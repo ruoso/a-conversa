@@ -111,7 +111,7 @@ A history view (accessible from the status indicator) shows recent events in rev
 
 The participant tablet uses the same visual conventions as the audience view (see [moderator-ui.md — visual state representation](moderator-ui.md#visual-state-representation)) for entity states (`proposed` / `agreed` / `disputed` / `meta-disagreement`). It adds:
 
-- **Per-participant vote indicators** — small per-facet markers next to each `proposed` / `disputed` facet showing each participant's current vote, including the other debater's. Each debater sees their own and the other's vote state in real time, pre-commit.
+- **Per-participant vote indicators** — small per-facet markers next to each `proposed` / `disputed` facet showing each participant's current vote, including the other debater's. Each debater sees their own and the other's vote state in real time, pre-commit. These indicators also appear in the pending-proposals pane (sidebar / tab) for systematic walkthrough — both surfaces are kept in sync, mirroring the moderator UI.
 - **Pending count badge** — a number on the pending-proposals tab indicating how many facets across all proposals still need this debater's vote.
 - **Diagnostic flags** — same visual treatment as the moderator UI; tappable to focus.
 

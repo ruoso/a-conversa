@@ -120,6 +120,26 @@ This minimizes the PII surface, keeps the open-source story clean (no proprietar
 
 Each debate is its own event log; multi-tenancy is lightweight (no cross-debate queries on the live path).
 
+## Local development environment
+
+**Development is done entirely locally** using a Docker Compose setup that brings up everything the application needs. A developer cloning the repo runs a single command and has the full stack running on their machine.
+
+The Compose file brings up:
+
+- The application server.
+- PostgreSQL.
+- A **local OAuth provider** (e.g., a small mock-OAuth service or a dev-mode self-hosted identity service) so that the auth flow works without depending on external providers during development. Dev accounts and screen names can be created freely; nothing leaves the local machine.
+- Any other supporting services the prototype needs (e.g., a static-asset server for the audience surface during dev).
+
+Goals of the local-dev story:
+
+- **One command** to start the full stack — no per-developer secrets, no external account setup required.
+- **No reliance on cloud services** for routine development. Every external dependency has a local equivalent or stub in the Compose set.
+- **Reproducible builds** — the same Compose file should produce the same dev environment on any machine that has Docker.
+- **Aligns with the open-source ethos** — anyone can clone the repo and develop without having to set up infrastructure.
+
+The cloud deployment is a different deployment target (managed Postgres, real OAuth providers, real domain/TLS, etc.) but uses the same application image as local-dev.
+
 ## Open architectural questions
 
 - **Backend language / framework.** TypeScript / Node, Go, Elixir (Phoenix has first-class real-time), Rust — all viable. Pick during prototyping based on team preference.

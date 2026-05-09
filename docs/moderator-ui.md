@@ -164,7 +164,9 @@ Within a single node, multiple facets can be in different states simultaneously.
 - **Substance** — shown by node role: a `disputed` substance node is a *claim* awaiting support; an `agreed` substance node can serve as `data`. (Visual: claims may have a prominent "needs support" outline, data may render flatter.)
 - **Axiom marks** — per-participant decorations, one per participant who marked.
 
-Per-participant vote indicators are not on the graph itself — they live in the right sidebar's pending-proposals pane. Each pending proposal shows three small indicators (one per participant) with states: *not-yet-voted* (gray), *agree* (green), *dispute* (red), *withdrawn* (yellow). The commit button per proposal becomes enabled only when all three are green.
+Per-participant vote indicators appear in **both places**: on the graph (next to each pending facet, for ambient awareness) and in the right sidebar's pending-proposals pane (for systematic walkthrough). Each pending facet shows three small indicators (one per participant) with states: *not-yet-voted* (gray), *agree* (green), *dispute* (red), *withdrawn* (yellow). The commit button per proposal in the sidebar becomes enabled only when all three are green.
+
+The graph view is the operator's "ambient awareness" mode — they can see at a glance which facets have which vote state. The sidebar is the "focus mode" — a consolidated list for working through pending proposals one by one. Both surfaces are kept in sync.
 
 ## Modes
 

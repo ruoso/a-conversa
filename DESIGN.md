@@ -16,8 +16,8 @@ The platform will be open source. The YouTube show is the proof of concept; if i
 - One moderator, who is the sole operator of the structuring tool.
 - Real-time classification: the moderator labels each statement as it is made. The debate intentionally slows so the structure can keep up.
 - A single, shared, live-growing graph is the visible artifact — what the audience sees being assembled.
-- **Both debaters must agree on every change to the graph before the debate moves on.** Disagreement about classification is itself diagnostic and gets handled by an explicit methodology.
-- Any participant (moderator or either debater) may propose any operation — classification, decomposition, edge, contradiction, etc. The moderator is the sole operator of the tool; participants propose verbally and the moderator executes if everyone agrees.
+- **All participants — both debaters and the moderator — must agree on every change to the graph before it lands.** Disagreement about classification is itself diagnostic and gets handled by an explicit methodology.
+- Any participant may propose any operation — classification, decomposition, edge, contradiction, etc. The moderator is the sole operator of the tool; participants propose verbally and the moderator commits the change once everyone agrees.
 
 ## Diagnostic goals
 
@@ -27,7 +27,7 @@ The platform will be open source. The YouTube show is the proof of concept; if i
 
 ## Two orthogonal classifications
 
-Every node carries a **statement kind** (fact / predictive / value / normative / definitional). Every edge carries an **argument role** (supports / rebuts / qualifies / bridges / defines / contradicts) drawn from Toulmin. The two dimensions are independent; both matter for surfacing where debaters talk past each other. See [docs/data-model.md](docs/data-model.md).
+Every node carries a **statement kind** (fact / predictive / value / normative / definitional). Every edge carries an **argument role** (supports / rebuts / qualifies / bridges-from / bridges-to / defines / contradicts) drawn from Toulmin. The two dimensions are independent; both matter for surfacing where debaters talk past each other. See [docs/data-model.md](docs/data-model.md).
 
 ## Document index
 

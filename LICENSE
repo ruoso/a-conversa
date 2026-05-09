@@ -1,0 +1,19 @@
+SPDX-License-Identifier: AGPL-3.0-or-later
+
+This project is licensed under the GNU Affero General Public License,
+version 3 or any later version ("AGPL-3.0-or-later").
+
+The canonical full text of the license is available at:
+
+    https://www.gnu.org/licenses/agpl-3.0.txt
+
+The AGPL was chosen for `a-conversa` because the project's intent is that
+"if it succeeds, others can adopt the same format with the same tooling."
+The AGPL's network-use clause ensures that anyone hosting an `a-conversa`
+instance has to publish their modifications, keeping the format and its
+tooling co-evolving as open source.
+
+This file is a license declaration during the design phase, while the
+project has no code. The full verbatim AGPL-3.0 text should be inserted
+here before the first code release; the SPDX identifier and reference
+above suffice as the license declaration in the meantime.
