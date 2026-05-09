@@ -78,8 +78,8 @@ The unified primitive across live and replay surfaces is **"render the graph at 
 
 V1 ships four distinct surfaces, sharing a TypeScript codebase and connecting to the same backend:
 
-- **Moderator** — full operator UI. Capture text, propose classification, draw edges, propose decomposition / interpretive split / meta-move, commit, view change history, watch structural diagnostics fire.
-- **Debaters (×2)** — agreement controls (agree / dispute / withdraw) on each pending proposal, plus a read-only graph view. Designed for a tablet held in the debater's hand or placed nearby.
+- **Moderator** — full operator UI. Capture text, propose classification, draw edges, propose decomposition / interpretive split / meta-move, commit, view change history, watch structural diagnostics fire. Detailed flow design in [moderator-ui.md](moderator-ui.md).
+- **Debaters (×2)** — agreement controls (agree / dispute / withdraw) on each pending facet, plus a read-only graph view. Voting is per-facet, not per-bundle. Designed for a tablet held in the debater's hand or placed nearby. Detailed flow design in [participant-ui.md](participant-ui.md).
 - **Audience / broadcast** — read-only, designed for video. Animated reveals on commit, clean typography, distinct visual states for `proposed` / `agreed` / `disputed` / `meta-disagreement`. This is the show. Served at a stable URL that **mirrors session privacy** — public sessions have a public viewer URL (anyone can load); private sessions require auth.
 - **Producer / director** — change-history scrubbing, segment-snapshot triggers, possibly OBS scene-switching cues. Useful for a polished broadcast; cuttable from v1 if the moderator surface plus OBS suffice.
 

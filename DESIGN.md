@@ -31,10 +31,12 @@ Every node carries a **statement kind** (fact / predictive / value / normative /
 
 ## Document index
 
-- [docs/data-model.md](docs/data-model.md) — nodes, edges, ownership, graph properties, structural diagnostics, visibility and history.
-- [docs/methodology.md](docs/methodology.md) — classification procedure, decomposition, diagnostic tests, axioms, meta-disagreement, agreement rule.
+- [docs/data-model.md](docs/data-model.md) — nodes, edges, ownership, graph properties, structural diagnostics, visibility and history, event types.
+- [docs/methodology.md](docs/methodology.md) — classification procedure, decomposition, diagnostic tests, axioms, meta-disagreement, agreement rule, the commit step.
 - [docs/architecture.md](docs/architecture.md) — engineering shape: event-sourced state model, sessions and the global graph (nodes/edges M-N to sessions), server-authoritative real-time, frontend surfaces, identity, deployment, replay, test mode.
-- [docs/example-walkthrough.md](docs/example-walkthrough.md) — simulated debate ("Should zoos exist?") produced by three sub-agents (Anna, Ben, Maria) with neutral prompts. Exercises the platform's procedure end-to-end and surfaces design questions about sub-IDs, annotations, defeater objects, and segment snapshots.
+- [docs/moderator-ui.md](docs/moderator-ui.md) — the moderator surface: layout sketch, core flows (capture, decompose, run diagnostic test, capture defeater, axiom-mark, meta-move, snapshot), visual state representation, keyboard shortcuts.
+- [docs/participant-ui.md](docs/participant-ui.md) — the debater tablet: per-facet voting (the central design), withdrawal flow, axiom-mark proposal, view of structural diagnostics and change history.
+- [docs/example-walkthrough.md](docs/example-walkthrough.md) — simulated debate ("Should zoos exist?") produced by three sub-agents (Anna, Ben, Maria) with neutral prompts. Exercises the platform's procedure end-to-end.
 
 ## Out of scope (for v1)
 
@@ -46,5 +48,4 @@ Every node carries a **statement kind** (fact / predictive / value / normative /
 
 Cross-cutting and product-level questions only. Doc-specific opens live in [docs/data-model.md](docs/data-model.md), [docs/methodology.md](docs/methodology.md), and [docs/architecture.md](docs/architecture.md).
 
-- **Moderator UI design** — the moderator surface is defined architecturally; the actual UI flows (capture → classify → propose → commit) need design work before implementation.
 - **Pre-debate prep workflow** — do debaters submit positions in advance? Could become a standalone use case ("map your own worldview" without a live debate). Out of scope for v1.
