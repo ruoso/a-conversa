@@ -126,6 +126,5 @@ Each debate is its own event log; multi-tenancy is lightweight (no cross-debate 
 - **Frontend framework.** React, Svelte, Solid — pick during prototyping. Must play well with the chosen graph-rendering library.
 - **One graph library or two.** Cytoscape for audience and ReactFlow for moderator vs. one library across surfaces. Resolve during UI prototyping.
 - **Auth library / OAuth implementation.** Self-hosted (Keycloak, Authelia, hand-rolled OAuth client) vs. hosted (Auth0, Clerk). Self-hosted aligns with open-source values; hosted is faster to ship.
-- **Producer / director surface in v1?** Probably yes for a polished first show, but cuttable if the moderator surface plus OBS does enough on its own.
-- **Test-mode UX details.** Timeline scrubber granularity (per event vs. per moderator commit); whether scrubbing highlights what changed at each step.
-- **Inheriting prior session state.** V1 says imported nodes start fresh in the new session. Should there be an opt-in "import the prior session's classification / axiom marks as starting proposals" that the new session's participants then accept or dispute? Interesting for series episodes; out of scope for v1 unless it becomes a clear need.
+- **Producer / director surface in v1?** Deferred. The moderator surface plus OBS may do enough; revisit during prototyping.
+- **Inheriting prior session state.** Deferred. V1 says imported nodes start fresh in the new session. Whether to add opt-in "import the prior session's classification / axiom marks as starting proposals" is a possible future feature, especially for series-episode formats.

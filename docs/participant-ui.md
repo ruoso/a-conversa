@@ -69,6 +69,8 @@ The most common operation.
 
 The debater's vote is **provisional until the moderator commits.** A debater can change their vote (from agree to dispute, or vice versa) up until commit lands.
 
+The other debater's votes are **visible** on each pending facet. Each debater sees how the other has voted in real time, before the moderator commits. This matches the format's transparency ethos (proposals, diagnostics, and history are all visible) and lets each side see exactly where they agree and disagree as votes land. The risk of social pressure to align is real but is outweighed by the value of seeing the disagreement in real time.
+
 ### P3. Withdraw agreement
 
 When the debater later realizes they shouldn't have agreed.
@@ -109,7 +111,7 @@ A history view (accessible from the status indicator) shows recent events in rev
 
 The participant tablet uses the same visual conventions as the audience view (see [moderator-ui.md — visual state representation](moderator-ui.md#visual-state-representation)) for entity states (`proposed` / `agreed` / `disputed` / `meta-disagreement`). It adds:
 
-- **Own vote indicators** — small per-facet markers next to each `proposed` / `disputed` facet showing this debater's current vote (or a "?" if not yet voted).
+- **Per-participant vote indicators** — small per-facet markers next to each `proposed` / `disputed` facet showing each participant's current vote, including the other debater's. Each debater sees their own and the other's vote state in real time, pre-commit.
 - **Pending count badge** — a number on the pending-proposals tab indicating how many facets across all proposals still need this debater's vote.
 - **Diagnostic flags** — same visual treatment as the moderator UI; tappable to focus.
 
@@ -125,11 +127,13 @@ The tablet is touch-first. Key gestures:
 
 Touch targets are sized for confident tapping during live debate (large enough that a glance-down-then-tap doesn't misfire).
 
-## Open UI questions
+## V1 defaults (resolved)
 
-- **Tablet form factor and orientation.** Optimized for landscape or portrait? Likely landscape (matches typical lap-held debate posture and gives more horizontal room for the graph).
-- **How new proposals are surfaced.** Visual flash on the graph + tab badge increment (current sketch) vs. notification banner vs. audible cue. Audible cues might be disruptive on camera; visual feedback is probably enough.
-- **Multi-pending-proposal handling.** When several proposals are in flight at once (a complex capture or decomposition), how does the debater navigate? List view with most-recent at top? Spatial layout matching the graph? Probably a list for v1.
-- **Undo before commit.** The debater can change their vote pre-commit. Is there a single "undo last action" gesture, or do they navigate back to the proposal and change their vote? The latter is simpler and aligns with the "everything is explicit" ethos.
-- **Showing the other debater's votes.** Does each debater see how the other has voted on each facet, before commit? Probably yes (transparency aligns with the format), but it's a non-trivial UX choice — could create social pressure to align.
-- **Verbal-action shortcuts on the tablet.** Quick "request decomposition" or "request meta-move" buttons that send a heads-up to the moderator? Probably not needed in v1 — the moderator listens — but worth noting as a possible accelerator.
+- **Tablet form factor and orientation** — landscape (matches typical lap-held debate posture and gives more horizontal room for the graph).
+- **How new proposals are surfaced** — visual flash on the affected entity in the graph view plus tab badge increment on the pending-proposals tab. No audible cues (disruptive on camera).
+- **Multi-pending-proposal handling** — list view with most-recent at top. Tap to expand a proposal.
+- **Undo before commit** — no separate undo gesture; the debater navigates to the proposal and changes their vote. Aligns with the "everything is explicit" ethos.
+- **Other debater's votes** — visible in real time on each pending facet. Captured in P2 above.
+- **Verbal-action shortcuts on the tablet** — none in v1. The moderator listens; substantive proposals are made verbally.
+
+(All decisions reachable in code without further chat-level deliberation; UI prototyping is the next step.)

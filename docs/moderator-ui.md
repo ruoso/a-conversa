@@ -42,7 +42,7 @@ The most common operation. Debater speaks; moderator captures.
 
 1. **Type the wording** into the capture text field. Free-form text, multi-line allowed.
 2. **Select the kind** from the classification palette (`fact` / `predictive` / `value` / `normative` / `definitional`). Single-key shortcut per kind speeds this.
-3. **Connect** to existing structure (optional but typical): pick a target node and an edge role (`supports`, `rebuts`, `qualifies`, etc.). The most-recently-active node may be auto-suggested as default target — see open question on default attachment.
+3. **Connect** to existing structure (optional but typical): pick a target node and an edge role (`supports`, `rebuts`, `qualifies`, etc.). The most-recently-active node is **auto-suggested as the default target**, pre-filled in the connect pane; one keystroke or click clears it if the suggestion is wrong. This trades a moment of latent error for capture speed during live debate; the override is one gesture away.
 4. **Propose**. A capture proposal lands several events at once: `node-created` (global), `entity-included` (in session), `proposal: classify-node`, plus optionally `edge-created`, `entity-included`, `proposal: set-edge-substance` if connecting. The graph shows the new node and edge in `proposed` state. The pending-proposals pane fills in.
 5. **Wait for votes**. Debaters' tablets show the proposals; they signal agree / dispute / withdraw. The right sidebar's vote indicators update as votes arrive.
 6. **Commit** once all participants are voting `agree`. The commit button(s) become enabled. The node's wording, classification, and edge transition to `agreed`; the audience sees the commit animate.
@@ -206,11 +206,13 @@ The right sidebar's change-history scroller shows the most recent events in reve
 
 Clicking an entry highlights the affected nodes/edges on the graph in a transient visual flash, helping the moderator see "what just changed" quickly. The pane is read-only — the moderator does not edit history; they propose new changes that land as forward events.
 
-## Open UI questions
+## V1 defaults (resolved)
 
-- **Audio capture / transcription assist.** Is the moderator typing every statement, or does v1 wire in audio-to-text as a draft they edit? Affects speed-of-capture and accuracy. Out of scope for v1 unless typing turns out to be a bottleneck.
-- **Default attachment behavior.** When capturing a new statement, is the most-recently-active node auto-suggested as target, or does the moderator always pick? Trade-off between speed and explicit-control.
-- **Per-debater axiom-mark proposal flow.** Either path is supported: the debater can initiate an axiom-mark from their tablet, or the moderator can capture one based on hearing "nothing would change my mind" verbally. See [participant-ui.md — P5](participant-ui.md#p5-mark-a-node-as-your-axiom).
-- **Producer/director affordances on the moderator UI.** If the producer surface is cut from v1, do snapshot triggers and OBS scene cues end up on the moderator UI?
-- **Capture pane position.** Bottom strip vs. right sidebar bottom vs. floating. Affects ergonomics for long-form typing.
-- **Multi-monitor support.** Some moderators may want the graph on one screen and capture on another. Does v1 support this, or one-screen-only?
+- **Audio capture / transcription assist** — none in v1. The moderator types every statement. Revisit only if typing turns out to be a bottleneck during prototyping.
+- **Default attachment behavior** — auto-suggest the most-recently-active node as target, with a one-gesture clear override. Captured in F1.
+
+## Deferred to UI prototyping
+
+- **Producer/director affordances on the moderator UI.** If the producer surface is cut from v1, do snapshot triggers and OBS scene cues end up on the moderator UI? Tied to the producer-surface deferred decision in [architecture.md](architecture.md#open-architectural-questions).
+- **Capture pane position.** Bottom strip vs. right sidebar bottom vs. floating. Resolve during UI prototyping.
+- **Multi-monitor support.** Some moderators may want the graph on one screen and capture on another. Resolve during UI prototyping.
