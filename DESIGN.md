@@ -43,9 +43,10 @@ Every node carries a **statement kind** (fact / predictive / value / normative /
 
 ## Open questions
 
-- **Moderator's tool UX** — what does the moderator actually interact with on screen? Capture, classify, decompose, connect — what do those operations look like as UI?
+Cross-cutting and product-level questions only. Doc-specific opens live in [docs/data-model.md](docs/data-model.md) and [docs/methodology.md](docs/methodology.md).
+
+- **Moderator's tool UX** — what does the moderator actually interact with on screen? Capture, classify, decompose, connect, commit, view-history — what do those operations look like as UI?
 - **Production setup** — one screen mirrored to viewers, or separate capture and display surfaces?
 - **Pre-debate prep workflow** — do debaters submit positions in advance? Could become a standalone use case ("map your own worldview" without a live debate).
 - **Persistence and export** of completed debate graphs and their change histories.
-- **Blocking vs. advisory diagnostics** — which structural problems block forward progress, which merely warn? (Tracked in [docs/methodology.md](docs/methodology.md).)
-- **Walkthrough-surfaced data-model questions** — sub-IDs vs. fresh IDs after decomposition, annotations on agreed nodes, defeater objects, methodological/stance annotations, segment snapshots. To be lifted into [docs/data-model.md](docs/data-model.md) when next touched.
+- **Walkthrough-surfaced items still pending:** sub-IDs vs. fresh IDs after decomposition; defeater objects (concrete retraction conditions modeled explicitly); segment snapshots (immutable named graph states alongside live view and change history).

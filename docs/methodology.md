@@ -6,17 +6,23 @@ This document describes the procedure participants follow during a debate: how s
 
 ## Agreement rule
 
-The foundational rule of the format: **both debaters must agree on every change to the graph before the debate moves on.** This applies to:
+The foundational rule of the format: **all participants — both debaters and the moderator — must agree on every change to the graph before it lands.** No exceptions. The agreement rule is what slows the debate down; that is the point. Clarity is a function of slow.
 
-- Node content (the wording of a statement).
-- Node classification (its kind: fact / value / etc., and any role implied by its edges).
-- Edges (whether and how two nodes relate).
-- Decompositions (whether a statement is compound, and how it splits).
-- Resolutions of structural diagnostics (contradictions, cycles, etc.).
+Anyone may propose any change. The moderator is the sole operator of the tool, so debaters propose verbally and the moderator commits the change once they observe agreement (see "The commit step" below).
 
-Anyone — moderator or either debater — may propose any change. The moderator is the sole operator of the tool, so participants propose verbally and the moderator executes the operation if everyone agrees.
+Agreement is **per-facet and per-participant**. Each facet of an entity (node wording, classification, substance; edge shape and substance; annotation content) tracks each participant's stance individually, and a facet only advances to `agreed` when every current participant has agreed to it.
 
-The agreement rule is what slows the debate down; that is the point. Clarity is a function of slow.
+### The commit step
+
+A proposed change appears on the graph in `proposed` state from the moment it is made. Participants verbally express agreement or disagreement. **The moderator commits the change** — transitions it to `agreed` and applies its effects — when they observe agreement from every participant. Until commit, the change is work-in-progress.
+
+The explicit commit step matters because:
+
+- Implicit agreement (everyone nods vaguely) doesn't accidentally land changes the participants didn't fully consider.
+- The moderator's role is structural, not interpretive. They don't decide whether agreement has been reached on the merits; they enact it once participants have expressed it.
+- It gives the participants a clear handoff moment: until the moderator commits, you can still object.
+
+A participant may **withdraw agreement** they previously gave. An `agreed` facet transitions back to `disputed`; the original commit and the withdrawal are both recorded in the change history. Withdrawal is allowed because real reasoning has second thoughts, and the format would be brittle if it didn't accommodate them.
 
 ## The change lifecycle
 
@@ -83,11 +89,13 @@ For decomposition specifically: agreeing to decompose N into A + B agrees to the
 - **Classification dispute.** Maria proposes N1 is `normative`. Ben disputes — he thinks it's a `value` claim. Classification facet → `disputed`. Diagnostic tests run (operationalization, is-ought, etc.); resolution may be a re-classification, a decomposition into components with different kinds, or `meta-disagreement`. Throughout, N1's wording facet may already be `agreed` and stays so.
 - **Decomposition.** Maria proposes splitting N1 into A + B. Decomposition facet `proposed`. Everyone agrees → N1 is removed, A and B exist. All of A's and B's facets start `proposed`. Each is its own change with its own lifecycle.
 - **Contradicts edge.** Anna proposes a `contradicts` edge between N1 and N2. Shape facet `proposed`. Everyone agrees on the shape → shape facet `agreed`. Substance facet (does the contradiction actually hold?) is `proposed`; if Ben disputes, substance facet → `disputed`; methodology runs (decompose? amend? accept-as-bedrock?). The edge stays visible in `disputed` substance throughout.
-- **Axiom-marking.** Ben proposes that N9 is an axiom for him. Axiom-mark is a change with its own lifecycle. Everyone agrees (or runs methodology — operationalization, etc.) → axiom-mark `agreed`. This is independent of N9's other facets, which may have landed earlier.
+- **Axiom-marking.** Ben proposes an axiom mark on N9 for himself. The axiom mark is a graph operation with its own lifecycle. All participants agree (or run methodology — operationalization, etc.) that yes, Ben holds N9 as bedrock → the axiom mark lands. The agreement here is on the *fact of Ben's bedrock commitment*, not on whether N9 is true. Anna may or may not have her own axiom mark on N9 (a separate change with its own lifecycle). N9's other facets are independent.
 
 ## Classification procedure
 
-When a statement is made, the moderator proposes a classification (kind + the role it plays via its edges). If both debaters accept, the node lands in the graph as `agreed`. If one or both disagree, the disagreement triggers the diagnostic tests below.
+When a statement is made, the moderator proposes a classification (the value of the node's `classification` facet — its kind: fact / predictive / value / normative / definitional). If all participants accept, the moderator commits and the classification facet lands as `agreed`. If anyone disputes, the classification facet stays `disputed` and the diagnostic tests below run.
+
+The classification is one facet of the node; the node's wording and substance facets each have their own independent agreement workflow.
 
 ## Diagnostic tests
 
@@ -111,9 +119,11 @@ If a purely descriptive statement is doing prescriptive work in the argument, th
 
 ### Disputation test
 
-- If both debaters agree the statement is true → it functions as `data` (and gets a `supports` edge to the claim it backs).
-- If one disputes it → it is itself a claim that needs its own support.
-- A statement's role can change mid-debate as its disputed/agreed status changes.
+The disputation test reads a node's `substance` facet:
+
+- If every participant agrees the content is true → the substance facet is `agreed`. The node functions as `data` and can carry a `supports` edge to a claim.
+- If anyone disputes the content → the substance facet is `disputed`. The node is itself a claim that needs its own support.
+- A node's role (data vs. claim) can change mid-debate as its substance facet transitions; an agreed-true node that someone later challenges moves back to `disputed` (via the withdrawal mechanism).
 
 ### Warrant elicitation
 
@@ -123,7 +133,7 @@ The articulated warrant is itself a new node, often the actual fact-or-value dis
 
 ## Decomposition
 
-Decomposition is a **first-class operation** on the graph, not a fallback. Anyone in the debate (the moderator or either debater) may call out that a statement is saying too much and propose breaking it down — decomposition is not gated on classification disagreement. The agreement rule applies: the moderator executes the split if everyone agrees.
+Decomposition is a **first-class methodological move**, not a fallback. Anyone in the debate (the moderator or either debater) may call out that a statement is saying too much and propose breaking it down — decomposition is not gated on classification disagreement. The decomposition operation itself is recorded in the change history (it is not a graph entity); its effects (the parent removed, components added) appear on the graph as new proposed nodes. The standard agreement rule applies.
 
 ### Common decomposition seams
 
@@ -140,7 +150,16 @@ The component nodes start as `proposed` and run through their own lifecycle (see
 
 ### Recursion
 
-Each component is run through the methodology again: classify, and if disagreement or further compound structure surfaces, decompose further. Decomposition bottoms out when each leaf node carries a clean classification both debaters accept.
+Each component is run through the methodology again: classify, and if disagreement or further compound structure surfaces, decompose further. Decomposition bottoms out when every facet of every leaf node has landed as `agreed` (and any edges among them have likewise landed).
+
+## Editing wording: reword vs. restructure
+
+When someone proposes editing a node's wording (because the original capture wasn't quite right, or because the participants want to refine after later context), the participants must agree on **what the edit means**:
+
+- **Reword** — the edit produces a clearer phrasing of the same statement. The node ID is preserved; the wording facet's value changes (the prior wording is recorded in the change history). All edges into or out of the node remain attached.
+- **Restructure** — the edit produces a meaningfully different statement, not the same node in better words. A new node is created (with its own facets in `proposed`) and the original node is left in place or removed; edges that referred to the original do not automatically follow.
+
+The choice between reword and restructure is itself a proposed change requiring agreement. If the participants disagree on whether an edit is a reword or a restructure, that disagreement runs through the standard methodology (often resolved by inspecting whether the edit changes which inferences land on the node).
 
 ## Interpretive splits
 
@@ -148,7 +167,7 @@ A statement may not bundle multiple claims as the speaker intended it, yet admit
 
 In the walkthrough ([example-walkthrough.md](example-walkthrough.md)), a defeater offered as "capability-frustration reduces to welfare deficits" was split by the moderator into an *epistemic* reading ("welfare deficits are our evidence for constitutive capacities") and a *metaphysical* reading ("capability-frustration *just is* welfare loss, ontologically"). The opposing debater's argument cleanly established the epistemic reading but not the metaphysical one — and the original claim needed the metaphysical reading to fail for it to fall. Neither debater had distinguished the two; the moderator did.
 
-Interpretive splits are subject to the agreement rule: both debaters must accept the split — and agree which reading their argument applies to — before it lands. This protects against the moderator imposing a frame either side rejects.
+Interpretive splits are subject to the standard agreement rule: all participants must accept the split — and the debaters must agree which reading their argument applies to — before it lands. This protects against the moderator imposing a frame either side rejects.
 
 Distinguishing interpretive split from ordinary decomposition:
 - **Decomposition** — the speaker intended multiple claims and bundled them; the split surfaces what was already there.
@@ -168,15 +187,19 @@ Surfacing meta-moves — rather than absorbing them — frequently locates where
 
 ## Axioms / terminal values
 
-When the operationalization test produces "nothing could change my mind", the node is marked as an **axiom**. Axioms are visually distinct in the graph.
+When the operationalization test produces "nothing could change my mind", the node receives an **axiom mark** from the participant who declared it. Axiom marks are **per-participant** — Ben's axiom mark on N9 records Ben's bedrock; Anna may add her own axiom mark to the same node (an unanticipated structural finding: shared bedrock), or hold a different node as her axiom, or hold no axiom at all in this debate. Axiom marks are visually distinct on the node they mark.
+
+The axiom-mark itself is a graph operation, not a graph entity — it is recorded as an event in the change history and rendered on the node it marks. Like every change, an axiom mark goes through the standard agreement lifecycle (proposed → committed by the moderator once everyone has agreed). Agreement on an axiom mark is roughly: "we all agree that this participant holds this node as bedrock for this debate" — not "we all agree the node is true."
 
 Axioms are not a defect. They are often the most valuable output of the exercise: the debate dead-ends at "A holds X as bedrock, B holds Y as bedrock, and that is the real disagreement." Surfacing axioms is a primary success state.
 
-Pragmatically, an axiom answers the question "what could end this debate?" with "nothing, but at least we know where the bedrock is."
+Pragmatically, an axiom-marked node answers "what could end this debate from this participant's side?" with "nothing on this point, but at least we know where the bedrock is."
 
 ## Meta-disagreement fallback
 
-If decomposition fails — debaters cannot agree the statement is compound, *and* cannot agree on a single classification — the node is marked as a **meta-disagreement**: it carries both proposed classifications side by side. The debate proceeds.
+When the diagnostic tests can't resolve a facet's dispute and decomposition can't either — for example, participants cannot agree on a single classification *and* cannot agree the statement is compound — the facet is marked as **meta-disagreement**: it carries both proposed values side by side. The debate proceeds.
+
+Meta-disagreement is a per-facet status, not a node-wide one. A node's classification facet may be `meta-disagreement` (carrying two competing kinds) while its wording facet is `agreed` and its substance facet is `disputed`. The same applies to edges: an edge's shape facet may be `meta-disagreement` (two proposed roles for the same edge) while its substance facet is in some other state.
 
 This honors "both sides must agree before moving on" without making it a hard block. The participants have agreed to *register* the disagreement and continue. Meta-disagreement is a last resort; the methodology is designed so that decomposition resolves most cases before this fallback is needed.
 
@@ -184,14 +207,13 @@ This honors "both sides must agree before moving on" without making it a hard bl
 
 The data model tracks structural problems (cycles, contradictions, multi-warrant patterns; see [data-model.md](data-model.md)). The methodology for resolving them mirrors classification: anyone proposes a resolution, all participants must agree. Typical resolution paths:
 
-- **Cycle in supports** — break one `supports` edge (acknowledged as not actually holding), decompose a node in the cycle, or promote a node to `axiom`.
-- **Contradiction** — decompose one or both nodes (most common), amend one to remove conflict, or accept the contradiction as a bedrock disagreement (both nodes become axioms, the `contradicts` edge stays).
+- **Cycle in supports** — break one `supports` edge (acknowledged as not actually holding), decompose a node in the cycle, or have a participant axiom-mark a node in the cycle (the chain terminates at that participant's bedrock).
+- **Contradiction** — decompose one or both nodes (most common), amend one to remove conflict, or accept the contradiction as a bedrock disagreement (each side axiom-marks the position they hold; the `contradicts` edge stays).
 - **Multiple competing warrants on one data→claim** — decompose the claim. After decomposition, each warrant attaches to a different component.
 - **Dangling claim** — a soft prompt; the moderator asks for support or asks whether the claim is being conceded/accepted.
 - **Coherency hints** — advisory only; no required resolution.
 
 ## Open methodology questions
 
-- Whether structural diagnostics block forward progress (must be resolved) or merely warn (visible but skippable). Likely a mix; topic-level contradictions block, advisory hints don't.
-- How to handle proposed-but-not-yet-agreed changes (do they appear in the graph as "pending" with visible markers, or only land once agreement is reached?).
-- Whether the moderator can override the agreement rule in extreme cases (e.g., a debater stonewalling). Probably no — overrides would compromise the format's core promise.
+- Whether structural diagnostics block forward progress (must be resolved) or merely warn (visible but skippable). Likely a mix; topic-level contradictions block, advisory hints don't. Affects how the data model surfaces unresolved diagnostics in [data-model.md — structural diagnostics](data-model.md#structural-diagnostics).
+- Whether the moderator can override the agreement rule in extreme cases (e.g., a debater stonewalling). Probably no — overrides would compromise the format's core promise. Withdrawal of agreement, by contrast, is allowed.
