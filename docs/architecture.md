@@ -89,6 +89,8 @@ A separate mode (no live participants) loads a saved debate's event log and pres
 
 The timeline is built on the same "render at log position" primitive as the audience view; test mode is the audience surface with a scrubber instead of live event streaming.
 
+**Granularity is per-event.** Every event in the log is a scrubber stop — proposals, individual participant votes, commits, withdrawals, snapshots, and so on. This makes the methodology's fine-grained workflow visible (e.g., "here's the moment Ben voted dispute on N1's classification, before Maria committed").
+
 ## Graph rendering
 
 - **Cytoscape.js** for the audience view — strong layout algorithms, animation hooks, customizable styling for distinct facet/state rendering.

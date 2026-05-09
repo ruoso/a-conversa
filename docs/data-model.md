@@ -50,16 +50,18 @@ Ownership is shown visually (color, marker, or similar — UX detail to be desig
 
 ### Per-participant agreement tracking
 
-Each participant (debater A, debater B, moderator) records their agreement on each facet of each entity individually. A facet's overall status is derived from the participants' individual states:
+Each participant (debater A, debater B, moderator) records their agreement on each facet of each entity individually. A facet's overall status is derived from the per-participant votes on its most-recent unresolved proposal *plus* whether the moderator has committed it. See [methodology — the commit step](methodology.md#the-commit-step) for the workflow:
 
-- `proposed` — at least one participant has not yet engaged with this facet.
-- `agreed` — every current participant has agreed.
-- `disputed` — at least one participant has explicitly rejected the proposed value.
-- `meta-disagreement` — irreducible disagreement; both proposed values carried.
+- `proposed` — a proposal exists but has not been committed yet. This covers both "still gathering votes" and "all voted agree, awaiting moderator commit." The proposal is visible on the graph throughout.
+- `agreed` — the moderator has committed the proposal (which requires every current participant to be voting `agree` at commit time).
+- `disputed` — at least one participant has voted `dispute` on the most-recent proposal, blocking commit.
+- `meta-disagreement` — the moderator has marked the proposal as meta-disagreement; both proposed values are carried side by side.
 
 "Agreed" is transient over the participant set: any change in who counts as a participant in the debate would re-open every facet for re-agreement. (In the live YouTube-show format the participant set is fixed, so this is mostly a theoretical concern; it matters for async / replay scenarios.)
 
-Participants may **withdraw agreement** they previously gave. An `agreed` facet can transition back to `disputed` if any participant revises their stance. Both the agreement and the withdrawal are recorded in the change history.
+Participants may **withdraw agreement** they previously gave. A `withdraw` vote sends the facet back to `disputed` and effectively supersedes the prior commit; the original commit and the withdrawal are both recorded in the change history.
+
+For the full event-level catalog, see [Event types](#event-types) below.
 
 ### Content, facets, and status
 
@@ -73,9 +75,9 @@ Node facets:
 
 Each facet's `status` is one of:
 
-- `proposed` — the facet has been proposed but not yet agreed. Visible on the graph in a distinct state, awaiting agreement.
-- `agreed` — all participants have agreed; the facet's value is locked in.
-- `disputed` — at least one participant has rejected the proposed value. Stays visible while methodology runs to resolve.
+- `proposed` — a value has been proposed but not yet committed. Visible on the graph in a distinct state, awaiting agreement and the moderator's commit.
+- `agreed` — the moderator has committed the proposal (requiring every current participant to be voting `agree`); the facet's value is locked in.
+- `disputed` — at least one participant has rejected the proposed value, blocking commit. Stays visible while methodology runs to resolve.
 - `meta-disagreement` — irreducible disagreement; both proposed values carried side by side.
 
 The same status enum applies uniformly to every facet of every entity, and to standalone operations (decompositions, axiom-marks). Each status transition is recorded as a separate event in the change history.
@@ -204,11 +206,80 @@ Earlier states of the graph are **not** kept visible. When a statement is decomp
 
 ### Change history
 
-Every graph operation is recorded in a **change history** event log. The history captures every per-facet status transition (proposed, agreed, disputed, meta-disagreement, withdrawn) for every entity, and every operation that doesn't produce a persistent entity (decomposition, interpretive split, axiom-mark, meta-move, edit-as-reword vs. edit-as-restructure). Each event records who proposed it, the per-participant agreement states at the time, and the timestamp.
+Every graph operation is recorded in a per-session **change history** event log. The history captures every per-facet status transition, every participant vote, every commit, every withdrawal, every operation that doesn't produce a persistent entity (decomposition, interpretive split, axiom-mark, meta-move, wording edit). Each event records the actor, timestamp, and any payload specific to the event kind.
 
-**Operations that aren't graph entities live only in the change history.** Decompositions, interpretive splits, axiom-marks, and meta-moves are events recorded in history; their *effects* (nodes added or removed, axiom rendering, etc.) appear on the graph. The operations themselves are not separate entities on the graph that a viewer can click. This is a UX challenge — surfacing operations meaningfully when they aren't visually present on the graph — but keeps the graph state itself simple: only nodes, edges, and their annotations.
+**Operations that aren't graph entities live only in the change history.** Decompositions, interpretive splits, axiom-marks, and meta-moves are events recorded in history; their *effects* (nodes added or removed, axiom rendering, etc.) appear on the graph. The change-history view (see [methodology.md](methodology.md)) is the primary surface for past operations; their effects unfold on the live graph and through replay.
 
 The change history is available out-of-band — for replay, audit, post-debate analysis, and possibly a separate production view (e.g., a side-display showing the most recent N operations as the audience watches the main graph). The history does not clutter the live graph.
+
+Granularity is **fine-grained**: each individual proposal, each individual participant vote, each individual commit is its own event. This gives per-event timeline scrubbing in test/replay mode (see [architecture.md — test mode](architecture.md#test-mode)) and full audit fidelity.
+
+### Event types
+
+The change history is an append-only log of typed events. Events fall into the categories below.
+
+#### Session lifecycle
+
+- `session-created` — initializes a session. Payload: host, privacy (public/private), creation timestamp.
+- `session-ended` — closes a session (deliberate end-of-show). Optional in v1.
+- `participant-joined` — participant joins. Payload: participant id, role (`moderator` / `debater-A` / `debater-B`), screen name, timestamp.
+- `participant-left` — participant leaves. Affects derivation of "all current participants have agreed" for in-flight proposals.
+
+#### Global entity creation
+
+These create entities in the *global* graph and typically co-occur with `entity-included` for the originating session.
+
+- `node-created` — payload: node id, wording, creator, timestamp.
+- `edge-created` — payload: edge id, role (`supports` / `rebuts` / etc.), source-node-id, target-node-id, creator, timestamp.
+- `annotation-created` — payload: annotation id, content, target-entity-id (node or edge), creator, timestamp.
+
+#### Session inclusion
+
+- `entity-included` — the session begins referencing an existing global entity. Payload: session id, entity-id, by-whom, timestamp.
+
+#### Proposals
+
+A proposal is a proposed change to the session's view of the graph, awaiting agreement. All proposals share the same lifecycle (`proposed` → `agreed` / `disputed` / `meta-disagreement`) but vary in payload by `kind`:
+
+- `classify-node` — proposes a statement kind for a node within this session. Payload: node, proposed kind.
+- `set-node-substance` — proposes whether the node's content holds. Payload: node, proposed value (`agreed` or `disputed`).
+- `set-edge-substance` — proposes whether the relation holds (conditional reading; "if source were true, would the relation hold?"). Payload: edge, proposed value.
+- `edit-wording` — proposes editing a node's wording. Payload: node, new wording, edit kind (`reword` | `restructure`).
+- `decompose` — proposes splitting a node into components. Payload: parent node, list of components (each with proposed wording / classification).
+- `interpretive-split` — proposes splitting along reading seams. Payload: parent node, list of readings.
+- `axiom-mark` — proposes that a named participant holds a node as bedrock. Payload: node, participant.
+- `meta-move` — proposes a reframe / scope change / methodological stance. Payload: kind (reframe | scope-change | stance), content, target.
+- `break-edge` — proposes removing an edge (for cycle resolution; "this support doesn't actually hold"). Payload: edge.
+- `amend-node` — proposes changing a node's content beyond a wording edit (used in contradiction resolution). Payload: node, new content.
+- `annotate` — proposes a new annotation on an existing entity. Payload: target entity, content.
+
+Each proposal event records: proposer, target session, proposal kind, payload, timestamp. Each proposal gets an id used by votes and the commit.
+
+#### Votes
+
+- `vote` — a participant signals their stance on a proposal. Payload: proposal id, participant, vote (`agree` | `dispute` | `withdraw`), timestamp. Withdraw applies only to a previously-agreed proposal and sends the facet/operation back to `disputed`.
+
+#### Resolutions
+
+- `commit` — the moderator commits a proposal that has all participants currently voting `agree`. Payload: proposal id, moderator, timestamp. This is the event that transitions the relevant facet/operation to `agreed` and applies its effects.
+- `meta-disagreement-marked` — the moderator marks a proposal as meta-disagreement (last-resort fallback after methodology has run). Payload: proposal id, moderator, timestamp. Both proposed values are carried side by side.
+
+#### Snapshots
+
+- `snapshot-created` — names a position in the event log for replay reference. Payload: label, log position, creator, timestamp.
+
+### Facet status derivation
+
+A facet's overall status is derived from the per-participant votes on the most-recent unresolved proposal for that facet:
+
+- No proposal yet, or proposal exists with at least one participant who hasn't voted → `proposed`.
+- All current participants voting `agree`, awaiting moderator commit → `proposed` (still — the moderator's commit is what lands it).
+- Most-recent proposal has been `commit`-ed → facet `agreed`, value = proposed value.
+- At least one participant currently voting `dispute` (and no successful subsequent commit) → `disputed`.
+- Moderator marked the facet as `meta-disagreement-marked` → `meta-disagreement`, carrying both proposed values.
+- `withdraw` vote sends the facet back to `disputed` (effectively superseding the prior commit).
+
+The change history is the source of truth; the in-memory projection computes current facet status by replaying the log.
 
 ## Surfacing operations in the UI
 

@@ -10,7 +10,7 @@ The foundational rule of the format: **all participants — both debaters and th
 
 Anyone may propose any change. The moderator is the sole operator of the tool, so debaters propose verbally and the moderator commits the change once they observe agreement (see "The commit step" below).
 
-Agreement is **per-facet and per-participant**. Each facet of an entity (node wording, classification, substance; edge shape and substance; annotation content) tracks each participant's stance individually, and a facet only advances to `agreed` when every current participant has agreed to it.
+Agreement is **per-facet and per-participant**. Each facet of an entity (node wording, classification, substance; edge shape and substance; annotation content) tracks each participant's stance individually. A facet advances to `agreed` only when every current participant is voting `agree` *and* the moderator commits (see "The commit step" below).
 
 ### The commit step
 
@@ -33,7 +33,7 @@ A participant may **withdraw agreement** they previously gave. An `agreed` facet
 Every proposed change moves through these states:
 
 - `proposed` — someone has proposed the change. **The proposal is visible on the graph in a distinct state from the moment it is made**, awaiting agreement.
-- `agreed` — all participants have agreed; the change has been applied.
+- `agreed` — all participants have voted `agree` and the moderator has committed; the change has been applied.
 - `disputed` — at least one participant has rejected the proposal. It remains visible while the methodology runs to resolve.
 - `meta-disagreement` — the disagreement turned out to be irreducible; both proposed shapes are carried side by side. Last-resort fallback (see below).
 
@@ -123,7 +123,7 @@ If a purely descriptive statement is doing prescriptive work in the argument, th
 
 The disputation test reads a node's `substance` facet:
 
-- If every participant agrees the content is true → the substance facet is `agreed`. The node functions as `data` and can carry a `supports` edge to a claim.
+- If every participant votes `agree` on the content's truth and the moderator commits → the substance facet is `agreed`. The node functions as `data` and can carry a `supports` edge to a claim.
 - If anyone disputes the content → the substance facet is `disputed`. The node is itself a claim that needs its own support.
 - A node's role (data vs. claim) can change mid-debate as its substance facet transitions; an agreed-true node that someone later challenges moves back to `disputed` (via the withdrawal mechanism).
 
