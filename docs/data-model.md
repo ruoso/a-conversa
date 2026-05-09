@@ -4,6 +4,19 @@
 
 This document defines the structure of a debate graph in `a-conversa`: nodes, edges, ownership, graph properties, structural diagnostics, and how the graph's state and history are represented.
 
+## Sessions and scope
+
+A debate is conducted within a **session**. Each session is independent and has its own authenticated participants. Nodes and edges, however, have global identity — the same node (with its wording) can be referenced in many sessions; the same structural edge can appear in many sessions. This M-N relationship lets one session build on another (e.g., citing prior episodes' axioms).
+
+Concretely, what's global vs. session-scoped:
+
+- **Global to a graph entity:** a node's `wording`; an edge's `shape` (role + endpoints).
+- **Session-scoped:** every other facet (`classification`, `substance`), per-participant agreement, axiom marks, annotations, and structural diagnostics. The participants making and reading these facets are themselves session-scoped.
+
+A node referenced in a new session starts fresh — its session-scoped facets begin in `proposed` and run through the standard lifecycle in the new session, with the new session's participants. State does not auto-inherit. (Future versions may offer opt-in inheritance with imported state landing as starting proposals; out of scope for v1.)
+
+The rest of this document describes the graph as it appears within a single session — that is the graph the methodology operates on. See [architecture.md](architecture.md) for the multi-session storage and orchestration story.
+
 ## Nodes
 
 A **node** represents a single statement on the graph. Nodes are first-class entities with the following properties.

@@ -33,6 +33,7 @@ Every node carries a **statement kind** (fact / predictive / value / normative /
 
 - [docs/data-model.md](docs/data-model.md) — nodes, edges, ownership, graph properties, structural diagnostics, visibility and history.
 - [docs/methodology.md](docs/methodology.md) — classification procedure, decomposition, diagnostic tests, axioms, meta-disagreement, agreement rule.
+- [docs/architecture.md](docs/architecture.md) — engineering shape: event-sourced state model, sessions and the global graph (nodes/edges M-N to sessions), server-authoritative real-time, frontend surfaces, identity, deployment, replay, test mode.
 - [docs/example-walkthrough.md](docs/example-walkthrough.md) — simulated debate ("Should zoos exist?") produced by three sub-agents (Anna, Ben, Maria) with neutral prompts. Exercises the platform's procedure end-to-end and surfaces design questions about sub-IDs, annotations, defeater objects, and segment snapshots.
 
 ## Out of scope (for v1)
@@ -43,10 +44,8 @@ Every node carries a **statement kind** (fact / predictive / value / normative /
 
 ## Open questions
 
-Cross-cutting and product-level questions only. Doc-specific opens live in [docs/data-model.md](docs/data-model.md) and [docs/methodology.md](docs/methodology.md).
+Cross-cutting and product-level questions only. Doc-specific opens live in [docs/data-model.md](docs/data-model.md), [docs/methodology.md](docs/methodology.md), and [docs/architecture.md](docs/architecture.md).
 
-- **Moderator's tool UX** — what does the moderator actually interact with on screen? Capture, classify, decompose, connect, commit, view-history — what do those operations look like as UI?
-- **Production setup** — one screen mirrored to viewers, or separate capture and display surfaces?
-- **Pre-debate prep workflow** — do debaters submit positions in advance? Could become a standalone use case ("map your own worldview" without a live debate).
-- **Persistence and export** of completed debate graphs and their change histories.
-- **Walkthrough-surfaced items still pending:** sub-IDs vs. fresh IDs after decomposition; defeater objects (concrete retraction conditions modeled explicitly); segment snapshots (immutable named graph states alongside live view and change history).
+- **Moderator UI design** — the moderator surface is defined architecturally; the actual UI flows (capture → classify → propose → commit) need design work before implementation.
+- **Pre-debate prep workflow** — do debaters submit positions in advance? Could become a standalone use case ("map your own worldview" without a live debate). Out of scope for v1.
+- **Walkthrough-surfaced items still pending:** sub-IDs vs. fresh IDs after decomposition; defeater objects (concrete retraction conditions modeled explicitly).
