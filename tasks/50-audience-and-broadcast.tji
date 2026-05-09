@@ -1,0 +1,196 @@
+# 50 — Audience and broadcast
+#
+# The read-only audience surface — rendered for video, served as an OBS
+# browser source for live shows. The "this is the show" surface.
+
+task audience "Audience and broadcast" {
+  task aud_shell "Audience app shell" {
+    depends foundation.repo_skeleton, foundation.stack_decisions.frontend_framework_decision
+    task aud_app_skeleton "Read-only app skeleton" {
+      effort 1d
+      allocate team
+    }
+    task aud_ws_client "WebSocket client (read-only subscription)" {
+      effort 1d
+      allocate team
+      depends !aud_app_skeleton, backend.websocket_protocol.ws_subscribe_to_session
+    }
+    task aud_state_management "State management for live event stream" {
+      effort 1d
+      allocate team
+      depends !aud_ws_client
+    }
+    task aud_no_auth_for_public "No auth for public-session viewer page" {
+      effort 0.5d
+      allocate team
+      depends !aud_app_skeleton
+      note "Public sessions render to anyone with the URL; private sessions auth-gate."
+    }
+    task aud_auth_for_private "Auth-gate private-session viewer pages" {
+      effort 0.5d
+      allocate team
+      depends !aud_no_auth_for_public, backend.auth.session_token_management
+    }
+  }
+
+  task aud_graph_rendering "Audience graph rendering (Cytoscape.js)" {
+    depends !aud_shell, foundation.stack_decisions.graph_lib_decision
+    task aud_cytoscape_init "Initialize Cytoscape.js viewport" {
+      effort 1d
+      allocate team
+    }
+    task aud_clean_typography "Clean typography for video legibility" {
+      effort 1d
+      allocate team
+      depends !aud_cytoscape_init
+    }
+    task aud_proposed_styling "Proposed-state styling (dashed, faded)" {
+      effort 1d
+      allocate team
+      depends !aud_cytoscape_init
+    }
+    task aud_agreed_styling "Agreed-state styling (solid, full color)" {
+      effort 0.5d
+      allocate team
+      depends !aud_cytoscape_init
+    }
+    task aud_disputed_styling "Disputed-state styling" {
+      effort 1d
+      allocate team
+      depends !aud_cytoscape_init
+    }
+    task aud_meta_disagreement_split "Meta-disagreement split rendering" {
+      effort 1d
+      allocate team
+      depends !aud_cytoscape_init
+    }
+    task aud_axiom_mark_decoration "Per-participant axiom-mark decoration" {
+      effort 1d
+      allocate team
+      depends !aud_cytoscape_init
+    }
+    task aud_annotation_rendering "Annotation rendering" {
+      effort 1d
+      allocate team
+      depends !aud_cytoscape_init
+    }
+    task aud_per_facet_visualization "Per-facet state visualization within a single node" {
+      effort 2d
+      allocate team
+      depends !aud_proposed_styling, !aud_agreed_styling, !aud_disputed_styling
+    }
+    task aud_layout_engine "Configure layout algorithm tuned for clarity on video" {
+      effort 2d
+      allocate team
+      depends !aud_cytoscape_init
+    }
+  }
+
+  task aud_animations "Animations on commit and graph changes" {
+    depends !aud_graph_rendering
+    task aud_node_appear_animation "Animate node appearing on creation" {
+      effort 1d
+      allocate team
+    }
+    task aud_proposed_to_agreed_animation "Animate proposed → agreed transition" {
+      effort 1d
+      allocate team
+    }
+    task aud_decomposition_animation "Animate decomposition (parent fading, components emerging)" {
+      effort 2d
+      allocate team
+    }
+    task aud_withdrawal_animation "Animate withdrawal (agreed → disputed)" {
+      effort 1d
+      allocate team
+    }
+    task aud_diagnostic_fire_animation "Animate diagnostic firing (cycle / contradiction highlight)" {
+      effort 1d
+      allocate team
+    }
+    task aud_axiom_mark_animation "Animate axiom-mark landing on a node" {
+      effort 0.5d
+      allocate team
+    }
+    task aud_animation_pacing "Pacing tuning so animations are readable on video" {
+      effort 1d
+      allocate team
+      depends !aud_node_appear_animation, !aud_proposed_to_agreed_animation
+    }
+  }
+
+  task aud_obs_integration "OBS browser-source considerations" {
+    depends !aud_shell
+    task aud_obs_sizing_defaults "Default sizing for typical OBS browser-source dimensions" {
+      effort 0.5d
+      allocate team
+    }
+    task aud_obs_transparency "Background transparency for compositing" {
+      effort 0.5d
+      allocate team
+      depends !aud_obs_sizing_defaults
+    }
+    task aud_obs_no_input_required "Ensure no user input is required for OBS rendering" {
+      effort 0.25d
+      allocate team
+    }
+    task aud_obs_setup_docs "OBS setup guide for show producers" {
+      effort 1d
+      allocate team
+      depends !aud_obs_sizing_defaults, !aud_obs_transparency
+    }
+  }
+
+  task aud_segment_markers "Segment snapshot rendering" {
+    depends !aud_graph_rendering, data_and_methodology.event_types.snapshot_events
+    task aud_chapter_marker_render "Render segment snapshot as a visible chapter marker" {
+      effort 1d
+      allocate team
+    }
+    task aud_segment_break_animation "Optional: brief animation cue at segment break" {
+      effort 1d
+      allocate team
+      depends !aud_chapter_marker_render
+    }
+  }
+
+  task aud_url_routing "Stable URL routing" {
+    depends !aud_shell
+    task aud_session_url "Stable URL per session" {
+      effort 1d
+      allocate team
+    }
+    task aud_url_position_param "URL parameter for log position (for replay deep-linking)" {
+      effort 1d
+      allocate team
+      depends !aud_session_url
+    }
+  }
+
+  task aud_tests "Audience surface tests" {
+    depends !aud_graph_rendering, !aud_animations
+    task aud_unit_tests "Component / styling unit tests" {
+      effort 2d
+      allocate team
+    }
+    task aud_behavior_tests "BDD scenarios — 'audience sees N1 land, transition agreed, etc.'" {
+      effort 2d
+      allocate team
+    }
+    task aud_playwright_e2e "Playwright E2E tests for the audience page" {
+      effort 2d
+      allocate team
+      note "Drive the actual audience URL in a browser, simulating live event arrivals."
+    }
+    task aud_visual_regression "Visual-regression tests (screenshots) for state styling" {
+      effort 2d
+      allocate team
+      depends !aud_playwright_e2e
+    }
+    task aud_obs_render_smoke "Smoke test rendering at OBS-source dimensions" {
+      effort 1d
+      allocate team
+      depends !!aud_obs_integration
+    }
+  }
+}

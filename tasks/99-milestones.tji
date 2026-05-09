@@ -1,0 +1,73 @@
+# 99 — Milestones
+#
+# Aggregating milestones that mark when major capability is in place.
+# Each milestone is a zero-duration TaskJuggler milestone whose
+# `depends` list points at the work that has to be done first.
+
+task milestones "Milestones" {
+  task m_foundation_ready "M0: Foundation ready" {
+    milestone
+    depends foundation.repo_skeleton, foundation.dev_env, foundation.ci
+    note "Repo skeleton, local Docker Compose dev environment, and CI all in place. New contributors can clone and `make up` (or equivalent) to get a working dev stack."
+  }
+
+  task m_event_log_functional "M1: Event log functional" {
+    milestone
+    depends data_and_methodology.schema, data_and_methodology.event_types, data_and_methodology.projection
+    note "Database schema, event types, and in-memory projection all working. Events can be appended; projections can be rebuilt from logs."
+  }
+
+  task m_methodology_engine_complete "M2: Methodology engine complete" {
+    milestone
+    depends data_and_methodology.methodology_engine, data_and_methodology.diagnostics
+    note "All facet operations (classify, decompose, axiom-mark, defeater capture, meta-move, etc.) implemented; structural diagnostics fire correctly."
+  }
+
+  task m_backend_mvp "M3: Backend MVP" {
+    milestone
+    depends !m_methodology_engine_complete, backend.api_skeleton, backend.auth, backend.session_management, backend.websocket_protocol, backend.cross_session_permissions
+    note "Backend can host live sessions: auth works, sessions can be created and joined, the WebSocket protocol relays proposals/votes/commits."
+  }
+
+  task m_moderator_mvp "M4: Moderator MVP" {
+    milestone
+    depends !m_backend_mvp, moderator_ui.mod_capture_flow, moderator_ui.mod_pending_proposals_pane, moderator_ui.mod_decompose_flow, moderator_ui.mod_diagnostic_flow, moderator_ui.mod_axiom_mark_flow, moderator_ui.mod_session_setup
+    note "A moderator can run a session: create session, capture statements, classify, decompose, run diagnostics, axiom-mark, commit. Enough to drive a debate from the operator side."
+  }
+
+  task m_participant_mvp "M5: Participant MVP" {
+    milestone
+    depends !m_backend_mvp, participant_ui.part_graph_view, participant_ui.part_voting, participant_ui.part_withdraw, participant_ui.part_axiom_mark_from_tablet, participant_ui.part_session_join
+    note "A debater can join a session, see the graph, vote per facet, withdraw agreement, and propose axiom-marks from their tablet."
+  }
+
+  task m_audience_mvp "M6: Audience MVP" {
+    milestone
+    depends !m_backend_mvp, audience.aud_graph_rendering, audience.aud_animations, audience.aud_obs_integration, audience.aud_url_routing
+    note "The audience surface renders the live debate well enough to be embedded as an OBS browser source for a video broadcast."
+  }
+
+  task m_end_to_end_debate "M7: End-to-end debate" {
+    milestone
+    depends !m_moderator_mvp, !m_participant_mvp, !m_audience_mvp, data_and_methodology.data_methodology_tests.dm_e2e_tests.walkthrough_replay_e2e, moderator_ui.mod_tests.mod_e2e_playwright.mod_pw_full_session_run
+    note "All three surfaces working together end-to-end. A complete debate can be conducted and recorded; the example walkthrough's scenario can be enacted live."
+  }
+
+  task m_replay_mvp "M8: Replay MVP" {
+    milestone
+    depends !m_end_to_end_debate, replay_test.replay_ui, replay_test.test_mode, replay_test.snapshots, backend.replay_endpoints
+    note "Completed debates can be replayed; the test-mode timeline scrubber lets developers and producers walk through any saved session."
+  }
+
+  task m_deployment_ready "M9: Deployment ready" {
+    milestone
+    depends !m_end_to_end_debate, deployment.prod_container, deployment.prod_compose, deployment.prod_secrets, deployment.prod_migrations, deployment.observability, deployment.backup_and_export, deployment.deployment_docs
+    note "An always-on cloud server can host live sessions in production. Backups, observability, secrets, and operator docs all in place."
+  }
+
+  task m_first_show_recorded "M10: First YouTube show recorded" {
+    milestone
+    depends !m_replay_mvp, !m_deployment_ready
+    note "The proof-of-concept YouTube show is recorded using the platform end-to-end. Validates the format on real participants and an audience."
+  }
+}

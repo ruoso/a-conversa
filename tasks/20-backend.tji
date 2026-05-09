@@ -1,0 +1,334 @@
+# 20 — Backend
+#
+# HTTP API, WebSocket protocol, authentication, session management, and
+# everything the frontend surfaces talk to.
+
+task backend "Backend" {
+  task api_skeleton "API server skeleton" {
+    depends foundation.repo_skeleton, foundation.dev_env
+    task http_server "HTTP server bootstrap" {
+      effort 1d
+      allocate team
+    }
+    task error_handling "Centralized error handling and serialization" {
+      effort 1d
+      allocate team
+      depends !http_server
+    }
+    task request_logging "Structured request logging" {
+      effort 0.5d
+      allocate team
+      depends !http_server
+    }
+    task health_endpoint "GET /healthz health endpoint" {
+      effort 0.25d
+      allocate team
+      depends !http_server
+    }
+    task openapi_or_equivalent "Document API surface (OpenAPI or equivalent)" {
+      effort 1d
+      allocate team
+      depends !http_server
+    }
+  }
+
+  task auth "Authentication" {
+    depends !api_skeleton, foundation.stack_decisions.auth_lib_decision
+    task oauth_provider_config "Configure OAuth providers (generic + first-class)" {
+      effort 2d
+      allocate team
+      note "Generic OAuth client + wiring for Google, GitHub, GitLab."
+    }
+    task oauth_callback_handler "OAuth callback handler" {
+      effort 1d
+      allocate team
+      depends !oauth_provider_config
+    }
+    task screen_name_collection "Screen-name collection on first auth" {
+      effort 1d
+      allocate team
+      depends !oauth_callback_handler
+    }
+    task session_token_management "Issue and validate platform session tokens" {
+      effort 2d
+      allocate team
+      depends !screen_name_collection
+    }
+    task no_profile_data_policy "Ensure no OAuth profile data is read or stored" {
+      effort 0.5d
+      allocate team
+      depends !oauth_callback_handler
+      note "Audit + tests confirming we use OAuth purely as auth signal."
+    }
+    task auth_middleware "Middleware enforcing authentication on protected endpoints" {
+      effort 1d
+      allocate team
+      depends !session_token_management
+    }
+  }
+
+  task session_management "Session management endpoints" {
+    depends !api_skeleton, !auth
+    task create_session_endpoint "POST /sessions" {
+      effort 1d
+      allocate team
+    }
+    task list_sessions_endpoint "GET /sessions" {
+      effort 0.5d
+      allocate team
+    }
+    task get_session_endpoint "GET /sessions/:id (metadata)" {
+      effort 0.5d
+      allocate team
+    }
+    task end_session_endpoint "POST /sessions/:id/end" {
+      effort 0.5d
+      allocate team
+    }
+    task session_privacy_toggle "Endpoint to toggle session privacy" {
+      effort 0.5d
+      allocate team
+    }
+    task participant_assignment "Assign participant roles (moderator/debater-A/debater-B)" {
+      effort 1d
+      allocate team
+      depends !create_session_endpoint
+    }
+    task session_listing_filters "Filter session list by participant / privacy / status" {
+      effort 1d
+      allocate team
+      depends !list_sessions_endpoint
+    }
+  }
+
+  task cross_session_permissions "Cross-session reference permissions" {
+    depends !session_management
+    task privacy_field_enforcement "Enforce public-by-default; host-marks-private flag" {
+      effort 1d
+      allocate team
+    }
+    task reference_permission_check "Check whether session B may reference session A's nodes/edges" {
+      effort 1d
+      allocate team
+      depends !privacy_field_enforcement
+    }
+    task entity_inclusion_endpoint "POST /sessions/:id/include — bring an existing global entity into this session" {
+      effort 1d
+      allocate team
+      depends !reference_permission_check
+    }
+  }
+
+  task websocket_protocol "WebSocket protocol" {
+    depends !auth, data_and_methodology.event_types, data_and_methodology.projection
+    task ws_connection_handling "WebSocket connection lifecycle" {
+      effort 1d
+      allocate team
+    }
+    task ws_auth_on_connect "Authenticate on connect using session token" {
+      effort 1d
+      allocate team
+      depends !ws_connection_handling
+    }
+    task ws_subscribe_to_session "Subscribe a client to a session's event stream" {
+      effort 1d
+      allocate team
+      depends !ws_auth_on_connect
+    }
+    task ws_message_envelope "Common WS message envelope and serialization" {
+      effort 1d
+      allocate team
+      depends !ws_connection_handling
+    }
+    task ws_propose_message "Propose message: client → server" {
+      effort 1d
+      allocate team
+      depends !ws_message_envelope, data_and_methodology.event_types.proposal_events
+    }
+    task ws_vote_message "Vote message (agree / dispute / withdraw)" {
+      effort 0.5d
+      allocate team
+      depends !ws_message_envelope
+    }
+    task ws_commit_message "Commit message — moderator-only authority" {
+      effort 1d
+      allocate team
+      depends !ws_message_envelope, data_and_methodology.methodology_engine.commit_logic
+    }
+    task ws_meta_disagreement_message "Mark-as-meta-disagreement message" {
+      effort 0.5d
+      allocate team
+      depends !ws_message_envelope
+    }
+    task ws_snapshot_message "Snapshot message" {
+      effort 0.5d
+      allocate team
+      depends !ws_message_envelope
+    }
+    task ws_event_broadcast "Server → all subscribed clients: event-applied broadcast" {
+      effort 1d
+      allocate team
+      depends !ws_subscribe_to_session
+    }
+    task ws_proposal_status_broadcast "Server → clients: per-facet vote state broadcast" {
+      effort 1d
+      allocate team
+      depends !ws_event_broadcast
+    }
+    task ws_diagnostic_broadcast "Server → clients: diagnostic-fired broadcast" {
+      effort 0.5d
+      allocate team
+      depends !ws_event_broadcast, data_and_methodology.diagnostics.diagnostic_event_emission
+    }
+    task ws_error_message "Server → client: error responses (validation, permission, etc.)" {
+      effort 0.5d
+      allocate team
+      depends !ws_message_envelope
+    }
+    task ws_reconnection_handling "Client reconnection with state catch-up" {
+      effort 2d
+      allocate team
+      depends !ws_event_broadcast
+    }
+    task ws_protocol_documentation "Document the WebSocket message protocol" {
+      effort 1d
+      allocate team
+      depends !ws_propose_message, !ws_vote_message, !ws_commit_message, !ws_event_broadcast
+    }
+  }
+
+  task replay_endpoints "Replay and history endpoints" {
+    depends !session_management, data_and_methodology.replay_primitive
+    task get_session_log "GET /sessions/:id/events — paginated event log" {
+      effort 1d
+      allocate team
+    }
+    task get_at_position "GET /sessions/:id/state?position=... — projected state at log position" {
+      effort 1d
+      allocate team
+      depends data_and_methodology.replay_primitive.project_at_position
+    }
+    task list_snapshots "GET /sessions/:id/snapshots" {
+      effort 0.5d
+      allocate team
+    }
+    task get_snapshot "GET /sessions/:id/snapshots/:label" {
+      effort 0.5d
+      allocate team
+      depends !list_snapshots
+    }
+  }
+
+  task server_validation "Server-side validation" {
+    depends !websocket_protocol, data_and_methodology.methodology_engine
+    task moderator_only_commit "Reject commits from non-moderator clients" {
+      effort 0.5d
+      allocate team
+    }
+    task proposer_authority "Anyone may propose; validate proposer identity" {
+      effort 0.5d
+      allocate team
+    }
+    task reject_invalid_event_payload "Reject malformed proposals before append" {
+      effort 1d
+      allocate team
+      depends data_and_methodology.event_types.event_validation
+    }
+    task reject_orphan_references "Reject events that reference non-existent entities" {
+      effort 0.5d
+      allocate team
+    }
+  }
+
+  task backend_tests "Backend tests" {
+    depends !api_skeleton, !auth, !session_management, !websocket_protocol, foundation.test_infra
+
+    task be_unit_tests "Unit tests" {
+      task auth_unit "Auth helpers, session-token logic" {
+        effort 1d
+        allocate team
+      }
+      task session_management_unit "Session-management endpoint logic in isolation" {
+        effort 1d
+        allocate team
+      }
+      task ws_message_unit "WS message serialization / parsing" {
+        effort 1d
+        allocate team
+      }
+      task validation_unit "Server-side validation logic" {
+        effort 1d
+        allocate team
+      }
+    }
+
+    task be_behavior_tests "Behavior tests (BDD scenarios)" {
+      task scenario_oauth_login "Scenario: user logs in via generic OAuth, sets screen name" {
+        effort 1d
+        allocate team
+      }
+      task scenario_create_join_session "Scenario: moderator creates session; debaters join with assigned roles" {
+        effort 1d
+        allocate team
+      }
+      task scenario_propose_vote_commit "Scenario: moderator proposes; debaters vote; moderator commits; broadcast lands" {
+        effort 1d
+        allocate team
+      }
+      task scenario_per_facet_voting "Scenario: per-facet votes — agree wording, dispute classification" {
+        effort 1d
+        allocate team
+      }
+      task scenario_withdrawal_broadcast "Scenario: participant withdraws; broadcast reverts facet to disputed" {
+        effort 1d
+        allocate team
+      }
+      task scenario_private_session_referenced "Scenario: private session's nodes can't be referenced from another session" {
+        effort 1d
+        allocate team
+      }
+      task scenario_public_session_referenced "Scenario: public session's nodes referenceable by any authenticated user" {
+        effort 1d
+        allocate team
+      }
+      task scenario_non_moderator_cannot_commit "Scenario: non-moderator commit attempt is rejected" {
+        effort 0.5d
+        allocate team
+      }
+      task scenario_reconnection_state_catchup "Scenario: client reconnects and catches up to current state" {
+        effort 1d
+        allocate team
+      }
+    }
+
+    task be_e2e_tests "End-to-end / integration tests" {
+      task auth_flow_integration "OAuth flow integration tests (mock provider in compose)" {
+        effort 2d
+        allocate team
+      }
+      task session_endpoint_integration "Session endpoint integration tests" {
+        effort 1d
+        allocate team
+      }
+      task ws_protocol_integration "WebSocket protocol integration tests" {
+        effort 3d
+        allocate team
+      }
+      task multi_client_integration "Multi-client event-broadcast integration tests" {
+        effort 2d
+        allocate team
+        depends !ws_protocol_integration
+      }
+      task permission_integration "Cross-session permission integration tests" {
+        effort 1d
+        allocate team
+        depends backend.cross_session_permissions
+      }
+      task replay_endpoint_integration "Replay-endpoint integration tests (event log, state-at-position, snapshots)" {
+        effort 1d
+        allocate team
+        depends backend.replay_endpoints
+      }
+    }
+  }
+}

@@ -1,0 +1,327 @@
+# 40 — Participant UI
+#
+# The debater tablet — read-only graph view plus per-facet voting controls.
+# See docs/participant-ui.md.
+
+task participant_ui "Participant (debater) UI" {
+  task part_shell "Participant app shell" {
+    depends foundation.repo_skeleton, foundation.stack_decisions.frontend_framework_decision
+    task part_app_skeleton "App skeleton (entry, build, routing)" {
+      effort 1d
+      allocate team
+    }
+    task part_state_management "State management setup" {
+      effort 1d
+      allocate team
+      depends !part_app_skeleton
+    }
+    task part_ws_client "WebSocket client (read-only events + vote/withdraw send)" {
+      effort 2d
+      allocate team
+      depends !part_state_management, backend.websocket_protocol.ws_message_envelope
+    }
+    task part_auth_flow "Login / OAuth callback handling on the client" {
+      effort 1d
+      allocate team
+      depends !part_app_skeleton, backend.auth.session_token_management
+    }
+    task part_screen_name_setup "Screen-name capture on first login" {
+      effort 0.5d
+      allocate team
+      depends !part_auth_flow
+    }
+    task part_landscape_layout "Landscape-orientation tablet layout" {
+      effort 1d
+      allocate team
+      depends !part_app_skeleton
+    }
+    task part_status_indicator "Persistent status indicator (role, screen name, pending count)" {
+      effort 1d
+      allocate team
+      depends !part_landscape_layout
+    }
+  }
+
+  task part_graph_view "Read-only graph view" {
+    depends !part_shell, foundation.stack_decisions.graph_lib_decision
+    task part_graph_render "Render the live graph (same conventions as audience view)" {
+      effort 2d
+      allocate team
+    }
+    task part_per_facet_state_styling "Per-facet state styling (proposed / agreed / disputed / meta-disagreement)" {
+      effort 1d
+      allocate team
+      depends !part_graph_render
+    }
+    task part_axiom_mark_decoration "Render per-participant axiom-marks" {
+      effort 0.5d
+      allocate team
+      depends !part_graph_render
+    }
+    task part_annotation_render "Render annotations on entities" {
+      effort 0.5d
+      allocate team
+      depends !part_graph_render
+    }
+    task part_diagnostic_highlights "Diagnostic flag highlights on graph" {
+      effort 0.5d
+      allocate team
+      depends !part_graph_render
+    }
+    task part_pan_zoom_tap "Pan, zoom, and tap-to-detail interactions" {
+      effort 1d
+      allocate team
+      depends !part_graph_render
+    }
+    task part_own_vote_indicators "This debater's own per-facet vote indicators on graph" {
+      effort 1d
+      allocate team
+      depends !part_per_facet_state_styling
+    }
+    task part_other_vote_indicators "Other participants' vote indicators on graph (real-time, pre-commit)" {
+      effort 1d
+      allocate team
+      depends !part_own_vote_indicators
+    }
+    task part_entity_detail_panel "Entity detail panel on tap" {
+      effort 1d
+      allocate team
+      depends !part_pan_zoom_tap
+    }
+  }
+
+  task part_pending_proposals "Pending proposals pane" {
+    depends !part_shell, backend.websocket_protocol.ws_proposal_status_broadcast
+    task part_proposals_tab "Pending proposals tab with count badge" {
+      effort 1d
+      allocate team
+    }
+    task part_proposal_list_view "List view, most-recent at top" {
+      effort 1d
+      allocate team
+      depends !part_proposals_tab
+    }
+    task part_proposal_expand "Tap to expand a proposal showing its facets" {
+      effort 1d
+      allocate team
+      depends !part_proposal_list_view
+    }
+    task part_per_facet_breakdown_in_pane "Per-facet breakdown of each proposal (mirrors moderator UI)" {
+      effort 1d
+      allocate team
+      depends !part_proposal_expand
+    }
+    task part_vote_indicators_in_pane "Per-participant vote indicators in the pane (mirrors moderator UI)" {
+      effort 0.5d
+      allocate team
+      depends !part_per_facet_breakdown_in_pane
+    }
+  }
+
+  task part_voting "Per-facet voting (P2)" {
+    depends !part_pending_proposals, backend.websocket_protocol.ws_vote_message
+    task part_vote_button_per_facet "Agree/Dispute buttons per facet" {
+      effort 1d
+      allocate team
+    }
+    task part_vote_single_tap "Single-tap voting (no confirmation modal)" {
+      effort 0.5d
+      allocate team
+      depends !part_vote_button_per_facet
+    }
+    task part_change_vote_pre_commit "Allow vote change up to commit" {
+      effort 1d
+      allocate team
+      depends !part_vote_single_tap
+    }
+    task part_agree_all_gesture "Agree-all gesture per proposal bundle" {
+      effort 0.5d
+      allocate team
+      depends !part_vote_button_per_facet
+    }
+    task part_proposal_notification "Visual flash + tab-badge increment on new proposal" {
+      effort 1d
+      allocate team
+    }
+  }
+
+  task part_withdraw "Withdraw agreement (P3)" {
+    depends !part_voting, data_and_methodology.methodology_engine.withdrawal_logic
+    task part_find_agreed_facet "Find a previously-agreed facet (graph or my-agreements view)" {
+      effort 1d
+      allocate team
+    }
+    task part_withdraw_dialog "Withdrawal confirmation dialog (deliberate extra tap)" {
+      effort 0.5d
+      allocate team
+      depends !part_find_agreed_facet
+    }
+    task part_withdraw_action "Send withdraw vote; reflect facet → disputed" {
+      effort 0.5d
+      allocate team
+      depends !part_withdraw_dialog
+    }
+    task part_my_agreements_view "Optional: 'my agreements' history view" {
+      effort 1d
+      allocate team
+    }
+  }
+
+  task part_axiom_mark_from_tablet "Axiom-mark from tablet (P5)" {
+    depends !part_graph_view, data_and_methodology.methodology_engine.axiom_mark_logic
+    task part_mark_axiom_action "Mark-as-my-axiom action in node detail panel" {
+      effort 1d
+      allocate team
+    }
+    task part_axiom_mark_proposal "Send axiom-mark proposal" {
+      effort 0.5d
+      allocate team
+      depends !part_mark_axiom_action
+    }
+  }
+
+  task part_diagnostics_view "View structural diagnostics (P6)" {
+    depends !part_graph_view, data_and_methodology.diagnostics.diagnostic_event_emission
+    task part_diagnostics_list "Diagnostics list accessible from status indicator" {
+      effort 1d
+      allocate team
+    }
+    task part_diagnostic_focus "Tap a flag to focus the affected region" {
+      effort 0.5d
+      allocate team
+      depends !part_diagnostics_list
+    }
+  }
+
+  task part_history_view "View change history (P7)" {
+    depends !part_shell, backend.replay_endpoints.get_session_log
+    task part_history_list "Reverse-chronological event list" {
+      effort 1d
+      allocate team
+    }
+    task part_history_filtering "Filter / search history" {
+      effort 1d
+      allocate team
+      depends !part_history_list
+    }
+  }
+
+  task part_session_join "Session join flow" {
+    depends !part_shell, backend.session_management
+    task part_invite_acceptance "Accept moderator's invite" {
+      effort 1d
+      allocate team
+    }
+    task part_lobby_view "Pre-debate lobby" {
+      effort 0.5d
+      allocate team
+      depends !part_invite_acceptance
+    }
+  }
+
+  task part_tests "Participant UI tests" {
+    depends !part_voting, !part_withdraw, !part_axiom_mark_from_tablet, foundation.test_infra
+
+    task part_unit_tests "Unit tests (components in isolation)" {
+      task part_unit_graph_view "Graph view components" {
+        effort 1d
+        allocate team
+      }
+      task part_unit_voting_controls "Per-facet voting controls" {
+        effort 1d
+        allocate team
+      }
+      task part_unit_status_indicator "Status indicator + pending count badge" {
+        effort 0.5d
+        allocate team
+      }
+      task part_unit_diagnostic_list "Diagnostic list components" {
+        effort 0.5d
+        allocate team
+      }
+      task part_unit_state_management "State-management reducers / stores" {
+        effort 1d
+        allocate team
+      }
+    }
+
+    task part_behavior_tests "Behavior tests (BDD scenarios)" {
+      task part_scenario_per_facet_voting "Scenario: vote agree on wording, dispute classification" {
+        effort 1d
+        allocate team
+      }
+      task part_scenario_agree_all "Scenario: agree-all gesture lands all facet votes" {
+        effort 0.5d
+        allocate team
+      }
+      task part_scenario_change_vote_pre_commit "Scenario: change vote from agree to dispute before commit" {
+        effort 0.5d
+        allocate team
+      }
+      task part_scenario_other_debater_vote_visible "Scenario: see other debater's vote land in real time" {
+        effort 1d
+        allocate team
+      }
+      task part_scenario_withdrawal_with_confirmation "Scenario: withdraw a previously-agreed facet via confirmation dialog" {
+        effort 1d
+        allocate team
+      }
+      task part_scenario_axiom_mark_from_tablet "Scenario: propose own axiom-mark from tablet" {
+        effort 0.5d
+        allocate team
+      }
+      task part_scenario_diagnostic_visible "Scenario: structural diagnostic surfaces on tablet view" {
+        effort 0.5d
+        allocate team
+      }
+    }
+
+    task part_e2e_playwright "End-to-end Playwright tests" {
+      task part_pw_voting_flow "Playwright: voting flow end-to-end" {
+        effort 1.5d
+        allocate team
+      }
+      task part_pw_agree_all_flow "Playwright: agree-all gesture" {
+        effort 0.5d
+        allocate team
+      }
+      task part_pw_withdraw_flow "Playwright: withdrawal flow with confirmation" {
+        effort 1d
+        allocate team
+      }
+      task part_pw_axiom_mark "Playwright: axiom-mark from tablet" {
+        effort 1d
+        allocate team
+      }
+      task part_pw_history_view "Playwright: change-history view" {
+        effort 0.5d
+        allocate team
+      }
+      task part_pw_landscape_layout "Playwright: tablet landscape layout test (viewport sizing)" {
+        effort 0.5d
+        allocate team
+      }
+      task part_pw_touch_simulation "Playwright: touch interactions (tap, pinch/pan)" {
+        effort 1.5d
+        allocate team
+      }
+      task part_pw_concurrent_with_moderator "Playwright: tablet driven in parallel with moderator UI" {
+        effort 2d
+        allocate team
+        note "Used as a building block for the full-session Playwright run in the moderator-ui tests."
+      }
+    }
+
+    task part_visual_regression "Visual regression tests" {
+      depends !part_e2e_playwright
+      task part_vr_state_styling "Visual regression on per-facet state styling (own + other vote indicators)" {
+        effort 1d
+        allocate team
+      }
+      task part_vr_landscape_layout "Visual regression on landscape tablet layout" {
+        effort 0.5d
+        allocate team
+      }
+    }
+  }
+}

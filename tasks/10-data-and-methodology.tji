@@ -1,0 +1,356 @@
+# 10 — Data and methodology
+#
+# Database schema, event-log primitives, in-memory graph projection,
+# structural-diagnostic detectors, and the methodology engine that drives
+# the per-facet, per-participant agreement state machine.
+
+task data_and_methodology "Data and methodology" {
+  task schema "Database schema" {
+    task users_table "users table" {
+      effort 0.5d
+      allocate team
+      note "id, oauth_subject, screen_name, created_at."
+    }
+    task sessions_table "sessions table" {
+      effort 0.5d
+      allocate team
+      note "id, host_user_id, privacy (public/private), created_at, ended_at."
+    }
+    task session_participants_table "session_participants table" {
+      effort 0.5d
+      allocate team
+      note "session_id, user_id, role (moderator/debater-A/debater-B), joined_at, left_at."
+    }
+    task nodes_table "nodes table (global)" {
+      effort 0.5d
+      allocate team
+      note "id, wording, created_by, created_at. No session column."
+    }
+    task edges_table "edges table (global)" {
+      effort 0.5d
+      allocate team
+      note "id, role, source_node_id, target_node_id, created_by, created_at."
+    }
+    task annotations_table "annotations table (global)" {
+      effort 0.5d
+      allocate team
+      note "id, content, target_kind (node/edge), target_id, created_by, created_at."
+    }
+    task session_nodes_join_table "session_nodes M-N join table" {
+      effort 0.25d
+      allocate team
+      depends !sessions_table, !nodes_table
+    }
+    task session_edges_join_table "session_edges M-N join table" {
+      effort 0.25d
+      allocate team
+      depends !sessions_table, !edges_table
+    }
+    task session_events_table "session_events append-only event log" {
+      effort 1d
+      allocate team
+      depends !sessions_table
+      note "Per-session event log; payload schema discriminated by event kind."
+    }
+    task migrations_tooling "Migrations runner and conventions" {
+      effort 1d
+      allocate team
+    }
+    task seed_data_for_tests "Seed-data fixtures for tests" {
+      effort 1d
+      allocate team
+      depends !session_events_table
+    }
+  }
+
+  task event_types "Event-type implementation" {
+    depends !schema.session_events_table
+    task event_base_envelope "Common event envelope (id, kind, actor, timestamp, payload)" {
+      effort 1d
+      allocate team
+    }
+    task session_lifecycle_events "session-created, session-ended, participant-joined, participant-left" {
+      effort 1d
+      allocate team
+      depends !event_base_envelope
+    }
+    task entity_creation_events "node-created, edge-created, annotation-created" {
+      effort 1d
+      allocate team
+      depends !event_base_envelope
+    }
+    task entity_inclusion_events "entity-included" {
+      effort 0.5d
+      allocate team
+      depends !event_base_envelope
+    }
+    task proposal_events "Proposal events (all kinds)" {
+      effort 2d
+      allocate team
+      depends !event_base_envelope
+      note "Discriminated union: classify-node, set-node-substance, set-edge-substance, edit-wording, decompose, interpretive-split, axiom-mark, meta-move, break-edge, amend-node, annotate."
+    }
+    task vote_events "vote (agree / dispute / withdraw)" {
+      effort 0.5d
+      allocate team
+      depends !proposal_events
+    }
+    task resolution_events "commit and meta-disagreement-marked" {
+      effort 0.5d
+      allocate team
+      depends !vote_events
+    }
+    task snapshot_events "snapshot-created" {
+      effort 0.5d
+      allocate team
+      depends !event_base_envelope
+    }
+    task event_validation "Validate event payloads against schema before append" {
+      effort 1d
+      allocate team
+      depends !proposal_events, !vote_events, !resolution_events
+    }
+  }
+
+  task projection "In-memory graph projection" {
+    depends !event_types
+    task projection_data_structure "In-memory graph data structure (nodes, edges, annotations, indices)" {
+      effort 2d
+      allocate team
+    }
+    task project_from_log "Build projection from full event log on session load" {
+      effort 2d
+      allocate team
+      depends !projection_data_structure
+    }
+    task project_incrementally "Update projection on each new event" {
+      effort 1d
+      allocate team
+      depends !project_from_log
+    }
+    task per_facet_status_derivation "Derive per-facet overall status from per-participant votes + commits" {
+      effort 2d
+      allocate team
+      depends !projection_data_structure
+    }
+    task active_firing_computation "Compute edge.substance ∧ source.substance for each edge" {
+      effort 0.5d
+      allocate team
+      depends !per_facet_status_derivation
+    }
+    task projection_caching "Cache active projections per session; release on idle" {
+      effort 1d
+      allocate team
+      depends !project_incrementally
+    }
+  }
+
+  task diagnostics "Structural diagnostics" {
+    depends !projection
+    task cycle_detection "Detect cycles in supports edges" {
+      effort 1d
+      allocate team
+    }
+    task contradiction_detection "Detect agreed-substance contradicts edges" {
+      effort 0.5d
+      allocate team
+    }
+    task multi_warrant_detection "Detect multiple warrants on the same (data, claim) pair" {
+      effort 1d
+      allocate team
+    }
+    task dangling_claim_detection "Detect claim-positioned nodes with no incoming supports/rebuts/bridges-to" {
+      effort 0.5d
+      allocate team
+    }
+    task coherency_hint_detection "Detect unusual edge/kind configurations" {
+      effort 1d
+      allocate team
+      note "Builds a small rule set; rules can be added over time."
+    }
+    task pending_consequences_stub "Stub: detect agreed-substance edges with unagreed-substance source" {
+      effort 0.5d
+      allocate team
+      note "Out of scope for v1 per data-model.md, but the detector is a small addition once the rest is in place."
+    }
+    task diagnostic_event_emission "Emit diagnostic-fired events to subscribers" {
+      effort 1d
+      allocate team
+      depends !cycle_detection, !contradiction_detection, !multi_warrant_detection
+    }
+    task blocking_vs_advisory_classification "Classify each diagnostic as blocking or advisory" {
+      effort 0.5d
+      allocate team
+      depends !cycle_detection, !contradiction_detection, !multi_warrant_detection, !dangling_claim_detection, !coherency_hint_detection
+    }
+  }
+
+  task methodology_engine "Methodology engine" {
+    depends !event_types, !projection
+    task agreement_state_machine "Per-facet, per-participant agreement state machine" {
+      effort 3d
+      allocate team
+    }
+    task commit_logic "Commit logic — moderator commits when all participants vote agree" {
+      effort 1d
+      allocate team
+      depends !agreement_state_machine
+    }
+    task withdrawal_logic "Withdrawal — agreed facet → disputed; supersedes prior commit" {
+      effort 1d
+      allocate team
+      depends !commit_logic
+    }
+    task meta_disagreement_logic "Meta-disagreement marking; carries both proposed values" {
+      effort 1d
+      allocate team
+      depends !agreement_state_machine
+    }
+    task decomposition_logic "Decomposition operation — remove parent, create components in proposed state" {
+      effort 2d
+      allocate team
+      depends !agreement_state_machine
+    }
+    task interpretive_split_logic "Interpretive-split operation (analogous shape to decomposition)" {
+      effort 1d
+      allocate team
+      depends !decomposition_logic
+    }
+    task axiom_mark_logic "Axiom-mark operation — per-participant" {
+      effort 1d
+      allocate team
+      depends !agreement_state_machine
+    }
+    task meta_move_logic "Meta-move handling (reframe / scope-change / stance)" {
+      effort 1d
+      allocate team
+      depends !agreement_state_machine
+    }
+    task reword_vs_restructure "Wording-edit handling — reword vs. restructure" {
+      effort 2d
+      allocate team
+      depends !agreement_state_machine
+      note "Reword preserves node ID; restructure creates a new node and old edges don't follow."
+    }
+    task defeater_capture_logic "Defeater capture — node + rebuts edge with pre-committed substance" {
+      effort 1d
+      allocate team
+      depends !agreement_state_machine
+    }
+    task break_edge_logic "Break-edge operation (cycle resolution path)" {
+      effort 0.5d
+      allocate team
+      depends !agreement_state_machine
+    }
+    task amend_node_logic "Amend-node operation (contradiction resolution path)" {
+      effort 0.5d
+      allocate team
+      depends !agreement_state_machine
+    }
+    task annotation_logic "Annotation creation, voting, withdrawal" {
+      effort 1d
+      allocate team
+      depends !agreement_state_machine
+    }
+  }
+
+  task replay_primitive "Render-at-log-position primitive" {
+    depends !projection
+    task project_at_position "Project the graph state at any event-log position" {
+      effort 2d
+      allocate team
+    }
+    task position_navigation "Move position forward / backward through the log" {
+      effort 1d
+      allocate team
+      depends !project_at_position
+    }
+    task snapshot_resolution "Resolve a named snapshot to its log position" {
+      effort 0.5d
+      allocate team
+      depends !project_at_position
+    }
+  }
+
+  task data_methodology_tests "Tests for data + methodology" {
+    depends !event_types, !projection, !diagnostics, !methodology_engine, foundation.test_infra
+
+    task dm_unit_tests "Unit tests" {
+      task event_serialization_unit "Round-trip event serialization" {
+        effort 1d
+        allocate team
+      }
+      task projection_unit "Projection rebuild + incremental unit tests" {
+        effort 2d
+        allocate team
+      }
+      task agreement_state_unit "Agreement state machine unit tests (transitions, withdrawal)" {
+        effort 2d
+        allocate team
+      }
+      task diagnostic_unit "Diagnostic detectors on synthetic graphs" {
+        effort 2d
+        allocate team
+      }
+      task methodology_op_unit "Per-operation unit tests (decompose, axiom-mark, defeater, meta-move, etc.)" {
+        effort 3d
+        allocate team
+      }
+    }
+
+    task dm_behavior_tests "Behavior tests (BDD scenarios)" {
+      task scenarios_capture_classify "Scenario: capture a statement, propose classification, all agree, commit" {
+        effort 1d
+        allocate team
+      }
+      task scenarios_classification_dispute "Scenario: classification disputed, run diagnostic test, resolve" {
+        effort 1d
+        allocate team
+      }
+      task scenarios_decomposition "Scenario: decomposition replaces parent with components" {
+        effort 1d
+        allocate team
+      }
+      task scenarios_axiom_marks_per_participant "Scenario: per-participant axiom-marks; both debaters mark same node" {
+        effort 1d
+        allocate team
+      }
+      task scenarios_defeater_pre_commit "Scenario: defeater captured with pre-committed edge substance" {
+        effort 1d
+        allocate team
+      }
+      task scenarios_meta_move_contested "Scenario: meta-move proposed, contested, stays disputed" {
+        effort 1d
+        allocate team
+      }
+      task scenarios_withdrawal "Scenario: agreement withdrawn after commit; facet returns to disputed" {
+        effort 1d
+        allocate team
+      }
+      task scenarios_cycle_detection "Scenario: cycle in supports detected; resolution paths offered" {
+        effort 1d
+        allocate team
+      }
+      task scenarios_contradiction_resolution "Scenario: contradiction accepted-as-bedrock with axiom-marks each side" {
+        effort 1d
+        allocate team
+      }
+    }
+
+    task dm_e2e_tests "End-to-end / integration tests (no UI)" {
+      task walkthrough_replay_e2e "Replay the example walkthrough's event log; assert final state" {
+        effort 2d
+        allocate team
+        note "Encodes the example-walkthrough.md scenario as a test fixture."
+      }
+      task projection_invariants_e2e "Projection invariants under random event sequences" {
+        effort 2d
+        allocate team
+      }
+      task event_log_property_tests "Property-based tests on the event log + projection" {
+        effort 2d
+        allocate team
+      }
+    }
+  }
+}

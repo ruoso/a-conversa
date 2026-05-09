@@ -1,0 +1,533 @@
+# 30 — Moderator UI
+#
+# The operator surface — the most complex client. Capture, classify,
+# decompose, run diagnostic tests, capture defeaters and meta-moves,
+# commit, snapshot. See docs/moderator-ui.md.
+
+task moderator_ui "Moderator UI" {
+  task mod_shell "Moderator app shell" {
+    depends foundation.repo_skeleton, foundation.stack_decisions.frontend_framework_decision
+    task mod_app_skeleton "App skeleton (routing, entry point, build config)" {
+      effort 1d
+      allocate team
+    }
+    task mod_state_management "State management setup" {
+      effort 1d
+      allocate team
+      depends !mod_app_skeleton
+    }
+    task mod_ws_client "WebSocket client" {
+      effort 2d
+      allocate team
+      depends !mod_state_management, backend.websocket_protocol.ws_message_envelope
+    }
+    task mod_auth_flow "Login / OAuth callback handling on the client" {
+      effort 1d
+      allocate team
+      depends !mod_app_skeleton, backend.auth.session_token_management
+    }
+    task mod_screen_name_setup "First-login screen-name capture" {
+      effort 0.5d
+      allocate team
+      depends !mod_auth_flow
+    }
+  }
+
+  task mod_layout "Three-pane layout" {
+    depends !mod_shell
+    task mod_layout_shell "Three-pane scaffolding" {
+      effort 1d
+      allocate team
+    }
+    task mod_graph_canvas_pane "Graph canvas pane" {
+      effort 1d
+      allocate team
+      depends !mod_layout_shell, foundation.stack_decisions.graph_lib_decision
+    }
+    task mod_right_sidebar "Right sidebar with stacked sub-panes" {
+      effort 1d
+      allocate team
+      depends !mod_layout_shell
+    }
+    task mod_bottom_strip_capture "Bottom-strip capture pane" {
+      effort 1d
+      allocate team
+      depends !mod_layout_shell
+    }
+    task mod_mode_banner "Mode banner in capture pane" {
+      effort 0.5d
+      allocate team
+      depends !mod_bottom_strip_capture
+    }
+  }
+
+  task mod_graph_rendering "Graph rendering for moderator" {
+    depends !mod_layout.mod_graph_canvas_pane
+    task mod_node_rendering "Node rendering with kind label" {
+      effort 1d
+      allocate team
+    }
+    task mod_edge_rendering "Edge rendering with role label" {
+      effort 1d
+      allocate team
+    }
+    task mod_annotation_rendering "Annotation rendering" {
+      effort 1d
+      allocate team
+    }
+    task mod_proposed_state_styling "Proposed state styling (dashed, faded)" {
+      effort 1d
+      allocate team
+    }
+    task mod_agreed_state_styling "Agreed state styling (solid, full color)" {
+      effort 0.5d
+      allocate team
+    }
+    task mod_disputed_state_styling "Disputed state styling (with red marker)" {
+      effort 1d
+      allocate team
+    }
+    task mod_meta_disagreement_split_render "Meta-disagreement split rendering" {
+      effort 1d
+      allocate team
+    }
+    task mod_axiom_mark_decoration "Axiom-mark decoration (per-participant)" {
+      effort 1d
+      allocate team
+    }
+    task mod_per_facet_state_visualization "Per-facet state visualization within a single node" {
+      effort 2d
+      allocate team
+      depends !mod_proposed_state_styling, !mod_agreed_state_styling, !mod_disputed_state_styling
+    }
+    task mod_vote_indicators_on_graph "Per-participant vote indicators on graph (ambient)" {
+      effort 1d
+      allocate team
+      depends !mod_per_facet_state_visualization
+    }
+    task mod_diagnostic_highlighting "Highlight nodes/edges affected by diagnostics" {
+      effort 1d
+      allocate team
+    }
+    task mod_layout_engine_choice "Choose and configure graph layout algorithm" {
+      effort 1d
+      allocate team
+    }
+    task mod_pan_zoom "Pan and zoom navigation" {
+      effort 0.5d
+      allocate team
+    }
+    task mod_selection "Click-to-select node/edge" {
+      effort 0.5d
+      allocate team
+    }
+    task mod_context_menus "Context menus on nodes and edges" {
+      effort 1d
+      allocate team
+      depends !mod_selection
+    }
+    task mod_hover_details "Hover details for nodes and edges" {
+      effort 0.5d
+      allocate team
+    }
+  }
+
+  task mod_capture_flow "F1 — Capture a new statement" {
+    depends !mod_layout, !mod_graph_rendering, backend.websocket_protocol.ws_propose_message
+    task mod_capture_text_input "Text input for statement wording" {
+      effort 1d
+      allocate team
+    }
+    task mod_classification_palette "Classification palette + keyboard shortcuts" {
+      effort 1d
+      allocate team
+    }
+    task mod_target_auto_suggest "Auto-suggest most-recently-active node as target" {
+      effort 1d
+      allocate team
+    }
+    task mod_target_clear_override "One-gesture clear override of auto-suggested target" {
+      effort 0.5d
+      allocate team
+      depends !mod_target_auto_suggest
+    }
+    task mod_edge_role_selector "Edge role selector for connecting to existing structure" {
+      effort 1d
+      allocate team
+    }
+    task mod_propose_action "Propose action — emits multiple events at once" {
+      effort 2d
+      allocate team
+      depends !mod_capture_text_input, !mod_classification_palette, !mod_edge_role_selector
+    }
+  }
+
+  task mod_pending_proposals_pane "Pending proposals pane" {
+    depends !mod_layout.mod_right_sidebar, backend.websocket_protocol.ws_proposal_status_broadcast
+    task mod_proposal_list "List of in-flight proposals" {
+      effort 1d
+      allocate team
+    }
+    task mod_per_facet_breakdown "Per-facet breakdown of each proposal" {
+      effort 1d
+      allocate team
+      depends !mod_proposal_list
+    }
+    task mod_vote_indicators_in_sidebar "Per-participant vote indicators in sidebar" {
+      effort 1d
+      allocate team
+      depends !mod_per_facet_breakdown
+    }
+    task mod_commit_button "Commit button per proposal — enabled only when all agree" {
+      effort 1d
+      allocate team
+      depends !mod_vote_indicators_in_sidebar, backend.websocket_protocol.ws_commit_message
+    }
+    task mod_proposal_filter_search "Filter / search pending proposals" {
+      effort 1d
+      allocate team
+      depends !mod_proposal_list
+    }
+  }
+
+  task mod_decompose_flow "F2 — Decompose" {
+    depends !mod_capture_flow, data_and_methodology.methodology_engine.decomposition_logic
+    task mod_decompose_mode "Enter decomposition mode for selected node" {
+      effort 1d
+      allocate team
+    }
+    task mod_multi_component_capture "Multi-component capture (wording + kind for each)" {
+      effort 1d
+      allocate team
+      depends !mod_decompose_mode
+    }
+    task mod_propose_decomposition "Propose decomposition action" {
+      effort 1d
+      allocate team
+      depends !mod_multi_component_capture
+    }
+    task mod_interpretive_split_mode "Interpretive-split mode (analogous flow)" {
+      effort 1d
+      allocate team
+      depends !mod_decompose_mode
+    }
+  }
+
+  task mod_diagnostic_flow "F3 — Run a diagnostic test" {
+    depends !mod_capture_flow
+    task mod_operationalization_mode "Operationalization mode" {
+      effort 1d
+      allocate team
+    }
+    task mod_is_ought_prompt "Is-ought check prompt" {
+      effort 0.5d
+      allocate team
+    }
+    task mod_disputation_test_display "Disputation-test indicator (data vs. claim)" {
+      effort 0.5d
+      allocate team
+    }
+    task mod_warrant_elicitation_mode "Warrant-elicitation mode" {
+      effort 1d
+      allocate team
+    }
+    task mod_diagnostic_methodology_suggestions "Methodology suggestions per diagnostic kind" {
+      effort 1d
+      allocate team
+      depends data_and_methodology.diagnostics.diagnostic_event_emission
+    }
+  }
+
+  task mod_draw_edge_flow "F4 — Draw an edge" {
+    depends !mod_graph_rendering, backend.websocket_protocol.ws_propose_message
+    task mod_drag_to_create_edge "Drag from source to target gesture" {
+      effort 2d
+      allocate team
+    }
+    task mod_role_palette_on_drop "Edge role palette on drop" {
+      effort 1d
+      allocate team
+      depends !mod_drag_to_create_edge
+    }
+  }
+
+  task mod_axiom_mark_flow "F5 — Capture an axiom-mark" {
+    depends !mod_capture_flow, data_and_methodology.methodology_engine.axiom_mark_logic
+    task mod_axiom_mark_action "Axiom-mark action with proposing participant" {
+      effort 1d
+      allocate team
+    }
+    task mod_axiom_mark_pending_render "Pending axiom-mark decoration" {
+      effort 0.5d
+      allocate team
+      depends !mod_axiom_mark_action
+    }
+  }
+
+  task mod_defeater_flow "F6 — Capture a defeater" {
+    depends !mod_capture_flow, data_and_methodology.methodology_engine.defeater_capture_logic
+    task mod_capture_defeater_mode "Capture-defeater mode with target selected" {
+      effort 1d
+      allocate team
+    }
+    task mod_defeater_node_creation "Create new node + rebuts edge in one action" {
+      effort 1d
+      allocate team
+      depends !mod_capture_defeater_mode
+    }
+    task mod_defeater_substance_precommit "Pre-commit edge substance as agreed; source substance proposed" {
+      effort 1d
+      allocate team
+      depends !mod_defeater_node_creation
+    }
+  }
+
+  task mod_diagnostic_resolution_flow "F7 — Resolve a structural diagnostic" {
+    depends !mod_diagnostic_flow, data_and_methodology.diagnostics.blocking_vs_advisory_classification
+    task mod_diagnostic_flag_pane "Diagnostic flags pane in sidebar" {
+      effort 1d
+      allocate team
+    }
+    task mod_blocking_diagnostic_banner "Blocking diagnostic banner / status indicator" {
+      effort 1d
+      allocate team
+      depends !mod_diagnostic_flag_pane
+    }
+    task mod_diagnostic_focus_action "Click flag to focus affected region" {
+      effort 0.5d
+      allocate team
+      depends !mod_diagnostic_flag_pane
+    }
+    task mod_resolution_path_picker "UI to pick resolution path (decompose / amend / break-edge / accept-as-bedrock)" {
+      effort 2d
+      allocate team
+      depends !mod_diagnostic_focus_action
+    }
+  }
+
+  task mod_meta_move_flow "F8 — Capture a meta-move" {
+    depends !mod_capture_flow, data_and_methodology.methodology_engine.meta_move_logic
+    task mod_meta_move_action "Capture meta-move action with target selected" {
+      effort 1d
+      allocate team
+    }
+    task mod_meta_move_kind_selector "Kind selector — reframe / scope-change / stance" {
+      effort 0.5d
+      allocate team
+      depends !mod_meta_move_action
+    }
+    task mod_meta_move_disputed_visibility "Render contested meta-move as disputed annotation" {
+      effort 0.5d
+      allocate team
+      depends !mod_meta_move_action
+    }
+  }
+
+  task mod_snapshot_flow "F10 — Snapshot a segment" {
+    depends !mod_capture_flow, backend.websocket_protocol.ws_snapshot_message
+    task mod_snapshot_action "Snapshot action (button + shortcut)" {
+      effort 0.5d
+      allocate team
+    }
+    task mod_snapshot_label_input "Snapshot label input modal" {
+      effort 0.5d
+      allocate team
+      depends !mod_snapshot_action
+    }
+    task mod_snapshot_visual_marker "Visual marker on graph for snapshot point" {
+      effort 0.5d
+      allocate team
+      depends !mod_snapshot_action
+    }
+  }
+
+  task mod_change_history_pane "Change history pane" {
+    depends !mod_layout.mod_right_sidebar, backend.replay_endpoints.get_session_log
+    task mod_history_scroller "Reverse-chronological event scroller" {
+      effort 1d
+      allocate team
+    }
+    task mod_history_event_summary "Brief payload summary per entry" {
+      effort 1d
+      allocate team
+      depends !mod_history_scroller
+    }
+    task mod_history_click_to_flash "Click entry to flash affected entities on graph" {
+      effort 1d
+      allocate team
+      depends !mod_history_scroller
+    }
+    task mod_history_filtering "Filter by event kind / actor / target" {
+      effort 1d
+      allocate team
+      depends !mod_history_scroller
+    }
+  }
+
+  task mod_keyboard_shortcuts "Keyboard shortcuts" {
+    depends !mod_capture_flow, !mod_decompose_flow, !mod_diagnostic_flow, !mod_snapshot_flow
+    task mod_global_keymap "Global keymap — kind shortcuts, propose, commit, snapshot, esc" {
+      effort 1d
+      allocate team
+    }
+    task mod_keymap_help_overlay "Keymap help overlay" {
+      effort 0.5d
+      allocate team
+      depends !mod_global_keymap
+    }
+  }
+
+  task mod_annotation_ui "Annotation UI" {
+    depends !mod_graph_rendering, data_and_methodology.methodology_engine.annotation_logic
+    task mod_render_annotations "Render annotations on entities" {
+      effort 1d
+      allocate team
+    }
+    task mod_propose_annotation_action "Propose annotation action" {
+      effort 1d
+      allocate team
+      depends !mod_render_annotations
+    }
+    task mod_annotation_kind_tagging "Annotation kind tagging (concern / reframe / stance / etc.)" {
+      effort 0.5d
+      allocate team
+      depends !mod_propose_annotation_action
+    }
+  }
+
+  task mod_session_setup "Session setup screens" {
+    depends !mod_shell, backend.session_management
+    task mod_create_session_form "Create-session form (topic, privacy)" {
+      effort 1d
+      allocate team
+    }
+    task mod_invite_participants "Invite participants (debater A, debater B)" {
+      effort 1d
+      allocate team
+      depends !mod_create_session_form
+    }
+    task mod_session_lobby "Pre-debate lobby until all participants joined" {
+      effort 1d
+      allocate team
+      depends !mod_invite_participants
+    }
+  }
+
+  task mod_tests "Moderator UI tests" {
+    depends !mod_capture_flow, !mod_decompose_flow, !mod_diagnostic_flow, !mod_pending_proposals_pane, foundation.test_infra
+
+    task mod_unit_tests "Unit tests (components in isolation)" {
+      task mod_unit_capture_pane "Capture pane component" {
+        effort 1d
+        allocate team
+      }
+      task mod_unit_classification_palette "Classification palette + keymap" {
+        effort 0.5d
+        allocate team
+      }
+      task mod_unit_proposal_list "Proposal list components" {
+        effort 1d
+        allocate team
+      }
+      task mod_unit_vote_indicators "Per-participant vote indicator components" {
+        effort 0.5d
+        allocate team
+      }
+      task mod_unit_history_pane "Change history pane" {
+        effort 1d
+        allocate team
+      }
+      task mod_unit_diagnostic_flag_pane "Diagnostic flag pane" {
+        effort 0.5d
+        allocate team
+      }
+      task mod_unit_state_management "State-management reducers / stores" {
+        effort 1d
+        allocate team
+      }
+    }
+
+    task mod_behavior_tests "Behavior tests (BDD scenarios)" {
+      task mod_scenario_capture_simple "Scenario: moderator captures a simple statement, all agree, commit" {
+        effort 1d
+        allocate team
+      }
+      task mod_scenario_classification_dispute "Scenario: classification disputed, run operationalization, resolve" {
+        effort 1d
+        allocate team
+      }
+      task mod_scenario_decomposition "Scenario: decomposition mode, capture components, commit" {
+        effort 1d
+        allocate team
+      }
+      task mod_scenario_capture_defeater "Scenario: capture defeater during operationalization" {
+        effort 1d
+        allocate team
+      }
+      task mod_scenario_axiom_mark "Scenario: capture axiom-mark for a participant" {
+        effort 0.5d
+        allocate team
+      }
+      task mod_scenario_meta_move "Scenario: capture meta-move; remains disputed when contested" {
+        effort 1d
+        allocate team
+      }
+      task mod_scenario_diagnostic_resolution "Scenario: blocking cycle diagnostic fires; pick resolution path" {
+        effort 1d
+        allocate team
+      }
+      task mod_scenario_snapshot "Scenario: snapshot a segment at a natural break" {
+        effort 0.5d
+        allocate team
+      }
+    }
+
+    task mod_e2e_playwright "End-to-end Playwright tests" {
+      task mod_pw_capture_flow "Playwright: capture flow end-to-end" {
+        effort 1.5d
+        allocate team
+      }
+      task mod_pw_decompose_flow "Playwright: decomposition flow" {
+        effort 1.5d
+        allocate team
+      }
+      task mod_pw_diagnostic_flow "Playwright: run a diagnostic test end-to-end" {
+        effort 1.5d
+        allocate team
+      }
+      task mod_pw_axiom_mark "Playwright: axiom-mark flow" {
+        effort 1d
+        allocate team
+      }
+      task mod_pw_defeater_capture "Playwright: defeater capture flow" {
+        effort 1d
+        allocate team
+      }
+      task mod_pw_meta_move "Playwright: meta-move flow" {
+        effort 1d
+        allocate team
+      }
+      task mod_pw_keyboard_workflow "Playwright: keyboard-driven workflow" {
+        effort 1d
+        allocate team
+      }
+      task mod_pw_full_session_run "Playwright: full session run (recreate the example walkthrough scenario)" {
+        effort 3d
+        allocate team
+        note "Drives moderator + two participant tablets in parallel browser contexts; produces a complete debate."
+      }
+    }
+
+    task mod_visual_regression "Visual regression tests" {
+      depends !mod_e2e_playwright
+      task mod_vr_state_styling "Visual regression on per-facet state styling" {
+        effort 1d
+        allocate team
+      }
+      task mod_vr_layout "Visual regression on overall layout" {
+        effort 1d
+        allocate team
+      }
+    }
+  }
+}

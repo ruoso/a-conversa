@@ -1,0 +1,31 @@
+# a-conversa — Work Breakdown Structure
+#
+# This TaskJuggler project file is used as a structured way to talk about the
+# individual tasks in building a-conversa. It is not (currently) used for real
+# scheduling — there are no calendars, no resources beyond a single placeholder,
+# and no reports configured. The tj3 binary should still parse the file, which
+# lets us validate structure and dependencies.
+
+project aconversa "a-conversa" 2026-05-01 +5y {
+  timezone "America/New_York"
+  numberformat "-" "" "," "." 1
+  currencyformat "(" ")" "," "." 0
+}
+
+# Single placeholder resource. TaskJuggler requires at least one resource for
+# `effort`-based tasks to be syntactically valid. We are not allocating real
+# people here; this is purely structural.
+resource team "Team"
+
+# Work breakdown — one include per major work stream. Files are numbered so
+# directory listings sort in build order; numeric gaps allow new streams to be
+# added between existing ones without renumbering.
+include "tasks/00-foundation.tji"
+include "tasks/10-data-and-methodology.tji"
+include "tasks/20-backend.tji"
+include "tasks/30-moderator-ui.tji"
+include "tasks/40-participant-ui.tji"
+include "tasks/50-audience-and-broadcast.tji"
+include "tasks/60-replay-and-test-mode.tji"
+include "tasks/70-deployment.tji"
+include "tasks/99-milestones.tji"

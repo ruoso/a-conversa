@@ -1,0 +1,222 @@
+# 00 — Foundation
+#
+# Repo skeleton, tech-stack confirmations, local development environment,
+# and CI. This is the work that has to happen before any feature work
+# can land cleanly.
+
+task foundation "Foundation" {
+  task stack_decisions "Tech-stack decisions" {
+    task lang_decision "Pick backend language and framework" {
+      effort 1d
+      allocate team
+      note "TS/Node, Go, Elixir, or Rust. See docs/architecture.md open questions."
+    }
+    task frontend_framework_decision "Pick frontend framework" {
+      effort 1d
+      allocate team
+      depends !lang_decision
+      note "React, Svelte, or Solid. Must work with the chosen graph library."
+    }
+    task graph_lib_decision "Pick graph rendering library or libraries" {
+      effort 1d
+      allocate team
+      depends !frontend_framework_decision
+      note "Cytoscape.js for audience and ReactFlow for moderator vs. one library across surfaces."
+    }
+    task auth_lib_decision "Pick auth library / OAuth implementation" {
+      effort 1d
+      allocate team
+      note "Self-hosted (Keycloak, Authelia, hand-rolled) vs. hosted (Auth0, Clerk)."
+    }
+    task style_tooling_decision "Pick styling / CSS approach" {
+      effort 0.5d
+      allocate team
+      depends !frontend_framework_decision
+    }
+    task test_unit_framework_decision "Pick unit-test framework" {
+      effort 0.5d
+      allocate team
+      depends !lang_decision, !frontend_framework_decision
+      note "Vitest / Jest / language-native — for unit-level tests across backend and frontend."
+    }
+    task test_behavior_framework_decision "Pick behavior-test framework" {
+      effort 0.5d
+      allocate team
+      depends !lang_decision
+      note "Cucumber / Gherkin or equivalent BDD framework — for scenario-level tests describing system behavior."
+    }
+    task playwright_decision "Confirm Playwright for web E2E" {
+      effort 0.25d
+      allocate team
+      depends !frontend_framework_decision
+      note "Playwright drives moderator UI, participant UI, audience surface, and test-mode in a real browser."
+    }
+    task storybook_or_equivalent_decision "Pick component-explorer tool (or skip)" {
+      effort 0.5d
+      allocate team
+      depends !frontend_framework_decision
+    }
+  }
+
+  task test_infra "Test infrastructure setup" {
+    depends !stack_decisions, !repo_skeleton
+    task unit_test_runner_setup "Wire up the unit test runner" {
+      effort 1d
+      allocate team
+      depends !!stack_decisions.test_unit_framework_decision
+    }
+    task behavior_test_runner_setup "Wire up the behavior test runner (Gherkin features)" {
+      effort 1d
+      allocate team
+      depends !!stack_decisions.test_behavior_framework_decision
+    }
+    task playwright_setup "Set up Playwright with browsers" {
+      effort 1d
+      allocate team
+      depends !!stack_decisions.playwright_decision
+    }
+    task playwright_test_helpers "Helpers for Playwright (auth, session creation, event seeding)" {
+      effort 2d
+      allocate team
+      depends !playwright_setup
+    }
+    task ci_unit_test_step "CI step running unit tests" {
+      effort 0.25d
+      allocate team
+      depends !unit_test_runner_setup
+    }
+    task ci_behavior_test_step "CI step running behavior tests" {
+      effort 0.25d
+      allocate team
+      depends !behavior_test_runner_setup
+    }
+    task ci_playwright_step "CI step running Playwright E2E tests" {
+      effort 0.5d
+      allocate team
+      depends !playwright_setup
+    }
+    task test_db_provisioning "Test-database provisioning per test run (clean DB per Playwright test)" {
+      effort 1d
+      allocate team
+    }
+  }
+
+  task repo_skeleton "Repository skeleton" {
+    depends !stack_decisions
+    task editorconfig "Add .editorconfig" {
+      effort 0.25d
+      allocate team
+    }
+    task gitignore "Add .gitignore for chosen stack" {
+      effort 0.25d
+      allocate team
+    }
+    task linter_config "Configure linter" {
+      effort 0.5d
+      allocate team
+    }
+    task formatter_config "Configure formatter" {
+      effort 0.5d
+      allocate team
+    }
+    task typecheck_config "Configure type checker" {
+      effort 0.5d
+      allocate team
+      depends !!stack_decisions.lang_decision
+    }
+    task pre_commit_hooks "Set up pre-commit hooks (lint, format, typecheck)" {
+      effort 0.5d
+      allocate team
+      depends !linter_config, !formatter_config, !typecheck_config
+    }
+    task dir_layout "Establish source directory layout" {
+      effort 0.5d
+      allocate team
+    }
+    task readme_dev_section "Add Development section to README" {
+      effort 0.25d
+      allocate team
+      depends !dir_layout
+    }
+  }
+
+  task dev_env "Local development environment" {
+    depends !repo_skeleton
+    task dockerfile_app "Dockerfile for the application" {
+      effort 1d
+      allocate team
+    }
+    task dockerfile_postgres "Postgres container config" {
+      effort 0.5d
+      allocate team
+    }
+    task dockerfile_mock_oauth "Local mock OAuth provider container" {
+      effort 1d
+      allocate team
+      note "Allows OAuth flows to work offline without external accounts."
+    }
+    task compose_file "docker-compose.yml bringing up the full stack" {
+      effort 1d
+      allocate team
+      depends !dockerfile_app, !dockerfile_postgres, !dockerfile_mock_oauth
+    }
+    task env_var_template "Provide .env.example with documented variables" {
+      effort 0.25d
+      allocate team
+      depends !compose_file
+    }
+    task one_command_script "One-command startup script (e.g., make up / scripts/dev)" {
+      effort 0.5d
+      allocate team
+      depends !compose_file
+    }
+    task seed_data_script "Script to seed dev database with example session" {
+      effort 1d
+      allocate team
+      depends !compose_file
+    }
+    task dev_env_docs "Document the local-dev workflow in CONTRIBUTING.md or docs" {
+      effort 0.5d
+      allocate team
+      depends !one_command_script
+    }
+  }
+
+  task ci "Continuous integration" {
+    depends !repo_skeleton
+    task ci_config "Set up CI configuration (GitHub Actions or equivalent)" {
+      effort 1d
+      allocate team
+    }
+    task ci_lint "Lint job in CI" {
+      effort 0.25d
+      allocate team
+      depends !ci_config, !!repo_skeleton.linter_config
+    }
+    task ci_format "Format-check job in CI" {
+      effort 0.25d
+      allocate team
+      depends !ci_config, !!repo_skeleton.formatter_config
+    }
+    task ci_typecheck "Typecheck job in CI" {
+      effort 0.25d
+      allocate team
+      depends !ci_config, !!repo_skeleton.typecheck_config
+    }
+    task ci_build "Build job in CI (compile / bundle)" {
+      effort 0.5d
+      allocate team
+      depends !ci_config
+    }
+    task ci_image_publish "Publish container image on tagged releases" {
+      effort 1d
+      allocate team
+      depends !ci_build
+    }
+    task ci_dependency_audit "Periodic dependency vulnerability check" {
+      effort 0.5d
+      allocate team
+      depends !ci_config
+    }
+  }
+}

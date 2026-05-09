@@ -1,0 +1,133 @@
+# 60 — Replay and test mode
+#
+# The replay viewer for completed debates and the test-mode timeline scrubber
+# for design iteration / debugging / demoing without three live participants.
+# The data-layer "render at log position" primitive lives in the data and
+# methodology stream (10); the work here is the surfaces that consume it.
+
+task replay_test "Replay and test mode" {
+  task replay_ui "Replay viewer UI" {
+    depends data_and_methodology.replay_primitive, audience.aud_graph_rendering, audience.aud_animations
+    task replay_mode_audience_surface "Replay-mode variant of the audience surface" {
+      effort 2d
+      allocate team
+      note "Same renderer as live audience; switches the input from live event stream to log-replay."
+    }
+    task replay_playback_controls "Play / pause / step controls" {
+      effort 1d
+      allocate team
+      depends !replay_mode_audience_surface
+    }
+    task replay_speed_controls "Playback speed controls (0.5x, 1x, 2x, etc.)" {
+      effort 1d
+      allocate team
+      depends !replay_playback_controls
+    }
+    task replay_seek_bar "Seek bar showing position in the event log" {
+      effort 1d
+      allocate team
+      depends !replay_playback_controls
+    }
+    task replay_url_position_loading "Load replay starting at URL-supplied position" {
+      effort 0.5d
+      allocate team
+      depends !replay_seek_bar, audience.aud_url_routing.aud_url_position_param
+    }
+    task replay_chapter_jumping "Jump to next/prev snapshot via chapter markers" {
+      effort 1d
+      allocate team
+      depends !replay_seek_bar, data_and_methodology.replay_primitive.snapshot_resolution
+    }
+  }
+
+  task test_mode "Test mode (timeline scrubber)" {
+    depends data_and_methodology.replay_primitive, audience.aud_graph_rendering
+    task test_mode_app "Test-mode app entry (separate URL / route)" {
+      effort 1d
+      allocate team
+    }
+    task test_mode_load_session "Load a saved session's event log" {
+      effort 1d
+      allocate team
+      depends !test_mode_app, backend.replay_endpoints.get_session_log
+    }
+    task test_mode_synthetic_session "Generate / load synthetic sessions for design iteration" {
+      effort 2d
+      allocate team
+      depends !test_mode_load_session
+    }
+    task test_mode_timeline_scrubber "Per-event timeline scrubber UI" {
+      effort 3d
+      allocate team
+      depends !test_mode_load_session, data_and_methodology.replay_primitive.position_navigation
+      note "Granularity is per-event — every event in the log is a scrubber stop."
+    }
+    task test_mode_event_inspector "Inspect the event at the current scrubber position" {
+      effort 1d
+      allocate team
+      depends !test_mode_timeline_scrubber
+    }
+    task test_mode_changed_highlights "Highlight what changed at each scrubber step" {
+      effort 2d
+      allocate team
+      depends !test_mode_timeline_scrubber
+    }
+    task test_mode_diagnostic_inspector "Inspect structural diagnostics at any position" {
+      effort 1d
+      allocate team
+      depends !test_mode_timeline_scrubber, data_and_methodology.diagnostics
+    }
+    task test_mode_export_position "Export the projected state at any position" {
+      effort 1d
+      allocate team
+      depends !test_mode_timeline_scrubber, backend.replay_endpoints.get_at_position
+    }
+  }
+
+  task snapshots "Snapshot surfaces" {
+    depends data_and_methodology.event_types.snapshot_events, backend.replay_endpoints.list_snapshots
+    task snapshot_creation_ui "Snapshot-creation UI (lives on moderator surface; produces shared snapshot record)" {
+      effort 0.5d
+      allocate team
+    }
+    task snapshot_list_ui "Snapshot list view" {
+      effort 1d
+      allocate team
+      depends !snapshot_creation_ui
+    }
+    task snapshot_jump_ui "Jump-to-snapshot action across replay and test mode" {
+      effort 1d
+      allocate team
+      depends !snapshot_list_ui
+    }
+  }
+
+  task replay_test_tests "Tests for replay and test mode" {
+    depends !replay_ui, !test_mode
+    task replay_unit_tests "Replay UI component unit tests" {
+      effort 2d
+      allocate team
+    }
+    task test_mode_unit_tests "Test-mode UI component unit tests" {
+      effort 2d
+      allocate team
+    }
+    task replay_behavior_tests "BDD scenarios — 'rewind from end of debate, see prior state, advance one event at a time, verify graph matches expected'" {
+      effort 2d
+      allocate team
+    }
+    task replay_playwright_e2e "Playwright E2E for replay viewer (load saved session, scrub through it)" {
+      effort 2d
+      allocate team
+    }
+    task test_mode_playwright_e2e "Playwright E2E for test-mode scrubber" {
+      effort 2d
+      allocate team
+    }
+    task replay_visual_regression "Visual-regression tests on key replay positions" {
+      effort 1d
+      allocate team
+      depends !replay_playwright_e2e
+    }
+  }
+}
