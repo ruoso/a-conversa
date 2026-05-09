@@ -48,4 +48,3 @@ Cross-cutting and product-level questions only. Doc-specific opens live in [docs
 
 - **Moderator UI design** — the moderator surface is defined architecturally; the actual UI flows (capture → classify → propose → commit) need design work before implementation.
 - **Pre-debate prep workflow** — do debaters submit positions in advance? Could become a standalone use case ("map your own worldview" without a live debate). Out of scope for v1.
-- **Walkthrough-surfaced items still pending:** sub-IDs vs. fresh IDs after decomposition; defeater objects (concrete retraction conditions modeled explicitly).

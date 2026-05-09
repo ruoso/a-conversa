@@ -31,6 +31,15 @@ A node referenced in a new session **starts fresh** in v1: participants re-engag
 
 Edges work the same way: the structural fact "edge E with role `supports` from N1 to N2 exists in the global graph" is global; whether a given session's participants agree the support holds is session-scoped.
 
+### Cross-session reference permissions
+
+Sessions are **public by default**; the host may mark a session **private**. Reference rules follow:
+
+- **Public session** — any authenticated user can reference the session's nodes and edges in a new session.
+- **Private session** — only participants of the original session (or the host) can reference its nodes and edges.
+
+This aligns with the YouTube-show context (shows are public by their nature) while preserving the option for private debates that aren't meant to be cited externally.
+
 ## State model: event-sourced
 
 The data model treats the change history as canonical and the current graph as a projection of it. The implementation follows directly:
@@ -71,7 +80,7 @@ V1 ships four distinct surfaces, sharing a TypeScript codebase and connecting to
 
 - **Moderator** — full operator UI. Capture text, propose classification, draw edges, propose decomposition / interpretive split / meta-move, commit, view change history, watch structural diagnostics fire.
 - **Debaters (×2)** — agreement controls (agree / dispute / withdraw) on each pending proposal, plus a read-only graph view. Designed for a tablet held in the debater's hand or placed nearby.
-- **Audience / broadcast** — read-only, designed for video. Animated reveals on commit, clean typography, distinct visual states for `proposed` / `agreed` / `disputed` / `meta-disagreement`. This is the show.
+- **Audience / broadcast** — read-only, designed for video. Animated reveals on commit, clean typography, distinct visual states for `proposed` / `agreed` / `disputed` / `meta-disagreement`. This is the show. Served at a stable URL that **mirrors session privacy** — public sessions have a public viewer URL (anyone can load); private sessions require auth.
 - **Producer / director** — change-history scrubbing, segment-snapshot triggers, possibly OBS scene-switching cues. Useful for a polished broadcast; cuttable from v1 if the moderator surface plus OBS suffice.
 
 ### Test mode
@@ -117,6 +126,4 @@ Each debate is its own event log; multi-tenancy is lightweight (no cross-debate 
 - **Auth library / OAuth implementation.** Self-hosted (Keycloak, Authelia, hand-rolled OAuth client) vs. hosted (Auth0, Clerk). Self-hosted aligns with open-source values; hosted is faster to ship.
 - **Producer / director surface in v1?** Probably yes for a polished first show, but cuttable if the moderator surface plus OBS does enough on its own.
 - **Test-mode UX details.** Timeline scrubber granularity (per event vs. per moderator commit); whether scrubbing highlights what changed at each step.
-- **Cross-session permissions.** Who can reference nodes/edges from session A in session B? Anyone authenticated, only the original creator, host-controlled allowlist? Affects UX and data-leak considerations.
 - **Inheriting prior session state.** V1 says imported nodes start fresh in the new session. Should there be an opt-in "import the prior session's classification / axiom marks as starting proposals" that the new session's participants then accept or dispute? Interesting for series episodes; out of scope for v1 unless it becomes a clear need.
-- **Audience-direct-viewer page** (someone watching live in a browser without going through OBS). Public-by-default, host-controlled access list, or auth-gated entirely? OBS-broadcast audience is unaffected by this decision.

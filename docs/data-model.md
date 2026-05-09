@@ -91,11 +91,19 @@ Edges have an **owner** (`A`, `B`, or `moderator`) — the participant who propo
 Like nodes, edges have multiple facets, each with its own independent status:
 
 - `shape` — the edge's role/type (`supports`, `rebuts`, etc.) and its endpoints (which nodes it connects).
-- `substance` — does the relation actually hold? (Does the data actually support? Does the contradiction actually obtain? Does the warrant actually license the inference?)
+- `substance` — does the relation hold *if the source's content is true*?
+
+The substance facet uses a **conditional reading**: participants can agree the relation holds (e.g., "if this data were true, it would support that claim") independently of whether the source's own content is substantively established. This separation matters — it lets the format capture commitments like "I'd accept that as a rebut, if it turned out to be the case" without requiring the source to be agreed-true first.
+
+Whether the relation is **actively firing** on the graph right now — whether the data actually supports, whether the contradiction actually obtains, whether the warrant actually licenses the inference — is the conjunction `edge.substance ∧ source.substance`. Both must be `agreed` for the relation to take current effect.
+
+This conditional reading also gives **defeaters** a natural home: a defeater is a regular node (the retraction condition, with its own `wording`, `classification`, `substance` facets) plus a `rebuts` edge to the defeated target whose substance is `agreed` but whose source's substance is not yet `agreed`. The pre-commitment is structural; the rebut sits in the graph but does not currently fire. If the source ever becomes substantively established, the rebut activates. (See [methodology.md](methodology.md) for how defeaters are captured during the operationalization test.)
+
+> Future development: the system could surface "pending consequences" as a structural diagnostic — `agreed`-substance edges whose source substance is not yet agreed, signalling commitments that would fire if the source were established. Out of scope for v1; recorded as a possible future feature.
 
 Edges have no `wording` facet — they are structural, not utterances. (Their `content` if any lives in annotations, see below.)
 
-A proposed `contradicts` edge between two nodes typically lands its `shape` facet quickly (the proposal is observable: yes, A is claiming a `contradicts` between N1 and N2) while its `substance` facet may stay `disputed` indefinitely as the methodology runs (does the contradiction actually hold?). The edge is visible throughout, in whatever per-facet state it currently occupies.
+A proposed `contradicts` edge between two nodes typically lands its `shape` facet quickly (the proposal is observable: yes, A is claiming a `contradicts` between N1 and N2) while its `substance` facet may stay `disputed` indefinitely as the methodology runs (does the contradiction obtain, conditional on both endpoints being true?). The edge is visible throughout, in whatever per-facet state it currently occupies.
 
 ### Edge roles
 
@@ -202,6 +210,6 @@ Every graph operation is recorded in a **change history** event log. The history
 
 The change history is available out-of-band — for replay, audit, post-debate analysis, and possibly a separate production view (e.g., a side-display showing the most recent N operations as the audience watches the main graph). The history does not clutter the live graph.
 
-## Open implementation questions
+## Surfacing operations in the UI
 
-- Surfacing operations (decompositions, axiom-marks, meta-moves) that aren't graph entities — how does the moderator review past operations during the debate, and how does the audience see them happen? Affects how the change history is queried and rendered.
+Operations that aren't graph entities (decompositions, axiom-marks, interpretive splits, meta-moves) are reviewable through **the change history view**, which is the primary surface for past operations. Their *effects* on the graph (nodes added or removed, axiom rendering, etc.) appear on the live graph as commits happen, and replay through the timeline scrubber. The graph state itself stays simple — only nodes, edges, and their annotations — while the change-history view fills in everything else.

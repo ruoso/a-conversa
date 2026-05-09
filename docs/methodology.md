@@ -111,6 +111,8 @@ The moderator runs these out loud, on camera. Each test either resolves the disa
 - "Nothing could change my mind" → an **axiom**.
 - If the two debaters give *different* answers about what would change their mind, that is the strongest signal that the statement is compound — they are each pointing at different components.
 
+If the participant names **specific retraction conditions** ("I'd retract this if X were the case"), capture each X as a regular node and add a `rebuts` edge from X to the target. The participant proposes the rebuts edge's `substance` as agreed (their pre-commitment that *if* X were true, it would defeat the target); X's own `substance` stays `proposed` (X hasn't been established). Under the conditional reading of edge substance (see [data-model.md](data-model.md)), this is structurally a **defeater**: a rebut sitting in the graph that doesn't currently fire, but would activate if X were ever substantively established. The methodology can revisit such defeaters when their source approaches `agreed` substance.
+
 ### Is-ought check
 
 If the statement contains "should / ought / better / worse / right / wrong" or carries an implicit prescription, there is a `normative` component, regardless of phrasing.
@@ -205,15 +207,19 @@ This honors "both sides must agree before moving on" without making it a hard bl
 
 ## Resolution of structural diagnostics
 
-The data model tracks structural problems (cycles, contradictions, multi-warrant patterns; see [data-model.md](data-model.md)). The methodology for resolving them mirrors classification: anyone proposes a resolution, all participants must agree. Typical resolution paths:
+The data model tracks structural problems (cycles, contradictions, multi-warrant patterns; see [data-model.md](data-model.md)). The methodology for resolving them mirrors classification: anyone proposes a resolution, all participants must agree. Diagnostics fall into two categories with different forcing:
 
-- **Cycle in supports** — break one `supports` edge (acknowledged as not actually holding), decompose a node in the cycle, or have a participant axiom-mark a node in the cycle (the chain terminates at that participant's bedrock).
+### Blocking diagnostics
+
+Logical problems block forward progress until **acknowledged**. "Acknowledged" includes resolving the problem *or* accepting it as bedrock — the requirement is that participants engage with it, not necessarily eliminate it.
+
+- **Cycle in `supports`** — break one `supports` edge (acknowledged as not actually holding), decompose a node in the cycle, or have a participant axiom-mark a node in the cycle (the chain terminates at that participant's bedrock).
 - **Contradiction** — decompose one or both nodes (most common), amend one to remove conflict, or accept the contradiction as a bedrock disagreement (each side axiom-marks the position they hold; the `contradicts` edge stays).
-- **Multiple competing warrants on one data→claim** — decompose the claim. After decomposition, each warrant attaches to a different component.
+
+### Advisory diagnostics
+
+Methodological opportunities — visible but non-blocking. The participants may act on them or leave them; they exist to nudge.
+
+- **Multiple competing warrants on one data→claim** — decompose the claim. After decomposition, each warrant attaches to a different component. Often surfaces a hidden compound structure, but if the participants don't see it that way, no requirement to act.
 - **Dangling claim** — a soft prompt; the moderator asks for support or asks whether the claim is being conceded/accepted.
 - **Coherency hints** — advisory only; no required resolution.
-
-## Open methodology questions
-
-- Whether structural diagnostics block forward progress (must be resolved) or merely warn (visible but skippable). Likely a mix; topic-level contradictions block, advisory hints don't. Affects how the data model surfaces unresolved diagnostics in [data-model.md — structural diagnostics](data-model.md#structural-diagnostics).
-- Whether the moderator can override the agreement rule in extreme cases (e.g., a debater stonewalling). Probably no — overrides would compromise the format's core promise. Withdrawal of agreement, by contrast, is allowed.
