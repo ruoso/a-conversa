@@ -277,7 +277,9 @@ task data_and_methodology "Data and methodology" {
     task interpretive_split_logic "Interpretive-split operation (analogous shape to decomposition)" {
       effort 1d
       allocate team
+      complete 100
       depends !decomposition_logic
+      note "Refinement: tasks/refinements/data-and-methodology/interpretive_split_logic.md"
     }
     task axiom_mark_logic "Axiom-mark operation — per-participant" {
       effort 1d

@@ -329,31 +329,57 @@ export function nodeIsVisible(projection: Projection, nodeId: string): boolean {
 }
 
 // ---------------------------------------------------------------
-// `decomposeConflictsWith` — find a pending decompose proposal against
-// the same parent.
+// `findConflictingProposalAgainst` — find a pending proposal of a
+// configured set of sub-kinds that targets the same parent node.
 //
-// Used by `decomposition_logic` (rule 3 of `validateDecomposeProposal`).
+// Used by the propose handler's `decompose` arm (refinement:
+// decomposition_logic) AND its `interpretive-split` arm (refinement:
+// interpretive_split_logic) to enforce the mutual-exclusion rule: the
+// two structural sub-kinds (`decompose`, `interpretive-split`) both
+// flip `parent.visible = false` on commit, so only one of either kind
+// may be pending against a given parent at a time. Both arms pass the
+// same conflicting-kinds set (`{'decompose', 'interpretive-split'}`,
+// canonicalized as the constant `CONFLICTING_PARENT_KINDS` in
+// `propose.ts`); the set parameter is the explicit shape that makes
+// the symmetry visible at the call site.
+//
 // Walks `projection.pendingProposals()` (not committed or
-// meta-disagreed — see the refinement's "Read-side
-// `decomposeConflictsWith` semantics" decision) and returns the first
-// pending proposal whose payload is `{ kind: 'decompose', parent_node_id:
-// <match> }`. Returns `null` on no conflict.
+// meta-disagreed — same reasoning as the original
+// `decomposeConflictsWith` rule: a *committed* decompose or
+// interpretive-split against the same parent has already flipped
+// `parent.visible = false`, so the propose handler's parent-visible
+// rule catches that case structurally; a *meta-disagreement-marked*
+// proposal isn't in flight any more) and returns the first pending
+// proposal whose `payload.kind` is in `conflictingKinds` AND whose
+// payload's `parent_node_id` matches `parentNodeId`. Returns `null`
+// on no conflict.
 //
-// The caller uses the returned proposal's `proposalEventId` in the
-// rejection detail so the API layer can surface "wait for {id} to
-// resolve first" or "withdraw {id} before re-proposing."
+// The narrow union type `'decompose' | 'interpretive-split'` reflects
+// the v1 set of structural sub-kinds whose payloads carry a
+// `parent_node_id`. If a future sub-kind adopts the same parent-
+// targeting shape (e.g. a hypothetical merge-back operation), the
+// union widens additively.
 //
-// A *committed* decompose against the same parent has already flipped
-// `parent.visible = false`, so rule 2 (`nodeIsVisible`) catches that
-// case structurally — no need to walk committed proposals here.
+// The caller uses the returned proposal's `proposalEventId` and
+// `payload.kind` in the rejection detail so the API layer can surface
+// "wait for {kind} proposal {id} to resolve first" or "withdraw {id}
+// before re-proposing."
 // ---------------------------------------------------------------
 
-export function decomposeConflictsWith(
+export type ConflictingParentKind = 'decompose' | 'interpretive-split';
+
+export function findConflictingProposalAgainst(
   projection: Projection,
   parentNodeId: string,
+  conflictingKinds: ReadonlySet<ConflictingParentKind>,
 ): PendingProposal | null {
   for (const proposal of projection.pendingProposals()) {
-    if (proposal.payload.kind === 'decompose' && proposal.payload.parent_node_id === parentNodeId) {
+    const payload = proposal.payload;
+    if (
+      (payload.kind === 'decompose' || payload.kind === 'interpretive-split') &&
+      conflictingKinds.has(payload.kind) &&
+      payload.parent_node_id === parentNodeId
+    ) {
       return proposal;
     }
   }

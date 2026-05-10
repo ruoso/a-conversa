@@ -26,7 +26,7 @@ export type {
 
 export {
   currentParticipants,
-  decomposeConflictsWith,
+  findConflictingProposalAgainst,
   findParticipantVoteOnProposal,
   findProposal,
   nextSequence,
@@ -38,6 +38,7 @@ export {
   requesterIsParticipant,
   requireModerator,
   requireParticipant,
+  type ConflictingParentKind,
   type FoundProposal,
 } from './primitives.js';
 

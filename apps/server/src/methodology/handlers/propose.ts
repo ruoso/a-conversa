@@ -1,7 +1,9 @@
 // `propose` action handler.
 //
 // Refinement: tasks/refinements/data-and-methodology/decomposition_logic.md
+// Refinement: tasks/refinements/data-and-methodology/interpretive_split_logic.md
 // TaskJuggler: data_and_methodology.methodology_engine.decomposition_logic
+// TaskJuggler: data_and_methodology.methodology_engine.interpretive_split_logic
 //
 // The propose action carries one of the eleven proposal sub-kinds. Per
 // the methodology framework (agreement_state_machine), the handler runs
@@ -18,42 +20,64 @@
 //     `validateDecomposeProposal` below for the rule comments):
 //       1. Parent-node-exists → `'target-entity-not-found'`.
 //       2. Parent-node-visible → `'illegal-state-transition'`.
-//       3. No conflicting decompose pending → `'illegal-state-transition'`.
+//       3. No conflicting decompose OR interpretive-split pending
+//          against the same parent → `'illegal-state-transition'`.
+//          (Mutual exclusion — extended from decomposition_logic's
+//          original "no other decompose pending" rule when
+//          interpretive_split_logic landed; see that refinement for the
+//          symmetry argument.)
 //     (Structural shape — `components.length ∈ [2, 10]`, each
 //     `wording` non-empty, valid `classification` — is enforced
 //     upstream by `decomposeProposalSchema` per ADR 0021. The
 //     methodology validator does not re-check.)
 //
-//   - For the other ten sub-kinds (`classify-node`,
+//   - For the `interpretive-split` sub-kind: the real propose-side
+//     validator per `interpretive_split_logic`. Same three rules as
+//     decompose, with the conflict-walker invoked against the same
+//     `CONFLICTING_PARENT_KINDS` set. The methodology semantics differ
+//     (decompose: the speaker bundled multiple claims; interpretive-
+//     split: the wording admits multiple readings — see
+//     `docs/methodology.md` lines 168–181) but the structural rules
+//     are identical because both operations target `parent.visible` on
+//     commit.
+//
+//   - For the other nine sub-kinds (`classify-node`,
 //     `set-node-substance`, `set-edge-substance`, `edit-wording`,
-//     `interpretive-split`, `axiom-mark`, `meta-move`, `break-edge`,
-//     `amend-node`, `annotate`): the universal-pass placeholder path.
-//     Each sub-kind's sibling task (`interpretive_split_logic`,
-//     `axiom_mark_logic`, etc.) will tighten its arm as it lands. The
-//     placeholder builds the same one-event envelope the original
-//     handler always built — no methodology-specific gating.
+//     `axiom-mark`, `meta-move`, `break-edge`, `amend-node`,
+//     `annotate`): the universal-pass placeholder path. Each sub-
+//     kind's sibling task (`axiom_mark_logic`, `meta_move_logic`,
+//     etc.) will tighten its arm as it lands. The placeholder builds
+//     the same one-event envelope the original handler always built —
+//     no methodology-specific gating.
 //
 // **Scope: propose-side only.** This handler validates the propose
 // action and emits the proposal envelope event. The commit-time
-// structural fan-out for decompose (component nodes' `node-created` +
-// `entity-included` events) is **not** in scope and lives downstream —
-// currently the projection's `applyCommittedProposal` decompose arm
-// only flips `parent.visible = false`, and `commit_logic`'s rule 4
-// rejects commits of structural sub-kinds with
-// `'illegal-state-transition'`. The gap is real and flagged in the
-// refinement's Open Questions — settling it is a follow-up
-// (`decomposition_commit_logic` or `commit_logic` amendment).
+// structural fan-out for decompose / interpretive-split (component-/
+// reading-nodes' `node-created` + `entity-included` events) is **not**
+// in scope and is the same Open Question both refinements flagged —
+// currently the projection's `applyCommittedProposal` arms only flip
+// `parent.visible = false`, and `commit_logic`'s rule 4 rejects
+// commits of structural sub-kinds with `'illegal-state-transition'`.
+// Settling the gap is a follow-up (likely a unified
+// `decomposition_commit_logic` that handles both sub-kinds — see the
+// refinements' shared open question).
 //
 // **Boundary with `replay.ts/applyCommittedProposal`.** This handler is
 // the **write-side** propose-time gate (does the request pass
-// methodology rules?). `applyCommittedProposal`'s decompose arm is the
-// **read-side** structural application that runs *at commit time*
-// after `commit_logic` has gated the commit. The two layers don't
-// overlap: this handler does not touch projection state, and the
-// projection handler does not re-validate methodology rules.
+// methodology rules?). `applyCommittedProposal`'s decompose and
+// interpretive-split arms are the **read-side** structural application
+// that runs *at commit time* after `commit_logic` has gated the
+// commit. The two layers don't overlap: this handler does not touch
+// projection state, and the projection handler does not re-validate
+// methodology rules.
 
 import type { PendingProposal, Projection } from '../../projection/index.js';
-import { decomposeConflictsWith, nodeIsVisible, requireParticipant } from '../primitives.js';
+import {
+  findConflictingProposalAgainst,
+  nodeIsVisible,
+  requireParticipant,
+  type ConflictingParentKind,
+} from '../primitives.js';
 import type {
   EventToAppendEnvelope,
   ProposeAction,
@@ -61,6 +85,26 @@ import type {
   ValidationResult,
   Validator,
 } from '../types.js';
+
+// ---------------------------------------------------------------
+// `CONFLICTING_PARENT_KINDS` — the set of proposal sub-kinds that
+// mutually exclude each other against a shared `parent_node_id`. Both
+// `decompose` and `interpretive-split` flip `parent.visible = false`
+// on commit (see `applyCommittedProposal` in `replay.ts`), so only one
+// pending proposal of either kind may target a given parent at a
+// time. Both the `decompose` arm and the `interpretive-split` arm
+// pass this same set to `findConflictingProposalAgainst`; the constant
+// is the single source of truth for "what blocks a new decompose or
+// interpretive-split."
+//
+// If a future sub-kind adopts the same parent-flip-invisible behavior,
+// it gets added here (and to the `ConflictingParentKind` union in
+// `primitives.ts`).
+// ---------------------------------------------------------------
+
+const CONFLICTING_PARENT_KINDS: ReadonlySet<ConflictingParentKind> = new Set<ConflictingParentKind>(
+  ['decompose', 'interpretive-split'],
+);
 
 // ---------------------------------------------------------------
 // `validateDecomposeProposal` — the propose-side validator for the
@@ -78,10 +122,12 @@ import type {
 //      restructured, or otherwise superseded per the visible-graph
 //      derivation in `docs/data-model.md` lines 273–285 — can't be
 //      re-decomposed. → `'illegal-state-transition'`.
-//   3. **No conflicting decompose pending.** No other proposal currently
-//      in `pendingProposals` is a decompose against the same
-//      `parent_node_id`. Two decomposes pending against the same parent
-//      would race; the second is rejected. → `'illegal-state-transition'`.
+//   3. **No conflicting decompose OR interpretive-split pending.** No
+//      other proposal currently in `pendingProposals` is a decompose
+//      OR interpretive-split against the same `parent_node_id`. The
+//      two operations are mutually exclusive on the same parent
+//      because both flip `parent.visible = false` on commit — the
+//      second of either kind is rejected. → `'illegal-state-transition'`.
 //
 // Rule 4 — structural payload shape (`components.length ∈ [2, 10]`,
 // each `wording` non-empty, valid `classification`) — is enforced
@@ -119,13 +165,88 @@ function validateDecomposeProposal(
     };
   }
 
-  // Rule 3 — no conflicting decompose pending against the same parent.
-  const conflict: PendingProposal | null = decomposeConflictsWith(projection, parentNodeId);
+  // Rule 3 — no conflicting decompose OR interpretive-split pending against the same parent.
+  const conflict: PendingProposal | null = findConflictingProposalAgainst(
+    projection,
+    parentNodeId,
+    CONFLICTING_PARENT_KINDS,
+  );
   if (conflict !== null) {
     return {
       ok: false,
       reason: 'illegal-state-transition',
-      detail: `propose decompose: another decompose proposal (${conflict.proposalEventId}) against parent ${parentNodeId} is already pending; resolve or withdraw it before re-proposing`,
+      detail: `propose decompose: another ${conflict.payload.kind} proposal (${conflict.proposalEventId}) against parent ${parentNodeId} is already pending; resolve or withdraw it before re-proposing`,
+    };
+  }
+
+  return null;
+}
+
+// ---------------------------------------------------------------
+// `validateInterpretiveSplitProposal` — the propose-side validator for
+// the `interpretive-split` proposal sub-kind.
+//
+// Same three rules as decompose, in the same evaluation order. The
+// methodology semantics differ (per `docs/methodology.md` lines
+// 168–181: decompose is for "the speaker bundled multiple claims";
+// interpretive-split is for "the wording admits multiple readings and
+// the disagreement lives at the seam"), but the propose-side rules
+// are identical because both operations have the same structural
+// effect on commit — flipping `parent.visible = false`.
+//
+// Rule 3 in particular checks the same `CONFLICTING_PARENT_KINDS` set:
+// a pending decompose against the same parent blocks a new
+// interpretive-split, AND a pending interpretive-split against the
+// same parent blocks another new interpretive-split. The mutual
+// exclusion is symmetric — see interpretive_split_logic.md for the
+// argument.
+//
+// Rule 4 — structural payload shape (`readings.length ∈ [2, 10]`,
+// each `wording` non-empty, valid `classification`) — is enforced
+// upstream by `interpretiveSplitProposalSchema` per ADR 0021. This
+// validator does not re-check.
+// ---------------------------------------------------------------
+
+function validateInterpretiveSplitProposal(
+  projection: Projection,
+  action: ProposeAction,
+): RejectedValidationResult | null {
+  if (action.proposal.kind !== 'interpretive-split') {
+    // Defensive — the dispatcher gates this. Never reached at runtime.
+    return null;
+  }
+  const parentNodeId = action.proposal.parent_node_id;
+
+  // Rule 1 — parent node exists.
+  const parent = projection.getNode(parentNodeId);
+  if (parent === undefined) {
+    return {
+      ok: false,
+      reason: 'target-entity-not-found',
+      detail: `propose interpretive-split: parent_node_id ${parentNodeId} does not reference any node in session ${projection.sessionId}`,
+    };
+  }
+
+  // Rule 2 — parent is currently visible.
+  if (!nodeIsVisible(projection, parentNodeId)) {
+    return {
+      ok: false,
+      reason: 'illegal-state-transition',
+      detail: `propose interpretive-split: parent node ${parentNodeId} is not currently visible (already superseded by a prior decompose / interpretive-split / restructure) and cannot be re-split`,
+    };
+  }
+
+  // Rule 3 — no conflicting decompose OR interpretive-split pending against the same parent.
+  const conflict: PendingProposal | null = findConflictingProposalAgainst(
+    projection,
+    parentNodeId,
+    CONFLICTING_PARENT_KINDS,
+  );
+  if (conflict !== null) {
+    return {
+      ok: false,
+      reason: 'illegal-state-transition',
+      detail: `propose interpretive-split: another ${conflict.payload.kind} proposal (${conflict.proposalEventId}) against parent ${parentNodeId} is already pending; resolve or withdraw it before re-proposing`,
     };
   }
 
@@ -135,10 +256,11 @@ function validateDecomposeProposal(
 // ---------------------------------------------------------------
 // The handler.
 //
-// Switches on `action.proposal.kind`. The `decompose` arm runs the
-// real validator. All other arms fall through to the universal-pass
-// placeholder path — sibling tasks (`interpretive_split_logic`,
-// `axiom_mark_logic`, etc.) will tighten their arms as they land.
+// Switches on `action.proposal.kind`. The `decompose` and
+// `interpretive-split` arms run their real validators. All other arms
+// fall through to the universal-pass placeholder path — sibling tasks
+// (`axiom_mark_logic`, `meta_move_logic`, etc.) will tighten their
+// arms as they land.
 // ---------------------------------------------------------------
 
 export const proposeHandler: Validator<ProposeAction> = (
@@ -162,7 +284,12 @@ export const proposeHandler: Validator<ProposeAction> = (
       if (rejection !== null) return rejection;
       break;
     }
-    // The other ten sub-kinds fall through to the placeholder emission.
+    case 'interpretive-split': {
+      const rejection = validateInterpretiveSplitProposal(projection, action);
+      if (rejection !== null) return rejection;
+      break;
+    }
+    // The other nine sub-kinds fall through to the placeholder emission.
     // Each sub-kind's sibling task tightens its arm as it lands.
     default:
       break;
@@ -182,12 +309,12 @@ export const proposeHandler: Validator<ProposeAction> = (
 
 // Backward-compatibility alias — the engine's `installHandlers` and the
 // barrel both still reference `placeholderProposeHandler`. After this
-// task the symbol is no longer a placeholder for the `decompose` arm
-// (it's the real validator there), but the name is preserved so the
-// import sites in `engine.ts` and `handlers/index.ts` don't need to
-// churn ahead of the other sibling sub-kind tasks. Once the remaining
-// ten sub-kinds tighten, the alias and the file comment header should
-// be revisited.
+// task the symbol is no longer a placeholder for the `decompose` or
+// `interpretive-split` arms (it's the real validator there), but the
+// name is preserved so the import sites in `engine.ts` and
+// `handlers/index.ts` don't need to churn ahead of the other sibling
+// sub-kind tasks. Once the remaining nine sub-kinds tighten, the alias
+// and the file comment header should be revisited.
 export const placeholderProposeHandler = proposeHandler;
 
 export default proposeHandler;
