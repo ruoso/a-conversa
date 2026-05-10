@@ -67,3 +67,31 @@ The TaskJuggler note already specifies the columns:
 ## Open questions
 
 (none — all decided)
+
+## Status
+
+**Done** 2026-05-10 — migration landed at
+[apps/server/migrations/0004_nodes.sql](../../../apps/server/migrations/0004_nodes.sql).
+
+Verified end-to-end against the dev Compose stack:
+
+- `make up` brings postgres up healthy; `make migrate` applies cleanly
+  through 0004 (`### MIGRATION 0004_nodes (UP) ###`).
+- `\d nodes` shows the four expected columns (`id UUID PK default
+  gen_random_uuid()`, `wording TEXT NOT NULL`, `created_by UUID NOT
+  NULL`, `created_at TIMESTAMPTZ NOT NULL default NOW()`), the
+  `nodes_created_by_idx` btree index, and the
+  `nodes_created_by_fkey` FK to `users(id)` ON DELETE RESTRICT.
+- INSERT user → INSERT node returns a server-minted UUID plus
+  `created_at`.
+- INSERT with a bogus `created_by` UUID is rejected by the FK
+  (`violates foreign key constraint "nodes_created_by_fkey"`).
+- **Reword in place**: `UPDATE nodes SET wording = ...` mutated the
+  row; the `id` was unchanged (verified via `id = :old_id`).
+- **Restructure as new row**: a second INSERT produced a new `id`;
+  the original row's `id` and `wording` were untouched. Both rows
+  coexist in the global `nodes` table — visibility is a per-session
+  event-log concern, not a row-deletion concern.
+- `make down-v` cleans up.
+
+No new ADR (per task spec).
