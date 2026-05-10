@@ -57,3 +57,27 @@ The TaskJuggler note for this task already specifies the columns:
 ## Open questions
 
 (none — all decided)
+
+## Status
+
+**Done** 2026-05-10. Migration landed at
+[`apps/server/migrations/0001_users.sql`](../../../apps/server/migrations/0001_users.sql).
+
+Verified end-to-end against the local Compose stack:
+
+- `make up` brings postgres + authelia healthy.
+- `make migrate` applies `0000_meta` and `0001_users` cleanly.
+- `\d users` shows the expected columns, nullability, and defaults
+  (`id UUID PK DEFAULT gen_random_uuid()`, `oauth_subject TEXT NOT NULL`
+  with implicit `users_oauth_subject_key` unique constraint,
+  `screen_name VARCHAR(64) NOT NULL`, `created_at TIMESTAMPTZ NOT NULL
+  DEFAULT now()`, `deleted_at TIMESTAMPTZ NULL`).
+- `\di users*` lists `users_pkey`, `users_oauth_subject_key` (unique),
+  and `users_screen_name_idx` (non-unique).
+- `INSERT INTO users (oauth_subject, screen_name) VALUES ('authelia:alice',
+  'alice') RETURNING id, created_at;` succeeded, returning a generated
+  UUID and a server-side timestamp.
+- A second insert reusing `oauth_subject = 'authelia:alice'` was rejected
+  with `duplicate key value violates unique constraint
+  "users_oauth_subject_key"` — uniqueness is enforced as required.
+- `make down-v` cleared the volumes so the next task starts fresh.

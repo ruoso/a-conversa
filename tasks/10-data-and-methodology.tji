@@ -9,6 +9,7 @@ task data_and_methodology "Data and methodology" {
     task users_table "users table" {
       effort 0.5d
       allocate team
+      complete 100
       note "Refinement: tasks/refinements/data-and-methodology/users_table.md"
     }
     task sessions_table "sessions table" {
