@@ -11,9 +11,11 @@
     "smoke:reactflow": "tsx scripts/hello-reactflow.tsx",
     "smoke:cytoscape": "tsx scripts/hello-cytoscape.ts",
     "smoke:tailwind": "tsx scripts/hello-tailwind.ts",
-    "test:smoke": "vitest run tests/smoke"
+    "test:smoke": "vitest run tests/smoke",
+    "test:behavior:smoke": "NODE_OPTIONS='--import tsx' cucumber-js"
   },
   "devDependencies": {
+    "@cucumber/cucumber": "^12.8.3",
     "@testing-library/react": "^16.0.0",
     "@types/node": "^22.0.0",
     "@types/react": "^18.3.0",

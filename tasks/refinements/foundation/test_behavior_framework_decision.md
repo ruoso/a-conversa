@@ -43,3 +43,19 @@ The TS/Node ecosystem narrows the candidates:
 ## Open questions
 
 (none — all decided)
+
+## Status
+
+**Done** — 2026-05-10.
+
+- ADR: [docs/adr/0007-behavior-test-framework-cucumber.md](../../../docs/adr/0007-behavior-test-framework-cucumber.md)
+- Smoke feature: [tests/behavior/hello.feature](../../../tests/behavior/hello.feature)
+- Smoke steps: [tests/behavior/steps/hello.steps.ts](../../../tests/behavior/steps/hello.steps.ts)
+- Cucumber config: [cucumber.cjs](../../../cucumber.cjs)
+- Run: `npm run test:behavior:smoke` (1 scenario, 3 steps, all green).
+
+**Deferred to downstream tasks** (explicitly carried forward, not closed here):
+
+- The "scenario asserts something about the running app" acceptance bullet is deferred to the per-stream `*_behavior_tests` tasks — those tasks own the actual scenarios. The smoke here only proves the runner choice end-to-end.
+- CI integration is deferred to `foundation.test_infra.ci_behavior_test_step`.
+- Per-scenario clean-DB hookup is deferred to `foundation.test_infra.test_db_provisioning` and `foundation.test_infra.behavior_test_runner_setup`.

@@ -49,6 +49,7 @@ task foundation "Foundation" {
     task test_behavior_framework_decision "Pick behavior-test framework" {
       effort 0.5d
       allocate team
+      complete 100
       depends !lang_decision
       note "Refinement: tasks/refinements/foundation/test_behavior_framework_decision.md"
     }
