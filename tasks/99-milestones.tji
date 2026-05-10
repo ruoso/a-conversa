@@ -7,6 +7,7 @@
 task milestones "Milestones" {
   task m_foundation_ready "M0: Foundation ready" {
     milestone
+    complete 100
     depends foundation.repo_skeleton, foundation.dev_env, foundation.ci
     note "Repo skeleton, local Docker Compose dev environment, and CI all in place. New contributors can clone and `make up` (or equivalent) to get a working dev stack."
   }
