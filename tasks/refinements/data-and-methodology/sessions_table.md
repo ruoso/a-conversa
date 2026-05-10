@@ -63,3 +63,29 @@ The TaskJuggler note already specifies the columns:
 ## Open questions
 
 (none — all decided)
+
+## Status
+
+**Done** 2026-05-10 — migration at
+[apps/server/migrations/0002_sessions.sql](../../../apps/server/migrations/0002_sessions.sql).
+
+Verified end-to-end against `postgres:16-alpine` via `make up && make
+migrate`:
+
+- `\d sessions` shows the expected columns (`id` UUID PK with
+  `gen_random_uuid()` default, `host_user_id` UUID NOT NULL,
+  `privacy` TEXT NOT NULL DEFAULT `'public'`, `topic` TEXT NOT NULL,
+  `created_at` TIMESTAMPTZ NOT NULL DEFAULT `now()`, `ended_at`
+  TIMESTAMPTZ NULL), the FK `sessions_host_user_id_fkey` to
+  `users(id)`, the CHECK `sessions_privacy_check` (privacy IN
+  ('public','private')), the `sessions_host_user_id_idx` index, and
+  the partial `sessions_public_idx` on `(created_at DESC) WHERE
+  privacy = 'public'`.
+- A valid INSERT (host user `Alice` → session with topic) returned a
+  generated UUID and `created_at`, with `privacy = 'public'` (default)
+  and `ended_at = NULL`.
+- INSERTing `privacy = 'invalid'` failed with
+  `violates check constraint "sessions_privacy_check"`.
+- INSERTing a bogus host UUID failed with
+  `violates foreign key constraint "sessions_host_user_id_fkey"`.
+- `make down-v` cleaned up volumes.
