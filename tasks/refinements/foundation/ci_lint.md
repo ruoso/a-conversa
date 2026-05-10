@@ -19,3 +19,7 @@ Add a CI job that runs ESLint against the whole repo; fails the build on lint er
 - A `lint` job in `.github/workflows/ci.yml`.
 - Passes on the empty-but-valid project; fails on a deliberately-introduced lint error.
 - Annotates failures inline on the PR via GitHub's lint annotations API (or via `eslint --format @microsoft/eslint-formatter-sarif` output).
+
+## Status
+
+**Done** 2026-05-10 — [.github/workflows/ci.yml](../../../.github/workflows/ci.yml) now defines a standalone `lint` job that depends on `setup`, restores the same pnpm store cache, and runs `pnpm run lint`. The previously-combined `checks` job no longer runs lint; its remaining steps (format + typecheck) will split out under `ci_format` and `ci_typecheck`, after which `checks` becomes empty and is deleted.
