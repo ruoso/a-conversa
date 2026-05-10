@@ -44,6 +44,7 @@ task participant_ui "Participant (debater) UI" {
       effort 1d
       allocate team
       depends !part_landscape_layout
+      note "Refinement: tasks/refinements/participant-ui/part_status_indicator.md"
     }
   }
 

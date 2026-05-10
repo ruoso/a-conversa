@@ -190,16 +190,19 @@ task foundation "Foundation" {
       effort 0.25d
       allocate team
       depends !compose_file
+      note "Refinement: tasks/refinements/foundation/env_var_template.md"
     }
     task one_command_script "One-command startup script (e.g., make up / scripts/dev)" {
       effort 0.5d
       allocate team
       depends !compose_file
+      note "Refinement: tasks/refinements/foundation/one_command_script.md"
     }
     task seed_data_script "Script to seed dev database with example session" {
       effort 1d
       allocate team
       depends !compose_file
+      note "Refinement: tasks/refinements/foundation/seed_data_script.md"
     }
     task dev_env_docs "Document the local-dev workflow in CONTRIBUTING.md or docs" {
       effort 0.5d
@@ -247,6 +250,7 @@ task foundation "Foundation" {
       effort 1d
       allocate team
       depends !ci_build
+      note "Refinement: tasks/refinements/foundation/ci_image_publish.md"
     }
     task ci_dependency_audit "Periodic dependency vulnerability check" {
       effort 0.5d
