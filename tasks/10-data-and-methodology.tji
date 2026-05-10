@@ -115,6 +115,8 @@ task data_and_methodology "Data and methodology" {
       effort 0.5d
       allocate team
       depends !vote_events
+
+      note "Refinement: tasks/refinements/data-and-methodology/resolution_events.md"
     }
     task snapshot_events "snapshot-created" {
       effort 0.5d

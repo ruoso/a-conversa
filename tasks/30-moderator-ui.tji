@@ -16,6 +16,8 @@ task moderator_ui "Moderator UI" {
       effort 1d
       allocate team
       depends !mod_app_skeleton
+
+      note "Refinement: tasks/refinements/moderator-ui/mod_state_management.md"
     }
     task mod_ws_client "WebSocket client" {
       effort 2d

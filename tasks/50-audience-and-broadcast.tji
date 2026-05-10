@@ -26,6 +26,8 @@ task audience "Audience and broadcast" {
       allocate team
       depends !aud_app_skeleton
       note "Public sessions render to anyone with the URL; private sessions auth-gate."
+
+      note "Refinement: tasks/refinements/audience/aud_no_auth_for_public.md"
     }
     task aud_auth_for_private "Auth-gate private-session viewer pages" {
       effort 0.5d

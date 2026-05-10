@@ -84,21 +84,29 @@ task foundation "Foundation" {
       effort 2d
       allocate team
       depends !playwright_setup
+
+      note "Refinement: tasks/refinements/foundation/playwright_test_helpers.md"
     }
     task ci_unit_test_step "CI step running unit tests" {
       effort 0.25d
       allocate team
       depends !unit_test_runner_setup
+
+      note "Refinement: tasks/refinements/foundation/ci_unit_test_step.md"
     }
     task ci_behavior_test_step "CI step running behavior tests" {
       effort 0.25d
       allocate team
       depends !behavior_test_runner_setup
+
+      note "Refinement: tasks/refinements/foundation/ci_behavior_test_step.md"
     }
     task ci_playwright_step "CI step running Playwright E2E tests" {
       effort 0.5d
       allocate team
       depends !playwright_setup
+
+      note "Refinement: tasks/refinements/foundation/ci_playwright_step.md"
     }
     task test_db_provisioning "Test-database provisioning per test run (clean DB per Playwright test)" {
       effort 1d
@@ -175,6 +183,8 @@ task foundation "Foundation" {
       effort 1d
       allocate team
       depends !dockerfile_app, !dockerfile_postgres, !dockerfile_mock_oauth
+
+      note "Refinement: tasks/refinements/foundation/compose_file.md"
     }
     task env_var_template "Provide .env.example with documented variables" {
       effort 0.25d
@@ -209,21 +219,29 @@ task foundation "Foundation" {
       effort 0.25d
       allocate team
       depends !ci_config, !!repo_skeleton.linter_config
+
+      note "Refinement: tasks/refinements/foundation/ci_lint.md"
     }
     task ci_format "Format-check job in CI" {
       effort 0.25d
       allocate team
       depends !ci_config, !!repo_skeleton.formatter_config
+
+      note "Refinement: tasks/refinements/foundation/ci_format.md"
     }
     task ci_typecheck "Typecheck job in CI" {
       effort 0.25d
       allocate team
       depends !ci_config, !!repo_skeleton.typecheck_config
+
+      note "Refinement: tasks/refinements/foundation/ci_typecheck.md"
     }
     task ci_build "Build job in CI (compile / bundle)" {
       effort 0.5d
       allocate team
       depends !ci_config
+
+      note "Refinement: tasks/refinements/foundation/ci_build.md"
     }
     task ci_image_publish "Publish container image on tagged releases" {
       effort 1d
@@ -234,6 +252,8 @@ task foundation "Foundation" {
       effort 0.5d
       allocate team
       depends !ci_config
+
+      note "Refinement: tasks/refinements/foundation/ci_dependency_audit.md"
     }
   }
 }

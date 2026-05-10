@@ -15,6 +15,8 @@ task participant_ui "Participant (debater) UI" {
       effort 1d
       allocate team
       depends !part_app_skeleton
+
+      note "Refinement: tasks/refinements/participant-ui/part_state_management.md"
     }
     task part_ws_client "WebSocket client (read-only events + vote/withdraw send)" {
       effort 2d
@@ -35,6 +37,8 @@ task participant_ui "Participant (debater) UI" {
       effort 1d
       allocate team
       depends !part_app_skeleton
+
+      note "Refinement: tasks/refinements/participant-ui/part_landscape_layout.md"
     }
     task part_status_indicator "Persistent status indicator (role, screen name, pending count)" {
       effort 1d
