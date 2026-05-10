@@ -21,6 +21,8 @@ Unit tests run on **Vitest**, with **`@vitest/coverage-v8`** for coverage and **
 
 Frontend component tests pair Vitest with **React Testing Library**. Backend tests run in the default Node environment; component tests opt into happy-dom either via the per-file `// @vitest-environment happy-dom` pragma or via a config-level project split when the workspaces land.
 
+Vitest is **the unit-test layer** — pure in-memory specs against TypeScript modules with no I/O. Anything that opens a database connection or hits a network is the integration layer (Cucumber + pglite, [ADR 0007](0007-behavior-test-framework-cucumber.md)) or the end-to-end layer (Playwright + the live compose stack, [ADR 0008](0008-e2e-framework-playwright.md)). Tests for Zod payload validators, projection arithmetic, agreement-state transitions, and the like belong here.
+
 This ADR settles only the framework and its companion choices. The real wiring — per-workspace `vitest.config.ts` files under `apps/*` and `packages/*`, the shared test-setup module (`@testing-library/jest-dom` matchers, common mocks), and the CI step — is deferred to its owning tasks.
 
 ## Consequences
@@ -49,3 +51,4 @@ Expected output includes Vitest's standard pass summary with both tests green. T
 ## Amendments
 
 - **2026-05-10** — Switched the package manager from npm to pnpm as part of [ADR 0010](0010-directory-layout-pnpm-workspaces.md). Run command above is now `pnpm install` / `pnpm run test:smoke`. The decision (Vitest) is unchanged.
+- **2026-05-10** — Added a paragraph to the Decision section clarifying Vitest's role in the three-layer test stack (unit → integration via Cucumber+pglite → E2E via Playwright+compose). The original three ADRs (0006/0007/0008) left "what database does each layer hit" implicit; this clarification makes the boundary explicit so future tasks file their tests in the right layer. The decision (Vitest) is unchanged.

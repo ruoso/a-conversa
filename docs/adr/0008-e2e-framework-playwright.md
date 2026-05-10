@@ -19,6 +19,8 @@ Playwright's combination of multi-context support and a real trace viewer is the
 
 End-to-end web tests run on **Playwright** via the `@playwright/test` runner. Specs are written in TypeScript and discovered from the per-workspace E2E directories that will exist once `repo_skeleton.dir_layout` lands; until then, the decision-proof spec lives at `tests/e2e/hello.spec.ts`. The runner ships its own `test` and `expect`; we do not add a separate assertion library.
 
+Playwright is **the end-to-end layer** — it drives the live compose stack ([ADR 0018](0018-compose-file-three-service-dev-stack.md)), exercising real `postgres:16-alpine`, real Authelia, and the real backend image once `backend.api_skeleton` lands. The integration layer below — Cucumber + pglite ([ADR 0007](0007-behavior-test-framework-cucumber.md)) — covers DB-touching scenarios in-process without Docker, while the unit layer above — Vitest ([ADR 0006](0006-unit-test-framework-vitest.md)) — covers pure in-memory specs. Browser-driving Cucumber step definitions spin up Playwright from inside a step; non-BDD UI suites use `@playwright/test` directly.
+
 This ADR settles only the framework choice. The actual operational scaffolding is owned by separate tasks and is explicitly **not** done here:
 
 - **Browser installation** (Chromium / Firefox / WebKit binaries via `npx playwright install`, system deps, headless vs headed defaults) — owned by `foundation.test_infra.playwright_setup`.
@@ -52,3 +54,4 @@ Expected output is `1 passed` from the Playwright `list` reporter. The sketch is
 ## Amendments
 
 - **2026-05-10** — Switched the package manager from npm to pnpm as part of [ADR 0010](0010-directory-layout-pnpm-workspaces.md). Run command above is now `pnpm install` / `pnpm run test:e2e:smoke`. The decision (`@playwright/test`) is unchanged.
+- **2026-05-10** — Added a paragraph to the Decision section clarifying Playwright's role in the three-layer test stack: Playwright + the live compose stack is the end-to-end layer; Cucumber + pglite ([ADR 0007](0007-behavior-test-framework-cucumber.md)) covers integration in-process; Vitest ([ADR 0006](0006-unit-test-framework-vitest.md)) covers pure unit. The original ADRs left "what does each runner hit" implicit; this clarification makes the boundary explicit. The decision (`@playwright/test`) is unchanged.
