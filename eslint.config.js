@@ -1,11 +1,16 @@
 // Flat ESLint config for a-conversa.
 //
-// Decision recorded in docs/adr/0011-linter-eslint-with-typescript-eslint.md.
-// Baseline: typescript-eslint's `recommended` (non-type-checked) tier — the
-// type-aware tier needs a tsconfig, which is owned by the downstream
-// `foundation.repo_skeleton.typecheck_config` task. Once that lands, this
-// config can swap `recommended` for `recommendedTypeChecked` and turn on
-// `parserOptions.projectService`.
+// Decision recorded in docs/adr/0011-linter-eslint-with-typescript-eslint.md
+// (with 2026-05-10 amendment) and docs/adr/0013-typecheck-tsconfig-strict-with-project-references.md.
+//
+// Baseline upgraded to typescript-eslint's `recommendedTypeChecked` tier on
+// 2026-05-10 once `tsconfig.base.json` landed via
+// `foundation.repo_skeleton.typecheck_config` (ADR 0013). Files in
+// `apps/**` and `packages/**` are covered by their per-workspace
+// `tsconfig.json`; root-level `scripts/**` and `tests/**` are covered by
+// `tsconfig.tools.json` (whitelisted via `allowDefaultProject` since the
+// projectService default discovery only matches files named
+// `tsconfig.json`).
 
 import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
@@ -19,7 +24,9 @@ export default tseslint.config(
     ignores: [
       'node_modules/',
       'dist/',
+      '**/dist/',
       'build/',
+      '**/build/',
       'coverage/',
       'playwright-report/',
       'test-results/',
@@ -27,14 +34,32 @@ export default tseslint.config(
       'package-lock.json',
     ],
   },
-  // Lint TS / TSX in the workspace tree, root scripts, and root-level tests.
+  // Lint TS / TSX in the workspace tree and root-level tests with the
+  // type-aware rule set. `projectService` auto-discovers each file's
+  // tsconfig: the per-workspace ones for apps/ and packages/, and a
+  // dedicated tests/tsconfig.json that picks up @types/node, vitest, etc.
   {
-    files: [
-      'apps/**/*.{ts,tsx}',
-      'packages/**/*.{ts,tsx}',
-      'scripts/**/*.{ts,tsx}',
-      'tests/**/*.ts',
-    ],
+    files: ['apps/**/*.{ts,tsx}', 'packages/**/*.{ts,tsx}', 'tests/**/*.ts'],
+    extends: [js.configs.recommended, ...tseslint.configs.recommendedTypeChecked],
+    languageOptions: {
+      parserOptions: {
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
+      },
+      globals: {
+        ...globals.node,
+        ...globals.browser,
+      },
+    },
+  },
+  // Root-level `scripts/` are throwaway smoke tests that exercise the
+  // dependency stack via `tsx`. They are covered by `tsconfig.tools.json`
+  // for the `pnpm typecheck:tools` step, but they're left on the
+  // non-type-checked lint tier — they're temporary and the type-aware
+  // rules misfire on Node globals when projectService's default-project
+  // fallback can't see ambient @types/node. ADR 0013 documents this carve-out.
+  {
+    files: ['scripts/**/*.{ts,tsx}'],
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     languageOptions: {
       globals: {

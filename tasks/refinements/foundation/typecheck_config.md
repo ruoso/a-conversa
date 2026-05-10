@@ -56,3 +56,19 @@ Default strictness flags worth enabling:
 ## Open questions
 
 (none — all decided)
+
+## Status
+
+**Done** 2026-05-10 — see [docs/adr/0013-typecheck-tsconfig-strict-with-project-references.md](../../../docs/adr/0013-typecheck-tsconfig-strict-with-project-references.md).
+
+Files landed:
+
+- `tsconfig.base.json` — shared compiler options (strict + the four extra strictness flags, `composite`, `declaration`, `verbatimModuleSyntax`, etc.).
+- Root solution-style `tsconfig.json` — `files: []` plus references to all five workspaces.
+- Per-workspace `apps/server/tsconfig.json` (NodeNext), `apps/{moderator,participant,audience}/tsconfig.json` (ESNext + Bundler + DOM + react-jsx), `packages/shared-types/tsconfig.json` (NodeNext).
+- `tsconfig.tools.json` — root scripts + `*.config.ts`, non-composite `noEmit`, ESNext+Bundler resolution.
+- `tests/tsconfig.json` — same shape as tools, scoped to `tests/**`. Lives at `tests/tsconfig.json` (not in the root tools config) so `typescript-eslint`'s `projectService` can auto-discover it.
+
+Scripts: `pnpm typecheck` (`tsc -b`), `pnpm typecheck:tools`, `pnpm typecheck:tests`.
+
+ESLint was upgraded from `tseslint.configs.recommended` to `tseslint.configs.recommendedTypeChecked` for `apps/**`, `packages/**`, and `tests/**` (the linter ADR 0011 explicitly flagged this as the follow-up once a tsconfig existed). `scripts/**` stays on the non-type-checked tier — type-aware rules misfired on Node globals when projectService's default-project fallback couldn't see ambient `@types/node`, and the original spec anticipated this carve-out. ADR 0011 has an Amendments section noting the upgrade.

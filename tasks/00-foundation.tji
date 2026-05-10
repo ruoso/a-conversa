@@ -153,6 +153,7 @@ task foundation "Foundation" {
     task typecheck_config "Configure type checker" {
       effort 0.5d
       allocate team
+      complete 100
       depends !!stack_decisions.lang_decision
       note "Refinement: tasks/refinements/foundation/typecheck_config.md"
     }

@@ -18,7 +18,10 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "typecheck": "tsc -b",
+    "typecheck:tools": "tsc --noEmit -p tsconfig.tools.json",
+    "typecheck:tests": "tsc --noEmit -p tests/tsconfig.json"
   },
   "devDependencies": {
     "@cucumber/cucumber": "^12.8.3",
@@ -40,6 +43,7 @@
     "reactflow": "^11.11.0",
     "tailwindcss": "^4.3.0",
     "tsx": "^4.19.0",
+    "typescript": "^6.0.3",
     "typescript-eslint": "^8.59.2",
     "vitest": "^2.1.0"
   }

@@ -50,3 +50,7 @@ pnpm run lint
 ```
 
 Expected: zero output, exit code 0. Auto-fix is wired as `pnpm run lint:fix`. The smoke proves the runner discovers TS / TSX across `scripts/`, `tests/`, `apps/`, and `packages/`, and that `cucumber.cjs` lints under the CJS-specific block.
+
+## Amendments
+
+- **2026-05-10 — Type-aware tier enabled.** `tsconfig.base.json` (and per-workspace `tsconfig.json` files plus a `tests/tsconfig.json` and a root `tsconfig.tools.json`) landed under `foundation.repo_skeleton.typecheck_config` (ADR 0013). With a tsconfig now in the tree, this config swapped `tseslint.configs.recommended` for `tseslint.configs.recommendedTypeChecked` for `apps/**`, `packages/**`, and `tests/**`, and turned on `parserOptions.projectService: true` so `typescript-eslint` auto-discovers each file's tsconfig. `scripts/**` is held on the non-type-checked tier — the smoke scripts there are throwaway and the type-aware rules misfired on Node globals when the projectService default-project fallback couldn't see ambient `@types/node`. ADR 0013 documents the full set of tsconfig files and the carve-out. The original Decision and Context above stand unchanged; this amendment is the mechanical follow-up the original Decision flagged.
