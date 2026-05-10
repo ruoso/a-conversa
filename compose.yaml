@@ -1,0 +1,145 @@
+# a-conversa — local-development Compose stack.
+#
+# Three services on a single user-defined bridge network so service
+# discovery works by name (the `app` reaches `postgres` and `authelia`
+# via DNS lookups against the Compose-managed embedded resolver).
+#
+# See docs/adr/0018-compose-file-three-service-dev-stack.md for the
+# rationale behind every choice in this file. Per-service config
+# decisions live in their respective infra READMEs and ADRs:
+#   - app:      docs/adr/0015-dockerfile-multi-stage-pnpm-corepack.md
+#   - postgres: infra/postgres/README.md, docs/adr/0016
+#   - authelia: infra/authelia/README.md, docs/adr/0017
+#
+# Compose auto-loads `.env` from the project root; the variable names
+# referenced below (POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB) are
+# fixed by ADR 0016. The `.env.example` template that documents them
+# (and the OIDC-related variables Authelia consumes) is authored by the
+# `foundation.dev_env.env_var_template` task; until that lands, copy
+# `.env.example` to `.env` (or set the variables in your shell) before
+# running `make up`.
+
+name: aconversa
+
+services:
+  # ---------------------------------------------------------------------
+  # app — the a-conversa application image (built from ./Dockerfile).
+  #
+  # NOTE: until `backend.api_skeleton` lands, the runtime entry point
+  # is a stub banner that exits 0 (per ADR 0015). The container will
+  # therefore start, exit cleanly, and — under `restart: unless-stopped`
+  # — be restarted in a tight loop, with the `/healthz` healthcheck
+  # perpetually unhealthy because nothing is listening on port 3000.
+  # To run the dev dependencies without that noise, bring just the
+  # backing services up:
+  #     docker compose up -d postgres authelia
+  # The full-stack `make up` experience becomes useful once the real
+  # entry point (apply migrations, start the HTTP/WebSocket server)
+  # lands with `backend.api_skeleton`.
+  app:
+    build:
+      context: .
+    image: aconversa/app:dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+      authelia:
+        condition: service_healthy
+    ports:
+      - '3000:3000'
+    networks:
+      - aconversa
+    restart: unless-stopped
+    healthcheck:
+      # Once the real entry point lands, the HTTP server exposes
+      # `/healthz`. The runtime image is alpine + node, so we exec
+      # node directly rather than depending on `wget`/`curl` being
+      # present.
+      test:
+        - CMD
+        - node
+        - -e
+        - "require('http').get('http://localhost:3000/healthz', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1));"
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+
+  # ---------------------------------------------------------------------
+  # postgres — upstream PostgreSQL 16 on Alpine.
+  #
+  # Conventions (image tag, credentials by env, healthcheck via
+  # pg_isready, named-volume persistence, initdb mount) come from
+  # infra/postgres/README.md and ADR 0016.
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - aconversa-postgres-data:/var/lib/postgresql/data
+      - ./infra/postgres/initdb:/docker-entrypoint-initdb.d:ro
+    ports:
+      - '5432:5432'
+    networks:
+      - aconversa
+    restart: unless-stopped
+    healthcheck:
+      # `$$` escapes Compose interpolation so the shell inside the
+      # container expands $POSTGRES_USER/$POSTGRES_DB at check time.
+      test:
+        - CMD-SHELL
+        - 'pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB'
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # ---------------------------------------------------------------------
+  # authelia — upstream Authelia 4.39, users-file mode.
+  #
+  # Configuration is committed under infra/authelia/ and mounted
+  # read-only; the sqlite store and filesystem-notifier output live on
+  # a named volume so `docker compose down` keeps them and `down -v`
+  # drops them. See infra/authelia/README.md and ADR 0017 for the
+  # full rationale.
+  authelia:
+    image: authelia/authelia:4.39
+    command:
+      - --config
+      - /config/configuration.yml
+    volumes:
+      - ./infra/authelia/configuration.yml:/config/configuration.yml:ro
+      - ./infra/authelia/users.yml:/config/users.yml:ro
+      - aconversa-authelia-data:/var/lib/authelia
+    ports:
+      - '9091:9091'
+    networks:
+      - aconversa
+    restart: unless-stopped
+    healthcheck:
+      # Authelia 4.39 ships busybox wget (no curl); `--spider` issues
+      # a HEAD-style request and exits non-zero on failure.
+      test:
+        - CMD
+        - wget
+        - -q
+        - --spider
+        - http://localhost:9091/api/health
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+
+networks:
+  # User-defined bridge so service-name DNS works across the three
+  # services. Declared explicitly (rather than relying on Compose's
+  # implicit default network) so the network's identity is stable and
+  # other tooling can attach to it by name.
+  aconversa:
+    driver: bridge
+
+volumes:
+  aconversa-postgres-data:
+  aconversa-authelia-data:

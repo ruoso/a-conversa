@@ -202,6 +202,7 @@ task foundation "Foundation" {
     task compose_file "docker-compose.yml bringing up the full stack" {
       effort 1d
       allocate team
+      complete 100
       depends !dockerfile_app, !dockerfile_postgres, !dockerfile_mock_oauth
 
       note "Refinement: tasks/refinements/foundation/compose_file.md"

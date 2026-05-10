@@ -32,3 +32,33 @@ The architecture's "make up brings up everything you need locally" promise lives
 - Tearing down with `docker compose down` is clean; `docker compose down -v` resets state.
 - Migrations run on `app` startup against the `postgres` service.
 - The `app` can reach the `authelia` issuer URL.
+
+## Status
+
+**Done — 2026-05-10.**
+
+- Stack lives at [`compose.yaml`](../../../compose.yaml) (modern
+  Compose-spec name): three services (`app`, `postgres`, `authelia`)
+  on the user-defined bridge network `aconversa`, with named volumes
+  `aconversa-postgres-data` and `aconversa-authelia-data`, the
+  Authelia config files mounted read-only, healthchecks for all three,
+  and `app` `depends_on` `postgres` + `authelia` with
+  `condition: service_healthy`.
+- ADR [0018](../../../docs/adr/0018-compose-file-three-service-dev-stack.md)
+  records the rationale and the partial-stack workflow.
+- [`Makefile`](../../../Makefile) gains real `up` / `down` / `down-v`
+  / `logs` / `ps` targets wrapping `docker compose ...`. The richer
+  one-command UX (env-file checks, friendly output) is owned by
+  `foundation.dev_env.one_command_script`.
+- Verified: `docker compose config` exits 0; `docker compose up -d
+  postgres authelia` brings both backing services to `healthy` in
+  ~12 s; `docker compose down -v` cleans up.
+- Caveat: the `app` runtime entry point is the ADR-0015 stub (prints
+  banner, exits 0). Until `backend.api_skeleton` lands, full-stack
+  `make up` will loop the `app` container under
+  `restart: unless-stopped` with `/healthz` perpetually unhealthy.
+  Use `docker compose up -d postgres authelia` for a quiet partial
+  stack today.
+- Deferred: `.env.example` (owned by `env_var_template`); the seed
+  script (`seed_data_script`); the friendly `make up` wrapper
+  (`one_command_script`); production compose (`deployment.prod_compose`).
