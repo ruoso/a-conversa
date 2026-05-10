@@ -111,6 +111,13 @@ export class Projection {
 
   #sessionState: SessionState = 'open';
 
+  // The sequence of the most recently applied event. `0` means
+  // "no events yet"; the first valid event is sequence 1. The
+  // `project_incrementally` task owns the contract around this
+  // field — `applyEvent` advances it; `applyEventIncremental`
+  // checks gaps / replay against it.
+  #lastAppliedSequence = 0;
+
   constructor(sessionId: string) {
     this.sessionId = sessionId;
   }
@@ -121,6 +128,14 @@ export class Projection {
 
   setSessionState(state: SessionState): void {
     this.#sessionState = state;
+  }
+
+  get lastAppliedSequence(): number {
+    return this.#lastAppliedSequence;
+  }
+
+  setLastAppliedSequence(sequence: number): void {
+    this.#lastAppliedSequence = sequence;
   }
 
   addNode(input: NewNodeInput): ProjectedNode {

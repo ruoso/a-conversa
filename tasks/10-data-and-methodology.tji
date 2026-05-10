@@ -171,7 +171,9 @@ task data_and_methodology "Data and methodology" {
     task project_incrementally "Update projection on each new event" {
       effort 1d
       allocate team
+      complete 100
       depends !project_from_log
+      note "Refinement: tasks/refinements/data-and-methodology/project_incrementally.md"
     }
     task per_facet_status_derivation "Derive per-facet overall status from per-participant votes + commits" {
       effort 2d

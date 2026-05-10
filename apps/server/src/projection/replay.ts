@@ -1,20 +1,39 @@
 // Event-log replay — build / mutate a projection from typed events.
 //
 // Refinement: tasks/refinements/data-and-methodology/project_from_log.md
+// Refinement: tasks/refinements/data-and-methodology/project_incrementally.md
 // TaskJuggler: data_and_methodology.projection.project_from_log
+// TaskJuggler: data_and_methodology.projection.project_incrementally
 //
 // Two entry points:
 //
 //   - `applyEvent(projection, event)` — per-event dispatcher; mutates
 //     in place. Switches on `event.kind`, then on the proposal sub-
-//     kind for `commit` events. Reused by the next task
-//     (`project_incrementally`) for single-event apply.
+//     kind for `commit` events. Returns a `ProjectionChange[]` change
+//     feed describing what the event touched. Reused by
+//     `applyEventIncremental` (incremental.ts) for the single-event
+//     apply path.
 //
 //   - `projectFromLog(events, sessionId)` — on-load entry point.
 //     Creates an empty projection and iterates the events in the
 //     order they were given (the caller is responsible for sorting
 //     by `sequence` ascending — typically a single ORDER BY clause
-//     in the loader's SQL).
+//     in the loader's SQL). Discards the per-event change feeds —
+//     the on-load path doesn't have a broadcaster to feed; the
+//     incremental path is where the feed matters.
+//
+// **Sequence ordering**. `applyEvent` enforces the contract
+// "the event's sequence is exactly `lastAppliedSequence + 1`."
+// Anything else (gap, replay of an already-applied event, out-of-
+// order) throws `OutOfOrderEventError`. This is the steady-state
+// guarantee: a projection that has consumed events 1..N applies
+// the event at sequence N+1, no other. Sequence advances only
+// after every other handler step succeeds — a mid-application
+// throw leaves the projection at its prior `lastAppliedSequence`
+// so a retry of the same sequence is meaningful (the projection
+// is otherwise corrupted by the partial mutation; the caller's
+// recovery story is "rebuild from the log via projectFromLog,"
+// not "try this single event again").
 //
 // **Validation discipline**. Events are expected to have already
 // passed `validateEvent` (per ADR 0021). We do not re-validate
@@ -52,33 +71,62 @@ import type {
 } from '@a-conversa/shared-types';
 
 import { Projection, ProjectionInvariantError, createEmptyProjection } from './projection.js';
-import type { PendingProposal, PerParticipantVote } from './types.js';
+import type { PendingProposal, PerParticipantVote, ProjectionChange } from './types.js';
 
 export class ReplayError extends Error {
   override readonly name = 'ReplayError';
 }
 
+export class OutOfOrderEventError extends Error {
+  override readonly name = 'OutOfOrderEventError';
+  readonly expectedSequence: number;
+  readonly actualSequence: number;
+
+  constructor(expectedSequence: number, actualSequence: number) {
+    super(
+      `out-of-order event: expected sequence ${expectedSequence}, got ${actualSequence}` +
+        (actualSequence <= expectedSequence - 1
+          ? ' (replay or out-of-order)'
+          : actualSequence > expectedSequence
+            ? ' (gap)'
+            : ''),
+    );
+    this.expectedSequence = expectedSequence;
+    this.actualSequence = actualSequence;
+  }
+}
+
 // ---------------------------------------------------------------
-// Per-event-kind handlers. Each handler signature is
-// `(projection: Projection, event: Event<K>) => void`. The
-// dispatcher narrows by `event.kind` so the handler sees the
-// concrete payload type.
+// Per-event-kind handlers. Each handler appends to a shared
+// `ProjectionChange[]` so the outer dispatcher can return the
+// full change feed. The dispatcher narrows by `event.kind` so the
+// handler sees the concrete payload type.
 // ---------------------------------------------------------------
 
-function handleSessionCreated(projection: Projection): void {
+function handleSessionCreated(projection: Projection, changes: ProjectionChange[]): void {
   // Session metadata only. The projection already knows its
   // sessionId; this event marks the log start. Re-affirm `open`
   // state defensively (the field defaults to `'open'` on
   // construction; setting it explicitly costs nothing and reads
   // honestly).
   projection.setSessionState('open');
+  changes.push({ kind: 'session-state-changed', state: 'open' });
 }
 
-function handleSessionEnded(projection: Projection, _payload: SessionEndedPayload): void {
+function handleSessionEnded(
+  projection: Projection,
+  _payload: SessionEndedPayload,
+  changes: ProjectionChange[],
+): void {
   projection.setSessionState('ended');
+  changes.push({ kind: 'session-state-changed', state: 'ended' });
 }
 
-function handleParticipantJoined(projection: Projection, payload: ParticipantJoinedPayload): void {
+function handleParticipantJoined(
+  projection: Projection,
+  payload: ParticipantJoinedPayload,
+  changes: ProjectionChange[],
+): void {
   projection.addParticipant({
     userId: payload.user_id,
     role: payload.role,
@@ -86,13 +134,27 @@ function handleParticipantJoined(projection: Projection, payload: ParticipantJoi
     joinedAt: payload.joined_at,
     leftAt: null,
   });
+  changes.push({
+    kind: 'participant-joined',
+    userId: payload.user_id,
+    role: payload.role,
+  });
 }
 
-function handleParticipantLeft(projection: Projection, payload: ParticipantLeftPayload): void {
+function handleParticipantLeft(
+  projection: Projection,
+  payload: ParticipantLeftPayload,
+  changes: ProjectionChange[],
+): void {
   projection.markParticipantLeft(payload.user_id, payload.left_at);
+  changes.push({ kind: 'participant-left', userId: payload.user_id });
 }
 
-function handleNodeCreated(projection: Projection, payload: NodeCreatedPayload): void {
+function handleNodeCreated(
+  projection: Projection,
+  payload: NodeCreatedPayload,
+  changes: ProjectionChange[],
+): void {
   if (projection.getNode(payload.node_id) !== undefined) {
     throw new ReplayError(`node-created: node ${payload.node_id} already present`);
   }
@@ -102,9 +164,14 @@ function handleNodeCreated(projection: Projection, payload: NodeCreatedPayload):
     createdBy: payload.created_by,
     createdAt: payload.created_at,
   });
+  changes.push({ kind: 'node-added', nodeId: payload.node_id });
 }
 
-function handleEdgeCreated(projection: Projection, payload: EdgeCreatedPayload): void {
+function handleEdgeCreated(
+  projection: Projection,
+  payload: EdgeCreatedPayload,
+  changes: ProjectionChange[],
+): void {
   if (projection.getEdge(payload.edge_id) !== undefined) {
     throw new ReplayError(`edge-created: edge ${payload.edge_id} already present`);
   }
@@ -116,9 +183,20 @@ function handleEdgeCreated(projection: Projection, payload: EdgeCreatedPayload):
     createdBy: payload.created_by,
     createdAt: payload.created_at,
   });
+  changes.push({
+    kind: 'edge-added',
+    edgeId: payload.edge_id,
+    sourceNodeId: payload.source_node_id,
+    targetNodeId: payload.target_node_id,
+    role: payload.role,
+  });
 }
 
-function handleAnnotationCreated(projection: Projection, payload: AnnotationCreatedPayload): void {
+function handleAnnotationCreated(
+  projection: Projection,
+  payload: AnnotationCreatedPayload,
+  changes: ProjectionChange[],
+): void {
   if (projection.getAnnotation(payload.annotation_id) !== undefined) {
     throw new ReplayError(
       `annotation-created: annotation ${payload.annotation_id} already present`,
@@ -133,19 +211,31 @@ function handleAnnotationCreated(projection: Projection, payload: AnnotationCrea
     createdBy: payload.created_by,
     createdAt: payload.created_at,
   });
+  changes.push({
+    kind: 'annotation-added',
+    annotationId: payload.annotation_id,
+    targetNodeId: payload.target_node_id,
+    targetEdgeId: payload.target_edge_id,
+  });
 }
 
-function handleEntityIncluded(projection: Projection, payload: EntityIncludedPayload): void {
+function handleEntityIncluded(
+  projection: Projection,
+  payload: EntityIncludedPayload,
+  changes: ProjectionChange[],
+): void {
   // The session begins referencing a global entity. For an entity
   // the session itself created (the common single-session-log
   // case) the corresponding `node-created` / `edge-created` /
   // `annotation-created` event already added it to the projection
-  // — this is a no-op. For a cross-session inclusion, the loader
-  // is responsible for synthesizing the global-creation event
-  // ahead of `entity-included` (joining `session_events` against
-  // `nodes` / `edges` / `annotations`); if it didn't, the entity
-  // is missing and we surface a clean failure rather than
-  // silently dropping it.
+  // — this is a no-op on storage but still a change-feed entry
+  // (the inclusion is information downstream consumers need).
+  // For a cross-session inclusion, the loader is responsible for
+  // synthesizing the global-creation event ahead of
+  // `entity-included` (joining `session_events` against `nodes` /
+  // `edges` / `annotations`); if it didn't, the entity is missing
+  // and we surface a clean failure rather than silently dropping
+  // it.
   switch (payload.entity_kind) {
     case 'node':
       if (projection.getNode(payload.entity_id) === undefined) {
@@ -153,22 +243,27 @@ function handleEntityIncluded(projection: Projection, payload: EntityIncludedPay
           `entity-included(node ${payload.entity_id}): not in projection — loader must inject the matching node-created event first`,
         );
       }
-      return;
+      break;
     case 'edge':
       if (projection.getEdge(payload.entity_id) === undefined) {
         throw new ReplayError(
           `entity-included(edge ${payload.entity_id}): not in projection — loader must inject the matching edge-created event first`,
         );
       }
-      return;
+      break;
     case 'annotation':
       if (projection.getAnnotation(payload.entity_id) === undefined) {
         throw new ReplayError(
           `entity-included(annotation ${payload.entity_id}): not in projection — loader must inject the matching annotation-created event first`,
         );
       }
-      return;
+      break;
   }
+  changes.push({
+    kind: 'entity-included',
+    entityKind: payload.entity_kind,
+    entityId: payload.entity_id,
+  });
 }
 
 function handleProposal(
@@ -177,6 +272,7 @@ function handleProposal(
   proposer: string | null,
   proposedAt: string,
   payload: ProposalEnvelopePayload,
+  changes: ProjectionChange[],
 ): void {
   const pending: PendingProposal = {
     proposalEventId,
@@ -185,9 +281,14 @@ function handleProposal(
     proposedAt,
   };
   projection.addPendingProposal(pending);
+  changes.push({ kind: 'pending-proposal-added', proposalId: proposalEventId });
 }
 
-function handleVote(projection: Projection, payload: VotePayload): void {
+function handleVote(
+  projection: Projection,
+  payload: VotePayload,
+  changes: ProjectionChange[],
+): void {
   // Per-facet status derivation owns the fan-out from a vote on a
   // proposal into per-participant agreement state on the affected
   // facet (and the resulting overall facet status). For this task
@@ -210,28 +311,43 @@ function handleVote(projection: Projection, payload: VotePayload): void {
   // No-op on the storage layer beyond the existence check. The
   // vote enum (`agree | dispute | withdraw`) is the methodology
   // engine's input; this dispatcher just confirms the vote
-  // references a real proposal.
-  const _vote: PerParticipantVote = payload.vote;
-  void _vote;
-  void payload.participant;
+  // references a real proposal and records the change-feed entry
+  // for downstream broadcasters.
+  const vote: PerParticipantVote = payload.vote;
+  changes.push({
+    kind: 'vote-recorded',
+    proposalId: payload.proposal_id,
+    participantId: payload.participant,
+    vote,
+  });
   void payload.voted_at;
   void pending;
 }
 
-function handleCommit(projection: Projection, payload: CommitPayload): void {
+function handleCommit(
+  projection: Projection,
+  payload: CommitPayload,
+  changes: ProjectionChange[],
+): void {
   const pending = projection.getPendingProposal(payload.proposal_id);
   if (pending === undefined) {
     throw new ReplayError(
       `commit: proposal ${payload.proposal_id} is not pending in this projection`,
     );
   }
-  applyCommittedProposal(projection, pending.payload);
+  applyCommittedProposal(projection, pending.payload, changes);
   projection.removePendingProposal(payload.proposal_id);
+  changes.push({
+    kind: 'pending-proposal-cleared',
+    proposalId: payload.proposal_id,
+    reason: 'commit',
+  });
 }
 
 function handleMetaDisagreementMarked(
   projection: Projection,
   payload: MetaDisagreementMarkedPayload,
+  changes: ProjectionChange[],
 ): void {
   const pending = projection.getPendingProposal(payload.proposal_id);
   if (pending === undefined) {
@@ -248,18 +364,31 @@ function handleMetaDisagreementMarked(
     markedAt: payload.marked_at,
   });
   projection.removePendingProposal(payload.proposal_id);
+  changes.push({ kind: 'meta-disagreement-marked', proposalId: payload.proposal_id });
+  changes.push({
+    kind: 'pending-proposal-cleared',
+    proposalId: payload.proposal_id,
+    reason: 'meta-disagreement',
+  });
 }
 
 function handleSnapshotCreated(
   projection: Projection,
   payload: SnapshotCreatedPayload,
   createdAt: string,
+  changes: ProjectionChange[],
 ): void {
   projection.addSnapshot({
     snapshotId: payload.snapshot_id,
     label: payload.label,
     logPosition: payload.log_position,
     createdAt,
+  });
+  changes.push({
+    kind: 'snapshot-added',
+    snapshotId: payload.snapshot_id,
+    label: payload.label,
+    logPosition: payload.log_position,
   });
 }
 
@@ -274,7 +403,11 @@ function handleSnapshotCreated(
 // with TODO comments here.
 // ---------------------------------------------------------------
 
-function applyCommittedProposal(projection: Projection, proposal: ProposalPayload): void {
+function applyCommittedProposal(
+  projection: Projection,
+  proposal: ProposalPayload,
+  changes: ProjectionChange[],
+): void {
   switch (proposal.kind) {
     case 'classify-node': {
       const node = projection.getNode(proposal.node_id);
@@ -286,6 +419,14 @@ function applyCommittedProposal(projection: Projection, proposal: ProposalPayloa
       // TODO(per_facet_status_derivation): populate
       // `classificationFacet.perParticipant` from the votes that
       // produced this commit.
+      changes.push({
+        kind: 'facet-updated',
+        entityKind: 'node',
+        entityId: proposal.node_id,
+        facet: 'classification',
+        value: proposal.classification,
+        status: 'agreed',
+      });
       return;
     }
     case 'set-node-substance': {
@@ -295,6 +436,14 @@ function applyCommittedProposal(projection: Projection, proposal: ProposalPayloa
       }
       node.substanceFacet.value = proposal.value;
       node.substanceFacet.status = 'agreed';
+      changes.push({
+        kind: 'facet-updated',
+        entityKind: 'node',
+        entityId: proposal.node_id,
+        facet: 'substance',
+        value: proposal.value,
+        status: 'agreed',
+      });
       return;
     }
     case 'set-edge-substance': {
@@ -304,6 +453,14 @@ function applyCommittedProposal(projection: Projection, proposal: ProposalPayloa
       }
       edge.substanceFacet.value = proposal.value;
       edge.substanceFacet.status = 'agreed';
+      changes.push({
+        kind: 'facet-updated',
+        entityKind: 'edge',
+        entityId: proposal.edge_id,
+        facet: 'substance',
+        value: proposal.value,
+        status: 'agreed',
+      });
       return;
     }
     case 'edit-wording': {
@@ -317,6 +474,19 @@ function applyCommittedProposal(projection: Projection, proposal: ProposalPayloa
         node.wording = proposal.new_wording;
         node.wordingFacet.value = proposal.new_wording;
         node.wordingFacet.status = 'agreed';
+        changes.push({
+          kind: 'node-wording-updated',
+          nodeId: proposal.node_id,
+          wording: proposal.new_wording,
+        });
+        changes.push({
+          kind: 'facet-updated',
+          entityKind: 'node',
+          entityId: proposal.node_id,
+          facet: 'wording',
+          value: proposal.new_wording,
+          status: 'agreed',
+        });
         return;
       }
       // restructure: supersede the old node; the matching
@@ -332,6 +502,12 @@ function applyCommittedProposal(projection: Projection, proposal: ProposalPayloa
         );
       }
       projection.setNodeVisible(proposal.node_id, false);
+      changes.push({
+        kind: 'visibility-changed',
+        entityKind: 'node',
+        entityId: proposal.node_id,
+        visible: false,
+      });
       const replacement = projection.getNode(proposal.new_node_id);
       if (!replacement) {
         throw new ReplayError(
@@ -357,6 +533,12 @@ function applyCommittedProposal(projection: Projection, proposal: ProposalPayloa
         throw new ReplayError(`commit/decompose: parent ${proposal.parent_node_id} not present`);
       }
       projection.setNodeVisible(proposal.parent_node_id, false);
+      changes.push({
+        kind: 'visibility-changed',
+        entityKind: 'node',
+        entityId: proposal.parent_node_id,
+        visible: false,
+      });
       return;
     }
     case 'interpretive-split': {
@@ -371,6 +553,12 @@ function applyCommittedProposal(projection: Projection, proposal: ProposalPayloa
         );
       }
       projection.setNodeVisible(proposal.parent_node_id, false);
+      changes.push({
+        kind: 'visibility-changed',
+        entityKind: 'node',
+        entityId: proposal.parent_node_id,
+        visible: false,
+      });
       return;
     }
     case 'axiom-mark': {
@@ -385,6 +573,11 @@ function applyCommittedProposal(projection: Projection, proposal: ProposalPayloa
       node.axiomMarks.set(proposal.participant, {
         proposalEventId: '',
         markedAt: '',
+      });
+      changes.push({
+        kind: 'axiom-mark-added',
+        nodeId: proposal.node_id,
+        participantId: proposal.participant,
       });
       return;
     }
@@ -415,6 +608,12 @@ function applyCommittedProposal(projection: Projection, proposal: ProposalPayloa
         throw new ReplayError(`commit/break-edge: edge ${proposal.edge_id} not present`);
       }
       projection.setEdgeVisible(proposal.edge_id, false);
+      changes.push({
+        kind: 'visibility-changed',
+        entityKind: 'edge',
+        entityId: proposal.edge_id,
+        visible: false,
+      });
       return;
     }
     case 'amend-node': {
@@ -429,6 +628,19 @@ function applyCommittedProposal(projection: Projection, proposal: ProposalPayloa
       node.wording = proposal.new_content;
       node.wordingFacet.value = proposal.new_content;
       node.wordingFacet.status = 'agreed';
+      changes.push({
+        kind: 'node-wording-updated',
+        nodeId: proposal.node_id,
+        wording: proposal.new_content,
+      });
+      changes.push({
+        kind: 'facet-updated',
+        entityKind: 'node',
+        entityId: proposal.node_id,
+        facet: 'wording',
+        value: proposal.new_content,
+        status: 'agreed',
+      });
       return;
     }
     case 'annotate': {
@@ -450,55 +662,77 @@ function applyCommittedProposal(projection: Projection, proposal: ProposalPayloa
 // Public dispatcher and replay entry point.
 // ---------------------------------------------------------------
 
-export function applyEvent(projection: Projection, event: Event): void {
+export function applyEvent(projection: Projection, event: Event): ProjectionChange[] {
   if (event.sessionId !== projection.sessionId) {
     throw new ReplayError(
       `event ${event.id} session mismatch: event.sessionId=${event.sessionId}, projection.sessionId=${projection.sessionId}`,
     );
   }
+
+  // Sequence-gap / replay / out-of-order check. The contract is
+  // "the next event's sequence is exactly lastAppliedSequence + 1."
+  // Anything else throws; the throw fires BEFORE any handler
+  // mutation so the projection is unchanged.
+  const expectedSequence = projection.lastAppliedSequence + 1;
+  if (event.sequence !== expectedSequence) {
+    throw new OutOfOrderEventError(expectedSequence, event.sequence);
+  }
+
+  const changes: ProjectionChange[] = [];
   try {
     switch (event.kind) {
       case 'session-created':
-        handleSessionCreated(projection);
-        return;
+        handleSessionCreated(projection, changes);
+        break;
       case 'session-ended':
-        handleSessionEnded(projection, event.payload);
-        return;
+        handleSessionEnded(projection, event.payload, changes);
+        break;
       case 'participant-joined':
-        handleParticipantJoined(projection, event.payload);
-        return;
+        handleParticipantJoined(projection, event.payload, changes);
+        break;
       case 'participant-left':
-        handleParticipantLeft(projection, event.payload);
-        return;
+        handleParticipantLeft(projection, event.payload, changes);
+        break;
       case 'node-created':
-        handleNodeCreated(projection, event.payload);
-        return;
+        handleNodeCreated(projection, event.payload, changes);
+        break;
       case 'edge-created':
-        handleEdgeCreated(projection, event.payload);
-        return;
+        handleEdgeCreated(projection, event.payload, changes);
+        break;
       case 'annotation-created':
-        handleAnnotationCreated(projection, event.payload);
-        return;
+        handleAnnotationCreated(projection, event.payload, changes);
+        break;
       case 'entity-included':
-        handleEntityIncluded(projection, event.payload);
-        return;
+        handleEntityIncluded(projection, event.payload, changes);
+        break;
       case 'proposal':
-        handleProposal(projection, event.id, event.actor, event.createdAt, event.payload);
-        return;
+        handleProposal(projection, event.id, event.actor, event.createdAt, event.payload, changes);
+        break;
       case 'vote':
-        handleVote(projection, event.payload);
-        return;
+        handleVote(projection, event.payload, changes);
+        break;
       case 'commit':
-        handleCommit(projection, event.payload);
-        return;
+        handleCommit(projection, event.payload, changes);
+        break;
       case 'meta-disagreement-marked':
-        handleMetaDisagreementMarked(projection, event.payload);
-        return;
+        handleMetaDisagreementMarked(projection, event.payload, changes);
+        break;
       case 'snapshot-created':
-        handleSnapshotCreated(projection, event.payload, event.createdAt);
-        return;
+        handleSnapshotCreated(projection, event.payload, event.createdAt, changes);
+        break;
     }
   } catch (cause) {
+    // Atomicity floor: the per-handler mutation might have
+    // partially mutated the projection before the throw. We do
+    // not roll back here — the storage layer's mutators each
+    // throw if they hit an invariant, and the handlers above are
+    // straight-line code. A mid-handler throw leaves the
+    // projection in whatever state the storage-layer mutators
+    // landed; the caller's recovery story is to discard the
+    // projection and rebuild from the event log via
+    // `projectFromLog` (which is the safe path for any
+    // projection-level fault). Critically we do NOT advance
+    // `lastAppliedSequence` on a failed apply.
     if (cause instanceof ReplayError) throw cause;
     if (cause instanceof ProjectionInvariantError) {
       throw new ReplayError(
@@ -508,6 +742,9 @@ export function applyEvent(projection: Projection, event: Event): void {
     }
     throw cause;
   }
+
+  projection.setLastAppliedSequence(event.sequence);
+  return changes;
 }
 
 export function projectFromLog(events: readonly Event[], sessionId: string): Projection {
