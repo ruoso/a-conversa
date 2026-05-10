@@ -397,10 +397,12 @@ export function hasAxiomMark(
 //
 // Used by the propose handler's `decompose` arm (refinement:
 // decomposition_logic), its `interpretive-split` arm (refinement:
-// interpretive_split_logic), AND its `edit-wording` arm (refinement:
-// reword_vs_restructure) to enforce the mutual-exclusion rule. The
-// three structural sub-kinds (`decompose`, `interpretive-split`,
-// `edit-wording`) compete on the same node:
+// interpretive_split_logic), its `edit-wording` arm (refinement:
+// reword_vs_restructure), AND its `amend-node` arm (refinement:
+// amend_node_logic) to enforce the mutual-exclusion rule. The four
+// node-touching structural sub-kinds (`decompose`,
+// `interpretive-split`, `edit-wording`, `amend-node`) all compete on
+// the same node:
 //
 //   - `decompose` and `interpretive-split` flip `parent.visible =
 //     false` on commit (the parent becomes superseded).
@@ -408,15 +410,20 @@ export function hasAxiomMark(
 //     `oldNode.visible = false` on commit (also supersession).
 //   - `edit-wording` with `edit_kind: reword` updates the wording
 //     facet in place but still owns that facet exclusively while
-//     pending; treating both inner kinds uniformly under the conflict-
-//     walker keeps the design symmetric.
+//     pending.
+//   - `amend-node` updates the wording facet in place — same
+//     structural effect as reword, but driven by the contradiction-
+//     resolution methodology path (per docs/methodology.md line 219).
+//   Treating all four uniformly under the conflict walker keeps the
+//   design symmetric — any pending wording-touching or supersession-
+//   producing proposal blocks the others.
 //
-// Only one pending proposal among the three sub-kinds may target a
-// given node at a time. All three arms pass the same conflicting-kinds
-// set (`{'decompose', 'interpretive-split', 'edit-wording'}`,
-// canonicalized as the constant `CONFLICTING_PARENT_KINDS` in
-// `propose.ts`); the set parameter is the explicit shape that makes
-// the symmetry visible at the call site.
+// Only one pending proposal among the four sub-kinds may target a
+// given node at a time. All four arms pass the same conflicting-kinds
+// set (`{'decompose', 'interpretive-split', 'edit-wording',
+// 'amend-node'}`, canonicalized as the constant
+// `CONFLICTING_PARENT_KINDS` in `propose.ts`); the set parameter is
+// the explicit shape that makes the symmetry visible at the call site.
 //
 // Walks `projection.pendingProposals()` (not committed or
 // meta-disagreed — same reasoning as the original
@@ -430,6 +437,7 @@ export function hasAxiomMark(
 //
 //   - `decompose` / `interpretive-split` → `payload.parent_node_id`.
 //   - `edit-wording` (both inner kinds) → `payload.node_id`.
+//   - `amend-node` → `payload.node_id`.
 //
 // The walker normalizes the lookup so callers pass a single "the node
 // the new proposal is about" id regardless of how the conflicting
@@ -438,9 +446,10 @@ export function hasAxiomMark(
 // Returns `null` on no conflict.
 //
 // The narrow union type `'decompose' | 'interpretive-split' |
-// 'edit-wording'` reflects the v1 set of structural sub-kinds. If a
-// future sub-kind adopts the same node-targeting shape (e.g. a
-// hypothetical merge-back operation), the union widens additively.
+// 'edit-wording' | 'amend-node'` reflects the v1 set of node-touching
+// structural sub-kinds. If a future sub-kind adopts the same node-
+// targeting shape (e.g. a hypothetical merge-back operation), the
+// union widens additively.
 //
 // The caller uses the returned proposal's `proposalEventId` and
 // `payload.kind` in the rejection detail so the API layer can surface
@@ -448,7 +457,11 @@ export function hasAxiomMark(
 // before re-proposing."
 // ---------------------------------------------------------------
 
-export type ConflictingParentKind = 'decompose' | 'interpretive-split' | 'edit-wording';
+export type ConflictingParentKind =
+  | 'decompose'
+  | 'interpretive-split'
+  | 'edit-wording'
+  | 'amend-node';
 
 export function findConflictingProposalAgainst(
   projection: Projection,
@@ -469,8 +482,65 @@ export function findConflictingProposalAgainst(
       }
       continue;
     }
+    if (payload.kind === 'amend-node') {
+      if (conflictingKinds.has(payload.kind) && payload.node_id === targetNodeId) {
+        return proposal;
+      }
+      continue;
+    }
   }
   return null;
+}
+
+// ---------------------------------------------------------------
+// `nodeIsPartyToAgreedContradicts` — does the projection contain a
+// visible `contradicts` edge whose source or target is `nodeId`, and
+// whose `substanceFacet` is in an agreed state (status `'agreed'` or
+// `'committed'`, value `'agreed'`)?
+//
+// Used by the propose handler's `amend-node` arm (refinement:
+// amend_node_logic) to enforce the contradiction-resolution
+// prerequisite. Per docs/methodology.md lines 219 and 74, amend-node
+// is specifically the contradiction-resolution path: "amend one [node]
+// so the conflict no longer holds." Allowing an amend-node against a
+// node that is not party to any agreed contradiction would let the
+// methodology distinction collapse — participants would use amend-node
+// for routine wording cleanups (which is what `edit-wording(reword)`
+// is for). The strict reading per the refinement keeps the two
+// operations semantically distinct.
+//
+// "Agreed" here means the contradicts edge's substance facet has been
+// committed (status `'agreed'` or `'committed'` per the agreement-
+// layer + facet-status-derivation widening in `FacetStatus`) AND the
+// recorded value is `'agreed'`. The shape facet for edges is implicit
+// — an edge exists in the projection only after its `edge-created`
+// event lands; the role (`'contradicts'`) is fixed at creation. So
+// the substance is the only facet that needs to be checked here.
+//
+// Walks `projection.edges()`. For each visible edge whose
+// `role === 'contradicts'` and whose source or target equals `nodeId`,
+// inspects `substanceFacet.status` (must be `'agreed'` or
+// `'committed'`) AND `substanceFacet.value === 'agreed'`. Returns
+// `true` on the first match; `false` if no matching edge is found.
+//
+// Returns `false` if `nodeId` doesn't reference any node — but the
+// caller (rule 1 of `validateAmendNodeProposal`) is expected to have
+// already rejected that case before reaching this check.
+// ---------------------------------------------------------------
+
+export function nodeIsPartyToAgreedContradicts(projection: Projection, nodeId: string): boolean {
+  for (const edge of projection.edges()) {
+    if (!edge.visible) continue;
+    if (edge.role !== 'contradicts') continue;
+    if (edge.sourceNodeId !== nodeId && edge.targetNodeId !== nodeId) continue;
+    const facet = edge.substanceFacet;
+    const status = facet.status;
+    const value = facet.value;
+    if ((status === 'agreed' || status === 'committed') && value === 'agreed') {
+      return true;
+    }
+  }
+  return false;
 }
 
 // ---------------------------------------------------------------

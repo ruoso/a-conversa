@@ -320,7 +320,9 @@ task data_and_methodology "Data and methodology" {
     task amend_node_logic "Amend-node operation (contradiction resolution path)" {
       effort 0.5d
       allocate team
+      complete 100
       depends !agreement_state_machine
+      note "Refinement: tasks/refinements/data-and-methodology/amend_node_logic.md"
     }
     task annotation_logic "Annotation creation, voting, withdrawal" {
       effort 1d

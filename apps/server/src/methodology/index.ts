@@ -33,6 +33,7 @@ export {
   findProposal,
   hasAxiomMark,
   nextSequence,
+  nodeIsPartyToAgreedContradicts,
   nodeIsVisible,
   proposalHasAnyDispute,
   proposalSubKind,

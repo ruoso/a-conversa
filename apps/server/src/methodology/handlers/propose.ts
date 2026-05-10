@@ -6,12 +6,14 @@
 // Refinement: tasks/refinements/data-and-methodology/meta_move_logic.md
 // Refinement: tasks/refinements/data-and-methodology/reword_vs_restructure.md
 // Refinement: tasks/refinements/data-and-methodology/break_edge_logic.md
+// Refinement: tasks/refinements/data-and-methodology/amend_node_logic.md
 // TaskJuggler: data_and_methodology.methodology_engine.decomposition_logic
 // TaskJuggler: data_and_methodology.methodology_engine.interpretive_split_logic
 // TaskJuggler: data_and_methodology.methodology_engine.axiom_mark_logic
 // TaskJuggler: data_and_methodology.methodology_engine.meta_move_logic
 // TaskJuggler: data_and_methodology.methodology_engine.reword_vs_restructure
 // TaskJuggler: data_and_methodology.methodology_engine.break_edge_logic
+// TaskJuggler: data_and_methodology.methodology_engine.amend_node_logic
 //
 // The propose action carries one of the eleven proposal sub-kinds. Per
 // the methodology framework (agreement_state_machine), the handler runs
@@ -125,12 +127,45 @@
 //     see `primitives.ts` for the "two narrow walkers beats one
 //     wide walker" rationale.
 //
-//   - For the other five sub-kinds (`classify-node`,
-//     `set-node-substance`, `set-edge-substance`, `amend-node`,
-//     `annotate`): the universal-pass placeholder path.
-//     Each sub-kind's sibling task will tighten its arm as it lands.
-//     The placeholder builds the same one-event envelope the original
-//     handler always built — no methodology-specific gating.
+//   - For the `amend-node` sub-kind: the real propose-side validator
+//     per `amend_node_logic`. Four rules (see
+//     `validateAmendNodeProposal` below for the rule comments):
+//       1. Node-exists → `'target-entity-not-found'`.
+//       2. Node-visible → `'illegal-state-transition'`.
+//       3. No conflicting decompose / interpretive-split / edit-wording
+//          / amend-node pending against the same node →
+//          `'illegal-state-transition'` (mutual exclusion across all
+//          four wording-touching / supersession-producing sub-kinds —
+//          extends `CONFLICTING_PARENT_KINDS` to include `'amend-node'`).
+//       4. The node is currently a party (source or target) to a
+//          visible `contradicts` edge whose substance facet is in an
+//          agreed state — i.e. there is an actual contradiction to
+//          resolve. → `'methodology-not-exhausted'`. **Strict reading**
+//          of docs/methodology.md line 219: "amend one [node] to
+//          remove conflict" is the contradiction-resolution path. An
+//          amend-node without an agreed contradiction is the wrong
+//          tool — the participant should propose `edit-wording(reword)`
+//          instead. See `amend_node_logic.md` for the strict-vs-
+//          permissive discussion.
+//     (Structural shape — `kind: 'amend-node'`, `node_id: UUID`,
+//     `new_content` non-empty — is enforced upstream by
+//     `amendNodeProposalSchema` per ADR 0021. The methodology
+//     validator does not re-check.) **amend-node vs reword.** Both
+//     sub-kinds update wording in place and have identical structural
+//     effect on commit (replay.ts ~line 722); the methodology
+//     distinguishes them by intent — reword is the routine
+//     clarification path (the wording was imprecise; we agree on what
+//     was meant), amend-node is the contradiction-resolution path
+//     (the wording implies a contradiction; we agree to amend ONE
+//     side to remove it). Rule 4 enforces the intent at the validator
+//     layer.
+//
+//   - For the other four sub-kinds (`classify-node`,
+//     `set-node-substance`, `set-edge-substance`, `annotate`): the
+//     universal-pass placeholder path. Each sub-kind's sibling task
+//     will tighten its arm as it lands. The placeholder builds the
+//     same one-event envelope the original handler always built — no
+//     methodology-specific gating.
 //
 // **Scope: propose-side only.** This handler validates the propose
 // action and emits the proposal envelope event. The commit-time
@@ -159,6 +194,7 @@ import {
   findConflictingBreakEdgeProposal,
   findConflictingProposalAgainst,
   hasAxiomMark,
+  nodeIsPartyToAgreedContradicts,
   nodeIsVisible,
   requireParticipant,
   type ConflictingParentKind,
@@ -173,9 +209,10 @@ import type {
 
 // ---------------------------------------------------------------
 // `CONFLICTING_PARENT_KINDS` — the set of proposal sub-kinds that
-// mutually exclude each other against a shared target node. The three
-// structural sub-kinds (`decompose`, `interpretive-split`,
-// `edit-wording`) compete on the same node:
+// mutually exclude each other against a shared target node. The four
+// node-touching structural sub-kinds (`decompose`,
+// `interpretive-split`, `edit-wording`, `amend-node`) all compete on
+// the same node:
 //
 //   - `decompose` and `interpretive-split` flip `parent.visible =
 //     false` on commit (see `applyCommittedProposal` in `replay.ts`).
@@ -186,19 +223,23 @@ import type {
 //     pending. Treating both inner kinds uniformly under the
 //     conflict-walker keeps the design symmetric (see
 //     `reword_vs_restructure.md` for the argument).
+//   - `amend-node` updates the wording facet in place — same
+//     structural effect as reword, driven by the contradiction-
+//     resolution methodology path (see `amend_node_logic.md`).
 //
-// Only one pending proposal among the three sub-kinds may target a
-// given node at a time. All three arms (decompose, interpretive-split,
-// edit-wording) pass this same set to `findConflictingProposalAgainst`;
-// the constant is the single source of truth.
+// Only one pending proposal among the four sub-kinds may target a
+// given node at a time. All four arms (decompose, interpretive-split,
+// edit-wording, amend-node) pass this same set to
+// `findConflictingProposalAgainst`; the constant is the single source
+// of truth.
 //
-// If a future sub-kind adopts the same parent-flip-invisible behavior,
-// it gets added here (and to the `ConflictingParentKind` union in
+// If a future sub-kind adopts the same node-targeting behavior, it
+// gets added here (and to the `ConflictingParentKind` union in
 // `primitives.ts`).
 // ---------------------------------------------------------------
 
 const CONFLICTING_PARENT_KINDS: ReadonlySet<ConflictingParentKind> = new Set<ConflictingParentKind>(
-  ['decompose', 'interpretive-split', 'edit-wording'],
+  ['decompose', 'interpretive-split', 'edit-wording', 'amend-node'],
 );
 
 // ---------------------------------------------------------------
@@ -768,13 +809,136 @@ function validateBreakEdgeProposal(
 }
 
 // ---------------------------------------------------------------
+// `validateAmendNodeProposal` — the propose-side validator for the
+// `amend-node` proposal sub-kind.
+//
+// **Methodology context.** Per docs/methodology.md line 219 (in
+// "Resolution of structural diagnostics → Blocking diagnostics →
+// Contradiction"): "decompose one or both nodes (most common), **amend
+// one to remove conflict**, or accept the contradiction as a bedrock
+// disagreement." Amend-node is the contradiction-resolution path. The
+// edit-wording (reword) sub-kind is the routine clarification path
+// (the wording was imprecise; we agree on what was meant). Both have
+// identical structural effect on commit (in-place wording update; see
+// `replay.ts/applyCommittedProposal`'s `amend-node` arm at ~line 722
+// vs. its `edit-wording(reword)` arm) — the methodology distinguishes
+// them by *intent*. Rule 4 below pins the intent at the validator
+// layer: an amend-node is rejected unless the node is currently a
+// party to an agreed contradiction.
+//
+// Rules in evaluation order:
+//
+//   1. **Node-exists.** `projection.getNode(node_id)` must return a
+//      record. → `'target-entity-not-found'`.
+//   2. **Node-visible.** The node's `visible` field must be `true`. A
+//      not-visible node — already superseded by a prior decompose /
+//      interpretive-split / restructure per the visible-graph
+//      derivation in `docs/data-model.md` lines 273–285 — can't be
+//      amended: the wording change would attach to a node nobody can
+//      see. → `'illegal-state-transition'`.
+//   3. **No conflicting decompose / interpretive-split / edit-wording
+//      / amend-node pending.** No other proposal currently in
+//      `pendingProposals` is one of the four node-touching structural
+//      sub-kinds against the same node. The walker passes
+//      `CONFLICTING_PARENT_KINDS`, which now includes `'amend-node'`
+//      (this task's extension). → `'illegal-state-transition'`.
+//   4. **Node is party to an agreed `contradicts` edge.** Some visible
+//      `contradicts` edge in the projection has source OR target
+//      equal to `node_id` AND its `substanceFacet` has been agreed
+//      (status `'agreed'` or `'committed'`, value `'agreed'`). The
+//      `nodeIsPartyToAgreedContradicts` primitive walks
+//      `projection.edges()` for the check. → `'methodology-not-
+//      exhausted'` if no such edge exists.
+//
+// Rule 5 — structural payload shape (`kind: 'amend-node'`,
+// `node_id: UUID`, `new_content` non-empty) — is enforced upstream by
+// `amendNodeProposalSchema` per ADR 0021. This validator does not
+// re-check.
+//
+// **`'methodology-not-exhausted'` choice for rule 4.** The reason was
+// minted by `meta_disagreement_logic` for "the methodology hasn't
+// reached the state where this resolution path is appropriate yet."
+// Amend-node-without-an-agreed-contradiction matches that shape: the
+// participant is reaching for the contradiction-resolution path
+// before there is a contradiction to resolve. Alternatives considered:
+// `'illegal-state-transition'` (the existing structural reason — but
+// the projection state isn't *illegal*; it's that this specific
+// methodology operation is the wrong tool for the current state) and
+// minting a fresh `'no-contradiction-to-resolve'` reason (clearer but
+// adds a single-call-site value to the union — not worth it for one
+// rule). Reusing `'methodology-not-exhausted'` keeps the
+// `RejectionReason` union stable; the `detail` string carries the
+// kind-specific specificity.
+// ---------------------------------------------------------------
+
+function validateAmendNodeProposal(
+  projection: Projection,
+  action: ProposeAction,
+): RejectedValidationResult | null {
+  if (action.proposal.kind !== 'amend-node') {
+    // Defensive — the dispatcher gates this. Never reached at runtime.
+    return null;
+  }
+  const nodeId = action.proposal.node_id;
+
+  // Rule 1 — node exists.
+  const node = projection.getNode(nodeId);
+  if (node === undefined) {
+    return {
+      ok: false,
+      reason: 'target-entity-not-found',
+      detail: `propose amend-node: node_id ${nodeId} does not reference any node in session ${projection.sessionId}`,
+    };
+  }
+
+  // Rule 2 — node is currently visible.
+  if (!nodeIsVisible(projection, nodeId)) {
+    return {
+      ok: false,
+      reason: 'illegal-state-transition',
+      detail: `propose amend-node: node ${nodeId} is not currently visible (already superseded by a prior decompose / interpretive-split / restructure) and cannot be amended`,
+    };
+  }
+
+  // Rule 3 — no conflicting decompose / interpretive-split /
+  // edit-wording / amend-node pending against the same node.
+  const conflict: PendingProposal | null = findConflictingProposalAgainst(
+    projection,
+    nodeId,
+    CONFLICTING_PARENT_KINDS,
+  );
+  if (conflict !== null) {
+    return {
+      ok: false,
+      reason: 'illegal-state-transition',
+      detail: `propose amend-node: another ${conflict.payload.kind} proposal (${conflict.proposalEventId}) against node ${nodeId} is already pending; resolve or withdraw it before re-proposing`,
+    };
+  }
+
+  // Rule 4 — node must be party to a visible `contradicts` edge whose
+  // substance facet is agreed. Amend-node is the contradiction-
+  // resolution path per docs/methodology.md line 219; without an
+  // agreed contradiction there is nothing to resolve and the
+  // participant should propose `edit-wording(reword)` instead.
+  if (!nodeIsPartyToAgreedContradicts(projection, nodeId)) {
+    return {
+      ok: false,
+      reason: 'methodology-not-exhausted',
+      detail: `propose amend-node: node ${nodeId} is not currently a party to any agreed contradicts edge; amend-node is the contradiction-resolution path (per docs/methodology.md), use edit-wording(reword) for routine wording clarifications`,
+    };
+  }
+
+  return null;
+}
+
+// ---------------------------------------------------------------
 // The handler.
 //
 // Switches on `action.proposal.kind`. The `decompose`,
-// `interpretive-split`, `axiom-mark`, `meta-move`, `edit-wording`, and
-// `break-edge` arms run their real validators. All other arms fall
-// through to the universal-pass placeholder path — sibling tasks will
-// tighten their arms as they land.
+// `interpretive-split`, `axiom-mark`, `meta-move`, `edit-wording`,
+// `break-edge`, and `amend-node` arms run their real validators. All
+// other arms fall through to the universal-pass placeholder path —
+// sibling tasks will tighten their arms as they land.
 // ---------------------------------------------------------------
 
 export const proposeHandler: Validator<ProposeAction> = (
@@ -824,7 +988,12 @@ export const proposeHandler: Validator<ProposeAction> = (
       if (rejection !== null) return rejection;
       break;
     }
-    // The other five sub-kinds fall through to the placeholder emission.
+    case 'amend-node': {
+      const rejection = validateAmendNodeProposal(projection, action);
+      if (rejection !== null) return rejection;
+      break;
+    }
+    // The other four sub-kinds fall through to the placeholder emission.
     // Each sub-kind's sibling task tightens its arm as it lands.
     default:
       break;
@@ -845,12 +1014,12 @@ export const proposeHandler: Validator<ProposeAction> = (
 // Backward-compatibility alias — the engine's `installHandlers` and the
 // barrel both still reference `placeholderProposeHandler`. After this
 // task the symbol is no longer a placeholder for the `decompose`,
-// `interpretive-split`, `axiom-mark`, `meta-move`, `edit-wording`, or
-// `break-edge` arms (it's the real validator there), but the name is
-// preserved so the import sites in `engine.ts` and `handlers/index.ts`
-// don't need to churn ahead of the other sibling sub-kind tasks. Once
-// the remaining five sub-kinds tighten, the alias and the file comment
-// header should be revisited.
+// `interpretive-split`, `axiom-mark`, `meta-move`, `edit-wording`,
+// `break-edge`, or `amend-node` arms (it's the real validator there),
+// but the name is preserved so the import sites in `engine.ts` and
+// `handlers/index.ts` don't need to churn ahead of the other sibling
+// sub-kind tasks. Once the remaining four sub-kinds tighten, the alias
+// and the file comment header should be revisited.
 export const placeholderProposeHandler = proposeHandler;
 
 export default proposeHandler;

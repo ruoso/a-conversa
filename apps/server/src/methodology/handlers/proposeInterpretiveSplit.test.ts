@@ -335,6 +335,36 @@ describe('propose interpretive-split — rule 3: no conflicting pending proposal
     }
   });
 
+  // Cross-kind mutual-exclusion case introduced by amend_node_logic's
+  // extension of `CONFLICTING_PARENT_KINDS` to include `'amend-node'`:
+  // an interpretive-split also rejects when an amend-node is already
+  // pending against the same parent. See amend_node_logic.md for the
+  // symmetry argument.
+  it('rejects when an amend-node proposal against the same parent is already pending (cross-kind conflict)', () => {
+    const p = seedSession();
+    const PENDING_AMEND_NODE_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccaa4';
+    applyEvent(p, {
+      ...makeEvent(nextSequence(p), 'proposal', DEBATER_A_ID, T3, {
+        proposal: {
+          kind: 'amend-node',
+          node_id: PARENT_NODE_ID,
+          new_content: 'A pending amend-node against the same parent.',
+        },
+      }),
+      id: PENDING_AMEND_NODE_ID,
+    });
+
+    const action = makeSplitAction(p);
+    const r = validateAction(p, action);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.reason).toBe('illegal-state-transition');
+      expect(r.detail).toContain(PENDING_AMEND_NODE_ID);
+      expect(r.detail).toContain('amend-node');
+      expect(r.detail).toContain(PARENT_NODE_ID);
+    }
+  });
+
   it('accepts an interpretive-split against a different parent while one is pending elsewhere', () => {
     const p = seedSession();
     // Add a second visible node.
