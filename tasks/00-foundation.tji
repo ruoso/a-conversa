@@ -9,7 +9,7 @@ task foundation "Foundation" {
     task lang_decision "Pick backend language and framework" {
       effort 1d
       allocate team
-      note "TS/Node, Go, Elixir, or Rust. See docs/architecture.md open questions."
+      note "Refinement: tasks/refinements/foundation/lang_decision.md"
     }
     task frontend_framework_decision "Pick frontend framework" {
       effort 1d
@@ -26,7 +26,7 @@ task foundation "Foundation" {
     task auth_lib_decision "Pick auth library / OAuth implementation" {
       effort 1d
       allocate team
-      note "Self-hosted (Keycloak, Authelia, hand-rolled) vs. hosted (Auth0, Clerk)."
+      note "Refinement: tasks/refinements/foundation/auth_lib_decision.md"
     }
     task style_tooling_decision "Pick styling / CSS approach" {
       effort 0.5d

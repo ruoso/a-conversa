@@ -9,32 +9,32 @@ task data_and_methodology "Data and methodology" {
     task users_table "users table" {
       effort 0.5d
       allocate team
-      note "id, oauth_subject, screen_name, created_at."
+      note "Refinement: tasks/refinements/data-and-methodology/users_table.md"
     }
     task sessions_table "sessions table" {
       effort 0.5d
       allocate team
-      note "id, host_user_id, privacy (public/private), created_at, ended_at."
+      note "Refinement: tasks/refinements/data-and-methodology/sessions_table.md"
     }
     task session_participants_table "session_participants table" {
       effort 0.5d
       allocate team
-      note "session_id, user_id, role (moderator/debater-A/debater-B), joined_at, left_at."
+      note "Refinement: tasks/refinements/data-and-methodology/session_participants_table.md"
     }
     task nodes_table "nodes table (global)" {
       effort 0.5d
       allocate team
-      note "id, wording, created_by, created_at. No session column."
+      note "Refinement: tasks/refinements/data-and-methodology/nodes_table.md"
     }
     task edges_table "edges table (global)" {
       effort 0.5d
       allocate team
-      note "id, role, source_node_id, target_node_id, created_by, created_at."
+      note "Refinement: tasks/refinements/data-and-methodology/edges_table.md"
     }
     task annotations_table "annotations table (global)" {
       effort 0.5d
       allocate team
-      note "id, content, target_kind (node/edge), target_id, created_by, created_at."
+      note "Refinement: tasks/refinements/data-and-methodology/annotations_table.md"
     }
     task session_nodes_join_table "session_nodes M-N join table" {
       effort 0.25d
@@ -55,6 +55,7 @@ task data_and_methodology "Data and methodology" {
     task migrations_tooling "Migrations runner and conventions" {
       effort 1d
       allocate team
+      note "Refinement: tasks/refinements/data-and-methodology/migrations_tooling.md"
     }
     task seed_data_for_tests "Seed-data fixtures for tests" {
       effort 1d
