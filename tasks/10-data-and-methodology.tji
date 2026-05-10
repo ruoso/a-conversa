@@ -104,6 +104,7 @@ task data_and_methodology "Data and methodology" {
     task entity_creation_events "node-created, edge-created, annotation-created" {
       effort 1d
       allocate team
+      complete 100
       depends !event_base_envelope
       note "Refinement: tasks/refinements/data-and-methodology/entity_creation_events.md"
     }

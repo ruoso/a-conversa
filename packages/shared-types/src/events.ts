@@ -148,6 +148,103 @@ export const participantLeftPayloadSchema = z.object({
 
 export type ParticipantLeftPayload = z.infer<typeof participantLeftPayloadSchema>;
 
+// -- Entity creation event payload schemas ---------------------------
+//
+// Owned by `entity_creation_events`. Refinement:
+// tasks/refinements/data-and-methodology/entity_creation_events.md.
+//
+// Three kinds — `node-created`, `edge-created`, `annotation-created` —
+// each materialize one row in the global `nodes` / `edges` /
+// `annotations` tables (see apps/server/migrations/0004_nodes.sql,
+// 0005_edges.sql, 0006_annotations.sql). The Zod field names mirror
+// the SQL columns 1:1 so the payload reads as the source of truth and
+// the projection is a pure copy.
+//
+// Two enums are exported at the top level — `edgeRoleSchema` and
+// `annotationKindSchema` — because downstream `proposal_events` will
+// reuse them (e.g. `set-edge-substance` carries an edge role; an
+// annotation-related proposal carries the kind). Single source of
+// truth: changing a value here keeps the payload schemas, the
+// proposal payloads, and any consuming UI in sync. The string lists
+// mirror the SQL CHECK constraints exactly — drift here would let
+// payloads validate but inserts fail.
+
+/**
+ * Edge role enum. Mirrors the CHECK constraint on `edges.role` in
+ * `apps/server/migrations/0005_edges.sql` exactly.
+ */
+export const edgeRoleSchema = z.enum([
+  'supports',
+  'rebuts',
+  'qualifies',
+  'bridges-from',
+  'bridges-to',
+  'defines',
+  'contradicts',
+]);
+
+export type EdgeRole = z.infer<typeof edgeRoleSchema>;
+
+/**
+ * Annotation kind enum. Mirrors the CHECK constraint on
+ * `annotations.kind` in `apps/server/migrations/0006_annotations.sql`
+ * exactly.
+ */
+export const annotationKindSchema = z.enum(['note', 'reframe', 'scope-change', 'stance']);
+
+export type AnnotationKind = z.infer<typeof annotationKindSchema>;
+
+export const nodeCreatedPayloadSchema = z.object({
+  node_id: z.string().uuid(),
+  // `nodes.wording` is TEXT NOT NULL with no DB-level length cap. The
+  // Zod `min(1)` rejects the empty string (a UI-visible "blank node"
+  // is not meaningful). No upper cap here; UIs can impose a soft
+  // display limit.
+  wording: z.string().min(1),
+  created_by: z.string().uuid(),
+  created_at: z.string().datetime({ offset: true }),
+});
+
+export type NodeCreatedPayload = z.infer<typeof nodeCreatedPayloadSchema>;
+
+export const edgeCreatedPayloadSchema = z.object({
+  edge_id: z.string().uuid(),
+  role: edgeRoleSchema,
+  source_node_id: z.string().uuid(),
+  target_node_id: z.string().uuid(),
+  created_by: z.string().uuid(),
+  created_at: z.string().datetime({ offset: true }),
+});
+
+export type EdgeCreatedPayload = z.infer<typeof edgeCreatedPayloadSchema>;
+
+/**
+ * Annotation-created payload.
+ *
+ * Polymorphic-FK encoding (R11 / option a, mirrored in
+ * `0006_annotations.sql`): two nullable typed columns plus a CHECK
+ * constraint enforcing exactly-one-non-null. The Zod `.refine()`
+ * below enforces the same XOR at validation time so a malformed
+ * payload is rejected before the insert.
+ */
+export const annotationCreatedPayloadSchema = z
+  .object({
+    annotation_id: z.string().uuid(),
+    kind: annotationKindSchema,
+    // `annotations.content` is TEXT NOT NULL; same `min(1)` reasoning
+    // as `wording` on the node payload.
+    content: z.string().min(1),
+    target_node_id: z.string().uuid().nullable(),
+    target_edge_id: z.string().uuid().nullable(),
+    created_by: z.string().uuid(),
+    created_at: z.string().datetime({ offset: true }),
+  })
+  .refine((payload) => (payload.target_node_id === null) !== (payload.target_edge_id === null), {
+    message: 'exactly one of target_node_id / target_edge_id must be set',
+  });
+
+export type AnnotationCreatedPayload = z.infer<typeof annotationCreatedPayloadSchema>;
+
 // Worked example: vote.
 //
 // Refined by `vote_events`; the shape here matches docs/data-model.md
@@ -174,9 +271,9 @@ export const eventPayloadSchemas: Record<EventKind, z.ZodTypeAny> = {
   'participant-joined': participantJoinedPayloadSchema,
   'participant-left': participantLeftPayloadSchema,
   // Owned by entity_creation_events
-  'node-created': placeholderPayloadSchema,
-  'edge-created': placeholderPayloadSchema,
-  'annotation-created': placeholderPayloadSchema,
+  'node-created': nodeCreatedPayloadSchema,
+  'edge-created': edgeCreatedPayloadSchema,
+  'annotation-created': annotationCreatedPayloadSchema,
   // Owned by entity_inclusion_events
   'entity-included': placeholderPayloadSchema,
   // Owned by proposal_events
@@ -203,9 +300,9 @@ export interface EventPayloadMap {
   'session-ended': SessionEndedPayload;
   'participant-joined': ParticipantJoinedPayload;
   'participant-left': ParticipantLeftPayload;
-  'node-created': Record<string, unknown>;
-  'edge-created': Record<string, unknown>;
-  'annotation-created': Record<string, unknown>;
+  'node-created': NodeCreatedPayload;
+  'edge-created': EdgeCreatedPayload;
+  'annotation-created': AnnotationCreatedPayload;
   'entity-included': Record<string, unknown>;
   proposal: Record<string, unknown>;
   vote: VotePayload;

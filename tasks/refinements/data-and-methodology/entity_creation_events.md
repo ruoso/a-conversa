@@ -53,3 +53,46 @@ These events typically co-occur with `entity-included` for the originating sessi
 ## Open questions
 
 (none — implementation of well-specified kinds)
+
+## Status
+
+**Done** 2026-05-10. Schemas + types live alongside the envelope in
+[`packages/shared-types/src/events.ts`](../../../packages/shared-types/src/events.ts);
+tests in
+[`packages/shared-types/src/events.test.ts`](../../../packages/shared-types/src/events.test.ts).
+
+What landed:
+
+- Three tight Zod schemas — `nodeCreatedPayloadSchema`,
+  `edgeCreatedPayloadSchema`, `annotationCreatedPayloadSchema` —
+  each with an exported `z.infer<…>` TS type.
+- Two shared enums hoisted to the module's top level —
+  `edgeRoleSchema` (seven roles) and `annotationKindSchema` (four
+  kinds), each with a `z.infer<…>` type alias (`EdgeRole`,
+  `AnnotationKind`). String lists mirror the SQL CHECK constraints
+  in `apps/server/migrations/0005_edges.sql` and
+  `apps/server/migrations/0006_annotations.sql` exactly.
+  Downstream `proposal_events` (e.g. `set-edge-substance`) imports
+  these so there is one source of truth.
+- Annotation polymorphic-FK XOR (R11 / option a) enforced via a
+  Zod `.refine()` on the annotation payload —
+  `(target_node_id === null) !== (target_edge_id === null)` with the
+  message **"exactly one of target_node_id / target_edge_id must be
+  set"**. Rejects both-non-null, both-null, and (transitively)
+  malformed UUIDs in the set side.
+- `eventPayloadSchemas` registry now points the three creation
+  kinds at the tight schemas (was: placeholder `passthrough`).
+- `EventPayloadMap` resolves the three creation kinds to their
+  concrete payload types (was: `Record<string, unknown>`).
+- Round-trip + invalid-input tests per kind — bad UUIDs (each UUID
+  field), unknown role, unknown kind, both-targets-set, neither-
+  target-set, empty wording / empty content, non-ISO timestamps.
+  21 new tests; total `events.test.ts` count is 56 (was 35); full
+  `pnpm run test:smoke` is green.
+
+Deferred placeholder kinds remaining: `entity-included` (owned by
+`entity_inclusion_events`); `proposal` (owned by `proposal_events`);
+`commit` and `meta-disagreement-marked` (owned by
+`resolution_events`); `snapshot-created` (owned by
+`snapshot_events`). The `vote` worked example may also tighten
+under `vote_events`. No new ADR.
