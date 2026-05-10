@@ -135,6 +135,7 @@ task foundation "Foundation" {
     task gitignore "Add .gitignore for chosen stack" {
       effort 0.25d
       allocate team
+      complete 100
       note "Refinement: tasks/refinements/foundation/gitignore.md"
     }
     task linter_config "Configure linter" {

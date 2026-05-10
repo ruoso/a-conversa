@@ -1,3 +1,50 @@
+# Node
 node_modules/
-test-results/
+*.log
+logs/
+
+# Build outputs (TS/Node + Vite-resolution conventions; React frontend)
+dist/
+build/
+
+# TypeScript incremental build info
+*.tsbuildinfo
+
+# Coverage
+coverage/
+.nyc_output/
+
+# Test artifacts
 playwright-report/
+test-results/
+
+# Package manager caches
+# Currently on npm (per package-lock.json), but include pnpm store
+# speculatively in case workspaces migrate later.
+.pnpm-store/
+
+# Environment files
+# Note: .env.example is intentionally checked in (template); see
+# foundation.dev_env.env_var_template.
+.env
+.env.local
+.env.*.local
+
+# IDE / editor local state
+# Default position: ignore the whole .vscode/ tree. Downstream tasks may
+# carve out shared files (e.g., .vscode/launch.json, .vscode/settings.json)
+# with explicit !-rules if/when they're committed.
+.vscode/*
+.idea/
+.DS_Store
+*.swp
+
+# TaskJuggler generated reports (from `tj3 -o`)
+# Scoped to the report directory only — do NOT ignore *.html globally,
+# since downstream docs/static assets may legitimately ship HTML.
+report/
+
+# Local-dev compose stack
+# Placeholder: data-volume mounts (e.g., a `data/` directory for the
+# Postgres container) will be added when foundation.dev_env.compose_file
+# lands and the volume layout is fixed.

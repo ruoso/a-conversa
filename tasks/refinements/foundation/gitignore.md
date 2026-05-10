@@ -45,3 +45,20 @@ Plus repo-specific:
 ## Open questions
 
 (none — patterns follow stack defaults; revisit when frontend framework lands)
+
+## Status
+
+**Done** 2026-05-10 — see [`.gitignore`](../../../.gitignore).
+
+Categories covered: Node (`node_modules/`, `*.log`, `logs/`), build outputs
+(`dist/`, `build/` — scoped to React + Vite-resolution; no Next/SvelteKit),
+TypeScript incremental info (`*.tsbuildinfo`), coverage (`coverage/`,
+`.nyc_output/`), test artifacts (`playwright-report/`, `test-results/`),
+pnpm store (speculative), environment files (`.env`, `.env.local`,
+`.env.*.local` — `.env.example` left committable), IDE local state
+(`.vscode/*`, `.idea/`, `.DS_Store`, `*.swp`), and TaskJuggler reports
+scoped to `report/` only (no global `*.html` ignore).
+
+Compose-stack-specific paths (e.g., a `data/` Postgres volume mount)
+deferred — they'll be added when `foundation.dev_env.compose_file` lands
+and the volume layout is fixed.
