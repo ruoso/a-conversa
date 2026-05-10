@@ -6,7 +6,9 @@
 
 ## What this task is
 
-Define and create the `session_nodes` M-N join table that records which (global) nodes a session references. A row is added when a session begins referencing a node — either because it just got created in this session or because the session is importing it from another session (cross-session reference per [docs/architecture.md — cross-session reference permissions](../../../docs/architecture.md#cross-session-reference-permissions)).
+Define and create the `session_nodes` M-N join table that records which (global) nodes a session **has ever referenced**. A row is added when a session begins referencing a node — either because it just got created in this session or because the session is importing it from another session (cross-session reference per [docs/architecture.md — cross-session reference permissions](../../../docs/architecture.md#cross-session-reference-permissions)).
+
+The table is an **index into the event log**, not a representation of the visible-graph state. A node that is no longer visible in the session's current rendering (e.g., it was decomposed and replaced by components, interpretively-split, or restructured-and-replaced) still has its `session_nodes` row — the visible-graph state is **computed from the event log**, not derived from this table. session_nodes serves two purposes only: (1) bootstrapping the projection (which global node rows to fetch) and (2) cross-session permission checks (was this node ever in this session?).
 
 ## Why it needs to be done
 
@@ -48,7 +50,7 @@ From [docs/data-model.md — event types — session inclusion](../../../docs/da
 ## Decisions
 
 - **Composite PK** on `(session_id, node_id)` (R9). Departure from the project-wide UUID-PK convention; M-N join tables are the standard exception.
-- **Monotonic inclusion** (R10). No `removed_at` column. Once a session includes a node, it stays included. Sessions can mark events for the node as withdrawn or amend the node, but the inclusion itself is monotonic.
+- **Monotonic inclusion as an event-log index** (R10, clarified). No `removed_at` column. The table records "this node has been referenced in this session at some point." The visible-graph state is computed from the session's event log, not from this table — events such as decomposition, interpretive-split, or restructure-and-replace remove a node from the *visible* graph while leaving its `session_nodes` row in place.
 
 ## Open questions
 

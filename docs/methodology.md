@@ -159,7 +159,9 @@ Each component is run through the methodology again: classify, and if disagreeme
 When someone proposes editing a node's wording (because the original capture wasn't quite right, or because the participants want to refine after later context), the participants must agree on **what the edit means**:
 
 - **Reword** — the edit produces a clearer phrasing of the same statement. The node ID is preserved; the wording facet's value changes (the prior wording is recorded in the change history). All edges into or out of the node remain attached.
-- **Restructure** — the edit produces a meaningfully different statement, not the same node in better words. A new node is created (with its own facets in `proposed`) and the original node is left in place or removed; edges that referred to the original do not automatically follow.
+- **Restructure** — the edit produces a meaningfully different statement, not the same node in better words. A new node is created (with its own facets in `proposed`) and the original node is **superseded** — removed from the visible graph. Edges incident to the original become invisible by virtue of the missing endpoint (see [data-model.md — visible-graph derivation](data-model.md#visible-graph-derivation)) and don't auto-follow to the new node; if participants want analogous edges on the replacement, they propose them explicitly.
+
+If participants want to keep the original alongside a new statement, they shouldn't restructure — they should add a new node directly via the standard capture flow.
 
 The choice between reword and restructure is itself a proposed change requiring agreement. If the participants disagree on whether an edit is a reword or a restructure, that disagreement runs through the standard methodology (often resolved by inspecting whether the edit changes which inferences land on the node).
 

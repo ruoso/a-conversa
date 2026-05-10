@@ -6,7 +6,9 @@
 
 ## What this task is
 
-Define and create the `session_edges` M-N join table — sister to `session_nodes`. Records which (global) edges a session references.
+Define and create the `session_edges` M-N join table — sister to `session_nodes`. Records which (global) edges a session **has ever referenced**.
+
+Same semantics as `session_nodes`: this table is an index into the event log, not a representation of the visible-graph state. An edge that is no longer in the visible graph (because one of its endpoint nodes has been removed, or because the edge itself was broken via the `break-edge` operation) keeps its `session_edges` row; the visible-graph state is computed from the event log.
 
 ## Why it needs to be done
 

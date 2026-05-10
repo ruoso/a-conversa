@@ -244,7 +244,9 @@ A proposal is a proposed change to the session's view of the graph, awaiting agr
 - `classify-node` — proposes a statement kind for a node within this session. Payload: node, proposed kind.
 - `set-node-substance` — proposes whether the node's content holds. Payload: node, proposed value (`agreed` or `disputed`).
 - `set-edge-substance` — proposes whether the relation holds (conditional reading; "if source were true, would the relation hold?"). Payload: edge, proposed value.
-- `edit-wording` — proposes editing a node's wording. Payload: node, new wording, edit kind (`reword` | `restructure`).
+- `edit-wording` — proposes editing a node's wording. Payload depends on `kind`:
+  - `kind: reword` — payload `{ node, new_wording }`. The node's `wording` is updated in place; prior wording lives only in the change history.
+  - `kind: restructure` — payload `{ node, new_wording, new_node_id }`. The proposal supersedes the old node with a freshly-created node (`new_node_id`, created via a paired `node-created` event) carrying the new wording. The old node becomes invisible in the projected graph after this event commits.
 - `decompose` — proposes splitting a node into components. Payload: parent node, list of components (each with proposed wording / classification).
 - `interpretive-split` — proposes splitting along reading seams. Payload: parent node, list of readings.
 - `axiom-mark` — proposes that a named participant holds a node as bedrock. Payload: node, participant.
@@ -267,6 +269,37 @@ Each proposal event records: proposer, target session, proposal kind, payload, t
 #### Snapshots
 
 - `snapshot-created` — names a position in the event log for replay reference. Payload: label, log position, creator, timestamp.
+
+### Visible-graph derivation
+
+The session's visible graph at any event-log position is computed from the event log according to these rules. The `session_nodes` and `session_edges` join tables are an index into the event log (recording every entity ever referenced in this session) and not a representation of the visible state — visibility is purely a function of the event log.
+
+**Node visibility.** A node is visible in the session iff:
+
+1. An `entity-included` event for the node has been committed for this session, **and**
+2. The node has not been **superseded** by a subsequent committed event of one of these kinds:
+   - `decompose` whose payload's parent references this node;
+   - `interpretive-split` whose payload's parent references this node;
+   - `edit-wording` with `kind: restructure` whose payload's `node` (old node id) references this node.
+
+Once superseded, the node remains in `session_nodes` (the table is monotonic) but is no longer rendered in the visible graph. The same global node may be re-included in a different session and behave normally there; supersession is per-session.
+
+**Edge visibility.** An edge is visible iff:
+
+1. An `entity-included` event for the edge has been committed for this session, **and**
+2. No subsequent committed `break-edge` event references this edge, **and**
+3. Both endpoint nodes are currently visible per the rule above.
+
+When a node becomes invisible, every edge with that node as source or target becomes invisible automatically. No explicit edge-removal event is needed; the projection computes edge visibility from endpoint state.
+
+**Annotation visibility.** An annotation is visible iff:
+
+1. An `annotation-created` event has fired for the annotation in this session's history, **and**
+2. The annotation's target entity (node or edge) is currently visible.
+
+If the target becomes invisible, the annotation does too.
+
+**Implication for restructure.** When a node is restructured, the `edit-wording` event with `kind: restructure` supersedes the old node. The new node (created via a paired `node-created` event) is included in this session and rendered in its place. Edges that pointed at the old node become invisible by virtue of the missing endpoint — they do not auto-follow to the replacement. If participants want analogous edges on the new node, they must propose them explicitly.
 
 ### Facet status derivation
 

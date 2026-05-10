@@ -60,7 +60,7 @@ The TaskJuggler note already specifies the columns:
 
 - **Primary key type: UUID** (CC1).
 - **Reword updates in place** (C3). The wording column changes; prior wordings live only in the event log.
-- **Restructure creates a new row** (C4). Old row stays unchanged; downstream edges don't auto-follow.
+- **Restructure creates a new row and supersedes the old node** (C4 + Q-R1 always-replace). The old row in the global `nodes` table stays unchanged (so historical event-log references continue to resolve). In the *session's* visible graph, the old node becomes invisible after the restructure event commits; the new node takes its place. Edges incident to the old node become invisible too (they don't auto-follow). If participants want to keep the original alongside a new statement, they should not restructure — they should add a new node directly via the standard capture flow. See [data-model.md — visible-graph derivation](../../../docs/data-model.md#visible-graph-derivation) for the formal rule.
 - **Wording length: no DB-level cap** (F7). Stored as `TEXT`. The UI may enforce a soft display limit.
 - **Wording format: plain text in v1** (F8). No Markdown, no mention syntax. Markup adds rendering complexity across all surfaces (audience, debater, moderator) for a feature not on the v1 roadmap. Revisit if/when a use case justifies it.
 
