@@ -109,6 +109,7 @@ task data_and_methodology "Data and methodology" {
       effort 0.5d
       allocate team
       depends !proposal_events
+      note "Refinement: tasks/refinements/data-and-methodology/vote_events.md"
     }
     task resolution_events "commit and meta-disagreement-marked" {
       effort 0.5d

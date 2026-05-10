@@ -66,16 +66,19 @@ task foundation "Foundation" {
       effort 1d
       allocate team
       depends !!stack_decisions.test_unit_framework_decision
+      note "Refinement: tasks/refinements/foundation/unit_test_runner_setup.md"
     }
     task behavior_test_runner_setup "Wire up the behavior test runner (Gherkin features)" {
       effort 1d
       allocate team
       depends !!stack_decisions.test_behavior_framework_decision
+      note "Refinement: tasks/refinements/foundation/behavior_test_runner_setup.md"
     }
     task playwright_setup "Set up Playwright with browsers" {
       effort 1d
       allocate team
       depends !!stack_decisions.playwright_decision
+      note "Refinement: tasks/refinements/foundation/playwright_setup.md"
     }
     task playwright_test_helpers "Helpers for Playwright (auth, session creation, event seeding)" {
       effort 2d
@@ -100,6 +103,7 @@ task foundation "Foundation" {
     task test_db_provisioning "Test-database provisioning per test run (clean DB per Playwright test)" {
       effort 1d
       allocate team
+      note "Refinement: tasks/refinements/foundation/test_db_provisioning.md"
     }
   }
 
@@ -155,15 +159,17 @@ task foundation "Foundation" {
     task dockerfile_app "Dockerfile for the application" {
       effort 1d
       allocate team
+      note "Refinement: tasks/refinements/foundation/dockerfile_app.md"
     }
     task dockerfile_postgres "Postgres container config" {
       effort 0.5d
       allocate team
+      note "Refinement: tasks/refinements/foundation/dockerfile_postgres.md"
     }
     task dockerfile_mock_oauth "Local mock OAuth provider container" {
       effort 1d
       allocate team
-      note "Allows OAuth flows to work offline without external accounts."
+      note "Refinement: tasks/refinements/foundation/dockerfile_mock_oauth.md"
     }
     task compose_file "docker-compose.yml bringing up the full stack" {
       effort 1d
@@ -197,6 +203,7 @@ task foundation "Foundation" {
     task ci_config "Set up CI configuration (GitHub Actions or equivalent)" {
       effort 1d
       allocate team
+      note "Refinement: tasks/refinements/foundation/ci_config.md"
     }
     task ci_lint "Lint job in CI" {
       effort 0.25d

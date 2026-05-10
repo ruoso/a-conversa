@@ -9,6 +9,7 @@ task audience "Audience and broadcast" {
     task aud_app_skeleton "Read-only app skeleton" {
       effort 1d
       allocate team
+      note "Refinement: tasks/refinements/audience/aud_app_skeleton.md"
     }
     task aud_ws_client "WebSocket client (read-only subscription)" {
       effort 1d

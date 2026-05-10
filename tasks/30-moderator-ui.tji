@@ -10,6 +10,7 @@ task moderator_ui "Moderator UI" {
     task mod_app_skeleton "App skeleton (routing, entry point, build config)" {
       effort 1d
       allocate team
+      note "Refinement: tasks/refinements/moderator-ui/mod_app_skeleton.md"
     }
     task mod_state_management "State management setup" {
       effort 1d

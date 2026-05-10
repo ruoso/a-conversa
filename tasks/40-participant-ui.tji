@@ -9,6 +9,7 @@ task participant_ui "Participant (debater) UI" {
     task part_app_skeleton "App skeleton (entry, build, routing)" {
       effort 1d
       allocate team
+      note "Refinement: tasks/refinements/participant-ui/part_app_skeleton.md"
     }
     task part_state_management "State management setup" {
       effort 1d
