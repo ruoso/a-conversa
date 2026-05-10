@@ -135,3 +135,7 @@ endpoint returns 500 in this bare-container smoke test because the
 issuer URL is configured for the Compose hostname rather than
 `localhost`; full end-to-end OIDC discovery is verified by the Playwright
 auth helper once `compose_file` and `env_var_template` are in place.
+
+## Amendments
+
+- **2026-05-10** — The `compose_file` and `env_var_template` deferrals above have both resolved. Compose wiring landed with [ADR 0018](0018-compose-file-three-service-dev-stack.md): the `authelia` service in [`compose.yaml`](../../compose.yaml) mounts `infra/authelia/configuration.yml` and `users.yml` read-only at `/config/`, runs `authelia/authelia:4.39`, exposes host port 9091, and is healthchecked via `wget --spider http://localhost:9091/api/health`. `.env.example` landed at [`.env.example`](../../.env.example) under `foundation.dev_env.env_var_template` with `OIDC_ISSUER_URL=http://authelia:9091`, `OIDC_CLIENT_ID=aconversa-app-dev`, and `OIDC_CLIENT_SECRET=aconversa-app-dev-secret`. The Playwright auth-flow helper (`foundation.test_infra.playwright_test_helpers`) remains deferred. The decision (Authelia in users-file mode) is unchanged.

@@ -51,3 +51,7 @@ The order is load-bearing: `lint-staged` auto-fixes and re-stages first, then `t
 - **Husky 9's hooksPath is `.husky/_`,** with the user-authored `.husky/pre-commit` consumed by the auto-generated dispatcher in `.husky/_/pre-commit`. Only `.husky/pre-commit` is committed; `.husky/_/` regenerates from `pnpm install`.
 - **Verified end-to-end** at landing: a commit with a formatting issue auto-fixed and landed cleanly; a commit with a `no-floating-promises` violation was rejected by `eslint --fix`; a commit with a missing-property type error was rejected by `tsc -b`. Test artifacts were removed before landing this ADR.
 - **Downstream constraint.** `foundation.repo_skeleton.readme_dev_section` will expand the README's "Local development" section into a full development-workflow document; this ADR's one-paragraph mention there is a placeholder.
+
+## Amendments
+
+- **2026-05-10** — `foundation.repo_skeleton.readme_dev_section` has landed; the README's "Local development" section now folds in the pre-commit-hook paragraph this ADR seeded. The "Downstream constraint" above is resolved. The decision (Husky + lint-staged) is unchanged.

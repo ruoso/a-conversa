@@ -47,3 +47,7 @@ pnpm run format:check
 ```
 
 Expected: `All matched files use Prettier code style!` and exit code 0. Auto-fix is `pnpm run format`. The smoke proves Prettier discovers TS / TSX / JSON / YAML / CJS / JS across the workspace tree, root scripts, root tests, and root config files; honours the `.prettierignore` exclusions; and that the formatted files pass `pnpm run lint` cleanly (no rule conflict).
+
+## Amendments
+
+- **2026-05-10** — Pre-commit integration landed via [ADR 0014](0014-pre-commit-hooks-husky-lint-staged.md): `lint-staged` runs `prettier --write` on staged `*.{ts,tsx,js,jsx,cjs,mjs}` (after `eslint --fix`) and on staged `*.{json,yml,yaml,html,css}`. `*.md` is intentionally excluded since `.prettierignore` already excludes it (preserves the `.editorconfig` hard-break convention). CI integration (`foundation.ci.ci_format`) remains deferred. The decision (Prettier 3.x) is unchanged.

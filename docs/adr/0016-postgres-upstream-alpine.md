@@ -31,3 +31,7 @@ Use the **upstream `postgres:16-alpine` image** directly, with no custom Dockerf
 - **`.env.example` is deferred** to `foundation.dev_env.env_var_template`. The variable *names* are fixed here so this task and that one don't drift.
 - **Production / cloud deployment doesn't inherit this ADR directly.** Cloud uses managed Postgres (RDS, Cloud SQL, or equivalent) with rotated secrets and no `initdb/` mount; the relevant ADR will live under `deployment.*` when that work lands. The schema migration story is shared; the container is not.
 - **No Dockerfile under `infra/postgres/`.** Deliberate. If a future change requires one (e.g., a custom extension that isn't available in upstream Alpine), this ADR is superseded by a new one and a Dockerfile lands then.
+
+## Amendments
+
+- **2026-05-10** — The "Compose wiring is deferred" and "`.env.example` is deferred" lines above have both resolved. Compose wiring landed with [ADR 0018](0018-compose-file-three-service-dev-stack.md) — the `postgres` service in [`compose.yaml`](../../compose.yaml) consumes the choices recorded here (image tag, named volume `aconversa-postgres-data`, `pg_isready` healthcheck, host port 5432, init-script bind mount of `infra/postgres/initdb/`). `.env.example` landed at [`.env.example`](../../.env.example) under `foundation.dev_env.env_var_template` with `POSTGRES_USER=aconversa`, `POSTGRES_PASSWORD=aconversa-dev`, `POSTGRES_DB=aconversa`, and a derived `DATABASE_URL`. The decision (`postgres:16-alpine`, no custom image) is unchanged.

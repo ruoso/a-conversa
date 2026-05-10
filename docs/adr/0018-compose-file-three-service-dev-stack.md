@@ -151,3 +151,7 @@ identically). Three services, one network, two named volumes.
   *not* exercised by this task — it would loop on the stub entry
   point, by design. Once `backend.api_skeleton` lands, the same
   compose file boots the full stack with no further changes.
+
+## Amendments
+
+- **2026-05-10** — The "`.env.example` is deferred" note above has resolved. `foundation.dev_env.env_var_template` landed [`.env.example`](../../.env.example) at the repo root with the union of variables this compose file plus the Authelia config plus the (eventual) application consume: `APP_PORT`, `POSTGRES_USER`/`POSTGRES_PASSWORD`/`POSTGRES_DB`/`DATABASE_URL`, `OIDC_ISSUER_URL`/`OIDC_CLIENT_ID`/`OIDC_CLIENT_SECRET`, and `SESSION_TOKEN_SECRET`. The "copy `.env.example` to `.env` before `make up`" loop is now closed. The decision (three-service compose stack) is unchanged.

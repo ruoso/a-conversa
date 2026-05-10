@@ -52,3 +52,4 @@ Expected output is `1 scenario (1 passed)` and `3 steps (3 passed)`. The sketch 
 ## Amendments
 
 - **2026-05-10** — Switched the package manager from npm to pnpm as part of [ADR 0010](0010-directory-layout-pnpm-workspaces.md). Run command above is now `pnpm install` / `pnpm run test:behavior:smoke`. The decision (`@cucumber/cucumber`) is unchanged.
+- **2026-05-10** — The "ADR forthcoming" note above for the non-BDD Playwright E2E runner has landed as [ADR 0008](0008-e2e-framework-playwright.md) (Web E2E framework: Playwright). Browser-driving Cucumber scenarios still spin up Playwright from inside a step definition; non-BDD UI suites use `@playwright/test` directly. The decision (`@cucumber/cucumber`) is unchanged.
