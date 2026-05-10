@@ -393,35 +393,54 @@ export function hasAxiomMark(
 
 // ---------------------------------------------------------------
 // `findConflictingProposalAgainst` — find a pending proposal of a
-// configured set of sub-kinds that targets the same parent node.
+// configured set of sub-kinds that targets the same node.
 //
 // Used by the propose handler's `decompose` arm (refinement:
-// decomposition_logic) AND its `interpretive-split` arm (refinement:
-// interpretive_split_logic) to enforce the mutual-exclusion rule: the
-// two structural sub-kinds (`decompose`, `interpretive-split`) both
-// flip `parent.visible = false` on commit, so only one of either kind
-// may be pending against a given parent at a time. Both arms pass the
-// same conflicting-kinds set (`{'decompose', 'interpretive-split'}`,
+// decomposition_logic), its `interpretive-split` arm (refinement:
+// interpretive_split_logic), AND its `edit-wording` arm (refinement:
+// reword_vs_restructure) to enforce the mutual-exclusion rule. The
+// three structural sub-kinds (`decompose`, `interpretive-split`,
+// `edit-wording`) compete on the same node:
+//
+//   - `decompose` and `interpretive-split` flip `parent.visible =
+//     false` on commit (the parent becomes superseded).
+//   - `edit-wording` with `edit_kind: restructure` flips
+//     `oldNode.visible = false` on commit (also supersession).
+//   - `edit-wording` with `edit_kind: reword` updates the wording
+//     facet in place but still owns that facet exclusively while
+//     pending; treating both inner kinds uniformly under the conflict-
+//     walker keeps the design symmetric.
+//
+// Only one pending proposal among the three sub-kinds may target a
+// given node at a time. All three arms pass the same conflicting-kinds
+// set (`{'decompose', 'interpretive-split', 'edit-wording'}`,
 // canonicalized as the constant `CONFLICTING_PARENT_KINDS` in
 // `propose.ts`); the set parameter is the explicit shape that makes
 // the symmetry visible at the call site.
 //
 // Walks `projection.pendingProposals()` (not committed or
 // meta-disagreed — same reasoning as the original
-// `decomposeConflictsWith` rule: a *committed* decompose or
-// interpretive-split against the same parent has already flipped
-// `parent.visible = false`, so the propose handler's parent-visible
-// rule catches that case structurally; a *meta-disagreement-marked*
-// proposal isn't in flight any more) and returns the first pending
-// proposal whose `payload.kind` is in `conflictingKinds` AND whose
-// payload's `parent_node_id` matches `parentNodeId`. Returns `null`
-// on no conflict.
+// `decomposeConflictsWith` rule: a *committed* structural proposal
+// against the same node has already flipped `node.visible = false`,
+// so the propose handler's node-visible rule catches that case
+// structurally; a *meta-disagreement-marked* proposal isn't in flight
+// any more) and returns the first pending proposal whose `payload.kind`
+// is in `conflictingKinds` AND whose payload's target-node id matches
+// `targetNodeId`. The target-node-id field name differs by sub-kind:
 //
-// The narrow union type `'decompose' | 'interpretive-split'` reflects
-// the v1 set of structural sub-kinds whose payloads carry a
-// `parent_node_id`. If a future sub-kind adopts the same parent-
-// targeting shape (e.g. a hypothetical merge-back operation), the
-// union widens additively.
+//   - `decompose` / `interpretive-split` → `payload.parent_node_id`.
+//   - `edit-wording` (both inner kinds) → `payload.node_id`.
+//
+// The walker normalizes the lookup so callers pass a single "the node
+// the new proposal is about" id regardless of how the conflicting
+// candidate payload names its target.
+//
+// Returns `null` on no conflict.
+//
+// The narrow union type `'decompose' | 'interpretive-split' |
+// 'edit-wording'` reflects the v1 set of structural sub-kinds. If a
+// future sub-kind adopts the same node-targeting shape (e.g. a
+// hypothetical merge-back operation), the union widens additively.
 //
 // The caller uses the returned proposal's `proposalEventId` and
 // `payload.kind` in the rejection detail so the API layer can surface
@@ -429,21 +448,26 @@ export function hasAxiomMark(
 // before re-proposing."
 // ---------------------------------------------------------------
 
-export type ConflictingParentKind = 'decompose' | 'interpretive-split';
+export type ConflictingParentKind = 'decompose' | 'interpretive-split' | 'edit-wording';
 
 export function findConflictingProposalAgainst(
   projection: Projection,
-  parentNodeId: string,
+  targetNodeId: string,
   conflictingKinds: ReadonlySet<ConflictingParentKind>,
 ): PendingProposal | null {
   for (const proposal of projection.pendingProposals()) {
     const payload = proposal.payload;
-    if (
-      (payload.kind === 'decompose' || payload.kind === 'interpretive-split') &&
-      conflictingKinds.has(payload.kind) &&
-      payload.parent_node_id === parentNodeId
-    ) {
-      return proposal;
+    if (payload.kind === 'decompose' || payload.kind === 'interpretive-split') {
+      if (conflictingKinds.has(payload.kind) && payload.parent_node_id === targetNodeId) {
+        return proposal;
+      }
+      continue;
+    }
+    if (payload.kind === 'edit-wording') {
+      if (conflictingKinds.has(payload.kind) && payload.node_id === targetNodeId) {
+        return proposal;
+      }
+      continue;
     }
   }
   return null;

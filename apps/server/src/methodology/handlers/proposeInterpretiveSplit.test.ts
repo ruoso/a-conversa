@@ -302,6 +302,39 @@ describe('propose interpretive-split — rule 3: no conflicting pending proposal
     }
   });
 
+  // Cross-kind mutual-exclusion case introduced by reword_vs_restructure's
+  // extension of `CONFLICTING_PARENT_KINDS` to include `'edit-wording'`:
+  // an interpretive-split proposal also rejects when an edit-wording
+  // (reword or restructure) is already pending against the same parent.
+  // The conflict's reported kind is `edit-wording`. See
+  // reword_vs_restructure.md for the symmetry argument.
+  it('rejects when an edit-wording proposal against the same parent is already pending (cross-kind conflict)', () => {
+    const p = seedSession();
+    const PENDING_EDIT_WORDING_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccaa3';
+    applyEvent(p, {
+      ...makeEvent(nextSequence(p), 'proposal', DEBATER_A_ID, T3, {
+        proposal: {
+          kind: 'edit-wording',
+          edit_kind: 'restructure',
+          node_id: PARENT_NODE_ID,
+          new_wording: 'A pending wording restructure on the same node.',
+          new_node_id: '99999999-9999-4999-8999-999999999aa9',
+        },
+      }),
+      id: PENDING_EDIT_WORDING_ID,
+    });
+
+    const action = makeSplitAction(p);
+    const r = validateAction(p, action);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.reason).toBe('illegal-state-transition');
+      expect(r.detail).toContain(PENDING_EDIT_WORDING_ID);
+      expect(r.detail).toContain('edit-wording');
+      expect(r.detail).toContain(PARENT_NODE_ID);
+    }
+  });
+
   it('accepts an interpretive-split against a different parent while one is pending elsewhere', () => {
     const p = seedSession();
     // Add a second visible node.

@@ -302,6 +302,38 @@ describe('propose decompose — rule 3: no conflicting decompose pending', () =>
     }
   });
 
+  // Cross-kind mutual-exclusion case introduced by reword_vs_restructure's
+  // extension of `CONFLICTING_PARENT_KINDS` to include `'edit-wording'`:
+  // a decompose proposal also rejects when an edit-wording (reword or
+  // restructure) is already pending against the same parent. The
+  // conflict's reported kind is `edit-wording`. See
+  // reword_vs_restructure.md for the symmetry argument.
+  it('rejects when an edit-wording proposal against the same parent is already pending', () => {
+    const p = seedSession();
+    const PENDING_EDIT_WORDING_ID = 'cccccccc-cccc-4ccc-8ccc-ccccccccccc3';
+    applyEvent(p, {
+      ...makeEvent(nextSequence(p), 'proposal', DEBATER_A_ID, T3, {
+        proposal: {
+          kind: 'edit-wording',
+          edit_kind: 'reword',
+          node_id: PARENT_NODE_ID,
+          new_wording: 'A pending wording edit on the same node.',
+        },
+      }),
+      id: PENDING_EDIT_WORDING_ID,
+    });
+
+    const action = makeDecomposeAction(p);
+    const r = validateAction(p, action);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.reason).toBe('illegal-state-transition');
+      expect(r.detail).toContain(PENDING_EDIT_WORDING_ID);
+      expect(r.detail).toContain('edit-wording');
+      expect(r.detail).toContain(PARENT_NODE_ID);
+    }
+  });
+
   it('accepts a decompose proposal against a different parent while one is pending elsewhere', () => {
     const p = seedSession();
     // Add a second visible node.

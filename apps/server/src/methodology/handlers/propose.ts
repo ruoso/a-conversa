@@ -4,10 +4,12 @@
 // Refinement: tasks/refinements/data-and-methodology/interpretive_split_logic.md
 // Refinement: tasks/refinements/data-and-methodology/axiom_mark_logic.md
 // Refinement: tasks/refinements/data-and-methodology/meta_move_logic.md
+// Refinement: tasks/refinements/data-and-methodology/reword_vs_restructure.md
 // TaskJuggler: data_and_methodology.methodology_engine.decomposition_logic
 // TaskJuggler: data_and_methodology.methodology_engine.interpretive_split_logic
 // TaskJuggler: data_and_methodology.methodology_engine.axiom_mark_logic
 // TaskJuggler: data_and_methodology.methodology_engine.meta_move_logic
+// TaskJuggler: data_and_methodology.methodology_engine.reword_vs_restructure
 //
 // The propose action carries one of the eleven proposal sub-kinds. Per
 // the methodology framework (agreement_state_machine), the handler runs
@@ -45,6 +47,25 @@
 //     are identical because both operations target `parent.visible` on
 //     commit.
 //
+//   - For the `edit-wording` sub-kind: the real propose-side validator
+//     per `reword_vs_restructure`. The arm sub-switches on `edit_kind`
+//     (`'reword' | 'restructure'`). Three shared rules (the same set
+//     decompose / interpretive-split enforce), plus a restructure-only
+//     fourth rule:
+//       1. Node-exists → `'target-entity-not-found'`.
+//       2. Node-visible → `'illegal-state-transition'`.
+//       3. No conflicting edit-wording / decompose / interpretive-split
+//          pending against the same node → `'illegal-state-transition'`.
+//       4. (restructure only) `new_node_id` must NOT name an existing
+//          node in the projection → `'illegal-state-transition'`.
+//     Reword has no rule 4 — it updates wording in place, preserves
+//     the node id, and doesn't mint a new id. Both inner kinds share
+//     rules 1–3 because both compete with decompose / interpretive-
+//     split on the same node (restructure flips
+//     `oldNode.visible = false` on commit; reword owns the wording
+//     facet exclusively while pending — both should be rejected if
+//     another structural sub-kind is racing them).
+//
 //   - For the `axiom-mark` sub-kind: the real propose-side validator
 //     per `axiom_mark_logic`. Four rules (see
 //     `validateAxiomMarkProposal` below for the rule comments):
@@ -81,13 +102,12 @@
 //     attaches an annotation, doesn't flip target visibility, and
 //     multiple meta-moves on the same target are fine.
 //
-//   - For the other seven sub-kinds (`classify-node`,
-//     `set-node-substance`, `set-edge-substance`, `edit-wording`,
-//     `break-edge`, `amend-node`, `annotate`): the universal-pass
-//     placeholder path. Each sub-kind's sibling task will tighten its
-//     arm as it lands. The placeholder builds the same one-event
-//     envelope the original handler always built — no methodology-
-//     specific gating.
+//   - For the other six sub-kinds (`classify-node`,
+//     `set-node-substance`, `set-edge-substance`, `break-edge`,
+//     `amend-node`, `annotate`): the universal-pass placeholder path.
+//     Each sub-kind's sibling task will tighten its arm as it lands.
+//     The placeholder builds the same one-event envelope the original
+//     handler always built — no methodology-specific gating.
 //
 // **Scope: propose-side only.** This handler validates the propose
 // action and emits the proposal envelope event. The commit-time
@@ -129,14 +149,24 @@ import type {
 
 // ---------------------------------------------------------------
 // `CONFLICTING_PARENT_KINDS` — the set of proposal sub-kinds that
-// mutually exclude each other against a shared `parent_node_id`. Both
-// `decompose` and `interpretive-split` flip `parent.visible = false`
-// on commit (see `applyCommittedProposal` in `replay.ts`), so only one
-// pending proposal of either kind may target a given parent at a
-// time. Both the `decompose` arm and the `interpretive-split` arm
-// pass this same set to `findConflictingProposalAgainst`; the constant
-// is the single source of truth for "what blocks a new decompose or
-// interpretive-split."
+// mutually exclude each other against a shared target node. The three
+// structural sub-kinds (`decompose`, `interpretive-split`,
+// `edit-wording`) compete on the same node:
+//
+//   - `decompose` and `interpretive-split` flip `parent.visible =
+//     false` on commit (see `applyCommittedProposal` in `replay.ts`).
+//   - `edit-wording` with `edit_kind: restructure` flips
+//     `oldNode.visible = false` on commit — also supersession.
+//   - `edit-wording` with `edit_kind: reword` updates the wording
+//     facet in place but still owns that facet exclusively while
+//     pending. Treating both inner kinds uniformly under the
+//     conflict-walker keeps the design symmetric (see
+//     `reword_vs_restructure.md` for the argument).
+//
+// Only one pending proposal among the three sub-kinds may target a
+// given node at a time. All three arms (decompose, interpretive-split,
+// edit-wording) pass this same set to `findConflictingProposalAgainst`;
+// the constant is the single source of truth.
 //
 // If a future sub-kind adopts the same parent-flip-invisible behavior,
 // it gets added here (and to the `ConflictingParentKind` union in
@@ -144,7 +174,7 @@ import type {
 // ---------------------------------------------------------------
 
 const CONFLICTING_PARENT_KINDS: ReadonlySet<ConflictingParentKind> = new Set<ConflictingParentKind>(
-  ['decompose', 'interpretive-split'],
+  ['decompose', 'interpretive-split', 'edit-wording'],
 );
 
 // ---------------------------------------------------------------
@@ -503,13 +533,125 @@ function validateMetaMoveProposal(
 }
 
 // ---------------------------------------------------------------
+// `validateEditWordingProposal` — the propose-side validator for the
+// `edit-wording` proposal sub-kind.
+//
+// The `edit-wording` payload carries a nested `edit_kind` discriminator
+// (`'reword' | 'restructure'`). Both inner kinds share three rules; the
+// `restructure` inner kind adds a fourth. See
+// `reword_vs_restructure.md` for the semantic argument:
+//
+//   - **Reword** preserves the node id; the wording facet's value
+//     changes in place and existing edges remain attached. No new node
+//     id is minted.
+//   - **Restructure** creates a new node (carrying `new_node_id` from
+//     the payload) and supersedes the old node. Edges to the old node
+//     do NOT follow to the new node (per the visible-graph derivation
+//     in `docs/data-model.md` lines 273–285 / 302); if participants
+//     want analogous edges on the replacement, they propose them
+//     explicitly.
+//
+// Rules in evaluation order (shared by both inner kinds):
+//
+//   1. **Node-exists.** `projection.getNode(node_id)` must return a
+//      record. → `'target-entity-not-found'`.
+//   2. **Node-visible.** The node's `visible` field must be `true`. A
+//      not-visible node — already superseded by a prior decompose /
+//      interpretive-split / restructure per the visible-graph
+//      derivation — can't be re-edited: the wording change would
+//      attach to a node nobody can see. → `'illegal-state-transition'`.
+//   3. **No conflicting edit-wording / decompose / interpretive-split
+//      pending.** No other proposal currently in `pendingProposals`
+//      is one of the three structural sub-kinds targeting the same
+//      node. → `'illegal-state-transition'`.
+//
+// Plus the restructure-only rule:
+//
+//   4. **`new_node_id` does not collide.** `projection.getNode
+//      (new_node_id)` must be `undefined`. A restructure proposal mints
+//      a brand-new node id; if that id already names an existing node,
+//      the proposal is structurally broken (committing it would
+//      silently overwrite the existing entity). →
+//      `'illegal-state-transition'`.
+//
+// Rule 5 — structural payload shape (`kind: 'edit-wording'`, the
+// nested `edit_kind` discriminator, `node_id: UUID`, `new_wording`
+// non-empty, and (for restructure) `new_node_id: UUID`) — is enforced
+// upstream by `editWordingProposalSchema` (a nested
+// `z.discriminatedUnion('edit_kind', ...)`) per ADR 0021. This
+// validator does not re-check.
+// ---------------------------------------------------------------
+
+function validateEditWordingProposal(
+  projection: Projection,
+  action: ProposeAction,
+): RejectedValidationResult | null {
+  if (action.proposal.kind !== 'edit-wording') {
+    // Defensive — the dispatcher gates this. Never reached at runtime.
+    return null;
+  }
+  const proposal = action.proposal;
+  const nodeId = proposal.node_id;
+  const editKind = proposal.edit_kind;
+
+  // Rule 1 — node exists.
+  const node = projection.getNode(nodeId);
+  if (node === undefined) {
+    return {
+      ok: false,
+      reason: 'target-entity-not-found',
+      detail: `propose edit-wording(${editKind}): node_id ${nodeId} does not reference any node in session ${projection.sessionId}`,
+    };
+  }
+
+  // Rule 2 — node is currently visible.
+  if (!nodeIsVisible(projection, nodeId)) {
+    return {
+      ok: false,
+      reason: 'illegal-state-transition',
+      detail: `propose edit-wording(${editKind}): node ${nodeId} is not currently visible (already superseded by a prior decompose / interpretive-split / restructure) and cannot be re-edited`,
+    };
+  }
+
+  // Rule 3 — no conflicting edit-wording / decompose / interpretive-split
+  // pending against the same node.
+  const conflict: PendingProposal | null = findConflictingProposalAgainst(
+    projection,
+    nodeId,
+    CONFLICTING_PARENT_KINDS,
+  );
+  if (conflict !== null) {
+    return {
+      ok: false,
+      reason: 'illegal-state-transition',
+      detail: `propose edit-wording(${editKind}): another ${conflict.payload.kind} proposal (${conflict.proposalEventId}) against node ${nodeId} is already pending; resolve or withdraw it before re-proposing`,
+    };
+  }
+
+  // Rule 4 (restructure only) — new_node_id must not collide.
+  if (proposal.edit_kind === 'restructure') {
+    const newNodeId = proposal.new_node_id;
+    const collision = projection.getNode(newNodeId);
+    if (collision !== undefined) {
+      return {
+        ok: false,
+        reason: 'illegal-state-transition',
+        detail: `propose edit-wording(restructure): new_node_id ${newNodeId} already names an existing node in session ${projection.sessionId}; a restructure must mint a fresh node id`,
+      };
+    }
+  }
+
+  return null;
+}
+
+// ---------------------------------------------------------------
 // The handler.
 //
 // Switches on `action.proposal.kind`. The `decompose`,
-// `interpretive-split`, `axiom-mark`, and `meta-move` arms run their
-// real validators. All other arms fall through to the universal-pass
-// placeholder path — sibling tasks will tighten their arms as they
-// land.
+// `interpretive-split`, `axiom-mark`, `meta-move`, and `edit-wording`
+// arms run their real validators. All other arms fall through to the
+// universal-pass placeholder path — sibling tasks will tighten their
+// arms as they land.
 // ---------------------------------------------------------------
 
 export const proposeHandler: Validator<ProposeAction> = (
@@ -549,7 +691,12 @@ export const proposeHandler: Validator<ProposeAction> = (
       if (rejection !== null) return rejection;
       break;
     }
-    // The other seven sub-kinds fall through to the placeholder emission.
+    case 'edit-wording': {
+      const rejection = validateEditWordingProposal(projection, action);
+      if (rejection !== null) return rejection;
+      break;
+    }
+    // The other six sub-kinds fall through to the placeholder emission.
     // Each sub-kind's sibling task tightens its arm as it lands.
     default:
       break;
@@ -570,11 +717,12 @@ export const proposeHandler: Validator<ProposeAction> = (
 // Backward-compatibility alias — the engine's `installHandlers` and the
 // barrel both still reference `placeholderProposeHandler`. After this
 // task the symbol is no longer a placeholder for the `decompose`,
-// `interpretive-split`, `axiom-mark`, or `meta-move` arms (it's the
-// real validator there), but the name is preserved so the import sites
-// in `engine.ts` and `handlers/index.ts` don't need to churn ahead of
-// the other sibling sub-kind tasks. Once the remaining seven sub-kinds
-// tighten, the alias and the file comment header should be revisited.
+// `interpretive-split`, `axiom-mark`, `meta-move`, or `edit-wording`
+// arms (it's the real validator there), but the name is preserved so
+// the import sites in `engine.ts` and `handlers/index.ts` don't need
+// to churn ahead of the other sibling sub-kind tasks. Once the
+// remaining six sub-kinds tighten, the alias and the file comment
+// header should be revisited.
 export const placeholderProposeHandler = proposeHandler;
 
 export default proposeHandler;

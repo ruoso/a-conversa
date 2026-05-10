@@ -298,8 +298,10 @@ task data_and_methodology "Data and methodology" {
     task reword_vs_restructure "Wording-edit handling — reword vs. restructure" {
       effort 2d
       allocate team
+      complete 100
       depends !agreement_state_machine
       note "Reword preserves node ID; restructure creates a new node and old edges don't follow."
+      note "Refinement: tasks/refinements/data-and-methodology/reword_vs_restructure.md"
     }
     task defeater_capture_logic "Defeater capture — node + rebuts edge with pre-committed substance" {
       effort 1d
