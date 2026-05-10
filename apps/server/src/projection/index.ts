@@ -6,7 +6,10 @@
 //   - tasks/refinements/data-and-methodology/project_incrementally.md
 //   - tasks/refinements/data-and-methodology/per_facet_status_derivation.md
 //   - tasks/refinements/data-and-methodology/active_firing_computation.md
+//   - tasks/refinements/data-and-methodology/projection_caching.md
 
+export { ProjectionCache } from './cache.js';
+export type { EventLoader, ProjectionCacheOptions } from './cache.js';
 export { Projection, ProjectionInvariantError, createEmptyProjection } from './projection.js';
 export type {
   AnnotationAddedChange,

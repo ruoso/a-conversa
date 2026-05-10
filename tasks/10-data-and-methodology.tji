@@ -192,7 +192,9 @@ task data_and_methodology "Data and methodology" {
     task projection_caching "Cache active projections per session; release on idle" {
       effort 1d
       allocate team
+      complete 100
       depends !project_incrementally
+      note "Refinement: tasks/refinements/data-and-methodology/projection_caching.md"
     }
   }
 
