@@ -280,6 +280,7 @@ task foundation "Foundation" {
     task ci_image_publish "Publish container image on tagged releases" {
       effort 1d
       allocate team
+      complete 100
       depends !ci_build
       note "Refinement: tasks/refinements/foundation/ci_image_publish.md"
     }

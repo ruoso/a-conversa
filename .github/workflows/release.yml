@@ -1,17 +1,28 @@
-# a-conversa — tagged-release pipeline (stub)
+# a-conversa — tagged-release image publish pipeline
 #
-# This workflow fires on `v*` tag pushes. The real wiring — building
-# the application image (Dockerfile per ADR 0015), tagging it, and
-# pushing to the registry — is owned by foundation.ci.ci_image_publish
-# (a separate task that depends on foundation.ci.ci_build). Until that
-# lands, this workflow is a deliberate stub: a single placeholder job
-# that prints what it would do and exits 0, so the trigger is wired
-# end-to-end and a future contributor only has to fill in the body.
+# Owned by foundation.ci.ci_image_publish. Fires on `v*` tag pushes,
+# builds the multi-stage application image (per ADR 0015), and pushes
+# it to GitHub Container Registry (ghcr.io) under
+# `ghcr.io/<repo-owner>/aconversa-app`.
 #
-# Forward pointers:
+# Tagging strategy (refinement: tasks/refinements/foundation/ci_image_publish.md):
 #
-#   - foundation.ci.ci_build           job that runs `pnpm -r build` (CI side)
-#   - foundation.ci.ci_image_publish   builds + pushes the application image on tag
+#   - Every `vMAJOR.MINOR.PATCH` tag → image tag `MAJOR.MINOR.PATCH`
+#     (docker/metadata-action's `{{version}}` strips the leading `v`).
+#   - Non-pre-release tags also get `:latest`. A pre-release is detected
+#     by the presence of `-` in the git ref (e.g. `v1.0.0-beta.1`); those
+#     deliberately do NOT move `:latest`.
+#
+# Caveat — ADR-0015 stub entry: the application image entry point is
+# still the placeholder banner-and-exit-0 from ADR 0015 until
+# backend.api_skeleton lands the real server bootstrap. v0.x foundation
+# tags publish anyway because the value of this task right now is the
+# *pipeline* (auth to ghcr, semver tag mapping, buildx + GHA cache, no
+# `:latest` on pre-releases) — backend.api_skeleton swaps the meaningful
+# body into the image without touching this workflow.
+#
+# Mirrors ci.yml's `setup` + `build` jobs for Node/Corepack/pnpm and the
+# buildx step. Keep them in lockstep when one moves.
 
 name: Release
 
@@ -20,16 +31,106 @@ on:
     tags:
       - 'v*'
 
+# `packages: write` is required for `docker/login-action` to push to
+# ghcr.io with the workflow's GITHUB_TOKEN. `contents: read` is the
+# default and matches ci.yml.
 permissions:
   contents: read
+  packages: write
 
 jobs:
-  release-stub:
-    name: Release pipeline (TODO)
+  publish:
+    name: Build and publish image
     runs-on: ubuntu-latest
     steps:
-      - name: Announce deferred wiring
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 20 with Corepack
+        uses: actions/setup-node@v4
+        with:
+          # Node major matches ADR 0001 (LTS we run) and ADR 0015
+          # (Dockerfile base image). Keep these in lockstep with ci.yml.
+          node-version: '20'
+
+      - name: Enable Corepack and activate pnpm
+        # `packageManager` in root package.json pins pnpm@9.15.4 (ADR
+        # 0010). Corepack reads that pin; no explicit version here so
+        # the pin in package.json stays the single source of truth.
         run: |
-          echo "release pipeline TODO"
-          echo "Owner: foundation.ci.ci_image_publish"
-          echo "Tag:   ${GITHUB_REF}"
+          corepack enable
+          corepack prepare --activate
+
+      - name: Resolve pnpm store path
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-store-${{ runner.os }}-
+
+      - name: Install dependencies
+        # HUSKY=0 mirrors the Dockerfile (ADR 0015 amendment) and ci.yml:
+        # no git hooks needed inside CI.
+        env:
+          HUSKY: '0'
+        run: pnpm install --frozen-lockfile
+
+      - name: Build workspaces
+        # Root `build` script is `pnpm -r build` — walks every workspace.
+        # Same as ci.yml's `build` job. The Dockerfile re-runs build
+        # inside its own builder stage; we run it here too so a workspace
+        # build break fails the publish job before we waste time on the
+        # image build.
+        run: pnpm run build
+
+      - name: Set up Docker Buildx
+        # Required for `cache-from`/`cache-to` and the `gha` cache
+        # backend below. Same pin as ci.yml.
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        # Uses the workflow's auto-provisioned GITHUB_TOKEN; works for
+        # any repo without extra secrets. `packages: write` (above) is
+        # what makes the token actually able to push.
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image tags and labels
+        # `{{version}}` strips the leading `v` so `v1.2.3` publishes as
+        # `:1.2.3`. The `latest` tag is gated on the ref NOT containing
+        # a hyphen — i.e. `v1.0.0-beta.1` publishes `:1.0.0-beta.1` only,
+        # while `v1.0.0` publishes both `:1.0.0` and `:latest`. The image
+        # name is forced lowercase via the `${{ github.repository_owner }}`
+        # context (GitHub usernames/orgs are already case-insensitive,
+        # but ghcr.io requires the path segment lowercase on push).
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/aconversa-app
+          tags: |
+            type=semver,pattern={{version}}
+            type=raw,value=latest,enable=${{ !contains(github.ref, '-') }}
+
+      - name: Build and push application image
+        # Same multi-stage Dockerfile as ci_build (ADR 0015), this time
+        # with `push: true` and the metadata-action-generated tags. GHA
+        # cache is shared with ci.yml's build job by virtue of using the
+        # same `type=gha` backend on the same repo, so a tag push usually
+        # rebuilds only the layers that changed since the last main build.
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
