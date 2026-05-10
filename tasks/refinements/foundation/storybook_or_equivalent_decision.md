@@ -48,3 +48,7 @@ Project context:
 ## Open questions
 
 (none — all decided)
+
+## Status
+
+**Done** (2026-05-10). Recorded in [docs/adr/0009-skip-component-explorer-in-v1.md](../../../docs/adr/0009-skip-component-explorer-in-v1.md). No tooling was added: no Storybook / Ladle / Histoire install, no `package.json` changes, no story files, no scripts. Components are developed in the running dev compose stack with seeded sessions; revisit (leaning Ladle) when the moderator's per-facet state matrix becomes unwieldy in the running app.

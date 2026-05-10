@@ -63,6 +63,7 @@ task foundation "Foundation" {
     task storybook_or_equivalent_decision "Pick component-explorer tool (or skip)" {
       effort 0.5d
       allocate team
+      complete 100
       depends !frontend_framework_decision
       note "Refinement: tasks/refinements/foundation/storybook_or_equivalent_decision.md"
     }
