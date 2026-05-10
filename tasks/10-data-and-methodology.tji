@@ -284,7 +284,9 @@ task data_and_methodology "Data and methodology" {
     task axiom_mark_logic "Axiom-mark operation — per-participant" {
       effort 1d
       allocate team
+      complete 100
       depends !agreement_state_machine
+      note "Refinement: tasks/refinements/data-and-methodology/axiom_mark_logic.md"
     }
     task meta_move_logic "Meta-move handling (reframe / scope-change / stance)" {
       effort 1d

@@ -329,6 +329,46 @@ export function nodeIsVisible(projection: Projection, nodeId: string): boolean {
 }
 
 // ---------------------------------------------------------------
+// `hasAxiomMark` — does the projection have a committed axiom-mark on
+// `nodeId` for `participantId`?
+//
+// Used by `axiom_mark_logic` (rule 4 of `validateAxiomMarkProposal`).
+// Wraps the per-(node, participant) lookup the projection's
+// `applyCommittedProposal` axiom-mark arm populates: when an
+// axiom-mark proposal commits, `replay.ts` writes an entry to
+// `node.axiomMarks[participant]`. The predicate asks "is there
+// already a committed entry for this pair?"
+//
+// Returns `false` for unknown node ids; callers that need to
+// distinguish "doesn't exist" from "exists but unmarked" should call
+// `projection.getNode(nodeId)` directly and inspect `axiomMarks`.
+// Returns `true` iff the node is present AND its `axiomMarks` map
+// contains `participantId`.
+//
+// Per-participant uniqueness model (per docs/data-model.md line 38):
+// the check is keyed on `(node, participant)`. Anna's mark on N9 does
+// not block Ben from also marking N9 — both are independent personal
+// declarations of bedrock and both may coexist.
+//
+// Reads committed marks only. A pending axiom-mark proposal does NOT
+// show up here (pending proposals don't write to `axiomMarks`). The
+// duplicate-check is "have you already had a commit land?" — a
+// second propose for an already-pending mark by the same participant
+// is harmless and short-circuited later by the vote / commit cycle.
+// See `axiom_mark_logic.md` "Decisions" for the rationale.
+// ---------------------------------------------------------------
+
+export function hasAxiomMark(
+  projection: Projection,
+  nodeId: string,
+  participantId: string,
+): boolean {
+  const node = projection.getNode(nodeId);
+  if (node === undefined) return false;
+  return node.axiomMarks.has(participantId);
+}
+
+// ---------------------------------------------------------------
 // `findConflictingProposalAgainst` — find a pending proposal of a
 // configured set of sub-kinds that targets the same parent node.
 //

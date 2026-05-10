@@ -179,6 +179,15 @@ export type RejectionReason =
   | 'no-prior-agree'
   | 'self-vote-not-allowed'
   | 'unanimous-agree-required'
+  // Propose-axiom-mark specific — owned by `axiom_mark_logic`. The rule
+  // is "the requester must be the same as the participant whose
+  // bedrock is being declared." A separate code from
+  // `'self-vote-not-allowed'` because the two have opposite semantic
+  // shape: `'self-vote-not-allowed'` would mean "you cannot act on
+  // something that is yours" (the historical reservation); this code
+  // means "you can only act on something that is yours." See
+  // `axiom_mark_logic.md` "Decisions" for the alternatives considered.
+  | 'axiom-mark-not-self'
   // Methodology-flow — owned by sibling tasks.
   | 'inapplicable-to-facet'
   | 'illegal-state-transition'

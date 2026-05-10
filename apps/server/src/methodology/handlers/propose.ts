@@ -2,8 +2,10 @@
 //
 // Refinement: tasks/refinements/data-and-methodology/decomposition_logic.md
 // Refinement: tasks/refinements/data-and-methodology/interpretive_split_logic.md
+// Refinement: tasks/refinements/data-and-methodology/axiom_mark_logic.md
 // TaskJuggler: data_and_methodology.methodology_engine.decomposition_logic
 // TaskJuggler: data_and_methodology.methodology_engine.interpretive_split_logic
+// TaskJuggler: data_and_methodology.methodology_engine.axiom_mark_logic
 //
 // The propose action carries one of the eleven proposal sub-kinds. Per
 // the methodology framework (agreement_state_machine), the handler runs
@@ -41,14 +43,32 @@
 //     are identical because both operations target `parent.visible` on
 //     commit.
 //
-//   - For the other nine sub-kinds (`classify-node`,
+//   - For the `axiom-mark` sub-kind: the real propose-side validator
+//     per `axiom_mark_logic`. Four rules (see
+//     `validateAxiomMarkProposal` below for the rule comments):
+//       1. Node-exists → `'target-entity-not-found'`.
+//       2. Node-visible → `'illegal-state-transition'`.
+//       3. Participant-equals-requester → `'axiom-mark-not-self'`
+//          (axiom-marks are personal — you can only declare your OWN
+//          bedrock; another participant proposing on your behalf is a
+//          category error per docs/methodology.md lines 192–200).
+//       4. No duplicate axiom-mark (per-participant uniqueness) →
+//          `'illegal-state-transition'`.
+//     (Structural shape — `kind: 'axiom-mark'`, `node_id: UUID`,
+//     `participant: UUID` — is enforced upstream by
+//     `axiomMarkProposalSchema` per ADR 0021. The methodology
+//     validator does not re-check.) Axiom-mark does NOT participate in
+//     the `CONFLICTING_PARENT_KINDS` mutual-exclusion set — it's
+//     per-participant, not structural; a pending decompose or
+//     interpretive-split against the same node does not block it.
+//
+//   - For the other eight sub-kinds (`classify-node`,
 //     `set-node-substance`, `set-edge-substance`, `edit-wording`,
-//     `axiom-mark`, `meta-move`, `break-edge`, `amend-node`,
-//     `annotate`): the universal-pass placeholder path. Each sub-
-//     kind's sibling task (`axiom_mark_logic`, `meta_move_logic`,
-//     etc.) will tighten its arm as it lands. The placeholder builds
-//     the same one-event envelope the original handler always built —
-//     no methodology-specific gating.
+//     `meta-move`, `break-edge`, `amend-node`, `annotate`): the
+//     universal-pass placeholder path. Each sub-kind's sibling task
+//     will tighten its arm as it lands. The placeholder builds the
+//     same one-event envelope the original handler always built — no
+//     methodology-specific gating.
 //
 // **Scope: propose-side only.** This handler validates the propose
 // action and emits the proposal envelope event. The commit-time
@@ -74,6 +94,7 @@
 import type { PendingProposal, Projection } from '../../projection/index.js';
 import {
   findConflictingProposalAgainst,
+  hasAxiomMark,
   nodeIsVisible,
   requireParticipant,
   type ConflictingParentKind,
@@ -254,13 +275,121 @@ function validateInterpretiveSplitProposal(
 }
 
 // ---------------------------------------------------------------
+// `validateAxiomMarkProposal` — the propose-side validator for the
+// `axiom-mark` proposal sub-kind.
+//
+// Axiom-marks are **per-participant** signals: "this participant
+// declares no evidence would change their mind on this node." Per
+// docs/methodology.md lines 192–200 they are personal bedrock — Ben
+// may hold N9 as axiom while Anna does not, or both may hold N9 as
+// axiom from their respective frames. The proposal itself must come
+// from the participant whose bedrock is being declared; the
+// subsequent vote round lets the other participants dispute (per the
+// methodology's universal agreement rule — agreement on an axiom-mark
+// is "we all agree that this participant holds this node as bedrock,"
+// not "we all agree the node is true").
+//
+// Rules in evaluation order:
+//
+//   1. **Node-exists.** `projection.getNode(node_id)` must return a
+//      record. → `'target-entity-not-found'`.
+//   2. **Node-visible.** The node's `visible` field must be `true`. An
+//      invisible node — already superseded by decompose /
+//      interpretive-split / restructure per the visible-graph
+//      derivation in docs/data-model.md lines 273–285 — can't carry
+//      a fresh axiom-mark; the mark would render on a node nobody
+//      can see. → `'illegal-state-transition'`.
+//   3. **Participant-equals-requester.** `proposal.participant ===
+//      action.requester`. Axiom-marks are personal — you can only
+//      mark YOUR OWN axiom. Surfacing someone else's bedrock on their
+//      behalf would be a category error: bedrock is what *this
+//      person* refuses to retract from, and only they can declare it.
+//      → `'axiom-mark-not-self'` (a new RejectionReason; the existing
+//      `'self-vote-not-allowed'` has the opposite semantic shape —
+//      see axiom_mark_logic.md "Decisions").
+//   4. **No duplicate axiom-mark.** `hasAxiomMark(projection, node_id,
+//      participant) === false`. The projection's `axiomMarks` map
+//      records committed marks per-(node, participant); a second
+//      propose from the same participant on the same node would be a
+//      no-op duplicate. → `'illegal-state-transition'` (mirrors the
+//      decompose / interpretive-split arms' rule 2/3 grouping under
+//      the umbrella).
+//
+// Rule 5 — structural payload shape — is enforced upstream by
+// `axiomMarkProposalSchema` per ADR 0021. This validator does not
+// re-check.
+//
+// **No conflict with decompose / interpretive-split.** An axiom-mark
+// is NOT in `CONFLICTING_PARENT_KINDS`. It doesn't flip
+// `node.visible = false` on commit and so doesn't race against
+// structural sub-kinds; a pending decompose or interpretive-split
+// against the same node does not block an axiom-mark proposal
+// against that node. (Indeed, docs/methodology.md line 175 even
+// names axiom-marking as one of the resolution paths for a cycle
+// alongside decomposing — these are alternative moves, not racing
+// proposals.)
+// ---------------------------------------------------------------
+
+function validateAxiomMarkProposal(
+  projection: Projection,
+  action: ProposeAction,
+): RejectedValidationResult | null {
+  if (action.proposal.kind !== 'axiom-mark') {
+    // Defensive — the dispatcher gates this. Never reached at runtime.
+    return null;
+  }
+  const nodeId = action.proposal.node_id;
+  const participantId = action.proposal.participant;
+
+  // Rule 1 — node exists.
+  const node = projection.getNode(nodeId);
+  if (node === undefined) {
+    return {
+      ok: false,
+      reason: 'target-entity-not-found',
+      detail: `propose axiom-mark: node_id ${nodeId} does not reference any node in session ${projection.sessionId}`,
+    };
+  }
+
+  // Rule 2 — node is currently visible.
+  if (!nodeIsVisible(projection, nodeId)) {
+    return {
+      ok: false,
+      reason: 'illegal-state-transition',
+      detail: `propose axiom-mark: node ${nodeId} is not currently visible (already superseded by a prior decompose / interpretive-split / restructure) and cannot be axiom-marked`,
+    };
+  }
+
+  // Rule 3 — the proposal's participant equals the action's requester.
+  // Axiom-marks are personal; only the bedrock-holder may declare it.
+  if (participantId !== action.requester) {
+    return {
+      ok: false,
+      reason: 'axiom-mark-not-self',
+      detail: `propose axiom-mark: requester ${action.requester} cannot mark an axiom on behalf of participant ${participantId}; axiom-marks are per-participant and personal — the proposing participant must match the participant being marked`,
+    };
+  }
+
+  // Rule 4 — no duplicate axiom-mark for this (node, participant).
+  if (hasAxiomMark(projection, nodeId, participantId)) {
+    return {
+      ok: false,
+      reason: 'illegal-state-transition',
+      detail: `propose axiom-mark: participant ${participantId} already has a committed axiom-mark on node ${nodeId}; a second axiom-mark on the same (node, participant) pair is redundant`,
+    };
+  }
+
+  return null;
+}
+
+// ---------------------------------------------------------------
 // The handler.
 //
-// Switches on `action.proposal.kind`. The `decompose` and
-// `interpretive-split` arms run their real validators. All other arms
-// fall through to the universal-pass placeholder path — sibling tasks
-// (`axiom_mark_logic`, `meta_move_logic`, etc.) will tighten their
-// arms as they land.
+// Switches on `action.proposal.kind`. The `decompose`,
+// `interpretive-split`, and `axiom-mark` arms run their real
+// validators. All other arms fall through to the universal-pass
+// placeholder path — sibling tasks (`meta_move_logic`, etc.) will
+// tighten their arms as they land.
 // ---------------------------------------------------------------
 
 export const proposeHandler: Validator<ProposeAction> = (
@@ -271,9 +400,10 @@ export const proposeHandler: Validator<ProposeAction> = (
   // `validateAction`; re-affirming here is defensive but typed (the
   // `requireParticipant` helper's contract is "fetch the record or
   // surface a typed rejection"). The duplicate check costs one Map
-  // lookup; we keep it because future per-sub-kind branches may need
-  // the participant record (e.g. axiom-mark's `participant` field
-  // must match the requester — sibling task's call).
+  // lookup; we keep it because per-sub-kind branches may need the
+  // participant record (e.g. axiom-mark's `participant` field must
+  // match the requester — `validateAxiomMarkProposal` rule 3 uses
+  // `action.requester` directly).
   const participant = requireParticipant(projection, action.requester);
   if (!participant.ok) return participant.rejection;
 
@@ -289,7 +419,12 @@ export const proposeHandler: Validator<ProposeAction> = (
       if (rejection !== null) return rejection;
       break;
     }
-    // The other nine sub-kinds fall through to the placeholder emission.
+    case 'axiom-mark': {
+      const rejection = validateAxiomMarkProposal(projection, action);
+      if (rejection !== null) return rejection;
+      break;
+    }
+    // The other eight sub-kinds fall through to the placeholder emission.
     // Each sub-kind's sibling task tightens its arm as it lands.
     default:
       break;
@@ -309,12 +444,12 @@ export const proposeHandler: Validator<ProposeAction> = (
 
 // Backward-compatibility alias — the engine's `installHandlers` and the
 // barrel both still reference `placeholderProposeHandler`. After this
-// task the symbol is no longer a placeholder for the `decompose` or
-// `interpretive-split` arms (it's the real validator there), but the
-// name is preserved so the import sites in `engine.ts` and
-// `handlers/index.ts` don't need to churn ahead of the other sibling
-// sub-kind tasks. Once the remaining nine sub-kinds tighten, the alias
-// and the file comment header should be revisited.
+// task the symbol is no longer a placeholder for the `decompose`,
+// `interpretive-split`, or `axiom-mark` arms (it's the real validator
+// there), but the name is preserved so the import sites in `engine.ts`
+// and `handlers/index.ts` don't need to churn ahead of the other
+// sibling sub-kind tasks. Once the remaining eight sub-kinds tighten,
+// the alias and the file comment header should be revisited.
 export const placeholderProposeHandler = proposeHandler;
 
 export default proposeHandler;

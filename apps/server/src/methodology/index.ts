@@ -29,6 +29,7 @@ export {
   findConflictingProposalAgainst,
   findParticipantVoteOnProposal,
   findProposal,
+  hasAxiomMark,
   nextSequence,
   nodeIsVisible,
   proposalHasAnyDispute,
