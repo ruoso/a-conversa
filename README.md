@@ -4,7 +4,7 @@ A debate platform that helps people debate by classifying every statement and on
 
 ## Status
 
-**Design phase.** No code yet. The design is captured across a set of docs under `docs/`. If you're new to the project, start with [DESIGN.md](DESIGN.md) and follow the document index from there.
+**Foundation build in progress.** The design captured under `docs/` is settled enough to start building; tech-stack picks and repo bootstrapping are landing under [milestone M0](tasks/99-milestones.tji). If you're new to the project, start with [DESIGN.md](DESIGN.md) and follow the document index from there. Architectural decisions taken so far live in [docs/adr/](docs/adr/).
 
 ## What is a-conversa?
 
@@ -23,6 +23,7 @@ For a worked example of the format in action, see [docs/example-walkthrough.md](
 - [docs/moderator-ui.md](docs/moderator-ui.md) — moderator surface flows: capture, decompose, run diagnostic test, capture defeater, axiom-mark, meta-move, snapshot. Visual state representation. Keyboard shortcuts.
 - [docs/participant-ui.md](docs/participant-ui.md) — debater tablet flows: per-facet voting (the central design), withdrawal, axiom-mark proposal, view of structural diagnostics and change history.
 - [docs/example-walkthrough.md](docs/example-walkthrough.md) — simulated debate exercising the design.
+- [docs/adr/](docs/adr/) — Architecture Decision Records. Each ADR captures one architectural choice (status, context, decision, consequences); see [docs/adr/README.md](docs/adr/README.md) for the convention.
 
 ## Local development
 
