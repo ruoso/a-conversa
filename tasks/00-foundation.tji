@@ -256,6 +256,7 @@ task foundation "Foundation" {
     task ci_format "Format-check job in CI" {
       effort 0.25d
       allocate team
+      complete 100
       depends !ci_config, !!repo_skeleton.formatter_config
 
       note "Refinement: tasks/refinements/foundation/ci_format.md"
