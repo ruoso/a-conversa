@@ -28,9 +28,9 @@
 // its kinds' placeholder schemas in `eventPayloadSchemas` below:
 //
 //   - `session_lifecycle_events` → `session-created`, `session-ended`,
-//     `participant-joined`, `participant-left` (the
-//     `session-created` schema here is a worked example; that task
-//     refines it and fills the other three).
+//     `participant-joined`, `participant-left` (**done** —
+//     tightened below; reconciled the worked-example `ts` field on
+//     `session-created` to `created_at` per the refinement).
 //   - `entity_creation_events` → `node-created`, `edge-created`,
 //     `annotation-created`.
 //   - `entity_inclusion_events` → `entity-included`.
@@ -92,24 +92,61 @@ export const eventKindSchema = z.enum(eventKinds);
 // -- Per-kind payload schemas: registry + worked examples -------------
 //
 // The registry is a `Record<EventKind, z.ZodTypeAny>`. Today every
-// kind maps to either a worked-example schema (`session-created`,
-// `vote`) or a placeholder (`z.object({}).passthrough()` — accepts
-// any object so writers aren't blocked while downstream tasks
-// finalize their kinds). Each downstream `event_types.*` task
+// kind maps to either a tight schema owned by a completed
+// `event_types.*` task or a placeholder (`z.object({}).passthrough()`
+// — accepts any object so writers aren't blocked while downstream
+// tasks finalize their kinds). Each downstream `event_types.*` task
 // replaces its kinds' entries with a tight schema.
 
-// Worked example: session-created.
+// -- Session lifecycle event payload schemas --------------------------
 //
-// Refined by `session_lifecycle_events`; the shape here is a
-// reasonable starting point matching docs/data-model.md — Sessions.
+// Owned by `session_lifecycle_events`. Refinement:
+// tasks/refinements/data-and-methodology/session_lifecycle_events.md.
+//
+// Field naming:
+//   - UUID columns use `z.string().uuid()`.
+//   - Timestamps are ISO-8601 strings (`z.string().datetime({ offset: true })`).
+//   - Per-event timestamp field names mirror the `sessions` and
+//     `session_participants` projection columns (`created_at`,
+//     `ended_at`, `joined_at`, `left_at`) so the event payload reads
+//     as the source of truth and the projection is a pure copy.
+//
+// **Reconciliation note**: ADR 0021 originally documented the
+// `session-created` worked example with a `ts` field. The
+// `session_lifecycle_events` refinement is canonical and uses
+// `created_at` (matching the `sessions.created_at` column it
+// projects). The schema below uses `created_at`.
+
 export const sessionCreatedPayloadSchema = z.object({
   host_user_id: z.string().uuid(),
   privacy: z.enum(['public', 'private']),
   topic: z.string(),
-  ts: z.string().datetime({ offset: true }),
+  created_at: z.string().datetime({ offset: true }),
 });
 
 export type SessionCreatedPayload = z.infer<typeof sessionCreatedPayloadSchema>;
+
+export const sessionEndedPayloadSchema = z.object({
+  ended_at: z.string().datetime({ offset: true }),
+});
+
+export type SessionEndedPayload = z.infer<typeof sessionEndedPayloadSchema>;
+
+export const participantJoinedPayloadSchema = z.object({
+  user_id: z.string().uuid(),
+  role: z.enum(['moderator', 'debater-A', 'debater-B']),
+  screen_name: z.string(),
+  joined_at: z.string().datetime({ offset: true }),
+});
+
+export type ParticipantJoinedPayload = z.infer<typeof participantJoinedPayloadSchema>;
+
+export const participantLeftPayloadSchema = z.object({
+  user_id: z.string().uuid(),
+  left_at: z.string().datetime({ offset: true }),
+});
+
+export type ParticipantLeftPayload = z.infer<typeof participantLeftPayloadSchema>;
 
 // Worked example: vote.
 //
@@ -133,9 +170,9 @@ const placeholderPayloadSchema = z.object({}).passthrough();
 export const eventPayloadSchemas: Record<EventKind, z.ZodTypeAny> = {
   // Owned by session_lifecycle_events
   'session-created': sessionCreatedPayloadSchema,
-  'session-ended': placeholderPayloadSchema,
-  'participant-joined': placeholderPayloadSchema,
-  'participant-left': placeholderPayloadSchema,
+  'session-ended': sessionEndedPayloadSchema,
+  'participant-joined': participantJoinedPayloadSchema,
+  'participant-left': participantLeftPayloadSchema,
   // Owned by entity_creation_events
   'node-created': placeholderPayloadSchema,
   'edge-created': placeholderPayloadSchema,
@@ -156,15 +193,16 @@ export const eventPayloadSchemas: Record<EventKind, z.ZodTypeAny> = {
 // -- Per-kind payload type map ---------------------------------------
 //
 // `EventPayloadMap` resolves each kind to its concrete payload type.
-// Today only `session-created` and `vote` have tight types; the rest
-// fall back to `Record<string, unknown>` (the placeholder's TS image)
-// and will tighten as their downstream tasks land.
+// Today the four session-lifecycle kinds plus the `vote` worked
+// example have tight types; the remaining nine fall back to
+// `Record<string, unknown>` (the placeholder's TS image) and will
+// tighten as their downstream tasks land.
 
 export interface EventPayloadMap {
   'session-created': SessionCreatedPayload;
-  'session-ended': Record<string, unknown>;
-  'participant-joined': Record<string, unknown>;
-  'participant-left': Record<string, unknown>;
+  'session-ended': SessionEndedPayload;
+  'participant-joined': ParticipantJoinedPayload;
+  'participant-left': ParticipantLeftPayload;
   'node-created': Record<string, unknown>;
   'edge-created': Record<string, unknown>;
   'annotation-created': Record<string, unknown>;

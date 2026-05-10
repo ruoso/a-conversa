@@ -97,6 +97,7 @@ task data_and_methodology "Data and methodology" {
     task session_lifecycle_events "session-created, session-ended, participant-joined, participant-left" {
       effort 1d
       allocate team
+      complete 100
       depends !event_base_envelope
       note "Refinement: tasks/refinements/data-and-methodology/session_lifecycle_events.md"
     }

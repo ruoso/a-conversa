@@ -59,3 +59,41 @@ The session_participants schema (per `session_participants_table.md`):
 ## Open questions
 
 (none — straightforward implementation of the kinds defined in data-model.md)
+
+## Status
+
+**Done** 2026-05-10. Schemas + types live alongside the envelope in
+[`packages/shared-types/src/events.ts`](../../../packages/shared-types/src/events.ts);
+tests in
+[`packages/shared-types/src/events.test.ts`](../../../packages/shared-types/src/events.test.ts).
+
+What landed:
+
+- Four tight Zod schemas — `sessionCreatedPayloadSchema`,
+  `sessionEndedPayloadSchema`, `participantJoinedPayloadSchema`,
+  `participantLeftPayloadSchema` — each with an exported
+  `z.infer<…>` TS type.
+- `eventPayloadSchemas` registry now points the four lifecycle kinds
+  at the tight schemas (was: placeholder `passthrough`).
+- `EventPayloadMap` resolves the four lifecycle kinds to their
+  concrete payload types (was: `Record<string, unknown>`).
+- Round-trip + invalid-input tests per kind, plus a property-style
+  test that iterates `eventKinds` and round-trips a representative
+  payload per kind through the registry's schema (placeholder kinds
+  get `{}`; downstream `event_types.*` tasks tighten the
+  representatives as they tighten their schemas).
+
+Verified: `pnpm run test:smoke` green (35 events tests, +21 vs. the
+event-base-envelope baseline of 14); `pnpm run typecheck` clean;
+`pnpm run lint` clean. Pre-commit hook (lint/format/typecheck) passes
+on the change.
+
+**Reconciliation against ADR 0021's worked example**: ADR 0021
+documented the `session-created` worked example with a `ts` field.
+This refinement is canonical (and matches the `sessions.created_at`
+column it projects), so the schema uses `created_at`. The change is
+mechanical (rename one field) and falls inside ADR 0021's downstream
+tightening carve-out for `event_types.*` tasks; no separate
+amendment line was added to ADR 0021. The reconciliation is recorded
+in the events module's top-of-file comment and in the
+session-lifecycle schema header comment.
