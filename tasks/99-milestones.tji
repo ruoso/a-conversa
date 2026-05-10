@@ -14,6 +14,7 @@ task milestones "Milestones" {
 
   task m_event_log_functional "M1: Event log functional" {
     milestone
+    complete 100
     depends data_and_methodology.schema, data_and_methodology.event_types, data_and_methodology.projection
     note "Database schema, event types, and in-memory projection all working. Events can be appended; projections can be rebuilt from logs."
   }
