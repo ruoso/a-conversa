@@ -79,3 +79,29 @@ Each event has a common envelope plus kind-specific payload.
 ## Open questions
 
 (none — all decided)
+
+## Status
+
+**Done** 2026-05-10. Migration: [`apps/server/migrations/0010_session_events.sql`](../../../apps/server/migrations/0010_session_events.sql).
+
+**Event-kind treatment.** Single `'proposal'` envelope kind, payload-discriminated. `docs/data-model.md` (Event types — Proposals) is explicit that all proposals share the same lifecycle and "vary in payload by `kind`", so the envelope-level CHECK lists `'proposal'` once and the inner discrimination (`classify-node` / `set-node-substance` / `set-edge-substance` / `edit-wording` / `decompose` / `interpretive-split` / `axiom-mark` / `meta-move` / `break-edge` / `amend-node` / `annotate`) lives in the payload. The migration's SQL header documents the choice and lists every sub-kind for reviewers.
+
+**CHECK kind list (envelope-level, in order):** `session-created`, `session-ended`, `participant-joined`, `participant-left`, `node-created`, `edge-created`, `annotation-created`, `entity-included`, `proposal`, `vote`, `commit`, `meta-disagreement-marked`, `snapshot-created`.
+
+**Verified behaviors** (against a fresh `make up` + `make migrate` stack):
+
+- `\d session_events` shows all expected columns (`id`, `session_id`, `sequence`, `kind`, `actor`, `payload`, `created_at`), the FK to `sessions` and `users` (both `ON DELETE RESTRICT`), the kind CHECK with the full catalog, the `(session_id, sequence)` unique constraint, and indexes on `(session_id, kind)` and `(session_id, created_at)`. The unique constraint's B-tree on `(session_id, sequence)` is the ordered-replay index — no separate redundant index added.
+- Insert with `sequence=1`, `kind='session-created'`, well-formed JSONB payload — succeeds.
+- Insert duplicate `(session_id, sequence)=(s, 1)` — fails on `session_events_session_id_sequence_key` unique constraint.
+- Insert with `kind='unknown-kind'` — fails on `session_events_kind_check`.
+- Insert with bogus `session_id` — fails on `session_events_session_id_fkey`.
+- Insert with `actor=NULL` — succeeds (nullable per refinement; leaves room for future system-generated events).
+- Insert with bogus `actor` UUID — fails on `session_events_actor_fkey`.
+- `make down-v` cleans up cleanly.
+
+**Deferred (out of scope for this migration):**
+
+- Per-kind JSONB payload schemas — owned by the various `data_and_methodology.event_types.*` tasks (envelope, lifecycle, entity-creation, inclusion, proposal, vote, resolution, snapshot).
+- Schema-on-write payload validator — owned by `data_and_methodology.event_types.event_validation`.
+- DB-level append-only enforcement (revoke UPDATE/DELETE on the running app's role) — production-deploy concern; the contract is application-level today.
+- Application-side sequence allocator (`MAX(sequence)+1` in-transaction) — owned by the application layer; the unique constraint here is the safety net.
