@@ -64,6 +64,7 @@ task data_and_methodology "Data and methodology" {
       effort 1d
       allocate team
       depends !session_events_table
+      note "Refinement: tasks/refinements/data-and-methodology/seed_data_for_tests.md"
     }
   }
 
@@ -72,6 +73,7 @@ task data_and_methodology "Data and methodology" {
     task event_base_envelope "Common event envelope (id, kind, actor, timestamp, payload)" {
       effort 1d
       allocate team
+      note "Refinement: tasks/refinements/data-and-methodology/event_base_envelope.md"
     }
     task session_lifecycle_events "session-created, session-ended, participant-joined, participant-left" {
       effort 1d

@@ -21,7 +21,7 @@ task foundation "Foundation" {
       effort 1d
       allocate team
       depends !frontend_framework_decision
-      note "Cytoscape.js for audience and ReactFlow for moderator vs. one library across surfaces."
+      note "Refinement: tasks/refinements/foundation/graph_lib_decision.md"
     }
     task auth_lib_decision "Pick auth library / OAuth implementation" {
       effort 1d
@@ -32,12 +32,13 @@ task foundation "Foundation" {
       effort 0.5d
       allocate team
       depends !frontend_framework_decision
+      note "Refinement: tasks/refinements/foundation/style_tooling_decision.md"
     }
     task test_unit_framework_decision "Pick unit-test framework" {
       effort 0.5d
       allocate team
       depends !lang_decision, !frontend_framework_decision
-      note "Vitest / Jest / language-native — for unit-level tests across backend and frontend."
+      note "Refinement: tasks/refinements/foundation/test_unit_framework_decision.md"
     }
     task test_behavior_framework_decision "Pick behavior-test framework" {
       effort 0.5d
@@ -49,12 +50,13 @@ task foundation "Foundation" {
       effort 0.25d
       allocate team
       depends !frontend_framework_decision
-      note "Playwright drives moderator UI, participant UI, audience surface, and test-mode in a real browser."
+      note "Refinement: tasks/refinements/foundation/playwright_decision.md"
     }
     task storybook_or_equivalent_decision "Pick component-explorer tool (or skip)" {
       effort 0.5d
       allocate team
       depends !frontend_framework_decision
+      note "Refinement: tasks/refinements/foundation/storybook_or_equivalent_decision.md"
     }
   }
 

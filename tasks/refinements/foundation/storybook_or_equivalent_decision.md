@@ -1,0 +1,49 @@
+# Pick component-explorer tool (or skip)
+
+**TaskJuggler entry**: [tasks/00-foundation.tji](../../00-foundation.tji) — task `foundation.stack_decisions.storybook_or_equivalent_decision`
+**Effort estimate**: 0.5d
+**Inherited dependencies**: `foundation.stack_decisions.frontend_framework_decision` (settled — React)
+
+## What this task is
+
+Decide whether to set up a component-explorer tool (Storybook or similar) for the four frontend workspaces, and if so, which one.
+
+## Why it needs to be done
+
+A component explorer accelerates UI iteration: you can render components in isolation with mocked props/state, see all variations side by side, and document them. Particularly useful for the moderator UI's complex state machines (per-facet states, vote indicators, diagnostic flags, etc.) and for visual regression. But it adds a workspace, a build step, and another tool to maintain.
+
+## Inputs / context
+
+Candidates:
+
+- **Storybook** — the established standard. Massive feature set (a11y, viewport, interactions, screenshot tests via Chromatic). Heavyweight install and config.
+- **Ladle** — much lighter, Vite-based, mostly Storybook-compatible story format. Great DX for the basics; smaller addon ecosystem.
+- **Histoire** — similar to Ladle in spirit; Vue-first historically.
+- **Skip it** — develop components by composing them in the running app and watching the result.
+
+Project context:
+
+- The four frontend surfaces have many distinct visual states (per-facet rendering, vote indicators, diagnostic flags, animation transitions, etc.). A component explorer would be valuable for designing these in isolation.
+- Visual regression tests are already in the WBS (`mod_vr_*`, `part_vr_*`, `aud_visual_regression`). A component explorer would feed those naturally.
+- Small team — Storybook's full feature set may be overkill.
+
+## Constraints / requirements
+
+- TypeScript / React-native.
+- Compatible with the chosen styling approach (`style_tooling_decision`).
+- Compatible with the chosen unit-test framework (so test stories can run as visual-regression specs).
+- Reasonable build time.
+
+## Acceptance criteria
+
+- Decision made (use a tool / skip).
+- If used: tool chosen and "hello story" runs.
+- If skipped: rationale recorded so we revisit when components multiply.
+
+## Open questions
+
+- **Use a component explorer or skip?**
+  - **Skip in v1.** No tool to install, configure, maintain; develop components in the running app. If component complexity becomes a real iteration bottleneck, install one then.
+  - **Ladle.** Light, fast, Vite-based — minimal overhead.
+  - **Storybook.** Full-featured; heaviest commitment.
+  - **My instinct: skip in v1.** The four frontend surfaces will be small at first; the running dev compose stack with a real session is the most authentic preview. Revisit when the moderator's per-facet state matrix gets unwieldy in the running app — at that point, lean toward Ladle for low overhead. **Awaiting input.**
