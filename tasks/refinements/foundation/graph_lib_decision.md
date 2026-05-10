@@ -60,3 +60,12 @@ Library candidates:
 ## Open questions
 
 (none — all decided)
+
+## Status
+
+**Done** (2026-05-10).
+
+- ADR: [`docs/adr/0004-graph-libraries-reactflow-and-cytoscape.md`](../../../docs/adr/0004-graph-libraries-reactflow-and-cytoscape.md)
+- Sketches:
+  - [`scripts/hello-reactflow.tsx`](../../../scripts/hello-reactflow.tsx) — moderator surface (ReactFlow).
+  - [`scripts/hello-cytoscape.ts`](../../../scripts/hello-cytoscape.ts) — participant tablet + audience + replay surfaces (Cytoscape.js).
