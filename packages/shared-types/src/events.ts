@@ -44,7 +44,10 @@
 //     `participant_id` to `proposal_id` / `participant`, and added
 //     `voted_at: ISO8601` per the refinement).
 //   - `resolution_events` → `commit`, `meta-disagreement-marked`.
-//   - `snapshot_events` → `snapshot-created`.
+//   - `snapshot_events` → `snapshot-created` (**done** — tightened
+//     below; payload is `{ snapshot_id, label, log_position }` with
+//     label capped at 128 chars and `log_position` a positive integer
+//     matching the session sequence ceiling documented above).
 //
 // **No event versioning in v1** (R20). The envelope omits a `version`
 // field. Adding one later is a non-breaking shape change (optional
@@ -370,10 +373,34 @@ export const metaDisagreementMarkedPayloadSchema = z.object({
 
 export type MetaDisagreementMarkedPayload = z.infer<typeof metaDisagreementMarkedPayloadSchema>;
 
-// Placeholder for kinds whose payload schema is owned by a
-// not-yet-completed downstream task. Accepts any object; downstream
-// tasks tighten this.
-const placeholderPayloadSchema = z.object({}).passthrough();
+// -- Snapshot event payload schema -----------------------------------
+//
+// Owned by `snapshot_events`. Refinement:
+// tasks/refinements/data-and-methodology/snapshot_events.md.
+//
+// A snapshot is a regular event in `session_events` (kind:
+// `snapshot-created`) — no separate table. The payload carries the
+// snapshot's surrogate UUID, a short user-supplied label (VARCHAR(128)
+// per the refinement's decision), and `log_position` — the session's
+// `sequence` value at the moment of the snapshot (typically the
+// snapshot event's own sequence, so replay-up-to-this-snapshot
+// includes the snapshot event itself).
+//
+// `log_position` is `z.number().int().positive()` (sequence values
+// are 1-indexed and BIGINT in SQL). JS `number` is safe up to 2^53,
+// matching the ceiling documented in the file header — well beyond
+// any plausible per-session event count.
+//
+// Discoverability is already covered by the `(session_id, kind)`
+// index on `session_events` (R29) — no additional index needed for
+// snapshot lookups.
+export const snapshotCreatedPayloadSchema = z.object({
+  snapshot_id: z.string().uuid(),
+  label: z.string().min(1).max(128),
+  log_position: z.number().int().positive(),
+});
+
+export type SnapshotCreatedPayload = z.infer<typeof snapshotCreatedPayloadSchema>;
 
 // The registry. Keys are exhaustive over `EventKind` (TypeScript
 // enforces this via the explicit type annotation).
@@ -397,18 +424,16 @@ export const eventPayloadSchemas: Record<EventKind, z.ZodTypeAny> = {
   commit: commitPayloadSchema,
   'meta-disagreement-marked': metaDisagreementMarkedPayloadSchema,
   // Owned by snapshot_events
-  'snapshot-created': placeholderPayloadSchema,
+  'snapshot-created': snapshotCreatedPayloadSchema,
 };
 
 // -- Per-kind payload type map ---------------------------------------
 //
 // `EventPayloadMap` resolves each kind to its concrete payload type.
-// Tightened kinds today: the four session-lifecycle kinds, the three
-// entity-creation kinds, `entity-included`, `proposal`, `vote`, and
-// the two resolution kinds (`commit`, `meta-disagreement-marked`).
-// `snapshot-created` remains as `Record<string, unknown>` (the
-// placeholder's TS image) and will tighten when its downstream task
-// lands.
+// All thirteen kinds are tightened: the four session-lifecycle kinds,
+// the three entity-creation kinds, `entity-included`, `proposal`,
+// `vote`, the two resolution kinds (`commit`,
+// `meta-disagreement-marked`), and `snapshot-created`.
 
 export interface EventPayloadMap {
   'session-created': SessionCreatedPayload;
@@ -423,7 +448,7 @@ export interface EventPayloadMap {
   vote: VotePayload;
   commit: CommitPayload;
   'meta-disagreement-marked': MetaDisagreementMarkedPayload;
-  'snapshot-created': Record<string, unknown>;
+  'snapshot-created': SnapshotCreatedPayload;
 }
 
 export type PayloadFor<K extends EventKind> = EventPayloadMap[K];

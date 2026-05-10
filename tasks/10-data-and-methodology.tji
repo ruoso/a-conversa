@@ -140,6 +140,7 @@ task data_and_methodology "Data and methodology" {
     task snapshot_events "snapshot-created" {
       effort 0.5d
       allocate team
+      complete 100
       depends !event_base_envelope
       note "Refinement: tasks/refinements/data-and-methodology/snapshot_events.md"
     }

@@ -51,3 +51,11 @@ From [docs/methodology.md — F10 (snapshot a segment)](../../../docs/moderator-
 ## Open questions
 
 (none — all decided)
+
+## Status
+
+**Done** 2026-05-10. `snapshotCreatedPayloadSchema` (and inferred
+`SnapshotCreatedPayload`) added to `packages/shared-types/src/events.ts`,
+registered in `eventPayloadSchemas`, and wired into `EventPayloadMap`.
+Round-trip + invalid-input tests in `packages/shared-types/src/events.test.ts`
+(8 new test cases). `pnpm run test:smoke` green.

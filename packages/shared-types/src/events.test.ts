@@ -22,6 +22,7 @@ import {
   participantLeftPayloadSchema,
   sessionCreatedPayloadSchema,
   sessionEndedPayloadSchema,
+  snapshotCreatedPayloadSchema,
   validateEvent,
   votePayloadSchema,
 } from './events.js';
@@ -38,6 +39,7 @@ const NODE_ID = '88888888-8888-4888-8888-888888888888';
 const NODE_ID_2 = '99999999-9999-4999-8999-999999999999';
 const EDGE_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const ANNOTATION_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+const SNAPSHOT_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 
 describe('EventEnvelope round-trip', () => {
   it('serializes and re-validates a `vote` envelope unchanged', () => {
@@ -731,6 +733,87 @@ describe('meta-disagreement-marked payload schema', () => {
   });
 });
 
+// -- Snapshot event payload schema -----------------------------------
+//
+// Owned by `snapshot_events`. Refinement:
+// tasks/refinements/data-and-methodology/snapshot_events.md.
+//
+// Snapshots are regular events in the session log (no separate table).
+// `log_position` is the session's `sequence` value at snapshot time —
+// a positive integer; JS `number` is safe up to 2^53, matching the
+// ceiling documented in the events.ts header. Label is capped at 128
+// characters per the refinement (VARCHAR(128)).
+
+describe('snapshot-created payload schema', () => {
+  const valid = {
+    snapshot_id: SNAPSHOT_ID,
+    label: 'Segment 1 close',
+    log_position: 42,
+  };
+
+  it('round-trips a well-formed payload through JSON', () => {
+    const parsed = snapshotCreatedPayloadSchema.parse(valid);
+    const wire = JSON.parse(JSON.stringify(parsed)) as unknown;
+    expect(snapshotCreatedPayloadSchema.parse(wire)).toEqual(valid);
+  });
+
+  it('rejects a non-UUID snapshot_id via validateEvent and names the kind', () => {
+    const envelope = {
+      id: EVENT_ID,
+      sessionId: SESSION_ID,
+      sequence: 11,
+      kind: 'snapshot-created' as const,
+      actor: ACTOR_ID,
+      payload: { ...valid, snapshot_id: 'not-a-uuid' },
+      createdAt: '2026-05-10T12:34:56Z',
+    };
+    let caught: unknown;
+    try {
+      validateEvent(envelope);
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(EventValidationError);
+    expect((caught as Error).message).toContain("'snapshot-created'");
+  });
+
+  it('rejects an empty label', () => {
+    const result = snapshotCreatedPayloadSchema.safeParse({ ...valid, label: '' });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a label longer than 128 characters', () => {
+    const result = snapshotCreatedPayloadSchema.safeParse({
+      ...valid,
+      label: 'x'.repeat(129),
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts a label of exactly 128 characters (boundary)', () => {
+    const result = snapshotCreatedPayloadSchema.safeParse({
+      ...valid,
+      label: 'x'.repeat(128),
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a non-integer log_position', () => {
+    const result = snapshotCreatedPayloadSchema.safeParse({ ...valid, log_position: 1.5 });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a negative log_position', () => {
+    const result = snapshotCreatedPayloadSchema.safeParse({ ...valid, log_position: -1 });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a zero log_position', () => {
+    const result = snapshotCreatedPayloadSchema.safeParse({ ...valid, log_position: 0 });
+    expect(result.success).toBe(false);
+  });
+});
+
 describe('placeholder payload schemas', () => {
   it('exposes a registry entry for every kind', () => {
     // Sanity check that the registry is exhaustive — adding a kind
@@ -821,10 +904,8 @@ describe('validateEvent failure paths', () => {
 //
 // For each registered kind, build a representative payload, parse it
 // through the registry's schema, JSON-serialize it, parse it again,
-// and assert equality. Tight schemas exercise their full shape;
-// placeholder kinds get `{}` (the placeholder accepts any object —
-// downstream `event_types.*` tasks replace these representatives as
-// each kind tightens).
+// and assert equality. All thirteen kinds are tightened today; each
+// representative exercises its full payload shape.
 
 const REPRESENTATIVE_PAYLOADS: Record<EventKind, unknown> = {
   'session-created': {
@@ -893,7 +974,11 @@ const REPRESENTATIVE_PAYLOADS: Record<EventKind, unknown> = {
     moderator: USER_ID,
     marked_at: '2026-05-10T12:34:56Z',
   },
-  'snapshot-created': {},
+  'snapshot-created': {
+    snapshot_id: SNAPSHOT_ID,
+    label: 'Segment 1 close',
+    log_position: 42,
+  },
 };
 
 describe('every kind round-trips through its registry schema', () => {
