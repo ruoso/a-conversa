@@ -71,8 +71,7 @@ ps:
 	@docker compose ps
 
 seed:
-	@echo "seed-data script not yet implemented; see foundation.dev_env.seed_data_script"
-	@exit 1
+	@pnpm run seed -- $(if $(FIXTURE),--fixture $(FIXTURE))
 
 clean:
 	@rm -rf node_modules apps/*/node_modules packages/*/node_modules

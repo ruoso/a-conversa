@@ -224,6 +224,7 @@ task foundation "Foundation" {
     task seed_data_script "Script to seed dev database with example session" {
       effort 1d
       allocate team
+      complete 100
       depends !compose_file
       note "Refinement: tasks/refinements/foundation/seed_data_script.md"
     }
