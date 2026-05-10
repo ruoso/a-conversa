@@ -30,3 +30,20 @@ The web framework (Express, Fastify, Hono, or similar) is deliberately deferred 
 - **Concurrency model is single-threaded event loop.** Adequate for the v1 scale (a handful of concurrent sessions, tens to low hundreds of nodes each, in-memory projections), but a future scale-out story would lean on horizontal processes rather than in-process parallelism. This is accepted explicitly; v1 does not need it.
 - **Runtime weight.** Node images are larger than a Go or Rust static binary. Acceptable given the single-image deployment target and the open-source-friendliness gain.
 - **Downstream tasks now constrained to the TS/Node ecosystem**: linter (ESLint family), formatter (Prettier or Biome), typecheck (`tsc`), unit and behavior test frameworks, and the application Dockerfile.
+
+## Stack-validation smoke test
+
+A minimal Node HTTP server lives at [`scripts/hello-world.ts`](../../scripts/hello-world.ts). It uses only the built-in `node:http` module — no framework yet — and listens on `PORT` (default 3000). It exists purely to prove the runtime works; the file is throwaway and will be removed when the real server lands as part of the repo-skeleton work.
+
+Run with:
+
+```sh
+npm install   # one-time
+npm run smoke:node
+```
+
+Then `curl http://127.0.0.1:3000/` to see `hello, world`.
+
+## Amendments
+
+- **2026-05-10** — Replaced the original transient `npx --yes ... tsx` invocation pattern with a project-local `package.json` + `npm install` setup. `tsx` and the smoke-test dependencies now live under `devDependencies`; smoke tests are invoked via `npm run smoke:*`. The decision (TypeScript on Node) is unchanged.

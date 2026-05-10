@@ -34,13 +34,17 @@ Build tooling, styling system, and test framework are deliberately deferred to t
 
 ## Stack-validation smoke test
 
-A minimal React component and server-side render check live at [`scripts/hello-react.tsx`](../../scripts/hello-react.tsx). It uses `react-dom/server`'s `renderToString` to mount `<Hello />` and print the resulting HTML. No `package.json`, no `tsconfig.json`, no bundler — just a one-shot proof that the React stack works end-to-end on the chosen runtime. The file is throwaway and will be removed when the real frontend workspace lands as part of the repo-skeleton work.
+A minimal React component and server-side render check live at [`scripts/hello-react.tsx`](../../scripts/hello-react.tsx). It uses `react-dom/server`'s `renderToString` to mount `<Hello />` and print the resulting HTML. The file is throwaway and will be removed when the real frontend workspace lands as part of the repo-skeleton work.
 
-Run command (NODE_PATH points the Node resolver at the npx cache so `tsx` can find `react`/`react-dom`):
+Run with:
 
 ```sh
-npx --yes --package=react --package=react-dom --package=tsx --package=@types/react \
-  -c 'NODE_PATH=$(dirname $(dirname $(which tsx))) tsx scripts/hello-react.tsx'
+npm install   # one-time
+npm run smoke:react
 ```
 
 Expected output: `<p>hello, react</p>`.
+
+## Amendments
+
+- **2026-05-10** — Replaced the original transient `npx --yes ... tsx` + `NODE_PATH` invocation with a project-local `package.json` + `npm install` setup. `react`, `react-dom`, `tsx`, and their types now live under `devDependencies`; the smoke test is invoked via `npm run smoke:react`. The decision (React) is unchanged.
