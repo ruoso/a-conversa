@@ -243,6 +243,8 @@ task data_and_methodology "Data and methodology" {
     task agreement_state_machine "Per-facet, per-participant agreement state machine" {
       effort 3d
       allocate team
+      complete 100
+      note "Refinement: tasks/refinements/data-and-methodology/agreement_state_machine.md"
     }
     task commit_logic "Commit logic — moderator commits when all participants vote agree" {
       effort 1d
