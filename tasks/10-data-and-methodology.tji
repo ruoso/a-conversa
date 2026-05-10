@@ -91,6 +91,7 @@ task data_and_methodology "Data and methodology" {
     task event_base_envelope "Common event envelope (id, kind, actor, timestamp, payload)" {
       effort 1d
       allocate team
+      complete 100
       note "Refinement: tasks/refinements/data-and-methodology/event_base_envelope.md"
     }
     task session_lifecycle_events "session-created, session-ended, participant-joined, participant-left" {

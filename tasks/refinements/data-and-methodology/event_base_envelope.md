@@ -63,3 +63,32 @@ The TS envelope mirrors this schema, with `payload` typed as a discriminated uni
 ## Open questions
 
 (none — all decided)
+
+## Status
+
+**Done** 2026-05-10.
+
+- ADR: [docs/adr/0021-event-envelope-discriminated-union-with-zod.md](../../../docs/adr/0021-event-envelope-discriminated-union-with-zod.md).
+- Module: [`packages/shared-types/src/events.ts`](../../../packages/shared-types/src/events.ts) — exports `EventKind`, `EventEnvelope<K>`, `Event` (discriminated union), `eventKindSchema`, `eventEnvelopeSchema`, `eventPayloadSchemas` (registry), `validateEvent`, `EventValidationError`, plus the two worked-example payload types/schemas (`SessionCreatedPayload` / `sessionCreatedPayloadSchema`, `VotePayload` / `votePayloadSchema`).
+- Tests: [`packages/shared-types/src/events.test.ts`](../../../packages/shared-types/src/events.test.ts) — round-trip, both worked examples (valid + invalid), placeholder acceptance, and the unknown-kind failure path. Runs under `pnpm run test:smoke` (the script now runs Vitest against `tests/smoke` and `packages` together).
+- Zod pinned at `4.4.3` as a `dependency` of `@a-conversa/shared-types`.
+
+**Placeholder schemas** today (each tightened by the named downstream task):
+
+| kind                       | downstream task               |
+| -------------------------- | ----------------------------- |
+| `session-created`          | `session_lifecycle_events` (worked example here; refined there) |
+| `session-ended`            | `session_lifecycle_events`    |
+| `participant-joined`       | `session_lifecycle_events`    |
+| `participant-left`         | `session_lifecycle_events`    |
+| `node-created`             | `entity_creation_events`      |
+| `edge-created`             | `entity_creation_events`      |
+| `annotation-created`       | `entity_creation_events`      |
+| `entity-included`          | `entity_inclusion_events`     |
+| `proposal`                 | `proposal_events`             |
+| `vote`                     | `vote_events` (worked example here; may refine there) |
+| `commit`                   | `resolution_events`           |
+| `meta-disagreement-marked` | `resolution_events`           |
+| `snapshot-created`         | `snapshot_events`             |
+
+The schema-on-write step (`event_validation`) imports `validateEvent` and runs it inside the same transaction that does `MAX(sequence)+1` and `INSERT`.

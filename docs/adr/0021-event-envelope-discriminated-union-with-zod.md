@@ -1,0 +1,44 @@
+# 0021 — Event envelope: TypeScript discriminated union with Zod
+
+- **Date**: 2026-05-10
+- **Status**: Accepted
+
+## Context
+
+The `session_events` table ([0010_session_events.sql](../../apps/server/migrations/0010_session_events.sql)) is the source-of-truth append-only log: every state transition in a session is one row. Each row carries an envelope (`id`, `session_id`, `sequence`, `kind`, `actor`, `payload`, `created_at`) plus a kind-specific JSONB `payload`. The SQL `CHECK` lists 13 envelope-level kinds; the `payload` column is intentionally untyped at the database level (the migration validates only "well-formed JSONB"), with schema-on-write validation deferred to the application layer (`event_validation` task).
+
+Every downstream consumer — the projection runtime, the WebSocket protocol, the change-history view, replay, test mode, the schema-on-write validator — needs a single shared TypeScript contract for events. The refinement at [tasks/refinements/data-and-methodology/event_base_envelope.md](../../tasks/refinements/data-and-methodology/event_base_envelope.md) settled the high-level shape (envelope mirrors the table; payload is a discriminated union by `kind`; lives in `packages/shared-types`). Two cross-cutting decisions ride along: validation library (R19 → Zod) and event versioning (R20 → none in v1). This ADR records the implementation choices.
+
+The 13 envelope-level kinds (per the CHECK in the migration): session lifecycle (`session-created`, `session-ended`, `participant-joined`, `participant-left`); global entity creation (`node-created`, `edge-created`, `annotation-created`); session inclusion (`entity-included`); proposals (single `proposal` kind, payload-discriminated); votes (`vote`); resolutions (`commit`, `meta-disagreement-marked`); snapshots (`snapshot-created`).
+
+## Decision
+
+**TypeScript discriminated union over `kind`.** `EventEnvelope<K extends EventKind>` is generic in the kind; `Event` is the union of `EventEnvelope<K>` over all `K`. Switching on `event.kind` narrows `event.payload` to the per-kind payload type, which is exactly what the projection runtime needs for exhaustive matching. The DB→TS field rename is camel-case at the boundary (`session_id` → `sessionId`, `created_at` → `createdAt`); the snake_case-in-JSON is preserved inside `payload` objects (those go through JSONB unchanged).
+
+**Validation library: Zod (R19).** TypeScript-native, types and runtime validators co-located, lightweight runtime cost, JSON Schema export possible later via converters if any external system ever needs it. Pinned at `4.4.3` as a `dependency` (not devDependency) on `@a-conversa/shared-types` — it's part of the runtime contract, not a build-time tool. Considered and rejected: ajv (great validator, but the schemas-vs-types split is friction we don't need at this scale); io-ts (runtime cost is heavier and the ergonomics for discriminated unions are noisier); hand-rolled type guards (no runtime errors, no compose-with-server validation step).
+
+**Per-kind payload schema registry.** A single `eventPayloadSchemas: Record<EventKind, z.ZodTypeAny>` maps each kind to its payload schema. Today the registry holds:
+
+- Two **worked examples** that demonstrate the shape end-to-end: `session-created` (`host_user_id`, `privacy`, `topic`, `ts`) and `vote` (`proposal_event_id`, `participant_id`, `vote`).
+- **Placeholder schemas** (`z.object({}).passthrough()`) for the remaining 11 kinds. The placeholder accepts any object, which keeps writers unblocked while each downstream `event_types.*` task tightens its kinds.
+
+Each downstream task (`session_lifecycle_events`, `entity_creation_events`, `entity_inclusion_events`, `proposal_events`, `vote_events`, `resolution_events`, `snapshot_events`) replaces its kinds' registry entries with a tight schema. The TypeScript `Record<EventKind, …>` annotation on the registry is exhaustiveness insurance: forgetting a kind is a compile error.
+
+**`validateEvent(raw)` is the entry point** the schema-on-write step calls. Two-stage parse: outer envelope first (`eventEnvelopeSchema`), then per-kind payload (registry lookup by `kind`). Returns the typed `Event` on success; throws an `EventValidationError` on failure with a message that names the kind and the failing path inside the payload. The two-stage shape produces materially clearer errors than a giant `z.discriminatedUnion`: a kind-mismatch surfaces at the envelope level; a payload-shape error surfaces tagged with the offending kind. The `event_validation` task wires `validateEvent` into the pre-insert path; an `INSERT … RETURNING` rolls back automatically if the call throws.
+
+**No event versioning in v1 (R20).** The envelope omits a `version` field. The event log is append-only and the catalog is small; any v1 schema change happens before there are real recorded sessions worth preserving compatibility with. Adding versioning later is a non-breaking shape change: an optional `version` field on the envelope schema, registry dispatch on `(kind, version)` instead of just `kind`. The revisit trigger is the first time we want to replay a recorded log against a server whose schema has changed — typically the first recorded show whose log we want to keep playable across upgrades.
+
+**Sequence is `number`, not `bigint`.** The DB column is `BIGINT`; JS `number` is exact up to 2^53 (~9 × 10^15), well beyond any plausible per-session event count. Recorded as a known ceiling rather than an immediate concern; widening to `bigint` is a one-line type change if a session ever crosses it.
+
+## Consequences
+
+- **One canonical event shape.** Server append code, WS message types, change-history rendering, replay, and tests all import the same `Event` union from `@a-conversa/shared-types`. Drift between layers can't accumulate.
+- **Exhaustive switch statements.** `switch (event.kind) { case '…': … }` with `noFallthroughCasesInSwitch` plus a `never` default forces every consumer to handle every kind.
+- **Downstream task scope is well-defined.** Each `event_types.*` task replaces its kinds' placeholder schemas in a single registry. No broad refactoring; just a per-task PR that swaps placeholders for tight schemas and adds tests.
+- **Schema-on-write integration is straightforward.** The `event_validation` task imports `validateEvent`, calls it inside the same transaction that runs `MAX(sequence)+1` and `INSERT`, and lets the `EventValidationError` roll the transaction back. No new validator surface to design.
+- **Versioning revisit is a known landing point.** Adding `version` later is a small additive change to the envelope schema and the registry shape; the rest of the codebase keeps working.
+- **Sequence ceiling is documented, not papered over.** If a single session ever crosses 2^53 events, the type widens to `bigint`; recorded so it can't surprise a reader years later.
+
+## Stack-validation tests
+
+[`packages/shared-types/src/events.test.ts`](../../packages/shared-types/src/events.test.ts) covers the round-trip (build envelope → JSON.stringify → JSON.parse → `validateEvent` → equal), the two worked-example payload schemas (each with valid + invalid input), one placeholder kind (`participant-joined` with `{}` passes), and the unknown-kind failure path. Run with `pnpm run test:smoke` (the script now runs Vitest against `tests/smoke` and `packages` together).
