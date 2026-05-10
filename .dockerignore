@@ -1,0 +1,57 @@
+# Mirrors the spirit of .gitignore: keep the build context lean so the
+# `pnpm install` and `pnpm -r build` layers in the Dockerfile see only
+# what they need, and so the cache invalidates on code changes — not
+# on local artefacts.
+
+# Version control
+.git/
+.gitignore
+.gitattributes
+
+# Node / pnpm
+node_modules/
+**/node_modules/
+.pnpm-store/
+.npm/
+.yarn/
+
+# Build outputs (will be regenerated inside the image)
+dist/
+**/dist/
+build/
+**/build/
+*.tsbuildinfo
+**/*.tsbuildinfo
+
+# Test artefacts and coverage
+coverage/
+.nyc_output/
+playwright-report/
+test-results/
+
+# Husky's auto-managed dispatcher (the committed `.husky/pre-commit`
+# hook itself stays in the context — only the regenerated `_/` is excluded).
+.husky/_/
+
+# Editor / IDE / OS state
+.vscode/
+.idea/
+.DS_Store
+*.swp
+
+# Logs
+*.log
+logs/
+
+# Local environment files (never bake secrets into the image)
+.env
+.env.local
+.env.*.local
+
+# TaskJuggler scratch
+report/
+
+# Docker bookkeeping
+Dockerfile
+.dockerignore
+docker-compose*.yml

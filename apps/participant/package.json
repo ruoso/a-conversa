@@ -3,5 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "scripts": {}
+  "scripts": {
+    "build": "echo 'no build yet (placeholder; bundler wiring lands with frontend tasks)'"
+  }
 }

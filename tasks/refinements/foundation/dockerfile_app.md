@@ -52,3 +52,17 @@ Stack pieces in place:
 - **Single image for v1.** Server serves frontend bundles as static assets. Matches architecture's "single Docker container" framing. Revisit if frontend bundles get unwieldy.
 - **Bundler: Vite.** Pairs naturally with Vitest (R17); standard for React + TS in 2026.
 - **Alpine runtime base.** Build stage uses `node:lts` (Debian) for native-module compilation; runtime is `node:lts-alpine`. Switch to debian-slim only if musl/glibc friction appears.
+
+## Status
+
+**Done** — 2026-05-10. Landed as [`Dockerfile`](../../../Dockerfile) at the repo root with companion [`.dockerignore`](../../../.dockerignore); rationale captured in [ADR 0015](../../../docs/adr/0015-dockerfile-multi-stage-pnpm-corepack.md).
+
+Verified end-to-end: `docker build -t a-conversa-app:dev .` succeeds against the current placeholder repo; `docker run --rm a-conversa-app:dev` prints the stub banner and exits 0. Runtime image size **155 MB** (target was < 200 MB).
+
+**Inevitable revisits**:
+
+- `backend.api_skeleton` will replace the stub `CMD` with the real server entry point (HTTP + WebSocket startup, healthz wiring).
+- `data_and_methodology.schema` (migrations) will add the `apps/server/migrations/` tree and the migration-runner; the runtime entry point then needs to apply migrations on startup (per architecture C6).
+- The frontend bundler tasks (`apps/{moderator,participant,audience}` Vite wiring) will replace each placeholder workspace's no-op `"build": "echo ..."` script with a real bundler invocation, and their `dist/` directories will need `COPY --from=build` lines added in the runtime stage.
+- `deployment.prod_container` will iterate on this Dockerfile for production (image signing, scanning, possibly distroless). The multi-stage shape is intended to be the spine production inherits from.
+- `foundation.dev_env.compose_file` is the immediate consumer; it will reference this image by tag.

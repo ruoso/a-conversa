@@ -184,6 +184,7 @@ task foundation "Foundation" {
     task dockerfile_app "Dockerfile for the application" {
       effort 1d
       allocate team
+      complete 100
       note "Refinement: tasks/refinements/foundation/dockerfile_app.md"
     }
     task dockerfile_postgres "Postgres container config" {
