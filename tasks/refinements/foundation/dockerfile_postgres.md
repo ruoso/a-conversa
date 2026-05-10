@@ -50,3 +50,12 @@ Every backend test, every event-log append, every projection run hits this datab
 
 - **Postgres major version: 16 (LTS).** Pin in the compose-file image tag. Bump when LTS rolls.
 - **No extensions in v1.** Add `pg_stat_statements` or others when there's a performance-debugging need.
+
+## Status
+
+**Done** — 2026-05-10.
+
+- ADR: [docs/adr/0016-postgres-upstream-alpine.md](../../../docs/adr/0016-postgres-upstream-alpine.md) — `postgres:16-alpine` upstream image, named volume `aconversa-postgres-data`, `pg_isready` healthcheck, no extensions, no init scripts in v1.
+- Container config record: [infra/postgres/README.md](../../../infra/postgres/README.md) — credentials convention (`aconversa` / `aconversa` / password-from-env), host port 5432, reset workflow (`docker compose down -v`), and the empty `infra/postgres/initdb/` directory mounted into `/docker-entrypoint-initdb.d/`.
+
+The actual Compose service block is wired by `foundation.dev_env.compose_file`, and the `.env.example` that fixes the credential values is authored by `foundation.dev_env.env_var_template`. Both consume the decisions recorded here.

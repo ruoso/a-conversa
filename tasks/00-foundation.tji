@@ -190,6 +190,7 @@ task foundation "Foundation" {
     task dockerfile_postgres "Postgres container config" {
       effort 0.5d
       allocate team
+      complete 100
       note "Refinement: tasks/refinements/foundation/dockerfile_postgres.md"
     }
     task dockerfile_mock_oauth "Local mock OAuth provider container" {
