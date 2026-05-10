@@ -16,6 +16,7 @@
     "test:smoke": "vitest run tests/smoke",
     "test:behavior:smoke": "NODE_OPTIONS='--import tsx' cucumber-js",
     "test:e2e:smoke": "playwright test --config=playwright.config.ts",
+    "build": "pnpm -r build",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",

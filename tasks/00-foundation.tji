@@ -272,6 +272,7 @@ task foundation "Foundation" {
     task ci_build "Build job in CI (compile / bundle)" {
       effort 0.5d
       allocate team
+      complete 100
       depends !ci_config
 
       note "Refinement: tasks/refinements/foundation/ci_build.md"

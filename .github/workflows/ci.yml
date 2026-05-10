@@ -21,10 +21,14 @@
 #   tests     — smoke-level test suites (unit, behavior, e2e). Currently
 #               a single sequential job; the per-runner split below is
 #               owned by downstream tasks.
+#   build     — `pnpm run build` (recursive workspace build) plus a
+#               buildx-based Docker image build with GHA layer cache,
+#               followed by a smoke run of the resulting image. Owned
+#               by foundation.ci.ci_build. Does NOT publish — publish
+#               is foundation.ci.ci_image_publish (lives in release.yml).
 #
 # Forward pointers (extension points; do not implement here):
 #
-#   - foundation.ci.ci_build           add a build job (`pnpm -r build`)
 #   - foundation.ci.ci_dependency_audit  add a scheduled dependency audit job
 #   - foundation.test_infra.ci_unit_test_step       split `pnpm test:smoke` into its own job
 #   - foundation.test_infra.ci_behavior_test_step   split `pnpm test:behavior:smoke` into its own job
@@ -299,3 +303,94 @@ jobs:
 
       - name: E2E smoke (foundation.test_infra.ci_playwright_step will own this)
         run: pnpm run test:e2e:smoke
+
+  build:
+    # Owned by foundation.ci.ci_build. Two parts:
+    #   1. `pnpm run build` — recursive workspace build (root script is
+    #      `pnpm -r build`). Today this is `tsc -b` for apps/server +
+    #      packages/shared-types and placeholder echoes for the React
+    #      frontends. The frontend bundlers will replace those echoes
+    #      with real Vite builds without changing this job.
+    #   2. Build the application Docker image (multi-stage; see
+    #      docs/adr/0015-dockerfile-multi-stage-pnpm-corepack.md) via
+    #      buildx with GHA-backed layer cache, then run a smoke check
+    #      against the built image.
+    #
+    # Smoke check today is `docker run --rm` against the stub entry
+    # point (which prints a banner and exits 0 — see ADR 0015). When
+    # backend.api_skeleton lands the real `/healthz` endpoint, this
+    # step gets a follow-up to do the HTTP probe (curl /healthz, expect
+    # 200) — tracked on the ci_build refinement.
+    #
+    # Does NOT publish. Publish (push to a registry on tagged release)
+    # is foundation.ci.ci_image_publish in release.yml.
+    #
+    # Parallel with `lint`, `format`, `typecheck`, and `tests`; shares
+    # the pnpm store cache populated by `setup`. Buildx layer cache is
+    # separate (type=gha, scoped to this job).
+    name: Build
+    runs-on: ubuntu-latest
+    needs: setup
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 20 with Corepack
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Enable Corepack and activate pnpm
+        run: |
+          corepack enable
+          corepack prepare --activate
+
+      - name: Resolve pnpm store path
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore pnpm store cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-store-${{ runner.os }}-
+
+      - name: Install dependencies
+        env:
+          HUSKY: '0'
+        run: pnpm install --frozen-lockfile
+
+      - name: Build workspaces
+        # Root `build` script is `pnpm -r build` — walks every workspace.
+        run: pnpm run build
+
+      - name: Set up Docker Buildx
+        # Required for `cache-from`/`cache-to` and the `gha` cache
+        # backend below. Pinned to v3 (major).
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build application image
+        # `load: true` makes the resulting image available to the local
+        # Docker daemon so the smoke step can `docker run` it; the GHA
+        # cache backend (type=gha) gives free layer reuse across runs
+        # of this workflow without us managing cache keys by hand.
+        # `push: false` keeps publish strictly in ci_image_publish.
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          tags: aconversa/app:ci
+          load: true
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test built image
+        # Today the entry point is the ADR 0015 stub (banner + exit 0).
+        # That's enough to prove the image starts cleanly. When
+        # backend.api_skeleton lands `/healthz`, replace this with a
+        # curl probe (start container with -d -p, wait, hit /healthz,
+        # expect 200, tear down).
+        run: docker run --rm aconversa/app:ci
