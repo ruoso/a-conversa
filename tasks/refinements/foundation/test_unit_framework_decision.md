@@ -41,11 +41,12 @@ Project context:
 - A "hello, unit test" passes in the dev environment from each workspace.
 - CI runs unit tests across all workspaces.
 
+## Decisions
+
+- **Vitest** (R17). Modern, TS-native, Jest-compat API, fast watch mode. Aligns with the bundler-resolution convention used on the frontend.
+- **Coverage tool: Vitest's built-in coverage with the v8 provider.**
+- **DOM environment: happy-dom.** Faster than jsdom and sufficient for React Testing Library's needs.
+
 ## Open questions
 
-- **Which framework?**
-  - **Vitest** — modern; matches Vite/bundler-friendly tsconfig (`ESNext` + `bundler` resolution); Jest-compat API means little ramp for anyone with Jest experience. Increasingly the default for new TS/React projects.
-  - **Jest** — most mature; broadest ecosystem; well-trodden React Testing Library docs assume Jest.
-  - **My instinct: Vitest.** Better TS DX, faster watch mode, and aligns with the modern bundler-resolution convention we're using on the frontend. Mature enough now that "Jest is more mature" is a smaller advantage than it was. **Awaiting input.**
-- **Coverage tool.** **My instinct: Vitest's built-in coverage (v8 provider).** **Awaiting input.**
-- **DOM environment.** **My instinct: happy-dom.** Faster than jsdom; sufficient for React Testing Library's needs. **Awaiting input.**
+(none — all decided)

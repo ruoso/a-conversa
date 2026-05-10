@@ -49,11 +49,14 @@ Library candidates:
 - Rationale recorded in the ADR log.
 - A "render N1, N2 with a supports edge" sketch works in each surface that uses the chosen library.
 
+## Decisions
+
+- **Two libraries** (R14):
+  - **ReactFlow** for the **moderator UI** — drag-to-create-edge ergonomics, React-native custom-node components, direct-manipulation feel.
+  - **Cytoscape.js** for **participant tablet + audience + replay**. Read-only surfaces share a renderer; participant tablet's visuals match the audience-broadcast renderer (which is what the format is "really" — the tablet shows the same thing the audience sees, plus per-facet vote indicators).
+- The cost of two styling languages and two animation systems is accepted; the moderator's interactive needs are different enough from the read-only surfaces that a single library serves neither well.
+- Design tokens (`packages/ui-tokens`) are shared across both libraries via stylesheet variables / Cytoscape style strings parameterized by tokens.
+
 ## Open questions
 
-- **One library or two?**
-  - **One: Cytoscape.js across all four surfaces.** Pro: single library to learn, single styling convention, smaller total bundle when shared. Con: the moderator's drag-to-create-edge will be more work since Cytoscape's React integration is not native; lose ReactFlow's UI ergonomics.
-  - **Two: ReactFlow for moderator, Cytoscape.js for participant + audience + replay.** Pro: each library is used where it shines. Con: two styling languages, two animation systems, two mental models for the team. The participant tablet rendering should match the audience visually, so it stays on Cytoscape.
-  - **Two with merged choices: ReactFlow for moderator AND participant** (interactive surfaces) **and Cytoscape for audience AND replay** (high-quality animation surfaces). Same trade-off.
-  - **My instinct: two — ReactFlow for moderator only; Cytoscape for participant, audience, and replay.** The moderator's interactive needs are sufficiently different from the read-only surfaces that one library doesn't serve both well; keeping participant matched to audience visually keeps the format coherent.
-  - **Awaiting input.**
+(none — all decided)

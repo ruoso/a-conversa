@@ -40,10 +40,11 @@ Project context:
 - If used: tool chosen and "hello story" runs.
 - If skipped: rationale recorded so we revisit when components multiply.
 
+## Decisions
+
+- **Skip in v1** (R18). No component explorer installed; develop components in the running dev compose stack. The running app with a real seeded session is the most authentic preview.
+- **Revisit when the moderator's per-facet state matrix gets unwieldy** in the running app. At that point, lean toward **Ladle** for low overhead — Vite-based, mostly Storybook-compatible story format, minimal install / config burden.
+
 ## Open questions
 
-- **Use a component explorer or skip?**
-  - **Skip in v1.** No tool to install, configure, maintain; develop components in the running app. If component complexity becomes a real iteration bottleneck, install one then.
-  - **Ladle.** Light, fast, Vite-based — minimal overhead.
-  - **Storybook.** Full-featured; heaviest commitment.
-  - **My instinct: skip in v1.** The four frontend surfaces will be small at first; the running dev compose stack with a real session is the most authentic preview. Revisit when the moderator's per-facet state matrix gets unwieldy in the running app — at that point, lean toward Ladle for low overhead. **Awaiting input.**
+(none — all decided)

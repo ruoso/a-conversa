@@ -45,21 +45,11 @@ The dev environment also seeds data when `make up` is run (via `foundation.dev_e
 
 ## Decisions
 
-- **Fixtures are committed to version control** as JSON files (event payloads + global entity rows). Plain text in git, easy to diff, deterministic.
+- **Fixtures are committed to version control as JSON files** (R21). Plain text in git, easy to diff, deterministic. Each fixture is a sequence of event-log records plus the global graph entities they reference.
+- **Fixtures live in `packages/test-fixtures/`** (R22). A separate workspace so both server tests and Playwright tests (which live in the frontend `apps/*` workspaces) can import the same data.
+- **Fixture loader replays through the application's event-append code** (R23). Slower than direct INSERTs but ensures fixtures only contain valid events; saves a class of "fixture works in tests but not in real flow" bugs. Validates the same way production writes do.
 - **The walkthrough fixture is canonical** — every other test that needs "a substantial debate" uses this one.
 
 ## Open questions
 
-- **Fixture format.**
-  - **(a) JSON files mirroring the schema** — straightforward; map cleanly to insert statements.
-  - **(b) A small DSL** for expressing event sequences (more readable but invents new syntax).
-  - **(c) TypeScript modules** that build fixtures programmatically (typed, but harder to diff).
-  - **My instinct: (a) JSON files** — most direct, easy to inspect. **Awaiting input.**
-- **Where do fixtures live?**
-  - **`apps/server/test/fixtures/`** — co-located with the server (which is what loads them).
-  - **`packages/test-fixtures/`** — separate workspace shared between server tests and Playwright tests.
-  - **My instinct: `packages/test-fixtures/`** — Playwright tests live in the frontend workspaces and need access too. **Awaiting input.**
-- **Fixture loader implementation.**
-  - **Direct INSERTs** to the test DB (skipping event-log validation) — fastest, but skips the validation pipeline.
-  - **Replay through the application's event-append code** — slower, but exercises the same validation that production writes go through.
-  - **My instinct: replay through event-append.** It's slower but it ensures fixtures only contain valid events; saves a class of "fixture works in tests but not in real flow" bugs. **Awaiting input.**
+(none — all decided)

@@ -55,11 +55,11 @@ The TS envelope mirrors this schema, with `payload` typed as a discriminated uni
 - **Lives in `packages/shared-types`** — server and clients share definitions.
 - **Schema-on-write validation** (carries from session_events_table R11). The validation step runs before insert; invalid payloads are rejected.
 
+## Additional decisions
+
+- **Validation library: Zod** (R19). TypeScript-native; types and runtime validators co-located; lightweight runtime cost. JSON Schema export possible via converters if external systems ever need it.
+- **No event versioning in v1** (R20). The event log is append-only and the catalog is small; any change in v1 happens before there are real recordings worth preserving compatibility with. Revisit when there's a real compatibility concern (e.g., a recorded show whose log we want to replay against a future server with a different schema).
+
 ## Open questions
 
-- **Validation library.** Common choices for TypeScript JSON-schema-style validation:
-  - **Zod** — TypeScript-native; types and runtime validators co-located; great DX. Schema definitions look like TS code.
-  - **JSON Schema (ajv)** — language-agnostic schemas; widely used; schemas in JSON files. Heavier to author than Zod for TS-first code.
-  - **TypeBox** — generates JSON Schema from TS-shaped definitions; bridges the two worlds.
-  - **My instinct: Zod.** Co-located definitions, types and runtime validation in lockstep, lightweight runtime cost. JSON Schema export is possible if external systems need it (Zod has converters). **Awaiting input.**
-- **Versioning.** As the event catalog evolves (new event kinds added, payloads change), how do we handle compatibility? **My instinct for v1: don't version yet.** The event log is append-only and the catalog is small; any change in v1 happens before there are real recordings. Revisit when there's a compatibility concern. **Awaiting input.**
+(none — all decided)
