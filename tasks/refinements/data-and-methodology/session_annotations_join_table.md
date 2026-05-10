@@ -50,3 +50,7 @@ Mirrors `session_nodes` / `session_edges`:
 
 - **Same PK and inclusion-monotonicity choices as `session_nodes`** (composite PK, no `removed_at` column). R9 + R10 carry.
 - **Same M-N exception to the UUID-PK convention** that the other two join tables made.
+
+## Status
+
+Done 2026-05-10 — `apps/server/migrations/0009_session_annotations.sql` creates the `session_annotations` table with composite PK on `(session_id, annotation_id)`, three `ON DELETE RESTRICT` FKs, an inverse-direction index on `annotation_id`, and a header citing R9, R10, and R26. Verified end-to-end: `make up` + `make migrate` applies through 0009 cleanly, `\d session_annotations` shows the expected columns + PK + FKs + index, a happy-path insert (user + node + annotation + session + session_annotations row) succeeds, a duplicate `(session_id, annotation_id)` insert fails on the PK, a bogus `session_id` fails on the FK, and `make down-v` tears down cleanly.
