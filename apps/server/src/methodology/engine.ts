@@ -35,16 +35,15 @@ import type { Projection } from '../projection/index.js';
 import type {
   ActionHandlerFor,
   ActionKind,
-  CommitAction,
-  EventToAppendEnvelope,
-  MarkMetaDisagreementAction,
   MethodologyAction,
-  ProposeAction,
   RejectedValidationResult,
   ValidationResult,
-  VoteAction,
 } from './types.js';
 import { requireParticipant } from './primitives.js';
+import { commitHandler } from './handlers/commit.js';
+import { placeholderProposeHandler } from './handlers/propose.js';
+import { placeholderVoteHandler } from './handlers/vote.js';
+import { placeholderMarkMetaDisagreementHandler } from './handlers/markMetaDisagreement.js';
 
 // ---------------------------------------------------------------
 // Handler registry.
@@ -65,14 +64,13 @@ export function getActionHandler<K extends ActionKind>(kind: K): ActionHandlerFo
   return handlers.get(kind) as ActionHandlerFor<K> | undefined;
 }
 
-// Reset to default placeholder handlers. Test-only. Called from
-// `engine.test.ts` after a test that installs a custom handler so
-// later tests see the default state. Not part of the public API
-// (still exported because the test file is in-tree; siblings should
-// register-not-reset).
+// Reset to default handlers. Test-only. Called from `engine.test.ts`
+// after a test that installs a custom handler so later tests see the
+// default state. Not part of the public API (still exported because
+// the test file is in-tree; siblings should register-not-reset).
 export function resetActionHandlers(): void {
   handlers.clear();
-  installDefaultHandlers();
+  installHandlers();
 }
 
 // ---------------------------------------------------------------
@@ -121,91 +119,28 @@ export function validateAction(
 }
 
 // ---------------------------------------------------------------
-// Default placeholder handlers.
+// Default handler installation.
 //
-// Each handler pass-through emits a single `EventToAppend` constructed
-// from the action's payload. They run after the universal checks
-// already accepted the action; the placeholders do NOT add any
-// methodology-specific rule. Sibling tasks register tighter handlers
-// to replace these.
+// Per-action handler logic lives under `./handlers/`. Each file
+// exports a `Validator<TAction>`; this function wires them into the
+// registry at module init.
+//
+// **Current state.** `commitHandler` is the real write-side validator
+// (per `commit_logic` — moderator-only, proposal-pending, unanimous-
+// agree-across-current-participants). The other three are placeholders
+// that pass universal checks and emit a single `EventToAppend` from
+// the action payload — sibling tasks (`vote_logic`,
+// `meta_disagreement_logic`, proposal-specific) will replace them.
 // ---------------------------------------------------------------
 
-function placeholderPropose(_projection: Projection, action: ProposeAction): ValidationResult {
-  const event: EventToAppendEnvelope<'proposal'> = {
-    id: action.eventId,
-    sessionId: action.sessionId,
-    sequence: action.sequence,
-    kind: 'proposal',
-    actor: action.actor,
-    payload: { proposal: action.proposal },
-    createdAt: action.createdAt,
-  };
-  return { ok: true, events: [event] };
+function installHandlers(): void {
+  registerActionHandler('propose', placeholderProposeHandler);
+  registerActionHandler('vote', placeholderVoteHandler);
+  registerActionHandler('commit', commitHandler);
+  registerActionHandler('mark-meta-disagreement', placeholderMarkMetaDisagreementHandler);
 }
 
-function placeholderVote(_projection: Projection, action: VoteAction): ValidationResult {
-  const event: EventToAppendEnvelope<'vote'> = {
-    id: action.eventId,
-    sessionId: action.sessionId,
-    sequence: action.sequence,
-    kind: 'vote',
-    actor: action.actor,
-    payload: {
-      proposal_id: action.proposalEventId,
-      participant: action.requester,
-      vote: action.vote,
-      voted_at: action.votedAt,
-    },
-    createdAt: action.createdAt,
-  };
-  return { ok: true, events: [event] };
-}
-
-function placeholderCommit(_projection: Projection, action: CommitAction): ValidationResult {
-  const event: EventToAppendEnvelope<'commit'> = {
-    id: action.eventId,
-    sessionId: action.sessionId,
-    sequence: action.sequence,
-    kind: 'commit',
-    actor: action.actor,
-    payload: {
-      proposal_id: action.proposalEventId,
-      moderator: action.requester,
-      committed_at: action.committedAt,
-    },
-    createdAt: action.createdAt,
-  };
-  return { ok: true, events: [event] };
-}
-
-function placeholderMarkMetaDisagreement(
-  _projection: Projection,
-  action: MarkMetaDisagreementAction,
-): ValidationResult {
-  const event: EventToAppendEnvelope<'meta-disagreement-marked'> = {
-    id: action.eventId,
-    sessionId: action.sessionId,
-    sequence: action.sequence,
-    kind: 'meta-disagreement-marked',
-    actor: action.actor,
-    payload: {
-      proposal_id: action.proposalEventId,
-      moderator: action.requester,
-      marked_at: action.markedAt,
-    },
-    createdAt: action.createdAt,
-  };
-  return { ok: true, events: [event] };
-}
-
-function installDefaultHandlers(): void {
-  registerActionHandler('propose', placeholderPropose);
-  registerActionHandler('vote', placeholderVote);
-  registerActionHandler('commit', placeholderCommit);
-  registerActionHandler('mark-meta-disagreement', placeholderMarkMetaDisagreement);
-}
-
-installDefaultHandlers();
+installHandlers();
 
 // ---------------------------------------------------------------
 // Internal helpers.

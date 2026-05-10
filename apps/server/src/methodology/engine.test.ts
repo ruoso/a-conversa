@@ -450,7 +450,13 @@ describe('validateAction — placeholder per-action handlers', () => {
     }
   });
 
-  it('commit action emits a commit event payload', () => {
+  it('commit action dispatches to the real commit handler (rejects no-vote case)', () => {
+    // After `commit_logic` landed, the engine's commit handler is the
+    // real write-side validator: it rejects a commit on a pending
+    // proposal where no participant has voted yet. This test asserts
+    // the dispatcher routes a commit action to that handler — the
+    // handler's full rule set is covered in
+    // `apps/server/src/methodology/handlers/commit.test.ts`.
     const p = seedSession();
     const action: CommitAction = {
       kind: 'commit',
@@ -464,14 +470,9 @@ describe('validateAction — placeholder per-action handlers', () => {
       committedAt: T9,
     };
     const r = validateAction(p, action);
-    expect(r.ok).toBe(true);
-    if (r.ok) {
-      const ev = r.events[0]!;
-      expect(ev.kind).toBe('commit');
-      if (ev.kind === 'commit') {
-        expect(ev.payload.moderator).toBe(MODERATOR_ID);
-        expect(ev.payload.proposal_id).toBe(PROPOSAL_ID_1);
-      }
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.reason).toBe('unanimous-agree-required');
     }
   });
 

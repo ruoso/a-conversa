@@ -249,7 +249,9 @@ task data_and_methodology "Data and methodology" {
     task commit_logic "Commit logic — moderator commits when all participants vote agree" {
       effort 1d
       allocate team
+      complete 100
       depends !agreement_state_machine
+      note "Refinement: tasks/refinements/data-and-methodology/commit_logic.md"
     }
     task withdrawal_logic "Withdrawal — agreed facet → disputed; supersedes prior commit" {
       effort 1d
