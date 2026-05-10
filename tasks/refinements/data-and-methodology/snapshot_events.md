@@ -44,7 +44,10 @@ From [docs/methodology.md — F10 (snapshot a segment)](../../../docs/moderator-
 - **`log_position`** is the session's `sequence` value at the time the snapshot is taken — typically the snapshot event's own sequence (so replay-up-to-this-snapshot includes the snapshot event itself).
 - **Label length cap: VARCHAR(128)** — short labels expected ("Segment 1 close").
 
+## Additional decisions
+
+- **Discoverability is already covered** by the `session_events_table`'s `(session_id, kind)` index (specified in round 2 acceptance criteria). No additional index needed for snapshot lookups (R29).
+
 ## Open questions
 
-- **Discoverability via index, or scan-and-filter?** Querying "list all snapshots in session S" can scan `session_events` filtering on `kind = 'snapshot-created'`. Should we have a dedicated index on `(session_id, kind)` to speed this up?
-  - **My instinct: yes, the `session_events_table` already specifies an index on `(session_id, kind)`** (round 2 acceptance criteria). So this is free. Confirm.
+(none — all decided)

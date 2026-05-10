@@ -46,7 +46,10 @@ By the time `dev_env.compose_file` and `dev_env.one_command_script` land (downst
 - **Lives in README.md** (not a separate `DEVELOPMENT.md`), following the repo's convention of keeping the front door rich.
 - **Stays under ~30 lines.** README is for orientation; deep docs live elsewhere.
 
+## Additional decisions
+
+- **CONTRIBUTING.md is a separate future task** (R25). Not part of this work. The README's Development section is enough until contributor onboarding becomes a real concern.
+
 ## Open questions
 
-- **Should there also be a `CONTRIBUTING.md`?** A separate doc covering code-style expectations, branch / PR workflow, the test-coverage bar, etc. **My instinct: yes, eventually,** but not as part of *this* task — that's its own work. **Awaiting input.**
-- **Should the README link to the design docs?** It already does (Documents section). No change needed unless the layout shifts.
+(none — all decided)

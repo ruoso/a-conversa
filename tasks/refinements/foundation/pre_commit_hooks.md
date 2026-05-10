@@ -37,23 +37,19 @@ Pre-commit-hook tooling for TS/Node:
 
 ## Acceptance criteria
 
-- A pre-commit hook installed via the chosen tool that runs:
+- A pre-commit hook installed via Husky + lint-staged that runs:
   - `prettier --write` on staged formatable files (re-stages after).
   - `eslint --fix` on staged TS/TSX (re-stages after).
-  - `tsc --noEmit` on the affected projects (full typecheck — granularity TBD; see open question).
+  - `tsc -b` (incremental, project references) on the whole repo — cached after the first run, so most subsequent commits typecheck in well under a second.
 - A staged-file commit that violates lint or typecheck rules is rejected.
 - A staged-file commit that the formatter cleans up succeeds (with the cleaned content committed).
 - Documented in CONTRIBUTING.md (or the README's development section) so contributors know what's running.
 
 ## Decisions
 
-- **Tooling: Husky + lint-staged.** Established standard, well-documented, large community. Lighter alternatives can be reconsidered if Husky's footprint becomes a problem.
-- **Hook scope: lint, format, typecheck.** All three run on every commit. No tests in pre-commit (too slow); CI runs tests.
+- **Tooling: Husky + lint-staged** (R24). Established standard, well-documented, large community.
+- **Hook scope: lint, format, typecheck — all three run on every commit** (R24). Typecheck is whole-repo via `tsc -b` (incremental, leverages project-references caching from `typecheck_config`). Catches type errors before they accumulate across commits, while staying fast on the steady-state path. No tests in pre-commit (too slow); CI runs tests.
 
 ## Open questions
 
-- **Typecheck scope in pre-commit.** `tsc --noEmit` on the full repo is slow. Options:
-  - **Whole-repo typecheck** every commit — accurate but slow (a few seconds at minimum).
-  - **Affected-projects typecheck** only — faster but requires figuring out which projects are affected by the staged files.
-  - **Skip typecheck in pre-commit** — let CI run it.
-  - **My instinct: skip typecheck in pre-commit.** Linter catches a lot; full typecheck runs in CI; the editor's TS server gives real-time feedback during development. Pre-commit hooks should be fast enough that contributors don't get frustrated. **Awaiting input.**
+(none — all decided)

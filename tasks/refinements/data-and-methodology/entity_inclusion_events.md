@@ -44,9 +44,11 @@ Annotations are a third global-entity kind; they also need session inclusion. Cu
 
 - **Single payload schema with `entity_kind` discriminator.** Cleaner than three separate kinds (`node-included` / `edge-included` / `annotation-included`); the table-write logic switches on `entity_kind`.
 
+## Additional decisions
+
+- **`session_annotations` is a third M-N join table** mirroring `session_nodes` and `session_edges` (R26). Annotations are first-class graph entities and get the same cross-session-reference treatment as nodes and edges. The schema task lives at `data_and_methodology.schema.session_annotations_join_table` (added to the WBS in round 4); the refinement is at [tasks/refinements/data-and-methodology/session_annotations_join_table.md](session_annotations_join_table.md).
+- The `entity-included` event with `entity_kind: 'annotation'` writes to `session_annotations`.
+
 ## Open questions
 
-- **Should there be a `session_annotations` join table?** Per round 1 / round 2 we have `session_nodes` and `session_edges`. Annotations weren't separately tracked in M-N joins — they were assumed to ride along with their target. But annotations are first-class entities that go through the agreement workflow; an annotation might be referenced in session B even if its target node was originally created in session A. Having a `session_annotations` join would mirror nodes/edges cleanly.
-  - **(a)** Add `session_annotations` as a third join table.
-  - **(b)** Keep the implicit "annotations follow their target" rule.
-  - **My instinct: (a) add a third join table.** Clean, mirrors nodes/edges, supports the cross-session-reference story for annotations the same way it does for nodes and edges. Out of scope as a schema change in this task — but the answer affects how `entity_kind: 'annotation'` is handled. **Awaiting input.**
+(none — all decided)

@@ -48,6 +48,12 @@ task data_and_methodology "Data and methodology" {
       depends !sessions_table, !edges_table
       note "Refinement: tasks/refinements/data-and-methodology/session_edges_join_table.md"
     }
+    task session_annotations_join_table "session_annotations M-N join table" {
+      effort 0.25d
+      allocate team
+      depends !sessions_table, !annotations_table
+      note "Refinement: tasks/refinements/data-and-methodology/session_annotations_join_table.md"
+    }
     task session_events_table "session_events append-only event log" {
       effort 1d
       allocate team

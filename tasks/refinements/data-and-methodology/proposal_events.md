@@ -59,7 +59,11 @@ Each proposal event includes proposer, target session, proposal kind, and gets a
 - **Proposal id is server-generated** at append time; clients don't supply it.
 - **Component lists for decompose / interpretive-split: minimum 2.** A "decomposition" of size 1 is a no-op; a size-2+ split is the meaningful case.
 
+## Additional decisions
+
+- **Component list maximum: 10** (R27). Generous for real decomposition cases (walkthrough's biggest was 4); pathological inputs flagged. Validation rejects proposals with `components.length > 10` or `readings.length > 10`.
+- **`meta-move` requires a target node or edge in v1** (R28). The Zod schema enforces `target_kind` as `'node' | 'edge'` and `target_id` as a UUID; both required. Session-level meta-moves (no target) can be added in a future schema-extension if a use case appears.
+
 ## Open questions
 
-- **Component list maximum.** A small upper bound prevents accidental denial-of-service from a malformed proposal. **My instinct: 10** — generous enough for real decomposition cases (the walkthrough's biggest decomposition was 4 components); small enough to flag pathological inputs. **Awaiting input.**
-- **Should `meta-move` target kinds be limited?** Currently the methodology says meta-moves attach to nodes or edges. Could we also have session-level meta-moves (no target)? The walkthrough's reframe was attached to a node. **My instinct: require a target in v1** — session-level meta-moves can be added later if a use case arises. **Awaiting input.**
+(none — all decided)
