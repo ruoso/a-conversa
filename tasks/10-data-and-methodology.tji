@@ -39,6 +39,7 @@ task data_and_methodology "Data and methodology" {
     task annotations_table "annotations table (global)" {
       effort 0.5d
       allocate team
+      complete 100
       note "Refinement: tasks/refinements/data-and-methodology/annotations_table.md"
     }
     task session_nodes_join_table "session_nodes M-N join table" {

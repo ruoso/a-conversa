@@ -68,3 +68,33 @@ The example walkthrough captures meta-moves as annotations with `kind=reframe` /
 ## Open questions
 
 (none — all decided)
+
+## Status
+
+**Done** 2026-05-10 — migration at
+[`apps/server/migrations/0006_annotations.sql`](../../../apps/server/migrations/0006_annotations.sql).
+
+Verified end-to-end against the local Compose stack:
+
+- `make up` brings postgres up healthy; `make migrate` applies through
+  `0006_annotations` cleanly.
+- `\d annotations` shows the seven columns, RESTRICT FKs to `nodes` /
+  `edges` / `users`, the `annotations_kind_check` CHECK on `kind`, the
+  `annotations_check` XOR CHECK on the polymorphic targets, and the
+  two partial indexes (`annotations_target_node_id_idx`,
+  `annotations_target_edge_id_idx`) each gated on
+  `WHERE <col> IS NOT NULL`.
+- Insert with `target_node_id` set + `kind='note'` → SUCCEEDS.
+- Insert with `target_edge_id` set + `kind='reframe'` → SUCCEEDS.
+- Insert with **both** target columns set → FAILS
+  `annotations_check` (the XOR CHECK).
+- Insert with **neither** target column set → FAILS
+  `annotations_check` (same constraint, the other side of XOR).
+- Insert with `kind='foo'` → FAILS `annotations_kind_check`.
+- `make down-v` cleans up.
+
+No new ADR — the XOR-via-two-typed-columns pattern (F11) and the
+TEXT+CHECK pattern for `kind` (CC2 / F12) are already covered by the
+refinement decisions and the existing migration conventions in
+ADR 0020. C5 (no `target_annotation_id` in v1) is enforced by
+omission and noted in the migration's header comment.
