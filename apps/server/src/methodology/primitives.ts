@@ -17,10 +17,14 @@
 //    siblings need to surface the typed `RejectionReason` upstream
 //    rather than turn a logic-flow into an exception.
 
+import type { ProposalPayload } from '@a-conversa/shared-types';
 import type {
   CommittedProposalRecord,
+  FacetName,
+  FacetState,
   ParticipantRecord,
   PendingProposal,
+  PerParticipantVote,
   Projection,
   UnresolvedMetaDisagreement,
 } from '../projection/index.js';
@@ -128,4 +132,96 @@ export function requireModerator(
     };
   }
   return participant;
+}
+
+// ---------------------------------------------------------------
+// `findParticipantVoteOnProposal` — resolve a participant's prior
+// vote on a *specific* proposal.
+//
+// Used by `withdrawal_logic` (vote handler) for the `already-voted`
+// (re-cast same vote) / `no-prior-agree` (withdraw without prior
+// agree) / dispute↔agree-switch rules. Returns:
+//
+//   - the recorded `PerParticipantVote` if the participant has a
+//     record on the affected facet AND that record's
+//     `proposalEventId` matches the queried proposal id;
+//   - `null` if the participant has no record on the facet, the
+//     record refers to a different proposal (the facet has hosted
+//     votes for other proposals over time and was overwritten on
+//     re-vote — the recorded `proposalEventId` is the ground truth
+//     for "which proposal does this vote refer to"), or the
+//     proposal sub-kind is structural (no per-facet vote tracking
+//     — `decompose`, `interpretive-split`, `axiom-mark`,
+//     `meta-move`, `break-edge`, `amend-node`, `annotate`).
+//
+// The facet-target resolution is duplicated from `handlers/commit.ts`
+// (which itself mirrors `replay.ts`'s private helpers); a future
+// refactor may extract them into a shared module — all three call
+// sites would switch together.
+// ---------------------------------------------------------------
+
+interface FacetTarget {
+  entityKind: 'node' | 'edge' | 'annotation';
+  entityId: string;
+  facet: FacetName;
+}
+
+function facetTargetForProposal(proposal: ProposalPayload): FacetTarget | null {
+  switch (proposal.kind) {
+    case 'classify-node':
+      return { entityKind: 'node', entityId: proposal.node_id, facet: 'classification' };
+    case 'set-node-substance':
+      return { entityKind: 'node', entityId: proposal.node_id, facet: 'substance' };
+    case 'set-edge-substance':
+      return { entityKind: 'edge', entityId: proposal.edge_id, facet: 'substance' };
+    case 'edit-wording':
+      return { entityKind: 'node', entityId: proposal.node_id, facet: 'wording' };
+    default:
+      return null;
+  }
+}
+
+function facetStateForTarget(
+  projection: Projection,
+  target: FacetTarget,
+): FacetState<unknown> | null {
+  if (target.entityKind === 'node') {
+    const node = projection.getNode(target.entityId);
+    if (!node) return null;
+    if (target.facet === 'classification') return node.classificationFacet;
+    if (target.facet === 'substance') return node.substanceFacet;
+    if (target.facet === 'wording') return node.wordingFacet;
+    return null;
+  }
+  if (target.entityKind === 'edge') {
+    const edge = projection.getEdge(target.entityId);
+    if (!edge) return null;
+    if (target.facet === 'substance') return edge.substanceFacet;
+    return null;
+  }
+  if (target.entityKind === 'annotation') {
+    const ann = projection.getAnnotation(target.entityId);
+    if (!ann) return null;
+    if (target.facet === 'wording') return ann.wordingFacet;
+    if (target.facet === 'substance') return ann.substanceFacet;
+    return null;
+  }
+  return null;
+}
+
+export function findParticipantVoteOnProposal(
+  projection: Projection,
+  proposalEventId: string,
+  participantId: string,
+): PerParticipantVote | null {
+  const found = findProposal(projection, proposalEventId);
+  if (found === null) return null;
+  const target = facetTargetForProposal(found.record.payload);
+  if (target === null) return null; // structural sub-kind — no per-facet vote tracking
+  const facet = facetStateForTarget(projection, target);
+  if (facet === null) return null;
+  const record = facet.perParticipant.get(participantId);
+  if (!record) return null;
+  if (record.proposalEventId !== proposalEventId) return null;
+  return record.vote;
 }

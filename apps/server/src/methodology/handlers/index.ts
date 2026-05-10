@@ -10,13 +10,16 @@
 // hazards are avoided: handlers depend on `types.ts` and
 // `primitives.ts`; `engine.ts` depends on the handlers.
 //
-// **What's real here today.** `commitHandler` is the real validator
-// (this task — `commit_logic`). The other three handlers are still
-// placeholders inherited from `agreement_state_machine`; the sibling
-// tasks `withdrawal_logic` / `vote_logic`, `meta_disagreement_logic`,
-// and proposal-specific tasks will replace them when they land.
+// **What's real here today.** `commitHandler` (`commit_logic`) and
+// `voteHandler` (`withdrawal_logic`, which owns all three vote arms
+// `agree` / `dispute` / `withdraw`) are the real validators. The
+// remaining two — `placeholderProposeHandler` and
+// `placeholderMarkMetaDisagreementHandler` — are still placeholders
+// inherited from `agreement_state_machine`; the sibling tasks
+// (`meta_disagreement_logic` and proposal-specific tasks) will
+// replace them when they land.
 
 export { commitHandler } from './commit.js';
 export { placeholderProposeHandler } from './propose.js';
-export { placeholderVoteHandler } from './vote.js';
+export { voteHandler } from './vote.js';
 export { placeholderMarkMetaDisagreementHandler } from './markMetaDisagreement.js';

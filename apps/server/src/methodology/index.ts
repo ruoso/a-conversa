@@ -26,6 +26,7 @@ export type {
 
 export {
   currentParticipants,
+  findParticipantVoteOnProposal,
   findProposal,
   nextSequence,
   requesterIsModerator,

@@ -256,7 +256,9 @@ task data_and_methodology "Data and methodology" {
     task withdrawal_logic "Withdrawal — agreed facet → disputed; supersedes prior commit" {
       effort 1d
       allocate team
+      complete 100
       depends !commit_logic
+      note "Refinement: tasks/refinements/data-and-methodology/withdrawal_logic.md"
     }
     task meta_disagreement_logic "Meta-disagreement marking; carries both proposed values" {
       effort 1d

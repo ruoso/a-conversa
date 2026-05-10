@@ -42,7 +42,7 @@ import type {
 import { requireParticipant } from './primitives.js';
 import { commitHandler } from './handlers/commit.js';
 import { placeholderProposeHandler } from './handlers/propose.js';
-import { placeholderVoteHandler } from './handlers/vote.js';
+import { voteHandler } from './handlers/vote.js';
 import { placeholderMarkMetaDisagreementHandler } from './handlers/markMetaDisagreement.js';
 
 // ---------------------------------------------------------------
@@ -125,17 +125,18 @@ export function validateAction(
 // exports a `Validator<TAction>`; this function wires them into the
 // registry at module init.
 //
-// **Current state.** `commitHandler` is the real write-side validator
-// (per `commit_logic` — moderator-only, proposal-pending, unanimous-
-// agree-across-current-participants). The other three are placeholders
-// that pass universal checks and emit a single `EventToAppend` from
-// the action payload — sibling tasks (`vote_logic`,
-// `meta_disagreement_logic`, proposal-specific) will replace them.
+// **Current state.** `commitHandler` (per `commit_logic`) and
+// `voteHandler` (per `withdrawal_logic` — the latter owns all three
+// vote arms `agree` / `dispute` / `withdraw`, not just withdraw) are
+// the real write-side validators. `placeholderProposeHandler` and
+// `placeholderMarkMetaDisagreementHandler` are still placeholders;
+// the sibling tasks (`meta_disagreement_logic`, proposal-specific
+// tasks) will replace them.
 // ---------------------------------------------------------------
 
 function installHandlers(): void {
   registerActionHandler('propose', placeholderProposeHandler);
-  registerActionHandler('vote', placeholderVoteHandler);
+  registerActionHandler('vote', voteHandler);
   registerActionHandler('commit', commitHandler);
   registerActionHandler('mark-meta-disagreement', placeholderMarkMetaDisagreementHandler);
 }
