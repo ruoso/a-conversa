@@ -76,3 +76,16 @@ The TaskJuggler note already specifies the columns:
 ## Open questions
 
 (none — all decided)
+
+## Status
+
+**Done** 2026-05-10. Migration: [`apps/server/migrations/0005_edges.sql`](../../../apps/server/migrations/0005_edges.sql).
+
+Verified end-to-end against the dev Compose stack (`make up` → `make migrate` → SQL probes → `make down-v`):
+
+- Schema (`\d edges`): six columns (`id`, `role`, `source_node_id`, `target_node_id`, `created_by`, `created_at`), three FKs all `ON DELETE RESTRICT`, the seven-value CHECK on `role`, the inline UNIQUE on `(role, source_node_id, target_node_id)`, and the two btree indexes on `source_node_id` / `target_node_id`.
+- **Directionality**: a `supports` edge from N1 → N2 inserts; the reversed `supports` edge N2 → N1 also inserts (different unique tuple). Symmetric `contradicts` will work the same way (two distinct rows with swapped endpoints).
+- **Uniqueness (F9)**: re-inserting `(supports, N1, N2)` fails with `duplicate key value violates unique constraint "edges_role_source_node_id_target_node_id_key"`.
+- **CHECK (CC2)**: `role = 'invalid'` fails with `violates check constraint "edges_role_check"`.
+- **FK**: a bogus `source_node_id` UUID fails with `violates foreign key constraint "edges_source_node_id_fkey"`.
+- Paired `bridges-from` / `bridges-to` is **not** enforced at the DB layer (F10 — runtime/diagnostic only); the table happily accepts a lone `bridges-from` without its sibling `bridges-to`. The coherency-hint diagnostic surfaces this.
