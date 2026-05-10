@@ -63,3 +63,32 @@ The TaskJuggler note already specifies the columns:
 ## Open questions
 
 (none — all decided)
+
+## Status
+
+**Done** 2026-05-10. Migration: [`apps/server/migrations/0003_session_participants.sql`](../../../apps/server/migrations/0003_session_participants.sql).
+
+Verified end-to-end against the dev stack (`make up && make migrate`):
+
+- `\d session_participants` reports the expected six columns, both
+  FKs (`session_id` and `user_id` REFERENCES … ON DELETE RESTRICT),
+  the `role` CHECK constraint enumerating `'moderator'`, `'debater-A'`,
+  `'debater-B'`, and three indexes — `session_participants_session_id_idx`
+  (non-unique), `session_participants_active_role_idx` (unique partial
+  WHERE `left_at IS NULL`), `session_participants_active_user_idx`
+  (unique partial WHERE `left_at IS NULL`).
+- Inserting three participants with the three valid roles into one
+  session succeeds.
+- A fourth insert with role `debater-A` into the same session while
+  the original `debater-A` row is still active fails on the partial
+  unique index `session_participants_active_role_idx` ("duplicate key
+  value … Key (session_id, role)=(…, debater-A) already exists").
+- Marking the original `debater-A` row as left
+  (`UPDATE … SET left_at = NOW()`) and then re-inserting with role
+  `debater-A` for a *different* user succeeds — confirming the
+  partial unique index only constrains rows with `left_at IS NULL`,
+  encoding the F5 leave-and-rejoin behavior.
+- An insert with role `'spectator'` fails on the CHECK constraint
+  `session_participants_role_check` (and would be unblocked by a
+  future one-line ALTER per F6).
+- `make down-v` cleans up the volumes.

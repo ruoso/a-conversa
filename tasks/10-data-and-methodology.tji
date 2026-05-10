@@ -21,6 +21,7 @@ task data_and_methodology "Data and methodology" {
     task session_participants_table "session_participants table" {
       effort 0.5d
       allocate team
+      complete 100
       note "Refinement: tasks/refinements/data-and-methodology/session_participants_table.md"
     }
     task nodes_table "nodes table (global)" {
