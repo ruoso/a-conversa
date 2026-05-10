@@ -51,3 +51,11 @@ Architectural facts that constrain:
 ## Open questions
 
 (none — all decided)
+
+## Status
+
+**Done** (2026-05-10).
+
+- ADR: [docs/adr/0003-frontend-framework-react.md](../../../docs/adr/0003-frontend-framework-react.md) — React, status Accepted.
+- Stack-validation smoke test: [scripts/hello-react.tsx](../../../scripts/hello-react.tsx) — `react-dom/server` `renderToString(<Hello />)` prints `<p>hello, react</p>`. Verified via `npx --yes --package=react --package=react-dom --package=tsx --package=@types/react -c 'NODE_PATH=$(dirname $(dirname $(which tsx))) tsx scripts/hello-react.tsx'`.
+- Unblocks: `graph_lib_decision`, `style_tooling_decision`, frontend `test_unit_framework_decision`, and `repo_skeleton.*` frontend-build configs.
