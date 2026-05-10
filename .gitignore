@@ -19,9 +19,11 @@ playwright-report/
 test-results/
 
 # Package manager caches
-# Currently on npm (per package-lock.json), but include pnpm store
-# speculatively in case workspaces migrate later.
+# Currently on pnpm (per pnpm-lock.yaml at root); npm and yarn caches are
+# kept here speculatively to keep stray installs out of the index.
 .pnpm-store/
+.npm/
+.yarn/
 
 # Environment files
 # Note: .env.example is intentionally checked in (template); see

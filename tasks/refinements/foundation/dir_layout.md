@@ -57,3 +57,31 @@ Repo content already in place:
 ## Open questions
 
 (none — all decided)
+
+## Status
+
+**Done** 2026-05-10. ADR: [docs/adr/0010-directory-layout-pnpm-workspaces.md](../../../docs/adr/0010-directory-layout-pnpm-workspaces.md).
+
+Top-level tree as committed:
+
+```
+apps/
+  server/         @a-conversa/server
+  moderator/      @a-conversa/moderator
+  participant/    @a-conversa/participant
+  audience/       @a-conversa/audience
+packages/
+  shared-types/   @a-conversa/shared-types
+docs/             design docs and ADRs
+scripts/          stack-validation throwaways (ADRs 0001/0003/0004/0005)
+tests/            root-level smoke tests for the test runners
+tasks/            TaskJuggler WBS and per-task refinements
+Makefile          top-level operator entry point
+pnpm-workspace.yaml
+package.json      (root, packageManager: pnpm@9.15.4)
+pnpm-lock.yaml
+```
+
+`apps/replay` is **deferred** — the replay viewer / test-mode surface may merge into `apps/audience` or land as its own workspace; the replay refinement decides. Migrations directory under `apps/server/migrations/` is also deferred to the migration-runner task.
+
+Verification: `pnpm -r ls` lists all six workspaces; root smoke tests (`test:smoke`, `test:behavior:smoke`, `test:e2e:smoke`) and one-off scripts (`smoke:react`, `smoke:reactflow`, `smoke:cytoscape`, `smoke:tailwind`) all pass post-migration.

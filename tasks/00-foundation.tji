@@ -163,6 +163,7 @@ task foundation "Foundation" {
     task dir_layout "Establish source directory layout" {
       effort 0.5d
       allocate team
+      complete 100
       note "Refinement: tasks/refinements/foundation/dir_layout.md"
     }
     task readme_dev_section "Add Development section to README" {
