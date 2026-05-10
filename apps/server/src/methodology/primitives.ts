@@ -329,6 +329,29 @@ export function nodeIsVisible(projection: Projection, nodeId: string): boolean {
 }
 
 // ---------------------------------------------------------------
+// `edgeIsVisible` — does the projection have a visible edge with this id?
+//
+// Used by `meta_move_logic` (rule 2 of `validateMetaMoveProposal` when
+// the target is an edge — a meta-move on an invisible edge would attach
+// an annotation to an entity nobody can see). The check mirrors the
+// visible-graph derivation in `docs/data-model.md`: an edge is
+// "currently visible" iff `projection.getEdge(edgeId)` returns a record
+// with `visible === true`. Per the read-side projection, `visible` is
+// flipped to `false` by `applyCommittedProposal` when a `break-edge`
+// against this edge commits (and parallels the node case for
+// supersession).
+//
+// Returns `false` for unknown edge ids; callers that need to
+// distinguish "doesn't exist" from "exists but not visible" should call
+// `projection.getEdge(edgeId)` directly. The dual of `nodeIsVisible`.
+// ---------------------------------------------------------------
+
+export function edgeIsVisible(projection: Projection, edgeId: string): boolean {
+  const edge = projection.getEdge(edgeId);
+  return edge !== undefined && edge.visible === true;
+}
+
+// ---------------------------------------------------------------
 // `hasAxiomMark` — does the projection have a committed axiom-mark on
 // `nodeId` for `participantId`?
 //

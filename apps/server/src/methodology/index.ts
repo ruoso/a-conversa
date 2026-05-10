@@ -26,6 +26,7 @@ export type {
 
 export {
   currentParticipants,
+  edgeIsVisible,
   findConflictingProposalAgainst,
   findParticipantVoteOnProposal,
   findProposal,

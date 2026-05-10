@@ -291,7 +291,9 @@ task data_and_methodology "Data and methodology" {
     task meta_move_logic "Meta-move handling (reframe / scope-change / stance)" {
       effort 1d
       allocate team
+      complete 100
       depends !agreement_state_machine
+      note "Refinement: tasks/refinements/data-and-methodology/meta_move_logic.md"
     }
     task reword_vs_restructure "Wording-edit handling — reword vs. restructure" {
       effort 2d

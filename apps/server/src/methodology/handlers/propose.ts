@@ -3,9 +3,11 @@
 // Refinement: tasks/refinements/data-and-methodology/decomposition_logic.md
 // Refinement: tasks/refinements/data-and-methodology/interpretive_split_logic.md
 // Refinement: tasks/refinements/data-and-methodology/axiom_mark_logic.md
+// Refinement: tasks/refinements/data-and-methodology/meta_move_logic.md
 // TaskJuggler: data_and_methodology.methodology_engine.decomposition_logic
 // TaskJuggler: data_and_methodology.methodology_engine.interpretive_split_logic
 // TaskJuggler: data_and_methodology.methodology_engine.axiom_mark_logic
+// TaskJuggler: data_and_methodology.methodology_engine.meta_move_logic
 //
 // The propose action carries one of the eleven proposal sub-kinds. Per
 // the methodology framework (agreement_state_machine), the handler runs
@@ -62,13 +64,30 @@
 //     per-participant, not structural; a pending decompose or
 //     interpretive-split against the same node does not block it.
 //
-//   - For the other eight sub-kinds (`classify-node`,
+//   - For the `meta-move` sub-kind: the real propose-side validator
+//     per `meta_move_logic`. Two rules (see `validateMetaMoveProposal`
+//     below for the rule comments):
+//       1. Target-entity-exists — `projection.getNode(target_id)` (when
+//          `target_kind === 'node'`) or `projection.getEdge(target_id)`
+//          (when `target_kind === 'edge'`) must be defined →
+//          `'target-entity-not-found'`.
+//       2. Target-entity-visible — the resolved node/edge's `visible`
+//          flag must be `true` → `'illegal-state-transition'`.
+//     (Structural shape — `meta_kind ∈ {reframe, scope-change, stance}`,
+//     `content` non-empty, `target_kind ∈ {node, edge}`, `target_id` a
+//     UUID — is enforced upstream by `metaMoveProposalSchema` per ADR
+//     0021 / refinement R28. The methodology validator does not re-
+//     check.) Meta-move is **not** in `CONFLICTING_PARENT_KINDS` — it
+//     attaches an annotation, doesn't flip target visibility, and
+//     multiple meta-moves on the same target are fine.
+//
+//   - For the other seven sub-kinds (`classify-node`,
 //     `set-node-substance`, `set-edge-substance`, `edit-wording`,
-//     `meta-move`, `break-edge`, `amend-node`, `annotate`): the
-//     universal-pass placeholder path. Each sub-kind's sibling task
-//     will tighten its arm as it lands. The placeholder builds the
-//     same one-event envelope the original handler always built — no
-//     methodology-specific gating.
+//     `break-edge`, `amend-node`, `annotate`): the universal-pass
+//     placeholder path. Each sub-kind's sibling task will tighten its
+//     arm as it lands. The placeholder builds the same one-event
+//     envelope the original handler always built — no methodology-
+//     specific gating.
 //
 // **Scope: propose-side only.** This handler validates the propose
 // action and emits the proposal envelope event. The commit-time
@@ -93,6 +112,7 @@
 
 import type { PendingProposal, Projection } from '../../projection/index.js';
 import {
+  edgeIsVisible,
   findConflictingProposalAgainst,
   hasAxiomMark,
   nodeIsVisible,
@@ -383,13 +403,113 @@ function validateAxiomMarkProposal(
 }
 
 // ---------------------------------------------------------------
+// `validateMetaMoveProposal` — the propose-side validator for the
+// `meta-move` proposal sub-kind.
+//
+// A meta-move is a reframe / scope-change / methodological stance
+// attached to a node or edge — a first-class capture of "the real
+// question is X, not the Y currently on the board" (per
+// docs/methodology.md lines 184–190). Per refinement R28, v1 requires
+// every meta-move to carry a target (`target_kind` + `target_id`);
+// session-level meta-moves (no target) are deferred.
+//
+// Rules in evaluation order:
+//
+//   1. **Target-entity-exists.** Dispatch on `target_kind`:
+//      - `'node'` → `projection.getNode(target_id)` must be non-
+//        undefined.
+//      - `'edge'` → `projection.getEdge(target_id)` must be non-
+//        undefined.
+//      → `'target-entity-not-found'` (same RejectionReason the
+//      decompose / interpretive-split / axiom-mark arms use when their
+//      target node is missing).
+//   2. **Target-entity-visible.** The resolved entity's `visible`
+//      field must be `true`. A meta-move on a superseded node or
+//      broken edge is meaningless — the annotation it creates would
+//      render against an entity nobody can see. → `'illegal-state-
+//      transition'`.
+//
+// Rule 3 — structural payload shape (`meta_kind ∈ {reframe, scope-
+// change, stance}`, `content` non-empty, `target_kind ∈ {node, edge}`,
+// `target_id` a UUID) — is enforced upstream by
+// `metaMoveProposalSchema` per ADR 0021 and refinement R28. This
+// validator does not re-check.
+//
+// **No conflict-walking.** A meta-move attaches an annotation; it does
+// NOT flip the target's `visible` flag on commit. Multiple meta-moves
+// on the same target are fine (a participant may reframe AND later
+// declare a stance on the same node). The `CONFLICTING_PARENT_KINDS`
+// set is unchanged.
+//
+// **Commit-time annotation creation.** The projection's
+// `applyCommittedProposal` meta-move arm (replay.ts ~line 687) is
+// currently a structural no-op — it synthesizes an annotation id but
+// doesn't emit the annotation-creation, deferring the rendering
+// decision to the methodology engine. Resolving the gap is the same
+// follow-up the decompose / interpretive-split / axiom-mark arms
+// flagged (likely lives alongside `commit_logic`'s structural-sub-
+// kind support); see this refinement's Open Questions.
+// ---------------------------------------------------------------
+
+function validateMetaMoveProposal(
+  projection: Projection,
+  action: ProposeAction,
+): RejectedValidationResult | null {
+  if (action.proposal.kind !== 'meta-move') {
+    // Defensive — the dispatcher gates this. Never reached at runtime.
+    return null;
+  }
+  const targetKind = action.proposal.target_kind;
+  const targetId = action.proposal.target_id;
+
+  // Rule 1 — target entity exists (dispatched on target_kind).
+  if (targetKind === 'node') {
+    const node = projection.getNode(targetId);
+    if (node === undefined) {
+      return {
+        ok: false,
+        reason: 'target-entity-not-found',
+        detail: `propose meta-move: target_id ${targetId} (target_kind 'node') does not reference any node in session ${projection.sessionId}`,
+      };
+    }
+    // Rule 2 — node is currently visible.
+    if (!nodeIsVisible(projection, targetId)) {
+      return {
+        ok: false,
+        reason: 'illegal-state-transition',
+        detail: `propose meta-move: target node ${targetId} is not currently visible (already superseded by a prior decompose / interpretive-split / restructure) — a meta-move on an invisible entity is meaningless`,
+      };
+    }
+    return null;
+  }
+  // target_kind === 'edge'
+  const edge = projection.getEdge(targetId);
+  if (edge === undefined) {
+    return {
+      ok: false,
+      reason: 'target-entity-not-found',
+      detail: `propose meta-move: target_id ${targetId} (target_kind 'edge') does not reference any edge in session ${projection.sessionId}`,
+    };
+  }
+  // Rule 2 — edge is currently visible.
+  if (!edgeIsVisible(projection, targetId)) {
+    return {
+      ok: false,
+      reason: 'illegal-state-transition',
+      detail: `propose meta-move: target edge ${targetId} is not currently visible (already broken by a prior break-edge commit) — a meta-move on an invisible entity is meaningless`,
+    };
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------
 // The handler.
 //
 // Switches on `action.proposal.kind`. The `decompose`,
-// `interpretive-split`, and `axiom-mark` arms run their real
-// validators. All other arms fall through to the universal-pass
-// placeholder path — sibling tasks (`meta_move_logic`, etc.) will
-// tighten their arms as they land.
+// `interpretive-split`, `axiom-mark`, and `meta-move` arms run their
+// real validators. All other arms fall through to the universal-pass
+// placeholder path — sibling tasks will tighten their arms as they
+// land.
 // ---------------------------------------------------------------
 
 export const proposeHandler: Validator<ProposeAction> = (
@@ -424,7 +544,12 @@ export const proposeHandler: Validator<ProposeAction> = (
       if (rejection !== null) return rejection;
       break;
     }
-    // The other eight sub-kinds fall through to the placeholder emission.
+    case 'meta-move': {
+      const rejection = validateMetaMoveProposal(projection, action);
+      if (rejection !== null) return rejection;
+      break;
+    }
+    // The other seven sub-kinds fall through to the placeholder emission.
     // Each sub-kind's sibling task tightens its arm as it lands.
     default:
       break;
@@ -445,11 +570,11 @@ export const proposeHandler: Validator<ProposeAction> = (
 // Backward-compatibility alias — the engine's `installHandlers` and the
 // barrel both still reference `placeholderProposeHandler`. After this
 // task the symbol is no longer a placeholder for the `decompose`,
-// `interpretive-split`, or `axiom-mark` arms (it's the real validator
-// there), but the name is preserved so the import sites in `engine.ts`
-// and `handlers/index.ts` don't need to churn ahead of the other
-// sibling sub-kind tasks. Once the remaining eight sub-kinds tighten,
-// the alias and the file comment header should be revisited.
+// `interpretive-split`, `axiom-mark`, or `meta-move` arms (it's the
+// real validator there), but the name is preserved so the import sites
+// in `engine.ts` and `handlers/index.ts` don't need to churn ahead of
+// the other sibling sub-kind tasks. Once the remaining seven sub-kinds
+// tighten, the alias and the file comment header should be revisited.
 export const placeholderProposeHandler = proposeHandler;
 
 export default proposeHandler;
