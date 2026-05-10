@@ -242,6 +242,7 @@ task foundation "Foundation" {
     task ci_config "Set up CI configuration (GitHub Actions or equivalent)" {
       effort 1d
       allocate team
+      complete 100
       note "Refinement: tasks/refinements/foundation/ci_config.md"
     }
     task ci_lint "Lint job in CI" {

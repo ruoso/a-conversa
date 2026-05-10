@@ -1,0 +1,35 @@
+# a-conversa — tagged-release pipeline (stub)
+#
+# This workflow fires on `v*` tag pushes. The real wiring — building
+# the application image (Dockerfile per ADR 0015), tagging it, and
+# pushing to the registry — is owned by foundation.ci.ci_image_publish
+# (a separate task that depends on foundation.ci.ci_build). Until that
+# lands, this workflow is a deliberate stub: a single placeholder job
+# that prints what it would do and exits 0, so the trigger is wired
+# end-to-end and a future contributor only has to fill in the body.
+#
+# Forward pointers:
+#
+#   - foundation.ci.ci_build           job that runs `pnpm -r build` (CI side)
+#   - foundation.ci.ci_image_publish   builds + pushes the application image on tag
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  release-stub:
+    name: Release pipeline (TODO)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Announce deferred wiring
+        run: |
+          echo "release pipeline TODO"
+          echo "Owner: foundation.ci.ci_image_publish"
+          echo "Tag:   ${GITHUB_REF}"

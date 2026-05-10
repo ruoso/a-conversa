@@ -41,3 +41,60 @@ CI is what catches regressions before they merge. A working CI config is the pla
 - A trivial commit triggers the workflow and all jobs pass on a clean repo.
 - Failed steps surface useful messages in the GitHub UI.
 - Workflow runs in under 10 minutes on the steady-state path (post-cache-warmup).
+
+## Status
+
+**Done — 2026-05-10.**
+
+- Per-PR workflow lives at
+  [`.github/workflows/ci.yml`](../../../.github/workflows/ci.yml):
+  triggers on every `pull_request` and on `push` to `main`; a
+  `concurrency: ci-${{ github.ref }}` block with
+  `cancel-in-progress: true` supersedes in-progress runs on the same
+  ref. Three jobs — `setup`, `checks` (depends on setup; runs lint,
+  format:check, the three typechecks), `tests` (depends on setup;
+  installs Playwright Chromium then runs the three smoke suites).
+  Node 20 via `actions/setup-node@v4`; pnpm via Corepack reading the
+  `packageManager` pin from root `package.json`; pnpm store cached via
+  `actions/cache@v4` keyed on `hashFiles('pnpm-lock.yaml')`.
+- Tagged-release stub at
+  [`.github/workflows/release.yml`](../../../.github/workflows/release.yml):
+  triggers on `push: tags: ['v*']`; single placeholder job that prints
+  "release pipeline TODO" and exits 0. Real wiring is owned by
+  `foundation.ci.ci_image_publish`.
+- ADR
+  [0019](../../../docs/adr/0019-ci-github-actions.md)
+  records the rationale (GitHub Actions; two workflow files;
+  Corepack-via-`actions/setup-node`; cached pnpm store; the deferred
+  per-concern parallelism; the deferred service containers; the
+  concurrency-cancellation choice).
+- Verified: `python3 -c 'import yaml,sys; yaml.safe_load(open(sys.argv[1]))'`
+  on both workflow files exits 0 with no output. The pre-commit hook
+  (ESLint / Prettier / `tsc -b`) runs at commit time and is the only
+  locally-enforced validation; the workflow itself is first exercised
+  on the next PR.
+
+## Deferrals (explicit)
+
+- **Per-concern parallel job splits.** v1 ships `checks` and `tests`
+  as combined sequential jobs; each downstream task takes one
+  concern out and gives it its own job:
+  - `foundation.ci.ci_lint` — `pnpm run lint` to its own job.
+  - `foundation.ci.ci_format` — `pnpm run format:check` to its own job.
+  - `foundation.ci.ci_typecheck` — split the three typecheck commands.
+  - `foundation.test_infra.ci_unit_test_step` — `pnpm run test:smoke`.
+  - `foundation.test_infra.ci_behavior_test_step` — `pnpm run test:behavior:smoke`.
+  - `foundation.test_infra.ci_playwright_step` — `pnpm run test:e2e:smoke`,
+    plus pinning Playwright + caching the browser binaries.
+- **Service containers (Postgres + Authelia).** Today's smoke suites
+  don't need either. The trigger to add them is a real test reaching
+  for a real DB —
+  `foundation.test_infra.test_db_provisioning` plus the per-runner CI
+  tasks above. A `TODO` comment in `ci.yml` marks the insertion
+  point.
+- **Build job (`pnpm -r build` in CI).** `foundation.ci.ci_build`.
+- **Image build + push on tagged release.** `foundation.ci.ci_image_publish`
+  fills the body of `release.yml`.
+- **Dependency vulnerability scan.** `foundation.ci.ci_dependency_audit`
+  (likely a separate `audit.yml` on a `schedule:` cron, not a
+  per-PR step).
