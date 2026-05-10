@@ -71,7 +71,13 @@ import type {
 } from '@a-conversa/shared-types';
 
 import { Projection, ProjectionInvariantError, createEmptyProjection } from './projection.js';
-import type { PendingProposal, PerParticipantVote, ProjectionChange } from './types.js';
+import type {
+  FacetName,
+  FacetState,
+  PendingProposal,
+  PerParticipantVote,
+  ProjectionChange,
+} from './types.js';
 
 export class ReplayError extends Error {
   override readonly name = 'ReplayError';
@@ -284,35 +290,78 @@ function handleProposal(
   changes.push({ kind: 'pending-proposal-added', proposalId: proposalEventId });
 }
 
+// Resolve the (entity, facet) target of a proposal payload for the
+// four facet-targeting proposal sub-kinds. Returns `null` for the
+// other (structural / multi-entity) sub-kinds — votes against those
+// still flow through `handleVote` for referential checks and the
+// change-feed entry, but no per-facet state is written. Owned by
+// `per_facet_status_derivation`.
+interface FacetTarget {
+  entityKind: 'node' | 'edge' | 'annotation';
+  entityId: string;
+  facet: FacetName;
+}
+
+function facetTargetForProposal(proposal: ProposalPayload): FacetTarget | null {
+  switch (proposal.kind) {
+    case 'classify-node':
+      return { entityKind: 'node', entityId: proposal.node_id, facet: 'classification' };
+    case 'set-node-substance':
+      return { entityKind: 'node', entityId: proposal.node_id, facet: 'substance' };
+    case 'set-edge-substance':
+      return { entityKind: 'edge', entityId: proposal.edge_id, facet: 'substance' };
+    case 'edit-wording':
+      return { entityKind: 'node', entityId: proposal.node_id, facet: 'wording' };
+    default:
+      return null;
+  }
+}
+
+function facetStateForTarget(
+  projection: Projection,
+  target: FacetTarget,
+): FacetState<unknown> | null {
+  if (target.entityKind === 'node') {
+    const node = projection.getNode(target.entityId);
+    if (!node) return null;
+    if (target.facet === 'classification') return node.classificationFacet;
+    if (target.facet === 'substance') return node.substanceFacet;
+    if (target.facet === 'wording') return node.wordingFacet;
+    return null;
+  }
+  if (target.entityKind === 'edge') {
+    const edge = projection.getEdge(target.entityId);
+    if (!edge) return null;
+    if (target.facet === 'substance') return edge.substanceFacet;
+    return null;
+  }
+  if (target.entityKind === 'annotation') {
+    const ann = projection.getAnnotation(target.entityId);
+    if (!ann) return null;
+    if (target.facet === 'wording') return ann.wordingFacet;
+    if (target.facet === 'substance') return ann.substanceFacet;
+    return null;
+  }
+  return null;
+}
+
 function handleVote(
   projection: Projection,
   payload: VotePayload,
   changes: ProjectionChange[],
 ): void {
-  // Per-facet status derivation owns the fan-out from a vote on a
-  // proposal into per-participant agreement state on the affected
-  // facet (and the resulting overall facet status). For this task
-  // we only record the vote against the pending proposal, leaving
-  // a note on the proposal that this vote was seen. The
-  // methodology engine will read the `pendingProposals` map plus
-  // the resolution events to compute final state.
-  //
-  // TODO(per_facet_status_derivation): Project this vote into the
-  // affected entity's per-participant facet state map. For now
-  // the projection's pending proposal alone captures vote
-  // arrival; downstream tests of facet derivation will exercise
-  // the full path.
+  // Look up the proposal in pending OR committed (a `withdraw` vote
+  // typically arrives after the proposal has been committed and
+  // therefore left `pendingProposals`).
   const pending = projection.getPendingProposal(payload.proposal_id);
-  if (pending === undefined) {
+  const committed = pending ? null : projection.getCommittedProposal(payload.proposal_id);
+  if (pending === undefined && committed === undefined) {
     throw new ReplayError(
-      `vote: proposal ${payload.proposal_id} is not pending in this projection`,
+      `vote: proposal ${payload.proposal_id} is neither pending nor committed in this projection`,
     );
   }
-  // No-op on the storage layer beyond the existence check. The
-  // vote enum (`agree | dispute | withdraw`) is the methodology
-  // engine's input; this dispatcher just confirms the vote
-  // references a real proposal and records the change-feed entry
-  // for downstream broadcasters.
+  const proposalPayload: ProposalPayload = pending ? pending.payload : committed!.payload;
+
   const vote: PerParticipantVote = payload.vote;
   changes.push({
     kind: 'vote-recorded',
@@ -320,8 +369,28 @@ function handleVote(
     participantId: payload.participant,
     vote,
   });
-  void payload.voted_at;
-  void pending;
+
+  // Project the vote into the affected facet's per-participant state
+  // for the four facet-targeting proposal sub-kinds. Other sub-kinds
+  // (axiom-mark, decompose, interpretive-split, meta-move,
+  // break-edge, amend-node, annotate) are structural — their per-
+  // participant agreement state is owned by their downstream
+  // methodology-engine tasks; this dispatcher does not touch a
+  // facet for them.
+  const target = facetTargetForProposal(proposalPayload);
+  if (target !== null) {
+    const facet = facetStateForTarget(projection, target);
+    if (facet === null) {
+      throw new ReplayError(
+        `vote: target entity ${target.entityKind}:${target.entityId} for facet ${target.facet} not present`,
+      );
+    }
+    facet.perParticipant.set(payload.participant, {
+      vote,
+      proposalEventId: payload.proposal_id,
+      votedAt: payload.voted_at,
+    });
+  }
 }
 
 function handleCommit(
@@ -336,6 +405,27 @@ function handleCommit(
     );
   }
   applyCommittedProposal(projection, pending.payload, changes);
+
+  // Record the commit on the affected facet's `committedProposalEventId`
+  // and `committedAt` for the four facet-targeting sub-kinds, so
+  // `deriveFacetStatus` can identify "was committed once" without a
+  // log re-walk. Owned by `per_facet_status_derivation`.
+  const target = facetTargetForProposal(pending.payload);
+  if (target !== null) {
+    const facet = facetStateForTarget(projection, target);
+    if (facet !== null) {
+      facet.committedProposalEventId = payload.proposal_id;
+      facet.committedAt = payload.committed_at;
+    }
+  }
+
+  projection.addCommittedProposal({
+    proposalEventId: payload.proposal_id,
+    payload: pending.payload,
+    committedAt: payload.committed_at,
+    moderator: payload.moderator,
+  });
+
   projection.removePendingProposal(payload.proposal_id);
   changes.push({
     kind: 'pending-proposal-cleared',
@@ -363,6 +453,19 @@ function handleMetaDisagreementMarked(
     markedBy: payload.moderator,
     markedAt: payload.marked_at,
   });
+
+  // Transition the affected facet's underlying agreement state to
+  // `meta-disagreement` for the four facet-targeting sub-kinds, so
+  // `deriveFacetStatus` returns `meta-disagreement` directly. Owned
+  // by `per_facet_status_derivation`.
+  const target = facetTargetForProposal(pending.payload);
+  if (target !== null) {
+    const facet = facetStateForTarget(projection, target);
+    if (facet !== null) {
+      facet.status = 'meta-disagreement';
+    }
+  }
+
   projection.removePendingProposal(payload.proposal_id);
   changes.push({ kind: 'meta-disagreement-marked', proposalId: payload.proposal_id });
   changes.push({

@@ -4,6 +4,7 @@
 //   - tasks/refinements/data-and-methodology/projection_data_structure.md
 //   - tasks/refinements/data-and-methodology/project_from_log.md
 //   - tasks/refinements/data-and-methodology/project_incrementally.md
+//   - tasks/refinements/data-and-methodology/per_facet_status_derivation.md
 
 export { Projection, ProjectionInvariantError, createEmptyProjection } from './projection.js';
 export type {
@@ -11,6 +12,7 @@ export type {
   AxiomMarkAddedChange,
   AxiomMarkRecord,
   ChangeEntityKind,
+  CommittedProposalRecord,
   EdgeAddedChange,
   EntityIncludedChange,
   FacetName,
@@ -46,3 +48,8 @@ export type {
 } from './types.js';
 export { applyEvent, OutOfOrderEventError, projectFromLog, ReplayError } from './replay.js';
 export { applyEventIncremental } from './incremental.js';
+export {
+  deriveFacetStatus,
+  FacetStatusDerivationError,
+  type DeriveEntityKind,
+} from './facet-status.js';

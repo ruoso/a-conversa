@@ -178,7 +178,9 @@ task data_and_methodology "Data and methodology" {
     task per_facet_status_derivation "Derive per-facet overall status from per-participant votes + commits" {
       effort 2d
       allocate team
+      complete 100
       depends !projection_data_structure
+      note "Refinement: tasks/refinements/data-and-methodology/per_facet_status_derivation.md"
     }
     task active_firing_computation "Compute edge.substance ∧ source.substance for each edge" {
       effort 0.5d

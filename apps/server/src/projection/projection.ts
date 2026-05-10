@@ -11,6 +11,7 @@
 // live in those downstream tasks.
 
 import type {
+  CommittedProposalRecord,
   FacetState,
   NewAnnotationInput,
   NewEdgeInput,
@@ -34,6 +35,8 @@ function emptyFacet<TValue>(): FacetState<TValue> {
     status: 'proposed',
     value: null,
     perParticipant: new Map(),
+    committedProposalEventId: null,
+    committedAt: null,
   };
 }
 
@@ -97,6 +100,12 @@ export class Projection {
   readonly #annotationsByEdge = new Map<string, Set<string>>();
 
   readonly #pendingProposals = new Map<string, PendingProposal>();
+
+  // Owned by `per_facet_status_derivation`. Records each commit so
+  // `handleVote` can resolve `withdraw` votes that arrive after the
+  // proposal has left `pendingProposals`, and so downstream readers
+  // can inspect committed history without re-walking the log.
+  readonly #committedProposals = new Map<string, CommittedProposalRecord>();
 
   // Per-userId: a list of historical participation rows. The
   // `session_participants` refinement settled that a participant who
@@ -285,6 +294,27 @@ export class Projection {
 
   getPendingProposal(proposalEventId: string): PendingProposal | undefined {
     return this.#pendingProposals.get(proposalEventId);
+  }
+
+  addCommittedProposal(record: CommittedProposalRecord): void {
+    if (this.#committedProposals.has(record.proposalEventId)) {
+      throw new ProjectionInvariantError(
+        `committed proposal ${record.proposalEventId} already present`,
+      );
+    }
+    this.#committedProposals.set(record.proposalEventId, record);
+  }
+
+  getCommittedProposal(proposalEventId: string): CommittedProposalRecord | undefined {
+    return this.#committedProposals.get(proposalEventId);
+  }
+
+  committedProposals(): IterableIterator<CommittedProposalRecord> {
+    return this.#committedProposals.values();
+  }
+
+  committedProposalCount(): number {
+    return this.#committedProposals.size;
   }
 
   addParticipant(record: ParticipantRecord): void {

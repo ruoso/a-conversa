@@ -26,7 +26,21 @@ import type {
   StatementKind,
 } from '@a-conversa/shared-types';
 
-export type FacetStatus = 'proposed' | 'agreed' | 'disputed' | 'meta-disagreement';
+// `FacetStatus` widened (additively) by `per_facet_status_derivation`:
+// the four agreement-layer values (`proposed | agreed | disputed |
+// meta-disagreement`) are what the dispatcher writes onto
+// `FacetState.status`; `committed` and `withdrawn` are output-only
+// values produced by `deriveFacetStatus` (facet-status.ts) on top of
+// the agreement-layer state plus the commit marker. Keeping the two
+// new values in this single union (rather than a separate enum) lets
+// consumers store one shape regardless of source.
+export type FacetStatus =
+  | 'proposed'
+  | 'agreed'
+  | 'disputed'
+  | 'committed'
+  | 'withdrawn'
+  | 'meta-disagreement';
 
 export type PerParticipantVote = 'agree' | 'dispute' | 'withdraw';
 
@@ -36,10 +50,28 @@ export interface PerParticipantFacetState {
   votedAt: string;
 }
 
+// `FacetState.committedProposalEventId` / `committedAt` (additive,
+// owned by `per_facet_status_derivation`):
+// populated by `handleCommit` for facet-targeting proposal sub-kinds
+// so `deriveFacetStatus` can identify "was committed once" without
+// re-walking the log. Both default to `null` until a commit lands.
 export interface FacetState<TValue> {
   status: FacetStatus;
   value: TValue | null;
   perParticipant: Map<string, PerParticipantFacetState>;
+  committedProposalEventId: string | null;
+  committedAt: string | null;
+}
+
+// Owned by `per_facet_status_derivation`. Records a commit so the
+// vote handler can resolve `withdraw` votes against proposals that
+// have left `pendingProposals`, and so future inspection of
+// committed history doesn't require a log re-walk.
+export interface CommittedProposalRecord {
+  proposalEventId: string;
+  payload: ProposalPayload;
+  committedAt: string;
+  moderator: string | null;
 }
 
 export interface AxiomMarkRecord {
