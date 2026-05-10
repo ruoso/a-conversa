@@ -50,3 +50,11 @@ report/
 # Placeholder: data-volume mounts (e.g., a `data/` directory for the
 # Postgres container) will be added when foundation.dev_env.compose_file
 # lands and the volume layout is fixed.
+
+# Authelia container scratch state (ad-hoc verification runs that bind
+# a host directory in place of the Compose-managed volume). The
+# Compose stack uses a named volume; this entry covers the bare-docker
+# smoke-test path documented in infra/authelia/README.md.
+infra/authelia/data/
+infra/authelia/db.sqlite3
+infra/authelia/notifications.txt

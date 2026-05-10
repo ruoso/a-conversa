@@ -1,0 +1,189 @@
+---
+# Authelia configuration — DEV ONLY
+#
+# This file is the local-development Authelia config. It is intentionally
+# permissive: one-factor for everyone, sqlite storage, filesystem
+# notifier, and a single committed users-file. None of these choices are
+# safe for production; production Authelia config lives elsewhere
+# (per ADR 0002 and ADR 0017) and is populated with real upstream OAuth
+# credentials and rotated secrets at deploy time.
+#
+# Real secret values come from the local `.env` (authored by the
+# `foundation.dev_env.env_var_template` task). Where this file references
+# a secret as a placeholder string here, that placeholder will be
+# overridden at runtime by an `AUTHELIA_*_FILE` or `AUTHELIA_*` env var
+# wired up by the `foundation.dev_env.compose_file` task.
+
+theme: light
+
+server:
+  address: 'tcp://0.0.0.0:9091'
+
+log:
+  level: info
+  format: text
+
+# Generic JWT used for one-time identity-verification flows (e.g. password
+# reset emails). Dev placeholder; compose overrides via env in real use.
+identity_validation:
+  reset_password:
+    jwt_secret: 'dev-only-jwt-secret-replace-in-env'
+
+# Authentication backend: flat YAML file. Production swaps this for an
+# LDAP or database-backed store; the OIDC client surface the application
+# sees does not change.
+authentication_backend:
+  password_reset:
+    disable: true
+  refresh_interval: '5 minutes'
+  file:
+    path: /config/users.yml
+    password:
+      algorithm: argon2
+      argon2:
+        variant: argon2id
+        iterations: 3
+        memory: 65536
+        parallelism: 4
+        key_length: 32
+        salt_length: 16
+
+# Access control: one-factor for everything. Dev only — production uses
+# per-domain rules and 2FA for sensitive endpoints.
+access_control:
+  default_policy: one_factor
+
+# Sessions. Dev uses a single in-process cookie store; production puts
+# this on Redis. The secret here is a placeholder that compose will
+# override.
+session:
+  secret: 'dev-only-session-secret-replace-in-env'
+  cookies:
+    # Cookie domain must contain a period or be an IP per Authelia.
+    # `aconversa.local` is added to /etc/hosts (or routed via the dev
+    # reverse proxy) for browser-side access; service-to-service calls
+    # inside the Compose network use the bare `authelia` hostname (see
+    # the README's "Issuer URL convention" section).
+    - name: authelia_session
+      domain: aconversa.local
+      authelia_url: 'https://auth.aconversa.local'
+      default_redirection_url: 'https://app.aconversa.local'
+      expiration: '1 hour'
+      inactivity: '5 minutes'
+
+# Regulation: brute-force throttling. Loose for dev so test runs aren't
+# locked out by Playwright re-trying credentials.
+regulation:
+  max_retries: 10
+  find_time: '2 minutes'
+  ban_time: '5 minutes'
+
+# Storage: sqlite for dev. Production uses Postgres. The data directory
+# is a container-local path; in compose it backs onto a named volume
+# (see `compose_file`).
+storage:
+  encryption_key: 'dev-only-storage-encryption-key-replace-in-env-please'
+  local:
+    # Backed onto a Compose volume by `compose_file`; container-local
+    # path stays under /var/lib so the read-only /config mount is not
+    # written to.
+    path: /var/lib/authelia/db.sqlite3
+
+# Notifier: required by Authelia even when not used. Filesystem in dev
+# captures any reset/2FA emails to a file we can grep; production uses
+# SMTP.
+notifier:
+  disable_startup_check: true
+  filesystem:
+    filename: /var/lib/authelia/notifications.txt
+
+# Telemetry off in dev — no phone-home.
+telemetry:
+  metrics:
+    enabled: false
+
+# OIDC provider. The application is registered as a generic OIDC client.
+# Client ID and (hashed) client secret are placeholders here; the real
+# values come from `.env` via `env_var_template`. The HMAC secret and
+# the issuer signing key are likewise dev-only material — production
+# uses freshly generated keys held as deploy secrets.
+identity_providers:
+  oidc:
+    hmac_secret: 'dev-only-oidc-hmac-secret-replace-in-env'
+    jwks:
+      - key_id: 'dev-issuer-2026'
+        algorithm: RS256
+        use: sig
+        # Dev-only RSA private key. Regenerate with:
+        #   docker run --rm authelia/authelia:latest \
+        #     authelia crypto pair rsa generate --directory /tmp \
+        #     --file.private-key oidc.issuer.dev.key
+        # Production replaces this with material held as a deploy secret.
+        key: |
+          -----BEGIN PRIVATE KEY-----
+          MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDN+vdG6IDKw/ZJ
+          qUVkQd6gjUPW/VEqlMXwXWDkwDIkObh/sOHwtGnUa7tUDeduiMncFuOobHi4osvG
+          OWl4WjAU/2vTDP4Va+1nnios7bPByHQ27+gyFZ1lqII4iJpyCs1/qLmTHykgeOyr
+          CrPYNaT2ezpAvdQMON0aQIk8fxqMqHjFD/l32FSaxo0O+v+kIIRnDyo1Z+9tI1sv
+          ypPJQFU6inHAuNQd7Y5ueRBnY0sNGMol6gdXVfXSDH0c8ujSLj01zKgXW/TCOJIB
+          n8APZSSOHG2Zm7kaNPPqjm4xpy3T20BBWAnTEzGqO7wcnpy3WHLDsLHlBpLL0kra
+          WA+lXEGFAgMBAAECggEABn/o1Z/4kG1mlCR3QBakA8TxYxNTQFi5dkA8EnvOGT6J
+          B955ArNus3lCzAA0UVSXqg4+2M2zcYARlguxvE58Pe1hZaN/UQW61A41nn1Rsse0
+          gxdG6G2uLcsHcOk+lmKo4WJdmLre/VtTfII18piev/hbejeDPW996pomunX4TH/l
+          3IidXwJWBdc+F6SXi3XJkoESpI+xQl+lkcBNX9B81dscFNd08TtosZPVAGfsg2k+
+          UI5wt/8P4FPOU8Z9kKuRhySzr8/SSYvULhRyEhFBBcanLp8h2sv09lFIXyYiz7Dh
+          dnbfCLHh1guSRo5Mz7+FdS8lefRDOblS49IDHHwFgQKBgQD/gZo+fo5xrrke+B6f
+          ebCFVZBkqs/70nKL3m6ZV2hqi+fW7EpGCYAPH2FStieIbbSfXPLm4wYtgIYlJL4K
+          RnuURpVBnlHhX7U3KHal9KaUJA7/X2HgOS7TPhSiDtKWyjh55J7L3Jk9YHza8UrH
+          pf+f9Z90t6pOo+Kj/TFLA/MNXQKBgQDOYNz74wrfbx1ImEL5qQjf1j5CHtqSypwF
+          HiAr8lsOCzzbNQvL49uuOjsS1MVNWdnNeKe+HDMUJ3miyozXt6CP1ywoBLyR+kRB
+          W8533+dHvsQHE1EPmnyAdD6KOcrwb62GkStwhfXtXWDCNKoRuC0ZhrBaQXJnERcw
+          YMDlf1oaSQKBgEOLUmhE8okRBHUwaIAGHmkRFovWMAdFOezJz3kQB1VrSM2jR3s+
+          VbEpvYOtDcReJAqg+sGYsHBk8pFtJiP3QAIRqrFfFgw7Td+X/c2fYE33PlO6Nlid
+          JUjIt5Gj033zVXy7uFLyLTxxfnAuq3Md6fayawXi683AO1DYxSgskhstAoGBAMr4
+          mv4kawIanvtRvLUcGP1EEVEoVSF/oPiri0qNfh4O0VhqEGMDg4AUBxtbJX0QvFQH
+          sToZM+dDd66ydNiH4aL2JZhqKCeNsulw6FwfWrDGHrcyuUuWTZJsQUHi2wOjYk9x
+          oP520csURmBaOVVaBQkQ3Yq2yVQyi9LppW1Q1gX5AoGAa6XaRV9iVhIKmGA9yN2p
+          4EBVAmfR01YayD+7/dIYHwiMwSsw41MtMtZ3lMg8ZRQ6Zs08xoD3XtoUxcBU95VS
+          6o0gMW3MWz4a6CFh0f4jouKsFIlW4O6hGNoYP2YFgL/z54adaqaQ1ghIdMgMQtEY
+          J8b6h4e6+Uaw+sXbpxm/SBk=
+          -----END PRIVATE KEY-----
+    lifespans:
+      access_token: '1 hour'
+      authorize_code: '1 minute'
+      id_token: '1 hour'
+      refresh_token: '90 minutes'
+    enable_client_debug_messages: true
+    cors:
+      endpoints:
+        - authorization
+        - token
+        - revocation
+        - introspection
+        - userinfo
+      allowed_origins_from_client_redirect_uris: true
+    clients:
+      - client_id: aconversa-app-dev
+        client_name: 'a-conversa (dev)'
+        # Dev-only client secret. Plaintext: 'aconversa-app-dev-secret'.
+        # Replaced at runtime by env_var_template.
+        client_secret: '$pbkdf2-sha512$310000$c8p78n7pUMln0jzvd4aK4Q$JNRBzwAo0ek5qV3oh1jTopVpZdQbAaZ8Bm9cNfgGgNDwVKu5nZc37qogRZ8/p7AwO1iAH1tcGYRUcGXr5yRbcQ'
+        public: false
+        authorization_policy: one_factor
+        require_pkce: false
+        pkce_challenge_method: ''
+        redirect_uris:
+          - 'http://localhost:5173/auth/callback'
+          - 'http://localhost:3000/auth/callback'
+        scopes:
+          - openid
+          - profile
+          - email
+          - offline_access
+        response_types:
+          - code
+        grant_types:
+          - authorization_code
+          - refresh_token
+        userinfo_signed_response_alg: none
+        token_endpoint_auth_method: client_secret_basic

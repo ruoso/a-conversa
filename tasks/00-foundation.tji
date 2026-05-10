@@ -196,6 +196,7 @@ task foundation "Foundation" {
     task dockerfile_mock_oauth "Local mock OAuth provider container" {
       effort 1d
       allocate team
+      complete 100
       note "Refinement: tasks/refinements/foundation/dockerfile_mock_oauth.md"
     }
     task compose_file "docker-compose.yml bringing up the full stack" {

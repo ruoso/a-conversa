@@ -1,0 +1,54 @@
+# Authelia users database — DEV ONLY
+#
+# Six dev accounts for local development. All use the same dev password
+# (see infra/authelia/README.md) so contributors can log in immediately
+# after `make up` without a credential vault.
+#
+# DO NOT ship this file (or this password format) in production. Production
+# Authelia uses a database-backed user store and federated upstream
+# providers (per ADR 0002); these flat-file entries exist solely to make
+# local dev and Playwright tests reproducible without external accounts.
+#
+# Password hash generated with:
+#   docker run --rm authelia/authelia:latest \
+#     authelia crypto hash generate argon2 --password 'aconversa-dev'
+#
+# All six users share the same hash because the dev password is shared.
+
+users:
+  alice:
+    displayname: 'Alice Example'
+    password: '$argon2id$v=19$m=65536,t=3,p=4$JpiWZ31afMmtrS72rVRXrA$jy30rqZRty9UwAL/7WVCmC1nK7N9FlgW/J3fQ021BPs'
+    email: alice@aconversa.local
+    groups:
+      - dev
+  ben:
+    displayname: 'Ben Example'
+    password: '$argon2id$v=19$m=65536,t=3,p=4$JpiWZ31afMmtrS72rVRXrA$jy30rqZRty9UwAL/7WVCmC1nK7N9FlgW/J3fQ021BPs'
+    email: ben@aconversa.local
+    groups:
+      - dev
+  maria:
+    displayname: 'Maria Example'
+    password: '$argon2id$v=19$m=65536,t=3,p=4$JpiWZ31afMmtrS72rVRXrA$jy30rqZRty9UwAL/7WVCmC1nK7N9FlgW/J3fQ021BPs'
+    email: maria@aconversa.local
+    groups:
+      - dev
+  dave:
+    displayname: 'Dave Example'
+    password: '$argon2id$v=19$m=65536,t=3,p=4$JpiWZ31afMmtrS72rVRXrA$jy30rqZRty9UwAL/7WVCmC1nK7N9FlgW/J3fQ021BPs'
+    email: dave@aconversa.local
+    groups:
+      - dev
+  erin:
+    displayname: 'Erin Example'
+    password: '$argon2id$v=19$m=65536,t=3,p=4$JpiWZ31afMmtrS72rVRXrA$jy30rqZRty9UwAL/7WVCmC1nK7N9FlgW/J3fQ021BPs'
+    email: erin@aconversa.local
+    groups:
+      - dev
+  frank:
+    displayname: 'Frank Example'
+    password: '$argon2id$v=19$m=65536,t=3,p=4$JpiWZ31afMmtrS72rVRXrA$jy30rqZRty9UwAL/7WVCmC1nK7N9FlgW/J3fQ021BPs'
+    email: frank@aconversa.local
+    groups:
+      - dev

@@ -52,3 +52,22 @@ This way the dev story exercises the same OIDC code path as production; no separ
 
 - **No upstream-stub in v1.** Authelia in local-user mode is faithful enough OIDC that the application's relying-party code is exercised the same way as production. Revisit only if tests need to specifically exercise the federated upstream path.
 - **Six dev users**: `alice`, `ben`, `maria` (canonical from the walkthrough) plus `dave`, `erin`, `frank` so two parallel sessions can run in tests.
+
+## Status
+
+**Done** 2026-05-10.
+
+- ADR: [docs/adr/0017-mock-oauth-authelia-users-file.md](../../../docs/adr/0017-mock-oauth-authelia-users-file.md)
+- Container config: [infra/authelia/](../../../infra/authelia/)
+  - `configuration.yml` — Authelia server, sessions, sqlite storage, filesystem notifier, OIDC provider with one client (`aconversa-app-dev`) and an inline dev RSA signing key.
+  - `users.yml` — six dev users (`alice`, `ben`, `maria`, `dave`, `erin`, `frank`), shared dev password `aconversa-dev` (argon2id-hashed).
+  - `README.md` — image pin (`authelia/authelia:4.39`), mount points, issuer URL convention, OIDC client shape, dev-password documentation, smoke-test invocation.
+
+Verified the upstream image starts cleanly against this config (`Authelia v4.39.19 is starting` → `Storage schema migration from 0 to 23 is complete` → `Startup complete` → `Listening for non-TLS connections on '[::]:9091'`).
+
+Deferred to downstream tasks:
+
+- **Compose service block** (volume, ports, dependency edges) — `foundation.dev_env.compose_file`.
+- **`.env.example`** with OIDC issuer URLs, client ID/secret, and Authelia secret overrides — `foundation.dev_env.env_var_template`.
+- **Playwright auth-flow helper** that drives Authelia's login screen — `foundation.test_infra.playwright_test_helpers`.
+- **Production Authelia config** — `deployment.prod_compose.prod_oauth_config`.
