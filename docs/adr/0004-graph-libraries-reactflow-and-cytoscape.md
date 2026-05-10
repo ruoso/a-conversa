@@ -37,8 +37,8 @@ Two minimal sketches prove each library renders "N1, N2 with a supports edge":
 - [`scripts/hello-reactflow.tsx`](../../scripts/hello-reactflow.tsx) — builds a ReactFlow tree with two nodes and one edge, server-renders via `react-dom/server`. ReactFlow defers most rendering until a DOM mount measures the viewport, so the SSR output is intentionally sparse; the goal is proving the import resolves and the React tree constructs.
 
   ```sh
-  npm install   # one-time
-  npm run smoke:reactflow
+  pnpm install   # one-time
+  pnpm run smoke:reactflow
   ```
 
   Expected output: `reactflow ok: rendered <N> chars of markup`.
@@ -46,7 +46,7 @@ Two minimal sketches prove each library renders "N1, N2 with a supports edge":
 - [`scripts/hello-cytoscape.ts`](../../scripts/hello-cytoscape.ts) — constructs a headless `cytoscape({ ... })` instance with two nodes and one edge, logs the element count.
 
   ```sh
-  npm run smoke:cytoscape
+  pnpm run smoke:cytoscape
   ```
 
   Expected output: `cytoscape ok: 3 elements (2 nodes, 1 edges)`.
@@ -56,3 +56,4 @@ Both files are throwaway and will be removed when the real workspaces land as pa
 ## Amendments
 
 - **2026-05-10** — Replaced the original transient `npx --yes ... tsx` + `NODE_PATH` invocations with a project-local `package.json` + `npm install` setup. `reactflow`, `cytoscape`, and their peer deps now live under `devDependencies`; both smoke tests are invoked via `npm run smoke:*`. The decision (ReactFlow + Cytoscape.js) is unchanged.
+- **2026-05-10** — Switched the package manager from npm to pnpm as part of [ADR 0010](0010-directory-layout-pnpm-workspaces.md). Run commands above are now `pnpm install` / `pnpm run smoke:*`. The decision (ReactFlow + Cytoscape.js) is unchanged.

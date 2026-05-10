@@ -40,8 +40,12 @@ This ADR settles only the framework and its companion choices. The real wiring â
 A single file at [`tests/smoke/hello.test.ts`](../../tests/smoke/hello.test.ts) proves the chain end-to-end without needing the workspace structure: a trivial arithmetic assertion proves the runner executes, and a React Testing Library mount of a tiny `<Hello />` component under happy-dom proves the React + DOM-shim path works. Run with:
 
 ```sh
-npm install   # one-time
-npm run test:smoke
+pnpm install   # one-time
+pnpm run test:smoke
 ```
 
 Expected output includes Vitest's standard pass summary with both tests green. The sketch is throwaway and will be removed when the real per-workspace test setups land as part of `unit_test_runner_setup` and the per-app `*_unit_tests` tasks.
+
+## Amendments
+
+- **2026-05-10** â€” Switched the package manager from npm to pnpm as part of [ADR 0010](0010-directory-layout-pnpm-workspaces.md). Run command above is now `pnpm install` / `pnpm run test:smoke`. The decision (Vitest) is unchanged.

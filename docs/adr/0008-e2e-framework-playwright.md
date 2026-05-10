@@ -43,8 +43,12 @@ Per-surface specs (moderator, participant, audience, replay-test) are written by
 A single spec at [`tests/e2e/hello.spec.ts`](../../tests/e2e/hello.spec.ts) and a minimal config at [`playwright.config.ts`](../../playwright.config.ts) prove the chain end-to-end without needing a browser binary or a running app: one test, a synchronous arithmetic assertion via Playwright's own `expect`, no `page` fixture. Run with:
 
 ```sh
-npm install   # one-time
-npm run test:e2e:smoke
+pnpm install   # one-time
+pnpm run test:e2e:smoke
 ```
 
 Expected output is `1 passed` from the Playwright `list` reporter. The sketch is throwaway and will be superseded by the real per-workspace E2E setups produced by `playwright_setup` and the per-surface `*_pw_*` tasks.
+
+## Amendments
+
+- **2026-05-10** — Switched the package manager from npm to pnpm as part of [ADR 0010](0010-directory-layout-pnpm-workspaces.md). Run command above is now `pnpm install` / `pnpm run test:e2e:smoke`. The decision (`@playwright/test`) is unchanged.

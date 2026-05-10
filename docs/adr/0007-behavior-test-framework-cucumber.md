@@ -43,8 +43,12 @@ This ADR settles only the framework, the TS-loading mechanism, and the conventio
 A single feature file at [`tests/behavior/hello.feature`](../../tests/behavior/hello.feature) and matching step definitions at [`tests/behavior/steps/hello.steps.ts`](../../tests/behavior/steps/hello.steps.ts) prove the chain end-to-end without needing the workspace structure or a running app: one scenario, three steps, trivial `node:assert` checks. The cucumber config lives at [`cucumber.cjs`](../../cucumber.cjs). Run with:
 
 ```sh
-npm install   # one-time
-npm run test:behavior:smoke
+pnpm install   # one-time
+pnpm run test:behavior:smoke
 ```
 
 Expected output is `1 scenario (1 passed)` and `3 steps (3 passed)`. The sketch is throwaway and will be removed when the real per-workspace behavior-test setups land as part of `behavior_test_runner_setup` and the per-stream `*_behavior_tests` tasks.
+
+## Amendments
+
+- **2026-05-10** — Switched the package manager from npm to pnpm as part of [ADR 0010](0010-directory-layout-pnpm-workspaces.md). Run command above is now `pnpm install` / `pnpm run test:behavior:smoke`. The decision (`@cucumber/cucumber`) is unchanged.

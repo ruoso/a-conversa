@@ -39,8 +39,8 @@ A minimal React component and server-side render check live at [`scripts/hello-r
 Run with:
 
 ```sh
-npm install   # one-time
-npm run smoke:react
+pnpm install   # one-time
+pnpm run smoke:react
 ```
 
 Expected output: `<p>hello, react</p>`.
@@ -48,3 +48,4 @@ Expected output: `<p>hello, react</p>`.
 ## Amendments
 
 - **2026-05-10** — Replaced the original transient `npx --yes ... tsx` + `NODE_PATH` invocation with a project-local `package.json` + `npm install` setup. `react`, `react-dom`, `tsx`, and their types now live under `devDependencies`; the smoke test is invoked via `npm run smoke:react`. The decision (React) is unchanged.
+- **2026-05-10** — Switched the package manager from npm to pnpm as part of [ADR 0010](0010-directory-layout-pnpm-workspaces.md). Run commands above are now `pnpm install` / `pnpm run smoke:react`. The decision (React) is unchanged.

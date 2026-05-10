@@ -41,8 +41,12 @@ The realization of this in the repo — creating `packages/ui-tokens` and wiring
 A minimal sketch at [`scripts/hello-tailwind.ts`](../../scripts/hello-tailwind.ts) proves the chain end-to-end without needing the workspace structure: a JS `tokens` object → Tailwind v4's `@theme` block → utility-class compilation → emitted CSS that contains the token value. Tailwind v4's `compile(css)` API takes the candidate utility classes directly, so no content-scanning or filesystem config is needed for the demo.
 
 ```sh
-npm install   # one-time
-npm run smoke:tailwind
+pnpm install   # one-time
+pnpm run smoke:tailwind
 ```
 
 Expected output includes `--color-facet-agreed: #1f7a3a;` on `:root`, a `.bg-facet-agreed` rule using `var(--color-facet-agreed)`, and a final `tailwind ok:` confirmation line. The token value (`#1f7a3a`) is checked literally in the emitted CSS so the test fails loudly if the token-to-CSS chain breaks. The sketch is throwaway and will be removed when the real `packages/ui-tokens` and per-app Tailwind configs land.
+
+## Amendments
+
+- **2026-05-10** — Switched the package manager from npm to pnpm as part of [ADR 0010](0010-directory-layout-pnpm-workspaces.md). Run command above is now `pnpm install` / `pnpm run smoke:tailwind`. The decision (Tailwind CSS) is unchanged.

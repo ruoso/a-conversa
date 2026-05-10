@@ -38,8 +38,8 @@ A minimal Node HTTP server lives at [`scripts/hello-world.ts`](../../scripts/hel
 Run with:
 
 ```sh
-npm install   # one-time
-npm run smoke:node
+pnpm install   # one-time
+pnpm run smoke:node
 ```
 
 Then `curl http://127.0.0.1:3000/` to see `hello, world`.
@@ -47,3 +47,4 @@ Then `curl http://127.0.0.1:3000/` to see `hello, world`.
 ## Amendments
 
 - **2026-05-10** — Replaced the original transient `npx --yes ... tsx` invocation pattern with a project-local `package.json` + `npm install` setup. `tsx` and the smoke-test dependencies now live under `devDependencies`; smoke tests are invoked via `npm run smoke:*`. The decision (TypeScript on Node) is unchanged.
+- **2026-05-10** — Switched the package manager from npm to pnpm as part of [ADR 0010](0010-directory-layout-pnpm-workspaces.md) (pnpm workspaces). Run commands above are now `pnpm install` / `pnpm run smoke:node`. The decision (TypeScript on Node) is unchanged.

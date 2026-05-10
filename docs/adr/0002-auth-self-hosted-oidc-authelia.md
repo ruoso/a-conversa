@@ -46,3 +46,7 @@ This is a sketch — implementation details belong to the dev-environment and de
 **Production.** The same Authelia container runs in the prod Compose set, but its YAML is populated with real OAuth client credentials for Google, GitHub, GitLab, etc., supplied as secrets at deploy time. The backend's OIDC client config is identical in shape — only the issuer URL and the trust material differ. Operators wanting to add another provider edit Authelia's YAML and restart that one service.
 
 **Open question (deferred).** Fully offline development — including tests where the dev Authelia instance must not reach out to a real upstream provider — needs a stubbed-upstream story. Authelia's dev users may already cover this (login terminates at Authelia without an upstream hop), but it needs verification when the dev environment is actually built. Tracked under `dev_env.dockerfile_mock_oauth`.
+
+## Amendments
+
+- **2026-05-10** — The dev-side counterpart now lives in [ADR 0017](0017-mock-oauth-authelia-users-file.md): Authelia in users-file mode with six checked-in dev users (alice, ben, maria, dave, erin, frank), no federated upstream in dev. The deferred open question above is resolved — login terminates at Authelia, fully offline. This ADR's production-side decision (self-hosted Authelia OIDC) is unchanged.
