@@ -225,3 +225,81 @@ export function findParticipantVoteOnProposal(
   if (record.proposalEventId !== proposalEventId) return null;
   return record.vote;
 }
+
+// ---------------------------------------------------------------
+// `proposalHasAnyDispute` — does any participant have a `dispute`
+// vote on the affected facet, referencing this specific proposal id?
+//
+// Used by `meta_disagreement_logic` to enforce the "methodology-not-
+// exhausted" gate: meta-disagreement is the methodology's last resort
+// (per `docs/methodology.md` line 208) and is meaningful only when
+// there is an actual stuck point. A proposal with no recorded dispute
+// has not been engaged with as a contest and cannot be marked.
+//
+// Returns:
+//
+//   - `true` if any `perParticipant` record on the affected facet has
+//     vote `'dispute'` AND `proposalEventId === proposalEventId` (the
+//     record's `proposalEventId` field is the ground truth for "which
+//     proposal does this recorded vote refer to," since the per-
+//     participant map is overwritten on re-vote);
+//   - `false` if the proposal isn't found, the sub-kind is structural
+//     (no per-facet vote tracking), the affected facet's target
+//     entity isn't on the projection, or no dispute record matches.
+//
+// Walks historical records (including those from participants who
+// have since left the session). Rationale: the dispute *did* happen
+// — the proposal was contested at some point — and the "is this
+// stuck?" signal is the historical fact, not the current-participant
+// fact. (See the refinement's "Participant-leaves semantics" decision
+// for why this differs from `commit_logic` rule 4's current-only walk.)
+// ---------------------------------------------------------------
+
+export function proposalHasAnyDispute(projection: Projection, proposalEventId: string): boolean {
+  const found = findProposal(projection, proposalEventId);
+  if (found === null) return false;
+  const target = facetTargetForProposal(found.record.payload);
+  if (target === null) return false; // structural sub-kind — no per-facet vote tracking
+  const facet = facetStateForTarget(projection, target);
+  if (facet === null) return false;
+  for (const record of facet.perParticipant.values()) {
+    if (record.vote === 'dispute' && record.proposalEventId === proposalEventId) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// ---------------------------------------------------------------
+// `proposalSubKind` — return the proposal's `kind` discriminator, or
+// `null` if the proposal isn't found.
+//
+// Used by `meta_disagreement_logic` to format the
+// `'illegal-state-transition'` rejection detail when a mark targets a
+// structural sub-kind (a `decompose`, `axiom-mark`, etc. proposal).
+// Same lookup as `findProposal` followed by a `.payload.kind` read;
+// extracted as a primitive because the handler needs only the kind
+// string, not the full record.
+// ---------------------------------------------------------------
+
+export function proposalSubKind(projection: Projection, proposalEventId: string): string | null {
+  const found = findProposal(projection, proposalEventId);
+  if (found === null) return null;
+  return found.record.payload.kind;
+}
+
+// ---------------------------------------------------------------
+// `proposalTargetsFacet` — does the proposal target one of the four
+// per-facet sub-kinds (`classify-node` / `set-node-substance` /
+// `set-edge-substance` / `edit-wording`)?
+//
+// Convenience predicate for handlers that need to distinguish the
+// facet-targeting sub-kinds from the structural sub-kinds without
+// re-implementing the discriminator switch.
+// ---------------------------------------------------------------
+
+export function proposalTargetsFacet(projection: Projection, proposalEventId: string): boolean {
+  const found = findProposal(projection, proposalEventId);
+  if (found === null) return false;
+  return facetTargetForProposal(found.record.payload) !== null;
+}

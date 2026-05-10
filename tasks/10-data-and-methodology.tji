@@ -263,7 +263,9 @@ task data_and_methodology "Data and methodology" {
     task meta_disagreement_logic "Meta-disagreement marking; carries both proposed values" {
       effort 1d
       allocate team
+      complete 100
       depends !agreement_state_machine
+      note "Refinement: tasks/refinements/data-and-methodology/meta_disagreement_logic.md"
     }
     task decomposition_logic "Decomposition operation — remove parent, create components in proposed state" {
       effort 2d

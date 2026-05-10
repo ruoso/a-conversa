@@ -476,7 +476,15 @@ describe('validateAction — placeholder per-action handlers', () => {
     }
   });
 
-  it('mark-meta-disagreement action emits a meta-disagreement-marked event', () => {
+  it('mark-meta-disagreement action dispatches to the real handler (rejects no-dispute case)', () => {
+    // After `meta_disagreement_logic` landed, the engine's
+    // mark-meta-disagreement handler is the real write-side validator:
+    // it rejects a mark on a pending proposal that has no recorded
+    // dispute on the affected facet (Option A — the structural
+    // exhaustion gate). This test asserts the dispatcher routes a
+    // mark-meta-disagreement action to that handler — the handler's
+    // full rule set is covered in
+    // `apps/server/src/methodology/handlers/markMetaDisagreement.test.ts`.
     const p = seedSession();
     const action: MarkMetaDisagreementAction = {
       kind: 'mark-meta-disagreement',
@@ -490,14 +498,9 @@ describe('validateAction — placeholder per-action handlers', () => {
       markedAt: T9,
     };
     const r = validateAction(p, action);
-    expect(r.ok).toBe(true);
-    if (r.ok) {
-      const ev = r.events[0]!;
-      expect(ev.kind).toBe('meta-disagreement-marked');
-      if (ev.kind === 'meta-disagreement-marked') {
-        expect(ev.payload.moderator).toBe(MODERATOR_ID);
-        expect(ev.payload.proposal_id).toBe(PROPOSAL_ID_1);
-      }
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.reason).toBe('methodology-not-exhausted');
     }
   });
 });
