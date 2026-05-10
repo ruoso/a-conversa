@@ -141,6 +141,7 @@ task foundation "Foundation" {
     task linter_config "Configure linter" {
       effort 0.5d
       allocate team
+      complete 100
       note "Refinement: tasks/refinements/foundation/linter_config.md"
     }
     task formatter_config "Configure formatter" {

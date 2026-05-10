@@ -42,3 +42,13 @@ TypeScript ecosystem candidates:
 ## Open questions
 
 (none — all decided)
+
+## Status
+
+**Done** 2026-05-10.
+
+- ADR: [docs/adr/0011-linter-eslint-with-typescript-eslint.md](../../../docs/adr/0011-linter-eslint-with-typescript-eslint.md)
+- Config: [eslint.config.js](../../../eslint.config.js)
+- Scripts: `pnpm run lint`, `pnpm run lint:fix` (root `package.json`).
+- Tier: **non-type-checked** (`tseslint.configs.recommended`). The type-aware tier (`recommendedTypeChecked` + `parserOptions.projectService: true`) is deferred until `foundation.repo_skeleton.typecheck_config` lands a root `tsconfig.json` — the swap is mechanical, recorded in the ADR's Consequences.
+- CI integration deferred to `foundation.ci.ci_lint`. Pre-commit hook deferred to `foundation.repo_skeleton.pre_commit_hooks`. Framework-specific plugins (React, JSX-A11y, Playwright) deferred to per-workspace tasks.
