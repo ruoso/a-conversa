@@ -43,3 +43,20 @@ Why Playwright (vs. alternatives like Cypress, Selenium, WebDriverIO):
 ## Open questions
 
 (none — confirming a stipulated decision)
+
+## Status
+
+**Done** — 2026-05-10.
+
+- ADR: [docs/adr/0008-e2e-framework-playwright.md](../../../docs/adr/0008-e2e-framework-playwright.md).
+- Decision-proof spec: [tests/e2e/hello.spec.ts](../../../tests/e2e/hello.spec.ts) (no `page` fixture, no browser binary, runs via `npm run test:e2e:smoke`).
+- Minimal runner config: [playwright.config.ts](../../../playwright.config.ts) (no browser projects — see ADR for why).
+- Root `package.json`: `@playwright/test` added to `devDependencies`; `test:e2e:smoke` script added.
+
+Explicit deferrals (NOT done by this task):
+
+- Browser installation (`npx playwright install` for Chromium / Firefox / WebKit) — deferred to `foundation.test_infra.playwright_setup`.
+- Auth / session / event-seeding helpers — deferred to `foundation.test_infra.playwright_test_helpers`.
+- CI Playwright job and artifact upload — deferred to `foundation.test_infra.ci_playwright_step`.
+- Per-test database provisioning — deferred to `foundation.test_infra.test_db_provisioning`.
+- Per-surface `*_pw_*` specs (moderator, participant, audience, replay-test) — owned by their respective WBS tasks.

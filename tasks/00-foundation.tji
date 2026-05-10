@@ -56,6 +56,7 @@ task foundation "Foundation" {
     task playwright_decision "Confirm Playwright for web E2E" {
       effort 0.25d
       allocate team
+      complete 100
       depends !frontend_framework_decision
       note "Refinement: tasks/refinements/foundation/playwright_decision.md"
     }
