@@ -45,9 +45,14 @@ Default strictness flags worth enabling:
 - `tsc --noEmit -p .` passes on the empty-but-valid project.
 - CI runs the typecheck step.
 
+## Decisions
+
+- **Module resolution** (R8): `module: NodeNext` for `apps/server` (Node), `module: ESNext` + `moduleResolution: bundler` for frontend workspaces (React + bundler).
+- **Target: ES2022.** Node 20+ supports it natively; all modern browsers handle it; no transpilation tax for common features.
+- **`exactOptionalPropertyTypes: true`.** Fits the project's "explicit decisions" ethos; flags legitimate-looking patterns that mask actual ambiguity.
+- **Project references.** Workspaces use TypeScript project references for incremental type-check speed; each `apps/*` and `packages/*` workspace ships its own `tsconfig.json` extending a shared `tsconfig.base.json` at the root.
+- **Strict flags enabled:** `strict: true`, `noUncheckedIndexedAccess: true`, `noImplicitOverride: true`, `noFallthroughCasesInSwitch: true`. Unused-* rules delegated to the linter.
+
 ## Open questions
 
-- **Module resolution.** **My instinct: `module: NodeNext` for the server, `module: ESNext` + `moduleResolution: bundler` for frontend targets** — matches modern Node and modern bundler conventions. **Awaiting input.**
-- **Target ECMAScript version.** **My instinct: ES2022** — Node 20+ supports it natively, all modern browsers handle it, no transpilation tax for common features. **Awaiting input.**
-- **`exactOptionalPropertyTypes` true or false.** True is more correct but flags some legitimate-looking patterns. **My instinct: true** — fits the project's "explicit decisions" ethos. **Awaiting input.**
-- **Project references vs. flat tsconfig per package.** Workspaces typically use project references; modern bundlers can handle either. **My instinct: project references** for incremental type-check speed. **Awaiting input.**
+(none — all decided)

@@ -34,10 +34,11 @@ TypeScript ecosystem candidates:
 - The empty-but-valid project lints clean.
 - CI runs the linter (`foundation.ci.ci_lint`).
 
+## Decisions
+
+- **Linter: ESLint** with `typescript-eslint` (R6). React-specific rules will land via `eslint-plugin-react` and `eslint-plugin-react-hooks` once frontend code lives in the repo. Revisit Biome later if/when its plugin ecosystem matches.
+- **Rule strictness: `typescript-eslint/recommended-type-checked`** baseline. Type-aware rules are exactly what makes ESLint pull its weight on a TS project.
+
 ## Open questions
 
-- **Linter choice.**
-  - **ESLint** — broadest plugin coverage; safer pick for a young project that may pick any frontend framework.
-  - **Biome** — combines linter + formatter, fast, single config file. If we're confident the framework choice will be supported by Biome's plugins, this collapses two foundation tasks into one config.
-  - My instinct: **ESLint** for v1 — the project will need framework-specific lints (React, Svelte, or Solid plugins) and ESLint's coverage is more complete; revisit Biome when its ecosystem catches up. **Awaiting input.**
-- **Rule strictness.** Pick a baseline ruleset (`recommended` vs. `recommended-type-checked` vs. custom). My instinct: **`typescript-eslint/recommended-type-checked`** — type-aware rules are exactly what makes ESLint pull its weight on a TS project. **Awaiting input.**
+(none — all decided)

@@ -70,14 +70,12 @@ Each event has a common envelope plus kind-specific payload.
 - **Append-only** — application contract; the table doesn't itself prevent updates, but the app's role won't have UPDATE/DELETE in production.
 - **Per-session monotonic sequence** — gives strict ordering within a session for replay purposes; a global timestamp alone isn't reliable enough under concurrent writes.
 
+## Additional decisions
+
+- **Payload validation: schema-on-write** (R11). The application validates each event's JSONB payload against a per-kind schema before insert; payload bugs are caught at write time. The existing `data_and_methodology.event_types.event_validation` task is where this lives.
+- **Sequence: application-managed monotonic per session** (R12). The server selects `MAX(sequence)+1` inside the same transaction that inserts the event. Single-writer-per-session (server-authoritative model) makes this safe. The unique constraint on `(session_id, sequence)` is the safety net.
+- **Retention: none in v1** (R13). The change history is part of the product (replay). Events accumulate indefinitely. Revisit if storage becomes an operational concern.
+
 ## Open questions
 
-- **JSONB payload validation: schema-on-read vs. schema-on-write?**
-  - **Schema-on-write**: validate the payload against a JSON schema in the application before insert. Stronger guarantee; payload bugs caught at write time.
-  - **Schema-on-read**: validate when projecting. Faster writes; payload bugs surface during projection.
-  - **My instinct: schema-on-write** at the application layer (`event_validation` task already exists for this). Confirm.
-- **Should `sequence` be enforced monotonic via a trigger, or rely on the application?**
-  - **Trigger / DEFAULT** (e.g., `BIGSERIAL` per session via window function): unusual in PostgreSQL; usually done in the application by selecting `MAX(sequence)+1` inside the same transaction.
-  - **Application-managed** with a unique constraint as the safety net.
-  - **My instinct: application-managed with the unique constraint** as the safety net. Single writer per session (server-authoritative) makes this safe. Confirm.
-- **Retention.** Events accumulate indefinitely. Is there a v1 retention policy? **My instinct: no automatic retention in v1** — the change history is part of the product (replay). Confirm.
+(none — all decided)

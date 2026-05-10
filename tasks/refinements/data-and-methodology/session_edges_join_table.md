@@ -39,8 +39,8 @@ Same as `session_nodes`:
 
 ## Decisions
 
-- **Same PK and inclusion-monotonicity choices as `session_nodes`** (composite PK, no `removed_at` column). Confirm together with `session_nodes`.
+- **Same PK and inclusion-monotonicity choices as `session_nodes`** (composite PK on `(session_id, edge_id)`, no `removed_at` column). R9 + R10.
 
 ## Open questions
 
-- (None separately — answers ride along with `session_nodes_join_table.md` open questions.)
+(none — all decided)

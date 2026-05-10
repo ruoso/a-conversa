@@ -42,12 +42,18 @@ Repo content already in place:
 - A documented top-level directory tree.
 - The first commit on this layout passes lint, typecheck, and the placeholder test in CI.
 
+## Decisions
+
+- **Workspace structure: pnpm workspaces** (R3). Top-level layout:
+  - `apps/server` — backend (TypeScript on Node), HTTP + WebSocket server, event-log writer, projection runtime.
+  - `apps/moderator` — moderator-UI frontend (React).
+  - `apps/participant` — participant tablet frontend (React).
+  - `apps/audience` — audience surface frontend (React).
+  - `apps/replay` (or merged into `apps/audience`) — replay viewer + test mode (decision deferred until those surfaces are refined).
+  - `packages/shared-types` — TypeScript types shared between server and clients (event payloads, API contracts).
+- **Migrations location: `apps/server/migrations/`** (R4). Ships with the backend service and runs from there.
+- **Top-level task runner: Makefile at root** (R5). Thin wrappers around `docker compose` and `pnpm` — keeps `make up` as the headline command.
+
 ## Open questions
 
-- **Monorepo structure: single `package.json` workspace, or several?**
-  - **Single workspace, multiple `apps/` and `packages/`** (npm/pnpm workspaces) — common for full-stack TS projects. Backend in `apps/server`, frontend surfaces in `apps/moderator`, `apps/participant`, `apps/audience`, shared types in `packages/shared-types`.
-  - **Single monolithic project** — one `package.json`, one `tsconfig.json`, source folders distinguish backend / frontend / shared. Simpler for a small team; may bloat as it grows.
-  - **My instinct: workspaces** — the four frontend surfaces will diverge in build config (audience needs OBS-friendly bundle, moderator and participant tablets are real-app surfaces); shared types between server and clients are very real. Workspaces handle this cleanly. **Awaiting input.**
-- **Workspace tool: npm workspaces / pnpm workspaces / yarn workspaces?** Strong instinct: **pnpm** (fast, disk-efficient, well-supported). **Awaiting input.**
-- **Where do migrations live?** Conventional locations: `migrations/`, `db/migrations/`, or `apps/server/migrations/`. **My instinct: `apps/server/migrations/`** so they ship with the backend service. **Awaiting input.**
-- **Top-level scripts: `Makefile` vs. npm scripts vs. shell scripts in `scripts/`?** **My instinct: `Makefile` at root** with thin wrappers around `docker compose` and `pnpm` commands; gives the README's `make up` story a real home. **Awaiting input.**
+(none — all decided)

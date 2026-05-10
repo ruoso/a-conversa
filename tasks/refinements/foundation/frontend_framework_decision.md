@@ -43,11 +43,11 @@ Architectural facts that constrain:
 - A "hello, world" component runs in the chosen framework, served from the dev compose stack.
 - Choice unblocks `graph_lib_decision`, `style_tooling_decision`, and the frontend test-framework picks.
 
+## Decisions
+
+- **Frontend framework: React** (R1). Broadest ecosystem; ReactFlow remains a viable graph-library candidate for the moderator surface; widest contributor pool. Bundle size and reactivity discipline are accepted trade-offs.
+- **Implication for graph library.** Both Cytoscape.js (audience) and ReactFlow (moderator) remain on the table for `graph_lib_decision`. The decision there will pick one or both.
+
 ## Open questions
 
-- **Which framework?** Live candidates per architecture.md:
-  - **React** — broadest ecosystem; ReactFlow (a candidate graph library) is React-native; widest contributor pool. Bigger bundle, more churn.
-  - **Svelte / SvelteKit** — smaller bundles, less ceremony, reactive primitives that suit live event streams well. Smaller graph-library ecosystem; ReactFlow won't work — would need Cytoscape across all surfaces.
-  - **Solid** — React-like but with fine-grained reactivity; small bundle. Smaller ecosystem still; same ReactFlow issue as Svelte.
-  - **Awaiting input.**
-- **Implication for graph library.** If React: keep both Cytoscape (audience) and ReactFlow (moderator) on the table. If Svelte or Solid: collapse to Cytoscape across all surfaces.
+(none — all decided)

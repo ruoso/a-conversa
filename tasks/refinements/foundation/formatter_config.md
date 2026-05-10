@@ -36,11 +36,13 @@ TypeScript ecosystem candidates:
 - The empty-but-valid project formats clean.
 - CI runs format check (`foundation.ci.ci_format`).
 
+## Decisions
+
+- **Formatter: Prettier** (R7). Pairs with the ESLint linter (R6) cleanly. Use `eslint-config-prettier` to disable ESLint rules that conflict with Prettier's output, so the two tools don't fight.
+- **Quote style: single quotes** (`'foo'`).
+- **Trailing comma: `all`** (everywhere — function args, object literals, arrays, function definitions).
+- **Print width: 100** (accommodates the verbose names in this codebase without forcing many one-line declarations to wrap).
+
 ## Open questions
 
-- **Formatter choice.**
-  - **Prettier** — pairs with whatever linter ESLint or otherwise. Most contributor-familiar.
-  - **Biome (combined with linter)** — if `linter_config` also picks Biome, this collapses to one tool.
-  - My instinct: **Prettier** if `linter_config` lands ESLint (consistent with that pick); Biome only if both tasks pick Biome together. **Awaiting input.**
-- **Quote style and trailing comma.** My instinct: **single quotes, trailing commas everywhere** (modern TS norm). **Awaiting input.**
-- **Print width.** My instinct: **100** (a touch over the 80-default, accommodates the verbose names in this codebase). **Awaiting input.**
+(none — all decided)

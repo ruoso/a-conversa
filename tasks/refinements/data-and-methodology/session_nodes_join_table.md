@@ -47,10 +47,9 @@ From [docs/data-model.md — event types — session inclusion](../../../docs/da
 
 ## Decisions
 
-- **Composite PK** on `(session_id, node_id)`. Simpler than a surrogate UUID PK — the join is itself the identity. (Departure from the project-wide UUID-PK convention; M-N join tables are the standard exception. Confirm.)
-- **No `removed_at` column** in v1 — once a session includes a node, it stays included. Sessions can mark events for the node as withdrawn or amend the node, but the inclusion is monotonic. Confirm.
+- **Composite PK** on `(session_id, node_id)` (R9). Departure from the project-wide UUID-PK convention; M-N join tables are the standard exception.
+- **Monotonic inclusion** (R10). No `removed_at` column. Once a session includes a node, it stays included. Sessions can mark events for the node as withdrawn or amend the node, but the inclusion itself is monotonic.
 
 ## Open questions
 
-- **Composite PK departing from the UUID convention?** Confirm the M-N exception is acceptable, or specify a surrogate UUID PK. **Awaiting input.**
-- **Monotonic inclusion (no removed_at) for v1?** Confirm; methodology has no "remove a node from a session" operation.
+(none — all decided)

@@ -36,10 +36,10 @@ The TS/Node ecosystem narrows the candidates:
 - A "hello-scenario" feature file runs in CI and asserts something simple about the running app.
 - Wired up to the test-DB provisioning task (`foundation.test_infra.test_db_provisioning`) so each scenario gets a clean DB.
 
+## Decisions
+
+- **Behavior-test framework: `@cucumber/cucumber` standalone** (R2). Runs scenarios at any layer (HTTP, WS, or browser-driving via Playwright when needed). Backend BDD scenarios don't need a browser, so coupling BDD to Playwright would add ceremony for no win. Playwright E2E suites remain separate and Playwright-native.
+
 ## Open questions
 
-- **Which framework?**
-  - **`@cucumber/cucumber` standalone** — runs scenarios at any layer (HTTP, WS, or driving a browser via Playwright). Most flexible; familiar to teams.
-  - **`playwright-bdd` (or similar)** — couples BDD to Playwright. Cleaner if all BDD scenarios go through a browser anyway.
-  - My instinct: **`@cucumber/cucumber` standalone** — backend BDD scenarios don't need a browser, and we get one runner for everything. The Playwright E2E suites stay separate (and Playwright-native).
-  - **Awaiting input.**
+(none — all decided)
