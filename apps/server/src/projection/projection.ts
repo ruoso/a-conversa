@@ -15,10 +15,14 @@ import type {
   NewAnnotationInput,
   NewEdgeInput,
   NewNodeInput,
+  ParticipantRecord,
   PendingProposal,
   ProjectedAnnotation,
   ProjectedEdge,
   ProjectedNode,
+  SessionState,
+  SnapshotRecord,
+  UnresolvedMetaDisagreement,
 } from './types.js';
 
 export class ProjectionInvariantError extends Error {
@@ -94,8 +98,29 @@ export class Projection {
 
   readonly #pendingProposals = new Map<string, PendingProposal>();
 
+  // Per-userId: a list of historical participation rows. The
+  // `session_participants` refinement settled that a participant who
+  // leaves and rejoins gets a NEW row in persistence; the projection
+  // mirrors that — multiple records per userId, ordered by `joinedAt`.
+  // A userId with an open record (`leftAt === null`) at the tail is
+  // currently joined.
+  readonly #participants = new Map<string, ParticipantRecord[]>();
+
+  readonly #snapshots = new Map<string, SnapshotRecord>();
+  readonly #unresolvedMetaDisagreements = new Map<string, UnresolvedMetaDisagreement>();
+
+  #sessionState: SessionState = 'open';
+
   constructor(sessionId: string) {
     this.sessionId = sessionId;
+  }
+
+  get sessionState(): SessionState {
+    return this.#sessionState;
+  }
+
+  setSessionState(state: SessionState): void {
+    this.#sessionState = state;
   }
 
   addNode(input: NewNodeInput): ProjectedNode {
@@ -245,6 +270,88 @@ export class Projection {
 
   getPendingProposal(proposalEventId: string): PendingProposal | undefined {
     return this.#pendingProposals.get(proposalEventId);
+  }
+
+  addParticipant(record: ParticipantRecord): void {
+    let history = this.#participants.get(record.userId);
+    if (!history) {
+      history = [];
+      this.#participants.set(record.userId, history);
+    } else {
+      const tail = history[history.length - 1];
+      if (tail && tail.leftAt === null) {
+        throw new ProjectionInvariantError(
+          `participant ${record.userId} is already joined; expected a participant-left first`,
+        );
+      }
+    }
+    history.push(record);
+  }
+
+  markParticipantLeft(userId: string, leftAt: string): void {
+    const history = this.#participants.get(userId);
+    const tail = history?.[history.length - 1];
+    if (!history || !tail || tail.leftAt !== null) {
+      throw new ProjectionInvariantError(`participant ${userId} is not currently joined`);
+    }
+    tail.leftAt = leftAt;
+  }
+
+  getParticipantHistory(userId: string): readonly ParticipantRecord[] {
+    return this.#participants.get(userId) ?? [];
+  }
+
+  currentParticipants(): ParticipantRecord[] {
+    const out: ParticipantRecord[] = [];
+    for (const history of this.#participants.values()) {
+      const tail = history[history.length - 1];
+      if (tail && tail.leftAt === null) out.push(tail);
+    }
+    return out;
+  }
+
+  participantCount(): number {
+    return this.currentParticipants().length;
+  }
+
+  addSnapshot(record: SnapshotRecord): void {
+    if (this.#snapshots.has(record.snapshotId)) {
+      throw new ProjectionInvariantError(`snapshot ${record.snapshotId} already present`);
+    }
+    this.#snapshots.set(record.snapshotId, record);
+  }
+
+  getSnapshot(snapshotId: string): SnapshotRecord | undefined {
+    return this.#snapshots.get(snapshotId);
+  }
+
+  snapshots(): IterableIterator<SnapshotRecord> {
+    return this.#snapshots.values();
+  }
+
+  snapshotCount(): number {
+    return this.#snapshots.size;
+  }
+
+  markMetaDisagreement(record: UnresolvedMetaDisagreement): void {
+    if (this.#unresolvedMetaDisagreements.has(record.proposalEventId)) {
+      throw new ProjectionInvariantError(
+        `meta-disagreement for proposal ${record.proposalEventId} already recorded`,
+      );
+    }
+    this.#unresolvedMetaDisagreements.set(record.proposalEventId, record);
+  }
+
+  getUnresolvedMetaDisagreement(proposalEventId: string): UnresolvedMetaDisagreement | undefined {
+    return this.#unresolvedMetaDisagreements.get(proposalEventId);
+  }
+
+  unresolvedMetaDisagreements(): IterableIterator<UnresolvedMetaDisagreement> {
+    return this.#unresolvedMetaDisagreements.values();
+  }
+
+  unresolvedMetaDisagreementCount(): number {
+    return this.#unresolvedMetaDisagreements.size;
   }
 
   nodeCount(): number {

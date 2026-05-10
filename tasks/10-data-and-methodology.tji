@@ -164,7 +164,9 @@ task data_and_methodology "Data and methodology" {
     task project_from_log "Build projection from full event log on session load" {
       effort 2d
       allocate team
+      complete 100
       depends !projection_data_structure
+      note "Refinement: tasks/refinements/data-and-methodology/project_from_log.md"
     }
     task project_incrementally "Update projection on each new event" {
       effort 1d

@@ -3,6 +3,10 @@
 // Refinement: tasks/refinements/data-and-methodology/projection_data_structure.md
 // TaskJuggler: data_and_methodology.projection.projection_data_structure
 //
+// Additional state shapes (participants, sessionState, snapshots,
+// unresolvedMetaDisagreements) added by `project_from_log`:
+// tasks/refinements/data-and-methodology/project_from_log.md.
+//
 // Storage shape only. Per-facet status derivation, event-handling, and
 // active-firing computation live in their own tasks; the shapes here
 // reserve slots for them (`PerParticipantFacetState` maps, axiom-mark
@@ -104,4 +108,32 @@ export interface NewAnnotationInput {
   targetEdgeId: string | null;
   createdBy: string;
   createdAt: string;
+}
+
+export type SessionState = 'open' | 'ended';
+
+export type ParticipantRole = 'moderator' | 'debater-A' | 'debater-B';
+
+export interface ParticipantRecord {
+  userId: string;
+  role: ParticipantRole;
+  screenName: string;
+  joinedAt: string;
+  leftAt: string | null;
+}
+
+export interface SnapshotRecord {
+  snapshotId: string;
+  label: string;
+  logPosition: number;
+  createdAt: string;
+}
+
+export interface UnresolvedMetaDisagreement {
+  proposalEventId: string;
+  payload: ProposalPayload;
+  proposer: string | null;
+  proposedAt: string;
+  markedBy: string | null;
+  markedAt: string;
 }
