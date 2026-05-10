@@ -158,6 +158,8 @@ task data_and_methodology "Data and methodology" {
     task projection_data_structure "In-memory graph data structure (nodes, edges, annotations, indices)" {
       effort 2d
       allocate team
+      complete 100
+      note "Refinement: tasks/refinements/data-and-methodology/projection_data_structure.md"
     }
     task project_from_log "Build projection from full event log on session load" {
       effort 2d
