@@ -51,3 +51,9 @@ Constraints from the project:
 ## Open questions
 
 (none — all decided)
+
+## Status
+
+**Done** (2026-05-10) — settled in [docs/adr/0005-styling-tailwind-with-shared-tokens.md](../../../docs/adr/0005-styling-tailwind-with-shared-tokens.md), with stack-validation sketch at [scripts/hello-tailwind.ts](../../../scripts/hello-tailwind.ts) (run via `npm run smoke:tailwind`). The token-flow concept (`tokens` JS object → Tailwind `@theme` → emitted CSS) is proven inline.
+
+The "shared `packages/ui-tokens` module referenced from each frontend workspace" and "first component renders in each frontend workspace" acceptance criteria are explicitly **deferred to `repo_skeleton.dir_layout`** (which owns workspace creation) and the per-surface scaffolding tasks under `moderator_ui.*`, `participant_ui.*`, `audience.*`, and `replay_test.*`. See the ADR's *Consequences* section for the carry-forward.

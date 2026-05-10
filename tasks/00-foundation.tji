@@ -35,6 +35,7 @@ task foundation "Foundation" {
     task style_tooling_decision "Pick styling / CSS approach" {
       effort 0.5d
       allocate team
+      complete 100
       depends !frontend_framework_decision
       note "Refinement: tasks/refinements/foundation/style_tooling_decision.md"
     }

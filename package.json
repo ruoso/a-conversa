@@ -9,7 +9,8 @@
     "smoke:node": "tsx scripts/hello-world.ts",
     "smoke:react": "tsx scripts/hello-react.tsx",
     "smoke:reactflow": "tsx scripts/hello-reactflow.tsx",
-    "smoke:cytoscape": "tsx scripts/hello-cytoscape.ts"
+    "smoke:cytoscape": "tsx scripts/hello-cytoscape.ts",
+    "smoke:tailwind": "tsx scripts/hello-tailwind.ts"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
@@ -19,6 +20,7 @@
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
     "reactflow": "^11.11.0",
+    "tailwindcss": "^4.3.0",
     "tsx": "^4.19.0"
   }
 }
