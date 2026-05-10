@@ -8,7 +8,7 @@
 //
 // Run with `npm run smoke:tailwind` after `npm install`.
 
-import { compile } from "tailwindcss";
+import { compile } from 'tailwindcss';
 
 // Sketch of what `packages/ui-tokens` will export — a plain data module.
 // Frontend workspaces will feed these into Tailwind via @theme and into
@@ -18,7 +18,7 @@ const tokens = {
     // Per-facet "agreed" state — a load-bearing token across all four
     // surfaces. Distinctive value chosen so we can grep for it in the
     // emitted CSS and prove the token flowed through.
-    facetAgreed: "#1f7a3a",
+    facetAgreed: '#1f7a3a',
   },
 } as const;
 
@@ -38,7 +38,7 @@ const compiled = await compile(inputCss);
 // In v4, `build(candidates)` is the equivalent of scanning content for
 // utility classes — we hand it the candidates directly instead of asking
 // it to crawl files.
-const css = compiled.build(["bg-facet-agreed"]);
+const css = compiled.build(['bg-facet-agreed']);
 
 console.log(css);
 
@@ -49,11 +49,9 @@ if (!css.includes(tokens.colors.facetAgreed)) {
   );
   process.exit(1);
 }
-if (!css.includes(".bg-facet-agreed")) {
-  console.error(
-    "smoke test failed: emitted CSS does not contain .bg-facet-agreed rule",
-  );
+if (!css.includes('.bg-facet-agreed')) {
+  console.error('smoke test failed: emitted CSS does not contain .bg-facet-agreed rule');
   process.exit(1);
 }
 
-console.log("tailwind ok: bg-facet-agreed compiled with token value");
+console.log('tailwind ok: bg-facet-agreed compiled with token value');

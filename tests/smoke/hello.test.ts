@@ -5,21 +5,21 @@
 // removed when the real per-workspace test setups land as part of
 // `unit_test_runner_setup` and the per-app `*_unit_tests` tasks.
 
-import { describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
-import * as React from "react";
+import { describe, expect, it } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import * as React from 'react';
 
-describe("vitest smoke", () => {
-  it("runs a trivial assertion", () => {
+describe('vitest smoke', () => {
+  it('runs a trivial assertion', () => {
     expect(2 + 2).toBe(4);
   });
 
-  it("mounts a React component under happy-dom", () => {
+  it('mounts a React component under happy-dom', () => {
     function Hello(): React.ReactElement {
-      return React.createElement("p", null, "hello, vitest");
+      return React.createElement('p', null, 'hello, vitest');
     }
 
     render(React.createElement(Hello));
-    expect(screen.getByText("hello, vitest")).toBeTruthy();
+    expect(screen.getByText('hello, vitest')).toBeTruthy();
   });
 });

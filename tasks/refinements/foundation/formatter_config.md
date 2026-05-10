@@ -46,3 +46,18 @@ TypeScript ecosystem candidates:
 ## Open questions
 
 (none — all decided)
+
+## Status
+
+**Done** — 2026-05-10.
+
+- ADR: [docs/adr/0012-formatter-prettier.md](../../../docs/adr/0012-formatter-prettier.md).
+- Config: [.prettierrc.json](../../../.prettierrc.json), [.prettierignore](../../../.prettierignore).
+- ESLint integration: [eslint.config.js](../../../eslint.config.js) extends `eslint-config-prettier` last so the linter and formatter don't fight.
+- Scripts: `pnpm run format`, `pnpm run format:check` in [package.json](../../../package.json).
+- Existing repo formatted (13 code/config files rewritten — pure formatting: single-quote and trailing-comma normalization). Markdown excluded from Prettier so `.editorconfig`'s hard-break carve-out (`[*.md] trim_trailing_whitespace = false`) is preserved.
+
+Deferred:
+
+- Pre-commit hook integration → `foundation.repo_skeleton.pre_commit_hooks`.
+- CI format-check job → `foundation.ci.ci_format`.

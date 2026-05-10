@@ -147,6 +147,7 @@ task foundation "Foundation" {
     task formatter_config "Configure formatter" {
       effort 0.5d
       allocate team
+      complete 100
       note "Refinement: tasks/refinements/foundation/formatter_config.md"
     }
     task typecheck_config "Configure type checker" {

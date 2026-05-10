@@ -4,13 +4,13 @@
 // Throwaway — will be removed when the real server lands as part of the
 // repo-skeleton work.
 
-import { createServer } from "node:http";
+import { createServer } from 'node:http';
 
 const port = Number(process.env.PORT ?? 3000);
 
 const server = createServer((_req, res) => {
-  res.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
-  res.end("hello, world\n");
+  res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
+  res.end('hello, world\n');
 });
 
 server.listen(port, () => {

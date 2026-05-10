@@ -1,0 +1,13 @@
+node_modules/
+dist/
+build/
+coverage/
+playwright-report/
+test-results/
+pnpm-lock.yaml
+package-lock.json
+
+# Markdown is excluded so Prettier doesn't strip the trailing-space hard-break
+# convention preserved by .editorconfig (`[*.md] trim_trailing_whitespace = false`).
+# Prettier has no option to preserve trailing whitespace in markdown.
+*.md

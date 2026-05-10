@@ -6,22 +6,20 @@
 // Run with `npm run smoke:reactflow` after `npm install`. Throwaway — will be
 // removed when the moderator-ui workspace lands as part of repo-skeleton work.
 
-import * as React from "react";
-import { renderToString } from "react-dom/server";
-import ReactFlow, { type Edge, type Node } from "reactflow";
+import * as React from 'react';
+import { renderToString } from 'react-dom/server';
+import ReactFlow, { type Edge, type Node } from 'reactflow';
 
 const nodes: Node[] = [
-  { id: "N1", position: { x: 0, y: 0 }, data: { label: "Statement N1" } },
-  { id: "N2", position: { x: 200, y: 100 }, data: { label: "Statement N2" } },
+  { id: 'N1', position: { x: 0, y: 0 }, data: { label: 'Statement N1' } },
+  { id: 'N2', position: { x: 200, y: 100 }, data: { label: 'Statement N2' } },
 ];
 
-const edges: Edge[] = [
-  { id: "E1", source: "N1", target: "N2", label: "supports" },
-];
+const edges: Edge[] = [{ id: 'E1', source: 'N1', target: 'N2', label: 'supports' }];
 
 function Hello(): React.ReactElement {
   return React.createElement(
-    "div",
+    'div',
     { style: { width: 400, height: 300 } },
     React.createElement(ReactFlow, { nodes, edges }),
   );
@@ -34,6 +32,6 @@ console.log(`reactflow ok: rendered ${html.length} chars of markup`);
 // so the SSR output is intentionally sparse — proving the React tree built and
 // the import resolved is the goal here, not a pixel-perfect render.
 if (html.length === 0) {
-  console.error("smoke test failed: empty render output");
+  console.error('smoke test failed: empty render output');
   process.exit(1);
 }
