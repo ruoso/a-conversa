@@ -56,3 +56,7 @@ Architectural facts that constrain the choice (from [docs/architecture.md](../..
 ## Open questions
 
 (none — task is decided pending the framework pick which is a downstream prototyping detail)
+
+## Status
+
+**Done** (2026-05-10). ADR recorded at [docs/adr/0001-language-and-runtime.md](../../../docs/adr/0001-language-and-runtime.md). Hello-world stack-validation script lives at [scripts/hello-world.ts](../../../scripts/hello-world.ts) and was verified locally with `npx --yes tsx scripts/hello-world.ts`.
