@@ -1,0 +1,65 @@
+# Proposal events
+
+**TaskJuggler entry**: [tasks/10-data-and-methodology.tji](../../10-data-and-methodology.tji) — task `data_and_methodology.event_types.proposal_events`
+**Effort estimate**: 2d
+**Inherited dependencies**: `data_and_methodology.event_types.event_base_envelope` (settled)
+
+## What this task is
+
+Implement the eleven proposal event sub-kinds as Zod schemas under `packages/shared-types`. Proposals are the methodology's main currency — every change to the graph starts as one. The `vote` and `commit` events (separate sub-tasks) reference proposal ids issued here.
+
+## Why it needs to be done
+
+Proposals carry the work of the methodology. Every facet update, every decomposition, every axiom-mark, every meta-move is a proposal. The schemas need to be precise — they're what the validation pipeline checks against.
+
+## Inputs / context
+
+From [docs/data-model.md — event types — proposals](../../../docs/data-model.md#proposals):
+
+A proposal is a proposed change awaiting agreement. All proposals share the same lifecycle. Variants by `kind`:
+
+- `classify-node` — `{ node_id, kind: StatementKind }`.
+- `set-node-substance` — `{ node_id, value: 'agreed' | 'disputed' }`.
+- `set-edge-substance` — `{ edge_id, value: 'agreed' | 'disputed' }`.
+- `edit-wording` — discriminated by edit kind (per the visible-graph derivation update):
+  - `kind: 'reword'` — `{ node_id, new_wording }`.
+  - `kind: 'restructure'` — `{ node_id, new_wording, new_node_id }`.
+- `decompose` — `{ parent_node_id, components: [{ wording, classification }] }`.
+- `interpretive-split` — `{ parent_node_id, readings: [{ wording, classification }] }`.
+- `axiom-mark` — `{ node_id, participant }`.
+- `meta-move` — `{ kind: 'reframe' | 'scope-change' | 'stance', content, target_kind, target_id }` (the meta-move attaches to a node or edge).
+- `break-edge` — `{ edge_id }`.
+- `amend-node` — `{ node_id, new_content }`.
+- `annotate` — `{ target_kind: 'node' | 'edge', target_id, kind: AnnotationKind, content }`.
+
+Each proposal event includes proposer, target session, proposal kind, and gets a unique proposal id used by votes and commits.
+
+## Constraints / requirements
+
+- Lives in `packages/shared-types`.
+- Each variant is a Zod schema; the proposal event is itself a discriminated union over the proposal kind.
+- The proposal id is generated server-side at append time (UUID). The server may add it to the payload before persisting.
+- Validation strict: enum values, UUIDs, lengths.
+- For `decompose` and `interpretive-split`, validate that components/readings is a non-empty list with reasonable bounds (e.g., 2 ≤ count ≤ 10).
+- For `meta-move`, validate that `target_kind` matches what `target_id` resolves to (server-side check, not Zod).
+- For `restructure`, validate that `new_node_id` is provided and is a UUID.
+
+## Acceptance criteria
+
+- Eleven Zod schemas exported from `packages/shared-types`, plus a `ProposalPayload` discriminated union over `kind`.
+- The `proposal-created` (or `proposal`) envelope payload nests this discriminated union under a `proposal_kind`-keyed field.
+- Round-trip tests for each variant.
+- Property-based tests that synthesize random valid payloads and confirm validation.
+- Negative tests for the most common invalid shapes (wrong enum, missing required field, malformed UUID).
+
+## Decisions
+
+- **One Zod schema per proposal sub-kind**, all in `packages/shared-types`.
+- **Discriminated union over `kind`**, then again on inner kind for `edit-wording` and `meta-move`.
+- **Proposal id is server-generated** at append time; clients don't supply it.
+- **Component lists for decompose / interpretive-split: minimum 2.** A "decomposition" of size 1 is a no-op; a size-2+ split is the meaningful case.
+
+## Open questions
+
+- **Component list maximum.** A small upper bound prevents accidental denial-of-service from a malformed proposal. **My instinct: 10** — generous enough for real decomposition cases (the walkthrough's biggest decomposition was 4 components); small enough to flag pathological inputs. **Awaiting input.**
+- **Should `meta-move` target kinds be limited?** Currently the methodology says meta-moves attach to nodes or edges. Could we also have session-level meta-moves (no target)? The walkthrough's reframe was attached to a node. **My instinct: require a target in v1** — session-level meta-moves can be added later if a use case arises. **Awaiting input.**

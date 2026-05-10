@@ -135,6 +135,7 @@ task foundation "Foundation" {
       effort 0.5d
       allocate team
       depends !linter_config, !formatter_config, !typecheck_config
+      note "Refinement: tasks/refinements/foundation/pre_commit_hooks.md"
     }
     task dir_layout "Establish source directory layout" {
       effort 0.5d
@@ -145,6 +146,7 @@ task foundation "Foundation" {
       effort 0.25d
       allocate team
       depends !dir_layout
+      note "Refinement: tasks/refinements/foundation/readme_dev_section.md"
     }
   }
 
