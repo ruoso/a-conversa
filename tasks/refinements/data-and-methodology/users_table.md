@@ -38,17 +38,20 @@ The TaskJuggler note for this task already specifies the columns:
 ## Acceptance criteria
 
 - A migration creating the `users` table with these columns:
-  - `id` — primary key (UUID or bigserial; choice depends on language/ORM conventions).
+  - `id` — primary key, **UUID** (project-wide convention).
   - `oauth_subject` — composite identifier, unique. Format `provider:subject` recommended.
-  - `screen_name` — user-supplied string with reasonable length cap.
+  - `screen_name` — user-supplied string (TBD on uniqueness, length cap — see open questions).
   - `created_at` — timestamp.
 - A unique index on `oauth_subject`.
 - Possibly a (non-unique) index on `screen_name` for lookups (open question).
 - The migration runs cleanly in the local dev Compose stack.
 
+## Decisions
+
+- **Primary key type: UUID.** Project-wide convention (CC1).
+
 ## Open questions
 
-- **Primary key type.** UUID vs. bigserial. UUID makes URLs and cross-database transport cleaner; bigserial is smaller and faster for joins. Defer to the migrations-tooling and language-idiom convention once those decisions are made (see also `migrations_tooling`).
-- **Screen-name uniqueness.** Should two users be allowed the same screen name? If yes, how are they distinguished in UI? If no, how is the conflict surfaced at registration? **Awaiting input.**
-- **Screen-name character set / length cap.** **Awaiting input.** Suggest UTF-8 + length 1–64 as a starting point.
-- **Soft-delete vs. hard-delete.** When a user disappears, is the row preserved (so historical event-log entries still resolve a name) or removed? **Awaiting input.** Strong instinct: preserve, since the change history is canonical and event entries reference users by id.
+- **Screen-name uniqueness (F1).** Should two users be allowed the same screen name? Display-name-style (duplicates allowed) or handle-style (globally unique)? **Awaiting input.**
+- **Screen-name character set / length cap (F2).** **Awaiting input.** Default suggestion: UTF-8 + length 1–64.
+- **User deletion behavior (F3).** Soft-delete (preserve row, mark deleted) vs. hard-delete (row removed). Strong instinct: soft-delete since the change history references users by id. **Awaiting input.**

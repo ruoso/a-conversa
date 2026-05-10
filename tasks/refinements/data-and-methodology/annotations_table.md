@@ -45,26 +45,35 @@ The example walkthrough captures meta-moves as annotations with `kind=reframe` /
 
 ## Acceptance criteria
 
-- A migration creating the `annotations` table with these columns:
-  - `id` — primary key.
-  - `target_kind` — enum or string (`node` / `edge`) indicating which kind of entity this annotation attaches to.
-  - `target_id` — opaque foreign reference (resolves to either `nodes.id` or `edges.id` depending on `target_kind`).
-  - `kind` — annotation kind: `note` (default; concerns or observations), `reframe`, `scope-change`, `stance`, possibly more.
-  - `content` — text.
+- A migration creating the `annotations` table with these columns (final shape contingent on F11):
+  - `id` — primary key, **UUID**.
+  - `target_kind` — `TEXT` with `CHECK (target_kind IN ('node', 'edge'))` — annotations cannot themselves be annotated in v1.
+  - `target_id` — `UUID` reference (specific representation contingent on F11).
+  - `kind` — `TEXT` with `CHECK` constraint listing the supported annotation kinds.
+  - `content` — `TEXT`.
   - `created_by` — FK to `users`.
   - `created_at` — timestamp.
 - Foreign-key constraint on `created_by`.
 - An index on `(target_kind, target_id)` for "show annotations attached to entity X" queries.
 - The migration runs cleanly in the local dev Compose stack.
-- Update [docs/architecture.md — storage](../../../docs/architecture.md#storage) to list `annotations` as a third global table alongside `nodes`, `edges`, `users` (was missed in the original architecture doc).
+- Update [docs/architecture.md — storage](../../../docs/architecture.md#storage) to list `annotations` as a third global table alongside `nodes`, `edges`, `users` (I1).
+
+## Decisions
+
+- **Primary key type: UUID** (CC1).
+- **Target kind: `TEXT` with `CHECK` constraint** (CC2).
+- **Annotation kind: `TEXT` with `CHECK` constraint** (CC2).
+- **Annotations cannot annotate annotations in v1** (C5). `target_kind` is `node` | `edge` only.
 
 ## Open questions
 
-- **Polymorphic FK representation.** Three plausible approaches:
-  - **Single nullable columns:** `target_node_id NULLABLE FK nodes`, `target_edge_id NULLABLE FK edges`. Cleanly typed FKs; one is always null. Database-level integrity is decent.
-  - **`target_kind` + `target_id` (string):** above sketch. Loose at the DB level — no FK validity enforced — but simpler to query.
-  - **Two separate tables:** `node_annotations` and `edge_annotations`. Strictest typing, more code.
+- **Polymorphic FK representation (F11).** Three approaches:
+  - **(a)** Single nullable typed columns: `target_node_id NULLABLE FK nodes`, `target_edge_id NULLABLE FK edges`. Cleanly typed FKs; one is always null. Database-level integrity is decent.
+  - **(b)** `target_kind` + `target_id` (UUID, no DB-level FK). Loose at the DB level — no FK validity enforced — but simpler to query.
+  - **(c)** Two separate tables: `node_annotations` and `edge_annotations`. Strictest typing, more code.
   - **Awaiting input.**
-- **Annotation kind enum.** The walkthrough uses `note` (concern), `reframe`, `scope-change`, `stance`. Are these the v1 set, or extendable? **Awaiting input.** Suggest extendable string with a runtime-enforced known-set.
-- **Can annotations themselves be annotated?** I.e., is the `target_kind` enum just `node`/`edge`, or also `annotation`? Currently no methodology references this. Probably exclude in v1. Confirm.
-- **Architecture doc correction.** The architecture doc's storage section lists only `nodes`, `edges`, `users` as global tables. Annotations are first-class per the data model and need to be added. **Will surface as a doc update; not a decision needed.**
+- **Annotation kind set (F12).** Fixed v1 set (`note`, `reframe`, `scope-change`, `stance`) vs. extendable list managed via the CHECK constraint. **Awaiting input.**
+
+## Doc inconsistencies surfaced (not decisions)
+
+- **I1.** [docs/architecture.md — storage](../../../docs/architecture.md#storage) lists only `nodes`, `edges`, `users` as global tables. Annotations need to be added. Pending fix.

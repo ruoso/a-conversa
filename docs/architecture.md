@@ -61,7 +61,7 @@ This makes replay, withdrawal, audit, segment-snapshots, and post-debate analysi
 ## Storage
 
 - **PostgreSQL** for everything. Boring, reliable, runs anywhere.
-- **Global tables** (one row per entity, no session column): `nodes`, `edges`, `users`.
+- **Global tables** (one row per entity, no session column): `nodes`, `edges`, `annotations`, `users`.
 - **Session tables**: `sessions`, `session_participants`, `session_nodes` and `session_edges` (M-N joins recording which graph entities each session includes), and a per-session append-only `session_events` table — the event log.
 - **In-memory graph projection per active session**, rebuilt from the session's event log (joined against the global node/edge tables) on session load and updated as events stream in. Cycle detection, multi-warrant detection, and contradiction detection all run against this in-memory representation — cheap for graphs of debate size (tens to low hundreds of nodes).
 - **No graph database** in v1. The in-memory projection handles structural queries; the operational and conceptual cost of adding a graph DB isn't justified at this scale.

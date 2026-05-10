@@ -46,17 +46,23 @@ The TaskJuggler note already specifies the columns:
 ## Acceptance criteria
 
 - A migration creating the `nodes` table with these columns:
-  - `id` — primary key.
-  - `wording` — text (the statement). No length cap at the database level (or a generous cap; the format encourages short statements but doesn't enforce it).
+  - `id` — primary key, **UUID**.
+  - `wording` — `TEXT` (length cap TBD — see open questions).
   - `created_by` — FK to `users`.
   - `created_at` — timestamp.
 - Foreign-key constraint on `created_by`.
 - An index on `created_by` for "show me nodes I've contributed" queries (low priority for v1; can be added later).
+- Reword updates `wording` in place; prior wordings live only in the event log.
+- Restructure creates a new row (new `id`); the old row stays unchanged.
 - The migration runs cleanly in the local dev Compose stack.
+
+## Decisions
+
+- **Primary key type: UUID** (CC1).
+- **Reword updates in place** (C3). The wording column changes; prior wordings live only in the event log.
+- **Restructure creates a new row** (C4). Old row stays unchanged; downstream edges don't auto-follow.
 
 ## Open questions
 
-- **Wording length cap.** The format encourages short statements but the methodology is silent on a hard limit. Suggest no cap at the database level; UI can enforce a soft display limit. **Awaiting input.**
-- **Wording format.** Plain text only, or does the format support light markup (Markdown / mention syntax)? **Awaiting input.** Strong default: plain text in v1.
-- **Reword behavior.** When a wording edit is committed as a "reword", does the database row's `wording` column get updated in place (and prior wordings live only in the event log)? Implied yes by [docs/methodology.md — editing wording](../../../docs/methodology.md#editing-wording-reword-vs-restructure), but worth being explicit. Confirm.
-- **Restructure behavior.** When an edit is a "restructure", a new node is created (new `id`); the old node's row stays unchanged? Implied yes. Confirm.
+- **Wording length cap (F7).** Database-level cap or unlimited? Strong instinct: no DB-level cap; UI may enforce a soft display limit. **Awaiting input.**
+- **Wording format (F8).** Plain text only or light markup (Markdown / mention syntax)? Strong instinct: plain text in v1. **Awaiting input.**

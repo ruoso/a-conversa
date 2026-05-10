@@ -41,19 +41,24 @@ The TaskJuggler note already specifies the columns:
 ## Acceptance criteria
 
 - A migration creating the `session_participants` table with these columns:
+  - `id` — primary key, **UUID**.
   - `session_id` — FK to `sessions`.
   - `user_id` — FK to `users`.
-  - `role` — enum or string (`moderator` / `debater-A` / `debater-B`).
+  - `role` — `TEXT` with `CHECK (role IN ('moderator', 'debater-A', 'debater-B'))` (extensibility under F6).
   - `joined_at` — timestamp.
   - `left_at` — nullable timestamp.
 - Foreign-key constraints with appropriate ON DELETE behavior (likely RESTRICT, since event log references participants).
 - An index on `session_id` for the most common query ("who's in this session right now?").
-- A unique constraint that prevents two simultaneously-active participants in the same role on the same session (`session_id, role` unique where `left_at IS NULL`). PostgreSQL partial unique index supports this.
-- A constraint or check that `role` is one of the allowed values.
+- A unique partial index that prevents two simultaneously-active participants in the same role on the same session (`session_id, role` unique where `left_at IS NULL`).
+- A unique partial index that prevents a single user from holding two simultaneous roles in the same session (`session_id, user_id` unique where `left_at IS NULL`) — encoding C2.
+
+## Decisions
+
+- **Primary key type: UUID** (CC1).
+- **Role column: `TEXT` with `CHECK` constraint** (CC2).
+- **Single role per user per session** (C2). Encoded as a partial unique index.
 
 ## Open questions
 
-- **Role enum vs. string.** Same trade-off as sessions.privacy. **Awaiting input.**
-- **Can a single user occupy multiple roles in different sessions?** Yes obviously (a user could be moderator in one session and a debater in another). But within a single session, can a user occupy two roles concurrently or sequentially? V1 assumption: **no** (one role per user per session). Confirm.
-- **What happens if a participant leaves and re-joins?** Two rows with different `joined_at` and `left_at`? Or update the existing row? **Awaiting input.** Cleaner under event-sourcing: each transition is a new row (more rows, but reconstructs cleanly from event log).
-- **Future-proofing for spectators / observers / additional roles.** V1 is fixed at moderator + two debaters; should the role enum be designed to accommodate future expansion (e.g., adding "spectator" later)? **Awaiting input.** Suggested: yes, treat the enum as extendable.
+- **Participant leave-and-rejoin behavior (F5).** Multiple rows (one per join-leave pair) vs. update the existing row in place. Strong instinct: multiple rows under event-sourcing. **Awaiting input.**
+- **Role-enum extensibility (F6).** Strict v1 set (`moderator` / `debater-A` / `debater-B`) vs. extendable design (e.g., `spectator` later). The CHECK-constraint approach makes adding a value easy regardless. **Awaiting input.**

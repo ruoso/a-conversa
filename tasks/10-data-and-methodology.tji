@@ -55,6 +55,7 @@ task data_and_methodology "Data and methodology" {
     task migrations_tooling "Migrations runner and conventions" {
       effort 1d
       allocate team
+      depends foundation.stack_decisions.lang_decision
       note "Refinement: tasks/refinements/data-and-methodology/migrations_tooling.md"
     }
     task seed_data_for_tests "Seed-data fixtures for tests" {

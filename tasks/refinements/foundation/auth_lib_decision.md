@@ -47,13 +47,11 @@ Other constraints:
 - Rationale recorded in the ADR log.
 - A draft of how it integrates with the dev environment (mock provider) and production (real providers).
 
+## Decisions
+
+- **Approach: self-hosted OIDC service.** Runs as a Compose service in dev and production. Generic OIDC client in our backend speaks standard OIDC to it. Upstream identity providers (Google, GitHub, GitLab) plug in via the OIDC service's configuration, not application code.
+- **Specific tool: Authelia.** Single Go binary that includes both an OIDC server and a federated login UI. Lightest-weight option in the self-hosted family; matches the project's "single Docker container, simple ops, open-source self-hostable" profile. Avoids the hydra+kratos two-service complexity.
+
 ## Open questions
 
-- **Which approach?**
-  - **Self-hosted OIDC service** (Keycloak, Authelia, ory/hydra, dex): runs as a Compose service in dev and production. Pro: consistent local/prod story, no SaaS dependency. Con: another service to operate.
-  - **Hand-rolled OAuth client** in the backend: directly speaks to provider OAuth endpoints. Pro: minimal dependencies, full control. Con: more code to maintain, less off-the-shelf.
-  - **Hosted IDP** (Auth0, Clerk, etc.): faster to ship. Con: requires every operator to set up and pay for an account, conflicts with self-hosting story.
-- **Which specific tool?** If self-hosted: Keycloak vs. Authelia vs. ory/hydra vs. dex.
-- **Does the choice cleanly support the local mock OAuth provider workflow?** The dev environment requires single-command startup with no external accounts; the chosen approach must accommodate this.
-
-The final decision is awaited from you.
+- **Local mock-provider workflow.** Authelia in Compose with prefab dev credentials should be enough; need to verify the upstream-provider stub story for fully offline development (i.e., tests where Google/GitHub aren't reachable). Will surface during dev-env build.

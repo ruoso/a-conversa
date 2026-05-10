@@ -48,7 +48,11 @@ Architectural facts that constrain the choice (from [docs/architecture.md](../..
 - Choice is reflected as a setting in `repo_skeleton.linter_config`, `formatter_config`, `typecheck_config` (downstream).
 - A "hello, world" HTTP server in the chosen stack runs locally.
 
+## Decisions
+
+- **Language: TypeScript on Node.** Decided.
+- **Web framework / runtime: TBD during repo setup.** The standard candidates for TS/Node are Express, Fastify, Hono, or similar. Pick during the repo-skeleton work; not blocking other decisions.
+
 ## Open questions
 
-- **Which language and framework?** The architecture doc lists TypeScript / Node, Go, Elixir (Phoenix), and Rust as candidates without picking among them. **This task's content is the decision itself — awaiting input.**
-- **Web framework / runtime?** Once language is chosen, the idiomatic framework typically follows (e.g., Express/Fastify/Hono for TS, stdlib + chi/echo for Go, Phoenix for Elixir, Axum/Tokio for Rust). Confirm at decision time.
+(none — task is decided pending the framework pick which is a downstream prototyping detail)

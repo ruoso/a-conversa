@@ -55,19 +55,22 @@ The TaskJuggler note already specifies the columns:
 ## Acceptance criteria
 
 - A migration creating the `edges` table with these columns:
-  - `id` — primary key.
-  - `role` — enum or string (one of `supports` / `rebuts` / `qualifies` / `bridges-from` / `bridges-to` / `defines` / `contradicts`).
+  - `id` — primary key, **UUID**.
+  - `role` — `TEXT` with `CHECK (role IN ('supports', 'rebuts', 'qualifies', 'bridges-from', 'bridges-to', 'defines', 'contradicts'))`.
   - `source_node_id` — FK to `nodes`.
   - `target_node_id` — FK to `nodes`.
   - `created_by` — FK to `users`.
   - `created_at` — timestamp.
 - Foreign-key constraints on all three FKs.
 - An index on `source_node_id` and another on `target_node_id` (graph traversal queries hit both directions).
-- A check or enum constraint enforcing the role values.
 - The migration runs cleanly in the local dev Compose stack.
+
+## Decisions
+
+- **Primary key type: UUID** (CC1).
+- **Role column: `TEXT` with `CHECK` constraint** (CC2).
 
 ## Open questions
 
-- **Role enum vs. string.** Same trade-off as elsewhere. **Awaiting input.**
-- **Is the same `(role, source, target)` triple allowed twice?** I.e., can two distinct edge rows share role + endpoints? Likely **no** (they'd be redundant), but worth confirming with a uniqueness constraint. **Awaiting input.**
-- **Should `bridges-from` and `bridges-to` from the same warrant be enforced to come in pairs?** A warrant with only one of the two is structurally incomplete. The system can detect this as a coherency-hint diagnostic (see [data-model.md — coherency violations](../../../docs/data-model.md#coherency-violations)) but should the schema constrain it? **Awaiting input.** Suggest no schema-level constraint; the runtime enforces.
+- **Edge uniqueness (F9).** Is the same `(role, source, target)` triple allowed twice (i.e., can two distinct edge rows share role + endpoints)? Strong instinct: no, unique constraint. **Awaiting input.**
+- **Schema-level enforcement of paired `bridges-from` / `bridges-to` (F10).** A warrant with only one of the two is structurally incomplete. Strong instinct: no schema-level constraint; runtime enforces (coherency-hint diagnostic). **Awaiting input.**

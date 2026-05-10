@@ -49,15 +49,22 @@ Downstream tasks that depend on this:
 - The local-dev Compose stack auto-applies migrations on startup.
 - A README section or doc covering: where migrations live, how to add one, how the rollback story works, how production deploys handle them.
 
+## Decisions
+
+- **Application refuses to start if pending migrations exist** (C6). The startup health check verifies the migration state and aborts if anything is unapplied.
+- **The dependency on `lang_decision` is now explicit** (I3 — see below). Now that T1 is TypeScript/Node, this task's content is well-defined.
+
 ## Open questions
 
-- **Tool choice.** Strongly coupled to the backend language. Common choices:
-  - TS/Node: Knex, Drizzle, Prisma migrate, node-pg-migrate.
-  - Go: golang-migrate, goose, atlas.
-  - Elixir: Ecto migrations.
-  - Rust: sqlx-cli, refinery.
-  - Language-agnostic: dbmate, sqitch, atlas.
-  **Awaiting input** — partly contingent on `lang_decision`. Suggest deferring final pick until after lang is chosen, or pick a language-agnostic tool (dbmate / atlas) so this task isn't blocked.
-- **Should this task gain an explicit `depends !lang_decision`?** Currently it has no `depends`, which is why it's truly unblocked. In practice the choice is gated. Recommend adding the dependency after the lang decision is made — or splitting this task in two: "pick conventions" (truly unblocked) vs. "wire up the tool" (depends on lang).
-- **Down migrations vs. forward-only.** Migration tools typically support downward "rollback" migrations; some teams prefer forward-only with point-in-time database snapshots and a "revert by writing a new migration" policy. **Awaiting input.**
-- **Schema versioning surfaced to the application.** Should the running app refuse to start if migrations are pending, or just log a warning? Strong default: refuse to start. Confirm.
+- **Tool choice (T4).** Now that the backend is **TypeScript/Node**, the live candidates are:
+  - **Knex** — query builder + migrations. Mature, widely used.
+  - **Drizzle migrate** — newer, type-safe, schema-as-code.
+  - **Prisma migrate** — schema-first; requires Prisma's runtime.
+  - **node-pg-migrate** — minimal, just migrations on raw SQL.
+  - Or a language-agnostic tool: **dbmate** or **atlas** — pure SQL migrations independent of the application stack.
+  **Awaiting input.**
+- **Migration policy (T5).** Forward-only (revert by writing a new forward migration) vs. up-and-down (every migration ships with a rollback). **Awaiting input.**
+
+## Doc inconsistencies surfaced (not decisions)
+
+- **I3.** This task's `.tji` entry should gain `depends !!lang_decision` (or absolute path) now that the language choice is made. Pending fix.

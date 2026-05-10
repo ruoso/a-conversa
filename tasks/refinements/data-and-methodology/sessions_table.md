@@ -43,18 +43,22 @@ The TaskJuggler note already specifies the columns:
 ## Acceptance criteria
 
 - A migration creating the `sessions` table with these columns:
-  - `id` — primary key.
+  - `id` — primary key, **UUID**.
   - `host_user_id` — foreign key into `users`.
-  - `privacy` — enum or string (`public` / `private`), default `public`.
-  - `topic` — the debate topic string (added based on moderator-ui `mod_create_session_form`).
+  - `privacy` — `TEXT` with `CHECK (privacy IN ('public', 'private'))`, default `'public'`.
+  - `topic` — `TEXT`. The debate topic, captured at session creation.
   - `created_at` — timestamp.
   - `ended_at` — nullable timestamp.
 - Foreign-key constraint on `host_user_id`.
 - An index on `host_user_id` for "list my sessions" queries.
 - An index on `privacy` (or a partial index on public sessions, if the cross-session reference query is expected to be hot).
 
+## Decisions
+
+- **Primary key type: UUID** (CC1).
+- **Privacy column: `TEXT` with `CHECK` constraint** (CC2). Allows future values to be added by changing the constraint without an enum-type migration.
+- **Topic column included** (C1). Not in the original architecture-doc enumeration — that's a doc gap to fix (I2).
+
 ## Open questions
 
-- **Topic field.** [docs/moderator-ui.md — F1](../../../docs/moderator-ui.md#f1-capture-a-new-statement) and the session-setup flow imply a topic is captured at session creation. Including it in `sessions` (above) seems right. Confirm.
-- **Privacy values: enum vs. string.** Database-backed enums are more constrained but harder to evolve; string with a CHECK constraint is more flexible. **Awaiting input.**
-- **Should there be an explicit `status` column?** ("scheduled" / "active" / "ended" / etc.) Or is `ended_at IS NULL` enough to mean "active"? **Awaiting input.**
+- **Explicit `status` column or `ended_at IS NULL` only (F4)?** A `status` enum (`scheduled` / `active` / `ended` / etc.) explicitly tracks lifecycle vs. inferring "active" from `ended_at IS NULL`. **Awaiting input.**
