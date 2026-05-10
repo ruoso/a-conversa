@@ -55,3 +55,7 @@ From [docs/data-model.md — event types — session inclusion](../../../docs/da
 ## Open questions
 
 (none — all decided)
+
+## Status
+
+Done 2026-05-10. Migration `apps/server/migrations/0007_session_nodes.sql` creates the `session_nodes` table with composite PK `(session_id, node_id)` (R9 — explicit departure from the UUID-PK convention), three `ON DELETE RESTRICT` foreign keys (`session_id` → `sessions`, `node_id` → `nodes`, `included_by` → `users`), an `included_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`, and an inverse-direction index `session_nodes_node_id_idx` on `node_id` for "in which sessions does this node appear?" queries. No `removed_at` column (R10 — monotonic inclusion; the table is an index into the event log, not a representation of the visible-graph state). Verified end-to-end against the local Compose stack: `make up` + `make migrate` applies through 0007; `\d session_nodes` shows the composite PK, all three FKs, and the `node_id` index; happy-path insert succeeds; duplicate `(session_id, node_id)` fails on `session_nodes_pkey`; bogus `session_id` fails on `session_nodes_session_id_fkey`; `make down-v` cleans up.

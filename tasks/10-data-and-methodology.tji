@@ -45,6 +45,7 @@ task data_and_methodology "Data and methodology" {
     task session_nodes_join_table "session_nodes M-N join table" {
       effort 0.25d
       allocate team
+      complete 100
       depends !sessions_table, !nodes_table
       note "Refinement: tasks/refinements/data-and-methodology/session_nodes_join_table.md"
     }
