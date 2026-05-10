@@ -10,17 +10,22 @@
     "smoke:react": "tsx scripts/hello-react.tsx",
     "smoke:reactflow": "tsx scripts/hello-reactflow.tsx",
     "smoke:cytoscape": "tsx scripts/hello-cytoscape.ts",
-    "smoke:tailwind": "tsx scripts/hello-tailwind.ts"
+    "smoke:tailwind": "tsx scripts/hello-tailwind.ts",
+    "test:smoke": "vitest run tests/smoke"
   },
   "devDependencies": {
+    "@testing-library/react": "^16.0.0",
     "@types/node": "^22.0.0",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
+    "@vitest/coverage-v8": "^2.1.0",
     "cytoscape": "^3.30.0",
+    "happy-dom": "^15.0.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
     "reactflow": "^11.11.0",
     "tailwindcss": "^4.3.0",
-    "tsx": "^4.19.0"
+    "tsx": "^4.19.0",
+    "vitest": "^2.1.0"
   }
 }

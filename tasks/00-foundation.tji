@@ -42,6 +42,7 @@ task foundation "Foundation" {
     task test_unit_framework_decision "Pick unit-test framework" {
       effort 0.5d
       allocate team
+      complete 100
       depends !lang_decision, !frontend_framework_decision
       note "Refinement: tasks/refinements/foundation/test_unit_framework_decision.md"
     }

@@ -50,3 +50,10 @@ Project context:
 ## Open questions
 
 (none — all decided)
+
+## Status
+
+**Done** — 2026-05-10. Settled by [ADR 0006](../../../docs/adr/0006-unit-test-framework-vitest.md) and the runner-validation smoke test at [tests/smoke/hello.test.ts](../../../tests/smoke/hello.test.ts) (run via `npm run test:smoke`). Two acceptance-criterion items are explicitly deferred:
+
+- **Per-workspace "hello, unit test"** waits on `repo_skeleton.dir_layout` to create the `apps/*` and `packages/*` workspaces; each per-workspace test will land with its owning `*_unit_tests` task. The inline smoke test above proves the runner choice itself is sound.
+- **CI runs unit tests across all workspaces** is owned by `foundation.test_infra.ci_unit_test_step`, which depends on `unit_test_runner_setup`. Not touched here.
