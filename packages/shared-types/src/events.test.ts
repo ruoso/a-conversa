@@ -580,21 +580,6 @@ describe('vote payload schema (worked example)', () => {
 });
 
 describe('placeholder payload schemas', () => {
-  it('accepts an empty object for `proposal` (downstream task tightens)', () => {
-    // Placeholder accepts any object; once `proposal_events` lands,
-    // this will require a tightened shape.
-    const envelope = {
-      id: EVENT_ID,
-      sessionId: SESSION_ID,
-      sequence: 1,
-      kind: 'proposal' as const,
-      actor: ACTOR_ID,
-      payload: {},
-      createdAt: '2026-05-10T12:34:56Z',
-    };
-    expect(() => validateEvent(envelope)).not.toThrow();
-  });
-
   it('exposes a registry entry for every kind', () => {
     // Sanity check that the registry is exhaustive — adding a kind
     // to the SQL CHECK without registering a schema would surface
@@ -731,7 +716,13 @@ const REPRESENTATIVE_PAYLOADS: Record<EventKind, unknown> = {
     included_by: USER_ID,
     included_at: '2026-05-10T12:34:56Z',
   },
-  proposal: {},
+  proposal: {
+    proposal: {
+      kind: 'classify-node',
+      node_id: NODE_ID,
+      classification: 'fact',
+    },
+  },
   vote: {
     proposal_event_id: PROPOSAL_EVENT_ID,
     participant_id: PARTICIPANT_ID,

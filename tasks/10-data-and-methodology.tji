@@ -118,6 +118,7 @@ task data_and_methodology "Data and methodology" {
     task proposal_events "Proposal events (all kinds)" {
       effort 2d
       allocate team
+      complete 100
       depends !event_base_envelope
       note "Refinement: tasks/refinements/data-and-methodology/proposal_events.md"
     }

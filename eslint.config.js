@@ -51,6 +51,15 @@ export default tseslint.config(
         ...globals.browser,
       },
     },
+    rules: {
+      // Underscore prefix on a variable / argument / destructured binding
+      // signals "intentionally unused" — common when omitting a field via
+      // destructuring rest in tests.
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
+    },
   },
   // Root-level `scripts/` are throwaway smoke tests that exercise the
   // dependency stack via `tsx`. They are covered by `tsconfig.tools.json`

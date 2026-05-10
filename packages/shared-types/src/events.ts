@@ -34,8 +34,11 @@
 //   - `entity_creation_events` → `node-created`, `edge-created`,
 //     `annotation-created`.
 //   - `entity_inclusion_events` → `entity-included`.
-//   - `proposal_events` → `proposal` (with payload-internal `kind`
-//     discriminator over the 11 proposal sub-kinds).
+//   - `proposal_events` → `proposal` (**done** — tightened below;
+//     the envelope payload nests a `proposal: ProposalPayload` under
+//     a `proposal` key, where `ProposalPayload` is a discriminated
+//     union over `kind` covering the eleven proposal sub-kinds; see
+//     `./events/proposals.ts`).
 //   - `vote_events` → `vote` (the `vote` schema here is a worked
 //     example; that task may refine it).
 //   - `resolution_events` → `commit`, `meta-disagreement-marked`.
@@ -55,6 +58,55 @@
 // an immediate concern.
 
 import { z } from 'zod';
+
+import { type ProposalEnvelopePayload, proposalEnvelopePayloadSchema } from './events/proposals.js';
+
+// -- Proposal payload re-exports -------------------------------------
+//
+// Owned by `proposal_events`. The eleven sub-kind schemas, the
+// discriminated `ProposalPayload`, the `StatementKind` enum, and the
+// outer `proposalEnvelopePayloadSchema` live in `./events/proposals.ts`
+// (split out because the discriminated union runs long). Re-exported
+// here so consumers see a single entry point.
+
+export {
+  amendNodeProposalSchema,
+  annotateProposalSchema,
+  axiomMarkProposalSchema,
+  breakEdgeProposalSchema,
+  classifyNodeProposalSchema,
+  decomposeProposalSchema,
+  editWordingProposalSchema,
+  interpretiveSplitProposalSchema,
+  metaMoveProposalSchema,
+  proposalComponentSchema,
+  proposalEnvelopePayloadSchema,
+  proposalPayloadSchema,
+  restructureEditProposalSchema,
+  rewordEditProposalSchema,
+  setEdgeSubstanceProposalSchema,
+  setNodeSubstanceProposalSchema,
+  statementKindSchema,
+} from './events/proposals.js';
+export type {
+  AmendNodeProposal,
+  AnnotateProposal,
+  AxiomMarkProposal,
+  BreakEdgeProposal,
+  ClassifyNodeProposal,
+  DecomposeProposal,
+  EditWordingProposal,
+  InterpretiveSplitProposal,
+  MetaMoveProposal,
+  ProposalComponent,
+  ProposalEnvelopePayload,
+  ProposalPayload,
+  RestructureEditProposal,
+  RewordEditProposal,
+  SetEdgeSubstanceProposal,
+  SetNodeSubstanceProposal,
+  StatementKind,
+} from './events/proposals.js';
 
 // -- Event kinds ------------------------------------------------------
 //
@@ -161,38 +213,25 @@ export type ParticipantLeftPayload = z.infer<typeof participantLeftPayloadSchema
 // the projection is a pure copy.
 //
 // Two enums are exported at the top level — `edgeRoleSchema` and
-// `annotationKindSchema` — because downstream `proposal_events` will
-// reuse them (e.g. `set-edge-substance` carries an edge role; an
-// annotation-related proposal carries the kind). Single source of
-// truth: changing a value here keeps the payload schemas, the
+// `annotationKindSchema` — because downstream `proposal_events` reuses
+// them (e.g. `set-edge-substance` carries an edge role; an annotation-
+// related proposal carries the kind). Single source of truth: changing
+// a value in `./events/enums.ts` keeps the payload schemas, the
 // proposal payloads, and any consuming UI in sync. The string lists
-// mirror the SQL CHECK constraints exactly — drift here would let
-// payloads validate but inserts fail.
+// mirror the SQL CHECK constraints exactly — drift would let payloads
+// validate but inserts fail.
+//
+// **Why a leaf module**: hosting the enums inline here would create a
+// circular import — `events.ts` imports `./events/proposals.ts`, which
+// in turn needs `annotationKindSchema`. Top-level Zod builders run at
+// module-init time, so a circular import where one side reads the
+// other's binding before it's been assigned crashes with `Cannot
+// access ... before initialization`. The leaf module breaks the cycle.
 
-/**
- * Edge role enum. Mirrors the CHECK constraint on `edges.role` in
- * `apps/server/migrations/0005_edges.sql` exactly.
- */
-export const edgeRoleSchema = z.enum([
-  'supports',
-  'rebuts',
-  'qualifies',
-  'bridges-from',
-  'bridges-to',
-  'defines',
-  'contradicts',
-]);
+export { annotationKindSchema, edgeRoleSchema, entityKindSchema } from './events/enums.js';
+export type { AnnotationKind, EdgeRole, EntityKind } from './events/enums.js';
 
-export type EdgeRole = z.infer<typeof edgeRoleSchema>;
-
-/**
- * Annotation kind enum. Mirrors the CHECK constraint on
- * `annotations.kind` in `apps/server/migrations/0006_annotations.sql`
- * exactly.
- */
-export const annotationKindSchema = z.enum(['note', 'reframe', 'scope-change', 'stance']);
-
-export type AnnotationKind = z.infer<typeof annotationKindSchema>;
+import { annotationKindSchema, edgeRoleSchema, entityKindSchema } from './events/enums.js';
 
 export const nodeCreatedPayloadSchema = z.object({
   node_id: z.string().uuid(),
@@ -257,15 +296,8 @@ export type AnnotationCreatedPayload = z.infer<typeof annotationCreatedPayloadSc
 // the matching join table; that lives with the API skeleton /
 // `event_validation` task and is not part of payload validation.
 
-/**
- * Entity-kind enum for `entity-included` payloads. Discriminates the
- * target join table: `node` → `session_nodes`, `edge` → `session_edges`,
- * `annotation` → `session_annotations` (R26).
- */
-export const entityKindSchema = z.enum(['node', 'edge', 'annotation']);
-
-export type EntityKind = z.infer<typeof entityKindSchema>;
-
+// `entityKindSchema` lives in `./events/enums.ts` (re-exported above)
+// for the same circular-import reason as the other shared enums.
 export const entityIncludedPayloadSchema = z.object({
   entity_kind: entityKindSchema,
   entity_id: z.string().uuid(),
@@ -307,7 +339,7 @@ export const eventPayloadSchemas: Record<EventKind, z.ZodTypeAny> = {
   // Owned by entity_inclusion_events
   'entity-included': entityIncludedPayloadSchema,
   // Owned by proposal_events
-  proposal: placeholderPayloadSchema,
+  proposal: proposalEnvelopePayloadSchema,
   // Owned by vote_events
   vote: votePayloadSchema,
   // Owned by resolution_events
@@ -320,8 +352,10 @@ export const eventPayloadSchemas: Record<EventKind, z.ZodTypeAny> = {
 // -- Per-kind payload type map ---------------------------------------
 //
 // `EventPayloadMap` resolves each kind to its concrete payload type.
-// Today the four session-lifecycle kinds plus the `vote` worked
-// example have tight types; the remaining nine fall back to
+// Tightened kinds today: the four session-lifecycle kinds, the three
+// entity-creation kinds, `entity-included`, `proposal`, and the `vote`
+// worked example. The remaining four (`commit`,
+// `meta-disagreement-marked`, `snapshot-created`) fall back to
 // `Record<string, unknown>` (the placeholder's TS image) and will
 // tighten as their downstream tasks land.
 
@@ -334,7 +368,7 @@ export interface EventPayloadMap {
   'edge-created': EdgeCreatedPayload;
   'annotation-created': AnnotationCreatedPayload;
   'entity-included': EntityIncludedPayload;
-  proposal: Record<string, unknown>;
+  proposal: ProposalEnvelopePayload;
   vote: VotePayload;
   commit: Record<string, unknown>;
   'meta-disagreement-marked': Record<string, unknown>;

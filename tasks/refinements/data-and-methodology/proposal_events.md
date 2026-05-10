@@ -67,3 +67,31 @@ Each proposal event includes proposer, target session, proposal kind, and gets a
 ## Open questions
 
 (none — all decided)
+
+## Status
+
+**Done** 2026-05-10.
+
+Implemented in `packages/shared-types/src/events/proposals.ts` (split out from `events.ts`; the discriminated union runs long enough that nesting it inline made the parent module hard to scan). `events.ts` re-exports the public surface so consumers see one entry point.
+
+A leaf `packages/shared-types/src/events/enums.ts` module hosts `edgeRoleSchema`, `annotationKindSchema`, and `entityKindSchema` — moved out of `events.ts` because the proposal payload schema (e.g. `annotate.annotation_kind`) needs `annotationKindSchema`, and importing it from `events.ts` would create a circular import (`events.ts → proposals.ts → events.ts`) that crashes at module-init with `Cannot access ... before initialization` on the Zod builder. The leaf module is shared by both files and breaks the cycle.
+
+**Schema choices worth recording**:
+
+- **`meta-move` is a single-shape object, not a discriminated union.** Per the refinement, the three meta-move kinds (`reframe` / `scope-change` / `stance`) share the *exact same* payload shape (`meta_kind` + `content` + `target_kind` + `target_id`). A `z.discriminatedUnion` would produce three identical-shape branches differing only in the literal `meta_kind` value — runtime/type complexity for no shape difference. A single object with `meta_kind: z.enum([...])` is strictly simpler. (Contrast `edit-wording`, where the two branches genuinely differ in fields — that one *is* a discriminated union.)
+- **Proposal sub-payload nests under a `proposal` key on the envelope payload.** Wire shape: `{ proposal: { kind: 'classify-node', ... } }`. Alternative considered — merge proposal fields directly into the envelope payload — was rejected because the validator's two-stage parse reads more cleanly when the proposal sub-payload is its own field, and the nesting reserves room for envelope-level proposal metadata (e.g. server-assigned `proposal_id`, future fields) without colliding with proposal payload field names.
+- **`StatementKind` is a top-level export** (`'fact' | 'predictive' | 'value' | 'normative' | 'definitional'`) because the moderator UI's classification picker, the projection's per-node classification field, and any future schema referring to statement kind all share the single source of truth.
+- **Inner discriminated union for `edit-wording`** (`reword` vs `restructure`): real shape difference (only `restructure` carries `new_node_id`), so a `z.discriminatedUnion('edit_kind', ...)` is the right tool — missing-`new_node_id`-on-restructure is a structural rejection, not a `refine()` check. Zod 4's outer `discriminatedUnion` doesn't allow duplicate discriminator literals across branches, so the inner union is a single branch at the top level (the parser dispatches to the inner union when `kind === 'edit-wording'`).
+
+**Component-list bounds (R27)** are enforced (`2 ≤ count ≤ 10`) on `decompose.components` and `interpretive-split.readings`. **`meta-move` target (R28)** is required (both `target_kind` and `target_id`).
+
+**Test count delta**: +44 (45 new tests in `events/proposals.test.ts`; -1 in `events.test.ts` from removing the now-stale "accepts an empty object for `proposal`" placeholder test). Total package tests: 105 (was 61).
+
+**Deferred** (cross-field server-side checks per refinement scope; payload validation is structural only):
+
+- `node_id` / `edge_id` / `parent_node_id` / `target_id` / `new_node_id` / `participant` referential checks (must resolve in the session's projection).
+- `meta-move` `target_kind` ↔ `target_id` consistency (the id must resolve to an entity of the asserted kind).
+- `axiom-mark`'s `participant` must be a current session participant.
+- `annotate` `target_kind` ↔ `target_id` consistency.
+
+These belong to `data_and_methodology.event_types.event_validation` and the methodology engine.
