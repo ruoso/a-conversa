@@ -168,6 +168,11 @@ export type RejectionReason =
   | 'proposal-not-pending'
   | 'proposal-already-committed'
   | 'proposal-already-meta-disagreement'
+  // Entity-reference — used by propose-side validators that target an
+  // existing graph entity (decompose's parent node, break-edge's edge,
+  // axiom-mark's node, etc.). Added by `decomposition_logic`; reused by
+  // sibling propose-sub-kind validators as they land.
+  | 'target-entity-not-found'
   // Vote-specific — owned by `commit_logic`, `withdrawal_logic`,
   // `vote_logic` (siblings).
   | 'already-voted'

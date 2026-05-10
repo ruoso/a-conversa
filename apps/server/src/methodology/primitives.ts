@@ -303,3 +303,59 @@ export function proposalTargetsFacet(projection: Projection, proposalEventId: st
   if (found === null) return false;
   return facetTargetForProposal(found.record.payload) !== null;
 }
+
+// ---------------------------------------------------------------
+// `nodeIsVisible` — does the projection have a visible node with this id?
+//
+// Used by `decomposition_logic` (rule 2 of `validateDecomposeProposal`)
+// and by the future `interpretive_split_logic` (same predicate — an
+// interpretive-split also requires a visible parent). The check mirrors
+// the visible-graph derivation in `docs/data-model.md` lines 273–285:
+// a node is "currently visible" iff `projection.getNode(nodeId)` returns
+// a record with `visible === true`. Per the read-side projection
+// (`apps/server/src/projection/projection.ts`), `visible` is flipped to
+// `false` by `applyCommittedProposal` when a `decompose`,
+// `interpretive-split`, or `edit-wording(restructure)` against this node
+// commits — so this predicate is exactly the supersession check.
+//
+// Returns `false` for unknown node ids; callers that need to distinguish
+// "doesn't exist" from "exists but not visible" should call
+// `projection.getNode(nodeId)` directly.
+// ---------------------------------------------------------------
+
+export function nodeIsVisible(projection: Projection, nodeId: string): boolean {
+  const node = projection.getNode(nodeId);
+  return node !== undefined && node.visible === true;
+}
+
+// ---------------------------------------------------------------
+// `decomposeConflictsWith` — find a pending decompose proposal against
+// the same parent.
+//
+// Used by `decomposition_logic` (rule 3 of `validateDecomposeProposal`).
+// Walks `projection.pendingProposals()` (not committed or
+// meta-disagreed — see the refinement's "Read-side
+// `decomposeConflictsWith` semantics" decision) and returns the first
+// pending proposal whose payload is `{ kind: 'decompose', parent_node_id:
+// <match> }`. Returns `null` on no conflict.
+//
+// The caller uses the returned proposal's `proposalEventId` in the
+// rejection detail so the API layer can surface "wait for {id} to
+// resolve first" or "withdraw {id} before re-proposing."
+//
+// A *committed* decompose against the same parent has already flipped
+// `parent.visible = false`, so rule 2 (`nodeIsVisible`) catches that
+// case structurally — no need to walk committed proposals here.
+// ---------------------------------------------------------------
+
+export function decomposeConflictsWith(
+  projection: Projection,
+  parentNodeId: string,
+): PendingProposal | null {
+  for (const proposal of projection.pendingProposals()) {
+    if (proposal.payload.kind === 'decompose' && proposal.payload.parent_node_id === parentNodeId) {
+      return proposal;
+    }
+  }
+  return null;
+}

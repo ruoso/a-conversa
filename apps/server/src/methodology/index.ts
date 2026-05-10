@@ -26,9 +26,11 @@ export type {
 
 export {
   currentParticipants,
+  decomposeConflictsWith,
   findParticipantVoteOnProposal,
   findProposal,
   nextSequence,
+  nodeIsVisible,
   proposalHasAnyDispute,
   proposalSubKind,
   proposalTargetsFacet,

@@ -270,7 +270,9 @@ task data_and_methodology "Data and methodology" {
     task decomposition_logic "Decomposition operation — remove parent, create components in proposed state" {
       effort 2d
       allocate team
+      complete 100
       depends !agreement_state_machine
+      note "Refinement: tasks/refinements/data-and-methodology/decomposition_logic.md"
     }
     task interpretive_split_logic "Interpretive-split operation (analogous shape to decomposition)" {
       effort 1d
