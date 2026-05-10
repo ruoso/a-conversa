@@ -53,3 +53,11 @@ By the time `dev_env.compose_file` and `dev_env.one_command_script` land (downst
 ## Open questions
 
 (none — all decided)
+
+## Status
+
+**Done** 2026-05-10 — see the "Local development" section in [`README.md`](../../../README.md). Replaces the earlier intended-state placeholder and folds in the pre-commit paragraph that `pre_commit_hooks` had inserted with a forward-pointer to this task.
+
+The new section follows the structure agreed in the spec: one-line intro, *Prerequisites*, *First-run setup*, *What works today*, *What's planned*, *Pre-commit hook*, plus pointers at the [Makefile](../../../Makefile) and [pnpm-workspace.yaml](../../../pnpm-workspace.yaml). It stays close to the ~30-line target.
+
+**Carry-over — revisit when `dev_env.compose_file` lands** (and its sibling tasks `one_command_script` and `seed_data_script`): at that point `make up`, the seeded-fixture instructions, and the served-surface URLs (`/moderator`, `/participant`, `/audience`, `/replay`) move from "planned" to "what works today". `dev_env.dev_env_docs` is the natural place to do that pass; this refinement should be touched again then to flip the wording.

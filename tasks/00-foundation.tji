@@ -173,6 +173,7 @@ task foundation "Foundation" {
     task readme_dev_section "Add Development section to README" {
       effort 0.25d
       allocate team
+      complete 100
       depends !dir_layout
       note "Refinement: tasks/refinements/foundation/readme_dev_section.md"
     }

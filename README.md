@@ -27,11 +27,35 @@ For a worked example of the format in action, see [docs/example-walkthrough.md](
 
 ## Local development
 
-The development environment runs entirely locally via Docker Compose — a single command brings up the application, PostgreSQL, and a local OAuth provider. No external accounts or cloud setup required for development. See [docs/architecture.md — local development environment](docs/architecture.md#local-development-environment) for the intended shape.
+Development is workspace-based (pnpm workspaces under [apps/](apps/) and [packages/](packages/)). Eventually a Docker Compose stack will boot the full app, PostgreSQL, and a local OAuth provider; that stack lands with `foundation.dev_env`.
 
-The Compose file and code will land when implementation begins; this is currently a design-phase repo.
+### Prerequisites
 
-`pnpm install` enables a Husky pre-commit hook that runs `lint-staged` (ESLint `--fix` and Prettier `--write` against staged files) followed by an incremental whole-repo typecheck (`tsc -b`); a commit that fails lint or typecheck is rejected, and a commit cleaned up by the formatter lands with the cleaned content. The full development-workflow doc — including run commands, the smoke scripts, and the test layout — will land with `readme_dev_section`.
+- Node 20+ (host is on 20.19.2).
+- pnpm 9.x — the version is pinned in [`package.json`](package.json) `packageManager`; enable via `corepack enable && corepack prepare pnpm@9.15.4 --activate`.
+- Docker — only needed once `dev_env` lands; not required today.
+
+### First-run setup
+
+`pnpm install` (or `make install`) installs every workspace and registers the Husky pre-commit hook.
+
+### What works today
+
+- Tests: `pnpm run test:smoke` (Vitest), `pnpm run test:behavior:smoke` (Cucumber), `pnpm run test:e2e:smoke` (Playwright). `make test` runs all three.
+- Lint / format / typecheck: `pnpm run lint`, `pnpm run format`, `pnpm run typecheck`.
+- Stack-validation smokes: `pnpm run smoke:{node,react,reactflow,cytoscape,tailwind}`.
+
+### What's planned
+
+- `make up` will bring up the app + Postgres + Authelia — placeholder until [`dev_env.compose_file`](tasks/refinements/foundation/compose_file.md) and [`dev_env.one_command_script`](tasks/refinements/foundation/one_command_script.md) land.
+- Seeded fixture for manual exploration via [`dev_env.seed_data_script`](tasks/refinements/foundation/seed_data_script.md).
+- Surfaces served on localhost: moderator at `/moderator`, participant at `/participant`, audience at `/audience` (`/replay` later). See [docs/architecture.md — local development environment](docs/architecture.md#local-development-environment).
+
+### Pre-commit hook
+
+`lint-staged` runs ESLint `--fix` and Prettier `--write` against staged files, followed by `tsc -b`. A commit that fails lint or typecheck is rejected; formatter cleanups are committed as-is. Bypass with `git commit --no-verify` when needed.
+
+See the [Makefile](Makefile) for the full target list and [pnpm-workspace.yaml](pnpm-workspace.yaml) for the workspace layout.
 
 ## License
 
