@@ -217,6 +217,7 @@ task foundation "Foundation" {
     task one_command_script "One-command startup script (e.g., make up / scripts/dev)" {
       effort 0.5d
       allocate team
+      complete 100
       depends !compose_file
       note "Refinement: tasks/refinements/foundation/one_command_script.md"
     }

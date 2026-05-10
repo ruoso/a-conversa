@@ -44,11 +44,12 @@ Development is workspace-based (pnpm workspaces under [apps/](apps/) and [packag
 - Tests: `pnpm run test:smoke` (Vitest), `pnpm run test:behavior:smoke` (Cucumber), `pnpm run test:e2e:smoke` (Playwright). `make test` runs all three.
 - Lint / format / typecheck: `pnpm run lint`, `pnpm run format`, `pnpm run typecheck`.
 - Stack-validation smokes: `pnpm run smoke:{node,react,reactflow,cytoscape,tailwind}`.
+- `make up` brings up Postgres + Authelia (auto-creating `.env` from `.env.example` if absent) and prints the URL banner. `make down` / `make down-v` tear the stack down (the latter also drops named volumes).
 
 ### What's planned
 
-- `make up` will bring up the app + Postgres + Authelia — placeholder until [`dev_env.compose_file`](tasks/refinements/foundation/compose_file.md) and [`dev_env.one_command_script`](tasks/refinements/foundation/one_command_script.md) land.
-- Seeded fixture for manual exploration via [`dev_env.seed_data_script`](tasks/refinements/foundation/seed_data_script.md).
+- `make up-app` (and eventually full-stack `make up`) brings the app container up too. Today the app's stub entry point exits 0 and restarts in a loop, so the split keeps the working subset quiet; once [`backend.api_skeleton`](tasks/refinements/backend/api_skeleton.md) lands, full-stack `make up` becomes the norm.
+- Seeded fixture for manual exploration via [`dev_env.seed_data_script`](tasks/refinements/foundation/seed_data_script.md). `make seed` is a stub that errors clearly until that task lands.
 - Surfaces served on localhost: moderator at `/moderator`, participant at `/participant`, audience at `/audience` (`/replay` later). See [docs/architecture.md — local development environment](docs/architecture.md#local-development-environment).
 
 ### Pre-commit hook
