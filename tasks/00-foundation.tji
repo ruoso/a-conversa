@@ -15,7 +15,7 @@ task foundation "Foundation" {
       effort 1d
       allocate team
       depends !lang_decision
-      note "React, Svelte, or Solid. Must work with the chosen graph library."
+      note "Refinement: tasks/refinements/foundation/frontend_framework_decision.md"
     }
     task graph_lib_decision "Pick graph rendering library or libraries" {
       effort 1d
@@ -43,7 +43,7 @@ task foundation "Foundation" {
       effort 0.5d
       allocate team
       depends !lang_decision
-      note "Cucumber / Gherkin or equivalent BDD framework — for scenario-level tests describing system behavior."
+      note "Refinement: tasks/refinements/foundation/test_behavior_framework_decision.md"
     }
     task playwright_decision "Confirm Playwright for web E2E" {
       effort 0.25d
@@ -106,23 +106,28 @@ task foundation "Foundation" {
     task editorconfig "Add .editorconfig" {
       effort 0.25d
       allocate team
+      note "Refinement: tasks/refinements/foundation/editorconfig.md"
     }
     task gitignore "Add .gitignore for chosen stack" {
       effort 0.25d
       allocate team
+      note "Refinement: tasks/refinements/foundation/gitignore.md"
     }
     task linter_config "Configure linter" {
       effort 0.5d
       allocate team
+      note "Refinement: tasks/refinements/foundation/linter_config.md"
     }
     task formatter_config "Configure formatter" {
       effort 0.5d
       allocate team
+      note "Refinement: tasks/refinements/foundation/formatter_config.md"
     }
     task typecheck_config "Configure type checker" {
       effort 0.5d
       allocate team
       depends !!stack_decisions.lang_decision
+      note "Refinement: tasks/refinements/foundation/typecheck_config.md"
     }
     task pre_commit_hooks "Set up pre-commit hooks (lint, format, typecheck)" {
       effort 0.5d
@@ -132,6 +137,7 @@ task foundation "Foundation" {
     task dir_layout "Establish source directory layout" {
       effort 0.5d
       allocate team
+      note "Refinement: tasks/refinements/foundation/dir_layout.md"
     }
     task readme_dev_section "Add Development section to README" {
       effort 0.25d

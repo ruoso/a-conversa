@@ -40,17 +40,19 @@ task data_and_methodology "Data and methodology" {
       effort 0.25d
       allocate team
       depends !sessions_table, !nodes_table
+      note "Refinement: tasks/refinements/data-and-methodology/session_nodes_join_table.md"
     }
     task session_edges_join_table "session_edges M-N join table" {
       effort 0.25d
       allocate team
       depends !sessions_table, !edges_table
+      note "Refinement: tasks/refinements/data-and-methodology/session_edges_join_table.md"
     }
     task session_events_table "session_events append-only event log" {
       effort 1d
       allocate team
       depends !sessions_table
-      note "Per-session event log; payload schema discriminated by event kind."
+      note "Refinement: tasks/refinements/data-and-methodology/session_events_table.md"
     }
     task migrations_tooling "Migrations runner and conventions" {
       effort 1d
