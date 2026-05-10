@@ -245,6 +245,36 @@ export const annotationCreatedPayloadSchema = z
 
 export type AnnotationCreatedPayload = z.infer<typeof annotationCreatedPayloadSchema>;
 
+// -- Entity inclusion event payload schema ---------------------------
+//
+// Owned by `entity_inclusion_events`. Refinement:
+// tasks/refinements/data-and-methodology/entity_inclusion_events.md.
+//
+// A single payload schema with `entity_kind` discriminating over
+// `node | edge | annotation` (R26: `session_annotations` is a third
+// M-N join table, mirroring `session_nodes` and `session_edges`).
+// The server-side write path switches on `entity_kind` to insert into
+// the matching join table; that lives with the API skeleton /
+// `event_validation` task and is not part of payload validation.
+
+/**
+ * Entity-kind enum for `entity-included` payloads. Discriminates the
+ * target join table: `node` → `session_nodes`, `edge` → `session_edges`,
+ * `annotation` → `session_annotations` (R26).
+ */
+export const entityKindSchema = z.enum(['node', 'edge', 'annotation']);
+
+export type EntityKind = z.infer<typeof entityKindSchema>;
+
+export const entityIncludedPayloadSchema = z.object({
+  entity_kind: entityKindSchema,
+  entity_id: z.string().uuid(),
+  included_by: z.string().uuid(),
+  included_at: z.string().datetime({ offset: true }),
+});
+
+export type EntityIncludedPayload = z.infer<typeof entityIncludedPayloadSchema>;
+
 // Worked example: vote.
 //
 // Refined by `vote_events`; the shape here matches docs/data-model.md
@@ -275,7 +305,7 @@ export const eventPayloadSchemas: Record<EventKind, z.ZodTypeAny> = {
   'edge-created': edgeCreatedPayloadSchema,
   'annotation-created': annotationCreatedPayloadSchema,
   // Owned by entity_inclusion_events
-  'entity-included': placeholderPayloadSchema,
+  'entity-included': entityIncludedPayloadSchema,
   // Owned by proposal_events
   proposal: placeholderPayloadSchema,
   // Owned by vote_events
@@ -303,7 +333,7 @@ export interface EventPayloadMap {
   'node-created': NodeCreatedPayload;
   'edge-created': EdgeCreatedPayload;
   'annotation-created': AnnotationCreatedPayload;
-  'entity-included': Record<string, unknown>;
+  'entity-included': EntityIncludedPayload;
   proposal: Record<string, unknown>;
   vote: VotePayload;
   commit: Record<string, unknown>;

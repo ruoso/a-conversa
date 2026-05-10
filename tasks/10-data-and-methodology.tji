@@ -111,6 +111,7 @@ task data_and_methodology "Data and methodology" {
     task entity_inclusion_events "entity-included" {
       effort 0.5d
       allocate team
+      complete 100
       depends !event_base_envelope
       note "Refinement: tasks/refinements/data-and-methodology/entity_inclusion_events.md"
     }

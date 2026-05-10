@@ -52,3 +52,7 @@ Annotations are a third global-entity kind; they also need session inclusion. Cu
 ## Open questions
 
 (none — all decided)
+
+## Status
+
+**Done** 2026-05-10 — `EntityIncludedPayload` Zod schema and `entityKindSchema` enum added to `packages/shared-types/src/events.ts`; registered in `eventPayloadSchemas` (replacing the placeholder); `EventPayloadMap['entity-included']` tightened to the inferred type. Tests added in `packages/shared-types/src/events.test.ts`: round-trip per `entity_kind` (node / edge / annotation), invalid UUID via `validateEvent`, and unknown-kind (`'attribute'`) rejection; representative payload in the property-style iterator updated from `{}` to a concrete value. Server-side join-table dispatch (`entity_kind` → `session_nodes` / `session_edges` / `session_annotations`) is deferred to `event_validation` / `backend.api_skeleton`.

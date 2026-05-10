@@ -11,6 +11,7 @@ import {
   EventValidationError,
   annotationCreatedPayloadSchema,
   edgeCreatedPayloadSchema,
+  entityIncludedPayloadSchema,
   eventEnvelopeSchema,
   eventKinds,
   eventPayloadSchemas,
@@ -490,6 +491,72 @@ describe('annotation-created payload schema', () => {
   });
 });
 
+// -- Entity inclusion event payload schema ---------------------------
+//
+// Owned by `entity_inclusion_events`. Single payload with
+// `entity_kind` discriminating node / edge / annotation (R26).
+
+describe('entity-included payload schema', () => {
+  const baseValid = {
+    entity_id: NODE_ID,
+    included_by: USER_ID,
+    included_at: '2026-05-10T12:34:56Z',
+  };
+
+  it("round-trips entity_kind: 'node' through JSON", () => {
+    const valid = { entity_kind: 'node' as const, ...baseValid };
+    const parsed = entityIncludedPayloadSchema.parse(valid);
+    const wire = JSON.parse(JSON.stringify(parsed)) as unknown;
+    expect(entityIncludedPayloadSchema.parse(wire)).toEqual(valid);
+  });
+
+  it("round-trips entity_kind: 'edge' through JSON", () => {
+    const valid = { entity_kind: 'edge' as const, ...baseValid, entity_id: EDGE_ID };
+    const parsed = entityIncludedPayloadSchema.parse(valid);
+    const wire = JSON.parse(JSON.stringify(parsed)) as unknown;
+    expect(entityIncludedPayloadSchema.parse(wire)).toEqual(valid);
+  });
+
+  it("round-trips entity_kind: 'annotation' through JSON", () => {
+    const valid = {
+      entity_kind: 'annotation' as const,
+      ...baseValid,
+      entity_id: ANNOTATION_ID,
+    };
+    const parsed = entityIncludedPayloadSchema.parse(valid);
+    const wire = JSON.parse(JSON.stringify(parsed)) as unknown;
+    expect(entityIncludedPayloadSchema.parse(wire)).toEqual(valid);
+  });
+
+  it('rejects a non-UUID entity_id via validateEvent and names the kind', () => {
+    const envelope = {
+      id: EVENT_ID,
+      sessionId: SESSION_ID,
+      sequence: 7,
+      kind: 'entity-included' as const,
+      actor: ACTOR_ID,
+      payload: { entity_kind: 'node', ...baseValid, entity_id: 'not-a-uuid' },
+      createdAt: '2026-05-10T12:34:56Z',
+    };
+    let caught: unknown;
+    try {
+      validateEvent(envelope);
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(EventValidationError);
+    expect((caught as Error).message).toContain("'entity-included'");
+  });
+
+  it("rejects an unknown entity_kind ('attribute')", () => {
+    const result = entityIncludedPayloadSchema.safeParse({
+      entity_kind: 'attribute',
+      ...baseValid,
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
 describe('vote payload schema (worked example)', () => {
   it('accepts each of agree / dispute / withdraw', () => {
     for (const vote of ['agree', 'dispute', 'withdraw'] as const) {
@@ -658,7 +725,12 @@ const REPRESENTATIVE_PAYLOADS: Record<EventKind, unknown> = {
     created_by: USER_ID,
     created_at: '2026-05-10T12:34:56Z',
   },
-  'entity-included': {},
+  'entity-included': {
+    entity_kind: 'node',
+    entity_id: NODE_ID,
+    included_by: USER_ID,
+    included_at: '2026-05-10T12:34:56Z',
+  },
   proposal: {},
   vote: {
     proposal_event_id: PROPOSAL_EVENT_ID,
