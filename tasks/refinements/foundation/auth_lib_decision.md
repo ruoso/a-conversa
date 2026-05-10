@@ -55,3 +55,7 @@ Other constraints:
 ## Open questions
 
 - **Local mock-provider workflow.** Authelia in Compose with prefab dev credentials should be enough; need to verify the upstream-provider stub story for fully offline development (i.e., tests where Google/GitHub aren't reachable). Will surface during dev-env build.
+
+## Status
+
+**Done** — 2026-05-10. Recorded as [ADR 0002 — Authentication: self-hosted OIDC service via Authelia](../../../docs/adr/0002-auth-self-hosted-oidc-authelia.md).
