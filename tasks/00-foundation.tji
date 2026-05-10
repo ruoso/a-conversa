@@ -231,7 +231,9 @@ task foundation "Foundation" {
     task dev_env_docs "Document the local-dev workflow in CONTRIBUTING.md or docs" {
       effort 0.5d
       allocate team
+      complete 100
       depends !one_command_script
+      note "Refinement: tasks/refinements/foundation/dev_env_docs.md"
     }
   }
 

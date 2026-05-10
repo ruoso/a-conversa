@@ -58,6 +58,8 @@ Development is workspace-based (pnpm workspaces under [apps/](apps/) and [packag
 
 See the [Makefile](Makefile) for the full target list and [pnpm-workspace.yaml](pnpm-workspace.yaml) for the workspace layout.
 
+For the deeper local-dev walkthrough see [docs/dev-environment.md](docs/dev-environment.md).
+
 ## License
 
 This project is licensed under the GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later). See [LICENSE](LICENSE) for details.
