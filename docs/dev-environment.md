@@ -55,6 +55,7 @@ The [`Makefile`](../Makefile) wraps `pnpm` and `docker compose` with friendlier 
 | `make test`    | Runs Vitest, Cucumber, and Playwright smokes in sequence.                                   | Before committing or pushing.                            |
 | `make up`      | Brings up `postgres + authelia`, waits ~15s for healthy, prints a URL banner.               | Anytime you need the backing services running.           |
 | `make up-app`  | Brings the `app` service up too.                                                            | When you want to exercise the app stub on purpose.       |
+| `make migrate` | Applies pending DB migrations against the running `postgres` (forward-only; [ADR 0020](adr/0020-migrations-node-pg-migrate-forward-only.md)). | After `make up`, before exercising anything that talks to the schema. |
 | `make down`    | `docker compose down`. Volumes preserved.                                                   | Stopping the stack at end of session.                    |
 | `make down-v`  | `docker compose down -v`. Volumes dropped.                                                  | Resetting to a clean stack (drops Postgres + Authelia state). |
 | `make logs`    | `docker compose logs -f`.                                                                   | Watching service output live.                            |

@@ -59,3 +59,17 @@ Downstream tasks that depend on this:
 ## Open questions
 
 (none — all decided)
+
+## Status
+
+**Done** 2026-05-10. See [ADR 0020](../../../docs/adr/0020-migrations-node-pg-migrate-forward-only.md).
+
+What landed:
+
+- `node-pg-migrate@8.0.4` + `pg@8.20.0` pinned as `dependencies` on `@a-conversa/server`.
+- Migrations directory at [`apps/server/migrations/`](../../../apps/server/migrations/) with one bootstrap migration `0000_meta.sql` (creates `_aconversa_meta` and self-records). File-naming convention: `NNNN_short_name.sql` (deviates from node-pg-migrate's default 13-digit-ms timestamps; readability at our scale, ordering still works since the tool sorts by filename).
+- Runner entry point at [`apps/server/scripts/migrate.ts`](../../../apps/server/scripts/migrate.ts) — reads `DATABASE_URL`, hard-codes `direction: 'up'` (forward-only), `singleTransaction: true`, `checkOrder: true`. Logs applied migrations or "no pending migrations".
+- Workspace script: `pnpm --filter @a-conversa/server run migrate`. Root convenience: `pnpm run migrate`. Make target: `make migrate` (rewrites `@postgres:` → `@localhost:` in the `.env` `DATABASE_URL` so the host-side runner reaches the published 5432).
+- Verified end-to-end against the running Compose stack: fresh DB applied `0000_meta`, `\dt` shows both `pgmigrations` and `_aconversa_meta`, second `make migrate` is a no-op.
+
+**Deferred to `backend.api_skeleton`**: the C6 rule that the application **refuses to start with pending migrations**. That gate lives inside the runtime entry point, which is still the ADR-0015 stub. The runner this task ships will be imported and called from that future startup path; recording the deferral here so the link doesn't get lost.

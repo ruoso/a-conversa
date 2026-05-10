@@ -14,7 +14,7 @@
 # becomes non-noisy once `backend.api_skeleton` lands. See ADR 0018
 # (Amendments) for the rationale.
 
-.PHONY: help install test up up-app down down-v logs ps seed clean
+.PHONY: help install test up up-app migrate down down-v logs ps seed clean
 
 help:
 	@echo "a-conversa — make targets"
@@ -22,6 +22,7 @@ help:
 	@echo "  make test      run smoke tests (vitest, cucumber, playwright)"
 	@echo "  make up        bring up postgres + authelia, wait for healthy, print URLs"
 	@echo "  make up-app    bring up the app service too (loops on stub entry point until backend.api_skeleton)"
+	@echo "  make migrate   apply pending DB migrations against the running postgres (forward-only; ADR 0020)"
 	@echo "  make down      stop the dev stack (volumes preserved)"
 	@echo "  make down-v    stop the dev stack and drop named volumes"
 	@echo "  make logs      tail logs from the dev stack"
@@ -57,6 +58,23 @@ up-app:
 	@echo ""
 	@echo "app service started. Note: until backend.api_skeleton lands, the entry point exits 0"
 	@echo "and the container restarts in a loop. See ADR 0018 (Amendments) for context."
+
+# Apply pending DB migrations (forward-only; see ADR 0020).
+# Connects to the running postgres via DATABASE_URL from .env. The
+# `make up` postgres maps host port 5432, but DATABASE_URL in
+# .env.example points at the in-Compose hostname `postgres` — running
+# from the host shell needs a localhost-flavoured URL. The override
+# below swaps `@postgres:` for `@localhost:` so `make migrate` works
+# off the .env without further editing. Inside the eventual app
+# container (post-backend.api_skeleton) the unmodified URL is correct.
+migrate:
+	@if [ ! -f .env ]; then \
+		echo "[migrate] .env missing — run 'make up' first to seed it from .env.example"; \
+		exit 1; \
+	fi
+	@set -a; . ./.env; set +a; \
+		DATABASE_URL=$$(echo "$$DATABASE_URL" | sed 's|@postgres:|@localhost:|') \
+		pnpm run migrate
 
 down:
 	@docker compose down

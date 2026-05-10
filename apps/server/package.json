@@ -4,6 +4,15 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc -b"
+    "build": "tsc -b",
+    "migrate": "tsx scripts/migrate.ts",
+    "migrate:create": "node-pg-migrate create --migrations-dir migrations --migration-file-language sql"
+  },
+  "dependencies": {
+    "node-pg-migrate": "8.0.4",
+    "pg": "8.20.0"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.20.0"
   }
 }
