@@ -62,6 +62,7 @@ The TaskJuggler note already specifies the columns:
   - `created_by` — FK to `users`.
   - `created_at` — timestamp.
 - Foreign-key constraints on all three FKs.
+- A unique constraint on `(role, source_node_id, target_node_id)` (no duplicate edges with the same role and endpoints).
 - An index on `source_node_id` and another on `target_node_id` (graph traversal queries hit both directions).
 - The migration runs cleanly in the local dev Compose stack.
 
@@ -69,8 +70,9 @@ The TaskJuggler note already specifies the columns:
 
 - **Primary key type: UUID** (CC1).
 - **Role column: `TEXT` with `CHECK` constraint** (CC2).
+- **Edge uniqueness: unique on `(role, source, target)`** (F9). Duplicates would be redundant and force diagnostic logic to deduplicate.
+- **Paired `bridges-from` / `bridges-to`: runtime check only** (F10). DB-level enforcement is hard (chicken-and-egg insertion order — neither edge can be inserted alone). The coherency-hint diagnostic catches a warrant with only one of the two and surfaces it for resolution.
 
 ## Open questions
 
-- **Edge uniqueness (F9).** Is the same `(role, source, target)` triple allowed twice (i.e., can two distinct edge rows share role + endpoints)? Strong instinct: no, unique constraint. **Awaiting input.**
-- **Schema-level enforcement of paired `bridges-from` / `bridges-to` (F10).** A warrant with only one of the two is structurally incomplete. Strong instinct: no schema-level constraint; runtime enforces (coherency-hint diagnostic). **Awaiting input.**
+(none — all decided)

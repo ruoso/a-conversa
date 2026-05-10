@@ -57,8 +57,9 @@ The TaskJuggler note already specifies the columns:
 
 - **Primary key type: UUID** (CC1).
 - **Privacy column: `TEXT` with `CHECK` constraint** (CC2). Allows future values to be added by changing the constraint without an enum-type migration.
-- **Topic column included** (C1). Not in the original architecture-doc enumeration — that's a doc gap to fix (I2).
+- **Topic column included** (C1).
+- **No explicit `status` column** (F4). Lifecycle is inferred from `ended_at IS NULL` (active / not). Avoids a redundant denormalization and the corresponding state-machine bugs.
 
 ## Open questions
 
-- **Explicit `status` column or `ended_at IS NULL` only (F4)?** A `status` enum (`scheduled` / `active` / `ended` / etc.) explicitly tracks lifecycle vs. inferring "active" from `ended_at IS NULL`. **Awaiting input.**
+(none — all decided)

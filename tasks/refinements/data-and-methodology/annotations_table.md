@@ -45,35 +45,26 @@ The example walkthrough captures meta-moves as annotations with `kind=reframe` /
 
 ## Acceptance criteria
 
-- A migration creating the `annotations` table with these columns (final shape contingent on F11):
+- A migration creating the `annotations` table with these columns:
   - `id` — primary key, **UUID**.
-  - `target_kind` — `TEXT` with `CHECK (target_kind IN ('node', 'edge'))` — annotations cannot themselves be annotated in v1.
-  - `target_id` — `UUID` reference (specific representation contingent on F11).
-  - `kind` — `TEXT` with `CHECK` constraint listing the supported annotation kinds.
+  - `target_node_id` — `UUID` nullable, FK to `nodes`.
+  - `target_edge_id` — `UUID` nullable, FK to `edges`.
+  - `kind` — `TEXT` with `CHECK (kind IN ('note', 'reframe', 'scope-change', 'stance'))`. Set extendable by altering the CHECK constraint when new kinds are added.
   - `content` — `TEXT`.
   - `created_by` — FK to `users`.
   - `created_at` — timestamp.
-- Foreign-key constraint on `created_by`.
-- An index on `(target_kind, target_id)` for "show annotations attached to entity X" queries.
+- Foreign-key constraints on `target_node_id`, `target_edge_id`, and `created_by`.
+- A `CHECK ((target_node_id IS NOT NULL) <> (target_edge_id IS NOT NULL))` constraint — exactly one of the two target columns must be non-null.
+- An index on `target_node_id` and another on `target_edge_id` for "show annotations attached to entity X" queries.
 - The migration runs cleanly in the local dev Compose stack.
-- Update [docs/architecture.md — storage](../../../docs/architecture.md#storage) to list `annotations` as a third global table alongside `nodes`, `edges`, `users` (I1).
 
 ## Decisions
 
 - **Primary key type: UUID** (CC1).
-- **Target kind: `TEXT` with `CHECK` constraint** (CC2).
-- **Annotation kind: `TEXT` with `CHECK` constraint** (CC2).
-- **Annotations cannot annotate annotations in v1** (C5). `target_kind` is `node` | `edge` only.
+- **Annotation kind: `TEXT` with `CHECK` constraint** (CC2). Extendable by altering the CHECK when a new kind is needed (F12).
+- **Annotations cannot annotate annotations in v1** (C5). The polymorphic-target columns are `target_node_id` and `target_edge_id` only.
+- **Polymorphic FK strategy: option (a) — two nullable typed FK columns** (F11). `target_node_id NULLABLE FK nodes`, `target_edge_id NULLABLE FK edges`, with a CHECK constraint that exactly one is non-null. Preserves DB-level FK integrity at the cost of one always-null column per row.
 
 ## Open questions
 
-- **Polymorphic FK representation (F11).** Three approaches:
-  - **(a)** Single nullable typed columns: `target_node_id NULLABLE FK nodes`, `target_edge_id NULLABLE FK edges`. Cleanly typed FKs; one is always null. Database-level integrity is decent.
-  - **(b)** `target_kind` + `target_id` (UUID, no DB-level FK). Loose at the DB level — no FK validity enforced — but simpler to query.
-  - **(c)** Two separate tables: `node_annotations` and `edge_annotations`. Strictest typing, more code.
-  - **Awaiting input.**
-- **Annotation kind set (F12).** Fixed v1 set (`note`, `reframe`, `scope-change`, `stance`) vs. extendable list managed via the CHECK constraint. **Awaiting input.**
-
-## Doc inconsistencies surfaced (not decisions)
-
-- **I1.** [docs/architecture.md — storage](../../../docs/architecture.md#storage) lists only `nodes`, `edges`, `users` as global tables. Annotations need to be added. Pending fix.
+(none — all decided)

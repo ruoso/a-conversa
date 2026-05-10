@@ -38,20 +38,22 @@ The TaskJuggler note for this task already specifies the columns:
 ## Acceptance criteria
 
 - A migration creating the `users` table with these columns:
-  - `id` — primary key, **UUID** (project-wide convention).
-  - `oauth_subject` — composite identifier, unique. Format `provider:subject` recommended.
-  - `screen_name` — user-supplied string (TBD on uniqueness, length cap — see open questions).
+  - `id` — primary key, **UUID**.
+  - `oauth_subject` — `TEXT`, unique. Format `provider:subject` recommended.
+  - `screen_name` — `VARCHAR(64)` UTF-8. Not unique (duplicates allowed; identity is the OAuth subject).
   - `created_at` — timestamp.
+  - `deleted_at` — nullable timestamp. Soft-delete marker.
 - A unique index on `oauth_subject`.
-- Possibly a (non-unique) index on `screen_name` for lookups (open question).
+- Possibly a (non-unique) index on `screen_name` for lookups.
 - The migration runs cleanly in the local dev Compose stack.
 
 ## Decisions
 
-- **Primary key type: UUID.** Project-wide convention (CC1).
+- **Primary key type: UUID** (CC1).
+- **Screen-name uniqueness: not unique** (F1). Display-name style — two users may share a screen name. Identity is the OAuth subject.
+- **Screen-name length cap: VARCHAR(64), UTF-8** (F2).
+- **User deletion: soft-delete** (F3). `deleted_at` column; the row is preserved so historical event-log entries continue to resolve to a name. Hard-delete would orphan history.
 
 ## Open questions
 
-- **Screen-name uniqueness (F1).** Should two users be allowed the same screen name? Display-name-style (duplicates allowed) or handle-style (globally unique)? **Awaiting input.**
-- **Screen-name character set / length cap (F2).** **Awaiting input.** Default suggestion: UTF-8 + length 1–64.
-- **User deletion behavior (F3).** Soft-delete (preserve row, mark deleted) vs. hard-delete (row removed). Strong instinct: soft-delete since the change history references users by id. **Awaiting input.**
+(none — all decided)

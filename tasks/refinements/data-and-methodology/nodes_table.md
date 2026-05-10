@@ -61,8 +61,9 @@ The TaskJuggler note already specifies the columns:
 - **Primary key type: UUID** (CC1).
 - **Reword updates in place** (C3). The wording column changes; prior wordings live only in the event log.
 - **Restructure creates a new row** (C4). Old row stays unchanged; downstream edges don't auto-follow.
+- **Wording length: no DB-level cap** (F7). Stored as `TEXT`. The UI may enforce a soft display limit.
+- **Wording format: plain text in v1** (F8). No Markdown, no mention syntax. Markup adds rendering complexity across all surfaces (audience, debater, moderator) for a feature not on the v1 roadmap. Revisit if/when a use case justifies it.
 
 ## Open questions
 
-- **Wording length cap (F7).** Database-level cap or unlimited? Strong instinct: no DB-level cap; UI may enforce a soft display limit. **Awaiting input.**
-- **Wording format (F8).** Plain text only or light markup (Markdown / mention syntax)? Strong instinct: plain text in v1. **Awaiting input.**
+(none — all decided)

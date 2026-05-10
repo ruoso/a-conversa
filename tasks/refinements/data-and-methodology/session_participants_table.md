@@ -57,8 +57,9 @@ The TaskJuggler note already specifies the columns:
 - **Primary key type: UUID** (CC1).
 - **Role column: `TEXT` with `CHECK` constraint** (CC2).
 - **Single role per user per session** (C2). Encoded as a partial unique index.
+- **Leave-and-rejoin: multiple rows** (F5). Each join-leave pair is its own row. The current "is this user in the session right now?" query is `WHERE session_id = ? AND user_id = ? AND left_at IS NULL`. Full join-leave history is reconstructible from the table.
+- **Role enum extensibility: extend the CHECK constraint when needed** (F6). No separate `roles` reference table for v1. Adding a future role (e.g., `spectator`) is a one-line migration to alter the CHECK.
 
 ## Open questions
 
-- **Participant leave-and-rejoin behavior (F5).** Multiple rows (one per join-leave pair) vs. update the existing row in place. Strong instinct: multiple rows under event-sourcing. **Awaiting input.**
-- **Role-enum extensibility (F6).** Strict v1 set (`moderator` / `debater-A` / `debater-B`) vs. extendable design (e.g., `spectator` later). The CHECK-constraint approach makes adding a value easy regardless. **Awaiting input.**
+(none — all decided)

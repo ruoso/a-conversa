@@ -52,19 +52,10 @@ Downstream tasks that depend on this:
 ## Decisions
 
 - **Application refuses to start if pending migrations exist** (C6). The startup health check verifies the migration state and aborts if anything is unapplied.
-- **The dependency on `lang_decision` is now explicit** (I3 — see below). Now that T1 is TypeScript/Node, this task's content is well-defined.
+- **Tool: `node-pg-migrate`** (T4). Minimal, raw-SQL migrations, no ORM imposition. Suits the project: we already speak SQL directly through CHECK-constraint conventions; migrations stay close to the schema we read.
+- **Policy: forward-only** (T5). Revert a bad migration by writing a new forward migration that undoes it. No down-scripts to maintain that may have rotted; one path through history is the only path.
+- **Dependency on `lang_decision` is explicit** in the `.tji` (I3). Resolved.
 
 ## Open questions
 
-- **Tool choice (T4).** Now that the backend is **TypeScript/Node**, the live candidates are:
-  - **Knex** — query builder + migrations. Mature, widely used.
-  - **Drizzle migrate** — newer, type-safe, schema-as-code.
-  - **Prisma migrate** — schema-first; requires Prisma's runtime.
-  - **node-pg-migrate** — minimal, just migrations on raw SQL.
-  - Or a language-agnostic tool: **dbmate** or **atlas** — pure SQL migrations independent of the application stack.
-  **Awaiting input.**
-- **Migration policy (T5).** Forward-only (revert by writing a new forward migration) vs. up-and-down (every migration ships with a rollback). **Awaiting input.**
-
-## Doc inconsistencies surfaced (not decisions)
-
-- **I3.** This task's `.tji` entry should gain `depends !!lang_decision` (or absolute path) now that the language choice is made. Pending fix.
+(none — all decided)
