@@ -306,7 +306,9 @@ task data_and_methodology "Data and methodology" {
     task defeater_capture_logic "Defeater capture — node + rebuts edge with pre-committed substance" {
       effort 1d
       allocate team
+      complete 100
       depends !agreement_state_machine
+      note "Refinement: tasks/refinements/data-and-methodology/defeater_capture_logic.md"
     }
     task break_edge_logic "Break-edge operation (cycle resolution path)" {
       effort 0.5d
