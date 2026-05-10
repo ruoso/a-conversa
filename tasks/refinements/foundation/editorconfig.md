@@ -46,3 +46,15 @@ For Markdown, `trim_trailing_whitespace` is often disabled (Markdown uses traili
 ## Open questions
 
 (none — this is a standardized file with industry defaults; no decisions needed)
+
+## Status
+
+**Done** (2026-05-10) — `.editorconfig` added at the repo root: [`/.editorconfig`](../../../.editorconfig).
+
+Settings applied:
+- `root = true`
+- Default for `[*]`: `charset = utf-8`, `end_of_line = lf`, `indent_style = space`, `indent_size = 2`, `insert_final_newline = true`, `trim_trailing_whitespace = true`
+- `[*.md]`: `trim_trailing_whitespace = false` (preserves Markdown hard-break trailing spaces)
+- `[Makefile]` and `[*.{mk,mak}]`: `indent_style = tab` (Make recipes require literal tabs)
+
+No conflicts with the (still-pending) Prettier defaults — Prettier's defaults are LF, 2-space, final newline, which match.

@@ -129,6 +129,7 @@ task foundation "Foundation" {
     task editorconfig "Add .editorconfig" {
       effort 0.25d
       allocate team
+      complete 100
       note "Refinement: tasks/refinements/foundation/editorconfig.md"
     }
     task gitignore "Add .gitignore for chosen stack" {
