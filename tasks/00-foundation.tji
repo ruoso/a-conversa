@@ -9,23 +9,27 @@ task foundation "Foundation" {
     task lang_decision "Pick backend language and framework" {
       effort 1d
       allocate team
+      complete 100
       note "Refinement: tasks/refinements/foundation/lang_decision.md"
     }
     task frontend_framework_decision "Pick frontend framework" {
       effort 1d
       allocate team
+      complete 100
       depends !lang_decision
       note "Refinement: tasks/refinements/foundation/frontend_framework_decision.md"
     }
     task graph_lib_decision "Pick graph rendering library or libraries" {
       effort 1d
       allocate team
+      complete 100
       depends !frontend_framework_decision
       note "Refinement: tasks/refinements/foundation/graph_lib_decision.md"
     }
     task auth_lib_decision "Pick auth library / OAuth implementation" {
       effort 1d
       allocate team
+      complete 100
       note "Refinement: tasks/refinements/foundation/auth_lib_decision.md"
     }
     task style_tooling_decision "Pick styling / CSS approach" {
