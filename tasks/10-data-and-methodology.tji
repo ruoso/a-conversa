@@ -80,6 +80,7 @@ task data_and_methodology "Data and methodology" {
     task seed_data_for_tests "Seed-data fixtures for tests" {
       effort 1d
       allocate team
+      complete 100
       depends !session_events_table
       note "Refinement: tasks/refinements/data-and-methodology/seed_data_for_tests.md"
     }

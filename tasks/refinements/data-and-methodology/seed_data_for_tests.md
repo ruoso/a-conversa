@@ -53,3 +53,52 @@ The dev environment also seeds data when `make up` is run (via `foundation.dev_e
 ## Open questions
 
 (none — all decided)
+
+## Status
+
+**Done as scaffold** — 2026-05-10.
+
+The fixtures workspace is set up at
+[`packages/test-fixtures/`](../../../packages/test-fixtures/) with a
+`loadFixture(name, client)` / `listFixtures()` API
+([`packages/test-fixtures/src/loader.ts`](../../../packages/test-fixtures/src/loader.ts))
+and one bundled fixture: `empty` (a session with three participants
+joined — alice as moderator, ben as debater-A, maria as debater-B —
+plus the four corresponding event-log rows: `session-created` and three
+`participant-joined`).
+
+**Loader strategy** — truncate-then-insert. `loadFixture` issues a
+single `TRUNCATE ... RESTART IDENTITY CASCADE` over `session_events,
+session_annotations, session_edges, session_nodes, session_participants,
+sessions, annotations, edges, nodes, users` and then INSERTs the
+fixture's contents. Idempotent: safe to call repeatedly (each call
+clears and reloads). The `pgmigrations` bookkeeping table is not
+truncated, so migrations stay applied across loads.
+
+**Deferred — R23 (replay through event-append code).** The settled
+decision is that the loader should drive the same append API that
+production writes use, so per-kind payload validation runs on fixtures
+too. That code path does not exist yet — it lives in
+`data_and_methodology.event_types.event_validation` and
+`backend.api_skeleton`. Today the loader uses raw INSERTs against
+`session_events`, with a `// TODO(R23):` comment at the call site
+marking where the rewrite happens. When `event_validation` and the
+backend skeleton land, this loader is rewritten to drive the real
+append API.
+
+**Deferred — the remaining fixtures.** The `walkthrough`, `mid-flow`,
+`cycle`, `contradiction`, `multi-warrant`, and `cross-session`
+fixtures all wait on the per-event-kind payload schemas owned by the
+`data_and_methodology.event_types.*` tasks. Faithfully encoding the
+canonical example walkthrough today would require inventing payload
+shapes that the rest of the codebase will then need to retrofit; the
+pragmatic choice is to defer those fixtures until the schemas settle.
+The `empty` fixture is sufficient to bootstrap the workspace, the
+loader API, and the verification harness.
+
+**Verified end-to-end.** A throwaway script ran `make up` →
+`make migrate` → `loadFixture('empty', client)` (twice, to confirm
+idempotency) and asserted `count(*) FROM session_events WHERE
+session_id = <fixture>` returns 4 and the participant join returns the
+expected three (moderator/debater-A/debater-B → alice/ben/maria), then
+`make down-v` cleaned up. No ADR.

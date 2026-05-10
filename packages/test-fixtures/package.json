@@ -1,0 +1,17 @@
+{
+  "name": "@a-conversa/test-fixtures",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "echo nothing to build yet"
+  },
+  "dependencies": {
+    "@a-conversa/shared-types": "workspace:*",
+    "pg": "8.20.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/pg": "^8.20.0"
+  }
+}
