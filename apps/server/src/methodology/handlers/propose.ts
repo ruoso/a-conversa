@@ -5,11 +5,13 @@
 // Refinement: tasks/refinements/data-and-methodology/axiom_mark_logic.md
 // Refinement: tasks/refinements/data-and-methodology/meta_move_logic.md
 // Refinement: tasks/refinements/data-and-methodology/reword_vs_restructure.md
+// Refinement: tasks/refinements/data-and-methodology/break_edge_logic.md
 // TaskJuggler: data_and_methodology.methodology_engine.decomposition_logic
 // TaskJuggler: data_and_methodology.methodology_engine.interpretive_split_logic
 // TaskJuggler: data_and_methodology.methodology_engine.axiom_mark_logic
 // TaskJuggler: data_and_methodology.methodology_engine.meta_move_logic
 // TaskJuggler: data_and_methodology.methodology_engine.reword_vs_restructure
+// TaskJuggler: data_and_methodology.methodology_engine.break_edge_logic
 //
 // The propose action carries one of the eleven proposal sub-kinds. Per
 // the methodology framework (agreement_state_machine), the handler runs
@@ -102,9 +104,30 @@
 //     attaches an annotation, doesn't flip target visibility, and
 //     multiple meta-moves on the same target are fine.
 //
-//   - For the other six sub-kinds (`classify-node`,
-//     `set-node-substance`, `set-edge-substance`, `break-edge`,
-//     `amend-node`, `annotate`): the universal-pass placeholder path.
+//   - For the `break-edge` sub-kind: the real propose-side validator
+//     per `break_edge_logic`. Three rules (see
+//     `validateBreakEdgeProposal` below for the rule comments):
+//       1. Edge-exists → `'target-entity-not-found'`.
+//       2. Edge-visible → `'illegal-state-transition'` (an
+//          already-broken edge cannot be re-broken — its
+//          `visible` flag is already `false` per the visible-graph
+//          derivation in docs/data-model.md lines 287–293).
+//       3. No conflicting break-edge proposal pending against the
+//          same edge → `'illegal-state-transition'` (two pending
+//          break-edges against the same edge would race on commit;
+//          the second is rejected).
+//     (Structural shape — `kind: 'break-edge'`, `edge_id: UUID` — is
+//     enforced upstream by `breakEdgeProposalSchema` per ADR 0021.
+//     The methodology validator does not re-check.) Break-edge is
+//     **edge-scoped**, not node-scoped: it does not participate in
+//     `CONFLICTING_PARENT_KINDS`. Rule 3 uses a separate
+//     `findConflictingBreakEdgeProposal` walker keyed on `edge_id`;
+//     see `primitives.ts` for the "two narrow walkers beats one
+//     wide walker" rationale.
+//
+//   - For the other five sub-kinds (`classify-node`,
+//     `set-node-substance`, `set-edge-substance`, `amend-node`,
+//     `annotate`): the universal-pass placeholder path.
 //     Each sub-kind's sibling task will tighten its arm as it lands.
 //     The placeholder builds the same one-event envelope the original
 //     handler always built — no methodology-specific gating.
@@ -133,6 +156,7 @@
 import type { PendingProposal, Projection } from '../../projection/index.js';
 import {
   edgeIsVisible,
+  findConflictingBreakEdgeProposal,
   findConflictingProposalAgainst,
   hasAxiomMark,
   nodeIsVisible,
@@ -645,13 +669,112 @@ function validateEditWordingProposal(
 }
 
 // ---------------------------------------------------------------
+// `validateBreakEdgeProposal` — the propose-side validator for the
+// `break-edge` proposal sub-kind.
+//
+// A break-edge proposes severing a supporting edge — the methodology's
+// primary cycle-resolution path per docs/methodology.md line 218
+// ("break one `supports` edge (acknowledged as not actually holding)").
+// On commit, `replay.ts`'s `applyCommittedProposal` break-edge arm
+// flips `edge.visible = false` (lines 708–720); per the visible-graph
+// derivation in docs/data-model.md line 290 ("No subsequent committed
+// `break-edge` event references this edge"), the edge is no longer
+// rendered.
+//
+// Rules in evaluation order:
+//
+//   1. **Edge-exists.** `projection.getEdge(edge_id)` must return a
+//      record. → `'target-entity-not-found'`. (Mirrors decompose /
+//      interpretive-split / meta-move's existence rule against the
+//      same RejectionReason — "the target doesn't exist.")
+//   2. **Edge-visible.** The edge's `visible` field must be `true`.
+//      An already-broken edge — flipped invisible by a prior committed
+//      break-edge — can't be re-broken; the operation would be a no-
+//      op against a non-rendered entity. → `'illegal-state-transition'`.
+//   3. **No conflicting break-edge pending against the same edge.** No
+//      other pending proposal in `pendingProposals` is a break-edge
+//      whose `edge_id` matches this one. Two concurrent break-edges
+//      against the same edge would race at commit time: the first to
+//      land flips `edge.visible = false`; the second, if also
+//      committed, would attempt to re-break an already-broken edge
+//      (which the projection's `applyCommittedProposal` would treat
+//      as idempotent but the methodology semantics treat as
+//      meaningless). The propose-time check short-circuits the race.
+//      → `'illegal-state-transition'`.
+//
+// Rule 4 — structural payload shape (`kind: 'break-edge'`,
+// `edge_id: UUID`) — is enforced upstream by `breakEdgeProposalSchema`
+// per ADR 0021. The methodology validator does not re-check.
+//
+// **Edge-scope vs. node-scope.** Break-edge is **edge-scoped**: it does
+// not participate in `CONFLICTING_PARENT_KINDS` (the node-scoped set
+// used by decompose / interpretive-split / edit-wording). A break-edge
+// against an edge whose source or target node has a pending decompose
+// is fine — the two operations target different entities. Rule 3 uses
+// the dedicated `findConflictingBreakEdgeProposal` walker keyed on
+// `edge_id`; see `primitives.ts` for the "two narrow walkers beats
+// one wide walker" rationale.
+//
+// **No cycle-prerequisite check.** docs/methodology.md describes
+// break-edge as the cycle-resolution path, but does not require a
+// diagnostic-fired cycle before allowing the proposal — participants
+// may break an edge they consider unsupported even when no cycle has
+// been detected. The cycle-detection diagnostic is a separate M2 task
+// (`diagnostics.cycle_detection`) and lives in the diagnostics sub-
+// stream, not as a propose-side gate. See the refinement's Open
+// Questions.
+// ---------------------------------------------------------------
+
+function validateBreakEdgeProposal(
+  projection: Projection,
+  action: ProposeAction,
+): RejectedValidationResult | null {
+  if (action.proposal.kind !== 'break-edge') {
+    // Defensive — the dispatcher gates this. Never reached at runtime.
+    return null;
+  }
+  const edgeId = action.proposal.edge_id;
+
+  // Rule 1 — edge exists.
+  const edge = projection.getEdge(edgeId);
+  if (edge === undefined) {
+    return {
+      ok: false,
+      reason: 'target-entity-not-found',
+      detail: `propose break-edge: edge_id ${edgeId} does not reference any edge in session ${projection.sessionId}`,
+    };
+  }
+
+  // Rule 2 — edge is currently visible.
+  if (!edgeIsVisible(projection, edgeId)) {
+    return {
+      ok: false,
+      reason: 'illegal-state-transition',
+      detail: `propose break-edge: edge ${edgeId} is not currently visible (already broken by a prior break-edge commit) and cannot be re-broken`,
+    };
+  }
+
+  // Rule 3 — no conflicting break-edge pending against the same edge.
+  const conflict: PendingProposal | null = findConflictingBreakEdgeProposal(projection, edgeId);
+  if (conflict !== null) {
+    return {
+      ok: false,
+      reason: 'illegal-state-transition',
+      detail: `propose break-edge: another break-edge proposal (${conflict.proposalEventId}) against edge ${edgeId} is already pending; resolve or withdraw it before re-proposing`,
+    };
+  }
+
+  return null;
+}
+
+// ---------------------------------------------------------------
 // The handler.
 //
 // Switches on `action.proposal.kind`. The `decompose`,
-// `interpretive-split`, `axiom-mark`, `meta-move`, and `edit-wording`
-// arms run their real validators. All other arms fall through to the
-// universal-pass placeholder path — sibling tasks will tighten their
-// arms as they land.
+// `interpretive-split`, `axiom-mark`, `meta-move`, `edit-wording`, and
+// `break-edge` arms run their real validators. All other arms fall
+// through to the universal-pass placeholder path — sibling tasks will
+// tighten their arms as they land.
 // ---------------------------------------------------------------
 
 export const proposeHandler: Validator<ProposeAction> = (
@@ -696,7 +819,12 @@ export const proposeHandler: Validator<ProposeAction> = (
       if (rejection !== null) return rejection;
       break;
     }
-    // The other six sub-kinds fall through to the placeholder emission.
+    case 'break-edge': {
+      const rejection = validateBreakEdgeProposal(projection, action);
+      if (rejection !== null) return rejection;
+      break;
+    }
+    // The other five sub-kinds fall through to the placeholder emission.
     // Each sub-kind's sibling task tightens its arm as it lands.
     default:
       break;
@@ -717,11 +845,11 @@ export const proposeHandler: Validator<ProposeAction> = (
 // Backward-compatibility alias — the engine's `installHandlers` and the
 // barrel both still reference `placeholderProposeHandler`. After this
 // task the symbol is no longer a placeholder for the `decompose`,
-// `interpretive-split`, `axiom-mark`, `meta-move`, or `edit-wording`
-// arms (it's the real validator there), but the name is preserved so
-// the import sites in `engine.ts` and `handlers/index.ts` don't need
-// to churn ahead of the other sibling sub-kind tasks. Once the
-// remaining six sub-kinds tighten, the alias and the file comment
+// `interpretive-split`, `axiom-mark`, `meta-move`, `edit-wording`, or
+// `break-edge` arms (it's the real validator there), but the name is
+// preserved so the import sites in `engine.ts` and `handlers/index.ts`
+// don't need to churn ahead of the other sibling sub-kind tasks. Once
+// the remaining five sub-kinds tighten, the alias and the file comment
 // header should be revisited.
 export const placeholderProposeHandler = proposeHandler;
 

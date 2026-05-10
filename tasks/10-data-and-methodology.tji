@@ -313,7 +313,9 @@ task data_and_methodology "Data and methodology" {
     task break_edge_logic "Break-edge operation (cycle resolution path)" {
       effort 0.5d
       allocate team
+      complete 100
       depends !agreement_state_machine
+      note "Refinement: tasks/refinements/data-and-methodology/break_edge_logic.md"
     }
     task amend_node_logic "Amend-node operation (contradiction resolution path)" {
       effort 0.5d

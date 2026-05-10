@@ -472,3 +472,53 @@ export function findConflictingProposalAgainst(
   }
   return null;
 }
+
+// ---------------------------------------------------------------
+// `findConflictingBreakEdgeProposal` — find a pending `break-edge`
+// proposal that targets the same edge.
+//
+// Used by the propose handler's `break-edge` arm (refinement:
+// break_edge_logic) to enforce edge-scoped mutual exclusion. Two
+// pending break-edge proposals against the same edge would race on
+// commit: the first to commit flips `edge.visible = false`; the second
+// would then be against an already-broken edge. The propose-time check
+// short-circuits the race.
+//
+// **Why a separate walker rather than generalizing
+// `findConflictingProposalAgainst`.** The node-scoped walker
+// normalizes across three node-targeting sub-kinds (`decompose`,
+// `interpretive-split`, `edit-wording`) — its parametric
+// `conflictingKinds` set is the shape that makes the symmetry visible.
+// The edge-scoped case today has exactly one sub-kind (`break-edge`)
+// addressing exactly one payload field (`edge_id`); adding an
+// edge-side branch to the existing walker would mix node-targeting
+// and edge-targeting concerns inside one function and require the
+// caller to know which `conflictingKinds` set applies to which
+// target-kind dimension. A second narrow walker is clearer. If a
+// future edge-targeting sub-kind appears (none planned in v1), this
+// walker generalizes additively the same way the node-scoped one
+// did when `edit-wording` joined.
+//
+// Walks `projection.pendingProposals()` (not committed or
+// meta-disagreed — same reasoning as the node-scoped walker: a
+// committed break-edge has already flipped `edge.visible = false`, so
+// the edge-visible rule catches that case structurally; a meta-
+// disagreement-marked proposal isn't in flight any more) and returns
+// the first pending proposal whose `payload.kind === 'break-edge'`
+// AND whose `payload.edge_id` matches `edgeId`.
+//
+// Returns `null` on no conflict.
+// ---------------------------------------------------------------
+
+export function findConflictingBreakEdgeProposal(
+  projection: Projection,
+  edgeId: string,
+): PendingProposal | null {
+  for (const proposal of projection.pendingProposals()) {
+    const payload = proposal.payload;
+    if (payload.kind === 'break-edge' && payload.edge_id === edgeId) {
+      return proposal;
+    }
+  }
+  return null;
+}

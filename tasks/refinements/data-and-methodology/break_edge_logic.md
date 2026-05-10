@@ -1,0 +1,128 @@
+# Break-edge logic — propose-side validator for the `break-edge` proposal sub-kind
+
+**TaskJuggler entry**: [tasks/10-data-and-methodology.tji](../../10-data-and-methodology.tji) — task `data_and_methodology.methodology_engine.break_edge_logic`
+**Effort estimate**: 0.5d
+**Inherited dependencies**: depends on `methodology_engine.agreement_state_machine` (the framework — `MethodologyAction`, `validateAction`, `RejectionReason`, `requireParticipant`, etc.). Indirectly: `methodology_engine.decomposition_logic`, `interpretive_split_logic`, `axiom_mark_logic`, `meta_move_logic`, and `reword_vs_restructure` (the prior five propose-arm tightenings — their factoring (`validateXProposal(projection, action)` locals dispatched from `propose.ts`'s switch), their `nodeIsVisible` / `edgeIsVisible` reuse, their conflict-walker pattern, and their structural-shape-is-upstream's-concern layering decision are the templates this task extends). Concretely settled: the Zod `breakEdgeProposalSchema` in `packages/shared-types/src/events/proposals.ts` (enforces structural shape — `{ kind: 'break-edge', edge_id: UUID }`); the projection's read-side `replay.ts/applyCommittedProposal` `break-edge` arm which flips `edge.visible = false` on commit (lines 708–720); the `edgeIsVisible` primitive landed by `meta_move_logic`.
+
+## What this task is
+
+Tighten the `propose` handler's `break-edge` arm with the real methodology-engine validator. The propose handler currently dispatches `decompose`, `interpretive-split`, `axiom-mark`, `meta-move`, and `edit-wording` to their real validators and lets the other six sub-kinds — including `break-edge` — fall through to the universal-pass placeholder path. This task replaces the fall-through for `break-edge` with three methodology-specific rules, in evaluation order:
+
+1. The `edge_id` references an edge that exists in this session's projection.
+2. The edge is currently visible in the projection (`visible === true`). An already-broken edge — flipped invisible by a prior committed break-edge per the visible-graph derivation in `docs/data-model.md` lines 287–293 — can't be re-broken: the operation would be a no-op against a non-rendered entity.
+3. No other `break-edge` proposal against the same `edge_id` is currently pending. Two concurrent break-edges against the same edge would race on commit: the first to land flips `edge.visible = false`; the second would be against an already-broken edge. The propose-time check short-circuits the race.
+4. The structural payload shape — `kind: 'break-edge'`, `edge_id: UUID` — is already enforced upstream by the Zod schema (`breakEdgeProposalSchema`, ADR 0021). The validator relies on that layering and does not re-check.
+
+On `Valid` the handler emits exactly one `EventToAppend` of kind `proposal` whose payload is `{ proposal: action.proposal }`. On any rule failure the handler returns a typed `Rejected` with a `RejectionReason` that names the specific failure.
+
+**Edge-scope vs. node-scope.** Break-edge is **edge-scoped** — it does not participate in `CONFLICTING_PARENT_KINDS` (the node-scoped set used by decompose / interpretive-split / edit-wording). A break-edge against an edge whose source or target node has a pending decompose is fine — the two operations target different entities (the decompose's `parent_node_id` is a node; the break-edge's `edge_id` is an edge). Rule 3's conflict walker is a separate edge-scoped primitive (`findConflictingBreakEdgeProposal`); see Decisions for the "two narrow walkers beats one wide walker" rationale.
+
+Scope is **propose-side only**. The commit-time structural application — flipping `edge.visible = false` — already lives in `replay.ts/applyCommittedProposal`'s `break-edge` arm (the structural side has been complete since the projection landed). The methodology engine's commit-side gate is enforced by `commit_logic`'s existing rules.
+
+## Why it needs to be done
+
+`docs/methodology.md` line 218 settles `break-edge` as the methodology's primary cycle-resolution path: "**Cycle in `supports`** — break one `supports` edge (acknowledged as not actually holding), decompose a node in the cycle, or have a participant axiom-mark a node in the cycle (the chain terminates at that participant's bedrock)." A participant proposes severing one supporting edge in a cycle; on commit the edge becomes invisible and the cycle is broken.
+
+Per `docs/data-model.md` line 254: "`break-edge` — proposes removing an edge (for cycle resolution; 'this support doesn't actually hold'). Payload: edge." And per the visible-graph derivation at line 290: "No subsequent committed `break-edge` event references this edge" is one of the three conditions for edge visibility.
+
+The placeholder propose handler currently accepts break-edge proposals against:
+- non-existent edges (the projection's commit-side would later throw `ReplayError("commit/break-edge: edge ${edge_id} not present")`);
+- already-broken edges (the commit would idempotently re-flip an already-invisible edge — meaningless work);
+- edges with another break-edge already pending (the second commit would race).
+
+Without this task the API layer would write all those illegal proposals as if they were live; downstream consumers would surface confused state and the operator would have to clean up after a commit-time `ReplayError`.
+
+## Inputs / context
+
+- [`docs/methodology.md`](../../../docs/methodology.md) — "Resolution of structural diagnostics → Blocking diagnostics" (line 218): break-edge is one of the three cycle-resolution paths alongside decompose-a-node-in-the-cycle and axiom-mark-a-node-in-the-cycle.
+- [`docs/data-model.md`](../../../docs/data-model.md) — proposal sub-kind enumeration (line 254): "`break-edge` — proposes removing an edge (for cycle resolution; 'this support doesn't actually hold'). Payload: edge." Visible-graph derivation (line 290): an edge is visible iff (among other conditions) "No subsequent committed `break-edge` event references this edge". Once a break-edge commits, the edge stays in `session_edges` (monotonic) but is no longer rendered.
+- [`apps/server/src/methodology/handlers/propose.ts`](../../../apps/server/src/methodology/handlers/propose.ts) — the propose handler with `decompose`, `interpretive-split`, `axiom-mark`, `meta-move`, and `edit-wording` arms already tightened. This task tightens the `break-edge` arm using the same pattern: a local `validateBreakEdgeProposal(projection, action)` function called from the `break-edge` case of the switch.
+- [`apps/server/src/methodology/primitives.ts`](../../../apps/server/src/methodology/primitives.ts) — `edgeIsVisible` (already landed by `meta_move_logic`; reused for rule 2). A new edge-scoped conflict walker `findConflictingBreakEdgeProposal(projection, edgeId): PendingProposal | null` is added alongside the existing node-scoped `findConflictingProposalAgainst`. The two walkers stay separate (see Decisions).
+- [`apps/server/src/projection/replay.ts`](../../../apps/server/src/projection/replay.ts) — `applyCommittedProposal`'s `break-edge` case (lines 708–720). The structural side is complete: on commit the arm calls `projection.setEdgeVisible(edge_id, false)` and pushes a `'visibility-changed'` change record. The propose-side gate is what this task adds; the structural side already works.
+- [`packages/shared-types/src/events/proposals.ts`](../../../packages/shared-types/src/events/proposals.ts) — `breakEdgeProposalSchema` (lines 229–232): the structural shape — `kind: z.literal('break-edge')`, `edge_id: z.string().uuid()`. Per ADR 0021 (event_validation) the schema validates at the API-layer ingress before the methodology engine sees the action.
+- [`tasks/refinements/data-and-methodology/decomposition_logic.md`](decomposition_logic.md), [`interpretive_split_logic.md`](interpretive_split_logic.md), [`axiom_mark_logic.md`](axiom_mark_logic.md), [`meta_move_logic.md`](meta_move_logic.md), [`reword_vs_restructure.md`](reword_vs_restructure.md) — sibling templates. The factoring (local `validateXProposal` function dispatched from the switch), rule numbering, structural-shape-upstream layering, and conflict-walker design all carry over.
+- [`apps/server/src/methodology/handlers/proposeMetaMove.test.ts`](../../../apps/server/src/methodology/handlers/proposeMetaMove.test.ts), [`tests/behavior/methodology/propose-meta-move.feature`](../../../../tests/behavior/methodology/propose-meta-move.feature) — sibling templates for the test layout and seed-helper style; meta-move is the closest cousin because it also has the node-and-edge target-resolution dimension that break-edge inherits (single-arm: edge only).
+- [`docs/adr/0022-no-throwaway-verifications.md`](../../../docs/adr/0022-no-throwaway-verifications.md) — Vitest for in-memory logic; Cucumber+pglite for at least one DB-driven scenario.
+
+## Constraints / requirements
+
+- The handler **does not write events**; it returns a `ValidationResult`. On `Valid` it emits exactly one `EventToAppend` of kind `proposal`.
+- The handler **does not mint timestamps or ids**; the API layer mints `eventId` and `createdAt` before calling the engine.
+- The handler **does not call `validateEvent`**; the API layer runs the structural validator (Zod) separately (ADR 0021). Methodology validation is on top of structural validation. The handler can rely on `edge_id` being a valid UUID.
+- **No new `RejectionReason` value.** Rules 1 and 2/3 reuse the existing `'target-entity-not-found'` and `'illegal-state-transition'` exactly as the decompose / interpretive-split / axiom-mark / meta-move / edit-wording arms use them. The semantics line up: "the target doesn't exist" → `target-entity-not-found`; "the target exists but is in a state that blocks the action" → `illegal-state-transition`.
+- Add a new edge-scoped conflict-walker primitive `findConflictingBreakEdgeProposal(projection, edgeId): PendingProposal | null` in `primitives.ts`. Walks `projection.pendingProposals()` and returns the first pending proposal whose `payload.kind === 'break-edge'` and whose `payload.edge_id === edgeId`. Returns `null` on no conflict.
+- Don't extend the node-scoped conflict walker (`findConflictingProposalAgainst` / `CONFLICTING_PARENT_KINDS`). Break-edge is edge-scoped; mixing it into the node-scoped walker would mix entity-kind concerns inside one function (see Decisions).
+- Don't pre-empt the other proposal sub-kinds. `break-edge` is the sixth arm tightened; the remaining five (`classify-node`, `set-node-substance`, `set-edge-substance`, `amend-node`, `annotate`) stay on the placeholder path until their own sibling tasks land.
+- Don't pre-empt cycle detection. The diagnostic that surfaces a cycle and offers break-edge as a resolution path is `diagnostics.cycle_detection` — a separate M2 task in the diagnostics sub-stream. This task's rule set does **not** require a cycle to exist before allowing a break-edge proposal; see Open Questions.
+- Verifications per ADR 0022: Vitest at `apps/server/src/methodology/handlers/proposeBreakEdge.test.ts`; Cucumber + pglite scenarios at `tests/behavior/methodology/propose-break-edge.feature` with step defs in `tests/behavior/steps/methodology-propose-break-edge.steps.ts`.
+
+## Acceptance criteria
+
+- `apps/server/src/methodology/handlers/propose.ts` gains a `break-edge` arm in its sub-kind switch, dispatching to a new local function `validateBreakEdgeProposal(projection, action)`. The function mirrors the sibling validators in shape, applies the three rules in evaluation order, and returns a `RejectedValidationResult | null`.
+- `apps/server/src/methodology/primitives.ts` gains a `findConflictingBreakEdgeProposal(projection: Projection, edgeId: string): PendingProposal | null` walker. Iterates `projection.pendingProposals()` and returns the first match whose `payload.kind === 'break-edge'` and `payload.edge_id === edgeId`.
+- `apps/server/src/methodology/index.ts` barrel: adds `findConflictingBreakEdgeProposal` to the named exports.
+- `validateBreakEdgeProposal` enforces in evaluation order:
+  1. **Edge-exists.** `projection.getEdge(edge_id)` non-undefined → else `'target-entity-not-found'`, detail naming the missing edge id and the session.
+  2. **Edge-visible.** `edgeIsVisible(projection, edge_id) === true` → else `'illegal-state-transition'`, detail naming the not-visible edge and including the phrase "not currently visible".
+  3. **No conflicting break-edge pending.** `findConflictingBreakEdgeProposal(projection, edge_id) === null` → else `'illegal-state-transition'`, detail naming the conflicting proposal's event id and the contended edge id.
+  4. (Structural shape — enforced upstream by Zod.)
+- On `Valid` emit one `EventToAppendEnvelope<'proposal'>` whose payload is `{ proposal: action.proposal }`. Envelope fields are mirror-copied from the action — same shape decompose's / interpretive-split's / axiom-mark's / meta-move's / edit-wording's accept paths use.
+- `apps/server/src/methodology/handlers/proposeBreakEdge.test.ts` covers:
+  - Reject when `edge_id` refers to no edge in the projection (reason `'target-entity-not-found'`, detail names the missing id).
+  - Reject when the edge exists but has been broken by a prior committed break-edge (reason `'illegal-state-transition'`, detail names the not-visible edge).
+  - Reject when another break-edge against the same edge is already pending (reason `'illegal-state-transition'`, detail names the pending proposal id and edge id).
+  - Accept a well-formed break-edge proposal against a visible edge — assert `Valid.events` is one `proposal` event with `payload.proposal` deep-equal to the action's payload; envelope mirrors the action.
+  - Zod-layer assertions: `breakEdgeProposalSchema.safeParse` rejects payloads missing `edge_id` and with a non-UUID `edge_id`. The methodology validator is never reached for those cases per the layering.
+- `tests/behavior/methodology/propose-break-edge.feature` covers 3 DB-driven scenarios:
+  1. Successful propose break-edge against a visible edge → `Valid` with one `proposal` event whose payload mirrors the action.
+  2. Reject when `edge_id` references no edge → `Rejected` with `'target-entity-not-found'`.
+  3. Reject when the edge has been previously broken (prior break-edge proposal + commit landed in the DB) → `Rejected` with `'illegal-state-transition'`.
+- Step defs in `tests/behavior/steps/methodology-propose-break-edge.steps.ts`. Reuses `tests/behavior/support/event-rows.ts` for row helpers and the shared `Then 'the validation result is Valid'` / `Then 'the validation result is Rejected with reason "..."'` steps from `methodology-engine.steps.ts` / `methodology-commit.steps.ts`. Reuses the shared `When 'the methodology engine validates the propose action against the projected session'` step from `methodology-propose-decompose.steps.ts`. Uses a distinct UUID prefix (`b3...`) to avoid collisions with propose-decompose (`e0...`), propose-interpretive-split (`f0...`), propose-axiom-mark (`a1...`), and propose-meta-move (`b2...`).
+- `tasks/10-data-and-methodology.tji` carries `complete 100` for `break_edge_logic` and a `note "Refinement: ..."` line. `tj3 project.tjp 2>&1 | grep -iE "error|fatal"` is silent.
+- `make test` end-to-end green; the existing 429 vitest + 80 cucumber baseline stays green and is extended by this task.
+
+## Decisions
+
+- **Scope: propose-side only.** This task validates `propose break-edge`. The commit-time structural application — flipping `edge.visible = false` — already lives in `replay.ts/applyCommittedProposal`'s `break-edge` arm and has been complete since the projection landed.
+- **Rule set (numbered, in evaluation order).**
+  1. **Edge-exists.** → `'target-entity-not-found'`.
+  2. **Edge-visible.** → `'illegal-state-transition'`.
+  3. **No conflicting break-edge pending against the same edge.** → `'illegal-state-transition'`.
+  4. (Structural shape — enforced upstream by Zod.)
+- **No new RejectionReason value.** All three rules reuse the existing `'target-entity-not-found'` and `'illegal-state-transition'` codes exactly as the sibling propose-arms do. The semantic shape lines up: "the target doesn't exist" vs. "the target exists but is in a state that blocks this action." No need to grow the union — the `detail` string carries the kind-specific specificity.
+- **Edge-scoped conflict walker: a new dedicated primitive, not a generalization of the existing one.** Two cleanly separate primitives is the design choice. The existing `findConflictingProposalAgainst(parentNodeId, conflictingKinds)` is node-scoped and parametric across three node-targeting sub-kinds (`decompose`, `interpretive-split`, `edit-wording`); its `conflictingKinds` set is the shape that makes the symmetry visible at the call site. The break-edge case today has exactly one sub-kind addressing exactly one payload field (`edge_id`); adding an edge-side branch to the existing walker would mix node-targeting and edge-targeting concerns inside one function and require callers to know which `conflictingKinds` set applies to which target-kind dimension. A second narrow walker (`findConflictingBreakEdgeProposal(edgeId)`) is clearer. If a future edge-targeting sub-kind appears (none planned in v1), the walker generalizes additively the same way the node-scoped one did when `edit-wording` joined `{decompose, interpretive-split}`. Alternative considered: a generic `findConflictingProposalAgainstEntity(entityKind, entityId, conflictingKinds)` that dispatches internally. *Rejected.* The dispatch logic would have to know the payload-field name for each sub-kind across both entity kinds, which is exactly the complexity the existing node-walker already centralizes for node sub-kinds; cross-kind centralization buys nothing because no sub-kind today targets both nodes and edges with the same payload shape. The two-walker design keeps each walker's domain crisp.
+- **No conflict with node-scoped proposals.** A break-edge against an edge whose source or target node has a pending `decompose` / `interpretive-split` / `edit-wording` is fine — they operate on different entities. The `CONFLICTING_PARENT_KINDS` set stays at `{'decompose', 'interpretive-split', 'edit-wording'}` (node-scoped only). The edge-scoped walker is independent.
+- **Where the handler lives.** `propose.ts` itself, factored locally as `validateBreakEdgeProposal(projection, action)`. Mirrors the sibling validators' choice. If `propose.ts` grows past ~700 lines as the remaining five sub-kinds tighten, factor into per-sub-kind files.
+- **Structural shape is upstream's concern.** The Zod schema in `breakEdgeProposalSchema` enforces all structural constraints (`kind: 'break-edge'`, `edge_id: UUID`). Per ADR 0021 the validator runs at the API ingress before the methodology engine sees the action. The methodology validator relies on this layering and does not re-check.
+- **`edgeIsVisible` reuse.** Already landed by `meta_move_logic` for the edge-target rule-2 case there. Same predicate, same semantics — an edge is "currently visible" iff `projection.getEdge(edgeId)` exists AND its `visible === true`. The rule-2 invariant is symmetric to the node case used by decompose / interpretive-split / axiom-mark.
+- **Test layout.** Vitest at `apps/server/src/methodology/handlers/proposeBreakEdge.test.ts` (new file — same naming pattern as the sibling `proposeXxx.test.ts` files). Cucumber + pglite at `tests/behavior/methodology/propose-break-edge.feature` with step defs in `tests/behavior/steps/methodology-propose-break-edge.steps.ts`. Reuses `event-rows.ts` and the shared Then / When steps. The step file uses a distinct UUID prefix (`b3...`) to avoid collisions with the propose-decompose (`e0...`), propose-interpretive-split (`f0...`), propose-axiom-mark (`a1...`), and propose-meta-move (`b2...`) step files.
+
+## Open questions
+
+- **Cycle-detection-as-prerequisite.** `docs/methodology.md` line 218 places `break-edge` as one of the three cycle-resolution paths (alongside decompose-a-node-in-the-cycle and axiom-mark-a-node-in-the-cycle). The methodology text reads as "here are the moves you can make when a cycle has fired"; it does **not** explicitly say "you may only break an edge that lies on a detected cycle." Two readings are defensible:
+  - **Permissive** (this task's choice for v1): participants may propose breaking any visible edge they consider unsupported, regardless of whether a cycle has been detected. Break-edge is a general "this support doesn't actually hold" assertion (per docs/data-model.md line 254); cycle detection is one common motivator but not a structural precondition. Practical considerations: it would be awkward to forbid the propose before the diagnostic has run (the diagnostic is incrementally computed; the participant may notice the unsupported edge first), and the methodology already protects via the agreement rule — a bogus break-edge gets disputed and never commits.
+  - **Strict**: a break-edge propose is only legal when the targeted edge lies on a `diagnostics.cycle_detection`-fired cycle. This would couple the propose-side validator to the diagnostics stream's output, which doesn't exist yet.
+  The permissive reading is what's implemented. If user testing surfaces a need for the strict reading, add a rule that consults the (eventually) cycle-detection-fired diagnostics. The cycle detection diagnostic is a separate M2 task (`diagnostics.cycle_detection`) and pre-empting it would mix concerns. Flagged here for the cycle-detection task's author to revisit when the diagnostic lands.
+- **Commit-time structural-sub-kind support.** The decompose / interpretive-split / axiom-mark / meta-move / edit-wording arms have flagged commit-side gaps where `commit_logic`'s rule 4 still rejects commits of structural sub-kinds with `'illegal-state-transition'` despite the projection arm being complete. The same observation applies to break-edge: `replay.ts`'s `break-edge` arm flips the edge to invisible correctly, but a `commit` action against a break-edge proposal is currently rejected by `commit_logic` for being structural. Resolving the gap is the shared cross-sub-kind follow-up; this task does not settle it.
+
+(All other questions settled.)
+
+## Status
+
+**Done** 2026-05-10.
+
+Implementation:
+
+- `apps/server/src/methodology/handlers/propose.ts` — the propose handler's switch gains a `break-edge` arm that dispatches to a local `validateBreakEdgeProposal(projection, action)`. The function enforces the three rules in evaluation order: (1) edge-exists via `getEdge`; (2) edge-visible via `edgeIsVisible`; (3) no-conflicting-break-edge-pending via the new edge-scoped walker. On `Valid` the handler emits one `EventToAppendEnvelope<'proposal'>`. The `CONFLICTING_PARENT_KINDS` set is unchanged — break-edge is edge-scoped, not node-scoped. The `placeholderProposeHandler` alias is preserved.
+- `apps/server/src/methodology/primitives.ts` — new `findConflictingBreakEdgeProposal(projection, edgeId): PendingProposal | null` walker. Iterates `projection.pendingProposals()` and returns the first match whose `payload.kind === 'break-edge'` and `payload.edge_id === edgeId`. A separate primitive from the node-scoped `findConflictingProposalAgainst` — two narrow walkers beats one wide walker per the Decisions discussion.
+- `apps/server/src/methodology/index.ts` — barrel updated: adds `findConflictingBreakEdgeProposal` to the named exports.
+- `tasks/10-data-and-methodology.tji` — `complete 100` and `note "Refinement: ..."` added to `break_edge_logic`.
+- **No new `RejectionReason` value.** All three rules reuse the existing `'target-entity-not-found'` and `'illegal-state-transition'` codes exactly as the sibling propose-arms do.
+
+Tests:
+
+- `apps/server/src/methodology/handlers/proposeBreakEdge.test.ts` — 6 cases: rule 1 (unknown edge_id → `target-entity-not-found`), rule 2 (already-broken edge → `illegal-state-transition`, exercised via a prior break-edge proposal + commit pair), rule 3 (pending break-edge against the same edge → `illegal-state-transition`, exercised by adding a prior proposal without a commit), the accept path (emits one proposal event with mirrored payload), and two Zod-layer pins (missing `edge_id`, non-UUID `edge_id`).
+- `tests/behavior/methodology/propose-break-edge.feature` — 3 DB-driven scenarios: (1) propose break-edge against a visible edge → `Valid` with one proposal event whose payload mirrors the action; (2) propose break-edge against an unknown edge → `Rejected` with `'target-entity-not-found'`; (3) propose break-edge against an edge with a prior committed break-edge against it (edge now invisible) → `Rejected` with `'illegal-state-transition'`.
+- Step defs in `tests/behavior/steps/methodology-propose-break-edge.steps.ts`. Distinct UUID prefix (`b3...`) from the propose-decompose (`e0...`), propose-interpretive-split (`f0...`), propose-axiom-mark (`a1...`), and propose-meta-move (`b2...`) step files keeps the SQL rows in separate sessions. Reuses `tests/behavior/support/event-rows.ts` and the shared `Then 'the validation result is Valid'` / `Then 'the validation result is Rejected with reason "..."'` / `When 'the methodology engine validates the propose action against the projected session'` steps from `methodology-engine.steps.ts`, `methodology-commit.steps.ts`, and `methodology-propose-decompose.steps.ts`.
+
+`pnpm run test:smoke` green (435 tests, +6 over the prior 429 baseline). `pnpm run test:behavior:smoke` green (83 scenarios, +3 over the prior 80 baseline). `make test` end-to-end green (vitest + cucumber + playwright). `tj3 project.tjp 2>&1 | grep -iE "error|fatal"` is silent. `pnpm run typecheck` clean.
