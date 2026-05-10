@@ -31,3 +31,12 @@ From [docs/data-model.md — event types — votes](../../../docs/data-model.md#
 - Added to the discriminated `EventPayload` union.
 - Round-trip test.
 - Validation rejects: malformed UUIDs, unknown vote values.
+
+## Status
+
+**Done** 2026-05-10.
+
+- `votePayloadSchema` in [`packages/shared-types/src/events.ts`](../../../packages/shared-types/src/events.ts) reconciled to the canonical refinement shape: `{ proposal_id: UUID, participant: UUID, vote: 'agree' | 'dispute' | 'withdraw', voted_at: ISO8601 }`. `VotePayload` is exported via `z.infer`. The schema is registered as `eventPayloadSchemas['vote']`; the `EventPayloadMap['vote']` entry resolves to `VotePayload`.
+- **Field-rename reconciliation from the original worked example** (`event_base_envelope` shipped a placeholder-quality `vote` schema while waiting for this task): `proposal_event_id` → `proposal_id`, `participant_id` → `participant`, plus the new `voted_at: ISO8601` field. ADR 0021 carried the worked-example field names in its narrative; an Amendment was appended to record the reconciliation rather than rewriting the body.
+- Tests in [`packages/shared-types/src/events.test.ts`](../../../packages/shared-types/src/events.test.ts) updated: round-trip on the new shape; happy + invalid `voted_at` (non-ISO and missing); `proposal_id` and `participant` UUID checks; the `every kind round-trips` representative payload for `vote` updated. All other tests still pass; `pnpm run test:smoke` is green (113 tests).
+- **Out of scope here, owned by `event_validation` / methodology engine**: the server-side referential check that `proposal_id` references an existing proposal in the same session, and the withdrawal-against-prior-agree check.

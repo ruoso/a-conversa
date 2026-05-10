@@ -29,7 +29,7 @@ const SESSION_ID = '11111111-1111-4111-8111-111111111111';
 const EVENT_ID = '22222222-2222-4222-8222-222222222222';
 const ACTOR_ID = '33333333-3333-4333-8333-333333333333';
 const HOST_USER_ID = '44444444-4444-4444-8444-444444444444';
-const PROPOSAL_EVENT_ID = '55555555-5555-4555-8555-555555555555';
+const PROPOSAL_ID = '55555555-5555-4555-8555-555555555555';
 const PARTICIPANT_ID = '66666666-6666-4666-8666-666666666666';
 const USER_ID = '77777777-7777-4777-8777-777777777777';
 const NODE_ID = '88888888-8888-4888-8888-888888888888';
@@ -46,9 +46,10 @@ describe('EventEnvelope round-trip', () => {
       kind: 'vote',
       actor: ACTOR_ID,
       payload: {
-        proposal_event_id: PROPOSAL_EVENT_ID,
-        participant_id: PARTICIPANT_ID,
+        proposal_id: PROPOSAL_ID,
+        participant: PARTICIPANT_ID,
         vote: 'agree',
+        voted_at: '2026-05-10T12:34:56Z',
       },
       createdAt: '2026-05-10T12:34:56Z',
     };
@@ -557,24 +558,73 @@ describe('entity-included payload schema', () => {
   });
 });
 
-describe('vote payload schema (worked example)', () => {
+describe('vote payload schema', () => {
+  const valid = {
+    proposal_id: PROPOSAL_ID,
+    participant: PARTICIPANT_ID,
+    vote: 'agree' as const,
+    voted_at: '2026-05-10T12:34:56Z',
+  };
+
+  it('round-trips a well-formed payload through JSON', () => {
+    const parsed = votePayloadSchema.parse(valid);
+    const wire = JSON.parse(JSON.stringify(parsed)) as unknown;
+    expect(votePayloadSchema.parse(wire)).toEqual(valid);
+  });
+
   it('accepts each of agree / dispute / withdraw', () => {
     for (const vote of ['agree', 'dispute', 'withdraw'] as const) {
-      const result = votePayloadSchema.safeParse({
-        proposal_event_id: PROPOSAL_EVENT_ID,
-        participant_id: PARTICIPANT_ID,
-        vote,
-      });
+      const result = votePayloadSchema.safeParse({ ...valid, vote });
       expect(result.success).toBe(true);
     }
   });
 
-  it('rejects an unknown vote value', () => {
+  it('rejects an unknown vote value via validateEvent and names the kind', () => {
+    const envelope = {
+      id: EVENT_ID,
+      sessionId: SESSION_ID,
+      sequence: 8,
+      kind: 'vote' as const,
+      actor: ACTOR_ID,
+      payload: { ...valid, vote: 'maybe' },
+      createdAt: '2026-05-10T12:34:56Z',
+    };
+    let caught: unknown;
+    try {
+      validateEvent(envelope);
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(EventValidationError);
+    expect((caught as Error).message).toContain("'vote'");
+  });
+
+  it('rejects a non-UUID proposal_id', () => {
+    const result = votePayloadSchema.safeParse({ ...valid, proposal_id: 'not-a-uuid' });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a non-UUID participant', () => {
+    const result = votePayloadSchema.safeParse({ ...valid, participant: 'not-a-uuid' });
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts a well-formed voted_at', () => {
     const result = votePayloadSchema.safeParse({
-      proposal_event_id: PROPOSAL_EVENT_ID,
-      participant_id: PARTICIPANT_ID,
-      vote: 'maybe',
+      ...valid,
+      voted_at: '2026-05-10T13:00:00+00:00',
     });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a non-ISO voted_at', () => {
+    const result = votePayloadSchema.safeParse({ ...valid, voted_at: 'just now' });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a missing voted_at', () => {
+    const { voted_at: _omitted, ...withoutVotedAt } = valid;
+    const result = votePayloadSchema.safeParse(withoutVotedAt);
     expect(result.success).toBe(false);
   });
 });
@@ -628,9 +678,10 @@ describe('validateEvent failure paths', () => {
       kind: 'vote',
       actor: ACTOR_ID,
       payload: {
-        proposal_event_id: PROPOSAL_EVENT_ID,
-        participant_id: PARTICIPANT_ID,
+        proposal_id: PROPOSAL_ID,
+        participant: PARTICIPANT_ID,
         vote: 'maybe',
+        voted_at: '2026-05-10T12:34:56Z',
       },
       createdAt: '2026-05-10T12:34:56Z',
     };
@@ -652,9 +703,10 @@ describe('validateEvent failure paths', () => {
       kind: 'vote',
       actor: ACTOR_ID,
       payload: {
-        proposal_event_id: PROPOSAL_EVENT_ID,
-        participant_id: PARTICIPANT_ID,
+        proposal_id: PROPOSAL_ID,
+        participant: PARTICIPANT_ID,
         vote: 'agree',
+        voted_at: '2026-05-10T12:34:56Z',
       },
       createdAt: '2026-05-10T12:34:56Z',
     };
@@ -724,9 +776,10 @@ const REPRESENTATIVE_PAYLOADS: Record<EventKind, unknown> = {
     },
   },
   vote: {
-    proposal_event_id: PROPOSAL_EVENT_ID,
-    participant_id: PARTICIPANT_ID,
+    proposal_id: PROPOSAL_ID,
+    participant: PARTICIPANT_ID,
     vote: 'agree',
+    voted_at: '2026-05-10T12:34:56Z',
   },
   commit: {},
   'meta-disagreement-marked': {},

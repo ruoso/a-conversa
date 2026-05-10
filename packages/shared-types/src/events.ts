@@ -39,8 +39,10 @@
 //     a `proposal` key, where `ProposalPayload` is a discriminated
 //     union over `kind` covering the eleven proposal sub-kinds; see
 //     `./events/proposals.ts`).
-//   - `vote_events` → `vote` (the `vote` schema here is a worked
-//     example; that task may refine it).
+//   - `vote_events` → `vote` (**done** — tightened below; reconciled
+//     the worked-example field names `proposal_event_id` /
+//     `participant_id` to `proposal_id` / `participant`, and added
+//     `voted_at: ISO8601` per the refinement).
 //   - `resolution_events` → `commit`, `meta-disagreement-marked`.
 //   - `snapshot_events` → `snapshot-created`.
 //
@@ -307,14 +309,30 @@ export const entityIncludedPayloadSchema = z.object({
 
 export type EntityIncludedPayload = z.infer<typeof entityIncludedPayloadSchema>;
 
-// Worked example: vote.
+// -- Vote event payload schema ---------------------------------------
 //
-// Refined by `vote_events`; the shape here matches docs/data-model.md
-// — Event types — Votes.
+// Owned by `vote_events`. Refinement:
+// tasks/refinements/data-and-methodology/vote_events.md.
+//
+// Field-name reconciliation from the original worked example:
+// the worked example used `proposal_event_id` and `participant_id`;
+// the refinement is canonical and uses `proposal_id` and `participant`
+// (matching docs/data-model.md — Event types — Votes). A `voted_at`
+// timestamp was also added so vote ordering / withdrawal semantics
+// have an authoritative payload-level clock independent of the
+// envelope's `createdAt`.
+//
+// Validation here is shape-only: the `vote` enum is constrained, and
+// UUIDs / ISO-8601 are checked. Server-side referential checks
+// (`proposal_id` refers to an existing proposal in the same session;
+// a `withdraw` vote is only valid against this participant's prior
+// `agree` on a committed proposal) live in `event_validation` and
+// the methodology engine, not here.
 export const votePayloadSchema = z.object({
-  proposal_event_id: z.string().uuid(),
-  participant_id: z.string().uuid(),
+  proposal_id: z.string().uuid(),
+  participant: z.string().uuid(),
   vote: z.enum(['agree', 'dispute', 'withdraw']),
+  voted_at: z.string().datetime({ offset: true }),
 });
 
 export type VotePayload = z.infer<typeof votePayloadSchema>;
@@ -353,11 +371,11 @@ export const eventPayloadSchemas: Record<EventKind, z.ZodTypeAny> = {
 //
 // `EventPayloadMap` resolves each kind to its concrete payload type.
 // Tightened kinds today: the four session-lifecycle kinds, the three
-// entity-creation kinds, `entity-included`, `proposal`, and the `vote`
-// worked example. The remaining four (`commit`,
-// `meta-disagreement-marked`, `snapshot-created`) fall back to
-// `Record<string, unknown>` (the placeholder's TS image) and will
-// tighten as their downstream tasks land.
+// entity-creation kinds, `entity-included`, `proposal`, and `vote`.
+// The remaining three (`commit`, `meta-disagreement-marked`,
+// `snapshot-created`) fall back to `Record<string, unknown>` (the
+// placeholder's TS image) and will tighten as their downstream tasks
+// land.
 
 export interface EventPayloadMap {
   'session-created': SessionCreatedPayload;

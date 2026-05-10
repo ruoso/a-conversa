@@ -42,3 +42,7 @@ Each downstream task (`session_lifecycle_events`, `entity_creation_events`, `ent
 ## Stack-validation tests
 
 [`packages/shared-types/src/events.test.ts`](../../packages/shared-types/src/events.test.ts) covers the round-trip (build envelope → JSON.stringify → JSON.parse → `validateEvent` → equal), the two worked-example payload schemas (each with valid + invalid input), one placeholder kind (`participant-joined` with `{}` passes), and the unknown-kind failure path. Run with `pnpm run test:smoke` (the script now runs Vitest against `tests/smoke` and `packages` together).
+
+## Amendments
+
+- **2026-05-10 — `vote` payload field-name reconciliation** (`vote_events`). The worked example here described the `vote` payload as `{ proposal_event_id, participant_id, vote }`. The canonical schema landed by `vote_events` uses `{ proposal_id, participant, vote, voted_at }` (matching docs/data-model.md and the refinement at [tasks/refinements/data-and-methodology/vote_events.md](../../tasks/refinements/data-and-methodology/vote_events.md)). The narrative above is left unchanged so the worked-example-vs-canonical history is visible; the registry and tests are the source of truth for field names.

@@ -125,6 +125,7 @@ task data_and_methodology "Data and methodology" {
     task vote_events "vote (agree / dispute / withdraw)" {
       effort 0.5d
       allocate team
+      complete 100
       depends !proposal_events
       note "Refinement: tasks/refinements/data-and-methodology/vote_events.md"
     }
