@@ -31,6 +31,8 @@ The development environment runs entirely locally via Docker Compose — a singl
 
 The Compose file and code will land when implementation begins; this is currently a design-phase repo.
 
+`pnpm install` enables a Husky pre-commit hook that runs `lint-staged` (ESLint `--fix` and Prettier `--write` against staged files) followed by an incremental whole-repo typecheck (`tsc -b`); a commit that fails lint or typecheck is rejected, and a commit cleaned up by the formatter lands with the cleaned content. The full development-workflow doc — including run commands, the smoke scripts, and the test layout — will land with `readme_dev_section`.
+
 ## License
 
 This project is licensed under the GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later). See [LICENSE](LICENSE) for details.

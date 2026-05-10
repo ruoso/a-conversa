@@ -53,3 +53,7 @@ Pre-commit-hook tooling for TS/Node:
 ## Open questions
 
 (none — all decided)
+
+## Status
+
+**Done** 2026-05-10. Implemented with `husky@9.1.7` + `lint-staged@17.0.4`. The hook lives at [`.husky/pre-commit`](../../../.husky/pre-commit) and runs `pnpm exec lint-staged && pnpm run typecheck`; the `lint-staged` config is in the repo-root [`package.json`](../../../package.json) (`*.{ts,tsx,js,jsx,cjs,mjs}` → `eslint --fix` then `prettier --write`; `*.{json,yml,yaml,html,css}` → `prettier --write`). `*.md` is intentionally excluded because `.prettierignore` already excludes it (preserving the editorconfig hard-break convention). Typecheck runs whole-repo via `tsc -b` (project-references graph; `tests/**` and `scripts/**` are out-of-graph and stay covered by CI's `typecheck:tools` / `typecheck:tests` jobs). Decision and rationale captured in [docs/adr/0014-pre-commit-hooks-husky-lint-staged.md](../../../docs/adr/0014-pre-commit-hooks-husky-lint-staged.md). The README's "Local development" section has a one-paragraph mention; the full development-workflow doc waits on `foundation.repo_skeleton.readme_dev_section`.

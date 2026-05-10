@@ -160,6 +160,7 @@ task foundation "Foundation" {
     task pre_commit_hooks "Set up pre-commit hooks (lint, format, typecheck)" {
       effort 0.5d
       allocate team
+      complete 100
       depends !linter_config, !formatter_config, !typecheck_config
       note "Refinement: tasks/refinements/foundation/pre_commit_hooks.md"
     }
