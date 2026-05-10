@@ -23,3 +23,9 @@ Both added to the discriminated `EventPayload` union.
 - Round-trip tests.
 - Validation rejects malformed UUIDs.
 - Server-side referential and authority checks (separate from Zod) enforce the moderator-only / proposal-exists / no-double-resolve rules.
+
+## Status
+
+**Done** 2026-05-10.
+
+`CommitPayload` and `MetaDisagreementMarkedPayload` Zod schemas land in `packages/shared-types/src/events.ts`, both registered in `eventPayloadSchemas` (replacing the placeholder passthroughs) and exported as TS types via `z.infer`. Field shape mirrors the vote schema's style: `z.string().uuid()` for `proposal_id` / `moderator`, `z.string().datetime({ offset: true })` for `committed_at` / `marked_at`. Round-trip + invalid-UUID + invalid-timestamp tests added in `packages/shared-types/src/events.test.ts`; the property-style "every kind round-trips" iterator now uses real payloads for both kinds. Server-side referential / authority checks remain pending in `event_validation` and the methodology engine.

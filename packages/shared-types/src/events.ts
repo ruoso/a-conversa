@@ -337,6 +337,39 @@ export const votePayloadSchema = z.object({
 
 export type VotePayload = z.infer<typeof votePayloadSchema>;
 
+// -- Resolution event payload schemas --------------------------------
+//
+// Owned by `resolution_events`. Refinement:
+// tasks/refinements/data-and-methodology/resolution_events.md.
+//
+// Two kinds — `commit` (moderator commits a proposal once every
+// participant is voting `agree`) and `meta-disagreement-marked`
+// (last-resort fallback recording an unresolvable proposal). Both
+// payloads are shape-only here: server-side referential and authority
+// checks (the actor is the moderator; the proposal exists and isn't
+// already resolved; no double-resolve) live in `event_validation` and
+// the methodology engine, not in Zod.
+//
+// Field names mirror the vote schema's style: UUIDs via
+// `z.string().uuid()`, ISO-8601 timestamps via
+// `z.string().datetime({ offset: true })`, with the per-event
+// timestamp named `<verb>ed_at` (`committed_at`, `marked_at`).
+export const commitPayloadSchema = z.object({
+  proposal_id: z.string().uuid(),
+  moderator: z.string().uuid(),
+  committed_at: z.string().datetime({ offset: true }),
+});
+
+export type CommitPayload = z.infer<typeof commitPayloadSchema>;
+
+export const metaDisagreementMarkedPayloadSchema = z.object({
+  proposal_id: z.string().uuid(),
+  moderator: z.string().uuid(),
+  marked_at: z.string().datetime({ offset: true }),
+});
+
+export type MetaDisagreementMarkedPayload = z.infer<typeof metaDisagreementMarkedPayloadSchema>;
+
 // Placeholder for kinds whose payload schema is owned by a
 // not-yet-completed downstream task. Accepts any object; downstream
 // tasks tighten this.
@@ -361,8 +394,8 @@ export const eventPayloadSchemas: Record<EventKind, z.ZodTypeAny> = {
   // Owned by vote_events
   vote: votePayloadSchema,
   // Owned by resolution_events
-  commit: placeholderPayloadSchema,
-  'meta-disagreement-marked': placeholderPayloadSchema,
+  commit: commitPayloadSchema,
+  'meta-disagreement-marked': metaDisagreementMarkedPayloadSchema,
   // Owned by snapshot_events
   'snapshot-created': placeholderPayloadSchema,
 };
@@ -371,11 +404,11 @@ export const eventPayloadSchemas: Record<EventKind, z.ZodTypeAny> = {
 //
 // `EventPayloadMap` resolves each kind to its concrete payload type.
 // Tightened kinds today: the four session-lifecycle kinds, the three
-// entity-creation kinds, `entity-included`, `proposal`, and `vote`.
-// The remaining three (`commit`, `meta-disagreement-marked`,
-// `snapshot-created`) fall back to `Record<string, unknown>` (the
-// placeholder's TS image) and will tighten as their downstream tasks
-// land.
+// entity-creation kinds, `entity-included`, `proposal`, `vote`, and
+// the two resolution kinds (`commit`, `meta-disagreement-marked`).
+// `snapshot-created` remains as `Record<string, unknown>` (the
+// placeholder's TS image) and will tighten when its downstream task
+// lands.
 
 export interface EventPayloadMap {
   'session-created': SessionCreatedPayload;
@@ -388,8 +421,8 @@ export interface EventPayloadMap {
   'entity-included': EntityIncludedPayload;
   proposal: ProposalEnvelopePayload;
   vote: VotePayload;
-  commit: Record<string, unknown>;
-  'meta-disagreement-marked': Record<string, unknown>;
+  commit: CommitPayload;
+  'meta-disagreement-marked': MetaDisagreementMarkedPayload;
   'snapshot-created': Record<string, unknown>;
 }
 

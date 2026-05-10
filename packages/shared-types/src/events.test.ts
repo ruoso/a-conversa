@@ -10,11 +10,13 @@ import {
   type EventKind,
   EventValidationError,
   annotationCreatedPayloadSchema,
+  commitPayloadSchema,
   edgeCreatedPayloadSchema,
   entityIncludedPayloadSchema,
   eventEnvelopeSchema,
   eventKinds,
   eventPayloadSchemas,
+  metaDisagreementMarkedPayloadSchema,
   nodeCreatedPayloadSchema,
   participantJoinedPayloadSchema,
   participantLeftPayloadSchema,
@@ -629,6 +631,106 @@ describe('vote payload schema', () => {
   });
 });
 
+// -- Resolution event payload schemas --------------------------------
+//
+// Owned by `resolution_events`. Shape-only validation; server-side
+// referential / authority checks (moderator-only commit, no double
+// resolve, etc.) live in `event_validation`.
+
+describe('commit payload schema', () => {
+  const valid = {
+    proposal_id: PROPOSAL_ID,
+    moderator: USER_ID,
+    committed_at: '2026-05-10T12:34:56Z',
+  };
+
+  it('round-trips a well-formed payload through JSON', () => {
+    const parsed = commitPayloadSchema.parse(valid);
+    const wire = JSON.parse(JSON.stringify(parsed)) as unknown;
+    expect(commitPayloadSchema.parse(wire)).toEqual(valid);
+  });
+
+  it('rejects a non-UUID proposal_id via validateEvent and names the kind', () => {
+    const envelope = {
+      id: EVENT_ID,
+      sessionId: SESSION_ID,
+      sequence: 9,
+      kind: 'commit' as const,
+      actor: ACTOR_ID,
+      payload: { ...valid, proposal_id: 'not-a-uuid' },
+      createdAt: '2026-05-10T12:34:56Z',
+    };
+    let caught: unknown;
+    try {
+      validateEvent(envelope);
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(EventValidationError);
+    expect((caught as Error).message).toContain("'commit'");
+  });
+
+  it('rejects a non-UUID moderator', () => {
+    const result = commitPayloadSchema.safeParse({ ...valid, moderator: 'not-a-uuid' });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a non-ISO committed_at', () => {
+    const result = commitPayloadSchema.safeParse({ ...valid, committed_at: 'just now' });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('meta-disagreement-marked payload schema', () => {
+  const valid = {
+    proposal_id: PROPOSAL_ID,
+    moderator: USER_ID,
+    marked_at: '2026-05-10T12:34:56Z',
+  };
+
+  it('round-trips a well-formed payload through JSON', () => {
+    const parsed = metaDisagreementMarkedPayloadSchema.parse(valid);
+    const wire = JSON.parse(JSON.stringify(parsed)) as unknown;
+    expect(metaDisagreementMarkedPayloadSchema.parse(wire)).toEqual(valid);
+  });
+
+  it('rejects a non-UUID proposal_id via validateEvent and names the kind', () => {
+    const envelope = {
+      id: EVENT_ID,
+      sessionId: SESSION_ID,
+      sequence: 10,
+      kind: 'meta-disagreement-marked' as const,
+      actor: ACTOR_ID,
+      payload: { ...valid, proposal_id: 'not-a-uuid' },
+      createdAt: '2026-05-10T12:34:56Z',
+    };
+    let caught: unknown;
+    try {
+      validateEvent(envelope);
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(EventValidationError);
+    expect((caught as Error).message).toContain("'meta-disagreement-marked'");
+  });
+
+  it('rejects a non-UUID moderator', () => {
+    const result = metaDisagreementMarkedPayloadSchema.safeParse({
+      ...valid,
+      moderator: 'not-a-uuid',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a non-ISO marked_at', () => {
+    const result = metaDisagreementMarkedPayloadSchema.safeParse({
+      ...valid,
+      marked_at: 'eventually',
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
 describe('placeholder payload schemas', () => {
   it('exposes a registry entry for every kind', () => {
     // Sanity check that the registry is exhaustive — adding a kind
@@ -781,8 +883,16 @@ const REPRESENTATIVE_PAYLOADS: Record<EventKind, unknown> = {
     vote: 'agree',
     voted_at: '2026-05-10T12:34:56Z',
   },
-  commit: {},
-  'meta-disagreement-marked': {},
+  commit: {
+    proposal_id: PROPOSAL_ID,
+    moderator: USER_ID,
+    committed_at: '2026-05-10T12:34:56Z',
+  },
+  'meta-disagreement-marked': {
+    proposal_id: PROPOSAL_ID,
+    moderator: USER_ID,
+    marked_at: '2026-05-10T12:34:56Z',
+  },
   'snapshot-created': {},
 };
 
