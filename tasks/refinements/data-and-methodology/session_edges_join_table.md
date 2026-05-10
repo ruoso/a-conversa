@@ -46,3 +46,7 @@ Same as `session_nodes`:
 ## Open questions
 
 (none — all decided)
+
+## Status
+
+Done 2026-05-10. Migration `apps/server/migrations/0008_session_edges.sql` created with the same shape as `0007_session_nodes.sql`: composite PK on `(session_id, edge_id)` (R9), no `removed_at` (R10), `included_by` + `included_at`, `ON DELETE RESTRICT` on all three FKs, and inverse-lookup index `session_edges_edge_id_idx` on `edge_id`. Verified end-to-end against the local Compose stack — `\d session_edges` shows the expected columns, PK, FKs, and index; insert succeeds, duplicate `(session_id, edge_id)` rejected by PK, bogus `session_id` rejected by FK, and `make down-v` cleans up. `complete 100` set in `tasks/10-data-and-methodology.tji`.
