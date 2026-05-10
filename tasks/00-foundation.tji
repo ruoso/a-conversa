@@ -264,6 +264,7 @@ task foundation "Foundation" {
     task ci_typecheck "Typecheck job in CI" {
       effort 0.25d
       allocate team
+      complete 100
       depends !ci_config, !!repo_skeleton.typecheck_config
 
       note "Refinement: tasks/refinements/foundation/ci_typecheck.md"
