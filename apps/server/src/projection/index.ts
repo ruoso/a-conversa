@@ -5,6 +5,7 @@
 //   - tasks/refinements/data-and-methodology/project_from_log.md
 //   - tasks/refinements/data-and-methodology/project_incrementally.md
 //   - tasks/refinements/data-and-methodology/per_facet_status_derivation.md
+//   - tasks/refinements/data-and-methodology/active_firing_computation.md
 
 export { Projection, ProjectionInvariantError, createEmptyProjection } from './projection.js';
 export type {
@@ -53,3 +54,4 @@ export {
   FacetStatusDerivationError,
   type DeriveEntityKind,
 } from './facet-status.js';
+export { ActiveFiringComputationError, getActiveFiring, isEdgeActive } from './active-firing.js';

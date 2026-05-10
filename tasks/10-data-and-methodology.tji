@@ -185,7 +185,9 @@ task data_and_methodology "Data and methodology" {
     task active_firing_computation "Compute edge.substance ∧ source.substance for each edge" {
       effort 0.5d
       allocate team
+      complete 100
       depends !per_facet_status_derivation
+      note "Refinement: tasks/refinements/data-and-methodology/active_firing_computation.md"
     }
     task projection_caching "Cache active projections per session; release on idle" {
       effort 1d
