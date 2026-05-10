@@ -14,7 +14,7 @@
     "smoke:tailwind": "tsx scripts/hello-tailwind.ts",
     "seed": "tsx scripts/seed.ts",
     "migrate": "pnpm --filter @a-conversa/server run migrate",
-    "test:smoke": "vitest run tests/smoke packages",
+    "test:smoke": "vitest run tests/smoke packages apps",
     "test:behavior:smoke": "NODE_OPTIONS='--import tsx' cucumber-js",
     "test:e2e:smoke": "playwright test --config=playwright.config.ts",
     "build": "pnpm -r build",

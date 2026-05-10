@@ -147,6 +147,7 @@ task data_and_methodology "Data and methodology" {
     task event_validation "Validate event payloads against schema before append" {
       effort 1d
       allocate team
+      complete 100
       depends !proposal_events, !vote_events, !resolution_events
       note "Refinement: tasks/refinements/data-and-methodology/event_validation.md"
     }

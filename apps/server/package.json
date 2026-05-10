@@ -9,8 +9,10 @@
     "migrate:create": "node-pg-migrate create --migrations-dir migrations --migration-file-language sql"
   },
   "dependencies": {
+    "@a-conversa/shared-types": "workspace:^",
     "node-pg-migrate": "8.0.4",
-    "pg": "8.20.0"
+    "pg": "8.20.0",
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@types/pg": "^8.20.0"
