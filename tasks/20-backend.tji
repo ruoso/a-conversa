@@ -106,6 +106,8 @@ task backend "Backend" {
     task get_session_endpoint "GET /sessions/:id (metadata)" {
       effort 0.5d
       allocate team
+      complete 100
+      note "Refinement: tasks/refinements/backend/get_session_endpoint.md"
     }
     task end_session_endpoint "POST /sessions/:id/end" {
       effort 0.5d

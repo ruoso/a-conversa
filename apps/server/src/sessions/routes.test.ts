@@ -32,6 +32,17 @@
 //   6. `?status=active` filters out ended sessions.
 //   7. `?status=ended` returns only ended sessions.
 //
+// **Coverage for `GET /sessions/:id`** (per the get-endpoint refinement):
+//
+//   1. Authenticated + visible → 200 + SessionResponse shape.
+//   2. No auth cookie → 401.
+//   3. Unknown id → 404 not-found.
+//   4. Private session not visible to caller → 404 (NOT 403; the
+//      existence-leak rule).
+//   5. Private session visible to host → 200.
+//   6. Private session visible to participant → 200.
+//   7. Bad UUID path param → 400 validation-failed.
+//
 // All tests use Fastify's `.inject(...)` — no port bind. The pool is a
 // memory shim that mimics the production `pg.Pool` surface (BEGIN /
 // COMMIT / ROLLBACK + the INSERTs) so the transactional shape is
@@ -182,6 +193,29 @@ function makeMemoryPool(initialUsers: UserRow[]): {
         created_at: new Date('2026-05-10T12:00:00.001Z'),
       });
       return Promise.resolve({ rows: [] as TRow[] });
+    }
+    if (
+      text.includes('FROM sessions') &&
+      text.includes('WHERE id = $1') &&
+      text.includes("privacy = 'public'") &&
+      text.includes('host_user_id = $2') &&
+      text.includes('session_participants')
+    ) {
+      // The `GET /sessions/:id` visibility-gated SELECT. Mirrors the
+      // production WHERE clause: id matches AND (public OR host OR
+      // participant). The shim implements the same predicate in JS
+      // so the test's assertion is against the row set the
+      // production SQL would return — not a re-derivation.
+      const targetId = p[0] as string;
+      const userId = p[1] as string;
+      const visible = store.sessions.filter(
+        (s) =>
+          s.id === targetId &&
+          (s.privacy === 'public' ||
+            s.host_user_id === userId ||
+            store.participants.some((sp) => sp.session_id === s.id && sp.user_id === userId)),
+      );
+      return Promise.resolve({ rows: visible as unknown as TRow[] });
     }
     if (
       text.includes('FROM sessions') &&
@@ -752,5 +786,246 @@ describe('GET /sessions — visibility gate and lifecycle filter', () => {
     expect(body.sessions).toHaveLength(1);
     expect(body.sessions?.[0]?.id).toBe(PUBLIC_ENDED.id);
     expect(typeof body.sessions?.[0]?.endedAt).toBe('string');
+  });
+});
+
+describe('GET /sessions/:id — visibility-gated fetch', () => {
+  // Re-uses the same seed helper shape as the list-endpoint suite —
+  // seed users + sessions + (optionally) participation rows into the
+  // shared memory pool, then build the Fastify app on top.
+  async function buildWithSeed(opts: {
+    users: UserRow[];
+    sessions: SessionRow[];
+    participants?: SessionParticipantRow[];
+  }): Promise<BuiltApp> {
+    const built = await buildApp({ users: opts.users });
+    built.store.sessions.push(...opts.sessions);
+    if (opts.participants !== undefined) {
+      built.store.participants.push(...opts.participants);
+    }
+    return built;
+  }
+
+  let built: BuiltApp | undefined;
+  afterEach(async () => {
+    if (built !== undefined) {
+      await built.app.close();
+      built = undefined;
+    }
+  });
+
+  // Fixed UUIDs for the seeded session rows. Distinct from the
+  // list-suite ids so a stray cross-suite reference fails loudly.
+  const PUBLIC_SESSION: SessionRow = {
+    id: '00000000-0000-4000-8000-dddddddd0001',
+    host_user_id: ALICE_ID,
+    privacy: 'public',
+    topic: 'A public debate',
+    created_at: new Date('2026-05-09T10:00:00.000Z'),
+    ended_at: null,
+  };
+  const PRIVATE_ALICE: SessionRow = {
+    id: '00000000-0000-4000-8000-eeeeeeee0001',
+    host_user_id: ALICE_ID,
+    privacy: 'private',
+    topic: "Alice's private debate",
+    created_at: new Date('2026-05-09T11:00:00.000Z'),
+    ended_at: null,
+  };
+
+  it('returns 200 + SessionResponse for an authenticated, visible session', async () => {
+    built = await buildWithSeed({
+      users: [
+        {
+          id: ALICE_ID,
+          oauth_subject: 'authelia:alice',
+          screen_name: 'alice',
+          deleted_at: null,
+        },
+      ],
+      sessions: [PUBLIC_SESSION],
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'GET',
+      url: `/sessions/${PUBLIC_SESSION.id}`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{
+      id?: string;
+      hostUserId?: string;
+      privacy?: string;
+      topic?: string;
+      createdAt?: string;
+      endedAt?: string | null;
+    }>();
+    // Bare SessionResponse — NOT wrapped in `{ session: ... }`.
+    expect(body.id).toBe(PUBLIC_SESSION.id);
+    expect(body.hostUserId).toBe(ALICE_ID);
+    expect(body.privacy).toBe('public');
+    expect(body.topic).toBe('A public debate');
+    expect(typeof body.createdAt).toBe('string');
+    expect(body.endedAt).toBeNull();
+  });
+
+  it('returns 401 auth-required when no session cookie is present', async () => {
+    built = await buildWithSeed({
+      users: [
+        {
+          id: ALICE_ID,
+          oauth_subject: 'authelia:alice',
+          screen_name: 'alice',
+          deleted_at: null,
+        },
+      ],
+      sessions: [PUBLIC_SESSION],
+    });
+    const response = await built.app.inject({
+      method: 'GET',
+      url: `/sessions/${PUBLIC_SESSION.id}`,
+    });
+    expect(response.statusCode).toBe(401);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('auth-required');
+  });
+
+  it('returns 404 not-found when the id does not exist', async () => {
+    built = await buildWithSeed({
+      users: [
+        {
+          id: ALICE_ID,
+          oauth_subject: 'authelia:alice',
+          screen_name: 'alice',
+          deleted_at: null,
+        },
+      ],
+      sessions: [], // no sessions seeded
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const unknownId = '00000000-0000-4000-8000-ffffffff0001';
+    const response = await built.app.inject({
+      method: 'GET',
+      url: `/sessions/${unknownId}`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(404);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('not-found');
+  });
+
+  it('returns 404 (NOT 403) when the session is private and the caller is not host/participant', async () => {
+    // The existence-leak rule: Ben must not be able to tell whether
+    // Alice's private session exists. The response must be 404,
+    // identical in shape to the unknown-id case above.
+    built = await buildWithSeed({
+      users: [
+        {
+          id: ALICE_ID,
+          oauth_subject: 'authelia:alice',
+          screen_name: 'alice',
+          deleted_at: null,
+        },
+        {
+          id: BEN_ID,
+          oauth_subject: 'authelia:ben',
+          screen_name: 'ben',
+          deleted_at: null,
+        },
+      ],
+      sessions: [PRIVATE_ALICE],
+      participants: [],
+    });
+    const token = await signSessionToken({ sub: BEN_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'GET',
+      url: `/sessions/${PRIVATE_ALICE.id}`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    // CRITICAL — 404, not 403. Asserting the exact status here is
+    // the load-bearing test for the existence-leak rule.
+    expect(response.statusCode).toBe(404);
+    expect(response.statusCode).not.toBe(403);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('not-found');
+  });
+
+  it('returns 200 for the host on their own private session', async () => {
+    built = await buildWithSeed({
+      users: [
+        {
+          id: ALICE_ID,
+          oauth_subject: 'authelia:alice',
+          screen_name: 'alice',
+          deleted_at: null,
+        },
+      ],
+      sessions: [PRIVATE_ALICE],
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'GET',
+      url: `/sessions/${PRIVATE_ALICE.id}`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{ id?: string; privacy?: string; hostUserId?: string }>();
+    expect(body.id).toBe(PRIVATE_ALICE.id);
+    expect(body.privacy).toBe('private');
+    expect(body.hostUserId).toBe(ALICE_ID);
+  });
+
+  it('returns 200 for a participant on a private session they are part of', async () => {
+    built = await buildWithSeed({
+      users: [
+        {
+          id: ALICE_ID,
+          oauth_subject: 'authelia:alice',
+          screen_name: 'alice',
+          deleted_at: null,
+        },
+        {
+          id: BEN_ID,
+          oauth_subject: 'authelia:ben',
+          screen_name: 'ben',
+          deleted_at: null,
+        },
+      ],
+      sessions: [PRIVATE_ALICE],
+      participants: [{ session_id: PRIVATE_ALICE.id, user_id: BEN_ID }],
+    });
+    const token = await signSessionToken({ sub: BEN_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'GET',
+      url: `/sessions/${PRIVATE_ALICE.id}`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{ id?: string; privacy?: string }>();
+    expect(body.id).toBe(PRIVATE_ALICE.id);
+    expect(body.privacy).toBe('private');
+  });
+
+  it('returns 400 validation-failed when the path :id is not a UUID', async () => {
+    built = await buildWithSeed({
+      users: [
+        {
+          id: ALICE_ID,
+          oauth_subject: 'authelia:alice',
+          screen_name: 'alice',
+          deleted_at: null,
+        },
+      ],
+      sessions: [PUBLIC_SESSION],
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'GET',
+      url: '/sessions/not-a-uuid',
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(400);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('validation-failed');
   });
 });

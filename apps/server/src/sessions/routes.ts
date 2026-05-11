@@ -2,14 +2,17 @@
 //
 //   - POST /sessions — create a new debate session.
 //   - GET /sessions — list the visible debate sessions for the caller.
+//   - GET /sessions/:id — fetch a single session's metadata.
 //
 // Refinements: tasks/refinements/backend/create_session_endpoint.md,
-//              tasks/refinements/backend/list_sessions_endpoint.md
+//              tasks/refinements/backend/list_sessions_endpoint.md,
+//              tasks/refinements/backend/get_session_endpoint.md
 // ADRs:        docs/adr/0021-event-envelope-discriminated-union-with-zod.md,
 //              docs/adr/0022-no-throwaway-verifications.md,
 //              docs/adr/0023-web-framework-fastify.md
 // TaskJuggler: backend.session_management.create_session_endpoint,
-//              backend.session_management.list_sessions_endpoint
+//              backend.session_management.list_sessions_endpoint,
+//              backend.session_management.get_session_endpoint
 //
 // **What this plugin owns today.** A single route — `POST /sessions` —
 // behind `preHandler: app.authenticate`. The handler:
@@ -65,11 +68,27 @@
 // rationale and the basic-vs-filters split with the sibling
 // `session_listing_filters` task.
 //
+// **`GET /sessions/:id`** — the single-session fetch. The handler:
+//
+//   1. Reads `request.authUser.id` (the caller).
+//   2. Reads the validated `:id` path param (Fastify rejects malformed
+//      UUIDs at the schema layer with 400 `validation-failed`).
+//   3. Issues a single SELECT against `sessions` with `id = $1` AND the
+//      SAME visibility predicate `GET /sessions` uses (public OR host
+//      OR participant). Zero rows → 404 `not-found` (whether the id
+//      doesn't exist OR the row exists but isn't visible to this
+//      caller — the two are deliberately indistinguishable from
+//      outside, to avoid leaking the existence of private sessions to
+//      unauthorized callers; see `tasks/refinements/backend/get_session_endpoint.md`'s
+//      "404-not-403" decision).
+//   4. Returns 200 + bare `SessionResponse` (NOT wrapped — the fetch
+//      endpoint's resource IS the session, no second axis along which
+//      the response could grow).
+//
 // **What this plugin does NOT do** — deferred to sibling tasks:
 //
 //   - Filters beyond the visibility gate (host filter, participant
 //     filter, pagination) — `backend.session_management.session_listing_filters`.
-//   - `GET /sessions/:id` (fetch) — `backend.session_management.get_session_endpoint`.
 //   - `POST /sessions/:id/end` — `backend.session_management.end_session_endpoint`.
 //   - `POST /sessions/:id/privacy` — `backend.session_management.session_privacy_toggle`.
 //   - `POST /sessions/:id/participants` — `backend.session_management.participant_assignment`.
@@ -287,6 +306,30 @@ const createSessionBodySchema = {
       description:
         "Optional session privacy. Defaults to `'public'` when omitted. " +
         "`'private'` gates cross-session reference and audience-page auth.",
+    },
+  },
+} as const;
+
+/**
+ * Path-param schema for `GET /sessions/:id`. JSON Schema attached to
+ * `schema.params`; Fastify's validator enforces UUID shape before the
+ * handler runs and rejects `/sessions/not-a-uuid` style requests with
+ * a `validation` error that the centralized handler renders as the
+ * canonical 400 `validation-failed` envelope.
+ *
+ * `format: 'uuid'` is the ajv-built-in UUID v4 format check — same
+ * surface the `SessionResponse` schema uses for the `id` field, so a
+ * round-trip GET/response keeps the same shape contract on both sides.
+ */
+const sessionIdParamsSchema = {
+  type: 'object',
+  required: ['id'],
+  additionalProperties: false,
+  properties: {
+    id: {
+      type: 'string',
+      format: 'uuid',
+      description: 'The session id (UUID).',
     },
   },
 } as const;
@@ -742,6 +785,88 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = (
       return reply.code(200).send({
         sessions: result.rows.map(sessionRowToResponse),
       });
+    },
+  );
+
+  app.get(
+    '/sessions/:id',
+    {
+      preHandler: app.authenticate,
+      schema: {
+        tags: ['sessions'],
+        summary: "Fetch a single session's metadata by id",
+        description:
+          'Returns the session metadata for the supplied id, if and only if ' +
+          'the caller is permitted to see it. Visibility (per `docs/architecture.md` ' +
+          'and the `list_sessions_endpoint` refinement): public sessions are ' +
+          'visible to every authenticated user; private sessions are visible ' +
+          'only to the host or a current/past participant.\n\n' +
+          'When the session does not exist OR exists but is invisible to the ' +
+          'caller, the server returns 404 `not-found` — the two cases are ' +
+          'deliberately indistinguishable to avoid leaking the existence of ' +
+          'private sessions to unauthorized callers (see ' +
+          '`tasks/refinements/backend/get_session_endpoint.md`).\n\n' +
+          'Returns 401 `auth-required` when no valid session cookie is present; ' +
+          '400 `validation-failed` when the path `:id` is not a UUID.',
+        security: [{ cookieAuth: [] }],
+        params: sessionIdParamsSchema,
+        response: {
+          200: sessionResponseRef,
+          '4xx': errorEnvelopeRef,
+          '5xx': errorEnvelopeRef,
+        },
+      },
+    },
+    async (request, reply) => {
+      // Defensive — same shape as the create / list handlers. The
+      // middleware guarantees `authUser` is set on every request that
+      // reaches a handler with `preHandler: app.authenticate`.
+      const auth = request.authUser;
+      if (auth === undefined) {
+        throw new ApiError(
+          500,
+          'internal-error',
+          'auth middleware did not populate request.authUser',
+        );
+      }
+      const userId = auth.id;
+
+      // Fastify's validator narrows the params to the schema shape;
+      // the cast captures the validated `id`.
+      const params = request.params as { id: string };
+      const sessionId = params.id;
+
+      // The visibility gate — LIFTED VERBATIM from `GET /sessions`'s
+      // SELECT (see the list endpoint above for the canonical
+      // rationale: public OR host OR participant, EXISTS-rather-than-
+      // JOIN to avoid duplication from leave-and-rejoin rows, past
+      // participants stay visible). Adding `id = $1` narrows the
+      // result to at most one row; zero rows means either the id
+      // doesn't exist OR it does but isn't visible to this caller —
+      // BOTH cases collapse into 404 so the response doesn't leak
+      // the existence of private sessions (the 404-not-403 decision
+      // in this endpoint's refinement).
+      const pool = ensurePool();
+      const result = await pool.query<SessionsInsertRow>(
+        `SELECT id, host_user_id, privacy, topic, created_at, ended_at
+         FROM sessions
+         WHERE id = $1
+           AND (
+                 privacy = 'public'
+                 OR host_user_id = $2
+                 OR EXISTS (
+                      SELECT 1 FROM session_participants sp
+                      WHERE sp.session_id = sessions.id AND sp.user_id = $2
+                    )
+               )`,
+        [sessionId, userId],
+      );
+      const row = result.rows[0];
+      if (row === undefined) {
+        throw ApiError.notFound('session not found or not visible');
+      }
+
+      return reply.code(200).send(sessionRowToResponse(row));
     },
   );
 
