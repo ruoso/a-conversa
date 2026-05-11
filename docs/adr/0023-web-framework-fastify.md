@@ -53,4 +53,27 @@ Structured logging uses Fastify's built-in **Pino** (the framework's default log
 
 ## Amendments
 
-(none yet)
+### 2026-05-10 — `/healthz` is liveness-only (not DB-pinging)
+
+The Consequences section originally framed `/healthz` as "the proper
+healthcheck with DB ping and migration-state check." On landing
+`backend.api_skeleton.health_endpoint`, that framing was walked back
+deliberately:
+
+- **`/healthz` is liveness-only.** Returns 200 + `{ status: 'ok', version }`
+  whenever the server is running. No DB ping, no OIDC check, no
+  per-request migration-state recheck.
+- **Migration state is gated at startup**, not at `/healthz`. The
+  `applyMigrationsOnStartup` call in `index.ts` runs before
+  `app.listen(...)`; the only way the route can answer is past the
+  gate, so a per-request recheck is redundant.
+- **DB / OIDC readiness is deferred to a future `/readyz`.** The
+  separation matters operationally: a liveness probe that flips to
+  red on a transient DB blip causes Docker / k8s to restart-loop the
+  app (the well-known anti-pattern). Readiness probes are designed
+  to flip; liveness probes are designed not to.
+
+The route lives at [`apps/server/src/routes/healthz.ts`](../../apps/server/src/routes/healthz.ts)
+as a `FastifyPluginAsync`, registered by `createServer` in
+[`server.ts`](../../apps/server/src/server.ts). Refinement:
+[tasks/refinements/backend/health_endpoint.md](../../tasks/refinements/backend/health_endpoint.md).

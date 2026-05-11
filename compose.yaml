@@ -25,14 +25,14 @@ services:
   # ---------------------------------------------------------------------
   # app — the a-conversa application image (built from ./Dockerfile).
   #
-  # The runtime entry point now runs the real Fastify server
-  # (ADR 0023; backend.api_skeleton.http_server, 2026-05-10). The
-  # container listens on :3000 and `curl http://localhost:3000/`
-  # returns `{"status":"ok"}`. The healthcheck below still targets
-  # `/healthz`, which is owned by `backend.api_skeleton.health_endpoint`
-  # and not yet implemented — so `docker compose ps` shows the service
-  # as `(unhealthy)` until that sibling lands, but the server is up
-  # and reachable. To run only the backing services for a quieter
+  # The runtime entry point runs the Fastify server
+  # (ADR 0023; backend.api_skeleton.http_server, 2026-05-10) and, on
+  # start, applies any pending migrations against DATABASE_URL
+  # (ADR 0020 C6, settled by backend.api_skeleton.health_endpoint).
+  # The container listens on :3000; `curl http://localhost:3000/`
+  # returns `{"status":"ok"}` and `curl http://localhost:3000/healthz`
+  # returns 200 — which flips the compose healthcheck below to
+  # `healthy`. To run only the backing services for a quieter
   # dev stack:
   #     docker compose up -d postgres authelia
   app:
@@ -44,16 +44,24 @@ services:
         condition: service_healthy
       authelia:
         condition: service_healthy
+    environment:
+      # `DATABASE_URL` is consumed by both the startup migration gate
+      # (apps/server/src/migrate-startup.ts) and the eventual session
+      # endpoints' connection pool. The value comes from `.env` (which
+      # compose auto-loads from this file's directory); the in-network
+      # hostname `postgres` resolves via the user-defined bridge below.
+      DATABASE_URL: ${DATABASE_URL}
     ports:
       - '3000:3000'
     networks:
       - aconversa
     restart: unless-stopped
     healthcheck:
-      # Once the real entry point lands, the HTTP server exposes
-      # `/healthz`. The runtime image is alpine + node, so we exec
-      # node directly rather than depending on `wget`/`curl` being
-      # present.
+      # The HTTP server exposes `/healthz` (liveness-only — a 200
+      # says "server is up and serving traffic"; DB readiness lives
+      # in a future /readyz). The runtime image is alpine + node, so
+      # we exec node directly rather than depending on `wget`/`curl`
+      # being present.
       test:
         - CMD
         - node

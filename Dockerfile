@@ -15,9 +15,11 @@
 #
 # The runtime entry point runs the Fastify-based HTTP server
 # (apps/server/dist/index.js) per ADR 0023 and ADR 0015's Amendment.
-# Migrations-on-startup and the proper `/healthz` are still pending
-# sibling tasks under backend.api_skeleton; deployment.prod_container
-# will iterate on this Dockerfile for production.
+# As of `backend.api_skeleton.health_endpoint` (2026-05-10) the
+# server also applies pending migrations on startup (ADR 0020 C6)
+# and answers `/healthz` for the compose healthcheck.
+# `deployment.prod_container` will iterate on this Dockerfile for
+# production.
 
 ARG NODE_VERSION=20
 ARG PNPM_VERSION=9.15.4
@@ -127,6 +129,15 @@ RUN pnpm install --frozen-lockfile --prod --ignore-scripts
 # does not ship; only emitted JS + .d.ts.
 COPY --from=build /app/apps/server/dist            ./apps/server/dist
 COPY --from=build /app/packages/shared-types/dist  ./packages/shared-types/dist
+
+# The migration runner (both the startup gate and the standalone
+# `scripts/migrate.ts` CLI) reads SQL files from
+# `apps/server/migrations/`. They're plain `.sql` (no build step), so
+# we copy them verbatim from the build context's `apps/server/migrations/`
+# checkout via the build stage. Without this, the startup gate hits
+# ENOENT and the container restart-loops with a clear "Can't get
+# migration files" error (which is the gate doing its job).
+COPY --from=build /app/apps/server/migrations      ./apps/server/migrations
 # Frontend dist directories are placeholders today and may not exist
 # under the alpine runtime once bundler tasks land — they will be
 # copied here too. Intentionally not copied yet.
@@ -139,10 +150,9 @@ USER node
 EXPOSE 3000
 
 # Real entry point — the Fastify-based HTTP server bootstrap (ADR 0023).
-# The compose `app` service's healthcheck targets `/healthz`, which is
-# owned by the eventual backend.api_skeleton.health_endpoint sibling;
-# until that lands the healthcheck stays unhealthy but the server
-# itself runs and `GET /` returns `{ status: 'ok' }`. Migrations are
-# applied separately via `make migrate` against the running postgres
-# (the migrations-on-startup hook is also owned by health_endpoint).
+# On start, applies any pending migrations against `DATABASE_URL`
+# (ADR 0020 C6, settled in `backend.api_skeleton.health_endpoint`)
+# and then listens on :3000. The compose `app` service's healthcheck
+# targets `/healthz`, which is now wired and flips the container to
+# `healthy` once the listen succeeds.
 CMD ["node", "/app/apps/server/dist/index.js"]

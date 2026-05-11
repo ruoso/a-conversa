@@ -25,7 +25,9 @@ task backend "Backend" {
     task health_endpoint "GET /healthz health endpoint" {
       effort 0.25d
       allocate team
+      complete 100
       depends !http_server
+      note "Refinement: tasks/refinements/backend/health_endpoint.md"
     }
     task openapi_or_equivalent "Document API surface (OpenAPI or equivalent)" {
       effort 1d

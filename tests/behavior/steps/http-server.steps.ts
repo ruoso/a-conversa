@@ -91,6 +91,21 @@ Then(
   },
 );
 
+// Used by tests/behavior/backend/healthz.feature — the /healthz
+// response carries a `version` field stamped from
+// `npm_package_version` (or '0.0.0' fallback). The exact value is
+// environment-dependent so we only assert it's a non-empty string.
+Then('the response body has a non-empty version string', function (this: AConversaWorld) {
+  const res = scratch(this).lastResponse;
+  assert.ok(res, 'no response captured — When step missing');
+  const parsed = JSON.parse(res.body) as { version?: unknown };
+  assert.equal(typeof parsed.version, 'string');
+  assert.ok(
+    typeof parsed.version === 'string' && parsed.version.length > 0,
+    `expected non-empty version string, got ${JSON.stringify(parsed.version)}`,
+  );
+});
+
 // Tear down the per-scenario Fastify instance. The world-level `After`
 // in support/world.ts handles the pglite handle; this hook only
 // touches the Fastify carrier so it's idempotent across scenarios

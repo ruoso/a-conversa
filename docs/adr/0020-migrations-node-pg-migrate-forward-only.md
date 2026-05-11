@@ -104,3 +104,36 @@ implementation.
 - We deliberately use only the `runner({ databaseUrl, dir,
   direction: 'up', ... })` entry point plus `.sql` migration files;
   `node-pg-migrate`'s broader DSL/builder surface is a non-goal.
+
+## Amendments
+
+### 2026-05-10 — Startup gate settled (C6)
+
+The "startup gate is deferred" caveat in the Decision section is
+resolved by `backend.api_skeleton.health_endpoint`. The gate lives at
+[`apps/server/src/migrate-startup.ts`](../../apps/server/src/migrate-startup.ts);
+it imports `node-pg-migrate`'s `runner` with the same options the CLI
+uses (`direction: 'up'`, `singleTransaction: true`, `checkOrder: true`,
+`migrationsTable: 'pgmigrations'`) and is invoked from
+[`apps/server/src/index.ts`](../../apps/server/src/index.ts) **before**
+`app.listen(...)`. The gate's behavior on each input shape:
+
+- `DATABASE_URL` set, all migrations applied → no-op, server listens.
+- `DATABASE_URL` set, pending migrations exist → applies them, then
+  listens. (Apply-on-startup, not check-and-abort — see the
+  refinement's Decisions for why the operational story matches the
+  Makefile's pre-commitment.)
+- `DATABASE_URL` set, runner throws (DB unreachable, migration SQL
+  error, `checkOrder` mismatch) → logs error, closes server, exits
+  non-zero. The compose `restart: unless-stopped` policy retries.
+- `DATABASE_URL` unset OR `SKIP_STARTUP_MIGRATIONS=true` → logs a
+  warning and skips the gate. Useful for tests and for replica /
+  read-only DB scenarios where the operator has already applied
+  migrations out-of-band.
+
+The standalone CLI ([`apps/server/scripts/migrate.ts`](../../apps/server/scripts/migrate.ts))
+remains the entry point `make migrate` calls — both paths produce
+identical `pgmigrations` rows because they invoke the same library
+against the same SQL.
+
+Refinement: [tasks/refinements/backend/health_endpoint.md](../../tasks/refinements/backend/health_endpoint.md).

@@ -29,15 +29,19 @@
 //   - A schema type provider (Zod or TypeBox) → first route that
 //     actually validates a request body.
 //
-// **Routes** — exactly one trivial smoke route today:
-//   - `GET /` returns `{ status: 'ok' }`.
-// The real `/healthz` (with DB ping and migration-state check) is
-// owned by `backend.api_skeleton.health_endpoint`. Sibling tasks
-// register their routes on the instance returned here.
+// **Routes** wired today:
+//   - `GET /` — trivial proof-of-bootstrap, returns `{ status: 'ok' }`.
+//   - `GET /healthz` — liveness probe (registered via the
+//     `healthzPlugin`); the compose `app` service healthcheck targets
+//     this route. Owned by `backend.api_skeleton.health_endpoint`.
+//
+// Sibling tasks register their routes on the instance returned here.
 
 import cors from '@fastify/cors';
 import sensible from '@fastify/sensible';
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
+
+import { healthzPlugin } from './routes/healthz.js';
 
 /**
  * Options that vary between deployment modes (production, dev,
@@ -84,15 +88,19 @@ export async function createServer(options: CreateServerOptions = {}): Promise<F
     credentials: true,
   });
 
-  // Trivial proof-of-bootstrap route. The proper `/healthz` (DB ping,
-  // migration-state check, version stamp) is owned by
-  // `backend.api_skeleton.health_endpoint` — this route is the
-  // human-facing `curl /` smoke until that lands. Returning a plain
+  // Trivial proof-of-bootstrap route. `/` is the human-facing smoke
+  // (`curl http://localhost:3000/`); `/healthz` (below) is the
+  // compose-healthcheck-facing liveness probe. Returning a plain
   // object lets Fastify's default JSON serializer handle the response.
   // The handler is intentionally sync (no `async`) — there's nothing
   // to await and the lint rule `@typescript-eslint/require-await`
   // catches gratuitous `async`.
   app.get('/', () => ({ status: 'ok' }));
+
+  // `/healthz` lives in its own plugin so the route's full context —
+  // semantics (liveness-only, not readiness), refinement link, sibling
+  // ownership — stays in one file. See routes/healthz.ts.
+  await app.register(healthzPlugin);
 
   return app;
 }
