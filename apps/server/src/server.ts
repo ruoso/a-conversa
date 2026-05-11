@@ -14,12 +14,17 @@
 //
 // **Plugins wired at bootstrap** — only the ones every future sibling
 // task will need:
-//   - `@fastify/sensible` — typed `httpErrors` helpers so the eventual
-//     `backend.api_skeleton.error_handling` sibling has a consistent
-//     surface to build on (`reply.notFound()`, `reply.badRequest()`,
-//     etc.).
+//   - `@fastify/sensible` — typed `httpErrors` helpers (`reply.notFound()`,
+//     `reply.badRequest()`, etc.); the error handler below recognises
+//     and passes these through with the canonical envelope.
 //   - `@fastify/cors` — permissive in dev (`origin: true`); production
 //     tightening lives with `deployment.prod_container`.
+//   - `errorHandlerPlugin` — centralized `setErrorHandler` +
+//     `setNotFoundHandler`, serialising every error response under the
+//     canonical `{ error: { code, message, ...detail } }` envelope.
+//     Owned by `backend.api_skeleton.error_handling`. Registered after
+//     sensible+cors but BEFORE the route plugins so route-thrown errors
+//     reach the handler instead of Fastify's default serializer.
 //
 // **Plugins explicitly deferred** to their owning tasks (so this
 // bootstrap doesn't pre-empt them):
@@ -41,6 +46,7 @@ import cors from '@fastify/cors';
 import sensible from '@fastify/sensible';
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
 
+import { errorHandlerPlugin } from './error-handler.js';
 import { healthzPlugin } from './routes/healthz.js';
 
 /**
@@ -87,6 +93,15 @@ export async function createServer(options: CreateServerOptions = {}): Promise<F
     origin: true,
     credentials: true,
   });
+
+  // Centralized error handling + 404 — wires `setErrorHandler` and
+  // `setNotFoundHandler` on the root scope (via `fastify-plugin`'s
+  // skip-override, so the handlers are NOT encapsulated to the
+  // registration's child scope). Must register BEFORE any route plugin
+  // so errors thrown from a route handler hit our handler rather than
+  // Fastify's default serializer. Refinement:
+  // tasks/refinements/backend/error_handling.md.
+  await app.register(errorHandlerPlugin);
 
   // Trivial proof-of-bootstrap route. `/` is the human-facing smoke
   // (`curl http://localhost:3000/`); `/healthz` (below) is the
