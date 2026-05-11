@@ -177,11 +177,18 @@ function statusCodeForRejection(reason: RejectionReason): number {
     // `cannot-remove-moderator` (added by participant_assignment): the
     // host/moderator is bound to the session for its lifetime and cannot
     // be removed via the participant-DELETE endpoint.
+    // `entity-not-referenceable` (added by entity_inclusion_endpoint): the
+    // caller cannot reach the source entity through any visible origin
+    // session. Authority failure, parallel to `not-a-participant` —
+    // 403 (not 404) so the response is honest about the semantics
+    // (the entity may exist; the caller just isn't allowed to
+    // reference it). See `tasks/refinements/backend/entity_inclusion_endpoint.md`.
     case 'not-a-moderator':
     case 'not-a-participant':
     case 'self-vote-not-allowed':
     case 'axiom-mark-not-self':
     case 'cannot-remove-moderator':
+    case 'entity-not-referenceable':
       return 403;
     // 404 — referenced entity not found (or not visible to the caller).
     // `user-not-found` (added by participant_assignment): the body's
@@ -196,12 +203,19 @@ function statusCodeForRejection(reason: RejectionReason): number {
     // `role-already-filled` / `user-already-joined` (added by
     // participant_assignment): partial-unique-index conflicts on
     // session_participants surfaced as typed 409s for client branching.
+    // `entity-already-included` (added by entity_inclusion_endpoint): the
+    // entity is already a member of the destination session — caught
+    // by the composite-PK `ON CONFLICT DO NOTHING` collapse on the
+    // join-table INSERT. 409 (not a silent 200) matches the "no
+    // silent no-ops" pattern the other session-management endpoints
+    // follow. See `tasks/refinements/backend/entity_inclusion_endpoint.md`.
     case 'sequence-mismatch':
     case 'session-mismatch':
     case 'already-voted':
     case 'no-prior-agree':
     case 'role-already-filled':
     case 'user-already-joined':
+    case 'entity-already-included':
       return 409;
     // 422 — well-formed but methodology state forbids this transition.
     case 'proposal-not-pending':

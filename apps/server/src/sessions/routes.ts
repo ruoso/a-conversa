@@ -203,6 +203,7 @@ import { ApiError } from '../errors.js';
 import { errorEnvelopeRef } from '../openapi.js';
 import { getDefaultPool, type DbPool } from '../db.js';
 import { validateEvent } from '../events/validate.js';
+import { canReferenceAnnotation, canReferenceEdge, canReferenceNode } from './references.js';
 import { visibilityWhereFragment } from './visibility.js';
 
 /**
@@ -468,6 +469,103 @@ export const sessionParticipantResponseSchema = {
  */
 export const sessionParticipantResponseRef = {
   $ref: `${SESSION_PARTICIPANT_RESPONSE_SCHEMA_ID}#`,
+} as const;
+
+/**
+ * Stable `$id` for the `EntityInclusionResponse` schema returned by
+ * `POST /sessions/:id/include`. Declared top-level so OpenAPI carries
+ * a single `components.schemas.EntityInclusionResponse` entry the
+ * endpoint references via `$ref`. Refinement:
+ * tasks/refinements/backend/entity_inclusion_endpoint.md.
+ */
+export const ENTITY_INCLUSION_RESPONSE_SCHEMA_ID = 'EntityInclusionResponse';
+
+/**
+ * The canonical `POST /sessions/:id/include` 200-response shape. All
+ * fields camelCase per the platform's HTTP convention. `entityKind`
+ * is the discriminator from the request body; `entityId` is the
+ * supplied global entity id (echoed back so the client doesn't need
+ * to remember which inclusion it just landed); `sessionId` is the
+ * destination session (echoed back from the path param); `includedBy`
+ * is the authenticated caller; `includedAt` is the join-table's
+ * `included_at` timestamp from RETURNING, formatted as ISO-8601.
+ *
+ * Mirrors the `entity-included` event payload (snake_case) on the
+ * write side but adopts camelCase for the HTTP response per the
+ * project's wire convention.
+ */
+export const entityInclusionResponseSchema = {
+  $id: ENTITY_INCLUSION_RESPONSE_SCHEMA_ID,
+  type: 'object',
+  required: ['entityKind', 'entityId', 'sessionId', 'includedBy', 'includedAt'],
+  additionalProperties: false,
+  properties: {
+    entityKind: {
+      type: 'string',
+      enum: ['node', 'edge', 'annotation'],
+      description: 'The kind of entity that was included — mirrors the request body discriminator.',
+    },
+    entityId: {
+      type: 'string',
+      format: 'uuid',
+      description: 'The global entity id that was brought into this session.',
+    },
+    sessionId: {
+      type: 'string',
+      format: 'uuid',
+      description: 'The destination session id (echoes the path param).',
+    },
+    includedBy: {
+      type: 'string',
+      format: 'uuid',
+      description: 'The authenticated user who included the entity.',
+    },
+    includedAt: {
+      type: 'string',
+      format: 'date-time',
+      description:
+        'ISO-8601 timestamp the inclusion landed (the `included_at` column of the matching ' +
+        '`session_<kind>s` row).',
+    },
+  },
+} as const;
+
+/**
+ * The `$ref` the inclusion endpoint uses to point at the shared
+ * `EntityInclusionResponse` schema. Single source of truth for the
+ * 200-response shape.
+ */
+export const entityInclusionResponseRef = {
+  $ref: `${ENTITY_INCLUSION_RESPONSE_SCHEMA_ID}#`,
+} as const;
+
+/**
+ * Request body schema for `POST /sessions/:id/include`. JSON Schema
+ * attached to `schema.body`; Fastify's validator rejects malformed
+ * bodies with a 400 `validation-failed` envelope before the handler
+ * even runs.
+ *
+ * `entityKind` enum mirrors the shared-types `entityKindSchema` (and
+ * the SQL CHECK on the `entity-included` event's payload). `entityId`
+ * UUID format is the same surface every UUID-typed body field uses
+ * across the session-management endpoints.
+ */
+const includeEntityBodySchema = {
+  type: 'object',
+  required: ['entityKind', 'entityId'],
+  additionalProperties: false,
+  properties: {
+    entityKind: {
+      type: 'string',
+      enum: ['node', 'edge', 'annotation'],
+      description: 'The kind of entity being included.',
+    },
+    entityId: {
+      type: 'string',
+      format: 'uuid',
+      description: 'The global entity id (UUID) being brought into this session.',
+    },
+  },
 } as const;
 
 /**
@@ -929,6 +1027,16 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = (
   // `components.schemas.SessionParticipantResponse` entry.
   if (app.getSchema(SESSION_PARTICIPANT_RESPONSE_SCHEMA_ID) === undefined) {
     app.addSchema(sessionParticipantResponseSchema);
+  }
+
+  // Register the `EntityInclusionResponse` schema once per Fastify
+  // instance — same idempotence pattern. The inclusion endpoint
+  // (`POST /sessions/:id/include`) references it via
+  // `entityInclusionResponseRef`; OpenAPI carries a single
+  // `components.schemas.EntityInclusionResponse` entry. Refinement:
+  // tasks/refinements/backend/entity_inclusion_endpoint.md.
+  if (app.getSchema(ENTITY_INCLUSION_RESPONSE_SCHEMA_ID) === undefined) {
+    app.addSchema(entityInclusionResponseSchema);
   }
 
   // Lazy DB-pool resolution. The first request triggers
@@ -2267,6 +2375,338 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = (
       });
 
       return reply.code(200).send(participantRowToResponse(updated));
+    },
+  );
+
+  // ----------------------------------------------------------------
+  // POST /sessions/:id/include — bring an existing global entity into
+  // the destination session.
+  // ----------------------------------------------------------------
+  //
+  // Refinement: tasks/refinements/backend/entity_inclusion_endpoint.md.
+  //
+  // The endpoint composes the two predicates the previous cross-session-
+  // permissions siblings landed:
+  //
+  //   - **Destination-side**: visibility-gated `SELECT ... FOR UPDATE`
+  //     on `sessions` (same predicate every session-management endpoint
+  //     uses) → active-participant SELECT against `session_participants`
+  //     → lifecycle gate (`ended_at IS NULL`).
+  //   - **Source-side**: `canReference<Kind>(client, entityId, callerId)`
+  //     per the validated `entityKind` enum. The predicate runs INSIDE
+  //     the transaction (with the same client the FOR UPDATE acquired)
+  //     so the source-side snapshot is consistent with the destination-
+  //     side snapshot — no TOCTOU race between an origin session going
+  //     private and the inclusion landing.
+  //
+  // The transaction:
+  //
+  //   1. Visibility-gated SELECT ... FOR UPDATE on the destination
+  //      `sessions` row (existence-non-leak: 404 on invisible).
+  //   2. Active-participant check: 403 `not-a-participant` if the
+  //      caller isn't currently in the destination session.
+  //   3. Lifecycle gate: 409 `session-already-ended` if `ended_at` is
+  //      set.
+  //   4. Source-side reachability: `canReference<Kind>` per the
+  //      validated `entityKind`. False → 403
+  //      `entity-not-referenceable`.
+  //   5. `INSERT INTO session_<kind>s ... ON CONFLICT DO NOTHING
+  //      RETURNING ...` against the matching join table. `rowCount ===
+  //      0` → 409 `entity-already-included` (the composite PK's
+  //      conflict surface collapses the race between concurrent
+  //      inclusion attempts on the same `(session_id, entity_id)` pair
+  //      into a deterministic outcome).
+  //   6. `MAX(sequence)+1` inside the transaction (ADR 0020). The FOR
+  //      UPDATE row lock on the destination session is the primary
+  //      serialisation; the `UNIQUE (session_id, sequence)` constraint
+  //      is the second-line guard.
+  //   7. Build the `entity-included` envelope, run `validateEvent`,
+  //      INSERT the event row.
+  //   8. COMMIT.
+  //
+  // The handler returns 200 + `{ entityKind, entityId, sessionId,
+  // includedBy, includedAt }` — the join-table's `included_at` from
+  // RETURNING is the canonical inclusion timestamp (the event's
+  // `created_at` is a microsecond-later audit-trail value; the
+  // join-table value is what UIs / projections care about).
+  //
+  // **`entityKind` → join-table dispatch table.** The validated
+  // `entityKind` enum picks the join-table name + entity-id column +
+  // reference predicate at handler-entry time. Every value is a
+  // hard-coded literal (no user input ever reaches the SQL text); the
+  // entity id and the caller id flow through positional `$N`
+  // parameters.
+  app.post(
+    '/sessions/:id/include',
+    {
+      preHandler: app.authenticate,
+      schema: {
+        tags: ['sessions'],
+        summary: 'Include an existing global entity into a session',
+        description:
+          'Brings an existing global entity (node, edge, or annotation) into the ' +
+          'destination session — INSERTs the matching `session_<kind>s` row AND emits ' +
+          'an `entity-included` event into `session_events` at the next available ' +
+          'sequence, atomically in a single transaction.\n\n' +
+          'Composes the two cross-session-permission predicates: the caller must be an ' +
+          'active participant of the destination session (otherwise 403 ' +
+          '`not-a-participant`), and the source entity must be referenceable by the ' +
+          'caller via at least one visible origin session (otherwise 403 ' +
+          '`entity-not-referenceable`). Visibility-then-participant-then-lifecycle-then-' +
+          'reference-then-uniqueness ordering: invisible private destinations return 404 ' +
+          '`not-found` BEFORE any other check (existence-non-leak). An ended destination ' +
+          'returns 409 `session-already-ended`. An entity already in the destination ' +
+          'returns 409 `entity-already-included` (caught via composite-PK conflict on ' +
+          'the join table).\n\n' +
+          'Returns 401 `auth-required` when no valid session cookie is present; 400 ' +
+          '`validation-failed` when the path `:id` or the body is malformed.',
+        security: [{ cookieAuth: [] }],
+        params: sessionIdParamsSchema,
+        body: includeEntityBodySchema,
+        response: {
+          200: entityInclusionResponseRef,
+          '4xx': errorEnvelopeRef,
+          '5xx': errorEnvelopeRef,
+        },
+      },
+    },
+    async (request, reply) => {
+      // Auth middleware guarantees `authUser` is set on every request
+      // that reaches a route with `preHandler: app.authenticate`; the
+      // defensive 500 here is unreachable under normal wiring.
+      const auth = request.authUser;
+      if (auth === undefined) {
+        throw new ApiError(
+          500,
+          'internal-error',
+          'auth middleware did not populate request.authUser',
+        );
+      }
+      const callerUserId = auth.id;
+
+      const params = request.params as { id: string };
+      const destinationSessionId = params.id;
+      const body = request.body as {
+        entityKind: 'node' | 'edge' | 'annotation';
+        entityId: string;
+      };
+      const entityKind = body.entityKind;
+      const entityId = body.entityId;
+
+      // Dispatch table — pick the join-table name, the entity-id
+      // column name, and the per-kind reference predicate from the
+      // validated `entityKind` enum. Each branch's values are
+      // hard-coded literals; no user input ever flows into the SQL
+      // text. The handler treats the three kinds symmetrically from
+      // this point on (single transactional code path; the kind only
+      // influences which strings get interpolated and which
+      // predicate runs).
+      const dispatch = {
+        node: {
+          joinTable: 'session_nodes',
+          entityIdColumn: 'node_id',
+          canReference: canReferenceNode,
+        },
+        edge: {
+          joinTable: 'session_edges',
+          entityIdColumn: 'edge_id',
+          canReference: canReferenceEdge,
+        },
+        annotation: {
+          joinTable: 'session_annotations',
+          entityIdColumn: 'annotation_id',
+          canReference: canReferenceAnnotation,
+        },
+      }[entityKind];
+
+      interface InclusionInsertRow extends Record<string, unknown> {
+        readonly session_id: string;
+        // The entity-id column name varies by kind; we don't model
+        // it as a typed field on the row interface because the
+        // handler reads it back through the validated `entityId`
+        // (the INSERT echoed it; the RETURNING value matches the
+        // input). The destructure below uses the column name from
+        // the dispatch table to satisfy TS without per-kind row
+        // types.
+        readonly included_by: string;
+        readonly included_at: Date | string;
+      }
+
+      const inclusion = await withTransaction(ensurePool(), async (client) => {
+        // 1. Destination visibility — SELECT ... FOR UPDATE.
+        //    Mirrors the predicate every session-management endpoint
+        //    uses. The FOR UPDATE row lock on the destination
+        //    session serialises concurrent inclusion attempts (same
+        //    primary serialisation mechanism as the participant-
+        //    assignment endpoint).
+        const lookup = await client.query<{
+          id: string;
+          host_user_id: string;
+          ended_at: Date | string | null;
+        }>(
+          `SELECT id, host_user_id, ended_at
+           FROM sessions
+           WHERE id = $1
+             AND ${visibilityWhereFragment(2)}
+           FOR UPDATE`,
+          [destinationSessionId, callerUserId],
+        );
+        const destination = lookup.rows[0];
+        if (destination === undefined) {
+          // Existence-non-leak: zero rows whether the destination
+          // doesn't exist or exists-but-isn't-visible. 404 either
+          // way. Mirrors `get_session_endpoint`'s 404-not-403
+          // decision.
+          throw ApiError.notFound('session not found or not visible');
+        }
+
+        // 2. Active-participant check. The visibility predicate
+        //    permits past participants (read-once-seen semantics);
+        //    write authority requires CURRENT participation
+        //    (`left_at IS NULL`). The host auto-joined as moderator
+        //    at session-creation (per the participant-assignment
+        //    Option-A amendment) always satisfies this; debaters
+        //    assigned via `POST /sessions/:id/participants` also
+        //    satisfy this until they leave. A stranger who can SEE
+        //    a public session but isn't a participant fails here
+        //    with 403 `not-a-participant`.
+        const activeRow = await client.query<{ id: string }>(
+          `SELECT id
+           FROM session_participants
+           WHERE session_id = $1 AND user_id = $2 AND left_at IS NULL
+           LIMIT 1`,
+          [destinationSessionId, callerUserId],
+        );
+        if (activeRow.rows.length === 0) {
+          throw new ApiError(
+            403,
+            'not-a-participant',
+            'only an active participant of the destination session may include an entity',
+          );
+        }
+
+        // 3. Lifecycle gate — an ended session is closed to new
+        //    inclusions. Reuses `session-already-ended` for
+        //    vocabulary consistency with the end / privacy /
+        //    participant-assignment endpoints.
+        if (destination.ended_at !== null) {
+          throw new ApiError(
+            409,
+            'session-already-ended',
+            'cannot include entities into an ended session',
+          );
+        }
+
+        // 4. Source-side reachability — does the caller have at
+        //    least one visible origin session for this entity? The
+        //    predicate runs against the SAME transaction client so
+        //    the source snapshot is consistent with the destination
+        //    snapshot. False → 403 `entity-not-referenceable`.
+        const reachable = await dispatch.canReference(client, entityId, callerUserId);
+        if (!reachable) {
+          throw new ApiError(
+            403,
+            'entity-not-referenceable',
+            'caller cannot reference this entity (no visible origin session)',
+          );
+        }
+
+        // 5. INSERT into the matching `session_<kind>s` table with
+        //    ON CONFLICT DO NOTHING. The composite PK on
+        //    `(session_id, <entity>_id)` collapses concurrent-
+        //    inclusion races into a deterministic "rowCount === 0"
+        //    outcome. RETURNING surfaces the row's `included_at`
+        //    timestamp (server-managed via the column DEFAULT
+        //    NOW()) so the response and the event payload share a
+        //    single source of truth.
+        const inclusionInsert = await client.query<InclusionInsertRow>(
+          `INSERT INTO ${dispatch.joinTable} (session_id, ${dispatch.entityIdColumn}, included_by)
+           VALUES ($1, $2, $3)
+           ON CONFLICT DO NOTHING
+           RETURNING session_id, ${dispatch.entityIdColumn}, included_by, included_at`,
+          [destinationSessionId, entityId, callerUserId],
+        );
+        const inclusionRow = inclusionInsert.rows[0];
+        if (inclusionRow === undefined) {
+          // ON CONFLICT DO NOTHING produced zero rows — the
+          // `(session_id, entity_id)` pair already exists in the
+          // join table. Surface as 409 `entity-already-included`
+          // (typed code; consistent with the "no silent no-ops"
+          // pattern the other session-management endpoints follow).
+          throw new ApiError(
+            409,
+            'entity-already-included',
+            'entity is already included in this session',
+          );
+        }
+        const includedAtIso = toIsoString(inclusionRow.included_at);
+
+        // 6. MAX(sequence)+1 inside the transaction (ADR 0020).
+        //    Same allocator pattern as the end-session / participant-
+        //    assignment endpoints; the FOR UPDATE on the destination
+        //    session row serialises concurrent inclusion attempts
+        //    and the UNIQUE (session_id, sequence) constraint is the
+        //    second-line guard.
+        const maxRes = await client.query<{ max_seq: number | string | null }>(
+          `SELECT COALESCE(MAX(sequence), 0) AS max_seq
+           FROM session_events
+           WHERE session_id = $1`,
+          [destinationSessionId],
+        );
+        const rawMax = maxRes.rows[0]?.max_seq ?? 0;
+        const maxSeq = typeof rawMax === 'string' ? Number.parseInt(rawMax, 10) : rawMax;
+        const nextSeq = maxSeq + 1;
+
+        // 7. Build the `entity-included` event envelope, run
+        //    `validateEvent`, INSERT. The payload's `included_at`
+        //    is the join-table value from RETURNING (same source of
+        //    truth as the response body); `included_by` is the
+        //    caller; `actor` on the envelope is also the caller.
+        const eventId = randomUUID();
+        const eventCreatedAtIso = new Date(nowFn()).toISOString();
+        const envelope = {
+          id: eventId,
+          sessionId: destinationSessionId,
+          sequence: nextSeq,
+          kind: 'entity-included' as const,
+          actor: callerUserId,
+          payload: {
+            entity_kind: entityKind,
+            entity_id: entityId,
+            included_by: callerUserId,
+            included_at: includedAtIso,
+          },
+          createdAt: eventCreatedAtIso,
+        };
+        validateEvent(envelope);
+        await client.query(
+          `INSERT INTO session_events
+             (id, session_id, sequence, kind, actor, payload)
+           VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
+          [
+            envelope.id,
+            envelope.sessionId,
+            envelope.sequence,
+            envelope.kind,
+            envelope.actor,
+            JSON.stringify(envelope.payload),
+          ],
+        );
+
+        return {
+          sessionId: destinationSessionId,
+          includedBy: callerUserId,
+          includedAt: includedAtIso,
+        };
+      });
+
+      return reply.code(200).send({
+        entityKind,
+        entityId,
+        sessionId: inclusion.sessionId,
+        includedBy: inclusion.includedBy,
+        includedAt: inclusion.includedAt,
+      });
     },
   );
 

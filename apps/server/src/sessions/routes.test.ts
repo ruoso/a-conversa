@@ -130,6 +130,20 @@ interface SessionParticipantRow {
   left_at?: Date | null;
 }
 
+interface InclusionRow {
+  // Shape of a row in `session_nodes` / `session_edges` /
+  // `session_annotations`. The test fixture stores all three kinds in
+  // separate arrays keyed by the join-table name; the entity-id field
+  // is named uniformly (`entity_id`) for ergonomics — the production
+  // SQL uses the per-kind column name (`node_id` / `edge_id` /
+  // `annotation_id`) but the shim normalises so the test code can
+  // assert against a single field name.
+  session_id: string;
+  entity_id: string;
+  included_by: string;
+  included_at: Date;
+}
+
 interface MemoryStore {
   users: Map<string, UserRow>;
   sessions: SessionRow[];
@@ -139,6 +153,14 @@ interface MemoryStore {
   // participant in session Y" without going through a participant-
   // assignment endpoint (which is a sibling task, not landed yet).
   participants: SessionParticipantRow[];
+  // Join-table rows for the cross-session inclusion endpoint and its
+  // source-side reachability predicates (`canReference<Kind>`). The
+  // inclusion endpoint's tests seed source-side rows directly to model
+  // "entity E lives in session A"; the endpoint's INSERT lands the
+  // destination-side row here too.
+  sessionNodes: InclusionRow[];
+  sessionEdges: InclusionRow[];
+  sessionAnnotations: InclusionRow[];
   // Transaction-control trace — the test's atomicity claim rests on
   // the handler emitting BEGIN → INSERT(sessions) → INSERT(session_events) → COMMIT
   // in order. Failure paths emit ROLLBACK instead of COMMIT. The
@@ -173,6 +195,9 @@ function makeMemoryPool(initialUsers: UserRow[]): {
     sessions: [],
     events: [],
     participants: [],
+    sessionNodes: [],
+    sessionEdges: [],
+    sessionAnnotations: [],
     trace: [],
   };
 
@@ -303,6 +328,96 @@ function makeMemoryPool(initialUsers: UserRow[]): {
       };
       store.participants[idx] = updated;
       return Promise.resolve({ rows: [updated] as unknown as TRow[] });
+    }
+    if (
+      text.includes('INSERT INTO session_nodes') ||
+      text.includes('INSERT INTO session_edges') ||
+      text.includes('INSERT INTO session_annotations')
+    ) {
+      // The entity-inclusion endpoint's join-table INSERT. The
+      // production statement is `INSERT INTO session_<kind>s
+      // (session_id, <entity>_id, included_by) VALUES ($1, $2, $3)
+      // ON CONFLICT DO NOTHING RETURNING ...`. We mirror the
+      // composite-PK uniqueness check in JS: if a row with the same
+      // (session_id, entity_id) already exists, return zero rows
+      // (the production ON CONFLICT DO NOTHING path); otherwise
+      // append and return the inserted row.
+      const targetArray = text.includes('INSERT INTO session_nodes')
+        ? store.sessionNodes
+        : text.includes('INSERT INTO session_edges')
+          ? store.sessionEdges
+          : store.sessionAnnotations;
+      const [sessionId, entityId, includedBy] = p as [string, string, string];
+      const existing = targetArray.find(
+        (r) => r.session_id === sessionId && r.entity_id === entityId,
+      );
+      if (existing !== undefined) {
+        // ON CONFLICT DO NOTHING — no row returned.
+        return Promise.resolve({ rows: [] as TRow[] });
+      }
+      const row: InclusionRow = {
+        session_id: sessionId,
+        entity_id: entityId,
+        included_by: includedBy,
+        included_at: new Date('2026-05-10T12:00:03.000Z'),
+      };
+      targetArray.push(row);
+      // The production RETURNING projects `session_id,
+      // <entity>_id, included_by, included_at`. The shim mirrors
+      // that shape; the per-kind column name is normalised back to
+      // the SQL surface (e.g. `node_id`) so the handler's
+      // destructure works. We look up the column name from the
+      // SQL text directly.
+      const entityIdColumn = text.includes('INSERT INTO session_nodes')
+        ? 'node_id'
+        : text.includes('INSERT INTO session_edges')
+          ? 'edge_id'
+          : 'annotation_id';
+      const returnedRow = {
+        session_id: row.session_id,
+        [entityIdColumn]: row.entity_id,
+        included_by: row.included_by,
+        included_at: row.included_at,
+      };
+      return Promise.resolve({ rows: [returnedRow] as unknown as TRow[] });
+    }
+    if (
+      (text.includes('FROM session_nodes sj') ||
+        text.includes('FROM session_edges sj') ||
+        text.includes('FROM session_annotations sj')) &&
+      text.includes('JOIN sessions ON sj.session_id = sessions.id')
+    ) {
+      // The source-side reference-permission predicate (`canReference
+      // <Kind>` from `apps/server/src/sessions/references.ts`). The
+      // production SELECT joins `session_<kind>s sj` to `sessions` and
+      // filters by `sj.<entity>_id = $1` AND the visibility fragment.
+      // We mirror the predicate in JS — picking the right join array
+      // from the SQL text and applying the same any-visible-origin
+      // rule from the production module.
+      const sourceArray = text.includes('FROM session_nodes sj')
+        ? store.sessionNodes
+        : text.includes('FROM session_edges sj')
+          ? store.sessionEdges
+          : store.sessionAnnotations;
+      const targetEntityId = p[0] as string;
+      const userId = p[1] as string;
+      const reachable = sourceArray.some((r) => {
+        if (r.entity_id !== targetEntityId) return false;
+        const originSession = store.sessions.find((s) => s.id === r.session_id);
+        if (originSession === undefined) return false;
+        // Same visibility predicate as `visibilityWhereFragment`:
+        // public, OR host, OR past-or-current participant.
+        return (
+          originSession.privacy === 'public' ||
+          originSession.host_user_id === userId ||
+          store.participants.some(
+            (sp) => sp.session_id === originSession.id && sp.user_id === userId,
+          )
+        );
+      });
+      return Promise.resolve({
+        rows: reachable ? ([{ reachable: 1 }] as unknown as TRow[]) : ([] as TRow[]),
+      });
     }
     if (text.includes('INSERT INTO session_events')) {
       const [id, sessionId, sequence, kind, actor, payloadJson] = p as [
@@ -2925,5 +3040,469 @@ describe('DELETE /sessions/:id/participants/:userId — host or self removal', (
     const body = response.json<{ error?: { code?: string } }>();
     expect(body.error?.code).toBe('not-found');
     expect(built.store.trace).toContain('ROLLBACK');
+  });
+});
+
+// =============================================================
+// POST /sessions/:id/include — cross-session entity inclusion
+// =============================================================
+//
+// Refinement: tasks/refinements/backend/entity_inclusion_endpoint.md.
+//
+// Coverage (8 cases):
+//   1. Success — node: 200 + join row + entity-included event.
+//   2. Success — edge: 200 + join row + entity-included event.
+//   3. Success — annotation: 200 + join row + entity-included event.
+//   4. Destination invisible (private + caller is not host/participant)
+//      → 404 not-found (existence-non-leak).
+//   5. Destination visible but caller is NOT an active participant
+//      → 403 not-a-participant.
+//   6. Destination is ended → 409 session-already-ended.
+//   7. Entity unreachable to caller (source is a private session
+//      caller can't see) → 403 entity-not-referenceable.
+//   8. Entity already included in destination → 409
+//      entity-already-included (composite-PK ON CONFLICT collapse).
+//   9. Bad body / bad UUID → 400 validation-failed.
+//  10. No auth cookie → 401 auth-required.
+
+describe('POST /sessions/:id/include — cross-session entity inclusion', () => {
+  async function buildWithSeed(opts: {
+    users: UserRow[];
+    sessions: SessionRow[];
+    participants?: SessionParticipantRow[];
+    sessionNodes?: InclusionRow[];
+    sessionEdges?: InclusionRow[];
+    sessionAnnotations?: InclusionRow[];
+    events?: SessionEventRow[];
+  }): Promise<BuiltApp> {
+    const built = await buildApp({ users: opts.users });
+    built.store.sessions.push(...opts.sessions);
+    if (opts.participants !== undefined) {
+      built.store.participants.push(...opts.participants);
+    }
+    if (opts.sessionNodes !== undefined) {
+      built.store.sessionNodes.push(...opts.sessionNodes);
+    }
+    if (opts.sessionEdges !== undefined) {
+      built.store.sessionEdges.push(...opts.sessionEdges);
+    }
+    if (opts.sessionAnnotations !== undefined) {
+      built.store.sessionAnnotations.push(...opts.sessionAnnotations);
+    }
+    if (opts.events !== undefined) {
+      built.store.events.push(...opts.events);
+    }
+    return built;
+  }
+
+  let built: BuiltApp | undefined;
+  afterEach(async () => {
+    if (built !== undefined) {
+      await built.app.close();
+      built = undefined;
+    }
+  });
+
+  // Two sessions: a public SOURCE (where the entity lives) and a
+  // public DESTINATION (where the entity is being included). Alice
+  // hosts both; she's an active participant of the destination (per
+  // the participant-assignment Option-A amendment her moderator row
+  // is implicit at session creation, but the test seeds it
+  // explicitly).
+  const SOURCE_SESSION_ID = '00000000-0000-4000-8000-3333aaaa0001';
+  const DESTINATION_SESSION_ID = '00000000-0000-4000-8000-3333aaaa0002';
+  const PRIVATE_SOURCE_SESSION_ID = '00000000-0000-4000-8000-3333aaaa0003';
+  const ENDED_DESTINATION_SESSION_ID = '00000000-0000-4000-8000-3333aaaa0004';
+  const NODE_ID = '00000000-0000-4000-a000-100000000001';
+  const EDGE_ID = '00000000-0000-4000-a000-100000000002';
+  const ANNOTATION_ID = '00000000-0000-4000-a000-100000000003';
+  const PRIVATE_NODE_ID = '00000000-0000-4000-a000-100000000004';
+
+  const PUBLIC_SOURCE: SessionRow = {
+    id: SOURCE_SESSION_ID,
+    host_user_id: ALICE_ID,
+    privacy: 'public',
+    topic: 'Source session',
+    created_at: new Date('2026-05-09T09:00:00.000Z'),
+    ended_at: null,
+  };
+  const PUBLIC_DESTINATION: SessionRow = {
+    id: DESTINATION_SESSION_ID,
+    host_user_id: ALICE_ID,
+    privacy: 'public',
+    topic: 'Destination session',
+    created_at: new Date('2026-05-09T10:00:00.000Z'),
+    ended_at: null,
+  };
+  const PRIVATE_SOURCE: SessionRow = {
+    id: PRIVATE_SOURCE_SESSION_ID,
+    host_user_id: ALICE_ID,
+    privacy: 'private',
+    topic: 'Private source',
+    created_at: new Date('2026-05-09T09:30:00.000Z'),
+    ended_at: null,
+  };
+  const ENDED_DESTINATION: SessionRow = {
+    id: ENDED_DESTINATION_SESSION_ID,
+    host_user_id: ALICE_ID,
+    privacy: 'public',
+    topic: 'Ended destination',
+    created_at: new Date('2026-05-09T08:00:00.000Z'),
+    ended_at: new Date('2026-05-09T08:30:00.000Z'),
+  };
+
+  const ALICE_MODERATOR_DEST: SessionParticipantRow = {
+    id: '00000000-0000-4000-9000-300000000001',
+    session_id: DESTINATION_SESSION_ID,
+    user_id: ALICE_ID,
+    role: 'moderator',
+    joined_at: new Date('2026-05-09T10:00:00.001Z'),
+    left_at: null,
+  };
+  const ALICE_MODERATOR_ENDED_DEST: SessionParticipantRow = {
+    id: '00000000-0000-4000-9000-300000000002',
+    session_id: ENDED_DESTINATION_SESSION_ID,
+    user_id: ALICE_ID,
+    role: 'moderator',
+    joined_at: new Date('2026-05-09T08:00:00.001Z'),
+    left_at: null,
+  };
+
+  const NODE_IN_PUBLIC_SOURCE: InclusionRow = {
+    session_id: SOURCE_SESSION_ID,
+    entity_id: NODE_ID,
+    included_by: ALICE_ID,
+    included_at: new Date('2026-05-09T09:00:00.500Z'),
+  };
+  const EDGE_IN_PUBLIC_SOURCE: InclusionRow = {
+    session_id: SOURCE_SESSION_ID,
+    entity_id: EDGE_ID,
+    included_by: ALICE_ID,
+    included_at: new Date('2026-05-09T09:00:00.500Z'),
+  };
+  const ANNOTATION_IN_PUBLIC_SOURCE: InclusionRow = {
+    session_id: SOURCE_SESSION_ID,
+    entity_id: ANNOTATION_ID,
+    included_by: ALICE_ID,
+    included_at: new Date('2026-05-09T09:00:00.500Z'),
+  };
+  const NODE_IN_PRIVATE_SOURCE: InclusionRow = {
+    session_id: PRIVATE_SOURCE_SESSION_ID,
+    entity_id: PRIVATE_NODE_ID,
+    included_by: ALICE_ID,
+    included_at: new Date('2026-05-09T09:30:00.500Z'),
+  };
+
+  function aliceSeed(
+    extra?: Partial<Parameters<typeof buildWithSeed>[0]>,
+  ): Parameters<typeof buildWithSeed>[0] {
+    return {
+      users: [
+        { id: ALICE_ID, oauth_subject: 'authelia:alice', screen_name: 'alice', deleted_at: null },
+        { id: BEN_ID, oauth_subject: 'authelia:ben', screen_name: 'ben', deleted_at: null },
+      ],
+      sessions: [PUBLIC_SOURCE, PUBLIC_DESTINATION],
+      participants: [ALICE_MODERATOR_DEST],
+      sessionNodes: [NODE_IN_PUBLIC_SOURCE],
+      sessionEdges: [EDGE_IN_PUBLIC_SOURCE],
+      sessionAnnotations: [ANNOTATION_IN_PUBLIC_SOURCE],
+      ...extra,
+    };
+  }
+
+  it('returns 200 + join row + entity-included event when the host includes a node', async () => {
+    built = await buildWithSeed(aliceSeed());
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'POST',
+      url: `/sessions/${DESTINATION_SESSION_ID}/include`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+      payload: { entityKind: 'node', entityId: NODE_ID },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{
+      entityKind?: string;
+      entityId?: string;
+      sessionId?: string;
+      includedBy?: string;
+      includedAt?: string;
+    }>();
+    expect(body.entityKind).toBe('node');
+    expect(body.entityId).toBe(NODE_ID);
+    expect(body.sessionId).toBe(DESTINATION_SESSION_ID);
+    expect(body.includedBy).toBe(ALICE_ID);
+    expect(typeof body.includedAt).toBe('string');
+
+    // Join-table row landed.
+    const destNodeRow = built.store.sessionNodes.find(
+      (r) => r.session_id === DESTINATION_SESSION_ID && r.entity_id === NODE_ID,
+    );
+    expect(destNodeRow).toBeDefined();
+    expect(destNodeRow?.included_by).toBe(ALICE_ID);
+
+    // entity-included event landed at the next sequence (no prior
+    // events for this destination → sequence=1).
+    const inclusionEvent = built.store.events.find(
+      (e) => e.kind === 'entity-included' && e.session_id === DESTINATION_SESSION_ID,
+    );
+    expect(inclusionEvent).toBeDefined();
+    expect(inclusionEvent?.sequence).toBe(1);
+    expect(inclusionEvent?.actor).toBe(ALICE_ID);
+    const payload = inclusionEvent?.payload as Record<string, unknown>;
+    expect(payload['entity_kind']).toBe('node');
+    expect(payload['entity_id']).toBe(NODE_ID);
+    expect(payload['included_by']).toBe(ALICE_ID);
+    expect(typeof payload['included_at']).toBe('string');
+
+    // Transaction shape — no ROLLBACK.
+    expect(built.store.trace[0]).toBe('BEGIN');
+    expect(built.store.trace[built.store.trace.length - 1]).toBe('COMMIT');
+    expect(built.store.trace).not.toContain('ROLLBACK');
+  });
+
+  it('returns 200 + join row + entity-included event when including an edge', async () => {
+    built = await buildWithSeed(aliceSeed());
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'POST',
+      url: `/sessions/${DESTINATION_SESSION_ID}/include`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+      payload: { entityKind: 'edge', entityId: EDGE_ID },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{ entityKind?: string; entityId?: string }>();
+    expect(body.entityKind).toBe('edge');
+    expect(body.entityId).toBe(EDGE_ID);
+
+    // Join-table row landed in session_edges.
+    const destEdgeRow = built.store.sessionEdges.find(
+      (r) => r.session_id === DESTINATION_SESSION_ID && r.entity_id === EDGE_ID,
+    );
+    expect(destEdgeRow).toBeDefined();
+
+    // entity-included event payload's entity_kind is 'edge'.
+    const evt = built.store.events.find((e) => e.kind === 'entity-included');
+    const payload = evt?.payload as Record<string, unknown>;
+    expect(payload['entity_kind']).toBe('edge');
+  });
+
+  it('returns 200 + join row + entity-included event when including an annotation', async () => {
+    built = await buildWithSeed(aliceSeed());
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'POST',
+      url: `/sessions/${DESTINATION_SESSION_ID}/include`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+      payload: { entityKind: 'annotation', entityId: ANNOTATION_ID },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{ entityKind?: string; entityId?: string }>();
+    expect(body.entityKind).toBe('annotation');
+    expect(body.entityId).toBe(ANNOTATION_ID);
+
+    // Join-table row landed in session_annotations.
+    const destAnnotationRow = built.store.sessionAnnotations.find(
+      (r) => r.session_id === DESTINATION_SESSION_ID && r.entity_id === ANNOTATION_ID,
+    );
+    expect(destAnnotationRow).toBeDefined();
+
+    const evt = built.store.events.find((e) => e.kind === 'entity-included');
+    const payload = evt?.payload as Record<string, unknown>;
+    expect(payload['entity_kind']).toBe('annotation');
+  });
+
+  it('returns 404 not-found when the destination is private and the caller is not host/participant', async () => {
+    // Ben is the caller; the destination session is private and Ben
+    // is neither host nor participant. The visibility predicate
+    // collapses zero-rows → 404 (existence-non-leak). 404, NOT 403.
+    const seed = aliceSeed();
+    // Mark the destination private and remove Alice's moderator
+    // row so Ben (the caller) isn't a participant either.
+    seed.sessions = [PUBLIC_SOURCE, { ...PUBLIC_DESTINATION, privacy: 'private' }];
+    // Keep ALICE_MODERATOR_DEST so Alice is still a participant of
+    // her own private destination — but Ben is the caller, and Ben
+    // isn't in `participants`. The visibility predicate fires first.
+    built = await buildWithSeed(seed);
+    const token = await signSessionToken({ sub: BEN_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'POST',
+      url: `/sessions/${DESTINATION_SESSION_ID}/include`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+      payload: { entityKind: 'node', entityId: NODE_ID },
+    });
+    expect(response.statusCode).toBe(404);
+    expect(response.statusCode).not.toBe(403);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('not-found');
+    expect(built.store.trace).toContain('ROLLBACK');
+  });
+
+  it('returns 403 not-a-participant when the destination is visible but the caller is not an active participant', async () => {
+    // Ben can SEE the public destination (visibility predicate
+    // passes — public sessions are visible to every authenticated
+    // user) but is NOT an active participant. The participant check
+    // fires with 403 `not-a-participant`.
+    built = await buildWithSeed(aliceSeed());
+    const token = await signSessionToken({ sub: BEN_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'POST',
+      url: `/sessions/${DESTINATION_SESSION_ID}/include`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+      payload: { entityKind: 'node', entityId: NODE_ID },
+    });
+    expect(response.statusCode).toBe(403);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('not-a-participant');
+
+    // No writes — the destination's join table is unchanged.
+    expect(
+      built.store.sessionNodes.filter((r) => r.session_id === DESTINATION_SESSION_ID),
+    ).toHaveLength(0);
+    expect(built.store.trace).toContain('ROLLBACK');
+  });
+
+  it('returns 409 session-already-ended when the destination is ended', async () => {
+    const seed = aliceSeed();
+    seed.sessions = [PUBLIC_SOURCE, ENDED_DESTINATION];
+    seed.participants = [ALICE_MODERATOR_ENDED_DEST];
+    built = await buildWithSeed(seed);
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'POST',
+      url: `/sessions/${ENDED_DESTINATION_SESSION_ID}/include`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+      payload: { entityKind: 'node', entityId: NODE_ID },
+    });
+    expect(response.statusCode).toBe(409);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('session-already-ended');
+    expect(built.store.trace).toContain('ROLLBACK');
+  });
+
+  it('returns 403 entity-not-referenceable when the source is a private session the caller cannot see', async () => {
+    // The private node lives only in a private session Ben can't
+    // see; Ben IS an active participant of the destination, so the
+    // first two gates pass, but the source-side `canReferenceNode`
+    // returns false → 403 `entity-not-referenceable`.
+    const seed = aliceSeed();
+    seed.sessions = [PRIVATE_SOURCE, PUBLIC_DESTINATION];
+    seed.sessionNodes = [NODE_IN_PRIVATE_SOURCE];
+    // Add Ben as an active participant of the destination so the
+    // earlier gates don't fire.
+    seed.participants = [
+      ALICE_MODERATOR_DEST,
+      {
+        id: '00000000-0000-4000-9000-300000000099',
+        session_id: DESTINATION_SESSION_ID,
+        user_id: BEN_ID,
+        role: 'debater-A',
+        joined_at: new Date('2026-05-09T10:00:01.000Z'),
+        left_at: null,
+      },
+    ];
+    built = await buildWithSeed(seed);
+    const token = await signSessionToken({ sub: BEN_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'POST',
+      url: `/sessions/${DESTINATION_SESSION_ID}/include`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+      payload: { entityKind: 'node', entityId: PRIVATE_NODE_ID },
+    });
+    expect(response.statusCode).toBe(403);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('entity-not-referenceable');
+
+    // No writes — the destination's join table is unchanged.
+    expect(
+      built.store.sessionNodes.filter(
+        (r) => r.session_id === DESTINATION_SESSION_ID && r.entity_id === PRIVATE_NODE_ID,
+      ),
+    ).toHaveLength(0);
+    expect(built.store.trace).toContain('ROLLBACK');
+  });
+
+  it('returns 409 entity-already-included when the entity is already in the destination', async () => {
+    // Seed the destination's join table with the same node id —
+    // the `ON CONFLICT DO NOTHING` collapses to zero RETURNING rows
+    // and the handler raises 409.
+    const seed = aliceSeed();
+    seed.sessionNodes = [
+      NODE_IN_PUBLIC_SOURCE,
+      {
+        session_id: DESTINATION_SESSION_ID,
+        entity_id: NODE_ID,
+        included_by: ALICE_ID,
+        included_at: new Date('2026-05-09T10:00:02.000Z'),
+      },
+    ];
+    built = await buildWithSeed(seed);
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'POST',
+      url: `/sessions/${DESTINATION_SESSION_ID}/include`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+      payload: { entityKind: 'node', entityId: NODE_ID },
+    });
+    expect(response.statusCode).toBe(409);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('entity-already-included');
+
+    // The destination still has exactly one row for this (session,
+    // node) pair — no duplicate was added.
+    const matches = built.store.sessionNodes.filter(
+      (r) => r.session_id === DESTINATION_SESSION_ID && r.entity_id === NODE_ID,
+    );
+    expect(matches).toHaveLength(1);
+    expect(built.store.trace).toContain('ROLLBACK');
+  });
+
+  it('returns 400 validation-failed for a malformed body or bad path UUID', async () => {
+    built = await buildWithSeed(aliceSeed());
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+
+    // Missing entityId.
+    const missing = await built.app.inject({
+      method: 'POST',
+      url: `/sessions/${DESTINATION_SESSION_ID}/include`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+      payload: { entityKind: 'node' },
+    });
+    expect(missing.statusCode).toBe(400);
+    expect(missing.json<{ error?: { code?: string } }>().error?.code).toBe('validation-failed');
+
+    // Invalid enum.
+    const badEnum = await built.app.inject({
+      method: 'POST',
+      url: `/sessions/${DESTINATION_SESSION_ID}/include`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+      payload: { entityKind: 'gizmo', entityId: NODE_ID },
+    });
+    expect(badEnum.statusCode).toBe(400);
+    expect(badEnum.json<{ error?: { code?: string } }>().error?.code).toBe('validation-failed');
+
+    // Bad UUID in path.
+    const badPath = await built.app.inject({
+      method: 'POST',
+      url: `/sessions/not-a-uuid/include`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+      payload: { entityKind: 'node', entityId: NODE_ID },
+    });
+    expect(badPath.statusCode).toBe(400);
+    expect(badPath.json<{ error?: { code?: string } }>().error?.code).toBe('validation-failed');
+  });
+
+  it('returns 401 auth-required when no session cookie is present', async () => {
+    built = await buildWithSeed(aliceSeed());
+    const response = await built.app.inject({
+      method: 'POST',
+      url: `/sessions/${DESTINATION_SESSION_ID}/include`,
+      payload: { entityKind: 'node', entityId: NODE_ID },
+    });
+    expect(response.statusCode).toBe(401);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('auth-required');
   });
 });

@@ -155,7 +155,9 @@ task backend "Backend" {
     task entity_inclusion_endpoint "POST /sessions/:id/include — bring an existing global entity into this session" {
       effort 1d
       allocate team
+      complete 100
       depends !reference_permission_check
+      note "Refinement: tasks/refinements/backend/entity_inclusion_endpoint.md"
     }
   }
 

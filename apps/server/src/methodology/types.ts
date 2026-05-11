@@ -205,7 +205,25 @@ export type RejectionReason =
   | 'role-already-filled'
   | 'user-already-joined'
   | 'user-not-found'
-  | 'cannot-remove-moderator';
+  | 'cannot-remove-moderator'
+  // Entity-inclusion specific — owned by
+  // `backend.cross_session_permissions.entity_inclusion_endpoint`. The
+  // two codes cover the failure modes of `POST /sessions/:id/include`
+  // that the existing universal reasons don't already capture:
+  //   - `entity-not-referenceable` (403): the caller cannot reach the
+  //     source entity through any visible origin session (the source-
+  //     side `canReference<Kind>` predicate returned false). This is an
+  //     authority failure, parallel to `not-a-participant`.
+  //   - `entity-already-included` (409): the entity is already in the
+  //     destination session (caught via the `ON CONFLICT DO NOTHING`
+  //     collapse on the composite-PK join-table INSERT). The duplicate
+  //     attempt is rejected with a typed conflict rather than a silent
+  //     200 no-op, matching the "no silent no-ops" pattern the other
+  //     session-management endpoints follow. See
+  //     `tasks/refinements/backend/entity_inclusion_endpoint.md` for
+  //     the 403-vs-404 and 409-vs-200-idempotent rationale.
+  | 'entity-not-referenceable'
+  | 'entity-already-included';
 
 // ---------------------------------------------------------------
 // `RequireResult<T>` — the discriminated result shape returned by

@@ -113,6 +113,7 @@ describe('rejectedToApiError', () => {
     { reason: 'self-vote-not-allowed', status: 403 },
     { reason: 'axiom-mark-not-self', status: 403 },
     { reason: 'cannot-remove-moderator', status: 403 },
+    { reason: 'entity-not-referenceable', status: 403 },
     { reason: 'target-entity-not-found', status: 404 },
     { reason: 'proposal-not-found', status: 404 },
     { reason: 'user-not-found', status: 404 },
@@ -122,6 +123,7 @@ describe('rejectedToApiError', () => {
     { reason: 'no-prior-agree', status: 409 },
     { reason: 'role-already-filled', status: 409 },
     { reason: 'user-already-joined', status: 409 },
+    { reason: 'entity-already-included', status: 409 },
     { reason: 'proposal-not-pending', status: 422 },
     { reason: 'proposal-already-committed', status: 422 },
     { reason: 'proposal-already-meta-disagreement', status: 422 },
@@ -164,6 +166,8 @@ describe('rejectedToApiError', () => {
       'user-already-joined': true,
       'user-not-found': true,
       'cannot-remove-moderator': true,
+      'entity-not-referenceable': true,
+      'entity-already-included': true,
     };
     expect(Object.keys(allReasons).sort()).toEqual(mapping.map((row) => row.reason).sort());
   });
