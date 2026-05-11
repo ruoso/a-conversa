@@ -15,6 +15,17 @@ export default defineConfig({
   },
   test: {
     environment: 'happy-dom',
+    // Skip sibling git worktrees under .claude/worktrees/ — they hold
+    // in-flight agent work without node_modules and break Vite's loader.
+    // Standard exclusions (node_modules / dist) plus the worktree dir.
+    exclude: [
+      '**/node_modules/**',
+      '**/dist/**',
+      '**/.idea/**',
+      '**/.git/**',
+      '**/.cache/**',
+      '.claude/worktrees/**',
+    ],
     coverage: {
       provider: 'v8',
     },
