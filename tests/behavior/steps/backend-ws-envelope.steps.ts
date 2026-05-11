@@ -78,11 +78,21 @@ interface FastifyLike {
 }
 
 interface WsEnvelopeScratch {
-  wsEnvelopeApp?: FastifyLike;
-  wsClient?: WsClient;
-  wsFirstFrame?: string;
+  // Shared with `backend-ws-auth.steps.ts` and
+  // `backend-ws-connection.steps.ts` — the auth-gated test app and the
+  // matching session cookie. Centralised so all three feature files use
+  // the same app/cookie carriers and share the `When an authenticated
+  // WebSocket client connects to {string}` step from
+  // `backend-ws-connection.steps.ts`.
+  wsAuthApp?: FastifyLike;
   wsAuthCookie?: string;
-  wsCloseEvent?: { code: number; reason: string };
+  // Lifecycle carriers — same shape `backend-ws-connection.steps.ts`
+  // uses; we read the first-frame value from the lifecycle scratch
+  // (the connect step in ws-connection writes into the lifecycle
+  // carriers).
+  wsLifecycleClient?: WsClient;
+  wsLifecycleFirstFrame?: string;
+  wsLifecycleCloseEvent?: { code: number; reason: string };
 }
 
 function scratch(world: AConversaWorld): WsEnvelopeScratch {
@@ -90,96 +100,36 @@ function scratch(world: AConversaWorld): WsEnvelopeScratch {
   return world.scratch as WsEnvelopeScratch;
 }
 
-function toUtf8(data: unknown): string {
-  if (Buffer.isBuffer(data)) return data.toString('utf8');
-  if (data instanceof ArrayBuffer) return Buffer.from(data).toString('utf8');
-  if (Array.isArray(data)) return Buffer.concat(data as Buffer[]).toString('utf8');
-  return String(data);
-}
-
 Given('an authenticated WebSocket test app', async function (this: AConversaWorld) {
   const s = scratch(this);
   // Build the WS test app. The memory-backed pool answers the auth
   // middleware's single SELECT against the users table; the fixture
   // user is alive so the cookie below verifies.
-  const app = await __buildTestWsApp({
+  const app = (await __buildTestWsApp({
     pool: makeMemoryPool([
       { id: FIXTURE_USER_ID, screenName: FIXTURE_SCREEN_NAME, deletedAt: null },
     ]),
     sessionTokenSecret: TEST_SESSION_SECRET,
-  });
+  })) as unknown as FastifyLike;
 
   // Pre-mint the session cookie so the When step doesn't have to
   // re-derive it. The shape is the same `name=value` pair browsers
   // send in the `Cookie` header.
+  //
+  // Carriers are shared with `backend-ws-auth.steps.ts` and
+  // `backend-ws-connection.steps.ts` (`wsAuthApp` + `wsAuthCookie`) —
+  // the `When an authenticated WebSocket client connects to {string}`
+  // step lives in `backend-ws-connection.steps.ts` and reads these
+  // carriers.
   const token = await signSessionToken({ sub: FIXTURE_USER_ID }, TEST_SESSION_SECRET);
   s.wsAuthCookie = `${SESSION_COOKIE_NAME}=${token}`;
-  s.wsEnvelopeApp = app;
+  s.wsAuthApp = app;
 });
-
-When(
-  'an authenticated WebSocket client connects to {string}',
-  async function (this: AConversaWorld, path: string) {
-    const s = scratch(this);
-    assert.ok(s.wsEnvelopeApp, 'WS test app not initialized — Given step missing');
-    assert.ok(s.wsAuthCookie, 'WS auth cookie not initialized — Given step missing');
-
-    let firstFrameResolve: ((value: string) => void) | null = null;
-    const firstFrame = new Promise<string>((resolve) => {
-      firstFrameResolve = resolve;
-    });
-    let closeResolve: ((value: { code: number; reason: string }) => void) | null = null;
-    const closeEvent = new Promise<{ code: number; reason: string }>((resolve) => {
-      closeResolve = resolve;
-    });
-
-    const ws = await s.wsEnvelopeApp.injectWS(
-      path,
-      { headers: { cookie: s.wsAuthCookie } },
-      {
-        onInit(client: WsClient) {
-          client.on('message', (data: unknown) => {
-            if (firstFrameResolve) {
-              const fn = firstFrameResolve;
-              firstFrameResolve = null;
-              fn(toUtf8(data));
-            }
-          });
-          client.on('close', (code: number, reason: Buffer) => {
-            if (closeResolve) {
-              const fn = closeResolve;
-              closeResolve = null;
-              fn({ code, reason: reason.toString('utf8') });
-            }
-          });
-        },
-      },
-    );
-
-    s.wsClient = ws;
-    // Stash the close-event promise via background await; the Then
-    // step reads `wsCloseEvent` to verify the connection state.
-    void closeEvent.then((evt) => {
-      s.wsCloseEvent = evt;
-    });
-
-    // Wait for the first frame (the hello envelope) before letting
-    // the When step resolve. Bounded so a regression doesn't hang the
-    // suite.
-    const frame = await Promise.race([
-      firstFrame,
-      new Promise<string>((_, reject) =>
-        setTimeout(() => reject(new Error('ws first frame timeout')), 500),
-      ),
-    ]);
-    s.wsFirstFrame = frame;
-  },
-);
 
 When(
   'the client sends the malformed frame {string}',
   async function (this: AConversaWorld, frame: string) {
-    const ws = scratch(this).wsClient;
+    const ws = scratch(this).wsLifecycleClient;
     assert.ok(ws, 'no ws client — connect step missing');
     ws.send(frame);
     // Brief settle so the server-side receive handler has time to
@@ -192,7 +142,7 @@ When(
 Then(
   'the client receives a canonical hello envelope with a UUID id and a UUID connectionId',
   function (this: AConversaWorld) {
-    const frame = scratch(this).wsFirstFrame;
+    const frame = scratch(this).wsLifecycleFirstFrame;
     assert.ok(frame, 'no first frame captured');
     const parsed = JSON.parse(frame) as {
       type?: unknown;
@@ -217,45 +167,33 @@ Then(
 
 Then('the WebSocket connection is still open', function (this: AConversaWorld) {
   const s = scratch(this);
-  assert.ok(s.wsClient, 'no ws client — connect step missing');
+  assert.ok(s.wsLifecycleClient, 'no ws client — connect step missing');
   // The `ws` library uses numeric ready-state values:
   //   0 = CONNECTING, 1 = OPEN, 2 = CLOSING, 3 = CLOSED.
   // The malformed-frame path's contract is that the server logs and
   // drops the message but leaves the socket open — so the client's
   // readyState is still 1 (OPEN), and no `close` event has fired.
   assert.equal(
-    s.wsClient.readyState,
+    s.wsLifecycleClient.readyState,
     1,
-    `expected WS readyState=1 (OPEN), got ${s.wsClient.readyState}`,
+    `expected WS readyState=1 (OPEN), got ${s.wsLifecycleClient.readyState}`,
   );
   assert.equal(
-    s.wsCloseEvent,
+    s.wsLifecycleCloseEvent,
     undefined,
-    `expected no close event, got ${JSON.stringify(s.wsCloseEvent)}`,
+    `expected no close event, got ${JSON.stringify(s.wsLifecycleCloseEvent)}`,
   );
 });
 
-// Per-scenario teardown — close the WS client and the Fastify app.
+// Per-scenario teardown — only the auth-app carrier this file built.
+// The lifecycle client + frame + close-event carriers are owned (and
+// torn down) by `backend-ws-connection.steps.ts`'s After hook.
 After(async function (this: AConversaWorld) {
   const s = scratch(this);
-  const ws = s.wsClient;
-  if (ws) {
-    try {
-      if (ws.readyState !== 3) {
-        ws.terminate();
-      }
-    } catch {
-      // Defensive — terminate on a torn-down socket can throw on
-      // some Node versions.
-    }
-    delete s.wsClient;
-  }
-  const app = s.wsEnvelopeApp;
+  const app = s.wsAuthApp;
   if (app) {
     await app.close();
-    delete s.wsEnvelopeApp;
+    delete s.wsAuthApp;
   }
-  delete s.wsFirstFrame;
   delete s.wsAuthCookie;
-  delete s.wsCloseEvent;
 });

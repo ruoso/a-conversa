@@ -172,7 +172,9 @@ task backend "Backend" {
     task ws_auth_on_connect "Authenticate on connect using session token" {
       effort 1d
       allocate team
+      complete 100
       depends !ws_connection_handling
+      note "Refinement: tasks/refinements/backend/ws_auth_on_connect.md"
     }
     task ws_subscribe_to_session "Subscribe a client to a session's event stream" {
       effort 1d

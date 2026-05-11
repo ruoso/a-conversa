@@ -1,29 +1,40 @@
 // Step definitions for tests/behavior/backend/ws-connection.feature.
 //
 // Refinement: tasks/refinements/backend/ws_connection_handling.md
+//             tasks/refinements/backend/ws_auth_on_connect.md
+//             tasks/refinements/backend/ws_message_envelope.md
 // ADRs:        docs/adr/0023-web-framework-fastify.md,
 //              docs/adr/0022-no-throwaway-verifications.md
 // TaskJuggler: backend.websocket_protocol.ws_connection_handling
 //
-// These steps reuse the `Given an HTTP server built from createServer`
-// step defined in `http-server.steps.ts` — building the same Fastify
-// instance via `createServer({ logger: false })` and stashing it on
-// the World's scratch carrier under `httpServer`. The WS scenarios
-// then drive the instance via `app.injectWS(...)` (provided by
-// `@fastify/websocket`), which exercises the full upgrade dispatch
-// through Fastify's routing without binding a port.
+// **History.** The original ws-connection.feature opened against
+// `createServer()` directly and asserted the placeholder hello shape
+// (`{ type, connectionId }`). Two parallel WS sub-tasks landed
+// afterward and changed the surface:
 //
-// **Why a separate steps file.** The HTTP-server steps own `httpServer`
-// + `lastResponse`; this file adds WS-specific scratch carriers
-// (`wsClient`, `wsFirstFrame`, `wsCloseEvent`) without bloating the
-// HTTP file's responsibility. Both files cast `world.scratch` to
-// their own interface — the cast pattern is the same one
-// http-server.steps.ts uses (see its comments).
+//   1. `ws_auth_on_connect` made the `/ws` upgrade reject any request
+//      without a valid `aconversa-session` cookie. Without auth, the
+//      upgrade now returns HTTP 401.
+//   2. `ws_message_envelope` replaced the placeholder hello with the
+//      canonical envelope shape (`{ type, id, payload: { connectionId } }`).
 //
-// The `pglite` Before hook in support/world.ts spins up a per-scenario
-// DB handle which these scenarios don't use; the upfront cost is the
-// same trade-off http-server.steps.ts already made (cheaper than a
-// World-variant split).
+// Both changes together mean: every lifecycle scenario in this file
+// now runs through the auth-gated `__buildTestWsApp` builder (sharing
+// the `wsAuthApp` + `wsAuthCookie` scratch carriers with
+// `backend-ws-auth.steps.ts`), and the hello-frame assertion reads
+// from `payload.connectionId` rather than top-level `connectionId`.
+// The lifecycle behaviors (client-initiated close, server-shutdown
+// 1001) are otherwise unchanged.
+//
+// **Why this file doesn't build its own app.** The auth setup (Given
+// `a ws-auth-gated server is built against the pglite-backed pool` +
+// `a user with oauth_subject "<sub>" exists with screen_name "<name>"`
+// + `the cucumber world has a valid session cookie for that user`) is
+// shared with the ws-auth.feature scenarios; centralising the
+// auth-gated-app construction in `backend-ws-auth.steps.ts` keeps the
+// scratch carriers in one place. This file owns only the lifecycle
+// step verbs (connect, close-from-client, close-app, assert close
+// codes).
 
 import { After, Then, When } from '@cucumber/cucumber';
 import { strict as assert } from 'node:assert';
@@ -31,14 +42,11 @@ import { strict as assert } from 'node:assert';
 import type { AConversaWorld } from '../support/world.js';
 
 // RFC 4122 v4 UUID matcher — mirrors the one used in the Vitest unit
-// test. Kept inline rather than imported from the server package so
-// the test tsconfig doesn't have to reach across workspace
-// boundaries for a single regex.
+// test and the other WS step files.
 const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-// Minimal structural typing for the ws-client surface we touch.
-// Avoids reaching into apps/server/node_modules for the `ws` library
-// types directly.
+// Minimal structural typing for the ws-client surface we touch. Same
+// shape as `backend-ws-auth.steps.ts` / `backend-ws-envelope.steps.ts`.
 interface WsClient {
   on(event: 'message', cb: (data: unknown) => void): void;
   on(event: 'close', cb: (code: number, reason: Buffer) => void): void;
@@ -47,33 +55,7 @@ interface WsClient {
   readyState: number;
 }
 
-interface WsScratch {
-  wsClient?: WsClient;
-  wsFirstFrame?: string;
-  wsCloseEvent?: { code: number; reason: string };
-  wsAppClosed?: boolean;
-  // The http-server.steps.ts file owns this carrier; we narrow our
-  // view of it here so our steps can reach the Fastify instance the
-  // shared Given step set up.
-  httpServer?: unknown;
-}
-
-function scratch(world: AConversaWorld): WsScratch {
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
-  return world.scratch as WsScratch;
-}
-
-function toUtf8(data: unknown): string {
-  if (Buffer.isBuffer(data)) return data.toString('utf8');
-  if (data instanceof ArrayBuffer) return Buffer.from(data).toString('utf8');
-  if (Array.isArray(data)) return Buffer.concat(data as Buffer[]).toString('utf8');
-  return String(data);
-}
-
-// Narrow the unknown httpServer carrier to the subset of FastifyInstance
-// we touch (`injectWS`, `close`). The shared Given step in
-// http-server.steps.ts stashes a real Fastify instance there; this
-// helper avoids dragging `fastify` types into this file.
+// The Fastify-instance subset we touch via `injectWS` + `close`.
 interface FastifyLike {
   injectWS(
     path?: string,
@@ -86,19 +68,65 @@ interface FastifyLike {
   close(): Promise<void>;
 }
 
-function getApp(world: AConversaWorld): FastifyLike {
-  const app = scratch(world).httpServer;
-  assert.ok(
-    app,
-    'http server not initialized — "Given an HTTP server built from createServer" missing',
-  );
-  return app as FastifyLike;
+// The shared scratch carrier — populated by
+// `backend-ws-auth.steps.ts`'s Given steps (auth-gated app +
+// cookie) and consumed here. The lifecycle-only fields
+// (`wsLifecycleFirstFrame`, `wsLifecycleCloseEvent`) live alongside
+// the auth carriers; the per-feature After hooks clean up their own
+// carriers.
+interface WsConnectionScratch {
+  wsAuthApp?: FastifyLike;
+  wsAuthCookie?: string;
+  // Lifecycle-only carriers — distinct from `wsAuthClient` /
+  // `wsAuthFirstFrame` to avoid stomping on the auth feature's state
+  // when scenarios from both features run in the same suite.
+  wsLifecycleClient?: WsClient;
+  wsLifecycleFirstFrame?: string;
+  wsLifecycleCloseEvent?: { code: number; reason: string };
+  wsLifecycleAppClosed?: boolean;
 }
 
+function scratch(world: AConversaWorld): WsConnectionScratch {
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
+  return world.scratch as WsConnectionScratch;
+}
+
+function toUtf8(data: unknown): string {
+  if (Buffer.isBuffer(data)) return data.toString('utf8');
+  if (data instanceof ArrayBuffer) return Buffer.from(data).toString('utf8');
+  if (Array.isArray(data)) return Buffer.concat(data as Buffer[]).toString('utf8');
+  return String(data);
+}
+
+function getApp(world: AConversaWorld): FastifyLike {
+  const app = scratch(world).wsAuthApp;
+  assert.ok(
+    app,
+    'WS auth app not initialized — Given "a ws-auth-gated server is built against the pglite-backed pool" missing',
+  );
+  return app;
+}
+
+function getCookie(world: AConversaWorld): string {
+  const cookie = scratch(world).wsAuthCookie;
+  assert.ok(
+    cookie,
+    'WS auth cookie not initialized — Given "the cucumber world has a valid session cookie for that user" missing',
+  );
+  return cookie;
+}
+
+// ============================================================
+// Whens
+// ============================================================
+
 When(
-  'a WebSocket client connects to {string}',
+  'an authenticated WebSocket client connects to {string}',
   async function (this: AConversaWorld, path: string) {
     const s = scratch(this);
+    const app = getApp(this);
+    const cookie = getCookie(this);
+
     let firstFrameResolve: ((value: string) => void) | null = null;
     const firstFrame = new Promise<string>((resolve) => {
       firstFrameResolve = resolve;
@@ -108,16 +136,14 @@ When(
       closeResolve = resolve;
     });
 
-    const ws = await getApp(this).injectWS(
+    const ws = await app.injectWS(
       path,
-      {},
+      { headers: { cookie } },
       {
         onInit(client: WsClient) {
           // Attach message + close listeners BEFORE the handshake
-          // completes — the placeholder hello frame the server sends
-          // can arrive before the `open` event resolves injectWS's
-          // promise. Capturing the first frame's payload here so the
-          // assertion step can read it deterministically.
+          // completes — the canonical hello envelope can arrive
+          // before the `open` event resolves injectWS's promise.
           client.on('message', (data: unknown) => {
             if (firstFrameResolve) {
               const fn = firstFrameResolve;
@@ -136,23 +162,20 @@ When(
       },
     );
 
-    s.wsClient = ws;
-    // Stash the promises' resolved values via background awaits — the
-    // Then steps consume `wsFirstFrame` / `wsCloseEvent` from the
-    // scratch carrier. Each background await writes the captured
-    // value once the corresponding event fires.
+    s.wsLifecycleClient = ws;
+    // Background-await the resolved values onto the scratch carrier
+    // so the Then steps can read them.
     void firstFrame.then((frame) => {
-      s.wsFirstFrame = frame;
+      s.wsLifecycleFirstFrame = frame;
     });
     void closeEvent.then((evt) => {
-      s.wsCloseEvent = evt;
+      s.wsLifecycleCloseEvent = evt;
     });
 
     // Wait for the first frame to arrive before letting the When step
-    // resolve — the next step is either an assertion against the
-    // frame (scenario 1) or a follow-up action that should observe
-    // a settled connection (scenarios 2 + 3). 500ms is generous
-    // (the in-process injectWS resolves in single-digit ms) and
+    // resolve — the following step is either an assertion on the
+    // frame (scenario 1) or a follow-up action that should observe a
+    // settled connection (scenarios 2 + 3). 500ms is generous and
     // bounded so a regression doesn't hang the suite.
     await Promise.race([
       firstFrame,
@@ -166,41 +189,60 @@ When(
 When(
   'the client closes the WebSocket with code {int}',
   async function (this: AConversaWorld, code: number) {
-    const ws = scratch(this).wsClient;
-    assert.ok(ws, 'no ws client — When connect step missing');
+    const ws = scratch(this).wsLifecycleClient;
+    assert.ok(ws, 'no ws client — connect step missing');
     ws.close(code, 'client-done');
     // Wait briefly for the close handshake to complete so the
-    // following Then step reads a settled `wsCloseEvent`.
+    // following Then step reads a settled `wsLifecycleCloseEvent`.
     await new Promise<void>((resolve) => setTimeout(resolve, 50));
   },
 );
 
-When('the server closes the HTTP application', async function (this: AConversaWorld) {
+When('the server closes the WebSocket application', async function (this: AConversaWorld) {
+  const s = scratch(this);
   const app = getApp(this);
   await app.close();
-  scratch(this).wsAppClosed = true;
+  s.wsLifecycleAppClosed = true;
+  // The auth After hook will skip re-closing the app since we already
+  // closed it — but it would still try to delete the carrier. Delete
+  // the wsAuthApp carrier here so the After hook is a no-op for the
+  // app it doesn't own anymore.
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
+  delete (scratch(this) as WsConnectionScratch).wsAuthApp;
   // Brief settle so the preClose-driven 1001 frame propagates to the
   // client side of the in-memory duplex stream before the Then step
-  // reads `wsCloseEvent`.
+  // reads `wsLifecycleCloseEvent`.
   await new Promise<void>((resolve) => setTimeout(resolve, 50));
 });
 
+// ============================================================
+// Thens
+// ============================================================
+
 Then(
-  'the client receives a placeholder hello frame with a UUID connectionId',
+  'the client receives a hello envelope with a UUID connectionId',
   function (this: AConversaWorld) {
-    const frame = scratch(this).wsFirstFrame;
+    const frame = scratch(this).wsLifecycleFirstFrame;
     assert.ok(frame, 'no first frame captured');
-    const parsed = JSON.parse(frame) as { type?: unknown; connectionId?: unknown };
+    // Canonical envelope shape per `ws_message_envelope`:
+    // `{ type: 'hello', id, payload: { connectionId } }`. We assert
+    // the envelope-level `type` discriminator and the
+    // `payload.connectionId` UUID — the envelope-level `id` is
+    // exercised by `ws-envelope.feature`.
+    const parsed = JSON.parse(frame) as {
+      type?: unknown;
+      payload?: { connectionId?: unknown };
+    };
     assert.equal(parsed.type, 'hello', `expected type "hello", got ${JSON.stringify(parsed.type)}`);
     assert.equal(
-      typeof parsed.connectionId,
+      typeof parsed.payload?.connectionId,
       'string',
-      `expected connectionId to be a string, got ${typeof parsed.connectionId}`,
+      `expected payload.connectionId to be a string, got ${typeof parsed.payload?.connectionId}`,
     );
     assert.match(
-      parsed.connectionId as string,
+      parsed.payload?.connectionId as string,
       UUID_V4_PATTERN,
-      `expected connectionId to match UUID v4, got ${String(parsed.connectionId)}`,
+      `expected payload.connectionId to match UUID v4, got ${String(parsed.payload?.connectionId)}`,
     );
   },
 );
@@ -208,7 +250,7 @@ Then(
 Then(
   'the WebSocket close handshake completes with code {int}',
   function (this: AConversaWorld, expected: number) {
-    const evt = scratch(this).wsCloseEvent;
+    const evt = scratch(this).wsLifecycleCloseEvent;
     assert.ok(evt, 'no close event captured');
     assert.equal(evt.code, expected, `expected close code ${expected}, got ${evt.code}`);
   },
@@ -217,7 +259,7 @@ Then(
 Then(
   'the WebSocket received a server-shutdown close with code {int} and reason {string}',
   function (this: AConversaWorld, expectedCode: number, expectedReason: string) {
-    const evt = scratch(this).wsCloseEvent;
+    const evt = scratch(this).wsLifecycleCloseEvent;
     assert.ok(evt, 'no close event captured');
     assert.equal(evt.code, expectedCode, `expected close code ${expectedCode}, got ${evt.code}`);
     assert.equal(
@@ -228,33 +270,28 @@ Then(
   },
 );
 
-// Tear down the per-scenario ws client. The HTTP server itself is
-// torn down by the http-server.steps.ts `After` hook; we only own
-// the client carrier here. Calling `.terminate()` on an already-
-// closed socket is a no-op in the `ws` library, so the hook is
-// idempotent across scenarios that closed cleanly + scenarios
+// Tear down the per-scenario ws client. The auth-app teardown is
+// owned by `backend-ws-auth.steps.ts`'s After hook (the same hook
+// that built the app via the Given step). Calling `.terminate()` on
+// an already-closed socket is a no-op in the `ws` library, so this
+// hook is idempotent across scenarios that closed cleanly + scenarios
 // where the server-shutdown path already destroyed the socket.
-// Cucumber's `After` hook accepts a sync function; we don't await
-// anything in this teardown (`terminate()` is sync). The async
-// signature would trip `@typescript-eslint/require-await`.
 After(function (this: AConversaWorld) {
   const s = scratch(this);
-  const ws = s.wsClient;
+  const ws = s.wsLifecycleClient;
   if (ws) {
     try {
-      // Only terminate if the socket isn't already closed (state
-      // CLOSED = 3 in the ws library).
+      // 3 = CLOSED in the `ws` library.
       if (ws.readyState !== 3) {
         ws.terminate();
       }
     } catch {
-      // Defensive — termination on a torn-down socket can throw on
-      // some Node versions. Swallow and continue; the scenario has
-      // already asserted what it cared about.
+      // Defensive — terminate on a torn-down socket can throw on some
+      // Node versions. Swallow; the scenario has already asserted.
     }
-    delete s.wsClient;
+    delete s.wsLifecycleClient;
   }
-  delete s.wsFirstFrame;
-  delete s.wsCloseEvent;
-  delete s.wsAppClosed;
+  delete s.wsLifecycleFirstFrame;
+  delete s.wsLifecycleCloseEvent;
+  delete s.wsLifecycleAppClosed;
 });
