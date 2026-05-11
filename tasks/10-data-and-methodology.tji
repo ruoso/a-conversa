@@ -221,6 +221,8 @@ task data_and_methodology "Data and methodology" {
     task dangling_claim_detection "Detect claim-positioned nodes with no incoming supports/rebuts/bridges-to" {
       effort 0.5d
       allocate team
+      complete 100
+      note "Refinement: tasks/refinements/data-and-methodology/dangling_claim_detection.md"
     }
     task coherency_hint_detection "Detect unusual edge/kind configurations" {
       effort 1d
