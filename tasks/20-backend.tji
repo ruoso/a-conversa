@@ -148,7 +148,9 @@ task backend "Backend" {
     task reference_permission_check "Check whether session B may reference session A's nodes/edges" {
       effort 1d
       allocate team
+      complete 100
       depends !privacy_field_enforcement
+      note "Refinement: tasks/refinements/backend/reference_permission_check.md"
     }
     task entity_inclusion_endpoint "POST /sessions/:id/include — bring an existing global entity into this session" {
       effort 1d
