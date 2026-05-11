@@ -215,6 +215,8 @@ task data_and_methodology "Data and methodology" {
     task multi_warrant_detection "Detect multiple warrants on the same (data, claim) pair" {
       effort 1d
       allocate team
+      complete 100
+      note "Refinement: tasks/refinements/data-and-methodology/multi_warrant_detection.md"
     }
     task dangling_claim_detection "Detect claim-positioned nodes with no incoming supports/rebuts/bridges-to" {
       effort 0.5d
