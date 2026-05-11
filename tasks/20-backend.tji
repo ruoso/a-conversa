@@ -22,7 +22,9 @@ task backend "Backend" {
     task request_logging "Structured request logging" {
       effort 0.5d
       allocate team
+      complete 100
       depends !http_server
+      note "Refinement: tasks/refinements/backend/request_logging.md"
     }
     task health_endpoint "GET /healthz health endpoint" {
       effort 0.25d

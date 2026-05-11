@@ -36,6 +36,12 @@ type AppInstance = Awaited<ReturnType<typeof createServer>>;
 interface InjectedResponse {
   statusCode: number;
   body: string;
+  // Mirrors the shape http-server.steps.ts uses for the shared
+  // `lastResponse` carrier — included so the structural cast against
+  // `world.scratch` stays compatible with whichever step file owns
+  // the `When` that populated it. This file only reads `body`, so
+  // the field is declared but unused here.
+  headers?: Record<string, unknown>;
 }
 
 // Same carrier names as in http-server.steps.ts so the shared

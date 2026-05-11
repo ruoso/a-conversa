@@ -34,9 +34,17 @@ type AppInstance = Awaited<ReturnType<typeof createServer>>;
 // against. Keeping the carrier minimal avoids dragging
 // fastify-internal types (which live under apps/server/node_modules,
 // not the test tsconfig's resolver) into this step file.
+//
+// `headers` is included so request_logging scenarios can assert
+// against `x-request-id` (and so a future readiness probe could
+// assert against, say, `cache-control`). Header values from
+// `light-my-request` are typed `string | string[] | undefined`; we
+// keep the same `unknown`-friendly carrier on the World so step defs
+// can narrow per-assertion.
 interface InjectedResponse {
   statusCode: number;
   body: string;
+  headers: Record<string, unknown>;
 }
 
 // Extend the AConversaWorld's scratch space with the HTTP-specific
@@ -72,6 +80,7 @@ When('a GET request is sent to {string}', async function (this: AConversaWorld, 
   scratch(this).lastResponse = {
     statusCode: response.statusCode,
     body: response.body,
+    headers: response.headers,
   };
 });
 
@@ -105,6 +114,34 @@ Then('the response body has a non-empty version string', function (this: AConver
     `expected non-empty version string, got ${JSON.stringify(parsed.version)}`,
   );
 });
+
+// Used by tests/behavior/backend/request-logging.feature — the
+// request_logging task wires Fastify's per-request id into the
+// response as `x-request-id` via an `onRequest` hook. The exact
+// value is environment-dependent (Fastify generates a fresh id per
+// request when no inbound header is set), so we only assert the
+// header is a non-empty string.
+Then(
+  'the response has a non-empty {string} header',
+  function (this: AConversaWorld, headerName: string) {
+    const res = scratch(this).lastResponse;
+    assert.ok(res, 'no response captured — When step missing');
+    // Header lookups in node http are case-insensitive; light-my-request
+    // canonicalizes to lowercase, so we lowercase the requested name
+    // before indexing. The carrier type is `Record<string, unknown>`
+    // so we narrow per-call.
+    const value = res.headers[headerName.toLowerCase()];
+    assert.equal(
+      typeof value,
+      'string',
+      `expected ${headerName} to be a string, got ${typeof value}`,
+    );
+    assert.ok(
+      typeof value === 'string' && value.length > 0,
+      `expected non-empty ${headerName} header, got ${JSON.stringify(value)}`,
+    );
+  },
+);
 
 // Tear down the per-scenario Fastify instance. The world-level `After`
 // in support/world.ts handles the pglite handle; this hook only

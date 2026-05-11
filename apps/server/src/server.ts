@@ -47,6 +47,7 @@ import sensible from '@fastify/sensible';
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
 
 import { errorHandlerPlugin } from './error-handler.js';
+import { createLoggerOptions } from './logger.js';
 import { healthzPlugin } from './routes/healthz.js';
 
 /**
@@ -71,12 +72,59 @@ export type CreateServerOptions = FastifyServerOptions;
  * @returns the configured instance.
  */
 export async function createServer(options: CreateServerOptions = {}): Promise<FastifyInstance> {
-  const defaultLogger: FastifyServerOptions['logger'] =
-    process.env.NODE_ENV === 'test' ? false : { level: process.env.LOG_LEVEL ?? 'info' };
+  // Per-environment logger config — owned by request_logging. Three
+  // modes (test=silent, prod=structured JSON, dev=pino-pretty). The
+  // helper reads `NODE_ENV` and `LOG_LEVEL` off the env passed in;
+  // see apps/server/src/logger.ts for the full per-mode contract.
+  const defaultLogger = createLoggerOptions(process.env);
 
   const app = Fastify({
     logger: defaultLogger,
+    // Reflect the inbound `x-request-id` header (if any) into
+    // `req.id`; otherwise Fastify generates a fresh id. The header
+    // value Fastify reads is configurable; the default is
+    // `'request-id'`, but the de facto convention is
+    // `'x-request-id'` — pin it explicitly so tracing-aware
+    // clients / load-balancers can carry an id end-to-end. The same
+    // id is echoed back on the response via the `onRequest` hook
+    // below. Refinement:
+    // tasks/refinements/backend/request_logging.md.
+    requestIdHeader: 'x-request-id',
+    // The label Pino's request serializer uses for the id field in
+    // every log line. Defaults to `'reqId'`; pin explicitly so logs
+    // and the response header use parallel vocabulary
+    // (`x-request-id` on the wire, `reqId` in the structured log).
+    requestIdLogLabel: 'reqId',
     ...options,
+  });
+
+  // Reflect the request id on every response as `x-request-id` so
+  // clients (and downstream load balancers / log aggregators) can
+  // correlate a response back to its server-side log lines. The
+  // hook is registered as `onRequest` (the earliest lifecycle hook)
+  // rather than `onSend` or `onResponse` because:
+  //
+  //   - `onRequest` fires before any handler runs, so the header is
+  //     queued on the reply early — guaranteed to appear on the
+  //     final response regardless of whether the route succeeds,
+  //     throws (error handler path), or 404s (not-found path).
+  //   - `onSend` would also work but runs per response payload,
+  //     after the route returns; the earlier we register the header,
+  //     the smaller the surface for a handler to accidentally drop
+  //     it.
+  //   - `onResponse` runs AFTER headers are flushed to the socket,
+  //     so `reply.header(...)` there is a no-op (the header buffer
+  //     has already been written).
+  //
+  // The id source is `request.id`, which Fastify sets to the inbound
+  // `x-request-id` header (per `requestIdHeader` above) if present,
+  // or to a freshly generated id otherwise. `String(...)` is
+  // defensive — `req.id` is typed `string | number` upstream (the
+  // default generator emits a monotonic number; the inbound-header
+  // path emits a string).
+  app.addHook('onRequest', (request, reply, done) => {
+    reply.header('x-request-id', String(request.id));
+    done();
   });
 
   // `@fastify/sensible` first — its `httpErrors` decoration is what
