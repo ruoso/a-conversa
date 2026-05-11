@@ -5,6 +5,7 @@
 //   - tasks/refinements/data-and-methodology/contradiction_detection.md
 //   - tasks/refinements/data-and-methodology/multi_warrant_detection.md
 //   - tasks/refinements/data-and-methodology/dangling_claim_detection.md
+//   - tasks/refinements/data-and-methodology/coherency_hint_detection.md
 //
 // The diagnostics module hosts read-side detectors for the
 // structural diagnostics defined in `docs/data-model.md`'s
@@ -18,3 +19,11 @@ export { detectSupportsCycles, type SupportsCycle } from './cycle-detection.js';
 export { detectContradictions, type Contradiction } from './contradiction-detection.js';
 export { detectMultiWarrants, type MultiWarrant } from './multi-warrant-detection.js';
 export { detectDanglingClaims, type DanglingClaim } from './dangling-claim-detection.js';
+export {
+  detectCoherencyHints,
+  type CoherencyHint,
+  type HintKind,
+  type IncompleteWarrantMissingBridgesToHint,
+  type IncompleteWarrantMissingBridgesFromHint,
+  type SelfContradictsHint,
+} from './coherency-hint-detection.js';

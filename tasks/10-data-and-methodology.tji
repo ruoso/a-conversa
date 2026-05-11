@@ -227,7 +227,9 @@ task data_and_methodology "Data and methodology" {
     task coherency_hint_detection "Detect unusual edge/kind configurations" {
       effort 1d
       allocate team
+      complete 100
       note "Builds a small rule set; rules can be added over time."
+      note "Refinement: tasks/refinements/data-and-methodology/coherency_hint_detection.md"
     }
     task pending_consequences_stub "Stub: detect agreed-substance edges with unagreed-substance source" {
       effort 0.5d

@@ -1,0 +1,306 @@
+// Detect unusual edge/kind configurations (coherency hints) in the
+// visible graph.
+//
+// Refinement: tasks/refinements/data-and-methodology/coherency_hint_detection.md
+// TaskJuggler: data_and_methodology.diagnostics.coherency_hint_detection
+//
+// Pure read function over the projection. Per `docs/data-model.md`
+// lines 143–151 ("Coherency guidance") and 195–197 ("Coherency
+// violations"):
+//
+//   "Some edge/node configurations are typical; others are unusual.
+//    The system provides advisory hints when an unusual configuration
+//    is created. … The list of typical/unusual patterns will grow with
+//    experience. The system never blocks; it nudges."
+//
+// Internally the detector is a **list of rule functions**, one per
+// `HintKind`. The public `detectCoherencyHints` reduces the list with
+// flatMap, concatenating each rule's output. A new rule is added by
+// writing a new function and appending it to the rule list — this is
+// the explicit extensibility model the WBS note calls out ("small
+// rule set; rules can be added over time"). The rule functions are
+// not exported individually; they are implementation detail of the
+// composed detector.
+//
+// v1 ships three rules, all doc-grounded:
+//
+//   1. `incomplete-warrant-missing-bridges-to` — per `docs/data-model.md`
+//      lines 122–131. A warrant is defined as a node W with TWO
+//      outgoing edges (`bridges-from` to D, `bridges-to` to C); a node
+//      with only `bridges-from` is structurally meaningless as a
+//      warrant. The `multi_warrant_detection` refinement explicitly
+//      hands off this case to coherency_hint_detection.
+//   2. `incomplete-warrant-missing-bridges-from` — the mirror case.
+//   3. `self-contradicts` — per `docs/data-model.md` line 120. The data
+//      model is explicit that genuinely-symmetric contradictions are
+//      encoded as **two opposite-direction edges**, not as a single
+//      self-loop. A `contradicts` edge whose source equals its target
+//      is the degenerate case the encoding doesn't anticipate.
+//
+// Filtering (uniform across rules):
+//   - `edge.visible === true` — broken edges and edges whose endpoints
+//     were superseded by decompose / restructure don't participate.
+//   - `getNode(edge.sourceNodeId)?.visible === true` AND
+//     `getNode(edge.targetNodeId)?.visible === true` — defensive
+//     guard mirroring the sibling detectors; the projection cascades
+//     endpoint visibility onto edges.
+//
+// Notably absent: no `isEdgeActive` gate, no substance-agreement
+// check. Per `docs/data-model.md` lines 143–151 coherency hints are
+// about **structure** — "edge/node configurations." A warrant with
+// only one bridge edge is structurally incomplete whether or not the
+// substance of either edge is agreed; a self-`contradicts` edge is
+// structurally odd whether or not anyone has agreed it actually
+// contradicts. This mirrors the multi-warrant and dangling-claim
+// detectors' structural-only stance and diverges deliberately from
+// the cycle / contradiction detectors (which gate on `isEdgeActive`).
+//
+// Boundary with siblings:
+//   - `multi_warrant_detection` (settled) counts only COMPLETE
+//     warrants (both bridge edges present) on the same (D, C) pair.
+//     Incomplete warrants are this detector's responsibility — the
+//     two detectors partition the warrant-shape space.
+//   - `dangling_claim_detection` (settled) fires on absence of
+//     incoming justification edges on a claim-positioned node. That
+//     is about absence of engagement on a target node; coherency
+//     hints are about structurally-odd configurations of the edges
+//     and nodes themselves.
+//   - `diagnostic_event_emission` (M2 sibling) wires this function's
+//     output into the event-stream surface.
+//   - `blocking_vs_advisory_classification` (M2 sibling) classifies
+//     coherency hints. Per the doc's "advisory hints" framing, all
+//     v1 hint kinds are expected to land as advisory in that
+//     downstream classification.
+
+import type { Projection } from '../projection/projection.js';
+
+/**
+ * Discriminator for the `CoherencyHint` discriminated union.
+ *
+ * String-literal union rather than a runtime enum. Same choice as the
+ * event-kind discriminator in `@a-conversa/shared-types` — smaller
+ * bundle, cleaner narrowing in TypeScript `switch` statements, no
+ * enum-import overhead. If a future surface wants a runtime listing
+ * of all hint kinds, add an `ALL_HINT_KINDS` const-array without
+ * changing the type.
+ *
+ * New rules add a new string literal here AND append a rule function
+ * to the `RULES` list below.
+ */
+export type HintKind =
+  | 'incomplete-warrant-missing-bridges-to'
+  | 'incomplete-warrant-missing-bridges-from'
+  | 'self-contradicts';
+
+/**
+ * Hint emitted by the `incomplete-warrant-missing-bridges-to` rule.
+ * A warrant node W has at least one visible `bridges-from W → D`
+ * edge but no visible `bridges-to` outgoing edge — one hint per
+ * dangling `bridges-from`. Carries the warrant node id and the data
+ * node id of that particular `bridges-from` so downstream UI can
+ * render "warrant W is wired to data D but has no claim wired" per
+ * unfinished pair.
+ */
+export interface IncompleteWarrantMissingBridgesToHint {
+  kind: 'incomplete-warrant-missing-bridges-to';
+  warrantNodeId: string;
+  dataNodeId: string;
+}
+
+/**
+ * Hint emitted by the `incomplete-warrant-missing-bridges-from` rule.
+ * Mirror of the above: a warrant node W has at least one visible
+ * `bridges-to W → C` edge but no visible `bridges-from` outgoing
+ * edge — one hint per dangling `bridges-to`. Carries the warrant
+ * node id and the claim node id.
+ */
+export interface IncompleteWarrantMissingBridgesFromHint {
+  kind: 'incomplete-warrant-missing-bridges-from';
+  warrantNodeId: string;
+  claimNodeId: string;
+}
+
+/**
+ * Hint emitted by the `self-contradicts` rule. A visible `contradicts`
+ * edge whose `sourceNodeId === targetNodeId`. The doc (`docs/data-model.md`
+ * line 120) says genuinely-symmetric contradictions are represented
+ * as two opposite-direction edges; a single self-loop is the
+ * degenerate case. Carries both the edge id (so the UI can highlight
+ * the specific edge) and the node id (so it can highlight the node).
+ */
+export interface SelfContradictsHint {
+  kind: 'self-contradicts';
+  edgeId: string;
+  nodeId: string;
+}
+
+/**
+ * One coherency hint. Discriminated union over `HintKind`. Downstream
+ * consumers `switch` on `kind` and handle the per-variant payload.
+ */
+export type CoherencyHint =
+  | IncompleteWarrantMissingBridgesToHint
+  | IncompleteWarrantMissingBridgesFromHint
+  | SelfContradictsHint;
+
+// ---------------------------------------------------------------
+// Rule functions — one per HintKind, composed by detectCoherencyHints.
+// Each rule is a pure function over the projection that emits the
+// hints it owns. Rules are independent; one rule's hints do not
+// suppress another rule's hints.
+// ---------------------------------------------------------------
+
+/**
+ * Detect warrants W that have at least one visible `bridges-from W → D`
+ * outgoing edge AND zero visible `bridges-to` outgoing edges. Emits
+ * one hint per dangling `bridges-from`.
+ *
+ * Iteration: walks `projection.nodes()` in insertion order. For each
+ * visible node, uses `getEdgesBySource(W.id)` to enumerate W's
+ * outgoing edges in a single O(out-degree) pass.
+ */
+function detectIncompleteWarrantsMissingBridgesTo(
+  projection: Projection,
+): IncompleteWarrantMissingBridgesToHint[] {
+  const hints: IncompleteWarrantMissingBridgesToHint[] = [];
+  for (const node of projection.nodes()) {
+    if (!node.visible) continue;
+
+    const outgoing = projection.getEdgesBySource(node.id);
+    const bridgesFromEdges: { edgeId: string; dataNodeId: string }[] = [];
+    let hasBridgesTo = false;
+
+    for (const edge of outgoing) {
+      if (!edge.visible) continue;
+      // Defensive endpoint-visibility check, matching the sibling
+      // detectors. The projection cascades endpoint visibility onto
+      // edges (per data-model.md lines 287–293) so a visible edge
+      // with an invisible endpoint shouldn't happen.
+      const target = projection.getNode(edge.targetNodeId);
+      if (!target || !target.visible) continue;
+
+      if (edge.role === 'bridges-from') {
+        bridgesFromEdges.push({ edgeId: edge.id, dataNodeId: edge.targetNodeId });
+      } else if (edge.role === 'bridges-to') {
+        hasBridgesTo = true;
+      }
+    }
+
+    if (bridgesFromEdges.length > 0 && !hasBridgesTo) {
+      for (const { dataNodeId } of bridgesFromEdges) {
+        hints.push({
+          kind: 'incomplete-warrant-missing-bridges-to',
+          warrantNodeId: node.id,
+          dataNodeId,
+        });
+      }
+    }
+  }
+  return hints;
+}
+
+/**
+ * Mirror of `detectIncompleteWarrantsMissingBridgesTo`. Detects
+ * warrants W with at least one visible `bridges-to W → C` outgoing
+ * edge AND zero visible `bridges-from` outgoing edges. Emits one
+ * hint per dangling `bridges-to`.
+ */
+function detectIncompleteWarrantsMissingBridgesFrom(
+  projection: Projection,
+): IncompleteWarrantMissingBridgesFromHint[] {
+  const hints: IncompleteWarrantMissingBridgesFromHint[] = [];
+  for (const node of projection.nodes()) {
+    if (!node.visible) continue;
+
+    const outgoing = projection.getEdgesBySource(node.id);
+    const bridgesToEdges: { edgeId: string; claimNodeId: string }[] = [];
+    let hasBridgesFrom = false;
+
+    for (const edge of outgoing) {
+      if (!edge.visible) continue;
+      const target = projection.getNode(edge.targetNodeId);
+      if (!target || !target.visible) continue;
+
+      if (edge.role === 'bridges-to') {
+        bridgesToEdges.push({ edgeId: edge.id, claimNodeId: edge.targetNodeId });
+      } else if (edge.role === 'bridges-from') {
+        hasBridgesFrom = true;
+      }
+    }
+
+    if (bridgesToEdges.length > 0 && !hasBridgesFrom) {
+      for (const { claimNodeId } of bridgesToEdges) {
+        hints.push({
+          kind: 'incomplete-warrant-missing-bridges-from',
+          warrantNodeId: node.id,
+          claimNodeId,
+        });
+      }
+    }
+  }
+  return hints;
+}
+
+/**
+ * Detect visible `contradicts` edges whose `sourceNodeId === targetNodeId`.
+ * Per `docs/data-model.md` line 120, genuinely-symmetric contradictions
+ * are represented as two opposite-direction edges; a self-loop is the
+ * degenerate case that doesn't fit that representation.
+ *
+ * Iteration: walks `projection.edges()` in insertion order.
+ */
+function detectSelfContradicts(projection: Projection): SelfContradictsHint[] {
+  const hints: SelfContradictsHint[] = [];
+  for (const edge of projection.edges()) {
+    if (!edge.visible) continue;
+    if (edge.role !== 'contradicts') continue;
+    if (edge.sourceNodeId !== edge.targetNodeId) continue;
+
+    const node = projection.getNode(edge.sourceNodeId);
+    if (!node || !node.visible) continue;
+
+    hints.push({
+      kind: 'self-contradicts',
+      edgeId: edge.id,
+      nodeId: edge.sourceNodeId,
+    });
+  }
+  return hints;
+}
+
+// ---------------------------------------------------------------
+// Rule registry.
+// ---------------------------------------------------------------
+
+/**
+ * Module-private registry of rule functions. Each rule is a pure
+ * function from a projection to its own hint kind's output. Rules
+ * run in declaration order; the public `detectCoherencyHints`
+ * concatenates their output via `flatMap`.
+ *
+ * **Adding a new rule**: write a new `detect<RuleName>(projection)`
+ * function above, add a new variant to the `HintKind` union and the
+ * `CoherencyHint` discriminated union, and append the new function
+ * here. The pure-function shape and visibility filter pattern carry
+ * over.
+ */
+const RULES: ReadonlyArray<(projection: Projection) => CoherencyHint[]> = [
+  detectIncompleteWarrantsMissingBridgesTo,
+  detectIncompleteWarrantsMissingBridgesFrom,
+  detectSelfContradicts,
+];
+
+/**
+ * Detect coherency hints in the visible graph.
+ *
+ * Pure read function. Returns the concatenated output of each rule
+ * in `RULES`, in rule-declaration order. Empty when no rule fires.
+ *
+ * Per the refinement Decisions section, rules are independent — one
+ * rule's hints do not suppress another rule's hints. A node that is
+ * both an incomplete warrant AND has a self-contradicts edge
+ * produces hints from both rules.
+ */
+export function detectCoherencyHints(projection: Projection): CoherencyHint[] {
+  return RULES.flatMap((rule) => rule(projection));
+}
