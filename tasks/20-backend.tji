@@ -94,6 +94,8 @@ task backend "Backend" {
     task create_session_endpoint "POST /sessions" {
       effort 1d
       allocate team
+      complete 100
+      note "Refinement: tasks/refinements/backend/create_session_endpoint.md"
     }
     task list_sessions_endpoint "GET /sessions" {
       effort 0.5d

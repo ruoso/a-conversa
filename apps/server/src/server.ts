@@ -56,6 +56,7 @@ import { errorHandlerPlugin } from './error-handler.js';
 import { createLoggerOptions } from './logger.js';
 import { errorEnvelopeRef, openapiPlugin } from './openapi.js';
 import { healthzPlugin } from './routes/healthz.js';
+import { sessionsRoutesPlugin } from './sessions/routes.js';
 
 /**
  * Options that vary between deployment modes (production, dev,
@@ -237,6 +238,17 @@ export async function createServer(options: CreateServerOptions = {}): Promise<F
       throw err;
     }
   }
+
+  // Session-management routes (`POST /sessions` today; `GET /sessions`,
+  // `GET /sessions/:id`, `POST /sessions/:id/end`, the privacy-toggle
+  // endpoint, and participant assignment as siblings land). Registered
+  // AFTER the auth middleware so the route's
+  // `preHandler: app.authenticate` resolves the decorator at
+  // route-registration time. The plugin lazily reaches for the DB pool
+  // on the first authenticated request; smoke tests of the bootstrap
+  // that never POST /sessions don't pay the cost. Refinement:
+  // tasks/refinements/backend/create_session_endpoint.md.
+  await app.register(sessionsRoutesPlugin);
 
   return app;
 }
