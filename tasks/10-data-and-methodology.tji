@@ -203,6 +203,8 @@ task data_and_methodology "Data and methodology" {
     task cycle_detection "Detect cycles in supports edges" {
       effort 1d
       allocate team
+      complete 100
+      note "Refinement: tasks/refinements/data-and-methodology/cycle_detection.md"
     }
     task contradiction_detection "Detect agreed-substance contradicts edges" {
       effort 0.5d
