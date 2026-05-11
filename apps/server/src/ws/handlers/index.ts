@@ -30,6 +30,7 @@ import fp from 'fastify-plugin';
 
 import { getDefaultPool, type DbPool } from '../../db.js';
 
+import { registerCommitHandlers } from './commit.js';
 import { registerProposeHandlers } from './propose.js';
 import { registerSubscribeHandlers } from './subscribe.js';
 import { registerVoteHandlers } from './vote.js';
@@ -46,6 +47,9 @@ export type { ProposeHandlerOptions } from './propose.js';
 
 export { buildVoteHandler, registerVoteHandlers } from './vote.js';
 export type { VoteHandlerOptions } from './vote.js';
+
+export { buildCommitHandler, registerCommitHandlers } from './commit.js';
+export type { CommitHandlerOptions } from './commit.js';
 
 /**
  * Options accepted by `wsHandlersPlugin`. Production callers pass `{}`
@@ -114,6 +118,21 @@ const wsHandlersPluginAsync: FastifyPluginAsync<WsHandlersOptions> = (
   // (`agree` / `dispute` / `withdraw`) rules to the methodology
   // engine's `voteHandler`.
   registerVoteHandlers(app.wsDispatcher, {
+    get pool() {
+      return ensurePool();
+    },
+    registry: app.wsSubscriptions,
+    broadcast: app.wsBroadcast,
+    log: app.log,
+  });
+
+  // Register the commit handler. Structurally identical to the
+  // propose / vote registrations — same gate stack + dual-signal
+  // contract + dispatcher-seam error path. The handler delegates
+  // moderator-only authority (`not-a-moderator`) and unanimity
+  // (`unanimous-agree-required`) to the methodology engine's
+  // `commitHandler`.
+  registerCommitHandlers(app.wsDispatcher, {
     get pool() {
       return ensurePool();
     },

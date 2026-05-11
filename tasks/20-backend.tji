@@ -207,7 +207,9 @@ task backend "Backend" {
     task ws_commit_message "Commit message — moderator-only authority" {
       effort 1d
       allocate team
+      complete 100
       depends !ws_message_envelope, data_and_methodology.methodology_engine.commit_logic
+      note "Refinement: tasks/refinements/backend/ws_commit_message.md"
     }
     task ws_meta_disagreement_message "Mark-as-meta-disagreement message" {
       effort 0.5d

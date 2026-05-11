@@ -108,20 +108,22 @@ export const wsMessageTypes = [
   // connection sees).
   'hello',
   // Group B — client → server request types. Append future sibling
-  // request types (`'commit'`, `'mark-meta-disagreement'`, `'snapshot'`)
-  // at this group's tail.
+  // request types (`'mark-meta-disagreement'`, `'snapshot'`) at this
+  // group's tail.
   'subscribe',
   'unsubscribe',
   'propose',
   'vote',
+  'commit',
   // Group C — server → client ack / result types correlated via
   // `inResponseTo`. Append future sibling ack/result types
-  // (`'committed'`, `'meta-disagreement-marked'`, `'snapshot-result'`)
-  // at this group's tail.
+  // (`'meta-disagreement-marked'`, `'snapshot-result'`) at this
+  // group's tail.
   'subscribed',
   'unsubscribed',
   'proposed',
   'voted',
+  'committed',
   // Group A — server-emitted unsolicited broadcast + the canonical
   // error envelope (which `inResponseTo` echoes when correlated).
   'event-applied',
@@ -410,6 +412,96 @@ export const votedPayloadSchema = z.object({
 
 export type VotedPayload = z.infer<typeof votedPayloadSchema>;
 
+// -- commit / committed payloads -----------------------------------
+//
+// `commit` (client → server): the moderator asks the server to commit
+// a pending proposal whose facet has reached unanimous-agree across
+// all current participants. The payload carries the target
+// `proposalId` and the optimistic-concurrency token `expectedSequence`.
+//
+// **Owned by `ws_commit_message`.** This task adds `commit` to Group
+// B and `committed` to Group C of the union-extension convention
+// documented in `wsMessageTypes` above. Mirrors the propose/proposed
+// + vote/voted shapes — the handler skeleton + dispatcher-seam error
+// path + dual-signal contract are identical (only the engine call
+// and the constructed action variant differ).
+//
+// **Moderator-only authority.** The methodology engine's `commitHandler`
+// enforces a `not-a-moderator` rejection when the requester is not the
+// session's moderator. The WS handler surfaces this as a wire `error`
+// envelope with `code: 'not-a-moderator'` via `rejectedToApiError`
+// (status 403 on the HTTP surface; the kebab `code` rides through to
+// the wire). The headline gate for this task — a debater who tries to
+// commit a proposal receives the typed 403 even though they passed the
+// subscribe-before-act gate.
+//
+// **Moderator identity comes from the connection, not the payload.**
+// The server reads `connection.user.id` and uses it as both the
+// methodology requester AND the event actor. There is NO `moderatorId`
+// field on the payload — a client cannot commit on behalf of someone
+// else. Symmetric with `propose` (no `proposerId`) and `vote` (no
+// `voterId`).
+
+/**
+ * Client → server. Asks the server to commit the pending `proposalId`
+ * for `sessionId`. The client must have already sent a successful
+ * `subscribe` for the same session (the server enforces); otherwise
+ * the wire response is an `error` envelope with `code: 'forbidden'`.
+ *
+ * The methodology engine enforces moderator-only authority via the
+ * `commitHandler`'s rule-1 `not-a-moderator` gate — a non-moderator
+ * subscribed participant who sends this envelope receives an `error`
+ * envelope with `code: 'not-a-moderator'`. Additional engine
+ * rejections (`proposal-not-found` / `proposal-already-committed` /
+ * `proposal-already-meta-disagreement` / `unanimous-agree-required`
+ * / `methodology-not-exhausted` / `illegal-state-transition` for a
+ * structural-sub-kind commit) all surface through the same wire
+ * `error` envelope with the engine's kebab `code`.
+ *
+ * On success the server sends two server-emitted envelopes to the
+ * moderator:
+ *
+ *   1. A `committed` ack (this envelope's request-response pair),
+ *      correlated via `inResponseTo`. Carries `{ sessionId,
+ *      sequence, eventId }` so the client clears its in-flight
+ *      commit state.
+ *   2. The standard `event-applied` broadcast (carrying the
+ *      appended `commit` event verbatim). Every connection in
+ *      `connectionsForSession(sessionId)` — including the moderator —
+ *      receives this.
+ *
+ * The commit handler emits exactly one `commit` event (the engine's
+ * `commitHandler` returns `events: [commitEvent]`). The downstream
+ * read-side projection (`handleCommit` in `replay.ts`) marks the
+ * affected facet `agreed` + moves the proposal from
+ * `pendingProposals` to `committedProposals`; that read-side update
+ * is driven by every subscriber's local incremental `applyEvent`
+ * call on the broadcast — no additional wire frames are required.
+ */
+export const wsCommitPayloadSchema = z.object({
+  sessionId: z.string().uuid(),
+  expectedSequence: z.number().int().nonnegative(),
+  proposalId: z.string().uuid(),
+});
+
+export type WsCommitPayload = z.infer<typeof wsCommitPayloadSchema>;
+
+/**
+ * Server → client ack. Echoes the originating `commit` envelope's
+ * `id` via `inResponseTo`. Payload carries the appended `commit`
+ * event's `sequence` + `eventId` + `sessionId` so the client can
+ * correlate the ack against its in-flight commit request and update
+ * local sequence tracking before the matching `event-applied`
+ * broadcast arrives.
+ */
+export const committedPayloadSchema = z.object({
+  sessionId: z.string().uuid(),
+  sequence: z.number().int().positive(),
+  eventId: z.string().uuid(),
+});
+
+export type CommittedPayload = z.infer<typeof committedPayloadSchema>;
+
 // -- event-applied payload -----------------------------------------
 //
 // `event-applied` (server → client): emitted by the broadcast surface
@@ -534,11 +626,13 @@ export const wsMessagePayloadSchemas: Record<WsMessageType, z.ZodTypeAny> = {
   unsubscribe: unsubscribePayloadSchema,
   propose: proposePayloadSchema,
   vote: wsVotePayloadSchema,
+  commit: wsCommitPayloadSchema,
   // Group C — server → client ack/result payload schemas.
   subscribed: subscribedPayloadSchema,
   unsubscribed: unsubscribedPayloadSchema,
   proposed: proposedPayloadSchema,
   voted: votedPayloadSchema,
+  committed: committedPayloadSchema,
   // The outer event envelope is checked; the per-kind payload inside
   // the event is `z.unknown()` per the schema in `events.ts` and is
   // re-validated by `validateEvent` on the receiving side. Server-side
@@ -562,11 +656,13 @@ export interface WsMessagePayloadMap {
   unsubscribe: UnsubscribePayload;
   propose: ProposePayload;
   vote: WsVotePayload;
+  commit: WsCommitPayload;
   // Group C — server → client ack/result payload types.
   subscribed: SubscribedPayload;
   unsubscribed: UnsubscribedPayload;
   proposed: ProposedPayload;
   voted: VotedPayload;
+  committed: CommittedPayload;
   'event-applied': EventAppliedPayload;
   error: ErrorPayload;
 }
