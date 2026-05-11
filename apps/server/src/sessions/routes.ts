@@ -4,11 +4,13 @@
 //   - GET /sessions — list the visible debate sessions for the caller.
 //   - GET /sessions/:id — fetch a single session's metadata.
 //   - POST /sessions/:id/end — moderator marks a session as ended.
+//   - PATCH /sessions/:id/privacy — host toggles the session privacy.
 //
 // Refinements: tasks/refinements/backend/create_session_endpoint.md,
 //              tasks/refinements/backend/list_sessions_endpoint.md,
 //              tasks/refinements/backend/get_session_endpoint.md,
-//              tasks/refinements/backend/end_session_endpoint.md
+//              tasks/refinements/backend/end_session_endpoint.md,
+//              tasks/refinements/backend/session_privacy_toggle.md
 // ADRs:        docs/adr/0020-postgres-write-path-locking-and-event-ordering.md,
 //              docs/adr/0021-event-envelope-discriminated-union-with-zod.md,
 //              docs/adr/0022-no-throwaway-verifications.md,
@@ -16,7 +18,8 @@
 // TaskJuggler: backend.session_management.create_session_endpoint,
 //              backend.session_management.list_sessions_endpoint,
 //              backend.session_management.get_session_endpoint,
-//              backend.session_management.end_session_endpoint
+//              backend.session_management.end_session_endpoint,
+//              backend.session_management.session_privacy_toggle
 //
 // **What this plugin owns today.** A single route — `POST /sessions` —
 // behind `preHandler: app.authenticate`. The handler:
@@ -116,11 +119,51 @@
 // authority-403 / visibility-404 ordering, the 409-not-200 rationale,
 // and the FOR UPDATE row-lock decision.
 //
+// **`PATCH /sessions/:id/privacy`** — the host-only privacy toggle. The handler:
+//
+//   1. Reads `request.authUser.id` (the caller), the validated `:id`
+//      path param, AND the validated body's `privacy` value.
+//   2. Issues a visibility-gated SELECT against `sessions` (same
+//      predicate the other session endpoints use) to capture the
+//      row's `host_user_id`, `ended_at`, and current `privacy`. Zero
+//      rows → 404 (existence-non-leak rule). Row found but
+//      `host_user_id != caller` → 403 `not-a-moderator`. Row found,
+//      host matches, but `ended_at IS NOT NULL` → 409
+//      `session-already-ended` (privacy on an ended session is
+//      meaningless; the cross-session-reference window is closed).
+//   3. Issues a single UPDATE `sessions SET privacy = $1 WHERE id = $2`
+//      RETURNING the full row. The UPDATE runs unconditionally — same-
+//      value writes are a no-op at the DB layer and a 200 from this
+//      endpoint (idempotent semantics; see refinement).
+//   4. Returns 200 + the updated camelCase `SessionResponse`.
+//
+// **Why no transaction wrapper.** The endpoint issues a single UPDATE.
+// `withTransaction` exists for endpoints that couple multiple writes
+// (create + event INSERT; end's UPDATE + event INSERT). One statement
+// has no atomicity boundary to manage; the visibility / authority /
+// lifecycle checks run via a preceding SELECT, then the UPDATE
+// follows. The SELECT and UPDATE see consistent state under standard
+// READ COMMITTED — a concurrent end-session attempt that interleaved
+// between this endpoint's SELECT and UPDATE would be detected at next
+// access; for the v1 single-writer-per-session model the race is
+// theoretical.
+//
+// **Why no `session-privacy-changed` event.** The event-kind catalog
+// (`packages/shared-types/src/events.ts` / `apps/server/migrations/
+// 0010_session_events.sql`) has no kind for privacy changes. Privacy
+// is session-row metadata, not a methodology-level fact about the
+// debate — the methodology engine never reads it; only the
+// cross-session-reference + listing/audience permissions read it,
+// and they read the current row value. Replay doesn't reconstruct
+// historical privacy. See
+// `tasks/refinements/backend/session_privacy_toggle.md` "Option B" for
+// the alternative (Option A — add the event kind) that was weighed
+// and rejected as scope creep for no v1 consumer.
+//
 // **What this plugin does NOT do** — deferred to sibling tasks:
 //
 //   - Filters beyond the visibility gate (host filter, participant
 //     filter, pagination) — `backend.session_management.session_listing_filters`.
-//   - `POST /sessions/:id/privacy` — `backend.session_management.session_privacy_toggle`.
 //   - `POST /sessions/:id/participants` — `backend.session_management.participant_assignment`.
 //
 // The plugin's barrel-style shape (a Fastify plugin and a few exported
@@ -360,6 +403,34 @@ const sessionIdParamsSchema = {
       type: 'string',
       format: 'uuid',
       description: 'The session id (UUID).',
+    },
+  },
+} as const;
+
+/**
+ * Request body schema for `PATCH /sessions/:id/privacy`. JSON Schema
+ * attached to `schema.body`; Fastify's validator rejects malformed
+ * bodies with a `validation` error that the centralized handler
+ * renders as the canonical `validation-failed` envelope.
+ *
+ * `privacy` is REQUIRED here (unlike `POST /sessions` where it
+ * defaults to `'public'` when absent). The endpoint's contract is
+ * "set privacy to X"; the X has to be supplied. Enum-constrained to
+ * the same two values the SQL CHECK accepts; an out-of-enum value
+ * would reach the DB only to be rejected at INSERT time, so we
+ * short-circuit at the API layer for a cleaner error envelope.
+ */
+const sessionPrivacyBodySchema = {
+  type: 'object',
+  required: ['privacy'],
+  additionalProperties: false,
+  properties: {
+    privacy: {
+      type: 'string',
+      enum: ['public', 'private'],
+      description:
+        "The desired session privacy. `'public'` allows cross-session reference; " +
+        "`'private'` gates cross-session reference and audience-page authentication.",
     },
   },
 } as const;
@@ -1108,6 +1179,152 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = (
       });
 
       return reply.code(200).send(sessionRowToResponse(updatedRow));
+    },
+  );
+
+  app.patch(
+    '/sessions/:id/privacy',
+    {
+      preHandler: app.authenticate,
+      schema: {
+        tags: ['sessions'],
+        summary: "Toggle a session's privacy (host-only)",
+        description:
+          "Updates the session row's `privacy` column to the requested value. Only the " +
+          'session host (the moderator at v1) may toggle privacy. Live sessions only: ' +
+          'an ended session cannot be re-privatised or re-published (privacy at end-time ' +
+          'is the frozen value).\n\n' +
+          'Visibility-then-authority ordering: invisible sessions (private + caller is ' +
+          'neither host nor participant) return 404 `not-found` BEFORE any authority ' +
+          'check, preserving the existence-non-leak property. Visible-but-not-host ' +
+          'returns 403 `not-a-moderator`. An already-ended session returns 409 ' +
+          '`session-already-ended`. Setting the same value the row already has is ' +
+          'a 200 no-op (idempotent semantics; see refinement).\n\n' +
+          'No `session-privacy-changed` event is written — privacy is session-row ' +
+          'metadata, not a methodology-level fact about the debate. See ' +
+          '`tasks/refinements/backend/session_privacy_toggle.md` "Option B".\n\n' +
+          'Returns 401 `auth-required` when no valid session cookie is present; ' +
+          '400 `validation-failed` when the path `:id` is not a UUID or the body ' +
+          'is malformed (missing `privacy`, value outside the enum).',
+        security: [{ cookieAuth: [] }],
+        params: sessionIdParamsSchema,
+        body: sessionPrivacyBodySchema,
+        response: {
+          200: sessionResponseRef,
+          '4xx': errorEnvelopeRef,
+          '5xx': errorEnvelopeRef,
+        },
+      },
+    },
+    async (request, reply) => {
+      // Same defensive-but-static-analysis-necessary check as the
+      // sibling handlers — the middleware guarantees `authUser` is
+      // set for any request that reaches a route with
+      // `preHandler: app.authenticate`.
+      const auth = request.authUser;
+      if (auth === undefined) {
+        throw new ApiError(
+          500,
+          'internal-error',
+          'auth middleware did not populate request.authUser',
+        );
+      }
+      const userId = auth.id;
+
+      const params = request.params as { id: string };
+      const sessionId = params.id;
+      const body = request.body as { privacy: 'public' | 'private' };
+      const desiredPrivacy = body.privacy;
+
+      const pool = ensurePool();
+
+      // 1. Visibility-gated lookup. Same predicate as `GET /sessions/:id`
+      //    and `POST /sessions/:id/end` — the existence-non-leak rule
+      //    carries through. We pull `host_user_id` and `ended_at` so
+      //    the authority + lifecycle checks can fire from a single
+      //    SELECT round trip. We do NOT use `FOR UPDATE` here: this
+      //    endpoint issues a single UPDATE without coupling to an
+      //    event INSERT, so there's no read-then-write window that a
+      //    concurrent writer could corrupt (the UPDATE itself is the
+      //    atomic step).
+      const lookup = await pool.query<{
+        id: string;
+        host_user_id: string;
+        ended_at: Date | string | null;
+      }>(
+        `SELECT id, host_user_id, ended_at
+         FROM sessions
+         WHERE id = $1
+           AND (
+                 privacy = 'public'
+                 OR host_user_id = $2
+                 OR EXISTS (
+                      SELECT 1 FROM session_participants sp
+                      WHERE sp.session_id = sessions.id AND sp.user_id = $2
+                    )
+               )`,
+        [sessionId, userId],
+      );
+      const existing = lookup.rows[0];
+      if (existing === undefined) {
+        // Zero rows — either the id doesn't exist OR it does but isn't
+        // visible to this caller. Both collapse into 404 so the
+        // response doesn't leak the existence of private sessions.
+        throw ApiError.notFound('session not found or not visible');
+      }
+
+      // 2. Authority — only the host may toggle privacy. Reuses
+      //    `not-a-moderator` to keep the rejection vocabulary stable
+      //    across the session-management surface (same code the
+      //    end-session endpoint emits for the same failure mode at v1
+      //    — the host IS the moderator).
+      if (existing.host_user_id !== userId) {
+        throw new ApiError(
+          403,
+          'not-a-moderator',
+          'only the session host may toggle the session privacy',
+        );
+      }
+
+      // 3. Lifecycle gate — ended sessions can't toggle. Privacy at
+      //    end-time is the frozen value; flipping it post-end would
+      //    either lie ("this session was always private") or break
+      //    invariants for downstream snapshot/audit consumers. Reuses
+      //    the `session-already-ended` code from the end-session
+      //    endpoint for vocabulary consistency.
+      if (existing.ended_at !== null) {
+        throw new ApiError(
+          409,
+          'session-already-ended',
+          'cannot toggle privacy on an ended session',
+        );
+      }
+
+      // 4. UPDATE. Runs unconditionally — same-value writes are a
+      //    no-op at the DB layer (`SET privacy = $1` writes the same
+      //    value; `created_at` / `host_user_id` / `topic` / `ended_at`
+      //    are not touched). The idempotency semantics mean a retry-
+      //    on-network-error is safe; clients don't have to detect
+      //    "did my prior call already land?" RETURNING surfaces the
+      //    full row so we can map directly to the response shape.
+      const updateResult = await pool.query<SessionsInsertRow>(
+        `UPDATE sessions
+         SET privacy = $1
+         WHERE id = $2
+         RETURNING id, host_user_id, privacy, topic, created_at, ended_at`,
+        [desiredPrivacy, sessionId],
+      );
+      const updated = updateResult.rows[0];
+      if (updated === undefined) {
+        // Defensive — should be unreachable. The WHERE matched a row
+        // we just SELECTed above; the UPDATE's WHERE narrows the
+        // same way. A surfaced 500 here means a wiring regression
+        // (e.g. concurrent DELETE — but `sessions` has no DELETE
+        // path at v1).
+        throw new ApiError(500, 'internal-error', 'session UPDATE returned no row');
+      }
+
+      return reply.code(200).send(sessionRowToResponse(updated));
     },
   );
 

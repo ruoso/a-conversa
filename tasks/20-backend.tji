@@ -118,6 +118,8 @@ task backend "Backend" {
     task session_privacy_toggle "Endpoint to toggle session privacy" {
       effort 0.5d
       allocate team
+      complete 100
+      note "Refinement: tasks/refinements/backend/session_privacy_toggle.md"
     }
     task participant_assignment "Assign participant roles (moderator/debater-A/debater-B)" {
       effort 1d

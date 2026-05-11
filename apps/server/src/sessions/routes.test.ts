@@ -58,6 +58,22 @@
 //   6. Bad UUID path param → 400 `validation-failed`.
 //   7. No auth cookie → 401 `auth-required`.
 //
+// **Coverage for `PATCH /sessions/:id/privacy`** (per the privacy-toggle refinement):
+//
+//   1. Host toggles public → private → 200 + the new privacy in the
+//      response; the in-memory row's privacy reflects the new value.
+//   2. Non-host (visible but not host) → 403 `not-a-moderator`; the
+//      row's privacy is unchanged.
+//   3. Non-participant on a private session → 404 `not-found` (the
+//      existence-non-leak rule fires BEFORE the authority check).
+//   4. Ended session → 409 `session-already-ended`; the row's privacy
+//      is unchanged.
+//   5. Unknown id → 404 `not-found`.
+//   6. Setting the same value the row already has → 200 (idempotent
+//      no-op); the response carries the unchanged privacy.
+//   7. Bad body (missing privacy / invalid enum) → 400 `validation-failed`.
+//   8. No auth cookie → 401 `auth-required`.
+//
 // All tests use Fastify's `.inject(...)` — no port bind. The pool is a
 // memory shim that mimics the production `pg.Pool` surface (BEGIN /
 // COMMIT / ROLLBACK + the INSERTs) so the transactional shape is
@@ -237,6 +253,24 @@ function makeMemoryPool(initialUsers: UserRow[]): {
             store.participants.some((sp) => sp.session_id === s.id && sp.user_id === userId)),
       );
       return Promise.resolve({ rows: visible as unknown as TRow[] });
+    }
+    if (text.includes('UPDATE sessions') && text.includes('SET privacy = $1')) {
+      // The `PATCH /sessions/:id/privacy` UPDATE. Flip the row's
+      // privacy column to the desired value and RETURN the full row
+      // in the same shape the create / end endpoints use. The shim's
+      // mutate-in-place mirrors what Postgres does under the hood —
+      // RETURNING surfaces the post-update value.
+      const [desiredPrivacy, targetId] = p as [string, string];
+      const idx = store.sessions.findIndex((s) => s.id === targetId);
+      if (idx < 0) {
+        return Promise.resolve({ rows: [] as TRow[] });
+      }
+      const updated: SessionRow = {
+        ...(store.sessions[idx] as SessionRow),
+        privacy: desiredPrivacy,
+      };
+      store.sessions[idx] = updated;
+      return Promise.resolve({ rows: [updated] as unknown as TRow[] });
     }
     if (text.includes('UPDATE sessions') && text.includes('SET ended_at = NOW()')) {
       // The `POST /sessions/:id/end` UPDATE. Flip the row's
@@ -1435,5 +1469,330 @@ describe('POST /sessions/:id/end — moderator ends the session', () => {
     // the handler ran, so no BEGIN.
     expect(built.store.trace).toHaveLength(0);
     expect(built.store.events.filter((e) => e.kind === 'session-ended')).toHaveLength(0);
+  });
+});
+
+describe('PATCH /sessions/:id/privacy — host toggles session privacy', () => {
+  // Seed helper — same shape as the list / get / end suites. Each
+  // test seeds the exact users + sessions + (optional) participants
+  // needed and drives a PATCH /sessions/:id/privacy.
+  async function buildWithSeed(opts: {
+    users: UserRow[];
+    sessions: SessionRow[];
+    participants?: SessionParticipantRow[];
+  }): Promise<BuiltApp> {
+    const built = await buildApp({ users: opts.users });
+    built.store.sessions.push(...opts.sessions);
+    if (opts.participants !== undefined) {
+      built.store.participants.push(...opts.participants);
+    }
+    return built;
+  }
+
+  let built: BuiltApp | undefined;
+  afterEach(async () => {
+    if (built !== undefined) {
+      await built.app.close();
+      built = undefined;
+    }
+  });
+
+  // Fixed UUIDs for the seeded session rows. Distinct from every
+  // other suite's ids so a stray cross-suite reference fails loudly.
+  const PUBLIC_ACTIVE: SessionRow = {
+    id: '00000000-0000-4000-8000-ffff00000001',
+    host_user_id: ALICE_ID,
+    privacy: 'public',
+    topic: 'A debate to privatize',
+    created_at: new Date('2026-05-09T10:00:00.000Z'),
+    ended_at: null,
+  };
+  const PRIVATE_ACTIVE: SessionRow = {
+    id: '00000000-0000-4000-8000-ffff00000002',
+    host_user_id: ALICE_ID,
+    privacy: 'private',
+    topic: 'A private debate to publish',
+    created_at: new Date('2026-05-09T11:00:00.000Z'),
+    ended_at: null,
+  };
+  const PUBLIC_ENDED: SessionRow = {
+    id: '00000000-0000-4000-8000-ffff00000003',
+    host_user_id: ALICE_ID,
+    privacy: 'public',
+    topic: 'Already finished',
+    created_at: new Date('2026-05-08T10:00:00.000Z'),
+    ended_at: new Date('2026-05-08T11:00:00.000Z'),
+  };
+  const PRIVATE_BENS: SessionRow = {
+    id: '00000000-0000-4000-8000-ffff00000004',
+    host_user_id: BEN_ID,
+    privacy: 'private',
+    topic: "Ben's private session",
+    created_at: new Date('2026-05-09T12:00:00.000Z'),
+    ended_at: null,
+  };
+
+  it('returns 200 + the new privacy in the response when the host toggles public to private', async () => {
+    built = await buildWithSeed({
+      users: [
+        {
+          id: ALICE_ID,
+          oauth_subject: 'authelia:alice',
+          screen_name: 'alice',
+          deleted_at: null,
+        },
+      ],
+      sessions: [PUBLIC_ACTIVE],
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'PATCH',
+      url: `/sessions/${PUBLIC_ACTIVE.id}/privacy`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+      payload: { privacy: 'private' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{
+      id?: string;
+      hostUserId?: string;
+      privacy?: string;
+      topic?: string;
+      createdAt?: string;
+      endedAt?: string | null;
+    }>();
+    expect(body.id).toBe(PUBLIC_ACTIVE.id);
+    expect(body.hostUserId).toBe(ALICE_ID);
+    expect(body.privacy).toBe('private');
+    expect(body.topic).toBe('A debate to privatize');
+    expect(body.endedAt).toBeNull();
+
+    // The in-memory row reflects the new value — the UPDATE landed.
+    const sessionAfter = built.store.sessions.find((s) => s.id === PUBLIC_ACTIVE.id);
+    expect(sessionAfter?.privacy).toBe('private');
+
+    // No event landed — Option B (no `session-privacy-changed` kind).
+    expect(built.store.events).toHaveLength(0);
+  });
+
+  it('returns 200 with the unchanged privacy when the host sets the same value (idempotent)', async () => {
+    built = await buildWithSeed({
+      users: [
+        {
+          id: ALICE_ID,
+          oauth_subject: 'authelia:alice',
+          screen_name: 'alice',
+          deleted_at: null,
+        },
+      ],
+      sessions: [PUBLIC_ACTIVE],
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    // The row is already public; set it to public again.
+    const response = await built.app.inject({
+      method: 'PATCH',
+      url: `/sessions/${PUBLIC_ACTIVE.id}/privacy`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+      payload: { privacy: 'public' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{ privacy?: string }>();
+    expect(body.privacy).toBe('public');
+    // Row's privacy still public — no-op write at the DB layer.
+    const sessionAfter = built.store.sessions.find((s) => s.id === PUBLIC_ACTIVE.id);
+    expect(sessionAfter?.privacy).toBe('public');
+  });
+
+  it('returns 403 not-a-moderator when the caller is visible but is not the host', async () => {
+    // Public session — Ben can see it, but Alice is the host. Ben's
+    // attempt to toggle privacy must be rejected with 403.
+    built = await buildWithSeed({
+      users: [
+        {
+          id: ALICE_ID,
+          oauth_subject: 'authelia:alice',
+          screen_name: 'alice',
+          deleted_at: null,
+        },
+        {
+          id: BEN_ID,
+          oauth_subject: 'authelia:ben',
+          screen_name: 'ben',
+          deleted_at: null,
+        },
+      ],
+      sessions: [PUBLIC_ACTIVE],
+    });
+    const token = await signSessionToken({ sub: BEN_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'PATCH',
+      url: `/sessions/${PUBLIC_ACTIVE.id}/privacy`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+      payload: { privacy: 'private' },
+    });
+    expect(response.statusCode).toBe(403);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('not-a-moderator');
+
+    // Row's privacy unchanged.
+    const sessionAfter = built.store.sessions.find((s) => s.id === PUBLIC_ACTIVE.id);
+    expect(sessionAfter?.privacy).toBe('public');
+  });
+
+  it('returns 404 (NOT 403) when the session is private and the caller is not host/participant', async () => {
+    // Alice tries to toggle Ben's private session — she can't even
+    // see it. Visibility-non-leak rule fires BEFORE the authority
+    // check: 404, not 403. Identical response to nonexistent-id.
+    built = await buildWithSeed({
+      users: [
+        {
+          id: ALICE_ID,
+          oauth_subject: 'authelia:alice',
+          screen_name: 'alice',
+          deleted_at: null,
+        },
+        {
+          id: BEN_ID,
+          oauth_subject: 'authelia:ben',
+          screen_name: 'ben',
+          deleted_at: null,
+        },
+      ],
+      sessions: [PRIVATE_BENS],
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'PATCH',
+      url: `/sessions/${PRIVATE_BENS.id}/privacy`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+      payload: { privacy: 'public' },
+    });
+    expect(response.statusCode).toBe(404);
+    expect(response.statusCode).not.toBe(403);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('not-found');
+
+    // Row's privacy unchanged.
+    const sessionAfter = built.store.sessions.find((s) => s.id === PRIVATE_BENS.id);
+    expect(sessionAfter?.privacy).toBe('private');
+  });
+
+  it('returns 409 session-already-ended when the host attempts to toggle an ended session', async () => {
+    built = await buildWithSeed({
+      users: [
+        {
+          id: ALICE_ID,
+          oauth_subject: 'authelia:alice',
+          screen_name: 'alice',
+          deleted_at: null,
+        },
+      ],
+      sessions: [PUBLIC_ENDED],
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'PATCH',
+      url: `/sessions/${PUBLIC_ENDED.id}/privacy`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+      payload: { privacy: 'private' },
+    });
+    expect(response.statusCode).toBe(409);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('session-already-ended');
+
+    // Row's privacy unchanged.
+    const sessionAfter = built.store.sessions.find((s) => s.id === PUBLIC_ENDED.id);
+    expect(sessionAfter?.privacy).toBe('public');
+  });
+
+  it('returns 404 not-found when the id does not exist', async () => {
+    built = await buildWithSeed({
+      users: [
+        {
+          id: ALICE_ID,
+          oauth_subject: 'authelia:alice',
+          screen_name: 'alice',
+          deleted_at: null,
+        },
+      ],
+      sessions: [],
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const unknownId = '00000000-0000-4000-8000-ffffffff000a';
+    const response = await built.app.inject({
+      method: 'PATCH',
+      url: `/sessions/${unknownId}/privacy`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+      payload: { privacy: 'private' },
+    });
+    expect(response.statusCode).toBe(404);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('not-found');
+  });
+
+  it('returns 400 validation-failed when the body omits privacy or carries an invalid enum', async () => {
+    built = await buildWithSeed({
+      users: [
+        {
+          id: ALICE_ID,
+          oauth_subject: 'authelia:alice',
+          screen_name: 'alice',
+          deleted_at: null,
+        },
+      ],
+      sessions: [PRIVATE_ACTIVE],
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+
+    // Missing privacy.
+    const missing = await built.app.inject({
+      method: 'PATCH',
+      url: `/sessions/${PRIVATE_ACTIVE.id}/privacy`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+      payload: {},
+    });
+    expect(missing.statusCode).toBe(400);
+    expect(missing.json<{ error?: { code?: string } }>().error?.code).toBe('validation-failed');
+
+    // Invalid enum.
+    const bad = await built.app.inject({
+      method: 'PATCH',
+      url: `/sessions/${PRIVATE_ACTIVE.id}/privacy`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+      payload: { privacy: 'secret' },
+    });
+    expect(bad.statusCode).toBe(400);
+    expect(bad.json<{ error?: { code?: string } }>().error?.code).toBe('validation-failed');
+
+    // Row's privacy unchanged through both attempts.
+    const sessionAfter = built.store.sessions.find((s) => s.id === PRIVATE_ACTIVE.id);
+    expect(sessionAfter?.privacy).toBe('private');
+  });
+
+  it('returns 401 auth-required when no session cookie is present', async () => {
+    built = await buildWithSeed({
+      users: [
+        {
+          id: ALICE_ID,
+          oauth_subject: 'authelia:alice',
+          screen_name: 'alice',
+          deleted_at: null,
+        },
+      ],
+      sessions: [PUBLIC_ACTIVE],
+    });
+    const response = await built.app.inject({
+      method: 'PATCH',
+      url: `/sessions/${PUBLIC_ACTIVE.id}/privacy`,
+      payload: { privacy: 'private' },
+    });
+    expect(response.statusCode).toBe(401);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('auth-required');
+
+    // No write side-effects.
+    const sessionAfter = built.store.sessions.find((s) => s.id === PUBLIC_ACTIVE.id);
+    expect(sessionAfter?.privacy).toBe('public');
   });
 });
