@@ -21,6 +21,7 @@ task milestones "Milestones" {
 
   task m_methodology_engine_complete "M2: Methodology engine complete" {
     milestone
+    complete 100
     depends data_and_methodology.methodology_engine, data_and_methodology.diagnostics
     note "All facet operations (classify, decompose, axiom-mark, defeater capture, meta-move, etc.) implemented; structural diagnostics fire correctly."
   }

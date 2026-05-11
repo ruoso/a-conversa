@@ -248,7 +248,9 @@ task data_and_methodology "Data and methodology" {
     task blocking_vs_advisory_classification "Classify each diagnostic as blocking or advisory" {
       effort 0.5d
       allocate team
+      complete 100
       depends !cycle_detection, !contradiction_detection, !multi_warrant_detection, !dangling_claim_detection, !coherency_hint_detection
+      note "Refinement: tasks/refinements/data-and-methodology/blocking_vs_advisory_classification.md"
     }
   }
 

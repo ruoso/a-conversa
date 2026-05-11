@@ -8,6 +8,7 @@
 //   - tasks/refinements/data-and-methodology/coherency_hint_detection.md
 //   - tasks/refinements/data-and-methodology/pending_consequences_stub.md
 //   - tasks/refinements/data-and-methodology/diagnostic_event_emission.md
+//   - tasks/refinements/data-and-methodology/blocking_vs_advisory_classification.md
 //
 // The diagnostics module hosts read-side detectors for the
 // structural diagnostics defined in `docs/data-model.md`'s
@@ -45,3 +46,4 @@ export {
   type DanglingClaimDiagnosticEntry,
   type CoherencyHintDiagnosticEntry,
 } from './event-emission.js';
+export { classifyDiagnostic, partitionBySeverity, type Severity } from './classification.js';
