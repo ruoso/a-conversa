@@ -142,6 +142,8 @@ task backend "Backend" {
     task privacy_field_enforcement "Enforce public-by-default; host-marks-private flag" {
       effort 1d
       allocate team
+      complete 100
+      note "Refinement: tasks/refinements/backend/privacy_field_enforcement.md"
     }
     task reference_permission_check "Check whether session B may reference session A's nodes/edges" {
       effort 1d

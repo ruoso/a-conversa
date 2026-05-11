@@ -203,6 +203,7 @@ import { ApiError } from '../errors.js';
 import { errorEnvelopeRef } from '../openapi.js';
 import { getDefaultPool, type DbPool } from '../db.js';
 import { validateEvent } from '../events/validate.js';
+import { visibilityWhereFragment } from './visibility.js';
 
 /**
  * Options accepted by `sessionsRoutesPlugin`. Every field is optional —
@@ -1254,8 +1255,15 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = (
       // replay/audit flows.
       const params: unknown[] = [userId];
       let p = 1;
-      let where =
-        "(\n           privacy = 'public'\n           OR host_user_id = $1\n           OR EXISTS (\n                SELECT 1 FROM session_participants sp\n                WHERE sp.session_id = sessions.id AND sp.user_id = $1\n              )\n         )";
+      // Visibility gate — public OR host OR (current/historical)
+      // participant. The canonical rule lives in
+      // `apps/server/src/sessions/visibility.ts` (one source of
+      // truth across the five session-management endpoints that
+      // read `sessions.privacy`). The fragment is parameterized at
+      // `$1` here because `userId` is the only param so far; the
+      // filter compositions below bump `p` and append their own
+      // `$N` placeholders onto the same params array.
+      let where = visibilityWhereFragment(p);
 
       if (query.status === 'active') {
         where += ' AND ended_at IS NULL';
@@ -1421,14 +1429,7 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = (
         `SELECT id, host_user_id, privacy, topic, created_at, ended_at
          FROM sessions
          WHERE id = $1
-           AND (
-                 privacy = 'public'
-                 OR host_user_id = $2
-                 OR EXISTS (
-                      SELECT 1 FROM session_participants sp
-                      WHERE sp.session_id = sessions.id AND sp.user_id = $2
-                    )
-               )`,
+           AND ${visibilityWhereFragment(2)}`,
         [sessionId, userId],
       );
       const row = result.rows[0];
@@ -1511,14 +1512,7 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = (
           `SELECT id, host_user_id, ended_at
            FROM sessions
            WHERE id = $1
-             AND (
-                   privacy = 'public'
-                   OR host_user_id = $2
-                   OR EXISTS (
-                        SELECT 1 FROM session_participants sp
-                        WHERE sp.session_id = sessions.id AND sp.user_id = $2
-                      )
-                 )
+             AND ${visibilityWhereFragment(2)}
            FOR UPDATE`,
           [sessionId, userId],
         );
@@ -1724,14 +1718,7 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = (
         `SELECT id, host_user_id, ended_at
          FROM sessions
          WHERE id = $1
-           AND (
-                 privacy = 'public'
-                 OR host_user_id = $2
-                 OR EXISTS (
-                      SELECT 1 FROM session_participants sp
-                      WHERE sp.session_id = sessions.id AND sp.user_id = $2
-                    )
-               )`,
+           AND ${visibilityWhereFragment(2)}`,
         [sessionId, userId],
       );
       const existing = lookup.rows[0];
@@ -1896,14 +1883,7 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = (
           `SELECT id, host_user_id, ended_at
            FROM sessions
            WHERE id = $1
-             AND (
-                   privacy = 'public'
-                   OR host_user_id = $2
-                   OR EXISTS (
-                        SELECT 1 FROM session_participants sp
-                        WHERE sp.session_id = sessions.id AND sp.user_id = $2
-                      )
-                 )
+             AND ${visibilityWhereFragment(2)}
            FOR UPDATE`,
           [sessionId, callerUserId],
         );
@@ -2154,14 +2134,7 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = (
           `SELECT id, host_user_id, ended_at
            FROM sessions
            WHERE id = $1
-             AND (
-                   privacy = 'public'
-                   OR host_user_id = $2
-                   OR EXISTS (
-                        SELECT 1 FROM session_participants sp
-                        WHERE sp.session_id = sessions.id AND sp.user_id = $2
-                      )
-                 )
+             AND ${visibilityWhereFragment(2)}
            FOR UPDATE`,
           [sessionId, callerUserId],
         );
