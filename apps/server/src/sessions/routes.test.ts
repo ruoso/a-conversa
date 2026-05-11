@@ -43,6 +43,21 @@
 //   6. Private session visible to participant → 200.
 //   7. Bad UUID path param → 400 validation-failed.
 //
+// **Coverage for `POST /sessions/:id/end`** (per the end-endpoint refinement):
+//
+//   1. Host ends an active session → 200 + endedAt populated; BOTH the
+//      UPDATE and the session-ended event INSERT recorded via the
+//      memory shim; transaction trace is BEGIN…COMMIT (no ROLLBACK).
+//   2. Non-host (visible but not host) → 403 `not-a-moderator`; no
+//      writes; trace ends with ROLLBACK.
+//   3. Non-participant on a private session → 404 `not-found` (the
+//      existence-non-leak rule fires BEFORE the authority check).
+//   4. Already-ended session (host re-attempts) → 409
+//      `session-already-ended`; no new writes; trace ends with ROLLBACK.
+//   5. Unknown id → 404 `not-found`.
+//   6. Bad UUID path param → 400 `validation-failed`.
+//   7. No auth cookie → 401 `auth-required`.
+//
 // All tests use Fastify's `.inject(...)` — no port bind. The pool is a
 // memory shim that mimics the production `pg.Pool` surface (BEGIN /
 // COMMIT / ROLLBACK + the INSERTs) so the transactional shape is
@@ -201,11 +216,17 @@ function makeMemoryPool(initialUsers: UserRow[]): {
       text.includes('host_user_id = $2') &&
       text.includes('session_participants')
     ) {
-      // The `GET /sessions/:id` visibility-gated SELECT. Mirrors the
-      // production WHERE clause: id matches AND (public OR host OR
-      // participant). The shim implements the same predicate in JS
-      // so the test's assertion is against the row set the
-      // production SQL would return — not a re-derivation.
+      // The `GET /sessions/:id` visibility-gated SELECT (with or
+      // without FOR UPDATE — `POST /sessions/:id/end` uses the same
+      // predicate plus the row lock). Mirrors the production WHERE
+      // clause: id matches AND (public OR host OR participant). The
+      // shim implements the same predicate in JS so the test's
+      // assertion is against the row set the production SQL would
+      // return — not a re-derivation.
+      //
+      // `FOR UPDATE` is a no-op in the shim — the single-threaded
+      // test runtime can't observe the lock semantics. The presence
+      // of the clause is enough to route the query here.
       const targetId = p[0] as string;
       const userId = p[1] as string;
       const visible = store.sessions.filter(
@@ -216,6 +237,41 @@ function makeMemoryPool(initialUsers: UserRow[]): {
             store.participants.some((sp) => sp.session_id === s.id && sp.user_id === userId)),
       );
       return Promise.resolve({ rows: visible as unknown as TRow[] });
+    }
+    if (text.includes('UPDATE sessions') && text.includes('SET ended_at = NOW()')) {
+      // The `POST /sessions/:id/end` UPDATE. Flip the row's
+      // `ended_at` to a deterministic timestamp (pinned for hermetic
+      // tests; production reads NOW() from the DB clock). RETURNING
+      // surfaces the full row in the same shape the create endpoint
+      // returns.
+      const targetId = p[0] as string;
+      const idx = store.sessions.findIndex((s) => s.id === targetId);
+      if (idx < 0) {
+        return Promise.resolve({ rows: [] as TRow[] });
+      }
+      const updated: SessionRow = {
+        ...(store.sessions[idx] as SessionRow),
+        ended_at: new Date('2026-05-10T12:00:01.000Z'),
+      };
+      store.sessions[idx] = updated;
+      return Promise.resolve({ rows: [updated] as unknown as TRow[] });
+    }
+    if (
+      text.includes('FROM session_events') &&
+      text.includes('MAX(sequence)') &&
+      text.includes('WHERE session_id = $1')
+    ) {
+      // The MAX(sequence) read inside the end-session transaction
+      // (ADR 0020 application-managed monotonic sequence allocator).
+      // The shim returns the highest sequence currently stored for
+      // the session, or 0 when no events exist (the production
+      // `COALESCE(MAX(sequence), 0)` produces the same value).
+      const sessionId = p[0] as string;
+      const sequences = store.events
+        .filter((e) => e.session_id === sessionId)
+        .map((e) => e.sequence);
+      const maxSeq = sequences.length === 0 ? 0 : Math.max(...sequences);
+      return Promise.resolve({ rows: [{ max_seq: maxSeq }] as unknown as TRow[] });
     }
     if (
       text.includes('FROM sessions') &&
@@ -1027,5 +1083,357 @@ describe('GET /sessions/:id — visibility-gated fetch', () => {
     expect(response.statusCode).toBe(400);
     const body = response.json<{ error?: { code?: string } }>();
     expect(body.error?.code).toBe('validation-failed');
+  });
+});
+
+describe('POST /sessions/:id/end — moderator ends the session', () => {
+  // Seed helper — same shape as the list / get suites. Each test seeds
+  // the exact users + sessions + (optional) participants + (optional)
+  // pre-existing session_events the scenario needs, then drives a
+  // POST /sessions/:id/end against the resulting app.
+  async function buildWithSeed(opts: {
+    users: UserRow[];
+    sessions: SessionRow[];
+    participants?: SessionParticipantRow[];
+    events?: SessionEventRow[];
+  }): Promise<BuiltApp> {
+    const built = await buildApp({ users: opts.users });
+    built.store.sessions.push(...opts.sessions);
+    if (opts.participants !== undefined) {
+      built.store.participants.push(...opts.participants);
+    }
+    if (opts.events !== undefined) {
+      built.store.events.push(...opts.events);
+    }
+    return built;
+  }
+
+  let built: BuiltApp | undefined;
+  afterEach(async () => {
+    if (built !== undefined) {
+      await built.app.close();
+      built = undefined;
+    }
+  });
+
+  // Fixed UUIDs for the seeded session rows. Distinct from the list /
+  // get-suite ids so a stray cross-suite reference fails loudly.
+  const PUBLIC_ACTIVE: SessionRow = {
+    id: '00000000-0000-4000-8000-eeee00000001',
+    host_user_id: ALICE_ID,
+    privacy: 'public',
+    topic: 'A debate to end',
+    created_at: new Date('2026-05-09T10:00:00.000Z'),
+    ended_at: null,
+  };
+  const PUBLIC_ALREADY_ENDED: SessionRow = {
+    id: '00000000-0000-4000-8000-eeee00000002',
+    host_user_id: ALICE_ID,
+    privacy: 'public',
+    topic: 'Already ended',
+    created_at: new Date('2026-05-08T10:00:00.000Z'),
+    ended_at: new Date('2026-05-08T11:00:00.000Z'),
+  };
+  const PRIVATE_BENS: SessionRow = {
+    id: '00000000-0000-4000-8000-eeee00000003',
+    host_user_id: BEN_ID,
+    privacy: 'private',
+    topic: "Ben's private session",
+    created_at: new Date('2026-05-09T12:00:00.000Z'),
+    ended_at: null,
+  };
+
+  // Pre-existing `session-created` event for ALICE's public session.
+  // The endpoint's MAX(sequence) read sees this as the highest
+  // existing sequence, so `nextSeq = 2` for the session-ended event.
+  const SESSION_CREATED_EVENT: SessionEventRow = {
+    id: '99999999-9999-4999-8999-999999999001',
+    session_id: PUBLIC_ACTIVE.id,
+    sequence: 1,
+    kind: 'session-created',
+    actor: ALICE_ID,
+    payload: {
+      host_user_id: ALICE_ID,
+      privacy: 'public',
+      topic: 'A debate to end',
+      created_at: '2026-05-09T10:00:00.000Z',
+    },
+    created_at: new Date('2026-05-09T10:00:00.001Z'),
+  };
+
+  it('returns 200 + the camelCase session shape with endedAt populated when the host ends an active session', async () => {
+    built = await buildWithSeed({
+      users: [
+        {
+          id: ALICE_ID,
+          oauth_subject: 'authelia:alice',
+          screen_name: 'alice',
+          deleted_at: null,
+        },
+      ],
+      sessions: [PUBLIC_ACTIVE],
+      events: [SESSION_CREATED_EVENT],
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'POST',
+      url: `/sessions/${PUBLIC_ACTIVE.id}/end`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{
+      id?: string;
+      hostUserId?: string;
+      privacy?: string;
+      topic?: string;
+      createdAt?: string;
+      endedAt?: string | null;
+    }>();
+    expect(body.id).toBe(PUBLIC_ACTIVE.id);
+    expect(body.hostUserId).toBe(ALICE_ID);
+    expect(body.privacy).toBe('public');
+    expect(body.topic).toBe('A debate to end');
+    expect(typeof body.endedAt).toBe('string');
+    // Same iso the shim's UPDATE handler pinned.
+    expect(body.endedAt).toBe('2026-05-10T12:00:01.000Z');
+  });
+
+  it('writes BOTH the UPDATE and the session-ended event atomically at the next sequence', async () => {
+    built = await buildWithSeed({
+      users: [
+        {
+          id: ALICE_ID,
+          oauth_subject: 'authelia:alice',
+          screen_name: 'alice',
+          deleted_at: null,
+        },
+      ],
+      sessions: [PUBLIC_ACTIVE],
+      events: [SESSION_CREATED_EVENT],
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'POST',
+      url: `/sessions/${PUBLIC_ACTIVE.id}/end`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(200);
+
+    // The UPDATE: the in-memory session row now carries a non-null
+    // ended_at. The shim's UPDATE handler mutates in place, so the
+    // store's sessions array has the new ended_at value.
+    const sessionAfter = built.store.sessions.find((s) => s.id === PUBLIC_ACTIVE.id);
+    expect(sessionAfter?.ended_at).not.toBeNull();
+
+    // The INSERT: the session-ended event landed at sequence=2 (the
+    // pre-existing session-created sat at sequence=1, so MAX+1 = 2).
+    const endedEvent = built.store.events.find(
+      (e) => e.session_id === PUBLIC_ACTIVE.id && e.kind === 'session-ended',
+    );
+    expect(endedEvent).toBeDefined();
+    expect(endedEvent?.sequence).toBe(2);
+    expect(endedEvent?.actor).toBe(ALICE_ID);
+    const payload = endedEvent?.payload as Record<string, unknown>;
+    expect(typeof payload?.['ended_at']).toBe('string');
+    // The payload's ended_at mirrors the column's value (the shim's
+    // UPDATE handler pinned both to the same iso string).
+    expect(payload?.['ended_at']).toBe('2026-05-10T12:00:01.000Z');
+
+    // Transaction shape: BEGIN, the SELECT + UPDATE + MAX + INSERT
+    // run inside, then COMMIT. NO ROLLBACK on the success path.
+    expect(built.store.trace[0]).toBe('BEGIN');
+    expect(built.store.trace[built.store.trace.length - 1]).toBe('COMMIT');
+    expect(built.store.trace).not.toContain('ROLLBACK');
+  });
+
+  it('returns 403 not-a-moderator when the caller is visible but is not the host', async () => {
+    // Public session — Ben can see it (it's public), but Alice is the
+    // host, so Ben's attempt to end it must be rejected with 403.
+    built = await buildWithSeed({
+      users: [
+        {
+          id: ALICE_ID,
+          oauth_subject: 'authelia:alice',
+          screen_name: 'alice',
+          deleted_at: null,
+        },
+        {
+          id: BEN_ID,
+          oauth_subject: 'authelia:ben',
+          screen_name: 'ben',
+          deleted_at: null,
+        },
+      ],
+      sessions: [PUBLIC_ACTIVE],
+      events: [SESSION_CREATED_EVENT],
+    });
+    const token = await signSessionToken({ sub: BEN_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'POST',
+      url: `/sessions/${PUBLIC_ACTIVE.id}/end`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(403);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('not-a-moderator');
+
+    // No write side-effects: the session remains active, no new event
+    // landed, the transaction rolled back.
+    const sessionAfter = built.store.sessions.find((s) => s.id === PUBLIC_ACTIVE.id);
+    expect(sessionAfter?.ended_at).toBeNull();
+    expect(
+      built.store.events.filter(
+        (e) => e.session_id === PUBLIC_ACTIVE.id && e.kind === 'session-ended',
+      ),
+    ).toHaveLength(0);
+    expect(built.store.trace).toContain('ROLLBACK');
+  });
+
+  it('returns 404 (NOT 403) when the session is private and the caller is not host/participant', async () => {
+    // Alice tries to end Ben's private session — she can't even see
+    // it. Visibility-non-leak rule fires BEFORE the authority check:
+    // 404, not 403, NOT some other distinguishable status. The
+    // session's existence isn't leaked.
+    built = await buildWithSeed({
+      users: [
+        {
+          id: ALICE_ID,
+          oauth_subject: 'authelia:alice',
+          screen_name: 'alice',
+          deleted_at: null,
+        },
+        {
+          id: BEN_ID,
+          oauth_subject: 'authelia:ben',
+          screen_name: 'ben',
+          deleted_at: null,
+        },
+      ],
+      sessions: [PRIVATE_BENS],
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'POST',
+      url: `/sessions/${PRIVATE_BENS.id}/end`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(404);
+    expect(response.statusCode).not.toBe(403);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('not-found');
+
+    // No write side-effects.
+    const sessionAfter = built.store.sessions.find((s) => s.id === PRIVATE_BENS.id);
+    expect(sessionAfter?.ended_at).toBeNull();
+    expect(built.store.trace).toContain('ROLLBACK');
+  });
+
+  it('returns 409 session-already-ended when the host re-attempts on an already-ended session', async () => {
+    built = await buildWithSeed({
+      users: [
+        {
+          id: ALICE_ID,
+          oauth_subject: 'authelia:alice',
+          screen_name: 'alice',
+          deleted_at: null,
+        },
+      ],
+      sessions: [PUBLIC_ALREADY_ENDED],
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'POST',
+      url: `/sessions/${PUBLIC_ALREADY_ENDED.id}/end`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(409);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('session-already-ended');
+
+    // The row's ended_at is unchanged (still the original timestamp,
+    // not the shim's UPDATE-handler pin), and no new session-ended
+    // event landed. The transaction rolled back.
+    const sessionAfter = built.store.sessions.find((s) => s.id === PUBLIC_ALREADY_ENDED.id);
+    expect(sessionAfter?.ended_at?.toISOString()).toBe('2026-05-08T11:00:00.000Z');
+    expect(
+      built.store.events.filter(
+        (e) => e.session_id === PUBLIC_ALREADY_ENDED.id && e.kind === 'session-ended',
+      ),
+    ).toHaveLength(0);
+    expect(built.store.trace).toContain('ROLLBACK');
+  });
+
+  it('returns 404 not-found when the id does not exist', async () => {
+    built = await buildWithSeed({
+      users: [
+        {
+          id: ALICE_ID,
+          oauth_subject: 'authelia:alice',
+          screen_name: 'alice',
+          deleted_at: null,
+        },
+      ],
+      sessions: [],
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const unknownId = '00000000-0000-4000-8000-ffffffff0009';
+    const response = await built.app.inject({
+      method: 'POST',
+      url: `/sessions/${unknownId}/end`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(404);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('not-found');
+  });
+
+  it('returns 400 validation-failed when the path :id is not a UUID', async () => {
+    built = await buildWithSeed({
+      users: [
+        {
+          id: ALICE_ID,
+          oauth_subject: 'authelia:alice',
+          screen_name: 'alice',
+          deleted_at: null,
+        },
+      ],
+      sessions: [],
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'POST',
+      url: '/sessions/not-a-uuid/end',
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(400);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('validation-failed');
+  });
+
+  it('returns 401 auth-required when no session cookie is present', async () => {
+    built = await buildWithSeed({
+      users: [
+        {
+          id: ALICE_ID,
+          oauth_subject: 'authelia:alice',
+          screen_name: 'alice',
+          deleted_at: null,
+        },
+      ],
+      sessions: [PUBLIC_ACTIVE],
+    });
+    const response = await built.app.inject({
+      method: 'POST',
+      url: `/sessions/${PUBLIC_ACTIVE.id}/end`,
+    });
+    expect(response.statusCode).toBe(401);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('auth-required');
+
+    // No write side-effects whatsoever — the middleware threw before
+    // the handler ran, so no BEGIN.
+    expect(built.store.trace).toHaveLength(0);
+    expect(built.store.events.filter((e) => e.kind === 'session-ended')).toHaveLength(0);
   });
 });

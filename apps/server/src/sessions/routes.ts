@@ -3,16 +3,20 @@
 //   - POST /sessions — create a new debate session.
 //   - GET /sessions — list the visible debate sessions for the caller.
 //   - GET /sessions/:id — fetch a single session's metadata.
+//   - POST /sessions/:id/end — moderator marks a session as ended.
 //
 // Refinements: tasks/refinements/backend/create_session_endpoint.md,
 //              tasks/refinements/backend/list_sessions_endpoint.md,
-//              tasks/refinements/backend/get_session_endpoint.md
-// ADRs:        docs/adr/0021-event-envelope-discriminated-union-with-zod.md,
+//              tasks/refinements/backend/get_session_endpoint.md,
+//              tasks/refinements/backend/end_session_endpoint.md
+// ADRs:        docs/adr/0020-postgres-write-path-locking-and-event-ordering.md,
+//              docs/adr/0021-event-envelope-discriminated-union-with-zod.md,
 //              docs/adr/0022-no-throwaway-verifications.md,
 //              docs/adr/0023-web-framework-fastify.md
 // TaskJuggler: backend.session_management.create_session_endpoint,
 //              backend.session_management.list_sessions_endpoint,
-//              backend.session_management.get_session_endpoint
+//              backend.session_management.get_session_endpoint,
+//              backend.session_management.end_session_endpoint
 //
 // **What this plugin owns today.** A single route — `POST /sessions` —
 // behind `preHandler: app.authenticate`. The handler:
@@ -85,11 +89,37 @@
 //      endpoint's resource IS the session, no second axis along which
 //      the response could grow).
 //
+// **`POST /sessions/:id/end`** — the moderator-only end-of-show. The handler:
+//
+//   1. Reads `request.authUser.id` (the caller) and the validated `:id`
+//      path param.
+//   2. Opens a transaction.
+//   3. Issues a visibility-gated `SELECT ... FOR UPDATE` against
+//      `sessions` (same predicate `GET /sessions/:id` uses) to capture
+//      the row's `host_user_id` and `ended_at` AND acquire a row lock
+//      so concurrent end-session attempts serialise. Zero rows → 404
+//      (existence-non-leak rule). Row found but `host_user_id !=
+//      caller` → 403 `not-a-moderator` (the host IS the moderator at
+//      v1). Row found, host matches, but `ended_at IS NOT NULL` → 409
+//      `session-already-ended` (re-ending is meaningful, not idempotent).
+//   4. UPDATEs `sessions SET ended_at = NOW()` RETURNING the full row.
+//   5. SELECTs `MAX(sequence)` on `session_events` for this session,
+//      computes `nextSeq = MAX + 1` (application-managed monotonic
+//      sequence per ADR 0020; the UNIQUE constraint is the safety net
+//      under concurrent writers).
+//   6. Builds the `session-ended` envelope (payload `{ ended_at: <iso
+//      from RETURNING> }`), runs `validateEvent`, and INSERTs the
+//      event row.
+//   7. COMMITs and returns 200 + the camelCase session JSON.
+//
+// See `tasks/refinements/backend/end_session_endpoint.md` for the
+// authority-403 / visibility-404 ordering, the 409-not-200 rationale,
+// and the FOR UPDATE row-lock decision.
+//
 // **What this plugin does NOT do** — deferred to sibling tasks:
 //
 //   - Filters beyond the visibility gate (host filter, participant
 //     filter, pagination) — `backend.session_management.session_listing_filters`.
-//   - `POST /sessions/:id/end` — `backend.session_management.end_session_endpoint`.
 //   - `POST /sessions/:id/privacy` — `backend.session_management.session_privacy_toggle`.
 //   - `POST /sessions/:id/participants` — `backend.session_management.participant_assignment`.
 //
@@ -867,6 +897,217 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = (
       }
 
       return reply.code(200).send(sessionRowToResponse(row));
+    },
+  );
+
+  app.post(
+    '/sessions/:id/end',
+    {
+      preHandler: app.authenticate,
+      schema: {
+        tags: ['sessions'],
+        summary: 'End a debate session (moderator-only)',
+        description:
+          'Marks the session as ended by setting `ended_at = NOW()` and emitting a ' +
+          '`session-ended` event into `session_events` at the next available sequence. ' +
+          'Both writes are atomic (single transaction); the row stays for replay/history. ' +
+          'Only the session host (the moderator at v1) may end the session.\n\n' +
+          'Visibility-then-authority ordering: invisible sessions (private + caller is ' +
+          'neither host nor participant) return 404 `not-found` BEFORE any authority ' +
+          'check, preserving the existence-non-leak property. Visible-but-not-host ' +
+          'returns 403 `not-a-moderator`. An already-ended session returns 409 ' +
+          '`session-already-ended` — re-ending is deliberately NOT idempotent because ' +
+          'a no-op response would silently desync the client from the methodology, and ' +
+          'a second `session-ended` event would corrupt the per-session log.\n\n' +
+          'Returns 401 `auth-required` when no valid session cookie is present; ' +
+          '400 `validation-failed` when the path `:id` is not a UUID.',
+        security: [{ cookieAuth: [] }],
+        params: sessionIdParamsSchema,
+        response: {
+          200: sessionResponseRef,
+          '4xx': errorEnvelopeRef,
+          '5xx': errorEnvelopeRef,
+        },
+      },
+    },
+    async (request, reply) => {
+      const auth = request.authUser;
+      if (auth === undefined) {
+        throw new ApiError(
+          500,
+          'internal-error',
+          'auth middleware did not populate request.authUser',
+        );
+      }
+      const userId = auth.id;
+
+      const params = request.params as { id: string };
+      const sessionId = params.id;
+
+      // The whole flow lives inside a single transaction so the
+      // visibility check, the authority check, the UPDATE, the
+      // MAX(sequence) read, and the event INSERT are atomic with
+      // respect to concurrent end-session attempts on the same
+      // session. `withTransaction` issues BEGIN/COMMIT (or ROLLBACK
+      // on throw); the production path takes a dedicated client out
+      // of the pg.Pool, the test/pglite path issues transaction
+      // control directly against `pool.query`.
+      const updatedRow = await withTransaction(ensurePool(), async (client) => {
+        // 1. Visibility-gated SELECT ... FOR UPDATE.
+        //    Same predicate as `GET /sessions/:id` (public OR host OR
+        //    participant) — the existence-non-leak property carries
+        //    through: invisible sessions return 404 BEFORE any
+        //    authority check fires. The `FOR UPDATE` clause acquires
+        //    a row lock so concurrent end-session attempts on the
+        //    same session serialise; the second transaction's
+        //    visibility-gated SELECT will block until the first
+        //    commits, then see the post-commit `ended_at IS NOT
+        //    NULL` and short-circuit to 409.
+        const lookup = await client.query<{
+          id: string;
+          host_user_id: string;
+          ended_at: Date | string | null;
+        }>(
+          `SELECT id, host_user_id, ended_at
+           FROM sessions
+           WHERE id = $1
+             AND (
+                   privacy = 'public'
+                   OR host_user_id = $2
+                   OR EXISTS (
+                        SELECT 1 FROM session_participants sp
+                        WHERE sp.session_id = sessions.id AND sp.user_id = $2
+                      )
+                 )
+           FOR UPDATE`,
+          [sessionId, userId],
+        );
+        const existing = lookup.rows[0];
+        if (existing === undefined) {
+          // Zero rows — either the id doesn't exist OR it does but
+          // isn't visible to this caller. Both collapse into 404 so
+          // the response doesn't leak the existence of private
+          // sessions. Mirrors `get_session_endpoint`'s 404-not-403
+          // decision.
+          throw ApiError.notFound('session not found or not visible');
+        }
+
+        // 2. Authority — only the host may end the session. The
+        //    `RejectionReason` union's `not-a-moderator` maps to 403
+        //    and is the right code at v1 because the host IS the
+        //    moderator. See the refinement for the alternatives
+        //    surveyed.
+        if (existing.host_user_id !== userId) {
+          throw new ApiError(403, 'not-a-moderator', 'only the session host may end the session');
+        }
+
+        // 3. Idempotency check — already-ended returns 409 with a
+        //    discriminating code, NOT a no-op 200. Re-ending is a
+        //    meaningful state attempt (the caller's mental model
+        //    says the session is still active); the typed code lets
+        //    the client distinguish this from a generic conflict
+        //    and refresh / display the "already ended" notice.
+        if (existing.ended_at !== null) {
+          throw new ApiError(409, 'session-already-ended', 'session has already ended');
+        }
+
+        // 4. Flip `ended_at` to NOW(). RETURNING surfaces the full
+        //    row (the same shape `sessionRowToResponse` consumes).
+        //    The DB's NOW() is the canonical end-of-show timestamp;
+        //    both the column and the event payload use the same
+        //    value (read out of RETURNING below) so the projection's
+        //    "session.endedAt == event.payload.ended_at" invariant
+        //    holds.
+        const updateResult = await client.query<SessionsInsertRow>(
+          `UPDATE sessions
+           SET ended_at = NOW()
+           WHERE id = $1
+           RETURNING id, host_user_id, privacy, topic, created_at, ended_at`,
+          [sessionId],
+        );
+        const updated = updateResult.rows[0];
+        if (updated === undefined || updated.ended_at === null) {
+          // Defensive — should be unreachable. The WHERE matched a
+          // row (we just SELECTed it under FOR UPDATE) and the SET
+          // assigns a non-null value. A surfaced 500 here means a
+          // wiring regression.
+          throw new ApiError(
+            500,
+            'internal-error',
+            'session UPDATE returned no row or null ended_at',
+          );
+        }
+        const endedAtIso = toIsoString(updated.ended_at);
+
+        // 5. Application-managed monotonic sequence allocator (ADR
+        //    0020). Read MAX(sequence) for this session, INSERT at
+        //    MAX+1. The MAX-then-INSERT pair is inside the
+        //    transaction so the `UNIQUE (session_id, sequence)`
+        //    constraint catches concurrent writers — a racing
+        //    transaction that committed at MAX+1 first would force
+        //    this transaction's INSERT to violate the unique check,
+        //    surface as a 500, and ROLLBACK. The FOR UPDATE on the
+        //    sessions row serialises concurrent end-session
+        //    attempts (which is the common case here), so the unique
+        //    constraint is the second-line guard rather than the
+        //    primary serialisation mechanism — but it's the
+        //    canonical guard the methodology engine's future event-
+        //    append helper will rely on.
+        const maxRes = await client.query<{ max_seq: number | string | null }>(
+          `SELECT COALESCE(MAX(sequence), 0) AS max_seq
+           FROM session_events
+           WHERE session_id = $1`,
+          [sessionId],
+        );
+        // `MAX(sequence)` is BIGINT in Postgres; the default `pg`
+        // parser surfaces BIGINT as string to avoid silent precision
+        // loss past 2^53. We coerce to JS number — safe well past
+        // 2^53 for any plausible per-session event count, and
+        // documented as a known ceiling in shared-types' events.ts.
+        const rawMax = maxRes.rows[0]?.max_seq ?? 0;
+        const maxSeq = typeof rawMax === 'string' ? Number.parseInt(rawMax, 10) : rawMax;
+        const nextSeq = maxSeq + 1;
+
+        // 6. Build the `session-ended` envelope and run it through
+        //    `validateEvent`. Same schema-on-write contract as
+        //    `session-created` — every row in `session_events` is
+        //    structurally valid by construction.
+        const eventId = randomUUID();
+        const eventCreatedAtIso = new Date(nowFn()).toISOString();
+        const envelope = {
+          id: eventId,
+          sessionId: updated.id,
+          sequence: nextSeq,
+          kind: 'session-ended' as const,
+          actor: userId,
+          payload: {
+            ended_at: endedAtIso,
+          },
+          createdAt: eventCreatedAtIso,
+        };
+        validateEvent(envelope);
+
+        // 7. INSERT the event row. `payload` carries the snake_case
+        //    shared-types payload; `created_at` is server-managed via
+        //    the column default.
+        await client.query(
+          `INSERT INTO session_events
+             (id, session_id, sequence, kind, actor, payload)
+           VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
+          [
+            envelope.id,
+            envelope.sessionId,
+            envelope.sequence,
+            envelope.kind,
+            envelope.actor,
+            JSON.stringify(envelope.payload),
+          ],
+        );
+
+        return updated;
+      });
+
+      return reply.code(200).send(sessionRowToResponse(updatedRow));
     },
   );
 
