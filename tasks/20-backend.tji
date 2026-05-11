@@ -54,7 +54,9 @@ task backend "Backend" {
     task oauth_callback_handler "OAuth callback handler" {
       effort 1d
       allocate team
+      complete 100
       depends !oauth_provider_config
+      note "Refinement: tasks/refinements/backend/oauth_callback_handler.md"
     }
     task screen_name_collection "Screen-name collection on first auth" {
       effort 1d

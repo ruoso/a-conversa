@@ -46,6 +46,7 @@ import cors from '@fastify/cors';
 import sensible from '@fastify/sensible';
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
 
+import { authRoutesPlugin, loadOidcConfig, OidcConfigError } from './auth/index.js';
 import { errorHandlerPlugin } from './error-handler.js';
 import { createLoggerOptions } from './logger.js';
 import { errorEnvelopeRef, openapiPlugin } from './openapi.js';
@@ -199,6 +200,29 @@ export async function createServer(options: CreateServerOptions = {}): Promise<F
   // semantics (liveness-only, not readiness), refinement link, sibling
   // ownership — stays in one file. See routes/healthz.ts.
   await app.register(healthzPlugin);
+
+  // OIDC handshake routes (`GET /auth/login` + `GET /auth/callback`).
+  // Owned by `backend.auth.oauth_callback_handler`. The plugin reads
+  // `OIDC_*` env vars at registration time; when those env vars are
+  // not set (the common case for `createServer({ logger: false })`
+  // smoke tests of the bootstrap), the plugin is silently skipped so
+  // tests that don't care about auth don't have to mock env. A
+  // production server with a real `.env` registers the routes; an
+  // OIDC-less test does not. Refinement:
+  // tasks/refinements/backend/oauth_callback_handler.md.
+  try {
+    const oidcConfig = loadOidcConfig(process.env);
+    await app.register(authRoutesPlugin, { oidcConfig });
+  } catch (err) {
+    if (err instanceof OidcConfigError) {
+      app.log.warn(
+        { issues: err.issues },
+        'OIDC env vars not set or invalid — /auth/login and /auth/callback are NOT registered. Set OIDC_ISSUER_URL, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, and APP_BASE_URL to enable the auth surface.',
+      );
+    } else {
+      throw err;
+    }
+  }
 
   return app;
 }
