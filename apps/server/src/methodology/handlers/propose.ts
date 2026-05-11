@@ -7,6 +7,7 @@
 // Refinement: tasks/refinements/data-and-methodology/reword_vs_restructure.md
 // Refinement: tasks/refinements/data-and-methodology/break_edge_logic.md
 // Refinement: tasks/refinements/data-and-methodology/amend_node_logic.md
+// Refinement: tasks/refinements/data-and-methodology/annotation_logic.md
 // TaskJuggler: data_and_methodology.methodology_engine.decomposition_logic
 // TaskJuggler: data_and_methodology.methodology_engine.interpretive_split_logic
 // TaskJuggler: data_and_methodology.methodology_engine.axiom_mark_logic
@@ -14,6 +15,7 @@
 // TaskJuggler: data_and_methodology.methodology_engine.reword_vs_restructure
 // TaskJuggler: data_and_methodology.methodology_engine.break_edge_logic
 // TaskJuggler: data_and_methodology.methodology_engine.amend_node_logic
+// TaskJuggler: data_and_methodology.methodology_engine.annotation_logic
 //
 // The propose action carries one of the eleven proposal sub-kinds. Per
 // the methodology framework (agreement_state_machine), the handler runs
@@ -160,12 +162,47 @@
 //     side to remove it). Rule 4 enforces the intent at the validator
 //     layer.
 //
-//   - For the other four sub-kinds (`classify-node`,
-//     `set-node-substance`, `set-edge-substance`, `annotate`): the
-//     universal-pass placeholder path. Each sub-kind's sibling task
-//     will tighten its arm as it lands. The placeholder builds the
-//     same one-event envelope the original handler always built — no
-//     methodology-specific gating.
+//   - For the `annotate` sub-kind: the real propose-side validator per
+//     `annotation_logic`. Two rules (see `validateAnnotateProposal`
+//     below for the rule comments):
+//       1. Target-entity-exists — `projection.getNode(target_id)` (when
+//          `target_kind === 'node'`) or `projection.getEdge(target_id)`
+//          (when `target_kind === 'edge'`) must be defined →
+//          `'target-entity-not-found'`.
+//       2. Target-entity-visible — the resolved node/edge's `visible`
+//          flag must be `true` → `'illegal-state-transition'`.
+//     (Structural shape — `kind: 'annotate'`, `target_kind ∈ {node,
+//     edge}`, `target_id: UUID`, `annotation_kind ∈ {note, reframe,
+//     scope-change, stance}`, `content` non-empty — is enforced
+//     upstream by `annotateProposalSchema` per ADR 0021. The
+//     methodology validator does not re-check.) Annotate is **not** in
+//     `CONFLICTING_PARENT_KINDS` — it attaches an annotation, doesn't
+//     flip target visibility, and multiple annotations on the same
+//     target are fine. No deduplication either: annotations are
+//     content-bearing and same-content duplicates may be intentional
+//     (the agreement workflow handles redundancy via dispute /
+//     withdrawal). The methodology validator does not walk pending /
+//     committed annotations looking for matches.
+//
+//     **`annotation_kind` overlap with `meta-move`**: the
+//     `annotation_kind` enum (`note`, `reframe`, `scope-change`,
+//     `stance`) overlaps with `meta-move`'s `meta_kind` enum
+//     (`reframe`, `scope-change`, `stance`). Per the meta_move_logic
+//     refinement, a meta-move commit creates an annotation with the
+//     corresponding kind; an annotate commit produces an annotation
+//     too. The two paths converge structurally but differ in user
+//     intent (meta-move: "I'm relocating the debate"; annotate:
+//     "attach context"). The annotate validator does NOT redirect or
+//     reject the three overlapping `annotation_kind` values — both
+//     paths remain available; resolving the redundancy is an ADR-
+//     level decision out of scope here. See annotation_logic.md.
+//
+//   - For the other three sub-kinds (`classify-node`,
+//     `set-node-substance`, `set-edge-substance`): the universal-pass
+//     placeholder path. Each sub-kind's sibling task will tighten its
+//     arm as it lands. The placeholder builds the same one-event
+//     envelope the original handler always built — no methodology-
+//     specific gating.
 //
 // **Scope: propose-side only.** This handler validates the propose
 // action and emits the proposal envelope event. The commit-time
@@ -932,13 +969,144 @@ function validateAmendNodeProposal(
 }
 
 // ---------------------------------------------------------------
+// `validateAnnotateProposal` — the propose-side validator for the
+// `annotate` proposal sub-kind.
+//
+// An annotation is a note attached to a node or edge that records
+// participant context — per docs/data-model.md lines 135–141, "notes
+// attached to the entity that record participant context the
+// participants want preserved without modifying the entity's core
+// meaning." Examples from the walkthrough: Ben's note that D1's
+// accreditation boundary "does argumentative work" (recorded as
+// context alongside an agree vote); a "declines to press"
+// methodological stance attached to a node Ben chose not to argue.
+// Annotations carry their own `wording` and `substance` facets and
+// go through the standard agreement workflow.
+//
+// Rules in evaluation order:
+//
+//   1. **Target-entity-exists.** Dispatch on `target_kind`:
+//      - `'node'` → `projection.getNode(target_id)` must be non-
+//        undefined.
+//      - `'edge'` → `projection.getEdge(target_id)` must be non-
+//        undefined.
+//      → `'target-entity-not-found'` (same RejectionReason the
+//      decompose / interpretive-split / axiom-mark / meta-move arms
+//      use when their target entity is missing).
+//   2. **Target-entity-visible.** The resolved entity's `visible`
+//      field must be `true`. An annotation against a superseded node
+//      or broken edge is meaningless — per docs/data-model.md lines
+//      295–300, "an annotation is visible iff (1) an annotation-
+//      created event has fired in this session's history, AND (2)
+//      the annotation's target entity (node or edge) is currently
+//      visible. If the target becomes invisible, the annotation does
+//      too." Writing one against an already-invisible target is a
+//      propose-time contradiction. → `'illegal-state-transition'`.
+//
+// Rule 3 — structural payload shape (`kind: 'annotate'`,
+// `target_kind ∈ {node, edge}`, `target_id` a UUID, `annotation_kind
+// ∈ {note, reframe, scope-change, stance}`, `content` non-empty) — is
+// enforced upstream by `annotateProposalSchema` per ADR 0021. The
+// methodology validator does not re-check.
+//
+// **No conflict-walking.** An annotation is **additive** — it attaches
+// to a target and does NOT flip `target.visible = false` on commit.
+// Multiple annotations on the same target are fine and methodologically
+// expected (a participant may attach a `note` recording context AND a
+// `stance` declaring decline-to-press against the same node). The
+// `CONFLICTING_PARENT_KINDS` set is unchanged (it's the node-touching
+// structural set: decompose / interpretive-split / edit-wording /
+// amend-node — none of which annotate participates in).
+//
+// **No deduplication.** The methodology layer does NOT reject "same-
+// content annotation against same target" as a duplicate. Annotations
+// are content-bearing artifacts; the participants may want two notes
+// that look similar (different framings, same surface text; or the
+// same note re-stated for emphasis at a later point in the debate).
+// The agreement workflow handles redundancy — a duplicate annotation,
+// if disputed, can be withdrawn. See `annotation_logic.md` "Decisions."
+//
+// **`annotation_kind` overlap with `meta-move`.** The `annotation_kind`
+// enum (`note`, `reframe`, `scope-change`, `stance`) overlaps with
+// `meta-move`'s `meta_kind` enum on the latter three values. Per the
+// meta_move_logic refinement, a meta-move commit creates an annotation
+// with the corresponding kind; an annotate commit also produces an
+// annotation. The two paths converge structurally but differ in user
+// intent. The annotate validator accepts all four `annotation_kind`
+// values — it does NOT redirect or reject the three overlapping
+// values. Both paths remain available; resolving the redundancy is an
+// ADR-level decision out of scope here.
+//
+// **Commit-time annotation creation.** The projection's
+// `applyCommittedProposal` annotate arm (replay.ts lines 749–760) is
+// currently a structural no-op — it defers the annotation entity's
+// creation to a paired `annotation-created` event the methodology
+// engine will eventually emit. Same shape as the decompose /
+// interpretive-split / axiom-mark / meta-move commit-time gaps; see
+// this refinement's Open Questions.
+// ---------------------------------------------------------------
+
+function validateAnnotateProposal(
+  projection: Projection,
+  action: ProposeAction,
+): RejectedValidationResult | null {
+  if (action.proposal.kind !== 'annotate') {
+    // Defensive — the dispatcher gates this. Never reached at runtime.
+    return null;
+  }
+  const targetKind = action.proposal.target_kind;
+  const targetId = action.proposal.target_id;
+
+  // Rule 1 — target entity exists (dispatched on target_kind).
+  if (targetKind === 'node') {
+    const node = projection.getNode(targetId);
+    if (node === undefined) {
+      return {
+        ok: false,
+        reason: 'target-entity-not-found',
+        detail: `propose annotate: target_id ${targetId} (target_kind 'node') does not reference any node in session ${projection.sessionId}`,
+      };
+    }
+    // Rule 2 — node is currently visible.
+    if (!nodeIsVisible(projection, targetId)) {
+      return {
+        ok: false,
+        reason: 'illegal-state-transition',
+        detail: `propose annotate: target node ${targetId} is not currently visible (already superseded by a prior decompose / interpretive-split / restructure) — an annotation on an invisible entity is meaningless`,
+      };
+    }
+    return null;
+  }
+  // target_kind === 'edge'
+  const edge = projection.getEdge(targetId);
+  if (edge === undefined) {
+    return {
+      ok: false,
+      reason: 'target-entity-not-found',
+      detail: `propose annotate: target_id ${targetId} (target_kind 'edge') does not reference any edge in session ${projection.sessionId}`,
+    };
+  }
+  // Rule 2 — edge is currently visible.
+  if (!edgeIsVisible(projection, targetId)) {
+    return {
+      ok: false,
+      reason: 'illegal-state-transition',
+      detail: `propose annotate: target edge ${targetId} is not currently visible (already broken by a prior break-edge commit) — an annotation on an invisible entity is meaningless`,
+    };
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------
 // The handler.
 //
 // Switches on `action.proposal.kind`. The `decompose`,
 // `interpretive-split`, `axiom-mark`, `meta-move`, `edit-wording`,
-// `break-edge`, and `amend-node` arms run their real validators. All
-// other arms fall through to the universal-pass placeholder path —
-// sibling tasks will tighten their arms as they land.
+// `break-edge`, `amend-node`, and `annotate` arms run their real
+// validators. The remaining three arms (`classify-node`,
+// `set-node-substance`, `set-edge-substance`) fall through to the
+// universal-pass placeholder path — their sibling tasks will tighten
+// them as they land.
 // ---------------------------------------------------------------
 
 export const proposeHandler: Validator<ProposeAction> = (
@@ -993,7 +1161,13 @@ export const proposeHandler: Validator<ProposeAction> = (
       if (rejection !== null) return rejection;
       break;
     }
-    // The other four sub-kinds fall through to the placeholder emission.
+    case 'annotate': {
+      const rejection = validateAnnotateProposal(projection, action);
+      if (rejection !== null) return rejection;
+      break;
+    }
+    // The other three sub-kinds (`classify-node`, `set-node-substance`,
+    // `set-edge-substance`) fall through to the placeholder emission.
     // Each sub-kind's sibling task tightens its arm as it lands.
     default:
       break;
@@ -1015,11 +1189,12 @@ export const proposeHandler: Validator<ProposeAction> = (
 // barrel both still reference `placeholderProposeHandler`. After this
 // task the symbol is no longer a placeholder for the `decompose`,
 // `interpretive-split`, `axiom-mark`, `meta-move`, `edit-wording`,
-// `break-edge`, or `amend-node` arms (it's the real validator there),
-// but the name is preserved so the import sites in `engine.ts` and
-// `handlers/index.ts` don't need to churn ahead of the other sibling
-// sub-kind tasks. Once the remaining four sub-kinds tighten, the alias
-// and the file comment header should be revisited.
+// `break-edge`, `amend-node`, or `annotate` arms (it's the real
+// validator there), but the name is preserved so the import sites in
+// `engine.ts` and `handlers/index.ts` don't need to churn ahead of the
+// remaining three sibling sub-kind tasks (`classify-node`,
+// `set-node-substance`, `set-edge-substance`). Once those tighten, the
+// alias and the file comment header should be revisited.
 export const placeholderProposeHandler = proposeHandler;
 
 export default proposeHandler;

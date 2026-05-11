@@ -327,7 +327,9 @@ task data_and_methodology "Data and methodology" {
     task annotation_logic "Annotation creation, voting, withdrawal" {
       effort 1d
       allocate team
+      complete 100
       depends !agreement_state_machine
+      note "Refinement: tasks/refinements/data-and-methodology/annotation_logic.md"
     }
   }
 
