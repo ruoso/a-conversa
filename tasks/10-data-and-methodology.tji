@@ -234,7 +234,9 @@ task data_and_methodology "Data and methodology" {
     task pending_consequences_stub "Stub: detect agreed-substance edges with unagreed-substance source" {
       effort 0.5d
       allocate team
+      complete 100
       note "Out of scope for v1 per data-model.md, but the detector is a small addition once the rest is in place."
+      note "Refinement: tasks/refinements/data-and-methodology/pending_consequences_stub.md"
     }
     task diagnostic_event_emission "Emit diagnostic-fired events to subscribers" {
       effort 1d

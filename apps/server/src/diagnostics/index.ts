@@ -6,6 +6,7 @@
 //   - tasks/refinements/data-and-methodology/multi_warrant_detection.md
 //   - tasks/refinements/data-and-methodology/dangling_claim_detection.md
 //   - tasks/refinements/data-and-methodology/coherency_hint_detection.md
+//   - tasks/refinements/data-and-methodology/pending_consequences_stub.md
 //
 // The diagnostics module hosts read-side detectors for the
 // structural diagnostics defined in `docs/data-model.md`'s
@@ -27,3 +28,4 @@ export {
   type IncompleteWarrantMissingBridgesFromHint,
   type SelfContradictsHint,
 } from './coherency-hint-detection.js';
+export { detectPendingConsequences, type PendingConsequence } from './pending-consequences.js';
