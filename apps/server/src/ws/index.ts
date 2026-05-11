@@ -48,6 +48,22 @@ export {
   type WsMessageHandler,
 } from './dispatcher.js';
 
+// `ws_error_message` — canonical server → client error envelope.
+// Builder + sender helper reused by the dispatcher seams, the
+// connection-level malformed-envelope path, and the subscribe
+// handler's visibility-rejection branch.
+export {
+  buildWsErrorEnvelope,
+  isApiErrorShape,
+  sendWsError,
+  WS_INTERNAL_ERROR_CODE,
+  WS_INTERNAL_ERROR_MESSAGE,
+  WS_MALFORMED_ENVELOPE_CODE,
+  WS_UNKNOWN_MESSAGE_TYPE_CODE,
+  type WsErrorEnvelopeOptions,
+  type WsErrorSender,
+} from './error-envelope.js';
+
 // `ws_subscribe_to_session` — per-connection subscription registry.
 // Decorated onto `app.wsSubscriptions`; the future broadcast surface
 // reaches for `connectionsForSession(...)` to iterate fan-out targets.

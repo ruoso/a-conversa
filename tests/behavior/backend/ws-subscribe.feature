@@ -11,10 +11,10 @@ Feature: WebSocket subscribe / unsubscribe
 
   These scenarios cover the wire-level subscribe / unsubscribe flow
   end-to-end through the real upgrade path (`app.injectWS`) against a
-  pglite-backed pool with a real `sessions` row. The not-visible path
-  is the placeholder error surface (log + drop, no ack) until
-  `ws_error_message` lands — a comment in the step definitions notes
-  the seam.
+  pglite-backed pool with a real `sessions` row. The not-visible
+  path's regression coverage moved to `ws-error.feature` once
+  `ws_error_message` landed (the wire shape is now an `error`
+  envelope with `code: 'not-found'` — not a silent drop).
 
   Refinement: tasks/refinements/backend/ws_subscribe_to_session.md
   ADRs:        docs/adr/0023-web-framework-fastify.md,
@@ -30,18 +30,6 @@ Feature: WebSocket subscribe / unsubscribe
     When an authenticated WebSocket client connects to "/ws"
     And the client sends a subscribe envelope for session "55555555-5555-4555-8555-555555555501"
     Then the client receives a subscribed ack referencing the subscribe envelope
-
-  Scenario: Subscribing to a non-visible private session yields no ack and the connection stays open
-    # The not-visible branch logs + drops today — the wire-format error
-    # envelope is owned by `ws_error_message`. This scenario pins the
-    # current observable: no ack frame within a bounded window, the
-    # connection survives. When `ws_error_message` lands, this scenario
-    # will be updated to assert the error envelope shape.
-    Given a user with oauth_subject "authelia:bob-host" exists with screen_name "bob-host"
-    And a private session owned by "bob-host" exists with id "55555555-5555-4555-8555-555555555502"
-    When an authenticated WebSocket client connects to "/ws"
-    And the client sends a subscribe envelope for session "55555555-5555-4555-8555-555555555502"
-    Then the client receives no subscribed ack within 200ms and the connection stays open
 
   Scenario: Unsubscribing emits an unsubscribed ack
     Given a public session owned by "alice-ws" exists with id "55555555-5555-4555-8555-555555555503"

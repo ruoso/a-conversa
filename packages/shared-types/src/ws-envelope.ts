@@ -76,6 +76,7 @@ export const wsMessageTypes = [
   'subscribed',
   'unsubscribed',
   'event-applied',
+  'error',
 ] as const;
 
 export type WsMessageType = (typeof wsMessageTypes)[number];
@@ -216,6 +217,79 @@ export type EventAppliedPayload = {
   event: Event;
 };
 
+// -- error payload -------------------------------------------------
+//
+// `error` (server → client): emitted when a client request fails or
+// the server cannot process an inbound frame. The envelope shape
+// mirrors the HTTP `ApiError` body shape (see
+// `apps/server/src/errors.ts`) minus the HTTP status code — the WS
+// channel has no status code; the `code` discriminator is the typed
+// branch clients switch on.
+//
+// **Owned by `ws_error_message`.** The discriminator vocabulary for
+// `payload.code` is unified across the HTTP and WS surfaces:
+//
+//   - HTTP `ApiError.code` taxonomy (kebab-case): `'bad-request'`,
+//     `'unauthorized'`, `'forbidden'`, `'not-found'`, `'conflict'`,
+//     `'unprocessable-entity'`, `'internal-error'`.
+//   - WS-specific additions: `'unknown-message-type'` (the
+//     dispatcher's `onUnknownType` fires) and `'malformed-envelope'`
+//     (`parseWsEnvelopeJson` rejects the inbound frame).
+//   - Future `RejectionReason` values from the methodology engine
+//     ride the same surface once the five message-type tasks
+//     (`ws_propose_message`, `ws_vote_message`, `ws_commit_message`,
+//     `ws_meta_disagreement_message`, `ws_snapshot_message`) land.
+//
+// **Correlation contract.** `inResponseTo` is present on the
+// envelope when the error responds to a specific client envelope
+// (the dispatcher seams echo `envelope.id`; the subscribe handler's
+// visibility rejection echoes the originating subscribe envelope's
+// id). It is absent when the error is server-emitted without a
+// client correlate — the canonical case is `'malformed-envelope'`,
+// where the inbound frame failed to parse and the server therefore
+// cannot read an `id` off it.
+//
+// **Schema-on-write.** `serializeWsEnvelope` re-runs `parseWsEnvelope`
+// on every outgoing frame, so a server bug that constructs an `error`
+// envelope with a missing `code` field surfaces at the server, not
+// on the client.
+//
+// **`code` is `z.string()` (not a closed enum).** Future
+// `RejectionReason` values keep widening the effective set;
+// constraining the wire schema to a closed enum here would force a
+// shared-types update on every methodology change. The discipline
+// is documented (every code is kebab-case + matches the HTTP
+// taxonomy or a documented WS-specific extension) and enforced by
+// the construction surface (`buildWsErrorEnvelope` accepts a
+// `string` and callers reach for the documented values) — not by
+// the wire schema.
+
+/**
+ * Server → client error envelope payload. Shape mirrors the HTTP
+ * `ApiError` body minus the status code.
+ *
+ * - `code` — kebab-case discriminator. Reuses the HTTP `ApiError.code`
+ *   taxonomy where applicable (`unauthorized`, `forbidden`,
+ *   `not-found`, `bad-request`, `conflict`, `unprocessable-entity`,
+ *   `internal-error`) plus WS-specific `unknown-message-type` and
+ *   `malformed-envelope`. Future methodology `RejectionReason` values
+ *   are added through the same surface as the relevant message-type
+ *   tasks land.
+ * - `message` — human-readable detail. `ApiError`-shaped server-side
+ *   errors echo their `message` field; non-`ApiError` thrown values
+ *   surface the generic literal `'internal error'` (the no-leak rule
+ *   in `apps/server/src/ws/error-envelope.ts`).
+ * - `details` — optional structured context (Zod issues, methodology
+ *   rejection details, etc.). Same shape as `ApiErrorDetails`.
+ */
+export const errorPayloadSchema = z.object({
+  code: z.string().min(1),
+  message: z.string(),
+  details: z.record(z.string(), z.unknown()).optional(),
+});
+
+export type ErrorPayload = z.infer<typeof errorPayloadSchema>;
+
 // -- Registry -------------------------------------------------------
 //
 // Exhaustive over `WsMessageType` (the `Record<...>` annotation forces
@@ -237,6 +311,7 @@ export const wsMessagePayloadSchemas: Record<WsMessageType, z.ZodTypeAny> = {
   // broadcast emitted carries a structurally valid event by
   // construction (schema-on-write invariant per ADR 0021).
   'event-applied': eventAppliedPayloadSchema,
+  error: errorPayloadSchema,
 };
 
 // -- Per-type payload type map -------------------------------------
@@ -252,6 +327,7 @@ export interface WsMessagePayloadMap {
   subscribed: SubscribedPayload;
   unsubscribed: UnsubscribedPayload;
   'event-applied': EventAppliedPayload;
+  error: ErrorPayload;
 }
 
 export type WsPayloadFor<T extends WsMessageType> = WsMessagePayloadMap[T];

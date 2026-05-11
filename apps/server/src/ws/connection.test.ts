@@ -76,6 +76,7 @@ type WsLike = {
   send(data: string): void;
   close(code?: number, reason?: string): void;
   terminate(): void;
+  readyState: number;
 };
 
 function toUtf8(data: unknown): string {
@@ -240,6 +241,45 @@ describe('wsConnectionHandlingPlugin', () => {
     // beforeEach-built `app` is already torn down by this point.
     app = await buildLifecycleApp();
     await app.ready();
+  });
+
+  it('replies with a `malformed-envelope` error envelope and keeps the connection open', async () => {
+    // Per `ws_error_message`, a frame that fails `parseWsEnvelopeJson`
+    // produces a canonical `error` envelope on the wire (`code:
+    // 'malformed-envelope'`, no `inResponseTo` because the inbound
+    // frame had no parseable id) and the connection STAYS OPEN — a
+    // per-frame parse failure is a client bug recoverable by
+    // re-sending, not a connection-state problem.
+    const cookie = await fixtureCookieHeader();
+    const { ws, next } = await openWsClient(app, { headers: { cookie } });
+    try {
+      // Drain hello.
+      const helloRaw = await next();
+      const hello = JSON.parse(helloRaw) as { type?: unknown };
+      expect(hello.type).toBe('hello');
+
+      // Send a frame that JSON.parse can't handle.
+      ws.send('{ this is not valid json');
+
+      const errRaw = await next();
+      const parsed = JSON.parse(errRaw) as {
+        type?: unknown;
+        id?: unknown;
+        inResponseTo?: unknown;
+        payload?: { code?: unknown; message?: unknown };
+      };
+      expect(parsed.type).toBe('error');
+      // No `inResponseTo` — the inbound frame had no readable id.
+      expect(parsed.inResponseTo).toBeUndefined();
+      expect(parsed.payload?.code).toBe('malformed-envelope');
+      expect(typeof parsed.payload?.message).toBe('string');
+
+      // Connection still OPEN. The `ws` library's readyState enum:
+      // 0 = CONNECTING, 1 = OPEN.
+      expect(ws.readyState).toBe(1);
+    } finally {
+      ws.terminate();
+    }
   });
 
   it('closes with 1011 when the handler throws (deterministic force-error header)', async () => {

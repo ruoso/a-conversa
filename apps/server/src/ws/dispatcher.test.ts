@@ -25,16 +25,30 @@ import { WsDispatcher } from './dispatcher.js';
 const MSG_ID = '11111111-1111-4111-8111-111111111111';
 const CONNECTION_ID = '22222222-2222-4222-8222-222222222222';
 
-// Minimal stub for the per-connection context. The dispatcher only
-// reads `connectionId` off the context for logging; the socket field
-// is never touched by the dispatcher itself (handlers use it).
-function stubConnection(id: string = CONNECTION_ID): WsConnectionContext {
+// Minimal stub for the per-connection context. The dispatcher
+// reads `connectionId` off the context for logging AND calls
+// `socket.send(wire)` from its default `onUnknownType` /
+// `onHandlerError` seams (per `ws_error_message`). The stub captures
+// every send-call in a per-test array so the wire-format error
+// envelope can be asserted against.
+interface StubConnection extends WsConnectionContext {
+  sends: string[];
+}
+
+function stubConnection(id: string = CONNECTION_ID): StubConnection {
+  const sends: string[] = [];
+  const socket = {
+    send(wire: string): void {
+      sends.push(wire);
+    },
+  };
   return {
     connectionId: id,
-    // Cast: the dispatcher never touches this field. A null shim is
-    // fine for unit tests; the cucumber integration drives a real
-    // WS socket end-to-end.
-    socket: null as unknown as WsConnectionContext['socket'],
+    sends,
+    // Cast: the stub `socket` exposes only `.send(string)` — enough
+    // for the dispatcher's default seams to reach. The cucumber
+    // integration drives a real WS socket end-to-end.
+    socket: socket as unknown as WsConnectionContext['socket'],
   };
 }
 
@@ -104,12 +118,12 @@ describe('WsDispatcher', () => {
     expect(handler).toHaveBeenCalledWith(envelope, conn);
   });
 
-  it('logs at warn level and returns when no handler is registered for the message type', async () => {
+  it('logs at warn level and sends an `unknown-message-type` error envelope when no handler is registered', async () => {
     // `hello` is in the closed type enum but no handler has been
-    // registered — exercises the unknown-handler path. The cast
-    // through `unknown` is the shape parseWsEnvelope would produce
-    // when a downstream task adds a new `type` to the enum but no
-    // handler has been wired yet.
+    // registered — exercises the unknown-handler path. Per
+    // `ws_error_message`, the default `onUnknownType` now logs AND
+    // sends a canonical `error` envelope on the socket with
+    // `code: 'unknown-message-type'` and `inResponseTo = envelope.id`.
     const envelope: WsEnvelope<'hello'> = {
       type: 'hello',
       id: MSG_ID,
@@ -124,9 +138,26 @@ describe('WsDispatcher', () => {
     expect(meta.connectionId).toBe(CONNECTION_ID);
     expect(meta.messageId).toBe(MSG_ID);
     expect(meta.messageType).toBe('hello');
-    expect(message).toMatch(/no handler registered/);
+    expect(message).toMatch(/unknown-message-type/);
     // No throw — the dispatcher swallows.
     expect(logger.error).not.toHaveBeenCalled();
+
+    // The wire-format error envelope was sent on the connection's
+    // socket. Per `ws_error_message`'s canonical shape:
+    //   - `type: 'error'`
+    //   - `id` is a fresh v4 UUID minted by `buildWsErrorEnvelope`
+    //   - `inResponseTo` echoes the originating envelope's `id`
+    //   - `payload.code: 'unknown-message-type'`
+    expect(conn.sends).toHaveLength(1);
+    const wire = JSON.parse(conn.sends[0] as string) as {
+      type?: unknown;
+      inResponseTo?: unknown;
+      payload?: { code?: unknown; message?: unknown };
+    };
+    expect(wire.type).toBe('error');
+    expect(wire.inResponseTo).toBe(MSG_ID);
+    expect(wire.payload?.code).toBe('unknown-message-type');
+    expect(typeof wire.payload?.message).toBe('string');
   });
 
   it('invokes the onUnknownType seam when set instead of the default warn', async () => {
@@ -148,15 +179,17 @@ describe('WsDispatcher', () => {
     expect(logger.warn).not.toHaveBeenCalled();
   });
 
-  it('catches handler-thrown errors and logs them via the default onHandlerError', async () => {
+  it('catches handler-thrown generic errors and emits the no-leak `internal-error` envelope', async () => {
+    // No-leak rule (per `ws_error_message`): a non-`ApiError` thrown
+    // value never has its `message` echoed to the client. The wire
+    // envelope carries the generic literal `code: 'internal-error'`
+    // and `message: 'internal error'`; the underlying error is logged
+    // server-side at error level only.
     const handler = vi.fn(() => {
-      // Synchronous throw inside an async-returning handler — exercises
-      // the dispatcher's try/catch around the handler invocation. The
-      // handler is typed as `() => Promise<void>`; `Promise.reject`
-      // satisfies the return type without an unnecessary `async`
-      // (`@typescript-eslint/require-await` would otherwise flag the
-      // bare `async () => { throw ... }` form).
-      throw new Error('handler-test-failure');
+      // Synchronous throw with a "secret" detail the client must NOT
+      // see — a stand-in for a programmer error / DB column name /
+      // hostname / etc.
+      throw new Error('SELECT failed near column host_user_id');
     });
     dispatcher.register('hello', handler);
 
@@ -176,10 +209,76 @@ describe('WsDispatcher', () => {
     expect(meta.connectionId).toBe(CONNECTION_ID);
     expect(meta.messageId).toBe(MSG_ID);
     expect(meta.messageType).toBe('hello');
-    expect((meta.err as Error).message).toBe('handler-test-failure');
+    // The full error is logged server-side — operator visibility.
+    expect((meta.err as Error).message).toBe('SELECT failed near column host_user_id');
+
+    // The wire envelope must NOT leak the underlying message.
+    expect(conn.sends).toHaveLength(1);
+    const wire = JSON.parse(conn.sends[0] as string) as {
+      type?: unknown;
+      inResponseTo?: unknown;
+      payload?: { code?: unknown; message?: unknown };
+    };
+    expect(wire.type).toBe('error');
+    expect(wire.inResponseTo).toBe(MSG_ID);
+    expect(wire.payload?.code).toBe('internal-error');
+    expect(wire.payload?.message).toBe('internal error');
+    // Crucial — the leaky detail must not appear on the wire.
+    expect(conn.sends[0]).not.toMatch(/host_user_id/);
+    expect(conn.sends[0]).not.toMatch(/SELECT failed/);
   });
 
-  it('catches handler-rejected promises and logs them via the default onHandlerError', async () => {
+  it('echoes `ApiError`-shaped throws via the wire envelope (code + message)', async () => {
+    // The duck-typed `ApiError`-shape branch. Methodology rejections
+    // (and explicit `ApiError.notFound(...)` throws) carry a safe
+    // `code` + `message` the handler chose; the wire envelope echoes
+    // them verbatim so the client can branch on the typed code and
+    // surface the chosen message.
+    // A real `ApiError` instance from `errors.ts` IS an Error subclass
+    // with `code` + `message` fields — the canonical shape the
+    // duck-typed `isApiErrorShape` check accepts. We construct a stub
+    // Error subclass here so eslint's `only-throw-error` is satisfied
+    // without importing the full `ApiError` class (the dispatcher's
+    // discrimination is structural; the test exercises that contract).
+    class StubApiError extends Error {
+      readonly code: string;
+      constructor(code: string, message: string) {
+        super(message);
+        this.code = code;
+      }
+    }
+    const apiErrorShape = new StubApiError(
+      'forbidden',
+      'you are not a participant of this session',
+    );
+    const handler = vi.fn(() => {
+      throw apiErrorShape;
+    });
+    dispatcher.register('hello', handler);
+
+    const envelope: WsEnvelope<'hello'> = {
+      type: 'hello',
+      id: MSG_ID,
+      payload: { connectionId: CONNECTION_ID },
+    };
+    const conn = stubConnection();
+
+    await dispatcher.dispatch(envelope, conn);
+
+    expect(logger.error).toHaveBeenCalledTimes(1);
+    expect(conn.sends).toHaveLength(1);
+    const wire = JSON.parse(conn.sends[0] as string) as {
+      type?: unknown;
+      inResponseTo?: unknown;
+      payload?: { code?: unknown; message?: unknown };
+    };
+    expect(wire.type).toBe('error');
+    expect(wire.inResponseTo).toBe(MSG_ID);
+    expect(wire.payload?.code).toBe('forbidden');
+    expect(wire.payload?.message).toBe('you are not a participant of this session');
+  });
+
+  it('catches handler-rejected promises and emits the wire error envelope', async () => {
     const handler = vi.fn(async () => Promise.reject(new Error('handler-async-failure')));
     dispatcher.register('hello', handler);
 
@@ -195,6 +294,14 @@ describe('WsDispatcher', () => {
     expect(logger.error).toHaveBeenCalledTimes(1);
     const [meta] = logger.error.mock.calls[0] as [Record<string, unknown>];
     expect((meta.err as Error).message).toBe('handler-async-failure');
+    // The rejected-promise path follows the same no-leak rule —
+    // generic literal on the wire, full error in the server log.
+    expect(conn.sends).toHaveLength(1);
+    const wire = JSON.parse(conn.sends[0] as string) as {
+      payload?: { code?: unknown; message?: unknown };
+    };
+    expect(wire.payload?.code).toBe('internal-error');
+    expect(wire.payload?.message).toBe('internal error');
   });
 
   it('invokes the onHandlerError seam when set instead of the default error log', async () => {

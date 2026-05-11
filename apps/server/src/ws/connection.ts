@@ -139,6 +139,7 @@ import {
   serializeWsEnvelope,
   WsEnvelopeValidationError,
 } from './envelope.js';
+import { sendWsError, WS_MALFORMED_ENVELOPE_CODE } from './error-envelope.js';
 import { wsSubscriptionsPlugin } from './subscriptions.js';
 
 /**
@@ -348,15 +349,33 @@ function buildConnectionHandler(
         envelope = parseWsEnvelopeJson(text);
       } catch (err) {
         if (err instanceof WsEnvelopeValidationError) {
-          // Client sent a malformed message. Log + drop. Once
-          // `ws_error_message` lands, this branch will construct and
-          // send the canonical error envelope on `socket` — routing
-          // the failure back to the client via the same wire shape
-          // every other server→client message uses.
+          // Client sent a malformed message. Log + send a canonical
+          // `error` envelope (`code: 'malformed-envelope'`) and KEEP
+          // the connection open — a per-frame parse failure is a
+          // client bug that the client can recover from by re-sending,
+          // not a connection-state problem. Closing the socket would
+          // force a reconnect + re-auth + re-subscribe handshake for
+          // a one-frame hiccup (per `ws_error_message`'s connection-
+          // stays-open invariant).
+          //
+          // `inResponseTo` is absent: the inbound frame failed to
+          // parse, so we cannot read an `id` off it.
           request.log.warn(
             { connectionId, err },
-            'ws-message-rejected — envelope parse failed (placeholder unknown-message-type)',
+            'ws-message-rejected — envelope parse failed; sending malformed-envelope error',
           );
+          try {
+            sendWsError((wire) => socket.send(wire), {
+              code: WS_MALFORMED_ENVELOPE_CODE,
+              message: 'envelope parse failed',
+            });
+          } catch (sendErr) {
+            // Defensive — a torn-down socket would throw on send.
+            request.log.warn(
+              { err: sendErr, connectionId },
+              'ws-message-rejected: failed to send malformed-envelope error',
+            );
+          }
           return;
         }
         // Anything else is a programmer error — re-throw so the

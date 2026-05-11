@@ -235,7 +235,9 @@ task backend "Backend" {
     task ws_error_message "Server → client: error responses (validation, permission, etc.)" {
       effort 0.5d
       allocate team
+      complete 100
       depends !ws_message_envelope
+      note "Refinement: tasks/refinements/backend/ws_error_message.md"
     }
     task ws_reconnection_handling "Client reconnection with state catch-up" {
       effort 2d

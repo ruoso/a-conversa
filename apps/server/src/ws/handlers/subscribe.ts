@@ -26,26 +26,14 @@
 // handler bodies pure-function — easier to unit-test in isolation
 // without standing up a full Fastify instance.
 //
-// **Error path is a placeholder until `ws_error_message` lands.** The
-// canonical wire-format error envelope is owned by `ws_error_message`
-// (one of this task's siblings under `websocket_protocol`). Today the
-// dispatcher's `onUnknownType` / `onHandlerError` seams log + drop;
-// this handler's "not visible" path follows the same discipline —
-// log at warn level and drop the request. The client's `subscribe`
-// envelope will eventually time-out client-side waiting for the ack
-// (no ack is the signal); when `ws_error_message` ships, that task
-// will replace this branch with a typed error envelope carrying
-// `inResponseTo = envelope.id` so the client gets a deterministic
-// rejection.
-//
-// **Why no error envelope today (vs. inventing one prematurely).** The
-// `error` type isn't in the closed `WsMessageType` discriminator yet
-// (per `packages/shared-types/src/ws-envelope.ts`). Adding it here
-// would either (a) hard-code a wire shape the `ws_error_message` task
-// will then have to change, or (b) require a forward-compatible
-// guess at the error envelope's shape. The dispatcher-seam pattern
-// the envelope task established is the project's chosen discipline:
-// log + drop today, wire-format error when the owning task lands.
+// **Error path: canonical `error` envelope** (per `ws_error_message`).
+// The visibility-rejection branch sends a typed `error` envelope with
+// `code: 'not-found'` (inherits the existence-non-leak rule from
+// `canSeeSession` — if the user can't see it, the wire says
+// not-found, not forbidden, regardless of whether the underlying row
+// exists). `inResponseTo` echoes the originating subscribe envelope's
+// `id` so the client correlates the rejection back to its in-flight
+// request.
 
 import { randomUUID } from 'node:crypto';
 
@@ -58,6 +46,7 @@ import { canSeeSession } from '../../sessions/visibility.js';
 import type { WsConnectionContext } from '../connection.js';
 import { serializeWsEnvelope } from '../envelope.js';
 import type { WsDispatcher } from '../dispatcher.js';
+import { sendWsError } from '../error-envelope.js';
 import type { WsSubscriptionRegistry } from '../subscriptions.js';
 
 /**
@@ -102,12 +91,13 @@ export function buildSubscribeHandler(
 
     const visible = await canSeeSession(opts.pool, sessionId, userId);
     if (!visible) {
-      // Placeholder error path. `ws_error_message` will replace the
-      // log + return with a typed error envelope sent back on the
-      // socket carrying `code: 'not-found'` (the visibility predicate
-      // collapses "doesn't exist" and "exists but not visible" — see
+      // Send the canonical `error` envelope (per `ws_error_message`).
+      // `code: 'not-found'` inherits the existence-non-leak rule from
+      // `canSeeSession` — the visibility predicate collapses
+      // "doesn't exist" and "exists but not visible" (see
       // `apps/server/src/sessions/visibility.ts`'s docblock for the
-      // 404-not-403 decision) and `inResponseTo = envelope.id`.
+      // 404-not-403 decision). `inResponseTo` correlates back to the
+      // originating subscribe envelope's `id`.
       opts.log.warn(
         {
           connectionId: connection.connectionId,
@@ -115,8 +105,13 @@ export function buildSubscribeHandler(
           sessionId,
           messageId: envelope.id,
         },
-        'ws-subscribe rejected — session not visible to user (placeholder error path, ws_error_message TODO)',
+        'ws-subscribe rejected — session not visible to user; sending not-found error envelope',
       );
+      sendWsError((wire) => connection.socket.send(wire), {
+        code: 'not-found',
+        message: 'session not found',
+        inResponseTo: envelope.id,
+      });
       return;
     }
 

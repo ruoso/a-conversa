@@ -30,18 +30,24 @@
 // **Unknown-type policy.** When the inbound envelope's `type` is in
 // the closed `WsMessageType` enum (so `parseWsEnvelope` accepted it)
 // but no handler is registered, the dispatcher logs a warn-level line
-// with `connectionId`, `messageId`, and `messageType` and returns
-// without throwing. **The actual wire-format error envelope is
-// `ws_error_message`'s job** — this dispatcher provides the seam (the
-// `onUnknownType` callback) so when that task lands it can plug the
-// error-envelope construction in without touching this file's core
-// contract.
+// with `connectionId`, `messageId`, and `messageType` AND sends a
+// canonical `error` envelope on the connection with `code:
+// 'unknown-message-type'` and `inResponseTo = envelope.id`. The wire-
+// format error envelope is owned by `ws_error_message`; this
+// dispatcher's default `onUnknownType` reaches for `sendWsError` so
+// production code paths emit the wire envelope without further
+// wiring. The seam stays replaceable so a downstream task can override
+// (e.g. a metrics-emitting seam) without changing the contract.
 //
 // **Handler-exception policy.** A handler's thrown error or rejected
 // promise is caught by the dispatcher, logged at error level with the
-// envelope id + type for correlation, and routed through the same
-// `onError` seam. Again, `ws_error_message` defines the wire shape;
-// this dispatcher just routes.
+// envelope id + type for correlation, AND surfaced as an `error`
+// envelope on the connection. Discrimination: if the thrown value is
+// `ApiError`-shaped (duck-typed via `isApiErrorShape`), the wire
+// envelope echoes its `code` + `message`; otherwise the wire envelope
+// emits the generic `code: 'internal-error'` / `message: 'internal
+// error'` and the full underlying error stays in the server log only
+// (the no-leak rule from `ws_error_message`).
 
 import type { FastifyBaseLogger, FastifyInstance, FastifyPluginAsync } from 'fastify';
 import fp from 'fastify-plugin';
@@ -49,6 +55,13 @@ import fp from 'fastify-plugin';
 import type { WsEnvelopeUnion, WsMessageType } from '@a-conversa/shared-types';
 
 import type { WsConnectionContext } from './connection.js';
+import {
+  isApiErrorShape,
+  sendWsError,
+  WS_INTERNAL_ERROR_CODE,
+  WS_INTERNAL_ERROR_MESSAGE,
+  WS_UNKNOWN_MESSAGE_TYPE_CODE,
+} from './error-envelope.js';
 
 /**
  * The shape every message handler implements. Receives the typed
@@ -131,8 +144,10 @@ export class WsDispatcher {
 
   constructor(log: FastifyBaseLogger, opts: WsDispatcherOptions = {}) {
     this.log = log;
-    // Defaults log at the matching level and return. `ws_error_message`
-    // overrides these with wire-format error envelope construction.
+    // Defaults log + send the canonical `error` envelope on the
+    // connection (per `ws_error_message`). Replaceable via opts so a
+    // downstream task (metrics emitter, alternate transport, ...) can
+    // override without changing the contract.
     this.onUnknownType =
       opts.onUnknownType ??
       ((envelope, connection) => {
@@ -142,8 +157,26 @@ export class WsDispatcher {
             messageId: envelope.id,
             messageType: envelope.type,
           },
-          'ws-dispatcher: no handler registered for message type (placeholder unknown-message-type)',
+          'ws-dispatcher: no handler registered for message type — sending unknown-message-type error envelope',
         );
+        // Wire-format error envelope. `inResponseTo` correlates the
+        // error back to the originating client envelope.
+        try {
+          sendWsError((wire) => connection.socket.send(wire), {
+            code: WS_UNKNOWN_MESSAGE_TYPE_CODE,
+            message: `no handler registered for message type '${envelope.type}'`,
+            inResponseTo: envelope.id,
+          });
+        } catch (sendErr) {
+          // Defensive — `sendWsError` can throw on a torn-down socket.
+          // The dispatcher must not crash on a per-connection send
+          // failure; log and continue (the original warn above is
+          // already in the log).
+          this.log.warn(
+            { err: sendErr, connectionId: connection.connectionId, messageId: envelope.id },
+            'ws-dispatcher: failed to send unknown-message-type error envelope on socket',
+          );
+        }
       });
     this.onHandlerError =
       opts.onHandlerError ??
@@ -155,8 +188,27 @@ export class WsDispatcher {
             messageId: envelope.id,
             messageType: envelope.type,
           },
-          'ws-dispatcher: handler threw or rejected (placeholder handler-error)',
+          'ws-dispatcher: handler threw or rejected — sending error envelope',
         );
+        // Discriminate via duck-typing. `ApiError`-shaped throws have
+        // a safe-to-echo `message` (the handler chose it); other
+        // throws (plain `Error`, programmer mistakes, DB driver
+        // errors, ...) surface the generic literal so we don't leak
+        // stack / column-name / hostname details to the client.
+        const safe = isApiErrorShape(err);
+        try {
+          sendWsError((wire) => connection.socket.send(wire), {
+            code: safe ? err.code : WS_INTERNAL_ERROR_CODE,
+            message: safe ? err.message : WS_INTERNAL_ERROR_MESSAGE,
+            inResponseTo: envelope.id,
+          });
+        } catch (sendErr) {
+          // Same defensive log + continue as the unknown-type seam.
+          this.log.warn(
+            { err: sendErr, connectionId: connection.connectionId, messageId: envelope.id },
+            'ws-dispatcher: failed to send error envelope on socket',
+          );
+        }
       });
   }
 

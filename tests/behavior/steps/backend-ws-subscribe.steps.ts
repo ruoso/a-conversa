@@ -251,19 +251,14 @@ Then(
   },
 );
 
-Then(
-  'the client receives no subscribed ack within 200ms and the connection stays open',
-  function (this: AConversaWorld) {
-    // Placeholder error-path assertion. The handler logs + drops today;
-    // `ws_error_message` will replace this with a typed error envelope
-    // and this Then will switch to asserting the error envelope's shape.
-    const s = scratch(this);
-    assert.equal(s.wsSubscribeNoAck, true, 'expected no subscribed ack to arrive but one did');
-    const ws = getClient(this);
-    // 1 = OPEN per the `ws` library's readyState enum.
-    assert.equal(ws.readyState, 1, `expected WS readyState=1 (OPEN), got ${ws.readyState}`);
-  },
-);
+// The "no subscribed ack" Then step was removed when `ws_error_message`
+// landed — the visibility-rejection branch now emits a wire `error`
+// envelope with `code: 'not-found'`, so regression coverage moved to
+// `tests/behavior/backend/ws-error.feature` and its step definitions
+// in `backend-ws-error.steps.ts`. The carriers `wsSubscribeNoAck`
+// remain in the scratch interface above because the subscribe-When
+// step still tracks "no ack" as a fallback signal when an upstream
+// scenario doesn't expect one — they're harmless when unread.
 
 // ============================================================
 // Teardown — only the per-feature carriers; the lifecycle client + the

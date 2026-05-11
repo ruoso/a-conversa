@@ -36,9 +36,11 @@ describe('wsMessageTypes vocabulary', () => {
     // `unsubscribe` (client → server) and `subscribed` / `unsubscribed`
     // (server → client acks) came from `ws_subscribe_to_session`;
     // `event-applied` (server → client broadcast) came from
-    // `ws_event_broadcast`. Each downstream message-type task expands
-    // this enum + its registry entry; the assertion pins the current
-    // state so an accidental widening is loud.
+    // `ws_event_broadcast`; `error` (server → client canonical error
+    // envelope) came from `ws_error_message`. Each downstream
+    // message-type task expands this enum + its registry entry; the
+    // assertion pins the current state so an accidental widening is
+    // loud.
     expect([...wsMessageTypes]).toEqual([
       'hello',
       'subscribe',
@@ -46,6 +48,7 @@ describe('wsMessageTypes vocabulary', () => {
       'subscribed',
       'unsubscribed',
       'event-applied',
+      'error',
     ]);
   });
 

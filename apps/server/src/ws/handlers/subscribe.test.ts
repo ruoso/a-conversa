@@ -292,10 +292,12 @@ describe('ws_subscribe_to_session — handler integration', () => {
     }
   });
 
-  it('drops a subscribe to a non-visible session (no ack, connection stays open)', async () => {
-    // Placeholder error path until `ws_error_message` lands. The
-    // observable today is: no ack appears within a bounded window, the
-    // registry stays empty, and the connection survives.
+  it('emits an `error` envelope with `code: "not-found"` for a non-visible session, connection stays open', async () => {
+    // Per `ws_error_message`, the placeholder log-and-drop is replaced
+    // by a wire `error` envelope. `code: 'not-found'` (NOT `forbidden`)
+    // inherits the existence-non-leak rule from `canSeeSession` — the
+    // visibility predicate collapses "doesn't exist" and "exists but
+    // not visible" (the 404-not-403 rule from `get_session_endpoint`).
     const cookie = await fixtureCookieHeader();
     const { ws, next } = await openWsClient(app, cookie);
     try {
@@ -304,34 +306,34 @@ describe('ws_subscribe_to_session — handler integration', () => {
 
       // HIDDEN_SESSION_ID is private and hosted by OTHER_HOST_ID; the
       // fixture user is not a participant. canSeeSession returns false;
-      // the handler logs at warn level and returns.
+      // the handler sends the `error` envelope.
       ws.send(subscribeEnvelope(SUB_MSG_ID, HIDDEN_SESSION_ID));
 
-      // Race the next-frame reader against a short timeout. The timeout
-      // winning is the assertion that no `subscribed` frame arrived.
-      const winner = await Promise.race([
-        next().then((raw) => ({ kind: 'frame' as const, raw })),
-        new Promise<{ kind: 'timeout' }>((resolve) =>
-          setTimeout(() => resolve({ kind: 'timeout' }), 200),
-        ),
-      ]);
-      expect(winner.kind).toBe('timeout');
+      const errRaw = await next();
+      const err = JSON.parse(errRaw) as {
+        type?: unknown;
+        inResponseTo?: unknown;
+        payload?: { code?: unknown; message?: unknown };
+      };
+      expect(err.type).toBe('error');
+      expect(err.inResponseTo).toBe(SUB_MSG_ID);
+      expect(err.payload?.code).toBe('not-found');
+      expect(typeof err.payload?.message).toBe('string');
 
       // Registry stays empty for the not-visible session.
       expect(app.wsSubscriptions.connectionsForSession(HIDDEN_SESSION_ID)).toEqual([]);
 
       // Same negative result for a fully-unknown session id — the
       // visibility predicate collapses "doesn't exist" and "exists
-      // but not visible" (the 404-not-403 rule from
-      // `get_session_endpoint`). The handler's branch is the same.
+      // but not visible". The handler's branch is the same.
       ws.send(subscribeEnvelope(SUB_MSG_ID, UNKNOWN_SESSION_ID));
-      const winner2 = await Promise.race([
-        next().then((raw) => ({ kind: 'frame' as const, raw })),
-        new Promise<{ kind: 'timeout' }>((resolve) =>
-          setTimeout(() => resolve({ kind: 'timeout' }), 200),
-        ),
-      ]);
-      expect(winner2.kind).toBe('timeout');
+      const err2Raw = await next();
+      const err2 = JSON.parse(err2Raw) as {
+        type?: unknown;
+        payload?: { code?: unknown };
+      };
+      expect(err2.type).toBe('error');
+      expect(err2.payload?.code).toBe('not-found');
       expect(app.wsSubscriptions.connectionsForSession(UNKNOWN_SESSION_ID)).toEqual([]);
 
       // The connection is still open — readyState 1 (OPEN) per the
