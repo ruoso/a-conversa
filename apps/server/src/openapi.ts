@@ -187,6 +187,31 @@ function buildSwaggerOptions(): Parameters<typeof swagger>[1] {
         version: resolveServerVersion(),
       },
       tags: [...OPENAPI_TAGS],
+      // Security schemes — protected routes attach
+      // `security: [{ cookieAuth: [] }]` to their `schema` block; the
+      // scheme below tells generated clients to carry the
+      // `aconversa-session` cookie. OpenAPI 3.x doesn't have a
+      // dedicated "cookie auth" type — `apiKey` with `in: 'cookie'`
+      // is the canonical representation. The cookie's value is the
+      // HS256 JWT issued by the auth flow; the auth-middleware
+      // (`apps/server/src/auth/middleware.ts`) validates it on every
+      // protected request. Refinement:
+      // tasks/refinements/backend/auth_middleware.md.
+      components: {
+        securitySchemes: {
+          cookieAuth: {
+            type: 'apiKey',
+            in: 'cookie',
+            name: 'aconversa-session',
+            description:
+              'Platform session cookie carrying the HS256 JWT issued by ' +
+              '`/auth/callback` (returning user) or `/auth/screen-name` ' +
+              '(new user after screen-name set). Protected endpoints fail ' +
+              'with 401 `auth-required` if the cookie is missing, ' +
+              'malformed, expired, or refers to a soft-deleted user.',
+          },
+        },
+      },
     },
     // Preserve the `$id` of `addSchema`-registered schemas as the
     // `components.schemas` key. The plugin's default resolver names

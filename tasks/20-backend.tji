@@ -83,7 +83,9 @@ task backend "Backend" {
     task auth_middleware "Middleware enforcing authentication on protected endpoints" {
       effort 1d
       allocate team
+      complete 100
       depends !session_token_management
+      note "Refinement: tasks/refinements/backend/auth_middleware.md"
     }
   }
 

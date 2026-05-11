@@ -86,9 +86,7 @@ import {
 import {
   buildSessionCookieClearHeader,
   buildSessionCookieHeader,
-  readSessionCookieFromHeader,
   signSessionToken,
-  verifySessionToken,
 } from './session-token.js';
 
 /**
@@ -840,19 +838,36 @@ const authRoutesPluginAsync: FastifyPluginAsync<AuthRoutesOptions> = (
   // ---------------------------------------------------------------
   // `GET /auth/me` — return the current user identified by the
   // platform session cookie.
+  //
+  // The cookie-validation + user-lookup chain that used to live inline
+  // here moved to `auth/middleware.ts`'s `authenticatePlugin` when the
+  // `auth_middleware` task landed. The route now opts in via
+  // `preHandler: app.authenticate`; on success the preHandler sets
+  // `request.authUser = { id, screenName }`, and the handler simply
+  // maps that onto the public response shape `{ userId, screenName }`.
+  // On any failure the middleware throws `ApiError(401, 'auth-required',
+  // ...)` and the centralized error-handler renders the canonical
+  // envelope — the handler below never runs in that case.
+  //
+  // The OpenAPI `security: [{ cookieAuth: [] }]` attribute below
+  // documents the cookie requirement; `apps/server/src/openapi.ts`
+  // declares the corresponding `securitySchemes.cookieAuth` entry.
+  // Refinement: tasks/refinements/backend/auth_middleware.md.
   // ---------------------------------------------------------------
   app.get(
     '/auth/me',
     {
+      preHandler: app.authenticate,
       schema: {
         tags: ['auth'],
         summary: 'Return the current authenticated user',
         description:
-          'Reads the `aconversa-session` cookie, validates the JWT (HS256 signature + ' +
-          '`exp`), looks up the users row by `id = sub`, and returns ' +
-          '`{ userId, screenName }`. 401 on missing / invalid / expired cookie or on a ' +
-          'soft-deleted user — single envelope `auth-session-invalid` regardless of which ' +
-          'sub-case fired (no information leak).',
+          'Reads the `aconversa-session` cookie (via the auth middleware), validates the ' +
+          'JWT (HS256 signature + `exp`), looks up the users row by `id = sub`, and ' +
+          'returns `{ userId, screenName }`. 401 with code `auth-required` on missing / ' +
+          'invalid / expired cookie or on a soft-deleted user — single envelope regardless ' +
+          'of which sub-case fired (no information leak).',
+        security: [{ cookieAuth: [] }],
         response: {
           200: {
             type: 'object',
@@ -868,44 +883,27 @@ const authRoutesPluginAsync: FastifyPluginAsync<AuthRoutesOptions> = (
         },
       },
     },
-    async (request) => {
-      const rawHeader = request.headers['cookie'];
-      const cookieHeader = typeof rawHeader === 'string' ? rawHeader : undefined;
-      const token = readSessionCookieFromHeader(cookieHeader);
-      if (token === undefined) {
+    (request) => {
+      // The middleware guarantees `authUser` is defined here — it
+      // throws otherwise, bypassing the handler. The non-null
+      // assertion is a static-analysis necessity (the augmentation
+      // types `authUser` as optional because public routes never set
+      // it) and a runtime invariant (the preHandler either set it or
+      // we never got here).
+      const user = request.authUser;
+      if (user === undefined) {
+        // Defensive — should be unreachable, but the type system
+        // doesn't know the preHandler invariant. A surfaced 500 here
+        // means a wiring regression (e.g. the preHandler was removed
+        // from the route options); failing loud is the right
+        // diagnostic.
         throw new ApiError(
-          401,
-          'auth-session-invalid',
-          'session is missing or has expired; sign in to continue',
+          500,
+          'internal-error',
+          'auth middleware did not populate request.authUser',
         );
       }
-      const verifyOpts = opts.now !== undefined ? { now: opts.now } : {};
-      const payload = await verifySessionToken(token, ensureSecret(), verifyOpts);
-      if (payload === null) {
-        throw new ApiError(
-          401,
-          'auth-session-invalid',
-          'session is missing or has expired; sign in to continue',
-        );
-      }
-      // Look up the users row. The row could be soft-deleted between
-      // token issuance and this read; treat that the same as an invalid
-      // session so the response shape stays singular.
-      const result = await ensurePool().query<UsersUpsertRow>(
-        `SELECT id, oauth_subject, screen_name
-         FROM users
-         WHERE id = $1 AND deleted_at IS NULL`,
-        [payload.sub],
-      );
-      const row = result.rows[0];
-      if (row === undefined) {
-        throw new ApiError(
-          401,
-          'auth-session-invalid',
-          'session is missing or has expired; sign in to continue',
-        );
-      }
-      return { userId: row.id, screenName: row.screen_name };
+      return { userId: user.id, screenName: user.screenName };
     },
   );
 
@@ -961,9 +959,23 @@ export async function __buildTestAuthApp(
   const { default: fastifyFactory } = await import('fastify');
   const { errorHandlerPlugin } = await import('../error-handler.js');
   const { errorEnvelopeSchema } = await import('../openapi.js');
+  const { authenticatePlugin } = await import('./middleware.js');
   const app = fastifyFactory({ logger: false });
   app.addSchema(errorEnvelopeSchema);
   await app.register(errorHandlerPlugin);
+  // Register the auth middleware BEFORE the routes plugin so
+  // `/auth/me`'s `preHandler: app.authenticate` resolves at
+  // route-registration time. The middleware reuses the same pool +
+  // secret + clock injections the routes plugin already accepts —
+  // we re-thread the relevant fields through.
+  const middlewareOpts: Parameters<typeof authenticatePlugin>[1] = {
+    ...(options.pool !== undefined ? { pool: options.pool } : {}),
+    ...(options.sessionTokenSecret !== undefined
+      ? { sessionTokenSecret: options.sessionTokenSecret }
+      : {}),
+    ...(options.now !== undefined ? { now: options.now } : {}),
+  };
+  await app.register(authenticatePlugin, middlewareOpts);
   await app.register(authRoutesPlugin, options);
   await app.ready();
   return app;

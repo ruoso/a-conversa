@@ -46,7 +46,12 @@ import cors from '@fastify/cors';
 import sensible from '@fastify/sensible';
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
 
-import { authRoutesPlugin, loadOidcConfig, OidcConfigError } from './auth/index.js';
+import {
+  authenticatePlugin,
+  authRoutesPlugin,
+  loadOidcConfig,
+  OidcConfigError,
+} from './auth/index.js';
 import { errorHandlerPlugin } from './error-handler.js';
 import { createLoggerOptions } from './logger.js';
 import { errorEnvelopeRef, openapiPlugin } from './openapi.js';
@@ -200,6 +205,15 @@ export async function createServer(options: CreateServerOptions = {}): Promise<F
   // semantics (liveness-only, not readiness), refinement link, sibling
   // ownership — stays in one file. See routes/healthz.ts.
   await app.register(healthzPlugin);
+
+  // Auth middleware — decorates the instance with `app.authenticate`
+  // and the request with `authUser`. Registered BEFORE the auth-routes
+  // plugin so `/auth/me`'s `preHandler: app.authenticate` resolves at
+  // route-registration time. The plugin lazily reaches for the DB
+  // pool + session-token secret on the first authenticated request;
+  // unauthenticated smoke tests of the bootstrap don't pay the cost.
+  // Refinement: tasks/refinements/backend/auth_middleware.md.
+  await app.register(authenticatePlugin);
 
   // OIDC handshake routes (`GET /auth/login` + `GET /auth/callback`).
   // Owned by `backend.auth.oauth_callback_handler`. The plugin reads

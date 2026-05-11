@@ -316,8 +316,11 @@ Then(
 // (= "http://localhost:3000"), which `startsWith` accepts.
 
 // Note: `the response body's error.code is {string}` is owned by
-// backend-oauth-callback.steps.ts. The `auth-session-invalid` envelope
-// asserts via that step unchanged.
+// backend-oauth-callback.steps.ts. The `auth-required` envelope
+// (emitted by the auth middleware on every /auth/me 401 path) asserts
+// via that step unchanged. See tasks/refinements/backend/auth_middleware.md
+// for the code-drift rationale (sunsetting the inline
+// `auth-session-invalid` envelope).
 
 // Note: `extractCookieValue` is used only for non-set-cookie reads
 // elsewhere; today's session-token scenarios don't need it. Exported

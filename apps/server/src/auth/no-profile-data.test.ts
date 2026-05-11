@@ -362,6 +362,7 @@ describe('Invariant 3: the OIDC userinfo endpoint is never called', () => {
       'flow.ts',
       'flow-state.ts',
       'index.ts',
+      'middleware.ts',
       'pending-cookie.ts',
       'routes.ts',
       'session-token.ts',

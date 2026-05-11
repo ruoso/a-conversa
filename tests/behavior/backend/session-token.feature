@@ -53,4 +53,4 @@ Feature: Platform session-token — issuance, validation, and lifecycle
     And the response sets a cleared aconversa-session cookie
     When I GET /auth/me without any session cookie
     Then the response status is 401
-    And the response body's error.code is "auth-session-invalid"
+    And the response body's error.code is "auth-required"

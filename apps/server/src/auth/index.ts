@@ -82,3 +82,12 @@ export {
   type SessionTokenPayload,
   type SignSessionTokenOptions,
 } from './session-token.js';
+
+export {
+  authenticatePlugin,
+  authenticateRequest,
+  AUTH_REQUIRED_CODE,
+  AUTH_REQUIRED_MESSAGE,
+  type AuthMiddlewareOptions,
+  type AuthUser,
+} from './middleware.js';

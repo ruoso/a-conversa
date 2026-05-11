@@ -40,9 +40,23 @@ interface OpenApiDoc {
   openapi: string;
   info: { title: string; version: string };
   tags?: Array<{ name: string }>;
-  paths: Record<string, Record<string, { tags?: string[]; responses?: Record<string, unknown> }>>;
+  paths: Record<
+    string,
+    Record<
+      string,
+      {
+        tags?: string[];
+        responses?: Record<string, unknown>;
+        security?: Array<Record<string, string[]>>;
+      }
+    >
+  >;
   components?: {
     schemas?: Record<string, unknown>;
+    securitySchemes?: Record<
+      string,
+      { type?: string; in?: string; name?: string; description?: string }
+    >;
   };
 }
 
@@ -167,6 +181,22 @@ describe('OpenAPI plugin', () => {
     );
     expect(envelope.properties?.error?.properties?.code?.type).toBe('string');
     expect(envelope.properties?.error?.properties?.message?.type).toBe('string');
+  });
+
+  it('declares the cookieAuth security scheme (in: cookie, name: aconversa-session)', async () => {
+    // The auth middleware (`apps/server/src/auth/middleware.ts`)
+    // requires the `aconversa-session` cookie on every protected
+    // route. The OpenAPI document declares the corresponding
+    // `securitySchemes.cookieAuth` entry so generated clients
+    // understand the cookie requirement. Refinement:
+    // tasks/refinements/backend/auth_middleware.md.
+    const response = await app.inject({ method: 'GET', url: '/docs/json' });
+    const doc = response.json<OpenApiDoc>();
+    const scheme = doc.components?.securitySchemes?.['cookieAuth'];
+    expect(scheme).toBeDefined();
+    expect(scheme?.type).toBe('apiKey');
+    expect(scheme?.in).toBe('cookie');
+    expect(scheme?.name).toBe('aconversa-session');
   });
 
   it('routes that reference ErrorEnvelope have a documented 5xx response', async () => {

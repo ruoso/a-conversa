@@ -38,7 +38,10 @@
 //
 //   `GET /auth/me`:
 //    15. Valid cookie → 200 with { userId, screenName }.
-//    16. Missing cookie → 401 + auth-session-invalid.
+//    16. Missing cookie → 401 + auth-required (envelope code emitted by
+//        the auth middleware; the inline `auth-session-invalid` envelope
+//        was sunset when `auth_middleware` extracted the cookie-verify
+//        chain into the shared preHandler).
 //    17. Tampered token → 401.
 //    18. Expired token → 401.
 //    19. Soft-deleted user → 401.
@@ -337,6 +340,21 @@ function makeMemoryPool(initialRows: UserRow[] = []): {
         const row = users.get(id);
         return Promise.resolve({ rows: (row ? [row] : []) as unknown as TRow[] });
       }
+      // The auth middleware (`apps/server/src/auth/middleware.ts`)
+      // issues a narrower SELECT — `SELECT id, screen_name FROM users
+      // WHERE id = $1 AND deleted_at IS NULL`. The pool shim doesn't
+      // track `deleted_at` (no scenario in this file exercises a
+      // soft-deleted user via this pool; the dedicated soft-delete
+      // case lives in `middleware.test.ts`), so a hit on this branch
+      // is always a live user. The empty-rows case (auth-required
+      // ghost-user) is the user-id-not-present sub-branch below.
+      if (text.includes('SELECT id, screen_name') && text.includes('WHERE id')) {
+        const id = p[0] as string;
+        const row = users.get(id);
+        return Promise.resolve({
+          rows: (row ? [{ id: row.id, screen_name: row.screen_name }] : []) as unknown as TRow[],
+        });
+      }
       if (text.includes('UPDATE users') && text.includes('SET screen_name')) {
         const id = p[0] as string;
         const newName = p[1] as string;
@@ -416,6 +434,18 @@ async function buildApp(opts: {
     completeFlowOptions,
     ...(opts.now !== undefined ? { now: opts.now } : {}),
   };
+  // The auth middleware must register BEFORE the routes plugin so
+  // `/auth/me`'s `preHandler: app.authenticate` resolves at the time
+  // the route attaches. Mirrors `__buildTestAuthApp` and the
+  // production wiring in `server.ts`. Refinement:
+  // tasks/refinements/backend/auth_middleware.md.
+  const { authenticatePlugin } = await import('./middleware.js');
+  const middlewareOpts: Parameters<typeof authenticatePlugin>[1] = {
+    pool,
+    sessionTokenSecret: TEST_SECRET,
+    ...(opts.now !== undefined ? { now: opts.now } : {}),
+  };
+  await app.register(authenticatePlugin, middlewareOpts);
   await app.register(authRoutesPlugin, pluginOpts);
   await app.ready();
   return { app, users };
@@ -458,11 +488,15 @@ describe('GET /auth/me', () => {
     expect(body.screenName).toBe('alice');
   });
 
-  it('returns 401 + auth-session-invalid when no cookie is present', async () => {
+  it('returns 401 + auth-required when no cookie is present', async () => {
+    // Code drift note: the inline `/auth/me` handler used to throw
+    // `auth-session-invalid`. After `auth_middleware` landed, the
+    // shared preHandler throws `auth-required` for every 401 path.
+    // See tasks/refinements/backend/auth_middleware.md Decisions.
     const response = await built.app.inject({ method: 'GET', url: '/auth/me' });
     expect(response.statusCode).toBe(401);
     const body = response.json<{ error?: { code?: string } }>();
-    expect(body.error?.code).toBe('auth-session-invalid');
+    expect(body.error?.code).toBe('auth-required');
   });
 
   it('returns 401 when the cookie carries a tampered token', async () => {
