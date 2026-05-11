@@ -30,6 +30,7 @@ import fp from 'fastify-plugin';
 
 import { getDefaultPool, type DbPool } from '../../db.js';
 
+import { registerProposeHandlers } from './propose.js';
 import { registerSubscribeHandlers } from './subscribe.js';
 
 export {
@@ -38,6 +39,9 @@ export {
   registerSubscribeHandlers,
 } from './subscribe.js';
 export type { SubscribeHandlerOptions } from './subscribe.js';
+
+export { buildProposeHandler, registerProposeHandlers } from './propose.js';
+export type { ProposeHandlerOptions } from './propose.js';
 
 /**
  * Options accepted by `wsHandlersPlugin`. Production callers pass `{}`
@@ -83,6 +87,20 @@ const wsHandlersPluginAsync: FastifyPluginAsync<WsHandlersOptions> = (
       return ensurePool();
     },
     registry: app.wsSubscriptions,
+    log: app.log,
+  });
+
+  // Register the propose handler. Same lazy-pool resolution as
+  // subscribe (the `propose` path runs `canSeeSession` + a
+  // transactional load/append). The handler also captures the
+  // per-instance broadcast bus (`app.wsBroadcast`) so the post-
+  // commit-emit step fans out the `event-applied` envelope.
+  registerProposeHandlers(app.wsDispatcher, {
+    get pool() {
+      return ensurePool();
+    },
+    registry: app.wsSubscriptions,
+    broadcast: app.wsBroadcast,
     log: app.log,
   });
 

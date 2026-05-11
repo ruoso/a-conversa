@@ -35,18 +35,23 @@ describe('wsMessageTypes vocabulary', () => {
     // `hello` came from `ws_message_envelope`; `subscribe` /
     // `unsubscribe` (client → server) and `subscribed` / `unsubscribed`
     // (server → client acks) came from `ws_subscribe_to_session`;
-    // `event-applied` (server → client broadcast) came from
-    // `ws_event_broadcast`; `error` (server → client canonical error
-    // envelope) came from `ws_error_message`. Each downstream
-    // message-type task expands this enum + its registry entry; the
-    // assertion pins the current state so an accidental widening is
-    // loud.
+    // `propose` (client → server) and `proposed` (server → client ack)
+    // came from `ws_propose_message`; `event-applied` (server → client
+    // broadcast) came from `ws_event_broadcast`; `error` (server →
+    // client canonical error envelope) came from `ws_error_message`.
+    // The vocabulary is laid out per the three-group union-extension
+    // convention documented in `ws-envelope.ts` (server-emitted /
+    // request / ack-or-result); future sibling message-type tasks
+    // append at the corresponding group's tail. The assertion pins
+    // the current state so an accidental widening is loud.
     expect([...wsMessageTypes]).toEqual([
       'hello',
       'subscribe',
       'unsubscribe',
+      'propose',
       'subscribed',
       'unsubscribed',
+      'proposed',
       'event-applied',
       'error',
     ]);

@@ -54,27 +54,74 @@
 
 import { z } from 'zod';
 
-import { eventEnvelopeSchema, type Event } from './events.js';
+import {
+  eventEnvelopeSchema,
+  proposalPayloadSchema,
+  type Event,
+  type ProposalPayload,
+} from './events.js';
 
 // -- Message-type vocabulary ----------------------------------------
 //
-// The closed list of `type` discriminator values. Today only `hello`
-// is shipped (replacing the ws_connection_handling placeholder).
-// Downstream tasks (`ws_propose_message`, `ws_vote_message`,
+// The closed list of `type` discriminator values. Each downstream
+// message-type task (`ws_propose_message`, `ws_vote_message`,
 // `ws_commit_message`, `ws_meta_disagreement_message`,
-// `ws_snapshot_message`, `ws_error_message`) extend this list and the
+// `ws_snapshot_message`, `ws_error_message`) extends this list and the
 // matching `wsMessagePayloadSchemas` entry.
+//
+// **Union-extension layout convention** (owned by `ws_propose_message`,
+// landed when the second wave of message-type tasks began). The
+// vocabulary is organised into three groups so the four remaining
+// message-type tasks (`ws_vote_message`, `ws_commit_message`,
+// `ws_meta_disagreement_message`, `ws_snapshot_message`) can each
+// extend the union by appending to a stable tail rather than editing
+// the middle of an array — minimising merge-conflict surface across
+// concurrent task branches.
+//
+//   - **Group B — client → server request types**: `'subscribe'`,
+//     `'unsubscribe'`, `'propose'`. Future sibling tasks append their
+//     request type (e.g. `'vote'`, `'commit'`, `'mark-meta-disagreement'`,
+//     `'snapshot'`) at this group's tail.
+//   - **Group C — server → client ack/result types** correlated via
+//     `inResponseTo`: `'subscribed'`, `'unsubscribed'`, `'proposed'`.
+//     Future sibling tasks append their ack/result type at this group's
+//     tail (e.g. `'voted'`, `'committed'`, `'meta-disagreement-marked'`,
+//     `'snapshot-result'`).
+//   - **Group A — server-emitted unsolicited frames**: `'hello'`,
+//     `'event-applied'`, `'error'`. The server originates these;
+//     `inResponseTo` is absent on `hello`/`event-applied`, optional on
+//     `error` (present when the error responds to a specific client
+//     envelope; absent for `'malformed-envelope'`).
+//
+// Today's enum is laid out in the order the tasks landed (hello first,
+// then the subscribe pair, then propose, then broadcast + error). The
+// `WsMessagePayloadMap` interface, the `wsMessagePayloadSchemas`
+// registry, and the per-payload schemas below follow the same order so
+// every place a future task touches stays grouped + appended.
 //
 // The list is declared `as const` so the `WsMessageType` union narrows
 // to the literal-string union. Zod's `z.enum(wsMessageTypes)` checks
 // the wire value against this list at parse time.
 
 export const wsMessageTypes = [
+  // Group A — server-emitted unsolicited frame (first message every
+  // connection sees).
   'hello',
+  // Group B — client → server request types. Append future sibling
+  // request types (`'vote'`, `'commit'`, `'mark-meta-disagreement'`,
+  // `'snapshot'`) at this group's tail.
   'subscribe',
   'unsubscribe',
+  'propose',
+  // Group C — server → client ack / result types correlated via
+  // `inResponseTo`. Append future sibling ack/result types
+  // (`'voted'`, `'committed'`, `'meta-disagreement-marked'`,
+  // `'snapshot-result'`) at this group's tail.
   'subscribed',
   'unsubscribed',
+  'proposed',
+  // Group A — server-emitted unsolicited broadcast + the canonical
+  // error envelope (which `inResponseTo` echoes when correlated).
   'event-applied',
   'error',
 ] as const;
@@ -180,6 +227,90 @@ export const unsubscribedPayloadSchema = z.object({
 });
 
 export type UnsubscribedPayload = z.infer<typeof unsubscribedPayloadSchema>;
+
+// -- propose / proposed payloads -----------------------------------
+//
+// `propose` (client → server): the client asks the server to apply a
+// new `proposal` event for a session it is **subscribed to** (the
+// subscribe-before-act gate is enforced on the server). The payload
+// carries the canonical `ProposalPayload` discriminated union (the
+// same shape that ends up inside the persisted `proposal` event's
+// `payload.proposal` field) plus an `expectedSequence` optimistic-
+// concurrency token.
+//
+// **Owned by `ws_propose_message`.** This task adds `propose` to
+// Group B and `proposed` to Group C of the union-extension convention
+// documented in `wsMessageTypes` above. The four future sibling tasks
+// (`ws_vote_message`, `ws_commit_message`,
+// `ws_meta_disagreement_message`, `ws_snapshot_message`) follow the
+// same shape — a request type in Group B + a matching ack/result type
+// in Group C — and the same handler skeleton + dispatcher-seam error
+// path.
+//
+// **`expectedSequence`.** The client's view of the most-recently-
+// applied sequence number for this session. The server reads
+// `MAX(sequence)` under a `FOR UPDATE` row-lock on `sessions` inside
+// the transaction; a mismatch surfaces as a wire `error` envelope
+// with `code: 'sequence-mismatch'` (the methodology-engine's
+// `RejectionReason` of the same name, mapped to HTTP 409 by the
+// shared `rejectedToApiError` helper). The optimistic-concurrency
+// token lets a tablet with stale projection state detect the race
+// without bouncing through the engine's universal check.
+
+/**
+ * Client → server. Asks the server to apply a `proposal` event for
+ * `sessionId`. The client must have already sent a successful
+ * `subscribe` for the same session (the server enforces); otherwise
+ * the wire response is an `error` envelope with `code: 'forbidden'`.
+ *
+ * On success the server sends two server-emitted envelopes to the
+ * proposer:
+ *
+ *   1. A `proposed` ack (this envelope's request-response pair),
+ *      correlated via `inResponseTo`. Carries `{ sessionId,
+ *      sequence, eventId }` so the client clears its in-flight
+ *      propose state.
+ *   2. The standard `event-applied` broadcast (carrying the appended
+ *      event verbatim). Every connection in
+ *      `connectionsForSession(sessionId)` — including the proposer —
+ *      receives this. The broadcast is the projection-update signal;
+ *      `proposed` is the request-correlation signal.
+ *
+ * On any rejection (visibility loss, methodology rejection, sequence
+ * mismatch), the server sends an `error` envelope with the
+ * corresponding `code` (via the dispatcher's `onHandlerError` seam +
+ * `rejectedToApiError(rejection)`).
+ */
+export const proposePayloadSchema = z.object({
+  sessionId: z.string().uuid(),
+  expectedSequence: z.number().int().nonnegative(),
+  proposal: proposalPayloadSchema,
+});
+
+export type ProposePayload = {
+  sessionId: string;
+  expectedSequence: number;
+  proposal: ProposalPayload;
+};
+
+/**
+ * Server → client ack. Echoes the originating `propose` envelope's
+ * `id` via `inResponseTo`. Payload carries the appended event's
+ * `sequence` + `eventId` + `sessionId` so the client can correlate
+ * the ack against its in-flight propose request and update local
+ * sequence tracking before the matching `event-applied` broadcast
+ * arrives (the broadcast's `payload.event.sequence` carries the same
+ * value; `proposed` arrives slightly earlier on the proposer's
+ * socket because the ack is sent inline by the handler whereas the
+ * broadcast fires the bus subscriber).
+ */
+export const proposedPayloadSchema = z.object({
+  sessionId: z.string().uuid(),
+  sequence: z.number().int().positive(),
+  eventId: z.string().uuid(),
+});
+
+export type ProposedPayload = z.infer<typeof proposedPayloadSchema>;
 
 // -- event-applied payload -----------------------------------------
 //
@@ -300,10 +431,14 @@ export type ErrorPayload = z.infer<typeof errorPayloadSchema>;
 
 export const wsMessagePayloadSchemas: Record<WsMessageType, z.ZodTypeAny> = {
   hello: helloPayloadSchema,
+  // Group B — client → server request payload schemas.
   subscribe: subscribePayloadSchema,
   unsubscribe: unsubscribePayloadSchema,
+  propose: proposePayloadSchema,
+  // Group C — server → client ack/result payload schemas.
   subscribed: subscribedPayloadSchema,
   unsubscribed: unsubscribedPayloadSchema,
+  proposed: proposedPayloadSchema,
   // The outer event envelope is checked; the per-kind payload inside
   // the event is `z.unknown()` per the schema in `events.ts` and is
   // re-validated by `validateEvent` on the receiving side. Server-side
@@ -322,10 +457,14 @@ export const wsMessagePayloadSchemas: Record<WsMessageType, z.ZodTypeAny> = {
 
 export interface WsMessagePayloadMap {
   hello: HelloPayload;
+  // Group B — client → server request payload types.
   subscribe: SubscribePayload;
   unsubscribe: UnsubscribePayload;
+  propose: ProposePayload;
+  // Group C — server → client ack/result payload types.
   subscribed: SubscribedPayload;
   unsubscribed: UnsubscribedPayload;
+  proposed: ProposedPayload;
   'event-applied': EventAppliedPayload;
   error: ErrorPayload;
 }

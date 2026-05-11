@@ -193,7 +193,9 @@ task backend "Backend" {
     task ws_propose_message "Propose message: client → server" {
       effort 1d
       allocate team
+      complete 100
       depends !ws_message_envelope, data_and_methodology.event_types.proposal_events
+      note "Refinement: tasks/refinements/backend/ws_propose_message.md"
     }
     task ws_vote_message "Vote message (agree / dispute / withdraw)" {
       effort 0.5d
