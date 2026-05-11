@@ -48,6 +48,7 @@ import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastif
 
 import { errorHandlerPlugin } from './error-handler.js';
 import { createLoggerOptions } from './logger.js';
+import { errorEnvelopeRef, openapiPlugin } from './openapi.js';
 import { healthzPlugin } from './routes/healthz.js';
 
 /**
@@ -151,14 +152,48 @@ export async function createServer(options: CreateServerOptions = {}): Promise<F
   // tasks/refinements/backend/error_handling.md.
   await app.register(errorHandlerPlugin);
 
+  // OpenAPI generator + Swagger UI. Registered BEFORE the route
+  // plugins so `@fastify/swagger` sees each route's `schema` block
+  // at startup and includes it in the generated document. The plugin
+  // is `fastify-plugin`-wrapped (skip-override) so it attaches to the
+  // root scope and observes subsequent registrations regardless of
+  // which encapsulation child they live in. Refinement:
+  // tasks/refinements/backend/openapi_or_equivalent.md.
+  await app.register(openapiPlugin);
+
   // Trivial proof-of-bootstrap route. `/` is the human-facing smoke
   // (`curl http://localhost:3000/`); `/healthz` (below) is the
-  // compose-healthcheck-facing liveness probe. Returning a plain
-  // object lets Fastify's default JSON serializer handle the response.
-  // The handler is intentionally sync (no `async`) — there's nothing
-  // to await and the lint rule `@typescript-eslint/require-await`
-  // catches gratuitous `async`.
-  app.get('/', () => ({ status: 'ok' }));
+  // compose-healthcheck-facing liveness probe. The `schema` block
+  // documents the response under the `meta` tag so the generated
+  // OpenAPI captures it alongside `/healthz`. The handler is
+  // intentionally sync (no `async`) — there's nothing to await and the
+  // lint rule `@typescript-eslint/require-await` catches gratuitous
+  // `async`.
+  app.get(
+    '/',
+    {
+      schema: {
+        tags: ['meta'],
+        summary: 'Bootstrap smoke route',
+        description:
+          'Returns `{ status: "ok" }`. Not a real healthcheck — use `/healthz` for ' +
+          'liveness. This route exists for human-facing smoke (`curl http://localhost:3000/`) ' +
+          'against a running stack.',
+        response: {
+          200: {
+            type: 'object',
+            required: ['status'],
+            additionalProperties: false,
+            properties: {
+              status: { type: 'string', enum: ['ok'] },
+            },
+          },
+          '5xx': errorEnvelopeRef,
+        },
+      },
+    },
+    () => ({ status: 'ok' }),
+  );
 
   // `/healthz` lives in its own plugin so the route's full context —
   // semantics (liveness-only, not readiness), refinement link, sibling

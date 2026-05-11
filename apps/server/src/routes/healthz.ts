@@ -32,6 +32,9 @@
 
 import type { FastifyPluginAsync } from 'fastify';
 
+import { errorEnvelopeRef } from '../openapi.js';
+import { resolveServerVersion } from '../version.js';
+
 /**
  * Response shape for `GET /healthz`. Kept explicit so the unit and
  * Cucumber tests assert against the same contract and so a future
@@ -52,22 +55,29 @@ export interface HealthzResponse {
 }
 
 /**
- * Resolve the server's version string. Reads
- * `process.env.npm_package_version`, which pnpm and npm set when the
- * server is launched via a package script (`pnpm start`,
- * `pnpm --filter @a-conversa/server run start`). When the runtime
- * image's `CMD ["node", "/app/apps/server/dist/index.js"]` invokes
- * node directly, the env var is absent — fall back to the literal
- * `'0.0.0'` rather than trying to read package.json from disk, which
- * would require knowing the runtime layout and would be a separate
- * piece of infrastructure to maintain. The version stamp is a "which
- * build is this" diagnostic, not a load-bearing identifier; the
- * fallback is acceptable until `deployment.prod_container` wires a
- * build-time `APP_VERSION` env var.
+ * JSON Schema describing the 200 response body. `@fastify/swagger`
+ * reads this off the route's `schema.response[200]` slot and renders
+ * it in the generated OpenAPI document. Future-route work (sessions,
+ * replay, auth) will pick a type provider (Zod or TypeBox) per the
+ * `openapi_or_equivalent` refinement; plain JSON Schema is the
+ * simplest forward-compatible choice for today's tiny surface.
  */
-function resolveVersion(): string {
-  return process.env['npm_package_version'] ?? '0.0.0';
-}
+const healthzResponseSchema = {
+  type: 'object',
+  required: ['status', 'version'],
+  additionalProperties: false,
+  properties: {
+    status: {
+      type: 'string',
+      enum: ['ok'],
+      description: 'Always the literal "ok" when the route returns 200.',
+    },
+    version: {
+      type: 'string',
+      description: "The server's package.json version (or '0.0.0' fallback).",
+    },
+  },
+} as const;
 
 /**
  * Fastify plugin that registers `GET /healthz`. Encapsulated as a
@@ -82,9 +92,28 @@ export const healthzPlugin: FastifyPluginAsync = (app, _opts) => {
   // `@typescript-eslint/require-await` would flag a gratuitous `async`.
   app.get(
     '/healthz',
+    {
+      schema: {
+        tags: ['meta'],
+        summary: 'Liveness probe',
+        description:
+          'Returns 200 whenever the server process is running and serving HTTP traffic. ' +
+          'Does NOT ping the database or OIDC; readiness is a separate (future) concern. ' +
+          'The compose `app` service healthcheck targets this route.',
+        response: {
+          200: healthzResponseSchema,
+          // Liveness-only — the route does not throw under normal
+          // operation, but the canonical envelope is still documented
+          // here so consumers writing typed clients see the same
+          // 5xx shape they would see from any other endpoint that
+          // unexpectedly faults.
+          '5xx': errorEnvelopeRef,
+        },
+      },
+    },
     (): HealthzResponse => ({
       status: 'ok',
-      version: resolveVersion(),
+      version: resolveServerVersion(),
     }),
   );
 

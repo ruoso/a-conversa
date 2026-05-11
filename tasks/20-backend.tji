@@ -36,7 +36,9 @@ task backend "Backend" {
     task openapi_or_equivalent "Document API surface (OpenAPI or equivalent)" {
       effort 1d
       allocate team
+      complete 100
       depends !http_server
+      note "Refinement: tasks/refinements/backend/openapi_or_equivalent.md"
     }
   }
 
