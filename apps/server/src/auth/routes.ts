@@ -83,6 +83,13 @@ import {
   signPendingCookie,
   verifyPendingCookie,
 } from './pending-cookie.js';
+import {
+  buildSessionCookieClearHeader,
+  buildSessionCookieHeader,
+  readSessionCookieFromHeader,
+  signSessionToken,
+  verifySessionToken,
+} from './session-token.js';
 
 /**
  * Options accepted by `authRoutesPlugin`. Every field is optional —
@@ -283,14 +290,21 @@ const callbackQuerystringSchema = {
 } as const;
 
 /**
- * 200 response body for `/auth/callback`. PROVISIONAL — the
- * `session_token_management` sibling replaces this with a cookie-set
- * + 302. Documented as such in the description so the OpenAPI surface
- * tracks the planned evolution.
+ * 200 response body for `/auth/callback` — the **new-user** branch.
+ * Returning users land on a 302 redirect (no body) instead. The body
+ * carries the OIDC subject + the upserted users-table row id +
+ * `needsScreenName: true` so the frontend renders the screen-name
+ * collection UI without re-deriving the placeholder state.
+ *
+ * The `needsScreenName` flag is always `true` on this 200 response —
+ * a freshly-inserted users row carries the `<pending>` placeholder by
+ * construction (see `upsertUserByOauthSubject` + `PLACEHOLDER_SCREEN_NAME`).
+ * Kept as a literal `true` so the OpenAPI consumer can branch on the
+ * shape rather than re-reading a separate field.
  */
 const callbackResponseSchema = {
   type: 'object',
-  required: ['sub', 'oauthSubject', 'userId'],
+  required: ['sub', 'oauthSubject', 'userId', 'needsScreenName'],
   additionalProperties: false,
   properties: {
     sub: {
@@ -304,10 +318,16 @@ const callbackResponseSchema = {
     userId: {
       type: 'string',
       format: 'uuid',
+      description: 'Application-side users-table row id (the new user just upserted).',
+    },
+    needsScreenName: {
+      type: 'boolean',
+      enum: [true],
       description:
-        'Application-side users-table row id. Provisional surface — ' +
-        '`session_token_management` will issue a platform session cookie ' +
-        'instead of returning this id in the body.',
+        'Always `true` on this 200 response — the user has just been created and their ' +
+        'screen name is the placeholder `<pending>`. The frontend should POST ' +
+        '`/auth/screen-name` next to collect the chosen name; the response there ' +
+        'issues the platform session cookie.',
     },
   },
 } as const;
@@ -563,13 +583,23 @@ const authRoutesPluginAsync: FastifyPluginAsync<AuthRoutesOptions> = (
           'store, exchanges the authorization code for tokens via the issuer’s ' +
           'token endpoint, validates the id_token (signature, audience, issuer, ' +
           'expiry, nonce), and upserts the users row keyed on the namespaced ' +
-          'OIDC subject (`<issuer-host>:<sub>`). Returns ' +
-          '`{ sub, oauthSubject, userId }`. **Provisional shape** — the ' +
-          '`session_token_management` sibling task will replace this body with ' +
-          'a session-cookie issuance + redirect to the post-login landing.',
+          'OIDC subject (`<issuer-host>:<sub>`).\n\n' +
+          '**Returning user** (the upserted row has a non-`<pending>` `screen_name`): ' +
+          'sets the platform session cookie `aconversa-session` (HS256 JWT, 7-day TTL) ' +
+          'and 302-redirects to `APP_BASE_URL`. No body.\n\n' +
+          '**New user** (the upserted row has `screen_name = <pending>`): sets the ' +
+          'short-lived `aconversa-auth-pending` cookie and returns 200 with ' +
+          '`{ sub, oauthSubject, userId, needsScreenName: true }`. The frontend ' +
+          'then POSTs `/auth/screen-name`, which issues the platform session cookie.',
         querystring: callbackQuerystringSchema,
         response: {
           200: callbackResponseSchema,
+          302: {
+            type: 'null',
+            description:
+              'Redirect to `APP_BASE_URL` after issuing the platform session cookie ' +
+              '(returning-user branch).',
+          },
           '4xx': errorEnvelopeRef,
           '5xx': errorEnvelopeRef,
         },
@@ -637,13 +667,27 @@ const authRoutesPluginAsync: FastifyPluginAsync<AuthRoutesOptions> = (
       const oauthSubject = namespacedOauthSubject(oidcConfig.issuerUrl, sub);
       const row = await upsertUserByOauthSubject(ensurePool(), oauthSubject);
 
-      // Issue the short-lived pending cookie. This cookie is the
-      // ONLY way `POST /auth/screen-name` knows which user is
-      // posting. The cookie is replaced by a full platform-session
-      // cookie when `session_token_management` lands; today it's a
-      // standalone bridge. The cookie's `expiresAt` field is checked
-      // server-side on verification — the `Max-Age` attribute is for
-      // browser-side housekeeping only.
+      // Split on the upserted row's screen_name. A returning user
+      // already has a non-placeholder name; we hand them the full
+      // platform session cookie and redirect them at the app shell.
+      // A brand-new user has the placeholder; we set the short-lived
+      // pending cookie so `POST /auth/screen-name` can verify the
+      // request, and the body's `needsScreenName: true` flag tells
+      // the frontend to render the name-picker.
+      if (row.screen_name !== PLACEHOLDER_SCREEN_NAME) {
+        // Returning-user branch. Issue the platform session JWT and
+        // redirect. Tests inject `now` for deterministic `iat` / `exp`;
+        // production uses Date.now via the signSessionToken default.
+        const signOpts = opts.now !== undefined ? { now: opts.now } : {};
+        const token = await signSessionToken({ sub: row.id }, ensureSecret(), signOpts);
+        reply.header('Set-Cookie', buildSessionCookieHeader(token, { secure: cookieSecure }));
+        return reply.redirect(oidcConfig.appBaseUrl, 302);
+      }
+
+      // New-user branch. Issue the short-lived pending cookie that
+      // exclusively authorizes `POST /auth/screen-name`. The cookie's
+      // `expiresAt` field is checked server-side on verification —
+      // the `Max-Age` attribute is for browser-side housekeeping only.
       const expiresAt = cookieNow() + PENDING_COOKIE_TTL_MS;
       const cookieValue = signPendingCookie({ userId: row.id, expiresAt }, ensureSecret());
       reply.header(
@@ -654,12 +698,14 @@ const authRoutesPluginAsync: FastifyPluginAsync<AuthRoutesOptions> = (
         }),
       );
 
-      // Provisional response shape. The `session_token_management`
-      // sibling will replace this with a cookie issuance + 302.
+      // The body's `needsScreenName: true` is a literal constant —
+      // a freshly-inserted users row carries the `<pending>` placeholder
+      // by construction; this branch is the placeholder-bearing case.
       return {
         sub,
         oauthSubject,
         userId: row.id,
+        needsScreenName: true as const,
       };
     },
   );
@@ -675,10 +721,11 @@ const authRoutesPluginAsync: FastifyPluginAsync<AuthRoutesOptions> = (
           '`/auth/callback`, validates the supplied screen name (≤ 64 chars, ' +
           'non-empty after trim), and writes it onto the user’s row only when ' +
           'the row currently has the placeholder `<pending>`. On success clears ' +
-          'the pending cookie. **Provisional surface** — once `session_token_management` ' +
-          'lands, the response also issues the full platform session cookie. This ' +
-          'endpoint never allows resetting an already-chosen screen name (409 on ' +
-          'second attempt); a future rename surface is out of scope.',
+          'the pending cookie AND sets the platform session cookie ' +
+          '`aconversa-session` (HS256 JWT, 7-day TTL); the next request from the ' +
+          'frontend can carry that cookie alone. This endpoint never allows ' +
+          'resetting an already-chosen screen name (409 on second attempt); a ' +
+          'future rename surface is out of scope.',
         body: screenNameBodySchema,
         response: {
           200: screenNameResponseSchema,
@@ -741,12 +788,124 @@ const authRoutesPluginAsync: FastifyPluginAsync<AuthRoutesOptions> = (
         );
       }
 
-      // 4. Clear the pending cookie. The bridge has served its purpose;
-      //    further requests need a real platform session (when
-      //    `session_token_management` lands).
-      reply.header('Set-Cookie', buildPendingCookieClearHeader({ secure: cookieSecure }));
+      // 4. Clear the pending cookie AND issue the platform session
+      //    cookie. The bridge has served its purpose; the session
+      //    cookie is the credential every protected endpoint and the
+      //    WebSocket handshake will consume from here on. We emit two
+      //    Set-Cookie headers (Fastify accepts an array under one
+      //    header name and emits them as separate Set-Cookie lines).
+      const signOpts = opts.now !== undefined ? { now: opts.now } : {};
+      const sessionToken = await signSessionToken({ sub: updated.id }, ensureSecret(), signOpts);
+      reply.header('Set-Cookie', [
+        buildPendingCookieClearHeader({ secure: cookieSecure }),
+        buildSessionCookieHeader(sessionToken, { secure: cookieSecure }),
+      ]);
 
       return { userId: updated.id, screenName: updated.screen_name };
+    },
+  );
+
+  // ---------------------------------------------------------------
+  // `POST /auth/logout` — clear the platform session cookie.
+  // ---------------------------------------------------------------
+  app.post(
+    '/auth/logout',
+    {
+      schema: {
+        tags: ['auth'],
+        summary: 'Clear the platform session cookie',
+        description:
+          'Clears the `aconversa-session` cookie. Idempotent — always 204, regardless ' +
+          'of whether the inbound cookie was present, valid, or expired. The browser-side ' +
+          'cookie cleanup is the whole point; no body, no token validation. A frontend ' +
+          'can call this without first checking the cookie state.',
+        response: {
+          204: {
+            type: 'null',
+            description: 'Cookie cleared (no body).',
+          },
+          '5xx': errorEnvelopeRef,
+        },
+      },
+    },
+    (_request, reply) => {
+      reply.header('Set-Cookie', buildSessionCookieClearHeader({ secure: cookieSecure }));
+      // Empty 204 — Fastify needs `.send()` to flush headers + status
+      // when the handler returns nothing meaningful.
+      reply.code(204).send();
+      return reply;
+    },
+  );
+
+  // ---------------------------------------------------------------
+  // `GET /auth/me` — return the current user identified by the
+  // platform session cookie.
+  // ---------------------------------------------------------------
+  app.get(
+    '/auth/me',
+    {
+      schema: {
+        tags: ['auth'],
+        summary: 'Return the current authenticated user',
+        description:
+          'Reads the `aconversa-session` cookie, validates the JWT (HS256 signature + ' +
+          '`exp`), looks up the users row by `id = sub`, and returns ' +
+          '`{ userId, screenName }`. 401 on missing / invalid / expired cookie or on a ' +
+          'soft-deleted user — single envelope `auth-session-invalid` regardless of which ' +
+          'sub-case fired (no information leak).',
+        response: {
+          200: {
+            type: 'object',
+            required: ['userId', 'screenName'],
+            additionalProperties: false,
+            properties: {
+              userId: { type: 'string', format: 'uuid' },
+              screenName: { type: 'string' },
+            },
+          },
+          '4xx': errorEnvelopeRef,
+          '5xx': errorEnvelopeRef,
+        },
+      },
+    },
+    async (request) => {
+      const rawHeader = request.headers['cookie'];
+      const cookieHeader = typeof rawHeader === 'string' ? rawHeader : undefined;
+      const token = readSessionCookieFromHeader(cookieHeader);
+      if (token === undefined) {
+        throw new ApiError(
+          401,
+          'auth-session-invalid',
+          'session is missing or has expired; sign in to continue',
+        );
+      }
+      const verifyOpts = opts.now !== undefined ? { now: opts.now } : {};
+      const payload = await verifySessionToken(token, ensureSecret(), verifyOpts);
+      if (payload === null) {
+        throw new ApiError(
+          401,
+          'auth-session-invalid',
+          'session is missing or has expired; sign in to continue',
+        );
+      }
+      // Look up the users row. The row could be soft-deleted between
+      // token issuance and this read; treat that the same as an invalid
+      // session so the response shape stays singular.
+      const result = await ensurePool().query<UsersUpsertRow>(
+        `SELECT id, oauth_subject, screen_name
+         FROM users
+         WHERE id = $1 AND deleted_at IS NULL`,
+        [payload.sub],
+      );
+      const row = result.rows[0];
+      if (row === undefined) {
+        throw new ApiError(
+          401,
+          'auth-session-invalid',
+          'session is missing or has expired; sign in to continue',
+        );
+      }
+      return { userId: row.id, screenName: row.screen_name };
     },
   );
 

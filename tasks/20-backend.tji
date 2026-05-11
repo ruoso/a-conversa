@@ -68,7 +68,9 @@ task backend "Backend" {
     task session_token_management "Issue and validate platform session tokens" {
       effort 2d
       allocate team
+      complete 100
       depends !screen_name_collection
+      note "Refinement: tasks/refinements/backend/session_token_management.md"
     }
     task no_profile_data_policy "Ensure no OAuth profile data is read or stored" {
       effort 0.5d

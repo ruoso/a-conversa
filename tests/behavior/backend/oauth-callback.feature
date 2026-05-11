@@ -29,12 +29,12 @@ Feature: OIDC callback handler — full handshake against a stubbed issuer
     And a users row exists with oauth_subject "authelia:alice"
     And the users row's screen_name is "<pending>"
 
-  Scenario: returning user — same oauth_subject reuses the row
+  Scenario: returning user — same oauth_subject reuses the row and is redirected
     Given a user with oauth_subject "authelia:alice" exists
     When I GET /auth/login
     And I GET the callback URL with the stored state and a stubbed sub "alice"
-    Then the response status is 200
-    And the response body's oauthSubject is "authelia:alice"
+    Then the response status is 302
+    And the Location header points at "http://localhost:3000"
     And exactly one users row exists with oauth_subject "authelia:alice"
 
   Scenario: state mismatch — callback with bad state returns 400

@@ -69,3 +69,16 @@ export {
   type PendingCookiePayload,
   type VerifyResult,
 } from './pending-cookie.js';
+
+export {
+  SESSION_COOKIE_NAME,
+  SESSION_TOKEN_TTL_MS,
+  SESSION_TOKEN_TTL_SECONDS,
+  signSessionToken,
+  verifySessionToken,
+  buildSessionCookieHeader,
+  buildSessionCookieClearHeader,
+  readSessionCookieFromHeader,
+  type SessionTokenPayload,
+  type SignSessionTokenOptions,
+} from './session-token.js';
