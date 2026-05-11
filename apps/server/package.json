@@ -5,11 +5,15 @@
   "type": "module",
   "scripts": {
     "build": "tsc -b",
+    "start": "node dist/index.js",
     "migrate": "tsx scripts/migrate.ts",
     "migrate:create": "node-pg-migrate create --migrations-dir migrations --migration-file-language sql"
   },
   "dependencies": {
     "@a-conversa/shared-types": "workspace:^",
+    "@fastify/cors": "11.2.0",
+    "@fastify/sensible": "6.0.4",
+    "fastify": "5.8.5",
     "node-pg-migrate": "8.0.4",
     "pg": "8.20.0",
     "zod": "4.4.3"

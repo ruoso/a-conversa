@@ -48,7 +48,7 @@ Development is workspace-based (pnpm workspaces under [apps/](apps/) and [packag
 
 ### What's planned
 
-- `make up-app` (and eventually full-stack `make up`) brings the app container up too. Today the app's stub entry point exits 0 and restarts in a loop, so the split keeps the working subset quiet; once [`backend.api_skeleton`](tasks/refinements/backend/api_skeleton.md) lands, full-stack `make up` becomes the norm.
+- `make up-app` brings the app container up too — the Fastify server (per [ADR 0023](docs/adr/0023-web-framework-fastify.md)) listens on `:3000` and `curl http://localhost:3000/` returns `{"status":"ok"}`. The compose healthcheck still targets `/healthz` (owned by `backend.api_skeleton.health_endpoint`, pending), so `docker compose ps` shows the service as unhealthy until that sibling lands. Once `health_endpoint` (with migrations-on-startup) ships, full-stack `make up` will absorb `up-app`.
 - Seeded fixture for manual exploration via [`dev_env.seed_data_script`](tasks/refinements/foundation/seed_data_script.md). `make seed` is a stub that errors clearly until that task lands.
 - Surfaces served on localhost: moderator at `/moderator`, participant at `/participant`, audience at `/audience` (`/replay` later). See [docs/architecture.md — local development environment](docs/architecture.md#local-development-environment).
 

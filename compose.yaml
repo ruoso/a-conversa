@@ -25,17 +25,16 @@ services:
   # ---------------------------------------------------------------------
   # app — the a-conversa application image (built from ./Dockerfile).
   #
-  # NOTE: until `backend.api_skeleton` lands, the runtime entry point
-  # is a stub banner that exits 0 (per ADR 0015). The container will
-  # therefore start, exit cleanly, and — under `restart: unless-stopped`
-  # — be restarted in a tight loop, with the `/healthz` healthcheck
-  # perpetually unhealthy because nothing is listening on port 3000.
-  # To run the dev dependencies without that noise, bring just the
-  # backing services up:
+  # The runtime entry point now runs the real Fastify server
+  # (ADR 0023; backend.api_skeleton.http_server, 2026-05-10). The
+  # container listens on :3000 and `curl http://localhost:3000/`
+  # returns `{"status":"ok"}`. The healthcheck below still targets
+  # `/healthz`, which is owned by `backend.api_skeleton.health_endpoint`
+  # and not yet implemented — so `docker compose ps` shows the service
+  # as `(unhealthy)` until that sibling lands, but the server is up
+  # and reachable. To run only the backing services for a quieter
+  # dev stack:
   #     docker compose up -d postgres authelia
-  # The full-stack `make up` experience becomes useful once the real
-  # entry point (apply migrations, start the HTTP/WebSocket server)
-  # lands with `backend.api_skeleton`.
   app:
     build:
       context: .

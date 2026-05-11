@@ -6,13 +6,18 @@
 # banner) by foundation.dev_env.one_command_script.
 #
 # The split between `up` (postgres + authelia) and `up-app` (app on
-# top) is honest about today's reality: the application image's
-# runtime entry point is still the stub from ADR 0015 — it exits 0
-# immediately, and `restart: unless-stopped` then re-launches it in a
-# tight loop. Bringing the backing services up alone gives a quiet,
-# usable dev stack today; `up-app` (and eventually full-stack `up`)
-# becomes non-noisy once `backend.api_skeleton` lands. See ADR 0018
-# (Amendments) for the rationale.
+# top) was introduced when the app image's runtime entry point was
+# still the stub from ADR 0015 (exit 0 + restart loop). The real
+# Fastify entry point has now landed (ADR 0023 /
+# `backend.api_skeleton.http_server`), so the app container runs the
+# server — but the compose healthcheck still targets `/healthz`, which
+# is owned by `backend.api_skeleton.health_endpoint` and not yet
+# implemented; the container is "running but unhealthy" until that
+# sibling lands. We therefore keep the `up` / `up-app` split for one
+# more task cycle so the default `make up` stays quiet; once
+# `health_endpoint` (with migrations-on-startup) ships, `up` absorbs
+# `up-app` and the split goes away. See ADR 0018 (Amendments) for
+# context.
 
 .PHONY: help install test up up-app migrate down down-v logs ps seed clean
 
@@ -21,7 +26,7 @@ help:
 	@echo "  make install   pnpm install across all workspaces"
 	@echo "  make test      run smoke tests (vitest, cucumber, playwright)"
 	@echo "  make up        bring up postgres + authelia, wait for healthy, print URLs"
-	@echo "  make up-app    bring up the app service too (loops on stub entry point until backend.api_skeleton)"
+	@echo "  make up-app    bring up the app service too (runs the real Fastify server; /healthz still pending)"
 	@echo "  make migrate   apply pending DB migrations against the running postgres (forward-only; ADR 0020)"
 	@echo "  make down      stop the dev stack (volumes preserved)"
 	@echo "  make down-v    stop the dev stack and drop named volumes"
@@ -51,13 +56,15 @@ up:
 	@echo "Dev stack ready:"
 	@echo "  postgres   localhost:5432"
 	@echo "  authelia   http://localhost:9091"
-	@echo "  app        http://localhost:3000   (waits on backend.api_skeleton; bring up with 'make up-app')"
+	@echo "  app        http://localhost:3000   (bring up with 'make up-app'; /healthz pending)"
 
 up-app:
 	@docker compose up -d --build app
 	@echo ""
-	@echo "app service started. Note: until backend.api_skeleton lands, the entry point exits 0"
-	@echo "and the container restarts in a loop. See ADR 0018 (Amendments) for context."
+	@echo "app service started. The Fastify server is listening on :3000; 'curl http://localhost:3000/'"
+	@echo "returns {\"status\":\"ok\"}. The compose healthcheck targets /healthz (still pending —"
+	@echo "owned by backend.api_skeleton.health_endpoint), so 'docker compose ps' shows the service"
+	@echo "as unhealthy until that sibling lands. See ADR 0023 + ADR 0015 (Amendments) for context."
 
 # Apply pending DB migrations (forward-only; see ADR 0020).
 # Connects to the running postgres via DATABASE_URL from .env. The

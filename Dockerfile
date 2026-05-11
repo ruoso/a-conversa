@@ -3,7 +3,7 @@
 # See docs/adr/0015-dockerfile-multi-stage-pnpm-corepack.md for the
 # rationale (multi-stage; build on node:lts Debian; runtime on
 # node:lts-alpine; pnpm via Corepack; single image serves all
-# surfaces; entry point is a stub today).
+# surfaces).
 #
 # Stages:
 #   deps    — install pnpm workspace deps with --frozen-lockfile
@@ -13,11 +13,11 @@
 # Build:    docker build -t a-conversa-app:dev .
 # Run:      docker run --rm a-conversa-app:dev
 #
-# The runtime entry point today only prints a banner and exits 0.
-# The real entry point (apply migrations, start the HTTP/WebSocket
-# server, serve the frontend bundles) lands with backend.api_skeleton
-# and the migrations task; deployment.prod_container will iterate on
-# this Dockerfile for production.
+# The runtime entry point runs the Fastify-based HTTP server
+# (apps/server/dist/index.js) per ADR 0023 and ADR 0015's Amendment.
+# Migrations-on-startup and the proper `/healthz` are still pending
+# sibling tasks under backend.api_skeleton; deployment.prod_container
+# will iterate on this Dockerfile for production.
 
 ARG NODE_VERSION=20
 ARG PNPM_VERSION=9.15.4
@@ -91,9 +91,9 @@ RUN pnpm -r build
 # ---------------------------------------------------------------------------
 # runtime — slim Alpine image carrying only what's needed to run.
 #
-# Today the entry point is a stub banner; the runtime stage exists
-# in its final shape so backend.api_skeleton just has to fill in the
-# entry point and any extra runtime files.
+# The entry point runs the compiled Fastify server (see ADR 0023);
+# the runtime stage carries the emitted JS, the production-only
+# node_modules tree, and nothing else.
 # ---------------------------------------------------------------------------
 FROM node:${NODE_VERSION}-alpine AS runtime
 
@@ -138,8 +138,11 @@ USER node
 
 EXPOSE 3000
 
-# Stub entry point. Prints a banner identifying the image and the
-# deferred work, then exits 0 so the container starts cleanly. The
-# real entry point (apply migrations, then start the server) lands
-# with backend.api_skeleton + the migrations task.
-CMD ["node", "-e", "console.log('a-conversa app image (stub).\\n' + 'No server entry point yet — backend.api_skeleton will wire migrations + HTTP/WebSocket startup.\\n' + 'Built workspaces: @a-conversa/server, @a-conversa/shared-types (frontend bundlers pending).');"]
+# Real entry point — the Fastify-based HTTP server bootstrap (ADR 0023).
+# The compose `app` service's healthcheck targets `/healthz`, which is
+# owned by the eventual backend.api_skeleton.health_endpoint sibling;
+# until that lands the healthcheck stays unhealthy but the server
+# itself runs and `GET /` returns `{ status: 'ok' }`. Migrations are
+# applied separately via `make migrate` against the running postgres
+# (the migrations-on-startup hook is also owned by health_endpoint).
+CMD ["node", "/app/apps/server/dist/index.js"]

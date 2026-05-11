@@ -9,6 +9,8 @@ task backend "Backend" {
     task http_server "HTTP server bootstrap" {
       effort 1d
       allocate team
+      complete 100
+      note "Refinement: tasks/refinements/backend/http_server.md"
     }
     task error_handling "Centralized error handling and serialization" {
       effort 1d
