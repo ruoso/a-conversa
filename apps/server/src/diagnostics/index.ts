@@ -2,6 +2,7 @@
 //
 // Refinements:
 //   - tasks/refinements/data-and-methodology/cycle_detection.md
+//   - tasks/refinements/data-and-methodology/contradiction_detection.md
 //
 // The diagnostics module hosts read-side detectors for the
 // structural diagnostics defined in `docs/data-model.md`'s
@@ -12,3 +13,4 @@
 // not extend it.
 
 export { detectSupportsCycles, type SupportsCycle } from './cycle-detection.js';
+export { detectContradictions, type Contradiction } from './contradiction-detection.js';
