@@ -47,7 +47,9 @@ task backend "Backend" {
     task oauth_provider_config "Configure OAuth providers (generic + first-class)" {
       effort 2d
       allocate team
+      complete 100
       note "Generic OAuth client + wiring for Google, GitHub, GitLab."
+      note "Refinement: tasks/refinements/backend/oauth_provider_config.md"
     }
     task oauth_callback_handler "OAuth callback handler" {
       effort 1d
