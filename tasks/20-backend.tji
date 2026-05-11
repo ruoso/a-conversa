@@ -131,7 +131,9 @@ task backend "Backend" {
     task session_listing_filters "Filter session list by participant / privacy / status" {
       effort 1d
       allocate team
+      complete 100
       depends !list_sessions_endpoint
+      note "Refinement: tasks/refinements/backend/session_listing_filters.md"
     }
   }
 

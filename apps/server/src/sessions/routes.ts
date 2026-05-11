@@ -10,6 +10,7 @@
 //
 // Refinements: tasks/refinements/backend/create_session_endpoint.md,
 //              tasks/refinements/backend/list_sessions_endpoint.md,
+//              tasks/refinements/backend/session_listing_filters.md,
 //              tasks/refinements/backend/get_session_endpoint.md,
 //              tasks/refinements/backend/end_session_endpoint.md,
 //              tasks/refinements/backend/session_privacy_toggle.md,
@@ -20,6 +21,7 @@
 //              docs/adr/0023-web-framework-fastify.md
 // TaskJuggler: backend.session_management.create_session_endpoint,
 //              backend.session_management.list_sessions_endpoint,
+//              backend.session_management.session_listing_filters,
 //              backend.session_management.get_session_endpoint,
 //              backend.session_management.end_session_endpoint,
 //              backend.session_management.session_privacy_toggle
@@ -56,27 +58,41 @@
 // `sessionCreatedPayloadSchema` at the earliest possible moment — the
 // INSERT either lands a valid row or doesn't run at all.
 //
-// **`GET /sessions`** — the visibility-gated list. The handler:
+// **`GET /sessions`** — the visibility-gated list with optional
+// filters and pagination. The handler:
 //
 //   1. Reads `request.authUser.id` (the caller).
-//   2. Reads the optional `?status=active|ended` query param.
-//   3. Issues a single SELECT against `sessions` with a parameterized
-//      visibility gate (`privacy = 'public' OR host_user_id = $1 OR
-//      EXISTS (... session_participants ...)`) and the optional status
-//      WHERE on `ended_at IS [NOT] NULL`. ORDER BY `created_at DESC`.
-//   4. Returns 200 + `{ sessions: SessionResponse[] }` (camelCase mapping
-//      via the same `sessionRowToResponse` helper the create endpoint
-//      uses).
+//   2. Reads the validated query string. `status` / `host` /
+//      `participant` / `privacy` / `topic` are optional filters
+//      AND-composed onto the visibility gate; `limit` (default 50,
+//      max 200) and `offset` (default 0) drive pagination.
+//   3. Builds the composed WHERE clause + parameter array
+//      incrementally — the visibility gate always uses `$1`; each
+//      filter appends a fragment AND a value via a positional `$N`
+//      counter. NO user-controlled string ever touches the SQL text;
+//      enum branches use hard-coded literals and the `topic` value is
+//      wrapped in `%...%` then passed as a parameter to `ILIKE`.
+//   4. Issues TWO SELECTs against the same composed WHERE: the page
+//      (with `ORDER BY created_at DESC LIMIT $N OFFSET $M`) and the
+//      total count (`COUNT(*)::int` with no LIMIT). Both queries
+//      reuse the parameter array up to (but not including) the
+//      pagination placeholders.
+//   5. Returns 200 + `{ sessions: SessionResponse[]; total: integer }`
+//      — `sessions` is the camelCase-mapped page, `total` is the
+//      visibility + filter count BEFORE limit/offset (matching the
+//      page query's WHERE).
 //
 // The visibility gate lifts the architecture's cross-session reference
 // permission rule (docs/architecture.md, "Cross-session reference
 // permissions") cleanly to a listing context: listing is strictly
 // weaker than referencing, so the same gate suffices. Public sessions
 // are visible to every authenticated user; private sessions are
-// visible only to the host or a current/past participant. See
-// tasks/refinements/backend/list_sessions_endpoint.md for the full
-// rationale and the basic-vs-filters split with the sibling
-// `session_listing_filters` task.
+// visible only to the host or a current/past participant. The filters
+// narrow WITHIN this set — a caller asking `?host=<other-user>` only
+// sees the matching sessions they were already permitted to see (public
+// + private-where-participant). See
+// tasks/refinements/backend/session_listing_filters.md for the
+// composed-WHERE rationale and pagination/`total` semantics.
 //
 // **`GET /sessions/:id`** — the single-session fetch. The handler:
 //
@@ -165,9 +181,14 @@
 //
 // **What this plugin does NOT do** — deferred to sibling tasks:
 //
-//   - Filters beyond the visibility gate (host filter, participant
-//     filter, pagination) — `backend.session_management.session_listing_filters`.
-//   - `POST /sessions/:id/participants` — `backend.session_management.participant_assignment`.
+//   - Full-text-search across topic + (future) participant screen-name
+//     + (future) tags — `?topic=` is ILIKE substring for v1; a future
+//     `backend.session_management.session_search` task replaces it with
+//     `to_tsvector` + ranking when a UI surface needs ranked results.
+//   - Cursor-based pagination — `?limit` / `?offset` is the v1 surface;
+//     a future cursor token would land alongside (and eventually
+//     deprecate `?offset`) if per-user row counts grow past offset
+//     pagination's comfort zone.
 //
 // The plugin's barrel-style shape (a Fastify plugin and a few exported
 // schema/type symbols) is the seed those sibling tasks extend; new
@@ -312,12 +333,18 @@ export const SESSION_LIST_RESPONSE_SCHEMA_ID = 'SessionListResponse';
 
 /**
  * The canonical session-list response shape — an object wrapping the
- * `sessions` array. The wrapper key (rather than a raw top-level
- * array) gives the response shape room to grow (pagination cursor,
- * total count, filter echo) without breaking the contract; clients
- * destructure `const { sessions } = await response.json()` and ignore
- * unknown sibling keys. See the refinement's "Response shape"
- * decision for the rationale.
+ * `sessions` array AND a `total` count of matching rows. The wrapper
+ * shape was chosen in `list_sessions_endpoint` for exactly this
+ * future: `session_listing_filters` adds pagination + filters, and the
+ * `total` field is the canonical "how many rows would this query
+ * return if I paged all the way through" denominator for paged UIs.
+ *
+ * `total` is the count of rows after visibility-gating + filters but
+ * BEFORE `LIMIT` / `OFFSET` are applied — matching the page query's
+ * WHERE clause. See `tasks/refinements/backend/session_listing_filters.md`
+ * for the rationale (the alternative — unfiltered visibility count —
+ * was rejected because it produces the wrong number for a "showing
+ * 1-50 of N" UI).
  *
  * Each array element is a `SessionResponse` — referenced via the
  * shared `$ref: 'SessionResponse#'` so the OpenAPI document carries
@@ -327,7 +354,7 @@ export const SESSION_LIST_RESPONSE_SCHEMA_ID = 'SessionListResponse';
 export const sessionListResponseSchema = {
   $id: SESSION_LIST_RESPONSE_SCHEMA_ID,
   type: 'object',
-  required: ['sessions'],
+  required: ['sessions', 'total'],
   additionalProperties: false,
   properties: {
     sessions: {
@@ -336,8 +363,19 @@ export const sessionListResponseSchema = {
         'The visible sessions for the authenticated caller, ordered by `created_at` ' +
         'DESC (most-recently-created first). Visibility per the architecture: public ' +
         'sessions are visible to every authenticated user; private sessions are ' +
-        'visible only to the host or a current/past participant.',
+        'visible only to the host or a current/past participant. The page is sliced ' +
+        'by the `?limit` / `?offset` query params (defaults 50 / 0); the `total` ' +
+        'field carries the full-match count for pagination UI.',
       items: sessionResponseRef,
+    },
+    total: {
+      type: 'integer',
+      minimum: 0,
+      description:
+        'The count of sessions matching the visibility gate AND every supplied filter ' +
+        '(host, participant, privacy, status, topic) BEFORE `LIMIT`/`OFFSET` are ' +
+        'applied. Paged UIs use this as the denominator for "showing N of M" status; ' +
+        'clients walking pages stop when `(offset + sessions.length) >= total`.',
     },
   },
 } as const;
@@ -580,19 +618,31 @@ const sessionParticipantParamsSchema = {
  * with a `validation` error that the centralized handler renders as
  * the canonical `validation-failed` envelope.
  *
- * `status` is optional:
- *   - absent → no lifecycle filter; both active and ended sessions returned.
- *   - `'active'` → `WHERE ended_at IS NULL` applied on top of the visibility gate.
- *   - `'ended'` → `WHERE ended_at IS NOT NULL` applied on top of the visibility gate.
+ * Every filter is optional; filters are AND-composed and narrow WITHIN
+ * the visibility gate (the gate stays in place — a caller asking
+ * `?host=<other-user>` only sees the matching sessions they were
+ * already permitted to see). `additionalProperties: false` rejects
+ * unknown keys (e.g. typo'd filter names) with `validation-failed`
+ * rather than silently ignoring them.
  *
- * Per the sessions-table refinement's "no explicit `status` column"
- * decision, lifecycle is inferred from `ended_at IS NULL` — this
- * filter exposes that inference as a query-time toggle.
+ * Filter surface (per `tasks/refinements/backend/session_listing_filters.md`):
  *
- * The sibling `session_listing_filters` task may extend this schema
- * (host filter, participant filter, pagination); THIS task lands the
- * visibility-gated base and the cheapest natural follow-on
- * (`status`).
+ *   - `status` (lifecycle, landed in `list_sessions_endpoint`):
+ *     `'active'` → `ended_at IS NULL`; `'ended'` → `ended_at IS NOT NULL`.
+ *   - `host` — UUID of the session host. Filters to sessions where
+ *     `host_user_id = $N`.
+ *   - `participant` — UUID of a user. Filters to sessions where the
+ *     user has any (current or historical) `session_participants`
+ *     row. EXISTS-style join mirrors the visibility-gate's participant
+ *     branch — leave-and-rejoin's multiple rows don't duplicate the
+ *     parent session row.
+ *   - `privacy` — narrows to a single privacy bucket. Enum-validated.
+ *   - `topic` — case-insensitive substring match (`topic ILIKE
+ *     '%<topic>%'`). ILIKE for v1; a future task may layer full-text-
+ *     search.
+ *   - `limit` — page size; default 50, max 200. Integer-coerced and
+ *     range-validated at the schema layer.
+ *   - `offset` — page offset; default 0, min 0. Integer-coerced.
  */
 const listSessionsQuerystringSchema = {
   type: 'object',
@@ -604,6 +654,59 @@ const listSessionsQuerystringSchema = {
       description:
         "Optional lifecycle filter. `'active'` → only sessions with `ended_at IS NULL`; " +
         "`'ended'` → only sessions with `ended_at IS NOT NULL`. Absent → both.",
+    },
+    host: {
+      type: 'string',
+      format: 'uuid',
+      description:
+        'Optional host filter. Narrows to sessions whose `host_user_id` matches. ' +
+        'The visibility gate still applies — the caller only sees the subset of the ' +
+        "host's sessions they would otherwise be permitted to see.",
+    },
+    participant: {
+      type: 'string',
+      format: 'uuid',
+      description:
+        'Optional participant filter. Narrows to sessions where the named user is or ' +
+        'was a participant (any `session_participants` row, including historical). The ' +
+        'visibility gate still applies — the caller only sees the subset of the ' +
+        "participant's sessions they would otherwise be permitted to see.",
+    },
+    privacy: {
+      type: 'string',
+      enum: ['public', 'private'],
+      description:
+        "Optional privacy filter. `'public'` or `'private'` narrows to a single " +
+        'bucket. The visibility gate still applies — a non-participant asking ' +
+        "`?privacy=private` sees no rows (private sessions they aren't in remain " +
+        'invisible).',
+    },
+    topic: {
+      type: 'string',
+      minLength: 1,
+      maxLength: 256,
+      description:
+        'Optional case-insensitive substring match against `topic`. Implemented via ' +
+        "`topic ILIKE '%<value>%'`; full-text-search is a future task. The value is " +
+        'passed as a parameterized pattern — no user input touches the SQL text.',
+    },
+    limit: {
+      type: 'integer',
+      minimum: 1,
+      maximum: 200,
+      default: 50,
+      description:
+        'Page size. Defaults to 50 if omitted; capped at 200 to prevent accidental ' +
+        '"give me everything" requests. Returned rows are at most this count; the ' +
+        '`total` field on the response carries the full match count for paging UIs.',
+    },
+    offset: {
+      type: 'integer',
+      minimum: 0,
+      default: 0,
+      description:
+        'Page offset. Defaults to 0. Combined with `limit` this drives offset-based ' +
+        'pagination over the ordered (`created_at DESC`) result set.',
     },
   },
 } as const;
@@ -1062,21 +1165,30 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = (
         tags: ['sessions'],
         summary: 'List the sessions visible to the authenticated caller',
         description:
-          'Returns every session the caller is permitted to see, ordered ' +
+          'Returns the sessions the caller is permitted to see, ordered ' +
           '`created_at` DESC. Visibility (per `docs/architecture.md`): public ' +
           'sessions are visible to every authenticated user; private sessions ' +
           'are visible only to the host or a current/past participant. The ' +
-          'optional `?status=active|ended` query param filters on lifecycle: ' +
-          "`'active'` → only sessions with `ended_at IS NULL`; `'ended'` → only " +
-          'sessions with `ended_at IS NOT NULL`; absent → both.\n\n' +
-          'The response wraps the array under a `sessions` key so the shape can ' +
-          'grow (pagination metadata, filter echo) without breaking existing ' +
-          'clients. Pagination itself is intentionally deferred to the sibling ' +
-          '`session_listing_filters` task; today the endpoint returns the full ' +
-          'visible set in one response.\n\n' +
+          'visibility gate is the canonical baseline; the query-string filters ' +
+          'below narrow WITHIN it.\n\n' +
+          'Filters (all optional, AND-composed):\n' +
+          '  • `?status=active|ended` — lifecycle filter (`ended_at IS NULL` / ' +
+          '`IS NOT NULL`).\n' +
+          '  • `?host=<userId>` — sessions hosted by the given user id.\n' +
+          '  • `?participant=<userId>` — sessions where the given user is or ' +
+          'was a participant.\n' +
+          '  • `?privacy=public|private` — narrow to a single privacy bucket.\n' +
+          '  • `?topic=<substring>` — case-insensitive substring match against ' +
+          'the topic column (ILIKE for v1; full-text-search is a future task).\n' +
+          '  • `?limit=<n>` (default 50, max 200) and `?offset=<n>` (default 0) ' +
+          'drive offset-based pagination.\n\n' +
+          'The response is `{ sessions: SessionResponse[]; total: integer }` — ' +
+          '`total` is the count of matches AFTER visibility + filters but ' +
+          'BEFORE limit/offset, so paged UIs can render "showing 1-50 of N".\n\n' +
           'Returns 401 `auth-required` when no valid session cookie is present; ' +
-          '400 `validation-failed` when the query string is malformed (e.g. an ' +
-          'unrecognised `status` value).',
+          '400 `validation-failed` when the query string is malformed (e.g. a ' +
+          'bad UUID on `host`/`participant`, an unrecognised `status` or ' +
+          '`privacy`, out-of-range `limit`/`offset`, or an unknown query key).',
         security: [{ cookieAuth: [] }],
         querystring: listSessionsQuerystringSchema,
         response: {
@@ -1101,53 +1213,147 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = (
       const userId = auth.id;
 
       // Fastify's validator coerces / rejects per the schema; the
-      // narrowed-cast captures the validated shape.
-      const query = request.query as { status?: 'active' | 'ended' };
+      // narrowed-cast captures the validated shape. Integer
+      // coercion is enabled (ajv default in Fastify) so
+      // `?limit=10` arrives as the number `10`; the schema's
+      // `default` populates `limit` and `offset` when absent.
+      const query = request.query as {
+        status?: 'active' | 'ended';
+        host?: string;
+        participant?: string;
+        privacy?: 'public' | 'private';
+        topic?: string;
+        limit?: number;
+        offset?: number;
+      };
+      const limit = query.limit ?? 50;
+      const offset = query.offset ?? 0;
 
-      // Build the lifecycle WHERE clause. The visibility gate is
-      // always present; the status filter is conditional. We
-      // concatenate the SQL but ALL parameter values flow via the
-      // `$1` placeholder — no user-controlled string ever touches
-      // the SQL text. (`status` is enum-validated at the schema
-      // layer; the branch is a hard-coded literal regardless.)
-      let lifecycleFilter = '';
+      // Build the composed WHERE clause + the parameter array
+      // incrementally. The pattern:
+      //
+      //   1. The visibility gate is always present and uses `$1`
+      //      (the caller's user id).
+      //   2. Each conditional filter appends a fragment AND a value;
+      //      the positional placeholder counter `p` tracks the next
+      //      `$N`. ALL user-controlled values flow via parameters —
+      //      enum values are validated at the schema layer and the
+      //      WHERE fragments use hard-coded literals (`'active'` /
+      //      `'ended'`). The `topic` substring is wrapped in `%...%`
+      //      and passed as a parameter — ILIKE evaluates the
+      //      pattern, so the `%` wildcards remain wildcards while
+      //      the captured substring stays a value, not SQL.
+      //
+      // The visibility gate's `EXISTS` (rather than a JOIN + DISTINCT)
+      // avoids row-duplication when a user has multiple historical
+      // participant rows for the same session (leave-and-rejoin →
+      // multiple rows per the participants-table refinement's F5
+      // decision). Past participants (`left_at IS NOT NULL`) remain
+      // visible — once you've seen a session you've seen it, and
+      // hiding it post-leave would surprise users and complicate
+      // replay/audit flows.
+      const params: unknown[] = [userId];
+      let p = 1;
+      let where =
+        "(\n           privacy = 'public'\n           OR host_user_id = $1\n           OR EXISTS (\n                SELECT 1 FROM session_participants sp\n                WHERE sp.session_id = sessions.id AND sp.user_id = $1\n              )\n         )";
+
       if (query.status === 'active') {
-        lifecycleFilter = ' AND ended_at IS NULL';
+        where += ' AND ended_at IS NULL';
       } else if (query.status === 'ended') {
-        lifecycleFilter = ' AND ended_at IS NOT NULL';
+        where += ' AND ended_at IS NOT NULL';
       }
 
-      // The visibility gate: ANY of (public privacy) OR (caller is
-      // host) OR (caller has a session_participants row for this
-      // session) admits the row. `EXISTS` (rather than a JOIN +
-      // DISTINCT) avoids row-duplication when a user has multiple
-      // historical participant rows for the same session — the
-      // participants-table refinement's F5 decision (leave-and-rejoin
-      // → multiple rows) makes this duplication possible. Past
-      // participants (`left_at IS NOT NULL`) remain visible: once
-      // you've seen a session you've seen it, and hiding it post-leave
-      // would surprise users and complicate replay/audit flows.
+      if (query.host !== undefined) {
+        p += 1;
+        params.push(query.host);
+        where += ` AND host_user_id = $${String(p)}`;
+      }
+
+      if (query.participant !== undefined) {
+        p += 1;
+        params.push(query.participant);
+        // Same `EXISTS` shape as the visibility gate's participant
+        // branch — historical rows count, and a participant with
+        // multiple (leave-and-rejoin) rows doesn't duplicate the
+        // parent session row.
+        where +=
+          ` AND EXISTS (SELECT 1 FROM session_participants sp2` +
+          ` WHERE sp2.session_id = sessions.id AND sp2.user_id = $${String(p)})`;
+      }
+
+      if (query.privacy !== undefined) {
+        p += 1;
+        params.push(query.privacy);
+        where += ` AND privacy = $${String(p)}`;
+      }
+
+      if (query.topic !== undefined) {
+        p += 1;
+        // The `%...%` pattern is the parameter value — Postgres'
+        // ILIKE evaluates the wildcards at query time. The captured
+        // user substring is a value, not SQL; quoting / injection
+        // hazards are isolated by the placeholder boundary.
+        params.push(`%${query.topic}%`);
+        where += ` AND topic ILIKE $${String(p)}`;
+      }
+
+      // The `total` query: same WHERE, no ORDER / LIMIT / OFFSET.
+      // Snapshot the params shape BEFORE we append the pagination
+      // placeholders so the COUNT(*) reuses the same array.
+      const countParams = params.slice();
+
+      // Append the limit + offset placeholders LAST — the page
+      // query uses them; the count query does not.
+      p += 1;
+      params.push(limit);
+      const limitPlaceholder = p;
+      p += 1;
+      params.push(offset);
+      const offsetPlaceholder = p;
+
       const pool = ensurePool();
-      const result = await pool.query<SessionsInsertRow>(
+
+      // Two parallel queries: the page (rows + order + limit/offset)
+      // and the total count. We issue them sequentially against the
+      // same pool — Promise.all would marginally cut latency but the
+      // two queries against the same connection-pool entry are
+      // already cheap, and sequential is easier to reason about
+      // under the pglite single-handle test path. READ COMMITTED is
+      // fine; the two queries see the same snapshot up to
+      // microseconds, and a concurrent INSERT that lands between
+      // the two SELECTs would at worst inflate `total` by 1 — a
+      // benign off-by-one for paging UI, not a correctness bug.
+      const pageResult = await pool.query<SessionsInsertRow>(
         `SELECT id, host_user_id, privacy, topic, created_at, ended_at
          FROM sessions
-         WHERE (
-                privacy = 'public'
-                OR host_user_id = $1
-                OR EXISTS (
-                     SELECT 1 FROM session_participants sp
-                     WHERE sp.session_id = sessions.id AND sp.user_id = $1
-                   )
-              )${lifecycleFilter}
-         ORDER BY created_at DESC`,
-        [userId],
+         WHERE ${where}
+         ORDER BY created_at DESC
+         LIMIT $${String(limitPlaceholder)} OFFSET $${String(offsetPlaceholder)}`,
+        params,
       );
 
+      const countResult = await pool.query<{ total: number | string }>(
+        `SELECT COUNT(*)::int AS total
+         FROM sessions
+         WHERE ${where}`,
+        countParams,
+      );
+
+      // `COUNT(*)::int` returns an integer to the driver. The pg
+      // driver surfaces ints as JS number; pglite mirrors that. We
+      // coerce defensively (a string-typed bigint would surface
+      // here if the cast were removed) — same defensive pattern as
+      // the `MAX(sequence)` reader in the end-session handler.
+      const rawTotal = countResult.rows[0]?.total ?? 0;
+      const total = typeof rawTotal === 'string' ? Number.parseInt(rawTotal, 10) : rawTotal;
+
       // Map each snake_case row to the camelCase response shape via
-      // the same helper the create endpoint uses; the wrapper key
-      // is the SessionListResponse contract.
+      // the same helper the create endpoint uses; the wrapper carries
+      // both the sliced page AND the total match count per the
+      // `SessionListResponse` contract.
       return reply.code(200).send({
-        sessions: result.rows.map(sessionRowToResponse),
+        sessions: pageResult.rows.map(sessionRowToResponse),
+        total,
       });
     },
   );

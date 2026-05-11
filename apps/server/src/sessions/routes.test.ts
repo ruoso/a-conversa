@@ -410,13 +410,22 @@ function makeMemoryPool(initialUsers: UserRow[]): {
       text.includes('FROM sessions') &&
       text.includes("privacy = 'public'") &&
       text.includes('host_user_id = $1') &&
-      text.includes('session_participants')
+      text.includes('session_participants') &&
+      (text.includes('COUNT(*)') || text.includes('ORDER BY created_at DESC'))
     ) {
-      // The `GET /sessions` visibility-gated SELECT. Mirrors the
-      // production WHERE clause: public OR host OR participant. The
-      // shim implements the same predicate in JS so the test's
-      // assertion is against the row set the production SQL would
-      // return — not a re-derivation.
+      // The `GET /sessions` visibility-gated SELECT — covers BOTH the
+      // page query (`ORDER BY created_at DESC LIMIT $N OFFSET $M`) and
+      // the total-count query (`SELECT COUNT(*)::int AS total ...`).
+      // Both share the same WHERE clause (visibility gate + composed
+      // filters); the page query additionally orders and slices. The
+      // shim mirrors the production WHERE clause: public OR host OR
+      // participant, then AND-composed filters from `?status`, `?host`,
+      // `?participant`, `?privacy`, `?topic`.
+      //
+      // ALL filter values flow through positional `$N` parameters in
+      // the production handler; the shim resolves the placeholders by
+      // textual matching on the WHERE fragments and reading the
+      // corresponding param slot.
       const userId = p[0] as string;
       const visible = store.sessions.filter(
         (s) =>
@@ -424,18 +433,86 @@ function makeMemoryPool(initialUsers: UserRow[]): {
           s.host_user_id === userId ||
           store.participants.some((sp) => sp.session_id === s.id && sp.user_id === userId),
       );
-      // Lifecycle filter — text-substring match on the production
-      // SQL surface. The handler concatenates `' AND ended_at IS NULL'`
-      // or `' AND ended_at IS NOT NULL'` depending on `?status`.
+      // The remaining params after $1 are consumed in the order the
+      // handler appends them. We track a cursor into `p` to read
+      // values as we recognise the matching WHERE fragments.
       let filtered = visible;
+      let paramIdx = 1;
+      // Lifecycle filter — enum-branched, no parameter consumed.
       if (text.includes('AND ended_at IS NULL')) {
-        filtered = visible.filter((s) => s.ended_at === null);
+        filtered = filtered.filter((s) => s.ended_at === null);
       } else if (text.includes('AND ended_at IS NOT NULL')) {
-        filtered = visible.filter((s) => s.ended_at !== null);
+        filtered = filtered.filter((s) => s.ended_at !== null);
       }
-      // ORDER BY created_at DESC.
+      // Host filter — `AND host_user_id = $N`. The next param slot
+      // carries the host UUID.
+      const hostMatch = text.match(/AND host_user_id = \$(\d+)/);
+      if (hostMatch !== null) {
+        const idx = Number.parseInt(hostMatch[1] ?? '0', 10) - 1;
+        const hostValue = p[idx] as string;
+        filtered = filtered.filter((s) => s.host_user_id === hostValue);
+        paramIdx = Math.max(paramIdx, idx + 1);
+      }
+      // Participant filter — `AND EXISTS (... sp2.user_id = $N)`.
+      const participantMatch = text.match(/sp2\.user_id = \$(\d+)/);
+      if (participantMatch !== null) {
+        const idx = Number.parseInt(participantMatch[1] ?? '0', 10) - 1;
+        const participantValue = p[idx] as string;
+        filtered = filtered.filter((s) =>
+          store.participants.some(
+            (sp) => sp.session_id === s.id && sp.user_id === participantValue,
+          ),
+        );
+        paramIdx = Math.max(paramIdx, idx + 1);
+      }
+      // Privacy filter — `AND privacy = $N`.
+      const privacyMatch = text.match(/AND privacy = \$(\d+)/);
+      if (privacyMatch !== null) {
+        const idx = Number.parseInt(privacyMatch[1] ?? '0', 10) - 1;
+        const privacyValue = p[idx] as string;
+        filtered = filtered.filter((s) => s.privacy === privacyValue);
+        paramIdx = Math.max(paramIdx, idx + 1);
+      }
+      // Topic filter — `AND topic ILIKE $N`; the param is wrapped in
+      // `%...%` by the handler. We strip the wrappers and do a
+      // case-insensitive substring match in JS.
+      const topicMatch = text.match(/AND topic ILIKE \$(\d+)/);
+      if (topicMatch !== null) {
+        const idx = Number.parseInt(topicMatch[1] ?? '0', 10) - 1;
+        const topicPattern = p[idx] as string;
+        // Strip the leading and trailing `%` to recover the substring.
+        const needle = topicPattern.replace(/^%/, '').replace(/%$/, '').toLowerCase();
+        filtered = filtered.filter((s) => s.topic.toLowerCase().includes(needle));
+        paramIdx = Math.max(paramIdx, idx + 1);
+      }
+      // Reference paramIdx so static analysis doesn't flag it; the
+      // value is the next-unread-slot, used implicitly by the
+      // recognisers above.
+      void paramIdx;
+      if (text.includes('COUNT(*)')) {
+        // The count query — return the filtered length as `total`.
+        return Promise.resolve({
+          rows: [{ total: filtered.length }] as unknown as TRow[],
+        });
+      }
+      // The page query. ORDER BY created_at DESC, then slice by
+      // LIMIT/OFFSET (the LAST two parameters in the array).
       const sorted = [...filtered].sort((a, b) => b.created_at.getTime() - a.created_at.getTime());
-      return Promise.resolve({ rows: sorted as unknown as TRow[] });
+      const limitMatch = text.match(/LIMIT \$(\d+)/);
+      const offsetMatch = text.match(/OFFSET \$(\d+)/);
+      let pageStart = 0;
+      let pageEnd = sorted.length;
+      if (offsetMatch !== null) {
+        const idx = Number.parseInt(offsetMatch[1] ?? '0', 10) - 1;
+        pageStart = (p[idx] as number) ?? 0;
+      }
+      if (limitMatch !== null) {
+        const idx = Number.parseInt(limitMatch[1] ?? '0', 10) - 1;
+        const limit = (p[idx] as number) ?? sorted.length;
+        pageEnd = Math.min(sorted.length, pageStart + limit);
+      }
+      const page = sorted.slice(pageStart, pageEnd);
+      return Promise.resolve({ rows: page as unknown as TRow[] });
     }
     return Promise.reject(new Error(`unexpected SQL in sessions memory pool: ${text}`));
   }
@@ -997,6 +1074,357 @@ describe('GET /sessions — visibility gate and lifecycle filter', () => {
     expect(body.sessions).toHaveLength(1);
     expect(body.sessions?.[0]?.id).toBe(PUBLIC_ENDED.id);
     expect(typeof body.sessions?.[0]?.endedAt).toBe('string');
+  });
+});
+
+describe('GET /sessions — filters and pagination', () => {
+  // Filter-and-pagination tests for the `session_listing_filters` task.
+  // The visibility gate stays in place; the filters narrow within it.
+  // The wrapper now carries `{ sessions, total }`; clients can page
+  // by combining `?limit` + `?offset` and trust `total` for the
+  // pagination-UI denominator.
+  //
+  // Refinement: tasks/refinements/backend/session_listing_filters.md.
+  async function buildWithSeed(opts: {
+    users: UserRow[];
+    sessions: SessionRow[];
+    participants?: SessionParticipantRow[];
+  }): Promise<BuiltApp> {
+    const built = await buildApp({ users: opts.users });
+    built.store.sessions.push(...opts.sessions);
+    if (opts.participants !== undefined) {
+      built.store.participants.push(...opts.participants);
+    }
+    return built;
+  }
+
+  let built: BuiltApp | undefined;
+  afterEach(async () => {
+    if (built !== undefined) {
+      await built.app.close();
+      built = undefined;
+    }
+  });
+
+  // Fixed UUIDs for the seeded fixtures — distinct from the
+  // visibility-gate suite's ids so a stray cross-suite reference fails
+  // loudly. Sessions are ordered by `created_at` so the DESC ordering
+  // assertions are deterministic.
+  const CAROL_ID = '33333333-3333-4333-8333-333333333333';
+  const SESSION_ALICE_PUB: SessionRow = {
+    id: '00000000-0000-4000-8000-f1f1f1f10001',
+    host_user_id: ALICE_ID,
+    privacy: 'public',
+    topic: 'Climate is changing',
+    created_at: new Date('2026-05-09T10:00:00.000Z'),
+    ended_at: null,
+  };
+  const SESSION_ALICE_PRIV: SessionRow = {
+    id: '00000000-0000-4000-8000-f1f1f1f10002',
+    host_user_id: ALICE_ID,
+    privacy: 'private',
+    topic: 'A private climate debate',
+    created_at: new Date('2026-05-09T11:00:00.000Z'),
+    ended_at: null,
+  };
+  const SESSION_BEN_PUB: SessionRow = {
+    id: '00000000-0000-4000-8000-f1f1f1f10003',
+    host_user_id: BEN_ID,
+    privacy: 'public',
+    topic: 'Should robots have rights',
+    created_at: new Date('2026-05-09T12:00:00.000Z'),
+    ended_at: null,
+  };
+  const SESSION_CAROL_PUB: SessionRow = {
+    id: '00000000-0000-4000-8000-f1f1f1f10004',
+    host_user_id: CAROL_ID,
+    privacy: 'public',
+    topic: 'Cooking with steam',
+    created_at: new Date('2026-05-09T13:00:00.000Z'),
+    ended_at: null,
+  };
+
+  const seededUsers: UserRow[] = [
+    {
+      id: ALICE_ID,
+      oauth_subject: 'authelia:alice',
+      screen_name: 'alice',
+      deleted_at: null,
+    },
+    {
+      id: BEN_ID,
+      oauth_subject: 'authelia:ben',
+      screen_name: 'ben',
+      deleted_at: null,
+    },
+    {
+      id: CAROL_ID,
+      oauth_subject: 'authelia:carol',
+      screen_name: 'carol',
+      deleted_at: null,
+    },
+  ];
+
+  it('?host filters to sessions hosted by the supplied user id', async () => {
+    built = await buildWithSeed({
+      users: seededUsers,
+      sessions: [SESSION_ALICE_PUB, SESSION_BEN_PUB, SESSION_CAROL_PUB],
+    });
+    // Alice asks for sessions hosted by Ben. The visibility gate
+    // admits the row (public) AND the filter narrows to the host
+    // match — only SESSION_BEN_PUB should land.
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'GET',
+      url: `/sessions?host=${BEN_ID}`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{
+      sessions?: Array<{ id?: string; hostUserId?: string }>;
+      total?: number;
+    }>();
+    expect(body.sessions).toHaveLength(1);
+    expect(body.sessions?.[0]?.id).toBe(SESSION_BEN_PUB.id);
+    expect(body.sessions?.[0]?.hostUserId).toBe(BEN_ID);
+    expect(body.total).toBe(1);
+  });
+
+  it('?participant filters to sessions where the user is/was a participant', async () => {
+    built = await buildWithSeed({
+      users: seededUsers,
+      sessions: [SESSION_ALICE_PUB, SESSION_BEN_PUB, SESSION_CAROL_PUB],
+      // Carol is a participant in Ben's public session.
+      participants: [{ session_id: SESSION_BEN_PUB.id, user_id: CAROL_ID }],
+    });
+    // Alice asks for sessions where Carol has participated. The
+    // visibility gate admits all three (public sessions all visible);
+    // the participant filter narrows to Ben's session only.
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'GET',
+      url: `/sessions?participant=${CAROL_ID}`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{ sessions?: Array<{ id?: string }>; total?: number }>();
+    expect(body.sessions).toHaveLength(1);
+    expect(body.sessions?.[0]?.id).toBe(SESSION_BEN_PUB.id);
+    expect(body.total).toBe(1);
+  });
+
+  it('?privacy=private narrows to the private bucket (visibility still applies)', async () => {
+    built = await buildWithSeed({
+      users: seededUsers,
+      sessions: [SESSION_ALICE_PUB, SESSION_ALICE_PRIV],
+    });
+    // Alice (the host of the private session) asks for her private
+    // bucket. The visibility gate admits both rows; the privacy
+    // filter narrows to PRIV only.
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'GET',
+      url: '/sessions?privacy=private',
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{
+      sessions?: Array<{ id?: string; privacy?: string }>;
+      total?: number;
+    }>();
+    expect(body.sessions).toHaveLength(1);
+    expect(body.sessions?.[0]?.id).toBe(SESSION_ALICE_PRIV.id);
+    expect(body.sessions?.[0]?.privacy).toBe('private');
+    expect(body.total).toBe(1);
+  });
+
+  it('?topic substring match is case-insensitive (ILIKE)', async () => {
+    built = await buildWithSeed({
+      users: seededUsers,
+      sessions: [SESSION_ALICE_PUB, SESSION_ALICE_PRIV, SESSION_BEN_PUB, SESSION_CAROL_PUB],
+    });
+    // Alice searches for "CLIMATE" (uppercase). Both her sessions
+    // carry the substring (one public, one private; both visible to
+    // her as the host). ILIKE is case-insensitive.
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'GET',
+      url: '/sessions?topic=CLIMATE',
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{ sessions?: Array<{ id?: string }>; total?: number }>();
+    const ids = body.sessions?.map((s) => s.id) ?? [];
+    expect(ids).toContain(SESSION_ALICE_PUB.id);
+    expect(ids).toContain(SESSION_ALICE_PRIV.id);
+    expect(ids).not.toContain(SESSION_BEN_PUB.id);
+    expect(ids).not.toContain(SESSION_CAROL_PUB.id);
+    expect(body.total).toBe(2);
+  });
+
+  it('combines ?host AND ?privacy with AND semantics', async () => {
+    built = await buildWithSeed({
+      users: seededUsers,
+      sessions: [SESSION_ALICE_PUB, SESSION_ALICE_PRIV, SESSION_BEN_PUB],
+    });
+    // Alice asks for HER public sessions only. Both filters narrow:
+    // host=ALICE narrows to her two sessions; privacy=public narrows
+    // to her one public session.
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'GET',
+      url: `/sessions?host=${ALICE_ID}&privacy=public`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{
+      sessions?: Array<{ id?: string; hostUserId?: string; privacy?: string }>;
+      total?: number;
+    }>();
+    expect(body.sessions).toHaveLength(1);
+    expect(body.sessions?.[0]?.id).toBe(SESSION_ALICE_PUB.id);
+    expect(body.sessions?.[0]?.hostUserId).toBe(ALICE_ID);
+    expect(body.sessions?.[0]?.privacy).toBe('public');
+    expect(body.total).toBe(1);
+  });
+
+  it('combines ?topic AND ?limit (filter narrows, then page slices)', async () => {
+    // Three sessions carry "climate"; capping limit at 1 returns
+    // only the most-recent one and `total` reflects the full match.
+    built = await buildWithSeed({
+      users: seededUsers,
+      sessions: [
+        SESSION_ALICE_PUB,
+        SESSION_ALICE_PRIV,
+        {
+          id: '00000000-0000-4000-8000-f1f1f1f10009',
+          host_user_id: CAROL_ID,
+          privacy: 'public',
+          topic: 'climate science update',
+          created_at: new Date('2026-05-09T14:00:00.000Z'),
+          ended_at: null,
+        },
+      ],
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'GET',
+      url: '/sessions?topic=climate&limit=1',
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{ sessions?: Array<{ id?: string }>; total?: number }>();
+    expect(body.sessions).toHaveLength(1);
+    expect(body.total).toBe(3);
+  });
+
+  it('?limit + ?offset paginates: total counts the full visibility-gated set, page slices', async () => {
+    // Four public sessions all visible to Alice. With limit=2 &
+    // offset=0, the first page returns the two newest; total=4.
+    // With offset=2 the next page returns the two oldest.
+    built = await buildWithSeed({
+      users: seededUsers,
+      sessions: [SESSION_ALICE_PUB, SESSION_ALICE_PRIV, SESSION_BEN_PUB, SESSION_CAROL_PUB],
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const firstPage = await built.app.inject({
+      method: 'GET',
+      url: '/sessions?limit=2&offset=0',
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(firstPage.statusCode).toBe(200);
+    const firstBody = firstPage.json<{
+      sessions?: Array<{ id?: string }>;
+      total?: number;
+    }>();
+    expect(firstBody.sessions).toHaveLength(2);
+    expect(firstBody.total).toBe(4);
+    // DESC order — the two newest sessions are CAROL_PUB (13:00) and
+    // BEN_PUB (12:00).
+    expect(firstBody.sessions?.[0]?.id).toBe(SESSION_CAROL_PUB.id);
+    expect(firstBody.sessions?.[1]?.id).toBe(SESSION_BEN_PUB.id);
+
+    const secondPage = await built.app.inject({
+      method: 'GET',
+      url: '/sessions?limit=2&offset=2',
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(secondPage.statusCode).toBe(200);
+    const secondBody = secondPage.json<{
+      sessions?: Array<{ id?: string }>;
+      total?: number;
+    }>();
+    expect(secondBody.sessions).toHaveLength(2);
+    expect(secondBody.total).toBe(4);
+    // The two oldest — SESSION_ALICE_PRIV (11:00) and
+    // SESSION_ALICE_PUB (10:00).
+    expect(secondBody.sessions?.[0]?.id).toBe(SESSION_ALICE_PRIV.id);
+    expect(secondBody.sessions?.[1]?.id).toBe(SESSION_ALICE_PUB.id);
+  });
+
+  it('returns total=0 + empty sessions when filters match nothing', async () => {
+    built = await buildWithSeed({
+      users: seededUsers,
+      sessions: [SESSION_ALICE_PUB, SESSION_BEN_PUB],
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'GET',
+      url: '/sessions?topic=zzz-no-match',
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{ sessions?: unknown[]; total?: number }>();
+    expect(body.sessions).toHaveLength(0);
+    expect(body.total).toBe(0);
+  });
+
+  it('returns 400 validation-failed when ?host is not a UUID', async () => {
+    built = await buildWithSeed({
+      users: seededUsers,
+      sessions: [SESSION_ALICE_PUB],
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'GET',
+      url: '/sessions?host=not-a-uuid',
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(400);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('validation-failed');
+  });
+
+  it('returns 400 validation-failed when ?limit exceeds the 200 cap', async () => {
+    built = await buildWithSeed({
+      users: seededUsers,
+      sessions: [SESSION_ALICE_PUB],
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'GET',
+      url: '/sessions?limit=999',
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(400);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('validation-failed');
+  });
+
+  it('returns 400 validation-failed when ?privacy is outside the enum', async () => {
+    built = await buildWithSeed({
+      users: seededUsers,
+      sessions: [SESSION_ALICE_PUB],
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'GET',
+      url: '/sessions?privacy=hidden',
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(400);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('validation-failed');
   });
 });
 
