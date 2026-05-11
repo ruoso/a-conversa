@@ -1,12 +1,15 @@
 // Fastify plugin registering the session-management HTTP endpoints.
 //
 //   - POST /sessions — create a new debate session.
+//   - GET /sessions — list the visible debate sessions for the caller.
 //
-// Refinement: tasks/refinements/backend/create_session_endpoint.md
+// Refinements: tasks/refinements/backend/create_session_endpoint.md,
+//              tasks/refinements/backend/list_sessions_endpoint.md
 // ADRs:        docs/adr/0021-event-envelope-discriminated-union-with-zod.md,
 //              docs/adr/0022-no-throwaway-verifications.md,
 //              docs/adr/0023-web-framework-fastify.md
-// TaskJuggler: backend.session_management.create_session_endpoint
+// TaskJuggler: backend.session_management.create_session_endpoint,
+//              backend.session_management.list_sessions_endpoint
 //
 // **What this plugin owns today.** A single route — `POST /sessions` —
 // behind `preHandler: app.authenticate`. The handler:
@@ -40,9 +43,32 @@
 // `sessionCreatedPayloadSchema` at the earliest possible moment — the
 // INSERT either lands a valid row or doesn't run at all.
 //
+// **`GET /sessions`** — the visibility-gated list. The handler:
+//
+//   1. Reads `request.authUser.id` (the caller).
+//   2. Reads the optional `?status=active|ended` query param.
+//   3. Issues a single SELECT against `sessions` with a parameterized
+//      visibility gate (`privacy = 'public' OR host_user_id = $1 OR
+//      EXISTS (... session_participants ...)`) and the optional status
+//      WHERE on `ended_at IS [NOT] NULL`. ORDER BY `created_at DESC`.
+//   4. Returns 200 + `{ sessions: SessionResponse[] }` (camelCase mapping
+//      via the same `sessionRowToResponse` helper the create endpoint
+//      uses).
+//
+// The visibility gate lifts the architecture's cross-session reference
+// permission rule (docs/architecture.md, "Cross-session reference
+// permissions") cleanly to a listing context: listing is strictly
+// weaker than referencing, so the same gate suffices. Public sessions
+// are visible to every authenticated user; private sessions are
+// visible only to the host or a current/past participant. See
+// tasks/refinements/backend/list_sessions_endpoint.md for the full
+// rationale and the basic-vs-filters split with the sibling
+// `session_listing_filters` task.
+//
 // **What this plugin does NOT do** — deferred to sibling tasks:
 //
-//   - `GET /sessions` (list) — `backend.session_management.list_sessions_endpoint`.
+//   - Filters beyond the visibility gate (host filter, participant
+//     filter, pagination) — `backend.session_management.session_listing_filters`.
 //   - `GET /sessions/:id` (fetch) — `backend.session_management.get_session_endpoint`.
 //   - `POST /sessions/:id/end` — `backend.session_management.end_session_endpoint`.
 //   - `POST /sessions/:id/privacy` — `backend.session_management.session_privacy_toggle`.
@@ -180,6 +206,59 @@ export const sessionResponseSchema = {
 export const sessionResponseRef = { $ref: `${SESSION_RESPONSE_SCHEMA_ID}#` } as const;
 
 /**
+ * Stable `$id` for the shared `SessionListResponse` schema. The list
+ * endpoint (`GET /sessions`) and any future listing surface that
+ * returns the wrapped `{ sessions: SessionResponse[] }` shape
+ * reference this exact wrapper via `{ $ref: 'SessionListResponse#' }`;
+ * the `refResolver` in `openapi.ts` preserves `$id` as the
+ * `components.schemas` key.
+ */
+export const SESSION_LIST_RESPONSE_SCHEMA_ID = 'SessionListResponse';
+
+/**
+ * The canonical session-list response shape — an object wrapping the
+ * `sessions` array. The wrapper key (rather than a raw top-level
+ * array) gives the response shape room to grow (pagination cursor,
+ * total count, filter echo) without breaking the contract; clients
+ * destructure `const { sessions } = await response.json()` and ignore
+ * unknown sibling keys. See the refinement's "Response shape"
+ * decision for the rationale.
+ *
+ * Each array element is a `SessionResponse` — referenced via the
+ * shared `$ref: 'SessionResponse#'` so the OpenAPI document carries
+ * a single per-session definition and the list endpoint's schema
+ * points at it rather than re-declaring the shape.
+ */
+export const sessionListResponseSchema = {
+  $id: SESSION_LIST_RESPONSE_SCHEMA_ID,
+  type: 'object',
+  required: ['sessions'],
+  additionalProperties: false,
+  properties: {
+    sessions: {
+      type: 'array',
+      description:
+        'The visible sessions for the authenticated caller, ordered by `created_at` ' +
+        'DESC (most-recently-created first). Visibility per the architecture: public ' +
+        'sessions are visible to every authenticated user; private sessions are ' +
+        'visible only to the host or a current/past participant.',
+      items: sessionResponseRef,
+    },
+  },
+} as const;
+
+/**
+ * The `$ref` clients use to point at the shared `SessionListResponse`
+ * schema. Future listing surfaces (e.g. a filters endpoint that
+ * differs only on the query-string surface) can attach this to their
+ * `schema.response[200]` slot rather than redeclaring the wrapper
+ * shape.
+ */
+export const sessionListResponseRef = {
+  $ref: `${SESSION_LIST_RESPONSE_SCHEMA_ID}#`,
+} as const;
+
+/**
  * Request body schema for `POST /sessions`. JSON Schema attached to
  * `schema.body`; Fastify's validator rejects malformed bodies with a
  * `validation` error that the centralized handler renders as the
@@ -208,6 +287,40 @@ const createSessionBodySchema = {
       description:
         "Optional session privacy. Defaults to `'public'` when omitted. " +
         "`'private'` gates cross-session reference and audience-page auth.",
+    },
+  },
+} as const;
+
+/**
+ * Query-string schema for `GET /sessions`. JSON Schema attached to
+ * `schema.querystring`; Fastify's validator rejects malformed inputs
+ * with a `validation` error that the centralized handler renders as
+ * the canonical `validation-failed` envelope.
+ *
+ * `status` is optional:
+ *   - absent → no lifecycle filter; both active and ended sessions returned.
+ *   - `'active'` → `WHERE ended_at IS NULL` applied on top of the visibility gate.
+ *   - `'ended'` → `WHERE ended_at IS NOT NULL` applied on top of the visibility gate.
+ *
+ * Per the sessions-table refinement's "no explicit `status` column"
+ * decision, lifecycle is inferred from `ended_at IS NULL` — this
+ * filter exposes that inference as a query-time toggle.
+ *
+ * The sibling `session_listing_filters` task may extend this schema
+ * (host filter, participant filter, pagination); THIS task lands the
+ * visibility-gated base and the cheapest natural follow-on
+ * (`status`).
+ */
+const listSessionsQuerystringSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    status: {
+      type: 'string',
+      enum: ['active', 'ended'],
+      description:
+        "Optional lifecycle filter. `'active'` → only sessions with `ended_at IS NULL`; " +
+        "`'ended'` → only sessions with `ended_at IS NOT NULL`. Absent → both.",
     },
   },
 } as const;
@@ -369,6 +482,16 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = (
     app.addSchema(sessionResponseSchema);
   }
 
+  // Register the wrapper `SessionListResponse` schema once per Fastify
+  // instance — same idempotence pattern as the per-session schema.
+  // The wrapper carries the `sessions: SessionResponse[]` shape the
+  // list endpoint returns. Future listing surfaces (e.g. the sibling
+  // `session_listing_filters` task) reference it via
+  // `sessionListResponseRef` rather than redeclaring the wrapper.
+  if (app.getSchema(SESSION_LIST_RESPONSE_SCHEMA_ID) === undefined) {
+    app.addSchema(sessionListResponseSchema);
+  }
+
   // Lazy DB-pool resolution. The first request triggers
   // `getDefaultPool()`; tests that never hit `POST /sessions` don't pay
   // the cost. Mirrors the `authRoutesPlugin` pattern.
@@ -521,6 +644,104 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = (
       // carries the full camelCase shape so the client doesn't need a
       // follow-up GET.
       return reply.code(201).send(sessionRowToResponse(created));
+    },
+  );
+
+  app.get(
+    '/sessions',
+    {
+      preHandler: app.authenticate,
+      schema: {
+        tags: ['sessions'],
+        summary: 'List the sessions visible to the authenticated caller',
+        description:
+          'Returns every session the caller is permitted to see, ordered ' +
+          '`created_at` DESC. Visibility (per `docs/architecture.md`): public ' +
+          'sessions are visible to every authenticated user; private sessions ' +
+          'are visible only to the host or a current/past participant. The ' +
+          'optional `?status=active|ended` query param filters on lifecycle: ' +
+          "`'active'` → only sessions with `ended_at IS NULL`; `'ended'` → only " +
+          'sessions with `ended_at IS NOT NULL`; absent → both.\n\n' +
+          'The response wraps the array under a `sessions` key so the shape can ' +
+          'grow (pagination metadata, filter echo) without breaking existing ' +
+          'clients. Pagination itself is intentionally deferred to the sibling ' +
+          '`session_listing_filters` task; today the endpoint returns the full ' +
+          'visible set in one response.\n\n' +
+          'Returns 401 `auth-required` when no valid session cookie is present; ' +
+          '400 `validation-failed` when the query string is malformed (e.g. an ' +
+          'unrecognised `status` value).',
+        security: [{ cookieAuth: [] }],
+        querystring: listSessionsQuerystringSchema,
+        response: {
+          200: sessionListResponseRef,
+          '4xx': errorEnvelopeRef,
+          '5xx': errorEnvelopeRef,
+        },
+      },
+    },
+    async (request, reply) => {
+      // Same defensive-but-static-analysis-necessary check as the
+      // create handler — the middleware guarantees `authUser` is set
+      // for any request that reaches this point.
+      const auth = request.authUser;
+      if (auth === undefined) {
+        throw new ApiError(
+          500,
+          'internal-error',
+          'auth middleware did not populate request.authUser',
+        );
+      }
+      const userId = auth.id;
+
+      // Fastify's validator coerces / rejects per the schema; the
+      // narrowed-cast captures the validated shape.
+      const query = request.query as { status?: 'active' | 'ended' };
+
+      // Build the lifecycle WHERE clause. The visibility gate is
+      // always present; the status filter is conditional. We
+      // concatenate the SQL but ALL parameter values flow via the
+      // `$1` placeholder — no user-controlled string ever touches
+      // the SQL text. (`status` is enum-validated at the schema
+      // layer; the branch is a hard-coded literal regardless.)
+      let lifecycleFilter = '';
+      if (query.status === 'active') {
+        lifecycleFilter = ' AND ended_at IS NULL';
+      } else if (query.status === 'ended') {
+        lifecycleFilter = ' AND ended_at IS NOT NULL';
+      }
+
+      // The visibility gate: ANY of (public privacy) OR (caller is
+      // host) OR (caller has a session_participants row for this
+      // session) admits the row. `EXISTS` (rather than a JOIN +
+      // DISTINCT) avoids row-duplication when a user has multiple
+      // historical participant rows for the same session — the
+      // participants-table refinement's F5 decision (leave-and-rejoin
+      // → multiple rows) makes this duplication possible. Past
+      // participants (`left_at IS NOT NULL`) remain visible: once
+      // you've seen a session you've seen it, and hiding it post-leave
+      // would surprise users and complicate replay/audit flows.
+      const pool = ensurePool();
+      const result = await pool.query<SessionsInsertRow>(
+        `SELECT id, host_user_id, privacy, topic, created_at, ended_at
+         FROM sessions
+         WHERE (
+                privacy = 'public'
+                OR host_user_id = $1
+                OR EXISTS (
+                     SELECT 1 FROM session_participants sp
+                     WHERE sp.session_id = sessions.id AND sp.user_id = $1
+                   )
+              )${lifecycleFilter}
+         ORDER BY created_at DESC`,
+        [userId],
+      );
+
+      // Map each snake_case row to the camelCase response shape via
+      // the same helper the create endpoint uses; the wrapper key
+      // is the SessionListResponse contract.
+      return reply.code(200).send({
+        sessions: result.rows.map(sessionRowToResponse),
+      });
     },
   );
 

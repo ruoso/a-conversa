@@ -1,12 +1,15 @@
-// Vitest unit tests for `POST /sessions` (apps/server/src/sessions/routes.ts).
+// Vitest unit tests for `POST /sessions` and `GET /sessions`
+// (apps/server/src/sessions/routes.ts).
 //
-// Refinement: tasks/refinements/backend/create_session_endpoint.md
+// Refinements: tasks/refinements/backend/create_session_endpoint.md,
+//              tasks/refinements/backend/list_sessions_endpoint.md
 // ADRs:        docs/adr/0021-event-envelope-discriminated-union-with-zod.md,
 //              docs/adr/0022-no-throwaway-verifications.md,
 //              docs/adr/0023-web-framework-fastify.md
-// TaskJuggler: backend.session_management.create_session_endpoint
+// TaskJuggler: backend.session_management.create_session_endpoint,
+//              backend.session_management.list_sessions_endpoint
 //
-// **Coverage** (per the refinement's Acceptance criteria):
+// **Coverage for `POST /sessions`** (per the create-endpoint refinement):
 //
 //   1. Valid body + authenticated user → 201 + camelCase response
 //      shape; the memory-backed DB shim records BOTH the sessions row
@@ -18,6 +21,16 @@
 //   3. Body missing `topic` → 400 + `validation-failed` envelope.
 //   4. Body `topic` too long (≥257 chars) → 400.
 //   5. Body `privacy` outside the enum → 400.
+//
+// **Coverage for `GET /sessions`** (per the list-endpoint refinement):
+//
+//   1. Authenticated → 200 + ordered list (created_at DESC).
+//   2. No auth cookie → 401.
+//   3. Public-only visibility for a user with no participation history.
+//   4. Public + private-where-participant visible to a participant.
+//   5. Private-where-not-a-participant is hidden.
+//   6. `?status=active` filters out ended sessions.
+//   7. `?status=ended` returns only ended sessions.
 //
 // All tests use Fastify's `.inject(...)` — no port bind. The pool is a
 // memory shim that mimics the production `pg.Pool` surface (BEGIN /
@@ -60,10 +73,20 @@ interface SessionEventRow {
   created_at: Date;
 }
 
+interface SessionParticipantRow {
+  session_id: string;
+  user_id: string;
+}
+
 interface MemoryStore {
   users: Map<string, UserRow>;
   sessions: SessionRow[];
   events: SessionEventRow[];
+  // Participation rows — visibility-gate join target for `GET /sessions`.
+  // The list-endpoint tests seed this directly to model "user X is a
+  // participant in session Y" without going through a participant-
+  // assignment endpoint (which is a sibling task, not landed yet).
+  participants: SessionParticipantRow[];
   // Transaction-control trace — the test's atomicity claim rests on
   // the handler emitting BEGIN → INSERT(sessions) → INSERT(session_events) → COMMIT
   // in order. Failure paths emit ROLLBACK instead of COMMIT. The
@@ -97,6 +120,7 @@ function makeMemoryPool(initialUsers: UserRow[]): {
     users: new Map(initialUsers.map((u) => [u.id, u])),
     sessions: [],
     events: [],
+    participants: [],
     trace: [],
   };
 
@@ -158,6 +182,37 @@ function makeMemoryPool(initialUsers: UserRow[]): {
         created_at: new Date('2026-05-10T12:00:00.001Z'),
       });
       return Promise.resolve({ rows: [] as TRow[] });
+    }
+    if (
+      text.includes('FROM sessions') &&
+      text.includes("privacy = 'public'") &&
+      text.includes('host_user_id = $1') &&
+      text.includes('session_participants')
+    ) {
+      // The `GET /sessions` visibility-gated SELECT. Mirrors the
+      // production WHERE clause: public OR host OR participant. The
+      // shim implements the same predicate in JS so the test's
+      // assertion is against the row set the production SQL would
+      // return — not a re-derivation.
+      const userId = p[0] as string;
+      const visible = store.sessions.filter(
+        (s) =>
+          s.privacy === 'public' ||
+          s.host_user_id === userId ||
+          store.participants.some((sp) => sp.session_id === s.id && sp.user_id === userId),
+      );
+      // Lifecycle filter — text-substring match on the production
+      // SQL surface. The handler concatenates `' AND ended_at IS NULL'`
+      // or `' AND ended_at IS NOT NULL'` depending on `?status`.
+      let filtered = visible;
+      if (text.includes('AND ended_at IS NULL')) {
+        filtered = visible.filter((s) => s.ended_at === null);
+      } else if (text.includes('AND ended_at IS NOT NULL')) {
+        filtered = visible.filter((s) => s.ended_at !== null);
+      }
+      // ORDER BY created_at DESC.
+      const sorted = [...filtered].sort((a, b) => b.created_at.getTime() - a.created_at.getTime());
+      return Promise.resolve({ rows: sorted as unknown as TRow[] });
     }
     return Promise.reject(new Error(`unexpected SQL in sessions memory pool: ${text}`));
   }
@@ -430,5 +485,272 @@ describe('POST /sessions — body validation', () => {
     expect(response.statusCode).toBe(400);
     const body = response.json<{ error?: { code?: string } }>();
     expect(body.error?.code).toBe('validation-failed');
+  });
+});
+
+describe('GET /sessions — visibility gate and lifecycle filter', () => {
+  // Helper: seed N sessions and a participant set, then build the
+  // app. Each test seeds the exact shape it needs so the assertions
+  // are local.
+  async function buildWithSeed(opts: {
+    users: UserRow[];
+    sessions: SessionRow[];
+    participants?: SessionParticipantRow[];
+  }): Promise<BuiltApp> {
+    const built = await buildApp({ users: opts.users });
+    built.store.sessions.push(...opts.sessions);
+    if (opts.participants !== undefined) {
+      built.store.participants.push(...opts.participants);
+    }
+    return built;
+  }
+
+  let built: BuiltApp | undefined;
+  afterEach(async () => {
+    if (built !== undefined) {
+      await built.app.close();
+      built = undefined;
+    }
+  });
+
+  const PUBLIC_OLD: SessionRow = {
+    id: '00000000-0000-4000-8000-aaaaaaaa0001',
+    host_user_id: ALICE_ID,
+    privacy: 'public',
+    topic: 'Older public debate',
+    created_at: new Date('2026-05-08T10:00:00.000Z'),
+    ended_at: null,
+  };
+  const PUBLIC_NEW: SessionRow = {
+    id: '00000000-0000-4000-8000-aaaaaaaa0002',
+    host_user_id: ALICE_ID,
+    privacy: 'public',
+    topic: 'Newer public debate',
+    created_at: new Date('2026-05-09T10:00:00.000Z'),
+    ended_at: null,
+  };
+  const PRIVATE_ALICE: SessionRow = {
+    id: '00000000-0000-4000-8000-bbbbbbbb0001',
+    host_user_id: ALICE_ID,
+    privacy: 'private',
+    topic: "Alice's private debate",
+    created_at: new Date('2026-05-09T11:00:00.000Z'),
+    ended_at: null,
+  };
+  const PUBLIC_ENDED: SessionRow = {
+    id: '00000000-0000-4000-8000-cccccccc0001',
+    host_user_id: ALICE_ID,
+    privacy: 'public',
+    topic: 'A finished public debate',
+    created_at: new Date('2026-05-07T10:00:00.000Z'),
+    ended_at: new Date('2026-05-07T11:00:00.000Z'),
+  };
+
+  it('returns 200 + the sessions list in created_at DESC order for an authenticated caller', async () => {
+    built = await buildWithSeed({
+      users: [
+        {
+          id: ALICE_ID,
+          oauth_subject: 'authelia:alice',
+          screen_name: 'alice',
+          deleted_at: null,
+        },
+      ],
+      sessions: [PUBLIC_OLD, PUBLIC_NEW],
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'GET',
+      url: '/sessions',
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{ sessions?: Array<{ id?: string; topic?: string }> }>();
+    expect(body.sessions).toHaveLength(2);
+    // DESC: newer first.
+    expect(body.sessions?.[0]?.id).toBe(PUBLIC_NEW.id);
+    expect(body.sessions?.[1]?.id).toBe(PUBLIC_OLD.id);
+  });
+
+  it('returns 401 auth-required when no session cookie is present', async () => {
+    built = await buildWithSeed({
+      users: [
+        {
+          id: ALICE_ID,
+          oauth_subject: 'authelia:alice',
+          screen_name: 'alice',
+          deleted_at: null,
+        },
+      ],
+      sessions: [PUBLIC_NEW],
+    });
+    const response = await built.app.inject({ method: 'GET', url: '/sessions' });
+    expect(response.statusCode).toBe(401);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('auth-required');
+  });
+
+  it('returns ONLY public sessions for a user with no participation history', async () => {
+    // Ben is a fresh user — not the host, not a participant in any
+    // private session. Alice owns a private session. Ben must NOT see it.
+    built = await buildWithSeed({
+      users: [
+        {
+          id: ALICE_ID,
+          oauth_subject: 'authelia:alice',
+          screen_name: 'alice',
+          deleted_at: null,
+        },
+        {
+          id: BEN_ID,
+          oauth_subject: 'authelia:ben',
+          screen_name: 'ben',
+          deleted_at: null,
+        },
+      ],
+      sessions: [PUBLIC_NEW, PRIVATE_ALICE],
+    });
+    const token = await signSessionToken({ sub: BEN_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'GET',
+      url: '/sessions',
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{ sessions?: Array<{ id?: string; privacy?: string }> }>();
+    expect(body.sessions).toHaveLength(1);
+    expect(body.sessions?.[0]?.id).toBe(PUBLIC_NEW.id);
+    expect(body.sessions?.[0]?.privacy).toBe('public');
+  });
+
+  it('returns public + private-where-participant for a participant', async () => {
+    // Ben is a participant in Alice's private session.
+    built = await buildWithSeed({
+      users: [
+        {
+          id: ALICE_ID,
+          oauth_subject: 'authelia:alice',
+          screen_name: 'alice',
+          deleted_at: null,
+        },
+        {
+          id: BEN_ID,
+          oauth_subject: 'authelia:ben',
+          screen_name: 'ben',
+          deleted_at: null,
+        },
+      ],
+      sessions: [PUBLIC_NEW, PRIVATE_ALICE],
+      participants: [{ session_id: PRIVATE_ALICE.id, user_id: BEN_ID }],
+    });
+    const token = await signSessionToken({ sub: BEN_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'GET',
+      url: '/sessions',
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{ sessions?: Array<{ id?: string }> }>();
+    const ids = body.sessions?.map((s) => s.id) ?? [];
+    expect(ids).toContain(PUBLIC_NEW.id);
+    expect(ids).toContain(PRIVATE_ALICE.id);
+    expect(ids).toHaveLength(2);
+  });
+
+  it('hides private-where-not-a-participant from a non-participant', async () => {
+    // Same shape as the "no participation history" case but more
+    // explicit — Ben has SOME participant history (in a different
+    // private session he won't be a participant of). The endpoint
+    // must NOT leak Alice's private session.
+    const OTHER_PRIVATE: SessionRow = {
+      id: '00000000-0000-4000-8000-bbbbbbbb0002',
+      host_user_id: BEN_ID,
+      privacy: 'private',
+      topic: "Ben's own private session",
+      created_at: new Date('2026-05-09T12:00:00.000Z'),
+      ended_at: null,
+    };
+    built = await buildWithSeed({
+      users: [
+        {
+          id: ALICE_ID,
+          oauth_subject: 'authelia:alice',
+          screen_name: 'alice',
+          deleted_at: null,
+        },
+        {
+          id: BEN_ID,
+          oauth_subject: 'authelia:ben',
+          screen_name: 'ben',
+          deleted_at: null,
+        },
+      ],
+      sessions: [PUBLIC_NEW, PRIVATE_ALICE, OTHER_PRIVATE],
+      participants: [{ session_id: OTHER_PRIVATE.id, user_id: BEN_ID }],
+    });
+    const token = await signSessionToken({ sub: BEN_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'GET',
+      url: '/sessions',
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{ sessions?: Array<{ id?: string }> }>();
+    const ids = body.sessions?.map((s) => s.id) ?? [];
+    expect(ids).toContain(PUBLIC_NEW.id);
+    // Ben sees OTHER_PRIVATE because he is host + participant. He
+    // does NOT see Alice's PRIVATE_ALICE.
+    expect(ids).toContain(OTHER_PRIVATE.id);
+    expect(ids).not.toContain(PRIVATE_ALICE.id);
+  });
+
+  it('filters out ended sessions when ?status=active', async () => {
+    built = await buildWithSeed({
+      users: [
+        {
+          id: ALICE_ID,
+          oauth_subject: 'authelia:alice',
+          screen_name: 'alice',
+          deleted_at: null,
+        },
+      ],
+      sessions: [PUBLIC_NEW, PUBLIC_ENDED],
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'GET',
+      url: '/sessions?status=active',
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{ sessions?: Array<{ id?: string; endedAt?: string | null }> }>();
+    expect(body.sessions).toHaveLength(1);
+    expect(body.sessions?.[0]?.id).toBe(PUBLIC_NEW.id);
+    expect(body.sessions?.[0]?.endedAt).toBeNull();
+  });
+
+  it('returns only ended sessions when ?status=ended', async () => {
+    built = await buildWithSeed({
+      users: [
+        {
+          id: ALICE_ID,
+          oauth_subject: 'authelia:alice',
+          screen_name: 'alice',
+          deleted_at: null,
+        },
+      ],
+      sessions: [PUBLIC_NEW, PUBLIC_ENDED],
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'GET',
+      url: '/sessions?status=ended',
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{ sessions?: Array<{ id?: string; endedAt?: string | null }> }>();
+    expect(body.sessions).toHaveLength(1);
+    expect(body.sessions?.[0]?.id).toBe(PUBLIC_ENDED.id);
+    expect(typeof body.sessions?.[0]?.endedAt).toBe('string');
   });
 });

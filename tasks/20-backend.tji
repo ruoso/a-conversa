@@ -100,6 +100,8 @@ task backend "Backend" {
     task list_sessions_endpoint "GET /sessions" {
       effort 0.5d
       allocate team
+      complete 100
+      note "Refinement: tasks/refinements/backend/list_sessions_endpoint.md"
     }
     task get_session_endpoint "GET /sessions/:id (metadata)" {
       effort 0.5d
