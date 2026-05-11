@@ -174,6 +174,11 @@ Given(
       pool,
       beginFlowOptions,
       completeFlowOptions,
+      // Pin the pending-cookie HMAC secret so the callback can sign
+      // without reading process.env. Disable Secure so the cookie
+      // round-trips over Fastify's in-process inject stream.
+      sessionTokenSecret: 'test-session-secret',
+      cookieSecure: false,
     });
     s.authApp = app;
   },

@@ -61,7 +61,9 @@ task backend "Backend" {
     task screen_name_collection "Screen-name collection on first auth" {
       effort 1d
       allocate team
+      complete 100
       depends !oauth_callback_handler
+      note "Refinement: tasks/refinements/backend/screen_name_collection.md"
     }
     task session_token_management "Issue and validate platform session tokens" {
       effort 2d

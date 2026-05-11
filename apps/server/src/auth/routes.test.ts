@@ -150,6 +150,11 @@ async function buildApp(
     pool,
     beginFlowOptions,
     completeFlowOptions,
+    // Pin the pending-cookie HMAC secret so the callback can sign
+    // without reading process.env. Setting `cookieSecure: false`
+    // keeps the Set-Cookie string deterministic across test envs.
+    sessionTokenSecret: 'test-session-secret',
+    cookieSecure: false,
   });
   await app.ready();
   return { app, flowState, users };

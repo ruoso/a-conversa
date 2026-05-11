@@ -1,14 +1,18 @@
-// Fastify plugin registering the OIDC handshake routes:
+// Fastify plugin registering the OIDC handshake routes plus the
+// screen-name collection endpoint:
 //
-//   - GET /auth/login   — initiate the authorization-code flow.
-//   - GET /auth/callback — handle the issuer's redirect back.
+//   - GET  /auth/login        — initiate the authorization-code flow.
+//   - GET  /auth/callback     — handle the issuer's redirect back.
+//   - POST /auth/screen-name  — replace `<pending>` with the chosen name.
 //
-// Refinement: tasks/refinements/backend/oauth_callback_handler.md
+// Refinement: tasks/refinements/backend/oauth_callback_handler.md,
+//             tasks/refinements/backend/screen_name_collection.md
 // ADRs:        docs/adr/0002-auth-self-hosted-oidc-authelia.md,
 //              docs/adr/0017-mock-oauth-authelia-users-file.md,
 //              docs/adr/0022-no-throwaway-verifications.md,
 //              docs/adr/0023-web-framework-fastify.md
-// TaskJuggler: backend.auth.oauth_callback_handler
+// TaskJuggler: backend.auth.oauth_callback_handler,
+//              backend.auth.screen_name_collection
 //
 // **Plugin shape.** The plugin is parameterized on a small options
 // bag so tests can inject a stubbed `Configuration` (no live Authelia
@@ -18,18 +22,31 @@
 // `OIDC_*` env vars, calls `getOidcClient(config)` lazily on first
 // request, and reaches for the singleton `pg.Pool`.
 //
+// **The pending-cookie bridge.** Real platform-session tokens come
+// from the next sibling task `session_token_management`. Until that
+// lands, the callback issues a short-lived (10-minute) signed
+// `aconversa-auth-pending` cookie carrying `{ userId, exp }`. That
+// cookie is consumed exclusively by `POST /auth/screen-name` (the
+// screen-name collection endpoint) — the request that needs to
+// authorize "is this the user who just finished OIDC?" without yet
+// having a full platform session. When `session_token_management`
+// lands, the pending cookie is cleared and replaced with the full
+// platform session cookie. See `pending-cookie.ts` and
+// `tasks/refinements/backend/screen_name_collection.md` for the
+// rationale.
+//
 // **What this plugin does NOT do** — handoffs to sibling tasks:
 //
 //   - Mint or set a platform session cookie. The callback returns the
 //     OIDC subject + the users-table row's `userId` in the response
-//     body; `session_token_management` replaces this body with a
-//     cookie-set + 302 to the post-login landing.
-//   - Collect a screen name. Freshly inserted users get
-//     `screen_name = '<pending>'`; `screen_name_collection` swaps in
-//     the user-chosen value via a separate endpoint.
+//     body PLUS the pending cookie; `session_token_management`
+//     replaces the body with a 302 + platform session cookie.
 //   - Read any claim besides `sub` off the id_token. Audited by
 //     `no_profile_data_policy`.
 //   - Enforce auth on any other route. Owned by `auth_middleware`.
+//   - Allow a user to change their screen name after first set. Once
+//     `<pending>` is replaced, this endpoint refuses further edits
+//     (409); future "rename" surface is out of scope.
 
 import type { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import fp from 'fastify-plugin';
@@ -57,6 +74,15 @@ import {
   getDefaultFlowStateStore,
   type FlowStateStore,
 } from './flow-state.js';
+import {
+  PENDING_COOKIE_TTL_MS,
+  buildPendingCookieClearHeader,
+  buildPendingCookieHeader,
+  readPendingCookieFromHeader,
+  resolveSessionTokenSecret,
+  signPendingCookie,
+  verifyPendingCookie,
+} from './pending-cookie.js';
 
 /**
  * Options accepted by `authRoutesPlugin`. Every field is optional —
@@ -110,6 +136,21 @@ export interface AuthRoutesOptions {
    * the default flow-state store; passing `flowState` overrides this.
    */
   readonly now?: () => number;
+  /**
+   * HMAC key for signing + verifying the short-lived `aconversa-auth-pending`
+   * cookie. When absent the plugin reads `SESSION_TOKEN_SECRET` from
+   * `process.env` lazily on first use. Tests pass a fixed string so
+   * the cookie shape is deterministic across runs.
+   */
+  readonly sessionTokenSecret?: string;
+  /**
+   * Whether to mark the pending cookie as `Secure`. When absent the
+   * plugin reads `process.env.NODE_ENV === 'production'`. Tests pass
+   * `false` so the cookie can be set over the in-process http inject
+   * stream without browser-level Secure-only filtering tripping the
+   * scenario.
+   */
+  readonly cookieSecure?: boolean;
 }
 
 /**
@@ -272,7 +313,136 @@ const callbackResponseSchema = {
 } as const;
 
 /**
- * The plugin body. Wires both routes onto the parent scope (via
+ * Screen-name validation result. The two ok-shapes carry the
+ * canonical (trimmed) value the handler will persist; the error-shape
+ * carries a discriminator the handler maps onto a 400 envelope. Kept
+ * out of `pending-cookie.ts` because this validation runs after the
+ * cookie verifies — it's a body-shape concern, not a signing concern.
+ */
+type ScreenNameValidationResult =
+  | { readonly ok: true; readonly value: string }
+  | { readonly ok: false; readonly reason: 'empty' | 'too-long' | 'whitespace-only' };
+
+/**
+ * Validate a candidate screen name per the users-table refinement
+ * (`tasks/refinements/data-and-methodology/users_table.md`):
+ *
+ *   - VARCHAR(64) — at most 64 UTF-8 code points.
+ *   - UTF-8 — JavaScript strings are already valid UTF-16, so any
+ *     well-formed JSON value satisfies UTF-8 round-trip into the DB.
+ *   - Strip leading/trailing whitespace; reject pure-whitespace.
+ *
+ * Length is checked AFTER trimming and on the UTF-16 code-unit length
+ * (`.length`). This is slightly conservative — a Unicode-aware
+ * `[...str].length` (code points) would allow some emoji + combining-
+ * mark sequences that `.length` rejects — but it matches what
+ * `VARCHAR(64)` checks against on the Postgres side (which counts
+ * characters, not bytes, but the DB driver passes through UTF-8 and
+ * the difference is negligible for normal screen names).
+ */
+function validateScreenName(input: unknown): ScreenNameValidationResult {
+  if (typeof input !== 'string') {
+    return { ok: false, reason: 'empty' };
+  }
+  if (input.length === 0) {
+    return { ok: false, reason: 'empty' };
+  }
+  const trimmed = input.trim();
+  if (trimmed.length === 0) {
+    return { ok: false, reason: 'whitespace-only' };
+  }
+  if (trimmed.length > 64) {
+    return { ok: false, reason: 'too-long' };
+  }
+  return { ok: true, value: trimmed };
+}
+
+/**
+ * Row shape returned from the screen-name UPDATE. Only the
+ * post-update `screen_name` is read by the handler; `id` is included
+ * for completeness so the response body can echo the verified pair
+ * without a follow-up SELECT.
+ */
+interface UsersScreenNameRow extends Record<string, unknown> {
+  readonly id: string;
+  readonly screen_name: string;
+}
+
+/**
+ * Apply the screen-name update to the users row.
+ *
+ * Idempotency / first-write semantics live entirely in the WHERE
+ * clause: the UPDATE matches only the row whose current
+ * `screen_name = '<pending>'` AND `deleted_at IS NULL`. If the row's
+ * screen name was previously set, the UPDATE matches zero rows and
+ * RETURNING is empty — the caller treats the empty result as the
+ * "already set" 409 case. The condition also blocks soft-deleted
+ * users from getting their name overwritten (consistent with the
+ * upsert's SELECT side).
+ *
+ * SQL is fully parameterized — no string concatenation.
+ *
+ * @param pool       - the DB pool (production singleton or test shim).
+ * @param userId     - users-table row id (verified via pending cookie).
+ * @param screenName - the validated, trimmed candidate string.
+ * @returns the updated row, or `undefined` if no row matched the
+ *          first-write condition (already-set / soft-deleted / not-found).
+ */
+export async function updatePendingScreenName(
+  pool: DbPool,
+  userId: string,
+  screenName: string,
+): Promise<UsersScreenNameRow | undefined> {
+  const result = await pool.query<UsersScreenNameRow>(
+    `UPDATE users
+     SET screen_name = $2
+     WHERE id = $1
+       AND screen_name = $3
+       AND deleted_at IS NULL
+     RETURNING id, screen_name`,
+    [userId, screenName, PLACEHOLDER_SCREEN_NAME],
+  );
+  return result.rows[0];
+}
+
+/**
+ * Request body schema for `POST /auth/screen-name`. The frontend POSTs
+ * a single field; the handler trims + validates per `validateScreenName`.
+ */
+const screenNameBodySchema = {
+  type: 'object',
+  required: ['screenName'],
+  additionalProperties: false,
+  properties: {
+    screenName: {
+      type: 'string',
+      description: 'The user-chosen display name. Trimmed; max 64 characters; must be non-empty.',
+      // Defensive upper bound — the handler's `validateScreenName`
+      // already enforces 64 post-trim, but a giant payload (megabytes
+      // of whitespace) is rejected at the schema layer before the
+      // handler allocates the trim copy.
+      maxLength: 256,
+    },
+  },
+} as const;
+
+/**
+ * 200 response body for `POST /auth/screen-name`. Echoes the verified
+ * `userId` + the persisted `screenName` so the frontend can read both
+ * without a follow-up GET.
+ */
+const screenNameResponseSchema = {
+  type: 'object',
+  required: ['userId', 'screenName'],
+  additionalProperties: false,
+  properties: {
+    userId: { type: 'string', format: 'uuid' },
+    screenName: { type: 'string' },
+  },
+} as const;
+
+/**
+ * The plugin body. Wires the three routes onto the parent scope (via
  * `fastify-plugin`'s skip-override marker) so the routes appear in
  * the generated OpenAPI document and the existing error-handler
  * plugin sees their thrown errors.
@@ -317,6 +487,27 @@ const authRoutesPluginAsync: FastifyPluginAsync<AuthRoutesOptions> = (
     resolvedPool = getDefaultPool();
     return resolvedPool;
   };
+
+  // Resolve the pending-cookie HMAC secret lazily. Production reads
+  // `SESSION_TOKEN_SECRET` off `process.env`; tests pass a fixed
+  // value via options so cookie strings stay deterministic.
+  let resolvedSecret: string | undefined = opts.sessionTokenSecret;
+  const ensureSecret = (): string => {
+    if (resolvedSecret !== undefined) {
+      return resolvedSecret;
+    }
+    resolvedSecret = resolveSessionTokenSecret(process.env);
+    return resolvedSecret;
+  };
+
+  // Compute the Secure-attribute toggle once. Production sets it via
+  // `NODE_ENV === 'production'`; tests can override.
+  const cookieSecure: boolean = opts.cookieSecure ?? process.env['NODE_ENV'] === 'production';
+
+  // Clock injection for cookie expiry — defaults to Date.now; tests
+  // pass a controllable function. Reuses the same `now` field as
+  // flow-state expiry so a single override controls both.
+  const cookieNow = (): number => (opts.now !== undefined ? opts.now() : Date.now());
 
   app.get(
     '/auth/login',
@@ -384,7 +575,7 @@ const authRoutesPluginAsync: FastifyPluginAsync<AuthRoutesOptions> = (
         },
       },
     },
-    async (request) => {
+    async (request, reply) => {
       // Build the full request URL — `authorizationCodeGrant` reads
       // the query string from it. Fastify's `request.url` is the
       // path + query; we re-host it under the configured app base
@@ -446,6 +637,23 @@ const authRoutesPluginAsync: FastifyPluginAsync<AuthRoutesOptions> = (
       const oauthSubject = namespacedOauthSubject(oidcConfig.issuerUrl, sub);
       const row = await upsertUserByOauthSubject(ensurePool(), oauthSubject);
 
+      // Issue the short-lived pending cookie. This cookie is the
+      // ONLY way `POST /auth/screen-name` knows which user is
+      // posting. The cookie is replaced by a full platform-session
+      // cookie when `session_token_management` lands; today it's a
+      // standalone bridge. The cookie's `expiresAt` field is checked
+      // server-side on verification — the `Max-Age` attribute is for
+      // browser-side housekeeping only.
+      const expiresAt = cookieNow() + PENDING_COOKIE_TTL_MS;
+      const cookieValue = signPendingCookie({ userId: row.id, expiresAt }, ensureSecret());
+      reply.header(
+        'Set-Cookie',
+        buildPendingCookieHeader(cookieValue, {
+          maxAgeMs: PENDING_COOKIE_TTL_MS,
+          secure: cookieSecure,
+        }),
+      );
+
       // Provisional response shape. The `session_token_management`
       // sibling will replace this with a cookie issuance + 302.
       return {
@@ -453,6 +661,92 @@ const authRoutesPluginAsync: FastifyPluginAsync<AuthRoutesOptions> = (
         oauthSubject,
         userId: row.id,
       };
+    },
+  );
+
+  app.post(
+    '/auth/screen-name',
+    {
+      schema: {
+        tags: ['auth'],
+        summary: 'Replace the placeholder screen name after first auth',
+        description:
+          'Consumes the short-lived `aconversa-auth-pending` cookie set by ' +
+          '`/auth/callback`, validates the supplied screen name (≤ 64 chars, ' +
+          'non-empty after trim), and writes it onto the user’s row only when ' +
+          'the row currently has the placeholder `<pending>`. On success clears ' +
+          'the pending cookie. **Provisional surface** — once `session_token_management` ' +
+          'lands, the response also issues the full platform session cookie. This ' +
+          'endpoint never allows resetting an already-chosen screen name (409 on ' +
+          'second attempt); a future rename surface is out of scope.',
+        body: screenNameBodySchema,
+        response: {
+          200: screenNameResponseSchema,
+          '4xx': errorEnvelopeRef,
+          '5xx': errorEnvelopeRef,
+        },
+      },
+    },
+    async (request, reply) => {
+      // 1. Pull + verify the pending cookie. Any malformed / missing
+      //    / expired / signature-invalid path produces the same 401
+      //    envelope — we deliberately don't leak which subcase fired.
+      const rawHeader = request.headers['cookie'];
+      const cookieHeader = typeof rawHeader === 'string' ? rawHeader : undefined;
+      const cookieValue = readPendingCookieFromHeader(cookieHeader);
+      if (cookieValue === undefined) {
+        throw new ApiError(
+          401,
+          'auth-pending-cookie-invalid',
+          'authorization is missing or has expired; complete the OIDC login again',
+        );
+      }
+      const verify = verifyPendingCookie(cookieValue, {
+        secret: ensureSecret(),
+        now: cookieNow,
+      });
+      if (!verify.ok) {
+        throw new ApiError(
+          401,
+          'auth-pending-cookie-invalid',
+          'authorization is missing or has expired; complete the OIDC login again',
+        );
+      }
+
+      // 2. Validate the body. The schema already covers shape +
+      //    `screenName` presence; this layer applies the
+      //    refinement-driven rules (trim, length, whitespace-only).
+      const body = request.body as { screenName?: unknown };
+      const validated = validateScreenName(body.screenName);
+      if (!validated.ok) {
+        const messageByReason: Record<typeof validated.reason, string> = {
+          empty: 'screenName must be a non-empty string',
+          'whitespace-only': 'screenName must contain non-whitespace characters',
+          'too-long': 'screenName must be at most 64 characters after trimming',
+        };
+        throw new ApiError(400, 'screen-name-invalid', messageByReason[validated.reason]);
+      }
+
+      // 3. Apply the first-write UPDATE. Zero matched rows means the
+      //    row already has a non-placeholder screen name (or is
+      //    soft-deleted / missing). Surface that as a 409 — the
+      //    cookie is valid but the request conflicts with current
+      //    state.
+      const updated = await updatePendingScreenName(ensurePool(), verify.userId, validated.value);
+      if (updated === undefined) {
+        throw new ApiError(
+          409,
+          'screen-name-already-set',
+          'this account already has a screen name; rename is not supported in this surface',
+        );
+      }
+
+      // 4. Clear the pending cookie. The bridge has served its purpose;
+      //    further requests need a real platform session (when
+      //    `session_token_management` lands).
+      reply.header('Set-Cookie', buildPendingCookieClearHeader({ secure: cookieSecure }));
+
+      return { userId: updated.id, screenName: updated.screen_name };
     },
   );
 

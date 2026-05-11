@@ -51,7 +51,21 @@ export {
   authRoutesPlugin,
   namespacedOauthSubject,
   upsertUserByOauthSubject,
+  updatePendingScreenName,
   PLACEHOLDER_SCREEN_NAME,
   __buildTestAuthApp,
   type AuthRoutesOptions,
 } from './routes.js';
+
+export {
+  PENDING_COOKIE_NAME,
+  PENDING_COOKIE_TTL_MS,
+  signPendingCookie,
+  verifyPendingCookie,
+  buildPendingCookieHeader,
+  buildPendingCookieClearHeader,
+  readPendingCookieFromHeader,
+  resolveSessionTokenSecret,
+  type PendingCookiePayload,
+  type VerifyResult,
+} from './pending-cookie.js';
