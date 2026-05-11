@@ -25,6 +25,10 @@ For a worked example of the format in action, see [docs/example-walkthrough.md](
 - [docs/example-walkthrough.md](docs/example-walkthrough.md) — simulated debate exercising the design.
 - [docs/adr/](docs/adr/) — Architecture Decision Records. Each ADR captures one architectural choice (status, context, decision, consequences); see [docs/adr/README.md](docs/adr/README.md) for the convention.
 
+## Localization
+
+UI localized in **English (US)**, **Brazilian Portuguese**, and **Latin American Spanish** (`en-US`, `pt-BR`, `es-419`) via `react-i18next` per [ADR 0024](docs/adr/0024-frontend-i18n-react-i18next-with-icu.md); the data model stays English-coded so events and replay are durable across translation updates. Participant-supplied content (statement wordings) is not translated.
+
 ## Local development
 
 Development is workspace-based (pnpm workspaces under [apps/](apps/) and [packages/](packages/)). Eventually a Docker Compose stack will boot the full app, PostgreSQL, and a local OAuth provider; that stack lands with `foundation.dev_env`.

@@ -77,3 +77,12 @@ The route lives at [`apps/server/src/routes/healthz.ts`](../../apps/server/src/r
 as a `FastifyPluginAsync`, registered by `createServer` in
 [`server.ts`](../../apps/server/src/server.ts). Refinement:
 [tasks/refinements/backend/health_endpoint.md](../../tasks/refinements/backend/health_endpoint.md).
+
+### 2026-05-10 — `ApiError.code` is the locale-stable contract
+
+The `ApiError` envelope's `code` field is confirmed as the
+locale-stable contract per [ADR 0024](0024-frontend-i18n-react-i18next-with-icu.md);
+`message` stays English as a developer aid (logs, OpenAPI examples,
+CLI debugging). The server does not parse `Accept-Language` in v1;
+frontends localize off `code` against their own catalogs. The
+decision (Fastify 5) is unchanged.

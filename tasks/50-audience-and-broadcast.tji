@@ -2,6 +2,20 @@
 #
 # The read-only audience surface — rendered for video, served as an OBS
 # browser source for live shows. The "this is the show" surface.
+#
+# i18n note
+# ---------
+# All user-facing strings in this surface land via the i18n catalog
+# substrate built by `frontend_i18n` (see tasks/35-frontend-i18n.tji
+# and docs/adr/0024-frontend-i18n-react-i18next-with-icu.md). Three
+# refinements under tasks/refinements/frontend-i18n/ are load-bearing:
+#   - i18n_catalog_workflow.md
+#   - i18n_methodology_glossary.md       — for node + edge labels
+#   - i18n_diagnostic_descriptions.md    — for diagnostic-fire captions
+# Audience locale is URL-prefix-driven (per i18n_locale_negotiation.md):
+# `/{locale}/sessions/{id}` lets the producer choose the locale via the
+# URL pointed at OBS. Diacritic + typography validation is owned by
+# i18n_audience_typography.md, which gates on aud_clean_typography.
 
 task audience "Audience and broadcast" {
   task aud_shell "Audience app shell" {
@@ -9,7 +23,9 @@ task audience "Audience and broadcast" {
     task aud_app_skeleton "Read-only app skeleton" {
       effort 1d
       allocate team
+      depends frontend_i18n.i18n_catalog_workflow, frontend_i18n.i18n_locale_negotiation
       note "Refinement: tasks/refinements/audience/aud_app_skeleton.md"
+      note "Locale comes from URL prefix: /{locale}/sessions/{id} (no auth on public sessions, so URL is the locale channel)"
     }
     task aud_ws_client "WebSocket client (read-only subscription)" {
       effort 1d

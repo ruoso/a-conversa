@@ -2,6 +2,19 @@
 #
 # The debater tablet — read-only graph view plus per-facet voting controls.
 # See docs/participant-ui.md.
+#
+# i18n note
+# ---------
+# All user-facing strings in this surface land via the i18n catalog
+# substrate built by `frontend_i18n` (see tasks/35-frontend-i18n.tji
+# and docs/adr/0024-frontend-i18n-react-i18next-with-icu.md). Three
+# refinements under tasks/refinements/frontend-i18n/ are load-bearing:
+#   - i18n_catalog_workflow.md
+#   - i18n_methodology_glossary.md
+#   - i18n_diagnostic_descriptions.md
+# Per-task dependency edges below cite frontend_i18n.* on the shell
+# and the diagnostics view; voting buttons and per-facet labels
+# inherit the glossary transitively through the shell.
 
 task participant_ui "Participant (debater) UI" {
   task part_shell "Participant app shell" {
@@ -9,6 +22,7 @@ task participant_ui "Participant (debater) UI" {
     task part_app_skeleton "App skeleton (entry, build, routing)" {
       effort 1d
       allocate team
+      depends frontend_i18n.i18n_catalog_workflow
       note "Refinement: tasks/refinements/participant-ui/part_app_skeleton.md"
     }
     task part_state_management "State management setup" {
@@ -187,7 +201,7 @@ task participant_ui "Participant (debater) UI" {
   }
 
   task part_diagnostics_view "View structural diagnostics (P6)" {
-    depends !part_graph_view, data_and_methodology.diagnostics.diagnostic_event_emission
+    depends !part_graph_view, data_and_methodology.diagnostics.diagnostic_event_emission, frontend_i18n.i18n_diagnostic_descriptions
     task part_diagnostics_list "Diagnostics list accessible from status indicator" {
       effort 1d
       allocate team

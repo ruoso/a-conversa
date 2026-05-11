@@ -33,6 +33,8 @@ Every node carries one statement kind:
 
 The kind is the value of the node's `classification` facet (see "Content, facets, and status" below). When the classification facet is in `meta-disagreement` state, the node carries two proposed kinds side by side until resolution.
 
+The five values above (and the edge roles, facet states, vote choices, annotation kinds, and diagnostic kinds defined elsewhere in this document) are **wire-format identifiers, not display labels** — their localized renderings for non-English UI locales are a frontend render-layer concern, recorded in [ADR 0024](adr/0024-frontend-i18n-react-i18next-with-icu.md) and the methodology glossary refinement.
+
 ### Axiom marks
 
 A node can carry one or more **axiom marks**. Each axiom mark is made by a specific participant and records "this participant declares no evidence would change their mind on this node." Axiom marks are **per-participant** — Ben may hold N9 as an axiom while Anna does not, or both may hold the same node as axiomatic from their respective frames. An axiom-mark is a graph operation recorded in the change history (not a graph entity in its own right) and is rendered visually on the node it marks. Surfacing axioms is a primary success state of the format. See [methodology — axioms](methodology.md#axioms--terminal-values).

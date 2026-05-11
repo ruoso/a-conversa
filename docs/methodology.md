@@ -97,6 +97,12 @@ When a statement is made, the moderator proposes a classification (the value of 
 
 The classification is one facet of the node; the node's wording and substance facets each have their own independent agreement workflow.
 
+### Vocabulary and localization
+
+The five statement kinds (`fact`, `predictive`, `value`, `normative`, `definitional`) — and similarly the seven edge roles, the annotation kinds, the facet states, the vote choices, and the diagnostic kinds — are methodological commitments. Their English names are **canonical in the data model**: they are the values stored in the event log, in the Postgres schema, in the WebSocket payloads, in the OpenAPI spec. Their renderings in pt-BR (`Fato` / `Preditiva` / `Valor` / `Normativa` / `Definicional`) and in es-419 (`Hecho` / `Predictiva` / `Valor` / `Normativa` / `Definicional`) are **labels for the same commitments**, not separate methodologies. The canonical English-to-locale mapping is recorded in [tasks/refinements/frontend-i18n/i18n_methodology_glossary.md](../tasks/refinements/frontend-i18n/i18n_methodology_glossary.md) and locked once native-speaker + philosophical review signs off; see [ADR 0024](adr/0024-frontend-i18n-react-i18next-with-icu.md). The same rule applies to edge roles.
+
+A consequence worth naming explicitly: a debate held in pt-BR may have a moderator running their UI in en-US (e.g., a non-Brazilian moderator brought in to operate the tool for a pt-BR show). The wordings on the nodes are pt-BR (participant-supplied content is never translated); the UI chrome and the methodology labels in that chrome are en-US. This is a supported configuration — the format intentionally separates participant content from operator chrome.
+
 ## Diagnostic tests
 
 The moderator runs these out loud, on camera. Each test either resolves the disagreement directly *or* reveals that the statement is compound and points to the seam along which it should be decomposed.

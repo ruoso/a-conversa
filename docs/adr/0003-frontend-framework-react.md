@@ -49,3 +49,4 @@ Expected output: `<p>hello, react</p>`.
 
 - **2026-05-10** — Replaced the original transient `npx --yes ... tsx` + `NODE_PATH` invocation with a project-local `package.json` + `npm install` setup. `react`, `react-dom`, `tsx`, and their types now live under `devDependencies`; the smoke test is invoked via `npm run smoke:react`. The decision (React) is unchanged.
 - **2026-05-10** — Switched the package manager from npm to pnpm as part of [ADR 0010](0010-directory-layout-pnpm-workspaces.md). Run commands above are now `pnpm install` / `pnpm run smoke:react`. The decision (React) is unchanged.
+- **2026-05-10** — Frontend i18n library settled as `react-i18next` in [ADR 0024](0024-frontend-i18n-react-i18next-with-icu.md); the Consequences clause "downstream tasks now constrained to the React ecosystem" now also constrains the i18n choice. The decision (React) is unchanged.

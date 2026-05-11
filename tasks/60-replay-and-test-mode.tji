@@ -4,6 +4,20 @@
 # for design iteration / debugging / demoing without three live participants.
 # The data-layer "render at log position" primitive lives in the data and
 # methodology stream (10); the work here is the surfaces that consume it.
+#
+# i18n note
+# ---------
+# Replay inherits the audience surface's i18n setup (URL-prefix locale,
+# Cytoscape style strings reading from the catalog). Test-mode is
+# moderator-adjacent but uses the same catalog. Refinements under
+# tasks/refinements/frontend-i18n/ that bound this group:
+#   - i18n_catalog_workflow.md
+#   - i18n_methodology_glossary.md       — for event-inspector kind labels
+#   - i18n_diagnostic_descriptions.md    — for inspecting diagnostic
+#                                          events at any scrubber position
+# The replay-mode audience surface depends on i18n_catalog_workflow
+# directly; test-mode picks the same catalog up transitively through
+# the replay primitive + audience graph rendering it consumes.
 
 task replay_test "Replay and test mode" {
   task replay_ui "Replay viewer UI" {
@@ -11,7 +25,9 @@ task replay_test "Replay and test mode" {
     task replay_mode_audience_surface "Replay-mode variant of the audience surface" {
       effort 2d
       allocate team
+      depends frontend_i18n.i18n_catalog_workflow
       note "Same renderer as live audience; switches the input from live event stream to log-replay."
+      note "Locale comes from URL prefix: /{locale}/replay/{id}, mirroring the audience surface."
     }
     task replay_playback_controls "Play / pause / step controls" {
       effort 1d

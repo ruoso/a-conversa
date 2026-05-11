@@ -83,6 +83,17 @@ V1 ships four distinct surfaces, sharing a TypeScript codebase and connecting to
 - **Audience / broadcast** — read-only, designed for video. Animated reveals on commit, clean typography, distinct visual states for `proposed` / `agreed` / `disputed` / `meta-disagreement`. This is the show. Served at a stable URL that **mirrors session privacy** — public sessions have a public viewer URL (anyone can load); private sessions require auth.
 - **Producer / director** — change-history scrubbing, segment-snapshot triggers, possibly OBS scene-switching cues. Useful for a polished broadcast; cuttable from v1 if the moderator surface plus OBS suffice.
 
+### Localization
+
+V1 ships in three locales: **English (US) `en-US`**, **Brazilian Portuguese `pt-BR`**, and **Latin American Spanish `es-419`**. The localization model is recorded in [ADR 0024](adr/0024-frontend-i18n-react-i18next-with-icu.md); the salient points:
+
+- **Catalogs live in a shared workspace.** `packages/i18n-catalogs/` exports per-locale JSON (`en-US.json`, `pt-BR.json`, `es-419.json`) consumed by all four UI workspaces — the same pattern as `packages/ui-tokens` for design tokens.
+- **Public audience and replay use a URL prefix** (`/{locale}/sessions/{id}`, `/{locale}/replay/{id}`) so a producer pointing OBS at the URL chooses the locale explicitly without a user session.
+- **Moderator, participant, and private audience use browser detection plus a user-preference cookie**, settable via a small UI control next to the screen-name capture step.
+- **The server is locale-agnostic.** The `ApiError` envelope's `code` field is the locale-stable contract; `message` stays English as a developer aid. The server does not parse `Accept-Language` in v1.
+- **Methodology vocabulary is localized at the render layer only.** Statement kinds, edge roles, facet states, vote choices, annotation kinds, and diagnostic kinds stay English-coded in the event log, the Postgres schema, the WebSocket payloads, and the OpenAPI spec. The localized rendering is keyed off the English value via the catalog. This preserves event-log durability across translation updates.
+- **Participant-supplied content (statement wordings) is not translated.** A debate held in pt-BR has pt-BR wordings on its nodes regardless of which UI locale the moderator runs.
+
 ### Test mode
 
 A separate mode (no live participants) loads a saved debate's event log and presents the current graph state plus a **timeline scrubber** that walks backward (and forward) through the event history. Used for design iteration, debugging diagnostics, and demoing the system without three live participants.

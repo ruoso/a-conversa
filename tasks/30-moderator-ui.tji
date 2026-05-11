@@ -3,6 +3,22 @@
 # The operator surface — the most complex client. Capture, classify,
 # decompose, run diagnostic tests, capture defeaters and meta-moves,
 # commit, snapshot. See docs/moderator-ui.md.
+#
+# i18n note
+# ---------
+# All user-facing strings in this surface land via the i18n catalog
+# substrate built by `frontend_i18n` (see tasks/35-frontend-i18n.tji
+# and docs/adr/0024-frontend-i18n-react-i18next-with-icu.md). Three
+# refinements under tasks/refinements/frontend-i18n/ are load-bearing
+# for this group:
+#   - i18n_catalog_workflow.md       — the catalog workspace shape
+#   - i18n_methodology_glossary.md   — fact/predictive/value/normative/
+#                                      definitional + edge roles + states
+#   - i18n_diagnostic_descriptions.md — cycle / contradiction / etc.
+# The per-task dependency edges below cite frontend_i18n.* only on
+# the load-bearing nodes (app shell, classification palette, node /
+# edge rendering, diagnostic flow). Every other leaf task inherits
+# i18n constraints transitively through the shell.
 
 task moderator_ui "Moderator UI" {
   task mod_shell "Moderator app shell" {
@@ -10,6 +26,7 @@ task moderator_ui "Moderator UI" {
     task mod_app_skeleton "App skeleton (routing, entry point, build config)" {
       effort 1d
       allocate team
+      depends frontend_i18n.i18n_catalog_workflow
       note "Refinement: tasks/refinements/moderator-ui/mod_app_skeleton.md"
     }
     task mod_state_management "State management setup" {
@@ -69,10 +86,12 @@ task moderator_ui "Moderator UI" {
     task mod_node_rendering "Node rendering with kind label" {
       effort 1d
       allocate team
+      depends frontend_i18n.i18n_methodology_glossary
     }
     task mod_edge_rendering "Edge rendering with role label" {
       effort 1d
       allocate team
+      depends frontend_i18n.i18n_methodology_glossary
     }
     task mod_annotation_rendering "Annotation rendering" {
       effort 1d
@@ -144,6 +163,7 @@ task moderator_ui "Moderator UI" {
     task mod_classification_palette "Classification palette + keyboard shortcuts" {
       effort 1d
       allocate team
+      depends frontend_i18n.i18n_methodology_glossary, frontend_i18n.i18n_keyboard_shortcuts_policy
     }
     task mod_target_auto_suggest "Auto-suggest most-recently-active node as target" {
       effort 1d
@@ -217,7 +237,7 @@ task moderator_ui "Moderator UI" {
   }
 
   task mod_diagnostic_flow "F3 — Run a diagnostic test" {
-    depends !mod_capture_flow
+    depends !mod_capture_flow, frontend_i18n.i18n_diagnostic_descriptions
     task mod_operationalization_mode "Operationalization mode" {
       effort 1d
       allocate team
@@ -286,7 +306,7 @@ task moderator_ui "Moderator UI" {
   }
 
   task mod_diagnostic_resolution_flow "F7 — Resolve a structural diagnostic" {
-    depends !mod_diagnostic_flow, data_and_methodology.diagnostics.blocking_vs_advisory_classification
+    depends !mod_diagnostic_flow, data_and_methodology.diagnostics.blocking_vs_advisory_classification, frontend_i18n.i18n_diagnostic_descriptions
     task mod_diagnostic_flag_pane "Diagnostic flags pane in sidebar" {
       effort 1d
       allocate team

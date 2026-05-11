@@ -38,6 +38,10 @@ Every node carries a **statement kind** (fact / predictive / value / normative /
 - [docs/participant-ui.md](docs/participant-ui.md) — the debater tablet: per-facet voting (the central design), withdrawal flow, axiom-mark proposal, view of structural diagnostics and change history.
 - [docs/example-walkthrough.md](docs/example-walkthrough.md) — simulated debate ("Should zoos exist?") produced by three sub-agents (Anna, Ben, Maria) with neutral prompts. Exercises the platform's procedure end-to-end.
 
+## Languages
+
+The platform's UI is localized for **English (US)**, **Brazilian Portuguese**, and **Latin American Spanish** (`en-US`, `pt-BR`, `es-419`). The methodology vocabulary (statement kinds, edge roles, facet states, diagnostic kinds) is presented in the active locale; the underlying data model remains English-coded so events and replay stay durable across locale changes. Participant-supplied content — statement wordings on nodes — is **not** translated; it stays in whatever language the participants spoke. A debate in pt-BR may have a moderator running their UI in en-US, and that mismatch is supported. See [docs/adr/0024-frontend-i18n-react-i18next-with-icu.md](docs/adr/0024-frontend-i18n-react-i18next-with-icu.md).
+
 ## Out of scope (for v1)
 
 - AI-assisted classification — manual tagging by the moderator only.

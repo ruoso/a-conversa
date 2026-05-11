@@ -1,0 +1,95 @@
+# 35 — Frontend internationalization
+#
+# Cross-cutting i18n plumbing for the four UI surfaces (moderator,
+# participant, audience, replay/test). Lives in the 35 slot deliberately —
+# between moderator-ui at 30 and participant-ui at 40 — so the dependency
+# edges from every UI group into this group read top-to-bottom in build
+# order. See docs/adr/0024-frontend-i18n-react-i18next-with-icu.md and
+# tasks/refinements/frontend-i18n/.
+#
+# Eventually lands a packages/i18n-catalogs/ workspace (created by
+# i18n_catalog_workflow) plus per-app wiring; no per-app code is written
+# under this group, only the substrate every UI consumes.
+
+task frontend_i18n "Frontend internationalization" {
+  depends foundation.repo_skeleton, foundation.stack_decisions.frontend_framework_decision
+
+  task i18n_library_choice "Pick i18n library + ICU plugin (ADR 0024)" {
+    effort 0.5d
+    allocate team
+    note "Refinement: tasks/refinements/frontend-i18n/i18n_library_choice.md"
+  }
+
+  task i18n_catalog_workflow "Catalog workspace + per-app integration" {
+    effort 1d
+    allocate team
+    depends !i18n_library_choice
+    note "Creates packages/i18n-catalogs/ with en-US.json / pt-BR.json / es-419.json"
+    note "Refinement: tasks/refinements/frontend-i18n/i18n_catalog_workflow.md"
+  }
+
+  task i18n_locale_negotiation "Locale detection + selection rules" {
+    effort 0.5d
+    allocate team
+    depends !i18n_library_choice
+    note "URL prefix for audience; user preference for moderator/participant; cookie persistence"
+    note "Refinement: tasks/refinements/frontend-i18n/i18n_locale_negotiation.md"
+  }
+
+  task i18n_methodology_glossary "Canonical en-US -> pt-BR / es-419 glossary" {
+    effort 2d
+    allocate team
+    depends !i18n_catalog_workflow
+    note "fact / predictive / value / normative / definitional + edge roles + states + diagnostics"
+    note "Requires native-speaker + philosophical review per locale (see Risks)"
+    note "Refinement: tasks/refinements/frontend-i18n/i18n_methodology_glossary.md"
+  }
+
+  task i18n_keyboard_shortcuts_policy "Per-locale keyboard shortcut policy for moderator palette" {
+    effort 0.5d
+    allocate team
+    depends !i18n_methodology_glossary
+    note "Decide: keep English mnemonic shortcuts regardless of locale, OR rebind per locale"
+    note "Refinement: tasks/refinements/frontend-i18n/i18n_keyboard_shortcuts_policy.md"
+  }
+
+  task i18n_date_time_formatting "Locale-aware Intl.DateTimeFormat / Intl.NumberFormat plumbing" {
+    effort 0.5d
+    allocate team
+    depends !i18n_locale_negotiation
+    note "A small util module in packages/i18n-catalogs/ (or a sibling utils package)"
+    note "Refinement: tasks/refinements/frontend-i18n/i18n_date_time_formatting.md"
+  }
+
+  task i18n_diagnostic_descriptions "Diagnostic kind -> localized description templates" {
+    effort 1d
+    allocate team
+    depends !i18n_methodology_glossary
+    note "cycle / contradiction / multi-warrant / dangling-claim / coherency-hint"
+    note "Refinement: tasks/refinements/frontend-i18n/i18n_diagnostic_descriptions.md"
+  }
+
+  task i18n_audience_typography "Confirm broadcast typography covers diacritics for all three locales" {
+    effort 0.5d
+    allocate team
+    depends !i18n_catalog_workflow, audience.aud_graph_rendering.aud_clean_typography
+    note "Visual smoke: c-cedilla, tilde-a, tilde-o, n-tilde, accented vowels render crisply at OBS broadcast resolution"
+    note "Refinement: tasks/refinements/frontend-i18n/i18n_audience_typography.md"
+  }
+
+  task i18n_error_code_catalog "Frontend ApiError code -> localized message mapping" {
+    effort 1d
+    allocate team
+    depends !i18n_catalog_workflow, backend.api_skeleton.error_handling
+    note "Mirrors apps/server/src/errors.ts code set; one entry per code per locale"
+    note "Refinement: tasks/refinements/frontend-i18n/i18n_error_code_catalog.md"
+  }
+
+  task i18n_testing "Playwright + visual-regression coverage across locales" {
+    effort 2d
+    allocate team
+    depends !i18n_locale_negotiation, foundation.test_infra.playwright_setup
+    note "Per-locale smoke run on the four surfaces; visual regression baselines per locale"
+    note "Refinement: tasks/refinements/frontend-i18n/i18n_testing.md"
+  }
+}

@@ -50,3 +50,4 @@ Expected output includes `--color-facet-agreed: #1f7a3a;` on `:root`, a `.bg-fac
 ## Amendments
 
 - **2026-05-10** — Switched the package manager from npm to pnpm as part of [ADR 0010](0010-directory-layout-pnpm-workspaces.md). Run command above is now `pnpm install` / `pnpm run smoke:tailwind`. The decision (Tailwind CSS) is unchanged.
+- **2026-05-10** — The pattern of a shared `packages/ui-tokens` workspace feeding all four surfaces is now mirrored by `packages/i18n-catalogs` per [ADR 0024](0024-frontend-i18n-react-i18next-with-icu.md). Text-direction (RTL) is NOT in scope for v1 — `en-US`, `pt-BR`, `es-419` are all LTR — but Tailwind's `dir-*` utilities remain available if a future locale forces it. The decision (Tailwind + tokens) is unchanged.
