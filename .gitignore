@@ -58,3 +58,8 @@ report/
 infra/authelia/data/
 infra/authelia/db.sqlite3
 infra/authelia/notifications.txt
+
+# Ephemeral sub-agent worktrees (local-only). Tools spawn isolated git
+# worktrees here for parallel investigation; they must never end up in
+# the index of the main branch.
+.claude/
