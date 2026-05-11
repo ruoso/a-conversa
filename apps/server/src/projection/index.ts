@@ -8,6 +8,10 @@
 //   - tasks/refinements/data-and-methodology/active_firing_computation.md
 //   - tasks/refinements/data-and-methodology/projection_caching.md
 
+// Re-exported from @a-conversa/shared-types for the convenience of step files
+// that mock or construct event envelopes alongside the projection types.
+export type { Event } from '@a-conversa/shared-types';
+
 export { ProjectionCache } from './cache.js';
 export type { EventLoader, ProjectionCacheOptions } from './cache.js';
 export { Projection, ProjectionInvariantError, createEmptyProjection } from './projection.js';
