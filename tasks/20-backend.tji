@@ -166,6 +166,8 @@ task backend "Backend" {
     task ws_connection_handling "WebSocket connection lifecycle" {
       effort 1d
       allocate team
+      complete 100
+      note "Refinement: tasks/refinements/backend/ws_connection_handling.md"
     }
     task ws_auth_on_connect "Authenticate on connect using session token" {
       effort 1d

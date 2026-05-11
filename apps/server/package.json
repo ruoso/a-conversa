@@ -15,6 +15,7 @@
     "@fastify/sensible": "6.0.4",
     "@fastify/swagger": "9.7.0",
     "@fastify/swagger-ui": "5.2.6",
+    "@fastify/websocket": "11.2.0",
     "fastify": "5.8.5",
     "fastify-plugin": "5.1.0",
     "jose": "6.1.0",
@@ -25,6 +26,7 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
-    "@types/pg": "^8.20.0"
+    "@types/pg": "^8.20.0",
+    "@types/ws": "8.18.1"
   }
 }

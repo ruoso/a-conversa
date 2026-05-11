@@ -28,11 +28,15 @@
 //
 // **Plugins explicitly deferred** to their owning tasks (so this
 // bootstrap doesn't pre-empt them):
-//   - `@fastify/websocket` → `backend.websocket_protocol.ws_connection_handling`.
 //   - `@fastify/swagger` + `swagger-ui` → `backend.api_skeleton.openapi_or_equivalent`.
 //   - `@fastify/helmet` → later security-headers pass.
 //   - A schema type provider (Zod or TypeBox) → first route that
 //     actually validates a request body.
+//
+// **Plugins wired by sibling websocket_protocol tasks** (after this
+// bootstrap-list, but registered inside the factory below):
+//   - `@fastify/websocket` → wired by `wsConnectionHandlingPlugin`
+//     (`backend.websocket_protocol.ws_connection_handling`).
 //
 // **Routes** wired today:
 //   - `GET /` — trivial proof-of-bootstrap, returns `{ status: 'ok' }`.
@@ -57,6 +61,7 @@ import { createLoggerOptions } from './logger.js';
 import { errorEnvelopeRef, openapiPlugin } from './openapi.js';
 import { healthzPlugin } from './routes/healthz.js';
 import { sessionsRoutesPlugin } from './sessions/routes.js';
+import { wsConnectionHandlingPlugin } from './ws/index.js';
 
 /**
  * Options that vary between deployment modes (production, dev,
@@ -249,6 +254,17 @@ export async function createServer(options: CreateServerOptions = {}): Promise<F
   // that never POST /sessions don't pay the cost. Refinement:
   // tasks/refinements/backend/create_session_endpoint.md.
   await app.register(sessionsRoutesPlugin);
+
+  // WebSocket connection lifecycle. Registers `@fastify/websocket`
+  // (decorating `app.websocketServer` + `app.injectWS`) and a single
+  // `GET /ws` route that upgrades to WS, mints a per-connection
+  // `connectionId`, logs open/close, sends a placeholder hello
+  // envelope, and arranges a 1001 going-away close on app shutdown.
+  // Auth gating, subscription routing, the canonical message envelope,
+  // message types, and broadcasts are each separate downstream
+  // websocket_protocol tasks that build on this foundation. Refinement:
+  // tasks/refinements/backend/ws_connection_handling.md.
+  await app.register(wsConnectionHandlingPlugin);
 
   return app;
 }
