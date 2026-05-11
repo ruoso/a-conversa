@@ -32,6 +32,7 @@ import { getDefaultPool, type DbPool } from '../../db.js';
 
 import { registerProposeHandlers } from './propose.js';
 import { registerSubscribeHandlers } from './subscribe.js';
+import { registerVoteHandlers } from './vote.js';
 
 export {
   buildSubscribeHandler,
@@ -42,6 +43,9 @@ export type { SubscribeHandlerOptions } from './subscribe.js';
 
 export { buildProposeHandler, registerProposeHandlers } from './propose.js';
 export type { ProposeHandlerOptions } from './propose.js';
+
+export { buildVoteHandler, registerVoteHandlers } from './vote.js';
+export type { VoteHandlerOptions } from './vote.js';
 
 /**
  * Options accepted by `wsHandlersPlugin`. Production callers pass `{}`
@@ -96,6 +100,20 @@ const wsHandlersPluginAsync: FastifyPluginAsync<WsHandlersOptions> = (
   // per-instance broadcast bus (`app.wsBroadcast`) so the post-
   // commit-emit step fans out the `event-applied` envelope.
   registerProposeHandlers(app.wsDispatcher, {
+    get pool() {
+      return ensurePool();
+    },
+    registry: app.wsSubscriptions,
+    broadcast: app.wsBroadcast,
+    log: app.log,
+  });
+
+  // Register the vote handler. Structurally identical to the propose
+  // registration — same gate stack, same dual-signal contract, same
+  // dispatcher-seam error path. The handler delegates per-arm
+  // (`agree` / `dispute` / `withdraw`) rules to the methodology
+  // engine's `voteHandler`.
+  registerVoteHandlers(app.wsDispatcher, {
     get pool() {
       return ensurePool();
     },

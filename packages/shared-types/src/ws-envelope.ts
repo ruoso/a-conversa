@@ -108,18 +108,20 @@ export const wsMessageTypes = [
   // connection sees).
   'hello',
   // Group B — client → server request types. Append future sibling
-  // request types (`'vote'`, `'commit'`, `'mark-meta-disagreement'`,
-  // `'snapshot'`) at this group's tail.
+  // request types (`'commit'`, `'mark-meta-disagreement'`, `'snapshot'`)
+  // at this group's tail.
   'subscribe',
   'unsubscribe',
   'propose',
+  'vote',
   // Group C — server → client ack / result types correlated via
   // `inResponseTo`. Append future sibling ack/result types
-  // (`'voted'`, `'committed'`, `'meta-disagreement-marked'`,
-  // `'snapshot-result'`) at this group's tail.
+  // (`'committed'`, `'meta-disagreement-marked'`, `'snapshot-result'`)
+  // at this group's tail.
   'subscribed',
   'unsubscribed',
   'proposed',
+  'voted',
   // Group A — server-emitted unsolicited broadcast + the canonical
   // error envelope (which `inResponseTo` echoes when correlated).
   'event-applied',
@@ -312,6 +314,102 @@ export const proposedPayloadSchema = z.object({
 
 export type ProposedPayload = z.infer<typeof proposedPayloadSchema>;
 
+// -- vote / voted payloads -----------------------------------------
+//
+// `vote` (client → server): the client asks the server to apply a new
+// `vote` event for a session it is **subscribed to** (the
+// subscribe-before-act gate is enforced on the server). The payload
+// carries the target `proposalId`, the vote arm (`choice`, one of
+// `'agree' | 'dispute' | 'withdraw'`), and the optimistic-concurrency
+// token `expectedSequence`.
+//
+// **Owned by `ws_vote_message`.** This task adds `vote` to Group B and
+// `voted` to Group C of the union-extension convention documented in
+// `wsMessageTypes` above. Mirrors the propose/proposed shape — the
+// handler skeleton + dispatcher-seam error path + dual-signal contract
+// are identical (only the engine call and the constructed action
+// variant differ).
+//
+// **Voter identity comes from the connection, not the payload.** The
+// server reads `connection.user.id` and uses it as both the
+// methodology requester AND the event actor. There is NO `voterId`
+// field on the payload — a client cannot vote on behalf of someone
+// else. Symmetric with `propose` (no `proposerId` field).
+//
+// **Withdraw is a vote variant, not a separate message type.** The
+// engine's `voteHandler` switches on the vote arm; the wire vocabulary
+// stays at one request type + one ack type. Per-arm rejections
+// (`no-prior-agree` for an illegal withdraw, `already-voted` for a
+// duplicate, `proposal-already-committed` for an agree on a committed
+// proposal, etc.) all surface via the wire `error` envelope with
+// `payload.code` set to the engine's rejection reason.
+//
+// **`choice` (request) vs. `vote` (action / event payload).** The
+// request payload calls the arm `choice` to avoid the confusingly
+// self-referential `{ type: 'vote', payload: { vote: ... } }` shape;
+// the handler maps `choice` → `action.vote` → `event.payload.vote` —
+// internal naming stays `vote`. See `ws_vote_message.md` Decisions.
+
+/**
+ * Client → server. Asks the server to apply a `vote` event for
+ * `sessionId` against `proposalId` with the named `choice`. The
+ * client must have already sent a successful `subscribe` for the
+ * same session (the server enforces); otherwise the wire response is
+ * an `error` envelope with `code: 'forbidden'`.
+ *
+ * On success the server sends two server-emitted envelopes to the
+ * voter:
+ *
+ *   1. A `voted` ack (this envelope's request-response pair),
+ *      correlated via `inResponseTo`. Carries `{ sessionId,
+ *      sequence, eventId }` so the client clears its in-flight vote
+ *      state.
+ *   2. The standard `event-applied` broadcast (carrying the
+ *      appended event verbatim). Every connection in
+ *      `connectionsForSession(sessionId)` — including the voter —
+ *      receives this.
+ *
+ * On any rejection (visibility loss, methodology rejection — e.g.
+ * `no-prior-agree`, `already-voted`, `proposal-already-committed` —
+ * sequence mismatch), the server sends an `error` envelope with the
+ * corresponding `code` via the dispatcher's `onHandlerError` seam +
+ * `rejectedToApiError(rejection)`.
+ */
+// Named `wsVotePayloadSchema` (not `votePayloadSchema`) to avoid a
+// collision with `votePayloadSchema` in `./events.ts` (the event-side
+// vote payload, with a different shape — `{ proposal_id, participant,
+// vote, voted_at }`). The two payloads are intentionally distinct —
+// the wire request carries client-facing field names + the optimistic-
+// concurrency token; the event payload carries the canonical
+// snake-case audit-log shape — but exporting both under the same
+// symbol from `@a-conversa/shared-types` would force re-export
+// gymnastics in `index.ts`. The `Ws` prefix is the same convention
+// `WsEnvelope` and `WsMessageType` use.
+export const wsVotePayloadSchema = z.object({
+  sessionId: z.string().uuid(),
+  expectedSequence: z.number().int().nonnegative(),
+  proposalId: z.string().uuid(),
+  choice: z.enum(['agree', 'dispute', 'withdraw']),
+});
+
+export type WsVotePayload = z.infer<typeof wsVotePayloadSchema>;
+
+/**
+ * Server → client ack. Echoes the originating `vote` envelope's `id`
+ * via `inResponseTo`. Payload carries the appended event's
+ * `sequence` + `eventId` + `sessionId` so the client can correlate
+ * the ack against its in-flight vote request and update local
+ * sequence tracking before the matching `event-applied` broadcast
+ * arrives.
+ */
+export const votedPayloadSchema = z.object({
+  sessionId: z.string().uuid(),
+  sequence: z.number().int().positive(),
+  eventId: z.string().uuid(),
+});
+
+export type VotedPayload = z.infer<typeof votedPayloadSchema>;
+
 // -- event-applied payload -----------------------------------------
 //
 // `event-applied` (server → client): emitted by the broadcast surface
@@ -435,10 +533,12 @@ export const wsMessagePayloadSchemas: Record<WsMessageType, z.ZodTypeAny> = {
   subscribe: subscribePayloadSchema,
   unsubscribe: unsubscribePayloadSchema,
   propose: proposePayloadSchema,
+  vote: wsVotePayloadSchema,
   // Group C — server → client ack/result payload schemas.
   subscribed: subscribedPayloadSchema,
   unsubscribed: unsubscribedPayloadSchema,
   proposed: proposedPayloadSchema,
+  voted: votedPayloadSchema,
   // The outer event envelope is checked; the per-kind payload inside
   // the event is `z.unknown()` per the schema in `events.ts` and is
   // re-validated by `validateEvent` on the receiving side. Server-side
@@ -461,10 +561,12 @@ export interface WsMessagePayloadMap {
   subscribe: SubscribePayload;
   unsubscribe: UnsubscribePayload;
   propose: ProposePayload;
+  vote: WsVotePayload;
   // Group C — server → client ack/result payload types.
   subscribed: SubscribedPayload;
   unsubscribed: UnsubscribedPayload;
   proposed: ProposedPayload;
+  voted: VotedPayload;
   'event-applied': EventAppliedPayload;
   error: ErrorPayload;
 }

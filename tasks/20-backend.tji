@@ -200,7 +200,9 @@ task backend "Backend" {
     task ws_vote_message "Vote message (agree / dispute / withdraw)" {
       effort 0.5d
       allocate team
-      depends !ws_message_envelope
+      complete 100
+      depends !ws_message_envelope, !ws_propose_message, data_and_methodology.methodology_engine.withdrawal_logic
+      note "Refinement: tasks/refinements/backend/ws_vote_message.md"
     }
     task ws_commit_message "Commit message — moderator-only authority" {
       effort 1d
