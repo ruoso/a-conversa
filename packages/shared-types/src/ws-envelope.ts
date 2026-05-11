@@ -108,22 +108,22 @@ export const wsMessageTypes = [
   // connection sees).
   'hello',
   // Group B — client → server request types. Append future sibling
-  // request types (`'mark-meta-disagreement'`, `'snapshot'`) at this
-  // group's tail.
+  // request types (`'snapshot'`) at this group's tail.
   'subscribe',
   'unsubscribe',
   'propose',
   'vote',
   'commit',
+  'mark-meta-disagreement',
   // Group C — server → client ack / result types correlated via
   // `inResponseTo`. Append future sibling ack/result types
-  // (`'meta-disagreement-marked'`, `'snapshot-result'`) at this
-  // group's tail.
+  // (`'snapshot-result'`) at this group's tail.
   'subscribed',
   'unsubscribed',
   'proposed',
   'voted',
   'committed',
+  'meta-disagreement-marked',
   // Group A — server-emitted unsolicited broadcast + the canonical
   // error envelope (which `inResponseTo` echoes when correlated).
   'event-applied',
@@ -502,6 +502,111 @@ export const committedPayloadSchema = z.object({
 
 export type CommittedPayload = z.infer<typeof committedPayloadSchema>;
 
+// -- mark-meta-disagreement / meta-disagreement-marked payloads ----
+//
+// `mark-meta-disagreement` (client → server): the moderator asks the
+// server to mark a pending proposal as meta-disagreement — the
+// methodology's last-resort terminal state for a facet-level dispute
+// the diagnostic tests + decomposition have failed to resolve (per
+// `docs/methodology.md` lines 203–212). The payload carries the
+// target `proposalId` and the optimistic-concurrency token
+// `expectedSequence`.
+//
+// **Owned by `ws_meta_disagreement_message`.** This task adds
+// `mark-meta-disagreement` to Group B and `meta-disagreement-marked`
+// to Group C of the union-extension convention documented in
+// `wsMessageTypes` above. Mirrors the propose / vote / commit shapes
+// — the handler skeleton + dispatcher-seam error path + dual-signal
+// contract are identical (only the engine call, the constructed
+// action variant, and the ack envelope type differ).
+//
+// **Moderator-only authority.** The methodology engine's
+// `markMetaDisagreementHandler` enforces a `not-a-moderator`
+// rejection when the requester is not the session's moderator. The
+// WS handler surfaces this as a wire `error` envelope with
+// `code: 'not-a-moderator'` via `rejectedToApiError` — same shape as
+// commit's headline gate.
+//
+// **Moderator identity comes from the connection, not the payload.**
+// The server reads `connection.user.id` and uses it as both the
+// methodology requester AND the event actor. There is NO
+// `moderatorId` field on the payload — a client cannot mark on
+// behalf of someone else. Symmetric with `propose` (no `proposerId`),
+// `vote` (no `voterId`), and `commit` (no `moderatorId`).
+//
+// **Wire-type naming.** The methodology engine's action kind is
+// itself `'mark-meta-disagreement'` (kebab-case throughout the wire
+// vocabulary; the engine uses `markMetaDisagreement` camelCase
+// internally). The ack `'meta-disagreement-marked'` mirrors the
+// `event.kind` of the emitted event (the past-participle convention
+// `proposed` / `voted` / `committed` follow).
+
+/**
+ * Client → server. Asks the server to mark the pending `proposalId`
+ * for `sessionId` as meta-disagreement. The client must have already
+ * sent a successful `subscribe` for the same session (the server
+ * enforces); otherwise the wire response is an `error` envelope with
+ * `code: 'forbidden'`.
+ *
+ * The methodology engine enforces moderator-only authority via the
+ * `markMetaDisagreementHandler`'s rule-1 `not-a-moderator` gate — a
+ * non-moderator subscribed participant who sends this envelope
+ * receives an `error` envelope with `code: 'not-a-moderator'`.
+ * Additional engine rejections (`proposal-not-found` /
+ * `proposal-already-committed` /
+ * `proposal-already-meta-disagreement` / `methodology-not-exhausted`
+ * / `illegal-state-transition` for a structural-sub-kind mark) all
+ * surface through the same wire `error` envelope with the engine's
+ * kebab `code`.
+ *
+ * On success the server sends two server-emitted envelopes to the
+ * moderator:
+ *
+ *   1. A `meta-disagreement-marked` ack (this envelope's request-
+ *      response pair), correlated via `inResponseTo`. Carries
+ *      `{ sessionId, sequence, eventId }` so the client clears its
+ *      in-flight mark state.
+ *   2. The standard `event-applied` broadcast (carrying the
+ *      appended `meta-disagreement-marked` event verbatim). Every
+ *      connection in `connectionsForSession(sessionId)` — including
+ *      the moderator — receives this.
+ *
+ * The mark-meta-disagreement handler emits exactly one
+ * `meta-disagreement-marked` event (the engine's
+ * `markMetaDisagreementHandler` returns `events: [markEvent]`). The
+ * downstream read-side projection (`handleMetaDisagreementMarked` in
+ * `replay.ts`) transitions the affected facet to status
+ * `meta-disagreement` + moves the proposal from `pendingProposals`
+ * to `unresolvedMetaDisagreements`; that read-side update is driven
+ * by every subscriber's local incremental `applyEvent` call on the
+ * broadcast — no additional wire frames are required.
+ */
+export const wsMarkMetaDisagreementPayloadSchema = z.object({
+  sessionId: z.string().uuid(),
+  expectedSequence: z.number().int().nonnegative(),
+  proposalId: z.string().uuid(),
+});
+
+export type WsMarkMetaDisagreementPayload = z.infer<typeof wsMarkMetaDisagreementPayloadSchema>;
+
+/**
+ * Server → client ack. Echoes the originating `mark-meta-disagreement`
+ * envelope's `id` via `inResponseTo`. Payload carries the appended
+ * `meta-disagreement-marked` event's `sequence` + `eventId` +
+ * `sessionId` so the client can correlate the ack against its
+ * in-flight mark request and update local sequence tracking before
+ * the matching `event-applied` broadcast arrives.
+ */
+export const metaDisagreementMarkedAckPayloadSchema = z.object({
+  sessionId: z.string().uuid(),
+  sequence: z.number().int().positive(),
+  eventId: z.string().uuid(),
+});
+
+export type MetaDisagreementMarkedAckPayload = z.infer<
+  typeof metaDisagreementMarkedAckPayloadSchema
+>;
+
 // -- event-applied payload -----------------------------------------
 //
 // `event-applied` (server → client): emitted by the broadcast surface
@@ -627,12 +732,14 @@ export const wsMessagePayloadSchemas: Record<WsMessageType, z.ZodTypeAny> = {
   propose: proposePayloadSchema,
   vote: wsVotePayloadSchema,
   commit: wsCommitPayloadSchema,
+  'mark-meta-disagreement': wsMarkMetaDisagreementPayloadSchema,
   // Group C — server → client ack/result payload schemas.
   subscribed: subscribedPayloadSchema,
   unsubscribed: unsubscribedPayloadSchema,
   proposed: proposedPayloadSchema,
   voted: votedPayloadSchema,
   committed: committedPayloadSchema,
+  'meta-disagreement-marked': metaDisagreementMarkedAckPayloadSchema,
   // The outer event envelope is checked; the per-kind payload inside
   // the event is `z.unknown()` per the schema in `events.ts` and is
   // re-validated by `validateEvent` on the receiving side. Server-side
@@ -657,12 +764,14 @@ export interface WsMessagePayloadMap {
   propose: ProposePayload;
   vote: WsVotePayload;
   commit: WsCommitPayload;
+  'mark-meta-disagreement': WsMarkMetaDisagreementPayload;
   // Group C — server → client ack/result payload types.
   subscribed: SubscribedPayload;
   unsubscribed: UnsubscribedPayload;
   proposed: ProposedPayload;
   voted: VotedPayload;
   committed: CommittedPayload;
+  'meta-disagreement-marked': MetaDisagreementMarkedAckPayload;
   'event-applied': EventAppliedPayload;
   error: ErrorPayload;
 }

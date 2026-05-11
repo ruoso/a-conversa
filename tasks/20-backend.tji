@@ -214,7 +214,9 @@ task backend "Backend" {
     task ws_meta_disagreement_message "Mark-as-meta-disagreement message" {
       effort 0.5d
       allocate team
-      depends !ws_message_envelope
+      complete 100
+      depends !ws_message_envelope, data_and_methodology.methodology_engine.meta_disagreement_logic
+      note "Refinement: tasks/refinements/backend/ws_meta_disagreement_message.md"
     }
     task ws_snapshot_message "Snapshot message" {
       effort 0.5d

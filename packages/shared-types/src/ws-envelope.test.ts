@@ -39,14 +39,17 @@ describe('wsMessageTypes vocabulary', () => {
     // came from `ws_propose_message`; `vote` (client → server) and
     // `voted` (server → client ack) came from `ws_vote_message`;
     // `commit` (client → server) and `committed` (server → client ack)
-    // came from `ws_commit_message`; `event-applied` (server → client
-    // broadcast) came from `ws_event_broadcast`; `error` (server →
-    // client canonical error envelope) came from `ws_error_message`.
-    // The vocabulary is laid out per the three-group union-extension
-    // convention documented in `ws-envelope.ts` (server-emitted /
-    // request / ack-or-result); future sibling message-type tasks
-    // append at the corresponding group's tail. The assertion pins the
-    // current state so an accidental widening is loud.
+    // came from `ws_commit_message`; `mark-meta-disagreement` (client
+    // → server) and `meta-disagreement-marked` (server → client ack)
+    // came from `ws_meta_disagreement_message`; `event-applied`
+    // (server → client broadcast) came from `ws_event_broadcast`;
+    // `error` (server → client canonical error envelope) came from
+    // `ws_error_message`. The vocabulary is laid out per the
+    // three-group union-extension convention documented in
+    // `ws-envelope.ts` (server-emitted / request / ack-or-result);
+    // future sibling message-type tasks append at the corresponding
+    // group's tail. The assertion pins the current state so an
+    // accidental widening is loud.
     expect([...wsMessageTypes]).toEqual([
       'hello',
       'subscribe',
@@ -54,11 +57,13 @@ describe('wsMessageTypes vocabulary', () => {
       'propose',
       'vote',
       'commit',
+      'mark-meta-disagreement',
       'subscribed',
       'unsubscribed',
       'proposed',
       'voted',
       'committed',
+      'meta-disagreement-marked',
       'event-applied',
       'error',
     ]);

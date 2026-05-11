@@ -31,6 +31,7 @@ import fp from 'fastify-plugin';
 import { getDefaultPool, type DbPool } from '../../db.js';
 
 import { registerCommitHandlers } from './commit.js';
+import { registerMarkMetaDisagreementHandlers } from './meta-disagreement.js';
 import { registerProposeHandlers } from './propose.js';
 import { registerSubscribeHandlers } from './subscribe.js';
 import { registerVoteHandlers } from './vote.js';
@@ -50,6 +51,12 @@ export type { VoteHandlerOptions } from './vote.js';
 
 export { buildCommitHandler, registerCommitHandlers } from './commit.js';
 export type { CommitHandlerOptions } from './commit.js';
+
+export {
+  buildMarkMetaDisagreementHandler,
+  registerMarkMetaDisagreementHandlers,
+} from './meta-disagreement.js';
+export type { MarkMetaDisagreementHandlerOptions } from './meta-disagreement.js';
 
 /**
  * Options accepted by `wsHandlersPlugin`. Production callers pass `{}`
@@ -133,6 +140,24 @@ const wsHandlersPluginAsync: FastifyPluginAsync<WsHandlersOptions> = (
   // (`unanimous-agree-required`) to the methodology engine's
   // `commitHandler`.
   registerCommitHandlers(app.wsDispatcher, {
+    get pool() {
+      return ensurePool();
+    },
+    registry: app.wsSubscriptions,
+    broadcast: app.wsBroadcast,
+    log: app.log,
+  });
+
+  // Register the mark-meta-disagreement handler. Structurally
+  // identical to the commit registration — same gate stack +
+  // dual-signal contract + dispatcher-seam error path. The handler
+  // delegates moderator-only authority (`not-a-moderator`),
+  // proposal-state checks (`proposal-already-committed` /
+  // `proposal-already-meta-disagreement`), the methodology-exhaustion
+  // gate (`methodology-not-exhausted`), and the structural-sub-kind
+  // boundary (`illegal-state-transition`) to the methodology engine's
+  // `markMetaDisagreementHandler`.
+  registerMarkMetaDisagreementHandlers(app.wsDispatcher, {
     get pool() {
       return ensurePool();
     },
