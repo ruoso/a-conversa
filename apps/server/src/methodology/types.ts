@@ -191,7 +191,21 @@ export type RejectionReason =
   // Methodology-flow — owned by sibling tasks.
   | 'inapplicable-to-facet'
   | 'illegal-state-transition'
-  | 'methodology-not-exhausted';
+  | 'methodology-not-exhausted'
+  // Participant-assignment specific — owned by
+  // `backend.session_management.participant_assignment`. The four codes
+  // cover the failure modes of `POST /sessions/:id/participants` (the
+  // role slot is occupied; the user already holds an active role; the
+  // userId in the body doesn't resolve to a non-deleted user) and
+  // `DELETE /sessions/:id/participants/:userId` (the active participant
+  // row is the moderator — the host is bound to the session for its
+  // lifetime and cannot be removed via this endpoint). See
+  // `tasks/refinements/backend/participant_assignment.md` for status-
+  // mapping rationale.
+  | 'role-already-filled'
+  | 'user-already-joined'
+  | 'user-not-found'
+  | 'cannot-remove-moderator';
 
 // ---------------------------------------------------------------
 // `RequireResult<T>` — the discriminated result shape returned by

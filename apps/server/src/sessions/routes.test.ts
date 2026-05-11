@@ -116,8 +116,18 @@ interface SessionEventRow {
 }
 
 interface SessionParticipantRow {
+  // Per-row shape mirroring the `session_participants` table. The
+  // create-session amendment (Option A — implicit moderator) writes a
+  // row here; the participant-assignment endpoints both read and
+  // write here. `id` / `joined_at` / `left_at` are nullable in the
+  // test interface so legacy seeders (the list-endpoint suite's
+  // shorthand) that only stamp `session_id` + `user_id` keep working.
   session_id: string;
   user_id: string;
+  id?: string;
+  role?: string;
+  joined_at?: Date;
+  left_at?: Date | null;
 }
 
 interface MemoryStore {
@@ -167,9 +177,16 @@ function makeMemoryPool(initialUsers: UserRow[]): {
   };
 
   let nextSessionId = 1;
+  let nextParticipantId = 1;
   const synthesizeUuid = (n: number): string => {
     const hex = n.toString(16).padStart(12, '0');
     return `00000000-0000-4000-8000-${hex}`;
+  };
+  const synthesizeParticipantUuid = (n: number): string => {
+    // Distinct UUID space from sessions so a stray cross-reference
+    // fails loudly. Same shape (v4-like) as `synthesizeUuid`.
+    const hex = n.toString(16).padStart(12, '0');
+    return `00000000-0000-4000-9000-${hex}`;
   };
 
   function runQuery<TRow extends Record<string, unknown>>(
@@ -204,6 +221,88 @@ function makeMemoryPool(initialUsers: UserRow[]): {
       };
       store.sessions.push(row);
       return Promise.resolve({ rows: [row] as unknown as TRow[] });
+    }
+    if (text.includes('INSERT INTO session_participants')) {
+      // The session-participants INSERT — covers both the create-
+      // session amendment (host as moderator, role literal 'moderator'
+      // in the SQL) and the participant-assignment POST endpoint (role
+      // supplied via $3). We disambiguate by checking the column-list
+      // shape: if the SQL has three placeholders ($1,$2,$3) the third
+      // is the role; otherwise the role is the literal 'moderator'.
+      const id = synthesizeParticipantUuid(nextParticipantId++);
+      const sessionId = p[0] as string;
+      const userId = p[1] as string;
+      const role = text.includes('$3') ? (p[2] as string) : 'moderator';
+      const row: SessionParticipantRow = {
+        id,
+        session_id: sessionId,
+        user_id: userId,
+        role,
+        joined_at: new Date('2026-05-10T12:00:00.500Z'),
+        left_at: null,
+      };
+      store.participants.push(row);
+      return Promise.resolve({ rows: [row] as unknown as TRow[] });
+    }
+    if (
+      text.includes('FROM session_participants') &&
+      text.includes('WHERE session_id = $1') &&
+      text.includes('role = $2') &&
+      text.includes('left_at IS NULL')
+    ) {
+      // The role-availability pre-check from the assign endpoint.
+      const targetSessionId = p[0] as string;
+      const targetRole = p[1] as string;
+      const matches = store.participants.filter(
+        (sp) =>
+          sp.session_id === targetSessionId &&
+          sp.role === targetRole &&
+          (sp.left_at === null || sp.left_at === undefined),
+      );
+      return Promise.resolve({
+        rows: matches.map((sp) => ({ id: sp.id })) as unknown as TRow[],
+      });
+    }
+    if (
+      text.includes('FROM session_participants') &&
+      text.includes('WHERE session_id = $1') &&
+      text.includes('user_id = $2') &&
+      text.includes('left_at IS NULL')
+    ) {
+      // The user-availability pre-check (assign) and the
+      // active-participant lookup (remove) — both share the same
+      // WHERE shape. The remove-endpoint asks for the full row;
+      // the assign-endpoint only checks length. Returning the full
+      // row covers both since the assign-endpoint's `LIMIT 1`
+      // truncates the test fixture to ≤1 row anyway.
+      const targetSessionId = p[0] as string;
+      const targetUserId = p[1] as string;
+      const matches = store.participants.filter(
+        (sp) =>
+          sp.session_id === targetSessionId &&
+          sp.user_id === targetUserId &&
+          (sp.left_at === null || sp.left_at === undefined),
+      );
+      return Promise.resolve({
+        rows: matches as unknown as TRow[],
+      });
+    }
+    if (text.includes('UPDATE session_participants') && text.includes('SET left_at = NOW()')) {
+      // The participant-DELETE UPDATE. Flip `left_at` on the
+      // matching row to a deterministic timestamp; RETURNING
+      // surfaces the post-update row.
+      const targetParticipantId = p[0] as string;
+      const idx = store.participants.findIndex((sp) => sp.id === targetParticipantId);
+      if (idx < 0) {
+        return Promise.resolve({ rows: [] as TRow[] });
+      }
+      const original = store.participants[idx] as SessionParticipantRow;
+      const updated: SessionParticipantRow = {
+        ...original,
+        left_at: new Date('2026-05-10T12:00:02.000Z'),
+      };
+      store.participants[idx] = updated;
+      return Promise.resolve({ rows: [updated] as unknown as TRow[] });
     }
     if (text.includes('INSERT INTO session_events')) {
       const [id, sessionId, sequence, kind, actor, payloadJson] = p as [
@@ -424,7 +523,12 @@ describe('POST /sessions — successful creation', () => {
     expect(body.endedAt).toBeNull();
   });
 
-  it('writes BOTH the sessions row AND the session-created event atomically', async () => {
+  it('writes the sessions row, the session-created event, the participant-joined event, and the moderator participant row atomically', async () => {
+    // Per the `participant_assignment` refinement's Option A — the
+    // create-session transaction now writes four rows in a single
+    // BEGIN/COMMIT: the sessions row, the session-created event at
+    // sequence=1, the session_participants row for the host as
+    // moderator, AND the participant-joined event at sequence=2.
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'POST',
@@ -441,23 +545,39 @@ describe('POST /sessions — successful creation', () => {
     expect(sessionRow?.privacy).toBe('private');
     expect(sessionRow?.topic).toBe('A debate');
 
-    // session_events row landed at sequence=1 with the canonical
-    // kind and a payload that mirrors the row's snake_case columns.
-    expect(built.store.events).toHaveLength(1);
-    const eventRow = built.store.events[0];
-    expect(eventRow?.session_id).toBe(sessionRow?.id);
-    expect(eventRow?.sequence).toBe(1);
-    expect(eventRow?.kind).toBe('session-created');
-    expect(eventRow?.actor).toBe(ALICE_ID);
-    const payload = eventRow?.payload as Record<string, unknown>;
-    expect(payload?.['host_user_id']).toBe(ALICE_ID);
-    expect(payload?.['privacy']).toBe('private');
-    expect(payload?.['topic']).toBe('A debate');
-    expect(typeof payload?.['created_at']).toBe('string');
+    // Two session_events rows: session-created at sequence=1 and
+    // participant-joined (for the host as moderator) at sequence=2.
+    expect(built.store.events).toHaveLength(2);
+    const createdEvent = built.store.events.find((e) => e.kind === 'session-created');
+    expect(createdEvent?.session_id).toBe(sessionRow?.id);
+    expect(createdEvent?.sequence).toBe(1);
+    expect(createdEvent?.actor).toBe(ALICE_ID);
+    const createdPayload = createdEvent?.payload as Record<string, unknown>;
+    expect(createdPayload?.['host_user_id']).toBe(ALICE_ID);
+    expect(createdPayload?.['privacy']).toBe('private');
+    expect(createdPayload?.['topic']).toBe('A debate');
+    expect(typeof createdPayload?.['created_at']).toBe('string');
 
-    // Transaction shape: BEGIN, then the two inserts (in any order
-    // the SQL surface allows; the trace's BEGIN→COMMIT bookends are
-    // what we pin), then COMMIT. NO ROLLBACK.
+    const joinedEvent = built.store.events.find((e) => e.kind === 'participant-joined');
+    expect(joinedEvent?.session_id).toBe(sessionRow?.id);
+    expect(joinedEvent?.sequence).toBe(2);
+    expect(joinedEvent?.actor).toBe(ALICE_ID);
+    const joinedPayload = joinedEvent?.payload as Record<string, unknown>;
+    expect(joinedPayload?.['user_id']).toBe(ALICE_ID);
+    expect(joinedPayload?.['role']).toBe('moderator');
+    expect(joinedPayload?.['screen_name']).toBe('alice');
+    expect(typeof joinedPayload?.['joined_at']).toBe('string');
+
+    // Exactly one session_participants row: the host as moderator.
+    expect(built.store.participants).toHaveLength(1);
+    const participantRow = built.store.participants[0];
+    expect(participantRow?.session_id).toBe(sessionRow?.id);
+    expect(participantRow?.user_id).toBe(ALICE_ID);
+    expect(participantRow?.role).toBe('moderator');
+    expect(participantRow?.left_at ?? null).toBeNull();
+
+    // Transaction shape: BEGIN, the four writes, then COMMIT. NO
+    // ROLLBACK on the success path.
     expect(built.store.trace[0]).toBe('BEGIN');
     expect(built.store.trace[built.store.trace.length - 1]).toBe('COMMIT');
     expect(built.store.trace).not.toContain('ROLLBACK');
@@ -475,7 +595,8 @@ describe('POST /sessions — successful creation', () => {
     const body = response.json<{ privacy?: string }>();
     expect(body.privacy).toBe('public');
     expect(built.store.sessions[0]?.privacy).toBe('public');
-    expect(built.store.events[0]?.payload?.['privacy']).toBe('public');
+    const createdEvent = built.store.events.find((e) => e.kind === 'session-created');
+    expect(createdEvent?.payload?.['privacy']).toBe('public');
   });
 });
 
@@ -1794,5 +1915,587 @@ describe('PATCH /sessions/:id/privacy — host toggles session privacy', () => {
     // No write side-effects.
     const sessionAfter = built.store.sessions.find((s) => s.id === PUBLIC_ACTIVE.id);
     expect(sessionAfter?.privacy).toBe('public');
+  });
+});
+
+// =============================================================
+// POST /sessions/:id/participants — host-only debater assignment
+// + DELETE /sessions/:id/participants/:userId — host or self removal
+// =============================================================
+//
+// Refinement: tasks/refinements/backend/participant_assignment.md.
+//
+// Coverage (12 cases):
+//   POST cases:
+//     1. Host assigns debater-A → 200 + new participants row + event
+//        at next sequence.
+//     2. Body role='moderator' → 400 (schema enum rejection).
+//     3. Role already filled → 409 role-already-filled.
+//     4. User already an active participant → 409 user-already-joined.
+//     5. Non-host caller → 403 not-a-moderator (no writes; ROLLBACK).
+//     6. Unknown userId → 404 user-not-found.
+//     7. Ended session → 409 session-already-ended.
+//   DELETE cases:
+//     8. Host removes a debater → 200 + UPDATE left_at + event.
+//     9. Participant removes themselves → 200.
+//    10. Non-host non-self caller → 403 not-a-moderator.
+//    11. Host tries to remove themselves (moderator) → 403
+//        cannot-remove-moderator (the host is bound to the session
+//        for its lifetime; the refinement chose 403 as the
+//        authority-failure mapping).
+//    12. User not currently in session → 404 not-found.
+
+describe('POST /sessions/:id/participants — host-only debater assignment', () => {
+  // Seed helper — same shape as the sibling suites; adds optional
+  // pre-existing participant rows so the conflict scenarios (role
+  // already filled / user already an active participant) can start
+  // from a populated table.
+  async function buildWithSeed(opts: {
+    users: UserRow[];
+    sessions: SessionRow[];
+    participants?: SessionParticipantRow[];
+    events?: SessionEventRow[];
+  }): Promise<BuiltApp> {
+    const built = await buildApp({ users: opts.users });
+    built.store.sessions.push(...opts.sessions);
+    if (opts.participants !== undefined) {
+      built.store.participants.push(...opts.participants);
+    }
+    if (opts.events !== undefined) {
+      built.store.events.push(...opts.events);
+    }
+    return built;
+  }
+
+  let built: BuiltApp | undefined;
+  afterEach(async () => {
+    if (built !== undefined) {
+      await built.app.close();
+      built = undefined;
+    }
+  });
+
+  // Reusable fixtures — Alice is the host (and the implicit moderator
+  // from the create-session amendment); Ben is the user being invited
+  // to a debater seat; Carol is a third party for the "two debaters
+  // already assigned" scenario.
+  const CAROL_ID = '33333333-3333-4333-8333-333333333333';
+
+  const SESSION_ID = '00000000-0000-4000-8000-1111pppp0001'.replace('pppp', 'aaaa');
+  const PUBLIC_ACTIVE: SessionRow = {
+    id: SESSION_ID,
+    host_user_id: ALICE_ID,
+    privacy: 'public',
+    topic: 'A debate',
+    created_at: new Date('2026-05-09T10:00:00.000Z'),
+    ended_at: null,
+  };
+  const PUBLIC_ENDED: SessionRow = {
+    id: '00000000-0000-4000-8000-1111aaaa0002',
+    host_user_id: ALICE_ID,
+    privacy: 'public',
+    topic: 'An ended debate',
+    created_at: new Date('2026-05-08T10:00:00.000Z'),
+    ended_at: new Date('2026-05-08T11:00:00.000Z'),
+  };
+
+  // The host's pre-existing moderator participant + session-created
+  // and participant-joined events. Mirrors what the create-session
+  // transaction would have produced (post-amendment).
+  const MODERATOR_PARTICIPANT: SessionParticipantRow = {
+    id: '00000000-0000-4000-9000-100000000001',
+    session_id: SESSION_ID,
+    user_id: ALICE_ID,
+    role: 'moderator',
+    joined_at: new Date('2026-05-09T10:00:00.001Z'),
+    left_at: null,
+  };
+  const SESSION_CREATED_EVENT: SessionEventRow = {
+    id: '99999999-9999-4999-8999-999999999001',
+    session_id: SESSION_ID,
+    sequence: 1,
+    kind: 'session-created',
+    actor: ALICE_ID,
+    payload: {
+      host_user_id: ALICE_ID,
+      privacy: 'public',
+      topic: 'A debate',
+      created_at: '2026-05-09T10:00:00.000Z',
+    },
+    created_at: new Date('2026-05-09T10:00:00.001Z'),
+  };
+  const PARTICIPANT_JOINED_EVENT: SessionEventRow = {
+    id: '99999999-9999-4999-8999-999999999002',
+    session_id: SESSION_ID,
+    sequence: 2,
+    kind: 'participant-joined',
+    actor: ALICE_ID,
+    payload: {
+      user_id: ALICE_ID,
+      role: 'moderator',
+      screen_name: 'alice',
+      joined_at: '2026-05-09T10:00:00.001Z',
+    },
+    created_at: new Date('2026-05-09T10:00:00.002Z'),
+  };
+
+  function aliceBenSeed(): {
+    users: UserRow[];
+    sessions: SessionRow[];
+    participants: SessionParticipantRow[];
+    events: SessionEventRow[];
+  } {
+    return {
+      users: [
+        { id: ALICE_ID, oauth_subject: 'authelia:alice', screen_name: 'alice', deleted_at: null },
+        { id: BEN_ID, oauth_subject: 'authelia:ben', screen_name: 'ben', deleted_at: null },
+      ],
+      sessions: [PUBLIC_ACTIVE],
+      participants: [MODERATOR_PARTICIPANT],
+      events: [SESSION_CREATED_EVENT, PARTICIPANT_JOINED_EVENT],
+    };
+  }
+
+  it('returns 200 + new participant row + participant-joined event when the host assigns debater-A', async () => {
+    built = await buildWithSeed(aliceBenSeed());
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'POST',
+      url: `/sessions/${SESSION_ID}/participants`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+      payload: { userId: BEN_ID, role: 'debater-A' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{
+      id?: string;
+      sessionId?: string;
+      userId?: string;
+      role?: string;
+      joinedAt?: string;
+      leftAt?: string | null;
+    }>();
+    expect(typeof body.id).toBe('string');
+    expect(body.sessionId).toBe(SESSION_ID);
+    expect(body.userId).toBe(BEN_ID);
+    expect(body.role).toBe('debater-A');
+    expect(typeof body.joinedAt).toBe('string');
+    expect(body.leftAt).toBeNull();
+
+    // Two participants now in the session: Alice as moderator + Ben as
+    // debater-A.
+    const activeParticipants = built.store.participants.filter(
+      (p) => p.session_id === SESSION_ID && (p.left_at === null || p.left_at === undefined),
+    );
+    expect(activeParticipants).toHaveLength(2);
+    const benRow = activeParticipants.find((p) => p.user_id === BEN_ID);
+    expect(benRow?.role).toBe('debater-A');
+
+    // The participant-joined event lands at sequence=3 (sequence=1 is
+    // session-created, sequence=2 is the host's participant-joined from
+    // the create-session amendment).
+    const benJoinedEvent = built.store.events.find(
+      (e) => e.kind === 'participant-joined' && e.payload?.['user_id'] === BEN_ID,
+    );
+    expect(benJoinedEvent).toBeDefined();
+    expect(benJoinedEvent?.sequence).toBe(3);
+    expect(benJoinedEvent?.actor).toBe(ALICE_ID);
+    const payload = benJoinedEvent?.payload as Record<string, unknown>;
+    expect(payload['role']).toBe('debater-A');
+    expect(payload['screen_name']).toBe('ben');
+    expect(typeof payload['joined_at']).toBe('string');
+
+    // Transaction shape — no ROLLBACK.
+    expect(built.store.trace[0]).toBe('BEGIN');
+    expect(built.store.trace[built.store.trace.length - 1]).toBe('COMMIT');
+    expect(built.store.trace).not.toContain('ROLLBACK');
+  });
+
+  it('returns 400 validation-failed when the body role is "moderator"', async () => {
+    built = await buildWithSeed(aliceBenSeed());
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'POST',
+      url: `/sessions/${SESSION_ID}/participants`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+      payload: { userId: BEN_ID, role: 'moderator' },
+    });
+    expect(response.statusCode).toBe(400);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('validation-failed');
+
+    // No new participant rows or events landed.
+    expect(built.store.participants.filter((p) => p.user_id === BEN_ID)).toHaveLength(0);
+  });
+
+  it('returns 409 role-already-filled when debater-A is already taken by another active user', async () => {
+    const seed = aliceBenSeed();
+    // Carol already holds debater-A.
+    seed.users.push({
+      id: CAROL_ID,
+      oauth_subject: 'authelia:carol',
+      screen_name: 'carol',
+      deleted_at: null,
+    });
+    seed.participants.push({
+      id: '00000000-0000-4000-9000-100000000002',
+      session_id: SESSION_ID,
+      user_id: CAROL_ID,
+      role: 'debater-A',
+      joined_at: new Date('2026-05-09T10:00:01.000Z'),
+      left_at: null,
+    });
+    built = await buildWithSeed(seed);
+
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'POST',
+      url: `/sessions/${SESSION_ID}/participants`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+      payload: { userId: BEN_ID, role: 'debater-A' },
+    });
+    expect(response.statusCode).toBe(409);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('role-already-filled');
+
+    // Ben was NOT inserted; transaction rolled back.
+    expect(built.store.participants.filter((p) => p.user_id === BEN_ID)).toHaveLength(0);
+    expect(built.store.trace).toContain('ROLLBACK');
+  });
+
+  it('returns 409 user-already-joined when the user is already an active participant', async () => {
+    const seed = aliceBenSeed();
+    // Ben already holds debater-A; the new attempt would assign him
+    // debater-B — same session, different role; the partial unique
+    // user index forbids two active rows for the same user.
+    seed.participants.push({
+      id: '00000000-0000-4000-9000-100000000003',
+      session_id: SESSION_ID,
+      user_id: BEN_ID,
+      role: 'debater-A',
+      joined_at: new Date('2026-05-09T10:00:01.000Z'),
+      left_at: null,
+    });
+    built = await buildWithSeed(seed);
+
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'POST',
+      url: `/sessions/${SESSION_ID}/participants`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+      payload: { userId: BEN_ID, role: 'debater-B' },
+    });
+    expect(response.statusCode).toBe(409);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('user-already-joined');
+
+    // No new row; transaction rolled back.
+    expect(
+      built.store.participants.filter((p) => p.user_id === BEN_ID && p.role === 'debater-B'),
+    ).toHaveLength(0);
+    expect(built.store.trace).toContain('ROLLBACK');
+  });
+
+  it('returns 403 not-a-moderator when a non-host caller tries to assign a participant', async () => {
+    built = await buildWithSeed(aliceBenSeed());
+    // Ben is visible (it's a public session) but is NOT the host —
+    // 403 fires.
+    const token = await signSessionToken({ sub: BEN_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'POST',
+      url: `/sessions/${SESSION_ID}/participants`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+      payload: { userId: CAROL_ID, role: 'debater-A' },
+    });
+    expect(response.statusCode).toBe(403);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('not-a-moderator');
+    expect(built.store.trace).toContain('ROLLBACK');
+  });
+
+  it('returns 404 user-not-found when the body userId does not resolve to a non-deleted users row', async () => {
+    built = await buildWithSeed(aliceBenSeed());
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const unknownUserId = '00000000-0000-4000-8000-ffffffff0099';
+    const response = await built.app.inject({
+      method: 'POST',
+      url: `/sessions/${SESSION_ID}/participants`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+      payload: { userId: unknownUserId, role: 'debater-A' },
+    });
+    expect(response.statusCode).toBe(404);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('user-not-found');
+    expect(built.store.trace).toContain('ROLLBACK');
+  });
+
+  it('returns 409 session-already-ended when the session has ended', async () => {
+    const seed = aliceBenSeed();
+    seed.sessions.push(PUBLIC_ENDED);
+    built = await buildWithSeed(seed);
+
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'POST',
+      url: `/sessions/${PUBLIC_ENDED.id}/participants`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+      payload: { userId: BEN_ID, role: 'debater-A' },
+    });
+    expect(response.statusCode).toBe(409);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('session-already-ended');
+    expect(built.store.trace).toContain('ROLLBACK');
+  });
+});
+
+describe('DELETE /sessions/:id/participants/:userId — host or self removal', () => {
+  async function buildWithSeed(opts: {
+    users: UserRow[];
+    sessions: SessionRow[];
+    participants?: SessionParticipantRow[];
+    events?: SessionEventRow[];
+  }): Promise<BuiltApp> {
+    const built = await buildApp({ users: opts.users });
+    built.store.sessions.push(...opts.sessions);
+    if (opts.participants !== undefined) {
+      built.store.participants.push(...opts.participants);
+    }
+    if (opts.events !== undefined) {
+      built.store.events.push(...opts.events);
+    }
+    return built;
+  }
+
+  let built: BuiltApp | undefined;
+  afterEach(async () => {
+    if (built !== undefined) {
+      await built.app.close();
+      built = undefined;
+    }
+  });
+
+  const SESSION_ID = '00000000-0000-4000-8000-2222aaaa0001';
+  const PUBLIC_ACTIVE: SessionRow = {
+    id: SESSION_ID,
+    host_user_id: ALICE_ID,
+    privacy: 'public',
+    topic: 'A debate',
+    created_at: new Date('2026-05-09T10:00:00.000Z'),
+    ended_at: null,
+  };
+  const MODERATOR_PARTICIPANT: SessionParticipantRow = {
+    id: '00000000-0000-4000-9000-200000000001',
+    session_id: SESSION_ID,
+    user_id: ALICE_ID,
+    role: 'moderator',
+    joined_at: new Date('2026-05-09T10:00:00.001Z'),
+    left_at: null,
+  };
+  const BEN_DEBATER: SessionParticipantRow = {
+    id: '00000000-0000-4000-9000-200000000002',
+    session_id: SESSION_ID,
+    user_id: BEN_ID,
+    role: 'debater-A',
+    joined_at: new Date('2026-05-09T10:00:01.000Z'),
+    left_at: null,
+  };
+  const SESSION_CREATED_EVENT: SessionEventRow = {
+    id: '88888888-8888-4888-8888-888888888001',
+    session_id: SESSION_ID,
+    sequence: 1,
+    kind: 'session-created',
+    actor: ALICE_ID,
+    payload: {
+      host_user_id: ALICE_ID,
+      privacy: 'public',
+      topic: 'A debate',
+      created_at: '2026-05-09T10:00:00.000Z',
+    },
+    created_at: new Date('2026-05-09T10:00:00.001Z'),
+  };
+  const HOST_JOINED_EVENT: SessionEventRow = {
+    id: '88888888-8888-4888-8888-888888888002',
+    session_id: SESSION_ID,
+    sequence: 2,
+    kind: 'participant-joined',
+    actor: ALICE_ID,
+    payload: {
+      user_id: ALICE_ID,
+      role: 'moderator',
+      screen_name: 'alice',
+      joined_at: '2026-05-09T10:00:00.001Z',
+    },
+    created_at: new Date('2026-05-09T10:00:00.002Z'),
+  };
+  const BEN_JOINED_EVENT: SessionEventRow = {
+    id: '88888888-8888-4888-8888-888888888003',
+    session_id: SESSION_ID,
+    sequence: 3,
+    kind: 'participant-joined',
+    actor: ALICE_ID,
+    payload: {
+      user_id: BEN_ID,
+      role: 'debater-A',
+      screen_name: 'ben',
+      joined_at: '2026-05-09T10:00:01.000Z',
+    },
+    created_at: new Date('2026-05-09T10:00:01.001Z'),
+  };
+
+  function aliceBenSeed(): {
+    users: UserRow[];
+    sessions: SessionRow[];
+    participants: SessionParticipantRow[];
+    events: SessionEventRow[];
+  } {
+    return {
+      users: [
+        { id: ALICE_ID, oauth_subject: 'authelia:alice', screen_name: 'alice', deleted_at: null },
+        { id: BEN_ID, oauth_subject: 'authelia:ben', screen_name: 'ben', deleted_at: null },
+      ],
+      sessions: [PUBLIC_ACTIVE],
+      participants: [MODERATOR_PARTICIPANT, BEN_DEBATER],
+      events: [SESSION_CREATED_EVENT, HOST_JOINED_EVENT, BEN_JOINED_EVENT],
+    };
+  }
+
+  it('returns 200 + the updated participant row with leftAt set when the host removes a debater', async () => {
+    built = await buildWithSeed(aliceBenSeed());
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'DELETE',
+      url: `/sessions/${SESSION_ID}/participants/${BEN_ID}`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{
+      id?: string;
+      userId?: string;
+      role?: string;
+      leftAt?: string | null;
+    }>();
+    expect(body.userId).toBe(BEN_ID);
+    expect(body.role).toBe('debater-A');
+    expect(typeof body.leftAt).toBe('string');
+
+    // The row's left_at is non-null in the in-memory store.
+    const benRow = built.store.participants.find(
+      (p) => p.session_id === SESSION_ID && p.user_id === BEN_ID,
+    );
+    expect(benRow?.left_at).not.toBeNull();
+
+    // A participant-left event landed at sequence=4 (sequence=3 was
+    // Ben's join).
+    const leftEvent = built.store.events.find((e) => e.kind === 'participant-left');
+    expect(leftEvent?.sequence).toBe(4);
+    expect(leftEvent?.actor).toBe(ALICE_ID);
+    const payload = leftEvent?.payload as Record<string, unknown>;
+    expect(payload['user_id']).toBe(BEN_ID);
+    expect(typeof payload['left_at']).toBe('string');
+
+    // Transaction shape — no ROLLBACK.
+    expect(built.store.trace[0]).toBe('BEGIN');
+    expect(built.store.trace[built.store.trace.length - 1]).toBe('COMMIT');
+    expect(built.store.trace).not.toContain('ROLLBACK');
+  });
+
+  it('returns 200 when the participant removes themselves', async () => {
+    built = await buildWithSeed(aliceBenSeed());
+    const token = await signSessionToken({ sub: BEN_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'DELETE',
+      url: `/sessions/${SESSION_ID}/participants/${BEN_ID}`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{ userId?: string; leftAt?: string | null }>();
+    expect(body.userId).toBe(BEN_ID);
+    expect(typeof body.leftAt).toBe('string');
+
+    const benRow = built.store.participants.find(
+      (p) => p.session_id === SESSION_ID && p.user_id === BEN_ID,
+    );
+    expect(benRow?.left_at).not.toBeNull();
+
+    // The actor on the event is the participant themselves (Ben), not
+    // the host.
+    const leftEvent = built.store.events.find((e) => e.kind === 'participant-left');
+    expect(leftEvent?.actor).toBe(BEN_ID);
+  });
+
+  it('returns 403 not-a-moderator when a non-host non-self caller tries to remove a participant', async () => {
+    // Carol is a third user, not the host, not the target. She can
+    // see the public session but cannot eject Ben.
+    const CAROL_ID = '33333333-3333-4333-8333-333333333333';
+    const seed = aliceBenSeed();
+    seed.users.push({
+      id: CAROL_ID,
+      oauth_subject: 'authelia:carol',
+      screen_name: 'carol',
+      deleted_at: null,
+    });
+    built = await buildWithSeed(seed);
+
+    const token = await signSessionToken({ sub: CAROL_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'DELETE',
+      url: `/sessions/${SESSION_ID}/participants/${BEN_ID}`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(403);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('not-a-moderator');
+
+    // Ben's row is unchanged.
+    const benRow = built.store.participants.find((p) => p.user_id === BEN_ID);
+    expect(benRow?.left_at ?? null).toBeNull();
+    expect(built.store.trace).toContain('ROLLBACK');
+  });
+
+  it('returns 403 cannot-remove-moderator when the host tries to remove themselves', async () => {
+    // The host IS the moderator at v1; this endpoint cannot eject
+    // them. Refinement decision: 403 (authority failure), not 422.
+    built = await buildWithSeed(aliceBenSeed());
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'DELETE',
+      url: `/sessions/${SESSION_ID}/participants/${ALICE_ID}`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(403);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('cannot-remove-moderator');
+
+    // The moderator row is unchanged.
+    const modRow = built.store.participants.find(
+      (p) => p.session_id === SESSION_ID && p.role === 'moderator',
+    );
+    expect(modRow?.left_at ?? null).toBeNull();
+    expect(built.store.trace).toContain('ROLLBACK');
+  });
+
+  it('returns 404 not-found when the user is not currently a participant', async () => {
+    // Carol exists as a user but is not a participant.
+    const CAROL_ID = '33333333-3333-4333-8333-333333333333';
+    const seed = aliceBenSeed();
+    seed.users.push({
+      id: CAROL_ID,
+      oauth_subject: 'authelia:carol',
+      screen_name: 'carol',
+      deleted_at: null,
+    });
+    built = await buildWithSeed(seed);
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'DELETE',
+      url: `/sessions/${SESSION_ID}/participants/${CAROL_ID}`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(404);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('not-found');
+    expect(built.store.trace).toContain('ROLLBACK');
   });
 });

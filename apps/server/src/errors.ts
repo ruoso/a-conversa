@@ -174,20 +174,34 @@ export function rejectedToApiError(rejection: RejectedValidationResult): ApiErro
 function statusCodeForRejection(reason: RejectionReason): number {
   switch (reason) {
     // 403 — authenticated but the role / relationship is wrong.
+    // `cannot-remove-moderator` (added by participant_assignment): the
+    // host/moderator is bound to the session for its lifetime and cannot
+    // be removed via the participant-DELETE endpoint.
     case 'not-a-moderator':
     case 'not-a-participant':
     case 'self-vote-not-allowed':
     case 'axiom-mark-not-self':
+    case 'cannot-remove-moderator':
       return 403;
     // 404 — referenced entity not found (or not visible to the caller).
+    // `user-not-found` (added by participant_assignment): the body's
+    // `userId` doesn't resolve to a non-deleted users row. 404 (not 400)
+    // because the UUID itself was well-formed; the failure is at the
+    // entity layer.
     case 'target-entity-not-found':
     case 'proposal-not-found':
+    case 'user-not-found':
       return 404;
     // 409 — request conflicts with current state (optimistic concurrency).
+    // `role-already-filled` / `user-already-joined` (added by
+    // participant_assignment): partial-unique-index conflicts on
+    // session_participants surfaced as typed 409s for client branching.
     case 'sequence-mismatch':
     case 'session-mismatch':
     case 'already-voted':
     case 'no-prior-agree':
+    case 'role-already-filled':
+    case 'user-already-joined':
       return 409;
     // 422 — well-formed but methodology state forbids this transition.
     case 'proposal-not-pending':

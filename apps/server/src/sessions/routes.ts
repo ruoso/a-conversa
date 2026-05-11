@@ -5,12 +5,15 @@
 //   - GET /sessions/:id — fetch a single session's metadata.
 //   - POST /sessions/:id/end — moderator marks a session as ended.
 //   - PATCH /sessions/:id/privacy — host toggles the session privacy.
+//   - POST /sessions/:id/participants — assign a debater participant (host-only).
+//   - DELETE /sessions/:id/participants/:userId — remove a participant (host or self).
 //
 // Refinements: tasks/refinements/backend/create_session_endpoint.md,
 //              tasks/refinements/backend/list_sessions_endpoint.md,
 //              tasks/refinements/backend/get_session_endpoint.md,
 //              tasks/refinements/backend/end_session_endpoint.md,
-//              tasks/refinements/backend/session_privacy_toggle.md
+//              tasks/refinements/backend/session_privacy_toggle.md,
+//              tasks/refinements/backend/participant_assignment.md
 // ADRs:        docs/adr/0020-postgres-write-path-locking-and-event-ordering.md,
 //              docs/adr/0021-event-envelope-discriminated-union-with-zod.md,
 //              docs/adr/0022-no-throwaway-verifications.md,
@@ -351,6 +354,84 @@ export const sessionListResponseRef = {
 } as const;
 
 /**
+ * Stable `$id` for the shared `SessionParticipantResponse` schema. The
+ * participant-assignment endpoints (`POST /sessions/:id/participants`
+ * and `DELETE /sessions/:id/participants/:userId`) reference this exact
+ * shape via `{ $ref: 'SessionParticipantResponse#' }`. Declared
+ * top-level so OpenAPI carries a single `components.schemas` entry
+ * both endpoints' documentation points at.
+ *
+ * Refinement: tasks/refinements/backend/participant_assignment.md.
+ */
+export const SESSION_PARTICIPANT_RESPONSE_SCHEMA_ID = 'SessionParticipantResponse';
+
+/**
+ * The canonical session-participant response shape. All fields
+ * camelCase per the platform's HTTP convention; the underlying
+ * `session_participants` row is snake_case + DB-typed timestamps and
+ * gets translated at the response boundary by
+ * `participantRowToResponse` below.
+ *
+ * `leftAt` is `string | null` — null while the participant is still in
+ * the session; populated with an ISO-8601 timestamp on a successful
+ * DELETE.
+ */
+export const sessionParticipantResponseSchema = {
+  $id: SESSION_PARTICIPANT_RESPONSE_SCHEMA_ID,
+  type: 'object',
+  required: ['id', 'sessionId', 'userId', 'role', 'joinedAt', 'leftAt'],
+  additionalProperties: false,
+  properties: {
+    id: {
+      type: 'string',
+      format: 'uuid',
+      description: 'Server-generated participant row id.',
+    },
+    sessionId: {
+      type: 'string',
+      format: 'uuid',
+      description: 'The session this participation row belongs to.',
+    },
+    userId: {
+      type: 'string',
+      format: 'uuid',
+      description: 'The user filling this participation slot.',
+    },
+    role: {
+      type: 'string',
+      enum: ['moderator', 'debater-A', 'debater-B'],
+      description:
+        'The role this participant holds in the session. Only `debater-A` and ' +
+        '`debater-B` can be assigned via `POST /sessions/:id/participants`; ' +
+        '`moderator` is reserved for the session host and assigned implicitly ' +
+        'at session creation.',
+    },
+    joinedAt: {
+      type: 'string',
+      format: 'date-time',
+      description: 'ISO-8601 timestamp the participation row was created.',
+    },
+    leftAt: {
+      type: ['string', 'null'],
+      format: 'date-time',
+      description:
+        'ISO-8601 timestamp the participant left the session; null while the ' +
+        'participant is still active.',
+    },
+  },
+} as const;
+
+/**
+ * The `$ref` participant-assignment endpoints use to point at the
+ * shared `SessionParticipantResponse` schema. Single source of truth
+ * for the response shape across `POST /sessions/:id/participants` and
+ * `DELETE /sessions/:id/participants/:userId`.
+ */
+export const sessionParticipantResponseRef = {
+  $ref: `${SESSION_PARTICIPANT_RESPONSE_SCHEMA_ID}#`,
+} as const;
+
+/**
  * Request body schema for `POST /sessions`. JSON Schema attached to
  * `schema.body`; Fastify's validator rejects malformed bodies with a
  * `validation` error that the centralized handler renders as the
@@ -431,6 +512,64 @@ const sessionPrivacyBodySchema = {
       description:
         "The desired session privacy. `'public'` allows cross-session reference; " +
         "`'private'` gates cross-session reference and audience-page authentication.",
+    },
+  },
+} as const;
+
+/**
+ * Request body schema for `POST /sessions/:id/participants`. JSON
+ * Schema attached to `schema.body`; Fastify's validator rejects
+ * malformed bodies with a `validation` error that the centralized
+ * handler renders as the canonical `validation-failed` envelope.
+ *
+ * The `role` enum **deliberately excludes `'moderator'`** — the
+ * moderator role is reserved for the session host and assigned
+ * implicitly at session creation (per Option A in
+ * `tasks/refinements/backend/participant_assignment.md`). A client
+ * that sends `role: 'moderator'` gets a clean 400
+ * `validation-failed` with an enum-mismatch issue from Ajv.
+ */
+const assignParticipantBodySchema = {
+  type: 'object',
+  required: ['userId', 'role'],
+  additionalProperties: false,
+  properties: {
+    userId: {
+      type: 'string',
+      format: 'uuid',
+      description: 'The user being invited to the session.',
+    },
+    role: {
+      type: 'string',
+      enum: ['debater-A', 'debater-B'],
+      description:
+        'The role the user fills. `moderator` is reserved for the session host ' +
+        'and assigned implicitly at session creation; it is NOT a valid value here.',
+    },
+  },
+} as const;
+
+/**
+ * Path-params schema for `DELETE /sessions/:id/participants/:userId`.
+ * JSON Schema attached to `schema.params`; Fastify's validator
+ * enforces UUID shape on both `:id` and `:userId` before the handler
+ * runs and rejects malformed UUIDs with a 400 `validation-failed`
+ * envelope.
+ */
+const sessionParticipantParamsSchema = {
+  type: 'object',
+  required: ['id', 'userId'],
+  additionalProperties: false,
+  properties: {
+    id: {
+      type: 'string',
+      format: 'uuid',
+      description: 'The session id (UUID).',
+    },
+    userId: {
+      type: 'string',
+      format: 'uuid',
+      description: 'The participating user id (UUID).',
     },
   },
 } as const;
@@ -607,6 +746,48 @@ export function sessionRowToResponse(row: SessionsInsertRow): {
 }
 
 /**
+ * Per-row shape returned from `session_participants` queries. Narrowed
+ * at the call site so the mapper doesn't need to know the full
+ * participants-table schema. The DB returns snake_case; camelCase
+ * translation happens at the response boundary.
+ */
+interface SessionParticipantsRow extends Record<string, unknown> {
+  readonly id: string;
+  readonly session_id: string;
+  readonly user_id: string;
+  readonly role: string;
+  readonly joined_at: Date | string;
+  readonly left_at: Date | string | null;
+}
+
+/**
+ * Map a `session_participants` row to the camelCase HTTP response
+ * shape with ISO-8601 string timestamps. Shared by
+ * `POST /sessions/:id/participants` and
+ * `DELETE /sessions/:id/participants/:userId` so the two endpoints
+ * return the same canonical shape (`SessionParticipantResponse`).
+ *
+ * Refinement: tasks/refinements/backend/participant_assignment.md.
+ */
+export function participantRowToResponse(row: SessionParticipantsRow): {
+  id: string;
+  sessionId: string;
+  userId: string;
+  role: string;
+  joinedAt: string;
+  leftAt: string | null;
+} {
+  return {
+    id: row.id,
+    sessionId: row.session_id,
+    userId: row.user_id,
+    role: row.role,
+    joinedAt: toIsoString(row.joined_at),
+    leftAt: row.left_at === null ? null : toIsoString(row.left_at),
+  };
+}
+
+/**
  * The plugin body. Wires the routes onto the parent scope (via
  * `fastify-plugin`'s skip-override marker) so the routes appear in
  * the generated OpenAPI document, the auth middleware decoration is
@@ -634,6 +815,16 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = (
   // `sessionListResponseRef` rather than redeclaring the wrapper.
   if (app.getSchema(SESSION_LIST_RESPONSE_SCHEMA_ID) === undefined) {
     app.addSchema(sessionListResponseSchema);
+  }
+
+  // Register the `SessionParticipantResponse` schema once per Fastify
+  // instance — same idempotence pattern. Both participant-assignment
+  // endpoints (`POST /sessions/:id/participants` and
+  // `DELETE /sessions/:id/participants/:userId`) reference it via
+  // `sessionParticipantResponseRef`; OpenAPI carries a single
+  // `components.schemas.SessionParticipantResponse` entry.
+  if (app.getSchema(SESSION_PARTICIPANT_RESPONSE_SCHEMA_ID) === undefined) {
+    app.addSchema(sessionParticipantResponseSchema);
   }
 
   // Lazy DB-pool resolution. The first request triggers
@@ -698,6 +889,7 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = (
         );
       }
       const hostUserId = auth.id;
+      const hostScreenName = auth.screenName;
 
       const body = request.body as { topic: string; privacy?: 'public' | 'private' };
       const topic = body.topic;
@@ -778,6 +970,77 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = (
             envelope.kind,
             envelope.actor,
             JSON.stringify(envelope.payload),
+          ],
+        );
+
+        // 4. Implicit-moderator join (Option A per
+        //    `tasks/refinements/backend/participant_assignment.md`).
+        //    The host is structurally the moderator of the session for
+        //    its v1 lifetime; emitting the join here means the
+        //    methodology engine's `currentParticipants(projection)`
+        //    sees a non-empty set on every active session from the
+        //    moment after this transaction commits. INSERT the
+        //    `session_participants` row; the DB fills `id`,
+        //    `joined_at`, `left_at` (NULL). RETURNING surfaces the
+        //    `joined_at` for the event payload so the row and the
+        //    event share a single canonical timestamp.
+        const participantInsert = await client.query<{
+          id: string;
+          joined_at: Date | string;
+        }>(
+          `INSERT INTO session_participants (session_id, user_id, role)
+           VALUES ($1, $2, 'moderator')
+           RETURNING id, joined_at`,
+          [row.id, hostUserId],
+        );
+        const participantRow = participantInsert.rows[0];
+        if (participantRow === undefined) {
+          // Defensive — RETURNING surfaces every inserted row, and
+          // the INSERT itself can only fail by violating a constraint
+          // (which would have surfaced as a query-level throw). A
+          // surfaced 500 here means a wiring regression.
+          throw new ApiError(500, 'internal-error', 'session_participants insert returned no row');
+        }
+        const joinedAtIso = toIsoString(participantRow.joined_at);
+
+        // 5. Build the `participant-joined` envelope for the host at
+        //    sequence=2 (the second event of the freshly-created
+        //    session; `session-created` sits at sequence=1). The
+        //    `actor` is the host (they "joined themselves" by
+        //    creating the session). The payload mirrors
+        //    `participantJoinedPayloadSchema` from shared-types
+        //    verbatim — same snake_case discipline as `session-
+        //    created`. `screen_name` comes from
+        //    `request.authUser.screenName` which the auth middleware
+        //    populated alongside the user id; no extra round trip.
+        const joinEventId = randomUUID();
+        const joinEventCreatedAtIso = new Date(nowFn()).toISOString();
+        const joinEnvelope = {
+          id: joinEventId,
+          sessionId: row.id,
+          sequence: 2,
+          kind: 'participant-joined' as const,
+          actor: hostUserId,
+          payload: {
+            user_id: hostUserId,
+            role: 'moderator' as const,
+            screen_name: hostScreenName,
+            joined_at: joinedAtIso,
+          },
+          createdAt: joinEventCreatedAtIso,
+        };
+        validateEvent(joinEnvelope);
+        await client.query(
+          `INSERT INTO session_events
+             (id, session_id, sequence, kind, actor, payload)
+           VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
+          [
+            joinEnvelope.id,
+            joinEnvelope.sessionId,
+            joinEnvelope.sequence,
+            joinEnvelope.kind,
+            joinEnvelope.actor,
+            JSON.stringify(joinEnvelope.payload),
           ],
         );
 
@@ -1325,6 +1588,506 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = (
       }
 
       return reply.code(200).send(sessionRowToResponse(updated));
+    },
+  );
+
+  // ----------------------------------------------------------------
+  // POST /sessions/:id/participants — host-only debater assignment.
+  // ----------------------------------------------------------------
+  //
+  // The host invites a user into the session as a debater (`debater-A`
+  // or `debater-B`). The `moderator` role is bound to the host at
+  // session creation (per Option A — see
+  // `tasks/refinements/backend/participant_assignment.md`); the body
+  // schema's enum rejects `'moderator'` with 400 before the handler
+  // even runs.
+  //
+  // The transaction:
+  //   1. Visibility-gated SELECT ... FOR UPDATE on `sessions` (mirrors
+  //      the end-session endpoint's WHERE clause).
+  //   2. Authority: caller must equal `host_user_id` else 403.
+  //   3. Lifecycle: session must not be ended else 409.
+  //   4. Resolve the body's userId to a `users` row (existence +
+  //      screen_name in one query). Zero rows → 404 `user-not-found`.
+  //   5. Check the role isn't already filled (partial unique index
+  //      `(session_id, role) WHERE left_at IS NULL`). Filled → 409
+  //      `role-already-filled`.
+  //   6. Check the user isn't already an active participant (partial
+  //      unique index `(session_id, user_id) WHERE left_at IS NULL`).
+  //      Active → 409 `user-already-joined`.
+  //   7. INSERT the `session_participants` row RETURNING the full row
+  //      shape (so the response and event payload share one timestamp).
+  //   8. MAX(sequence)+1 — application-managed monotonic allocator
+  //      inside the transaction (ADR 0020).
+  //   9. Build the `participant-joined` envelope, run `validateEvent`,
+  //      INSERT the event row.
+  //  10. COMMIT and return 200 + the camelCase participant row.
+  app.post(
+    '/sessions/:id/participants',
+    {
+      preHandler: app.authenticate,
+      schema: {
+        tags: ['sessions'],
+        summary: 'Assign a debater participant to a session (host-only)',
+        description:
+          'Invites a user into the session as `debater-A` or `debater-B`. The host ' +
+          '(the moderator at v1) is the only caller authorized to assign debaters. ' +
+          'The moderator role is reserved for the session host and assigned ' +
+          'implicitly at session creation — sending `role: "moderator"` here returns ' +
+          '400 `validation-failed`. The handler INSERTs a `session_participants` ' +
+          'row AND emits a `participant-joined` event into `session_events` at the ' +
+          'next available sequence, in a single transaction.\n\n' +
+          'Visibility-then-authority-then-state ordering: invisible private sessions ' +
+          'return 404 `not-found` BEFORE any authority check (existence-non-leak). ' +
+          'Visible-but-not-host returns 403 `not-a-moderator`. An ended session ' +
+          'returns 409 `session-already-ended`. An unknown userId returns 404 ' +
+          '`user-not-found`. A role already filled returns 409 `role-already-filled`. ' +
+          'A user already holding an active role returns 409 `user-already-joined`.\n\n' +
+          'Returns 401 `auth-required` when no valid session cookie is present.',
+        security: [{ cookieAuth: [] }],
+        params: sessionIdParamsSchema,
+        body: assignParticipantBodySchema,
+        response: {
+          200: sessionParticipantResponseRef,
+          '4xx': errorEnvelopeRef,
+          '5xx': errorEnvelopeRef,
+        },
+      },
+    },
+    async (request, reply) => {
+      const auth = request.authUser;
+      if (auth === undefined) {
+        throw new ApiError(
+          500,
+          'internal-error',
+          'auth middleware did not populate request.authUser',
+        );
+      }
+      const callerUserId = auth.id;
+
+      const params = request.params as { id: string };
+      const sessionId = params.id;
+      const body = request.body as {
+        userId: string;
+        role: 'debater-A' | 'debater-B';
+      };
+      const targetUserId = body.userId;
+      const targetRole = body.role;
+
+      const inserted = await withTransaction(ensurePool(), async (client) => {
+        // 1. Visibility-gated SELECT ... FOR UPDATE — same predicate
+        //    `POST /sessions/:id/end` uses. The FOR UPDATE row lock
+        //    serialises concurrent assignment attempts on the same
+        //    session and the same role slot; without it, two
+        //    transactions could both pass the role-availability check
+        //    and only the partial-unique-index would catch the
+        //    duplicate at INSERT time (correct but noisier).
+        const lookup = await client.query<{
+          id: string;
+          host_user_id: string;
+          ended_at: Date | string | null;
+        }>(
+          `SELECT id, host_user_id, ended_at
+           FROM sessions
+           WHERE id = $1
+             AND (
+                   privacy = 'public'
+                   OR host_user_id = $2
+                   OR EXISTS (
+                        SELECT 1 FROM session_participants sp
+                        WHERE sp.session_id = sessions.id AND sp.user_id = $2
+                      )
+                 )
+           FOR UPDATE`,
+          [sessionId, callerUserId],
+        );
+        const existing = lookup.rows[0];
+        if (existing === undefined) {
+          // Zero rows — either the id doesn't exist OR it does but
+          // isn't visible to this caller. Both collapse into 404 so
+          // the response doesn't leak the existence of private
+          // sessions (mirrors `get_session_endpoint`'s 404-not-403
+          // decision).
+          throw ApiError.notFound('session not found or not visible');
+        }
+
+        // 2. Authority — only the host may assign participants. The
+        //    host IS the moderator at v1; `not-a-moderator` is the
+        //    canonical 403 code used across the session-management
+        //    surface for this failure mode.
+        if (existing.host_user_id !== callerUserId) {
+          throw new ApiError(
+            403,
+            'not-a-moderator',
+            'only the session host may assign participants',
+          );
+        }
+
+        // 3. Lifecycle — an ended session cannot accept new
+        //    participants. Reuses `session-already-ended` for
+        //    vocabulary consistency with the end / privacy endpoints.
+        if (existing.ended_at !== null) {
+          throw new ApiError(
+            409,
+            'session-already-ended',
+            'cannot assign participants to an ended session',
+          );
+        }
+
+        // 4. Resolve the body's userId to a non-deleted users row.
+        //    Pulls `screen_name` in the same query so step 9's
+        //    `participant-joined` payload (which carries
+        //    `screen_name` per shared-types) doesn't need a second
+        //    round trip.
+        const userLookup = await client.query<{
+          id: string;
+          screen_name: string;
+        }>(
+          `SELECT id, screen_name
+           FROM users
+           WHERE id = $1
+             AND deleted_at IS NULL`,
+          [targetUserId],
+        );
+        const targetUser = userLookup.rows[0];
+        if (targetUser === undefined) {
+          throw new ApiError(404, 'user-not-found', 'no user matches the supplied userId');
+        }
+
+        // 5. Role-availability check — partial unique index
+        //    `session_participants_active_role_idx` covers
+        //    `(session_id, role) WHERE left_at IS NULL`. We pre-check
+        //    here for a typed 409; the index would also catch a race,
+        //    but the pre-check produces the canonical error envelope
+        //    rather than a raw integrity-violation 5xx.
+        const roleCheck = await client.query<{ id: string }>(
+          `SELECT id
+           FROM session_participants
+           WHERE session_id = $1 AND role = $2 AND left_at IS NULL
+           LIMIT 1`,
+          [sessionId, targetRole],
+        );
+        if (roleCheck.rows.length > 0) {
+          throw new ApiError(
+            409,
+            'role-already-filled',
+            `role '${targetRole}' is already filled in this session`,
+          );
+        }
+
+        // 6. User-availability check — partial unique index
+        //    `session_participants_active_user_idx` covers
+        //    `(session_id, user_id) WHERE left_at IS NULL`. Same
+        //    pre-check rationale as the role check above.
+        const userCheck = await client.query<{ id: string }>(
+          `SELECT id
+           FROM session_participants
+           WHERE session_id = $1 AND user_id = $2 AND left_at IS NULL
+           LIMIT 1`,
+          [sessionId, targetUserId],
+        );
+        if (userCheck.rows.length > 0) {
+          throw new ApiError(
+            409,
+            'user-already-joined',
+            'user is already an active participant in this session',
+          );
+        }
+
+        // 7. INSERT the new `session_participants` row. The DB fills
+        //    `id` (gen_random_uuid()), `joined_at` (NOW()) and
+        //    `left_at` (NULL). RETURNING surfaces the whole row so
+        //    the response and event payload share a single source of
+        //    truth.
+        const participantInsert = await client.query<SessionParticipantsRow>(
+          `INSERT INTO session_participants (session_id, user_id, role)
+           VALUES ($1, $2, $3)
+           RETURNING id, session_id, user_id, role, joined_at, left_at`,
+          [sessionId, targetUserId, targetRole],
+        );
+        const participantRow = participantInsert.rows[0];
+        if (participantRow === undefined) {
+          throw new ApiError(500, 'internal-error', 'session_participants insert returned no row');
+        }
+        const joinedAtIso = toIsoString(participantRow.joined_at);
+
+        // 8. MAX(sequence)+1 inside the transaction (ADR 0020). The
+        //    UNIQUE (session_id, sequence) constraint is the safety
+        //    net for concurrent appenders; the FOR UPDATE row lock
+        //    earlier in the transaction is the primary serialisation
+        //    mechanism for the session-management surface.
+        const maxRes = await client.query<{ max_seq: number | string | null }>(
+          `SELECT COALESCE(MAX(sequence), 0) AS max_seq
+           FROM session_events
+           WHERE session_id = $1`,
+          [sessionId],
+        );
+        const rawMax = maxRes.rows[0]?.max_seq ?? 0;
+        const maxSeq = typeof rawMax === 'string' ? Number.parseInt(rawMax, 10) : rawMax;
+        const nextSeq = maxSeq + 1;
+
+        // 9. Build the `participant-joined` envelope, run
+        //    `validateEvent`, INSERT. `actor` is the caller (the host)
+        //    — they initiated the assignment; the joined user is the
+        //    subject (payload.user_id) but not the actor.
+        const eventId = randomUUID();
+        const eventCreatedAtIso = new Date(nowFn()).toISOString();
+        const envelope = {
+          id: eventId,
+          sessionId,
+          sequence: nextSeq,
+          kind: 'participant-joined' as const,
+          actor: callerUserId,
+          payload: {
+            user_id: targetUserId,
+            role: targetRole,
+            screen_name: targetUser.screen_name,
+            joined_at: joinedAtIso,
+          },
+          createdAt: eventCreatedAtIso,
+        };
+        validateEvent(envelope);
+        await client.query(
+          `INSERT INTO session_events
+             (id, session_id, sequence, kind, actor, payload)
+           VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
+          [
+            envelope.id,
+            envelope.sessionId,
+            envelope.sequence,
+            envelope.kind,
+            envelope.actor,
+            JSON.stringify(envelope.payload),
+          ],
+        );
+
+        return participantRow;
+      });
+
+      return reply.code(200).send(participantRowToResponse(inserted));
+    },
+  );
+
+  // ----------------------------------------------------------------
+  // DELETE /sessions/:id/participants/:userId — remove a participant.
+  // ----------------------------------------------------------------
+  //
+  // Authority: the session host OR the participant themselves. The
+  // moderator (the host at v1) cannot be removed via this endpoint —
+  // the host owns the session for its lifetime. Removal is a soft
+  // operation: the row's `left_at` flips from NULL to NOW(); a future
+  // re-join INSERTs a fresh row (F5).
+  //
+  // The transaction:
+  //   1. Visibility-gated SELECT ... FOR UPDATE on `sessions`.
+  //   2. Authority: caller is host OR caller === :userId else 403.
+  //   3. Lifecycle: session must not be ended else 409.
+  //   4. Find the active `session_participants` row for `(session_id,
+  //      user_id) WHERE left_at IS NULL`. Zero rows → 404.
+  //   5. Block moderator removal: role='moderator' → 403
+  //      `cannot-remove-moderator`.
+  //   6. UPDATE `left_at = NOW()` RETURNING the full row (so the
+  //      response and event share one canonical timestamp).
+  //   7. MAX(sequence)+1 — application-managed monotonic allocator.
+  //   8. Build the `participant-left` envelope, run `validateEvent`,
+  //      INSERT.
+  //   9. COMMIT and return 200 + the camelCase participant row.
+  app.delete(
+    '/sessions/:id/participants/:userId',
+    {
+      preHandler: app.authenticate,
+      schema: {
+        tags: ['sessions'],
+        summary: 'Remove a participant from a session (host or self)',
+        description:
+          'Marks the participant as left by setting `left_at = NOW()` and emitting ' +
+          'a `participant-left` event into `session_events` at the next available ' +
+          'sequence — both writes are atomic (single transaction). The row stays for ' +
+          'replay/history. Either the session host or the participant themselves may ' +
+          'remove the participant; the moderator (the host at v1) cannot be removed ' +
+          'via this endpoint.\n\n' +
+          'Visibility-then-authority-then-state ordering: invisible private sessions ' +
+          'return 404 `not-found` BEFORE any authority check. A caller who is neither ' +
+          'host nor the participant themselves returns 403 `not-a-moderator`. An ended ' +
+          'session returns 409 `session-already-ended`. A user who is not currently ' +
+          'a participant returns 404 `not-found`. Attempting to remove the moderator ' +
+          'returns 403 `cannot-remove-moderator`.\n\n' +
+          'Returns 401 `auth-required` when no valid session cookie is present.',
+        security: [{ cookieAuth: [] }],
+        params: sessionParticipantParamsSchema,
+        response: {
+          200: sessionParticipantResponseRef,
+          '4xx': errorEnvelopeRef,
+          '5xx': errorEnvelopeRef,
+        },
+      },
+    },
+    async (request, reply) => {
+      const auth = request.authUser;
+      if (auth === undefined) {
+        throw new ApiError(
+          500,
+          'internal-error',
+          'auth middleware did not populate request.authUser',
+        );
+      }
+      const callerUserId = auth.id;
+
+      const params = request.params as { id: string; userId: string };
+      const sessionId = params.id;
+      const targetUserId = params.userId;
+
+      const updated = await withTransaction(ensurePool(), async (client) => {
+        // 1. Visibility-gated SELECT ... FOR UPDATE — same predicate
+        //    every session-management endpoint uses.
+        const lookup = await client.query<{
+          id: string;
+          host_user_id: string;
+          ended_at: Date | string | null;
+        }>(
+          `SELECT id, host_user_id, ended_at
+           FROM sessions
+           WHERE id = $1
+             AND (
+                   privacy = 'public'
+                   OR host_user_id = $2
+                   OR EXISTS (
+                        SELECT 1 FROM session_participants sp
+                        WHERE sp.session_id = sessions.id AND sp.user_id = $2
+                      )
+                 )
+           FOR UPDATE`,
+          [sessionId, callerUserId],
+        );
+        const existing = lookup.rows[0];
+        if (existing === undefined) {
+          throw ApiError.notFound('session not found or not visible');
+        }
+
+        // 2. Authority — host OR the participant themselves. Anyone
+        //    else gets 403 `not-a-moderator` (the host IS the
+        //    moderator at v1; the code stays stable across the
+        //    session-management surface).
+        const isHost = existing.host_user_id === callerUserId;
+        const isSelf = callerUserId === targetUserId;
+        if (!isHost && !isSelf) {
+          throw new ApiError(
+            403,
+            'not-a-moderator',
+            'only the session host or the participant themselves may remove a participant',
+          );
+        }
+
+        // 3. Lifecycle — an ended session is closed to participant
+        //    state changes; reuses `session-already-ended`.
+        if (existing.ended_at !== null) {
+          throw new ApiError(
+            409,
+            'session-already-ended',
+            'cannot remove participants from an ended session',
+          );
+        }
+
+        // 4. Find the active participant row. Zero rows → 404 (the
+        //    user isn't currently in the session; identical-shape
+        //    response to the unknown-session case). The query keys on
+        //    (session_id, user_id) WHERE left_at IS NULL — the
+        //    same predicate the partial unique index enforces, so
+        //    at most one row can match.
+        const activeRow = await client.query<SessionParticipantsRow>(
+          `SELECT id, session_id, user_id, role, joined_at, left_at
+           FROM session_participants
+           WHERE session_id = $1 AND user_id = $2 AND left_at IS NULL
+           LIMIT 1`,
+          [sessionId, targetUserId],
+        );
+        const participant = activeRow.rows[0];
+        if (participant === undefined) {
+          throw ApiError.notFound('participant is not currently in the session');
+        }
+
+        // 5. Block moderator removal. The host owns the session for
+        //    its v1 lifetime; the participants-DELETE endpoint can't
+        //    eject them. Same vocabulary as
+        //    `tasks/refinements/backend/participant_assignment.md` —
+        //    403 `cannot-remove-moderator` (authority failure).
+        if (participant.role === 'moderator') {
+          throw new ApiError(
+            403,
+            'cannot-remove-moderator',
+            'the moderator cannot be removed via this endpoint',
+          );
+        }
+
+        // 6. UPDATE `left_at = NOW()`. RETURNING surfaces the full
+        //    row in the same shape `participantRowToResponse` and the
+        //    `participant-left` payload consume.
+        const updateRes = await client.query<SessionParticipantsRow>(
+          `UPDATE session_participants
+           SET left_at = NOW()
+           WHERE id = $1
+           RETURNING id, session_id, user_id, role, joined_at, left_at`,
+          [participant.id],
+        );
+        const updatedRow = updateRes.rows[0];
+        if (updatedRow === undefined || updatedRow.left_at === null) {
+          throw new ApiError(
+            500,
+            'internal-error',
+            'session_participants UPDATE returned no row or null left_at',
+          );
+        }
+        const leftAtIso = toIsoString(updatedRow.left_at);
+
+        // 7. MAX(sequence)+1 inside the transaction. Same pattern as
+        //    `POST /sessions/:id/end`.
+        const maxRes = await client.query<{ max_seq: number | string | null }>(
+          `SELECT COALESCE(MAX(sequence), 0) AS max_seq
+           FROM session_events
+           WHERE session_id = $1`,
+          [sessionId],
+        );
+        const rawMax = maxRes.rows[0]?.max_seq ?? 0;
+        const maxSeq = typeof rawMax === 'string' ? Number.parseInt(rawMax, 10) : rawMax;
+        const nextSeq = maxSeq + 1;
+
+        // 8. Build the `participant-left` envelope, run
+        //    `validateEvent`, INSERT. `actor` is the caller (host or
+        //    the participant themselves); the subject is in the
+        //    payload's `user_id`.
+        const eventId = randomUUID();
+        const eventCreatedAtIso = new Date(nowFn()).toISOString();
+        const envelope = {
+          id: eventId,
+          sessionId,
+          sequence: nextSeq,
+          kind: 'participant-left' as const,
+          actor: callerUserId,
+          payload: {
+            user_id: targetUserId,
+            left_at: leftAtIso,
+          },
+          createdAt: eventCreatedAtIso,
+        };
+        validateEvent(envelope);
+        await client.query(
+          `INSERT INTO session_events
+             (id, session_id, sequence, kind, actor, payload)
+           VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
+          [
+            envelope.id,
+            envelope.sessionId,
+            envelope.sequence,
+            envelope.kind,
+            envelope.actor,
+            JSON.stringify(envelope.payload),
+          ],
+        );
+
+        return updatedRow;
+      });
+
+      return reply.code(200).send(participantRowToResponse(updated));
     },
   );
 

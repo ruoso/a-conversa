@@ -30,7 +30,10 @@ Feature: POST /sessions/:id/end — moderator ends a debate session
     And a user with oauth_subject "authelia:alice" exists with screen_name "alice"
     And I have a valid session cookie for that user
 
-  Scenario: Host ends an active session — row flips, session-ended event lands at sequence 2
+  Scenario: Host ends an active session — row flips, session-ended event lands at sequence 3
+    # The create-session amendment from participant_assignment writes a
+    # `participant-joined` event for the host (as moderator) at sequence
+    # 2, so the subsequent session-ended event lands at sequence 3.
     When I POST /sessions with topic "A debate to end" and privacy "public"
     Then the response status is 201
     When I POST /sessions/:id/end for the most recently created session
@@ -38,7 +41,7 @@ Feature: POST /sessions/:id/end — moderator ends a debate session
     And the response body's topic is "A debate to end"
     And the response body's endedAt is a non-null ISO timestamp
     And the sessions row's ended_at is not null
-    And the session_events table has 1 row at sequence 2 with kind "session-ended"
+    And the session_events table has 1 row at sequence 3 with kind "session-ended"
     And the session-ended event's payload ended_at is a non-null ISO timestamp
 
   Scenario: Non-host caller is rejected with 403 not-a-moderator

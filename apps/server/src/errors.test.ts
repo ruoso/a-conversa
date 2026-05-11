@@ -112,12 +112,16 @@ describe('rejectedToApiError', () => {
     { reason: 'not-a-participant', status: 403 },
     { reason: 'self-vote-not-allowed', status: 403 },
     { reason: 'axiom-mark-not-self', status: 403 },
+    { reason: 'cannot-remove-moderator', status: 403 },
     { reason: 'target-entity-not-found', status: 404 },
     { reason: 'proposal-not-found', status: 404 },
+    { reason: 'user-not-found', status: 404 },
     { reason: 'sequence-mismatch', status: 409 },
     { reason: 'session-mismatch', status: 409 },
     { reason: 'already-voted', status: 409 },
     { reason: 'no-prior-agree', status: 409 },
+    { reason: 'role-already-filled', status: 409 },
+    { reason: 'user-already-joined', status: 409 },
     { reason: 'proposal-not-pending', status: 422 },
     { reason: 'proposal-already-committed', status: 422 },
     { reason: 'proposal-already-meta-disagreement', status: 422 },
@@ -156,6 +160,10 @@ describe('rejectedToApiError', () => {
       'inapplicable-to-facet': true,
       'illegal-state-transition': true,
       'methodology-not-exhausted': true,
+      'role-already-filled': true,
+      'user-already-joined': true,
+      'user-not-found': true,
+      'cannot-remove-moderator': true,
     };
     expect(Object.keys(allReasons).sort()).toEqual(mapping.map((row) => row.reason).sort());
   });

@@ -124,7 +124,9 @@ task backend "Backend" {
     task participant_assignment "Assign participant roles (moderator/debater-A/debater-B)" {
       effort 1d
       allocate team
+      complete 100
       depends !create_session_endpoint
+      note "Refinement: tasks/refinements/backend/participant_assignment.md"
     }
     task session_listing_filters "Filter session list by participant / privacy / status" {
       effort 1d

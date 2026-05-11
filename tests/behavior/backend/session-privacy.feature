@@ -36,7 +36,11 @@ Feature: PATCH /sessions/:id/privacy — host toggles session privacy
     Then the response status is 200
     And the response body's privacy is "private"
     And the sessions row's privacy is "private"
-    And the session_events table has 1 rows
+    # 2 rows = session-created (sequence=1) + participant-joined (for
+    # the host as moderator, sequence=2) from the create-session
+    # transaction; the privacy toggle deliberately does NOT emit an
+    # event (Option B in session_privacy_toggle.md).
+    And the session_events table has 2 rows
 
   Scenario: Non-host caller is rejected with 403 not-a-moderator
     Given a user with oauth_subject "authelia:ben" exists with screen_name "ben"
