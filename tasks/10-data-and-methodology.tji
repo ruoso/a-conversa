@@ -241,7 +241,9 @@ task data_and_methodology "Data and methodology" {
     task diagnostic_event_emission "Emit diagnostic-fired events to subscribers" {
       effort 1d
       allocate team
+      complete 100
       depends !cycle_detection, !contradiction_detection, !multi_warrant_detection
+      note "Refinement: tasks/refinements/data-and-methodology/diagnostic_event_emission.md"
     }
     task blocking_vs_advisory_classification "Classify each diagnostic as blocking or advisory" {
       effort 0.5d

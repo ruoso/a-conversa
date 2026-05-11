@@ -7,6 +7,7 @@
 //   - tasks/refinements/data-and-methodology/dangling_claim_detection.md
 //   - tasks/refinements/data-and-methodology/coherency_hint_detection.md
 //   - tasks/refinements/data-and-methodology/pending_consequences_stub.md
+//   - tasks/refinements/data-and-methodology/diagnostic_event_emission.md
 //
 // The diagnostics module hosts read-side detectors for the
 // structural diagnostics defined in `docs/data-model.md`'s
@@ -29,3 +30,18 @@ export {
   type SelfContradictsHint,
 } from './coherency-hint-detection.js';
 export { detectPendingConsequences, type PendingConsequence } from './pending-consequences.js';
+export {
+  computeAllDiagnostics,
+  diffDiagnostics,
+  identityKeyFor,
+  DiagnosticBus,
+  type DiagnosticEntry,
+  type DiagnosticKind,
+  type DiagnosticBusEvent,
+  type DiagnosticListener,
+  type CycleDiagnosticEntry,
+  type ContradictionDiagnosticEntry,
+  type MultiWarrantDiagnosticEntry,
+  type DanglingClaimDiagnosticEntry,
+  type CoherencyHintDiagnosticEntry,
+} from './event-emission.js';
