@@ -179,7 +179,9 @@ task backend "Backend" {
     task ws_subscribe_to_session "Subscribe a client to a session's event stream" {
       effort 1d
       allocate team
+      complete 100
       depends !ws_auth_on_connect
+      note "Refinement: tasks/refinements/backend/ws_subscribe_to_session.md"
     }
     task ws_message_envelope "Common WS message envelope and serialization" {
       effort 1d

@@ -61,6 +61,7 @@ import { createLoggerOptions } from './logger.js';
 import { errorEnvelopeRef, openapiPlugin } from './openapi.js';
 import { healthzPlugin } from './routes/healthz.js';
 import { sessionsRoutesPlugin } from './sessions/routes.js';
+import { wsHandlersPlugin } from './ws/handlers/index.js';
 import { wsConnectionHandlingPlugin } from './ws/index.js';
 
 /**
@@ -265,6 +266,14 @@ export async function createServer(options: CreateServerOptions = {}): Promise<F
   // websocket_protocol tasks that build on this foundation. Refinement:
   // tasks/refinements/backend/ws_connection_handling.md.
   await app.register(wsConnectionHandlingPlugin);
+
+  // WS message-type handlers (subscribe / unsubscribe today; more
+  // land as `ws_propose_message`, `ws_vote_message`, etc. ship).
+  // Registered AFTER `wsConnectionHandlingPlugin` because the
+  // handlers plugin reaches for the dispatcher + subscription
+  // registry that plugin decorates. Refinement:
+  // tasks/refinements/backend/ws_subscribe_to_session.md.
+  await app.register(wsHandlersPlugin);
 
   return app;
 }

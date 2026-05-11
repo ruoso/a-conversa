@@ -134,6 +134,7 @@ import {
   serializeWsEnvelope,
   WsEnvelopeValidationError,
 } from './envelope.js';
+import { wsSubscriptionsPlugin } from './subscriptions.js';
 
 /**
  * Close codes used by this plugin. The numeric values follow the
@@ -356,6 +357,15 @@ function buildConnectionHandler(
 
     socket.on('close', (code: number, reasonBuffer: Buffer) => {
       openConnections.delete(ctx);
+      // Drop every subscription this connection held (owned by
+      // `ws_subscribe_to_session`). Idempotent — a connection that
+      // never subscribed makes this a no-op. The registry is at the
+      // app level (decorated via `wsSubscriptionsPlugin`), so the
+      // handler reaches for `app.wsSubscriptions`. Failing to clean
+      // up here would leak entries in both the bySession and
+      // byConnection indices; calling once on close is the single
+      // teardown point.
+      app.wsSubscriptions.removeConnection(connectionId);
       // The `reason` arrives as a `Buffer` (possibly empty); convert
       // to a string for the log line. Empty buffers serialise to an
       // empty string, which is the right "no reason given" signal.
@@ -697,6 +707,16 @@ const wsConnectionHandlingPluginAsync: FastifyPluginAsync<WsConnectionHandlingOp
   // Refinement: tasks/refinements/backend/ws_message_envelope.md.
   await app.register(wsDispatcherPlugin);
 
+  // Per-app-instance WS subscription registry. Decorates
+  // `app.wsSubscriptions`. The connection-close hook (above) calls
+  // `removeConnection(...)`; the `subscribe` / `unsubscribe` message
+  // handlers (registered by `wsHandlersPlugin` in `server.ts`) reach
+  // for `subscribe(...)` / `unsubscribe(...)`; the future
+  // `ws_event_broadcast` task will reach for
+  // `connectionsForSession(...)`. Refinement:
+  // tasks/refinements/backend/ws_subscribe_to_session.md.
+  await app.register(wsSubscriptionsPlugin);
+
   // Route + shutdown hook stay encapsulated to the child plugin —
   // only the library decorations need to hoist. The auth resolvers
   // are threaded through plugin options so the route's
@@ -786,6 +806,7 @@ export async function __buildTestWsApp(
   const { errorHandlerPlugin } = await import('../error-handler.js');
   const { errorEnvelopeSchema } = await import('../openapi.js');
   const { authenticatePlugin } = await import('../auth/middleware.js');
+  const { wsHandlersPlugin } = await import('./handlers/index.js');
   const app = fastifyFactory({ logger: false });
   app.addSchema(errorEnvelopeSchema);
   await app.register(errorHandlerPlugin);
@@ -804,6 +825,12 @@ export async function __buildTestWsApp(
     sessionTokenSecret: opts.sessionTokenSecret,
     ...(opts.now !== undefined ? { now: opts.now } : {}),
   });
+  // Register the WS message-type handlers (subscribe / unsubscribe
+  // today; more land as their owning tasks ship). Must run AFTER
+  // `wsConnectionHandlingPlugin` — that plugin decorates the
+  // dispatcher and the subscription registry, both of which
+  // `wsHandlersPlugin` reaches for at registration time.
+  await app.register(wsHandlersPlugin, { pool: opts.pool });
   await app.ready();
   return app;
 }

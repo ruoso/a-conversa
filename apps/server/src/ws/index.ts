@@ -47,3 +47,16 @@ export {
   type WsDispatcherOptions,
   type WsMessageHandler,
 } from './dispatcher.js';
+
+// `ws_subscribe_to_session` — per-connection subscription registry.
+// Decorated onto `app.wsSubscriptions`; the future broadcast surface
+// reaches for `connectionsForSession(...)` to iterate fan-out targets.
+export { WsSubscriptionRegistry, wsSubscriptionsPlugin } from './subscriptions.js';
+export {
+  buildSubscribeHandler,
+  buildUnsubscribeHandler,
+  registerSubscribeHandlers,
+  wsHandlersPlugin,
+  type SubscribeHandlerOptions,
+  type WsHandlersOptions,
+} from './handlers/index.js';

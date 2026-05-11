@@ -32,10 +32,19 @@ const CONNECTION_ID = '33333333-3333-4333-8333-333333333333';
 
 describe('wsMessageTypes vocabulary', () => {
   it('exposes the closed enum the registry is exhaustive over', () => {
-    // The list today carries only `hello`. Each downstream message-type
-    // task expands this enum + its registry entry. The assertion below
-    // pins the current state so an accidental widening is loud.
-    expect([...wsMessageTypes]).toEqual(['hello']);
+    // `hello` came from `ws_message_envelope`; `subscribe` /
+    // `unsubscribe` (client → server) and `subscribed` / `unsubscribed`
+    // (server → client acks) came from `ws_subscribe_to_session`. Each
+    // downstream message-type task expands this enum + its registry
+    // entry; the assertion pins the current state so an accidental
+    // widening is loud.
+    expect([...wsMessageTypes]).toEqual([
+      'hello',
+      'subscribe',
+      'unsubscribe',
+      'subscribed',
+      'unsubscribed',
+    ]);
   });
 
   it('keeps the payload registry exhaustive over the type vocabulary', () => {

@@ -67,7 +67,13 @@ import { z } from 'zod';
 // to the literal-string union. Zod's `z.enum(wsMessageTypes)` checks
 // the wire value against this list at parse time.
 
-export const wsMessageTypes = ['hello'] as const;
+export const wsMessageTypes = [
+  'hello',
+  'subscribe',
+  'unsubscribe',
+  'subscribed',
+  'unsubscribed',
+] as const;
 
 export type WsMessageType = (typeof wsMessageTypes)[number];
 
@@ -95,6 +101,82 @@ export const helloPayloadSchema = z.object({
 
 export type HelloPayload = z.infer<typeof helloPayloadSchema>;
 
+// -- subscribe / unsubscribe payloads ------------------------------
+//
+// `subscribe` / `unsubscribe` (client → server): the client asks the
+// server to add (resp. remove) a (connection, session) tuple to the
+// per-server-instance subscription registry. The server replies with a
+// `subscribed` / `unsubscribed` ack envelope whose `inResponseTo`
+// echoes the request envelope's `id` — giving the client a
+// deterministic point at which to start counting on the broadcast
+// stream (the future `ws_event_broadcast` task ties into this: the
+// client is guaranteed that all event broadcasts emitted AFTER the
+// `subscribed` ack reach the client over the same socket).
+//
+// **Owned by `ws_subscribe_to_session`.** Adding `subscribe`,
+// `unsubscribe`, `subscribed`, and `unsubscribed` to the closed
+// discriminator enum is this task's contribution; the registry +
+// handler implementation lives server-side in
+// `apps/server/src/ws/subscriptions.ts` and `apps/server/src/ws/handlers/`.
+
+/**
+ * Client → server. Asks the server to start streaming events for
+ * `sessionId` over this connection. Idempotent on the server side —
+ * re-subscribing is a no-op (no error envelope, the ack still fires so
+ * the client's request-response correlation is consistent).
+ *
+ * The server gates this request via the canonical `canSeeSession`
+ * predicate (same primitive the HTTP routes use). A client that asks
+ * to subscribe to a session they cannot see receives an error envelope
+ * (owned by `ws_error_message` — see the placeholder error path in the
+ * handler).
+ */
+export const subscribePayloadSchema = z.object({
+  sessionId: z.string().uuid(),
+});
+
+export type SubscribePayload = z.infer<typeof subscribePayloadSchema>;
+
+/**
+ * Client → server. Asks the server to stop streaming events for
+ * `sessionId` over this connection. Idempotent — unsubscribing from a
+ * session the client wasn't subscribed to still produces an
+ * `unsubscribed` ack (no error). On WS close every still-open
+ * subscription is dropped server-side via
+ * `WsSubscriptionRegistry.removeConnection` — the client doesn't need
+ * to send a flurry of `unsubscribe`s on teardown.
+ */
+export const unsubscribePayloadSchema = z.object({
+  sessionId: z.string().uuid(),
+});
+
+export type UnsubscribePayload = z.infer<typeof unsubscribePayloadSchema>;
+
+/**
+ * Server → client ack. Echoes the originating `subscribe` envelope's
+ * `id` via `inResponseTo` so the client can correlate the ack with
+ * its in-flight request and stop waiting. The payload carries the
+ * `sessionId` so a client that multiplexes subscriptions over a
+ * single socket can route the ack without keeping a request-id table
+ * (the `inResponseTo` field is still authoritative — the `sessionId`
+ * echo is for human debuggability).
+ */
+export const subscribedPayloadSchema = z.object({
+  sessionId: z.string().uuid(),
+});
+
+export type SubscribedPayload = z.infer<typeof subscribedPayloadSchema>;
+
+/**
+ * Server → client ack. Same shape as `subscribed` but emitted in
+ * response to an `unsubscribe` request.
+ */
+export const unsubscribedPayloadSchema = z.object({
+  sessionId: z.string().uuid(),
+});
+
+export type UnsubscribedPayload = z.infer<typeof unsubscribedPayloadSchema>;
+
 // -- Registry -------------------------------------------------------
 //
 // Exhaustive over `WsMessageType` (the `Record<...>` annotation forces
@@ -105,6 +187,10 @@ export type HelloPayload = z.infer<typeof helloPayloadSchema>;
 
 export const wsMessagePayloadSchemas: Record<WsMessageType, z.ZodTypeAny> = {
   hello: helloPayloadSchema,
+  subscribe: subscribePayloadSchema,
+  unsubscribe: unsubscribePayloadSchema,
+  subscribed: subscribedPayloadSchema,
+  unsubscribed: unsubscribedPayloadSchema,
 };
 
 // -- Per-type payload type map -------------------------------------
@@ -115,6 +201,10 @@ export const wsMessagePayloadSchemas: Record<WsMessageType, z.ZodTypeAny> = {
 
 export interface WsMessagePayloadMap {
   hello: HelloPayload;
+  subscribe: SubscribePayload;
+  unsubscribe: UnsubscribePayload;
+  subscribed: SubscribedPayload;
+  unsubscribed: UnsubscribedPayload;
 }
 
 export type WsPayloadFor<T extends WsMessageType> = WsMessagePayloadMap[T];
