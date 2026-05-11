@@ -221,7 +221,9 @@ task backend "Backend" {
     task ws_snapshot_message "Snapshot message" {
       effort 0.5d
       allocate team
+      complete 100
       depends !ws_message_envelope
+      note "Refinement: tasks/refinements/backend/ws_snapshot_message.md"
     }
     task ws_event_broadcast "Server → all subscribed clients: event-applied broadcast" {
       effort 1d

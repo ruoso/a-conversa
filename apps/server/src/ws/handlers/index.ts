@@ -33,6 +33,7 @@ import { getDefaultPool, type DbPool } from '../../db.js';
 import { registerCommitHandlers } from './commit.js';
 import { registerMarkMetaDisagreementHandlers } from './meta-disagreement.js';
 import { registerProposeHandlers } from './propose.js';
+import { registerSnapshotHandlers } from './snapshot.js';
 import { registerSubscribeHandlers } from './subscribe.js';
 import { registerVoteHandlers } from './vote.js';
 
@@ -57,6 +58,13 @@ export {
   registerMarkMetaDisagreementHandlers,
 } from './meta-disagreement.js';
 export type { MarkMetaDisagreementHandlerOptions } from './meta-disagreement.js';
+
+export {
+  buildSnapshotHandler,
+  registerSnapshotHandlers,
+  serializeProjectionForWire,
+} from './snapshot.js';
+export type { SnapshotHandlerOptions } from './snapshot.js';
 
 /**
  * Options accepted by `wsHandlersPlugin`. Production callers pass `{}`
@@ -163,6 +171,22 @@ const wsHandlersPluginAsync: FastifyPluginAsync<WsHandlersOptions> = (
     },
     registry: app.wsSubscriptions,
     broadcast: app.wsBroadcast,
+    log: app.log,
+  });
+
+  // Register the snapshot handler. Unlike the four write handlers
+  // above, this is a read-only request — the handler runs the same
+  // subscribe-before-act + visibility gate stack, loads the event
+  // log, builds the projection via `projectFromLog`, and sends a
+  // `snapshot-state` response on the requesting client's socket. No
+  // broadcast bus, no transaction. The handler implements
+  // Interpretation A (state-query catch-up) of the WBS task; see the
+  // refinement Decisions for the choice rationale.
+  registerSnapshotHandlers(app.wsDispatcher, {
+    get pool() {
+      return ensurePool();
+    },
+    registry: app.wsSubscriptions,
     log: app.log,
   });
 

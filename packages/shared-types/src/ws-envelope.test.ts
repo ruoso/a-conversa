@@ -41,7 +41,11 @@ describe('wsMessageTypes vocabulary', () => {
     // `commit` (client → server) and `committed` (server → client ack)
     // came from `ws_commit_message`; `mark-meta-disagreement` (client
     // → server) and `meta-disagreement-marked` (server → client ack)
-    // came from `ws_meta_disagreement_message`; `event-applied`
+    // came from `ws_meta_disagreement_message`; `snapshot` (client →
+    // server) and `snapshot-state` (server → client response) came
+    // from `ws_snapshot_message` — Interpretation A (state-query
+    // catch-up), not Interpretation B (label-creation); see the
+    // refinement Decisions for the choice rationale. `event-applied`
     // (server → client broadcast) came from `ws_event_broadcast`;
     // `error` (server → client canonical error envelope) came from
     // `ws_error_message`. The vocabulary is laid out per the
@@ -58,12 +62,14 @@ describe('wsMessageTypes vocabulary', () => {
       'vote',
       'commit',
       'mark-meta-disagreement',
+      'snapshot',
       'subscribed',
       'unsubscribed',
       'proposed',
       'voted',
       'committed',
       'meta-disagreement-marked',
+      'snapshot-state',
       'event-applied',
       'error',
     ]);

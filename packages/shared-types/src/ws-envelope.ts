@@ -79,14 +79,14 @@ import {
 // concurrent task branches.
 //
 //   - **Group B — client → server request types**: `'subscribe'`,
-//     `'unsubscribe'`, `'propose'`. Future sibling tasks append their
-//     request type (e.g. `'vote'`, `'commit'`, `'mark-meta-disagreement'`,
-//     `'snapshot'`) at this group's tail.
+//     `'unsubscribe'`, `'propose'`, `'vote'`, `'commit'`,
+//     `'mark-meta-disagreement'`, `'snapshot'`. Future sibling tasks
+//     append their request type at this group's tail.
 //   - **Group C — server → client ack/result types** correlated via
-//     `inResponseTo`: `'subscribed'`, `'unsubscribed'`, `'proposed'`.
-//     Future sibling tasks append their ack/result type at this group's
-//     tail (e.g. `'voted'`, `'committed'`, `'meta-disagreement-marked'`,
-//     `'snapshot-result'`).
+//     `inResponseTo`: `'subscribed'`, `'unsubscribed'`, `'proposed'`,
+//     `'voted'`, `'committed'`, `'meta-disagreement-marked'`,
+//     `'snapshot-state'`. Future sibling tasks append their
+//     ack/result type at this group's tail.
 //   - **Group A — server-emitted unsolicited frames**: `'hello'`,
 //     `'event-applied'`, `'error'`. The server originates these;
 //     `inResponseTo` is absent on `hello`/`event-applied`, optional on
@@ -115,15 +115,17 @@ export const wsMessageTypes = [
   'vote',
   'commit',
   'mark-meta-disagreement',
+  'snapshot',
   // Group C — server → client ack / result types correlated via
-  // `inResponseTo`. Append future sibling ack/result types
-  // (`'snapshot-result'`) at this group's tail.
+  // `inResponseTo`. Append future sibling ack/result types at this
+  // group's tail.
   'subscribed',
   'unsubscribed',
   'proposed',
   'voted',
   'committed',
   'meta-disagreement-marked',
+  'snapshot-state',
   // Group A — server-emitted unsolicited broadcast + the canonical
   // error envelope (which `inResponseTo` echoes when correlated).
   'event-applied',
@@ -607,6 +609,135 @@ export type MetaDisagreementMarkedAckPayload = z.infer<
   typeof metaDisagreementMarkedAckPayloadSchema
 >;
 
+// -- snapshot / snapshot-state payloads ----------------------------
+//
+// `snapshot` (client → server): the client asks the server to send
+// the current projection state for a session it is **subscribed to**
+// (the subscribe-before-act gate is enforced on the server). The
+// payload carries only the target `sessionId` — there is NO
+// `expectedSequence` (this is a read, not a write) and NO `at: <seq>`
+// in v1 (the historical-point query is documented as a future
+// extension; the v1 schema does not declare an `at` field, so a
+// client that sends one has it silently stripped by Zod's default
+// behaviour — when the feature lands, the schema is widened in a
+// backward-compatible way).
+//
+// **Owned by `ws_snapshot_message`.** This task adds `snapshot` to
+// Group B and `snapshot-state` to Group C of the union-extension
+// convention documented in `wsMessageTypes` above. Unlike its four
+// siblings (propose / vote / commit / mark-meta-disagreement) this
+// is a **read-only** request — no event-append, no broadcast, no
+// transaction. The handler runs the subscribe-before-act gate + the
+// visibility re-check + a projection replay-from-log, then sends a
+// `snapshot-state` envelope to the originating client.
+//
+// **Catch-up pattern.** A freshly-connected client follows the
+// `subscribe → snapshot → react-to-deltas` loop:
+//
+//   1. `subscribe` to the session — registers for live broadcasts.
+//   2. `snapshot` to fetch the current projection state at the
+//      server's `lastAppliedSequence`.
+//   3. Apply every subsequent `event-applied` broadcast as a delta on
+//      top of the snapshot — the local projection stays in sync with
+//      the server's view.
+//
+// Without this envelope, a mid-session subscriber receives only the
+// deltas with no baseline to apply them against. See refinement
+// Decisions for the rationale of choosing this state-query shape
+// (Interpretation A) over the label-creation shape (Interpretation
+// B); the latter is deferred to a future task once the methodology
+// engine grows a snapshot-create handler.
+//
+// **No `at` parameter today.** The `at: <sequence>` form (request
+// "send me the state as of sequence N") is documented as a future
+// extension; the v1 schema does not declare it. Use cases — test-
+// mode scrubbing and audience-surface chapter navigation — are
+// future deliverables. The schema's structural shape (`{ sessionId
+// }`) accepts extra fields per Zod's default and ignores them, so
+// adding `at` later is backward-compatible.
+
+/**
+ * Client → server. Asks the server to send the current projection
+ * state for `sessionId`. The client must have already sent a
+ * successful `subscribe` for the same session (the server enforces);
+ * otherwise the wire response is an `error` envelope with
+ * `code: 'forbidden'`.
+ *
+ * On success the server sends ONE envelope to the requesting client:
+ *
+ *   - A `snapshot-state` response (this envelope's request-response
+ *     pair), correlated via `inResponseTo`. Carries `{ sessionId,
+ *     sequence, projection }`. The `projection` field holds the
+ *     full projection as a JSON-safe object (see
+ *     `snapshotStatePayloadSchema` below).
+ *
+ * Unlike the propose / vote / commit / mark-meta-disagreement
+ * handlers, this surface emits NO broadcast and NO event. It is a
+ * pure read. Other subscribed clients are unaffected.
+ *
+ * On any rejection (not subscribed → `forbidden`; session not
+ * visible → `not-found`), the server sends an `error` envelope with
+ * the corresponding `code` via the dispatcher's `onHandlerError`
+ * seam.
+ */
+export const snapshotPayloadSchema = z.object({
+  sessionId: z.string().uuid(),
+});
+
+export type SnapshotPayload = z.infer<typeof snapshotPayloadSchema>;
+
+/**
+ * Server → client response. Echoes the originating `snapshot`
+ * envelope's `id` via `inResponseTo`. Payload carries:
+ *
+ *   - `sessionId` — the session the projection describes.
+ *   - `sequence` — `projection.lastAppliedSequence` at the point the
+ *     SELECT ran. Subsequent `event-applied` broadcasts at
+ *     `sequence > this` are deltas the client applies on top; any
+ *     broadcast at `sequence <= this` is a no-op (already reflected
+ *     in the snapshot).
+ *   - `projection` — the full state, with the in-memory `Projection`
+ *     class's Maps flattened to plain objects. The structure mirrors
+ *     `apps/server/src/projection/types.ts`'s shape:
+ *
+ *     ```ts
+ *     {
+ *       sessionState: 'open' | 'ended',
+ *       lastAppliedSequence: number,
+ *       participants: ParticipantRecord[],
+ *       nodes: ProjectedNode[],       // with FacetState.perParticipant flattened
+ *       edges: ProjectedEdge[],       // with FacetState.perParticipant flattened
+ *       annotations: ProjectedAnnotation[],
+ *       pendingProposals: PendingProposal[],
+ *       committedProposals: CommittedProposalRecord[],
+ *       snapshots: SnapshotRecord[],
+ *       unresolvedMetaDisagreements: UnresolvedMetaDisagreement[]
+ *     }
+ *     ```
+ *
+ * **Why `projection` is `z.unknown()`.** The projection types are
+ * locked by the `projection` work-stream's refinements; widening
+ * the wire schema to enforce every nested key would tightly couple
+ * the WS module to those types and produce a maintenance burden
+ * each time a new facet field lands. The projection is built by a
+ * pure function (`projectFromLog`) over schema-validated events;
+ * re-validating its OUTPUT is redundant. The serialization helper's
+ * unit tests pin the wire shape; the schema's job is to keep the
+ * OUTER envelope honest (no missing `sessionId`, no negative
+ * `sequence`).
+ */
+export const snapshotStatePayloadSchema = z.object({
+  sessionId: z.string().uuid(),
+  sequence: z.number().int().nonnegative(),
+  projection: z.unknown(),
+});
+
+export type SnapshotStatePayload = {
+  sessionId: string;
+  sequence: number;
+  projection: unknown;
+};
+
 // -- event-applied payload -----------------------------------------
 //
 // `event-applied` (server → client): emitted by the broadcast surface
@@ -733,6 +864,7 @@ export const wsMessagePayloadSchemas: Record<WsMessageType, z.ZodTypeAny> = {
   vote: wsVotePayloadSchema,
   commit: wsCommitPayloadSchema,
   'mark-meta-disagreement': wsMarkMetaDisagreementPayloadSchema,
+  snapshot: snapshotPayloadSchema,
   // Group C — server → client ack/result payload schemas.
   subscribed: subscribedPayloadSchema,
   unsubscribed: unsubscribedPayloadSchema,
@@ -740,6 +872,7 @@ export const wsMessagePayloadSchemas: Record<WsMessageType, z.ZodTypeAny> = {
   voted: votedPayloadSchema,
   committed: committedPayloadSchema,
   'meta-disagreement-marked': metaDisagreementMarkedAckPayloadSchema,
+  'snapshot-state': snapshotStatePayloadSchema,
   // The outer event envelope is checked; the per-kind payload inside
   // the event is `z.unknown()` per the schema in `events.ts` and is
   // re-validated by `validateEvent` on the receiving side. Server-side
@@ -765,6 +898,7 @@ export interface WsMessagePayloadMap {
   vote: WsVotePayload;
   commit: WsCommitPayload;
   'mark-meta-disagreement': WsMarkMetaDisagreementPayload;
+  snapshot: SnapshotPayload;
   // Group C — server → client ack/result payload types.
   subscribed: SubscribedPayload;
   unsubscribed: UnsubscribedPayload;
@@ -772,6 +906,7 @@ export interface WsMessagePayloadMap {
   voted: VotedPayload;
   committed: CommittedPayload;
   'meta-disagreement-marked': MetaDisagreementMarkedAckPayload;
+  'snapshot-state': SnapshotStatePayload;
   'event-applied': EventAppliedPayload;
   error: ErrorPayload;
 }
