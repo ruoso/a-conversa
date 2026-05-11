@@ -76,3 +76,37 @@ export {
   type SubscribeHandlerOptions,
   type WsHandlersOptions,
 } from './handlers/index.js';
+
+// `ws_diagnostic_broadcast` — bridge from the projection-layer
+// `DiagnosticBus` to the WS fan-out surface. Decorates
+// `app.diagnosticBus` (the per-instance bus) + `app.wsDiagnosticBroadcast`
+// (the session-context-aware wrapper); registers `fired` / `cleared`
+// listeners that fan out a `diagnostic` envelope to every subscribed
+// connection.
+export {
+  buildDiagnosticBroadcastListener,
+  WsDiagnosticBroadcast,
+  wsDiagnosticBusPlugin,
+  wsDiagnosticBroadcastPlugin,
+  type DiagnosticBroadcastActiveContext,
+  type DiagnosticBroadcastListener,
+  type DiagnosticBroadcastListenerOptions,
+  type DiagnosticBroadcastStatus,
+} from './broadcast/diagnostic.js';
+
+// `ws_proposal_status_broadcast` — derived per-facet proposal-status
+// broadcast subscriber. Listens on `app.wsBroadcast` for the four
+// status-affecting event kinds (propose / vote / commit /
+// meta-disagreement-marked); computes the current per-facet status
+// via `deriveFacetStatus`; fans out a `proposal-status` envelope to
+// every connection subscribed to the affected session. Registered
+// AFTER `wsEventAppliedBroadcastPlugin` so the bus's synchronous
+// dispatch order is `event-applied` → `proposal-status`.
+export {
+  buildProposalStatusBroadcastListener,
+  buildPoolEventLoader,
+  wsProposalStatusBroadcastPlugin,
+  type ProposalStatusBroadcastListenerOptions,
+  type ProposalStatusEventLoader,
+  type WsProposalStatusBroadcastOptions,
+} from './broadcast/proposal-status.js';

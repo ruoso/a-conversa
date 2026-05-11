@@ -48,7 +48,11 @@ describe('wsMessageTypes vocabulary', () => {
     // refinement Decisions for the choice rationale. `event-applied`
     // (server → client broadcast) came from `ws_event_broadcast`;
     // `error` (server → client canonical error envelope) came from
-    // `ws_error_message`. The vocabulary is laid out per the
+    // `ws_error_message`; `diagnostic` (server → client structural
+    // diagnostic broadcast) came from `ws_diagnostic_broadcast`;
+    // `proposal-status` (server → client derived per-facet status
+    // broadcast) came from `ws_proposal_status_broadcast`. The
+    // vocabulary is laid out per the
     // three-group union-extension convention documented in
     // `ws-envelope.ts` (server-emitted / request / ack-or-result);
     // future sibling message-type tasks append at the corresponding
@@ -72,6 +76,8 @@ describe('wsMessageTypes vocabulary', () => {
       'snapshot-state',
       'event-applied',
       'error',
+      'diagnostic',
+      'proposal-status',
     ]);
   });
 

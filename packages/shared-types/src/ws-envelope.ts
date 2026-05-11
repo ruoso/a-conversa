@@ -130,6 +130,8 @@ export const wsMessageTypes = [
   // error envelope (which `inResponseTo` echoes when correlated).
   'event-applied',
   'error',
+  'diagnostic',
+  'proposal-status',
 ] as const;
 
 export type WsMessageType = (typeof wsMessageTypes)[number];
@@ -847,6 +849,230 @@ export const errorPayloadSchema = z.object({
 
 export type ErrorPayload = z.infer<typeof errorPayloadSchema>;
 
+// -- diagnostic payload --------------------------------------------
+//
+// `diagnostic` (server → client): emitted by the diagnostic broadcast
+// surface (`ws_diagnostic_broadcast`) when a structural diagnostic
+// fires or clears for a session. Every WS connection subscribed to
+// the diagnostic's `sessionId` receives one `diagnostic` envelope per
+// fired/cleared entry, fanned out from the projection layer after
+// `applyEvent` re-computes the diagnostic snapshot. Mirrors the
+// `event-applied` fan-out shape (same `wsConnectionSenders` registry
+// + same `wsSubscriptions` lookup); the payload is what differs.
+//
+// **Source of truth for the inner `diagnostic` field.** The shape is
+// `apps/server/src/diagnostics/event-emission.ts`'s `DiagnosticEntry`
+// discriminated union (`cycle | contradiction | multi-warrant |
+// dangling-claim | coherency-hint`). The wire payload passes it
+// through verbatim — no re-shaping, no flattening — so a receiver
+// that already knows how to render a `DiagnosticEntry` can render the
+// broadcast directly. The wire schema validates the outer envelope
+// (`sessionId` UUID, `sequence` nonneg int, `kind` enum, `status`
+// enum, `severity` enum) and accepts `diagnostic` as `z.unknown()` for
+// the same reason `snapshot-state` accepts `projection` as
+// `z.unknown()` — the inner type is owned by another module's
+// refinements; widening this schema to enforce every variant of the
+// union would tightly couple the WS contract to the diagnostics-
+// module's types and force a shared-types update on every variant
+// change. The construction surface
+// (`buildDiagnosticBroadcastEnvelope` in `apps/server/src/ws/broadcast/diagnostic.ts`)
+// is where the `DiagnosticEntry` shape is enforced by TypeScript.
+//
+// **`kind` enum.** The five surfaced diagnostic kinds, identical to
+// the `DiagnosticKind` discriminator in `event-emission.ts`.
+// `pending-consequences` is DELIBERATELY EXCLUDED from the aggregator
+// per its own refinement's stub-framing; re-promoting it is a one-
+// line append both here and in the diagnostics module.
+//
+// **`severity` enum.** Reuses the classifier vocabulary from
+// `apps/server/src/diagnostics/classification.ts` —
+// `'blocking' | 'advisory'`, doc-grounded in `docs/methodology.md`
+// lines 210–227 ("Resolution of structural diagnostics"). The
+// blocking/advisory split is the source of truth for severity in the
+// system; mapping to `info/warn/error` would invent a translation
+// layer that doesn't match any other surface and would drift from the
+// methodology doc.
+//
+// **`status` field.** `'fired' | 'cleared'` — mirrors the
+// `DiagnosticBus`'s `'fired' | 'cleared'` event names. A diagnostic
+// can fire on one event and clear on a later one (e.g. a cycle fires
+// when a `supports` edge is added that closes a loop; the cycle
+// clears when that edge is removed by amendment or decomposition).
+// Receivers maintain their own diagnostic-set state by applying each
+// `fired` / `cleared` delta to the prior snapshot.
+//
+// **Ordering relative to `event-applied`.** Diagnostic broadcasts
+// fire from the projection-cache wiring AFTER `applyEvent` re-runs
+// the diagnostic snapshot. The current code does not yet wire the
+// projection cache to the diagnostic bus; the bridge module owns the
+// `notifyForSession(sessionId, sequence, prev, next)` entry point
+// the cache will call AFTER its `event-applied` bus emit. Wiring-
+// order invariant: routes emit `event-applied` AFTER COMMIT, then
+// the projection wiring computes prev/next and calls the diagnostic
+// notifier — so subscribed clients see `event-applied(N)` before
+// `diagnostic` envelopes derived from the post-N projection. See
+// `tasks/refinements/backend/ws_diagnostic_broadcast.md`'s Decisions
+// for the full ordering note.
+
+/** Closed enum for the wire `kind` discriminator on `diagnostic`. */
+export const wsDiagnosticKinds = [
+  'cycle',
+  'contradiction',
+  'multi-warrant',
+  'dangling-claim',
+  'coherency-hint',
+] as const;
+
+export type WsDiagnosticKind = (typeof wsDiagnosticKinds)[number];
+
+/** Closed enum for the `status` discriminator on `diagnostic`. */
+export const wsDiagnosticStatuses = ['fired', 'cleared'] as const;
+
+export type WsDiagnosticStatus = (typeof wsDiagnosticStatuses)[number];
+
+/** Closed enum for the `severity` field on `diagnostic`. Mirrors the
+ *  classifier vocabulary from `apps/server/src/diagnostics/classification.ts`. */
+export const wsDiagnosticSeverities = ['blocking', 'advisory'] as const;
+
+export type WsDiagnosticSeverity = (typeof wsDiagnosticSeverities)[number];
+
+/**
+ * Server → client diagnostic broadcast payload. The five surfaced
+ * structural-diagnostic kinds are derived from the projection by the
+ * detectors under `apps/server/src/diagnostics/`; this envelope is
+ * the wire surface a subscribed client uses to render the moderator
+ * UI's diagnostic panel (and the participant UI's per-facet
+ * annotations) without a separate fetch.
+ *
+ * - `sessionId` — which session the diagnostic is about. Used by the
+ *   broadcast subscriber's `connectionsForSession(sessionId)` lookup;
+ *   receivers also use it for routing when a single connection
+ *   subscribes to multiple sessions (rare, but supported).
+ * - `kind` — the diagnostic kind discriminator. Closed enum over the
+ *   five surfaced kinds; pending-consequences is excluded per the
+ *   stub-framing of its detector.
+ * - `severity` — `'blocking' | 'advisory'` per the classifier
+ *   (`classifyDiagnostic`). Cycle + contradiction are blocking;
+ *   multi-warrant, dangling-claim, and coherency-hint are advisory.
+ * - `status` — `'fired'` when the diagnostic newly appears in the
+ *   post-event projection; `'cleared'` when it was present before
+ *   and is gone afterward. The DiagnosticBus's diff semantics.
+ * - `sequence` — the event-log sequence number at which the
+ *   diagnostic fired/cleared. Lets receivers correlate a diagnostic
+ *   delta with the prior `event-applied` frame that triggered the
+ *   re-computation.
+ * - `diagnostic` — the full `DiagnosticEntry` from the diagnostics
+ *   module, passed through verbatim. Typed `z.unknown()` at the wire
+ *   layer for the same reason `snapshot-state.projection` is unknown:
+ *   the inner type is owned elsewhere and re-validating it here
+ *   would force a wire-schema update on every detector change. The
+ *   construction surface in the bridge module is type-checked.
+ */
+export const diagnosticPayloadSchema = z.object({
+  sessionId: z.string().uuid(),
+  kind: z.enum(wsDiagnosticKinds),
+  severity: z.enum(wsDiagnosticSeverities),
+  status: z.enum(wsDiagnosticStatuses),
+  sequence: z.number().int().nonnegative(),
+  diagnostic: z.unknown(),
+});
+
+export type DiagnosticPayload = {
+  sessionId: string;
+  kind: WsDiagnosticKind;
+  severity: WsDiagnosticSeverity;
+  status: WsDiagnosticStatus;
+  sequence: number;
+  diagnostic: unknown;
+};
+
+// -- proposal-status payload --------------------------------------
+//
+// `proposal-status` (server → client): emitted by the broadcast surface
+// (`ws_proposal_status_broadcast`) AFTER the corresponding
+// `event-applied` broadcast whenever an appended event modifies the
+// per-facet status of a proposal. Every WS connection subscribed to
+// the affected `sessionId` receives one `proposal-status` envelope per
+// affected proposal — the broadcast is a derived/projected view atop
+// the raw `event-applied` stream so clients can update facet displays
+// without re-running `deriveFacetStatus` themselves.
+//
+// **Filter set — which events trigger.** The subscriber filters the
+// bus to only the four event kinds that can change per-facet status:
+// `proposal`, `vote`, `commit`, `meta-disagreement-marked`. Other
+// event kinds (session-created, participant-joined, entity-included,
+// etc.) do NOT produce a `proposal-status` envelope. `vote` events
+// include the `withdraw` arm — there is no separate `vote-withdrawn`
+// event kind; withdrawal is a vote variant per `events.ts`.
+//
+// **Ordering relative to `event-applied`.** The bus dispatches
+// synchronously to listeners in registration order, and the
+// proposal-status subscriber registers AFTER the event-applied
+// subscriber in `server.ts`. So for a given event, every subscribed
+// connection observes `event-applied` FIRST and (if applicable) the
+// derived `proposal-status` envelope AFTER. The broadcasts share a
+// session and a sequence, so a client correlates them via the carried
+// `sequence` value when needed.
+//
+// **`perFacetStatus` shape.** A flat object keyed by `FacetName`
+// (`'classification' | 'substance' | 'wording'`) with `FacetStatus`
+// string values (`'proposed' | 'agreed' | 'disputed' | 'committed' |
+// 'withdrawn' | 'meta-disagreement'`). Only facets the affected
+// proposal targets are present — a `set-node-substance` proposal
+// produces `{ substance: <status> }`; a `classify-node` proposal
+// produces `{ classification: <status> }`; structural proposal sub-
+// kinds (axiom-mark / decompose / interpretive-split / meta-move /
+// break-edge / amend-node / annotate) target no facet and the
+// subscriber skips them entirely (no broadcast). The wire schema
+// validates the outer envelope shape and accepts `perFacetStatus` as
+// `z.record(z.string())` — the closed enum lives in
+// `apps/server/src/projection/types.ts` (`FacetName`, `FacetStatus`)
+// and the construction surface in
+// `apps/server/src/ws/broadcast/proposal-status.ts` is the type-
+// checked seam. Mirrors the same trade-off as
+// `snapshot-state.projection` / `diagnostic.diagnostic`: the inner
+// vocabulary is owned by another module's refinements, and widening
+// the wire schema to enforce every value would tightly couple the WS
+// contract to those types.
+//
+// **`proposalId` and `sequence`.** The `proposalId` is the appended
+// event's `proposal_id` (vote / commit / mark-meta-disagreement) or
+// the event's own `id` for `proposal` events. The `sequence` mirrors
+// the triggering event's sequence so receivers can pin the broadcast
+// to a specific point on the event log.
+
+/**
+ * Server → client derived broadcast payload. Carries the current
+ * per-facet status for the proposal a just-appended event affected.
+ *
+ * - `sessionId` — which session the proposal belongs to. Used by the
+ *   broadcast subscriber's `connectionsForSession(sessionId)` lookup.
+ * - `proposalId` — the proposal whose status changed. Lets receivers
+ *   address the matching facet display directly without re-deriving
+ *   from the raw event.
+ * - `sequence` — the event-log sequence at which the status was
+ *   computed (the triggering event's sequence). Receivers can drop a
+ *   stale `proposal-status` envelope by sequence comparison if frames
+ *   reorder across reconnect.
+ * - `perFacetStatus` — a flat object keyed by `FacetName` with
+ *   `FacetStatus` string values; only facets the affected proposal
+ *   targets appear. See `apps/server/src/projection/types.ts` for the
+ *   closed enums.
+ */
+export const proposalStatusPayloadSchema = z.object({
+  sessionId: z.string().uuid(),
+  proposalId: z.string().uuid(),
+  sequence: z.number().int().nonnegative(),
+  perFacetStatus: z.record(z.string(), z.string()),
+});
+
+export type ProposalStatusPayload = {
+  sessionId: string;
+  proposalId: string;
+  sequence: number;
+  perFacetStatus: Record<string, string>;
+};
+
 // -- Registry -------------------------------------------------------
 //
 // Exhaustive over `WsMessageType` (the `Record<...>` annotation forces
@@ -881,6 +1107,8 @@ export const wsMessagePayloadSchemas: Record<WsMessageType, z.ZodTypeAny> = {
   // construction (schema-on-write invariant per ADR 0021).
   'event-applied': eventAppliedPayloadSchema,
   error: errorPayloadSchema,
+  diagnostic: diagnosticPayloadSchema,
+  'proposal-status': proposalStatusPayloadSchema,
 };
 
 // -- Per-type payload type map -------------------------------------
@@ -909,6 +1137,8 @@ export interface WsMessagePayloadMap {
   'snapshot-state': SnapshotStatePayload;
   'event-applied': EventAppliedPayload;
   error: ErrorPayload;
+  diagnostic: DiagnosticPayload;
+  'proposal-status': ProposalStatusPayload;
 }
 
 export type WsPayloadFor<T extends WsMessageType> = WsMessagePayloadMap[T];

@@ -23,3 +23,21 @@ export {
   wsEventAppliedBroadcastPlugin,
   type EventAppliedBroadcastListenerOptions,
 } from './event-applied.js';
+export {
+  buildDiagnosticBroadcastListener,
+  WsDiagnosticBroadcast,
+  wsDiagnosticBusPlugin,
+  wsDiagnosticBroadcastPlugin,
+  type DiagnosticBroadcastActiveContext,
+  type DiagnosticBroadcastListener,
+  type DiagnosticBroadcastListenerOptions,
+  type DiagnosticBroadcastStatus,
+} from './diagnostic.js';
+export {
+  buildProposalStatusBroadcastListener,
+  buildPoolEventLoader,
+  wsProposalStatusBroadcastPlugin,
+  type ProposalStatusBroadcastListenerOptions,
+  type ProposalStatusEventLoader,
+  type WsProposalStatusBroadcastOptions,
+} from './proposal-status.js';

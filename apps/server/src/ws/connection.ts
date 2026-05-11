@@ -884,6 +884,18 @@ export async function __buildTestWsApp(
   // dispatcher and the subscription registry, both of which
   // `wsHandlersPlugin` reaches for at registration time.
   await app.register(wsHandlersPlugin, { pool: opts.pool });
+
+  // Register the WS diagnostic broadcast surface so the cucumber +
+  // integration tests can exercise the full bridge:
+  // `app.wsDiagnosticBroadcast.notifyForSession(...) → DiagnosticBus
+  // → WS fan-out`. Mirrors `createServer`'s registration order —
+  // AFTER the connection-handling plugin (so the connection-sender
+  // registry + subscription registry are present) and AFTER the
+  // handlers plugin (so subscribe handling is wired). Refinement:
+  // tasks/refinements/backend/ws_diagnostic_broadcast.md.
+  const { wsDiagnosticBroadcastPlugin } = await import('./broadcast/diagnostic.js');
+  await app.register(wsDiagnosticBroadcastPlugin);
+
   await app.ready();
   return app;
 }

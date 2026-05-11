@@ -62,7 +62,11 @@ import { errorEnvelopeRef, openapiPlugin } from './openapi.js';
 import { healthzPlugin } from './routes/healthz.js';
 import { sessionsRoutesPlugin } from './sessions/routes.js';
 import { wsHandlersPlugin } from './ws/handlers/index.js';
-import { wsConnectionHandlingPlugin } from './ws/index.js';
+import {
+  wsConnectionHandlingPlugin,
+  wsDiagnosticBroadcastPlugin,
+  wsProposalStatusBroadcastPlugin,
+} from './ws/index.js';
 
 /**
  * Options that vary between deployment modes (production, dev,
@@ -274,6 +278,36 @@ export async function createServer(options: CreateServerOptions = {}): Promise<F
   // registry that plugin decorates. Refinement:
   // tasks/refinements/backend/ws_subscribe_to_session.md.
   await app.register(wsHandlersPlugin);
+
+  // WS diagnostic broadcast surface. Bridges the projection-layer
+  // `DiagnosticBus` to the WS fan-out: decorates `app.diagnosticBus`
+  // + `app.wsDiagnosticBroadcast` (the session-context-aware
+  // wrapper) and binds `fired` / `cleared` listeners that fan out a
+  // `diagnostic` envelope to every connection subscribed to the
+  // diagnostic's session. Registered AFTER `wsConnectionHandlingPlugin`
+  // (so `app.wsConnectionSenders` + `app.wsSubscriptions` are
+  // available) and AFTER the event-applied broadcast plugin (so the
+  // listener-registration order matches the natural broadcast
+  // ordering: `event-applied(N)` before any `diagnostic` derived
+  // from the post-N projection). Refinement:
+  // tasks/refinements/backend/ws_diagnostic_broadcast.md.
+  await app.register(wsDiagnosticBroadcastPlugin);
+
+  // WS proposal-status broadcast surface. Listens on `app.wsBroadcast`
+  // for the four status-affecting event kinds (propose / vote /
+  // commit / meta-disagreement-marked); on each, loads the session's
+  // event log up to the triggering sequence, builds a fresh
+  // projection, derives the per-facet status via `deriveFacetStatus`,
+  // and fans out a `proposal-status` envelope to every connection
+  // subscribed to the session. Registered AFTER
+  // `wsConnectionHandlingPlugin` (so `app.wsBroadcast` /
+  // `app.wsConnectionSenders` / `app.wsSubscriptions` are available)
+  // and AFTER the event-applied broadcast plugin registered inside
+  // it — that registration order is what makes the bus's synchronous
+  // dispatch deliver `event-applied` first and `proposal-status`
+  // second on every emit. Refinement:
+  // tasks/refinements/backend/ws_proposal_status_broadcast.md.
+  await app.register(wsProposalStatusBroadcastPlugin);
 
   return app;
 }

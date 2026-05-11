@@ -240,7 +240,9 @@ task backend "Backend" {
     task ws_diagnostic_broadcast "Server → clients: diagnostic-fired broadcast" {
       effort 0.5d
       allocate team
+      complete 100
       depends !ws_event_broadcast, data_and_methodology.diagnostics.diagnostic_event_emission
+      note "Refinement: tasks/refinements/backend/ws_diagnostic_broadcast.md"
     }
     task ws_error_message "Server → client: error responses (validation, permission, etc.)" {
       effort 0.5d
