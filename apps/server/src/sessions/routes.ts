@@ -202,9 +202,19 @@ import fp from 'fastify-plugin';
 import { ApiError } from '../errors.js';
 import { errorEnvelopeRef } from '../openapi.js';
 import { getDefaultPool, type DbPool } from '../db.js';
+import { appendSessionEvent } from '../events/append.js';
 import { validateEvent } from '../events/validate.js';
 import { canReferenceAnnotation, canReferenceEdge, canReferenceNode } from './references.js';
 import { visibilityWhereFragment } from './visibility.js';
+
+// `@a-conversa/shared-types`'s `Event` discriminated union — used by
+// the post-COMMIT broadcast emit. The route's `withTransaction`
+// callback collects every event it appends into a local array; after
+// the COMMIT lands, the route iterates the array and calls
+// `app.wsBroadcast.emit(...)` for each (the post-commit-emit
+// invariant — see tasks/refinements/backend/ws_event_broadcast.md).
+import type { Event } from '@a-conversa/shared-types';
+import { wsBroadcastPlugin } from '../ws/broadcast/index.js';
 
 /**
  * Options accepted by `sessionsRoutesPlugin`. Every field is optional —
@@ -996,10 +1006,21 @@ export function participantRowToResponse(row: SessionParticipantsRow): {
  * visible at registration time, and the error-handler plugin classifies
  * thrown errors under the canonical envelope.
  */
-const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = (
+const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = async (
   app: FastifyInstance,
   opts,
 ) => {
+  // Ensure `app.wsBroadcast` is decorated so the post-COMMIT
+  // event-applied emit can publish. Both this plugin and
+  // `wsConnectionHandlingPlugin` register the bus plugin — the bus
+  // plugin's own `hasDecorator` guard makes the second registration
+  // a no-op so order doesn't matter. Without this, the
+  // `__buildTestSessionsApp` builder (used by `routes.test.ts`)
+  // wouldn't have the bus and the routes' `app.wsBroadcast.emit(...)`
+  // call would throw. Refinement:
+  // tasks/refinements/backend/ws_event_broadcast.md.
+  await app.register(wsBroadcastPlugin);
+
   // Register the shared `SessionResponse` schema once per Fastify
   // instance. `addSchema` is idempotent across `fastify-plugin`-wrapped
   // plugins on the same scope, but Fastify throws if the same `$id` is
@@ -1107,6 +1128,12 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = (
       const topic = body.topic;
       const privacy: 'public' | 'private' = body.privacy ?? 'public';
 
+      // Events appended inside the transaction. Emitted to the WS
+      // broadcast bus AFTER the transaction commits (the post-commit-
+      // emit invariant — emitting before commit risks a subscriber
+      // observing a frame for an event the DB later rolls back).
+      const appendedEvents: Event[] = [];
+
       const created = await withTransaction(ensurePool(), async (client) => {
         // 1. Insert the session row. `gen_random_uuid()` produces the
         //    id; `NOW()` produces `created_at`; RETURNING surfaces the
@@ -1162,28 +1189,13 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = (
         // `withTransaction`.
         validateEvent(envelope);
 
-        // 3. Insert the event row. `sequence = 1` hard-coded because
-        //    this is the session's first event (no prior events to
-        //    select MAX from). `actor` is the host. `payload` carries
-        //    the snake_case shared-types payload. `created_at` is
-        //    server-managed via the column default — we don't pass
-        //    `eventCreatedAtIso` here because the projection layer
-        //    reads `created_at` from the row, not the payload, and
-        //    consistency with the DB clock is preferable to consistency
-        //    with the wall clock at handler-entry time.
-        await client.query(
-          `INSERT INTO session_events
-             (id, session_id, sequence, kind, actor, payload)
-           VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
-          [
-            envelope.id,
-            envelope.sessionId,
-            envelope.sequence,
-            envelope.kind,
-            envelope.actor,
-            JSON.stringify(envelope.payload),
-          ],
-        );
+        // 3. Insert the event row via the centralized
+        //    `appendSessionEvent` helper — single SQL surface across
+        //    every event-append site (per
+        //    tasks/refinements/backend/ws_event_broadcast.md). The
+        //    returned event is collected for the post-COMMIT WS
+        //    broadcast emit.
+        appendedEvents.push(await appendSessionEvent(client, envelope));
 
         // 4. Implicit-moderator join (Option A per
         //    `tasks/refinements/backend/participant_assignment.md`).
@@ -1242,22 +1254,22 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = (
           createdAt: joinEventCreatedAtIso,
         };
         validateEvent(joinEnvelope);
-        await client.query(
-          `INSERT INTO session_events
-             (id, session_id, sequence, kind, actor, payload)
-           VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
-          [
-            joinEnvelope.id,
-            joinEnvelope.sessionId,
-            joinEnvelope.sequence,
-            joinEnvelope.kind,
-            joinEnvelope.actor,
-            JSON.stringify(joinEnvelope.payload),
-          ],
-        );
+        appendedEvents.push(await appendSessionEvent(client, joinEnvelope));
 
         return row;
       });
+
+      // Post-commit broadcast emit (per
+      // tasks/refinements/backend/ws_event_broadcast.md). The
+      // transaction has COMMITted; every collected event is a durable
+      // row. Emitting now means subscribers see the broadcast AFTER
+      // the DB write is final — never for a row that gets rolled back.
+      // The bus dispatches synchronously and the broadcast subscriber
+      // iterates `app.wsSubscriptions.connectionsForSession(...)` to
+      // fan out the `event-applied` envelope.
+      for (const evt of appendedEvents) {
+        app.wsBroadcast.emit({ event: evt });
+      }
 
       // 201 Created — the row is the new resource; the response body
       // carries the full camelCase shape so the client doesn't need a
@@ -1593,6 +1605,11 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = (
       const params = request.params as { id: string };
       const sessionId = params.id;
 
+      // Events appended inside the transaction. Emitted to the WS
+      // broadcast bus after COMMIT (post-commit-emit invariant — see
+      // tasks/refinements/backend/ws_event_broadcast.md).
+      const appendedEvents: Event[] = [];
+
       // The whole flow lives inside a single transaction so the
       // visibility check, the authority check, the UPDATE, the
       // MAX(sequence) read, and the event INSERT are atomic with
@@ -1729,25 +1746,19 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = (
         };
         validateEvent(envelope);
 
-        // 7. INSERT the event row. `payload` carries the snake_case
-        //    shared-types payload; `created_at` is server-managed via
-        //    the column default.
-        await client.query(
-          `INSERT INTO session_events
-             (id, session_id, sequence, kind, actor, payload)
-           VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
-          [
-            envelope.id,
-            envelope.sessionId,
-            envelope.sequence,
-            envelope.kind,
-            envelope.actor,
-            JSON.stringify(envelope.payload),
-          ],
-        );
+        // 7. INSERT the event row via the centralized
+        //    `appendSessionEvent` helper. The appended event is
+        //    collected for the post-COMMIT WS broadcast emit.
+        appendedEvents.push(await appendSessionEvent(client, envelope));
 
         return updated;
       });
+
+      // Post-commit broadcast emit (see
+      // tasks/refinements/backend/ws_event_broadcast.md).
+      for (const evt of appendedEvents) {
+        app.wsBroadcast.emit({ event: evt });
+      }
 
       return reply.code(200).send(sessionRowToResponse(updatedRow));
     },
@@ -1975,6 +1986,11 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = (
       const targetUserId = body.userId;
       const targetRole = body.role;
 
+      // Events appended inside the transaction. Emitted to the WS
+      // broadcast bus after COMMIT (post-commit-emit invariant — see
+      // tasks/refinements/backend/ws_event_broadcast.md).
+      const appendedEvents: Event[] = [];
+
       const inserted = await withTransaction(ensurePool(), async (client) => {
         // 1. Visibility-gated SELECT ... FOR UPDATE — same predicate
         //    `POST /sessions/:id/end` uses. The FOR UPDATE row lock
@@ -2141,22 +2157,18 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = (
           createdAt: eventCreatedAtIso,
         };
         validateEvent(envelope);
-        await client.query(
-          `INSERT INTO session_events
-             (id, session_id, sequence, kind, actor, payload)
-           VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
-          [
-            envelope.id,
-            envelope.sessionId,
-            envelope.sequence,
-            envelope.kind,
-            envelope.actor,
-            JSON.stringify(envelope.payload),
-          ],
-        );
+        // INSERT via centralized helper + collect for post-COMMIT
+        // broadcast emit.
+        appendedEvents.push(await appendSessionEvent(client, envelope));
 
         return participantRow;
       });
+
+      // Post-commit broadcast emit (see
+      // tasks/refinements/backend/ws_event_broadcast.md).
+      for (const evt of appendedEvents) {
+        app.wsBroadcast.emit({ event: evt });
+      }
 
       return reply.code(200).send(participantRowToResponse(inserted));
     },
@@ -2230,6 +2242,11 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = (
       const params = request.params as { id: string; userId: string };
       const sessionId = params.id;
       const targetUserId = params.userId;
+
+      // Events appended inside the transaction. Emitted to the WS
+      // broadcast bus after COMMIT (post-commit-emit invariant — see
+      // tasks/refinements/backend/ws_event_broadcast.md).
+      const appendedEvents: Event[] = [];
 
       const updated = await withTransaction(ensurePool(), async (client) => {
         // 1. Visibility-gated SELECT ... FOR UPDATE — same predicate
@@ -2357,22 +2374,18 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = (
           createdAt: eventCreatedAtIso,
         };
         validateEvent(envelope);
-        await client.query(
-          `INSERT INTO session_events
-             (id, session_id, sequence, kind, actor, payload)
-           VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
-          [
-            envelope.id,
-            envelope.sessionId,
-            envelope.sequence,
-            envelope.kind,
-            envelope.actor,
-            JSON.stringify(envelope.payload),
-          ],
-        );
+        // INSERT via centralized helper + collect for post-COMMIT
+        // broadcast emit.
+        appendedEvents.push(await appendSessionEvent(client, envelope));
 
         return updatedRow;
       });
+
+      // Post-commit broadcast emit (see
+      // tasks/refinements/backend/ws_event_broadcast.md).
+      for (const evt of appendedEvents) {
+        app.wsBroadcast.emit({ event: evt });
+      }
 
       return reply.code(200).send(participantRowToResponse(updated));
     },
@@ -2532,6 +2545,11 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = (
         readonly included_at: Date | string;
       }
 
+      // Events appended inside the transaction. Emitted to the WS
+      // broadcast bus after COMMIT (post-commit-emit invariant — see
+      // tasks/refinements/backend/ws_event_broadcast.md).
+      const appendedEvents: Event[] = [];
+
       const inclusion = await withTransaction(ensurePool(), async (client) => {
         // 1. Destination visibility — SELECT ... FOR UPDATE.
         //    Mirrors the predicate every session-management endpoint
@@ -2679,19 +2697,9 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = (
           createdAt: eventCreatedAtIso,
         };
         validateEvent(envelope);
-        await client.query(
-          `INSERT INTO session_events
-             (id, session_id, sequence, kind, actor, payload)
-           VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
-          [
-            envelope.id,
-            envelope.sessionId,
-            envelope.sequence,
-            envelope.kind,
-            envelope.actor,
-            JSON.stringify(envelope.payload),
-          ],
-        );
+        // INSERT via centralized helper + collect for post-COMMIT
+        // broadcast emit.
+        appendedEvents.push(await appendSessionEvent(client, envelope));
 
         return {
           sessionId: destinationSessionId,
@@ -2699,6 +2707,12 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = (
           includedAt: includedAtIso,
         };
       });
+
+      // Post-commit broadcast emit (see
+      // tasks/refinements/backend/ws_event_broadcast.md).
+      for (const evt of appendedEvents) {
+        app.wsBroadcast.emit({ event: evt });
+      }
 
       return reply.code(200).send({
         entityKind,
@@ -2710,10 +2724,10 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = (
     },
   );
 
-  // The plugin body is synchronous — `app.post(...)` returns the
-  // FastifyInstance, not a Promise — but `FastifyPluginAsync` demands
-  // a Promise<void> return. Mirrors the auth-routes plugin convention.
-  return Promise.resolve();
+  // The plugin body's `await app.register(wsBroadcastPlugin)` makes
+  // this async; the rest of the body runs synchronously (`app.post(...)`
+  // returns the FastifyInstance, not a Promise) but the `async` keyword
+  // satisfies the `FastifyPluginAsync` Promise<void> return contract.
 };
 
 /**

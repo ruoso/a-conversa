@@ -127,6 +127,11 @@ import { ApiError } from '../errors.js';
 // as a value namespace.
 import type { WebSocket } from 'ws';
 
+import {
+  wsBroadcastPlugin,
+  wsConnectionSendersPlugin,
+  wsEventAppliedBroadcastPlugin,
+} from './broadcast/index.js';
 import { wsDispatcherPlugin } from './dispatcher.js';
 import {
   buildHelloEnvelope,
@@ -272,6 +277,18 @@ function buildConnectionHandler(
     const ctx: WsConnectionContext = { connectionId, socket, user };
     openConnections.add(ctx);
 
+    // Register the per-connection sender on the connection-sender
+    // registry so the broadcast surface (`ws_event_broadcast`) can
+    // fan out frames over this socket without reaching into this
+    // module's closures. The sender is a thin wrapper around
+    // `serializeWsEnvelope` + `socket.send` — keeping the
+    // serialisation here means every server-emitted frame (hello,
+    // ack, broadcast) goes through one code path. The sender is
+    // unregistered in the `close` hook below.
+    app.wsConnectionSenders.register(connectionId, (envelope) => {
+      socket.send(serializeWsEnvelope(envelope));
+    });
+
     // Per-request logger carries `reqId`; the explicit `connectionId`
     // plus `userId` is added so a single connection's lifecycle can be
     // filtered out of an aggregator by either predicate. The fastify
@@ -366,6 +383,11 @@ function buildConnectionHandler(
       // byConnection indices; calling once on close is the single
       // teardown point.
       app.wsSubscriptions.removeConnection(connectionId);
+      // Drop the per-connection sender so the broadcast surface
+      // (`ws_event_broadcast`) skips this connection on future fan-
+      // outs. Idempotent — a connection that never registered makes
+      // this a no-op. Paired with the `register(...)` call on open.
+      app.wsConnectionSenders.unregister(connectionId);
       // The `reason` arrives as a `Buffer` (possibly empty); convert
       // to a string for the log line. Empty buffers serialise to an
       // empty string, which is the right "no reason given" signal.
@@ -711,11 +733,23 @@ const wsConnectionHandlingPluginAsync: FastifyPluginAsync<WsConnectionHandlingOp
   // `app.wsSubscriptions`. The connection-close hook (above) calls
   // `removeConnection(...)`; the `subscribe` / `unsubscribe` message
   // handlers (registered by `wsHandlersPlugin` in `server.ts`) reach
-  // for `subscribe(...)` / `unsubscribe(...)`; the future
-  // `ws_event_broadcast` task will reach for
-  // `connectionsForSession(...)`. Refinement:
-  // tasks/refinements/backend/ws_subscribe_to_session.md.
+  // for `subscribe(...)` / `unsubscribe(...)`; the broadcast surface
+  // (`ws_event_broadcast`) reaches for `connectionsForSession(...)`.
+  // Refinement: tasks/refinements/backend/ws_subscribe_to_session.md.
   await app.register(wsSubscriptionsPlugin);
+
+  // Per-app-instance WS broadcast surface. The bus (`app.wsBroadcast`)
+  // accepts `event-applied` emissions from the session-management
+  // routes after their `session_events` INSERT commits; the per-
+  // connection sender registry (`app.wsConnectionSenders`) holds the
+  // (connectionId -> send-on-this-socket) lookup the broadcast
+  // listener fans out through. Registering the broadcast subscriber
+  // (`wsEventAppliedBroadcastPlugin`) wires the listener to the bus
+  // so emits are observed. Refinement:
+  // tasks/refinements/backend/ws_event_broadcast.md.
+  await app.register(wsBroadcastPlugin);
+  await app.register(wsConnectionSendersPlugin);
+  await app.register(wsEventAppliedBroadcastPlugin);
 
   // Route + shutdown hook stay encapsulated to the child plugin —
   // only the library decorations need to hoist. The auth resolvers

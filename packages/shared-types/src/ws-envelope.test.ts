@@ -34,16 +34,18 @@ describe('wsMessageTypes vocabulary', () => {
   it('exposes the closed enum the registry is exhaustive over', () => {
     // `hello` came from `ws_message_envelope`; `subscribe` /
     // `unsubscribe` (client → server) and `subscribed` / `unsubscribed`
-    // (server → client acks) came from `ws_subscribe_to_session`. Each
-    // downstream message-type task expands this enum + its registry
-    // entry; the assertion pins the current state so an accidental
-    // widening is loud.
+    // (server → client acks) came from `ws_subscribe_to_session`;
+    // `event-applied` (server → client broadcast) came from
+    // `ws_event_broadcast`. Each downstream message-type task expands
+    // this enum + its registry entry; the assertion pins the current
+    // state so an accidental widening is loud.
     expect([...wsMessageTypes]).toEqual([
       'hello',
       'subscribe',
       'unsubscribe',
       'subscribed',
       'unsubscribed',
+      'event-applied',
     ]);
   });
 

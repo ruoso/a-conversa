@@ -218,7 +218,9 @@ task backend "Backend" {
     task ws_event_broadcast "Server → all subscribed clients: event-applied broadcast" {
       effort 1d
       allocate team
+      complete 100
       depends !ws_subscribe_to_session
+      note "Refinement: tasks/refinements/backend/ws_event_broadcast.md"
     }
     task ws_proposal_status_broadcast "Server → clients: per-facet vote state broadcast" {
       effort 1d

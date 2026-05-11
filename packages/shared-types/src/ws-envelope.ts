@@ -54,6 +54,8 @@
 
 import { z } from 'zod';
 
+import { eventEnvelopeSchema, type Event } from './events.js';
+
 // -- Message-type vocabulary ----------------------------------------
 //
 // The closed list of `type` discriminator values. Today only `hello`
@@ -73,6 +75,7 @@ export const wsMessageTypes = [
   'unsubscribe',
   'subscribed',
   'unsubscribed',
+  'event-applied',
 ] as const;
 
 export type WsMessageType = (typeof wsMessageTypes)[number];
@@ -177,6 +180,42 @@ export const unsubscribedPayloadSchema = z.object({
 
 export type UnsubscribedPayload = z.infer<typeof unsubscribedPayloadSchema>;
 
+// -- event-applied payload -----------------------------------------
+//
+// `event-applied` (server → client): emitted by the broadcast surface
+// (`ws_event_broadcast`) whenever an event is successfully appended to
+// `session_events`. Every WS connection subscribed to the event's
+// `sessionId` (via `subscribe`) receives one `event-applied` envelope
+// per appended event, in per-session sequence order.
+//
+// The payload wraps the appended event verbatim — same shape `events.ts`
+// owns. Wrapping (rather than spreading the event fields onto the
+// payload top level) keeps the event surface treatable as a single
+// unit downstream consumers can pass to any code path that already
+// handles a persisted event (the projection layer, the methodology
+// engine's replay, audit logs).
+//
+// `sessionId` and `sequence` are NOT separate top-level fields on the
+// payload — they live on the inner `event` already (and would otherwise
+// drift). The convention saves a frame's worth of bytes and keeps the
+// invariant "the event IS the broadcast" obvious to a wire-trace reader.
+//
+// **Ordering invariant.** The broadcast surface emits AFTER the
+// `session_events` INSERT commits. Two events for the same session
+// committed in sequence order produce two `event-applied` broadcasts
+// in the same sequence order on every subscribed connection (per-
+// session per-connection FIFO). Cross-session ordering is NOT
+// guaranteed; subscribers care only about their own session's stream.
+
+export const eventAppliedPayloadSchema = z.object({
+  event: eventEnvelopeSchema,
+});
+
+export type EventAppliedPayload = {
+  /** The appended event — same shape `events.ts` owns. */
+  event: Event;
+};
+
 // -- Registry -------------------------------------------------------
 //
 // Exhaustive over `WsMessageType` (the `Record<...>` annotation forces
@@ -191,6 +230,13 @@ export const wsMessagePayloadSchemas: Record<WsMessageType, z.ZodTypeAny> = {
   unsubscribe: unsubscribePayloadSchema,
   subscribed: subscribedPayloadSchema,
   unsubscribed: unsubscribedPayloadSchema,
+  // The outer event envelope is checked; the per-kind payload inside
+  // the event is `z.unknown()` per the schema in `events.ts` and is
+  // re-validated by `validateEvent` on the receiving side. Server-side
+  // we run `validateEvent` BEFORE the append + broadcast, so every
+  // broadcast emitted carries a structurally valid event by
+  // construction (schema-on-write invariant per ADR 0021).
+  'event-applied': eventAppliedPayloadSchema,
 };
 
 // -- Per-type payload type map -------------------------------------
@@ -205,6 +251,7 @@ export interface WsMessagePayloadMap {
   unsubscribe: UnsubscribePayload;
   subscribed: SubscribedPayload;
   unsubscribed: UnsubscribedPayload;
+  'event-applied': EventAppliedPayload;
 }
 
 export type WsPayloadFor<T extends WsMessageType> = WsMessagePayloadMap[T];
