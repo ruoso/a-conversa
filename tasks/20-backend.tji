@@ -182,7 +182,9 @@ task backend "Backend" {
     task ws_message_envelope "Common WS message envelope and serialization" {
       effort 1d
       allocate team
+      complete 100
       depends !ws_connection_handling
+      note "Refinement: tasks/refinements/backend/ws_message_envelope.md"
     }
     task ws_propose_message "Propose message: client → server" {
       effort 1d

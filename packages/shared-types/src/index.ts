@@ -5,3 +5,4 @@
 // envelopes today, WS message and API types as later tasks land them.
 
 export * from './events.js';
+export * from './ws-envelope.js';

@@ -9,24 +9,33 @@
 // Tests for the WebSocket connection-lifecycle plugin.
 //
 // Refinement: tasks/refinements/backend/ws_connection_handling.md
+//             tasks/refinements/backend/ws_auth_on_connect.md
 // ADRs:        docs/adr/0023-web-framework-fastify.md,
 //              docs/adr/0022-no-throwaway-verifications.md
 // TaskJuggler: backend.websocket_protocol.ws_connection_handling
 //
-// Coverage:
-//   1. A connection opens and receives the placeholder hello frame
-//      `{ type: 'hello', connectionId }` as its first message.
-//   2. The `connectionId` is a syntactically-valid RFC 4122 v4 UUID.
-//   3. A client-initiated close drives the server's `close` handler
-//      (asserted indirectly by app teardown succeeding while the
-//      connection is open — the onClose hook is exercised in the
-//      shutdown test below).
+// **Coverage.** The lifecycle primitives:
+//   1. A connection opens and receives the canonical hello envelope
+//      `{ type: 'hello', id, payload: { connectionId } }` as its first
+//      message — replacing the prior placeholder shape per
+//      `ws_message_envelope`.
+//   2. Both the envelope `id` and the payload `connectionId` are
+//      syntactically-valid RFC 4122 v4 UUIDs.
+//   3. A client-initiated close drives the server's `close` handler.
 //   4. App close hook → an in-flight connection receives a 1001
 //      going-away close from the server.
 //   5. Unexpected-error path → setting the test-only force-error
 //      header on the upgrade request causes the handler to throw,
 //      the library's `errorHandler` callback fires, and the socket
 //      receives a 1011 internal-error close.
+//
+// **Authentication seam.** Every test in this file authenticates the
+// WS upgrade — `ws_auth_on_connect` made auth a precondition for any
+// connection. Tests mint a session JWT for `FIXTURE_USER_ID` and pass
+// it via the `Cookie` header in the upgrade `Request`. Auth-rejection
+// scenarios (no cookie / bad signature / expired token / valid user
+// stashed on context) live in the sibling `auth.test.ts`; this file
+// is the lifecycle-after-auth surface.
 //
 // Tests use `@fastify/websocket`'s `app.injectWS(...)` to drive a
 // connection against the in-process Fastify instance — no port bind,
@@ -36,8 +45,14 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 
-import { createServer } from '../server.js';
-import { WS_CLOSE_CODES, WS_TEST_FORCE_ERROR_HEADER } from './connection.js';
+import { signSessionToken, SESSION_COOKIE_NAME } from '../auth/session-token.js';
+import { WS_CLOSE_CODES, WS_TEST_FORCE_ERROR_HEADER, __buildTestWsApp } from './connection.js';
+import {
+  FIXTURE_SCREEN_NAME,
+  FIXTURE_USER_ID,
+  TEST_SESSION_SECRET,
+  makeMemoryPool,
+} from './test-helpers.js';
 
 // RFC 4122 v4 UUID matcher: 8-4-4-4-12 hex, with the 13th char fixed
 // to `4` and the 17th to one of [89ab]. Exported nowhere — the
@@ -128,11 +143,36 @@ function nextClose(ws: {
   });
 }
 
+/**
+ * Build the WS test app the lifecycle tests share. The fixture user
+ * is live (`deletedAt: null`) so every cookie minted from
+ * `FIXTURE_USER_ID` passes auth.
+ */
+async function buildLifecycleApp(): Promise<FastifyInstance> {
+  return __buildTestWsApp({
+    pool: makeMemoryPool([
+      { id: FIXTURE_USER_ID, screenName: FIXTURE_SCREEN_NAME, deletedAt: null },
+    ]),
+    sessionTokenSecret: TEST_SESSION_SECRET,
+  });
+}
+
+/**
+ * Helper: mint a valid session-cookie value (just the JWT, no
+ * `Set-Cookie` attributes) for the fixture user. Returned as the raw
+ * `name=value` cookie pair so a test can pass it as the `Cookie`
+ * header on the upgrade `Request`.
+ */
+async function fixtureCookieHeader(): Promise<string> {
+  const token = await signSessionToken({ sub: FIXTURE_USER_ID }, TEST_SESSION_SECRET);
+  return `${SESSION_COOKIE_NAME}=${token}`;
+}
+
 describe('wsConnectionHandlingPlugin', () => {
   let app: FastifyInstance;
 
   beforeEach(async () => {
-    app = await createServer({ logger: false });
+    app = await buildLifecycleApp();
     await app.ready();
   });
 
@@ -140,22 +180,34 @@ describe('wsConnectionHandlingPlugin', () => {
     await app.close();
   });
 
-  it('sends a placeholder hello frame on connect with a v4 connectionId', async () => {
-    const { ws, next } = await openWsClient(app);
+  it('sends a canonical hello envelope on connect with v4 ids', async () => {
+    const cookie = await fixtureCookieHeader();
+    const { ws, next } = await openWsClient(app, { headers: { cookie } });
     try {
       const raw = await next();
-      const parsed = JSON.parse(raw) as { type?: unknown; connectionId?: unknown };
-
+      // Canonical envelope shape per `ws_message_envelope` —
+      // `{ type: 'hello', id, payload: { connectionId } }`. Both ids
+      // are RFC 4122 v4 UUIDs: the envelope `id` is freshly minted
+      // per message; `connectionId` is stable for the connection's
+      // lifetime.
+      const parsed = JSON.parse(raw) as {
+        type?: unknown;
+        id?: unknown;
+        payload?: { connectionId?: unknown };
+      };
       expect(parsed.type).toBe('hello');
-      expect(typeof parsed.connectionId).toBe('string');
-      expect(parsed.connectionId).toMatch(UUID_V4_PATTERN);
+      expect(typeof parsed.id).toBe('string');
+      expect(parsed.id).toMatch(UUID_V4_PATTERN);
+      expect(typeof parsed.payload?.connectionId).toBe('string');
+      expect(parsed.payload?.connectionId).toMatch(UUID_V4_PATTERN);
     } finally {
       ws.terminate();
     }
   });
 
   it('lets a client cleanly close the connection', async () => {
-    const { ws, next } = await openWsClient(app);
+    const cookie = await fixtureCookieHeader();
+    const { ws, next } = await openWsClient(app, { headers: { cookie } });
     // Consume the hello frame so the message-buffer pointer advances
     // past it; the test asserts that close() resolves without
     // throwing, which is what proves the server-side close handler
@@ -173,7 +225,8 @@ describe('wsConnectionHandlingPlugin', () => {
   });
 
   it('closes in-flight connections with 1001 on app shutdown', async () => {
-    const { ws, next } = await openWsClient(app);
+    const cookie = await fixtureCookieHeader();
+    const { ws, next } = await openWsClient(app, { headers: { cookie } });
     await next(); // consume hello
 
     const closed = nextClose(ws);
@@ -185,13 +238,14 @@ describe('wsConnectionHandlingPlugin', () => {
 
     // Rebuild for the afterEach to have something to close — the
     // beforeEach-built `app` is already torn down by this point.
-    app = await createServer({ logger: false });
+    app = await buildLifecycleApp();
     await app.ready();
   });
 
   it('closes with 1011 when the handler throws (deterministic force-error header)', async () => {
+    const cookie = await fixtureCookieHeader();
     const { ws, next } = await openWsClient(app, {
-      headers: { [WS_TEST_FORCE_ERROR_HEADER]: '1' },
+      headers: { cookie, [WS_TEST_FORCE_ERROR_HEADER]: '1' },
     });
     // The hello frame is sent BEFORE the handler throws (the throw
     // is the last statement in the open path), so we still receive

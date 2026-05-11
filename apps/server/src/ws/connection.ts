@@ -63,12 +63,61 @@
 //     rejects. We log and emit a 1011 close. The library otherwise
 //     terminates the socket without our envelope; routing through
 //     `errorHandler` keeps the close code consistent.
+//
+//   - **Auth gate (ws_auth_on_connect).** The `GET /ws` route attaches a
+//     `preValidation` hook that reads the `aconversa-session` cookie off
+//     the upgrade request, verifies the HS256 JWT via the same
+//     `authenticateRequest` primitive `apps/server/src/auth/middleware.ts`
+//     uses for HTTP routes, and either:
+//
+//       - On success: attaches `{ id, screenName }` to
+//         `request.authUser` so the connection handler can stash it on
+//         the per-connection context (`WsConnectionContext.user`).
+//       - On failure: throws `ApiError(401, 'auth-required', ...)` which
+//         the centralized error-handler plugin renders as the canonical
+//         envelope. `@fastify/websocket`'s dispatch lets Fastify's HTTP
+//         pipeline run BEFORE the upgrade is hijacked — the 401 response
+//         is sent on the raw upgrade socket and the library's
+//         `onResponse` hook destroys it. The client's `injectWS` promise
+//         rejects with "Unexpected server response: 401". The WS
+//         handshake never completes; no `connectionId` is minted; no
+//         per-connection state is allocated.
+//
+//     Rationale for the pre-upgrade reject (vs. an accept-then-close
+//     with a 4xxx close code): the README of `@fastify/websocket`
+//     explicitly endorses `preValidation` hooks for auth, the
+//     HTTP-status surface is the same one HTTP routes use, and 401 is
+//     the canonical Fastify error envelope. Inventing a custom 4401
+//     close code would diverge from the HTTP middleware's envelope for
+//     no semantic gain.
+//
+//     Cookie-on-upgrade contract: the WS endpoint is **same-origin** in
+//     the production deployment (and in compose dev) so the browser's
+//     native `new WebSocket(...)` API sends the session cookie on the
+//     upgrade `Request` automatically — per the WebSocket spec. The
+//     browser API does NOT permit setting arbitrary headers on a WS
+//     upgrade; same-origin cookies are the contract this auth gate
+//     relies on. Any future cross-origin audience surface (e.g.
+//     `audience.broadcast_surface`) MUST either be same-origin to the
+//     app or carry a different auth primitive (a query-string ticket
+//     issued by an authenticated HTTP exchange). The audience-surface
+//     task is reminded of this constraint in its own refinement.
 
 import { randomUUID } from 'node:crypto';
 
 import fastifyWebsocket from '@fastify/websocket';
 import type { FastifyInstance, FastifyPluginAsync, FastifyRequest } from 'fastify';
 import fp from 'fastify-plugin';
+
+import {
+  authenticateRequest,
+  AUTH_REQUIRED_CODE,
+  AUTH_REQUIRED_MESSAGE,
+  type AuthUser,
+} from '../auth/middleware.js';
+import { resolveSessionTokenSecret } from '../auth/pending-cookie.js';
+import { getDefaultPool, type DbPool } from '../db.js';
+import { ApiError } from '../errors.js';
 // `@fastify/websocket` is wired against the `ws` library; `@types/ws`
 // provides the `WebSocket` type referenced below in the connection
 // context and the handler signature. Importing the type directly
@@ -77,6 +126,14 @@ import fp from 'fastify-plugin';
 // tests tsconfig's `moduleResolution: Bundler` resolver doesn't see
 // as a value namespace.
 import type { WebSocket } from 'ws';
+
+import { wsDispatcherPlugin } from './dispatcher.js';
+import {
+  buildHelloEnvelope,
+  parseWsEnvelopeJson,
+  serializeWsEnvelope,
+  WsEnvelopeValidationError,
+} from './envelope.js';
 
 /**
  * Close codes used by this plugin. The numeric values follow the
@@ -114,20 +171,50 @@ export interface WsConnectionContext {
   readonly connectionId: string;
   /** The underlying `ws` socket. Kept so the shutdown hook can close it. */
   readonly socket: WebSocket;
+  /**
+   * The authenticated user that owns this connection. Populated by the
+   * `preValidation` auth gate (see `ws_auth_on_connect`); shape mirrors
+   * `request.authUser` (`{ id, screenName }`) so a downstream
+   * `ws_event_broadcast` can route messages by user id without a
+   * second user-row lookup.
+   *
+   * **Type-level optional, runtime invariant non-null** — mirrors the
+   * `FastifyRequest.authUser?` pattern in `auth/types.d.ts`. The
+   * connection handler only runs after the `preValidation` auth gate
+   * has populated this field; downstream consumers reading the
+   * context from inside a handler (or via
+   * `__getOpenConnectionsForTests()`) can rely on it being defined.
+   * The optional type at the surface lets sibling downstream tasks
+   * (`ws_message_envelope`'s dispatcher, `ws_subscribe_to_session`'s
+   * subscription map) construct context objects in their unit tests
+   * without fabricating a user when their test isn't about the auth
+   * surface.
+   *
+   * Marked `readonly` because the user-id binding is fixed for the
+   * connection's lifetime; a token-rotation flow that re-binds
+   * mid-connection would replace the context, not mutate it.
+   */
+  readonly user?: AuthUser;
 }
 
 /**
- * The placeholder envelope shape this plugin emits as the first
- * message on every connection. **This is NOT the canonical
- * envelope** — `ws_message_envelope` (next-but-one task) defines
- * that. Documented here so frontend / client code reading the wire
- * during the gap between this task and the envelope task can find
- * the spec in one place.
+ * The placeholder envelope shape this plugin originally emitted as
+ * the first message on every connection. **Superseded by
+ * `ws_message_envelope`** — the canonical envelope shape now flows
+ * through `@a-conversa/shared-types`'s `WsEnvelope<'hello'>`
+ * (`{ type: 'hello', id, payload: { connectionId } }`). The runtime
+ * sends the envelope-shaped frame via `buildHelloEnvelope` +
+ * `serializeWsEnvelope` (see `./envelope.ts`); this interface is kept
+ * only as a type-level historical marker for readers tracing the
+ * placeholder-to-envelope migration in one place.
  *
- * The shape is intentionally minimal — `type: 'hello'` plus the
- * connection id. Any client built against this shape WILL need to
- * be updated when the envelope task lands; the migration plan lives
- * in that refinement.
+ * Marked `@deprecated` so any code wired against the old shape gets
+ * a TS lint nudge to migrate. New code MUST use `WsEnvelope<'hello'>`
+ * from `@a-conversa/shared-types`.
+ *
+ * @deprecated Use `WsEnvelope<'hello'>` from `@a-conversa/shared-types`.
+ *             Replaced by the canonical envelope per
+ *             `tasks/refinements/backend/ws_message_envelope.md`.
  */
 export interface WsHelloPlaceholder {
   readonly type: 'hello';
@@ -153,41 +240,119 @@ export const WS_TEST_FORCE_ERROR_HEADER = 'x-ws-test-force-error';
 
 /**
  * Build the connection-lifecycle handler. Returned as a closure over
- * `app` (currently unused beyond the type position; kept so future
- * downstream tasks can reach for `app.log` or `app.websocketServer`
- * without re-threading parameters).
+ * `app` so the handler can reach `app.wsDispatcher` for inbound
+ * message routing (per `ws_message_envelope`). Future tasks reach for
+ * `app.log` or `app.websocketServer` through the same closure.
  */
 function buildConnectionHandler(
-  _app: FastifyInstance,
+  app: FastifyInstance,
 ): (socket: WebSocket, request: FastifyRequest) => void {
   return (socket, request) => {
-    // ws_auth_on_connect will gate here — that task wraps the same
-    // primitives `auth/middleware.ts` uses to validate the platform
-    // session cookie off the upgrade request. The seam is BEFORE the
-    // connection-id mint so an unauthenticated upgrade is rejected
-    // without allocating any per-connection state. See
-    // tasks/refinements/backend/auth_middleware.md and the eventual
-    // refinement for ws_auth_on_connect.
+    // The `preValidation` auth gate (wired below in `wsRoutePlugin`)
+    // has already verified the platform session cookie and populated
+    // `request.authUser`. If we reach this point, the upgrade is
+    // authenticated; an unauthenticated upgrade would have been
+    // rejected with a 401 envelope by the centralized error handler
+    // BEFORE this handler ever fires (per
+    // tasks/refinements/backend/ws_auth_on_connect.md).
+    //
+    // The defensive narrow below is for the type checker —
+    // `authUser` is optional at the type level (public routes never
+    // populate it) but the gate guarantees population for `/ws`. A
+    // missing value here would indicate a wiring bug (the gate was
+    // bypassed); throw so the library's `errorHandler` emits a 1011
+    // and we don't carry on with `undefined`.
+    const user = request.authUser;
+    if (user === undefined) {
+      throw new Error('ws-auth-gate bypass: request.authUser is undefined inside the WS handler');
+    }
 
     const connectionId = randomUUID();
-    const ctx: WsConnectionContext = { connectionId, socket };
+    const ctx: WsConnectionContext = { connectionId, socket, user };
     openConnections.add(ctx);
 
     // Per-request logger carries `reqId`; the explicit `connectionId`
-    // is added so a single connection's lifecycle can be filtered out
-    // of an aggregator with one predicate. The fastify request id and
-    // the WS connection id are deliberately distinct: a single
-    // upgrade flow can in principle retry (today's `@fastify/websocket`
-    // only spins one request per upgrade, but future-proof the log
-    // vocabulary).
-    request.log.info({ connectionId }, 'ws-connection-opened');
+    // plus `userId` is added so a single connection's lifecycle can be
+    // filtered out of an aggregator by either predicate. The fastify
+    // request id and the WS connection id are deliberately distinct:
+    // a single upgrade flow can in principle retry (today's
+    // `@fastify/websocket` only spins one request per upgrade, but
+    // future-proof the log vocabulary).
+    request.log.info(
+      { connectionId, userId: user.id, screenName: user.screenName },
+      'ws-connection-opened',
+    );
 
-    // Placeholder envelope — see WsHelloPlaceholder docs above.
-    // ws_message_envelope will replace this with the canonical
-    // wire shape. Stringified explicitly so the wire bytes are
-    // deterministic for tests that read the first frame.
-    const hello: WsHelloPlaceholder = { type: 'hello', connectionId };
-    socket.send(JSON.stringify(hello));
+    // Canonical envelope-shaped hello, owned by `ws_message_envelope`.
+    // Replaces the prior placeholder `{ type: 'hello', connectionId }`
+    // shape — the wire frame is now
+    // `{ type: 'hello', id: <uuid>, payload: { connectionId } }`. The
+    // build helper mints the message `id` (separate from `connectionId`);
+    // `serializeWsEnvelope` validates the envelope before emitting so
+    // a server-construction bug fails loudly here rather than silently
+    // on the wire.
+    socket.send(serializeWsEnvelope(buildHelloEnvelope(connectionId)));
+
+    // Inbound message receive loop — owned by `ws_message_envelope`.
+    // Every client → server frame is parsed via `parseWsEnvelopeJson`
+    // and routed to `app.wsDispatcher`. Downstream message-type tasks
+    // (`ws_propose_message`, `ws_vote_message`, etc.) register their
+    // handlers against the dispatcher in their own plugin setup;
+    // here the connection handler is generic across all types.
+    //
+    // Failure modes:
+    //   1. Non-string frame (Buffer / binary) → convert to UTF-8 text
+    //      first. The WS protocol allows binary frames; the canonical
+    //      envelope is JSON so a binary frame fails the parse and
+    //      surfaces via the same error path as a malformed string.
+    //   2. JSON parse failure or schema-invalid envelope →
+    //      `parseWsEnvelopeJson` throws `WsEnvelopeValidationError`.
+    //      Logged at warn level (the client sent garbage; this is not
+    //      a server error). The wire-format error envelope is
+    //      `ws_error_message`'s job — when that task lands, the catch
+    //      below will construct and send the error envelope on the
+    //      socket. Today we log + drop.
+    //   3. Well-formed envelope → handed to the dispatcher. Unknown
+    //      `type` and handler exceptions are routed through the
+    //      dispatcher's seams (logged today; wire-format error
+    //      envelope from `ws_error_message`).
+    socket.on('message', (data: unknown) => {
+      const text = Buffer.isBuffer(data)
+        ? data.toString('utf8')
+        : data instanceof ArrayBuffer
+          ? Buffer.from(data).toString('utf8')
+          : Array.isArray(data)
+            ? Buffer.concat(data as Buffer[]).toString('utf8')
+            : String(data);
+
+      let envelope;
+      try {
+        envelope = parseWsEnvelopeJson(text);
+      } catch (err) {
+        if (err instanceof WsEnvelopeValidationError) {
+          // Client sent a malformed message. Log + drop. Once
+          // `ws_error_message` lands, this branch will construct and
+          // send the canonical error envelope on `socket` — routing
+          // the failure back to the client via the same wire shape
+          // every other server→client message uses.
+          request.log.warn(
+            { connectionId, err },
+            'ws-message-rejected — envelope parse failed (placeholder unknown-message-type)',
+          );
+          return;
+        }
+        // Anything else is a programmer error — re-throw so the
+        // library's `errorHandler` emits 1011 (consistent with other
+        // unexpected-error paths in this plugin).
+        throw err;
+      }
+
+      // Hand the parsed envelope to the dispatcher. The dispatcher
+      // catches handler exceptions internally (routes them through
+      // its `onHandlerError` seam) so the receive loop stays single-
+      // exception-safe — one bad message can't kill the connection.
+      void app.wsDispatcher.dispatch(envelope, ctx);
+    });
 
     socket.on('close', (code: number, reasonBuffer: Buffer) => {
       openConnections.delete(ctx);
@@ -195,7 +360,7 @@ function buildConnectionHandler(
       // to a string for the log line. Empty buffers serialise to an
       // empty string, which is the right "no reason given" signal.
       const reason = reasonBuffer.toString('utf8');
-      request.log.info({ connectionId, code, reason }, 'ws-connection-closed');
+      request.log.info({ connectionId, userId: user.id, code, reason }, 'ws-connection-closed');
     });
 
     // Unexpected-error path. Triggered today by:
@@ -244,14 +409,52 @@ function buildConnectionHandler(
 const openConnections = new Set<WsConnectionContext>();
 
 /**
+ * Resolver bundle the route's `preValidation` auth gate reaches for.
+ * Constructed by the outer plugin (which owns the option-resolution
+ * closure) and passed into the inner route plugin via plugin options.
+ *
+ * Pulled out as an interface so the route plugin doesn't need to know
+ * how the resolvers are constructed — only that they exist. Production
+ * resolvers reach for `getDefaultPool()` and
+ * `resolveSessionTokenSecret(process.env)` lazily on first use; tests
+ * pin a memory-backed pool plus a fixed secret and clock.
+ */
+interface WsAuthResolvers {
+  readonly ensurePool: () => DbPool;
+  readonly ensureSecret: () => string;
+  readonly now: (() => number) | undefined;
+}
+
+/**
  * Internal Fastify plugin — registers the `GET /ws` route. The
  * `@fastify/websocket` library is registered by the OUTER plugin
  * (see `wsConnectionHandlingPlugin` below); registering it here too
  * would either decorate the encapsulation child only (so the root
  * loses `app.injectWS` — breaks tests) or duplicate-decorate (so
  * Fastify throws at startup).
+ *
+ * The auth resolvers are passed in via plugin options so the inner
+ * route's `preValidation` hook can reach them. The outer plugin is
+ * the lifecycle owner of the resolved pool + secret; this inner plugin
+ * is the consumer.
  */
-const wsRoutePlugin: FastifyPluginAsync = (app, _opts) => {
+const wsRoutePlugin: FastifyPluginAsync<{ auth: WsAuthResolvers }> = (app, opts) => {
+  const { auth } = opts;
+
+  // Defensive decorator: the auth middleware (`authenticatePlugin`)
+  // also pre-allocates `request.authUser` to `undefined`. When the WS
+  // plugin is registered in a minimal test app alongside the auth
+  // middleware, the decorator already exists — Fastify throws on
+  // duplicate decoration without this guard. When the WS plugin is
+  // registered standalone (a test app that doesn't also register
+  // `authenticatePlugin`), the decorator doesn't exist yet and our
+  // `preValidation` hook's `request.authUser = ...` write needs the
+  // slot allocated. The `hasRequestDecorator` check keeps the two
+  // plugins compose-able in either order.
+  if (!app.hasRequestDecorator('authUser')) {
+    app.decorateRequest('authUser', undefined);
+  }
+
   app.get(
     '/ws',
     {
@@ -263,13 +466,77 @@ const wsRoutePlugin: FastifyPluginAsync = (app, _opts) => {
       schema: {
         hide: true,
         tags: ['ws'],
-        summary: 'WebSocket upgrade endpoint (placeholder hello envelope)',
+        summary: 'WebSocket upgrade endpoint (auth-gated, placeholder hello envelope)',
         description:
           'WebSocket upgrade endpoint owned by ws_connection_handling. The on-open ' +
           'hello frame `{ type: "hello", connectionId }` is a placeholder envelope ' +
           'and will be replaced by the canonical shape from ws_message_envelope. ' +
-          'Auth gating, subscription routing, and message handling are downstream ' +
+          'The upgrade is gated by the same `aconversa-session` cookie the HTTP ' +
+          'auth middleware reads — unauthenticated upgrades are rejected with HTTP ' +
+          '401 + the canonical envelope BEFORE the handshake completes (no 4xxx ' +
+          'close code). Subscription routing and message handling are downstream ' +
           'sibling tasks.',
+      },
+      // **Auth gate** (`ws_auth_on_connect`). Runs Fastify's normal
+      // `preValidation` lifecycle hook on the upgrade request — per
+      // @fastify/websocket's README, the request travels through the
+      // full HTTP pipeline before the library hijacks the socket. The
+      // hook:
+      //
+      //   1. Reads the `Cookie` header off the upgrade `Request`.
+      //   2. Calls `authenticateRequest(cookieHeader, pool, secret, now?)`
+      //      — the SAME helper `apps/server/src/auth/middleware.ts`
+      //      composes for HTTP routes. No duplicated cookie parsing,
+      //      no duplicated JWT verify, no duplicated user lookup.
+      //   3. On success: stashes `{ id, screenName }` on
+      //      `request.authUser`; the WS handler reads it and copies it
+      //      onto the per-connection context.
+      //   4. On failure: throws `ApiError(401, 'auth-required', ...)`.
+      //      The centralized error-handler plugin renders the
+      //      canonical envelope; the response is sent on the raw
+      //      upgrade socket; the library's `onResponse` hook destroys
+      //      the socket; the client's `injectWS` (or browser
+      //      `WebSocket`) sees a non-101 response and the handshake
+      //      never completes. NO `connectionId` is minted; NO entry
+      //      lands in `openConnections`.
+      //
+      // 401 + the canonical envelope is the right surface (parallel to
+      // every HTTP middleware reject). Inventing a custom 4401 WS
+      // close code would diverge from the HTTP envelope for no gain.
+      preValidation: async (request, _reply) => {
+        const rawHeader = request.headers['cookie'];
+        const cookieHeader = typeof rawHeader === 'string' ? rawHeader : undefined;
+        // Short-circuit BEFORE resolving the pool when no cookie is
+        // present. `authenticateRequest` would do the same internally
+        // (its first step is `readSessionCookieFromHeader`), but
+        // pulling the check up here means the lazy pool resolution
+        // doesn't fire for unauth upgrades — important in tests + dev
+        // where `DATABASE_URL` may not be set and `getDefaultPool()`
+        // throws. The 401 envelope is the same in either path.
+        if (cookieHeader === undefined || cookieHeader === '') {
+          request.log.debug(
+            { route: '/ws' },
+            'ws-auth-on-connect rejected — no session cookie on upgrade request',
+          );
+          throw new ApiError(401, AUTH_REQUIRED_CODE, AUTH_REQUIRED_MESSAGE);
+        }
+        const authUser = await authenticateRequest(
+          cookieHeader,
+          auth.ensurePool(),
+          auth.ensureSecret(),
+          auth.now,
+        );
+        if (authUser === null) {
+          // Debug-only: log the reject so the operator can correlate
+          // the 401 with a request id. The error handler renders the
+          // 401 envelope; this line just adds the context.
+          request.log.debug(
+            { route: '/ws' },
+            'ws-auth-on-connect rejected — cookie present but verify/lookup failed',
+          );
+          throw new ApiError(401, AUTH_REQUIRED_CODE, AUTH_REQUIRED_MESSAGE);
+        }
+        request.authUser = authUser;
       },
     },
     buildConnectionHandler(app),
@@ -322,6 +589,122 @@ function wsShutdownPreClose(this: FastifyInstance, done: () => void): void {
 }
 
 /**
+ * Options accepted by `wsConnectionHandlingPlugin`. Every field
+ * optional — production callers pass `{}` (or nothing) and the plugin
+ * reaches for env-driven defaults. Mirrors the `AuthMiddlewareOptions`
+ * shape so the two plugins compose against the same primitives.
+ *
+ * Tests supply the secret + a stubbed pool + (optionally) a fixed
+ * clock to keep the auth-gate verification deterministic.
+ */
+export interface WsConnectionHandlingOptions {
+  /**
+   * Database pool. When absent the plugin lazily calls
+   * `getDefaultPool()` on the first authenticated upgrade. Tests pass
+   * a memory-backed shim or a pglite-backed adapter so the user-row
+   * lookup `authenticateRequest` runs hits the test DB.
+   */
+  readonly pool?: DbPool;
+  /**
+   * HMAC key for verifying the platform session JWT. When absent the
+   * plugin reads `SESSION_TOKEN_SECRET` via `resolveSessionTokenSecret`
+   * lazily on first use. Shared with `session-token.ts` and the auth
+   * middleware — the same env var, the same key, the same JWT.
+   */
+  readonly sessionTokenSecret?: string;
+  /**
+   * Clock injection for hermetic tests. When absent verification uses
+   * `Date.now`. Tests pin a fixed value so an "expired token" case
+   * runs deterministically without timer manipulation.
+   */
+  readonly now?: () => number;
+}
+
+/**
+ * Inner plugin body — typed `FastifyPluginAsync<WsConnectionHandlingOptions>`
+ * so `opts` receives the proper shape (the `fp(...)` wrapper below
+ * loses the generic if the body is inlined; mirrors the
+ * `authenticatePluginAsync` + `fp(...)` split in `auth/middleware.ts`).
+ */
+const wsConnectionHandlingPluginAsync: FastifyPluginAsync<WsConnectionHandlingOptions> = async (
+  app,
+  opts,
+) => {
+  // Resolve pool + secret lazily — production callers pass `{}` and
+  // the plugin reaches for the singleton pool + the env secret on
+  // the first upgrade. Tests inject everything up front.
+  let resolvedPool: DbPool | undefined = opts.pool;
+  const ensurePool = (): DbPool => {
+    if (resolvedPool !== undefined) {
+      return resolvedPool;
+    }
+    resolvedPool = getDefaultPool();
+    return resolvedPool;
+  };
+
+  let resolvedSecret: string | undefined = opts.sessionTokenSecret;
+  const ensureSecret = (): string => {
+    if (resolvedSecret !== undefined) {
+      return resolvedSecret;
+    }
+    resolvedSecret = resolveSessionTokenSecret(process.env);
+    return resolvedSecret;
+  };
+
+  const auth: WsAuthResolvers = {
+    ensurePool,
+    ensureSecret,
+    now: opts.now,
+  };
+
+  // Register `@fastify/websocket` at root so its decorations
+  // (`app.websocketServer`, `app.injectWS`, `request.ws`) reach the
+  // top scope. The library itself is `fp`-wrapped upstream, but the
+  // skip-override semantics only fire if the registrant is also at
+  // a non-encapsulated scope — which the outer `fp` wrapper here
+  // ensures.
+  //
+  // `errorHandler` fires when a WS route handler throws
+  // synchronously or its returned promise rejects. We log and emit
+  // a 1011 close so the client sees a consistent shutdown code
+  // regardless of WHICH unexpected-error path fired; the library
+  // otherwise terminates the socket without a code + reason.
+  await app.register(fastifyWebsocket, {
+    preClose: wsShutdownPreClose,
+    errorHandler(error, socket, request) {
+      request.log.error({ err: error }, 'ws-connection-error — closing with 1011 internal-error');
+      try {
+        // 1011 = INTERNAL_ERROR per RFC 6455.
+        socket.close(WS_CLOSE_CODES.INTERNAL_ERROR, 'internal-error');
+      } catch (closeErr) {
+        // Defensive — if the socket is already torn down, `.close()`
+        // can throw. Swallow and continue; the process must not
+        // crash on a per-connection cleanup failure.
+        request.log.warn(
+          { err: closeErr },
+          'ws-connection-error secondary failure while closing socket',
+        );
+      }
+    },
+  });
+
+  // Per-app-instance WS message dispatcher. Decorates
+  // `app.wsDispatcher` (skip-override via fastify-plugin so the
+  // decoration reaches the root scope). Sibling message-type plugins
+  // (`ws_propose_message`, `ws_vote_message`, ...) register handlers
+  // against this dispatcher; the connection handler below calls
+  // `app.wsDispatcher.dispatch(...)` for every inbound message.
+  // Refinement: tasks/refinements/backend/ws_message_envelope.md.
+  await app.register(wsDispatcherPlugin);
+
+  // Route + shutdown hook stay encapsulated to the child plugin —
+  // only the library decorations need to hoist. The auth resolvers
+  // are threaded through plugin options so the route's
+  // `preValidation` hook can reach them.
+  await app.register(wsRoutePlugin, { auth });
+};
+
+/**
  * Public entry point — register this in `server.ts`'s `createServer`
  * factory alongside the existing `await app.register(...)` calls.
  * The export is `fastify-plugin`-wrapped only at the outermost layer
@@ -334,45 +717,93 @@ function wsShutdownPreClose(this: FastifyInstance, done: () => void): void {
  * The route registration itself is still encapsulated inside the
  * internal plugin above; only the library's decorations are hoisted.
  */
-export const wsConnectionHandlingPlugin: FastifyPluginAsync = fp(
-  async (app) => {
-    // Register `@fastify/websocket` at root so its decorations
-    // (`app.websocketServer`, `app.injectWS`, `request.ws`) reach the
-    // top scope. The library itself is `fp`-wrapped upstream, but the
-    // skip-override semantics only fire if the registrant is also at
-    // a non-encapsulated scope — which the outer `fp` wrapper here
-    // ensures.
-    //
-    // `errorHandler` fires when a WS route handler throws
-    // synchronously or its returned promise rejects. We log and emit
-    // a 1011 close so the client sees a consistent shutdown code
-    // regardless of WHICH unexpected-error path fired; the library
-    // otherwise terminates the socket without a code + reason.
-    await app.register(fastifyWebsocket, {
-      preClose: wsShutdownPreClose,
-      errorHandler(error, socket, request) {
-        request.log.error({ err: error }, 'ws-connection-error — closing with 1011 internal-error');
-        try {
-          // 1011 = INTERNAL_ERROR per RFC 6455.
-          socket.close(WS_CLOSE_CODES.INTERNAL_ERROR, 'internal-error');
-        } catch (closeErr) {
-          // Defensive — if the socket is already torn down, `.close()`
-          // can throw. Swallow and continue; the process must not
-          // crash on a per-connection cleanup failure.
-          request.log.warn(
-            { err: closeErr },
-            'ws-connection-error secondary failure while closing socket',
-          );
-        }
-      },
-    });
+export const wsConnectionHandlingPlugin = fp(wsConnectionHandlingPluginAsync, {
+  name: 'ws-connection-handling',
+  fastify: '5.x',
+});
 
-    // Route + shutdown hook stay encapsulated to the child plugin —
-    // only the library decorations need to hoist.
-    await app.register(wsRoutePlugin);
-  },
-  {
-    name: 'ws-connection-handling',
-    fastify: '5.x',
-  },
-);
+/**
+ * Test-only inspector — returns a snapshot of the open-connection
+ * contexts as a readonly array. Test code uses this to assert that
+ * the per-connection `user` field was populated by the auth gate
+ * (the property is server-private; we don't expose it on the wire
+ * yet — `ws_event_broadcast` will eventually surface it as a sender
+ * id, but for `ws_auth_on_connect` the check is purely
+ * server-internal).
+ *
+ * The double-underscore prefix marks the export as test-only — same
+ * convention as `__buildTestAuthApp` and `__buildStubConfiguration`.
+ * Production callers should never reach for this; the
+ * connection-context shape is not a public surface and may change
+ * with downstream tasks.
+ */
+export function __getOpenConnectionsForTests(): readonly WsConnectionContext[] {
+  return Array.from(openConnections);
+}
+
+/**
+ * Options accepted by `__buildTestWsApp`.
+ */
+export interface BuildTestWsAppOptions {
+  /** DB pool the auth gate consults for the user-row lookup. */
+  readonly pool: DbPool;
+  /** HMAC key used to sign + verify the session JWT in tests. */
+  readonly sessionTokenSecret: string;
+  /** Optional clock override for hermetic expired-token cases. */
+  readonly now?: () => number;
+}
+
+/**
+ * Test-only convenience — build a minimal Fastify instance with the
+ * shared error-envelope schema, the error-handler plugin, the auth
+ * middleware (so its `decorateRequest('authUser')` slot is allocated
+ * and the type augmentation is consistent), and the WS plugin all
+ * wired against the same pool + secret + clock. Used by both Vitest
+ * (`connection.test.ts`, `auth.test.ts`) and Cucumber
+ * (`backend-ws-auth.steps.ts`) — single builder so the WS surface
+ * under test is identical across layers.
+ *
+ * Production code does NOT use this helper — `createServer()` in
+ * `server.ts` wires the full stack including OpenAPI, CORS,
+ * auth-routes, sessions-routes, etc. This helper is the minimum
+ * Fastify instance needed to exercise the WS plugin's auth-gate
+ * behavior end-to-end.
+ *
+ * The double-underscore prefix marks the export as test-only. Mirrors
+ * `__buildTestAuthApp` in `auth/routes.ts`.
+ */
+export async function __buildTestWsApp(
+  opts: BuildTestWsAppOptions,
+): Promise<import('fastify').FastifyInstance> {
+  // Importing dynamically so the test tsconfig (which doesn't resolve
+  // `fastify` directly because that dep lives under
+  // `apps/server/node_modules`) can still consume this helper from
+  // outside the server workspace boundary. Resolved at runtime by
+  // Node's module resolver since this module lives under
+  // `apps/server`. Mirrors the dynamic-import pattern in
+  // `__buildTestAuthApp`.
+  const { default: fastifyFactory } = await import('fastify');
+  const { errorHandlerPlugin } = await import('../error-handler.js');
+  const { errorEnvelopeSchema } = await import('../openapi.js');
+  const { authenticatePlugin } = await import('../auth/middleware.js');
+  const app = fastifyFactory({ logger: false });
+  app.addSchema(errorEnvelopeSchema);
+  await app.register(errorHandlerPlugin);
+  // Register the auth middleware so its `request.authUser` decorator
+  // is allocated at the root scope (mirroring `createServer`'s
+  // ordering). The WS plugin's defensive `hasRequestDecorator` check
+  // makes the registration idempotent — but keeping the middleware
+  // registered keeps the test app's shape identical to production's.
+  await app.register(authenticatePlugin, {
+    pool: opts.pool,
+    sessionTokenSecret: opts.sessionTokenSecret,
+    ...(opts.now !== undefined ? { now: opts.now } : {}),
+  });
+  await app.register(wsConnectionHandlingPlugin, {
+    pool: opts.pool,
+    sessionTokenSecret: opts.sessionTokenSecret,
+    ...(opts.now !== undefined ? { now: opts.now } : {}),
+  });
+  await app.ready();
+  return app;
+}
