@@ -75,8 +75,10 @@ task backend "Backend" {
     task no_profile_data_policy "Ensure no OAuth profile data is read or stored" {
       effort 0.5d
       allocate team
+      complete 100
       depends !oauth_callback_handler
       note "Audit + tests confirming we use OAuth purely as auth signal."
+      note "Refinement: tasks/refinements/backend/no_profile_data_policy.md"
     }
     task auth_middleware "Middleware enforcing authentication on protected endpoints" {
       effort 1d
