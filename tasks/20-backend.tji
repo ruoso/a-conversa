@@ -263,7 +263,9 @@ task backend "Backend" {
     task ws_protocol_documentation "Document the WebSocket message protocol" {
       effort 1d
       allocate team
+      complete 100
       depends !ws_propose_message, !ws_vote_message, !ws_commit_message, !ws_event_broadcast
+      note "Refinement: tasks/refinements/backend/ws_protocol_documentation.md"
     }
   }
 
