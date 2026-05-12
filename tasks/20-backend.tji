@@ -235,7 +235,9 @@ task backend "Backend" {
     task ws_proposal_status_broadcast "Server → clients: per-facet vote state broadcast" {
       effort 1d
       allocate team
+      complete 100
       depends !ws_event_broadcast
+      note "Refinement: tasks/refinements/backend/ws_proposal_status_broadcast.md"
     }
     task ws_diagnostic_broadcast "Server → clients: diagnostic-fired broadcast" {
       effort 0.5d
