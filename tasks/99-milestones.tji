@@ -28,6 +28,7 @@ task milestones "Milestones" {
 
   task m_backend_mvp "M3: Backend MVP" {
     milestone
+    complete 100
     depends !m_methodology_engine_complete, backend.api_skeleton, backend.auth, backend.session_management, backend.websocket_protocol, backend.cross_session_permissions
     note "Backend can host live sessions: auth works, sessions can be created and joined, the WebSocket protocol relays proposals/votes/commits."
   }
