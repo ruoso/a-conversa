@@ -908,6 +908,19 @@ export async function __buildTestWsApp(
   const { wsDiagnosticBroadcastPlugin } = await import('./broadcast/diagnostic.js');
   await app.register(wsDiagnosticBroadcastPlugin);
 
+  // Register the WS proposal-status broadcast surface so the cucumber
+  // + integration tests can exercise the derived `proposal-status`
+  // envelope path: a propose/vote/commit/meta-disagreement-marked
+  // event fired through `app.wsBroadcast` is filtered + reprojected
+  // into a per-facet status envelope and fanned out via
+  // `app.wsConnectionSenders`. Mirrors `createServer`'s registration
+  // order — AFTER `wsEventAppliedBroadcastPlugin` (registered inside
+  // `wsConnectionHandlingPlugin`) so the bus's synchronous-dispatch
+  // order is `event-applied` → `proposal-status`. Refinement:
+  // tasks/refinements/backend/ws_proposal_status_broadcast.md.
+  const { wsProposalStatusBroadcastPlugin } = await import('./broadcast/proposal-status.js');
+  await app.register(wsProposalStatusBroadcastPlugin, { pool: opts.pool });
+
   await app.ready();
   return app;
 }

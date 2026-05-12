@@ -54,14 +54,18 @@ interface ProposalStatusScratch {
   // client connects to "/ws"` When step in
   // backend-ws-event-broadcast.steps.ts.
   wsBroadcastSecondClient?: WsClient;
-  // Per-feature carriers — streaming frame buffers for both clients.
-  // Kept distinct from `wsBroadcastFrames` / `wsBroadcastFramesSecond`
-  // so the upstream broadcast step file's assertions don't drain our
-  // proposal-status frames and vice versa. (The two listener sets
-  // attach independently — every inbound frame is pushed into BOTH
-  // queues.)
-  wsProposalStatusFrames?: string[];
-  wsProposalStatusFramesSecond?: string[];
+  // First-client streaming buffers — each trigger step (vote / commit /
+  // a server-emitted event-applied) attaches its OWN persistent
+  // listener EAGERLY before triggering (because `ws.on('message')`
+  // does not buffer late-attached listeners). We read whichever one is
+  // populated for the active scenario.
+  wsVoteFrames?: string[];
+  wsCommitFrames?: string[];
+  wsBroadcastFrames?: string[];
+  // Second-client streaming buffer — initialised by the broadcast
+  // step file's `a second authenticated WebSocket client connects to
+  // "/ws"` When step, which attaches the listener at connect time.
+  wsBroadcastFramesSecond?: string[];
 }
 
 function scratch(world: AConversaWorld): ProposalStatusScratch {
@@ -69,37 +73,35 @@ function scratch(world: AConversaWorld): ProposalStatusScratch {
   return world.scratch as ProposalStatusScratch;
 }
 
-function toUtf8(data: unknown): string {
-  if (Buffer.isBuffer(data)) return data.toString('utf8');
-  if (data instanceof ArrayBuffer) return Buffer.from(data).toString('utf8');
-  if (Array.isArray(data)) return Buffer.concat(data as Buffer[]).toString('utf8');
-  return String(data);
-}
-
 function ensureFramesQueue(world: AConversaWorld): string[] {
   const s = scratch(world);
-  if (s.wsProposalStatusFrames === undefined) {
-    s.wsProposalStatusFrames = [];
-    const ws = s.wsLifecycleClient;
-    assert.ok(ws, 'no ws client — first-client connect step must precede');
-    ws.on('message', (data: unknown) => {
-      s.wsProposalStatusFrames?.push(toUtf8(data));
-    });
-  }
-  return s.wsProposalStatusFrames;
+  // Each trigger step (vote / commit) eagerly attaches its own
+  // first-client streaming listener BEFORE sending its envelope.
+  // The proposal-status frame lands on the same socket, so it ends
+  // up in whichever queue is populated for the active scenario.
+  // We read from whichever one was set up by the trigger step that
+  // ran earlier in the scenario. `ws.on('message')` does not buffer
+  // late-attached listeners, so attaching here in the `Then` step
+  // would race and lose the frame.
+  const queue = s.wsCommitFrames ?? s.wsVoteFrames ?? s.wsBroadcastFrames;
+  assert.ok(
+    queue !== undefined,
+    "no first-client streaming frame queue is populated — the trigger step (vote / commit / server-emitted broadcast) must run before the proposal-status assertion so its eager `on('message')` listener catches the post-trigger broadcast",
+  );
+  return queue;
 }
 
 function ensureSecondFramesQueue(world: AConversaWorld): string[] {
   const s = scratch(world);
-  if (s.wsProposalStatusFramesSecond === undefined) {
-    s.wsProposalStatusFramesSecond = [];
-    const ws = s.wsBroadcastSecondClient;
-    assert.ok(ws, 'no second ws client — second-client connect step must precede');
-    ws.on('message', (data: unknown) => {
-      s.wsProposalStatusFramesSecond?.push(toUtf8(data));
-    });
-  }
-  return s.wsProposalStatusFramesSecond;
+  // The second-client streaming buffer is populated by the broadcast
+  // step file's `a second authenticated WebSocket client connects to
+  // "/ws"` When step, which attaches the listener at connect time —
+  // before the trigger step runs.
+  assert.ok(
+    s.wsBroadcastFramesSecond !== undefined,
+    'wsBroadcastFramesSecond not initialised — the `a second authenticated WebSocket client connects to "/ws"` When step must run first',
+  );
+  return s.wsBroadcastFramesSecond;
 }
 
 interface ProposalStatusFrame {
@@ -226,7 +228,6 @@ Then(
 // ============================================================
 
 After(function (this: AConversaWorld) {
-  const s = scratch(this);
-  delete s.wsProposalStatusFrames;
-  delete s.wsProposalStatusFramesSecond;
+  // No per-feature carriers to drop — the streaming buffers we read
+  // from are owned + cleaned up by the broadcast step file.
 });
