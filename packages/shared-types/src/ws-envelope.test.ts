@@ -51,10 +51,14 @@ describe('wsMessageTypes vocabulary', () => {
     // `ws_error_message`; `diagnostic` (server → client structural
     // diagnostic broadcast) came from `ws_diagnostic_broadcast`;
     // `proposal-status` (server → client derived per-facet status
-    // broadcast) came from `ws_proposal_status_broadcast`. The
-    // vocabulary is laid out per the
-    // three-group union-extension convention documented in
-    // `ws-envelope.ts` (server-emitted / request / ack-or-result);
+    // broadcast) came from `ws_proposal_status_broadcast`.
+    // `catch-up` (client → server) and `caught-up` (server → client
+    // ack) came from `ws_reconnection_handling` — the server-side
+    // surface for state catch-up on reconnect; the slice-replay path
+    // reuses `event-applied` for replay frames and the snapshot-
+    // fallback path reuses `snapshot-state`. The vocabulary is laid
+    // out per the three-group union-extension convention documented
+    // in `ws-envelope.ts` (server-emitted / request / ack-or-result);
     // future sibling message-type tasks append at the corresponding
     // group's tail. The assertion pins the current state so an
     // accidental widening is loud.
@@ -67,6 +71,7 @@ describe('wsMessageTypes vocabulary', () => {
       'commit',
       'mark-meta-disagreement',
       'snapshot',
+      'catch-up',
       'subscribed',
       'unsubscribed',
       'proposed',
@@ -74,6 +79,7 @@ describe('wsMessageTypes vocabulary', () => {
       'committed',
       'meta-disagreement-marked',
       'snapshot-state',
+      'caught-up',
       'event-applied',
       'error',
       'diagnostic',

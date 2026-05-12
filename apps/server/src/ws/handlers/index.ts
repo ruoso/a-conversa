@@ -30,6 +30,7 @@ import fp from 'fastify-plugin';
 
 import { getDefaultPool, type DbPool } from '../../db.js';
 
+import { registerCatchUpHandlers, resolveCatchUpMaxEvents } from './catch-up.js';
 import { registerCommitHandlers } from './commit.js';
 import { registerMarkMetaDisagreementHandlers } from './meta-disagreement.js';
 import { registerProposeHandlers } from './propose.js';
@@ -66,6 +67,15 @@ export {
 } from './snapshot.js';
 export type { SnapshotHandlerOptions } from './snapshot.js';
 
+export {
+  buildCatchUpHandler,
+  registerCatchUpHandlers,
+  resolveCatchUpMaxEvents,
+  DEFAULT_WS_CATCHUP_MAX_EVENTS,
+  WS_CATCHUP_MAX_EVENTS_ENV,
+} from './catch-up.js';
+export type { CatchUpHandlerOptions } from './catch-up.js';
+
 /**
  * Options accepted by `wsHandlersPlugin`. Production callers pass `{}`
  * (or nothing) and the plugin reaches for `getDefaultPool()` on first
@@ -79,6 +89,16 @@ export interface WsHandlersOptions {
    * plugin lazily calls `getDefaultPool()` on first invocation.
    */
   readonly pool?: DbPool;
+  /**
+   * Snapshot-fallback threshold for the `catch-up` handler. When the
+   * gap between the client's `sinceSequence` and the server's
+   * `MAX(sequence)` exceeds this number, the handler skips per-event
+   * replay and sends a snapshot instead. Defaults to the env-resolved
+   * value (`WS_CATCHUP_MAX_EVENTS` or 500 when absent). Tests inject
+   * small values to exercise both branches deterministically. See
+   * `tasks/refinements/backend/ws_reconnection_handling.md`.
+   */
+  readonly catchUpMaxEvents?: number;
 }
 
 const wsHandlersPluginAsync: FastifyPluginAsync<WsHandlersOptions> = (
@@ -188,6 +208,29 @@ const wsHandlersPluginAsync: FastifyPluginAsync<WsHandlersOptions> = (
     },
     registry: app.wsSubscriptions,
     log: app.log,
+  });
+
+  // Register the catch-up handler — server-side surface for client
+  // reconnection with state catch-up. The handler runs the same
+  // subscribe-before-act + visibility gates, then either streams
+  // missing `event-applied` envelopes for a slice
+  // `(sinceSequence, currentMax]` (reusing the live broadcast's
+  // envelope type so clients route both through one reducer), or
+  // sends a `snapshot-state` (reusing the snapshot handler's
+  // `serializeProjectionForWire`) when the gap exceeds the
+  // configurable threshold. The threshold defaults to the env-
+  // resolved value (`WS_CATCHUP_MAX_EVENTS` or 500) — tests inject
+  // small values to exercise both branches deterministically. See
+  // `tasks/refinements/backend/ws_reconnection_handling.md` for the
+  // shape choice rationale + the dedup contract clients honour.
+  const catchUpThreshold = opts.catchUpMaxEvents ?? resolveCatchUpMaxEvents();
+  registerCatchUpHandlers(app.wsDispatcher, {
+    get pool() {
+      return ensurePool();
+    },
+    registry: app.wsSubscriptions,
+    log: app.log,
+    maxCatchUpEvents: catchUpThreshold,
   });
 
   return Promise.resolve();

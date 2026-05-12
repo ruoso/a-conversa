@@ -256,7 +256,9 @@ task backend "Backend" {
     task ws_reconnection_handling "Client reconnection with state catch-up" {
       effort 2d
       allocate team
+      complete 100
       depends !ws_event_broadcast
+      note "Refinement: tasks/refinements/backend/ws_reconnection_handling.md"
     }
     task ws_protocol_documentation "Document the WebSocket message protocol" {
       effort 1d

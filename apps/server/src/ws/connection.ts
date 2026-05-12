@@ -824,6 +824,15 @@ export interface BuildTestWsAppOptions {
   readonly sessionTokenSecret: string;
   /** Optional clock override for hermetic expired-token cases. */
   readonly now?: () => number;
+  /**
+   * Optional snapshot-fallback threshold for the catch-up handler.
+   * Tests that exercise the slice-replay vs. snapshot-fallback
+   * branching of `ws_reconnection_handling` pass a small value
+   * (e.g. 3) so the threshold can be crossed in a hermetic setup.
+   * Absent → the handler reads the env (`WS_CATCHUP_MAX_EVENTS`)
+   * with a default of 500.
+   */
+  readonly catchUpMaxEvents?: number;
 }
 
 /**
@@ -883,7 +892,10 @@ export async function __buildTestWsApp(
   // `wsConnectionHandlingPlugin` — that plugin decorates the
   // dispatcher and the subscription registry, both of which
   // `wsHandlersPlugin` reaches for at registration time.
-  await app.register(wsHandlersPlugin, { pool: opts.pool });
+  await app.register(wsHandlersPlugin, {
+    pool: opts.pool,
+    ...(opts.catchUpMaxEvents !== undefined ? { catchUpMaxEvents: opts.catchUpMaxEvents } : {}),
+  });
 
   // Register the WS diagnostic broadcast surface so the cucumber +
   // integration tests can exercise the full bridge:

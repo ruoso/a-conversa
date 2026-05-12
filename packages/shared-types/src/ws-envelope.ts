@@ -116,6 +116,7 @@ export const wsMessageTypes = [
   'commit',
   'mark-meta-disagreement',
   'snapshot',
+  'catch-up',
   // Group C — server → client ack / result types correlated via
   // `inResponseTo`. Append future sibling ack/result types at this
   // group's tail.
@@ -126,6 +127,7 @@ export const wsMessageTypes = [
   'committed',
   'meta-disagreement-marked',
   'snapshot-state',
+  'caught-up',
   // Group A — server-emitted unsolicited broadcast + the canonical
   // error envelope (which `inResponseTo` echoes when correlated).
   'event-applied',
@@ -740,6 +742,101 @@ export type SnapshotStatePayload = {
   projection: unknown;
 };
 
+// -- catch-up / caught-up payloads ---------------------------------
+//
+// `catch-up` (client → server): the client asks the server to deliver
+// every event the client has missed since `sinceSequence` (exclusive),
+// for a session it is **subscribed to** (the subscribe-before-act gate
+// is enforced on the server). The server responds with EITHER:
+//
+//   1. A stream of `event-applied` envelopes (the exact same envelope
+//      type the live broadcast surface uses — see refinement
+//      Decisions for the reuse rationale) covering
+//      `(sinceSequence, currentMaxSequence]`, followed by a
+//      `caught-up` ack with `fromSnapshot: false`. The slice-replay
+//      path.
+//   2. A single `snapshot-state` envelope (built via the same
+//      `serializeProjectionForWire` helper the snapshot handler
+//      uses), followed by a `caught-up` ack with
+//      `fromSnapshot: true`. The snapshot-fallback path; selected
+//      when `currentMaxSequence - sinceSequence` exceeds a
+//      configurable threshold (default 500, via env
+//      `WS_CATCHUP_MAX_EVENTS`).
+//
+// **Owned by `ws_reconnection_handling`.** This task adds `catch-up`
+// to Group B and `caught-up` to Group C of the union-extension
+// convention documented in `wsMessageTypes` above. Server-side; the
+// client retry / backoff / re-auth / re-subscribe orchestration that
+// invokes this surface lives in future participant / moderator /
+// audience tasks.
+//
+// **Dedup contract.** The handler reads its slice synchronously from
+// the DB, but the bus may dispatch a NEW live `event-applied`
+// broadcast between the SELECT and the per-frame send. Clients MUST
+// deduplicate `event-applied` frames by `event.sequence` — the
+// per-event `sequence` is the single source of truth for replay-vs-
+// live ordering. The `caught-up` ack's `throughSequence` is the
+// boundary: any `event-applied` with `sequence <= throughSequence`
+// is part of the replay; anything `>` is live.
+
+/**
+ * Client → server. Asks the server to deliver every event the client
+ * has missed since `sinceSequence` (exclusive) for `sessionId`. The
+ * client must have already sent a successful `subscribe` for the same
+ * session (the server enforces); otherwise the wire response is an
+ * `error` envelope with `code: 'forbidden'`.
+ *
+ * - `sessionId` — the session to catch up on.
+ * - `sinceSequence` — the last `event.sequence` the client observed.
+ *   Zero is valid (the client says "I have seen nothing; send me
+ *   everything"). Negative values are rejected by the schema.
+ *
+ * The handler responds based on the gap between `sinceSequence` and
+ * the server's current `MAX(sequence)`:
+ *
+ *   - Gap ≤ `WS_CATCHUP_MAX_EVENTS` (default 500): stream
+ *     `event-applied` frames + final `caught-up` ack (slice path).
+ *   - Gap > `WS_CATCHUP_MAX_EVENTS`: send `snapshot-state` + final
+ *     `caught-up` ack with `fromSnapshot: true` (snapshot path).
+ *   - Gap = 0 (at head): single `caught-up` ack, `eventCount: 0`.
+ *   - `sinceSequence` > `MAX(sequence)` (client ahead — defensive):
+ *     single `caught-up` ack, `eventCount: 0`, `throughSequence:
+ *     MAX(sequence)`. The server logs a warn but does NOT error.
+ */
+export const catchUpPayloadSchema = z.object({
+  sessionId: z.string().uuid(),
+  sinceSequence: z.number().int().nonnegative(),
+});
+
+export type CatchUpPayload = z.infer<typeof catchUpPayloadSchema>;
+
+/**
+ * Server → client ack emitted at the end of every catch-up flow.
+ * Echoes the originating `catch-up` envelope's `id` via
+ * `inResponseTo`. The ack is the explicit "replay window closed"
+ * signal — without it the client cannot distinguish a final replay
+ * frame from a subsequent live broadcast.
+ *
+ * - `sessionId` — the session the catch-up covered.
+ * - `throughSequence` — the sequence of the last event the catch-up
+ *   considered (slice path: `MAX(sequence)` at the time of the
+ *   SELECT; snapshot path: `projection.lastAppliedSequence` carried
+ *   on the `snapshot-state` envelope).
+ * - `eventCount` — the number of `event-applied` frames the handler
+ *   emitted as part of this catch-up. Zero for the snapshot-fallback
+ *   path and for the no-op-at-head case.
+ * - `fromSnapshot` — `true` when the snapshot-fallback path ran;
+ *   `false` for the slice path (including the no-op case).
+ */
+export const caughtUpPayloadSchema = z.object({
+  sessionId: z.string().uuid(),
+  throughSequence: z.number().int().nonnegative(),
+  eventCount: z.number().int().nonnegative(),
+  fromSnapshot: z.boolean(),
+});
+
+export type CaughtUpPayload = z.infer<typeof caughtUpPayloadSchema>;
+
 // -- event-applied payload -----------------------------------------
 //
 // `event-applied` (server → client): emitted by the broadcast surface
@@ -1091,6 +1188,7 @@ export const wsMessagePayloadSchemas: Record<WsMessageType, z.ZodTypeAny> = {
   commit: wsCommitPayloadSchema,
   'mark-meta-disagreement': wsMarkMetaDisagreementPayloadSchema,
   snapshot: snapshotPayloadSchema,
+  'catch-up': catchUpPayloadSchema,
   // Group C — server → client ack/result payload schemas.
   subscribed: subscribedPayloadSchema,
   unsubscribed: unsubscribedPayloadSchema,
@@ -1099,6 +1197,7 @@ export const wsMessagePayloadSchemas: Record<WsMessageType, z.ZodTypeAny> = {
   committed: committedPayloadSchema,
   'meta-disagreement-marked': metaDisagreementMarkedAckPayloadSchema,
   'snapshot-state': snapshotStatePayloadSchema,
+  'caught-up': caughtUpPayloadSchema,
   // The outer event envelope is checked; the per-kind payload inside
   // the event is `z.unknown()` per the schema in `events.ts` and is
   // re-validated by `validateEvent` on the receiving side. Server-side
@@ -1127,6 +1226,7 @@ export interface WsMessagePayloadMap {
   commit: WsCommitPayload;
   'mark-meta-disagreement': WsMarkMetaDisagreementPayload;
   snapshot: SnapshotPayload;
+  'catch-up': CatchUpPayload;
   // Group C — server → client ack/result payload types.
   subscribed: SubscribedPayload;
   unsubscribed: UnsubscribedPayload;
@@ -1135,6 +1235,7 @@ export interface WsMessagePayloadMap {
   committed: CommittedPayload;
   'meta-disagreement-marked': MetaDisagreementMarkedAckPayload;
   'snapshot-state': SnapshotStatePayload;
+  'caught-up': CaughtUpPayload;
   'event-applied': EventAppliedPayload;
   error: ErrorPayload;
   diagnostic: DiagnosticPayload;
