@@ -33,6 +33,12 @@ task milestones "Milestones" {
     note "Backend can host live sessions: auth works, sessions can be created and joined, the WebSocket protocol relays proposals/votes/commits."
   }
 
+  task m_backend_review "M3-review: Backend security hardening" {
+    milestone
+    depends !m_backend_mvp, backend_hardening
+    note "Production hardening + test pinning + DoS controls rolling up the three independent M3 security reviews (auth + secrets, input validation / DoS, test-coverage gaps). Source documents live at docs/security/m3-review/. Blocks M9 — the public network surface should not be exposed before this milestone."
+  }
+
   task m_moderator_mvp "M4: Moderator MVP" {
     milestone
     depends !m_backend_mvp, moderator_ui.mod_capture_flow, moderator_ui.mod_pending_proposals_pane, moderator_ui.mod_decompose_flow, moderator_ui.mod_diagnostic_flow, moderator_ui.mod_axiom_mark_flow, moderator_ui.mod_session_setup
@@ -65,8 +71,8 @@ task milestones "Milestones" {
 
   task m_deployment_ready "M9: Deployment ready" {
     milestone
-    depends !m_end_to_end_debate, deployment.prod_container, deployment.prod_compose, deployment.prod_secrets, deployment.prod_migrations, deployment.observability, deployment.backup_and_export, deployment.deployment_docs
-    note "An always-on cloud server can host live sessions in production. Backups, observability, secrets, and operator docs all in place."
+    depends !m_end_to_end_debate, !m_backend_review, deployment.prod_container, deployment.prod_compose, deployment.prod_secrets, deployment.prod_migrations, deployment.observability, deployment.backup_and_export, deployment.deployment_docs
+    note "An always-on cloud server can host live sessions in production. Backups, observability, secrets, and operator docs all in place. Depends on M3-review (backend security hardening) — public network exposure is gated on that work."
   }
 
   task m_first_show_recorded "M10: First YouTube show recorded" {
