@@ -21,6 +21,12 @@
 //        `authorizationCodeGrant`, upserts the user, and returns 200
 //        `{ sub, oauthSubject, userId }`.
 //     7. A second callback with the same state (after take()) returns 400.
+//     7a. OIDC state replay protection (G-012): the state-consumed
+//         invariant is pinned as a security claim — a replay against
+//         the same state after a successful callback is rejected with
+//         `auth-state-invalid`. The describe block names the three
+//         sibling threat shapes (browser-history attack, referer leak,
+//         XSS-stolen state) so the audit-trail grep finds the framing.
 //
 // Tests use Fastify's built-in `.inject(...)` — no port bind. The
 // `Configuration` is a `__buildStubConfiguration` instance; the
@@ -437,5 +443,120 @@ describe('namespacedOauthSubject', () => {
     expect(http).not.toBe(https);
     expect(http).toBe('http://localhost:9091:alice');
     expect(https).toBe('https://localhost:9091:alice');
+  });
+});
+
+// ============================================================
+// OIDC state replay protection (G-012)
+// ============================================================
+//
+// Per docs/security/m3-review/coverage.md G-012: pin the security
+// invariant that a `state` value `take()`ed by one successful
+// `/auth/callback` cannot be replayed against another `/auth/callback`.
+// The production code (apps/server/src/auth/flow-state.ts) implements
+// this via `take(state)` removing the entry from the map before
+// returning it, and the route handler at routes.ts:619-626 returning
+// `auth-state-invalid` when `take()` yields `undefined`. The
+// rejection is correct today; this test makes the *threat-model
+// framing* of the rejection explicit so an auditor's
+// `grep -r "G-012" apps/server` lands on the proof.
+//
+// Threat shapes this invariant defends against — all three reduce to
+// the same wire-level attack (`GET /auth/callback?code=...&state=<leaked>`
+// arriving AFTER the legitimate callback consumed that state):
+//
+//   - **Browser-history attack.** Attacker recovers the OIDC redirect
+//     URL emitted by `/auth/login` (carrying `state` in its query)
+//     from the victim's browser history — via XSS on a different
+//     site, a malicious extension, or shared-device snooping — and
+//     replays it.
+//   - **Referer leak.** The OIDC issuer's authorization page
+//     (Authelia) embeds the callback URL in its rendered HTML; if
+//     that page leaks via a referer header to any third-party
+//     resource (analytics, ad pixel, OAuth provider error page), the
+//     `state` value escapes.
+//   - **XSS-stolen state.** A script running on a vulnerable
+//     subdomain reads `document.referrer` or the URL bar on the
+//     callback page, exfiltrates the `state` to an attacker-
+//     controlled endpoint, attacker replays.
+//
+// The adjacent `'a replay against the same state after take() returns
+// 400'` case inside `describe('GET /auth/callback')` already pins the
+// in-process replay semantic as a structural-wiring test (grouped
+// with other callback paths). This block re-asserts the same
+// behavior under its security framing, with a leading comment that
+// names the threats and the gap reference (G-012). The two tests
+// co-exist intentionally — see the refinement
+// `tasks/refinements/backend-hardening/oidc_state_replay_explicit_pin.md`
+// for the audience-split rationale.
+
+describe('OIDC state replay protection (G-012)', () => {
+  let test: TestApp;
+  beforeEach(async () => {
+    test = await buildApp((sub) => makeAuthCodeGrantStub(sub));
+  });
+  afterEach(async () => {
+    await test.app.close();
+  });
+
+  it('rejects a replayed state value after the first callback consumed it', async () => {
+    // Step 1: mint a state via /auth/login. Sanity-check the 302 so
+    // a setup bug (e.g. a randomState helper that fails silently)
+    // doesn't mask the real signal. The deterministic randomState
+    // in buildApp's beginFlowOptions yields `state-1` on the first
+    // call — that's the value the two callback requests below use.
+    const loginResponse = await test.app.inject({ method: 'GET', url: '/auth/login' });
+    expect(loginResponse.statusCode).toBe(302);
+    expect(test.flowState.size()).toBe(1);
+
+    // Step 2: legitimate callback. `state-1` is taken from the
+    // store; `take` removes it before returning. The success path
+    // exchanges the auth code, upserts the user, issues the session
+    // cookie, and returns the user-shape body. Asserting the body
+    // shape (not just 200) catches a future refactor that returns
+    // 200 with an empty/wrong body — without this the replay
+    // assertion below could be satisfied even if the success path
+    // was broken (rejection because the code never ran, not because
+    // take() consumed the state).
+    const first = await test.app.inject({
+      method: 'GET',
+      url: '/auth/callback?code=AUTHCODE&state=state-1',
+    });
+    expect(first.statusCode).toBe(200);
+    const firstBody = first.json<{ sub?: string; oauthSubject?: string; userId?: string }>();
+    expect(firstBody.sub).toBe('alice');
+    expect(firstBody.oauthSubject).toBe('http://authelia:9091:alice');
+    expect(typeof firstBody.userId).toBe('string');
+    // After take(), the store is empty — the entry has been
+    // consumed and removed. The replay below will find nothing.
+    expect(test.flowState.size()).toBe(0);
+
+    // Step 3: replay with the SAME state value. In a real attack
+    // this is the leaked-state request arriving from a different
+    // browser/session/device. `flowState.take('state-1')` returns
+    // `undefined` (the entry is gone); the route handler maps that
+    // to a 400 + `auth-state-invalid` envelope. No second session
+    // is minted; no second cookie is set.
+    const replay = await test.app.inject({
+      method: 'GET',
+      url: '/auth/callback?code=AUTHCODE&state=state-1',
+    });
+    expect(replay.statusCode).toBe(400);
+    const replayBody = replay.json<{ error?: { code?: string; message?: string } }>();
+    expect(replayBody.error?.code).toBe('auth-state-invalid');
+    // Two-prong message assertion: the code is the structural
+    // anchor, the message regex catches a future refactor that
+    // keeps the code but rewrites the operative noun out of the
+    // human-readable string.
+    expect(replayBody.error?.message).toMatch(/state/i);
+    // The replay response MUST NOT issue a session cookie. A
+    // misrouted code path (e.g. a future caching layer that
+    // preserves `flowState` entries on first read) could otherwise
+    // satisfy the 400-status check while still leaking a cookie
+    // header from a prior layer.
+    expect(replay.headers['set-cookie']).toBeUndefined();
+    // And the user table size did not grow — the upsert behind the
+    // happy path ran exactly once.
+    expect(test.users.size).toBe(1);
   });
 });

@@ -239,6 +239,7 @@ task backend_hardening "M3-review hardening (security audit follow-ups)" {
     task oidc_state_replay_explicit_pin "Test: pin OIDC state-replay rejection explicitly" {
       effort 0.25d
       allocate team
+      complete 100
       note "Source: docs/security/m3-review/coverage.md G-012"
       note "Refinement: tasks/refinements/backend-hardening/oidc_state_replay_explicit_pin.md"
     }
