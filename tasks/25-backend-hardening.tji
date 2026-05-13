@@ -193,6 +193,7 @@ task backend_hardening "M3-review hardening (security audit follow-ups)" {
     task s_to_c_type_rejection_pin "Test: S→C-only WS types rejected when sent C→S" {
       effort 0.25d
       allocate team
+      complete 100
       note "Source: docs/security/m3-review/coverage.md G-008; docs/security/m3-review/inputs.md F-010"
       note "Refinement: tasks/refinements/backend-hardening/s_to_c_type_rejection_pin.md"
     }

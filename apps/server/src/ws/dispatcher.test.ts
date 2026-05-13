@@ -16,7 +16,7 @@
 import type { FastifyBaseLogger } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { WsEnvelope, WsEnvelopeUnion } from '@a-conversa/shared-types';
+import type { WsEnvelope, WsEnvelopeUnion, WsMessageType } from '@a-conversa/shared-types';
 
 import type { WsConnectionContext } from './connection.js';
 import {
@@ -164,6 +164,107 @@ describe('WsDispatcher', () => {
     expect(wire.payload?.code).toBe('unknown-message-type');
     expect(typeof wire.payload?.message).toBe('string');
   });
+
+  // --- G-008 / s_to_c_type_rejection_pin -------------------------
+  //
+  // Pins that every server→client-only `WsMessageType` is rejected
+  // with `unknown-message-type` when sent as a C→S frame. The closed
+  // `WsMessageType` enum carries both directions in a single
+  // discriminator (the three-group layout documented in
+  // `packages/shared-types/src/ws-envelope.ts`):
+  //
+  //   - Group A — server-emitted unsolicited frames: `hello`,
+  //     `event-applied`, `error`, `diagnostic`, `proposal-status`.
+  //   - Group B — client→server requests: `subscribe`, `unsubscribe`,
+  //     `propose`, `vote`, `commit`, `mark-meta-disagreement`,
+  //     `snapshot`, `catch-up`. (Excluded from this test — these have
+  //     real handlers and are exercised by per-handler tests.)
+  //   - Group C — server-emitted ack/result frames correlated via
+  //     `inResponseTo`: `subscribed`, `unsubscribed`, `proposed`,
+  //     `voted`, `committed`, `meta-disagreement-marked`,
+  //     `snapshot-state`, `caught-up`.
+  //
+  // Today the rejection is implicit (no handler registered → the
+  // `onUnknownType` seam fires). This test makes it explicit so a
+  // future task that accidentally registers a handler for an S→C type
+  // (e.g. typo'ing `'committed'` for `'commit'`, or auto-wiring the
+  // dispatcher from the enum) trips the assertion at review time.
+  //
+  // Static array literal (not a runtime filter over `wsMessageTypes`)
+  // is deliberate per the refinement decision: adding a new S→C type
+  // to the shared-types enum requires consciously adding it here too —
+  // the closed list is the audit trail.
+  const S_TO_C_ONLY_TYPES = [
+    // Group A — server-emitted unsolicited frames.
+    'hello',
+    'event-applied',
+    'error',
+    'diagnostic',
+    'proposal-status',
+    // Group C — server-emitted ack/result frames.
+    'subscribed',
+    'unsubscribed',
+    'proposed',
+    'voted',
+    'committed',
+    'meta-disagreement-marked',
+    'snapshot-state',
+    'caught-up',
+  ] as const satisfies readonly WsMessageType[];
+
+  it.each(S_TO_C_ONLY_TYPES)(
+    'rejects a C→S frame typed as `%s` (S→C-only) with `unknown-message-type`',
+    async (type) => {
+      // The default dispatcher (built in beforeEach) has NO handlers
+      // registered for this `type` — every S→C type is server-emitted
+      // only and is intentionally never wired into the inbound
+      // registry. The unknown-type seam must fire.
+      //
+      // The envelope's `payload` is a constant stub: the dispatcher's
+      // `onUnknownType` seam does NOT introspect the payload (it
+      // reaches for `envelope.type` and `envelope.id` only), so a
+      // per-type-shaped payload would be ceremony without value. The
+      // cast widens the stub to the per-type discriminated-union
+      // shape so the static type system accepts the `dispatch` call.
+      const envelope = {
+        type,
+        id: MSG_ID,
+        payload: { stub: true },
+      } as unknown as WsEnvelopeUnion;
+      const conn = stubConnection();
+
+      await dispatcher.dispatch(envelope, conn);
+
+      // Wire-format error envelope: `type: 'error'`,
+      // `inResponseTo = envelope.id`, `payload.code:
+      // 'unknown-message-type'`. Same canonical shape the synthetic
+      // unknown-type test above pins.
+      expect(conn.sends).toHaveLength(1);
+      const wire = JSON.parse(conn.sends[0] as string) as {
+        type?: unknown;
+        inResponseTo?: unknown;
+        payload?: { code?: unknown };
+      };
+      expect(wire.type).toBe('error');
+      expect(wire.inResponseTo).toBe(MSG_ID);
+      expect(wire.payload?.code).toBe('unknown-message-type');
+
+      // Structured warn log carries the raw `messageType` for operator
+      // visibility (the same operator-only-detail pattern the
+      // unknown-type test pins).
+      expect(logger.warn).toHaveBeenCalledTimes(1);
+      const [meta] = logger.warn.mock.calls[0] as [Record<string, unknown>];
+      expect(meta.connectionId).toBe(CONNECTION_ID);
+      expect(meta.messageId).toBe(MSG_ID);
+      expect(meta.messageType).toBe(type);
+
+      // Belt-and-suspenders — the handler-error path must NOT have
+      // fired; this confirms the rejection came from the
+      // `onUnknownType` seam (no handler registered) rather than from
+      // a handler throwing.
+      expect(logger.error).not.toHaveBeenCalled();
+    },
+  );
 
   // --- F-009 / wire_error_no_echo --------------------------------
   //
