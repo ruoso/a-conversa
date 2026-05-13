@@ -2,7 +2,48 @@
   "chrome": {
     "hello": "olá, mundo"
   },
-  "methodology": {},
+  "methodology": {
+    "kind": {
+      "fact": "Fato",
+      "predictive": "Preditiva",
+      "value": "Valor",
+      "normative": "Normativa",
+      "definitional": "Definicional"
+    },
+    "edgeRole": {
+      "supports": "Apoia",
+      "rebuts": "Refuta",
+      "qualifies": "Qualifica",
+      "bridges-from": "Ponte de",
+      "bridges-to": "Ponte para",
+      "defines": "Define",
+      "contradicts": "Contradiz"
+    },
+    "facetState": {
+      "proposed": "Proposta",
+      "agreed": "Acordada",
+      "disputed": "Em disputa",
+      "meta-disagreement": "Meta-desacordo"
+    },
+    "voteChoice": {
+      "agree": "Concordar",
+      "dispute": "Discordar",
+      "withdraw": "Retirar"
+    },
+    "annotationKind": {
+      "note": "Nota",
+      "reframe": "Reenquadramento",
+      "scope-change": "Mudança de escopo",
+      "stance": "Posição"
+    },
+    "diagnostic": {
+      "cycle": "Ciclo",
+      "contradiction": "Contradição",
+      "multi-warrant": "Multi-garantia",
+      "dangling-claim": "Afirmação pendente",
+      "coherency-hint": "Sugestão de coerência"
+    }
+  },
   "diagnostics": {},
   "errors": {}
 }

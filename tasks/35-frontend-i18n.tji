@@ -41,6 +41,7 @@ task frontend_i18n "Frontend internationalization" {
   task i18n_methodology_glossary "Canonical en-US -> pt-BR / es-419 glossary" {
     effort 2d
     allocate team
+    complete 100
     depends !i18n_catalog_workflow
     note "fact / predictive / value / normative / definitional + edge roles + states + diagnostics"
     note "Requires native-speaker + philosophical review per locale (see Risks)"

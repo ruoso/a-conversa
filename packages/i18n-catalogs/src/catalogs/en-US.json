@@ -2,7 +2,48 @@
   "chrome": {
     "hello": "hello, world"
   },
-  "methodology": {},
+  "methodology": {
+    "kind": {
+      "fact": "Fact",
+      "predictive": "Predictive",
+      "value": "Value",
+      "normative": "Normative",
+      "definitional": "Definitional"
+    },
+    "edgeRole": {
+      "supports": "Supports",
+      "rebuts": "Rebuts",
+      "qualifies": "Qualifies",
+      "bridges-from": "Bridges from",
+      "bridges-to": "Bridges to",
+      "defines": "Defines",
+      "contradicts": "Contradicts"
+    },
+    "facetState": {
+      "proposed": "Proposed",
+      "agreed": "Agreed",
+      "disputed": "Disputed",
+      "meta-disagreement": "Meta-disagreement"
+    },
+    "voteChoice": {
+      "agree": "Agree",
+      "dispute": "Dispute",
+      "withdraw": "Withdraw"
+    },
+    "annotationKind": {
+      "note": "Note",
+      "reframe": "Reframe",
+      "scope-change": "Scope change",
+      "stance": "Stance"
+    },
+    "diagnostic": {
+      "cycle": "Cycle",
+      "contradiction": "Contradiction",
+      "multi-warrant": "Multi-warrant",
+      "dangling-claim": "Dangling claim",
+      "coherency-hint": "Coherency hint"
+    }
+  },
   "diagnostics": {},
   "errors": {}
 }
