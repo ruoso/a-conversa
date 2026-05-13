@@ -14,10 +14,12 @@
       "title": "Elige tu nombre de pantalla",
       "label": "Nombre de pantalla",
       "submit": "Continuar",
+      "helper": "{used}/{max} caracteres",
       "errors": {
         "empty": "Por favor, ingresa un nombre de pantalla.",
         "whitespaceOnly": "El nombre no puede contener solo espacios.",
         "tooLong": "El nombre debe tener como máximo 64 caracteres.",
+        "invalidCharacter": "El nombre contiene un carácter no permitido (control / bidi / no imprimible).",
         "alreadySet": "Esta cuenta ya tiene un nombre de pantalla.",
         "pendingCookieInvalid": "Tu inicio de sesión expiró. Vuelve a iniciar sesión.",
         "generic": "No se pudo guardar tu nombre. Inténtalo de nuevo."

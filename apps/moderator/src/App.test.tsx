@@ -536,6 +536,347 @@ describe('ScreenName route — form behavior', () => {
   });
 });
 
+// ────────────────────────────────────────────────────────────────────────
+// `mod_screen_name_setup` — UX polish on top of `mod_auth_flow`'s form:
+//   - client-side mirror of the backend's NFKC + control-char + bidi-
+//     override + printable-class checks (immediate inline feedback)
+//   - accessibility wiring (aria-invalid / aria-describedby / aria-live,
+//     a character-count helper, autoComplete=off, inputMode=text)
+//   - focus management (autoFocus on mount via ref + re-focus after a
+//     server-side error so the aria-live announcement is heard)
+// Per ADR 0022 these are committed tests, not throwaway probes.
+// ────────────────────────────────────────────────────────────────────────
+describe('ScreenName route — client-side mirror of backend validation', () => {
+  beforeEach(() => {
+    global.fetch = vi.fn().mockResolvedValue(new Response('', { status: 401 }));
+  });
+
+  it('rejects a name containing an RLO (bidi-override) without POSTing', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('', { status: 401 }));
+    global.fetch = fetchMock;
+
+    render(
+      <MemoryRouter initialEntries={['/screen-name']}>
+        <App />
+      </MemoryRouter>,
+    );
+    const input = screen.getByTestId('screen-name-input');
+    // 'alice' + RLO + 'admin' — the audience-broadcast-spoof case from
+    // F-010. The client mirror catches it before the POST.
+    fireEvent.change(input, { target: { value: 'alice‮admin' } });
+    await act(async () => {
+      fireEvent.submit(screen.getByTestId('screen-name-form'));
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('screen-name-error').textContent).toBe(
+        'Display name contains a disallowed character (control / bidi-override / non-printable).',
+      );
+    });
+    // No POST should have happened — only the initial /auth/me GET.
+    const postCall = fetchMock.mock.calls.find((c) => (c[0] as string) === '/auth/screen-name');
+    expect(postCall).toBeUndefined();
+  });
+
+  it('rejects a name containing a ZWJ (zero-width joiner) without POSTing', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('', { status: 401 }));
+    global.fetch = fetchMock;
+
+    render(
+      <MemoryRouter initialEntries={['/screen-name']}>
+        <App />
+      </MemoryRouter>,
+    );
+    const input = screen.getByTestId('screen-name-input');
+    fireEvent.change(input, { target: { value: 'alice‍bob' } });
+    await act(async () => {
+      fireEvent.submit(screen.getByTestId('screen-name-form'));
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('screen-name-error').textContent).toBe(
+        'Display name contains a disallowed character (control / bidi-override / non-printable).',
+      );
+    });
+    const postCall = fetchMock.mock.calls.find((c) => (c[0] as string) === '/auth/screen-name');
+    expect(postCall).toBeUndefined();
+  });
+
+  it('rejects a name containing a NUL (C0 control) without POSTing', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('', { status: 401 }));
+    global.fetch = fetchMock;
+
+    render(
+      <MemoryRouter initialEntries={['/screen-name']}>
+        <App />
+      </MemoryRouter>,
+    );
+    const input = screen.getByTestId('screen-name-input');
+    fireEvent.change(input, { target: { value: 'alice\u0000' } });
+    await act(async () => {
+      fireEvent.submit(screen.getByTestId('screen-name-form'));
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('screen-name-error').textContent).toBe(
+        'Display name contains a disallowed character (control / bidi-override / non-printable).',
+      );
+    });
+    const postCall = fetchMock.mock.calls.find((c) => (c[0] as string) === '/auth/screen-name');
+    expect(postCall).toBeUndefined();
+  });
+
+  it('POSTs the NFKC-normalized form (ligature `ﬁle` → `file`) on success', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('', { status: 401 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            userId: '00000000-0000-4000-8000-00000000000a',
+            screenName: 'file',
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            userId: '00000000-0000-4000-8000-00000000000a',
+            screenName: 'file',
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      );
+    global.fetch = fetchMock;
+
+    render(
+      <MemoryRouter initialEntries={['/screen-name']}>
+        <App />
+      </MemoryRouter>,
+    );
+    const input = screen.getByTestId('screen-name-input');
+    // U+FB01 LATIN SMALL LIGATURE FI — NFKC decomposes to U+0066 U+0069.
+    fireEvent.change(input, { target: { value: 'ﬁle' } });
+    await act(async () => {
+      fireEvent.submit(screen.getByTestId('screen-name-form'));
+      await Promise.resolve();
+    });
+    const postCall = fetchMock.mock.calls.find((c) => (c[0] as string) === '/auth/screen-name') as
+      | [string, RequestInit]
+      | undefined;
+    expect(postCall).toBeDefined();
+    expect(JSON.parse(postCall?.[1].body as string)).toEqual({ screenName: 'file' });
+  });
+
+  it('maps the server `screen-name-invalid` envelope to the invalidCharacter key', async () => {
+    // Corner case: the client mirror passed but the server rejected
+    // (e.g. a post-NFKC re-trim landed on empty, or a future server-side
+    // rule the client hasn't mirrored yet). The localized message
+    // surfaces invalidCharacter — the safest fallback now that empty /
+    // whitespace / too-long paths are caught client-side first.
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('', { status: 401 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            error: {
+              code: 'screen-name-invalid',
+              message: 'screenName contains a disallowed character',
+            },
+          }),
+          { status: 400, headers: { 'content-type': 'application/json' } },
+        ),
+      );
+    global.fetch = fetchMock;
+
+    render(
+      <MemoryRouter initialEntries={['/screen-name']}>
+        <App />
+      </MemoryRouter>,
+    );
+    const input = screen.getByTestId('screen-name-input');
+    fireEvent.change(input, { target: { value: 'alice' } });
+    await act(async () => {
+      fireEvent.submit(screen.getByTestId('screen-name-form'));
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('screen-name-error').textContent).toBe(
+        'Display name contains a disallowed character (control / bidi-override / non-printable).',
+      );
+    });
+  });
+
+  it('resolves the new auth.screenName.errors.invalidCharacter key in every locale', async () => {
+    await i18next.changeLanguage('en-US');
+    expect(i18next.t('auth.screenName.errors.invalidCharacter')).toBe(
+      'Display name contains a disallowed character (control / bidi-override / non-printable).',
+    );
+    await i18next.changeLanguage('pt-BR');
+    expect(i18next.t('auth.screenName.errors.invalidCharacter')).toBe(
+      'O nome de exibição contém um caractere não permitido (controle / bidi / não imprimível).',
+    );
+    await i18next.changeLanguage('es-419');
+    expect(i18next.t('auth.screenName.errors.invalidCharacter')).toBe(
+      'El nombre contiene un carácter no permitido (control / bidi / no imprimible).',
+    );
+    await i18next.changeLanguage('en-US');
+  });
+});
+
+describe('ScreenName route — accessibility + helper text + focus', () => {
+  beforeEach(() => {
+    global.fetch = vi.fn().mockResolvedValue(new Response('', { status: 401 }));
+  });
+
+  it('renders the character-count helper with 0/64 on mount', async () => {
+    render(
+      <MemoryRouter initialEntries={['/screen-name']}>
+        <App />
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId('screen-name-helper').textContent).toBe('0/64 characters');
+    });
+  });
+
+  it('updates the character-count helper as the user types (trimmed length)', async () => {
+    render(
+      <MemoryRouter initialEntries={['/screen-name']}>
+        <App />
+      </MemoryRouter>,
+    );
+    const input = screen.getByTestId('screen-name-input');
+    fireEvent.change(input, { target: { value: '  alice  ' } });
+    await waitFor(() => {
+      // Helper reports trimmed length so the user sees what the server
+      // will count against the 64-character cap.
+      expect(screen.getByTestId('screen-name-helper').textContent).toBe('5/64 characters');
+    });
+  });
+
+  it('sets aria-describedby on the input pointing to helper + error ids', () => {
+    render(
+      <MemoryRouter initialEntries={['/screen-name']}>
+        <App />
+      </MemoryRouter>,
+    );
+    const input = screen.getByTestId<HTMLInputElement>('screen-name-input');
+    expect(input.getAttribute('aria-describedby')).toBe('screen-name-helper screen-name-error');
+  });
+
+  it('toggles aria-invalid on the input when an error is shown', async () => {
+    render(
+      <MemoryRouter initialEntries={['/screen-name']}>
+        <App />
+      </MemoryRouter>,
+    );
+    const input = screen.getByTestId<HTMLInputElement>('screen-name-input');
+    expect(input.getAttribute('aria-invalid')).toBe('false');
+    fireEvent.change(input, { target: { value: 'alice‮admin' } });
+    await act(async () => {
+      fireEvent.submit(screen.getByTestId('screen-name-form'));
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(input.getAttribute('aria-invalid')).toBe('true');
+    });
+    // Typing clears the error → aria-invalid resets.
+    fireEvent.change(input, { target: { value: 'alice' } });
+    await waitFor(() => {
+      expect(input.getAttribute('aria-invalid')).toBe('false');
+    });
+  });
+
+  it('sets autoComplete=off and inputMode=text on the input', () => {
+    render(
+      <MemoryRouter initialEntries={['/screen-name']}>
+        <App />
+      </MemoryRouter>,
+    );
+    const input = screen.getByTestId<HTMLInputElement>('screen-name-input');
+    // A screen name is not a stored credential; off is the right hint.
+    expect(input.getAttribute('autocomplete')).toBe('off');
+    // Mobile keyboard hint: plain text (not numeric, not email, etc.).
+    expect(input.getAttribute('inputmode')).toBe('text');
+  });
+
+  it('marks the error region with role=alert AND aria-live=polite + aria-atomic', async () => {
+    render(
+      <MemoryRouter initialEntries={['/screen-name']}>
+        <App />
+      </MemoryRouter>,
+    );
+    const input = screen.getByTestId('screen-name-input');
+    fireEvent.change(input, { target: { value: 'alice\u0000' } });
+    await act(async () => {
+      fireEvent.submit(screen.getByTestId('screen-name-form'));
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      const errorRegion = screen.getByTestId('screen-name-error');
+      // `role=alert` is the assertive variant; `aria-live=polite` queues
+      // in the polite channel. Different ATs implement one or the
+      // other; both attributes cost nothing extra and broaden coverage.
+      expect(errorRegion.getAttribute('role')).toBe('alert');
+      expect(errorRegion.getAttribute('aria-live')).toBe('polite');
+      expect(errorRegion.getAttribute('aria-atomic')).toBe('true');
+    });
+  });
+
+  it('focuses the input on mount', async () => {
+    render(
+      <MemoryRouter initialEntries={['/screen-name']}>
+        <App />
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      const input = screen.getByTestId<HTMLInputElement>('screen-name-input');
+      // The `useEffect` runs after the initial render; assert focus
+      // landed on the input rather than the document body.
+      expect(document.activeElement).toBe(input);
+    });
+  });
+
+  it('returns focus to the input after a server-side error', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('', { status: 401 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            error: { code: 'screen-name-already-set', message: 'already set' },
+          }),
+          { status: 409, headers: { 'content-type': 'application/json' } },
+        ),
+      );
+    global.fetch = fetchMock;
+
+    render(
+      <MemoryRouter initialEntries={['/screen-name']}>
+        <App />
+      </MemoryRouter>,
+    );
+    const input = screen.getByTestId<HTMLInputElement>('screen-name-input');
+    fireEvent.change(input, { target: { value: 'alice' } });
+    // Click the submit button (focus shifts to it from the input).
+    const submitBtn = screen.getByTestId<HTMLButtonElement>('screen-name-submit');
+    submitBtn.focus();
+    expect(document.activeElement).toBe(submitBtn);
+    await act(async () => {
+      fireEvent.submit(screen.getByTestId('screen-name-form'));
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      // After the server-error response, focus returns to the input so
+      // the aria-live announcement is heard at the right context.
+      expect(document.activeElement).toBe(input);
+    });
+  });
+});
+
 describe('no-profile-data audit on the moderator client', () => {
   it('useAuth.ts contains no OIDC profile-claim identifiers', () => {
     // Symmetric with `apps/server/src/auth/no-profile-data.test.ts`'s

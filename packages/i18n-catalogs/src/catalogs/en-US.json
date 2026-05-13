@@ -14,10 +14,12 @@
       "title": "Choose your display name",
       "label": "Display name",
       "submit": "Continue",
+      "helper": "{used}/{max} characters",
       "errors": {
         "empty": "Please enter a display name.",
         "whitespaceOnly": "Display name cannot be only whitespace.",
         "tooLong": "Display name must be at most 64 characters.",
+        "invalidCharacter": "Display name contains a disallowed character (control / bidi-override / non-printable).",
         "alreadySet": "This account already has a display name.",
         "pendingCookieInvalid": "Your sign-in expired. Please sign in again.",
         "generic": "Could not save your display name. Please try again."
