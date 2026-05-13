@@ -51,6 +51,8 @@
 
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
+import { assertSafeCookieValue } from './cookie-charset.js';
+
 /**
  * Cookie name for the short-lived pending-cookie. Constant so the
  * route handler reads / clears the same key the OIDC callback wrote.
@@ -256,6 +258,14 @@ export function buildPendingCookieHeader(
   value: string,
   opts: { maxAgeMs: number; secure: boolean },
 ): string {
+  // Defense against header injection at the builder boundary —
+  // F-011 in `docs/security/m3-review/auth.md`. Today's caller path
+  // (`signPendingCookie` → this builder) emits `<b64url>.<b64url>`
+  // (safe charset by construction); the assertion locks the surface
+  // against a future caller passing an unsanitized value. Throws
+  // `InvalidCookieValueError` — programmer-error, never reaches user
+  // input, so a typed throw is the right diagnostic.
+  assertSafeCookieValue(value);
   const maxAgeSeconds = Math.max(0, Math.floor(opts.maxAgeMs / 1000));
   const parts = [
     `${PENDING_COOKIE_NAME}=${value}`,

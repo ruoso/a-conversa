@@ -59,6 +59,8 @@
 
 import { SignJWT, jwtVerify } from 'jose';
 
+import { assertSafeCookieValue } from './cookie-charset.js';
+
 /**
  * Cookie name for the platform session token. Constant so every
  * caller (route handler, eventual auth middleware, eventual WebSocket
@@ -334,6 +336,15 @@ export function buildSessionCookieHeader(
   token: string,
   opts: { secure: boolean; maxAgeSeconds?: number },
 ): string {
+  // Defense against header injection at the builder boundary —
+  // F-011 in `docs/security/m3-review/auth.md`. Today's caller path
+  // (`signSessionToken` → this builder) emits a JWT (safe charset by
+  // construction); the assertion locks the surface against a future
+  // caller passing an unsanitized value (CR / LF / `;` / space / `=`
+  // would all enable Set-Cookie injection). Throws
+  // `InvalidCookieValueError` — programmer-error, never reaches user
+  // input, so a typed throw is the right diagnostic.
+  assertSafeCookieValue(token);
   const maxAge = opts.maxAgeSeconds ?? SESSION_TOKEN_TTL_SECONDS;
   const parts = [
     `${SESSION_COOKIE_NAME}=${token}`,

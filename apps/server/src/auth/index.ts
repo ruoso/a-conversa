@@ -58,6 +58,12 @@ export {
 } from './routes.js';
 
 export {
+  assertSafeCookieValue,
+  InvalidCookieValueError,
+  SAFE_COOKIE_VALUE_REGEX,
+} from './cookie-charset.js';
+
+export {
   PENDING_COOKIE_NAME,
   PENDING_COOKIE_TTL_MS,
   signPendingCookie,
