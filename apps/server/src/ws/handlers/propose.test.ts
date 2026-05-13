@@ -554,6 +554,98 @@ describe('ws_propose_message — handler integration', () => {
     }
   });
 
+  it('KNOWN-LIMITATION: pins no wire-layer dedupe by envelope id — first copy succeeds, second copy fails with `sequence-mismatch` (G-009)', async () => {
+    // Pins the CURRENT, documented limitation that the server has no
+    // wire-layer dedupe by `envelope.id` (source: `docs/security/m3-
+    // review/coverage.md` G-009). The dispatcher at
+    // `apps/server/src/ws/dispatcher.ts` trusts the inbound `id` and
+    // does NOT maintain a per-connection seen-set; replay protection
+    // for write actions lives at the engine layer via
+    // `expectedSequence`. The first copy of a `propose` envelope
+    // appends at MAX+1; the second copy carries the SAME (now stale)
+    // `expectedSequence` and is rejected by the engine's optimistic-
+    // concurrency check as `sequence-mismatch`.
+    //
+    // This is an ACCEPTED limitation — what should be a server-side
+    // dedupe is instead a methodology-engine reject. The structural
+    // fix is a future `wire_dedupe` task (per-connection
+    // `(connectionId, envelope.id)` seen-set + an explicit
+    // `duplicate-envelope` error code). When that task lands, this
+    // test MUST be inverted: the second copy should produce a
+    // `duplicate-envelope` error envelope (or be silently dropped,
+    // TBD by that task's refinement) rather than `sequence-mismatch`.
+    // Refinement: `tasks/refinements/backend-hardening/duplicate_envelope_id_pin.md`.
+    const cookie = await fixtureCookieHeader();
+    const { ws, next } = await openWsClient(app, cookie);
+    try {
+      await next(); // hello
+
+      ws.send(subscribeFrame(SUB_MSG_ID, VISIBLE_SESSION_ID));
+      const subAck = JSON.parse(await next()) as { type?: unknown };
+      expect(subAck.type).toBe('subscribed');
+
+      // First copy: well-formed propose at the seed's MAX(sequence)=3
+      // boundary. Mirrors the happy-path test's setup beat-for-beat.
+      ws.send(annotateProposeFrame(PROPOSE_MSG_ID, VISIBLE_SESSION_ID, 3, NODE_ID));
+
+      // Drain the `proposed` ack + `event-applied` broadcast for the
+      // first copy. Order is not contractually fixed (mirror the
+      // happy-path test's tolerant read).
+      const firstFrames: Record<string, unknown>[] = [];
+      for (let i = 0; i < 2; i++) {
+        const raw = await next();
+        firstFrames.push(JSON.parse(raw) as Record<string, unknown>);
+      }
+      const firstTypes = firstFrames.map((f) => f.type);
+      expect(firstTypes).toContain('proposed');
+      expect(firstTypes).toContain('event-applied');
+
+      // The `proposed` ack carries `inResponseTo` = the shared
+      // envelope id. This is the auditor-readable proof that the
+      // first server frame correlates to the FIRST client envelope.
+      const firstProposed = firstFrames.find((f) => f.type === 'proposed') as
+        | { inResponseTo?: unknown; payload?: { sequence?: unknown } }
+        | undefined;
+      expect(firstProposed?.inResponseTo).toBe(PROPOSE_MSG_ID);
+      expect(firstProposed?.payload?.sequence).toBe(4);
+
+      // Second copy: the EXACT same envelope (identical `id`,
+      // identical `expectedSequence`, identical proposal payload).
+      // A wire-layer dedupe would intercept this before the handler
+      // ran; today nothing does, so the handler runs and the
+      // engine's optimistic-concurrency check rejects it because
+      // MAX(sequence) has advanced to 4 while the carried
+      // `expectedSequence` is still 3.
+      ws.send(annotateProposeFrame(PROPOSE_MSG_ID, VISIBLE_SESSION_ID, 3, NODE_ID));
+
+      const err = await readUntilType(next, 'error');
+      const payload = err.parsed.payload as { code?: unknown; message?: unknown };
+      // Both the `proposed` ack AND the `error` envelope carry the
+      // SAME `inResponseTo` — the duplicate id is propagated
+      // faithfully through both success and error paths, NOT
+      // mangled or de-duplicated server-side. This is the wire-
+      // contract surface G-009 names.
+      expect(err.parsed.inResponseTo).toBe(PROPOSE_MSG_ID);
+      expect(payload.code).toBe('sequence-mismatch');
+
+      // Persisted side-effect: exactly ONE new `proposal` event for
+      // the session (sequence 4). The second copy was rejected
+      // before any append. Pins the store-level invariant that the
+      // replay did NOT cause a double-append; the engine's check
+      // is load-bearing for replay protection even though it isn't
+      // the *intended* wire-layer dedupe surface.
+      const proposalEvents = store.events.filter(
+        (e) => e.session_id === VISIBLE_SESSION_ID && e.kind === 'proposal',
+      );
+      expect(proposalEvents.length).toBe(1);
+      expect(proposalEvents[0]?.sequence).toBe(4);
+      const totalEvents = store.events.filter((e) => e.session_id === VISIBLE_SESSION_ID).length;
+      expect(totalEvents).toBe(4); // 3 seed + 1 proposal
+    } finally {
+      ws.terminate();
+    }
+  });
+
   it('echoes the methodology engine `not-a-participant` rejection as a wire error', async () => {
     const cookie = await fixtureCookieHeader();
     const { ws, next } = await openWsClient(app, cookie);
