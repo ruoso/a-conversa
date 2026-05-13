@@ -198,6 +198,7 @@ task backend_hardening "M3-review hardening (security audit follow-ups)" {
     task logout_no_revocation_pin "Test: pin the logout-doesn't-revoke trade-off (until denylist lands)" {
       effort 0.25d
       allocate team
+      complete 100
       note "Source: docs/security/m3-review/coverage.md G-005"
       note "Refinement: tasks/refinements/backend-hardening/logout_no_revocation_pin.md"
     }

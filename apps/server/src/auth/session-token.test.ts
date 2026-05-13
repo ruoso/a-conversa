@@ -51,6 +51,12 @@
 //    21. Valid cookie → 204; Set-Cookie clears.
 //    22. Invalid cookie → 204; Set-Cookie clears.
 //
+//   `POST /auth/logout` — known trade-off (docs/security/m3-review/coverage.md G-005,
+//   docs/security/m3-review/auth.md F-001 + F-006):
+//    22a. A cookie replayed against `/auth/me` AFTER logout still authenticates
+//         (200). Pins the current accepted limitation; the test MUST be inverted
+//         to assert 401 when `jwt_revocation_jti_denylist` lands.
+//
 //   `/auth/callback` integration:
 //    23. Returning user (non-pending) → 302 + Set-Cookie session.
 //    24. New user (pending) → 200 + Set-Cookie pending + needsScreenName.
@@ -726,6 +732,138 @@ describe('POST /auth/logout', () => {
     const setCookie = response.headers['set-cookie'];
     const setCookieStr = Array.isArray(setCookie) ? setCookie.join(',') : String(setCookie);
     expect(setCookieStr).toMatch(/Max-Age=0/);
+  });
+});
+
+// ============================================================
+// POST /auth/logout — known trade-off: no server-side revocation
+// ============================================================
+//
+// This describe block PINS THE CURRENT, INTENTIONAL LIMITATION of the
+// logout surface. It is NOT an aspirational test of desired behavior.
+//
+// What the test asserts:
+//   - `POST /auth/logout` clears the browser-side cookie (Max-Age=0)
+//     on the response — same as the cookie-clear pins in the previous
+//     describe block.
+//   - The EXACT same cookie value, REPLAYED against `GET /auth/me`
+//     AFTER the logout call, STILL RETURNS 200. The JWT remains
+//     structurally valid (HMAC verifies, payload-shape audit passes,
+//     `exp` is in the future, and the server holds NO denylist) so
+//     `/auth/me` cannot tell that the user "logged out."
+//
+// Why this is an accepted limitation:
+//   - `docs/security/m3-review/auth.md` F-001 — `/auth/logout` is
+//     unauthenticated, clears the cookie, but never invalidates the
+//     JWT on the server. The 7-day TTL is the only bound on a stolen
+//     token's lifetime.
+//   - `docs/security/m3-review/auth.md` F-006 — the JWT payload is
+//     exactly `{ sub, iat, exp }`; no `jti`, no IP/UA binding. The
+//     cookie is a portable bearer credential.
+//   - `docs/security/m3-review/coverage.md` G-005 — the trade-off
+//     had no committed test pinning it; an auditor reading the code
+//     could not tell whether revocation was "overlooked" or
+//     "deferred." This describe block IS that pin.
+//
+// When the structural fix lands, INVERT THIS TEST:
+//   - The follow-up task is `backend_hardening.auth_hardening.jwt_revocation_jti_denylist`
+//     in `tasks/25-backend-hardening.tji`; its refinement lives at
+//     `tasks/refinements/backend-hardening/jwt_revocation_jti_denylist.md`.
+//   - That task adds a `jti` to the JWT payload + an
+//     `auth_token_denylist` table + a denylist lookup in
+//     `verifySessionToken` (or the auth middleware that wraps it) +
+//     a denylist INSERT on the logout path.
+//   - Once that ships, the replayed cookie at step 4 below MUST be
+//     rejected: change `expect(replay.statusCode).toBe(200)` to
+//     `expect(replay.statusCode).toBe(401)`, drop the post-logout
+//     body equality assertions (no body on the 401 envelope's success
+//     shape), and rename this describe block to drop the
+//     "— known trade-off: no server-side revocation" suffix. The
+//     denylist task's refinement names this inversion as an
+//     acceptance criterion so the cross-link is bidirectional.
+
+describe('POST /auth/logout — known trade-off: no server-side revocation (G-005)', () => {
+  // The user-id matches the seeded row in `initialRows`; the screen
+  // name is the body field the post-logout `/auth/me` replay asserts
+  // against to pin "the JWT still resolves to this user" rather than
+  // just "/auth/me returned 200."
+  const aliceId = '00000000-0000-4000-8000-000000000070';
+
+  it('a cookie replayed against /auth/me AFTER logout STILL authenticates (pins current behavior; INVERT to 401 when jwt_revocation_jti_denylist lands)', async () => {
+    const built = await buildApp({
+      initialRows: [
+        {
+          id: aliceId,
+          oauth_subject: 'authelia:alice-logout-pin',
+          screen_name: 'alice',
+        },
+      ],
+    });
+    try {
+      // Step 1. Mint a session JWT directly. Equivalent to the
+      // cookie a real user would carry after a successful
+      // /auth/callback round-trip; using `signSessionToken` keeps the
+      // test independent of the OIDC flow stubs.
+      const token = await signSessionToken({ sub: aliceId }, TEST_SECRET);
+      const cookieHeader = `${SESSION_COOKIE_NAME}=${token}`;
+
+      // Step 2. Pre-logout sanity: the cookie is accepted by
+      // /auth/me. Without this, a setup bug (e.g., a token mint the
+      // verifier rejects) would mask the load-bearing replay below.
+      const preLogout = await built.app.inject({
+        method: 'GET',
+        url: '/auth/me',
+        headers: { cookie: cookieHeader },
+      });
+      expect(preLogout.statusCode).toBe(200);
+      const preLogoutBody = preLogout.json<{ userId: string; screenName: string }>();
+      expect(preLogoutBody.userId).toBe(aliceId);
+      expect(preLogoutBody.screenName).toBe('alice');
+
+      // Step 3. Logout. The server emits 204 + a cookie-clear
+      // Set-Cookie. The browser would drop the cookie at this point;
+      // the test does NOT — it keeps the original `token` so step 4
+      // can replay it.
+      const logout = await built.app.inject({
+        method: 'POST',
+        url: '/auth/logout',
+        headers: { cookie: cookieHeader },
+      });
+      expect(logout.statusCode).toBe(204);
+      const setCookie = logout.headers['set-cookie'];
+      const setCookieStr = Array.isArray(setCookie) ? setCookie.join(',') : String(setCookie);
+      expect(setCookieStr).toContain(`${SESSION_COOKIE_NAME}=`);
+      expect(setCookieStr).toMatch(/Max-Age=0/);
+
+      // Step 4. THE LOAD-BEARING ASSERTION. Replay the EXACT same
+      // cookie value (`token` from step 1, untouched by the logout
+      // response) against /auth/me. Today: 200. The JWT verifier has
+      // no denylist to consult; HMAC + payload-shape + clock all
+      // still pass.
+      //
+      // When `jwt_revocation_jti_denylist` lands (tji path
+      // `backend_hardening.auth_hardening.jwt_revocation_jti_denylist`;
+      // refinement `tasks/refinements/backend-hardening/jwt_revocation_jti_denylist.md`),
+      // INVERT this assertion to 401 and drop the body checks
+      // below — the 401 envelope has no `userId` / `screenName` to
+      // compare against.
+      const replay = await built.app.inject({
+        method: 'GET',
+        url: '/auth/me',
+        headers: { cookie: cookieHeader },
+      });
+      expect(replay.statusCode).toBe(200);
+      // The replay still resolves to the same user. A future refactor
+      // that quietly rewrote the cookie's `sub` claim on logout (no
+      // current code path does this, but defense-in-depth on the pin)
+      // would pass the status check while breaking the contract; the
+      // body equality catches it.
+      const replayBody = replay.json<{ userId: string; screenName: string }>();
+      expect(replayBody.userId).toBe(aliceId);
+      expect(replayBody.screenName).toBe('alice');
+    } finally {
+      await built.app.close();
+    }
   });
 });
 
