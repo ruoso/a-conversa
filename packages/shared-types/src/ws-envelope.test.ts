@@ -14,6 +14,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  catchUpPayloadSchema,
   parseWsEnvelope,
   parseWsEnvelopeJson,
   serializeWsEnvelope,
@@ -29,6 +30,7 @@ import {
 const MSG_ID = '11111111-1111-4111-8111-111111111111';
 const REQ_ID = '22222222-2222-4222-8222-222222222222';
 const CONNECTION_ID = '33333333-3333-4333-8333-333333333333';
+const SESSION_ID = '44444444-4444-4444-8444-444444444444';
 
 describe('wsMessageTypes vocabulary', () => {
   it('exposes the closed enum the registry is exhaustive over', () => {
@@ -259,5 +261,153 @@ describe('wsEnvelopeSchema (outer shape only)', () => {
       payload: 'this is not a hello payload but the outer schema accepts it',
     });
     expect(result.success).toBe(true);
+  });
+});
+
+// ============================================================
+// `catch-up` payload boundary values — regression-pin for G-006.
+//
+// Refinement: tasks/refinements/backend-hardening/catch_up_boundary_values_pin.md
+// Source:     docs/security/m3-review/coverage.md G-006
+//
+// The Zod schema enforces `sinceSequence: z.number().int().nonnegative()`.
+// `catch-up.test.ts` already covers the `sinceSequence > MAX(sequence)`
+// client-ahead path at the handler level. This block pins the WIRE-
+// BOUNDARY rejections at the envelope-parser layer so a future
+// regression in the schema (e.g., switching `nonnegative()` to
+// `min(-1)`, or dropping `.int()`) is caught by the test suite — not
+// by a security review six months from now.
+//
+// **What `JSON.parse` does to each non-finite value.** `NaN` /
+// `Infinity` / `-Infinity` are NOT valid JSON tokens. `JSON.stringify`
+// serializes them as `null`. The dispatcher receives a JSON string from
+// the wire, so the realistic adversarial input for those cases is a
+// literal `null` payload field — pinned below alongside the direct
+// numeric forms (for the in-memory parse path).
+// ============================================================
+
+// Build a `catch-up` envelope JSON string with an arbitrary
+// `sinceSequence` value injected verbatim (so we can exercise wire
+// inputs that wouldn't survive a typed object literal — e.g., a string
+// where a number is expected). The `sessionId` is always a valid v4
+// UUID so failures isolate to the `sinceSequence` field.
+function catchUpEnvelopeJson(sinceSequenceLiteral: string): string {
+  return `{"type":"catch-up","id":"${MSG_ID}","payload":{"sessionId":"${SESSION_ID}","sinceSequence":${sinceSequenceLiteral}}}`;
+}
+
+describe('catch-up `sinceSequence` boundary values (G-006)', () => {
+  describe('schema-level rejections (catchUpPayloadSchema directly)', () => {
+    const cases: Array<{ name: string; value: unknown }> = [
+      { name: 'negative integer (-1)', value: -1 },
+      { name: 'fractional (0.5)', value: 0.5 },
+      { name: 'string "0"', value: '0' },
+      { name: 'string "100"', value: '100' },
+      { name: 'null (serialized NaN / Infinity)', value: null },
+      { name: 'undefined (missing field)', value: undefined },
+      { name: 'NaN literal (in-memory only)', value: Number.NaN },
+      { name: 'Infinity literal (in-memory only)', value: Number.POSITIVE_INFINITY },
+      { name: '-Infinity literal (in-memory only)', value: Number.NEGATIVE_INFINITY },
+      { name: 'boolean true', value: true },
+      { name: 'array []', value: [] },
+      { name: 'object {}', value: {} },
+    ];
+
+    for (const c of cases) {
+      it(`rejects sinceSequence: ${c.name}`, () => {
+        const result = catchUpPayloadSchema.safeParse({
+          sessionId: SESSION_ID,
+          sinceSequence: c.value,
+        });
+        expect(result.success).toBe(false);
+      });
+    }
+
+    it('rejects sinceSequence above Number.MAX_SAFE_INTEGER (2^53)', () => {
+      // `Number.MAX_SAFE_INTEGER + 2` (= 9007199254740993 in math,
+      // 9007199254740992 in IEEE 754) is the canonical "above the
+      // safe integer ceiling" probe. The literal form is written via
+      // the constant rather than the decimal digits so ESLint's
+      // `no-loss-of-precision` doesn't fire on what is exactly the
+      // condition we're pinning. Zod v4's `.int()` defers to
+      // `Number.isSafeInteger` — values past the safe-integer
+      // ceiling fail the `.int()` predicate. This test pins that
+      // behavior (and would catch a regression that swapped `.int()`
+      // for the looser `.finite()` or removed the safety bound
+      // entirely). See Decisions in the refinement document.
+      const result = catchUpPayloadSchema.safeParse({
+        sessionId: SESSION_ID,
+        sinceSequence: Number.MAX_SAFE_INTEGER + 2,
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('accepts sinceSequence: 0 (regression — client says "I have seen nothing")', () => {
+      const result = catchUpPayloadSchema.safeParse({
+        sessionId: SESSION_ID,
+        sinceSequence: 0,
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('accepts sinceSequence: 100 (regression — typical mid-replay)', () => {
+      const result = catchUpPayloadSchema.safeParse({
+        sessionId: SESSION_ID,
+        sinceSequence: 100,
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('accepts sinceSequence: Number.MAX_SAFE_INTEGER (regression — boundary value)', () => {
+      // The ceiling itself IS a safe integer; only values past it
+      // fail. Pin both sides of the boundary to make the contract
+      // explicit.
+      const result = catchUpPayloadSchema.safeParse({
+        sessionId: SESSION_ID,
+        sinceSequence: Number.MAX_SAFE_INTEGER,
+      });
+      expect(result.success).toBe(true);
+    });
+  });
+
+  describe('wire-boundary rejections (parseWsEnvelopeJson)', () => {
+    // These cases mirror the realistic wire-input failure modes: the
+    // server only ever sees a JSON string. Anything that JSON cannot
+    // represent (NaN / Infinity) reaches the parser as `null`, which
+    // also fails the schema.
+    const cases: Array<{ name: string; literal: string }> = [
+      { name: 'negative integer (-1)', literal: '-1' },
+      { name: 'fractional (0.5)', literal: '0.5' },
+      { name: 'string "0"', literal: '"0"' },
+      { name: 'string "100"', literal: '"100"' },
+      { name: 'null (the JSON.stringify image of NaN / Infinity)', literal: 'null' },
+      { name: 'boolean true', literal: 'true' },
+      { name: 'above Number.MAX_SAFE_INTEGER (9007199254740993)', literal: '9007199254740993' },
+    ];
+
+    for (const c of cases) {
+      it(`rejects sinceSequence: ${c.name} with WsEnvelopeValidationError`, () => {
+        expect(() => parseWsEnvelopeJson(catchUpEnvelopeJson(c.literal))).toThrow(
+          WsEnvelopeValidationError,
+        );
+      });
+    }
+
+    it('rejects a catch-up envelope missing `sinceSequence` entirely', () => {
+      // The omitted-field case can't go through `catchUpEnvelopeJson`
+      // (it always includes the field). Build the JSON inline. Closed
+      // `z.object` rejects a missing required key.
+      const wire = `{"type":"catch-up","id":"${MSG_ID}","payload":{"sessionId":"${SESSION_ID}"}}`;
+      expect(() => parseWsEnvelopeJson(wire)).toThrow(WsEnvelopeValidationError);
+    });
+
+    it('accepts a well-formed catch-up envelope with sinceSequence: 0', () => {
+      // Regression case — ensure the test isn't accidentally rejecting
+      // everything (e.g., because the `sessionId` is malformed).
+      expect(() => parseWsEnvelopeJson(catchUpEnvelopeJson('0'))).not.toThrow();
+    });
+
+    it('accepts a well-formed catch-up envelope with sinceSequence: 100', () => {
+      expect(() => parseWsEnvelopeJson(catchUpEnvelopeJson('100'))).not.toThrow();
+    });
   });
 });

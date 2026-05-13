@@ -214,6 +214,7 @@ task backend_hardening "M3-review hardening (security audit follow-ups)" {
     task catch_up_boundary_values_pin "Test: catch-up boundary values (negative / NaN / huge)" {
       effort 0.25d
       allocate team
+      complete 100
       note "Source: docs/security/m3-review/coverage.md G-006"
       note "Refinement: tasks/refinements/backend-hardening/catch_up_boundary_values_pin.md"
     }

@@ -639,6 +639,75 @@ describe('ws_reconnection_handling — handler integration', () => {
     }
   });
 
+  it('SECURITY (G-006): wire-boundary rejection of adversarial `sinceSequence` values → `malformed-envelope`', async () => {
+    // Pin G-006 (coverage.md): the Zod schema's
+    // `sinceSequence: z.number().int().nonnegative()` rejects each
+    // boundary value, and the dispatcher surfaces every rejection as
+    // a canonical `malformed-envelope` error envelope. The full
+    // schema-level vocabulary is exercised in
+    // `packages/shared-types/src/ws-envelope.test.ts` (pure-logic
+    // layer per ADR 0022); this case pins the WIRE BOUNDARY — that
+    // the dispatcher actually reaches the envelope parser and emits
+    // the canonical error wire shape for the catch-up surface.
+    //
+    // The bad values cover negative / fractional / string / null
+    // (the JSON image of NaN / Infinity). Iterating all of them on
+    // a single connection also verifies the connection stays open
+    // across repeated parse failures (a per-frame client bug, not
+    // a connection-state problem — pinned by `connection.test.ts`).
+    const badLiterals = [
+      '-1', // negative
+      '0.5', // fractional
+      '"0"', // string masquerading as number
+      'null', // JSON.stringify(NaN) === 'null'; same for Infinity
+      '9007199254740993', // above Number.MAX_SAFE_INTEGER
+    ];
+
+    const built = makeCatchUpPool();
+    app = await buildHandlerApp(built.pool);
+    const cookie = await fixtureCookieHeader();
+    const { ws, next } = await openWsClient(app, cookie);
+    try {
+      await next(); // hello
+
+      // Subscribe so the visibility gate is closed — the parse
+      // failure happens BEFORE the gate fires, so this is belt-and-
+      // suspenders; without it, a future regression that moves the
+      // parse downstream of the gate would still surface as a wire
+      // error of a different code, and we want this test to fail
+      // loudly if that happens.
+      ws.send(subscribeFrame(SUB_MSG_ID, SEEDED_SESSION_ID));
+      const subAck = JSON.parse(await next()) as { type?: unknown };
+      expect(subAck.type).toBe('subscribed');
+
+      for (const literal of badLiterals) {
+        const wire = `{"type":"catch-up","id":"${CATCH_MSG_ID}","payload":{"sessionId":"${SEEDED_SESSION_ID}","sinceSequence":${literal}}}`;
+        ws.send(wire);
+
+        const errRaw = await next();
+        const err = JSON.parse(errRaw) as {
+          type?: unknown;
+          inResponseTo?: unknown;
+          payload?: { code?: unknown; message?: unknown };
+        };
+        expect(err.type).toBe('error');
+        // The malformed-envelope error has no `inResponseTo` per the
+        // canonical contract — the inbound frame's `id` is not
+        // trusted because the envelope itself failed validation.
+        expect(err.inResponseTo).toBeUndefined();
+        expect(err.payload?.code).toBe('malformed-envelope');
+        expect(typeof err.payload?.message).toBe('string');
+      }
+
+      // Connection stayed open across all five parse failures
+      // (per the malformed-envelope contract: per-frame client bug,
+      // not connection-fatal).
+      expect(ws.readyState).toBe(1);
+    } finally {
+      ws.terminate();
+    }
+  });
+
   it('sinceSequence > MAX(sequence) (client ahead — defensive) → `caught-up` with eventCount=0, no error', async () => {
     const built = makeCatchUpPool();
     app = await buildHandlerApp(built.pool);
