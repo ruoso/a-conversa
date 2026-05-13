@@ -49,6 +49,7 @@ task backend_hardening "M3-review hardening (security audit follow-ups)" {
     task pino_redact_config "Configure Pino redact for cookie / authorization / token fields" {
       effort 0.25d
       allocate team
+      complete 100
       note "Source: docs/security/m3-review/auth.md F-012; docs/security/m3-review/inputs.md F-007"
       note "Refinement: tasks/refinements/backend-hardening/pino_redact_config.md"
     }

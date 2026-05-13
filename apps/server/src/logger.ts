@@ -1,9 +1,11 @@
 // Per-environment Pino logger configuration for the Fastify server.
 //
 // Refinement: tasks/refinements/backend/request_logging.md
+//             tasks/refinements/backend-hardening/pino_redact_config.md
 // ADRs:        docs/adr/0023-web-framework-fastify.md,
 //              docs/adr/0022-no-throwaway-verifications.md
 // TaskJuggler: backend.api_skeleton.request_logging
+//              backend_hardening.auth_hardening.pino_redact_config
 //
 // Fastify ships Pino by default; this module centralizes the
 // per-environment configuration so every request gets a uniform
@@ -31,9 +33,12 @@
 //     text, screen names, OAuth state, etc. Bodies are out of scope
 //     for the per-request access log.
 //   - Authorization / Cookie / Set-Cookie headers — bearer tokens,
-//     session cookies, OAuth state. Pino's standard request
-//     serializer is replaced (see below) so headers are dropped
-//     entirely from the access line.
+//     session cookies, OAuth state. Pinned by an explicit Pino
+//     `redact` block (see `LOGGER_REDACT_CONFIG` below) that
+//     rewrites the value to `'[redacted]'` regardless of how the
+//     log call is shaped. Closes
+//     `docs/security/m3-review/auth.md` F-012 +
+//     `docs/security/m3-review/inputs.md` F-007.
 //   - Query strings on auth-callback routes — those carry OAuth
 //     authorization codes and state nonces. Not solved here at
 //     library level; the auth route handlers are responsible for
@@ -90,6 +95,96 @@ type LogLevel = (typeof VALID_LOG_LEVELS)[number];
 function isValidLogLevel(value: string): value is LogLevel {
   return (VALID_LOG_LEVELS as readonly string[]).includes(value);
 }
+
+/**
+ * Pino `redact` configuration shared by every non-test mode.
+ *
+ * Source findings:
+ *   - `docs/security/m3-review/auth.md` F-012 — a future PR that adds
+ *     `{ cookie: rawHeader }` for "debugging" would leak the bearer
+ *     token to logs. There is no per-call discipline that prevents it.
+ *   - `docs/security/m3-review/inputs.md` F-007 — the 5xx fallback path
+ *     emits the full `err` object (driver fields, query text echo from
+ *     `pg`'s `DatabaseError`); structured prod JSON serializes the
+ *     whole thing. No `redact` was wired.
+ *
+ * Defense-in-depth: paths are structurally pinned here so any future
+ * log call that happens to include a cookie / authorization header /
+ * bearer token has its value rewritten to `'[redacted]'` before the
+ * line ever leaves the process. The pinned tests in
+ * `logger.test.ts` capture log output and assert the censorship
+ * applies regardless of how a log call is shaped.
+ *
+ * Path syntax follows Pino's documented wildcard form
+ * (https://getpino.io/#/docs/redaction):
+ *   - `req.headers.cookie` — request inbound cookie header (string).
+ *   - `req.headers["set-cookie"]` — defensive; inbound `Set-Cookie`
+ *     is non-standard but a misconfigured upstream proxy could echo
+ *     it.
+ *   - `req.headers.authorization` — bearer / basic auth.
+ *   - `req.headers["x-api-key"]` — defensive; no such header is
+ *     accepted today, but the redact list outlives any one route.
+ *   - `res.headers["set-cookie"]` — outbound cookie issuance is the
+ *     primary leak surface (auth login / logout).
+ *   - `cookie`, `*.cookie` — top-level + one-level-deep catch for
+ *     any log-bag object that puts a `cookie` field anywhere
+ *     (`{ cookie }`, `err.cookie`, `debug.cookie`, etc.). Pino's
+ *     `*` matches one path segment, so both the bare and the
+ *     `*.cookie` form are needed to cover both `{ cookie: ... }`
+ *     and `{ wrapper: { cookie: ... } }`.
+ *   - `token`, `*.token` — JWT / pending cookie / OAuth tokens.
+ *   - `password`, `*.password` — defensive; no password field
+ *     exists in the domain (OIDC only), but a future feature
+ *     shouldn't have to remember to redact it.
+ *   - `secret`, `*.secret` — defensive; `SESSION_TOKEN_SECRET` and
+ *     similar.
+ *   - `authorization`, `*.authorization` — same shape as the
+ *     header, plus any custom binding
+ *     (`{ authorization: rawHeader }`).
+ *
+ * The `censor` value `'[redacted]'` is the obvious marker so a
+ * reader scanning logs immediately sees that a value was scrubbed
+ * rather than wondering why a field is empty.
+ *
+ * Applied across both production (structured JSON) and development
+ * (pino-pretty transport) modes. The test mode returns `false` to
+ * Fastify (no logger at all) so the redact config is structurally
+ * present but moot there.
+ */
+const REDACT_PATHS = [
+  'req.headers.cookie',
+  'req.headers["set-cookie"]',
+  'req.headers.authorization',
+  'req.headers["x-api-key"]',
+  'res.headers["set-cookie"]',
+  // Bare top-level forms: Pino's `*` matches exactly one path segment,
+  // so a `{ token: ... }` log bag is NOT caught by `*.token`. The
+  // explicit bare form is needed to cover that shape.
+  'cookie',
+  'token',
+  'password',
+  'secret',
+  'authorization',
+  // One-segment-deep wildcard forms: catch `{ wrapper: { token: ... } }`
+  // and similar custom log bags.
+  '*.cookie',
+  '*.token',
+  '*.password',
+  '*.secret',
+  '*.authorization',
+] as const;
+
+const REDACT_CENSOR = '[redacted]';
+
+/**
+ * The `redact` block applied to every non-test logger config.
+ * Exported for tests that want to assert the structural pin without
+ * re-deriving the paths.
+ */
+export const LOGGER_REDACT_CONFIG = {
+  paths: [...REDACT_PATHS],
+  censor: REDACT_CENSOR,
+} as const;
 
 /**
  * Resolve the desired log level from the environment. Reads
@@ -157,11 +252,20 @@ export function createLoggerOptions(env: LoggerEnv): LoggerOptions {
 
   const level = resolveLogLevel(env);
 
+  // Build a fresh `redact` block per call so callers can't mutate the
+  // shared constant via the returned options. `paths` is a new array,
+  // `censor` is a primitive string; the resulting object is a safe
+  // shallow copy.
+  const redact = {
+    paths: [...REDACT_PATHS],
+    censor: REDACT_CENSOR,
+  };
+
   if (nodeEnv === 'production') {
     // Structured JSON, one object per line. No transport — Pino's
     // default serializer writes to stdout. Aggregators (Loki,
     // CloudWatch, etc.) ingest this directly.
-    return { level };
+    return { level, redact };
   }
 
   // Development (and anything else: NODE_ENV unset, NODE_ENV=ci, ...).
@@ -171,8 +275,14 @@ export function createLoggerOptions(env: LoggerEnv): LoggerOptions {
   // local ISO-like timestamp; `ignore` drops noisy keys that aren't
   // useful in dev (pid + hostname are always the same value across
   // every line).
+  //
+  // `redact` is applied in the main thread (before the line hands off
+  // to the pino-pretty worker), so the worker only ever sees the
+  // already-censored payload — there is no leak window across the
+  // thread boundary.
   return {
     level,
+    redact,
     transport: {
       target: 'pino-pretty',
       options: {
