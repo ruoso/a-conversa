@@ -16,10 +16,15 @@
 import type { FastifyBaseLogger } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { WsEnvelope } from '@a-conversa/shared-types';
+import type { WsEnvelope, WsEnvelopeUnion } from '@a-conversa/shared-types';
 
 import type { WsConnectionContext } from './connection.js';
-import { WsDispatcher } from './dispatcher.js';
+import {
+  formatUnknownTypeMessage,
+  SAFE_UNKNOWN_TYPE_REGEX,
+  WS_UNKNOWN_MESSAGE_TYPE_GENERIC_MESSAGE,
+  WsDispatcher,
+} from './dispatcher.js';
 
 // Sample v4 UUIDs.
 const MSG_ID = '11111111-1111-4111-8111-111111111111';
@@ -158,6 +163,195 @@ describe('WsDispatcher', () => {
     expect(wire.inResponseTo).toBe(MSG_ID);
     expect(wire.payload?.code).toBe('unknown-message-type');
     expect(typeof wire.payload?.message).toBe('string');
+  });
+
+  // --- F-009 / wire_error_no_echo --------------------------------
+  //
+  // The unknown-type wire `message` must NOT echo the client-supplied
+  // `type` verbatim. Per `wire_error_no_echo` the echo is gated
+  // through `SAFE_UNKNOWN_TYPE_REGEX = /^[a-z][a-z0-9-]{0,32}$/`:
+  //
+  //   - Well-formed-but-unknown (typo, e.g. `subscriber` for
+  //     `subscribe`): the wire message includes the value (debugging
+  //     convenience).
+  //   - Anything outside the regex (control chars, very long strings,
+  //     HTML / quotes / NUL bytes): the wire message falls back to
+  //     the generic literal `'unknown message type'`.
+  //
+  // These tests construct envelopes whose runtime `type` is NOT a
+  // member of the closed `WsMessageType` enum. The parse path
+  // (`parseWsEnvelope`) would reject these — but the dispatcher must
+  // be robust on its own, both for defense-in-depth and because a
+  // future widening of `wsMessageTypeSchema` (e.g. to a free-form
+  // string for forward-compat) would let them through.
+  //
+  // The casts widen the typed envelope to a runtime-arbitrary `type`
+  // so the test can drive the seam with values the static type
+  // system would otherwise reject. Documented narrow-cast pattern —
+  // we're exercising the helper's runtime contract, not its
+  // type-level contract.
+  function envelopeWithRawType(type: unknown): WsEnvelopeUnion {
+    return {
+      type,
+      id: MSG_ID,
+      payload: { connectionId: CONNECTION_ID },
+    } as unknown as WsEnvelopeUnion;
+  }
+
+  it('pins the SAFE_UNKNOWN_TYPE_REGEX literal so any drift forces a refinement update', () => {
+    // The regex IS the security boundary — the refinement document
+    // calls it out by value. A future contributor relaxing the
+    // pattern (adding `_` or removing the leading-letter anchor)
+    // breaks this test and forces them to update both the test and
+    // the refinement at once.
+    expect(SAFE_UNKNOWN_TYPE_REGEX.source).toBe('^[a-z][a-z0-9-]{0,32}$');
+  });
+
+  it('echoes a well-formed-but-unknown `type` in the wire message (debugging-friendly path)', async () => {
+    // Client typo: `subscriber` for `subscribe`. Matches the regex
+    // (lowercase kebab, <= 33 chars), so the echo is allowed.
+    const envelope = envelopeWithRawType('subscriber');
+    const conn = stubConnection();
+
+    await dispatcher.dispatch(envelope, conn);
+
+    expect(conn.sends).toHaveLength(1);
+    const wire = JSON.parse(conn.sends[0] as string) as {
+      payload?: { code?: unknown; message?: unknown };
+    };
+    expect(wire.payload?.code).toBe('unknown-message-type');
+    expect(wire.payload?.message).toBe(`${WS_UNKNOWN_MESSAGE_TYPE_GENERIC_MESSAGE}: subscriber`);
+  });
+
+  it('drops control characters from the wire message (NUL / CR / LF / tab not echoed)', async () => {
+    // A `type` peppered with control characters fails the regex
+    // (none of `\0`, `\r`, `\n`, `\t` match `[a-z0-9-]`). The wire
+    // message falls back to the generic literal.
+    const evil = 'sub scribe\r\n\tINJECT';
+    const envelope = envelopeWithRawType(evil);
+    const conn = stubConnection();
+
+    await dispatcher.dispatch(envelope, conn);
+
+    expect(conn.sends).toHaveLength(1);
+    const raw = conn.sends[0] as string;
+    const wire = JSON.parse(raw) as { payload?: { code?: unknown; message?: unknown } };
+    expect(wire.payload?.code).toBe('unknown-message-type');
+    expect(wire.payload?.message).toBe(WS_UNKNOWN_MESSAGE_TYPE_GENERIC_MESSAGE);
+    // Defense-in-depth assertion — even the JSON-escaped serialised
+    // wire string must not carry the raw control sequences or the
+    // `INJECT` payload that travelled with them.
+    expect(raw).not.toMatch(/INJECT/);
+    expect(raw).not.toMatch(/\\u0000/);
+    expect(raw).not.toMatch(/\\r\\n/);
+  });
+
+  it('drops a 5000-character `type` from the wire message (length guard)', async () => {
+    // A 5000-char `type` exceeds the regex's 33-char ceiling. The
+    // serialised wire must NOT carry the long string.
+    const long = 'a'.repeat(5000);
+    const envelope = envelopeWithRawType(long);
+    const conn = stubConnection();
+
+    await dispatcher.dispatch(envelope, conn);
+
+    expect(conn.sends).toHaveLength(1);
+    const raw = conn.sends[0] as string;
+    const wire = JSON.parse(raw) as { payload?: { message?: unknown } };
+    expect(wire.payload?.message).toBe(WS_UNKNOWN_MESSAGE_TYPE_GENERIC_MESSAGE);
+    // The wire frame must be vastly shorter than the input — pin
+    // a cheap upper bound so any future regression (echoing the
+    // attacker-controlled string back) trips immediately.
+    expect(raw.length).toBeLessThan(500);
+    expect(raw).not.toMatch(/a{100,}/);
+  });
+
+  it('drops HTML / quotes / NUL bytes from the wire message (no XSS / log-injection vector)', async () => {
+    // The canonical reflected-input attack shapes: HTML tags, quote
+    // characters, and a NUL byte mid-string. None of `<>"'\0` are
+    // in the regex's allowed set, so the wire falls back.
+    const evil = '<script>alert("xss")</script> ';
+    const envelope = envelopeWithRawType(evil);
+    const conn = stubConnection();
+
+    await dispatcher.dispatch(envelope, conn);
+
+    expect(conn.sends).toHaveLength(1);
+    const raw = conn.sends[0] as string;
+    const wire = JSON.parse(raw) as { payload?: { message?: unknown } };
+    expect(wire.payload?.message).toBe(WS_UNKNOWN_MESSAGE_TYPE_GENERIC_MESSAGE);
+    expect(raw).not.toMatch(/<script>/);
+    expect(raw).not.toMatch(/alert/);
+    expect(raw).not.toMatch(/xss/);
+    expect(raw).not.toMatch(/\\u0000/);
+  });
+
+  it('still emits `unknown-message-type` code + `inResponseTo` correlation on the wire (regression)', async () => {
+    // Belt-and-suspenders — even when the `type` is sanitized out
+    // of the wire `message`, the envelope's `code` and
+    // `inResponseTo` are unchanged. Clients branching on the typed
+    // `code` still get the discriminator; the correlation back to
+    // the originating envelope's `id` is preserved.
+    const envelope = envelopeWithRawType('completely-garbage\r\n\t ');
+    const conn = stubConnection();
+
+    await dispatcher.dispatch(envelope, conn);
+
+    expect(conn.sends).toHaveLength(1);
+    const wire = JSON.parse(conn.sends[0] as string) as {
+      type?: unknown;
+      inResponseTo?: unknown;
+      payload?: { code?: unknown };
+    };
+    expect(wire.type).toBe('error');
+    expect(wire.payload?.code).toBe('unknown-message-type');
+    expect(wire.inResponseTo).toBe(MSG_ID);
+  });
+
+  // --- formatUnknownTypeMessage unit coverage --------------------
+  //
+  // Pure-helper tests. The regex IS the security boundary; pinning
+  // its surface separately (in addition to the integration tests
+  // above) keeps the unit-level contract auditable in one spot.
+
+  it('formatUnknownTypeMessage echoes safe kebab-case strings', () => {
+    expect(formatUnknownTypeMessage('subscribe')).toBe(
+      `${WS_UNKNOWN_MESSAGE_TYPE_GENERIC_MESSAGE}: subscribe`,
+    );
+    expect(formatUnknownTypeMessage('a')).toBe(`${WS_UNKNOWN_MESSAGE_TYPE_GENERIC_MESSAGE}: a`);
+    expect(formatUnknownTypeMessage('meta-disagreement-marked')).toBe(
+      `${WS_UNKNOWN_MESSAGE_TYPE_GENERIC_MESSAGE}: meta-disagreement-marked`,
+    );
+    expect(formatUnknownTypeMessage('a-1-b-2')).toBe(
+      `${WS_UNKNOWN_MESSAGE_TYPE_GENERIC_MESSAGE}: a-1-b-2`,
+    );
+  });
+
+  it('formatUnknownTypeMessage falls back to the generic literal on unsafe inputs', () => {
+    // Leading digit / mixed case / underscore / space / dot —
+    // all outside the regex.
+    expect(formatUnknownTypeMessage('1leading-digit')).toBe(
+      WS_UNKNOWN_MESSAGE_TYPE_GENERIC_MESSAGE,
+    );
+    expect(formatUnknownTypeMessage('MixedCase')).toBe(WS_UNKNOWN_MESSAGE_TYPE_GENERIC_MESSAGE);
+    expect(formatUnknownTypeMessage('snake_case')).toBe(WS_UNKNOWN_MESSAGE_TYPE_GENERIC_MESSAGE);
+    expect(formatUnknownTypeMessage('with space')).toBe(WS_UNKNOWN_MESSAGE_TYPE_GENERIC_MESSAGE);
+    expect(formatUnknownTypeMessage('with.dot')).toBe(WS_UNKNOWN_MESSAGE_TYPE_GENERIC_MESSAGE);
+    expect(formatUnknownTypeMessage('')).toBe(WS_UNKNOWN_MESSAGE_TYPE_GENERIC_MESSAGE);
+    expect(formatUnknownTypeMessage('a'.repeat(34))).toBe(WS_UNKNOWN_MESSAGE_TYPE_GENERIC_MESSAGE);
+  });
+
+  it('formatUnknownTypeMessage rejects non-string inputs (number / null / undefined / object)', () => {
+    // `envelope.type` is statically a string union, but the parse
+    // path crosses a JSON boundary — defense-in-depth assertion
+    // that the helper does not throw on non-string runtime values.
+    expect(formatUnknownTypeMessage(123)).toBe(WS_UNKNOWN_MESSAGE_TYPE_GENERIC_MESSAGE);
+    expect(formatUnknownTypeMessage(null)).toBe(WS_UNKNOWN_MESSAGE_TYPE_GENERIC_MESSAGE);
+    expect(formatUnknownTypeMessage(undefined)).toBe(WS_UNKNOWN_MESSAGE_TYPE_GENERIC_MESSAGE);
+    expect(formatUnknownTypeMessage({ malicious: true })).toBe(
+      WS_UNKNOWN_MESSAGE_TYPE_GENERIC_MESSAGE,
+    );
+    expect(formatUnknownTypeMessage([])).toBe(WS_UNKNOWN_MESSAGE_TYPE_GENERIC_MESSAGE);
   });
 
   it('invokes the onUnknownType seam when set instead of the default warn', async () => {

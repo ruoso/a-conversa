@@ -168,6 +168,7 @@ task backend_hardening "M3-review hardening (security audit follow-ups)" {
     task wire_error_no_echo "Stop echoing client-supplied `type` in unknown-message-type errors" {
       effort 0.25d
       allocate team
+      complete 100
       note "Source: docs/security/m3-review/inputs.md F-009"
       note "Refinement: tasks/refinements/backend-hardening/wire_error_no_echo.md"
     }

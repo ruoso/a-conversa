@@ -39,6 +39,23 @@
 // wiring. The seam stays replaceable so a downstream task can override
 // (e.g. a metrics-emitting seam) without changing the contract.
 //
+// **No-echo discipline for the unknown-type wire message** (per
+// `backend_hardening.data_hygiene.wire_error_no_echo`, closing
+// `docs/security/m3-review/inputs.md` F-009). The wire `message`
+// emitted on the unknown-type path includes the client-supplied
+// `type` ONLY when that value matches the strict regex
+// `SAFE_UNKNOWN_TYPE_REGEX = /^[a-z][a-z0-9-]{0,32}$/` — the same
+// kebab-case shape every `WsMessageType` value satisfies today. Any
+// other input (control chars, very long strings, HTML / quotes / null
+// bytes, mixed-case, leading digit, etc.) falls back to the generic
+// literal `'unknown message type'`. Rationale: debugging-friendly
+// echo when the client sent a plausible-looking typo (`subscriber`
+// for `subscribe`); strict refusal when the client sent garbage that
+// a downstream consumer (moderator-UI diagnostic display, log
+// aggregator) might render unsafely. The structured log line still
+// carries the raw `messageType` for operator visibility — the
+// sanitization applies to the WIRE message only.
+//
 // **Handler-exception policy.** A handler's thrown error or rejected
 // promise is caught by the dispatcher, logged at error level with the
 // envelope id + type for correlation, AND surfaced as an `error`
@@ -74,6 +91,58 @@ export type WsMessageHandler<T extends WsMessageType = WsMessageType> = (
   envelope: Extract<WsEnvelopeUnion, { type: T }>,
   connection: WsConnectionContext,
 ) => Promise<void>;
+
+/**
+ * Strict regex gating the unknown-type wire-message echo (per
+ * `backend_hardening.data_hygiene.wire_error_no_echo`, closing
+ * `docs/security/m3-review/inputs.md` F-009).
+ *
+ * Matches kebab-case identifiers: a leading lowercase letter, then
+ * up to 32 additional `[a-z0-9-]` characters (total 1-33 chars). This
+ * covers every value in `wsMessageTypes` today (the longest,
+ * `meta-disagreement-marked`, is 24 chars) plus headroom for
+ * plausible future additions and plausible client typos. Anything
+ * outside this shape — control chars, HTML, quotes, NUL, mixed case,
+ * leading digit, very long strings — bypasses the echo and the wire
+ * message falls back to the generic literal.
+ *
+ * Exported so the test can pin `.source` (so future drift forces an
+ * update to this refinement) and so a downstream consumer can reuse
+ * the same predicate if it ever needs to.
+ */
+export const SAFE_UNKNOWN_TYPE_REGEX = /^[a-z][a-z0-9-]{0,32}$/;
+
+/**
+ * Generic literal emitted on the wire when the unknown `type` value
+ * fails `SAFE_UNKNOWN_TYPE_REGEX`. Exported so the test can assert the
+ * exact string without re-declaring the constant.
+ */
+export const WS_UNKNOWN_MESSAGE_TYPE_GENERIC_MESSAGE = 'unknown message type';
+
+/**
+ * Build the wire `message` for the unknown-type error envelope.
+ *
+ * Returns `'unknown message type: <type>'` only when `type` is a
+ * string matching `SAFE_UNKNOWN_TYPE_REGEX`; otherwise returns the
+ * generic literal. The echo branch is the debugging-convenience path
+ * (a client typo like `subscriber` for `subscribe` still surfaces in
+ * the wire message). The fallback closes the reflected-input vector
+ * F-009 warned about — a downstream consumer that renders the wire
+ * `message` unsafely (a moderator-UI diagnostic display, a log
+ * aggregator) cannot be coerced into rendering attacker-supplied
+ * control chars / HTML / very long strings.
+ *
+ * `type` is typed `unknown` because the dispatcher's caller passes
+ * `envelope.type` which the WsMessageType union narrows at the type
+ * level — but the value crossed the parse boundary as JSON, so this
+ * helper must be robust against any runtime input.
+ */
+export function formatUnknownTypeMessage(type: unknown): string {
+  if (typeof type === 'string' && SAFE_UNKNOWN_TYPE_REGEX.test(type)) {
+    return `${WS_UNKNOWN_MESSAGE_TYPE_GENERIC_MESSAGE}: ${type}`;
+  }
+  return WS_UNKNOWN_MESSAGE_TYPE_GENERIC_MESSAGE;
+}
 
 /**
  * Optional dispatcher-construction options. Today only the seams the
@@ -161,10 +230,18 @@ export class WsDispatcher {
         );
         // Wire-format error envelope. `inResponseTo` correlates the
         // error back to the originating client envelope.
+        //
+        // The wire `message` is gated through `formatUnknownTypeMessage`
+        // (per `wire_error_no_echo`, F-009): the client-supplied
+        // `type` is echoed only when it matches the strict
+        // `SAFE_UNKNOWN_TYPE_REGEX`; otherwise the generic literal
+        // is emitted. The structured log line above already carries
+        // the raw `messageType` for operator visibility — operators
+        // see everything; clients see only the sanitized echo.
         try {
           sendWsError((wire) => connection.socket.send(wire), {
             code: WS_UNKNOWN_MESSAGE_TYPE_CODE,
-            message: `no handler registered for message type '${envelope.type}'`,
+            message: formatUnknownTypeMessage(envelope.type),
             inResponseTo: envelope.id,
           });
         } catch (sendErr) {
