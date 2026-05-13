@@ -667,6 +667,16 @@ const authRoutesPluginAsync: FastifyPluginAsync<AuthRoutesOptions> = (
         const signOpts = opts.now !== undefined ? { now: opts.now } : {};
         const token = await signSessionToken({ sub: row.id }, ensureSecret(), signOpts);
         reply.header('Set-Cookie', buildSessionCookieHeader(token, { secure: cookieSecure }));
+        // Closes docs/security/m3-review/coverage.md G-019 — this 302
+        // carries the platform session `Set-Cookie`. Even though the
+        // response body is empty, a CDN that caches the headers would
+        // replay the cookie at every cache hit (catastrophic). The
+        // `no-store` directive forbids any cache from storing this
+        // response. The login-leg redirect to the IdP at `/auth/login`
+        // is deliberately NOT marked — that redirect carries no
+        // user-identifying state (the `state` value is per-flow not
+        // per-user).
+        reply.header('Cache-Control', 'no-store');
         return reply.redirect(oidcConfig.appBaseUrl, 302);
       }
 
@@ -683,6 +693,15 @@ const authRoutesPluginAsync: FastifyPluginAsync<AuthRoutesOptions> = (
           secure: cookieSecure,
         }),
       );
+      // Closes docs/security/m3-review/coverage.md G-019 — the new-user
+      // 200 body carries user-identifying fields (`sub`, `oauthSubject`,
+      // `userId`); a misconfigured CDN MUST NOT cache and replay this
+      // across users. `no-store` is the canonical HTTP/1.1 directive
+      // for "do not store at any cache layer." See the route's
+      // sibling identity endpoints — every cookie-bearing or
+      // identity-bearing response in this plugin carries the same
+      // directive.
+      reply.header('Cache-Control', 'no-store');
 
       // The body's `needsScreenName: true` is a literal constant —
       // a freshly-inserted users row carries the `<pending>` placeholder
@@ -794,6 +813,11 @@ const authRoutesPluginAsync: FastifyPluginAsync<AuthRoutesOptions> = (
         buildPendingCookieClearHeader({ secure: cookieSecure }),
         buildSessionCookieHeader(sessionToken, { secure: cookieSecure }),
       ]);
+      // Closes docs/security/m3-review/coverage.md G-019 — this 200 body
+      // carries the user's `userId` and the freshly-set `screenName`,
+      // plus the platform session `Set-Cookie`. A CDN that caches this
+      // would replay one user's session cookie + identity to another.
+      reply.header('Cache-Control', 'no-store');
 
       return { userId: updated.id, screenName: updated.screen_name };
     },
@@ -824,6 +848,13 @@ const authRoutesPluginAsync: FastifyPluginAsync<AuthRoutesOptions> = (
     },
     (_request, reply) => {
       reply.header('Set-Cookie', buildSessionCookieClearHeader({ secure: cookieSecure }));
+      // Closes docs/security/m3-review/coverage.md G-019 — the 204 carries
+      // the cookie-clearing `Set-Cookie` header. A CDN that cached this
+      // response would log out every user it served from the cached
+      // entry (a different kind of cross-user leak — the clear-cookie
+      // is per-user state too). `no-store` keeps every logout response
+      // unique to the requester.
+      reply.header('Cache-Control', 'no-store');
       // Empty 204 — Fastify needs `.send()` to flush headers + status
       // when the handler returns nothing meaningful.
       reply.code(204).send();
@@ -850,10 +881,32 @@ const authRoutesPluginAsync: FastifyPluginAsync<AuthRoutesOptions> = (
   // declares the corresponding `securitySchemes.cookieAuth` entry.
   // Refinement: tasks/refinements/backend/auth_middleware.md.
   // ---------------------------------------------------------------
+  // Combined preHandler for `GET /auth/me`. Stamps `Cache-Control:
+  // no-store` FIRST (so it is present on every response including the
+  // middleware's 401 throw path), then defers to `app.authenticate`.
+  // Closes docs/security/m3-review/coverage.md G-019.
+  //
+  // The auth-middleware decorator (`app.authenticate`) is registered by
+  // the sibling `authenticatePlugin`. The dedicated screen-name unit
+  // test builds the route plugin without the middleware (it never
+  // hits `/auth/me`), so `app.authenticate` may be undefined at
+  // registration; the function-typeof check keeps the chain valid in
+  // both wiring topologies.
+  const authMePreHandler = async function authMePreHandler(
+    this: FastifyInstance,
+    request: import('fastify').FastifyRequest,
+    reply: import('fastify').FastifyReply,
+  ): Promise<void> {
+    reply.header('Cache-Control', 'no-store');
+    if (typeof app.authenticate === 'function') {
+      await app.authenticate.call(this, request, reply);
+    }
+  };
+
   app.get(
     '/auth/me',
     {
-      preHandler: app.authenticate,
+      preHandler: authMePreHandler,
       schema: {
         tags: ['auth'],
         summary: 'Return the current authenticated user',
@@ -880,6 +933,9 @@ const authRoutesPluginAsync: FastifyPluginAsync<AuthRoutesOptions> = (
       },
     },
     (request) => {
+      // `Cache-Control: no-store` is stamped by the `setNoStoreHeader`
+      // preHandler that runs before `app.authenticate` — see the chain
+      // assembled above. Closes docs/security/m3-review/coverage.md G-019.
       // The middleware guarantees `authUser` is defined here — it
       // throws otherwise, bypassing the handler. The non-null
       // assertion is a static-analysis necessity (the augmentation

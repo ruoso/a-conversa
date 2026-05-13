@@ -89,4 +89,20 @@ describe('GET /healthz', () => {
     const body = response.json<{ version?: unknown }>();
     expect(body.version).toBe('0.0.0');
   });
+
+  it('does NOT carry Cache-Control: no-store (negative pin for G-019)', async () => {
+    // The `Cache-Control: no-store` directive lives on identity /
+    // cookie-bearing endpoints (`/auth/me`, `/auth/logout`,
+    // `/auth/callback`, `/auth/screen-name`) — see
+    // docs/security/m3-review/coverage.md G-019 + the dedicated
+    // describe block in apps/server/src/auth/session-token.test.ts.
+    // `/healthz` is a public liveness probe and does NOT carry
+    // per-user state, so it MUST NOT inherit the directive — a
+    // future refactor that over-applies the header (e.g. via a global
+    // `onSend` hook) would break healthcheck cacheability for
+    // intermediate probes. This pin guards against that drift.
+    const response = await app.inject({ method: 'GET', url: '/healthz' });
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['cache-control']).toBeUndefined();
+  });
 });

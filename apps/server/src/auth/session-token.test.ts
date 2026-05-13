@@ -57,6 +57,18 @@
 //
 //   `/auth/screen-name` integration:
 //    25. Success → 200 + Set-Cookie pending-clear + Set-Cookie session.
+//
+//   `Cache-Control: no-store` on identity endpoints
+//   (docs/security/m3-review/coverage.md G-019):
+//    26. GET /auth/me — authed 200 response carries `Cache-Control: no-store`.
+//    27. GET /auth/me — unauthed 401 response carries `Cache-Control: no-store`
+//        (preHandler stamps the header before `app.authenticate` throws, and
+//        the centralized error-handler renders without clearing it).
+//    28. POST /auth/logout — 204 response carries `Cache-Control: no-store`.
+//    29. POST /auth/screen-name — 200 response carries `Cache-Control: no-store`.
+//    30. GET /auth/callback — returning-user 302 response carries
+//        `Cache-Control: no-store` (the cookie-bearing redirect MUST NOT cache).
+//    31. GET /auth/callback — new-user 200 response carries `Cache-Control: no-store`.
 
 import Fastify, { type FastifyInstance } from 'fastify';
 import { SignJWT } from 'jose';
@@ -844,6 +856,166 @@ describe('POST /auth/screen-name — session cookie issuance', () => {
         (l) => l.startsWith(`${SESSION_COOKIE_NAME}=`) && !/Max-Age=0/.test(l),
       );
       expect(sessionSet, `expected session-set in ${JSON.stringify(lines)}`).toBeDefined();
+    } finally {
+      await built.app.close();
+    }
+  });
+});
+
+// ============================================================
+// Cache-Control: no-store on identity / cookie-bearing endpoints
+// (closes docs/security/m3-review/coverage.md G-019)
+// ============================================================
+//
+// Identity-bearing or cookie-bearing responses MUST declare
+// `Cache-Control: no-store` so a misconfigured CDN/proxy cannot
+// cache one user's response and serve it to another. The directive
+// is the canonical HTTP/1.1 instruction to all cache layers; the
+// HTTP/1.0 `Pragma: no-cache` sibling is intentionally omitted (every
+// modern intermediary respects `Cache-Control`).
+//
+// Defense-in-depth: today's deployment is same-origin with no
+// intermediate CDN, so this is informational hardening. The pin makes
+// the contract explicit for any future deployment topology and for
+// auditors reading the protocol surface.
+
+describe('Cache-Control: no-store on identity endpoints (G-019)', () => {
+  const aliceId = '00000000-0000-4000-8000-000000000060';
+
+  it('GET /auth/me — authed 200 carries Cache-Control: no-store', async () => {
+    const built = await buildApp({
+      initialRows: [
+        {
+          id: aliceId,
+          oauth_subject: 'authelia:alice',
+          screen_name: 'alice',
+        },
+      ],
+    });
+    try {
+      const token = await signSessionToken({ sub: aliceId }, TEST_SECRET);
+      const response = await built.app.inject({
+        method: 'GET',
+        url: '/auth/me',
+        headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.headers['cache-control']).toBe('no-store');
+    } finally {
+      await built.app.close();
+    }
+  });
+
+  it('GET /auth/me — unauthed 401 carries Cache-Control: no-store', async () => {
+    // The preHandler that stamps the header runs BEFORE `app.authenticate`.
+    // When the middleware throws ApiError(401, 'auth-required', ...), the
+    // centralized error-handler emits the canonical envelope via
+    // `reply.status().type().send(envelope)` — which does NOT clear
+    // previously-set headers. So the no-store directive propagates onto
+    // the 401 response too. This pin guards against an error-handler
+    // refactor that adds a `headers({})` reset.
+    const built = await buildApp({ initialRows: [] });
+    try {
+      const response = await built.app.inject({ method: 'GET', url: '/auth/me' });
+      expect(response.statusCode).toBe(401);
+      expect(response.headers['cache-control']).toBe('no-store');
+    } finally {
+      await built.app.close();
+    }
+  });
+
+  it('POST /auth/logout — 204 carries Cache-Control: no-store', async () => {
+    const built = await buildApp({ initialRows: [] });
+    try {
+      const response = await built.app.inject({ method: 'POST', url: '/auth/logout' });
+      expect(response.statusCode).toBe(204);
+      expect(response.headers['cache-control']).toBe('no-store');
+    } finally {
+      await built.app.close();
+    }
+  });
+
+  it('POST /auth/screen-name — 200 carries Cache-Control: no-store', async () => {
+    const userId = '00000000-0000-4000-8000-000000000310';
+    const built = await buildApp({
+      initialRows: [
+        {
+          id: userId,
+          oauth_subject: 'authelia:dave',
+          screen_name: PLACEHOLDER_SCREEN_NAME,
+        },
+      ],
+    });
+    try {
+      const expiresAt = Date.now() + 60_000;
+      const cookieValue = signPendingCookie({ userId, expiresAt }, TEST_SECRET);
+      const response = await built.app.inject({
+        method: 'POST',
+        url: '/auth/screen-name',
+        headers: { cookie: `${PENDING_COOKIE_NAME}=${cookieValue}` },
+        payload: { screenName: 'dave' },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.headers['cache-control']).toBe('no-store');
+    } finally {
+      await built.app.close();
+    }
+  });
+
+  it('GET /auth/callback — returning-user 302 carries Cache-Control: no-store', async () => {
+    const built = await buildApp({
+      initialRows: [
+        {
+          id: '00000000-0000-4000-8000-000000000210',
+          // F-008 hardening: the namespace key uses the issuer URL's
+          // full origin; the seed must match.
+          oauth_subject: 'http://authelia:9091:alice',
+          screen_name: 'alice',
+        },
+      ],
+      authCodeGrantSub: 'alice',
+    });
+    try {
+      await built.app.inject({ method: 'GET', url: '/auth/login' });
+      const response = await built.app.inject({
+        method: 'GET',
+        url: '/auth/callback?code=AUTHCODE&state=state-1',
+      });
+      expect(response.statusCode).toBe(302);
+      expect(response.headers['cache-control']).toBe('no-store');
+    } finally {
+      await built.app.close();
+    }
+  });
+
+  it('GET /auth/callback — new-user 200 carries Cache-Control: no-store', async () => {
+    const built = await buildApp({ authCodeGrantSub: 'eve' });
+    try {
+      await built.app.inject({ method: 'GET', url: '/auth/login' });
+      const response = await built.app.inject({
+        method: 'GET',
+        url: '/auth/callback?code=AUTHCODE&state=state-1',
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.headers['cache-control']).toBe('no-store');
+    } finally {
+      await built.app.close();
+    }
+  });
+
+  it('GET /auth/login — redirect to IdP is NOT marked Cache-Control: no-store', async () => {
+    // The login leg is deliberately NOT marked: it 302-redirects to the
+    // IdP and carries no user-identifying state (the `state` value is
+    // per-flow not per-user). Pinning the absence prevents over-applying
+    // the directive and clarifies the design boundary.
+    const built = await buildApp({ initialRows: [] });
+    try {
+      const response = await built.app.inject({ method: 'GET', url: '/auth/login' });
+      expect(response.statusCode).toBe(302);
+      // No assertion of presence — the header may legitimately be absent.
+      // We instead pin that it is NOT 'no-store' (i.e., either absent or
+      // some other directive). Today's behaviour: absent.
+      expect(response.headers['cache-control']).toBeUndefined();
     } finally {
       await built.app.close();
     }
