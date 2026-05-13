@@ -46,7 +46,14 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 
 import { signSessionToken, SESSION_COOKIE_NAME } from '../auth/session-token.js';
-import { WS_CLOSE_CODES, WS_TEST_FORCE_ERROR_HEADER, __buildTestWsApp } from './connection.js';
+import {
+  DEFAULT_WS_MAX_PAYLOAD_BYTES,
+  WS_CLOSE_CODES,
+  WS_MAX_PAYLOAD_ENV,
+  WS_TEST_FORCE_ERROR_HEADER,
+  __buildTestWsApp,
+  resolveWsMaxPayload,
+} from './connection.js';
 import {
   FIXTURE_SCREEN_NAME,
   FIXTURE_USER_ID,
@@ -297,5 +304,161 @@ describe('wsConnectionHandlingPlugin', () => {
 
     expect(code).toBe(WS_CLOSE_CODES.INTERNAL_ERROR);
     expect(reason).toBe('internal-error');
+  });
+});
+
+// ---- maxPayload: closes docs/security/m3-review/inputs.md F-002 ----
+//
+// Refinement: tasks/refinements/backend-hardening/fastify_body_limit.md.
+//
+// `maxPayload` is the inbound-frame ceiling that `@fastify/websocket`
+// forwards to the upstream `ws.WebSocketServer`. We pin two pieces of
+// behavior:
+//
+//   1. The env-driven resolver (`resolveWsMaxPayload`) returns the
+//      default on absent / empty / NaN / non-positive input and the
+//      parsed integer otherwise — same shape as `resolveBodyLimit`
+//      and `resolveCatchUpMaxEvents`.
+//
+//   2. An oversized inbound frame causes the server to close the
+//      socket with WS close code **1009** ("Too Big" — IANA reserved
+//      code per RFC 6455 §7.4.1; emitted by `ws`'s receiver in
+//      `lib/receiver.js` when the running message length exceeds
+//      `maxPayload`). The connection terminates without paying the
+//      JSON-parse cost (the framing layer rejects the frame before
+//      any dispatcher sees a byte).
+
+describe('resolveWsMaxPayload', () => {
+  it('returns DEFAULT_WS_MAX_PAYLOAD_BYTES (64 KiB) when WS_MAX_PAYLOAD_BYTES is absent', () => {
+    expect(DEFAULT_WS_MAX_PAYLOAD_BYTES).toBe(64 * 1024);
+    expect(resolveWsMaxPayload({})).toBe(DEFAULT_WS_MAX_PAYLOAD_BYTES);
+  });
+
+  it('returns the default on empty / NaN / unparseable input', () => {
+    expect(resolveWsMaxPayload({ WS_MAX_PAYLOAD_BYTES: '' })).toBe(DEFAULT_WS_MAX_PAYLOAD_BYTES);
+    expect(resolveWsMaxPayload({ WS_MAX_PAYLOAD_BYTES: 'NaN' })).toBe(DEFAULT_WS_MAX_PAYLOAD_BYTES);
+    expect(resolveWsMaxPayload({ WS_MAX_PAYLOAD_BYTES: 'oops' })).toBe(
+      DEFAULT_WS_MAX_PAYLOAD_BYTES,
+    );
+  });
+
+  it('returns the default on zero / negative input', () => {
+    expect(resolveWsMaxPayload({ WS_MAX_PAYLOAD_BYTES: '0' })).toBe(DEFAULT_WS_MAX_PAYLOAD_BYTES);
+    expect(resolveWsMaxPayload({ WS_MAX_PAYLOAD_BYTES: '-1' })).toBe(DEFAULT_WS_MAX_PAYLOAD_BYTES);
+  });
+
+  it('returns the parsed positive integer otherwise', () => {
+    expect(resolveWsMaxPayload({ WS_MAX_PAYLOAD_BYTES: '4096' })).toBe(4096);
+    expect(resolveWsMaxPayload({ WS_MAX_PAYLOAD_BYTES: '131072' })).toBe(131072);
+  });
+
+  it('exports WS_MAX_PAYLOAD_ENV as the env var name the resolver consults', () => {
+    expect(WS_MAX_PAYLOAD_ENV).toBe('WS_MAX_PAYLOAD_BYTES');
+  });
+});
+
+describe('wsConnectionHandlingPlugin — maxPayload lockdown (inputs.md F-002)', () => {
+  // Local helper: temporarily override `process.env.WS_MAX_PAYLOAD_BYTES`,
+  // build a WS test app (so the registration reads the override at
+  // factory time), run the body, then restore the env. The plugin
+  // resolves the env once at `app.register(fastifyWebsocket, ...)`
+  // time, so each test that needs a different limit builds its own
+  // app under the override.
+  async function withWsMaxPayload<T>(value: string | undefined, fn: () => Promise<T>): Promise<T> {
+    const prev = process.env[WS_MAX_PAYLOAD_ENV];
+    if (value === undefined) {
+      delete process.env[WS_MAX_PAYLOAD_ENV];
+    } else {
+      process.env[WS_MAX_PAYLOAD_ENV] = value;
+    }
+    try {
+      return await fn();
+    } finally {
+      if (prev === undefined) {
+        delete process.env[WS_MAX_PAYLOAD_ENV];
+      } else {
+        process.env[WS_MAX_PAYLOAD_ENV] = prev;
+      }
+    }
+  }
+
+  it('closes the socket with code 1009 when an inbound frame exceeds the limit', async () => {
+    // Force a tight 4 KiB limit so the oversize-frame payload stays
+    // small enough to keep the test fast.
+    const TIGHT_LIMIT_BYTES = 4 * 1024;
+    await withWsMaxPayload(String(TIGHT_LIMIT_BYTES), async () => {
+      const app = await buildLifecycleApp();
+      await app.ready();
+      const cookie = await fixtureCookieHeader();
+      const { ws, next } = await openWsClient(app, { headers: { cookie } });
+      try {
+        // Drain the hello frame so message ordering is deterministic.
+        await next();
+
+        const closed = nextClose(ws);
+        // Send a frame whose UTF-8 byte length exceeds the limit.
+        // ASCII chars are 1 byte each; `'a'.repeat(LIMIT + 1)` is the
+        // smallest payload that trips the receiver's ceiling.
+        ws.send('a'.repeat(TIGHT_LIMIT_BYTES + 1));
+
+        const { code } = await closed;
+        // `ws`'s receiver emits the close error with code 1009 — the
+        // IANA WebSocket close code for "Message Too Big" (RFC 6455
+        // §7.4.1). Pinning the exact numeric code is what proves the
+        // rejection came from the framing layer (before the
+        // dispatcher), not from a downstream malformed-envelope
+        // path (which would have closed with 1011 or sent an `error`
+        // envelope while keeping the connection open).
+        expect(code).toBe(1009);
+      } finally {
+        try {
+          ws.terminate();
+        } catch {
+          // Already closed; ignore.
+        }
+        await app.close();
+      }
+    });
+  });
+
+  it('lets a normal-size frame round-trip through the dispatcher (regression)', async () => {
+    // Default 64 KiB limit; send a frame well under the ceiling. The
+    // canonical "small malformed JSON" path replies with the
+    // `malformed-envelope` error envelope and keeps the connection
+    // open — confirming the inbound frame DID reach the dispatcher
+    // (i.e. the framing layer did NOT reject it).
+    await withWsMaxPayload(undefined, async () => {
+      const app = await buildLifecycleApp();
+      await app.ready();
+      const cookie = await fixtureCookieHeader();
+      const { ws, next } = await openWsClient(app, { headers: { cookie } });
+      try {
+        // Drain hello.
+        await next();
+
+        // 1 KiB frame, well under the 64 KiB default — and shaped to
+        // fail the envelope parser (so we get a deterministic reply
+        // we can wait for). The point of this assertion is that the
+        // dispatcher SAW the frame, not that the frame was valid.
+        ws.send('a'.repeat(1024));
+        const errRaw = await next();
+        const parsed = JSON.parse(errRaw) as {
+          type?: unknown;
+          payload?: { code?: unknown };
+        };
+        expect(parsed.type).toBe('error');
+        expect(parsed.payload?.code).toBe('malformed-envelope');
+
+        // Connection still open — the regression hook.
+        expect(ws.readyState).toBe(1);
+      } finally {
+        try {
+          ws.terminate();
+        } catch {
+          // Already closed; ignore.
+        }
+        await app.close();
+      }
+    });
   });
 });

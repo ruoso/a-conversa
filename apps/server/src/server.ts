@@ -113,6 +113,66 @@ export interface CorsEnv {
 }
 
 /**
+ * Default Fastify `bodyLimit` — 64 KiB. Closes
+ * `docs/security/m3-review/inputs.md` F-002. Tight enough to choke a
+ * memory-pressure DoS at the framework boundary (before any JSON
+ * parser sees a byte); generous enough that no legitimate request
+ * body bumps against it. The only HTTP body the server accepts with
+ * any free-text length is the session-create `topic` (already capped
+ * at 256 chars in the schema layer); every other POST/PATCH body is
+ * a few hundred bytes of structured fields.
+ *
+ * Refinement:
+ *   tasks/refinements/backend-hardening/fastify_body_limit.md.
+ */
+export const DEFAULT_BODY_LIMIT_BYTES = 64 * 1024;
+
+/**
+ * Env var name production reads to override
+ * `DEFAULT_BODY_LIMIT_BYTES`. Exported so tests can assert against
+ * the same constant the resolver consults.
+ */
+export const BODY_LIMIT_ENV = 'BODY_LIMIT_BYTES';
+
+/**
+ * Subset of `process.env` consumed by `resolveBodyLimit`. Typed so
+ * callers can pass `process.env` directly (same pattern as `CorsEnv`
+ * + `LoggerEnv`).
+ */
+export interface BodyLimitEnv {
+  readonly BODY_LIMIT_BYTES?: string | undefined;
+}
+
+/**
+ * Resolve the Fastify `bodyLimit` from the environment. Production
+ * callers pass `process.env`; tests pass a bespoke record.
+ *
+ *   - Reads `BODY_LIMIT_BYTES` from the supplied env object.
+ *   - Returns `DEFAULT_BODY_LIMIT_BYTES` (64 KiB) when the value is
+ *     absent, empty, unparseable, or non-positive.
+ *   - Returns the parsed integer otherwise.
+ *
+ * Mirrors the resolve-pattern used by
+ * `resolveCatchUpMaxEvents`
+ * (`apps/server/src/ws/handlers/catch-up.ts`): the production code
+ * path reads the env once at factory time; tests inject directly.
+ *
+ * Closes `docs/security/m3-review/inputs.md` F-002. Refinement:
+ *   tasks/refinements/backend-hardening/fastify_body_limit.md.
+ */
+export function resolveBodyLimit(env: BodyLimitEnv = process.env): number {
+  const raw = env.BODY_LIMIT_BYTES;
+  if (raw === undefined || raw === '') {
+    return DEFAULT_BODY_LIMIT_BYTES;
+  }
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_BODY_LIMIT_BYTES;
+  }
+  return parsed;
+}
+
+/**
  * The shape we hand `@fastify/cors`. Narrow enough to commit-pin: the
  * `origin` field is either `true` (reflect any) or a concrete array
  * of allowed origins; `credentials` is always `true` (the session
@@ -216,6 +276,20 @@ export async function createServer(options: CreateServerOptions = {}): Promise<F
 
   const app = Fastify({
     logger: defaultLogger,
+    // Explicit HTTP body-size ceiling — closes
+    // `docs/security/m3-review/inputs.md` F-002. Fastify's documented
+    // default is 1 MiB; we drop to 64 KiB (see
+    // `DEFAULT_BODY_LIMIT_BYTES`) which is 6–8× headroom over the
+    // largest body shape this server accepts (the session-create
+    // `topic` capped at 256 chars; every other body is a few hundred
+    // bytes of structured fields). Bodies over the limit produce a
+    // canonical `413 Payload Too Large` response (Fastify's
+    // `FST_ERR_CTP_BODY_TOO_LARGE` → the error-handler's
+    // `http-error-413` envelope). The value is env-overridable via
+    // `BODY_LIMIT_BYTES` so production can tune without a code
+    // change. Refinement:
+    //   tasks/refinements/backend-hardening/fastify_body_limit.md.
+    bodyLimit: resolveBodyLimit(process.env),
     // Reflect the inbound `x-request-id` header (if any) into
     // `req.id`; otherwise Fastify generates a fresh id. The header
     // value Fastify reads is configurable; the default is

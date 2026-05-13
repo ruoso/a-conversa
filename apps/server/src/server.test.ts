@@ -36,7 +36,13 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 
-import { createServer, resolveCorsOptions } from './server.js';
+import {
+  BODY_LIMIT_ENV,
+  createServer,
+  DEFAULT_BODY_LIMIT_BYTES,
+  resolveBodyLimit,
+  resolveCorsOptions,
+} from './server.js';
 
 /**
  * Helper that temporarily overrides keys on `process.env`, runs the
@@ -324,5 +330,139 @@ describe('createServer — CORS dev-vs-prod boundary (auth.md F-003)', () => {
         }
       },
     );
+  });
+});
+
+// ---- bodyLimit: closes docs/security/m3-review/inputs.md F-002 ----
+//
+// The unit tests pin the env-driven resolver; the integration tests
+// pin the observable wire behavior of a built server. Per ADR 0022,
+// the integration cases (POST a body that exceeds the limit → 413;
+// POST a body under the limit → handler runs) are the source of
+// truth; the resolver tests are the cheap boundary-condition pin.
+//
+// Refinement: tasks/refinements/backend-hardening/fastify_body_limit.md.
+
+describe('resolveBodyLimit', () => {
+  it('returns DEFAULT_BODY_LIMIT_BYTES (64 KiB) when BODY_LIMIT_BYTES is absent', () => {
+    expect(DEFAULT_BODY_LIMIT_BYTES).toBe(64 * 1024);
+    expect(resolveBodyLimit({})).toBe(DEFAULT_BODY_LIMIT_BYTES);
+  });
+
+  it('returns the default when BODY_LIMIT_BYTES is the empty string', () => {
+    expect(resolveBodyLimit({ BODY_LIMIT_BYTES: '' })).toBe(DEFAULT_BODY_LIMIT_BYTES);
+  });
+
+  it('returns the default when BODY_LIMIT_BYTES is unparseable', () => {
+    expect(resolveBodyLimit({ BODY_LIMIT_BYTES: 'NaN' })).toBe(DEFAULT_BODY_LIMIT_BYTES);
+    expect(resolveBodyLimit({ BODY_LIMIT_BYTES: 'not-a-number' })).toBe(DEFAULT_BODY_LIMIT_BYTES);
+  });
+
+  it('returns the default when BODY_LIMIT_BYTES is zero or negative', () => {
+    expect(resolveBodyLimit({ BODY_LIMIT_BYTES: '0' })).toBe(DEFAULT_BODY_LIMIT_BYTES);
+    expect(resolveBodyLimit({ BODY_LIMIT_BYTES: '-1' })).toBe(DEFAULT_BODY_LIMIT_BYTES);
+  });
+
+  it('returns the parsed positive integer otherwise', () => {
+    expect(resolveBodyLimit({ BODY_LIMIT_BYTES: '8192' })).toBe(8192);
+    expect(resolveBodyLimit({ BODY_LIMIT_BYTES: '1048576' })).toBe(1048576);
+  });
+
+  it('exports BODY_LIMIT_ENV as the env var name the resolver consults', () => {
+    expect(BODY_LIMIT_ENV).toBe('BODY_LIMIT_BYTES');
+  });
+});
+
+describe('createServer — bodyLimit lockdown (inputs.md F-002)', () => {
+  it('initialConfig.bodyLimit is DEFAULT_BODY_LIMIT_BYTES when BODY_LIMIT_BYTES is unset', async () => {
+    await withEnv({ BODY_LIMIT_BYTES: undefined }, async () => {
+      const app = await createServer({ logger: false });
+      await app.ready();
+      try {
+        expect(app.initialConfig.bodyLimit).toBe(DEFAULT_BODY_LIMIT_BYTES);
+      } finally {
+        await app.close();
+      }
+    });
+  });
+
+  it('initialConfig.bodyLimit follows BODY_LIMIT_BYTES when set', async () => {
+    // A tighter, valid value so the test can confirm the env actually
+    // threads through to the factory. 8 KiB is well below the default
+    // 64 KiB; if `resolveBodyLimit` weren't wired in, this would
+    // assert against 64 * 1024 and fail.
+    await withEnv({ BODY_LIMIT_BYTES: String(8 * 1024) }, async () => {
+      const app = await createServer({ logger: false });
+      await app.ready();
+      try {
+        expect(app.initialConfig.bodyLimit).toBe(8 * 1024);
+      } finally {
+        await app.close();
+      }
+    });
+  });
+
+  it('rejects an oversized POST with 413 under the canonical error envelope', async () => {
+    // Drive against `/sessions` because it is a known POST route with
+    // a JSON body. Auth is not configured in the test env, so the
+    // request hits the auth gate at the schema layer first — but the
+    // `bodyLimit` check fires BEFORE auth (it's part of Fastify's
+    // content-type parser layer). The 413 surfaces regardless of
+    // whether auth would have rejected the request.
+    //
+    // Why post a 64 KiB + 1 payload: the bodyLimit is set to 64 KiB,
+    // so 64 KiB + 1 is the smallest payload that exceeds it.
+    await withEnv({ BODY_LIMIT_BYTES: undefined }, async () => {
+      const app = await createServer({ logger: false });
+      await app.ready();
+      try {
+        const oversize = 'a'.repeat(DEFAULT_BODY_LIMIT_BYTES + 1);
+        const response = await app.inject({
+          method: 'POST',
+          url: '/sessions',
+          headers: {
+            'content-type': 'application/json',
+            // `content-length` must be present for the limit check
+            // to fire on the request body length; `inject` will set
+            // it automatically from `payload.length`. Passing the
+            // string directly keeps inject's bookkeeping correct.
+          },
+          payload: oversize,
+        });
+        expect(response.statusCode).toBe(413);
+        // Canonical error envelope from the error-handler plugin.
+        const body: { error?: { code?: unknown; message?: unknown } } = response.json();
+        expect(typeof body.error?.code).toBe('string');
+        expect(typeof body.error?.message).toBe('string');
+      } finally {
+        await app.close();
+      }
+    });
+  });
+
+  it('lets an under-limit POST through to the route handler (regression)', async () => {
+    // Same route, but a payload well under the limit. The auth-gate
+    // (or the schema validator) is the next thing in the pipeline; we
+    // assert against "NOT 413" rather than a specific success code
+    // because the request still trips other rejections (no auth
+    // cookie present, the JSON body doesn't satisfy the route schema,
+    // etc.). What this test pins is that the bodyLimit layer did NOT
+    // reject — i.e. the under-limit case is structurally past the
+    // 413 gate.
+    await withEnv({ BODY_LIMIT_BYTES: undefined }, async () => {
+      const app = await createServer({ logger: false });
+      await app.ready();
+      try {
+        const response = await app.inject({
+          method: 'POST',
+          url: '/sessions',
+          headers: { 'content-type': 'application/json' },
+          payload: '{}', // 2 bytes, well under 64 KiB
+        });
+        expect(response.statusCode).not.toBe(413);
+      } finally {
+        await app.close();
+      }
+    });
   });
 });

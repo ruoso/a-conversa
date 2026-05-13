@@ -162,6 +162,71 @@ export const WS_CLOSE_CODES = {
 } as const;
 
 /**
+ * Default `@fastify/websocket` `maxPayload` (incoming-frame ceiling).
+ * Closes `docs/security/m3-review/inputs.md` F-002. The underlying
+ * `ws` library defaults to `100 * 1024 * 1024` (100 MiB) when unset;
+ * `@fastify/websocket` does not force a smaller default. 64 KiB is
+ * tight enough to choke a memory-pressure DoS — any oversized inbound
+ * frame is rejected by the receiver with close code 1009 ("Too Big")
+ * BEFORE the dispatcher pays the JSON-parse cost — and generous
+ * enough that no legitimate client→server envelope bumps against it.
+ *
+ * **Direction**: `maxPayload` gates the receiver path only (verified
+ * against `ws@8.20.0`'s `lib/receiver.js` + `lib/permessage-deflate.js`;
+ * the sender does not consult it). Outgoing frames — including a
+ * potentially-large `snapshot-state` response — are NOT subject to
+ * this limit.
+ *
+ * Refinement:
+ *   tasks/refinements/backend-hardening/fastify_body_limit.md.
+ */
+export const DEFAULT_WS_MAX_PAYLOAD_BYTES = 64 * 1024;
+
+/**
+ * Env var name production reads to override
+ * `DEFAULT_WS_MAX_PAYLOAD_BYTES`. Exported so tests can assert
+ * against the same constant the resolver consults.
+ */
+export const WS_MAX_PAYLOAD_ENV = 'WS_MAX_PAYLOAD_BYTES';
+
+/**
+ * Subset of `process.env` consumed by `resolveWsMaxPayload`. Typed so
+ * callers can pass `process.env` directly without an `as any` cast
+ * (same pattern as `CorsEnv` / `BodyLimitEnv` in `server.ts`).
+ */
+export interface WsMaxPayloadEnv {
+  readonly WS_MAX_PAYLOAD_BYTES?: string | undefined;
+}
+
+/**
+ * Resolve the `@fastify/websocket` `maxPayload` (incoming-frame
+ * ceiling) from the environment. Production callers pass
+ * `process.env`; tests pass a bespoke record.
+ *
+ *   - Reads `WS_MAX_PAYLOAD_BYTES` from the supplied env object.
+ *   - Returns `DEFAULT_WS_MAX_PAYLOAD_BYTES` (64 KiB) when the value
+ *     is absent, empty, unparseable, or non-positive.
+ *   - Returns the parsed integer otherwise.
+ *
+ * Mirrors the resolve-pattern used by
+ * `resolveCatchUpMaxEvents` (`./handlers/catch-up.ts`) and
+ * `resolveBodyLimit` (`../server.ts`). Closes
+ * `docs/security/m3-review/inputs.md` F-002. Refinement:
+ *   tasks/refinements/backend-hardening/fastify_body_limit.md.
+ */
+export function resolveWsMaxPayload(env: WsMaxPayloadEnv = process.env): number {
+  const raw = env.WS_MAX_PAYLOAD_BYTES;
+  if (raw === undefined || raw === '') {
+    return DEFAULT_WS_MAX_PAYLOAD_BYTES;
+  }
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_WS_MAX_PAYLOAD_BYTES;
+  }
+  return parsed;
+}
+
+/**
  * Per-connection context tracked on the server. Today carries only
  * the `connectionId` and the underlying socket; downstream tasks
  * will extend this with `authUser` (`ws_auth_on_connect`),
@@ -720,7 +785,20 @@ const wsConnectionHandlingPluginAsync: FastifyPluginAsync<WsConnectionHandlingOp
   // a 1011 close so the client sees a consistent shutdown code
   // regardless of WHICH unexpected-error path fired; the library
   // otherwise terminates the socket without a code + reason.
+  // `options.maxPayload` is the incoming-frame size ceiling. Closes
+  // `docs/security/m3-review/inputs.md` F-002 — without this, the
+  // upstream `ws` library defaults to 100 MiB and a hostile client
+  // can force the dispatcher to JSON.parse a 100 MiB frame just to
+  // reject it as malformed-envelope. With this set, the receiver
+  // rejects oversized frames at the WS framing layer and closes the
+  // socket with code 1009 ("Too Big") BEFORE any JSON parser sees a
+  // byte. The 64 KiB default is env-overridable via
+  // `WS_MAX_PAYLOAD_BYTES`; `maxPayload` only gates the receive path
+  // (verified against `ws@8.20.0`'s `receiver.js`), so outgoing
+  // `snapshot-state` frames are not affected. Refinement:
+  //   tasks/refinements/backend-hardening/fastify_body_limit.md.
   await app.register(fastifyWebsocket, {
+    options: { maxPayload: resolveWsMaxPayload(process.env) },
     preClose: wsShutdownPreClose,
     errorHandler(error, socket, request) {
       request.log.error({ err: error }, 'ws-connection-error — closing with 1011 internal-error');
