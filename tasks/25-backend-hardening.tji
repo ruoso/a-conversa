@@ -31,6 +31,7 @@ task backend_hardening "M3-review hardening (security audit follow-ups)" {
     task session_secret_strength_check "Boot-time SESSION_TOKEN_SECRET strength enforcement" {
       effort 0.5d
       allocate team
+      complete 100
       note "Source: docs/security/m3-review/auth.md F-004"
       note "Refinement: tasks/refinements/backend-hardening/session_secret_strength_check.md"
     }

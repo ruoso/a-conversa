@@ -45,6 +45,7 @@
 //     Config / env-loading is owned by a separate refinement once
 //     more env vars are needed.
 
+import { resolveSessionTokenSecret, SessionSecretRejectedError } from './auth/index.js';
 import { applyMigrationsOnStartup, withFastifyLogger } from './migrate-startup.js';
 import { createServer } from './server.js';
 
@@ -78,6 +79,45 @@ function parseBoolEnv(raw: string | undefined): boolean {
 }
 
 async function main(): Promise<void> {
+  // --- Session-token secret strength gate ---
+  //
+  // Validate `SESSION_TOKEN_SECRET` BEFORE building the Fastify
+  // instance so a missing / short / placeholder value fails LOUDLY
+  // at startup rather than at first auth (or worse, silently shipping
+  // a guessable signing key). The lazy callers in
+  // `auth/pending-cookie.ts`, `auth/middleware.ts`, `auth/routes.ts`,
+  // and `ws/connection.ts` all share this resolver — pre-flighting
+  // it here means every downstream consumer gets the already-vetted
+  // secret without re-doing the strength check.
+  //
+  // The check itself: `resolveSessionTokenSecret(process.env)` throws
+  // `SessionSecretRejectedError` on any of:
+  //   - missing / empty,
+  //   - byte length < `SESSION_TOKEN_SECRET_MIN_BYTES` (carved out
+  //     under `NODE_ENV === 'test'`),
+  //   - value in the dev-placeholder denylist (only enforced under
+  //     `NODE_ENV === 'production'`; devs may use the example value
+  //     locally).
+  //
+  // The error's `.message` names the reason but never echoes the
+  // rejected value (stderr / structured logs would otherwise capture
+  // partial secret material).
+  //
+  // Source: docs/security/m3-review/auth.md F-004.
+  try {
+    resolveSessionTokenSecret(process.env);
+  } catch (error) {
+    if (error instanceof SessionSecretRejectedError) {
+      // Write to stderr directly — no Fastify instance yet to log
+      // through, and `process.exit(1)` skips any later flush. The
+      // non-leaking message is the only thing we surface; the typed
+      // reason is captured in the exit code (1) + the message text.
+      process.stderr.write(`startup secret gate failed: ${error.message}\n`);
+      process.exit(1);
+    }
+    throw error;
+  }
+
   const app = await createServer();
 
   // --- Startup migration gate (ADR 0020 C6) ---

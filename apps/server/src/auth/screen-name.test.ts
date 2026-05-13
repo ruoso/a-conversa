@@ -45,6 +45,10 @@ import {
   buildPendingCookieHeader,
   PENDING_COOKIE_NAME,
   PENDING_COOKIE_TTL_MS,
+  resolveSessionTokenSecret,
+  SESSION_TOKEN_SECRET_DEV_DENYLIST,
+  SESSION_TOKEN_SECRET_MIN_BYTES,
+  SessionSecretRejectedError,
   signPendingCookie,
   verifyPendingCookie,
 } from './pending-cookie.js';
@@ -154,6 +158,156 @@ describe('pending-cookie sign / verify', () => {
     });
     expect(verified.ok).toBe(false);
     if (!verified.ok) expect(verified.reason).toBe('expired');
+  });
+});
+
+// Strength gate for `SESSION_TOKEN_SECRET`. Closes docs/security/m3-review/auth.md F-004:
+// the resolver is no longer a "non-empty string" check — it enforces a 32-byte
+// floor (with a `NODE_ENV === 'test'` carve-out) and a production-only denylist of
+// well-known dev placeholders. The boot path in `apps/server/src/index.ts`
+// `instanceof`-checks the thrown `SessionSecretRejectedError` and exits non-zero
+// before binding a port. Tests below pin all three rejection paths, the carve-out,
+// the production-only denylist gate, the accepted-32+-byte happy path, and the
+// non-leaking message invariant.
+describe('resolveSessionTokenSecret strength gate', () => {
+  // A 32+-byte fixture used wherever a test needs the resolver to ACCEPT in
+  // every environment. The literal is human-readable for diff-review; entropy
+  // doesn't matter in tests — the gate only cares about byte length + denylist.
+  const STRONG_SECRET = 'a'.repeat(SESSION_TOKEN_SECRET_MIN_BYTES);
+  // A 5-character secret used wherever a test needs the resolver to REJECT
+  // under the length floor. Five characters is well below the 32-byte floor;
+  // its exact contents are unimportant.
+  const SHORT_SECRET = 'short';
+  // The production-denylisted literal from `.env.example`. Sourced from the
+  // exported constant so the test fixture can't drift from the runtime denylist.
+  const DEV_PLACEHOLDER = SESSION_TOKEN_SECRET_DEV_DENYLIST[0];
+
+  it('rejects an unset env var with reason=missing', () => {
+    expect(() => resolveSessionTokenSecret({ NODE_ENV: 'production' })).toThrow(
+      SessionSecretRejectedError,
+    );
+    try {
+      resolveSessionTokenSecret({ NODE_ENV: 'production' });
+    } catch (error) {
+      expect(error).toBeInstanceOf(SessionSecretRejectedError);
+      if (error instanceof SessionSecretRejectedError) {
+        expect(error.reason).toBe('missing');
+        expect(error.name).toBe('SessionSecretRejectedError');
+      }
+    }
+  });
+
+  it('rejects an empty-string env var with reason=missing (regression)', () => {
+    expect(() =>
+      resolveSessionTokenSecret({ SESSION_TOKEN_SECRET: '', NODE_ENV: 'production' }),
+    ).toThrow(SessionSecretRejectedError);
+    try {
+      resolveSessionTokenSecret({ SESSION_TOKEN_SECRET: '', NODE_ENV: 'production' });
+    } catch (error) {
+      if (error instanceof SessionSecretRejectedError) {
+        expect(error.reason).toBe('missing');
+      }
+    }
+  });
+
+  it('rejects a 5-char secret in production with reason=too-short', () => {
+    try {
+      resolveSessionTokenSecret({ SESSION_TOKEN_SECRET: SHORT_SECRET, NODE_ENV: 'production' });
+      throw new Error('expected SessionSecretRejectedError');
+    } catch (error) {
+      expect(error).toBeInstanceOf(SessionSecretRejectedError);
+      if (error instanceof SessionSecretRejectedError) {
+        expect(error.reason).toBe('too-short');
+      }
+    }
+  });
+
+  it('rejects a 5-char secret in development with reason=too-short (floor applies outside test env)', () => {
+    try {
+      resolveSessionTokenSecret({ SESSION_TOKEN_SECRET: SHORT_SECRET, NODE_ENV: 'development' });
+      throw new Error('expected SessionSecretRejectedError');
+    } catch (error) {
+      expect(error).toBeInstanceOf(SessionSecretRejectedError);
+      if (error instanceof SessionSecretRejectedError) {
+        expect(error.reason).toBe('too-short');
+      }
+    }
+  });
+
+  it('accepts a 5-char secret under NODE_ENV=test (carve-out for existing fixtures)', () => {
+    const value = resolveSessionTokenSecret({
+      SESSION_TOKEN_SECRET: SHORT_SECRET,
+      NODE_ENV: 'test',
+    });
+    expect(value).toBe(SHORT_SECRET);
+  });
+
+  it('rejects the .env.example placeholder in production with reason=matches-dev-placeholder', () => {
+    try {
+      resolveSessionTokenSecret({
+        SESSION_TOKEN_SECRET: DEV_PLACEHOLDER,
+        NODE_ENV: 'production',
+      });
+      throw new Error('expected SessionSecretRejectedError');
+    } catch (error) {
+      expect(error).toBeInstanceOf(SessionSecretRejectedError);
+      if (error instanceof SessionSecretRejectedError) {
+        expect(error.reason).toBe('matches-dev-placeholder');
+      }
+    }
+  });
+
+  it('accepts the .env.example placeholder in development (dev convenience)', () => {
+    const value = resolveSessionTokenSecret({
+      SESSION_TOKEN_SECRET: DEV_PLACEHOLDER,
+      NODE_ENV: 'development',
+    });
+    expect(value).toBe(DEV_PLACEHOLDER);
+  });
+
+  it('accepts a 32-byte secret in production, development, and test', () => {
+    expect(
+      resolveSessionTokenSecret({ SESSION_TOKEN_SECRET: STRONG_SECRET, NODE_ENV: 'production' }),
+    ).toBe(STRONG_SECRET);
+    expect(
+      resolveSessionTokenSecret({ SESSION_TOKEN_SECRET: STRONG_SECRET, NODE_ENV: 'development' }),
+    ).toBe(STRONG_SECRET);
+    expect(
+      resolveSessionTokenSecret({ SESSION_TOKEN_SECRET: STRONG_SECRET, NODE_ENV: 'test' }),
+    ).toBe(STRONG_SECRET);
+  });
+
+  it('does not echo the rejected value in the too-short error message', () => {
+    // Use a secret whose substring would be visually distinct in any captured
+    // log line so the test fails clearly if the message ever leaks it.
+    const distinctShort = 'nope!';
+    try {
+      resolveSessionTokenSecret({ SESSION_TOKEN_SECRET: distinctShort, NODE_ENV: 'production' });
+      throw new Error('expected SessionSecretRejectedError');
+    } catch (error) {
+      expect(error).toBeInstanceOf(SessionSecretRejectedError);
+      if (error instanceof SessionSecretRejectedError) {
+        expect(error.message).not.toContain(distinctShort);
+      }
+    }
+  });
+
+  it('does not echo the rejected value in the matches-dev-placeholder error message', () => {
+    try {
+      resolveSessionTokenSecret({
+        SESSION_TOKEN_SECRET: DEV_PLACEHOLDER,
+        NODE_ENV: 'production',
+      });
+      throw new Error('expected SessionSecretRejectedError');
+    } catch (error) {
+      expect(error).toBeInstanceOf(SessionSecretRejectedError);
+      if (error instanceof SessionSecretRejectedError) {
+        // The literal placeholder value must NOT appear in the message.
+        // The message names the reason and points to remediation; the value
+        // itself stays out of stderr / structured logs.
+        expect(error.message).not.toContain(DEV_PLACEHOLDER ?? '');
+      }
+    }
   });
 });
 

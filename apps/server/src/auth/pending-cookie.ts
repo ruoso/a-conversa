@@ -296,21 +296,136 @@ export function buildPendingCookieClearHeader(opts: { secure: boolean }): string
 }
 
 /**
+ * Minimum acceptable length of `SESSION_TOKEN_SECRET`, measured in
+ * UTF-8 bytes. 32 bytes / 256 bits matches the HS256 standard key
+ * length (the JWT signing primitive in `session-token.ts`). Shorter
+ * keys give an attacker a tractable offline brute-force; longer is
+ * fine (HMAC truncates internally).
+ *
+ * Source: docs/security/m3-review/auth.md F-004.
+ */
+export const SESSION_TOKEN_SECRET_MIN_BYTES = 32;
+
+/**
+ * Denylist of well-known dev-placeholder secrets. Any value matching
+ * one of these strings is rejected in production. The list is
+ * deliberately small — only literals that have shipped in this repo's
+ * `.env.example` (or close variants thereof). Adding more entries is
+ * cheap, but the goal is "catch the operator who forgot to rotate
+ * the example value," NOT "enforce password strength" — entropy is
+ * the byte-length check's job.
+ *
+ * Documented entries:
+ *   - `dev-session-secret-change-me` — the literal in `.env.example`
+ *     (line 95).
+ *   - `change-me` — generic placeholder; matches the conventional
+ *     pattern an operator might paste while testing config plumbing.
+ *
+ * In `NODE_ENV !== 'production'` the denylist is INACTIVE — devs can
+ * use the example value locally without rotating it.
+ */
+export const SESSION_TOKEN_SECRET_DEV_DENYLIST: readonly string[] = Object.freeze([
+  'dev-session-secret-change-me',
+  'change-me',
+]);
+
+/**
+ * Typed error thrown by `resolveSessionTokenSecret` when the resolved
+ * value fails the strength / placeholder checks. Carries a `reason`
+ * discriminator for tests + structured logs; the human-readable
+ * `.message` names the failure mode but NEVER echoes the rejected
+ * value (logs / stderr would otherwise leak the partial-secret).
+ *
+ * Three reasons:
+ *   - `'missing'` — env var unset or empty (regression of prior
+ *     "non-empty" check).
+ *   - `'too-short'` — byte length below `SESSION_TOKEN_SECRET_MIN_BYTES`.
+ *     Test env (`NODE_ENV === 'test'`) carve-out: this reason is NOT
+ *     raised even for a 5-char secret, so existing test fixtures
+ *     (which use short fixed strings like `'test-secret'`) keep
+ *     working.
+ *   - `'matches-dev-placeholder'` — value appears in
+ *     `SESSION_TOKEN_SECRET_DEV_DENYLIST`. Only raised when
+ *     `NODE_ENV === 'production'`; dev and test environments accept
+ *     the example value so contributors can `cp .env.example .env`
+ *     and boot without warnings.
+ */
+export class SessionSecretRejectedError extends Error {
+  public readonly reason: 'missing' | 'too-short' | 'matches-dev-placeholder';
+
+  public constructor(reason: 'missing' | 'too-short' | 'matches-dev-placeholder', message: string) {
+    super(message);
+    this.name = 'SessionSecretRejectedError';
+    this.reason = reason;
+  }
+}
+
+/**
  * Resolve `SESSION_TOKEN_SECRET` from a process-env-like record.
- * Throws if unset / empty so the OIDC callback fails loudly when
- * configured incorrectly rather than producing an unverifiable
- * cookie.
+ * Throws a `SessionSecretRejectedError` if the value fails one of:
+ *
+ *   1. Present + non-empty (always enforced).
+ *   2. Byte length ≥ `SESSION_TOKEN_SECRET_MIN_BYTES` (UTF-8 bytes).
+ *      Carved out under `NODE_ENV === 'test'` so existing test
+ *      fixtures keep working with short fixed secrets.
+ *   3. Not on `SESSION_TOKEN_SECRET_DEV_DENYLIST`. Only enforced
+ *      under `NODE_ENV === 'production'` so devs can use the
+ *      example value locally.
+ *
+ * The error message names the failure reason ("too short" / "matches
+ * known dev placeholder") but does NOT echo the rejected value —
+ * stderr / structured logs would otherwise capture partial-secret
+ * material.
+ *
+ * Source: docs/security/m3-review/auth.md F-004 (dev secret is
+ * committed literal; no boot-time strength check).
  *
  * @param env - `process.env` (or a test double).
  * @returns the secret string.
- * @throws if the env var is missing or empty.
+ * @throws `SessionSecretRejectedError` if any check fails.
  */
 export function resolveSessionTokenSecret(env: Record<string, string | undefined>): string {
   const secret = env['SESSION_TOKEN_SECRET'];
   if (secret === undefined || secret === '') {
-    throw new Error(
-      'SESSION_TOKEN_SECRET is not set; cannot sign the pending-auth cookie. ' +
+    throw new SessionSecretRejectedError(
+      'missing',
+      'SESSION_TOKEN_SECRET is not set; cannot sign session tokens or pending-auth cookies. ' +
         'Set SESSION_TOKEN_SECRET in the environment.',
+    );
+  }
+  const nodeEnv = env['NODE_ENV'];
+  // Denylist check first. The denylisted dev placeholders are shorter
+  // than `SESSION_TOKEN_SECRET_MIN_BYTES` by design (the `.env.example`
+  // literal is 27 bytes); checking the denylist BEFORE the length floor
+  // ensures:
+  //   - Production gets the more-specific `matches-dev-placeholder`
+  //     reason (clearer remediation for the operator).
+  //   - Dev / test get the dev-convenience pass-through: a known
+  //     placeholder bypasses the length floor so contributors can
+  //     `cp .env.example .env` without rotating to a 32-byte value
+  //     just to boot the server locally.
+  // Random short secrets (not on the denylist) still trip the length
+  // check below — the carve-out is for the KNOWN placeholders only.
+  if (SESSION_TOKEN_SECRET_DEV_DENYLIST.includes(secret)) {
+    if (nodeEnv === 'production') {
+      throw new SessionSecretRejectedError(
+        'matches-dev-placeholder',
+        'SESSION_TOKEN_SECRET matches a known dev placeholder and must not be used in production. ' +
+          'Rotate to a high-entropy value supplied by the deployment secrets pipeline.',
+      );
+    }
+    return secret;
+  }
+  // Byte-length check. The test carve-out keeps existing fixtures
+  // (short fixed secrets like `'test-secret'`) working without a
+  // mass-rewrite. Tests that specifically pin the rejection behavior
+  // bypass the carve-out by passing an env record with
+  // `NODE_ENV: 'development'` or `NODE_ENV: 'production'`.
+  if (nodeEnv !== 'test' && Buffer.byteLength(secret, 'utf8') < SESSION_TOKEN_SECRET_MIN_BYTES) {
+    throw new SessionSecretRejectedError(
+      'too-short',
+      `SESSION_TOKEN_SECRET is too short; must be at least ${String(SESSION_TOKEN_SECRET_MIN_BYTES)} bytes (UTF-8). ` +
+        'Generate a high-entropy value (e.g. `openssl rand -base64 48`) and set it in the environment.',
     );
   }
   return secret;

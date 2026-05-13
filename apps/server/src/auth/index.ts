@@ -66,6 +66,9 @@ export {
 export {
   PENDING_COOKIE_NAME,
   PENDING_COOKIE_TTL_MS,
+  SESSION_TOKEN_SECRET_MIN_BYTES,
+  SESSION_TOKEN_SECRET_DEV_DENYLIST,
+  SessionSecretRejectedError,
   signPendingCookie,
   verifyPendingCookie,
   buildPendingCookieHeader,
