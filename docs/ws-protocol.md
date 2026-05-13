@@ -179,7 +179,9 @@ No `at: <sequence>` parameter in v1 — the historical-point query is documented
 - **When**: after reconnect + re-subscribe, the client asks for every event missed since `sinceSequence` (exclusive). Must be preceded by a successful `subscribe`.
 - **Correlation**: closes with [`caught-up`](#caught-up) ack (correlated). The handler picks one of two paths:
   - **Slice replay**: streams [`event-applied`](#event-applied) envelopes for `(sinceSequence, currentMaxSequence]` (NOT correlated — these are unsolicited replay frames) then sends `caught-up` with `fromSnapshot: false`.
-  - **Snapshot fallback**: when `currentMaxSequence - sinceSequence > WS_CATCHUP_MAX_EVENTS` (default 500, env-configurable), sends one [`snapshot-state`](#snapshot-state) envelope then `caught-up` with `fromSnapshot: true`.
+  - **Snapshot fallback**: when `currentMaxSequence - sinceSequence > WS_CATCHUP_MAX_EVENTS` (default 500, env-configurable, hard-capped at 5000), sends one [`snapshot-state`](#snapshot-state) envelope then `caught-up` with `fromSnapshot: true`.
+- **Rate limit**: per-connection cap of **10 envelopes per 60 s** (default; env-overridable via `WS_CATCH_UP_MAX_PER_MINUTE`). Excess envelopes are rejected with [`error`](#error) `code: 'too-many-catch-up-requests'`; the connection stays open and the cap window self-resets after 60 s. The bucket is per-connection state cleared on socket close. Closes [`docs/security/m3-review/inputs.md`](security/m3-review/inputs.md) F-004.
+- **Bounded SELECT**: both internal SELECTs (slice replay and snapshot fallback) carry an explicit `LIMIT`. The slice's LIMIT is the resolved threshold (clamped to 5000); the snapshot's LIMIT is `MAX_CATCH_UP_EVENTS_CEILING = 5000` directly — decoupled from the threshold so a small slice threshold doesn't truncate the snapshot. A single catch-up request can never scan more than 5000 rows. Closes [F-004](security/m3-review/inputs.md) + [F-005](security/m3-review/inputs.md).
 - **Owner**: [`apps/server/src/ws/handlers/catch-up.ts`](../apps/server/src/ws/handlers/catch-up.ts).
 
 ```json
@@ -395,15 +397,16 @@ From [`apps/server/src/errors.ts`](../apps/server/src/errors.ts). Every code her
 
 ### WS-specific codes
 
-Three codes that are not in the HTTP taxonomy because they describe transport-level failures unique to the WS surface.
+Codes that are not in the HTTP taxonomy because they describe transport-level failures unique to the WS surface.
 
 | code | meaning |
 |------|---------|
 | `unknown-message-type` | The envelope's `type` is in the closed `WsMessageType` enum but no handler is registered. Emitted by the dispatcher's `onUnknownType` seam. |
 | `malformed-envelope` | The inbound frame failed `parseWsEnvelopeJson` (bad JSON, binary frame that's not UTF-8 JSON, or schema-invalid envelope/payload). Emitted by the receive loop in [`connection.ts`](../apps/server/src/ws/connection.ts). `inResponseTo` is absent — the server cannot read an `id` off a frame that failed to parse. The connection stays open. |
 | `too-many-subscriptions` | The connection has already subscribed to `MAX_SUBSCRIPTIONS_PER_CONNECTION` sessions (default 32, env-tunable via `WS_MAX_SUBSCRIPTIONS_PER_CONNECTION`) and is trying to add another. Re-subscribing to a session the connection already holds is idempotent (no error). `inResponseTo` correlates back to the originating `subscribe` envelope's `id`. Wire message intentionally carries no integers — the cap value is not leaked. Closes [`docs/security/m3-review/inputs.md`](security/m3-review/inputs.md) F-001. |
+| `too-many-catch-up-requests` | The per-connection [`catch-up`](#catch-up) rate limit (default 10 envelopes per 60 s, env-overridable via `WS_CATCH_UP_MAX_PER_MINUTE`) rejected this envelope. Emitted by `apps/server/src/ws/handlers/catch-up.ts` as Gate 0; the connection stays open and the cap window self-resets after 60 s. Closes [`docs/security/m3-review/inputs.md`](security/m3-review/inputs.md) F-004. |
 
-The three constants are exported from [`error-envelope.ts`](../apps/server/src/ws/error-envelope.ts) as `WS_UNKNOWN_MESSAGE_TYPE_CODE`, `WS_MALFORMED_ENVELOPE_CODE`, and `WS_TOO_MANY_SUBSCRIPTIONS_CODE` for test + handler co-location.
+The constants are exported from [`error-envelope.ts`](../apps/server/src/ws/error-envelope.ts) as `WS_UNKNOWN_MESSAGE_TYPE_CODE` / `WS_MALFORMED_ENVELOPE_CODE`, from [`subscriptions.ts`](../apps/server/src/ws/subscriptions.ts) as `WS_TOO_MANY_SUBSCRIPTIONS_CODE`, and from [`handlers/catch-up.ts`](../apps/server/src/ws/handlers/catch-up.ts) as `WS_TOO_MANY_CATCH_UP_REQUESTS_CODE` for test + handler co-location.
 
 ### Methodology `RejectionReason` codes
 
@@ -514,7 +517,7 @@ The catch-up handler compares `currentMaxSequence - sinceSequence` to the thresh
 - **Gap = 0** (client at head): single [`caught-up`](#caught-up) ack, `eventCount: 0`, `fromSnapshot: false`.
 - **`sinceSequence > currentMaxSequence`** (client ahead — defensive): single `caught-up` ack, `throughSequence: currentMaxSequence`, `eventCount: 0`. Server logs a warn but does NOT error.
 
-The threshold is read from `process.env.WS_CATCHUP_MAX_EVENTS` once at registration time via `resolveCatchUpMaxEvents(env)` (default 500). Tests inject small values directly via handler options to exercise both branches deterministically. See [`ws_reconnection_handling.md`](../tasks/refinements/backend/ws_reconnection_handling.md).
+The threshold is read from `process.env.WS_CATCHUP_MAX_EVENTS` once at registration time via `resolveCatchUpMaxEvents(env)` (default 500, hard-capped at `MAX_CATCH_UP_EVENTS_CEILING = 5000` per [F-005](security/m3-review/inputs.md)). Tests inject small values directly via handler options to exercise both branches deterministically. Both SELECTs carry an explicit `LIMIT` equal to the resolved threshold, and a per-connection rate limit caps `catch-up` envelopes at 10/min by default (env-overridable via `WS_CATCH_UP_MAX_PER_MINUTE`; closes [F-004](security/m3-review/inputs.md)). See [`ws_reconnection_handling.md`](../tasks/refinements/backend/ws_reconnection_handling.md) and [`catch_up_event_limit.md`](../tasks/refinements/backend-hardening/catch_up_event_limit.md).
 
 ### Client-side dedup contract
 

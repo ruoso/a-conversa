@@ -30,7 +30,11 @@ import fp from 'fastify-plugin';
 
 import { getDefaultPool, type DbPool } from '../../db.js';
 
-import { registerCatchUpHandlers, resolveCatchUpMaxEvents } from './catch-up.js';
+import {
+  registerCatchUpHandlers,
+  resolveCatchUpMaxEvents,
+  resolveCatchUpRateLimit,
+} from './catch-up.js';
 import { registerCommitHandlers } from './commit.js';
 import { registerMarkMetaDisagreementHandlers } from './meta-disagreement.js';
 import { registerProposeHandlers } from './propose.js';
@@ -71,8 +75,15 @@ export {
   buildCatchUpHandler,
   registerCatchUpHandlers,
   resolveCatchUpMaxEvents,
+  resolveCatchUpRateLimit,
+  clearCatchUpRateStateForConnection,
   DEFAULT_WS_CATCHUP_MAX_EVENTS,
+  MAX_CATCH_UP_EVENTS_CEILING,
   WS_CATCHUP_MAX_EVENTS_ENV,
+  DEFAULT_CATCH_UP_RATE_LIMIT_PER_MINUTE,
+  CATCH_UP_RATE_LIMIT_WINDOW_MS,
+  WS_CATCH_UP_RATE_LIMIT_ENV,
+  WS_TOO_MANY_CATCH_UP_REQUESTS_CODE,
 } from './catch-up.js';
 export type { CatchUpHandlerOptions } from './catch-up.js';
 
@@ -99,6 +110,22 @@ export interface WsHandlersOptions {
    * `tasks/refinements/backend/ws_reconnection_handling.md`.
    */
   readonly catchUpMaxEvents?: number;
+  /**
+   * Per-connection rate-limit cap on `catch-up` envelopes per
+   * 60-second window. Defaults to the env-resolved value
+   * (`WS_CATCH_UP_MAX_PER_MINUTE` or 10 when absent). Tests inject
+   * small values (e.g. 2) so the rate-limit assertion can fire in a
+   * small handful of envelopes. Closes
+   * `docs/security/m3-review/inputs.md` F-004. See
+   * `tasks/refinements/backend-hardening/catch_up_event_limit.md`.
+   */
+  readonly catchUpRateLimitPerWindow?: number;
+  /**
+   * Clock override for hermetic rate-limit tests. Production callers
+   * pass nothing — the handler reads `Date.now`. Tests pass a fixed
+   * value so window-reset assertions are deterministic.
+   */
+  readonly now?: () => number;
 }
 
 const wsHandlersPluginAsync: FastifyPluginAsync<WsHandlersOptions> = (
@@ -224,6 +251,7 @@ const wsHandlersPluginAsync: FastifyPluginAsync<WsHandlersOptions> = (
   // `tasks/refinements/backend/ws_reconnection_handling.md` for the
   // shape choice rationale + the dedup contract clients honour.
   const catchUpThreshold = opts.catchUpMaxEvents ?? resolveCatchUpMaxEvents();
+  const catchUpRateLimit = opts.catchUpRateLimitPerWindow ?? resolveCatchUpRateLimit();
   registerCatchUpHandlers(app.wsDispatcher, {
     get pool() {
       return ensurePool();
@@ -231,6 +259,8 @@ const wsHandlersPluginAsync: FastifyPluginAsync<WsHandlersOptions> = (
     registry: app.wsSubscriptions,
     log: app.log,
     maxCatchUpEvents: catchUpThreshold,
+    rateLimitPerWindow: catchUpRateLimit,
+    ...(opts.now !== undefined ? { now: opts.now } : {}),
   });
 
   return Promise.resolve();

@@ -86,21 +86,21 @@ const HTTP_API_ERROR_CODES = new Set<string>([
 ]);
 
 /**
- * WS-specific codes — the transport-level discriminators that are
- * not in the HTTP taxonomy. Mirrors the exported constants in
- * `error-envelope.ts`; duplicated here as literals so the test stays
- * self-contained and so a future rename of either constant fails this
- * test rather than silently passing under the new name.
- *
- * `too-many-subscriptions` is the per-connection subscription cap
- * discriminator (cap + handler live in `subscriptions.ts` +
- * `handlers/subscribe.ts`; closes
- * `docs/security/m3-review/inputs.md` F-001).
+ * WS-specific codes — the transport-level discriminators that are not
+ * in the HTTP taxonomy. Mirrors the exported constants in
+ * `error-envelope.ts` plus per-handler rate-limit / capacity literals
+ * exported from `subscriptions.ts` (`WS_TOO_MANY_SUBSCRIPTIONS_CODE`,
+ * closing F-001) and `handlers/catch-up.ts`
+ * (`WS_TOO_MANY_CATCH_UP_REQUESTS_CODE`, closing F-004). Duplicated
+ * here as literals so the test stays self-contained and a future
+ * rename of any constant fails this test rather than silently passing
+ * under the new name.
  */
 const WS_SPECIFIC_CODES = new Set<string>([
   'unknown-message-type',
   'malformed-envelope',
   'too-many-subscriptions',
+  'too-many-catch-up-requests',
 ]);
 
 /**

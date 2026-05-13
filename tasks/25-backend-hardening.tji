@@ -119,6 +119,7 @@ task backend_hardening "M3-review hardening (security audit follow-ups)" {
     task catch_up_event_limit "Add LIMIT + per-connection rate-limit to catch-up replay" {
       effort 0.5d
       allocate team
+      complete 100
       note "Source: docs/security/m3-review/inputs.md F-004 + F-005"
       note "Refinement: tasks/refinements/backend-hardening/catch_up_event_limit.md"
     }

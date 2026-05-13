@@ -141,6 +141,7 @@ import {
   WsEnvelopeValidationError,
 } from './envelope.js';
 import { sendWsError, WS_MALFORMED_ENVELOPE_CODE } from './error-envelope.js';
+import { clearCatchUpRateStateForConnection } from './handlers/catch-up.js';
 import { wsSubscriptionsPlugin } from './subscriptions.js';
 
 /**
@@ -495,6 +496,14 @@ function buildConnectionHandler(
       // outs. Idempotent — a connection that never registered makes
       // this a no-op. Paired with the `register(...)` call on open.
       app.wsConnectionSenders.unregister(connectionId);
+      // Drop the per-connection catch-up rate-limit bucket so the
+      // module-scoped state in `handlers/catch-up.ts` matches the
+      // documented invariant: per-connection, clears on close. Closes
+      // `docs/security/m3-review/inputs.md` F-004. Idempotent — a
+      // connection that never sent a catch-up envelope has no bucket;
+      // the delete is a no-op. Refinement:
+      //   tasks/refinements/backend-hardening/catch_up_event_limit.md.
+      clearCatchUpRateStateForConnection(connectionId);
       // The `reason` arrives as a `Buffer` (possibly empty); convert
       // to a string for the log line. Empty buffers serialise to an
       // empty string, which is the right "no reason given" signal.
@@ -1025,6 +1034,15 @@ export interface BuildTestWsAppOptions {
    */
   readonly catchUpMaxEvents?: number;
   /**
+   * Optional per-connection rate-limit cap for the catch-up handler
+   * (envelopes per 60-second window). Tests that exercise the F-004
+   * rate-limit reject path pass a small value (e.g. 2). Absent → the
+   * handler reads the env (`WS_CATCH_UP_MAX_PER_MINUTE`) with a
+   * default of 10. Refinement:
+   *   tasks/refinements/backend-hardening/catch_up_event_limit.md.
+   */
+  readonly catchUpRateLimitPerWindow?: number;
+  /**
    * Optional WS `Origin`-header allowlist for the upgrade gate. Tests
    * that aren't about the Origin gate pass nothing — the builder
    * defaults to `WS_ORIGIN_ALLOWLIST_ANY` (`'*'`) so any Origin or a
@@ -1107,6 +1125,10 @@ export async function __buildTestWsApp(
   await app.register(wsHandlersPlugin, {
     pool: opts.pool,
     ...(opts.catchUpMaxEvents !== undefined ? { catchUpMaxEvents: opts.catchUpMaxEvents } : {}),
+    ...(opts.catchUpRateLimitPerWindow !== undefined
+      ? { catchUpRateLimitPerWindow: opts.catchUpRateLimitPerWindow }
+      : {}),
+    ...(opts.now !== undefined ? { now: opts.now } : {}),
   });
 
   // Register the WS diagnostic broadcast surface so the cucumber +
