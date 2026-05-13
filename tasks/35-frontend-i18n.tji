@@ -17,6 +17,7 @@ task frontend_i18n "Frontend internationalization" {
   task i18n_library_choice "Pick i18n library + ICU plugin (ADR 0024)" {
     effort 0.5d
     allocate team
+    complete 100
     note "Refinement: tasks/refinements/frontend-i18n/i18n_library_choice.md"
   }
 

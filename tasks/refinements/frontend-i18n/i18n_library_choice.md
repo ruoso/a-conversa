@@ -44,7 +44,24 @@ Candidates surveyed: `react-i18next` + `i18next` + `i18next-icu`; `@lingui/core`
 - **Locale detector: `i18next-browser-languagedetector` ^8** on moderator + participant + private-audience surfaces only. Public audience + replay use URL prefix (decided in `i18n_locale_negotiation`).
 - **Mounting pattern**: each `apps/*` workspace mounts a single `I18nextProvider` (or `initReactI18next`) at the React root in `main.tsx`. Configuration (loadPath / fallback chain / namespaces) is read from `packages/i18n-catalogs/src/config.ts` (created by `i18n_catalog_workflow`).
 - **Pin policy**: exact versions on first install per the ADR 0023 / 0010 convention.
+- **Actual pinned versions land above the ADR's anticipated baseline.** The ADR Decision section anticipated `i18next` ^23, `react-i18next` ^14, `i18next-icu` ^2, `i18next-browser-languagedetector` ^8 (versions current on the ADR's 2026-05-10 date). At install time on 2026-05-11 the npm latest-stable line had advanced: `i18next@26.1.0`, `react-i18next@17.0.7`, `i18next-icu@2.4.3`, `i18next-browser-languagedetector@8.2.1`. Per the ADR's own "Exact versions are pinned on first install" clause, the actual pinned versions are the install-time latest-stable line; `react-i18next@17` requires `i18next@>=26.0.10` (its declared peer range), which matches what we install. The ICU plugin's peer `intl-messageformat >=10.3.3 <12.0.0` is satisfied by `intl-messageformat@11.2.5`, which we also pin explicitly to keep the dep graph deterministic. Peer-dep constraints all hold against the React 18 / TS 6 environment (`react-i18next@17.0.7` requires `react >= 16.8.0` and `typescript ^5 || ^6`).
+- **Install location: root `package.json` devDependencies.** The ADR scopes per-app wiring to `i18n_catalog_workflow` and the per-app skeleton tasks, so per-app `dependencies` entries are not added here (that would be the "wiring" the refinement defers). The libs are pinned at the repo root in the same shape as the existing stack-validation devDependencies (`react`, `react-dom`, `reactflow`, `cytoscape`, `tailwindcss`) so the lockfile records the exact resolved versions immediately and `pnpm install` is deterministic for any contributor who pulls this commit, without preempting `i18n_catalog_workflow`'s job of creating the catalog workspace and choosing which `apps/*` consume which entrypoint. The next task can migrate these pins into `packages/i18n-catalogs/package.json` (and the relevant `apps/*` consumers) at its own discretion.
 
 ## Open questions
 
 (none — all decided)
+
+## Status
+
+**Done** — 2026-05-11. Landed as:
+
+- ADR: [`docs/adr/0024-frontend-i18n-react-i18next-with-icu.md`](../../../docs/adr/0024-frontend-i18n-react-i18next-with-icu.md) (Accepted). Amendment lines on ADRs 0003, 0005, 0010, 0021, 0023 pointing here were landed with the ADR.
+- Dependencies pinned (exact) in [`package.json`](../../../package.json) `devDependencies`:
+  - `i18next@26.1.0`
+  - `react-i18next@17.0.7`
+  - `i18next-icu@2.4.3`
+  - `i18next-browser-languagedetector@8.2.1`
+  - `intl-messageformat@11.2.5` (explicit pin of `i18next-icu`'s peer dep, kept here for deterministic resolution)
+- `pnpm-lock.yaml` updated by `pnpm install`; `pnpm run check` and `pnpm run test:smoke` both green (1018 tests passing).
+- `complete 100` marker added in [`tasks/35-frontend-i18n.tji`](../../35-frontend-i18n.tji); `tj3 project.tjp 2>&1 | grep -iE "error|fatal"` silent.
+- No per-app wiring or smoke test added at this layer — per ADR 0022 + ADR 0024's "Stack-validation tests" clause, the real load-path and ICU-plural-select verification lands inside `i18n_catalog_workflow` and the per-app skeleton tasks.
