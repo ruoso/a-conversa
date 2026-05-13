@@ -158,6 +158,7 @@ task backend_hardening "M3-review hardening (security audit follow-ups)" {
     task screen_name_nfkc_normalization "NFKC-normalize + strip bidi/control chars from screen names" {
       effort 0.5d
       allocate team
+      complete 100
       note "Source: docs/security/m3-review/auth.md F-010"
       note "Refinement: tasks/refinements/backend-hardening/screen_name_nfkc_normalization.md"
     }

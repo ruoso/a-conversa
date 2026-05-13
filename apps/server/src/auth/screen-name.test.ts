@@ -54,6 +54,7 @@ import {
 } from './pending-cookie.js';
 import { authRoutesPlugin, PLACEHOLDER_SCREEN_NAME } from './routes.js';
 import type { AuthRoutesOptions } from './routes.js';
+import { FORBIDDEN_FORMAT_CODEPOINTS, validateScreenName } from './screen-name.js';
 import type { DbPool } from '../db.js';
 
 const VALID_OIDC_CONFIG = {
@@ -574,5 +575,239 @@ describe('buildPendingCookieHeader', () => {
   it('adds Secure when secure=true', () => {
     const header = buildPendingCookieHeader('v.s', { maxAgeMs: 60_000, secure: true });
     expect(header).toContain('Secure');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// NFKC normalization + bidi/control-char hardening for `validateScreenName`.
+// Closes docs/security/m3-review/auth.md F-010. The unit block below pins
+// the pure-logic invariants of the validator; the route-level block under
+// `POST /auth/screen-name — NFKC + character-class hardening` pins the
+// end-to-end behavior (rejection envelope + persisted form).
+// ---------------------------------------------------------------------------
+
+describe('validateScreenName — NFKC + character-class hardening', () => {
+  it('accepts an ordinary ASCII name (regression)', () => {
+    const result = validateScreenName('alice');
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value).toBe('alice');
+  });
+
+  it('trims leading and trailing whitespace (regression)', () => {
+    const result = validateScreenName('  alice  ');
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value).toBe('alice');
+  });
+
+  it('accepts a Cyrillic name `аdmin` as a distinct identity from Latin `admin`', () => {
+    // U+0430 Cyrillic а (lowercase) — NOT the Latin U+0061 a. The two
+    // strings are visually identical but their codepoints differ
+    // post-NFKC, so the stored form preserves the distinction.
+    const cyrillic = validateScreenName('аdmin');
+    const latin = validateScreenName('admin');
+    expect(cyrillic.ok).toBe(true);
+    expect(latin.ok).toBe(true);
+    if (cyrillic.ok && latin.ok) {
+      // Both accepted, both NFKC-normalized — but the bytes differ.
+      expect(cyrillic.value).not.toBe(latin.value);
+      expect(cyrillic.value.codePointAt(0)).toBe(0x0430);
+      expect(latin.value.codePointAt(0)).toBe(0x0061);
+    }
+  });
+
+  it('normalizes `ﬁle` (U+FB01 LATIN SMALL LIGATURE FI) to `file` (NFKC)', () => {
+    // The ligature decomposes to `fi` under NFKC; the stored form is
+    // 4 chars (`file`), not 3 (`ﬁle`).
+    const result = validateScreenName('ﬁle');
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value).toBe('file');
+      expect(result.value.length).toBe(4);
+    }
+  });
+
+  it('rejects a name containing the RLO (U+202E) bidi override', () => {
+    const result = validateScreenName('alice‮admin');
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('invalid-character');
+  });
+
+  it('rejects a name containing every entry in FORBIDDEN_FORMAT_CODEPOINTS', () => {
+    // Walk every entry in the explicit set so the test fails loudly if
+    // a future edit removes one without adjusting the suite.
+    for (const cp of FORBIDDEN_FORMAT_CODEPOINTS) {
+      const candidate = `alice${String.fromCodePoint(cp)}bob`;
+      const result = validateScreenName(candidate);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.reason).toBe('invalid-character');
+      }
+    }
+  });
+
+  it('rejects a name containing a NUL (U+0000) control char', () => {
+    const result = validateScreenName('alice bob');
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('invalid-character');
+  });
+
+  it('rejects a name containing a C1 control char (U+0085 NEXT LINE)', () => {
+    const result = validateScreenName('alicebob');
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('invalid-character');
+  });
+
+  it('rejects a name containing a zero-width joiner (U+200D)', () => {
+    const result = validateScreenName('al‍ice');
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('invalid-character');
+  });
+
+  it('rejects a name composed entirely of a non-printable codepoint (post-NFKC)', () => {
+    // U+FFF9..U+FFFB are interlinear-annotation format chars (Cf).
+    // They fall outside the printable class.
+    const result = validateScreenName('￹bad￻');
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('invalid-character');
+  });
+
+  it('enforces the 64-char cap AFTER NFKC normalization', () => {
+    // 33 copies of U+FB01 (ligature fi) → 33 chars pre-NFKC, 66 chars
+    // post-NFKC (each ligature expands to 2 chars). The post-NFKC
+    // length exceeds the 64-char cap, so the validator rejects.
+    const candidate = 'ﬁ'.repeat(33);
+    expect(candidate.length).toBe(33);
+    const result = validateScreenName(candidate);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('too-long');
+  });
+
+  it('accepts an emoji (Unicode Symbol class) — printable-class allows \\p{S}', () => {
+    // Sanity-check the printable class is broad enough to let common
+    // expressive content through. Single grinning-face emoji.
+    const result = validateScreenName('alice \u{1F600}');
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value).toBe('alice \u{1F600}');
+  });
+
+  it('rejects a non-string input as empty (regression)', () => {
+    const result = validateScreenName(42);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('empty');
+  });
+});
+
+describe('POST /auth/screen-name — NFKC + character-class hardening', () => {
+  const userId = '00000000-0000-4000-8000-000000000020';
+  let app: FastifyInstance;
+  let users: Map<string, UserRow>;
+
+  beforeEach(async () => {
+    const built = await buildApp({
+      initialRows: [
+        {
+          id: userId,
+          oauth_subject: 'authelia:nfkc-test',
+          screen_name: PLACEHOLDER_SCREEN_NAME,
+        },
+      ],
+    });
+    app = built.app;
+    users = built.users;
+  });
+
+  afterEach(async () => {
+    await app.close();
+  });
+
+  it('persists the NFKC-normalized form (U+FB01 ﬁle → "file")', async () => {
+    const cookieHeader = makeCookieHeaderValue(userId, Date.now() + 60_000);
+    const response = await app.inject({
+      method: 'POST',
+      url: '/auth/screen-name',
+      headers: { cookie: cookieHeader },
+      payload: { screenName: 'ﬁle' },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{ userId: string; screenName: string }>();
+    // The wire response echoes the normalized form, NOT the raw input.
+    expect(body.screenName).toBe('file');
+    expect(body.screenName.length).toBe(4);
+    // The persisted row also carries the normalized form.
+    expect(users.get(userId)?.screen_name).toBe('file');
+  });
+
+  it('rejects a name with RLO (U+202E) bidi override (400 screen-name-invalid)', async () => {
+    const cookieHeader = makeCookieHeaderValue(userId, Date.now() + 60_000);
+    const response = await app.inject({
+      method: 'POST',
+      url: '/auth/screen-name',
+      headers: { cookie: cookieHeader },
+      payload: { screenName: 'alice‮admin' },
+    });
+    expect(response.statusCode).toBe(400);
+    const body = response.json<{ error?: { code?: string; message?: string } }>();
+    expect(body.error?.code).toBe('screen-name-invalid');
+    // The message does NOT echo the offending character — defense
+    // against probing the reject rule.
+    expect(body.error?.message ?? '').not.toContain('‮');
+    // The row is untouched.
+    expect(users.get(userId)?.screen_name).toBe(PLACEHOLDER_SCREEN_NAME);
+  });
+
+  it('rejects a name with a NUL control char (400 screen-name-invalid)', async () => {
+    const cookieHeader = makeCookieHeaderValue(userId, Date.now() + 60_000);
+    const response = await app.inject({
+      method: 'POST',
+      url: '/auth/screen-name',
+      headers: { cookie: cookieHeader },
+      payload: { screenName: 'alice bob' },
+    });
+    expect(response.statusCode).toBe(400);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('screen-name-invalid');
+    expect(users.get(userId)?.screen_name).toBe(PLACEHOLDER_SCREEN_NAME);
+  });
+
+  it('rejects a name with a zero-width joiner (400 screen-name-invalid)', async () => {
+    const cookieHeader = makeCookieHeaderValue(userId, Date.now() + 60_000);
+    const response = await app.inject({
+      method: 'POST',
+      url: '/auth/screen-name',
+      headers: { cookie: cookieHeader },
+      payload: { screenName: 'al‍ice' },
+    });
+    expect(response.statusCode).toBe(400);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('screen-name-invalid');
+    expect(users.get(userId)?.screen_name).toBe(PLACEHOLDER_SCREEN_NAME);
+  });
+
+  it('persists Cyrillic `аdmin` as a distinct identity from Latin `admin`', async () => {
+    // First user: Cyrillic.
+    const cookieHeader = makeCookieHeaderValue(userId, Date.now() + 60_000);
+    const response = await app.inject({
+      method: 'POST',
+      url: '/auth/screen-name',
+      headers: { cookie: cookieHeader },
+      payload: { screenName: 'аdmin' },
+    });
+    expect(response.statusCode).toBe(200);
+    const persisted = users.get(userId)?.screen_name ?? '';
+    expect(persisted.codePointAt(0)).toBe(0x0430);
+    // Distinct from the Latin form even though visually identical.
+    expect(persisted).not.toBe('admin');
+  });
+
+  it('accepts an ordinary ASCII name (regression)', async () => {
+    const cookieHeader = makeCookieHeaderValue(userId, Date.now() + 60_000);
+    const response = await app.inject({
+      method: 'POST',
+      url: '/auth/screen-name',
+      headers: { cookie: cookieHeader },
+      payload: { screenName: 'alice' },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(users.get(userId)?.screen_name).toBe('alice');
   });
 });

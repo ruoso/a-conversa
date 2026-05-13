@@ -83,6 +83,7 @@ import {
   signPendingCookie,
   verifyPendingCookie,
 } from './pending-cookie.js';
+import { validateScreenName } from './screen-name.js';
 import {
   buildSessionCookieClearHeader,
   buildSessionCookieHeader,
@@ -339,51 +340,6 @@ const callbackResponseSchema = {
     },
   },
 } as const;
-
-/**
- * Screen-name validation result. The two ok-shapes carry the
- * canonical (trimmed) value the handler will persist; the error-shape
- * carries a discriminator the handler maps onto a 400 envelope. Kept
- * out of `pending-cookie.ts` because this validation runs after the
- * cookie verifies — it's a body-shape concern, not a signing concern.
- */
-type ScreenNameValidationResult =
-  | { readonly ok: true; readonly value: string }
-  | { readonly ok: false; readonly reason: 'empty' | 'too-long' | 'whitespace-only' };
-
-/**
- * Validate a candidate screen name per the users-table refinement
- * (`tasks/refinements/data-and-methodology/users_table.md`):
- *
- *   - VARCHAR(64) — at most 64 UTF-8 code points.
- *   - UTF-8 — JavaScript strings are already valid UTF-16, so any
- *     well-formed JSON value satisfies UTF-8 round-trip into the DB.
- *   - Strip leading/trailing whitespace; reject pure-whitespace.
- *
- * Length is checked AFTER trimming and on the UTF-16 code-unit length
- * (`.length`). This is slightly conservative — a Unicode-aware
- * `[...str].length` (code points) would allow some emoji + combining-
- * mark sequences that `.length` rejects — but it matches what
- * `VARCHAR(64)` checks against on the Postgres side (which counts
- * characters, not bytes, but the DB driver passes through UTF-8 and
- * the difference is negligible for normal screen names).
- */
-function validateScreenName(input: unknown): ScreenNameValidationResult {
-  if (typeof input !== 'string') {
-    return { ok: false, reason: 'empty' };
-  }
-  if (input.length === 0) {
-    return { ok: false, reason: 'empty' };
-  }
-  const trimmed = input.trim();
-  if (trimmed.length === 0) {
-    return { ok: false, reason: 'whitespace-only' };
-  }
-  if (trimmed.length > 64) {
-    return { ok: false, reason: 'too-long' };
-  }
-  return { ok: true, value: trimmed };
-}
 
 /**
  * Row shape returned from the screen-name UPDATE. Only the
@@ -774,10 +730,18 @@ const authRoutesPluginAsync: FastifyPluginAsync<AuthRoutesOptions> = (
       const body = request.body as { screenName?: unknown };
       const validated = validateScreenName(body.screenName);
       if (!validated.ok) {
+        // The four rejection reasons share the `screen-name-invalid`
+        // envelope code; the message differs per reason so the
+        // frontend can render a useful hint. The `invalid-character`
+        // reason intentionally does NOT echo which specific character
+        // tripped the policy — that would oracle the reject rule to a
+        // probing attacker. Closes docs/security/m3-review/auth.md F-010.
         const messageByReason: Record<typeof validated.reason, string> = {
           empty: 'screenName must be a non-empty string',
           'whitespace-only': 'screenName must contain non-whitespace characters',
           'too-long': 'screenName must be at most 64 characters after trimming',
+          'invalid-character':
+            'screenName contains a disallowed character (control / bidi-override / non-printable)',
         };
         throw new ApiError(400, 'screen-name-invalid', messageByReason[validated.reason]);
       }
