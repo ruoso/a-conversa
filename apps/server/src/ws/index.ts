@@ -13,6 +13,8 @@
 //              backend.websocket_protocol.ws_message_envelope
 
 export {
+  ORIGIN_NOT_ALLOWED_CODE,
+  ORIGIN_NOT_ALLOWED_MESSAGE,
   WS_CLOSE_CODES,
   WS_TEST_FORCE_ERROR_HEADER,
   wsConnectionHandlingPlugin,

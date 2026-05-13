@@ -118,6 +118,7 @@ import {
 import { resolveSessionTokenSecret } from '../auth/pending-cookie.js';
 import { getDefaultPool, type DbPool } from '../db.js';
 import { ApiError } from '../errors.js';
+import { WS_ORIGIN_ALLOWLIST_ANY, type WsOriginAllowlist } from '../ws-origin-allowlist.js';
 // `@fastify/websocket` is wired against the `ws` library; `@types/ws`
 // provides the `WebSocket` type referenced below in the connection
 // context and the handler signature. Importing the type directly
@@ -225,6 +226,28 @@ export function resolveWsMaxPayload(env: WsMaxPayloadEnv = process.env): number 
   }
   return parsed;
 }
+
+/**
+ * Canonical `error.code` rendered when the WS upgrade's `Origin` header
+ * is missing (production) or not on the env-resolved allowlist. Closes
+ * `docs/security/m3-review/auth.md` F-002 (the same-origin assumption
+ * is now server-enforced, not documentation-only).
+ *
+ * Exported so tests (and any future audit pipeline / monitoring rule)
+ * can assert against the exact wire code without re-declaring the
+ * string. Matches the kebab-case pattern of `AUTH_REQUIRED_CODE`.
+ */
+export const ORIGIN_NOT_ALLOWED_CODE = 'origin-not-allowed';
+
+/**
+ * Canonical 403 message rendered alongside `ORIGIN_NOT_ALLOWED_CODE`.
+ * Like `AUTH_REQUIRED_MESSAGE`, a single phrasing across every reject
+ * variant (missing Origin vs. unlisted Origin) preserves the no-info-
+ * leak property — a probe can't distinguish "no header" from "wrong
+ * origin" by the message.
+ */
+export const ORIGIN_NOT_ALLOWED_MESSAGE =
+  'the WebSocket upgrade Origin is not on the server allowlist';
 
 /**
  * Per-connection context tracked on the server. Today carries only
@@ -534,11 +557,20 @@ const openConnections = new Set<WsConnectionContext>();
  * resolvers reach for `getDefaultPool()` and
  * `resolveSessionTokenSecret(process.env)` lazily on first use; tests
  * pin a memory-backed pool plus a fixed secret and clock.
+ *
+ * The `originAllowlist` field carries the env-resolved WS upgrade
+ * `Origin`-header allowlist (per
+ * `tasks/refinements/backend-hardening/ws_origin_allowlist.md`):
+ * either the dev-only `'*'` sentinel (any origin accepted; cookie
+ * check still runs) or an explicit list of normalized origin strings.
+ * The gate's narrowing reads the typed sentinel rather than a magic
+ * string.
  */
 interface WsAuthResolvers {
   readonly ensurePool: () => DbPool;
   readonly ensureSecret: () => string;
   readonly now: (() => number) | undefined;
+  readonly originAllowlist: WsOriginAllowlist;
 }
 
 /**
@@ -620,6 +652,52 @@ const wsRoutePlugin: FastifyPluginAsync<{ auth: WsAuthResolvers }> = (app, opts)
       // every HTTP middleware reject). Inventing a custom 4401 WS
       // close code would diverge from the HTTP envelope for no gain.
       preValidation: async (request, _reply) => {
+        // **Origin allowlist gate (ws_origin_allowlist, F-002).** Runs
+        // BEFORE the cookie/JWT check so an attacker probing the WS
+        // surface from an off-origin page is rejected without paying
+        // the cookie-parse + JWT-verify cost AND without any 401-vs-
+        // 403 leak about whether the attacker happened to also carry
+        // a stolen cookie. Two postures:
+        //
+        //   - Dev sentinel (`WS_ORIGIN_ALLOWLIST_ANY === '*'`): accept
+        //     any `Origin` header value AND accept a missing header
+        //     (curl, `injectWS` without an explicit `origin`, etc.).
+        //     The cookie+JWT gate is the only auth contract in dev.
+        //   - Prod (array of normalized origin strings): REQUIRE an
+        //     `Origin` header AND require it to be in the allowlist.
+        //     Missing or unlisted → throw `ApiError(403,
+        //     ORIGIN_NOT_ALLOWED_CODE, ORIGIN_NOT_ALLOWED_MESSAGE)`,
+        //     which the centralized error handler renders as the
+        //     canonical envelope on the upgrade response. The library's
+        //     `onResponse` hook destroys the socket; `injectWS` (and a
+        //     real browser `WebSocket`) sees a non-101 response and
+        //     the handshake never completes. No `connectionId` minted;
+        //     no per-connection state allocated.
+        //
+        // The check is byte-equal against the WHATWG-normalized origin
+        // strings the resolver produced — no scheme casing, no
+        // trailing-slash, no port-default surprise. See
+        // `apps/server/src/ws-origin-allowlist.ts` for the resolver
+        // contract.
+        if (auth.originAllowlist !== WS_ORIGIN_ALLOWLIST_ANY) {
+          const rawOrigin = request.headers['origin'];
+          const originHeader = typeof rawOrigin === 'string' ? rawOrigin : undefined;
+          if (originHeader === undefined || originHeader === '') {
+            request.log.debug(
+              { route: '/ws' },
+              'ws-origin-allowlist rejected — upgrade request missing Origin header',
+            );
+            throw new ApiError(403, ORIGIN_NOT_ALLOWED_CODE, ORIGIN_NOT_ALLOWED_MESSAGE);
+          }
+          if (!auth.originAllowlist.includes(originHeader)) {
+            request.log.debug(
+              { route: '/ws' },
+              'ws-origin-allowlist rejected — upgrade request Origin not on the allowlist',
+            );
+            throw new ApiError(403, ORIGIN_NOT_ALLOWED_CODE, ORIGIN_NOT_ALLOWED_MESSAGE);
+          }
+        }
+
         const rawHeader = request.headers['cookie'];
         const cookieHeader = typeof rawHeader === 'string' ? rawHeader : undefined;
         // Short-circuit BEFORE resolving the pool when no cookie is
@@ -734,6 +812,22 @@ export interface WsConnectionHandlingOptions {
    * runs deterministically without timer manipulation.
    */
   readonly now?: () => number;
+  /**
+   * Resolved WS upgrade `Origin`-header allowlist. Either the dev-only
+   * `'*'` sentinel (any Origin or missing Origin accepted; the
+   * cookie/JWT gate is the only auth contract in dev) or an explicit
+   * list of WHATWG-normalized origin strings (production: Origin
+   * REQUIRED and must appear byte-equal in the array). Owned by
+   * `tasks/refinements/backend-hardening/ws_origin_allowlist.md`
+   * (closes `docs/security/m3-review/auth.md` F-002).
+   *
+   * Production callers in `createServer()` pass the resolver output
+   * (`resolveWsOriginAllowlist(process.env)`). Tests pass `'*'` for a
+   * permissive default or a tight array (e.g.
+   * `['https://app.example.com']`) for the gate's reject/accept
+   * variants.
+   */
+  readonly originAllowlist: WsOriginAllowlist;
 }
 
 /**
@@ -771,6 +865,7 @@ const wsConnectionHandlingPluginAsync: FastifyPluginAsync<WsConnectionHandlingOp
     ensurePool,
     ensureSecret,
     now: opts.now,
+    originAllowlist: opts.originAllowlist,
   };
 
   // Register `@fastify/websocket` at root so its decorations
@@ -911,6 +1006,16 @@ export interface BuildTestWsAppOptions {
    * with a default of 500.
    */
   readonly catchUpMaxEvents?: number;
+  /**
+   * Optional WS `Origin`-header allowlist for the upgrade gate. Tests
+   * that aren't about the Origin gate pass nothing — the builder
+   * defaults to `WS_ORIGIN_ALLOWLIST_ANY` (`'*'`) so any Origin or a
+   * missing Origin header is accepted and the cookie gate stays the
+   * only auth contract under test. Tests that exercise the
+   * `ws_origin_allowlist` gate's reject/accept variants pass a tight
+   * array (e.g. `['https://app.example.com']`).
+   */
+  readonly originAllowlist?: WsOriginAllowlist;
 }
 
 /**
@@ -963,6 +1068,7 @@ export async function __buildTestWsApp(
   await app.register(wsConnectionHandlingPlugin, {
     pool: opts.pool,
     sessionTokenSecret: opts.sessionTokenSecret,
+    originAllowlist: opts.originAllowlist ?? WS_ORIGIN_ALLOWLIST_ANY,
     ...(opts.now !== undefined ? { now: opts.now } : {}),
   });
   // Register the WS message-type handlers (subscribe / unsubscribe

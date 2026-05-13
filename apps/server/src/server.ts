@@ -63,6 +63,7 @@ import { createLoggerOptions } from './logger.js';
 import { errorEnvelopeRef, openapiPlugin } from './openapi.js';
 import { healthzPlugin } from './routes/healthz.js';
 import { sessionsRoutesPlugin } from './sessions/routes.js';
+import { resolveWsOriginAllowlist } from './ws-origin-allowlist.js';
 import { wsHandlersPlugin } from './ws/handlers/index.js';
 import {
   wsConnectionHandlingPlugin,
@@ -462,7 +463,15 @@ export async function createServer(options: CreateServerOptions = {}): Promise<F
   // message types, and broadcasts are each separate downstream
   // websocket_protocol tasks that build on this foundation. Refinement:
   // tasks/refinements/backend/ws_connection_handling.md.
-  await app.register(wsConnectionHandlingPlugin);
+  //
+  // The `originAllowlist` option threads the env-resolved allowlist
+  // into the WS preValidation gate (per
+  // tasks/refinements/backend-hardening/ws_origin_allowlist.md). The
+  // resolver fail-fasts at boot when production env vars are
+  // missing/malformed (same posture as `loadOidcConfig`); a dev start
+  // gets the `'*'` sentinel and the gate accepts every origin.
+  const wsOriginAllowlist = resolveWsOriginAllowlist(process.env);
+  await app.register(wsConnectionHandlingPlugin, { originAllowlist: wsOriginAllowlist });
 
   // WS message-type handlers (subscribe / unsubscribe today; more
   // land as `ws_propose_message`, `ws_vote_message`, etc. ship).
