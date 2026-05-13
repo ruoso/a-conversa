@@ -41,7 +41,9 @@ task moderator_ui "Moderator UI" {
     task mod_ws_client "WebSocket client" {
       effort 2d
       allocate team
+      complete 100
       depends !mod_state_management, backend.websocket_protocol.ws_message_envelope
+      note "Refinement: tasks/refinements/moderator-ui/mod_ws_client.md"
     }
     task mod_auth_flow "Login / OAuth callback handling on the client" {
       effort 1d
