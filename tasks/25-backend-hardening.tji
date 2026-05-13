@@ -110,6 +110,7 @@ task backend_hardening "M3-review hardening (security audit follow-ups)" {
     task user_text_length_caps "Add max-length to user-authored text fields (wording / content)" {
       effort 0.5d
       allocate team
+      complete 100
       note "Source: docs/security/m3-review/inputs.md F-003"
       note "Refinement: tasks/refinements/backend-hardening/user_text_length_caps.md"
     }

@@ -33,6 +33,19 @@ Correlation: the client mints `id` on every envelope it originates; the server m
 
 Binary WebSocket frames are not part of the protocol — the receive loop converts `Buffer` / `ArrayBuffer` / fragmented `Buffer[]` to UTF-8 before `JSON.parse`; non-UTF-8-JSON content fails the parse and routes through the [`malformed-envelope`](#malformed-envelope-errors) path.
 
+### Per-field length caps
+
+User-authored text fields in the proposal / event vocabulary are capped at the schema layer. A payload that exceeds the cap fails the per-type Zod parse and routes through the [`malformed-envelope`](#malformed-envelope-errors) path (HTTP-side: 400 `validation-failed`). The cap constants live in [`packages/shared-types/src/limits.ts`](../packages/shared-types/src/limits.ts).
+
+| Field(s) | Cap | Constant |
+| --- | --- | --- |
+| Node `wording`, annotation `content`, `edit-wording.new_wording` (reword + restructure), `decompose.components[].wording`, `interpretive-split.readings[].wording`, `meta-move.content`, `amend-node.new_content`, `annotate.content` | 10 000 chars | `MAX_METHODOLOGY_TEXT_LENGTH` |
+| Session `topic` | 256 chars | `MAX_TOPIC_LENGTH` |
+| Snapshot `label` | 128 chars | `MAX_SNAPSHOT_LABEL_LENGTH` |
+| Participant `screen_name` | 64 chars | `MAX_SCREEN_NAME_LENGTH` |
+
+The methodology-text cap is generous on purpose (a few paragraphs of nuanced text), while comfortably under the 64 KiB frame ceiling enforced at the transport layer.
+
 ## Message-type catalog
 
 The closed [`WsMessageType`](../packages/shared-types/src/ws-envelope.ts) enum has 21 entries today, grouped by direction:

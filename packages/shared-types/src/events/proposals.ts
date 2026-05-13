@@ -42,6 +42,7 @@
 
 import { z } from 'zod';
 
+import { MAX_METHODOLOGY_TEXT_LENGTH } from '../limits.js';
 import { annotationKindSchema } from './enums.js';
 
 // -- StatementKind ---------------------------------------------------
@@ -120,7 +121,8 @@ export const rewordEditProposalSchema = z.object({
   kind: z.literal('edit-wording'),
   edit_kind: z.literal('reword'),
   node_id: z.string().uuid(),
-  new_wording: z.string().min(1),
+  // Methodology-text cap per F-003 — see `limits.ts`.
+  new_wording: z.string().min(1).max(MAX_METHODOLOGY_TEXT_LENGTH),
 });
 
 export type RewordEditProposal = z.infer<typeof rewordEditProposalSchema>;
@@ -129,7 +131,8 @@ export const restructureEditProposalSchema = z.object({
   kind: z.literal('edit-wording'),
   edit_kind: z.literal('restructure'),
   node_id: z.string().uuid(),
-  new_wording: z.string().min(1),
+  // Methodology-text cap per F-003 — see `limits.ts`.
+  new_wording: z.string().min(1).max(MAX_METHODOLOGY_TEXT_LENGTH),
   new_node_id: z.string().uuid(),
 });
 
@@ -150,7 +153,9 @@ export type EditWordingProposal = z.infer<typeof editWordingProposalSchema>;
 // then.
 
 export const proposalComponentSchema = z.object({
-  wording: z.string().min(1),
+  // Methodology-text cap per F-003 — see `limits.ts`. Each component
+  // is a wording in its own right, so the per-string cap applies.
+  wording: z.string().min(1).max(MAX_METHODOLOGY_TEXT_LENGTH),
   classification: statementKindSchema,
 });
 
@@ -214,7 +219,8 @@ export type AxiomMarkProposal = z.infer<typeof axiomMarkProposalSchema>;
 export const metaMoveProposalSchema = z.object({
   kind: z.literal('meta-move'),
   meta_kind: z.enum(['reframe', 'scope-change', 'stance']),
-  content: z.string().min(1),
+  // Methodology-text cap per F-003 — see `limits.ts`.
+  content: z.string().min(1).max(MAX_METHODOLOGY_TEXT_LENGTH),
   target_kind: z.enum(['node', 'edge']),
   target_id: z.string().uuid(),
 });
@@ -244,7 +250,8 @@ export type BreakEdgeProposal = z.infer<typeof breakEdgeProposalSchema>;
 export const amendNodeProposalSchema = z.object({
   kind: z.literal('amend-node'),
   node_id: z.string().uuid(),
-  new_content: z.string().min(1),
+  // Methodology-text cap per F-003 — see `limits.ts`.
+  new_content: z.string().min(1).max(MAX_METHODOLOGY_TEXT_LENGTH),
 });
 
 export type AmendNodeProposal = z.infer<typeof amendNodeProposalSchema>;
@@ -261,7 +268,8 @@ export const annotateProposalSchema = z.object({
   target_kind: z.enum(['node', 'edge']),
   target_id: z.string().uuid(),
   annotation_kind: annotationKindSchema,
-  content: z.string().min(1),
+  // Methodology-text cap per F-003 — see `limits.ts`.
+  content: z.string().min(1).max(MAX_METHODOLOGY_TEXT_LENGTH),
 });
 
 export type AnnotateProposal = z.infer<typeof annotateProposalSchema>;

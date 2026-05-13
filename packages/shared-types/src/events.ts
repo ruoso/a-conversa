@@ -64,6 +64,12 @@
 
 import { z } from 'zod';
 
+import {
+  MAX_METHODOLOGY_TEXT_LENGTH,
+  MAX_SCREEN_NAME_LENGTH,
+  MAX_SNAPSHOT_LABEL_LENGTH,
+  MAX_TOPIC_LENGTH,
+} from './limits.js';
 import { type ProposalEnvelopePayload, proposalEnvelopePayloadSchema } from './events/proposals.js';
 
 // -- Proposal payload re-exports -------------------------------------
@@ -177,7 +183,11 @@ export const eventKindSchema = z.enum(eventKinds);
 export const sessionCreatedPayloadSchema = z.object({
   host_user_id: z.string().uuid(),
   privacy: z.enum(['public', 'private']),
-  topic: z.string(),
+  // Topic length cap mirrors the HTTP-layer `maxLength: 256` already
+  // enforced on `createSessionBodySchema`. See
+  // `packages/shared-types/src/limits.ts` and finding F-003 in
+  // `docs/security/m3-review/inputs.md`.
+  topic: z.string().max(MAX_TOPIC_LENGTH),
   created_at: z.string().datetime({ offset: true }),
 });
 
@@ -192,7 +202,11 @@ export type SessionEndedPayload = z.infer<typeof sessionEndedPayloadSchema>;
 export const participantJoinedPayloadSchema = z.object({
   user_id: z.string().uuid(),
   role: z.enum(['moderator', 'debater-A', 'debater-B']),
-  screen_name: z.string(),
+  // Screen-name cap mirrors `validateScreenName`'s post-trim 64-char
+  // check in `apps/server/src/auth/routes.ts` — see
+  // `packages/shared-types/src/limits.ts` and finding F-003 in
+  // `docs/security/m3-review/inputs.md`.
+  screen_name: z.string().max(MAX_SCREEN_NAME_LENGTH),
   joined_at: z.string().datetime({ offset: true }),
 });
 
@@ -242,9 +256,10 @@ export const nodeCreatedPayloadSchema = z.object({
   node_id: z.string().uuid(),
   // `nodes.wording` is TEXT NOT NULL with no DB-level length cap. The
   // Zod `min(1)` rejects the empty string (a UI-visible "blank node"
-  // is not meaningful). No upper cap here; UIs can impose a soft
-  // display limit.
-  wording: z.string().min(1),
+  // is not meaningful); `.max()` caps the methodology text length to
+  // prevent storage / bandwidth amplification (F-003). See
+  // `packages/shared-types/src/limits.ts`.
+  wording: z.string().min(1).max(MAX_METHODOLOGY_TEXT_LENGTH),
   created_by: z.string().uuid(),
   created_at: z.string().datetime({ offset: true }),
 });
@@ -275,9 +290,10 @@ export const annotationCreatedPayloadSchema = z
   .object({
     annotation_id: z.string().uuid(),
     kind: annotationKindSchema,
-    // `annotations.content` is TEXT NOT NULL; same `min(1)` reasoning
-    // as `wording` on the node payload.
-    content: z.string().min(1),
+    // `annotations.content` is TEXT NOT NULL; same `min(1)` and
+    // `.max(MAX_METHODOLOGY_TEXT_LENGTH)` reasoning as `wording` on the
+    // node payload (F-003).
+    content: z.string().min(1).max(MAX_METHODOLOGY_TEXT_LENGTH),
     target_node_id: z.string().uuid().nullable(),
     target_edge_id: z.string().uuid().nullable(),
     created_by: z.string().uuid(),
@@ -396,7 +412,9 @@ export type MetaDisagreementMarkedPayload = z.infer<typeof metaDisagreementMarke
 // snapshot lookups.
 export const snapshotCreatedPayloadSchema = z.object({
   snapshot_id: z.string().uuid(),
-  label: z.string().min(1).max(128),
+  // Snapshot label cap centralised in `limits.ts` (was previously a
+  // magic 128 here). Same value, different sourcing.
+  label: z.string().min(1).max(MAX_SNAPSHOT_LABEL_LENGTH),
   log_position: z.number().int().positive(),
 });
 
