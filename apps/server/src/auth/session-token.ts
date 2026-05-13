@@ -90,6 +90,20 @@ export const SESSION_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 export const SESSION_TOKEN_TTL_SECONDS = SESSION_TOKEN_TTL_MS / 1000;
 
 /**
+ * Clock-skew tolerance applied to the verifier's `iat <= now` and
+ * `(exp - iat) <= TTL` invariant checks. 60 seconds covers reasonable
+ * NTP drift between a horizontally-scaled signer pod and a verifier
+ * pod, and matches the "small slack" recommendation in F-009 of the
+ * M3 security review (`docs/security/m3-review/auth.md`).
+ *
+ * The slack is deliberately narrow: 60s is large enough that ordinary
+ * cross-pod clock disagreement never trips a legitimate token, and
+ * small enough that a forged token claiming a wildly-future `iat` or
+ * a wildly-long TTL is rejected promptly.
+ */
+export const CLOCK_SKEW_SECONDS = 60;
+
+/**
  * The exact claim shape the platform session token carries. `sub` is
  * the `users.id` UUID; `iat` and `exp` are the JWT-standard issue-at
  * and expiry instants in seconds since epoch.
@@ -178,6 +192,14 @@ export async function signSessionToken(
  * and nothing else — so a token forged with extra claims (e.g. an
  * elevated-privilege marker) is rejected.
  *
+ * After the shape audit we pin two defense-in-depth invariants
+ * (F-009 in `docs/security/m3-review/auth.md`):
+ *   - `iat <= now + CLOCK_SKEW_SECONDS` (token not from the future).
+ *   - `exp - iat <= SESSION_TOKEN_TTL_SECONDS + CLOCK_SKEW_SECONDS`
+ *     (declared TTL within policy). A forged token with
+ *     `exp = year 2100` is rejected even if the signing secret
+ *     leaks.
+ *
  * Returns `null` on every failure mode. The route handler maps the
  * null result onto a single 401 envelope; per the refinement we don't
  * leak which sub-case fired.
@@ -250,6 +272,39 @@ export async function verifySessionToken(
     if (!allowedKeys.has(key)) {
       return null;
     }
+  }
+  // Defense-in-depth invariant pins on `iat` and `exp - iat`.
+  // Source: docs/security/m3-review/auth.md F-009.
+  //
+  // The signing path (`signSessionToken`) bounds `iat` to "now" and
+  // `exp` to `iat + SESSION_TOKEN_TTL_SECONDS` by construction; the
+  // verifier did NOT historically re-bind those invariants on read,
+  // so a token forged with `iat = far-past` and `exp = year 2100`
+  // (only feasible if the signing secret is compromised) would have
+  // verified. We now reject:
+  //
+  //   1. `payload.iat > now + CLOCK_SKEW_SECONDS` — token claims it
+  //      was issued in the future. (Internal rejection label:
+  //      `token-not-yet-valid`.)
+  //   2. `(payload.exp - payload.iat) > SESSION_TOKEN_TTL_SECONDS +
+  //      CLOCK_SKEW_SECONDS` — token's declared TTL exceeds the
+  //      policy ceiling. (Internal rejection label:
+  //      `token-ttl-out-of-policy`.)
+  //
+  // Both rejections collapse to the same `null` return as every
+  // other failure mode, matching the established "single 401
+  // envelope, no sub-case leak" contract documented above. The
+  // labels exist for code-review readability and for the test names
+  // in `session-token.test.ts`; they are not emitted to clients.
+  const nowMs = options.now !== undefined ? options.now() : Date.now();
+  const nowSeconds = Math.floor(nowMs / 1000);
+  if (payload['iat'] > nowSeconds + CLOCK_SKEW_SECONDS) {
+    // token-not-yet-valid: signed `iat` is meaningfully in the future.
+    return null;
+  }
+  if (payload['exp'] - payload['iat'] > SESSION_TOKEN_TTL_SECONDS + CLOCK_SKEW_SECONDS) {
+    // token-ttl-out-of-policy: declared TTL window exceeds the policy ceiling.
+    return null;
   }
   return {
     sub: payload['sub'],

@@ -71,6 +71,7 @@ import type { AuthRoutesOptions } from './routes.js';
 import {
   buildSessionCookieClearHeader,
   buildSessionCookieHeader,
+  CLOCK_SKEW_SECONDS,
   readSessionCookieFromHeader,
   SESSION_COOKIE_NAME,
   SESSION_TOKEN_TTL_SECONDS,
@@ -217,6 +218,125 @@ describe('signSessionToken / verifySessionToken', () => {
 
   it('throws when signing with an empty sub', async () => {
     await expect(signSessionToken({ sub: '' }, TEST_SECRET)).rejects.toThrow(/sub/);
+  });
+
+  // ============================================================
+  // Defense-in-depth `iat` / `exp - iat` invariant pins (F-009).
+  // Source: docs/security/m3-review/auth.md F-009.
+  //
+  // These tests assert that even if the signing secret were
+  // compromised, a forged token with a far-future `iat` or a
+  // wildly-long TTL is rejected by the verifier's invariant
+  // re-binding. The signing path bounds these by construction; the
+  // verifier now bounds them on read with a 60s clock-skew slack.
+  // ============================================================
+
+  it('rejects a token whose `iat` is 1 hour in the future (token-not-yet-valid)', async () => {
+    // Sign with a clock 1 hour ahead of "now"; the resulting `iat`
+    // is 3600s in the future relative to the verify clock. Well past
+    // the 60s skew allowance.
+    const nowMs = 1_700_000_000 * 1000;
+    const futureSignMs = nowMs + 3600 * 1000;
+    const token = await signSessionToken(
+      { sub: '00000000-0000-4000-8000-000000000001' },
+      TEST_SECRET,
+      { now: () => futureSignMs },
+    );
+    const payload = await verifySessionToken(token, TEST_SECRET, { now: () => nowMs });
+    expect(payload).toBeNull();
+  });
+
+  it('rejects a token whose TTL is one year (token-ttl-out-of-policy)', async () => {
+    // Forge a token directly via `jose` with `iat = now` and
+    // `exp = iat + 365 * 86400`. The TTL window (one year) far
+    // exceeds `SESSION_TOKEN_TTL_SECONDS + CLOCK_SKEW_SECONDS`.
+    const key = new TextEncoder().encode(TEST_SECRET);
+    const nowSeconds = 1_700_000_000;
+    const iat = nowSeconds;
+    const exp = iat + 365 * 86400;
+    const forged = await new SignJWT({
+      sub: '00000000-0000-4000-8000-000000000001',
+      iat,
+      exp,
+    })
+      .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
+      .sign(key);
+    const verified = await verifySessionToken(forged, TEST_SECRET, {
+      now: () => nowSeconds * 1000,
+    });
+    expect(verified).toBeNull();
+  });
+
+  it('accepts a token with TTL exactly at `SESSION_TOKEN_TTL_SECONDS` (boundary, inside)', async () => {
+    // Mint a normal token (TTL is exactly SESSION_TOKEN_TTL_SECONDS
+    // by construction). Verify at the same clock — it should pass.
+    const nowMs = 1_700_000_000 * 1000;
+    const token = await signSessionToken(
+      { sub: '00000000-0000-4000-8000-000000000001' },
+      TEST_SECRET,
+      { now: () => nowMs },
+    );
+    const payload = await verifySessionToken(token, TEST_SECRET, { now: () => nowMs });
+    expect(payload).not.toBeNull();
+    expect((payload?.exp ?? 0) - (payload?.iat ?? 0)).toBe(SESSION_TOKEN_TTL_SECONDS);
+  });
+
+  it('rejects a token whose TTL exceeds `SESSION_TOKEN_TTL_SECONDS + CLOCK_SKEW_SECONDS` by 1 second (boundary, outside)', async () => {
+    // Forge a token with TTL = SESSION_TOKEN_TTL_SECONDS +
+    // CLOCK_SKEW_SECONDS + 1. One second past the policy ceiling.
+    const key = new TextEncoder().encode(TEST_SECRET);
+    const nowSeconds = 1_700_000_000;
+    const iat = nowSeconds;
+    const exp = iat + SESSION_TOKEN_TTL_SECONDS + CLOCK_SKEW_SECONDS + 1;
+    const forged = await new SignJWT({
+      sub: '00000000-0000-4000-8000-000000000001',
+      iat,
+      exp,
+    })
+      .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
+      .sign(key);
+    const verified = await verifySessionToken(forged, TEST_SECRET, {
+      now: () => nowSeconds * 1000,
+    });
+    expect(verified).toBeNull();
+  });
+
+  it('accepts a token whose `iat` is 30s in the future (within clock-skew slack)', async () => {
+    // 30s < CLOCK_SKEW_SECONDS — within the slack allowance.
+    const nowMs = 1_700_000_000 * 1000;
+    const signMs = nowMs + 30 * 1000;
+    const token = await signSessionToken(
+      { sub: '00000000-0000-4000-8000-000000000001' },
+      TEST_SECRET,
+      { now: () => signMs },
+    );
+    const payload = await verifySessionToken(token, TEST_SECRET, { now: () => nowMs });
+    expect(payload).not.toBeNull();
+  });
+
+  it('rejects a token whose `iat` is 90s in the future (outside clock-skew slack)', async () => {
+    // 90s > CLOCK_SKEW_SECONDS — past the slack allowance.
+    const nowMs = 1_700_000_000 * 1000;
+    const signMs = nowMs + 90 * 1000;
+    const token = await signSessionToken(
+      { sub: '00000000-0000-4000-8000-000000000001' },
+      TEST_SECRET,
+      { now: () => signMs },
+    );
+    const payload = await verifySessionToken(token, TEST_SECRET, { now: () => nowMs });
+    expect(payload).toBeNull();
+  });
+
+  it('regression: a freshly-minted normal token still round-trips', async () => {
+    // Belt-and-suspenders check that the invariant pins haven't
+    // broken the canonical happy path.
+    const token = await signSessionToken(
+      { sub: '00000000-0000-4000-8000-000000000001' },
+      TEST_SECRET,
+    );
+    const payload = await verifySessionToken(token, TEST_SECRET);
+    expect(payload).not.toBeNull();
+    expect(payload?.sub).toBe('00000000-0000-4000-8000-000000000001');
   });
 });
 

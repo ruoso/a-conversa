@@ -54,6 +54,7 @@ task backend_hardening "M3-review hardening (security audit follow-ups)" {
     task iat_exp_invariant_check "Pin iat<exp + max-TTL invariant in verifySessionToken" {
       effort 0.25d
       allocate team
+      complete 100
       note "Source: docs/security/m3-review/auth.md F-009"
       note "Refinement: tasks/refinements/backend-hardening/iat_exp_invariant_check.md"
     }
