@@ -601,3 +601,122 @@ describe('DiagnosticBus', () => {
     expect(clearedCount).toBe(0);
   });
 });
+
+// ---------------------------------------------------------------
+// DiagnosticBus — synchronous-dispatch contract (G-016).
+// ---------------------------------------------------------------
+//
+// Source finding: docs/security/m3-review/coverage.md G-016.
+// Refinement:    tasks/refinements/backend-hardening/diagnostic_sync_dispatch_pin.md
+//
+// This block pins the **current** synchronous-dispatch contract of
+// `DiagnosticBus.notify(...)`. The contract is stated in the class's
+// own leading comment ("Synchronous dispatch, no error handling") and
+// is depended on by `WsDiagnosticBroadcast.notifyForSession`'s
+// context-window pattern in `apps/server/src/ws/broadcast/diagnostic.ts`
+// (the wrapper sets active context BEFORE `bus.notify(...)` and clears
+// it in `finally` AFTER — the pattern is only safe if `notify` returns
+// AFTER every listener has finished).
+//
+// **If a future refactor makes the bus async-aware** (e.g., adds
+// `await listener(entry)` inside `notify`'s loop, or queues dispatch
+// through `Promise.resolve()` / `queueMicrotask` / `setImmediate`),
+// these tests WILL fail — and that's the load-bearing signal. The
+// failure is a prompt to ALSO re-align the wrapper's context-window
+// pattern (today a single-slot mutable holder; under async dispatch it
+// would need an async-local store, a per-call closure, or an entry-
+// level context field). **This test IS the canonical doc of the
+// dispatch shape**; updating it is the structural step that surfaces
+// the cross-cutting refactor to reviewers.
+//
+// The discriminating-sentinel pattern (see the first `it(...)`):
+// a naive single-boolean sentinel passes under both sync dispatch AND
+// a hypothetical async-aware bus that `await`s listeners — because
+// awaiting an immediately-resolving function returns in the same
+// microtask tick. The discriminator is the GAP between "the listener
+// body started executing" and "every promise the listener returned
+// has resolved." Sync dispatch sees the former but not the latter at
+// `notify`'s return time; async-aware dispatch would see both.
+
+describe('DiagnosticBus — synchronous-dispatch contract (G-016)', () => {
+  it('returns AFTER each listener body has run synchronously, BEFORE any awaited microtask resolves', async () => {
+    const bus = new DiagnosticBus();
+    let syncSentinel = false;
+    let microtaskSentinel = false;
+
+    // A listener that sets a sync sentinel synchronously, then
+    // schedules a microtask that sets a second sentinel. The bus's
+    // `notify(...)` does NOT await any promise the listener might
+    // return (today's contract). After `notify` returns, the sync
+    // sentinel MUST be set (the listener body ran) and the microtask
+    // sentinel MUST NOT be set (the bus did not drain the listener's
+    // microtask queue). A future async-aware bus that `await`s each
+    // listener would set BOTH and this assertion would fail.
+    //
+    // The async work is launched via an inner IIFE whose promise is
+    // explicitly discarded (`void`), so the listener's outer return
+    // type stays `void` per `DiagnosticListener`. Switching the outer
+    // signature to `async` would itself be the kind of refactor this
+    // test is designed to flag — keeping the listener synchronous-
+    // returning preserves the test's discriminator role.
+    bus.on('fired', () => {
+      syncSentinel = true;
+      void (async () => {
+        await Promise.resolve();
+        microtaskSentinel = true;
+      })();
+    });
+
+    const cycleA = cycleEntry(NODE_A, NODE_B, NODE_C);
+    bus.notify([], [cycleA]);
+
+    // Sync half: listener body ran inside `notify(...)`.
+    expect(syncSentinel).toBe(true);
+    // Async half: the listener's returned promise was NOT awaited by
+    // the bus. The microtask has not yet been drained.
+    expect(microtaskSentinel).toBe(false);
+
+    // Positive control — drain the microtask queue and confirm the
+    // microtask sentinel flips. Without this, a refactor that simply
+    // DOESN'T CALL THE LISTENER would also pass the assertions above.
+    await Promise.resolve();
+    expect(microtaskSentinel).toBe(true);
+  });
+
+  it('ignores promises returned by listeners — multiple async listeners do not extend notify', async () => {
+    const bus = new DiagnosticBus();
+    let firstMicrotaskSentinel = false;
+    let secondMicrotaskSentinel = false;
+
+    bus.on('fired', () => {
+      void (async () => {
+        await Promise.resolve();
+        firstMicrotaskSentinel = true;
+      })();
+    });
+    bus.on('fired', () => {
+      void (async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+        secondMicrotaskSentinel = true;
+      })();
+    });
+
+    const cycleA = cycleEntry(NODE_A, NODE_B, NODE_C);
+    bus.notify([], [cycleA]);
+
+    // Neither microtask sentinel is set at `notify`'s return —
+    // the bus dispatched the listener bodies synchronously but did
+    // NOT await the returned promises.
+    expect(firstMicrotaskSentinel).toBe(false);
+    expect(secondMicrotaskSentinel).toBe(false);
+
+    // Drain enough microtask ticks for the deepest listener to
+    // complete — positive control that the listeners DID run.
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(firstMicrotaskSentinel).toBe(true);
+    expect(secondMicrotaskSentinel).toBe(true);
+  });
+});

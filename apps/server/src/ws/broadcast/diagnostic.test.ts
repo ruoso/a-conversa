@@ -46,7 +46,11 @@ import {
   type DiagnosticEntry,
   type CoherencyHintDiagnosticEntry,
 } from '../../diagnostics/index.js';
-import { buildDiagnosticBroadcastListener, WsDiagnosticBroadcast } from './diagnostic.js';
+import {
+  buildDiagnosticBroadcastListener,
+  WsDiagnosticBroadcast,
+  type DiagnosticBroadcastActiveContext,
+} from './diagnostic.js';
 import { WsConnectionSenderRegistry } from './connections.js';
 import { WsSubscriptionRegistry } from '../subscriptions.js';
 
@@ -443,5 +447,135 @@ describe('buildDiagnosticBroadcastListener — defensive missing-context path', 
     expect(bridge.lines[0]?.msg).toMatch(/without active session context/);
     expect(bridge.lines[0]?.ctx['status']).toBe('fired');
     expect(bridge.lines[0]?.ctx['entryKind']).toBe('cycle');
+  });
+});
+
+// -------------------------------------------------------------------
+// WsDiagnosticBroadcast — synchronous-dispatch context window (G-016).
+// -------------------------------------------------------------------
+//
+// Source finding: docs/security/m3-review/coverage.md G-016.
+// Refinement:    tasks/refinements/backend-hardening/diagnostic_sync_dispatch_pin.md
+//
+// This block pins the **current** context-window contract that
+// `WsDiagnosticBroadcast.notifyForSession` depends on. The wrapper
+// sets `#activeContext` BEFORE calling `bus.notify(...)` and clears
+// it in `finally` AFTER `notify` returns. The pattern is safe ONLY
+// while `DiagnosticBus.notify` dispatches synchronously — listeners
+// must observe the context during dispatch, and the clear must NOT
+// happen until every listener has finished.
+//
+// The bus-level half of this contract is pinned by
+// `apps/server/src/diagnostics/event-emission.test.ts`'s
+// `DiagnosticBus — synchronous-dispatch contract (G-016)` describe.
+// The wrapper-level half — that the set / fire / clear window is
+// fully contained in `notifyForSession`'s synchronous call — is
+// pinned here.
+//
+// **If a future refactor makes the bus async-aware** (e.g., adds
+// `await listener(entry)` inside `notify`'s loop, or queues dispatch
+// through `Promise.resolve()` / `queueMicrotask` / `setImmediate`),
+// the bus-level test fails first; this test then needs updating to
+// assert the NEW context-window pattern (today's single-slot mutable
+// holder won't work under interleaved async notify calls — the
+// wrapper would need an async-local store, a per-call closure, or an
+// entry-level context field). **This test IS the canonical doc of
+// the context-window shape**; updating it is the structural step
+// that surfaces the cross-cutting refactor to reviewers.
+
+describe('WsDiagnosticBroadcast — synchronous-dispatch context window (G-016)', () => {
+  it('listeners observe the active context during dispatch AND the context is cleared by the time notifyForSession returns', () => {
+    const bridge = setupBridge();
+    bridge.subscriptions.subscribe(CONN_1, SESSION_A);
+    bridge.connectionSenders.register(CONN_1, () => undefined);
+
+    // The listener captures the wrapper's active context AT FIRE TIME
+    // into an outer-scoped slot. After `notifyForSession` returns, the
+    // outer slot reveals whether the context was set during the call;
+    // a separate read of `wrapper.getActiveContext()` reveals whether
+    // it was cleared by return time. The two observations together
+    // pin the full set → fire → clear window as synchronous.
+    const captured: { duringDispatch: DiagnosticBroadcastActiveContext | undefined } = {
+      duringDispatch: undefined,
+    };
+    bridge.bus.on('fired', () => {
+      captured.duringDispatch = bridge.wrapper.getActiveContext();
+    });
+
+    bridge.wrapper.notifyForSession(SESSION_A, 42, [], [cycleEntry()]);
+
+    // Set half: the listener observed the active context during
+    // dispatch. If the bus were async (queued the listener call to a
+    // microtask), the wrapper's `finally` would have already cleared
+    // the context by the time the listener ran — `duringDispatch`
+    // would be `undefined` and this assertion would fail.
+    expect(captured.duringDispatch).toEqual({ sessionId: SESSION_A, sequence: 42 });
+
+    // Clear half: by the time `notifyForSession` returns
+    // synchronously, the `finally` block has cleared the context.
+    expect(bridge.wrapper.getActiveContext()).toBeUndefined();
+
+    // Window-is-contained half: both halves observable synchronously,
+    // immediately after `notifyForSession` returns, WITHOUT awaiting
+    // anything. A future refactor that defers either the set or the
+    // clear past the sync boundary would break this test.
+  });
+
+  it('does not extend the context window for async-returning listeners — wrapper mirrors the bus contract', async () => {
+    const bridge = setupBridge();
+    bridge.subscriptions.subscribe(CONN_1, SESSION_A);
+    bridge.connectionSenders.register(CONN_1, () => undefined);
+
+    // An async listener that captures the context twice: once
+    // synchronously (during dispatch) and once after awaiting a
+    // microtask. The bus does NOT await the returned promise (see
+    // `DiagnosticBus — synchronous-dispatch contract (G-016)`), so
+    // the wrapper's `finally` runs BEFORE the awaited microtask
+    // resolves. The post-microtask observation should be `undefined`
+    // — the context window does NOT stretch to cover the async
+    // continuation. A consumer that puts async work in a listener
+    // and depends on the context being available across it is
+    // unsupported, and this test pins that.
+    const captured: {
+      duringDispatch: DiagnosticBroadcastActiveContext | undefined;
+      afterMicrotask: DiagnosticBroadcastActiveContext | undefined;
+    } = {
+      duringDispatch: undefined,
+      afterMicrotask: undefined,
+    };
+    bridge.bus.on('fired', () => {
+      captured.duringDispatch = bridge.wrapper.getActiveContext();
+      // The async continuation is launched via an inner IIFE whose
+      // promise is explicitly discarded — the bus's listener
+      // signature is sync-returning by contract (`DiagnosticListener
+      // = (entry) => void`), and this test PINS that an async-
+      // returning listener does not stretch the wrapper's context
+      // window. Keeping the outer listener sync-returning mirrors
+      // the bus's contract and forecloses a contributor "fixing" the
+      // signature by widening it to allow promise-returning
+      // listeners (which would itself be the refactor this pin is
+      // designed to flag).
+      void (async () => {
+        await Promise.resolve();
+        captured.afterMicrotask = bridge.wrapper.getActiveContext();
+      })();
+    });
+
+    bridge.wrapper.notifyForSession(SESSION_A, 99, [], [cycleEntry()]);
+
+    // Sync half: at dispatch time, context was set.
+    expect(captured.duringDispatch).toEqual({ sessionId: SESSION_A, sequence: 99 });
+    // Immediately after `notifyForSession` returns, the wrapper has
+    // already cleared the context — the listener's awaited
+    // continuation hasn't run yet.
+    expect(bridge.wrapper.getActiveContext()).toBeUndefined();
+
+    // Drain the microtask queue so the listener's continuation runs.
+    // Positive control that the listener body actually completed,
+    // and that the post-microtask context observation is the
+    // load-bearing one — `undefined`, because the wrapper does NOT
+    // re-establish context for async continuations.
+    await Promise.resolve();
+    expect(captured.afterMicrotask).toBeUndefined();
   });
 });
