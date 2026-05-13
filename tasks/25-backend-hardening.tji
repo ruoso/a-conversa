@@ -154,6 +154,7 @@ task backend_hardening "M3-review hardening (security audit follow-ups)" {
     task ilike_topic_search_protection "Bound ILIKE-on-topic search abuse" {
       effort 0.5d
       allocate team
+      complete 100
       note "Source: docs/security/m3-review/inputs.md F-013"
       note "Refinement: tasks/refinements/backend-hardening/ilike_topic_search_protection.md"
     }

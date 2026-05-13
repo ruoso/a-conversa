@@ -214,7 +214,11 @@ import { visibilityWhereFragment } from './visibility.js';
 // `app.wsBroadcast.emit(...)` for each (the post-commit-emit
 // invariant — see tasks/refinements/backend/ws_event_broadcast.md).
 import type { Event } from '@a-conversa/shared-types';
-import { MAX_SESSION_LIST_OFFSET } from '@a-conversa/shared-types';
+import {
+  MAX_SESSION_LIST_OFFSET,
+  MAX_TOPIC_SEARCH_LENGTH,
+  MIN_TOPIC_SEARCH_LENGTH,
+} from '@a-conversa/shared-types';
 import { wsBroadcastPlugin } from '../ws/broadcast/index.js';
 
 /**
@@ -793,12 +797,24 @@ const listSessionsQuerystringSchema = {
     },
     topic: {
       type: 'string',
-      minLength: 1,
-      maxLength: 256,
+      // `MIN_TOPIC_SEARCH_LENGTH = 3`, `MAX_TOPIC_SEARCH_LENGTH = 64`
+      // — see `packages/shared-types/src/limits.ts`. Closes
+      // docs/security/m3-review/inputs.md F-013. The min-cap rejects
+      // 0/1/2-char patterns (which match nearly every row and force
+      // a full-scan worst case); the max-cap bounds the per-row ILIKE
+      // comparison cost. Distinct from `MAX_TOPIC_LENGTH=256` (the
+      // per-row stored-topic cap at session-creation) — this is the
+      // SEARCH-string cap. Over-cap or below-min requests fail with
+      // 400 `validation-failed` before any DB round-trip.
+      minLength: MIN_TOPIC_SEARCH_LENGTH,
+      maxLength: MAX_TOPIC_SEARCH_LENGTH,
       description:
         'Optional case-insensitive substring match against `topic`. Implemented via ' +
         "`topic ILIKE '%<value>%'`; full-text-search is a future task. The value is " +
-        'passed as a parameterized pattern — no user input touches the SQL text.',
+        'passed as a parameterized pattern — no user input touches the SQL text. ' +
+        'Length must be 3..64 characters — shorter patterns are not selective enough ' +
+        'to be useful and longer ones inflate per-row ILIKE cost. See ' +
+        'docs/security/m3-review/inputs.md F-013.',
     },
     limit: {
       type: 'integer',

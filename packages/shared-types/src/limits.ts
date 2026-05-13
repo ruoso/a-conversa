@@ -93,3 +93,55 @@ export const MAX_SCREEN_NAME_LENGTH = 64;
  * of parsing the query string.
  */
 export const MAX_SESSION_LIST_OFFSET = 100_000;
+
+/**
+ * `GET /sessions` `?topic` SEARCH-string upper bound.
+ *
+ * Refinement: tasks/refinements/backend-hardening/ilike_topic_search_protection.md
+ * Source finding: docs/security/m3-review/inputs.md F-013
+ *
+ * Distinct from `MAX_TOPIC_LENGTH` (the per-row stored-topic cap of
+ * 256 used at session creation). This constant caps the user-
+ * supplied SEARCH STRING used in `?topic=<value>` filter on the
+ * list-sessions surface — the value that becomes
+ * `WHERE topic ILIKE '%<value>%'` in the SQL.
+ *
+ * The list-sessions schema previously accepted `?topic` up to 256
+ * chars (mirroring the storage cap). The `sessions.topic` column
+ * has no GIN/trigram index, so every list call with a `?topic`
+ * filter triggers a sequential scan; the per-row cost scales with
+ * the pattern length (Postgres' ILIKE is roughly linear in the
+ * pattern). Capping the search-string length at 64 makes each
+ * `ILIKE '%<pattern>%'` comparison cheap; capping the row-pattern
+ * at the stored ceiling of 256 left an authenticated attacker
+ * 4x more expensive comparisons per row than necessary.
+ *
+ * 64 is generous for legitimate substring search ("climate change
+ * panel discussion 2026" is 39 chars) and tight enough that a
+ * worst-case pattern costs the same order of magnitude as a
+ * typical 8-12 char query. Over-cap requests fail at the schema
+ * layer (400 `validation-failed`) before any DB round-trip.
+ *
+ * The structural fix (a GIN/trigram index on `sessions.topic`)
+ * is deferred to a future migration; the cap is the cheap first
+ * line of defense.
+ */
+export const MAX_TOPIC_SEARCH_LENGTH = 64;
+
+/**
+ * `GET /sessions` `?topic` SEARCH-string lower bound.
+ *
+ * Refinement: tasks/refinements/backend-hardening/ilike_topic_search_protection.md
+ * Source finding: docs/security/m3-review/inputs.md F-013
+ *
+ * Very short ILIKE patterns (`'%a%'`, `'%ab%'`) match a high
+ * fraction of rows, defeating the per-row early-exit Postgres
+ * uses on long patterns and producing the worst-case behavior the
+ * cap above is trying to avoid (near-full table scan with no
+ * narrowing). A minimum of 3 characters is the same heuristic
+ * used by trigram indexes (each trigram is exactly 3 characters)
+ * and is the smallest length at which substring search starts
+ * being selective enough to be useful for the caller anyway. Below-
+ * min requests fail at the schema layer (400 `validation-failed`).
+ */
+export const MIN_TOPIC_SEARCH_LENGTH = 3;

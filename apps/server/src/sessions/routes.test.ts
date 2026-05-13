@@ -83,7 +83,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 
-import { MAX_SESSION_LIST_OFFSET } from '@a-conversa/shared-types';
+import {
+  MAX_SESSION_LIST_OFFSET,
+  MAX_TOPIC_SEARCH_LENGTH,
+  MIN_TOPIC_SEARCH_LENGTH,
+} from '@a-conversa/shared-types';
 
 import { SESSION_COOKIE_NAME, signSessionToken } from '../auth/session-token.js';
 import type { DbPool } from '../db.js';
@@ -1625,6 +1629,143 @@ describe('GET /sessions — filters and pagination', () => {
     expect(response.statusCode).toBe(400);
     const body = response.json<{ error?: { code?: string } }>();
     expect(body.error?.code).toBe('validation-failed');
+  });
+
+  // `?topic` SEARCH-string length bounds — closes
+  // docs/security/m3-review/inputs.md F-013. The pre-task schema
+  // accepted `?topic` 1..256 chars; `sessions.topic` has no GIN/
+  // trigram index, so each `?topic=` filter triggers a full
+  // sequential scan and the per-row ILIKE cost scales with the
+  // pattern length. The tightening: minimum 3 chars (below that,
+  // patterns match nearly every row and force a near-full scan
+  // worst case), maximum 64 chars (caps per-row comparison cost
+  // — distinct from the storage cap `MAX_TOPIC_LENGTH=256`).
+  // The structural fix (a `gin_trgm_ops` index on `sessions.topic`)
+  // is deferred to a future migration; the schema caps are the
+  // cheap first line of defense. Over-cap and below-min requests
+  // are rejected at the validator layer (400 `validation-failed`)
+  // before any DB round-trip.
+
+  it('returns 400 validation-failed when ?topic is empty', async () => {
+    built = await buildWithSeed({
+      users: seededUsers,
+      sessions: [SESSION_ALICE_PUB],
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'GET',
+      url: '/sessions?topic=',
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(400);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('validation-failed');
+  });
+
+  it('returns 400 validation-failed when ?topic is below the minimum length (2 chars)', async () => {
+    built = await buildWithSeed({
+      users: seededUsers,
+      sessions: [SESSION_ALICE_PUB],
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'GET',
+      url: '/sessions?topic=ab',
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(400);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('validation-failed');
+  });
+
+  it('?topic exactly at the minimum length (3 chars) is accepted', async () => {
+    built = await buildWithSeed({
+      users: seededUsers,
+      sessions: [SESSION_ALICE_PUB],
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    // `abc` is the at-min query. SESSION_ALICE_PUB's topic
+    // ('Climate is changing') doesn't contain 'abc', so the result
+    // is an empty page — but the request must succeed at the
+    // schema layer.
+    const response = await built.app.inject({
+      method: 'GET',
+      url: '/sessions?topic=abc',
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{ sessions?: unknown[]; total?: number }>();
+    expect(body.sessions).toHaveLength(0);
+    expect(body.total).toBe(0);
+  });
+
+  it('?topic exactly at the maximum length (64 chars) is accepted', async () => {
+    built = await buildWithSeed({
+      users: seededUsers,
+      sessions: [SESSION_ALICE_PUB],
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const atCap = 'a'.repeat(MAX_TOPIC_SEARCH_LENGTH);
+    const response = await built.app.inject({
+      method: 'GET',
+      url: `/sessions?topic=${atCap}`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    // At-cap is accepted at the schema layer; the seeded topic
+    // doesn't match the pattern, so the body is empty.
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{ sessions?: unknown[]; total?: number }>();
+    expect(body.sessions).toHaveLength(0);
+    expect(body.total).toBe(0);
+  });
+
+  it('returns 400 validation-failed when ?topic exceeds the 64-character cap (cap + 1)', async () => {
+    built = await buildWithSeed({
+      users: seededUsers,
+      sessions: [SESSION_ALICE_PUB],
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const overCap = 'a'.repeat(MAX_TOPIC_SEARCH_LENGTH + 1);
+    const response = await built.app.inject({
+      method: 'GET',
+      url: `/sessions?topic=${overCap}`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(400);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('validation-failed');
+  });
+
+  it('?topic=climate (typical short query) still works — regression', async () => {
+    // Regression on the typical happy path — the caps must NOT
+    // interfere with normal substring search. SESSION_ALICE_PUB's
+    // topic is 'Climate is changing'; the case-insensitive ILIKE
+    // match should land it in the response.
+    built = await buildWithSeed({
+      users: seededUsers,
+      sessions: [SESSION_ALICE_PUB],
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'GET',
+      url: '/sessions?topic=climate',
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{ sessions?: Array<{ id?: string }>; total?: number }>();
+    expect(body.sessions).toHaveLength(1);
+    expect(body.total).toBe(1);
+    expect(body.sessions?.[0]?.id).toBe(SESSION_ALICE_PUB.id);
+  });
+
+  it('cap constants from shared-types match the schema-layer expectations', () => {
+    // Pin the constants themselves so a future change to the
+    // shared-types module surfaces here too. The min and max
+    // bracket the legitimate-search-string range; the min equals 3
+    // (trigram length) and the max equals 64 (per the refinement).
+    expect(MIN_TOPIC_SEARCH_LENGTH).toBe(3);
+    expect(MAX_TOPIC_SEARCH_LENGTH).toBe(64);
+    expect(MIN_TOPIC_SEARCH_LENGTH).toBeLessThan(MAX_TOPIC_SEARCH_LENGTH);
   });
 });
 
