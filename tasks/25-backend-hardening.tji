@@ -275,30 +275,35 @@ task backend_hardening "M3-review hardening (security audit follow-ups)" {
     task host_moderator_role_note "Doc note: host == moderator conflation point + future separation contract" {
       effort 0.25d
       allocate team
+      complete 100
       note "Source: docs/security/m3-review/auth.md F-014"
       note "Refinement: tasks/refinements/backend-hardening/host_moderator_role_note.md"
     }
     task auth_callback_next_param_note "Doc note: any future ?next= param must be same-origin-validated" {
       effort 0.25d
       allocate team
+      complete 100
       note "Source: docs/security/m3-review/auth.md F-013"
       note "Refinement: tasks/refinements/backend-hardening/auth_callback_next_param_note.md"
     }
     task session_events_growth_policy_note "Doc note: session_events unbounded-growth policy + future archive trigger" {
       effort 0.25d
       allocate team
+      complete 100
       note "Source: docs/security/m3-review/inputs.md F-011"
       note "Refinement: tasks/refinements/backend-hardening/session_events_growth_policy_note.md"
     }
     task entity_inclusion_render_policy "Methodology decision: cross-session entity render policy (transitive privacy)" {
       effort 0.5d
       allocate team
+      complete 100
       note "Source: docs/security/m3-review/coverage.md G-015"
       note "Refinement: tasks/refinements/backend-hardening/entity_inclusion_render_policy.md"
     }
     task flow_state_sweep_cadence_note "Doc note: flow-state sweep cadence + the 60s timing-observation window" {
       effort 0.25d
       allocate team
+      complete 100
       note "Source: docs/security/m3-review/inputs.md F-012"
       note "Refinement: tasks/refinements/backend-hardening/flow_state_sweep_cadence_note.md"
     }

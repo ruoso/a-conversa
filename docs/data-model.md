@@ -319,3 +319,17 @@ The change history is the source of truth; the in-memory projection computes cur
 ## Surfacing operations in the UI
 
 Operations that aren't graph entities (decompositions, axiom-marks, interpretive splits, meta-moves) are reviewable through **the change history view**, which is the primary surface for past operations. Their *effects* on the graph (nodes added or removed, axiom rendering, etc.) appear on the live graph as commits happen, and replay through the timeline scrubber. The graph state itself stays simple — only nodes, edges, and their annotations — while the change-history view fills in everything else.
+
+## Event-log growth policy (v1)
+
+The `session_events` table is append-only and **NEVER pruned** in v1. Events are replay-authoritative — the projected session state is computed from the log, never from a separate "current state" table — so deletion is structurally unsafe.
+
+At projected v1 volume (a YouTube show producing a few sessions per week, each session emitting on the order of 10^2–10^3 events) storage is comfortably within a single Postgres instance. A future archival task lands when ANY of these triggers fires:
+
+1. The `session_events` table exceeds ~100 GB.
+2. Application storage cost dominates the deployment bill.
+3. A regulatory or compliance data-retention requirement appears.
+
+When the trigger fires, the archival task should dump per-session event logs to object storage (S3-shaped) once the session is `ended` AND older than N days, leaving a session-level "archived" pointer in Postgres. Replay endpoints fetch the dump on first access.
+
+See [`tasks/refinements/backend-hardening/session_events_growth_policy_note.md`](../tasks/refinements/backend-hardening/session_events_growth_policy_note.md).

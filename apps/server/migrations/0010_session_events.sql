@@ -5,6 +5,17 @@
 -- TaskJuggler: data_and_methodology.schema.session_events_table
 -- Forward-only per ADR 0020 (no down migration).
 --
+-- **Unbounded growth policy** (v1).  This table grows linearly with
+-- debate volume; events are NEVER deleted (the log is replay-
+-- authoritative).  At projected v1 volume (a YouTube show with a few
+-- sessions per week) storage is comfortably within a single Postgres
+-- instance.  A future archival task should land when ANY of these
+-- triggers fires: (1) table exceeds ~100 GB; (2) storage cost
+-- dominates the deployment bill; (3) a regulatory data-retention
+-- requirement appears.  See
+-- tasks/refinements/backend-hardening/session_events_growth_policy_note.md
+-- (closes docs/security/m3-review/inputs.md F-011).
+--
 -- This table is the **source of truth**. Every other table
 -- (`nodes`/`edges`/`annotations`, the `session_*` joins) records *what
 -- entities exist*; this table records *what happened*. The two

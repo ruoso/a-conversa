@@ -19,6 +19,16 @@
 //              docs/adr/0021-event-envelope-discriminated-union-with-zod.md,
 //              docs/adr/0022-no-throwaway-verifications.md,
 //              docs/adr/0023-web-framework-fastify.md
+//
+// **v1 role conflation: host == moderator.** Every authority check in
+// this plugin treats `host_user_id === request.authUser.id` as "is
+// moderator" and returns `not-a-moderator` for any non-host caller. The
+// data model already distinguishes `actor` from `host` on per-event
+// payloads, so the future "moderator separable from host" task can swap
+// each per-site check for a single `isModerator(session, userId)` helper
+// without touching the wire vocabulary. See
+// tasks/refinements/backend-hardening/host_moderator_role_note.md
+// (closes docs/security/m3-review/auth.md F-014).
 // TaskJuggler: backend.session_management.create_session_endpoint,
 //              backend.session_management.list_sessions_endpoint,
 //              backend.session_management.session_listing_filters,

@@ -336,6 +336,14 @@ export function getDefaultFlowStateStore(): FlowStateStore {
   // 60-second sweep cadence. Lower would burn CPU on a near-empty
   // map; higher would let expired entries linger longer (still
   // bounded — they're consumed-and-removed by `take` anyway).
+  //
+  // **Timing-observation note.** A response-time oracle on
+  // `/auth/callback?state=<expired>` can distinguish "entry was in the
+  // map, expired, lookup slower" from "entry was never in the map" —
+  // up to ~60 s after the entry's TTL fires. Low-impact leak (existence
+  // of a recent failed flow, not user identity); accepted for v1. See
+  // tasks/refinements/backend-hardening/flow_state_sweep_cadence_note.md
+  // (closes docs/security/m3-review/inputs.md F-012).
   defaultSweepTimer = setInterval(() => {
     defaultStore?.sweep();
   }, 60_000);

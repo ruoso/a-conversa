@@ -677,6 +677,15 @@ const authRoutesPluginAsync: FastifyPluginAsync<AuthRoutesOptions> = (
         // user-identifying state (the `state` value is per-flow not
         // per-user).
         reply.header('Cache-Control', 'no-store');
+        // No open-redirect surface today: `oidcConfig.appBaseUrl` is a
+        // server-side fixed value read from the environment, never
+        // user-controllable. If a future feature adds a `?next=<url>`
+        // parameter to remember where the user was trying to go, that
+        // value MUST be validated against `new URL(appBaseUrl).origin`
+        // before reaching `reply.redirect` — same-origin only, never
+        // an unvalidated pass-through. See
+        // tasks/refinements/backend-hardening/auth_callback_next_param_note.md
+        // (closes docs/security/m3-review/auth.md F-013).
         return reply.redirect(oidcConfig.appBaseUrl, 302);
       }
 

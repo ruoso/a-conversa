@@ -231,3 +231,13 @@ Methodological opportunities — visible but non-blocking. The participants may 
 - **Multiple competing warrants on one data→claim** — decompose the claim. After decomposition, each warrant attaches to a different component. Often surfaces a hidden compound structure, but if the participants don't see it that way, no requirement to act.
 - **Dangling claim** — a soft prompt; the moderator asks for support or asks whether the claim is being conceded/accepted.
 - **Coherency hints** — advisory only; no required resolution.
+
+## Cross-session inclusion
+
+A session can include entities (nodes, edges, annotations) from another session via the `entity-included` event (see `apps/server/src/sessions/routes.ts` POST /sessions/:id/include). The `canReference*` predicates gate **who can disclose**: only callers who can see the source session AND are participants of the destination session can issue the include.
+
+**Rendering policy** — included entities are rendered transitively in the destination session's snapshot with their **full content** (kind, wording, per-facet status, axiom-marks, edge roles). The trust boundary is the `canReference*` predicate at inclusion time, not a per-render visibility check.
+
+The act of inclusion is the act of disclosing the entity's content to the destination session's audience. Hosts of private sessions choose to include with full knowledge of the destination's audience. The `entity-included` event records `included_by` so the disclosure is attributable.
+
+See [`tasks/refinements/backend-hardening/entity_inclusion_render_policy.md`](../tasks/refinements/backend-hardening/entity_inclusion_render_policy.md) for the design rationale + the future "quoted reference" alternative (out of scope for v1).

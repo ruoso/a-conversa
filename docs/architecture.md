@@ -114,6 +114,7 @@ The timeline is built on the same "render at log position" primitive as the audi
 - **Do not read identity profile data.** OAuth is used purely as an authentication signal.
 - **Ask each user a screen name** during the connect flow. The screen name is the only piece of user-supplied info the platform stores.
 - **All session participants must be authenticated.** Moderator, debaters, and (for direct viewer pages) anyone joining a session in any role. The audience watching via the OBS broadcast does not authenticate against the platform — they're consuming the produced video and never touch the application.
+- **v1 role conflation: host == moderator.** The user who creates a session is the moderator, and the moderator gate is the same as the host check. The event-payload vocabulary already distinguishes `actor` from `host`, so a future task can split these roles without changing the wire format. See [`tasks/refinements/backend-hardening/host_moderator_role_note.md`](../tasks/refinements/backend-hardening/host_moderator_role_note.md).
 
 This minimizes the PII surface, keeps the open-source story clean (no proprietary identity service required), and lets participants use the platform without revealing more than they want to.
 
