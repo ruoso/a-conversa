@@ -137,6 +137,7 @@ task backend_hardening "M3-review hardening (security audit follow-ups)" {
     task flow_state_map_bound "Cap flow-state Map size to fail-fast on abuse" {
       effort 0.25d
       allocate team
+      complete 100
       note "Source: docs/security/m3-review/inputs.md F-006"
       note "Refinement: tasks/refinements/backend-hardening/flow_state_map_bound.md"
     }

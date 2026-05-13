@@ -214,6 +214,94 @@ describe('GET /auth/login', () => {
   });
 });
 
+// ============================================================
+// /auth/login — capacity-cap 503 path (M3-review inputs.md F-006)
+// ============================================================
+//
+// When the flow-state store is at its hard cap and the eager sweep at
+// the cap boundary frees no entries, `put(...)` throws
+// `FlowStateCapacityError`. The route handler maps that onto a 503
+// with code `temporarily-unavailable`. The wire message MUST NOT leak
+// the cap value (an attacker who knew the cap could calibrate the
+// flood against it). See refinement
+// `tasks/refinements/backend-hardening/flow_state_map_bound.md`.
+
+describe('GET /auth/login — capacity cap (inputs.md F-006)', () => {
+  let testApp: TestApp;
+
+  beforeEach(async () => {
+    // Build with a tiny cap so we can saturate it in two requests.
+    // The test rebuilds `buildApp` inline rather than threading the
+    // cap through every other test's TestApp setup.
+    const app = Fastify({ logger: false });
+    app.addSchema(errorEnvelopeSchema);
+    await app.register(errorHandlerPlugin);
+    const flowState = createFlowStateStore({ ttlMs: 60_000, maxEntries: 2 });
+    const { pool, users } = makeMemoryPool();
+    let stateSeq = 0;
+    const beginFlowOptions = {
+      randomState: (): string => {
+        stateSeq += 1;
+        return `cap-state-${String(stateSeq)}`;
+      },
+      randomNonce: (): string => 'nonce-cap',
+      randomPKCECodeVerifier: (): string => 'verifier-cap',
+      calculatePKCECodeChallenge: (_v: string): Promise<string> => Promise.resolve('challenge-cap'),
+      buildAuthorizationUrl: (
+        _cfg: unknown,
+        params: URLSearchParams | Record<string, string>,
+      ): URL => {
+        const sp = params instanceof URLSearchParams ? params : new URLSearchParams(params);
+        return new URL(`http://authelia:9091/auth?${sp.toString()}`);
+      },
+    } satisfies AuthRoutesOptions['beginFlowOptions'];
+    const completeFlowOptions = {
+      authorizationCodeGrant: makeAuthCodeGrantStub('alice') as never,
+    } satisfies NonNullable<AuthRoutesOptions['completeFlowOptions']>;
+    await app.register(authRoutesPlugin, {
+      oidcConfig: { ...VALID_OIDC_CONFIG },
+      oidcClient: makeStubClient(),
+      flowState,
+      pool,
+      beginFlowOptions,
+      completeFlowOptions,
+      sessionTokenSecret: 'test-session-secret',
+      cookieSecure: false,
+    });
+    await app.ready();
+    testApp = { app, flowState, users };
+  });
+
+  afterEach(async () => {
+    await testApp.app.close();
+  });
+
+  it('returns 503 + temporarily-unavailable when the cap is reached', async () => {
+    // Saturate the cap (= 2): two successful redirects fill the
+    // store.
+    const first = await testApp.app.inject({ method: 'GET', url: '/auth/login' });
+    expect(first.statusCode).toBe(302);
+    const second = await testApp.app.inject({ method: 'GET', url: '/auth/login' });
+    expect(second.statusCode).toBe(302);
+    expect(testApp.flowState.size()).toBe(2);
+    // Third call: at-cap, no expired entries, eager sweep frees
+    // nothing → 503.
+    const third = await testApp.app.inject({ method: 'GET', url: '/auth/login' });
+    expect(third.statusCode).toBe(503);
+    const body = third.json<{ error?: { code?: string; message?: string } }>();
+    expect(body.error?.code).toBe('temporarily-unavailable');
+    // The message must NOT include the cap value (= 2) or the
+    // current map size — an attacker could otherwise calibrate the
+    // flood against it. Asserting absence of any small integer in
+    // the message is a tighter check than asserting absence of `2`
+    // alone.
+    expect(body.error?.message).toBeDefined();
+    expect(body.error?.message ?? '').not.toMatch(/\b\d+\b/);
+    // The store is unchanged on rejection.
+    expect(testApp.flowState.size()).toBe(2);
+  });
+});
+
 describe('GET /auth/callback', () => {
   let test: TestApp;
   beforeEach(async () => {

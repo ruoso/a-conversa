@@ -88,7 +88,13 @@ vi.mock('openid-client', () => ({
 }));
 
 const { beginAuthFlow, completeAuthFlow, AuthStateMismatchError } = await import('./flow.js');
-const { createFlowStateStore } = await import('./flow-state.js');
+const {
+  createFlowStateStore,
+  FlowStateCapacityError,
+  FLOW_STATE_MAX_ENTRIES_ENV,
+  MAX_FLOW_STATE_ENTRIES,
+  resolveFlowStateMaxEntries,
+} = await import('./flow-state.js');
 
 // A sentinel Configuration — the flow primitives don't inspect it
 // directly; they pass it through to the openid-client mocks. Using
@@ -295,5 +301,169 @@ describe('flow-state store', () => {
     store.put('state-a', { nonce: 'new', codeVerifier: 'new-v', expiresAt: 500 });
     const taken = store.take('state-a');
     expect(taken?.nonce).toBe('new');
+  });
+});
+
+describe('flow-state capacity cap (M3-review inputs.md F-006)', () => {
+  // Per ADR 0022, the cap behaviors are pinned by committed Vitest
+  // cases — these tests ARE the verification of the cap shape, not a
+  // throwaway probe.
+
+  it('exports MAX_FLOW_STATE_ENTRIES = 1000 (the production default)', () => {
+    expect(MAX_FLOW_STATE_ENTRIES).toBe(1000);
+  });
+
+  it('exports FLOW_STATE_MAX_ENTRIES_ENV = "FLOW_STATE_MAX_ENTRIES"', () => {
+    expect(FLOW_STATE_MAX_ENTRIES_ENV).toBe('FLOW_STATE_MAX_ENTRIES');
+  });
+
+  it('accepts entries up to the cap (cap=3 → first three puts succeed)', () => {
+    const store = createFlowStateStore({ now: () => 1000, maxEntries: 3 });
+    store.put('a', { nonce: 'n', codeVerifier: 'v', expiresAt: 999_999 });
+    store.put('b', { nonce: 'n', codeVerifier: 'v', expiresAt: 999_999 });
+    store.put('c', { nonce: 'n', codeVerifier: 'v', expiresAt: 999_999 });
+    expect(store.size()).toBe(3);
+  });
+
+  it('throws FlowStateCapacityError when at the cap and no entries are expired', () => {
+    const store = createFlowStateStore({ now: () => 1000, maxEntries: 3 });
+    store.put('a', { nonce: 'n', codeVerifier: 'v', expiresAt: 999_999 });
+    store.put('b', { nonce: 'n', codeVerifier: 'v', expiresAt: 999_999 });
+    store.put('c', { nonce: 'n', codeVerifier: 'v', expiresAt: 999_999 });
+    expect(() => store.put('d', { nonce: 'n', codeVerifier: 'v', expiresAt: 999_999 })).toThrow(
+      FlowStateCapacityError,
+    );
+    // The store is unchanged on rejection — `d` was never inserted
+    // and the existing entries are intact.
+    expect(store.size()).toBe(3);
+  });
+
+  it('the thrown error message does NOT leak the cap value or the current size', () => {
+    const store = createFlowStateStore({ now: () => 1000, maxEntries: 3 });
+    store.put('a', { nonce: 'n', codeVerifier: 'v', expiresAt: 999_999 });
+    store.put('b', { nonce: 'n', codeVerifier: 'v', expiresAt: 999_999 });
+    store.put('c', { nonce: 'n', codeVerifier: 'v', expiresAt: 999_999 });
+    try {
+      store.put('d', { nonce: 'n', codeVerifier: 'v', expiresAt: 999_999 });
+      throw new Error('expected FlowStateCapacityError');
+    } catch (err) {
+      expect(err).toBeInstanceOf(FlowStateCapacityError);
+      const message = (err as Error).message;
+      // Neither the cap value nor the current size should appear.
+      expect(message).not.toMatch(/\b3\b/);
+      // And a future `JSON.stringify(err)` should not carry a cap.
+      const serialized = JSON.stringify(err, Object.getOwnPropertyNames(err));
+      expect(serialized).not.toMatch(/\b3\b/);
+    }
+  });
+
+  it('eager-sweeps expired entries at the cap boundary, then accepts the new entry', () => {
+    let clock = 1000;
+    const store = createFlowStateStore({ now: () => clock, maxEntries: 3 });
+    // Two of these three expire at 2000; the third lives to 999_999.
+    store.put('expired-1', { nonce: 'n', codeVerifier: 'v', expiresAt: 2000 });
+    store.put('fresh-1', { nonce: 'n', codeVerifier: 'v', expiresAt: 999_999 });
+    store.put('expired-2', { nonce: 'n', codeVerifier: 'v', expiresAt: 2000 });
+    expect(store.size()).toBe(3);
+    // Advance past the expired entries' TTL but stay within the
+    // 60-second background sweep window — the eager sweep on `put`
+    // should clear them.
+    clock = 5000;
+    // The new put should succeed: at-cap → eager sweep clears 2 →
+    // size drops to 1 → insert lands → size goes back to 2.
+    store.put('new-1', { nonce: 'n', codeVerifier: 'v', expiresAt: 999_999 });
+    expect(store.size()).toBe(2);
+    expect(store.take('fresh-1')).toBeDefined();
+    expect(store.take('new-1')).toBeDefined();
+  });
+
+  it('does NOT eager-sweep below the cap (cheap path stays cheap)', () => {
+    // Below the cap, `put` must not walk the map. We verify this by
+    // observing that an unexpired entry's `take` still succeeds even
+    // when the clock has advanced past *another* (unrelated, still
+    // unexpired) entry would notionally be swept — i.e. nothing is
+    // touched.
+    let clock = 1000;
+    const store = createFlowStateStore({ now: () => clock, maxEntries: 10 });
+    store.put('a', { nonce: 'n', codeVerifier: 'v', expiresAt: 1500 });
+    expect(store.size()).toBe(1);
+    clock = 2000;
+    // Adding a second entry. `a` is now expired but we expect it to
+    // remain in the map because the cap (10) was not reached and the
+    // cheap path takes no sweep.
+    store.put('b', { nonce: 'n', codeVerifier: 'v', expiresAt: 999_999 });
+    expect(store.size()).toBe(2); // both entries still present.
+    // `take('a')` lazily removes the expired entry — that's the
+    // documented per-entry GC path, separate from the cap-driven
+    // sweep.
+    expect(store.take('a')).toBeUndefined();
+    expect(store.size()).toBe(1);
+  });
+
+  it('overwriting an existing state never trips the cap', () => {
+    const store = createFlowStateStore({ now: () => 1000, maxEntries: 3 });
+    store.put('a', { nonce: 'old', codeVerifier: 'old', expiresAt: 999_999 });
+    store.put('b', { nonce: 'n', codeVerifier: 'v', expiresAt: 999_999 });
+    store.put('c', { nonce: 'n', codeVerifier: 'v', expiresAt: 999_999 });
+    expect(store.size()).toBe(3);
+    // At the cap. Overwriting 'a' (an existing state) must still
+    // succeed — the cap check is gated on `!map.has(state)`, so this
+    // path doesn't grow the map.
+    store.put('a', { nonce: 'new', codeVerifier: 'new', expiresAt: 999_999 });
+    expect(store.size()).toBe(3);
+    expect(store.take('a')?.nonce).toBe('new');
+  });
+});
+
+describe('resolveFlowStateMaxEntries', () => {
+  it('returns MAX_FLOW_STATE_ENTRIES (1000) when FLOW_STATE_MAX_ENTRIES is unset', () => {
+    expect(resolveFlowStateMaxEntries({})).toBe(MAX_FLOW_STATE_ENTRIES);
+  });
+
+  it('returns the default when FLOW_STATE_MAX_ENTRIES is empty', () => {
+    expect(resolveFlowStateMaxEntries({ FLOW_STATE_MAX_ENTRIES: '' })).toBe(MAX_FLOW_STATE_ENTRIES);
+  });
+
+  it('returns the default when FLOW_STATE_MAX_ENTRIES is not a number', () => {
+    expect(resolveFlowStateMaxEntries({ FLOW_STATE_MAX_ENTRIES: 'not-a-number' })).toBe(
+      MAX_FLOW_STATE_ENTRIES,
+    );
+  });
+
+  it('returns the default when FLOW_STATE_MAX_ENTRIES is zero', () => {
+    expect(resolveFlowStateMaxEntries({ FLOW_STATE_MAX_ENTRIES: '0' })).toBe(
+      MAX_FLOW_STATE_ENTRIES,
+    );
+  });
+
+  it('returns the default when FLOW_STATE_MAX_ENTRIES is negative', () => {
+    expect(resolveFlowStateMaxEntries({ FLOW_STATE_MAX_ENTRIES: '-5' })).toBe(
+      MAX_FLOW_STATE_ENTRIES,
+    );
+  });
+
+  it('returns the parsed value when FLOW_STATE_MAX_ENTRIES is a positive integer', () => {
+    expect(resolveFlowStateMaxEntries({ FLOW_STATE_MAX_ENTRIES: '500' })).toBe(500);
+  });
+
+  it('is wired by createFlowStateStore via process.env when no maxEntries option is passed', () => {
+    const prior = process.env['FLOW_STATE_MAX_ENTRIES'];
+    process.env['FLOW_STATE_MAX_ENTRIES'] = '5';
+    try {
+      const store = createFlowStateStore({ now: () => 1000 });
+      for (let i = 0; i < 5; i++) {
+        store.put(`k-${String(i)}`, { nonce: 'n', codeVerifier: 'v', expiresAt: 999_999 });
+      }
+      expect(store.size()).toBe(5);
+      expect(() =>
+        store.put('overflow', { nonce: 'n', codeVerifier: 'v', expiresAt: 999_999 }),
+      ).toThrow(FlowStateCapacityError);
+    } finally {
+      if (prior === undefined) {
+        delete process.env['FLOW_STATE_MAX_ENTRIES'];
+      } else {
+        process.env['FLOW_STATE_MAX_ENTRIES'] = prior;
+      }
+    }
   });
 });

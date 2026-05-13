@@ -71,6 +71,7 @@ import {
 import {
   computeExpiresAt,
   createFlowStateStore,
+  FlowStateCapacityError,
   getDefaultFlowStateStore,
   type FlowStateStore,
 } from './flow-state.js';
@@ -527,11 +528,32 @@ const authRoutesPluginAsync: FastifyPluginAsync<AuthRoutesOptions> = (
       );
       const computeOpts: { now?: () => number } = {};
       if (opts.now !== undefined) computeOpts.now = opts.now;
-      flowState.put(state, {
-        nonce,
-        codeVerifier,
-        expiresAt: computeExpiresAt(computeOpts),
-      });
+      try {
+        flowState.put(state, {
+          nonce,
+          codeVerifier,
+          expiresAt: computeExpiresAt(computeOpts),
+        });
+      } catch (err) {
+        // M3-review F-006: the flow-state map is capped at
+        // `MAX_FLOW_STATE_ENTRIES` (env-overridable via
+        // `FLOW_STATE_MAX_ENTRIES`); when full *and* an eager sweep
+        // could not free space, `put(...)` throws the typed
+        // `FlowStateCapacityError`. Surface as a 503 with code
+        // `temporarily-unavailable`. The message intentionally does
+        // NOT include the cap value or the current map size — an
+        // attacker who knew the cap could calibrate a flood against
+        // it. See refinement
+        // `tasks/refinements/backend-hardening/flow_state_map_bound.md`.
+        if (err instanceof FlowStateCapacityError) {
+          throw new ApiError(
+            503,
+            'temporarily-unavailable',
+            'service is temporarily unable to start a new auth flow; please retry shortly',
+          );
+        }
+        throw err;
+      }
       return reply.redirect(url.toString(), 302);
     },
   );
