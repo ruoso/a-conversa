@@ -1,20 +1,75 @@
-// Placeholder login route.
+// Login route for the moderator console.
 //
-// Real auth flow (Authelia redirect, token capture, in-memory session
-// token storage) lands with `moderator_ui.mod_shell.mod_auth_flow`.
-// This skeleton renders a localized string from the canonical catalog
-// (`chrome.hello` — the example key from `i18n_catalog_workflow`) so
-// the route + i18n chain is exercisable end-to-end.
+// Refinement: tasks/refinements/moderator-ui/mod_auth_flow.md
+// ADRs:        docs/adr/0002-auth-self-hosted-oidc-authelia.md
+// TaskJuggler: moderator_ui.mod_shell.mod_auth_flow
+//
+// Renders one of four states off `useAuth()`:
+//
+//   - `loading`            → "Checking session…" placeholder.
+//   - `unauthenticated`    → a "Sign in with SSO" anchor that
+//                            navigates to `/auth/login` (full-page
+//                            navigation; the OIDC dance is cross-origin
+//                            so `fetch` cannot follow the 302).
+//   - `needs-screen-name`  → `<Navigate to="/screen-name" replace />`.
+//   - `authenticated`      → a welcome banner with the user's screen
+//                            name plus a logout button.
+//
+// `mod_state_management` will replace `useAuth()`'s internals with a
+// Zustand subscription; the call-site code below does not change.
 
 import type { ReactElement } from 'react';
+import { Navigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+
+import { useAuth } from '../auth/useAuth';
 
 export function LoginRoute(): ReactElement {
   const { t } = useTranslation();
+  const auth = useAuth();
+
+  if (auth.status === 'loading') {
+    return (
+      <main data-testid="route-login">
+        <h1 data-testid="route-title">{t('auth.login.title')}</h1>
+        <p data-testid="auth-checking">{t('auth.login.checking')}</p>
+      </main>
+    );
+  }
+
+  if (auth.status === 'needs-screen-name') {
+    return <Navigate to="/screen-name" replace />;
+  }
+
+  if (auth.status === 'authenticated' && auth.user !== undefined) {
+    return (
+      <main data-testid="route-login">
+        <h1 data-testid="route-title">{t('auth.login.title')}</h1>
+        <p data-testid="auth-welcome">{t('auth.login.welcome', { name: auth.user.screenName })}</p>
+        <button
+          type="button"
+          data-testid="auth-logout-button"
+          onClick={() => {
+            void auth.logout();
+          }}
+        >
+          {t('auth.login.logout')}
+        </button>
+      </main>
+    );
+  }
+
+  // Default branch: unauthenticated (or an unexpected status — fall
+  // back to the login affordance rather than rendering a blank screen).
+  // An `<a>` element triggers a full-page navigation, which is what the
+  // OIDC handshake needs (Authelia is a foreign origin; `fetch` can't
+  // follow the redirect into it).
   return (
     <main data-testid="route-login">
-      <h1 data-testid="route-title">Login</h1>
-      <p data-testid="i18n-hello">{t('chrome.hello')}</p>
+      <h1 data-testid="route-title">{t('auth.login.title')}</h1>
+      <a href="/auth/login" data-testid="auth-login-button" role="button">
+        {t('auth.login.button')}
+      </a>
     </main>
   );
 }

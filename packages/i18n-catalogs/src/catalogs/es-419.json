@@ -2,6 +2,28 @@
   "chrome": {
     "hello": "hola, mundo"
   },
+  "auth": {
+    "login": {
+      "title": "Iniciar sesión",
+      "button": "Iniciar sesión con SSO",
+      "checking": "Verificando sesión…",
+      "welcome": "Bienvenida(o), {name}",
+      "logout": "Cerrar sesión"
+    },
+    "screenName": {
+      "title": "Elige tu nombre de pantalla",
+      "label": "Nombre de pantalla",
+      "submit": "Continuar",
+      "errors": {
+        "empty": "Por favor, ingresa un nombre de pantalla.",
+        "whitespaceOnly": "El nombre no puede contener solo espacios.",
+        "tooLong": "El nombre debe tener como máximo 64 caracteres.",
+        "alreadySet": "Esta cuenta ya tiene un nombre de pantalla.",
+        "pendingCookieInvalid": "Tu inicio de sesión expiró. Vuelve a iniciar sesión.",
+        "generic": "No se pudo guardar tu nombre. Inténtalo de nuevo."
+      }
+    }
+  },
   "methodology": {
     "kind": {
       "fact": "Hecho",

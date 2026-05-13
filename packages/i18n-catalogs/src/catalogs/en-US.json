@@ -2,6 +2,28 @@
   "chrome": {
     "hello": "hello, world"
   },
+  "auth": {
+    "login": {
+      "title": "Sign in",
+      "button": "Sign in with SSO",
+      "checking": "Checking session…",
+      "welcome": "Welcome, {name}",
+      "logout": "Sign out"
+    },
+    "screenName": {
+      "title": "Choose your display name",
+      "label": "Display name",
+      "submit": "Continue",
+      "errors": {
+        "empty": "Please enter a display name.",
+        "whitespaceOnly": "Display name cannot be only whitespace.",
+        "tooLong": "Display name must be at most 64 characters.",
+        "alreadySet": "This account already has a display name.",
+        "pendingCookieInvalid": "Your sign-in expired. Please sign in again.",
+        "generic": "Could not save your display name. Please try again."
+      }
+    }
+  },
   "methodology": {
     "kind": {
       "fact": "Fact",

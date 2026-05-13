@@ -46,7 +46,9 @@ task moderator_ui "Moderator UI" {
     task mod_auth_flow "Login / OAuth callback handling on the client" {
       effort 1d
       allocate team
+      complete 100
       depends !mod_app_skeleton, backend.auth.session_token_management
+      note "Refinement: tasks/refinements/moderator-ui/mod_auth_flow.md"
     }
     task mod_screen_name_setup "First-login screen-name capture" {
       effort 0.5d
