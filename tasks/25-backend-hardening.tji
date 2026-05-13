@@ -233,6 +233,7 @@ task backend_hardening "M3-review hardening (security audit follow-ups)" {
     task pending_cookie_clock_skew_pin "Test: pending-cookie behavior under server clock skew" {
       effort 0.25d
       allocate team
+      complete 100
       note "Source: docs/security/m3-review/coverage.md G-011"
       note "Refinement: tasks/refinements/backend-hardening/pending_cookie_clock_skew_pin.md"
     }
