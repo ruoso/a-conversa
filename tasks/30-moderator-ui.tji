@@ -26,6 +26,7 @@ task moderator_ui "Moderator UI" {
     task mod_app_skeleton "App skeleton (routing, entry point, build config)" {
       effort 1d
       allocate team
+      complete 100
       depends frontend_i18n.i18n_catalog_workflow
       note "Refinement: tasks/refinements/moderator-ui/mod_app_skeleton.md"
     }

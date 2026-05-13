@@ -16,6 +16,7 @@
     "scripts/**/*.tsx",
     "apps/server/scripts/**/*.ts",
     "packages/i18n-catalogs/scripts/**/*.ts",
+    "apps/*/vite.config.ts",
     "vitest.config.ts",
     "playwright.config.ts"
   ]

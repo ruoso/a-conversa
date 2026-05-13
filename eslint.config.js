@@ -45,6 +45,14 @@ export default tseslint.config(
   // dedicated tests/tsconfig.json that picks up @types/node, vitest, etc.
   {
     files: ['apps/**/*.{ts,tsx}', 'packages/**/*.{ts,tsx}', 'tests/**/*.ts'],
+    // Per-app bundler configs (`vite.config.ts`) live at the app root,
+    // outside the per-workspace `tsconfig.json` `include` (which scopes
+    // to `src/` for the React apps). They are typechecked by
+    // `tsconfig.tools.json` via the root `pnpm typecheck:tools` step,
+    // not by the app's `tsc -b`. The next config block puts them on the
+    // non-type-checked lint tier so projectService doesn't fail to find
+    // them in any workspace project.
+    ignores: ['apps/*/vite.config.ts'],
     extends: [js.configs.recommended, ...tseslint.configs.recommendedTypeChecked],
     languageOptions: {
       parserOptions: {
@@ -79,6 +87,19 @@ export default tseslint.config(
       globals: {
         ...globals.node,
         ...globals.browser,
+      },
+    },
+  },
+  // Per-app bundler configs (`apps/*/vite.config.ts`). Same shape as
+  // `scripts/`: typechecked by `tsconfig.tools.json` (which includes
+  // `apps/*/vite.config.ts`), linted on the non-type-checked tier so
+  // projectService doesn't need to locate them in a workspace project.
+  {
+    files: ['apps/*/vite.config.ts'],
+    extends: [js.configs.recommended, ...tseslint.configs.recommended],
+    languageOptions: {
+      globals: {
+        ...globals.node,
       },
     },
   },
