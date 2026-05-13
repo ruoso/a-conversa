@@ -18,7 +18,9 @@
 //     `reply.badRequest()`, etc.); the error handler below recognises
 //     and passes these through with the canonical envelope.
 //   - `@fastify/cors` — permissive in dev (`origin: true`); production
-//     tightening lives with `deployment.prod_container`.
+//     locks the allowlist down to `APP_BASE_URL`'s origin (plus an
+//     optional `CORS_ORIGIN_ALLOWLIST` for staging multi-origin shapes).
+//     Refinement: tasks/refinements/backend-hardening/prod_cors_lockdown.md.
 //   - `errorHandlerPlugin` — centralized `setErrorHandler` +
 //     `setNotFoundHandler`, serialising every error response under the
 //     canonical `{ error: { code, message, ...detail } }` envelope.
@@ -78,6 +80,122 @@ import {
  * pino under Vitest / Cucumber.
  */
 export type CreateServerOptions = FastifyServerOptions;
+
+/**
+ * Subset of `process.env` that `resolveCorsOptions` consumes. Typed
+ * so callers can pass `process.env` directly without an `as any`
+ * cast (per the same pattern as `LoggerEnv` in `logger.ts`).
+ *
+ * Three keys participate:
+ *
+ *   - `NODE_ENV` — the mode discriminator. `'production'` selects
+ *     the strict allowlist; anything else (`'development'`, `'test'`,
+ *     unset, `'ci'`, ...) keeps the open `origin: true` dev default.
+ *   - `APP_BASE_URL` — the public-facing base URL. The origin
+ *     (`new URL(APP_BASE_URL).origin`) is the canonical allowed
+ *     origin in production. When `NODE_ENV === 'production'` and
+ *     `APP_BASE_URL` is missing/malformed, `resolveCorsOptions`
+ *     throws — a production server with no `APP_BASE_URL` cannot
+ *     decide what origins to accept, and failing fast at boot is
+ *     safer than silently shipping an open CORS policy.
+ *   - `CORS_ORIGIN_ALLOWLIST` — optional comma-separated list of
+ *     additional origins to allow in production (staging shapes,
+ *     preview deployments on bespoke subdomains, etc.). Each entry
+ *     is parsed through `new URL(...).origin` to normalize (so
+ *     trailing-slash variants don't slip through as distinct
+ *     allowlist entries). Malformed entries cause `resolveCorsOptions`
+ *     to throw — same fail-fast posture as `APP_BASE_URL`.
+ */
+export interface CorsEnv {
+  readonly NODE_ENV?: string | undefined;
+  readonly APP_BASE_URL?: string | undefined;
+  readonly CORS_ORIGIN_ALLOWLIST?: string | undefined;
+}
+
+/**
+ * The shape we hand `@fastify/cors`. Narrow enough to commit-pin: the
+ * `origin` field is either `true` (reflect any) or a concrete array
+ * of allowed origins; `credentials` is always `true` (the session
+ * cookie path depends on it). `@fastify/cors`'s upstream type allows
+ * `boolean | string | RegExp | ...` — the narrower local type makes
+ * the dev-vs-prod boundary visible in the function signature.
+ */
+export type ResolvedCorsOptions =
+  | { readonly origin: true; readonly credentials: true }
+  | { readonly origin: string[]; readonly credentials: true };
+
+/**
+ * Closes `docs/security/m3-review/auth.md` F-003 — production CORS
+ * is no longer a wildcard reflection with cookies. The function
+ * returns the options object `@fastify/cors` is registered with.
+ *
+ * **Dev / test default**: `{ origin: true, credentials: true }`.
+ * Reflects any inbound `Origin`. Needed because local development
+ * runs at `http://localhost:3000` (the server) but the frontend dev
+ * server (Vite) defaults to `http://localhost:5173` and the browser
+ * treats `localhost` vs `127.0.0.1` as cross-origin; preview /
+ * Storybook ports also vary per developer. The dev story is not the
+ * threat model — what matters is locking the production surface.
+ *
+ * **Production allowlist**: `{ origin: [<APP_BASE_URL.origin>, ...
+ * CORS_ORIGIN_ALLOWLIST], credentials: true }`. Only the exact
+ * origins listed are echoed back in `Access-Control-Allow-Origin`;
+ * cross-origin browser fetches with `withCredentials` from any other
+ * origin produce no `Access-Control-Allow-Origin` header and the
+ * browser refuses the response. `credentials: true` stays on because
+ * the session cookie is what makes the same-origin frontend work.
+ *
+ * The function deliberately validates `APP_BASE_URL` via `new URL(...)`
+ * rather than reaching into `loadOidcConfig` — the CORS policy is
+ * not OIDC-conditional. A deployment with no OIDC env vars but a
+ * set `APP_BASE_URL` still needs CORS resolved against that base URL.
+ *
+ * @param env - subset of `process.env`. Pass `process.env` in the
+ *              bootstrap; tests pass a bespoke record.
+ * @returns the validated options object to pass to `app.register(cors, ...)`.
+ * @throws `Error` when `NODE_ENV === 'production'` and `APP_BASE_URL`
+ *         is missing / malformed, or when a `CORS_ORIGIN_ALLOWLIST`
+ *         entry is malformed. Fail-fast at boot beats silent wildcard.
+ */
+export function resolveCorsOptions(env: CorsEnv): ResolvedCorsOptions {
+  if (env.NODE_ENV !== 'production') {
+    return { origin: true, credentials: true };
+  }
+  const appBaseUrl = env.APP_BASE_URL;
+  if (typeof appBaseUrl !== 'string' || appBaseUrl.length === 0) {
+    throw new Error(
+      'CORS lockdown: APP_BASE_URL must be set in production (NODE_ENV=production); refusing to register a wildcard CORS allowlist.',
+    );
+  }
+  let baseOrigin: string;
+  try {
+    baseOrigin = new URL(appBaseUrl).origin;
+  } catch {
+    throw new Error(
+      `CORS lockdown: APP_BASE_URL is not a valid URL ("${appBaseUrl}"); refusing to register a wildcard CORS allowlist.`,
+    );
+  }
+  const origins: string[] = [baseOrigin];
+  const rawAllowlist = env.CORS_ORIGIN_ALLOWLIST;
+  if (typeof rawAllowlist === 'string' && rawAllowlist.length > 0) {
+    for (const entry of rawAllowlist.split(',')) {
+      const trimmed = entry.trim();
+      if (trimmed.length === 0) continue;
+      let parsed: string;
+      try {
+        parsed = new URL(trimmed).origin;
+      } catch {
+        throw new Error(
+          `CORS lockdown: CORS_ORIGIN_ALLOWLIST entry "${trimmed}" is not a valid URL.`,
+        );
+      }
+      if (!origins.includes(parsed)) {
+        origins.push(parsed);
+      }
+    }
+  }
+  return { origin: origins, credentials: true };
+}
 
 /**
  * Build a configured `FastifyInstance`. Does NOT call `.listen(...)` —
@@ -150,15 +268,16 @@ export async function createServer(options: CreateServerOptions = {}): Promise<F
   // early means any subsequent plugin can use the helpers.
   await app.register(sensible);
 
-  // Permissive CORS for dev / compose; production locks this down via
-  // `deployment.prod_container`. `origin: true` reflects the request
-  // origin, which is appropriate for a same-origin dev story plus
-  // localhost-vs-127.0.0.1 cross-talk that the browser treats as
-  // cross-origin.
-  await app.register(cors, {
-    origin: true,
-    credentials: true,
-  });
+  // CORS — dev keeps `origin: true` (reflect any) so localhost dev
+  // with arbitrary preview origins and the `localhost` vs `127.0.0.1`
+  // cross-talk both work without per-developer env tweaks. Production
+  // narrows the allowlist to `APP_BASE_URL`'s origin (plus any
+  // `CORS_ORIGIN_ALLOWLIST` extras) so a malicious cross-origin site
+  // cannot cause the browser to send `Access-Control-Allow-Origin:
+  // <attacker>` back with `credentials: true`. Closes
+  // `docs/security/m3-review/auth.md` F-003. Refinement:
+  // tasks/refinements/backend-hardening/prod_cors_lockdown.md.
+  await app.register(cors, resolveCorsOptions(process.env));
 
   // Centralized error handling + 404 — wires `setErrorHandler` and
   // `setNotFoundHandler` on the root scope (via `fastify-plugin`'s
