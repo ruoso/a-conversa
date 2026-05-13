@@ -5,5 +5,11 @@
   "type": "module",
   "scripts": {
     "build": "echo 'no build yet (placeholder; bundler wiring lands with frontend tasks)'"
+  },
+  "dependencies": {
+    "@a-conversa/i18n-catalogs": "workspace:*",
+    "i18next": "26.1.0",
+    "i18next-icu": "2.4.3",
+    "react-i18next": "17.0.7"
   }
 }

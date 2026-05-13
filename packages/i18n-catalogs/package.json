@@ -1,0 +1,33 @@
+{
+  "name": "@a-conversa/i18n-catalogs",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./config": {
+      "source": "./src/config.ts",
+      "types": "./dist/config.d.ts",
+      "default": "./dist/config.js"
+    },
+    "./en-US.json": "./src/catalogs/en-US.json",
+    "./pt-BR.json": "./src/catalogs/pt-BR.json",
+    "./es-419.json": "./src/catalogs/es-419.json"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "check": "tsx scripts/check-parity.ts"
+  },
+  "dependencies": {
+    "i18next": "26.1.0",
+    "i18next-icu": "2.4.3",
+    "intl-messageformat": "11.2.5",
+    "react-i18next": "17.0.7"
+  }
+}

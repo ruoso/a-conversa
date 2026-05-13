@@ -11,5 +11,8 @@
     "noEmit": false
   },
   "include": ["src"],
-  "references": [{ "path": "../../packages/shared-types" }]
+  "references": [
+    { "path": "../../packages/shared-types" },
+    { "path": "../../packages/i18n-catalogs" }
+  ]
 }

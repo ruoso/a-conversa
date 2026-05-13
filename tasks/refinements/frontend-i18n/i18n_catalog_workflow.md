@@ -50,5 +50,19 @@ Every UI task that renders translatable text needs a place to put its strings. T
 ## Open questions
 
 - **External translator workflow.** If/when external translators are engaged, do they get repo write access (PRs against `packages/i18n-catalogs/`) or do we adopt Crowdin / Lokalise / Weblate? Deferred to v1.x.
-- **Namespacing split-by-file vs. single nested object.** The acceptance criteria above accept either; revisit on first content load (`i18n_methodology_glossary`) when the actual structure becomes visible.
+- **Namespacing split-by-file vs. single nested object.** The acceptance criteria above accept either; revisit on first content load (`i18n_methodology_glossary`) when the actual structure becomes visible. **As implemented**: single nested object per locale (`{ chrome: {...}, methodology: {...}, diagnostics: {...}, errors: {...} }`), shipped under i18next's `translation` namespace; `t('chrome.hello')` resolves through dotted-key lookup. Per-file split deferred until catalog volume justifies it.
 - **CI integration.** The parity-check script lands here; the CI job that runs it lands either as a sub-task of `i18n_testing` or as an amendment to an existing `ci_*` task. Resolve in `i18n_testing`.
+
+## Status
+
+**Done** — 2026-05-11. Landed as:
+
+- New workspace [`packages/i18n-catalogs/`](../../../packages/i18n-catalogs/) registered in [`pnpm-workspace.yaml`](../../../pnpm-workspace.yaml) (via the existing `packages/*` glob) and in the root [`tsconfig.json`](../../../tsconfig.json) `references` list.
+- Three locale catalogs in `packages/i18n-catalogs/src/catalogs/`: `en-US.json`, `pt-BR.json`, `es-419.json`. Each ships the four-namespace skeleton (`chrome` / `methodology` / `diagnostics` / `errors`) and the acceptance-criteria example key `chrome.hello` (en-US: `"hello, world"`, pt-BR: `"olá, mundo"`, es-419: `"hola, mundo"`).
+- `packages/i18n-catalogs/src/config.ts` — canonical `i18next.init` options (`buildInitOptions(locale)`), the supported-locale union (`SUPPORTED_LOCALES`), the namespace union (`NAMESPACES`), and the fallback chain (`FALLBACK_LNG`). Re-exported from `src/index.ts`.
+- `packages/i18n-catalogs/scripts/check-parity.ts` — bidirectional parity check (en-US ↔ pt-BR, en-US ↔ es-419). Runs via `pnpm --filter @a-conversa/i18n-catalogs run check`; exits non-zero on missing or extra keys. CI wiring deferred to `i18n_testing` per the Open question.
+- `packages/i18n-catalogs/README.md` — contributor docs (consuming pattern, adding a string, fallback chain, namespacing rationale, translator workflow note).
+- Per-app integration: each of `apps/moderator`, `apps/participant`, `apps/audience` lists `@a-conversa/i18n-catalogs` (workspace) plus the three pinned runtime libs (`i18next@26.1.0`, `i18next-icu@2.4.3`, `react-i18next@17.0.7`) under `dependencies`, references the package in `tsconfig.json`, and provides an `src/i18n.ts` bootstrap exporting `initI18n(locale)` that mounts the ICU plugin + `initReactI18next` and calls `i18next.init(buildInitOptions(locale))`. The per-app `main.tsx` (created by `mod_app_skeleton` / `part_app_skeleton` / `aud_app_skeleton`) calls `initI18n` before mounting the React root.
+- Vitest unit coverage: `packages/i18n-catalogs/src/config.test.ts` — 15 cases covering supported-locale order, namespace list, fallback-chain entries, `buildResources` / `buildInitOptions` shape, the acceptance-criteria `t('chrome.hello')` round-trip in all three locales, and a fallback-chain round-trip (pt-BR caller, en-US-only key → returns en-US value). Wired into the smoke pass via the existing `vitest run tests/smoke packages apps` glob.
+- `complete 100` marker added in [`tasks/35-frontend-i18n.tji`](../../35-frontend-i18n.tji); `tj3 project.tjp 2>&1 | grep -iE "error|fatal"` silent.
+- `pnpm install`, `pnpm run check`, and `pnpm run test:smoke` (1033 tests, +15 new) all green.

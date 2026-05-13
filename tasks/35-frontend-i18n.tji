@@ -24,6 +24,7 @@ task frontend_i18n "Frontend internationalization" {
   task i18n_catalog_workflow "Catalog workspace + per-app integration" {
     effort 1d
     allocate team
+    complete 100
     depends !i18n_library_choice
     note "Creates packages/i18n-catalogs/ with en-US.json / pt-BR.json / es-419.json"
     note "Refinement: tasks/refinements/frontend-i18n/i18n_catalog_workflow.md"
