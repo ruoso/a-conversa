@@ -579,6 +579,81 @@ describe('ws_propose_message — handler integration', () => {
     }
   });
 
+  it('SECURITY: ignores any client-supplied `proposerId` / `actor` field on the payload — proposer identity comes from the authenticated connection', async () => {
+    // Pins the actor-spoof-rejected invariant for the WS `propose`
+    // handler. The vote / commit / mark-meta-disagreement handlers
+    // already pin this in their respective `*.test.ts` files; this is
+    // the propose parity case (`docs/security/m3-review/coverage.md`
+    // G-007).
+    //
+    // The wire schema `wsProposePayloadSchema` is a closed `z.object`
+    // — Zod's default behavior strips unknown keys at parse time, so
+    // the extra `proposerId` / `actor` field never makes it past
+    // `parseWsEnvelope`. Even if a future refactor loosened the
+    // schema, the handler at `propose.ts:280` reads
+    // `connection.user.id` for the action's `actor` and never
+    // consults the payload for identity. Both layers together
+    // guarantee the appended event's `actor` is `FIXTURE_USER_ID`,
+    // regardless of any client-supplied spoof attempt.
+    const cookie = await fixtureCookieHeader();
+    const { ws, next } = await openWsClient(app, cookie);
+    try {
+      await next(); // hello
+
+      ws.send(subscribeFrame(SUB_MSG_ID, VISIBLE_SESSION_ID));
+      const subAck = JSON.parse(await next()) as { type?: unknown };
+      expect(subAck.type).toBe('subscribed');
+
+      // Build a propose envelope with EXTRA spoof fields on the
+      // payload: `proposerId`, `actor`, `requester` — every name a
+      // future attacker might guess. `wsProposePayloadSchema`'s
+      // closed `z.object` strips them at parse time; the handler
+      // would ignore them even if they survived parse.
+      const spoofedFrame = JSON.stringify({
+        type: 'propose',
+        id: PROPOSE_MSG_ID,
+        payload: {
+          sessionId: VISIBLE_SESSION_ID,
+          expectedSequence: 3,
+          proposal: {
+            kind: 'annotate',
+            target_kind: 'node',
+            target_id: NODE_ID,
+            annotation_kind: 'note',
+            content: 'Spoof-attempt note.',
+          },
+          // <-- spoof attempts below; all of these MUST be ignored
+          proposerId: OTHER_HOST_ID,
+          actor: OTHER_HOST_ID,
+          requester: OTHER_HOST_ID,
+        },
+      });
+      ws.send(spoofedFrame);
+
+      // Drain `proposed` ack + `event-applied` broadcast (order is
+      // not contractually fixed — mirror the existing happy-path
+      // test's tolerant read).
+      for (let i = 0; i < 2; i++) {
+        const raw = await next();
+        const parsed = JSON.parse(raw) as { type?: unknown };
+        expect(['proposed', 'event-applied']).toContain(parsed.type);
+      }
+
+      // The appended event's `actor` is the connection's
+      // authenticated user, NOT the spoofed `OTHER_HOST_ID`. This is
+      // the security invariant G-007 pins.
+      const appended = store.events.find(
+        (e) => e.session_id === VISIBLE_SESSION_ID && e.sequence === 4,
+      );
+      expect(appended).toBeDefined();
+      expect(appended?.kind).toBe('proposal');
+      expect(appended?.actor).toBe(FIXTURE_USER_ID);
+      expect(appended?.actor).not.toBe(OTHER_HOST_ID);
+    } finally {
+      ws.terminate();
+    }
+  });
+
   it('rejects a propose for a non-visible session with `not-found` (existence-non-leak)', async () => {
     const cookie = await fixtureCookieHeader();
     const { ws, next } = await openWsClient(app, cookie);
