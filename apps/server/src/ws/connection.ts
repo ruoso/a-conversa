@@ -828,6 +828,16 @@ export interface WsConnectionHandlingOptions {
    * variants.
    */
   readonly originAllowlist: WsOriginAllowlist;
+  /**
+   * Optional override for the per-connection subscription cap (closes
+   * `docs/security/m3-review/inputs.md` F-001). When absent the
+   * subscriptions plugin reads `WS_MAX_SUBSCRIPTIONS_PER_CONNECTION`
+   * (default `MAX_SUBSCRIPTIONS_PER_CONNECTION` = 32). Tests inject
+   * small values (e.g. 3) to exercise the cap deterministically
+   * without `process.env` mutation. Owned by
+   * `tasks/refinements/backend-hardening/subscription_cap_per_connection.md`.
+   */
+  readonly maxSubscriptionsPerConnection?: number;
 }
 
 /**
@@ -927,8 +937,16 @@ const wsConnectionHandlingPluginAsync: FastifyPluginAsync<WsConnectionHandlingOp
   // handlers (registered by `wsHandlersPlugin` in `server.ts`) reach
   // for `subscribe(...)` / `unsubscribe(...)`; the broadcast surface
   // (`ws_event_broadcast`) reaches for `connectionsForSession(...)`.
-  // Refinement: tasks/refinements/backend/ws_subscribe_to_session.md.
-  await app.register(wsSubscriptionsPlugin);
+  // The cap option (per-connection subscription cap, env-tunable,
+  // default 32) is threaded through here so tests can inject a small
+  // value without mutating `process.env`. Refinements:
+  //   tasks/refinements/backend/ws_subscribe_to_session.md,
+  //   tasks/refinements/backend-hardening/subscription_cap_per_connection.md.
+  await app.register(wsSubscriptionsPlugin, {
+    ...(opts.maxSubscriptionsPerConnection !== undefined
+      ? { maxSubscriptionsPerConnection: opts.maxSubscriptionsPerConnection }
+      : {}),
+  });
 
   // Per-app-instance WS broadcast surface. The bus (`app.wsBroadcast`)
   // accepts `event-applied` emissions from the session-management
@@ -1016,6 +1034,13 @@ export interface BuildTestWsAppOptions {
    * array (e.g. `['https://app.example.com']`).
    */
   readonly originAllowlist?: WsOriginAllowlist;
+  /**
+   * Optional per-connection subscription cap. Defaults to the
+   * env-resolved value (`WS_MAX_SUBSCRIPTIONS_PER_CONNECTION` or 32);
+   * tests that exercise the cap pass a small value (e.g. 3 or 5) so
+   * the boundary is reachable in a hermetic setup.
+   */
+  readonly maxSubscriptionsPerConnection?: number;
 }
 
 /**
@@ -1070,6 +1095,9 @@ export async function __buildTestWsApp(
     sessionTokenSecret: opts.sessionTokenSecret,
     originAllowlist: opts.originAllowlist ?? WS_ORIGIN_ALLOWLIST_ANY,
     ...(opts.now !== undefined ? { now: opts.now } : {}),
+    ...(opts.maxSubscriptionsPerConnection !== undefined
+      ? { maxSubscriptionsPerConnection: opts.maxSubscriptionsPerConnection }
+      : {}),
   });
   // Register the WS message-type handlers (subscribe / unsubscribe
   // today; more land as their owning tasks ship). Must run AFTER

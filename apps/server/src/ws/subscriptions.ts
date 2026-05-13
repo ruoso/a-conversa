@@ -1,9 +1,11 @@
 // In-process per-(connection, session) subscription registry + plugin.
 //
 // Refinement: tasks/refinements/backend/ws_subscribe_to_session.md
+//             tasks/refinements/backend-hardening/subscription_cap_per_connection.md
 // ADRs:        docs/adr/0022-no-throwaway-verifications.md,
 //              docs/adr/0023-web-framework-fastify.md
 // TaskJuggler: backend.websocket_protocol.ws_subscribe_to_session
+//              backend_hardening.resource_limits_and_dos.subscription_cap_per_connection
 //
 // **What this module owns.**
 //
@@ -71,6 +73,122 @@ import type { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import fp from 'fastify-plugin';
 
 /**
+ * Default per-connection subscription cap. Closes
+ * `docs/security/m3-review/inputs.md` F-001.
+ *
+ * Rationale for 32: a legitimate moderator UI may reasonably watch
+ * a handful of concurrent sessions (e.g. while supervising parallel
+ * breakout debates), so the cap has to be generous enough that no
+ * legitimate UI flow trips it; but no UX known to the project lists
+ * dozens of sessions in a single connection's working set. 32 is
+ * roughly an order of magnitude over the largest realistic legitimate
+ * fan-out (4-8 concurrent sessions for a senior moderator) — so a
+ * legitimate operator never sees the cap, and an attacker's
+ * fan-out is bounded at a value that keeps the registry + broadcast
+ * cost per connection trivial.
+ *
+ * The cap is **per-connection, not per-user**. Two open tabs from
+ * the same user are two connections; each gets its own 32-slot
+ * budget. A per-user aggregate cap is a separate concern (different
+ * threat model — collusion / many-tab abuse rather than the
+ * single-connection-subscribes-to-thousands attack F-001
+ * documents). See the refinement document for the rationale.
+ *
+ * Refinement:
+ *   tasks/refinements/backend-hardening/subscription_cap_per_connection.md.
+ */
+export const MAX_SUBSCRIPTIONS_PER_CONNECTION = 32;
+
+/**
+ * Env var name production reads to override
+ * `MAX_SUBSCRIPTIONS_PER_CONNECTION`. Exported so the
+ * production wiring + the test surface share one constant.
+ */
+export const WS_MAX_SUBSCRIPTIONS_PER_CONNECTION_ENV = 'WS_MAX_SUBSCRIPTIONS_PER_CONNECTION';
+
+/**
+ * Subset of `process.env` consumed by
+ * `resolveMaxSubscriptionsPerConnection`. Typed so callers can pass
+ * `process.env` directly (same pattern as `BodyLimitEnv` /
+ * `FlowStateMaxEntriesEnv`).
+ */
+export interface MaxSubscriptionsPerConnectionEnv {
+  readonly WS_MAX_SUBSCRIPTIONS_PER_CONNECTION?: string | undefined;
+}
+
+/**
+ * Resolve the per-connection subscription cap from the environment.
+ * Returns `MAX_SUBSCRIPTIONS_PER_CONNECTION` (32) when the env var
+ * is absent, empty, unparseable, or non-positive; returns the
+ * parsed integer otherwise.
+ *
+ * Mirrors `resolveBodyLimit` / `resolveCatchUpMaxEvents` /
+ * `resolveFlowStateMaxEntries` — the production code path reads the
+ * env once at plugin registration time; tests inject the value
+ * directly via the registry's constructor option to keep the
+ * verification hermetic.
+ *
+ * Refinement:
+ *   tasks/refinements/backend-hardening/subscription_cap_per_connection.md.
+ */
+export function resolveMaxSubscriptionsPerConnection(
+  env: MaxSubscriptionsPerConnectionEnv = process.env,
+): number {
+  const raw = env.WS_MAX_SUBSCRIPTIONS_PER_CONNECTION;
+  if (raw === undefined || raw === '') {
+    return MAX_SUBSCRIPTIONS_PER_CONNECTION;
+  }
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return MAX_SUBSCRIPTIONS_PER_CONNECTION;
+  }
+  return parsed;
+}
+
+/**
+ * Typed error thrown by `WsSubscriptionRegistry.subscribe(...)` when
+ * the per-connection cap is reached and the caller is trying to add a
+ * NEW session to the connection's set. The subscribe handler catches
+ * this and emits the canonical `error` envelope with
+ * `code: 'too-many-subscriptions'` so the client sees the cap rather
+ * than a silent drop.
+ *
+ * Carries no internal state details (no `cap` field, no occupancy
+ * count) — keeps the symbol out of any wire shape so a future
+ * `JSON.stringify(err)` cannot leak the cap value. Mirrors the
+ * `FlowStateCapacityError` shape used by the
+ * `flow_state_map_bound` sibling task.
+ */
+export class SubscriptionCapacityError extends Error {
+  override readonly name = 'SubscriptionCapacityError';
+  constructor(message = 'subscription cap reached for this connection') {
+    super(message);
+  }
+}
+
+/**
+ * Options accepted by `WsSubscriptionRegistry`'s constructor. The
+ * single-option shape mirrors `createFlowStateStore` — production
+ * callers pass nothing (defaults), tests pass the override.
+ */
+export interface WsSubscriptionRegistryOptions {
+  /**
+   * Cap on `byConnection.get(connectionId).size`. Defaults to
+   * `MAX_SUBSCRIPTIONS_PER_CONNECTION` (32) when absent; the
+   * production wiring (`wsSubscriptionsPlugin`) reads the env via
+   * `resolveMaxSubscriptionsPerConnection` so an operator can lift
+   * the cap without a code change. Tests pass small values (e.g.
+   * `{ maxSubscriptionsPerConnection: 3 }`) to exercise the cap
+   * boundary deterministically.
+   *
+   * Must be a positive integer; the constructor does NOT validate
+   * (the resolver does that on the env path; explicit-option callers
+   * are trusted to pass a sensible value).
+   */
+  readonly maxSubscriptionsPerConnection?: number;
+}
+
+/**
  * Per-server-instance subscription registry. Maintains two indices
  * (session → connections, connection → sessions) so every public-API
  * operation is O(1) on the relevant side.
@@ -84,17 +202,56 @@ export class WsSubscriptionRegistry {
   private readonly bySession = new Map<string, Set<string>>();
   /** connectionId -> set of sessionIds the connection is subscribed to. */
   private readonly byConnection = new Map<string, Set<string>>();
+  /**
+   * Hard ceiling on `byConnection.get(connectionId).size`. Resolved
+   * at construction time so the cap is fixed for the registry's
+   * lifetime — runtime mutation would invalidate the
+   * already-accepted-subscriptions contract.
+   */
+  private readonly maxSubscriptionsPerConnection: number;
+
+  constructor(options: WsSubscriptionRegistryOptions = {}) {
+    this.maxSubscriptionsPerConnection =
+      options.maxSubscriptionsPerConnection ?? MAX_SUBSCRIPTIONS_PER_CONNECTION;
+  }
 
   /**
    * Add a (connection, session) subscription. Idempotent — calling
    * twice with the same tuple is a no-op (the underlying `Set.add`
    * is itself idempotent; both indices remain consistent).
    *
+   * **Cap enforcement.** Before recording a NEW (connectionId,
+   * sessionId) pair, the method checks
+   * `byConnection.get(connectionId).size >= maxSubscriptionsPerConnection`:
+   *
+   *   - At cap AND `sessionId` already in the set: idempotent
+   *     no-op (the existing subscription stays). Re-subscribing to
+   *     something already subscribed must not be artificially
+   *     blocked by the cap.
+   *   - At cap AND `sessionId` is new: throws
+   *     `SubscriptionCapacityError`. The subscribe handler catches
+   *     this and emits an `error` envelope with
+   *     `code: 'too-many-subscriptions'`.
+   *   - Below cap: proceeds as before.
+   *
+   * Closes `docs/security/m3-review/inputs.md` F-001.
+   *
    * @param connectionId the WS connection's stable id (the
    *                     `WsConnectionContext.connectionId`).
    * @param sessionId the session id the client wants events for.
+   * @throws {SubscriptionCapacityError} when the connection is at the
+   *         cap and `sessionId` is not already in its set.
    */
   subscribe(connectionId: string, sessionId: string): void {
+    const existing = this.byConnection.get(connectionId);
+    if (
+      existing !== undefined &&
+      existing.size >= this.maxSubscriptionsPerConnection &&
+      !existing.has(sessionId)
+    ) {
+      throw new SubscriptionCapacityError();
+    }
+
     let conns = this.bySession.get(sessionId);
     if (conns === undefined) {
       conns = new Set();
@@ -102,7 +259,7 @@ export class WsSubscriptionRegistry {
     }
     conns.add(connectionId);
 
-    let sessions = this.byConnection.get(connectionId);
+    let sessions = existing;
     if (sessions === undefined) {
       sessions = new Set();
       this.byConnection.set(connectionId, sessions);
@@ -203,6 +360,22 @@ export class WsSubscriptionRegistry {
 }
 
 /**
+ * Options accepted by `wsSubscriptionsPlugin`. Production callers
+ * pass `{}` (or nothing) and the plugin resolves the cap from
+ * `process.env` via `resolveMaxSubscriptionsPerConnection`. Tests
+ * inject `maxSubscriptionsPerConnection` directly so the cap surface
+ * can be exercised hermetically without mutating `process.env`.
+ */
+export interface WsSubscriptionsPluginOptions {
+  /**
+   * Override for the per-connection subscription cap. When absent,
+   * the plugin reads `WS_MAX_SUBSCRIPTIONS_PER_CONNECTION` from the
+   * environment (default `MAX_SUBSCRIPTIONS_PER_CONNECTION` = 32).
+   */
+  readonly maxSubscriptionsPerConnection?: number;
+}
+
+/**
  * Fastify plugin: construct a `WsSubscriptionRegistry` per app instance
  * and decorate it onto `app.wsSubscriptions`. Mirror of the
  * `wsDispatcherPlugin` pattern — `fastify-plugin`-wrapped so the
@@ -210,13 +383,25 @@ export class WsSubscriptionRegistry {
  *
  * Each `createServer()` call gets its own registry; tests build a fresh
  * app per scenario, so there's no cross-test bleed.
+ *
+ * The registry's per-connection cap defaults to
+ * `MAX_SUBSCRIPTIONS_PER_CONNECTION` (32) and can be overridden via
+ * `WS_MAX_SUBSCRIPTIONS_PER_CONNECTION` (env) or the plugin option
+ * (tests). Closes `docs/security/m3-review/inputs.md` F-001.
  */
-const wsSubscriptionsPluginAsync: FastifyPluginAsync = (app: FastifyInstance) => {
+const wsSubscriptionsPluginAsync: FastifyPluginAsync<WsSubscriptionsPluginOptions> = (
+  app: FastifyInstance,
+  opts: WsSubscriptionsPluginOptions,
+) => {
   // Guard against re-decoration. Production registers the plugin once;
   // a defensive check keeps the failure mode explicit if a future test
   // pattern lands a second `createServer()` against the same instance.
   if (!app.hasDecorator('wsSubscriptions')) {
-    app.decorate('wsSubscriptions', new WsSubscriptionRegistry());
+    const cap = opts.maxSubscriptionsPerConnection ?? resolveMaxSubscriptionsPerConnection();
+    app.decorate(
+      'wsSubscriptions',
+      new WsSubscriptionRegistry({ maxSubscriptionsPerConnection: cap }),
+    );
   }
   return Promise.resolve();
 };

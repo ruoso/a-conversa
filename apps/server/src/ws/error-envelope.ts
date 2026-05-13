@@ -195,6 +195,22 @@ export const WS_UNKNOWN_MESSAGE_TYPE_CODE = 'unknown-message-type';
 export const WS_MALFORMED_ENVELOPE_CODE = 'malformed-envelope';
 
 /**
+ * Discriminator the subscribe handler emits when a connection has
+ * already subscribed to its per-connection cap of sessions and is
+ * trying to add another. Closes
+ * `docs/security/m3-review/inputs.md` F-001. The cap (and its env
+ * override) live in `subscriptions.ts`; the wire code is shared
+ * here so the handler + test + protocol doc stay in lock-step.
+ *
+ * The wire `message` field intentionally carries no integer (no
+ * cap value, no occupancy count) so a future cap retune via
+ * `WS_MAX_SUBSCRIPTIONS_PER_CONNECTION` does not require a
+ * coordinated wire-message change AND so an attacker cannot
+ * calibrate their fan-out against the leaked value.
+ */
+export const WS_TOO_MANY_SUBSCRIPTIONS_CODE = 'too-many-subscriptions';
+
+/**
  * Duck-typed `ApiError` shape. Returns `true` when the thrown value
  * has both `code: string` and `message: string` fields, which is the
  * structural contract `apps/server/src/errors.ts`'s `ApiError` class

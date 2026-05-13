@@ -73,14 +73,14 @@ The `connectionId` is stable for the connection's lifetime and is used in server
 - **Direction**: C→S request.
 - **Payload schema**: `subscribePayloadSchema` — `{ sessionId: uuid }`.
 - **When**: the client asks the server to start streaming events for `sessionId`. Idempotent — re-subscribing is a no-op and still produces the ack.
-- **Correlation**: ack via [`subscribed`](#subscribed) carries `inResponseTo: <subscribe.id>`. Failure → [`error`](#error) (`code: 'not-found'` for an invisible session, [`inResponseTo: <subscribe.id>`](#error)).
+- **Correlation**: ack via [`subscribed`](#subscribed) carries `inResponseTo: <subscribe.id>`. Failure → [`error`](#error) — `code: 'not-found'` for an invisible session, `code: 'too-many-subscriptions'` when the per-connection cap is reached (see [Error envelope reference](#error-envelope-reference)), `inResponseTo: <subscribe.id>` on every error path.
 - **Owner**: [`apps/server/src/ws/handlers/subscribe.ts`](../apps/server/src/ws/handlers/subscribe.ts) (registered via [`handlers/index.ts`](../apps/server/src/ws/handlers/index.ts)).
 
 ```json
 { "type": "subscribe", "id": "…", "payload": { "sessionId": "…" } }
 ```
 
-The handler runs `canSeeSession(pool, sessionId, userId)` — the same visibility predicate HTTP routes use. Invisible sessions surface as `not-found` (NOT `forbidden`) per the existence-non-leak rule documented in `sessions/visibility.ts`. On success the (connection, session) tuple is added to the per-instance [`WsSubscriptionRegistry`](../apps/server/src/ws/subscriptions.ts). See [`ws_subscribe_to_session.md`](../tasks/refinements/backend/ws_subscribe_to_session.md).
+The handler runs `canSeeSession(pool, sessionId, userId)` — the same visibility predicate HTTP routes use. Invisible sessions surface as `not-found` (NOT `forbidden`) per the existence-non-leak rule documented in `sessions/visibility.ts`. On success the (connection, session) tuple is added to the per-instance [`WsSubscriptionRegistry`](../apps/server/src/ws/subscriptions.ts). The registry enforces a per-connection cap (`MAX_SUBSCRIPTIONS_PER_CONNECTION`, default 32, env override `WS_MAX_SUBSCRIPTIONS_PER_CONNECTION`); a fresh subscribe that would exceed the cap is rejected with `code: 'too-many-subscriptions'` while re-subscribing to a session the connection already holds remains idempotent. See [`ws_subscribe_to_session.md`](../tasks/refinements/backend/ws_subscribe_to_session.md) and [`subscription_cap_per_connection.md`](../tasks/refinements/backend-hardening/subscription_cap_per_connection.md).
 
 ### `unsubscribe`
 
@@ -395,14 +395,15 @@ From [`apps/server/src/errors.ts`](../apps/server/src/errors.ts). Every code her
 
 ### WS-specific codes
 
-Two codes that are not in the HTTP taxonomy because they describe transport-level failures unique to the WS surface.
+Three codes that are not in the HTTP taxonomy because they describe transport-level failures unique to the WS surface.
 
 | code | meaning |
 |------|---------|
 | `unknown-message-type` | The envelope's `type` is in the closed `WsMessageType` enum but no handler is registered. Emitted by the dispatcher's `onUnknownType` seam. |
 | `malformed-envelope` | The inbound frame failed `parseWsEnvelopeJson` (bad JSON, binary frame that's not UTF-8 JSON, or schema-invalid envelope/payload). Emitted by the receive loop in [`connection.ts`](../apps/server/src/ws/connection.ts). `inResponseTo` is absent — the server cannot read an `id` off a frame that failed to parse. The connection stays open. |
+| `too-many-subscriptions` | The connection has already subscribed to `MAX_SUBSCRIPTIONS_PER_CONNECTION` sessions (default 32, env-tunable via `WS_MAX_SUBSCRIPTIONS_PER_CONNECTION`) and is trying to add another. Re-subscribing to a session the connection already holds is idempotent (no error). `inResponseTo` correlates back to the originating `subscribe` envelope's `id`. Wire message intentionally carries no integers — the cap value is not leaked. Closes [`docs/security/m3-review/inputs.md`](security/m3-review/inputs.md) F-001. |
 
-The two constants are exported from [`error-envelope.ts`](../apps/server/src/ws/error-envelope.ts) as `WS_UNKNOWN_MESSAGE_TYPE_CODE` and `WS_MALFORMED_ENVELOPE_CODE` for test + handler co-location.
+The three constants are exported from [`error-envelope.ts`](../apps/server/src/ws/error-envelope.ts) as `WS_UNKNOWN_MESSAGE_TYPE_CODE`, `WS_MALFORMED_ENVELOPE_CODE`, and `WS_TOO_MANY_SUBSCRIPTIONS_CODE` for test + handler co-location.
 
 ### Methodology `RejectionReason` codes
 

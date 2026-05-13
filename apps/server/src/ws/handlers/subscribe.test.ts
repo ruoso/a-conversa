@@ -43,6 +43,12 @@ import { signSessionToken, SESSION_COOKIE_NAME } from '../../auth/session-token.
 import type { DbPool } from '../../db.js';
 import { __buildTestWsApp } from '../connection.js';
 import { FIXTURE_SCREEN_NAME, FIXTURE_USER_ID, TEST_SESSION_SECRET } from '../test-helpers.js';
+import {
+  MAX_SUBSCRIPTIONS_PER_CONNECTION,
+  WS_MAX_SUBSCRIPTIONS_PER_CONNECTION_ENV,
+  WsSubscriptionRegistry,
+  resolveMaxSubscriptionsPerConnection,
+} from '../subscriptions.js';
 
 // Stable fixture ids.
 const VISIBLE_SESSION_ID = '00000000-0000-4000-8000-0000000000c1';
@@ -126,6 +132,49 @@ function makeWsHandlerPool(): DbPool {
       return Promise.reject(new Error(`unexpected SQL in WS handler test pool: ${text}`));
     },
   };
+}
+
+// ---- Permissive pool for cap-boundary tests ----
+//
+// The cap tests need to subscribe to many distinct session ids without
+// constructing a memory backing for each. This variant answers the
+// visibility predicate as "visible" for ANY session id — sufficient
+// for the cap-boundary integration tests (the cap is a pre-write
+// gate; visibility passes for every candidate id so the test focuses
+// on the cap surface). The auth-row lookup mirrors the standard pool.
+function makeAlwaysVisibleWsHandlerPool(): DbPool {
+  return {
+    query<TRow extends Record<string, unknown>>(
+      text: string,
+      params?: ReadonlyArray<unknown>,
+    ): Promise<{ rows: TRow[] }> {
+      const p = (params ?? []) as unknown[];
+      if (text.includes('SELECT id, screen_name') && text.includes('WHERE id')) {
+        const id = p[0] as string;
+        if (id === FIXTURE_USER_ID) {
+          return Promise.resolve({
+            rows: [{ id: FIXTURE_USER_ID, screen_name: FIXTURE_SCREEN_NAME }] as unknown as TRow[],
+          });
+        }
+        return Promise.resolve({ rows: [] as TRow[] });
+      }
+      if (
+        text.trim().startsWith('SELECT 1') &&
+        text.includes('FROM sessions') &&
+        text.includes('WHERE id = $1')
+      ) {
+        return Promise.resolve({ rows: [{ visible: 1 }] as unknown as TRow[] });
+      }
+      return Promise.reject(new Error(`unexpected SQL in WS handler cap test pool: ${text}`));
+    },
+  };
+}
+
+// Build N distinct valid UUID v4 strings deterministically. Used by
+// the cap tests to subscribe to N distinct sessions in sequence.
+function capSessionId(i: number): string {
+  const hex = i.toString(16).padStart(2, '0');
+  return `00000000-0000-4000-8000-0000000000${hex}`;
 }
 
 // ---- WS client plumbing --------------------------------------------
@@ -411,5 +460,350 @@ describe('ws_subscribe_to_session — handler integration', () => {
     }
 
     expect(app.wsSubscriptions.connectionsForSession(VISIBLE_SESSION_ID)).toEqual([]);
+  });
+});
+
+// ---- Per-connection subscription cap (M3-review inputs.md F-001) ----
+//
+// Closes `docs/security/m3-review/inputs.md` F-001. The cap lives in
+// `subscriptions.ts` (`MAX_SUBSCRIPTIONS_PER_CONNECTION` = 32, env
+// override `WS_MAX_SUBSCRIPTIONS_PER_CONNECTION`); the subscribe
+// handler catches `SubscriptionCapacityError` and emits a wire
+// `error` envelope with `code: 'too-many-subscriptions'`.
+
+describe('ws_subscribe_to_session — per-connection subscription cap (inputs.md F-001)', () => {
+  let capApp: FastifyInstance | undefined;
+
+  afterEach(async () => {
+    if (capApp !== undefined) {
+      await capApp.close();
+      capApp = undefined;
+    }
+  });
+
+  async function buildCappedApp(cap: number): Promise<FastifyInstance> {
+    capApp = await __buildTestWsApp({
+      pool: makeAlwaysVisibleWsHandlerPool(),
+      sessionTokenSecret: TEST_SESSION_SECRET,
+      maxSubscriptionsPerConnection: cap,
+    });
+    return capApp;
+  }
+
+  it('exports the documented default + env-name constants', () => {
+    // Pins the cap value documented in the refinement + ws-protocol.md.
+    // A future retune of the default must update both the constant and
+    // the documentation in lock-step; this test fails if they drift.
+    expect(MAX_SUBSCRIPTIONS_PER_CONNECTION).toBe(32);
+    expect(WS_MAX_SUBSCRIPTIONS_PER_CONNECTION_ENV).toBe('WS_MAX_SUBSCRIPTIONS_PER_CONNECTION');
+  });
+
+  it('with cap=3, three distinct subscribes succeed', async () => {
+    const app = await buildCappedApp(3);
+    const cookie = await fixtureCookieHeader();
+    const { ws, next } = await openWsClient(app, cookie);
+    try {
+      await next(); // drain hello
+
+      for (let i = 1; i <= 3; i++) {
+        const sessionId = capSessionId(i);
+        const messageId = `11111111-1111-4111-8111-${i.toString(16).padStart(12, '0')}`;
+        ws.send(subscribeEnvelope(messageId, sessionId));
+        const ackRaw = await next();
+        const ack = JSON.parse(ackRaw) as {
+          type?: unknown;
+          inResponseTo?: unknown;
+          payload?: { sessionId?: unknown };
+        };
+        expect(ack.type).toBe('subscribed');
+        expect(ack.inResponseTo).toBe(messageId);
+        expect(ack.payload?.sessionId).toBe(sessionId);
+      }
+
+      const sessions = [
+        ...app.wsSubscriptions.sessionsForConnection(
+          app.wsSubscriptions.connectionsForSession(capSessionId(1))[0]!,
+        ),
+      ].sort();
+      expect(sessions).toHaveLength(3);
+    } finally {
+      ws.terminate();
+    }
+  });
+
+  it('with cap=3, a 4th distinct subscribe is rejected with too-many-subscriptions', async () => {
+    const app = await buildCappedApp(3);
+    const cookie = await fixtureCookieHeader();
+    const { ws, next } = await openWsClient(app, cookie);
+    try {
+      await next(); // hello
+
+      // Fill the cap with 3 distinct subscribes.
+      for (let i = 1; i <= 3; i++) {
+        ws.send(
+          subscribeEnvelope(
+            `11111111-1111-4111-8111-${i.toString(16).padStart(12, '0')}`,
+            capSessionId(i),
+          ),
+        );
+        const ack = JSON.parse(await next()) as { type?: unknown };
+        expect(ack.type).toBe('subscribed');
+      }
+
+      // 4th distinct → rejected with the canonical error envelope.
+      const overflowMessageId = '11111111-1111-4111-8111-0000000000ff';
+      const overflowSessionId = capSessionId(4);
+      ws.send(subscribeEnvelope(overflowMessageId, overflowSessionId));
+      const errRaw = await next();
+      const err = JSON.parse(errRaw) as {
+        type?: unknown;
+        inResponseTo?: unknown;
+        payload?: { code?: unknown; message?: unknown };
+      };
+      expect(err.type).toBe('error');
+      expect(err.inResponseTo).toBe(overflowMessageId);
+      expect(err.payload?.code).toBe('too-many-subscriptions');
+      expect(typeof err.payload?.message).toBe('string');
+      // No-leak invariant: the wire message MUST NOT include the cap
+      // value (or any integer) — otherwise an attacker can calibrate
+      // their fan-out against the leaked value. Same pattern as the
+      // `flow_state_map_bound` sibling task.
+      expect(err.payload?.message as string).not.toMatch(/\b\d+\b/);
+
+      // The 4th session is NOT in the registry; the first three are.
+      expect(app.wsSubscriptions.connectionsForSession(overflowSessionId)).toEqual([]);
+      expect(app.wsSubscriptions.connectionsForSession(capSessionId(1))).toHaveLength(1);
+
+      // The connection stays open — per-frame failures are recoverable
+      // (the protocol's general invariant).
+      expect(ws.readyState).toBe(1);
+    } finally {
+      ws.terminate();
+    }
+  });
+
+  it('with cap=3 at capacity, re-subscribing to an existing session is idempotent (no error, ack received)', async () => {
+    const app = await buildCappedApp(3);
+    const cookie = await fixtureCookieHeader();
+    const { ws, next } = await openWsClient(app, cookie);
+    try {
+      await next(); // hello
+
+      // Fill the cap.
+      for (let i = 1; i <= 3; i++) {
+        ws.send(
+          subscribeEnvelope(
+            `11111111-1111-4111-8111-${i.toString(16).padStart(12, '0')}`,
+            capSessionId(i),
+          ),
+        );
+        const ack = JSON.parse(await next()) as { type?: unknown };
+        expect(ack.type).toBe('subscribed');
+      }
+
+      // Re-subscribe to one of the existing 3. Must NOT be rejected by
+      // the cap (it's not adding a new session) — produces a normal
+      // `subscribed` ack.
+      const idempotentMessageId = '22222222-2222-4222-8222-000000000001';
+      ws.send(subscribeEnvelope(idempotentMessageId, capSessionId(2)));
+      const ack = JSON.parse(await next()) as {
+        type?: unknown;
+        inResponseTo?: unknown;
+        payload?: { sessionId?: unknown };
+      };
+      expect(ack.type).toBe('subscribed');
+      expect(ack.inResponseTo).toBe(idempotentMessageId);
+      expect(ack.payload?.sessionId).toBe(capSessionId(2));
+
+      // Still 3 sessions for the connection — re-subscribing does not
+      // double-count.
+      const connId = app.wsSubscriptions.connectionsForSession(capSessionId(1))[0]!;
+      expect(app.wsSubscriptions.sessionsForConnection(connId)).toHaveLength(3);
+    } finally {
+      ws.terminate();
+    }
+  });
+
+  it('with cap=3, unsubscribing then subscribing to a NEW session succeeds', async () => {
+    const app = await buildCappedApp(3);
+    const cookie = await fixtureCookieHeader();
+    const { ws, next } = await openWsClient(app, cookie);
+    try {
+      await next(); // hello
+
+      // Fill the cap.
+      for (let i = 1; i <= 3; i++) {
+        ws.send(
+          subscribeEnvelope(
+            `11111111-1111-4111-8111-${i.toString(16).padStart(12, '0')}`,
+            capSessionId(i),
+          ),
+        );
+        const ack = JSON.parse(await next()) as { type?: unknown };
+        expect(ack.type).toBe('subscribed');
+      }
+
+      // Unsubscribe from one — frees a slot.
+      ws.send(unsubscribeEnvelope('22222222-2222-4222-8222-000000000010', capSessionId(2)));
+      const unsubAck = JSON.parse(await next()) as { type?: unknown };
+      expect(unsubAck.type).toBe('unsubscribed');
+
+      // Subscribe to a 4th, distinct, NEW session — must succeed
+      // because the connection is now back at 2 sessions.
+      const newMessageId = '22222222-2222-4222-8222-000000000020';
+      const newSessionId = capSessionId(99);
+      ws.send(subscribeEnvelope(newMessageId, newSessionId));
+      const ack = JSON.parse(await next()) as {
+        type?: unknown;
+        inResponseTo?: unknown;
+        payload?: { sessionId?: unknown };
+      };
+      expect(ack.type).toBe('subscribed');
+      expect(ack.inResponseTo).toBe(newMessageId);
+      expect(ack.payload?.sessionId).toBe(newSessionId);
+    } finally {
+      ws.terminate();
+    }
+  });
+
+  it('with cap=5 (env-tunable), 5 succeed and the 6th distinct is rejected', async () => {
+    // Pins the env-tunability contract: an operator can lift the cap
+    // via `WS_MAX_SUBSCRIPTIONS_PER_CONNECTION`. Tests inject the
+    // value directly (avoiding `process.env` mutation), but the wiring
+    // — option → plugin → registry constructor — is the same path the
+    // resolver follows.
+    const app = await buildCappedApp(5);
+    const cookie = await fixtureCookieHeader();
+    const { ws, next } = await openWsClient(app, cookie);
+    try {
+      await next(); // hello
+
+      for (let i = 1; i <= 5; i++) {
+        ws.send(
+          subscribeEnvelope(
+            `33333333-3333-4333-8333-${i.toString(16).padStart(12, '0')}`,
+            capSessionId(i),
+          ),
+        );
+        const ack = JSON.parse(await next()) as { type?: unknown };
+        expect(ack.type).toBe('subscribed');
+      }
+
+      // 6th distinct is rejected.
+      const overflowMessageId = '33333333-3333-4333-8333-0000000000ff';
+      ws.send(subscribeEnvelope(overflowMessageId, capSessionId(6)));
+      const err = JSON.parse(await next()) as {
+        type?: unknown;
+        payload?: { code?: unknown };
+      };
+      expect(err.type).toBe('error');
+      expect(err.payload?.code).toBe('too-many-subscriptions');
+    } finally {
+      ws.terminate();
+    }
+  });
+});
+
+// ---- resolveMaxSubscriptionsPerConnection (env resolver) ----
+//
+// Pure-logic tests for the env-resolution helper. Mirrors the
+// `resolveCatchUpMaxEvents` / `resolveBodyLimit` test discipline.
+
+describe('resolveMaxSubscriptionsPerConnection', () => {
+  it('returns the default 32 when the env var is absent', () => {
+    expect(resolveMaxSubscriptionsPerConnection({})).toBe(MAX_SUBSCRIPTIONS_PER_CONNECTION);
+  });
+
+  it('returns the default when the env var is the empty string', () => {
+    expect(resolveMaxSubscriptionsPerConnection({ WS_MAX_SUBSCRIPTIONS_PER_CONNECTION: '' })).toBe(
+      MAX_SUBSCRIPTIONS_PER_CONNECTION,
+    );
+  });
+
+  it('returns the default when the env var is non-numeric', () => {
+    expect(
+      resolveMaxSubscriptionsPerConnection({ WS_MAX_SUBSCRIPTIONS_PER_CONNECTION: 'banana' }),
+    ).toBe(MAX_SUBSCRIPTIONS_PER_CONNECTION);
+  });
+
+  it('returns the default when the env var is zero or negative', () => {
+    expect(resolveMaxSubscriptionsPerConnection({ WS_MAX_SUBSCRIPTIONS_PER_CONNECTION: '0' })).toBe(
+      MAX_SUBSCRIPTIONS_PER_CONNECTION,
+    );
+    expect(
+      resolveMaxSubscriptionsPerConnection({ WS_MAX_SUBSCRIPTIONS_PER_CONNECTION: '-5' }),
+    ).toBe(MAX_SUBSCRIPTIONS_PER_CONNECTION);
+  });
+
+  it('returns the parsed integer when positive', () => {
+    expect(
+      resolveMaxSubscriptionsPerConnection({ WS_MAX_SUBSCRIPTIONS_PER_CONNECTION: '128' }),
+    ).toBe(128);
+    expect(resolveMaxSubscriptionsPerConnection({ WS_MAX_SUBSCRIPTIONS_PER_CONNECTION: '5' })).toBe(
+      5,
+    );
+  });
+});
+
+// ---- WsSubscriptionRegistry — direct unit coverage of the cap ----
+//
+// These tests exercise the cap surface directly on the registry, with
+// no Fastify / WS plumbing involved. They're a peer to the existing
+// `../subscriptions.test.ts` registry tests and pin the public
+// contract of the cap (idempotent re-subscribe at cap, throw on new
+// at cap, constructor option threading).
+
+describe('WsSubscriptionRegistry — subscription cap (unit)', () => {
+  const CONN = '00000000-0000-4000-8000-000000000001';
+
+  it('throws SubscriptionCapacityError when a new sessionId is added at cap', () => {
+    const reg = new WsSubscriptionRegistry({ maxSubscriptionsPerConnection: 2 });
+    reg.subscribe(CONN, capSessionId(1));
+    reg.subscribe(CONN, capSessionId(2));
+    expect(() => reg.subscribe(CONN, capSessionId(3))).toThrow(/cap reached/i);
+    // The registry stays consistent — the rejected session is NOT
+    // recorded on either index.
+    expect(reg.sessionsForConnection(CONN)).toHaveLength(2);
+    expect(reg.connectionsForSession(capSessionId(3))).toEqual([]);
+  });
+
+  it('does NOT throw when re-subscribing at cap to an existing sessionId (idempotent)', () => {
+    const reg = new WsSubscriptionRegistry({ maxSubscriptionsPerConnection: 2 });
+    reg.subscribe(CONN, capSessionId(1));
+    reg.subscribe(CONN, capSessionId(2));
+    // Re-subscribe to one of the existing two — must not throw and
+    // must not double-count.
+    expect(() => reg.subscribe(CONN, capSessionId(1))).not.toThrow();
+    expect(reg.sessionsForConnection(CONN)).toHaveLength(2);
+  });
+
+  it('defaults to MAX_SUBSCRIPTIONS_PER_CONNECTION when constructed without options', () => {
+    const reg = new WsSubscriptionRegistry();
+    // Add MAX_SUBSCRIPTIONS_PER_CONNECTION + 1 sessions; the last
+    // one must throw. Smoke check that the constructor default is in
+    // play (env-resolution happens at plugin-registration time, not
+    // here).
+    for (let i = 1; i <= MAX_SUBSCRIPTIONS_PER_CONNECTION; i++) {
+      reg.subscribe(CONN, capSessionId(i));
+    }
+    expect(() => reg.subscribe(CONN, capSessionId(MAX_SUBSCRIPTIONS_PER_CONNECTION + 1))).toThrow(
+      /cap reached/i,
+    );
+  });
+
+  it('SubscriptionCapacityError message contains no integers (no cap leak)', () => {
+    const reg = new WsSubscriptionRegistry({ maxSubscriptionsPerConnection: 1 });
+    reg.subscribe(CONN, capSessionId(1));
+    try {
+      reg.subscribe(CONN, capSessionId(2));
+      throw new Error('expected SubscriptionCapacityError');
+    } catch (err) {
+      // The error message MUST NOT include the cap value or the
+      // current occupancy — otherwise serialising the error (e.g.
+      // in a server log scrape leaking back to a client) would
+      // reveal the cap to a calibrating attacker.
+      const message = (err as Error).message;
+      expect(message).not.toMatch(/\b\d+\b/);
+    }
   });
 });

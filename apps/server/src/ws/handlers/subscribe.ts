@@ -1,9 +1,11 @@
 // Dispatcher handlers for `subscribe` / `unsubscribe` client messages.
 //
 // Refinement: tasks/refinements/backend/ws_subscribe_to_session.md
+//             tasks/refinements/backend-hardening/subscription_cap_per_connection.md
 // ADRs:        docs/adr/0022-no-throwaway-verifications.md,
 //              docs/adr/0023-web-framework-fastify.md
 // TaskJuggler: backend.websocket_protocol.ws_subscribe_to_session
+//              backend_hardening.resource_limits_and_dos.subscription_cap_per_connection
 //
 // **What this module owns.**
 //
@@ -46,8 +48,8 @@ import { canSeeSession } from '../../sessions/visibility.js';
 import type { WsConnectionContext } from '../connection.js';
 import { serializeWsEnvelope } from '../envelope.js';
 import type { WsDispatcher } from '../dispatcher.js';
-import { sendWsError } from '../error-envelope.js';
-import type { WsSubscriptionRegistry } from '../subscriptions.js';
+import { sendWsError, WS_TOO_MANY_SUBSCRIPTIONS_CODE } from '../error-envelope.js';
+import { SubscriptionCapacityError, type WsSubscriptionRegistry } from '../subscriptions.js';
 
 /**
  * Captures the pool + registry + logger so the handler bodies are
@@ -115,7 +117,33 @@ export function buildSubscribeHandler(
       return;
     }
 
-    opts.registry.subscribe(connection.connectionId, sessionId);
+    try {
+      opts.registry.subscribe(connection.connectionId, sessionId);
+    } catch (err) {
+      if (err instanceof SubscriptionCapacityError) {
+        // Per-connection subscription cap hit. Closes
+        // `docs/security/m3-review/inputs.md` F-001. The wire
+        // message intentionally carries no integer (no cap value,
+        // no occupancy count) so an attacker cannot calibrate
+        // their fan-out against the leaked cap.
+        opts.log.warn(
+          {
+            connectionId: connection.connectionId,
+            userId,
+            sessionId,
+            messageId: envelope.id,
+          },
+          'ws-subscribe rejected — per-connection subscription cap reached',
+        );
+        sendWsError((wire) => connection.socket.send(wire), {
+          code: WS_TOO_MANY_SUBSCRIPTIONS_CODE,
+          message: 'subscription cap reached for this connection',
+          inResponseTo: envelope.id,
+        });
+        return;
+      }
+      throw err;
+    }
 
     // Send the `subscribed` ack. The envelope's `inResponseTo`
     // correlates to the originating `subscribe` envelope's `id`; the
