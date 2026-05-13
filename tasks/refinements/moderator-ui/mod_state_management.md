@@ -25,3 +25,19 @@ Set up Zustand-based state management for the moderator's local UI state — pen
 - Three store slices wired up in `apps/moderator/src/stores/`.
 - A trivial component reads from each store and re-renders on update.
 - ESLint / Prettier / typecheck pass.
+
+## Status
+
+**Done** — 2026-05-11.
+
+- Pinned `zustand@5.0.13` in `apps/moderator/package.json` (no `^`, per the project's version-pinning convention).
+- Added three store slices under `apps/moderator/src/stores/`:
+  - `captureStore.ts` — `useCaptureStore` with `text` / `classification` (typed as `StatementKind` from `@a-conversa/shared-types`) / `targetEntityId` / `mode` (eight-state `CaptureMode` covering F1–F8 capture flows) plus per-field setters and a `reset()` for post-propose cleanup.
+  - `selectionStore.ts` — `useSelectionStore` with `selected: { kind: EntityKind, id }` plus `select()` / `clear()`.
+  - `uiStore.ts` — `useUiStore` with `activeSidebarPane` (typed `SidebarPane`) and `zoom` (clamped to `[MIN_ZOOM, MAX_ZOOM]`).
+- DevTools gating: `stores/devtools.ts` wraps each slice in the Zustand `devtools` middleware behind `import.meta.env.DEV`, so the production Vite bundle tree-shakes the middleware (the moderator `tsconfig.json` picks up the matching ambient types via `"types": ["vite/client"]`).
+- `OperateRoute` now subscribes to each store with discrete selectors and renders the live values, satisfying the "trivial component reads from each store and re-renders on update" AC.
+- Smoke tests: `apps/moderator/src/stores/stores.test.tsx` covers store initial state, per-field setters, `reset()` / `clear()`, zoom clamping, and React re-renders for each slice (11 new tests; `pnpm run test:smoke` total: 1160 → 1171).
+- ESLint, Prettier, `tsc -b`, and `pnpm -F @a-conversa/moderator build` all clean.
+
+Downstream consumers (`mod_ws_client`, `mod_auth_flow`) plug into this surface by adding sibling stores under `apps/moderator/src/stores/` (server-state and auth-state, respectively) — the `stores/` directory and the barrel `index.ts` are the obvious extension point.

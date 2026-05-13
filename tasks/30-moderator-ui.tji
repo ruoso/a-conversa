@@ -33,6 +33,7 @@ task moderator_ui "Moderator UI" {
     task mod_state_management "State management setup" {
       effort 1d
       allocate team
+      complete 100
       depends !mod_app_skeleton
 
       note "Refinement: tasks/refinements/moderator-ui/mod_state_management.md"
