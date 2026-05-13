@@ -214,6 +214,7 @@ import { visibilityWhereFragment } from './visibility.js';
 // `app.wsBroadcast.emit(...)` for each (the post-commit-emit
 // invariant — see tasks/refinements/backend/ws_event_broadcast.md).
 import type { Event } from '@a-conversa/shared-types';
+import { MAX_SESSION_LIST_OFFSET } from '@a-conversa/shared-types';
 import { wsBroadcastPlugin } from '../ws/broadcast/index.js';
 
 /**
@@ -812,10 +813,20 @@ const listSessionsQuerystringSchema = {
     offset: {
       type: 'integer',
       minimum: 0,
+      // `MAX_SESSION_LIST_OFFSET = 100_000` — see
+      // `packages/shared-types/src/limits.ts`. Closes
+      // docs/security/m3-review/coverage.md G-013 (an authenticated
+      // client could otherwise burn DB scan budget on
+      // `?offset=999999999999`). 100k = 500 pages at the maximum
+      // `?limit=200`; over-cap requests fail with 400
+      // `validation-failed` before any DB round-trip.
+      maximum: MAX_SESSION_LIST_OFFSET,
       default: 0,
       description:
         'Page offset. Defaults to 0. Combined with `limit` this drives offset-based ' +
-        'pagination over the ordered (`created_at DESC`) result set.',
+        'pagination over the ordered (`created_at DESC`) result set. Capped at ' +
+        '100 000 (500 pages at `limit=200`) to bound DB scan cost — see ' +
+        'docs/security/m3-review/coverage.md G-013.',
     },
   },
 } as const;

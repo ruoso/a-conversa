@@ -83,6 +83,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 
+import { MAX_SESSION_LIST_OFFSET } from '@a-conversa/shared-types';
+
 import { SESSION_COOKIE_NAME, signSessionToken } from '../auth/session-token.js';
 import type { DbPool } from '../db.js';
 import { __buildTestSessionsApp } from './routes.js';
@@ -1524,6 +1526,89 @@ describe('GET /sessions — filters and pagination', () => {
     expect(response.statusCode).toBe(400);
     const body = response.json<{ error?: { code?: string } }>();
     expect(body.error?.code).toBe('validation-failed');
+  });
+
+  // `?offset` cap — closes docs/security/m3-review/coverage.md G-013.
+  // The pre-task schema only enforced `minimum: 0`, so a request like
+  // `GET /sessions?offset=999999999999` was well-formed and reached
+  // Postgres as a valid `OFFSET 999999999999`. Postgres returns empty
+  // correctly but burns I/O / CPU scanning past the offset; an
+  // authenticated client could multiply that with parallel requests.
+  // The cap is `MAX_SESSION_LIST_OFFSET = 100_000` — 500 pages at
+  // `?limit=200`, orders of magnitude beyond any human pagination
+  // need. Over-cap requests fail at the schema layer (400
+  // `validation-failed`) before any DB round-trip.
+
+  it('?offset exactly at the cap (100_000) is accepted', async () => {
+    built = await buildWithSeed({
+      users: seededUsers,
+      sessions: [SESSION_ALICE_PUB],
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'GET',
+      url: `/sessions?offset=${MAX_SESSION_LIST_OFFSET}`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    // At-cap is accepted; the offset is far past any seeded row, so
+    // the body is empty but `total` still reflects the visibility-
+    // gated count.
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{ sessions?: unknown[]; total?: number }>();
+    expect(body.sessions).toHaveLength(0);
+    expect(body.total).toBe(1);
+  });
+
+  it('returns 400 validation-failed when ?offset exceeds the 100_000 cap (cap + 1)', async () => {
+    built = await buildWithSeed({
+      users: seededUsers,
+      sessions: [SESSION_ALICE_PUB],
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'GET',
+      url: `/sessions?offset=${MAX_SESSION_LIST_OFFSET + 1}`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(400);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('validation-failed');
+  });
+
+  it('returns 400 validation-failed when ?offset is a far-over-cap integer (DoS scenario)', async () => {
+    // The G-013 adversarial scenario: `GET /sessions?offset=1e18`.
+    // The schema rejects it before any DB round-trip.
+    built = await buildWithSeed({
+      users: seededUsers,
+      sessions: [SESSION_ALICE_PUB],
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'GET',
+      url: '/sessions?offset=999999999999999',
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(400);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('validation-failed');
+  });
+
+  it('?offset=0 (the default) still works — regression', async () => {
+    built = await buildWithSeed({
+      users: seededUsers,
+      sessions: [SESSION_ALICE_PUB],
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'GET',
+      url: '/sessions?offset=0',
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{ sessions?: Array<{ id?: string }>; total?: number }>();
+    expect(body.sessions).toHaveLength(1);
+    expect(body.total).toBe(1);
+    expect(body.sessions?.[0]?.id).toBe(SESSION_ALICE_PUB.id);
   });
 
   it('returns 400 validation-failed when ?privacy is outside the enum', async () => {

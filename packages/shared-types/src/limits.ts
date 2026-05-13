@@ -72,3 +72,24 @@ export const MAX_SNAPSHOT_LABEL_LENGTH = 128;
  * schema enforces the same ceiling at validation time.
  */
 export const MAX_SCREEN_NAME_LENGTH = 64;
+
+/**
+ * `GET /sessions` `?offset` upper bound.
+ *
+ * Refinement: tasks/refinements/backend-hardening/list_sessions_offset_cap.md
+ * Source finding: docs/security/m3-review/coverage.md G-013
+ *
+ * The list-sessions schema previously capped `?limit` at 200 but left
+ * `?offset` with only a `minimum: 0` — so a well-formed request like
+ * `GET /sessions?offset=999999999999` arrived at Postgres as a valid
+ * `OFFSET 999999999999`. Postgres returns an empty result correctly
+ * but burns I/O and CPU scanning past the offset; an authenticated
+ * client can multiply that cost with parallel requests.
+ *
+ * 100 000 = 500 pages at the maximum `limit` of 200 — orders of
+ * magnitude beyond any human pagination need. Over-cap requests are
+ * rejected at the schema layer (400 `validation-failed`) before any
+ * DB round-trip; the cost of an abuse attempt collapses to the cost
+ * of parsing the query string.
+ */
+export const MAX_SESSION_LIST_OFFSET = 100_000;
