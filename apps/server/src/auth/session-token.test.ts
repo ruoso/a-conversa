@@ -724,13 +724,14 @@ describe('POST /auth/logout', () => {
 describe('GET /auth/callback', () => {
   it('redirects with the session cookie when the user is returning (non-pending)', async () => {
     // Seed a row already at a real screen name. The stubbed
-    // authorizationCodeGrant returns sub=alice, so the namespaced
-    // oauth_subject is `authelia:alice` — match that on the seed.
+    // authorizationCodeGrant returns sub=alice, and the namespaced
+    // oauth_subject uses the issuer URL's full origin per F-008
+    // hardening (`http://authelia:9091:alice`) — match that on the seed.
     const built = await buildApp({
       initialRows: [
         {
           id: '00000000-0000-4000-8000-000000000200',
-          oauth_subject: 'authelia:alice',
+          oauth_subject: 'http://authelia:9091:alice',
           screen_name: 'alice',
         },
       ],
@@ -782,7 +783,8 @@ describe('GET /auth/callback', () => {
         needsScreenName: boolean;
       }>();
       expect(body.sub).toBe('bob');
-      expect(body.oauthSubject).toBe('authelia:bob');
+      // F-008 hardening: namespace key is the issuer's full origin.
+      expect(body.oauthSubject).toBe('http://authelia:9091:bob');
       expect(body.needsScreenName).toBe(true);
       // Set-Cookie carries the pending cookie; NO session cookie yet.
       const setCookie = response.headers['set-cookie'];

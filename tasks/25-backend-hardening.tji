@@ -69,6 +69,7 @@ task backend_hardening "M3-review hardening (security audit follow-ups)" {
     task oauth_subject_full_namespacing "Namespace oauth_subject by full issuer URL (not hostname only)" {
       effort 0.25d
       allocate team
+      complete 100
       note "Source: docs/security/m3-review/auth.md F-008"
       note "Refinement: tasks/refinements/backend-hardening/oauth_subject_full_namespacing.md"
     }

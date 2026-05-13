@@ -20,8 +20,8 @@ Feature: No-OAuth-profile-data policy — id_token claims never leak
     And I GET the callback URL with the stored state and a stubbed sub "alice"
     Then the response status is 200
     And the response body contains none of the profile-claim values
-    And the users row for "authelia:alice" carries only id, oauth_subject, screen_name, created_at, deleted_at
-    And the users row for "authelia:alice" has screen_name "<pending>"
+    And the users row for "http://authelia:9091:alice" carries only id, oauth_subject, screen_name, created_at, deleted_at
+    And the users row for "http://authelia:9091:alice" has screen_name "<pending>"
 
   Scenario: GET /auth/me returns only userId and screenName — no profile data
     Given a user with oauth_subject "authelia:bob" exists with screen_name "bob"

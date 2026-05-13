@@ -170,18 +170,28 @@ interface UsersUpsertRow extends Record<string, unknown> {
 }
 
 /**
- * Compose the namespaced OIDC subject identifier — `${hostname}:${sub}`.
+ * Compose the namespaced OIDC subject identifier — `${origin}:${sub}`.
  *
  * Per the users-table refinement's F2, `oauth_subject` is stored as
  * `provider:subject` to avoid cross-provider collisions. We use the
- * issuer URL's hostname as the provider key — for the dev Authelia
- * case that's `authelia` (yielding `authelia:alice`); production with
- * an `auth.example.com` issuer yields `auth.example.com:<sub>`. The
- * hostname is the deployment-specific identifier the operator already
- * controls via `OIDC_ISSUER_URL`.
+ * issuer URL's **origin** (`<protocol>//<hostname>[:port]`) as the
+ * provider key — for the dev Authelia case that's
+ * `http://authelia:9091` (yielding `http://authelia:9091:alice`);
+ * production with an `https://auth.example.com` issuer yields
+ * `https://auth.example.com:<sub>`. The origin is the
+ * deployment-specific identifier the operator already controls via
+ * `OIDC_ISSUER_URL`.
+ *
+ * Hardening note (M3-review F-008 in `docs/security/m3-review/auth.md`):
+ * an earlier version used only `issuerUrl.hostname`, which collided
+ * across two issuers sharing the same hostname on different ports
+ * (e.g. `http://auth.example.com:9091` vs
+ * `https://auth.example.com:443`) and across protocol differences
+ * (http vs https). Switching to `.origin` distinguishes all three
+ * dimensions (protocol, hostname, port).
  */
 export function namespacedOauthSubject(issuerUrl: URL, sub: string): string {
-  return `${issuerUrl.hostname}:${sub}`;
+  return `${issuerUrl.origin}:${sub}`;
 }
 
 /**

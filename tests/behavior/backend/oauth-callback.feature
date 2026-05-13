@@ -8,7 +8,8 @@ Feature: OIDC callback handler — full handshake against a stubbed issuer
   the id_token in one call via openid-client's `authorizationCodeGrant`),
   reads ONLY the `sub` claim, and upserts a `users` row keyed on the
   namespaced OIDC subject (`provider:sub`, where provider is the issuer
-  URL's hostname).
+  URL's full origin — protocol + hostname + port — per F-008 hardening
+  in docs/security/m3-review/auth.md).
   Refinement: tasks/refinements/backend/oauth_callback_handler.md
   ADRs:        docs/adr/0002-auth-self-hosted-oidc-authelia.md,
                docs/adr/0017-mock-oauth-authelia-users-file.md,
@@ -24,18 +25,18 @@ Feature: OIDC callback handler — full handshake against a stubbed issuer
     And the Location header points at "http://authelia:9091/auth"
     When I GET the callback URL with the stored state and a stubbed sub "alice"
     Then the response status is 200
-    And the response body's oauthSubject is "authelia:alice"
+    And the response body's oauthSubject is "http://authelia:9091:alice"
     And the response body's sub is "alice"
-    And a users row exists with oauth_subject "authelia:alice"
+    And a users row exists with oauth_subject "http://authelia:9091:alice"
     And the users row's screen_name is "<pending>"
 
   Scenario: returning user — same oauth_subject reuses the row and is redirected
-    Given a user with oauth_subject "authelia:alice" exists
+    Given a user with oauth_subject "http://authelia:9091:alice" exists
     When I GET /auth/login
     And I GET the callback URL with the stored state and a stubbed sub "alice"
     Then the response status is 302
     And the Location header points at "http://localhost:3000"
-    And exactly one users row exists with oauth_subject "authelia:alice"
+    And exactly one users row exists with oauth_subject "http://authelia:9091:alice"
 
   Scenario: state mismatch — callback with bad state returns 400
     When I GET /auth/login

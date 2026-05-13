@@ -305,7 +305,9 @@ describe('Invariant 2: id_token claims are read for only .sub', () => {
       ['needsScreenName', 'oauthSubject', 'sub', 'userId'].sort(),
     );
     expect(parsed['sub']).toBe('alice');
-    expect(parsed['oauthSubject']).toBe('authelia:alice');
+    // Namespace key uses the issuer's full origin per F-008 hardening
+    // (docs/security/m3-review/auth.md).
+    expect(parsed['oauthSubject']).toBe('http://authelia:9091:alice');
     expect(parsed['needsScreenName']).toBe(true);
   });
 
@@ -330,11 +332,12 @@ describe('Invariant 2: id_token claims are read for only .sub', () => {
         }
       }
     }
-    // And the inserted users row: oauth_subject is `authelia:alice`;
-    // screen_name is the placeholder. Neither carries any profile data.
+    // And the inserted users row: oauth_subject is the full-origin
+    // namespaced key (F-008 hardening); screen_name is the placeholder.
+    // Neither carries any profile data.
     const row = Array.from(test.users.values())[0];
     expect(row).toBeDefined();
-    expect(row?.oauth_subject).toBe('authelia:alice');
+    expect(row?.oauth_subject).toBe('http://authelia:9091:alice');
     expect(row?.screen_name).toBe('<pending>');
     for (const value of profileValuesArray()) {
       expect(row?.oauth_subject).not.toContain(value);

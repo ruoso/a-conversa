@@ -34,7 +34,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { errorHandlerPlugin } from '../error-handler.js';
 import { errorEnvelopeSchema } from '../openapi.js';
 import { __buildStubConfiguration } from './config.js';
-import { authRoutesPlugin, createFlowStateStore } from './routes.js';
+import { authRoutesPlugin, createFlowStateStore, namespacedOauthSubject } from './routes.js';
 import type { AuthRoutesOptions } from './routes.js';
 import type { DbPool } from '../db.js';
 
@@ -259,7 +259,9 @@ describe('GET /auth/callback', () => {
     expect(response.statusCode).toBe(200);
     const body = response.json<{ sub?: string; oauthSubject?: string; userId?: string }>();
     expect(body.sub).toBe('alice');
-    expect(body.oauthSubject).toBe('authelia:alice');
+    // Namespace key uses the full issuer origin (`<protocol>//<host>[:port]`)
+    // per F-008 hardening — see docs/security/m3-review/auth.md.
+    expect(body.oauthSubject).toBe('http://authelia:9091:alice');
     expect(typeof body.userId).toBe('string');
     expect(test.users.size).toBe(1);
   });
@@ -278,5 +280,74 @@ describe('GET /auth/callback', () => {
     expect(replay.statusCode).toBe(400);
     const body = replay.json<{ error?: { code?: string } }>();
     expect(body.error?.code).toBe('auth-state-invalid');
+  });
+});
+
+// ============================================================
+// namespacedOauthSubject — F-008 hardening (full-origin namespace)
+// ============================================================
+//
+// Per docs/security/m3-review/auth.md F-008 / refinement
+// tasks/refinements/backend-hardening/oauth_subject_full_namespacing.md:
+// the namespace key for `users.oauth_subject` must include the issuer
+// URL's full origin (protocol + hostname + port), not just the
+// hostname. Two issuers on the same hostname with different ports —
+// or one on http and one on https — must produce different namespace
+// keys so an OIDC `sub` reuse across the two cannot collide on the
+// `oauth_subject` UNIQUE constraint and silently merge accounts.
+
+describe('namespacedOauthSubject', () => {
+  it("uses the issuer URL's full origin (protocol + host + port) as the namespace prefix", () => {
+    // The dev Authelia URL — `http://authelia:9091` — produces an
+    // origin-prefixed namespace key, not a hostname-only one.
+    const result = namespacedOauthSubject(new URL('http://authelia:9091'), 'alice');
+    expect(result).toBe('http://authelia:9091:alice');
+    // The protocol scheme MUST be part of the key.
+    expect(result).toMatch(/^https?:\/\//);
+    // The full `sub` must appear after the origin + ':' separator.
+    expect(result.endsWith(':alice')).toBe(true);
+  });
+
+  it('two issuers on the SAME hostname-DIFFERENT-port produce DIFFERENT namespace keys', () => {
+    // The F-008 scenario: an operator stands up two issuers on the
+    // same domain at different ports (e.g. legacy Authelia on :9091
+    // alongside a production OIDC issuer on :443). Pre-fix, both
+    // collapsed to `auth.example.com:<sub>`; post-fix the port is
+    // part of the namespace so they stay distinct.
+    const a = namespacedOauthSubject(new URL('https://auth.example.com:9091'), 'shared-sub');
+    const b = namespacedOauthSubject(new URL('https://auth.example.com:443'), 'shared-sub');
+    expect(a).not.toBe(b);
+    expect(a).toBe('https://auth.example.com:9091:shared-sub');
+    // Note: `URL.origin` omits the explicit `:443` for https since it
+    // is the default port — that's the intended semantics from the
+    // WHATWG URL spec. The test pins the post-`origin` shape rather
+    // than asserting a literal `:443` string.
+    expect(b).toBe('https://auth.example.com:shared-sub');
+  });
+
+  it('two users from the SAME issuer get the SAME namespace prefix', () => {
+    // Same issuer, two different `sub` values — the namespace prefix
+    // (everything before the last `:<sub>` segment) must be identical.
+    const issuer = new URL('http://authelia:9091');
+    const alice = namespacedOauthSubject(issuer, 'alice');
+    const bob = namespacedOauthSubject(issuer, 'bob');
+    const prefixA = alice.slice(0, alice.length - 'alice'.length);
+    const prefixB = bob.slice(0, bob.length - 'bob'.length);
+    expect(prefixA).toBe(prefixB);
+    expect(prefixA).toBe('http://authelia:9091:');
+  });
+
+  it('different protocols on the SAME hostname-port produce DIFFERENT namespace keys', () => {
+    // http vs https on the same host — distinguishing protocol is
+    // half the F-008 fix (port is the other half). A maintainer who
+    // flipped the issuer URL from http to https without rotating
+    // `oauth_subject` values would otherwise see legacy rows resolve
+    // to the new origin silently. The origin-based key keeps them
+    // separate.
+    const http = namespacedOauthSubject(new URL('http://localhost:9091'), 'alice');
+    const https = namespacedOauthSubject(new URL('https://localhost:9091'), 'alice');
+    expect(http).not.toBe(https);
+    expect(http).toBe('http://localhost:9091:alice');
+    expect(https).toBe('https://localhost:9091:alice');
   });
 });
