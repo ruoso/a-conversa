@@ -1,1 +1,5 @@
-pnpm exec lint-staged && pnpm run typecheck && pnpm run typecheck:tools && pnpm run typecheck:tests
+pnpm exec lint-staged \
+  && pnpm run lint \
+  && pnpm run typecheck \
+  && pnpm run typecheck:tools \
+  && pnpm run typecheck:tests

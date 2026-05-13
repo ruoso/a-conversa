@@ -15,11 +15,13 @@
 # a thin alias for back-compat with existing dev-loop muscle memory.
 # See ADR 0018 / ADR 0023 / ADR 0020 (Amendments) for context.
 
-.PHONY: help install test up up-app migrate down down-v logs ps seed clean
+.PHONY: help install check test up up-app migrate down down-v logs ps seed clean
 
 help:
 	@echo "a-conversa — make targets"
 	@echo "  make install   pnpm install across all workspaces"
+	@echo "  make check     run the full static-analysis bundle (lint + format:check + typecheck x3)"
+	@echo "                 — same target invoked by the pre-commit hook and by CI"
 	@echo "  make test      run smoke tests (vitest, cucumber, playwright)"
 	@echo "  make up        bring up the whole dev stack (postgres + authelia + app), wait for healthy, print URLs"
 	@echo "  make up-app    alias for 'make up' (back-compat; the old up/up-app split is gone)"
@@ -34,6 +36,13 @@ help:
 
 install:
 	@pnpm install -r
+
+# Single entry point for the static-analysis bundle. Used by:
+#   - the Husky pre-commit hook (`.husky/pre-commit`)
+#   - the GH Actions CI workflow (`.github/workflows/ci.yml`)
+# so dev + CI share one contract. See ADR 0014 (Amendment 2026-05-11).
+check:
+	@pnpm run check
 
 test:
 	@pnpm run test:smoke

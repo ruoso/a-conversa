@@ -9,7 +9,23 @@
     "noEmit": true,
     "composite": false,
     "declaration": false,
-    "declarationMap": false
+    "declarationMap": false,
+    // The tests tree is not a pnpm workspace, so workspace package
+    // names (e.g. `@a-conversa/shared-types`) are not symlinked into
+    // any `node_modules/` reachable from `tests/`. The behavior step
+    // files reach into `apps/server/src/**` via relative paths; those
+    // server source files in turn import `@a-conversa/shared-types`.
+    // Map the workspace names to source so module resolution succeeds
+    // when this tsconfig is the active project — without this, the
+    // imports collapse to `any` and the type-aware ESLint rules
+    // (`@typescript-eslint/no-unsafe-*`) fire on otherwise-correct
+    // discriminated-union narrowing.
+    "paths": {
+      "@a-conversa/shared-types": ["../packages/shared-types/src/index.ts"],
+      "@a-conversa/shared-types/*": ["../packages/shared-types/src/*"],
+      "@a-conversa/test-fixtures": ["../packages/test-fixtures/src/index.ts"],
+      "@a-conversa/test-fixtures/*": ["../packages/test-fixtures/src/*"]
+    }
   },
   "include": ["**/*.ts", "**/*.tsx"]
 }

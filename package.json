@@ -15,7 +15,7 @@
     "seed": "tsx scripts/seed.ts",
     "migrate": "pnpm --filter @a-conversa/server run migrate",
     "test:smoke": "vitest run tests/smoke packages apps",
-    "test:behavior:smoke": "NODE_OPTIONS='--import tsx' cucumber-js",
+    "test:behavior:smoke": "NODE_OPTIONS='--import tsx --conditions=source' cucumber-js",
     "test:e2e:smoke": "playwright test --config=playwright.config.ts",
     "build": "pnpm -r build",
     "lint": "eslint .",
@@ -25,6 +25,7 @@
     "typecheck": "tsc -b",
     "typecheck:tools": "tsc --noEmit -p tsconfig.tools.json",
     "typecheck:tests": "tsc --noEmit -p tests/tsconfig.json",
+    "check": "pnpm run lint && pnpm run format:check && pnpm run typecheck && pnpm run typecheck:tools && pnpm run typecheck:tests",
     "prepare": "husky"
   },
   "lint-staged": {

@@ -32,6 +32,11 @@ export default tseslint.config(
       'test-results/',
       'pnpm-lock.yaml',
       'package-lock.json',
+      // Local-only sub-agent worktrees. Gitignored (see .gitignore),
+      // so CI never sees them; ignoring them here keeps `pnpm lint`
+      // useful for devs who use worktrees — otherwise typescript-eslint
+      // hits "multiple candidate TSConfigRootDirs" parsing errors.
+      '.claude/',
     ],
   },
   // Lint TS / TSX in the workspace tree and root-level tests with the

@@ -52,6 +52,7 @@ The [`Makefile`](../Makefile) wraps `pnpm` and `docker compose` with friendlier 
 | Target         | What it does                                                                                | When you'd want it                                       |
 | -------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
 | `make install` | `pnpm install -r` across all workspaces.                                                    | First clone, or after pulling lockfile changes.          |
+| `make check`   | Runs the full static-analysis bundle: `lint`, `format:check`, `typecheck`, `typecheck:tools`, `typecheck:tests`. Same target the pre-commit hook and CI invoke. | Anytime you want the exact contract CI will enforce.    |
 | `make test`    | Runs Vitest, Cucumber, and Playwright smokes in sequence.                                   | Before committing or pushing.                            |
 | `make up`      | Brings up `postgres + authelia`, waits ~15s for healthy, prints a URL banner.               | Anytime you need the backing services running.           |
 | `make up-app`  | Brings the `app` service up too.                                                            | When you want to exercise the app stub on purpose.       |
@@ -108,13 +109,15 @@ The five `pnpm run smoke:{node,react,reactflow,cytoscape,tailwind}` scripts are 
 
 | Command                  | What it does                                       |
 | ------------------------ | -------------------------------------------------- |
+| `pnpm run check`         | Runs `lint + format:check + typecheck + typecheck:tools + typecheck:tests` in one go — the same bundle the pre-commit hook and CI invoke. Single entry point. |
 | `pnpm run lint`          | ESLint over the repo ([ADR 0011](adr/0011-linter-eslint-with-typescript-eslint.md)). |
 | `pnpm run format`        | Prettier write across the repo ([ADR 0012](adr/0012-formatter-prettier.md)). |
+| `pnpm run format:check`  | Prettier `--check` across the repo (read-only).    |
 | `pnpm run typecheck`     | `tsc -b` over project references ([ADR 0013](adr/0013-typecheck-tsconfig-strict-with-project-references.md)). |
 | `pnpm run typecheck:tools` | Typecheck the standalone `scripts/` programs.    |
 | `pnpm run typecheck:tests` | Typecheck the test sources under `tests/`.       |
 
-The pre-commit hook ([ADR 0014](adr/0014-pre-commit-hooks-husky-lint-staged.md)) runs ESLint `--fix`, Prettier `--write`, and `tsc -b` against staged files automatically; manual invocation of the commands above is for ad-hoc verification only. **Tests are intentionally not in the hook** — kept fast on purpose; the CI step catches what the hook misses.
+The pre-commit hook ([ADR 0014](adr/0014-pre-commit-hooks-husky-lint-staged.md)) runs `lint-staged` (ESLint `--fix` + Prettier `--write` on staged files), then `pnpm run lint` (full repo), then the three `tsc -b` invocations. The whole-repo lint catches the failure mode where a config or upstream-type change invalidates a file nobody staged — `lint-staged` alone can't see it. **Tests are intentionally not in the hook** — kept fast on purpose; the CI smoke step catches what the hook deliberately skips. `pnpm run check` / `make check` is the unified entry point both dev and CI invoke.
 
 ## Workspace layout
 
