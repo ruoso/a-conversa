@@ -31,7 +31,27 @@ await i18next
 
 After init, `t('chrome.hello')` resolves through the dotted-key lookup. The fallback chain (`pt-BR` → `pt` → `en-US`, `es-419` → `es` → `en-US`) is wired by `FALLBACK_LNG`.
 
-Locale detection (browser-detector vs. URL-prefix per surface) lands in `frontend_i18n.i18n_locale_negotiation`. The cookie name `aconversa_locale` is settled there; this package does not parse cookies itself.
+Locale detection (browser-detector vs. URL-prefix per surface) lives in `src/negotiation.ts` and is re-exported from the package root. The cookie name `aconversa_locale` is settled by `frontend_i18n.i18n_locale_negotiation`.
+
+## Locale negotiation
+
+The package exports two negotiation helpers (see `src/negotiation.ts`):
+
+- `negotiateAuthenticatedLocale()` — for the moderator, participant, and private-audience surfaces. Resolution chain: `aconversa_locale` cookie → `navigator.languages` (canonicalized onto the v1 supported set) → `en-US`. Backed by `i18next-browser-languagedetector` per ADR 0024.
+- `negotiateUrlLocale(pathname?)` — for the public audience and replay surfaces. Reads the leading URL segment (`/pt-BR/sessions/abc123`). Returns `{ locale, residualPath }`. Falls back to `en-US` when no prefix is present or the prefix doesn't resolve.
+
+Cookie shape:
+
+- **Name**: `aconversa_locale`
+- **Value**: canonical tag (`en-US` / `pt-BR` / `es-419`)
+- **Path**: `/`
+- **Max-Age**: 31_536_000 (one year)
+- **SameSite**: `Lax`
+- **Secure**: present iff served over HTTPS
+
+No `HttpOnly` (the frontend reads it). No `Domain` (host-only). The backend ignores this cookie entirely (per ADR 0023 + ADR 0024 — locale is a frontend concern).
+
+`persistLocale(locale)` writes the cookie; `readLocaleCookie()` reads it; `clearLocaleCookie()` removes it. The moderator + participant surfaces invoke `persistLocale` from the locale-selector control next to the screen-name capture form.
 
 ## Adding a string
 

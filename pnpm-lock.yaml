@@ -226,6 +226,9 @@ importers:
       i18next:
         specifier: 26.1.0
         version: 26.1.0(typescript@6.0.3)
+      i18next-browser-languagedetector:
+        specifier: 8.2.1
+        version: 8.2.1
       i18next-icu:
         specifier: 2.4.3
         version: 2.4.3(intl-messageformat@11.2.5)

@@ -20,3 +20,16 @@ export {
   buildResources,
   buildInitOptions,
 } from './config.js';
+
+export {
+  LOCALE_COOKIE_NAME,
+  type PersistLocaleOptions,
+  type UrlLocaleResult,
+  canonicalizeLocale,
+  clearLocaleCookie,
+  defaultLocale,
+  negotiateAuthenticatedLocale,
+  negotiateUrlLocale,
+  persistLocale,
+  readLocaleCookie,
+} from './negotiation.js';

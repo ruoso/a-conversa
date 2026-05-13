@@ -54,3 +54,15 @@ Locale resolution is the first decision the app makes on every page load — eve
 
 - **Locale-selector control placement on the audience surface.** The public-audience surface has no UI control surface in the usual sense (OBS browser source); the URL is the control. A small overlay control on the in-browser audience viewer (when not in OBS source mode) may be helpful — out of scope for this task; revisit if needed.
 - **URL prefix vs. query param vs. subdomain.** The plan and ADR settled on URL prefix (`/pt-BR/...`). Query-param (`?locale=pt-BR`) was considered and rejected because it's easier for a producer to drop accidentally; subdomain (`pt-br.example.com`) was rejected because TLS and routing are simpler with a single hostname. Recorded so the alternative isn't relitigated.
+
+## Status
+
+**Done** (2026-05-11). Artifacts:
+
+- `packages/i18n-catalogs/src/negotiation.ts` — exports `negotiateAuthenticatedLocale()` (cookie → `navigator.languages` via `i18next-browser-languagedetector` → `en-US`), `negotiateUrlLocale(pathname?)` (returns `{ locale, residualPath }` with exact + loose match on the leading URL segment), `canonicalizeLocale(raw)`, `defaultLocale()`, `persistLocale(locale, options?)`, `readLocaleCookie()`, `clearLocaleCookie()`, plus the `LOCALE_COOKIE_NAME` constant. Re-exported from `packages/i18n-catalogs/src/index.ts`.
+- `packages/i18n-catalogs/src/negotiation.test.ts` — 25 Vitest cases covering tag canonicalization (exact / case-variant / language-only / non-shipped-region / unsupported), the cookie round-trip, the authenticated chain precedence (cookie > navigator.languages > navigator.language > `en-US`), and the URL-prefix parser (exact + loose match, prefix-stripping, residual path).
+- `apps/moderator/src/main.tsx` — boots `initI18n` from `negotiateAuthenticatedLocale()` instead of the prior hard-coded `navigator.language` shim.
+- `packages/i18n-catalogs/README.md` — documents the cookie shape (name `aconversa_locale`, `Path=/`, `Max-Age=31_536_000`, `SameSite=Lax`, `Secure` iff HTTPS) and the two negotiation helpers.
+- `packages/i18n-catalogs/package.json` — declares `i18next-browser-languagedetector@8.2.1` as a dependency. `packages/i18n-catalogs/tsconfig.json` adds the `DOM` + `DOM.Iterable` libs for the cookie / `window.location` reads.
+
+Audience + participant `main.tsx` files do not exist yet (those app skeletons are pending under `aud_app_skeleton` / `part_app_skeleton`); the helpers are exported and documented so those tasks can consume them directly.
