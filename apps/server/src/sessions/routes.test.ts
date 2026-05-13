@@ -1867,6 +1867,97 @@ describe('GET /sessions/:id — visibility-gated fetch', () => {
     const body = response.json<{ error?: { code?: string } }>();
     expect(body.error?.code).toBe('validation-failed');
   });
+
+  it('returns a bytewise-identical 404 response for a nonexistent id vs. a private session not visible to the caller (G-014)', async () => {
+    // Source: docs/security/m3-review/coverage.md G-014
+    // Refinement: tasks/refinements/backend-hardening/bytewise_404_vs_private_pin.md
+    //
+    // The visibility predicate collapses "session doesn't exist" and
+    // "session exists but caller can't see it" at the SQL layer (zero
+    // rows in both cases). The handler returns the same 404 +
+    // `ApiError.notFound('session not found or not visible')` for
+    // both. This test pins the no-existence-leak invariant — a future
+    // refactor that distinguishes the two (e.g. by adding a
+    // `details.reason` field, by changing the message, by switching
+    // to a different status) breaks this assertion.
+    //
+    // Compare strategy: issue both requests against a single app
+    // fixture seeded with a private session Alice can NOT see (Ben is
+    // the host; Alice is not a participant) and a fully-unknown UUID
+    // not seeded anywhere. Both requests are authenticated as Alice.
+    // Deep-equal the full JSON bodies — the canonical HTTP error
+    // envelope has no per-request varying fields (no id, no
+    // timestamp, no request-id; see apps/server/src/error-handler.ts:148-157).
+    built = await buildWithSeed({
+      users: [
+        {
+          id: ALICE_ID,
+          oauth_subject: 'authelia:alice',
+          screen_name: 'alice',
+          deleted_at: null,
+        },
+        {
+          id: BEN_ID,
+          oauth_subject: 'authelia:ben',
+          screen_name: 'ben',
+          deleted_at: null,
+        },
+      ],
+      // PRIVATE_BEN is Ben's private session; Alice cannot see it.
+      sessions: [
+        {
+          id: '00000000-0000-4000-8000-cccc00000001',
+          host_user_id: BEN_ID,
+          privacy: 'private',
+          topic: "Ben's invisible-to-Alice debate",
+          created_at: new Date('2026-05-09T12:00:00.000Z'),
+          ended_at: null,
+        },
+      ],
+      participants: [],
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    // A fully-unknown UUID, distinct from the private-not-visible id.
+    const UNKNOWN_ID = '00000000-0000-4000-8000-cccc99999999';
+    const PRIVATE_NOT_VISIBLE_ID = '00000000-0000-4000-8000-cccc00000001';
+
+    const resPrivate = await built.app.inject({
+      method: 'GET',
+      url: `/sessions/${PRIVATE_NOT_VISIBLE_ID}`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    const resUnknown = await built.app.inject({
+      method: 'GET',
+      url: `/sessions/${UNKNOWN_ID}`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+
+    // Status-code parity (load-bearing — 404 on both sides).
+    expect(resPrivate.statusCode).toBe(404);
+    expect(resUnknown.statusCode).toBe(404);
+    expect(resPrivate.statusCode).toBe(resUnknown.statusCode);
+
+    // error.code + error.message parity (asserted explicitly so a
+    // regression on either field surfaces with a readable message).
+    const bodyPrivate = resPrivate.json<{ error?: { code?: string; message?: string } }>();
+    const bodyUnknown = resUnknown.json<{ error?: { code?: string; message?: string } }>();
+    expect(bodyPrivate.error?.code).toBe('not-found');
+    expect(bodyUnknown.error?.code).toBe('not-found');
+    expect(bodyPrivate.error?.code).toBe(bodyUnknown.error?.code);
+    expect(bodyPrivate.error?.message).toBe(bodyUnknown.error?.message);
+
+    // Full-body deep-equal — the canonical error envelope has no
+    // per-request varying fields, so the full JSON must match. Any
+    // future addition of a discriminating field (e.g. `details.reason`)
+    // on one branch and not the other fails this assertion.
+    expect(bodyPrivate).toEqual(bodyUnknown);
+
+    // Headers parity for the content-type — the same `application/json`
+    // is emitted on both sides (Fastify's setErrorHandler routes
+    // through `reply.type('application/json')`). A future divergence
+    // here would also be a leak vector.
+    expect(resPrivate.headers['content-type']).toBe(resUnknown.headers['content-type']);
+  });
 });
 
 describe('POST /sessions/:id/end — moderator ends the session', () => {
@@ -2543,6 +2634,86 @@ describe('PATCH /sessions/:id/privacy — host toggles session privacy', () => {
     // No write side-effects.
     const sessionAfter = built.store.sessions.find((s) => s.id === PUBLIC_ACTIVE.id);
     expect(sessionAfter?.privacy).toBe('public');
+  });
+
+  it('returns a bytewise-identical 404 response for a nonexistent id vs. a private session not visible to the caller (G-014)', async () => {
+    // Source: docs/security/m3-review/coverage.md G-014
+    // Refinement: tasks/refinements/backend-hardening/bytewise_404_vs_private_pin.md
+    //
+    // Mirrors the GET /sessions/:id bytewise-pin test on the PATCH
+    // surface — same visibility predicate collapse, same `ApiError
+    // .notFound('session not found or not visible')` literal. The
+    // visibility-then-authority ordering at routes.ts:1855-1860
+    // surfaces 404 (NOT 403) BEFORE the host-only authority check
+    // fires, regardless of whether the row exists.
+    //
+    // Compare strategy: Alice (the authenticated caller) attempts to
+    // toggle privacy on (a) Ben's private session — invisible to Alice
+    // by the visibility predicate — and (b) a fully-unknown UUID. Both
+    // responses must be byte-equal modulo no per-request varying
+    // fields (the canonical error envelope is just `{ error: { code,
+    // message } }`).
+    built = await buildWithSeed({
+      users: [
+        {
+          id: ALICE_ID,
+          oauth_subject: 'authelia:alice',
+          screen_name: 'alice',
+          deleted_at: null,
+        },
+        {
+          id: BEN_ID,
+          oauth_subject: 'authelia:ben',
+          screen_name: 'ben',
+          deleted_at: null,
+        },
+      ],
+      sessions: [PRIVATE_BENS],
+      participants: [],
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    // A fully-unknown UUID, distinct from PRIVATE_BENS.id.
+    const UNKNOWN_ID = '00000000-0000-4000-8000-ffff99999999';
+
+    const resPrivate = await built.app.inject({
+      method: 'PATCH',
+      url: `/sessions/${PRIVATE_BENS.id}/privacy`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+      payload: { privacy: 'public' },
+    });
+    const resUnknown = await built.app.inject({
+      method: 'PATCH',
+      url: `/sessions/${UNKNOWN_ID}/privacy`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+      payload: { privacy: 'public' },
+    });
+
+    // Status-code parity — both branches must collapse into 404, never
+    // 403 (the existence-non-leak rule).
+    expect(resPrivate.statusCode).toBe(404);
+    expect(resUnknown.statusCode).toBe(404);
+    expect(resPrivate.statusCode).toBe(resUnknown.statusCode);
+
+    // error.code + error.message parity, asserted explicitly.
+    const bodyPrivate = resPrivate.json<{ error?: { code?: string; message?: string } }>();
+    const bodyUnknown = resUnknown.json<{ error?: { code?: string; message?: string } }>();
+    expect(bodyPrivate.error?.code).toBe('not-found');
+    expect(bodyUnknown.error?.code).toBe('not-found');
+    expect(bodyPrivate.error?.code).toBe(bodyUnknown.error?.code);
+    expect(bodyPrivate.error?.message).toBe(bodyUnknown.error?.message);
+
+    // Full-body deep-equal — any future addition of a discriminating
+    // field on one branch (and not the other) fails here.
+    expect(bodyPrivate).toEqual(bodyUnknown);
+
+    // Headers parity for the content-type.
+    expect(resPrivate.headers['content-type']).toBe(resUnknown.headers['content-type']);
+
+    // Neither response modified state — Ben's private session stays
+    // private; the unknown id never landed anywhere.
+    const benSessionAfter = built.store.sessions.find((s) => s.id === PRIVATE_BENS.id);
+    expect(benSessionAfter?.privacy).toBe('private');
+    expect(built.store.sessions.find((s) => s.id === UNKNOWN_ID)).toBeUndefined();
   });
 });
 

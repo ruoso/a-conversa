@@ -461,6 +461,83 @@ describe('ws_subscribe_to_session — handler integration', () => {
 
     expect(app.wsSubscriptions.connectionsForSession(VISIBLE_SESSION_ID)).toEqual([]);
   });
+
+  it('emits bytewise-identical `error` envelopes for a nonexistent session vs. a private not-visible session (G-014)', async () => {
+    // Source: docs/security/m3-review/coverage.md G-014
+    // Refinement: tasks/refinements/backend-hardening/bytewise_404_vs_private_pin.md
+    //
+    // The visibility predicate `canSeeSession` collapses "session
+    // doesn't exist" and "session exists but caller can't see it" at
+    // the SQL layer (zero rows in both cases). The handler's
+    // visibility-rejection branch emits the same `error` envelope for
+    // both. This test pins the no-leak invariant — a future refactor
+    // that distinguishes the two (e.g. by adding a `details.reason`
+    // field, by routing through a different error path, by changing
+    // the `code` or `message`) breaks this assertion.
+    //
+    // Compare strategy: send two `subscribe` envelopes with the SAME
+    // client-supplied `id` so `inResponseTo` is held equal across the
+    // two responses by construction; then strip the freshly-minted
+    // server-side `id` and the `inResponseTo` (belt-and-suspenders) and
+    // assert the remaining payloads are deep-equal.
+    const cookie = await fixtureCookieHeader();
+    const { ws, next } = await openWsClient(app, cookie);
+    try {
+      await next(); // hello
+
+      // The two cases:
+      //   1. HIDDEN_SESSION_ID — seeded with privacy='private' and
+      //      host=OTHER_HOST_ID; the fixture user is neither host nor
+      //      participant. canSeeSession returns false.
+      //   2. UNKNOWN_SESSION_ID — not seeded at all. canSeeSession
+      //      returns false (no row matches `id = $1`).
+      // Reuse the same client-supplied envelope id (SUB_MSG_ID) so the
+      // server's `inResponseTo` is the same on both sides — the only
+      // remaining allowed variation is the server-minted per-response
+      // `id` field, which we strip below.
+      ws.send(subscribeEnvelope(SUB_MSG_ID, HIDDEN_SESSION_ID));
+      const errPrivateRaw = await next();
+      ws.send(subscribeEnvelope(SUB_MSG_ID, UNKNOWN_SESSION_ID));
+      const errUnknownRaw = await next();
+
+      const errPrivate = JSON.parse(errPrivateRaw) as Record<string, unknown>;
+      const errUnknown = JSON.parse(errUnknownRaw) as Record<string, unknown>;
+
+      // Status-code / discriminator parity (asserted before the
+      // bytewise compare so a regression on either of these surfaces
+      // with a more readable failure message).
+      expect(errPrivate.type).toBe('error');
+      expect(errUnknown.type).toBe('error');
+      const privatePayload = errPrivate.payload as { code?: unknown; message?: unknown };
+      const unknownPayload = errUnknown.payload as { code?: unknown; message?: unknown };
+      expect(privatePayload.code).toBe('not-found');
+      expect(unknownPayload.code).toBe('not-found');
+      expect(privatePayload.code).toBe(unknownPayload.code);
+      expect(privatePayload.message).toBe(unknownPayload.message);
+
+      // Bytewise compare after stripping varying fields. `id` is the
+      // server-minted per-response v4 UUID (genuinely varies). The
+      // `inResponseTo` is held equal across both requests by the
+      // shared SUB_MSG_ID, but strip it too for belt-and-suspenders so
+      // a future refactor that mints `inResponseTo` from elsewhere
+      // doesn't accidentally pass this test.
+      const stripVarying = (env: Record<string, unknown>): Record<string, unknown> => {
+        const copy: Record<string, unknown> = { ...env };
+        delete copy.id;
+        delete copy.inResponseTo;
+        return copy;
+      };
+      expect(stripVarying(errPrivate)).toEqual(stripVarying(errUnknown));
+
+      // The registry stays empty for both — neither case landed a
+      // subscription. Asserted separately so a regression on the
+      // registry side doesn't get masked by the bytewise compare.
+      expect(app.wsSubscriptions.connectionsForSession(HIDDEN_SESSION_ID)).toEqual([]);
+      expect(app.wsSubscriptions.connectionsForSession(UNKNOWN_SESSION_ID)).toEqual([]);
+    } finally {
+      ws.terminate();
+    }
+  });
 });
 
 // ---- Per-connection subscription cap (M3-review inputs.md F-001) ----

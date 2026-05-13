@@ -207,6 +207,7 @@ task backend_hardening "M3-review hardening (security audit follow-ups)" {
     task bytewise_404_vs_private_pin "Test: bytewise-identical 404 vs private-403 responses" {
       effort 0.25d
       allocate team
+      complete 100
       note "Source: docs/security/m3-review/coverage.md G-014"
       note "Refinement: tasks/refinements/backend-hardening/bytewise_404_vs_private_pin.md"
     }
