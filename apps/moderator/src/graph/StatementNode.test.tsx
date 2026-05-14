@@ -603,6 +603,120 @@ describe('StatementNode — disputed-state styling (mod_disputed_state_styling)'
   }
 });
 
+describe('StatementNode — meta-disagreement-state styling (mod_meta_disagreement_split_render)', () => {
+  // The meta-disagreement-state visual is the methodology's "agreed to
+  // disagree" disposition signal: the dispute is irreducible, both
+  // proposed values are carried side by side, and the moderator has
+  // recorded the disagreement itself as the facet's status. The card
+  // reads as a double-border (CSS's two parallel lines — the literal
+  // "split decision" visual) in violet, with a 2-px ring halo for the
+  // attention-grabbing escalation signal. The violet palette is the
+  // methodology-escalation color family, distinct from slate (baseline
+  // / agreed) and rose (disputed). `opacity-100` is explicit defense
+  // against any inherited dim opacity.
+  const LOCALES = ['en-US', 'pt-BR', 'es-419'] as const;
+
+  it('applies border-double + border-violet-600 + ring-2 + ring-violet-400 + data-facet-status="meta-disagreement" when classification facet is meta-disagreement', () => {
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-meta-1',
+          data: {
+            wording: 'an irreducibly-disputed statement',
+            kind: 'fact',
+            facetStatuses: { classification: 'meta-disagreement' },
+          },
+        })}
+      />,
+    );
+    const card = screen.getByTestId('statement-node-n-meta-1');
+    expect(card.className).toContain('border-double');
+    expect(card.className).toContain('border-violet-600');
+    expect(card.className).toContain('ring-2');
+    expect(card.className).toContain('ring-violet-400');
+    expect(card.className).toContain('opacity-100');
+    // Not styled as any of the other three branches.
+    expect(card.className).not.toContain('border-dashed');
+    expect(card.className).not.toContain('border-rose-600');
+    expect(card.className).not.toContain('ring-rose-500');
+    expect(card.getAttribute('data-facet-status')).toBe('meta-disagreement');
+  });
+
+  it('meta-disagreement beats disputed in the card-level rollup (priority chain wired through to the className branch)', () => {
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-meta-over-disputed',
+          data: {
+            wording: 'mixed: meta-disagreement wins over disputed',
+            kind: 'fact',
+            facetStatuses: { classification: 'disputed', substance: 'meta-disagreement' },
+          },
+        })}
+      />,
+    );
+    const card = screen.getByTestId('statement-node-n-meta-over-disputed');
+    // Meta-disagreement has higher priority than disputed → the data
+    // attribute and the violet split-visual styling reflect the meta-
+    // disagreement state.
+    expect(card.getAttribute('data-facet-status')).toBe('meta-disagreement');
+    expect(card.className).toContain('border-double');
+    expect(card.className).toContain('border-violet-600');
+    expect(card.className).toContain('ring-violet-400');
+    // Not styled as disputed (the disputed branch uses red + ring-rose-500).
+    expect(card.className).not.toContain('border-rose-600');
+    expect(card.className).not.toContain('ring-rose-500');
+  });
+
+  it('proposed wins over meta-disagreement (the rollup priority is unchanged by this task)', () => {
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-proposed-over-meta',
+          data: {
+            wording: 'mixed: still in flight on another facet',
+            kind: 'fact',
+            facetStatuses: { classification: 'meta-disagreement', substance: 'proposed' },
+          },
+        })}
+      />,
+    );
+    const card = screen.getByTestId('statement-node-n-proposed-over-meta');
+    // Proposed has higher priority than meta-disagreement → the
+    // proposed visual wins. The meta-disagreement violet marker does
+    // NOT apply.
+    expect(card.getAttribute('data-facet-status')).toBe('proposed');
+    expect(card.className).toContain('border-dashed');
+    expect(card.className).not.toContain('border-double');
+    expect(card.className).not.toContain('border-violet-600');
+    expect(card.className).not.toContain('ring-violet-400');
+  });
+
+  for (const locale of LOCALES) {
+    it(`applies the meta-disagreement-state styling regardless of active locale (${locale})`, async () => {
+      await i18next.changeLanguage(locale);
+      render(
+        <StatementNode
+          {...makeNodeProps({
+            id: `n-meta-locale-${locale}`,
+            data: {
+              wording: 'meta-disagreement across locales',
+              kind: 'fact',
+              facetStatuses: { classification: 'meta-disagreement' },
+            },
+          })}
+        />,
+      );
+      const card = screen.getByTestId(`statement-node-n-meta-locale-${locale}`);
+      expect(card.getAttribute('data-facet-status')).toBe('meta-disagreement');
+      expect(card.className).toContain('border-double');
+      expect(card.className).toContain('border-violet-600');
+      expect(card.className).toContain('ring-violet-400');
+      await i18next.changeLanguage('en-US');
+    });
+  }
+});
+
 describe('cardRollupStatus — rollup priority order (mod_agreed_state_styling)', () => {
   // Direct unit tests on the rollup function — pin the priority order
   // without relying on a React render. The order is

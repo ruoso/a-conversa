@@ -142,6 +142,8 @@ task moderator_ui "Moderator UI" {
     task mod_meta_disagreement_split_render "Meta-disagreement split rendering" {
       effort 1d
       allocate team
+      complete 100
+      note "Refinement: tasks/refinements/moderator-ui/mod_meta_disagreement_split_render.md"
     }
     task mod_axiom_mark_decoration "Axiom-mark decoration (per-participant)" {
       effort 1d

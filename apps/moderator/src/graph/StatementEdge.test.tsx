@@ -467,3 +467,89 @@ describe('StatementEdge — disputed-state styling (mod_disputed_state_styling)'
     expect(foundRedStroke).toBe(true);
   });
 });
+
+describe('StatementEdge — meta-disagreement-state styling (mod_meta_disagreement_split_render)', () => {
+  // Edges only carry a `substance` facet in v1; the "meta-disagreement"
+  // state means the methodology-flow has marked the facet as
+  // irreducibly disputed and the moderator has recorded the
+  // disagreement as the disposition. The visual is a violet stroke
+  // (`#7c3aed` — Tailwind's `violet-600`, matching the node's
+  // `border-violet-600` marker) at full opacity with a tight `2 2`
+  // dotted dasharray conveying "fragmented / split". No opacity dim —
+  // the meta-disagreement visual is fully attention-grabbing (mirrors
+  // the disputed pattern). The `data-facet-status="meta-disagreement"`
+  // attribute on the role-label pill is the stable seam for downstream
+  // tasks / Playwright selectors.
+  it('stamps data-facet-status="meta-disagreement" on the role-label pill when the substance facet is meta-disagreement', async () => {
+    const edge: Edge<StatementEdgeData> = {
+      id: 'edge-meta',
+      source: 'n1',
+      target: 'n2',
+      type: 'statement',
+      data: {
+        role: 'supports',
+        annotations: [],
+        facetStatuses: { substance: 'meta-disagreement' },
+      },
+    };
+    render(
+      <div style={{ width: 400, height: 400 }}>
+        <ReactFlow nodes={NODES} edges={[edge]} edgeTypes={edgeTypes} />
+      </div>,
+    );
+    const label = await waitFor(() => screen.getByTestId('graph-edge-label-edge-meta'));
+    expect(label.getAttribute('data-facet-status')).toBe('meta-disagreement');
+  });
+
+  it('applies the violet stroke (#7c3aed / rgb(124, 58, 237)) + "2 2" dasharray on the BaseEdge path when the substance facet is meta-disagreement', async () => {
+    // Pin that the meta-disagreement visual is a violet dotted stroke
+    // with no opacity dim. The path is rendered inside ReactFlow's SVG
+    // and isn't directly id-targetable; we assert against any path
+    // inside the .react-flow__edges container.
+    const edge: Edge<StatementEdgeData> = {
+      id: 'edge-meta-style',
+      source: 'n1',
+      target: 'n2',
+      type: 'statement',
+      data: {
+        role: 'supports',
+        annotations: [],
+        facetStatuses: { substance: 'meta-disagreement' },
+      },
+    };
+    const { container } = render(
+      <div style={{ width: 400, height: 400 }}>
+        <ReactFlow nodes={NODES} edges={[edge]} edgeTypes={edgeTypes} />
+      </div>,
+    );
+    await waitFor(() => screen.getByTestId('graph-edge-label-edge-meta-style'));
+    const paths = container.querySelectorAll('.react-flow__edges path');
+    // ReactFlow renders multiple paths per edge (one for the
+    // interaction stroke, one for the visible edge); the visible edge
+    // is the one our `style` prop is applied to. At least one path
+    // must carry both the violet stroke and the dotted dasharray.
+    let foundVioletDotted = false;
+    for (const path of paths) {
+      const style = path.getAttribute('style') ?? '';
+      // happy-dom may serialize the inline style as either the hex
+      // (`stroke: #7c3aed`) or the rgb tuple (`stroke: rgb(124, 58, 237)`);
+      // accept either form. The dasharray may live in the `style`
+      // string or be hoisted to a `stroke-dasharray` attribute (the
+      // BaseEdge from ReactFlow forwards style as CSS — happy-dom
+      // keeps the property in the `style` string).
+      const hasVioletStroke = /stroke\s*:\s*(#7c3aed|rgb\(\s*124\s*,\s*58\s*,\s*237\s*\))/i.test(
+        style,
+      );
+      const hasDottedDash =
+        /stroke-dasharray\s*:\s*['"]?\s*2\s+2/i.test(style) ||
+        path.getAttribute('stroke-dasharray') === '2 2';
+      if (hasVioletStroke && hasDottedDash) {
+        foundVioletDotted = true;
+      }
+      // No inline opacity override — the meta-disagreement state is
+      // fully attention-grabbing, not faded.
+      expect(style).not.toMatch(/opacity\s*:/i);
+    }
+    expect(foundVioletDotted).toBe(true);
+  });
+});

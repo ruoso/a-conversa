@@ -2,8 +2,9 @@
 // renders the methodology role label on the edge body, plus any
 // annotations targeting this edge, plus per-facet state styling.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_disputed_state_styling.md
-// (prior:      tasks/refinements/moderator-ui/mod_agreed_state_styling.md,
+// Refinement: tasks/refinements/moderator-ui/mod_meta_disagreement_split_render.md
+// (prior:      tasks/refinements/moderator-ui/mod_disputed_state_styling.md,
+//              tasks/refinements/moderator-ui/mod_agreed_state_styling.md,
 //              tasks/refinements/moderator-ui/mod_proposed_state_styling.md,
 //              tasks/refinements/moderator-ui/mod_annotation_rendering.md,
 //              tasks/refinements/moderator-ui/mod_edge_rendering.md)
@@ -23,8 +24,9 @@
 //
 // Geometry: `getBezierPath` matches ReactFlow's default look so the
 // downstream state-styling tasks (`mod_proposed_state_styling`,
-// `mod_agreed_state_styling`, `mod_disputed_state_styling`) can extend
-// the class-name / marker logic without re-deciding the curve shape.
+// `mod_agreed_state_styling`, `mod_disputed_state_styling`,
+// `mod_meta_disagreement_split_render`) can extend the class-name /
+// marker logic without re-deciding the curve shape.
 //
 // Label rendering: `<EdgeLabelRenderer>` is ReactFlow's official portal
 // for putting HTML on an edge. It keeps the label horizontal regardless
@@ -70,7 +72,7 @@ function StatementEdgeImpl(props: EdgeProps<StatementEdgeData>): ReactElement {
 
   // State-styling rollup. Edges in v1 carry only the `substance` facet,
   // so the rollup is the substance status directly (no priority pick to
-  // do across facets). Three branches today:
+  // do across facets). Four branches today:
   //   - `'proposed'` (refinement `mod_proposed_state_styling`): dashed
   //     stroke + opacity-0.6 — the "in flight" visual.
   //   - `'agreed'`   (refinement `mod_agreed_state_styling`): solid
@@ -87,12 +89,21 @@ function StatementEdgeImpl(props: EdgeProps<StatementEdgeData>): ReactElement {
   //     `<path>` element; the canonical extension point is the `style`
   //     prop's `stroke` (same pattern the proposed branch uses for
   //     `strokeDasharray` / `opacity`).
+  //   - `'meta-disagreement'` (refinement
+  //     `mod_meta_disagreement_split_render`): violet stroke
+  //     (`#7c3aed` — Tailwind's `violet-600`, matching the node's
+  //     `border-violet-600` double-border marker) + a tight
+  //     `strokeDasharray: '2 2'` dotted pattern conveying "fragmented /
+  //     split" — visually distinct from the proposed long-dash
+  //     (`6 4`) and the disputed solid stroke. No opacity dim — the
+  //     meta-disagreement visual is fully attention-grabbing, not
+  //     faded (mirrors the disputed pattern).
   //
-  // Other substance statuses (`'meta-disagreement'`, `'committed'`,
-  // `'withdrawn'`) still stamp the data attribute (stable seam —
-  // `<BaseEdge>`'s path is rendered inside ReactFlow's SVG and isn't
-  // directly id-targetable) but don't change the stroke style until
-  // their own sibling refinements land their styling branches.
+  // Other substance statuses (`'committed'`, `'withdrawn'`) still stamp
+  // the data attribute (stable seam — `<BaseEdge>`'s path is rendered
+  // inside ReactFlow's SVG and isn't directly id-targetable) but don't
+  // change the stroke style until their own sibling refinements land
+  // their styling branches.
   const substanceStatus = facetStatuses.substance;
   const proposedEdgeStyle =
     substanceStatus === 'proposed' ? { strokeDasharray: '6 4', opacity: 0.6 } : undefined;
@@ -101,6 +112,18 @@ function StatementEdgeImpl(props: EdgeProps<StatementEdgeData>): ReactElement {
   // as the same red across the canvas. If a design-tokens package later
   // lands a `danger` / `error` family, this hex is the placeholder.
   const disputedEdgeStyle = substanceStatus === 'disputed' ? { stroke: '#e11d48' } : undefined;
+  // `violet-600` — Tailwind palette. Matches the node's
+  // `border-violet-600` meta-disagreement marker so nodes and edges in
+  // the same meta-disagreement state read as the same violet across the
+  // canvas. The `2 2` dasharray is a tight dotted pattern (distinct
+  // from the proposed `6 4` long-dash) that conveys the "fragmented /
+  // split" disposition the methodology text describes. If a design-
+  // tokens package later lands a `methodology-escalation` / `notice`
+  // family, this hex is the placeholder.
+  const metaDisagreementEdgeStyle =
+    substanceStatus === 'meta-disagreement'
+      ? { stroke: '#7c3aed', strokeDasharray: '2 2' }
+      : undefined;
 
   // `style` is optional on `EdgeProps` but `BaseEdge`'s prop type (under
   // `exactOptionalPropertyTypes`) requires `CSSProperties` (not `… | undefined`).
@@ -108,7 +131,7 @@ function StatementEdgeImpl(props: EdgeProps<StatementEdgeData>): ReactElement {
   // override (if any). Only one of the per-status overrides applies at
   // a time (the substance facet has exactly one status). We only set
   // `style` on `<BaseEdge>` when at least one of the inputs is present.
-  const statusEdgeStyle = proposedEdgeStyle ?? disputedEdgeStyle;
+  const statusEdgeStyle = proposedEdgeStyle ?? disputedEdgeStyle ?? metaDisagreementEdgeStyle;
   const mergedStyle =
     style !== undefined || statusEdgeStyle !== undefined
       ? { ...(style ?? {}), ...(statusEdgeStyle ?? {}) }
