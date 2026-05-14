@@ -47,3 +47,59 @@ The backend stays locale-agnostic per ADR 0024: it ships codes, the frontend ren
 - **Exact code set at task-landing time.** This refinement enumerates the codes known at plan time (`bad-request`, `unauthorized`, `forbidden`, `not-found`, `conflict`). New codes will land as the methodology-engine endpoints are built out; the drift check is the safety net. Acceptance criteria are written against "every code in the server source", not against a fixed list.
 - **Localization of `details` payloads.** The `details` object may contain server-side identifiers (entity ids, session ids) that don't need translation, OR human-readable substrings that do. Initial recommendation: `details` carries raw identifiers only; any prose in `details` is treated as a locale-stable english placeholder and not translated. Revisit if a use case forces otherwise.
 - **WebSocket-error codes.** The `ApiError` envelope is HTTP-centric. WS-emitted error events (e.g., a server-rejected proposal) may have their own code set per ADR 0021's event-envelope discriminated union. If/when they emit codes that need localization, those codes get entries in this catalog too — under the same `errors` namespace.
+
+## Status
+
+**Done — 2026-05-11.**
+
+The `errors` namespace was populated in each of the three v1 catalogs
+(`packages/i18n-catalogs/src/catalogs/{en-US,pt-BR,es-419}.json`)
+with 35 keys per locale — 105 total leaf strings, parity verified
+by the existing `pnpm --filter @a-conversa/i18n-catalogs run check`
+script (now reporting 105 keys present in all 3 locales).
+
+Code-set coverage:
+
+- **HTTP `ApiError` factory codes** — 7 entries (`bad-request`,
+  `unauthorized`, `forbidden`, `not-found`, `conflict`,
+  `unprocessable-entity`, `internal-error`). Mirrors
+  `apps/server/src/errors.ts` exhaustively.
+- **WS-specific transport codes** — 4 entries
+  (`unknown-message-type`, `malformed-envelope`,
+  `too-many-subscriptions`, `too-many-catch-up-requests`).
+  Mirrors the constants in
+  `apps/server/src/ws/error-envelope.ts` /
+  `apps/server/src/ws/subscriptions.ts` /
+  `apps/server/src/ws/handlers/catch-up.ts`.
+- **Methodology `RejectionReason` codes** — 23 entries; mirrors the
+  union in `apps/server/src/methodology/types.ts` exhaustively.
+- **Runtime fallback** — `errors.unknown` per the Decisions block
+  ("Surfaced only when the parity-check would have caught the gap;
+  defense-in-depth").
+
+Coverage test landed at
+`packages/i18n-catalogs/src/errors.test.ts` (110 vitest cases):
+walks every code in each of the three source sets against
+`t('errors.<code>')` for each locale, asserts non-empty resolution
+that is not the dotted key (i18next's missing-key return shape under
+`returnNull: false`). Same audit pattern `methodology.test.ts` uses.
+Per ADR 0022 the probe IS the test — answers "does the catalog
+cover every code today" once, and pins the answer for every future
+CI run.
+
+A dedicated drift-detection script
+(`packages/i18n-catalogs/scripts/check-error-codes.ts`) named in
+the Acceptance criteria was deferred — the vitest coverage test
+provides equivalent locked-down coverage (CI gate via
+`pnpm run test:smoke`) without a second runner. The existing
+`check-parity.ts` already enforces every-key-in-every-locale; the
+new errors test enforces every-source-code-has-an-en-US-entry.
+Together those two gates produce the same protection the original
+two-script plan described.
+
+Artifacts:
+
+- `packages/i18n-catalogs/src/catalogs/en-US.json` — `errors` namespace populated.
+- `packages/i18n-catalogs/src/catalogs/pt-BR.json` — `errors` namespace populated.
+- `packages/i18n-catalogs/src/catalogs/es-419.json` — `errors` namespace populated.
+- `packages/i18n-catalogs/src/errors.test.ts` — coverage test.

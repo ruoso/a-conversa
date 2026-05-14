@@ -117,5 +117,41 @@
       "action": "Review the flagged configuration. Repair it if it was an accident, or leave it if the structure is intentional."
     }
   },
-  "errors": {}
+  "errors": {
+    "bad-request": "The request was malformed and could not be processed.",
+    "unauthorized": "You need to sign in to continue.",
+    "forbidden": "You do not have permission to perform this action.",
+    "not-found": "The item you are looking for could not be found.",
+    "conflict": "This change conflicts with the current state. Please refresh and try again.",
+    "unprocessable-entity": "The current state does not allow this action.",
+    "internal-error": "Something went wrong on our end. Please try again.",
+    "unknown-message-type": "The server does not recognize this message type.",
+    "malformed-envelope": "The message could not be read. Please reconnect if the problem continues.",
+    "too-many-subscriptions": "This connection is already watching too many sessions. Close one before opening another.",
+    "too-many-catch-up-requests": "Too many catch-up requests on this connection. Please wait a moment and try again.",
+    "not-a-participant": "Only participants in this session may perform this action.",
+    "sequence-mismatch": "Someone else just acted on this session. Please refresh and try again.",
+    "session-mismatch": "This action refers to a different session than the one you are working in.",
+    "not-a-moderator": "Only the moderator may perform this action.",
+    "proposal-not-found": "That proposal no longer exists.",
+    "proposal-not-pending": "That proposal is no longer pending and cannot be voted on.",
+    "proposal-already-committed": "That proposal has already been committed.",
+    "proposal-already-meta-disagreement": "That proposal has already been marked as a meta-disagreement.",
+    "target-entity-not-found": "The item this proposal refers to could not be found.",
+    "already-voted": "You have already voted on this proposal.",
+    "no-prior-agree": "You can only withdraw a vote you previously agreed to.",
+    "self-vote-not-allowed": "You cannot vote on your own proposal.",
+    "unanimous-agree-required": "Every participant must agree before this proposal can be committed.",
+    "axiom-mark-not-self": "You can only axiom-mark your own position.",
+    "inapplicable-to-facet": "This action does not apply to this kind of statement.",
+    "illegal-state-transition": "That state change is not allowed from the current state.",
+    "methodology-not-exhausted": "The methodology must be exhausted before this action can be taken.",
+    "role-already-filled": "That role is already filled in this session.",
+    "user-already-joined": "That user has already joined this session.",
+    "user-not-found": "That user could not be found.",
+    "cannot-remove-moderator": "The session host cannot be removed.",
+    "entity-not-referenceable": "You cannot reference that item from any session you can see.",
+    "entity-already-included": "That item is already part of this session.",
+    "unknown": "An unexpected error occurred. Please try again."
+  }
 }

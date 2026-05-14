@@ -117,5 +117,41 @@
       "action": "Revisa la configuración señalada. Repárala si fue un accidente, o déjala si la estructura es intencional."
     }
   },
-  "errors": {}
+  "errors": {
+    "bad-request": "La solicitud estaba mal formada y no pudo procesarse.",
+    "unauthorized": "Necesitas iniciar sesión para continuar.",
+    "forbidden": "No tienes permiso para realizar esta acción.",
+    "not-found": "No se encontró el elemento que buscas.",
+    "conflict": "Este cambio entra en conflicto con el estado actual. Actualiza e inténtalo de nuevo.",
+    "unprocessable-entity": "El estado actual no permite esta acción.",
+    "internal-error": "Algo salió mal de nuestro lado. Inténtalo de nuevo.",
+    "unknown-message-type": "El servidor no reconoce este tipo de mensaje.",
+    "malformed-envelope": "No se pudo leer el mensaje. Vuelve a conectarte si el problema continúa.",
+    "too-many-subscriptions": "Esta conexión ya está siguiendo demasiadas sesiones. Cierra una antes de abrir otra.",
+    "too-many-catch-up-requests": "Demasiadas solicitudes de sincronización en esta conexión. Espera un momento e inténtalo de nuevo.",
+    "not-a-participant": "Solo quienes participan en esta sesión pueden realizar esta acción.",
+    "sequence-mismatch": "Otra persona acaba de actuar en esta sesión. Actualiza e inténtalo de nuevo.",
+    "session-mismatch": "Esta acción se refiere a una sesión diferente de la que estás usando.",
+    "not-a-moderator": "Solo la moderación puede realizar esta acción.",
+    "proposal-not-found": "Esa propuesta ya no existe.",
+    "proposal-not-pending": "Esa propuesta ya no está pendiente y no puede votarse.",
+    "proposal-already-committed": "Esa propuesta ya fue consolidada.",
+    "proposal-already-meta-disagreement": "Esa propuesta ya fue marcada como meta-desacuerdo.",
+    "target-entity-not-found": "No se encontró el elemento al que se refiere esta propuesta.",
+    "already-voted": "Ya votaste en esta propuesta.",
+    "no-prior-agree": "Solo puedes retirar un voto con el que previamente estuviste de acuerdo.",
+    "self-vote-not-allowed": "No puedes votar en tu propia propuesta.",
+    "unanimous-agree-required": "Toda la participación debe estar de acuerdo antes de consolidar esta propuesta.",
+    "axiom-mark-not-self": "Solo puedes marcar como axioma tu propia posición.",
+    "inapplicable-to-facet": "Esta acción no se aplica a este tipo de afirmación.",
+    "illegal-state-transition": "Ese cambio de estado no está permitido desde el estado actual.",
+    "methodology-not-exhausted": "La metodología debe agotarse antes de tomar esta acción.",
+    "role-already-filled": "Ese rol ya está ocupado en esta sesión.",
+    "user-already-joined": "Esa persona ya se unió a esta sesión.",
+    "user-not-found": "No se encontró a esa persona.",
+    "cannot-remove-moderator": "No se puede remover a la persona anfitriona de la sesión.",
+    "entity-not-referenceable": "No puedes referenciar ese elemento desde ninguna sesión visible para ti.",
+    "entity-already-included": "Ese elemento ya forma parte de esta sesión.",
+    "unknown": "Ocurrió un error inesperado. Inténtalo de nuevo."
+  }
 }

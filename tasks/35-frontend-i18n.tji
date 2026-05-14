@@ -88,6 +88,7 @@ task frontend_i18n "Frontend internationalization" {
   task i18n_error_code_catalog "Frontend ApiError code -> localized message mapping" {
     effort 1d
     allocate team
+    complete 100
     depends !i18n_catalog_workflow, backend.api_skeleton.error_handling
     note "Mirrors apps/server/src/errors.ts code set; one entry per code per locale"
     note "Refinement: tasks/refinements/frontend-i18n/i18n_error_code_catalog.md"
