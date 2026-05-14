@@ -61,3 +61,40 @@ In pt-BR, the english mnemonics coincidentally still match the first letter of e
 ## Open questions
 
 (none — all decided)
+
+## Status
+
+**Done — 2026-05-11.** Policy materialised as a small TypeScript module under
+`packages/i18n-catalogs/`.
+
+Artifacts:
+
+- `packages/i18n-catalogs/src/keyboard-shortcuts.ts` — exports
+  `METHODOLOGY_KINDS`, `KIND_TO_SHORTCUT`, `KEYBOARD_SHORTCUT_POLICY`
+  (set to `'english-mnemonic'`), `getShortcutForKind(kind, locale)`,
+  and `buildShortcutMatrix()`. The `locale` parameter is accepted for
+  forward compatibility but ignored under the current policy.
+- `packages/i18n-catalogs/src/keyboard-shortcuts.test.ts` — 15 Vitest
+  cases covering: policy mode constant, every kind's specific
+  mnemonic, totality of `KIND_TO_SHORTCUT`, single-lowercase-ASCII
+  shape, no within-table collisions, locale-independent resolution
+  through `getShortcutForKind`, totality of the
+  `(SupportedLocale x MethodologyKind)` matrix, no within-locale
+  collisions on the matrix, every locale row equals the canonical
+  english-mnemonic table, and the documented per-locale rows from
+  the refinement table.
+- `packages/i18n-catalogs/src/index.ts` — re-exports the new module's
+  public surface (`KIND_TO_SHORTCUT`, `METHODOLOGY_KINDS`,
+  `KEYBOARD_SHORTCUT_POLICY`, `getShortcutForKind`,
+  `buildShortcutMatrix`, plus the `MethodologyKind` /
+  `KeyboardShortcutPolicy` types).
+- `docs/moderator-ui.md` — the "Keyboard shortcuts (sketch)" section
+  gained a one-line cross-reference recording that the classification
+  shortcuts stay english-mnemonic regardless of UI locale and citing
+  this refinement.
+
+The decision itself (english-mnemonic, locale-independent) was already
+captured in ADR 0024's Consequences and in the refinement's Decisions
+block; this task lands the executable form (mapping module + tests)
+that `mod_classification_palette` and `mod_keymap_help_overlay` will
+import.

@@ -195,6 +195,14 @@ The moderator's hands need to stay on the keyboard to keep up with live debate.
 - `Cmd+S` — snapshot
 - `Esc` — exit current mode, return to default
 
+The classification shortcuts (`f` / `p` / `v` / `n` / `d`) stay
+english-mnemonic regardless of UI locale; the keymap help overlay shows
+the localized methodology label next to each shortcut (so a pt-BR
+moderator sees `F: Fato` and an es-419 moderator sees `F: Hecho`).
+Rationale + executable mapping in
+[tasks/refinements/frontend-i18n/i18n_keyboard_shortcuts_policy.md](../tasks/refinements/frontend-i18n/i18n_keyboard_shortcuts_policy.md)
+and [`packages/i18n-catalogs/src/keyboard-shortcuts.ts`](../packages/i18n-catalogs/src/keyboard-shortcuts.ts).
+
 Specific bindings defer to UI prototyping. The principle is "everything reachable from the keyboard."
 
 ## Change history pane

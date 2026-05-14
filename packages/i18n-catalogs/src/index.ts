@@ -33,3 +33,13 @@ export {
   persistLocale,
   readLocaleCookie,
 } from './negotiation.js';
+
+export {
+  KEYBOARD_SHORTCUT_POLICY,
+  type KeyboardShortcutPolicy,
+  KIND_TO_SHORTCUT,
+  METHODOLOGY_KINDS,
+  type MethodologyKind,
+  buildShortcutMatrix,
+  getShortcutForKind,
+} from './keyboard-shortcuts.js';

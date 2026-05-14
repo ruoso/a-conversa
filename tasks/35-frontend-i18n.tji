@@ -52,6 +52,7 @@ task frontend_i18n "Frontend internationalization" {
   task i18n_keyboard_shortcuts_policy "Per-locale keyboard shortcut policy for moderator palette" {
     effort 0.5d
     allocate team
+    complete 100
     depends !i18n_methodology_glossary
     note "Decide: keep English mnemonic shortcuts regardless of locale, OR rebind per locale"
     note "Refinement: tasks/refinements/frontend-i18n/i18n_keyboard_shortcuts_policy.md"
