@@ -39,6 +39,7 @@ import {
 import type { FacetName, FacetStatus } from './facetStatus';
 import type { Annotation, AxiomMark, Vote } from './selectors';
 import { initI18n } from '../i18n';
+import { useSelectionStore } from '../stores';
 
 // Build a minimum `NodeProps<StatementNodeData>` value for tests.
 // ReactFlow hands the renderer many fields (dragging, selected, xPos,
@@ -99,10 +100,16 @@ function makeAnnotation(overrides: Partial<Annotation> & { id: string }): Annota
 beforeEach(async () => {
   await initI18n('en-US');
   await i18next.changeLanguage('en-US');
+  // Reset the selection store between cases so the per-card `isSelected`
+  // selector returns `false` by default — the bulk of these tests assume
+  // nothing is selected (the `mod_selection` cases at the bottom of the
+  // file explicitly opt into selection by calling `select(...)` first).
+  useSelectionStore.getState().clear();
 });
 
 afterEach(() => {
   cleanup();
+  useSelectionStore.getState().clear();
 });
 
 describe('StatementNode — rendering', () => {
@@ -1207,5 +1214,91 @@ describe('StatementNode — per-participant vote indicators (mod_vote_indicators
     // Not styled as agree (emerald) or dispute (rose).
     expect(indicator!.className).not.toContain('bg-emerald-500');
     expect(indicator!.className).not.toContain('bg-rose-500');
+  });
+});
+
+// -- Click-to-select visual state (mod_selection) ---------------------
+//
+// `<StatementNode>` subscribes to `useSelectionStore` and stamps a
+// `data-selected` attribute + a Tailwind `ring-4 ring-sky-500` outline
+// when the store's `selected` matches this node. The store-write side
+// (the actual `onNodeClick` handler) is exercised in
+// `GraphCanvasPane.test.tsx`; these cases lock in the per-card READ
+// path — the visual layer the moderator sees when a node is selected.
+
+describe('StatementNode — click-to-select visual state (mod_selection)', () => {
+  it('stamps data-selected="false" on a node when nothing is selected', () => {
+    render(
+      <StatementNode {...makeNodeProps({ id: 'n-unsel', data: { wording: 'w', kind: 'fact' } })} />,
+    );
+    const card = screen.getByTestId('statement-node-n-unsel');
+    expect(card.getAttribute('data-selected')).toBe('false');
+    // The selection ring is NOT applied when not selected.
+    expect(card.className).not.toContain('ring-sky-500');
+  });
+
+  it('stamps data-selected="true" and the sky-500 ring on the node when its id is selected', () => {
+    useSelectionStore.getState().select({ kind: 'node', id: 'n-sel' });
+    render(
+      <StatementNode {...makeNodeProps({ id: 'n-sel', data: { wording: 'w', kind: 'fact' } })} />,
+    );
+    const card = screen.getByTestId('statement-node-n-sel');
+    expect(card.getAttribute('data-selected')).toBe('true');
+    expect(card.className).toContain('ring-4');
+    expect(card.className).toContain('ring-sky-500');
+  });
+
+  it('does not select a node when a DIFFERENT node is the current selection', () => {
+    useSelectionStore.getState().select({ kind: 'node', id: 'some-other-node' });
+    render(
+      <StatementNode {...makeNodeProps({ id: 'n-other', data: { wording: 'w', kind: 'fact' } })} />,
+    );
+    const card = screen.getByTestId('statement-node-n-other');
+    expect(card.getAttribute('data-selected')).toBe('false');
+    expect(card.className).not.toContain('ring-sky-500');
+  });
+
+  it('does not select a node when an EDGE with the same id is selected', () => {
+    // Edge-kind selection must not bleed into node selection — the
+    // `kind` discriminator on `Selection` is load-bearing.
+    useSelectionStore.getState().select({ kind: 'edge', id: 'n-shared-id' });
+    render(
+      <StatementNode
+        {...makeNodeProps({ id: 'n-shared-id', data: { wording: 'w', kind: 'fact' } })}
+      />,
+    );
+    const card = screen.getByTestId('statement-node-n-shared-id');
+    expect(card.getAttribute('data-selected')).toBe('false');
+    expect(card.className).not.toContain('ring-sky-500');
+  });
+
+  it('preserves the existing status-styling classes when also selected (additive layer)', () => {
+    // The selection ring composes ON TOP of the status ring (e.g.
+    // `ring-2 ring-rose-500` for disputed) — both classnames must
+    // remain present so Tailwind's last-wins precedence picks up the
+    // sky-500 ring color + ring-4 width without dropping the underlying
+    // status border.
+    useSelectionStore.getState().select({ kind: 'node', id: 'n-disputed-sel' });
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-disputed-sel',
+          data: {
+            wording: 'disputed and selected',
+            kind: 'fact',
+            facetStatuses: { substance: 'disputed' },
+          },
+        })}
+      />,
+    );
+    const card = screen.getByTestId('statement-node-n-disputed-sel');
+    expect(card.getAttribute('data-selected')).toBe('true');
+    expect(card.getAttribute('data-facet-status')).toBe('disputed');
+    // Disputed status classes still present.
+    expect(card.className).toContain('border-rose-600');
+    expect(card.className).toContain('ring-rose-500');
+    // Selection-ring classes also present.
+    expect(card.className).toContain('ring-4');
+    expect(card.className).toContain('ring-sky-500');
   });
 });

@@ -44,6 +44,7 @@ import { memo, type ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 import { BaseEdge, EdgeLabelRenderer, getBezierPath, type EdgeProps } from 'reactflow';
 
+import { useSelectionStore } from '../stores/index.js';
 import { AnnotationBadge } from './AnnotationBadge.js';
 import type { StatementEdgeData } from './selectors.js';
 
@@ -51,6 +52,19 @@ function StatementEdgeImpl(props: EdgeProps<StatementEdgeData>): ReactElement {
   const { id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data, style } =
     props;
   const { t } = useTranslation();
+
+  // Selection state for this edge. Refinement: `mod_selection`. Same
+  // boolean-projection pattern as `<StatementNode>`: the selector
+  // reduces the store's `selected: Selection | null` to a single
+  // boolean specific to THIS edge so only the previously- or newly-
+  // selected edge re-renders. The decoration lives on the role-label
+  // div (the visible interactive surface) — the `<BaseEdge>` `<path>`
+  // is inside ReactFlow's SVG and isn't directly id-targetable for
+  // tests, mirroring the existing `data-facet-status` decision on the
+  // same label.
+  const isSelected = useSelectionStore(
+    (state) => state.selected?.kind === 'edge' && state.selected.id === id,
+  );
 
   const [edgePath, labelX, labelY] = getBezierPath({
     sourceX,
@@ -138,8 +152,19 @@ function StatementEdgeImpl(props: EdgeProps<StatementEdgeData>): ReactElement {
       : undefined;
   const baseEdgeStyleProps = mergedStyle === undefined ? {} : { style: mergedStyle };
 
-  const labelDataAttrs =
-    substanceStatus !== undefined ? { 'data-facet-status': substanceStatus } : {};
+  // The role-label div carries the existing `data-facet-status` seam
+  // for substance state-styling, plus the new `data-selected` seam this
+  // task adds. Both branches of `data-selected` are stamped so tests
+  // can target the negative case without relying on attribute absence.
+  const labelDataAttrs = {
+    ...(substanceStatus !== undefined ? { 'data-facet-status': substanceStatus } : {}),
+    'data-selected': isSelected ? 'true' : 'false',
+  };
+  // Selection ring (refinement `mod_selection`). Composed via Tailwind
+  // `ring-4 ring-sky-500` — same palette / width as the node card so
+  // selected nodes and selected edges read as the same "selected" signal
+  // across the canvas.
+  const labelSelectionClassName = isSelected ? ' ring-4 ring-sky-500' : '';
 
   return (
     <>
@@ -161,7 +186,7 @@ function StatementEdgeImpl(props: EdgeProps<StatementEdgeData>): ReactElement {
           <div
             data-testid={`graph-edge-label-${id}`}
             data-edge-role={data?.role ?? ''}
-            className="rounded bg-white px-1 text-xs text-slate-900 shadow-sm"
+            className={`rounded bg-white px-1 text-xs text-slate-900 shadow-sm${labelSelectionClassName}`}
             {...labelDataAttrs}
           >
             {label}

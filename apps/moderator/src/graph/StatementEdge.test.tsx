@@ -28,6 +28,7 @@ import 'reactflow/dist/style.css';
 import { initI18n } from '../i18n';
 import { edgeTypes } from './edgeTypes';
 import type { Annotation, StatementEdgeData } from './selectors';
+import { useSelectionStore } from '../stores';
 
 const ALL_ROLES = [
   'supports',
@@ -202,10 +203,14 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   await i18next.changeLanguage('en-US');
+  // Reset the selection store between cases — the `mod_selection`
+  // tests at the end of the file explicitly opt into selection.
+  useSelectionStore.getState().clear();
 });
 
 afterEach(() => {
   cleanup();
+  useSelectionStore.getState().clear();
 });
 
 describe('StatementEdge — methodology role label × locale', () => {
@@ -551,5 +556,54 @@ describe('StatementEdge — meta-disagreement-state styling (mod_meta_disagreeme
       expect(style).not.toMatch(/opacity\s*:/i);
     }
     expect(foundVioletDotted).toBe(true);
+  });
+});
+
+// -- Click-to-select visual state (mod_selection) ---------------------
+//
+// `<StatementEdge>` subscribes to `useSelectionStore` and stamps a
+// `data-selected` attribute + a Tailwind `ring-4 ring-sky-500` outline
+// on the role-label div when the store's `selected` matches this edge.
+// The store-write side is exercised in `GraphCanvasPane.test.tsx`;
+// these cases pin the per-edge READ path — the visual layer the
+// moderator sees when an edge is selected.
+
+describe('StatementEdge — click-to-select visual state (mod_selection)', () => {
+  it('stamps data-selected="false" on the edge label when nothing is selected', async () => {
+    render(
+      <div style={{ width: 400, height: 400 }}>
+        <ReactFlow nodes={NODES} edges={[edgeFor('supports')]} edgeTypes={edgeTypes} />
+      </div>,
+    );
+    const label = await waitFor(() => screen.getByTestId('graph-edge-label-edge-supports'));
+    expect(label.getAttribute('data-selected')).toBe('false');
+    expect(label.className).not.toContain('ring-sky-500');
+  });
+
+  it('stamps data-selected="true" + the sky-500 ring on the label when the edge is selected', async () => {
+    useSelectionStore.getState().select({ kind: 'edge', id: 'edge-supports' });
+    render(
+      <div style={{ width: 400, height: 400 }}>
+        <ReactFlow nodes={NODES} edges={[edgeFor('supports')]} edgeTypes={edgeTypes} />
+      </div>,
+    );
+    const label = await waitFor(() => screen.getByTestId('graph-edge-label-edge-supports'));
+    expect(label.getAttribute('data-selected')).toBe('true');
+    expect(label.className).toContain('ring-4');
+    expect(label.className).toContain('ring-sky-500');
+  });
+
+  it('does not select an edge when a NODE with the same id is the current selection', async () => {
+    // The `kind` discriminator on `Selection` must keep node-kind and
+    // edge-kind selection disjoint even when ids happen to collide.
+    useSelectionStore.getState().select({ kind: 'node', id: 'edge-supports' });
+    render(
+      <div style={{ width: 400, height: 400 }}>
+        <ReactFlow nodes={NODES} edges={[edgeFor('supports')]} edgeTypes={edgeTypes} />
+      </div>,
+    );
+    const label = await waitFor(() => screen.getByTestId('graph-edge-label-edge-supports'));
+    expect(label.getAttribute('data-selected')).toBe('false');
+    expect(label.className).not.toContain('ring-sky-500');
   });
 });

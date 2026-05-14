@@ -39,14 +39,21 @@
 // level so the canvas mounts cleanly under the test environment.
 
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen } from '@testing-library/react';
 import i18next from 'i18next';
 import type { AnnotationKind, Event } from '@a-conversa/shared-types';
 
-import { GraphCanvasPane, projectNodes } from './GraphCanvasPane';
+import {
+  GraphCanvasPane,
+  handleEdgeClick,
+  handleNodeClick,
+  handlePaneClick,
+  projectNodes,
+} from './GraphCanvasPane';
 import { STATEMENT_NODE_TYPE } from './StatementNode';
 import { selectEdgesForSession } from './selectors';
 import { useWsStore } from '../ws/wsStore';
+import { useSelectionStore } from '../stores';
 import { initI18n } from '../i18n';
 
 beforeAll(() => {
@@ -181,6 +188,7 @@ function makeEdgeCreated(opts: {
 
 beforeEach(async () => {
   useWsStore.getState().reset();
+  useSelectionStore.getState().clear();
   await initI18n('en-US');
   await i18next.changeLanguage('en-US');
 });
@@ -188,6 +196,7 @@ beforeEach(async () => {
 afterEach(() => {
   cleanup();
   useWsStore.getState().reset();
+  useSelectionStore.getState().clear();
 });
 
 describe('GraphCanvasPane — ReactFlow mount', () => {
@@ -630,5 +639,86 @@ describe('GraphCanvasPane — axiom-mark badges (mod_axiom_mark_decoration)', ()
     const badge = screen.getByTestId(`axiom-mark-badge-${NODE_A}-${PARTICIPANT_A}`);
     expect(badge.getAttribute('data-participant-id')).toBe(PARTICIPANT_A);
     expect(badge.textContent).toBe('A');
+  });
+});
+
+// -- Click-to-select handlers (mod_selection) -------------------------
+//
+// The canvas wires ReactFlow's `onNodeClick` / `onEdgeClick` /
+// `onPaneClick` props to module-scope handlers that write to
+// `useSelectionStore`. Two layers of assertion:
+//
+//   1. Direct handler invocation — pinning the store-update contract.
+//      ReactFlow's internal click pipeline (which gates the user-facing
+//      `onNodeClick` callback on `nodeInternals.get(id)` returning a
+//      measured node) doesn't fire in happy-dom because the internal
+//      node map is populated by ResizeObserver measurements that don't
+//      run under the no-op observer stub. Calling the handler the way
+//      ReactFlow would call it pins the wire-up regardless.
+//
+//   2. End-to-end via the store — selecting a node via the store and
+//      verifying the rendered DOM picks up `data-selected="true"`.
+//      Confirms the read-side (the per-card selector subscription in
+//      `<StatementNode>`) is wired in the live canvas tree.
+
+describe('GraphCanvasPane — click-to-select handlers (mod_selection)', () => {
+  it('handleNodeClick writes { kind: "node", id } to the selection store', () => {
+    expect(useSelectionStore.getState().selected).toBeNull();
+    handleNodeClick(undefined, { id: NODE_A } as Parameters<typeof handleNodeClick>[1]);
+    expect(useSelectionStore.getState().selected).toEqual({ kind: 'node', id: NODE_A });
+  });
+
+  it('handleEdgeClick writes { kind: "edge", id } to the selection store', () => {
+    expect(useSelectionStore.getState().selected).toBeNull();
+    handleEdgeClick(undefined, {
+      id: 'edge-7',
+      source: NODE_A,
+      target: NODE_B,
+    });
+    expect(useSelectionStore.getState().selected).toEqual({ kind: 'edge', id: 'edge-7' });
+  });
+
+  it('handlePaneClick clears the selection store', () => {
+    useSelectionStore.getState().select({ kind: 'node', id: NODE_A });
+    expect(useSelectionStore.getState().selected).toEqual({ kind: 'node', id: NODE_A });
+    handlePaneClick();
+    expect(useSelectionStore.getState().selected).toBeNull();
+  });
+
+  it('handleNodeClick overrides a prior edge selection (last-write-wins)', () => {
+    useSelectionStore.getState().select({ kind: 'edge', id: 'edge-prior' });
+    handleNodeClick(undefined, { id: NODE_B } as Parameters<typeof handleNodeClick>[1]);
+    expect(useSelectionStore.getState().selected).toEqual({ kind: 'node', id: NODE_B });
+  });
+});
+
+describe('GraphCanvasPane — selection visual layer (mod_selection)', () => {
+  it('the rendered StatementNode picks up data-selected="true" once the store is updated', () => {
+    // Confirms the read-side subscription inside `<StatementNode>` is
+    // wired into the canvas tree: writing to the store flips the
+    // attribute on the corresponding rendered card.
+    useWsStore.getState().applyEvent(
+      makeNodeCreated({
+        sequence: 1,
+        nodeId: NODE_A,
+        wording: 'select me',
+      }),
+    );
+    render(<GraphCanvasPane sessionId={SESSION_ID} />);
+    const card = screen.getByTestId(`statement-node-${NODE_A}`);
+    expect(card.getAttribute('data-selected')).toBe('false');
+
+    // Drive the store the way the handler would. The store-update path
+    // ends in a React re-render of the subscribed `<StatementNode>`;
+    // `act(...)` flushes the resulting render queue synchronously so the
+    // post-assertions see the updated DOM.
+    act(() => {
+      handleNodeClick(undefined, { id: NODE_A } as Parameters<typeof handleNodeClick>[1]);
+    });
+
+    // The same card now reflects the selection.
+    expect(card.getAttribute('data-selected')).toBe('true');
+    expect(card.className).toContain('ring-4');
+    expect(card.className).toContain('ring-sky-500');
   });
 });

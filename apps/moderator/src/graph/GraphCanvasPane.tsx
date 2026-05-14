@@ -39,11 +39,12 @@
 // from `src/index.css` independently.
 
 import { useMemo, type ReactElement } from 'react';
-import ReactFlow, { Background, type Node, type NodeTypes } from 'reactflow';
+import ReactFlow, { Background, type Edge, type Node, type NodeTypes } from 'reactflow';
 import type { Event, StatementKind } from '@a-conversa/shared-types';
 
 import 'reactflow/dist/style.css';
 
+import { useSelectionStore } from '../stores/index.js';
 import { useWsStore, type WsState } from '../ws/wsStore.js';
 import { STATEMENT_NODE_TYPE, StatementNode, type StatementNodeData } from './StatementNode.js';
 import { edgeTypes } from './edgeTypes.js';
@@ -91,6 +92,36 @@ const GRID_DY = 140;
  * doesn't trigger an extra render on every poll.
  */
 const EMPTY_EVENTS: readonly Event[] = Object.freeze([]);
+
+/**
+ * Selection click handlers (refinement `mod_selection`).
+ *
+ * Hoisted to module scope so the handler references stay referentially
+ * stable across `<GraphCanvasPane>` renders — ReactFlow's prop-diff for
+ * `onNodeClick` / `onEdgeClick` / `onPaneClick` would otherwise see a
+ * fresh function every render and fight its own memoization. The handlers
+ * only WRITE to `useSelectionStore` (via `.getState()`); they don't read
+ * its current value, so subscribing the canvas to the store would be
+ * extra renders for no benefit.
+ *
+ * The store API is `select({ kind, id })` / `clear()` — matching the
+ * `useSelectionStore` shape pinned by `mod_state_management`. Exported
+ * for direct testing because ReactFlow's internal click pipeline (which
+ * checks `nodeInternals.get(id)` from a store populated by ResizeObserver
+ * measurements) doesn't fire in happy-dom; the test suite invokes these
+ * handlers directly to pin the wire-up contract.
+ */
+export function handleNodeClick(_event: unknown, node: Node): void {
+  useSelectionStore.getState().select({ kind: 'node', id: node.id });
+}
+
+export function handleEdgeClick(_event: unknown, edge: Edge): void {
+  useSelectionStore.getState().select({ kind: 'edge', id: edge.id });
+}
+
+export function handlePaneClick(): void {
+  useSelectionStore.getState().clear();
+}
 
 /**
  * Pure projection from a session's event log to ReactFlow nodes.
@@ -270,7 +301,15 @@ export function GraphCanvasPane(props: GraphCanvasPaneProps): ReactElement {
 
   return (
     <div data-testid="graph-canvas-root" className="h-full w-full">
-      <ReactFlow nodes={nodes} edges={edges} nodeTypes={NODE_TYPES} edgeTypes={edgeTypes}>
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        nodeTypes={NODE_TYPES}
+        edgeTypes={edgeTypes}
+        onNodeClick={handleNodeClick}
+        onEdgeClick={handleEdgeClick}
+        onPaneClick={handlePaneClick}
+      >
         <Background />
       </ReactFlow>
     </div>

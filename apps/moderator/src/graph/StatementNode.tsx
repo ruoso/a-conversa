@@ -43,6 +43,7 @@ import { useTranslation } from 'react-i18next';
 import type { NodeProps } from 'reactflow';
 import type { StatementKind } from '@a-conversa/shared-types';
 
+import { useSelectionStore } from '../stores/index.js';
 import { AnnotationBadge } from './AnnotationBadge.js';
 import { AxiomMarkBadge } from './AxiomMarkBadge.js';
 import { FacetPill } from './FacetPill.js';
@@ -184,6 +185,19 @@ export function StatementNode(props: NodeProps<StatementNodeData>): ReactElement
   const { t } = useTranslation();
   const { wording, kind, annotations, facetStatuses, axiomMarks, votesByFacet } = data;
 
+  // Selection state for this card. Refinement: `mod_selection`. The
+  // selector reduces the store's `selected: Selection | null` to a single
+  // boolean specific to THIS node, so only the previously- or newly-
+  // selected card re-renders when selection changes — every other card on
+  // the canvas keeps the same `isSelected = false` return value across
+  // the selection change and Zustand's strict-equality check skips the
+  // re-render. The store's `select`/`clear` are written by the canvas's
+  // click handlers in `GraphCanvasPane.tsx` (no per-component `onClick`
+  // wiring here — ReactFlow's `onNodeClick` is the canonical seam).
+  const isSelected = useSelectionStore(
+    (state) => state.selected?.kind === 'node' && state.selected.id === id,
+  );
+
   // Resolve the kind label off the canonical glossary namespace from
   // `i18n_methodology_glossary`. `t('methodology.kind.fact')` etc.
   // returns the localized string for the active locale; on `null` we
@@ -235,8 +249,26 @@ export function StatementNode(props: NodeProps<StatementNodeData>): ReactElement
           : rollupStatus === 'meta-disagreement'
             ? 'border-double border-violet-600 ring-2 ring-violet-400 opacity-100'
             : 'border-slate-300';
-  const cardClassName = `${baseClassName} ${styleClassName}`;
-  const rootProps = rollupStatus !== undefined ? { 'data-facet-status': rollupStatus } : {};
+  // Selection ring (refinement `mod_selection`). Composed ON TOP of the
+  // status ring (`ring-2 ring-rose-500` / `ring-2 ring-violet-400`) —
+  // Tailwind's `ring-4` widens the ring and `ring-sky-500` overrides
+  // the ring color. The sky palette reads neutrally against slate
+  // (baseline / agreed), rose (disputed), and violet (meta-disagreement)
+  // so the selection ring doesn't fight the status signal.
+  const selectionClassName = isSelected ? 'ring-4 ring-sky-500' : '';
+  const cardClassName = `${baseClassName} ${styleClassName}${
+    selectionClassName ? ` ${selectionClassName}` : ''
+  }`;
+  // Root data attributes: `data-facet-status` is the existing seam for
+  // the status-styling tasks; `data-selected` is the stable boolean
+  // selection seam this task adds (Tailwind class strings aren't
+  // load-bearing across builds, but data attributes are). Both branches
+  // of `data-selected` are stamped (true / false) so downstream tests
+  // can target the negative case without relying on attribute absence.
+  const rootProps = {
+    ...(rollupStatus !== undefined ? { 'data-facet-status': rollupStatus } : {}),
+    'data-selected': isSelected ? 'true' : 'false',
+  };
 
   // Per-facet pill row — the per-facet *detail* layer that sits above
   // the wording paragraph. The card frame above is the whole-card
