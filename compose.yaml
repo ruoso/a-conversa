@@ -45,11 +45,31 @@ services:
       authelia:
         condition: service_healthy
     environment:
-      # `DATABASE_URL` is consumed by both the startup migration gate
-      # (apps/server/src/migrate-startup.ts) and the eventual session
-      # endpoints' connection pool. The value comes from `.env` (which
-      # compose auto-loads from this file's directory); the in-network
-      # hostname `postgres` resolves via the user-defined bridge below.
+      # Compose auto-loads `.env` for variable substitution in this
+      # file, but each variable still has to be listed here to reach
+      # the container's process environment. The runtime image sets
+      # `NODE_ENV=production`, which arms several boot gates the app
+      # enforces against its env block — every name below corresponds
+      # to a gate or a config field the production server reads:
+      #   - SESSION_TOKEN_SECRET — `resolveSessionTokenSecret` aborts
+      #     startup when missing / short / a dev placeholder
+      #     (closes docs/security/m3-review/auth.md F-004).
+      #   - APP_BASE_URL — required by `resolveCorsAllowlist` under
+      #     `NODE_ENV=production` (closes F-003) and by
+      #     `loadOidcConfig`.
+      #   - OIDC_ISSUER_URL / OIDC_CLIENT_ID / OIDC_CLIENT_SECRET —
+      #     parsed by `loadOidcConfig` at registration time; absence
+      #     downgrades the auth surface to a warning, but the dev
+      #     stack expects them so the moderator's OIDC handshake works.
+      #   - DATABASE_URL — consumed by the startup migration gate
+      #     (apps/server/src/migrate-startup.ts) and the session
+      #     endpoints' connection pool. The in-network hostname
+      #     `postgres` resolves via the user-defined bridge below.
+      SESSION_TOKEN_SECRET: ${SESSION_TOKEN_SECRET}
+      APP_BASE_URL: ${APP_BASE_URL}
+      OIDC_ISSUER_URL: ${OIDC_ISSUER_URL}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET}
       DATABASE_URL: ${DATABASE_URL}
     ports:
       - '3000:3000'
