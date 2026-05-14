@@ -68,6 +68,37 @@
       "coherency-hint": "Sugestão de coerência"
     }
   },
-  "diagnostics": {},
+  "diagnostics": {
+    "cycle": {
+      "title": "Ciclo em apoios",
+      "description": "Ciclo detectado nas arestas de {role} entre: {nodes}",
+      "detail": "Estas afirmações se apoiam mutuamente em um ciclo fechado, então nada no ciclo se sustenta fora de si mesmo. Isto é raciocínio circular.",
+      "action": "Quebre uma aresta de apoio, decomponha um nó do ciclo, ou faça um participante marcar como axioma um nó onde a cadeia termina."
+    },
+    "contradiction": {
+      "title": "Contradição",
+      "description": "{count, plural, one {# contradição} other {# contradições}} entre afirmações acordadas",
+      "detail": "Uma aresta de contradição acordada conecta duas afirmações cuja substância foi acordada. Ambas não podem ser verdadeiras ao mesmo tempo, então o avanço fica bloqueado até que os participantes engajem com o conflito.",
+      "action": "Decomponha uma ou ambas as afirmações, emende uma para remover o conflito, ou aceite a contradição como desacordo de base e cada lado marca como axioma a posição que sustenta."
+    },
+    "multi-warrant": {
+      "title": "Múltiplas garantias",
+      "description": "{count, plural, =2 {Duas garantias conectam os mesmos dados à mesma afirmação: {nodes}} other {# garantias conectam os mesmos dados à mesma afirmação: {nodes}}}",
+      "detail": "Duas ou mais garantias licenciam a mesma inferência de dado-para-afirmação por pontes diferentes. Cada garantia se ancora em um aspecto distinto da afirmação, o que é um sinal forte de que a afirmação está agrupando múltiplas coisas.",
+      "action": "Considere decompor a afirmação para que cada garantia se conecte ao componente que de fato licencia. Sugestão: nenhuma ação é exigida se os participantes não enxergarem o agrupamento."
+    },
+    "dangling-claim": {
+      "title": "Afirmação pendente",
+      "description": "A afirmação não tem apoios, refutações nem pontes-para de entrada: {nodes}",
+      "detail": "Uma afirmação está posicionada como reivindicação (algo sendo engajado) mas não tem justificativa de entrada. Não é um erro — afirmações podem permanecer brevemente sem apoio — mas uma afirmação que segue pendente está sendo implicitamente aceita ou implicitamente concedida.",
+      "action": "Solicite apoio ao defensor, ou pergunte se a afirmação está sendo concedida ou aceita."
+    },
+    "coherency-hint": {
+      "title": "Sugestão de coerência",
+      "description": "{count, plural, one {# configuração incomum detectada: {kind}} other {# configurações incomuns detectadas: {kind}}}",
+      "detail": "O grafo contém uma configuração incomum de aresta ou nó — por exemplo, uma garantia incompleta (uma ponte-de sem uma ponte-para correspondente, ou o inverso) ou uma aresta de auto-contradição. O sistema nunca bloqueia por isto; é apenas sugestão.",
+      "action": "Revise a configuração sinalizada. Conserte se foi acidente, ou deixe como está se a estrutura é intencional."
+    }
+  },
   "errors": {}
 }

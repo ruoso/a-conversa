@@ -68,6 +68,7 @@ task frontend_i18n "Frontend internationalization" {
   task i18n_diagnostic_descriptions "Diagnostic kind -> localized description templates" {
     effort 1d
     allocate team
+    complete 100
     depends !i18n_methodology_glossary
     note "cycle / contradiction / multi-warrant / dangling-claim / coherency-hint"
     note "Refinement: tasks/refinements/frontend-i18n/i18n_diagnostic_descriptions.md"

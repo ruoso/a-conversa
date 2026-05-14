@@ -68,6 +68,37 @@
       "coherency-hint": "Coherency hint"
     }
   },
-  "diagnostics": {},
+  "diagnostics": {
+    "cycle": {
+      "title": "Cycle in supports",
+      "description": "Cycle detected in {role} edges among: {nodes}",
+      "detail": "These statements support each other in a closed loop, so nothing in the loop is grounded outside of itself. This is circular reasoning.",
+      "action": "Break one supports edge, decompose a node in the cycle, or have a participant axiom-mark a node where the chain terminates."
+    },
+    "contradiction": {
+      "title": "Contradiction",
+      "description": "{count, plural, one {# contradiction} other {# contradictions}} between agreed statements",
+      "detail": "An agreed contradicts edge holds between two statements whose substance is agreed. Both cannot be true at the same time, so forward progress is blocked until the participants engage with the conflict.",
+      "action": "Decompose one or both statements, amend one to remove the conflict, or accept the contradiction as a bedrock disagreement and have each side axiom-mark their position."
+    },
+    "multi-warrant": {
+      "title": "Multiple warrants",
+      "description": "{count, plural, =2 {Two warrants bridge the same data to the same claim: {nodes}} other {# warrants bridge the same data to the same claim: {nodes}}}",
+      "detail": "Two or more warrants license the same data-to-claim inference along different bridges. Each warrant is anchoring on a different aspect of the claim, which is a strong signal that the claim is bundling multiple things.",
+      "action": "Consider decomposing the claim so each warrant attaches to the component it actually licenses. Advisory: no action is required if the participants do not see the bundling."
+    },
+    "dangling-claim": {
+      "title": "Dangling claim",
+      "description": "Claim has no incoming supports, rebuts, or bridges-to: {nodes}",
+      "detail": "A statement is positioned as a claim (something being engaged with) but has no incoming justification. Not an error — claims can stand briefly before being supported — but a claim that remains dangling is either being implicitly accepted or implicitly conceded.",
+      "action": "Prompt the defender for support, or ask whether the claim is being conceded or accepted."
+    },
+    "coherency-hint": {
+      "title": "Coherency hint",
+      "description": "{count, plural, one {# unusual configuration detected: {kind}} other {# unusual configurations detected: {kind}}}",
+      "detail": "The graph contains an unusual edge or node configuration — for example, an incomplete warrant (a bridges-from with no matching bridges-to, or the reverse) or a self-contradicts edge. The system never blocks on this; it is advisory only.",
+      "action": "Review the flagged configuration. Repair it if it was an accident, or leave it if the structure is intentional."
+    }
+  },
   "errors": {}
 }

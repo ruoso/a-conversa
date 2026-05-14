@@ -68,6 +68,37 @@
       "coherency-hint": "Sugerencia de coherencia"
     }
   },
-  "diagnostics": {},
+  "diagnostics": {
+    "cycle": {
+      "title": "Ciclo en apoyos",
+      "description": "Ciclo detectado en aristas de {role} entre: {nodes}",
+      "detail": "Estas afirmaciones se apoyan mutuamente en un bucle cerrado, así que nada en el bucle se sostiene fuera de sí mismo. Esto es razonamiento circular.",
+      "action": "Rompe una arista de apoyo, descompón un nodo del ciclo, o haz que un participante marque como axioma un nodo donde la cadena termina."
+    },
+    "contradiction": {
+      "title": "Contradicción",
+      "description": "{count, plural, one {# contradicción} other {# contradicciones}} entre afirmaciones acordadas",
+      "detail": "Una arista de contradicción acordada conecta dos afirmaciones cuya sustancia está acordada. Ambas no pueden ser verdaderas al mismo tiempo, así que el avance queda bloqueado hasta que los participantes engagen con el conflicto.",
+      "action": "Descompón una o ambas afirmaciones, enmienda una para eliminar el conflicto, o acepta la contradicción como desacuerdo de fondo y cada lado marca como axioma la posición que sostiene."
+    },
+    "multi-warrant": {
+      "title": "Múltiples garantías",
+      "description": "{count, plural, =2 {Dos garantías conectan los mismos datos con la misma afirmación: {nodes}} other {# garantías conectan los mismos datos con la misma afirmación: {nodes}}}",
+      "detail": "Dos o más garantías licencian la misma inferencia de dato a afirmación por puentes distintos. Cada garantía se ancla en un aspecto diferente de la afirmación, lo cual es una señal fuerte de que la afirmación está agrupando varias cosas.",
+      "action": "Considera descomponer la afirmación para que cada garantía se conecte al componente que realmente licencia. Sugerencia: no se requiere ninguna acción si los participantes no ven el agrupamiento."
+    },
+    "dangling-claim": {
+      "title": "Afirmación pendiente",
+      "description": "La afirmación no tiene apoyos, refutaciones ni puentes-hacia entrantes: {nodes}",
+      "detail": "Una afirmación está posicionada como reclamo (algo siendo engagado) pero no tiene justificación entrante. No es un error — los reclamos pueden permanecer brevemente sin apoyo — pero un reclamo que sigue pendiente está siendo implícitamente aceptado o implícitamente concedido.",
+      "action": "Pide apoyo al defensor, o pregunta si la afirmación está siendo concedida o aceptada."
+    },
+    "coherency-hint": {
+      "title": "Sugerencia de coherencia",
+      "description": "{count, plural, one {# configuración inusual detectada: {kind}} other {# configuraciones inusuales detectadas: {kind}}}",
+      "detail": "El grafo contiene una configuración inusual de arista o nodo — por ejemplo, una garantía incompleta (un puente-desde sin un puente-hacia correspondiente, o el inverso) o una arista de auto-contradicción. El sistema nunca bloquea por esto; es solo sugerencia.",
+      "action": "Revisa la configuración señalada. Repárala si fue un accidente, o déjala si la estructura es intencional."
+    }
+  },
   "errors": {}
 }

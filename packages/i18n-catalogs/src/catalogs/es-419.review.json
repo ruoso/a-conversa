@@ -30,7 +30,27 @@
     "methodology.diagnostic.contradiction",
     "methodology.diagnostic.multi-warrant",
     "methodology.diagnostic.dangling-claim",
-    "methodology.diagnostic.coherency-hint"
+    "methodology.diagnostic.coherency-hint",
+    "diagnostics.cycle.title",
+    "diagnostics.cycle.description",
+    "diagnostics.cycle.detail",
+    "diagnostics.cycle.action",
+    "diagnostics.contradiction.title",
+    "diagnostics.contradiction.description",
+    "diagnostics.contradiction.detail",
+    "diagnostics.contradiction.action",
+    "diagnostics.multi-warrant.title",
+    "diagnostics.multi-warrant.description",
+    "diagnostics.multi-warrant.detail",
+    "diagnostics.multi-warrant.action",
+    "diagnostics.dangling-claim.title",
+    "diagnostics.dangling-claim.description",
+    "diagnostics.dangling-claim.detail",
+    "diagnostics.dangling-claim.action",
+    "diagnostics.coherency-hint.title",
+    "diagnostics.coherency-hint.description",
+    "diagnostics.coherency-hint.detail",
+    "diagnostics.coherency-hint.action"
   ],
   "signed_off": []
 }
