@@ -372,6 +372,21 @@ jobs:
         # Chromium needs on the ubuntu-latest runner (libnss3, etc.).
         run: pnpm exec playwright install chromium --with-deps
 
+      - name: Build i18n-catalogs (consumed by playwright.config.ts + e2e fixtures)
+        # `playwright.config.ts` and `tests/e2e/fixtures/locales.ts`
+        # import from `@a-conversa/i18n-catalogs`. Vitest resolves
+        # workspace packages via the `source` export condition
+        # (`vitest.config.ts`), so unit/behaviour suites run against
+        # TS source with no upstream build. Playwright uses Node's
+        # default resolver and falls through to `default` → `dist/`,
+        # which only exists after `tsc -b`. The compose stack builds
+        # workspace dists inside the Docker image, but those don't
+        # leak back into the runner's `node_modules` tree — so we
+        # build the one package the test harness reads on the runner.
+        # `--filter ...^` would pull in its dependents; we only need
+        # the package itself (it has no project references).
+        run: pnpm --filter @a-conversa/i18n-catalogs build
+
       - name: Write CI .env for compose
         # `make up` reads `.env` for the env vars the `app` service
         # needs at boot. The values below mirror the `Smoke test
