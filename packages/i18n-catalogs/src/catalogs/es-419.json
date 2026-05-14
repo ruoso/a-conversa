@@ -49,6 +49,11 @@
       "disputed": "En disputa",
       "meta-disagreement": "Meta-desacuerdo"
     },
+    "facet": {
+      "wording": "Redacción",
+      "classification": "Clasificación",
+      "substance": "Sustancia"
+    },
     "voteChoice": {
       "agree": "De acuerdo",
       "dispute": "En desacuerdo",

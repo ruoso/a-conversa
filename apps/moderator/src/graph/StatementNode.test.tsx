@@ -881,3 +881,181 @@ describe('StatementNode — axiom-mark decoration row (mod_axiom_mark_decoration
     expect(axiomIsBeforeAnnotation).toBe(true);
   });
 });
+
+describe('StatementNode — per-facet state visualization (mod_per_facet_state_visualization)', () => {
+  // The facet-pill row surfaces ALL per-facet statuses simultaneously on
+  // the card — the detail layer underneath the whole-card frame rollup.
+  // Pills iterate in canonical reading order (`wording` → `classification`
+  // → `substance`, per `FACET_RENDER_ORDER` in `StatementNode.tsx`); only
+  // facets present in `data.facetStatuses` produce a pill. The row is
+  // omitted entirely when `facetStatuses` is empty (mirrors the
+  // annotation / axiom-mark row pattern).
+
+  it('does not render the facet-pill row when facetStatuses is empty', () => {
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-no-facets',
+          data: { wording: 'fresh node', kind: 'fact' },
+        })}
+      />,
+    );
+    // The container is only rendered when at least one pill exists.
+    expect(screen.queryByTestId('facet-pill-row-node-n-no-facets')).toBeNull();
+  });
+
+  it('renders a single wording pill when only wording is proposed', () => {
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-wording-only',
+          data: {
+            wording: 'in-flight wording',
+            kind: 'fact',
+            facetStatuses: { wording: 'proposed' },
+          },
+        })}
+      />,
+    );
+    const row = screen.getByTestId('facet-pill-row-node-n-wording-only');
+    expect(row).toBeTruthy();
+    const pills = row.querySelectorAll('[data-facet-pill]');
+    expect(pills.length).toBe(1);
+    const pill = pills[0] as HTMLElement;
+    expect(pill.getAttribute('data-facet-name')).toBe('wording');
+    expect(pill.getAttribute('data-facet-status')).toBe('proposed');
+  });
+
+  it('renders three pills in canonical order (wording → classification → substance)', () => {
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-three-facets',
+          data: {
+            wording: 'all three facets touched',
+            kind: 'fact',
+            facetStatuses: {
+              classification: 'disputed',
+              substance: 'proposed',
+              wording: 'agreed',
+            },
+          },
+        })}
+      />,
+    );
+    const row = screen.getByTestId('facet-pill-row-node-n-three-facets');
+    const pills = Array.from(row.querySelectorAll<HTMLElement>('[data-facet-pill]'));
+    expect(pills.length).toBe(3);
+    // Pin the DOM order — wording first, then classification, then substance.
+    expect(pills.map((p) => p.getAttribute('data-facet-name'))).toEqual([
+      'wording',
+      'classification',
+      'substance',
+    ]);
+    // Each pill carries its own independent status.
+    expect(pills[0]?.getAttribute('data-facet-status')).toBe('agreed');
+    expect(pills[1]?.getAttribute('data-facet-status')).toBe('disputed');
+    expect(pills[2]?.getAttribute('data-facet-status')).toBe('proposed');
+  });
+
+  it('renders independent per-facet statuses when statuses are mixed (one disputed + two committed)', () => {
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-mixed-closed',
+          data: {
+            wording: 'one disputed, two committed',
+            kind: 'value',
+            facetStatuses: {
+              wording: 'committed',
+              classification: 'committed',
+              substance: 'disputed',
+            },
+          },
+        })}
+      />,
+    );
+    const row = screen.getByTestId('facet-pill-row-node-n-mixed-closed');
+    const pills = Array.from(row.querySelectorAll<HTMLElement>('[data-facet-pill]'));
+    expect(pills.length).toBe(3);
+    const byFacet: Record<string, string | null> = {};
+    for (const p of pills) {
+      const name = p.getAttribute('data-facet-name');
+      if (name !== null) byFacet[name] = p.getAttribute('data-facet-status');
+    }
+    expect(byFacet.wording).toBe('committed');
+    expect(byFacet.classification).toBe('committed');
+    expect(byFacet.substance).toBe('disputed');
+    // The committed-state pill should carry the committed-state classes
+    // (closed-state styling — the pill renders distinctly even though
+    // the whole-card frame falls back to baseline for `committed`).
+    const committedPill = pills.find((p) => p.getAttribute('data-facet-name') === 'wording');
+    expect(committedPill?.className).toContain('opacity-90');
+    // The disputed pill should carry the rose ring even though the
+    // whole-card rollup is `disputed` (frame uses ring-2; pill uses ring-1).
+    const disputedPill = pills.find((p) => p.getAttribute('data-facet-name') === 'substance');
+    expect(disputedPill?.className).toContain('border-rose-600');
+    expect(disputedPill?.className).toContain('ring-1');
+  });
+
+  it('coexists with the whole-card frame styling (rollup + per-pill render independently)', () => {
+    // When one facet is proposed and another is disputed, the whole-card
+    // frame rolls up to PROPOSED (the highest-priority status), so the
+    // card frame paints dashed-slate. Independently, the disputed pill
+    // still carries the red-marker classes — the rollup and the per-pill
+    // detail are TWO separate signals and must coexist.
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-frame-and-pills',
+          data: {
+            wording: 'proposed wins the rollup; disputed pill still shows red',
+            kind: 'fact',
+            facetStatuses: { wording: 'proposed', substance: 'disputed' },
+          },
+        })}
+      />,
+    );
+    const card = screen.getByTestId('statement-node-n-frame-and-pills');
+    // Frame: the rollup picks `proposed` → dashed-slate border on the
+    // whole card. The `data-facet-status` attribute on the root reflects
+    // the rollup (not the per-pill statuses).
+    expect(card.getAttribute('data-facet-status')).toBe('proposed');
+    expect(card.className).toContain('border-dashed');
+    expect(card.className).not.toContain('border-rose-600');
+
+    // Per-pill row: the disputed pill carries its own red marker.
+    const row = screen.getByTestId('facet-pill-row-node-n-frame-and-pills');
+    const pills = Array.from(row.querySelectorAll<HTMLElement>('[data-facet-pill]'));
+    expect(pills.length).toBe(2);
+    const disputedPill = pills.find((p) => p.getAttribute('data-facet-name') === 'substance');
+    expect(disputedPill?.getAttribute('data-facet-status')).toBe('disputed');
+    expect(disputedPill?.className).toContain('border-rose-600');
+    expect(disputedPill?.className).toContain('ring-rose-500');
+  });
+
+  it('renders the facet-pill row ABOVE the wording paragraph', () => {
+    // Visual hierarchy: per-facet detail leads (the methodology's
+    // structural axis), then the wording paragraph (the content). Pin
+    // the DOM order so a future refactor doesn't silently invert it.
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-order-check',
+          data: {
+            wording: 'ordering check',
+            kind: 'fact',
+            facetStatuses: { wording: 'proposed' },
+          },
+        })}
+      />,
+    );
+    const row = screen.getByTestId('facet-pill-row-node-n-order-check');
+    const wording = screen.getByTestId('statement-node-wording-n-order-check');
+    // `DOCUMENT_POSITION_FOLLOWING` (4): "other follows this" — i.e. row
+    // comes BEFORE wording in the DOM.
+    const rowIsBeforeWording =
+      (row.compareDocumentPosition(wording) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+    expect(rowIsBeforeWording).toBe(true);
+  });
+});

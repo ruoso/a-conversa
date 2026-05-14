@@ -49,6 +49,11 @@
       "disputed": "Em disputa",
       "meta-disagreement": "Meta-desacordo"
     },
+    "facet": {
+      "wording": "Redação",
+      "classification": "Classificação",
+      "substance": "Substância"
+    },
     "voteChoice": {
       "agree": "Concordar",
       "dispute": "Discordar",

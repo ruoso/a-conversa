@@ -49,6 +49,11 @@
       "disputed": "Disputed",
       "meta-disagreement": "Meta-disagreement"
     },
+    "facet": {
+      "wording": "Wording",
+      "classification": "Classification",
+      "substance": "Substance"
+    },
     "voteChoice": {
       "agree": "Agree",
       "dispute": "Dispute",

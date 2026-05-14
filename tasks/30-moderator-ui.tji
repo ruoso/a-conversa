@@ -154,7 +154,9 @@ task moderator_ui "Moderator UI" {
     task mod_per_facet_state_visualization "Per-facet state visualization within a single node" {
       effort 2d
       allocate team
+      complete 100
       depends !mod_proposed_state_styling, !mod_agreed_state_styling, !mod_disputed_state_styling
+      note "Refinement: tasks/refinements/moderator-ui/mod_per_facet_state_visualization.md"
     }
     task mod_vote_indicators_on_graph "Per-participant vote indicators on graph (ambient)" {
       effort 1d

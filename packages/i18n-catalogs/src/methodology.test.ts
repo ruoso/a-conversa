@@ -59,6 +59,12 @@ const METHODOLOGY_VALUES = {
     'contradicts',
   ],
   facetState: ['proposed', 'agreed', 'disputed', 'meta-disagreement'],
+  // Per-facet identifiers. Refinement:
+  // `tasks/refinements/moderator-ui/mod_per_facet_state_visualization.md`.
+  // The moderator's per-facet pill row resolves
+  // `methodology.facet.<name>` for each pill; the round-trip below
+  // pins every locale's catalog entry for the three v1 facets.
+  facet: ['wording', 'classification', 'substance'],
   voteChoice: ['agree', 'dispute', 'withdraw'],
   annotationKind: ['note', 'reframe', 'scope-change', 'stance'],
   diagnostic: ['cycle', 'contradiction', 'multi-warrant', 'dangling-claim', 'coherency-hint'],

@@ -1,7 +1,8 @@
 // `<StatementNode>` — custom ReactFlow node for the moderator's graph.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_axiom_mark_decoration.md
-// (prior:     tasks/refinements/moderator-ui/mod_meta_disagreement_split_render.md,
+// Refinement: tasks/refinements/moderator-ui/mod_per_facet_state_visualization.md
+// (prior:     tasks/refinements/moderator-ui/mod_axiom_mark_decoration.md,
+//             tasks/refinements/moderator-ui/mod_meta_disagreement_split_render.md,
 //             tasks/refinements/moderator-ui/mod_disputed_state_styling.md,
 //             tasks/refinements/moderator-ui/mod_agreed_state_styling.md,
 //             tasks/refinements/moderator-ui/mod_proposed_state_styling.md,
@@ -43,8 +44,29 @@ import type { StatementKind } from '@a-conversa/shared-types';
 
 import { AnnotationBadge } from './AnnotationBadge.js';
 import { AxiomMarkBadge } from './AxiomMarkBadge.js';
+import { FacetPill } from './FacetPill.js';
 import type { FacetName, FacetStatus } from './facetStatus.js';
 import type { Annotation, AxiomMark } from './selectors.js';
+
+/**
+ * Canonical reading order for the per-facet pill row. Matches the
+ * methodology's enumeration in `docs/methodology.md` § "Facets":
+ *
+ *   1. Wording        — "does the captured text faithfully represent what was said?"
+ *   2. Classification — "what kind of statement is it?"
+ *   3. Substance      — "do we agree the content is true / the claim holds?"
+ *
+ * **This is the reading order, not the rollup priority.** The card-level
+ * rollup priority (`ROLLUP_PRIORITY`, below) is about *importance* —
+ * what status wins when multiple are present, for the whole-card frame.
+ * `FACET_RENDER_ORDER` is about *reading sequence* — the order pills
+ * appear left-to-right inside the per-facet bar so the moderator scans
+ * "wording / classification / substance" in the same order as the
+ * methodology document enumerates them.
+ *
+ * Refinement: `mod_per_facet_state_visualization`.
+ */
+const FACET_RENDER_ORDER: readonly FacetName[] = ['wording', 'classification', 'substance'];
 
 /**
  * The shape of `data` ReactFlow hands to `<StatementNode>` via
@@ -70,9 +92,10 @@ export interface StatementNodeData {
    * Per-facet `FacetStatus` for this node. Populated by `projectNodes`
    * via `computeFacetStatuses(events)`. Empty when no facet-targeting
    * proposal references the node — the card renders with the solid-
-   * border / fully-opaque baseline in that case. The sibling per-facet
-   * state-visualization task (`mod_per_facet_state_visualization`)
-   * subdivides the card into per-facet slices using this same record.
+   * border / fully-opaque baseline AND no per-facet pill row in that
+   * case. When non-empty, drives BOTH the whole-card frame styling (via
+   * `cardRollupStatus`) AND the per-facet pill row (refinement
+   * `mod_per_facet_state_visualization`).
    */
   readonly facetStatuses: Readonly<Partial<Record<FacetName, FacetStatus>>>;
   /**
@@ -204,8 +227,30 @@ export function StatementNode(props: NodeProps<StatementNodeData>): ReactElement
   const cardClassName = `${baseClassName} ${styleClassName}`;
   const rootProps = rollupStatus !== undefined ? { 'data-facet-status': rollupStatus } : {};
 
+  // Per-facet pill row — the per-facet *detail* layer that sits above
+  // the wording paragraph. The card frame above is the whole-card
+  // *rollup* signal (the "scan the canvas" view); the pill row surfaces
+  // the per-facet statuses simultaneously so the moderator sees at a
+  // glance which facets are committed vs disputed vs proposed without
+  // drilling into the right sidebar. Renders only when at least one
+  // pill would render — mirrors the annotation / axiom-mark row pattern
+  // (no empty container in the DOM). Pills iterate in canonical reading
+  // order (`wording > classification > substance`, per
+  // `FACET_RENDER_ORDER`); only facets present in `facetStatuses`
+  // produce a pill. Refinement: `mod_per_facet_state_visualization`.
+  const facetPills = FACET_RENDER_ORDER.flatMap((facet) => {
+    const status = facetStatuses[facet];
+    if (status === undefined) return [];
+    return [<FacetPill key={facet} facet={facet} status={status} />];
+  });
+
   return (
     <div data-testid={`statement-node-${id}`} className={cardClassName} {...rootProps}>
+      {facetPills.length > 0 ? (
+        <div data-testid={`facet-pill-row-node-${id}`} className="mb-1 flex flex-wrap gap-1">
+          {facetPills}
+        </div>
+      ) : null}
       <p
         data-testid={`statement-node-wording-${id}`}
         className="text-sm text-slate-900 leading-snug whitespace-pre-line break-words"
