@@ -80,9 +80,11 @@ task frontend_i18n "Frontend internationalization" {
   task i18n_audience_typography "Confirm broadcast typography covers diacritics for all three locales" {
     effort 0.5d
     allocate team
+    complete 100
     depends !i18n_catalog_workflow, audience.aud_graph_rendering.aud_clean_typography
     note "Visual smoke: c-cedilla, tilde-a, tilde-o, n-tilde, accented vowels render crisply at OBS broadcast resolution"
     note "Refinement: tasks/refinements/frontend-i18n/i18n_audience_typography.md"
+    note "Lands typography policy (Inter + system fallback) as data in packages/i18n-catalogs; visual-smoke half deferred to aud_clean_typography + aud_visual_regression"
   }
 
   task i18n_error_code_catalog "Frontend ApiError code -> localized message mapping" {
