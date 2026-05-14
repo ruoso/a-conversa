@@ -186,6 +186,9 @@ importers:
       '@fastify/sensible':
         specifier: 6.0.4
         version: 6.0.4
+      '@fastify/static':
+        specifier: 8.2.0
+        version: 8.2.0
       '@fastify/swagger':
         specifier: 9.7.0
         version: 9.7.0
@@ -740,6 +743,9 @@ packages:
 
   '@fastify/sensible@6.0.4':
     resolution: {integrity: sha512-1vxcCUlPMew6WroK8fq+LVOwbsLtX+lmuRuqpcp6eYqu6vmkLwbKTdBWAZwbeaSgCfW4tzUpTIHLLvTiQQ1BwQ==}
+
+  '@fastify/static@8.2.0':
+    resolution: {integrity: sha512-PejC/DtT7p1yo3p+W7LiUtLMsV8fEvxAK15sozHy9t8kwo5r0uLYmhV/inURmGz1SkHZFz/8CNtHLPyhKcx4SQ==}
 
   '@fastify/static@9.1.3':
     resolution: {integrity: sha512-aXrYtsiryLhRxRNaxNqsn7FUISeb7rB9q4eHUPIot5aeQBLNahnz1m6thzm7JWC1poSGXS9XrX8DvuMivp2hkQ==}
@@ -1605,6 +1611,10 @@ packages:
   commander@14.0.3:
     resolution: {integrity: sha512-H+y0Jo/T1RZ9qPP4Eh1pkcQcLRglraJaSLoyOtHxu6AapkjWVCy2Sit1QQ4x3Dng8qDlSsZEet7g5Pq06MvTgw==}
     engines: {node: '>=20'}
+
+  content-disposition@0.5.4:
+    resolution: {integrity: sha512-FveZTNuGw04cxlAiWbzi6zTAL/lhehaWbTtgluJh4/E95DqMwTmha3KZN1aAWA8cFIhHzMZUvLevkw5Rqk+tSQ==}
+    engines: {node: '>= 0.6'}
 
   content-disposition@1.1.0:
     resolution: {integrity: sha512-5jRCH9Z/+DRP7rkvY83B+yGIGX96OYdJmzngqnw2SBSxqCFPd0w2km3s5iawpGX8krnwSGmF0FW5Nhr0Hfai3g==}
@@ -3572,6 +3582,15 @@ snapshots:
       type-is: 2.0.1
       vary: 1.1.2
 
+  '@fastify/static@8.2.0':
+    dependencies:
+      '@fastify/accept-negotiator': 2.0.1
+      '@fastify/send': 4.1.0
+      content-disposition: 0.5.4
+      fastify-plugin: 5.1.0
+      fastq: 1.20.1
+      glob: 11.1.0
+
   '@fastify/static@9.1.3':
     dependencies:
       '@fastify/accept-negotiator': 2.0.1
@@ -4436,6 +4455,10 @@ snapshots:
   commander@14.0.2: {}
 
   commander@14.0.3: {}
+
+  content-disposition@0.5.4:
+    dependencies:
+      safe-buffer: 5.2.1
 
   content-disposition@1.1.0: {}
 

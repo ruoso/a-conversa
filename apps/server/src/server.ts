@@ -41,7 +41,13 @@
 //     (`backend.websocket_protocol.ws_connection_handling`).
 //
 // **Routes** wired today:
-//   - `GET /` — trivial proof-of-bootstrap, returns `{ status: 'ok' }`.
+//   - `GET /` — serves the moderator SPA's `index.html` (registered
+//     via `staticFrontendsPlugin` — `backend.api_skeleton.serve_static_frontends`).
+//     Was previously a `{ status: 'ok' }` smoke route; that has been
+//     removed now that the single-origin deployment serves the
+//     moderator UI from the same Fastify process. The compose
+//     healthcheck and the human-facing liveness smoke both target
+//     `/healthz` instead.
 //   - `GET /healthz` — liveness probe (registered via the
 //     `healthzPlugin`); the compose `app` service healthcheck targets
 //     this route. Owned by `backend.api_skeleton.health_endpoint`.
@@ -63,8 +69,9 @@ import { getDefaultPool } from './db.js';
 import { closeUserConnections } from './ws/connection.js';
 import { errorHandlerPlugin } from './error-handler.js';
 import { createLoggerOptions } from './logger.js';
-import { errorEnvelopeRef, openapiPlugin } from './openapi.js';
+import { openapiPlugin } from './openapi.js';
 import { healthzPlugin } from './routes/healthz.js';
+import { staticFrontendsPlugin } from './routes/static-frontends.js';
 import { sessionsRoutesPlugin } from './sessions/routes.js';
 import { resolveWsOriginAllowlist } from './ws-origin-allowlist.js';
 import { wsHandlersPlugin } from './ws/handlers/index.js';
@@ -375,39 +382,14 @@ export async function createServer(options: CreateServerOptions = {}): Promise<F
   // tasks/refinements/backend/openapi_or_equivalent.md.
   await app.register(openapiPlugin);
 
-  // Trivial proof-of-bootstrap route. `/` is the human-facing smoke
-  // (`curl http://localhost:3000/`); `/healthz` (below) is the
-  // compose-healthcheck-facing liveness probe. The `schema` block
-  // documents the response under the `meta` tag so the generated
-  // OpenAPI captures it alongside `/healthz`. The handler is
-  // intentionally sync (no `async`) — there's nothing to await and the
-  // lint rule `@typescript-eslint/require-await` catches gratuitous
-  // `async`.
-  app.get(
-    '/',
-    {
-      schema: {
-        tags: ['meta'],
-        summary: 'Bootstrap smoke route',
-        description:
-          'Returns `{ status: "ok" }`. Not a real healthcheck — use `/healthz` for ' +
-          'liveness. This route exists for human-facing smoke (`curl http://localhost:3000/`) ' +
-          'against a running stack.',
-        response: {
-          200: {
-            type: 'object',
-            required: ['status'],
-            additionalProperties: false,
-            properties: {
-              status: { type: 'string', enum: ['ok'] },
-            },
-          },
-          '5xx': errorEnvelopeRef,
-        },
-      },
-    },
-    () => ({ status: 'ok' }),
-  );
+  // The previous `GET /` bootstrap smoke route (returning
+  // `{ status: 'ok' }`) was removed in
+  // `backend.api_skeleton.serve_static_frontends`. Today `/` is owned
+  // by the moderator SPA — the `staticFrontendsPlugin` registered
+  // LAST in this factory mounts the moderator's `dist/` at the root
+  // and serves `index.html` there. The human-facing liveness smoke
+  // (`curl http://localhost:3000/healthz`) and the compose
+  // healthcheck both target `/healthz`, which remains a JSON route.
 
   // `/healthz` lives in its own plugin so the route's full context —
   // semantics (liveness-only, not readiness), refinement link, sibling
@@ -541,6 +523,34 @@ export async function createServer(options: CreateServerOptions = {}): Promise<F
   // second on every emit. Refinement:
   // tasks/refinements/backend/ws_proposal_status_broadcast.md.
   await app.register(wsProposalStatusBroadcastPlugin);
+
+  // Static-frontends plugin — serves the moderator SPA's `dist/`
+  // (and any future participant / audience / replay bundles) from the
+  // same Fastify process as the JSON API. Single-origin deployment
+  // per the refinement.
+  //
+  // **Registered LAST on purpose.** Fastify matches routes in
+  // registration order; the wildcard static handler would shadow API
+  // surfaces if it ran first. Putting it last guarantees `/healthz`,
+  // `/auth/*`, `/sessions/*`, `/ws`, `/docs`, and every future API
+  // route take precedence — the static handler only sees requests
+  // they didn't claim.
+  //
+  // The plugin also installs an SPA-aware `setNotFoundHandler` that
+  // overrides the canonical one from `errorHandlerPlugin`: HTML
+  // requests for unknown paths get the moderator's `index.html` (so
+  // React Router can render the route client-side); JSON / curl
+  // clients still get the canonical `{ error: { code: 'not-found',
+  // message: 'Route not found' } }` envelope.
+  //
+  // Fail-fast at boot: a missing or unreadable `dist/` (or its
+  // `index.html`) throws here, BEFORE `app.listen(...)`. The runtime
+  // image copies `apps/moderator/dist` into the container; a stripped
+  // image without it produces a clear startup error rather than 404s
+  // on every HTML request.
+  //
+  // Refinement: tasks/refinements/backend/serve_static_frontends.md.
+  await app.register(staticFrontendsPlugin);
 
   return app;
 }

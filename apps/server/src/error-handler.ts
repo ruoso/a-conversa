@@ -51,6 +51,17 @@
 // renderer doesn't have to branch on transport-level 404 vs.
 // application-level 404 — both look like
 // `{ error: { code: 'not-found', message: '...' } }`.
+//
+// **Where the not-found handler actually lives.** Fastify allows
+// `setNotFoundHandler` to be set ONCE per prefix scope. The single
+// owner of the root-scope not-found handler is
+// `routes/static-frontends.ts` (registered last in `server.ts`),
+// because it has to discriminate between "HTML request for a
+// client-routed SPA path → serve `index.html`" and "JSON request →
+// canonical envelope." This file exports `sendNotFoundEnvelope` for
+// the JSON branch; the static-frontends plugin calls it directly.
+// Setting `setNotFoundHandler` here would double-set the handler at
+// prefix `/` and throw at registration.
 
 import type { FastifyInstance, FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import fp from 'fastify-plugin';
@@ -325,8 +336,15 @@ function handleError(err: unknown, request: FastifyRequest, reply: FastifyReply)
  *
  * The function is intentionally sync (no `async`) — there's nothing
  * to await; `setNotFoundHandler` accepts a sync function fine.
+ *
+ * Exported as `sendNotFoundEnvelope` so the static-frontends plugin
+ * (`backend.api_skeleton.serve_static_frontends`) can defer to the
+ * same canonical JSON 404 when an unknown path's `Accept` header
+ * isn't `text/html` — see `routes/static-frontends.ts`. The single
+ * exported chokepoint keeps the JSON envelope identical regardless
+ * of which handler emitted it.
  */
-function handleNotFound(_request: FastifyRequest, reply: FastifyReply): void {
+export function sendNotFoundEnvelope(_request: FastifyRequest, reply: FastifyReply): void {
   sendEnvelope(reply, 404, buildEnvelope('not-found', 'Route not found'));
 }
 
@@ -336,7 +354,11 @@ function handleNotFound(_request: FastifyRequest, reply: FastifyReply): void {
  */
 const errorHandlerPluginAsync: FastifyPluginAsync = (app: FastifyInstance, _opts) => {
   app.setErrorHandler(handleError);
-  app.setNotFoundHandler(handleNotFound);
+  // The not-found handler is owned by `routes/static-frontends.ts`
+  // (registered last in `server.ts`) — it needs to discriminate
+  // between HTML requests (SPA fallback) and JSON requests
+  // (canonical envelope below). Setting one here would double-set
+  // the handler at prefix `/` and throw.
   return Promise.resolve();
 };
 

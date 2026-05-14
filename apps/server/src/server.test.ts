@@ -11,14 +11,19 @@
 //
 // Coverage:
 //   1. `createServer()` resolves with a Fastify instance.
-//   2. The trivial `GET /` route returns 200 + `{ status: 'ok' }`.
-//   3. CORS is wired — an `OPTIONS /` preflight gets the expected
-//      access-control-allow-* headers back, confirming `@fastify/cors`
-//      is registered.
+//   2. `GET /` returns the moderator SPA's `index.html` (200, HTML
+//      content-type) — single-origin deployment per
+//      `backend.api_skeleton.serve_static_frontends`. The previous
+//      `{ status: 'ok' }` bootstrap smoke route has been removed.
+//   3. CORS is wired — an `OPTIONS /healthz` preflight gets the
+//      expected access-control-allow-* headers back, confirming
+//      `@fastify/cors` is registered. (Was `OPTIONS /` before; `/` is
+//      now an SPA route which @fastify/cors still preflights, but
+//      `/healthz` is more semantically a CORS-relevant API surface.)
 //   4. `@fastify/sensible` is wired — `app.httpErrors.notFound()` is
 //      callable (the decoration that `error_handling` will build on).
-//   5. Unknown routes return 404 (Fastify default 404 handler is in
-//      place and not accidentally overridden).
+//   5. Unknown JSON-Accept routes return the canonical 404 envelope
+//      (the SPA fallback is asserted by static-frontends.test.ts).
 //   6. `resolveCorsOptions` unit-level: dev returns `{ origin: true }`,
 //      production reflects only `APP_BASE_URL`'s origin (plus an
 //      optional `CORS_ORIGIN_ALLOWLIST`), and missing / malformed prod
@@ -103,22 +108,39 @@ describe('createServer', () => {
     expect(typeof app.httpErrors.notFound).toBe('function');
   });
 
-  it('GET / returns 200 and { status: "ok" }', async () => {
+  it('GET / serves the moderator SPA index.html (single-origin deployment)', async () => {
+    // The previous `{ status: 'ok' }` bootstrap smoke at `/` is gone
+    // — `staticFrontendsPlugin` mounts the moderator's `dist/` at the
+    // root. The compiled `index.html` shipped by Vite contains the
+    // `<div id="root"></div>` mount point and a `<script type="module"
+    // src="/assets/index-<hash>.js">` tag. Pin the structural markers
+    // rather than the full HTML so a future bundler change (hash-suffix
+    // tweak, Tailwind injection variant) doesn't flake the test.
+    //
+    // Detailed static-serving coverage (assets, Accept-discriminator
+    // fallback, missing-dist boot failure) lives in
+    // `routes/static-frontends.test.ts` per ADR 0022.
     const response = await app.inject({ method: 'GET', url: '/' });
 
     expect(response.statusCode).toBe(200);
-    expect(response.headers['content-type']).toMatch(/application\/json/);
-    expect(response.json()).toEqual({ status: 'ok' });
+    expect(response.headers['content-type']).toMatch(/text\/html/);
+    const body = response.body;
+    expect(body).toContain('<div id="root"></div>');
+    expect(body).toContain('a-conversa');
   });
 
-  it('OPTIONS / advertises CORS via @fastify/cors', async () => {
+  it('OPTIONS /healthz advertises CORS via @fastify/cors', async () => {
     // A CORS preflight uses an `Origin` header plus
     // `Access-Control-Request-Method`. `@fastify/cors` reflects the
     // origin back (since we registered with `origin: true`) and adds
     // the access-control-allow-* family.
+    //
+    // We preflight `/healthz` (rather than `/` as before) because `/`
+    // is now an SPA HTML route, and `/healthz` is the canonical
+    // CORS-relevant API surface this test cares about exercising.
     const response = await app.inject({
       method: 'OPTIONS',
-      url: '/',
+      url: '/healthz',
       headers: {
         origin: 'http://example.test',
         'access-control-request-method': 'GET',
@@ -130,10 +152,20 @@ describe('createServer', () => {
     expect(response.headers['access-control-allow-origin']).toBe('http://example.test');
   });
 
-  it('returns 404 for unknown routes', async () => {
-    const response = await app.inject({ method: 'GET', url: '/this-route-does-not-exist' });
+  it('returns 404 envelope for unknown routes (JSON Accept)', async () => {
+    // The static-frontends plugin's SPA-fallback handler returns the
+    // SPA's `index.html` for `Accept: text/html` and the canonical
+    // JSON 404 envelope otherwise. This test pins the JSON path; the
+    // HTML fallback is asserted by `routes/static-frontends.test.ts`.
+    const response = await app.inject({
+      method: 'GET',
+      url: '/this-route-does-not-exist',
+      headers: { accept: 'application/json' },
+    });
 
     expect(response.statusCode).toBe(404);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('not-found');
   });
 
   it('exposes @fastify/sensible httpErrors helpers', () => {

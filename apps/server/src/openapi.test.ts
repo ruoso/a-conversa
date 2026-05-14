@@ -12,7 +12,11 @@
 //      a 3.x string.
 //   3. The document includes the `/healthz` path with a documented
 //      200 response shape.
-//   4. The document includes the `/` path tagged with `meta`.
+//   4. The document does NOT include `/` as an OpenAPI path —
+//      `/` is now owned by `staticFrontendsPlugin` which serves the
+//      moderator SPA's `index.html` and is `schemaHide: true` (per
+//      `backend.api_skeleton.serve_static_frontends`). The previous
+//      `{ status: 'ok' }` bootstrap smoke route is gone.
 //   5. The document declares the full tag taxonomy
 //      (`meta`, `auth`, `sessions`, `events`, `replay`).
 //   6. `components.schemas.ErrorEnvelope` is present and matches the
@@ -130,13 +134,17 @@ describe('OpenAPI plugin', () => {
     expect(healthzGet?.responses?.['200']).toBeDefined();
   });
 
-  it('documents the / smoke route under the meta tag', async () => {
+  it('does NOT document `/` — the moderator SPA owns that path', async () => {
+    // `serve_static_frontends` removed the `{ status: 'ok' }` smoke
+    // route at `/` and mounted the moderator's `dist/` there
+    // (`@fastify/static` with `schemaHide: true` so the wildcard
+    // doesn't pollute the API doc). The OpenAPI document should
+    // therefore have no `paths['/']` entry — the moderator SPA is
+    // not API surface.
     const response = await app.inject({ method: 'GET', url: '/docs/json' });
     const doc = response.json<OpenApiDoc>();
 
-    expect(doc.paths['/']).toBeDefined();
-    const rootGet = doc.paths['/']?.get;
-    expect(rootGet?.tags).toContain('meta');
+    expect(doc.paths['/']).toBeUndefined();
   });
 
   it('declares the full tag taxonomy (meta, auth, sessions, events, replay)', async () => {
@@ -200,7 +208,7 @@ describe('OpenAPI plugin', () => {
   });
 
   it('routes that reference ErrorEnvelope have a documented 5xx response', async () => {
-    // Both `GET /` and `GET /healthz` attach `errorEnvelopeRef` to
+    // `GET /healthz` attaches `errorEnvelopeRef` to
     // `schema.response['5xx']`. The OpenAPI 3.x spec uses uppercase
     // status-class keys (`'5XX'`), and `@fastify/swagger`
     // normalizes Fastify's lowercase `'5xx'` into that form when
@@ -211,10 +219,14 @@ describe('OpenAPI plugin', () => {
     // test stays insensitive to minor generator-version changes; the
     // contract being pinned is "an error response is documented,"
     // not "the documented response key is exactly this string."
+    //
+    // The previous loop also asserted against `/` — that route is
+    // gone (the moderator SPA owns `/` per
+    // `backend.api_skeleton.serve_static_frontends`).
     const response = await app.inject({ method: 'GET', url: '/docs/json' });
     const doc = response.json<OpenApiDoc>();
 
-    for (const path of ['/', '/healthz']) {
+    for (const path of ['/healthz']) {
       const responses = doc.paths[path]?.get?.responses ?? {};
       const hasErrorResponse =
         '5XX' in responses || '5xx' in responses || '500' in responses || 'default' in responses;

@@ -138,9 +138,27 @@ COPY --from=build /app/packages/shared-types/dist  ./packages/shared-types/dist
 # ENOENT and the container restart-loops with a clear "Can't get
 # migration files" error (which is the gate doing its job).
 COPY --from=build /app/apps/server/migrations      ./apps/server/migrations
-# Frontend dist directories are placeholders today and may not exist
-# under the alpine runtime once bundler tasks land — they will be
-# copied here too. Intentionally not copied yet.
+
+# Moderator SPA bundle — the Fastify server's
+# `staticFrontendsPlugin` (registered last in
+# `apps/server/src/server.ts` per
+# tasks/refinements/backend/serve_static_frontends.md) serves these
+# static assets from the same process as the JSON API, so the
+# deployment is a single origin (one hostname + port answers both
+# `/` HTML and `/sessions` JSON). The server fails fast at boot if
+# the dist tree is absent; an image that strips this layer would
+# crash at startup instead of silently degrading to a JSON-only API.
+#
+# The `MODERATOR_DIST_DIR` env var can override this location at
+# runtime; the default the plugin resolves to
+# `apps/moderator/dist` relative to the server's compiled output,
+# which under this image layout is `/app/apps/moderator/dist`.
+#
+# Participant, audience, and replay don't have a `dist/` yet
+# (stubbed apps) — when their bundlers land, add the matching
+# `COPY --from=build /app/apps/<name>/dist ./apps/<name>/dist`
+# line and a matching frontend entry in the static-frontends plugin.
+COPY --from=build /app/apps/moderator/dist         ./apps/moderator/dist
 
 # Drop privileges. The `node` user (uid 1000) ships with the official
 # image and owns nothing under /app — that's fine for the read-only

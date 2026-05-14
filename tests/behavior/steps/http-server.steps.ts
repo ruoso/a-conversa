@@ -84,6 +84,25 @@ When('a GET request is sent to {string}', async function (this: AConversaWorld, 
   };
 });
 
+// Used by tests/behavior/backend/http-server.feature — the
+// `serve_static_frontends` plugin's SPA-fallback handler discriminates
+// by `Accept` header (HTML → SPA `index.html`, anything else → JSON
+// 404 envelope). This step lets a scenario set the inbound Accept
+// explicitly so the discrimination is visible in the feature file.
+When(
+  'a GET request is sent to {string} with Accept {string}',
+  async function (this: AConversaWorld, url: string, accept: string) {
+    const app = scratch(this).httpServer;
+    assert.ok(app, 'http server not initialized — Given step missing');
+    const response = await app.inject({ method: 'GET', url, headers: { accept } });
+    scratch(this).lastResponse = {
+      statusCode: response.statusCode,
+      body: response.body,
+      headers: response.headers,
+    };
+  },
+);
+
 Then('the response status is {int}', function (this: AConversaWorld, expected: number) {
   const res = scratch(this).lastResponse;
   assert.ok(res, 'no response captured — When step missing');
@@ -99,6 +118,18 @@ Then(
     assert.equal(parsed.status, expectedStatus);
   },
 );
+
+// Used by tests/behavior/backend/http-server.feature's `GET /` SPA
+// scenario — the moderator's `dist/index.html` is HTML, not JSON. The
+// content-type check confirms the static plugin (not a stray API
+// route) answered the request.
+Then('the response content-type is HTML', function (this: AConversaWorld) {
+  const res = scratch(this).lastResponse;
+  assert.ok(res, 'no response captured — When step missing');
+  const ct = res.headers['content-type'];
+  const ctStr = typeof ct === 'string' ? ct : Array.isArray(ct) ? ct.join(',') : '';
+  assert.ok(/text\/html/.test(ctStr), `expected text/html content-type, got "${ctStr}"`);
+});
 
 // Used by tests/behavior/backend/healthz.feature — the /healthz
 // response carries a `version` field stamped from

@@ -40,6 +40,13 @@ task backend "Backend" {
       depends !http_server
       note "Refinement: tasks/refinements/backend/openapi_or_equivalent.md"
     }
+    task serve_static_frontends "Serve frontend SPAs from the API server" {
+      effort 1d
+      allocate team
+      complete 100
+      depends !http_server
+      note "Refinement: tasks/refinements/backend/serve_static_frontends.md"
+    }
   }
 
   task auth "Authentication" {
