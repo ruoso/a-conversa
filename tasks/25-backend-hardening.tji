@@ -97,6 +97,7 @@ task backend_hardening "M3-review hardening (security audit follow-ups)" {
     task catch_up_revoked_visibility_pin "Pin catch-up rejects after visibility-revoke" {
       effort 0.25d
       allocate team
+      complete 100
       depends !privacy_flip_subscription_prune
       note "Source: docs/security/m3-review/coverage.md G-002"
       note "Refinement: tasks/refinements/backend-hardening/catch_up_revoked_visibility_pin.md"

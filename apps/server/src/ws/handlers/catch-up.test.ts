@@ -60,6 +60,14 @@ const DEBATER_A_ID = '00000000-0000-4000-8000-000000000c05';
 const OTHER_HOST_ID = '00000000-0000-4000-8000-000000000c06';
 const PROPOSAL_EVENT_ID = '00000000-0000-4000-8000-000000000cb1';
 
+// G-002 fixtures — race-against-the-prune + former-participant pins.
+// Refinement: tasks/refinements/backend-hardening/catch_up_revoked_visibility_pin.md.
+// Sessions whose host is OTHER_HOST_ID so FIXTURE_USER_ID is structurally
+// a non-host; the privacy bit is mutated mid-test for Scenario A, and the
+// `participants` array's `left_at` is non-null for Scenario B.
+const STRANGER_SUB_SESSION_ID = '00000000-0000-4000-8000-000000000c07';
+const FORMER_PARTICIPANT_SESSION_ID = '00000000-0000-4000-8000-000000000c08';
+
 // RFC 4122 v4 UUID matcher.
 const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -74,6 +82,23 @@ const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}
 //
 // HIDDEN_SESSION_ID is a private session hosted by OTHER_HOST_ID — not
 // visible to FIXTURE_USER_ID. Used for the not-found gate test.
+//
+// STRANGER_SUB_SESSION_ID (G-002 Scenario A): public-then-private
+// session hosted by OTHER_HOST_ID. FIXTURE_USER_ID is neither host nor
+// participant. The test subscribes while public, then mutates
+// `store.sessions[…].privacy = 'private'` to simulate the race-window
+// state the privacy-flip prune (predecessor task G-001) leaves open:
+// the registry entry exists but `canSeeSession` would now reject. No
+// seeded events — gate-2 fires before the boundary read so events are
+// not needed.
+//
+// FORMER_PARTICIPANT_SESSION_ID (G-002 Scenario B): private session
+// hosted by OTHER_HOST_ID. FIXTURE_USER_ID has a `session_participants`
+// row with `left_at` set, so they are a FORMER participant. Per the
+// visibility rule (once-a-participant always seeable; see
+// apps/server/src/sessions/visibility.ts:12-19), the predicate admits.
+// No seeded events — the catch-up's `caught-up` ack with eventCount=0
+// is sufficient evidence that gate-2 admitted the request.
 
 interface SessionRow {
   id: string;
@@ -92,9 +117,24 @@ interface EventRow {
   created_at: Date;
 }
 
+/**
+ * Per-row shape mirroring the `session_participants` table — minimal
+ * subset the visibility recogniser needs. `left_at` is present
+ * intentionally so Scenario B can exercise the former-participant
+ * branch of the once-a-participant rule (the production EXISTS clause
+ * has no `left_at IS NULL` filter, so this column is informational
+ * only — the mock admits regardless of its value).
+ */
+interface ParticipantRow {
+  session_id: string;
+  user_id: string;
+  left_at: Date | null;
+}
+
 interface Store {
   sessions: SessionRow[];
   events: EventRow[];
+  participants: ParticipantRow[];
 }
 
 function makeCatchUpPool(): { pool: DbPool; store: Store } {
@@ -104,6 +144,34 @@ function makeCatchUpPool(): { pool: DbPool; store: Store } {
     sessions: [
       { id: SEEDED_SESSION_ID, host_user_id: FIXTURE_USER_ID, privacy: 'public', ended_at: null },
       { id: HIDDEN_SESSION_ID, host_user_id: OTHER_HOST_ID, privacy: 'private', ended_at: null },
+      // G-002 Scenario A — public, FIXTURE_USER_ID is non-host and
+      // non-participant. Test mutates `privacy` to 'private' mid-test.
+      {
+        id: STRANGER_SUB_SESSION_ID,
+        host_user_id: OTHER_HOST_ID,
+        privacy: 'public',
+        ended_at: null,
+      },
+      // G-002 Scenario B — private, FIXTURE_USER_ID is a former
+      // participant (left_at set; see `participants` below). Per the
+      // once-a-participant rule, `canSeeSession` admits.
+      {
+        id: FORMER_PARTICIPANT_SESSION_ID,
+        host_user_id: OTHER_HOST_ID,
+        privacy: 'private',
+        ended_at: null,
+      },
+    ],
+    participants: [
+      // G-002 Scenario B fixture — FIXTURE_USER_ID joined and then left
+      // FORMER_PARTICIPANT_SESSION_ID. The production participant
+      // EXISTS clause has no `left_at IS NULL` filter, so this row
+      // admits the user via `canSeeSession`.
+      {
+        session_id: FORMER_PARTICIPANT_SESSION_ID,
+        user_id: FIXTURE_USER_ID,
+        left_at: t(5),
+      },
     ],
     events: [
       {
@@ -216,7 +284,14 @@ function makeCatchUpPool(): { pool: DbPool; store: Store } {
         }
         const isPublic = session.privacy === 'public';
         const isHost = session.host_user_id === userId;
-        if (isPublic || isHost) {
+        // Once-a-participant rule: the production EXISTS clause has no
+        // `left_at IS NULL` filter, so any matching participant row
+        // (current OR past) admits visibility. Refinement: tasks/
+        // refinements/backend-hardening/catch_up_revoked_visibility_pin.md.
+        const isOrWasParticipant = store.participants.some(
+          (p2) => p2.session_id === sessionId && p2.user_id === userId,
+        );
+        if (isPublic || isHost || isOrWasParticipant) {
           return Promise.resolve({ rows: [{ visible: 1 }] as unknown as TRow[] });
         }
         return Promise.resolve({ rows: [] as TRow[] });
@@ -493,6 +568,169 @@ describe('ws_reconnection_handling — handler integration', () => {
       const payload = err.parsed.payload as { code?: unknown };
       expect(err.parsed.inResponseTo).toBe(CATCH_MSG_ID);
       expect(payload.code).toBe('not-found');
+    } finally {
+      ws.terminate();
+    }
+  });
+
+  it('SECURITY (G-002): subscribe → privacy-flip server-side → racing `catch-up` is rejected with `not-found` (gate-2 re-check)', async () => {
+    // Pin G-002 (coverage.md): the catch-up handler's gate-2
+    // `canSeeSession` re-check at apps/server/src/ws/handlers/catch-up.ts:464
+    // catches the race where a `catch-up` envelope lands AFTER a
+    // session has flipped to private but BEFORE the active prune
+    // (privacy_flip_subscription_prune, G-001) has evicted the
+    // subscriber from the registry. The two defenses are
+    // complementary — the prune is the active fix; this gate is the
+    // structural defense for the in-flight envelope that races the
+    // prune iteration.
+    //
+    // Setup: STRANGER_SUB_SESSION_ID starts public; FIXTURE_USER_ID
+    // (a non-host non-participant) subscribes via the normal
+    // subscribe handler path so the registry entry carries the userId
+    // binding the predecessor task added. Then the test mutates
+    // `store.sessions[…].privacy = 'private'` directly — simulating
+    // the race-window state (privacy bit committed, prune not yet
+    // iterated to this connection). Catch-up: gate-2 fires.
+    //
+    // The wire shape is `code: 'not-found'` (NOT `forbidden`) per the
+    // existence-non-leak rule — same shape as the existing not-found
+    // gate test above, so a reader of the two tests sees the parallel.
+    //
+    // Refinement: tasks/refinements/backend-hardening/catch_up_revoked_visibility_pin.md.
+    const built = makeCatchUpPool();
+    app = await buildHandlerApp(built.pool);
+    const cookie = await fixtureCookieHeader();
+    const { ws, next } = await openWsClient(app, cookie);
+    try {
+      await next(); // hello
+
+      // Subscribe normally while the session is public — succeeds.
+      ws.send(subscribeFrame(SUB_MSG_ID, STRANGER_SUB_SESSION_ID));
+      const subAck = JSON.parse(await next()) as { type?: unknown };
+      expect(subAck.type).toBe('subscribed');
+
+      // Sanity check: registry entry exists for this connection
+      // BEFORE the privacy flip (mirrors the pre-prune state).
+      const conns = (await import('../connection.js')).__getOpenConnectionsForTests();
+      expect(conns.length).toBe(1);
+      const connectionId = conns[0]!.connectionId;
+      const beforeFlip = app.wsSubscriptions.connectionsForSession(STRANGER_SUB_SESSION_ID);
+      expect(beforeFlip).toContain(connectionId);
+
+      // Server-side privacy flip — without triggering the prune.
+      // This is the race state: privacy='private' is committed; the
+      // prune helper has not yet evicted this connection.
+      const sessionRow = built.store.sessions.find((s) => s.id === STRANGER_SUB_SESSION_ID);
+      expect(sessionRow).toBeDefined();
+      sessionRow!.privacy = 'private';
+
+      // Registry entry still exists (prune did NOT run) — pin the
+      // race precondition.
+      const afterFlip = app.wsSubscriptions.connectionsForSession(STRANGER_SUB_SESSION_ID);
+      expect(afterFlip).toContain(connectionId);
+
+      // Racing catch-up envelope. Gate-1 (subscribe-before-act)
+      // passes because the registry entry persists; gate-2
+      // (visibility re-check) fires because canSeeSession now
+      // returns false for this non-host non-participant on a
+      // private session.
+      ws.send(catchUpFrame(CATCH_MSG_ID, STRANGER_SUB_SESSION_ID, 0));
+
+      const err = await readUntilType(next, 'error');
+      const payload = err.parsed.payload as { code?: unknown; message?: unknown };
+      expect(err.parsed.type).toBe('error');
+      expect(err.parsed.inResponseTo).toBe(CATCH_MSG_ID);
+      expect(payload.code).toBe('not-found');
+      expect(typeof payload.message).toBe('string');
+
+      // Per-frame logical errors leave the connection open — pinned
+      // explicitly so a future regression that closes the socket on
+      // gate-2 fails this test.
+      expect(ws.readyState).toBe(1);
+    } finally {
+      ws.terminate();
+    }
+  });
+
+  it('SECURITY (G-002): former participant (left_at set) on a private session is still admitted (pins once-a-participant rule)', async () => {
+    // Pin the complementary half of G-002: the visibility predicate's
+    // participant EXISTS clause has NO `left_at IS NULL` filter, so a
+    // user who joined and then left a private session is still
+    // visible at catch-up time. The rule is documented in
+    // apps/server/src/sessions/visibility.ts:12-19 ("once you've seen
+    // a session you've seen it"). This test pins the methodology
+    // decision — a future regression that tightens the predicate to
+    // current-participants-only (intuitively reasonable, but a
+    // security-model change that would silently break audience-replay
+    // for past participants) fails this test.
+    //
+    // Setup: FORMER_PARTICIPANT_SESSION_ID is private, hosted by
+    // OTHER_HOST_ID. FIXTURE_USER_ID has a participants row with
+    // `left_at: t(5)` (left), so they are NOT a current participant.
+    // The test uses the forcibly-subscribe shortcut (same pattern as
+    // the not-found gate test above) to install the registry entry
+    // without going through the subscribe handler — keeping the focus
+    // on the catch-up surface; subscribe-handler coverage of the
+    // participant case lives in subscribe.test.ts.
+    //
+    // The fixture session has zero events; `MAX(sequence) = 0`,
+    // `sinceSequence = 0`, so the handler reaches the no-op-at-head
+    // branch and emits a single `caught-up` ack with `eventCount: 0`,
+    // `throughSequence: 0`, `fromSnapshot: false`. The ack is
+    // sufficient evidence that gate-2 admitted the request.
+    //
+    // Refinement: tasks/refinements/backend-hardening/catch_up_revoked_visibility_pin.md.
+    const built = makeCatchUpPool();
+    app = await buildHandlerApp(built.pool);
+    const cookie = await fixtureCookieHeader();
+    const { ws, next } = await openWsClient(app, cookie);
+    try {
+      await next(); // hello
+
+      // Forcibly install the registry entry — the production
+      // subscribe handler would also admit (the participant rule
+      // applies there too), but bypassing it keeps the test focused
+      // on the catch-up surface.
+      const conns = (await import('../connection.js')).__getOpenConnectionsForTests();
+      expect(conns.length).toBe(1);
+      const connectionId = conns[0]!.connectionId;
+      app.wsSubscriptions.subscribe(connectionId, FORMER_PARTICIPANT_SESSION_ID);
+
+      // Pre-condition: the participant row exists with left_at set,
+      // and the user is NOT host. So the predicate admits via the
+      // participant EXISTS branch, not the host or public branches.
+      const sessionRow = built.store.sessions.find((s) => s.id === FORMER_PARTICIPANT_SESSION_ID);
+      expect(sessionRow?.privacy).toBe('private');
+      expect(sessionRow?.host_user_id).toBe(OTHER_HOST_ID);
+      const participantRow = built.store.participants.find(
+        (p) => p.session_id === FORMER_PARTICIPANT_SESSION_ID && p.user_id === FIXTURE_USER_ID,
+      );
+      expect(participantRow).toBeDefined();
+      expect(participantRow!.left_at).not.toBeNull();
+
+      ws.send(catchUpFrame(CATCH_MSG_ID, FORMER_PARTICIPANT_SESSION_ID, 0));
+
+      const drained = await drainUntilCaughtUp(next);
+
+      // Gate-2 admitted — no error frame, single caught-up ack.
+      expect(drained.eventApplied.length).toBe(0);
+      expect(drained.snapshotState).toBeUndefined();
+      expect(drained.caughtUp).toBeDefined();
+      const ackPayload = drained.caughtUp!.payload as {
+        sessionId?: unknown;
+        throughSequence?: unknown;
+        eventCount?: unknown;
+        fromSnapshot?: unknown;
+      };
+      expect(drained.caughtUp!.inResponseTo).toBe(CATCH_MSG_ID);
+      expect(ackPayload.sessionId).toBe(FORMER_PARTICIPANT_SESSION_ID);
+      expect(ackPayload.throughSequence).toBe(0);
+      expect(ackPayload.eventCount).toBe(0);
+      expect(ackPayload.fromSnapshot).toBe(false);
+
+      // Connection stays open across the success path too — pinned
+      // for symmetry with Scenario A.
+      expect(ws.readyState).toBe(1);
     } finally {
       ws.terminate();
     }
