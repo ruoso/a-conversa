@@ -73,7 +73,6 @@ const authorizationCodeGrantMock = vi.hoisted(() =>
 
 vi.mock('openid-client', () => ({
   discovery: vi.fn(),
-  allowInsecureRequests: vi.fn(),
   randomState: randomStateMock,
   randomNonce: randomNonceMock,
   randomPKCECodeVerifier: randomPKCECodeVerifierMock,
