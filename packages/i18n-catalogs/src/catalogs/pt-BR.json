@@ -68,6 +68,23 @@
       "coherency-hint": "Sugestão de coerência"
     }
   },
+  "moderator": {
+    "rightSidebar": {
+      "emptyPanePlaceholder": "Em breve",
+      "toggleAria": "{expanded, select, true {Recolher painel} other {Expandir painel}}",
+      "panes": {
+        "pendingProposals": {
+          "title": "Propostas pendentes"
+        },
+        "diagnosticFlags": {
+          "title": "Sinalizações diagnósticas"
+        },
+        "changeHistory": {
+          "title": "Histórico de mudanças"
+        }
+      }
+    }
+  },
   "diagnostics": {
     "cycle": {
       "title": "Ciclo em apoios",

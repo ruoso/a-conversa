@@ -23,6 +23,7 @@ import { useTranslation } from 'react-i18next';
 
 import { OperateLayout } from '../layout/OperateLayout';
 import { BottomStripCapture } from '../layout/BottomStripCapture';
+import { RightSidebar } from '../layout/RightSidebar';
 import { useCaptureStore, useSelectionStore, useUiStore } from '../stores/index.js';
 
 export function OperateRoute(): ReactElement {
@@ -47,6 +48,7 @@ export function OperateRoute(): ReactElement {
           </div>
         }
         bottomStrip={<BottomStripCapture />}
+        rightSidebar={<RightSidebar />}
       />
     </main>
   );

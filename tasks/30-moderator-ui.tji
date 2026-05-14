@@ -77,7 +77,9 @@ task moderator_ui "Moderator UI" {
     task mod_right_sidebar "Right sidebar with stacked sub-panes" {
       effort 1d
       allocate team
+      complete 100
       depends !mod_layout_shell
+      note "Refinement: tasks/refinements/moderator-ui/mod_right_sidebar.md"
     }
     task mod_bottom_strip_capture "Bottom-strip capture pane" {
       effort 1d

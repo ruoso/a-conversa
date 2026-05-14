@@ -68,6 +68,23 @@
       "coherency-hint": "Coherency hint"
     }
   },
+  "moderator": {
+    "rightSidebar": {
+      "emptyPanePlaceholder": "Coming soon",
+      "toggleAria": "{expanded, select, true {Collapse pane} other {Expand pane}}",
+      "panes": {
+        "pendingProposals": {
+          "title": "Pending proposals"
+        },
+        "diagnosticFlags": {
+          "title": "Diagnostic flags"
+        },
+        "changeHistory": {
+          "title": "Change history"
+        }
+      }
+    }
+  },
   "diagnostics": {
     "cycle": {
       "title": "Cycle in supports",
