@@ -12,13 +12,17 @@
 // Downstream siblings replace the three slots:
 //   - graphPane     -> mod_layout.mod_graph_canvas_pane
 //   - rightSidebar  -> mod_layout.mod_right_sidebar
-//   - bottomStrip   -> mod_layout.mod_bottom_strip_capture
+//   - bottomStrip   -> mod_layout.mod_bottom_strip_capture (landed —
+//                      `<BottomStripCapture>` scaffold mounts here;
+//                      `mod_capture_flow.*` and `mod_mode_banner` fill
+//                      its sub-slots)
 
 import type { ReactElement } from 'react';
 import { useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 
 import { OperateLayout } from '../layout/OperateLayout';
+import { BottomStripCapture } from '../layout/BottomStripCapture';
 import { useCaptureStore, useSelectionStore, useUiStore } from '../stores/index.js';
 
 export function OperateRoute(): ReactElement {
@@ -42,6 +46,7 @@ export function OperateRoute(): ReactElement {
             <p data-testid="active-sidebar-pane">{activeSidebarPane}</p>
           </div>
         }
+        bottomStrip={<BottomStripCapture />}
       />
     </main>
   );

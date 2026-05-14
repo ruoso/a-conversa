@@ -82,7 +82,9 @@ task moderator_ui "Moderator UI" {
     task mod_bottom_strip_capture "Bottom-strip capture pane" {
       effort 1d
       allocate team
+      complete 100
       depends !mod_layout_shell
+      note "Refinement: tasks/refinements/moderator-ui/mod_bottom_strip_capture.md"
     }
     task mod_mode_banner "Mode banner in capture pane" {
       effort 0.5d
