@@ -83,6 +83,37 @@ The four v1 namespaces:
 
 v1 ships every namespace inside a single nested JSON per locale. Splitting by file (`en-US/chrome.json`, etc.) is a deferred refactor — revisit on first content load.
 
+## Date / time / number formatting
+
+Locale-aware `Intl`-backed formatters live in `src/format.ts`. Every UI surface uses these helpers instead of constructing `Intl.DateTimeFormat` / `Intl.NumberFormat` directly, so the active-locale resolution lives in one place and call sites do not have to re-read `i18next.language`.
+
+Exported helpers:
+
+- `formatDate(date, options?)` — date-only rendering (default `{ dateStyle: 'medium' }`).
+- `formatTime(date, options?)` — time-only rendering (default `{ timeStyle: 'short' }`).
+- `formatDateTime(date, options?)` — combined date + time (default `{ dateStyle: 'medium', timeStyle: 'short' }`).
+- `formatNumber(value, options?)` — wraps `Intl.NumberFormat`.
+- `formatRelativeTime(value, unit, options?)` — wraps `Intl.RelativeTimeFormat` (default `{ numeric: 'auto' }`).
+
+Each helper accepts an optional `locale` field on its options bag. Resolution chain: explicit `locale` argument > `i18next.language` > `defaultLocale()` (`en-US`).
+
+```ts
+import { formatDateTime, formatRelativeTime, formatNumber } from '@a-conversa/i18n-catalogs';
+
+formatDateTime(new Date(), { dateStyle: 'long' });
+// "May 10, 2026 at 2:30 PM" / "10 de maio de 2026 às 14:30" / "10 de mayo de 2026, 14:30"
+
+formatRelativeTime(-5, 'minute');
+// "5 minutes ago" / "há 5 minutos" / "hace 5 minutos"
+
+formatNumber(1234567);
+// "1,234,567" / "1.234.567" / "1,234,567"
+```
+
+Formatter instances are memoized per (locale, options) pair — repeated calls reuse the same `Intl.DateTimeFormat` object. The escape hatches `getDateTimeFormatter` / `getNumberFormatter` / `getRelativeTimeFormatter` return the cached formatter directly for hot loops.
+
+No polyfill is wired: the v1 audience surface targets recent Chromium (OBS browser source) and Node 20 — both ship `Intl.RelativeTimeFormat` natively. Revisit if a supported browser ever lacks it.
+
 ## Translator workflow
 
 v1 ships **maintainer-edited JSON via PR**. Crowdin / Lokalise / Weblate integration is deferred to v1.x (open question on the refinement).

@@ -61,9 +61,11 @@ task frontend_i18n "Frontend internationalization" {
   task i18n_date_time_formatting "Locale-aware Intl.DateTimeFormat / Intl.NumberFormat plumbing" {
     effort 0.5d
     allocate team
+    complete 100
     depends !i18n_locale_negotiation
     note "A small util module in packages/i18n-catalogs/ (or a sibling utils package)"
     note "Refinement: tasks/refinements/frontend-i18n/i18n_date_time_formatting.md"
+    note "Landed 2026-05-11: packages/i18n-catalogs/src/format.ts + 37 vitest cases"
   }
 
   task i18n_diagnostic_descriptions "Diagnostic kind -> localized description templates" {

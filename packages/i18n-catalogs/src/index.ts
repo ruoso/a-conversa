@@ -43,3 +43,15 @@ export {
   buildShortcutMatrix,
   getShortcutForKind,
 } from './keyboard-shortcuts.js';
+
+export {
+  __resetFormatterCache,
+  formatDate,
+  formatDateTime,
+  formatNumber,
+  formatRelativeTime,
+  formatTime,
+  getDateTimeFormatter,
+  getNumberFormatter,
+  getRelativeTimeFormatter,
+} from './format.js';

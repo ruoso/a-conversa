@@ -48,3 +48,16 @@ Every UI surface displays timestamps (event log entries, change history pane, sn
 
 - **`Intl.RelativeTimeFormat` polyfill.** Modern browsers (and Node 20) support it natively; the audience surface's OBS browser-source target uses a recent Chromium engine. No polyfill expected to be needed. Revisit if a supported browser target lacks it.
 - **Time-zone handling.** Each session has a server-assigned timestamp (UTC). The frontend renders in the user's local time zone by default. Whether to add an explicit "show in show-time-zone" toggle (useful for live shows targeting a specific audience) is out of scope; capture as a follow-up if it surfaces.
+
+## Status
+
+**Done** — 2026-05-11.
+
+Landed in `packages/i18n-catalogs/`:
+
+- `src/format.ts` — `formatDate`, `formatTime`, `formatDateTime`, `formatNumber`, `formatRelativeTime` helpers, plus the `getDateTimeFormatter` / `getNumberFormatter` / `getRelativeTimeFormatter` escape hatches and the `__resetFormatterCache` test-only reset. Each helper accepts an explicit `locale` field on the options bag and otherwise falls back to `i18next.language` then `defaultLocale()` (`en-US`). Formatter instances are memoized per (locale, options) pair via module-level `Map<string, Intl.*Format>` caches with a stable JSON-keyed cache key (option key-order does not split the cache).
+- `src/format.test.ts` — 37 Vitest cases covering each helper in en-US / pt-BR / es-419, the locale-resolution chain, and memoization behaviour (instance identity across calls, distinct instances per locale / options, post-reset rebuild).
+- `src/index.ts` re-exports the new helpers from the package root.
+- `README.md` documents the helpers, their defaults, and the resolution chain.
+
+No polyfill is shipped; `Intl.RelativeTimeFormat` is native on every v1 target (recent Chromium, Node 20+). Total package test count is now 352 (previously 315; +37).
