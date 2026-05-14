@@ -1,16 +1,21 @@
 // `<StatementNode>` — custom ReactFlow node for the moderator's graph.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_node_rendering.md
+// Refinement: tasks/refinements/moderator-ui/mod_annotation_rendering.md
+// (prior:     tasks/refinements/moderator-ui/mod_node_rendering.md)
 // ADRs:       docs/adr/0004-graph-libraries-reactflow-and-cytoscape.md
 //             docs/adr/0024-frontend-i18n-react-i18next-with-icu.md
 //
 // Every domain node on the moderator's canvas is a "statement" — a
 // piece of methodology text with (eventually) a classification. The
-// node card renders two things:
+// node card renders three things:
 //
 //   1. The statement wording (the `node-created` payload's `wording`).
 //   2. The localized methodology kind label (`methodology.kind.<id>`
 //      from the i18n catalog landed by `i18n_methodology_glossary`).
+//   3. A decoration row of annotation badges, one per `annotation-
+//      created` event whose `target_node_id` is this node. Badges
+//      render only when the list is non-empty so the unannotated
+//      card stays clean. See `mod_annotation_rendering`.
 //
 // Classification is null until a `classify-node` proposal has been
 // committed (see `projectNodes` in `GraphCanvasPane.tsx`). When kind
@@ -30,12 +35,14 @@ import { useTranslation } from 'react-i18next';
 import type { NodeProps } from 'reactflow';
 import type { StatementKind } from '@a-conversa/shared-types';
 
+import { AnnotationBadge } from './AnnotationBadge.js';
+import type { Annotation } from './selectors.js';
+
 /**
  * The shape of `data` ReactFlow hands to `<StatementNode>` via
- * `NodeProps<StatementNodeData>`. The two fields are the minimum
- * surface today — wording (always present on a `node-created` event)
- * and kind (resolved from committed `classify-node` proposals, null
- * until first classification commits).
+ * `NodeProps<StatementNodeData>`. Wording and kind come from the
+ * `node-created` payload + any committed `classify-node` proposal;
+ * `annotations` is enriched in `projectNodes` from the same event log.
  */
 export interface StatementNodeData {
   /** The node's wording (verbatim from `node-created` / `edit-wording.reword`). */
@@ -45,6 +52,12 @@ export interface StatementNodeData {
    * node has not yet had a `classify-node` proposal committed.
    */
   readonly kind: StatementKind | null;
+  /**
+   * Annotations targeting this node. Empty when no `annotation-created`
+   * event references the node — the badge list is omitted entirely in
+   * that case (no empty container in the DOM).
+   */
+  readonly annotations: readonly Annotation[];
 }
 
 /**
@@ -59,7 +72,7 @@ export const STATEMENT_NODE_TYPE = 'statement';
 export function StatementNode(props: NodeProps<StatementNodeData>): ReactElement {
   const { id, data } = props;
   const { t } = useTranslation();
-  const { wording, kind } = data;
+  const { wording, kind, annotations } = data;
 
   // Resolve the kind label off the canonical glossary namespace from
   // `i18n_methodology_glossary`. `t('methodology.kind.fact')` etc.
@@ -89,6 +102,13 @@ export function StatementNode(props: NodeProps<StatementNodeData>): ReactElement
       >
         {kindLabel}
       </p>
+      {annotations.length > 0 ? (
+        <div data-testid={`annotation-badge-list-node-${id}`} className="mt-1 flex flex-wrap gap-1">
+          {annotations.map((annotation) => (
+            <AnnotationBadge key={annotation.id} annotation={annotation} />
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

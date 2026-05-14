@@ -1,7 +1,9 @@
 // `<StatementEdge>` — custom ReactFlow edge that draws a bezier path and
-// renders the methodology role label on the edge body.
+// renders the methodology role label on the edge body, plus any
+// annotations targeting this edge.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_edge_rendering.md
+// Refinement: tasks/refinements/moderator-ui/mod_annotation_rendering.md
+// (prior:      tasks/refinements/moderator-ui/mod_edge_rendering.md)
 // ADRs:        docs/adr/0004-graph-libraries-reactflow-and-cytoscape.md,
 //              docs/adr/0024-frontend-i18n-react-i18next-with-icu.md
 //
@@ -12,7 +14,9 @@
 // label text resolves through react-i18next as
 // `t('methodology.edgeRole.<role>')`, so the same component renders the
 // per-locale label in en-US / pt-BR / es-419 (and any future locale that
-// ships a catalog).
+// ships a catalog). `data.annotations` carries every `annotation-created`
+// event whose `target_edge_id` is this edge; each annotation renders as
+// an `<AnnotationBadge>` stacked beneath the role pill.
 //
 // Geometry: `getBezierPath` matches ReactFlow's default look so the
 // downstream state-styling tasks (`mod_proposed_state_styling`,
@@ -28,13 +32,14 @@
 // use case).
 //
 // Memoization: ReactFlow re-runs the edge renderer on every viewport
-// pan/zoom — `memo(...)` skips the re-render when `data.role` and the
-// endpoint coordinates haven't changed.
+// pan/zoom — `memo(...)` skips the re-render when `data.role`,
+// `data.annotations`, and the endpoint coordinates haven't changed.
 
 import { memo, type ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 import { BaseEdge, EdgeLabelRenderer, getBezierPath, type EdgeProps } from 'reactflow';
 
+import { AnnotationBadge } from './AnnotationBadge.js';
 import type { StatementEdgeData } from './selectors.js';
 
 function StatementEdgeImpl(props: EdgeProps<StatementEdgeData>): ReactElement {
@@ -57,6 +62,7 @@ function StatementEdgeImpl(props: EdgeProps<StatementEdgeData>): ReactElement {
   // return the literal `methodology.edgeRole.undefined`, which is worse
   // signal than just rendering blank.
   const label = data?.role ? t(`methodology.edgeRole.${data.role}`) : '';
+  const annotations = data?.annotations ?? [];
 
   // `style` is optional on `EdgeProps` but `BaseEdge`'s prop type (under
   // `exactOptionalPropertyTypes`) requires `CSSProperties` (not `… | undefined`).
@@ -69,8 +75,6 @@ function StatementEdgeImpl(props: EdgeProps<StatementEdgeData>): ReactElement {
       <BaseEdge id={id} path={edgePath} {...baseEdgeStyleProps} />
       <EdgeLabelRenderer>
         <div
-          data-testid={`graph-edge-label-${id}`}
-          data-edge-role={data?.role ?? ''}
           style={{
             position: 'absolute',
             transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
@@ -81,9 +85,25 @@ function StatementEdgeImpl(props: EdgeProps<StatementEdgeData>): ReactElement {
             // doesn't try to start a new connection.
             pointerEvents: 'all',
           }}
-          className="nodrag nopan rounded bg-white px-1 text-xs text-slate-900 shadow-sm"
+          className="nodrag nopan flex flex-col items-center gap-0.5"
         >
-          {label}
+          <div
+            data-testid={`graph-edge-label-${id}`}
+            data-edge-role={data?.role ?? ''}
+            className="rounded bg-white px-1 text-xs text-slate-900 shadow-sm"
+          >
+            {label}
+          </div>
+          {annotations.length > 0 ? (
+            <div
+              data-testid={`annotation-badge-list-edge-${id}`}
+              className="flex flex-wrap gap-0.5 justify-center"
+            >
+              {annotations.map((annotation) => (
+                <AnnotationBadge key={annotation.id} annotation={annotation} />
+              ))}
+            </div>
+          ) : null}
         </div>
       </EdgeLabelRenderer>
     </>

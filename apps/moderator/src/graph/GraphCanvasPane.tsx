@@ -1,8 +1,9 @@
 // `<GraphCanvasPane>` — ReactFlow mount for the moderator's graph
 // canvas slot inside `<OperateLayout>`.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_edge_rendering.md
-// (prior:     tasks/refinements/moderator-ui/mod_node_rendering.md,
+// Refinement: tasks/refinements/moderator-ui/mod_annotation_rendering.md
+// (prior:     tasks/refinements/moderator-ui/mod_edge_rendering.md,
+//             tasks/refinements/moderator-ui/mod_node_rendering.md,
 //             tasks/refinements/moderator-ui/mod_graph_canvas_pane.md)
 // ADR:        docs/adr/0004-graph-libraries-reactflow-and-cytoscape.md
 //
@@ -44,7 +45,12 @@ import 'reactflow/dist/style.css';
 import { useWsStore, type WsState } from '../ws/wsStore.js';
 import { STATEMENT_NODE_TYPE, StatementNode, type StatementNodeData } from './StatementNode.js';
 import { edgeTypes } from './edgeTypes.js';
-import { selectEdgesForSession } from './selectors.js';
+import {
+  EMPTY_ANNOTATIONS,
+  groupAnnotationsByNode,
+  projectAnnotations,
+  selectEdgesForSession,
+} from './selectors.js';
 
 /**
  * `nodeTypes` is declared at module scope, NOT inline on `<ReactFlow>`.
@@ -90,8 +96,11 @@ const EMPTY_EVENTS: readonly Event[] = Object.freeze([]);
  *   commits).
  * - `commit` whose referenced proposal is `classify-node` → set the
  *   matching node's `data.kind` to the proposal's `classification`.
- * - All other event kinds are ignored at this layer (edges,
- *   annotations, substance, decompose, etc. are downstream tasks).
+ * - `annotation-created` (collected in a second pass) → bucket by
+ *   `target_node_id` and enrich each matching node's `data.annotations`
+ *   with the badges that target it.
+ * - All other event kinds are ignored at this layer (edges, substance,
+ *   decompose, etc. are downstream tasks).
  *
  * The function preserves event order: the `i`-th `node-created` event
  * gets the `i`-th grid slot. That's enough determinism for the
@@ -111,9 +120,16 @@ export function projectNodes(events: readonly Event[]): Node<StatementNodeData>[
     { nodeId: string; classification: StatementKind }
   >();
 
+  // Annotation enrichment is a separate pass — annotations target a
+  // node by id and aren't gated on the proposal/commit dance, so a
+  // single up-front projection + groupBy is cheaper than threading
+  // through the main loop.
+  const annotationsByNode = groupAnnotationsByNode(projectAnnotations(events));
+
   for (const event of events) {
     if (event.kind === 'node-created') {
       const i = nodes.length;
+      const annotations = annotationsByNode.get(event.payload.node_id) ?? EMPTY_ANNOTATIONS;
       const node: Node<StatementNodeData> = {
         id: event.payload.node_id,
         type: STATEMENT_NODE_TYPE,
@@ -124,6 +140,7 @@ export function projectNodes(events: readonly Event[]): Node<StatementNodeData>[
         data: {
           wording: event.payload.wording,
           kind: null,
+          annotations,
         },
       };
       nodes.push(node);

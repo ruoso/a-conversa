@@ -1,6 +1,7 @@
 // Tests for `<StatementNode>` — the moderator's custom ReactFlow node.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_node_rendering.md
+// Refinement: tasks/refinements/moderator-ui/mod_annotation_rendering.md
+// (prior:     tasks/refinements/moderator-ui/mod_node_rendering.md)
 //
 // Per ADR 0022 these are committed Vitest cases, not throwaway probes.
 // They lock in:
@@ -14,6 +15,8 @@
 //      "null", not a missing-key string).
 //   5. The three `statement-node-*-<id>` test ids are present on the
 //      rendered tree so downstream rendering tasks can target them.
+//   6. The annotation badge row renders only when annotations are
+//      present, and preserves arrival order across multiple badges.
 //
 // `<StatementNode>` is a plain React component (no ReactFlow runtime
 // hook is read from it — it consumes the `NodeProps` shape but doesn't
@@ -27,27 +30,43 @@ import type { NodeProps } from 'reactflow';
 import type { StatementKind } from '@a-conversa/shared-types';
 
 import { STATEMENT_NODE_TYPE, StatementNode, type StatementNodeData } from './StatementNode';
+import type { Annotation } from './selectors';
 import { initI18n } from '../i18n';
 
 // Build a minimum `NodeProps<StatementNodeData>` value for tests.
 // ReactFlow hands the renderer many fields (dragging, selected, xPos,
 // yPos, etc.) the component doesn't consume; we synthesize a shape
 // that satisfies the type without spinning up the ReactFlow store.
+// The `data` overrides may omit `annotations` — we default to empty
+// here so the bulk of the cases stay terse.
 function makeNodeProps(overrides: {
   id?: string;
-  data: StatementNodeData;
+  data: Omit<StatementNodeData, 'annotations'> & { annotations?: readonly Annotation[] };
 }): NodeProps<StatementNodeData> {
   const id = overrides.id ?? 'node-test-1';
+  const { annotations = [], ...rest } = overrides.data;
   return {
     id,
     type: STATEMENT_NODE_TYPE,
-    data: overrides.data,
+    data: { ...rest, annotations },
     selected: false,
     isConnectable: true,
     dragging: false,
     xPos: 0,
     yPos: 0,
     zIndex: 0,
+  };
+}
+
+function makeAnnotation(overrides: Partial<Annotation> & { id: string }): Annotation {
+  return {
+    id: overrides.id,
+    kind: overrides.kind ?? 'note',
+    content: overrides.content ?? 'an annotation body',
+    targetNodeId: overrides.targetNodeId ?? null,
+    targetEdgeId: overrides.targetEdgeId ?? null,
+    createdBy: overrides.createdBy ?? '00000000-0000-4000-8000-0000000000aa',
+    createdAt: overrides.createdAt ?? '2026-05-11T00:00:00.000Z',
   };
 }
 
@@ -151,5 +170,91 @@ describe('StatementNode — localized kind label', () => {
     // Sanity: differs from en-US "Fact".
     expect(screen.getByTestId('statement-node-kind-pt-fact').textContent).not.toBe('Fact');
     await i18next.changeLanguage('en-US');
+  });
+});
+
+describe('StatementNode — annotation badge decoration row', () => {
+  it('does not render the badge list container when the node has no annotations', () => {
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-no-annotations',
+          data: { wording: 'plain', kind: 'fact' },
+        })}
+      />,
+    );
+    // The container is only rendered when at least one badge is attached.
+    expect(screen.queryByTestId('annotation-badge-list-node-n-no-annotations')).toBeNull();
+  });
+
+  it('renders one annotation badge with the matching test id when the node has one annotation', () => {
+    const annotation = makeAnnotation({
+      id: 'anno-1',
+      kind: 'note',
+      content: 'see footnote 3',
+      targetNodeId: 'n-with-annotation',
+    });
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-with-annotation',
+          data: {
+            wording: 'annotated',
+            kind: 'fact',
+            annotations: [annotation],
+          },
+        })}
+      />,
+    );
+    expect(screen.getByTestId('annotation-badge-list-node-n-with-annotation')).toBeTruthy();
+    expect(screen.getByTestId('annotation-badge-anno-1')).toBeTruthy();
+    expect(screen.getByTestId('annotation-badge-anno-1').textContent).toBe('Note');
+    expect(screen.getByTestId('annotation-badge-anno-1').getAttribute('data-annotation-kind')).toBe(
+      'note',
+    );
+    expect(screen.getByTestId('annotation-badge-anno-1').getAttribute('title')).toBe(
+      'see footnote 3',
+    );
+  });
+
+  it('renders multiple annotation badges in arrival order', () => {
+    const annotations: Annotation[] = [
+      makeAnnotation({
+        id: 'anno-a',
+        kind: 'note',
+        targetNodeId: 'n-many',
+        content: 'first',
+      }),
+      makeAnnotation({
+        id: 'anno-b',
+        kind: 'reframe',
+        targetNodeId: 'n-many',
+        content: 'second',
+      }),
+      makeAnnotation({
+        id: 'anno-c',
+        kind: 'scope-change',
+        targetNodeId: 'n-many',
+        content: 'third',
+      }),
+    ];
+    const { container } = render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-many',
+          data: { wording: 'with several annotations', kind: 'value', annotations },
+        })}
+      />,
+    );
+    // Pull badges in DOM order from the container — verifies arrival
+    // order is preserved.
+    const ids = Array.from(
+      container.querySelectorAll('[data-testid^="annotation-badge-anno-"]'),
+    ).map((el) => el.getAttribute('data-testid'));
+    expect(ids).toEqual([
+      'annotation-badge-anno-a',
+      'annotation-badge-anno-b',
+      'annotation-badge-anno-c',
+    ]);
   });
 });

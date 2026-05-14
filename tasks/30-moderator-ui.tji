@@ -118,6 +118,8 @@ task moderator_ui "Moderator UI" {
     task mod_annotation_rendering "Annotation rendering" {
       effort 1d
       allocate team
+      complete 100
+      note "Refinement: tasks/refinements/moderator-ui/mod_annotation_rendering.md"
     }
     task mod_proposed_state_styling "Proposed state styling (dashed, faded)" {
       effort 1d

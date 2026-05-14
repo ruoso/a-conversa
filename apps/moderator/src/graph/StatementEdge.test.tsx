@@ -27,7 +27,7 @@ import 'reactflow/dist/style.css';
 
 import { initI18n } from '../i18n';
 import { edgeTypes } from './edgeTypes';
-import type { StatementEdgeData } from './selectors';
+import type { Annotation, StatementEdgeData } from './selectors';
 
 const ALL_ROLES = [
   'supports',
@@ -107,7 +107,19 @@ function edgeFor(role: (typeof ALL_ROLES)[number]): Edge<StatementEdgeData> {
     source: 'n1',
     target: 'n2',
     type: 'statement',
-    data: { role },
+    data: { role, annotations: [] },
+  };
+}
+
+function makeAnnotation(overrides: Partial<Annotation> & { id: string }): Annotation {
+  return {
+    id: overrides.id,
+    kind: overrides.kind ?? 'note',
+    content: overrides.content ?? 'an annotation body',
+    targetNodeId: overrides.targetNodeId ?? null,
+    targetEdgeId: overrides.targetEdgeId ?? null,
+    createdBy: overrides.createdBy ?? '00000000-0000-4000-8000-0000000000aa',
+    createdAt: overrides.createdAt ?? '2026-05-11T00:00:00.000Z',
   };
 }
 
@@ -235,5 +247,60 @@ describe('StatementEdge — defensive paths', () => {
     const label = await waitFor(() => screen.getByTestId('graph-edge-label-edge-no-data'));
     expect(label.textContent).toBe('');
     expect(label.getAttribute('data-edge-role')).toBe('');
+  });
+});
+
+describe('StatementEdge — annotation badge overlay', () => {
+  it('renders one annotation badge inside the edge label overlay', async () => {
+    const annotation = makeAnnotation({
+      id: 'anno-e-1',
+      kind: 'reframe',
+      content: 'reframing this edge',
+      targetEdgeId: 'edge-with-annotation',
+    });
+    const edge: Edge<StatementEdgeData> = {
+      id: 'edge-with-annotation',
+      source: 'n1',
+      target: 'n2',
+      type: 'statement',
+      data: { role: 'supports', annotations: [annotation] },
+    };
+    render(
+      <div style={{ width: 400, height: 400 }}>
+        <ReactFlow nodes={NODES} edges={[edge]} edgeTypes={edgeTypes} />
+      </div>,
+    );
+    const list = await waitFor(() =>
+      screen.getByTestId('annotation-badge-list-edge-edge-with-annotation'),
+    );
+    expect(list).toBeTruthy();
+    const badge = screen.getByTestId('annotation-badge-anno-e-1');
+    expect(badge.textContent).toBe('Reframe');
+    expect(badge.getAttribute('data-annotation-kind')).toBe('reframe');
+    expect(badge.getAttribute('title')).toBe('reframing this edge');
+  });
+
+  it('renders multiple annotation badges in arrival order on an edge', async () => {
+    const annotations: Annotation[] = [
+      makeAnnotation({ id: 'anno-e-a', kind: 'note', targetEdgeId: 'edge-many' }),
+      makeAnnotation({ id: 'anno-e-b', kind: 'stance', targetEdgeId: 'edge-many' }),
+    ];
+    const edge: Edge<StatementEdgeData> = {
+      id: 'edge-many',
+      source: 'n1',
+      target: 'n2',
+      type: 'statement',
+      data: { role: 'qualifies', annotations },
+    };
+    const { container } = render(
+      <div style={{ width: 400, height: 400 }}>
+        <ReactFlow nodes={NODES} edges={[edge]} edgeTypes={edgeTypes} />
+      </div>,
+    );
+    await waitFor(() => screen.getByTestId('annotation-badge-list-edge-edge-many'));
+    const ids = Array.from(
+      container.querySelectorAll('[data-testid^="annotation-badge-anno-e-"]'),
+    ).map((el) => el.getAttribute('data-testid'));
+    expect(ids).toEqual(['annotation-badge-anno-e-a', 'annotation-badge-anno-e-b']);
   });
 });

@@ -1,7 +1,8 @@
 // Tests for `<GraphCanvasPane>` — the moderator's ReactFlow canvas mount.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_edge_rendering.md
-// (prior:     tasks/refinements/moderator-ui/mod_node_rendering.md,
+// Refinement: tasks/refinements/moderator-ui/mod_annotation_rendering.md
+// (prior:     tasks/refinements/moderator-ui/mod_edge_rendering.md,
+//             tasks/refinements/moderator-ui/mod_node_rendering.md,
 //             tasks/refinements/moderator-ui/mod_graph_canvas_pane.md)
 //
 // Per ADR 0022 these are committed Vitest cases, not throwaway probes.
@@ -39,7 +40,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import i18next from 'i18next';
-import type { Event } from '@a-conversa/shared-types';
+import type { AnnotationKind, Event } from '@a-conversa/shared-types';
 
 import { GraphCanvasPane, projectNodes } from './GraphCanvasPane';
 import { STATEMENT_NODE_TYPE } from './StatementNode';
@@ -121,6 +122,33 @@ function makeCommit(opts: { sequence: number; proposalEnvelopeId: string }): Eve
       proposal_id: opts.proposalEnvelopeId,
       moderator: ACTOR,
       committed_at: '2026-05-11T00:00:00.000Z',
+    },
+    createdAt: '2026-05-11T00:00:00.000Z',
+  };
+}
+
+function makeAnnotationCreated(opts: {
+  sequence: number;
+  annotationId: string;
+  kind: AnnotationKind;
+  content?: string;
+  targetNodeId: string | null;
+  targetEdgeId: string | null;
+}): Event {
+  return {
+    id: `00000000-0000-4000-8000-${(0x400 + opts.sequence).toString(16).padStart(12, '0')}`,
+    sessionId: SESSION_ID,
+    sequence: opts.sequence,
+    kind: 'annotation-created',
+    actor: ACTOR,
+    payload: {
+      annotation_id: opts.annotationId,
+      kind: opts.kind,
+      content: opts.content ?? 'annotation body',
+      target_node_id: opts.targetNodeId,
+      target_edge_id: opts.targetEdgeId,
+      created_by: ACTOR,
+      created_at: '2026-05-11T00:00:00.000Z',
     },
     createdAt: '2026-05-11T00:00:00.000Z',
   };
@@ -214,9 +242,9 @@ describe('projectNodes — pure projection from events to ReactFlow nodes', () =
     expect(nodes).toHaveLength(2);
     expect(nodes[0]?.id).toBe(NODE_A);
     expect(nodes[0]?.type).toBe(STATEMENT_NODE_TYPE);
-    expect(nodes[0]?.data).toEqual({ wording: 'first', kind: null });
+    expect(nodes[0]?.data).toEqual({ wording: 'first', kind: null, annotations: [] });
     expect(nodes[1]?.id).toBe(NODE_B);
-    expect(nodes[1]?.data).toEqual({ wording: 'second', kind: null });
+    expect(nodes[1]?.data).toEqual({ wording: 'second', kind: null, annotations: [] });
   });
 
   it('lays nodes out on a deterministic grid keyed by node-created order', () => {
@@ -376,5 +404,71 @@ describe('GraphCanvasPane — store-derived edges (mod_edge_rendering)', () => {
     expect(edges.map((e) => e.id)).toEqual(['edge-1']);
     expect(edges[0]?.source).toBe(NODE_A);
     expect(edges[0]?.target).toBe(NODE_B);
+  });
+});
+
+describe('projectNodes — annotation enrichment (mod_annotation_rendering)', () => {
+  it('attaches a node-targeted annotation to the matching node data.annotations', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'a' }),
+      makeAnnotationCreated({
+        sequence: 2,
+        annotationId: 'anno-1',
+        kind: 'note',
+        targetNodeId: NODE_A,
+        targetEdgeId: null,
+      }),
+    ];
+    const nodes = projectNodes(events);
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0]?.data.annotations).toHaveLength(1);
+    expect(nodes[0]?.data.annotations[0]?.id).toBe('anno-1');
+    expect(nodes[0]?.data.annotations[0]?.kind).toBe('note');
+  });
+
+  it('leaves a node with no matching annotation with an empty data.annotations array', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'a' }),
+      makeNodeCreated({ sequence: 2, nodeId: NODE_B, wording: 'b' }),
+      makeAnnotationCreated({
+        sequence: 3,
+        annotationId: 'anno-1',
+        kind: 'note',
+        targetNodeId: NODE_B,
+        targetEdgeId: null,
+      }),
+    ];
+    const nodes = projectNodes(events);
+    expect(nodes).toHaveLength(2);
+    const nodeA = nodes.find((n) => n.id === NODE_A);
+    const nodeB = nodes.find((n) => n.id === NODE_B);
+    expect(nodeA?.data.annotations).toEqual([]);
+    expect(nodeB?.data.annotations).toHaveLength(1);
+    expect(nodeB?.data.annotations[0]?.id).toBe('anno-1');
+  });
+});
+
+describe('GraphCanvasPane — annotation badges (mod_annotation_rendering)', () => {
+  it('renders an annotation badge inside the target node card', () => {
+    const store = useWsStore.getState();
+    store.applyEvent(makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'a' }));
+    store.applyEvent(
+      makeAnnotationCreated({
+        sequence: 2,
+        annotationId: 'anno-1',
+        kind: 'reframe',
+        content: 'reframe to a value claim',
+        targetNodeId: NODE_A,
+        targetEdgeId: null,
+      }),
+    );
+    render(<GraphCanvasPane sessionId={SESSION_ID} />);
+    // The node renders with the badge list container and the badge
+    // inside it; the localized en-US label is "Reframe".
+    expect(screen.getByTestId(`annotation-badge-list-node-${NODE_A}`)).toBeTruthy();
+    const badge = screen.getByTestId('annotation-badge-anno-1');
+    expect(badge.textContent).toBe('Reframe');
+    expect(badge.getAttribute('data-annotation-kind')).toBe('reframe');
+    expect(badge.getAttribute('title')).toBe('reframe to a value claim');
   });
 });
