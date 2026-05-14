@@ -387,21 +387,62 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Smoke test built image
-        # Today the entry point is the ADR 0015 stub (banner + exit 0).
-        # That's enough to prove the image starts cleanly. When
-        # backend.api_skeleton lands `/healthz`, replace this with a
-        # curl probe (start container with -d -p, wait, hit /healthz,
-        # expect 200, tear down).
+        # The CMD is the Fastify-based HTTP server bootstrap
+        # (`apps/server/dist/index.js`). It runs as a long-lived
+        # listener, so the smoke check has to (1) start the container
+        # in the background, (2) probe `/healthz` until it returns 200
+        # or a timeout fires, (3) tear the container down. The earlier
+        # "banner-and-exit" stub from ADR 0015 is long gone.
         #
-        # `SESSION_TOKEN_SECRET` is required by the boot gate added by
-        # `backend.session_secret_strength_check` (closes
-        # docs/security/m3-review/auth.md F-004). Any value of at least
-        # 32 bytes that isn't on the dev-placeholder denylist satisfies
-        # the gate; this 64-char hex string is fine for a smoke run.
+        # Required env (boot gates the production server enforces):
+        #   - SESSION_TOKEN_SECRET — >= 32 bytes, not a dev placeholder.
+        #     See `backend.session_secret_strength_check` (closes
+        #     `docs/security/m3-review/auth.md` F-004). The 64-char hex
+        #     literal below satisfies the gate without leaking secret
+        #     material.
+        #   - APP_BASE_URL — required when NODE_ENV=production by both
+        #     the CORS-allowlist resolver (`backend.prod_cors_lockdown`
+        #     closes F-003) AND `loadOidcConfig`. Pointed at localhost
+        #     since this run never accepts real client traffic.
+        #   - OIDC_ISSUER_URL / OIDC_CLIENT_ID / OIDC_CLIENT_SECRET —
+        #     `loadOidcConfig` parses + URL-validates these at boot.
+        #     The smoke run never reaches the OIDC discovery roundtrip
+        #     (no HTTP call before app.listen succeeds), so any
+        #     URL-shaped + non-empty values are fine.
+        #   - DATABASE_URL — intentionally NOT set; the startup
+        #     migration gate logs a warning and proceeds when absent
+        #     (`apps/server/src/index.ts` boot path). The smoke check
+        #     only verifies `/healthz`, which doesn't touch the DB.
         run: |
-          docker run --rm \
+          set -euo pipefail
+          docker run -d --name aconversa-ci-smoke \
+            -p 3000:3000 \
             -e SESSION_TOKEN_SECRET=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
+            -e APP_BASE_URL=http://localhost:3000 \
+            -e OIDC_ISSUER_URL=http://oidc.smoke.invalid \
+            -e OIDC_CLIENT_ID=ci-smoke \
+            -e OIDC_CLIENT_SECRET=ci-smoke-secret \
             aconversa/app:ci
+
+          # Poll /healthz for up to 30 seconds. Each iteration prints
+          # the container's tail so a failure has a stack trace inline
+          # in the Actions log.
+          for i in $(seq 1 30); do
+            if curl --fail --silent --show-error http://localhost:3000/healthz > /dev/null; then
+              echo "smoke OK after ${i}s"
+              docker logs --tail 20 aconversa-ci-smoke
+              docker stop aconversa-ci-smoke > /dev/null
+              docker rm aconversa-ci-smoke > /dev/null
+              exit 0
+            fi
+            sleep 1
+          done
+
+          echo "smoke FAILED — /healthz never returned 200 within 30s"
+          docker logs aconversa-ci-smoke
+          docker stop aconversa-ci-smoke > /dev/null || true
+          docker rm aconversa-ci-smoke > /dev/null || true
+          exit 1
 
   audit-warn:
     # Owned by foundation.ci.ci_dependency_audit. Soft signal: runs
