@@ -26,8 +26,26 @@
 //   4. `@fastify/sensible` / any error carrying `err.statusCode` →
 //      pass-through with the canonical envelope.
 //   5. Anything else → log with stack at error level; 500 +
-//      `{ error: { code: 'internal-error', message: 'Internal server
-//      error' } }`. The stack is never serialized into the body.
+//      `{ error: { code: 'internal-error', message: 'internal error'
+//      } }`. The stack is never serialized into the body.
+//
+// M3-review `inputs.md` F-008 — wire-message no-leak on 5xx:
+//
+//   Every response that emits at HTTP status >= 500 has its wire
+//   `body.error.message` replaced with the generic literal
+//   `HTTP_INTERNAL_ERROR_MESSAGE = 'internal error'` and any structured
+//   `details` dropped from the body. The typed `body.error.code` is
+//   PRESERVED — it is the only typed discriminator clients branch on
+//   (e.g. `temporarily-unavailable` from the flow-state capacity guard
+//   in `apps/server/src/auth/routes.ts`). The full `code`, original
+//   `message`, and `details` still reach the server log via
+//   `request.log.error({ err }, ...)`, so operators retain full
+//   visibility. 4xx responses are unaffected: typed 4xx messages
+//   (`'topic is required'`, `'missing field'`) are client-actionable
+//   and stay on the wire.
+//
+//   Refinement:
+//   tasks/refinements/backend-hardening/defensive_500_message_sanitize.md.
 //
 // `setNotFoundHandler` mirrors the envelope so the frontend's error
 // renderer doesn't have to branch on transport-level 404 vs.
@@ -157,12 +175,67 @@ function buildEnvelope(
 }
 
 /**
+ * Generic wire-`message` literal emitted on every 5xx response.
+ *
+ * Exported so tests and any future caller share a single source — a
+ * future contributor relaxing the literal cannot drift it independent
+ * of the assertions in `error-handler.test.ts`. Closes the
+ * `inputs.md` F-008 wire-leak surface.
+ *
+ * Lowercase / unpunctuated by design — mirrors
+ * `WS_INTERNAL_ERROR_MESSAGE` in `ws/error-envelope.ts` so the HTTP
+ * and WS surfaces emit the same generic literal on the no-leak path.
+ */
+export const HTTP_INTERNAL_ERROR_MESSAGE = 'internal error';
+
+/**
+ * Canonical 5xx envelope code emitted when no typed `ApiError` code is
+ * available (raw `Error` thrown, non-Error throw, etc.). Typed
+ * `ApiError.code` values (`'internal-error'`,
+ * `'temporarily-unavailable'`, etc.) are preserved on the wire on 5xx
+ * — only the `message` and `details` are scrubbed. See `inputs.md`
+ * F-008 and the refinement at
+ * `tasks/refinements/backend-hardening/defensive_500_message_sanitize.md`.
+ */
+export const HTTP_INTERNAL_ERROR_CODE = 'internal-error';
+
+/**
+ * Strip leaky fields from a 5xx envelope shortly before serialization
+ * — replace `message` with the generic literal; drop every `details`
+ * key that may have been spread under `error` by `buildEnvelope(...)`.
+ *
+ * The typed `code` is preserved verbatim: it is the only typed
+ * discriminator clients branch on for 5xx responses (e.g.
+ * `'temporarily-unavailable'` from the flow-state capacity guard).
+ * Scrubbing the code would break those branches without reducing the
+ * leak surface — the leak vector is `message` / `details`, not `code`.
+ *
+ * Called from `sendEnvelope(...)` so every code path that reaches the
+ * Fastify reply goes through one chokepoint; the handler cannot
+ * accidentally bypass the scrub in any branch.
+ */
+function scrubFiveHundredEnvelope(statusCode: number, envelope: ErrorEnvelope): ErrorEnvelope {
+  if (statusCode < 500) return envelope;
+  return {
+    error: {
+      code: envelope.error.code,
+      message: HTTP_INTERNAL_ERROR_MESSAGE,
+    },
+  };
+}
+
+/**
  * Send the canonical envelope at the given HTTP status. Centralized
  * so the handler can't accidentally drift into Fastify's default
  * serialization in any branch.
+ *
+ * 5xx responses are passed through `scrubFiveHundredEnvelope(...)`
+ * before serialization — the wire `message` and `details` are
+ * replaced with the generic literal; the typed `code` is preserved.
  */
 function sendEnvelope(reply: FastifyReply, statusCode: number, envelope: ErrorEnvelope): void {
-  reply.status(statusCode).type('application/json').send(envelope);
+  const safeEnvelope = scrubFiveHundredEnvelope(statusCode, envelope);
+  reply.status(statusCode).type('application/json').send(safeEnvelope);
 }
 
 /**
@@ -174,6 +247,16 @@ function sendEnvelope(reply: FastifyReply, statusCode: number, envelope: ErrorEn
 function handleError(err: unknown, request: FastifyRequest, reply: FastifyReply): void {
   // 1. ApiError — the typed route-thrown control-flow error.
   if (err instanceof ApiError) {
+    // M3-review inputs.md F-008 — when an `ApiError` carries a 5xx
+    // status, its original `message` and `details` may carry
+    // operationally-sensitive text (DB driver fragments, the literal
+    // sentinel a defensive `throw new ApiError(500, 'internal-error',
+    // 'session insert returned no row')` site emits). The wire is
+    // scrubbed by `sendEnvelope(...)`; we log the full error here so
+    // operators retain visibility on the server-side path.
+    if (err.statusCode >= 500) {
+      request.log.error({ err }, 'unhandled 5xx ApiError in route handler');
+    }
     sendEnvelope(reply, err.statusCode, buildEnvelope(err.code, err.message, err.details));
     return;
   }
@@ -210,7 +293,13 @@ function handleError(err: unknown, request: FastifyRequest, reply: FastifyReply)
   // 4. Status-carrying errors (@fastify/sensible's httpErrors.*, and
   //    anything else that carries a numeric statusCode). Pass the
   //    status through; derive a kebab `code` from the carrier.
+  //    5xx status-carrying errors land on the no-leak path the same
+  //    way ApiError 5xx do — `sendEnvelope(...)` scrubs the wire
+  //    message; we log here so operators see the original.
   if (isStatusCarryingError(err)) {
+    if (err.statusCode >= 500) {
+      request.log.error({ err }, 'unhandled 5xx status-carrying error in route handler');
+    }
     sendEnvelope(reply, err.statusCode, buildEnvelope(deriveCode(err), err.message));
     return;
   }
@@ -220,9 +309,13 @@ function handleError(err: unknown, request: FastifyRequest, reply: FastifyReply)
   //    respond with the generic 500 envelope. NEVER include the
   //    stack, message, or cause in the body — we do not know what's
   //    safe to render and conservative redaction is the right
-  //    default.
+  //    default. (The pre-scrubbed envelope passed here uses the
+  //    canonical `HTTP_INTERNAL_ERROR_*` constants; `sendEnvelope(...)`
+  //    then routes through `scrubFiveHundredEnvelope(...)` for
+  //    uniformity — the inputs already match, so the result is the
+  //    same envelope.)
   request.log.error({ err }, 'unhandled error in route handler');
-  sendEnvelope(reply, 500, buildEnvelope('internal-error', 'Internal server error'));
+  sendEnvelope(reply, 500, buildEnvelope(HTTP_INTERNAL_ERROR_CODE, HTTP_INTERNAL_ERROR_MESSAGE));
 }
 
 /**
