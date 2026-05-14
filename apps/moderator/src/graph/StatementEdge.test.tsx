@@ -107,7 +107,7 @@ function edgeFor(role: (typeof ALL_ROLES)[number]): Edge<StatementEdgeData> {
     source: 'n1',
     target: 'n2',
     type: 'statement',
-    data: { role, annotations: [] },
+    data: { role, annotations: [], facetStatuses: {} },
   };
 }
 
@@ -263,7 +263,7 @@ describe('StatementEdge — annotation badge overlay', () => {
       source: 'n1',
       target: 'n2',
       type: 'statement',
-      data: { role: 'supports', annotations: [annotation] },
+      data: { role: 'supports', annotations: [annotation], facetStatuses: {} },
     };
     render(
       <div style={{ width: 400, height: 400 }}>
@@ -290,7 +290,7 @@ describe('StatementEdge — annotation badge overlay', () => {
       source: 'n1',
       target: 'n2',
       type: 'statement',
-      data: { role: 'qualifies', annotations },
+      data: { role: 'qualifies', annotations, facetStatuses: {} },
     };
     const { container } = render(
       <div style={{ width: 400, height: 400 }}>
@@ -302,5 +302,41 @@ describe('StatementEdge — annotation badge overlay', () => {
       container.querySelectorAll('[data-testid^="annotation-badge-anno-e-"]'),
     ).map((el) => el.getAttribute('data-testid'));
     expect(ids).toEqual(['annotation-badge-anno-e-a', 'annotation-badge-anno-e-b']);
+  });
+});
+
+describe('StatementEdge — proposed-state styling (mod_proposed_state_styling)', () => {
+  it('stamps data-facet-status="proposed" on the role-label pill when the substance facet is proposed', async () => {
+    const edge: Edge<StatementEdgeData> = {
+      id: 'edge-proposed',
+      source: 'n1',
+      target: 'n2',
+      type: 'statement',
+      data: { role: 'supports', annotations: [], facetStatuses: { substance: 'proposed' } },
+    };
+    render(
+      <div style={{ width: 400, height: 400 }}>
+        <ReactFlow nodes={NODES} edges={[edge]} edgeTypes={edgeTypes} />
+      </div>,
+    );
+    const label = await waitFor(() => screen.getByTestId('graph-edge-label-edge-proposed'));
+    expect(label.getAttribute('data-facet-status')).toBe('proposed');
+  });
+
+  it('omits the data-facet-status attribute when facetStatuses is empty', async () => {
+    const edge: Edge<StatementEdgeData> = {
+      id: 'edge-baseline',
+      source: 'n1',
+      target: 'n2',
+      type: 'statement',
+      data: { role: 'supports', annotations: [], facetStatuses: {} },
+    };
+    render(
+      <div style={{ width: 400, height: 400 }}>
+        <ReactFlow nodes={NODES} edges={[edge]} edgeTypes={edgeTypes} />
+      </div>,
+    );
+    const label = await waitFor(() => screen.getByTestId('graph-edge-label-edge-baseline'));
+    expect(label.getAttribute('data-facet-status')).toBeNull();
   });
 });

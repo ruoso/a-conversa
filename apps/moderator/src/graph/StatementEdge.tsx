@@ -1,9 +1,10 @@
 // `<StatementEdge>` — custom ReactFlow edge that draws a bezier path and
 // renders the methodology role label on the edge body, plus any
-// annotations targeting this edge.
+// annotations targeting this edge, plus per-facet state styling.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_annotation_rendering.md
-// (prior:      tasks/refinements/moderator-ui/mod_edge_rendering.md)
+// Refinement: tasks/refinements/moderator-ui/mod_proposed_state_styling.md
+// (prior:      tasks/refinements/moderator-ui/mod_annotation_rendering.md,
+//              tasks/refinements/moderator-ui/mod_edge_rendering.md)
 // ADRs:        docs/adr/0004-graph-libraries-reactflow-and-cytoscape.md,
 //              docs/adr/0024-frontend-i18n-react-i18next-with-icu.md
 //
@@ -63,12 +64,30 @@ function StatementEdgeImpl(props: EdgeProps<StatementEdgeData>): ReactElement {
   // signal than just rendering blank.
   const label = data?.role ? t(`methodology.edgeRole.${data.role}`) : '';
   const annotations = data?.annotations ?? [];
+  const facetStatuses = data?.facetStatuses ?? {};
+
+  // State-styling rollup (refinement `mod_proposed_state_styling`). Any
+  // proposed facet → the edge reads as in flight: dashed stroke + faded
+  // opacity. The sibling `mod_agreed_state_styling` and
+  // `mod_disputed_state_styling` tasks extend this with their own
+  // branches on the same `facetStatuses` record. `data-facet-status` on
+  // the role-label pill is the stable test seam — `<BaseEdge>`'s path
+  // is rendered inside ReactFlow's SVG and isn't directly id-targetable.
+  const isProposed = facetStatuses.substance === 'proposed';
+  const proposedEdgeStyle = isProposed ? { strokeDasharray: '6 4', opacity: 0.6 } : undefined;
 
   // `style` is optional on `EdgeProps` but `BaseEdge`'s prop type (under
   // `exactOptionalPropertyTypes`) requires `CSSProperties` (not `… | undefined`).
-  // Spread the prop only when defined to satisfy the stricter signature
-  // without losing the caller-provided style when ReactFlow does pass one.
-  const baseEdgeStyleProps = style === undefined ? {} : { style };
+  // Compose the caller-provided style (if any) with the proposed-state
+  // overrides (if any). We only set `style` on `<BaseEdge>` when at
+  // least one of them is present.
+  const mergedStyle =
+    style !== undefined || proposedEdgeStyle !== undefined
+      ? { ...(style ?? {}), ...(proposedEdgeStyle ?? {}) }
+      : undefined;
+  const baseEdgeStyleProps = mergedStyle === undefined ? {} : { style: mergedStyle };
+
+  const labelDataAttrs = isProposed ? { 'data-facet-status': 'proposed' as const } : {};
 
   return (
     <>
@@ -91,6 +110,7 @@ function StatementEdgeImpl(props: EdgeProps<StatementEdgeData>): ReactElement {
             data-testid={`graph-edge-label-${id}`}
             data-edge-role={data?.role ?? ''}
             className="rounded bg-white px-1 text-xs text-slate-900 shadow-sm"
+            {...labelDataAttrs}
           >
             {label}
           </div>

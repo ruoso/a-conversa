@@ -242,9 +242,19 @@ describe('projectNodes — pure projection from events to ReactFlow nodes', () =
     expect(nodes).toHaveLength(2);
     expect(nodes[0]?.id).toBe(NODE_A);
     expect(nodes[0]?.type).toBe(STATEMENT_NODE_TYPE);
-    expect(nodes[0]?.data).toEqual({ wording: 'first', kind: null, annotations: [] });
+    expect(nodes[0]?.data).toEqual({
+      wording: 'first',
+      kind: null,
+      annotations: [],
+      facetStatuses: {},
+    });
     expect(nodes[1]?.id).toBe(NODE_B);
-    expect(nodes[1]?.data).toEqual({ wording: 'second', kind: null, annotations: [] });
+    expect(nodes[1]?.data).toEqual({
+      wording: 'second',
+      kind: null,
+      annotations: [],
+      facetStatuses: {},
+    });
   });
 
   it('lays nodes out on a deterministic grid keyed by node-created order', () => {
@@ -470,5 +480,49 @@ describe('GraphCanvasPane — annotation badges (mod_annotation_rendering)', () 
     expect(badge.textContent).toBe('Reframe');
     expect(badge.getAttribute('data-annotation-kind')).toBe('reframe');
     expect(badge.getAttribute('title')).toBe('reframe to a value claim');
+  });
+});
+
+describe('projectNodes — facet-status enrichment (mod_proposed_state_styling)', () => {
+  it('attaches facetStatuses.classification === proposed to a node with a classify-node proposal and no commit', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'a' }),
+      makeClassifyProposal({
+        sequence: 2,
+        envelopeId: PROPOSAL_A,
+        nodeId: NODE_A,
+        classification: 'fact',
+      }),
+    ];
+    const nodes = projectNodes(events);
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0]?.data.facetStatuses).toEqual({ classification: 'proposed' });
+  });
+
+  it('leaves facetStatuses empty for a node with no facet-targeting proposals', () => {
+    const events: Event[] = [makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'a' })];
+    const nodes = projectNodes(events);
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0]?.data.facetStatuses).toEqual({});
+  });
+});
+
+describe('GraphCanvasPane — proposed-state node styling (mod_proposed_state_styling)', () => {
+  it('renders the target node with border-dashed + data-facet-status when a classify-node proposal lives in the store', () => {
+    const store = useWsStore.getState();
+    store.applyEvent(makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'in-flight' }));
+    store.applyEvent(
+      makeClassifyProposal({
+        sequence: 2,
+        envelopeId: PROPOSAL_A,
+        nodeId: NODE_A,
+        classification: 'fact',
+      }),
+    );
+    render(<GraphCanvasPane sessionId={SESSION_ID} />);
+    const card = screen.getByTestId(`statement-node-${NODE_A}`);
+    expect(card.getAttribute('data-facet-status')).toBe('proposed');
+    expect(card.className).toContain('border-dashed');
+    expect(card.className).toContain('opacity-60');
   });
 });

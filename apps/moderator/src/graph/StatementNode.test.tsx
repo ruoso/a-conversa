@@ -30,6 +30,7 @@ import type { NodeProps } from 'reactflow';
 import type { StatementKind } from '@a-conversa/shared-types';
 
 import { STATEMENT_NODE_TYPE, StatementNode, type StatementNodeData } from './StatementNode';
+import type { FacetName, FacetStatus } from './facetStatus';
 import type { Annotation } from './selectors';
 import { initI18n } from '../i18n';
 
@@ -37,18 +38,21 @@ import { initI18n } from '../i18n';
 // ReactFlow hands the renderer many fields (dragging, selected, xPos,
 // yPos, etc.) the component doesn't consume; we synthesize a shape
 // that satisfies the type without spinning up the ReactFlow store.
-// The `data` overrides may omit `annotations` — we default to empty
-// here so the bulk of the cases stay terse.
+// The `data` overrides may omit `annotations` / `facetStatuses` — we
+// default both to empty here so the bulk of the cases stay terse.
 function makeNodeProps(overrides: {
   id?: string;
-  data: Omit<StatementNodeData, 'annotations'> & { annotations?: readonly Annotation[] };
+  data: Omit<StatementNodeData, 'annotations' | 'facetStatuses'> & {
+    annotations?: readonly Annotation[];
+    facetStatuses?: Readonly<Partial<Record<FacetName, FacetStatus>>>;
+  };
 }): NodeProps<StatementNodeData> {
   const id = overrides.id ?? 'node-test-1';
-  const { annotations = [], ...rest } = overrides.data;
+  const { annotations = [], facetStatuses = {}, ...rest } = overrides.data;
   return {
     id,
     type: STATEMENT_NODE_TYPE,
-    data: { ...rest, annotations },
+    data: { ...rest, annotations, facetStatuses },
     selected: false,
     isConnectable: true,
     dragging: false,
@@ -257,4 +261,112 @@ describe('StatementNode — annotation badge decoration row', () => {
       'annotation-badge-anno-c',
     ]);
   });
+});
+
+describe('StatementNode — proposed-state styling (mod_proposed_state_styling)', () => {
+  // Cross-locale assertion that the styling is locale-independent. The
+  // wording / kind label resolves through i18n; the dashed border +
+  // opacity-60 + data-facet-status are styling-only and should apply
+  // regardless of the active locale.
+  const LOCALES = ['en-US', 'pt-BR', 'es-419'] as const;
+
+  it('applies border-dashed + opacity-60 + data-facet-status="proposed" when classification facet is proposed', () => {
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-proposed-1',
+          data: {
+            wording: 'in-flight statement',
+            kind: 'fact',
+            facetStatuses: { classification: 'proposed' },
+          },
+        })}
+      />,
+    );
+    const card = screen.getByTestId('statement-node-n-proposed-1');
+    expect(card.className).toContain('border-dashed');
+    expect(card.className).toContain('opacity-60');
+    expect(card.getAttribute('data-facet-status')).toBe('proposed');
+  });
+
+  it('omits the proposed-state styling when facetStatuses is empty', () => {
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-baseline',
+          data: {
+            wording: 'committed statement',
+            kind: 'fact',
+            // facetStatuses defaults to {}
+          },
+        })}
+      />,
+    );
+    const card = screen.getByTestId('statement-node-n-baseline');
+    expect(card.className).not.toContain('border-dashed');
+    expect(card.className).not.toContain('opacity-60');
+    expect(card.getAttribute('data-facet-status')).toBeNull();
+  });
+
+  it('treats "any facet proposed" as proposed even if another facet is agreed (card-level rollup)', () => {
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-mixed',
+          data: {
+            wording: 'mixed-status statement',
+            kind: 'fact',
+            facetStatuses: { classification: 'agreed', substance: 'proposed' },
+          },
+        })}
+      />,
+    );
+    const card = screen.getByTestId('statement-node-n-mixed');
+    expect(card.getAttribute('data-facet-status')).toBe('proposed');
+    expect(card.className).toContain('border-dashed');
+  });
+
+  it('does not apply proposed styling when only agreed / disputed / committed facets are present', () => {
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-all-resolved',
+          data: {
+            wording: 'fully resolved statement',
+            kind: 'fact',
+            facetStatuses: {
+              classification: 'agreed',
+              substance: 'committed',
+              wording: 'disputed',
+            },
+          },
+        })}
+      />,
+    );
+    const card = screen.getByTestId('statement-node-n-all-resolved');
+    expect(card.getAttribute('data-facet-status')).toBeNull();
+    expect(card.className).not.toContain('border-dashed');
+  });
+
+  for (const locale of LOCALES) {
+    it(`applies the proposed-state styling regardless of active locale (${locale})`, async () => {
+      await i18next.changeLanguage(locale);
+      render(
+        <StatementNode
+          {...makeNodeProps({
+            id: `n-locale-${locale}`,
+            data: {
+              wording: 'in-flight',
+              kind: 'fact',
+              facetStatuses: { classification: 'proposed' },
+            },
+          })}
+        />,
+      );
+      const card = screen.getByTestId(`statement-node-n-locale-${locale}`);
+      expect(card.getAttribute('data-facet-status')).toBe('proposed');
+      expect(card.className).toContain('border-dashed');
+      await i18next.changeLanguage('en-US');
+    });
+  }
 });

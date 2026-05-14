@@ -124,6 +124,8 @@ task moderator_ui "Moderator UI" {
     task mod_proposed_state_styling "Proposed state styling (dashed, faded)" {
       effort 1d
       allocate team
+      complete 100
+      note "Refinement: tasks/refinements/moderator-ui/mod_proposed_state_styling.md"
     }
     task mod_agreed_state_styling "Agreed state styling (solid, full color)" {
       effort 0.5d

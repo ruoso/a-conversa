@@ -1,8 +1,9 @@
 // Store-derived selectors that translate the WS event log into the
 // ReactFlow node / edge / annotation shapes the canvas consumes.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_annotation_rendering.md
-// (prior:     tasks/refinements/moderator-ui/mod_edge_rendering.md)
+// Refinement: tasks/refinements/moderator-ui/mod_proposed_state_styling.md
+// (prior:     tasks/refinements/moderator-ui/mod_annotation_rendering.md,
+//             tasks/refinements/moderator-ui/mod_edge_rendering.md)
 //
 // `selectEdgesForSession` walks the per-session event log in `useWsStore`
 // and projects every `edge-created` event into a ReactFlow `Edge<{ role,
@@ -23,6 +24,12 @@
 import type { Edge } from 'reactflow';
 import type { AnnotationKind, EdgeRole, Event } from '@a-conversa/shared-types';
 
+import {
+  computeFacetStatuses,
+  EMPTY_FACET_STATUSES,
+  type FacetName,
+  type FacetStatus,
+} from './facetStatus.js';
 import type { WsState } from '../ws/wsStore.js';
 
 /**
@@ -55,6 +62,16 @@ export interface StatementEdgeData {
    * render the badge row beneath the role label.
    */
   annotations: readonly Annotation[];
+  /**
+   * Per-facet `FacetStatus` for this edge. Read by `<StatementEdge>` to
+   * apply the proposed / agreed / disputed state styling (refinement
+   * `mod_proposed_state_styling` and siblings). Empty when no facet-
+   * targeting proposal references the edge — the styling falls back to
+   * the solid-stroke default. Edges carry only the `substance` facet
+   * in v1; this record's shape allows the sibling per-facet-state
+   * task to add more facets without changing the contract.
+   */
+  facetStatuses: Readonly<Partial<Record<FacetName, FacetStatus>>>;
 }
 
 /**
@@ -170,16 +187,21 @@ export function selectEdgesForSession(
   const session = state.sessionState[sessionId];
   if (!session) return [];
   const annotationsByEdge = groupAnnotationsByEdge(projectAnnotations(session.events));
+  // Per-edge per-facet `FacetStatus` index — computed once over the same
+  // events array so the projection stays a single pass-effort over the
+  // log. Refinement: `mod_proposed_state_styling`.
+  const facetStatusIndex = computeFacetStatuses(session.events);
   const out: Edge<StatementEdgeData>[] = [];
   for (const event of session.events) {
     if (event.kind !== 'edge-created') continue;
     const annotations = annotationsByEdge.get(event.payload.edge_id) ?? EMPTY_ANNOTATIONS;
+    const facetStatuses = facetStatusIndex.edges.get(event.payload.edge_id) ?? EMPTY_FACET_STATUSES;
     out.push({
       id: event.payload.edge_id,
       source: event.payload.source_node_id,
       target: event.payload.target_node_id,
       type: 'statement',
-      data: { role: event.payload.role, annotations },
+      data: { role: event.payload.role, annotations, facetStatuses },
     });
   }
   return out;

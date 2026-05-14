@@ -142,8 +142,10 @@ describe('selectEdgesForSession', () => {
       type: 'statement',
       // `annotations` defaults to an empty list (the module-scope
       // shared `EMPTY_ANNOTATIONS` reference) when no annotation event
-      // targets this edge.
-      data: { role: 'supports', annotations: [] },
+      // targets this edge. `facetStatuses` defaults to the module-scope
+      // shared `EMPTY_FACET_STATUSES` empty record (refinement
+      // `mod_proposed_state_styling`).
+      data: { role: 'supports', annotations: [], facetStatuses: {} },
     });
   });
 
@@ -239,6 +241,51 @@ describe('selectEdgesForSession', () => {
     expect(edges[0]?.data?.annotations).toHaveLength(1);
     expect(edges[0]?.data?.annotations?.[0]?.id).toBe('anno-1');
     expect(edges[0]?.data?.annotations?.[0]?.kind).toBe('note');
+  });
+
+  // -- Per-facet state-styling enrichment (mod_proposed_state_styling) -
+
+  it('attaches facetStatuses.substance === proposed to an edge with a set-edge-substance proposal and no votes', () => {
+    const edgeId = '22222222-2222-4222-8222-222222222222';
+    const proposalId = '33333333-3333-4333-8333-333333333333';
+    const state = makeState([
+      makeEdgeCreated({
+        sequence: 1,
+        edgeId,
+        role: 'supports',
+        source: '00000000-0000-4000-8000-000000000001',
+        target: '00000000-0000-4000-8000-000000000002',
+      }),
+      {
+        id: proposalId,
+        sessionId: SESSION,
+        sequence: 2,
+        kind: 'proposal',
+        actor: ACTOR,
+        payload: {
+          proposal: { kind: 'set-edge-substance', edge_id: edgeId, value: 'agreed' },
+        },
+        createdAt: '2026-05-11T00:00:00.000Z',
+      },
+    ]);
+    const edges = selectEdgesForSession(state, SESSION);
+    expect(edges).toHaveLength(1);
+    expect(edges[0]?.data?.facetStatuses).toEqual({ substance: 'proposed' });
+  });
+
+  it('leaves facetStatuses empty on an edge with no facet-targeting proposals', () => {
+    const state = makeState([
+      makeEdgeCreated({
+        sequence: 1,
+        edgeId: 'edge-plain',
+        role: 'supports',
+        source: 'n1',
+        target: 'n2',
+      }),
+    ]);
+    const edges = selectEdgesForSession(state, SESSION);
+    expect(edges).toHaveLength(1);
+    expect(edges[0]?.data?.facetStatuses).toEqual({});
   });
 });
 

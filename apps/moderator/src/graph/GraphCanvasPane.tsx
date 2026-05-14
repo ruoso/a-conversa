@@ -1,8 +1,9 @@
 // `<GraphCanvasPane>` — ReactFlow mount for the moderator's graph
 // canvas slot inside `<OperateLayout>`.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_annotation_rendering.md
-// (prior:     tasks/refinements/moderator-ui/mod_edge_rendering.md,
+// Refinement: tasks/refinements/moderator-ui/mod_proposed_state_styling.md
+// (prior:     tasks/refinements/moderator-ui/mod_annotation_rendering.md,
+//             tasks/refinements/moderator-ui/mod_edge_rendering.md,
 //             tasks/refinements/moderator-ui/mod_node_rendering.md,
 //             tasks/refinements/moderator-ui/mod_graph_canvas_pane.md)
 // ADR:        docs/adr/0004-graph-libraries-reactflow-and-cytoscape.md
@@ -45,6 +46,7 @@ import 'reactflow/dist/style.css';
 import { useWsStore, type WsState } from '../ws/wsStore.js';
 import { STATEMENT_NODE_TYPE, StatementNode, type StatementNodeData } from './StatementNode.js';
 import { edgeTypes } from './edgeTypes.js';
+import { computeFacetStatuses, EMPTY_FACET_STATUSES } from './facetStatus.js';
 import {
   EMPTY_ANNOTATIONS,
   groupAnnotationsByNode,
@@ -126,10 +128,19 @@ export function projectNodes(events: readonly Event[]): Node<StatementNodeData>[
   // through the main loop.
   const annotationsByNode = groupAnnotationsByNode(projectAnnotations(events));
 
+  // Per-facet `FacetStatus` index for state-styling (refinement
+  // `mod_proposed_state_styling`). Same single-pass-up-front pattern as
+  // the annotation enrichment: cheaper than threading through the main
+  // loop, and decouples the state-machine derivation from the node /
+  // edge / annotation projection.
+  const facetStatusIndex = computeFacetStatuses(events);
+
   for (const event of events) {
     if (event.kind === 'node-created') {
       const i = nodes.length;
       const annotations = annotationsByNode.get(event.payload.node_id) ?? EMPTY_ANNOTATIONS;
+      const facetStatuses =
+        facetStatusIndex.nodes.get(event.payload.node_id) ?? EMPTY_FACET_STATUSES;
       const node: Node<StatementNodeData> = {
         id: event.payload.node_id,
         type: STATEMENT_NODE_TYPE,
@@ -141,6 +152,7 @@ export function projectNodes(events: readonly Event[]): Node<StatementNodeData>[
           wording: event.payload.wording,
           kind: null,
           annotations,
+          facetStatuses,
         },
       };
       nodes.push(node);
