@@ -239,6 +239,156 @@ describe('validateEvent — envelope-level failures', () => {
   });
 });
 
+// -- KNOWN-LIMITATION: sequence safe-integer ceiling (G-010) ---------
+//
+// Per-session `session_events.sequence` values are JS `number`s, safe
+// up to and including `Number.MAX_SAFE_INTEGER` (`2^53 - 1` =
+// 9007199254740991). The pg driver returns BIGINT as a string by
+// default; production code parses with `Number.parseInt(rawMax, 10)`
+// at `propose.ts:232`, `vote.ts:184`, `commit.ts:188`,
+// `meta-disagreement.ts:213`, and five sites in `sessions/routes.ts`.
+//
+// The LOAD-BEARING safety net for the propose / vote / commit /
+// meta-disagreement write paths is THIS `validateEvent` gate: the
+// event envelope schema constrains
+// `sequence: z.number().int().nonnegative()` and Zod v4's `.int()`
+// defers to `Number.isSafeInteger`, so any proposed write at sequence
+// > `Number.MAX_SAFE_INTEGER` is rejected at write-time before the
+// row hits the DB. The wire surface for that rejection is the
+// dispatcher's `onHandlerError` seam — since `EventValidationError`
+// is NOT `ApiError`-shaped (see `apps/server/src/ws/dispatcher.ts`'s
+// `isApiErrorShape` check), the client sees a generic
+// `code: 'internal-error'` envelope, not a typed `'sequence-overflow'`.
+// The handler's `validateEvent(emitted)` call (e.g., `propose.ts:305`)
+// throws inside `withTransaction`; the transaction rolls back; no
+// row is appended. The connection stays open — a per-message
+// validation failure is recoverable.
+//
+// Why these pins live HERE and not in `ws/handlers/propose.test.ts`:
+// the propose handler runs `projectFromLog(priorEvents, sessionId)`
+// over every prior event, and the projection's per-event check at
+// `apps/server/src/projection/replay.ts:780` enforces "next event's
+// sequence is exactly `lastAppliedSequence + 1`," throwing
+// `OutOfOrderEventError` on any gap. Seeding a `participant-joined`
+// at `MAX_SAFE_INTEGER` requires `MAX_SAFE_INTEGER - 1` prior events
+// (impossible to enumerate). Mocking the projection would break the
+// integration property the propose-test layer exists to verify. The
+// closest *faithful* test is at THIS gate: `validateEvent`'s schema
+// check on a candidate event at the boundary value. Pinning here
+// is cheap, fast, and verifies the actual safety net.
+//
+// No typed `sequence-overflow` wire code today; the structural fix
+// is a future `sequence_bigint_storage` task (bigint columns +
+// bigint-aware JS handling). When that task lands, pin #1 stays
+// (`MAX_SAFE_INTEGER` accepted), pin #2 inverts (sequence > 2^53
+// would become acceptable), and pin #3 becomes obsolete (bigint
+// math is precise past 2^53). See
+// `tasks/refinements/backend-hardening/bigint_sequence_overflow_pin.md`.
+describe('validateEvent — KNOWN-LIMITATION: sequence safe-integer ceiling (G-010)', () => {
+  it('SAFE: accepts sequence = Number.MAX_SAFE_INTEGER (the boundary)', () => {
+    // The ceiling itself IS a safe integer; only values past it fail.
+    // Pinning that the safe boundary is exactly `MAX_SAFE_INTEGER`
+    // catches a regression that introduced a cap BELOW this (e.g., an
+    // over-eager DoS guard at `MAX_SAFE_INTEGER / 2`) or that swapped
+    // `.int()` for a stricter predicate. A regression here would
+    // surface as a deployment failure when a real session crossed
+    // the new (wrong) cap; pinning the boundary is the early-warning.
+    const candidate = envelope('vote', REPRESENTATIVE_PAYLOADS.vote, {
+      sequence: Number.MAX_SAFE_INTEGER,
+    });
+    // Sanity-check the precondition: MAX_SAFE_INTEGER IS a safe
+    // integer (ESLint's `no-loss-of-precision` won't fire on the
+    // built-in constant).
+    expect(Number.isSafeInteger(Number.MAX_SAFE_INTEGER)).toBe(true);
+    const validated = validateEvent(candidate);
+    expect(validated.kind).toBe('vote');
+    expect(validated.sequence).toBe(Number.MAX_SAFE_INTEGER);
+  });
+
+  it("UNSAFE: rejects sequence = Number.MAX_SAFE_INTEGER + 1 with code: 'envelope-invalid'", () => {
+    // `Number.MAX_SAFE_INTEGER + 1` = 9007199254740992 — NOT a safe
+    // integer (`Number.isSafeInteger(MAX_SAFE_INTEGER + 1) === false`).
+    // The envelope schema's `sequence: z.number().int().nonnegative()`
+    // constraint (Zod v4's `.int()` defers to `Number.isSafeInteger`)
+    // rejects it; the wrapper classifies the failure as
+    // `'envelope-invalid'` with `kind: null` (the violation is on the
+    // envelope's `sequence` field, not the per-kind payload).
+    //
+    // This is the load-bearing safety net for the propose / vote /
+    // commit / meta-disagreement WS handlers: when the engine emits
+    // an event with `sequence = MAX(sequence) + 1` and that next
+    // allocation crosses the safe-integer ceiling, this gate rejects
+    // it BEFORE the INSERT lands. The wire surface (downstream
+    // consequence) is the dispatcher's generic `internal-error`
+    // envelope; the connection stays open. See the block comment
+    // above for the full chain.
+    //
+    // When the future `sequence_bigint_storage` task lands, this
+    // assertion inverts: bigint sequences > 2^53 become acceptable
+    // and the propose chain no longer needs the safety net.
+    const seq = Number.MAX_SAFE_INTEGER + 1;
+    // Sanity-check the precondition this pin depends on. If a future
+    // ES spec change re-defines MAX_SAFE_INTEGER or relaxes
+    // `Number.isSafeInteger`, this pin will need to be revisited —
+    // failing here is the early-warning signal.
+    expect(Number.isSafeInteger(seq)).toBe(false);
+    const bad = envelope('vote', REPRESENTATIVE_PAYLOADS.vote, { sequence: seq });
+    const error = captureError(bad);
+    expect(error.code).toBe('envelope-invalid');
+    expect(error.kind).toBeNull();
+    expect(error.issues.length).toBeGreaterThan(0);
+    // At least one Zod issue must be rooted at the `sequence` field —
+    // otherwise a future regression that returns the right error
+    // CODE but for the wrong FIELD (e.g., an actor-related rejection
+    // that also happens to be envelope-invalid) would pass this test
+    // for the wrong reason.
+    expect(error.issues.some((issue) => issue.path === 'sequence')).toBe(true);
+  });
+
+  it('PRECISION-LOSS: Number.parseInt("9007199254740993", 10) === 9007199254740992 — pins the silent precision-loss formula G-010 names', () => {
+    // Direct pin of the JS-runtime fact G-010's adversarial-scenario
+    // hypothesis depends on. The pg driver returns BIGINT as a
+    // string; `propose.ts:232` (and the eight sibling parseInt call
+    // sites named in the refinement) parse the string with
+    // `Number.parseInt(rawMax, 10)`. For any value strictly above
+    // `Number.MAX_SAFE_INTEGER`, the parse silently rounds to the
+    // nearest representable IEEE 754 double — there is NO runtime
+    // exception, NO console warning, NO loss-of-precision sentinel.
+    //
+    // Why this matters: if a non-application-mediated INSERT (DBA
+    // error, hand-crafted migration, restore-from-backup with a
+    // poison row, ...) ever lands a row with `sequence =
+    // 9007199254740993`, the next propose's `MAX(sequence)` read
+    // returns the string '9007199254740993', the parseInt produces
+    // 9007199254740992 (one less in math), and the propose-handler
+    // chain runs against the wrong value. The application-mediated
+    // write path is still protected by `validateEvent` (per the
+    // UNSAFE pin above — the engine's emitted event at
+    // `nextSeq = parsedMax + 1 = 9007199254740993` would fail
+    // `validateEvent`'s `.int()` check), but the precision-loss
+    // formula itself is the empirical fact this pin makes visible
+    // to the auditor.
+    //
+    // The literal is written as a string (not as a numeric literal)
+    // so ESLint's `no-loss-of-precision` rule doesn't fire on what
+    // is exactly the condition being pinned.
+    const rawFromDb = '9007199254740993'; // one past MAX_SAFE_INTEGER
+    const parsed = Number.parseInt(rawFromDb, 10);
+    // The mathematical value 9007199254740993 is not representable
+    // as an IEEE 754 double; the nearest representable value is
+    // 9007199254740992 (= MAX_SAFE_INTEGER + 1).
+    expect(parsed).toBe(Number.MAX_SAFE_INTEGER + 1);
+    // The parsed value is NOT a safe integer — feeding it forward
+    // into an event envelope would fail validation per the UNSAFE
+    // pin above.
+    expect(Number.isSafeInteger(parsed)).toBe(false);
+    // And critically: the parsed value is NOT the original DB value.
+    // This silent inequality is the structural foundation of the
+    // G-010 adversarial scenario.
+    expect(String(parsed)).not.toBe(rawFromDb);
+  });
+});
+
 // -- Payload-level failure modes (one per kind) ----------------------
 //
 // Each entry corrupts one field in the representative payload. The

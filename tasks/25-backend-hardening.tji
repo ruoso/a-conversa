@@ -230,6 +230,7 @@ task backend_hardening "M3-review hardening (security audit follow-ups)" {
     task bigint_sequence_overflow_pin "Test: behavior at session_events.sequence near 2^53" {
       effort 0.5d
       allocate team
+      complete 100
       note "Source: docs/security/m3-review/coverage.md G-010"
       note "Refinement: tasks/refinements/backend-hardening/bigint_sequence_overflow_pin.md"
     }
