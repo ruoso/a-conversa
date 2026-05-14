@@ -136,6 +136,8 @@ task moderator_ui "Moderator UI" {
     task mod_disputed_state_styling "Disputed state styling (with red marker)" {
       effort 1d
       allocate team
+      complete 100
+      note "Refinement: tasks/refinements/moderator-ui/mod_disputed_state_styling.md"
     }
     task mod_meta_disagreement_split_render "Meta-disagreement split rendering" {
       effort 1d

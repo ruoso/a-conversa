@@ -501,6 +501,108 @@ describe('StatementNode — agreed-state styling (mod_agreed_state_styling)', ()
   }
 });
 
+describe('StatementNode — disputed-state styling (mod_disputed_state_styling)', () => {
+  // The disputed-state visual is the methodology's "requires resolution"
+  // signal: at least one current participant has voted `dispute` (or
+  // withdrawn against an uncommitted facet) and the moderator must
+  // surface and resolve the disagreement before the entity can be
+  // committed. The card reads as solid red border + a 2-px ring halo
+  // — the unambiguous "this needs attention" marker. `opacity-100` is
+  // explicit defense against any inherited dim opacity.
+  const LOCALES = ['en-US', 'pt-BR', 'es-419'] as const;
+
+  it('applies border-solid + border-rose-600 + ring-2 + ring-rose-500 + data-facet-status="disputed" when classification facet is disputed', () => {
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-disputed-1',
+          data: {
+            wording: 'a disputed statement',
+            kind: 'fact',
+            facetStatuses: { classification: 'disputed' },
+          },
+        })}
+      />,
+    );
+    const card = screen.getByTestId('statement-node-n-disputed-1');
+    expect(card.className).toContain('border-solid');
+    expect(card.className).toContain('border-rose-600');
+    expect(card.className).toContain('ring-2');
+    expect(card.className).toContain('ring-rose-500');
+    expect(card.className).toContain('opacity-100');
+    expect(card.className).not.toContain('border-dashed');
+    expect(card.getAttribute('data-facet-status')).toBe('disputed');
+  });
+
+  it('disputed beats agreed in the card-level rollup (priority chain wired through to the className branch)', () => {
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-disputed-over-agreed',
+          data: {
+            wording: 'mixed: disputed wins over agreed',
+            kind: 'fact',
+            facetStatuses: { classification: 'agreed', substance: 'disputed' },
+          },
+        })}
+      />,
+    );
+    const card = screen.getByTestId('statement-node-n-disputed-over-agreed');
+    // Disputed has higher priority than agreed → the data attribute and
+    // the red-marker styling reflect the disputed state.
+    expect(card.getAttribute('data-facet-status')).toBe('disputed');
+    expect(card.className).toContain('border-rose-600');
+    expect(card.className).toContain('ring-rose-500');
+    // Not styled as agreed (the agreed branch uses `border-slate-700`).
+    expect(card.className).not.toContain('border-slate-700');
+  });
+
+  it('proposed wins over disputed (the rollup priority is unchanged by this task)', () => {
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-proposed-over-disputed',
+          data: {
+            wording: 'mixed: still in flight on another facet',
+            kind: 'fact',
+            facetStatuses: { classification: 'disputed', substance: 'proposed' },
+          },
+        })}
+      />,
+    );
+    const card = screen.getByTestId('statement-node-n-proposed-over-disputed');
+    // Proposed has higher priority than disputed → the proposed visual
+    // wins. The disputed red marker does NOT apply.
+    expect(card.getAttribute('data-facet-status')).toBe('proposed');
+    expect(card.className).toContain('border-dashed');
+    expect(card.className).not.toContain('border-rose-600');
+    expect(card.className).not.toContain('ring-rose-500');
+  });
+
+  for (const locale of LOCALES) {
+    it(`applies the disputed-state styling regardless of active locale (${locale})`, async () => {
+      await i18next.changeLanguage(locale);
+      render(
+        <StatementNode
+          {...makeNodeProps({
+            id: `n-disputed-locale-${locale}`,
+            data: {
+              wording: 'disputed across locales',
+              kind: 'fact',
+              facetStatuses: { classification: 'disputed' },
+            },
+          })}
+        />,
+      );
+      const card = screen.getByTestId(`statement-node-n-disputed-locale-${locale}`);
+      expect(card.getAttribute('data-facet-status')).toBe('disputed');
+      expect(card.className).toContain('border-rose-600');
+      expect(card.className).toContain('ring-rose-500');
+      await i18next.changeLanguage('en-US');
+    });
+  }
+});
+
 describe('cardRollupStatus — rollup priority order (mod_agreed_state_styling)', () => {
   // Direct unit tests on the rollup function — pin the priority order
   // without relying on a React render. The order is

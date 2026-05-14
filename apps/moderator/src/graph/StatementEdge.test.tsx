@@ -398,3 +398,72 @@ describe('StatementEdge — agreed-state styling (mod_agreed_state_styling)', ()
     }
   });
 });
+
+describe('StatementEdge — disputed-state styling (mod_disputed_state_styling)', () => {
+  // Edges only carry a `substance` facet in v1; the "disputed" state
+  // means at least one current participant has voted `dispute` (or
+  // withdrawn against an uncommitted facet). The visual is a solid red
+  // stroke at full opacity (no dasharray, no opacity dim) — the
+  // unambiguous "this needs resolution" signal. The
+  // `data-facet-status="disputed"` attribute on the role-label pill is
+  // the stable seam for downstream tasks / Playwright selectors.
+  it('stamps data-facet-status="disputed" on the role-label pill when the substance facet is disputed', async () => {
+    const edge: Edge<StatementEdgeData> = {
+      id: 'edge-disputed',
+      source: 'n1',
+      target: 'n2',
+      type: 'statement',
+      data: { role: 'supports', annotations: [], facetStatuses: { substance: 'disputed' } },
+    };
+    render(
+      <div style={{ width: 400, height: 400 }}>
+        <ReactFlow nodes={NODES} edges={[edge]} edgeTypes={edgeTypes} />
+      </div>,
+    );
+    const label = await waitFor(() => screen.getByTestId('graph-edge-label-edge-disputed'));
+    expect(label.getAttribute('data-facet-status')).toBe('disputed');
+  });
+
+  it('applies the red stroke (#e11d48 / rgb(225, 29, 72)) on the BaseEdge path when the substance facet is disputed', async () => {
+    // Pin that the disputed-state visual is a solid red stroke, no
+    // dasharray, no opacity dim. The path is rendered inside
+    // ReactFlow's SVG and isn't directly id-targetable; we assert
+    // against any path inside the .react-flow__edges container.
+    const edge: Edge<StatementEdgeData> = {
+      id: 'edge-disputed-style',
+      source: 'n1',
+      target: 'n2',
+      type: 'statement',
+      data: { role: 'supports', annotations: [], facetStatuses: { substance: 'disputed' } },
+    };
+    const { container } = render(
+      <div style={{ width: 400, height: 400 }}>
+        <ReactFlow nodes={NODES} edges={[edge]} edgeTypes={edgeTypes} />
+      </div>,
+    );
+    // Wait for the edge to render (the role label being present is a
+    // sufficient proxy — the BaseEdge path renders in the same frame).
+    await waitFor(() => screen.getByTestId('graph-edge-label-edge-disputed-style'));
+    const paths = container.querySelectorAll('.react-flow__edges path');
+    // ReactFlow renders multiple paths per edge (one for the
+    // interaction stroke, one for the visible edge); the visible edge
+    // is the one our `style` prop is applied to. At least one path
+    // must carry the red stroke.
+    let foundRedStroke = false;
+    for (const path of paths) {
+      const style = path.getAttribute('style') ?? '';
+      // happy-dom may serialize the inline style as either the hex
+      // (`stroke: #e11d48`) or the rgb tuple (`stroke: rgb(225, 29, 72)`);
+      // accept either form.
+      if (/stroke\s*:\s*(#e11d48|rgb\(\s*225\s*,\s*29\s*,\s*72\s*\))/i.test(style)) {
+        foundRedStroke = true;
+      }
+      // No dashed stroke — the disputed state is solid.
+      expect(path.getAttribute('stroke-dasharray')).toBeNull();
+      // No inline opacity override either — the disputed state is fully
+      // attention-grabbing, not faded.
+      expect(style).not.toMatch(/opacity\s*:/i);
+    }
+    expect(foundRedStroke).toBe(true);
+  });
+});

@@ -1,7 +1,8 @@
 // `<StatementNode>` — custom ReactFlow node for the moderator's graph.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_agreed_state_styling.md
-// (prior:     tasks/refinements/moderator-ui/mod_proposed_state_styling.md,
+// Refinement: tasks/refinements/moderator-ui/mod_disputed_state_styling.md
+// (prior:     tasks/refinements/moderator-ui/mod_agreed_state_styling.md,
+//             tasks/refinements/moderator-ui/mod_proposed_state_styling.md,
 //             tasks/refinements/moderator-ui/mod_annotation_rendering.md,
 //             tasks/refinements/moderator-ui/mod_node_rendering.md)
 // ADRs:       docs/adr/0004-graph-libraries-reactflow-and-cytoscape.md
@@ -145,7 +146,7 @@ export function StatementNode(props: NodeProps<StatementNodeData>): ReactElement
 
   // Card-level state-styling rollup. The rollup picks the highest-
   // priority facet status (see `cardRollupStatus` JSDoc for the order).
-  // Two branches are implemented today:
+  // Three branches are implemented today:
   //   - `'proposed'` (refinement `mod_proposed_state_styling`): dashed
   //     border + opacity-60 — the "in flight" visual.
   //   - `'agreed'`   (refinement `mod_agreed_state_styling`): solid
@@ -153,14 +154,19 @@ export function StatementNode(props: NodeProps<StatementNodeData>): ReactElement
   //     the unstyled baseline's `border-slate-300`) to make the "this
   //     has been agreed" signal visually distinct from the unstyled
   //     "nothing has happened yet" baseline.
+  //   - `'disputed'` (refinement `mod_disputed_state_styling`): solid
+  //     red border (`border-rose-600`) + a 2-px `ring-rose-500` halo —
+  //     the unambiguous "this needs resolution" red marker the moderator
+  //     scans for. `opacity-100` is explicit defense against any
+  //     inherited dim opacity.
   //
-  // Other rollup statuses (`'disputed'`, `'meta-disagreement'`,
-  // `'committed'`, `'withdrawn'`) still receive a `data-facet-status`
-  // attribute (the stable seam — Tailwind class strings aren't stable
-  // across JIT / production builds, but `[data-facet-status="…"]`
-  // selectors are), but the rendered classes fall back to the baseline
-  // until the sibling state-styling task for that status lands its
-  // own className branch.
+  // Other rollup statuses (`'meta-disagreement'`, `'committed'`,
+  // `'withdrawn'`) still receive a `data-facet-status` attribute (the
+  // stable seam — Tailwind class strings aren't stable across JIT /
+  // production builds, but `[data-facet-status="…"]` selectors are),
+  // but the rendered classes fall back to the baseline until the
+  // sibling state-styling task for that status lands its own className
+  // branch.
   const rollupStatus = cardRollupStatus(facetStatuses);
 
   const baseClassName =
@@ -170,7 +176,9 @@ export function StatementNode(props: NodeProps<StatementNodeData>): ReactElement
       ? 'border-dashed border-slate-400 opacity-60'
       : rollupStatus === 'agreed'
         ? 'border-solid border-slate-700 opacity-100'
-        : 'border-slate-300';
+        : rollupStatus === 'disputed'
+          ? 'border-solid border-rose-600 ring-2 ring-rose-500 opacity-100'
+          : 'border-slate-300';
   const cardClassName = `${baseClassName} ${styleClassName}`;
   const rootProps = rollupStatus !== undefined ? { 'data-facet-status': rollupStatus } : {};
 

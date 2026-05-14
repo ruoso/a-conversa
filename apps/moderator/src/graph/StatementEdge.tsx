@@ -2,8 +2,9 @@
 // renders the methodology role label on the edge body, plus any
 // annotations targeting this edge, plus per-facet state styling.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_agreed_state_styling.md
-// (prior:      tasks/refinements/moderator-ui/mod_proposed_state_styling.md,
+// Refinement: tasks/refinements/moderator-ui/mod_disputed_state_styling.md
+// (prior:      tasks/refinements/moderator-ui/mod_agreed_state_styling.md,
+//              tasks/refinements/moderator-ui/mod_proposed_state_styling.md,
 //              tasks/refinements/moderator-ui/mod_annotation_rendering.md,
 //              tasks/refinements/moderator-ui/mod_edge_rendering.md)
 // ADRs:        docs/adr/0004-graph-libraries-reactflow-and-cytoscape.md,
@@ -69,7 +70,7 @@ function StatementEdgeImpl(props: EdgeProps<StatementEdgeData>): ReactElement {
 
   // State-styling rollup. Edges in v1 carry only the `substance` facet,
   // so the rollup is the substance status directly (no priority pick to
-  // do across facets). Two branches today:
+  // do across facets). Three branches today:
   //   - `'proposed'` (refinement `mod_proposed_state_styling`): dashed
   //     stroke + opacity-0.6 — the "in flight" visual.
   //   - `'agreed'`   (refinement `mod_agreed_state_styling`): solid
@@ -78,24 +79,39 @@ function StatementEdgeImpl(props: EdgeProps<StatementEdgeData>): ReactElement {
   //     `data-facet-status="agreed"` attribute is still stamped on the
   //     role-label pill so downstream tests / styling tasks can target
   //     the agreed seam.
+  //   - `'disputed'` (refinement `mod_disputed_state_styling`): solid
+  //     red stroke (`#e11d48` — Tailwind's `rose-600`, matching the
+  //     red border the node uses for the same state). No dasharray,
+  //     no opacity dim — the disputed visual is fully attention-
+  //     grabbing, not faded. The `<BaseEdge>` renders the underlying
+  //     `<path>` element; the canonical extension point is the `style`
+  //     prop's `stroke` (same pattern the proposed branch uses for
+  //     `strokeDasharray` / `opacity`).
   //
-  // Other substance statuses (`'disputed'`, `'meta-disagreement'`,
-  // `'committed'`, `'withdrawn'`) still stamp the data attribute (stable
-  // seam — `<BaseEdge>`'s path is rendered inside ReactFlow's SVG and
-  // isn't directly id-targetable) but don't change the stroke style
-  // until their own sibling refinements land their styling branches.
+  // Other substance statuses (`'meta-disagreement'`, `'committed'`,
+  // `'withdrawn'`) still stamp the data attribute (stable seam —
+  // `<BaseEdge>`'s path is rendered inside ReactFlow's SVG and isn't
+  // directly id-targetable) but don't change the stroke style until
+  // their own sibling refinements land their styling branches.
   const substanceStatus = facetStatuses.substance;
-  const isProposed = substanceStatus === 'proposed';
-  const proposedEdgeStyle = isProposed ? { strokeDasharray: '6 4', opacity: 0.6 } : undefined;
+  const proposedEdgeStyle =
+    substanceStatus === 'proposed' ? { strokeDasharray: '6 4', opacity: 0.6 } : undefined;
+  // `rose-600` — Tailwind palette. Matches the node's `border-rose-600`
+  // disputed marker so nodes and edges in the same disputed state read
+  // as the same red across the canvas. If a design-tokens package later
+  // lands a `danger` / `error` family, this hex is the placeholder.
+  const disputedEdgeStyle = substanceStatus === 'disputed' ? { stroke: '#e11d48' } : undefined;
 
   // `style` is optional on `EdgeProps` but `BaseEdge`'s prop type (under
   // `exactOptionalPropertyTypes`) requires `CSSProperties` (not `… | undefined`).
-  // Compose the caller-provided style (if any) with the proposed-state
-  // overrides (if any). We only set `style` on `<BaseEdge>` when at
-  // least one of them is present.
+  // Compose the caller-provided style (if any) with the per-status
+  // override (if any). Only one of the per-status overrides applies at
+  // a time (the substance facet has exactly one status). We only set
+  // `style` on `<BaseEdge>` when at least one of the inputs is present.
+  const statusEdgeStyle = proposedEdgeStyle ?? disputedEdgeStyle;
   const mergedStyle =
-    style !== undefined || proposedEdgeStyle !== undefined
-      ? { ...(style ?? {}), ...(proposedEdgeStyle ?? {}) }
+    style !== undefined || statusEdgeStyle !== undefined
+      ? { ...(style ?? {}), ...(statusEdgeStyle ?? {}) }
       : undefined;
   const baseEdgeStyleProps = mergedStyle === undefined ? {} : { style: mergedStyle };
 
