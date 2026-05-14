@@ -29,7 +29,12 @@ import i18next from 'i18next';
 import type { NodeProps } from 'reactflow';
 import type { StatementKind } from '@a-conversa/shared-types';
 
-import { STATEMENT_NODE_TYPE, StatementNode, type StatementNodeData } from './StatementNode';
+import {
+  STATEMENT_NODE_TYPE,
+  StatementNode,
+  cardRollupStatus,
+  type StatementNodeData,
+} from './StatementNode';
 import type { FacetName, FacetStatus } from './facetStatus';
 import type { Annotation } from './selectors';
 import { initI18n } from '../i18n';
@@ -326,7 +331,16 @@ describe('StatementNode — proposed-state styling (mod_proposed_state_styling)'
     expect(card.className).toContain('border-dashed');
   });
 
-  it('does not apply proposed styling when only agreed / disputed / committed facets are present', () => {
+  it('picks the highest-priority status when multiple non-proposed facets are present (rollup order: proposed > meta-disagreement > disputed > agreed > committed > withdrawn)', () => {
+    // Updated under refinement `mod_agreed_state_styling`. The earlier
+    // assertion ("no `data-facet-status` when nothing is proposed") was
+    // written before the rollup priority order was decided; with the
+    // landed order (`proposed > meta-disagreement > disputed > agreed >
+    // committed > withdrawn`), a mix of `agreed` / `committed` /
+    // `disputed` now resolves to `disputed`. The component stamps the
+    // attribute (the stable seam for `mod_disputed_state_styling` to
+    // extend) but does not apply proposed-state classes — that branch
+    // requires an actually-proposed facet.
     render(
       <StatementNode
         {...makeNodeProps({
@@ -344,7 +358,7 @@ describe('StatementNode — proposed-state styling (mod_proposed_state_styling)'
       />,
     );
     const card = screen.getByTestId('statement-node-n-all-resolved');
-    expect(card.getAttribute('data-facet-status')).toBeNull();
+    expect(card.getAttribute('data-facet-status')).toBe('disputed');
     expect(card.className).not.toContain('border-dashed');
   });
 
@@ -369,4 +383,176 @@ describe('StatementNode — proposed-state styling (mod_proposed_state_styling)'
       await i18next.changeLanguage('en-US');
     });
   }
+});
+
+describe('StatementNode — agreed-state styling (mod_agreed_state_styling)', () => {
+  // The agreed-state visual is the methodology's "fully aligned" signal:
+  // every current participant has voted `agree` on the facet and no
+  // commit / dispute / meta-disagreement event has landed yet. The card
+  // reads as solid-bordered + full-opacity (the unstyled baseline is
+  // also solid + full-opacity; the agreed variant darkens the border
+  // from `border-slate-300` to `border-slate-700` so the "this has been
+  // agreed" signal is visually distinct from the "nothing has happened
+  // here yet" baseline). The `data-facet-status="agreed"` attribute is
+  // the stable seam for downstream tests / styling tasks.
+  const LOCALES = ['en-US', 'pt-BR', 'es-419'] as const;
+
+  it('applies border-solid + border-slate-700 + opacity-100 + data-facet-status="agreed" when classification facet is agreed', () => {
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-agreed-1',
+          data: {
+            wording: 'unanimously agreed statement',
+            kind: 'fact',
+            facetStatuses: { classification: 'agreed' },
+          },
+        })}
+      />,
+    );
+    const card = screen.getByTestId('statement-node-n-agreed-1');
+    expect(card.className).toContain('border-solid');
+    expect(card.className).toContain('border-slate-700');
+    expect(card.className).toContain('opacity-100');
+    expect(card.className).not.toContain('border-dashed');
+    expect(card.getAttribute('data-facet-status')).toBe('agreed');
+  });
+
+  it('applies agreed styling when every facet is agreed (rollup pick from a uniform set)', () => {
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-agreed-all',
+          data: {
+            wording: 'fully agreed across all facets',
+            kind: 'value',
+            facetStatuses: {
+              classification: 'agreed',
+              substance: 'agreed',
+              wording: 'agreed',
+            },
+          },
+        })}
+      />,
+    );
+    const card = screen.getByTestId('statement-node-n-agreed-all');
+    expect(card.getAttribute('data-facet-status')).toBe('agreed');
+    expect(card.className).toContain('border-slate-700');
+  });
+
+  it('proposed wins over agreed in the card-level rollup (proposed has higher priority than agreed)', () => {
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-proposed-over-agreed',
+          data: {
+            wording: 'mixed: still in flight',
+            kind: 'fact',
+            facetStatuses: { classification: 'agreed', substance: 'proposed' },
+          },
+        })}
+      />,
+    );
+    const card = screen.getByTestId('statement-node-n-proposed-over-agreed');
+    // Proposed has higher priority than agreed → the data attribute and
+    // the dashed-border styling reflect the proposed state.
+    expect(card.getAttribute('data-facet-status')).toBe('proposed');
+    expect(card.className).toContain('border-dashed');
+  });
+
+  it('agreed beats committed in the card-level rollup (closed facets sort last)', () => {
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-agreed-over-committed',
+          data: {
+            wording: 'mixed: agreed and committed',
+            kind: 'fact',
+            facetStatuses: { classification: 'agreed', substance: 'committed' },
+          },
+        })}
+      />,
+    );
+    const card = screen.getByTestId('statement-node-n-agreed-over-committed');
+    expect(card.getAttribute('data-facet-status')).toBe('agreed');
+    expect(card.className).toContain('border-slate-700');
+  });
+
+  for (const locale of LOCALES) {
+    it(`applies the agreed-state styling regardless of active locale (${locale})`, async () => {
+      await i18next.changeLanguage(locale);
+      render(
+        <StatementNode
+          {...makeNodeProps({
+            id: `n-agreed-locale-${locale}`,
+            data: {
+              wording: 'agreed across locales',
+              kind: 'fact',
+              facetStatuses: { classification: 'agreed' },
+            },
+          })}
+        />,
+      );
+      const card = screen.getByTestId(`statement-node-n-agreed-locale-${locale}`);
+      expect(card.getAttribute('data-facet-status')).toBe('agreed');
+      expect(card.className).toContain('border-slate-700');
+      await i18next.changeLanguage('en-US');
+    });
+  }
+});
+
+describe('cardRollupStatus — rollup priority order (mod_agreed_state_styling)', () => {
+  // Direct unit tests on the rollup function — pin the priority order
+  // without relying on a React render. The order is
+  // `proposed > meta-disagreement > disputed > agreed > committed > withdrawn`.
+  it('returns undefined for an empty facet record', () => {
+    expect(cardRollupStatus({})).toBeUndefined();
+  });
+
+  it('returns the single status when only one facet is present', () => {
+    expect(cardRollupStatus({ classification: 'agreed' })).toBe('agreed');
+    expect(cardRollupStatus({ classification: 'proposed' })).toBe('proposed');
+    expect(cardRollupStatus({ classification: 'committed' })).toBe('committed');
+  });
+
+  it('proposed beats every other status', () => {
+    expect(
+      cardRollupStatus({
+        classification: 'proposed',
+        substance: 'agreed',
+        wording: 'committed',
+      }),
+    ).toBe('proposed');
+    expect(cardRollupStatus({ classification: 'meta-disagreement', substance: 'proposed' })).toBe(
+      'proposed',
+    );
+  });
+
+  it('meta-disagreement beats disputed / agreed / committed / withdrawn', () => {
+    expect(
+      cardRollupStatus({
+        classification: 'meta-disagreement',
+        substance: 'disputed',
+        wording: 'agreed',
+      }),
+    ).toBe('meta-disagreement');
+  });
+
+  it('disputed beats agreed / committed / withdrawn', () => {
+    expect(cardRollupStatus({ classification: 'disputed', substance: 'agreed' })).toBe('disputed');
+    expect(cardRollupStatus({ classification: 'committed', substance: 'disputed' })).toBe(
+      'disputed',
+    );
+  });
+
+  it('agreed beats committed and withdrawn', () => {
+    expect(cardRollupStatus({ classification: 'agreed', substance: 'committed' })).toBe('agreed');
+    expect(cardRollupStatus({ classification: 'withdrawn', substance: 'agreed' })).toBe('agreed');
+  });
+
+  it('committed beats withdrawn', () => {
+    expect(cardRollupStatus({ classification: 'committed', substance: 'withdrawn' })).toBe(
+      'committed',
+    );
+  });
 });

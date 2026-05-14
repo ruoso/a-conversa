@@ -340,3 +340,61 @@ describe('StatementEdge — proposed-state styling (mod_proposed_state_styling)'
     expect(label.getAttribute('data-facet-status')).toBeNull();
   });
 });
+
+describe('StatementEdge — agreed-state styling (mod_agreed_state_styling)', () => {
+  // Edges only carry a `substance` facet in v1; the "agreed" state means
+  // every current participant has voted `agree` on the proposed
+  // substance value, no commit yet. The visual is a solid stroke + full
+  // opacity (== ReactFlow's `<BaseEdge>` default; no style override).
+  // The `data-facet-status="agreed"` attribute on the role-label pill is
+  // the stable seam for downstream tasks / Playwright selectors.
+  it('stamps data-facet-status="agreed" on the role-label pill when the substance facet is agreed', async () => {
+    const edge: Edge<StatementEdgeData> = {
+      id: 'edge-agreed',
+      source: 'n1',
+      target: 'n2',
+      type: 'statement',
+      data: { role: 'supports', annotations: [], facetStatuses: { substance: 'agreed' } },
+    };
+    render(
+      <div style={{ width: 400, height: 400 }}>
+        <ReactFlow nodes={NODES} edges={[edge]} edgeTypes={edgeTypes} />
+      </div>,
+    );
+    const label = await waitFor(() => screen.getByTestId('graph-edge-label-edge-agreed'));
+    expect(label.getAttribute('data-facet-status')).toBe('agreed');
+  });
+
+  it('does not apply the dashed-stroke style when the substance facet is agreed', async () => {
+    // Pin that the agreed-state visual is the BaseEdge default, not the
+    // dashed-stroke proposed-state visual. The path is rendered inside
+    // ReactFlow's SVG and isn't directly id-targetable; we assert no
+    // `stroke-dasharray` attribute is set on any path inside the
+    // .react-flow__edges container (i.e. agreed edges render with the
+    // default solid stroke).
+    const edge: Edge<StatementEdgeData> = {
+      id: 'edge-agreed-style',
+      source: 'n1',
+      target: 'n2',
+      type: 'statement',
+      data: { role: 'supports', annotations: [], facetStatuses: { substance: 'agreed' } },
+    };
+    const { container } = render(
+      <div style={{ width: 400, height: 400 }}>
+        <ReactFlow nodes={NODES} edges={[edge]} edgeTypes={edgeTypes} />
+      </div>,
+    );
+    // Wait for the edge to render (the role label being present is a
+    // sufficient proxy — the BaseEdge path renders in the same frame).
+    await waitFor(() => screen.getByTestId('graph-edge-label-edge-agreed-style'));
+    const paths = container.querySelectorAll('.react-flow__edges path');
+    for (const path of paths) {
+      // No dashed stroke — the agreed state is solid.
+      expect(path.getAttribute('stroke-dasharray')).toBeNull();
+      // No inline opacity override either (the BaseEdge default is full
+      // opacity).
+      const style = path.getAttribute('style') ?? '';
+      expect(style).not.toMatch(/opacity\s*:/i);
+    }
+  });
+});

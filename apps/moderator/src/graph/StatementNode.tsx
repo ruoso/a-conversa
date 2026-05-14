@@ -1,7 +1,8 @@
 // `<StatementNode>` — custom ReactFlow node for the moderator's graph.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_proposed_state_styling.md
-// (prior:     tasks/refinements/moderator-ui/mod_annotation_rendering.md,
+// Refinement: tasks/refinements/moderator-ui/mod_agreed_state_styling.md
+// (prior:     tasks/refinements/moderator-ui/mod_proposed_state_styling.md,
+//             tasks/refinements/moderator-ui/mod_annotation_rendering.md,
 //             tasks/refinements/moderator-ui/mod_node_rendering.md)
 // ADRs:       docs/adr/0004-graph-libraries-reactflow-and-cytoscape.md
 //             docs/adr/0024-frontend-i18n-react-i18next-with-icu.md
@@ -81,21 +82,51 @@ export interface StatementNodeData {
 export const STATEMENT_NODE_TYPE = 'statement';
 
 /**
- * Card-level rollup of the per-facet statuses. Returns `'proposed'` when
- * any facet is `'proposed'` (the conservative "any in flight → card reads
- * as in flight" default per the refinement's Decisions); otherwise
- * `undefined` and the card renders with its solid-border / fully-opaque
- * baseline. The sibling state-styling tasks (`mod_agreed_state_styling`,
- * `mod_disputed_state_styling`) extend this rollup with their own
- * branches; `mod_per_facet_state_visualization` ultimately replaces the
- * rollup with per-facet rendering. Exported so the test suite can pin
+ * Card-level rollup of the per-facet statuses. Returns the highest-priority
+ * status present in the per-facet record, or `undefined` when the record is
+ * empty (i.e. no facet-targeting event has touched this entity yet — the
+ * card renders with its solid-border / fully-opaque baseline).
+ *
+ * **Priority order** (refinement `mod_agreed_state_styling` Decisions):
+ *   1. `proposed`            — in-flight, the moderator can act on it now.
+ *   2. `meta-disagreement`   — escalation; the moderator's attention is needed.
+ *   3. `disputed`            — needs resolution before commit.
+ *   4. `agreed`              — pre-commit unanimous agreement.
+ *   5. `committed`           — closed, kept in the rollup so downstream tasks
+ *                              (`mod_disputed_state_styling`,
+ *                              `mod_per_facet_state_visualization`) can stamp
+ *                              the seam attribute and add their own styling
+ *                              branches without re-deciding the order.
+ *   6. `withdrawn`           — same rationale as committed; closed.
+ *
+ * Rationale: "things you can act on" sort first; `committed` / `withdrawn`
+ * are closed and sort last. Within the agreement layer, `proposed` outranks
+ * `disputed` outranks `agreed` because `proposed` means "still gathering
+ * votes" — the most active surface for the moderator to drive forward.
+ * `meta-disagreement` sits second because the methodology-engine
+ * escalation always takes precedence over a normal disputed facet.
+ *
+ * The sibling state-styling tasks (`mod_disputed_state_styling`,
+ * `mod_meta_disagreement_split_render`, etc.) extend the rendering branch
+ * for their status; `mod_per_facet_state_visualization` ultimately replaces
+ * this rollup with per-facet rendering. Exported so the test suite can pin
  * the rollup logic without re-rendering.
  */
+const ROLLUP_PRIORITY: readonly FacetStatus[] = [
+  'proposed',
+  'meta-disagreement',
+  'disputed',
+  'agreed',
+  'committed',
+  'withdrawn',
+];
+
 export function cardRollupStatus(
   facetStatuses: Readonly<Partial<Record<FacetName, FacetStatus>>>,
 ): FacetStatus | undefined {
-  for (const status of Object.values(facetStatuses)) {
-    if (status === 'proposed') return 'proposed';
+  const present = new Set(Object.values(facetStatuses));
+  for (const status of ROLLUP_PRIORITY) {
+    if (present.has(status)) return status;
   }
   return undefined;
 }
@@ -112,24 +143,36 @@ export function StatementNode(props: NodeProps<StatementNodeData>): ReactElement
   // regardless of classification state.
   const kindLabel = kind === null ? '—' : t(`methodology.kind.${kind}`);
 
-  // Card-level state-styling rollup. Today only the proposed branch is
-  // implemented (this refinement); the sibling `mod_agreed_state_styling`
-  // and `mod_disputed_state_styling` tasks extend the same rollup with
-  // their own branches on the same `data.facetStatuses` shape. A null
-  // rollup means no styling override — the card reads as the existing
-  // solid-border / fully-opaque baseline.
+  // Card-level state-styling rollup. The rollup picks the highest-
+  // priority facet status (see `cardRollupStatus` JSDoc for the order).
+  // Two branches are implemented today:
+  //   - `'proposed'` (refinement `mod_proposed_state_styling`): dashed
+  //     border + opacity-60 — the "in flight" visual.
+  //   - `'agreed'`   (refinement `mod_agreed_state_styling`): solid
+  //     border + full opacity, but with `border-slate-700` (darker than
+  //     the unstyled baseline's `border-slate-300`) to make the "this
+  //     has been agreed" signal visually distinct from the unstyled
+  //     "nothing has happened yet" baseline.
+  //
+  // Other rollup statuses (`'disputed'`, `'meta-disagreement'`,
+  // `'committed'`, `'withdrawn'`) still receive a `data-facet-status`
+  // attribute (the stable seam — Tailwind class strings aren't stable
+  // across JIT / production builds, but `[data-facet-status="…"]`
+  // selectors are), but the rendered classes fall back to the baseline
+  // until the sibling state-styling task for that status lands its
+  // own className branch.
   const rollupStatus = cardRollupStatus(facetStatuses);
-  const isProposed = rollupStatus === 'proposed';
 
-  // Proposed-state classes per the refinement: replace the default solid
-  // `border` with `border-dashed` and dim the card with `opacity-60`.
-  // The data attribute is the stable test / downstream-styling seam
-  // (Tailwind class strings are not stable across JIT / production
-  // builds, but `[data-facet-status="proposed"]` selectors are).
-  const cardClassName = isProposed
-    ? 'rounded-md border border-dashed border-slate-400 bg-white shadow-sm px-3 py-2 min-w-[12rem] max-w-[18rem] opacity-60'
-    : 'rounded-md border border-slate-300 bg-white shadow-sm px-3 py-2 min-w-[12rem] max-w-[18rem]';
-  const rootProps = isProposed ? { 'data-facet-status': 'proposed' as const } : {};
+  const baseClassName =
+    'rounded-md border bg-white shadow-sm px-3 py-2 min-w-[12rem] max-w-[18rem]';
+  const styleClassName =
+    rollupStatus === 'proposed'
+      ? 'border-dashed border-slate-400 opacity-60'
+      : rollupStatus === 'agreed'
+        ? 'border-solid border-slate-700 opacity-100'
+        : 'border-slate-300';
+  const cardClassName = `${baseClassName} ${styleClassName}`;
+  const rootProps = rollupStatus !== undefined ? { 'data-facet-status': rollupStatus } : {};
 
   return (
     <div data-testid={`statement-node-${id}`} className={cardClassName} {...rootProps}>
