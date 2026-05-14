@@ -99,8 +99,10 @@ task frontend_i18n "Frontend internationalization" {
   task i18n_testing "Playwright + visual-regression coverage across locales" {
     effort 2d
     allocate team
+    complete 100
     depends !i18n_locale_negotiation, foundation.test_infra.playwright_setup
     note "Per-locale smoke run on the four surfaces; visual regression baselines per locale"
     note "Refinement: tasks/refinements/frontend-i18n/i18n_testing.md"
+    note "Landed 2026-05-11: real Playwright wiring (per-locale Chromium projects, single-origin Fastify); CI e2e-playwright job; make test:e2e + test:e2e:compose; README updated"
   }
 }

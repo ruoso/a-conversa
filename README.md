@@ -50,6 +50,21 @@ Development is workspace-based (pnpm workspaces under [apps/](apps/) and [packag
 - Stack-validation smokes: `pnpm run smoke:{node,react,reactflow,cytoscape,tailwind}`.
 - `make up` brings up Postgres + Authelia (auto-creating `.env` from `.env.example` if absent) and prints the URL banner. `make down` / `make down-v` tear the stack down (the latter also drops named volumes).
 
+### End-to-end tests
+
+Playwright specs live in [`tests/e2e/`](tests/e2e/) and run against the **single-origin** Fastify server — the same process serves the moderator SPA at `/` alongside the JSON / WebSocket API (see [`apps/server/src/routes/static-frontends.ts`](apps/server/src/routes/static-frontends.ts) and the [serve_static_frontends refinement](tasks/refinements/backend/serve_static_frontends.md)). No separate Vite preview; the tests load the moderator UI through the same URL a real browser would.
+
+Per-locale Chromium projects in [`playwright.config.ts`](playwright.config.ts) pre-seed the `aconversa_locale` cookie (see [`packages/i18n-catalogs/src/negotiation.ts`](packages/i18n-catalogs/src/negotiation.ts)) for each supported locale (`en-US`, `pt-BR`, `es-419`). A spec under `chromium-pt-BR` therefore boots the SPA with the pt-BR catalog already resolved — exactly the path a returning Brazilian moderator would take.
+
+Two run modes:
+
+- `make test:e2e` — run against an already-running compose stack. Fastest iteration: `make up` once, then `make test:e2e` repeatedly. The default base URL is `http://localhost:3000`; override with `PLAYWRIGHT_BASE_URL` for a remote staging host.
+- `make test:e2e:compose` — bring up the full compose stack, wait for `/healthz`, run the suite, tear down with `down -v`. Slower (compose build + health poll) but the realistic path; the teardown runs whether the suite passes or fails.
+
+CI runs the compose-driven path on every PR via the `e2e-playwright` job in [`.github/workflows/ci.yml`](.github/workflows/ci.yml). On failure the job uploads `playwright-report/` and `test-results/` (traces / videos / screenshots) as workflow artifacts.
+
+Browser binaries are installed CI-job-locally via `pnpm exec playwright install chromium --with-deps`; the runtime Docker image never bakes Chromium.
+
 ### What's planned
 
 - `make up-app` brings the app container up too — the Fastify server (per [ADR 0023](docs/adr/0023-web-framework-fastify.md)) listens on `:3000` and `curl http://localhost:3000/` returns `{"status":"ok"}`. The compose healthcheck still targets `/healthz` (owned by `backend.api_skeleton.health_endpoint`, pending), so `docker compose ps` shows the service as unhealthy until that sibling lands. Once `health_endpoint` (with migrations-on-startup) ships, full-stack `make up` will absorb `up-app`.

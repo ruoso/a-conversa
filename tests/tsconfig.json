@@ -24,7 +24,9 @@
       "@a-conversa/shared-types": ["../packages/shared-types/src/index.ts"],
       "@a-conversa/shared-types/*": ["../packages/shared-types/src/*"],
       "@a-conversa/test-fixtures": ["../packages/test-fixtures/src/index.ts"],
-      "@a-conversa/test-fixtures/*": ["../packages/test-fixtures/src/*"]
+      "@a-conversa/test-fixtures/*": ["../packages/test-fixtures/src/*"],
+      "@a-conversa/i18n-catalogs": ["../packages/i18n-catalogs/src/index.ts"],
+      "@a-conversa/i18n-catalogs/*": ["../packages/i18n-catalogs/src/*"]
     }
   },
   "include": ["**/*.ts", "**/*.tsx"]

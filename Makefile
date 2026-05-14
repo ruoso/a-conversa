@@ -15,7 +15,7 @@
 # a thin alias for back-compat with existing dev-loop muscle memory.
 # See ADR 0018 / ADR 0023 / ADR 0020 (Amendments) for context.
 
-.PHONY: help install check test up up-app migrate down down-v logs ps seed clean
+.PHONY: help install check test test\:e2e test\:e2e\:compose up up-app migrate down down-v logs ps seed clean
 
 help:
 	@echo "a-conversa — make targets"
@@ -23,6 +23,8 @@ help:
 	@echo "  make check     run the full static-analysis bundle (lint + format:check + typecheck x3)"
 	@echo "                 — same target invoked by the pre-commit hook and by CI"
 	@echo "  make test      run smoke tests (vitest, cucumber, playwright)"
+	@echo "  make test:e2e  run the Playwright e2e suite against an already-running server (assumes 'make up')"
+	@echo "  make test:e2e:compose  bring up compose, run e2e, tear down (slow but realistic)"
 	@echo "  make up        bring up the whole dev stack (postgres + authelia + app), wait for healthy, print URLs"
 	@echo "  make up-app    alias for 'make up' (back-compat; the old up/up-app split is gone)"
 	@echo "  make migrate   apply pending DB migrations against the running postgres (forward-only; ADR 0020)"
@@ -48,6 +50,35 @@ test:
 	@pnpm run test:smoke
 	@pnpm run test:behavior:smoke
 	@pnpm run test:e2e:smoke
+
+# Run the Playwright e2e suite against an already-running server. The
+# default baseURL is `http://localhost:3000` — set PLAYWRIGHT_BASE_URL
+# to override (e.g., pointing at a remote staging host). The compose
+# stack (`make up`) MUST be running, otherwise every spec times out
+# against a connection-refused error. See README "End-to-end tests"
+# for the full local-dev story.
+test\:e2e:
+	@pnpm run test:e2e
+
+# Bring up the compose stack, wait for `/healthz` to flip to 200, run
+# the e2e suite, then tear the stack down (with -v so the named
+# volumes are dropped — leaves the dev env clean for the next run).
+# The teardown runs whether the suite passes or fails so a Playwright
+# crash never leaks compose state.
+test\:e2e\:compose:
+	@$(MAKE) up
+	@echo "[waiting for /healthz to flip to 200]"
+	@for i in $$(seq 1 60); do \
+		if curl --fail --silent http://localhost:3000/healthz > /dev/null 2>&1; then \
+			echo "[/healthz OK after $${i}s]"; \
+			break; \
+		fi; \
+		sleep 1; \
+	done
+	@status=0; \
+		$(MAKE) test:e2e || status=$$?; \
+		$(MAKE) down-v; \
+		exit $$status
 
 up:
 	@if [ ! -f .env ]; then \

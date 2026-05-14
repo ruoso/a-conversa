@@ -1,15 +1,157 @@
-import { defineConfig } from '@playwright/test';
+// Playwright configuration for `a-conversa`.
+//
+// Refinement: tasks/refinements/frontend-i18n/i18n_testing.md
+// ADRs:        docs/adr/0008-e2e-framework-playwright.md,
+//              docs/adr/0022-no-throwaway-verifications.md,
+//              docs/adr/0024-frontend-i18n-react-i18next-with-icu.md
+// TaskJuggler: frontend_i18n.i18n_testing
+//
+// **Single-origin deployment.** The Fastify server serves the moderator's
+// built `dist/` at `/` (see `apps/server/src/routes/static-frontends.ts`)
+// alongside the JSON / WebSocket API. Playwright tests therefore drive
+// a single URL (`http://localhost:3000` by default) — no separate Vite
+// preview, no CORS shim. The compose stack (`make up`) brings up the
+// app exactly the way a real client would meet it.
+//
+// **Why `webServer` is unset.** Auto-starting the compose stack from
+// `webServer` is tempting but couples the test process to docker. We
+// keep the responsibility separate: the dev brings up `make up` (or
+// CI brings it up explicitly), and the runner just connects. This:
+//
+//   - Keeps `pnpm run test:e2e` fast on iteration (server is already up).
+//   - Lets the CI job own teardown via `make down-v` so cleanup is
+//     guaranteed even on Playwright failures.
+//   - Avoids the "Playwright crashed; compose left running" footgun.
+//
+// **Per-locale projects.** The three Chromium projects pre-seed the
+// `aconversa_locale` cookie before the SPA loads. The cookie is the
+// first signal `negotiateAuthenticatedLocale()` reads, so the SPA's
+// initial paint already uses the project's locale — exactly the path a
+// returning user would take.
+//
+// **Artifacts on failure.** Traces, screenshots, and videos are
+// retained on failure only (no green-run cost). The HTML reporter
+// writes to `playwright-report/` (already gitignored); test artifacts
+// (traces, videos, screenshots) land under `test-results/`.
 
-// Decision-only smoke configuration. The real Playwright wiring — browser
-// projects (Chromium/Firefox/WebKit), reporters, base URL pointing at the
-// dev compose stack, video/trace artifacts, retries — is owned by
-// `foundation.test_infra.playwright_setup`. Here we only prove the runner
-// loads and executes a spec; no `page` fixture, no browser binary needed.
+import { defineConfig, devices } from '@playwright/test';
+
+import { LOCALE_COOKIE_NAME, SUPPORTED_LOCALES } from '@a-conversa/i18n-catalogs';
+
+const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:3000';
+
+// Derive the cookie's `domain` attribute from the base URL so the
+// pre-seeded cookie matches the host the tests load. Localhost is the
+// common case; CI overrides via PLAYWRIGHT_BASE_URL only if it points
+// at a non-localhost ingress.
+const cookieDomain = new URL(BASE_URL).hostname;
+
+/**
+ * Build a `storageState` object that pre-seeds the `aconversa_locale`
+ * cookie for a given locale. Playwright treats `storageState` as either
+ * a path to a JSON file or an inline object — we use the inline form
+ * so the per-project setup stays declarative and reproducible without
+ * touching the filesystem.
+ *
+ * The cookie attributes match what `persistLocale()` in
+ * `packages/i18n-catalogs/src/negotiation.ts` writes from the SPA at
+ * runtime: `Path=/`, `SameSite=Lax`, value is the canonical tag. We
+ * do not set `Secure` because the dev compose stack is plain HTTP;
+ * production deployments serve over HTTPS and the cookie value the
+ * SPA itself sets will carry `Secure`. The pre-seeded cookie just
+ * has to be readable by `document.cookie` before the SPA boots.
+ */
+function localeStorageState(locale: (typeof SUPPORTED_LOCALES)[number]): {
+  cookies: Array<{
+    name: string;
+    value: string;
+    domain: string;
+    path: string;
+    expires: number;
+    httpOnly: boolean;
+    secure: boolean;
+    sameSite: 'Strict' | 'Lax' | 'None';
+  }>;
+  origins: Array<{ origin: string; localStorage: Array<{ name: string; value: string }> }>;
+} {
+  return {
+    cookies: [
+      {
+        name: LOCALE_COOKIE_NAME,
+        value: locale,
+        domain: cookieDomain,
+        path: '/',
+        // Far-future expiry; Playwright requires `expires` (-1 means
+        // session cookie). Use one-year-from-now in epoch seconds.
+        expires: Math.floor(Date.now() / 1000) + 365 * 24 * 60 * 60,
+        httpOnly: false,
+        secure: false,
+        sameSite: 'Lax',
+      },
+    ],
+    origins: [],
+  };
+}
+
 export default defineConfig({
   testDir: 'tests/e2e',
-  // No `projects` block: a project entry implies a browser, and listing
-  // browsers triggers the runner's "browser not installed" check on first
-  // use. The default project runs the spec in the Node worker, which is
-  // all the decision-proof spec (`hello.spec.ts`) needs.
-  reporter: [['list']],
+  // Specs that don't need a browser (the legacy `hello.spec.ts`
+  // arithmetic smoke) live next to specs that do. Each per-locale
+  // project filters with a `testMatch` so cross-locale specs run
+  // three times (once per project) while non-browser specs run once
+  // under the default project.
+  fullyParallel: true,
+  // `forbidOnly: !!process.env.CI` — a `.only` left in a spec must
+  // not pass CI silently.
+  forbidOnly: !!process.env.CI,
+  retries: process.env.CI ? 1 : 0,
+  // Workers default to the runner's CPU count; cap on CI to avoid
+  // contention with the compose stack on a small runner. When unset
+  // Playwright picks half the available CPUs which is the right
+  // default for local dev — so we only set `workers` under CI.
+  ...(process.env.CI ? { workers: 2 } : {}),
+  reporter: [['list'], ['html', { outputFolder: 'playwright-report', open: 'never' }]],
+  outputDir: 'test-results',
+  use: {
+    baseURL: BASE_URL,
+    trace: 'retain-on-failure',
+    screenshot: 'only-on-failure',
+    video: 'retain-on-failure',
+  },
+  // No `webServer` block: tests run against whatever is at `baseURL`.
+  // Locally: `make up` brings up postgres + authelia + app; then
+  // `pnpm run test:e2e`. CI: the `e2e-playwright` job runs `make up`
+  // explicitly and tears down via `make down-v` on success and failure.
+  projects: [
+    // Decision-only smoke (no browser). The legacy `hello.spec.ts`
+    // proves the runner discovers TypeScript specs; per ADR 0008 it
+    // does not use the `page` fixture and does not need a browser.
+    // Kept under its own project so per-locale projects don't run it
+    // three times.
+    {
+      name: 'smoke-node',
+      testMatch: /hello\.spec\.ts$/,
+    },
+    // Per-locale Chromium projects. Each pre-seeds the
+    // `aconversa_locale` cookie so the SPA's first paint uses the
+    // project's locale. The same spec runs once per project; the
+    // `locale` test annotation passes through via `process.env` so
+    // assertions can look up the expected localized strings.
+    ...SUPPORTED_LOCALES.map((locale) => ({
+      name: `chromium-${locale}`,
+      testMatch: /i18n-moderator-smoke\.spec\.ts$/,
+      use: {
+        ...devices['Desktop Chrome'],
+        // The browser's own `Accept-Language` is a fallback signal
+        // for `navigator.languages`; setting it here matches what a
+        // user with that locale's browser would send. The cookie is
+        // the dominant signal (cookie > navigator.languages in
+        // `negotiateAuthenticatedLocale`), but matching both means
+        // the spec exercises a self-consistent client profile.
+        locale,
+        storageState: localeStorageState(locale),
+      },
+      metadata: { locale },
+    })),
+  ],
 });
