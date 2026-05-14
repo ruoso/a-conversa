@@ -69,8 +69,15 @@
 // emit the ack envelope in both cases (the client's request-response
 // correlation stays consistent regardless of registry state).
 
-import type { FastifyInstance, FastifyPluginAsync } from 'fastify';
+import { randomUUID } from 'node:crypto';
+
+import type { FastifyBaseLogger, FastifyInstance, FastifyPluginAsync } from 'fastify';
 import fp from 'fastify-plugin';
+
+import type { UnsubscribedReason, WsEnvelope } from '@a-conversa/shared-types';
+
+import { canSeeSession, type VisibilityExecutor } from '../sessions/visibility.js';
+import type { WsConnectionSenderRegistry } from './broadcast/connections.js';
 
 /**
  * Default per-connection subscription cap. Closes
@@ -203,6 +210,31 @@ export class WsSubscriptionRegistry {
   /** connectionId -> set of sessionIds the connection is subscribed to. */
   private readonly byConnection = new Map<string, Set<string>>();
   /**
+   * connectionId -> authenticated userId. Parallel index populated by
+   * `subscribe(connectionId, sessionId, userId)` when the third
+   * argument is supplied. The privacy-flip pruner
+   * (`pruneSubscribersForPrivateSession` below) reads from this map to
+   * evaluate `canSeeSession(pool, sessionId, userId)` for each
+   * subscriber.
+   *
+   * **Per-connection, not per-(connection, session).** A connection is
+   * authenticated once at upgrade time; every subscription it holds
+   * belongs to the same user. Storing the binding once per connection
+   * (rather than per tuple) keeps the index small and matches the
+   * lifecycle: the binding is allocated when the connection first
+   * subscribes and cleared on `removeConnection`.
+   *
+   * **Optional binding.** Legacy callers that pass two arguments to
+   * `subscribe(connectionId, sessionId)` produce subscriptions without
+   * a user binding; `userForConnection` returns `undefined` for those.
+   * The pruner skips such entries with a warn log (it cannot evaluate
+   * `canSeeSession` without a userId) — a defensive posture that
+   * keeps existing test fixtures working while production call sites
+   * always pass the userId. Refinement:
+   *   tasks/refinements/backend-hardening/privacy_flip_subscription_prune.md.
+   */
+  private readonly userByConnection = new Map<string, string>();
+  /**
    * Hard ceiling on `byConnection.get(connectionId).size`. Resolved
    * at construction time so the cap is fixed for the registry's
    * lifetime — runtime mutation would invalidate the
@@ -236,13 +268,28 @@ export class WsSubscriptionRegistry {
    *
    * Closes `docs/security/m3-review/inputs.md` F-001.
    *
+   * **`userId` binding (optional).** Production callers (the WS
+   * subscribe handler) pass the authenticated user's id as the third
+   * argument; the registry stores it in `userByConnection` so the
+   * privacy-flip pruner can later evaluate
+   * `canSeeSession(pool, sessionId, userId)` for each subscriber.
+   * Legacy two-argument calls (existing tests that fabricate registry
+   * entries) still work — the connection just doesn't carry a user
+   * binding, and the pruner skips it with a warn log. Re-subscribing
+   * with a different `userId` replaces the prior binding (this is the
+   * defensive shape; real connections never re-bind because the
+   * connection-level auth is fixed at upgrade time).
+   *
    * @param connectionId the WS connection's stable id (the
    *                     `WsConnectionContext.connectionId`).
    * @param sessionId the session id the client wants events for.
+   * @param userId the authenticated user id (`connection.user.id`).
+   *               Optional for back-compat with existing tests that
+   *               fabricate registry entries without an auth surface.
    * @throws {SubscriptionCapacityError} when the connection is at the
    *         cap and `sessionId` is not already in its set.
    */
-  subscribe(connectionId: string, sessionId: string): void {
+  subscribe(connectionId: string, sessionId: string, userId?: string): void {
     const existing = this.byConnection.get(connectionId);
     if (
       existing !== undefined &&
@@ -265,6 +312,10 @@ export class WsSubscriptionRegistry {
       this.byConnection.set(connectionId, sessions);
     }
     sessions.add(sessionId);
+
+    if (userId !== undefined) {
+      this.userByConnection.set(connectionId, userId);
+    }
   }
 
   /**
@@ -329,6 +380,25 @@ export class WsSubscriptionRegistry {
   }
 
   /**
+   * Look up the authenticated user id bound to `connectionId` at
+   * subscribe time. Returns `undefined` when:
+   *
+   *   - The connection has no subscriptions in the registry.
+   *   - The connection subscribed via the legacy two-argument
+   *     `subscribe(connId, sessId)` shape (existing tests).
+   *
+   * Used by `pruneSubscribersForPrivateSession` (this module) to
+   * evaluate `canSeeSession(pool, sessionId, userId)` for each
+   * subscriber when a session's privacy flips to private.
+   *
+   * @param connectionId the WS connection's stable id.
+   * @returns the bound userId or `undefined`.
+   */
+  userForConnection(connectionId: string): string | undefined {
+    return this.userByConnection.get(connectionId);
+  }
+
+  /**
    * Drop every subscription held by `connectionId`. Called by the
    * connection-close hook in `connection.ts` so a dropped socket
    * doesn't leak entries in either index.
@@ -339,11 +409,20 @@ export class WsSubscriptionRegistry {
    * in). Each iteration is O(1) — a `Set.delete` on the
    * by-session index and possibly a `Map.delete` to prune.
    *
+   * Wipes the user binding (`userByConnection`) in lock-step with the
+   * two index entries — the binding's lifecycle is the connection's
+   * lifecycle.
+   *
    * Idempotent — calling with an unknown connection id is a no-op.
    */
   removeConnection(connectionId: string): void {
     const sessions = this.byConnection.get(connectionId);
     if (sessions === undefined) {
+      // Even on the "unknown connection" path, defensively wipe the
+      // user binding in case `subscribe(...)` was called without a
+      // matching session add (impossible today, but the call is O(1)
+      // and keeps the lifecycle airtight).
+      this.userByConnection.delete(connectionId);
       return;
     }
     for (const sessionId of sessions) {
@@ -356,6 +435,175 @@ export class WsSubscriptionRegistry {
       }
     }
     this.byConnection.delete(connectionId);
+    this.userByConnection.delete(connectionId);
+  }
+}
+
+// -- Privacy-flip subscription prune -------------------------------
+//
+// `pruneSubscribersForPrivateSession` is the single helper that walks
+// the per-session subscription set when a session's privacy flips to
+// `'private'`, re-runs the visibility predicate for each subscriber,
+// and evicts any user who can no longer see the session. The helper
+// is called by `PATCH /sessions/:id/privacy` (in
+// `apps/server/src/sessions/routes.ts`) when the desired privacy is
+// `'private'`. Refinement:
+//   tasks/refinements/backend-hardening/privacy_flip_subscription_prune.md.
+// Closes `docs/security/m3-review/coverage.md` G-001.
+
+/**
+ * Options accepted by `pruneSubscribersForPrivateSession`. The shape
+ * mirrors `EventAppliedBroadcastListenerOptions` — the subscription
+ * registry + the connection-sender registry + a logger — plus the
+ * visibility executor (a `DbPool` or transaction client) and the
+ * `sessionId` whose privacy just flipped.
+ */
+export interface PruneSubscribersForPrivateSessionOptions {
+  /** Per-app-instance subscription registry. */
+  readonly subscriptions: WsSubscriptionRegistry;
+  /** Per-app-instance connection-sender registry. */
+  readonly connectionSenders: WsConnectionSenderRegistry;
+  /**
+   * Visibility executor — anything with a `query(text, params)` method
+   * whose result has a `.rows` array. The production caller passes the
+   * shared `DbPool`; tests pass an in-memory shim that mimics the SQL
+   * surface the predicate consults.
+   */
+  readonly pool: VisibilityExecutor;
+  /** The session id whose privacy just flipped to `'private'`. */
+  readonly sessionId: string;
+  /** Logger for per-connection warn-level error-isolation paths. */
+  readonly log: FastifyBaseLogger;
+}
+
+/**
+ * Walk every subscriber of `sessionId` and evict any whose
+ * authenticated user can no longer see the session. For each evicted
+ * connection:
+ *
+ *   1. Send a server-initiated `unsubscribed` envelope with
+ *      `payload.reason = 'privacy-flipped'`. `inResponseTo` is absent
+ *      (the frame is unsolicited; not correlated to any client
+ *      request).
+ *   2. Call `subscriptions.unsubscribe(connectionId, sessionId)` so
+ *      future broadcasts skip this connection.
+ *
+ * **Why this exists.** The broadcast surface (`event-applied.ts`,
+ * `diagnostic.ts`, `proposal-status.ts`) routes by the subscription
+ * registry; it does NOT re-run `canSeeSession` per fan-out (that
+ * would multiply the per-broadcast DB cost). The cheaper structural
+ * fix is to keep the registry truthful: an entry exists IFF the user
+ * can see the session right now. This helper enforces that invariant
+ * on the one HTTP path that can flip a user's visibility from "yes"
+ * to "no": `PATCH /sessions/:id/privacy` to `'private'`.
+ *
+ * **Per-connection error isolation.** Each connection's send +
+ * unsubscribe is wrapped in a try/catch. One bad socket logs a warn
+ * line and the loop continues; the helper's promise resolves
+ * regardless. The caller's HTTP response is NEVER blocked by a slow
+ * or broken WS connection — the UPDATE has already committed, the
+ * response status is independent of fan-out success.
+ *
+ * **Participants are never pruned.** `canSeeSession` returns `true`
+ * for the host AND for any current-or-past participant, regardless of
+ * privacy. The predicate is the authoritative gate; this helper just
+ * iterates and calls it.
+ *
+ * **Connections without a userId binding are skipped.** Legacy test
+ * fixtures that call `subscribe(connId, sessId)` without a userId
+ * produce subscriptions the pruner cannot evaluate; those are skipped
+ * with a debug-level log (no eviction, no error). Production call
+ * sites always pass the userId.
+ *
+ * **`canSeeSession` failure is per-connection.** If the visibility
+ * query itself rejects (pool exhausted, intermittent DB error), the
+ * pruner logs a warn line for that connection and continues to the
+ * next. The privacy bit DID flip; partial prune failure is a
+ * degradation, not a state corruption.
+ *
+ * Closes `docs/security/m3-review/coverage.md` G-001. Refinement:
+ *   tasks/refinements/backend-hardening/privacy_flip_subscription_prune.md.
+ */
+export async function pruneSubscribersForPrivateSession(
+  opts: PruneSubscribersForPrivateSessionOptions,
+): Promise<void> {
+  const { subscriptions, connectionSenders, pool, sessionId, log } = opts;
+  const connectionIds = subscriptions.connectionsForSession(sessionId);
+  if (connectionIds.length === 0) {
+    return;
+  }
+
+  const reason: UnsubscribedReason = 'privacy-flipped';
+
+  for (const connectionId of connectionIds) {
+    const userId = subscriptions.userForConnection(connectionId);
+    if (userId === undefined) {
+      // Subscription has no user binding (legacy test fixture or a
+      // wiring regression that bypassed the production subscribe
+      // handler). Without a userId we cannot evaluate `canSeeSession`;
+      // skip with a debug-level log. Production paths always bind a
+      // userId.
+      log.debug(
+        { sessionId, connectionId },
+        'ws-prune-privacy-flip: skipping connection — no userId binding (legacy fixture or wiring gap)',
+      );
+      continue;
+    }
+
+    let visible: boolean;
+    try {
+      visible = await canSeeSession(pool, sessionId, userId);
+    } catch (err) {
+      // Per-connection isolation: a DB error on ONE visibility check
+      // does not break the rest of the loop. Log + skip.
+      log.warn(
+        { err, sessionId, connectionId, userId },
+        'ws-prune-privacy-flip: canSeeSession query failed — leaving subscription in place (next event-applied fan-out will skip this connection if the registry is cleaned later)',
+      );
+      continue;
+    }
+
+    if (visible) {
+      // The user is the host or a participant — they keep the
+      // subscription regardless of the privacy flip.
+      continue;
+    }
+
+    const envelope: WsEnvelope<'unsubscribed'> = {
+      type: 'unsubscribed',
+      id: randomUUID(),
+      payload: { sessionId, reason },
+    };
+
+    const sender = connectionSenders.get(connectionId);
+    if (sender === undefined) {
+      // The connection's sender has already been unregistered (the
+      // close hook ran between the snapshot and this iteration).
+      // Defensive: remove the subscription entry too — the close hook
+      // would have done that via `removeConnection`, but if we're
+      // racing it, double-removal is idempotent.
+      subscriptions.unsubscribe(connectionId, sessionId);
+      continue;
+    }
+
+    try {
+      sender(envelope);
+    } catch (err) {
+      // Per-connection isolation: a send-failure on ONE socket does
+      // not break the loop. We still remove the registry entry — the
+      // user cannot see the session anymore, so leaving them
+      // subscribed (and silent) would leak future broadcasts.
+      log.warn(
+        { err, sessionId, connectionId, userId },
+        'ws-prune-privacy-flip: send failed — removing subscription anyway to prevent post-flip broadcast leak',
+      );
+    }
+
+    subscriptions.unsubscribe(connectionId, sessionId);
+    log.info(
+      { sessionId, connectionId, userId, reason },
+      'ws-prune-privacy-flip: subscriber evicted',
+    );
   }
 }
 

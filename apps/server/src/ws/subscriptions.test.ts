@@ -25,9 +25,15 @@
 // covered separately in `handlers/subscribe.test.ts`. The wire-format
 // end-to-end is covered in the cucumber feature.
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-import { WsSubscriptionRegistry } from './subscriptions.js';
+import type { FastifyBaseLogger } from 'fastify';
+
+import type { WsEnvelopeUnion } from '@a-conversa/shared-types';
+
+import type { VisibilityExecutor } from '../sessions/visibility.js';
+import { WsConnectionSenderRegistry } from './broadcast/connections.js';
+import { pruneSubscribersForPrivateSession, WsSubscriptionRegistry } from './subscriptions.js';
 
 // Stable fixture ids — value doesn't matter, only that distinct ids are
 // used for distinct connections / sessions. Mirrors the `MSG_ID` /
@@ -181,5 +187,330 @@ describe('WsSubscriptionRegistry — public-API invariants', () => {
     // assertion below makes the runtime invariant explicit.
     (snap as string[]).length = 0;
     expect(reg.connectionsForSession(SESS_X).length).toBe(2);
+  });
+});
+
+// -- User binding (privacy-flip prune precursor) -------------------
+//
+// The `(connectionId, userId)` binding is the bridge between a
+// subscription registry entry and the `canSeeSession(pool, sessId,
+// userId)` predicate the prune helper consults. The legacy two-arg
+// `subscribe(conn, sess)` shape is kept for back-compat with the
+// twelve existing test fixtures that fabricate registry entries
+// without an auth surface; the three-arg shape is what the production
+// subscribe handler calls.
+//
+// Refinement:
+//   tasks/refinements/backend-hardening/privacy_flip_subscription_prune.md.
+
+const USER_A = '11111111-1111-4111-8111-1111111111a1';
+const USER_B = '22222222-2222-4222-8222-2222222222b2';
+
+describe('WsSubscriptionRegistry — userId binding', () => {
+  it('records the userId when subscribe is called with three arguments', () => {
+    const reg = new WsSubscriptionRegistry();
+    reg.subscribe(CONN_A, SESS_X, USER_A);
+
+    expect(reg.userForConnection(CONN_A)).toBe(USER_A);
+    // Both indices populated as before.
+    expect(reg.connectionsForSession(SESS_X)).toEqual([CONN_A]);
+    expect(reg.sessionsForConnection(CONN_A)).toEqual([SESS_X]);
+  });
+
+  it('omits the binding when subscribe is called with two arguments (legacy)', () => {
+    const reg = new WsSubscriptionRegistry();
+    reg.subscribe(CONN_A, SESS_X);
+    // No third argument → no userId binding. The pruner skips such
+    // entries because it cannot evaluate `canSeeSession` without a
+    // userId.
+    expect(reg.userForConnection(CONN_A)).toBeUndefined();
+    // The two indices still work as before.
+    expect(reg.connectionsForSession(SESS_X)).toEqual([CONN_A]);
+  });
+
+  it('removeConnection wipes the user binding alongside the indices', () => {
+    const reg = new WsSubscriptionRegistry();
+    reg.subscribe(CONN_A, SESS_X, USER_A);
+    reg.subscribe(CONN_A, SESS_Y, USER_A);
+
+    reg.removeConnection(CONN_A);
+
+    // All three: by-session, by-connection, by-user-of-connection.
+    expect(reg.connectionsForSession(SESS_X)).toEqual([]);
+    expect(reg.connectionsForSession(SESS_Y)).toEqual([]);
+    expect(reg.sessionsForConnection(CONN_A)).toEqual([]);
+    expect(reg.userForConnection(CONN_A)).toBeUndefined();
+  });
+
+  it('re-subscribing with a different userId replaces the binding', () => {
+    // Defensive: real connections don't re-bind because the connection's
+    // user is fixed at upgrade time. The shape is pinned anyway so a
+    // future regression in the subscribe handler that re-binds is
+    // visible at the registry level.
+    const reg = new WsSubscriptionRegistry();
+    reg.subscribe(CONN_A, SESS_X, USER_A);
+    reg.subscribe(CONN_A, SESS_X, USER_B);
+    expect(reg.userForConnection(CONN_A)).toBe(USER_B);
+  });
+});
+
+// -- pruneSubscribersForPrivateSession (helper unit tests) ---------
+//
+// The helper walks the registry, consults `canSeeSession` for each
+// subscriber, and evicts users who can no longer see the session.
+// These unit tests stub the visibility executor (so no real DB) and
+// stub the sender (so we can inspect the wire envelope) — pure unit
+// coverage of the helper's branching logic. The route-level test in
+// `routes.test.ts` covers the integration end-to-end.
+
+const SESS_PRIVATE = '00000000-0000-4000-8000-0000000000c1';
+
+/** Build a tiny fake logger that records calls for assertion. */
+function makeFakeLog(): FastifyBaseLogger {
+  const noop = vi.fn();
+  // Cast to FastifyBaseLogger — only the methods the helper calls
+  // (`debug`, `info`, `warn`) need to be present. `child` returns
+  // itself so any future `.child({...})` call doesn't trip.
+  const log: Partial<FastifyBaseLogger> = {
+    debug: noop,
+    info: noop,
+    warn: noop,
+    error: noop,
+    fatal: noop,
+    trace: noop,
+    level: 'info',
+    silent: noop,
+  };
+  (log as { child: () => FastifyBaseLogger }).child = () => log as FastifyBaseLogger;
+  return log as FastifyBaseLogger;
+}
+
+/**
+ * Build a fake `VisibilityExecutor` whose `query` shim mimics
+ * `canSeeSession`'s SQL: `SELECT 1 AS visible FROM sessions WHERE id =
+ * $1 AND (visibility-fragment)`. Returns one row when
+ * `visibleUserIds` contains `params[1]` (the userId at slot 2);
+ * otherwise zero rows (matches "not visible").
+ *
+ * The helper consults `canSeeSession` once per subscriber; this shim
+ * drives the boolean answer.
+ */
+function makeVisibilityExecutor(visibleUserIds: ReadonlySet<string>): VisibilityExecutor {
+  return {
+    query<TRow extends Record<string, unknown> = Record<string, unknown>>(
+      _text: string,
+      params?: ReadonlyArray<unknown>,
+    ): Promise<{ rows: TRow[] }> {
+      const userId = params?.[1] as string | undefined;
+      if (userId !== undefined && visibleUserIds.has(userId)) {
+        return Promise.resolve({ rows: [{ visible: 1 } as unknown as TRow] });
+      }
+      return Promise.resolve({ rows: [] });
+    },
+  };
+}
+
+describe('pruneSubscribersForPrivateSession', () => {
+  it('evicts a subscriber the visibility predicate rejects + sends an unsubscribed envelope with reason: privacy-flipped', async () => {
+    const subscriptions = new WsSubscriptionRegistry();
+    const connectionSenders = new WsConnectionSenderRegistry();
+    const sent: WsEnvelopeUnion[] = [];
+    subscriptions.subscribe(CONN_A, SESS_PRIVATE, USER_A);
+    connectionSenders.register(CONN_A, (env) => {
+      sent.push(env);
+    });
+    // USER_A is NOT in the visible set → the predicate rejects them.
+    const pool = makeVisibilityExecutor(new Set());
+
+    await pruneSubscribersForPrivateSession({
+      subscriptions,
+      connectionSenders,
+      pool,
+      sessionId: SESS_PRIVATE,
+      log: makeFakeLog(),
+    });
+
+    // The registry entry is gone.
+    expect(subscriptions.connectionsForSession(SESS_PRIVATE)).toEqual([]);
+    expect(subscriptions.sessionsForConnection(CONN_A)).toEqual([]);
+
+    // One server-initiated `unsubscribed` envelope was sent on
+    // CONN_A's wire.
+    expect(sent).toHaveLength(1);
+    const env = sent[0];
+    expect(env?.type).toBe('unsubscribed');
+    // `inResponseTo` is absent — this is an unsolicited push, not a
+    // correlated ack.
+    expect(env?.inResponseTo).toBeUndefined();
+    if (env?.type === 'unsubscribed') {
+      expect(env.payload.sessionId).toBe(SESS_PRIVATE);
+      expect(env.payload.reason).toBe('privacy-flipped');
+    }
+  });
+
+  it('keeps a subscriber the visibility predicate admits (host / participant)', async () => {
+    const subscriptions = new WsSubscriptionRegistry();
+    const connectionSenders = new WsConnectionSenderRegistry();
+    const sent: WsEnvelopeUnion[] = [];
+    subscriptions.subscribe(CONN_A, SESS_PRIVATE, USER_A);
+    connectionSenders.register(CONN_A, (env) => {
+      sent.push(env);
+    });
+    // USER_A IS in the visible set → the predicate admits them.
+    const pool = makeVisibilityExecutor(new Set([USER_A]));
+
+    await pruneSubscribersForPrivateSession({
+      subscriptions,
+      connectionSenders,
+      pool,
+      sessionId: SESS_PRIVATE,
+      log: makeFakeLog(),
+    });
+
+    // Subscription still in place.
+    expect(subscriptions.connectionsForSession(SESS_PRIVATE)).toEqual([CONN_A]);
+    // No envelope sent — the subscriber was admitted, not evicted.
+    expect(sent).toEqual([]);
+  });
+
+  it('prunes a mix of subscribers in a single walk — keeps the visible, evicts the rest', async () => {
+    const subscriptions = new WsSubscriptionRegistry();
+    const connectionSenders = new WsConnectionSenderRegistry();
+    const sentByConn = new Map<string, WsEnvelopeUnion[]>();
+    const collect = (conn: string) => (env: WsEnvelopeUnion) => {
+      const list = sentByConn.get(conn) ?? [];
+      list.push(env);
+      sentByConn.set(conn, list);
+    };
+    subscriptions.subscribe(CONN_A, SESS_PRIVATE, USER_A); // visible
+    subscriptions.subscribe(CONN_B, SESS_PRIVATE, USER_B); // NOT visible
+    connectionSenders.register(CONN_A, collect(CONN_A));
+    connectionSenders.register(CONN_B, collect(CONN_B));
+    const pool = makeVisibilityExecutor(new Set([USER_A]));
+
+    await pruneSubscribersForPrivateSession({
+      subscriptions,
+      connectionSenders,
+      pool,
+      sessionId: SESS_PRIVATE,
+      log: makeFakeLog(),
+    });
+
+    // Only CONN_A remains subscribed.
+    const remaining = [...subscriptions.connectionsForSession(SESS_PRIVATE)].sort();
+    expect(remaining).toEqual([CONN_A].sort());
+
+    // CONN_A got no envelope; CONN_B got the eviction push.
+    expect(sentByConn.get(CONN_A) ?? []).toEqual([]);
+    const bEnvelopes = sentByConn.get(CONN_B) ?? [];
+    expect(bEnvelopes).toHaveLength(1);
+    const bEnv = bEnvelopes[0];
+    expect(bEnv?.type).toBe('unsubscribed');
+    if (bEnv?.type === 'unsubscribed') {
+      expect(bEnv.payload.reason).toBe('privacy-flipped');
+    }
+  });
+
+  it('skips connections without a userId binding (legacy two-arg subscribe) without crashing', async () => {
+    const subscriptions = new WsSubscriptionRegistry();
+    const connectionSenders = new WsConnectionSenderRegistry();
+    const sent: WsEnvelopeUnion[] = [];
+    // Legacy fixture: subscribe without a userId. The pruner cannot
+    // evaluate visibility and must skip without throwing.
+    subscriptions.subscribe(CONN_A, SESS_PRIVATE);
+    connectionSenders.register(CONN_A, (env) => {
+      sent.push(env);
+    });
+    const pool = makeVisibilityExecutor(new Set());
+
+    await pruneSubscribersForPrivateSession({
+      subscriptions,
+      connectionSenders,
+      pool,
+      sessionId: SESS_PRIVATE,
+      log: makeFakeLog(),
+    });
+
+    // Subscription kept (the pruner cannot prove the user can't see
+    // the session without a userId binding; defensive posture).
+    expect(subscriptions.connectionsForSession(SESS_PRIVATE)).toEqual([CONN_A]);
+    expect(sent).toEqual([]);
+  });
+
+  it('continues the loop when one connection sender throws (per-connection error isolation)', async () => {
+    const subscriptions = new WsSubscriptionRegistry();
+    const connectionSenders = new WsConnectionSenderRegistry();
+    const sent: WsEnvelopeUnion[] = [];
+    subscriptions.subscribe(CONN_A, SESS_PRIVATE, USER_A); // sender throws
+    subscriptions.subscribe(CONN_B, SESS_PRIVATE, USER_B); // sender works
+    connectionSenders.register(CONN_A, () => {
+      throw new Error('socket already torn down');
+    });
+    connectionSenders.register(CONN_B, (env) => {
+      sent.push(env);
+    });
+    // Neither user is visible.
+    const pool = makeVisibilityExecutor(new Set());
+
+    await pruneSubscribersForPrivateSession({
+      subscriptions,
+      connectionSenders,
+      pool,
+      sessionId: SESS_PRIVATE,
+      log: makeFakeLog(),
+    });
+
+    // BOTH subscriptions removed — CONN_A's send threw, but the
+    // helper still calls `unsubscribe` (the user cannot see the
+    // session anymore; leaving them subscribed and silent would
+    // leak future broadcasts).
+    expect(subscriptions.connectionsForSession(SESS_PRIVATE)).toEqual([]);
+    // CONN_B's sender was reached after CONN_A's throw — proves the
+    // loop continued.
+    expect(sent).toHaveLength(1);
+  });
+
+  it('is a no-op when no one is subscribed to the session', async () => {
+    const subscriptions = new WsSubscriptionRegistry();
+    const connectionSenders = new WsConnectionSenderRegistry();
+    const pool = makeVisibilityExecutor(new Set());
+    // No throw, no crash, resolves cleanly.
+    await pruneSubscribersForPrivateSession({
+      subscriptions,
+      connectionSenders,
+      pool,
+      sessionId: SESS_PRIVATE,
+      log: makeFakeLog(),
+    });
+    expect(subscriptions.connectionsForSession(SESS_PRIVATE)).toEqual([]);
+  });
+
+  it('survives a canSeeSession query rejection by leaving the subscription in place', async () => {
+    const subscriptions = new WsSubscriptionRegistry();
+    const connectionSenders = new WsConnectionSenderRegistry();
+    const sent: WsEnvelopeUnion[] = [];
+    subscriptions.subscribe(CONN_A, SESS_PRIVATE, USER_A);
+    connectionSenders.register(CONN_A, (env) => {
+      sent.push(env);
+    });
+    // The visibility executor REJECTS rather than resolves; the
+    // pruner logs + skips, does NOT crash the promise.
+    const pool: VisibilityExecutor = {
+      query: () => Promise.reject(new Error('pool exhausted')),
+    };
+
+    await pruneSubscribersForPrivateSession({
+      subscriptions,
+      connectionSenders,
+      pool,
+      sessionId: SESS_PRIVATE,
+      log: makeFakeLog(),
+    });
+
+    // Subscription left in place — the predicate could not give a
+    // definite answer; eviction is deferred (next privacy-flip will
+    // try again).
+    expect(subscriptions.connectionsForSession(SESS_PRIVATE)).toEqual([CONN_A]);
+    expect(sent).toEqual([]);
   });
 });

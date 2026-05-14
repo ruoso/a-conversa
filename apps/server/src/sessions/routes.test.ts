@@ -2858,6 +2858,233 @@ describe('PATCH /sessions/:id/privacy — host toggles session privacy', () => {
   });
 });
 
+describe('PATCH /sessions/:id/privacy — subscription prune on flip to private (G-001)', () => {
+  // Source: docs/security/m3-review/coverage.md G-001
+  // Refinement: tasks/refinements/backend-hardening/privacy_flip_subscription_prune.md
+  //
+  // The handler post-UPDATE prune walks `app.wsSubscriptions.connectionsForSession(sessionId)`,
+  // looks up each connection's userId, runs `canSeeSession`, and
+  // evicts every subscriber whose user can no longer see the session.
+  // Tests below register fake senders on `app.wsConnectionSenders` to
+  // collect server-initiated `unsubscribed` envelopes, then assert
+  // both the wire shape and the post-prune registry state.
+
+  async function buildWithSeed(opts: {
+    users: UserRow[];
+    sessions: SessionRow[];
+    participants?: SessionParticipantRow[];
+  }): Promise<BuiltApp> {
+    const built = await buildApp({ users: opts.users });
+    built.store.sessions.push(...opts.sessions);
+    if (opts.participants !== undefined) {
+      built.store.participants.push(...opts.participants);
+    }
+    return built;
+  }
+
+  let built: BuiltApp | undefined;
+  afterEach(async () => {
+    if (built !== undefined) {
+      await built.app.close();
+      built = undefined;
+    }
+  });
+
+  const PUBLIC_ACTIVE: SessionRow = {
+    id: '00000000-0000-4000-8000-ffff77770001',
+    host_user_id: ALICE_ID,
+    privacy: 'public',
+    topic: 'A public debate that will go private',
+    created_at: new Date('2026-05-09T10:00:00.000Z'),
+    ended_at: null,
+  };
+  const PRIVATE_ACTIVE: SessionRow = {
+    id: '00000000-0000-4000-8000-ffff77770002',
+    host_user_id: ALICE_ID,
+    privacy: 'private',
+    topic: 'A private debate going public',
+    created_at: new Date('2026-05-09T10:00:00.000Z'),
+    ended_at: null,
+  };
+
+  // A non-participant stranger.
+  const STRANGER_ID = '44444444-4444-4444-8444-444444444444';
+  const STRANGER_CONN = '00000000-0000-4000-8000-0000cccc0001';
+  const PARTICIPANT_CONN = '00000000-0000-4000-8000-0000cccc0002';
+
+  it('evicts a non-participant stranger when the host flips public to private (sends unsubscribed envelope + registry pruned)', async () => {
+    built = await buildWithSeed({
+      users: [
+        {
+          id: ALICE_ID,
+          oauth_subject: 'authelia:alice',
+          screen_name: 'alice',
+          deleted_at: null,
+        },
+        {
+          id: STRANGER_ID,
+          oauth_subject: 'authelia:stranger',
+          screen_name: 'stranger',
+          deleted_at: null,
+        },
+      ],
+      sessions: [PUBLIC_ACTIVE],
+      participants: [],
+    });
+
+    // Pre-populate the subscription registry: the stranger was
+    // subscribed while the session was still public. The userId
+    // binding is the production three-arg shape.
+    built.app.wsSubscriptions.subscribe(STRANGER_CONN, PUBLIC_ACTIVE.id, STRANGER_ID);
+    // Register a sender that captures the envelopes the prune helper
+    // sends.
+    const sent: Array<{ type: string; payload: Record<string, unknown> }> = [];
+    built.app.wsConnectionSenders.register(STRANGER_CONN, (env) => {
+      // Read the payload as a plain record — every WsEnvelopeUnion
+      // payload is an object literal of `string -> unknown` for these
+      // assertion purposes; the discriminator (`env.type`) carries the
+      // structural identity.
+      sent.push({ type: env.type, payload: { ...env.payload } });
+    });
+
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'PATCH',
+      url: `/sessions/${PUBLIC_ACTIVE.id}/privacy`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+      payload: { privacy: 'private' },
+    });
+    expect(response.statusCode).toBe(200);
+
+    // The stranger's registry entry is gone.
+    expect(built.app.wsSubscriptions.connectionsForSession(PUBLIC_ACTIVE.id)).toEqual([]);
+
+    // The stranger's sender received exactly one `unsubscribed`
+    // envelope with `reason: 'privacy-flipped'`. The inResponseTo
+    // field is absent (this is server-initiated, not an ack).
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.type).toBe('unsubscribed');
+    expect(sent[0]?.payload['sessionId']).toBe(PUBLIC_ACTIVE.id);
+    expect(sent[0]?.payload['reason']).toBe('privacy-flipped');
+  });
+
+  it('keeps a participant subscribed when the host flips public to private', async () => {
+    built = await buildWithSeed({
+      users: [
+        {
+          id: ALICE_ID,
+          oauth_subject: 'authelia:alice',
+          screen_name: 'alice',
+          deleted_at: null,
+        },
+        {
+          id: BEN_ID,
+          oauth_subject: 'authelia:ben',
+          screen_name: 'ben',
+          deleted_at: null,
+        },
+      ],
+      sessions: [PUBLIC_ACTIVE],
+      // Ben is a participant — `canSeeSession` returns true for him
+      // regardless of privacy.
+      participants: [{ session_id: PUBLIC_ACTIVE.id, user_id: BEN_ID }],
+    });
+    built.app.wsSubscriptions.subscribe(PARTICIPANT_CONN, PUBLIC_ACTIVE.id, BEN_ID);
+    const sent: Array<{ type: string }> = [];
+    built.app.wsConnectionSenders.register(PARTICIPANT_CONN, (env) => {
+      sent.push({ type: env.type });
+    });
+
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'PATCH',
+      url: `/sessions/${PUBLIC_ACTIVE.id}/privacy`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+      payload: { privacy: 'private' },
+    });
+    expect(response.statusCode).toBe(200);
+
+    // Ben (participant) is still subscribed.
+    expect(built.app.wsSubscriptions.connectionsForSession(PUBLIC_ACTIVE.id)).toEqual([
+      PARTICIPANT_CONN,
+    ]);
+    // No server-initiated frame was sent to Ben.
+    expect(sent).toEqual([]);
+  });
+
+  it('is a no-op for pruning when the host flips private to public (visibility widens, nobody loses access)', async () => {
+    built = await buildWithSeed({
+      users: [
+        {
+          id: ALICE_ID,
+          oauth_subject: 'authelia:alice',
+          screen_name: 'alice',
+          deleted_at: null,
+        },
+        {
+          id: BEN_ID,
+          oauth_subject: 'authelia:ben',
+          screen_name: 'ben',
+          deleted_at: null,
+        },
+      ],
+      sessions: [PRIVATE_ACTIVE],
+      participants: [{ session_id: PRIVATE_ACTIVE.id, user_id: BEN_ID }],
+    });
+    // Both Alice (host) and Ben (participant) are subscribed.
+    built.app.wsSubscriptions.subscribe(PARTICIPANT_CONN, PRIVATE_ACTIVE.id, BEN_ID);
+    const sent: Array<{ type: string }> = [];
+    built.app.wsConnectionSenders.register(PARTICIPANT_CONN, (env) => {
+      sent.push({ type: env.type });
+    });
+
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'PATCH',
+      url: `/sessions/${PRIVATE_ACTIVE.id}/privacy`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+      payload: { privacy: 'public' },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json<{ privacy?: string }>().privacy).toBe('public');
+
+    // Registry untouched — flip to public skips the pruner entirely.
+    expect(built.app.wsSubscriptions.connectionsForSession(PRIVATE_ACTIVE.id)).toEqual([
+      PARTICIPANT_CONN,
+    ]);
+    // No envelopes sent — the pruner doesn't run on a public-flip.
+    expect(sent).toEqual([]);
+  });
+
+  it('is a no-op when public-to-private flips a session with zero subscribers (empty walk does not crash)', async () => {
+    built = await buildWithSeed({
+      users: [
+        {
+          id: ALICE_ID,
+          oauth_subject: 'authelia:alice',
+          screen_name: 'alice',
+          deleted_at: null,
+        },
+      ],
+      sessions: [PUBLIC_ACTIVE],
+    });
+    // No subscriptions, no senders. The pruner's empty-walk path is
+    // exercised — the test asserts the handler still returns 200 and
+    // the row's privacy did flip.
+
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'PATCH',
+      url: `/sessions/${PUBLIC_ACTIVE.id}/privacy`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+      payload: { privacy: 'private' },
+    });
+    expect(response.statusCode).toBe(200);
+    const sessionAfter = built.store.sessions.find((s) => s.id === PUBLIC_ACTIVE.id);
+    expect(sessionAfter?.privacy).toBe('private');
+  });
+});
+
 // =============================================================
 // POST /sessions/:id/participants — host-only debater assignment
 // + DELETE /sessions/:id/participants/:userId — host or self removal

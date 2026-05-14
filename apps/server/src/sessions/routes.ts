@@ -229,7 +229,8 @@ import {
   MAX_TOPIC_SEARCH_LENGTH,
   MIN_TOPIC_SEARCH_LENGTH,
 } from '@a-conversa/shared-types';
-import { wsBroadcastPlugin } from '../ws/broadcast/index.js';
+import { wsBroadcastPlugin, wsConnectionSendersPlugin } from '../ws/broadcast/index.js';
+import { pruneSubscribersForPrivateSession, wsSubscriptionsPlugin } from '../ws/subscriptions.js';
 
 /**
  * Options accepted by `sessionsRoutesPlugin`. Every field is optional —
@@ -1057,6 +1058,19 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = asy
   // call would throw. Refinement:
   // tasks/refinements/backend/ws_event_broadcast.md.
   await app.register(wsBroadcastPlugin);
+
+  // Ensure `app.wsSubscriptions` + `app.wsConnectionSenders` are
+  // decorated so the `PATCH /sessions/:id/privacy` handler can call
+  // `pruneSubscribersForPrivateSession(...)` after the privacy
+  // UPDATE lands. Both plugins are `fastify-plugin`-wrapped and
+  // idempotent against re-registration; production registers them
+  // via `wsConnectionHandlingPlugin` (which composes the whole WS
+  // surface), and the test surface (`__buildTestSessionsApp`) reaches
+  // the same decorators through this registration. Closes
+  // `docs/security/m3-review/coverage.md` G-001. Refinement:
+  //   tasks/refinements/backend-hardening/privacy_flip_subscription_prune.md.
+  await app.register(wsSubscriptionsPlugin);
+  await app.register(wsConnectionSendersPlugin);
 
   // Register the shared `SessionResponse` schema once per Fastify
   // instance. `addSchema` is idempotent across `fastify-plugin`-wrapped
@@ -1934,6 +1948,34 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = asy
         // (e.g. concurrent DELETE — but `sessions` has no DELETE
         // path at v1).
         throw new ApiError(500, 'internal-error', 'session UPDATE returned no row');
+      }
+
+      // 5. Subscription prune (closes
+      //    `docs/security/m3-review/coverage.md` G-001). When the
+      //    new privacy is `'private'`, walk the WS subscription
+      //    registry for `sessionId` and evict any subscriber whose
+      //    authenticated user can no longer see the session. The
+      //    helper sends each evicted subscriber a server-initiated
+      //    `unsubscribed` envelope with
+      //    `payload.reason = 'privacy-flipped'` and removes the
+      //    registry entry so subsequent broadcasts don't reach them.
+      //    Participants are NEVER pruned (the visibility predicate
+      //    admits the host + every current-or-past participant
+      //    regardless of privacy). A flip to `'public'` is a no-op
+      //    for pruning — visibility widens, nobody loses access.
+      //    Per-connection error isolation is owned by the helper;
+      //    the prune cannot block / fail this response (the UPDATE
+      //    has already committed; the privacy bit IS the new
+      //    value). Refinement:
+      //      tasks/refinements/backend-hardening/privacy_flip_subscription_prune.md.
+      if (desiredPrivacy === 'private') {
+        await pruneSubscribersForPrivateSession({
+          subscriptions: app.wsSubscriptions,
+          connectionSenders: app.wsConnectionSenders,
+          pool,
+          sessionId,
+          log: request.log,
+        });
       }
 
       return reply.code(200).send(sessionRowToResponse(updated));

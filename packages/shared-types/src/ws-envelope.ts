@@ -229,11 +229,58 @@ export const subscribedPayloadSchema = z.object({
 export type SubscribedPayload = z.infer<typeof subscribedPayloadSchema>;
 
 /**
- * Server → client ack. Same shape as `subscribed` but emitted in
- * response to an `unsubscribe` request.
+ * Closed vocabulary for the `reason` field on a server-initiated
+ * `unsubscribed` envelope. Each value documents WHY the server kicked
+ * the connection off a subscription it had previously held.
+ *
+ * **`'privacy-flipped'`** — the session went from `'public'` to
+ * `'private'` via `PATCH /sessions/:id/privacy` and the recipient is
+ * neither the host nor a participant, so the visibility predicate
+ * (`canSeeSession`) rejected them. Owned by
+ * `backend_hardening.subscription_lifecycle.privacy_flip_subscription_prune`
+ * (closes `docs/security/m3-review/coverage.md` G-001).
+ *
+ * Future server-initiated unsubscribe paths extend this enum. The
+ * sibling task `user_soft_delete_ws_close` (G-003) is expected to add
+ * `'user-removed'` when a user's account is soft-deleted while their
+ * WS connection is still open.
+ *
+ * **Closed enum, not free-form.** A new value here is a deliberate
+ * protocol extension; the type-check + the `protocol-docs.test.ts`
+ * audit force the docs to track it. A free-form string would let
+ * silent drift through.
+ */
+export const unsubscribedReasons = ['privacy-flipped'] as const;
+
+export type UnsubscribedReason = (typeof unsubscribedReasons)[number];
+
+export const unsubscribedReasonSchema = z.enum(unsubscribedReasons);
+
+/**
+ * Server → client ack. Two on-the-wire variants share this shape:
+ *
+ *   1. **Client-acked** — sent in response to a client's `unsubscribe`
+ *      request. `inResponseTo` echoes the request envelope's `id`;
+ *      `reason` is absent.
+ *   2. **Server-initiated** — sent unsolicited when the server has
+ *      determined the recipient must lose their subscription stream
+ *      (e.g. a privacy flip the recipient can no longer see).
+ *      `inResponseTo` is absent (no client request to correlate with);
+ *      `reason` is present and reads from `unsubscribedReasons`.
+ *
+ * Clients use the presence of `reason` (or the absence of
+ * `inResponseTo`) to distinguish the two paths. Either way, the
+ * connection-level contract is the same: after receiving this frame,
+ * the client will not receive any more broadcasts for `sessionId`
+ * over this connection.
+ *
+ * Owned by `backend.websocket_protocol.ws_subscribe_to_session`; the
+ * `reason` field was added by
+ * `backend_hardening.subscription_lifecycle.privacy_flip_subscription_prune`.
  */
 export const unsubscribedPayloadSchema = z.object({
   sessionId: z.string().uuid(),
+  reason: unsubscribedReasonSchema.optional(),
 });
 
 export type UnsubscribedPayload = z.infer<typeof unsubscribedPayloadSchema>;

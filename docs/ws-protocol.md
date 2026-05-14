@@ -206,15 +206,22 @@ The payload echoes `sessionId` for human debuggability; `inResponseTo` is the au
 
 ### `unsubscribed`
 
-- **Direction**: S→C ack.
-- **Payload schema**: `unsubscribedPayloadSchema` — `{ sessionId }`.
-- **When**: after the server removes the tuple. Always fires, even when no subscription existed.
-- **Correlation**: `inResponseTo` echoes the originating [`unsubscribe`](#unsubscribe)'s `id`.
-- **Owner**: [`apps/server/src/ws/handlers/subscribe.ts`](../apps/server/src/ws/handlers/subscribe.ts).
+- **Direction**: S→C ack OR server-initiated push.
+- **Payload schema**: `unsubscribedPayloadSchema` — `{ sessionId, reason?: 'privacy-flipped' }`. The `reason` field is optional; when present, the frame was emitted unsolicited by the server (not in response to a client request).
+- **When (client-acked path)**: after the server removes the tuple in response to a client [`unsubscribe`](#unsubscribe). Always fires on that path, even when no subscription existed. `inResponseTo` echoes the originating request's `id`; `reason` is absent.
+- **When (server-initiated path)**: the server has determined the recipient must lose their subscription stream — today, only when `PATCH /sessions/:id/privacy` flips the session to `'private'` and the recipient is no longer visible to the session per `canSeeSession`. `inResponseTo` is absent; `reason` is `'privacy-flipped'`. The pruner removes the registry entry too, so subsequent broadcasts won't reach the recipient. See [`privacy_flip_subscription_prune.md`](../tasks/refinements/backend-hardening/privacy_flip_subscription_prune.md) (closes `docs/security/m3-review/coverage.md` G-001).
+- **Correlation**: `inResponseTo` echoes the originating [`unsubscribe`](#unsubscribe)'s `id` on the client-acked path; absent on the server-initiated path.
+- **Owner**: [`apps/server/src/ws/handlers/subscribe.ts`](../apps/server/src/ws/handlers/subscribe.ts) (ack path); [`apps/server/src/ws/subscriptions.ts`](../apps/server/src/ws/subscriptions.ts)'s `pruneSubscribersForPrivateSession` (server-initiated path).
 
-```json
+```jsonc
+// Client-acked: in response to a client `unsubscribe`.
 { "type": "unsubscribed", "id": "…", "inResponseTo": "…", "payload": { "sessionId": "…" } }
+
+// Server-initiated: the session went private and the recipient cannot see it anymore.
+{ "type": "unsubscribed", "id": "…", "payload": { "sessionId": "…", "reason": "privacy-flipped" } }
 ```
+
+The `reason` enum (`unsubscribedReasons` in [`packages/shared-types/src/ws-envelope.ts`](../packages/shared-types/src/ws-envelope.ts)) is deliberately closed; future server-initiated paths (e.g. `user_soft_delete_ws_close`, G-003) will extend the enum with additional values rather than minting new envelope types.
 
 ### `proposed`
 

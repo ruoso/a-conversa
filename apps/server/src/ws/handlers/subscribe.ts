@@ -118,7 +118,14 @@ export function buildSubscribeHandler(
     }
 
     try {
-      opts.registry.subscribe(connection.connectionId, sessionId);
+      // Pass the authenticated userId so the privacy-flip pruner
+      // (`pruneSubscribersForPrivateSession` in `../subscriptions.ts`)
+      // can later evaluate `canSeeSession(pool, sessionId, userId)`
+      // for this subscriber if the session's privacy flips. Closes
+      // `docs/security/m3-review/coverage.md` G-001 in concert with
+      // the PATCH `/sessions/:id/privacy` handler. Refinement:
+      //   tasks/refinements/backend-hardening/privacy_flip_subscription_prune.md.
+      opts.registry.subscribe(connection.connectionId, sessionId, userId);
     } catch (err) {
       if (err instanceof SubscriptionCapacityError) {
         // Per-connection subscription cap hit. Closes
