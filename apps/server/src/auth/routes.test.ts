@@ -76,6 +76,20 @@ function makeMemoryPool(): {
         const row = users.get(oauthSubject);
         return Promise.resolve({ rows: (row ? [row] : []) as unknown as TRow[] });
       }
+      // `auth_token_denylist` consult — default-empty (no jti
+      // revoked). The auth-routes tests that exercise revoked-cookie
+      // paths override this branch by overriding the pool wholesale.
+      if (text.includes('FROM auth_token_denylist') && text.includes('WHERE jti')) {
+        return Promise.resolve({ rows: [] as TRow[] });
+      }
+      // `auth_token_denylist` INSERT (logout path). Default-noop
+      // returning zero rows — tests that assert the write inspect
+      // their own captured pool. The `ON CONFLICT DO NOTHING`
+      // production shape means an empty-rows response is the natural
+      // "already revoked" code path.
+      if (text.includes('INSERT INTO auth_token_denylist')) {
+        return Promise.resolve({ rows: [] as TRow[] });
+      }
       return Promise.reject(new Error(`unexpected SQL in memory pool: ${text}`));
     },
   };

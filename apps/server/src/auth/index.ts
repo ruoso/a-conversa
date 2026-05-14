@@ -100,3 +100,17 @@ export {
   type AuthMiddlewareOptions,
   type AuthUser,
 } from './middleware.js';
+
+export {
+  addToDenylist,
+  isJtiRevoked,
+  sweepExpiredDenylistRows,
+  startDenylistSweeper,
+  getDefaultDenylistSweeper,
+  resolveDenylistSweepIntervalMs,
+  AUTH_DENYLIST_SWEEP_INTERVAL_ENV,
+  DEFAULT_DENYLIST_SWEEP_INTERVAL_MS,
+  __resetDefaultDenylistSweeper,
+  type DenylistRow,
+  type DenylistSweeperHandle,
+} from './token-denylist.js';

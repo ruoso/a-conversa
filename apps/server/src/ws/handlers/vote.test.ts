@@ -366,6 +366,9 @@ function makeVotePool(): { pool: DbPool; store: Store } {
         return Promise.resolve({ rows: [] as TRow[] });
       }
 
+      if (text.includes('FROM auth_token_denylist') && text.includes('WHERE jti')) {
+        return Promise.resolve({ rows: [] as TRow[] });
+      }
       return Promise.reject(new Error(`unexpected SQL in WS vote test pool: ${text}`));
     },
   };

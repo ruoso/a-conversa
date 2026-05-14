@@ -70,6 +70,15 @@ export function makeMemoryPool(rows: ReadonlyArray<TestUserRow>): DbPool {
           rows: [{ id: row.id, screen_name: row.screenName }] as unknown as TRow[],
         });
       }
+      // `auth_token_denylist` consult fired by `authenticateRequest`
+      // (post-`jwt_revocation_jti_denylist`). The default-empty pool
+      // says "no jti is revoked" so the auth gate continues onto the
+      // user-row lookup. Tests that exercise revoked-cookie paths
+      // build their own pool that recognises the denylist insert +
+      // returns a row from the SELECT.
+      if (text.includes('FROM auth_token_denylist') && text.includes('WHERE jti')) {
+        return Promise.resolve({ rows: [] as TRow[] });
+      }
       return Promise.reject(new Error(`unexpected SQL in WS test memory pool: ${text}`));
     },
   };

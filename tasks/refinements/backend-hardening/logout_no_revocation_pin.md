@@ -106,3 +106,13 @@ Artifacts:
 Test count delta: +1 `it(...)` in `session-token.test.ts` (47 → 48). `pnpm run check` and `pnpm run test:smoke` both pass.
 
 **Note for the maintainer landing `jwt_revocation_jti_denylist`**: this test's `describe` title contains the substring `— known trade-off`. The denylist task's diff will need to (a) flip `expect(replay.statusCode).toBe(200)` to `toBe(401)`, (b) remove the post-replay body equality assertions (the 401 envelope has no `userId` / `screenName`), and (c) rename the describe to drop the trade-off suffix. The test's leading comment lays out these three steps explicitly so the inversion is mechanical.
+
+**INVERSION LANDED — 2026-05-11.**
+
+The `jwt_revocation_jti_denylist` task shipped on 2026-05-11 (see [`tasks/refinements/backend-hardening/jwt_revocation_jti_denylist.md`](./jwt_revocation_jti_denylist.md)'s Status block). The pin test was inverted as planned:
+
+- The `describe` block title is now `'POST /auth/logout — server-side revocation via jti + denylist (G-005)'` (dropped the `— known trade-off: no server-side revocation` suffix).
+- The `it(...)` body now expects `expect(replay.statusCode).toBe(401)` on the post-logout replay and asserts the `auth-required` envelope code via the response body's `error.code` field. The previous body equality assertions on `userId` + `screenName` were removed (the 401 envelope has no such fields).
+- The leading block comment was rewritten to record the inversion + the source findings (`auth.md` F-001 + F-006, `coverage.md` G-005) that the structural fix closes. The substring `INVERT TO 401` is gone — the inversion has landed and the maintainer-facing instructions in the original pin are now history.
+
+The pin's audit-trail role is preserved: an auditor running `grep -r "G-005" apps/server/src/auth/` still lands on the same test (now asserting the correct behavior), and the test's leading comment still references `auth.md` F-001 + F-006 + `coverage.md` G-005 so the cross-link to the source findings survives.

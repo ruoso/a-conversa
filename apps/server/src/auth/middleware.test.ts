@@ -71,6 +71,14 @@ function makeMemoryPool(rows: UserRow[]): {
           rows: [{ id: row.id, screen_name: row.screen_name }] as unknown as TRow[],
         });
       }
+      // `auth_token_denylist` consult fired by `authenticateRequest`
+      // (post-`jwt_revocation_jti_denylist`). Default empty pool: no
+      // jti is on the denylist. Tests that exercise the revoked
+      // branch build their own pool that returns a row from this
+      // SELECT.
+      if (text.includes('FROM auth_token_denylist') && text.includes('WHERE jti')) {
+        return Promise.resolve({ rows: [] as TRow[] });
+      }
       return Promise.reject(new Error(`unexpected SQL in middleware memory pool: ${text}`));
     },
   };

@@ -39,6 +39,7 @@ task backend_hardening "M3-review hardening (security audit follow-ups)" {
     task jwt_revocation_jti_denylist "Per-session JWT revocation via jti + denylist table" {
       effort 3d
       allocate team
+      complete 100
       note "Source: docs/security/m3-review/auth.md F-001 + F-006; docs/security/m3-review/coverage.md G-005"
       note "Refinement: tasks/refinements/backend-hardening/jwt_revocation_jti_denylist.md"
     }

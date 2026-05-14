@@ -577,6 +577,12 @@ function makeMarkPool(): { pool: DbPool; store: Store } {
         return Promise.resolve({ rows: [] as TRow[] });
       }
 
+      // `auth_token_denylist` consult — default-empty pool says
+      // "no jti revoked" so the auth gate falls through to the
+      // user-row lookup. Post-`jwt_revocation_jti_denylist`.
+      if (text.includes('FROM auth_token_denylist') && text.includes('WHERE jti')) {
+        return Promise.resolve({ rows: [] as TRow[] });
+      }
       return Promise.reject(new Error(`unexpected SQL in WS mark test pool: ${text}`));
     },
   };

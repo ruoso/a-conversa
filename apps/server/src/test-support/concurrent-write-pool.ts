@@ -873,6 +873,14 @@ export function makeConcurrentWritePool(
         return { rows: [] as TRow[] };
       }
 
+      // `auth_token_denylist` consult (post-`jwt_revocation_jti_denylist`).
+      // The concurrent-write harness exercises route-level write
+      // contention; its auth chain consults the denylist via the
+      // standard `authenticateRequest` path. Default empty rows mean
+      // "no jti revoked", which is the harness's expected baseline.
+      if (text.includes('FROM auth_token_denylist') && text.includes('WHERE jti')) {
+        return { rows: [] as TRow[] };
+      }
       throw new Error(`concurrent-write harness: unexpected SQL: ${text}`);
     };
 

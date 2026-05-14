@@ -31,21 +31,33 @@
 // long-lived connection is authenticated for thousands of subsequent
 // messages without any DB lookup. A DB-backed token would either force
 // per-message lookups (latency disaster) or a per-connection cache
-// (an invalidation problem). The cost is per-session revocation
-// granularity, which is deferred: if/when the UX needs it, a small
-// `auth_token_denylist (jti, expires_at)` migration covers it.
-// See `tasks/refinements/backend/session_token_management.md` for the
-// full rationale.
+// (an invalidation problem). The granular-revocation gap was closed
+// in M3-review (per
+// `tasks/refinements/backend-hardening/jwt_revocation_jti_denylist.md`):
+// the JWT now carries a `jti` (v4 UUID) claim that the auth middleware
+// consults against a small `auth_token_denylist` Postgres table once
+// per upgrade / once per HTTP request. The WS path's per-connection
+// cache of the resolved `AuthUser` keeps the denylist consult to one
+// DB hit per connection's lifetime; revocation propagation onto an
+// open WS connection runs via `closeUserConnections(userId,
+// 'auth-revoked')` from the logout path — closing the connection IS
+// the cache invalidation.
+// See `tasks/refinements/backend/session_token_management.md` and
+// `tasks/refinements/backend-hardening/jwt_revocation_jti_denylist.md`
+// for the full rationale.
 //
 // **Why `jose`.** Production-grade audited JWT library, native ESM,
 // TypeScript-first, no algorithm-confusion vulnerabilities. Pinned at
 // 6.x in `apps/server/package.json` alongside the existing dep set.
 //
 // **Claim minimalism.** Per ADR 0002, the platform reads no profile
-// data; the token MUST carry only the `users.id` (as `sub`) plus the
-// JWT-standard `iat` / `exp`. NO `iss`, NO `aud`, NO `jti`, NO
-// `screen_name`. The verify helper's payload-shape check rejects any
-// token carrying additional claims so future drift is caught.
+// data; the token MUST carry only the `users.id` (as `sub`), the
+// JWT-standard `iat` / `exp`, and the per-session `jti` (v4 UUID,
+// added in M3-review per
+// `tasks/refinements/backend-hardening/jwt_revocation_jti_denylist.md`).
+// NO `iss`, NO `aud`, NO `screen_name`. The verify helper's
+// payload-shape check enumerates the four allowed keys and rejects
+// any token carrying additional claims so future drift is caught.
 //
 // **What this module does NOT own.**
 //   - Reading/writing the cookie on Fastify request/response —
@@ -56,6 +68,8 @@
 //     `pending-cookie.ts`.
 //   - The auth middleware that gates protected routes — sibling task
 //     `auth_middleware`.
+
+import { randomUUID } from 'node:crypto';
 
 import { SignJWT, jwtVerify } from 'jose';
 
@@ -106,13 +120,20 @@ export const SESSION_TOKEN_TTL_SECONDS = SESSION_TOKEN_TTL_MS / 1000;
 export const CLOCK_SKEW_SECONDS = 60;
 
 /**
- * The exact claim shape the platform session token carries. `sub` is
- * the `users.id` UUID; `iat` and `exp` are the JWT-standard issue-at
- * and expiry instants in seconds since epoch.
+ * The exact claim shape the platform session token carries.
  *
- * NO other field. NO `iss`, NO `aud`, NO `screenName`, NO `jti`.
- * Adding a field here would require updating `verifySessionToken`'s
- * payload-shape check; the test suite pins the current shape.
+ *   * `sub` — the `users.id` UUID.
+ *   * `iat` — issue-at instant, seconds since epoch.
+ *   * `exp` — expiry instant, seconds since epoch.
+ *   * `jti` — per-session v4 UUID (M3-review, refinement
+ *     `tasks/refinements/backend-hardening/jwt_revocation_jti_denylist.md`).
+ *     Used by the auth middleware to consult the `auth_token_denylist`
+ *     table on every verify; logout writes one row per `jti` so a
+ *     replayed cookie no longer authenticates.
+ *
+ * NO other field. NO `iss`, NO `aud`, NO `screenName`. Adding a field
+ * here would require updating `verifySessionToken`'s payload-shape
+ * check; the test suite pins the current shape.
  */
 export interface SessionTokenPayload {
   /** Users-table row id (UUID string). */
@@ -121,12 +142,15 @@ export interface SessionTokenPayload {
   readonly iat: number;
   /** Expiry instant, seconds since epoch. */
   readonly exp: number;
+  /** Per-session v4 UUID. The denylist's primary key. */
+  readonly jti: string;
 }
 
 /**
  * Options forwarded to `signSessionToken` for test-time overrides.
  * Production callers pass nothing; tests pin `now` so `iat` / `exp`
- * are deterministic across runs.
+ * are deterministic across runs, and (rarely) pin `jti` so the
+ * minted token's denylist key is predictable.
  */
 export interface SignSessionTokenOptions {
   /**
@@ -135,6 +159,13 @@ export interface SignSessionTokenOptions {
    * `iat` is `Math.floor(now() / 1000)`; `exp` is `iat + SESSION_TOKEN_TTL_SECONDS`.
    */
   readonly now?: () => number;
+  /**
+   * `jti` generator. Returns a v4 UUID string. Defaults to
+   * `crypto.randomUUID()`. Tests pin a deterministic generator so the
+   * minted token's `jti` is predictable across runs; the denylist
+   * tests assert against the exact UUID.
+   */
+  readonly randomJti?: () => string;
 }
 
 /**
@@ -166,13 +197,24 @@ export async function signSessionToken(
   const now = options.now ?? ((): number => Date.now());
   const iat = Math.floor(now() / 1000);
   const exp = iat + SESSION_TOKEN_TTL_SECONDS;
+  // Mint a v4 UUID `jti` per sign. Production uses Node's built-in
+  // `crypto.randomUUID()` (RFC 4122 v4); tests inject a deterministic
+  // generator so the `jti` is predictable across runs. The `jti` is
+  // the primary key of the `auth_token_denylist` table; logout
+  // writes one row per `jti` so a replayed cookie is rejected.
+  const generateJti = options.randomJti ?? ((): string => randomUUID());
+  const jti = generateJti();
   const key = new TextEncoder().encode(secret);
   // `jose`'s `SignJWT` builder. We set `iat` / `exp` ourselves rather
   // than calling `.setIssuedAt()` / `.setExpirationTime(...)` so the
   // clock override in `options.now` is the single source of truth for
   // both fields — `jose`'s setters would consult its internal clock
-  // for `iat` and produce a mismatch.
-  const jwt = await new SignJWT({ sub: payload.sub, iat, exp })
+  // for `iat` and produce a mismatch. `jti` is set as a payload claim
+  // for the same reason — `.setJti(...)` would work but the explicit
+  // payload-claim shape mirrors `sub` / `iat` / `exp` and keeps the
+  // payload-shape audit's enumeration in `verifySessionToken`
+  // straightforward.
+  const jwt = await new SignJWT({ sub: payload.sub, iat, exp, jti })
     .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
     .sign(key);
   return jwt;
@@ -265,11 +307,27 @@ export async function verifySessionToken(
   if (typeof payload['exp'] !== 'number' || !Number.isFinite(payload['exp'])) {
     return null;
   }
+  // `jti` is REQUIRED on every token minted by `signSessionToken`
+  // after M3-review's `jwt_revocation_jti_denylist` task. A legacy
+  // token minted before this change carried no `jti`; such tokens are
+  // now rejected here (the user re-authenticates and the next sign
+  // mints a fresh `jti`). The shape is "v4 UUID string"; we check
+  // string-typeness + non-empty-length here and let the denylist
+  // consult at the call site decide whether the value is on the
+  // revocation list.
+  if (typeof payload['jti'] !== 'string' || payload['jti'].length === 0) {
+    return null;
+  }
   // Enumerate the keys so an unexpected claim trips the check. We
   // intentionally include the algorithm-header keys jose injects on
   // the payload (none — jose puts them in the `protectedHeader`,
-  // not the payload). The payload should be exactly three fields.
-  const allowedKeys = new Set(['sub', 'iat', 'exp']);
+  // not the payload). The payload should be exactly four fields:
+  // `sub`, `iat`, `exp`, `jti`. The `jti` claim was added by the
+  // M3-review `jwt_revocation_jti_denylist` task; relaxing the audit
+  // here preserves the defense-in-depth posture against forged
+  // elevated-privilege claims (any OTHER unknown claim still trips
+  // rejection).
+  const allowedKeys = new Set(['sub', 'iat', 'exp', 'jti']);
   for (const key of Object.keys(payload)) {
     if (!allowedKeys.has(key)) {
       return null;
@@ -312,6 +370,7 @@ export async function verifySessionToken(
     sub: payload['sub'],
     iat: payload['iat'],
     exp: payload['exp'],
+    jti: payload['jti'],
   };
 }
 

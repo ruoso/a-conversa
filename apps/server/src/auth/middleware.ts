@@ -62,6 +62,7 @@ import { ApiError } from '../errors.js';
 import { getDefaultPool, type DbPool } from '../db.js';
 import { resolveSessionTokenSecret } from './pending-cookie.js';
 import { readSessionCookieFromHeader, verifySessionToken } from './session-token.js';
+import { isJtiRevoked } from './token-denylist.js';
 import type { AuthUser } from './types.d.ts';
 
 // Re-export the AuthUser shape from the module-augmentation file so
@@ -167,6 +168,17 @@ export async function authenticateRequest(
   const verifyOpts = now !== undefined ? { now } : {};
   const payload = await verifySessionToken(token, secret, verifyOpts);
   if (payload === null) {
+    return null;
+  }
+  // M3-review hardening — consult the `auth_token_denylist` table
+  // BEFORE the user-row lookup so a revoked-but-still-structurally-valid
+  // JWT never burns the user-row query. A hit collapses to the same
+  // `null` return every other failure mode produces (see
+  // `tasks/refinements/backend-hardening/jwt_revocation_jti_denylist.md`).
+  // Source: docs/security/m3-review/auth.md F-001 + F-006;
+  //         docs/security/m3-review/coverage.md G-005.
+  const revoked = await isJtiRevoked(payload.jti, pool);
+  if (revoked) {
     return null;
   }
   // SELECT the users row by id. The `deleted_at IS NULL` clause skips

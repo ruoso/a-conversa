@@ -55,9 +55,12 @@ import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastif
 import {
   authenticatePlugin,
   authRoutesPlugin,
+  getDefaultDenylistSweeper,
   loadOidcConfig,
   OidcConfigError,
 } from './auth/index.js';
+import { getDefaultPool } from './db.js';
+import { closeUserConnections } from './ws/connection.js';
 import { errorHandlerPlugin } from './error-handler.js';
 import { createLoggerOptions } from './logger.js';
 import { errorEnvelopeRef, openapiPlugin } from './openapi.js';
@@ -431,7 +434,35 @@ export async function createServer(options: CreateServerOptions = {}): Promise<F
   // tasks/refinements/backend/oauth_callback_handler.md.
   try {
     const oidcConfig = loadOidcConfig(process.env);
-    await app.register(authRoutesPlugin, { oidcConfig });
+    // Wire the WS-revocation hook into the logout path. When `POST
+    // /auth/logout` verifies a cookie + commits a denylist row, the
+    // hook closes every open WebSocket connection owned by the
+    // logging-out user (close code 4401 / reason `auth-revoked`).
+    // The static import edge `auth/ → ws/` here is acceptable because
+    // `server.ts` is the composition root that already imports both.
+    // Refinement: tasks/refinements/backend-hardening/jwt_revocation_jti_denylist.md.
+    await app.register(authRoutesPlugin, {
+      oidcConfig,
+      closeUserConnectionsHook: closeUserConnections,
+    });
+    // Lazily arm the denylist sweeper against the default pool. The
+    // sweeper is `.unref()`'d so graceful shutdown is not blocked;
+    // calling `getDefaultDenylistSweeper` here binds the singleton to
+    // the production pool. A test build that never authenticates
+    // doesn't reach here (the OIDC config load throws, the catch
+    // branch warns) — same posture as the routes registration.
+    // Wrapped in a try/catch so a `DATABASE_URL`-less boot (where
+    // `getDefaultPool` throws) doesn't tear down the server — the
+    // sweeper is hygiene, not a correctness invariant.
+    // Refinement: tasks/refinements/backend-hardening/jwt_revocation_jti_denylist.md.
+    try {
+      getDefaultDenylistSweeper(getDefaultPool());
+    } catch (sweeperErr) {
+      app.log.warn(
+        { err: sweeperErr },
+        'auth_token_denylist sweeper not armed (DATABASE_URL unset?). Logout will still write denylist rows when DATABASE_URL is configured; the sweeper just cleans expired rows on a 60-minute cadence.',
+      );
+    }
   } catch (err) {
     if (err instanceof OidcConfigError) {
       app.log.warn(

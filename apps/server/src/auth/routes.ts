@@ -88,8 +88,11 @@ import { validateScreenName } from './screen-name.js';
 import {
   buildSessionCookieClearHeader,
   buildSessionCookieHeader,
+  readSessionCookieFromHeader,
   signSessionToken,
+  verifySessionToken,
 } from './session-token.js';
+import { addToDenylist } from './token-denylist.js';
 
 /**
  * Options accepted by `authRoutesPlugin`. Every field is optional —
@@ -158,6 +161,21 @@ export interface AuthRoutesOptions {
    * scenario.
    */
   readonly cookieSecure?: boolean;
+  /**
+   * Hook called from the logout path after the denylist row commits to
+   * close every open WebSocket connection owned by the logging-out
+   * user. Receives `(userId, reason)` and returns the number of
+   * connections closed. Production wires
+   * `closeUserConnections` from `ws/connection.ts`; tests pass a spy
+   * so the assertion can verify `(userId, reason)` without standing
+   * up a real WS upgrade.
+   *
+   * The hook is OPTIONAL — a test scenario that exercises only the
+   * denylist write and the cookie-clear can omit it. When omitted, the
+   * logout handler skips the WS close call. Refinement:
+   * `tasks/refinements/backend-hardening/jwt_revocation_jti_denylist.md`.
+   */
+  readonly closeUserConnectionsHook?: (userId: string, reason?: string) => number;
 }
 
 /**
@@ -833,19 +851,45 @@ const authRoutesPluginAsync: FastifyPluginAsync<AuthRoutesOptions> = (
   );
 
   // ---------------------------------------------------------------
-  // `POST /auth/logout` — clear the platform session cookie.
+  // `POST /auth/logout` — clear the platform session cookie AND
+  // revoke the JWT server-side.
+  //
+  // M3-review hardening — closes `docs/security/m3-review/auth.md`
+  // F-001 + F-006 and `docs/security/m3-review/coverage.md` G-005.
+  // Before the `jwt_revocation_jti_denylist` task landed, this handler
+  // only cleared the browser-side cookie; the JWT remained
+  // structurally valid until its 7-day `exp`. The handler now:
+  //   1. Reads the cookie + verifies the JWT (HS256 + payload-shape +
+  //      `exp`). On any failure mode (no cookie / malformed /
+  //      tampered / expired), the handler still returns 204 with the
+  //      cookie-clear — the user "is" logged out from their
+  //      perspective; rejecting the request would be a UX footgun.
+  //   2. On verify success, INSERTs `(jti, user_id, expires_at)` into
+  //      the denylist. ON CONFLICT DO NOTHING — double-logout is
+  //      idempotent.
+  //   3. AFTER the denylist commit, calls
+  //      `closeUserConnectionsHook(userId, 'auth-revoked')` to close
+  //      every open WS owned by the user. Order matters: writing the
+  //      denylist row FIRST means a concurrent reconnect after the
+  //      close still fails at the upgrade gate via the denylist
+  //      consult.
+  //   4. Returns 204 + cookie-clear. The 204 shape is unchanged.
   // ---------------------------------------------------------------
   app.post(
     '/auth/logout',
     {
       schema: {
         tags: ['auth'],
-        summary: 'Clear the platform session cookie',
+        summary: 'Clear the platform session cookie and revoke the JWT',
         description:
-          'Clears the `aconversa-session` cookie. Idempotent — always 204, regardless ' +
-          'of whether the inbound cookie was present, valid, or expired. The browser-side ' +
-          'cookie cleanup is the whole point; no body, no token validation. A frontend ' +
-          'can call this without first checking the cookie state.',
+          'Clears the `aconversa-session` cookie AND, when the inbound cookie carries a ' +
+          'verified JWT, adds the JWT’s `jti` claim to the `auth_token_denylist` table + ' +
+          'closes every open WebSocket connection owned by the logging-out user (with ' +
+          'WS close code 4401 and reason `auth-revoked`). Idempotent — always 204, ' +
+          'regardless of whether the inbound cookie was present, valid, or expired. The ' +
+          'denylist write happens only on a successfully-verified cookie; an invalid/' +
+          'missing cookie remains a no-op cookie-clear. Refinement: ' +
+          '`tasks/refinements/backend-hardening/jwt_revocation_jti_denylist.md`.',
         response: {
           204: {
             type: 'null',
@@ -855,7 +899,10 @@ const authRoutesPluginAsync: FastifyPluginAsync<AuthRoutesOptions> = (
         },
       },
     },
-    (_request, reply) => {
+    async (request, reply) => {
+      // Always emit the cookie-clear + no-store. These run regardless
+      // of the cookie's verification result so the 204 shape stays
+      // identical to the pre-M3-review behaviour.
       reply.header('Set-Cookie', buildSessionCookieClearHeader({ secure: cookieSecure }));
       // Closes docs/security/m3-review/coverage.md G-019 — the 204 carries
       // the cookie-clearing `Set-Cookie` header. A CDN that cached this
@@ -864,6 +911,70 @@ const authRoutesPluginAsync: FastifyPluginAsync<AuthRoutesOptions> = (
       // is per-user state too). `no-store` keeps every logout response
       // unique to the requester.
       reply.header('Cache-Control', 'no-store');
+
+      // Try to verify the cookie's JWT so we can extract the `jti` +
+      // `userId` + `exp` for the denylist row. Missing cookie /
+      // malformed cookie / tampered signature / expired token all
+      // surface as `payload === null`; we silently skip the denylist
+      // write in those cases (rationale in the handler-block comment
+      // above + the refinement's Decisions).
+      const rawHeader = request.headers['cookie'];
+      const cookieHeader = typeof rawHeader === 'string' ? rawHeader : undefined;
+      const cookieValue = readSessionCookieFromHeader(cookieHeader);
+      if (cookieValue !== undefined) {
+        const verifyOpts = opts.now !== undefined ? { now: opts.now } : {};
+        const payload = await verifySessionToken(cookieValue, ensureSecret(), verifyOpts);
+        if (payload !== null) {
+          // Write the denylist row FIRST, then close WS connections.
+          // Order matters: a concurrent reconnect attempt between the
+          // close call and the denylist commit must still fail at
+          // the upgrade gate. The denylist consult in
+          // `authenticateRequest` is the load-bearing check — the
+          // close call is the propagation onto already-open sockets.
+          try {
+            await addToDenylist(
+              {
+                jti: payload.jti,
+                userId: payload.sub,
+                expiresAtMs: payload.exp * 1000,
+              },
+              ensurePool(),
+            );
+          } catch (err) {
+            // A failed denylist write is non-fatal for the cookie
+            // clear (the user gets their cookie cleared regardless),
+            // but it IS the failure mode that allows the replayed
+            // cookie to slip through. Log + bubble up — the
+            // centralized error-handler renders the 500 envelope and
+            // the operator's monitoring catches the regression.
+            request.log.error(
+              { err, userId: payload.sub },
+              'auth_token_denylist write failed during /auth/logout',
+            );
+            throw err;
+          }
+          // Close any open WS owned by this user. The hook is wired
+          // in `server.ts` to `closeUserConnections` from
+          // `ws/connection.ts`. Tests pass a spy; a test that omits
+          // the hook simply skips the close call.
+          if (opts.closeUserConnectionsHook !== undefined) {
+            try {
+              opts.closeUserConnectionsHook(payload.sub, 'auth-revoked');
+            } catch (err) {
+              // The hook closing one bad socket must not break the
+              // logout response — log + continue. The denylist row is
+              // already committed, so the cache invariant
+              // (denylist-write-first) is preserved even if a single
+              // socket close throws.
+              request.log.warn(
+                { err, userId: payload.sub },
+                'closeUserConnectionsHook threw during /auth/logout (denylist row already committed)',
+              );
+            }
+          }
+        }
+      }
+
       // Empty 204 — Fastify needs `.send()` to flush headers + status
       // when the handler returns nothing meaningful.
       reply.code(204).send();

@@ -129,6 +129,9 @@ function makeWsHandlerPool(): DbPool {
         return Promise.resolve({ rows: [] as TRow[] });
       }
 
+      if (text.includes('FROM auth_token_denylist') && text.includes('WHERE jti')) {
+        return Promise.resolve({ rows: [] as TRow[] });
+      }
       return Promise.reject(new Error(`unexpected SQL in WS handler test pool: ${text}`));
     },
   };
@@ -164,6 +167,9 @@ function makeAlwaysVisibleWsHandlerPool(): DbPool {
         text.includes('WHERE id = $1')
       ) {
         return Promise.resolve({ rows: [{ visible: 1 }] as unknown as TRow[] });
+      }
+      if (text.includes('FROM auth_token_denylist') && text.includes('WHERE jti')) {
+        return Promise.resolve({ rows: [] as TRow[] });
       }
       return Promise.reject(new Error(`unexpected SQL in WS handler cap test pool: ${text}`));
     },

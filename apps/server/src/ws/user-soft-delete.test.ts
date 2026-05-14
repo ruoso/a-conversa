@@ -164,6 +164,13 @@ function makeMutableUserPool(initial: ReadonlyArray<TestUserRow>): MutableUserPo
             rows: [{ id: row.id, screen_name: row.screenName }] as unknown as TRow[],
           });
         }
+        // `auth_token_denylist` consult — default empty (no jti
+        // revoked). The soft-delete test exercises the
+        // `deleted_at IS NOT NULL` branch, not the revocation branch,
+        // so the denylist is always empty here.
+        if (text.includes('FROM auth_token_denylist') && text.includes('WHERE jti')) {
+          return Promise.resolve({ rows: [] as TRow[] });
+        }
         return Promise.reject(new Error(`unexpected SQL in soft-delete test pool: ${text}`));
       },
     },
@@ -434,6 +441,64 @@ describe('closeUserConnections — soft-delete WS revocation (coverage.md G-003)
     } finally {
       tab1.ws.terminate();
       tab2.ws.terminate();
+    }
+  });
+});
+
+// ============================================================
+// jwt_revocation_jti_denylist — logout → WS revocation chain
+// ============================================================
+//
+// Refinement: tasks/refinements/backend-hardening/jwt_revocation_jti_denylist.md
+//
+// The denylist task's load-bearing assertion: when `POST /auth/logout`
+// runs, it must (a) commit the cookie's `jti` to the denylist BEFORE
+// (b) closing every open WS owned by the user. The unit-level pin
+// here exercises only the close-call half — `closeUserConnections` is
+// invoked directly and the wire-side close is observed. The denylist
+// row + the ordering invariant are pinned in
+// `apps/server/src/auth/logout-revocation.test.ts`. Together the two
+// pins cover the chain end-to-end.
+
+describe('jwt_revocation_jti_denylist — closeUserConnections WS-side propagation', () => {
+  let app: FastifyInstance;
+  let pool: MutableUserPool;
+
+  beforeEach(async () => {
+    ({ app, pool } = await buildSoftDeleteTestApp());
+  });
+
+  afterEach(async () => {
+    await app.close();
+  });
+
+  it('a `closeUserConnections(userId, "auth-revoked")` triggered by the logout hook closes the WS with code 4401', async () => {
+    const cookie = await fixtureCookieHeader(FIXTURE_USER_ID);
+    const { ws, next, closed } = await openWsClient(app, { headers: { cookie } });
+    try {
+      // Drain the hello so the registry has registered the
+      // connection. The user is NOT soft-deleted in this scenario —
+      // the trigger is the logout hook, not the soft-delete UPDATE.
+      await next();
+      expect(__getConnectionsForUserForTests(FIXTURE_USER_ID)).toHaveLength(1);
+      void pool; // pool is unused in this test — kept for symmetry
+
+      // The production logout path calls
+      // `closeUserConnectionsHook(userId, 'auth-revoked')` after the
+      // denylist commit. We exercise the same primitive directly here.
+      const count = closeUserConnections(FIXTURE_USER_ID, 'auth-revoked');
+      expect(count).toBe(1);
+
+      const { code, reason } = await closed;
+      expect(code).toBe(WS_AUTH_REVOKED_CLOSE_CODE);
+      expect(reason).toBe(WS_AUTH_REVOKED_REASON);
+
+      await waitFor(
+        () => __getConnectionsByUserSizeForTests() === 0,
+        'connectionsByUser drained after logout-driven close',
+      );
+    } finally {
+      ws.terminate();
     }
   });
 });

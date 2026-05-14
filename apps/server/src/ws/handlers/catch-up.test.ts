@@ -350,6 +350,12 @@ function makeCatchUpPool(): { pool: DbPool; store: Store } {
         return Promise.resolve({ rows: rows as unknown as TRow[] });
       }
 
+      // `auth_token_denylist` consult (post-`jwt_revocation_jti_denylist`).
+      // Default-empty: no jti revoked. Tests in this file don't
+      // exercise revocation paths.
+      if (text.includes('FROM auth_token_denylist') && text.includes('WHERE jti')) {
+        return Promise.resolve({ rows: [] as TRow[] });
+      }
       return Promise.reject(new Error(`unexpected SQL in WS catch-up test pool: ${text}`));
     },
   };

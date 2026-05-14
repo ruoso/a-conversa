@@ -110,6 +110,16 @@ function makeMemoryPool(): {
         const row = users.get(oauthSubject);
         return Promise.resolve({ rows: (row ? [row] : []) as unknown as TRow[] });
       }
+      // `auth_token_denylist` surface (post-`jwt_revocation_jti_denylist`).
+      // The no-profile-data audit tracks queries to prove no profile
+      // data leaks; the denylist surface carries only `(jti, user_id,
+      // expires_at)`, none of which is profile data. Default-noop.
+      if (text.includes('FROM auth_token_denylist') && text.includes('WHERE jti')) {
+        return Promise.resolve({ rows: [] as TRow[] });
+      }
+      if (text.includes('INSERT INTO auth_token_denylist')) {
+        return Promise.resolve({ rows: [] as TRow[] });
+      }
       return Promise.reject(new Error(`unexpected SQL in memory pool: ${text}`));
     },
   };
@@ -427,13 +437,20 @@ describe('Invariant 4: users migration carries no profile-data columns', () => {
 });
 
 // ============================================================
-// Invariant 5 — session JWT carries only { sub, iat, exp }
+// Invariant 5 — session JWT carries only { sub, iat, exp, jti }
 // ============================================================
+//
+// After the M3-review `jwt_revocation_jti_denylist` task landed, the
+// JWT payload carries a fourth claim: `jti`, a v4 UUID minted by the
+// signer and consulted against `auth_token_denylist` on every verify.
+// `jti` is a CRYPTOGRAPHIC IDENTIFIER, NOT profile data — it carries
+// no OIDC claim value, no screen name, no email. The no-profile-data
+// invariant still holds: the JWT payload remains profile-free.
 
-describe('Invariant 5: session JWT payload is exactly { sub, iat, exp }', () => {
+describe('Invariant 5: session JWT payload is exactly { sub, iat, exp, jti }', () => {
   const TEST_SECRET = 'test-session-secret-for-jwt-shape-audit';
 
-  it('signSessionToken produces a JWT whose payload has exactly three claim keys', async () => {
+  it('signSessionToken produces a JWT whose payload has exactly four claim keys (sub, iat, exp, jti)', async () => {
     const token = await signSessionToken(
       { sub: '00000000-0000-4000-8000-000000000001' },
       TEST_SECRET,
@@ -445,19 +462,28 @@ describe('Invariant 5: session JWT payload is exactly { sub, iat, exp }', () => 
     const payloadJson = Buffer.from(parts[1] as string, 'base64url').toString('utf8');
     const payload = JSON.parse(payloadJson) as Record<string, unknown>;
 
-    // Exactly three keys, sorted. Any extra key (a `screen_name`, a
-    // `role`, an `email`) fails this assertion immediately.
-    expect(Object.keys(payload).sort()).toEqual(['exp', 'iat', 'sub']);
+    // Exactly four keys, sorted. Any extra key (a `screen_name`, a
+    // `role`, an `email`) fails this assertion immediately. `jti` is
+    // an internal cryptographic identifier — its presence does NOT
+    // weaken the no-profile-data invariant.
+    expect(Object.keys(payload).sort()).toEqual(['exp', 'iat', 'jti', 'sub']);
     expect(typeof payload['sub']).toBe('string');
     expect(typeof payload['iat']).toBe('number');
     expect(typeof payload['exp']).toBe('number');
+    expect(typeof payload['jti']).toBe('string');
+    // The `jti` is a v4 UUID: 8-4-4-4-12 hex with the version-4
+    // digit. Pin the shape so an accidental swap to a profile-derived
+    // value (e.g. the screen name) is caught here.
+    expect(payload['jti']).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
 
     // Cross-reference: verifySessionToken on the same token returns
     // the same shape (the existing session-token.test.ts pins this
     // independently; we re-assert in the no-profile-data narrative).
     const verified = await verifySessionToken(token, TEST_SECRET);
     expect(verified).not.toBeNull();
-    expect(Object.keys(verified ?? {}).sort()).toEqual(['exp', 'iat', 'sub']);
+    expect(Object.keys(verified ?? {}).sort()).toEqual(['exp', 'iat', 'jti', 'sub']);
   });
 });
 

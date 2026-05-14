@@ -51,11 +51,14 @@
 //    21. Valid cookie → 204; Set-Cookie clears.
 //    22. Invalid cookie → 204; Set-Cookie clears.
 //
-//   `POST /auth/logout` — known trade-off (docs/security/m3-review/coverage.md G-005,
+//   `POST /auth/logout` — server-side revocation
+//   (closes docs/security/m3-review/coverage.md G-005,
 //   docs/security/m3-review/auth.md F-001 + F-006):
-//    22a. A cookie replayed against `/auth/me` AFTER logout still authenticates
-//         (200). Pins the current accepted limitation; the test MUST be inverted
-//         to assert 401 when `jwt_revocation_jti_denylist` lands.
+//    22a. A cookie replayed against `/auth/me` AFTER logout is REJECTED with 401.
+//         The auth middleware consults `auth_token_denylist` on every verify;
+//         logout writes the cookie's `jti` to the table, so the replayed cookie
+//         no longer authenticates. Inverted from the prior known-trade-off pin
+//         when the structural fix (`jwt_revocation_jti_denylist`) landed.
 //
 //   `/auth/callback` integration:
 //    23. Returning user (non-pending) → 302 + Set-Cookie session.
@@ -506,6 +509,18 @@ function makeMemoryPool(initialRows: UserRow[] = []): {
           rows: [{ id: next.id, screen_name: next.screen_name }] as unknown as TRow[],
         });
       }
+      // `auth_token_denylist` consult fired by `authenticateRequest`
+      // (post-`jwt_revocation_jti_denylist`). The default pool says
+      // "no jti revoked"; per-test variants override below.
+      if (text.includes('FROM auth_token_denylist') && text.includes('WHERE jti')) {
+        return Promise.resolve({ rows: [] as TRow[] });
+      }
+      // `auth_token_denylist` INSERT fired by `POST /auth/logout`.
+      // Default-noop returning zero rows — the dedicated logout
+      // tests use a tracking pool that records the insert.
+      if (text.includes('INSERT INTO auth_token_denylist')) {
+        return Promise.resolve({ rows: [] as TRow[] });
+      }
       return Promise.reject(new Error(`unexpected SQL in session-token memory pool: ${text}`));
     },
   };
@@ -736,61 +751,55 @@ describe('POST /auth/logout', () => {
 });
 
 // ============================================================
-// POST /auth/logout — known trade-off: no server-side revocation
+// POST /auth/logout — server-side revocation via jti + denylist (G-005)
 // ============================================================
 //
-// This describe block PINS THE CURRENT, INTENTIONAL LIMITATION of the
-// logout surface. It is NOT an aspirational test of desired behavior.
+// This describe block previously pinned a KNOWN TRADE-OFF: replaying a
+// JWT cookie against `/auth/me` after `POST /auth/logout` continued to
+// authenticate (`expect(replay.statusCode).toBe(200)`). The trade-off
+// was closed by the M3-review `jwt_revocation_jti_denylist` task
+// (refinement
+// `tasks/refinements/backend-hardening/jwt_revocation_jti_denylist.md`).
 //
-// What the test asserts:
+// What the test now asserts (the INVERTED form):
 //   - `POST /auth/logout` clears the browser-side cookie (Max-Age=0)
 //     on the response — same as the cookie-clear pins in the previous
 //     describe block.
 //   - The EXACT same cookie value, REPLAYED against `GET /auth/me`
-//     AFTER the logout call, STILL RETURNS 200. The JWT remains
-//     structurally valid (HMAC verifies, payload-shape audit passes,
-//     `exp` is in the future, and the server holds NO denylist) so
-//     `/auth/me` cannot tell that the user "logged out."
+//     AFTER the logout call, NOW RETURNS 401. The auth middleware
+//     consults the `auth_token_denylist` table on every verify; the
+//     `jti` claim is on the list (logout wrote it there), so the
+//     middleware returns `null` from `authenticateRequest` and the
+//     preHandler throws `ApiError(401, 'auth-required', ...)`.
 //
-// Why this is an accepted limitation:
-//   - `docs/security/m3-review/auth.md` F-001 — `/auth/logout` is
-//     unauthenticated, clears the cookie, but never invalidates the
-//     JWT on the server. The 7-day TTL is the only bound on a stolen
-//     token's lifetime.
-//   - `docs/security/m3-review/auth.md` F-006 — the JWT payload is
-//     exactly `{ sub, iat, exp }`; no `jti`, no IP/UA binding. The
-//     cookie is a portable bearer credential.
-//   - `docs/security/m3-review/coverage.md` G-005 — the trade-off
-//     had no committed test pinning it; an auditor reading the code
-//     could not tell whether revocation was "overlooked" or
-//     "deferred." This describe block IS that pin.
+// References:
+//   - `docs/security/m3-review/auth.md` F-001 + F-006 — the originating
+//     findings (logout doesn't revoke; JWT has no per-session id).
+//   - `docs/security/m3-review/coverage.md` G-005 — the coverage gap
+//     that pinned this trade-off; now closed by the structural fix.
 //
-// When the structural fix lands, INVERT THIS TEST:
-//   - The follow-up task is `backend_hardening.auth_hardening.jwt_revocation_jti_denylist`
-//     in `tasks/25-backend-hardening.tji`; its refinement lives at
-//     `tasks/refinements/backend-hardening/jwt_revocation_jti_denylist.md`.
-//   - That task adds a `jti` to the JWT payload + an
-//     `auth_token_denylist` table + a denylist lookup in
-//     `verifySessionToken` (or the auth middleware that wraps it) +
-//     a denylist INSERT on the logout path.
-//   - Once that ships, the replayed cookie at step 4 below MUST be
-//     rejected: change `expect(replay.statusCode).toBe(200)` to
-//     `expect(replay.statusCode).toBe(401)`, drop the post-logout
-//     body equality assertions (no body on the 401 envelope's success
-//     shape), and rename this describe block to drop the
-//     "— known trade-off: no server-side revocation" suffix. The
-//     denylist task's refinement names this inversion as an
-//     acceptance criterion so the cross-link is bidirectional.
+// Audit trail: the previous trade-off describe title contained the
+// suffix `— known trade-off: no server-side revocation`. Auditors who
+// `grep -r "G-005" apps/server/src/auth/` should still land here; the
+// describe title was renamed to drop the trade-off suffix (the surface
+// now enforces revocation, not documents its absence).
 
-describe('POST /auth/logout — known trade-off: no server-side revocation (G-005)', () => {
-  // The user-id matches the seeded row in `initialRows`; the screen
-  // name is the body field the post-logout `/auth/me` replay asserts
-  // against to pin "the JWT still resolves to this user" rather than
-  // just "/auth/me returned 200."
+describe('POST /auth/logout — server-side revocation via jti + denylist (G-005)', () => {
+  // The user-id matches the seeded row in `initialRows`. Because the
+  // replay below now expects 401, the post-replay body equality
+  // assertions are dropped (the 401 envelope has no `userId` /
+  // `screenName` to compare).
   const aliceId = '00000000-0000-4000-8000-000000000070';
 
-  it('a cookie replayed against /auth/me AFTER logout STILL authenticates (pins current behavior; INVERT to 401 when jwt_revocation_jti_denylist lands)', async () => {
-    const built = await buildApp({
+  it('a cookie replayed against /auth/me AFTER logout is rejected with 401 (denylist enforces revocation)', async () => {
+    // The denylist tracking pool: a per-test variant of the memory
+    // pool that also recognises `INSERT INTO auth_token_denylist` and
+    // `SELECT 1 FROM auth_token_denylist WHERE jti = $1`. The base
+    // memory pool's denylist branches return empty rows by default
+    // (no jti revoked); this variant tracks the inserted jtis so the
+    // SELECT can return a row matching the post-logout state.
+    const denylist = new Set<string>();
+    const innerBuilt = await buildApp({
       initialRows: [
         {
           id: aliceId,
@@ -799,18 +808,78 @@ describe('POST /auth/logout — known trade-off: no server-side revocation (G-00
         },
       ],
     });
+    // Replace the pool's `query` to intercept the denylist surface.
+    const originalQuery = innerBuilt.app
+      ? // The buildApp helper returns the app + the users map; the
+        // pool is bound inside the closure. We re-build with a custom
+        // pool below — the simpler approach is to mint a fresh app
+        // here whose pool tracks the denylist directly.
+        null
+      : null;
+    void originalQuery;
+    await innerBuilt.app.close();
+
+    // Re-build with a tracking pool. The cleanest approach is to
+    // inline a thin pool wrapper around the existing memory pool, but
+    // `buildApp` doesn't expose pool injection — so we craft a fresh
+    // app that mirrors `buildApp`'s shape with a custom pool below.
+    const trackingPool: DbPool = {
+      query<TRow extends Record<string, unknown>>(
+        text: string,
+        params?: ReadonlyArray<unknown>,
+      ): Promise<{ rows: TRow[] }> {
+        const p = (params ?? []) as unknown[];
+        if (text.includes('SELECT id, screen_name') && text.includes('WHERE id')) {
+          const id = p[0] as string;
+          if (id === aliceId) {
+            return Promise.resolve({
+              rows: [{ id: aliceId, screen_name: 'alice' }] as unknown as TRow[],
+            });
+          }
+          return Promise.resolve({ rows: [] as TRow[] });
+        }
+        if (text.includes('FROM auth_token_denylist') && text.includes('WHERE jti')) {
+          const jti = p[0] as string;
+          return Promise.resolve({
+            rows: (denylist.has(jti) ? [{ exists: 1 }] : []) as unknown as TRow[],
+          });
+        }
+        if (text.includes('INSERT INTO auth_token_denylist')) {
+          const jti = p[0] as string;
+          denylist.add(jti);
+          return Promise.resolve({ rows: [{ jti }] as unknown as TRow[] });
+        }
+        return Promise.reject(new Error(`unexpected SQL in tracking pool: ${text}`));
+      },
+    };
+    const app = Fastify({ logger: false });
+    app.addSchema(errorEnvelopeSchema);
+    await app.register(errorHandlerPlugin);
+    const { authenticatePlugin } = await import('./middleware.js');
+    await app.register(authenticatePlugin, {
+      pool: trackingPool,
+      sessionTokenSecret: TEST_SECRET,
+    });
+    await app.register(authRoutesPlugin, {
+      oidcConfig: { ...VALID_OIDC_CONFIG },
+      oidcClient: makeStubClient(),
+      pool: trackingPool,
+      sessionTokenSecret: TEST_SECRET,
+      cookieSecure: false,
+    });
+    await app.ready();
     try {
-      // Step 1. Mint a session JWT directly. Equivalent to the
-      // cookie a real user would carry after a successful
-      // /auth/callback round-trip; using `signSessionToken` keeps the
-      // test independent of the OIDC flow stubs.
+      // Step 1. Mint a session JWT directly. Equivalent to the cookie
+      // a real user would carry after a successful /auth/callback
+      // round-trip; using `signSessionToken` keeps the test
+      // independent of the OIDC flow stubs.
       const token = await signSessionToken({ sub: aliceId }, TEST_SECRET);
       const cookieHeader = `${SESSION_COOKIE_NAME}=${token}`;
 
       // Step 2. Pre-logout sanity: the cookie is accepted by
       // /auth/me. Without this, a setup bug (e.g., a token mint the
       // verifier rejects) would mask the load-bearing replay below.
-      const preLogout = await built.app.inject({
+      const preLogout = await app.inject({
         method: 'GET',
         url: '/auth/me',
         headers: { cookie: cookieHeader },
@@ -821,10 +890,11 @@ describe('POST /auth/logout — known trade-off: no server-side revocation (G-00
       expect(preLogoutBody.screenName).toBe('alice');
 
       // Step 3. Logout. The server emits 204 + a cookie-clear
-      // Set-Cookie. The browser would drop the cookie at this point;
-      // the test does NOT — it keeps the original `token` so step 4
-      // can replay it.
-      const logout = await built.app.inject({
+      // Set-Cookie AND writes the cookie's `jti` to the denylist.
+      // The browser would drop the cookie at this point; the test
+      // does NOT — it keeps the original `token` so step 4 can
+      // replay it.
+      const logout = await app.inject({
         method: 'POST',
         url: '/auth/logout',
         headers: { cookie: cookieHeader },
@@ -835,34 +905,24 @@ describe('POST /auth/logout — known trade-off: no server-side revocation (G-00
       expect(setCookieStr).toContain(`${SESSION_COOKIE_NAME}=`);
       expect(setCookieStr).toMatch(/Max-Age=0/);
 
+      // The denylist now holds exactly one jti — the cookie's.
+      expect(denylist.size).toBe(1);
+
       // Step 4. THE LOAD-BEARING ASSERTION. Replay the EXACT same
       // cookie value (`token` from step 1, untouched by the logout
-      // response) against /auth/me. Today: 200. The JWT verifier has
-      // no denylist to consult; HMAC + payload-shape + clock all
-      // still pass.
-      //
-      // When `jwt_revocation_jti_denylist` lands (tji path
-      // `backend_hardening.auth_hardening.jwt_revocation_jti_denylist`;
-      // refinement `tasks/refinements/backend-hardening/jwt_revocation_jti_denylist.md`),
-      // INVERT this assertion to 401 and drop the body checks
-      // below — the 401 envelope has no `userId` / `screenName` to
-      // compare against.
-      const replay = await built.app.inject({
+      // response) against /auth/me. Post-`jwt_revocation_jti_denylist`:
+      // 401. The auth middleware's denylist consult finds the `jti`
+      // and collapses to the standard `auth-required` envelope.
+      const replay = await app.inject({
         method: 'GET',
         url: '/auth/me',
         headers: { cookie: cookieHeader },
       });
-      expect(replay.statusCode).toBe(200);
-      // The replay still resolves to the same user. A future refactor
-      // that quietly rewrote the cookie's `sub` claim on logout (no
-      // current code path does this, but defense-in-depth on the pin)
-      // would pass the status check while breaking the contract; the
-      // body equality catches it.
-      const replayBody = replay.json<{ userId: string; screenName: string }>();
-      expect(replayBody.userId).toBe(aliceId);
-      expect(replayBody.screenName).toBe('alice');
+      expect(replay.statusCode).toBe(401);
+      const replayBody = replay.json<{ error?: { code?: string } }>();
+      expect(replayBody.error?.code).toBe('auth-required');
     } finally {
-      await built.app.close();
+      await app.close();
     }
   });
 });
