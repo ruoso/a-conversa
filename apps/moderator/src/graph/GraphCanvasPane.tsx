@@ -1,8 +1,9 @@
 // `<GraphCanvasPane>` — ReactFlow mount for the moderator's graph
 // canvas slot inside `<OperateLayout>`.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_proposed_state_styling.md
-// (prior:     tasks/refinements/moderator-ui/mod_annotation_rendering.md,
+// Refinement: tasks/refinements/moderator-ui/mod_axiom_mark_decoration.md
+// (prior:     tasks/refinements/moderator-ui/mod_proposed_state_styling.md,
+//             tasks/refinements/moderator-ui/mod_annotation_rendering.md,
 //             tasks/refinements/moderator-ui/mod_edge_rendering.md,
 //             tasks/refinements/moderator-ui/mod_node_rendering.md,
 //             tasks/refinements/moderator-ui/mod_graph_canvas_pane.md)
@@ -49,8 +50,11 @@ import { edgeTypes } from './edgeTypes.js';
 import { computeFacetStatuses, EMPTY_FACET_STATUSES } from './facetStatus.js';
 import {
   EMPTY_ANNOTATIONS,
+  EMPTY_AXIOM_MARKS,
   groupAnnotationsByNode,
+  groupAxiomMarksByNode,
   projectAnnotations,
+  projectAxiomMarks,
   selectEdgesForSession,
 } from './selectors.js';
 
@@ -128,6 +132,15 @@ export function projectNodes(events: readonly Event[]): Node<StatementNodeData>[
   // through the main loop.
   const annotationsByNode = groupAnnotationsByNode(projectAnnotations(events));
 
+  // Axiom-mark enrichment — same up-front-pass pattern. The axiom-mark
+  // projection IS gated on the proposal + commit dance (only committed
+  // marks are rendered as badges), but `projectAxiomMarks` encapsulates
+  // that, so the enrichment loop here treats axiom-marks the same way
+  // it treats annotations: project once, group by target node, attach
+  // the matching subset to each emitted node. Refinement:
+  // `mod_axiom_mark_decoration`.
+  const axiomMarksByNode = groupAxiomMarksByNode(projectAxiomMarks(events));
+
   // Per-facet `FacetStatus` index for state-styling (refinement
   // `mod_proposed_state_styling`). Same single-pass-up-front pattern as
   // the annotation enrichment: cheaper than threading through the main
@@ -141,6 +154,7 @@ export function projectNodes(events: readonly Event[]): Node<StatementNodeData>[
       const annotations = annotationsByNode.get(event.payload.node_id) ?? EMPTY_ANNOTATIONS;
       const facetStatuses =
         facetStatusIndex.nodes.get(event.payload.node_id) ?? EMPTY_FACET_STATUSES;
+      const axiomMarks = axiomMarksByNode.get(event.payload.node_id) ?? EMPTY_AXIOM_MARKS;
       const node: Node<StatementNodeData> = {
         id: event.payload.node_id,
         type: STATEMENT_NODE_TYPE,
@@ -153,6 +167,7 @@ export function projectNodes(events: readonly Event[]): Node<StatementNodeData>[
           kind: null,
           annotations,
           facetStatuses,
+          axiomMarks,
         },
       };
       nodes.push(node);

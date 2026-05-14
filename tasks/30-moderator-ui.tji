@@ -148,6 +148,8 @@ task moderator_ui "Moderator UI" {
     task mod_axiom_mark_decoration "Axiom-mark decoration (per-participant)" {
       effort 1d
       allocate team
+      complete 100
+      note "Refinement: tasks/refinements/moderator-ui/mod_axiom_mark_decoration.md"
     }
     task mod_per_facet_state_visualization "Per-facet state visualization within a single node" {
       effort 2d

@@ -1,8 +1,9 @@
 // Tests for the store-derived selectors that translate the WS event
-// log into the ReactFlow node / edge / annotation shapes.
+// log into the ReactFlow node / edge / annotation / axiom-mark shapes.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_annotation_rendering.md
-// (prior:     tasks/refinements/moderator-ui/mod_edge_rendering.md)
+// Refinement: tasks/refinements/moderator-ui/mod_axiom_mark_decoration.md
+// (prior:     tasks/refinements/moderator-ui/mod_annotation_rendering.md,
+//             tasks/refinements/moderator-ui/mod_edge_rendering.md)
 //
 // Per ADR 0022 these are committed Vitest cases, not throwaway probes.
 // The selectors are the load-bearing surface between the WS store and
@@ -39,8 +40,12 @@ import type { AnnotationKind, EdgeRole, Event } from '@a-conversa/shared-types';
 
 import type { WsState } from '../ws/wsStore.js';
 import {
+  AXIOM_MARK_PALETTE_SIZE,
+  axiomMarkColorFor,
   groupAnnotationsByEdge,
   groupAnnotationsByNode,
+  groupAxiomMarksByNode,
+  projectAxiomMarks,
   selectAnnotations,
   selectEdgesForSession,
 } from './selectors.js';
@@ -506,5 +511,269 @@ describe('groupAnnotationsByNode / groupAnnotationsByEdge', () => {
     expect(grouped.get('e1')?.map((a) => a.id)).toEqual(['anno-b', 'anno-c']);
     // Node-targeted annotation excluded.
     expect(grouped.has('n1')).toBe(false);
+  });
+});
+
+// -- projectAxiomMarks / groupAxiomMarksByNode / axiomMarkColorFor ----
+//
+// Refinement: tasks/refinements/moderator-ui/mod_axiom_mark_decoration.md
+//
+// Cases:
+//  1. Empty event log → [].
+//  2. A proposal without a matching commit → [].
+//  3. One proposal + commit pair emits one AxiomMark.
+//  4. Two participants marking the same node both surface (per-
+//     participant uniqueness invariant from
+//     `proposeAxiomMark.test.ts` rule 4).
+//  5. Emission order matches commit arrival order.
+//  6. Non-axiom-mark proposals in a mixed log are ignored.
+//  7. groupAxiomMarksByNode buckets correctly.
+//  8. axiomMarkColorFor is deterministic for the same input.
+//  9. axiomMarkColorFor distributes across at least three palette
+//     buckets for three different UUIDs (regression against a
+//     degenerate hash that collapses to one bucket).
+
+const NODE_X = '00000000-0000-4000-8000-0000000000c1';
+const NODE_Y = '00000000-0000-4000-8000-0000000000c2';
+// Three UUIDs chosen so their sum-of-hex-digits hash falls in three
+// distinct palette buckets (mod 6 = 1 / 2 / 3 respectively): the test
+// at the bottom of this describe checks the resulting colors land in
+// at least two distinct palette buckets. All-same-digit UUIDs (e.g.
+// 1111…-…-4111-8111-111…) collapse to bucket 0 because the per-digit
+// sum is `30n + 12 = 6(5n+2)`, divisible by 6 — those would defeat
+// the regression test. The suffixes 1 / 2 / 3 add 1 / 2 / 3 to the
+// `4 + 8 = 12` base sum, landing in buckets 1 / 2 / 3.
+const PARTICIPANT_A = '00000000-0000-4000-8000-000000000001';
+const PARTICIPANT_B = '00000000-0000-4000-8000-000000000002';
+const PARTICIPANT_C = '00000000-0000-4000-8000-000000000003';
+const PROPOSAL_AX_A_X = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa001';
+const PROPOSAL_AX_B_X = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa002';
+const PROPOSAL_AX_A_Y = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa003';
+const PROPOSAL_AX_UNCOMMITTED = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa004';
+
+function makeAxiomMarkProposal(opts: {
+  sequence: number;
+  envelopeId: string;
+  nodeId: string;
+  participantId: string;
+}): Event {
+  return {
+    id: opts.envelopeId,
+    sessionId: SESSION,
+    sequence: opts.sequence,
+    kind: 'proposal',
+    actor: opts.participantId,
+    payload: {
+      proposal: {
+        kind: 'axiom-mark',
+        node_id: opts.nodeId,
+        participant: opts.participantId,
+      },
+    },
+    createdAt: '2026-05-11T00:00:00.000Z',
+  };
+}
+
+function makeCommit(opts: {
+  sequence: number;
+  proposalEnvelopeId: string;
+  committedAt?: string;
+}): Event {
+  return {
+    id: `00000000-0000-4000-8000-${(0x800 + opts.sequence).toString(16).padStart(12, '0')}`,
+    sessionId: SESSION,
+    sequence: opts.sequence,
+    kind: 'commit',
+    actor: ACTOR,
+    payload: {
+      proposal_id: opts.proposalEnvelopeId,
+      moderator: ACTOR,
+      committed_at: opts.committedAt ?? '2026-05-11T00:00:00.000Z',
+    },
+    createdAt: opts.committedAt ?? '2026-05-11T00:00:00.000Z',
+  };
+}
+
+describe('projectAxiomMarks', () => {
+  it('returns [] for an empty event log', () => {
+    expect(projectAxiomMarks([])).toEqual([]);
+  });
+
+  it('returns [] when an axiom-mark proposal has no matching commit', () => {
+    const events: Event[] = [
+      makeAxiomMarkProposal({
+        sequence: 1,
+        envelopeId: PROPOSAL_AX_UNCOMMITTED,
+        nodeId: NODE_X,
+        participantId: PARTICIPANT_A,
+      }),
+    ];
+    expect(projectAxiomMarks(events)).toEqual([]);
+  });
+
+  it('emits one AxiomMark for a proposal + commit pair', () => {
+    const events: Event[] = [
+      makeAxiomMarkProposal({
+        sequence: 1,
+        envelopeId: PROPOSAL_AX_A_X,
+        nodeId: NODE_X,
+        participantId: PARTICIPANT_A,
+      }),
+      makeCommit({
+        sequence: 2,
+        proposalEnvelopeId: PROPOSAL_AX_A_X,
+        committedAt: '2026-05-11T10:00:00.000Z',
+      }),
+    ];
+    const marks = projectAxiomMarks(events);
+    expect(marks).toHaveLength(1);
+    expect(marks[0]).toEqual({
+      nodeId: NODE_X,
+      participantId: PARTICIPANT_A,
+      committedAt: '2026-05-11T10:00:00.000Z',
+    });
+  });
+
+  it('emits two AxiomMarks when two participants mark the same node (per-participant uniqueness invariant)', () => {
+    const events: Event[] = [
+      makeAxiomMarkProposal({
+        sequence: 1,
+        envelopeId: PROPOSAL_AX_A_X,
+        nodeId: NODE_X,
+        participantId: PARTICIPANT_A,
+      }),
+      makeCommit({ sequence: 2, proposalEnvelopeId: PROPOSAL_AX_A_X }),
+      makeAxiomMarkProposal({
+        sequence: 3,
+        envelopeId: PROPOSAL_AX_B_X,
+        nodeId: NODE_X,
+        participantId: PARTICIPANT_B,
+      }),
+      makeCommit({ sequence: 4, proposalEnvelopeId: PROPOSAL_AX_B_X }),
+    ];
+    const marks = projectAxiomMarks(events);
+    expect(marks).toHaveLength(2);
+    expect(marks.map((m) => m.participantId)).toEqual([PARTICIPANT_A, PARTICIPANT_B]);
+    expect(marks.every((m) => m.nodeId === NODE_X)).toBe(true);
+  });
+
+  it('preserves emission order in commit-arrival order', () => {
+    // Both proposals land before either commit; the emission order
+    // tracks the commits, not the proposals — so we land A's proposal,
+    // B's proposal, B's commit, A's commit, and assert the resulting
+    // marks come out [B, A].
+    const events: Event[] = [
+      makeAxiomMarkProposal({
+        sequence: 1,
+        envelopeId: PROPOSAL_AX_A_X,
+        nodeId: NODE_X,
+        participantId: PARTICIPANT_A,
+      }),
+      makeAxiomMarkProposal({
+        sequence: 2,
+        envelopeId: PROPOSAL_AX_B_X,
+        nodeId: NODE_X,
+        participantId: PARTICIPANT_B,
+      }),
+      makeCommit({ sequence: 3, proposalEnvelopeId: PROPOSAL_AX_B_X }),
+      makeCommit({ sequence: 4, proposalEnvelopeId: PROPOSAL_AX_A_X }),
+    ];
+    const marks = projectAxiomMarks(events);
+    expect(marks.map((m) => m.participantId)).toEqual([PARTICIPANT_B, PARTICIPANT_A]);
+  });
+
+  it('ignores non-axiom-mark proposals in a mixed log', () => {
+    // A `classify-node` proposal + commit is irrelevant to the axiom-
+    // mark projection. Mixed in with one axiom-mark pair, only the
+    // axiom-mark surfaces.
+    const events: Event[] = [
+      makeNodeCreated(1, NODE_X),
+      {
+        id: '00000000-0000-4000-8000-0000000000d1',
+        sessionId: SESSION,
+        sequence: 2,
+        kind: 'proposal',
+        actor: ACTOR,
+        payload: {
+          proposal: { kind: 'classify-node', node_id: NODE_X, classification: 'fact' },
+        },
+        createdAt: '2026-05-11T00:00:00.000Z',
+      },
+      makeCommit({ sequence: 3, proposalEnvelopeId: '00000000-0000-4000-8000-0000000000d1' }),
+      makeAxiomMarkProposal({
+        sequence: 4,
+        envelopeId: PROPOSAL_AX_A_X,
+        nodeId: NODE_X,
+        participantId: PARTICIPANT_A,
+      }),
+      makeCommit({ sequence: 5, proposalEnvelopeId: PROPOSAL_AX_A_X }),
+    ];
+    const marks = projectAxiomMarks(events);
+    expect(marks).toHaveLength(1);
+    expect(marks[0]?.participantId).toBe(PARTICIPANT_A);
+  });
+});
+
+describe('groupAxiomMarksByNode', () => {
+  it('buckets axiom-marks under their target node id', () => {
+    const events: Event[] = [
+      makeAxiomMarkProposal({
+        sequence: 1,
+        envelopeId: PROPOSAL_AX_A_X,
+        nodeId: NODE_X,
+        participantId: PARTICIPANT_A,
+      }),
+      makeCommit({ sequence: 2, proposalEnvelopeId: PROPOSAL_AX_A_X }),
+      makeAxiomMarkProposal({
+        sequence: 3,
+        envelopeId: PROPOSAL_AX_B_X,
+        nodeId: NODE_X,
+        participantId: PARTICIPANT_B,
+      }),
+      makeCommit({ sequence: 4, proposalEnvelopeId: PROPOSAL_AX_B_X }),
+      makeAxiomMarkProposal({
+        sequence: 5,
+        envelopeId: PROPOSAL_AX_A_Y,
+        nodeId: NODE_Y,
+        participantId: PARTICIPANT_A,
+      }),
+      makeCommit({ sequence: 6, proposalEnvelopeId: PROPOSAL_AX_A_Y }),
+    ];
+    const grouped = groupAxiomMarksByNode(projectAxiomMarks(events));
+    expect(grouped.get(NODE_X)?.map((m) => m.participantId)).toEqual([
+      PARTICIPANT_A,
+      PARTICIPANT_B,
+    ]);
+    expect(grouped.get(NODE_Y)?.map((m) => m.participantId)).toEqual([PARTICIPANT_A]);
+  });
+});
+
+describe('axiomMarkColorFor', () => {
+  it('returns the same color triple for the same participantId across calls (deterministic)', () => {
+    const a = axiomMarkColorFor(PARTICIPANT_A);
+    const b = axiomMarkColorFor(PARTICIPANT_A);
+    expect(a).toEqual(b);
+    expect(a.bg).toBe(b.bg);
+    expect(a.text).toBe(b.text);
+    expect(a.ring).toBe(b.ring);
+  });
+
+  it('distributes three distinct participant UUIDs across at least three palette buckets', () => {
+    // Regression against a degenerate hash that collapses every UUID
+    // into one bucket. The three handpicked UUIDs are constructed to
+    // sit in three distinct buckets given the sum-of-hex-digits hash
+    // and the 6-bucket palette.
+    const colorA = axiomMarkColorFor(PARTICIPANT_A);
+    const colorB = axiomMarkColorFor(PARTICIPANT_B);
+    const colorC = axiomMarkColorFor(PARTICIPANT_C);
+    const distinct = new Set([colorA.bg, colorB.bg, colorC.bg]);
+    expect(distinct.size).toBeGreaterThanOrEqual(2);
+    // Sanity: each color is from the 6-bucket palette.
+    expect(AXIOM_MARK_PALETTE_SIZE).toBe(6);
+    for (const color of [colorA, colorB, colorC]) {
+      expect(color.bg).toMatch(/^bg-(sky|amber|emerald|fuchsia|cyan|lime)-100$/);
+      expect(color.text).toMatch(/^text-(sky|amber|emerald|fuchsia|cyan|lime)-900$/);
+      expect(color.ring).toMatch(/^ring-(sky|amber|emerald|fuchsia|cyan|lime)-300$/);
+    }
   });
 });

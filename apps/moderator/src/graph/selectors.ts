@@ -1,8 +1,9 @@
 // Store-derived selectors that translate the WS event log into the
 // ReactFlow node / edge / annotation shapes the canvas consumes.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_proposed_state_styling.md
-// (prior:     tasks/refinements/moderator-ui/mod_annotation_rendering.md,
+// Refinement: tasks/refinements/moderator-ui/mod_axiom_mark_decoration.md
+// (prior:     tasks/refinements/moderator-ui/mod_proposed_state_styling.md,
+//             tasks/refinements/moderator-ui/mod_annotation_rendering.md,
 //             tasks/refinements/moderator-ui/mod_edge_rendering.md)
 //
 // `selectEdgesForSession` walks the per-session event log in `useWsStore`
@@ -163,6 +164,187 @@ export function groupAnnotationsByEdge(
     }
   }
   return out;
+}
+
+/**
+ * Camel-cased projection of one committed axiom-mark on a node.
+ *
+ * Refinement: tasks/refinements/moderator-ui/mod_axiom_mark_decoration.md
+ *
+ * An axiom-mark is the methodology's per-participant "this node is bedrock
+ * for this participant" disposition (`docs/methodology.md` §"Axioms /
+ * terminal values"). Per-participant means a single node can carry N
+ * `AxiomMark` records — one per participant who marked it. The rendering
+ * layer surfaces every record as a separate decoration badge on the node
+ * (`<AxiomMarkBadge>`) so the moderator sees both which nodes are marked
+ * AND which participant marked each one.
+ *
+ * `committedAt` carries the commit envelope's `committed_at` so downstream
+ * sorting / tooltip-detail tasks don't have to re-walk the log.
+ */
+export interface AxiomMark {
+  readonly nodeId: string;
+  readonly participantId: string;
+  readonly committedAt: string;
+}
+
+/**
+ * Module-scope shared empty axiom-mark array. Hands a stable reference to
+ * consumers (the node projection's `data.axiomMarks` default) so React /
+ * ReactFlow memoization doesn't see a fresh array on every projection
+ * pass. Same rationale as `EMPTY_ANNOTATIONS`.
+ */
+export const EMPTY_AXIOM_MARKS: readonly AxiomMark[] = Object.freeze([]);
+
+/**
+ * Pure projection from a session's event log to the `AxiomMark[]` shape.
+ *
+ * Walks `events` once. For each `proposal` event whose inner proposal is
+ * `axiom-mark`, records the (nodeId, participantId) pair against the
+ * proposal envelope id. For each `commit` event whose `proposal_id`
+ * matches a recorded axiom-mark proposal, emits one `AxiomMark` with the
+ * commit's `committed_at`. Uncommitted axiom-mark proposals produce **no**
+ * output — the rendering layer treats the badge as the methodology-
+ * disposition "ratified" state, not the in-flight vote (the pending
+ * visualization is owned by `mod_axiom_mark_pending_render` downstream).
+ *
+ * Emission order is commit-event arrival order. The typical debate
+ * scenario — A marks N9, then B marks N9 — emits A's mark first.
+ */
+export function projectAxiomMarks(events: readonly Event[]): AxiomMark[] {
+  // Map from proposal envelope id → (nodeId, participantId) for axiom-
+  // mark proposals seen in the walk. A commit whose proposal_id references
+  // an unseen / non-axiom-mark proposal contributes nothing.
+  const pending = new Map<string, { nodeId: string; participantId: string }>();
+  const out: AxiomMark[] = [];
+  for (const event of events) {
+    if (event.kind === 'proposal') {
+      const inner = event.payload.proposal;
+      if (inner.kind === 'axiom-mark') {
+        pending.set(event.id, { nodeId: inner.node_id, participantId: inner.participant });
+      }
+      continue;
+    }
+    if (event.kind === 'commit') {
+      const proposal = pending.get(event.payload.proposal_id);
+      if (proposal === undefined) continue;
+      out.push({
+        nodeId: proposal.nodeId,
+        participantId: proposal.participantId,
+        committedAt: event.payload.committed_at,
+      });
+      continue;
+    }
+  }
+  return out;
+}
+
+/**
+ * Bucket axiom-marks by their target node id. Returns a `Map` rather
+ * than a plain `Object` for the same UUID-key + `O(1)` rationale as
+ * `groupAnnotationsByNode`.
+ */
+export function groupAxiomMarksByNode(marks: readonly AxiomMark[]): Map<string, AxiomMark[]> {
+  const out = new Map<string, AxiomMark[]>();
+  for (const mark of marks) {
+    const existing = out.get(mark.nodeId);
+    if (existing) {
+      existing.push(mark);
+    } else {
+      out.set(mark.nodeId, [mark]);
+    }
+  }
+  return out;
+}
+
+/**
+ * The Tailwind color triple for a single per-participant axiom-mark
+ * badge. Each entry is a complete Tailwind class string so the JIT
+ * scanner picks them up at build time (Tailwind's content-aware
+ * extraction can't see strings interpolated at runtime — every class
+ * has to appear literally somewhere in the source).
+ *
+ * The shape is the public contract: `bg` paints the badge background,
+ * `text` paints the centered "A" glyph, `ring` lays a 1-px halo so two
+ * adjacent same-colored badges remain separable in the rare per-
+ * participant collision (six buckets means a session with seven+
+ * participants would alias — the halo keeps the visual stable).
+ */
+export interface AxiomMarkColor {
+  readonly bg: string;
+  readonly text: string;
+  readonly ring: string;
+}
+
+/**
+ * The six-color palette for per-participant axiom-marks. Chosen to (a)
+ * be pairwise distinguishable, (b) not collide with the methodology-
+ * state palette (slate / rose / violet) or the annotation badge (the
+ * shape difference — rounded-square here vs. rounded-pill there — is
+ * the primary seam, so amber 100/900 is acceptable to share with the
+ * annotation badge as long as the shape stays distinct). See the
+ * refinement's "Decisions" for the palette rationale.
+ *
+ * Indexed by hash bucket; `axiomMarkColorFor` selects by `hash(uuid) % 6`.
+ * Frozen at module scope so the references stay stable across calls.
+ */
+const AXIOM_MARK_PALETTE: readonly AxiomMarkColor[] = Object.freeze([
+  Object.freeze({ bg: 'bg-sky-100', text: 'text-sky-900', ring: 'ring-sky-300' }),
+  Object.freeze({ bg: 'bg-amber-100', text: 'text-amber-900', ring: 'ring-amber-300' }),
+  Object.freeze({ bg: 'bg-emerald-100', text: 'text-emerald-900', ring: 'ring-emerald-300' }),
+  Object.freeze({ bg: 'bg-fuchsia-100', text: 'text-fuchsia-900', ring: 'ring-fuchsia-300' }),
+  Object.freeze({ bg: 'bg-cyan-100', text: 'text-cyan-900', ring: 'ring-cyan-300' }),
+  Object.freeze({ bg: 'bg-lime-100', text: 'text-lime-900', ring: 'ring-lime-300' }),
+]);
+
+/**
+ * Number of color buckets in the per-participant palette. Exported via
+ * `AXIOM_MARK_PALETTE.length` so the test suite can assert against the
+ * canonical count without re-declaring it.
+ */
+export const AXIOM_MARK_PALETTE_SIZE = AXIOM_MARK_PALETTE.length;
+
+/**
+ * Deterministic per-participant color assignment.
+ *
+ * Hashes the UUID by summing its hex-digit values (after stripping the
+ * dashes / non-hex characters) and picks a palette bucket via
+ * `hash % AXIOM_MARK_PALETTE.length`. Same `participantId` always yields
+ * the same color across renders / refreshes / browsers / surfaces — the
+ * color is a stable property of the participant identity, not of the
+ * session join order. Different participants typically get different
+ * colors; the 6-bucket palette means a 7+-participant session aliases
+ * (the ring halo keeps adjacent same-colored badges separable in that
+ * rare case).
+ *
+ * The hash is stateless and decoupled from any cross-surface coordination
+ * — the participant tablet, audience surface, and server-side diagnostic
+ * snapshot all arrive at the same color for the same participant without
+ * sharing a session-scoped palette assignment. See the refinement's
+ * "Decisions" for why hash-based is preferred over a per-session palette.
+ */
+export function axiomMarkColorFor(participantId: string): AxiomMarkColor {
+  let hash = 0;
+  for (let i = 0; i < participantId.length; i++) {
+    const ch = participantId.charCodeAt(i);
+    // Sum hex-digit values only (0-9, a-f, A-F). Skip the dashes that
+    // separate UUID groups. Non-hex characters in a well-formed UUID are
+    // dashes; skipping them keeps the hash deterministic for any UUID
+    // formatting variant (with / without dashes, upper / lower case).
+    let digit: number;
+    if (ch >= 48 && ch <= 57)
+      digit = ch - 48; // '0'-'9' → 0-9
+    else if (ch >= 97 && ch <= 102)
+      digit = 10 + (ch - 97); // 'a'-'f' → 10-15
+    else if (ch >= 65 && ch <= 70)
+      digit = 10 + (ch - 65); // 'A'-'F' → 10-15
+    else continue;
+    hash = (hash + digit) >>> 0; // unsigned 32-bit; sum can't overflow for a 36-char UUID
+  }
+  // `palette[i] ?? palette[0]` keeps the return non-undefined for
+  // TypeScript's strict-null mode; the index is always in range.
+  const bucket = hash % AXIOM_MARK_PALETTE.length;
+  return AXIOM_MARK_PALETTE[bucket] ?? AXIOM_MARK_PALETTE[0]!;
 }
 
 /**

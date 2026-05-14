@@ -1,7 +1,8 @@
 // Tests for `<GraphCanvasPane>` — the moderator's ReactFlow canvas mount.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_annotation_rendering.md
-// (prior:     tasks/refinements/moderator-ui/mod_edge_rendering.md,
+// Refinement: tasks/refinements/moderator-ui/mod_axiom_mark_decoration.md
+// (prior:     tasks/refinements/moderator-ui/mod_annotation_rendering.md,
+//             tasks/refinements/moderator-ui/mod_edge_rendering.md,
 //             tasks/refinements/moderator-ui/mod_node_rendering.md,
 //             tasks/refinements/moderator-ui/mod_graph_canvas_pane.md)
 //
@@ -247,6 +248,7 @@ describe('projectNodes — pure projection from events to ReactFlow nodes', () =
       kind: null,
       annotations: [],
       facetStatuses: {},
+      axiomMarks: [],
     });
     expect(nodes[1]?.id).toBe(NODE_B);
     expect(nodes[1]?.data).toEqual({
@@ -254,6 +256,7 @@ describe('projectNodes — pure projection from events to ReactFlow nodes', () =
       kind: null,
       annotations: [],
       facetStatuses: {},
+      axiomMarks: [],
     });
   });
 
@@ -524,5 +527,106 @@ describe('GraphCanvasPane — proposed-state node styling (mod_proposed_state_st
     expect(card.getAttribute('data-facet-status')).toBe('proposed');
     expect(card.className).toContain('border-dashed');
     expect(card.className).toContain('opacity-60');
+  });
+});
+
+// -- Axiom-mark decoration (mod_axiom_mark_decoration) ----------------
+//
+// `projectNodes` enriches each emitted node's `data.axiomMarks` from the
+// (committed) axiom-mark projection. The badge is rendered by
+// `<StatementNode>` from that field. These cases pin both:
+//
+//   - The projection-level enrichment (a node gets the matching
+//     committed marks; pre-commit proposals contribute nothing).
+//   - The end-to-end render path through the canvas: a node-created +
+//     axiom-mark proposal + commit yield a rendered badge inside the
+//     node card.
+
+// Hash bucket 1 (sum-of-hex-digits = 13 mod 6 = 1). See the same
+// constants in `selectors.test.ts` for the rationale.
+const PARTICIPANT_A = '00000000-0000-4000-8000-000000000001';
+const AXIOM_PROPOSAL_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa001';
+
+function makeAxiomMarkProposal(opts: {
+  sequence: number;
+  envelopeId: string;
+  nodeId: string;
+  participantId: string;
+}): Event {
+  return {
+    id: opts.envelopeId,
+    sessionId: SESSION_ID,
+    sequence: opts.sequence,
+    kind: 'proposal',
+    actor: opts.participantId,
+    payload: {
+      proposal: {
+        kind: 'axiom-mark',
+        node_id: opts.nodeId,
+        participant: opts.participantId,
+      },
+    },
+    createdAt: '2026-05-11T00:00:00.000Z',
+  };
+}
+
+describe('projectNodes — axiom-mark enrichment (mod_axiom_mark_decoration)', () => {
+  it('attaches a committed axiom-mark to the matching node data.axiomMarks', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'a bedrock statement' }),
+      makeAxiomMarkProposal({
+        sequence: 2,
+        envelopeId: AXIOM_PROPOSAL_A,
+        nodeId: NODE_A,
+        participantId: PARTICIPANT_A,
+      }),
+      makeCommit({ sequence: 3, proposalEnvelopeId: AXIOM_PROPOSAL_A }),
+    ];
+    const nodes = projectNodes(events);
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0]?.data.axiomMarks).toHaveLength(1);
+    expect(nodes[0]?.data.axiomMarks[0]?.participantId).toBe(PARTICIPANT_A);
+    expect(nodes[0]?.data.axiomMarks[0]?.nodeId).toBe(NODE_A);
+  });
+
+  it('leaves data.axiomMarks empty when the proposal exists but no commit has landed', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'a' }),
+      makeAxiomMarkProposal({
+        sequence: 2,
+        envelopeId: AXIOM_PROPOSAL_A,
+        nodeId: NODE_A,
+        participantId: PARTICIPANT_A,
+      }),
+      // No commit — the badge does NOT render pre-commit per the
+      // refinement's "committed-only" decision.
+    ];
+    const nodes = projectNodes(events);
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0]?.data.axiomMarks).toEqual([]);
+  });
+});
+
+describe('GraphCanvasPane — axiom-mark badges (mod_axiom_mark_decoration)', () => {
+  it('renders an axiom-mark badge inside the target node card after a committed axiom-mark proposal', () => {
+    const store = useWsStore.getState();
+    store.applyEvent(makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'bedrock' }));
+    store.applyEvent(
+      makeAxiomMarkProposal({
+        sequence: 2,
+        envelopeId: AXIOM_PROPOSAL_A,
+        nodeId: NODE_A,
+        participantId: PARTICIPANT_A,
+      }),
+    );
+    store.applyEvent(makeCommit({ sequence: 3, proposalEnvelopeId: AXIOM_PROPOSAL_A }));
+    render(<GraphCanvasPane sessionId={SESSION_ID} />);
+    // The axiom-mark badge list container renders on the node card and
+    // contains the per-participant badge. The badge's `data-participant-id`
+    // is the stable selector.
+    expect(screen.getByTestId(`axiom-mark-list-node-${NODE_A}`)).toBeTruthy();
+    const badge = screen.getByTestId(`axiom-mark-badge-${NODE_A}-${PARTICIPANT_A}`);
+    expect(badge.getAttribute('data-participant-id')).toBe(PARTICIPANT_A);
+    expect(badge.textContent).toBe('A');
   });
 });

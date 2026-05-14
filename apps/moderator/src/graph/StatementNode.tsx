@@ -1,7 +1,8 @@
 // `<StatementNode>` — custom ReactFlow node for the moderator's graph.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_meta_disagreement_split_render.md
-// (prior:     tasks/refinements/moderator-ui/mod_disputed_state_styling.md,
+// Refinement: tasks/refinements/moderator-ui/mod_axiom_mark_decoration.md
+// (prior:     tasks/refinements/moderator-ui/mod_meta_disagreement_split_render.md,
+//             tasks/refinements/moderator-ui/mod_disputed_state_styling.md,
 //             tasks/refinements/moderator-ui/mod_agreed_state_styling.md,
 //             tasks/refinements/moderator-ui/mod_proposed_state_styling.md,
 //             tasks/refinements/moderator-ui/mod_annotation_rendering.md,
@@ -41,8 +42,9 @@ import type { NodeProps } from 'reactflow';
 import type { StatementKind } from '@a-conversa/shared-types';
 
 import { AnnotationBadge } from './AnnotationBadge.js';
+import { AxiomMarkBadge } from './AxiomMarkBadge.js';
 import type { FacetName, FacetStatus } from './facetStatus.js';
-import type { Annotation } from './selectors.js';
+import type { Annotation, AxiomMark } from './selectors.js';
 
 /**
  * The shape of `data` ReactFlow hands to `<StatementNode>` via
@@ -73,6 +75,15 @@ export interface StatementNodeData {
    * subdivides the card into per-facet slices using this same record.
    */
   readonly facetStatuses: Readonly<Partial<Record<FacetName, FacetStatus>>>;
+  /**
+   * Committed per-participant axiom-marks on this node. Each entry is
+   * one `(node, participant)` pair where the participant has marked this
+   * node as bedrock and the moderator has committed the proposal. Empty
+   * when no committed axiom-mark exists — the badge row is omitted from
+   * the DOM in that case (no empty container, same pattern as the
+   * annotation row). Refinement: `mod_axiom_mark_decoration`.
+   */
+  readonly axiomMarks: readonly AxiomMark[];
 }
 
 /**
@@ -137,7 +148,7 @@ export function cardRollupStatus(
 export function StatementNode(props: NodeProps<StatementNodeData>): ReactElement {
   const { id, data } = props;
   const { t } = useTranslation();
-  const { wording, kind, annotations, facetStatuses } = data;
+  const { wording, kind, annotations, facetStatuses, axiomMarks } = data;
 
   // Resolve the kind label off the canonical glossary namespace from
   // `i18n_methodology_glossary`. `t('methodology.kind.fact')` etc.
@@ -211,6 +222,24 @@ export function StatementNode(props: NodeProps<StatementNodeData>): ReactElement
       >
         {kindLabel}
       </p>
+      {axiomMarks.length > 0 ? (
+        // Axiom-mark badge row — rendered ABOVE the annotation row.
+        // Axiom-marks are methodology-disposition (load-bearing for
+        // "what is the recorded outcome for this participant"); annotations
+        // are commentary. The reader's eye should land on the load-bearing
+        // decoration first when scanning the card. Refinement:
+        // `mod_axiom_mark_decoration`. The container is omitted entirely
+        // when no committed axiom-marks exist, keeping the DOM clean for
+        // the common case. Per-mark key uses `participantId` because the
+        // per-participant uniqueness invariant (one mark per (node,
+        // participant) — pinned by `proposeAxiomMark.test.ts` rule 4)
+        // guarantees uniqueness within the per-node list.
+        <div data-testid={`axiom-mark-list-node-${id}`} className="mt-1 flex flex-wrap gap-1">
+          {axiomMarks.map((mark) => (
+            <AxiomMarkBadge key={mark.participantId} mark={mark} />
+          ))}
+        </div>
+      ) : null}
       {annotations.length > 0 ? (
         <div data-testid={`annotation-badge-list-node-${id}`} className="mt-1 flex flex-wrap gap-1">
           {annotations.map((annotation) => (

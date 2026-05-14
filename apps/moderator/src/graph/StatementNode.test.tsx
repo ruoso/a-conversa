@@ -1,7 +1,8 @@
 // Tests for `<StatementNode>` — the moderator's custom ReactFlow node.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_annotation_rendering.md
-// (prior:     tasks/refinements/moderator-ui/mod_node_rendering.md)
+// Refinement: tasks/refinements/moderator-ui/mod_axiom_mark_decoration.md
+// (prior:     tasks/refinements/moderator-ui/mod_annotation_rendering.md,
+//             tasks/refinements/moderator-ui/mod_node_rendering.md)
 //
 // Per ADR 0022 these are committed Vitest cases, not throwaway probes.
 // They lock in:
@@ -36,7 +37,7 @@ import {
   type StatementNodeData,
 } from './StatementNode';
 import type { FacetName, FacetStatus } from './facetStatus';
-import type { Annotation } from './selectors';
+import type { Annotation, AxiomMark } from './selectors';
 import { initI18n } from '../i18n';
 
 // Build a minimum `NodeProps<StatementNodeData>` value for tests.
@@ -47,23 +48,32 @@ import { initI18n } from '../i18n';
 // default both to empty here so the bulk of the cases stay terse.
 function makeNodeProps(overrides: {
   id?: string;
-  data: Omit<StatementNodeData, 'annotations' | 'facetStatuses'> & {
+  data: Omit<StatementNodeData, 'annotations' | 'facetStatuses' | 'axiomMarks'> & {
     annotations?: readonly Annotation[];
     facetStatuses?: Readonly<Partial<Record<FacetName, FacetStatus>>>;
+    axiomMarks?: readonly AxiomMark[];
   };
 }): NodeProps<StatementNodeData> {
   const id = overrides.id ?? 'node-test-1';
-  const { annotations = [], facetStatuses = {}, ...rest } = overrides.data;
+  const { annotations = [], facetStatuses = {}, axiomMarks = [], ...rest } = overrides.data;
   return {
     id,
     type: STATEMENT_NODE_TYPE,
-    data: { ...rest, annotations, facetStatuses },
+    data: { ...rest, annotations, facetStatuses, axiomMarks },
     selected: false,
     isConnectable: true,
     dragging: false,
     xPos: 0,
     yPos: 0,
     zIndex: 0,
+  };
+}
+
+function makeAxiomMark(overrides: Partial<AxiomMark> & { participantId: string }): AxiomMark {
+  return {
+    nodeId: overrides.nodeId ?? 'node-test-1',
+    participantId: overrides.participantId,
+    committedAt: overrides.committedAt ?? '2026-05-11T00:00:00.000Z',
   };
 }
 
@@ -770,5 +780,104 @@ describe('cardRollupStatus — rollup priority order (mod_agreed_state_styling)'
     expect(cardRollupStatus({ classification: 'committed', substance: 'withdrawn' })).toBe(
       'committed',
     );
+  });
+});
+
+describe('StatementNode — axiom-mark decoration row (mod_axiom_mark_decoration)', () => {
+  // The axiom-mark badge row surfaces per-participant bedrock-disposition
+  // marks on the node card. Per-participant means multiple marks can land
+  // on a single node — one per participant who marked it. The row is
+  // omitted from the DOM when no axiom-marks exist, mirroring the
+  // annotation-row pattern. The row renders ABOVE the annotation row
+  // (axiom-marks are methodology-load-bearing; annotations are commentary).
+
+  // Distinct hash buckets — see the same constants in `selectors.test.ts`.
+  const PARTICIPANT_A = '00000000-0000-4000-8000-000000000001';
+  const PARTICIPANT_B = '00000000-0000-4000-8000-000000000002';
+
+  it('does not render the axiom-mark list container when the node has no axiom-marks', () => {
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-no-axioms',
+          data: { wording: 'plain', kind: 'fact' },
+        })}
+      />,
+    );
+    expect(screen.queryByTestId('axiom-mark-list-node-n-no-axioms')).toBeNull();
+  });
+
+  it('renders one axiom-mark badge with the right testid when the node has one axiom-mark', () => {
+    const mark = makeAxiomMark({ nodeId: 'n-one-axiom', participantId: PARTICIPANT_A });
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-one-axiom',
+          data: {
+            wording: 'a bedrock statement',
+            kind: 'value',
+            axiomMarks: [mark],
+          },
+        })}
+      />,
+    );
+    expect(screen.getByTestId('axiom-mark-list-node-n-one-axiom')).toBeTruthy();
+    expect(screen.getByTestId(`axiom-mark-badge-n-one-axiom-${PARTICIPANT_A}`)).toBeTruthy();
+  });
+
+  it('renders multiple axiom-mark badges in arrival order (per-participant uniqueness — both participants surface)', () => {
+    const marks: AxiomMark[] = [
+      makeAxiomMark({ nodeId: 'n-multi', participantId: PARTICIPANT_A }),
+      makeAxiomMark({ nodeId: 'n-multi', participantId: PARTICIPANT_B }),
+    ];
+    const { container } = render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-multi',
+          data: { wording: 'shared bedrock', kind: 'value', axiomMarks: marks },
+        })}
+      />,
+    );
+    const ids = Array.from(
+      container.querySelectorAll('[data-testid^="axiom-mark-badge-n-multi-"]'),
+    ).map((el) => el.getAttribute('data-participant-id'));
+    expect(ids).toEqual([PARTICIPANT_A, PARTICIPANT_B]);
+  });
+
+  it('renders the axiom-mark row above the annotation row when both are present', () => {
+    // Visual hierarchy: axiom-marks (methodology-disposition) above
+    // annotations (commentary). Pin the DOM order so a future refactor
+    // doesn't silently invert it.
+    const mark = makeAxiomMark({ nodeId: 'n-both', participantId: PARTICIPANT_A });
+    const annotation: Annotation = {
+      id: 'anno-x',
+      kind: 'note',
+      content: 'commentary',
+      targetNodeId: 'n-both',
+      targetEdgeId: null,
+      createdBy: PARTICIPANT_A,
+      createdAt: '2026-05-11T00:00:00.000Z',
+    };
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-both',
+          data: {
+            wording: 'both decorations',
+            kind: 'fact',
+            axiomMarks: [mark],
+            annotations: [annotation],
+          },
+        })}
+      />,
+    );
+    const axiomRow = screen.getByTestId('axiom-mark-list-node-n-both');
+    const annotationRow = screen.getByTestId('annotation-badge-list-node-n-both');
+    // The axiom row's compareDocumentPosition vs. the annotation row:
+    // `Node.DOCUMENT_POSITION_FOLLOWING` (4) means "other follows this"
+    // — i.e. axiom-row comes BEFORE annotation-row in the DOM.
+    const axiomIsBeforeAnnotation =
+      (axiomRow.compareDocumentPosition(annotationRow) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+    expect(axiomIsBeforeAnnotation).toBe(true);
   });
 });

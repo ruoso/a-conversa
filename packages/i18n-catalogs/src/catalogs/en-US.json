@@ -60,6 +60,11 @@
       "scope-change": "Scope change",
       "stance": "Stance"
     },
+    "axiomMark": {
+      "label": "Axiom mark",
+      "tooltip": "Axiom marked by {participantId}",
+      "srLabel": "Axiom mark from participant {participantId}"
+    },
     "diagnostic": {
       "cycle": "Cycle",
       "contradiction": "Contradiction",
