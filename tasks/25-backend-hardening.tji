@@ -261,6 +261,7 @@ task backend_hardening "M3-review hardening (security audit follow-ups)" {
     task concurrent_write_test_harness "pglite-backed test harness for concurrent writes (Promise.all + delay injection)" {
       effort 2d
       allocate team
+      complete 100
       note "Source: docs/security/m3-review/coverage.md G-004 + G-018"
       note "Refinement: tasks/refinements/backend-hardening/concurrent_write_test_harness.md"
     }
