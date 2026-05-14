@@ -161,7 +161,17 @@ services:
     ports:
       - '9091:9091'
     networks:
-      - aconversa
+      aconversa:
+        # Service is reachable as `authelia` (the bare service name) AND
+        # `authelia.aconversa.local` (the FQDN-with-period). Authelia's
+        # session-cookie matching requires the request's issuer URL host
+        # to fall under a configured `session.cookies[].authelia_url`
+        # whose domain contains a period; the bare `authelia` hostname
+        # alone trips the matcher. The FQDN alias keeps the in-compose
+        # service-discovery convention while satisfying Authelia's
+        # validation. The TLS cert's SANs cover both names.
+        aliases:
+          - authelia.aconversa.local
     restart: unless-stopped
     healthcheck:
       # Authelia 4.39 ships busybox wget (no curl); `--spider` issues

@@ -72,11 +72,22 @@ session:
     # Cookie domain must contain a period or be an IP per Authelia.
     # `aconversa.local` is added to /etc/hosts (or routed via the dev
     # reverse proxy) for browser-side access; service-to-service calls
-    # inside the Compose network use the bare `authelia` hostname (see
-    # the README's "Issuer URL convention" section).
+    # inside the Compose network reach Authelia at
+    # `authelia.aconversa.local:9091` (a compose network alias on the
+    # `authelia` service, see `compose.yaml`). The `authelia_url` below
+    # must match the issuer-URL host that `openid-client` uses for the
+    # discovery request, otherwise Authelia's OIDC discovery handler
+    # returns "no session cookie configuration matches url ..." and
+    # `GET /auth/login` 500s.
     - name: authelia_session
       domain: aconversa.local
-      authelia_url: 'https://auth.aconversa.local'
+      authelia_url: 'https://authelia.aconversa.local:9091'
+      # `default_redirection_url` is the post-login fallback only used
+      # when no explicit `redirect_uri` is supplied — the OIDC flow
+      # always passes one, so this is a placeholder. Authelia requires
+      # it to share the cookie scope (`aconversa.local`) and use
+      # HTTPS; the value below satisfies both without affecting the
+      # OIDC flow.
       default_redirection_url: 'https://app.aconversa.local'
       expiration: '1 hour'
       inactivity: '5 minutes'
