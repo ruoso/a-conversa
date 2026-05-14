@@ -61,12 +61,12 @@ const { loadOidcConfig, getOidcClient, OidcConfigError, __isOidcClientCached } =
 
 // Reusable valid env block — the test cases override individual
 // fields to exercise specific failure paths. The dev/CI Authelia
-// issuer is `https://authelia:9091` (Authelia serves TLS with a
+// issuer is `https://authelia.aconversa.local:9091` (Authelia serves TLS with a
 // committed self-signed cert; the compose `app` service trusts it via
 // `NODE_EXTRA_CA_CERTS`) — matching the production HTTPS-only shape
 // `openid-client@6` enforces.
 const validEnv = {
-  OIDC_ISSUER_URL: 'https://authelia:9091',
+  OIDC_ISSUER_URL: 'https://authelia.aconversa.local:9091',
   OIDC_CLIENT_ID: 'aconversa-app-dev',
   OIDC_CLIENT_SECRET: 'aconversa-app-dev-secret',
   APP_BASE_URL: 'http://localhost:3000',
@@ -75,7 +75,7 @@ const validEnv = {
 describe('loadOidcConfig', () => {
   it('accepts a well-formed env block and derives the redirect URI', () => {
     const config = loadOidcConfig(validEnv);
-    expect(config.issuerUrl.toString()).toBe('https://authelia:9091/');
+    expect(config.issuerUrl.toString()).toBe('https://authelia.aconversa.local:9091/');
     expect(config.clientId).toBe('aconversa-app-dev');
     expect(config.clientSecret).toBe('aconversa-app-dev-secret');
     expect(config.appBaseUrl).toBe('http://localhost:3000');
@@ -160,7 +160,7 @@ describe('getOidcClient', () => {
     // this module actually invokes.
     const [server, clientId, secret] = args as unknown as [URL, string, string];
     expect(server).toBeInstanceOf(URL);
-    expect(server.toString()).toBe('https://authelia:9091/');
+    expect(server.toString()).toBe('https://authelia.aconversa.local:9091/');
     expect(clientId).toBe('aconversa-app-dev');
     expect(secret).toBe('aconversa-app-dev-secret');
   });
