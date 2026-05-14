@@ -93,7 +93,9 @@ task moderator_ui "Moderator UI" {
     task mod_mode_banner "Mode banner in capture pane" {
       effort 0.5d
       allocate team
+      complete 100
       depends !mod_bottom_strip_capture
+      note "Refinement: tasks/refinements/moderator-ui/mod_mode_banner.md"
     }
   }
 

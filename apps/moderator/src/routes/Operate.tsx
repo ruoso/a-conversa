@@ -1,23 +1,26 @@
 // Operate route for `/sessions/:id/operate` — the moderator console.
 //
 // Refinement: tasks/refinements/moderator-ui/mod_graph_canvas_pane.md
-// (prior refinement: tasks/refinements/moderator-ui/mod_layout_shell.md)
+// (prior refinements: tasks/refinements/moderator-ui/mod_layout_shell.md,
+//  tasks/refinements/moderator-ui/mod_bottom_strip_capture.md,
+//  tasks/refinements/moderator-ui/mod_mode_banner.md)
 //
 // Composes the three-pane `<OperateLayout>` (`mod_layout_shell`) with
 // `<GraphCanvasPane>` (`mod_graph_canvas_pane`) wired into the graph
-// slot. The temporary store-subscription placeholder from the layout-
-// shell task is gone; the ReactFlow canvas now occupies the graph
-// pane. `route-operate` and `session-id` test ids are preserved so the
-// router-level `App.test.tsx` cases continue to pass — `session-id`
-// is now an `sr-only` span pinned out of the layout flow rather than
-// a visible paragraph inside the (former) graph-pane placeholder.
+// slot, `<RightSidebar>` (`mod_right_sidebar`) into the right slot,
+// and `<BottomStripCapture>` (`mod_bottom_strip_capture`) into the
+// bottom strip, with `<ModeBanner>` (`mod_mode_banner`) filling the
+// strip's `modeBanner` sub-slot. The temporary store-subscription
+// placeholder from the layout-shell task is gone; the ReactFlow
+// canvas now occupies the graph pane. `route-operate` and
+// `session-id` test ids are preserved so the router-level
+// `App.test.tsx` cases continue to pass — `session-id` is now an
+// `sr-only` span pinned out of the layout flow rather than a visible
+// paragraph inside the (former) graph-pane placeholder.
 //
-// Downstream siblings still replace the remaining two slots:
-//   - rightSidebar  -> mod_layout.mod_right_sidebar
-//   - bottomStrip   -> mod_layout.mod_bottom_strip_capture (landed —
-//                      `<BottomStripCapture>` scaffold mounts here;
-//                      `mod_capture_flow.*` and `mod_mode_banner` fill
-//                      its sub-slots)
+// Downstream consumers still replace the remaining capture-strip
+// sub-slots (`textInput`, `classificationPalette`, `edgeRoleSelector`,
+// `proposeAction`) when each `mod_capture_flow.*` task lands.
 
 import type { ReactElement } from 'react';
 import { useParams } from 'react-router-dom';
@@ -25,6 +28,7 @@ import { useParams } from 'react-router-dom';
 import { OperateLayout } from '../layout/OperateLayout';
 import { BottomStripCapture } from '../layout/BottomStripCapture';
 import { GraphCanvasPane } from '../graph/GraphCanvasPane';
+import { ModeBanner } from '../layout/ModeBanner';
 import { RightSidebar } from '../layout/RightSidebar';
 
 export function OperateRoute(): ReactElement {
@@ -44,7 +48,7 @@ export function OperateRoute(): ReactElement {
       </span>
       <OperateLayout
         graphPane={<GraphCanvasPane />}
-        bottomStrip={<BottomStripCapture />}
+        bottomStrip={<BottomStripCapture modeBanner={<ModeBanner />} />}
         rightSidebar={<RightSidebar />}
       />
     </main>

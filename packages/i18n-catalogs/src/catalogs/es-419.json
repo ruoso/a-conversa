@@ -83,6 +83,40 @@
           "title": "Historial de cambios"
         }
       }
+    },
+    "modeBanner": {
+      "idle": {
+        "label": "Inactivo",
+        "description": "Esperando el próximo movimiento de la moderación."
+      },
+      "capture-statement": {
+        "label": "Capturar afirmación",
+        "description": "Redacta una nueva afirmación y clasifícala antes de proponer."
+      },
+      "decompose": {
+        "label": "Descomponer",
+        "description": "Divide la afirmación seleccionada en sus afirmaciones componentes."
+      },
+      "capture-defeater": {
+        "label": "Capturar refutación",
+        "description": "Registra una refutación contra la afirmación seleccionada."
+      },
+      "operationalization": {
+        "label": "Operacionalización",
+        "description": "Vuelve testeable una afirmación en disputa nombrando sus condiciones."
+      },
+      "warrant-elicitation": {
+        "label": "Elicitar garantía",
+        "description": "Explicita la garantía que licencia la inferencia del dato a la afirmación."
+      },
+      "meta-move": {
+        "label": "Meta-movimiento",
+        "description": "Captura un reencuadre, cambio de alcance o postura sobre la discusión misma."
+      },
+      "axiom-mark": {
+        "label": "Marca de axioma",
+        "description": "Marca una afirmación como posición de base de la cual el participante no cederá."
+      }
     }
   },
   "diagnostics": {

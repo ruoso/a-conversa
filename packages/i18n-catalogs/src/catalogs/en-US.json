@@ -83,6 +83,40 @@
           "title": "Change history"
         }
       }
+    },
+    "modeBanner": {
+      "idle": {
+        "label": "Idle",
+        "description": "Waiting for the moderator's next move."
+      },
+      "capture-statement": {
+        "label": "Capture statement",
+        "description": "Compose a new statement and classify it before proposing."
+      },
+      "decompose": {
+        "label": "Decompose",
+        "description": "Break the selected statement into its component claims."
+      },
+      "capture-defeater": {
+        "label": "Capture defeater",
+        "description": "Record a rebuttal against the selected statement."
+      },
+      "operationalization": {
+        "label": "Operationalization",
+        "description": "Make a disputed statement testable by naming its conditions."
+      },
+      "warrant-elicitation": {
+        "label": "Warrant elicitation",
+        "description": "Surface the warrant that licenses the inference from data to claim."
+      },
+      "meta-move": {
+        "label": "Meta-move",
+        "description": "Capture a reframe, scope change, or stance about the discussion itself."
+      },
+      "axiom-mark": {
+        "label": "Axiom-mark",
+        "description": "Mark a statement as a bedrock position the participant will not retreat from."
+      }
     }
   },
   "diagnostics": {
