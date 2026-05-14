@@ -135,6 +135,23 @@
         "label": "Marca de axioma",
         "description": "Marque uma afirmação como posição de base da qual o participante não recuará."
       }
+    },
+    "contextMenu": {
+      "node": {
+        "proposeVote": "Propor votação",
+        "proposeDecompose": "Propor decomposição",
+        "proposeMetaDisagreement": "Propor meta-desacordo",
+        "annotate": "Anotar",
+        "axiomMark": "Marcar como axioma"
+      },
+      "edge": {
+        "proposeVote": "Propor votação",
+        "proposeMetaDisagreement": "Propor meta-desacordo",
+        "annotate": "Anotar"
+      },
+      "pane": {
+        "createStatement": "Criar nova afirmação"
+      }
     }
   },
   "diagnostics": {

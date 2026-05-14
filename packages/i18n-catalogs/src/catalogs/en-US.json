@@ -135,6 +135,23 @@
         "label": "Axiom-mark",
         "description": "Mark a statement as a bedrock position the participant will not retreat from."
       }
+    },
+    "contextMenu": {
+      "node": {
+        "proposeVote": "Propose vote",
+        "proposeDecompose": "Propose decompose",
+        "proposeMetaDisagreement": "Propose meta-disagreement",
+        "annotate": "Annotate",
+        "axiomMark": "Mark as axiom"
+      },
+      "edge": {
+        "proposeVote": "Propose vote",
+        "proposeMetaDisagreement": "Propose meta-disagreement",
+        "annotate": "Annotate"
+      },
+      "pane": {
+        "createStatement": "Create new statement"
+      }
     }
   },
   "diagnostics": {

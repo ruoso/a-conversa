@@ -135,6 +135,23 @@
         "label": "Marca de axioma",
         "description": "Marca una afirmación como posición de base de la cual el participante no cederá."
       }
+    },
+    "contextMenu": {
+      "node": {
+        "proposeVote": "Proponer votación",
+        "proposeDecompose": "Proponer descomposición",
+        "proposeMetaDisagreement": "Proponer meta-desacuerdo",
+        "annotate": "Anotar",
+        "axiomMark": "Marcar como axioma"
+      },
+      "edge": {
+        "proposeVote": "Proponer votación",
+        "proposeMetaDisagreement": "Proponer meta-desacuerdo",
+        "annotate": "Anotar"
+      },
+      "pane": {
+        "createStatement": "Crear nueva afirmación"
+      }
     }
   },
   "diagnostics": {

@@ -38,13 +38,16 @@
 // one by default. We stub a no-op `ResizeObserver` once at the suite
 // level so the canvas mounts cleanly under the test environment.
 
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import i18next from 'i18next';
 import type { AnnotationKind, Event } from '@a-conversa/shared-types';
 
 import {
   GraphCanvasPane,
+  buildEdgeMenuItems,
+  buildNodeMenuItems,
+  buildPaneMenuItems,
   handleEdgeClick,
   handleNodeClick,
   handlePaneClick,
@@ -720,5 +723,223 @@ describe('GraphCanvasPane — selection visual layer (mod_selection)', () => {
     expect(card.getAttribute('data-selected')).toBe('true');
     expect(card.className).toContain('ring-4');
     expect(card.className).toContain('ring-sky-500');
+  });
+});
+
+// -- Context-menu builders (mod_context_menus) ------------------------
+//
+// `buildNodeMenuItems` / `buildEdgeMenuItems` / `buildPaneMenuItems` are
+// pure factories that produce the `MenuItem[]` arrays the menu shell
+// consumes. Unit-testing them here pins the per-target action vocabulary
+// (which stubs live on the node menu vs edge menu vs pane menu) — the
+// downstream tasks that replace each stub with a real handler can swap
+// the `onSelect` body without changing this contract.
+describe('GraphCanvasPane — context-menu item factories (mod_context_menus)', () => {
+  it('buildNodeMenuItems returns the five node-scope actions in order', () => {
+    const items = buildNodeMenuItems({ kind: 'node', id: NODE_A });
+    expect(items.map((it) => it.id)).toEqual([
+      'propose-vote',
+      'propose-decompose',
+      'propose-meta-disagreement',
+      'annotate',
+      'axiom-mark',
+    ]);
+    expect(items.map((it) => it.labelKey)).toEqual([
+      'moderator.contextMenu.node.proposeVote',
+      'moderator.contextMenu.node.proposeDecompose',
+      'moderator.contextMenu.node.proposeMetaDisagreement',
+      'moderator.contextMenu.node.annotate',
+      'moderator.contextMenu.node.axiomMark',
+    ]);
+  });
+
+  it('buildEdgeMenuItems returns the three edge-scope actions in order', () => {
+    const items = buildEdgeMenuItems({ kind: 'edge', id: 'edge-9' });
+    expect(items.map((it) => it.id)).toEqual([
+      'propose-vote',
+      'propose-meta-disagreement',
+      'annotate',
+    ]);
+    expect(items.map((it) => it.labelKey)).toEqual([
+      'moderator.contextMenu.edge.proposeVote',
+      'moderator.contextMenu.edge.proposeMetaDisagreement',
+      'moderator.contextMenu.edge.annotate',
+    ]);
+  });
+
+  it('buildPaneMenuItems returns the single create-statement action', () => {
+    const items = buildPaneMenuItems({ kind: 'pane', id: null });
+    expect(items.map((it) => it.id)).toEqual(['create-statement']);
+    expect(items[0]?.labelKey).toBe('moderator.contextMenu.pane.createStatement');
+  });
+
+  it('every menu-item stub onSelect runs without throwing (console.info placeholder)', () => {
+    // Refinement decision: each stub `console.info`s and is replaced by
+    // downstream tasks. Pin that the stubs are callable today — a future
+    // refactor that breaks the stub signature would fail this case.
+    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    try {
+      for (const item of buildNodeMenuItems({ kind: 'node', id: NODE_A })) {
+        expect(() => item.onSelect()).not.toThrow();
+      }
+      for (const item of buildEdgeMenuItems({ kind: 'edge', id: 'edge-9' })) {
+        expect(() => item.onSelect()).not.toThrow();
+      }
+      for (const item of buildPaneMenuItems({ kind: 'pane', id: null })) {
+        expect(() => item.onSelect()).not.toThrow();
+      }
+      // 5 + 3 + 1 = 9 stub fires.
+      expect(infoSpy).toHaveBeenCalledTimes(9);
+    } finally {
+      infoSpy.mockRestore();
+    }
+  });
+});
+
+// -- Context-menu wire-up (mod_context_menus) -------------------------
+//
+// The handlers wire ReactFlow's `onNodeContextMenu` / `onEdgeContextMenu`
+// / `onPaneContextMenu` to `useState` on the canvas; the menu renders
+// when the state is non-null. Two layers of assertion:
+//
+//   1. The handlers themselves — driven via `contextmenu` events on the
+//      node card / edge label (the DOM surfaces ReactFlow attaches its
+//      own listeners to). Right-clicking a card opens a menu with the
+//      node items; right-clicking the canvas root (pane) opens the
+//      pane menu.
+//   2. The close paths — clicking outside / Escape / clicking an item
+//      closes the menu (the menu element disappears from the DOM).
+describe('GraphCanvasPane — context-menu wire-up (mod_context_menus)', () => {
+  it('right-clicking a rendered node opens the node menu with target=node', () => {
+    useWsStore.getState().applyEvent(
+      makeNodeCreated({
+        sequence: 1,
+        nodeId: NODE_A,
+        wording: 'right-click me',
+      }),
+    );
+    render(<GraphCanvasPane sessionId={SESSION_ID} />);
+    // No menu before the right-click.
+    expect(screen.queryByTestId('graph-context-menu')).toBeNull();
+
+    // Fire a contextmenu event on the rendered card. The card lives
+    // inside ReactFlow's node-renderer chain; ReactFlow's
+    // `onNodeContextMenu` prop fires when the user right-clicks a
+    // rendered node. `fireEvent.contextMenu` bubbles up through the
+    // React event system to ReactFlow's listener.
+    const card = screen.getByTestId(`statement-node-${NODE_A}`);
+    act(() => {
+      fireEvent.contextMenu(card, { clientX: 100, clientY: 200 });
+    });
+
+    const menu = screen.getByTestId('graph-context-menu');
+    expect(menu.getAttribute('data-target-kind')).toBe('node');
+    expect(menu.getAttribute('data-target-id')).toBe(NODE_A);
+    expect(menu.style.top).toBe('200px');
+    expect(menu.style.left).toBe('100px');
+
+    // Every node-scope action item is rendered.
+    expect(screen.getByTestId('graph-context-menu-item-propose-vote')).toBeTruthy();
+    expect(screen.getByTestId('graph-context-menu-item-propose-decompose')).toBeTruthy();
+    expect(screen.getByTestId('graph-context-menu-item-propose-meta-disagreement')).toBeTruthy();
+    expect(screen.getByTestId('graph-context-menu-item-annotate')).toBeTruthy();
+    expect(screen.getByTestId('graph-context-menu-item-axiom-mark')).toBeTruthy();
+  });
+
+  it('right-clicking a node also selects it (mirrors desktop graph-editor convention)', () => {
+    useWsStore.getState().applyEvent(
+      makeNodeCreated({
+        sequence: 1,
+        nodeId: NODE_A,
+        wording: 'select via right-click',
+      }),
+    );
+    render(<GraphCanvasPane sessionId={SESSION_ID} />);
+    expect(useSelectionStore.getState().selected).toBeNull();
+    const card = screen.getByTestId(`statement-node-${NODE_A}`);
+    act(() => {
+      fireEvent.contextMenu(card, { clientX: 10, clientY: 20 });
+    });
+    expect(useSelectionStore.getState().selected).toEqual({ kind: 'node', id: NODE_A });
+  });
+
+  it('right-clicking the pane (canvas background) opens the pane menu', () => {
+    render(<GraphCanvasPane sessionId={SESSION_ID} />);
+    expect(screen.queryByTestId('graph-context-menu')).toBeNull();
+
+    // The pane right-click target is the ReactFlow pane background.
+    // ReactFlow stamps the `react-flow__pane` class on it; in
+    // happy-dom that element is present in the rendered tree.
+    const paneEl = document.querySelector('.react-flow__pane');
+    expect(paneEl).toBeTruthy();
+    if (paneEl === null) return;
+    act(() => {
+      fireEvent.contextMenu(paneEl, { clientX: 50, clientY: 75 });
+    });
+
+    const menu = screen.getByTestId('graph-context-menu');
+    expect(menu.getAttribute('data-target-kind')).toBe('pane');
+    expect(menu.getAttribute('data-target-id')).toBe('');
+    expect(screen.getByTestId('graph-context-menu-item-create-statement')).toBeTruthy();
+  });
+
+  it('clicking a menu item closes the menu (action stubs are fire-and-close)', () => {
+    useWsStore
+      .getState()
+      .applyEvent(makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'w' }));
+    render(<GraphCanvasPane sessionId={SESSION_ID} />);
+    const card = screen.getByTestId(`statement-node-${NODE_A}`);
+    act(() => {
+      fireEvent.contextMenu(card, { clientX: 1, clientY: 2 });
+    });
+    expect(screen.getByTestId('graph-context-menu')).toBeTruthy();
+
+    // Silence the stub's console.info noise while the menu item fires.
+    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    try {
+      act(() => {
+        fireEvent.click(screen.getByTestId('graph-context-menu-item-annotate'));
+      });
+    } finally {
+      infoSpy.mockRestore();
+    }
+
+    expect(screen.queryByTestId('graph-context-menu')).toBeNull();
+  });
+
+  it('Escape closes an open context menu', () => {
+    useWsStore
+      .getState()
+      .applyEvent(makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'w' }));
+    render(<GraphCanvasPane sessionId={SESSION_ID} />);
+    const card = screen.getByTestId(`statement-node-${NODE_A}`);
+    act(() => {
+      fireEvent.contextMenu(card, { clientX: 1, clientY: 2 });
+    });
+    expect(screen.getByTestId('graph-context-menu')).toBeTruthy();
+
+    act(() => {
+      fireEvent.keyDown(window, { key: 'Escape' });
+    });
+
+    expect(screen.queryByTestId('graph-context-menu')).toBeNull();
+  });
+
+  it('an outside mousedown closes an open context menu', () => {
+    useWsStore
+      .getState()
+      .applyEvent(makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'w' }));
+    render(<GraphCanvasPane sessionId={SESSION_ID} />);
+    const card = screen.getByTestId(`statement-node-${NODE_A}`);
+    act(() => {
+      fireEvent.contextMenu(card, { clientX: 1, clientY: 2 });
+    });
+    expect(screen.getByTestId('graph-context-menu')).toBeTruthy();
+
+    act(() => {
+      fireEvent.mouseDown(document.body);
+    });
+
+    expect(screen.queryByTestId('graph-context-menu')).toBeNull();
   });
 });

@@ -38,7 +38,13 @@
 // utilities continue to work because Tailwind's stylesheet is imported
 // from `src/index.css` independently.
 
-import { useMemo, type ReactElement } from 'react';
+import {
+  useCallback,
+  useMemo,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type ReactElement,
+} from 'react';
 import ReactFlow, { Background, type Edge, type Node, type NodeTypes } from 'reactflow';
 import type { Event, StatementKind } from '@a-conversa/shared-types';
 
@@ -48,6 +54,7 @@ import { useSelectionStore } from '../stores/index.js';
 import { useWsStore, type WsState } from '../ws/wsStore.js';
 import { STATEMENT_NODE_TYPE, StatementNode, type StatementNodeData } from './StatementNode.js';
 import { edgeTypes } from './edgeTypes.js';
+import { GraphContextMenu, type MenuItem } from './GraphContextMenu.js';
 import { computeFacetStatuses, EMPTY_FACET_STATUSES } from './facetStatus.js';
 import {
   EMPTY_ANNOTATIONS,
@@ -121,6 +128,120 @@ export function handleEdgeClick(_event: unknown, edge: Edge): void {
 
 export function handlePaneClick(): void {
   useSelectionStore.getState().clear();
+}
+
+/**
+ * Context-menu state on the canvas. `null` when no menu is open.
+ *
+ * Refinement: `mod_context_menus`. Carried as `useState` on the canvas
+ * because the open-menu position is a transient UI fact tied to a
+ * single component's lifetime — no other surface (right sidebar, mode
+ * banner) reads it, so the scope stays honest. The `target` discriminator
+ * matches the methodology vocabulary (node vs edge vs pane); `id` is
+ * `null` for pane right-clicks (no target entity).
+ */
+export interface ContextMenuState {
+  readonly target: { readonly kind: 'node' | 'edge' | 'pane'; readonly id: string | null };
+  readonly x: number;
+  readonly y: number;
+}
+
+/**
+ * Action-handler stub. Refinement: `mod_context_menus`. **Downstream
+ * tasks replace each stub with the real action handler** — this task
+ * only delivers the menu shell, so every menu item calls into this
+ * helper for now. The `target` carries enough info (`kind` + `id`) for
+ * the downstream replacements to route to the correct
+ * proposal / capture flow.
+ *
+ * The stub uses `console.info` (not `console.log`) so it's visible in
+ * the browser devtools without being filtered as debug noise. Downstream
+ * tasks remove the `console.info` line when wiring the real handler.
+ */
+function actionStub(action: string, target: ContextMenuState['target']): void {
+  console.info(`menu action: ${action}`, target);
+}
+
+/**
+ * Build the menu items for a node right-click. Refinement:
+ * `mod_context_menus`. The action list (vote / decompose /
+ * meta-disagreement / annotate / axiom-mark) is the methodology's
+ * node-scope vocabulary; downstream tasks replace each item's
+ * `onSelect` with the real handler. Exported for direct testing without
+ * a React tree.
+ */
+export function buildNodeMenuItems(target: ContextMenuState['target']): readonly MenuItem[] {
+  return [
+    {
+      id: 'propose-vote',
+      labelKey: 'moderator.contextMenu.node.proposeVote',
+      onSelect: () => actionStub('propose-vote', target),
+    },
+    {
+      id: 'propose-decompose',
+      labelKey: 'moderator.contextMenu.node.proposeDecompose',
+      onSelect: () => actionStub('propose-decompose', target),
+    },
+    {
+      id: 'propose-meta-disagreement',
+      labelKey: 'moderator.contextMenu.node.proposeMetaDisagreement',
+      onSelect: () => actionStub('propose-meta-disagreement', target),
+    },
+    {
+      id: 'annotate',
+      labelKey: 'moderator.contextMenu.node.annotate',
+      onSelect: () => actionStub('annotate', target),
+    },
+    {
+      id: 'axiom-mark',
+      labelKey: 'moderator.contextMenu.node.axiomMark',
+      onSelect: () => actionStub('axiom-mark', target),
+    },
+  ];
+}
+
+/**
+ * Build the menu items for an edge right-click. Refinement:
+ * `mod_context_menus`. Edges carry only the `substance` facet so the
+ * action list is narrower than the node list — no axiom-mark (a
+ * per-node concept), no decompose (a node operation). Vote / meta-
+ * disagreement / annotate are the edge-scope vocabulary.
+ */
+export function buildEdgeMenuItems(target: ContextMenuState['target']): readonly MenuItem[] {
+  return [
+    {
+      id: 'propose-vote',
+      labelKey: 'moderator.contextMenu.edge.proposeVote',
+      onSelect: () => actionStub('propose-vote', target),
+    },
+    {
+      id: 'propose-meta-disagreement',
+      labelKey: 'moderator.contextMenu.edge.proposeMetaDisagreement',
+      onSelect: () => actionStub('propose-meta-disagreement', target),
+    },
+    {
+      id: 'annotate',
+      labelKey: 'moderator.contextMenu.edge.annotate',
+      onSelect: () => actionStub('annotate', target),
+    },
+  ];
+}
+
+/**
+ * Build the menu items for a pane right-click (empty-canvas context
+ * menu). Refinement: `mod_context_menus`. v1 surfaces only "create new
+ * statement" — mirrors the "new node" empty-canvas affordance in
+ * desktop graph editors. Downstream review may add additional pane
+ * actions; the menu shell already accepts an arbitrary `items` array.
+ */
+export function buildPaneMenuItems(target: ContextMenuState['target']): readonly MenuItem[] {
+  return [
+    {
+      id: 'create-statement',
+      labelKey: 'moderator.contextMenu.pane.createStatement',
+      onSelect: () => actionStub('create-statement', target),
+    },
+  ];
 }
 
 /**
@@ -269,6 +390,45 @@ export interface GraphCanvasPaneProps {
 export function GraphCanvasPane(props: GraphCanvasPaneProps): ReactElement {
   const { sessionId } = props;
 
+  // Context-menu state — `null` when no menu is open. Set by the right-
+  // click handlers below; cleared by the menu's `onClose`. Refinement:
+  // `mod_context_menus`.
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const closeContextMenu = useCallback(() => setContextMenu(null), []);
+
+  // Right-click handlers. Each `preventDefault()`s the native browser
+  // context menu and opens our menu at the cursor coordinates. Node /
+  // edge right-clicks also `select(...)` the target so the existing
+  // selection ring (sky-500 from `mod_selection`) flips to the right-
+  // clicked entity — mirrors desktop graph editors' "right-click selects
+  // then opens menu" convention.
+  const handleNodeContextMenu = useCallback((event: ReactMouseEvent, node: Node): void => {
+    event.preventDefault();
+    useSelectionStore.getState().select({ kind: 'node', id: node.id });
+    setContextMenu({
+      target: { kind: 'node', id: node.id },
+      x: event.clientX,
+      y: event.clientY,
+    });
+  }, []);
+  const handleEdgeContextMenu = useCallback((event: ReactMouseEvent, edge: Edge): void => {
+    event.preventDefault();
+    useSelectionStore.getState().select({ kind: 'edge', id: edge.id });
+    setContextMenu({
+      target: { kind: 'edge', id: edge.id },
+      x: event.clientX,
+      y: event.clientY,
+    });
+  }, []);
+  const handlePaneContextMenu = useCallback((event: ReactMouseEvent): void => {
+    event.preventDefault();
+    setContextMenu({
+      target: { kind: 'pane', id: null },
+      x: event.clientX,
+      y: event.clientY,
+    });
+  }, []);
+
   // Per-session events selector. Scoping to `sessionState[sessionId]?.events`
   // means unrelated state changes (other sessions, connection status,
   // subscriptions) don't re-render the canvas — the WS store immutably
@@ -299,6 +459,21 @@ export function GraphCanvasPane(props: GraphCanvasPaneProps): ReactElement {
     [sessionId, events],
   );
 
+  // Build the menu items for whatever the context menu currently targets.
+  // The `items` are rebuilt on every render the menu is open, but that's
+  // fine — the per-item `onSelect` closes over `contextMenu.target` and
+  // gets fresh `target` data each render.
+  let menuItems: readonly MenuItem[] = [];
+  if (contextMenu !== null) {
+    if (contextMenu.target.kind === 'node') {
+      menuItems = buildNodeMenuItems(contextMenu.target);
+    } else if (contextMenu.target.kind === 'edge') {
+      menuItems = buildEdgeMenuItems(contextMenu.target);
+    } else {
+      menuItems = buildPaneMenuItems(contextMenu.target);
+    }
+  }
+
   return (
     <div data-testid="graph-canvas-root" className="h-full w-full">
       <ReactFlow
@@ -309,9 +484,22 @@ export function GraphCanvasPane(props: GraphCanvasPaneProps): ReactElement {
         onNodeClick={handleNodeClick}
         onEdgeClick={handleEdgeClick}
         onPaneClick={handlePaneClick}
+        onNodeContextMenu={handleNodeContextMenu}
+        onEdgeContextMenu={handleEdgeContextMenu}
+        onPaneContextMenu={handlePaneContextMenu}
       >
         <Background />
       </ReactFlow>
+      {contextMenu !== null ? (
+        <GraphContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          targetKind={contextMenu.target.kind}
+          targetId={contextMenu.target.id}
+          items={menuItems}
+          onClose={closeContextMenu}
+        />
+      ) : null}
     </div>
   );
 }

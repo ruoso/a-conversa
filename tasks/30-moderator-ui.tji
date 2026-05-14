@@ -186,7 +186,9 @@ task moderator_ui "Moderator UI" {
     task mod_context_menus "Context menus on nodes and edges" {
       effort 1d
       allocate team
+      complete 100
       depends !mod_selection
+      note "Refinement: tasks/refinements/moderator-ui/mod_context_menus.md"
     }
     task mod_hover_details "Hover details for nodes and edges" {
       effort 0.5d
