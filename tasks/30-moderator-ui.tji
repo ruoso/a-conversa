@@ -104,7 +104,9 @@ task moderator_ui "Moderator UI" {
     task mod_node_rendering "Node rendering with kind label" {
       effort 1d
       allocate team
+      complete 100
       depends frontend_i18n.i18n_methodology_glossary
+      note "Refinement: tasks/refinements/moderator-ui/mod_node_rendering.md"
     }
     task mod_edge_rendering "Edge rendering with role label" {
       effort 1d

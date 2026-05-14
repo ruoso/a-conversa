@@ -1,22 +1,25 @@
 // Operate route for `/sessions/:id/operate` — the moderator console.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_graph_canvas_pane.md
-// (prior refinements: tasks/refinements/moderator-ui/mod_layout_shell.md,
-//  tasks/refinements/moderator-ui/mod_bottom_strip_capture.md,
-//  tasks/refinements/moderator-ui/mod_mode_banner.md)
+// Refinement: tasks/refinements/moderator-ui/mod_node_rendering.md
+// (prior:     tasks/refinements/moderator-ui/mod_graph_canvas_pane.md,
+//             tasks/refinements/moderator-ui/mod_layout_shell.md,
+//             tasks/refinements/moderator-ui/mod_bottom_strip_capture.md,
+//             tasks/refinements/moderator-ui/mod_mode_banner.md,
+//             tasks/refinements/moderator-ui/mod_right_sidebar.md)
 //
 // Composes the three-pane `<OperateLayout>` (`mod_layout_shell`) with
-// `<GraphCanvasPane>` (`mod_graph_canvas_pane`) wired into the graph
-// slot, `<RightSidebar>` (`mod_right_sidebar`) into the right slot,
-// and `<BottomStripCapture>` (`mod_bottom_strip_capture`) into the
-// bottom strip, with `<ModeBanner>` (`mod_mode_banner`) filling the
-// strip's `modeBanner` sub-slot. The temporary store-subscription
-// placeholder from the layout-shell task is gone; the ReactFlow
-// canvas now occupies the graph pane. `route-operate` and
-// `session-id` test ids are preserved so the router-level
-// `App.test.tsx` cases continue to pass — `session-id` is now an
-// `sr-only` span pinned out of the layout flow rather than a visible
-// paragraph inside the (former) graph-pane placeholder.
+// `<GraphCanvasPane sessionId={id} />` (`mod_graph_canvas_pane` +
+// `mod_node_rendering`) wired into the graph slot, `<RightSidebar>`
+// (`mod_right_sidebar`) into the right slot, and `<BottomStripCapture>`
+// (`mod_bottom_strip_capture`) into the bottom strip with `<ModeBanner>`
+// (`mod_mode_banner`) filling the strip's `modeBanner` sub-slot. The
+// session id from the route param threads into the canvas so the
+// node-projection layer subscribes to the right per-session slice.
+//
+// `route-operate` and `session-id` test ids are preserved so the
+// router-level `App.test.tsx` cases continue to pass — `session-id`
+// is an `sr-only` span pinned out of the layout flow rather than
+// a visible paragraph inside the (former) graph-pane placeholder.
 //
 // Downstream consumers still replace the remaining capture-strip
 // sub-slots (`textInput`, `classificationPalette`, `edgeRoleSelector`,
@@ -47,7 +50,7 @@ export function OperateRoute(): ReactElement {
         {id}
       </span>
       <OperateLayout
-        graphPane={<GraphCanvasPane />}
+        graphPane={<GraphCanvasPane sessionId={id} />}
         bottomStrip={<BottomStripCapture modeBanner={<ModeBanner />} />}
         rightSidebar={<RightSidebar />}
       />
