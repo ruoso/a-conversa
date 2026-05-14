@@ -13,12 +13,17 @@
 //              backend.websocket_protocol.ws_message_envelope
 
 export {
+  closeUserConnections,
   ORIGIN_NOT_ALLOWED_CODE,
   ORIGIN_NOT_ALLOWED_MESSAGE,
+  WS_AUTH_REVOKED_CLOSE_CODE,
+  WS_AUTH_REVOKED_REASON,
   WS_CLOSE_CODES,
   WS_TEST_FORCE_ERROR_HEADER,
   wsConnectionHandlingPlugin,
   __buildTestWsApp,
+  __getConnectionsByUserSizeForTests,
+  __getConnectionsForUserForTests,
   __getOpenConnectionsForTests,
   type BuildTestWsAppOptions,
   type WsConnectionContext,

@@ -89,6 +89,7 @@ task backend_hardening "M3-review hardening (security audit follow-ups)" {
     task user_soft_delete_ws_close "Close WS connections of soft-deleted users" {
       effort 1d
       allocate team
+      complete 100
       note "Source: docs/security/m3-review/coverage.md G-003"
       note "Refinement: tasks/refinements/backend-hardening/user_soft_delete_ws_close.md"
     }

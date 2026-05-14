@@ -164,6 +164,61 @@ export const WS_CLOSE_CODES = {
 } as const;
 
 /**
+ * Application-defined WebSocket close code emitted by
+ * `closeUserConnections(...)` when a still-open connection is revoked
+ * because its authenticated user has been soft-deleted (or, more
+ * generally, the upgrade-time auth contract no longer holds). Closes
+ * `docs/security/m3-review/coverage.md` G-003.
+ *
+ * **Why 4401.** RFC 6455 §7.4 reserves the 4000–4999 range for
+ * application use; the project picks 4401 so the numeric value mirrors
+ * the HTTP 401 the upgrade-time gate would emit on a fresh connection
+ * attempt by the same (now-revoked) user. A WS-aware client can map
+ * the close code directly to "your session is no longer valid; sign in
+ * again" without a custom vocabulary.
+ *
+ * **Why a custom 4xxx here and not at upgrade-time.** The
+ * upgrade-rejection path (`ws_auth_on_connect`) intentionally uses
+ * HTTP 401 + the canonical envelope because the HTTP response surface
+ * is reachable BEFORE the handshake completes. AFTER upgrade, no HTTP
+ * response surface exists; a structured 4xxx close code is the only
+ * signal the client can read.
+ *
+ * Refinement:
+ *   tasks/refinements/backend-hardening/user_soft_delete_ws_close.md.
+ */
+export const WS_AUTH_REVOKED_CLOSE_CODE = 4401;
+
+/**
+ * Default reason string emitted alongside `WS_AUTH_REVOKED_CLOSE_CODE`.
+ * Carries the "why category" — `'auth-revoked'` is broader than
+ * `'user-deleted'` so future revocation surfaces (token rotation,
+ * ban, password reset) can reuse the same wire shape without a
+ * vocabulary change.
+ *
+ * RFC 6455 §5.5.1 caps WS close-frame reasons at 123 bytes; this
+ * default is 12 bytes, comfortably inside the limit. Callers
+ * overriding the reason are subject to a defensive byte-truncation
+ * inside `closeUserConnections` (a too-long reason does NOT throw —
+ * the helper truncates so a misconfigured caller does not block a
+ * security-critical revocation).
+ *
+ * Refinement:
+ *   tasks/refinements/backend-hardening/user_soft_delete_ws_close.md.
+ */
+export const WS_AUTH_REVOKED_REASON = 'auth-revoked';
+
+/**
+ * Hard byte ceiling on the `reason` argument forwarded to
+ * `socket.close(code, reason)`. RFC 6455 §5.5.1 caps WS close-frame
+ * reasons at 123 bytes (the 125-byte control-frame limit minus the
+ * two-byte close-code prefix). Truncation lives in the helper rather
+ * than the call site so a misconfigured caller can't block a
+ * security-critical revocation by passing an over-long string.
+ */
+const WS_CLOSE_REASON_MAX_BYTES = 123;
+
+/**
  * Default `@fastify/websocket` `maxPayload` (incoming-frame ceiling).
  * Closes `docs/security/m3-review/inputs.md` F-002. The underlying
  * `ws` library defaults to `100 * 1024 * 1024` (100 MiB) when unset;
@@ -366,6 +421,7 @@ function buildConnectionHandler(
     const connectionId = randomUUID();
     const ctx: WsConnectionContext = { connectionId, socket, user };
     openConnections.add(ctx);
+    addToConnectionsByUser(ctx);
 
     // Register the per-connection sender on the connection-sender
     // registry so the broadcast surface (`ws_event_broadcast`) can
@@ -482,6 +538,7 @@ function buildConnectionHandler(
 
     socket.on('close', (code: number, reasonBuffer: Buffer) => {
       openConnections.delete(ctx);
+      removeFromConnectionsByUser(ctx);
       // Drop every subscription this connection held (owned by
       // `ws_subscribe_to_session`). Idempotent — a connection that
       // never subscribed makes this a no-op. The registry is at the
@@ -555,6 +612,200 @@ function buildConnectionHandler(
  * inside the inner route plugin via the upstream-library options.
  */
 const openConnections = new Set<WsConnectionContext>();
+
+/**
+ * Module-scoped per-user index: maps a user id to the set of open
+ * `WsConnectionContext`s owned by that user. Maintained alongside
+ * `openConnections` so `closeUserConnections(userId, ...)` is O(1) on
+ * the lookup AND so a future revocation surface (admin "delete user",
+ * self-delete flow) does not have to walk the whole `openConnections`
+ * set on every revocation.
+ *
+ * Storage shape mirrors `WsSubscriptionRegistry.bySession` — one Map
+ * keyed by the discriminator (here `userId`) holding Sets of the
+ * entities (here `WsConnectionContext`). Empty Sets are pruned via
+ * `Map.delete` so the Map's `size` equals the count of distinct users
+ * with at least one open connection.
+ *
+ * **Why the Set carries the full context, not just `connectionId`.**
+ * The helper needs to call `socket.close(...)` directly; the registry
+ * value is the socket-bearing context so no second lookup is needed.
+ * The two-map design that `WsSubscriptionRegistry` uses (a session →
+ * connections Map AND a connection → sessions Map) is overkill here:
+ * the cleanup path is the connection's own `close` event handler,
+ * which already has the `ctx` in scope and can pass it to
+ * `removeFromConnectionsByUser(ctx)` in O(1).
+ *
+ * Cleared by `wsShutdownPreClose` along with `openConnections` so a
+ * process restart leaves the registry empty.
+ *
+ * Refinement:
+ *   tasks/refinements/backend-hardening/user_soft_delete_ws_close.md.
+ */
+const connectionsByUser = new Map<string, Set<WsConnectionContext>>();
+
+/**
+ * Add a context to `connectionsByUser`. Called from the connection-open
+ * path right after `openConnections.add(ctx)`. Idempotent — a re-add of
+ * an already-present context is a Set no-op.
+ */
+function addToConnectionsByUser(ctx: WsConnectionContext): void {
+  const userId = ctx.user?.id;
+  if (userId === undefined) {
+    // The auth gate guarantees `user` is populated for /ws (see the
+    // defensive narrow inside `buildConnectionHandler`). The guard here
+    // is purely for TypeScript's optional-property typing of the
+    // `WsConnectionContext.user?` field.
+    return;
+  }
+  let set = connectionsByUser.get(userId);
+  if (set === undefined) {
+    set = new Set<WsConnectionContext>();
+    connectionsByUser.set(userId, set);
+  }
+  set.add(ctx);
+}
+
+/**
+ * Remove a context from `connectionsByUser`. Called from the
+ * connection-close path right after `openConnections.delete(ctx)`.
+ * Idempotent. Empty Sets are pruned so the Map's `size` matches the
+ * count of distinct users with at least one open connection.
+ */
+function removeFromConnectionsByUser(ctx: WsConnectionContext): void {
+  const userId = ctx.user?.id;
+  if (userId === undefined) {
+    return;
+  }
+  const set = connectionsByUser.get(userId);
+  if (set === undefined) {
+    return;
+  }
+  set.delete(ctx);
+  if (set.size === 0) {
+    connectionsByUser.delete(userId);
+  }
+}
+
+/**
+ * Close every still-open WS connection owned by `userId` with the
+ * canonical auth-revoked close code (`WS_AUTH_REVOKED_CLOSE_CODE` =
+ * 4401) and reason (`WS_AUTH_REVOKED_REASON` = `'auth-revoked'` by
+ * default; callers may override).
+ *
+ * Returns the number of connections that were targeted by the close
+ * loop (i.e. the size of the per-user Set at the start of the call).
+ * The counter is captured from a snapshot before any `socket.close`
+ * fires so the return value is stable regardless of re-entrant close
+ * handlers mutating the index mid-iteration.
+ *
+ * **Per-connection error isolation.** Each `socket.close(...)` call is
+ * wrapped in a try/catch — an already-torn-down socket throwing must
+ * not prevent the helper from closing the other connections that
+ * share the same userId. Mirrors the `wsShutdownPreClose` pattern.
+ *
+ * **No DB query.** The helper trusts its caller (the future
+ * admin-delete-user surface) to have already performed the soft-delete
+ * via `UPDATE users SET deleted_at = NOW()`. Re-querying inside the
+ * helper would fork the source of truth and open a race window.
+ *
+ * **Reason truncation.** RFC 6455 §5.5.1 caps the WS close-frame
+ * reason at 123 bytes; the helper truncates an over-long reason
+ * defensively rather than throwing. A caller that passes a longer
+ * string still gets the desired semantic; the wire reason carries
+ * the first 123 bytes.
+ *
+ * **In-flight dispatches.** This helper closes the socket; it does
+ * NOT proactively abort in-flight handler work (a `propose` mid-
+ * DB-write completes its transaction). The dispatcher's send path
+ * discovers the closed socket on the next `socket.send(...)` attempt
+ * and logs via its existing send-error seam. This matches the
+ * broader project invariant that the WS layer is a transport, not a
+ * transaction manager.
+ *
+ * **No production caller in v1.** The trigger surface (admin
+ * "delete user" endpoint, self-delete flow) is deferred to a future
+ * `admin_user_delete` task. This helper lands here so the structural
+ * primitive is in place; the wire-up happens later. See the
+ * refinement for the scoping rationale.
+ *
+ * Closes `docs/security/m3-review/coverage.md` G-003. Refinement:
+ *   tasks/refinements/backend-hardening/user_soft_delete_ws_close.md.
+ *
+ * @param userId - the soft-deleted (or otherwise auth-revoked) user id.
+ * @param reason - override for the WS close-frame reason. Defaults to
+ *                 `WS_AUTH_REVOKED_REASON`. Truncated to 123 bytes.
+ * @returns the count of connections the helper attempted to close.
+ */
+export function closeUserConnections(
+  userId: string,
+  reason: string = WS_AUTH_REVOKED_REASON,
+): number {
+  const set = connectionsByUser.get(userId);
+  if (set === undefined || set.size === 0) {
+    return 0;
+  }
+  // Snapshot to a fresh array BEFORE iterating: the `socket.close(...)`
+  // call below triggers the connection's `close` event synchronously
+  // for a socket already in OPEN state, which re-enters
+  // `removeFromConnectionsByUser(ctx)` and mutates the underlying Set.
+  // Iterating the live Set would risk skipping elements.
+  const snapshot = [...set];
+  // Truncate the reason defensively. RFC 6455 §5.5.1: 123 bytes.
+  // `Buffer.byteLength('utf8')` matches what `socket.close(...)`
+  // actually serialises on the wire (the `ws` library copies the
+  // reason into a UTF-8 buffer); truncation by code units would
+  // either over- or under-shoot for multibyte characters.
+  let safeReason = reason;
+  if (Buffer.byteLength(safeReason, 'utf8') > WS_CLOSE_REASON_MAX_BYTES) {
+    // Walk down a byte-budget by characters. Slicing by characters is
+    // safer than `Buffer.subarray(...).toString('utf8')` which can
+    // split a multibyte sequence and produce a replacement-character
+    // tail. The loop converges in O(reason.length).
+    let truncated = safeReason;
+    while (Buffer.byteLength(truncated, 'utf8') > WS_CLOSE_REASON_MAX_BYTES) {
+      truncated = truncated.slice(0, -1);
+    }
+    safeReason = truncated;
+  }
+  for (const ctx of snapshot) {
+    try {
+      // Only emit a structured close when the socket can produce a
+      // frame. `ws` readyState values: 0=CONNECTING, 1=OPEN,
+      // 2=CLOSING, 3=CLOSED.
+      if (ctx.socket.readyState === 1 || ctx.socket.readyState === 0) {
+        // `socket.close(code, reason)` writes the close frame to the
+        // client (carrying the 4401 / 'auth-revoked' signal the client
+        // reads as "your session is no longer valid"); the underlying
+        // `ws` library then waits up to `closeTimeout` (default 30s)
+        // for the client's close echo before firing the server-side
+        // `close` event. A misbehaving (or slow-to-echo) client must
+        // not leave a stale entry in `connectionsByUser` /
+        // `openConnections` for 30 seconds, AND a server that's
+        // revoking an attacker's auth must not depend on the attacker
+        // cooperating with the close handshake to surface the cleanup.
+        // Calling `socket.terminate()` immediately after `close()`
+        // forces the server-side close event to fire synchronously
+        // (the close frame has already been queued on the wire — the
+        // client still receives 4401 + 'auth-revoked'); the server's
+        // own cleanup path (`socket.on('close', ...)` in
+        // `buildConnectionHandler`) runs without waiting for the
+        // peer's response.
+        ctx.socket.close(WS_AUTH_REVOKED_CLOSE_CODE, safeReason);
+        ctx.socket.terminate();
+      }
+    } catch {
+      // Defensive — a torn-down socket would throw on .close(). One
+      // bad socket must not prevent the loop from reaching the rest.
+      // Logging would require a Fastify instance reference the helper
+      // does not carry; the failure mode (a single dead socket in the
+      // index) is self-healing because the close event for that
+      // socket will still drain the index entry via the normal
+      // `removeFromConnectionsByUser(ctx)` path.
+    }
+  }
+  return snapshot.length;
+}
 
 /**
  * Resolver bundle the route's `preValidation` auth gate reaches for.
@@ -788,6 +1039,13 @@ function wsShutdownPreClose(this: FastifyInstance, done: () => void): void {
     }
   }
   openConnections.clear();
+  // Drop the per-user index alongside the open-connections set so a
+  // process restart leaves both registries empty (closes
+  // `docs/security/m3-review/coverage.md` G-003 — the auth-revoked
+  // helper's lookup table). The Map's contents reference the same
+  // contexts already drained from `openConnections`; clearing both is
+  // strictly bookkeeping symmetry.
+  connectionsByUser.clear();
   done();
 }
 
@@ -1012,6 +1270,39 @@ export const wsConnectionHandlingPlugin = fp(wsConnectionHandlingPluginAsync, {
  */
 export function __getOpenConnectionsForTests(): readonly WsConnectionContext[] {
   return Array.from(openConnections);
+}
+
+/**
+ * Test-only inspector — returns the count of distinct user ids with
+ * at least one open WS connection (i.e. `connectionsByUser.size`).
+ * Used by the soft-delete tests to assert that
+ * `closeUserConnections(...)` pruned the per-user index entry after
+ * closing every connection it covered.
+ *
+ * The double-underscore prefix marks the export as test-only — same
+ * convention as `__getOpenConnectionsForTests`.
+ *
+ * Refinement:
+ *   tasks/refinements/backend-hardening/user_soft_delete_ws_close.md.
+ */
+export function __getConnectionsByUserSizeForTests(): number {
+  return connectionsByUser.size;
+}
+
+/**
+ * Test-only inspector — returns a snapshot of the open
+ * `WsConnectionContext`s owned by `userId`. Used by the soft-delete
+ * tests to assert that the per-user index is populated correctly on
+ * open and drained on close.
+ *
+ * Returns an empty array when no connection is recorded for the user.
+ *
+ * Refinement:
+ *   tasks/refinements/backend-hardening/user_soft_delete_ws_close.md.
+ */
+export function __getConnectionsForUserForTests(userId: string): readonly WsConnectionContext[] {
+  const set = connectionsByUser.get(userId);
+  return set === undefined ? [] : [...set];
 }
 
 /**
