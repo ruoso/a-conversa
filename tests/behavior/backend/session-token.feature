@@ -19,7 +19,7 @@ Feature: Platform session-token — issuance, validation, and lifecycle
     Given the auth server is built with a stubbed OIDC client and pglite-backed pool
 
   Scenario: returning user — callback issues the session cookie and 302-redirects
-    Given a user with oauth_subject "authelia:alice" exists with screen_name "alice"
+    Given a user with oauth_subject "http://authelia:9091:alice" exists with screen_name "alice"
     When I GET /auth/login
     And I GET the callback URL with the stored state and a stubbed sub "alice"
     Then the response status is 302

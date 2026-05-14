@@ -392,7 +392,16 @@ jobs:
         # backend.api_skeleton lands `/healthz`, replace this with a
         # curl probe (start container with -d -p, wait, hit /healthz,
         # expect 200, tear down).
-        run: docker run --rm aconversa/app:ci
+        #
+        # `SESSION_TOKEN_SECRET` is required by the boot gate added by
+        # `backend.session_secret_strength_check` (closes
+        # docs/security/m3-review/auth.md F-004). Any value of at least
+        # 32 bytes that isn't on the dev-placeholder denylist satisfies
+        # the gate; this 64-char hex string is fine for a smoke run.
+        run: |
+          docker run --rm \
+            -e SESSION_TOKEN_SECRET=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
+            aconversa/app:ci
 
   audit-warn:
     # Owned by foundation.ci.ci_dependency_audit. Soft signal: runs
