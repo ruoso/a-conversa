@@ -1,24 +1,27 @@
 // `<GraphCanvasPane>` — ReactFlow mount for the moderator's graph
 // canvas slot inside `<OperateLayout>`.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_node_rendering.md
-// (prior:     tasks/refinements/moderator-ui/mod_graph_canvas_pane.md)
+// Refinement: tasks/refinements/moderator-ui/mod_edge_rendering.md
+// (prior:     tasks/refinements/moderator-ui/mod_node_rendering.md,
+//             tasks/refinements/moderator-ui/mod_graph_canvas_pane.md)
 // ADR:        docs/adr/0004-graph-libraries-reactflow-and-cytoscape.md
 //
 // The moderator surface is the interactive-edit profile per ADR 0004:
 // ReactFlow's drag-to-create-edge ergonomics + first-class custom React
-// components for nodes are why it was picked here. The read-only
+// components for nodes/edges are why it was picked here. The read-only
 // surfaces (audience / participant tablet / replay) use Cytoscape; that
 // split is the explicit price of letting each surface use the library
 // that fits its interaction profile.
 //
 // `mod_graph_canvas_pane` landed the empty canvas. `mod_node_rendering`
-// (this revision) adds: a `StatementNode` custom node type, an event
-// projection that turns the session's `events: Event[]` into ReactFlow
-// `Node<StatementNodeData>[]`, and the `sessionId` prop the projection
-// keys off of. Downstream rendering tasks (edges, annotations, state
-// styling, pan-zoom polish, selection, context menus, draw-edge flow)
-// continue to plug into the same `<ReactFlow>` tree.
+// added the custom `StatementNode` type + the `projectNodes` event-log
+// projection. `mod_edge_rendering` (this revision) layers in the custom
+// `StatementEdge` type, the `edgeTypes` registry, and a store-derived
+// edges projection via `selectEdgesForSession`. The component now wires
+// nodes + edges from the same `useWsStore` events array. Downstream
+// rendering tasks (annotations, state styling, pan-zoom polish,
+// selection, context menus, draw-edge flow) continue to plug into the
+// same `<ReactFlow>` tree.
 //
 // **Layout note.** Node positioning is owned by `mod_layout_engine_choice`
 // (a separate task). Until then this component lays nodes out on a
@@ -38,8 +41,10 @@ import type { Event, StatementKind } from '@a-conversa/shared-types';
 
 import 'reactflow/dist/style.css';
 
-import { useWsStore } from '../ws/wsStore.js';
+import { useWsStore, type WsState } from '../ws/wsStore.js';
 import { STATEMENT_NODE_TYPE, StatementNode, type StatementNodeData } from './StatementNode.js';
+import { edgeTypes } from './edgeTypes.js';
+import { selectEdgesForSession } from './selectors.js';
 
 /**
  * `nodeTypes` is declared at module scope, NOT inline on `<ReactFlow>`.
@@ -47,6 +52,10 @@ import { STATEMENT_NODE_TYPE, StatementNode, type StatementNodeData } from './St
  * changes by referential identity; an inline `{ statement: StatementNode }`
  * would allocate a fresh object every render and fight ReactFlow's
  * internal memoization. One stable reference, registered once.
+ *
+ * `edgeTypes` is imported from `./edgeTypes` for the same reason — the
+ * map is declared once at module scope of that file so the reference
+ * stays stable across renders.
  */
 const NODE_TYPES: NodeTypes = {
   [STATEMENT_NODE_TYPE]: StatementNode,
@@ -175,10 +184,32 @@ export function GraphCanvasPane(props: GraphCanvasPaneProps): ReactElement {
   const events = useWsStore((state) => state.sessionState[sessionId]?.events ?? EMPTY_EVENTS);
 
   const nodes = useMemo(() => projectNodes(events), [events]);
+  // `selectEdgesForSession` is a pure function over `WsState`; we build
+  // the minimal `WsState`-shaped object from the events we already
+  // subscribed to so the projection stays the single source of truth
+  // for the wire-event → ReactFlow-edge mapping. Reading the live store
+  // via `useWsStore.getState()` inside the `useMemo` would skip the
+  // events subscription and risk a stale closure across renders.
+  const edges = useMemo(
+    () =>
+      selectEdgesForSession(
+        {
+          sessionState: {
+            [sessionId]: {
+              lastAppliedSequence: 0,
+              events: events as Event[],
+              pendingProposals: {},
+            },
+          },
+        } as unknown as WsState,
+        sessionId,
+      ),
+    [sessionId, events],
+  );
 
   return (
     <div data-testid="graph-canvas-root" className="h-full w-full">
-      <ReactFlow nodes={nodes} edges={[]} nodeTypes={NODE_TYPES}>
+      <ReactFlow nodes={nodes} edges={edges} nodeTypes={NODE_TYPES} edgeTypes={edgeTypes}>
         <Background />
       </ReactFlow>
     </div>

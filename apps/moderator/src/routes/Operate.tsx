@@ -1,7 +1,8 @@
 // Operate route for `/sessions/:id/operate` — the moderator console.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_node_rendering.md
-// (prior:     tasks/refinements/moderator-ui/mod_graph_canvas_pane.md,
+// Refinement: tasks/refinements/moderator-ui/mod_edge_rendering.md
+// (prior:     tasks/refinements/moderator-ui/mod_node_rendering.md,
+//             tasks/refinements/moderator-ui/mod_graph_canvas_pane.md,
 //             tasks/refinements/moderator-ui/mod_layout_shell.md,
 //             tasks/refinements/moderator-ui/mod_bottom_strip_capture.md,
 //             tasks/refinements/moderator-ui/mod_mode_banner.md,
@@ -9,12 +10,13 @@
 //
 // Composes the three-pane `<OperateLayout>` (`mod_layout_shell`) with
 // `<GraphCanvasPane sessionId={id} />` (`mod_graph_canvas_pane` +
-// `mod_node_rendering`) wired into the graph slot, `<RightSidebar>`
-// (`mod_right_sidebar`) into the right slot, and `<BottomStripCapture>`
-// (`mod_bottom_strip_capture`) into the bottom strip with `<ModeBanner>`
-// (`mod_mode_banner`) filling the strip's `modeBanner` sub-slot. The
-// session id from the route param threads into the canvas so the
-// node-projection layer subscribes to the right per-session slice.
+// `mod_node_rendering` + `mod_edge_rendering`) wired into the graph
+// slot, `<RightSidebar>` (`mod_right_sidebar`) into the right slot, and
+// `<BottomStripCapture>` (`mod_bottom_strip_capture`) into the bottom
+// strip with `<ModeBanner>` (`mod_mode_banner`) filling the strip's
+// `modeBanner` sub-slot. The session id from the route param threads
+// into the canvas so the node + edge projection layers subscribe to
+// the right per-session slice.
 //
 // `route-operate` and `session-id` test ids are preserved so the
 // router-level `App.test.tsx` cases continue to pass — `session-id`

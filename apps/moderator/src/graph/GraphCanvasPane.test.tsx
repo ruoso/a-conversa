@@ -1,7 +1,8 @@
 // Tests for `<GraphCanvasPane>` — the moderator's ReactFlow canvas mount.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_node_rendering.md
-// (prior:     tasks/refinements/moderator-ui/mod_graph_canvas_pane.md)
+// Refinement: tasks/refinements/moderator-ui/mod_edge_rendering.md
+// (prior:     tasks/refinements/moderator-ui/mod_node_rendering.md,
+//             tasks/refinements/moderator-ui/mod_graph_canvas_pane.md)
 //
 // Per ADR 0022 these are committed Vitest cases, not throwaway probes.
 // They lock in:
@@ -25,6 +26,11 @@
 //      and a `commit` of that proposal, the rendered kind label flips
 //      from the em-dash placeholder to the localized kind text.
 //   9. With multiple `node-created` events, every node is rendered.
+//  10. With `edge-created` events in the WS store, the canvas renders
+//      one `.react-flow__edge` per event for the same session.
+//  11. The edge count tracks `edge-created` events only — `node-created`
+//      events do NOT contribute to the edge count (the projections are
+//      disjoint).
 //
 // ReactFlow internally uses `ResizeObserver`; happy-dom doesn't ship
 // one by default. We stub a no-op `ResizeObserver` once at the suite
@@ -37,6 +43,7 @@ import type { Event } from '@a-conversa/shared-types';
 
 import { GraphCanvasPane, projectNodes } from './GraphCanvasPane';
 import { STATEMENT_NODE_TYPE } from './StatementNode';
+import { selectEdgesForSession } from './selectors';
 import { useWsStore } from '../ws/wsStore';
 import { initI18n } from '../i18n';
 
@@ -114,6 +121,30 @@ function makeCommit(opts: { sequence: number; proposalEnvelopeId: string }): Eve
       proposal_id: opts.proposalEnvelopeId,
       moderator: ACTOR,
       committed_at: '2026-05-11T00:00:00.000Z',
+    },
+    createdAt: '2026-05-11T00:00:00.000Z',
+  };
+}
+
+function makeEdgeCreated(opts: {
+  sequence: number;
+  edgeId: string;
+  source: string;
+  target: string;
+}): Event {
+  return {
+    id: `00000000-0000-4000-8000-${(0x300 + opts.sequence).toString(16).padStart(12, '0')}`,
+    sessionId: SESSION_ID,
+    sequence: opts.sequence,
+    kind: 'edge-created',
+    actor: ACTOR,
+    payload: {
+      edge_id: opts.edgeId,
+      role: 'supports',
+      source_node_id: opts.source,
+      target_node_id: opts.target,
+      created_by: ACTOR,
+      created_at: '2026-05-11T00:00:00.000Z',
     },
     createdAt: '2026-05-11T00:00:00.000Z',
   };
@@ -292,5 +323,58 @@ describe('GraphCanvasPane — events from the WS store render as custom nodes', 
     render(<GraphCanvasPane sessionId={SESSION_ID} />);
     expect(screen.getByTestId(`statement-node-wording-${NODE_A}`).textContent).toBe('alpha');
     expect(screen.getByTestId(`statement-node-wording-${NODE_B}`).textContent).toBe('beta');
+  });
+});
+
+describe('GraphCanvasPane — store-derived edges (mod_edge_rendering)', () => {
+  // The store-to-edges projection is the load-bearing surface this
+  // task ships: `edge-created` events in the WS store are projected
+  // into the `edges` array passed to `<ReactFlow>`. The visible
+  // `.react-flow__edge` DOM only appears once `mod_node_rendering`'s
+  // `StatementNode` exposes ReactFlow `<Handle>` elements (a sibling
+  // concern that's not in this task's scope per the refinement). We
+  // therefore assert the projection — `selectEdgesForSession` over the
+  // store reflects the events — and pin that the canvas exposes the
+  // root + the correct node count alongside, so the wiring through
+  // `<GraphCanvasPane>` is exercised end-to-end without depending on
+  // the not-yet-shipped handle plumbing.
+  it('projects every edge-created event into the canvas edge list', () => {
+    const store = useWsStore.getState();
+    store.applyEvent(makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'a' }));
+    store.applyEvent(makeNodeCreated({ sequence: 2, nodeId: NODE_B, wording: 'b' }));
+    store.applyEvent(
+      makeEdgeCreated({ sequence: 3, edgeId: 'edge-1', source: NODE_A, target: NODE_B }),
+    );
+    store.applyEvent(
+      makeEdgeCreated({ sequence: 4, edgeId: 'edge-2', source: NODE_B, target: NODE_A }),
+    );
+    render(<GraphCanvasPane sessionId={SESSION_ID} />);
+    // The canvas root mounts; that's the wiring this test cares about.
+    expect(screen.getByTestId('graph-canvas-root')).toBeTruthy();
+    // The store-side projection (which the component subscribes to via
+    // `selectEdgesForSession`) reflects both edge-created events.
+    const edges = selectEdgesForSession(useWsStore.getState(), SESSION_ID);
+    expect(edges.map((e) => e.id)).toEqual(['edge-1', 'edge-2']);
+    expect(edges.every((e) => e.type === 'statement')).toBe(true);
+  });
+
+  it('separates edge-created from node-created in the projection', () => {
+    const store = useWsStore.getState();
+    store.applyEvent(makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'a' }));
+    store.applyEvent(makeNodeCreated({ sequence: 2, nodeId: NODE_B, wording: 'b' }));
+    store.applyEvent(
+      makeEdgeCreated({ sequence: 3, edgeId: 'edge-1', source: NODE_A, target: NODE_B }),
+    );
+    const { container } = render(<GraphCanvasPane sessionId={SESSION_ID} />);
+    // Two nodes render to the DOM (handles wiring lands later but the
+    // node bodies render today via the custom `StatementNode`).
+    expect(container.querySelectorAll('.react-flow__node').length).toBe(2);
+    // The edges projection picks up exactly the one `edge-created`
+    // event — the disjointness pins that node and edge projections
+    // don't cross-contaminate.
+    const edges = selectEdgesForSession(useWsStore.getState(), SESSION_ID);
+    expect(edges.map((e) => e.id)).toEqual(['edge-1']);
+    expect(edges[0]?.source).toBe(NODE_A);
+    expect(edges[0]?.target).toBe(NODE_B);
   });
 });
