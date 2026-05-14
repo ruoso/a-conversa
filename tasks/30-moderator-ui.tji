@@ -72,7 +72,9 @@ task moderator_ui "Moderator UI" {
     task mod_graph_canvas_pane "Graph canvas pane" {
       effort 1d
       allocate team
+      complete 100
       depends !mod_layout_shell, foundation.stack_decisions.graph_lib_decision
+      note "Refinement: tasks/refinements/moderator-ui/mod_graph_canvas_pane.md"
     }
     task mod_right_sidebar "Right sidebar with stacked sub-panes" {
       effort 1d
