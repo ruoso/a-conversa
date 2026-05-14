@@ -120,12 +120,6 @@ When('the OIDC client is obtained', async function (this: AConversaWorld) {
   assert.ok(s.oidcConfig, 'oidcConfig not loaded — When step missing');
   s.oidcClient = await getOidcClient(s.oidcConfig, {
     discovery: stubDiscovery,
-    // No-op insecure-requests toggle — the stubbed Configuration is
-    // never used to fetch anything, so the toggle's effect is moot;
-    // we override to avoid touching the real openid-client global.
-    allowInsecureRequests: () => {
-      // intentionally empty
-    },
   });
 });
 
@@ -151,9 +145,6 @@ Then(
     // wouldn't accidentally succeed by re-stubbing.
     s.oidcClientSecond = await getOidcClient(s.oidcConfig, {
       discovery: stubDiscovery,
-      allowInsecureRequests: () => {
-        // intentionally empty
-      },
     });
     assert.equal(
       s.oidcClientSecond,

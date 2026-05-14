@@ -72,12 +72,7 @@
 // won't leak the secret either.
 
 import { z } from 'zod';
-import {
-  Configuration,
-  discovery as defaultDiscovery,
-  allowInsecureRequests as defaultAllowInsecureRequests,
-  type ServerMetadata,
-} from 'openid-client';
+import { Configuration, discovery as defaultDiscovery, type ServerMetadata } from 'openid-client';
 
 // Re-export the runtime `Configuration` type alias for sibling tasks
 // (oauth_callback_handler, session_token_management) so they don't
@@ -276,9 +271,8 @@ export function loadOidcConfig(env: Record<string, string | undefined>): OidcCon
 const clientCache = new WeakMap<OidcConfig, Promise<Configuration>>();
 
 /**
- * Discovery-and-insecure-requests overrides injectable for tests.
- * Production code paths always use the defaults (`openid-client`'s
- * real `discovery` + `allowInsecureRequests`); the Vitest unit tests
+ * Discovery override injectable for tests. Production code paths
+ * always use openid-client's real `discovery`; the Vitest unit tests
  * mock the module via `vi.mock(...)` and the Cucumber scenario passes
  * a real-but-network-free implementation via this options object.
  *
@@ -287,15 +281,9 @@ const clientCache = new WeakMap<OidcConfig, Promise<Configuration>>();
  * `/.well-known/openid-configuration`; in tests it can be a
  * `new Configuration(stubServerMetadata, clientId, clientSecret)`
  * construction (no network).
- *
- * `allowInsecureRequests` toggles openid-client's reject-http-issuers
- * default off; needed for the dev Authelia case
- * (`http://authelia:9091`). Tests don't usually need to assert
- * against the toggle but can if they want.
  */
 export interface OidcDiscoveryOptions {
   discovery?: (server: URL, clientId: string, clientSecret: string) => Promise<Configuration>;
-  allowInsecureRequests?: (config: Configuration) => void;
 }
 
 /**
@@ -310,13 +298,16 @@ export interface OidcDiscoveryOptions {
  * `session_token_management` reads `serverMetadata().issuer` off it,
  * and so on.
  *
- * **Discovery insecure-issuer policy.** The default in openid-client
- * v6 is to reject http:// issuer URLs (it expects https://). For the
- * dev Authelia stack the issuer URL is `http://authelia:9091`, which
- * is fine — local-only, Compose-internal, never sees the public
- * internet. The function detects an http issuer and applies
- * `allowInsecureRequests(config)` to opt in to the dev shape; production
- * issuer URLs are https and the helper is a no-op there.
+ * **Issuer URL policy.** `openid-client` v6 rejects http:// issuer URLs
+ * by default — `performDiscovery` runs `checkProtocol(server, …)` and
+ * raises `OperationProcessingError: only requests to HTTPS are allowed`
+ * for plaintext issuers. The dev stack matches the production shape:
+ * Authelia serves TLS with a committed self-signed cert
+ * (`infra/authelia/tls/`), the compose `app` service trusts it via
+ * `NODE_EXTRA_CA_CERTS`, and `OIDC_ISSUER_URL=https://authelia:9091`.
+ * Any boot with an http issuer is treated as a misconfiguration and
+ * fails loud at the first discovery call — we deliberately do not bypass
+ * the library's TLS gate.
  *
  * **`options` is test-only.** Production callers pass no options and
  * the function reaches for the real openid-client exports. Tests
@@ -335,7 +326,6 @@ export async function getOidcClient(
     return cached;
   }
   const discoveryFn = options.discovery ?? defaultDiscovery;
-  const allowInsecureRequestsFn = options.allowInsecureRequests ?? defaultAllowInsecureRequests;
   // openid-client v6's `discovery(server, clientId, metadata)` accepts
   // the client secret as the third arg (string shorthand for
   // `{ client_secret: ... }`). The library then defaults to
@@ -347,13 +337,7 @@ export async function getOidcClient(
   // production Authelia config switch to a different method
   // (e.g., `private_key_jwt`), this call evolves to pass the matching
   // `clientAuthentication` helper as the fourth argument.
-  const promise = (async (): Promise<Configuration> => {
-    const result = await discoveryFn(config.issuerUrl, config.clientId, config.clientSecret);
-    if (config.issuerUrl.protocol === 'http:') {
-      allowInsecureRequestsFn(result);
-    }
-    return result;
-  })();
+  const promise = discoveryFn(config.issuerUrl, config.clientId, config.clientSecret);
   clientCache.set(config, promise);
   return promise;
 }

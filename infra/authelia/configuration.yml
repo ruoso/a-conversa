@@ -18,6 +18,16 @@ theme: light
 
 server:
   address: 'tcp://0.0.0.0:9091'
+  # Dev-only TLS so the OIDC issuer URL is `https://authelia:9091`,
+  # matching the production shape that `openid-client` enforces
+  # (HTTPS-only by default). The cert + key are committed under
+  # `infra/authelia/tls/` and mounted into `/config/tls/` by
+  # `compose.yaml`; see that directory's README for the trust story.
+  # Production runs Authelia behind a reverse proxy that terminates TLS
+  # with real CA-issued certs and removes this block.
+  tls:
+    certificate: /config/tls/cert.pem
+    key: /config/tls/key.pem
 
 log:
   level: info

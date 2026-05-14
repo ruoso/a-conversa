@@ -24,10 +24,12 @@
 //      openid-client `discovery(...)` helper; the second call against
 //      the same config does not.
 //   6. `getOidcClient` calls `discovery(...)` with the expected
-//      arguments (issuer URL, client id, client secret).
-//   7. `getOidcClient` calls `allowInsecureRequests(...)` for http
-//      issuer URLs (the dev Authelia case) and skips it for https
-//      issuers (the production case).
+//      arguments (issuer URL, client id, client secret). The dev /
+//      CI / production issuer URL is always https — openid-client@6
+//      enforces TLS at the protocol check and we deliberately do not
+//      bypass that gate; the dev Authelia stack ships a self-signed
+//      cert (`infra/authelia/tls/`) and the app container trusts it
+//      via `NODE_EXTRA_CA_CERTS`.
 //
 // **On mocking `openid-client`.** ADR 0022 forbids throwaway probes
 // of the system under test, not test doubles for upstream libraries.
@@ -48,11 +50,9 @@ const discoveryMock = vi.hoisted(() =>
     return Promise.resolve({ __mocked: true });
   }),
 );
-const allowInsecureRequestsMock = vi.hoisted(() => vi.fn());
 
 vi.mock('openid-client', () => ({
   discovery: discoveryMock,
-  allowInsecureRequests: allowInsecureRequestsMock,
 }));
 
 // Import AFTER the mock so the module sees the mocked helpers.
@@ -60,9 +60,13 @@ const { loadOidcConfig, getOidcClient, OidcConfigError, __isOidcClientCached } =
   await import('./config.js');
 
 // Reusable valid env block — the test cases override individual
-// fields to exercise specific failure paths.
+// fields to exercise specific failure paths. The dev/CI Authelia
+// issuer is `https://authelia:9091` (Authelia serves TLS with a
+// committed self-signed cert; the compose `app` service trusts it via
+// `NODE_EXTRA_CA_CERTS`) — matching the production HTTPS-only shape
+// `openid-client@6` enforces.
 const validEnv = {
-  OIDC_ISSUER_URL: 'http://authelia:9091',
+  OIDC_ISSUER_URL: 'https://authelia:9091',
   OIDC_CLIENT_ID: 'aconversa-app-dev',
   OIDC_CLIENT_SECRET: 'aconversa-app-dev-secret',
   APP_BASE_URL: 'http://localhost:3000',
@@ -71,7 +75,7 @@ const validEnv = {
 describe('loadOidcConfig', () => {
   it('accepts a well-formed env block and derives the redirect URI', () => {
     const config = loadOidcConfig(validEnv);
-    expect(config.issuerUrl.toString()).toBe('http://authelia:9091/');
+    expect(config.issuerUrl.toString()).toBe('https://authelia:9091/');
     expect(config.clientId).toBe('aconversa-app-dev');
     expect(config.clientSecret).toBe('aconversa-app-dev-secret');
     expect(config.appBaseUrl).toBe('http://localhost:3000');
@@ -142,7 +146,6 @@ describe('loadOidcConfig', () => {
 describe('getOidcClient', () => {
   beforeEach(() => {
     discoveryMock.mockClear();
-    allowInsecureRequestsMock.mockClear();
   });
 
   it('invokes openid-client discovery with issuer URL, client id, and client secret', async () => {
@@ -157,7 +160,7 @@ describe('getOidcClient', () => {
     // this module actually invokes.
     const [server, clientId, secret] = args as unknown as [URL, string, string];
     expect(server).toBeInstanceOf(URL);
-    expect(server.toString()).toBe('http://authelia:9091/');
+    expect(server.toString()).toBe('https://authelia:9091/');
     expect(clientId).toBe('aconversa-app-dev');
     expect(secret).toBe('aconversa-app-dev-secret');
   });
@@ -184,21 +187,6 @@ describe('getOidcClient', () => {
     await getOidcClient(a);
     await getOidcClient(b);
     expect(discoveryMock).toHaveBeenCalledTimes(2);
-  });
-
-  it('applies allowInsecureRequests for http issuer URLs (the dev Authelia shape)', async () => {
-    const config = loadOidcConfig({ ...validEnv, OIDC_ISSUER_URL: 'http://authelia:9091' });
-    await getOidcClient(config);
-    expect(allowInsecureRequestsMock).toHaveBeenCalledTimes(1);
-  });
-
-  it('does not apply allowInsecureRequests for https issuer URLs (the production shape)', async () => {
-    const config = loadOidcConfig({
-      ...validEnv,
-      OIDC_ISSUER_URL: 'https://auth.example.com',
-    });
-    await getOidcClient(config);
-    expect(allowInsecureRequestsMock).not.toHaveBeenCalled();
   });
 
   it('concurrent first-callers share a single discovery round-trip', async () => {

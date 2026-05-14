@@ -71,6 +71,17 @@ services:
       OIDC_CLIENT_ID: ${OIDC_CLIENT_ID}
       OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET}
       DATABASE_URL: ${DATABASE_URL}
+      # Make Node.js trust Authelia's self-signed dev cert when
+      # `openid-client` performs discovery + token exchange against
+      # `https://authelia:9091`. `NODE_EXTRA_CA_CERTS` is read by Node's
+      # TLS layer at startup and appended to the system trust bundle —
+      # production deploys leave this unset (real CA-issued certs) and
+      # this whole block becomes a no-op.
+      NODE_EXTRA_CA_CERTS: /etc/aconversa/authelia-ca.pem
+    volumes:
+      # Same cert Authelia presents on `https://authelia:9091`. The
+      # in-container path is referenced by `NODE_EXTRA_CA_CERTS` above.
+      - ./infra/authelia/tls/cert.pem:/etc/aconversa/authelia-ca.pem:ro
     ports:
       - '3000:3000'
     networks:
@@ -139,6 +150,13 @@ services:
     volumes:
       - ./infra/authelia/configuration.yml:/config/configuration.yml:ro
       - ./infra/authelia/users.yml:/config/users.yml:ro
+      # Dev-only TLS material. Authelia's `server.tls` block in
+      # `configuration.yml` references these paths; the cert covers
+      # SANs `authelia` (compose-internal hostname) and `localhost`
+      # (host port-forward). The `app` service trusts the same
+      # certificate via `NODE_EXTRA_CA_CERTS` below. See
+      # `infra/authelia/tls/README.md` for the trust story.
+      - ./infra/authelia/tls:/config/tls:ro
       - aconversa-authelia-data:/var/lib/authelia
     ports:
       - '9091:9091'
@@ -148,12 +166,16 @@ services:
     healthcheck:
       # Authelia 4.39 ships busybox wget (no curl); `--spider` issues
       # a HEAD-style request and exits non-zero on failure.
+      # `--no-check-certificate` because the dev TLS material is
+      # self-signed and not in the alpine image's trust store; the
+      # healthcheck only needs reachability, not identity verification.
       test:
         - CMD
         - wget
         - -q
         - --spider
-        - http://localhost:9091/api/health
+        - --no-check-certificate
+        - https://localhost:9091/api/health
       interval: 10s
       timeout: 5s
       retries: 6
