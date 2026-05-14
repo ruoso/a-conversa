@@ -212,3 +212,80 @@ describe('FacetPill — base structural classes', () => {
     expect(pill.className).toContain('whitespace-nowrap');
   });
 });
+
+describe('FacetPill — in-pill vote-indicator row (mod_vote_indicators_on_graph)', () => {
+  // The vote-indicator row sits inside the pill, to the right of the
+  // facet-name label. Omitted when there are no votes; present
+  // otherwise. Pill border / opacity / status classes are unchanged.
+  const PARTICIPANT_A = '00000000-0000-4000-8000-000000000001';
+  const PARTICIPANT_B = '00000000-0000-4000-8000-000000000002';
+  const PARTICIPANT_C = '00000000-0000-4000-8000-000000000003';
+
+  it('does not render the vote-indicator row when votes is empty / undefined', () => {
+    render(<FacetPill facet="wording" status="proposed" />);
+    const pill = getPill();
+    expect(pill.querySelector('[data-vote-indicator-row]')).toBeNull();
+    expect(pill.querySelector('[data-vote-indicator]')).toBeNull();
+  });
+
+  it('renders one indicator inside the pill when one vote is passed', () => {
+    render(
+      <FacetPill
+        facet="wording"
+        status="proposed"
+        votes={[{ participantId: PARTICIPANT_A, choice: 'agree' }]}
+      />,
+    );
+    const pill = getPill();
+    const row = pill.querySelector('[data-vote-indicator-row]');
+    expect(row).toBeTruthy();
+    const indicators = pill.querySelectorAll('[data-vote-indicator]');
+    expect(indicators.length).toBe(1);
+    expect(indicators[0]?.getAttribute('data-participant-id')).toBe(PARTICIPANT_A);
+    expect(indicators[0]?.getAttribute('data-choice')).toBe('agree');
+  });
+
+  it('renders three indicators with distinct data-choice values for mixed agree + dispute + withdraw votes', () => {
+    render(
+      <FacetPill
+        facet="substance"
+        status="disputed"
+        votes={[
+          { participantId: PARTICIPANT_A, choice: 'agree' },
+          { participantId: PARTICIPANT_B, choice: 'dispute' },
+          { participantId: PARTICIPANT_C, choice: 'withdraw' },
+        ]}
+      />,
+    );
+    const pill = getPill();
+    const indicators = Array.from(pill.querySelectorAll<HTMLElement>('[data-vote-indicator]'));
+    expect(indicators.length).toBe(3);
+    expect(indicators.map((i) => i.getAttribute('data-choice'))).toEqual([
+      'agree',
+      'dispute',
+      'withdraw',
+    ]);
+    expect(indicators.map((i) => i.getAttribute('data-participant-id'))).toEqual([
+      PARTICIPANT_A,
+      PARTICIPANT_B,
+      PARTICIPANT_C,
+    ]);
+  });
+
+  it('preserves the per-status pill className branches when votes are present (no styling regression)', () => {
+    // Sanity: adding a vote-indicator row inside the pill must NOT
+    // disturb the pill's per-status border / ring / opacity branch.
+    render(
+      <FacetPill
+        facet="classification"
+        status="disputed"
+        votes={[{ participantId: PARTICIPANT_A, choice: 'dispute' }]}
+      />,
+    );
+    const pill = getPill();
+    expect(pill.className).toContain('border-rose-600');
+    expect(pill.className).toContain('ring-1');
+    expect(pill.className).toContain('ring-rose-500');
+    expect(pill.getAttribute('data-facet-status')).toBe('disputed');
+  });
+});

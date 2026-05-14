@@ -37,7 +37,7 @@ import {
   type StatementNodeData,
 } from './StatementNode';
 import type { FacetName, FacetStatus } from './facetStatus';
-import type { Annotation, AxiomMark } from './selectors';
+import type { Annotation, AxiomMark, Vote } from './selectors';
 import { initI18n } from '../i18n';
 
 // Build a minimum `NodeProps<StatementNodeData>` value for tests.
@@ -48,18 +48,25 @@ import { initI18n } from '../i18n';
 // default both to empty here so the bulk of the cases stay terse.
 function makeNodeProps(overrides: {
   id?: string;
-  data: Omit<StatementNodeData, 'annotations' | 'facetStatuses' | 'axiomMarks'> & {
+  data: Omit<StatementNodeData, 'annotations' | 'facetStatuses' | 'axiomMarks' | 'votesByFacet'> & {
     annotations?: readonly Annotation[];
     facetStatuses?: Readonly<Partial<Record<FacetName, FacetStatus>>>;
     axiomMarks?: readonly AxiomMark[];
+    votesByFacet?: Readonly<Partial<Record<FacetName, readonly Vote[]>>>;
   };
 }): NodeProps<StatementNodeData> {
   const id = overrides.id ?? 'node-test-1';
-  const { annotations = [], facetStatuses = {}, axiomMarks = [], ...rest } = overrides.data;
+  const {
+    annotations = [],
+    facetStatuses = {},
+    axiomMarks = [],
+    votesByFacet = {},
+    ...rest
+  } = overrides.data;
   return {
     id,
     type: STATEMENT_NODE_TYPE,
-    data: { ...rest, annotations, facetStatuses, axiomMarks },
+    data: { ...rest, annotations, facetStatuses, axiomMarks, votesByFacet },
     selected: false,
     isConnectable: true,
     dragging: false,
@@ -1057,5 +1064,148 @@ describe('StatementNode — per-facet state visualization (mod_per_facet_state_v
     const rowIsBeforeWording =
       (row.compareDocumentPosition(wording) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
     expect(rowIsBeforeWording).toBe(true);
+  });
+});
+
+describe('StatementNode — per-participant vote indicators (mod_vote_indicators_on_graph)', () => {
+  // The in-pill vote-indicator row surfaces WHO voted WHAT on each
+  // facet's pending proposal. Per-participant outer ring color (from
+  // `axiomMarkColorFor`) + choice-keyed inner fill (emerald = agree,
+  // rose = dispute, slate = withdraw). The row is omitted from a pill
+  // when the facet has no votes — the existing border / opacity rules
+  // are unaffected.
+
+  // Distinct hash buckets — same constants used in
+  // `AxiomMarkBadge.test.tsx` / `selectors.test.ts`.
+  const PARTICIPANT_A = '00000000-0000-4000-8000-000000000001';
+  const PARTICIPANT_B = '00000000-0000-4000-8000-000000000002';
+
+  it('renders no vote-indicator rows when votesByFacet is empty', () => {
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-no-votes',
+          data: {
+            wording: 'facet pills but no votes',
+            kind: 'fact',
+            facetStatuses: { wording: 'proposed' },
+          },
+        })}
+      />,
+    );
+    // Pill renders but the vote-indicator row inside the pill does not.
+    const row = screen.getByTestId('facet-pill-row-node-n-no-votes');
+    expect(row.querySelector('[data-vote-indicator]')).toBeNull();
+    expect(row.querySelector('[data-vote-indicator-row]')).toBeNull();
+  });
+
+  it('renders one indicator inside the wording pill when a single participant agrees on wording', () => {
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-one-vote',
+          data: {
+            wording: 'one agree on wording',
+            kind: 'fact',
+            facetStatuses: { wording: 'proposed' },
+            votesByFacet: {
+              wording: [{ participantId: PARTICIPANT_A, choice: 'agree' }],
+            },
+          },
+        })}
+      />,
+    );
+    const row = screen.getByTestId('facet-pill-row-node-n-one-vote');
+    const wordingPill = Array.from(row.querySelectorAll<HTMLElement>('[data-facet-pill]')).find(
+      (p) => p.getAttribute('data-facet-name') === 'wording',
+    );
+    expect(wordingPill).toBeTruthy();
+    const indicators = wordingPill!.querySelectorAll('[data-vote-indicator]');
+    expect(indicators.length).toBe(1);
+    const indicator = indicators[0] as HTMLElement;
+    expect(indicator.getAttribute('data-participant-id')).toBe(PARTICIPANT_A);
+    expect(indicator.getAttribute('data-choice')).toBe('agree');
+  });
+
+  it('renders one indicator row per pill when votes land on two different facets', () => {
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-two-facets',
+          data: {
+            wording: 'votes across two facets',
+            kind: 'fact',
+            facetStatuses: { wording: 'proposed', substance: 'disputed' },
+            votesByFacet: {
+              wording: [{ participantId: PARTICIPANT_A, choice: 'agree' }],
+              substance: [{ participantId: PARTICIPANT_B, choice: 'dispute' }],
+            },
+          },
+        })}
+      />,
+    );
+    const row = screen.getByTestId('facet-pill-row-node-n-two-facets');
+    const pills = Array.from(row.querySelectorAll<HTMLElement>('[data-facet-pill]'));
+    const wordingPill = pills.find((p) => p.getAttribute('data-facet-name') === 'wording')!;
+    const substancePill = pills.find((p) => p.getAttribute('data-facet-name') === 'substance')!;
+    const wordingIndicators = wordingPill.querySelectorAll<HTMLElement>('[data-vote-indicator]');
+    const substanceIndicators =
+      substancePill.querySelectorAll<HTMLElement>('[data-vote-indicator]');
+    expect(wordingIndicators.length).toBe(1);
+    expect(substanceIndicators.length).toBe(1);
+    expect(wordingIndicators[0]?.getAttribute('data-choice')).toBe('agree');
+    expect(substanceIndicators[0]?.getAttribute('data-choice')).toBe('dispute');
+  });
+
+  it('renders mixed votes (agree + dispute) with distinct data-choice values on the same pill', () => {
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-mixed-votes',
+          data: {
+            wording: 'agree and dispute on substance',
+            kind: 'fact',
+            facetStatuses: { substance: 'disputed' },
+            votesByFacet: {
+              substance: [
+                { participantId: PARTICIPANT_A, choice: 'agree' },
+                { participantId: PARTICIPANT_B, choice: 'dispute' },
+              ],
+            },
+          },
+        })}
+      />,
+    );
+    const row = screen.getByTestId('facet-pill-row-node-n-mixed-votes');
+    const indicators = Array.from(row.querySelectorAll<HTMLElement>('[data-vote-indicator]'));
+    expect(indicators.length).toBe(2);
+    const choices = indicators.map((i) => i.getAttribute('data-choice'));
+    expect(choices).toEqual(['agree', 'dispute']);
+  });
+
+  it('renders a withdrawn vote with the gray choice color and data-choice="withdraw"', () => {
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-withdrawn',
+          data: {
+            wording: 'one withdrew on classification',
+            kind: 'fact',
+            facetStatuses: { classification: 'withdrawn' },
+            votesByFacet: {
+              classification: [{ participantId: PARTICIPANT_A, choice: 'withdraw' }],
+            },
+          },
+        })}
+      />,
+    );
+    const row = screen.getByTestId('facet-pill-row-node-n-withdrawn');
+    const indicator = row.querySelector<HTMLElement>('[data-vote-indicator]');
+    expect(indicator).toBeTruthy();
+    expect(indicator!.getAttribute('data-choice')).toBe('withdraw');
+    expect(indicator!.className).toContain('bg-slate-400');
+    // Not styled as agree (emerald) or dispute (rose).
+    expect(indicator!.className).not.toContain('bg-emerald-500');
+    expect(indicator!.className).not.toContain('bg-rose-500');
   });
 });

@@ -51,10 +51,12 @@ import { computeFacetStatuses, EMPTY_FACET_STATUSES } from './facetStatus.js';
 import {
   EMPTY_ANNOTATIONS,
   EMPTY_AXIOM_MARKS,
+  EMPTY_VOTES_BY_FACET,
   groupAnnotationsByNode,
   groupAxiomMarksByNode,
   projectAnnotations,
   projectAxiomMarks,
+  projectVotesByFacet,
   selectEdgesForSession,
 } from './selectors.js';
 
@@ -148,6 +150,11 @@ export function projectNodes(events: readonly Event[]): Node<StatementNodeData>[
   // edge / annotation projection.
   const facetStatusIndex = computeFacetStatuses(events);
 
+  // Per-node per-facet vote index — the per-participant vote dots inside
+  // each facet pill. Same single-pass-up-front pattern. Refinement:
+  // `mod_vote_indicators_on_graph`.
+  const votesByFacetIndex = projectVotesByFacet(events);
+
   for (const event of events) {
     if (event.kind === 'node-created') {
       const i = nodes.length;
@@ -155,6 +162,15 @@ export function projectNodes(events: readonly Event[]): Node<StatementNodeData>[
       const facetStatuses =
         facetStatusIndex.nodes.get(event.payload.node_id) ?? EMPTY_FACET_STATUSES;
       const axiomMarks = axiomMarksByNode.get(event.payload.node_id) ?? EMPTY_AXIOM_MARKS;
+      // Convert the per-node `Map<FacetName, Vote[]>` returned by
+      // `projectVotesByFacet` to the `StatementNodeData.votesByFacet`
+      // partial-record shape the renderer consumes. Empty / absent →
+      // the shared `EMPTY_VOTES_BY_FACET` reference, keeping React /
+      // ReactFlow memoization stable for the no-votes common case.
+      const perNodeVotes = votesByFacetIndex.get(event.payload.node_id);
+      const votesByFacet = perNodeVotes
+        ? (Object.fromEntries(perNodeVotes) as StatementNodeData['votesByFacet'])
+        : EMPTY_VOTES_BY_FACET;
       const node: Node<StatementNodeData> = {
         id: event.payload.node_id,
         type: STATEMENT_NODE_TYPE,
@@ -168,6 +184,7 @@ export function projectNodes(events: readonly Event[]): Node<StatementNodeData>[
           annotations,
           facetStatuses,
           axiomMarks,
+          votesByFacet,
         },
       };
       nodes.push(node);

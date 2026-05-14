@@ -46,6 +46,7 @@ import {
   groupAnnotationsByNode,
   groupAxiomMarksByNode,
   projectAxiomMarks,
+  projectVotesByFacet,
   selectAnnotations,
   selectEdgesForSession,
 } from './selectors.js';
@@ -775,5 +776,345 @@ describe('axiomMarkColorFor', () => {
       expect(color.text).toMatch(/^text-(sky|amber|emerald|fuchsia|cyan|lime)-900$/);
       expect(color.ring).toMatch(/^ring-(sky|amber|emerald|fuchsia|cyan|lime)-300$/);
     }
+  });
+});
+
+// -- projectVotesByFacet ---------------------------------------------
+//
+// Refinement: tasks/refinements/moderator-ui/mod_vote_indicators_on_graph.md
+//
+// The vote-by-facet projection feeds the in-pill vote-indicator row.
+// It walks proposal + vote events, maps each vote to its target
+// (nodeId, facet) via the proposal envelope id, and records each
+// participant's latest arm. Insertion order is the participant's FIRST
+// vote arrival order (subsequent overwrites preserve position).
+
+const PROPOSAL_WORDING_1 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1';
+const PROPOSAL_CLASSIFY_1 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2';
+const PROPOSAL_SUBSTANCE_1 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3';
+const PROPOSAL_EDGE_SUBSTANCE = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa4';
+const NODE_VOTE_1 = '11111111-1111-4111-8111-111111111111';
+const NODE_VOTE_2 = '22222222-2222-4222-8222-222222222222';
+const EDGE_VOTE_1 = '33333333-3333-4333-8333-333333333333';
+const VOTE_PARTICIPANT_A = '00000000-0000-4000-8000-0000000000a1';
+const VOTE_PARTICIPANT_B = '00000000-0000-4000-8000-0000000000a2';
+
+function makeClassifyProposal(opts: {
+  sequence: number;
+  envelopeId: string;
+  nodeId: string;
+}): Event {
+  return {
+    id: opts.envelopeId,
+    sessionId: SESSION,
+    sequence: opts.sequence,
+    kind: 'proposal',
+    actor: ACTOR,
+    payload: {
+      proposal: {
+        kind: 'classify-node',
+        node_id: opts.nodeId,
+        classification: 'fact',
+      },
+    },
+    createdAt: '2026-05-11T00:00:00.000Z',
+  };
+}
+
+function makeEditWordingProposal(opts: {
+  sequence: number;
+  envelopeId: string;
+  nodeId: string;
+}): Event {
+  return {
+    id: opts.envelopeId,
+    sessionId: SESSION,
+    sequence: opts.sequence,
+    kind: 'proposal',
+    actor: ACTOR,
+    payload: {
+      proposal: {
+        kind: 'edit-wording',
+        edit_kind: 'reword',
+        node_id: opts.nodeId,
+        new_wording: 'reworded',
+      },
+    },
+    createdAt: '2026-05-11T00:00:00.000Z',
+  };
+}
+
+function makeSetNodeSubstanceProposal(opts: {
+  sequence: number;
+  envelopeId: string;
+  nodeId: string;
+}): Event {
+  return {
+    id: opts.envelopeId,
+    sessionId: SESSION,
+    sequence: opts.sequence,
+    kind: 'proposal',
+    actor: ACTOR,
+    payload: {
+      proposal: {
+        kind: 'set-node-substance',
+        node_id: opts.nodeId,
+        value: 'agreed',
+      },
+    },
+    createdAt: '2026-05-11T00:00:00.000Z',
+  };
+}
+
+function makeSetEdgeSubstanceProposal(opts: {
+  sequence: number;
+  envelopeId: string;
+  edgeId: string;
+}): Event {
+  return {
+    id: opts.envelopeId,
+    sessionId: SESSION,
+    sequence: opts.sequence,
+    kind: 'proposal',
+    actor: ACTOR,
+    payload: {
+      proposal: {
+        kind: 'set-edge-substance',
+        edge_id: opts.edgeId,
+        value: 'agreed',
+      },
+    },
+    createdAt: '2026-05-11T00:00:00.000Z',
+  };
+}
+
+function makeVote(opts: {
+  sequence: number;
+  proposalEnvelopeId: string;
+  participantId: string;
+  vote: 'agree' | 'dispute' | 'withdraw';
+}): Event {
+  return {
+    id: `00000000-0000-4000-8000-${(0xb00 + opts.sequence).toString(16).padStart(12, '0')}`,
+    sessionId: SESSION,
+    sequence: opts.sequence,
+    kind: 'vote',
+    actor: opts.participantId,
+    payload: {
+      proposal_id: opts.proposalEnvelopeId,
+      participant: opts.participantId,
+      vote: opts.vote,
+      voted_at: '2026-05-11T00:00:00.000Z',
+    },
+    createdAt: '2026-05-11T00:00:00.000Z',
+  };
+}
+
+describe('projectVotesByFacet', () => {
+  it('returns an empty map for an empty event log', () => {
+    const result = projectVotesByFacet([]);
+    expect(result.size).toBe(0);
+  });
+
+  it('projects a single agree vote onto the right (nodeId, facet) bucket', () => {
+    const events: Event[] = [
+      makeEditWordingProposal({
+        sequence: 1,
+        envelopeId: PROPOSAL_WORDING_1,
+        nodeId: NODE_VOTE_1,
+      }),
+      makeVote({
+        sequence: 2,
+        proposalEnvelopeId: PROPOSAL_WORDING_1,
+        participantId: VOTE_PARTICIPANT_A,
+        vote: 'agree',
+      }),
+    ];
+    const result = projectVotesByFacet(events);
+    const perNode = result.get(NODE_VOTE_1);
+    expect(perNode).toBeDefined();
+    const perFacet = perNode!.get('wording');
+    expect(perFacet).toEqual([{ participantId: VOTE_PARTICIPANT_A, choice: 'agree' }]);
+  });
+
+  it('latest vote wins when the same participant votes twice (agree → dispute switch)', () => {
+    const events: Event[] = [
+      makeClassifyProposal({
+        sequence: 1,
+        envelopeId: PROPOSAL_CLASSIFY_1,
+        nodeId: NODE_VOTE_1,
+      }),
+      makeVote({
+        sequence: 2,
+        proposalEnvelopeId: PROPOSAL_CLASSIFY_1,
+        participantId: VOTE_PARTICIPANT_A,
+        vote: 'agree',
+      }),
+      makeVote({
+        sequence: 3,
+        proposalEnvelopeId: PROPOSAL_CLASSIFY_1,
+        participantId: VOTE_PARTICIPANT_A,
+        vote: 'dispute',
+      }),
+    ];
+    const result = projectVotesByFacet(events);
+    const perFacet = result.get(NODE_VOTE_1)!.get('classification');
+    expect(perFacet).toEqual([{ participantId: VOTE_PARTICIPANT_A, choice: 'dispute' }]);
+  });
+
+  it('preserves first-vote arrival order across multiple participants', () => {
+    const events: Event[] = [
+      makeEditWordingProposal({
+        sequence: 1,
+        envelopeId: PROPOSAL_WORDING_1,
+        nodeId: NODE_VOTE_1,
+      }),
+      makeVote({
+        sequence: 2,
+        proposalEnvelopeId: PROPOSAL_WORDING_1,
+        participantId: VOTE_PARTICIPANT_A,
+        vote: 'agree',
+      }),
+      makeVote({
+        sequence: 3,
+        proposalEnvelopeId: PROPOSAL_WORDING_1,
+        participantId: VOTE_PARTICIPANT_B,
+        vote: 'dispute',
+      }),
+      // A switches arm — should NOT move A to the end of the list.
+      makeVote({
+        sequence: 4,
+        proposalEnvelopeId: PROPOSAL_WORDING_1,
+        participantId: VOTE_PARTICIPANT_A,
+        vote: 'dispute',
+      }),
+    ];
+    const result = projectVotesByFacet(events);
+    const perFacet = result.get(NODE_VOTE_1)!.get('wording');
+    expect(perFacet).toEqual([
+      { participantId: VOTE_PARTICIPANT_A, choice: 'dispute' },
+      { participantId: VOTE_PARTICIPANT_B, choice: 'dispute' },
+    ]);
+  });
+
+  it('buckets votes correctly across two facets on the same node', () => {
+    const events: Event[] = [
+      makeEditWordingProposal({
+        sequence: 1,
+        envelopeId: PROPOSAL_WORDING_1,
+        nodeId: NODE_VOTE_1,
+      }),
+      makeSetNodeSubstanceProposal({
+        sequence: 2,
+        envelopeId: PROPOSAL_SUBSTANCE_1,
+        nodeId: NODE_VOTE_1,
+      }),
+      makeVote({
+        sequence: 3,
+        proposalEnvelopeId: PROPOSAL_WORDING_1,
+        participantId: VOTE_PARTICIPANT_A,
+        vote: 'agree',
+      }),
+      makeVote({
+        sequence: 4,
+        proposalEnvelopeId: PROPOSAL_SUBSTANCE_1,
+        participantId: VOTE_PARTICIPANT_B,
+        vote: 'dispute',
+      }),
+    ];
+    const result = projectVotesByFacet(events);
+    const perNode = result.get(NODE_VOTE_1)!;
+    expect(perNode.get('wording')).toEqual([
+      { participantId: VOTE_PARTICIPANT_A, choice: 'agree' },
+    ]);
+    expect(perNode.get('substance')).toEqual([
+      { participantId: VOTE_PARTICIPANT_B, choice: 'dispute' },
+    ]);
+  });
+
+  it('buckets votes correctly across two distinct nodes', () => {
+    const events: Event[] = [
+      makeEditWordingProposal({
+        sequence: 1,
+        envelopeId: PROPOSAL_WORDING_1,
+        nodeId: NODE_VOTE_1,
+      }),
+      makeEditWordingProposal({
+        sequence: 2,
+        envelopeId: PROPOSAL_CLASSIFY_1,
+        nodeId: NODE_VOTE_2,
+      }),
+      makeVote({
+        sequence: 3,
+        proposalEnvelopeId: PROPOSAL_WORDING_1,
+        participantId: VOTE_PARTICIPANT_A,
+        vote: 'agree',
+      }),
+      makeVote({
+        sequence: 4,
+        proposalEnvelopeId: PROPOSAL_CLASSIFY_1,
+        participantId: VOTE_PARTICIPANT_A,
+        vote: 'withdraw',
+      }),
+    ];
+    const result = projectVotesByFacet(events);
+    expect(result.get(NODE_VOTE_1)!.get('wording')).toEqual([
+      { participantId: VOTE_PARTICIPANT_A, choice: 'agree' },
+    ]);
+    expect(result.get(NODE_VOTE_2)!.get('wording')).toEqual([
+      { participantId: VOTE_PARTICIPANT_A, choice: 'withdraw' },
+    ]);
+  });
+
+  it('silently drops a vote referencing an unknown proposal', () => {
+    const events: Event[] = [
+      makeVote({
+        sequence: 1,
+        proposalEnvelopeId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+        participantId: VOTE_PARTICIPANT_A,
+        vote: 'agree',
+      }),
+    ];
+    const result = projectVotesByFacet(events);
+    expect(result.size).toBe(0);
+  });
+
+  it('silently drops a vote on an edge-substance proposal (edges are out of scope)', () => {
+    const events: Event[] = [
+      makeSetEdgeSubstanceProposal({
+        sequence: 1,
+        envelopeId: PROPOSAL_EDGE_SUBSTANCE,
+        edgeId: EDGE_VOTE_1,
+      }),
+      makeVote({
+        sequence: 2,
+        proposalEnvelopeId: PROPOSAL_EDGE_SUBSTANCE,
+        participantId: VOTE_PARTICIPANT_A,
+        vote: 'agree',
+      }),
+    ];
+    const result = projectVotesByFacet(events);
+    // No node bucket; edges are not surfaced by this projection.
+    expect(result.size).toBe(0);
+  });
+
+  it('records a withdraw arm distinctly (per methodology, withdraw is its own arm)', () => {
+    const events: Event[] = [
+      makeEditWordingProposal({
+        sequence: 1,
+        envelopeId: PROPOSAL_WORDING_1,
+        nodeId: NODE_VOTE_1,
+      }),
+      makeVote({
+        sequence: 2,
+        proposalEnvelopeId: PROPOSAL_WORDING_1,
+        participantId: VOTE_PARTICIPANT_A,
+        vote: 'withdraw',
+      }),
+    ];
+    const result = projectVotesByFacet(events);
+    expect(result.get(NODE_VOTE_1)!.get('wording')).toEqual([
+      { participantId: VOTE_PARTICIPANT_A, choice: 'withdraw' },
+    ]);
   });
 });

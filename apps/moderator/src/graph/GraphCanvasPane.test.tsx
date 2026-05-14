@@ -249,6 +249,7 @@ describe('projectNodes — pure projection from events to ReactFlow nodes', () =
       annotations: [],
       facetStatuses: {},
       axiomMarks: [],
+      votesByFacet: {},
     });
     expect(nodes[1]?.id).toBe(NODE_B);
     expect(nodes[1]?.data).toEqual({
@@ -257,6 +258,7 @@ describe('projectNodes — pure projection from events to ReactFlow nodes', () =
       annotations: [],
       facetStatuses: {},
       axiomMarks: [],
+      votesByFacet: {},
     });
   });
 

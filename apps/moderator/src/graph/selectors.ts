@@ -23,7 +23,7 @@
 // it can do the per-target annotation enrichment in a single pass.
 
 import type { Edge } from 'reactflow';
-import type { AnnotationKind, EdgeRole, Event } from '@a-conversa/shared-types';
+import type { AnnotationKind, EdgeRole, Event, ProposalPayload } from '@a-conversa/shared-types';
 
 import {
   computeFacetStatuses,
@@ -386,5 +386,172 @@ export function selectEdgesForSession(
       data: { role: event.payload.role, annotations, facetStatuses },
     });
   }
+  return out;
+}
+
+// -- Per-participant vote projection --------------------------------
+//
+// Refinement: tasks/refinements/moderator-ui/mod_vote_indicators_on_graph.md
+//
+// `projectVotesByFacet` walks the per-session event log and produces a
+// per-node per-facet list of `Vote` records — one entry per participant
+// who voted on the facet's pending proposal, recording the participant's
+// *latest* vote arm. The result is consumed by the in-pill vote-indicator
+// row to surface "who voted what" ambiently on the canvas.
+//
+// **Methodology semantics**: every facet-targeting proposal sub-kind has
+// at most one in-flight proposal per facet at a time (the server's
+// methodology engine enforces this; once a proposal is committed or
+// meta-disagreed, it's closed and a new one can be opened). This
+// projection mirrors the server-side rule of `apps/server/src/methodology/
+// handlers/vote.ts` rule 4: latest vote per `(proposal, participant)`
+// wins; agree↔dispute switches are legal and surface as the new arm.
+//
+// **Scope**: node-targeting facet sub-kinds only (`classify-node`,
+// `set-node-substance`, `edit-wording`, `amend-node`). Edge-substance
+// votes are not surfaced here — the edge surface doesn't render an
+// in-pill indicator row in v1; a separate task can extend if needed.
+// Structural sub-kinds (`decompose`, `interpretive-split`, `axiom-mark`,
+// `meta-move`, `break-edge`, `annotate`) contribute nothing — they don't
+// target a (node, facet) pair.
+
+/**
+ * One participant's vote on a facet's pending proposal, projected for
+ * rendering. Mirrors the `vote` event payload, narrowed to the two
+ * fields the indicator surface consumes.
+ *
+ * `choice` uses `'choice'` (not `'vote'`) as the field name so the seam
+ * attribute `data-choice` on the indicator span reads naturally; the
+ * wire payload's `vote` field name is preserved in the read of
+ * `event.payload.vote` and renamed at the projection boundary.
+ */
+export interface Vote {
+  readonly participantId: string;
+  readonly choice: 'agree' | 'dispute' | 'withdraw';
+}
+
+/**
+ * Module-scope shared empty vote-by-facet record. Hands a stable
+ * reference to consumers (the node projection's `data.votesByFacet`
+ * default) so React / ReactFlow memoization doesn't see a fresh object
+ * on every projection pass. Same rationale as `EMPTY_ANNOTATIONS` and
+ * `EMPTY_FACET_STATUSES`.
+ */
+export const EMPTY_VOTES_BY_FACET: Readonly<Partial<Record<FacetName, readonly Vote[]>>> =
+  Object.freeze({});
+
+/**
+ * Module-scope shared empty per-facet votes array. Used as the
+ * default fallback for facets with no votes; keeps the reference
+ * stable across renders.
+ */
+export const EMPTY_VOTES: readonly Vote[] = Object.freeze([]);
+
+/**
+ * Decode the (nodeId, facet) target of a proposal payload for vote
+ * projection. Only the four node-targeting facet sub-kinds produce a
+ * target; every other sub-kind (edge-substance, structural sub-kinds)
+ * returns `null` so the caller drops the proposal from the projection.
+ */
+function voteTargetOf(proposal: ProposalPayload): { nodeId: string; facet: FacetName } | null {
+  switch (proposal.kind) {
+    case 'classify-node':
+      return { nodeId: proposal.node_id, facet: 'classification' };
+    case 'set-node-substance':
+      return { nodeId: proposal.node_id, facet: 'substance' };
+    case 'edit-wording':
+    case 'amend-node':
+      return { nodeId: proposal.node_id, facet: 'wording' };
+    default:
+      // edge-substance, decompose, interpretive-split, axiom-mark,
+      // meta-move, break-edge, annotate — no per-node-facet target.
+      return null;
+  }
+}
+
+/**
+ * Pure projection from a session's event log to the per-node per-facet
+ * `Vote[]` index. Single-pass over `events`.
+ *
+ * For each `proposal` event whose inner proposal targets a (nodeId,
+ * facet), records the proposal-id → target mapping. For each subsequent
+ * `vote` event referencing a known target, records the participant's
+ * latest vote (last-write-wins per `(proposal, participant)`).
+ *
+ * Insertion order in the per-facet list: order of each participant's
+ * FIRST vote on that facet (subsequent votes by the same participant
+ * overwrite the choice in-place, preserving the original position).
+ * This keeps the rendered dot order stable across the agree↔dispute
+ * switch — the dot for participant A doesn't jump to the end of the
+ * row when A switches from agree to dispute.
+ *
+ * Unknown / non-facet-targeting proposals contribute nothing. Votes
+ * referencing an unknown proposal are silently dropped.
+ */
+export function projectVotesByFacet(events: readonly Event[]): Map<string, Map<FacetName, Vote[]>> {
+  // proposal envelope id → (nodeId, facet) target.
+  const proposalTarget = new Map<string, { nodeId: string; facet: FacetName }>();
+  // per-(nodeId, facet) accumulator: keeps both an ordered list of
+  // votes and a participantId → index map for in-place overwrite of a
+  // participant's latest arm without disturbing arrival order.
+  const out = new Map<string, Map<FacetName, Vote[]>>();
+  const positionIndex = new Map<string, Map<FacetName, Map<string, number>>>();
+
+  for (const event of events) {
+    if (event.kind === 'proposal') {
+      const target = voteTargetOf(event.payload.proposal);
+      if (target === null) continue;
+      proposalTarget.set(event.id, target);
+      continue;
+    }
+    if (event.kind === 'vote') {
+      const target = proposalTarget.get(event.payload.proposal_id);
+      if (target === undefined) continue;
+      const { nodeId, facet } = target;
+
+      let perNode = out.get(nodeId);
+      if (perNode === undefined) {
+        perNode = new Map();
+        out.set(nodeId, perNode);
+      }
+      let perFacet = perNode.get(facet);
+      if (perFacet === undefined) {
+        perFacet = [];
+        perNode.set(facet, perFacet);
+      }
+
+      let perNodePositions = positionIndex.get(nodeId);
+      if (perNodePositions === undefined) {
+        perNodePositions = new Map();
+        positionIndex.set(nodeId, perNodePositions);
+      }
+      let perFacetPositions = perNodePositions.get(facet);
+      if (perFacetPositions === undefined) {
+        perFacetPositions = new Map();
+        perNodePositions.set(facet, perFacetPositions);
+      }
+
+      const participantId = event.payload.participant;
+      const choice = event.payload.vote;
+      const priorIndex = perFacetPositions.get(participantId);
+      if (priorIndex === undefined) {
+        perFacetPositions.set(participantId, perFacet.length);
+        perFacet.push({ participantId, choice });
+      } else {
+        perFacet[priorIndex] = { participantId, choice };
+      }
+      continue;
+    }
+    // Other event kinds (commit, meta-disagreement-marked, node-created,
+    // edge-created, annotation-created, etc.) do not contribute votes.
+    // A commit or meta-disagreement-marked event closes the proposal on
+    // the methodology side but the votes recorded BEFORE closure remain
+    // surfaced — they're the historical record of who agreed (the
+    // moderator still wants to see "Alice agreed, Bob agreed" on a
+    // committed proposal). Server-side write rules prevent further
+    // arm-switching votes after commit (rule 3 in vote.ts), so the
+    // last-write-wins semantics are stable.
+  }
+
   return out;
 }

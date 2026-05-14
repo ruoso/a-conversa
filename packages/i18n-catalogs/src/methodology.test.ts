@@ -66,6 +66,12 @@ const METHODOLOGY_VALUES = {
   // pins every locale's catalog entry for the three v1 facets.
   facet: ['wording', 'classification', 'substance'],
   voteChoice: ['agree', 'dispute', 'withdraw'],
+  // Per-participant vote-indicator verb-form fragments. Refinement:
+  // `tasks/refinements/moderator-ui/mod_vote_indicators_on_graph.md`.
+  // Distinct from `voteChoice` — the indicator's aria-label substitutes
+  // the verb-form here ("voted agree") while `voteChoice` is the
+  // title-case noun ("Agree" / "Dispute" / "Withdraw").
+  voteIndicatorChoice: ['agree', 'dispute', 'withdraw'],
   annotationKind: ['note', 'reframe', 'scope-change', 'stance'],
   diagnostic: ['cycle', 'contradiction', 'multi-warrant', 'dangling-claim', 'coherency-hint'],
 } as const;

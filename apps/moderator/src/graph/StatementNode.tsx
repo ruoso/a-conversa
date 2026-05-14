@@ -1,7 +1,8 @@
 // `<StatementNode>` — custom ReactFlow node for the moderator's graph.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_per_facet_state_visualization.md
-// (prior:     tasks/refinements/moderator-ui/mod_axiom_mark_decoration.md,
+// Refinement: tasks/refinements/moderator-ui/mod_vote_indicators_on_graph.md
+// (prior:     tasks/refinements/moderator-ui/mod_per_facet_state_visualization.md,
+//             tasks/refinements/moderator-ui/mod_axiom_mark_decoration.md,
 //             tasks/refinements/moderator-ui/mod_meta_disagreement_split_render.md,
 //             tasks/refinements/moderator-ui/mod_disputed_state_styling.md,
 //             tasks/refinements/moderator-ui/mod_agreed_state_styling.md,
@@ -46,7 +47,7 @@ import { AnnotationBadge } from './AnnotationBadge.js';
 import { AxiomMarkBadge } from './AxiomMarkBadge.js';
 import { FacetPill } from './FacetPill.js';
 import type { FacetName, FacetStatus } from './facetStatus.js';
-import type { Annotation, AxiomMark } from './selectors.js';
+import { EMPTY_VOTES, type Annotation, type AxiomMark, type Vote } from './selectors.js';
 
 /**
  * Canonical reading order for the per-facet pill row. Matches the
@@ -107,6 +108,16 @@ export interface StatementNodeData {
    * annotation row). Refinement: `mod_axiom_mark_decoration`.
    */
   readonly axiomMarks: readonly AxiomMark[];
+  /**
+   * Per-facet `Vote[]` index for this node — one entry per facet that
+   * has at least one vote on its pending proposal. Each entry is the
+   * list of per-participant votes (latest arm each), preserving each
+   * participant's first-vote arrival order so the indicator dots don't
+   * jump position on an agree↔dispute switch. Empty / absent facets
+   * render their pill unchanged (no in-pill indicator row). Refinement:
+   * `mod_vote_indicators_on_graph`.
+   */
+  readonly votesByFacet: Readonly<Partial<Record<FacetName, readonly Vote[]>>>;
 }
 
 /**
@@ -171,7 +182,7 @@ export function cardRollupStatus(
 export function StatementNode(props: NodeProps<StatementNodeData>): ReactElement {
   const { id, data } = props;
   const { t } = useTranslation();
-  const { wording, kind, annotations, facetStatuses, axiomMarks } = data;
+  const { wording, kind, annotations, facetStatuses, axiomMarks, votesByFacet } = data;
 
   // Resolve the kind label off the canonical glossary namespace from
   // `i18n_methodology_glossary`. `t('methodology.kind.fact')` etc.
@@ -241,7 +252,8 @@ export function StatementNode(props: NodeProps<StatementNodeData>): ReactElement
   const facetPills = FACET_RENDER_ORDER.flatMap((facet) => {
     const status = facetStatuses[facet];
     if (status === undefined) return [];
-    return [<FacetPill key={facet} facet={facet} status={status} />];
+    const votes = votesByFacet[facet] ?? EMPTY_VOTES;
+    return [<FacetPill key={facet} facet={facet} status={status} votes={votes} />];
   });
 
   return (

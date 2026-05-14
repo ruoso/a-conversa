@@ -1,8 +1,9 @@
 // `<FacetPill>` — small bordered chip rendering ONE facet's status on a
 // statement node card.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_per_facet_state_visualization.md
-// (prior:     tasks/refinements/moderator-ui/mod_disputed_state_styling.md,
+// Refinement: tasks/refinements/moderator-ui/mod_vote_indicators_on_graph.md
+// (prior:     tasks/refinements/moderator-ui/mod_per_facet_state_visualization.md,
+//             tasks/refinements/moderator-ui/mod_disputed_state_styling.md,
 //             tasks/refinements/moderator-ui/mod_agreed_state_styling.md,
 //             tasks/refinements/moderator-ui/mod_proposed_state_styling.md)
 // ADRs:       docs/adr/0004-graph-libraries-reactflow-and-cytoscape.md
@@ -36,10 +37,19 @@ import { memo, type ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { FacetName, FacetStatus } from './facetStatus.js';
+import { EMPTY_VOTES, type Vote } from './selectors.js';
+import { VoteIndicator } from './VoteIndicator.js';
 
 export interface FacetPillProps {
   readonly facet: FacetName;
   readonly status: FacetStatus;
+  /**
+   * Per-participant votes on this facet's pending proposal. Empty when
+   * the facet has no votes; the indicator row is omitted in that case
+   * (mirrors the annotation / axiom-mark-row "no empty container" rule).
+   * Refinement: `mod_vote_indicators_on_graph`.
+   */
+  readonly votes?: readonly Vote[];
 }
 
 /**
@@ -65,10 +75,30 @@ const PILL_STATUS_CLASSNAME: Readonly<Record<FacetStatus, string>> = {
 };
 
 function FacetPillImpl(props: FacetPillProps): ReactElement {
-  const { facet, status } = props;
+  const { facet, status, votes = EMPTY_VOTES } = props;
   const { t } = useTranslation();
 
   const className = `${PILL_BASE_CLASSNAME} ${PILL_STATUS_CLASSNAME[status]}`;
+
+  // The vote-indicator row sits inside the pill, to the right of the
+  // facet-name label. Rendered ONLY when at least one vote exists —
+  // otherwise the pill renders unchanged (mirrors the empty-container
+  // omission rule used elsewhere on the card). Refinement:
+  // `mod_vote_indicators_on_graph`. `gap-0.5` keeps the dot row tight
+  // inside the pill's `px-1.5` padding; `ml-1` separates the dots from
+  // the facet-name label.
+  const voteIndicatorRow =
+    votes.length > 0 ? (
+      <span data-vote-indicator-row="" className="ml-1 inline-flex items-center gap-0.5">
+        {votes.map((vote) => (
+          <VoteIndicator
+            key={vote.participantId}
+            participantId={vote.participantId}
+            choice={vote.choice}
+          />
+        ))}
+      </span>
+    ) : null;
 
   return (
     <span
@@ -78,6 +108,7 @@ function FacetPillImpl(props: FacetPillProps): ReactElement {
       className={className}
     >
       {t(`methodology.facet.${facet}`)}
+      {voteIndicatorRow}
     </span>
   );
 }

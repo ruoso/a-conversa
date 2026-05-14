@@ -70,6 +70,14 @@
       "tooltip": "Axiom marked by {participantId}",
       "srLabel": "Axiom mark from participant {participantId}"
     },
+    "voteIndicator": {
+      "label": "Participant {participantId} voted {choice}"
+    },
+    "voteIndicatorChoice": {
+      "agree": "agree",
+      "dispute": "dispute",
+      "withdraw": "withdraw"
+    },
     "diagnostic": {
       "cycle": "Cycle",
       "contradiction": "Contradiction",
