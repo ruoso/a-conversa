@@ -270,6 +270,7 @@ task backend_hardening "M3-review hardening (security audit follow-ups)" {
     task inclusion_source_toctou_pin "Decide + pin TOCTOU behavior for entity-inclusion source visibility" {
       effort 0.5d
       allocate team
+      complete 100
       depends !concurrent_write_test_harness
       note "Source: docs/security/m3-review/coverage.md G-017"
       note "Refinement: tasks/refinements/backend-hardening/inclusion_source_toctou_pin.md"

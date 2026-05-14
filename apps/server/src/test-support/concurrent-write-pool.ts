@@ -106,11 +106,37 @@ export interface SessionEventRow {
   readonly created_at: Date;
 }
 
+/**
+ * Inclusion-join row shape. The production schema splits inclusion
+ * rows across three tables (`session_nodes`, `session_edges`,
+ * `session_annotations`) with a per-kind entity-id column name
+ * (`node_id` / `edge_id` / `annotation_id`); the harness store
+ * normalises the entity-id field to `entity_id` for ergonomics and
+ * keys the three kinds via separate arrays on the store. The shim's
+ * RETURNING projection rebuilds the per-kind column name from the SQL
+ * text when the inclusion INSERT is recognised.
+ *
+ * Used by the `canReference<Kind>` source-side reachability predicate
+ * (`SELECT 1 AS reachable FROM session_<kind>s sj JOIN sessions ...`)
+ * and by the entity-inclusion endpoint's join-table INSERT (`INSERT
+ * INTO session_<kind>s (session_id, <entity>_id, included_by) VALUES
+ * ($1, $2, $3) ON CONFLICT DO NOTHING RETURNING ...`).
+ */
+export interface InclusionRow {
+  readonly session_id: string;
+  readonly entity_id: string;
+  readonly included_by: string;
+  readonly included_at: Date;
+}
+
 export interface HarnessStore {
   users: UserRow[];
   sessions: SessionRow[];
   participants: SessionParticipantRow[];
   events: SessionEventRow[];
+  sessionNodes: InclusionRow[];
+  sessionEdges: InclusionRow[];
+  sessionAnnotations: InclusionRow[];
 }
 
 // ---- Errors ----------------------------------------------------------
@@ -317,6 +343,9 @@ export function makeConcurrentWritePool(
     sessions: [...(options.initial?.sessions ?? [])],
     participants: [...(options.initial?.participants ?? [])],
     events: [...(options.initial?.events ?? [])],
+    sessionNodes: [...(options.initial?.sessionNodes ?? [])],
+    sessionEdges: [...(options.initial?.sessionEdges ?? [])],
+    sessionAnnotations: [...(options.initial?.sessionAnnotations ?? [])],
   };
 
   const lockManager = new RowLockManager();
@@ -486,6 +515,192 @@ export function makeConcurrentWritePool(
             },
           ] as unknown as TRow[],
         };
+      }
+
+      // ---- Non-FOR-UPDATE row-shape SELECT on sessions ----------
+      //
+      // The `PATCH /sessions/:id/privacy` handler issues a
+      // visibility-gated row-shape SELECT (NOT FOR UPDATE — privacy
+      // PATCH is a single-statement UPDATE, no need to lock the read
+      // path). Distinguished from `canSeeSession` (which is
+      // `SELECT 1 ...`) by selecting the row columns; distinguished
+      // from the FOR UPDATE variant by the missing `FOR UPDATE`.
+      if (
+        /FROM\s+sessions(?![A-Za-z_])/.test(text) &&
+        !text.includes('FOR UPDATE') &&
+        text.includes('SELECT id, host_user_id, ended_at') &&
+        text.includes('WHERE id = $1') &&
+        text.includes("privacy = 'public'")
+      ) {
+        const sessionId = p[0] as string;
+        const userId = p[1] as string;
+        const session = store.sessions.find((s) => s.id === sessionId);
+        if (session === undefined) {
+          return { rows: [] as TRow[] };
+        }
+        const isPublic = session.privacy === 'public';
+        const isHost = session.host_user_id === userId;
+        const isParticipant = store.participants.some(
+          (sp) => sp.session_id === sessionId && sp.user_id === userId && sp.left_at === null,
+        );
+        if (!isPublic && !isHost && !isParticipant) {
+          return { rows: [] as TRow[] };
+        }
+        return {
+          rows: [
+            {
+              id: session.id,
+              host_user_id: session.host_user_id,
+              ended_at: session.ended_at,
+            },
+          ] as unknown as TRow[],
+        };
+      }
+
+      // ---- UPDATE sessions SET privacy = $1 ---------------------
+      //
+      // The `PATCH /sessions/:id/privacy` UPDATE. Single atomic
+      // statement; mutate-in-place on the matching session row and
+      // RETURNING the full row shape. We DO NOT acquire the
+      // `sessions:<id>` lock here — production's UPDATE is a single
+      // statement that doesn't bracket a read-then-write window; the
+      // race this harness is built to expose (G-017) is precisely
+      // the absence of a FOR UPDATE on the source-side reference
+      // predicate.
+      if (text.includes('UPDATE sessions') && text.includes('SET privacy = $1')) {
+        const [desiredPrivacy, sessionId] = p as [string, string];
+        const idx = store.sessions.findIndex((s) => s.id === sessionId);
+        if (idx < 0) {
+          return { rows: [] as TRow[] };
+        }
+        const original = store.sessions[idx] as SessionRow;
+        const updated: SessionRow = {
+          ...original,
+          privacy: desiredPrivacy as 'public' | 'private',
+        };
+        store.sessions[idx] = updated;
+        return {
+          rows: [
+            {
+              id: updated.id,
+              host_user_id: updated.host_user_id,
+              privacy: updated.privacy,
+              topic: updated.topic,
+              created_at: updated.created_at,
+              ended_at: updated.ended_at,
+            },
+          ] as unknown as TRow[],
+        };
+      }
+
+      // ---- canReference<Kind> source-side reachability predicate
+      //
+      // The reference predicate (`canReferenceNode/Edge/Annotation`
+      // in apps/server/src/sessions/references.ts). Production SQL:
+      //   SELECT 1 AS reachable
+      //     FROM session_<kind>s sj
+      //     JOIN sessions ON sj.session_id = sessions.id
+      //    WHERE sj.<entity>_id = $1
+      //      AND <visibilityWhereFragment(2)>
+      //    LIMIT 1
+      // Mirrors the JS predicate from the existing memory-pool shim
+      // in apps/server/src/sessions/routes.test.ts: returns one row
+      // iff there exists a join row whose origin session is visible
+      // to the caller per the public-or-host-or-participant rule.
+      //
+      // Note: this predicate is the load-bearing surface for the
+      // G-017 TOCTOU pinning test. Reading `sessions.privacy` and
+      // `session_participants` rows directly from the store — under
+      // READ COMMITTED, a privacy-flip COMMIT that lands between the
+      // SELECT and the COMMIT of the enclosing transaction is
+      // visible here; that's exactly the race the test exercises.
+      if (
+        (text.includes('FROM session_nodes sj') ||
+          text.includes('FROM session_edges sj') ||
+          text.includes('FROM session_annotations sj')) &&
+        text.includes('JOIN sessions ON sj.session_id = sessions.id')
+      ) {
+        const sourceArray = text.includes('FROM session_nodes sj')
+          ? store.sessionNodes
+          : text.includes('FROM session_edges sj')
+            ? store.sessionEdges
+            : store.sessionAnnotations;
+        const targetEntityId = p[0] as string;
+        const userId = p[1] as string;
+        const reachable = sourceArray.some((r) => {
+          if (r.entity_id !== targetEntityId) return false;
+          const originSession = store.sessions.find((s) => s.id === r.session_id);
+          if (originSession === undefined) return false;
+          // visibilityWhereFragment: public OR host OR past-or-
+          // current participant. The production fragment does NOT
+          // filter `left_at`; once a participant always a participant
+          // for visibility purposes (per `visibility.ts`'s
+          // "past-or-current" rule). The harness mirrors that
+          // exactly — no `left_at` filter here.
+          return (
+            originSession.privacy === 'public' ||
+            originSession.host_user_id === userId ||
+            store.participants.some(
+              (sp) => sp.session_id === originSession.id && sp.user_id === userId,
+            )
+          );
+        });
+        return {
+          rows: reachable ? ([{ reachable: 1 }] as unknown as TRow[]) : ([] as TRow[]),
+        };
+      }
+
+      // ---- INSERT INTO session_<kind>s --------------------------
+      //
+      // The entity-inclusion endpoint's join-table INSERT. Production
+      // SQL: `INSERT INTO session_<kind>s (session_id, <entity>_id,
+      // included_by) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING
+      // RETURNING session_id, <entity>_id, included_by, included_at`.
+      // The composite PK on (session_id, <entity>_id) collapses
+      // concurrent-inclusion races to a deterministic "zero rows
+      // returned" outcome via ON CONFLICT DO NOTHING; the shim
+      // mirrors that.
+      //
+      // RETURNING reconstructs the per-kind column name (`node_id` /
+      // `edge_id` / `annotation_id`) from the SQL text so the
+      // handler's destructure works.
+      if (
+        text.includes('INSERT INTO session_nodes') ||
+        text.includes('INSERT INTO session_edges') ||
+        text.includes('INSERT INTO session_annotations')
+      ) {
+        const targetArray = text.includes('INSERT INTO session_nodes')
+          ? store.sessionNodes
+          : text.includes('INSERT INTO session_edges')
+            ? store.sessionEdges
+            : store.sessionAnnotations;
+        const entityIdColumn = text.includes('INSERT INTO session_nodes')
+          ? 'node_id'
+          : text.includes('INSERT INTO session_edges')
+            ? 'edge_id'
+            : 'annotation_id';
+        const [sessionId, entityId, includedBy] = p as [string, string, string];
+        const existing = targetArray.find(
+          (r) => r.session_id === sessionId && r.entity_id === entityId,
+        );
+        if (existing !== undefined) {
+          // ON CONFLICT DO NOTHING — zero rows returned.
+          return { rows: [] as TRow[] };
+        }
+        const row: InclusionRow = {
+          session_id: sessionId,
+          entity_id: entityId,
+          included_by: includedBy,
+          included_at: createdAtFactory(),
+        };
+        targetArray.push(row);
+        const returnedRow = {
+          session_id: row.session_id,
+          [entityIdColumn]: row.entity_id,
+          included_by: row.included_by,
+          included_at: row.included_at,
+        };
+        return { rows: [returnedRow] as unknown as TRow[] };
       }
 
       // ---- MAX(sequence) on session_events ----------------------
