@@ -1,0 +1,24 @@
+/* Global stylesheet for the moderator app.
+ *
+ * Refinement: tasks/refinements/moderator-ui/mod_layout_shell.md
+ * ADR:        docs/adr/0005-styling-tailwind-with-shared-tokens.md
+ *
+ * Imports Tailwind v4 utilities (the `@tailwindcss/vite` plugin in
+ * `vite.config.ts` compiles the bundle's class candidates). The body /
+ * html / #root reset claims the full viewport so the `OperateLayout`
+ * grid (`h-screen`) sees real height; otherwise React's root would
+ * default to `content-height` and the three-pane shell would collapse.
+ *
+ * `packages/ui-tokens` is still deferred per ADR 0005's Consequences;
+ * once it lands, the theme block belongs here (or in a shared
+ * stylesheet pulled in via `@import`).
+ */
+
+@import 'tailwindcss';
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}

@@ -17,6 +17,7 @@ import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import { negotiateAuthenticatedLocale } from '@a-conversa/i18n-catalogs';
 
+import './index.css';
 import { App } from './App';
 import { initI18n } from './i18n';
 

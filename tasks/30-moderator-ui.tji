@@ -66,6 +66,8 @@ task moderator_ui "Moderator UI" {
     task mod_layout_shell "Three-pane scaffolding" {
       effort 1d
       allocate team
+      complete 100
+      note "Refinement: tasks/refinements/moderator-ui/mod_layout_shell.md"
     }
     task mod_graph_canvas_pane "Graph canvas pane" {
       effort 1d
