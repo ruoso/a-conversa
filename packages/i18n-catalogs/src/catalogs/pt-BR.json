@@ -35,13 +35,34 @@
       "definitional": "Definicional"
     },
     "edgeRole": {
-      "supports": "Apoia",
-      "rebuts": "Refuta",
-      "qualifies": "Qualifica",
-      "bridges-from": "Ponte de",
-      "bridges-to": "Ponte para",
-      "defines": "Define",
-      "contradicts": "Contradiz"
+      "supports": {
+        "label": "Apoia",
+        "description": "A fonte fornece evidência ou base para o alvo."
+      },
+      "rebuts": {
+        "label": "Refuta",
+        "description": "A fonte contesta ou refuta o alvo."
+      },
+      "qualifies": {
+        "label": "Qualifica",
+        "description": "A fonte restringe o escopo ou o grau do alvo — \"geralmente\", \"na maioria dos casos\", \"exceto quando X\"."
+      },
+      "bridges-from": {
+        "label": "Ponte de",
+        "description": "Sai de um nó de garantia em direção ao dado em que ele se apoia."
+      },
+      "bridges-to": {
+        "label": "Ponte para",
+        "description": "Sai de um nó de garantia em direção à afirmação que ele autoriza."
+      },
+      "defines": {
+        "label": "Define",
+        "description": "A fonte fornece o significado de um termo usado no alvo."
+      },
+      "contradicts": {
+        "label": "Contradiz",
+        "description": "A fonte e o alvo se opõem; ambos não podem ser verdadeiros."
+      }
     },
     "facetState": {
       "proposed": "Proposta",

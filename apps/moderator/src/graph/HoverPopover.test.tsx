@@ -348,11 +348,20 @@ describe('HoverPopover — edge target rendering', () => {
   });
 
   it('does NOT render the role-description section when the catalog lacks methodology.edgeRole.<role>.description', () => {
-    // The en-US catalog as of `mod_edge_popover_full_target_wording`
-    // carries NO `methodology.edgeRole.<role>.description` entries —
-    // the descriptions are deferred to a future
-    // `i18n_methodology_role_descriptions` task. The popover renderer
-    // therefore omits the description paragraph entirely.
+    // The canonical catalog now carries a description for every role
+    // (`i18n_methodology_role_descriptions`). To keep the omitted-DOM
+    // branch covered we shadow the `supports.description` resource with
+    // the literal dotted key — that is exactly what i18next's
+    // `returnNull: false` miss behavior emits, so the popover's
+    // `roleDescription !== roleDescriptionKey` guard evaluates to
+    // `false` and the description paragraph is omitted. (i18next 26
+    // removed the legacy `removeResource` method; `addResource` with
+    // the key-as-value is the supported way to simulate a miss while
+    // keeping the rest of the catalog intact.) The next test's
+    // `beforeEach` calls `initI18n('en-US')` which resets the resource
+    // store, so the override does not leak across tests.
+    const missKey = 'methodology.edgeRole.supports.description';
+    i18next.addResource('en-US', 'translation', missKey, missKey);
     render(
       <HoverPopover
         id="edge-no-desc"
@@ -367,21 +376,11 @@ describe('HoverPopover — edge target rendering', () => {
   });
 
   it('renders the role-description section when the catalog DOES carry methodology.edgeRole.<role>.description', () => {
-    // The seam is the literal-key fallback (i18next's miss behavior
-    // under `returnNull: false`): the popover renders the description
-    // paragraph iff the lookup resolves to something OTHER than the
-    // literal key string. We exercise the hit path by adding a
-    // synthetic description resource for the `qualifies` role to the
-    // already-initialized i18next instance. The next test's
-    // `beforeEach` calls `initI18n('en-US')` which re-runs
-    // `i18next.init(...)` against the canonical catalog and resets the
-    // resource store, so no per-test cleanup is needed.
-    i18next.addResource(
-      'en-US',
-      'translation',
-      'methodology.edgeRole.qualifies.description',
-      'An edge that qualifies the target claim with a condition.',
-    );
+    // The canonical catalog (post `i18n_methodology_role_descriptions`)
+    // carries a description for every role. The popover renders the
+    // description paragraph iff the lookup resolves to something OTHER
+    // than the literal key string. No `addResource()` injection needed:
+    // the en-US `qualifies.description` entry from the catalog suffices.
     render(
       <HoverPopover
         id="edge-with-desc"
@@ -394,9 +393,10 @@ describe('HoverPopover — edge target rendering', () => {
     const popover = screen.getByTestId('hover-popover-edge-with-desc');
     const desc = popover.querySelector('[data-hover-popover-section="role-description"]');
     expect(desc).not.toBeNull();
-    expect(desc!.textContent).toContain(
-      'An edge that qualifies the target claim with a condition.',
-    );
+    // Assert the canonical en-US sentence per the refinement's
+    // authoritative-text table (`tasks/refinements/frontend-i18n/
+    // i18n_methodology_role_descriptions.md`).
+    expect(desc!.textContent).toContain('Source hedges the scope or degree of target');
   });
 
   it('renders the substance facet row when facetStatuses has substance', () => {

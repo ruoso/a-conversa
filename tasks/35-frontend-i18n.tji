@@ -52,8 +52,18 @@ task frontend_i18n "Frontend internationalization" {
   task i18n_methodology_role_descriptions "Add methodology.edgeRole.<role>.description entries to all v1 locale catalogs" {
     effort 0.5d
     allocate team
+    complete 100
     depends !i18n_methodology_glossary
     note "Source of debt: mod_edge_popover_full_target_wording (this commit) — the moderator edge popover wires a conditional render of methodology.edgeRole.<role>.description via i18next t.exists(). Once these entries land in en-US.json / pt-BR.json / es-419.json for the seven edge roles (supports, rebuts, qualifies, bridges-from, bridges-to, defines, contradicts), the popover automatically surfaces a one-sentence role description on hover; until then the key-existence check yields the role label alone."
+    note "Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit b7c5ff0)."
+    note "Refinement: tasks/refinements/frontend-i18n/i18n_methodology_role_descriptions.md"
+  }
+
+  task i18n_methodology_role_descriptions_native_review "Native-speaker review of pt-BR + es-419 edge-role descriptions" {
+    effort 1d
+    allocate team
+    depends !i18n_methodology_role_descriptions
+    note "Source of debt: i18n_methodology_role_descriptions (this commit) — pt-BR and es-419 description drafts landed flagged PENDING in the *.review.json trackers; replace with native-speaker-reviewed text and sign off the review trackers. Methodology + philosophical accuracy review per locale."
     note "Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit b7c5ff0)."
   }
 

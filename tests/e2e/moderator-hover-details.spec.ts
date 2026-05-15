@@ -205,6 +205,17 @@ test.describe.serial('moderator hover details', () => {
     const endpointsRow = edgePopover.locator('[data-hover-popover-section="endpoints"]');
     await expect(endpointsRow).toHaveAttribute('data-hover-popover-source-id', NODE_ID);
     await expect(endpointsRow).toHaveAttribute('data-hover-popover-target-id', NODE_ID_OTHER);
+    // Role-description row. Refinement
+    // `i18n_methodology_role_descriptions` lit the conditional-render
+    // seam by landing `methodology.edgeRole.<role>.description` entries
+    // in every v1 locale. The structural contract is "visible AND
+    // non-empty"; we deliberately do NOT pin the literal English text —
+    // descriptions are content decisions that may revise across future
+    // refinements, while "the description paragraph renders for every
+    // role on every hover" is the load-bearing UX contract.
+    const descriptionRow = edgePopover.locator('[data-hover-popover-section="role-description"]');
+    await expect(descriptionRow).toBeVisible();
+    await expect(descriptionRow).not.toBeEmpty();
     // Negative assertions — the popover MUST NOT render source/target
     // wordings (even a 60-char prefix). This pins the load-bearing
     // contract change from `mod_edge_popover_full_target_wording`.

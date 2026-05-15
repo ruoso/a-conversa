@@ -35,13 +35,34 @@
       "definitional": "Definicional"
     },
     "edgeRole": {
-      "supports": "Apoya",
-      "rebuts": "Refuta",
-      "qualifies": "Califica",
-      "bridges-from": "Puente desde",
-      "bridges-to": "Puente hacia",
-      "defines": "Define",
-      "contradicts": "Contradice"
+      "supports": {
+        "label": "Apoya",
+        "description": "La fuente aporta evidencia o respaldo al objetivo."
+      },
+      "rebuts": {
+        "label": "Refuta",
+        "description": "La fuente impugna o refuta el objetivo."
+      },
+      "qualifies": {
+        "label": "Califica",
+        "description": "La fuente acota el alcance o el grado del objetivo — \"generalmente\", \"en la mayoría de los casos\", \"excepto cuando X\"."
+      },
+      "bridges-from": {
+        "label": "Puente desde",
+        "description": "Sale de un nodo de garantía hacia el dato en que se apoya."
+      },
+      "bridges-to": {
+        "label": "Puente hacia",
+        "description": "Sale de un nodo de garantía hacia la afirmación que autoriza."
+      },
+      "defines": {
+        "label": "Define",
+        "description": "La fuente aporta el significado de un término usado en el objetivo."
+      },
+      "contradicts": {
+        "label": "Contradice",
+        "description": "La fuente y el objetivo se oponen; ambos no pueden ser verdaderos."
+      }
     },
     "facetState": {
       "proposed": "Propuesta",

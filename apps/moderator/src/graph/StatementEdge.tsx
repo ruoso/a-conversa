@@ -81,7 +81,7 @@ function StatementEdgeImpl(props: EdgeProps<StatementEdgeData>): ReactElement {
   // rather than throwing. The catalog miss check below would otherwise
   // return the literal `methodology.edgeRole.undefined`, which is worse
   // signal than just rendering blank.
-  const label = data?.role ? t(`methodology.edgeRole.${data.role}`) : '';
+  const label = data?.role ? t(`methodology.edgeRole.${data.role}.label`) : '';
   const annotations = data?.annotations ?? [];
   const facetStatuses = data?.facetStatuses ?? {};
 

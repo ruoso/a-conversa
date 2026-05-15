@@ -90,14 +90,32 @@ const METHODOLOGY_VALUES = {
 const STRUCTURALLY_IDENTICAL: ReadonlySet<string> = new Set([
   // en-US "Define" / pt-BR "Define" / es-419 "Define" — same Latin verb
   // form in all three; nothing to translate.
-  'pt-BR::methodology.edgeRole.defines',
-  'es-419::methodology.edgeRole.defines',
+  'pt-BR::methodology.edgeRole.defines.label',
+  'es-419::methodology.edgeRole.defines.label',
 ]);
 
 async function makeT(locale: SupportedLocale): Promise<(key: string) => string> {
   const instance = i18next.createInstance();
   await instance.use(ICU).init(buildInitOptions(locale));
   return (key: string) => instance.t(key);
+}
+
+/**
+ * Build the dotted-path key for a given group + id.
+ *
+ * The `edgeRole` group migrated from a bare-label string at
+ * `methodology.edgeRole.<role>` to a `{label, description}` object at
+ * `methodology.edgeRole.<role>.{label, description}` in
+ * `frontend_i18n.i18n_methodology_role_descriptions`. The label round-
+ * trip now reads `methodology.edgeRole.<role>.label`; the description
+ * round-trip (separate `describe` block below) reads `<role>.description`.
+ * Other groups remain bare-leaf entries at `methodology.<group>.<id>`.
+ */
+function leafKey(group: keyof typeof METHODOLOGY_VALUES, id: string): string {
+  if (group === 'edgeRole') {
+    return `methodology.edgeRole.${id}.label`;
+  }
+  return `methodology.${group}.${id}`;
 }
 
 describe('methodology glossary round-trip', () => {
@@ -108,7 +126,7 @@ describe('methodology glossary round-trip', () => {
         readonly string[],
       ][]) {
         for (const id of ids) {
-          const key = `methodology.${group}.${id}`;
+          const key = leafKey(group, id);
           it(`resolves ${key} to a non-empty string`, async () => {
             const t = await makeT(locale);
             const value = t(key);
@@ -135,7 +153,7 @@ describe('methodology glossary: non-en-US locales translate (not copy) en-US', (
       readonly string[],
     ][]) {
       for (const id of ids) {
-        const key = `methodology.${group}.${id}`;
+        const key = leafKey(group, id);
         const en = tEn(key);
         const pt = tPt(key);
         const es = tEs(key);
@@ -171,9 +189,9 @@ describe('methodology glossary: known canonical translations', () => {
     expect(t('methodology.kind.fact')).toBe('Hecho');
   });
 
-  it('pt-BR methodology.edgeRole.bridges-from = "Ponte de"', async () => {
+  it('pt-BR methodology.edgeRole.bridges-from.label = "Ponte de"', async () => {
     const t = await makeT('pt-BR');
-    expect(t('methodology.edgeRole.bridges-from')).toBe('Ponte de');
+    expect(t('methodology.edgeRole.bridges-from.label')).toBe('Ponte de');
   });
 
   it('es-419 methodology.facetState.meta-disagreement = "Meta-desacuerdo"', async () => {
@@ -184,6 +202,73 @@ describe('methodology glossary: known canonical translations', () => {
   it('pt-BR methodology.diagnostic.coherency-hint = "Sugestão de coerência"', async () => {
     const t = await makeT('pt-BR');
     expect(t('methodology.diagnostic.coherency-hint')).toBe('Sugestão de coerência');
+  });
+});
+
+// edgeRole description round-trip (i18n_methodology_role_descriptions).
+//
+// Each `methodology.edgeRole.<role>` entry migrated from a bare label
+// string to a `{label, description}` object so the moderator's edge
+// hover-popover surfaces a one-sentence role description on hover. The
+// label round-trip above resolves `<role>.label`; this block pins that
+// the new `<role>.description` sub-key resolves to a non-empty,
+// locale-distinct string for every role in every locale.
+
+describe('methodology edgeRole description round-trip', () => {
+  for (const locale of SUPPORTED_LOCALES) {
+    describe(`locale ${locale}`, () => {
+      for (const id of METHODOLOGY_VALUES.edgeRole) {
+        const key = `methodology.edgeRole.${id}.description`;
+        it(`resolves ${key} to a non-empty string`, async () => {
+          const t = await makeT(locale);
+          const value = t(key);
+          expect(value).toBeTruthy();
+          expect(value.length).toBeGreaterThan(0);
+          // i18next returns the dotted key when the entry is missing.
+          expect(value).not.toBe(key);
+        });
+      }
+    });
+  }
+
+  it('non-en-US edgeRole descriptions differ from en-US (drafts translate, not copy)', async () => {
+    const tEn = await makeT('en-US');
+    const tPt = await makeT('pt-BR');
+    const tEs = await makeT('es-419');
+    for (const id of METHODOLOGY_VALUES.edgeRole) {
+      const key = `methodology.edgeRole.${id}.description`;
+      const en = tEn(key);
+      expect(tPt(key), `pt-BR.${key} should differ from en-US`).not.toBe(en);
+      expect(tEs(key), `es-419.${key} should differ from en-US`).not.toBe(en);
+    }
+  });
+});
+
+describe('methodology edgeRole description: known canonical translations', () => {
+  // One fixed-expectation per locale; pins the canonical authoritative
+  // en-US string + the draft pt-BR / es-419 strings landed by
+  // i18n_methodology_role_descriptions. The drafts are flagged PENDING
+  // in the sibling *.review.json trackers — the native-review follow-up
+  // may revise them, in which case this test moves with the catalog.
+  it('en-US methodology.edgeRole.supports.description matches the canonical sentence', async () => {
+    const t = await makeT('en-US');
+    expect(t('methodology.edgeRole.supports.description')).toBe(
+      'Source provides evidence or backing for target.',
+    );
+  });
+
+  it('pt-BR methodology.edgeRole.supports.description matches the draft sentence', async () => {
+    const t = await makeT('pt-BR');
+    expect(t('methodology.edgeRole.supports.description')).toBe(
+      'A fonte fornece evidência ou base para o alvo.',
+    );
+  });
+
+  it('es-419 methodology.edgeRole.supports.description matches the draft sentence', async () => {
+    const t = await makeT('es-419');
+    expect(t('methodology.edgeRole.supports.description')).toBe(
+      'La fuente aporta evidencia o respaldo al objetivo.',
+    );
   });
 });
 

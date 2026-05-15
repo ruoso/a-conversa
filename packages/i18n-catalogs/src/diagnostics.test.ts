@@ -202,27 +202,27 @@ describe('diagnostic descriptions render with sample payloads', () => {
 // composition pattern works end-to-end.
 
 describe('diagnostic descriptions compose with the methodology glossary', () => {
-  it('en-US cycle.description composes with methodology.edgeRole.supports', async () => {
+  it('en-US cycle.description composes with methodology.edgeRole.supports.label', async () => {
     const t = await makeT('en-US');
-    const role = t('methodology.edgeRole.supports');
+    const role = t('methodology.edgeRole.supports.label');
     const rendered = t('diagnostics.cycle.description', { role, nodes: 'N1, N2' });
     expect(role).toBe('Supports');
     expect(rendered).toContain('Supports');
     expect(rendered).toContain('N1, N2');
   });
 
-  it('pt-BR cycle.description composes with methodology.edgeRole.supports', async () => {
+  it('pt-BR cycle.description composes with methodology.edgeRole.supports.label', async () => {
     const t = await makeT('pt-BR');
-    const role = t('methodology.edgeRole.supports');
+    const role = t('methodology.edgeRole.supports.label');
     const rendered = t('diagnostics.cycle.description', { role, nodes: 'N1, N2' });
     expect(role).toBe('Apoia');
     expect(rendered).toContain('Apoia');
     expect(rendered).toContain('N1, N2');
   });
 
-  it('es-419 cycle.description composes with methodology.edgeRole.supports', async () => {
+  it('es-419 cycle.description composes with methodology.edgeRole.supports.label', async () => {
     const t = await makeT('es-419');
-    const role = t('methodology.edgeRole.supports');
+    const role = t('methodology.edgeRole.supports.label');
     const rendered = t('diagnostics.cycle.description', { role, nodes: 'N1, N2' });
     expect(role).toBe('Apoya');
     expect(rendered).toContain('Apoya');

@@ -249,7 +249,7 @@ export function HoverPopover(props: HoverPopoverProps): ReactElement {
   // per `mod_layout_measured_dimensions`. The endpoint references row
   // surfaces the canvas-stable canonical handle (the node ids) instead.
   const { role, facetStatuses, diagnosticHighlight, sourceId, targetId } = target.data;
-  const roleLabel = t(`methodology.edgeRole.${role}`);
+  const roleLabel = t(`methodology.edgeRole.${role}.label`);
   // Conditional role-description seam. Refinement:
   // `mod_edge_popover_full_target_wording` (Option C). The popover
   // renders a small description paragraph below the role headline IFF

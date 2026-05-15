@@ -35,13 +35,34 @@
       "definitional": "Definitional"
     },
     "edgeRole": {
-      "supports": "Supports",
-      "rebuts": "Rebuts",
-      "qualifies": "Qualifies",
-      "bridges-from": "Bridges from",
-      "bridges-to": "Bridges to",
-      "defines": "Defines",
-      "contradicts": "Contradicts"
+      "supports": {
+        "label": "Supports",
+        "description": "Source provides evidence or backing for target."
+      },
+      "rebuts": {
+        "label": "Rebuts",
+        "description": "Source challenges or refutes target."
+      },
+      "qualifies": {
+        "label": "Qualifies",
+        "description": "Source hedges the scope or degree of target — \"usually\", \"in most cases\", \"except when X\"."
+      },
+      "bridges-from": {
+        "label": "Bridges from",
+        "description": "Outgoing from a warrant node to the data it draws on."
+      },
+      "bridges-to": {
+        "label": "Bridges to",
+        "description": "Outgoing from a warrant node to the claim it licenses."
+      },
+      "defines": {
+        "label": "Defines",
+        "description": "Source provides the meaning of a term used in target."
+      },
+      "contradicts": {
+        "label": "Contradicts",
+        "description": "Source and target conflict; both cannot be true."
+      }
     },
     "facetState": {
       "proposed": "Proposed",
