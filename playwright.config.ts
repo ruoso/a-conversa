@@ -224,5 +224,27 @@ export default defineConfig({
         storageState: localeStorageState('en-US'),
       },
     },
+    // Create-session whole-flow e2e (mod_create_session_form). Drives
+    // login → /sessions/new → POST /sessions → navigate to
+    // /sessions/<id>/operate, asserting the operate route + graph
+    // canvas mount. Per ORCHESTRATOR.md 28a71f9 this spec is the gate
+    // for the moderator UI stream once the form lands.
+    //
+    // - Single locale (en-US) for deterministic title/button assertions.
+    //   The cross-locale title text is pinned at the catalog parity
+    //   layer; the whole-flow chain is locale-independent.
+    // - `ignoreHTTPSErrors: true` mirrors `chromium-auth` because the
+    //   OIDC redirect crosses the self-signed cert on
+    //   `authelia.aconversa.local`.
+    {
+      name: 'chromium-create-session',
+      testMatch: /create-session-flow\.spec\.ts$/,
+      use: {
+        ...devices['Desktop Chrome'],
+        locale: 'en-US',
+        ignoreHTTPSErrors: true,
+        storageState: localeStorageState('en-US'),
+      },
+    },
   ],
 });

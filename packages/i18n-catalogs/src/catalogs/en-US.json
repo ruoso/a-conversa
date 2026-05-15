@@ -108,6 +108,29 @@
     }
   },
   "moderator": {
+    "createSession": {
+      "title": "Create a session",
+      "topic": {
+        "label": "Debate topic",
+        "placeholder": "What will be debated?"
+      },
+      "privacy": {
+        "label": "Privacy",
+        "public": "Public — allow cross-session reference",
+        "private": "Private — restrict to invited participants"
+      },
+      "helper": "{used}/{max} characters",
+      "submit": "Create session",
+      "errors": {
+        "topicRequired": "Please enter a debate topic.",
+        "topicTooLong": "Debate topic must be at most 256 characters.",
+        "privacyInvalid": "Please choose either public or private.",
+        "validation": "The session could not be created. Please check your input.",
+        "unauthenticated": "Your session expired. Please sign in again.",
+        "network": "Could not reach the server. Please try again.",
+        "generic": "Something went wrong. Please try again."
+      }
+    },
     "rightSidebar": {
       "emptyPanePlaceholder": "Coming soon",
       "toggleAria": "{expanded, select, true {Collapse pane} other {Expand pane}}",

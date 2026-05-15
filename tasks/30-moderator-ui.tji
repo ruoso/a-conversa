@@ -520,6 +520,8 @@ task moderator_ui "Moderator UI" {
     task mod_create_session_form "Create-session form (topic, privacy)" {
       effort 1d
       allocate team
+      complete 100
+      note "Refinement: tasks/refinements/moderator-ui/mod_create_session_form.md"
     }
     task mod_invite_participants "Invite participants (debater A, debater B)" {
       effort 1d

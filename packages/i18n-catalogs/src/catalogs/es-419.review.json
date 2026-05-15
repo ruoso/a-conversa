@@ -57,7 +57,22 @@
     "diagnostics.coherency-hint.title",
     "diagnostics.coherency-hint.description",
     "diagnostics.coherency-hint.detail",
-    "diagnostics.coherency-hint.action"
+    "diagnostics.coherency-hint.action",
+    "moderator.createSession.title",
+    "moderator.createSession.topic.label",
+    "moderator.createSession.topic.placeholder",
+    "moderator.createSession.privacy.label",
+    "moderator.createSession.privacy.public",
+    "moderator.createSession.privacy.private",
+    "moderator.createSession.helper",
+    "moderator.createSession.submit",
+    "moderator.createSession.errors.topicRequired",
+    "moderator.createSession.errors.topicTooLong",
+    "moderator.createSession.errors.privacyInvalid",
+    "moderator.createSession.errors.validation",
+    "moderator.createSession.errors.unauthenticated",
+    "moderator.createSession.errors.network",
+    "moderator.createSession.errors.generic"
   ],
   "signed_off": []
 }

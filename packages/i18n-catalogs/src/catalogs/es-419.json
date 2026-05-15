@@ -108,6 +108,29 @@
     }
   },
   "moderator": {
+    "createSession": {
+      "title": "Crear una sesión",
+      "topic": {
+        "label": "Tema del debate",
+        "placeholder": "¿Qué se debatirá?"
+      },
+      "privacy": {
+        "label": "Privacidad",
+        "public": "Pública — permite referencias entre sesiones",
+        "private": "Privada — restringida a participantes invitados"
+      },
+      "helper": "{used}/{max} caracteres",
+      "submit": "Crear sesión",
+      "errors": {
+        "topicRequired": "Por favor, ingresa un tema de debate.",
+        "topicTooLong": "El tema del debate debe tener como máximo 256 caracteres.",
+        "privacyInvalid": "Elige pública o privada.",
+        "validation": "No se pudo crear la sesión. Revisa los datos.",
+        "unauthenticated": "Tu sesión expiró. Vuelve a iniciar sesión.",
+        "network": "No se pudo conectar con el servidor. Inténtalo de nuevo.",
+        "generic": "Algo salió mal. Inténtalo de nuevo."
+      }
+    },
     "rightSidebar": {
       "emptyPanePlaceholder": "Próximamente",
       "toggleAria": "{expanded, select, true {Contraer panel} other {Expandir panel}}",

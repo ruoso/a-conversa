@@ -67,6 +67,14 @@ task frontend_i18n "Frontend internationalization" {
     note "Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit b7c5ff0)."
   }
 
+  task i18n_create_session_form_native_review "Native-speaker review of pt-BR + es-419 create-session-form strings" {
+    effort 0.5d
+    allocate team
+    depends !i18n_methodology_role_descriptions_native_review
+    note "Source of debt: mod_create_session_form (this commit) — pt-BR and es-419 drafts of the 15 keys under moderator.createSession.* landed flagged PENDING in the *.review.json trackers; replace with native-speaker-reviewed text and sign off the review trackers. UI prose translation (lower bar than methodology terms but still needs review)."
+    note "Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit b7c5ff0)."
+  }
+
   task i18n_keyboard_shortcuts_policy "Per-locale keyboard shortcut policy for moderator palette" {
     effort 0.5d
     allocate team

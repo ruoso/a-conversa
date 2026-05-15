@@ -190,6 +190,70 @@ describe('moderator router', () => {
     });
     expect(screen.getByTestId('session-id').textContent).toBe('sess-456');
   });
+
+  // /sessions/new/setup — the create-session form route, gated `authenticated-only`
+  // by `<RequireAuth>`. Three sub-assertions cover the gate's three
+  // observable cells for this route: authenticated renders the form,
+  // unauthenticated redirects to /login, needs-screen-name redirects to
+  // /screen-name. Mirrors the lobby + operate router-gate cases.
+  describe('/sessions/new/setup — RequireAuth gate', () => {
+    it('renders the create-session form when /auth/me reports authenticated', async () => {
+      global.fetch = vi.fn(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              userId: '00000000-0000-4000-8000-00000000004a',
+              screenName: 'alice',
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          ),
+        ),
+      );
+      render(
+        <MemoryRouter initialEntries={['/sessions/new/setup']}>
+          <App />
+        </MemoryRouter>,
+      );
+      await waitFor(() => {
+        expect(screen.getByTestId('route-create-session')).toBeTruthy();
+      });
+      expect(screen.getByTestId('route-title').textContent).toBe('Create a session');
+    });
+
+    it('redirects to /login when /auth/me reports unauthenticated', async () => {
+      global.fetch = vi.fn(() => Promise.resolve(new Response('', { status: 401 })));
+      render(
+        <MemoryRouter initialEntries={['/sessions/new/setup']}>
+          <App />
+        </MemoryRouter>,
+      );
+      await waitFor(() => {
+        expect(screen.getByTestId('route-login')).toBeTruthy();
+      });
+    });
+
+    it('redirects to /screen-name when /auth/me reports the placeholder screen name', async () => {
+      global.fetch = vi.fn(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              userId: '00000000-0000-4000-8000-00000000004b',
+              screenName: '<pending>',
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          ),
+        ),
+      );
+      render(
+        <MemoryRouter initialEntries={['/sessions/new/setup']}>
+          <App />
+        </MemoryRouter>,
+      );
+      await waitFor(() => {
+        expect(screen.getByTestId('route-screen-name')).toBeTruthy();
+      });
+    });
+  });
 });
 
 describe('Login route — auth states', () => {
