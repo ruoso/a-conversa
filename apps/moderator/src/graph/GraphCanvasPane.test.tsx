@@ -40,6 +40,7 @@
 
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { createElement, type ComponentType } from 'react';
 import i18next from 'i18next';
 import type { AnnotationKind, DiagnosticPayload, Event } from '@a-conversa/shared-types';
 
@@ -83,10 +84,25 @@ vi.mock('./layoutEngine', async () => {
 const fitViewSpy = vi.fn();
 (globalThis as unknown as { __aConversaFitViewSpy?: typeof fitViewSpy }).__aConversaFitViewSpy =
   fitViewSpy;
+// Capture every prop set passed to `<ReactFlow>` so the `mod_pan_zoom`
+// cases can assert against the configured behaviour-pinning props
+// (`panOnDrag`, `zoomOnScroll`, `zoomOnPinch`, `zoomOnDoubleClick`,
+// `minZoom`, `maxZoom`, and the deliberately-absent `defaultViewport`).
+// The wrapper renders the real `ReactFlow` component unchanged, so the
+// rest of the suite (which exercises the actual ReactFlow mount,
+// background grid, node-handle measurement, click pipeline) keeps
+// observing the genuine library behaviour.
+const reactFlowPropCaptures: Record<string, unknown>[] = [];
 vi.mock('reactflow', async () => {
   const actual = await vi.importActual<typeof import('reactflow')>('reactflow');
+  const RealReactFlow = actual.default;
+  const ReactFlowPassthrough = (props: Record<string, unknown>): unknown => {
+    reactFlowPropCaptures.push(props);
+    return createElement(RealReactFlow as unknown as ComponentType<Record<string, unknown>>, props);
+  };
   return {
     ...actual,
+    default: ReactFlowPassthrough,
     useReactFlow: () => {
       const real = actual.useReactFlow();
       return {
@@ -99,6 +115,8 @@ vi.mock('reactflow', async () => {
 
 import {
   GraphCanvasPane,
+  MAX_ZOOM,
+  MIN_ZOOM,
   buildEdgeMenuItems,
   buildNodeMenuItems,
   buildPaneMenuItems,
@@ -1758,5 +1776,61 @@ describe('GraphCanvasPane — tidy-up button (mod_layout_tidy_action)', () => {
     } finally {
       window.requestAnimationFrame = originalRaf;
     }
+  });
+});
+
+// -- Pan + zoom configuration (mod_pan_zoom) -------------------------
+//
+// Four committed Vitest cases per ADR 0022 pinning the props the canvas
+// mount passes to `<ReactFlow>`. The reactflow mock at the top of this
+// file (module scope) installs a passthrough wrapper that captures
+// every prop-set the canvas sends to the library, so these cases assert
+// against `reactFlowPropCaptures` — the same wire the production code
+// writes to. The four behaviour props pin against literal `true` (not
+// truthy) so a future regression that flips one to `false` trips the
+// test exactly; the zoom-range props pin against the exported
+// `MIN_ZOOM` / `MAX_ZOOM` constants (no magic numbers, no drift).
+
+describe('mod_pan_zoom (pan + zoom configuration)', () => {
+  beforeEach(() => {
+    reactFlowPropCaptures.length = 0;
+  });
+
+  it('pins the four pan/zoom behaviour props to the literal `true`', () => {
+    render(<GraphCanvasPane sessionId={SESSION_ID} />);
+    // At least one render captured props — the canvas mounted.
+    expect(reactFlowPropCaptures.length).toBeGreaterThan(0);
+    const props = reactFlowPropCaptures[reactFlowPropCaptures.length - 1];
+    expect(props?.panOnDrag).toBe(true);
+    expect(props?.zoomOnScroll).toBe(true);
+    expect(props?.zoomOnPinch).toBe(true);
+    expect(props?.zoomOnDoubleClick).toBe(true);
+  });
+
+  it('passes `minZoom` equal to the exported MIN_ZOOM constant (0.1)', () => {
+    render(<GraphCanvasPane sessionId={SESSION_ID} />);
+    expect(reactFlowPropCaptures.length).toBeGreaterThan(0);
+    const props = reactFlowPropCaptures[reactFlowPropCaptures.length - 1];
+    expect(props?.minZoom).toBe(MIN_ZOOM);
+    expect(MIN_ZOOM).toBe(0.1);
+  });
+
+  it('passes `maxZoom` equal to the exported MAX_ZOOM constant (2.5)', () => {
+    render(<GraphCanvasPane sessionId={SESSION_ID} />);
+    expect(reactFlowPropCaptures.length).toBeGreaterThan(0);
+    const props = reactFlowPropCaptures[reactFlowPropCaptures.length - 1];
+    expect(props?.maxZoom).toBe(MAX_ZOOM);
+    expect(MAX_ZOOM).toBe(2.5);
+  });
+
+  it('does NOT pass a `defaultViewport` prop (the library default `{x:0,y:0,zoom:1}` is intentional)', () => {
+    // Setting `defaultViewport` explicitly would override ReactFlow's
+    // first-paint heuristics and break the position-cache → fitView
+    // interaction in subtle ways. A future regression that adds an
+    // unexamined `defaultViewport` trips this case.
+    render(<GraphCanvasPane sessionId={SESSION_ID} />);
+    expect(reactFlowPropCaptures.length).toBeGreaterThan(0);
+    const props = reactFlowPropCaptures[reactFlowPropCaptures.length - 1];
+    expect(props?.defaultViewport).toBeUndefined();
   });
 });

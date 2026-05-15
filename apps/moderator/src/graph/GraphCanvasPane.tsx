@@ -509,6 +509,21 @@ const MEASUREMENT_DEBOUNCE_MS = 75;
  */
 const DIMENSION_CHANGE_THRESHOLD_PX = 1;
 
+/**
+ * **Pan/zoom range, in viewport-transform units.** Refinement:
+ * `mod_pan_zoom`. ReactFlow's defaults are `0.5` / `2` — too tight for
+ * a moderator debate with up to ~100 nodes. The lower bound supports a
+ * true overview of a dense canvas; the upper bound supports close-
+ * reading single-card wording detail. The `fitView({ padding: 0.1 })`
+ * call inside `handleTidyUp` is bounded to this same range — ReactFlow
+ * clamps fitView's computed zoom to `[minZoom, maxZoom]` automatically.
+ * Exported so `GraphCanvasPane.test.tsx` asserts against the same
+ * source of truth the production code reads (no magic numbers in
+ * tests, no drift).
+ */
+export const MIN_ZOOM = 0.1;
+export const MAX_ZOOM = 2.5;
+
 export function GraphCanvasPane(props: GraphCanvasPaneProps): ReactElement {
   // Wrap the inner canvas in `<ReactFlowProvider>` so the measurement
   // hooks (`useNodesInitialized` / `useStore`) — which read the same
@@ -818,6 +833,24 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
         onNodeContextMenu={handleNodeContextMenu}
         onEdgeContextMenu={handleEdgeContextMenu}
         onPaneContextMenu={handlePaneContextMenu}
+        // Refinement: `mod_pan_zoom`. Pin the pan/zoom contract
+        // explicitly so the behaviour does not drift across ReactFlow
+        // upgrades. The four behaviour props match ReactFlow's
+        // documented defaults (drag-to-pan on background, scroll-wheel
+        // zoom, trackpad pinch zoom, double-click zoom) — the explicit
+        // declaration is the load-bearing piece, the values themselves
+        // are unchanged from the library defaults.
+        panOnDrag={true}
+        zoomOnScroll={true}
+        zoomOnPinch={true}
+        zoomOnDoubleClick={true}
+        // Widen the zoom range from ReactFlow's defaults (0.5 .. 2). A
+        // debate with ~100 nodes does not fit in the viewport at 0.5x;
+        // the moderator needs to zoom further out to overview the
+        // whole canvas. The 2.5x upper bound lets a moderator close-
+        // read a single card with wording detail.
+        minZoom={MIN_ZOOM}
+        maxZoom={MAX_ZOOM}
       >
         <Background />
       </ReactFlow>

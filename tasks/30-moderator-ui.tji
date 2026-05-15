@@ -231,6 +231,8 @@ task moderator_ui "Moderator UI" {
     task mod_pan_zoom "Pan and zoom navigation" {
       effort 0.5d
       allocate team
+      complete 100
+      note "Refinement: tasks/refinements/moderator-ui/mod_pan_zoom.md"
     }
     task mod_selection "Click-to-select node/edge" {
       effort 0.5d
