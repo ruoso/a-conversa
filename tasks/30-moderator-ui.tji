@@ -133,9 +133,18 @@ task moderator_ui "Moderator UI" {
     task mod_node_handle_rendering "Render ReactFlow Handle elements on StatementNode for edge anchoring" {
       effort 0.5d
       allocate team
+      complete 100
       depends !mod_node_rendering, !mod_edge_rendering
+      note "Refinement: tasks/refinements/moderator-ui/mod_node_handle_rendering.md"
       note "Source of debt: mod_hover_details Status block (commit b7ac2d5) — deferred edge-hover Playwright assertion (Test 4 of moderator-hover-details.spec.ts) is conditional because .react-flow__edge does not render in a real browser without source/target Handle elements on StatementNode. Closing this task lifts that assertion to a hard expectation."
       note "Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit added after b7ac2d5)."
+    }
+    task mod_edge_popover_full_target_wording "Decide edge popover wording truncation: lift cap or contract the 60-char prefix" {
+      effort 0.25d
+      allocate team
+      depends !mod_node_handle_rendering
+      note "Source of debt: mod_node_handle_rendering Status block (this commit) — when lifting Test 4 of moderator-hover-details.spec.ts to hard, the assertion 'popover contains target wording' had to be relaxed to a 60-char prefix match because HoverPopover.tsx's truncate() caps source/target wordings at 60 chars. Decide whether to lift the cap (then tighten the e2e assertion back to full-wording containment) or document the 60-char cap as the design contract (and pin the assertion to it intentionally). Methodology + design call."
+      note "Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit b7c5ff0)."
     }
     task mod_annotation_rendering "Annotation rendering" {
       effort 1d

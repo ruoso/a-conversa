@@ -1,6 +1,7 @@
 // E2E spec for the moderator hover-details popover.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_hover_details.md
+// Refinement: tasks/refinements/moderator-ui/mod_node_handle_rendering.md
+// (prior:     tasks/refinements/moderator-ui/mod_hover_details.md)
 // ADRs:        docs/adr/0008-e2e-framework-playwright.md,
 //              docs/adr/0022-no-throwaway-verifications.md,
 //              docs/adr/0024-frontend-i18n-react-i18next-with-icu.md
@@ -160,35 +161,54 @@ test.describe.serial('moderator hover details', () => {
 
     // -- Test 4: edge popover surfaces role + endpoints --------------
     //
-    // **Conditional on edge rendering**: the moderator's `<StatementNode>`
-    // does not yet expose ReactFlow `<Handle>` elements (a pre-existing
-    // limitation acknowledged in `mod_node_rendering` / the
-    // `GraphCanvasPane.test.tsx` comments — the visible
-    // `.react-flow__edge` DOM only appears once handles ship). If the
-    // edge label is not in the DOM, this assertion block is skipped
-    // gracefully — the per-component Vitest cases in
-    // `StatementEdge.test.tsx` and `HoverPopover.test.tsx` cover the
-    // edge popover content + wiring against a `<ReactFlow>` mount in
-    // happy-dom with the explicit `ResizeObserver` / dimension stub.
-    // A future `mod_node_handle_rendering` (or equivalent) task will
-    // add handles and this e2e branch can switch to a hard
-    // expectation.
+    // `mod_node_handle_rendering` (refinement
+    // `tasks/refinements/moderator-ui/mod_node_handle_rendering.md`)
+    // landed the ReactFlow `<Handle>` anchors on `<StatementNode>` —
+    // `Position.Top` target + `Position.Bottom` source, matching
+    // dagre's `rankdir: 'TB'` (ADR 0025). With handles in place
+    // ReactFlow can resolve each edge's endpoint coordinates and paint
+    // the `<path>` + the edge label; the assertions below run hard
+    // (no conditional / no early return). Acceptance bar lifted from
+    // the prior "deferred-e2e" debt registered on `mod_hover_details`'s
+    // Status block.
     const edgeLabel = page.getByTestId(`graph-edge-label-${EDGE_ID}`);
-    const edgeLabelCount = await edgeLabel.count();
-    if (edgeLabelCount > 0) {
-      await edgeLabel.hover();
-      const edgePopover = page.getByTestId(`hover-popover-${EDGE_ID}`);
-      await expect(edgePopover, 'hover popover must appear when the edge is hovered').toBeVisible();
-      await expect(edgePopover).toHaveAttribute('data-hover-target-kind', 'edge');
-      // Localized role label (en-US "Supports") + truncated source +
-      // target wordings.
-      await expect(edgePopover).toContainText('Supports');
-      await expect(edgePopover).toContainText(TARGET_WORDING);
-      // Move off the edge to dismiss.
-      await page.mouse.move(0, 0);
-    }
+    // First pin the SVG `<path>` is in the DOM — independent of the
+    // popover content, this is the load-bearing "handles actually work
+    // end-to-end in a real browser" check.
+    await expect(
+      page.locator('.react-flow__edge'),
+      'one .react-flow__edge SVG path must render per seeded edge',
+    ).toHaveCount(1, { timeout: 10_000 });
+    await expect(edgeLabel, 'seeded edge label must render').toBeVisible({ timeout: 10_000 });
+    await edgeLabel.hover();
+    const edgePopover = page.getByTestId(`hover-popover-${EDGE_ID}`);
+    await expect(edgePopover, 'hover popover must appear when the edge is hovered').toBeVisible();
+    await expect(edgePopover).toHaveAttribute('data-hover-target-kind', 'edge');
+    // Localized role label (en-US "Supports") + truncated source +
+    // target wordings. The edge popover's ICU template truncates
+    // wordings at 60 chars (see `truncate` in `HoverPopover.tsx`),
+    // so the assertion uses a 60-char prefix of `TARGET_WORDING` —
+    // long enough to disambiguate the target from the source, short
+    // enough to survive the cap.
+    await expect(edgePopover).toContainText('Supports');
+    await expect(edgePopover).toContainText(TARGET_WORDING.slice(0, 60));
+    // Move off the edge to dismiss before Test 5 takes keyboard focus.
+    await page.mouse.move(0, 0);
 
     // -- Test 5: keyboard focus opens the popover --------------------
+    // Test 3 clicks the node, which on most browsers leaves the node as
+    // `document.activeElement`. A subsequent `.focus()` on the already-
+    // focused element is a no-op (the React `onFocus` synthetic event
+    // does NOT re-fire), so a popover dismissed via the intervening
+    // Test 4 mouse-leave would stay dismissed. To make the keyboard-
+    // focus assertion robust to whatever focus state the prior tests
+    // left behind, blur first (move focus to the document body) so the
+    // subsequent `.focus()` is a real focus transition and fires
+    // `onFocus` → `setIsHovered(true)` → popover open.
+    await page.evaluate(() => {
+      const el = document.activeElement;
+      if (el instanceof HTMLElement) el.blur();
+    });
     await nodeCard.focus();
     await expect(
       page.getByTestId(`hover-popover-${NODE_ID}`),

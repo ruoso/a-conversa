@@ -1,7 +1,8 @@
 // Tests for `<StatementNode>` — the moderator's custom ReactFlow node.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_axiom_mark_decoration.md
-// (prior:     tasks/refinements/moderator-ui/mod_annotation_rendering.md,
+// Refinement: tasks/refinements/moderator-ui/mod_node_handle_rendering.md
+// (prior:     tasks/refinements/moderator-ui/mod_axiom_mark_decoration.md,
+//             tasks/refinements/moderator-ui/mod_annotation_rendering.md,
 //             tasks/refinements/moderator-ui/mod_node_rendering.md)
 //
 // Per ADR 0022 these are committed Vitest cases, not throwaway probes.
@@ -18,16 +19,31 @@
 //      rendered tree so downstream rendering tasks can target them.
 //   6. The annotation badge row renders only when annotations are
 //      present, and preserves arrival order across multiple badges.
+//   7. The two ReactFlow `<Handle>` anchors (target on top, source on
+//      bottom) render as the first children of the card root, compose
+//      cleanly with the diagnostic halo + the hover popover + every
+//      per-status branch (refinement `mod_node_handle_rendering`).
 //
-// `<StatementNode>` is a plain React component (no ReactFlow runtime
-// hook is read from it — it consumes the `NodeProps` shape but doesn't
-// call into the ReactFlow store), so it renders cleanly under
-// `@testing-library/react` without a `<ReactFlowProvider>` wrapper.
+// `<StatementNode>` now renders `<Handle>` children (per
+// `mod_node_handle_rendering`); `<Handle>` reads from ReactFlow's
+// internal Zustand store via `useStore` / `useStoreApi`, which throws
+// without a `<ReactFlowProvider>` context. The local `render(...)`
+// shadow below wraps every render in a `<ReactFlowProvider>` to provide
+// that context — every existing test case keeps its call shape, only
+// the wrapper is new.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import {
+  cleanup,
+  fireEvent,
+  render as rtlRender,
+  screen,
+  type RenderOptions,
+  type RenderResult,
+} from '@testing-library/react';
 import i18next from 'i18next';
-import type { NodeProps } from 'reactflow';
+import { type ReactElement } from 'react';
+import { ReactFlowProvider, type NodeProps } from 'reactflow';
 import type { StatementKind } from '@a-conversa/shared-types';
 
 import {
@@ -41,6 +57,16 @@ import type { FacetName, FacetStatus } from './facetStatus';
 import type { Annotation, AxiomMark, Vote } from './selectors';
 import { initI18n } from '../i18n';
 import { useSelectionStore } from '../stores';
+
+// Local `render(...)` shadow that wraps every render in a
+// `<ReactFlowProvider>`. The provider is what supplies the Zustand store
+// `<Handle>`'s `useStore` / `useStoreApi` read from. Tests keep their
+// existing `render(<StatementNode {...} />)` call shape — only the
+// wrapper is new (and transparent to assertions: `<ReactFlowProvider>`
+// itself renders nothing in the DOM, just a context).
+function render(ui: ReactElement, options?: RenderOptions): RenderResult {
+  return rtlRender(ui, { wrapper: ReactFlowProvider, ...options });
+}
 
 // Build a minimum `NodeProps<StatementNodeData>` value for tests.
 // ReactFlow hands the renderer many fields (dragging, selected, xPos,
@@ -1676,4 +1702,137 @@ describe('StatementNode — hover popover wiring (mod_hover_details)', () => {
     expect(popover.getAttribute('data-hover-target-kind')).toBe('node');
     expect(popover.getAttribute('id')).toBe('hover-popover-n-popover-attrs');
   });
+});
+
+describe('StatementNode — ReactFlow Handle anchors (mod_node_handle_rendering)', () => {
+  // These cases pin the two `<Handle>` elements added by
+  // `mod_node_handle_rendering`. The anchors are what unblocks ReactFlow's
+  // edge-renderer: without them `handleBounds` is null on every node and
+  // every edge's SVG `<path>` is skipped. The tests assert via the
+  // library's documented DOM stamps — `data-handlepos="top" | "bottom"` on
+  // the rendered `<div>` — and via the `.react-flow__handle-top` /
+  // `.react-flow__handle-bottom` class names ReactFlow puts on the same
+  // elements. Both seams are stable across the library's minor versions;
+  // the test asserts both so a future library shift in one stamp doesn't
+  // silently regress the contract.
+
+  it('renders exactly two handles on a baseline node (one top target + one bottom source)', () => {
+    const { container } = render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-handles-base',
+          data: { wording: 'baseline', kind: 'fact' },
+        })}
+      />,
+    );
+    const handles = container.querySelectorAll('.react-flow__handle');
+    expect(handles.length).toBe(2);
+  });
+
+  it('renders a target handle at Position.Top (data-handlepos="top" + react-flow__handle-top class)', () => {
+    const { container } = render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-handles-top',
+          data: { wording: 'top', kind: 'fact' },
+        })}
+      />,
+    );
+    const topHandle = container.querySelector('[data-handlepos="top"]');
+    expect(topHandle).not.toBeNull();
+    expect(topHandle?.className).toContain('react-flow__handle-top');
+  });
+
+  it('renders a source handle at Position.Bottom (data-handlepos="bottom" + react-flow__handle-bottom class)', () => {
+    const { container } = render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-handles-bottom',
+          data: { wording: 'bottom', kind: 'fact' },
+        })}
+      />,
+    );
+    const bottomHandle = container.querySelector('[data-handlepos="bottom"]');
+    expect(bottomHandle).not.toBeNull();
+    expect(bottomHandle?.className).toContain('react-flow__handle-bottom');
+  });
+
+  it('composes with the diagnostic-halo ring without losing either handle', () => {
+    // Render a node carrying a blocking diagnostic; both the amber-ring
+    // className stack AND the two handles must still render. This pins
+    // that the new children don't disrupt the diagnostic-highlighting
+    // layer (refinement `mod_diagnostic_highlighting`).
+    const { container } = render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-handles-diag',
+          data: {
+            wording: 'haloed',
+            kind: 'fact',
+            diagnosticHighlight: { severity: 'blocking', kinds: ['cycle'] },
+          },
+        })}
+      />,
+    );
+    const card = screen.getByTestId('statement-node-n-handles-diag');
+    // Blocking-halo classes are still on the root.
+    expect(card.className).toContain('ring-amber-500/80');
+    expect(card.className).toContain('motion-safe:animate-pulse');
+    // Both handles still render.
+    expect(container.querySelectorAll('.react-flow__handle').length).toBe(2);
+    expect(container.querySelector('[data-handlepos="top"]')).not.toBeNull();
+    expect(container.querySelector('[data-handlepos="bottom"]')).not.toBeNull();
+  });
+
+  it('composes with the hover popover (both handles render simultaneously with the open popover)', () => {
+    const { container } = render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-handles-hover',
+          data: { wording: 'hovered', kind: 'fact' },
+        })}
+      />,
+    );
+    const card = screen.getByTestId('statement-node-n-handles-hover');
+    fireEvent.mouseEnter(card);
+    // Popover is up.
+    expect(screen.getByTestId('hover-popover-n-handles-hover')).toBeTruthy();
+    // Both handles still render alongside the popover.
+    expect(container.querySelectorAll('.react-flow__handle').length).toBe(2);
+    expect(container.querySelector('[data-handlepos="top"]')).not.toBeNull();
+    expect(container.querySelector('[data-handlepos="bottom"]')).not.toBeNull();
+  });
+
+  // Pin that the new children don't break any existing per-status
+  // className branch. One parametrized test across the four statuses
+  // asserts the two handles always render — proposed / agreed / disputed
+  // / meta-disagreement. The meta-disagreement case is the same
+  // 2-handle layout as the baseline node (per the refinement's
+  // Decisions; multi-handle-per-split-side is deferred indefinitely
+  // pending a data-model change).
+  const STATUSES_FOR_HANDLE_COMPOSITION: readonly FacetStatus[] = [
+    'proposed',
+    'agreed',
+    'disputed',
+    'meta-disagreement',
+  ];
+  for (const status of STATUSES_FOR_HANDLE_COMPOSITION) {
+    it(`renders both handles when the card rollup is "${status}"`, () => {
+      const { container } = render(
+        <StatementNode
+          {...makeNodeProps({
+            id: `n-handles-status-${status}`,
+            data: {
+              wording: status,
+              kind: 'fact',
+              facetStatuses: { substance: status },
+            },
+          })}
+        />,
+      );
+      expect(container.querySelectorAll('.react-flow__handle').length).toBe(2);
+      expect(container.querySelector('[data-handlepos="top"]')).not.toBeNull();
+      expect(container.querySelector('[data-handlepos="bottom"]')).not.toBeNull();
+    });
+  }
 });

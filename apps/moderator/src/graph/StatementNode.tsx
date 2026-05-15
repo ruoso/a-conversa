@@ -1,7 +1,8 @@
 // `<StatementNode>` — custom ReactFlow node for the moderator's graph.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_vote_indicators_on_graph.md
-// (prior:     tasks/refinements/moderator-ui/mod_per_facet_state_visualization.md,
+// Refinement: tasks/refinements/moderator-ui/mod_node_handle_rendering.md
+// (prior:     tasks/refinements/moderator-ui/mod_vote_indicators_on_graph.md,
+//             tasks/refinements/moderator-ui/mod_per_facet_state_visualization.md,
 //             tasks/refinements/moderator-ui/mod_axiom_mark_decoration.md,
 //             tasks/refinements/moderator-ui/mod_meta_disagreement_split_render.md,
 //             tasks/refinements/moderator-ui/mod_disputed_state_styling.md,
@@ -11,6 +12,7 @@
 //             tasks/refinements/moderator-ui/mod_node_rendering.md)
 // ADRs:       docs/adr/0004-graph-libraries-reactflow-and-cytoscape.md
 //             docs/adr/0024-frontend-i18n-react-i18next-with-icu.md
+//             docs/adr/0025-graph-layout-engine-dagre.md
 //
 // Every domain node on the moderator's canvas is a "statement" — a
 // piece of methodology text with (eventually) a classification. The
@@ -40,7 +42,7 @@
 
 import { useState, type ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { NodeProps } from 'reactflow';
+import { Handle, Position, type NodeProps } from 'reactflow';
 import type { StatementKind } from '@a-conversa/shared-types';
 
 import { useSelectionStore } from '../stores/index.js';
@@ -356,6 +358,40 @@ export function StatementNode(props: NodeProps<StatementNodeData>): ReactElement
       onBlur={() => setIsHovered(false)}
       {...rootProps}
     >
+      {/*
+       * ReactFlow `<Handle>` anchors — the seam ReactFlow's edge renderer
+       * needs to resolve edge endpoint coordinates. Without these the
+       * library's internal `handleBounds` lookup returns null, the SVG
+       * `<path>` for every incident edge is skipped, and a console
+       * warning ("edge has no source/target handle") fires on every mount.
+       *
+       * Placement follows ADR 0025's `rankdir: 'TB'` (top-to-bottom)
+       * layout direction: in TB, edges flow downward — the source node
+       * sits above the target, the outgoing-edge anchor is at the
+       * BOTTOM of the parent, the incoming-edge anchor is at the TOP of
+       * the child. If a future task switches the layout default (e.g.
+       * to `LR`), these `Position` values need a parallel update
+       * (source → `Position.Right`, target → `Position.Left`).
+       *
+       * Rendered as the FIRST children of the card root so the visual
+       * stacking order stays "anchors first, then content, then floating
+       * popover" — handles sit on the card border perimeter, content
+       * sits inside the body, the popover floats above (`bottom:
+       * calc(100% + 4px)` relative to the card). React's child render
+       * order doesn't affect ReactFlow's anchor math (it reads the
+       * `position` prop + the card's bounding rect), but JSX-first keeps
+       * the component's structure readable.
+       *
+       * No `id` prop, no `style` override: a single source + single
+       * target handle has no need for the multi-handle disambiguation
+       * `id` enables, and ReactFlow's default 6-px-radius circle is the
+       * minimal visual idiom — a future visual-design pass can re-skin
+       * via a Tailwind className override without changing this seam.
+       *
+       * Refinement: tasks/refinements/moderator-ui/mod_node_handle_rendering.md
+       */}
+      <Handle type="target" position={Position.Top} />
+      <Handle type="source" position={Position.Bottom} />
       {facetPills.length > 0 ? (
         <div data-testid={`facet-pill-row-node-${id}`} className="mb-1 flex flex-wrap gap-1">
           {facetPills}

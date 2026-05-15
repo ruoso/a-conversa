@@ -62,18 +62,78 @@ import { useSelectionStore } from '../stores';
 import { initI18n } from '../i18n';
 
 beforeAll(() => {
-  // ReactFlow's core observes its container with ResizeObserver to
-  // recompute viewport dims. happy-dom doesn't implement it; without
-  // a stub, mounting the canvas throws `ResizeObserver is not defined`.
-  if (typeof globalThis.ResizeObserver === 'undefined') {
-    class NoopResizeObserver {
-      observe(): void {}
-      unobserve(): void {}
-      disconnect(): void {}
+  // ReactFlow's core observes each node container with `ResizeObserver`
+  // and only calls `updateNodeDimensions` (which populates the internal
+  // `handleBounds` an edge needs to render) from inside the observer's
+  // callback. happy-dom doesn't ship `ResizeObserver`. A bare noop stub
+  // would let the mount complete but never fire the callback, so the
+  // `.react-flow__edge` SVG `<path>` would stay unrendered — failing
+  // the `mod_node_handle_rendering` edge-render assertion below.
+  //
+  // Install an active stub identical to the one in
+  // `StatementEdge.test.tsx`: when `.observe(element)` is called,
+  // synchronously fire the callback with one entry for that element.
+  // The library reads `offsetWidth` off the entry's target rather than
+  // the `contentRect` field, so the per-element rect we hand it doesn't
+  // need to be exact — what matters is that the callback runs.
+  class ImmediateResizeObserver {
+    constructor(private readonly callback: ResizeObserverCallback) {}
+    observe(target: Element): void {
+      this.callback(
+        [
+          {
+            target,
+            contentRect: target.getBoundingClientRect(),
+            borderBoxSize: [],
+            contentBoxSize: [],
+            devicePixelContentBoxSize: [],
+          },
+        ],
+        this,
+      );
     }
-    (globalThis as unknown as { ResizeObserver: typeof NoopResizeObserver }).ResizeObserver =
-      NoopResizeObserver;
+    unobserve(): void {}
+    disconnect(): void {}
   }
+  (globalThis as unknown as { ResizeObserver: typeof ImmediateResizeObserver }).ResizeObserver =
+    ImmediateResizeObserver;
+
+  // ReactFlow's dimension probe reads `offsetWidth` / `offsetHeight` on
+  // each node element (via the internal `getDimensions(node)` helper).
+  // happy-dom returns 0 for both, which makes ReactFlow's `doUpdate`
+  // check fail (`dimensions.width && dimensions.height` is falsy) and
+  // the node never gets `handleBounds` populated, so the edge renderer
+  // skips the edge. Override the two properties to return a non-zero
+  // pair on every HTMLElement so the measurement pass succeeds.
+  // Similarly, `getHandleBounds` reads `getBoundingClientRect` on the
+  // node + handle elements; happy-dom returns zero rects by default.
+  Object.defineProperty(HTMLElement.prototype, 'offsetWidth', {
+    configurable: true,
+    get(): number {
+      return 100;
+    },
+  });
+  Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
+    configurable: true,
+    get(): number {
+      return 40;
+    },
+  });
+  Element.prototype.getBoundingClientRect = function getBoundingClientRectStub(): DOMRect {
+    return {
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 40,
+      top: 0,
+      left: 0,
+      right: 100,
+      bottom: 40,
+      toJSON() {
+        return this;
+      },
+    };
+  };
   // ReactFlow also reads `DOMMatrixReadOnly` for some transforms;
   // happy-dom provides it. No additional stub needed at this layer.
 });
@@ -403,17 +463,18 @@ describe('GraphCanvasPane — events from the WS store render as custom nodes', 
 });
 
 describe('GraphCanvasPane — store-derived edges (mod_edge_rendering)', () => {
-  // The store-to-edges projection is the load-bearing surface this
-  // task ships: `edge-created` events in the WS store are projected
-  // into the `edges` array passed to `<ReactFlow>`. The visible
-  // `.react-flow__edge` DOM only appears once `mod_node_rendering`'s
-  // `StatementNode` exposes ReactFlow `<Handle>` elements (a sibling
-  // concern that's not in this task's scope per the refinement). We
-  // therefore assert the projection — `selectEdgesForSession` over the
-  // store reflects the events — and pin that the canvas exposes the
-  // root + the correct node count alongside, so the wiring through
-  // `<GraphCanvasPane>` is exercised end-to-end without depending on
-  // the not-yet-shipped handle plumbing.
+  // The store-to-edges projection is the load-bearing surface
+  // `mod_edge_rendering` shipped: `edge-created` events in the WS store
+  // are projected into the `edges` array passed to `<ReactFlow>`. The
+  // visible `.react-flow__edge` SVG DOM only appears once `<StatementNode>`
+  // exposes ReactFlow `<Handle>` elements — which `mod_node_handle_rendering`
+  // (the refinement at
+  // `tasks/refinements/moderator-ui/mod_node_handle_rendering.md`) now
+  // ships. The projection-level assertions below stay (the disjointness
+  // between node and edge projections is still load-bearing); the new
+  // `.react-flow__edge` count assertion lifts the formerly-deferred
+  // "edges actually paint" check from the projection layer to the DOM
+  // layer under happy-dom.
   it('projects every edge-created event into the canvas edge list', () => {
     const store = useWsStore.getState();
     store.applyEvent(makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'a' }));
@@ -452,6 +513,32 @@ describe('GraphCanvasPane — store-derived edges (mod_edge_rendering)', () => {
     expect(edges.map((e) => e.id)).toEqual(['edge-1']);
     expect(edges[0]?.source).toBe(NODE_A);
     expect(edges[0]?.target).toBe(NODE_B);
+  });
+
+  // Refinement: tasks/refinements/moderator-ui/mod_node_handle_rendering.md
+  //
+  // With `<Handle>` elements now on `<StatementNode>` (Position.Top
+  // target + Position.Bottom source), ReactFlow's edge-renderer can
+  // resolve every edge's endpoint coordinates and paint the SVG
+  // `<path>` for each projected edge. This case lifts the
+  // formerly-deferred "edges actually render" assertion from the
+  // projection layer (the two cases above) to the DOM layer: for one
+  // `edge-created` event in the store, exactly one `.react-flow__edge`
+  // SVG group appears in the rendered canvas.
+  it('renders one .react-flow__edge per edge-created event in the store', () => {
+    const store = useWsStore.getState();
+    store.applyEvent(makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'a' }));
+    store.applyEvent(makeNodeCreated({ sequence: 2, nodeId: NODE_B, wording: 'b' }));
+    store.applyEvent(
+      makeEdgeCreated({ sequence: 3, edgeId: 'edge-1', source: NODE_A, target: NODE_B }),
+    );
+    const { container } = render(<GraphCanvasPane sessionId={SESSION_ID} />);
+    // Both nodes render.
+    expect(container.querySelectorAll('.react-flow__node').length).toBe(2);
+    // Exactly one edge SVG renders — the projection layer's edge list
+    // (asserted above) is now reflected in the DOM because both nodes
+    // expose `<Handle>` anchors at top + bottom.
+    expect(container.querySelectorAll('.react-flow__edge').length).toBe(1);
   });
 });
 
