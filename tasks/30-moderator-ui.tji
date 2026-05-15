@@ -130,6 +130,13 @@ task moderator_ui "Moderator UI" {
       depends frontend_i18n.i18n_methodology_glossary
       note "Refinement: tasks/refinements/moderator-ui/mod_edge_rendering.md"
     }
+    task mod_node_handle_rendering "Render ReactFlow Handle elements on StatementNode for edge anchoring" {
+      effort 0.5d
+      allocate team
+      depends !mod_node_rendering, !mod_edge_rendering
+      note "Source of debt: mod_hover_details Status block (commit b7ac2d5) — deferred edge-hover Playwright assertion (Test 4 of moderator-hover-details.spec.ts) is conditional because .react-flow__edge does not render in a real browser without source/target Handle elements on StatementNode. Closing this task lifts that assertion to a hard expectation."
+      note "Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit added after b7ac2d5)."
+    }
     task mod_annotation_rendering "Annotation rendering" {
       effort 1d
       allocate team

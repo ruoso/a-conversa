@@ -116,6 +116,7 @@ Brief:
 > 1. Append a `## Status` block to `<refinement path>`. Format: `**Done** — <today's date>.` followed by 4–8 bullets summarizing what landed, citing artifact paths. Do not rewrite earlier sections of the refinement. The implementation summary from the prior step is: `<Implementer's return summary>`.
 > 2. Add `complete 100` immediately after `allocate team` in the matching task block in `tasks/<NN>-<area>.tji`. Confirm `tj3 project.tjp 2>&1 | grep -iE "error|fatal"` is silent.
 > 3. If the task is the last unmet dependency of a milestone in `tasks/99-milestones.tji`, add `complete 100` to that milestone too. Check by walking the milestone's `depends` list and confirming every other entry is also `complete 100`.
+> 4. **Register tech-debt tasks in the WBS.** If the Implementer's summary or the Status block names a follow-up task (typically deferred-e2e debt pointing at a provisional `<task_name>`, or any other "future task X will close this"), add that task to the appropriate `tasks/<NN>-<area>.tji` file in the same commit. Use a stable kebab/snake_case id, give it an effort estimate (`0.5d`/`1d`), an `allocate team` line, a `depends` list reflecting the real prerequisites, and a `note` line citing the source-of-debt refinement + commit. Do NOT add `complete 100` (the task is deliberately open). Confirm `tj3 project.tjp` stays silent after the addition. The orchestrator's next pick-task pass will see the new leaf and route it through the normal loop.
 >
 > Commit (one task = one commit):
 >
@@ -229,6 +230,20 @@ When a sub-agent runs tests, builds, lint/typecheck, `docker compose logs`, or a
 - **Never read the raw log file directly** with `Read` from a verification-running sub-agent — that defeats the point. Use `Explore`.
 
 This applies to the Implementer (running `pnpm run check`, `test:smoke`, Playwright, etc.) and any other sub-agent that runs a noisy command. Briefs below already cite this rule; surface it again in any future brief that runs verification.
+
+## Tech-debt registration — passed through to every brief
+
+Whenever a sub-agent surfaces a follow-up task (deferred test coverage, a known component-not-yet-wired, a small enhancement deferred for scope reasons, etc.), it MUST land as a real WBS leaf — not just a note in a Status block.
+
+**Refinement-Writer:** when you defer something to a future task, name the future task crisply (a stable id, an effort estimate, a one-line description) so the Closer can register it mechanically. Mention it under Acceptance criteria with phrasing like "deferred to `<task_name>` (see Closer task-registration in ORCHESTRATOR.md)".
+
+**Implementer:** when verification surfaces a gap you can't close in scope, include the proposed follow-up task name in your return summary (e.g. "deferred edge-hover assertion pending `mod_node_handle_rendering` — recommended placement under `mod_graph_rendering`").
+
+**Closer:** Ritual step 4 (above) — add the new task block to the appropriate `tasks/<NN>-<area>.tji` file in the same commit that closes the current leaf. Stable id, effort, `allocate team`, `depends` list, `note` line citing the source-of-debt refinement + this commit. Do NOT add `complete 100`. Re-run `tj3 project.tjp` to confirm syntax.
+
+**Orchestrator:** when reading the next iteration's mental WBS state, treat newly-registered tech-debt leaves as eligible candidates for the next pick. A subgroup with a freshly-registered open leaf has not closed; the pick-task pass picks up the debt before declaring the subgroup done.
+
+Rationale: a Status-block note is invisible to the orchestrator's task-picker. The pattern showed up first on `mod_node_handle_rendering` (deferred from `mod_hover_details` / commit `b7ac2d5`) — recorded in prose, missed by the WBS, almost lost. This section closes that loophole.
 
 ## What sub-agents must NOT do (passed through to every brief)
 
