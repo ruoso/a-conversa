@@ -196,6 +196,22 @@ task moderator_ui "Moderator UI" {
     task mod_layout_engine_choice "Choose and configure graph layout algorithm" {
       effort 1d
       allocate team
+      complete 100
+      note "Refinement: tasks/refinements/moderator-ui/mod_layout_engine_choice.md"
+    }
+    task mod_layout_measured_dimensions "Use measured node dimensions in layout pass instead of constants" {
+      effort 0.5d
+      allocate team
+      depends !mod_layout_engine_choice
+      note "Source of debt: mod_layout_engine_choice (commit added by this Closer) — dagre currently runs against constant 288x90 px dimensions; very tall StatementNode cards (many facets, large per-facet styling, long wording) can overflow the 90 px height slot and produce edge crossings. Lift by measuring each node via getBoundingClientRect() in a second-pass relayout. ADR 0025 'Consequences' section names this trade-off."
+      note "Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit b7c5ff0)."
+    }
+    task mod_layout_tidy_action "Wire relayoutAll() to a moderator-visible 'tidy up' button" {
+      effort 0.5d
+      allocate team
+      depends !mod_layout_engine_choice
+      note "Source of debt: mod_layout_engine_choice (commit added by this Closer) — relayoutAll() seam is exported but not wired to a button. A 'tidy up' control in the moderator UI lets the operator force a full re-layout when the incremental position cache produces an awkward arrangement."
+      note "Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit b7c5ff0)."
     }
     task mod_pan_zoom "Pan and zoom navigation" {
       effort 0.5d

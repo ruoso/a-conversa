@@ -12,6 +12,7 @@
   "dependencies": {
     "@a-conversa/i18n-catalogs": "workspace:*",
     "@a-conversa/shared-types": "workspace:^",
+    "@dagrejs/dagre": "1.1.4",
     "i18next": "26.1.0",
     "i18next-icu": "2.4.3",
     "react": "18.3.1",

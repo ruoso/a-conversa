@@ -205,5 +205,24 @@ export default defineConfig({
         storageState: localeStorageState('en-US'),
       },
     },
+    // Graph layout e2e (mod_layout_engine_choice, ADR 0025). Drives the
+    // moderator's operate route, seeds a 6-node / 5-edge claim+evidence
+    // +rebut fixture into the Zustand WS store, and asserts: pairwise
+    // non-overlap of rendered cards, source.y < target.y for every
+    // edge under rankdir=TB, and ≤ 2 px drift of original cards when
+    // one incremental node + edge is seeded (the position-cache
+    // stability contract). Same locale / ignoreHTTPSErrors profile as
+    // `chromium-moderator-hover` — the layout assertions are locale-
+    // independent (positions, not text), so single-locale is enough.
+    {
+      name: 'chromium-moderator-layout',
+      testMatch: /moderator-graph-layout\.spec\.ts$/,
+      use: {
+        ...devices['Desktop Chrome'],
+        locale: 'en-US',
+        ignoreHTTPSErrors: true,
+        storageState: localeStorageState('en-US'),
+      },
+    },
   ],
 });

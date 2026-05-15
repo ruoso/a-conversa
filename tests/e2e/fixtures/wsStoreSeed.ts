@@ -106,7 +106,7 @@ export async function seedWsStore(
           __aConversaWsStore?: {
             getState(): {
               applyEvent(event: unknown): boolean;
-              sessionState: Record<string, { events: unknown[] }>;
+              sessionState: Record<string, { events: unknown[]; lastAppliedSequence: number }>;
             };
           };
         }
@@ -118,7 +118,13 @@ export async function seedWsStore(
       }
       const actor = '00000000-0000-4000-8000-0000000000aa';
       const createdAt = '2026-05-11T00:00:00.000Z';
-      let sequence = 1;
+      // Continue the sequence from the store's current high-water mark
+      // so consecutive `seedWsStore` calls on the same session don't
+      // collide with `lastAppliedSequence` — the store rejects events
+      // whose `sequence <= lastAppliedSequence`. Fresh sessions start
+      // at 0, so the first seeded event lands at sequence 1.
+      const existing = store.getState().sessionState[sessionId];
+      let sequence = (existing?.lastAppliedSequence ?? 0) + 1;
       for (const node of nodes) {
         store.getState().applyEvent({
           id: `00000000-0000-4000-8000-${(0x1000 + sequence).toString(16).padStart(12, '0')}`,

@@ -54,6 +54,7 @@ import {
   projectNodes,
 } from './GraphCanvasPane';
 import { STATEMENT_NODE_TYPE } from './StatementNode';
+import { applyLayout } from './layoutEngine';
 import { projectDiagnosticHighlights } from './diagnosticHighlights';
 import { selectEdgesForSession } from './selectors';
 import { useWsStore } from '../ws/wsStore';
@@ -275,7 +276,13 @@ describe('projectNodes — pure projection from events to ReactFlow nodes', () =
     });
   });
 
-  it('lays nodes out on a deterministic grid keyed by node-created order', () => {
+  it('emits every node at the placeholder origin (positions are owned by applyLayout per mod_layout_engine_choice)', () => {
+    // `projectNodes` no longer assigns grid coordinates — the layout
+    // engine (ADR 0025) overwrites each node's position before the
+    // node reaches `<ReactFlow>`. The projection's contract here is
+    // simply: every emitted node carries the placeholder `(0, 0)`,
+    // and `applyLayout` produces a non-overlapping arrangement for
+    // a connected pair.
     const events: Event[] = Array.from({ length: 6 }, (_, i) =>
       makeNodeCreated({
         sequence: i + 1,
@@ -283,16 +290,29 @@ describe('projectNodes — pure projection from events to ReactFlow nodes', () =
         wording: `w${i}`,
       }),
     );
-    const nodes = projectNodes(events);
-    // 4 cols × 140-pixel row height: positions 0..3 on row 0, 4..5 on row 1.
-    expect(nodes.map((n) => n.position)).toEqual([
-      { x: 0, y: 0 },
-      { x: 240, y: 0 },
-      { x: 480, y: 0 },
-      { x: 720, y: 0 },
-      { x: 0, y: 140 },
-      { x: 240, y: 140 },
+    const projected = projectNodes(events);
+    for (const node of projected) {
+      expect(node.position).toEqual({ x: 0, y: 0 });
+    }
+
+    // Drive the projection through the layout engine for a parent→child
+    // pair; the dagre TB direction places the parent above the child.
+    const parentChild = projected.slice(0, 2);
+    const laidOut = applyLayout(parentChild, [
+      {
+        id: 'parent->child',
+        source: parentChild[0]?.id ?? '',
+        target: parentChild[1]?.id ?? '',
+        type: 'statement',
+      },
     ]);
+    expect(laidOut).toHaveLength(2);
+    const parentY = laidOut[0]?.position.y ?? Number.NaN;
+    const childY = laidOut[1]?.position.y ?? Number.NaN;
+    expect(parentY).toBeLessThan(childY);
+    // Distinct x AND y is sufficient for the "not all stacked at the
+    // origin" baseline.
+    expect(laidOut[0]?.position).not.toEqual(laidOut[1]?.position);
   });
 
   it('applies a committed classify-node proposal to the matching node', () => {

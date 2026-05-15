@@ -1,13 +1,15 @@
 // `<GraphCanvasPane>` — ReactFlow mount for the moderator's graph
 // canvas slot inside `<OperateLayout>`.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_axiom_mark_decoration.md
-// (prior:     tasks/refinements/moderator-ui/mod_proposed_state_styling.md,
+// Refinement: tasks/refinements/moderator-ui/mod_layout_engine_choice.md
+// (prior:     tasks/refinements/moderator-ui/mod_axiom_mark_decoration.md,
+//             tasks/refinements/moderator-ui/mod_proposed_state_styling.md,
 //             tasks/refinements/moderator-ui/mod_annotation_rendering.md,
 //             tasks/refinements/moderator-ui/mod_edge_rendering.md,
 //             tasks/refinements/moderator-ui/mod_node_rendering.md,
 //             tasks/refinements/moderator-ui/mod_graph_canvas_pane.md)
-// ADR:        docs/adr/0004-graph-libraries-reactflow-and-cytoscape.md
+// ADRs:       docs/adr/0004-graph-libraries-reactflow-and-cytoscape.md,
+//             docs/adr/0025-graph-layout-engine-dagre.md
 //
 // The moderator surface is the interactive-edit profile per ADR 0004:
 // ReactFlow's drag-to-create-edge ergonomics + first-class custom React
@@ -26,11 +28,16 @@
 // selection, context menus, draw-edge flow) continue to plug into the
 // same `<ReactFlow>` tree.
 //
-// **Layout note.** Node positioning is owned by `mod_layout_engine_choice`
-// (a separate task). Until then this component lays nodes out on a
-// deterministic grid keyed by their `node-created` event sequence — the
-// minimum that keeps nodes from stacking on top of each other and keeps
-// the test assertions concrete.
+// **Layout note.** Node positioning is delegated to `applyLayout` from
+// `./layoutEngine` (refinement `mod_layout_engine_choice`, pinned by
+// ADR 0025). The engine runs a Sugiyama-style hierarchical layout via
+// `@dagrejs/dagre` on every `useMemo([events, diagnosticHighlights,
+// edges])` tick; positions for previously-laid-out nodes are cached in
+// a `useRef<Map<id, {x, y}>>` so existing nodes never move on
+// incremental events (only new nodes feed dagre alongside the cached
+// neighbours). `projectNodes` no longer emits placeholder grid
+// coordinates — every emitted node starts at `(0, 0)` and the layout
+// pass overwrites that with a dagre-derived placement.
 //
 // CSS coupling: `reactflow/dist/style.css` is imported here (not in
 // `main.tsx`) so a surface that doesn't render the canvas doesn't
@@ -41,11 +48,18 @@
 import {
   useCallback,
   useMemo,
+  useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
   type ReactElement,
 } from 'react';
-import ReactFlow, { Background, type Edge, type Node, type NodeTypes } from 'reactflow';
+import ReactFlow, {
+  Background,
+  type Edge,
+  type Node,
+  type NodeTypes,
+  type XYPosition,
+} from 'reactflow';
 import type { Event, StatementKind } from '@a-conversa/shared-types';
 
 import 'reactflow/dist/style.css';
@@ -55,6 +69,7 @@ import { useWsStore, type WsState } from '../ws/wsStore.js';
 import { STATEMENT_NODE_TYPE, StatementNode, type StatementNodeData } from './StatementNode.js';
 import { edgeTypes } from './edgeTypes.js';
 import { GraphContextMenu, type MenuItem } from './GraphContextMenu.js';
+import { applyLayout } from './layoutEngine.js';
 import {
   EMPTY_DIAGNOSTIC_HIGHLIGHTS,
   projectDiagnosticHighlights,
@@ -88,15 +103,6 @@ import type { DiagnosticPayload } from '@a-conversa/shared-types';
 const NODE_TYPES: NodeTypes = {
   [STATEMENT_NODE_TYPE]: StatementNode,
 };
-
-/**
- * Grid width: this many nodes per row before wrapping. Coupled with
- * `GRID_DX` / `GRID_DY` it determines the deterministic placeholder
- * layout — superseded once `mod_layout_engine_choice` lands.
- */
-const GRID_COLS = 4;
-const GRID_DX = 240;
-const GRID_DY = 140;
 
 /**
  * Empty array used as the selector fallback when a session hasn't
@@ -276,10 +282,12 @@ export function buildPaneMenuItems(target: ContextMenuState['target']): readonly
  * - All other event kinds are ignored at this layer (edges, substance,
  *   decompose, etc. are downstream tasks).
  *
- * The function preserves event order: the `i`-th `node-created` event
- * gets the `i`-th grid slot. That's enough determinism for the
- * placeholder layout; the real layout engine ships with
- * `mod_layout_engine_choice`.
+ * The function preserves event order. Position assignment is deferred
+ * to `applyLayout` from `./layoutEngine` (refinement
+ * `mod_layout_engine_choice`, pinned by ADR 0025); every node emitted
+ * here carries the placeholder `position: { x: 0, y: 0 }`, which the
+ * layout pass overwrites on the next memoization tick inside
+ * `<GraphCanvasPane>`.
  */
 export function projectNodes(
   events: readonly Event[],
@@ -326,7 +334,6 @@ export function projectNodes(
 
   for (const event of events) {
     if (event.kind === 'node-created') {
-      const i = nodes.length;
       const annotations = annotationsByNode.get(event.payload.node_id) ?? EMPTY_ANNOTATIONS;
       const facetStatuses =
         facetStatusIndex.nodes.get(event.payload.node_id) ?? EMPTY_FACET_STATUSES;
@@ -369,14 +376,14 @@ export function projectNodes(
       const node: Node<StatementNodeData> = {
         id: event.payload.node_id,
         type: STATEMENT_NODE_TYPE,
-        position: {
-          x: (i % GRID_COLS) * GRID_DX,
-          y: Math.floor(i / GRID_COLS) * GRID_DY,
-        },
+        // Placeholder origin — `applyLayout` overwrites this with a
+        // dagre-derived position before the node reaches `<ReactFlow>`.
+        // See the module header's "Layout note".
+        position: { x: 0, y: 0 },
         data,
       };
+      nodeIndexById.set(event.payload.node_id, nodes.length);
       nodes.push(node);
-      nodeIndexById.set(event.payload.node_id, i);
       continue;
     }
 
@@ -490,10 +497,6 @@ export function GraphCanvasPane(props: GraphCanvasPaneProps): ReactElement {
     [activeDiagnostics],
   );
 
-  const nodes = useMemo(
-    () => projectNodes(events, diagnosticHighlights),
-    [events, diagnosticHighlights],
-  );
   // `selectEdgesForSession` is a pure function over `WsState`; we build
   // the minimal `WsState`-shaped object from the events we already
   // subscribed to so the projection stays the single source of truth
@@ -518,6 +521,31 @@ export function GraphCanvasPane(props: GraphCanvasPaneProps): ReactElement {
       ),
     [sessionId, events, diagnosticHighlights],
   );
+
+  // Position cache for the incremental layout pass (refinement
+  // `mod_layout_engine_choice`, ADR 0025). Nodes whose id is in the
+  // cache reuse their previous `{x, y}` verbatim; only new nodes feed
+  // dagre alongside the cached neighbours. `useRef` (not `useState`):
+  // writes to the cache happen AFTER the `useMemo` returns and MUST
+  // NOT trigger a re-render — the `useMemo` deps already drive the
+  // re-render cadence. The cache is per-component-instance, so route
+  // navigation that unmounts / remounts `<GraphCanvasPane>` starts
+  // fresh (intended semantics for "the moderator left and came back").
+  const positionCacheRef = useRef<Map<string, XYPosition>>(new Map());
+  const nodes = useMemo(() => {
+    const projected = projectNodes(events, diagnosticHighlights);
+    const laidOut = applyLayout(projected, edges, { cache: positionCacheRef.current });
+    // Mirror every emitted position into the cache so the NEXT
+    // memoization tick reuses these positions for already-laid-out
+    // nodes. The mutation does not drive a render (useRef semantics).
+    for (const node of laidOut) {
+      positionCacheRef.current.set(node.id, node.position);
+    }
+    return laidOut;
+    // `edges` is a new dep relative to the pre-layout-engine memo —
+    // dagre's placement depends on the edge set, so adding an edge
+    // between an existing node and a new node MUST re-run the layout.
+  }, [events, diagnosticHighlights, edges]);
 
   // Build the menu items for whatever the context menu currently targets.
   // The `items` are rebuilt on every render the menu is open, but that's
