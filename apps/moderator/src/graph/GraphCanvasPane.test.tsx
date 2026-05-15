@@ -1242,3 +1242,254 @@ describe('GraphCanvasPane — edge wording enrichment end-to-end (mod_hover_deta
     expect(edges[0]?.data?.targetWording).toBe('claim wording');
   });
 });
+
+// -- Measurement-driven re-layout (mod_layout_measured_dimensions) ---
+//
+// `<GraphCanvasPane>` subscribes to ReactFlow's internal `nodeInternals`
+// store via `useStore` (gated on `useNodesInitialized`) and on
+// measurement change, debounces 75 ms before evicting the position
+// cache for the changed ids and bumping a layout-revision counter. The
+// next memoization tick re-runs `applyLayout` with the freshly-populated
+// measurement cache. These cases pin both the re-measure flow (a tall
+// rect for one node moves THAT node and only that node) and the steady-
+// state silence (no further re-layouts once measurements stabilize).
+//
+// Test idiom: per the refinement, the existing `ImmediateResizeObserver`
+// stub fires synchronously on `observe()`, so the only latency is the
+// 75 ms `setTimeout` debounce. We use `vi.useFakeTimers()` +
+// `vi.advanceTimersByTime(80)` to fast-forward past it.
+
+/**
+ * Read a rendered node's translate position from the ReactFlow node
+ * wrapper's inline `transform` style. ReactFlow stamps
+ * `transform: translate(Xpx, Ypx)` on each `.react-flow__node` element;
+ * the values are the same `{x, y}` written to `Node.position`. Returns
+ * `null` if the node wrapper isn't in the DOM yet (e.g. the first
+ * paint hasn't completed) or the transform style is empty.
+ */
+function readNodeTransform(
+  container: HTMLElement,
+  nodeId: string,
+): { x: number; y: number } | null {
+  const card = container.querySelector(`[data-testid="statement-node-${nodeId}"]`);
+  if (card === null) return null;
+  // The card itself is the inner StatementNode; the ReactFlow wrapper
+  // is its ancestor with class `react-flow__node`.
+  let wrapper: Element | null = card;
+  while (wrapper !== null && !wrapper.classList.contains('react-flow__node')) {
+    wrapper = wrapper.parentElement;
+  }
+  if (wrapper === null) return null;
+  const style = (wrapper as HTMLElement).style.transform;
+  const match = style.match(/translate\(\s*(-?\d+(?:\.\d+)?)px\s*,\s*(-?\d+(?:\.\d+)?)px\s*\)/);
+  if (match === null) return null;
+  return { x: Number(match[1]), y: Number(match[2]) };
+}
+
+describe('GraphCanvasPane — measurement-driven re-layout (mod_layout_measured_dimensions)', () => {
+  // Stash the prototype's measurement stubs so per-test overrides can
+  // restore them on teardown.
+  let originalOffsetWidth!: PropertyDescriptor;
+  let originalOffsetHeight!: PropertyDescriptor;
+  let originalGetBoundingClientRect!: typeof Element.prototype.getBoundingClientRect;
+
+  beforeEach(() => {
+    originalOffsetWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetWidth')!;
+    originalOffsetHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight')!;
+    // Capture the original prototype method for restoration. The
+    // assignment loses `this` binding, which is exactly what we want
+    // here — we'll write the captured function back onto the prototype
+    // in `afterEach`, where `this` resolves dynamically on every
+    // invocation. The lint rule is defensive against accidental
+    // unbinding; this usage is intentional.
+    //
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
+  });
+
+  afterEach(() => {
+    Object.defineProperty(HTMLElement.prototype, 'offsetWidth', originalOffsetWidth);
+    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', originalOffsetHeight);
+    Element.prototype.getBoundingClientRect = originalGetBoundingClientRect;
+    vi.useRealTimers();
+  });
+
+  /**
+   * Override the per-prototype measurement helpers so each rendered
+   * node returns its OWN per-id rect, looked up by the `data-id`
+   * attribute ReactFlow stamps on the `.react-flow__node` wrapper.
+   * Nodes whose id isn't in the rect map fall back to a default.
+   */
+  function installPerNodeRects(
+    rectsById: ReadonlyMap<string, { width: number; height: number }>,
+    fallback: { width: number; height: number },
+  ): void {
+    function rectFor(el: HTMLElement): { width: number; height: number } {
+      // Walk up to find the `.react-flow__node` wrapper carrying
+      // `data-id`. The inner card and its children all resolve to the
+      // same per-node rect.
+      let cur: HTMLElement | null = el;
+      while (cur !== null) {
+        if (cur.classList?.contains?.('react-flow__node')) {
+          const id = cur.getAttribute('data-id');
+          if (id !== null && rectsById.has(id)) return rectsById.get(id)!;
+          break;
+        }
+        cur = cur.parentElement;
+      }
+      return fallback;
+    }
+    Object.defineProperty(HTMLElement.prototype, 'offsetWidth', {
+      configurable: true,
+      get(): number {
+        return rectFor(this as HTMLElement).width;
+      },
+    });
+    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
+      configurable: true,
+      get(): number {
+        return rectFor(this as HTMLElement).height;
+      },
+    });
+    Element.prototype.getBoundingClientRect = function (): DOMRect {
+      const rect = rectFor(this as HTMLElement);
+      return {
+        x: 0,
+        y: 0,
+        width: rect.width,
+        height: rect.height,
+        top: 0,
+        left: 0,
+        right: rect.width,
+        bottom: rect.height,
+        toJSON() {
+          return this;
+        },
+      };
+    };
+  }
+
+  it('re-runs applyLayout with measured dimensions after the 75 ms debounce; tall node moves', async () => {
+    // Install per-node rects BEFORE rendering so ReactFlow's first
+    // measurement pass picks up the per-id values. Node A is "tall"
+    // (200 x 160 — well over the 90 px default); node B is baseline.
+    // The edge A→B forces dagre into two ranks (A above B), so the
+    // vertical gap is observably sensitive to A's measured height.
+    const rectsById = new Map<string, { width: number; height: number }>([
+      [NODE_A, { width: 200, height: 160 }],
+      [NODE_B, { width: 100, height: 40 }],
+    ]);
+    installPerNodeRects(rectsById, { width: 100, height: 40 });
+
+    // Seed two node-created events + an edge.
+    const store = useWsStore.getState();
+    store.applyEvent(makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'tall' }));
+    store.applyEvent(makeNodeCreated({ sequence: 2, nodeId: NODE_B, wording: 'baseline' }));
+    store.applyEvent(
+      makeEdgeCreated({ sequence: 3, edgeId: 'edge-AB', source: NODE_A, target: NODE_B }),
+    );
+
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+
+    const { container } = render(<GraphCanvasPane sessionId={SESSION_ID} />);
+
+    // First-paint positions. ReactFlow's synchronous ResizeObserver
+    // callback has fired by now (the stub is synchronous), but the
+    // measurement effect's 75 ms debounce has NOT yet committed —
+    // positions are still from the constant 288 x 90 first-paint
+    // layout pass.
+    const firstA = readNodeTransform(container, NODE_A);
+    const firstB = readNodeTransform(container, NODE_B);
+    expect(firstA, 'first-paint position for node A must exist').not.toBeNull();
+    expect(firstB, 'first-paint position for node B must exist').not.toBeNull();
+    if (firstA === null || firstB === null) return;
+
+    // First-paint TB direction: A above B.
+    expect(firstA.y).toBeLessThan(firstB.y);
+    const firstGap = firstB.y - firstA.y;
+
+    // Advance past the debounce window. The pending eviction commits;
+    // applyLayout re-runs with the per-node measured rects; React
+    // re-renders.
+    await act(async () => {
+      vi.advanceTimersByTime(80);
+      // Flush microtasks so React processes the state update queued
+      // by the debounce callback before the next assertion reads the
+      // rendered DOM.
+      await Promise.resolve();
+    });
+
+    const secondA = readNodeTransform(container, NODE_A);
+    const secondB = readNodeTransform(container, NODE_B);
+    expect(secondA, 'post-debounce position for node A must exist').not.toBeNull();
+    expect(secondB, 'post-debounce position for node B must exist').not.toBeNull();
+    if (secondA === null || secondB === null) return;
+
+    // After the measured re-layout, node A's rendered height is 160
+    // (vs the 90 px first-paint constant). The gap between A.y and
+    // B.y reflects ((heightA + heightB) / 2 + ranksep), so growing
+    // A's height by 70 px should widen the gap. We assert the gap
+    // CHANGED by a non-trivial amount — proving dagre received the
+    // measured rect on the second pass.
+    const secondGap = secondB.y - secondA.y;
+    expect(
+      Math.abs(secondGap - firstGap),
+      `vertical gap between A and B should change after measurement: firstGap=${firstGap}, secondGap=${secondGap}`,
+    ).toBeGreaterThanOrEqual(10);
+  });
+
+  it('does NOT re-run applyLayout once measurements stabilize (no further eviction → steady-state silence)', async () => {
+    // Per-node rects that DON'T match the 288 x 90 constants — every
+    // node's first measurement crosses the threshold once and then
+    // stays put.
+    const rectsById = new Map<string, { width: number; height: number }>([
+      [NODE_A, { width: 120, height: 50 }],
+      [NODE_B, { width: 120, height: 50 }],
+    ]);
+    installPerNodeRects(rectsById, { width: 120, height: 50 });
+
+    const store = useWsStore.getState();
+    store.applyEvent(makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'a' }));
+    store.applyEvent(makeNodeCreated({ sequence: 2, nodeId: NODE_B, wording: 'b' }));
+
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+
+    const { container } = render(<GraphCanvasPane sessionId={SESSION_ID} />);
+
+    // Drain the first re-layout (the one triggered by the very first
+    // measurement of each node).
+    await act(async () => {
+      vi.advanceTimersByTime(80);
+      // Flush microtasks so React processes the state update queued
+      // by the debounce callback before the next assertion reads the
+      // rendered DOM.
+      await Promise.resolve();
+    });
+
+    const afterFirstSettle = readNodeTransform(container, NODE_A);
+    expect(afterFirstSettle).not.toBeNull();
+
+    // Now advance another window — no new measurements means no new
+    // pending evictions; the timer never arms. The position remains
+    // identical.
+    await act(async () => {
+      vi.advanceTimersByTime(80);
+      // Flush microtasks so React processes the state update queued
+      // by the debounce callback before the next assertion reads the
+      // rendered DOM.
+      await Promise.resolve();
+    });
+    const afterSecondSettle = readNodeTransform(container, NODE_A);
+    expect(afterSecondSettle).toEqual(afterFirstSettle);
+
+    // Advance another window for paranoia — still stable.
+    await act(async () => {
+      vi.advanceTimersByTime(80);
+      // Flush microtasks so React processes the state update queued
+      // by the debounce callback before the next assertion reads the
+      // rendered DOM.
+      await Promise.resolve();
+    });
+    expect(readNodeTransform(container, NODE_A)).toEqual(afterFirstSettle);
+  });
+});

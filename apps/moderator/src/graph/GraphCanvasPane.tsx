@@ -47,6 +47,7 @@
 
 import {
   useCallback,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -55,9 +56,14 @@ import {
 } from 'react';
 import ReactFlow, {
   Background,
+  ReactFlowProvider,
+  useNodesInitialized,
+  useStore,
+  useStoreApi,
   type Edge,
   type Node,
   type NodeTypes,
+  type ReactFlowState,
   type XYPosition,
 } from 'reactflow';
 import type { Event, StatementKind } from '@a-conversa/shared-types';
@@ -430,7 +436,93 @@ export interface GraphCanvasPaneProps {
   readonly sessionId: string;
 }
 
+/**
+ * Selector hash for the measurement-driven re-layout.
+ *
+ * Refinement: `mod_layout_measured_dimensions`.
+ *
+ * `useStore` re-renders the subscribing component when its selector
+ * return value changes by referential equality. Returning the live
+ * `state.nodeInternals` Map per-render would either (a) allocate a new
+ * Map on every render (cheap but defeats memoization in selector
+ * subscribers downstream) or (b) return the same Map reference but
+ * mutated in place (which React / Zustand would NOT see as changed).
+ *
+ * Instead, we return a numeric hash derived from each measured node's
+ * `id + width + height`. The hash is deterministic given a fixed set of
+ * measured rects, and changes if and only if at least one rect changes.
+ * The effect that reads the actual rects then pulls them off
+ * `useStoreApi().getState().nodeInternals` synchronously — same idiom
+ * the ReactFlow docs document for "subscribe to a derived signal,
+ * read the live state in the effect."
+ *
+ * `nodesInitialized` is folded into the hash so the effect fires once
+ * the gate flips; before that, every node has `width == null` so the
+ * hash stays at 0 regardless of partial measurements.
+ */
+function selectMeasurementRevision(state: ReactFlowState): number {
+  let acc = 0;
+  for (const node of state.nodeInternals.values()) {
+    if (node.width == null || node.height == null) continue;
+    if (node.width <= 0 || node.height <= 0) continue;
+    // Deterministic order-insensitive hash over (id, width, height).
+    // Stringify the id so the per-id hash differs across ids; multiply
+    // width by a prime so width vs height swaps produce a different
+    // hash. Order independence is the load-bearing property — Map
+    // iteration order is insertion order, which is stable enough for
+    // our purposes, but accumulating with `+=` rather than position-
+    // dependent shifts keeps the hash robust against future iteration-
+    // order changes.
+    let idHash = 0;
+    for (let i = 0; i < node.id.length; i += 1) {
+      idHash = (idHash * 31 + node.id.charCodeAt(i)) | 0;
+    }
+    acc = (acc + idHash + Math.round(node.width) * 131 + Math.round(node.height)) | 0;
+  }
+  return acc;
+}
+
+/**
+ * **Measurement aftershock debounce, ms.** Refinement:
+ * `mod_layout_measured_dimensions`. Per-facet decoration rows can fire
+ * a chain of `ResizeObserver` callbacks as the catalog text and CSS
+ * settle; debouncing 75 ms absorbs the cascade without firing N
+ * intermediate re-layouts on a single content tick. Empirically tight
+ * enough to feel responsive (well under one perceptual "moment" of
+ * 100–150 ms) and loose enough to coalesce a typical decoration
+ * cascade. Upper bound on re-layout latency after the last measurement
+ * change: ~75 ms + one render cycle + one dagre pass — well under the
+ * 100 ms budget ADR 0025 set for the constant-dimension layout pass.
+ */
+const MEASUREMENT_DEBOUNCE_MS = 75;
+
+/**
+ * **Minimum dimension delta to evict a cached position, px.** A
+ * measurement that arrives within 1 px of the cached value does NOT
+ * trigger a re-layout — sub-pixel jitter (browser zoom, scrollbar
+ * artifact, font hinting) shouldn't churn the canvas. The 1 px
+ * threshold is the same "ignore measurement noise" idiom the
+ * `auth-flow.spec.ts` 2 px tolerance uses on the rendered side.
+ * Refinement: `mod_layout_measured_dimensions`.
+ */
+const DIMENSION_CHANGE_THRESHOLD_PX = 1;
+
 export function GraphCanvasPane(props: GraphCanvasPaneProps): ReactElement {
+  // Wrap the inner canvas in `<ReactFlowProvider>` so the measurement
+  // hooks (`useNodesInitialized` / `useStore`) — which read the same
+  // store ReactFlow stamps `width` / `height` on after every
+  // `ResizeObserver` callback — can run as siblings of `<ReactFlow>`.
+  // Without an explicit provider, ReactFlow auto-creates one INSIDE its
+  // own tree; we'd have no place to mount the measurement effect.
+  // Refinement: `mod_layout_measured_dimensions`.
+  return (
+    <ReactFlowProvider>
+      <GraphCanvasPaneInner {...props} />
+    </ReactFlowProvider>
+  );
+}
+
+function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
   const { sessionId } = props;
 
   // Context-menu state — `null` when no menu is open. Set by the right-
@@ -532,9 +624,31 @@ export function GraphCanvasPane(props: GraphCanvasPaneProps): ReactElement {
   // navigation that unmounts / remounts `<GraphCanvasPane>` starts
   // fresh (intended semantics for "the moderator left and came back").
   const positionCacheRef = useRef<Map<string, XYPosition>>(new Map());
+  // Measurement cache — the per-id `{width, height}` map fed to dagre
+  // via `LayoutOptions.dimensions`. Populated by the debounced
+  // measurement effect below, read inside the `nodes` `useMemo`.
+  // Refinement: `mod_layout_measured_dimensions`.
+  const measurementCacheRef = useRef<Map<string, { width: number; height: number }>>(new Map());
+  // Pending evictions — ids whose measured rect changed but the
+  // 75 ms debounce hasn't elapsed yet. Survives across re-renders
+  // (and across effect cleanup/re-run cycles) so a measurement that
+  // crossed the threshold doesn't get silently dropped if a second
+  // measurement arrives before the debounce fires. Drained when the
+  // debounce timer fires (we apply the position-cache eviction +
+  // commit the measurement cache atomically then).
+  const pendingMeasurementsRef = useRef<Map<string, { width: number; height: number }>>(new Map());
+  // Bumped by the debounced measurement effect when at least one rect
+  // crossed the change threshold; folded into the `nodes` `useMemo`
+  // deps so the next memoization tick reads the freshly-evicted
+  // position cache alongside the freshly-populated measurement cache.
+  const [layoutRevision, setLayoutRevision] = useState<number>(0);
+
   const nodes = useMemo(() => {
     const projected = projectNodes(events, diagnosticHighlights);
-    const laidOut = applyLayout(projected, edges, { cache: positionCacheRef.current });
+    const laidOut = applyLayout(projected, edges, {
+      cache: positionCacheRef.current,
+      dimensions: measurementCacheRef.current,
+    });
     // Mirror every emitted position into the cache so the NEXT
     // memoization tick reuses these positions for already-laid-out
     // nodes. The mutation does not drive a render (useRef semantics).
@@ -545,7 +659,109 @@ export function GraphCanvasPane(props: GraphCanvasPaneProps): ReactElement {
     // `edges` is a new dep relative to the pre-layout-engine memo —
     // dagre's placement depends on the edge set, so adding an edge
     // between an existing node and a new node MUST re-run the layout.
-  }, [events, diagnosticHighlights, edges]);
+    // `layoutRevision` is bumped by the measurement effect when an
+    // evicted cache entry needs a fresh dagre pass for the measured
+    // footprint. Refinement: `mod_layout_measured_dimensions`.
+  }, [events, diagnosticHighlights, edges, layoutRevision]);
+
+  // -- Measurement-driven re-layout (mod_layout_measured_dimensions) --
+  //
+  // Subscribe to a deterministic hash of `state.nodeInternals`'s
+  // measured rects. The selector changes its return value if and only
+  // if at least one node's measured `width` / `height` changed; that
+  // change re-runs the effect below. We DON'T use `state.nodeInternals`
+  // directly as the selector return value because the Map reference is
+  // mutated in place internally (Zustand `useStore` would not see the
+  // change), and re-creating it per render is both wasteful and noisy
+  // for downstream selectors. The numeric hash is content-stable and
+  // cheap. The actual rects are read off the live state inside the
+  // effect via `useStoreApi().getState()` — same idiom the ReactFlow
+  // docs document for "subscribe to a derived signal, read the live
+  // state in the effect."
+  const measurementRevision = useStore(selectMeasurementRevision);
+  const nodesInitialized = useNodesInitialized();
+  const storeApi = useStoreApi();
+
+  useEffect(() => {
+    // Gate the re-layout on `useNodesInitialized` (the official
+    // ReactFlow seam; returns `true` only after every visible node has
+    // been measured at least once). Before the gate flips, partial
+    // measurements would produce a re-layout that immediately needs
+    // another re-layout — wasteful.
+    if (!nodesInitialized) return undefined;
+
+    // Read the live `nodeInternals` Map out of the store. The map is
+    // keyed by node id; each entry's `width` / `height` is what
+    // ReactFlow's `ResizeObserver` measured (null until the first
+    // measurement; we already gated on `nodesInitialized`).
+    const internals = storeApi.getState().nodeInternals;
+
+    // Compare each rect against the committed measurement cache. If
+    // the rect differs by ≥ DIMENSION_CHANGE_THRESHOLD_PX on either
+    // axis, stage it in `pendingMeasurementsRef.current`. We DO NOT
+    // commit the measurement cache or evict the position cache yet —
+    // the debounce window may bring further measurements (the
+    // per-facet / per-decoration cascade); we hold the staged set
+    // until the timer fires.
+    let staged = false;
+    for (const [id, internal] of internals.entries()) {
+      if (internal.width == null || internal.height == null) continue;
+      if (internal.width <= 0 || internal.height <= 0) continue;
+      const rect = { width: internal.width, height: internal.height };
+      const prev = measurementCacheRef.current.get(id);
+      if (
+        prev === undefined ||
+        Math.abs(prev.width - rect.width) >= DIMENSION_CHANGE_THRESHOLD_PX ||
+        Math.abs(prev.height - rect.height) >= DIMENSION_CHANGE_THRESHOLD_PX
+      ) {
+        pendingMeasurementsRef.current.set(id, rect);
+        staged = true;
+      }
+    }
+
+    // Only arm the debounce if THIS invocation staged something OR a
+    // previous invocation staged something the timer never got to
+    // commit (cleanup raced ahead). The "previous staging survives"
+    // path is the load-bearing piece — without it, a cascade of
+    // measurements that arrives faster than the debounce window would
+    // never get its eviction applied.
+    if (!staged && pendingMeasurementsRef.current.size === 0) return undefined;
+
+    // Debounce: per-facet decoration rows can fire a chain of
+    // ResizeObserver callbacks as the catalog text and CSS settle.
+    // Coalesce them into one re-layout pass at the end of the cascade.
+    const timer = setTimeout(() => {
+      // Drain the staged measurements: commit each into the
+      // measurement cache and evict the matching position-cache entry
+      // so the next `applyLayout` pass treats those ids as uncached
+      // (forcing a fresh dagre placement for them, alongside the
+      // cached neighbours, which pass through with their existing
+      // positions — `applyLayout`'s mixed cache / no-cache codepath
+      // is the seam). Existing-nodes-never-move is preserved for
+      // every id NOT in the staged set.
+      const drained = pendingMeasurementsRef.current;
+      if (drained.size === 0) return;
+      for (const [id, rect] of drained.entries()) {
+        measurementCacheRef.current.set(id, rect);
+        positionCacheRef.current.delete(id);
+      }
+      pendingMeasurementsRef.current = new Map();
+      // Bump the layout revision to invalidate the `nodes` `useMemo`.
+      // The next memoization tick re-runs `applyLayout` with the
+      // freshly-evicted position cache + the freshly-populated
+      // measurement cache, producing positions that respect the
+      // rendered footprint.
+      setLayoutRevision((rev) => rev + 1);
+    }, MEASUREMENT_DEBOUNCE_MS);
+
+    // Cleanup: clear the pending debounce on unmount OR on a re-render
+    // that supplants the previous effect invocation. A new measurement
+    // that arrives during the 75 ms window resets the timer to the
+    // tail of the cascade.
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [measurementRevision, nodesInitialized, storeApi]);
 
   // Build the menu items for whatever the context menu currently targets.
   // The `items` are rebuilt on every render the menu is open, but that's

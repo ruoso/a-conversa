@@ -211,7 +211,9 @@ task moderator_ui "Moderator UI" {
     task mod_layout_measured_dimensions "Use measured node dimensions in layout pass instead of constants" {
       effort 0.5d
       allocate team
+      complete 100
       depends !mod_layout_engine_choice
+      note "Refinement: tasks/refinements/moderator-ui/mod_layout_measured_dimensions.md"
       note "Source of debt: mod_layout_engine_choice (commit added by this Closer) — dagre currently runs against constant 288x90 px dimensions; very tall StatementNode cards (many facets, large per-facet styling, long wording) can overflow the 90 px height slot and produce edge crossings. Lift by measuring each node via getBoundingClientRect() in a second-pass relayout. ADR 0025 'Consequences' section names this trade-off."
       note "Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit b7c5ff0)."
     }

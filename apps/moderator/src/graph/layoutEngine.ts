@@ -50,10 +50,16 @@
 // measurement pass is deferred to `mod_layout_measured_dimensions`).
 //
 // The height is the typical two-line wording + kind label + one
-// decoration row. Variable-height cards (multi-row decorations) will
-// visually overflow the 90 px slot in the worst case; the DOM-measured
-// improvement is deferred to the future `mod_layout_measured_dimensions`
-// task (ADR 0025 Consequences).
+// decoration row. Variable-height cards (multi-row decorations) used
+// to overflow the 90 px slot in the worst case; that ADR 0025
+// `Consequences` trade-off was lifted by `mod_layout_measured_dimensions`,
+// which added the optional `LayoutOptions.dimensions` map. When the
+// caller supplies a per-id `{width, height}` rect (measured by
+// ReactFlow's `ResizeObserver` and read off `nodeInternals` via
+// `useStore`), `runDagre` feeds dagre that footprint instead of the
+// constants. Nodes whose id is NOT in the map (e.g. a brand-new node
+// pre-measurement) fall back to the constants, preserving the pre-
+// measurement first-paint behavior.
 //
 // **Cycle handling.** Dagre breaks cycles by reversing the offending
 // edge for the layering pass and drawing it in its original direction.
@@ -98,6 +104,22 @@ export interface LayoutOptions {
   readonly rankSep?: number;
   readonly nodeSep?: number;
   readonly cache?: ReadonlyMap<string, XYPosition>;
+  /**
+   * Per-node measured dimensions. When a node's id is present in this
+   * map, the dagre input uses the corresponding `{ width, height }`
+   * instead of the constant `nodeWidth` / `nodeHeight`. Nodes whose id
+   * is NOT in the map fall back to the constants. This is the seam
+   * `<GraphCanvasPane>` uses to feed dagre the rects ReactFlow's
+   * `ResizeObserver` measured off the rendered DOM. Refinement:
+   * `mod_layout_measured_dimensions`.
+   *
+   * Closes the ADR 0025 `Consequences` trade-off: the constant 90 px
+   * height fed to dagre was the source of the variable-card-height
+   * overlap. With per-node measured rects, dagre allocates each node's
+   * actual rendered footprint, so the non-overlap contract holds for
+   * tall cards (multi-row decorations, long wordings) too.
+   */
+  readonly dimensions?: ReadonlyMap<string, { readonly width: number; readonly height: number }>;
 }
 
 /**
@@ -113,7 +135,7 @@ export interface LayoutOptions {
  * - `rankSep`: `60` px vertical gap between layered ranks.
  * - `nodeSep`: `40` px horizontal gap between siblings inside a rank.
  */
-export const DEFAULT_LAYOUT_OPTIONS: Required<Omit<LayoutOptions, 'cache'>> = {
+export const DEFAULT_LAYOUT_OPTIONS: Required<Omit<LayoutOptions, 'cache' | 'dimensions'>> = {
   rankdir: 'TB',
   nodeWidth: 288,
   nodeHeight: 90,
@@ -127,7 +149,11 @@ interface ResolvedOptions {
   readonly nodeHeight: number;
   readonly rankSep: number;
   readonly nodeSep: number;
+  readonly dimensions: ReadonlyMap<string, { readonly width: number; readonly height: number }>;
 }
+
+const EMPTY_DIMENSIONS: ReadonlyMap<string, { readonly width: number; readonly height: number }> =
+  new Map();
 
 function resolveOptions(options: LayoutOptions | undefined): ResolvedOptions {
   return {
@@ -136,6 +162,7 @@ function resolveOptions(options: LayoutOptions | undefined): ResolvedOptions {
     nodeHeight: options?.nodeHeight ?? DEFAULT_LAYOUT_OPTIONS.nodeHeight,
     rankSep: options?.rankSep ?? DEFAULT_LAYOUT_OPTIONS.rankSep,
     nodeSep: options?.nodeSep ?? DEFAULT_LAYOUT_OPTIONS.nodeSep,
+    dimensions: options?.dimensions ?? EMPTY_DIMENSIONS,
   };
 }
 
@@ -168,7 +195,16 @@ function runDagre<T>(
 
   const participatingIds = new Set<string>();
   for (const node of nodes) {
-    graph.setNode(node.id, { width: opts.nodeWidth, height: opts.nodeHeight });
+    // Refinement: `mod_layout_measured_dimensions`. If the caller provided
+    // a measured rect for this id, feed dagre the actually-rendered
+    // footprint; otherwise fall back to the per-call constants. Nodes
+    // whose id isn't in the dimensions map (e.g. a brand-new node that
+    // hasn't been measured yet) get the constant — same behavior as the
+    // pre-measurement era.
+    const measured = opts.dimensions.get(node.id);
+    const width = measured?.width ?? opts.nodeWidth;
+    const height = measured?.height ?? opts.nodeHeight;
+    graph.setNode(node.id, { width, height });
     participatingIds.add(node.id);
   }
   for (const edge of edges) {
@@ -194,10 +230,17 @@ function runDagre<T>(
       continue;
     }
     // Dagre's `(x, y)` is the node's geometric center; ReactFlow's
-    // `Node.position` is the top-left corner.
+    // `Node.position` is the top-left corner. Use the same per-id rect
+    // we fed `setNode(...)` so the geometric-center→top-left translation
+    // matches the footprint dagre actually placed. Falling back to the
+    // constants for unmeasured nodes mirrors the `setNode` branch above.
+    // Refinement: `mod_layout_measured_dimensions`.
+    const measured = opts.dimensions.get(node.id);
+    const width = measured?.width ?? opts.nodeWidth;
+    const height = measured?.height ?? opts.nodeHeight;
     positions.set(node.id, {
-      x: placed.x - opts.nodeWidth / 2,
-      y: placed.y - opts.nodeHeight / 2,
+      x: placed.x - width / 2,
+      y: placed.y - height / 2,
     });
   }
   return positions;

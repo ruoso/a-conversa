@@ -369,3 +369,125 @@ describe('layoutEngine — LayoutOptions plumbing', () => {
     expect(bp.y - ap.y).toBeGreaterThanOrEqual(opts.rankSep ?? 0);
   });
 });
+
+// -- Per-node measured dimensions (mod_layout_measured_dimensions) --
+//
+// The `dimensions` field on `LayoutOptions` carries per-id measured
+// rects from ReactFlow's internal `nodeInternals` (post-ResizeObserver).
+// `runDagre` consults the map per node with a fallback to the constants;
+// the post-layout geometric-center → top-left translation reads the same
+// per-id rect (falling back) so the emitted `Node.position` matches the
+// measured footprint exactly. These cases pin the plumbing.
+describe('layoutEngine — per-node dimensions (mod_layout_measured_dimensions)', () => {
+  it('feeds dagre the per-id rect when present in `dimensions`', () => {
+    // Tall measured rect for n1 forces dagre to allocate a bigger
+    // vertical footprint for the top rank. Under TB direction, the
+    // distance between n1 (top) and n2 (bottom) centers must grow
+    // proportionally to (measuredN1.height + n2.height) / 2 + ranksep.
+    const nodes = [makeNode('n1'), makeNode('n2')];
+    const edges = [makeEdge('n1', 'n2')];
+    const baseline = applyLayout(nodes, edges);
+    const baselineN1 = baseline.find((n) => n.id === 'n1')?.position;
+    const baselineN2 = baseline.find((n) => n.id === 'n2')?.position;
+    expect(baselineN1).toBeDefined();
+    expect(baselineN2).toBeDefined();
+    if (baselineN1 === undefined || baselineN2 === undefined) return;
+
+    // Baseline gap between top-left y values: ~ (90 + 60) = 150.
+    const baselineGap = baselineN2.y - baselineN1.y;
+
+    // Feed dagre a 400 x 200 measured rect for n1. Now the vertical
+    // gap between top-lefts must grow because n1's rank slot is
+    // 200 - 90 = 110 px taller; n2's top-left y shifts down by
+    // roughly that much.
+    const dimensions = new Map<string, { width: number; height: number }>([
+      ['n1', { width: 400, height: 200 }],
+    ]);
+    const measured = applyLayout(nodes, edges, { dimensions });
+    const measuredN1 = measured.find((n) => n.id === 'n1')?.position;
+    const measuredN2 = measured.find((n) => n.id === 'n2')?.position;
+    expect(measuredN1).toBeDefined();
+    expect(measuredN2).toBeDefined();
+    if (measuredN1 === undefined || measuredN2 === undefined) return;
+    const measuredGap = measuredN2.y - measuredN1.y;
+    // The gap must increase by at least (200 - 90) / 2 = 55 px — the
+    // half-height difference on the taller node. (Half because dagre's
+    // center placement spreads the extra footprint across the rank
+    // boundary symmetrically.)
+    expect(measuredGap - baselineGap).toBeGreaterThanOrEqual(50);
+  });
+
+  it('falls back to nodeWidth / nodeHeight for ids absent from `dimensions`', () => {
+    // Partial map: n1 has a measured rect, n2 falls back to the constant.
+    // Non-overlap holds across the mixed-dimension input.
+    const nodes = [makeNode('n1'), makeNode('n2'), makeNode('n3')];
+    const edges = [makeEdge('n1', 'n2'), makeEdge('n2', 'n3')];
+    const dimensions = new Map<string, { width: number; height: number }>([
+      ['n1', { width: 200, height: 160 }],
+    ]);
+    const out = applyLayout(nodes, edges, { dimensions });
+    expect(out).toHaveLength(3);
+    // Every emitted node has a finite position.
+    for (const node of out) {
+      expect(Number.isFinite(node.position.x)).toBe(true);
+      expect(Number.isFinite(node.position.y)).toBe(true);
+    }
+    // Non-overlap across pairs. We use the per-node rect (measured for
+    // n1, constant for n2/n3) to compute each card's bounding rect.
+    const rects = out.map((n) => {
+      const dim = dimensions.get(n.id);
+      return {
+        id: n.id,
+        x: n.position.x,
+        y: n.position.y,
+        width: dim?.width ?? DEFAULT_LAYOUT_OPTIONS.nodeWidth,
+        height: dim?.height ?? DEFAULT_LAYOUT_OPTIONS.nodeHeight,
+      };
+    });
+    for (let i = 0; i < rects.length; i += 1) {
+      for (let j = i + 1; j < rects.length; j += 1) {
+        const a = rects[i];
+        const b = rects[j];
+        if (a === undefined || b === undefined) continue;
+        const aRight = a.x + a.width;
+        const aBottom = a.y + a.height;
+        const bRight = b.x + b.width;
+        const bBottom = b.y + b.height;
+        const overlaps = !(aRight <= b.x || bRight <= a.x || aBottom <= b.y || bBottom <= a.y);
+        expect(overlaps).toBe(false);
+      }
+    }
+  });
+
+  it('relayoutAll honors `dimensions` for every id', () => {
+    const nodes = [makeNode('a'), makeNode('b')];
+    const edges = [makeEdge('a', 'b')];
+    const dimensions = new Map<string, { width: number; height: number }>([
+      ['a', { width: 300, height: 180 }],
+      ['b', { width: 240, height: 120 }],
+    ]);
+    const out = relayoutAll(nodes, edges, { dimensions });
+    expect(out).toHaveLength(2);
+    const ap = out.find((n) => n.id === 'a')?.position;
+    const bp = out.find((n) => n.id === 'b')?.position;
+    expect(ap).toBeDefined();
+    expect(bp).toBeDefined();
+    if (ap === undefined || bp === undefined) return;
+    // TB-direction still holds with per-id dimensions: a above b.
+    expect(ap.y < bp.y).toBe(true);
+    // Vertical gap respects the rank separator (default 60) on top of
+    // the larger of the two heights.
+    expect(bp.y - ap.y).toBeGreaterThanOrEqual(DEFAULT_LAYOUT_OPTIONS.rankSep);
+  });
+
+  it('treats an empty `dimensions` map identically to omitting the field', () => {
+    const nodes = [makeNode('a'), makeNode('b'), makeNode('c')];
+    const edges = [makeEdge('a', 'b'), makeEdge('b', 'c')];
+    const withEmpty = applyLayout(nodes, edges, { dimensions: new Map() });
+    const withOmit = applyLayout(nodes, edges);
+    expect(withEmpty).toHaveLength(withOmit.length);
+    for (let i = 0; i < withEmpty.length; i += 1) {
+      expect(withEmpty[i]?.position).toEqual(withOmit[i]?.position);
+    }
+  });
+});
