@@ -154,7 +154,7 @@
       }
     },
     "hoverPopover": {
-      "edgeEndpoints": "{role}: \"{sourceWording}\" -> \"{targetWording}\""
+      "edgeEndpointsReference": "{sourceId} -> {targetId}"
     }
   },
   "diagnostics": {

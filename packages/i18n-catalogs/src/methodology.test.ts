@@ -187,25 +187,56 @@ describe('methodology glossary: known canonical translations', () => {
   });
 });
 
-// Hover-popover ICU template (mod_hover_details).
+// Hover-popover ICU template (mod_edge_popover_full_target_wording).
 //
-// `moderator.hoverPopover.edgeEndpoints` is one new ICU template added by
-// the hover-popover task — the only catalog change in that task. The
-// template renders the edge popover's source→target framing with three
-// substitution points: `{role}` (the localized edge role label),
-// `{sourceWording}` (truncated to 60 chars at the call site), and
-// `{targetWording}` (same truncation). All three locales share the same
-// template body because the `{role}` substitution carries the locale-
-// correct edge role label and the wording substitutions carry user-
-// authored content; only the punctuation (colon, arrow, quotes) is
-// locale-neutral in the v1 locale set.
+// `moderator.hoverPopover.edgeEndpointsReference` is the ICU template
+// the edge popover renders in place of the retired
+// `moderator.hoverPopover.edgeEndpoints` wording-bearing template. The
+// new template substitutes only `{sourceId}` / `{targetId}` — the
+// node-id pair, not user-authored wording strings — so the popover
+// surfaces the canonical canvas-stable handle (every node card stamps
+// `data-testid="statement-node-<id>"`) instead of duplicating wording
+// the card already shows. All three locales share the same template
+// body because the content is pure punctuation (ASCII `->` per the
+// existing `typography.ts:V1_LOCALE_CODEPOINT_RANGES` policy — Latin
+// Extended-A + General Punctuation only, no Arrows block expansion).
+//
+// The negative-assertion block also pins that the retired
+// `moderator.hoverPopover.edgeEndpoints` key no longer resolves in any
+// locale (returns the literal key string, i18next's documented miss
+// behavior under `returnNull: false`).
 
-describe('moderator.hoverPopover.edgeEndpoints round-trip', () => {
+describe('moderator.hoverPopover.edgeEndpointsReference round-trip', () => {
   for (const locale of SUPPORTED_LOCALES) {
-    it(`resolves the edgeEndpoints template with ICU substitutions in ${locale}`, async () => {
+    it(`resolves the edgeEndpointsReference template with ICU substitutions in ${locale}`, async () => {
       // The shared `makeT` helper above returns a no-args `t`; this
       // case needs ICU substitution so we build a per-test instance
       // and pass the substitution map directly.
+      const instance = i18next.createInstance();
+      await instance.use(ICU).init(buildInitOptions(locale));
+      const rendered = instance.t('moderator.hoverPopover.edgeEndpointsReference', {
+        sourceId: 'src-1',
+        targetId: 'tgt-1',
+      });
+      // Non-empty.
+      expect(rendered).toBeTruthy();
+      expect(rendered.length).toBeGreaterThan(0);
+      // Not the raw key (i18next returns the key when missing).
+      expect(rendered).not.toBe('moderator.hoverPopover.edgeEndpointsReference');
+      // Every ICU placeholder was substituted.
+      expect(rendered).toContain('src-1');
+      expect(rendered).toContain('tgt-1');
+      // Punctuation invariant — ASCII `->` arrow per the typography
+      // codepoint-range policy referenced above.
+      expect(rendered).toContain('->');
+    });
+  }
+
+  it('retires the legacy moderator.hoverPopover.edgeEndpoints key from every locale', async () => {
+    // i18next returns the key itself when no translation is found
+    // (config.ts pins `returnNull: false`). A literal-key result here
+    // is the contract that the catalog entry was removed in this task.
+    for (const locale of SUPPORTED_LOCALES) {
       const instance = i18next.createInstance();
       await instance.use(ICU).init(buildInitOptions(locale));
       const rendered = instance.t('moderator.hoverPopover.edgeEndpoints', {
@@ -213,22 +244,10 @@ describe('moderator.hoverPopover.edgeEndpoints round-trip', () => {
         sourceWording: 'A wording',
         targetWording: 'B wording',
       });
-      // Non-empty.
-      expect(rendered).toBeTruthy();
-      expect(rendered.length).toBeGreaterThan(0);
-      // Not the raw key (i18next returns the key when missing).
-      expect(rendered).not.toBe('moderator.hoverPopover.edgeEndpoints');
-      // Every ICU placeholder was substituted.
-      expect(rendered).toContain('Supports');
-      expect(rendered).toContain('A wording');
-      expect(rendered).toContain('B wording');
-      // Punctuation invariant — the ASCII arrow + quoted wordings are
-      // the template's visual signature. ASCII `->` is the deliberate
-      // choice rather than the typographic `→` (U+2192) so the audience
-      // catalog typography policy (Latin Extended-A + General
-      // Punctuation only, per `typography.ts:V1_LOCALE_CODEPOINT_RANGES`)
-      // continues to hold without expansion to the Arrows block.
-      expect(rendered).toContain('->');
-    });
-  }
+      expect(
+        rendered,
+        `moderator.hoverPopover.edgeEndpoints must NOT resolve in ${locale} (the catalog entry was removed by mod_edge_popover_full_target_wording)`,
+      ).toBe('moderator.hoverPopover.edgeEndpoints');
+    }
+  });
 });

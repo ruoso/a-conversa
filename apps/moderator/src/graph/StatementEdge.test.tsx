@@ -109,14 +109,19 @@ function edgeFor(role: (typeof ALL_ROLES)[number]): Edge<StatementEdgeData> {
     source: 'n1',
     target: 'n2',
     type: 'statement',
-    // `sourceWording` / `targetWording` are non-optional on
-    // `StatementEdgeData` per `mod_hover_details`. The popover renderer
-    // reads them; in tests that don't inspect the popover, the fixed
-    // 'A' / 'B' values are placeholders matching the test `NODES`.
+    // `sourceId` / `targetId` are non-optional on `StatementEdgeData`
+    // per `mod_edge_popover_full_target_wording`; the popover renders
+    // them in the endpoint-references row. `sourceWording` /
+    // `targetWording` remain non-optional per `mod_hover_details`
+    // (retained for future surfaces — the popover no longer consumes
+    // them). In tests that don't inspect the popover, the fixed 'n1' /
+    // 'n2' / 'A' / 'B' values are placeholders matching the test `NODES`.
     data: {
       role,
       annotations: [],
       facetStatuses: {},
+      sourceId: 'n1',
+      targetId: 'n2',
       sourceWording: 'A',
       targetWording: 'B',
     },
@@ -283,6 +288,8 @@ describe('StatementEdge — annotation badge overlay', () => {
         role: 'supports',
         annotations: [annotation],
         facetStatuses: {},
+        sourceId: 'n1',
+        targetId: 'n2',
         sourceWording: 'A',
         targetWording: 'B',
       },
@@ -316,6 +323,8 @@ describe('StatementEdge — annotation badge overlay', () => {
         role: 'qualifies',
         annotations,
         facetStatuses: {},
+        sourceId: 'n1',
+        targetId: 'n2',
         sourceWording: 'A',
         targetWording: 'B',
       },
@@ -344,6 +353,8 @@ describe('StatementEdge — proposed-state styling (mod_proposed_state_styling)'
         role: 'supports',
         annotations: [],
         facetStatuses: { substance: 'proposed' },
+        sourceId: 'n1',
+        targetId: 'n2',
         sourceWording: 'A',
         targetWording: 'B',
       },
@@ -367,6 +378,8 @@ describe('StatementEdge — proposed-state styling (mod_proposed_state_styling)'
         role: 'supports',
         annotations: [],
         facetStatuses: {},
+        sourceId: 'n1',
+        targetId: 'n2',
         sourceWording: 'A',
         targetWording: 'B',
       },
@@ -398,6 +411,8 @@ describe('StatementEdge — agreed-state styling (mod_agreed_state_styling)', ()
         role: 'supports',
         annotations: [],
         facetStatuses: { substance: 'agreed' },
+        sourceId: 'n1',
+        targetId: 'n2',
         sourceWording: 'A',
         targetWording: 'B',
       },
@@ -427,6 +442,8 @@ describe('StatementEdge — agreed-state styling (mod_agreed_state_styling)', ()
         role: 'supports',
         annotations: [],
         facetStatuses: { substance: 'agreed' },
+        sourceId: 'n1',
+        targetId: 'n2',
         sourceWording: 'A',
         targetWording: 'B',
       },
@@ -469,6 +486,8 @@ describe('StatementEdge — disputed-state styling (mod_disputed_state_styling)'
         role: 'supports',
         annotations: [],
         facetStatuses: { substance: 'disputed' },
+        sourceId: 'n1',
+        targetId: 'n2',
         sourceWording: 'A',
         targetWording: 'B',
       },
@@ -496,6 +515,8 @@ describe('StatementEdge — disputed-state styling (mod_disputed_state_styling)'
         role: 'supports',
         annotations: [],
         facetStatuses: { substance: 'disputed' },
+        sourceId: 'n1',
+        targetId: 'n2',
         sourceWording: 'A',
         targetWording: 'B',
       },
@@ -554,6 +575,8 @@ describe('StatementEdge — meta-disagreement-state styling (mod_meta_disagreeme
         role: 'supports',
         annotations: [],
         facetStatuses: { substance: 'meta-disagreement' },
+        sourceId: 'n1',
+        targetId: 'n2',
         sourceWording: 'A',
         targetWording: 'B',
       },
@@ -581,6 +604,8 @@ describe('StatementEdge — meta-disagreement-state styling (mod_meta_disagreeme
         role: 'supports',
         annotations: [],
         facetStatuses: { substance: 'meta-disagreement' },
+        sourceId: 'n1',
+        targetId: 'n2',
         sourceWording: 'A',
         targetWording: 'B',
       },
@@ -695,6 +720,8 @@ function edgeWithDiagnostic(
       annotations: [],
       facetStatuses,
       diagnosticHighlight,
+      sourceId: 'n1',
+      targetId: 'n2',
       sourceWording: 'A',
       targetWording: 'B',
     },
@@ -760,6 +787,8 @@ describe('StatementEdge — diagnostic highlight (mod_diagnostic_highlighting)',
         annotations: [],
         facetStatuses: { substance: 'disputed' },
         diagnosticHighlight: { severity: 'blocking', kinds: ['contradiction'] },
+        sourceId: 'n1',
+        targetId: 'n2',
         sourceWording: 'A',
         targetWording: 'B',
       },
@@ -870,7 +899,20 @@ describe('StatementEdge — hover popover wiring (mod_hover_details)', () => {
     expect(screen.queryByTestId('hover-popover-edge-supports')).toBeNull();
   });
 
-  it('renders the localized role + source/target wordings in the popover (ICU template)', async () => {
+  it('renders the localized role + endpoint references (source/target ids) in the popover and does NOT render endpoint wordings', async () => {
+    // Refinement: `mod_edge_popover_full_target_wording` (Option C).
+    // The popover surfaces ids (canvas-stable canonical handles), not
+    // wordings — the cards already render the wordings inline with
+    // measured dimensions, so duplicating wording in the popover would
+    // not earn the popover's existence on the edge surface.
+    //
+    // The edge's `source` / `target` must match the test `NODES`
+    // fixture's ids (`'n1'` / `'n2'`) so ReactFlow can resolve the
+    // endpoint coordinates and paint the label. `sourceId` /
+    // `targetId` on the projected `data` payload carry the same ids
+    // (this is the contract: the selector copies them verbatim from
+    // the `edge-created` payload's `source_node_id` /
+    // `target_node_id`).
     const edge: Edge<StatementEdgeData> = {
       id: 'edge-wordings',
       source: 'n1',
@@ -880,6 +922,11 @@ describe('StatementEdge — hover popover wiring (mod_hover_details)', () => {
         role: 'supports',
         annotations: [],
         facetStatuses: {},
+        sourceId: 'n1',
+        targetId: 'n2',
+        // Both wording fields stay populated (the selector still
+        // projects them for future surfaces) but the popover renderer
+        // must NOT surface them — the assertions below pin that.
         sourceWording: 'data wording',
         targetWording: 'claim wording',
       },
@@ -892,13 +939,19 @@ describe('StatementEdge — hover popover wiring (mod_hover_details)', () => {
     const label = await waitFor(() => screen.getByTestId('graph-edge-label-edge-wordings'));
     fireEvent.mouseEnter(label);
     const popover = screen.getByTestId('hover-popover-edge-wordings');
-    // The ICU template substitutes role + source + target into a
-    // `Supports: "data wording" → "claim wording"` line. The actual
-    // resolution goes through i18next so we assert against the
-    // surrounding content rather than the exact format string.
+    // Role headline still surfaces.
     expect(popover.textContent).toContain('Supports');
-    expect(popover.textContent).toContain('data wording');
-    expect(popover.textContent).toContain('claim wording');
+    // Endpoint references row carries the ids (visible text + stable
+    // data attributes).
+    const endpoints = popover.querySelector('[data-hover-popover-section="endpoints"]');
+    expect(endpoints).not.toBeNull();
+    expect(endpoints!.textContent).toContain('n1');
+    expect(endpoints!.textContent).toContain('n2');
+    expect(endpoints!.getAttribute('data-hover-popover-source-id')).toBe('n1');
+    expect(endpoints!.getAttribute('data-hover-popover-target-id')).toBe('n2');
+    // Negative pin: wordings must NOT be rendered by the popover.
+    expect(popover.textContent).not.toContain('data wording');
+    expect(popover.textContent).not.toContain('claim wording');
     // Stable seam: data-hover-target-kind="edge".
     expect(popover.getAttribute('data-hover-target-kind')).toBe('edge');
   });
@@ -915,6 +968,8 @@ describe('StatementEdge — hover popover wiring (mod_hover_details)', () => {
         annotations: [],
         facetStatuses: { substance: 'disputed' },
         diagnosticHighlight: { severity: 'blocking', kinds: ['contradiction'] },
+        sourceId: 'n1',
+        targetId: 'n2',
         sourceWording: 'A',
         targetWording: 'B',
       },

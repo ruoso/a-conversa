@@ -1,7 +1,8 @@
 // E2E spec for the moderator hover-details popover.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_node_handle_rendering.md
-// (prior:     tasks/refinements/moderator-ui/mod_hover_details.md)
+// Refinement: tasks/refinements/moderator-ui/mod_edge_popover_full_target_wording.md
+// (prior:     tasks/refinements/moderator-ui/mod_node_handle_rendering.md,
+//             tasks/refinements/moderator-ui/mod_hover_details.md)
 // ADRs:        docs/adr/0008-e2e-framework-playwright.md,
 //              docs/adr/0022-no-throwaway-verifications.md,
 //              docs/adr/0024-frontend-i18n-react-i18next-with-icu.md
@@ -11,7 +12,11 @@
 //   2. Hovering a node (or focusing it via the keyboard) surfaces a
 //      `<HoverPopover>` whose content contains the node's full wording.
 //   3. Hovering an edge surfaces a popover whose content contains the
-//      localized role + source/target wordings (the ICU template).
+//      localized role + endpoint references (source/target node ids,
+//      stamped with stable `data-hover-popover-{source,target}-id`
+//      seams). The popover does NOT render source/target wordings —
+//      the cards already show them inline (refinement
+//      `mod_edge_popover_full_target_wording`, Option C).
 //   4. Moving the pointer off the entity hides the popover.
 //   5. Click-through: clicking the entity while the popover is up still
 //      selects the entity (`useSelectionStore` is the canonical seam,
@@ -159,7 +164,7 @@ test.describe.serial('moderator hover details', () => {
       'clicking the node must select it (data-selected="true")',
     ).toHaveAttribute('data-selected', 'true');
 
-    // -- Test 4: edge popover surfaces role + endpoints --------------
+    // -- Test 4: edge popover surfaces role + endpoint references ----
     //
     // `mod_node_handle_rendering` (refinement
     // `tasks/refinements/moderator-ui/mod_node_handle_rendering.md`)
@@ -167,10 +172,18 @@ test.describe.serial('moderator hover details', () => {
     // `Position.Top` target + `Position.Bottom` source, matching
     // dagre's `rankdir: 'TB'` (ADR 0025). With handles in place
     // ReactFlow can resolve each edge's endpoint coordinates and paint
-    // the `<path>` + the edge label; the assertions below run hard
-    // (no conditional / no early return). Acceptance bar lifted from
-    // the prior "deferred-e2e" debt registered on `mod_hover_details`'s
-    // Status block.
+    // the `<path>` + the edge label.
+    //
+    // `mod_edge_popover_full_target_wording` (Option C) reframed what
+    // the edge popover surfaces: the popover now renders role +
+    // endpoint references (source/target node ids), NOT source/target
+    // wordings. The cards already show wording inline with measured
+    // dimensions per `mod_layout_measured_dimensions`, so duplicating
+    // wording in the popover would not earn the popover's existence on
+    // the edge surface. The assertions below pin both the positive
+    // surface (role + ids + stable data-attribute seams) and the
+    // negative contract (no wordings, even a 60-char prefix is
+    // forbidden).
     const edgeLabel = page.getByTestId(`graph-edge-label-${EDGE_ID}`);
     // First pin the SVG `<path>` is in the DOM — independent of the
     // popover content, this is the load-bearing "handles actually work
@@ -184,14 +197,19 @@ test.describe.serial('moderator hover details', () => {
     const edgePopover = page.getByTestId(`hover-popover-${EDGE_ID}`);
     await expect(edgePopover, 'hover popover must appear when the edge is hovered').toBeVisible();
     await expect(edgePopover).toHaveAttribute('data-hover-target-kind', 'edge');
-    // Localized role label (en-US "Supports") + truncated source +
-    // target wordings. The edge popover's ICU template truncates
-    // wordings at 60 chars (see `truncate` in `HoverPopover.tsx`),
-    // so the assertion uses a 60-char prefix of `TARGET_WORDING` —
-    // long enough to disambiguate the target from the source, short
-    // enough to survive the cap.
+    // Positive assertions — role headline + endpoint references row.
     await expect(edgePopover).toContainText('Supports');
-    await expect(edgePopover).toContainText(TARGET_WORDING.slice(0, 60));
+    await expect(edgePopover).toContainText(NODE_ID);
+    await expect(edgePopover).toContainText(NODE_ID_OTHER);
+    // Stable data-attribute seams on the endpoints row.
+    const endpointsRow = edgePopover.locator('[data-hover-popover-section="endpoints"]');
+    await expect(endpointsRow).toHaveAttribute('data-hover-popover-source-id', NODE_ID);
+    await expect(endpointsRow).toHaveAttribute('data-hover-popover-target-id', NODE_ID_OTHER);
+    // Negative assertions — the popover MUST NOT render source/target
+    // wordings (even a 60-char prefix). This pins the load-bearing
+    // contract change from `mod_edge_popover_full_target_wording`.
+    await expect(edgePopover).not.toContainText(SOURCE_WORDING.slice(0, 60));
+    await expect(edgePopover).not.toContainText(TARGET_WORDING.slice(0, 60));
     // Move off the edge to dismiss before Test 5 takes keyboard focus.
     await page.mouse.move(0, 0);
 

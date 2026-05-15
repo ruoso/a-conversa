@@ -1,24 +1,37 @@
 // `<HoverPopover>` — transient detail popover surfaced beside a hovered
 // or keyboard-focused node / edge on the moderator's graph canvas.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_hover_details.md
-// (prior:     tasks/refinements/moderator-ui/mod_diagnostic_highlighting.md,
+// Refinement: tasks/refinements/moderator-ui/mod_edge_popover_full_target_wording.md
+// (prior:     tasks/refinements/moderator-ui/mod_hover_details.md,
+//             tasks/refinements/moderator-ui/mod_diagnostic_highlighting.md,
 //             tasks/refinements/moderator-ui/mod_per_facet_state_visualization.md,
 //             tasks/refinements/moderator-ui/mod_axiom_mark_decoration.md,
 //             tasks/refinements/moderator-ui/mod_selection.md,
-//             tasks/refinements/moderator-ui/mod_context_menus.md)
+//             tasks/refinements/moderator-ui/mod_context_menus.md,
+//             tasks/refinements/moderator-ui/mod_layout_measured_dimensions.md)
 // ADRs:       docs/adr/0004-graph-libraries-reactflow-and-cytoscape.md
 //             docs/adr/0005-styling-tailwind-with-shared-tokens.md
 //             docs/adr/0024-frontend-i18n-react-i18next-with-icu.md
 //
-// The card / edge label visual is intentionally compact: the node card
-// caps at `max-w-[18rem]` (so a long wording wraps to several lines), and
-// the edge label is a single role pill. The popover surfaces the
-// methodology-relevant context that the compact card / label had to
-// truncate: the full wording paragraph, the localized kind, every
+// **Node popover** — the node card visual is intentionally compact
+// (`max-w-[18rem]` so a long wording wraps to several lines, but with
+// measured dimensions per `mod_layout_measured_dimensions` the card
+// fits its full content). The popover adds the localized kind, every
 // per-facet status with localized state, every axiom-mark line, and
-// any active diagnostic title(s). For edges, it adds the source→target
-// wording framing via an ICU template.
+// any active diagnostic title(s). The node popover continues to render
+// the full wording paragraph as a deliberate redundancy with the card
+// (the popover is the structured detail surface for keyboard / hover
+// users; the card and the popover both want to surface the wording).
+//
+// **Edge popover** — the edge label is a single role pill, and per
+// `mod_edge_popover_full_target_wording` the popover surfaces what
+// the pill leaves out: the role's full meaning (a conditional
+// `methodology.edgeRole.<role>.description` line, rendered only when
+// the catalog carries the key) and the endpoint relationship (the
+// source / target node ids, rendered as a font-mono `{sourceId} ->
+// {targetId}` line in the canonical canvas-stable handle form). The
+// popover deliberately does NOT render the source / target wordings —
+// the cards already show them inline.
 //
 // **Positioning is pure CSS.** The popover layers as a child of the
 // already-positioned `data-testid="statement-node-<id>"` root (for
@@ -74,18 +87,6 @@ const FACET_RENDER_ORDER: readonly FacetName[] = ['wording', 'classification', '
  * (`i18n_facet_state_completion`).
  */
 const LOCALIZED_FACET_STATES = new Set(['proposed', 'agreed', 'disputed', 'meta-disagreement']);
-
-/**
- * Truncate a wording for the edge popover's source→target framing. The
- * 60-character cap balances "enough to read" with "fits on one popover
- * line." Truncation is a JS-side concern, not the catalog's — the ICU
- * template substitutes the already-truncated string.
- */
-function truncate(wording: string): string {
-  const MAX = 60;
-  if (wording.length <= MAX) return wording;
-  return `${wording.slice(0, MAX)}…`;
-}
 
 export interface HoverPopoverProps {
   /** Entity id; drives `id="hover-popover-<id>"` and `data-testid`. */
@@ -240,21 +241,38 @@ export function HoverPopover(props: HoverPopoverProps): ReactElement {
     );
   }
 
-  // Edge target. Sections: role headline → source→target framing → per-
-  // facet (substance only in v1) → active diagnostic. Source/target
-  // wordings are truncated to 60 chars before substitution into the
-  // ICU template.
-  const { role, facetStatuses, diagnosticHighlight, sourceWording, targetWording } = target.data;
+  // Edge target. Sections (post `mod_edge_popover_full_target_wording`):
+  // role headline → optional role-description → endpoint references
+  // (source/target ids) → per-facet (substance only in v1) → active
+  // diagnostic. Source/target *wordings* are no longer rendered by the
+  // popover — the cards already show wording with measured dimensions
+  // per `mod_layout_measured_dimensions`. The endpoint references row
+  // surfaces the canvas-stable canonical handle (the node ids) instead.
+  const { role, facetStatuses, diagnosticHighlight, sourceId, targetId } = target.data;
   const roleLabel = t(`methodology.edgeRole.${role}`);
-  // `moderator.hoverPopover.edgeEndpoints` is the one new ICU template
-  // added by this task. Substitutes `{role}` / `{sourceWording}` /
-  // `{targetWording}`; wordings are truncated to 60 chars before
-  // substitution (the cap balances "enough to read" with "fits on one
-  // popover line"). Refinement: `mod_hover_details`.
-  const endpointsLine = t('moderator.hoverPopover.edgeEndpoints', {
-    role: roleLabel,
-    sourceWording: truncate(sourceWording),
-    targetWording: truncate(targetWording),
+  // Conditional role-description seam. Refinement:
+  // `mod_edge_popover_full_target_wording` (Option C). The popover
+  // renders a small description paragraph below the role headline IFF
+  // the catalog carries a `methodology.edgeRole.<role>.description`
+  // entry for the active locale. i18next's miss behavior under
+  // `returnNull: false` (see `i18n-catalogs/config.ts`) returns the
+  // literal key string when no translation is found — the "key !==
+  // resolved string" idiom is the documented miss detection. Today
+  // every locale's lookup misses; the descriptions land in a future
+  // task `i18n_methodology_role_descriptions` without further code
+  // change here.
+  const roleDescriptionKey = `methodology.edgeRole.${role}.description`;
+  const roleDescription = t(roleDescriptionKey);
+  const hasRoleDescription = roleDescription !== roleDescriptionKey;
+  // `moderator.hoverPopover.edgeEndpointsReference` is the ICU template
+  // that replaced the retired `edgeEndpoints` template in
+  // `mod_edge_popover_full_target_wording`. Substitutes `{sourceId}` /
+  // `{targetId}` — node ids, not user-authored wordings. Locale-
+  // identical body (pure punctuation per the typography codepoint-range
+  // policy).
+  const endpointsLine = t('moderator.hoverPopover.edgeEndpointsReference', {
+    sourceId,
+    targetId,
   });
   const facetRows = FACET_RENDER_ORDER.flatMap((facet) => {
     const status = facetStatuses[facet];
@@ -285,9 +303,19 @@ export function HoverPopover(props: HoverPopoverProps): ReactElement {
       >
         {roleLabel}
       </p>
+      {hasRoleDescription ? (
+        <p
+          data-hover-popover-section="role-description"
+          className="text-xs text-slate-600 leading-snug"
+        >
+          {roleDescription}
+        </p>
+      ) : null}
       <p
         data-hover-popover-section="endpoints"
-        className="text-sm text-slate-900 leading-snug break-words"
+        data-hover-popover-source-id={sourceId}
+        data-hover-popover-target-id={targetId}
+        className="text-xs text-slate-700 font-mono break-all"
       >
         {endpointsLine}
       </p>

@@ -87,30 +87,60 @@ export interface StatementEdgeData {
    */
   diagnosticHighlight?: DiagnosticHighlight;
   /**
+   * Source-node id, copied verbatim from the `edge-created` event's
+   * `source_node_id` payload field. Read by `<HoverPopover>` to render
+   * the edge popover's endpoint-references row — the canvas-stable
+   * canonical handle for cross-referencing an edge endpoint with the
+   * matching `data-testid="statement-node-<id>"` card. Refinement:
+   * `tasks/refinements/moderator-ui/mod_edge_popover_full_target_wording.md`.
+   *
+   * Non-optional: every `edge-created` event carries the id by wire
+   * contract, so the selector always projects a string here.
+   */
+  sourceId: string;
+  /**
+   * Target-node id, copied verbatim from the `edge-created` event's
+   * `target_node_id` payload field. Same semantics as `sourceId`.
+   * Refinement: `tasks/refinements/moderator-ui/mod_edge_popover_full_target_wording.md`.
+   */
+  targetId: string;
+  /**
    * Wording of this edge's source node, as projected from the per-session
-   * `node-created` payloads. Read by `<HoverPopover>` to render the
-   * edge popover's source→target framing. Refinement:
-   * `tasks/refinements/moderator-ui/mod_hover_details.md`.
+   * `node-created` payloads. Refinements:
+   * `tasks/refinements/moderator-ui/mod_hover_details.md`,
+   * `tasks/refinements/moderator-ui/mod_edge_popover_full_target_wording.md`.
    *
    * Non-optional: every edge the selector emits carries a string value.
    * When the source-node id has not yet been seen in the events log
    * (a wire-protocol violation but defensible), the value is the
    * documented `'—'` em-dash fallback rather than `undefined` — keeps
-   * the popover renderer's null-check surface small.
+   * the renderer's null-check surface small.
    *
-   * Note: the wording surfaced here is the ORIGINAL value from the
-   * `node-created` payload. Committed `edit-wording` proposals do NOT
-   * update this field today — the wording staleness mirrors today's
-   * `projectNodes` semantics. A future refinement
+   * No longer consumed by `<HoverPopover>` after
+   * `mod_edge_popover_full_target_wording` (Option C): the edge popover
+   * now renders source/target *ids*, not wordings, to avoid duplicating
+   * card content (`<StatementNode>` already renders the full wording
+   * with measured dimensions per `mod_layout_measured_dimensions`).
+   * The field is retained for future surfaces (per-edge sidebar
+   * detail, audit log, diagnostic detail panel) that may want endpoint
+   * wordings — the projection is cheap, the field is part of the
+   * selector's stable surface, and removing it would force regression
+   * sweeps across existing tests.
+   *
+   * Wording staleness caveat: the wording surfaced here is the
+   * ORIGINAL value from the `node-created` payload. Committed
+   * `edit-wording` proposals do NOT update this field today — mirrors
+   * today's `projectNodes` semantics. A future refinement
    * (`mod_capture_flow.mod_edit_wording_flow`) will update both
    * projections to consume committed wording edits in lockstep.
    */
   sourceWording: string;
   /**
    * Wording of this edge's target node, as projected from the per-session
-   * `node-created` payloads. Same semantics, fallback, and staleness
-   * caveat as `sourceWording`. Refinement:
-   * `tasks/refinements/moderator-ui/mod_hover_details.md`.
+   * `node-created` payloads. Same semantics, fallback, retention
+   * rationale, and staleness caveat as `sourceWording`. Refinements:
+   * `tasks/refinements/moderator-ui/mod_hover_details.md`,
+   * `tasks/refinements/moderator-ui/mod_edge_popover_full_target_wording.md`.
    */
   targetWording: string;
 }
@@ -445,12 +475,22 @@ export function selectEdgesForSession(
     // the popover renderer's null-check surface stays small.
     const sourceWording = wordingByNodeId.get(event.payload.source_node_id) ?? '—';
     const targetWording = wordingByNodeId.get(event.payload.target_node_id) ?? '—';
+    // Edge endpoint ids — populated verbatim from the `edge-created`
+    // payload's `source_node_id` / `target_node_id`. Read by
+    // `<HoverPopover>` to render the endpoint-references row (the
+    // popover surface that replaced the retired source→target wording
+    // line per `mod_edge_popover_full_target_wording`). No walk
+    // needed; the ids are always present on the event.
+    const sourceId = event.payload.source_node_id;
+    const targetId = event.payload.target_node_id;
     const data: StatementEdgeData =
       diagnosticHighlight === undefined
         ? {
             role: event.payload.role,
             annotations,
             facetStatuses,
+            sourceId,
+            targetId,
             sourceWording,
             targetWording,
           }
@@ -459,6 +499,8 @@ export function selectEdgesForSession(
             annotations,
             facetStatuses,
             diagnosticHighlight,
+            sourceId,
+            targetId,
             sourceWording,
             targetWording,
           };

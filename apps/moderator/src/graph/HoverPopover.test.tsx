@@ -49,6 +49,8 @@ function edgeData(overrides: Partial<StatementEdgeData> = {}): StatementEdgeData
     role: overrides.role ?? 'supports',
     annotations: overrides.annotations ?? ([] as readonly Annotation[]),
     facetStatuses: overrides.facetStatuses ?? {},
+    sourceId: overrides.sourceId ?? 'src-default',
+    targetId: overrides.targetId ?? 'tgt-default',
     sourceWording: overrides.sourceWording ?? 'source wording',
     targetWording: overrides.targetWording ?? 'target wording',
     ...(overrides.diagnosticHighlight !== undefined
@@ -212,9 +214,17 @@ describe('HoverPopover — node target rendering', () => {
 });
 
 // -- Edge target ------------------------------------------------------
+//
+// Refinement: `mod_edge_popover_full_target_wording` (Option C).
+// The edge popover surfaces role + (conditional) role-description +
+// endpoint references (source/target node ids) + per-facet status +
+// active diagnostic. Source/target *wordings* are NOT rendered — the
+// cards already show them inline with measured dimensions, so
+// duplicating wording in the popover would not earn the popover's
+// existence on the edge surface.
 
 describe('HoverPopover — edge target rendering', () => {
-  it('renders the role headline and the localized endpoints ICU template', () => {
+  it('renders the role headline and the endpoint references row with source/target ids', () => {
     render(
       <HoverPopover
         id="edge-1"
@@ -222,26 +232,30 @@ describe('HoverPopover — edge target rendering', () => {
           kind: 'edge',
           data: edgeData({
             role: 'supports',
-            sourceWording: 'A wording',
-            targetWording: 'B wording',
+            sourceId: 'src-1',
+            targetId: 'tgt-1',
           }),
         }}
       />,
     );
     const popover = screen.getByTestId('hover-popover-edge-1');
     expect(popover.textContent).toContain('Supports');
-    expect(popover.textContent).toContain('A wording');
-    expect(popover.textContent).toContain('B wording');
+    const endpoints = popover.querySelector('[data-hover-popover-section="endpoints"]');
+    expect(endpoints).not.toBeNull();
+    expect(endpoints!.textContent).toContain('src-1');
+    expect(endpoints!.textContent).toContain('tgt-1');
+    // ASCII arrow per the typography codepoint-range policy.
+    expect(endpoints!.textContent).toContain('->');
   });
 
-  it('renders the endpoints template across locales (pt-BR uses Apoia, es-419 uses Apoya)', async () => {
+  it('renders the role headline localized across locales (pt-BR / es-419)', async () => {
     await i18next.changeLanguage('pt-BR');
     const { rerender } = render(
       <HoverPopover
         id="edge-locale"
         target={{
           kind: 'edge',
-          data: edgeData({ role: 'supports', sourceWording: 'A', targetWording: 'B' }),
+          data: edgeData({ role: 'supports', sourceId: 'src-1', targetId: 'tgt-1' }),
         }}
       />,
     );
@@ -253,7 +267,7 @@ describe('HoverPopover — edge target rendering', () => {
         id="edge-locale"
         target={{
           kind: 'edge',
-          data: edgeData({ role: 'supports', sourceWording: 'A', targetWording: 'B' }),
+          data: edgeData({ role: 'supports', sourceId: 'src-1', targetId: 'tgt-1' }),
         }}
       />,
     );
@@ -261,28 +275,128 @@ describe('HoverPopover — edge target rendering', () => {
     await i18next.changeLanguage('en-US');
   });
 
-  it('truncates source wording > 60 chars with a "…" suffix', () => {
-    const longSource =
-      'A wording that is significantly longer than the 60-character cap the popover applies for the endpoints line';
+  it('renders endpoint ids in the endpoints row consistently across locales (template is locale-identical)', async () => {
+    for (const locale of ['en-US', 'pt-BR', 'es-419'] as const) {
+      await i18next.changeLanguage(locale);
+      const { unmount } = render(
+        <HoverPopover
+          id={`edge-${locale}`}
+          target={{
+            kind: 'edge',
+            data: edgeData({ sourceId: 'src-1', targetId: 'tgt-1' }),
+          }}
+        />,
+      );
+      const endpoints = screen
+        .getByTestId(`hover-popover-edge-${locale}`)
+        .querySelector('[data-hover-popover-section="endpoints"]');
+      expect(endpoints, `endpoints section in ${locale}`).not.toBeNull();
+      expect(endpoints!.textContent).toContain('src-1');
+      expect(endpoints!.textContent).toContain('tgt-1');
+      expect(endpoints!.textContent).toContain('->');
+      unmount();
+    }
+    await i18next.changeLanguage('en-US');
+  });
+
+  it('stamps data-hover-popover-source-id / data-hover-popover-target-id on the endpoints row', () => {
     render(
       <HoverPopover
-        id="edge-trunc"
+        id="edge-seam"
+        target={{
+          kind: 'edge',
+          data: edgeData({ sourceId: 'src-1', targetId: 'tgt-1' }),
+        }}
+      />,
+    );
+    const endpoints = screen
+      .getByTestId('hover-popover-edge-seam')
+      .querySelector('[data-hover-popover-section="endpoints"]');
+    expect(endpoints).not.toBeNull();
+    expect(endpoints!.getAttribute('data-hover-popover-source-id')).toBe('src-1');
+    expect(endpoints!.getAttribute('data-hover-popover-target-id')).toBe('tgt-1');
+  });
+
+  it('does NOT render source/target wordings on the edge popover (regardless of wording length)', () => {
+    const longSource =
+      'A source wording that is significantly longer than 60 characters so this test catches any re-introduction of the prior truncate path';
+    const longTarget =
+      'A target wording that is similarly long so neither slice prefix appears in the rendered DOM under any path';
+    render(
+      <HoverPopover
+        id="edge-no-wordings"
         target={{
           kind: 'edge',
           data: edgeData({
             role: 'supports',
+            sourceId: 'src-no-wordings',
+            targetId: 'tgt-no-wordings',
             sourceWording: longSource,
-            targetWording: 'short',
+            targetWording: longTarget,
           }),
         }}
       />,
     );
-    const popover = screen.getByTestId('hover-popover-edge-trunc');
-    // First 60 chars present, but the full source is not.
-    expect(popover.textContent).toContain(longSource.slice(0, 60));
+    const popover = screen.getByTestId('hover-popover-edge-no-wordings');
+    // Negative pin: neither full nor 60-char-prefixed wording appears.
     expect(popover.textContent).not.toContain(longSource);
-    // The ellipsis is present.
-    expect(popover.textContent).toContain('…');
+    expect(popover.textContent).not.toContain(longSource.slice(0, 60));
+    expect(popover.textContent).not.toContain(longTarget);
+    expect(popover.textContent).not.toContain(longTarget.slice(0, 60));
+    // No ellipsis truncation marker either (the prior renderer added one).
+    expect(popover.textContent).not.toContain('…');
+  });
+
+  it('does NOT render the role-description section when the catalog lacks methodology.edgeRole.<role>.description', () => {
+    // The en-US catalog as of `mod_edge_popover_full_target_wording`
+    // carries NO `methodology.edgeRole.<role>.description` entries —
+    // the descriptions are deferred to a future
+    // `i18n_methodology_role_descriptions` task. The popover renderer
+    // therefore omits the description paragraph entirely.
+    render(
+      <HoverPopover
+        id="edge-no-desc"
+        target={{
+          kind: 'edge',
+          data: edgeData({ role: 'supports' }),
+        }}
+      />,
+    );
+    const popover = screen.getByTestId('hover-popover-edge-no-desc');
+    expect(popover.querySelector('[data-hover-popover-section="role-description"]')).toBeNull();
+  });
+
+  it('renders the role-description section when the catalog DOES carry methodology.edgeRole.<role>.description', () => {
+    // The seam is the literal-key fallback (i18next's miss behavior
+    // under `returnNull: false`): the popover renders the description
+    // paragraph iff the lookup resolves to something OTHER than the
+    // literal key string. We exercise the hit path by adding a
+    // synthetic description resource for the `qualifies` role to the
+    // already-initialized i18next instance. The next test's
+    // `beforeEach` calls `initI18n('en-US')` which re-runs
+    // `i18next.init(...)` against the canonical catalog and resets the
+    // resource store, so no per-test cleanup is needed.
+    i18next.addResource(
+      'en-US',
+      'translation',
+      'methodology.edgeRole.qualifies.description',
+      'An edge that qualifies the target claim with a condition.',
+    );
+    render(
+      <HoverPopover
+        id="edge-with-desc"
+        target={{
+          kind: 'edge',
+          data: edgeData({ role: 'qualifies' }),
+        }}
+      />,
+    );
+    const popover = screen.getByTestId('hover-popover-edge-with-desc');
+    const desc = popover.querySelector('[data-hover-popover-section="role-description"]');
+    expect(desc).not.toBeNull();
+    expect(desc!.textContent).toContain(
+      'An edge that qualifies the target claim with a condition.',
+    );
   });
 
   it('renders the substance facet row when facetStatuses has substance', () => {

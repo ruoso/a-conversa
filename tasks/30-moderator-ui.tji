@@ -142,7 +142,9 @@ task moderator_ui "Moderator UI" {
     task mod_edge_popover_full_target_wording "Decide edge popover wording truncation: lift cap or contract the 60-char prefix" {
       effort 0.25d
       allocate team
+      complete 100
       depends !mod_node_handle_rendering
+      note "Refinement: tasks/refinements/moderator-ui/mod_edge_popover_full_target_wording.md"
       note "Source of debt: mod_node_handle_rendering Status block (this commit) — when lifting Test 4 of moderator-hover-details.spec.ts to hard, the assertion 'popover contains target wording' had to be relaxed to a 60-char prefix match because HoverPopover.tsx's truncate() caps source/target wordings at 60 chars. Decide whether to lift the cap (then tighten the e2e assertion back to full-wording containment) or document the 60-char cap as the design contract (and pin the assertion to it intentionally). Methodology + design call."
       note "Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit b7c5ff0)."
     }

@@ -153,11 +153,15 @@ describe('selectEdgesForSession', () => {
       // `mod_proposed_state_styling`). `sourceWording` / `targetWording`
       // default to the `'—'` em-dash fallback because no `node-created`
       // event in this log mentions either endpoint id (refinement
-      // `mod_hover_details`).
+      // `mod_hover_details`). `sourceId` / `targetId` are copied
+      // verbatim from the `edge-created` payload (refinement
+      // `mod_edge_popover_full_target_wording`).
       data: {
         role: 'supports',
         annotations: [],
         facetStatuses: {},
+        sourceId: '00000000-0000-4000-8000-000000000001',
+        targetId: '00000000-0000-4000-8000-000000000002',
         sourceWording: '—',
         targetWording: '—',
       },
@@ -390,6 +394,37 @@ describe('selectEdgesForSession', () => {
     expect(edges).toHaveLength(1);
     expect(edges[0]?.data?.sourceWording).toBe('source wording present');
     expect(edges[0]?.data?.targetWording).toBe('—');
+  });
+
+  // -- Endpoint id projection (mod_edge_popover_full_target_wording) --
+  //
+  // The selector populates `data.sourceId` / `data.targetId` directly
+  // from the `edge-created` payload's `source_node_id` /
+  // `target_node_id` — no walk is needed because the ids are always
+  // present on the wire event. The hover popover surfaces these ids in
+  // its endpoint-references row in place of the retired wording-bearing
+  // line. Refinement:
+  // `tasks/refinements/moderator-ui/mod_edge_popover_full_target_wording.md`.
+
+  it('projects data.sourceId and data.targetId from the edge-created payload (no node-created prerequisites)', () => {
+    const sourceId = '00000000-0000-4000-8000-0000000000a1';
+    const targetId = '00000000-0000-4000-8000-0000000000a2';
+    const state = makeState([
+      makeEdgeCreated({
+        sequence: 1,
+        edgeId: 'edge-ids-only',
+        role: 'supports',
+        source: sourceId,
+        target: targetId,
+      }),
+    ]);
+    const edges = selectEdgesForSession(state, SESSION);
+    expect(edges).toHaveLength(1);
+    // The ids are populated verbatim from the event payload even when
+    // no prior `node-created` event has been seen (the wording-walk
+    // path falls back to the em-dash; the id projection does not).
+    expect(edges[0]?.data?.sourceId).toBe(sourceId);
+    expect(edges[0]?.data?.targetId).toBe(targetId);
   });
 
   it('produces deterministic source/target wordings across multiple calls on the same events (purity)', () => {
