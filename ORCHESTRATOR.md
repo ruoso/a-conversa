@@ -97,6 +97,8 @@ Brief:
 >
 > Before returning, run the verification the refinement's Acceptance criteria require, at minimum: `pnpm run check`, `pnpm run test:smoke`, and `pnpm -F <affected-workspace> build` where relevant. If the refinement requires Cucumber or Playwright layers, run them too. For Playwright suites, bring the compose stack up (`make up`), run, then tear down with `make down-v` so the runner is clean.
 >
+> **Test output handling (mandatory):** redirect every verification command to a file (`<command> > /tmp/<run>.log 2>&1`) and then dispatch an `Explore` sub-agent with the file path to extract pass/fail and failing-test excerpts. Do NOT pipe to `tail`. Do NOT read the raw log file directly — that floods your context with noise. The Explore agent's tight report is what you act on.
+>
 > If verification fails, fix the implementation (not the test) and re-run until green. If a verification gap is in the test infrastructure itself, fix that infrastructure — but do not document it in the refinement's Status block (that's the Closer's job; just report the fix in your summary).
 
 Must return (≤ 8 lines): files created / edited (paths only), Vitest test-count delta (before → after), e2e suite result (pass / fail / not-run-not-required), one-line summary of what shipped.
@@ -149,6 +151,8 @@ Brief:
 > If conclusion is `success`, return `green`.
 >
 > If conclusion is `failure` (or `cancelled` / `timed_out`), identify the failing job id(s) and extract the first 60 lines around the actual failure from each (skip action-image preamble and Node-deprecation warnings).
+>
+> **Test output handling (mandatory):** dump the failing job's log to a file (`gh run view <id> --log-failed > /tmp/ci-<id>.log 2>&1` or `gh run view --job <jobid> --log > /tmp/ci-<jobid>.log 2>&1`) and then dispatch an `Explore` sub-agent with the file path asking it to extract the failure window. Do NOT pipe to `tail`. Do NOT read the raw log file inline — even one full job log can blow the context.
 
 Must return (≤ 12 lines): run id, conclusion, failing job ids (if any), the extracted failure excerpt verbatim — keep tight; this is the only place log content reaches the orchestrator's context. Even here, prefer "tests failed in spec X with error Y" over raw log dumps.
 
@@ -163,6 +167,8 @@ Brief:
 > ```
 >
 > Investigate locally where possible (most CI failures reproduce against `make up` + the same suite the CI step runs). Fix the root cause and verify locally with the same commands the CI step uses.
+>
+> **Test output handling (mandatory):** redirect every reproduction command's output to a file (`<command> > /tmp/<run>.log 2>&1`) and use an `Explore` sub-agent to read it. Do NOT pipe to `tail`. Do NOT read the raw log file inline — Playwright + compose-stack output is the worst offender for blowing context.
 >
 > Hard rules:
 >
@@ -238,6 +244,17 @@ Per-iteration, the orchestrator also passes:
 - The refinement path (existing or to-be-created).
 - The predecessor task ids + their refinement paths.
 
+## Test output handling — passed through to every brief that runs a verification
+
+When a sub-agent runs tests, builds, lint/typecheck, `gh run view`, `docker compose logs`, or any other command whose stdout/stderr is large or unstructured:
+
+- **Redirect to a file**: `<command> > /tmp/<run>.log 2>&1` (or a path under the project if longer-lived).
+- **Inspect via an `Explore` sub-agent**: spawn one with the log path and a tight question ("did the run pass? if not, paste the failing assertions / stack frames verbatim"). The Explore agent's report comes back as the tool result — the raw log never enters the parent's context.
+- **Never pipe to `tail`** — it truncates blindly and can hide the real failure above the tail window.
+- **Never read the raw log file directly** with `Read` from a verification-running sub-agent — that defeats the point. Use `Explore`.
+
+This applies to the Implementer (running `pnpm run check`, `test:smoke`, Playwright, etc.), the CI-Watcher (`gh run view` log extraction), the CI-Fixer (local reproduction), and any other sub-agent that runs a noisy command. Briefs below already cite this rule; surface it again in any future brief that runs verification.
+
 ## What sub-agents must NOT do (passed through to every brief)
 
 - Don't open PRs. Push-to-main per task.
@@ -248,6 +265,7 @@ Per-iteration, the orchestrator also passes:
 - Don't run `make down-v` without a clear reason — it drops named volumes. `make down` (preserves volumes) is safe.
 - Don't edit `.env` in place; use `cp .env.example .env` plus an overrides append.
 - Don't push secrets. `.env.example` is the only env file in the repo; `.env` is gitignored.
+- Don't pipe verification commands to `tail` or read raw test/log output inline — see "Test output handling" above.
 
 ## End-of-mission
 
