@@ -28,6 +28,7 @@ import type {
   ProposalStatusPayload,
 } from '@a-conversa/shared-types';
 
+import { diagnosticIdentityKey } from '../graph/diagnosticHighlights.js';
 import { withDevtools } from '../stores/devtools.js';
 
 /**
@@ -51,6 +52,19 @@ export interface WsSessionState {
   pendingProposals: Record<string, ProposalStatusPayload>;
   /** Latest diagnostic snapshot envelope, if any. */
   lastDiagnostic?: DiagnosticPayload;
+  /**
+   * Active diagnostics for this session, keyed by the canonical
+   * identity key (`diagnosticIdentityKey(payload)`). An entry is
+   * added/replaced on each `'fired'` envelope and removed on each
+   * `'cleared'` envelope. Refinement:
+   * `tasks/refinements/moderator-ui/mod_diagnostic_highlighting.md`.
+   *
+   * Read by `<GraphCanvasPane>` to drive the per-entity diagnostic
+   * halo on nodes / edges. `lastDiagnostic` (above) stays the
+   * "last envelope seen" slot for backward compat with the existing
+   * `client.test.ts` test; this map is the new "active set" surface.
+   */
+  activeDiagnostics: ReadonlyMap<string, DiagnosticPayload>;
 }
 
 export interface WsState {
@@ -109,6 +123,7 @@ function ensureSession(state: WsState, sessionId: string): WsSessionState {
     lastAppliedSequence: 0,
     events: [],
     pendingProposals: {},
+    activeDiagnostics: new Map(),
   };
 }
 
@@ -191,9 +206,27 @@ export const useWsStore = create<WsState>()(
     applyDiagnostic: (payload) =>
       set((state) => {
         const session = ensureSession(state, payload.sessionId);
+        // Compute the canonical identity key for the active-set delta.
+        // `fired` adds/replaces the entry under the key; `cleared` removes
+        // the entry. `lastDiagnostic` always updates to the latest
+        // envelope (cleared envelopes included — the slot's contract is
+        // "last envelope seen", not "last fired diagnostic"; the
+        // pre-existing `client.test.ts` reader continues to work).
+        const key = diagnosticIdentityKey(payload);
+        const nextActive = new Map(session.activeDiagnostics);
+        if (payload.status === 'fired') {
+          nextActive.set(key, payload);
+        } else {
+          // `cleared` — remove the entry if present. An unknown key is a
+          // no-op (the diff machinery on the server may emit a `cleared`
+          // for a diagnostic this client never saw `fired` for, e.g. on
+          // first connect; we tolerate the no-op silently).
+          nextActive.delete(key);
+        }
         const nextSession: WsSessionState = {
           ...session,
           lastDiagnostic: payload,
+          activeDiagnostics: nextActive,
         };
         return {
           sessionState: { ...state.sessionState, [payload.sessionId]: nextSession },

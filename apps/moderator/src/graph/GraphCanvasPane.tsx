@@ -55,6 +55,11 @@ import { useWsStore, type WsState } from '../ws/wsStore.js';
 import { STATEMENT_NODE_TYPE, StatementNode, type StatementNodeData } from './StatementNode.js';
 import { edgeTypes } from './edgeTypes.js';
 import { GraphContextMenu, type MenuItem } from './GraphContextMenu.js';
+import {
+  EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+  projectDiagnosticHighlights,
+  type DiagnosticHighlightIndex,
+} from './diagnosticHighlights.js';
 import { computeFacetStatuses, EMPTY_FACET_STATUSES } from './facetStatus.js';
 import {
   EMPTY_ANNOTATIONS,
@@ -67,6 +72,7 @@ import {
   projectVotesByFacet,
   selectEdgesForSession,
 } from './selectors.js';
+import type { DiagnosticPayload } from '@a-conversa/shared-types';
 
 /**
  * `nodeTypes` is declared at module scope, NOT inline on `<ReactFlow>`.
@@ -99,6 +105,14 @@ const GRID_DY = 140;
  * doesn't trigger an extra render on every poll.
  */
 const EMPTY_EVENTS: readonly Event[] = Object.freeze([]);
+
+/**
+ * Stable empty `activeDiagnostics` reference. Same `===`-stable-across-
+ * renders rationale as `EMPTY_EVENTS` — the Zustand selector returns
+ * this constant for sessions with no active diagnostics so subscribers
+ * don't re-render on every poll. Refinement: `mod_diagnostic_highlighting`.
+ */
+const EMPTY_ACTIVE_DIAGNOSTICS: ReadonlyMap<string, DiagnosticPayload> = new Map();
 
 /**
  * Selection click handlers (refinement `mod_selection`).
@@ -267,7 +281,10 @@ export function buildPaneMenuItems(target: ContextMenuState['target']): readonly
  * placeholder layout; the real layout engine ships with
  * `mod_layout_engine_choice`.
  */
-export function projectNodes(events: readonly Event[]): Node<StatementNodeData>[] {
+export function projectNodes(
+  events: readonly Event[],
+  highlights: DiagnosticHighlightIndex = EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+): Node<StatementNodeData>[] {
   // First pass: collect node-created events in arrival order, alongside
   // a map from node id to the array index (so we can apply later
   // classification commits without re-scanning).
@@ -323,6 +340,32 @@ export function projectNodes(events: readonly Event[]): Node<StatementNodeData>[
       const votesByFacet = perNodeVotes
         ? (Object.fromEntries(perNodeVotes) as StatementNodeData['votesByFacet'])
         : EMPTY_VOTES_BY_FACET;
+      // Per-node diagnostic-highlight enrichment from the precomputed
+      // index. Refinement: `mod_diagnostic_highlighting`. Absent ids
+      // resolve to `undefined` (the `<StatementNode>` consumer reads
+      // that as "no halo"). We omit the field entirely when undefined
+      // so the equality check in the test suite's `toEqual({...})`
+      // calls stays clean for the no-diagnostic baseline.
+      const diagnosticHighlight = highlights.nodes.get(event.payload.node_id);
+      const data: StatementNodeData =
+        diagnosticHighlight === undefined
+          ? {
+              wording: event.payload.wording,
+              kind: null,
+              annotations,
+              facetStatuses,
+              axiomMarks,
+              votesByFacet,
+            }
+          : {
+              wording: event.payload.wording,
+              kind: null,
+              annotations,
+              facetStatuses,
+              axiomMarks,
+              votesByFacet,
+              diagnosticHighlight,
+            };
       const node: Node<StatementNodeData> = {
         id: event.payload.node_id,
         type: STATEMENT_NODE_TYPE,
@@ -330,14 +373,7 @@ export function projectNodes(events: readonly Event[]): Node<StatementNodeData>[
           x: (i % GRID_COLS) * GRID_DX,
           y: Math.floor(i / GRID_COLS) * GRID_DY,
         },
-        data: {
-          wording: event.payload.wording,
-          kind: null,
-          annotations,
-          facetStatuses,
-          axiomMarks,
-          votesByFacet,
-        },
+        data,
       };
       nodes.push(node);
       nodeIndexById.set(event.payload.node_id, i);
@@ -434,8 +470,30 @@ export function GraphCanvasPane(props: GraphCanvasPaneProps): ReactElement {
   // subscriptions) don't re-render the canvas — the WS store immutably
   // swaps the per-session record on `applyEvent`.
   const events = useWsStore((state) => state.sessionState[sessionId]?.events ?? EMPTY_EVENTS);
+  // Per-session active-diagnostics selector. Same scoping rationale as
+  // `events` — the canvas re-renders only when the active-diagnostic
+  // set for THIS session flips (the WS store immutably swaps the
+  // per-session record on `applyDiagnostic`). Refinement:
+  // `mod_diagnostic_highlighting`.
+  const activeDiagnostics = useWsStore(
+    (state) => state.sessionState[sessionId]?.activeDiagnostics ?? EMPTY_ACTIVE_DIAGNOSTICS,
+  );
 
-  const nodes = useMemo(() => projectNodes(events), [events]);
+  // Compute the per-entity diagnostic-highlight index once per
+  // memoization tick. The helper is pure over its input map; the
+  // memoization dependency is the active-diagnostics reference, which
+  // the store immutably swaps on each `applyDiagnostic` call. Empty
+  // input returns the stable `EMPTY_DIAGNOSTIC_HIGHLIGHTS` reference so
+  // the no-diagnostic baseline doesn't churn references downstream.
+  const diagnosticHighlights = useMemo(
+    () => projectDiagnosticHighlights(activeDiagnostics),
+    [activeDiagnostics],
+  );
+
+  const nodes = useMemo(
+    () => projectNodes(events, diagnosticHighlights),
+    [events, diagnosticHighlights],
+  );
   // `selectEdgesForSession` is a pure function over `WsState`; we build
   // the minimal `WsState`-shaped object from the events we already
   // subscribed to so the projection stays the single source of truth
@@ -451,12 +509,14 @@ export function GraphCanvasPane(props: GraphCanvasPaneProps): ReactElement {
               lastAppliedSequence: 0,
               events: events as Event[],
               pendingProposals: {},
+              activeDiagnostics: EMPTY_ACTIVE_DIAGNOSTICS,
             },
           },
         } as unknown as WsState,
         sessionId,
+        diagnosticHighlights,
       ),
-    [sessionId, events],
+    [sessionId, events, diagnosticHighlights],
   );
 
   // Build the menu items for whatever the context menu currently targets.

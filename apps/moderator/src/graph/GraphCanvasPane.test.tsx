@@ -41,7 +41,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import i18next from 'i18next';
-import type { AnnotationKind, Event } from '@a-conversa/shared-types';
+import type { AnnotationKind, DiagnosticPayload, Event } from '@a-conversa/shared-types';
 
 import {
   GraphCanvasPane,
@@ -54,6 +54,7 @@ import {
   projectNodes,
 } from './GraphCanvasPane';
 import { STATEMENT_NODE_TYPE } from './StatementNode';
+import { projectDiagnosticHighlights } from './diagnosticHighlights';
 import { selectEdgesForSession } from './selectors';
 import { useWsStore } from '../ws/wsStore';
 import { useSelectionStore } from '../stores';
@@ -941,5 +942,167 @@ describe('GraphCanvasPane — context-menu wire-up (mod_context_menus)', () => {
     });
 
     expect(screen.queryByTestId('graph-context-menu')).toBeNull();
+  });
+});
+
+// -- Diagnostic-highlight enrichment + end-to-end render
+//    (mod_diagnostic_highlighting) ---------------------------------
+//
+// `projectNodes(events, highlights)` enriches each emitted node's
+// `data.diagnosticHighlight` from the precomputed index;
+// `selectEdgesForSession(state, sessionId, highlights)` does the same
+// for edges. The end-to-end cases drive a `fired` then `cleared`
+// envelope through the store and assert the canvas card picks up the
+// amber halo on fired and drops it on cleared.
+
+function firedCycleDiagnostic(nodes: string[]): DiagnosticPayload {
+  return {
+    sessionId: SESSION_ID,
+    kind: 'cycle',
+    severity: 'blocking',
+    status: 'fired',
+    sequence: 99,
+    diagnostic: { kind: 'cycle', nodes },
+  };
+}
+
+function clearedCycleDiagnostic(nodes: string[]): DiagnosticPayload {
+  return {
+    sessionId: SESSION_ID,
+    kind: 'cycle',
+    severity: 'blocking',
+    status: 'cleared',
+    sequence: 100,
+    diagnostic: { kind: 'cycle', nodes },
+  };
+}
+
+describe('projectNodes — diagnostic-highlight enrichment (mod_diagnostic_highlighting)', () => {
+  it('enriches data.diagnosticHighlight on a node whose id is in the highlights index', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'a' }),
+      makeNodeCreated({ sequence: 2, nodeId: NODE_B, wording: 'b' }),
+    ];
+    const payload = firedCycleDiagnostic([NODE_A, NODE_B]);
+    const highlights = projectDiagnosticHighlights(new Map([['k', payload]]));
+    const nodes = projectNodes(events, highlights);
+    expect(nodes).toHaveLength(2);
+    expect(nodes[0]?.data.diagnosticHighlight).toEqual({
+      severity: 'blocking',
+      kinds: ['cycle'],
+    });
+    expect(nodes[1]?.data.diagnosticHighlight).toEqual({
+      severity: 'blocking',
+      kinds: ['cycle'],
+    });
+  });
+
+  it('leaves data.diagnosticHighlight undefined for a node whose id is NOT in the highlights index', () => {
+    const events: Event[] = [makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'a' })];
+    // Highlights only touch a different node id.
+    const payload = firedCycleDiagnostic(['some-other-node-id', NODE_B]);
+    const highlights = projectDiagnosticHighlights(new Map([['k', payload]]));
+    const nodes = projectNodes(events, highlights);
+    expect(nodes[0]?.data.diagnosticHighlight).toBeUndefined();
+  });
+});
+
+describe('selectEdgesForSession — diagnostic-highlight enrichment (mod_diagnostic_highlighting)', () => {
+  it('enriches data.diagnosticHighlight on an edge whose id is in the highlights index', () => {
+    const EDGE_ID = '00000000-0000-4000-8000-00000000ee01';
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'a' }),
+      makeNodeCreated({ sequence: 2, nodeId: NODE_B, wording: 'b' }),
+      makeEdgeCreated({ sequence: 3, edgeId: EDGE_ID, source: NODE_A, target: NODE_B }),
+    ];
+    // Build a contradiction diagnostic that affects this edge.
+    const payload: DiagnosticPayload = {
+      sessionId: SESSION_ID,
+      kind: 'contradiction',
+      severity: 'blocking',
+      status: 'fired',
+      sequence: 4,
+      diagnostic: {
+        kind: 'contradiction',
+        nodeA: NODE_A,
+        nodeB: NODE_B,
+        edges: [EDGE_ID],
+      },
+    };
+    const highlights = projectDiagnosticHighlights(new Map([['k', payload]]));
+    // Hand-build a WsState containing only this session.
+    const state = {
+      sessionState: {
+        [SESSION_ID]: {
+          lastAppliedSequence: 0,
+          events,
+          pendingProposals: {},
+          activeDiagnostics: new Map(),
+        },
+      },
+    } as unknown as Parameters<typeof selectEdgesForSession>[0];
+    const edges = selectEdgesForSession(state, SESSION_ID, highlights);
+    expect(edges).toHaveLength(1);
+    expect(edges[0]?.data?.diagnosticHighlight).toEqual({
+      severity: 'blocking',
+      kinds: ['contradiction'],
+    });
+  });
+
+  it('leaves data.diagnosticHighlight undefined for an edge whose id is NOT in the highlights index', () => {
+    const EDGE_ID = '00000000-0000-4000-8000-00000000ee02';
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'a' }),
+      makeNodeCreated({ sequence: 2, nodeId: NODE_B, wording: 'b' }),
+      makeEdgeCreated({ sequence: 3, edgeId: EDGE_ID, source: NODE_A, target: NODE_B }),
+    ];
+    // Empty highlights.
+    const state = {
+      sessionState: {
+        [SESSION_ID]: {
+          lastAppliedSequence: 0,
+          events,
+          pendingProposals: {},
+          activeDiagnostics: new Map(),
+        },
+      },
+    } as unknown as Parameters<typeof selectEdgesForSession>[0];
+    const edges = selectEdgesForSession(state, SESSION_ID);
+    expect(edges).toHaveLength(1);
+    expect(edges[0]?.data?.diagnosticHighlight).toBeUndefined();
+  });
+});
+
+describe('GraphCanvasPane — end-to-end diagnostic halo flow (mod_diagnostic_highlighting)', () => {
+  it('renders the amber ring + data-diagnostic-severity="blocking" on the card when a fired cycle diagnostic lives in the store', () => {
+    const store = useWsStore.getState();
+    store.applyEvent(makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'cycled' }));
+    store.applyEvent(makeNodeCreated({ sequence: 2, nodeId: NODE_B, wording: 'cycled too' }));
+    store.applyDiagnostic(firedCycleDiagnostic([NODE_A, NODE_B]));
+    render(<GraphCanvasPane sessionId={SESSION_ID} />);
+    const card = screen.getByTestId(`statement-node-${NODE_A}`);
+    expect(card.getAttribute('data-diagnostic-severity')).toBe('blocking');
+    expect(card.className).toContain('ring-amber-500/80');
+  });
+
+  it('clears the ring + the attribute after a cleared envelope for the same identity arrives', () => {
+    const store = useWsStore.getState();
+    store.applyEvent(makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'cycled' }));
+    store.applyEvent(makeNodeCreated({ sequence: 2, nodeId: NODE_B, wording: 'cycled too' }));
+    store.applyDiagnostic(firedCycleDiagnostic([NODE_A, NODE_B]));
+    render(<GraphCanvasPane sessionId={SESSION_ID} />);
+    // Sanity: ring present after fired.
+    expect(
+      screen.getByTestId(`statement-node-${NODE_A}`).getAttribute('data-diagnostic-severity'),
+    ).toBe('blocking');
+
+    // Now clear the same identity.
+    act(() => {
+      useWsStore.getState().applyDiagnostic(clearedCycleDiagnostic([NODE_A, NODE_B]));
+    });
+
+    const card = screen.getByTestId(`statement-node-${NODE_A}`);
+    expect(card.getAttribute('data-diagnostic-severity')).toBeNull();
+    expect(card.className).not.toContain('ring-amber-500/80');
   });
 });

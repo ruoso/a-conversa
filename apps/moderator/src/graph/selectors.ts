@@ -31,6 +31,11 @@ import {
   type FacetName,
   type FacetStatus,
 } from './facetStatus.js';
+import {
+  EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+  type DiagnosticHighlight,
+  type DiagnosticHighlightIndex,
+} from './diagnosticHighlights.js';
 import type { WsState } from '../ws/wsStore.js';
 
 /**
@@ -73,6 +78,14 @@ export interface StatementEdgeData {
    * task to add more facets without changing the contract.
    */
   facetStatuses: Readonly<Partial<Record<FacetName, FacetStatus>>>;
+  /**
+   * Per-entity diagnostic highlight from the active-diagnostic set, or
+   * `undefined` when no active diagnostic touches this edge. Read by
+   * `<StatementEdge>` to compose the amber halo onto the role-label
+   * pill. Refinement:
+   * `tasks/refinements/moderator-ui/mod_diagnostic_highlighting.md`.
+   */
+  diagnosticHighlight?: DiagnosticHighlight;
 }
 
 /**
@@ -365,6 +378,7 @@ export function axiomMarkColorFor(participantId: string): AxiomMarkColor {
 export function selectEdgesForSession(
   state: WsState,
   sessionId: string,
+  highlights: DiagnosticHighlightIndex = EMPTY_DIAGNOSTIC_HIGHLIGHTS,
 ): Edge<StatementEdgeData>[] {
   const session = state.sessionState[sessionId];
   if (!session) return [];
@@ -378,12 +392,21 @@ export function selectEdgesForSession(
     if (event.kind !== 'edge-created') continue;
     const annotations = annotationsByEdge.get(event.payload.edge_id) ?? EMPTY_ANNOTATIONS;
     const facetStatuses = facetStatusIndex.edges.get(event.payload.edge_id) ?? EMPTY_FACET_STATUSES;
+    // Per-edge diagnostic-highlight enrichment from the precomputed
+    // index. Refinement: `mod_diagnostic_highlighting`. Absent ids
+    // resolve to `undefined`, which the consumer (`<StatementEdge>`)
+    // reads as "no halo".
+    const diagnosticHighlight = highlights.edges.get(event.payload.edge_id);
+    const data: StatementEdgeData =
+      diagnosticHighlight === undefined
+        ? { role: event.payload.role, annotations, facetStatuses }
+        : { role: event.payload.role, annotations, facetStatuses, diagnosticHighlight };
     out.push({
       id: event.payload.edge_id,
       source: event.payload.source_node_id,
       target: event.payload.target_node_id,
       type: 'statement',
-      data: { role: event.payload.role, annotations, facetStatuses },
+      data,
     });
   }
   return out;

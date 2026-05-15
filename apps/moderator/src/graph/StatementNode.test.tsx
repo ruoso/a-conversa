@@ -36,6 +36,7 @@ import {
   cardRollupStatus,
   type StatementNodeData,
 } from './StatementNode';
+import type { DiagnosticHighlight } from './diagnosticHighlights';
 import type { FacetName, FacetStatus } from './facetStatus';
 import type { Annotation, AxiomMark, Vote } from './selectors';
 import { initI18n } from '../i18n';
@@ -49,11 +50,15 @@ import { useSelectionStore } from '../stores';
 // default both to empty here so the bulk of the cases stay terse.
 function makeNodeProps(overrides: {
   id?: string;
-  data: Omit<StatementNodeData, 'annotations' | 'facetStatuses' | 'axiomMarks' | 'votesByFacet'> & {
+  data: Omit<
+    StatementNodeData,
+    'annotations' | 'facetStatuses' | 'axiomMarks' | 'votesByFacet' | 'diagnosticHighlight'
+  > & {
     annotations?: readonly Annotation[];
     facetStatuses?: Readonly<Partial<Record<FacetName, FacetStatus>>>;
     axiomMarks?: readonly AxiomMark[];
     votesByFacet?: Readonly<Partial<Record<FacetName, readonly Vote[]>>>;
+    diagnosticHighlight?: DiagnosticHighlight;
   };
 }): NodeProps<StatementNodeData> {
   const id = overrides.id ?? 'node-test-1';
@@ -62,12 +67,20 @@ function makeNodeProps(overrides: {
     facetStatuses = {},
     axiomMarks = [],
     votesByFacet = {},
+    diagnosticHighlight,
     ...rest
   } = overrides.data;
+  // Only include `diagnosticHighlight` on the data object when it's
+  // defined — exactOptionalPropertyTypes rejects `undefined` on an
+  // optional property.
+  const data: StatementNodeData =
+    diagnosticHighlight === undefined
+      ? { ...rest, annotations, facetStatuses, axiomMarks, votesByFacet }
+      : { ...rest, annotations, facetStatuses, axiomMarks, votesByFacet, diagnosticHighlight };
   return {
     id,
     type: STATEMENT_NODE_TYPE,
-    data: { ...rest, annotations, facetStatuses, axiomMarks, votesByFacet },
+    data,
     selected: false,
     isConnectable: true,
     dragging: false,
@@ -1301,4 +1314,196 @@ describe('StatementNode — click-to-select visual state (mod_selection)', () =>
     expect(card.className).toContain('ring-4');
     expect(card.className).toContain('ring-sky-500');
   });
+});
+
+// -- Diagnostic highlight (mod_diagnostic_highlighting) --------------
+//
+// The amber halo composes on the card root when
+// `data.diagnosticHighlight !== undefined`. The `data-diagnostic-severity`
+// attribute stamps the severity (`blocking` / `advisory`) as the stable
+// DOM seam (mirrors the `data-facet-status` decision: omit on baseline,
+// stamp only when relevant). The `title` attribute carries the
+// localized diagnostic kind title(s) — single title for one active
+// diagnostic, `", "`-joined for several.
+
+describe('StatementNode — diagnostic highlight (mod_diagnostic_highlighting)', () => {
+  it('has no data-diagnostic-severity attribute and no amber ring when diagnosticHighlight is undefined', () => {
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-no-diag',
+          data: { wording: 'no diagnostic', kind: 'fact' },
+        })}
+      />,
+    );
+    const card = screen.getByTestId('statement-node-n-no-diag');
+    expect(card.getAttribute('data-diagnostic-severity')).toBeNull();
+    expect(card.className).not.toContain('ring-amber-500');
+    expect(card.className).not.toContain('ring-amber-300');
+    // No title attribute on the baseline card.
+    expect(card.getAttribute('title')).toBeNull();
+  });
+
+  it('stamps data-diagnostic-severity="blocking" + the amber blocking ring classes', () => {
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-block',
+          data: {
+            wording: 'blocking-highlighted',
+            kind: 'fact',
+            diagnosticHighlight: { severity: 'blocking', kinds: ['cycle'] },
+          },
+        })}
+      />,
+    );
+    const card = screen.getByTestId('statement-node-n-block');
+    expect(card.getAttribute('data-diagnostic-severity')).toBe('blocking');
+    expect(card.className).toContain('ring-4');
+    expect(card.className).toContain('ring-amber-500/80');
+    expect(card.className).toContain('ring-offset-2');
+    expect(card.className).toContain('ring-offset-white');
+    expect(card.className).toContain('motion-safe:animate-pulse');
+  });
+
+  it('stamps data-diagnostic-severity="advisory" + the amber advisory ring classes (no pulse)', () => {
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-adv',
+          data: {
+            wording: 'advisory-highlighted',
+            kind: 'fact',
+            diagnosticHighlight: { severity: 'advisory', kinds: ['multi-warrant'] },
+          },
+        })}
+      />,
+    );
+    const card = screen.getByTestId('statement-node-n-adv');
+    expect(card.getAttribute('data-diagnostic-severity')).toBe('advisory');
+    expect(card.className).toContain('ring-2');
+    expect(card.className).toContain('ring-amber-300/70');
+    expect(card.className).toContain('ring-offset-1');
+    expect(card.className).toContain('ring-offset-white');
+    // No pulse on advisory.
+    expect(card.className).not.toContain('animate-pulse');
+  });
+
+  it('composes with the disputed status ring (both rings present, neither overwrites)', () => {
+    // A node with substance disputed (rose ring) AND a blocking
+    // diagnostic (amber ring) MUST keep both classnames in the
+    // composed className — they read as separate visual layers per
+    // the refinement's "layer ordering" decision.
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-dispute-diag',
+          data: {
+            wording: 'disputed + diagnostic',
+            kind: 'fact',
+            facetStatuses: { substance: 'disputed' },
+            diagnosticHighlight: { severity: 'blocking', kinds: ['cycle'] },
+          },
+        })}
+      />,
+    );
+    const card = screen.getByTestId('statement-node-n-dispute-diag');
+    // Disputed classes present.
+    expect(card.className).toContain('border-rose-600');
+    expect(card.className).toContain('ring-rose-500');
+    // Diagnostic classes also present.
+    expect(card.className).toContain('ring-amber-500/80');
+    // Stable seams both stamped.
+    expect(card.getAttribute('data-facet-status')).toBe('disputed');
+    expect(card.getAttribute('data-diagnostic-severity')).toBe('blocking');
+  });
+
+  it('composes with the sky-500 selection ring (both selection + diagnostic rings present)', () => {
+    useSelectionStore.getState().select({ kind: 'node', id: 'n-sel-diag' });
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-sel-diag',
+          data: {
+            wording: 'selected + diagnostic',
+            kind: 'fact',
+            diagnosticHighlight: { severity: 'blocking', kinds: ['contradiction'] },
+          },
+        })}
+      />,
+    );
+    const card = screen.getByTestId('statement-node-n-sel-diag');
+    // Selection-ring classes present.
+    expect(card.className).toContain('ring-sky-500');
+    // Diagnostic-ring classes also present.
+    expect(card.className).toContain('ring-amber-500/80');
+    // Both seams stamped.
+    expect(card.getAttribute('data-selected')).toBe('true');
+    expect(card.getAttribute('data-diagnostic-severity')).toBe('blocking');
+  });
+
+  it('sets title="Cycle in supports" (en-US) for a single-kind highlight', () => {
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-cycle-title',
+          data: {
+            wording: 'cycle-only',
+            kind: 'fact',
+            diagnosticHighlight: { severity: 'blocking', kinds: ['cycle'] },
+          },
+        })}
+      />,
+    );
+    const card = screen.getByTestId('statement-node-n-cycle-title');
+    // The diagnostics.cycle.title key resolves to "Cycle in supports"
+    // in the en-US catalog (per packages/i18n-catalogs/src/catalogs/en-US.json).
+    expect(card.getAttribute('title')).toBe('Cycle in supports');
+  });
+
+  it('joins multi-kind highlight titles with ", "', () => {
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-multi-title',
+          data: {
+            wording: 'multi-kind',
+            kind: 'fact',
+            diagnosticHighlight: { severity: 'blocking', kinds: ['cycle', 'contradiction'] },
+          },
+        })}
+      />,
+    );
+    const card = screen.getByTestId('statement-node-n-multi-title');
+    expect(card.getAttribute('title')).toBe('Cycle in supports, Contradiction');
+  });
+
+  // Cross-locale: the cycle title resolves to its catalog-correct
+  // string in every v1 locale. Pins that the tooltip flows through
+  // i18n (not a hard-coded en-US string).
+  const CYCLE_TITLE_BY_LOCALE = {
+    'en-US': 'Cycle in supports',
+    'pt-BR': 'Ciclo em apoios',
+    'es-419': 'Ciclo en apoyos',
+  } as const;
+  for (const locale of ['en-US', 'pt-BR', 'es-419'] as const) {
+    it(`resolves the cycle title in ${locale}`, async () => {
+      await i18next.changeLanguage(locale);
+      render(
+        <StatementNode
+          {...makeNodeProps({
+            id: `n-cycle-${locale}`,
+            data: {
+              wording: 'locale check',
+              kind: 'fact',
+              diagnosticHighlight: { severity: 'blocking', kinds: ['cycle'] },
+            },
+          })}
+        />,
+      );
+      const card = screen.getByTestId(`statement-node-n-cycle-${locale}`);
+      expect(card.getAttribute('title')).toBe(CYCLE_TITLE_BY_LOCALE[locale]);
+      await i18next.changeLanguage('en-US');
+    });
+  }
 });

@@ -47,6 +47,7 @@ import { useSelectionStore } from '../stores/index.js';
 import { AnnotationBadge } from './AnnotationBadge.js';
 import { AxiomMarkBadge } from './AxiomMarkBadge.js';
 import { FacetPill } from './FacetPill.js';
+import type { DiagnosticHighlight } from './diagnosticHighlights.js';
 import type { FacetName, FacetStatus } from './facetStatus.js';
 import { EMPTY_VOTES, type Annotation, type AxiomMark, type Vote } from './selectors.js';
 
@@ -119,6 +120,13 @@ export interface StatementNodeData {
    * `mod_vote_indicators_on_graph`.
    */
   readonly votesByFacet: Readonly<Partial<Record<FacetName, readonly Vote[]>>>;
+  /**
+   * Per-entity diagnostic highlight, or `undefined` when no active
+   * diagnostic touches this node. Read by `<StatementNode>` to compose
+   * the amber halo onto the card root. Refinement:
+   * `tasks/refinements/moderator-ui/mod_diagnostic_highlighting.md`.
+   */
+  readonly diagnosticHighlight?: DiagnosticHighlight;
 }
 
 /**
@@ -183,7 +191,15 @@ export function cardRollupStatus(
 export function StatementNode(props: NodeProps<StatementNodeData>): ReactElement {
   const { id, data } = props;
   const { t } = useTranslation();
-  const { wording, kind, annotations, facetStatuses, axiomMarks, votesByFacet } = data;
+  const {
+    wording,
+    kind,
+    annotations,
+    facetStatuses,
+    axiomMarks,
+    votesByFacet,
+    diagnosticHighlight,
+  } = data;
 
   // Selection state for this card. Refinement: `mod_selection`. The
   // selector reduces the store's `selected: Selection | null` to a single
@@ -256,18 +272,53 @@ export function StatementNode(props: NodeProps<StatementNodeData>): ReactElement
   // (baseline / agreed), rose (disputed), and violet (meta-disagreement)
   // so the selection ring doesn't fight the status signal.
   const selectionClassName = isSelected ? 'ring-4 ring-sky-500' : '';
+  // Diagnostic-highlight ring (refinement `mod_diagnostic_highlighting`).
+  // Composes on top of the status ring (rose / violet) and the selection
+  // ring (sky). The blocking variant uses `ring-4` + `ring-offset-2` +
+  // `motion-safe:animate-pulse` — the wider ring + the offset separator
+  // + the motion cue together read as "this is urgent". The advisory
+  // variant uses `ring-2` + `ring-offset-1` and no pulse so the canvas
+  // doesn't become a wall of motion when several coherency hints fire
+  // simultaneously. Both share the amber palette so the "this is a
+  // diagnostic" signal is consistent regardless of severity. The
+  // `motion-safe:` Tailwind variant respects `prefers-reduced-motion`
+  // automatically, so users who opted out see a static blocking ring
+  // (still differentiated from advisory by width + offset).
+  const diagnosticClassName =
+    diagnosticHighlight === undefined
+      ? ''
+      : diagnosticHighlight.severity === 'blocking'
+        ? 'ring-4 ring-amber-500/80 ring-offset-2 ring-offset-white motion-safe:animate-pulse'
+        : 'ring-2 ring-amber-300/70 ring-offset-1 ring-offset-white';
   const cardClassName = `${baseClassName} ${styleClassName}${
     selectionClassName ? ` ${selectionClassName}` : ''
-  }`;
+  }${diagnosticClassName ? ` ${diagnosticClassName}` : ''}`;
+  // Diagnostic-highlight tooltip — joins the per-active-diagnostic kind
+  // titles with `", "`. Single-kind: one localized title. Multi-kind:
+  // titles joined. The richer hover-card prose (description / detail /
+  // action) is owned by future siblings (`mod_diagnostic_flag_pane`,
+  // `mod_hover_details`); this task only stamps the kind title(s) on
+  // the native `title` attribute — the lowest-friction tooltip surface.
+  const diagnosticTitle =
+    diagnosticHighlight === undefined
+      ? undefined
+      : diagnosticHighlight.kinds.map((k) => t(`diagnostics.${k}.title`)).join(', ');
   // Root data attributes: `data-facet-status` is the existing seam for
   // the status-styling tasks; `data-selected` is the stable boolean
   // selection seam this task adds (Tailwind class strings aren't
   // load-bearing across builds, but data attributes are). Both branches
   // of `data-selected` are stamped (true / false) so downstream tests
   // can target the negative case without relying on attribute absence.
+  // `data-diagnostic-severity` is stamped only when a diagnostic
+  // highlight is present (mirrors the `data-facet-status` decision to
+  // omit on baseline rather than stamp `"none"`).
   const rootProps = {
     ...(rollupStatus !== undefined ? { 'data-facet-status': rollupStatus } : {}),
     'data-selected': isSelected ? 'true' : 'false',
+    ...(diagnosticHighlight !== undefined
+      ? { 'data-diagnostic-severity': diagnosticHighlight.severity }
+      : {}),
+    ...(diagnosticTitle !== undefined ? { title: diagnosticTitle } : {}),
   };
 
   // Per-facet pill row — the per-facet *detail* layer that sits above

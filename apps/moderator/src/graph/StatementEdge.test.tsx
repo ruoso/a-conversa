@@ -28,6 +28,7 @@ import 'reactflow/dist/style.css';
 import { initI18n } from '../i18n';
 import { edgeTypes } from './edgeTypes';
 import type { Annotation, StatementEdgeData } from './selectors';
+import type { DiagnosticHighlight } from './diagnosticHighlights';
 import { useSelectionStore } from '../stores';
 
 const ALL_ROLES = [
@@ -605,5 +606,124 @@ describe('StatementEdge — click-to-select visual state (mod_selection)', () =>
     const label = await waitFor(() => screen.getByTestId('graph-edge-label-edge-supports'));
     expect(label.getAttribute('data-selected')).toBe('false');
     expect(label.className).not.toContain('ring-sky-500');
+  });
+});
+
+// -- Diagnostic highlight (mod_diagnostic_highlighting) --------------
+//
+// The amber halo composes on the role-label pill (NOT the BaseEdge
+// path) when `data.diagnosticHighlight !== undefined`. The
+// `data-diagnostic-severity` attribute stamps the severity as the
+// stable DOM seam. The methodology-state path styling (disputed red /
+// meta-disagreement violet) stays on the `<path>` independently — the
+// two visual layers do not interfere.
+
+function edgeWithDiagnostic(
+  role: 'supports' | 'rebuts',
+  diagnosticHighlight: DiagnosticHighlight,
+  facetStatuses: StatementEdgeData['facetStatuses'] = {},
+): Edge<StatementEdgeData> {
+  return {
+    id: `edge-${role}-${diagnosticHighlight.severity}`,
+    source: 'n1',
+    target: 'n2',
+    type: 'statement',
+    data: { role, annotations: [], facetStatuses, diagnosticHighlight },
+  };
+}
+
+describe('StatementEdge — diagnostic highlight (mod_diagnostic_highlighting)', () => {
+  it('has no data-diagnostic-severity attribute and no amber ring when diagnosticHighlight is undefined', async () => {
+    render(
+      <div style={{ width: 400, height: 400 }}>
+        <ReactFlow nodes={NODES} edges={[edgeFor('supports')]} edgeTypes={edgeTypes} />
+      </div>,
+    );
+    const label = await waitFor(() => screen.getByTestId('graph-edge-label-edge-supports'));
+    expect(label.getAttribute('data-diagnostic-severity')).toBeNull();
+    expect(label.className).not.toContain('ring-amber-500');
+    expect(label.className).not.toContain('ring-amber-300');
+  });
+
+  it('stamps data-diagnostic-severity="blocking" + the amber blocking ring classes on the role-label pill', async () => {
+    const edge = edgeWithDiagnostic('supports', { severity: 'blocking', kinds: ['cycle'] });
+    render(
+      <div style={{ width: 400, height: 400 }}>
+        <ReactFlow nodes={NODES} edges={[edge]} edgeTypes={edgeTypes} />
+      </div>,
+    );
+    const label = await waitFor(() => screen.getByTestId(`graph-edge-label-${edge.id}`));
+    expect(label.getAttribute('data-diagnostic-severity')).toBe('blocking');
+    expect(label.className).toContain('ring-4');
+    expect(label.className).toContain('ring-amber-500/80');
+    expect(label.className).toContain('ring-offset-2');
+    expect(label.className).toContain('motion-safe:animate-pulse');
+  });
+
+  it('stamps data-diagnostic-severity="advisory" + the amber advisory ring classes on the role-label pill', async () => {
+    const edge = edgeWithDiagnostic('rebuts', { severity: 'advisory', kinds: ['coherency-hint'] });
+    render(
+      <div style={{ width: 400, height: 400 }}>
+        <ReactFlow nodes={NODES} edges={[edge]} edgeTypes={edgeTypes} />
+      </div>,
+    );
+    const label = await waitFor(() => screen.getByTestId(`graph-edge-label-${edge.id}`));
+    expect(label.getAttribute('data-diagnostic-severity')).toBe('advisory');
+    expect(label.className).toContain('ring-2');
+    expect(label.className).toContain('ring-amber-300/70');
+    expect(label.className).toContain('ring-offset-1');
+    // No pulse on advisory.
+    expect(label.className).not.toContain('animate-pulse');
+  });
+
+  it('keeps the disputed red stroke on the BaseEdge path while the role-label pill carries the amber halo (independent visual layers)', async () => {
+    // Same edge with substance=disputed (red stroke on path) AND a
+    // blocking diagnostic (amber halo on label pill). Both visuals
+    // must be present — the methodology-state path styling and the
+    // diagnostic halo are independent visual layers.
+    const edge: Edge<StatementEdgeData> = {
+      id: 'edge-dispute-diag',
+      source: 'n1',
+      target: 'n2',
+      type: 'statement',
+      data: {
+        role: 'supports',
+        annotations: [],
+        facetStatuses: { substance: 'disputed' },
+        diagnosticHighlight: { severity: 'blocking', kinds: ['contradiction'] },
+      },
+    };
+    const { container } = render(
+      <div style={{ width: 400, height: 400 }}>
+        <ReactFlow nodes={NODES} edges={[edge]} edgeTypes={edgeTypes} />
+      </div>,
+    );
+    const label = await waitFor(() => screen.getByTestId('graph-edge-label-edge-dispute-diag'));
+    // The label pill carries both seams.
+    expect(label.getAttribute('data-facet-status')).toBe('disputed');
+    expect(label.getAttribute('data-diagnostic-severity')).toBe('blocking');
+    expect(label.className).toContain('ring-amber-500/80');
+    // The BaseEdge path keeps the disputed red stroke — the
+    // diagnostic halo did NOT restyle the path.
+    const paths = container.querySelectorAll('.react-flow__edges path');
+    let foundRedStroke = false;
+    for (const path of paths) {
+      const style = path.getAttribute('style') ?? '';
+      if (/stroke\s*:\s*(#e11d48|rgb\(\s*225\s*,\s*29\s*,\s*72\s*\))/i.test(style)) {
+        foundRedStroke = true;
+      }
+    }
+    expect(foundRedStroke).toBe(true);
+  });
+
+  it('sets title on the role-label pill from the localized diagnostic kind title', async () => {
+    const edge = edgeWithDiagnostic('supports', { severity: 'blocking', kinds: ['cycle'] });
+    render(
+      <div style={{ width: 400, height: 400 }}>
+        <ReactFlow nodes={NODES} edges={[edge]} edgeTypes={edgeTypes} />
+      </div>,
+    );
+    const label = await waitFor(() => screen.getByTestId(`graph-edge-label-${edge.id}`));
+    expect(label.getAttribute('title')).toBe('Cycle in supports');
   });
 });

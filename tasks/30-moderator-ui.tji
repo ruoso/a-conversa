@@ -183,6 +183,8 @@ task moderator_ui "Moderator UI" {
     task mod_diagnostic_highlighting "Highlight nodes/edges affected by diagnostics" {
       effort 1d
       allocate team
+      complete 100
+      note "Refinement: tasks/refinements/moderator-ui/mod_diagnostic_highlighting.md"
     }
     task mod_layout_engine_choice "Choose and configure graph layout algorithm" {
       effort 1d

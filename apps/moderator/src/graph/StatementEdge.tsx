@@ -152,13 +152,39 @@ function StatementEdgeImpl(props: EdgeProps<StatementEdgeData>): ReactElement {
       : undefined;
   const baseEdgeStyleProps = mergedStyle === undefined ? {} : { style: mergedStyle };
 
+  // Diagnostic-highlight halo on the role-label pill (refinement
+  // `mod_diagnostic_highlighting`). Same composition decision as the
+  // `mod_selection` ring: the `<BaseEdge>` `<path>` is inside ReactFlow's
+  // SVG and isn't directly id-targetable for tests; the role-label div
+  // is the stable DOM seam for both data-attribute stamps and ring
+  // classes. The methodology-state path styling (proposed dashed /
+  // disputed red stroke / meta-disagreement violet dotted) stays the
+  // canonical signal on the edge body; this halo lives on the label.
+  const diagnosticHighlight = data?.diagnosticHighlight;
+  const labelDiagnosticClassName =
+    diagnosticHighlight === undefined
+      ? ''
+      : diagnosticHighlight.severity === 'blocking'
+        ? ' ring-4 ring-amber-500/80 ring-offset-2 ring-offset-white motion-safe:animate-pulse'
+        : ' ring-2 ring-amber-300/70 ring-offset-1 ring-offset-white';
+  const diagnosticTitle =
+    diagnosticHighlight === undefined
+      ? undefined
+      : diagnosticHighlight.kinds.map((k) => t(`diagnostics.${k}.title`)).join(', ');
   // The role-label div carries the existing `data-facet-status` seam
   // for substance state-styling, plus the new `data-selected` seam this
   // task adds. Both branches of `data-selected` are stamped so tests
   // can target the negative case without relying on attribute absence.
+  // `data-diagnostic-severity` is stamped only when a diagnostic
+  // highlight is present (mirrors the `data-facet-status` decision to
+  // omit on baseline rather than stamp `"none"`).
   const labelDataAttrs = {
     ...(substanceStatus !== undefined ? { 'data-facet-status': substanceStatus } : {}),
     'data-selected': isSelected ? 'true' : 'false',
+    ...(diagnosticHighlight !== undefined
+      ? { 'data-diagnostic-severity': diagnosticHighlight.severity }
+      : {}),
+    ...(diagnosticTitle !== undefined ? { title: diagnosticTitle } : {}),
   };
   // Selection ring (refinement `mod_selection`). Composed via Tailwind
   // `ring-4 ring-sky-500` — same palette / width as the node card so
@@ -186,7 +212,7 @@ function StatementEdgeImpl(props: EdgeProps<StatementEdgeData>): ReactElement {
           <div
             data-testid={`graph-edge-label-${id}`}
             data-edge-role={data?.role ?? ''}
-            className={`rounded bg-white px-1 text-xs text-slate-900 shadow-sm${labelSelectionClassName}`}
+            className={`rounded bg-white px-1 text-xs text-slate-900 shadow-sm${labelSelectionClassName}${labelDiagnosticClassName}`}
             {...labelDataAttrs}
           >
             {label}
