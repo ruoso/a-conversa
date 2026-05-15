@@ -40,12 +40,13 @@
 // pan/zoom — `memo(...)` skips the re-render when `data.role`,
 // `data.annotations`, and the endpoint coordinates haven't changed.
 
-import { memo, type ReactElement } from 'react';
+import { memo, useState, type ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 import { BaseEdge, EdgeLabelRenderer, getBezierPath, type EdgeProps } from 'reactflow';
 
 import { useSelectionStore } from '../stores/index.js';
 import { AnnotationBadge } from './AnnotationBadge.js';
+import { HoverPopover } from './HoverPopover.js';
 import type { StatementEdgeData } from './selectors.js';
 
 function StatementEdgeImpl(props: EdgeProps<StatementEdgeData>): ReactElement {
@@ -167,10 +168,12 @@ function StatementEdgeImpl(props: EdgeProps<StatementEdgeData>): ReactElement {
       : diagnosticHighlight.severity === 'blocking'
         ? ' ring-4 ring-amber-500/80 ring-offset-2 ring-offset-white motion-safe:animate-pulse'
         : ' ring-2 ring-amber-300/70 ring-offset-1 ring-offset-white';
-  const diagnosticTitle =
-    diagnosticHighlight === undefined
-      ? undefined
-      : diagnosticHighlight.kinds.map((k) => t(`diagnostics.${k}.title`)).join(', ');
+  // Hover / focus-visible state for the per-edge popover. Refinement:
+  // `mod_hover_details`. Same single-boolean idiom as `<StatementNode>` —
+  // pointer and keyboard inputs both flip the flag, the popover renders
+  // as a sibling of the role-label inside the `<EdgeLabelRenderer>`
+  // portal's positioned container.
+  const [isHovered, setIsHovered] = useState(false);
   // The role-label div carries the existing `data-facet-status` seam
   // for substance state-styling, plus the new `data-selected` seam this
   // task adds. Both branches of `data-selected` are stamped so tests
@@ -178,13 +181,20 @@ function StatementEdgeImpl(props: EdgeProps<StatementEdgeData>): ReactElement {
   // `data-diagnostic-severity` is stamped only when a diagnostic
   // highlight is present (mirrors the `data-facet-status` decision to
   // omit on baseline rather than stamp `"none"`).
+  //
+  // The native `title` attribute previously stamped for diagnostic-
+  // highlight kind names has been REMOVED. Refinement:
+  // `mod_hover_details`. The popover (rendered as a sibling inside the
+  // edge-label container below) surfaces the same content with richer
+  // layout; leaving `title` would race a native multi-second tooltip
+  // against our instant popover.
   const labelDataAttrs = {
     ...(substanceStatus !== undefined ? { 'data-facet-status': substanceStatus } : {}),
     'data-selected': isSelected ? 'true' : 'false',
     ...(diagnosticHighlight !== undefined
       ? { 'data-diagnostic-severity': diagnosticHighlight.severity }
       : {}),
-    ...(diagnosticTitle !== undefined ? { title: diagnosticTitle } : {}),
+    ...(isHovered ? { 'aria-describedby': `hover-popover-${id}` } : {}),
   };
   // Selection ring (refinement `mod_selection`). Composed via Tailwind
   // `ring-4 ring-sky-500` — same palette / width as the node card so
@@ -207,12 +217,17 @@ function StatementEdgeImpl(props: EdgeProps<StatementEdgeData>): ReactElement {
             // doesn't try to start a new connection.
             pointerEvents: 'all',
           }}
-          className="nodrag nopan flex flex-col items-center gap-0.5"
+          className="nodrag nopan flex flex-col items-center gap-0.5 relative"
         >
           <div
             data-testid={`graph-edge-label-${id}`}
             data-edge-role={data?.role ?? ''}
             className={`rounded bg-white px-1 text-xs text-slate-900 shadow-sm${labelSelectionClassName}${labelDiagnosticClassName}`}
+            tabIndex={0}
+            onMouseEnter={() => setIsHovered(true)}
+            onMouseLeave={() => setIsHovered(false)}
+            onFocus={() => setIsHovered(true)}
+            onBlur={() => setIsHovered(false)}
             {...labelDataAttrs}
           >
             {label}
@@ -226,6 +241,9 @@ function StatementEdgeImpl(props: EdgeProps<StatementEdgeData>): ReactElement {
                 <AnnotationBadge key={annotation.id} annotation={annotation} />
               ))}
             </div>
+          ) : null}
+          {isHovered && data !== undefined ? (
+            <HoverPopover id={id} target={{ kind: 'edge', data }} />
           ) : null}
         </div>
       </EdgeLabelRenderer>

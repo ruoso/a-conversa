@@ -20,7 +20,7 @@
 // queries the resulting label by `data-testid`.
 
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import i18next from 'i18next';
 import ReactFlow, { Position, type Edge, type Node } from 'reactflow';
 import 'reactflow/dist/style.css';
@@ -109,7 +109,17 @@ function edgeFor(role: (typeof ALL_ROLES)[number]): Edge<StatementEdgeData> {
     source: 'n1',
     target: 'n2',
     type: 'statement',
-    data: { role, annotations: [], facetStatuses: {} },
+    // `sourceWording` / `targetWording` are non-optional on
+    // `StatementEdgeData` per `mod_hover_details`. The popover renderer
+    // reads them; in tests that don't inspect the popover, the fixed
+    // 'A' / 'B' values are placeholders matching the test `NODES`.
+    data: {
+      role,
+      annotations: [],
+      facetStatuses: {},
+      sourceWording: 'A',
+      targetWording: 'B',
+    },
   };
 }
 
@@ -269,7 +279,13 @@ describe('StatementEdge — annotation badge overlay', () => {
       source: 'n1',
       target: 'n2',
       type: 'statement',
-      data: { role: 'supports', annotations: [annotation], facetStatuses: {} },
+      data: {
+        role: 'supports',
+        annotations: [annotation],
+        facetStatuses: {},
+        sourceWording: 'A',
+        targetWording: 'B',
+      },
     };
     render(
       <div style={{ width: 400, height: 400 }}>
@@ -296,7 +312,13 @@ describe('StatementEdge — annotation badge overlay', () => {
       source: 'n1',
       target: 'n2',
       type: 'statement',
-      data: { role: 'qualifies', annotations, facetStatuses: {} },
+      data: {
+        role: 'qualifies',
+        annotations,
+        facetStatuses: {},
+        sourceWording: 'A',
+        targetWording: 'B',
+      },
     };
     const { container } = render(
       <div style={{ width: 400, height: 400 }}>
@@ -318,7 +340,13 @@ describe('StatementEdge — proposed-state styling (mod_proposed_state_styling)'
       source: 'n1',
       target: 'n2',
       type: 'statement',
-      data: { role: 'supports', annotations: [], facetStatuses: { substance: 'proposed' } },
+      data: {
+        role: 'supports',
+        annotations: [],
+        facetStatuses: { substance: 'proposed' },
+        sourceWording: 'A',
+        targetWording: 'B',
+      },
     };
     render(
       <div style={{ width: 400, height: 400 }}>
@@ -335,7 +363,13 @@ describe('StatementEdge — proposed-state styling (mod_proposed_state_styling)'
       source: 'n1',
       target: 'n2',
       type: 'statement',
-      data: { role: 'supports', annotations: [], facetStatuses: {} },
+      data: {
+        role: 'supports',
+        annotations: [],
+        facetStatuses: {},
+        sourceWording: 'A',
+        targetWording: 'B',
+      },
     };
     render(
       <div style={{ width: 400, height: 400 }}>
@@ -360,7 +394,13 @@ describe('StatementEdge — agreed-state styling (mod_agreed_state_styling)', ()
       source: 'n1',
       target: 'n2',
       type: 'statement',
-      data: { role: 'supports', annotations: [], facetStatuses: { substance: 'agreed' } },
+      data: {
+        role: 'supports',
+        annotations: [],
+        facetStatuses: { substance: 'agreed' },
+        sourceWording: 'A',
+        targetWording: 'B',
+      },
     };
     render(
       <div style={{ width: 400, height: 400 }}>
@@ -383,7 +423,13 @@ describe('StatementEdge — agreed-state styling (mod_agreed_state_styling)', ()
       source: 'n1',
       target: 'n2',
       type: 'statement',
-      data: { role: 'supports', annotations: [], facetStatuses: { substance: 'agreed' } },
+      data: {
+        role: 'supports',
+        annotations: [],
+        facetStatuses: { substance: 'agreed' },
+        sourceWording: 'A',
+        targetWording: 'B',
+      },
     };
     const { container } = render(
       <div style={{ width: 400, height: 400 }}>
@@ -419,7 +465,13 @@ describe('StatementEdge — disputed-state styling (mod_disputed_state_styling)'
       source: 'n1',
       target: 'n2',
       type: 'statement',
-      data: { role: 'supports', annotations: [], facetStatuses: { substance: 'disputed' } },
+      data: {
+        role: 'supports',
+        annotations: [],
+        facetStatuses: { substance: 'disputed' },
+        sourceWording: 'A',
+        targetWording: 'B',
+      },
     };
     render(
       <div style={{ width: 400, height: 400 }}>
@@ -440,7 +492,13 @@ describe('StatementEdge — disputed-state styling (mod_disputed_state_styling)'
       source: 'n1',
       target: 'n2',
       type: 'statement',
-      data: { role: 'supports', annotations: [], facetStatuses: { substance: 'disputed' } },
+      data: {
+        role: 'supports',
+        annotations: [],
+        facetStatuses: { substance: 'disputed' },
+        sourceWording: 'A',
+        targetWording: 'B',
+      },
     };
     const { container } = render(
       <div style={{ width: 400, height: 400 }}>
@@ -496,6 +554,8 @@ describe('StatementEdge — meta-disagreement-state styling (mod_meta_disagreeme
         role: 'supports',
         annotations: [],
         facetStatuses: { substance: 'meta-disagreement' },
+        sourceWording: 'A',
+        targetWording: 'B',
       },
     };
     render(
@@ -521,6 +581,8 @@ describe('StatementEdge — meta-disagreement-state styling (mod_meta_disagreeme
         role: 'supports',
         annotations: [],
         facetStatuses: { substance: 'meta-disagreement' },
+        sourceWording: 'A',
+        targetWording: 'B',
       },
     };
     const { container } = render(
@@ -628,7 +690,14 @@ function edgeWithDiagnostic(
     source: 'n1',
     target: 'n2',
     type: 'statement',
-    data: { role, annotations: [], facetStatuses, diagnosticHighlight },
+    data: {
+      role,
+      annotations: [],
+      facetStatuses,
+      diagnosticHighlight,
+      sourceWording: 'A',
+      targetWording: 'B',
+    },
   };
 }
 
@@ -691,6 +760,8 @@ describe('StatementEdge — diagnostic highlight (mod_diagnostic_highlighting)',
         annotations: [],
         facetStatuses: { substance: 'disputed' },
         diagnosticHighlight: { severity: 'blocking', kinds: ['contradiction'] },
+        sourceWording: 'A',
+        targetWording: 'B',
       },
     };
     const { container } = render(
@@ -716,7 +787,11 @@ describe('StatementEdge — diagnostic highlight (mod_diagnostic_highlighting)',
     expect(foundRedStroke).toBe(true);
   });
 
-  it('sets title on the role-label pill from the localized diagnostic kind title', async () => {
+  it('does NOT stamp a native title attribute on the role-label pill (superseded by hover popover)', async () => {
+    // As of `mod_hover_details`, the native `title` attribute has been
+    // REMOVED from the role-label pill. The popover (rendered as a
+    // sibling inside the edge-label container on hover/focus) surfaces
+    // the localized diagnostic title(s) instead.
     const edge = edgeWithDiagnostic('supports', { severity: 'blocking', kinds: ['cycle'] });
     render(
       <div style={{ width: 400, height: 400 }}>
@@ -724,6 +799,136 @@ describe('StatementEdge — diagnostic highlight (mod_diagnostic_highlighting)',
       </div>,
     );
     const label = await waitFor(() => screen.getByTestId(`graph-edge-label-${edge.id}`));
-    expect(label.getAttribute('title')).toBe('Cycle in supports');
+    expect(label.getAttribute('title')).toBeNull();
+    // Stable seam (data-diagnostic-severity) still stamped.
+    expect(label.getAttribute('data-diagnostic-severity')).toBe('blocking');
+  });
+
+  it('renders the localized diagnostic title inside the popover on hover (cycle, en-US)', async () => {
+    const edge = edgeWithDiagnostic('supports', { severity: 'blocking', kinds: ['cycle'] });
+    render(
+      <div style={{ width: 400, height: 400 }}>
+        <ReactFlow nodes={NODES} edges={[edge]} edgeTypes={edgeTypes} />
+      </div>,
+    );
+    const label = await waitFor(() => screen.getByTestId(`graph-edge-label-${edge.id}`));
+    fireEvent.mouseEnter(label);
+    const popover = await waitFor(() => screen.getByTestId(`hover-popover-${edge.id}`));
+    expect(popover.textContent).toContain('Cycle in supports');
+  });
+});
+
+// -- Hover popover wiring (mod_hover_details) -------------------------
+//
+// The role-label div carries `onMouseEnter` / `onMouseLeave` / `onFocus`
+// / `onBlur` handlers that flip a `useState<boolean>` hover flag. The
+// `<HoverPopover>` renders as a sibling inside the existing `flex flex-
+// col items-center gap-0.5` container under `<EdgeLabelRenderer>`. The
+// `aria-describedby` linkage is stamped only while the popover is open.
+// Refinement: `mod_hover_details`.
+
+describe('StatementEdge — hover popover wiring (mod_hover_details)', () => {
+  it('does not render the popover by default; renders it on mouseenter', async () => {
+    render(
+      <div style={{ width: 400, height: 400 }}>
+        <ReactFlow nodes={NODES} edges={[edgeFor('supports')]} edgeTypes={edgeTypes} />
+      </div>,
+    );
+    const label = await waitFor(() => screen.getByTestId('graph-edge-label-edge-supports'));
+    expect(screen.queryByTestId('hover-popover-edge-supports')).toBeNull();
+    expect(label.getAttribute('aria-describedby')).toBeNull();
+    fireEvent.mouseEnter(label);
+    const popover = screen.getByTestId('hover-popover-edge-supports');
+    expect(popover).toBeTruthy();
+    expect(label.getAttribute('aria-describedby')).toBe('hover-popover-edge-supports');
+  });
+
+  it('removes the popover on mouseleave', async () => {
+    render(
+      <div style={{ width: 400, height: 400 }}>
+        <ReactFlow nodes={NODES} edges={[edgeFor('supports')]} edgeTypes={edgeTypes} />
+      </div>,
+    );
+    const label = await waitFor(() => screen.getByTestId('graph-edge-label-edge-supports'));
+    fireEvent.mouseEnter(label);
+    expect(screen.getByTestId('hover-popover-edge-supports')).toBeTruthy();
+    fireEvent.mouseLeave(label);
+    expect(screen.queryByTestId('hover-popover-edge-supports')).toBeNull();
+    expect(label.getAttribute('aria-describedby')).toBeNull();
+  });
+
+  it('renders the popover on focus / removes on blur (keyboard parity)', async () => {
+    render(
+      <div style={{ width: 400, height: 400 }}>
+        <ReactFlow nodes={NODES} edges={[edgeFor('supports')]} edgeTypes={edgeTypes} />
+      </div>,
+    );
+    const label = await waitFor(() => screen.getByTestId('graph-edge-label-edge-supports'));
+    fireEvent.focus(label);
+    expect(screen.getByTestId('hover-popover-edge-supports')).toBeTruthy();
+    fireEvent.blur(label);
+    expect(screen.queryByTestId('hover-popover-edge-supports')).toBeNull();
+  });
+
+  it('renders the localized role + source/target wordings in the popover (ICU template)', async () => {
+    const edge: Edge<StatementEdgeData> = {
+      id: 'edge-wordings',
+      source: 'n1',
+      target: 'n2',
+      type: 'statement',
+      data: {
+        role: 'supports',
+        annotations: [],
+        facetStatuses: {},
+        sourceWording: 'data wording',
+        targetWording: 'claim wording',
+      },
+    };
+    render(
+      <div style={{ width: 400, height: 400 }}>
+        <ReactFlow nodes={NODES} edges={[edge]} edgeTypes={edgeTypes} />
+      </div>,
+    );
+    const label = await waitFor(() => screen.getByTestId('graph-edge-label-edge-wordings'));
+    fireEvent.mouseEnter(label);
+    const popover = screen.getByTestId('hover-popover-edge-wordings');
+    // The ICU template substitutes role + source + target into a
+    // `Supports: "data wording" → "claim wording"` line. The actual
+    // resolution goes through i18next so we assert against the
+    // surrounding content rather than the exact format string.
+    expect(popover.textContent).toContain('Supports');
+    expect(popover.textContent).toContain('data wording');
+    expect(popover.textContent).toContain('claim wording');
+    // Stable seam: data-hover-target-kind="edge".
+    expect(popover.getAttribute('data-hover-target-kind')).toBe('edge');
+  });
+
+  it('keeps data-facet-status / data-selected / data-diagnostic-severity stamps while the popover is open', async () => {
+    useSelectionStore.getState().select({ kind: 'edge', id: 'edge-stamps' });
+    const edge: Edge<StatementEdgeData> = {
+      id: 'edge-stamps',
+      source: 'n1',
+      target: 'n2',
+      type: 'statement',
+      data: {
+        role: 'supports',
+        annotations: [],
+        facetStatuses: { substance: 'disputed' },
+        diagnosticHighlight: { severity: 'blocking', kinds: ['contradiction'] },
+        sourceWording: 'A',
+        targetWording: 'B',
+      },
+    };
+    render(
+      <div style={{ width: 400, height: 400 }}>
+        <ReactFlow nodes={NODES} edges={[edge]} edgeTypes={edgeTypes} />
+      </div>,
+    );
+    const label = await waitFor(() => screen.getByTestId('graph-edge-label-edge-stamps'));
+    fireEvent.mouseEnter(label);
+    expect(screen.getByTestId('hover-popover-edge-stamps')).toBeTruthy();
+    expect(label.getAttribute('data-selected')).toBe('true');
+    expect(label.getAttribute('data-facet-status')).toBe('disputed');
+    expect(label.getAttribute('data-diagnostic-severity')).toBe('blocking');
   });
 });

@@ -1106,3 +1106,32 @@ describe('GraphCanvasPane — end-to-end diagnostic halo flow (mod_diagnostic_hi
     expect(card.className).not.toContain('ring-amber-500/80');
   });
 });
+
+// -- Hover popover edge endpoint enrichment (mod_hover_details) -------
+//
+// End-to-end: a session with one node-created + one node-created + one
+// edge-created in the WS store projects an `Edge<StatementEdgeData>`
+// whose `data.sourceWording` / `data.targetWording` come from the
+// node-created payloads. The selector wiring inside `<GraphCanvasPane>`
+// passes the events array through `selectEdgesForSession`, which builds
+// the per-node wording index. Refinement: `mod_hover_details`.
+
+describe('GraphCanvasPane — edge wording enrichment end-to-end (mod_hover_details)', () => {
+  it('threads node-created wordings onto the projected edge data via the canvas wiring', () => {
+    const store = useWsStore.getState();
+    store.applyEvent(makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'data wording' }));
+    store.applyEvent(makeNodeCreated({ sequence: 2, nodeId: NODE_B, wording: 'claim wording' }));
+    store.applyEvent(
+      makeEdgeCreated({ sequence: 3, edgeId: 'edge-wording-e2e', source: NODE_A, target: NODE_B }),
+    );
+    render(<GraphCanvasPane sessionId={SESSION_ID} />);
+    // The canvas root mounts.
+    expect(screen.getByTestId('graph-canvas-root')).toBeTruthy();
+    // The selector-side projection (the same one the canvas
+    // subscribes to) carries the enriched wordings.
+    const edges = selectEdgesForSession(useWsStore.getState(), SESSION_ID);
+    expect(edges).toHaveLength(1);
+    expect(edges[0]?.data?.sourceWording).toBe('data wording');
+    expect(edges[0]?.data?.targetWording).toBe('claim wording');
+  });
+});

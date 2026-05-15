@@ -210,6 +210,8 @@ task moderator_ui "Moderator UI" {
     task mod_hover_details "Hover details for nodes and edges" {
       effort 0.5d
       allocate team
+      complete 100
+      note "Refinement: tasks/refinements/moderator-ui/mod_hover_details.md"
     }
   }
 

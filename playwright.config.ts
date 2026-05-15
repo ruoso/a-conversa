@@ -180,5 +180,30 @@ export default defineConfig({
         ignoreHTTPSErrors: true,
       },
     },
+    // Hover-details e2e (mod_hover_details). Drives the moderator's
+    // operate route, seeds synthetic node + edge events into the
+    // Zustand WS store via `window.__aConversaWsStore` (dev-only
+    // attachment in `apps/moderator/src/main.tsx`), and asserts the
+    // popover content + click-through / focus-visible behaviour.
+    //
+    // - Single locale (en-US) for deterministic content-text assertions.
+    //   The cross-locale popover-content matrix is covered by the
+    //   Vitest cases in `HoverPopover.test.tsx`.
+    // - `ignoreHTTPSErrors: true` mirrors `chromium-auth` because the
+    //   OIDC redirect crosses the self-signed cert on
+    //   `authelia.aconversa.local`.
+    // - Reuses the same en-US locale storage state as the per-locale
+    //   smoke project so the SPA's first paint resolves the catalog
+    //   the spec's content assertions expect.
+    {
+      name: 'chromium-moderator-hover',
+      testMatch: /moderator-hover-details\.spec\.ts$/,
+      use: {
+        ...devices['Desktop Chrome'],
+        locale: 'en-US',
+        ignoreHTTPSErrors: true,
+        storageState: localeStorageState('en-US'),
+      },
+    },
   ],
 });

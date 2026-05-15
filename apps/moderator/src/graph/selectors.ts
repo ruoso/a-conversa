@@ -86,6 +86,33 @@ export interface StatementEdgeData {
    * `tasks/refinements/moderator-ui/mod_diagnostic_highlighting.md`.
    */
   diagnosticHighlight?: DiagnosticHighlight;
+  /**
+   * Wording of this edge's source node, as projected from the per-session
+   * `node-created` payloads. Read by `<HoverPopover>` to render the
+   * edge popover's source→target framing. Refinement:
+   * `tasks/refinements/moderator-ui/mod_hover_details.md`.
+   *
+   * Non-optional: every edge the selector emits carries a string value.
+   * When the source-node id has not yet been seen in the events log
+   * (a wire-protocol violation but defensible), the value is the
+   * documented `'—'` em-dash fallback rather than `undefined` — keeps
+   * the popover renderer's null-check surface small.
+   *
+   * Note: the wording surfaced here is the ORIGINAL value from the
+   * `node-created` payload. Committed `edit-wording` proposals do NOT
+   * update this field today — the wording staleness mirrors today's
+   * `projectNodes` semantics. A future refinement
+   * (`mod_capture_flow.mod_edit_wording_flow`) will update both
+   * projections to consume committed wording edits in lockstep.
+   */
+  sourceWording: string;
+  /**
+   * Wording of this edge's target node, as projected from the per-session
+   * `node-created` payloads. Same semantics, fallback, and staleness
+   * caveat as `sourceWording`. Refinement:
+   * `tasks/refinements/moderator-ui/mod_hover_details.md`.
+   */
+  targetWording: string;
 }
 
 /**
@@ -387,6 +414,19 @@ export function selectEdgesForSession(
   // events array so the projection stays a single pass-effort over the
   // log. Refinement: `mod_proposed_state_styling`.
   const facetStatusIndex = computeFacetStatuses(session.events);
+  // Per-node wording index built up from every `node-created` event in
+  // the session's log. Read for each emitted edge to populate
+  // `data.sourceWording` / `data.targetWording`. Refinement:
+  // `mod_hover_details`. Wording is the ORIGINAL `node-created` payload
+  // value — committed `edit-wording` proposals do not yet feed this
+  // index (matches today's `projectNodes` semantics; a future task
+  // updates both projections together).
+  const wordingByNodeId = new Map<string, string>();
+  for (const event of session.events) {
+    if (event.kind === 'node-created') {
+      wordingByNodeId.set(event.payload.node_id, event.payload.wording);
+    }
+  }
   const out: Edge<StatementEdgeData>[] = [];
   for (const event of session.events) {
     if (event.kind !== 'edge-created') continue;
@@ -397,10 +437,31 @@ export function selectEdgesForSession(
     // resolve to `undefined`, which the consumer (`<StatementEdge>`)
     // reads as "no halo".
     const diagnosticHighlight = highlights.edges.get(event.payload.edge_id);
+    // Edge endpoint wordings. Refinement: `mod_hover_details`. The
+    // `'—'` em-dash fallback is the documented behaviour for an edge
+    // whose source or target id hasn't been seen as a `node-created`
+    // payload yet — defensible against a wire-protocol violation. Both
+    // fields are non-optional on the emitted `StatementEdgeData` so
+    // the popover renderer's null-check surface stays small.
+    const sourceWording = wordingByNodeId.get(event.payload.source_node_id) ?? '—';
+    const targetWording = wordingByNodeId.get(event.payload.target_node_id) ?? '—';
     const data: StatementEdgeData =
       diagnosticHighlight === undefined
-        ? { role: event.payload.role, annotations, facetStatuses }
-        : { role: event.payload.role, annotations, facetStatuses, diagnosticHighlight };
+        ? {
+            role: event.payload.role,
+            annotations,
+            facetStatuses,
+            sourceWording,
+            targetWording,
+          }
+        : {
+            role: event.payload.role,
+            annotations,
+            facetStatuses,
+            diagnosticHighlight,
+            sourceWording,
+            targetWording,
+          };
     out.push({
       id: event.payload.edge_id,
       source: event.payload.source_node_id,

@@ -150,8 +150,17 @@ describe('selectEdgesForSession', () => {
       // shared `EMPTY_ANNOTATIONS` reference) when no annotation event
       // targets this edge. `facetStatuses` defaults to the module-scope
       // shared `EMPTY_FACET_STATUSES` empty record (refinement
-      // `mod_proposed_state_styling`).
-      data: { role: 'supports', annotations: [], facetStatuses: {} },
+      // `mod_proposed_state_styling`). `sourceWording` / `targetWording`
+      // default to the `'—'` em-dash fallback because no `node-created`
+      // event in this log mentions either endpoint id (refinement
+      // `mod_hover_details`).
+      data: {
+        role: 'supports',
+        annotations: [],
+        facetStatuses: {},
+        sourceWording: '—',
+        targetWording: '—',
+      },
     });
   });
 
@@ -292,6 +301,143 @@ describe('selectEdgesForSession', () => {
     const edges = selectEdgesForSession(state, SESSION);
     expect(edges).toHaveLength(1);
     expect(edges[0]?.data?.facetStatuses).toEqual({});
+  });
+
+  // -- Endpoint wording enrichment (mod_hover_details) ----------------
+  //
+  // The selector enriches each emitted `Edge` with `data.sourceWording`
+  // / `data.targetWording` by walking the events log once up-front for
+  // every `node-created` event and building a per-node wording index.
+  // The hover popover reads these fields to render the source→target
+  // framing. Refinement: `tasks/refinements/moderator-ui/mod_hover_details.md`.
+
+  it('enriches data.sourceWording and data.targetWording from prior node-created events', () => {
+    const sourceId = '00000000-0000-4000-8000-0000000000a1';
+    const targetId = '00000000-0000-4000-8000-0000000000a2';
+    const state = makeState([
+      {
+        id: '00000000-0000-4000-8000-000000000101',
+        sessionId: SESSION,
+        sequence: 1,
+        kind: 'node-created',
+        actor: ACTOR,
+        payload: {
+          node_id: sourceId,
+          wording: 'The data we collected',
+          created_by: ACTOR,
+          created_at: '2026-05-11T00:00:00.000Z',
+        },
+        createdAt: '2026-05-11T00:00:00.000Z',
+      },
+      {
+        id: '00000000-0000-4000-8000-000000000102',
+        sessionId: SESSION,
+        sequence: 2,
+        kind: 'node-created',
+        actor: ACTOR,
+        payload: {
+          node_id: targetId,
+          wording: 'The minimum wage should be raised',
+          created_by: ACTOR,
+          created_at: '2026-05-11T00:00:00.000Z',
+        },
+        createdAt: '2026-05-11T00:00:00.000Z',
+      },
+      makeEdgeCreated({
+        sequence: 3,
+        edgeId: 'edge-enriched',
+        role: 'supports',
+        source: sourceId,
+        target: targetId,
+      }),
+    ]);
+    const edges = selectEdgesForSession(state, SESSION);
+    expect(edges).toHaveLength(1);
+    expect(edges[0]?.data?.sourceWording).toBe('The data we collected');
+    expect(edges[0]?.data?.targetWording).toBe('The minimum wage should be raised');
+  });
+
+  it('falls back to the "—" em-dash for an edge whose source / target has not been node-created yet', () => {
+    const sourceId = '00000000-0000-4000-8000-0000000000a1';
+    const targetId = '00000000-0000-4000-8000-0000000000a2';
+    const state = makeState([
+      // Only the source node is created; the target has not (a wire-
+      // protocol violation but defensible). The selector must not
+      // throw and must surface the documented em-dash fallback.
+      {
+        id: '00000000-0000-4000-8000-000000000101',
+        sessionId: SESSION,
+        sequence: 1,
+        kind: 'node-created',
+        actor: ACTOR,
+        payload: {
+          node_id: sourceId,
+          wording: 'source wording present',
+          created_by: ACTOR,
+          created_at: '2026-05-11T00:00:00.000Z',
+        },
+        createdAt: '2026-05-11T00:00:00.000Z',
+      },
+      makeEdgeCreated({
+        sequence: 2,
+        edgeId: 'edge-half-known',
+        role: 'supports',
+        source: sourceId,
+        target: targetId,
+      }),
+    ]);
+    const edges = selectEdgesForSession(state, SESSION);
+    expect(edges).toHaveLength(1);
+    expect(edges[0]?.data?.sourceWording).toBe('source wording present');
+    expect(edges[0]?.data?.targetWording).toBe('—');
+  });
+
+  it('produces deterministic source/target wordings across multiple calls on the same events (purity)', () => {
+    const sourceId = '00000000-0000-4000-8000-0000000000a1';
+    const targetId = '00000000-0000-4000-8000-0000000000a2';
+    const events: Event[] = [
+      {
+        id: '00000000-0000-4000-8000-000000000101',
+        sessionId: SESSION,
+        sequence: 1,
+        kind: 'node-created',
+        actor: ACTOR,
+        payload: {
+          node_id: sourceId,
+          wording: 'pure wording A',
+          created_by: ACTOR,
+          created_at: '2026-05-11T00:00:00.000Z',
+        },
+        createdAt: '2026-05-11T00:00:00.000Z',
+      },
+      {
+        id: '00000000-0000-4000-8000-000000000102',
+        sessionId: SESSION,
+        sequence: 2,
+        kind: 'node-created',
+        actor: ACTOR,
+        payload: {
+          node_id: targetId,
+          wording: 'pure wording B',
+          created_by: ACTOR,
+          created_at: '2026-05-11T00:00:00.000Z',
+        },
+        createdAt: '2026-05-11T00:00:00.000Z',
+      },
+      makeEdgeCreated({
+        sequence: 3,
+        edgeId: 'edge-pure',
+        role: 'supports',
+        source: sourceId,
+        target: targetId,
+      }),
+    ];
+    const state = makeState(events);
+    const edgesA = selectEdgesForSession(state, SESSION);
+    const edgesB = selectEdgesForSession(state, SESSION);
+    expect(edgesA[0]?.data?.sourceWording).toBe('pure wording A');
+    expect(edgesA[0]?.data?.sourceWording).toBe(edgesB[0]?.data?.sourceWording);
+    expect(edgesA[0]?.data?.targetWording).toBe(edgesB[0]?.data?.targetWording);
   });
 });
 

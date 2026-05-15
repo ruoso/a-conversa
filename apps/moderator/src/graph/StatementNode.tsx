@@ -38,7 +38,7 @@
 // `mod_per_facet_state_visualization`, `mod_axiom_mark_decoration`, ...)
 // and layer on top of this card.
 
-import type { ReactElement } from 'react';
+import { useState, type ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { NodeProps } from 'reactflow';
 import type { StatementKind } from '@a-conversa/shared-types';
@@ -47,6 +47,7 @@ import { useSelectionStore } from '../stores/index.js';
 import { AnnotationBadge } from './AnnotationBadge.js';
 import { AxiomMarkBadge } from './AxiomMarkBadge.js';
 import { FacetPill } from './FacetPill.js';
+import { HoverPopover } from './HoverPopover.js';
 import type { DiagnosticHighlight } from './diagnosticHighlights.js';
 import type { FacetName, FacetStatus } from './facetStatus.js';
 import { EMPTY_VOTES, type Annotation, type AxiomMark, type Vote } from './selectors.js';
@@ -292,17 +293,16 @@ export function StatementNode(props: NodeProps<StatementNodeData>): ReactElement
         : 'ring-2 ring-amber-300/70 ring-offset-1 ring-offset-white';
   const cardClassName = `${baseClassName} ${styleClassName}${
     selectionClassName ? ` ${selectionClassName}` : ''
-  }${diagnosticClassName ? ` ${diagnosticClassName}` : ''}`;
-  // Diagnostic-highlight tooltip — joins the per-active-diagnostic kind
-  // titles with `", "`. Single-kind: one localized title. Multi-kind:
-  // titles joined. The richer hover-card prose (description / detail /
-  // action) is owned by future siblings (`mod_diagnostic_flag_pane`,
-  // `mod_hover_details`); this task only stamps the kind title(s) on
-  // the native `title` attribute — the lowest-friction tooltip surface.
-  const diagnosticTitle =
-    diagnosticHighlight === undefined
-      ? undefined
-      : diagnosticHighlight.kinds.map((k) => t(`diagnostics.${k}.title`)).join(', ');
+  }${diagnosticClassName ? ` ${diagnosticClassName}` : ''} relative`;
+  // Hover / focus-visible state for the per-card popover. Refinement:
+  // `mod_hover_details`. Single boolean flipped by both pointer and
+  // keyboard input paths so WCAG 2.1 SC 1.4.13 ("Content on Hover or
+  // Focus") is satisfied: the keyboard user sees the same popover as
+  // the mouse user. The flag lives in component-local `useState` —
+  // pinning the open-popover position to one entity's lifetime mirrors
+  // `mod_context_menus`'s decision to keep menu position out of the
+  // selection store.
+  const [isHovered, setIsHovered] = useState(false);
   // Root data attributes: `data-facet-status` is the existing seam for
   // the status-styling tasks; `data-selected` is the stable boolean
   // selection seam this task adds (Tailwind class strings aren't
@@ -312,13 +312,19 @@ export function StatementNode(props: NodeProps<StatementNodeData>): ReactElement
   // `data-diagnostic-severity` is stamped only when a diagnostic
   // highlight is present (mirrors the `data-facet-status` decision to
   // omit on baseline rather than stamp `"none"`).
+  //
+  // The native `title` attribute previously stamped for diagnostic-
+  // highlight kind names has been REMOVED. Refinement:
+  // `mod_hover_details`. The popover surfaces the same content in a
+  // richer layout; leaving `title` would race a native multi-second
+  // tooltip against our instant popover.
   const rootProps = {
     ...(rollupStatus !== undefined ? { 'data-facet-status': rollupStatus } : {}),
     'data-selected': isSelected ? 'true' : 'false',
     ...(diagnosticHighlight !== undefined
       ? { 'data-diagnostic-severity': diagnosticHighlight.severity }
       : {}),
-    ...(diagnosticTitle !== undefined ? { title: diagnosticTitle } : {}),
+    ...(isHovered ? { 'aria-describedby': `hover-popover-${id}` } : {}),
   };
 
   // Per-facet pill row — the per-facet *detail* layer that sits above
@@ -340,7 +346,16 @@ export function StatementNode(props: NodeProps<StatementNodeData>): ReactElement
   });
 
   return (
-    <div data-testid={`statement-node-${id}`} className={cardClassName} {...rootProps}>
+    <div
+      data-testid={`statement-node-${id}`}
+      className={cardClassName}
+      tabIndex={0}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      onFocus={() => setIsHovered(true)}
+      onBlur={() => setIsHovered(false)}
+      {...rootProps}
+    >
       {facetPills.length > 0 ? (
         <div data-testid={`facet-pill-row-node-${id}`} className="mb-1 flex flex-wrap gap-1">
           {facetPills}
@@ -387,6 +402,7 @@ export function StatementNode(props: NodeProps<StatementNodeData>): ReactElement
           ))}
         </div>
       ) : null}
+      {isHovered ? <HoverPopover id={id} target={{ kind: 'node', data }} /> : null}
     </div>
   );
 }

@@ -152,6 +152,9 @@
       "pane": {
         "createStatement": "Criar nova afirmação"
       }
+    },
+    "hoverPopover": {
+      "edgeEndpoints": "{role}: \"{sourceWording}\" -> \"{targetWording}\""
     }
   },
   "diagnostics": {

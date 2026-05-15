@@ -25,7 +25,7 @@
 // `@testing-library/react` without a `<ReactFlowProvider>` wrapper.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import i18next from 'i18next';
 import type { NodeProps } from 'reactflow';
 import type { StatementKind } from '@a-conversa/shared-types';
@@ -1442,11 +1442,18 @@ describe('StatementNode — diagnostic highlight (mod_diagnostic_highlighting)',
     expect(card.getAttribute('data-diagnostic-severity')).toBe('blocking');
   });
 
-  it('sets title="Cycle in supports" (en-US) for a single-kind highlight', () => {
+  // Note: as of `mod_hover_details`, the native `title` attribute has
+  // been REMOVED from the card root — the popover (rendered on hover /
+  // focus-visible) carries the localized diagnostic title(s) instead.
+  // The migration cases below assert that the diagnostic kind titles
+  // surface in the popover content with the same content + same
+  // cross-locale wiring as the prior `title`-attribute baseline.
+
+  it('does NOT stamp a native title attribute for a single-kind highlight (superseded by hover popover)', () => {
     render(
       <StatementNode
         {...makeNodeProps({
-          id: 'n-cycle-title',
+          id: 'n-cycle-no-title',
           data: {
             wording: 'cycle-only',
             kind: 'fact',
@@ -1455,17 +1462,18 @@ describe('StatementNode — diagnostic highlight (mod_diagnostic_highlighting)',
         })}
       />,
     );
-    const card = screen.getByTestId('statement-node-n-cycle-title');
-    // The diagnostics.cycle.title key resolves to "Cycle in supports"
-    // in the en-US catalog (per packages/i18n-catalogs/src/catalogs/en-US.json).
-    expect(card.getAttribute('title')).toBe('Cycle in supports');
+    const card = screen.getByTestId('statement-node-n-cycle-no-title');
+    // The native `title` is gone — the popover supersedes it.
+    expect(card.getAttribute('title')).toBeNull();
+    // The stable seam (data-diagnostic-severity) is unchanged.
+    expect(card.getAttribute('data-diagnostic-severity')).toBe('blocking');
   });
 
-  it('joins multi-kind highlight titles with ", "', () => {
+  it('does NOT stamp a native title attribute for a multi-kind highlight (superseded by hover popover)', () => {
     render(
       <StatementNode
         {...makeNodeProps({
-          id: 'n-multi-title',
+          id: 'n-multi-no-title',
           data: {
             wording: 'multi-kind',
             kind: 'fact',
@@ -1474,25 +1482,65 @@ describe('StatementNode — diagnostic highlight (mod_diagnostic_highlighting)',
         })}
       />,
     );
-    const card = screen.getByTestId('statement-node-n-multi-title');
-    expect(card.getAttribute('title')).toBe('Cycle in supports, Contradiction');
+    const card = screen.getByTestId('statement-node-n-multi-no-title');
+    expect(card.getAttribute('title')).toBeNull();
+    expect(card.getAttribute('data-diagnostic-severity')).toBe('blocking');
+  });
+
+  it('renders the localized diagnostic title inside the popover on hover (single kind, en-US)', () => {
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-cycle-popover',
+          data: {
+            wording: 'cycle-only',
+            kind: 'fact',
+            diagnosticHighlight: { severity: 'blocking', kinds: ['cycle'] },
+          },
+        })}
+      />,
+    );
+    const card = screen.getByTestId('statement-node-n-cycle-popover');
+    // Open popover by firing mouseenter.
+    fireEvent.mouseEnter(card);
+    const popover = screen.getByTestId('hover-popover-n-cycle-popover');
+    expect(popover.textContent).toContain('Cycle in supports');
+  });
+
+  it('joins multi-kind diagnostic titles inside the popover with ", "', () => {
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-multi-popover',
+          data: {
+            wording: 'multi-kind',
+            kind: 'fact',
+            diagnosticHighlight: { severity: 'blocking', kinds: ['cycle', 'contradiction'] },
+          },
+        })}
+      />,
+    );
+    const card = screen.getByTestId('statement-node-n-multi-popover');
+    fireEvent.mouseEnter(card);
+    const popover = screen.getByTestId('hover-popover-n-multi-popover');
+    expect(popover.textContent).toContain('Cycle in supports, Contradiction');
   });
 
   // Cross-locale: the cycle title resolves to its catalog-correct
-  // string in every v1 locale. Pins that the tooltip flows through
-  // i18n (not a hard-coded en-US string).
+  // string in every v1 locale inside the popover. Pins that the
+  // popover content flows through i18n (not a hard-coded en-US string).
   const CYCLE_TITLE_BY_LOCALE = {
     'en-US': 'Cycle in supports',
     'pt-BR': 'Ciclo em apoios',
     'es-419': 'Ciclo en apoyos',
   } as const;
   for (const locale of ['en-US', 'pt-BR', 'es-419'] as const) {
-    it(`resolves the cycle title in ${locale}`, async () => {
+    it(`resolves the cycle title in ${locale} inside the popover`, async () => {
       await i18next.changeLanguage(locale);
       render(
         <StatementNode
           {...makeNodeProps({
-            id: `n-cycle-${locale}`,
+            id: `n-cycle-popover-${locale}`,
             data: {
               wording: 'locale check',
               kind: 'fact',
@@ -1501,9 +1549,131 @@ describe('StatementNode — diagnostic highlight (mod_diagnostic_highlighting)',
           })}
         />,
       );
-      const card = screen.getByTestId(`statement-node-n-cycle-${locale}`);
-      expect(card.getAttribute('title')).toBe(CYCLE_TITLE_BY_LOCALE[locale]);
+      const card = screen.getByTestId(`statement-node-n-cycle-popover-${locale}`);
+      fireEvent.mouseEnter(card);
+      const popover = screen.getByTestId(`hover-popover-n-cycle-popover-${locale}`);
+      expect(popover.textContent).toContain(CYCLE_TITLE_BY_LOCALE[locale]);
       await i18next.changeLanguage('en-US');
     });
   }
+});
+
+// -- Hover popover wiring (mod_hover_details) -------------------------
+//
+// The node card root carries `onMouseEnter` / `onMouseLeave` / `onFocus`
+// / `onBlur` handlers that flip a `useState<boolean>` hover flag; the
+// `<HoverPopover>` renders conditionally on the flag. The
+// `aria-describedby` linkage between the card root and the popover is
+// stamped only while the popover is open (per the refinement's a11y
+// rule: announcing a tooltip linkage that doesn't render would be an
+// a11y lie). Refinement: `mod_hover_details`.
+
+describe('StatementNode — hover popover wiring (mod_hover_details)', () => {
+  it('does not render the hover popover by default', () => {
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-popover-default',
+          data: { wording: 'plain', kind: 'fact' },
+        })}
+      />,
+    );
+    expect(screen.queryByTestId('hover-popover-n-popover-default')).toBeNull();
+    // aria-describedby is absent when the popover is not open.
+    const card = screen.getByTestId('statement-node-n-popover-default');
+    expect(card.getAttribute('aria-describedby')).toBeNull();
+  });
+
+  it('renders the popover on mouseenter and removes it on mouseleave', () => {
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-popover-mouse',
+          data: { wording: 'plain', kind: 'fact' },
+        })}
+      />,
+    );
+    const card = screen.getByTestId('statement-node-n-popover-mouse');
+    fireEvent.mouseEnter(card);
+    expect(screen.getByTestId('hover-popover-n-popover-mouse')).toBeTruthy();
+    expect(card.getAttribute('aria-describedby')).toBe('hover-popover-n-popover-mouse');
+    fireEvent.mouseLeave(card);
+    expect(screen.queryByTestId('hover-popover-n-popover-mouse')).toBeNull();
+    expect(card.getAttribute('aria-describedby')).toBeNull();
+  });
+
+  it('renders the popover on focus and removes it on blur (keyboard parity)', () => {
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-popover-focus',
+          data: { wording: 'plain', kind: 'fact' },
+        })}
+      />,
+    );
+    const card = screen.getByTestId('statement-node-n-popover-focus');
+    fireEvent.focus(card);
+    expect(screen.getByTestId('hover-popover-n-popover-focus')).toBeTruthy();
+    fireEvent.blur(card);
+    expect(screen.queryByTestId('hover-popover-n-popover-focus')).toBeNull();
+  });
+
+  it('keeps data-selected / data-facet-status / data-diagnostic-severity stamps while the popover is open', () => {
+    useSelectionStore.getState().select({ kind: 'node', id: 'n-popover-stamps' });
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-popover-stamps',
+          data: {
+            wording: 'all stamps',
+            kind: 'fact',
+            facetStatuses: { substance: 'disputed' },
+            diagnosticHighlight: { severity: 'blocking', kinds: ['cycle'] },
+          },
+        })}
+      />,
+    );
+    const card = screen.getByTestId('statement-node-n-popover-stamps');
+    fireEvent.mouseEnter(card);
+    // Popover is up.
+    expect(screen.getByTestId('hover-popover-n-popover-stamps')).toBeTruthy();
+    // Every existing seam still on the root.
+    expect(card.getAttribute('data-selected')).toBe('true');
+    expect(card.getAttribute('data-facet-status')).toBe('disputed');
+    expect(card.getAttribute('data-diagnostic-severity')).toBe('blocking');
+  });
+
+  it('renders the full wording inside the popover', () => {
+    const longWording =
+      'A sufficiently long wording that the card might wrap; the popover renders the full content without truncation so the moderator can read the entire statement at a glance.';
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-popover-wording',
+          data: { wording: longWording, kind: 'fact' },
+        })}
+      />,
+    );
+    const card = screen.getByTestId('statement-node-n-popover-wording');
+    fireEvent.mouseEnter(card);
+    const popover = screen.getByTestId('hover-popover-n-popover-wording');
+    expect(popover.textContent).toContain(longWording);
+  });
+
+  it('stamps role="tooltip" and data-hover-target-kind="node" on the popover', () => {
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-popover-attrs',
+          data: { wording: 'attrs check', kind: 'fact' },
+        })}
+      />,
+    );
+    const card = screen.getByTestId('statement-node-n-popover-attrs');
+    fireEvent.mouseEnter(card);
+    const popover = screen.getByTestId('hover-popover-n-popover-attrs');
+    expect(popover.getAttribute('role')).toBe('tooltip');
+    expect(popover.getAttribute('data-hover-target-kind')).toBe('node');
+    expect(popover.getAttribute('id')).toBe('hover-popover-n-popover-attrs');
+  });
 });

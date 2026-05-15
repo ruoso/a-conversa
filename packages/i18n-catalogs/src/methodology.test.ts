@@ -186,3 +186,49 @@ describe('methodology glossary: known canonical translations', () => {
     expect(t('methodology.diagnostic.coherency-hint')).toBe('Sugestão de coerência');
   });
 });
+
+// Hover-popover ICU template (mod_hover_details).
+//
+// `moderator.hoverPopover.edgeEndpoints` is one new ICU template added by
+// the hover-popover task — the only catalog change in that task. The
+// template renders the edge popover's source→target framing with three
+// substitution points: `{role}` (the localized edge role label),
+// `{sourceWording}` (truncated to 60 chars at the call site), and
+// `{targetWording}` (same truncation). All three locales share the same
+// template body because the `{role}` substitution carries the locale-
+// correct edge role label and the wording substitutions carry user-
+// authored content; only the punctuation (colon, arrow, quotes) is
+// locale-neutral in the v1 locale set.
+
+describe('moderator.hoverPopover.edgeEndpoints round-trip', () => {
+  for (const locale of SUPPORTED_LOCALES) {
+    it(`resolves the edgeEndpoints template with ICU substitutions in ${locale}`, async () => {
+      // The shared `makeT` helper above returns a no-args `t`; this
+      // case needs ICU substitution so we build a per-test instance
+      // and pass the substitution map directly.
+      const instance = i18next.createInstance();
+      await instance.use(ICU).init(buildInitOptions(locale));
+      const rendered = instance.t('moderator.hoverPopover.edgeEndpoints', {
+        role: 'Supports',
+        sourceWording: 'A wording',
+        targetWording: 'B wording',
+      });
+      // Non-empty.
+      expect(rendered).toBeTruthy();
+      expect(rendered.length).toBeGreaterThan(0);
+      // Not the raw key (i18next returns the key when missing).
+      expect(rendered).not.toBe('moderator.hoverPopover.edgeEndpoints');
+      // Every ICU placeholder was substituted.
+      expect(rendered).toContain('Supports');
+      expect(rendered).toContain('A wording');
+      expect(rendered).toContain('B wording');
+      // Punctuation invariant — the ASCII arrow + quoted wordings are
+      // the template's visual signature. ASCII `->` is the deliberate
+      // choice rather than the typographic `→` (U+2192) so the audience
+      // catalog typography policy (Latin Extended-A + General
+      // Punctuation only, per `typography.ts:V1_LOCALE_CODEPOINT_RANGES`)
+      // continues to hold without expansion to the Arrows block.
+      expect(rendered).toContain('->');
+    });
+  }
+});
