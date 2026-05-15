@@ -28,6 +28,22 @@ pnpm install         # or: make install
 
 No additional steps. A fresh clone is ready for tests, lint, and typecheck immediately after `pnpm install`.
 
+## Host resolution for Authelia
+
+The OIDC dance hands the browser a 302 to `https://authelia.aconversa.local:9091/api/oidc/authorization?…`. That hostname is a network alias on the compose bridge — the `app` container resolves it via Docker's embedded DNS — but the **host** machine (where your browser runs) has no entry for it. Without a `/etc/hosts` line, browser-driven login fails at DNS resolution before the user ever reaches Authelia's login form.
+
+One-time setup:
+
+```sh
+echo '127.0.0.1  authelia.aconversa.local' | sudo tee -a /etc/hosts
+```
+
+That single line resolves the hostname to localhost; the compose port-forward at `:9091` then routes the request to the Authelia container. The self-signed cert at [`infra/authelia/tls/cert.pem`](../infra/authelia/tls/cert.pem) already carries `DNS:authelia.aconversa.local` as a SAN, so TLS verifies cleanly against either the in-network FQDN or the host-side one.
+
+`make up` checks `/etc/hosts` after the stack reports healthy and prints a notice with the fix command if the entry is missing — the notice is non-blocking because backend-only flows (`/healthz`, the Vitest + Cucumber smoke suites, the Playwright suite when it uses pre-seeded auth cookies) work without it. **The only flow that requires the `/etc/hosts` entry is the interactive browser SSO login.**
+
+To undo the entry later, edit `/etc/hosts` and remove the line. Compose stops working from the host once removed, but the in-network path (`docker exec aconversa-app-1 ...`) is unaffected.
+
 ## The compose stack
 
 Three services on one user-defined bridge network ([`compose.yaml`](../compose.yaml), [ADR 0018](adr/0018-compose-file-three-service-dev-stack.md)):
@@ -54,8 +70,9 @@ The [`Makefile`](../Makefile) wraps `pnpm` and `docker compose` with friendlier 
 | `make install` | `pnpm install -r` across all workspaces.                                                    | First clone, or after pulling lockfile changes.          |
 | `make check`   | Runs the full static-analysis bundle: `lint`, `format:check`, `typecheck`, `typecheck:tools`, `typecheck:tests`. Same target the pre-commit hook and CI invoke. | Anytime you want the exact contract CI will enforce.    |
 | `make test`    | Runs Vitest, Cucumber, and Playwright smokes in sequence.                                   | Before committing or pushing.                            |
-| `make up`      | Brings up `postgres + authelia`, waits ~15s for healthy, prints a URL banner.               | Anytime you need the backing services running.           |
-| `make up-app`  | Brings the `app` service up too.                                                            | When you want to exercise the app stub on purpose.       |
+| `make up`      | Brings up `postgres + authelia + app` with the dev compose override (`NODE_ENV=development`); waits ~30s for healthy; prints the URL banner + the `/etc/hosts` notice if `authelia.aconversa.local` is missing. | Day-to-day dev work — the dev override relaxes the production-mode boot gates so `.env.example`'s placeholder secret boots without rotation. |
+| `make up-prod-mode` | Same as `make up` but **without** the dev override. Production-mode boot gates (`SESSION_TOKEN_SECRET` strength, CORS lockdown, WS Origin allowlist) all armed. | Reproducing a CI failure locally, or smoking the production-config path. Used by CI's `e2e-playwright` job and by `make test:e2e:compose`. |
+| `make up-app`  | Alias for `make up` (back-compat; the old `up`/`up-app` split is gone).                      | Existing muscle memory.                                  |
 | `make migrate` | Applies pending DB migrations against the running `postgres` (forward-only; [ADR 0020](adr/0020-migrations-node-pg-migrate-forward-only.md)). | After `make up`, before exercising anything that talks to the schema. |
 | `make down`    | `docker compose down`. Volumes preserved.                                                   | Stopping the stack at end of session.                    |
 | `make down-v`  | `docker compose down -v`. Volumes dropped.                                                  | Resetting to a clean stack (drops Postgres + Authelia state). |
@@ -64,7 +81,7 @@ The [`Makefile`](../Makefile) wraps `pnpm` and `docker compose` with friendlier 
 | `make seed`    | Runs the seed-data script (currently a stub — see [`seed_data_script`](../tasks/refinements/foundation/seed_data_script.md)). | Loads the walkthrough fixture once the script lands.    |
 | `make clean`   | Removes `node_modules` (root + workspaces) and build artefacts.                             | Recovering from a corrupted install.                     |
 
-The `up` / `up-app` split is honest about today's reality (see [What's not yet runnable end-to-end](#whats-not-yet-runnable-end-to-end) below); the rationale lives in [`one_command_script` Status](../tasks/refinements/foundation/one_command_script.md#status) and [ADR 0018 Amendments](adr/0018-compose-file-three-service-dev-stack.md#amendments).
+The `up` / `up-prod-mode` split keeps local dev ergonomic without weakening CI: `make up` uses the dev compose override ([`compose.dev.yaml`](../compose.dev.yaml)) so `NODE_ENV=development` relaxes the production-mode boot gates (the `SESSION_TOKEN_SECRET` placeholder denylist, the CORS lockdown that requires `APP_BASE_URL`, the WS Origin allowlist, the pino JSON-output mode, the cookie `Secure` attribute). `make up-prod-mode` skips that override so CI — which runs `make up-prod-mode` in the `e2e-playwright` job — exercises the exact boot-gate set production ships. The `up-app` alias is preserved for muscle memory; the rationale for the dropped `up`/`up-app` split lives in [`one_command_script` Status](../tasks/refinements/foundation/one_command_script.md#status) and [ADR 0018 Amendments](adr/0018-compose-file-three-service-dev-stack.md#amendments).
 
 ## Environment variables
 
@@ -86,14 +103,14 @@ cp .env.example .env
 
 Six dev users are seeded in [`infra/authelia/users.yml`](../infra/authelia/users.yml): **`alice`**, **`ben`**, **`maria`**, **`dave`**, **`erin`**, **`frank`**. All six share the dev password **`aconversa-dev`**.
 
-Issuer URL convention:
+Issuer URL convention (current, post the HTTPS-issuer flip in commit [`f01ef3b`](https://github.com/ruoso/a-conversa/commit/f01ef3b) and the FQDN-alias landing in [`e02652b`](https://github.com/ruoso/a-conversa/commit/e02652b)):
 
-| Caller                          | Issuer URL                |
-| ------------------------------- | ------------------------- |
-| Backend service inside Compose  | `http://authelia:9091`    |
-| Browser / host shell            | `http://localhost:9091`   |
+| Caller                          | Issuer URL                                      |
+| ------------------------------- | ----------------------------------------------- |
+| Backend service inside Compose  | `https://authelia.aconversa.local:9091`         |
+| Browser / host shell            | `https://authelia.aconversa.local:9091`         |
 
-Service-to-service traffic uses the Compose-internal DNS name; browser-side redirects target the host-published port. Full rationale and the rotation procedure in [`infra/authelia/README.md`](../infra/authelia/README.md).
+Both sides use the **same** URL. Inside the compose network the FQDN resolves via the network alias on the `authelia` service; from the host the same name resolves to `127.0.0.1` via the `/etc/hosts` entry (see [Host resolution for Authelia](#host-resolution-for-authelia) above). The self-signed cert at [`infra/authelia/tls/cert.pem`](../infra/authelia/tls/cert.pem) carries a SAN for that hostname. Using one URL on both sides keeps the OIDC `iss` claim consistent and avoids the openid-client metadata-vs-issuer trap a "browser uses localhost, backend uses container hostname" split would require. Full rationale and the rotation procedure in [`infra/authelia/README.md`](../infra/authelia/README.md).
 
 ## Tests
 

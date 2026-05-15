@@ -1,0 +1,36 @@
+# Development override for compose.yaml.
+#
+# Composed in by `make up` (and `make up-app`) to relax the
+# production-mode boot gates the runtime image arms by default. The
+# Dockerfile's runtime stage sets `ENV NODE_ENV=production` so the
+# production-served image is hardened by default; this override flips
+# `NODE_ENV=development` on the app container only, so a freshly cloned
+# repo boots against `.env.example` without rotating the placeholder
+# secret first.
+#
+# What `NODE_ENV=development` relaxes (audit on 2026-05-15):
+#
+#   - SESSION_TOKEN_SECRET placeholder denylist
+#     (apps/server/src/auth/pending-cookie.ts) — the placeholder literal
+#     in `.env.example` (`dev-session-secret-change-me`) is rejected
+#     under production but allowed under any other NODE_ENV value.
+#   - CORS allowlist (apps/server/src/server.ts) — the production-mode
+#     `APP_BASE_URL`-required gate becomes a permissive wildcard.
+#   - WebSocket Origin allowlist (apps/server/src/ws-origin-allowlist.ts)
+#     — falls back to "any origin" so a stray ad-hoc dev origin doesn't
+#     trip the 403 path.
+#   - Pino logger format (apps/server/src/logger.ts) — pretty (non-JSON)
+#     output so `make logs` is human-readable.
+#   - Cookie `Secure` attribute (apps/server/src/auth/pending-cookie.ts)
+#     — dropped so the cookie works against the dev stack's http:// URLs.
+#
+# CI's `e2e-playwright` job deliberately does NOT compose this file in:
+# it uses `make up-prod-mode` so the test surface exercises the same
+# boot gates a real production deployment runs. See
+# `.github/workflows/ci.yml` and the `up-prod-mode` target in
+# `Makefile`.
+
+services:
+  app:
+    environment:
+      NODE_ENV: development

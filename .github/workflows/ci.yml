@@ -405,8 +405,18 @@ jobs:
             echo "APP_BASE_URL=http://localhost:3000";
           } >> .env
 
-      - name: Bring up compose stack
-        run: make up
+      - name: Bring up compose stack (prod-mode boot gates)
+        # `make up-prod-mode` composes only `compose.yaml` — no dev
+        # override. The dev override (`compose.dev.yaml`, used by
+        # `make up` for local dev ergonomics) flips
+        # `NODE_ENV=development` and relaxes the SESSION_TOKEN_SECRET
+        # denylist + CORS lockdown + WS Origin allowlist. CI must
+        # exercise the production boot gates so a regression that
+        # only fires under `NODE_ENV=production` cannot pass locally
+        # and fail in CI (or vice versa). The `Write CI .env`
+        # step above supplies a 64-byte SESSION_TOKEN_SECRET +
+        # APP_BASE_URL specifically to satisfy those gates here.
+        run: make up-prod-mode
 
       - name: Wait for /healthz
         # `make up` already sleeps 30s for healthchecks; we still
