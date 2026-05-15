@@ -56,7 +56,17 @@ The orchestrator walks its in-context WBS and selects the next leaf with all thr
 2. Every `depends` target transitively `complete 100`.
 3. Falls under a milestone in M4..M8 — skip any leaf whose only milestone path goes through `m_deployment_ready` or anything under `deployment.*`.
 
-Selection priority: lowest-numbered milestone first; within a milestone, the leaf whose siblings are closest to closing; ties broken alphabetically by task name for determinism.
+Selection priority: lowest-numbered milestone first. **Within a milestone, use judgment to pick the leaf that generates the least amount of tech debt**, where "tech debt" means deferred assertions, missing seams that successor tasks will have to work around, or open tech-debt tasks (per the tech-debt registration policy below) that another task's e2e or refinement explicitly depends on.
+
+Heuristics, in rough order of weight:
+
+1. **Close existing debt before creating new debt.** If a leaf is already named as deferred-debt in another refinement's Status block — or is itself a tech-debt leaf added under the registration policy — picking it pays down debt instead of accruing it. This usually wins.
+2. **Infrastructure / seam tasks before consumer tasks.** If a leaf adds a structural seam (a wire-format, a layout pass, a renderer handle) that several successor tasks would otherwise have to defer assertions against, pick it first.
+3. **Composability with recent work.** Prefer a leaf whose surface composes cleanly with the most recent commit's work; this keeps reviewer + future-reader context coherent and reduces the chance of small reverts.
+4. **Subgroup momentum.** All else equal, prefer a leaf in a subgroup with siblings already complete (continuity), but **don't sacrifice (1) or (2) just to close a subgroup**.
+5. **Tie-breaker for genuine ties:** alphabetical by task name for determinism.
+
+When picking, state the reasoning in one or two sentences before dispatching the Refinement-Writer — this makes the pick auditable and lets the user redirect if the intuition is off. Don't dispatch silently.
 
 The selected task's `<task_id>`, the path `tasks/<NN>-<area>.tji` it lives in, the predecessor task ids (with their refinement paths `tasks/refinements/<area>/<predecessor>.md`), and the refinement path it will produce (`tasks/refinements/<area>/<task_name>.md`) are the only data the orchestrator passes downstream. No file contents, no code excerpts.
 
