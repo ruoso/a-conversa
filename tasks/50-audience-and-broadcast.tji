@@ -18,6 +18,15 @@
 # i18n_audience_typography.md, which gates on aud_clean_typography.
 
 task audience "Audience and broadcast" {
+  # Every audience-UI leaf inherits this dependency. Public-session
+  # paths are unauthenticated by design (see `aud_no_auth_for_public`),
+  # but the private-session path goes through the same OIDC handshake
+  # the moderator + participant surfaces do — and the broadcast
+  # surface itself sits behind the same auth layer until a session is
+  # promoted to public. `auth_flow_integration` is the canonical home
+  # for the end-to-end OIDC handshake tests; nothing in this stream
+  # should ship without that safety net.
+  depends backend.backend_tests.be_e2e_tests.auth_flow_integration
   task aud_shell "Audience app shell" {
     depends foundation.repo_skeleton, foundation.stack_decisions.frontend_framework_decision
     task aud_app_skeleton "Read-only app skeleton" {

@@ -17,6 +17,12 @@
 # inherit the glossary transitively through the shell.
 
 task participant_ui "Participant (debater) UI" {
+  # Every participant-UI leaf inherits this dependency: the participant
+  # surface authenticates the same way as the moderator (OIDC against
+  # the platform's Authelia). `auth_flow_integration` is the canonical
+  # home for the end-to-end OIDC handshake tests; nothing in the
+  # participant-UI stream should ship without that safety net in place.
+  depends backend.backend_tests.be_e2e_tests.auth_flow_integration
   task part_shell "Participant app shell" {
     depends foundation.repo_skeleton, foundation.stack_decisions.frontend_framework_decision
     task part_app_skeleton "App skeleton (entry, build, routing)" {

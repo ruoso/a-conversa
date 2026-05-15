@@ -20,6 +20,14 @@
 # the replay primitive + audience graph rendering it consumes.
 
 task replay_test "Replay and test mode" {
+  # Every replay-UI leaf inherits this dependency. The replay viewer
+  # consumes the same session-history endpoints the moderator does and
+  # respects the same visibility-gated auth surface; the test-mode
+  # timeline scrubber inherits the operator-side auth from the
+  # moderator console. `auth_flow_integration` is the canonical home
+  # for the end-to-end OIDC handshake tests; nothing in this stream
+  # should ship without that safety net.
+  depends backend.backend_tests.be_e2e_tests.auth_flow_integration
   task replay_ui "Replay viewer UI" {
     depends data_and_methodology.replay_primitive, audience.aud_graph_rendering, audience.aud_animations
     task replay_mode_audience_surface "Replay-mode variant of the audience surface" {
