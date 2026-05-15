@@ -11,13 +11,18 @@
 //   /sessions/:id/operate        — three-pane operator console.
 //
 // Unmatched paths redirect to `/login` so an unauthenticated visitor
-// always lands on the auth entry point. The route-level auth gate (a
-// redirect from protected routes back to `/login` when unauthed) lands
-// with `mod_state_management` once the auth state is store-driven.
+// always lands on the auth entry point. The three protected routes are
+// wrapped with `<RequireAuth>` (see `auth/RequireAuth.tsx`), which
+// consumes `useAuth()` and redirects per the discriminated status:
+// `'needs-screen-name-only'` for `/screen-name` and `'authenticated-only'`
+// for the two `/sessions/:id/...` routes. `/login` stays unwrapped — it
+// runs its own four-state switch in-component and is the universal
+// redirect sink.
 
 import type { ReactElement } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 
+import { RequireAuth } from './auth/RequireAuth';
 import { LobbyRoute } from './routes/Lobby';
 import { LoginRoute } from './routes/Login';
 import { OperateRoute } from './routes/Operate';
@@ -27,9 +32,30 @@ export function App(): ReactElement {
   return (
     <Routes>
       <Route path="/login" element={<LoginRoute />} />
-      <Route path="/screen-name" element={<ScreenNameRoute />} />
-      <Route path="/sessions/:id/lobby" element={<LobbyRoute />} />
-      <Route path="/sessions/:id/operate" element={<OperateRoute />} />
+      <Route
+        path="/screen-name"
+        element={
+          <RequireAuth mode="needs-screen-name-only">
+            <ScreenNameRoute />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/sessions/:id/lobby"
+        element={
+          <RequireAuth mode="authenticated-only">
+            <LobbyRoute />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/sessions/:id/operate"
+        element={
+          <RequireAuth mode="authenticated-only">
+            <OperateRoute />
+          </RequireAuth>
+        }
+      />
       <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>
   );

@@ -47,6 +47,37 @@ afterAll(() => {
   global.fetch = originalFetch;
 });
 
+// ────────────────────────────────────────────────────────────────────────
+// Helper — fresh `Response` per call so multi-consumer fetches don't
+// trip on body-already-consumed. With the `RequireAuth` gate in place,
+// each protected-route mount fires `/auth/me` twice (once from the gate's
+// `useAuth`, once from the route's `useAuth`); a single shared `Response`
+// can't be read twice. `mockImplementation` constructs a new `Response`
+// per call to side-step that.
+// ────────────────────────────────────────────────────────────────────────
+// Stub `/auth/me` to a fresh `needs-screen-name` response per call. When
+// `onPostScreenName` is provided, `/auth/screen-name` POSTs return a fresh
+// response from that builder. All other URLs 404.
+function stubAuthMeNeedsScreenName(onPostScreenName?: () => Response): ReturnType<typeof vi.fn> {
+  return vi.fn((url: string) => {
+    if (url === '/auth/me') {
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            userId: '00000000-0000-4000-8000-000000000007',
+            screenName: '<pending>',
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      );
+    }
+    if (url === '/auth/screen-name' && onPostScreenName) {
+      return Promise.resolve(onPostScreenName());
+    }
+    return Promise.resolve(new Response('', { status: 404 }));
+  });
+}
+
 describe('moderator i18n bootstrap', () => {
   it('resolves the chrome.hello catalog key for en-US', () => {
     expect(i18next.t('chrome.hello')).toBe('hello, world');
@@ -113,23 +144,50 @@ describe('moderator router', () => {
     });
   });
 
-  it('renders the lobby route with the session id captured from the path', () => {
+  it('renders the lobby route with the session id captured from the path', async () => {
+    // The lobby route is gated by `<RequireAuth mode="authenticated-only">`;
+    // stub `/auth/me` to a fully-authed response so the gate renders
+    // children rather than redirecting to `/login`.
+    global.fetch = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          userId: '00000000-0000-4000-8000-000000000010',
+          screenName: 'alice',
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      ),
+    );
     render(
       <MemoryRouter initialEntries={['/sessions/sess-123/lobby']}>
         <App />
       </MemoryRouter>,
     );
-    expect(screen.getByTestId('route-lobby')).toBeTruthy();
+    await waitFor(() => {
+      expect(screen.getByTestId('route-lobby')).toBeTruthy();
+    });
     expect(screen.getByTestId('session-id').textContent).toBe('sess-123');
   });
 
-  it('renders the operate route with the session id captured from the path', () => {
+  it('renders the operate route with the session id captured from the path', async () => {
+    // Same auth stub as the lobby case — the gate accepts the
+    // `'authenticated'` status and renders children.
+    global.fetch = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          userId: '00000000-0000-4000-8000-000000000011',
+          screenName: 'alice',
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      ),
+    );
     render(
       <MemoryRouter initialEntries={['/sessions/sess-456/operate']}>
         <App />
       </MemoryRouter>,
     );
-    expect(screen.getByTestId('route-operate')).toBeTruthy();
+    await waitFor(() => {
+      expect(screen.getByTestId('route-operate')).toBeTruthy();
+    });
     expect(screen.getByTestId('session-id').textContent).toBe('sess-456');
   });
 });
@@ -230,13 +288,17 @@ describe('Login route — auth states', () => {
     // Defensive: the backend should not put us here (the returning-user
     // callback skips issuing the session cookie for `<pending>` rows),
     // but the client transitions to `needs-screen-name` if it ever does.
-    global.fetch = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          userId: '00000000-0000-4000-8000-000000000003',
-          screenName: '<pending>',
-        }),
-        { status: 200, headers: { 'content-type': 'application/json' } },
+    // Use `mockImplementation` so each `/auth/me` call (the gate AND the
+    // route component each fire one) gets a fresh `Response` body.
+    global.fetch = vi.fn(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            userId: '00000000-0000-4000-8000-000000000003',
+            screenName: '<pending>',
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
       ),
     );
 
@@ -321,15 +383,19 @@ describe('Login route — auth states', () => {
 });
 
 describe('ScreenName route — form behavior', () => {
-  it('disables submit when the input is empty or whitespace-only', () => {
-    global.fetch = vi.fn().mockResolvedValue(new Response('', { status: 401 }));
+  // All tests in this block need the gate to render the form, which
+  // requires `status === 'needs-screen-name'`. Stub `/auth/me` to the
+  // `<pending>` shape via `mockImplementation` so the multi-consumer
+  // (gate + form) `useAuth()` calls each get a fresh response.
+  it('disables submit when the input is empty or whitespace-only', async () => {
+    global.fetch = stubAuthMeNeedsScreenName();
 
     render(
       <MemoryRouter initialEntries={['/screen-name']}>
         <App />
       </MemoryRouter>,
     );
-    const submit = screen.getByTestId<HTMLButtonElement>('screen-name-submit');
+    const submit = await screen.findByTestId<HTMLButtonElement>('screen-name-submit');
     const input = screen.getByTestId<HTMLInputElement>('screen-name-input');
 
     // Empty → disabled.
@@ -351,12 +417,8 @@ describe('ScreenName route — form behavior', () => {
       value: { ...window.location, reload: reloadSpy },
     });
 
-    const fetchMock = vi
-      .fn()
-      // /auth/me on mount → 401 unauthenticated.
-      .mockResolvedValueOnce(new Response('', { status: 401 }))
-      // POST /auth/screen-name → 200 success.
-      .mockResolvedValueOnce(
+    const fetchMock = stubAuthMeNeedsScreenName(
+      () =>
         new Response(
           JSON.stringify({
             userId: '00000000-0000-4000-8000-000000000006',
@@ -364,17 +426,7 @@ describe('ScreenName route — form behavior', () => {
           }),
           { status: 200, headers: { 'content-type': 'application/json' } },
         ),
-      )
-      // auth.refresh() after success → /auth/me again → 200 authed.
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            userId: '00000000-0000-4000-8000-000000000006',
-            screenName: 'alice',
-          }),
-          { status: 200, headers: { 'content-type': 'application/json' } },
-        ),
-      );
+    );
     global.fetch = fetchMock;
 
     render(
@@ -382,7 +434,7 @@ describe('ScreenName route — form behavior', () => {
         <App />
       </MemoryRouter>,
     );
-    const input = screen.getByTestId('screen-name-input');
+    const input = await screen.findByTestId('screen-name-input');
     fireEvent.change(input, { target: { value: '  alice  ' } });
     await act(async () => {
       fireEvent.submit(screen.getByTestId('screen-name-form'));
@@ -400,14 +452,14 @@ describe('ScreenName route — form behavior', () => {
   });
 
   it('renders the localized too-long error when input exceeds 64 characters', async () => {
-    global.fetch = vi.fn().mockResolvedValue(new Response('', { status: 401 }));
+    global.fetch = stubAuthMeNeedsScreenName();
 
     render(
       <MemoryRouter initialEntries={['/screen-name']}>
         <App />
       </MemoryRouter>,
     );
-    const input = screen.getByTestId('screen-name-input');
+    const input = await screen.findByTestId('screen-name-input');
     // 65 visible characters (no surrounding whitespace).
     fireEvent.change(input, { target: { value: 'a'.repeat(65) } });
     await act(async () => {
@@ -422,10 +474,8 @@ describe('ScreenName route — form behavior', () => {
   });
 
   it('renders the localized already-set error on server 409', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(new Response('', { status: 401 }))
-      .mockResolvedValueOnce(
+    const fetchMock = stubAuthMeNeedsScreenName(
+      () =>
         new Response(
           JSON.stringify({
             error: {
@@ -435,7 +485,7 @@ describe('ScreenName route — form behavior', () => {
           }),
           { status: 409, headers: { 'content-type': 'application/json' } },
         ),
-      );
+    );
     global.fetch = fetchMock;
 
     render(
@@ -443,7 +493,7 @@ describe('ScreenName route — form behavior', () => {
         <App />
       </MemoryRouter>,
     );
-    const input = screen.getByTestId('screen-name-input');
+    const input = await screen.findByTestId('screen-name-input');
     fireEvent.change(input, { target: { value: 'alice' } });
     await act(async () => {
       fireEvent.submit(screen.getByTestId('screen-name-form'));
@@ -457,10 +507,8 @@ describe('ScreenName route — form behavior', () => {
   });
 
   it('renders the localized pending-cookie-invalid error on server 401', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(new Response('', { status: 401 }))
-      .mockResolvedValueOnce(
+    const fetchMock = stubAuthMeNeedsScreenName(
+      () =>
         new Response(
           JSON.stringify({
             error: {
@@ -470,7 +518,7 @@ describe('ScreenName route — form behavior', () => {
           }),
           { status: 401, headers: { 'content-type': 'application/json' } },
         ),
-      );
+    );
     global.fetch = fetchMock;
 
     render(
@@ -478,7 +526,7 @@ describe('ScreenName route — form behavior', () => {
         <App />
       </MemoryRouter>,
     );
-    const input = screen.getByTestId('screen-name-input');
+    const input = await screen.findByTestId('screen-name-input');
     fireEvent.change(input, { target: { value: 'alice' } });
     await act(async () => {
       fireEvent.submit(screen.getByTestId('screen-name-form'));
@@ -492,17 +540,15 @@ describe('ScreenName route — form behavior', () => {
   });
 
   it('renders the generic error on an unrecognized server error code', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(new Response('', { status: 401 }))
-      .mockResolvedValueOnce(
+    const fetchMock = stubAuthMeNeedsScreenName(
+      () =>
         new Response(
           JSON.stringify({
             error: { code: 'completely-unknown-code', message: 'something' },
           }),
           { status: 500, headers: { 'content-type': 'application/json' } },
         ),
-      );
+    );
     global.fetch = fetchMock;
 
     render(
@@ -510,7 +556,7 @@ describe('ScreenName route — form behavior', () => {
         <App />
       </MemoryRouter>,
     );
-    const input = screen.getByTestId('screen-name-input');
+    const input = await screen.findByTestId('screen-name-input');
     fireEvent.change(input, { target: { value: 'alice' } });
     await act(async () => {
       fireEvent.submit(screen.getByTestId('screen-name-form'));
@@ -523,15 +569,15 @@ describe('ScreenName route — form behavior', () => {
     });
   });
 
-  it('caps the textbox at 256 characters via maxLength', () => {
-    global.fetch = vi.fn().mockResolvedValue(new Response('', { status: 401 }));
+  it('caps the textbox at 256 characters via maxLength', async () => {
+    global.fetch = stubAuthMeNeedsScreenName();
 
     render(
       <MemoryRouter initialEntries={['/screen-name']}>
         <App />
       </MemoryRouter>,
     );
-    const input = screen.getByTestId<HTMLInputElement>('screen-name-input');
+    const input = await screen.findByTestId<HTMLInputElement>('screen-name-input');
     expect(input.maxLength).toBe(256);
   });
 });
@@ -548,11 +594,11 @@ describe('ScreenName route — form behavior', () => {
 // ────────────────────────────────────────────────────────────────────────
 describe('ScreenName route — client-side mirror of backend validation', () => {
   beforeEach(() => {
-    global.fetch = vi.fn().mockResolvedValue(new Response('', { status: 401 }));
+    global.fetch = stubAuthMeNeedsScreenName();
   });
 
   it('rejects a name containing an RLO (bidi-override) without POSTing', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response('', { status: 401 }));
+    const fetchMock = stubAuthMeNeedsScreenName();
     global.fetch = fetchMock;
 
     render(
@@ -560,7 +606,7 @@ describe('ScreenName route — client-side mirror of backend validation', () => 
         <App />
       </MemoryRouter>,
     );
-    const input = screen.getByTestId('screen-name-input');
+    const input = await screen.findByTestId('screen-name-input');
     // 'alice' + RLO + 'admin' — the audience-broadcast-spoof case from
     // F-010. The client mirror catches it before the POST.
     fireEvent.change(input, { target: { value: 'alice‮admin' } });
@@ -579,7 +625,7 @@ describe('ScreenName route — client-side mirror of backend validation', () => 
   });
 
   it('rejects a name containing a ZWJ (zero-width joiner) without POSTing', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response('', { status: 401 }));
+    const fetchMock = stubAuthMeNeedsScreenName();
     global.fetch = fetchMock;
 
     render(
@@ -587,7 +633,7 @@ describe('ScreenName route — client-side mirror of backend validation', () => 
         <App />
       </MemoryRouter>,
     );
-    const input = screen.getByTestId('screen-name-input');
+    const input = await screen.findByTestId('screen-name-input');
     fireEvent.change(input, { target: { value: 'alice‍bob' } });
     await act(async () => {
       fireEvent.submit(screen.getByTestId('screen-name-form'));
@@ -603,7 +649,7 @@ describe('ScreenName route — client-side mirror of backend validation', () => 
   });
 
   it('rejects a name containing a NUL (C0 control) without POSTing', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response('', { status: 401 }));
+    const fetchMock = stubAuthMeNeedsScreenName();
     global.fetch = fetchMock;
 
     render(
@@ -611,7 +657,7 @@ describe('ScreenName route — client-side mirror of backend validation', () => 
         <App />
       </MemoryRouter>,
     );
-    const input = screen.getByTestId('screen-name-input');
+    const input = await screen.findByTestId('screen-name-input');
     fireEvent.change(input, { target: { value: 'alice\u0000' } });
     await act(async () => {
       fireEvent.submit(screen.getByTestId('screen-name-form'));
@@ -627,10 +673,8 @@ describe('ScreenName route — client-side mirror of backend validation', () => 
   });
 
   it('POSTs the NFKC-normalized form (ligature `ﬁle` → `file`) on success', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(new Response('', { status: 401 }))
-      .mockResolvedValueOnce(
+    const fetchMock = stubAuthMeNeedsScreenName(
+      () =>
         new Response(
           JSON.stringify({
             userId: '00000000-0000-4000-8000-00000000000a',
@@ -638,16 +682,7 @@ describe('ScreenName route — client-side mirror of backend validation', () => 
           }),
           { status: 200, headers: { 'content-type': 'application/json' } },
         ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            userId: '00000000-0000-4000-8000-00000000000a',
-            screenName: 'file',
-          }),
-          { status: 200, headers: { 'content-type': 'application/json' } },
-        ),
-      );
+    );
     global.fetch = fetchMock;
 
     render(
@@ -655,7 +690,7 @@ describe('ScreenName route — client-side mirror of backend validation', () => 
         <App />
       </MemoryRouter>,
     );
-    const input = screen.getByTestId('screen-name-input');
+    const input = await screen.findByTestId('screen-name-input');
     // U+FB01 LATIN SMALL LIGATURE FI — NFKC decomposes to U+0066 U+0069.
     fireEvent.change(input, { target: { value: 'ﬁle' } });
     await act(async () => {
@@ -675,10 +710,8 @@ describe('ScreenName route — client-side mirror of backend validation', () => 
     // rule the client hasn't mirrored yet). The localized message
     // surfaces invalidCharacter — the safest fallback now that empty /
     // whitespace / too-long paths are caught client-side first.
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(new Response('', { status: 401 }))
-      .mockResolvedValueOnce(
+    const fetchMock = stubAuthMeNeedsScreenName(
+      () =>
         new Response(
           JSON.stringify({
             error: {
@@ -688,7 +721,7 @@ describe('ScreenName route — client-side mirror of backend validation', () => 
           }),
           { status: 400, headers: { 'content-type': 'application/json' } },
         ),
-      );
+    );
     global.fetch = fetchMock;
 
     render(
@@ -696,7 +729,7 @@ describe('ScreenName route — client-side mirror of backend validation', () => 
         <App />
       </MemoryRouter>,
     );
-    const input = screen.getByTestId('screen-name-input');
+    const input = await screen.findByTestId('screen-name-input');
     fireEvent.change(input, { target: { value: 'alice' } });
     await act(async () => {
       fireEvent.submit(screen.getByTestId('screen-name-form'));
@@ -728,7 +761,7 @@ describe('ScreenName route — client-side mirror of backend validation', () => 
 
 describe('ScreenName route — accessibility + helper text + focus', () => {
   beforeEach(() => {
-    global.fetch = vi.fn().mockResolvedValue(new Response('', { status: 401 }));
+    global.fetch = stubAuthMeNeedsScreenName();
   });
 
   it('renders the character-count helper with 0/64 on mount', async () => {
@@ -748,7 +781,7 @@ describe('ScreenName route — accessibility + helper text + focus', () => {
         <App />
       </MemoryRouter>,
     );
-    const input = screen.getByTestId('screen-name-input');
+    const input = await screen.findByTestId('screen-name-input');
     fireEvent.change(input, { target: { value: '  alice  ' } });
     await waitFor(() => {
       // Helper reports trimmed length so the user sees what the server
@@ -757,13 +790,13 @@ describe('ScreenName route — accessibility + helper text + focus', () => {
     });
   });
 
-  it('sets aria-describedby on the input pointing to helper + error ids', () => {
+  it('sets aria-describedby on the input pointing to helper + error ids', async () => {
     render(
       <MemoryRouter initialEntries={['/screen-name']}>
         <App />
       </MemoryRouter>,
     );
-    const input = screen.getByTestId<HTMLInputElement>('screen-name-input');
+    const input = await screen.findByTestId<HTMLInputElement>('screen-name-input');
     expect(input.getAttribute('aria-describedby')).toBe('screen-name-helper screen-name-error');
   });
 
@@ -773,7 +806,7 @@ describe('ScreenName route — accessibility + helper text + focus', () => {
         <App />
       </MemoryRouter>,
     );
-    const input = screen.getByTestId<HTMLInputElement>('screen-name-input');
+    const input = await screen.findByTestId<HTMLInputElement>('screen-name-input');
     expect(input.getAttribute('aria-invalid')).toBe('false');
     fireEvent.change(input, { target: { value: 'alice‮admin' } });
     await act(async () => {
@@ -790,13 +823,13 @@ describe('ScreenName route — accessibility + helper text + focus', () => {
     });
   });
 
-  it('sets autoComplete=off and inputMode=text on the input', () => {
+  it('sets autoComplete=off and inputMode=text on the input', async () => {
     render(
       <MemoryRouter initialEntries={['/screen-name']}>
         <App />
       </MemoryRouter>,
     );
-    const input = screen.getByTestId<HTMLInputElement>('screen-name-input');
+    const input = await screen.findByTestId<HTMLInputElement>('screen-name-input');
     // A screen name is not a stored credential; off is the right hint.
     expect(input.getAttribute('autocomplete')).toBe('off');
     // Mobile keyboard hint: plain text (not numeric, not email, etc.).
@@ -809,7 +842,7 @@ describe('ScreenName route — accessibility + helper text + focus', () => {
         <App />
       </MemoryRouter>,
     );
-    const input = screen.getByTestId('screen-name-input');
+    const input = await screen.findByTestId('screen-name-input');
     fireEvent.change(input, { target: { value: 'alice\u0000' } });
     await act(async () => {
       fireEvent.submit(screen.getByTestId('screen-name-form'));
@@ -841,17 +874,15 @@ describe('ScreenName route — accessibility + helper text + focus', () => {
   });
 
   it('returns focus to the input after a server-side error', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(new Response('', { status: 401 }))
-      .mockResolvedValueOnce(
+    const fetchMock = stubAuthMeNeedsScreenName(
+      () =>
         new Response(
           JSON.stringify({
             error: { code: 'screen-name-already-set', message: 'already set' },
           }),
           { status: 409, headers: { 'content-type': 'application/json' } },
         ),
-      );
+    );
     global.fetch = fetchMock;
 
     render(
@@ -859,7 +890,7 @@ describe('ScreenName route — accessibility + helper text + focus', () => {
         <App />
       </MemoryRouter>,
     );
-    const input = screen.getByTestId<HTMLInputElement>('screen-name-input');
+    const input = await screen.findByTestId<HTMLInputElement>('screen-name-input');
     fireEvent.change(input, { target: { value: 'alice' } });
     // Click the submit button (focus shifts to it from the input).
     const submitBtn = screen.getByTestId<HTMLButtonElement>('screen-name-submit');

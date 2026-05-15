@@ -59,6 +59,13 @@ task moderator_ui "Moderator UI" {
       depends !mod_auth_flow
       note "Refinement: tasks/refinements/moderator-ui/mod_screen_name_setup.md"
     }
+    task mod_route_auth_gate "Route auth gate (unauthenticated redirect)" {
+      effort 0.5d
+      allocate team
+      complete 100
+      depends !mod_auth_flow, !mod_screen_name_setup, !mod_state_management
+      note "Refinement: tasks/refinements/moderator-ui/mod_route_auth_gate.md"
+    }
   }
 
   task mod_layout "Three-pane layout" {
