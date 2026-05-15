@@ -35,16 +35,16 @@ Refinements exist at `tasks/refinements/<area>/<task_name>.md` (path convention 
 
 ## Loop shape — one WBS task per iteration
 
-Each iteration is five sub-agent calls. The orchestrator drives the sequence, decides which task to dispatch, and tracks state via `TaskCreate`/`TaskUpdate`. It does no other work directly.
+Each iteration is three sub-agent calls. The orchestrator drives the sequence, decides which task to dispatch, and tracks state via `TaskCreate`/`TaskUpdate`. It does no other work directly.
 
 1. **Pick next task** — the orchestrator selects from its in-context WBS (no sub-agent).
 2. **Write refinement** — `Refinement-Writer` sub-agent.
 3. **Implement** — `Implementer` sub-agent (runs its own verification before returning).
-4. **Run ritual + commit + push** — `Closer` sub-agent.
-5. **Watch CI** — `CI-Watcher` sub-agent.
-6. **Fix CI** (conditional, repeat until green) — `CI-Fixer` sub-agent → loop back to step 5.
+4. **Run ritual + commit (local only)** — `Closer` sub-agent.
 
-When step 5 returns green, the orchestrator updates its in-context WBS model (the just-closed leaf is now `complete 100`; check whether that closes its parent milestone) and starts the next iteration at step 1.
+When the Closer returns, the orchestrator updates its in-context WBS model (the just-closed leaf is now `complete 100`; check whether that closes its parent milestone) and starts the next iteration at step 1.
+
+**The orchestrator does NOT push and does NOT watch CI.** The human user pushes to `origin/main` manually, in batches, and observes CI themselves. Sub-agents commit locally only. If the user reports a CI failure on a prior commit, that gets dispatched ad-hoc as a fix task — not as part of the orchestrator's loop.
 
 Stop when no eligible leaf remains in M4..M8 (mission complete), or when a sub-agent reports an irrecoverable infrastructure problem.
 
@@ -74,6 +74,8 @@ Brief:
 >
 > When the refinement surfaces an architectural question not already settled by an ADR, make the most defensible call yourself and document the alternatives + rationale under Decisions. Bias toward: reusing existing seams, the simpler abstraction with one or two call sites today, test coverage that pins observable behavior, and patterns the predecessor refinements established. Genuinely new ADR-level decisions (new dependency, new architectural seam, security-relevant trade-off) require an ADR — write one in `docs/adr/` following `docs/adr/README.md` and reference it from the refinement.
 >
+> **For UI-stream tasks** (`moderator_ui.*`, `participant_ui.*`, `audience.*`, `replay_test.*`): scope a Playwright e2e spec under Acceptance criteria by default. If the component is not yet reachable from any user flow, you may defer the e2e — but you MUST then (a) say so explicitly under Acceptance criteria, naming the unit/component coverage that stands in, and (b) identify the future WBS task(s) that will make this component reachable and that MUST inherit the deferred e2e debt. See the "UI-stream e2e policy" section of `ORCHESTRATOR.md` for the full rule. When this task IS the wiring task for a previously-deferred component, search the WBS and sibling refinements for "deferred e2e" markers and include those scenarios in your scoped spec.
+>
 > Leave the `## Status` heading present with placeholder text `_pending implementation_`. The Closer step appends the real Status block.
 >
 > Do NOT edit any file outside `tasks/refinements/` and (when an ADR is needed) `docs/adr/`. Do NOT touch the `.tji` files — the orchestrator owns the WBS shape; the refinement document is your output.
@@ -88,7 +90,7 @@ Brief:
 >
 > Hard rules:
 >
-> - No e2e edits unless the refinement explicitly scopes them.
+> - No e2e edits unless the refinement explicitly scopes them. **For UI-stream tasks**: the refinement should either scope a Playwright spec OR explicitly mark e2e deferred-because-not-yet-reachable. If a UI-stream refinement is silent on e2e, stop and ask the orchestrator to re-dispatch the Refinement-Writer — do not silently land without e2e.
 > - No new i18n catalog keys unless the refinement scopes them.
 > - No new dependencies without an ADR (Refinement-Writer should have produced one; if a fresh dependency surfaces during implementation, stop and report — do not add it autonomously).
 > - No `--no-verify`, no hook bypass, no test weakening.
@@ -107,7 +109,7 @@ Must return (≤ 8 lines): files created / edited (paths only), Vitest test-coun
 
 Brief:
 
-> Run the task-completion ritual for `<task_id>` per `tasks/refinements/README.md#task-completion-ritual`, then commit and push.
+> Run the task-completion ritual for `<task_id>` per `tasks/refinements/README.md#task-completion-ritual`, then commit locally. **Do NOT push** — the human user batches pushes themselves.
 >
 > Ritual:
 >
@@ -132,56 +134,17 @@ Brief:
 > Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 > ```
 >
-> Push:
+> **Do NOT run `git push`.** The commit stays on local `main`; the human user pushes in batches at their own cadence. If you call `git push`, the auto-mode classifier will soft-block it and your work returns blocked — wasting an iteration. Just commit and stop.
 >
-> ```
-> git push origin main
-> ```
->
-> No PR; main is the integration branch per established cadence. Do not use `--no-verify`. If the pre-commit hook fails, fix the underlying issue and create a NEW commit (not `--amend`).
+> Do not use `--no-verify`. If the pre-commit hook fails, fix the underlying issue and create a NEW commit (not `--amend`).
 
-Must return (≤ 6 lines): commit SHA, push outcome, `complete 100` lines added (which task ids), milestone propagation done-yes-or-no (and which milestone if yes).
+Must return (≤ 5 lines): commit SHA, `complete 100` lines added (which task ids), milestone propagation done-yes-or-no (and which milestone if yes). **Do NOT push** — pushing to `origin/main` is the human user's responsibility; they batch pushes and watch CI themselves.
 
-### 4. CI-Watcher
+### CI is out of the orchestrator's loop
 
-Brief:
+The orchestrator does not dispatch a CI-Watcher or a CI-Fixer. The human user pushes commits to `origin/main` in batches and watches CI themselves. If they report a CI failure on a previously-closed task, that becomes an ad-hoc fix task dispatched outside the normal loop — typically as a one-off `Agent` call briefed with the failing spec and the relevant refinement. Such a fix lands as `fix(<area>): <summary>` and stays separate from the WBS task's original commit.
 
-> Watch the CI run for the just-pushed commit `<commit SHA>` on `main`. Use `gh run list --branch main --limit 1` to identify the run id, then poll `gh run view <id>` until the conclusion is non-null. Total wait ceiling: 30 minutes; if it hasn't concluded by then, report `timeout` and stop polling.
->
-> If conclusion is `success`, return `green`.
->
-> If conclusion is `failure` (or `cancelled` / `timed_out`), identify the failing job id(s) and extract the first 60 lines around the actual failure from each (skip action-image preamble and Node-deprecation warnings).
->
-> **Test output handling (mandatory):** dump the failing job's log to a file (`gh run view <id> --log-failed > /tmp/ci-<id>.log 2>&1` or `gh run view --job <jobid> --log > /tmp/ci-<jobid>.log 2>&1`) and then dispatch an `Explore` sub-agent with the file path asking it to extract the failure window. Do NOT pipe to `tail`. Do NOT read the raw log file inline — even one full job log can blow the context.
-
-Must return (≤ 12 lines): run id, conclusion, failing job ids (if any), the extracted failure excerpt verbatim — keep tight; this is the only place log content reaches the orchestrator's context. Even here, prefer "tests failed in spec X with error Y" over raw log dumps.
-
-### 5. CI-Fixer (conditional)
-
-Brief:
-
-> CI run `<run id>` failed on commit `<commit SHA>`. Failing job(s): `<job ids>`. Failure excerpt:
->
-> ```
-> <CI-Watcher's excerpt>
-> ```
->
-> Investigate locally where possible (most CI failures reproduce against `make up` + the same suite the CI step runs). Fix the root cause and verify locally with the same commands the CI step uses.
->
-> **Test output handling (mandatory):** redirect every reproduction command's output to a file (`<command> > /tmp/<run>.log 2>&1`) and use an `Explore` sub-agent to read it. Do NOT pipe to `tail`. Do NOT read the raw log file inline — Playwright + compose-stack output is the worst offender for blowing context.
->
-> Hard rules:
->
-> - Never disable a failing test to make CI green.
-> - Never weaken an assertion to make CI green.
-> - Never push to skip CI or change the workflow to silence the failure unless the workflow change IS the substantive fix.
-> - Fix the root cause in production code, refinement, or test infrastructure — not the symptom.
->
-> Commit as `fix(ci): <one-line summary>` (or `fix(<area>): ...` if the fix lives outside CI config). Push to `main`. Same commit-message shape as the Closer.
-
-Must return (≤ 8 lines): root-cause one-liner, files changed, commit SHA, push outcome. The orchestrator loops back to CI-Watcher with the new commit.
-
-If three consecutive CI-Fixer iterations on the same task have not produced a green run, the orchestrator surfaces this via `AskUserQuestion`, leaves the WBS unchanged (the failing task does NOT get `complete 100`), and moves on to the next iteration's task pick. The skipped task will be picked up again later if its CI eventually goes green via a different fix path, or surfaced to the user as a deferred item at mission end.
+Rationale: this orchestrator was built as a code-shipping loop, not a CI-monitoring loop. Watching a 6–20-minute CI run is wall-clock waste for an automated agent; the human user already does it at a useful cadence.
 
 ## Orchestrator self-tracking
 
@@ -190,11 +153,10 @@ Use `TaskCreate`/`TaskUpdate` to maintain a tiny progress list per iteration. On
 Example shape for one iteration:
 
 ```
-#1 Pick next task <id>             status: completed
-#2 Write refinement                 status: completed
-#3 Implement                        status: in_progress
-#4 Run ritual + commit + push      status: pending
-#5 Watch CI                         status: pending
+#1 Pick next task <id>          status: completed
+#2 Write refinement              status: completed
+#3 Implement                     status: in_progress
+#4 Run ritual + commit (local)   status: pending
 ```
 
 Reset the list at the start of each iteration (mark prior tasks `deleted` once they're no longer relevant).
@@ -211,8 +173,7 @@ The orchestrator does NOT re-read the `.tji` files to verify — the Closer is t
 ## Stop conditions
 
 - **Mission complete** — no eligible leaf remains in M4..M8. Orchestrator dispatches one final `End-of-Mission` sub-agent (brief in §End-of-mission below), then stops.
-- **Three-iteration CI stuck** — see CI-Fixer policy above. Surface via `AskUserQuestion`, continue to next task.
-- **Tooling gap** — a sub-agent reports `gh`, `docker`, `tj3`, or `pnpm` is unusable. Surface via `AskUserQuestion`, halt until user replies.
+- **Tooling gap** — a sub-agent reports `docker`, `tj3`, or `pnpm` is unusable. Surface via `AskUserQuestion`, halt until user replies.
 - **Corrupted state** — a sub-agent reports the working tree, the git index, or the WBS itself is in an unexpected shape. Surface via `AskUserQuestion`, halt.
 
 The orchestrator does NOT stop for routine design questions; those are decided inside the Refinement-Writer per the "make the most defensible call" rule.
@@ -225,7 +186,6 @@ The orchestrator does not verify these itself; the first sub-agent that needs ea
 - Node 20 LTS.
 - Docker + Docker Compose (`make up` works).
 - Playwright Chromium installed locally (`pnpm exec playwright install chromium`). Without it, `make test` silently no-ops the browser specs — the trap that hid `mod_route_auth_gate`'s failing assertion before. Sub-agents that run Playwright confirm it's installed before invoking.
-- `gh` CLI authenticated (`gh auth status` ok).
 - `tj3` (TaskJuggler) available.
 
 ## Reference paths passed to sub-agents
@@ -244,20 +204,36 @@ Per-iteration, the orchestrator also passes:
 - The refinement path (existing or to-be-created).
 - The predecessor task ids + their refinement paths.
 
+## UI-stream e2e policy — passed through to every UI-stream brief
+
+Applies to every task under `moderator_ui.*`, `participant_ui.*`, `audience.*`, `replay_test.*`.
+
+**Default — e2e is in scope:** the Refinement-Writer scopes a Playwright spec under Acceptance criteria; the Implementer lands it; the spec exercises the user-visible behavior the task adds.
+
+**Deferred-e2e exception — when the component is not yet reachable:** if the task creates a component or capability that no user flow currently reaches (no route renders it; no event surface invokes it; only unit/component tests exercise it), the refinement may defer the Playwright spec. In that case the refinement MUST:
+
+1. State explicitly under Acceptance criteria that the e2e is deferred *because the surface is not yet reachable*, and name the unit/component coverage that takes its place for now.
+2. Identify the future WBS task(s) whose work will make this component reachable. Those tasks' refinements MUST scope Playwright coverage that exercises the now-visible behavior — including any "deferred-e2e" debt from prior tasks pointing at the wiring task.
+
+**Wiring tasks inherit deferred e2e debt.** When a UI-stream task wires a previously-deferred component into a reachable flow (adds a route, hooks an event, mounts a subtree), the Refinement-Writer reads the WBS for older `note` lines or refinement Status blocks that flag deferred e2e against this wiring task and includes those scenarios in the new Playwright spec.
+
+**Visual-regression is not a substitute for Playwright.** A `mod_vr_*` / `aud_vr_*` / `part_vr_*` sibling task captures pixel-level appearance — Playwright captures *behavior*. Both can coexist; only Playwright satisfies the e2e policy.
+
 ## Test output handling — passed through to every brief that runs a verification
 
-When a sub-agent runs tests, builds, lint/typecheck, `gh run view`, `docker compose logs`, or any other command whose stdout/stderr is large or unstructured:
+When a sub-agent runs tests, builds, lint/typecheck, `docker compose logs`, or any other command whose stdout/stderr is large or unstructured:
 
 - **Redirect to a file**: `<command> > /tmp/<run>.log 2>&1` (or a path under the project if longer-lived).
 - **Inspect via an `Explore` sub-agent**: spawn one with the log path and a tight question ("did the run pass? if not, paste the failing assertions / stack frames verbatim"). The Explore agent's report comes back as the tool result — the raw log never enters the parent's context.
 - **Never pipe to `tail`** — it truncates blindly and can hide the real failure above the tail window.
 - **Never read the raw log file directly** with `Read` from a verification-running sub-agent — that defeats the point. Use `Explore`.
 
-This applies to the Implementer (running `pnpm run check`, `test:smoke`, Playwright, etc.), the CI-Watcher (`gh run view` log extraction), the CI-Fixer (local reproduction), and any other sub-agent that runs a noisy command. Briefs below already cite this rule; surface it again in any future brief that runs verification.
+This applies to the Implementer (running `pnpm run check`, `test:smoke`, Playwright, etc.) and any other sub-agent that runs a noisy command. Briefs below already cite this rule; surface it again in any future brief that runs verification.
 
 ## What sub-agents must NOT do (passed through to every brief)
 
-- Don't open PRs. Push-to-main per task.
+- Don't open PRs. Commit locally; the human user pushes to `origin/main` in batches.
+- Don't run `git push` — the auto-mode classifier soft-blocks sub-agent pushes to the default branch, and pushing isn't the orchestrator's job anyway.
 - Don't bundle two tasks in one commit. One leaf = one commit.
 - Don't skip the ritual. Both `complete 100` and `## Status` are load-bearing.
 - Don't touch `deployment.*`.
@@ -266,11 +242,12 @@ This applies to the Implementer (running `pnpm run check`, `test:smoke`, Playwri
 - Don't edit `.env` in place; use `cp .env.example .env` plus an overrides append.
 - Don't push secrets. `.env.example` is the only env file in the repo; `.env` is gitignored.
 - Don't pipe verification commands to `tail` or read raw test/log output inline — see "Test output handling" above.
+- For UI-stream tasks (`moderator_ui.*`, `participant_ui.*`, `audience.*`, `replay_test.*`): don't ship without a Playwright e2e spec unless the refinement explicitly marks e2e deferred-because-not-yet-reachable AND names the future wiring task that inherits the debt. See "UI-stream e2e policy" above.
 
 ## End-of-mission
 
 When the orchestrator's WBS model shows no eligible leaf remains in M4..M8, dispatch one last sub-agent:
 
-> Update `DESIGN.md`'s Status section with a one-paragraph note: "MVP scope complete (M1–M8); M9 deployment + M10 first show pending human-driven work." Do not rewrite the surrounding sections. Commit as `docs: DESIGN.md — mark MVP scope complete` and push to `main`.
+> Update `DESIGN.md`'s Status section with a one-paragraph note: "MVP scope complete (M1–M8); M9 deployment + M10 first show pending human-driven work." Do not rewrite the surrounding sections. Commit (local only — do NOT push) as `docs: DESIGN.md — mark MVP scope complete`.
 
 Then print a final summary listing the closed tasks + green milestones + deferred questions (if any) and stop.
