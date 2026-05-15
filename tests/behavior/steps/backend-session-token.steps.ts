@@ -182,7 +182,7 @@ When('I GET \\/auth\\/me with the session cookie', async function (this: AConver
   assert.ok(cookieValue, 'no session cookie captured — preceding Given missing');
   const response = await app.inject({
     method: 'GET',
-    url: '/auth/me',
+    url: '/api/auth/me',
     headers: { cookie: `${SESSION_COOKIE_NAME}=${cookieValue}` },
   });
   s.lastResponse = {
@@ -196,7 +196,7 @@ When('I GET \\/auth\\/me without any session cookie', async function (this: ACon
   const s = scratch(this);
   const app = s.authApp;
   assert.ok(app, 'auth app not initialized');
-  const response = await app.inject({ method: 'GET', url: '/auth/me' });
+  const response = await app.inject({ method: 'GET', url: '/api/auth/me' });
   s.lastResponse = {
     statusCode: response.statusCode,
     body: response.body,
@@ -212,7 +212,7 @@ When('I POST \\/auth\\/logout with the session cookie', async function (this: AC
   assert.ok(cookieValue, 'no session cookie captured — preceding Given missing');
   const response = await app.inject({
     method: 'POST',
-    url: '/auth/logout',
+    url: '/api/auth/logout',
     headers: { cookie: `${SESSION_COOKIE_NAME}=${cookieValue}` },
   });
   s.lastResponse = {

@@ -107,7 +107,7 @@ const VALID_OIDC_CONFIG = {
   clientId: 'aconversa-app-dev',
   clientSecret: 'aconversa-app-dev-secret',
   appBaseUrl: 'http://localhost:3000',
-  redirectUri: 'http://localhost:3000/auth/callback',
+  redirectUri: 'http://localhost:3000/api/auth/callback',
 } as const;
 
 // ============================================================
@@ -632,7 +632,7 @@ describe('GET /auth/me', () => {
     const token = await signSessionToken({ sub: userId }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'GET',
-      url: '/auth/me',
+      url: '/api/auth/me',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     expect(response.statusCode).toBe(200);
@@ -646,7 +646,7 @@ describe('GET /auth/me', () => {
     // `auth-session-invalid`. After `auth_middleware` landed, the
     // shared preHandler throws `auth-required` for every 401 path.
     // See tasks/refinements/backend/auth_middleware.md Decisions.
-    const response = await built.app.inject({ method: 'GET', url: '/auth/me' });
+    const response = await built.app.inject({ method: 'GET', url: '/api/auth/me' });
     expect(response.statusCode).toBe(401);
     const body = response.json<{ error?: { code?: string } }>();
     expect(body.error?.code).toBe('auth-required');
@@ -659,7 +659,7 @@ describe('GET /auth/me', () => {
     const tampered = `${parts[0]}.${parts[1]}.${fakeSig}`;
     const response = await built.app.inject({
       method: 'GET',
-      url: '/auth/me',
+      url: '/api/auth/me',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${tampered}` },
     });
     expect(response.statusCode).toBe(401);
@@ -669,7 +669,7 @@ describe('GET /auth/me', () => {
     const token = await signSessionToken({ sub: userId }, TEST_SECRET, { now: () => 1_000 });
     const response = await built.app.inject({
       method: 'GET',
-      url: '/auth/me',
+      url: '/api/auth/me',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     expect(response.statusCode).toBe(401);
@@ -682,7 +682,7 @@ describe('GET /auth/me', () => {
     );
     const response = await built.app.inject({
       method: 'GET',
-      url: '/auth/me',
+      url: '/api/auth/me',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     expect(response.statusCode).toBe(401);
@@ -691,7 +691,7 @@ describe('GET /auth/me', () => {
   it('returns 401 when the cookie carries a malformed string', async () => {
     const response = await built.app.inject({
       method: 'GET',
-      url: '/auth/me',
+      url: '/api/auth/me',
       headers: { cookie: `${SESSION_COOKIE_NAME}=not-a-jwt` },
     });
     expect(response.statusCode).toBe(401);
@@ -714,7 +714,7 @@ describe('POST /auth/logout', () => {
   });
 
   it('clears the cookie even when no cookie is present (idempotent)', async () => {
-    const response = await built.app.inject({ method: 'POST', url: '/auth/logout' });
+    const response = await built.app.inject({ method: 'POST', url: '/api/auth/logout' });
     expect(response.statusCode).toBe(204);
     const setCookie = response.headers['set-cookie'];
     const setCookieStr = Array.isArray(setCookie) ? setCookie.join(',') : String(setCookie);
@@ -727,7 +727,7 @@ describe('POST /auth/logout', () => {
     const token = await signSessionToken({ sub: userId }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'POST',
-      url: '/auth/logout',
+      url: '/api/auth/logout',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     expect(response.statusCode).toBe(204);
@@ -740,7 +740,7 @@ describe('POST /auth/logout', () => {
   it('clears the cookie when given an invalid cookie (still 204)', async () => {
     const response = await built.app.inject({
       method: 'POST',
-      url: '/auth/logout',
+      url: '/api/auth/logout',
       headers: { cookie: `${SESSION_COOKIE_NAME}=garbage` },
     });
     expect(response.statusCode).toBe(204);
@@ -881,7 +881,7 @@ describe('POST /auth/logout — server-side revocation via jti + denylist (G-005
       // verifier rejects) would mask the load-bearing replay below.
       const preLogout = await app.inject({
         method: 'GET',
-        url: '/auth/me',
+        url: '/api/auth/me',
         headers: { cookie: cookieHeader },
       });
       expect(preLogout.statusCode).toBe(200);
@@ -896,7 +896,7 @@ describe('POST /auth/logout — server-side revocation via jti + denylist (G-005
       // replay it.
       const logout = await app.inject({
         method: 'POST',
-        url: '/auth/logout',
+        url: '/api/auth/logout',
         headers: { cookie: cookieHeader },
       });
       expect(logout.statusCode).toBe(204);
@@ -915,7 +915,7 @@ describe('POST /auth/logout — server-side revocation via jti + denylist (G-005
       // and collapses to the standard `auth-required` envelope.
       const replay = await app.inject({
         method: 'GET',
-        url: '/auth/me',
+        url: '/api/auth/me',
         headers: { cookie: cookieHeader },
       });
       expect(replay.statusCode).toBe(401);
@@ -948,10 +948,10 @@ describe('GET /auth/callback', () => {
       authCodeGrantSub: 'alice',
     });
     try {
-      await built.app.inject({ method: 'GET', url: '/auth/login' });
+      await built.app.inject({ method: 'GET', url: '/api/auth/login' });
       const response = await built.app.inject({
         method: 'GET',
-        url: '/auth/callback?code=AUTHCODE&state=state-1',
+        url: '/api/auth/callback?code=AUTHCODE&state=state-1',
       });
       expect(response.statusCode).toBe(302);
       expect(response.headers['location']).toBe(VALID_OIDC_CONFIG.appBaseUrl);
@@ -980,10 +980,10 @@ describe('GET /auth/callback', () => {
     // No seeded row — the upsert inserts fresh with `<pending>`.
     const built = await buildApp({ authCodeGrantSub: 'bob' });
     try {
-      await built.app.inject({ method: 'GET', url: '/auth/login' });
+      await built.app.inject({ method: 'GET', url: '/api/auth/login' });
       const response = await built.app.inject({
         method: 'GET',
-        url: '/auth/callback?code=AUTHCODE&state=state-1',
+        url: '/api/auth/callback?code=AUTHCODE&state=state-1',
       });
       expect(response.statusCode).toBe(200);
       const body = response.json<{
@@ -1028,7 +1028,7 @@ describe('POST /auth/screen-name — session cookie issuance', () => {
       const cookieValue = signPendingCookie({ userId, expiresAt }, TEST_SECRET);
       const response = await built.app.inject({
         method: 'POST',
-        url: '/auth/screen-name',
+        url: '/api/auth/screen-name',
         headers: { cookie: `${PENDING_COOKIE_NAME}=${cookieValue}` },
         payload: { screenName: 'carol' },
       });
@@ -1094,7 +1094,7 @@ describe('Cache-Control: no-store on identity endpoints (G-019)', () => {
       const token = await signSessionToken({ sub: aliceId }, TEST_SECRET);
       const response = await built.app.inject({
         method: 'GET',
-        url: '/auth/me',
+        url: '/api/auth/me',
         headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
       });
       expect(response.statusCode).toBe(200);
@@ -1114,7 +1114,7 @@ describe('Cache-Control: no-store on identity endpoints (G-019)', () => {
     // refactor that adds a `headers({})` reset.
     const built = await buildApp({ initialRows: [] });
     try {
-      const response = await built.app.inject({ method: 'GET', url: '/auth/me' });
+      const response = await built.app.inject({ method: 'GET', url: '/api/auth/me' });
       expect(response.statusCode).toBe(401);
       expect(response.headers['cache-control']).toBe('no-store');
     } finally {
@@ -1125,7 +1125,7 @@ describe('Cache-Control: no-store on identity endpoints (G-019)', () => {
   it('POST /auth/logout — 204 carries Cache-Control: no-store', async () => {
     const built = await buildApp({ initialRows: [] });
     try {
-      const response = await built.app.inject({ method: 'POST', url: '/auth/logout' });
+      const response = await built.app.inject({ method: 'POST', url: '/api/auth/logout' });
       expect(response.statusCode).toBe(204);
       expect(response.headers['cache-control']).toBe('no-store');
     } finally {
@@ -1149,7 +1149,7 @@ describe('Cache-Control: no-store on identity endpoints (G-019)', () => {
       const cookieValue = signPendingCookie({ userId, expiresAt }, TEST_SECRET);
       const response = await built.app.inject({
         method: 'POST',
-        url: '/auth/screen-name',
+        url: '/api/auth/screen-name',
         headers: { cookie: `${PENDING_COOKIE_NAME}=${cookieValue}` },
         payload: { screenName: 'dave' },
       });
@@ -1174,10 +1174,10 @@ describe('Cache-Control: no-store on identity endpoints (G-019)', () => {
       authCodeGrantSub: 'alice',
     });
     try {
-      await built.app.inject({ method: 'GET', url: '/auth/login' });
+      await built.app.inject({ method: 'GET', url: '/api/auth/login' });
       const response = await built.app.inject({
         method: 'GET',
-        url: '/auth/callback?code=AUTHCODE&state=state-1',
+        url: '/api/auth/callback?code=AUTHCODE&state=state-1',
       });
       expect(response.statusCode).toBe(302);
       expect(response.headers['cache-control']).toBe('no-store');
@@ -1189,10 +1189,10 @@ describe('Cache-Control: no-store on identity endpoints (G-019)', () => {
   it('GET /auth/callback — new-user 200 carries Cache-Control: no-store', async () => {
     const built = await buildApp({ authCodeGrantSub: 'eve' });
     try {
-      await built.app.inject({ method: 'GET', url: '/auth/login' });
+      await built.app.inject({ method: 'GET', url: '/api/auth/login' });
       const response = await built.app.inject({
         method: 'GET',
-        url: '/auth/callback?code=AUTHCODE&state=state-1',
+        url: '/api/auth/callback?code=AUTHCODE&state=state-1',
       });
       expect(response.statusCode).toBe(200);
       expect(response.headers['cache-control']).toBe('no-store');
@@ -1208,7 +1208,7 @@ describe('Cache-Control: no-store on identity endpoints (G-019)', () => {
     // the directive and clarifies the design boundary.
     const built = await buildApp({ initialRows: [] });
     try {
-      const response = await built.app.inject({ method: 'GET', url: '/auth/login' });
+      const response = await built.app.inject({ method: 'GET', url: '/api/auth/login' });
       expect(response.statusCode).toBe(302);
       // No assertion of presence — the header may legitimately be absent.
       // We instead pin that it is NOT 'no-store' (i.e., either absent or

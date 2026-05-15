@@ -328,7 +328,7 @@ describe('Pino redact end-to-end log capture', () => {
       {
         req: {
           method: 'GET',
-          url: '/auth/me',
+          url: '/api/auth/me',
           headers: {
             cookie: 'aconversa-session=abc.def.ghi',
             'user-agent': 'vitest-client/1.0',
@@ -344,7 +344,7 @@ describe('Pino redact end-to-end log capture', () => {
     expect(line).toContain('[redacted]');
     // Non-sensitive sibling fields must pass through.
     expect(line).toContain('"method":"GET"');
-    expect(line).toContain('"url":"/auth/me"');
+    expect(line).toContain('"url":"/api/auth/me"');
     expect(line).toContain('"user-agent":"vitest-client/1.0"');
   });
 
@@ -423,11 +423,11 @@ describe('Pino redact end-to-end log capture', () => {
     const stream = createCaptureStream();
     const logger = buildProdLogger(stream);
 
-    logger.info({ req: { method: 'DELETE', url: '/sessions/abc' } }, 'request');
+    logger.info({ req: { method: 'DELETE', url: '/api/sessions/abc' } }, 'request');
 
     const line = stream.lines[0]!;
     expect(line).toContain('"method":"DELETE"');
-    expect(line).toContain('"url":"/sessions/abc"');
+    expect(line).toContain('"url":"/api/sessions/abc"');
     // The line should not contain the censor marker — nothing was
     // redacted on this call.
     expect(line).not.toContain('[redacted]');

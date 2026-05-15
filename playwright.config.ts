@@ -225,7 +225,7 @@ export default defineConfig({
       },
     },
     // Create-session whole-flow e2e (mod_create_session_form). Drives
-    // login → /sessions/new → POST /sessions → navigate to
+    // login → /sessions/new → POST /api/sessions → navigate to
     // /sessions/<id>/operate, asserting the operate route + graph
     // canvas mount. Per ORCHESTRATOR.md 28a71f9 this spec is the gate
     // for the moderator UI stream once the form lands.

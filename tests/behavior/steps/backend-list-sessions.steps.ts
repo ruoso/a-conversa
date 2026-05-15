@@ -143,7 +143,7 @@ When('I GET \\/sessions', async function (this: AConversaWorld) {
   assert.ok(cookieValue, 'no session cookie captured — preceding Given missing');
   const response = await app.inject({
     method: 'GET',
-    url: '/sessions',
+    url: '/api/sessions',
     headers: { cookie: `${SESSION_COOKIE_NAME}=${cookieValue}` },
   });
   s.lastResponse = {
@@ -170,7 +170,7 @@ When(
     assert.ok(app, 'sessions app not initialized — Background step missing');
     const response = await app.inject({
       method: 'GET',
-      url: '/sessions',
+      url: '/api/sessions',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     s.lastResponse = {

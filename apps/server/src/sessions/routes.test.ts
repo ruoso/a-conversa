@@ -705,7 +705,7 @@ describe('POST /sessions — successful creation', () => {
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'POST',
-      url: '/sessions',
+      url: '/api/sessions',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
       payload: { topic: 'Is the moon made of cheese?' },
     });
@@ -736,7 +736,7 @@ describe('POST /sessions — successful creation', () => {
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'POST',
-      url: '/sessions',
+      url: '/api/sessions',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
       payload: { topic: 'A debate', privacy: 'private' },
     });
@@ -791,7 +791,7 @@ describe('POST /sessions — successful creation', () => {
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'POST',
-      url: '/sessions',
+      url: '/api/sessions',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
       payload: { topic: 'Hello' },
     });
@@ -827,7 +827,7 @@ describe('POST /sessions — auth gate', () => {
   it('returns 401 auth-required when no session cookie is present', async () => {
     const response = await built.app.inject({
       method: 'POST',
-      url: '/sessions',
+      url: '/api/sessions',
       payload: { topic: 'No cookie here' },
     });
     expect(response.statusCode).toBe(401);
@@ -849,7 +849,7 @@ describe('POST /sessions — auth gate', () => {
     const token = await signSessionToken({ sub: BEN_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'POST',
-      url: '/sessions',
+      url: '/api/sessions',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
       payload: { topic: 'Ghost user' },
     });
@@ -884,7 +884,7 @@ describe('POST /sessions — body validation', () => {
   it('returns 400 when the body omits topic', async () => {
     const response = await built.app.inject({
       method: 'POST',
-      url: '/sessions',
+      url: '/api/sessions',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
       payload: {},
     });
@@ -901,7 +901,7 @@ describe('POST /sessions — body validation', () => {
     const tooLong = 'x'.repeat(257);
     const response = await built.app.inject({
       method: 'POST',
-      url: '/sessions',
+      url: '/api/sessions',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
       payload: { topic: tooLong },
     });
@@ -914,7 +914,7 @@ describe('POST /sessions — body validation', () => {
   it('returns 400 when privacy is outside the enum', async () => {
     const response = await built.app.inject({
       method: 'POST',
-      url: '/sessions',
+      url: '/api/sessions',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
       payload: { topic: 'OK topic', privacy: 'secret' },
     });
@@ -927,7 +927,7 @@ describe('POST /sessions — body validation', () => {
   it('returns 400 when topic is an empty string', async () => {
     const response = await built.app.inject({
       method: 'POST',
-      url: '/sessions',
+      url: '/api/sessions',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
       payload: { topic: '' },
     });
@@ -1010,7 +1010,7 @@ describe('GET /sessions — visibility gate and lifecycle filter', () => {
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'GET',
-      url: '/sessions',
+      url: '/api/sessions',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     expect(response.statusCode).toBe(200);
@@ -1033,7 +1033,7 @@ describe('GET /sessions — visibility gate and lifecycle filter', () => {
       ],
       sessions: [PUBLIC_NEW],
     });
-    const response = await built.app.inject({ method: 'GET', url: '/sessions' });
+    const response = await built.app.inject({ method: 'GET', url: '/api/sessions' });
     expect(response.statusCode).toBe(401);
     const body = response.json<{ error?: { code?: string } }>();
     expect(body.error?.code).toBe('auth-required');
@@ -1062,7 +1062,7 @@ describe('GET /sessions — visibility gate and lifecycle filter', () => {
     const token = await signSessionToken({ sub: BEN_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'GET',
-      url: '/sessions',
+      url: '/api/sessions',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     expect(response.statusCode).toBe(200);
@@ -1095,7 +1095,7 @@ describe('GET /sessions — visibility gate and lifecycle filter', () => {
     const token = await signSessionToken({ sub: BEN_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'GET',
-      url: '/sessions',
+      url: '/api/sessions',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     expect(response.statusCode).toBe(200);
@@ -1140,7 +1140,7 @@ describe('GET /sessions — visibility gate and lifecycle filter', () => {
     const token = await signSessionToken({ sub: BEN_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'GET',
-      url: '/sessions',
+      url: '/api/sessions',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     expect(response.statusCode).toBe(200);
@@ -1168,7 +1168,7 @@ describe('GET /sessions — visibility gate and lifecycle filter', () => {
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'GET',
-      url: '/sessions?status=active',
+      url: '/api/sessions?status=active',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     expect(response.statusCode).toBe(200);
@@ -1193,7 +1193,7 @@ describe('GET /sessions — visibility gate and lifecycle filter', () => {
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'GET',
-      url: '/sessions?status=ended',
+      url: '/api/sessions?status=ended',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     expect(response.statusCode).toBe(200);
@@ -1303,7 +1303,7 @@ describe('GET /sessions — filters and pagination', () => {
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'GET',
-      url: `/sessions?host=${BEN_ID}`,
+      url: `/api/sessions?host=${BEN_ID}`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     expect(response.statusCode).toBe(200);
@@ -1330,7 +1330,7 @@ describe('GET /sessions — filters and pagination', () => {
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'GET',
-      url: `/sessions?participant=${CAROL_ID}`,
+      url: `/api/sessions?participant=${CAROL_ID}`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     expect(response.statusCode).toBe(200);
@@ -1351,7 +1351,7 @@ describe('GET /sessions — filters and pagination', () => {
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'GET',
-      url: '/sessions?privacy=private',
+      url: '/api/sessions?privacy=private',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     expect(response.statusCode).toBe(200);
@@ -1376,7 +1376,7 @@ describe('GET /sessions — filters and pagination', () => {
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'GET',
-      url: '/sessions?topic=CLIMATE',
+      url: '/api/sessions?topic=CLIMATE',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     expect(response.statusCode).toBe(200);
@@ -1400,7 +1400,7 @@ describe('GET /sessions — filters and pagination', () => {
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'GET',
-      url: `/sessions?host=${ALICE_ID}&privacy=public`,
+      url: `/api/sessions?host=${ALICE_ID}&privacy=public`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     expect(response.statusCode).toBe(200);
@@ -1436,7 +1436,7 @@ describe('GET /sessions — filters and pagination', () => {
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'GET',
-      url: '/sessions?topic=climate&limit=1',
+      url: '/api/sessions?topic=climate&limit=1',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     expect(response.statusCode).toBe(200);
@@ -1456,7 +1456,7 @@ describe('GET /sessions — filters and pagination', () => {
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const firstPage = await built.app.inject({
       method: 'GET',
-      url: '/sessions?limit=2&offset=0',
+      url: '/api/sessions?limit=2&offset=0',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     expect(firstPage.statusCode).toBe(200);
@@ -1473,7 +1473,7 @@ describe('GET /sessions — filters and pagination', () => {
 
     const secondPage = await built.app.inject({
       method: 'GET',
-      url: '/sessions?limit=2&offset=2',
+      url: '/api/sessions?limit=2&offset=2',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     expect(secondPage.statusCode).toBe(200);
@@ -1497,7 +1497,7 @@ describe('GET /sessions — filters and pagination', () => {
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'GET',
-      url: '/sessions?topic=zzz-no-match',
+      url: '/api/sessions?topic=zzz-no-match',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     expect(response.statusCode).toBe(200);
@@ -1514,7 +1514,7 @@ describe('GET /sessions — filters and pagination', () => {
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'GET',
-      url: '/sessions?host=not-a-uuid',
+      url: '/api/sessions?host=not-a-uuid',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     expect(response.statusCode).toBe(400);
@@ -1530,7 +1530,7 @@ describe('GET /sessions — filters and pagination', () => {
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'GET',
-      url: '/sessions?limit=999',
+      url: '/api/sessions?limit=999',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     expect(response.statusCode).toBe(400);
@@ -1557,7 +1557,7 @@ describe('GET /sessions — filters and pagination', () => {
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'GET',
-      url: `/sessions?offset=${MAX_SESSION_LIST_OFFSET}`,
+      url: `/api/sessions?offset=${MAX_SESSION_LIST_OFFSET}`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     // At-cap is accepted; the offset is far past any seeded row, so
@@ -1577,7 +1577,7 @@ describe('GET /sessions — filters and pagination', () => {
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'GET',
-      url: `/sessions?offset=${MAX_SESSION_LIST_OFFSET + 1}`,
+      url: `/api/sessions?offset=${MAX_SESSION_LIST_OFFSET + 1}`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     expect(response.statusCode).toBe(400);
@@ -1595,7 +1595,7 @@ describe('GET /sessions — filters and pagination', () => {
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'GET',
-      url: '/sessions?offset=999999999999999',
+      url: '/api/sessions?offset=999999999999999',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     expect(response.statusCode).toBe(400);
@@ -1611,7 +1611,7 @@ describe('GET /sessions — filters and pagination', () => {
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'GET',
-      url: '/sessions?offset=0',
+      url: '/api/sessions?offset=0',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     expect(response.statusCode).toBe(200);
@@ -1629,7 +1629,7 @@ describe('GET /sessions — filters and pagination', () => {
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'GET',
-      url: '/sessions?privacy=hidden',
+      url: '/api/sessions?privacy=hidden',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     expect(response.statusCode).toBe(400);
@@ -1660,7 +1660,7 @@ describe('GET /sessions — filters and pagination', () => {
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'GET',
-      url: '/sessions?topic=',
+      url: '/api/sessions?topic=',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     expect(response.statusCode).toBe(400);
@@ -1676,7 +1676,7 @@ describe('GET /sessions — filters and pagination', () => {
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'GET',
-      url: '/sessions?topic=ab',
+      url: '/api/sessions?topic=ab',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     expect(response.statusCode).toBe(400);
@@ -1696,7 +1696,7 @@ describe('GET /sessions — filters and pagination', () => {
     // schema layer.
     const response = await built.app.inject({
       method: 'GET',
-      url: '/sessions?topic=abc',
+      url: '/api/sessions?topic=abc',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     expect(response.statusCode).toBe(200);
@@ -1714,7 +1714,7 @@ describe('GET /sessions — filters and pagination', () => {
     const atCap = 'a'.repeat(MAX_TOPIC_SEARCH_LENGTH);
     const response = await built.app.inject({
       method: 'GET',
-      url: `/sessions?topic=${atCap}`,
+      url: `/api/sessions?topic=${atCap}`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     // At-cap is accepted at the schema layer; the seeded topic
@@ -1734,7 +1734,7 @@ describe('GET /sessions — filters and pagination', () => {
     const overCap = 'a'.repeat(MAX_TOPIC_SEARCH_LENGTH + 1);
     const response = await built.app.inject({
       method: 'GET',
-      url: `/sessions?topic=${overCap}`,
+      url: `/api/sessions?topic=${overCap}`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     expect(response.statusCode).toBe(400);
@@ -1754,7 +1754,7 @@ describe('GET /sessions — filters and pagination', () => {
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'GET',
-      url: '/sessions?topic=climate',
+      url: '/api/sessions?topic=climate',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     expect(response.statusCode).toBe(200);
@@ -1834,7 +1834,7 @@ describe('GET /sessions/:id — visibility-gated fetch', () => {
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'GET',
-      url: `/sessions/${PUBLIC_SESSION.id}`,
+      url: `/api/sessions/${PUBLIC_SESSION.id}`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     expect(response.statusCode).toBe(200);
@@ -1869,7 +1869,7 @@ describe('GET /sessions/:id — visibility-gated fetch', () => {
     });
     const response = await built.app.inject({
       method: 'GET',
-      url: `/sessions/${PUBLIC_SESSION.id}`,
+      url: `/api/sessions/${PUBLIC_SESSION.id}`,
     });
     expect(response.statusCode).toBe(401);
     const body = response.json<{ error?: { code?: string } }>();
@@ -1892,7 +1892,7 @@ describe('GET /sessions/:id — visibility-gated fetch', () => {
     const unknownId = '00000000-0000-4000-8000-ffffffff0001';
     const response = await built.app.inject({
       method: 'GET',
-      url: `/sessions/${unknownId}`,
+      url: `/api/sessions/${unknownId}`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     expect(response.statusCode).toBe(404);
@@ -1925,7 +1925,7 @@ describe('GET /sessions/:id — visibility-gated fetch', () => {
     const token = await signSessionToken({ sub: BEN_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'GET',
-      url: `/sessions/${PRIVATE_ALICE.id}`,
+      url: `/api/sessions/${PRIVATE_ALICE.id}`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     // CRITICAL — 404, not 403. Asserting the exact status here is
@@ -1951,7 +1951,7 @@ describe('GET /sessions/:id — visibility-gated fetch', () => {
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'GET',
-      url: `/sessions/${PRIVATE_ALICE.id}`,
+      url: `/api/sessions/${PRIVATE_ALICE.id}`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     expect(response.statusCode).toBe(200);
@@ -1983,7 +1983,7 @@ describe('GET /sessions/:id — visibility-gated fetch', () => {
     const token = await signSessionToken({ sub: BEN_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'GET',
-      url: `/sessions/${PRIVATE_ALICE.id}`,
+      url: `/api/sessions/${PRIVATE_ALICE.id}`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     expect(response.statusCode).toBe(200);
@@ -2007,7 +2007,7 @@ describe('GET /sessions/:id — visibility-gated fetch', () => {
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'GET',
-      url: '/sessions/not-a-uuid',
+      url: '/api/sessions/not-a-uuid',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     expect(response.statusCode).toBe(400);
@@ -2070,12 +2070,12 @@ describe('GET /sessions/:id — visibility-gated fetch', () => {
 
     const resPrivate = await built.app.inject({
       method: 'GET',
-      url: `/sessions/${PRIVATE_NOT_VISIBLE_ID}`,
+      url: `/api/sessions/${PRIVATE_NOT_VISIBLE_ID}`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     const resUnknown = await built.app.inject({
       method: 'GET',
-      url: `/sessions/${UNKNOWN_ID}`,
+      url: `/api/sessions/${UNKNOWN_ID}`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
 
@@ -2198,7 +2198,7 @@ describe('POST /sessions/:id/end — moderator ends the session', () => {
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'POST',
-      url: `/sessions/${PUBLIC_ACTIVE.id}/end`,
+      url: `/api/sessions/${PUBLIC_ACTIVE.id}/end`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
 
@@ -2236,7 +2236,7 @@ describe('POST /sessions/:id/end — moderator ends the session', () => {
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'POST',
-      url: `/sessions/${PUBLIC_ACTIVE.id}/end`,
+      url: `/api/sessions/${PUBLIC_ACTIVE.id}/end`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     expect(response.statusCode).toBe(200);
@@ -2292,7 +2292,7 @@ describe('POST /sessions/:id/end — moderator ends the session', () => {
     const token = await signSessionToken({ sub: BEN_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'POST',
-      url: `/sessions/${PUBLIC_ACTIVE.id}/end`,
+      url: `/api/sessions/${PUBLIC_ACTIVE.id}/end`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     expect(response.statusCode).toBe(403);
@@ -2336,7 +2336,7 @@ describe('POST /sessions/:id/end — moderator ends the session', () => {
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'POST',
-      url: `/sessions/${PRIVATE_BENS.id}/end`,
+      url: `/api/sessions/${PRIVATE_BENS.id}/end`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     expect(response.statusCode).toBe(404);
@@ -2365,7 +2365,7 @@ describe('POST /sessions/:id/end — moderator ends the session', () => {
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'POST',
-      url: `/sessions/${PUBLIC_ALREADY_ENDED.id}/end`,
+      url: `/api/sessions/${PUBLIC_ALREADY_ENDED.id}/end`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     expect(response.statusCode).toBe(409);
@@ -2401,7 +2401,7 @@ describe('POST /sessions/:id/end — moderator ends the session', () => {
     const unknownId = '00000000-0000-4000-8000-ffffffff0009';
     const response = await built.app.inject({
       method: 'POST',
-      url: `/sessions/${unknownId}/end`,
+      url: `/api/sessions/${unknownId}/end`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     expect(response.statusCode).toBe(404);
@@ -2424,7 +2424,7 @@ describe('POST /sessions/:id/end — moderator ends the session', () => {
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'POST',
-      url: '/sessions/not-a-uuid/end',
+      url: '/api/sessions/not-a-uuid/end',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     expect(response.statusCode).toBe(400);
@@ -2446,7 +2446,7 @@ describe('POST /sessions/:id/end — moderator ends the session', () => {
     });
     const response = await built.app.inject({
       method: 'POST',
-      url: `/sessions/${PUBLIC_ACTIVE.id}/end`,
+      url: `/api/sessions/${PUBLIC_ACTIVE.id}/end`,
     });
     expect(response.statusCode).toBe(401);
     const body = response.json<{ error?: { code?: string } }>();
@@ -2534,7 +2534,7 @@ describe('PATCH /sessions/:id/privacy — host toggles session privacy', () => {
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'PATCH',
-      url: `/sessions/${PUBLIC_ACTIVE.id}/privacy`,
+      url: `/api/sessions/${PUBLIC_ACTIVE.id}/privacy`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
       payload: { privacy: 'private' },
     });
@@ -2578,7 +2578,7 @@ describe('PATCH /sessions/:id/privacy — host toggles session privacy', () => {
     // The row is already public; set it to public again.
     const response = await built.app.inject({
       method: 'PATCH',
-      url: `/sessions/${PUBLIC_ACTIVE.id}/privacy`,
+      url: `/api/sessions/${PUBLIC_ACTIVE.id}/privacy`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
       payload: { privacy: 'public' },
     });
@@ -2614,7 +2614,7 @@ describe('PATCH /sessions/:id/privacy — host toggles session privacy', () => {
     const token = await signSessionToken({ sub: BEN_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'PATCH',
-      url: `/sessions/${PUBLIC_ACTIVE.id}/privacy`,
+      url: `/api/sessions/${PUBLIC_ACTIVE.id}/privacy`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
       payload: { privacy: 'private' },
     });
@@ -2651,7 +2651,7 @@ describe('PATCH /sessions/:id/privacy — host toggles session privacy', () => {
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'PATCH',
-      url: `/sessions/${PRIVATE_BENS.id}/privacy`,
+      url: `/api/sessions/${PRIVATE_BENS.id}/privacy`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
       payload: { privacy: 'public' },
     });
@@ -2680,7 +2680,7 @@ describe('PATCH /sessions/:id/privacy — host toggles session privacy', () => {
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'PATCH',
-      url: `/sessions/${PUBLIC_ENDED.id}/privacy`,
+      url: `/api/sessions/${PUBLIC_ENDED.id}/privacy`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
       payload: { privacy: 'private' },
     });
@@ -2709,7 +2709,7 @@ describe('PATCH /sessions/:id/privacy — host toggles session privacy', () => {
     const unknownId = '00000000-0000-4000-8000-ffffffff000a';
     const response = await built.app.inject({
       method: 'PATCH',
-      url: `/sessions/${unknownId}/privacy`,
+      url: `/api/sessions/${unknownId}/privacy`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
       payload: { privacy: 'private' },
     });
@@ -2735,7 +2735,7 @@ describe('PATCH /sessions/:id/privacy — host toggles session privacy', () => {
     // Missing privacy.
     const missing = await built.app.inject({
       method: 'PATCH',
-      url: `/sessions/${PRIVATE_ACTIVE.id}/privacy`,
+      url: `/api/sessions/${PRIVATE_ACTIVE.id}/privacy`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
       payload: {},
     });
@@ -2745,7 +2745,7 @@ describe('PATCH /sessions/:id/privacy — host toggles session privacy', () => {
     // Invalid enum.
     const bad = await built.app.inject({
       method: 'PATCH',
-      url: `/sessions/${PRIVATE_ACTIVE.id}/privacy`,
+      url: `/api/sessions/${PRIVATE_ACTIVE.id}/privacy`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
       payload: { privacy: 'secret' },
     });
@@ -2771,7 +2771,7 @@ describe('PATCH /sessions/:id/privacy — host toggles session privacy', () => {
     });
     const response = await built.app.inject({
       method: 'PATCH',
-      url: `/sessions/${PUBLIC_ACTIVE.id}/privacy`,
+      url: `/api/sessions/${PUBLIC_ACTIVE.id}/privacy`,
       payload: { privacy: 'private' },
     });
     expect(response.statusCode).toBe(401);
@@ -2824,13 +2824,13 @@ describe('PATCH /sessions/:id/privacy — host toggles session privacy', () => {
 
     const resPrivate = await built.app.inject({
       method: 'PATCH',
-      url: `/sessions/${PRIVATE_BENS.id}/privacy`,
+      url: `/api/sessions/${PRIVATE_BENS.id}/privacy`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
       payload: { privacy: 'public' },
     });
     const resUnknown = await built.app.inject({
       method: 'PATCH',
-      url: `/sessions/${UNKNOWN_ID}/privacy`,
+      url: `/api/sessions/${UNKNOWN_ID}/privacy`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
       payload: { privacy: 'public' },
     });
@@ -2956,7 +2956,7 @@ describe('PATCH /sessions/:id/privacy — subscription prune on flip to private 
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'PATCH',
-      url: `/sessions/${PUBLIC_ACTIVE.id}/privacy`,
+      url: `/api/sessions/${PUBLIC_ACTIVE.id}/privacy`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
       payload: { privacy: 'private' },
     });
@@ -3004,7 +3004,7 @@ describe('PATCH /sessions/:id/privacy — subscription prune on flip to private 
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'PATCH',
-      url: `/sessions/${PUBLIC_ACTIVE.id}/privacy`,
+      url: `/api/sessions/${PUBLIC_ACTIVE.id}/privacy`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
       payload: { privacy: 'private' },
     });
@@ -3047,7 +3047,7 @@ describe('PATCH /sessions/:id/privacy — subscription prune on flip to private 
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'PATCH',
-      url: `/sessions/${PRIVATE_ACTIVE.id}/privacy`,
+      url: `/api/sessions/${PRIVATE_ACTIVE.id}/privacy`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
       payload: { privacy: 'public' },
     });
@@ -3081,7 +3081,7 @@ describe('PATCH /sessions/:id/privacy — subscription prune on flip to private 
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'PATCH',
-      url: `/sessions/${PUBLIC_ACTIVE.id}/privacy`,
+      url: `/api/sessions/${PUBLIC_ACTIVE.id}/privacy`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
       payload: { privacy: 'private' },
     });
@@ -3234,7 +3234,7 @@ describe('POST /sessions/:id/participants — host-only debater assignment', () 
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'POST',
-      url: `/sessions/${SESSION_ID}/participants`,
+      url: `/api/sessions/${SESSION_ID}/participants`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
       payload: { userId: BEN_ID, role: 'debater-A' },
     });
@@ -3289,7 +3289,7 @@ describe('POST /sessions/:id/participants — host-only debater assignment', () 
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'POST',
-      url: `/sessions/${SESSION_ID}/participants`,
+      url: `/api/sessions/${SESSION_ID}/participants`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
       payload: { userId: BEN_ID, role: 'moderator' },
     });
@@ -3323,7 +3323,7 @@ describe('POST /sessions/:id/participants — host-only debater assignment', () 
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'POST',
-      url: `/sessions/${SESSION_ID}/participants`,
+      url: `/api/sessions/${SESSION_ID}/participants`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
       payload: { userId: BEN_ID, role: 'debater-A' },
     });
@@ -3354,7 +3354,7 @@ describe('POST /sessions/:id/participants — host-only debater assignment', () 
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'POST',
-      url: `/sessions/${SESSION_ID}/participants`,
+      url: `/api/sessions/${SESSION_ID}/participants`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
       payload: { userId: BEN_ID, role: 'debater-B' },
     });
@@ -3376,7 +3376,7 @@ describe('POST /sessions/:id/participants — host-only debater assignment', () 
     const token = await signSessionToken({ sub: BEN_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'POST',
-      url: `/sessions/${SESSION_ID}/participants`,
+      url: `/api/sessions/${SESSION_ID}/participants`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
       payload: { userId: CAROL_ID, role: 'debater-A' },
     });
@@ -3392,7 +3392,7 @@ describe('POST /sessions/:id/participants — host-only debater assignment', () 
     const unknownUserId = '00000000-0000-4000-8000-ffffffff0099';
     const response = await built.app.inject({
       method: 'POST',
-      url: `/sessions/${SESSION_ID}/participants`,
+      url: `/api/sessions/${SESSION_ID}/participants`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
       payload: { userId: unknownUserId, role: 'debater-A' },
     });
@@ -3410,7 +3410,7 @@ describe('POST /sessions/:id/participants — host-only debater assignment', () 
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'POST',
-      url: `/sessions/${PUBLIC_ENDED.id}/participants`,
+      url: `/api/sessions/${PUBLIC_ENDED.id}/participants`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
       payload: { userId: BEN_ID, role: 'debater-A' },
     });
@@ -3537,7 +3537,7 @@ describe('DELETE /sessions/:id/participants/:userId — host or self removal', (
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'DELETE',
-      url: `/sessions/${SESSION_ID}/participants/${BEN_ID}`,
+      url: `/api/sessions/${SESSION_ID}/participants/${BEN_ID}`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
 
@@ -3578,7 +3578,7 @@ describe('DELETE /sessions/:id/participants/:userId — host or self removal', (
     const token = await signSessionToken({ sub: BEN_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'DELETE',
-      url: `/sessions/${SESSION_ID}/participants/${BEN_ID}`,
+      url: `/api/sessions/${SESSION_ID}/participants/${BEN_ID}`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
 
@@ -3614,7 +3614,7 @@ describe('DELETE /sessions/:id/participants/:userId — host or self removal', (
     const token = await signSessionToken({ sub: CAROL_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'DELETE',
-      url: `/sessions/${SESSION_ID}/participants/${BEN_ID}`,
+      url: `/api/sessions/${SESSION_ID}/participants/${BEN_ID}`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     expect(response.statusCode).toBe(403);
@@ -3634,7 +3634,7 @@ describe('DELETE /sessions/:id/participants/:userId — host or self removal', (
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'DELETE',
-      url: `/sessions/${SESSION_ID}/participants/${ALICE_ID}`,
+      url: `/api/sessions/${SESSION_ID}/participants/${ALICE_ID}`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     expect(response.statusCode).toBe(403);
@@ -3663,7 +3663,7 @@ describe('DELETE /sessions/:id/participants/:userId — host or self removal', (
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'DELETE',
-      url: `/sessions/${SESSION_ID}/participants/${CAROL_ID}`,
+      url: `/api/sessions/${SESSION_ID}/participants/${CAROL_ID}`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     expect(response.statusCode).toBe(404);
@@ -3845,7 +3845,7 @@ describe('POST /sessions/:id/include — cross-session entity inclusion', () => 
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'POST',
-      url: `/sessions/${DESTINATION_SESSION_ID}/include`,
+      url: `/api/sessions/${DESTINATION_SESSION_ID}/include`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
       payload: { entityKind: 'node', entityId: NODE_ID },
     });
@@ -3896,7 +3896,7 @@ describe('POST /sessions/:id/include — cross-session entity inclusion', () => 
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'POST',
-      url: `/sessions/${DESTINATION_SESSION_ID}/include`,
+      url: `/api/sessions/${DESTINATION_SESSION_ID}/include`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
       payload: { entityKind: 'edge', entityId: EDGE_ID },
     });
@@ -3923,7 +3923,7 @@ describe('POST /sessions/:id/include — cross-session entity inclusion', () => 
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'POST',
-      url: `/sessions/${DESTINATION_SESSION_ID}/include`,
+      url: `/api/sessions/${DESTINATION_SESSION_ID}/include`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
       payload: { entityKind: 'annotation', entityId: ANNOTATION_ID },
     });
@@ -3959,7 +3959,7 @@ describe('POST /sessions/:id/include — cross-session entity inclusion', () => 
     const token = await signSessionToken({ sub: BEN_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'POST',
-      url: `/sessions/${DESTINATION_SESSION_ID}/include`,
+      url: `/api/sessions/${DESTINATION_SESSION_ID}/include`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
       payload: { entityKind: 'node', entityId: NODE_ID },
     });
@@ -3979,7 +3979,7 @@ describe('POST /sessions/:id/include — cross-session entity inclusion', () => 
     const token = await signSessionToken({ sub: BEN_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'POST',
-      url: `/sessions/${DESTINATION_SESSION_ID}/include`,
+      url: `/api/sessions/${DESTINATION_SESSION_ID}/include`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
       payload: { entityKind: 'node', entityId: NODE_ID },
     });
@@ -4002,7 +4002,7 @@ describe('POST /sessions/:id/include — cross-session entity inclusion', () => 
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'POST',
-      url: `/sessions/${ENDED_DESTINATION_SESSION_ID}/include`,
+      url: `/api/sessions/${ENDED_DESTINATION_SESSION_ID}/include`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
       payload: { entityKind: 'node', entityId: NODE_ID },
     });
@@ -4037,7 +4037,7 @@ describe('POST /sessions/:id/include — cross-session entity inclusion', () => 
     const token = await signSessionToken({ sub: BEN_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'POST',
-      url: `/sessions/${DESTINATION_SESSION_ID}/include`,
+      url: `/api/sessions/${DESTINATION_SESSION_ID}/include`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
       payload: { entityKind: 'node', entityId: PRIVATE_NODE_ID },
     });
@@ -4072,7 +4072,7 @@ describe('POST /sessions/:id/include — cross-session entity inclusion', () => 
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await built.app.inject({
       method: 'POST',
-      url: `/sessions/${DESTINATION_SESSION_ID}/include`,
+      url: `/api/sessions/${DESTINATION_SESSION_ID}/include`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
       payload: { entityKind: 'node', entityId: NODE_ID },
     });
@@ -4096,7 +4096,7 @@ describe('POST /sessions/:id/include — cross-session entity inclusion', () => 
     // Missing entityId.
     const missing = await built.app.inject({
       method: 'POST',
-      url: `/sessions/${DESTINATION_SESSION_ID}/include`,
+      url: `/api/sessions/${DESTINATION_SESSION_ID}/include`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
       payload: { entityKind: 'node' },
     });
@@ -4106,7 +4106,7 @@ describe('POST /sessions/:id/include — cross-session entity inclusion', () => 
     // Invalid enum.
     const badEnum = await built.app.inject({
       method: 'POST',
-      url: `/sessions/${DESTINATION_SESSION_ID}/include`,
+      url: `/api/sessions/${DESTINATION_SESSION_ID}/include`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
       payload: { entityKind: 'gizmo', entityId: NODE_ID },
     });
@@ -4116,7 +4116,7 @@ describe('POST /sessions/:id/include — cross-session entity inclusion', () => 
     // Bad UUID in path.
     const badPath = await built.app.inject({
       method: 'POST',
-      url: `/sessions/not-a-uuid/include`,
+      url: `/api/sessions/not-a-uuid/include`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
       payload: { entityKind: 'node', entityId: NODE_ID },
     });
@@ -4128,7 +4128,7 @@ describe('POST /sessions/:id/include — cross-session entity inclusion', () => 
     built = await buildWithSeed(aliceSeed());
     const response = await built.app.inject({
       method: 'POST',
-      url: `/sessions/${DESTINATION_SESSION_ID}/include`,
+      url: `/api/sessions/${DESTINATION_SESSION_ID}/include`,
       payload: { entityKind: 'node', entityId: NODE_ID },
     });
     expect(response.statusCode).toBe(401);

@@ -40,9 +40,9 @@ Feature: WebSocket vote (client → server)
 
   Scenario: A subscribed participant agrees on a proposal — voter receives both voted ack and event-applied broadcast, second subscribed client receives the broadcast
     Given a vote-ready session for "alice-ws" exists with id "88888888-8888-4888-8888-888888888801" and node id "88888888-8888-4888-8888-8888888888a1" and pending proposal id "88888888-8888-4888-8888-8888888888b1"
-    When an authenticated WebSocket client connects to "/ws"
+    When an authenticated WebSocket client connects to "/api/ws"
     And the client sends a subscribe envelope for session "88888888-8888-4888-8888-888888888801"
-    And a second authenticated WebSocket client connects to "/ws"
+    And a second authenticated WebSocket client connects to "/api/ws"
     And the second client sends a subscribe envelope for session "88888888-8888-4888-8888-888888888801"
     And the client sends a vote envelope for session "88888888-8888-4888-8888-888888888801" with expectedSequence 5 on proposal "88888888-8888-4888-8888-8888888888b1" choosing "agree"
     Then the client receives a voted ack referencing the vote envelope at sequence 6
@@ -51,7 +51,7 @@ Feature: WebSocket vote (client → server)
 
   Scenario: A duplicate agree from the same voter is rejected with already-voted
     Given a vote-ready session for "alice-ws" exists with id "88888888-8888-4888-8888-888888888802" and node id "88888888-8888-4888-8888-8888888888a2" and pending proposal id "88888888-8888-4888-8888-8888888888b2"
-    When an authenticated WebSocket client connects to "/ws"
+    When an authenticated WebSocket client connects to "/api/ws"
     And the client sends a subscribe envelope for session "88888888-8888-4888-8888-888888888802"
     And the client sends a vote envelope for session "88888888-8888-4888-8888-888888888802" with expectedSequence 5 on proposal "88888888-8888-4888-8888-8888888888b2" choosing "agree"
     And the client waits for the voted ack
@@ -60,13 +60,13 @@ Feature: WebSocket vote (client → server)
 
   Scenario: A withdraw of a still-pending proposal is rejected with no-prior-agree
     Given a vote-ready session for "alice-ws" exists with id "88888888-8888-4888-8888-888888888803" and node id "88888888-8888-4888-8888-8888888888a3" and pending proposal id "88888888-8888-4888-8888-8888888888b3"
-    When an authenticated WebSocket client connects to "/ws"
+    When an authenticated WebSocket client connects to "/api/ws"
     And the client sends a subscribe envelope for session "88888888-8888-4888-8888-888888888803"
     And the client sends a vote envelope for session "88888888-8888-4888-8888-888888888803" with expectedSequence 5 on proposal "88888888-8888-4888-8888-8888888888b3" choosing "withdraw"
     Then the client receives an error envelope with code "no-prior-agree" referencing the vote envelope
 
   Scenario: An unsubscribed client cannot vote — receives a forbidden error envelope
     Given a vote-ready session for "alice-ws" exists with id "88888888-8888-4888-8888-888888888804" and node id "88888888-8888-4888-8888-8888888888a4" and pending proposal id "88888888-8888-4888-8888-8888888888b4"
-    When an authenticated WebSocket client connects to "/ws"
+    When an authenticated WebSocket client connects to "/api/ws"
     And the client sends a vote envelope for session "88888888-8888-4888-8888-888888888804" with expectedSequence 5 on proposal "88888888-8888-4888-8888-8888888888b4" choosing "agree"
     Then the client receives an error envelope with code "forbidden" referencing the vote envelope

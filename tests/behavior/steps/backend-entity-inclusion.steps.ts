@@ -118,7 +118,7 @@ When(
     const token = await signSessionToken({ sub: actorUserId }, TEST_SESSION_SECRET);
     const response = await app.inject({
       method: 'POST',
-      url: '/sessions',
+      url: '/api/sessions',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
       payload: { topic, privacy },
     });
@@ -189,7 +189,7 @@ When(
     const token = await signSessionToken({ sub: actorUserId }, TEST_SESSION_SECRET);
     const response = await app.inject({
       method: 'POST',
-      url: `/sessions/${destinationId}/include`,
+      url: `/api/sessions/${destinationId}/include`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
       payload: { entityKind: 'node', entityId },
     });
@@ -213,7 +213,7 @@ When(
     assert.ok(cookieValue, 'no session cookie captured');
     const response = await app.inject({
       method: 'POST',
-      url: `/sessions/${destinationId}/end`,
+      url: `/api/sessions/${destinationId}/end`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${cookieValue}` },
     });
     s.lastResponse = {

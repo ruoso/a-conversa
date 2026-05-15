@@ -90,7 +90,7 @@ When(
     assert.ok(sessionId, 'no sessions row found to fetch by id');
     const response = await app.inject({
       method: 'GET',
-      url: `/sessions/${sessionId}`,
+      url: `/api/sessions/${sessionId}`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${cookieValue}` },
     });
     s.lastResponse = {
@@ -123,7 +123,7 @@ When(
     assert.ok(app, 'sessions app not initialized — Background step missing');
     const response = await app.inject({
       method: 'GET',
-      url: `/sessions/${sessionId}`,
+      url: `/api/sessions/${sessionId}`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     s.lastResponse = {
@@ -146,7 +146,7 @@ When('I GET \\/sessions\\/{word}', async function (this: AConversaWorld, literal
   assert.ok(cookieValue, 'no session cookie captured — preceding Given missing');
   const response = await app.inject({
     method: 'GET',
-    url: `/sessions/${literalId}`,
+    url: `/api/sessions/${literalId}`,
     headers: { cookie: `${SESSION_COOKIE_NAME}=${cookieValue}` },
   });
   s.lastResponse = {

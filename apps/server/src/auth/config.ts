@@ -18,7 +18,7 @@
 //
 // 2. `loadOidcConfig(env)` — pure function from a `Record<string, string>`
 //    (typically `process.env`) to a typed `OidcConfig`. Returns the
-//    derived `redirectUri` (`${APP_BASE_URL}/auth/callback`) alongside
+//    derived `redirectUri` (`${APP_BASE_URL}/api/auth/callback`) alongside
 //    the env-supplied values so the eventual callback handler reads a
 //    single field rather than re-deriving the URL.
 //
@@ -33,7 +33,7 @@
 //
 // **What this module does NOT own** — deferred to sibling tasks:
 //
-//   - `/auth/login` / `/auth/callback` route handlers
+//   - `/api/auth/login` / `/api/auth/callback` route handlers
 //     → `backend.auth.oauth_callback_handler`.
 //   - Screen-name collection on first auth
 //     → `backend.auth.screen_name_collection`.
@@ -107,7 +107,7 @@ export { Configuration };
  *   - `APP_BASE_URL` — the public-facing base URL of the application
  *     (the half users navigate to, not the in-Compose service-to-
  *     service URL). The redirect URI is derived as
- *     `${APP_BASE_URL}/auth/callback`. Defaults to
+ *     `${APP_BASE_URL}/api/auth/callback`. Defaults to
  *     `http://localhost:3000` for the local-dev / host-shell case;
  *     production sets this to the public hostname.
  *
@@ -141,7 +141,7 @@ export type OidcEnv = z.infer<typeof oidcEnvSchema>;
  * Resolved OIDC configuration consumed by the callback handler and
  * any sibling that needs to build an authorization URL or exchange a
  * code. The redirect URI is derived once at load time so callers see
- * one source of truth instead of re-stringing `${APP_BASE_URL}/auth/callback`
+ * one source of truth instead of re-stringing `${APP_BASE_URL}/api/auth/callback`
  * in every site.
  *
  * **Field-by-field**
@@ -157,11 +157,11 @@ export type OidcEnv = z.infer<typeof oidcEnvSchema>;
  *   - `appBaseUrl` — the validated base URL string. Same shape as
  *     env so error messages and config dumps can mention "APP_BASE_URL"
  *     verbatim.
- *   - `redirectUri` — `${appBaseUrl}/auth/callback`. Must match one
+ *   - `redirectUri` — `${appBaseUrl}/api/auth/callback`. Must match one
  *     of the `redirect_uris` registered in
  *     `infra/authelia/configuration.yml` (the dev client allows both
- *     `http://localhost:3000/auth/callback` and
- *     `http://localhost:5173/auth/callback`); production swaps both
+ *     `http://localhost:3000/api/auth/callback` and
+ *     `http://localhost:5173/api/auth/callback`); production swaps both
  *     the registered list and this env var to the public hostname.
  *
  * The shape is `readonly` to discourage in-place mutation — a sibling
@@ -235,8 +235,8 @@ export function loadOidcConfig(env: Record<string, string | undefined>): OidcCon
   const data = parsed.data;
   // Strip a trailing slash off APP_BASE_URL before composing the
   // redirect URI so `http://localhost:3000/` and `http://localhost:3000`
-  // both produce `http://localhost:3000/auth/callback` (rather than a
-  // double-slash variant that Authelia's redirect-URI check would
+  // both produce `http://localhost:3000/api/auth/callback` (rather than
+  // a double-slash variant that Authelia's redirect-URI check would
   // reject). The URL spec considers the two forms equivalent; Authelia
   // does a string compare against its registered list.
   const appBaseUrl = data.APP_BASE_URL.replace(/\/$/, '');
@@ -245,7 +245,7 @@ export function loadOidcConfig(env: Record<string, string | undefined>): OidcCon
     clientId: data.OIDC_CLIENT_ID,
     clientSecret: data.OIDC_CLIENT_SECRET,
     appBaseUrl,
-    redirectUri: `${appBaseUrl}/auth/callback`,
+    redirectUri: `${appBaseUrl}/api/auth/callback`,
   };
 }
 

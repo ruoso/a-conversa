@@ -7,13 +7,13 @@
 //   /screen-name                 — first-login screen-name capture
 //                                  (owned by `mod_auth_flow`; UX polish
 //                                  lands in `mod_screen_name_setup`).
-//   /sessions/new/setup          — create-session form (topic + privacy);
+//   /sessions/new                — create-session form (topic + privacy);
 //                                  owned by `mod_create_session_form`. The
-//                                  3-segment path side-steps the Fastify
-//                                  `GET /sessions/:id` route which would
-//                                  otherwise match `/sessions/new` and
-//                                  return 400 validation-failed before the
-//                                  static-frontends SPA fallback fires.
+//                                  backend lives under `/api/*` (see
+//                                  `apps/server/src/server.ts`), so the
+//                                  SPA can safely own any non-`/api/*`
+//                                  shape under `/sessions/*` without
+//                                  colliding with a params validator.
 //   /sessions/:id/lobby          — pre-debate lobby.
 //   /sessions/:id/operate        — three-pane operator console.
 //
@@ -49,7 +49,7 @@ export function App(): ReactElement {
         }
       />
       <Route
-        path="/sessions/new/setup"
+        path="/sessions/new"
         element={
           <RequireAuth mode="authenticated-only">
             <CreateSessionRoute />

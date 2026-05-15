@@ -101,7 +101,7 @@ When(
     assert.ok(cookieValue, 'no session cookie captured — preceding Given missing');
     const response = await app.inject({
       method: 'POST',
-      url: '/sessions',
+      url: '/api/sessions',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${cookieValue}` },
       payload: { topic, privacy },
     });
@@ -123,7 +123,7 @@ When(
     assert.ok(cookieValue, 'no session cookie captured — preceding Given missing');
     const response = await app.inject({
       method: 'POST',
-      url: '/sessions',
+      url: '/api/sessions',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${cookieValue}` },
       payload: { topic },
     });

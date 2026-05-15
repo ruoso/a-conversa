@@ -75,7 +75,7 @@ function getClient(world: AConversaWorld): WsClient {
   const ws = scratch(world).wsLifecycleClient;
   assert.ok(
     ws,
-    'no ws client — the `an authenticated WebSocket client connects to "/ws"` When step must precede',
+    'no ws client — the `an authenticated WebSocket client connects to "/api/ws"` When step must precede',
   );
   return ws;
 }

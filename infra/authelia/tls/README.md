@@ -17,7 +17,7 @@ library's TLS gate.
 - Authelia mounts `cert.pem` + `key.pem` and serves TLS via the
   `server.tls` block in `configuration.yml`.
 - The Playwright browser never visits `https://authelia:9091` directly
-  (the i18n smoke spec asserts the 302 from `GET /auth/login` without
+  (the i18n smoke spec asserts the 302 from `GET /api/auth/login` without
   following the redirect into Authelia), so the browser trust store
   doesn't need this cert.
 

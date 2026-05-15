@@ -97,7 +97,7 @@ When(
     assert.ok(sessionId, 'no sessions row found to toggle by id');
     const response = await app.inject({
       method: 'PATCH',
-      url: `/sessions/${sessionId}/privacy`,
+      url: `/api/sessions/${sessionId}/privacy`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${cookieValue}` },
       payload: { privacy: desiredPrivacy },
     });
@@ -131,7 +131,7 @@ When(
     assert.ok(app, 'sessions app not initialized — Background step missing');
     const response = await app.inject({
       method: 'PATCH',
-      url: `/sessions/${sessionId}/privacy`,
+      url: `/api/sessions/${sessionId}/privacy`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
       payload: { privacy: desiredPrivacy },
     });

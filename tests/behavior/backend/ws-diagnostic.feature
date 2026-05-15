@@ -29,14 +29,14 @@ Feature: WebSocket diagnostic broadcast
 
   Scenario: A subscribed client receives a diagnostic envelope when a cycle fires for the session
     Given a public session owned by "alice-ws" exists with id "77777777-7777-4777-8777-777777777701"
-    When an authenticated WebSocket client connects to "/ws"
+    When an authenticated WebSocket client connects to "/api/ws"
     And the client sends a subscribe envelope for session "77777777-7777-4777-8777-777777777701"
     And the server notifies a cycle diagnostic fired for session "77777777-7777-4777-8777-777777777701" at sequence 1
     Then the client receives a diagnostic envelope with kind "cycle" and severity "blocking" and status "fired"
 
   Scenario: A subscribed client receives a diagnostic envelope when a contradiction clears for the session
     Given a public session owned by "alice-ws" exists with id "77777777-7777-4777-8777-777777777702"
-    When an authenticated WebSocket client connects to "/ws"
+    When an authenticated WebSocket client connects to "/api/ws"
     And the client sends a subscribe envelope for session "77777777-7777-4777-8777-777777777702"
     And the server notifies a contradiction diagnostic cleared for session "77777777-7777-4777-8777-777777777702" at sequence 4
     Then the client receives a diagnostic envelope with kind "contradiction" and severity "blocking" and status "cleared"
@@ -44,7 +44,7 @@ Feature: WebSocket diagnostic broadcast
   Scenario: A client subscribed to session A does not receive diagnostic broadcasts for session B
     Given a public session owned by "alice-ws" exists with id "77777777-7777-4777-8777-777777777703"
     And a public session owned by "alice-ws" exists with id "77777777-7777-4777-8777-777777777704"
-    When an authenticated WebSocket client connects to "/ws"
+    When an authenticated WebSocket client connects to "/api/ws"
     And the client sends a subscribe envelope for session "77777777-7777-4777-8777-777777777703"
     And the server notifies a cycle diagnostic fired for session "77777777-7777-4777-8777-777777777704" at sequence 1
     Then the client receives no diagnostic envelope within 200ms

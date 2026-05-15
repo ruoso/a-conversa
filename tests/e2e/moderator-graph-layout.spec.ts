@@ -20,7 +20,7 @@
 //      position-cache strategy is the stability seam.
 //
 // **Setup pattern.** Mirrors `moderator-hover-details.spec.ts`:
-// `loginAs` → POST /sessions → goto operate → probe WS-store
+// `loginAs` → POST /api/sessions → goto operate → probe WS-store
 // reachability → `seedWsStore(...)` with the layout fixture →
 // assertions. The fallback branch (window-attached store unreachable)
 // mirrors hover-details, marking the rich-content cases skipped with
@@ -129,7 +129,7 @@ test.describe.serial('moderator graph layout (dagre, TB)', () => {
     await loginAs(page, { username: 'alice' });
 
     // 2. Create a fresh session.
-    const createResp = await page.request.post('/sessions', {
+    const createResp = await page.request.post('/api/sessions', {
       data: {
         topic: 'graph-layout spec session',
         privacy: 'private',
@@ -307,7 +307,7 @@ test.describe.serial('moderator graph layout (dagre, TB)', () => {
   }) => {
     await loginAs(page, { username: 'alice' });
 
-    const createResp = await page.request.post('/sessions', {
+    const createResp = await page.request.post('/api/sessions', {
       data: {
         topic: 'graph-layout tall-node spec session',
         privacy: 'private',

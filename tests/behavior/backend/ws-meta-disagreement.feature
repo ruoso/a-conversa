@@ -53,7 +53,7 @@ Feature: WebSocket mark-meta-disagreement (client → server, moderator-only)
 
   Scenario: The moderator marks a pending proposal as meta-disagreement — ack + broadcast on the moderator's socket
     Given a markable session for "alice-ws" exists with id "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa901" and node id "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa9a01" and pending proposal id "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa9b01" with a recorded dispute
-    When an authenticated WebSocket client connects to "/ws"
+    When an authenticated WebSocket client connects to "/api/ws"
     And the client sends a subscribe envelope for session "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa901"
     And the client sends a mark-meta-disagreement envelope for session "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa901" with expectedSequence 7 on proposal "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa9b01"
     Then the client receives a meta-disagreement-marked ack referencing the mark envelope at sequence 8
@@ -61,14 +61,14 @@ Feature: WebSocket mark-meta-disagreement (client → server, moderator-only)
 
   Scenario: A non-moderator subscribed participant cannot mark — receives a not-a-moderator error envelope
     Given a markable session hosted by "other-host" with id "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa902" and node id "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa9a02" and pending proposal id "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa9b02" where "alice-ws" is a debater with a recorded dispute
-    When an authenticated WebSocket client connects to "/ws"
+    When an authenticated WebSocket client connects to "/api/ws"
     And the client sends a subscribe envelope for session "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa902"
     And the client sends a mark-meta-disagreement envelope for session "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa902" with expectedSequence 6 on proposal "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa9b02"
     Then the client receives an error envelope with code "not-a-moderator" referencing the mark envelope
 
   Scenario: A mark on an already-committed proposal is rejected with proposal-already-committed
     Given a committed-proposal session for "alice-ws" exists with id "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa903" and node id "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa9a03" and pending proposal id "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa9b03"
-    When an authenticated WebSocket client connects to "/ws"
+    When an authenticated WebSocket client connects to "/api/ws"
     And the client sends a subscribe envelope for session "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa903"
     And the client sends a mark-meta-disagreement envelope for session "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa903" with expectedSequence 8 on proposal "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa9b03"
     Then the client receives an error envelope with code "proposal-already-committed" referencing the mark envelope

@@ -1,7 +1,7 @@
 // Create-session form route for the moderator console.
 //
 // Refinement: tasks/refinements/moderator-ui/mod_create_session_form.md
-// Backend contract: POST /sessions (apps/server/src/sessions/routes.ts) —
+// Backend contract: POST /api/sessions (apps/server/src/sessions/routes.ts) —
 //   request `{ topic: string (1..256), privacy?: 'public' | 'private' }`;
 //   response 201 `{ id, hostUserId, privacy, topic, createdAt, endedAt }`.
 //   Validation failures land as 400 `validation-failed`; missing auth as
@@ -10,21 +10,12 @@
 //
 // The moderator's entry point into a new debate. After authenticating
 // and (for first-time users) setting a screen name, the moderator lands
-// on `/sessions/new/setup` (gated `authenticated-only` via `<RequireAuth>`
-// in `App.tsx`), fills in a topic, picks public/private, and on submit
-// POSTs `/sessions`. The handler returns 201 with `{ id, ... }`; the
-// form then `useNavigate`s to `/sessions/${id}/operate` with `replace:
-// false` so the back button returns to the form (a "create another"
-// affordance).
-//
-// The path is `/sessions/new/setup` rather than the refinement's stated
-// `/sessions/new` because Fastify's `GET /sessions/:id` API route matches
-// the latter (2-segment) form first and returns 400 `validation-failed`
-// before the static-frontends SPA fallback ever fires. A 3-segment path
-// has no registered backend route, lands on the SPA fallback's 404
-// handler with an HTML accept, and serves `index.html` so the SPA
-// mounts. See `apps/server/src/routes/static-frontends.ts` for the
-// SPA-fallback discriminator.
+// on `/sessions/new` (gated `authenticated-only` via `<RequireAuth>` in
+// `App.tsx`), fills in a topic, picks public/private, and on submit
+// POSTs `/api/sessions`. The handler returns 201 with `{ id, ... }`;
+// the form then `useNavigate`s to `/sessions/${id}/operate` with
+// `replace: false` so the back button returns to the form (a "create
+// another" affordance).
 //
 // Shape and a11y wiring mirror `ScreenName.tsx` deliberately: same
 // `useRef` + one-shot `useEffect` for focus-on-mount, same
@@ -127,7 +118,7 @@ export function CreateSessionRoute(): ReactElement {
     }
     setSubmitting(true);
     try {
-      const response = await fetch('/sessions', {
+      const response = await fetch('/api/sessions', {
         method: 'POST',
         credentials: 'include',
         headers: {

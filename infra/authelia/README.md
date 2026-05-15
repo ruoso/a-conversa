@@ -69,7 +69,7 @@ committed in `configuration.yml`:
 | ------------------------------ | ----------------------------------------- |
 | `client_id`                    | `aconversa-app-dev`                       |
 | `client_secret` (plaintext)    | `aconversa-app-dev-secret`                |
-| `redirect_uris`                | `http://localhost:5173/auth/callback`, `http://localhost:3000/auth/callback` |
+| `redirect_uris`                | `http://localhost:5173/api/auth/callback`, `http://localhost:3000/api/auth/callback` |
 | `scopes`                       | `openid`, `profile`, `email`, `offline_access` |
 | `response_types`               | `code`                                    |
 | `grant_types`                  | `authorization_code`, `refresh_token`     |

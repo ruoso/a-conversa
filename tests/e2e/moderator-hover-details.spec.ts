@@ -27,7 +27,7 @@
 //
 // **Setup pattern.** The spec uses `loginAs` from `fixtures/auth.ts`
 // to drive the OIDC handshake against the dev compose stack's Authelia.
-// It then creates a fresh session via `POST /sessions`. Once on
+// It then creates a fresh session via `POST /api/sessions`. Once on
 // `/sessions/<id>/operate`, the spec seeds a synthetic node and edge
 // into the moderator's Zustand WS store via the `wsStoreSeed.ts`
 // helper — this bypasses the server-side capture-flow protocol (which
@@ -76,7 +76,7 @@ test.describe.serial('moderator hover details', () => {
     // 2. Create a fresh session via the JSON API. The cookie jar set
     //    by `loginAs` carries the platform session cookie, so the
     //    request authenticates.
-    const createResp = await page.request.post('/sessions', {
+    const createResp = await page.request.post('/api/sessions', {
       data: {
         topic: 'hover-details spec session',
         privacy: 'private',

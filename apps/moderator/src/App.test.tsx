@@ -55,12 +55,12 @@ afterAll(() => {
 // can't be read twice. `mockImplementation` constructs a new `Response`
 // per call to side-step that.
 // ────────────────────────────────────────────────────────────────────────
-// Stub `/auth/me` to a fresh `needs-screen-name` response per call. When
-// `onPostScreenName` is provided, `/auth/screen-name` POSTs return a fresh
+// Stub `/api/auth/me` to a fresh `needs-screen-name` response per call. When
+// `onPostScreenName` is provided, `/api/auth/screen-name` POSTs return a fresh
 // response from that builder. All other URLs 404.
 function stubAuthMeNeedsScreenName(onPostScreenName?: () => Response): ReturnType<typeof vi.fn> {
   return vi.fn((url: string) => {
-    if (url === '/auth/me') {
+    if (url === '/api/auth/me') {
       return Promise.resolve(
         new Response(
           JSON.stringify({
@@ -71,7 +71,7 @@ function stubAuthMeNeedsScreenName(onPostScreenName?: () => Response): ReturnTyp
         ),
       );
     }
-    if (url === '/auth/screen-name' && onPostScreenName) {
+    if (url === '/api/auth/screen-name' && onPostScreenName) {
       return Promise.resolve(onPostScreenName());
     }
     return Promise.resolve(new Response('', { status: 404 }));
@@ -112,7 +112,7 @@ describe('moderator i18n bootstrap', () => {
 
 describe('moderator router', () => {
   // The router tests render `/login`, which mounts the auth hook, which
-  // calls `/auth/me`. Stub fetch to return 401 so the unauthenticated
+  // calls `/api/auth/me`. Stub fetch to return 401 so the unauthenticated
   // branch renders.
   beforeEach(() => {
     global.fetch = vi.fn().mockResolvedValue(new Response('', { status: 401 }));
@@ -146,7 +146,7 @@ describe('moderator router', () => {
 
   it('renders the lobby route with the session id captured from the path', async () => {
     // The lobby route is gated by `<RequireAuth mode="authenticated-only">`;
-    // stub `/auth/me` to a fully-authed response so the gate renders
+    // stub `/api/auth/me` to a fully-authed response so the gate renders
     // children rather than redirecting to `/login`.
     global.fetch = vi.fn().mockResolvedValue(
       new Response(
@@ -196,8 +196,8 @@ describe('moderator router', () => {
   // observable cells for this route: authenticated renders the form,
   // unauthenticated redirects to /login, needs-screen-name redirects to
   // /screen-name. Mirrors the lobby + operate router-gate cases.
-  describe('/sessions/new/setup — RequireAuth gate', () => {
-    it('renders the create-session form when /auth/me reports authenticated', async () => {
+  describe('/sessions/new — RequireAuth gate', () => {
+    it('renders the create-session form when /api/auth/me reports authenticated', async () => {
       global.fetch = vi.fn(() =>
         Promise.resolve(
           new Response(
@@ -210,7 +210,7 @@ describe('moderator router', () => {
         ),
       );
       render(
-        <MemoryRouter initialEntries={['/sessions/new/setup']}>
+        <MemoryRouter initialEntries={['/sessions/new']}>
           <App />
         </MemoryRouter>,
       );
@@ -220,10 +220,10 @@ describe('moderator router', () => {
       expect(screen.getByTestId('route-title').textContent).toBe('Create a session');
     });
 
-    it('redirects to /login when /auth/me reports unauthenticated', async () => {
+    it('redirects to /login when /api/auth/me reports unauthenticated', async () => {
       global.fetch = vi.fn(() => Promise.resolve(new Response('', { status: 401 })));
       render(
-        <MemoryRouter initialEntries={['/sessions/new/setup']}>
+        <MemoryRouter initialEntries={['/sessions/new']}>
           <App />
         </MemoryRouter>,
       );
@@ -232,7 +232,7 @@ describe('moderator router', () => {
       });
     });
 
-    it('redirects to /screen-name when /auth/me reports the placeholder screen name', async () => {
+    it('redirects to /screen-name when /api/auth/me reports the placeholder screen name', async () => {
       global.fetch = vi.fn(() =>
         Promise.resolve(
           new Response(
@@ -245,7 +245,7 @@ describe('moderator router', () => {
         ),
       );
       render(
-        <MemoryRouter initialEntries={['/sessions/new/setup']}>
+        <MemoryRouter initialEntries={['/sessions/new']}>
           <App />
         </MemoryRouter>,
       );
@@ -267,12 +267,12 @@ describe('Login route — auth states', () => {
     );
     await waitFor(() => {
       const btn = screen.getByTestId('auth-login-button');
-      expect(btn.getAttribute('href')).toBe('/auth/login');
+      expect(btn.getAttribute('href')).toBe('/api/auth/login');
       expect(btn.textContent).toBe('Sign in with SSO');
     });
   });
 
-  it('calls GET /auth/me with credentials: include on mount', async () => {
+  it('calls GET /api/auth/me with credentials: include on mount', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response('', { status: 401 }));
     global.fetch = fetchMock;
 
@@ -285,7 +285,7 @@ describe('Login route — auth states', () => {
       expect(fetchMock).toHaveBeenCalled();
     });
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe('/auth/me');
+    expect(url).toBe('/api/auth/me');
     expect(init.method).toBe('GET');
     expect(init.credentials).toBe('include');
   });
@@ -439,7 +439,7 @@ describe('Login route — auth states', () => {
       expect(fetchMock).toHaveBeenCalledTimes(2);
     });
     const [logoutUrl, logoutInit] = fetchMock.mock.calls[1] as [string, RequestInit];
-    expect(logoutUrl).toBe('/auth/logout');
+    expect(logoutUrl).toBe('/api/auth/logout');
     expect(logoutInit.method).toBe('POST');
     expect(logoutInit.credentials).toBe('include');
     expect(reloadSpy).toHaveBeenCalled();
@@ -506,9 +506,9 @@ describe('ScreenName route — form behavior', () => {
     });
 
     // Find the POST among the fetch calls.
-    const postCall = fetchMock.mock.calls.find((c) => (c[0] as string) === '/auth/screen-name') as
-      | [string, RequestInit]
-      | undefined;
+    const postCall = fetchMock.mock.calls.find(
+      (c) => (c[0] as string) === '/api/auth/screen-name',
+    ) as [string, RequestInit] | undefined;
     expect(postCall).toBeDefined();
     expect(postCall?.[1].method).toBe('POST');
     expect(postCall?.[1].credentials).toBe('include');
@@ -684,7 +684,7 @@ describe('ScreenName route — client-side mirror of backend validation', () => 
       );
     });
     // No POST should have happened — only the initial /auth/me GET.
-    const postCall = fetchMock.mock.calls.find((c) => (c[0] as string) === '/auth/screen-name');
+    const postCall = fetchMock.mock.calls.find((c) => (c[0] as string) === '/api/auth/screen-name');
     expect(postCall).toBeUndefined();
   });
 
@@ -708,7 +708,7 @@ describe('ScreenName route — client-side mirror of backend validation', () => 
         'Display name contains a disallowed character (control / bidi-override / non-printable).',
       );
     });
-    const postCall = fetchMock.mock.calls.find((c) => (c[0] as string) === '/auth/screen-name');
+    const postCall = fetchMock.mock.calls.find((c) => (c[0] as string) === '/api/auth/screen-name');
     expect(postCall).toBeUndefined();
   });
 
@@ -732,7 +732,7 @@ describe('ScreenName route — client-side mirror of backend validation', () => 
         'Display name contains a disallowed character (control / bidi-override / non-printable).',
       );
     });
-    const postCall = fetchMock.mock.calls.find((c) => (c[0] as string) === '/auth/screen-name');
+    const postCall = fetchMock.mock.calls.find((c) => (c[0] as string) === '/api/auth/screen-name');
     expect(postCall).toBeUndefined();
   });
 
@@ -761,9 +761,9 @@ describe('ScreenName route — client-side mirror of backend validation', () => 
       fireEvent.submit(screen.getByTestId('screen-name-form'));
       await Promise.resolve();
     });
-    const postCall = fetchMock.mock.calls.find((c) => (c[0] as string) === '/auth/screen-name') as
-      | [string, RequestInit]
-      | undefined;
+    const postCall = fetchMock.mock.calls.find(
+      (c) => (c[0] as string) === '/api/auth/screen-name',
+    ) as [string, RequestInit] | undefined;
     expect(postCall).toBeDefined();
     expect(JSON.parse(postCall?.[1].body as string)).toEqual({ screenName: 'file' });
   });

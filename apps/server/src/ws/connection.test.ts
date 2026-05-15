@@ -105,7 +105,7 @@ async function openWsClient(
   const queue: string[] = [];
   let waiter: ((msg: string) => void) | null = null;
 
-  const ws = await app.injectWS('/ws', options ?? {}, {
+  const ws = await app.injectWS('/api/ws', options ?? {}, {
     onInit(client: unknown) {
       // Pre-attach the message handler before the handshake
       // completes so the server-initiated `hello` frame is captured

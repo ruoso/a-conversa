@@ -108,7 +108,7 @@ When(
     assert.ok(cookieValue, 'no session cookie captured — preceding Given missing');
     const response = await app.inject({
       method: 'GET',
-      url: `/sessions?host=${userId}`,
+      url: `/api/sessions?host=${userId}`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${cookieValue}` },
     });
     s.lastResponse = {
@@ -137,7 +137,7 @@ When(
     assert.ok(app, 'sessions app not initialized — Background step missing');
     const response = await app.inject({
       method: 'GET',
-      url: `/sessions?privacy=${encodeURIComponent(privacy)}`,
+      url: `/api/sessions?privacy=${encodeURIComponent(privacy)}`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     s.lastResponse = {
@@ -158,7 +158,7 @@ When(
     assert.ok(cookieValue, 'no session cookie captured — preceding Given missing');
     const response = await app.inject({
       method: 'GET',
-      url: `/sessions?topic=${encodeURIComponent(topic)}`,
+      url: `/api/sessions?topic=${encodeURIComponent(topic)}`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${cookieValue}` },
     });
     s.lastResponse = {
@@ -179,7 +179,7 @@ When(
     assert.ok(cookieValue, 'no session cookie captured — preceding Given missing');
     const response = await app.inject({
       method: 'GET',
-      url: `/sessions?limit=${String(limit)}&offset=${String(offset)}`,
+      url: `/api/sessions?limit=${String(limit)}&offset=${String(offset)}`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${cookieValue}` },
     });
     s.lastResponse = {

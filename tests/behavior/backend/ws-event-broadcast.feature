@@ -27,16 +27,16 @@ Feature: WebSocket event-applied broadcast
 
   Scenario: A subscribed client receives event-applied broadcasts for new events in the session
     Given a public session owned by "alice-ws" exists with id "66666666-6666-4666-8666-666666666601"
-    When an authenticated WebSocket client connects to "/ws"
+    When an authenticated WebSocket client connects to "/api/ws"
     And the client sends a subscribe envelope for session "66666666-6666-4666-8666-666666666601"
     And the server emits an event-applied broadcast for session "66666666-6666-4666-8666-666666666601" with sequence 1
     Then the client receives an event-applied envelope for sequence 1
 
   Scenario: Two clients subscribed to the same session both receive the same broadcast in the same order
     Given a public session owned by "alice-ws" exists with id "66666666-6666-4666-8666-666666666602"
-    When an authenticated WebSocket client connects to "/ws"
+    When an authenticated WebSocket client connects to "/api/ws"
     And the client sends a subscribe envelope for session "66666666-6666-4666-8666-666666666602"
-    And a second authenticated WebSocket client connects to "/ws"
+    And a second authenticated WebSocket client connects to "/api/ws"
     And the second client sends a subscribe envelope for session "66666666-6666-4666-8666-666666666602"
     And the server emits an event-applied broadcast for session "66666666-6666-4666-8666-666666666602" with sequence 1
     And the server emits an event-applied broadcast for session "66666666-6666-4666-8666-666666666602" with sequence 2
@@ -46,14 +46,14 @@ Feature: WebSocket event-applied broadcast
   Scenario: A client subscribed to session A does not receive broadcasts for session B
     Given a public session owned by "alice-ws" exists with id "66666666-6666-4666-8666-666666666603"
     And a public session owned by "alice-ws" exists with id "66666666-6666-4666-8666-666666666604"
-    When an authenticated WebSocket client connects to "/ws"
+    When an authenticated WebSocket client connects to "/api/ws"
     And the client sends a subscribe envelope for session "66666666-6666-4666-8666-666666666603"
     And the server emits an event-applied broadcast for session "66666666-6666-4666-8666-666666666604" with sequence 1
     Then the client receives no event-applied envelope within 200ms
 
   Scenario: Unsubscribed clients receive no broadcasts after unsubscribe
     Given a public session owned by "alice-ws" exists with id "66666666-6666-4666-8666-666666666605"
-    When an authenticated WebSocket client connects to "/ws"
+    When an authenticated WebSocket client connects to "/api/ws"
     And the client sends a subscribe envelope for session "66666666-6666-4666-8666-666666666605"
     And the client sends an unsubscribe envelope for session "66666666-6666-4666-8666-666666666605"
     And the server emits an event-applied broadcast for session "66666666-6666-4666-8666-666666666605" with sequence 1

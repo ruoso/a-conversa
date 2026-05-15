@@ -51,6 +51,15 @@
 //   - `GET /healthz` — liveness probe (registered via the
 //     `healthzPlugin`); the compose `app` service healthcheck targets
 //     this route. Owned by `backend.api_skeleton.health_endpoint`.
+//     **Lives at the root** (not under `/api/*`) — ops convention.
+//   - `GET /api/auth/*`, `GET|POST /api/sessions/*`, `GET /api/ws`,
+//     `GET /api/docs[/json]` — every other HTTP / WS surface lives
+//     under `/api/*`. The literal `/api` prefix lives directly inside
+//     the route declarations (`app.get('/api/auth/login', ...)` etc.)
+//     because the route plugins are `fastify-plugin`-wrapped
+//     (skip-override) and would not pick up a `prefix` option on
+//     `app.register(...)`. Refinement:
+//     tasks/refinements/backend/serve_static_frontends_path_collision_fix.md.
 //
 // Sibling tasks register their routes on the instance returned here.
 
@@ -398,14 +407,14 @@ export async function createServer(options: CreateServerOptions = {}): Promise<F
 
   // Auth middleware — decorates the instance with `app.authenticate`
   // and the request with `authUser`. Registered BEFORE the auth-routes
-  // plugin so `/auth/me`'s `preHandler: app.authenticate` resolves at
-  // route-registration time. The plugin lazily reaches for the DB
+  // plugin so `/api/auth/me`'s `preHandler: app.authenticate` resolves
+  // at route-registration time. The plugin lazily reaches for the DB
   // pool + session-token secret on the first authenticated request;
   // unauthenticated smoke tests of the bootstrap don't pay the cost.
   // Refinement: tasks/refinements/backend/auth_middleware.md.
   await app.register(authenticatePlugin);
 
-  // OIDC handshake routes (`GET /auth/login` + `GET /auth/callback`).
+  // OIDC handshake routes (`GET /api/auth/login` + `GET /api/auth/callback`).
   // Owned by `backend.auth.oauth_callback_handler`. The plugin reads
   // `OIDC_*` env vars at registration time; when those env vars are
   // not set (the common case for `createServer({ logger: false })`
@@ -414,11 +423,19 @@ export async function createServer(options: CreateServerOptions = {}): Promise<F
   // production server with a real `.env` registers the routes; an
   // OIDC-less test does not. Refinement:
   // tasks/refinements/backend/oauth_callback_handler.md.
+  //
+  // The route literals inside `auth/routes.ts` carry the `/api/*`
+  // prefix directly — `authRoutesPlugin` is `fastify-plugin`-wrapped
+  // (skip-override), so a `register(..., { prefix: '/api' })` call
+  // here would be ignored by Fastify (skip-override plugins attach to
+  // the parent scope and the parent's prefix context does not apply).
+  // Refinement:
+  //   tasks/refinements/backend/serve_static_frontends_path_collision_fix.md.
   try {
     const oidcConfig = loadOidcConfig(process.env);
     // Wire the WS-revocation hook into the logout path. When `POST
-    // /auth/logout` verifies a cookie + commits a denylist row, the
-    // hook closes every open WebSocket connection owned by the
+    // /api/auth/logout` verifies a cookie + commits a denylist row,
+    // the hook closes every open WebSocket connection owned by the
     // logging-out user (close code 4401 / reason `auth-revoked`).
     // The static import edge `auth/ → ws/` here is acceptable because
     // `server.ts` is the composition root that already imports both.
@@ -456,15 +473,22 @@ export async function createServer(options: CreateServerOptions = {}): Promise<F
     }
   }
 
-  // Session-management routes (`POST /sessions` today; `GET /sessions`,
-  // `GET /sessions/:id`, `POST /sessions/:id/end`, the privacy-toggle
-  // endpoint, and participant assignment as siblings land). Registered
-  // AFTER the auth middleware so the route's
-  // `preHandler: app.authenticate` resolves the decorator at
-  // route-registration time. The plugin lazily reaches for the DB pool
-  // on the first authenticated request; smoke tests of the bootstrap
-  // that never POST /sessions don't pay the cost. Refinement:
+  // Session-management routes (`POST /api/sessions` today;
+  // `GET /api/sessions`, `GET /api/sessions/:id`,
+  // `POST /api/sessions/:id/end`, the privacy-toggle endpoint, and
+  // participant assignment as siblings land). Registered AFTER the
+  // auth middleware so the route's `preHandler: app.authenticate`
+  // resolves the decorator at route-registration time. The plugin
+  // lazily reaches for the DB pool on the first authenticated request;
+  // smoke tests of the bootstrap that never POST /api/sessions don't
+  // pay the cost. Refinement:
   // tasks/refinements/backend/create_session_endpoint.md.
+  //
+  // The route literals inside `sessions/routes.ts` carry the `/api/*`
+  // prefix directly (same reason as `authRoutesPlugin` above —
+  // `sessionsRoutesPlugin` is `fastify-plugin`-wrapped so a
+  // `prefix` option would be ignored). Refinement:
+  //   tasks/refinements/backend/serve_static_frontends_path_collision_fix.md.
   await app.register(sessionsRoutesPlugin);
 
   // WebSocket connection lifecycle. Registers `@fastify/websocket`

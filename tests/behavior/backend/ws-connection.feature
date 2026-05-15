@@ -21,15 +21,15 @@ Feature: WebSocket connection lifecycle
     And the cucumber world has a valid session cookie for that user
 
   Scenario: a connecting client receives a canonical hello envelope
-    When an authenticated WebSocket client connects to "/ws"
+    When an authenticated WebSocket client connects to "/api/ws"
     Then the client receives a hello envelope with a UUID connectionId
 
   Scenario: a client-initiated close completes cleanly
-    When an authenticated WebSocket client connects to "/ws"
+    When an authenticated WebSocket client connects to "/api/ws"
     And the client closes the WebSocket with code 1000
     Then the WebSocket close handshake completes with code 1000
 
   Scenario: server shutdown closes in-flight WebSocket connections with 1001
-    When an authenticated WebSocket client connects to "/ws"
+    When an authenticated WebSocket client connects to "/api/ws"
     And the server closes the WebSocket application
     Then the WebSocket received a server-shutdown close with code 1001 and reason "server-shutting-down"

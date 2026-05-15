@@ -27,7 +27,7 @@
 //   - Callback handler splits drifting (returning-user no longer
 //     issues `aconversa-session`; new-user no longer issues
 //     `aconversa-auth-pending`) — caught by the cookie-jar assertion.
-//   - `/auth/me` growing an extra field (no-profile-data-policy
+//   - `/api/auth/me` growing an extra field (no-profile-data-policy
 //     regression) — caught by the exact-shape assertion.
 //
 // **Scenario ordering — `test.describe.serial`.** The four scenarios
@@ -35,14 +35,14 @@
 //
 //   1. new-user — CREATES the `users` row for `alice` (the OIDC
 //      callback's upsert fires for the first time). Submits the
-//      screen-name form. Asserts `/auth/me` returns `{ userId,
+//      screen-name form. Asserts `/api/auth/me` returns `{ userId,
 //      screenName: 'alice' }`.
 //   2. returning-user — re-uses the row created above. The callback's
 //      returning-user branch sets `aconversa-session` directly; no
-//      screen-name form. Asserts the same `/auth/me` shape.
-//   3. logout — clears the cookie. Asserts `/auth/me` returns 401
-//      `auth-required` AFTER `POST /auth/logout`.
-//   4. invalid-state — drives a single `request.get('/auth/callback?
+//      screen-name form. Asserts the same `/api/auth/me` shape.
+//   3. logout — clears the cookie. Asserts `/api/auth/me` returns 401
+//      `auth-required` AFTER `POST /api/auth/logout`.
+//   4. invalid-state — drives a single `request.get('/api/auth/callback?
 //      state=bogus&code=irrelevant')` and asserts the 400
 //      `auth-state-invalid` envelope. Pure HTTP, no browser
 //      navigation — fast and isolated.
@@ -62,12 +62,12 @@ const TEST_USERNAME = 'alice';
 const SESSION_COOKIE_NAME = 'aconversa-session';
 
 test.describe.serial('OAuth flow integration — full handshake against Authelia', () => {
-  test('new user: completes OIDC, lands on /screen-name, submits a screen name, /auth/me returns the user', async ({
+  test('new user: completes OIDC, lands on /screen-name, submits a screen name, /api/auth/me returns the user', async ({
     page,
   }) => {
     const me = await loginAs(page, { username: TEST_USERNAME });
 
-    // The new-user branch ended at `POST /auth/screen-name`, which
+    // The new-user branch ended at `POST /api/auth/screen-name`, which
     // cleared the pending cookie AND set the platform session cookie.
     // Inspect the page context's cookie jar (HttpOnly cookies are
     // readable here — Playwright's `context.cookies()` returns them).
@@ -79,11 +79,11 @@ test.describe.serial('OAuth flow integration — full handshake against Authelia
     ).toBeDefined();
     expect(sessionCookie?.httpOnly, `${SESSION_COOKIE_NAME} must be HttpOnly`).toBe(true);
 
-    // `/auth/me` reads as `{ userId, screenName }` — and ONLY those
+    // `/api/auth/me` reads as `{ userId, screenName }` — and ONLY those
     // two keys. This pins the `no_profile_data_policy` invariant at
     // the e2e layer: a regression that leaks `oauthSubject` or any
-    // OIDC claim through `/auth/me` fails here.
-    expect(me.screenName, 'screenName must echo the value submitted to /auth/screen-name').toBe(
+    // OIDC claim through `/api/auth/me` fails here.
+    expect(me.screenName, 'screenName must echo the value submitted to /api/auth/screen-name').toBe(
       TEST_USERNAME,
     );
     expect(typeof me.userId, 'userId must be a string (uuid)').toBe('string');
@@ -92,22 +92,24 @@ test.describe.serial('OAuth flow integration — full handshake against Authelia
     // Exact-shape assertion — no extra fields. `Object.keys` ordering
     // is implementation-defined in the JSON parse pipeline, so we
     // sort before comparing.
-    const meRaw = await page.request.get('/auth/me');
-    expect(meRaw.status(), 'GET /auth/me must return 200 for the authenticated session').toBe(200);
+    const meRaw = await page.request.get('/api/auth/me');
+    expect(meRaw.status(), 'GET /api/auth/me must return 200 for the authenticated session').toBe(
+      200,
+    );
     const body = (await meRaw.json()) as Record<string, unknown>;
     expect(
       Object.keys(body).sort(),
-      '/auth/me response shape must be exactly { userId, screenName }',
+      '/api/auth/me response shape must be exactly { userId, screenName }',
     ).toEqual(['screenName', 'userId']);
   });
 
-  test('returning user: completes OIDC, redirected to APP_BASE_URL, /auth/me returns the same user', async ({
+  test('returning user: completes OIDC, redirected to APP_BASE_URL, /api/auth/me returns the same user', async ({
     browser,
   }) => {
     // Fresh browser context so the previous test's cookies don't
     // leak (Authelia's own session cookie would short-circuit the
     // form fill). The same dev user logs in — this time the upsert
-    // in `/auth/callback` finds the existing row, the returning-user
+    // in `/api/auth/callback` finds the existing row, the returning-user
     // branch fires, and `aconversa-session` is set directly without
     // the screen-name detour.
     const context = await browser.newContext({ ignoreHTTPSErrors: true });
@@ -120,7 +122,7 @@ test.describe.serial('OAuth flow integration — full handshake against Authelia
       ).toBe(TEST_USERNAME);
 
       // The returning-user branch issued `aconversa-session` on the
-      // 302 from `/auth/callback`, NOT via a screen-name POST. Assert
+      // 302 from `/api/auth/callback`, NOT via a screen-name POST. Assert
       // the cookie is set and the URL never visited `/screen-name`.
       const cookies = await context.cookies();
       const sessionCookie = cookies.find((c) => c.name === SESSION_COOKIE_NAME);
@@ -141,7 +143,7 @@ test.describe.serial('OAuth flow integration — full handshake against Authelia
     }
   });
 
-  test('logout: POST /auth/logout, subsequent /auth/me returns 401 auth-required', async ({
+  test('logout: POST /api/auth/logout, subsequent /api/auth/me returns 401 auth-required', async ({
     browser,
   }) => {
     const context = await browser.newContext({ ignoreHTTPSErrors: true });
@@ -153,24 +155,24 @@ test.describe.serial('OAuth flow integration — full handshake against Authelia
       await loginAs(page, { username: TEST_USERNAME });
 
       // Sanity: we're authenticated.
-      const before = await page.request.get('/auth/me');
-      expect(before.status(), 'precondition: /auth/me is 200 before logout').toBe(200);
+      const before = await page.request.get('/api/auth/me');
+      expect(before.status(), 'precondition: /api/auth/me is 200 before logout').toBe(200);
 
       // Drive the logout. The handler returns 204 + a cookie-clear
       // Set-Cookie. The page context's cookie jar drops the value
       // when the Max-Age=0 / Expires=epoch attribute lands.
-      const logoutResponse = await page.request.post('/auth/logout');
-      expect(logoutResponse.status(), 'POST /auth/logout must return 204').toBe(204);
+      const logoutResponse = await page.request.post('/api/auth/logout');
+      expect(logoutResponse.status(), 'POST /api/auth/logout must return 204').toBe(204);
 
-      // After the cookie clear, `/auth/me` returns the canonical 401
+      // After the cookie clear, `/api/auth/me` returns the canonical 401
       // `auth-required` envelope. This pins the cookie-clear path
       // (the auth middleware's missing-cookie branch).
-      const after = await page.request.get('/auth/me');
-      expect(after.status(), '/auth/me must return 401 after logout').toBe(401);
+      const after = await page.request.get('/api/auth/me');
+      expect(after.status(), '/api/auth/me must return 401 after logout').toBe(401);
       const body = (await after.json()) as { error?: { code?: string } };
       expect(
         body.error?.code,
-        '/auth/me 401 envelope must carry code auth-required after logout',
+        '/api/auth/me 401 envelope must carry code auth-required after logout',
       ).toBe('auth-required');
 
       // And the page context's cookie jar must no longer carry the
@@ -188,7 +190,7 @@ test.describe.serial('OAuth flow integration — full handshake against Authelia
     }
   });
 
-  test('invalid state: navigating to /auth/callback with a bogus state returns 400 auth-state-invalid', async ({
+  test('invalid state: navigating to /api/auth/callback with a bogus state returns 400 auth-state-invalid', async ({
     request,
   }) => {
     // Pure HTTP — no browser navigation, no Authelia touch. This
@@ -196,12 +198,12 @@ test.describe.serial('OAuth flow integration — full handshake against Authelia
     // inbound `state` is not in the flow-state store, so the handler
     // throws `auth-state-invalid` and the error handler renders the
     // canonical 400 envelope.
-    const response = await request.get('/auth/callback?state=bogus&code=irrelevant');
-    expect(response.status(), '/auth/callback with bogus state must return 400').toBe(400);
+    const response = await request.get('/api/auth/callback?state=bogus&code=irrelevant');
+    expect(response.status(), '/api/auth/callback with bogus state must return 400').toBe(400);
     const body = (await response.json()) as { error?: { code?: string } };
     expect(
       body.error?.code,
-      '/auth/callback bogus-state envelope must carry code auth-state-invalid',
+      '/api/auth/callback bogus-state envelope must carry code auth-state-invalid',
     ).toBe('auth-state-invalid');
   });
 });

@@ -112,7 +112,7 @@ describe('beginAuthFlow', () => {
 
   it('returns { url, state, nonce, codeVerifier } sourced from openid-client primitives', async () => {
     const result = await beginAuthFlow(stubClient, {
-      redirectUri: 'http://localhost:3000/auth/callback',
+      redirectUri: 'http://localhost:3000/api/auth/callback',
     });
     expect(result.state).toBe('mock-state');
     expect(result.nonce).toBe('mock-nonce');
@@ -122,13 +122,13 @@ describe('beginAuthFlow', () => {
 
   it('passes the expected query params to buildAuthorizationUrl', async () => {
     await beginAuthFlow(stubClient, {
-      redirectUri: 'http://localhost:3000/auth/callback',
+      redirectUri: 'http://localhost:3000/api/auth/callback',
     });
     expect(buildAuthorizationUrlMock).toHaveBeenCalledTimes(1);
     const call = buildAuthorizationUrlMock.mock.calls[0];
     expect(call).toBeDefined();
     const [, params] = call as [unknown, Record<string, string>];
-    expect(params['redirect_uri']).toBe('http://localhost:3000/auth/callback');
+    expect(params['redirect_uri']).toBe('http://localhost:3000/api/auth/callback');
     expect(params['response_type']).toBe('code');
     expect(params['scope']).toBe('openid');
     expect(params['state']).toBe('mock-state');
@@ -139,7 +139,7 @@ describe('beginAuthFlow', () => {
 
   it('defaults scope to "openid" (no profile/email per ADR 0002)', async () => {
     await beginAuthFlow(stubClient, {
-      redirectUri: 'http://localhost:3000/auth/callback',
+      redirectUri: 'http://localhost:3000/api/auth/callback',
     });
     const call = buildAuthorizationUrlMock.mock.calls[0];
     const [, params] = call as [unknown, Record<string, string>];
@@ -150,7 +150,7 @@ describe('beginAuthFlow', () => {
 
   it('honors an explicit scope when the caller passes one', async () => {
     await beginAuthFlow(stubClient, {
-      redirectUri: 'http://localhost:3000/auth/callback',
+      redirectUri: 'http://localhost:3000/api/auth/callback',
       scope: 'openid offline_access',
     });
     const call = buildAuthorizationUrlMock.mock.calls[0];
@@ -160,7 +160,7 @@ describe('beginAuthFlow', () => {
 
   it('calls each random/pkce primitive exactly once per flow', async () => {
     await beginAuthFlow(stubClient, {
-      redirectUri: 'http://localhost:3000/auth/callback',
+      redirectUri: 'http://localhost:3000/api/auth/callback',
     });
     expect(randomStateMock).toHaveBeenCalledTimes(1);
     expect(randomNonceMock).toHaveBeenCalledTimes(1);
@@ -190,7 +190,7 @@ describe('completeAuthFlow', () => {
   });
 
   it('throws AuthStateMismatchError when the inbound state differs from expected', async () => {
-    const url = new URL('http://localhost:3000/auth/callback?code=AUTHCODE&state=WRONG-STATE');
+    const url = new URL('http://localhost:3000/api/auth/callback?code=AUTHCODE&state=WRONG-STATE');
     await expect(
       completeAuthFlow(stubClient, url, {
         expectedState: 'mock-state',
@@ -203,7 +203,7 @@ describe('completeAuthFlow', () => {
   });
 
   it('on state match, passes state/nonce/verifier to authorizationCodeGrant', async () => {
-    const url = new URL('http://localhost:3000/auth/callback?code=AUTHCODE&state=mock-state');
+    const url = new URL('http://localhost:3000/api/auth/callback?code=AUTHCODE&state=mock-state');
     await completeAuthFlow(stubClient, url, {
       expectedState: 'mock-state',
       expectedNonce: 'mock-nonce',
@@ -225,7 +225,7 @@ describe('completeAuthFlow', () => {
   });
 
   it('returns { sub } from the token response claims', async () => {
-    const url = new URL('http://localhost:3000/auth/callback?code=AUTHCODE&state=mock-state');
+    const url = new URL('http://localhost:3000/api/auth/callback?code=AUTHCODE&state=mock-state');
     const result = await completeAuthFlow(stubClient, url, {
       expectedState: 'mock-state',
       expectedNonce: 'mock-nonce',
@@ -245,7 +245,7 @@ describe('completeAuthFlow', () => {
       token_type: 'Bearer',
       claims: () => undefined,
     } as unknown as Awaited<ReturnType<typeof authorizationCodeGrantMock>>);
-    const url = new URL('http://localhost:3000/auth/callback?code=AUTHCODE&state=mock-state');
+    const url = new URL('http://localhost:3000/api/auth/callback?code=AUTHCODE&state=mock-state');
     await expect(
       completeAuthFlow(stubClient, url, {
         expectedState: 'mock-state',

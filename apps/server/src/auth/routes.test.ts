@@ -101,7 +101,7 @@ const VALID_OIDC_CONFIG = {
   clientId: 'aconversa-app-dev',
   clientSecret: 'aconversa-app-dev-secret',
   appBaseUrl: 'http://localhost:3000',
-  redirectUri: 'http://localhost:3000/auth/callback',
+  redirectUri: 'http://localhost:3000/api/auth/callback',
 } as const;
 
 function makeStubClient(): ReturnType<typeof __buildStubConfiguration> {
@@ -209,7 +209,7 @@ describe('GET /auth/login', () => {
   });
 
   it('302-redirects to the issuer authorization endpoint', async () => {
-    const response = await test.app.inject({ method: 'GET', url: '/auth/login' });
+    const response = await test.app.inject({ method: 'GET', url: '/api/auth/login' });
     expect(response.statusCode).toBe(302);
     expect(response.headers['location']).toBeDefined();
     expect(String(response.headers['location'])).toMatch(/^http:\/\/authelia:9091\/auth\?/);
@@ -217,14 +217,16 @@ describe('GET /auth/login', () => {
 
   it('persists the flow state under the generated state', async () => {
     expect(test.flowState.size()).toBe(0);
-    await test.app.inject({ method: 'GET', url: '/auth/login' });
+    await test.app.inject({ method: 'GET', url: '/api/auth/login' });
     expect(test.flowState.size()).toBe(1);
   });
 
   it('passes the expected query params to the authorization URL', async () => {
-    const response = await test.app.inject({ method: 'GET', url: '/auth/login' });
+    const response = await test.app.inject({ method: 'GET', url: '/api/auth/login' });
     const location = new URL(String(response.headers['location']));
-    expect(location.searchParams.get('redirect_uri')).toBe('http://localhost:3000/auth/callback');
+    expect(location.searchParams.get('redirect_uri')).toBe(
+      'http://localhost:3000/api/auth/callback',
+    );
     expect(location.searchParams.get('response_type')).toBe('code');
     expect(location.searchParams.get('scope')).toBe('openid');
     expect(location.searchParams.get('state')).toBe('state-1');
@@ -299,14 +301,14 @@ describe('GET /auth/login — capacity cap (inputs.md F-006)', () => {
   it('returns 503 + temporarily-unavailable when the cap is reached', async () => {
     // Saturate the cap (= 2): two successful redirects fill the
     // store.
-    const first = await testApp.app.inject({ method: 'GET', url: '/auth/login' });
+    const first = await testApp.app.inject({ method: 'GET', url: '/api/auth/login' });
     expect(first.statusCode).toBe(302);
-    const second = await testApp.app.inject({ method: 'GET', url: '/auth/login' });
+    const second = await testApp.app.inject({ method: 'GET', url: '/api/auth/login' });
     expect(second.statusCode).toBe(302);
     expect(testApp.flowState.size()).toBe(2);
     // Third call: at-cap, no expired entries, eager sweep frees
     // nothing → 503.
-    const third = await testApp.app.inject({ method: 'GET', url: '/auth/login' });
+    const third = await testApp.app.inject({ method: 'GET', url: '/api/auth/login' });
     expect(third.statusCode).toBe(503);
     const body = third.json<{ error?: { code?: string; message?: string } }>();
     expect(body.error?.code).toBe('temporarily-unavailable');
@@ -334,7 +336,7 @@ describe('GET /auth/callback', () => {
   it('returns 400 + auth-state-invalid envelope when state is missing', async () => {
     const response = await test.app.inject({
       method: 'GET',
-      url: '/auth/callback?code=AUTHCODE',
+      url: '/api/auth/callback?code=AUTHCODE',
     });
     expect(response.statusCode).toBe(400);
     // The querystring schema's `required: ['code', 'state']` rejects
@@ -347,10 +349,10 @@ describe('GET /auth/callback', () => {
   it('returns 400 when state does not match a stored entry', async () => {
     // Begin a flow so the store has a known entry, then send an
     // unrelated state.
-    await test.app.inject({ method: 'GET', url: '/auth/login' });
+    await test.app.inject({ method: 'GET', url: '/api/auth/login' });
     const response = await test.app.inject({
       method: 'GET',
-      url: '/auth/callback?code=AUTHCODE&state=does-not-exist',
+      url: '/api/auth/callback?code=AUTHCODE&state=does-not-exist',
     });
     expect(response.statusCode).toBe(400);
     const body = response.json<{ error?: { code?: string; message?: string } }>();
@@ -359,10 +361,10 @@ describe('GET /auth/callback', () => {
   });
 
   it('with a matching state, exchanges code and returns the user', async () => {
-    await test.app.inject({ method: 'GET', url: '/auth/login' });
+    await test.app.inject({ method: 'GET', url: '/api/auth/login' });
     const response = await test.app.inject({
       method: 'GET',
-      url: '/auth/callback?code=AUTHCODE&state=state-1',
+      url: '/api/auth/callback?code=AUTHCODE&state=state-1',
     });
     expect(response.statusCode).toBe(200);
     const body = response.json<{ sub?: string; oauthSubject?: string; userId?: string }>();
@@ -375,15 +377,15 @@ describe('GET /auth/callback', () => {
   });
 
   it('a replay against the same state after take() returns 400', async () => {
-    await test.app.inject({ method: 'GET', url: '/auth/login' });
+    await test.app.inject({ method: 'GET', url: '/api/auth/login' });
     const first = await test.app.inject({
       method: 'GET',
-      url: '/auth/callback?code=AUTHCODE&state=state-1',
+      url: '/api/auth/callback?code=AUTHCODE&state=state-1',
     });
     expect(first.statusCode).toBe(200);
     const replay = await test.app.inject({
       method: 'GET',
-      url: '/auth/callback?code=AUTHCODE&state=state-1',
+      url: '/api/auth/callback?code=AUTHCODE&state=state-1',
     });
     expect(replay.statusCode).toBe(400);
     const body = replay.json<{ error?: { code?: string } }>();
@@ -519,7 +521,7 @@ describe('OIDC state replay protection (G-012)', () => {
     // doesn't mask the real signal. The deterministic randomState
     // in buildApp's beginFlowOptions yields `state-1` on the first
     // call — that's the value the two callback requests below use.
-    const loginResponse = await test.app.inject({ method: 'GET', url: '/auth/login' });
+    const loginResponse = await test.app.inject({ method: 'GET', url: '/api/auth/login' });
     expect(loginResponse.statusCode).toBe(302);
     expect(test.flowState.size()).toBe(1);
 
@@ -534,7 +536,7 @@ describe('OIDC state replay protection (G-012)', () => {
     // take() consumed the state).
     const first = await test.app.inject({
       method: 'GET',
-      url: '/auth/callback?code=AUTHCODE&state=state-1',
+      url: '/api/auth/callback?code=AUTHCODE&state=state-1',
     });
     expect(first.statusCode).toBe(200);
     const firstBody = first.json<{ sub?: string; oauthSubject?: string; userId?: string }>();
@@ -553,7 +555,7 @@ describe('OIDC state replay protection (G-012)', () => {
     // is minted; no second cookie is set.
     const replay = await test.app.inject({
       method: 'GET',
-      url: '/auth/callback?code=AUTHCODE&state=state-1',
+      url: '/api/auth/callback?code=AUTHCODE&state=state-1',
     });
     expect(replay.statusCode).toBe(400);
     const replayBody = replay.json<{ error?: { code?: string; message?: string } }>();

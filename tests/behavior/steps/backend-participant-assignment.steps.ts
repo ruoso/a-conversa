@@ -111,7 +111,7 @@ When(
     const targetUserId = await lookupUserId(this, screenName);
     const response = await app.inject({
       method: 'POST',
-      url: `/sessions/${sessionId}/participants`,
+      url: `/api/sessions/${sessionId}/participants`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${cookieValue}` },
       payload: { userId: targetUserId, role },
     });
@@ -142,7 +142,7 @@ When(
     const token = await signSessionToken({ sub: actorUserId }, TEST_SESSION_SECRET);
     const response = await app.inject({
       method: 'POST',
-      url: `/sessions/${sessionId}/participants`,
+      url: `/api/sessions/${sessionId}/participants`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
       payload: { userId: targetUserId, role },
     });
@@ -166,7 +166,7 @@ When(
     const targetUserId = await lookupUserId(this, screenName);
     const response = await app.inject({
       method: 'DELETE',
-      url: `/sessions/${sessionId}/participants/${targetUserId}`,
+      url: `/api/sessions/${sessionId}/participants/${targetUserId}`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${cookieValue}` },
     });
     s.lastResponse = {

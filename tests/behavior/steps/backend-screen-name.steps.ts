@@ -109,7 +109,7 @@ Given(
     assert.ok(app, 'auth app not initialized — Background Given step missing');
 
     // Run /auth/login to populate the deterministic flow state.
-    const loginResp = await app.inject({ method: 'GET', url: '/auth/login' });
+    const loginResp = await app.inject({ method: 'GET', url: '/api/auth/login' });
     assert.equal(loginResp.statusCode, 302, 'expected /auth/login to redirect');
     const loc = loginResp.headers['location'];
     assert.equal(typeof loc, 'string', 'no Location header on /auth/login');
@@ -129,7 +129,7 @@ Given(
     // <pending> placeholder AND issues the pending cookie.
     const callbackResp = await app.inject({
       method: 'GET',
-      url: `/auth/callback?code=AUTHCODE&state=${encodeURIComponent(stateParam)}`,
+      url: `/api/auth/callback?code=AUTHCODE&state=${encodeURIComponent(stateParam)}`,
     });
     assert.equal(callbackResp.statusCode, 200, `callback failed: ${callbackResp.body}`);
     const body = JSON.parse(callbackResp.body) as { userId?: string };
@@ -172,7 +172,7 @@ When(
     assert.ok(cookieValue, 'no pending-cookie captured — preceding Given missing');
     const response = await app.inject({
       method: 'POST',
-      url: '/auth/screen-name',
+      url: '/api/auth/screen-name',
       headers: {
         cookie: `${PENDING_COOKIE_NAME}=${cookieValue}`,
         'content-type': 'application/json',
@@ -195,7 +195,7 @@ When(
     assert.ok(app, 'auth app not initialized');
     const response = await app.inject({
       method: 'POST',
-      url: '/auth/screen-name',
+      url: '/api/auth/screen-name',
       headers: { 'content-type': 'application/json' },
       payload: { screenName },
     });

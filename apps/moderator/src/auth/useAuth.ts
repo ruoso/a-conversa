@@ -124,9 +124,9 @@ export function useAuth(): UseAuthResult {
     try {
       // `credentials: 'include'` makes the browser attach the
       // `aconversa-session` cookie. Same-origin in production (Vite
-      // dev proxies `/auth/*` to the backend); the include credential
+      // dev proxies `/api/*` to the backend); the include credential
       // is still cheap and the cross-origin-safe default.
-      const response = await fetch('/auth/me', {
+      const response = await fetch('/api/auth/me', {
         method: 'GET',
         credentials: 'include',
         headers: { Accept: 'application/json' },
@@ -141,7 +141,7 @@ export function useAuth(): UseAuthResult {
         setStatus('unauthenticated');
         setError({
           code: 'auth-me-failed',
-          message: `unexpected status ${String(response.status)} from /auth/me`,
+          message: `unexpected status ${String(response.status)} from /api/auth/me`,
         });
         return;
       }
@@ -152,7 +152,7 @@ export function useAuth(): UseAuthResult {
         setStatus('unauthenticated');
         setError({
           code: 'auth-me-malformed',
-          message: '/auth/me returned an unexpected body shape',
+          message: '/api/auth/me returned an unexpected body shape',
         });
         return;
       }
@@ -184,7 +184,7 @@ export function useAuth(): UseAuthResult {
   const logout = useCallback(async (): Promise<void> => {
     setError(undefined);
     try {
-      await fetch('/auth/logout', {
+      await fetch('/api/auth/logout', {
         method: 'POST',
         credentials: 'include',
       });

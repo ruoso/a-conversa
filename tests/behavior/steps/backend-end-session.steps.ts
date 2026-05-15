@@ -111,7 +111,7 @@ When(
     assert.ok(sessionId, 'no sessions row found to end by id');
     const response = await app.inject({
       method: 'POST',
-      url: `/sessions/${sessionId}/end`,
+      url: `/api/sessions/${sessionId}/end`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${cookieValue}` },
     });
     s.lastResponse = {
@@ -144,7 +144,7 @@ When(
     assert.ok(app, 'sessions app not initialized — Background step missing');
     const response = await app.inject({
       method: 'POST',
-      url: `/sessions/${sessionId}/end`,
+      url: `/api/sessions/${sessionId}/end`,
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     s.lastResponse = {
@@ -167,7 +167,7 @@ When('I POST \\/sessions\\/{word}\\/end', async function (this: AConversaWorld, 
   assert.ok(cookieValue, 'no session cookie captured — preceding Given missing');
   const response = await app.inject({
     method: 'POST',
-    url: `/sessions/${literalId}/end`,
+    url: `/api/sessions/${literalId}/end`,
     headers: { cookie: `${SESSION_COOKIE_NAME}=${cookieValue}` },
   });
   s.lastResponse = {

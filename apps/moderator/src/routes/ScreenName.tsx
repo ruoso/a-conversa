@@ -217,7 +217,7 @@ export function ScreenNameRoute(): ReactElement {
     }
     setSubmitting(true);
     try {
-      const response = await fetch('/auth/screen-name', {
+      const response = await fetch('/api/auth/screen-name', {
         method: 'POST',
         credentials: 'include',
         headers: {

@@ -1,12 +1,19 @@
 // Fastify plugin registering the session-management HTTP endpoints.
 //
-//   - POST /sessions — create a new debate session.
-//   - GET /sessions — list the visible debate sessions for the caller.
-//   - GET /sessions/:id — fetch a single session's metadata.
-//   - POST /sessions/:id/end — moderator marks a session as ended.
-//   - PATCH /sessions/:id/privacy — host toggles the session privacy.
-//   - POST /sessions/:id/participants — assign a debater participant (host-only).
-//   - DELETE /sessions/:id/participants/:userId — remove a participant (host or self).
+// All routes below are served under `/api/*` — `createServer()` (and
+// the `__buildTestSessionsApp` test helper) register this plugin with
+// `{ prefix: '/api' }`, so the route literals here remain bare
+// `/sessions/...` and Fastify prepends the prefix at registration time.
+// Refinement:
+//   tasks/refinements/backend/serve_static_frontends_path_collision_fix.md.
+//
+//   - POST /api/sessions — create a new debate session.
+//   - GET /api/sessions — list the visible debate sessions for the caller.
+//   - GET /api/sessions/:id — fetch a single session's metadata.
+//   - POST /api/sessions/:id/end — moderator marks a session as ended.
+//   - PATCH /api/sessions/:id/privacy — host toggles the session privacy.
+//   - POST /api/sessions/:id/participants — assign a debater participant (host-only).
+//   - DELETE /api/sessions/:id/participants/:userId — remove a participant (host or self).
 //
 // Refinements: tasks/refinements/backend/create_session_endpoint.md,
 //              tasks/refinements/backend/list_sessions_endpoint.md,
@@ -1129,7 +1136,7 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = asy
   const nowFn = (): number => (opts.now !== undefined ? opts.now() : Date.now());
 
   app.post(
-    '/sessions',
+    '/api/sessions',
     {
       preHandler: app.authenticate,
       schema: {
@@ -1330,7 +1337,7 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = asy
   );
 
   app.get(
-    '/sessions',
+    '/api/sessions',
     {
       preHandler: app.authenticate,
       schema: {
@@ -1538,7 +1545,7 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = asy
   );
 
   app.get(
-    '/sessions/:id',
+    '/api/sessions/:id',
     {
       preHandler: app.authenticate,
       schema: {
@@ -1613,7 +1620,7 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = asy
   );
 
   app.post(
-    '/sessions/:id/end',
+    '/api/sessions/:id/end',
     {
       preHandler: app.authenticate,
       schema: {
@@ -1816,7 +1823,7 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = asy
   );
 
   app.patch(
-    '/sessions/:id/privacy',
+    '/api/sessions/:id/privacy',
     {
       preHandler: app.authenticate,
       schema: {
@@ -2014,7 +2021,7 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = asy
   //      INSERT the event row.
   //  10. COMMIT and return 200 + the camelCase participant row.
   app.post(
-    '/sessions/:id/participants',
+    '/api/sessions/:id/participants',
     {
       preHandler: app.authenticate,
       schema: {
@@ -2278,7 +2285,7 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = asy
   //      INSERT.
   //   9. COMMIT and return 200 + the camelCase participant row.
   app.delete(
-    '/sessions/:id/participants/:userId',
+    '/api/sessions/:id/participants/:userId',
     {
       preHandler: app.authenticate,
       schema: {
@@ -2529,7 +2536,7 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = asy
   // entity id and the caller id flow through positional `$N`
   // parameters.
   app.post(
-    '/sessions/:id/include',
+    '/api/sessions/:id/include',
     {
       preHandler: app.authenticate,
       schema: {

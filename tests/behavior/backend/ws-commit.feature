@@ -41,7 +41,7 @@ Feature: WebSocket commit (client → server, moderator-only)
 
   Scenario: The moderator commits a unanimously-agreed proposal — committed ack + event-applied broadcast on the moderator's own socket
     Given a commit-ready session for "alice-ws" exists with id "99999999-9999-4999-8999-999999999901" and node id "99999999-9999-4999-8999-9999999999a1" and pending proposal id "99999999-9999-4999-8999-9999999999b1" with all participants agreeing
-    When an authenticated WebSocket client connects to "/ws"
+    When an authenticated WebSocket client connects to "/api/ws"
     And the client sends a subscribe envelope for session "99999999-9999-4999-8999-999999999901"
     And the client sends a commit envelope for session "99999999-9999-4999-8999-999999999901" with expectedSequence 9 on proposal "99999999-9999-4999-8999-9999999999b1"
     Then the client receives a committed ack referencing the commit envelope at sequence 10
@@ -49,20 +49,20 @@ Feature: WebSocket commit (client → server, moderator-only)
 
   Scenario: A non-moderator subscribed participant cannot commit — receives a not-a-moderator error envelope
     Given a commit-ready session hosted by "other-host" with id "99999999-9999-4999-8999-999999999902" and node id "99999999-9999-4999-8999-9999999999a2" and pending proposal id "99999999-9999-4999-8999-9999999999b2" where "alice-ws" is a debater
-    When an authenticated WebSocket client connects to "/ws"
+    When an authenticated WebSocket client connects to "/api/ws"
     And the client sends a subscribe envelope for session "99999999-9999-4999-8999-999999999902"
     And the client sends a commit envelope for session "99999999-9999-4999-8999-999999999902" with expectedSequence 5 on proposal "99999999-9999-4999-8999-9999999999b2"
     Then the client receives an error envelope with code "not-a-moderator" referencing the commit envelope
 
   Scenario: A commit before unanimous-agree is rejected with unanimous-agree-required
     Given a half-agree session for "alice-ws" exists with id "99999999-9999-4999-8999-999999999903" and node id "99999999-9999-4999-8999-9999999999a3" and pending proposal id "99999999-9999-4999-8999-9999999999b3" where only the moderator has agreed
-    When an authenticated WebSocket client connects to "/ws"
+    When an authenticated WebSocket client connects to "/api/ws"
     And the client sends a subscribe envelope for session "99999999-9999-4999-8999-999999999903"
     And the client sends a commit envelope for session "99999999-9999-4999-8999-999999999903" with expectedSequence 6 on proposal "99999999-9999-4999-8999-9999999999b3"
     Then the client receives an error envelope with code "unanimous-agree-required" referencing the commit envelope
 
   Scenario: An unsubscribed client cannot commit — receives a forbidden error envelope
     Given a commit-ready session for "alice-ws" exists with id "99999999-9999-4999-8999-999999999904" and node id "99999999-9999-4999-8999-9999999999a4" and pending proposal id "99999999-9999-4999-8999-9999999999b4" with all participants agreeing
-    When an authenticated WebSocket client connects to "/ws"
+    When an authenticated WebSocket client connects to "/api/ws"
     And the client sends a commit envelope for session "99999999-9999-4999-8999-999999999904" with expectedSequence 9 on proposal "99999999-9999-4999-8999-9999999999b4"
     Then the client receives an error envelope with code "forbidden" referencing the commit envelope

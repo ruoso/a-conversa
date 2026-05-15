@@ -104,18 +104,18 @@ describe('static-frontends plugin — moderator served at /', () => {
     expect(body.status).toBe('ok');
   });
 
-  it('GET /auth/me without auth returns the canonical 401 envelope (API precedence)', async () => {
-    // The `/auth/me` route is registered when OIDC env is set — in
-    // the test bootstrap it may be skipped (no OIDC config). Either
-    // way, the static handler must NOT silently serve HTML for the
-    // path — the response must be one of:
+  it('GET /api/auth/me without auth returns the canonical 401 envelope (API precedence)', async () => {
+    // The `/api/auth/me` route is registered when OIDC env is set —
+    // in the test bootstrap it may be skipped (no OIDC config).
+    // Either way, the static handler must NOT silently serve HTML
+    // for the path — the response must be one of:
     //   - 401 from `app.authenticate` (route is registered),
     //   - 404 JSON envelope from the static-frontends not-found
     //     handler (route is not registered).
     // Both shapes are application/json and never HTML.
     const response = await app.inject({
       method: 'GET',
-      url: '/auth/me',
+      url: '/api/auth/me',
       headers: { accept: 'application/json' },
     });
     expect(response.headers['content-type']).toMatch(/application\/json/);
@@ -123,6 +123,10 @@ describe('static-frontends plugin — moderator served at /', () => {
   });
 
   it('GET /unknown/spa/path with Accept: text/html returns the SPA index.html', async () => {
+    // After the `/api/*` migration any non-`/api/*` path falls through
+    // to the SPA index when the client prefers HTML — the SPA owns the
+    // entire non-API namespace under `/`. Refinement:
+    //   tasks/refinements/backend/serve_static_frontends_path_collision_fix.md.
     const response = await app.inject({
       method: 'GET',
       url: '/sessions/abc/lobby',

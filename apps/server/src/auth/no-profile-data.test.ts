@@ -49,7 +49,7 @@ const VALID_OIDC_CONFIG = {
   clientId: 'aconversa-app-dev',
   clientSecret: 'aconversa-app-dev-secret',
   appBaseUrl: 'http://localhost:3000',
-  redirectUri: 'http://localhost:3000/auth/callback',
+  redirectUri: 'http://localhost:3000/api/auth/callback',
 } as const;
 
 // Profile-data values stuffed onto the stubbed id_token. Real upstream
@@ -259,7 +259,7 @@ describe('Invariant 1: OIDC scope is exactly "openid"', () => {
   });
 
   it('GET /auth/login builds an authorization URL with scope=openid (no profile/email)', async () => {
-    const response = await test.app.inject({ method: 'GET', url: '/auth/login' });
+    const response = await test.app.inject({ method: 'GET', url: '/api/auth/login' });
     expect(response.statusCode).toBe(302);
     const params = test.capturedAuthUrlParams;
     expect(params).toBeDefined();
@@ -292,10 +292,10 @@ describe('Invariant 2: id_token claims are read for only .sub', () => {
     // Drive a complete flow: login captures state; callback exchanges
     // the (stubbed) code for a token whose id_token carries every
     // profile claim listed in PROFILE_DATA_VALUES.
-    await test.app.inject({ method: 'GET', url: '/auth/login' });
+    await test.app.inject({ method: 'GET', url: '/api/auth/login' });
     const response = await test.app.inject({
       method: 'GET',
-      url: '/auth/callback?code=AUTHCODE&state=state-1',
+      url: '/api/auth/callback?code=AUTHCODE&state=state-1',
     });
     expect(response.statusCode).toBe(200);
 
@@ -322,10 +322,10 @@ describe('Invariant 2: id_token claims are read for only .sub', () => {
   });
 
   it('no profile claim value is passed as a parameter to any DB query', async () => {
-    await test.app.inject({ method: 'GET', url: '/auth/login' });
+    await test.app.inject({ method: 'GET', url: '/api/auth/login' });
     const response = await test.app.inject({
       method: 'GET',
-      url: '/auth/callback?code=AUTHCODE&state=state-1',
+      url: '/api/auth/callback?code=AUTHCODE&state=state-1',
     });
     expect(response.statusCode).toBe(200);
     // The INSERT carries (oauth_subject, screen_name); neither value
@@ -501,7 +501,7 @@ describe('Invariant 6 (adjacent): no profile claim value appears in any inspecta
   });
 
   it('login redirect, callback response, and response headers carry no profile-claim values', async () => {
-    const loginRes = await test.app.inject({ method: 'GET', url: '/auth/login' });
+    const loginRes = await test.app.inject({ method: 'GET', url: '/api/auth/login' });
     expect(loginRes.statusCode).toBe(302);
     // The login redirect's Location header carries the authorization
     // URL — built from state/nonce/PKCE only. None of the profile
@@ -514,7 +514,7 @@ describe('Invariant 6 (adjacent): no profile claim value appears in any inspecta
 
     const cbRes = await test.app.inject({
       method: 'GET',
-      url: '/auth/callback?code=AUTHCODE&state=state-1',
+      url: '/api/auth/callback?code=AUTHCODE&state=state-1',
     });
     expect(cbRes.statusCode).toBe(200);
 

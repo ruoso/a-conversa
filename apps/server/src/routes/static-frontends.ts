@@ -17,11 +17,19 @@
 // fetch(), no third-party-cookie pain, no extra TLS cert.
 //
 // **Route precedence (load-bearing).** Fastify matches routes in
-// REGISTRATION order. API routes (`/healthz`, `/auth/*`, `/sessions/*`,
-// `/ws`, `/docs`) are registered BEFORE this plugin in `server.ts`.
-// This plugin is registered LAST so the wildcard static handler can't
-// shadow any API surface — `GET /auth/me` always reaches the auth
-// route, never a `auth/me` file under the moderator's dist.
+// REGISTRATION order. API routes (`/healthz`, `/api/auth/*`,
+// `/api/sessions/*`, `/api/ws`, `/api/docs`) are registered BEFORE this
+// plugin in `server.ts`. This plugin is registered LAST so the
+// wildcard static handler can't shadow any API surface — `GET /api/auth/me`
+// always reaches the auth route, never an `api/auth/me` file under
+// the moderator's dist.
+//
+// **Post-migration invariant** (per
+// tasks/refinements/backend/serve_static_frontends_path_collision_fix.md):
+// every URL is now either `/api/*` (backend), `/healthz` (ops liveness),
+// or non-`/api/*` (SPA). The static-frontends fallback can fire for
+// any non-`/api/*` path without risk of a sibling params validator
+// shadowing it.
 //
 // **SPA fallback.** The moderator app is client-routed via React
 // Router. A direct hit on `/sessions/abc/lobby` would 404 against the

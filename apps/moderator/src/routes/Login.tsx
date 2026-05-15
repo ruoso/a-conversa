@@ -67,7 +67,7 @@ export function LoginRoute(): ReactElement {
   return (
     <main data-testid="route-login">
       <h1 data-testid="route-title">{t('auth.login.title')}</h1>
-      <a href="/auth/login" data-testid="auth-login-button" role="button">
+      <a href="/api/auth/login" data-testid="auth-login-button" role="button">
         {t('auth.login.button')}
       </a>
     </main>

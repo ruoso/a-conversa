@@ -161,7 +161,7 @@ async function openWsClient(app: FastifyInstance, cookie: string): Promise<Opene
   let waiter: ((msg: string) => void) | null = null;
 
   const ws = await app.injectWS(
-    '/ws',
+    '/api/ws',
     { headers: { cookie } },
     {
       onInit(client: unknown) {
@@ -382,7 +382,7 @@ describe('concurrent writes — participant assign (HTTP)', () => {
     // completed inside the same transaction).
     const reqA = app.inject({
       method: 'POST',
-      url: `/sessions/${SESSION_ID}/participants`,
+      url: `/api/sessions/${SESSION_ID}/participants`,
       headers: { cookie: aliceCookie },
       payload: { userId: BEN_ID, role: 'debater-A' },
     });
@@ -393,7 +393,7 @@ describe('concurrent writes — participant assign (HTTP)', () => {
     // Blocks at the FOR UPDATE on the session row.
     const reqB = app.inject({
       method: 'POST',
-      url: `/sessions/${SESSION_ID}/participants`,
+      url: `/api/sessions/${SESSION_ID}/participants`,
       headers: { cookie: aliceCookie },
       payload: { userId: CARA_ID, role: 'debater-A' },
     });
@@ -455,7 +455,7 @@ describe('concurrent writes — end-session (HTTP)', () => {
     // The FOR UPDATE + ended_at-NOT-NULL gate is the contention point.
     const reqA = app.inject({
       method: 'POST',
-      url: `/sessions/${SESSION_ID}/end`,
+      url: `/api/sessions/${SESSION_ID}/end`,
       headers: { cookie: aliceCookie },
     });
 
@@ -463,7 +463,7 @@ describe('concurrent writes — end-session (HTTP)', () => {
 
     const reqB = app.inject({
       method: 'POST',
-      url: `/sessions/${SESSION_ID}/end`,
+      url: `/api/sessions/${SESSION_ID}/end`,
       headers: { cookie: aliceCookie },
     });
 

@@ -8,7 +8,7 @@
 //
 // **Why this helper exists.** The hover-popover spec needs the canvas
 // to render at least one node and one edge so we can hover them. The
-// canonical path (POST /sessions, drive the WS protocol's capture
+// canonical path (POST /api/sessions, drive the WS protocol's capture
 // flow, wait for the server to echo back events) is correct but
 // significantly slower and more coupled to the server contract than
 // what the hover-popover test needs to pin. The hover behavior is a

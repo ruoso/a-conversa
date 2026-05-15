@@ -129,7 +129,7 @@ async function buildLogoutTestApp(hook?: (userId: string, reason?: string) => nu
       clientId: 'aconversa-app-dev',
       clientSecret: 'aconversa-app-dev-secret',
       appBaseUrl: 'http://localhost:3000',
-      redirectUri: 'http://localhost:3000/auth/callback',
+      redirectUri: 'http://localhost:3000/api/auth/callback',
     },
     ...(hook !== undefined ? { closeUserConnectionsHook: hook } : {}),
   });
@@ -159,7 +159,7 @@ describe('POST /auth/logout — denylist + WS revocation chain', () => {
 
     const response = await app.inject({
       method: 'POST',
-      url: '/auth/logout',
+      url: '/api/auth/logout',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     expect(response.statusCode).toBe(204);
@@ -178,7 +178,7 @@ describe('POST /auth/logout — denylist + WS revocation chain', () => {
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const response = await app.inject({
       method: 'POST',
-      url: '/auth/logout',
+      url: '/api/auth/logout',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     expect(response.statusCode).toBe(204);
@@ -199,12 +199,12 @@ describe('POST /auth/logout — denylist + WS revocation chain', () => {
     // Pre-revoke sanity: both verify (200) on /auth/me.
     const preA = await app.inject({
       method: 'GET',
-      url: '/auth/me',
+      url: '/api/auth/me',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${tokenA}` },
     });
     const preB = await app.inject({
       method: 'GET',
-      url: '/auth/me',
+      url: '/api/auth/me',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${tokenB}` },
     });
     expect(preA.statusCode).toBe(200);
@@ -213,7 +213,7 @@ describe('POST /auth/logout — denylist + WS revocation chain', () => {
     // Revoke A.
     await app.inject({
       method: 'POST',
-      url: '/auth/logout',
+      url: '/api/auth/logout',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${tokenA}` },
     });
     expect(denylist.size).toBe(1);
@@ -221,12 +221,12 @@ describe('POST /auth/logout — denylist + WS revocation chain', () => {
     // Post-revoke: A is rejected, B still verifies.
     const postA = await app.inject({
       method: 'GET',
-      url: '/auth/me',
+      url: '/api/auth/me',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${tokenA}` },
     });
     const postB = await app.inject({
       method: 'GET',
-      url: '/auth/me',
+      url: '/api/auth/me',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${tokenB}` },
     });
     expect(postA.statusCode).toBe(401);
@@ -238,7 +238,7 @@ describe('POST /auth/logout — denylist + WS revocation chain', () => {
     const { app, denylist } = await buildLogoutTestApp(hook);
     apps.push(app);
 
-    const response = await app.inject({ method: 'POST', url: '/auth/logout' });
+    const response = await app.inject({ method: 'POST', url: '/api/auth/logout' });
     expect(response.statusCode).toBe(204);
     const setCookie = response.headers['set-cookie'];
     const setCookieStr = Array.isArray(setCookie) ? setCookie.join(',') : String(setCookie);
@@ -254,7 +254,7 @@ describe('POST /auth/logout — denylist + WS revocation chain', () => {
 
     const response = await app.inject({
       method: 'POST',
-      url: '/auth/logout',
+      url: '/api/auth/logout',
       headers: { cookie: `${SESSION_COOKIE_NAME}=garbage.not.a.jwt` },
     });
     expect(response.statusCode).toBe(204);
@@ -274,7 +274,7 @@ describe('POST /auth/logout — denylist + WS revocation chain', () => {
     });
     const response = await app.inject({
       method: 'POST',
-      url: '/auth/logout',
+      url: '/api/auth/logout',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${expiredToken}` },
     });
     expect(response.statusCode).toBe(204);
@@ -298,7 +298,7 @@ describe('POST /auth/logout — denylist + WS revocation chain', () => {
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     await app.inject({
       method: 'POST',
-      url: '/auth/logout',
+      url: '/api/auth/logout',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     // At hook-call time, the denylist already held the cookie's jti.
@@ -313,12 +313,12 @@ describe('POST /auth/logout — denylist + WS revocation chain', () => {
     const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
     const first = await app.inject({
       method: 'POST',
-      url: '/auth/logout',
+      url: '/api/auth/logout',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     const second = await app.inject({
       method: 'POST',
-      url: '/auth/logout',
+      url: '/api/auth/logout',
       headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
     });
     expect(first.statusCode).toBe(204);

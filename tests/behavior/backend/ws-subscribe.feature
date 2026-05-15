@@ -27,13 +27,13 @@ Feature: WebSocket subscribe / unsubscribe
 
   Scenario: Subscribing to a visible public session emits a subscribed ack
     Given a public session owned by "alice-ws" exists with id "55555555-5555-4555-8555-555555555501"
-    When an authenticated WebSocket client connects to "/ws"
+    When an authenticated WebSocket client connects to "/api/ws"
     And the client sends a subscribe envelope for session "55555555-5555-4555-8555-555555555501"
     Then the client receives a subscribed ack referencing the subscribe envelope
 
   Scenario: Unsubscribing emits an unsubscribed ack
     Given a public session owned by "alice-ws" exists with id "55555555-5555-4555-8555-555555555503"
-    When an authenticated WebSocket client connects to "/ws"
+    When an authenticated WebSocket client connects to "/api/ws"
     And the client sends a subscribe envelope for session "55555555-5555-4555-8555-555555555503"
     And the client sends an unsubscribe envelope for session "55555555-5555-4555-8555-555555555503"
     Then the client receives an unsubscribed ack referencing the unsubscribe envelope

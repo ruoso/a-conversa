@@ -65,7 +65,7 @@ function stubFetch(builder: () => Response): ReturnType<typeof vi.fn> {
 
 function renderRoute(): void {
   render(
-    <MemoryRouter initialEntries={['/sessions/new/setup']}>
+    <MemoryRouter initialEntries={['/sessions/new']}>
       <CreateSessionRoute />
     </MemoryRouter>,
   );
@@ -154,7 +154,7 @@ describe('CreateSession route — submit behaviour', () => {
     expect(submit.disabled).toBe(true);
   });
 
-  it('POSTs to /sessions with the trimmed topic and public privacy by default', async () => {
+  it('POSTs to /api/sessions with the trimmed topic and public privacy by default', async () => {
     const fetchMock = stubFetch(
       () =>
         new Response(JSON.stringify({ id: '00000000-0000-4000-8000-000000000100' }), {
@@ -176,7 +176,7 @@ describe('CreateSession route — submit behaviour', () => {
       expect(fetchMock).toHaveBeenCalled();
     });
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe('/sessions');
+    expect(url).toBe('/api/sessions');
     expect(init.method).toBe('POST');
     expect(init.credentials).toBe('include');
     expect(JSON.parse(init.body as string)).toEqual({

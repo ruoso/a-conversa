@@ -147,7 +147,7 @@ describe('createWsClient — connect + hello', () => {
   it('opens a socket on connect() and flips status to "connecting" then "open"', () => {
     const harness = makeHarness(['00000000-0000-4000-8000-000000001001']);
     const client = createWsClient({
-      url: '/ws',
+      url: '/api/ws',
       makeSocket: harness.factory,
       randomId: harness.nextId,
       scheduleTimeout: harness.schedule,

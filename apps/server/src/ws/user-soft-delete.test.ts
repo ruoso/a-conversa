@@ -99,7 +99,7 @@ async function openWsClient(
   const closed = new Promise<{ code: number; reason: string }>((resolve) => {
     closeResolver = resolve;
   });
-  const ws = await app.injectWS('/ws', options ?? {}, {
+  const ws = await app.injectWS('/api/ws', options ?? {}, {
     onInit(client: unknown) {
       (client as WsLike).on('message', (data: unknown) => {
         const text = toUtf8(data);

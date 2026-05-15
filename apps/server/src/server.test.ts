@@ -451,7 +451,7 @@ describe('createServer — bodyLimit lockdown (inputs.md F-002)', () => {
         const oversize = 'a'.repeat(DEFAULT_BODY_LIMIT_BYTES + 1);
         const response = await app.inject({
           method: 'POST',
-          url: '/sessions',
+          url: '/api/sessions',
           headers: {
             'content-type': 'application/json',
             // `content-length` must be present for the limit check
@@ -487,7 +487,7 @@ describe('createServer — bodyLimit lockdown (inputs.md F-002)', () => {
       try {
         const response = await app.inject({
           method: 'POST',
-          url: '/sessions',
+          url: '/api/sessions',
           headers: { 'content-type': 'application/json' },
           payload: '{}', // 2 bytes, well under 64 KiB
         });

@@ -29,7 +29,7 @@
 //
 // **What this spec does NOT do.** It does not complete the OIDC
 // handshake against Authelia. The login navigation case asserts the
-// browser leaves the SPA (the server-side `/auth/login` redirect
+// browser leaves the SPA (the server-side `/api/auth/login` redirect
 // fires) without driving the foreign-origin login flow. Full-stack
 // auth flow tests are a separate task.
 
@@ -89,7 +89,7 @@ test.describe('moderator login route renders localized strings', () => {
     ).toHaveText(expected.loginTitle);
   });
 
-  test('the SSO login affordance carries the localized label and navigates to /auth/login', async ({
+  test('the SSO login affordance carries the localized label and navigates to /api/auth/login', async ({
     page,
   }, testInfo) => {
     const locale = localeForProject(testInfo.project.name);
@@ -108,16 +108,19 @@ test.describe('moderator login route renders localized strings', () => {
       `login button label must be the localized auth.login.button for locale ${locale}`,
     ).toHaveText(expected.loginButton);
 
-    // The login button is an `<a href="/auth/login">`. A click triggers
-    // a full-page navigation to the server's `/auth/login`, which
+    // The login button is an `<a href="/api/auth/login">`. A click triggers
+    // a full-page navigation to the server's `/api/auth/login`, which
     // responds with a 302 to the OIDC issuer. We don't want to follow
     // the redirect into Authelia (that is a separate test layer), so
     // we intercept the navigation: assert the response status is a
     // redirect and the Location points at the OIDC issuer's
     // authorize endpoint.
-    const navigationPromise = page.waitForResponse((resp) => resp.url().endsWith('/auth/login'), {
-      timeout: 10_000,
-    });
+    const navigationPromise = page.waitForResponse(
+      (resp) => resp.url().endsWith('/api/auth/login'),
+      {
+        timeout: 10_000,
+      },
+    );
     await loginButton.click();
     const response = await navigationPromise;
     // The server emits a 302 with a Location to Authelia. Some compose
@@ -126,12 +129,12 @@ test.describe('moderator login route renders localized strings', () => {
     // shape, not the destination's identity.
     expect(
       [302, 303, 307],
-      `GET /auth/login must be a redirect for locale ${locale} (got ${response.status()})`,
+      `GET /api/auth/login must be a redirect for locale ${locale} (got ${response.status()})`,
     ).toContain(response.status());
     const location = response.headers()['location'];
     expect(
       location,
-      `GET /auth/login must carry a Location header for locale ${locale}`,
+      `GET /api/auth/login must carry a Location header for locale ${locale}`,
     ).toBeDefined();
     // The redirect points at the OIDC `/authorize` endpoint — any
     // RFC-6749 conforming `response_type=code` URL satisfies. We
@@ -140,7 +143,7 @@ test.describe('moderator login route renders localized strings', () => {
     // wiring) trips here rather than fall through.
     expect(
       location,
-      `GET /auth/login Location must include response_type=code for locale ${locale}`,
+      `GET /api/auth/login Location must include response_type=code for locale ${locale}`,
     ).toMatch(/response_type=code/);
   });
 

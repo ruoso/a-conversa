@@ -10,7 +10,7 @@
 // the WS sub-tree builds on:
 //
 //   1. Register `@fastify/websocket` against the Fastify app.
-//   2. Register a single `GET /ws` route with `{ websocket: true }`.
+//   2. Register a single `GET /api/ws` route with `{ websocket: true }`.
 //   3. On each connection: mint a v4 `connectionId`, log open/close,
 //      send a placeholder `{ type: 'hello', connectionId }` first
 //      message, gracefully close with code 1011 on unexpected errors,
@@ -64,7 +64,7 @@
 //     terminates the socket without our envelope; routing through
 //     `errorHandler` keeps the close code consistent.
 //
-//   - **Auth gate (ws_auth_on_connect).** The `GET /ws` route attaches a
+//   - **Auth gate (ws_auth_on_connect).** The `GET /api/ws` route attaches a
 //     `preValidation` hook that reads the `aconversa-session` cookie off
 //     the upgrade request, verifies the HS256 JWT via the same
 //     `authenticateRequest` primitive `apps/server/src/auth/middleware.ts`
@@ -409,7 +409,7 @@ function buildConnectionHandler(
     //
     // The defensive narrow below is for the type checker —
     // `authUser` is optional at the type level (public routes never
-    // populate it) but the gate guarantees population for `/ws`. A
+    // populate it) but the gate guarantees population for `/api/ws`. A
     // missing value here would indicate a wiring bug (the gate was
     // bypassed); throw so the library's `errorHandler` emits a 1011
     // and we don't carry on with `undefined`.
@@ -652,7 +652,7 @@ const connectionsByUser = new Map<string, Set<WsConnectionContext>>();
 function addToConnectionsByUser(ctx: WsConnectionContext): void {
   const userId = ctx.user?.id;
   if (userId === undefined) {
-    // The auth gate guarantees `user` is populated for /ws (see the
+    // The auth gate guarantees `user` is populated for /api/ws (see the
     // defensive narrow inside `buildConnectionHandler`). The guard here
     // is purely for TypeScript's optional-property typing of the
     // `WsConnectionContext.user?` field.
@@ -834,7 +834,7 @@ interface WsAuthResolvers {
 }
 
 /**
- * Internal Fastify plugin — registers the `GET /ws` route. The
+ * Internal Fastify plugin — registers the `GET /api/ws` route. The
  * `@fastify/websocket` library is registered by the OUTER plugin
  * (see `wsConnectionHandlingPlugin` below); registering it here too
  * would either decorate the encapsulation child only (so the root
@@ -864,7 +864,7 @@ const wsRoutePlugin: FastifyPluginAsync<{ auth: WsAuthResolvers }> = (app, opts)
   }
 
   app.get(
-    '/ws',
+    '/api/ws',
     {
       websocket: true,
       // Mark as internal/undocumented for OpenAPI: the WS protocol
@@ -944,14 +944,14 @@ const wsRoutePlugin: FastifyPluginAsync<{ auth: WsAuthResolvers }> = (app, opts)
           const originHeader = typeof rawOrigin === 'string' ? rawOrigin : undefined;
           if (originHeader === undefined || originHeader === '') {
             request.log.debug(
-              { route: '/ws' },
+              { route: '/api/ws' },
               'ws-origin-allowlist rejected — upgrade request missing Origin header',
             );
             throw new ApiError(403, ORIGIN_NOT_ALLOWED_CODE, ORIGIN_NOT_ALLOWED_MESSAGE);
           }
           if (!auth.originAllowlist.includes(originHeader)) {
             request.log.debug(
-              { route: '/ws' },
+              { route: '/api/ws' },
               'ws-origin-allowlist rejected — upgrade request Origin not on the allowlist',
             );
             throw new ApiError(403, ORIGIN_NOT_ALLOWED_CODE, ORIGIN_NOT_ALLOWED_MESSAGE);
@@ -969,7 +969,7 @@ const wsRoutePlugin: FastifyPluginAsync<{ auth: WsAuthResolvers }> = (app, opts)
         // throws. The 401 envelope is the same in either path.
         if (cookieHeader === undefined || cookieHeader === '') {
           request.log.debug(
-            { route: '/ws' },
+            { route: '/api/ws' },
             'ws-auth-on-connect rejected — no session cookie on upgrade request',
           );
           throw new ApiError(401, AUTH_REQUIRED_CODE, AUTH_REQUIRED_MESSAGE);
@@ -985,7 +985,7 @@ const wsRoutePlugin: FastifyPluginAsync<{ auth: WsAuthResolvers }> = (app, opts)
           // the 401 with a request id. The error handler renders the
           // 401 envelope; this line just adds the context.
           request.log.debug(
-            { route: '/ws' },
+            { route: '/api/ws' },
             'ws-auth-on-connect rejected — cookie present but verify/lookup failed',
           );
           throw new ApiError(401, AUTH_REQUIRED_CODE, AUTH_REQUIRED_MESSAGE);
@@ -1242,7 +1242,7 @@ const wsConnectionHandlingPluginAsync: FastifyPluginAsync<WsConnectionHandlingOp
  * so the decorations `@fastify/websocket` injects
  * (`app.websocketServer`, `app.injectWS`, `request.ws`) are
  * available at the root scope — tests that build a Fastify instance
- * via `createServer()` and call `app.injectWS('/ws')` need the
+ * via `createServer()` and call `app.injectWS('/api/ws')` need the
  * decoration on the root.
  *
  * The route registration itself is still encapsulated inside the

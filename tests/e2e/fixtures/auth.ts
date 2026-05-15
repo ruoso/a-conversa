@@ -12,13 +12,13 @@
 //
 //   1. Navigate to `/login` (the moderator SPA's unauthenticated route).
 //   2. Click `[data-testid="auth-login-button"]` — a full-page anchor to
-//      `/auth/login`, which the Fastify server 302-redirects to
+//      `/api/auth/login`, which the Fastify server 302-redirects to
 //      `https://authelia.aconversa.local:9091/api/oidc/authorization?...`.
 //   3. On Authelia's login form, fill `[name="username"]` and
 //      `[name="password"]` and click the sign-in button. Authelia
 //      validates against `/config/users.yml`, mints an authorization
-//      code, and 302-redirects to `/auth/callback?state=...&code=...`.
-//   4. The Fastify server's `/auth/callback` handler validates the
+//      code, and 302-redirects to `/api/auth/callback?state=...&code=...`.
+//   4. The Fastify server's `/api/auth/callback` handler validates the
 //      `state`, exchanges the code for tokens against Authelia's token
 //      endpoint, upserts the `users` row, and:
 //        - returning user: 302 to `APP_BASE_URL` + Set-Cookie `aconversa-session`.
@@ -26,13 +26,13 @@
 //          body the SPA reads on the *next* SPA navigation.
 //   5. The helper navigates the browser back to `/login` if the
 //      callback's 200-JSON response left it stranded on
-//      `/auth/callback`. The SPA's `LoginRoute` then reads `/auth/me`
+//      `/api/auth/callback`. The SPA's `LoginRoute` then reads `/api/auth/me`
 //      and, on the `<pending>` screen-name placeholder, does
 //      `<Navigate to="/screen-name" />`.
 //   6. The helper detects whichever branch fired:
 //        - If the post-OIDC URL is the screen-name form, fill it with
 //          `opts.screenName ?? opts.username` and submit.
-//        - Either way, poll `/auth/me` until 200 (the authenticated
+//        - Either way, poll `/api/auth/me` until 200 (the authenticated
 //          contract), then return.
 //
 // **Why a single helper, not two.** Callers do NOT know whether the
@@ -55,23 +55,23 @@
 // in `compose.yaml`, so an upstream bump that changes the label text
 // is a deliberate event.
 //
-// **Why the new-user branch POSTs `/auth/screen-name` via the API,
-// not via the rendered form.** The backend's `/auth/callback`
+// **Why the new-user branch POSTs `/api/auth/screen-name` via the API,
+// not via the rendered form.** The backend's `/api/auth/callback`
 // new-user branch returns a 200 JSON body
 // (`{ sub, oauthSubject, userId, needsScreenName: true }`) instead
 // of redirecting to the SPA's `/screen-name` route. The browser
 // renders that JSON directly — the SPA is NOT mounted on this
 // page, so there is no form to fill. Navigating to `/screen-name`
 // without a session cookie hits `RequireAuth`'s `unauthenticated`
-// branch (because `/auth/me` returns 401 — the pending cookie is
+// branch (because `/api/auth/me` returns 401 — the pending cookie is
 // not the platform session cookie) and redirects to `/login`,
 // landing the user in a dead end. The cleanest way to close the
-// loop in the helper is to POST `/auth/screen-name` directly from
+// loop in the helper is to POST `/api/auth/screen-name` directly from
 // the test-side request context (which inherits the cookie jar
 // including the pending cookie). The server validates the pending
 // cookie, writes the screen name, and sets the platform session
 // cookie. The helper then navigates to `/login` so the SPA mounts
-// in `authenticated` state. The "raw JSON on `/auth/callback`" UX
+// in `authenticated` state. The "raw JSON on `/api/auth/callback`" UX
 // gap is acknowledged in `moderator-ui/mod_auth_flow.md`'s
 // "screen-name-detection question" section; a follow-up task
 // (backend Accept-header branching, or a frontend `/auth-callback`
@@ -145,7 +145,7 @@ export interface LoginAsOptions {
 }
 
 /**
- * Polls `/auth/me` via the given page's request context until it
+ * Polls `/api/auth/me` via the given page's request context until it
  * either returns 200 (authenticated) or the deadline elapses. Returns
  * the parsed `{ userId, screenName }` body on success; throws on
  * timeout. The poll interval is 250 ms — short enough to feel snappy,
@@ -153,7 +153,7 @@ export interface LoginAsOptions {
  *
  * The poll is necessary because the OIDC callback's final 302 lands
  * the browser back on the SPA, which then mounts and fires its own
- * `/auth/me` request; the helper completes when the page-side cookie
+ * `/api/auth/me` request; the helper completes when the page-side cookie
  * jar carries the session cookie and the server returns the user
  * shape. Using the request context (rather than the page's `fetch`)
  * means the helper works whether the SPA has mounted yet or not.
@@ -163,7 +163,7 @@ async function waitForAuthenticated(
   deadlineMs: number,
 ): Promise<{ userId: string; screenName: string }> {
   while (Date.now() < deadlineMs) {
-    const response = await request.get('/auth/me');
+    const response = await request.get('/api/auth/me');
     if (response.status() === 200) {
       const body = (await response.json()) as { userId: string; screenName: string };
       return body;
@@ -174,12 +174,12 @@ async function waitForAuthenticated(
     // it immediately rather than silently retrying.
     if (response.status() !== 401) {
       throw new Error(
-        `loginAs: GET /auth/me returned unexpected status ${response.status()} while waiting for authentication`,
+        `loginAs: GET /api/auth/me returned unexpected status ${response.status()} while waiting for authentication`,
       );
     }
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
-  throw new Error('loginAs: timed out waiting for GET /auth/me to return 200');
+  throw new Error('loginAs: timed out waiting for GET /api/auth/me to return 200');
 }
 
 /**
@@ -196,13 +196,13 @@ async function waitForAuthenticated(
  * `page.goto(...)` calls inherit them.
  *
  * **Returns** the authenticated user's `{ userId, screenName }` as
- * read from `GET /auth/me` once the dance settles. Callers can use
+ * read from `GET /api/auth/me` once the dance settles. Callers can use
  * the userId to seed downstream API calls without re-reading the
  * cookie jar.
  *
  * **Throws** on any structural failure: missing Authelia form,
  * timeout waiting for the auth state to settle, an unexpected status
- * on `/auth/me`. Each error message names the helper plus the failing
+ * on `/api/auth/me`. Each error message names the helper plus the failing
  * step so the regression class is obvious in the trace.
  *
  * @example
@@ -220,11 +220,11 @@ export async function loginAs(
 
   // 1. Land on the SPA's login route. Even if the SPA hasn't fully
   //    mounted (no `auth-login-button` rendered yet) we can fall back
-  //    to a direct navigation to `/auth/login` — but the canonical
+  //    to a direct navigation to `/api/auth/login` — but the canonical
   //    path is the click, because that's what a real user does.
   await page.goto('/login');
 
-  // 2. Click the SSO affordance. The button is an `<a href="/auth/login">`,
+  // 2. Click the SSO affordance. The button is an `<a href="/api/auth/login">`,
   //    so the click triggers a full-page navigation (the OIDC dance is
   //    cross-origin; `fetch` would not follow the redirect).
   const loginButton = page.getByTestId('auth-login-button');
@@ -256,13 +256,13 @@ export async function loginAs(
   await page.getByRole('textbox', { name: AUTHELIA_PASSWORD_LABEL }).fill(password);
 
   // 4. Submit. Authelia validates, mints a code, and 302s back to
-  //    `/auth/callback`. The Fastify server then either 302s onto
+  //    `/api/auth/callback`. The Fastify server then either 302s onto
   //    `APP_BASE_URL` (returning user) or returns a 200 JSON envelope
   //    the SPA reads and routes to `/screen-name` (new user).
   //
   //    We wait for the browser to leave the Authelia origin before
   //    deciding which branch fired. The first thing that happens after
-  //    the form POSTs is Authelia's 302 to `/auth/callback?...`; the
+  //    the form POSTs is Authelia's 302 to `/api/auth/callback?...`; the
   //    follow-up 302 (returning user) or 200 + SPA-route (new user)
   //    determines the URL we eventually settle on.
   await page.getByRole('button', { name: AUTHELIA_SUBMIT_NAME }).click();
@@ -291,26 +291,26 @@ export async function loginAs(
     timeout: 30_000,
   });
 
-  // 5. Branch detection. After Authelia's 302 to `/auth/callback`,
+  // 5. Branch detection. After Authelia's 302 to `/api/auth/callback`,
   //    one of two things has happened server-side:
   //
   //    - returning user: the server 302'd onto `APP_BASE_URL`
-  //      (i.e., `/`). The SPA mounts, reads `/auth/me`, transitions
+  //      (i.e., `/`). The SPA mounts, reads `/api/auth/me`, transitions
   //      to `authenticated`, and renders the welcome banner. The
   //      browser settles on `/login` (the SPA's universal redirect
   //      sink for `/`).
   //
   //    - new user: the server returned a 200 JSON envelope
   //      (`{ sub, oauthSubject, userId, needsScreenName: true }`)
-  //      directly on `/auth/callback`. The browser is now sitting
-  //      on `/auth/callback` rendering the raw JSON — the SPA is
+  //      directly on `/api/auth/callback`. The browser is now sitting
+  //      on `/api/auth/callback` rendering the raw JSON — the SPA is
   //      NOT mounted because the response was JSON, not HTML.
   //
-  //    We discriminate on the URL: `/auth/callback` means the
+  //    We discriminate on the URL: `/api/auth/callback` means the
   //    new-user JSON-body branch fired. The cookie jar carries
   //    `aconversa-auth-pending` either way; for the new-user case
   //    we close out the screen-name step before navigating into
-  //    the SPA (otherwise `/auth/me` returns 401 because the
+  //    the SPA (otherwise `/api/auth/me` returns 401 because the
   //    pending cookie is NOT the platform session cookie, and the
   //    SPA's `RequireAuth` would bounce the user out of
   //    `/screen-name` back to `/login` — see the
@@ -318,36 +318,36 @@ export async function loginAs(
   //    "screen-name-detection question" for the open UX gap that
   //    motivates closing it via the API path here rather than via
   //    the SPA's form-render path).
-  if (page.url().includes('/auth/callback')) {
+  if (page.url().includes('/api/auth/callback')) {
     // POST the screen-name directly via the cookie-jar-bearing
     // request context. The pending cookie sitting in
     // `page.context().cookies()` is sent automatically; the server
     // validates it, writes the screen name onto the users row, and
     // returns 200 with both Set-Cookies (pending-clear + session).
-    const response = await page.request.post('/auth/screen-name', {
+    const response = await page.request.post('/api/auth/screen-name', {
       data: { screenName },
       headers: { 'content-type': 'application/json' },
     });
     if (response.status() !== 200) {
       const body = await response.text();
       throw new Error(
-        `loginAs: POST /auth/screen-name returned ${String(response.status())} during new-user setup; body: ${body}`,
+        `loginAs: POST /api/auth/screen-name returned ${String(response.status())} during new-user setup; body: ${body}`,
       );
     }
   }
 
   // 6. Navigate to `/login` to settle the SPA. For returning users
-  //    the SPA mounts and reads `/auth/me` (200, authenticated). For
+  //    the SPA mounts and reads `/api/auth/me` (200, authenticated). For
   //    new users (just past the POST above) the session cookie is
-  //    now set; the SPA reads `/auth/me` (200, authenticated). The
+  //    now set; the SPA reads `/api/auth/me` (200, authenticated). The
   //    redundant `goto('/login')` for returning users is cheap —
   //    the chunked bundle is cached after the earlier `goto('/login')`
   //    in step 1 — and keeps the post-helper page state symmetric
   //    across branches (callers see a mounted SPA, not a JSON view
-  //    on `/auth/callback`).
+  //    on `/api/auth/callback`).
   await page.goto('/login');
 
-  // 7. Poll `/auth/me` until it returns 200. This is the canonical
+  // 7. Poll `/api/auth/me` until it returns 200. This is the canonical
   //    "the cookie is set and the server agrees we're authenticated"
   //    signal.
   return waitForAuthenticated(page.request, deadlineMs);

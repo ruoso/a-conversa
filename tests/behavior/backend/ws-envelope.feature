@@ -19,11 +19,11 @@ Feature: WebSocket message envelope
 
   Scenario: a connecting client receives the canonical hello envelope
     Given an authenticated WebSocket test app
-    When an authenticated WebSocket client connects to "/ws"
+    When an authenticated WebSocket client connects to "/api/ws"
     Then the client receives a canonical hello envelope with a UUID id and a UUID connectionId
 
   Scenario: a malformed client message is dropped without closing the connection
     Given an authenticated WebSocket test app
-    When an authenticated WebSocket client connects to "/ws"
+    When an authenticated WebSocket client connects to "/api/ws"
     And the client sends the malformed frame "{ not valid json"
     Then the WebSocket connection is still open

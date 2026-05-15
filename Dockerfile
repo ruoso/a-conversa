@@ -145,7 +145,7 @@ COPY --from=build /app/apps/server/migrations      ./apps/server/migrations
 # tasks/refinements/backend/serve_static_frontends.md) serves these
 # static assets from the same process as the JSON API, so the
 # deployment is a single origin (one hostname + port answers both
-# `/` HTML and `/sessions` JSON). The server fails fast at boot if
+# `/` HTML and `/api/sessions` JSON). The server fails fast at boot if
 # the dist tree is absent; an image that strips this layer would
 # crash at startup instead of silently degrading to a JSON-only API.
 #

@@ -93,7 +93,7 @@ describe('loadOidcConfig', () => {
     expect(config.clientId).toBe('aconversa-app-dev');
     expect(config.clientSecret).toBe('aconversa-app-dev-secret');
     expect(config.appBaseUrl).toBe('http://localhost:3000');
-    expect(config.redirectUri).toBe('http://localhost:3000/auth/callback');
+    expect(config.redirectUri).toBe('http://localhost:3000/api/auth/callback');
   });
 
   it('defaults APP_BASE_URL to http://localhost:3000 when absent', () => {
@@ -102,13 +102,13 @@ describe('loadOidcConfig', () => {
     delete (env as Partial<typeof env>).APP_BASE_URL;
     const config = loadOidcConfig(env);
     expect(config.appBaseUrl).toBe('http://localhost:3000');
-    expect(config.redirectUri).toBe('http://localhost:3000/auth/callback');
+    expect(config.redirectUri).toBe('http://localhost:3000/api/auth/callback');
   });
 
   it('strips trailing slash on APP_BASE_URL before composing redirectUri', () => {
     const config = loadOidcConfig({ ...validEnv, APP_BASE_URL: 'http://localhost:3000/' });
     expect(config.appBaseUrl).toBe('http://localhost:3000');
-    expect(config.redirectUri).toBe('http://localhost:3000/auth/callback');
+    expect(config.redirectUri).toBe('http://localhost:3000/api/auth/callback');
   });
 
   it('throws OidcConfigError on malformed issuer URL', () => {

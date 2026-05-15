@@ -1,9 +1,16 @@
 // Fastify plugin registering the OIDC handshake routes plus the
-// screen-name collection endpoint:
+// screen-name collection endpoint. All routes below are served under
+// `/api/*` — `createServer()` (and the `__buildTestAuthApp` test
+// helper) register this plugin with `{ prefix: '/api' }`, so the
+// route literals here remain bare `/auth/...` and Fastify prepends
+// the prefix at registration time. Refinement:
+//   tasks/refinements/backend/serve_static_frontends_path_collision_fix.md.
 //
-//   - GET  /auth/login        — initiate the authorization-code flow.
-//   - GET  /auth/callback     — handle the issuer's redirect back.
-//   - POST /auth/screen-name  — replace `<pending>` with the chosen name.
+//   - GET  /api/auth/login        — initiate the authorization-code flow.
+//   - GET  /api/auth/callback     — handle the issuer's redirect back.
+//   - POST /api/auth/screen-name  — replace `<pending>` with the chosen name.
+//   - POST /api/auth/logout       — revoke + clear the session cookie.
+//   - GET  /api/auth/me           — return the current authenticated user.
 //
 // Refinement: tasks/refinements/backend/oauth_callback_handler.md,
 //             tasks/refinements/backend/screen_name_collection.md
@@ -513,7 +520,7 @@ const authRoutesPluginAsync: FastifyPluginAsync<AuthRoutesOptions> = (
   const cookieNow = (): number => (opts.now !== undefined ? opts.now() : Date.now());
 
   app.get(
-    '/auth/login',
+    '/api/auth/login',
     {
       schema: {
         tags: ['auth'],
@@ -577,7 +584,7 @@ const authRoutesPluginAsync: FastifyPluginAsync<AuthRoutesOptions> = (
   );
 
   app.get(
-    '/auth/callback',
+    '/api/auth/callback',
     {
       schema: {
         tags: ['auth'],
@@ -743,7 +750,7 @@ const authRoutesPluginAsync: FastifyPluginAsync<AuthRoutesOptions> = (
   );
 
   app.post(
-    '/auth/screen-name',
+    '/api/auth/screen-name',
     {
       schema: {
         tags: ['auth'],
@@ -876,7 +883,7 @@ const authRoutesPluginAsync: FastifyPluginAsync<AuthRoutesOptions> = (
   //   4. Returns 204 + cookie-clear. The 204 shape is unchanged.
   // ---------------------------------------------------------------
   app.post(
-    '/auth/logout',
+    '/api/auth/logout',
     {
       schema: {
         tags: ['auth'],
@@ -1024,7 +1031,7 @@ const authRoutesPluginAsync: FastifyPluginAsync<AuthRoutesOptions> = (
   };
 
   app.get(
-    '/auth/me',
+    '/api/auth/me',
     {
       preHandler: authMePreHandler,
       schema: {

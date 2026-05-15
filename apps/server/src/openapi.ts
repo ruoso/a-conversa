@@ -13,11 +13,13 @@
 //      OpenAPI 3.x document. `@fastify/swagger` reads each route's
 //      `schema` field at startup and assembles a single
 //      `app.swagger()` document.
-//   2. Registers `@fastify/swagger-ui` at `/docs`, which serves the
-//      Swagger UI HTML and exposes the OpenAPI JSON at `/docs/json`
-//      (the plugin's documented default for the JSON route under the
-//      configured `routePrefix`). Frontends and external consumers
-//      can fetch `/docs/json` to generate typed clients.
+//   2. Registers `@fastify/swagger-ui` at `/api/docs`, which serves
+//      the Swagger UI HTML and exposes the OpenAPI JSON at
+//      `/api/docs/json` (the plugin's documented default for the JSON
+//      route under the configured `routePrefix`). Frontends and
+//      external consumers can fetch `/api/docs/json` to generate typed
+//      clients. Migrated under `/api/*` per
+//      tasks/refinements/backend/serve_static_frontends_path_collision_fix.md.
 //   3. Pre-declares the canonical error envelope schema as
 //      `components.schemas.ErrorEnvelope` so each route's
 //      `schema.response.4xx` / `5xx` can reference a single shared
@@ -205,7 +207,7 @@ function buildSwaggerOptions(): Parameters<typeof swagger>[1] {
             name: 'aconversa-session',
             description:
               'Platform session cookie carrying the HS256 JWT issued by ' +
-              '`/auth/callback` (returning user) or `/auth/screen-name` ' +
+              '`/api/auth/callback` (returning user) or `/api/auth/screen-name` ' +
               '(new user after screen-name set). Protected endpoints fail ' +
               'with 401 `auth-required` if the cookie is missing, ' +
               'malformed, expired, or refers to a soft-deleted user.',
@@ -236,9 +238,12 @@ function buildSwaggerOptions(): Parameters<typeof swagger>[1] {
 }
 
 /**
- * Build the Swagger-UI mount options. `routePrefix: '/docs'` puts the
- * UI at `/docs` and the OpenAPI JSON at `/docs/json` (the plugin's
- * default JSON path under the configured prefix).
+ * Build the Swagger-UI mount options. `routePrefix: '/api/docs'` puts
+ * the UI at `/api/docs` and the OpenAPI JSON at `/api/docs/json` (the
+ * plugin's default JSON path under the configured prefix). The
+ * `/api/*` prefix matches the rest of the backend HTTP surface per
+ * tasks/refinements/backend/serve_static_frontends_path_collision_fix.md
+ * — only `/healthz` is exempt from the migration.
  *
  * `staticCSP: true` adds a Content-Security-Policy header tight enough
  * for the bundled assets — no inline scripts beyond what swagger-ui
@@ -247,7 +252,7 @@ function buildSwaggerOptions(): Parameters<typeof swagger>[1] {
  */
 function buildSwaggerUiOptions(): Parameters<typeof swaggerUi>[1] {
   return {
-    routePrefix: '/docs',
+    routePrefix: '/api/docs',
     staticCSP: true,
     uiConfig: {
       // Tag groups expanded by default; route blocks collapsed. Matches

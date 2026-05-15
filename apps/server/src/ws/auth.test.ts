@@ -74,7 +74,7 @@ async function openWsClient(
 ): Promise<OpenedWs> {
   const queue: string[] = [];
   let waiter: ((msg: string) => void) | null = null;
-  const ws = await app.injectWS('/ws', options ?? {}, {
+  const ws = await app.injectWS('/api/ws', options ?? {}, {
     onInit(client: unknown) {
       (client as WsLike).on('message', (data: unknown) => {
         const text = toUtf8(data);

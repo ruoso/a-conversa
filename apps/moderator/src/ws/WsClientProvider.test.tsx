@@ -44,7 +44,7 @@ function makeFakeClient(): { client: WsClient; log: FakeClientLog } {
     trackSession: () => Promise.resolve(),
     untrackSession: () => Promise.resolve(),
     onEnvelope: () => () => undefined,
-    url: '/ws',
+    url: '/api/ws',
   };
   return { client, log };
 }

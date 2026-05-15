@@ -41,12 +41,12 @@ Feature: WebSocket canonical server → client error envelope
     # A fully-unknown discriminator value (e.g. `"banana"`) would be
     # rejected at the envelope-schema stage and hit the malformed-envelope
     # path instead — covered by the next scenario.
-    When an authenticated WebSocket client connects to "/ws"
+    When an authenticated WebSocket client connects to "/api/ws"
     And the client sends an envelope with type "subscribed"
     Then the client receives an error envelope with code "unknown-message-type" referencing the previous envelope
 
   Scenario: Malformed JSON produces a `malformed-envelope` error and the same connection still works
-    When an authenticated WebSocket client connects to "/ws"
+    When an authenticated WebSocket client connects to "/api/ws"
     And the client sends a malformed frame "{ not valid json" and waits for the error envelope
     Then the client receives an error envelope with code "malformed-envelope" with no inResponseTo
     And the WebSocket connection is still open
@@ -54,6 +54,6 @@ Feature: WebSocket canonical server → client error envelope
   Scenario: Subscribe to a non-visible private session produces a `not-found` error envelope
     Given a user with oauth_subject "authelia:bob-err" exists with screen_name "bob-err"
     And a private session owned by "bob-err" exists with id "66666666-6666-4666-8666-666666666601"
-    When an authenticated WebSocket client connects to "/ws"
+    When an authenticated WebSocket client connects to "/api/ws"
     And the client sends a subscribe envelope for session "66666666-6666-4666-8666-666666666601"
     Then the client receives an error envelope with code "not-found" referencing the subscribe envelope

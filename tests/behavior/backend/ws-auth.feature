@@ -17,11 +17,11 @@ Feature: WebSocket auth on connect
     Given a ws-auth-gated server is built against the pglite-backed pool
 
   Scenario: an upgrade with no session cookie is refused with HTTP 401
-    When a WebSocket client connects to "/ws" without a session cookie
+    When a WebSocket client connects to "/api/ws" without a session cookie
     Then the WebSocket upgrade is refused with HTTP status 401
 
   Scenario: an upgrade with a valid session cookie succeeds and the hello frame arrives
     Given a user with oauth_subject "authelia:alice-ws" exists with screen_name "alice-ws"
     And the cucumber world has a valid session cookie for that user
-    When a WebSocket client connects to "/ws" with the session cookie
+    When a WebSocket client connects to "/api/ws" with the session cookie
     Then the WebSocket upgrade completes and a hello frame arrives

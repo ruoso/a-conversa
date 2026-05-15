@@ -114,7 +114,7 @@ const OIDC_CONFIG = {
   clientId: 'aconversa-app-dev',
   clientSecret: 'aconversa-app-dev-secret',
   appBaseUrl: 'http://localhost:3000',
-  redirectUri: 'http://localhost:3000/auth/callback',
+  redirectUri: 'http://localhost:3000/api/auth/callback',
 } as const;
 
 // Stubbed `authorizationCodeGrant` whose claims() returns sub + every

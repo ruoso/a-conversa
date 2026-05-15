@@ -17,7 +17,7 @@ Feature: OIDC client configuration
   Scenario: env vars flow through loadOidcConfig into an openid-client Configuration
     Given the dev OIDC environment is set
     When the OIDC config is loaded
-    Then the loaded redirect URI is "http://localhost:3000/auth/callback"
+    Then the loaded redirect URI is "http://localhost:3000/api/auth/callback"
     And the loaded client id is "aconversa-app-dev"
     When the OIDC client is obtained
     Then the obtained client's metadata client_id is "aconversa-app-dev"

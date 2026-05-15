@@ -34,9 +34,9 @@ Feature: WebSocket propose (client → server)
 
   Scenario: A subscribed participant proposes — proposer receives both proposed ack and event-applied broadcast, second subscribed client receives the broadcast
     Given a propose-ready session for "alice-ws" exists with id "77777777-7777-4777-8777-777777777701" and node id "77777777-7777-4777-8777-777777777ab1"
-    When an authenticated WebSocket client connects to "/ws"
+    When an authenticated WebSocket client connects to "/api/ws"
     And the client sends a subscribe envelope for session "77777777-7777-4777-8777-777777777701"
-    And a second authenticated WebSocket client connects to "/ws"
+    And a second authenticated WebSocket client connects to "/api/ws"
     And the second client sends a subscribe envelope for session "77777777-7777-4777-8777-777777777701"
     And the client sends a propose envelope for session "77777777-7777-4777-8777-777777777701" with expectedSequence 3 targeting node "77777777-7777-4777-8777-777777777ab1"
     Then the client receives a proposed ack referencing the propose envelope at sequence 4
@@ -45,13 +45,13 @@ Feature: WebSocket propose (client → server)
 
   Scenario: An unsubscribed client cannot propose — receives a forbidden error envelope
     Given a propose-ready session for "alice-ws" exists with id "77777777-7777-4777-8777-777777777702" and node id "77777777-7777-4777-8777-777777777ab2"
-    When an authenticated WebSocket client connects to "/ws"
+    When an authenticated WebSocket client connects to "/api/ws"
     And the client sends a propose envelope for session "77777777-7777-4777-8777-777777777702" with expectedSequence 3 targeting node "77777777-7777-4777-8777-777777777ab2"
     Then the client receives an error envelope with code "forbidden" referencing the propose envelope
 
   Scenario: A propose with a stale expectedSequence is rejected with sequence-mismatch
     Given a propose-ready session for "alice-ws" exists with id "77777777-7777-4777-8777-777777777703" and node id "77777777-7777-4777-8777-777777777ab3"
-    When an authenticated WebSocket client connects to "/ws"
+    When an authenticated WebSocket client connects to "/api/ws"
     And the client sends a subscribe envelope for session "77777777-7777-4777-8777-777777777703"
     And the client sends a propose envelope for session "77777777-7777-4777-8777-777777777703" with expectedSequence 1 targeting node "77777777-7777-4777-8777-777777777ab3"
     Then the client receives an error envelope with code "sequence-mismatch" referencing the propose envelope

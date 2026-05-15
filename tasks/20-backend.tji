@@ -50,7 +50,9 @@ task backend "Backend" {
     task serve_static_frontends_path_collision_fix "Fix SPA-route collision with /sessions/:id API params validator" {
       effort 0.5d
       allocate team
+      complete 100
       depends !serve_static_frontends
+      note "Refinement: tasks/refinements/backend/serve_static_frontends_path_collision_fix.md"
       note "Source of debt: mod_create_session_form (this commit) — `/sessions/new` returned 400 from Fastify's GET /sessions/:id UUID params validator BEFORE the static-frontends SPA fallback could fire, forcing the moderator route to `/sessions/new/setup` as a 3-segment workaround. Any future 2-segment SPA route under /sessions/* will hit the same wall. Options: (a) move all session API routes under /api/sessions/*; (b) gate the params validator on the Accept header (validate UUID only for application/json, fall through to SPA for text/html); (c) explicitly exempt named segments like /sessions/new from validation. Choose under refinement."
       note "Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit b7c5ff0)."
     }

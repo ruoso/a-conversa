@@ -618,7 +618,7 @@ async function openWsClient(app: FastifyInstance, cookie: string): Promise<Opene
   let waiter: ((msg: string) => void) | null = null;
 
   const ws = await app.injectWS(
-    '/ws',
+    '/api/ws',
     { headers: { cookie } },
     {
       onInit(client: unknown) {

@@ -12,26 +12,18 @@
 // is the regression-class proof that the moderator stack (auth → form →
 // POST → navigation → canvas mount) holds end-to-end. Before this lands
 // the moderator console was half-built from the user's perspective —
-// `POST /sessions` was API-only and required `curl` to drive. The
+// `POST /api/sessions` was API-only and required `curl` to drive. The
 // happy-path scenario closes that gap.
 //
 // Two scenarios:
 //
-//   1. happy path — alice logs in, navigates to /sessions/new/setup,
+//   1. happy path — alice logs in, navigates to /sessions/new,
 //      fills a topic + selects private, submits, waits for the URL to
 //      settle on /sessions/<uuid>/operate, asserts the graph canvas
 //      mounted.
 //   2. button-disabled-on-empty invariant — alice logs in, navigates
-//      to /sessions/new/setup, types whitespace only, asserts the
-//      submit button is disabled (trimmed-length-zero rule).
-//
-// **Why `/sessions/new/setup` and not `/sessions/new`.** The Fastify
-// `GET /sessions/:id` API route matches `/sessions/new` (2-segment
-// path) and returns 400 `validation-failed` because `new` is not a
-// UUID. The 4xx fires BEFORE the static-frontends not-found handler's
-// SPA fallback can run, so the SPA never mounts on `/sessions/new`.
-// A 3-segment path has no registered backend route, lands on the
-// SPA-fallback 404 handler with an HTML accept, and serves `index.html`.
+//      to /sessions/new, types whitespace only, asserts the submit
+//      button is disabled (trimmed-length-zero rule).
 //
 // **Locale matrix.** This spec runs in en-US only — the cross-locale
 // title / button text matrix is covered by the catalog-level parity
@@ -54,8 +46,8 @@ test.describe('Create-session flow — moderator creates a session and lands on 
 
     // 2. Navigate to the form route. The route is gated by
     //    `<RequireAuth mode="authenticated-only">`; the gate sees the
-    //    cookie-bearing /auth/me 200 response and renders children.
-    await page.goto('/sessions/new/setup');
+    //    cookie-bearing /api/auth/me 200 response and renders children.
+    await page.goto('/sessions/new');
     await expect(page.getByTestId('route-create-session')).toBeVisible();
     await expect(page.getByTestId('route-title')).toHaveText('Create a session');
 
@@ -70,9 +62,9 @@ test.describe('Create-session flow — moderator creates a session and lands on 
     await expect(page.getByTestId('create-session-privacy-private')).toBeChecked();
     await expect(page.getByTestId('create-session-privacy-public')).not.toBeChecked();
 
-    // 5. Submit. The form POSTs /sessions, the backend handler returns
-    //    201 with `{ id, ... }`, and the form calls `useNavigate` onto
-    //    /sessions/<id>/operate.
+    // 5. Submit. The form POSTs /api/sessions, the backend handler
+    //    returns 201 with `{ id, ... }`, and the form calls `useNavigate`
+    //    onto /sessions/<id>/operate.
     await page.getByTestId('create-session-submit').click();
 
     // 6. Wait for the navigation to settle. The session id is the
@@ -92,7 +84,7 @@ test.describe('Create-session flow — moderator creates a session and lands on 
     page,
   }) => {
     await loginAs(page, { username: TEST_USERNAME });
-    await page.goto('/sessions/new/setup');
+    await page.goto('/sessions/new');
 
     // The submit button is disabled by default (empty topic). Type
     // whitespace only — the trim-then-length-zero rule keeps it

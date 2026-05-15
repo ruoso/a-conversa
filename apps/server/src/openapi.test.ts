@@ -77,7 +77,7 @@ describe('OpenAPI plugin', () => {
   });
 
   it('serves Swagger UI HTML at /docs (and /docs/)', async () => {
-    // The swagger-ui plugin mounts under `routePrefix: '/docs'` and
+    // The swagger-ui plugin mounts under `routePrefix: '/api/docs'` and
     // serves the index HTML at both `/docs` and `/docs/` (Fastify's
     // route-with-trailing-slash flexibility). The static asset
     // sub-tree (CSS, JS, images) lives at `/docs/static/*`.
@@ -85,19 +85,19 @@ describe('OpenAPI plugin', () => {
     // We assert both forms return 200 + HTML so a regression in
     // routePrefix wiring (e.g. swagger-ui demoted to a sub-path) is
     // caught here, not by a confused operator.
-    const docs = await app.inject({ method: 'GET', url: '/docs' });
+    const docs = await app.inject({ method: 'GET', url: '/api/docs' });
     expect(docs.statusCode).toBe(200);
     expect(docs.headers['content-type']).toMatch(/text\/html/);
     // The HTML should reference swagger-ui (sanity check on body content).
     expect(docs.body).toMatch(/swagger/i);
 
-    const docsSlash = await app.inject({ method: 'GET', url: '/docs/' });
+    const docsSlash = await app.inject({ method: 'GET', url: '/api/docs/' });
     expect(docsSlash.statusCode).toBe(200);
     expect(docsSlash.headers['content-type']).toMatch(/text\/html/);
   });
 
   it('serves the OpenAPI JSON document at /docs/json', async () => {
-    const response = await app.inject({ method: 'GET', url: '/docs/json' });
+    const response = await app.inject({ method: 'GET', url: '/api/docs/json' });
 
     expect(response.statusCode).toBe(200);
     expect(response.headers['content-type']).toMatch(/application\/json/);
@@ -109,7 +109,7 @@ describe('OpenAPI plugin', () => {
   });
 
   it('documents info.title, info.description, and a resolved info.version', async () => {
-    const response = await app.inject({ method: 'GET', url: '/docs/json' });
+    const response = await app.inject({ method: 'GET', url: '/api/docs/json' });
     const doc = response.json<OpenApiDoc>();
 
     expect(doc.info.title).toBe('a-conversa API');
@@ -121,7 +121,7 @@ describe('OpenAPI plugin', () => {
   });
 
   it('documents the /healthz path with a 200 response shape and the meta tag', async () => {
-    const response = await app.inject({ method: 'GET', url: '/docs/json' });
+    const response = await app.inject({ method: 'GET', url: '/api/docs/json' });
     const doc = response.json<OpenApiDoc>();
 
     expect(doc.paths['/healthz']).toBeDefined();
@@ -141,14 +141,14 @@ describe('OpenAPI plugin', () => {
     // doesn't pollute the API doc). The OpenAPI document should
     // therefore have no `paths['/']` entry — the moderator SPA is
     // not API surface.
-    const response = await app.inject({ method: 'GET', url: '/docs/json' });
+    const response = await app.inject({ method: 'GET', url: '/api/docs/json' });
     const doc = response.json<OpenApiDoc>();
 
     expect(doc.paths['/']).toBeUndefined();
   });
 
   it('declares the full tag taxonomy (meta, auth, sessions, events, replay)', async () => {
-    const response = await app.inject({ method: 'GET', url: '/docs/json' });
+    const response = await app.inject({ method: 'GET', url: '/api/docs/json' });
     const doc = response.json<OpenApiDoc>();
 
     const tagNames = (doc.tags ?? []).map((t) => t.name);
@@ -160,7 +160,7 @@ describe('OpenAPI plugin', () => {
   });
 
   it('exposes the canonical ErrorEnvelope schema under components.schemas', async () => {
-    const response = await app.inject({ method: 'GET', url: '/docs/json' });
+    const response = await app.inject({ method: 'GET', url: '/api/docs/json' });
     const doc = response.json<OpenApiDoc>();
 
     expect(doc.components?.schemas?.['ErrorEnvelope']).toBeDefined();
@@ -198,7 +198,7 @@ describe('OpenAPI plugin', () => {
     // `securitySchemes.cookieAuth` entry so generated clients
     // understand the cookie requirement. Refinement:
     // tasks/refinements/backend/auth_middleware.md.
-    const response = await app.inject({ method: 'GET', url: '/docs/json' });
+    const response = await app.inject({ method: 'GET', url: '/api/docs/json' });
     const doc = response.json<OpenApiDoc>();
     const scheme = doc.components?.securitySchemes?.['cookieAuth'];
     expect(scheme).toBeDefined();
@@ -223,7 +223,7 @@ describe('OpenAPI plugin', () => {
     // The previous loop also asserted against `/` — that route is
     // gone (the moderator SPA owns `/` per
     // `backend.api_skeleton.serve_static_frontends`).
-    const response = await app.inject({ method: 'GET', url: '/docs/json' });
+    const response = await app.inject({ method: 'GET', url: '/api/docs/json' });
     const doc = response.json<OpenApiDoc>();
 
     for (const path of ['/healthz']) {

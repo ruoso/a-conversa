@@ -415,7 +415,7 @@ describe('POST /auth/screen-name', () => {
     const cookieHeader = makeCookieHeaderValue(userId, Date.now() + 60_000);
     const response = await app.inject({
       method: 'POST',
-      url: '/auth/screen-name',
+      url: '/api/auth/screen-name',
       headers: { cookie: cookieHeader },
       payload: { screenName: 'alice' },
     });
@@ -430,7 +430,7 @@ describe('POST /auth/screen-name', () => {
     const cookieHeader = makeCookieHeaderValue(userId, Date.now() + 60_000);
     const response = await app.inject({
       method: 'POST',
-      url: '/auth/screen-name',
+      url: '/api/auth/screen-name',
       headers: { cookie: cookieHeader },
       payload: { screenName: 'alice' },
     });
@@ -446,7 +446,7 @@ describe('POST /auth/screen-name', () => {
     const cookieHeader = makeCookieHeaderValue(userId, Date.now() + 60_000);
     const response = await app.inject({
       method: 'POST',
-      url: '/auth/screen-name',
+      url: '/api/auth/screen-name',
       headers: { cookie: cookieHeader },
       payload: { screenName: '  alice  ' },
     });
@@ -457,7 +457,7 @@ describe('POST /auth/screen-name', () => {
   it('rejects a request with no cookie (401)', async () => {
     const response = await app.inject({
       method: 'POST',
-      url: '/auth/screen-name',
+      url: '/api/auth/screen-name',
       payload: { screenName: 'alice' },
     });
     expect(response.statusCode).toBe(401);
@@ -475,7 +475,7 @@ describe('POST /auth/screen-name', () => {
     const tampered = `${PENDING_COOKIE_NAME}=${payloadHalf ?? ''}.${fakeSig}`;
     const response = await app.inject({
       method: 'POST',
-      url: '/auth/screen-name',
+      url: '/api/auth/screen-name',
       headers: { cookie: tampered },
       payload: { screenName: 'alice' },
     });
@@ -486,7 +486,7 @@ describe('POST /auth/screen-name', () => {
     const cookieHeader = makeCookieHeaderValue(userId, 1000); // far past
     const response = await app.inject({
       method: 'POST',
-      url: '/auth/screen-name',
+      url: '/api/auth/screen-name',
       headers: { cookie: cookieHeader },
       payload: { screenName: 'alice' },
     });
@@ -497,7 +497,7 @@ describe('POST /auth/screen-name', () => {
     const cookieHeader = makeCookieHeaderValue(userId, Date.now() + 60_000);
     const response = await app.inject({
       method: 'POST',
-      url: '/auth/screen-name',
+      url: '/api/auth/screen-name',
       headers: { cookie: cookieHeader },
       payload: { screenName: '   ' },
     });
@@ -511,7 +511,7 @@ describe('POST /auth/screen-name', () => {
     const tooLong = 'x'.repeat(65);
     const response = await app.inject({
       method: 'POST',
-      url: '/auth/screen-name',
+      url: '/api/auth/screen-name',
       headers: { cookie: cookieHeader },
       payload: { screenName: tooLong },
     });
@@ -524,7 +524,7 @@ describe('POST /auth/screen-name', () => {
     const cookieHeader = makeCookieHeaderValue(userId, Date.now() + 60_000);
     const response = await app.inject({
       method: 'POST',
-      url: '/auth/screen-name',
+      url: '/api/auth/screen-name',
       headers: { cookie: cookieHeader },
       payload: {},
     });
@@ -540,7 +540,7 @@ describe('POST /auth/screen-name', () => {
     const cookieHeader = makeCookieHeaderValue(userId, Date.now() + 60_000);
     const first = await app.inject({
       method: 'POST',
-      url: '/auth/screen-name',
+      url: '/api/auth/screen-name',
       headers: { cookie: cookieHeader },
       payload: { screenName: 'alice' },
     });
@@ -549,7 +549,7 @@ describe('POST /auth/screen-name', () => {
     // no longer at the placeholder.
     const second = await app.inject({
       method: 'POST',
-      url: '/auth/screen-name',
+      url: '/api/auth/screen-name',
       headers: { cookie: cookieHeader },
       payload: { screenName: 'alice-renamed' },
     });
@@ -724,7 +724,7 @@ describe('POST /auth/screen-name — NFKC + character-class hardening', () => {
     const cookieHeader = makeCookieHeaderValue(userId, Date.now() + 60_000);
     const response = await app.inject({
       method: 'POST',
-      url: '/auth/screen-name',
+      url: '/api/auth/screen-name',
       headers: { cookie: cookieHeader },
       payload: { screenName: 'ﬁle' },
     });
@@ -741,7 +741,7 @@ describe('POST /auth/screen-name — NFKC + character-class hardening', () => {
     const cookieHeader = makeCookieHeaderValue(userId, Date.now() + 60_000);
     const response = await app.inject({
       method: 'POST',
-      url: '/auth/screen-name',
+      url: '/api/auth/screen-name',
       headers: { cookie: cookieHeader },
       payload: { screenName: 'alice‮admin' },
     });
@@ -759,7 +759,7 @@ describe('POST /auth/screen-name — NFKC + character-class hardening', () => {
     const cookieHeader = makeCookieHeaderValue(userId, Date.now() + 60_000);
     const response = await app.inject({
       method: 'POST',
-      url: '/auth/screen-name',
+      url: '/api/auth/screen-name',
       headers: { cookie: cookieHeader },
       payload: { screenName: 'alice bob' },
     });
@@ -773,7 +773,7 @@ describe('POST /auth/screen-name — NFKC + character-class hardening', () => {
     const cookieHeader = makeCookieHeaderValue(userId, Date.now() + 60_000);
     const response = await app.inject({
       method: 'POST',
-      url: '/auth/screen-name',
+      url: '/api/auth/screen-name',
       headers: { cookie: cookieHeader },
       payload: { screenName: 'al‍ice' },
     });
@@ -788,7 +788,7 @@ describe('POST /auth/screen-name — NFKC + character-class hardening', () => {
     const cookieHeader = makeCookieHeaderValue(userId, Date.now() + 60_000);
     const response = await app.inject({
       method: 'POST',
-      url: '/auth/screen-name',
+      url: '/api/auth/screen-name',
       headers: { cookie: cookieHeader },
       payload: { screenName: 'аdmin' },
     });
@@ -803,7 +803,7 @@ describe('POST /auth/screen-name — NFKC + character-class hardening', () => {
     const cookieHeader = makeCookieHeaderValue(userId, Date.now() + 60_000);
     const response = await app.inject({
       method: 'POST',
-      url: '/auth/screen-name',
+      url: '/api/auth/screen-name',
       headers: { cookie: cookieHeader },
       payload: { screenName: 'alice' },
     });

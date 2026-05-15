@@ -51,7 +51,7 @@ interface ProposalStatusScratch {
   wsLifecycleClient?: WsClient;
   // Shared with the broadcast / propose step files — the second
   // client opens via the existing `a second authenticated WebSocket
-  // client connects to "/ws"` When step in
+  // client connects to "/api/ws"` When step in
   // backend-ws-event-broadcast.steps.ts.
   wsBroadcastSecondClient?: WsClient;
   // First-client streaming buffers — each trigger step (vote / commit /
@@ -99,7 +99,7 @@ function ensureSecondFramesQueue(world: AConversaWorld): string[] {
   // before the trigger step runs.
   assert.ok(
     s.wsBroadcastFramesSecond !== undefined,
-    'wsBroadcastFramesSecond not initialised — the `a second authenticated WebSocket client connects to "/ws"` When step must run first',
+    'wsBroadcastFramesSecond not initialised — the `a second authenticated WebSocket client connects to "/api/ws"` When step must run first',
   );
   return s.wsBroadcastFramesSecond;
 }

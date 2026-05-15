@@ -82,7 +82,7 @@ const OIDC_CONFIG = {
   clientId: 'aconversa-app-dev',
   clientSecret: 'aconversa-app-dev-secret',
   appBaseUrl: 'http://localhost:3000',
-  redirectUri: 'http://localhost:3000/auth/callback',
+  redirectUri: 'http://localhost:3000/api/auth/callback',
 } as const;
 
 // Stubbed `authorizationCodeGrant`. Reads `world.scratch.stubSub` so
@@ -193,7 +193,7 @@ When('I GET \\/auth\\/login', async function (this: AConversaWorld) {
   const s = scratch(this);
   const app = s.authApp;
   assert.ok(app, 'auth app not initialized — Given step missing');
-  const response = await app.inject({ method: 'GET', url: '/auth/login' });
+  const response = await app.inject({ method: 'GET', url: '/api/auth/login' });
   s.lastResponse = {
     statusCode: response.statusCode,
     body: response.body,
@@ -242,7 +242,7 @@ When(
     s.stubSub = sub;
     const response = await app.inject({
       method: 'GET',
-      url: `/auth/callback?code=AUTHCODE&state=${encodeURIComponent(s.capturedState)}`,
+      url: `/api/auth/callback?code=AUTHCODE&state=${encodeURIComponent(s.capturedState)}`,
     });
     s.lastResponse = {
       statusCode: response.statusCode,
@@ -258,7 +258,7 @@ When('I GET the callback URL with a deliberately bad state', async function (thi
   assert.ok(app, 'auth app not initialized');
   const response = await app.inject({
     method: 'GET',
-    url: '/auth/callback?code=AUTHCODE&state=THIS-STATE-IS-NOT-STORED',
+    url: '/api/auth/callback?code=AUTHCODE&state=THIS-STATE-IS-NOT-STORED',
   });
   s.lastResponse = {
     statusCode: response.statusCode,

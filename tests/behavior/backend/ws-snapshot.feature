@@ -46,7 +46,7 @@ Feature: WebSocket snapshot (client → server, state query)
 
   Scenario: A subscribed participant requests a snapshot — receives snapshot-state reflecting the seeded session
     Given a snapshot-ready session for "alice-ws" exists with id "99999999-9999-4999-8999-999999999901" and node id "99999999-9999-4999-8999-999999999a01" and pending proposal id "99999999-9999-4999-8999-999999999b01"
-    When an authenticated WebSocket client connects to "/ws"
+    When an authenticated WebSocket client connects to "/api/ws"
     And the client sends a subscribe envelope for session "99999999-9999-4999-8999-999999999901"
     And the client sends a snapshot envelope for session "99999999-9999-4999-8999-999999999901"
     Then the client receives a snapshot-state response referencing the snapshot envelope at sequence 5
@@ -54,13 +54,13 @@ Feature: WebSocket snapshot (client → server, state query)
 
   Scenario: An unsubscribed client cannot snapshot — receives a forbidden error envelope
     Given a snapshot-ready session for "alice-ws" exists with id "99999999-9999-4999-8999-999999999902" and node id "99999999-9999-4999-8999-999999999a02" and pending proposal id "99999999-9999-4999-8999-999999999b02"
-    When an authenticated WebSocket client connects to "/ws"
+    When an authenticated WebSocket client connects to "/api/ws"
     And the client sends a snapshot envelope for session "99999999-9999-4999-8999-999999999902"
     Then the client receives an error envelope with code "forbidden" referencing the snapshot envelope
 
   Scenario: A snapshot reflects events appended by sibling write handlers — regression-pin for the catch-up contract
     Given a propose-ready session for "alice-ws" exists with id "99999999-9999-4999-8999-999999999903" and node id "99999999-9999-4999-8999-999999999a03"
-    When an authenticated WebSocket client connects to "/ws"
+    When an authenticated WebSocket client connects to "/api/ws"
     And the client sends a subscribe envelope for session "99999999-9999-4999-8999-999999999903"
     And the client sends a propose envelope for session "99999999-9999-4999-8999-999999999903" with expectedSequence 3 targeting node "99999999-9999-4999-8999-999999999a03"
     And the client receives a proposed ack referencing the propose envelope at sequence 4

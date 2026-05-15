@@ -170,7 +170,7 @@ interface PendingRequest {
   readonly timeoutHandle: unknown;
 }
 
-const DEFAULT_URL = '/ws';
+const DEFAULT_URL = '/api/ws';
 const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_INITIAL_BACKOFF_MS = 250;
 const DEFAULT_MAX_BACKOFF_MS = 30_000;

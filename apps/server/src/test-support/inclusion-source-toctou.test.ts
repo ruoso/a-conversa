@@ -191,7 +191,7 @@ describe('include + source-privacy-flip TOCTOU (G-017 pin)', () => {
 
     const includePromise = app.inject({
       method: 'POST',
-      url: `/sessions/${DESTINATION_SESSION_ID}/include`,
+      url: `/api/sessions/${DESTINATION_SESSION_ID}/include`,
       headers: { cookie: aliceCookie },
       payload: { entityKind: 'node', entityId: NODE_ID },
     });
@@ -208,7 +208,7 @@ describe('include + source-privacy-flip TOCTOU (G-017 pin)', () => {
     // source row. Neither contends on Alice's destination lock.
     const flipResult = await app.inject({
       method: 'PATCH',
-      url: `/sessions/${SOURCE_SESSION_ID}/privacy`,
+      url: `/api/sessions/${SOURCE_SESSION_ID}/privacy`,
       headers: { cookie: bobCookie },
       payload: { privacy: 'private' },
     });
@@ -283,7 +283,7 @@ describe('include + source-privacy-flip TOCTOU (G-017 pin)', () => {
     // post-COMMIT value ('private') and rejects.
     const flipResult = await app.inject({
       method: 'PATCH',
-      url: `/sessions/${SOURCE_SESSION_ID}/privacy`,
+      url: `/api/sessions/${SOURCE_SESSION_ID}/privacy`,
       headers: { cookie: bobCookie },
       payload: { privacy: 'private' },
     });
@@ -298,7 +298,7 @@ describe('include + source-privacy-flip TOCTOU (G-017 pin)', () => {
     // `entity-not-referenceable`.
     const includeResult = await app.inject({
       method: 'POST',
-      url: `/sessions/${DESTINATION_SESSION_ID}/include`,
+      url: `/api/sessions/${DESTINATION_SESSION_ID}/include`,
       headers: { cookie: aliceCookie },
       payload: { entityKind: 'node', entityId: NODE_ID },
     });
