@@ -153,5 +153,32 @@ export default defineConfig({
       },
       metadata: { locale },
     })),
+    // Full OIDC handshake project. Drives `tests/e2e/auth-flow.spec.ts`
+    // against the dev compose stack's Authelia binary. Refinement:
+    // `tasks/refinements/backend/auth_flow_integration.md`.
+    //
+    // - `ignoreHTTPSErrors: true` scoped to this project ONLY. The
+    //   OIDC redirect crosses `https://authelia.aconversa.local:9091`
+    //   which uses a self-signed cert (`infra/authelia/tls/cert.pem`).
+    //   The other projects (smoke-node, chromium-<locale>) keep their
+    //   strict-cert posture so a future HTTPS regression in the
+    //   moderator surface still surfaces.
+    // - The spec uses `test.describe.serial(...)` to pin the
+    //   scenario order (new-user must precede returning-user because
+    //   the first run is what creates the users-table row). No
+    //   per-project parallelism cap is needed — the serial wrapper
+    //   guarantees the scenarios run on one worker.
+    // - The auth flow is locale-agnostic (the OIDC handshake carries
+    //   no locale signal). Running the spec three times under three
+    //   locales would triple wall-clock cost for zero signal — see
+    //   the refinement's Decisions block.
+    {
+      name: 'chromium-auth',
+      testMatch: /auth-flow\.spec\.ts$/,
+      use: {
+        ...devices['Desktop Chrome'],
+        ignoreHTTPSErrors: true,
+      },
+    },
   ],
 });

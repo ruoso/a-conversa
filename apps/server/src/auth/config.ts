@@ -72,7 +72,12 @@
 // won't leak the secret either.
 
 import { z } from 'zod';
-import { Configuration, discovery as defaultDiscovery, type ServerMetadata } from 'openid-client';
+import {
+  ClientSecretBasic,
+  Configuration,
+  discovery as defaultDiscovery,
+  type ServerMetadata,
+} from 'openid-client';
 
 // Re-export the runtime `Configuration` type alias for sibling tasks
 // (oauth_callback_handler, session_token_management) so they don't
@@ -283,7 +288,19 @@ const clientCache = new WeakMap<OidcConfig, Promise<Configuration>>();
  * construction (no network).
  */
 export interface OidcDiscoveryOptions {
-  discovery?: (server: URL, clientId: string, clientSecret: string) => Promise<Configuration>;
+  discovery?: (
+    server: URL,
+    clientId: string,
+    clientSecret: string,
+    // The fourth arg is openid-client's `clientAuthentication`
+    // factory — production code always passes
+    // `ClientSecretBasic(clientSecret)` (see `getOidcClient` body).
+    // Tests typically inject a stub that ignores this arg; the
+    // signature is permissive (`unknown`) so test stubs don't have
+    // to import the library's `ClientAuth` type just to satisfy
+    // the function shape.
+    clientAuthentication?: unknown,
+  ) => Promise<Configuration>;
 }
 
 /**
@@ -326,18 +343,38 @@ export async function getOidcClient(
     return cached;
   }
   const discoveryFn = options.discovery ?? defaultDiscovery;
-  // openid-client v6's `discovery(server, clientId, metadata)` accepts
-  // the client secret as the third arg (string shorthand for
-  // `{ client_secret: ... }`). The library then defaults to
-  // `ClientSecretPost` for token-endpoint auth; the dev Authelia
-  // client is registered as `client_secret_basic`, but openid-client
-  // negotiates the method based on what the discovery document
-  // advertises and what the client supports — `client_secret_basic`
-  // is one of the auth methods Authelia exposes. Should the
-  // production Authelia config switch to a different method
-  // (e.g., `private_key_jwt`), this call evolves to pass the matching
-  // `clientAuthentication` helper as the fourth argument.
-  const promise = discoveryFn(config.issuerUrl, config.clientId, config.clientSecret);
+  // openid-client v6's `discovery(server, clientId, metadata,
+  // clientAuthentication?)` accepts the client secret as the third arg
+  // (string shorthand for `{ client_secret: ... }`). When no fourth arg
+  // is supplied the library defaults to `ClientSecretPost` for token-
+  // endpoint auth.
+  //
+  // **Why we MUST pass `ClientSecretBasic` explicitly here.** The dev
+  // and production Authelia clients are registered with
+  // `token_endpoint_auth_method: client_secret_basic` (see
+  // `infra/authelia/configuration.yml`). The library does NOT negotiate
+  // the method against the discovery document's
+  // `token_endpoint_auth_methods_supported` array — it uses whatever
+  // the application picks, and Authelia returns
+  // `invalid_client` (401) when the request method doesn't match the
+  // registered one. This is the canonical "2026-05-15
+  // `client_secret_post` vs `client_secret_basic`" regression the
+  // Playwright `auth-flow.spec.ts` suite was added to catch. Should
+  // the production Authelia config ever switch to a different method
+  // (e.g., `private_key_jwt`), the helper here evolves to match.
+  //
+  // The `clientAuthentication` argument is the fourth slot; tests that
+  // inject a stub via `options.discovery` ignore it (their stub
+  // signatures don't declare the fourth parameter, which TypeScript
+  // treats as "implicitly accept any args" for the call site). The
+  // tests deliberately do NOT exercise the basic-vs-post path — only
+  // the e2e Playwright suite catches that drift.
+  const promise = discoveryFn(
+    config.issuerUrl,
+    config.clientId,
+    config.clientSecret,
+    ClientSecretBasic(config.clientSecret),
+  );
   clientCache.set(config, promise);
   return promise;
 }

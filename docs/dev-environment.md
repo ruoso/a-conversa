@@ -122,6 +122,32 @@ Three runners, all rolled up under `make test`:
 
 The five `pnpm run smoke:{node,react,reactflow,cytoscape,tailwind}` scripts are stack-validation throwaways that prove the picked dependencies wire up; they will go away once their owning workspaces have real code (cite ADRs [0001](adr/0001-language-and-runtime.md), [0003](adr/0003-frontend-framework-react.md), [0004](adr/0004-graph-libraries-reactflow-and-cytoscape.md), [0005](adr/0005-styling-tailwind-with-shared-tokens.md)).
 
+### Running the Playwright e2e suite locally
+
+The Playwright suite (including the `tests/e2e/auth-flow.spec.ts` OIDC handshake spec — refinement: [`tasks/refinements/backend/auth_flow_integration.md`](../tasks/refinements/backend/auth_flow_integration.md)) requires the compose stack to be running. The CI `e2e-playwright` job in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) mirrors this locally via `make up-prod-mode`, which exercises the production-mode boot gates.
+
+One-time setup:
+
+```sh
+pnpm exec playwright install chromium --with-deps   # browser binaries (runner-local)
+echo '127.0.0.1  authelia.aconversa.local' | sudo tee -a /etc/hosts  # see "Host resolution for Authelia"
+```
+
+Per-run flow:
+
+```sh
+make up-prod-mode       # bring up postgres + authelia + app with prod boot gates
+pnpm run test:e2e       # run every project (smoke-node, chromium-<locale>, chromium-auth)
+make down               # stop the stack (volumes preserved between iterations)
+```
+
+**Note on test-DB cleanup.** The `auth-flow` spec's new-user scenario creates a `users` row on its first run; the returning-user scenario then re-uses it. The four scenarios share state within a single suite run (the spec uses `test.describe.serial(...)` to pin the order). To reset between iterations you have two options:
+
+- `make down-v && make up-prod-mode` — drops both named volumes (`aconversa-postgres-data`, `aconversa-authelia-data`), guaranteeing a fresh users table and a fresh Authelia sqlite store. Slower (cold compose start) but bulletproof.
+- Leave the stack up and iterate. The auth-flow scenarios are idempotent enough to re-run against an existing `alice` row (the new-user scenario detects the screen-name form's absence on a re-run and falls through to the returning-user path via the helper's branch detection); the only path that requires a clean slate is verifying the screen-name-form rendering specifically.
+
+CI uses the first option unconditionally (`make down-v` runs in the teardown step regardless of suite outcome), so every CI run begins on a clean slate.
+
 ## Lint, format, typecheck
 
 | Command                  | What it does                                       |

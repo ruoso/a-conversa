@@ -186,9 +186,19 @@ identity_providers:
     clients:
       - client_id: aconversa-app-dev
         client_name: 'a-conversa (dev)'
-        # Dev-only client secret. Plaintext: 'aconversa-app-dev-secret'.
-        # Replaced at runtime by env_var_template.
-        client_secret: '$pbkdf2-sha512$310000$c8p78n7pUMln0jzvd4aK4Q$JNRBzwAo0ek5qV3oh1jTopVpZdQbAaZ8Bm9cNfgGgNDwVKu5nZc37qogRZ8/p7AwO1iAH1tcGYRUcGXr5yRbcQ'
+        # Dev-only client secret. Plaintext: 'aconversa-app-dev-secret'
+        # (matches `OIDC_CLIENT_SECRET` in `.env.example`). Production
+        # Authelia uses a different users backend and a rotated secret
+        # held by `deployment.prod_secrets`. To rotate the dev hash:
+        #   docker run --rm authelia/authelia:4.39 authelia crypto hash \
+        #     generate pbkdf2 --password 'NEW-SECRET' --variant sha512 \
+        #     --iterations 310000
+        # then paste the resulting `Digest:` value below and update
+        # `OIDC_CLIENT_SECRET` in `.env.example` to match. The pinning
+        # regression class this hash drift causes is caught by the
+        # `tests/e2e/auth-flow.spec.ts` Playwright suite (refinement:
+        # `tasks/refinements/backend/auth_flow_integration.md`).
+        client_secret: '$pbkdf2-sha512$310000$oPwTO7qcCKQwH7M.xa5NOA$EtFYuUT7zXVjD3o9xEZaw6637xzH.eU1V4xIXV4N1vRoqIX3/r8JmR.0gSKSAfzho.9M0AmiRoGzfNWk5PQmyQ'
         public: false
         authorization_policy: one_factor
         require_pkce: false

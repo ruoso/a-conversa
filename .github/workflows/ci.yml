@@ -405,6 +405,26 @@ jobs:
             echo "APP_BASE_URL=http://localhost:3000";
           } >> .env
 
+      - name: Register authelia.aconversa.local in /etc/hosts
+        # Required by `tests/e2e/auth-flow.spec.ts` (refinement:
+        # `tasks/refinements/backend/auth_flow_integration.md`). The
+        # OIDC redirect lands the browser on
+        # `https://authelia.aconversa.local:9091/...`; that hostname
+        # is a compose-network alias on the `authelia` service, so
+        # the in-container resolver knows it but the runner-host
+        # resolver does not. Without this entry the browser's first
+        # navigation to Authelia fails at DNS resolution and the auth
+        # spec falls over before reaching the login form. The
+        # self-signed cert at `infra/authelia/tls/cert.pem` already
+        # carries a SAN for this name, so TLS verifies against the
+        # host-side resolution as well. The line is harmless for
+        # every other test (the i18n smoke specs never traverse to
+        # Authelia from the browser; the server-to-server discovery
+        # path runs inside the compose network and uses the bridge
+        # resolver). Documented in `docs/dev-environment.md` under
+        # "Host resolution for Authelia".
+        run: echo '127.0.0.1  authelia.aconversa.local' | sudo tee -a /etc/hosts
+
       - name: Bring up compose stack (prod-mode boot gates)
         # `make up-prod-mode` composes only `compose.yaml` — no dev
         # override. The dev override (`compose.dev.yaml`, used by

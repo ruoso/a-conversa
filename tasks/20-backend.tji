@@ -384,6 +384,8 @@ task backend "Backend" {
       task auth_flow_integration "OAuth flow integration tests (mock provider in compose)" {
         effort 2d
         allocate team
+        complete 100
+        note "Refinement: tasks/refinements/backend/auth_flow_integration.md"
       }
       task session_endpoint_integration "Session endpoint integration tests" {
         effort 1d

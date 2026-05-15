@@ -50,9 +50,23 @@ const discoveryMock = vi.hoisted(() =>
     return Promise.resolve({ __mocked: true });
   }),
 );
+// `ClientSecretBasic` is the openid-client factory the production
+// `getOidcClient` invokes to pin the token-endpoint auth method to
+// `client_secret_basic` (matching the Authelia registration). The
+// unit tests don't care which method is selected — they assert on
+// the `discovery(...)` call shape — but the factory must be importable
+// so the module's `ClientSecretBasic(config.clientSecret)` expression
+// resolves. We return a sentinel `{ __auth: 'basic' }` so the test's
+// `discoveryMock.mock.calls[0][3]` assertion (below) can pin that
+// the auth method was wired, without coupling to the openid-client
+// internal `ClientAuth` callable shape.
+const clientSecretBasicMock = vi.hoisted(() =>
+  vi.fn((clientSecret: string) => ({ __auth: 'basic', clientSecret })),
+);
 
 vi.mock('openid-client', () => ({
   discovery: discoveryMock,
+  ClientSecretBasic: clientSecretBasicMock,
 }));
 
 // Import AFTER the mock so the module sees the mocked helpers.
