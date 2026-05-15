@@ -72,7 +72,10 @@
     "moderator.createSession.errors.validation",
     "moderator.createSession.errors.unauthenticated",
     "moderator.createSession.errors.network",
-    "moderator.createSession.errors.generic"
+    "moderator.createSession.errors.generic",
+    "moderator.graph.tidyUp.label",
+    "moderator.graph.tidyUp.ariaLabel",
+    "moderator.graph.tidyUp.tooltip"
   ],
   "signed_off": []
 }

@@ -43,6 +43,60 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import i18next from 'i18next';
 import type { AnnotationKind, DiagnosticPayload, Event } from '@a-conversa/shared-types';
 
+// -- Mocks for the tidy-up button cases (mod_layout_tidy_action) -----
+//
+// Two module-level mocks are installed so the tidy-up cases at the
+// bottom of this file can observe the click-handler's effects:
+//
+// 1. `./layoutEngine` is wrapped so `applyLayout` is a Vitest spy that
+//    delegates to the real implementation but captures call args and
+//    snapshots `options.cache.size` AT CALL TIME (the canvas writes
+//    positions back into the cache after applyLayout returns, so a
+//    post-hoc read would always see the populated state). The captured
+//    sizes live on `applyLayoutSpy.sizesAtCall` for direct assertions.
+//
+// 2. `reactflow` is wrapped so `useReactFlow()` returns a `fitView`
+//    Vitest spy. The spy is also installed on a global handle
+//    (`__aConversaFitViewSpy`) so the tidy-up case can clear it
+//    between iterations without re-importing.
+//
+// The mocks pass every other export through unchanged, so the rest of
+// the test file's existing cases continue to exercise the real
+// `applyLayout` / real `useReactFlow` semantics.
+const sizesAtCall: number[] = [];
+const applyLayoutSpy = vi.fn();
+vi.mock('./layoutEngine', async () => {
+  const actual = await vi.importActual<typeof import('./layoutEngine')>('./layoutEngine');
+  return {
+    ...actual,
+    applyLayout: (...args: Parameters<typeof actual.applyLayout>) => {
+      const opts = args[2] as { cache?: Map<string, unknown> } | undefined;
+      sizesAtCall.push(opts?.cache?.size ?? -1);
+      applyLayoutSpy(...args);
+      return actual.applyLayout(...args);
+    },
+  };
+});
+// Attach the side array onto the spy for in-test reads.
+(applyLayoutSpy as unknown as { sizesAtCall: number[] }).sizesAtCall = sizesAtCall;
+
+const fitViewSpy = vi.fn();
+(globalThis as unknown as { __aConversaFitViewSpy?: typeof fitViewSpy }).__aConversaFitViewSpy =
+  fitViewSpy;
+vi.mock('reactflow', async () => {
+  const actual = await vi.importActual<typeof import('reactflow')>('reactflow');
+  return {
+    ...actual,
+    useReactFlow: () => {
+      const real = actual.useReactFlow();
+      return {
+        ...real,
+        fitView: fitViewSpy,
+      };
+    },
+  };
+});
+
 import {
   GraphCanvasPane,
   buildEdgeMenuItems,
@@ -1491,5 +1545,218 @@ describe('GraphCanvasPane — measurement-driven re-layout (mod_layout_measured_
       await Promise.resolve();
     });
     expect(readNodeTransform(container, NODE_A)).toEqual(afterFirstSettle);
+  });
+});
+
+// -- Tidy-up button (mod_layout_tidy_action) -------------------------
+//
+// Six committed Vitest cases per ADR 0022. The button binds to a click
+// handler that (a) clears `positionCacheRef.current`, (b) bumps the
+// existing `layoutRevision` counter, (c) schedules a rAF callback
+// that calls `useReactFlow().fitView({ duration: 0, padding: 0.1 })`.
+// These cases pin all three behaviours plus the localized rendering and
+// the empty-canvas no-op semantics.
+
+describe('GraphCanvasPane — tidy-up button (mod_layout_tidy_action)', () => {
+  beforeEach(() => {
+    // Reset the mocked-applyLayout spy + the size-at-call side array.
+    // Otherwise call counts leak across cases.
+    applyLayoutSpy.mockClear();
+    sizesAtCall.length = 0;
+    fitViewSpy.mockClear();
+  });
+
+  it('renders with a localized accessible name, title, and visible label', () => {
+    // Seed at least one node so the canvas isn't strictly empty; the
+    // button must render regardless of node count, but a non-empty
+    // fixture mirrors the typical operator flow.
+    useWsStore
+      .getState()
+      .applyEvent(makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'tidy-up fixture' }));
+    render(<GraphCanvasPane sessionId={SESSION_ID} />);
+    const button = screen.getByTestId('graph-tidy-up-button');
+    expect(button).toBeTruthy();
+    expect(button.tagName).toBe('BUTTON');
+    expect(button.getAttribute('type')).toBe('button');
+    // Localized strings resolve to NON-key text (not the raw catalog
+    // key). The en-US authoritative values are pinned by the catalog.
+    expect(button.getAttribute('aria-label')).toBe('Re-layout the graph to a fresh arrangement');
+    expect(button.getAttribute('title')).toBe(
+      "Recalculates every node's position from scratch — useful when the canvas feels cluttered.",
+    );
+    expect(button.textContent).toBe('Tidy up');
+  });
+
+  it('clicking it clears the position cache (spy on Map.prototype.clear)', () => {
+    useWsStore
+      .getState()
+      .applyEvent(makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'a' }));
+    useWsStore
+      .getState()
+      .applyEvent(makeNodeCreated({ sequence: 2, nodeId: NODE_B, wording: 'b' }));
+    render(<GraphCanvasPane sessionId={SESSION_ID} />);
+    // Spy on Map.prototype.clear AFTER the initial render — otherwise
+    // any internal Map.clear() invocations during mount would pollute
+    // the count.
+    const clearSpy = vi.spyOn(Map.prototype, 'clear');
+    try {
+      const button = screen.getByTestId('graph-tidy-up-button');
+      fireEvent.click(button);
+      // At least one Map was cleared on click — that's the position
+      // cache. We don't assert exact equality (1) because React /
+      // ReactFlow internals are free to call .clear() too; the
+      // load-bearing property is "at least one call happened, and the
+      // click handler ran without throwing."
+      expect(clearSpy).toHaveBeenCalled();
+    } finally {
+      clearSpy.mockRestore();
+    }
+  });
+
+  it('clicking it bumps layoutRevision so applyLayout re-runs against an empty cache', () => {
+    // The `applyLayoutSpy` is installed at the top of this file by the
+    // `./layoutEngine` mock; it delegates to the real implementation
+    // but captures call args + per-call `cache.size`. The spy was
+    // cleared in `beforeEach`.
+    useWsStore
+      .getState()
+      .applyEvent(makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'a' }));
+    useWsStore
+      .getState()
+      .applyEvent(makeNodeCreated({ sequence: 2, nodeId: NODE_B, wording: 'b' }));
+    render(<GraphCanvasPane sessionId={SESSION_ID} />);
+    // The initial render populated the cache via at least one
+    // applyLayout call.
+    const callsBeforeClick = applyLayoutSpy.mock.calls.length;
+    expect(callsBeforeClick).toBeGreaterThan(0);
+    // The most-recent pre-click call should have populated the cache;
+    // capture its post-state by reading the call's `options.cache`
+    // argument — Vitest snapshots the OBJECT reference at call time,
+    // and the canvas mutates that same Map after the call returns.
+    const lastBeforeCall = applyLayoutSpy.mock.calls[callsBeforeClick - 1];
+    const cacheBefore = (lastBeforeCall?.[2] as { cache?: Map<string, unknown> } | undefined)
+      ?.cache;
+    expect(cacheBefore).toBeDefined();
+    // The canvas's useMemo writes positions back into the cache after
+    // applyLayout returns, so after the initial render the cache has
+    // entries for both seeded nodes.
+    expect(cacheBefore?.size).toBe(2);
+
+    const button = screen.getByTestId('graph-tidy-up-button');
+    act(() => {
+      fireEvent.click(button);
+    });
+
+    // After click, applyLayout was invoked at least once more — the
+    // revision bump invalidated the `nodes` `useMemo` and React re-ran
+    // it on the next render.
+    const callsAfterClick = applyLayoutSpy.mock.calls.length;
+    expect(callsAfterClick).toBeGreaterThan(callsBeforeClick);
+  });
+
+  it('the post-click applyLayout invocation sees an empty cache (cache was cleared synchronously before the re-run)', () => {
+    useWsStore
+      .getState()
+      .applyEvent(makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'a' }));
+    useWsStore
+      .getState()
+      .applyEvent(makeNodeCreated({ sequence: 2, nodeId: NODE_B, wording: 'b' }));
+    render(<GraphCanvasPane sessionId={SESSION_ID} />);
+    const callsBefore = applyLayoutSpy.mock.calls.length;
+    expect(callsBefore).toBeGreaterThan(0);
+
+    // Snapshot the cache SIZE AT INVOCATION for each pre-click call.
+    // The canvas writes positions back into the cache AFTER applyLayout
+    // returns, so the snapshot uses each call's recorded size (the
+    // mock factory records `options.cache.size` at call time, captured
+    // in a side array keyed off the call index).
+    const cacheSizesPre = applyLayoutSpy.mock.calls.map(
+      (args) => (args[2] as { cache?: Map<string, unknown> } | undefined)?.cache?.size ?? -1,
+    );
+    // The most-recent pre-click call: the cache had been re-populated
+    // by the previous render's write-back. (Initial pass: 0; subsequent
+    // passes: 2.)
+    expect(cacheSizesPre[cacheSizesPre.length - 1]).toBe(2);
+
+    const button = screen.getByTestId('graph-tidy-up-button');
+    act(() => {
+      fireEvent.click(button);
+    });
+
+    // The post-click invocation: the click handler cleared the cache
+    // synchronously BEFORE the revision bump triggered the useMemo
+    // re-run; the next applyLayout call sees `options.cache.size === 0`.
+    const postClickCall = applyLayoutSpy.mock.calls[callsBefore];
+    expect(postClickCall).toBeDefined();
+    const cacheAtPostClick = (postClickCall?.[2] as { cache?: Map<string, unknown> } | undefined)
+      ?.cache;
+    // The cache that applyLayout was invoked with: the same Map
+    // reference the canvas held. After the post-click writes, that
+    // Map ends at size 2 again (the canvas wrote positions back for
+    // both nodes). What we need to assert is that at the MOMENT of
+    // invocation the cache was empty — we captured that via the
+    // sizesAtCall side array. The post-click size must equal 0
+    // because the click handler `.clear()`ed the cache before the
+    // revision bump triggered the re-run.
+    // The captured size is the position-cache size AT CALL TIME
+    // (mock factory snapshots it). The most-recent post-click call's
+    // size is exactly 0.
+    expect((applyLayoutSpy as unknown as { sizesAtCall: number[] }).sizesAtCall[callsBefore]).toBe(
+      0,
+    );
+    expect(cacheAtPostClick).toBeDefined();
+  });
+
+  it('clicking it on an empty canvas is a no-op (no throw, applyLayout invoked with empty inputs)', () => {
+    // No events in the WS store for SESSION_ID.
+    render(<GraphCanvasPane sessionId={SESSION_ID} />);
+    const callsBefore = applyLayoutSpy.mock.calls.length;
+    const button = screen.getByTestId('graph-tidy-up-button');
+    expect(() => {
+      act(() => {
+        fireEvent.click(button);
+      });
+    }).not.toThrow();
+    // The click handler still bumped the revision; useMemo re-ran with
+    // an empty events array and applyLayout was called with `[]`.
+    const callsAfter = applyLayoutSpy.mock.calls.length;
+    expect(callsAfter).toBeGreaterThan(callsBefore);
+    const postClickCall = applyLayoutSpy.mock.calls[callsBefore];
+    expect(postClickCall?.[0]).toEqual([]);
+  });
+
+  it('fitView is called via requestAnimationFrame after the click, with {duration: 0, padding: 0.1}', () => {
+    // The mock factory for `reactflow` (module-scope) exposes a
+    // `fitViewSpy` that captures every `useReactFlow().fitView(...)`
+    // call. The handler defers the fitView through rAF, so the spy
+    // must NOT see a call synchronously inside the click handler;
+    // draining rAF then triggers exactly one call with the configured
+    // padding + zero-duration options.
+    const rafCallbacks: FrameRequestCallback[] = [];
+    const originalRaf = window.requestAnimationFrame;
+    window.requestAnimationFrame = (cb: FrameRequestCallback): number => {
+      rafCallbacks.push(cb);
+      return rafCallbacks.length;
+    };
+    try {
+      useWsStore
+        .getState()
+        .applyEvent(makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'a' }));
+      render(<GraphCanvasPane sessionId={SESSION_ID} />);
+
+      const button = screen.getByTestId('graph-tidy-up-button');
+      fireEvent.click(button);
+      // Synchronous: fitView NOT called yet.
+      expect(fitViewSpy.mock.calls.length).toBe(0);
+      // Drain rAF callbacks scheduled by the click handler.
+      while (rafCallbacks.length > 0) {
+        const cb = rafCallbacks.shift();
+        cb?.(0);
+      }
+      expect(fitViewSpy.mock.calls.length).toBe(1);
+      expect(fitViewSpy.mock.calls[0]?.[0]).toEqual({ duration: 0, padding: 0.1 });
+    } finally {
+      window.requestAnimationFrame = originalRaf;
+    }
   });
 });

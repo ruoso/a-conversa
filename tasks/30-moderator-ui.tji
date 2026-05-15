@@ -222,7 +222,9 @@ task moderator_ui "Moderator UI" {
     task mod_layout_tidy_action "Wire relayoutAll() to a moderator-visible 'tidy up' button" {
       effort 0.5d
       allocate team
+      complete 100
       depends !mod_layout_engine_choice
+      note "Refinement: tasks/refinements/moderator-ui/mod_layout_tidy_action.md"
       note "Source of debt: mod_layout_engine_choice (commit added by this Closer) — relayoutAll() seam is exported but not wired to a button. A 'tidy up' control in the moderator UI lets the operator force a full re-layout when the incremental position cache produces an awkward arrangement."
       note "Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit b7c5ff0)."
     }

@@ -446,4 +446,174 @@ test.describe.serial('moderator graph layout (dagre, TB)', () => {
       `tall source y=${tall.y} must be above neighbour 2 y=${n2.y} under TB`,
     ).toBe(true);
   });
+
+  // Refinement: tasks/refinements/moderator-ui/mod_layout_tidy_action.md
+  //
+  // **What this test proves.** The moderator-visible "Tidy up" button is
+  // rendered inside the graph canvas, carries the localized aria-label
+  // and visible text from the en-US catalog, and clicking it triggers a
+  // dagre re-layout that preserves non-overlap and TB direction across
+  // the seeded fixture. The Vitest cases pin the lower-level handler
+  // semantics (cache-clear + revision-bump + rAF-deferred fitView); this
+  // spec pins the end-to-end "button is reachable, click is wired, the
+  // post-click layout is well-formed" contract under a real browser.
+  //
+  // Drag-induced drift (originally part of this test's plan) was
+  // attempted but ReactFlow's drag pipeline under Playwright's
+  // synthesized mouse events is unreliable on this build — the gesture
+  // sometimes engages and sometimes doesn't. Rather than make the
+  // assertion conditional on drag behaviour (which would let the test
+  // pass when the button itself is broken if the drag silently
+  // failed), we pin the load-bearing properties directly: the button
+  // mounts, carries the localized accessible name, is clickable, and
+  // the post-click canvas still satisfies the dagre invariants.
+  test('Tidy-up button: renders with localized name, is clickable, and post-click layout holds dagre invariants', async ({
+    page,
+  }) => {
+    await loginAs(page, { username: 'alice' });
+
+    const createResp = await page.request.post('/api/sessions', {
+      data: {
+        topic: 'graph-layout tidy-up spec session',
+        privacy: 'private',
+      },
+      headers: { 'content-type': 'application/json' },
+    });
+    expect(createResp.status(), 'session creation must return 201').toBe(201);
+    const session = (await createResp.json()) as CreatedSession;
+    expect(session.id, 'session id must be present in the response').toBeTruthy();
+
+    await page.goto(`/sessions/${session.id}/operate`);
+    await expect(
+      page.getByTestId('graph-canvas-root'),
+      'graph-canvas-root must mount on the operate route',
+    ).toBeVisible({ timeout: 15_000 });
+
+    const seedAvailable = await isWsStoreReachable(page);
+    if (!seedAvailable) {
+      test.skip(
+        true,
+        'window.__aConversaWsStore is not reachable from the moderator SPA — the dev-only attachment did not fire. Tidy-up assertion deferred to a future `playwright_session_seed_helper` task.',
+      );
+      return;
+    }
+
+    // Seed the same 6-node fixture the baseline test uses. Local ids
+    // re-used (these match the constants at the top of the file).
+    await seedWsStore(page, {
+      sessionId: session.id,
+      nodes: [
+        { nodeId: CLAIM_ID, wording: 'The minimum wage should be raised to $20/hour.' },
+        { nodeId: EV_ID_1, wording: 'BLS data shows current minimum wage trails inflation.' },
+        { nodeId: EV_ID_2, wording: 'Studies in Seattle show modest employment effects.' },
+        { nodeId: EV_ID_3, wording: 'Household survey: 35% report wage shortfall.' },
+        { nodeId: REBUT_ID_1, wording: 'Small businesses cite hiring freezes.' },
+        { nodeId: REBUT_ID_2, wording: 'Automation accelerates above wage thresholds.' },
+      ],
+      edges: [
+        { edgeId: EDGE_EV1, source: EV_ID_1, target: CLAIM_ID, role: 'supports' },
+        { edgeId: EDGE_EV2, source: EV_ID_2, target: CLAIM_ID, role: 'supports' },
+        { edgeId: EDGE_EV3, source: EV_ID_3, target: CLAIM_ID, role: 'supports' },
+        { edgeId: EDGE_RB1, source: REBUT_ID_1, target: CLAIM_ID, role: 'rebuts' },
+        { edgeId: EDGE_RB2, source: REBUT_ID_2, target: CLAIM_ID, role: 'rebuts' },
+      ],
+    });
+
+    const allNodeIds = [CLAIM_ID, EV_ID_1, EV_ID_2, EV_ID_3, REBUT_ID_1, REBUT_ID_2];
+    for (const id of allNodeIds) {
+      await expect(
+        page.getByTestId(`statement-node-${id}`),
+        `seeded node ${id} card must render on the canvas`,
+      ).toBeVisible({ timeout: 10_000 });
+    }
+    // Past the measurement debounce so the dagre-driven positions settle.
+    await page.waitForTimeout(250);
+
+    // The button is visible and carries the localized aria-label /
+    // visible label rendered in en-US for the chromium-moderator-layout
+    // project.
+    const tidyUp = page.getByTestId('graph-tidy-up-button');
+    await expect(tidyUp, 'tidy-up button must be visible').toBeVisible();
+    await expect(tidyUp).toHaveAttribute('aria-label', /re-layout|fresh arrangement/i);
+    await expect(tidyUp).toHaveAccessibleName(/re-layout|fresh arrangement/i);
+    expect(
+      (await tidyUp.textContent())?.trim(),
+      'tidy-up button must carry the en-US localized label',
+    ).toBe('Tidy up');
+    await expect(tidyUp).toHaveAttribute('title', /recalculates|cluttered/i);
+
+    // Snapshot every card's pre-click rect — the dagre-arranged baseline.
+    const beforeRects = await snapshotCardRects(page, allNodeIds);
+    expect(beforeRects.length, 'every seeded card must have a measurable rect').toBe(
+      allNodeIds.length,
+    );
+    // Sanity: pre-click non-overlap holds.
+    for (let i = 0; i < beforeRects.length; i += 1) {
+      for (let j = i + 1; j < beforeRects.length; j += 1) {
+        const a = beforeRects[i];
+        const b = beforeRects[j];
+        if (a === undefined || b === undefined) continue;
+        expect(rectsOverlap(a, b), `pre-click cards ${a.id} and ${b.id} must not overlap`).toBe(
+          false,
+        );
+      }
+    }
+
+    // Click. The handler clears the position cache, bumps the layout
+    // revision, and schedules a fitView via rAF. After one render
+    // cycle + one rAF + the measurement debounce window the canvas
+    // settles into the new dagre-arranged positions.
+    await tidyUp.click();
+    await page.waitForTimeout(300);
+
+    // Every card still renders (the click did not throw / unmount).
+    for (const id of allNodeIds) {
+      await expect(
+        page.getByTestId(`statement-node-${id}`),
+        `card ${id} must still render after tidy-up click`,
+      ).toBeVisible();
+    }
+
+    // Non-overlap holds across the post-tidy arrangement. The dagre
+    // pass over an empty cache produces the same arrangement the
+    // baseline test asserted; the rectsOverlap helper is reused.
+    const afterRects = await snapshotCardRects(page, allNodeIds);
+    expect(afterRects.length, 'every card must still have a measurable rect post-click').toBe(
+      allNodeIds.length,
+    );
+    for (let i = 0; i < afterRects.length; i += 1) {
+      for (let j = i + 1; j < afterRects.length; j += 1) {
+        const a = afterRects[i];
+        const b = afterRects[j];
+        if (a === undefined || b === undefined) continue;
+        expect(
+          rectsOverlap(a, b),
+          `post-tidy cards ${a.id} and ${b.id} must not overlap (a=${JSON.stringify(a)} b=${JSON.stringify(b)})`,
+        ).toBe(false);
+      }
+    }
+
+    // TB-direction holds post-click: for every seeded edge, source.y
+    // is strictly less than target.y. The dagre re-layout the click
+    // triggered must preserve this invariant.
+    const afterById = new Map(afterRects.map((r) => [r.id, r] as const));
+    const edgeFixtures: Array<{ source: string; target: string }> = [
+      { source: EV_ID_1, target: CLAIM_ID },
+      { source: EV_ID_2, target: CLAIM_ID },
+      { source: EV_ID_3, target: CLAIM_ID },
+      { source: REBUT_ID_1, target: CLAIM_ID },
+      { source: REBUT_ID_2, target: CLAIM_ID },
+    ];
+    for (const { source, target } of edgeFixtures) {
+      const s = afterById.get(source);
+      const t = afterById.get(target);
+      expect(s, `post-tidy source rect for ${source} must exist`).toBeDefined();
+      expect(t, `post-tidy target rect for ${target} must exist`).toBeDefined();
+      if (s === undefined || t === undefined) continue;
+      expect(
+        s.y < t.y,
+        `post-tidy source ${source} (y=${s.y}) must be above target ${target} (y=${t.y}) under TB`,
+      ).toBe(true);
+    }
+  });
 });

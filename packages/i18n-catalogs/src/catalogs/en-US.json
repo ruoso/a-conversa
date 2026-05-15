@@ -199,6 +199,13 @@
     },
     "hoverPopover": {
       "edgeEndpointsReference": "{sourceId} -> {targetId}"
+    },
+    "graph": {
+      "tidyUp": {
+        "label": "Tidy up",
+        "ariaLabel": "Re-layout the graph to a fresh arrangement",
+        "tooltip": "Recalculates every node's position from scratch — useful when the canvas feels cluttered."
+      }
     }
   },
   "diagnostics": {

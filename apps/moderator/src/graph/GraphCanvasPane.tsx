@@ -58,6 +58,7 @@ import ReactFlow, {
   Background,
   ReactFlowProvider,
   useNodesInitialized,
+  useReactFlow,
   useStore,
   useStoreApi,
   type Edge,
@@ -66,6 +67,7 @@ import ReactFlow, {
   type ReactFlowState,
   type XYPosition,
 } from 'reactflow';
+import { useTranslation } from 'react-i18next';
 import type { Event, StatementKind } from '@a-conversa/shared-types';
 
 import 'reactflow/dist/style.css';
@@ -664,6 +666,31 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
     // footprint. Refinement: `mod_layout_measured_dimensions`.
   }, [events, diagnosticHighlights, edges, layoutRevision]);
 
+  // -- Tidy-up action (mod_layout_tidy_action) -----------------------
+  //
+  // The moderator-visible button rendered in the top-right corner of the
+  // canvas binds to this handler. Clicking it forces a fresh dagre pass
+  // over every node by (a) clearing the position cache so the next
+  // `useMemo` tick treats every id as a cache miss — `applyLayout` over
+  // an empty cache produces "the same result as `relayoutAll(...)` for
+  // the same inputs" per the function's contract documentation
+  // (`layoutEngine.ts:264`); (b) bumping the existing `layoutRevision`
+  // counter (a second writer to the seam `mod_layout_measured_dimensions`
+  // established) so the `nodes` `useMemo` invalidates and re-runs; and
+  // (c) deferring a `fitView({ duration: 0, padding: 0.1 })` call to the
+  // next animation frame so ReactFlow's internal node-position store
+  // reads the post-relayout positions when computing the bounding box.
+  // The measurement cache is preserved — only positions are recomputed.
+  const { t } = useTranslation();
+  const { fitView } = useReactFlow();
+  const handleTidyUp = useCallback((): void => {
+    positionCacheRef.current.clear();
+    setLayoutRevision((r) => r + 1);
+    requestAnimationFrame(() => {
+      fitView({ duration: 0, padding: 0.1 });
+    });
+  }, [fitView]);
+
   // -- Measurement-driven re-layout (mod_layout_measured_dimensions) --
   //
   // Subscribe to a deterministic hash of `state.nodeInternals`'s
@@ -779,7 +806,7 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
   }
 
   return (
-    <div data-testid="graph-canvas-root" className="h-full w-full">
+    <div data-testid="graph-canvas-root" className="relative h-full w-full">
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -794,6 +821,16 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
       >
         <Background />
       </ReactFlow>
+      <button
+        type="button"
+        data-testid="graph-tidy-up-button"
+        aria-label={t('moderator.graph.tidyUp.ariaLabel')}
+        title={t('moderator.graph.tidyUp.tooltip')}
+        onClick={handleTidyUp}
+        className="absolute right-4 top-4 z-10 rounded bg-white px-3 py-1.5 text-sm font-medium text-slate-900 shadow ring-1 ring-slate-300 hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+      >
+        {t('moderator.graph.tidyUp.label')}
+      </button>
       {contextMenu !== null ? (
         <GraphContextMenu
           x={contextMenu.x}
