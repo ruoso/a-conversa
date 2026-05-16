@@ -260,6 +260,8 @@ task moderator_ui "Moderator UI" {
     task mod_capture_text_input "Text input for statement wording" {
       effort 1d
       allocate team
+      complete 100
+      note "Refinement: tasks/refinements/moderator-ui/mod_capture_text_input.md"
     }
     task mod_classification_palette "Classification palette + keyboard shortcuts" {
       effort 1d

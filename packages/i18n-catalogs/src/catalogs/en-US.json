@@ -146,6 +146,12 @@
         }
       }
     },
+    "captureTextInput": {
+      "label": "Statement wording",
+      "placeholder": "Type the statement wording here…",
+      "ariaLabel": "Compose the wording for a new statement to propose to the debate",
+      "helper": "{used}/{max} characters"
+    },
     "modeBanner": {
       "idle": {
         "label": "Idle",

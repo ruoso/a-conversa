@@ -146,6 +146,12 @@
         }
       }
     },
+    "captureTextInput": {
+      "label": "Texto del enunciado",
+      "placeholder": "Escribe el texto del enunciado aquí…",
+      "ariaLabel": "Redacta el texto de un nuevo enunciado para proponerlo al debate",
+      "helper": "{used}/{max} caracteres"
+    },
     "modeBanner": {
       "idle": {
         "label": "Inactivo",

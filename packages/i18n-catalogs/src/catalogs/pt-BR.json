@@ -146,6 +146,12 @@
         }
       }
     },
+    "captureTextInput": {
+      "label": "Texto da declaração",
+      "placeholder": "Digite o texto da declaração aqui…",
+      "ariaLabel": "Componha o texto de uma nova declaração para propor ao debate",
+      "helper": "{used}/{max} caracteres"
+    },
     "modeBanner": {
       "idle": {
         "label": "Ocioso",

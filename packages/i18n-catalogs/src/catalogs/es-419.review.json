@@ -75,7 +75,11 @@
     "moderator.createSession.errors.generic",
     "moderator.graph.tidyUp.label",
     "moderator.graph.tidyUp.ariaLabel",
-    "moderator.graph.tidyUp.tooltip"
+    "moderator.graph.tidyUp.tooltip",
+    "moderator.captureTextInput.label",
+    "moderator.captureTextInput.placeholder",
+    "moderator.captureTextInput.ariaLabel",
+    "moderator.captureTextInput.helper"
   ],
   "signed_off": []
 }

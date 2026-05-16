@@ -1,7 +1,8 @@
 // Operate route for `/sessions/:id/operate` — the moderator console.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_edge_rendering.md
-// (prior:     tasks/refinements/moderator-ui/mod_node_rendering.md,
+// Refinement: tasks/refinements/moderator-ui/mod_capture_text_input.md
+// (prior:     tasks/refinements/moderator-ui/mod_edge_rendering.md,
+//             tasks/refinements/moderator-ui/mod_node_rendering.md,
 //             tasks/refinements/moderator-ui/mod_graph_canvas_pane.md,
 //             tasks/refinements/moderator-ui/mod_layout_shell.md,
 //             tasks/refinements/moderator-ui/mod_bottom_strip_capture.md,
@@ -14,17 +15,22 @@
 // slot, `<RightSidebar>` (`mod_right_sidebar`) into the right slot, and
 // `<BottomStripCapture>` (`mod_bottom_strip_capture`) into the bottom
 // strip with `<ModeBanner>` (`mod_mode_banner`) filling the strip's
-// `modeBanner` sub-slot. The session id from the route param threads
-// into the canvas so the node + edge projection layers subscribe to
-// the right per-session slice.
+// `modeBanner` sub-slot and `<CaptureTextInput>` (`mod_capture_text_input`)
+// filling the strip's `textInput` sub-slot. The session id from the
+// route param threads into the canvas so the node + edge projection
+// layers subscribe to the right per-session slice.
 //
 // `route-operate` and `session-id` test ids are preserved so the
 // router-level `App.test.tsx` cases continue to pass — `session-id`
 // is an `sr-only` span pinned out of the layout flow rather than
 // a visible paragraph inside the (former) graph-pane placeholder.
 //
-// Downstream consumers still replace the remaining capture-strip
-// sub-slots (`textInput`, `classificationPalette`, `edgeRoleSelector`,
+// The `onSubmit` handler on `<CaptureTextInput>` is a no-op until
+// `mod_propose_action` lands and wires the real propose round-trip.
+// The Cmd/Ctrl+Enter gesture is observable (`e.preventDefault` fires
+// so no newline is inserted) but inert until the propose handler
+// arrives. Downstream consumers still replace the remaining capture-
+// strip sub-slots (`classificationPalette`, `edgeRoleSelector`,
 // `proposeAction`) when each `mod_capture_flow.*` task lands.
 
 import type { ReactElement } from 'react';
@@ -32,9 +38,17 @@ import { useParams } from 'react-router-dom';
 
 import { OperateLayout } from '../layout/OperateLayout';
 import { BottomStripCapture } from '../layout/BottomStripCapture';
+import { CaptureTextInput } from '../layout/CaptureTextInput';
 import { GraphCanvasPane } from '../graph/GraphCanvasPane';
 import { ModeBanner } from '../layout/ModeBanner';
 import { RightSidebar } from '../layout/RightSidebar';
+
+// No-op submit handler — the consumer-supplied callback `mod_propose_action`
+// will wire to its real submit handler when that task lands. Until then
+// the Cmd/Ctrl+Enter gesture is observable but inert.
+function noopSubmit(): void {
+  // intentionally empty
+}
 
 export function OperateRoute(): ReactElement {
   const { id = '' } = useParams<{ id: string }>();
@@ -53,7 +67,12 @@ export function OperateRoute(): ReactElement {
       </span>
       <OperateLayout
         graphPane={<GraphCanvasPane sessionId={id} />}
-        bottomStrip={<BottomStripCapture modeBanner={<ModeBanner />} />}
+        bottomStrip={
+          <BottomStripCapture
+            modeBanner={<ModeBanner />}
+            textInput={<CaptureTextInput onSubmit={noopSubmit} />}
+          />
+        }
         rightSidebar={<RightSidebar />}
       />
     </main>
