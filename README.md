@@ -4,7 +4,7 @@ A debate platform that helps people debate by classifying every statement and on
 
 ## Status
 
-**Foundation build in progress.** The design captured under `docs/` is settled enough to start building; tech-stack picks and repo bootstrapping are landing under [milestone M0](tasks/99-milestones.tji). If you're new to the project, start with [DESIGN.md](DESIGN.md) and follow the document index from there. Architectural decisions taken so far live in [docs/adr/](docs/adr/).
+**M0–M3 complete; surface build in progress.** Foundation, data model + methodology engine, and the backend MVP have landed (see [milestones M0–M3 in `tasks/99-milestones.tji`](tasks/99-milestones.tji)). Active work is the M3-lobby manual smoke (`m_manual_lobby_smoke`) and the moderator / participant / audience surface MVPs (M4–M6); the orchestrator that drives WBS work is described in [ORCHESTRATOR.md](ORCHESTRATOR.md). If you're new to the project, start with [DESIGN.md](DESIGN.md) and follow the document index from there. Architectural decisions taken so far live in [docs/adr/](docs/adr/).
 
 ## What is a-conversa?
 
@@ -24,6 +24,7 @@ For a worked example of the format in action, see [docs/example-walkthrough.md](
 - [docs/participant-ui.md](docs/participant-ui.md) — debater tablet flows: per-facet voting (the central design), withdrawal, axiom-mark proposal, view of structural diagnostics and change history.
 - [docs/example-walkthrough.md](docs/example-walkthrough.md) — simulated debate exercising the design.
 - [docs/adr/](docs/adr/) — Architecture Decision Records. Each ADR captures one architectural choice (status, context, decision, consequences); see [docs/adr/README.md](docs/adr/README.md) for the convention.
+- [ORCHESTRATOR.md](ORCHESTRATOR.md) — startup prompt for an orchestrator session that drives the WBS forward, using `make unblocked` as its sole window into "what's ready to pick up."
 
 ## Localization
 
@@ -31,13 +32,13 @@ UI localized in **English (US)**, **Brazilian Portuguese**, and **Latin American
 
 ## Local development
 
-Development is workspace-based (pnpm workspaces under [apps/](apps/) and [packages/](packages/)). Eventually a Docker Compose stack will boot the full app, PostgreSQL, and a local OAuth provider; that stack lands with `foundation.dev_env`.
+Development is workspace-based (pnpm workspaces under [apps/](apps/) and [packages/](packages/)). A three-service Docker Compose stack (`app + postgres + authelia`) is brought up by `make up`; see [docs/dev-environment.md](docs/dev-environment.md) for the full walkthrough.
 
 ### Prerequisites
 
-- Node 20+ (host is on 20.19.2).
-- pnpm 9.x — the version is pinned in [`package.json`](package.json) `packageManager`; enable via `corepack enable && corepack prepare pnpm@9.15.4 --activate`.
-- Docker — only needed once `dev_env` lands; not required today.
+- Node 20+ (host last verified on 20.19.2).
+- pnpm 9.x — the version is pinned in [`package.json`](package.json) `packageManager`; enable via `corepack enable` and Corepack will enforce the pinned version on every `pnpm` invocation.
+- Docker + Docker Compose v2 — required for `make up` and the Playwright e2e suite.
 
 ### First-run setup
 
@@ -45,14 +46,17 @@ Development is workspace-based (pnpm workspaces under [apps/](apps/) and [packag
 
 ### What works today
 
+- `make check` — runs the full static-analysis bundle (lint + format:check + typecheck × 3). Same target the pre-commit hook and CI invoke; run it before pushing.
+- `make unblocked` — lists, per milestone, the leaf tasks currently READY to pick up. Pass `MILESTONE=<id>` to scope to one milestone (e.g. `make unblocked MILESTONE=m_moderator_mvp`). Resolves the WBS dep graph via `tj3`; see [`scripts/unblocked.ts`](scripts/unblocked.ts).
 - Tests: `pnpm run test:smoke` (Vitest), `pnpm run test:behavior:smoke` (Cucumber), `pnpm run test:e2e:smoke` (Playwright). `make test` runs all three.
 - Lint / format / typecheck: `pnpm run lint`, `pnpm run format`, `pnpm run typecheck`.
 - Stack-validation smokes: `pnpm run smoke:{node,react,reactflow,cytoscape,tailwind}`.
-- `make up` brings up Postgres + Authelia (auto-creating `.env` from `.env.example` if absent) and prints the URL banner. `make down` / `make down-v` tear the stack down (the latter also drops named volumes).
+- `make up` brings up Postgres + Authelia + the app container (auto-creating `.env` from `.env.example` if absent), waits for healthy, and prints the URL banner. The app listens on `:3000` and `/healthz` flips to 200 once startup migrations finish. `make up-prod-mode` is the same boot without the dev override (used by CI). `make down` / `make down-v` tear the stack down (the latter also drops named volumes).
+- `make seed` — currently a stub that errors clearly; real seeding lands with [`dev_env.seed_data_script`](tasks/refinements/foundation/seed_data_script.md).
 
 ### End-to-end tests
 
-Playwright specs live in [`tests/e2e/`](tests/e2e/) and run against the **single-origin** Fastify server — the same process serves the moderator SPA at `/` alongside the JSON / WebSocket API (see [`apps/server/src/routes/static-frontends.ts`](apps/server/src/routes/static-frontends.ts) and the [serve_static_frontends refinement](tasks/refinements/backend/serve_static_frontends.md)). No separate Vite preview; the tests load the moderator UI through the same URL a real browser would.
+Playwright specs live in [`tests/e2e/`](tests/e2e/) and run against the **single-origin** Fastify server — the same process serves the SPA bundles alongside the JSON / WebSocket API (see [`apps/server/src/routes/static-frontends.ts`](apps/server/src/routes/static-frontends.ts) and the [serve_static_frontends refinement](tasks/refinements/backend/serve_static_frontends.md)). No separate Vite preview; tests load each surface through the same URL a real browser would. Per [ADR 0026](docs/adr/0026-micro-frontend-root-app.md) the surface URLs are pivoting to a micro-frontend layout — `/` (root landing + auth chrome), `/m/*` (moderator), `/p/*` (participant), `/a/*` (audience); this pivot is in flight, with `apps/root/` and `packages/shell/` actively under construction.
 
 Per-locale Chromium projects in [`playwright.config.ts`](playwright.config.ts) pre-seed the `aconversa_locale` cookie (see [`packages/i18n-catalogs/src/negotiation.ts`](packages/i18n-catalogs/src/negotiation.ts)) for each supported locale (`en-US`, `pt-BR`, `es-419`). A spec under `chromium-pt-BR` therefore boots the SPA with the pt-BR catalog already resolved — exactly the path a returning Brazilian moderator would take.
 
@@ -65,19 +69,11 @@ CI runs the compose-driven path on every PR via the `e2e-playwright` job in [`.g
 
 Browser binaries are installed CI-job-locally via `pnpm exec playwright install chromium --with-deps`; the runtime Docker image never bakes Chromium.
 
-### What's planned
-
-- `make up-app` brings the app container up too — the Fastify server (per [ADR 0023](docs/adr/0023-web-framework-fastify.md)) listens on `:3000` and `curl http://localhost:3000/` returns `{"status":"ok"}`. The compose healthcheck still targets `/healthz` (owned by `backend.api_skeleton.health_endpoint`, pending), so `docker compose ps` shows the service as unhealthy until that sibling lands. Once `health_endpoint` (with migrations-on-startup) ships, full-stack `make up` will absorb `up-app`.
-- Seeded fixture for manual exploration via [`dev_env.seed_data_script`](tasks/refinements/foundation/seed_data_script.md). `make seed` is a stub that errors clearly until that task lands.
-- Surfaces served on localhost: moderator at `/moderator`, participant at `/participant`, audience at `/audience` (`/replay` later). See [docs/architecture.md — local development environment](docs/architecture.md#local-development-environment).
-
 ### Pre-commit hook
 
-`lint-staged` runs ESLint `--fix` and Prettier `--write` against staged files, followed by `tsc -b`. A commit that fails lint or typecheck is rejected; formatter cleanups are committed as-is. Bypass with `git commit --no-verify` when needed.
+`lint-staged` runs ESLint `--fix` and Prettier `--write` against staged files, then `pnpm run lint` (full repo) and the three `tsc -b` invocations (`typecheck`, `typecheck:tools`, `typecheck:tests`). When `.tji`/`.tjp` files are staged the hook also runs `tj3 --silent project.tjp` and rejects the commit on any Warning or Error line — keeping the WBS warning-free. A failed hook rejects the commit; formatter cleanups are committed as-is. Bypass with `git commit --no-verify` only when justified.
 
-See the [Makefile](Makefile) for the full target list and [pnpm-workspace.yaml](pnpm-workspace.yaml) for the workspace layout.
-
-For the deeper local-dev walkthrough see [docs/dev-environment.md](docs/dev-environment.md).
+See the [Makefile](Makefile) for the full target list. The deeper local-dev walkthrough (workspace layout, env vars, compose services, troubleshooting) is in [docs/dev-environment.md](docs/dev-environment.md).
 
 ## License
 
