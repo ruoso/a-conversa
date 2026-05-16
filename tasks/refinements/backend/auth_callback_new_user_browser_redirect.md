@@ -63,4 +63,10 @@ Resolve the "raw JSON renders in browser after new-user callback" UX gap acknowl
 
 ## Status
 
-_pending implementation_
+**Done** — 2026-05-16.
+
+- Backend handler (`apps/server/src/auth/routes.ts`): deleted the 200-JSON `callbackResponseSchema`; new-user branch now `reply.redirect(<APP_BASE_URL>/screen-name?from=callback, 302)` with the pending cookie still attached and `Cache-Control: no-store` stamped per G-019. OpenAPI `response` shrinks to the 302 case; the docstring rewrites to cover both branches.
+- Frontend (`apps/root/src/App.tsx`): `ScreenNameRoute` reads `?from=callback` and renders the form even when `auth.status === 'unauthenticated'`; the inline `onSuccess` navigate was removed because it raced with the route's own status-driven `<Navigate to={resolvePostAuthTarget()}>` for the single sessionStorage entry — both consumers would fire, the inline one would see an empty bucket, and the user landed at `/` instead of the deep link. `LandingRoute` gained the same return-to consumption pattern as `LoginRoute` / `ScreenNameRoute` to close the returning-user variant of the gap (the OIDC callback's 302 to `APP_BASE_URL` was dead-ending at the welcome view).
+- E2E fixture (`tests/e2e/fixtures/auth.ts`): removed the `if (page.url().includes('/api/auth/callback'))` workaround and the API-POST shortcut (`page.request.post('/api/auth/screen-name', ...)`) plus the leading rationale block. The helper now drives the browser through the rendered form (`getByTestId('screen-name-input').fill(...)` + click submit). Net `-85 / +47` lines.
+- Server tests (`apps/server/src/auth/{routes,no-profile-data,session-token}.test.ts`): rewrote new-user assertions from 200/JSON-body to 302 / `Location: /screen-name?from=callback` / pending-cookie Set-Cookie / Cache-Control: no-store. Upsert side-effect on the in-memory users table is now the regression signal for "the callback ran and created the row."
+- Verification: `pnpm typecheck` green; `pnpm test:smoke` 3409/3409 pass; `pnpm test:e2e --project=chromium-auth` 5/5 scenarios pass on fresh `make down-v` + `make up` data, including the genuine new-user paths for alice (scenario #1) and ben (`landing-to-lobby`).

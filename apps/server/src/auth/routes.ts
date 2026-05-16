@@ -325,47 +325,14 @@ const callbackQuerystringSchema = {
 } as const;
 
 /**
- * 200 response body for `/auth/callback` — the **new-user** branch.
- * Returning users land on a 302 redirect (no body) instead. The body
- * carries the OIDC subject + the upserted users-table row id +
- * `needsScreenName: true` so the frontend renders the screen-name
- * collection UI without re-deriving the placeholder state.
- *
- * The `needsScreenName` flag is always `true` on this 200 response —
- * a freshly-inserted users row carries the `<pending>` placeholder by
- * construction (see `upsertUserByOauthSubject` + `PLACEHOLDER_SCREEN_NAME`).
- * Kept as a literal `true` so the OpenAPI consumer can branch on the
- * shape rather than re-reading a separate field.
+ * Path + query the new-user branch of `/auth/callback` redirects the
+ * browser to. The root SPA mounts `ScreenNameRoute` here and reads
+ * `from=callback` as the gate to render the screen-name form even
+ * though `/api/auth/me` returns 401 (the pending cookie is not the
+ * platform session cookie). See
+ * `tasks/refinements/backend/auth_callback_new_user_browser_redirect.md`.
  */
-const callbackResponseSchema = {
-  type: 'object',
-  required: ['sub', 'oauthSubject', 'userId', 'needsScreenName'],
-  additionalProperties: false,
-  properties: {
-    sub: {
-      type: 'string',
-      description: "OIDC subject identifier (the id_token's `sub` claim).",
-    },
-    oauthSubject: {
-      type: 'string',
-      description: 'Namespaced subject stored on the users row (`provider:sub`).',
-    },
-    userId: {
-      type: 'string',
-      format: 'uuid',
-      description: 'Application-side users-table row id (the new user just upserted).',
-    },
-    needsScreenName: {
-      type: 'boolean',
-      enum: [true],
-      description:
-        'Always `true` on this 200 response — the user has just been created and their ' +
-        'screen name is the placeholder `<pending>`. The frontend should POST ' +
-        '`/auth/screen-name` next to collect the chosen name; the response there ' +
-        'issues the platform session cookie.',
-    },
-  },
-} as const;
+const NEW_USER_SCREEN_NAME_PATH = '/screen-name?from=callback';
 
 /**
  * Row shape returned from the screen-name UPDATE. Only the
@@ -594,22 +561,28 @@ const authRoutesPluginAsync: FastifyPluginAsync<AuthRoutesOptions> = (
           'store, exchanges the authorization code for tokens via the issuer’s ' +
           'token endpoint, validates the id_token (signature, audience, issuer, ' +
           'expiry, nonce), and upserts the users row keyed on the namespaced ' +
-          'OIDC subject (`<issuer-host>:<sub>`).\n\n' +
+          'OIDC subject (`<issuer-host>:<sub>`). Both branches respond with a ' +
+          '302 redirect (no body) so the browser navigates onward without ever ' +
+          'rendering a JSON response.\n\n' +
           '**Returning user** (the upserted row has a non-`<pending>` `screen_name`): ' +
           'sets the platform session cookie `aconversa-session` (HS256 JWT, 7-day TTL) ' +
-          'and 302-redirects to `APP_BASE_URL`. No body.\n\n' +
+          'and 302-redirects to `APP_BASE_URL`.\n\n' +
           '**New user** (the upserted row has `screen_name = <pending>`): sets the ' +
-          'short-lived `aconversa-auth-pending` cookie and returns 200 with ' +
-          '`{ sub, oauthSubject, userId, needsScreenName: true }`. The frontend ' +
-          'then POSTs `/auth/screen-name`, which issues the platform session cookie.',
+          'short-lived `aconversa-auth-pending` cookie and 302-redirects to ' +
+          '`APP_BASE_URL` + `' +
+          NEW_USER_SCREEN_NAME_PATH +
+          '`, where the root SPA renders the screen-name form. The form POSTs ' +
+          '`/auth/screen-name`, which validates the pending cookie and issues the ' +
+          'platform session cookie.',
         querystring: callbackQuerystringSchema,
         response: {
-          200: callbackResponseSchema,
           302: {
             type: 'null',
             description:
-              'Redirect to `APP_BASE_URL` after issuing the platform session cookie ' +
-              '(returning-user branch).',
+              'Redirect after the OIDC code exchange. Target is `APP_BASE_URL` ' +
+              '(returning user, session cookie attached) or `APP_BASE_URL` + `' +
+              NEW_USER_SCREEN_NAME_PATH +
+              '` (new user, pending cookie attached).',
           },
           '4xx': errorEnvelopeRef,
           '5xx': errorEnvelopeRef,
@@ -683,8 +656,11 @@ const authRoutesPluginAsync: FastifyPluginAsync<AuthRoutesOptions> = (
       // platform session cookie and redirect them at the app shell.
       // A brand-new user has the placeholder; we set the short-lived
       // pending cookie so `POST /auth/screen-name` can verify the
-      // request, and the body's `needsScreenName: true` flag tells
-      // the frontend to render the name-picker.
+      // request, and redirect the browser to the SPA's screen-name
+      // form (the `?from=callback` query parameter is the gate the
+      // SPA reads to render the form despite `/api/auth/me` returning
+      // 401 with only the pending cookie present). See
+      // tasks/refinements/backend/auth_callback_new_user_browser_redirect.md.
       if (row.screen_name !== PLACEHOLDER_SCREEN_NAME) {
         // Returning-user branch. Issue the platform session JWT and
         // redirect. Tests inject `now` for deterministic `iat` / `exp`;
@@ -727,25 +703,19 @@ const authRoutesPluginAsync: FastifyPluginAsync<AuthRoutesOptions> = (
           secure: cookieSecure,
         }),
       );
-      // Closes docs/security/m3-review/coverage.md G-019 — the new-user
-      // 200 body carries user-identifying fields (`sub`, `oauthSubject`,
-      // `userId`); a misconfigured CDN MUST NOT cache and replay this
-      // across users. `no-store` is the canonical HTTP/1.1 directive
-      // for "do not store at any cache layer." See the route's
-      // sibling identity endpoints — every cookie-bearing or
-      // identity-bearing response in this plugin carries the same
-      // directive.
+      // Closes docs/security/m3-review/coverage.md G-019 — this 302
+      // carries the pending `Set-Cookie`. A CDN that cached the headers
+      // would replay the cookie at every cache hit; `no-store` forbids
+      // any cache layer from storing this response. Mirrors the
+      // returning-user branch above.
       reply.header('Cache-Control', 'no-store');
 
-      // The body's `needsScreenName: true` is a literal constant —
-      // a freshly-inserted users row carries the `<pending>` placeholder
-      // by construction; this branch is the placeholder-bearing case.
-      return {
-        sub,
-        oauthSubject,
-        userId: row.id,
-        needsScreenName: true as const,
-      };
+      // Same open-redirect note as the returning-user branch above:
+      // the URL is built from the server-side `appBaseUrl` plus a
+      // fixed path; no user-controllable component reaches
+      // `reply.redirect`. The same future-`?next=` constraint applies.
+      const target = new URL(NEW_USER_SCREEN_NAME_PATH, oidcConfig.appBaseUrl).toString();
+      return reply.redirect(target, 302);
     },
   );
 

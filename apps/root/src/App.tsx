@@ -1,5 +1,5 @@
 import { useEffect, type ReactElement } from 'react';
-import { Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 
 import { LoginButton, ScreenNameForm, useAuth } from '@a-conversa/shell';
@@ -34,7 +34,20 @@ function LandingRoute(): ReactElement {
     return <Navigate to="/screen-name" replace />;
   }
 
+  // Consume the sessionStorage-remembered return-to set by
+  // `SurfaceHost` when an unauthenticated visitor hit a deep link
+  // (e.g. `/m/sessions/new`). The OIDC callback's returning-user
+  // branch 302s back to `APP_BASE_URL` (i.e. `/`), so without this
+  // the user lands on the welcome view and has to click the
+  // start-session link again instead of being carried to where they
+  // were trying to go. `LoginRoute` and `ScreenNameRoute` already do
+  // the same consumption; this keeps the three auth-chrome routes
+  // symmetric.
   if (auth.status === 'authenticated' && auth.user !== undefined) {
+    const remembered = takeRememberedReturnTo();
+    if (remembered !== undefined) {
+      return <Navigate to={remembered} replace />;
+    }
     return (
       <main
         data-testid="route-home"
@@ -129,13 +142,23 @@ function LoginRoute(): ReactElement {
 function ScreenNameRoute(): ReactElement {
   const { t } = useTranslation();
   const auth = useAuth();
-  const navigate = useNavigate();
+  const location = useLocation();
 
   if (auth.status === 'loading') {
     return <LoadingFrame />;
   }
 
-  if (auth.status === 'unauthenticated') {
+  // The OIDC callback's new-user branch 302-redirects the browser here
+  // with `?from=callback` and a pending cookie set. `/api/auth/me`
+  // returns 401 against the pending cookie alone, so `auth.status`
+  // resolves to `unauthenticated` — but the user genuinely is mid-
+  // onboarding, and the form's POST will validate the pending cookie
+  // server-side. Render the form on this signal instead of bouncing
+  // to /login. See
+  // tasks/refinements/backend/auth_callback_new_user_browser_redirect.md.
+  const fromCallback = new URLSearchParams(location.search).get('from') === 'callback';
+
+  if (auth.status === 'unauthenticated' && !fromCallback) {
     return <Navigate to="/login" replace />;
   }
 
@@ -148,14 +171,16 @@ function ScreenNameRoute(): ReactElement {
       <h1 data-testid="route-title" className="text-2xl font-semibold">
         {t('auth.screenName.title')}
       </h1>
-      <ScreenNameForm
-        onSuccess={() => {
-          void (async () => {
-            await Promise.resolve(auth.refresh());
-            await navigate(resolvePostAuthTarget(), { replace: true });
-          })();
-        }}
-      />
+      {/* `ScreenNameForm` calls `auth.refresh()` internally on a
+          successful POST; when that resolves to `authenticated`, the
+          route's auth-status branch above re-renders into
+          `<Navigate to={resolvePostAuthTarget()} replace />` and
+          consumes the remembered return-to. We deliberately do NOT
+          also navigate from `onSuccess` — two consumers racing for
+          the single sessionStorage entry would leak the value out
+          from under the Navigate and land the user on `/` instead of
+          the deep link they were trying to reach. */}
+      <ScreenNameForm onSuccess={() => undefined} />
     </main>
   );
 }

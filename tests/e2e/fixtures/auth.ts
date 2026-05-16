@@ -20,20 +20,22 @@
 //      code, and 302-redirects to `/api/auth/callback?state=...&code=...`.
 //   4. The Fastify server's `/api/auth/callback` handler validates the
 //      `state`, exchanges the code for tokens against Authelia's token
-//      endpoint, upserts the `users` row, and:
+//      endpoint, upserts the `users` row, and 302-redirects the browser:
 //        - returning user: 302 to `APP_BASE_URL` + Set-Cookie `aconversa-session`.
-//        - new user: 200 + Set-Cookie `aconversa-auth-pending` + a JSON
-//          body the SPA reads on the *next* SPA navigation.
-//   5. The helper navigates the browser back to `/login` if the
-//      callback's 200-JSON response left it stranded on
-//      `/api/auth/callback`. The SPA's `LoginRoute` then reads `/api/auth/me`
-//      and, on the `<pending>` screen-name placeholder, does
-//      `<Navigate to="/screen-name" />`.
-//   6. The helper detects whichever branch fired:
-//        - If the post-OIDC URL is the screen-name form, fill it with
-//          `opts.screenName ?? opts.username` and submit.
-//        - Either way, poll `/api/auth/me` until 200 (the authenticated
-//          contract), then return.
+//        - new user: 302 to `/screen-name?from=callback` + Set-Cookie
+//          `aconversa-auth-pending`. The SPA mounts `ScreenNameRoute`,
+//          reads the `?from=callback` signal, and renders the form even
+//          though `/api/auth/me` returns 401 with only the pending cookie.
+//          See `tasks/refinements/backend/auth_callback_new_user_browser_redirect.md`.
+//   5. The helper detects whichever branch fired:
+//        - new user (URL contains `/screen-name`): fill the form's input
+//          with `opts.screenName ?? opts.username` and click submit.
+//          The SPA's `onSuccess` calls `auth.refresh()` and navigates
+//          onward to the remembered return-to.
+//        - returning user: nothing extra — the browser is already past
+//          the OIDC dance with the session cookie set.
+//   6. Poll `/api/auth/me` until 200 (the authenticated contract), then
+//      return.
 //
 // **Why a single helper, not two.** Callers do NOT know whether the
 // users row already exists in the test DB — CI re-uses one Authelia
@@ -55,27 +57,15 @@
 // in `compose.yaml`, so an upstream bump that changes the label text
 // is a deliberate event.
 //
-// **Why the new-user branch POSTs `/api/auth/screen-name` via the API,
-// not via the rendered form.** The backend's `/api/auth/callback`
-// new-user branch returns a 200 JSON body
-// (`{ sub, oauthSubject, userId, needsScreenName: true }`) instead
-// of redirecting to the SPA's `/screen-name` route. The browser
-// renders that JSON directly — the SPA is NOT mounted on this
-// page, so there is no form to fill. Navigating to `/screen-name`
-// without a session cookie hits `RequireAuth`'s `unauthenticated`
-// branch (because `/api/auth/me` returns 401 — the pending cookie is
-// not the platform session cookie) and redirects to `/login`,
-// landing the user in a dead end. The cleanest way to close the
-// loop in the helper is to POST `/api/auth/screen-name` directly from
-// the test-side request context (which inherits the cookie jar
-// including the pending cookie). The server validates the pending
-// cookie, writes the screen name, and sets the platform session
-// cookie. The helper then navigates to `/login` so the SPA mounts
-// in `authenticated` state. The "raw JSON on `/api/auth/callback`" UX
-// gap is acknowledged in `moderator-ui/mod_auth_flow.md`'s
-// "screen-name-detection question" section; a follow-up task
-// (backend Accept-header branching, or a frontend `/auth-callback`
-// route) closes that gap for real users.
+// **New-user branch — drive the browser through the screen-name form.**
+// The backend's `/api/auth/callback` new-user branch 302-redirects to
+// `/screen-name?from=callback` with the pending cookie set; the root
+// SPA mounts `ScreenNameRoute`, reads the `?from=callback` signal,
+// and renders the form despite `auth.status === 'unauthenticated'`
+// (per `tasks/refinements/backend/auth_callback_new_user_browser_redirect.md`).
+// The helper fills the form and submits it as a real user would; the
+// form's POST validates the pending cookie server-side and the SPA's
+// onSuccess navigates onward.
 //
 // **Promotion path.** `foundation.test_infra.playwright_test_helpers`
 // (in the WBS) will move this helper to
@@ -313,62 +303,32 @@ export async function loginAs(
   });
 
   // 5. Branch detection. After Authelia's 302 to `/api/auth/callback`,
-  //    one of two things has happened server-side:
+  //    the server now 302s the browser onward in BOTH branches:
   //
-  //    - returning user: the server 302'd onto `APP_BASE_URL`
-  //      (i.e., `/`). The SPA mounts, reads `/api/auth/me`, transitions
-  //      to `authenticated`, and renders the welcome banner. The
-  //      browser settles on `/login` (the SPA's universal redirect
-  //      sink for `/`).
+  //    - returning user: 302 to `APP_BASE_URL` (i.e., `/`). The SPA
+  //      mounts and `useAuth()`'s `/api/auth/me` returns 200; the page
+  //      settles on `/` (or `/login`'s post-auth `<Navigate>` target).
   //
-  //    - new user: the server returned a 200 JSON envelope
-  //      (`{ sub, oauthSubject, userId, needsScreenName: true }`)
-  //      directly on `/api/auth/callback`. The browser is now sitting
-  //      on `/api/auth/callback` rendering the raw JSON — the SPA is
-  //      NOT mounted because the response was JSON, not HTML.
-  //
-  //    We discriminate on the URL: `/api/auth/callback` means the
-  //    new-user JSON-body branch fired. The cookie jar carries
-  //    `aconversa-auth-pending` either way; for the new-user case
-  //    we close out the screen-name step before navigating into
-  //    the SPA (otherwise `/api/auth/me` returns 401 because the
-  //    pending cookie is NOT the platform session cookie, and the
-  //    SPA's `RequireAuth` would bounce the user out of
-  //    `/screen-name` back to `/login` — see the
-  //    `moderator-ui/mod_auth_flow.md` refinement's
-  //    "screen-name-detection question" for the open UX gap that
-  //    motivates closing it via the API path here rather than via
-  //    the SPA's form-render path).
-  if (page.url().includes('/api/auth/callback')) {
-    // POST the screen-name directly via the cookie-jar-bearing
-    // request context. The pending cookie sitting in
-    // `page.context().cookies()` is sent automatically; the server
-    // validates it, writes the screen name onto the users row, and
-    // returns 200 with both Set-Cookies (pending-clear + session).
-    const response = await page.request.post('/api/auth/screen-name', {
-      data: { screenName },
-      headers: { 'content-type': 'application/json' },
+  //    - new user: 302 to `/screen-name?from=callback` with the
+  //      `aconversa-auth-pending` cookie set. The SPA mounts
+  //      `ScreenNameRoute`, reads `?from=callback`, and renders the
+  //      form despite `auth.status === 'unauthenticated'`. We fill it
+  //      and submit; the POST validates the pending cookie server-side
+  //      and the SPA's `onSuccess` navigates onward.
+  if (page.url().includes('/screen-name')) {
+    // The SPA's screen-name input + submit are both rendered with
+    // stable test IDs by `<ScreenNameForm>`.
+    await page.getByTestId('screen-name-input').waitFor({ state: 'visible', timeout: 10_000 });
+    await page.getByTestId('screen-name-input').fill(screenName);
+    await page.getByTestId('screen-name-submit').click();
+    // Wait for the SPA to leave `/screen-name`; the `onSuccess` calls
+    // `auth.refresh()` and then `navigate(resolvePostAuthTarget())`.
+    await page.waitForURL((url) => !url.pathname.startsWith('/screen-name'), {
+      timeout: 15_000,
     });
-    if (response.status() !== 200) {
-      const body = await response.text();
-      throw new Error(
-        `loginAs: POST /api/auth/screen-name returned ${String(response.status())} during new-user setup; body: ${body}`,
-      );
-    }
   }
 
-  // 6. Navigate to `/login` to settle the SPA. For returning users
-  //    the SPA mounts and reads `/api/auth/me` (200, authenticated). For
-  //    new users (just past the POST above) the session cookie is
-  //    now set; the SPA reads `/api/auth/me` (200, authenticated). The
-  //    redundant `goto('/login')` for returning users is cheap —
-  //    the chunked bundle is cached after the earlier `goto('/login')`
-  //    in step 1 — and keeps the post-helper page state symmetric
-  //    across branches (callers see a mounted SPA, not a JSON view
-  //    on `/api/auth/callback`).
-  await page.goto('/login');
-
-  // 7. Poll `/api/auth/me` until it returns 200. This is the canonical
+  // 6. Poll `/api/auth/me` until it returns 200. This is the canonical
   //    "the cookie is set and the server agrees we're authenticated"
   //    signal.
   return waitForAuthenticated(page.request, deadlineMs);

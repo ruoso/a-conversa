@@ -360,20 +360,35 @@ describe('GET /auth/callback', () => {
     expect(body.error?.message).toMatch(/state/i);
   });
 
-  it('with a matching state, exchanges code and returns the user', async () => {
+  it('with a matching state, exchanges code, upserts the user, and 302s the browser to the screen-name form', async () => {
+    // The new-user branch now 302s the browser to the SPA's
+    // `/screen-name?from=callback` route (per
+    // `tasks/refinements/backend/auth_callback_new_user_browser_redirect.md`)
+    // instead of returning a 200 JSON body. The upsert side effect and
+    // the pending-cookie issuance are still the canonical regression
+    // signals — assert them off the cookie jar and the in-memory users
+    // table rather than off a response body that is now empty.
     await test.app.inject({ method: 'GET', url: '/api/auth/login' });
     const response = await test.app.inject({
       method: 'GET',
       url: '/api/auth/callback?code=AUTHCODE&state=state-1',
     });
-    expect(response.statusCode).toBe(200);
-    const body = response.json<{ sub?: string; oauthSubject?: string; userId?: string }>();
-    expect(body.sub).toBe('alice');
+    expect(response.statusCode).toBe(302);
+    expect(String(response.headers['location'] ?? '')).toMatch(/\/screen-name\?from=callback$/);
+    // The pending cookie MUST be set on this redirect — without it the
+    // SPA's screen-name form has nothing to authorize the POST with.
+    const setCookie = response.headers['set-cookie'];
+    const setCookieArr = Array.isArray(setCookie) ? setCookie : [setCookie ?? ''];
+    expect(setCookieArr.some((c) => c.includes('aconversa-auth-pending='))).toBe(true);
+    // `Cache-Control: no-store` is the G-019 requirement — the redirect
+    // carries a per-user `Set-Cookie` header that a CDN MUST NOT cache.
+    expect(String(response.headers['cache-control'] ?? '')).toMatch(/no-store/);
+    // Upsert happened — the in-memory users table now carries the row.
     // Namespace key uses the full issuer origin (`<protocol>//<host>[:port]`)
     // per F-008 hardening — see docs/security/m3-review/auth.md.
-    expect(body.oauthSubject).toBe('http://authelia:9091:alice');
-    expect(typeof body.userId).toBe('string');
     expect(test.users.size).toBe(1);
+    const row = Array.from(test.users.values())[0];
+    expect(row?.oauth_subject).toBe('http://authelia:9091:alice');
   });
 
   it('a replay against the same state after take() returns 400', async () => {
@@ -382,7 +397,7 @@ describe('GET /auth/callback', () => {
       method: 'GET',
       url: '/api/auth/callback?code=AUTHCODE&state=state-1',
     });
-    expect(first.statusCode).toBe(200);
+    expect(first.statusCode).toBe(302);
     const replay = await test.app.inject({
       method: 'GET',
       url: '/api/auth/callback?code=AUTHCODE&state=state-1',
@@ -527,22 +542,27 @@ describe('OIDC state replay protection (G-012)', () => {
 
     // Step 2: legitimate callback. `state-1` is taken from the
     // store; `take` removes it before returning. The success path
-    // exchanges the auth code, upserts the user, issues the session
-    // cookie, and returns the user-shape body. Asserting the body
-    // shape (not just 200) catches a future refactor that returns
-    // 200 with an empty/wrong body — without this the replay
-    // assertion below could be satisfied even if the success path
-    // was broken (rejection because the code never ran, not because
-    // take() consumed the state).
+    // exchanges the auth code, upserts the user, issues the pending
+    // cookie, and 302-redirects the browser to the SPA's screen-name
+    // form. Asserting the redirect target + the cookie + the users-
+    // table row (not just 302) catches a future refactor that returns
+    // 302 with the wrong Location or without the cookie — without
+    // this the replay assertion below could be satisfied even if the
+    // success path was broken.
     const first = await test.app.inject({
       method: 'GET',
       url: '/api/auth/callback?code=AUTHCODE&state=state-1',
     });
-    expect(first.statusCode).toBe(200);
-    const firstBody = first.json<{ sub?: string; oauthSubject?: string; userId?: string }>();
-    expect(firstBody.sub).toBe('alice');
-    expect(firstBody.oauthSubject).toBe('http://authelia:9091:alice');
-    expect(typeof firstBody.userId).toBe('string');
+    expect(first.statusCode).toBe(302);
+    expect(String(first.headers['location'] ?? '')).toMatch(/\/screen-name\?from=callback$/);
+    const firstSetCookie = first.headers['set-cookie'];
+    const firstSetCookieArr = Array.isArray(firstSetCookie)
+      ? firstSetCookie
+      : [firstSetCookie ?? ''];
+    expect(firstSetCookieArr.some((c) => c.includes('aconversa-auth-pending='))).toBe(true);
+    expect(test.users.size).toBe(1);
+    const firstRow = Array.from(test.users.values())[0];
+    expect(firstRow?.oauth_subject).toBe('http://authelia:9091:alice');
     // After take(), the store is empty — the entry has been
     // consumed and removed. The replay below will find nothing.
     expect(test.flowState.size()).toBe(0);

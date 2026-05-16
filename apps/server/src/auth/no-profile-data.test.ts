@@ -288,37 +288,45 @@ describe('Invariant 2: id_token claims are read for only .sub', () => {
     await test.app.close();
   });
 
-  it('the callback response body contains none of the profile claim values', async () => {
+  it('the callback response carries none of the profile claim values', async () => {
     // Drive a complete flow: login captures state; callback exchanges
     // the (stubbed) code for a token whose id_token carries every
-    // profile claim listed in PROFILE_DATA_VALUES.
+    // profile claim listed in PROFILE_DATA_VALUES. The new-user branch
+    // now 302-redirects to the SPA's `/screen-name?from=callback` form
+    // (per `tasks/refinements/backend/auth_callback_new_user_browser_redirect.md`),
+    // so the response body is empty — but the Location header, the
+    // Set-Cookie value, and every other header MUST still be free of
+    // any profile-claim value.
     await test.app.inject({ method: 'GET', url: '/api/auth/login' });
     const response = await test.app.inject({
       method: 'GET',
       url: '/api/auth/callback?code=AUTHCODE&state=state-1',
     });
-    expect(response.statusCode).toBe(200);
+    expect(response.statusCode).toBe(302);
 
     // The raw response body string must contain NONE of the profile
-    // values. A substring search is the right granularity — any
-    // accidental claim echo (e.g., into an error message) trips this.
+    // values. The 302 body is normally empty; this guards against a
+    // future regression that re-introduces a body.
     const bodyText = response.body;
     for (const value of profileValuesArray()) {
       expect(bodyText).not.toContain(value);
     }
 
-    // The structured body must be exactly the documented shape:
-    // `{ sub, oauthSubject, userId, needsScreenName }`. Any extra
-    // field forwarded from the claims is a violation.
-    const parsed = JSON.parse(bodyText) as Record<string, unknown>;
-    expect(Object.keys(parsed).sort()).toEqual(
-      ['needsScreenName', 'oauthSubject', 'sub', 'userId'].sort(),
-    );
-    expect(parsed['sub']).toBe('alice');
-    // Namespace key uses the issuer's full origin per F-008 hardening
-    // (docs/security/m3-review/auth.md).
-    expect(parsed['oauthSubject']).toBe('http://authelia:9091:alice');
-    expect(parsed['needsScreenName']).toBe(true);
+    // The redirect target is a fixed SPA path — no profile data may
+    // leak into it. Pin the exact suffix so a future "land the user
+    // on /screen-name?name=alice" regression trips here.
+    const location = String(response.headers['location'] ?? '');
+    expect(location).toMatch(/\/screen-name\?from=callback$/);
+    for (const value of profileValuesArray()) {
+      expect(location).not.toContain(value);
+    }
+
+    // Header audit: Set-Cookie, content-type, etc. None of these
+    // should carry profile data either.
+    const headerText = JSON.stringify(response.headers);
+    for (const value of profileValuesArray()) {
+      expect(headerText).not.toContain(value);
+    }
   });
 
   it('no profile claim value is passed as a parameter to any DB query', async () => {
@@ -327,7 +335,7 @@ describe('Invariant 2: id_token claims are read for only .sub', () => {
       method: 'GET',
       url: '/api/auth/callback?code=AUTHCODE&state=state-1',
     });
-    expect(response.statusCode).toBe(200);
+    expect(response.statusCode).toBe(302);
     // The INSERT carries (oauth_subject, screen_name); neither value
     // is sourced from a profile claim. The follow-up SELECT (if it
     // fires on the ON CONFLICT branch) carries (oauth_subject). Audit:
@@ -516,10 +524,10 @@ describe('Invariant 6 (adjacent): no profile claim value appears in any inspecta
       method: 'GET',
       url: '/api/auth/callback?code=AUTHCODE&state=state-1',
     });
-    expect(cbRes.statusCode).toBe(200);
+    expect(cbRes.statusCode).toBe(302);
 
     // Body audit (already covered above; re-asserted here in the
-    // surface-wide context).
+    // surface-wide context). The 302 body is normally empty.
     for (const value of profileValuesArray()) {
       expect(cbRes.body).not.toContain(value);
     }

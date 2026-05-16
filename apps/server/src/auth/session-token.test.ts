@@ -976,8 +976,13 @@ describe('GET /auth/callback', () => {
     }
   });
 
-  it('returns 200 + pending cookie + needsScreenName flag when the user is new', async () => {
-    // No seeded row — the upsert inserts fresh with `<pending>`.
+  it('302-redirects to /screen-name?from=callback with the pending cookie when the user is new', async () => {
+    // No seeded row — the upsert inserts fresh with `<pending>`. The
+    // new-user branch now 302s the browser to the SPA's screen-name
+    // form (per `tasks/refinements/backend/auth_callback_new_user_browser_redirect.md`);
+    // the response body is gone, so the regression signals move to
+    // the redirect Location, the pending Set-Cookie, and the absence
+    // of a session Set-Cookie (only the screen-name POST issues that).
     const built = await buildApp({ authCodeGrantSub: 'bob' });
     try {
       await built.app.inject({ method: 'GET', url: '/api/auth/login' });
@@ -985,18 +990,10 @@ describe('GET /auth/callback', () => {
         method: 'GET',
         url: '/api/auth/callback?code=AUTHCODE&state=state-1',
       });
-      expect(response.statusCode).toBe(200);
-      const body = response.json<{
-        sub: string;
-        oauthSubject: string;
-        userId: string;
-        needsScreenName: boolean;
-      }>();
-      expect(body.sub).toBe('bob');
-      // F-008 hardening: namespace key is the issuer's full origin.
-      expect(body.oauthSubject).toBe('http://authelia:9091:bob');
-      expect(body.needsScreenName).toBe(true);
-      // Set-Cookie carries the pending cookie; NO session cookie yet.
+      expect(response.statusCode).toBe(302);
+      expect(String(response.headers['location'] ?? '')).toMatch(/\/screen-name\?from=callback$/);
+      // Set-Cookie carries the pending cookie; NO session cookie yet
+      // (only the screen-name POST issues the platform session).
       const setCookie = response.headers['set-cookie'];
       const setCookieStr = Array.isArray(setCookie) ? setCookie.join(',') : String(setCookie);
       expect(setCookieStr).toContain(`${PENDING_COOKIE_NAME}=`);
@@ -1186,7 +1183,7 @@ describe('Cache-Control: no-store on identity endpoints (G-019)', () => {
     }
   });
 
-  it('GET /auth/callback — new-user 200 carries Cache-Control: no-store', async () => {
+  it('GET /auth/callback — new-user 302 to /screen-name?from=callback carries Cache-Control: no-store', async () => {
     const built = await buildApp({ authCodeGrantSub: 'eve' });
     try {
       await built.app.inject({ method: 'GET', url: '/api/auth/login' });
@@ -1194,7 +1191,7 @@ describe('Cache-Control: no-store on identity endpoints (G-019)', () => {
         method: 'GET',
         url: '/api/auth/callback?code=AUTHCODE&state=state-1',
       });
-      expect(response.statusCode).toBe(200);
+      expect(response.statusCode).toBe(302);
       expect(response.headers['cache-control']).toBe('no-store');
     } finally {
       await built.app.close();

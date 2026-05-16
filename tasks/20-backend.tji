@@ -126,6 +126,7 @@ task backend "Backend" {
     task auth_callback_new_user_browser_redirect "New-user OAuth callback must redirect the browser, not render raw JSON" {
       effort 0.5d
       allocate team
+      complete 100
       depends !oauth_callback_handler, !screen_name_collection
       note -8<-
         Refinement: tasks/refinements/backend/auth_callback_new_user_browser_redirect.md
