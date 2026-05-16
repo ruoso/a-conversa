@@ -343,14 +343,21 @@ export function useProposeAction(): UseProposeActionResult {
     setProposing(true);
 
     try {
-      // First envelope — `classify-node`. The server's propose handler
-      // creates the paired `node-created` + `entity-included` events
-      // inline; the `event-applied` broadcast lands and updates
-      // `useWsStore.sessionState[sessionId].lastAppliedSequence` BEFORE
-      // the matching `proposed` ack resolves the send-promise (the WS
-      // client dispatches the broadcast into the store via its
-      // `applyEvent` reducer; the broadcast arrives on the proposer's
-      // socket alongside non-proposer subscribers).
+      // First envelope — `classify-node`. Per
+      // `tasks/refinements/backend/ws_propose_message.md:13` the
+      // server's propose handler appends exactly one event per
+      // envelope — the `proposal` event — via `appendSessionEvent`.
+      // Structural entity-creation events (`node-created`,
+      // `entity-included`, `edge-created`) for the referenced node /
+      // edge do NOT fire here; they fire later on commit per
+      // `tasks/refinements/data-and-methodology/commit_logic.md:13`.
+      // The `event-applied` broadcast for this `proposal` event
+      // lands and updates
+      // `useWsStore.sessionState[sessionId].lastAppliedSequence`
+      // BEFORE the matching `proposed` ack resolves the send-promise
+      // (the WS client dispatches the broadcast into the store via
+      // its `applyEvent` reducer; the broadcast arrives on the
+      // proposer's socket alongside non-proposer subscribers).
       await client.send('propose', {
         sessionId: sessionIdNow,
         expectedSequence: lastAppliedSequenceForCall(),

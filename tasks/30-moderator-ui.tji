@@ -668,6 +668,7 @@ task moderator_ui "Moderator UI" {
   task mod_propose_action_refinement_amendment "Amend mod_propose_action refinement to correct wire-shape claim (propose emits only `proposal`; `node-created` fires on commit)" {
     effort 0.25d
     allocate team
+    complete 100
     note "Source of debt: mod_propose_action Status block (this commit) — refinement claim that propose emits paired node-created/entity-included/edge-created events is WRONG per tasks/refinements/backend/ws_propose_message.md + tasks/refinements/backend/commit_logic.md. The e2e test was corrected to pin the actual contract; the refinement doc body and the apps/moderator/src/layout/useProposeAction.ts:347-353 code comment still claim the wrong shape and need updating. Methodology + doc-hygiene task; no implementation change required (the runtime already emits the correct envelope)."
     note "Surfaced via tech-debt registration policy in ORCHESTRATOR.md (this commit)."
   }

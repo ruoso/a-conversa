@@ -38,9 +38,12 @@ reset + i18n + tests on top of seams already in place:
   (`packages/shared-types/src/ws-envelope.ts:341-351`). The bundle
   this task emits is **a sequence of `propose` envelopes**, NOT a
   single envelope (see Decision §1 — the wire shape is one envelope
-  per proposal sub-kind; the server's propose handler emits the
-  paired `node-created` / `edge-created` / `entity-included` events
-  alongside each proposal).
+  per proposal sub-kind; per `tasks/refinements/backend/ws_propose_message.md:13`
+  the server's propose handler emits exactly one event — the
+  `proposal` event — per envelope. Structural entity-creation
+  events (`node-created` / `edge-created` / `entity-included`) fire
+  later on commit, not on propose, per
+  `tasks/refinements/data-and-methodology/commit_logic.md:13`).
 - The WS client surface is in place — `WsClient.send('propose',
   payload)` returns a Promise that resolves on the `proposed` ack or
   rejects with `WsRequestError` / `WsRequestTimeoutError`
@@ -156,10 +159,15 @@ their public contracts):
   — 2026-05-15). Shipped `<CaptureTargetChip>` and the auto-stage
   effect against `useCaptureStore.targetEntityId`. This task reads
   the slice to decide whether to emit the edge half of the bundle;
-  a `null` slice means "free-floating new node — emit `node-created`
-  + `proposal: classify-node` only". A non-null slice means "emit
-  the connecting bundle — add `edge-created` + `proposal:
-  set-edge-substance`".
+  a `null` slice means "free-floating new node — emit one
+  `proposal: classify-node` envelope only". A non-null slice means
+  "emit the connecting bundle — add a second envelope carrying
+  `proposal: set-edge-substance`". (Per
+  `tasks/refinements/backend/ws_propose_message.md:13` each
+  envelope produces a single `proposal` event on the wire; the
+  `node-created` / `edge-created` / `entity-included` events
+  belonging to the referenced node and edge fire later on commit
+  per `tasks/refinements/data-and-methodology/commit_logic.md:13`.)
 - **`moderator_ui.mod_capture_flow.mod_target_clear_override`** (done
   — 2026-05-15). Shipped the × button + `Esc` gesture and the
   coupled-clear contract (clearing target also clears edge role).
@@ -212,10 +220,16 @@ their public contracts):
   `classify-node` / `set-edge-substance` sub-kind schemas the
   bundle wraps).
 - **`data_and_methodology.event_types.entity_creation_events`** (done
-  — the `node-created` / `edge-created` schemas the propose
-  handler's server-side emits alongside the proposal events; this
-  task does NOT construct these payloads itself, only the
-  `ProposalPayload` carrying the `node_id` / `edge_id` references).
+  — the `node-created` / `edge-created` schemas. These events do
+  NOT fire on propose; per
+  `tasks/refinements/backend/ws_propose_message.md:13` propose
+  appends a single `proposal` event, and per
+  `tasks/refinements/data-and-methodology/commit_logic.md:13` the
+  structural entity-creation events fire on commit. This task does
+  NOT construct entity-creation payloads itself, only the
+  `ProposalPayload` carrying the `node_id` / `edge_id` references
+  the eventual commit-time entity-creation events will use as
+  primary keys).
 - **`backend_hardening.resource_limits_and_dos.user_text_length_caps`**
   (done — `MAX_METHODOLOGY_TEXT_LENGTH = 10_000` exported from
   `@a-conversa/shared-types/limits`; the textarea already enforces
@@ -309,10 +323,15 @@ hook. The hook:
 
 3. **Generates** the client-side `node_id` UUID v4 (and, when
    connecting, the `edge_id` UUID v4) so the in-progress
-   proposal can reference its own newly-created entities. The
+   proposal can reference its own future entities. The
    server's append path treats client-generated ids as the
-   canonical primary keys for the `nodes` / `edges` rows the
-   paired `node-created` / `edge-created` events create.
+   canonical primary keys; the `nodes` / `edges` rows
+   materialize on **commit** (when the eventual
+   `node-created` / `edge-created` events fire per
+   `tasks/refinements/data-and-methodology/commit_logic.md:13`),
+   not on propose — per
+   `tasks/refinements/backend/ws_propose_message.md:13` the
+   propose handler appends only the `proposal` event.
 
 4. **Constructs** the propose bundle — one `propose` envelope per
    proposal sub-kind. The free-floating case emits one envelope
@@ -342,14 +361,23 @@ hook. The hook:
    draft and retry. The error region uses the wire-code error
    message from the server when available.
 
-8. **Does NOT** emit any non-propose events directly. The propose
-   handler is the only WS write surface this task drives; the
-   server-side propose handler emits the paired `node-created`,
-   `entity-included`, and (optionally) `edge-created` events
-   inline (per `docs/moderator-ui.md:46` F1 step 4 — the
-   "several events at once" specification means several events
-   land on the server, not several envelopes on the wire).
-   See Decision §1 for the cross-check.
+8. **Does NOT** emit any non-propose envelopes. The propose
+   handler is the only WS write surface this task drives. Per
+   `tasks/refinements/backend/ws_propose_message.md:13` the
+   server-side propose handler appends exactly one event per
+   envelope — the `proposal` event itself — via
+   `appendSessionEvent` and broadcasts it. The structural
+   entity-creation events (`node-created`, `edge-created`,
+   `entity-included`) do **not** fire on propose; they fire on
+   the commit transition, when the read-side
+   `replay.ts/handleCommit` applies the structural effect per
+   `tasks/refinements/data-and-methodology/commit_logic.md:13`.
+   The `docs/moderator-ui.md:46` F1-step-4 narration that
+   describes "several events at once" landing on a single
+   propose predates this settled boundary and should be read as
+   describing the eventual user-visible outcome across the
+   propose-then-commit lifecycle, not the wire shape of the
+   propose envelope itself. See Decision §1 for the cross-check.
 
 The task is the **first WS write surface** the moderator UI drives.
 Every prior moderator-UI task either reads server state (via
@@ -370,16 +398,25 @@ Three reasons, in priority order:
 2. **The propose gesture is the F1 capture flow's payoff.** Per
    `docs/moderator-ui.md:39-50`: F1 step 1 is type-wording, step 2
    is pick-classification, step 3 is pick-target+role, step 4 is
-   *"Propose. A capture proposal lands several events at once:
+   the propose action. (The F1 narration at
+   `docs/moderator-ui.md:46` enumerates the eventual events
+   produced by the propose-then-commit lifecycle —
    `node-created` (global), `entity-included` (in session),
    `proposal: classify-node`, plus optionally `edge-created`,
    `entity-included`, `proposal: set-edge-substance` if
-   connecting. The graph shows the new node and edge in
-   `proposed` state. The pending-proposals pane fills in."* The
-   five prior leaves staged the inputs; this task fires the
-   action. Without this task, the moderator's keystrokes never
-   reach the server — the capture pane is a write-only sketchpad
-   that talks to no one.
+   connecting — and concludes "The graph shows the new node and
+   edge in `proposed` state. The pending-proposals pane fills
+   in." That narration predates the settled wire-shape boundary:
+   per `tasks/refinements/backend/ws_propose_message.md:13` the
+   propose envelope appends only the `proposal` event, and per
+   `tasks/refinements/data-and-methodology/commit_logic.md:13`
+   the entity-creation events fire on commit. The
+   pending-proposals pane filling in is the user-visible signal
+   of the propose append; the entity rows materialize once the
+   moderator commits.) The five prior leaves staged the inputs;
+   this task fires the action. Without this task, the
+   moderator's keystrokes never reach the server — the capture
+   pane is a write-only sketchpad that talks to no one.
 3. **The first WS write surface unblocks every downstream
    write-driving flow.** `mod_pending_proposals_pane.mod_commit_button`
    needs the propose-bundle to land first (you commit something
@@ -470,12 +507,17 @@ verified against the working tree):
   edge-substance half when connecting. Wire shape:
   `{ kind: 'set-edge-substance', edge_id: UUID, value: 'agreed' | 'disputed' }`.
 - `packages/shared-types/src/events.ts:255-278` — the
-  `nodeCreatedPayloadSchema` and `edgeCreatedPayloadSchema` the
-  server's propose handler emits inline; this task does NOT
+  `nodeCreatedPayloadSchema` and `edgeCreatedPayloadSchema`. These
+  events are emitted by the read-side commit handler, NOT by the
+  propose handler (per
+  `tasks/refinements/backend/ws_propose_message.md:13` propose
+  appends a single `proposal` event, and per
+  `tasks/refinements/data-and-methodology/commit_logic.md:13` the
+  entity-creation events fire on commit). This task does NOT
   construct these payloads (the wire flows `propose` envelopes
   whose `proposal` payload references the client-generated
-  `node_id` / `edge_id`; the server's append path constructs the
-  paired creation events from those references).
+  `node_id` / `edge_id`; the eventual commit-time entity-creation
+  events reuse those references as their primary keys).
 - `tests/e2e/moderator-capture.spec.ts:1-550` — the sibling spec
   the new propose-action e2e block joins. Extended by every prior
   capture-flow task; the file is the canonical regression home
@@ -547,8 +589,12 @@ ADRs and refinements consulted for style + decision continuity:
 - `tasks/refinements/data-and-methodology/proposal_events.md` —
   the proposal sub-kind discriminated union.
 - `tasks/refinements/data-and-methodology/entity_creation_events.md`
-  — the paired `node-created` / `edge-created` events the server
-  emits alongside each propose envelope.
+  — the `node-created` / `edge-created` events the server emits
+  on commit (NOT alongside the propose envelope; per
+  `tasks/refinements/backend/ws_propose_message.md:13` propose
+  appends only the `proposal` event, and per
+  `tasks/refinements/data-and-methodology/commit_logic.md:13` the
+  structural entity-creation events fire on commit).
 - `tasks/refinements/data-and-methodology/event_base_envelope.md`
   — the persisted-event envelope shape.
 - `tasks/refinements/frontend-i18n/i18n_keyboard_shortcuts_policy.md`
@@ -696,15 +742,20 @@ use by `ws/client.ts:220`). The hook generates:
 
 - **`node_id`** for the new statement node. Used in the
   `classify-node` proposal payload's `node_id` field
-  (`packages/shared-types/src/events/proposals.ts:73-77`). The
-  server's propose handler creates the paired `node-created`
-  event with the same `node_id` so the canonical `nodes` row's
-  primary key matches the proposal's reference.
+  (`packages/shared-types/src/events/proposals.ts:73-77`). On
+  commit (per
+  `tasks/refinements/data-and-methodology/commit_logic.md:13`)
+  the eventual `node-created` event reuses the same `node_id`
+  so the canonical `nodes` row's primary key matches the
+  proposal's reference. Propose itself appends only the
+  `proposal` event per
+  `tasks/refinements/backend/ws_propose_message.md:13`.
 - **`edge_id`** when `targetEntityId !== null`. Used in the
   `set-edge-substance` proposal payload's `edge_id` field
-  (`packages/shared-types/src/events/proposals.ts:98-104`). The
-  server's propose handler creates the paired `edge-created`
-  event with the same `edge_id`.
+  (`packages/shared-types/src/events/proposals.ts:98-104`). On
+  commit the eventual `edge-created` event reuses the same
+  `edge_id` (same propose-vs-commit boundary as for `node_id`
+  above).
 
 The hook holds these ids in scope through the round-trip so the
 second envelope (set-edge-substance) references the first
@@ -733,13 +784,18 @@ proposal sub-kind**:
     }
   }
   ```
-  The server's propose handler emits four events on success:
-  `node-created` (the new node row), `entity-included` (link to
-  this session), `proposal` (the `classify-node` proposal),
-  and an implicit `entity-included` for the proposal itself (per
-  the propose handler's existing implementation — this task does
-  NOT verify the server's emission order; that's pinned by
-  `ws_propose_message`'s Vitest + Cucumber suites).
+  The server's propose handler emits exactly one event on
+  success — the `proposal` event itself (the `classify-node`
+  proposal) — per
+  `tasks/refinements/backend/ws_propose_message.md:13`
+  (`appendSessionEvent` is called once per envelope). The
+  structural events for the referenced new node
+  (`node-created`, `entity-included` linking it to the session)
+  do NOT fire here; they fire on the eventual commit of this
+  proposal per
+  `tasks/refinements/data-and-methodology/commit_logic.md:13`.
+  This task does NOT verify the server's emission shape; that's
+  pinned by `ws_propose_message`'s Vitest + Cucumber suites.
 
 - **Connecting case** (target + role staged): two envelopes,
   sequential. After the first ack updates the local
@@ -762,23 +818,31 @@ proposal sub-kind**:
     }
   }
   ```
-  The server's second propose handler call emits
-  `edge-created` (the new edge row, referencing `targetEntityId`
-  as the target and the client-minted `node_id` as the source)
-  + `entity-included` + `proposal: set-edge-substance` (the
-  edge-substance proposal). The role field on the
-  `edge-created` payload is populated from the client's
-  `edgeRole` slice via the server's propose handler's existing
-  edge-creation path (per `ws_propose_message`'s implementation
-  reading the action's referenced edge_id and constructing the
-  paired creation event with the staged role).
+  The server's second propose handler call emits exactly one
+  event — `proposal: set-edge-substance` (the edge-substance
+  proposal) — per
+  `tasks/refinements/backend/ws_propose_message.md:13`. The
+  structural `edge-created` event for the referenced new edge
+  (which will reference `targetEntityId` as the target and the
+  client-minted `node_id` as the source, with the `role` field
+  carrying the staged `edgeRole`) and the accompanying
+  `entity-included` fire later on commit per
+  `tasks/refinements/data-and-methodology/commit_logic.md:13`,
+  not on this propose envelope.
 
 The "several events at once" phrasing in
-`docs/moderator-ui.md:46` refers to the **server-side event
-emission** (multiple persisted events per propose handler call);
-the wire vocabulary remains one `propose` envelope per proposal
-sub-kind. Decision §1 records the alternatives surveyed and
-rejected.
+`docs/moderator-ui.md:46` predates the settled propose-vs-commit
+boundary. Per
+`tasks/refinements/backend/ws_propose_message.md:13` the propose
+handler persists exactly one event per envelope (the `proposal`
+event); per
+`tasks/refinements/data-and-methodology/commit_logic.md:13` the
+entity-creation events fire later on commit. The "several events"
+the F1 narration describes are the eventual events landed across
+the full propose-then-commit lifecycle, not events landed on a
+single propose envelope. The wire vocabulary remains one
+`propose` envelope per proposal sub-kind. Decision §1 records the
+alternatives surveyed and rejected.
 
 ### Optimistic clear semantics (Decision §4)
 
@@ -1255,11 +1319,17 @@ realistic-but-bounded server-side-event landed proof.
 ### 10. Connecting propose: edgeRole reaches the server-side edge creation
 
 - The wire shape's `set-edge-substance` proposal carries the
-  client-minted `edge_id`. The server's propose handler uses
-  the role from the in-flight action context to populate the
-  paired `edge-created` payload — this is asserted at the
-  server (`ws_propose_message`'s tests); the moderator-side
-  test asserts the wire shape only.
+  client-minted `edge_id` along with the staged role. The
+  role is preserved across the propose-then-commit boundary
+  and ultimately populates the `edge-created` payload that
+  fires on commit (per
+  `tasks/refinements/data-and-methodology/commit_logic.md:13`),
+  not on propose (per
+  `tasks/refinements/backend/ws_propose_message.md:13` propose
+  appends only the `proposal` event). The role-preservation
+  contract is asserted at the server
+  (`ws_propose_message`'s tests); the moderator-side test
+  asserts the wire shape only.
 
 ### 11. `WsClientProvider` mount + `trackSession` lifecycle
 
@@ -1378,10 +1448,16 @@ test('alice: propose a free-floating new statement; the propose envelope hits th
 
   // 7. The server's event-applied broadcast lands in the moderator's
   //    useWsStore. Assert via the dev-only `window.__aConversaWsStore`
-  //    seam. The free-floating bundle emits node-created +
-  //    entity-included + proposal events; we check that
-  //    lastAppliedSequence advances and at least one node-created
-  //    event landed for the session.
+  //    seam. Per
+  //    `tasks/refinements/backend/ws_propose_message.md:13` the
+  //    propose handler appends exactly one event per envelope — the
+  //    `proposal` event. Structural entity-creation events
+  //    (`node-created` / `entity-included` / `edge-created`) are
+  //    commit-time effects per
+  //    `tasks/refinements/data-and-methodology/commit_logic.md:13`
+  //    and do NOT land on propose. We check that
+  //    lastAppliedSequence advances and the `proposal` event landed
+  //    for the session.
   if (!(await isWsStoreReachable(page))) {
     test.skip(true, 'wsStore seam not reachable in this environment');
     return;
@@ -1401,7 +1477,7 @@ test('alice: propose a free-floating new statement; the propose envelope hits th
     )
     .toMatchObject({
       lastSequence: expect.any(Number) as number,
-      kinds: expect.arrayContaining(['node-created', 'entity-included', 'proposal']) as string[],
+      kinds: expect.arrayContaining(['proposal']) as string[],
     });
 });
 ```
@@ -1473,16 +1549,21 @@ Three alternatives surveyed:
 - **One envelope per proposal sub-kind, sequential awaits**
   (chosen). The wire vocabulary defined by `ws_propose_message`
   carries exactly one `ProposalPayload` per `propose` envelope
-  (`packages/shared-types/src/ws-envelope.ts:341-351`). The
-  "several events at once" language in `docs/moderator-ui.md:46`
-  refers to the **server-side event emission** (the propose
-  handler appends `node-created` + `entity-included` +
-  `proposal` events inside one transaction per propose call);
-  it does NOT mean one envelope carrying multiple proposals.
-  The connecting case fires two envelopes sequentially so the
-  `expectedSequence` token advances coherently between them and
-  the server's per-envelope `validateAction` call sees a
-  consistent projection.
+  (`packages/shared-types/src/ws-envelope.ts:341-351`), and per
+  `tasks/refinements/backend/ws_propose_message.md:13` the
+  propose handler appends exactly one `proposal` event per
+  envelope via `appendSessionEvent`. The "several events at
+  once" language in `docs/moderator-ui.md:46` predates the
+  settled propose-vs-commit boundary; it does NOT describe the
+  propose envelope's wire shape. The structural
+  `node-created` / `edge-created` / `entity-included` events
+  fire on commit per
+  `tasks/refinements/data-and-methodology/commit_logic.md:13`,
+  not inside the propose transaction. The connecting case fires
+  two envelopes sequentially so the `expectedSequence` token
+  advances coherently between them and the server's
+  per-envelope `validateAction` call sees a consistent
+  projection.
 - **A new `propose-bundle` envelope type carrying multiple
   proposals** — rejected. Would require extending
   `wsMessageTypes` + `wsMessagePayloadSchemas` + the server's
