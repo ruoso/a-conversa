@@ -26,7 +26,7 @@
 // writer (the same seam the WS client subscriber uses) — no mocking.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import i18next from 'i18next';
 import type { Event, ProposalPayload } from '@a-conversa/shared-types';
 import { formatRelativeTime, __resetFormatterCache } from '@a-conversa/i18n-catalogs';
@@ -712,12 +712,293 @@ describe('PendingProposalsPane — per-participant vote indicators integration',
   });
 });
 
+// Refinement: tasks/refinements/moderator-ui/mod_proposal_filter_search.md
+//
+// The pane grew a pinned filter strip above the conditional empty-state
+// vs list branch (Decision §2 — always visible). These cases pin:
+//   (a) the strip renders with a free-text input and three state chips;
+//       the empty input has no × clear button;
+//   (b) typing in the text input narrows the list to matching rows
+//       (case-insensitive substring against the same `summaryText` the
+//       row renders — Decision §3);
+//   (c) the × clear button appears when the input is non-empty and
+//       clicking it restores the full list;
+//   (d) clicking the "Ready" chip narrows the list to rows whose
+//       `deriveAllAgree` returns `{ ok: true }`;
+//   (e) clicking the "Disputed" chip narrows the list to rows with at
+//       least one disputed facet entry;
+//   (f) when the filter excludes every row, the
+//       `pending-proposals-filtered-empty` paragraph renders AND the
+//       original `pending-proposals-pane-empty` does NOT;
+//   (g) the strip stays visible even when the list is empty
+//       (default-empty AND filtered-empty);
+//   (h) the existing row test-id contract is unaffected.
+describe('PendingProposalsPane — filter strip', () => {
+  function setProposal(
+    seq: number,
+    envelopeId: string,
+    proposal: ProposalPayload,
+    overrides?: { actor?: string | null; createdAt?: string; sessionId?: string },
+  ): void {
+    act(() => {
+      useWsStore.getState().applyEvent(proposalEvent(seq, envelopeId, proposal, overrides));
+    });
+  }
+
+  const editWordingProposal: ProposalPayload = {
+    kind: 'edit-wording',
+    edit_kind: 'reword',
+    node_id: NODE_X,
+    new_wording: 'The proposed minimum wage helps workers.',
+  };
+
+  const editWordingOther: ProposalPayload = {
+    kind: 'edit-wording',
+    edit_kind: 'reword',
+    node_id: NODE_Y,
+    new_wording: 'Public transit funding should increase.',
+  };
+
+  it('(a) strip renders with three state chips + a text input; empty input has no × clear button', () => {
+    renderPane();
+    const strip = screen.getByTestId('pending-proposals-filter-strip');
+    expect(strip).toBeTruthy();
+    const input = screen.getByTestId('pending-proposals-filter-text');
+    expect(input).toBeTruthy();
+    expect((input as HTMLInputElement).value).toBe('');
+    expect(screen.queryByTestId('pending-proposals-filter-text-clear')).toBeNull();
+    const chips = screen.getAllByTestId('pending-proposals-filter-state');
+    expect(chips).toHaveLength(3);
+    expect(chips.map((c) => c.getAttribute('data-filter-state'))).toEqual([
+      'all',
+      'ready',
+      'disputed',
+    ]);
+    // The All chip is pressed by default.
+    expect(chips[0]?.getAttribute('aria-pressed')).toBe('true');
+    expect(chips[1]?.getAttribute('aria-pressed')).toBe('false');
+    expect(chips[2]?.getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('(b) typing in the text input narrows the list to matching rows (case-insensitive substring)', () => {
+    setProposal(1, PROPOSAL_P, editWordingProposal);
+    setProposal(2, PROPOSAL_Q, editWordingOther);
+    renderPane();
+    // Both rows visible by default.
+    expect(screen.getAllByTestId('pending-proposal-row')).toHaveLength(2);
+
+    const input = screen.getByTestId('pending-proposals-filter-text');
+    act(() => {
+      fireEvent.change(input, { target: { value: 'MINIMUM' } });
+    });
+    const rows = screen.getAllByTestId('pending-proposal-row');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.getAttribute('data-proposal-id')).toBe(PROPOSAL_P);
+  });
+
+  it('(c) the × clear button appears when the input is non-empty; clicking restores the full list', () => {
+    setProposal(1, PROPOSAL_P, editWordingProposal);
+    setProposal(2, PROPOSAL_Q, editWordingOther);
+    renderPane();
+
+    const input = screen.getByTestId('pending-proposals-filter-text');
+    act(() => {
+      fireEvent.change(input, { target: { value: 'minimum' } });
+    });
+    expect(screen.getAllByTestId('pending-proposal-row')).toHaveLength(1);
+
+    const clearBtn = screen.getByTestId('pending-proposals-filter-text-clear');
+    expect(clearBtn).toBeTruthy();
+    act(() => {
+      clearBtn.click();
+    });
+    expect(screen.getAllByTestId('pending-proposal-row')).toHaveLength(2);
+    // The button disappears once the input is empty again.
+    expect(screen.queryByTestId('pending-proposals-filter-text-clear')).toBeNull();
+    expect((input as HTMLInputElement).value).toBe('');
+  });
+
+  it('(d) clicking the "Ready" chip narrows the list to rows whose deriveAllAgree returns ok', () => {
+    // Two participants joined; row P has both agreed; row Q has only A.
+    const DEBATER_A_LOCAL = '00000000-0000-4000-8000-0000000000d1';
+    const DEBATER_B_LOCAL = '00000000-0000-4000-8000-0000000000d2';
+    act(() => {
+      useWsStore.getState().setConnectionStatus('open');
+      useWsStore.getState().applyEvent({
+        id: envId('j', 1),
+        sessionId: SESSION,
+        sequence: 1,
+        kind: 'participant-joined',
+        actor: DEBATER_A_LOCAL,
+        payload: {
+          user_id: DEBATER_A_LOCAL,
+          role: 'debater-A',
+          screen_name: 'A',
+          joined_at: '2026-05-16T00:00:00.000Z',
+        },
+        createdAt: '2026-05-16T00:00:00.000Z',
+      });
+      useWsStore.getState().applyEvent({
+        id: envId('j', 2),
+        sessionId: SESSION,
+        sequence: 2,
+        kind: 'participant-joined',
+        actor: DEBATER_B_LOCAL,
+        payload: {
+          user_id: DEBATER_B_LOCAL,
+          role: 'debater-B',
+          screen_name: 'B',
+          joined_at: '2026-05-16T00:00:00.000Z',
+        },
+        createdAt: '2026-05-16T00:00:00.000Z',
+      });
+      useWsStore.getState().applyEvent(proposalEvent(3, PROPOSAL_P, classifyNodeFact));
+      useWsStore.getState().applyEvent(proposalEvent(4, PROPOSAL_Q, classifyNodeValue));
+      // Both agree on P's classification.
+      useWsStore.getState().applyEvent({
+        id: envId('v', 5),
+        sessionId: SESSION,
+        sequence: 5,
+        kind: 'vote',
+        actor: DEBATER_A_LOCAL,
+        payload: {
+          proposal_id: PROPOSAL_P,
+          participant: DEBATER_A_LOCAL,
+          vote: 'agree',
+          voted_at: '2026-05-16T00:01:05.000Z',
+        },
+        createdAt: '2026-05-16T00:01:05.000Z',
+      });
+      useWsStore.getState().applyEvent({
+        id: envId('v', 6),
+        sessionId: SESSION,
+        sequence: 6,
+        kind: 'vote',
+        actor: DEBATER_B_LOCAL,
+        payload: {
+          proposal_id: PROPOSAL_P,
+          participant: DEBATER_B_LOCAL,
+          vote: 'agree',
+          voted_at: '2026-05-16T00:01:05.000Z',
+        },
+        createdAt: '2026-05-16T00:01:05.000Z',
+      });
+    });
+    renderPane();
+    expect(screen.getAllByTestId('pending-proposal-row')).toHaveLength(2);
+
+    const readyChip = screen
+      .getAllByTestId('pending-proposals-filter-state')
+      .find((c) => c.getAttribute('data-filter-state') === 'ready')!;
+    act(() => {
+      readyChip.click();
+    });
+    const rows = screen.getAllByTestId('pending-proposal-row');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.getAttribute('data-proposal-id')).toBe(PROPOSAL_P);
+    expect(readyChip.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('(e) clicking the "Disputed" chip narrows to rows with at least one disputed facet', () => {
+    act(() => {
+      useWsStore.getState().applyEvent(proposalEvent(1, PROPOSAL_P, classifyNodeFact));
+      useWsStore.getState().applyEvent(proposalEvent(2, PROPOSAL_Q, classifyNodeValue));
+      // Push a server proposal-status frame that marks P's classification
+      // as disputed.
+      useWsStore.getState().applyProposalStatus({
+        sessionId: SESSION,
+        proposalId: PROPOSAL_P,
+        sequence: 3,
+        perFacetStatus: { classification: 'disputed' },
+      });
+    });
+    renderPane();
+    expect(screen.getAllByTestId('pending-proposal-row')).toHaveLength(2);
+
+    const disputedChip = screen
+      .getAllByTestId('pending-proposals-filter-state')
+      .find((c) => c.getAttribute('data-filter-state') === 'disputed')!;
+    act(() => {
+      disputedChip.click();
+    });
+    const rows = screen.getAllByTestId('pending-proposal-row');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.getAttribute('data-proposal-id')).toBe(PROPOSAL_P);
+  });
+
+  it('(f) the filtered-empty paragraph appears when the filter excludes every row; original empty is hidden', () => {
+    setProposal(1, PROPOSAL_P, editWordingProposal);
+    renderPane();
+    expect(screen.getAllByTestId('pending-proposal-row')).toHaveLength(1);
+
+    const input = screen.getByTestId('pending-proposals-filter-text');
+    act(() => {
+      fireEvent.change(input, { target: { value: 'no-such-text-anywhere' } });
+    });
+    expect(screen.queryByTestId('pending-proposal-row')).toBeNull();
+    expect(screen.getByTestId('pending-proposals-filtered-empty')).toBeTruthy();
+    expect(screen.queryByTestId('pending-proposals-pane-empty')).toBeNull();
+  });
+
+  it('(g) strip stays visible in default-empty AND filtered-empty states', () => {
+    // Default-empty — no proposals at all.
+    renderPane();
+    expect(screen.getByTestId('pending-proposals-filter-strip')).toBeTruthy();
+    expect(screen.getByTestId('pending-proposals-pane-empty')).toBeTruthy();
+
+    // Add a proposal; then filter it out.
+    setProposal(1, PROPOSAL_P, editWordingProposal);
+    const input = screen.getByTestId('pending-proposals-filter-text');
+    act(() => {
+      fireEvent.change(input, { target: { value: 'no-such-text-anywhere' } });
+    });
+    // The strip is still present in the filtered-empty state.
+    expect(screen.getByTestId('pending-proposals-filter-strip')).toBeTruthy();
+    expect(screen.getByTestId('pending-proposals-filtered-empty')).toBeTruthy();
+  });
+
+  it('(h) the existing row test-id contract is unaffected by the strip', () => {
+    setProposal(1, PROPOSAL_P, classifyNodeFact);
+    renderPane();
+    expect(screen.getByTestId('pending-proposal-row')).toBeTruthy();
+    expect(screen.getByTestId('pending-proposal-row-kind')).toBeTruthy();
+    expect(screen.getByTestId('pending-proposal-row-summary')).toBeTruthy();
+    expect(screen.getByTestId('pending-proposal-row-author')).toBeTruthy();
+    expect(screen.getByTestId('pending-proposal-row-timestamp')).toBeTruthy();
+  });
+
+  it('chip labels resolve via the ICU-select stateChipLabel key', () => {
+    renderPane();
+    const chips = screen.getAllByTestId('pending-proposals-filter-state');
+    // The en-US ICU select arms are All / Ready to commit / Disputed.
+    const labels = chips.map((c) => c.textContent);
+    expect(labels).toEqual(['All', 'Ready to commit', 'Disputed']);
+  });
+
+  it('text-input placeholder + aria-label + clear-button aria-label resolve from the catalog', () => {
+    renderPane();
+    const input = screen.getByTestId('pending-proposals-filter-text');
+    expect(input.getAttribute('placeholder')).toBe('Filter proposals…');
+    expect(input.getAttribute('aria-label')).toBe('Filter pending proposals by text');
+    act(() => {
+      fireEvent.change(input, { target: { value: 'x' } });
+    });
+    const clearBtn = screen.getByTestId('pending-proposals-filter-text-clear');
+    expect(clearBtn.getAttribute('aria-label')).toBe('Clear filter text');
+  });
+});
+
 describe('PendingProposalsPane — i18n catalog parity', () => {
   const KEYS = [
     'moderator.proposalList.emptyState',
     'moderator.proposalList.paneAriaLabel',
     'moderator.proposalList.rowAriaLabel',
     'moderator.proposalList.systemAuthor',
+    'moderator.proposalFilter.textPlaceholder',
+    'moderator.proposalFilter.textAriaLabel',
+    'moderator.proposalFilter.clearTextAriaLabel',
+    'moderator.proposalFilter.stateChipLabel',
+    'moderator.proposalFilter.noMatches',
   ];
   const LOCALES = ['en-US', 'pt-BR', 'es-419'] as const;
 

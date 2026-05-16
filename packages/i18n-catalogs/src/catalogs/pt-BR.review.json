@@ -123,7 +123,12 @@
     "moderator.commitButton.timeoutError",
     "moderator.commitButton.gateTooltip",
     "moderator.commitButton.errorRoleLabel",
-    "moderator.commitButton.reason"
+    "moderator.commitButton.reason",
+    "moderator.proposalFilter.textPlaceholder",
+    "moderator.proposalFilter.textAriaLabel",
+    "moderator.proposalFilter.clearTextAriaLabel",
+    "moderator.proposalFilter.stateChipLabel",
+    "moderator.proposalFilter.noMatches"
   ],
   "signed_off": []
 }

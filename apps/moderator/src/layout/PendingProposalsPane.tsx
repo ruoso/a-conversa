@@ -50,7 +50,7 @@
 // happens on each `applyEvent` write (the WS writer creates a new
 // array via `[...session.events, event]`).
 
-import { useMemo, type ReactElement } from 'react';
+import { useMemo, useState, type ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ProposalPayload } from '@a-conversa/shared-types';
 import { formatRelativeTime } from '@a-conversa/i18n-catalogs';
@@ -69,6 +69,13 @@ import {
   type CommitGateReason,
   type VotesByFacetIndex,
 } from '../graph/proposalFacets';
+import {
+  isDefaultFilter,
+  matchesProposalFilter,
+  type ProposalFilter,
+  type ProposalFilterState,
+} from '../graph/proposalFilter';
+import { summaryText } from '../graph/proposalSummary';
 import { ProposalFacetBreakdown } from './ProposalFacetBreakdown';
 import { useCommitAction } from './useCommitAction';
 
@@ -91,6 +98,24 @@ export interface PendingProposalsPaneProps {
 
 const PANE_CONTAINER_CLASSES = 'flex max-h-full flex-col gap-1 overflow-y-auto text-slate-700';
 const LIST_CLASSES = 'm-0 flex list-none flex-col gap-1 p-0';
+// Per `mod_proposal_filter_search` Decision §7 — pinned strip above the
+// list with a free-text input (flex-1, consumes available width) and a
+// state-filter chip group (auto-width on the right, wraps below on
+// narrow widths). The strip itself stays visible above the conditional
+// empty-state-vs-list branch (Decision §2).
+const FILTER_STRIP_CLASSES = 'flex flex-wrap items-center gap-2 py-1';
+const FILTER_TEXT_CONTAINER_CLASSES = 'relative flex flex-1 min-w-[8rem] items-center';
+const FILTER_TEXT_INPUT_CLASSES =
+  'w-full rounded border border-slate-200 bg-white px-2 py-1 pr-6 text-sm text-slate-700 placeholder:text-slate-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400';
+const FILTER_TEXT_CLEAR_CLASSES =
+  'absolute right-1 inline-flex h-4 w-4 items-center justify-center rounded text-slate-500 hover:text-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-slate-400';
+const FILTER_CHIP_GROUP_CLASSES = 'flex flex-wrap items-center gap-1';
+const FILTER_CHIP_BASE_CLASSES =
+  'rounded border px-2 py-0.5 text-xs font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400';
+const FILTER_CHIP_INACTIVE_CLASSES = 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50';
+// Per Decision §7 — pressed-chip uses the same `slate-700` tone as the
+// row kind chip for visual continuity.
+const FILTER_CHIP_ACTIVE_CLASSES = 'border-slate-700 bg-slate-700 text-white';
 // Per `mod_per_facet_breakdown` Decision §2 / Constraints, the row
 // grew from a single-line flex container to a two-line stack: the
 // header keeps its one-line shape; the breakdown sits below it.
@@ -145,53 +170,10 @@ function kindChipText(proposal: ProposalPayload, t: (key: string) => string): st
   return proposal.kind;
 }
 
-/**
- * Pick a one-line summary string per sub-kind (Decision §5). The
- * selector emits the full proposal payload; the row component decides
- * what to render. For `classify-node`, the chip already shows the
- * classification — the summary column falls back to the node id
- * prefix (the moderator UI does not yet have a client-side
- * node-wording resolver in the pane — Decision §5).
- *
- * For sub-kinds carrying a free-text field (`edit-wording`,
- * `amend-node`, `meta-move`, `annotate`, components of `decompose` /
- * `interpretive-split`), the row renders that text. The Tailwind
- * `truncate` class handles overflow at the column level.
- */
-function summaryText(proposal: ProposalPayload): string {
-  switch (proposal.kind) {
-    case 'classify-node':
-      // The chip already shows the classification; the summary falls
-      // back to a node-id prefix (Decision §5).
-      return `node ${proposal.node_id.slice(0, 8)}`;
-    case 'set-node-substance':
-      return `Set substance = ${proposal.value} (node ${proposal.node_id.slice(0, 8)})`;
-    case 'set-edge-substance':
-      return `Set substance = ${proposal.value} (edge ${proposal.edge_id.slice(0, 8)})`;
-    case 'edit-wording':
-      return proposal.new_wording;
-    case 'amend-node':
-      return proposal.new_content;
-    case 'meta-move':
-      return `${proposal.meta_kind}: ${proposal.content}`;
-    case 'annotate':
-      return `${proposal.annotation_kind}: ${proposal.content}`;
-    case 'decompose':
-      return `Decompose into ${String(proposal.components.length)} components`;
-    case 'interpretive-split':
-      return `Split into ${String(proposal.readings.length)} readings`;
-    case 'axiom-mark':
-      return `Axiom-mark (participant ${proposal.participant.slice(0, 8)})`;
-    case 'break-edge':
-      return `Break edge ${proposal.edge_id.slice(0, 8)}`;
-    default: {
-      // Exhaustively narrowed; this is a runtime safety net for callers
-      // that bypass TypeScript (e.g. tests that build malformed events).
-      const unknown = proposal as { kind: string };
-      return unknown.kind;
-    }
-  }
-}
+// `summaryText(proposal)` is now exported from `../graph/proposalSummary`
+// so the row component AND the filter predicate
+// (`../graph/proposalFilter`) compute against the same string by
+// construction (mod_proposal_filter_search Decision §3).
 
 /**
  * Format the author column — 8-char UUID prefix in v1, or a localized
@@ -379,6 +361,23 @@ function PendingProposalRow(props: {
   );
 }
 
+/**
+ * The three state-filter chip arms (Decision §1.c). Declared at module
+ * scope so the chip-render loop iterates a stable reference.
+ */
+const FILTER_STATES: readonly ProposalFilterState[] = ['all', 'ready', 'disputed'];
+
+/**
+ * Map a `ProposalFilterState` to the ICU-select arm name in
+ * `moderator.proposalFilter.stateChipLabel` (Decision §9 — one key with
+ * three arms mirrors the `moderator.commitButton.reason` pattern).
+ */
+const FILTER_STATE_SELECT_ARM: Readonly<Record<ProposalFilterState, string>> = {
+  all: 'all',
+  ready: 'ready',
+  disputed: 'disputed',
+};
+
 export function PendingProposalsPane(props: PendingProposalsPaneProps): ReactElement {
   const { sessionId, nowMs } = props;
   const { t } = useTranslation();
@@ -434,23 +433,114 @@ export function PendingProposalsPane(props: PendingProposalsPaneProps): ReactEle
   // socket is anything other than `'open'`.
   const connectionOpen = useWsStore((state) => state.connectionStatus === 'open');
 
+  // Per `mod_proposal_filter_search` Decision §5 — two local-component
+  // state cells driving the filter strip. No Zustand slice, no URL
+  // param: the filter resets on every pane mount (by design — the
+  // moderator's filter from minutes ago is rarely the filter they want
+  // now). The pair is composed into a `ProposalFilter` for downstream
+  // consumers via a single `useMemo`.
+  const [filterText, setFilterText] = useState<string>('');
+  const [filterState, setFilterState] = useState<ProposalFilterState>('all');
+
+  const filter: ProposalFilter = useMemo(
+    () => ({ text: filterText, state: filterState }),
+    [filterText, filterState],
+  );
+
+  // Identity-stable fast path (Decision §8) — when the filter is the
+  // default, return the pre-filter `rows` reference directly so the
+  // pane stays identity-stable and downstream `React.memo`-wrapped row
+  // components don't re-render spuriously. Otherwise compute the
+  // filtered subset, keyed on the meaningful inputs.
+  const filteredRows = useMemo(() => {
+    if (isDefaultFilter(filter)) return rows;
+    return rows.filter((row) =>
+      matchesProposalFilter(
+        row,
+        filter,
+        currentParticipantIds,
+        votesByFacetIndex,
+        facetStatusIndex,
+        pendingProposals?.[row.proposalEventId]?.perFacetStatus,
+      ),
+    );
+  }, [rows, filter, currentParticipantIds, votesByFacetIndex, facetStatusIndex, pendingProposals]);
+
   const resolvedNowMs = nowMs ?? Date.now();
   const systemAuthorLabel = t('moderator.proposalList.systemAuthor');
   const paneAriaLabel = t('moderator.proposalList.paneAriaLabel');
+  const filterTextPlaceholder = t('moderator.proposalFilter.textPlaceholder');
+  const filterTextAriaLabel = t('moderator.proposalFilter.textAriaLabel');
+  const filterClearAriaLabel = t('moderator.proposalFilter.clearTextAriaLabel');
+  const noMatchesText = t('moderator.proposalFilter.noMatches');
 
-  if (rows.length === 0) {
-    return (
-      <div
-        data-testid="pending-proposals-pane"
-        aria-label={paneAriaLabel}
-        className={PANE_CONTAINER_CLASSES}
-      >
-        <p data-testid="pending-proposals-pane-empty" className={EMPTY_STATE_CLASSES}>
-          {t('moderator.proposalList.emptyState')}
-        </p>
+  const filterIsActive = !isDefaultFilter(filter);
+  // Decision §4 — the two distinct empty-state triggers. The original
+  // "no proposals at all" copy surfaces ONLY when the default filter
+  // is in effect; the new "no matches" copy surfaces when the filter
+  // is non-default and the post-filter count is zero (regardless of
+  // the pre-filter count).
+  const showDefaultEmpty = !filterIsActive && filteredRows.length === 0;
+  const showFilteredEmpty = filterIsActive && filteredRows.length === 0;
+
+  // The strip stays visible above the conditional empty-state-vs-list
+  // branch (Decision §2 — the filter is the moderator's escape from
+  // the filtered-empty state; hiding it would be a usability dead-end).
+  const filterStrip = (
+    <div data-testid="pending-proposals-filter-strip" className={FILTER_STRIP_CLASSES}>
+      <div className={FILTER_TEXT_CONTAINER_CLASSES}>
+        <input
+          type="search"
+          data-testid="pending-proposals-filter-text"
+          className={FILTER_TEXT_INPUT_CLASSES}
+          placeholder={filterTextPlaceholder}
+          aria-label={filterTextAriaLabel}
+          value={filterText}
+          onChange={(e) => {
+            setFilterText(e.target.value);
+          }}
+        />
+        {filterText !== '' ? (
+          <button
+            type="button"
+            data-testid="pending-proposals-filter-text-clear"
+            aria-label={filterClearAriaLabel}
+            className={FILTER_TEXT_CLEAR_CLASSES}
+            onClick={() => {
+              setFilterText('');
+            }}
+          >
+            {/* Decision §6 — inline × glyph; the localized aria-label
+                carries the accessible name. */}
+            <span aria-hidden="true">×</span>
+          </button>
+        ) : null}
       </div>
-    );
-  }
+      <div className={FILTER_CHIP_GROUP_CLASSES}>
+        {FILTER_STATES.map((state) => {
+          const pressed = filterState === state;
+          const label = t('moderator.proposalFilter.stateChipLabel', {
+            state: FILTER_STATE_SELECT_ARM[state],
+          });
+          return (
+            <button
+              key={state}
+              type="button"
+              data-testid="pending-proposals-filter-state"
+              data-filter-state={state}
+              aria-pressed={pressed}
+              className={`${FILTER_CHIP_BASE_CLASSES} ${pressed ? FILTER_CHIP_ACTIVE_CLASSES : FILTER_CHIP_INACTIVE_CLASSES}`}
+              onClick={() => {
+                setFilterState(state);
+              }}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
 
   return (
     <div
@@ -458,22 +548,35 @@ export function PendingProposalsPane(props: PendingProposalsPaneProps): ReactEle
       aria-label={paneAriaLabel}
       className={PANE_CONTAINER_CLASSES}
     >
-      <ol data-testid="pending-proposals-pane-list" role="list" className={LIST_CLASSES}>
-        {rows.map((row) => (
-          <PendingProposalRow
-            key={row.proposalEventId}
-            row={row}
-            nowMs={resolvedNowMs}
-            systemAuthorLabel={systemAuthorLabel}
-            t={t}
-            facetStatusIndex={facetStatusIndex}
-            serverPerFacetStatus={pendingProposals?.[row.proposalEventId]?.perFacetStatus}
-            votesByFacetIndex={votesByFacetIndex}
-            currentParticipantIds={currentParticipantIds}
-            connectionOpen={connectionOpen}
-          />
-        ))}
-      </ol>
+      {filterStrip}
+      {showDefaultEmpty ? (
+        <p data-testid="pending-proposals-pane-empty" className={EMPTY_STATE_CLASSES}>
+          {t('moderator.proposalList.emptyState')}
+        </p>
+      ) : null}
+      {showFilteredEmpty ? (
+        <p data-testid="pending-proposals-filtered-empty" className={EMPTY_STATE_CLASSES}>
+          {noMatchesText}
+        </p>
+      ) : null}
+      {filteredRows.length > 0 ? (
+        <ol data-testid="pending-proposals-pane-list" role="list" className={LIST_CLASSES}>
+          {filteredRows.map((row) => (
+            <PendingProposalRow
+              key={row.proposalEventId}
+              row={row}
+              nowMs={resolvedNowMs}
+              systemAuthorLabel={systemAuthorLabel}
+              t={t}
+              facetStatusIndex={facetStatusIndex}
+              serverPerFacetStatus={pendingProposals?.[row.proposalEventId]?.perFacetStatus}
+              votesByFacetIndex={votesByFacetIndex}
+              currentParticipantIds={currentParticipantIds}
+              connectionOpen={connectionOpen}
+            />
+          ))}
+        </ol>
+      ) : null}
     </div>
   );
 }

@@ -155,6 +155,14 @@ task frontend_i18n "Frontend internationalization" {
     note "Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit b7c5ff0)."
   }
 
+  task i18n_proposal_filter_search_native_review "Native-speaker review of pt-BR + es-419 proposal-filter strings (5 keys including 3-arm ICU select for state chip)" {
+    effort 0.5d
+    allocate team
+    depends !i18n_commit_button_native_review
+    note "Source of debt: mod_proposal_filter_search (this commit) — pt-BR and es-419 drafts of the 5 keys under moderator.proposalFilter.* (textPlaceholder, textAriaLabel, clearTextAriaLabel, stateChipLabel [ICU 3-arm select: all / ready / disputed], noMatches) landed flagged PENDING in the *.review.json trackers; replace with native-speaker-reviewed text and sign off the review trackers. UI prose translation (lower bar than methodology terms but still needs native-speaker review, including the ICU-select wording per state arm)."
+    note "Surfaced via tech-debt registration policy in ORCHESTRATOR.md (this commit)."
+  }
+
   task i18n_keyboard_shortcuts_policy "Per-locale keyboard shortcut policy for moderator palette" {
     effort 0.5d
     allocate team

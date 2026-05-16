@@ -210,6 +210,13 @@
       "errorRoleLabel": "Commit error",
       "reason": "{reason, select, sessionNotConnected {the session is not connected — reconnecting…} proposalMetaDisagreement {this proposal is marked as meta-disagreement; resolve it before committing} noCurrentParticipants {no participants have joined the session yet} participantsNotVoted {one or more participants have not voted on every facet} participantsDisagree {one or more participants have not agreed on every facet} structuralSubKindNotSupported {this proposal kind is not yet supported for commit} other {unknown}}"
     },
+    "proposalFilter": {
+      "textPlaceholder": "Filter proposals…",
+      "textAriaLabel": "Filter pending proposals by text",
+      "clearTextAriaLabel": "Clear filter text",
+      "stateChipLabel": "{state, select, all {All} ready {Ready to commit} disputed {Disputed} other {Unknown}}",
+      "noMatches": "No proposals match your filter"
+    },
     "modeBanner": {
       "idle": {
         "label": "Idle",

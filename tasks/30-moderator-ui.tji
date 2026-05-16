@@ -322,6 +322,7 @@ task moderator_ui "Moderator UI" {
     task mod_proposal_filter_search "Filter / search pending proposals" {
       effort 1d
       allocate team
+      complete 100
       depends !mod_proposal_list
     }
   }

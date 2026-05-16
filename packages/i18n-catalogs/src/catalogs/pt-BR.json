@@ -210,6 +210,13 @@
       "errorRoleLabel": "Erro de confirmação",
       "reason": "{reason, select, sessionNotConnected {a sessão não está conectada — reconectando…} proposalMetaDisagreement {esta proposta está marcada como meta-discordância; resolva antes de confirmar} noCurrentParticipants {nenhum participante entrou na sessão ainda} participantsNotVoted {um ou mais participantes ainda não votaram em todos os aspectos} participantsDisagree {um ou mais participantes não concordaram em todos os aspectos} structuralSubKindNotSupported {este tipo de proposta ainda não é suportado para confirmação} other {desconhecido}}"
     },
+    "proposalFilter": {
+      "textPlaceholder": "Filtrar propostas…",
+      "textAriaLabel": "Filtrar propostas pendentes por texto",
+      "clearTextAriaLabel": "Limpar texto do filtro",
+      "stateChipLabel": "{state, select, all {Todas} ready {Prontas para confirmar} disputed {Em disputa} other {Desconhecido}}",
+      "noMatches": "Nenhuma proposta corresponde ao filtro"
+    },
     "modeBanner": {
       "idle": {
         "label": "Ocioso",
