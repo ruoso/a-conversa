@@ -536,4 +536,27 @@ describe('captureKeymap — onExitMode handler (mode-aware Escape)', () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     expect(onExitMode).not.toHaveBeenCalled();
   });
+
+  // Refinement: tasks/refinements/moderator-ui/mod_interpretive_split_mode.md
+  //
+  // The mode-aware Escape early-return generalises to also route
+  // `onExitMode` when `mode === 'interpretive-split'`. Decision §8
+  // records the single-handler reuse rationale.
+  it('routes Escape to onExitMode when mode === interpretive-split', () => {
+    const onExitMode = vi.fn<() => void>();
+    useCaptureStore.getState().enterInterpretiveSplitMode('n1');
+    detach = attachCaptureKeymap({ onExitMode });
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(onExitMode).toHaveBeenCalledTimes(1);
+  });
+
+  it('interpretive-split exit takes priority over target-clear when both handlers are registered', () => {
+    const onExitMode = vi.fn<() => void>();
+    const onClearTarget = vi.fn<() => void>();
+    useCaptureStore.getState().enterInterpretiveSplitMode('n1');
+    detach = attachCaptureKeymap({ onExitMode, onClearTarget });
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(onExitMode).toHaveBeenCalledTimes(1);
+    expect(onClearTarget).not.toHaveBeenCalled();
+  });
 });

@@ -1000,11 +1000,12 @@ describe('GraphCanvasPane — selection visual layer (mod_selection)', () => {
 // downstream tasks that replace each stub with a real handler can swap
 // the `onSelect` body without changing this contract.
 describe('GraphCanvasPane — context-menu item factories (mod_context_menus)', () => {
-  it('buildNodeMenuItems returns the five node-scope actions in order', () => {
+  it('buildNodeMenuItems returns the six node-scope actions in order (propose-interpretive-split lands immediately after propose-decompose per mod_interpretive_split_mode Decision §3)', () => {
     const items = buildNodeMenuItems({ kind: 'node', id: NODE_A });
     expect(items.map((it) => it.id)).toEqual([
       'propose-vote',
       'propose-decompose',
+      'propose-interpretive-split',
       'propose-meta-disagreement',
       'annotate',
       'axiom-mark',
@@ -1012,6 +1013,7 @@ describe('GraphCanvasPane — context-menu item factories (mod_context_menus)', 
     expect(items.map((it) => it.labelKey)).toEqual([
       'moderator.contextMenu.node.proposeVote',
       'moderator.contextMenu.node.proposeDecompose',
+      'moderator.contextMenu.node.proposeInterpretiveSplit',
       'moderator.contextMenu.node.proposeMetaDisagreement',
       'moderator.contextMenu.node.annotate',
       'moderator.contextMenu.node.axiomMark',
@@ -1064,8 +1066,9 @@ describe('GraphCanvasPane — context-menu item factories (mod_context_menus)', 
       for (const item of buildPaneMenuItems({ kind: 'pane', id: null })) {
         expect(() => item.onSelect()).not.toThrow();
       }
-      // 5 + 3 + 1 = 9 stub fires.
-      expect(infoSpy).toHaveBeenCalledTimes(9);
+      // 6 + 3 + 1 = 10 stub fires (the node menu grew by the
+      // propose-interpretive-split item — mod_interpretive_split_mode).
+      expect(infoSpy).toHaveBeenCalledTimes(10);
     } finally {
       infoSpy.mockRestore();
     }
@@ -1099,6 +1102,36 @@ describe('GraphCanvasPane — context-menu item factories (mod_context_menus)', 
     const decompose = items.find((it) => it.id === 'propose-decompose');
     expect(decompose).toBeDefined();
     decompose?.onSelect();
+    expect(onEnter).toHaveBeenCalledTimes(1);
+    expect(onEnter).toHaveBeenCalledWith(NODE_A);
+  });
+
+  // Refinement: tasks/refinements/moderator-ui/mod_interpretive_split_mode.md
+  //
+  // The propose-interpretive-split item adds a fourth optional handler
+  // parameter to `buildNodeMenuItems` (peer to `onEnterDecomposeMode`).
+  // Same shape: when omitted, the legacy stub runs; when supplied, the
+  // handler is invoked with the target node id.
+  it('buildNodeMenuItems (no extra args) wires propose-interpretive-split to the legacy actionStub', () => {
+    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    try {
+      const items = buildNodeMenuItems({ kind: 'node', id: NODE_A });
+      const isplit = items.find((it) => it.id === 'propose-interpretive-split');
+      expect(isplit).toBeDefined();
+      isplit?.onSelect();
+      expect(infoSpy).toHaveBeenCalledTimes(1);
+      expect(infoSpy.mock.calls[0]?.[0]).toContain('propose-interpretive-split');
+    } finally {
+      infoSpy.mockRestore();
+    }
+  });
+
+  it('buildNodeMenuItems wires propose-interpretive-split to onEnterInterpretiveSplitMode when supplied', () => {
+    const onEnter = vi.fn<(nodeId: string) => void>();
+    const items = buildNodeMenuItems({ kind: 'node', id: NODE_A }, undefined, undefined, onEnter);
+    const isplit = items.find((it) => it.id === 'propose-interpretive-split');
+    expect(isplit).toBeDefined();
+    isplit?.onSelect();
     expect(onEnter).toHaveBeenCalledTimes(1);
     expect(onEnter).toHaveBeenCalledWith(NODE_A);
   });
@@ -1141,6 +1174,38 @@ describe('GraphCanvasPane — propose-decompose mode entry (mod_decompose_mode)'
     // (per the menu shell contract — covered separately).
     expect(useCaptureStore.getState().mode).toBe('decompose');
     expect(useCaptureStore.getState().decomposeTargetNodeId).toBe(NODE_A);
+  });
+});
+
+// Refinement: tasks/refinements/moderator-ui/mod_interpretive_split_mode.md
+//
+// Sibling end-to-end wire-up for the propose-interpretive-split item.
+describe('GraphCanvasPane — propose-interpretive-split mode entry (mod_interpretive_split_mode)', () => {
+  it('right-clicking a node and clicking "Propose interpretive split" enters interpretive-split mode for that node', () => {
+    useWsStore.getState().applyEvent(
+      makeNodeCreated({
+        sequence: 1,
+        nodeId: NODE_A,
+        wording: 'A statement to split.',
+      }),
+    );
+    render(<GraphCanvasPane sessionId={SESSION_ID} />);
+    expect(useCaptureStore.getState().mode).toBe('idle');
+    expect(useCaptureStore.getState().interpretiveSplitTargetNodeId).toBeNull();
+
+    const card = screen.getByTestId(`statement-node-${NODE_A}`);
+    act(() => {
+      fireEvent.contextMenu(card, { clientX: 10, clientY: 20 });
+    });
+    const item = screen.getByTestId('graph-context-menu-item-propose-interpretive-split');
+    expect(item).toBeTruthy();
+
+    act(() => {
+      fireEvent.click(item);
+    });
+
+    expect(useCaptureStore.getState().mode).toBe('interpretive-split');
+    expect(useCaptureStore.getState().interpretiveSplitTargetNodeId).toBe(NODE_A);
   });
 });
 
@@ -1189,6 +1254,7 @@ describe('GraphCanvasPane — context-menu wire-up (mod_context_menus)', () => {
     // Every node-scope action item is rendered.
     expect(screen.getByTestId('graph-context-menu-item-propose-vote')).toBeTruthy();
     expect(screen.getByTestId('graph-context-menu-item-propose-decompose')).toBeTruthy();
+    expect(screen.getByTestId('graph-context-menu-item-propose-interpretive-split')).toBeTruthy();
     expect(screen.getByTestId('graph-context-menu-item-propose-meta-disagreement')).toBeTruthy();
     expect(screen.getByTestId('graph-context-menu-item-annotate')).toBeTruthy();
     expect(screen.getByTestId('graph-context-menu-item-axiom-mark')).toBeTruthy();

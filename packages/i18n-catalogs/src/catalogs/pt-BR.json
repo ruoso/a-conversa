@@ -312,6 +312,36 @@
         }
       }
     },
+    "interpretiveSplit": {
+      "exit": {
+        "ariaLabel": "Sair do modo de divisão interpretativa",
+        "tooltip": "Cancelar divisão interpretativa (Esc)"
+      },
+      "banner": {
+        "targetWording": "Dividindo {nodeWording}"
+      },
+      "readings": {
+        "rowLabel": "Leitura {index}",
+        "textPlaceholder": "Texto da leitura…",
+        "classificationLegend": "Tipo da leitura",
+        "addRow": "Adicionar leitura",
+        "removeRowAria": "Remover leitura {index}"
+      },
+      "propose": {
+        "label": "Propor divisão interpretativa",
+        "inFlightLabel": "Propondo divisão interpretativa…",
+        "ariaLabel": "Propor a divisão interpretativa capturada como uma proposta no grafo",
+        "validationError": "Não foi possível propor a divisão interpretativa: {reason}",
+        "wireError": "Falha ao propor divisão interpretativa: {message} ({code})",
+        "timeoutError": "A solicitação de proposta de divisão interpretativa expirou. Verifique sua conexão e tente novamente.",
+        "reason": {
+          "sessionMissing": "nenhuma sessão carregada",
+          "notConnected": "a sessão não está conectada — reconectando…",
+          "targetMissing": "nenhum nó pai selecionado para divisão interpretativa",
+          "readingsInvalid": "cada leitura precisa de texto e classificação (2–10 linhas)"
+        }
+      }
+    },
     "proposalFilter": {
       "textPlaceholder": "Filtrar propostas…",
       "textAriaLabel": "Filtrar propostas pendentes por texto",
@@ -331,6 +361,10 @@
       "decompose": {
         "label": "Decompor",
         "description": "Quebre a afirmação selecionada em suas afirmações componentes."
+      },
+      "interpretive-split": {
+        "label": "Divisão interpretativa",
+        "description": "Surge múltiplas leituras da declaração selecionada quando o texto admite mais de uma."
       },
       "capture-defeater": {
         "label": "Capturar refutação",
@@ -357,6 +391,7 @@
       "node": {
         "proposeVote": "Propor votação",
         "proposeDecompose": "Propor decomposição",
+        "proposeInterpretiveSplit": "Propor divisão interpretativa",
         "proposeMetaDisagreement": "Propor meta-desacordo",
         "annotate": "Anotar",
         "axiomMark": "Marcar como axioma"

@@ -2,7 +2,8 @@
 //
 // Refinement: tasks/refinements/moderator-ui/mod_state_management.md
 // (also:      tasks/refinements/moderator-ui/mod_edge_role_selector.md,
-//             tasks/refinements/moderator-ui/mod_decompose_mode.md)
+//             tasks/refinements/moderator-ui/mod_decompose_mode.md,
+//             tasks/refinements/moderator-ui/mod_interpretive_split_mode.md)
 //
 // Holds the in-progress proposal the moderator is composing: the
 // statement text, its classification (StatementKind from
@@ -61,12 +62,17 @@ const MINIMUM_DECOMPOSE_COMPONENTS = 2;
 const MAXIMUM_DECOMPOSE_COMPONENTS = 10;
 
 /**
- * Build the two-empty-row seed shape `enterDecomposeMode` plants into
- * the slice on mode entry. Returns a fresh array each call so the
- * `set()` carries a new reference (Zustand triggers subscribers on
- * reference identity).
+ * Build the two-empty-row seed shape `enterDecomposeMode` /
+ * `enterInterpretiveSplitMode` plant into their slice on mode entry.
+ * Returns a fresh array each call so the `set()` carries a new
+ * reference (Zustand triggers subscribers on reference identity).
+ *
+ * Mode-neutral name introduced by
+ * `tasks/refinements/moderator-ui/mod_interpretive_split_mode.md`
+ * Decision §1 (extract-and-share with the decompose-side name as a
+ * thin wrapper for source stability).
  */
-function createEmptyDecomposeComponents(): DecomposeComponent[] {
+export function createEmptyProposalRows(): DecomposeComponent[] {
   return [
     { text: '', classification: null },
     { text: '', classification: null },
@@ -74,21 +80,44 @@ function createEmptyDecomposeComponents(): DecomposeComponent[] {
 }
 
 /**
- * Free-function validator the sibling `mod_propose_decomposition` will
- * import to gate the propose button. Returns `true` iff every row has
- * non-empty trimmed text AND a non-null classification AND the array
- * length is within `[MINIMUM_DECOMPOSE_COMPONENTS,
+ * Thin wrapper preserved for source-stable callers (the existing
+ * decompose-side mode helpers / tests). Identical to
+ * `createEmptyProposalRows`.
+ */
+export function createEmptyDecomposeComponents(): DecomposeComponent[] {
+  return createEmptyProposalRows();
+}
+
+/**
+ * Free-function validator both propose-{decomposition,interpretive-
+ * split} hooks import to gate the propose button. Returns `true` iff
+ * every row has non-empty trimmed text AND a non-null classification
+ * AND the array length is within `[MINIMUM_DECOMPOSE_COMPONENTS,
  * MAXIMUM_DECOMPOSE_COMPONENTS]`.
  *
- * Decision §8 of the refinement records why this lives in the store
- * module rather than a sibling validator file.
+ * Same Zod bounds apply to both `decomposeProposalSchema.components`
+ * and `interpretiveSplitProposalSchema.readings`
+ * (`packages/shared-types/src/events/proposals.ts:155-186`); the
+ * validator is mode-neutral.
+ *
+ * Mode-neutral name introduced by
+ * `tasks/refinements/moderator-ui/mod_interpretive_split_mode.md`
+ * Decision §1.
+ */
+export function validateProposalRows(rows: ReadonlyArray<DecomposeComponent>): boolean {
+  if (rows.length < MINIMUM_DECOMPOSE_COMPONENTS) return false;
+  if (rows.length > MAXIMUM_DECOMPOSE_COMPONENTS) return false;
+  return rows.every((row) => row.text.trim().length > 0 && row.classification !== null);
+}
+
+/**
+ * Thin wrapper preserved for source-stable callers. Identical to
+ * `validateProposalRows`.
  */
 export function validateDecomposeComponents(
   components: ReadonlyArray<DecomposeComponent>,
 ): boolean {
-  if (components.length < MINIMUM_DECOMPOSE_COMPONENTS) return false;
-  if (components.length > MAXIMUM_DECOMPOSE_COMPONENTS) return false;
-  return components.every((c) => c.text.trim().length > 0 && c.classification !== null);
+  return validateProposalRows(components);
 }
 
 export { MINIMUM_DECOMPOSE_COMPONENTS, MAXIMUM_DECOMPOSE_COMPONENTS };
@@ -104,6 +133,7 @@ export type CaptureMode =
   | 'idle'
   | 'capture-statement'
   | 'decompose'
+  | 'interpretive-split'
   | 'capture-defeater'
   | 'operationalization'
   | 'warrant-elicitation'
@@ -244,6 +274,67 @@ export interface CaptureState {
    * Refinement: `tasks/refinements/moderator-ui/mod_multi_component_capture.md`.
    */
   removeDecomposeComponent: (index: number) => void;
+
+  /**
+   * The id of the node currently being interpretively split when
+   * `mode === 'interpretive-split'`; `null` otherwise. Set atomically
+   * by `enterInterpretiveSplitMode(nodeId)` and cleared by
+   * `exitInterpretiveSplitMode()` / `reset()`. The propose-interpretive
+   * -split flow reads this when building the propose envelope's
+   * `parent_node_id`.
+   *
+   * Refinement: `tasks/refinements/moderator-ui/mod_interpretive_split_mode.md`.
+   */
+  interpretiveSplitTargetNodeId: string | null;
+  /**
+   * Per-row capture state for the interpretive-split flow's multi-
+   * reading grid. Empty array outside interpretive-split mode;
+   * initialized to two empty rows by `enterInterpretiveSplitMode`;
+   * cleared back to `[]` by `exitInterpretiveSplitMode` / `reset`. The
+   * row shape mirrors `DecomposeComponent` (the same `proposalComponentSchema`
+   * applies; the wire envelope's per-row array is `readings` rather
+   * than `components`).
+   *
+   * Refinement: `tasks/refinements/moderator-ui/mod_interpretive_split_mode.md`.
+   */
+  interpretiveSplitReadings: ReadonlyArray<DecomposeComponent>;
+
+  /**
+   * Set `interpretiveSplitTargetNodeId` directly. Direct callers
+   * should prefer the coupled helpers (`enterInterpretiveSplitMode` /
+   * `exitInterpretiveSplitMode`); this setter mirrors
+   * `setDecomposeTargetNodeId` for symmetry / test seams.
+   */
+  setInterpretiveSplitTargetNodeId: (id: string | null) => void;
+  /**
+   * Enter interpretive-split mode for `nodeId`. Atomic multi-field
+   * update mirroring `enterDecomposeMode`: sets
+   * `mode = 'interpretive-split'`, `interpretiveSplitTargetNodeId =
+   * nodeId`, clears the F1 capture-flow slices, and seeds two empty
+   * reading rows. Does NOT cross-clear the decompose slices
+   * (Decision §5 of the refinement — the two modes are mutually
+   * exclusive via `mode`).
+   *
+   * Refinement: `tasks/refinements/moderator-ui/mod_interpretive_split_mode.md`.
+   */
+  enterInterpretiveSplitMode: (nodeId: string) => void;
+  /**
+   * Exit interpretive-split mode. Atomic update mirroring
+   * `exitDecomposeMode`.
+   */
+  exitInterpretiveSplitMode: () => void;
+  /** Write the per-row text for `interpretiveSplitReadings[index]` (with the same defensive clamp as the decompose mutator). */
+  setInterpretiveSplitReadingText: (index: number, text: string) => void;
+  /** Write the per-row classification for `interpretiveSplitReadings[index]`. */
+  setInterpretiveSplitReadingClassification: (
+    index: number,
+    classification: StatementKind | null,
+  ) => void;
+  /** Append one empty row to `interpretiveSplitReadings` (no-op at the maximum). */
+  addInterpretiveSplitReading: () => void;
+  /** Remove the indexed row from `interpretiveSplitReadings` (no-op at the minimum). */
+  removeInterpretiveSplitReading: (index: number) => void;
+
   /** Reset the pane to a fresh idle state — called after a successful propose. */
   reset: () => void;
 }
@@ -258,6 +349,8 @@ const initialCaptureState: Pick<
   | 'proposing'
   | 'decomposeTargetNodeId'
   | 'decomposeComponents'
+  | 'interpretiveSplitTargetNodeId'
+  | 'interpretiveSplitReadings'
 > = {
   text: '',
   classification: null,
@@ -267,6 +360,8 @@ const initialCaptureState: Pick<
   proposing: false,
   decomposeTargetNodeId: null,
   decomposeComponents: [],
+  interpretiveSplitTargetNodeId: null,
+  interpretiveSplitReadings: [],
 };
 
 export const useCaptureStore = create<CaptureState>()(
@@ -342,6 +437,70 @@ export const useCaptureStore = create<CaptureState>()(
           ? state
           : {
               decomposeComponents: state.decomposeComponents.filter((_, i) => i !== index),
+            },
+      ),
+    setInterpretiveSplitTargetNodeId: (interpretiveSplitTargetNodeId) =>
+      set({ interpretiveSplitTargetNodeId }),
+    enterInterpretiveSplitMode: (nodeId) =>
+      set({
+        mode: 'interpretive-split',
+        interpretiveSplitTargetNodeId: nodeId,
+        // F1-coupling clear (mirrors enterDecomposeMode — Decision §6
+        // of mod_decompose_mode.md, applied symmetrically to the
+        // interpretive-split mode entry per mod_interpretive_split_mode
+        // Decision §5).
+        text: '',
+        classification: null,
+        targetEntityId: null,
+        edgeRole: null,
+        // Two-empty-row seed (mirrors enterDecomposeMode).
+        interpretiveSplitReadings: createEmptyProposalRows(),
+      }),
+    exitInterpretiveSplitMode: () =>
+      set({
+        mode: 'idle',
+        interpretiveSplitTargetNodeId: null,
+        interpretiveSplitReadings: [],
+      }),
+    setInterpretiveSplitReadingText: (index, text) =>
+      set((state) => ({
+        interpretiveSplitReadings: state.interpretiveSplitReadings.map((row, i) =>
+          i === index
+            ? {
+                ...row,
+                text:
+                  text.length > MAX_METHODOLOGY_TEXT_LENGTH
+                    ? text.slice(0, MAX_METHODOLOGY_TEXT_LENGTH)
+                    : text,
+              }
+            : row,
+        ),
+      })),
+    setInterpretiveSplitReadingClassification: (index, classification) =>
+      set((state) => ({
+        interpretiveSplitReadings: state.interpretiveSplitReadings.map((row, i) =>
+          i === index ? { ...row, classification } : row,
+        ),
+      })),
+    addInterpretiveSplitReading: () =>
+      set((state) =>
+        state.interpretiveSplitReadings.length >= MAXIMUM_DECOMPOSE_COMPONENTS
+          ? state
+          : {
+              interpretiveSplitReadings: [
+                ...state.interpretiveSplitReadings,
+                { text: '', classification: null },
+              ],
+            },
+      ),
+    removeInterpretiveSplitReading: (index) =>
+      set((state) =>
+        state.interpretiveSplitReadings.length <= MINIMUM_DECOMPOSE_COMPONENTS
+          ? state
+          : {
+              interpretiveSplitReadings: state.interpretiveSplitReadings.filter(
+                (_, i) => i !== index,
+              ),
             },
       ),
     reset: () => set({ ...initialCaptureState }),

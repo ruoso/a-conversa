@@ -312,6 +312,36 @@
         }
       }
     },
+    "interpretiveSplit": {
+      "exit": {
+        "ariaLabel": "Exit interpretive split mode",
+        "tooltip": "Cancel interpretive split (Esc)"
+      },
+      "banner": {
+        "targetWording": "Splitting {nodeWording}"
+      },
+      "readings": {
+        "rowLabel": "Reading {index}",
+        "textPlaceholder": "Reading wording…",
+        "classificationLegend": "Reading kind",
+        "addRow": "Add reading",
+        "removeRowAria": "Remove reading {index}"
+      },
+      "propose": {
+        "label": "Propose interpretive split",
+        "inFlightLabel": "Proposing interpretive split…",
+        "ariaLabel": "Propose the captured interpretive split as a proposal on the graph",
+        "validationError": "Cannot propose interpretive split: {reason}",
+        "wireError": "Propose interpretive split failed: {message} ({code})",
+        "timeoutError": "The propose interpretive split request timed out. Check your connection and try again.",
+        "reason": {
+          "sessionMissing": "no session is loaded",
+          "notConnected": "the session is not connected — reconnecting…",
+          "targetMissing": "no parent node selected for interpretive split",
+          "readingsInvalid": "every reading needs wording and a classification (2–10 rows)"
+        }
+      }
+    },
     "proposalFilter": {
       "textPlaceholder": "Filter proposals…",
       "textAriaLabel": "Filter pending proposals by text",
@@ -331,6 +361,10 @@
       "decompose": {
         "label": "Decompose",
         "description": "Break the selected statement into its component claims."
+      },
+      "interpretive-split": {
+        "label": "Interpretive split",
+        "description": "Surface multiple readings of the selected statement when the wording admits more than one."
       },
       "capture-defeater": {
         "label": "Capture defeater",
@@ -357,6 +391,7 @@
       "node": {
         "proposeVote": "Propose vote",
         "proposeDecompose": "Propose decompose",
+        "proposeInterpretiveSplit": "Propose interpretive split",
         "proposeMetaDisagreement": "Propose meta-disagreement",
         "annotate": "Annotate",
         "axiomMark": "Mark as axiom"

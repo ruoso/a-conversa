@@ -11,3 +11,5 @@ package-lock.json
 # convention preserved by .editorconfig (`[*.md] trim_trailing_whitespace = false`).
 # Prettier has no option to preserve trailing whitespace in markdown.
 *.md
+css/
+scripts/wz_tooltip.js

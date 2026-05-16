@@ -229,6 +229,7 @@ export function buildNodeMenuItems(
   target: ContextMenuState['target'],
   onOpenAxiomMarkSubmenu?: () => void,
   onEnterDecomposeMode?: (nodeId: string) => void,
+  onEnterInterpretiveSplitMode?: (nodeId: string) => void,
 ): readonly MenuItem[] {
   return [
     {
@@ -243,6 +244,14 @@ export function buildNodeMenuItems(
         target.kind === 'node' && target.id !== null && onEnterDecomposeMode
           ? () => onEnterDecomposeMode(target.id as string)
           : () => actionStub('propose-decompose', target),
+    },
+    {
+      id: 'propose-interpretive-split',
+      labelKey: 'moderator.contextMenu.node.proposeInterpretiveSplit',
+      onSelect:
+        target.kind === 'node' && target.id !== null && onEnterInterpretiveSplitMode
+          ? () => onEnterInterpretiveSplitMode(target.id as string)
+          : () => actionStub('propose-interpretive-split', target),
     },
     {
       id: 'propose-meta-disagreement',
@@ -653,6 +662,13 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
     (nodeId: string) => useCaptureStore.getState().enterDecomposeMode(nodeId),
     [],
   );
+  // Sibling stable mode-entry callback for the new
+  // `propose-interpretive-split` item. Refinement:
+  // `mod_interpretive_split_mode`.
+  const enterInterpretiveSplitMode = useCallback(
+    (nodeId: string) => useCaptureStore.getState().enterInterpretiveSplitMode(nodeId),
+    [],
+  );
   // **Important:** `closeContextMenu` does NOT cascade-close the
   // submenu. The `<GraphContextMenu>` shell calls `onClose` after a
   // menu item's `onSelect` runs (including the axiom-mark item that
@@ -959,6 +975,7 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
           });
         },
         enterDecomposeMode,
+        enterInterpretiveSplitMode,
       );
     } else if (contextMenu.target.kind === 'edge') {
       menuItems = buildEdgeMenuItems(contextMenu.target);

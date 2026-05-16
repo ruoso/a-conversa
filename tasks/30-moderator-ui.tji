@@ -349,6 +349,7 @@ task moderator_ui "Moderator UI" {
     task mod_interpretive_split_mode "Interpretive-split mode (analogous flow)" {
       effort 1d
       allocate team
+      complete 100
       depends !mod_decompose_mode
     }
   }

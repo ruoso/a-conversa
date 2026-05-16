@@ -89,18 +89,21 @@ export interface CaptureKeymapHandlers {
    */
   onPickEdgeRole?: (role: EdgeRole) => void;
   /**
-   * Exit the current capture-pane mode (decompose / future
-   * interpretive-split / other future modes that own their own Escape
-   * semantics). Triggered by `Escape` under the same modifier-bail /
-   * editable-target / repeat-skip guards as `onClearTarget`. When
-   * `useCaptureStore.getState().mode === 'decompose'` (and future
-   * modes), this handler takes priority over `onClearTarget` — the
-   * operator's mental model is "I'm in a mode; Escape leaves the
-   * mode," and the staged-target chip the F1 clearer surfaces is below
-   * the operator's current attention while in a sub-mode.
+   * Exit the current capture-pane mode (decompose / interpretive-split
+   * / other future modes that own their own Escape semantics).
+   * Triggered by `Escape` under the same modifier-bail / editable-
+   * target / repeat-skip guards as `onClearTarget`. When
+   * `useCaptureStore.getState().mode === 'decompose'` OR
+   * `=== 'interpretive-split'` (and future modes), this handler takes
+   * priority over `onClearTarget` — the operator's mental model is
+   * "I'm in a mode; Escape leaves the mode," and the staged-target
+   * chip the F1 clearer surfaces is below the operator's current
+   * attention while in a sub-mode.
    *
    * Refinement: tasks/refinements/moderator-ui/mod_decompose_mode.md
    * (Decision §5 records the priority order).
+   * Refinement: tasks/refinements/moderator-ui/mod_interpretive_split_mode.md
+   * (Decision §8 records the generalisation to interpretive-split).
    */
   onExitMode?: () => void;
   // future: onSubmit?: () => void;
@@ -225,7 +228,10 @@ export function attachCaptureKeymap(handlers: CaptureKeymapHandlers): () => void
     // only letter keys; `Escape` never collides.
     if (key === 'escape') {
       const mode = useCaptureStore.getState().mode;
-      if (mode === 'decompose' && handlers.onExitMode !== undefined) {
+      if (
+        (mode === 'decompose' || mode === 'interpretive-split') &&
+        handlers.onExitMode !== undefined
+      ) {
         // 6. Consume the keystroke.
         event.preventDefault();
         handlers.onExitMode();

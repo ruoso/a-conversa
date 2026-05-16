@@ -1,37 +1,19 @@
-// `<DecomposeComponentClassificationPicker>` — per-row classification
-// picker for the decompose-mode multi-component capture grid.
+// `<DecomposeComponentClassificationPicker mode>` — per-row
+// classification picker for the decompose- and interpretive-split-mode
+// multi-component capture grid.
 //
 // Refinement: tasks/refinements/moderator-ui/mod_multi_component_capture.md
+// Parameterised by:
+//             tasks/refinements/moderator-ui/mod_interpretive_split_mode.md
 // Sibling pattern: apps/moderator/src/layout/ClassificationPalette.tsx
 // Design doc: docs/moderator-ui.md (F2 decompose flow, step 3)
 //
-// Mounts inside `<DecomposeComponentRow>`; bound to the per-index
-// slice `useCaptureStore.decomposeComponents[index].classification`.
-// The variant mirrors `<ClassificationPalette>`'s visual vocabulary —
-// five buttons over `METHODOLOGY_KINDS` with localized
-// `methodology.kind.<kind>` labels + uppercase mnemonic chips, the
-// `aria-pressed` selection signaling, the Tailwind selected /
-// unselected variants — and differs along the binding axis (per-row
-// rather than the global F1 slice).
-//
-// Decision §4 of the refinement records why this is a sibling
-// component rather than a parameterized version of
-// `<ClassificationPalette>`: the binding to the store seam (one slice
-// vs. per-row index) is the load-bearing axis; parameterizing the F1
-// palette to serve both would push complexity into the F1 component
-// for a sibling use-case.
-//
-// Per Decision §6, the per-row picker installs NO document-level
-// keyboard listener (no `attachCaptureKeymap`). The F1 palette's
-// listener is unmounted when the route swaps the slot's content for
-// the decompose grid; the per-row pickers are click-only / tab-only
-// in v1.
-//
-// The Tailwind class constants are duplicated module-locally from
-// `ClassificationPalette.tsx` per Decision §4 — the strings are
-// tightly coupled to each component's layout; extracting them into a
-// shared module is a YAGNI extraction until a third caller appears
-// (likely the interpretive-split picker).
+// Bound to the per-index slice
+// `useCaptureStore.decomposeComponents[index].classification` or
+// `useCaptureStore.interpretiveSplitReadings[index].classification`
+// per the `mode` prop. The five-button visual vocabulary is shared
+// with `<ClassificationPalette>`; the binding axis (per-index +
+// per-mode) is the load-bearing differentiator.
 
 import { type ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -42,6 +24,7 @@ import {
 } from '@a-conversa/i18n-catalogs';
 
 import { useCaptureStore } from '../stores/captureStore';
+import type { ProposalMode } from './ProposalModeExitAffordance';
 
 const SELECTED_CLASSES =
   'inline-flex items-center gap-1 rounded border border-blue-600 bg-blue-600 px-2 py-1 text-xs font-medium text-white shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700';
@@ -52,39 +35,56 @@ const UNSELECTED_CLASSES =
 const KEY_CHIP_CLASSES =
   'ml-0.5 rounded border border-current bg-transparent px-1 text-[0.65rem] font-semibold leading-none opacity-80';
 
+const MODE_CONFIG = {
+  decompose: {
+    testidPrefix: 'decompose-component-classification',
+    classificationLegendKey: 'moderator.decompose.components.classificationLegend',
+  },
+  'interpretive-split': {
+    testidPrefix: 'interpretive-split-reading-classification',
+    classificationLegendKey: 'moderator.interpretiveSplit.readings.classificationLegend',
+  },
+} as const;
+
 export interface DecomposeComponentClassificationPickerProps {
-  /** Zero-indexed row position in `useCaptureStore.decomposeComponents`. */
+  /** Which proposal mode this picker serves. */
+  mode: ProposalMode;
+  /** Zero-indexed row position in the active mode's slice. */
   index: number;
 }
 
 export function DecomposeComponentClassificationPicker(
   props: DecomposeComponentClassificationPickerProps,
 ): ReactElement {
-  const { index } = props;
+  const { mode, index } = props;
   const { t } = useTranslation();
 
-  const classification = useCaptureStore(
-    (s) => s.decomposeComponents[index]?.classification ?? null,
+  const classification = useCaptureStore((s) =>
+    mode === 'decompose'
+      ? (s.decomposeComponents[index]?.classification ?? null)
+      : (s.interpretiveSplitReadings[index]?.classification ?? null),
   );
-  const setDecomposeComponentClassification = useCaptureStore(
-    (s) => s.setDecomposeComponentClassification,
+  const setClassification = useCaptureStore((s) =>
+    mode === 'decompose'
+      ? s.setDecomposeComponentClassification
+      : s.setInterpretiveSplitReadingClassification,
   );
+
+  const config = MODE_CONFIG[mode];
 
   function handleClick(kind: MethodologyKind): void {
     if (classification === kind) {
-      // Re-click toggles off — same idiom as `<ClassificationPalette>`
-      // Decision §4 (mod_classification_palette).
-      setDecomposeComponentClassification(index, null);
+      setClassification(index, null);
       return;
     }
-    setDecomposeComponentClassification(index, kind);
+    setClassification(index, kind);
   }
 
   return (
     <div
       role="group"
-      aria-label={t('moderator.decompose.components.classificationLegend')}
-      data-testid={`decompose-component-classification-${String(index)}`}
+      aria-label={t(config.classificationLegendKey)}
+      data-testid={`${config.testidPrefix}-${String(index)}`}
       className="flex flex-wrap items-center gap-1"
     >
       {METHODOLOGY_KINDS.map((kind) => {
@@ -95,7 +95,7 @@ export function DecomposeComponentClassificationPicker(
           <button
             key={kind}
             type="button"
-            data-testid={`decompose-component-classification-${String(index)}-button-${kind}`}
+            data-testid={`${config.testidPrefix}-${String(index)}-button-${kind}`}
             data-kind={kind}
             aria-pressed={isSelected}
             onClick={() => {

@@ -33,7 +33,7 @@ afterEach(() => {
 
 describe('DecomposeComponentClassificationPicker — per-row binding', () => {
   it('renders five buttons over METHODOLOGY_KINDS for the bound index', () => {
-    render(<DecomposeComponentClassificationPicker index={0} />);
+    render(<DecomposeComponentClassificationPicker mode="decompose" index={0} />);
     for (const kind of ['fact', 'predictive', 'value', 'normative', 'definitional']) {
       expect(
         screen.getByTestId(`decompose-component-classification-0-button-${kind}`),
@@ -42,7 +42,7 @@ describe('DecomposeComponentClassificationPicker — per-row binding', () => {
   });
 
   it('initial aria-pressed is "false" on every button (slice classification === null)', () => {
-    render(<DecomposeComponentClassificationPicker index={0} />);
+    render(<DecomposeComponentClassificationPicker mode="decompose" index={0} />);
     for (const kind of ['fact', 'predictive', 'value', 'normative', 'definitional']) {
       const button = screen.getByTestId(`decompose-component-classification-0-button-${kind}`);
       expect(button.getAttribute('aria-pressed')).toBe('false');
@@ -50,13 +50,13 @@ describe('DecomposeComponentClassificationPicker — per-row binding', () => {
   });
 
   it('clicking the "fact" button calls setDecomposeComponentClassification(index, "fact")', () => {
-    render(<DecomposeComponentClassificationPicker index={0} />);
+    render(<DecomposeComponentClassificationPicker mode="decompose" index={0} />);
     fireEvent.click(screen.getByTestId('decompose-component-classification-0-button-fact'));
     expect(useCaptureStore.getState().decomposeComponents[0]?.classification).toBe('fact');
   });
 
   it('re-clicking the currently selected kind toggles it off (null)', () => {
-    render(<DecomposeComponentClassificationPicker index={0} />);
+    render(<DecomposeComponentClassificationPicker mode="decompose" index={0} />);
     const factButton = screen.getByTestId('decompose-component-classification-0-button-fact');
     fireEvent.click(factButton);
     expect(useCaptureStore.getState().decomposeComponents[0]?.classification).toBe('fact');
@@ -65,7 +65,7 @@ describe('DecomposeComponentClassificationPicker — per-row binding', () => {
   });
 
   it('clicking a different kind after one is selected switches the selection (single-select)', () => {
-    render(<DecomposeComponentClassificationPicker index={0} />);
+    render(<DecomposeComponentClassificationPicker mode="decompose" index={0} />);
     fireEvent.click(screen.getByTestId('decompose-component-classification-0-button-fact'));
     fireEvent.click(screen.getByTestId('decompose-component-classification-0-button-value'));
     expect(useCaptureStore.getState().decomposeComponents[0]?.classification).toBe('value');
@@ -74,13 +74,34 @@ describe('DecomposeComponentClassificationPicker — per-row binding', () => {
   it('per-row isolation — clicking row 0\'s "fact" does NOT change row 1\'s classification', () => {
     render(
       <>
-        <DecomposeComponentClassificationPicker index={0} />
-        <DecomposeComponentClassificationPicker index={1} />
+        <DecomposeComponentClassificationPicker mode="decompose" index={0} />
+        <DecomposeComponentClassificationPicker mode="decompose" index={1} />
       </>,
     );
     fireEvent.click(screen.getByTestId('decompose-component-classification-0-button-fact'));
     const state = useCaptureStore.getState();
     expect(state.decomposeComponents[0]?.classification).toBe('fact');
     expect(state.decomposeComponents[1]?.classification).toBeNull();
+  });
+});
+
+// Refinement: tasks/refinements/moderator-ui/mod_interpretive_split_mode.md
+describe('DecomposeComponentClassificationPicker — mode="interpretive-split"', () => {
+  beforeEach(() => {
+    act(() => {
+      useCaptureStore.getState().reset();
+      useCaptureStore.getState().enterInterpretiveSplitMode('n1');
+    });
+  });
+
+  it('writes via setInterpretiveSplitReadingClassification; per-button testids carry the per-mode prefix', () => {
+    render(<DecomposeComponentClassificationPicker mode="interpretive-split" index={0} />);
+    for (const kind of ['fact', 'predictive', 'value', 'normative', 'definitional']) {
+      expect(
+        screen.getByTestId(`interpretive-split-reading-classification-0-button-${kind}`),
+      ).toBeTruthy();
+    }
+    fireEvent.click(screen.getByTestId('interpretive-split-reading-classification-0-button-fact'));
+    expect(useCaptureStore.getState().interpretiveSplitReadings[0]?.classification).toBe('fact');
   });
 });

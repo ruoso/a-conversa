@@ -33,20 +33,20 @@ afterEach(() => {
 
 describe('DecomposeComponentTextInput — per-row textarea binding', () => {
   it('typing into the textarea calls setDecomposeComponentText for the bound index', () => {
-    render(<DecomposeComponentTextInput index={0} />);
+    render(<DecomposeComponentTextInput mode="decompose" index={0} />);
     const textarea = screen.getByTestId<HTMLTextAreaElement>('decompose-component-text-0');
     fireEvent.change(textarea, { target: { value: 'hello' } });
     expect(useCaptureStore.getState().decomposeComponents[0]?.text).toBe('hello');
   });
 
   it('the textarea maxLength equals MAX_METHODOLOGY_TEXT_LENGTH', () => {
-    render(<DecomposeComponentTextInput index={0} />);
+    render(<DecomposeComponentTextInput mode="decompose" index={0} />);
     const textarea = screen.getByTestId<HTMLTextAreaElement>('decompose-component-text-0');
     expect(textarea.maxLength).toBe(MAX_METHODOLOGY_TEXT_LENGTH);
   });
 
   it('the textarea aria-label resolves to "Component <index+1>" (en-US)', () => {
-    render(<DecomposeComponentTextInput index={0} />);
+    render(<DecomposeComponentTextInput mode="decompose" index={0} />);
     const textarea = screen.getByTestId<HTMLTextAreaElement>('decompose-component-text-0');
     expect(textarea.getAttribute('aria-label')).toBe('Component 1');
   });
@@ -54,8 +54,8 @@ describe('DecomposeComponentTextInput — per-row textarea binding', () => {
   it('per-row isolation — writing to row 0 does not change row 1', () => {
     render(
       <>
-        <DecomposeComponentTextInput index={0} />
-        <DecomposeComponentTextInput index={1} />
+        <DecomposeComponentTextInput mode="decompose" index={0} />
+        <DecomposeComponentTextInput mode="decompose" index={1} />
       </>,
     );
     const row0 = screen.getByTestId<HTMLTextAreaElement>('decompose-component-text-0');
@@ -66,5 +66,28 @@ describe('DecomposeComponentTextInput — per-row textarea binding', () => {
     expect(useCaptureStore.getState().decomposeComponents[1]?.text).toBe('second');
     expect(row0.value).toBe('first');
     expect(row1.value).toBe('second');
+  });
+});
+
+// Refinement: tasks/refinements/moderator-ui/mod_interpretive_split_mode.md
+describe('DecomposeComponentTextInput — mode="interpretive-split"', () => {
+  beforeEach(() => {
+    act(() => {
+      useCaptureStore.getState().reset();
+      useCaptureStore.getState().enterInterpretiveSplitMode('n1');
+    });
+  });
+
+  it('reads from / writes to the interpretiveSplitReadings slice via the per-mode setter', () => {
+    render(<DecomposeComponentTextInput mode="interpretive-split" index={0} />);
+    const textarea = screen.getByTestId<HTMLTextAreaElement>('interpretive-split-reading-text-0');
+    fireEvent.change(textarea, { target: { value: 'hello reading' } });
+    expect(useCaptureStore.getState().interpretiveSplitReadings[0]?.text).toBe('hello reading');
+  });
+
+  it('aria-label resolves to "Reading <index+1>" (en-US)', () => {
+    render(<DecomposeComponentTextInput mode="interpretive-split" index={0} />);
+    const textarea = screen.getByTestId<HTMLTextAreaElement>('interpretive-split-reading-text-0');
+    expect(textarea.getAttribute('aria-label')).toBe('Reading 1');
   });
 });

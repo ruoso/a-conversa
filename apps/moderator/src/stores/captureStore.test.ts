@@ -24,7 +24,13 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { MAX_METHODOLOGY_TEXT_LENGTH } from '@a-conversa/shared-types';
 
-import { useCaptureStore, validateDecomposeComponents } from './captureStore.js';
+import {
+  createEmptyDecomposeComponents,
+  createEmptyProposalRows,
+  useCaptureStore,
+  validateDecomposeComponents,
+  validateProposalRows,
+} from './captureStore.js';
 
 const captureInitial = useCaptureStore.getState();
 
@@ -276,5 +282,194 @@ describe('validateDecomposeComponents — truth table (mod_multi_component_captu
         { text: 'b', classification: null },
       ]),
     ).toBe(false);
+  });
+});
+
+// Refinement: tasks/refinements/moderator-ui/mod_interpretive_split_mode.md
+//
+// `validateProposalRows` is the mode-neutral name introduced by this
+// refinement (Decision §1); `validateDecomposeComponents` stays as a
+// thin wrapper for source-stable consumers. Body identity is the
+// load-bearing pin — the wrapper must continue resolving via the
+// existing export name.
+describe('validateProposalRows / wrapper preservation (mod_interpretive_split_mode)', () => {
+  it('validateProposalRows returns the same truth as validateDecomposeComponents on identical input', () => {
+    const passing = [
+      { text: 'a', classification: 'fact' as const },
+      { text: 'b', classification: 'value' as const },
+    ];
+    expect(validateProposalRows(passing)).toBe(true);
+    expect(validateDecomposeComponents(passing)).toBe(true);
+
+    const failing = [{ text: '', classification: null }];
+    expect(validateProposalRows(failing)).toBe(false);
+    expect(validateDecomposeComponents(failing)).toBe(false);
+  });
+
+  it('createEmptyProposalRows returns two empty rows; createEmptyDecomposeComponents stays as a wrapper with the same shape', () => {
+    const rows = createEmptyProposalRows();
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toEqual({ text: '', classification: null });
+    expect(rows[1]).toEqual({ text: '', classification: null });
+    const wrapperRows = createEmptyDecomposeComponents();
+    expect(wrapperRows).toEqual(rows);
+    // Fresh array identity each call (Zustand subscribers fire on
+    // reference change — same invariant the helper has always carried).
+    expect(createEmptyProposalRows()).not.toBe(rows);
+  });
+});
+
+// Refinement: tasks/refinements/moderator-ui/mod_interpretive_split_mode.md
+//
+// New `'interpretive-split'` CaptureMode value + the parallel slices
+// + the seven mode-flip / per-row helpers. The cases mirror the
+// existing `decompose` set so the per-mode invariants are pinned
+// symmetrically.
+describe('useCaptureStore — interpretive-split slice (mod_interpretive_split_mode)', () => {
+  it('interpretiveSplitTargetNodeId is null in the initial state', () => {
+    expect(useCaptureStore.getState().interpretiveSplitTargetNodeId).toBeNull();
+  });
+
+  it('interpretiveSplitReadings is [] in the initial state', () => {
+    expect(useCaptureStore.getState().interpretiveSplitReadings).toEqual([]);
+  });
+
+  it("'interpretive-split' is a valid CaptureMode value (setMode + slice read)", () => {
+    useCaptureStore.getState().setMode('interpretive-split');
+    expect(useCaptureStore.getState().mode).toBe('interpretive-split');
+  });
+
+  it('setInterpretiveSplitTargetNodeId mutates the slice directly (test seam)', () => {
+    useCaptureStore.getState().setInterpretiveSplitTargetNodeId('n-direct');
+    expect(useCaptureStore.getState().interpretiveSplitTargetNodeId).toBe('n-direct');
+    useCaptureStore.getState().setInterpretiveSplitTargetNodeId(null);
+    expect(useCaptureStore.getState().interpretiveSplitTargetNodeId).toBeNull();
+  });
+
+  it('enterInterpretiveSplitMode sets mode, the target id, seeds two empty rows, clears F1 slices', () => {
+    useCaptureStore.getState().setText('a stale draft wording');
+    useCaptureStore.getState().setClassification('fact');
+    useCaptureStore.getState().setTargetEntityId('node-stale');
+    useCaptureStore.getState().setEdgeRole('supports');
+
+    useCaptureStore.getState().enterInterpretiveSplitMode('n1');
+
+    const state = useCaptureStore.getState();
+    expect(state.mode).toBe('interpretive-split');
+    expect(state.interpretiveSplitTargetNodeId).toBe('n1');
+    expect(state.interpretiveSplitReadings).toHaveLength(2);
+    expect(state.interpretiveSplitReadings[0]).toEqual({ text: '', classification: null });
+    expect(state.interpretiveSplitReadings[1]).toEqual({ text: '', classification: null });
+    // F1 slices cleared.
+    expect(state.text).toBe('');
+    expect(state.classification).toBeNull();
+    expect(state.targetEntityId).toBeNull();
+    expect(state.edgeRole).toBeNull();
+  });
+
+  it('enterInterpretiveSplitMode uses a single set() — subscribers observe exactly one transition per call', () => {
+    let notifications = 0;
+    const unsubscribe = useCaptureStore.subscribe(() => {
+      notifications += 1;
+    });
+    try {
+      useCaptureStore.getState().enterInterpretiveSplitMode('n1');
+      expect(notifications).toBe(1);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('enterInterpretiveSplitMode does NOT clear the decompose slices (Decision §5 — no cross-clearing)', () => {
+    // First populate decompose slices.
+    useCaptureStore.getState().enterDecomposeMode('decompose-target');
+    useCaptureStore.getState().setDecomposeComponentText(0, 'decompose row 0');
+    const beforeDecomposeRows = useCaptureStore.getState().decomposeComponents;
+
+    // Now switch to interpretive-split. The decompose slices remain
+    // populated — the mode field is the exclusion mechanism.
+    useCaptureStore.getState().enterInterpretiveSplitMode('split-target');
+    const state = useCaptureStore.getState();
+    expect(state.mode).toBe('interpretive-split');
+    expect(state.decomposeTargetNodeId).toBe('decompose-target');
+    expect(state.decomposeComponents).toBe(beforeDecomposeRows);
+  });
+
+  it('exitInterpretiveSplitMode reverts mode to idle and clears both interpretive-split slices', () => {
+    useCaptureStore.getState().enterInterpretiveSplitMode('n1');
+    expect(useCaptureStore.getState().mode).toBe('interpretive-split');
+    useCaptureStore.getState().exitInterpretiveSplitMode();
+    const state = useCaptureStore.getState();
+    expect(state.mode).toBe('idle');
+    expect(state.interpretiveSplitTargetNodeId).toBeNull();
+    expect(state.interpretiveSplitReadings).toEqual([]);
+  });
+
+  it('reset() clears both interpretive-split slices', () => {
+    useCaptureStore.getState().enterInterpretiveSplitMode('n1');
+    expect(useCaptureStore.getState().interpretiveSplitTargetNodeId).toBe('n1');
+    useCaptureStore.getState().reset();
+    const state = useCaptureStore.getState();
+    expect(state.mode).toBe('idle');
+    expect(state.interpretiveSplitTargetNodeId).toBeNull();
+    expect(state.interpretiveSplitReadings).toEqual([]);
+  });
+
+  it('setInterpretiveSplitReadingText(0, "hello") writes only to row 0; row 1 unchanged', () => {
+    useCaptureStore.getState().enterInterpretiveSplitMode('n1');
+    useCaptureStore.getState().setInterpretiveSplitReadingText(0, 'hello');
+    const state = useCaptureStore.getState();
+    expect(state.interpretiveSplitReadings[0]).toEqual({ text: 'hello', classification: null });
+    expect(state.interpretiveSplitReadings[1]).toEqual({ text: '', classification: null });
+  });
+
+  it('setInterpretiveSplitReadingText clamps over-long input to MAX_METHODOLOGY_TEXT_LENGTH', () => {
+    useCaptureStore.getState().enterInterpretiveSplitMode('n1');
+    useCaptureStore
+      .getState()
+      .setInterpretiveSplitReadingText(0, 'x'.repeat(MAX_METHODOLOGY_TEXT_LENGTH + 1));
+    expect(useCaptureStore.getState().interpretiveSplitReadings[0]?.text.length).toBe(
+      MAX_METHODOLOGY_TEXT_LENGTH,
+    );
+  });
+
+  it('setInterpretiveSplitReadingClassification(1, "fact") writes to row 1', () => {
+    useCaptureStore.getState().enterInterpretiveSplitMode('n1');
+    useCaptureStore.getState().setInterpretiveSplitReadingClassification(1, 'fact');
+    const state = useCaptureStore.getState();
+    expect(state.interpretiveSplitReadings[1]?.classification).toBe('fact');
+    expect(state.interpretiveSplitReadings[0]?.classification).toBeNull();
+  });
+
+  it('addInterpretiveSplitReading appends one empty row; at length 10 it is a no-op', () => {
+    useCaptureStore.getState().enterInterpretiveSplitMode('n1');
+    useCaptureStore.getState().addInterpretiveSplitReading();
+    expect(useCaptureStore.getState().interpretiveSplitReadings).toHaveLength(3);
+    // Pad to 10.
+    for (let i = 0; i < 7; i += 1) {
+      useCaptureStore.getState().addInterpretiveSplitReading();
+    }
+    expect(useCaptureStore.getState().interpretiveSplitReadings).toHaveLength(10);
+    // One more — no-op.
+    useCaptureStore.getState().addInterpretiveSplitReading();
+    expect(useCaptureStore.getState().interpretiveSplitReadings).toHaveLength(10);
+  });
+
+  it('removeInterpretiveSplitReading on a 3-row grid removes the indexed row; at the minimum 2 rows is a no-op', () => {
+    useCaptureStore.getState().enterInterpretiveSplitMode('n1');
+    useCaptureStore.getState().addInterpretiveSplitReading(); // length === 3
+    useCaptureStore.getState().setInterpretiveSplitReadingText(0, 'row-0');
+    useCaptureStore.getState().setInterpretiveSplitReadingText(1, 'row-1');
+    useCaptureStore.getState().setInterpretiveSplitReadingText(2, 'row-2');
+    useCaptureStore.getState().removeInterpretiveSplitReading(1);
+    let state = useCaptureStore.getState();
+    expect(state.interpretiveSplitReadings).toHaveLength(2);
+    expect(state.interpretiveSplitReadings[0]?.text).toBe('row-0');
+    expect(state.interpretiveSplitReadings[1]?.text).toBe('row-2');
+    // Now at the minimum — no-op.
+    useCaptureStore.getState().removeInterpretiveSplitReading(0);
+    state = useCaptureStore.getState();
+    expect(state.interpretiveSplitReadings).toHaveLength(2);
+    expect(state.interpretiveSplitReadings[0]?.text).toBe('row-0');
   });
 });

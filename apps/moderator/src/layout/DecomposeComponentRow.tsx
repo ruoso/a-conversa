@@ -1,35 +1,53 @@
-// `<DecomposeComponentRow>` — one row of the decompose-mode
-// multi-component capture grid.
+// `<DecomposeComponentRow mode>` — one row of the decompose- or
+// interpretive-split-mode multi-component capture grid.
 //
 // Refinement: tasks/refinements/moderator-ui/mod_multi_component_capture.md
+// Parameterised by:
+//             tasks/refinements/moderator-ui/mod_interpretive_split_mode.md
 // Design doc: docs/moderator-ui.md (F2 decompose flow, step 3)
 //
 // Composes the per-row label + the per-row text input + the per-row
 // classification picker + the per-row remove button as a single row.
-// The text input and the picker each read / write their slice through
-// per-index store selectors; the remove button calls the supplied
-// `onRemove` callback. This component is presentation-only: no store
-// reads beyond what its children make on their own.
-//
-// The row is keyed by index in the parent grid; the per-index store
-// selectors carry the load-bearing state binding (one slice index per
-// child component).
+// All four threads receive the same `mode` prop; the per-row label key
+// and the remove-row aria key are resolved per-mode here (the row
+// owns the visible label / aria text). Per-mode `data-testid`s on the
+// row + label switch on `props.mode`.
 
 import { type ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { DecomposeComponentClassificationPicker } from './DecomposeComponentClassificationPicker';
 import { DecomposeComponentTextInput } from './DecomposeComponentTextInput';
+import type { ProposalMode } from './ProposalModeExitAffordance';
+
+const MODE_KEYS = {
+  decompose: {
+    rowLabel: 'moderator.decompose.components.rowLabel',
+    removeRowAria: 'moderator.decompose.components.removeRowAria',
+    rowTestidPrefix: 'decompose-component-row',
+    rowLabelTestidPrefix: 'decompose-component-row-label',
+    rowRemoveTestidPrefix: 'decompose-component-row-remove',
+  },
+  'interpretive-split': {
+    rowLabel: 'moderator.interpretiveSplit.readings.rowLabel',
+    removeRowAria: 'moderator.interpretiveSplit.readings.removeRowAria',
+    rowTestidPrefix: 'interpretive-split-reading-row',
+    rowLabelTestidPrefix: 'interpretive-split-reading-row-label',
+    rowRemoveTestidPrefix: 'interpretive-split-reading-row-remove',
+  },
+} as const;
 
 export interface DecomposeComponentRowProps {
-  /** Zero-indexed row position in `useCaptureStore.decomposeComponents`. */
+  /** Which proposal mode this row serves. */
+  mode: ProposalMode;
+  /** Zero-indexed row position in the active mode's slice. */
   index: number;
   /**
    * Whether this row's remove button is enabled. The grid passes
    * `componentsLength > MINIMUM_DECOMPOSE_COMPONENTS`; rows in a
-   * 2-row grid have disabled remove buttons (the store's
-   * `removeDecomposeComponent` no-ops at the minimum, but the UI
-   * disables the button proactively for early feedback).
+   * 2-row grid have disabled remove buttons (the store's per-mode
+   * remove helper no-ops at the minimum, but the UI disables the
+   * button proactively for early feedback).
    */
   canRemove: boolean;
   /** Fired when the moderator clicks the per-row remove button. */
@@ -37,34 +55,31 @@ export interface DecomposeComponentRowProps {
 }
 
 export function DecomposeComponentRow(props: DecomposeComponentRowProps): ReactElement {
-  const { index, canRemove, onRemove } = props;
+  const { mode, index, canRemove, onRemove } = props;
   const { t } = useTranslation();
 
-  const indexLabel = t('moderator.decompose.components.rowLabel', {
-    index: index + 1,
-  });
-  const removeAria = t('moderator.decompose.components.removeRowAria', {
-    index: index + 1,
-  });
+  const keys = MODE_KEYS[mode];
+  const indexLabel = t(keys.rowLabel, { index: index + 1 });
+  const removeAria = t(keys.removeRowAria, { index: index + 1 });
 
   return (
     <div
-      data-testid={`decompose-component-row-${String(index)}`}
+      data-testid={`${keys.rowTestidPrefix}-${String(index)}`}
       className="flex w-full items-start gap-2 rounded border border-slate-200 bg-white px-2 py-1"
     >
       <span
-        data-testid={`decompose-component-row-label-${String(index)}`}
+        data-testid={`${keys.rowLabelTestidPrefix}-${String(index)}`}
         className="mt-1 inline-flex h-5 min-w-[5rem] items-center text-xs font-medium text-slate-700"
       >
         {indexLabel}
       </span>
       <div className="flex flex-1 flex-col gap-1">
-        <DecomposeComponentTextInput index={index} />
-        <DecomposeComponentClassificationPicker index={index} />
+        <DecomposeComponentTextInput mode={mode} index={index} />
+        <DecomposeComponentClassificationPicker mode={mode} index={index} />
       </div>
       <button
         type="button"
-        data-testid={`decompose-component-row-remove-${String(index)}`}
+        data-testid={`${keys.rowRemoveTestidPrefix}-${String(index)}`}
         onClick={onRemove}
         disabled={!canRemove}
         aria-label={removeAria}

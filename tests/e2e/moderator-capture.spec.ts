@@ -1986,4 +1986,99 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
       'Workers should receive fair benefits.',
     );
   });
+
+  // Refinement: tasks/refinements/moderator-ui/mod_interpretive_split_mode.md
+  //
+  // Analogous full-chain regression for the interpretive-split flow.
+  // Enter interpretive-split mode via the new context-menu peer item,
+  // fill two reading rows, propose, and assert the envelope reaches
+  // the server. Mirrors the predecessor decompose-side block (Decision
+  // §7 of the refinement records the full-chain e2e scope choice).
+  //
+  // The seeded parent node (via `seedWsStore`) does NOT exist in the
+  // server's Postgres event log, so `validateInterpretiveSplitProposal`
+  // rule 1 (parent-node-exists) rejects with
+  // `target-entity-not-found` — the wire-error region surfaces the
+  // typed code which proves the round-trip completed. Snapshot
+  // restore re-mounts the readings grid with the moderator's typed
+  // rows; both assertions cover the full propose-side surface.
+  test('alice: enter interpretive-split mode → fill 2 reading rows → propose interpretive split → envelope reaches the server (wire-error region surfaces the typed rejection)', async ({
+    page,
+  }) => {
+    await loginAs(page, { username: TEST_USERNAME });
+    await page.goto('/sessions/new');
+    await expect(page.getByTestId('route-create-session')).toBeVisible();
+
+    await page
+      .getByTestId('create-session-topic-input')
+      .fill('Propose-interpretive-split e2e regression check.');
+    await page.getByTestId('create-session-submit').click();
+    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    await seedInviteParticipantsForGate(page);
+    await page.getByTestId('invite-enter-session').click();
+    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
+    await expect(page.getByTestId('route-operate')).toBeVisible();
+
+    if (!(await isWsStoreReachable(page))) {
+      test.skip(
+        true,
+        'window.__aConversaWsStore is not reachable — the dev-only attachment did not fire.',
+      );
+      return;
+    }
+
+    const url = new URL(page.url());
+    const sessionId = url.pathname.split('/')[2] ?? '';
+
+    // Seed a parent node so the right-click + propose-interpretive-split
+    // menu item has a target to fire against.
+    const SEED_NODE_ID = 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaa11';
+    const SEED_WORDING = 'Welfare deficits explain capability-frustration.';
+    await seedWsStore(page, {
+      sessionId,
+      nodes: [{ nodeId: SEED_NODE_ID, wording: SEED_WORDING }],
+    });
+
+    const nodeCard = page.getByTestId(`statement-node-${SEED_NODE_ID}`);
+    await expect(nodeCard).toBeVisible({ timeout: 10_000 });
+
+    // Enter interpretive-split mode via the context menu.
+    await nodeCard.click({ button: 'right' });
+    await page.getByTestId('graph-context-menu-item-propose-interpretive-split').click();
+    await expect(page.getByTestId('interpretive-split-readings-grid')).toBeVisible();
+
+    // The propose-interpretive-split button is mounted (slot swap on
+    // `mode === 'interpretive-split'`) and disabled at empty rows.
+    await expect(page.getByTestId('propose-interpretive-split-action-button')).toBeDisabled();
+
+    // Fill the two reading rows.
+    await page
+      .getByTestId('interpretive-split-reading-text-0')
+      .fill('Welfare deficits are our evidence for constitutive capacities.');
+    await page.getByTestId('interpretive-split-reading-classification-0-button-fact').click();
+    await page
+      .getByTestId('interpretive-split-reading-text-1')
+      .fill('Capability-frustration just is welfare loss, ontologically.');
+    await page.getByTestId('interpretive-split-reading-classification-1-button-value').click();
+
+    // Both rows filled — the button enables.
+    await expect(page.getByTestId('propose-interpretive-split-action-button')).toBeEnabled();
+    await page.getByTestId('propose-interpretive-split-action-button').click();
+
+    // The propose envelope reached the server: rule 1 (parent-exists)
+    // rejects because the seeded node only lives in the client-side
+    // WS store. The wire-error region surfaces the typed code; the
+    // snapshot restore re-mounts the grid with the moderator's rows.
+    const wireError = page.getByTestId('propose-interpretive-split-action-wire-error');
+    await expect(wireError).toBeVisible({ timeout: 10_000 });
+    await expect(wireError).toContainText('target-entity-not-found');
+
+    await expect(page.getByTestId('interpretive-split-readings-grid')).toBeVisible();
+    await expect(page.getByTestId('interpretive-split-reading-text-0')).toHaveValue(
+      'Welfare deficits are our evidence for constitutive capacities.',
+    );
+    await expect(page.getByTestId('interpretive-split-reading-text-1')).toHaveValue(
+      'Capability-frustration just is welfare loss, ontologically.',
+    );
+  });
 });

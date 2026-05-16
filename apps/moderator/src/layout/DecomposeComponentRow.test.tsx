@@ -34,12 +34,26 @@ afterEach(() => {
 
 describe('DecomposeComponentRow — render shape', () => {
   it('renders the localized row label "Component 1" for index 0 in en-US', () => {
-    render(<DecomposeComponentRow index={0} canRemove={false} onRemove={() => undefined} />);
+    render(
+      <DecomposeComponentRow
+        mode="decompose"
+        index={0}
+        canRemove={false}
+        onRemove={() => undefined}
+      />,
+    );
     expect(screen.getByTestId('decompose-component-row-label-0').textContent).toBe('Component 1');
   });
 
   it('renders the text input + the picker + the remove button as children', () => {
-    render(<DecomposeComponentRow index={0} canRemove={true} onRemove={() => undefined} />);
+    render(
+      <DecomposeComponentRow
+        mode="decompose"
+        index={0}
+        canRemove={true}
+        onRemove={() => undefined}
+      />,
+    );
     expect(screen.getByTestId('decompose-component-row-0')).toBeTruthy();
     expect(screen.getByTestId('decompose-component-text-0')).toBeTruthy();
     expect(screen.getByTestId('decompose-component-classification-0')).toBeTruthy();
@@ -48,14 +62,63 @@ describe('DecomposeComponentRow — render shape', () => {
 
   it('clicking the remove button calls the supplied onRemove prop', () => {
     const onRemove = vi.fn();
-    render(<DecomposeComponentRow index={1} canRemove={true} onRemove={onRemove} />);
+    render(
+      <DecomposeComponentRow mode="decompose" index={1} canRemove={true} onRemove={onRemove} />,
+    );
     fireEvent.click(screen.getByTestId('decompose-component-row-remove-1'));
     expect(onRemove).toHaveBeenCalledTimes(1);
   });
 
   it('the remove button is disabled when canRemove === false', () => {
-    render(<DecomposeComponentRow index={0} canRemove={false} onRemove={() => undefined} />);
+    render(
+      <DecomposeComponentRow
+        mode="decompose"
+        index={0}
+        canRemove={false}
+        onRemove={() => undefined}
+      />,
+    );
     const button = screen.getByTestId<HTMLButtonElement>('decompose-component-row-remove-0');
     expect(button.disabled).toBe(true);
+  });
+});
+
+// Refinement: tasks/refinements/moderator-ui/mod_interpretive_split_mode.md
+describe('DecomposeComponentRow — mode="interpretive-split"', () => {
+  beforeEach(() => {
+    // Seed the interpretive-split slice instead so per-row reads bind.
+    act(() => {
+      useCaptureStore.getState().reset();
+      useCaptureStore.getState().enterInterpretiveSplitMode('n1');
+    });
+  });
+
+  it('renders the localized row label "Reading 1" for index 0 in en-US', () => {
+    render(
+      <DecomposeComponentRow
+        mode="interpretive-split"
+        index={0}
+        canRemove={false}
+        onRemove={() => undefined}
+      />,
+    );
+    expect(screen.getByTestId('interpretive-split-reading-row-label-0').textContent).toBe(
+      'Reading 1',
+    );
+  });
+
+  it('renders the text input + the picker + the remove button with per-mode testids', () => {
+    render(
+      <DecomposeComponentRow
+        mode="interpretive-split"
+        index={0}
+        canRemove={true}
+        onRemove={() => undefined}
+      />,
+    );
+    expect(screen.getByTestId('interpretive-split-reading-row-0')).toBeTruthy();
+    expect(screen.getByTestId('interpretive-split-reading-text-0')).toBeTruthy();
+    expect(screen.getByTestId('interpretive-split-reading-classification-0')).toBeTruthy();
+    expect(screen.getByTestId('interpretive-split-reading-row-remove-0')).toBeTruthy();
   });
 });

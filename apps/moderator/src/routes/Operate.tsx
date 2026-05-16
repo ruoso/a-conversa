@@ -1,7 +1,8 @@
 // Operate route for `/sessions/:id/operate` — the moderator console.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_propose_decomposition.md
-// (prior:     tasks/refinements/moderator-ui/mod_propose_action.md,
+// Refinement: tasks/refinements/moderator-ui/mod_interpretive_split_mode.md
+// (prior:     tasks/refinements/moderator-ui/mod_propose_decomposition.md,
+//             tasks/refinements/moderator-ui/mod_propose_action.md,
 //             tasks/refinements/moderator-ui/mod_edge_role_selector.md,
 //             tasks/refinements/moderator-ui/mod_target_auto_suggest.md,
 //             tasks/refinements/moderator-ui/mod_classification_palette.md,
@@ -66,8 +67,11 @@ import { CaptureTextInput } from '../layout/CaptureTextInput';
 import { ClassificationPalette } from '../layout/ClassificationPalette';
 import { DecomposeComponentsGrid } from '../layout/DecomposeComponentsGrid';
 import { DecomposeModeExitButton } from '../layout/DecomposeModeExitButton';
+import { InterpretiveSplitModeExitButton } from '../layout/InterpretiveSplitModeExitButton';
+import { InterpretiveSplitReadingsGrid } from '../layout/InterpretiveSplitReadingsGrid';
 import { ProposeAction } from '../layout/ProposeAction';
 import { ProposeDecompositionAction } from '../layout/ProposeDecompositionAction';
+import { ProposeInterpretiveSplitAction } from '../layout/ProposeInterpretiveSplitAction';
 import { useProposeAction } from '../layout/useProposeAction';
 import { GraphCanvasPane } from '../graph/GraphCanvasPane';
 import { ModeBanner } from '../layout/ModeBanner';
@@ -114,6 +118,12 @@ function OperateRouteInner(props: { sessionId: string }): ReactElement {
   // mod_multi_component_capture.md.
   const mode = useCaptureStore((s) => s.mode);
   const isDecomposeMode = mode === 'decompose';
+  const isInterpretiveSplitMode = mode === 'interpretive-split';
+  // `isProposalMode` collapses both structural-restructure proposals
+  // (decompose, interpretive-split) into a single gate for the three
+  // slot swaps the two modes share — Decision §5 of
+  // mod_interpretive_split_mode.
+  const isProposalMode = isDecomposeMode || isInterpretiveSplitMode;
 
   useEffect(() => {
     if (sessionId === '') return;
@@ -144,11 +154,16 @@ function OperateRouteInner(props: { sessionId: string }): ReactElement {
               <>
                 <ModeBanner />
                 <DecomposeModeExitButton />
+                <InterpretiveSplitModeExitButton />
               </>
             }
             textInput={
-              isDecomposeMode ? (
-                <DecomposeComponentsGrid />
+              isProposalMode ? (
+                isInterpretiveSplitMode ? (
+                  <InterpretiveSplitReadingsGrid />
+                ) : (
+                  <DecomposeComponentsGrid mode="decompose" />
+                )
               ) : (
                 <CaptureTextInput
                   onSubmit={() => {
@@ -157,9 +172,17 @@ function OperateRouteInner(props: { sessionId: string }): ReactElement {
                 />
               )
             }
-            classificationPalette={isDecomposeMode ? null : <ClassificationPalette />}
-            edgeRoleSelector={isDecomposeMode ? null : <CaptureTargetAndRole />}
-            proposeAction={isDecomposeMode ? <ProposeDecompositionAction /> : <ProposeAction />}
+            classificationPalette={isProposalMode ? null : <ClassificationPalette />}
+            edgeRoleSelector={isProposalMode ? null : <CaptureTargetAndRole />}
+            proposeAction={
+              isDecomposeMode ? (
+                <ProposeDecompositionAction />
+              ) : isInterpretiveSplitMode ? (
+                <ProposeInterpretiveSplitAction />
+              ) : (
+                <ProposeAction />
+              )
+            }
           />
         }
         rightSidebar={
