@@ -288,12 +288,16 @@ jobs:
       # This job keeps unit + behavior smoke, which don't need a
       # browser binary or a running backend.
 
-      # Build the moderator dist before the unit smoke suite — the
-      # `static-frontends` Vitest cases load the SPA's `index.html`
-      # to assert single-origin serving, and the plugin fail-fasts
-      # at boot when the dist is absent.
-      - name: Build moderator dist (prerequisite for static-frontends tests)
-        run: pnpm --filter @a-conversa/moderator build
+      # Build the workspace before the unit smoke suite. The
+      # `static-frontends` Vitest cases load the root SPA's
+      # `index.html` (served at `/`) and the moderator surface bundle
+      # (served under `/_surfaces/moderator/`) to assert single-origin
+      # serving; the plugin fail-fasts at boot when either dist is
+      # absent. Building the whole workspace avoids per-app filters
+      # that have to be touched every time another app becomes a
+      # runtime dependency.
+      - name: Build workspace (dists prerequisite for static-frontends tests)
+        run: pnpm run build
 
       - name: Unit smoke (foundation.test_infra.ci_unit_test_step will own this)
         run: pnpm run test:smoke
