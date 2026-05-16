@@ -169,8 +169,27 @@
         "inputAriaLabel": "Invite link for {role}"
       },
       "enterSession": {
-        "label": "Enter session",
-        "hint": "You can enter the session before debaters join."
+        "label": "Enter session"
+      },
+      "lobby": {
+        "ready": {
+          "present": "Ready",
+          "pending": "Not yet joined"
+        },
+        "bothReady": {
+          "banner": "Both debaters joined! Ready to start."
+        },
+        "disabledTooltip": {
+          "awaiting-A": "Awaiting Debater A",
+          "awaiting-B": "Awaiting Debater B",
+          "awaiting-both": "Awaiting both debaters"
+        },
+        "enterHint": {
+          "ready": "Click to enter the session.",
+          "awaiting-A": "Waiting for Debater A to join before you can enter.",
+          "awaiting-B": "Waiting for Debater B to join before you can enter.",
+          "awaiting-both": "Waiting for both debaters to join before you can enter."
+        }
       }
     },
     "rightSidebar": {

@@ -181,3 +181,108 @@ export async function isWsStoreReachable(page: Page): Promise<boolean> {
     );
   });
 }
+
+/**
+ * One synthetic participant the seeder injects via a
+ * `participant-joined` event. Shape mirrors the wire payload narrowed
+ * to the fields the invite view's slot reducer consumes (per
+ * `apps/moderator/src/routes/InviteParticipants.tsx:97-126`).
+ */
+export interface SeedParticipant {
+  readonly userId: string;
+  readonly role: 'moderator' | 'debater-A' | 'debater-B';
+  readonly screenName: string;
+}
+
+export interface SeedParticipantsOptions {
+  readonly sessionId: string;
+  readonly participants?: readonly SeedParticipant[];
+  readonly left?: readonly string[];
+}
+
+/**
+ * Seed synthetic `participant-joined` / `participant-left` events into
+ * the moderator's Zustand WS store for the given `sessionId`. The
+ * helper MUST be invoked AFTER the moderator SPA has mounted — the
+ * dev-only window attachment happens during the React bootstrap (see
+ * `apps/moderator/src/main.tsx`).
+ *
+ * Mirrors `seedWsStore` in shape but stays narrow to participant
+ * lifecycle events (per `mod_session_lobby` Decision §5: sibling helper
+ * keeps each function's scope tight rather than turning `seedWsStore`
+ * into a swiss-army-knife). Reuses the same `window.__aConversaWsStore`
+ * lookup and the same `applyEvent` seam.
+ *
+ * The helper continues the sequence from the store's current high-water
+ * mark so consecutive seed calls on the same session don't collide
+ * with `lastAppliedSequence` (the store rejects events whose
+ * `sequence <= lastAppliedSequence`).
+ *
+ * Throws when the window-attached store is unreachable; that's the
+ * signal the dev-only `window.__aConversaWsStore` assignment didn't
+ * fire (production build / bundler scope mismatch) and callers should
+ * branch to a fallback path.
+ */
+export async function seedParticipants(
+  page: Page,
+  options: SeedParticipantsOptions,
+): Promise<{ eventCount: number }> {
+  const { sessionId, participants = [], left = [] } = options;
+  return page.evaluate(
+    ({ sessionId, participants, left }) => {
+      const store = (
+        window as unknown as {
+          __aConversaWsStore?: {
+            getState(): {
+              applyEvent(event: unknown): boolean;
+              sessionState: Record<string, { events: unknown[]; lastAppliedSequence: number }>;
+            };
+          };
+        }
+      ).__aConversaWsStore;
+      if (store === undefined) {
+        throw new Error(
+          'seedParticipants: window.__aConversaWsStore is undefined — the dev-only assignment did not run. Ensure the SPA is running in dev mode (Vite import.meta.env.DEV === true).',
+        );
+      }
+      const createdAt = '2026-05-16T00:00:00.000Z';
+      const existing = store.getState().sessionState[sessionId];
+      let sequence = (existing?.lastAppliedSequence ?? 0) + 1;
+      for (const participant of participants) {
+        store.getState().applyEvent({
+          id: `00000000-0000-4000-8000-${(0x3000 + sequence).toString(16).padStart(12, '0')}`,
+          sessionId,
+          sequence,
+          kind: 'participant-joined',
+          actor: participant.userId,
+          payload: {
+            user_id: participant.userId,
+            role: participant.role,
+            screen_name: participant.screenName,
+            joined_at: createdAt,
+          },
+          createdAt,
+        });
+        sequence += 1;
+      }
+      for (const userId of left) {
+        store.getState().applyEvent({
+          id: `00000000-0000-4000-8000-${(0x4000 + sequence).toString(16).padStart(12, '0')}`,
+          sessionId,
+          sequence,
+          kind: 'participant-left',
+          actor: userId,
+          payload: {
+            user_id: userId,
+            left_at: createdAt,
+          },
+          createdAt,
+        });
+        sequence += 1;
+      }
+      const after = store.getState().sessionState[sessionId];
+      return { eventCount: after?.events.length ?? 0 };
+    },
+    { sessionId, participants, left },
+  );
+}

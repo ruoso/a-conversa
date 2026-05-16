@@ -169,8 +169,27 @@
         "inputAriaLabel": "Enlace de invitación para {role}"
       },
       "enterSession": {
-        "label": "Entrar a la sesión",
-        "hint": "Puedes entrar a la sesión antes de que lleguen los debatientes."
+        "label": "Entrar a la sesión"
+      },
+      "lobby": {
+        "ready": {
+          "present": "Listo(a)",
+          "pending": "Aún no se ha unido"
+        },
+        "bothReady": {
+          "banner": "¡Ambos debatientes se han unido! Listo para comenzar."
+        },
+        "disabledTooltip": {
+          "awaiting-A": "Esperando a Debatiente A",
+          "awaiting-B": "Esperando a Debatiente B",
+          "awaiting-both": "Esperando a ambos debatientes"
+        },
+        "enterHint": {
+          "ready": "Haz clic para entrar a la sesión.",
+          "awaiting-A": "Esperando a que Debatiente A se una antes de poder entrar.",
+          "awaiting-B": "Esperando a que Debatiente B se una antes de poder entrar.",
+          "awaiting-both": "Esperando a que ambos debatientes se unan antes de poder entrar."
+        }
       }
     },
     "rightSidebar": {

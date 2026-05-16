@@ -550,7 +550,9 @@ task moderator_ui "Moderator UI" {
     task mod_session_lobby "Pre-debate lobby until all participants joined" {
       effort 1d
       allocate team
+      complete 100
       depends !mod_invite_participants
+      note "Refinement: tasks/refinements/moderator-ui/mod_session_lobby.md"
     }
   }
 

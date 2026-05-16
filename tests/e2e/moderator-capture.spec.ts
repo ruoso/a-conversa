@@ -34,12 +34,39 @@
 // in-progress draft via the textarea's `value` attribute (the same
 // wire as a screen reader on the controlled input).
 
-import { expect, test } from '@playwright/test';
+import { expect, type Page, test } from '@playwright/test';
 
 import { loginAs } from './fixtures/auth';
-import { isWsStoreReachable, seedWsStore } from './fixtures/wsStoreSeed';
+import { isWsStoreReachable, seedParticipants, seedWsStore } from './fixtures/wsStoreSeed';
 
 const TEST_USERNAME = 'alice';
+
+// mod_session_lobby: the Enter-session button is strict-gated (disabled
+// until both debater slots are filled). This spec's assertions all live
+// on the operate canvas; the gate behavior is exercised by
+// `tests/e2e/invite-participants-flow.spec.ts`. To bridge past the gate
+// here we seed both debaters via the dev-only `window.__aConversaWsStore`
+// test seam so the click on `invite-enter-session` proceeds. The session
+// id is extracted from the current URL (Playwright already settled on
+// /sessions/<uuid>/invite by the time this helper runs).
+const GATE_DEBATER_A_USER_ID = '00000000-0000-4000-8000-0000000000a1';
+const GATE_DEBATER_B_USER_ID = '00000000-0000-4000-8000-0000000000b1';
+
+async function seedInviteParticipantsForGate(page: Page): Promise<void> {
+  const url = page.url();
+  const match = url.match(/\/sessions\/([0-9a-f-]+)\/invite$/);
+  if (match === null) {
+    throw new Error(`seedInviteParticipantsForGate: URL did not match the invite shape: ${url}`);
+  }
+  const sessionId = match[1] as string;
+  await seedParticipants(page, {
+    sessionId,
+    participants: [
+      { userId: GATE_DEBATER_A_USER_ID, role: 'debater-A', screenName: 'ben' },
+      { userId: GATE_DEBATER_B_USER_ID, role: 'debater-B', screenName: 'maria' },
+    ],
+  });
+}
 
 test.describe('Capture-pane textarea — moderator types wording, sees helper count, and submits via Cmd/Ctrl+Enter', () => {
   test('alice creates a session, lands on operate, types a wording, helper count updates, and Cmd/Ctrl+Enter fires without inserting a newline', async ({
@@ -63,6 +90,11 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     // /sessions/<id>/invite; click 'Enter session' from there to reach
     // the operate canvas (where this spec's assertions live).
     await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    // mod_session_lobby strict-gated the Enter button: it stays disabled
+    // until both debaters joined. Seed both via the WS test seam so the
+    // gate opens (this spec's assertions all live on /operate; the
+    // gate's behavior is exercised by tests/e2e/invite-participants-flow).
+    await seedInviteParticipantsForGate(page);
     await page.getByTestId('invite-enter-session').click();
     await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, {
       timeout: 10_000,
@@ -128,6 +160,11 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     // /sessions/<id>/invite; click 'Enter session' from there to reach
     // the operate canvas (where this spec's assertions live).
     await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    // mod_session_lobby strict-gated the Enter button: it stays disabled
+    // until both debaters joined. Seed both via the WS test seam so the
+    // gate opens (this spec's assertions all live on /operate; the
+    // gate's behavior is exercised by tests/e2e/invite-participants-flow).
+    await seedInviteParticipantsForGate(page);
     await page.getByTestId('invite-enter-session').click();
     await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
     await expect(page.getByTestId('route-operate')).toBeVisible();
@@ -181,6 +218,11 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     // /sessions/<id>/invite; click 'Enter session' from there to reach
     // the operate canvas (where this spec's assertions live).
     await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    // mod_session_lobby strict-gated the Enter button: it stays disabled
+    // until both debaters joined. Seed both via the WS test seam so the
+    // gate opens (this spec's assertions all live on /operate; the
+    // gate's behavior is exercised by tests/e2e/invite-participants-flow).
+    await seedInviteParticipantsForGate(page);
     await page.getByTestId('invite-enter-session').click();
     await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, {
       timeout: 10_000,
@@ -275,6 +317,11 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     // /sessions/<id>/invite; click 'Enter session' from there to reach
     // the operate canvas (where this spec's assertions live).
     await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    // mod_session_lobby strict-gated the Enter button: it stays disabled
+    // until both debaters joined. Seed both via the WS test seam so the
+    // gate opens (this spec's assertions all live on /operate; the
+    // gate's behavior is exercised by tests/e2e/invite-participants-flow).
+    await seedInviteParticipantsForGate(page);
     await page.getByTestId('invite-enter-session').click();
     await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, {
       timeout: 10_000,
@@ -363,6 +410,11 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     // /sessions/<id>/invite; click 'Enter session' from there to reach
     // the operate canvas (where this spec's assertions live).
     await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    // mod_session_lobby strict-gated the Enter button: it stays disabled
+    // until both debaters joined. Seed both via the WS test seam so the
+    // gate opens (this spec's assertions all live on /operate; the
+    // gate's behavior is exercised by tests/e2e/invite-participants-flow).
+    await seedInviteParticipantsForGate(page);
     await page.getByTestId('invite-enter-session').click();
     await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, {
       timeout: 10_000,
@@ -488,6 +540,11 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     // /sessions/<id>/invite; click 'Enter session' from there to reach
     // the operate canvas (where this spec's assertions live).
     await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    // mod_session_lobby strict-gated the Enter button: it stays disabled
+    // until both debaters joined. Seed both via the WS test seam so the
+    // gate opens (this spec's assertions all live on /operate; the
+    // gate's behavior is exercised by tests/e2e/invite-participants-flow).
+    await seedInviteParticipantsForGate(page);
     await page.getByTestId('invite-enter-session').click();
     await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, {
       timeout: 10_000,
@@ -679,6 +736,11 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     // /sessions/<id>/invite; click 'Enter session' from there to reach
     // the operate canvas (where this spec's assertions live).
     await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    // mod_session_lobby strict-gated the Enter button: it stays disabled
+    // until both debaters joined. Seed both via the WS test seam so the
+    // gate opens (this spec's assertions all live on /operate; the
+    // gate's behavior is exercised by tests/e2e/invite-participants-flow).
+    await seedInviteParticipantsForGate(page);
     await page.getByTestId('invite-enter-session').click();
     await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
     await expect(page.getByTestId('route-operate')).toBeVisible();
@@ -809,6 +871,11 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     // /sessions/<id>/invite; click 'Enter session' from there to reach
     // the operate canvas (where this spec's assertions live).
     await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    // mod_session_lobby strict-gated the Enter button: it stays disabled
+    // until both debaters joined. Seed both via the WS test seam so the
+    // gate opens (this spec's assertions all live on /operate; the
+    // gate's behavior is exercised by tests/e2e/invite-participants-flow).
+    await seedInviteParticipantsForGate(page);
     await page.getByTestId('invite-enter-session').click();
     await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
     await expect(page.getByTestId('route-operate')).toBeVisible();
@@ -880,6 +947,11 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     // /sessions/<id>/invite; click 'Enter session' from there to reach
     // the operate canvas (where this spec's assertions live).
     await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    // mod_session_lobby strict-gated the Enter button: it stays disabled
+    // until both debaters joined. Seed both via the WS test seam so the
+    // gate opens (this spec's assertions all live on /operate; the
+    // gate's behavior is exercised by tests/e2e/invite-participants-flow).
+    await seedInviteParticipantsForGate(page);
     await page.getByTestId('invite-enter-session').click();
     await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
     await expect(page.getByTestId('route-operate')).toBeVisible();
@@ -957,6 +1029,11 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     // /sessions/<id>/invite; click 'Enter session' from there to reach
     // the operate canvas (where this spec's assertions live).
     await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    // mod_session_lobby strict-gated the Enter button: it stays disabled
+    // until both debaters joined. Seed both via the WS test seam so the
+    // gate opens (this spec's assertions all live on /operate; the
+    // gate's behavior is exercised by tests/e2e/invite-participants-flow).
+    await seedInviteParticipantsForGate(page);
     await page.getByTestId('invite-enter-session').click();
     await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
     await expect(page.getByTestId('route-operate')).toBeVisible();
@@ -1034,6 +1111,11 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     // /sessions/<id>/invite; click 'Enter session' from there to reach
     // the operate canvas (where this spec's assertions live).
     await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    // mod_session_lobby strict-gated the Enter button: it stays disabled
+    // until both debaters joined. Seed both via the WS test seam so the
+    // gate opens (this spec's assertions all live on /operate; the
+    // gate's behavior is exercised by tests/e2e/invite-participants-flow).
+    await seedInviteParticipantsForGate(page);
     await page.getByTestId('invite-enter-session').click();
     await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
     await expect(page.getByTestId('route-operate')).toBeVisible();
@@ -1105,6 +1187,11 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     // /sessions/<id>/invite; click 'Enter session' from there to reach
     // the operate canvas (where this spec's assertions live).
     await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    // mod_session_lobby strict-gated the Enter button: it stays disabled
+    // until both debaters joined. Seed both via the WS test seam so the
+    // gate opens (this spec's assertions all live on /operate; the
+    // gate's behavior is exercised by tests/e2e/invite-participants-flow).
+    await seedInviteParticipantsForGate(page);
     await page.getByTestId('invite-enter-session').click();
     await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
     await expect(page.getByTestId('route-operate')).toBeVisible();

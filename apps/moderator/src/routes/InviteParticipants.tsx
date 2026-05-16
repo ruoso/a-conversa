@@ -1,8 +1,15 @@
 // Invite-participants route for `/sessions/:id/invite` — the moderator's
-// post-create surface for handing out per-debater shareable links.
+// post-create surface for handing out per-debater shareable links and
+// the pre-debate lobby that gates entry to the operate canvas.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_invite_participants.md
-// TaskJuggler: moderator_ui.mod_session_setup.mod_invite_participants
+// Refinements:
+//   - tasks/refinements/moderator-ui/mod_invite_participants.md
+//   - tasks/refinements/moderator-ui/mod_session_lobby.md (Possibility C —
+//     enrich this surface in place with a strict gate, per-slot ready
+//     badges, a "both ready" banner, and state-driven disabled hints)
+// TaskJuggler:
+//   - moderator_ui.mod_session_setup.mod_invite_participants
+//   - moderator_ui.mod_session_setup.mod_session_lobby
 //
 // After `POST /api/sessions` returns 201, `CreateSession.tsx` navigates
 // here. The view fetches the session metadata (topic + privacy) via
@@ -11,9 +18,13 @@
 // slots in fixed order: `moderator` (always filled — the host row was
 // inserted at session creation per `participant_assignment`), `debater-A`,
 // `debater-B`. Each debater slot carries a copy-to-clipboard invite link
-// shaped `<origin>/sessions/<id>/invite?role=<role>`. An "Enter session"
-// button (always enabled, per Decision §3) navigates to
-// `/sessions/<id>/operate`.
+// shaped `<origin>/sessions/<id>/invite?role=<role>` and an always-
+// visible ready/pending badge. The "Enter session" button is strict-
+// gated (disabled until both debater slots are filled, per
+// `mod_session_lobby` Decision §2) and navigates to
+// `/sessions/<id>/operate` on click; the gate reason drives a localized
+// disabled tooltip + hint paragraph and a "both ready" banner appears
+// once both debaters have joined.
 //
 // **Backend dependencies still pending** (registered as follow-ups in
 // `tasks/20-backend.tji` per the refinement's Backend follow-up tasks):
@@ -233,6 +244,31 @@ function InviteParticipantsRouteInner(props: InviteParticipantsRouteInnerProps):
   const events = useWsStore((state) => state.sessionState[sessionId]?.events);
   const occupants = useMemo(() => deriveSlotOccupants(events ?? []), [events]);
 
+  // ── Gate derivations for mod_session_lobby ───────────────────────
+  //
+  // The Enter-session button is strict-gated: disabled until BOTH
+  // debater slots are filled (per `mod_session_lobby` Decision §2 and
+  // the methodology invariant in DESIGN.md §"Format" — a moderator
+  // entering before both debaters are present is operating in a
+  // methodologically broken state with no possible quorum for commits).
+  //
+  // `gateReason` surfaces WHICH slots are missing so the tooltip /
+  // hint / banner can localize accordingly. Pure derivations off the
+  // existing `occupants` map — no new state slots, no new effects.
+  const bothDebatersPresent = useMemo(
+    () => occupants['debater-A'] !== undefined && occupants['debater-B'] !== undefined,
+    [occupants],
+  );
+  type GateReason = 'ready' | 'awaiting-A' | 'awaiting-B' | 'awaiting-both';
+  const gateReason = useMemo<GateReason>(() => {
+    const aPresent = occupants['debater-A'] !== undefined;
+    const bPresent = occupants['debater-B'] !== undefined;
+    if (aPresent && bPresent) return 'ready';
+    if (!aPresent && !bPresent) return 'awaiting-both';
+    if (!aPresent) return 'awaiting-A';
+    return 'awaiting-B';
+  }, [occupants]);
+
   // ── Copy-to-clipboard per-slot transient state ────────────────────
   // Map role -> "Copied!" confirmation visibility. The auto-clear
   // timeout id is held in a ref so we can cancel an outstanding clear
@@ -295,8 +331,14 @@ function InviteParticipantsRouteInner(props: InviteParticipantsRouteInnerProps):
 
   const handleEnterSession = useCallback((): void => {
     if (sessionId === '') return;
+    // Defense-in-depth: the button carries `disabled={!bothDebatersPresent}`
+    // so the native attribute already blocks click events when the
+    // gate is closed; this guard keeps the handler honest in case a
+    // future refactor swaps the native disabled attribute for
+    // `aria-disabled` (which doesn't block clicks).
+    if (!bothDebatersPresent) return;
     void navigate(`/sessions/${sessionId}/operate`, { replace: false });
-  }, [navigate, sessionId]);
+  }, [bothDebatersPresent, navigate, sessionId]);
 
   const handleRetry = useCallback((): void => {
     setRetryNonce((n) => n + 1);
@@ -397,6 +439,34 @@ function InviteParticipantsRouteInner(props: InviteParticipantsRouteInnerProps):
                       })}
                     </p>
                   )}
+                  {/*
+                    Per-slot ready-state badge for `mod_session_lobby`.
+                    Always visible on debater slots (states: `ready`
+                    when occupant present, `pending` otherwise) so the
+                    moderator's at-a-glance "who's here?" cue stays
+                    explicit alongside the overall gate state. The
+                    moderator slot does not get a badge — the moderator
+                    IS the operator, not a participant whose presence
+                    the gate checks (per Decisions §3).
+                  */}
+                  {role !== 'moderator' && (
+                    <span
+                      data-testid="invite-slot-ready"
+                      data-role={role}
+                      data-ready={isFilled ? 'true' : 'false'}
+                      className={
+                        isFilled
+                          ? 'inline-block mt-2 text-sm text-green-700'
+                          : 'inline-block mt-2 text-sm text-gray-500'
+                      }
+                    >
+                      {t(
+                        isFilled
+                          ? 'moderator.invite.lobby.ready.present'
+                          : 'moderator.invite.lobby.ready.pending',
+                      )}
+                    </span>
+                  )}
                   {showCopyAffordance && (
                     <div className="mt-3 flex flex-col gap-2">
                       <div className="flex gap-2">
@@ -452,17 +522,61 @@ function InviteParticipantsRouteInner(props: InviteParticipantsRouteInnerProps):
             })}
           </div>
 
+          {/*
+            "Both ready" banner (mod_session_lobby Decision §4) —
+            visible while both debaters are present. `role="status"` +
+            `aria-live="polite"` triggers a one-time screen-reader
+            announcement on first appearance without interrupting the
+            moderator. The banner persists until the gate state changes
+            (a debater leaves, or the moderator clicks Enter and
+            navigates away).
+          */}
+          {gateReason === 'ready' && (
+            <p
+              data-testid="invite-both-ready-banner"
+              role="status"
+              aria-live="polite"
+              className="mt-4 rounded bg-green-50 border border-green-200 px-3 py-2 text-green-800"
+            >
+              {t('moderator.invite.lobby.bothReady.banner')}
+            </p>
+          )}
+
           <div className="mt-6 flex flex-col gap-2">
+            {/*
+              Strict-gated Enter-session button (mod_session_lobby
+              Decision §2). Native HTML `disabled` (per Decision §9)
+              so keyboard focus skips it correctly and screen readers
+              announce the disabled state via the standard channel.
+              `aria-describedby` ties the button to the state-driven
+              hint paragraph below; `title` adds the awaiting tooltip
+              for sighted users on hover when disabled.
+            */}
             <button
               type="button"
               data-testid="invite-enter-session"
               onClick={handleEnterSession}
-              className="rounded bg-blue-600 px-4 py-2 text-white"
+              disabled={!bothDebatersPresent}
+              aria-describedby="invite-enter-session-hint"
+              title={
+                bothDebatersPresent
+                  ? undefined
+                  : t(`moderator.invite.lobby.disabledTooltip.${gateReason}`)
+              }
+              className={
+                bothDebatersPresent
+                  ? 'rounded bg-blue-600 px-4 py-2 text-white'
+                  : 'rounded bg-gray-300 px-4 py-2 text-gray-600 cursor-not-allowed'
+              }
             >
               {t('moderator.invite.enterSession.label')}
             </button>
-            <p data-testid="invite-enter-session-hint" className="text-sm text-gray-600">
-              {t('moderator.invite.enterSession.hint')}
+            <p
+              id="invite-enter-session-hint"
+              data-testid="invite-enter-session-hint"
+              className="text-sm text-gray-600"
+            >
+              {t(`moderator.invite.lobby.enterHint.${gateReason}`)}
             </p>
           </div>
         </>

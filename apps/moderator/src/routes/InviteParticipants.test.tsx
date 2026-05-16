@@ -427,33 +427,352 @@ describe('InviteParticipants route — enter-session button', () => {
     global.fetch = stubSessionFetch(okSessionResponse);
   });
 
-  it('navigates to /sessions/<id>/operate on click', async () => {
+  it('navigates to /sessions/<id>/operate on click when both debaters are present', async () => {
     renderRoute();
     await waitFor(() => {
       expect(screen.getByTestId('invite-enter-session')).toBeTruthy();
     });
-    fireEvent.click(screen.getByTestId('invite-enter-session'));
-    expect(navigateSpy).toHaveBeenCalledWith(`/sessions/${SESSION_ID}/operate`, { replace: false });
-  });
-
-  it('is always enabled — both with no participants and with both debater slots filled', async () => {
-    renderRoute();
-    await waitFor(() => {
-      expect(screen.getByTestId('invite-enter-session')).toBeTruthy();
-    });
-    const buttonEmpty = screen.getByTestId<HTMLButtonElement>('invite-enter-session');
-    expect(buttonEmpty.disabled).toBe(false);
-    // Seed both debater slots, still enabled.
+    // Seed both debaters first (the strict gate from `mod_session_lobby`
+    // disables the click otherwise).
     act(() => {
       seedParticipantJoined(1, 'debater-A', DEBATER_A_ID, 'ben');
       seedParticipantJoined(2, 'debater-B', DEBATER_B_ID, 'maria');
     });
     await waitFor(() => {
-      const occupants = screen.getAllByTestId('invite-slot-occupant');
-      expect(occupants.length).toBeGreaterThanOrEqual(2);
+      const button = screen.getByTestId<HTMLButtonElement>('invite-enter-session');
+      expect(button.disabled).toBe(false);
     });
-    const buttonFilled = screen.getByTestId<HTMLButtonElement>('invite-enter-session');
-    expect(buttonFilled.disabled).toBe(false);
+    fireEvent.click(screen.getByTestId('invite-enter-session'));
+    expect(navigateSpy).toHaveBeenCalledWith(`/sessions/${SESSION_ID}/operate`, { replace: false });
+  });
+
+  // Amended case 15 (per `mod_session_lobby` Decision §2) — inverted
+  // from the predecessor's "always enabled" assertion to the new strict
+  // gate: disabled until BOTH debaters joined. Render with zero / one
+  // debater present and the button stays disabled; seed both and the
+  // gate opens.
+  it('is disabled until both debaters joined — strict gate per mod_session_lobby', async () => {
+    renderRoute();
+    await waitFor(() => {
+      expect(screen.getByTestId('invite-enter-session')).toBeTruthy();
+    });
+    const buttonInitial = screen.getByTestId<HTMLButtonElement>('invite-enter-session');
+    expect(buttonInitial.disabled).toBe(true);
+    // Seed only debater-A — still disabled.
+    act(() => {
+      seedParticipantJoined(1, 'debater-A', DEBATER_A_ID, 'ben');
+    });
+    await waitFor(() => {
+      const occupant = screen
+        .getAllByTestId('invite-slot-occupant')
+        .find((el) => el.getAttribute('data-role') === 'debater-A');
+      expect(occupant?.textContent).toBe('ben');
+    });
+    expect(screen.getByTestId<HTMLButtonElement>('invite-enter-session').disabled).toBe(true);
+    // Seed debater-B — gate opens.
+    act(() => {
+      seedParticipantJoined(2, 'debater-B', DEBATER_B_ID, 'maria');
+    });
+    await waitFor(() => {
+      const button = screen.getByTestId<HTMLButtonElement>('invite-enter-session');
+      expect(button.disabled).toBe(false);
+    });
+  });
+
+  it('is disabled when only debater-B is present', async () => {
+    renderRoute();
+    await waitFor(() => {
+      expect(screen.getByTestId('invite-enter-session')).toBeTruthy();
+    });
+    act(() => {
+      seedParticipantJoined(1, 'debater-B', DEBATER_B_ID, 'maria');
+    });
+    await waitFor(() => {
+      const occupant = screen
+        .getAllByTestId('invite-slot-occupant')
+        .find((el) => el.getAttribute('data-role') === 'debater-B');
+      expect(occupant?.textContent).toBe('maria');
+    });
+    expect(screen.getByTestId<HTMLButtonElement>('invite-enter-session').disabled).toBe(true);
+  });
+
+  it('disabled click is a no-op — navigateSpy is not called when zero debaters present', async () => {
+    renderRoute();
+    await waitFor(() => {
+      expect(screen.getByTestId('invite-enter-session')).toBeTruthy();
+    });
+    const button = screen.getByTestId<HTMLButtonElement>('invite-enter-session');
+    expect(button.disabled).toBe(true);
+    // fireEvent.click on a native-disabled button does not dispatch
+    // the React click handler — assert the navigate spy stays clean.
+    fireEvent.click(button);
+    expect(navigateSpy).not.toHaveBeenCalled();
+  });
+
+  it('gate re-disables when a debater leaves after both joined', async () => {
+    renderRoute();
+    await waitFor(() => {
+      expect(screen.getByTestId('invite-enter-session')).toBeTruthy();
+    });
+    act(() => {
+      seedParticipantJoined(1, 'debater-A', DEBATER_A_ID, 'ben');
+      seedParticipantJoined(2, 'debater-B', DEBATER_B_ID, 'maria');
+    });
+    await waitFor(() => {
+      const button = screen.getByTestId<HTMLButtonElement>('invite-enter-session');
+      expect(button.disabled).toBe(false);
+    });
+    // Banner is visible at this point.
+    expect(screen.queryByTestId('invite-both-ready-banner')).toBeTruthy();
+    // Debater A leaves — gate closes, banner unmounts, awaiting-A
+    // tooltip surfaces on the button.
+    act(() => {
+      seedParticipantLeft(3, DEBATER_A_ID);
+    });
+    await waitFor(() => {
+      expect(screen.queryByTestId('invite-both-ready-banner')).toBeNull();
+    });
+    const buttonAfter = screen.getByTestId<HTMLButtonElement>('invite-enter-session');
+    expect(buttonAfter.disabled).toBe(true);
+    expect(buttonAfter.getAttribute('title')).toBe('Awaiting Debater A');
+  });
+});
+
+describe('InviteParticipants route — per-slot ready badge (mod_session_lobby)', () => {
+  beforeEach(() => {
+    global.fetch = stubSessionFetch(okSessionResponse);
+  });
+
+  it('renders pending badges on both debater slots before any participant-joined event', async () => {
+    renderRoute();
+    await waitFor(() => {
+      expect(screen.getByTestId('invite-session-topic')).toBeTruthy();
+    });
+    const badges = screen.getAllByTestId('invite-slot-ready');
+    expect(badges.length).toBe(2);
+    const badgeA = badges.find((el) => el.getAttribute('data-role') === 'debater-A');
+    const badgeB = badges.find((el) => el.getAttribute('data-role') === 'debater-B');
+    expect(badgeA?.getAttribute('data-ready')).toBe('false');
+    expect(badgeA?.textContent).toBe('Not yet joined');
+    expect(badgeB?.getAttribute('data-ready')).toBe('false');
+    expect(badgeB?.textContent).toBe('Not yet joined');
+  });
+
+  it('debater-A badge flips to ready when participant-joined arrives; debater-B stays pending', async () => {
+    renderRoute();
+    await waitFor(() => {
+      expect(screen.getByTestId('invite-session-topic')).toBeTruthy();
+    });
+    act(() => {
+      seedParticipantJoined(1, 'debater-A', DEBATER_A_ID, 'ben');
+    });
+    await waitFor(() => {
+      const badge = screen
+        .getAllByTestId('invite-slot-ready')
+        .find((el) => el.getAttribute('data-role') === 'debater-A');
+      expect(badge?.getAttribute('data-ready')).toBe('true');
+      expect(badge?.textContent).toBe('Ready');
+    });
+    const badgeB = screen
+      .getAllByTestId('invite-slot-ready')
+      .find((el) => el.getAttribute('data-role') === 'debater-B');
+    expect(badgeB?.getAttribute('data-ready')).toBe('false');
+    expect(badgeB?.textContent).toBe('Not yet joined');
+  });
+
+  it('moderator slot does not render a ready badge', async () => {
+    seedParticipantJoined(1, 'moderator', HOST_USER_ID, 'alice');
+    renderRoute();
+    await waitFor(() => {
+      expect(screen.getByTestId('invite-session-topic')).toBeTruthy();
+    });
+    const moderatorBadge = screen
+      .queryAllByTestId('invite-slot-ready')
+      .find((el) => el.getAttribute('data-role') === 'moderator');
+    expect(moderatorBadge).toBeUndefined();
+  });
+});
+
+describe('InviteParticipants route — both-ready banner (mod_session_lobby)', () => {
+  beforeEach(() => {
+    global.fetch = stubSessionFetch(okSessionResponse);
+  });
+
+  it('renders the banner when both debaters joined', async () => {
+    renderRoute();
+    await waitFor(() => {
+      expect(screen.getByTestId('invite-session-topic')).toBeTruthy();
+    });
+    act(() => {
+      seedParticipantJoined(1, 'debater-A', DEBATER_A_ID, 'ben');
+      seedParticipantJoined(2, 'debater-B', DEBATER_B_ID, 'maria');
+    });
+    await waitFor(() => {
+      const banner = screen.queryByTestId('invite-both-ready-banner');
+      expect(banner).toBeTruthy();
+      expect(banner?.textContent).toBe('Both debaters joined! Ready to start.');
+    });
+  });
+
+  it('does not render the banner when only one debater is present', async () => {
+    renderRoute();
+    await waitFor(() => {
+      expect(screen.getByTestId('invite-session-topic')).toBeTruthy();
+    });
+    act(() => {
+      seedParticipantJoined(1, 'debater-A', DEBATER_A_ID, 'ben');
+    });
+    await waitFor(() => {
+      const occupant = screen
+        .getAllByTestId('invite-slot-occupant')
+        .find((el) => el.getAttribute('data-role') === 'debater-A');
+      expect(occupant?.textContent).toBe('ben');
+    });
+    expect(screen.queryByTestId('invite-both-ready-banner')).toBeNull();
+  });
+
+  it('banner uses role="status" + aria-live="polite"', async () => {
+    renderRoute();
+    await waitFor(() => {
+      expect(screen.getByTestId('invite-session-topic')).toBeTruthy();
+    });
+    act(() => {
+      seedParticipantJoined(1, 'debater-A', DEBATER_A_ID, 'ben');
+      seedParticipantJoined(2, 'debater-B', DEBATER_B_ID, 'maria');
+    });
+    await waitFor(() => {
+      const banner = screen.queryByTestId('invite-both-ready-banner');
+      expect(banner).toBeTruthy();
+      expect(banner?.getAttribute('role')).toBe('status');
+      expect(banner?.getAttribute('aria-live')).toBe('polite');
+    });
+  });
+});
+
+describe('InviteParticipants route — disabled tooltip + hint (mod_session_lobby)', () => {
+  beforeEach(() => {
+    global.fetch = stubSessionFetch(okSessionResponse);
+  });
+
+  it('awaiting-both: title="Awaiting both debaters", hint matches awaiting-both', async () => {
+    renderRoute();
+    await waitFor(() => {
+      expect(screen.getByTestId('invite-enter-session')).toBeTruthy();
+    });
+    const button = screen.getByTestId('invite-enter-session');
+    expect(button.getAttribute('title')).toBe('Awaiting both debaters');
+    const hint = screen.getByTestId('invite-enter-session-hint');
+    expect(hint.textContent).toBe('Waiting for both debaters to join before you can enter.');
+  });
+
+  it('awaiting-A: only debater-B present → title="Awaiting Debater A"', async () => {
+    renderRoute();
+    await waitFor(() => {
+      expect(screen.getByTestId('invite-enter-session')).toBeTruthy();
+    });
+    act(() => {
+      seedParticipantJoined(1, 'debater-B', DEBATER_B_ID, 'maria');
+    });
+    await waitFor(() => {
+      const occupant = screen
+        .getAllByTestId('invite-slot-occupant')
+        .find((el) => el.getAttribute('data-role') === 'debater-B');
+      expect(occupant?.textContent).toBe('maria');
+    });
+    const button = screen.getByTestId('invite-enter-session');
+    expect(button.getAttribute('title')).toBe('Awaiting Debater A');
+    expect(screen.getByTestId('invite-enter-session-hint').textContent).toBe(
+      'Waiting for Debater A to join before you can enter.',
+    );
+  });
+
+  it('awaiting-B: only debater-A present → title="Awaiting Debater B"', async () => {
+    renderRoute();
+    await waitFor(() => {
+      expect(screen.getByTestId('invite-enter-session')).toBeTruthy();
+    });
+    act(() => {
+      seedParticipantJoined(1, 'debater-A', DEBATER_A_ID, 'ben');
+    });
+    await waitFor(() => {
+      const occupant = screen
+        .getAllByTestId('invite-slot-occupant')
+        .find((el) => el.getAttribute('data-role') === 'debater-A');
+      expect(occupant?.textContent).toBe('ben');
+    });
+    const button = screen.getByTestId('invite-enter-session');
+    expect(button.getAttribute('title')).toBe('Awaiting Debater B');
+    expect(screen.getByTestId('invite-enter-session-hint').textContent).toBe(
+      'Waiting for Debater B to join before you can enter.',
+    );
+  });
+
+  it('ready: both debaters present → no title, hint="Click to enter the session."', async () => {
+    renderRoute();
+    await waitFor(() => {
+      expect(screen.getByTestId('invite-enter-session')).toBeTruthy();
+    });
+    act(() => {
+      seedParticipantJoined(1, 'debater-A', DEBATER_A_ID, 'ben');
+      seedParticipantJoined(2, 'debater-B', DEBATER_B_ID, 'maria');
+    });
+    await waitFor(() => {
+      const button = screen.getByTestId<HTMLButtonElement>('invite-enter-session');
+      expect(button.disabled).toBe(false);
+    });
+    const button = screen.getByTestId('invite-enter-session');
+    // When enabled, the title is omitted so hover doesn't surface
+    // stale awaiting-tooltip text. Confirm absence.
+    expect(button.hasAttribute('title')).toBe(false);
+    expect(screen.getByTestId('invite-enter-session-hint').textContent).toBe(
+      'Click to enter the session.',
+    );
+  });
+
+  it('a11y: aria-describedby on the button points at the hint paragraph id', async () => {
+    renderRoute();
+    await waitFor(() => {
+      expect(screen.getByTestId('invite-enter-session')).toBeTruthy();
+    });
+    const button = screen.getByTestId('invite-enter-session');
+    expect(button.getAttribute('aria-describedby')).toBe('invite-enter-session-hint');
+    const hint = screen.getByTestId('invite-enter-session-hint');
+    expect(hint.getAttribute('id')).toBe('invite-enter-session-hint');
+  });
+
+  it('i18n: every new lobby key resolves in en-US (no raw key strings leak)', async () => {
+    renderRoute();
+    await waitFor(() => {
+      expect(screen.getByTestId('invite-session-topic')).toBeTruthy();
+    });
+    // Pending state — badges + tooltip + hint all resolve.
+    const badgesPending = screen.getAllByTestId('invite-slot-ready');
+    for (const badge of badgesPending) {
+      const text = badge.textContent ?? '';
+      expect(text.length).toBeGreaterThan(0);
+      expect(text.startsWith('moderator.invite.')).toBe(false);
+    }
+    const buttonPending = screen.getByTestId('invite-enter-session');
+    const titlePending = buttonPending.getAttribute('title') ?? '';
+    expect(titlePending.length).toBeGreaterThan(0);
+    expect(titlePending.startsWith('moderator.invite.')).toBe(false);
+    const hintPending = screen.getByTestId('invite-enter-session-hint').textContent ?? '';
+    expect(hintPending.length).toBeGreaterThan(0);
+    expect(hintPending.startsWith('moderator.invite.')).toBe(false);
+    // Ready state — banner + hint resolve.
+    act(() => {
+      seedParticipantJoined(1, 'debater-A', DEBATER_A_ID, 'ben');
+      seedParticipantJoined(2, 'debater-B', DEBATER_B_ID, 'maria');
+    });
+    await waitFor(() => {
+      expect(screen.queryByTestId('invite-both-ready-banner')).toBeTruthy();
+    });
+    const banner = screen.getByTestId('invite-both-ready-banner').textContent ?? '';
+    expect(banner.length).toBeGreaterThan(0);
+    expect(banner.startsWith('moderator.invite.')).toBe(false);
+    const hintReady = screen.getByTestId('invite-enter-session-hint').textContent ?? '';
+    expect(hintReady.length).toBeGreaterThan(0);
+    expect(hintReady.startsWith('moderator.invite.')).toBe(false);
   });
 });
 
