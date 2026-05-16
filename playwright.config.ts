@@ -38,6 +38,8 @@ import { defineConfig, devices } from '@playwright/test';
 
 import { LOCALE_COOKIE_NAME, SUPPORTED_LOCALES } from '@a-conversa/i18n-catalogs';
 
+import { AUTH_STORAGE_STATE_PATH } from './tests/e2e/fixtures/auth-storage-path';
+
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:3000';
 
 // Derive the cookie's `domain` attribute from the base URL so the
@@ -180,6 +182,37 @@ export default defineConfig({
         ignoreHTTPSErrors: true,
       },
     },
+    // One-time auth bootstrap. Drives a single OIDC dance for `alice`
+    // and writes the resulting cookie jar to `AUTH_STORAGE_STATE_PATH`.
+    // Every downstream project that needs an authed page declares this
+    // as a `dependencies` entry; Playwright runs setup once per
+    // dependency relationship, before the dependents start. Previously
+    // each test ran its own `loginAs`, which fanned ~30 OIDC dances
+    // through the dev Authelia container per suite and tripped the
+    // per-IP rate limiter (the rate-limit rejection surfaces inside
+    // `openid-client` as `OAUTH_RESPONSE_IS_NOT_CONFORM` → 500 on
+    // `/api/auth/callback`, which in turn made `loginAs` fail with a
+    // misleading `auth-pending-cookie-invalid` envelope from the
+    // follow-up `POST /api/auth/screen-name` — the failure surface
+    // that motivated the change). Sharing one cookie jar across the
+    // suite drops the dance count back to one per consuming project.
+    //
+    // The setup uses `chromium-create-session`'s profile (single
+    // locale en-US, ignoreHTTPSErrors for the Authelia self-signed
+    // cert, pre-seeded en-US locale cookie) because every consuming
+    // project happens to share that profile; if a future consumer
+    // needs a different profile, add a second setup project rather
+    // than parameterising this one.
+    {
+      name: 'setup-auth',
+      testMatch: /global-auth\.setup\.ts$/,
+      use: {
+        ...devices['Desktop Chrome'],
+        locale: 'en-US',
+        ignoreHTTPSErrors: true,
+        storageState: localeStorageState('en-US'),
+      },
+    },
     // Hover-details e2e (mod_hover_details). Drives the moderator's
     // operate route, seeds synthetic node + edge events into the
     // Zustand WS store via `window.__aConversaWsStore` (dev-only
@@ -192,17 +225,19 @@ export default defineConfig({
     // - `ignoreHTTPSErrors: true` mirrors `chromium-auth` because the
     //   OIDC redirect crosses the self-signed cert on
     //   `authelia.aconversa.local`.
-    // - Reuses the same en-US locale storage state as the per-locale
-    //   smoke project so the SPA's first paint resolves the catalog
-    //   the spec's content assertions expect.
+    // - `storageState` loads the bootstrap auth jar from
+    //   `setup-auth`. `loginAs` short-circuits on the resulting
+    //   `/api/auth/me === 200` probe so the per-test OIDC dance never
+    //   runs.
     {
       name: 'chromium-moderator-hover',
       testMatch: /moderator-hover-details\.spec\.ts$/,
+      dependencies: ['setup-auth'],
       use: {
         ...devices['Desktop Chrome'],
         locale: 'en-US',
         ignoreHTTPSErrors: true,
-        storageState: localeStorageState('en-US'),
+        storageState: AUTH_STORAGE_STATE_PATH,
       },
     },
     // Graph layout e2e (mod_layout_engine_choice, ADR 0025). Drives the
@@ -217,11 +252,12 @@ export default defineConfig({
     {
       name: 'chromium-moderator-layout',
       testMatch: /moderator-graph-layout\.spec\.ts$/,
+      dependencies: ['setup-auth'],
       use: {
         ...devices['Desktop Chrome'],
         locale: 'en-US',
         ignoreHTTPSErrors: true,
-        storageState: localeStorageState('en-US'),
+        storageState: AUTH_STORAGE_STATE_PATH,
       },
     },
     // Create-session whole-flow e2e (mod_create_session_form) and
@@ -245,11 +281,12 @@ export default defineConfig({
     {
       name: 'chromium-create-session',
       testMatch: /(create-session-flow|moderator-capture|invite-participants-flow)\.spec\.ts$/,
+      dependencies: ['setup-auth'],
       use: {
         ...devices['Desktop Chrome'],
         locale: 'en-US',
         ignoreHTTPSErrors: true,
-        storageState: localeStorageState('en-US'),
+        storageState: AUTH_STORAGE_STATE_PATH,
       },
     },
   ],

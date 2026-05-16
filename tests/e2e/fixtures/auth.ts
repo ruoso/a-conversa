@@ -218,6 +218,27 @@ export async function loginAs(
   const timeoutMs = opts.timeoutMs ?? 60_000;
   const deadlineMs = Date.now() + timeoutMs;
 
+  // 0. Storage-state short-circuit. The setup project
+  //    (`tests/e2e/global-auth.setup.ts`) drives a single OIDC dance
+  //    per project and writes the resulting cookie jar to
+  //    `AUTH_STORAGE_STATE_PATH`; every consuming project loads that
+  //    file as its `storageState`, so the page's cookie jar already
+  //    carries `aconversa-session` before the first navigation. The
+  //    `/api/auth/me === 200` probe is the canonical "the platform
+  //    accepts this cookie" check; on a hit we skip the dance entirely
+  //    (avoids hammering Authelia's per-IP rate limiter, which is what
+  //    surfaced as `OAUTH_RESPONSE_IS_NOT_CONFORM` → 500 callback →
+  //    bogus `auth-pending-cookie-invalid` failure in the original
+  //    flake). On a miss (no storage state, expired cookie, or a
+  //    different user wanted) we fall through to the full dance.
+  const probe = await page.request.get('/api/auth/me');
+  if (probe.status() === 200) {
+    const body = (await probe.json()) as { userId: string; screenName: string };
+    if (body.screenName === screenName) {
+      return body;
+    }
+  }
+
   // 1. Land on the SPA's login route. Even if the SPA hasn't fully
   //    mounted (no `auth-login-button` rendered yet) we can fall back
   //    to a direct navigation to `/api/auth/login` — but the canonical

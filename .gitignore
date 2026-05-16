@@ -17,6 +17,7 @@ coverage/
 # Test artifacts
 playwright-report/
 test-results/
+tests/e2e/.auth/
 
 # Package manager caches
 # Currently on pnpm (per pnpm-lock.yaml at root); npm and yarn caches are
