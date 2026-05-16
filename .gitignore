@@ -50,6 +50,10 @@ tests/e2e/.auth/
 report/*
 !report/.gitkeep
 
+# Temp tjp written by `scripts/unblocked.ts` (cleaned up in normal runs,
+# but ignore it so an aborted run doesn't pollute git status).
+.unblocked-report.tjp
+
 # Local-dev compose stack
 # Placeholder: data-volume mounts (e.g., a `data/` directory for the
 # Postgres container) will be added when foundation.dev_env.compose_file

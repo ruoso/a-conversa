@@ -15,7 +15,7 @@
 # a thin alias for back-compat with existing dev-loop muscle memory.
 # See ADR 0018 / ADR 0023 / ADR 0020 (Amendments) for context.
 
-.PHONY: help install check test test\:e2e test\:e2e\:compose up up-app up-prod-mode _bring-up migrate down down-v logs ps seed clean
+.PHONY: help install check test test\:e2e test\:e2e\:compose up up-app up-prod-mode _bring-up migrate down down-v logs ps seed unblocked clean
 
 help:
 	@echo "a-conversa — make targets"
@@ -37,6 +37,8 @@ help:
 	@echo "  make logs           tail logs from the dev stack"
 	@echo "  make ps             show dev-stack service status"
 	@echo "  make seed           seed the dev database (stub — see foundation.dev_env.seed_data_script)"
+	@echo "  make unblocked      list, per milestone, the leaf tasks that are currently unblocked"
+	@echo "                      (uses tj3 to resolve the WBS dep graph; see scripts/unblocked.ts)"
 	@echo "  make clean          remove build artifacts and caches"
 
 install:
@@ -184,6 +186,12 @@ ps:
 
 seed:
 	@pnpm run seed -- $(if $(FIXTURE),--fixture $(FIXTURE))
+
+# List currently-unblocked leaf tasks, grouped by milestone. Uses tj3
+# (TaskJuggler) to resolve the WBS dep graph — see the header comment in
+# `scripts/unblocked.ts` for the approach.
+unblocked:
+	@pnpm run unblocked
 
 clean:
 	@rm -rf node_modules apps/*/node_modules packages/*/node_modules
