@@ -18,4 +18,17 @@
 // package's own version literal; bumping it is intentional and forces the
 // test to update in lockstep.
 
+// Mount-contract types — see `./mount-contract/` and
+// tasks/refinements/shell-package/shell_mount_contract.md.
+export type {
+  AuthContextValue,
+  I18n,
+  MountFn,
+  MountProps,
+  SurfaceMeta,
+  SurfaceModule,
+  UnmountFn,
+  WebSocketClient,
+} from './mount-contract/index.js';
+
 export const SHELL_PACKAGE_VERSION = '0.1.0' as const;

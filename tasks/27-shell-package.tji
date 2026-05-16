@@ -32,6 +32,7 @@ task shell_package "Shell package (@aconversa/shell)" {
   task shell_mount_contract "Mount-contract types (MountProps, UnmountFn, SurfaceModule)" {
     effort 0.5d
     allocate team
+    complete 100
     depends !shell_pkg_skeleton
     note "Refinement: tasks/refinements/shell-package/shell_mount_contract.md"
     note "TypeScript types every surface bundle's mount() signature conforms to and every consumer (root + tests) imports. ADR 0026."
