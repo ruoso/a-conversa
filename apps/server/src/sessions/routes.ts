@@ -14,6 +14,7 @@
 //   - PATCH /api/sessions/:id/privacy — host toggles the session privacy.
 //   - POST /api/sessions/:id/participants — assign a debater participant (host-only).
 //   - DELETE /api/sessions/:id/participants/:userId — remove a participant (host or self).
+//   - GET /api/sessions/:id/participants — list a session's participant rows (visibility-gated).
 //
 // Refinements: tasks/refinements/backend/create_session_endpoint.md,
 //              tasks/refinements/backend/list_sessions_endpoint.md,
@@ -21,7 +22,8 @@
 //              tasks/refinements/backend/get_session_endpoint.md,
 //              tasks/refinements/backend/end_session_endpoint.md,
 //              tasks/refinements/backend/session_privacy_toggle.md,
-//              tasks/refinements/backend/participant_assignment.md
+//              tasks/refinements/backend/participant_assignment.md,
+//              tasks/refinements/backend/list_session_participants_endpoint.md
 // ADRs:        docs/adr/0020-postgres-write-path-locking-and-event-ordering.md,
 //              docs/adr/0021-event-envelope-discriminated-union-with-zod.md,
 //              docs/adr/0022-no-throwaway-verifications.md,
@@ -222,7 +224,7 @@ import { getDefaultPool, type DbPool } from '../db.js';
 import { appendSessionEvent } from '../events/append.js';
 import { validateEvent } from '../events/validate.js';
 import { canReferenceAnnotation, canReferenceEdge, canReferenceNode } from './references.js';
-import { visibilityWhereFragment } from './visibility.js';
+import { canSeeSession, visibilityWhereFragment } from './visibility.js';
 
 // `@a-conversa/shared-types`'s `Event` discriminated union — used by
 // the post-COMMIT broadcast emit. The route's `withTransaction`
@@ -502,6 +504,60 @@ export const sessionParticipantResponseSchema = {
  */
 export const sessionParticipantResponseRef = {
   $ref: `${SESSION_PARTICIPANT_RESPONSE_SCHEMA_ID}#`,
+} as const;
+
+/**
+ * Stable `$id` for the wrapper `SessionParticipantListResponse` schema
+ * returned by `GET /sessions/:id/participants`. Declared top-level so
+ * OpenAPI carries a single `components.schemas.SessionParticipantListResponse`
+ * entry. Mirrors the wrapper-shape convention `SessionListResponse`
+ * established (`{ sessions: SessionResponse[] }`) — the wrapper key
+ * leaves room for future pagination metadata or filter echo without a
+ * breaking change.
+ *
+ * Refinement: tasks/refinements/backend/list_session_participants_endpoint.md.
+ */
+export const SESSION_PARTICIPANT_LIST_RESPONSE_SCHEMA_ID = 'SessionParticipantListResponse';
+
+/**
+ * The canonical session-participant-list response shape — an object
+ * wrapping the `participants` array. Each element is a
+ * `SessionParticipantResponse` referenced via the shared `$ref`, so
+ * OpenAPI carries one per-participant definition and the list endpoint's
+ * schema points at it rather than re-declaring the shape.
+ *
+ * The endpoint returns ALL rows for the session (active + historical) in
+ * `joined_at ASC, id ASC` order. The wrapper is an object (not a raw
+ * array) so future additions — pagination metadata, filter echo, audit
+ * counts — are additive rather than breaking.
+ */
+export const sessionParticipantListResponseSchema = {
+  $id: SESSION_PARTICIPANT_LIST_RESPONSE_SCHEMA_ID,
+  type: 'object',
+  required: ['participants'],
+  additionalProperties: false,
+  properties: {
+    participants: {
+      type: 'array',
+      description:
+        'Every `session_participants` row for the session, including historical rows ' +
+        'where `left_at IS NOT NULL`. Ordered `joined_at ASC, id ASC` — the implicit-' +
+        'moderator row (joined at session-creation time) always sorts first; a stable ' +
+        'tie-breaker on `id` keeps the order deterministic across runs. Clients that ' +
+        'only want the current occupants filter by `leftAt === null` client-side.',
+      items: sessionParticipantResponseRef,
+    },
+  },
+} as const;
+
+/**
+ * The `$ref` `GET /sessions/:id/participants` uses to point at the
+ * shared `SessionParticipantListResponse` schema. Future endpoints that
+ * return a list-of-participants shape (none today) can reference it via
+ * `$ref` for single-source-of-truth.
+ */
+export const sessionParticipantListResponseRef = {
+  $ref: `${SESSION_PARTICIPANT_LIST_RESPONSE_SCHEMA_ID}#`,
 } as const;
 
 /**
@@ -1106,6 +1162,15 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = asy
   // `components.schemas.SessionParticipantResponse` entry.
   if (app.getSchema(SESSION_PARTICIPANT_RESPONSE_SCHEMA_ID) === undefined) {
     app.addSchema(sessionParticipantResponseSchema);
+  }
+
+  // Register the wrapper `SessionParticipantListResponse` schema once
+  // per Fastify instance. `GET /sessions/:id/participants` references
+  // it via `sessionParticipantListResponseRef`; OpenAPI carries a
+  // single `components.schemas.SessionParticipantListResponse` entry.
+  // Refinement: tasks/refinements/backend/list_session_participants_endpoint.md.
+  if (app.getSchema(SESSION_PARTICIPANT_LIST_RESPONSE_SCHEMA_ID) === undefined) {
+    app.addSchema(sessionParticipantListResponseSchema);
   }
 
   // Register the `EntityInclusionResponse` schema once per Fastify
@@ -2474,6 +2539,119 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = asy
       }
 
       return reply.code(200).send(participantRowToResponse(updated));
+    },
+  );
+
+  // ----------------------------------------------------------------
+  // GET /sessions/:id/participants — list a session's participants.
+  // ----------------------------------------------------------------
+  //
+  // Refinement: tasks/refinements/backend/list_session_participants_endpoint.md.
+  //
+  // An authenticated user fetches the participant rows for a session.
+  // The endpoint returns ALL rows for the session — active AND historical
+  // (rows with `left_at IS NOT NULL` from leave-and-rejoin churn) — in
+  // a stable `joined_at ASC, id ASC` order. The implicit-moderator row
+  // (joined at session-creation time per the create-session amendment)
+  // always sorts first; debater rows follow in join order. Clients that
+  // only want the current occupants filter by `leftAt === null` client-
+  // side (`deriveSlotOccupants` already does this over the event stream;
+  // the same logic applies to this REST shape).
+  //
+  // Visibility is routed through the `canSeeSession` predicate from
+  // `./visibility.ts` — the canonical seam the visibility module's lead
+  // doc explicitly named for participant-list endpoints (lines 41-45).
+  // The predicate runs first; false → 404 `not-found` (existence-non-
+  // leak: identical envelope to "unknown id"). True → a second SELECT
+  // fetches the participant rows. No transaction — both reads are read-
+  // only and the consumers (lobby slot fill, future tab-return
+  // rehydration) tolerate the race between them.
+  app.get(
+    '/api/sessions/:id/participants',
+    {
+      preHandler: app.authenticate,
+      schema: {
+        tags: ['sessions'],
+        summary: "List a session's participant slot assignments",
+        description:
+          'Returns every `session_participants` row for the supplied session id, ' +
+          'in `joined_at ASC, id ASC` order — active rows (where `left_at IS NULL`) ' +
+          'and historical rows (leave-and-rejoin churn, where `left_at` is set) ' +
+          'are both included. Clients filter on `leftAt === null` if they want ' +
+          'just the current occupants.\n\n' +
+          'Visibility is routed through the canonical `canSeeSession` predicate: ' +
+          'public sessions are visible to every authenticated user; private sessions ' +
+          'are visible only to the host or a current/past participant. Once visible, ' +
+          'the caller sees the full participants list — there is no per-row scrubbing ' +
+          '(knowing who else is in a session you can see is part of being in that ' +
+          'session).\n\n' +
+          'When the session does not exist OR exists but is invisible to the caller, ' +
+          'the server returns 404 `not-found` — the two cases are deliberately ' +
+          'indistinguishable to avoid leaking the existence of private sessions to ' +
+          'unauthorized callers (mirrors the `GET /sessions/:id` 404-not-403 rule).\n\n' +
+          'Returns 401 `auth-required` when no valid session cookie is present; ' +
+          '400 `validation-failed` when the path `:id` is not a UUID.',
+        security: [{ cookieAuth: [] }],
+        params: sessionIdParamsSchema,
+        response: {
+          200: sessionParticipantListResponseRef,
+          '4xx': errorEnvelopeRef,
+          '5xx': errorEnvelopeRef,
+        },
+      },
+    },
+    async (request, reply) => {
+      // Defensive — same shape as the sibling handlers. The middleware
+      // guarantees `authUser` is set on every request that reaches a
+      // handler with `preHandler: app.authenticate`.
+      const auth = request.authUser;
+      if (auth === undefined) {
+        throw new ApiError(
+          500,
+          'internal-error',
+          'auth middleware did not populate request.authUser',
+        );
+      }
+      const userId = auth.id;
+
+      const params = request.params as { id: string };
+      const sessionId = params.id;
+
+      const pool = ensurePool();
+
+      // 1. Visibility gate — `canSeeSession` returns the boolean answer
+      //    against the same predicate every session-management endpoint
+      //    uses. False collapses "session doesn't exist" and "session
+      //    exists but caller can't see it" into a single outcome (the
+      //    predicate doesn't distinguish the two). Both branches throw
+      //    the same 404 with the same message — the existence-non-leak
+      //    rule inherited from `GET /sessions/:id`.
+      const visible = await canSeeSession(pool, sessionId, userId);
+      if (!visible) {
+        throw ApiError.notFound('session not found or not visible');
+      }
+
+      // 2. Fetch every participant row for the session in chronological
+      //    join order. The visibility check above already established
+      //    the caller may see the session as a whole; the participants
+      //    list is a property OF the session and inherits its
+      //    visibility. The ORDER BY's secondary sort on `id` keeps the
+      //    output deterministic when two rows share a `joined_at` value
+      //    (astronomically unlikely under NOW() resolution, but UUIDs
+      //    are non-monotonic so we need a stable tie-breaker for test
+      //    assertions and for the implicit-moderator-first ordering to
+      //    be reliable across reseeded fixtures).
+      const result = await pool.query<SessionParticipantsRow>(
+        `SELECT id, session_id, user_id, role, joined_at, left_at
+         FROM session_participants
+         WHERE session_id = $1
+         ORDER BY joined_at ASC, id ASC`,
+        [sessionId],
+      );
+
+      return reply
+        .code(200)
+        .send({ participants: result.rows.map((row) => participantRowToResponse(row)) });
     },
   );
 

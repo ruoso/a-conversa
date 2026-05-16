@@ -318,6 +318,30 @@ function makeMemoryPool(initialUsers: UserRow[]): {
         rows: matches as unknown as TRow[],
       });
     }
+    if (
+      text.includes('FROM session_participants') &&
+      text.includes('WHERE session_id = $1') &&
+      text.includes('ORDER BY joined_at ASC, id ASC') &&
+      !text.includes('left_at IS NULL') &&
+      !text.includes('role = $2') &&
+      !text.includes('user_id = $2')
+    ) {
+      // The `GET /sessions/:id/participants` SELECT. Returns ALL rows
+      // for the session (active + historical) sorted by `joined_at ASC,
+      // id ASC` — implicit-moderator row first, then debater rows in
+      // join order. The shim mirrors the production WHERE: every row
+      // whose `session_id` matches, no `left_at` filter.
+      const targetSessionId = p[0] as string;
+      const matches = store.participants
+        .filter((sp) => sp.session_id === targetSessionId)
+        .sort((a, b) => {
+          const aJ = (a.joined_at ?? new Date(0)).getTime();
+          const bJ = (b.joined_at ?? new Date(0)).getTime();
+          if (aJ !== bJ) return aJ - bJ;
+          return (a.id ?? '').localeCompare(b.id ?? '');
+        });
+      return Promise.resolve({ rows: matches as unknown as TRow[] });
+    }
     if (text.includes('UPDATE session_participants') && text.includes('SET left_at = NOW()')) {
       // The participant-DELETE UPDATE. Flip `left_at` on the
       // matching row to a deterministic timestamp; RETURNING
@@ -3670,6 +3694,258 @@ describe('DELETE /sessions/:id/participants/:userId — host or self removal', (
     const body = response.json<{ error?: { code?: string } }>();
     expect(body.error?.code).toBe('not-found');
     expect(built.store.trace).toContain('ROLLBACK');
+  });
+});
+
+// =============================================================
+// GET /sessions/:id/participants — list a session's participants
+// =============================================================
+//
+// Refinement: tasks/refinements/backend/list_session_participants_endpoint.md.
+//
+// Coverage (6 cases):
+//   1. Authenticated + visible public session → 200 + array including
+//      the implicit-moderator row.
+//   2. No auth cookie → 401 auth-required.
+//   3. Unknown id → 404 not-found.
+//   4. Private session NOT visible to caller → 404 not-found
+//      (existence-non-leak: same envelope as unknown-id).
+//   5. Private session visible to a non-host participant → 200 + array
+//      containing that participant's row.
+//   6. Non-UUID path param → 400 validation-failed.
+
+describe('GET /sessions/:id/participants — list a session participants', () => {
+  async function buildWithSeed(opts: {
+    users: UserRow[];
+    sessions: SessionRow[];
+    participants?: SessionParticipantRow[];
+  }): Promise<BuiltApp> {
+    const built = await buildApp({ users: opts.users });
+    built.store.sessions.push(...opts.sessions);
+    if (opts.participants !== undefined) {
+      built.store.participants.push(...opts.participants);
+    }
+    return built;
+  }
+
+  let built: BuiltApp | undefined;
+  afterEach(async () => {
+    if (built !== undefined) {
+      await built.app.close();
+      built = undefined;
+    }
+  });
+
+  // Fixed UUIDs for the seeded fixtures. Distinct from sibling-suite
+  // ids so a stray cross-suite reference fails loudly.
+  const SESSION_ID = '00000000-0000-4000-8000-3333aaaa0001';
+  const PRIVATE_SESSION_ID = '00000000-0000-4000-8000-3333eeee0001';
+
+  const PUBLIC_SESSION: SessionRow = {
+    id: SESSION_ID,
+    host_user_id: ALICE_ID,
+    privacy: 'public',
+    topic: 'A public debate',
+    created_at: new Date('2026-05-09T10:00:00.000Z'),
+    ended_at: null,
+  };
+  const PRIVATE_ALICE: SessionRow = {
+    id: PRIVATE_SESSION_ID,
+    host_user_id: ALICE_ID,
+    privacy: 'private',
+    topic: "Alice's private debate",
+    created_at: new Date('2026-05-09T11:00:00.000Z'),
+    ended_at: null,
+  };
+
+  // Implicit-moderator row Alice gets at session creation.
+  const ALICE_MODERATOR: SessionParticipantRow = {
+    id: '00000000-0000-4000-9000-300000000001',
+    session_id: SESSION_ID,
+    user_id: ALICE_ID,
+    role: 'moderator',
+    joined_at: new Date('2026-05-09T10:00:00.001Z'),
+    left_at: null,
+  };
+  const BEN_DEBATER: SessionParticipantRow = {
+    id: '00000000-0000-4000-9000-300000000002',
+    session_id: SESSION_ID,
+    user_id: BEN_ID,
+    role: 'debater-A',
+    joined_at: new Date('2026-05-09T10:00:01.000Z'),
+    left_at: null,
+  };
+  const ALICE_MODERATOR_PRIVATE: SessionParticipantRow = {
+    id: '00000000-0000-4000-9000-300000000003',
+    session_id: PRIVATE_SESSION_ID,
+    user_id: ALICE_ID,
+    role: 'moderator',
+    joined_at: new Date('2026-05-09T11:00:00.001Z'),
+    left_at: null,
+  };
+  const BEN_DEBATER_PRIVATE: SessionParticipantRow = {
+    id: '00000000-0000-4000-9000-300000000004',
+    session_id: PRIVATE_SESSION_ID,
+    user_id: BEN_ID,
+    role: 'debater-A',
+    joined_at: new Date('2026-05-09T11:00:01.000Z'),
+    left_at: null,
+  };
+
+  it('returns 200 + the participants list including the implicit-moderator row for an authenticated visible session', async () => {
+    built = await buildWithSeed({
+      users: [
+        { id: ALICE_ID, oauth_subject: 'authelia:alice', screen_name: 'alice', deleted_at: null },
+        { id: BEN_ID, oauth_subject: 'authelia:ben', screen_name: 'ben', deleted_at: null },
+      ],
+      sessions: [PUBLIC_SESSION],
+      // Two rows: the implicit moderator (Alice) and a debater (Ben).
+      // Both rows are active (`leftAt: null`).
+      participants: [ALICE_MODERATOR, BEN_DEBATER],
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'GET',
+      url: `/api/sessions/${SESSION_ID}/participants`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{
+      participants?: Array<{
+        id?: string;
+        sessionId?: string;
+        userId?: string;
+        role?: string;
+        joinedAt?: string;
+        leftAt?: string | null;
+      }>;
+    }>();
+    expect(Array.isArray(body.participants)).toBe(true);
+    expect(body.participants).toHaveLength(2);
+    // Ordering: joined_at ASC → moderator (Alice) first, then debater
+    // (Ben). The implicit-moderator-first invariant is pinned here.
+    const [first, second] = body.participants ?? [];
+    expect(first?.userId).toBe(ALICE_ID);
+    expect(first?.role).toBe('moderator');
+    expect(first?.sessionId).toBe(SESSION_ID);
+    expect(typeof first?.joinedAt).toBe('string');
+    expect(first?.leftAt).toBeNull();
+    expect(second?.userId).toBe(BEN_ID);
+    expect(second?.role).toBe('debater-A');
+    expect(second?.leftAt).toBeNull();
+  });
+
+  it('returns 401 auth-required when no session cookie is present', async () => {
+    built = await buildWithSeed({
+      users: [
+        { id: ALICE_ID, oauth_subject: 'authelia:alice', screen_name: 'alice', deleted_at: null },
+      ],
+      sessions: [PUBLIC_SESSION],
+      participants: [ALICE_MODERATOR],
+    });
+    const response = await built.app.inject({
+      method: 'GET',
+      url: `/api/sessions/${SESSION_ID}/participants`,
+    });
+    expect(response.statusCode).toBe(401);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('auth-required');
+  });
+
+  it('returns 404 not-found when the session id does not exist', async () => {
+    built = await buildWithSeed({
+      users: [
+        { id: ALICE_ID, oauth_subject: 'authelia:alice', screen_name: 'alice', deleted_at: null },
+      ],
+      sessions: [], // no sessions seeded
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const unknownId = '00000000-0000-4000-8000-3333ffff0099';
+    const response = await built.app.inject({
+      method: 'GET',
+      url: `/api/sessions/${unknownId}/participants`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(404);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('not-found');
+  });
+
+  it('returns 404 (NOT 403) when the session is private and the caller is not host/participant', async () => {
+    // Existence-non-leak: Ben must not be able to tell whether Alice's
+    // private session exists. The response is 404, identical to the
+    // unknown-id case above.
+    built = await buildWithSeed({
+      users: [
+        { id: ALICE_ID, oauth_subject: 'authelia:alice', screen_name: 'alice', deleted_at: null },
+        { id: BEN_ID, oauth_subject: 'authelia:ben', screen_name: 'ben', deleted_at: null },
+      ],
+      sessions: [PRIVATE_ALICE],
+      // Ben is NOT seeded as a participant — the private session is
+      // invisible to him.
+      participants: [ALICE_MODERATOR_PRIVATE],
+    });
+    const token = await signSessionToken({ sub: BEN_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'GET',
+      url: `/api/sessions/${PRIVATE_SESSION_ID}/participants`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    // CRITICAL — 404, not 403. Asserting the exact status here is the
+    // load-bearing test for the existence-leak rule (mirrors the
+    // `GET /sessions/:id` 404-not-403 invariant).
+    expect(response.statusCode).toBe(404);
+    expect(response.statusCode).not.toBe(403);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('not-found');
+  });
+
+  it('returns 200 + participants array for a non-host participant on a private session they are part of', async () => {
+    built = await buildWithSeed({
+      users: [
+        { id: ALICE_ID, oauth_subject: 'authelia:alice', screen_name: 'alice', deleted_at: null },
+        { id: BEN_ID, oauth_subject: 'authelia:ben', screen_name: 'ben', deleted_at: null },
+      ],
+      sessions: [PRIVATE_ALICE],
+      // Ben is a participant — the private session is visible to him.
+      participants: [ALICE_MODERATOR_PRIVATE, BEN_DEBATER_PRIVATE],
+    });
+    const token = await signSessionToken({ sub: BEN_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'GET',
+      url: `/api/sessions/${PRIVATE_SESSION_ID}/participants`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{
+      participants?: Array<{ userId?: string; role?: string }>;
+    }>();
+    expect(body.participants).toHaveLength(2);
+    // Ben (the caller) is included; no scrubbing of the host's userId
+    // for non-host viewers.
+    const benRow = body.participants?.find((p) => p.userId === BEN_ID);
+    expect(benRow?.role).toBe('debater-A');
+    const aliceRow = body.participants?.find((p) => p.userId === ALICE_ID);
+    expect(aliceRow?.role).toBe('moderator');
+  });
+
+  it('returns 400 validation-failed when the path :id is not a UUID', async () => {
+    built = await buildWithSeed({
+      users: [
+        { id: ALICE_ID, oauth_subject: 'authelia:alice', screen_name: 'alice', deleted_at: null },
+      ],
+      sessions: [PUBLIC_SESSION],
+      participants: [ALICE_MODERATOR],
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'GET',
+      url: '/api/sessions/not-a-uuid/participants',
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(400);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('validation-failed');
   });
 });
 

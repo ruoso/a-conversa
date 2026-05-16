@@ -579,6 +579,12 @@ task moderator_ui "Moderator UI" {
       depends !mod_invite_participants
       note "Refinement: tasks/refinements/moderator-ui/mod_session_lobby.md"
     }
+    task mod_invite_participants_rest_prefetch "Adopt GET /api/sessions/:id/participants for lobby slot prefetch" {
+      effort 0.5d
+      allocate team
+      depends !mod_invite_participants, backend.session_management.list_session_participants_endpoint
+      note "Frontend adoption of the new GET /api/sessions/:id/participants endpoint. Switch lobby slot fill from WS-catch-up-only to HTTP-prefetch + WS-upgrade composition. Source: tasks/refinements/backend/list_session_participants_endpoint.md (commit landing this leaf)."
+    }
   }
 
   task mod_tests "Moderator UI tests" {

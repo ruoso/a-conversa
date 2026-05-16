@@ -186,8 +186,11 @@ task backend "Backend" {
     task list_session_participants_endpoint "GET /sessions/:id/participants — list participant slot assignments" {
       effort 0.5d
       allocate team
+      complete 100
       depends !get_session_endpoint
       note -8<-
+        Refinement: tasks/refinements/backend/list_session_participants_endpoint.md
+
         Source of debt: mod_invite_participants Status block (this commit) — the moderator's invite view at /sessions/:id/invite currently derives slot occupancy from WS catch-up replay of participant-joined / participant-left events via client.trackSession(sessionId). That path is correct for live sessions but degrades on tab-return after long idle (the WS reconnects and replays from sinceSequence:0, but cold-load shape consistency with the rest of the session-management surface is the canonical REST seam). This endpoint returns the current participants array as a list of SessionParticipantResponse rows (id, sessionId, userId, role, joinedAt, leftAt).
 
         Surfaced via tech-debt registration policy in ORCHESTRATOR.md (this commit).
