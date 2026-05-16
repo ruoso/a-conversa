@@ -713,7 +713,7 @@ task moderator_ui "Moderator UI" {
   task mod_extract_to_mountable_library "Extract moderator to mountable Vite-library bundle (ADR 0026 refactor)" {
     effort 3d
     allocate team
-    depends !mod_shell, shell_package.shell_mount_contract, shell_package.shell_auth_context, shell_package.shell_login_logout_components, shell_package.shell_screen_name_form, shell_package.shell_i18n_bootstrap, shell_package.shell_ws_client, shell_package.shell_error_mapper
+    depends !mod_shell, shell_package.shell_mount_contract, shell_package.shell_substrate_extraction
     note -8<-
       Refinement: tasks/refinements/moderator-ui/mod_extract_to_mountable_library.md
 

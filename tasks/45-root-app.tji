@@ -30,7 +30,7 @@ task root_app "Root app (apps/root/)" {
   task root_providers "Top-level providers (AuthProvider + I18nProvider + BrowserRouter)" {
     effort 0.5d
     allocate team
-    depends !root_pkg_skeleton, shell_package.shell_auth_context, shell_package.shell_i18n_bootstrap
+    depends !root_pkg_skeleton, shell_package.shell_substrate_extraction
     note -8<-
       Refinement: tasks/refinements/root-app/root_providers.md
 
@@ -41,7 +41,7 @@ task root_app "Root app (apps/root/)" {
   task root_login_route "/login route" {
     effort 0.25d
     allocate team
-    depends !root_providers, shell_package.shell_login_logout_components
+    depends !root_providers, shell_package.shell_substrate_extraction
     note -8<-
       Refinement: tasks/refinements/root-app/root_login_route.md
 
@@ -52,7 +52,7 @@ task root_app "Root app (apps/root/)" {
   task root_screen_name_route "/screen-name route" {
     effort 0.25d
     allocate team
-    depends !root_providers, shell_package.shell_screen_name_form
+    depends !root_providers, shell_package.shell_substrate_extraction
     note -8<-
       Refinement: tasks/refinements/root-app/root_screen_name_route.md
 
@@ -63,7 +63,7 @@ task root_app "Root app (apps/root/)" {
   task root_logout_route "/logout route" {
     effort 0.25d
     allocate team
-    depends !root_providers, shell_package.shell_login_logout_components
+    depends !root_providers, shell_package.shell_substrate_extraction
     note -8<-
       Refinement: tasks/refinements/root-app/root_logout_route.md
 

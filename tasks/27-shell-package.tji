@@ -45,80 +45,18 @@ task shell_package "Shell package (@aconversa/shell)" {
     ->8-
   }
 
-  task shell_auth_context "AuthContext provider + useAuth hook" {
-    effort 1d
+  task shell_substrate_extraction "Extract auth + screen-name + login/logout + i18n + WS + error-mapper substrate from apps/moderator into @a-conversa/shell, rewire moderator imports, wrap moderator main.tsx in shell providers, keep all moderator tests green" {
+    effort 7d
     allocate team
-    depends !shell_pkg_skeleton, backend.auth.session_token_management
+    depends !shell_pkg_skeleton, !shell_mount_contract, backend.auth.session_token_management, frontend_i18n.i18n_catalog_workflow, frontend_i18n.i18n_error_code_catalog, backend.websocket_protocol.ws_message_envelope
     note -8<-
-      Refinement: tasks/refinements/shell-package/shell_auth_context.md
+      Refinement: tasks/refinements/shell-package/shell_substrate_extraction.md
 
-      Extracted from apps/moderator/src/auth/useAuth.ts. ADR 0026.
-    ->8-
-  }
+      Collapses the prior seven open shell_package leaves (shell_auth_context, shell_screen_name_form, shell_login_logout_components, shell_i18n_bootstrap, shell_ws_client, shell_error_mapper, shell_tests) into one atomic transition because every leaf otherwise required an isolated "moderator-side rewire + tests stay green" cycle. Per user redirect 2026-05-16. ADR 0026.
 
-  task shell_screen_name_form "<ScreenNameForm> component" {
-    effort 0.5d
-    allocate team
-    depends !shell_auth_context
-    note -8<-
-      Refinement: tasks/refinements/shell-package/shell_screen_name_form.md
+      Lands packages/shell/src/{auth,screen-name,login-logout,i18n,ws,error-mapper}/ with full vitest coverage, deletes the moderator-local copies, rewires ~10 moderator imports, wraps moderator main.tsx in the shell provider tree (AuthProvider + I18nProvider + WsProvider as required by the shell-side implementations), updates moderator test wrappers once, drops the obsolete no-profile-data audit block that greps a file that no longer exists.
 
-      Extracted from apps/moderator/src/routes/ScreenName.tsx. ADR 0026.
-    ->8-
-  }
-
-  task shell_login_logout_components "<LoginButton> + logout() helper" {
-    effort 0.5d
-    allocate team
-    depends !shell_auth_context
-    note -8<-
-      Refinement: tasks/refinements/shell-package/shell_login_logout_components.md
-
-      Extracted from apps/moderator/src/routes/Login.tsx + the moderator's logout path. ADR 0026.
-    ->8-
-  }
-
-  task shell_i18n_bootstrap "Shared i18next instance bootstrap" {
-    effort 0.5d
-    allocate team
-    depends !shell_pkg_skeleton, frontend_i18n.i18n_catalog_workflow
-    note -8<-
-      Refinement: tasks/refinements/shell-package/shell_i18n_bootstrap.md
-
-      Factory that creates the shared i18next instance consuming @aconversa/i18n-catalogs. ADR 0026 + ADR 0024.
-    ->8-
-  }
-
-  task shell_ws_client "Shared WebSocket client" {
-    effort 1d
-    allocate team
-    depends !shell_pkg_skeleton, backend.websocket_protocol.ws_message_envelope
-    note -8<-
-      Refinement: tasks/refinements/shell-package/shell_ws_client.md
-
-      Extracted from apps/moderator/src/ws/client.ts. ADR 0026.
-    ->8-
-  }
-
-  task shell_error_mapper "ApiError code -> i18n-key mapping helper" {
-    effort 0.25d
-    allocate team
-    depends !shell_pkg_skeleton, frontend_i18n.i18n_error_code_catalog
-    note -8<-
-      Refinement: tasks/refinements/shell-package/shell_error_mapper.md
-
-      Extracted from the errorCodeToI18nKey helpers in apps/moderator/src/routes/CreateSession.tsx + apps/moderator/src/routes/ScreenName.tsx. ADR 0026.
-    ->8-
-  }
-
-  task shell_tests "Vitest unit tests for the shell package" {
-    effort 1d
-    allocate team
-    depends !shell_auth_context, !shell_screen_name_form, !shell_login_logout_components, !shell_i18n_bootstrap, !shell_ws_client, !shell_error_mapper
-    note -8<-
-      Refinement: tasks/refinements/shell-package/shell_tests.md
-
-      Vitest coverage per ADR 0006 + ADR 0022. ADR 0026.
+      Leaves the moderator's mountable-library refactor proper (Vite library mode, mount() export, URL prefix migration /sessions/:id/* → /m/sessions/:id/*, deletion of moderator-local index.html + main.tsx bootstrap) to the separate mod_extract_to_mountable_library task.
     ->8-
   }
 }
