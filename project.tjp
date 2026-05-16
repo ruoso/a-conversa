@@ -12,6 +12,15 @@ project aconversa "a-conversa" 2026-05-01 +5y {
   currencyformat "(" ")" "," "." 0
 }
 
+# We don't need to generate this all the time, uncomment when you want to see it.
+#taskreport gantt "Gantt Chart" {
+#  formats html
+#  headline "Simple Gantt Chart"
+#  columns bsi, name, status, chart
+#  loadunit hours
+#}
+#
+
 # Single placeholder resource. TaskJuggler requires at least one resource for
 # `effort`-based tasks to be syntactically valid. We are not allocating real
 # people here; this is purely structural.
