@@ -56,6 +56,13 @@ task backend "Backend" {
       note "Source of debt: mod_create_session_form (this commit) — `/sessions/new` returned 400 from Fastify's GET /sessions/:id UUID params validator BEFORE the static-frontends SPA fallback could fire, forcing the moderator route to `/sessions/new/setup` as a 3-segment workaround. Any future 2-segment SPA route under /sessions/* will hit the same wall. Options: (a) move all session API routes under /api/sessions/*; (b) gate the params validator on the Accept header (validate UUID only for application/json, fall through to SPA for text/html); (c) explicitly exempt named segments like /sessions/new from validation. Choose under refinement."
       note "Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit b7c5ff0)."
     }
+    task serve_static_frontends_multi_surface "Extend static-frontends plugin to serve root app + per-surface bundles (ADR 0026)" {
+      effort 0.5d
+      allocate team
+      depends !serve_static_frontends
+      note "Refinement: tasks/refinements/backend/serve_static_frontends_multi_surface.md"
+      note "Extends the serve_static_frontends plugin to: (a) serve apps/root/dist/index.html for non-API + non-/_surfaces/* paths; (b) serve apps/root/dist/assets/* for root's chunked assets; (c) serve per-surface bundles under /_surfaces/{moderator,participant,audience,replay-test}/[hash].js (plus CSS sidecars) with long-lived cache headers; (d) serve /_surfaces/manifest.json mapping each surface to its current hashed bundle URL. The root reads the manifest at boot. ADR 0026 — micro-frontend root app + lazy-loaded surface bundles."
+    }
   }
 
   task auth "Authentication" {

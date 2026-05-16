@@ -41,20 +41,20 @@ task milestones "Milestones" {
 
   task m_moderator_mvp "M4: Moderator MVP" {
     milestone
-    depends !m_backend_mvp, moderator_ui.mod_capture_flow, moderator_ui.mod_pending_proposals_pane, moderator_ui.mod_decompose_flow, moderator_ui.mod_diagnostic_flow, moderator_ui.mod_axiom_mark_flow, moderator_ui.mod_session_setup
-    note "A moderator can run a session: create session, capture statements, classify, decompose, run diagnostics, axiom-mark, commit. Enough to drive a debate from the operator side."
+    depends !m_backend_mvp, moderator_ui.mod_capture_flow, moderator_ui.mod_pending_proposals_pane, moderator_ui.mod_decompose_flow, moderator_ui.mod_diagnostic_flow, moderator_ui.mod_axiom_mark_flow, moderator_ui.mod_session_setup, moderator_ui.mod_extract_to_mountable_library
+    note "A moderator can run a session: create session, capture statements, classify, decompose, run diagnostics, axiom-mark, commit. Enough to drive a debate from the operator side. Reopened on 2026-05-16 by the ADR 0026 micro-frontend pivot: now also depends on mod_extract_to_mountable_library, which converts apps/moderator from standalone SPA to mountable Vite-library bundle and repaths routes under /m/*."
   }
 
   task m_participant_mvp "M5: Participant MVP" {
     milestone
-    depends !m_backend_mvp, participant_ui.part_graph_view, participant_ui.part_voting, participant_ui.part_withdraw, participant_ui.part_axiom_mark_from_tablet, participant_ui.part_session_join
-    note "A debater can join a session, see the graph, vote per facet, withdraw agreement, and propose axiom-marks from their tablet."
+    depends !m_backend_mvp, participant_ui.part_graph_view, participant_ui.part_voting, participant_ui.part_withdraw, participant_ui.part_axiom_mark_from_tablet, participant_ui.part_session_join, shell_package, root_app
+    note "A debater can join a session, see the graph, vote per facet, withdraw agreement, and propose axiom-marks from their tablet. Under ADR 0026 the participant surface mounts inside the new apps/root/ app via @aconversa/shell; M5 now also depends on shell_package + root_app."
   }
 
   task m_audience_mvp "M6: Audience MVP" {
     milestone
-    depends !m_backend_mvp, audience.aud_graph_rendering, audience.aud_animations, audience.aud_obs_integration, audience.aud_url_routing
-    note "The audience surface renders the live debate well enough to be embedded as an OBS browser source for a video broadcast."
+    depends !m_backend_mvp, audience.aud_graph_rendering, audience.aud_animations, audience.aud_obs_integration, audience.aud_url_routing, shell_package, root_app
+    note "The audience surface renders the live debate well enough to be embedded as an OBS browser source for a video broadcast. Under ADR 0026 the audience surface mounts inside the new apps/root/ app via @aconversa/shell; M6 now also depends on shell_package + root_app."
   }
 
   task m_end_to_end_debate "M7: End-to-end debate" {

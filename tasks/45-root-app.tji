@@ -1,0 +1,98 @@
+# 45 — Root app (apps/root/)
+#
+# The thin micro-frontend root app. Owns:
+#   - auth chrome routes (/login, /screen-name, /logout)
+#   - the landing route (/)
+#   - the URL-prefix dispatcher that lazy-imports surface bundles by prefix
+#     (/m/* -> moderator, /p/* -> participant, /a/* -> audience)
+#   - top-level providers (AuthProvider, I18nextProvider, BrowserRouter)
+#   - the asset-manifest loader for surface bundles
+#   - /auth/callback handling that reads return_to and routes accordingly
+#
+# Created under the micro-frontend pivot in
+# docs/adr/0026-micro-frontend-root-app.md. Sits in the 45 slot
+# deliberately — between participant-ui at 40 and audience at 50 — so the
+# dispatcher's dependency edges into each surface read top-to-bottom in
+# build order.
+
+task root_app "Root app (apps/root/)" {
+  task root_pkg_skeleton "apps/root workspace skeleton" {
+    effort 0.5d
+    allocate team
+    depends foundation.repo_skeleton, foundation.stack_decisions.frontend_framework_decision, frontend_i18n.i18n_catalog_workflow
+    note "Refinement: tasks/refinements/root-app/root_pkg_skeleton.md"
+    note "Creates apps/root/ with Vite, React, TS, Tailwind, package.json named @aconversa/root. ADR 0026."
+  }
+
+  task root_providers "Top-level providers (AuthProvider + I18nProvider + BrowserRouter)" {
+    effort 0.5d
+    allocate team
+    depends !root_pkg_skeleton, shell_package.shell_auth_context, shell_package.shell_i18n_bootstrap
+    note "Refinement: tasks/refinements/root-app/root_providers.md"
+    note "Wires AuthProvider + I18nProvider + BrowserRouter at the top of the tree. ADR 0026."
+  }
+
+  task root_login_route "/login route" {
+    effort 0.25d
+    allocate team
+    depends !root_providers, shell_package.shell_login_logout_components
+    note "Refinement: tasks/refinements/root-app/root_login_route.md"
+    note "Renders shell.LoginButton. ADR 0026."
+  }
+
+  task root_screen_name_route "/screen-name route" {
+    effort 0.25d
+    allocate team
+    depends !root_providers, shell_package.shell_screen_name_form
+    note "Refinement: tasks/refinements/root-app/root_screen_name_route.md"
+    note "Renders shell.ScreenNameForm. ADR 0026."
+  }
+
+  task root_logout_route "/logout route" {
+    effort 0.25d
+    allocate team
+    depends !root_providers, shell_package.shell_login_logout_components
+    note "Refinement: tasks/refinements/root-app/root_logout_route.md"
+    note "POSTs /auth/logout, reloads to /login. ADR 0026."
+  }
+
+  task root_landing "/ route (authenticated + unauthenticated states)" {
+    effort 0.5d
+    allocate team
+    depends !root_providers
+    note "Refinement: tasks/refinements/root-app/root_landing.md"
+    note "Landing page at /, branching on auth state. ADR 0026."
+  }
+
+  task root_callback_return_to "/auth/callback handling with return_to query" {
+    effort 0.5d
+    allocate team
+    depends !root_providers, backend.auth.session_token_management
+    note "Refinement: tasks/refinements/root-app/root_callback_return_to.md"
+    note "/auth/callback reads return_to query parameter and routes accordingly post-auth so an invite-clicker lands back at their invite page after auth. ADR 0026."
+  }
+
+  task root_manifest_loader "Surface-bundle manifest loader" {
+    effort 0.5d
+    allocate team
+    depends !root_providers, shell_package.shell_mount_contract
+    note "Refinement: tasks/refinements/root-app/root_manifest_loader.md"
+    note "Fetches /_surfaces/manifest.json at boot and exposes loadSurface(prefix): Promise<SurfaceModule>. ADR 0026."
+  }
+
+  task root_dispatcher "URL-prefix-based surface dispatcher" {
+    effort 1d
+    allocate team
+    depends !root_manifest_loader
+    note "Refinement: tasks/refinements/root-app/root_dispatcher.md"
+    note "/m/* -> moderator, /p/* -> participant, /a/* -> audience. Calls loadSurface() then mount(). Handles unmount on URL change. ADR 0026."
+  }
+
+  task root_tests "Root app unit + Playwright smoke" {
+    effort 1d
+    allocate team
+    depends !root_dispatcher, foundation.test_infra
+    note "Refinement: tasks/refinements/root-app/root_tests.md"
+    note "Root unit tests plus a Playwright smoke exercising /login -> /screen-name -> / for a new user. Per ADR 0008 + ADR 0022. ADR 0026."
+  }
+}

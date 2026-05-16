@@ -1,0 +1,94 @@
+# 27 — Shell package (@aconversa/shell)
+#
+# The shared substrate consumed by both the new root app (apps/root/) and
+# every UI surface (apps/moderator/, apps/participant/, apps/audience/,
+# apps/replay-test/). Holds the mount-contract types, the auth context +
+# helpers + screen-name form, the shared i18next instance bootstrap, the
+# shared WebSocket client, and the ApiError code -> i18n-key mapper.
+#
+# Created under the micro-frontend pivot in
+# docs/adr/0026-micro-frontend-root-app.md. Sits in the 27 slot
+# deliberately — between backend-hardening at 25 and moderator-ui at 30 —
+# so the dependency edges from every UI group (and from apps/root/) into
+# this group read top-to-bottom in build order.
+#
+# Net source of every leaf: extracted from apps/moderator/src/ during the
+# moderator refactor (moderator_ui.mod_extract_to_mountable_library); the
+# shell-package leaves below land the extracted code in
+# packages/shell/src/ first, and the moderator refactor then deletes the
+# moderator-local copies and rewires imports.
+
+task shell_package "Shell package (@aconversa/shell)" {
+  task shell_pkg_skeleton "packages/shell workspace skeleton" {
+    effort 0.5d
+    allocate team
+    depends foundation.repo_skeleton, foundation.stack_decisions.frontend_framework_decision
+    note "Refinement: tasks/refinements/shell-package/shell_pkg_skeleton.md"
+    note "Creates packages/shell/ with package.json (@aconversa/shell), tsconfig, vite library-mode config, src/index.ts."
+    note "ADR 0026."
+  }
+
+  task shell_mount_contract "Mount-contract types (MountProps, UnmountFn, SurfaceModule)" {
+    effort 0.5d
+    allocate team
+    depends !shell_pkg_skeleton
+    note "Refinement: tasks/refinements/shell-package/shell_mount_contract.md"
+    note "TypeScript types every surface bundle's mount() signature conforms to and every consumer (root + tests) imports. ADR 0026."
+  }
+
+  task shell_auth_context "AuthContext provider + useAuth hook" {
+    effort 1d
+    allocate team
+    depends !shell_pkg_skeleton, backend.auth.session_token_management
+    note "Refinement: tasks/refinements/shell-package/shell_auth_context.md"
+    note "Extracted from apps/moderator/src/auth/useAuth.ts. ADR 0026."
+  }
+
+  task shell_screen_name_form "<ScreenNameForm> component" {
+    effort 0.5d
+    allocate team
+    depends !shell_auth_context
+    note "Refinement: tasks/refinements/shell-package/shell_screen_name_form.md"
+    note "Extracted from apps/moderator/src/routes/ScreenName.tsx. ADR 0026."
+  }
+
+  task shell_login_logout_components "<LoginButton> + logout() helper" {
+    effort 0.5d
+    allocate team
+    depends !shell_auth_context
+    note "Refinement: tasks/refinements/shell-package/shell_login_logout_components.md"
+    note "Extracted from apps/moderator/src/routes/Login.tsx + the moderator's logout path. ADR 0026."
+  }
+
+  task shell_i18n_bootstrap "Shared i18next instance bootstrap" {
+    effort 0.5d
+    allocate team
+    depends !shell_pkg_skeleton, frontend_i18n.i18n_catalog_workflow
+    note "Refinement: tasks/refinements/shell-package/shell_i18n_bootstrap.md"
+    note "Factory that creates the shared i18next instance consuming @aconversa/i18n-catalogs. ADR 0026 + ADR 0024."
+  }
+
+  task shell_ws_client "Shared WebSocket client" {
+    effort 1d
+    allocate team
+    depends !shell_pkg_skeleton, backend.websocket_protocol.ws_message_envelope
+    note "Refinement: tasks/refinements/shell-package/shell_ws_client.md"
+    note "Extracted from apps/moderator/src/ws/client.ts. ADR 0026."
+  }
+
+  task shell_error_mapper "ApiError code -> i18n-key mapping helper" {
+    effort 0.25d
+    allocate team
+    depends !shell_pkg_skeleton, frontend_i18n.i18n_error_code_catalog
+    note "Refinement: tasks/refinements/shell-package/shell_error_mapper.md"
+    note "Extracted from the errorCodeToI18nKey helpers in apps/moderator/src/routes/CreateSession.tsx + apps/moderator/src/routes/ScreenName.tsx. ADR 0026."
+  }
+
+  task shell_tests "Vitest unit tests for the shell package" {
+    effort 1d
+    allocate team
+    depends !shell_auth_context, !shell_screen_name_form, !shell_login_logout_components, !shell_i18n_bootstrap, !shell_ws_client, !shell_error_mapper
+    note "Refinement: tasks/refinements/shell-package/shell_tests.md"
+    note "Vitest coverage per ADR 0006 + ADR 0022. ADR 0026."
+  }
+}

@@ -690,4 +690,13 @@ task moderator_ui "Moderator UI" {
     note "Source of debt: mod_propose_action Status block (this commit) — refinement claim that propose emits paired node-created/entity-included/edge-created events is WRONG per tasks/refinements/backend/ws_propose_message.md + tasks/refinements/backend/commit_logic.md. The e2e test was corrected to pin the actual contract; the refinement doc body and the apps/moderator/src/layout/useProposeAction.ts:347-353 code comment still claim the wrong shape and need updating. Methodology + doc-hygiene task; no implementation change required (the runtime already emits the correct envelope)."
     note "Surfaced via tech-debt registration policy in ORCHESTRATOR.md (this commit)."
   }
+
+  task mod_extract_to_mountable_library "Extract moderator to mountable Vite-library bundle (ADR 0026 refactor)" {
+    effort 3d
+    allocate team
+    depends !mod_shell, shell_package.shell_mount_contract, shell_package.shell_auth_context, shell_package.shell_login_logout_components, shell_package.shell_screen_name_form, shell_package.shell_i18n_bootstrap, shell_package.shell_ws_client, shell_package.shell_error_mapper
+    note "Refinement: tasks/refinements/moderator-ui/mod_extract_to_mountable_library.md"
+    note "Converts apps/moderator from a standalone SPA to a Vite-library bundle exporting mount(props): UnmountFn. Deletes the moderator-local auth chrome (apps/moderator/src/auth/, routes/Login.tsx, routes/ScreenName.tsx, the RequireAuth wrapper, the auth-related chunk of App.tsx) — those now live in packages/shell/ + apps/root/. Deletes apps/moderator/src/ws/client.ts in favor of the shared @aconversa/shell WS client. Repaths all moderator routes from /sessions/:id/* to /m/sessions/:id/* (including /sessions/new -> /m/sessions/new, /sessions/:id/setup -> /m/sessions/:id/setup, /sessions/:id/invite -> /m/sessions/:id/invite, /sessions/:id/lobby -> /m/sessions/:id/lobby). Updates the just-landed mod_invite_participants invite URL shape to /p/sessions/:id/invite?role=<role> (participant-facing entry point). Updates all moderator Playwright tests for the new /m/* path prefix."
+    note "ADR 0026 — micro-frontend root app + lazy-loaded surface bundles. Source-of-debt: the implicit standalone-SPA architecture under which moderator landed, now superseded."
+  }
 }

@@ -29,17 +29,19 @@ task audience "Audience and broadcast" {
   depends backend.backend_tests.be_e2e_tests.auth_flow_integration
   task aud_shell "Audience app shell" {
     depends foundation.repo_skeleton, foundation.stack_decisions.frontend_framework_decision
-    task aud_app_skeleton "Read-only app skeleton" {
+    task aud_app_skeleton "Audience surface as a mountable library (entry, build, mount() export)" {
       effort 1d
       allocate team
-      depends frontend_i18n.i18n_catalog_workflow, frontend_i18n.i18n_locale_negotiation
+      depends shell_package.shell_mount_contract, frontend_i18n.i18n_locale_negotiation
       note "Refinement: tasks/refinements/audience/aud_app_skeleton.md"
-      note "Locale comes from URL prefix: /{locale}/sessions/{id} (no auth on public sessions, so URL is the locale channel)"
+      note "Reshaped under ADR 0026: audience builds as a Vite-library bundle exporting mount(props): UnmountFn; no own index.html or DOM bootstrap. i18n now bootstraps in @aconversa/shell and is passed in via MountProps (locale negotiation still uses the URL prefix per i18n_locale_negotiation.md; the audience surface reads its locale from the URL and configures the shared i18n instance accordingly)."
+      note "Locale comes from URL prefix per i18n_locale_negotiation.md; under ADR 0026 the per-session prefix becomes /a/sessions/:id, with the locale segment handled inside the audience surface's basename-scoped routes."
     }
-    task aud_ws_client "WebSocket client (read-only subscription)" {
-      effort 1d
+    task aud_ws_client "Wire audience surface to shell's WS client (read-only subscription)" {
+      effort 0.5d
       allocate team
-      depends !aud_app_skeleton, backend.websocket_protocol.ws_subscribe_to_session
+      depends !aud_app_skeleton, shell_package.shell_ws_client, backend.websocket_protocol.ws_subscribe_to_session
+      note "Reshaped under ADR 0026: the underlying WS client implementation lives in @aconversa/shell. This leaf wires the audience surface's read-only subscription path to the shared client (was: re-implementing the WS client inside the audience workspace, 1d)."
     }
     task aud_state_management "State management for live event stream" {
       effort 1d
@@ -54,10 +56,11 @@ task audience "Audience and broadcast" {
 
       note "Refinement: tasks/refinements/audience/aud_no_auth_for_public.md"
     }
-    task aud_auth_for_private "Auth-gate private-session viewer pages" {
+    task aud_auth_for_private "Wire audience surface to shell's AuthContext for private sessions" {
       effort 0.5d
       allocate team
-      depends !aud_no_auth_for_public, backend.auth.session_token_management
+      depends !aud_no_auth_for_public, shell_package.shell_auth_context
+      note "Reshaped under ADR 0026: the OAuth callback handling, login/logout, and screen-name capture all live in apps/root/ + @aconversa/shell. The audience surface only consumes useAuth() from shell to auth-gate private-session viewer pages; the auth UX itself is the root's responsibility."
     }
   }
 
