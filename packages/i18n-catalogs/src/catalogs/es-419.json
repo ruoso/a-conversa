@@ -437,6 +437,9 @@
     },
     "notAuthenticated": {
       "body": "Parece que cerraste sesión. Actualiza la página para iniciar sesión nuevamente."
+    },
+    "chrome": {
+      "productLabel": "A Conversa — Participante"
     }
   },
   "diagnostics": {

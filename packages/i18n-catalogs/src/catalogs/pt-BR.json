@@ -437,6 +437,9 @@
     },
     "notAuthenticated": {
       "body": "Parece que você saiu. Atualize a página para entrar novamente."
+    },
+    "chrome": {
+      "productLabel": "A Conversa — Participante"
     }
   },
   "diagnostics": {

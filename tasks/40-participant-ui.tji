@@ -59,6 +59,7 @@ task participant_ui "Participant (debater) UI" {
     task part_landscape_layout "Landscape-orientation tablet layout" {
       effort 1d
       allocate team
+      complete 100
       depends !part_app_skeleton
 
       note "Refinement: tasks/refinements/participant-ui/part_landscape_layout.md"

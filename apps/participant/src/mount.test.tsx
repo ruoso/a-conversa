@@ -69,6 +69,15 @@ describe('participant surface mount()', () => {
     // must NOT render in the authenticated branch.
     expect(screen.queryByTestId('participant-not-authenticated')).toBeNull();
 
+    // `part_landscape_layout`: the placeholder route renders inside a
+    // landscape-grid chrome shell. The four named-region testids must
+    // be visible end-to-end after mount, pinning the route-tree-to-
+    // layout wiring (not just the layout in isolation).
+    expect(screen.getByTestId('participant-layout-root')).toBeTruthy();
+    expect(screen.getByTestId('participant-header')).toBeTruthy();
+    expect(screen.getByTestId('participant-main')).toBeTruthy();
+    expect(screen.getByTestId('participant-footer')).toBeTruthy();
+
     unmount();
     expect(container.innerHTML).toBe('');
   });

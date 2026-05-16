@@ -318,6 +318,13 @@ task frontend_i18n "Frontend internationalization" {
     note "Native-speaker review of pt-BR + es-419 entries for participant.identity.signedInAs + participant.notAuthenticated.body added in part_auth_flow (this commit). Source refinement: tasks/refinements/participant-ui/part_auth_flow.md."
   }
 
+  task i18n_participant_chrome_native_review "Native-speaker review of pt-BR + es-419 participant-chrome strings (1 new key under participant.chrome.*)" {
+    effort 0.25d
+    allocate team
+    depends !i18n_participant_identity_native_review
+    note "Native-speaker review of pt-BR + es-419 entries for participant.chrome.productLabel added in part_landscape_layout (this commit). Source refinement: tasks/refinements/participant-ui/part_landscape_layout.md."
+  }
+
   task i18n_keyboard_shortcuts_policy "Per-locale keyboard shortcut policy for moderator palette" {
     effort 0.5d
     allocate team

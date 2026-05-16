@@ -437,6 +437,9 @@
     },
     "notAuthenticated": {
       "body": "You appear to have signed out. Refresh the page to sign in again."
+    },
+    "chrome": {
+      "productLabel": "A Conversa — Participant"
     }
   },
   "diagnostics": {

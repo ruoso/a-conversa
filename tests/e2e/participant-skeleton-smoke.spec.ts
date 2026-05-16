@@ -68,6 +68,34 @@ test.describe('Participant surface skeleton — invite URL reaches the placehold
     // main; pin the en-US text so a regression in the i18n bridge
     // (host-supplied i18n not reaching the surface) surfaces here.
     await expect(page.locator('h1').first()).toHaveText('Participant surface');
+
+    // `part_landscape_layout`: the placeholder body is wrapped in a
+    // landscape-grid chrome shell. Pin the four named-region testids
+    // so a regression that strips the layout (or renames a region)
+    // surfaces at the user-perspective layer, not just inside Vitest.
+    await expect(page.getByTestId('participant-layout-root')).toBeVisible();
+    const layoutHeader = page.getByTestId('participant-header');
+    await expect(layoutHeader).toBeVisible();
+    await expect(page.getByTestId('participant-main')).toBeVisible();
+    const layoutFooter = page.getByTestId('participant-footer');
+    await expect(layoutFooter).toBeVisible();
+
+    // The header carries the product label (`participant.chrome.productLabel`,
+    // en-US text). A regression that drops the chrome content but
+    // keeps the region testid would otherwise pass.
+    await expect(layoutHeader).toContainText('A Conversa — Participant');
+
+    // The identity row migrates from the route body into the chrome
+    // header (Decision §2 of part_landscape_layout). Pin that the
+    // `participant-identity` element is a descendant of the header
+    // region, not the route body — the structural shift this leaf
+    // delivers.
+    await expect(layoutHeader.getByTestId('participant-identity')).toBeVisible();
+
+    // The footer slot is reserved for `part_status_indicator`'s chip
+    // and lands empty today. A regression that paints content into the
+    // footer prematurely (or wires a stub placeholder) surfaces here.
+    await expect(layoutFooter).toBeEmpty();
   });
 
   test('authenticated visit surfaces the host-supplied screenName under participant-identity', async ({

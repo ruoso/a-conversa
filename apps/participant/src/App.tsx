@@ -2,9 +2,11 @@
 //
 // Refinement: tasks/refinements/participant-ui/part_app_skeleton.md
 //              tasks/refinements/participant-ui/part_auth_flow.md
+//              tasks/refinements/participant-ui/part_landscape_layout.md
 // ADRs:        0002 (no profile data — only `screenName` reaches the DOM),
 //              0022 (no throwaway verifications — the identity testid +
-//                    not-authenticated testid are the pinned seams),
+//                    not-authenticated testid + four layout-region
+//                    testids are the pinned seams),
 //              0026 (host owns auth chrome; surface only reads the
 //                    host-supplied `useAuth()`).
 //
@@ -17,12 +19,20 @@
 //
 // On top of the placeholder, `part_auth_flow` adds the participant's
 // first useful read of the host-supplied auth state: `useAuth()` is
-// consumed inside the placeholder body, and the authenticated user's
+// consumed inside the surface, and the authenticated user's
 // `screenName` is surfaced under the stable `participant-identity`
 // testid. A defensive `participant-not-authenticated` panel covers the
 // sub-paint window where the host's auth value flips after mount but
 // before the `SurfaceHost` cleanup tears the surface down (see Decision
 // §3 of the `part_auth_flow` refinement).
+//
+// `part_landscape_layout` wraps the placeholder body inside a
+// landscape-grid scaffold (`<ParticipantLayout>`): a slim header on
+// top + the placeholder body in the main region + an empty footer
+// reserved for `part_status_indicator`'s chip. The identity row that
+// `part_auth_flow` landed inside the body migrates up into the
+// chrome header (`<ParticipantChrome>`) so it persists across every
+// URL once downstream leaves replace the wildcard body.
 //
 // Future leaves replace this wildcard with the real participant route
 // tree:
@@ -30,9 +40,11 @@
 //   - `part_session_join.part_invite_acceptance` lands the
 //     `/sessions/:id/invite?role=...` claim flow.
 //   - `part_session_join.part_lobby_view` lands the pre-debate lobby.
-//   - `part_landscape_layout` lands the operate view.
+//   - `part_graph_view` + `part_voting` land the operate view.
 //
-// When those routes ship, the placeholder testid disappears.
+// When those routes ship, the placeholder testid disappears, but the
+// chrome (`<ParticipantLayout>` with `<ParticipantChrome>` in the
+// header + `<StatusIndicator />` in the footer) persists.
 
 import type { ReactElement } from 'react';
 import { Route, Routes } from 'react-router-dom';
@@ -40,7 +52,51 @@ import { useTranslation } from 'react-i18next';
 
 import { useAuth } from '@a-conversa/shell';
 
-function PlaceholderRoute(): ReactElement {
+import { ParticipantLayout } from './layout/ParticipantLayout';
+
+function ParticipantChrome(): ReactElement {
+  // Chrome content for the header row: left-aligned product label +
+  // right-aligned identity affordance. Mirrors the `part_auth_flow`
+  // `useAuth()` consumption shape exactly (status switch first, then
+  // `.user !== undefined` belt-and-suspenders, then `.screenName`
+  // access). Reuses the existing `participant.identity.signedInAs` ICU
+  // key — no new key for the identity row.
+  //
+  // When unauthenticated, the chrome renders the product label only
+  // (no identity row). The "not authenticated" body panel still lives
+  // inside `<PlaceholderRouteBody>` (route content), not the chrome
+  // — auth-state messaging belongs in the content region per
+  // `part_auth_flow` Decision §3.
+  const { t } = useTranslation();
+  const auth = useAuth();
+  return (
+    <>
+      <span className="text-sm font-semibold text-slate-800">
+        {t('participant.chrome.productLabel')}
+      </span>
+      {auth.status === 'authenticated' && auth.user !== undefined ? (
+        <span data-testid="participant-identity" className="text-sm text-slate-700">
+          {t('participant.identity.signedInAs', { name: auth.user.screenName })}
+        </span>
+      ) : null}
+    </>
+  );
+}
+
+function PlaceholderRouteBody(): ReactElement {
+  // Existing body from `part_auth_flow`: the placeholder title, the
+  // body caption, and the not-authenticated guard branch. The identity
+  // row that `part_auth_flow` landed inside this body has migrated up
+  // into `<ParticipantChrome>` (Decision §2 of `part_landscape_layout`);
+  // the body keeps the title + body caption + the not-authenticated
+  // guard branch only.
+  //
+  // The outer wrapper is `<div>` (not `<main>`): the layout's
+  // `<section data-testid="participant-main">` is the page's main
+  // content region, and only one `<main>` per page is semantically
+  // correct. The `route-participant-placeholder` testid stays on the
+  // wrapper so the predecessor's Playwright + Vitest pins keep
+  // matching (`getByTestId` is element-tag-agnostic).
   const { t } = useTranslation();
   const auth = useAuth();
 
@@ -55,23 +111,30 @@ function PlaceholderRoute(): ReactElement {
   // belt-and-suspenders against a malformed-provider edge.
   if (auth.status !== 'authenticated' || auth.user === undefined) {
     return (
-      <main data-testid="route-participant-placeholder" className="mx-auto max-w-2xl p-6">
+      <div data-testid="route-participant-placeholder" className="mx-auto max-w-2xl p-6">
         <h1 className="text-2xl font-semibold">{t('participant.placeholder.title')}</h1>
         <p data-testid="participant-not-authenticated" className="mt-2 text-sm text-slate-600">
           {t('participant.notAuthenticated.body')}
         </p>
-      </main>
+      </div>
     );
   }
 
   return (
-    <main data-testid="route-participant-placeholder" className="mx-auto max-w-2xl p-6">
+    <div data-testid="route-participant-placeholder" className="mx-auto max-w-2xl p-6">
       <h1 className="text-2xl font-semibold">{t('participant.placeholder.title')}</h1>
       <p className="mt-2 text-sm text-slate-600">{t('participant.placeholder.body')}</p>
-      <p data-testid="participant-identity" className="mt-4 text-sm text-slate-700">
-        {t('participant.identity.signedInAs', { name: auth.user.screenName })}
-      </p>
-    </main>
+    </div>
+  );
+}
+
+function PlaceholderRoute(): ReactElement {
+  return (
+    <ParticipantLayout
+      header={<ParticipantChrome />}
+      main={<PlaceholderRouteBody />}
+      footer={null}
+    />
   );
 }
 

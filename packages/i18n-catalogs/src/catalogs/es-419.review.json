@@ -207,7 +207,8 @@
     "participant.placeholder.title",
     "participant.placeholder.body",
     "participant.identity.signedInAs",
-    "participant.notAuthenticated.body"
+    "participant.notAuthenticated.body",
+    "participant.chrome.productLabel"
   ],
   "signed_off": []
 }
