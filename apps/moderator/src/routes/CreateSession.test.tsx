@@ -185,7 +185,7 @@ describe('CreateSession route — submit behaviour', () => {
     });
   });
 
-  it('navigates to /sessions/<id>/operate with replace: false on 201', async () => {
+  it('navigates to /sessions/<id>/invite with replace: false on 201', async () => {
     global.fetch = stubFetch(
       () =>
         new Response(JSON.stringify({ id: 'session-uuid-xyz' }), {
@@ -206,7 +206,10 @@ describe('CreateSession route — submit behaviour', () => {
     await waitFor(() => {
       expect(navigateSpy).toHaveBeenCalled();
     });
-    expect(navigateSpy).toHaveBeenCalledWith('/sessions/session-uuid-xyz/operate', {
+    // mod_invite_participants amends the post-201 navigation target
+    // from /operate to /invite — the moderator lands on the invite
+    // surface before entering the operate canvas.
+    expect(navigateSpy).toHaveBeenCalledWith('/sessions/session-uuid-xyz/invite', {
       replace: false,
     });
   });

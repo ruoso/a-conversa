@@ -31,6 +31,47 @@ beforeAll(async () => {
   await initI18n('en-US');
 });
 
+// ────────────────────────────────────────────────────────────────────────
+// `WebSocket` polyfill — happy-dom does NOT expose `WebSocket` as a
+// constructor (typeof WebSocket === 'undefined' in the test env). When
+// a router test renders a route that mounts `<WsClientProvider>` with
+// auth status `'authenticated'`, the provider's effect calls
+// `client.connect()`, which calls `new WebSocket(url)`. Without a
+// polyfill the throw lands inside React's effect commit and bubbles up
+// as "Should not already be working" + cascades into subsequent tests.
+//
+// The pre-existing operate-route case happens to side-step the issue
+// because its DOM assertion resolves before the WS effect fires; the
+// invite-route case below cannot (its own fetch effect lengthens the
+// render cycle enough that the throw lands inside an awaited render).
+// A file-wide stub is the right scope — every WS-driving route in this
+// suite benefits, no other code path notices.
+class FakeWebSocketCtor {
+  readyState = 0;
+  constructor(_url: string) {
+    /* no-op */
+  }
+  close(): void {
+    /* no-op */
+  }
+  send(): void {
+    /* no-op */
+  }
+  addEventListener(): void {
+    /* no-op */
+  }
+  removeEventListener(): void {
+    /* no-op */
+  }
+}
+const originalWebSocket = (globalThis as { WebSocket?: unknown }).WebSocket;
+beforeAll(() => {
+  (globalThis as { WebSocket?: unknown }).WebSocket = FakeWebSocketCtor;
+});
+afterAll(() => {
+  (globalThis as { WebSocket?: unknown }).WebSocket = originalWebSocket;
+});
+
 afterEach(() => {
   cleanup();
 });
@@ -246,6 +287,98 @@ describe('moderator router', () => {
       );
       render(
         <MemoryRouter initialEntries={['/sessions/new']}>
+          <App />
+        </MemoryRouter>,
+      );
+      await waitFor(() => {
+        expect(screen.getByTestId('route-screen-name')).toBeTruthy();
+      });
+    });
+  });
+
+  // /sessions/:id/invite — the invite-participants route (mod_invite_participants),
+  // gated `authenticated-only` by `<RequireAuth>`. Three sub-assertions
+  // mirror the /sessions/new gate cases: authenticated renders the invite
+  // view, unauthenticated redirects to /login, needs-screen-name redirects
+  // to /screen-name. The invite route also fires GET /api/sessions/:id
+  // on mount; the stub returns 200 alongside the auth response so the
+  // route's HTTP-fetch path doesn't blow up the gate's render.
+  describe('/sessions/:id/invite — RequireAuth gate', () => {
+    // The WebSocket constructor is polyfilled at file scope (see the
+    // top-of-file `FakeWebSocketCtor`) so the WS provider's connect
+    // call doesn't throw when this gate's authenticated-branch test
+    // renders the invite route.
+    function stubAuthAndSession(authResponse: () => Response): ReturnType<typeof vi.fn> {
+      return vi.fn((url: string) => {
+        if (url === '/api/auth/me') {
+          return Promise.resolve(authResponse());
+        }
+        if (url.startsWith('/api/sessions/')) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                id: 'abc-123',
+                hostUserId: '00000000-0000-4000-8000-00000000005a',
+                privacy: 'public',
+                topic: 'sample topic',
+                createdAt: '2026-05-16T00:00:00.000Z',
+                endedAt: null,
+              }),
+              { status: 200, headers: { 'content-type': 'application/json' } },
+            ),
+          );
+        }
+        return Promise.resolve(new Response('', { status: 404 }));
+      });
+    }
+
+    it('renders the invite view when /api/auth/me reports authenticated', async () => {
+      global.fetch = stubAuthAndSession(
+        () =>
+          new Response(
+            JSON.stringify({
+              userId: '00000000-0000-4000-8000-00000000005b',
+              screenName: 'alice',
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          ),
+      );
+      render(
+        <MemoryRouter initialEntries={['/sessions/abc-123/invite']}>
+          <App />
+        </MemoryRouter>,
+      );
+      await waitFor(() => {
+        expect(screen.getByTestId('route-invite-participants')).toBeTruthy();
+      });
+      expect(screen.getByTestId('route-title').textContent).toBe('Invite participants');
+    });
+
+    it('redirects to /login when /api/auth/me reports unauthenticated', async () => {
+      global.fetch = stubAuthAndSession(() => new Response('', { status: 401 }));
+      render(
+        <MemoryRouter initialEntries={['/sessions/abc-123/invite']}>
+          <App />
+        </MemoryRouter>,
+      );
+      await waitFor(() => {
+        expect(screen.getByTestId('route-login')).toBeTruthy();
+      });
+    });
+
+    it('redirects to /screen-name when /api/auth/me reports the placeholder screen name', async () => {
+      global.fetch = stubAuthAndSession(
+        () =>
+          new Response(
+            JSON.stringify({
+              userId: '00000000-0000-4000-8000-00000000005c',
+              screenName: '<pending>',
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          ),
+      );
+      render(
+        <MemoryRouter initialEntries={['/sessions/abc-123/invite']}>
           <App />
         </MemoryRouter>,
       );

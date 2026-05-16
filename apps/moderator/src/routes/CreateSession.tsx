@@ -13,9 +13,12 @@
 // on `/sessions/new` (gated `authenticated-only` via `<RequireAuth>` in
 // `App.tsx`), fills in a topic, picks public/private, and on submit
 // POSTs `/api/sessions`. The handler returns 201 with `{ id, ... }`;
-// the form then `useNavigate`s to `/sessions/${id}/operate` with
+// the form then `useNavigate`s to `/sessions/${id}/invite` (the
+// invite-participants view shipped by `mod_invite_participants`) with
 // `replace: false` so the back button returns to the form (a "create
-// another" affordance).
+// another" affordance). Was: `/sessions/${id}/operate` — amended in
+// `mod_invite_participants` so the moderator sees the invite surface
+// before entering the operate canvas.
 //
 // Shape and a11y wiring mirror `ScreenName.tsx` deliberately: same
 // `useRef` + one-shot `useEffect` for focus-on-mount, same
@@ -135,10 +138,14 @@ export function CreateSessionRoute(): ReactElement {
           topicRef.current?.focus();
           return;
         }
-        // `replace: false` so the back button from /sessions/<id>/operate
+        // `replace: false` so the back button from /sessions/<id>/invite
         // returns to /sessions/new (a "create another" affordance) rather
-        // than skipping past the form.
-        void navigate(`/sessions/${body.id}/operate`, { replace: false });
+        // than skipping past the form. Was `/operate`; amended by
+        // `mod_invite_participants` — the moderator sees the invite
+        // surface (per-debater shareable links + slot fill state) before
+        // entering the operate canvas. The invite view's own "Enter
+        // session" button then navigates to /sessions/<id>/operate.
+        void navigate(`/sessions/${body.id}/invite`, { replace: false });
         return;
       }
       // Non-201. Read the envelope's `error.code` if present, map to

@@ -134,6 +134,45 @@
         "generic": "Something went wrong. Please try again."
       }
     },
+    "invite": {
+      "title": "Invite participants",
+      "loading": "Loading session…",
+      "retry": "Retry",
+      "errors": {
+        "fetchFailed": "Could not load the session. Please try again."
+      },
+      "privacy": {
+        "public": "Public",
+        "private": "Private"
+      },
+      "role": {
+        "moderator": "Moderator",
+        "debater-A": "Debater A",
+        "debater-B": "Debater B"
+      },
+      "slot": {
+        "moderator": {
+          "label": "Moderator (you)"
+        },
+        "debater-A": {
+          "label": "Debater A"
+        },
+        "debater-B": {
+          "label": "Debater B"
+        },
+        "empty": "Awaiting {role}"
+      },
+      "copyLink": {
+        "label": "Copy invite link",
+        "copied": "Copied!",
+        "fallbackHint": "Could not copy automatically. Select the link above and copy it manually.",
+        "inputAriaLabel": "Invite link for {role}"
+      },
+      "enterSession": {
+        "label": "Enter session",
+        "hint": "You can enter the session before debaters join."
+      }
+    },
     "rightSidebar": {
       "emptyPanePlaceholder": "Coming soon",
       "toggleAria": "{expanded, select, true {Collapse pane} other {Expand pane}}",

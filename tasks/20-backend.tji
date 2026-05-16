@@ -151,6 +151,20 @@ task backend "Backend" {
       depends !list_sessions_endpoint
       note "Refinement: tasks/refinements/backend/session_listing_filters.md"
     }
+    task list_session_participants_endpoint "GET /sessions/:id/participants — list participant slot assignments" {
+      effort 0.5d
+      allocate team
+      depends !get_session_endpoint
+      note "Source of debt: mod_invite_participants Status block (this commit) — the moderator's invite view at /sessions/:id/invite currently derives slot occupancy from WS catch-up replay of participant-joined / participant-left events via client.trackSession(sessionId). That path is correct for live sessions but degrades on tab-return after long idle (the WS reconnects and replays from sinceSequence:0, but cold-load shape consistency with the rest of the session-management surface is the canonical REST seam). This endpoint returns the current participants array as a list of SessionParticipantResponse rows (id, sessionId, userId, role, joinedAt, leftAt)."
+      note "Surfaced via tech-debt registration policy in ORCHESTRATOR.md (this commit)."
+    }
+    task session_invite_self_claim_endpoint "POST /sessions/:id/invite/claim — debater self-claims a role slot when arriving via invite URL" {
+      effort 1d
+      allocate team
+      depends !participant_assignment, !list_session_participants_endpoint
+      note "Source of debt: mod_invite_participants Status block (this commit) — the moderator's invite view generates shareable links of shape <origin>/sessions/<id>/invite?role=<role>; the debater opens the link, logs in, and needs a self-claim endpoint to take the slot (the existing POST /api/sessions/:id/participants is host-only and requires a userId the debater can't supply). Body { role: 'debater-A' | 'debater-B' }; authenticated caller's userId is implicit from request.authUser.id. Reuses the transactional shape from participant_assignment (SELECT ... FOR UPDATE + role-availability check + INSERT + participant-joined event + COMMIT). Refinement should decide: whether self-claim requires private-visibility-or-host-invited, and how slot-already-filled errors surface to the debater. This is the debater-side endpoint that completes the invite → claim loop."
+      note "Surfaced via tech-debt registration policy in ORCHESTRATOR.md (this commit)."
+    }
   }
 
   task cross_session_permissions "Cross-session reference permissions" {

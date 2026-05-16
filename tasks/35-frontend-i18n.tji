@@ -163,6 +163,14 @@ task frontend_i18n "Frontend internationalization" {
     note "Surfaced via tech-debt registration policy in ORCHESTRATOR.md (this commit)."
   }
 
+  task i18n_invite_participants_native_review "Native-speaker review of pt-BR + es-419 invite-participants strings (19 keys)" {
+    effort 0.5d
+    allocate team
+    depends !i18n_proposal_filter_search_native_review
+    note "Source of debt: mod_invite_participants (this commit) — pt-BR and es-419 drafts of the 19 keys under moderator.invite.* (18 scoped in the refinement's catalog table + 1 a11y inputAriaLabel surfaced during implementation per the refinement's a11y section, lines 240-242) landed flagged PENDING in the *.review.json trackers; replace with native-speaker-reviewed text and sign off the review trackers. UI prose translation (lower bar than methodology terms but still needs native-speaker review)."
+    note "Surfaced via tech-debt registration policy in ORCHESTRATOR.md (this commit)."
+  }
+
   task i18n_keyboard_shortcuts_policy "Per-locale keyboard shortcut policy for moderator palette" {
     effort 0.5d
     allocate team

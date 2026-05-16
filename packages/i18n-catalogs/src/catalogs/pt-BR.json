@@ -134,6 +134,45 @@
         "generic": "Algo deu errado. Tente novamente."
       }
     },
+    "invite": {
+      "title": "Convidar participantes",
+      "loading": "Carregando sessão…",
+      "retry": "Tentar novamente",
+      "errors": {
+        "fetchFailed": "Não foi possível carregar a sessão. Tente novamente."
+      },
+      "privacy": {
+        "public": "Pública",
+        "private": "Privada"
+      },
+      "role": {
+        "moderator": "Moderador(a)",
+        "debater-A": "Debatedor(a) A",
+        "debater-B": "Debatedor(a) B"
+      },
+      "slot": {
+        "moderator": {
+          "label": "Moderador(a) (você)"
+        },
+        "debater-A": {
+          "label": "Debatedor(a) A"
+        },
+        "debater-B": {
+          "label": "Debatedor(a) B"
+        },
+        "empty": "Aguardando {role}"
+      },
+      "copyLink": {
+        "label": "Copiar link de convite",
+        "copied": "Copiado!",
+        "fallbackHint": "Não foi possível copiar automaticamente. Selecione o link acima e copie manualmente.",
+        "inputAriaLabel": "Link de convite para {role}"
+      },
+      "enterSession": {
+        "label": "Entrar na sessão",
+        "hint": "Você pode entrar na sessão antes dos debatedores."
+      }
+    },
     "rightSidebar": {
       "emptyPanePlaceholder": "Em breve",
       "toggleAria": "{expanded, select, true {Recolher painel} other {Expandir painel}}",

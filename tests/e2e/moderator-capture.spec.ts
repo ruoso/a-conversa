@@ -59,6 +59,11 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     const topic = 'Capture-pane textarea regression check.';
     await page.getByTestId('create-session-topic-input').fill(topic);
     await page.getByTestId('create-session-submit').click();
+    // mod_invite_participants amended the post-201 navigation target to
+    // /sessions/<id>/invite; click 'Enter session' from there to reach
+    // the operate canvas (where this spec's assertions live).
+    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    await page.getByTestId('invite-enter-session').click();
     await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, {
       timeout: 10_000,
     });
@@ -119,6 +124,11 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
       .getByTestId('create-session-topic-input')
       .fill('Pane context-menu focus-bridge regression check.');
     await page.getByTestId('create-session-submit').click();
+    // mod_invite_participants amended the post-201 navigation target to
+    // /sessions/<id>/invite; click 'Enter session' from there to reach
+    // the operate canvas (where this spec's assertions live).
+    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    await page.getByTestId('invite-enter-session').click();
     await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
     await expect(page.getByTestId('route-operate')).toBeVisible();
 
@@ -167,6 +177,11 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
       .getByTestId('create-session-topic-input')
       .fill('Classification palette regression check.');
     await page.getByTestId('create-session-submit').click();
+    // mod_invite_participants amended the post-201 navigation target to
+    // /sessions/<id>/invite; click 'Enter session' from there to reach
+    // the operate canvas (where this spec's assertions live).
+    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    await page.getByTestId('invite-enter-session').click();
     await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, {
       timeout: 10_000,
     });
@@ -256,6 +271,11 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
       .getByTestId('create-session-topic-input')
       .fill('Capture target chip regression check.');
     await page.getByTestId('create-session-submit').click();
+    // mod_invite_participants amended the post-201 navigation target to
+    // /sessions/<id>/invite; click 'Enter session' from there to reach
+    // the operate canvas (where this spec's assertions live).
+    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    await page.getByTestId('invite-enter-session').click();
     await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, {
       timeout: 10_000,
     });
@@ -339,6 +359,11 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
       .getByTestId('create-session-topic-input')
       .fill('Capture target chip clear-gesture regression check.');
     await page.getByTestId('create-session-submit').click();
+    // mod_invite_participants amended the post-201 navigation target to
+    // /sessions/<id>/invite; click 'Enter session' from there to reach
+    // the operate canvas (where this spec's assertions live).
+    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    await page.getByTestId('invite-enter-session').click();
     await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, {
       timeout: 10_000,
     });
@@ -459,6 +484,11 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
       .getByTestId('create-session-topic-input')
       .fill('Edge role selector regression check.');
     await page.getByTestId('create-session-submit').click();
+    // mod_invite_participants amended the post-201 navigation target to
+    // /sessions/<id>/invite; click 'Enter session' from there to reach
+    // the operate canvas (where this spec's assertions live).
+    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    await page.getByTestId('invite-enter-session').click();
     await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, {
       timeout: 10_000,
     });
@@ -645,6 +675,11 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
       .getByTestId('create-session-topic-input')
       .fill('Propose action e2e regression check.');
     await page.getByTestId('create-session-submit').click();
+    // mod_invite_participants amended the post-201 navigation target to
+    // /sessions/<id>/invite; click 'Enter session' from there to reach
+    // the operate canvas (where this spec's assertions live).
+    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    await page.getByTestId('invite-enter-session').click();
     await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
     await expect(page.getByTestId('route-operate')).toBeVisible();
 
@@ -770,6 +805,11 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
       .getByTestId('create-session-topic-input')
       .fill('Pending proposals pane e2e regression check.');
     await page.getByTestId('create-session-submit').click();
+    // mod_invite_participants amended the post-201 navigation target to
+    // /sessions/<id>/invite; click 'Enter session' from there to reach
+    // the operate canvas (where this spec's assertions live).
+    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    await page.getByTestId('invite-enter-session').click();
     await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
     await expect(page.getByTestId('route-operate')).toBeVisible();
 
@@ -836,6 +876,11 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
       .getByTestId('create-session-topic-input')
       .fill('Per-facet breakdown pane e2e regression check.');
     await page.getByTestId('create-session-submit').click();
+    // mod_invite_participants amended the post-201 navigation target to
+    // /sessions/<id>/invite; click 'Enter session' from there to reach
+    // the operate canvas (where this spec's assertions live).
+    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    await page.getByTestId('invite-enter-session').click();
     await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
     await expect(page.getByTestId('route-operate')).toBeVisible();
 
@@ -908,6 +953,11 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
       .getByTestId('create-session-topic-input')
       .fill('Vote-indicator no-vote-yet baseline e2e regression check.');
     await page.getByTestId('create-session-submit').click();
+    // mod_invite_participants amended the post-201 navigation target to
+    // /sessions/<id>/invite; click 'Enter session' from there to reach
+    // the operate canvas (where this spec's assertions live).
+    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    await page.getByTestId('invite-enter-session').click();
     await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
     await expect(page.getByTestId('route-operate')).toBeVisible();
 
@@ -980,6 +1030,11 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
       .getByTestId('create-session-topic-input')
       .fill('Commit-button disabled-baseline e2e regression check.');
     await page.getByTestId('create-session-submit').click();
+    // mod_invite_participants amended the post-201 navigation target to
+    // /sessions/<id>/invite; click 'Enter session' from there to reach
+    // the operate canvas (where this spec's assertions live).
+    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    await page.getByTestId('invite-enter-session').click();
     await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
     await expect(page.getByTestId('route-operate')).toBeVisible();
 
@@ -1046,6 +1101,11 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
       .getByTestId('create-session-topic-input')
       .fill('Pending-proposals filter-strip e2e regression check.');
     await page.getByTestId('create-session-submit').click();
+    // mod_invite_participants amended the post-201 navigation target to
+    // /sessions/<id>/invite; click 'Enter session' from there to reach
+    // the operate canvas (where this spec's assertions live).
+    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    await page.getByTestId('invite-enter-session').click();
     await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
     await expect(page.getByTestId('route-operate')).toBeVisible();
 

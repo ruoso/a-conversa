@@ -19,8 +19,11 @@
 //
 //   1. happy path — alice logs in, navigates to /sessions/new,
 //      fills a topic + selects private, submits, waits for the URL to
-//      settle on /sessions/<uuid>/operate, asserts the graph canvas
-//      mounted.
+//      settle on /sessions/<uuid>/invite (was /operate before
+//      `mod_invite_participants` amended the post-201 navigation).
+//      The deeper graph-canvas-mounted assertion moved to
+//      `invite-participants-flow.spec.ts`, which drives the chain all
+//      the way through the "Enter session" click.
 //   2. button-disabled-on-empty invariant — alice logs in, navigates
 //      to /sessions/new, types whitespace only, asserts the submit
 //      button is disabled (trimmed-length-zero rule).
@@ -36,8 +39,8 @@ import { loginAs } from './fixtures/auth';
 
 const TEST_USERNAME = 'alice';
 
-test.describe('Create-session flow — moderator creates a session and lands on the operate canvas', () => {
-  test('alice logs in, navigates to /sessions/new, submits topic + private privacy, lands on /sessions/<id>/operate with the canvas mounted', async ({
+test.describe('Create-session flow — moderator creates a session and lands on the invite view', () => {
+  test('alice logs in, navigates to /sessions/new, submits topic + private privacy, lands on /sessions/<id>/invite (the invite-participants view)', async ({
     page,
   }) => {
     // 1. Login. After this, the page context's cookie jar carries
@@ -64,20 +67,22 @@ test.describe('Create-session flow — moderator creates a session and lands on 
 
     // 5. Submit. The form POSTs /api/sessions, the backend handler
     //    returns 201 with `{ id, ... }`, and the form calls `useNavigate`
-    //    onto /sessions/<id>/operate.
+    //    onto /sessions/<id>/invite (the invite-participants view —
+    //    was /operate before `mod_invite_participants` amended the
+    //    post-201 navigation target).
     await page.getByTestId('create-session-submit').click();
 
     // 6. Wait for the navigation to settle. The session id is the
     //    server-generated UUID we don't know in advance; match the URL
     //    pattern (lowercase hex + hyphens per RFC 4122 stringification).
-    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
+    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
 
-    // 7. Assert the operate route mounted AND the graph canvas root is
-    //    visible. This is the load-bearing assertion for the whole-
-    //    flow chain — if the form-to-operate seam regresses, this
-    //    fails loudly.
-    await expect(page.getByTestId('route-operate')).toBeVisible();
-    await expect(page.getByTestId('graph-canvas-root')).toBeVisible();
+    // 7. Assert the invite route mounted. The deeper graph-canvas
+    //    assertion moved to `invite-participants-flow.spec.ts` (which
+    //    drives the chain through "Enter session" all the way to the
+    //    operate route); here we cap the spec at the new post-create
+    //    landing surface.
+    await expect(page.getByTestId('route-invite-participants')).toBeVisible();
   });
 
   test('client-side validation: empty (whitespace-only) topic leaves the submit button disabled', async ({

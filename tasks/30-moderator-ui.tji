@@ -543,7 +543,9 @@ task moderator_ui "Moderator UI" {
     task mod_invite_participants "Invite participants (debater A, debater B)" {
       effort 1d
       allocate team
+      complete 100
       depends !mod_create_session_form
+      note "Refinement: tasks/refinements/moderator-ui/mod_invite_participants.md"
     }
     task mod_session_lobby "Pre-debate lobby until all participants joined" {
       effort 1d
