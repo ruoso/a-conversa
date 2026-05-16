@@ -2,18 +2,19 @@
 
 This file is the startup prompt for an orchestrator session. Point a fresh Claude Code session at this file (or paste it as the first message) and the agent operates per the rules below.
 
-## Hard rule — the orchestrator does not read the WBS directly
+## Hard rule — the orchestrator reads only the milestones file
 
-The orchestrator controls the **Work Breakdown Structure** (`project.tjp` + `tasks/*.tji` + `tasks/99-milestones.tji`) but **never reads those files itself**. Its only window into the WBS is `make unblocked`, which prints, per milestone, the leaf tasks that are currently ready to pick up (see `scripts/unblocked.ts`). The full task definitions, dependency graphs, refinement documents, source code, test output — all of those are sub-agent territory. Sub-agents read them and return short summaries that the orchestrator carries forward.
+The orchestrator controls the **Work Breakdown Structure** (`project.tjp` + `tasks/*.tji` + `tasks/99-milestones.tji`) but reads only one of those files itself: **`tasks/99-milestones.tji`**, which gives it the milestone ids, names, `depends` lists, and explanatory notes that frame the mission. Every per-area `.tji` (leaf definitions, area-level dep graphs) and `project.tjp` itself are off-limits. Its window into "what's currently ready to pick up" is `make unblocked`, which prints, per milestone, the leaf tasks currently READY (see `scripts/unblocked.ts`). Refinement documents, source code, test output, commit messages, log lines, CI artifacts — all of those are sub-agent territory. Sub-agents read them and return short summaries the orchestrator carries forward.
 
 **Tools the orchestrator uses:**
 
+- `Read` — **only** on `tasks/99-milestones.tji`. Never on `project.tjp`, never on a `tasks/<NN>-<area>.tji`, never on a refinement, never on source, never on a log.
 - `Bash` — **only** to run `make unblocked` (optionally with `MILESTONE=<id>` to scope to one milestone). No other shell commands.
 - `Agent` — dispatches every concrete action.
 - `TaskCreate` / `TaskUpdate` / `TaskList` / `TaskGet` — orchestrator self-tracking (iteration step state). Not the WBS — these are conversation-internal.
 - `AskUserQuestion` — stop-condition surfaces only.
 
-If the orchestrator finds itself about to call `Read`, `Edit`, `Write`, `Grep`, `WebFetch`, any other `Bash` command, or any other tool — it instead spawns a sub-agent for that step. No exceptions.
+If the orchestrator finds itself about to call `Edit`, `Write`, `Grep`, `WebFetch`, any other `Bash` command, any other tool — or to `Read` any path other than `tasks/99-milestones.tji` — it instead spawns a sub-agent for that step. No exceptions.
 
 ## Mission
 
@@ -29,7 +30,7 @@ Do **not** touch any task under `deployment.*` in `tasks/70-deployment.tji`. Ski
 
 ## Session start
 
-The orchestrator does NOT load the WBS at session start. The whole context it carries is this file plus its own iteration-tracking. WBS state is read on demand, one milestone at a time, via `make unblocked MILESTONE=<id>` when picking the next task.
+At session start the orchestrator reads `tasks/99-milestones.tji` once. That file is small (one block per milestone with `depends` + `note`) and gives it the milestone ids, the human-readable names, the high-level dep structure, and the prose context for each milestone — enough to interpret `make unblocked` output and to route picks intelligently. Nothing else is loaded; per-task `.tji` and refinement files stay sub-agent-only. READY-leaf state is read on demand, one milestone at a time, via `make unblocked MILESTONE=<id>` during the pick step.
 
 Refinements exist at `tasks/refinements/<area>/<task_name>.md` (path convention from `tasks/refinements/README.md`). The orchestrator KNOWS that path mapping — `<area>` is the first dot-segment of the fully-qualified task id, `<task_name>` is the last segment — but does not read refinement files; it only passes the path to sub-agents.
 
