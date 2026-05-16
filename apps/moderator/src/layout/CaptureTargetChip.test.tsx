@@ -14,7 +14,7 @@
 //   - Per-locale parity round-trip for the four new catalog keys.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import i18next from 'i18next';
 import type { Event } from '@a-conversa/shared-types';
@@ -313,12 +313,194 @@ describe('CaptureTargetChip — wording label resolution', () => {
   });
 });
 
+// Refinement: tasks/refinements/moderator-ui/mod_target_clear_override.md
+//
+// These cases pin the × button and the `Esc` keyboard gesture: both
+// reach the same `handleClear` implementation, both null the slice,
+// both bump `userHasClearedRef` so the auto-stage effect does not
+// immediately re-suggest from the still-selected node. The
+// re-engagement test pins that a NEW node selection after the clear
+// re-engages the auto-stage path.
+describe('CaptureTargetChip — × button gesture', () => {
+  it('renders the × button in the filled state with a localized aria-label and title', () => {
+    seedEvents([makeNodeCreated(1, 'n-1', SHORT_WORDING)]);
+    renderChip();
+    act(() => {
+      useSelectionStore.setState({ selected: { kind: 'node', id: 'n-1' } });
+    });
+    const clearButton = screen.getByTestId('capture-target-chip-clear');
+    expect(clearButton.tagName).toBe('BUTTON');
+    expect(clearButton.getAttribute('type')).toBe('button');
+    expect(clearButton.getAttribute('aria-label')).toBe('Clear target');
+    expect(clearButton.getAttribute('title')).toBe('Clear staged target (Esc)');
+  });
+
+  it('does NOT render the × button in the empty state', () => {
+    renderChip();
+    expect(screen.queryByTestId('capture-target-chip-clear')).toBeNull();
+  });
+
+  it('clicking the × button clears the slice and flips the chip to empty state', () => {
+    seedEvents([makeNodeCreated(1, 'n-1', SHORT_WORDING)]);
+    renderChip();
+    act(() => {
+      useSelectionStore.setState({ selected: { kind: 'node', id: 'n-1' } });
+    });
+    expect(useCaptureStore.getState().targetEntityId).toBe('n-1');
+
+    act(() => {
+      fireEvent.click(screen.getByTestId('capture-target-chip-clear'));
+    });
+
+    expect(useCaptureStore.getState().targetEntityId).toBeNull();
+    expect(screen.getByTestId('capture-target-chip-label').textContent).toBe('No target yet');
+    expect(screen.queryByTestId('capture-target-chip-clear')).toBeNull();
+  });
+
+  it('clicking × during an override produces a clean empty state (no marker, no button)', () => {
+    seedEvents([
+      makeNodeCreated(1, 'n-1', 'first'),
+      makeNodeCreated(2, 'n-other', 'manually chosen target'),
+    ]);
+    renderChip();
+    act(() => {
+      useSelectionStore.setState({ selected: { kind: 'node', id: 'n-1' } });
+    });
+    act(() => {
+      useCaptureStore.getState().setTargetEntityId('n-other');
+    });
+    expect(screen.getByTestId('capture-target-chip-override-marker')).toBeTruthy();
+
+    act(() => {
+      fireEvent.click(screen.getByTestId('capture-target-chip-clear'));
+    });
+
+    expect(useCaptureStore.getState().targetEntityId).toBeNull();
+    expect(screen.queryByTestId('capture-target-chip-override-marker')).toBeNull();
+    expect(screen.queryByTestId('capture-target-chip-clear')).toBeNull();
+    expect(screen.getByTestId('capture-target-chip-label').textContent).toBe('No target yet');
+  });
+});
+
+describe('CaptureTargetChip — Esc gesture', () => {
+  it('Esc keydown clears the slice when no editable target has focus', () => {
+    seedEvents([makeNodeCreated(1, 'n-1', SHORT_WORDING)]);
+    renderChip();
+    act(() => {
+      useSelectionStore.setState({ selected: { kind: 'node', id: 'n-1' } });
+    });
+    expect(useCaptureStore.getState().targetEntityId).toBe('n-1');
+
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+
+    expect(useCaptureStore.getState().targetEntityId).toBeNull();
+    expect(screen.getByTestId('capture-target-chip-label').textContent).toBe('No target yet');
+  });
+
+  it('Esc keydown bails when a textarea is the active element (editable-target guard)', () => {
+    seedEvents([makeNodeCreated(1, 'n-1', SHORT_WORDING)]);
+    renderChip();
+    act(() => {
+      useSelectionStore.setState({ selected: { kind: 'node', id: 'n-1' } });
+    });
+    expect(useCaptureStore.getState().targetEntityId).toBe('n-1');
+
+    const textarea = document.createElement('textarea');
+    document.body.appendChild(textarea);
+    textarea.focus();
+    expect(document.activeElement).toBe(textarea);
+
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+
+    expect(useCaptureStore.getState().targetEntityId).toBe('n-1');
+    expect(screen.getByTestId('capture-target-chip-label').textContent).toBe(
+      `Target: ${SHORT_WORDING}`,
+    );
+
+    textarea.remove();
+  });
+});
+
+describe('CaptureTargetChip — re-engagement after clear', () => {
+  it('a new node selection after clear re-engages the auto-stage path', () => {
+    seedEvents([makeNodeCreated(1, 'n-1', 'first node'), makeNodeCreated(2, 'n-2', 'second node')]);
+    renderChip();
+
+    // Auto-suggest n-1.
+    act(() => {
+      useSelectionStore.setState({ selected: { kind: 'node', id: 'n-1' } });
+    });
+    expect(useCaptureStore.getState().targetEntityId).toBe('n-1');
+
+    // Clear via × button — the userHasClearedRef bump now blocks
+    // immediate re-suggestion from the still-selected n-1.
+    act(() => {
+      fireEvent.click(screen.getByTestId('capture-target-chip-clear'));
+    });
+    expect(useCaptureStore.getState().targetEntityId).toBeNull();
+
+    // Select n-2 — re-engagement fires (different node id).
+    act(() => {
+      useSelectionStore.setState({ selected: { kind: 'node', id: 'n-2' } });
+    });
+    expect(useCaptureStore.getState().targetEntityId).toBe('n-2');
+    expect(screen.getByTestId('capture-target-chip-label').textContent).toBe('Target: second node');
+    // The auto-stage path is re-engaged — no override marker.
+    expect(screen.queryByTestId('capture-target-chip-override-marker')).toBeNull();
+  });
+
+  it('staying on the same node after clear does NOT re-suggest', () => {
+    seedEvents([makeNodeCreated(1, 'n-1', SHORT_WORDING)]);
+    renderChip();
+    act(() => {
+      useSelectionStore.setState({ selected: { kind: 'node', id: 'n-1' } });
+    });
+    act(() => {
+      fireEvent.click(screen.getByTestId('capture-target-chip-clear'));
+    });
+    expect(useCaptureStore.getState().targetEntityId).toBeNull();
+
+    // Re-dispatch the same n-1 selection (no-op write — paranoid case).
+    act(() => {
+      useSelectionStore.setState({ selected: { kind: 'node', id: 'n-1' } });
+    });
+    expect(useCaptureStore.getState().targetEntityId).toBeNull();
+    expect(screen.getByTestId('capture-target-chip-label').textContent).toBe('No target yet');
+  });
+
+  it('pane-click after clear does NOT re-suggest', () => {
+    seedEvents([makeNodeCreated(1, 'n-1', SHORT_WORDING)]);
+    renderChip();
+    act(() => {
+      useSelectionStore.setState({ selected: { kind: 'node', id: 'n-1' } });
+    });
+    act(() => {
+      fireEvent.click(screen.getByTestId('capture-target-chip-clear'));
+    });
+    expect(useCaptureStore.getState().targetEntityId).toBeNull();
+
+    // Pane-click — selection clears; the auto-stage effect's leading
+    // guard (recentlyActiveNodeId === null) short-circuits.
+    act(() => {
+      useSelectionStore.getState().clear();
+    });
+    expect(useCaptureStore.getState().targetEntityId).toBeNull();
+    expect(screen.getByTestId('capture-target-chip-label').textContent).toBe('No target yet');
+  });
+});
+
 describe('CaptureTargetChip — i18n catalog parity', () => {
   const KEYS = [
     'moderator.captureTargetChip.empty',
     'moderator.captureTargetChip.suggested',
     'moderator.captureTargetChip.overrideMarkerAria',
     'moderator.captureTargetChip.ariaLabel',
+    'moderator.captureTargetChip.clearAria',
+    'moderator.captureTargetChip.clearTitle',
   ] as const;
   const LOCALES = ['en-US', 'pt-BR', 'es-419'] as const;
 

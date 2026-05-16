@@ -163,7 +163,9 @@
       "empty": "No target yet",
       "suggested": "Target: {label}",
       "overrideMarkerAria": "Override (manually staged target)",
-      "ariaLabel": "Edge target — auto-suggested from the most recently selected node"
+      "ariaLabel": "Edge target — auto-suggested from the most recently selected node",
+      "clearAria": "Clear target",
+      "clearTitle": "Clear staged target (Esc)"
     },
     "modeBanner": {
       "idle": {

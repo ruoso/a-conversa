@@ -15,7 +15,9 @@
 // (`mod_propose_action`'s `Cmd/Ctrl+Shift+Enter`, `Esc` to exit mode,
 // `Cmd+D` for decompose, etc.) will extend by adding new optional
 // handler properties to `CaptureKeymapHandlers`. The first consumer
-// is `<ClassificationPalette>` which wires `onPickKind`.
+// is `<ClassificationPalette>` which wires `onPickKind`; the second is
+// `<CaptureTargetChip>` which wires `onClearTarget` (the `Esc` binding
+// landed by `mod_target_clear_override`).
 //
 // Listener behaviour (defaults the palette relies on, in this order):
 //
@@ -60,6 +62,14 @@ import { KIND_TO_SHORTCUT, type MethodologyKind } from '@a-conversa/i18n-catalog
 export interface CaptureKeymapHandlers {
   /** Pick a methodology kind. The palette wires this. */
   onPickKind?: (kind: MethodologyKind) => void;
+  /**
+   * Clear the staged edge target. The capture-target chip wires this;
+   * triggered by the `Esc` key under the same modifier-bail /
+   * editable-target / repeat-skip guards as `onPickKind`.
+   *
+   * Refinement: tasks/refinements/moderator-ui/mod_target_clear_override.md
+   */
+  onClearTarget?: () => void;
   // future: onSubmit?: () => void;
   // future: onExitMode?: () => void;
   // future: onDecompose?: () => void;
@@ -131,6 +141,19 @@ export function attachCaptureKeymap(handlers: CaptureKeymapHandlers): () => void
       // 6. Consume the keystroke.
       event.preventDefault();
       handlers.onPickKind(kind);
+      return;
+    }
+
+    // 7. `Esc` routes to `onClearTarget` when registered. The branch
+    // sits after the kind-match because the shortcut table contains
+    // only letter keys; `Escape` never collides. The branch is gated on
+    // `handlers.onClearTarget !== undefined` so consumers that did not
+    // register for clear (e.g., the classification palette) do not
+    // observe Esc.
+    if (key === 'escape' && handlers.onClearTarget !== undefined) {
+      // 6. Consume the keystroke.
+      event.preventDefault();
+      handlers.onClearTarget();
       return;
     }
   }

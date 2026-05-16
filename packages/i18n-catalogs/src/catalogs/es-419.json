@@ -163,7 +163,9 @@
       "empty": "Sin objetivo todavía",
       "suggested": "Objetivo: {label}",
       "overrideMarkerAria": "Anulación (objetivo definido manualmente)",
-      "ariaLabel": "Objetivo del borde — sugerido automáticamente desde el nodo seleccionado más recientemente"
+      "ariaLabel": "Objetivo del borde — sugerido automáticamente desde el nodo seleccionado más recientemente",
+      "clearAria": "Borrar objetivo",
+      "clearTitle": "Borrar objetivo seleccionado (Esc)"
     },
     "modeBanner": {
       "idle": {

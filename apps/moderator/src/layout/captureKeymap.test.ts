@@ -205,3 +205,97 @@ describe('captureKeymap — attachCaptureKeymap listener behaviour', () => {
     }).not.toThrow();
   });
 });
+
+// Refinement: tasks/refinements/moderator-ui/mod_target_clear_override.md
+//
+// These cases lock in the Esc → onClearTarget routing the capture-target
+// chip consumes. They sit inside the same `attachCaptureKeymap` listener
+// as the kind-shortcut branch and therefore inherit the same
+// modifier-bail / editable-target / repeat-skip guards.
+describe('captureKeymap — onClearTarget handler', () => {
+  let detach: (() => void) | null = null;
+  let onClearTarget: ReturnType<typeof vi.fn<() => void>>;
+
+  beforeEach(() => {
+    onClearTarget = vi.fn();
+  });
+
+  afterEach(() => {
+    if (detach !== null) {
+      detach();
+      detach = null;
+    }
+    document.body.innerHTML = '';
+  });
+
+  it('routes a plain `Escape` keypress to onClearTarget', () => {
+    detach = attachCaptureKeymap({ onClearTarget });
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(onClearTarget).toHaveBeenCalledTimes(1);
+  });
+
+  it('matches case-insensitively (lowercase `escape` also routes)', () => {
+    detach = attachCaptureKeymap({ onClearTarget });
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'escape', bubbles: true }));
+    expect(onClearTarget).toHaveBeenCalledTimes(1);
+  });
+
+  it('bails when metaKey is held (Cmd+Esc passes through)', () => {
+    detach = attachCaptureKeymap({ onClearTarget });
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', metaKey: true, bubbles: true }),
+    );
+    expect(onClearTarget).not.toHaveBeenCalled();
+  });
+
+  it('bails when ctrlKey is held (Ctrl+Esc passes through)', () => {
+    detach = attachCaptureKeymap({ onClearTarget });
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', ctrlKey: true, bubbles: true }),
+    );
+    expect(onClearTarget).not.toHaveBeenCalled();
+  });
+
+  it('bails when document.activeElement is a textarea (editable-target guard)', () => {
+    const textarea = document.createElement('textarea');
+    document.body.appendChild(textarea);
+    textarea.focus();
+    expect(document.activeElement).toBe(textarea);
+
+    detach = attachCaptureKeymap({ onClearTarget });
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(onClearTarget).not.toHaveBeenCalled();
+  });
+
+  it('bails when event.repeat is true (held Esc does not bounce)', () => {
+    detach = attachCaptureKeymap({ onClearTarget });
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', repeat: true, bubbles: true }),
+    );
+    expect(onClearTarget).not.toHaveBeenCalled();
+  });
+
+  it('preventDefault is called on a matched Escape (keystroke consumed)', () => {
+    detach = attachCaptureKeymap({ onClearTarget });
+    const ev = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    document.dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBe(true);
+  });
+
+  it('does not throw when Escape fires but no onClearTarget handler is registered', () => {
+    detach = attachCaptureKeymap({});
+    expect(() => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    }).not.toThrow();
+  });
+
+  it('a registered onClearTarget alongside onPickKind both route their keys', () => {
+    const onPickKind = vi.fn<(kind: MethodologyKind) => void>();
+    detach = attachCaptureKeymap({ onPickKind, onClearTarget });
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', bubbles: true }));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(onPickKind).toHaveBeenCalledTimes(1);
+    expect(onPickKind).toHaveBeenCalledWith('fact');
+    expect(onClearTarget).toHaveBeenCalledTimes(1);
+  });
+});

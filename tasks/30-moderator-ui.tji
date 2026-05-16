@@ -277,6 +277,7 @@ task moderator_ui "Moderator UI" {
     task mod_target_clear_override "One-gesture clear override of auto-suggested target" {
       effort 0.5d
       allocate team
+      complete 100
       depends !mod_target_auto_suggest
     }
     task mod_edge_role_selector "Edge role selector for connecting to existing structure" {

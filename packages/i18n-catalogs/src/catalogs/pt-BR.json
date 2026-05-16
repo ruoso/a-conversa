@@ -163,7 +163,9 @@
       "empty": "Sem alvo ainda",
       "suggested": "Alvo: {label}",
       "overrideMarkerAria": "Substituição (alvo definido manualmente)",
-      "ariaLabel": "Alvo da aresta — sugerido automaticamente a partir do nó selecionado mais recentemente"
+      "ariaLabel": "Alvo da aresta — sugerido automaticamente a partir do nó selecionado mais recentemente",
+      "clearAria": "Limpar alvo",
+      "clearTitle": "Limpar alvo selecionado (Esc)"
     },
     "modeBanner": {
       "idle": {

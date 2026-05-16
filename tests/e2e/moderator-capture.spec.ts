@@ -268,4 +268,122 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     );
     await expect(page.getByTestId('capture-target-chip-override-marker')).toHaveCount(0);
   });
+
+  // Refinement: tasks/refinements/moderator-ui/mod_target_clear_override.md
+  //
+  // The capture-target chip clear-gesture regression cover. Pins:
+  //   - the × button is NOT rendered in the empty state (no slice value
+  //     → no button); pressing Esc on the empty operate route is a no-op,
+  //   - seeded-graph happy path: click node 1 → chip auto-suggests →
+  //     × button visible → click × → chip flips to empty state,
+  //   - re-engagement: after a clear, click node 2 → chip auto-suggests
+  //     node 2 (the re-engagement rule fires because the active node id
+  //     changed),
+  //   - Esc keyboard gesture clears the staged target,
+  //   - editable-target Esc no-op: focus the textarea, press Esc → chip
+  //     stays at "Target: ..." (the editable-target guard consumes Esc).
+  test('alice: × button and Esc both clear the staged target; re-engagement re-suggests on next node click', async ({
+    page,
+  }) => {
+    await loginAs(page, { username: TEST_USERNAME });
+    await page.goto('/sessions/new');
+    await expect(page.getByTestId('route-create-session')).toBeVisible();
+
+    await page
+      .getByTestId('create-session-topic-input')
+      .fill('Capture target chip clear-gesture regression check.');
+    await page.getByTestId('create-session-submit').click();
+    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, {
+      timeout: 10_000,
+    });
+    await expect(page.getByTestId('route-operate')).toBeVisible();
+
+    // 2. Empty-graph path: chip mounts in the empty state; the × button
+    //    is not rendered. Pressing Esc on the operate route with no
+    //    focus is idempotent (slice is already null).
+    await expect(page.getByTestId('capture-target-chip')).toBeVisible();
+    await expect(page.getByTestId('capture-target-chip-label')).toHaveText('No target yet');
+    await expect(page.getByTestId('capture-target-chip-clear')).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('capture-target-chip-label')).toHaveText('No target yet');
+
+    // 3. Probe the WS-store seed path (same pattern as the auto-suggest
+    //    spec above). If the dev-only attachment didn't fire, skip the
+    //    seeded-graph cases — the empty-state regression above still
+    //    gates the no-button-when-empty contract.
+    const seedAvailable = await isWsStoreReachable(page);
+    if (!seedAvailable) {
+      test.skip(
+        true,
+        'window.__aConversaWsStore is not reachable — the dev-only attachment did not fire. Seeded-graph cases deferred to a future seed-infrastructure task.',
+      );
+      return;
+    }
+
+    // 4. Seed two nodes.
+    const url = new URL(page.url());
+    const sessionId = url.pathname.split('/')[2] ?? '';
+    expect(sessionId, 'session id must be parsed from the URL').toBeTruthy();
+
+    const NODE_ID_1 = '22222222-2222-4222-8222-222222222201';
+    const NODE_ID_2 = '22222222-2222-4222-8222-222222222202';
+    const WORDING_1 = 'Clear-gesture node one.';
+    const WORDING_2 = 'Clear-gesture node two.';
+    await seedWsStore(page, {
+      sessionId,
+      nodes: [
+        { nodeId: NODE_ID_1, wording: WORDING_1 },
+        { nodeId: NODE_ID_2, wording: WORDING_2 },
+      ],
+    });
+
+    // 5. Click node 1 → chip auto-suggests; × button is visible.
+    const node1 = page.getByTestId(`statement-node-${NODE_ID_1}`);
+    await expect(node1, 'seeded node 1 must render').toBeVisible({ timeout: 10_000 });
+    await node1.click();
+    await expect(page.getByTestId('capture-target-chip-label')).toContainText(
+      'Target: Clear-gesture node one',
+    );
+    const clearButton = page.getByTestId('capture-target-chip-clear');
+    await expect(clearButton).toBeVisible();
+    await expect(clearButton).toHaveAttribute('aria-label', 'Clear target');
+
+    // 6. Click × → chip flips to the empty state; the × button is gone.
+    await clearButton.click();
+    await expect(page.getByTestId('capture-target-chip-label')).toHaveText('No target yet');
+    await expect(page.getByTestId('capture-target-chip-clear')).toHaveCount(0);
+
+    // 7. Re-engagement: click node 2 → chip auto-suggests node 2.
+    const node2 = page.getByTestId(`statement-node-${NODE_ID_2}`);
+    await expect(node2).toBeVisible({ timeout: 10_000 });
+    await node2.click();
+    await expect(page.getByTestId('capture-target-chip-label')).toContainText(
+      'Target: Clear-gesture node two',
+    );
+    await expect(page.getByTestId('capture-target-chip-override-marker')).toHaveCount(0);
+
+    // 8. Esc keyboard gesture — focus on a non-editable element (the
+    //    node2 click in step 7 left focus on a node card, which is not
+    //    an editable target). Pressing Esc routes through the keymap's
+    //    onClearTarget handler and clears the slice.
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('capture-target-chip-label')).toHaveText('No target yet');
+
+    // 9. Editable-target Esc no-op: click node 1 to re-engage the chip
+    //    (a deliberate selection-change after clear lights up the auto-
+    //    stage path again), then focus the capture textarea and press
+    //    Esc → chip stays at "Target: ..." (the editable-target guard
+    //    in captureKeymap.ts consumes the Esc before the chip handler
+    //    fires).
+    await node1.click();
+    await expect(page.getByTestId('capture-target-chip-label')).toContainText(
+      'Target: Clear-gesture node one',
+    );
+    const textarea = page.getByTestId('capture-text-input-textarea');
+    await textarea.focus();
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('capture-target-chip-label')).toContainText(
+      'Target: Clear-gesture node one',
+    );
+  });
 });
