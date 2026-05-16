@@ -63,6 +63,7 @@ task backend "Backend" {
     task serve_static_frontends_multi_surface "Extend static-frontends plugin to serve root app + per-surface bundles (ADR 0026)" {
       effort 0.5d
       allocate team
+      complete 100
       depends !serve_static_frontends
       note -8<-
         Refinement: tasks/refinements/backend/serve_static_frontends_multi_surface.md

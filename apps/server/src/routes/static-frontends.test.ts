@@ -33,7 +33,7 @@
 // Tests use Fastify's built-in `app.inject(...)` — no port bind, no
 // network. See ADR 0022.
 
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -283,6 +283,95 @@ describe('static-frontends plugin — fail-fast at boot', () => {
     } finally {
       await app.close();
       rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('throws when a surface distDir holds two files matching the module pattern (stale build)', async () => {
+    // Regression pin for `discoverSingleFile`'s multiple-match throw.
+    // A dist that holds bundles from two different commits would let
+    // the manifest serve indeterministic URLs; failing fast at
+    // registration surfaces the operator's missed `rm -rf dist/`.
+    const Fastify = (await import('fastify')).default;
+    const app = Fastify({ logger: false });
+    const frontendDir = mkdtempSync(join(tmpdir(), 'a-conversa-frontend-stub-'));
+    const surfaceDir = mkdtempSync(join(tmpdir(), 'a-conversa-surface-stale-'));
+    try {
+      // Minimal valid frontend so the plugin progresses to the surface
+      // validation step.
+      writeFileSync(join(frontendDir, 'index.html'), '<!doctype html><html></html>');
+      // Two files match the same module pattern — the stale-dist case.
+      writeFileSync(join(surfaceDir, 'moderator-aaaa1111.js'), '// build A');
+      writeFileSync(join(surfaceDir, 'moderator-bbbb2222.js'), '// build B');
+      await expect(
+        app.register(staticFrontendsPlugin, {
+          frontends: [
+            {
+              urlPrefix: '/',
+              distDir: frontendDir,
+              defaultIndex: 'index.html',
+              label: 'root-stub',
+            },
+          ],
+          surfaces: [
+            {
+              surfaceId: 'moderator',
+              urlPrefix: '/_surfaces/moderator/',
+              distDir: surfaceDir,
+              moduleFilePattern: /^moderator-[A-Za-z0-9_-]+\.js$/,
+              label: 'moderator-stale',
+            },
+          ],
+        }),
+      ).rejects.toThrow(/matched 2 files/);
+    } finally {
+      await app.close();
+      rmSync(frontendDir, { recursive: true, force: true });
+      rmSync(surfaceDir, { recursive: true, force: true });
+    }
+  });
+
+  it('throws when a surface distDir holds no file matching the module pattern (missing build)', async () => {
+    // Regression pin for `discoverSingleFile`'s zero-match throw. A
+    // dist that lacks the expected bundle (mis-named output, broken
+    // build, forgotten Dockerfile `COPY`) would otherwise serve 404s
+    // for every manifest fetch; failing fast keeps the operator's
+    // startup log readable.
+    const Fastify = (await import('fastify')).default;
+    const app = Fastify({ logger: false });
+    const frontendDir = mkdtempSync(join(tmpdir(), 'a-conversa-frontend-stub-'));
+    const surfaceDir = mkdtempSync(join(tmpdir(), 'a-conversa-surface-empty-'));
+    try {
+      writeFileSync(join(frontendDir, 'index.html'), '<!doctype html><html></html>');
+      // A stray file that does NOT match the pattern — confirms the
+      // scan walked the dir but found no match (vs. a directory-empty
+      // edge case).
+      mkdirSync(join(surfaceDir, 'assets'));
+      writeFileSync(join(surfaceDir, 'assets', 'unrelated.txt'), 'noise');
+      await expect(
+        app.register(staticFrontendsPlugin, {
+          frontends: [
+            {
+              urlPrefix: '/',
+              distDir: frontendDir,
+              defaultIndex: 'index.html',
+              label: 'root-stub',
+            },
+          ],
+          surfaces: [
+            {
+              surfaceId: 'moderator',
+              urlPrefix: '/_surfaces/moderator/',
+              distDir: surfaceDir,
+              moduleFilePattern: /^moderator-[A-Za-z0-9_-]+\.js$/,
+              label: 'moderator-missing',
+            },
+          ],
+        }),
+      ).rejects.toThrow(/did not match any file under/);
+    } finally {
+      await app.close();
+      rmSync(frontendDir, { recursive: true, force: true });
+      rmSync(surfaceDir, { recursive: true, force: true });
     }
   });
 });

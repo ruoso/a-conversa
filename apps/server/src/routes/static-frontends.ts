@@ -120,9 +120,15 @@ export interface FrontendEntry {
 /**
  * Options to the plugin. Defaults to the moderator-only list resolved
  * from `process.env`; tests pass a bespoke list to bypass the env.
+ *
+ * `surfaces` mirrors `frontends`: if omitted, the plugin falls back to
+ * `resolveDefaultSurfaces(process.env)`; tests pass a bespoke list to
+ * exercise the discovery + fail-fast paths against a fixture `distDir`
+ * without depending on a real workspace `vite build`.
  */
 export interface StaticFrontendsPluginOptions {
   readonly frontends?: readonly FrontendEntry[];
+  readonly surfaces?: readonly SurfaceEntry[];
 }
 
 /**
@@ -506,7 +512,7 @@ const staticFrontendsPluginAsync: FastifyPluginAsync<StaticFrontendsPluginOption
   opts,
 ) => {
   const frontends = opts.frontends ?? resolveDefaultFrontends(process.env);
-  const surfaces = resolveDefaultSurfaces(process.env);
+  const surfaces = opts.surfaces ?? resolveDefaultSurfaces(process.env);
   if (frontends.length === 0) {
     // Still own the root-scope not-found handler — errorHandlerPlugin
     // deliberately does NOT install one (see error-handler.ts), so we
