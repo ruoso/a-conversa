@@ -19,6 +19,7 @@ task root_app "Root app (apps/root/)" {
   task root_pkg_skeleton "apps/root workspace skeleton" {
     effort 0.5d
     allocate team
+    complete 100
     depends foundation.repo_skeleton, foundation.stack_decisions.frontend_framework_decision, frontend_i18n.i18n_catalog_workflow
     note -8<-
       Refinement: tasks/refinements/root-app/root_pkg_skeleton.md
