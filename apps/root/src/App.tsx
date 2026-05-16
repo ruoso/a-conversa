@@ -30,22 +30,22 @@ function TopBanner(): ReactElement {
         <div className="flex items-center gap-6">
           <Link to="/" className="text-lg font-semibold tracking-tight text-slate-900">a-conversa</Link>
           <nav className="hidden items-center gap-4 text-sm text-slate-600 md:flex">
-            <Link to="/why" className="hover:text-slate-900">Why it matters</Link>
-            <Link to="/methodology" className="hover:text-slate-900">Methodology</Link>
-            <Link to="/roles" className="hover:text-slate-900">Roles & surfaces</Link>
-            <Link to="/walkthrough" className="hover:text-slate-900">Example walkthrough</Link>
+            <Link to="/why" className="hover:text-slate-900">{t('chrome.rootLanding.navWhy')}</Link>
+            <Link to="/methodology" className="hover:text-slate-900">{t('chrome.rootLanding.navMethodology')}</Link>
+            <Link to="/roles" className="hover:text-slate-900">{t('chrome.rootLanding.navRoles')}</Link>
+            <Link to="/walkthrough" className="hover:text-slate-900">{t('chrome.rootLanding.navWalkthrough')}</Link>
           </nav>
         </div>
         <div className="flex items-center gap-2">
           {auth.status === 'authenticated' && auth.user !== undefined ? (
-            <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">Logged in as {auth.user.screenName}</span>
+            <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">{t('chrome.rootLanding.loggedInAs', { screenName: auth.user.screenName })}</span>
           ) : (
-            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">Visitor mode</span>
+            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">{t('chrome.rootLanding.visitorMode')}</span>
           )}
           <Link to="/m/sessions/new" data-testid="root-start-session" className="rounded-full border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">{t('moderator.createSession.title')}</Link>
           {auth.status === 'authenticated' ? (
             <>
-              <Link to="/m" data-testid="root-open-moderator" className="rounded-full border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Open moderator</Link>
+              <Link to="/m" data-testid="root-open-moderator" className="rounded-full border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">{t('chrome.rootLanding.openModerator')}</Link>
               <Link to="/logout" data-testid="root-logout-link" className="rounded-full bg-slate-900 px-4 py-2 text-sm font-medium text-white">{t('auth.login.logout')}</Link>
             </>
           ) : (
@@ -67,21 +67,22 @@ function Shell({ children }: { children: ReactElement }): ReactElement {
 }
 
 function HomePage(): ReactElement {
+  const { t } = useTranslation();
   return (
     <Shell>
       <section className="grid gap-8 rounded-3xl border border-slate-200 bg-white p-8 shadow-sm md:grid-cols-2">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-indigo-600">A platform for productive disagreement</p>
-          <h1 data-testid="route-title" className="mt-3 text-4xl font-semibold tracking-tight text-slate-900">Turn heat into structure, and structure into progress.</h1>
-          <p className="mt-4 text-slate-600">a-conversa is designed for conversations where truth, values, and trade-offs get tangled. Instead of debating faster, participants debate slower with explicit claim typing, relation mapping, and mutual commit checkpoints.</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-indigo-600">{t('chrome.rootLanding.homeEyebrow')}</p>
+          <h1 data-testid="route-title" className="mt-3 text-4xl font-semibold tracking-tight text-slate-900">{t('chrome.rootLanding.homeTitle')}</h1>
+          <p className="mt-4 text-slate-600">{t('chrome.rootLanding.homeBody')}</p>
           <div className="mt-6 flex gap-3">
-            <Link to="/why" className="rounded-full bg-slate-900 px-5 py-3 text-sm font-medium text-white">See why teams use it</Link>
-            <Link to="/methodology" className="rounded-full border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700">Explore the method</Link>
-            <Link to="/walkthrough" className="rounded-full border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700">Read a full walkthrough</Link>
+            <Link to="/why" className="rounded-full bg-slate-900 px-5 py-3 text-sm font-medium text-white">{t('chrome.rootLanding.ctaWhy')}</Link>
+            <Link to="/methodology" className="rounded-full border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700">{t('chrome.rootLanding.ctaMethod')}</Link>
+            <Link to="/walkthrough" className="rounded-full border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700">{t('chrome.rootLanding.ctaWalkthrough')}</Link>
           </div>
         </div>
         <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6">
-          <h2 className="text-lg font-semibold text-slate-900">At a glance</h2>
+          <h2 className="text-lg font-semibold text-slate-900">{t('chrome.rootLanding.atAGlance')}</h2>
           <ul className="mt-3 space-y-3 text-sm text-slate-700">
             <li>• Capture exact statements before interpretation drifts.</li>
             <li>• Classify each claim type to avoid category mistakes.</li>

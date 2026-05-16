@@ -1,6 +1,22 @@
 {
   "chrome": {
-    "hello": "hello, world"
+    "hello": "hello, world",
+    "rootLanding": {
+      "navWhy": "Why it matters",
+      "navMethodology": "Methodology",
+      "navRoles": "Roles & surfaces",
+      "navWalkthrough": "Example walkthrough",
+      "visitorMode": "Visitor mode",
+      "loggedInAs": "Logged in as {{screenName}}",
+      "openModerator": "Open moderator",
+      "homeEyebrow": "A platform for productive disagreement",
+      "homeTitle": "Turn heat into structure, and structure into progress.",
+      "homeBody": "a-conversa is designed for conversations where truth, values, and trade-offs get tangled. Instead of debating faster, participants debate slower with explicit claim typing, relation mapping, and mutual commit checkpoints.",
+      "ctaWhy": "See why teams use it",
+      "ctaMethod": "Explore the method",
+      "ctaWalkthrough": "Read a full walkthrough",
+      "atAGlance": "At a glance"
+    }
   },
   "auth": {
     "login": {

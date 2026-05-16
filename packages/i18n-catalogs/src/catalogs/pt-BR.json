@@ -1,6 +1,22 @@
 {
   "chrome": {
-    "hello": "olá, mundo"
+    "hello": "olá, mundo",
+    "rootLanding": {
+      "navWhy": "Por que isso importa",
+      "navMethodology": "Metodologia",
+      "navRoles": "Papéis e superfícies",
+      "navWalkthrough": "Exemplo guiado",
+      "visitorMode": "Modo visitante",
+      "loggedInAs": "Conectado como {{screenName}}",
+      "openModerator": "Abrir moderador",
+      "homeEyebrow": "Uma plataforma para discordância produtiva",
+      "homeTitle": "Transforme atrito em estrutura e estrutura em progresso.",
+      "homeBody": "A a-conversa foi criada para conversas em que verdade, valores e trade-offs se misturam. Em vez de debater mais rápido, os participantes debatem com mais calma, com tipagem explícita de afirmações, mapeamento de relações e pontos de compromisso mútuo.",
+      "ctaWhy": "Veja por que as equipes usam",
+      "ctaMethod": "Explorar o método",
+      "ctaWalkthrough": "Ler um passo a passo completo",
+      "atAGlance": "Visão geral"
+    }
   },
   "auth": {
     "login": {

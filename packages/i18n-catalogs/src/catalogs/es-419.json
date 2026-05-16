@@ -1,6 +1,22 @@
 {
   "chrome": {
-    "hello": "hola, mundo"
+    "hello": "hola, mundo",
+    "rootLanding": {
+      "navWhy": "Por qué importa",
+      "navMethodology": "Metodología",
+      "navRoles": "Roles y superficies",
+      "navWalkthrough": "Ejemplo guiado",
+      "visitorMode": "Modo visitante",
+      "loggedInAs": "Conectado como {{screenName}}",
+      "openModerator": "Abrir moderador",
+      "homeEyebrow": "Una plataforma para el desacuerdo productivo",
+      "homeTitle": "Convierte la fricción en estructura y la estructura en avance.",
+      "homeBody": "a-conversa está diseñada para conversaciones donde la verdad, los valores y los compromisos se enredan. En lugar de debatir más rápido, los participantes debaten más despacio con tipificación explícita de afirmaciones, mapeo de relaciones y puntos de compromiso mutuo.",
+      "ctaWhy": "Ver por qué los equipos la usan",
+      "ctaMethod": "Explorar el método",
+      "ctaWalkthrough": "Leer un recorrido completo",
+      "atAGlance": "Vista general"
+    }
   },
   "auth": {
     "login": {
