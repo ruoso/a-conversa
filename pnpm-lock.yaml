@@ -266,6 +266,19 @@ importers:
         specifier: 4.4.3
         version: 4.4.3
 
+  packages/shell:
+    dependencies:
+      react:
+        specifier: '*'
+        version: 18.3.1
+      react-dom:
+        specifier: '*'
+        version: 18.3.1(react@18.3.1)
+    devDependencies:
+      vite:
+        specifier: 8.0.12
+        version: 8.0.12(@types/node@22.19.18)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.8.4)
+
   packages/test-fixtures:
     dependencies:
       '@a-conversa/shared-types':

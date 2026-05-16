@@ -5,6 +5,7 @@
     { "path": "packages/shared-types" },
     { "path": "packages/test-fixtures" },
     { "path": "packages/i18n-catalogs" },
+    { "path": "packages/shell" },
     { "path": "apps/server" },
     { "path": "apps/moderator" },
     { "path": "apps/participant" },

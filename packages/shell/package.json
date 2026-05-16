@@ -1,0 +1,26 @@
+{
+  "name": "@a-conversa/shell",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "vite build && tsc --emitDeclarationOnly -p tsconfig.json",
+    "typecheck": "tsc -b"
+  },
+  "peerDependencies": {
+    "react": "*",
+    "react-dom": "*"
+  },
+  "devDependencies": {
+    "vite": "8.0.12"
+  }
+}

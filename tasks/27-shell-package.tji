@@ -22,6 +22,7 @@ task shell_package "Shell package (@aconversa/shell)" {
   task shell_pkg_skeleton "packages/shell workspace skeleton" {
     effort 0.5d
     allocate team
+    complete 100
     depends foundation.repo_skeleton, foundation.stack_decisions.frontend_framework_decision
     note "Refinement: tasks/refinements/shell-package/shell_pkg_skeleton.md"
     note "Creates packages/shell/ with package.json (@aconversa/shell), tsconfig, vite library-mode config, src/index.ts."

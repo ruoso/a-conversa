@@ -52,7 +52,7 @@ export default tseslint.config(
     // not by the app's `tsc -b`. The next config block puts them on the
     // non-type-checked lint tier so projectService doesn't fail to find
     // them in any workspace project.
-    ignores: ['apps/*/vite.config.ts'],
+    ignores: ['apps/*/vite.config.ts', 'packages/*/vite.config.ts'],
     extends: [js.configs.recommended, ...tseslint.configs.recommendedTypeChecked],
     languageOptions: {
       parserOptions: {
@@ -90,12 +90,13 @@ export default tseslint.config(
       },
     },
   },
-  // Per-app bundler configs (`apps/*/vite.config.ts`). Same shape as
-  // `scripts/`: typechecked by `tsconfig.tools.json` (which includes
-  // `apps/*/vite.config.ts`), linted on the non-type-checked tier so
-  // projectService doesn't need to locate them in a workspace project.
+  // Per-app and per-package bundler configs (`apps/*/vite.config.ts`,
+  // `packages/*/vite.config.ts`). Same shape as `scripts/`: typechecked
+  // by `tsconfig.tools.json` (which includes both globs), linted on the
+  // non-type-checked tier so projectService doesn't need to locate them
+  // in a workspace project.
   {
-    files: ['apps/*/vite.config.ts'],
+    files: ['apps/*/vite.config.ts', 'packages/*/vite.config.ts'],
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     languageOptions: {
       globals: {
