@@ -200,6 +200,16 @@
       "rowAriaLabel": "{kind} por {author}, {ago}",
       "systemAuthor": "Sistema"
     },
+    "commitButton": {
+      "label": "Confirmar",
+      "inFlightLabel": "Confirmando…",
+      "ariaLabel": "Confirmar esta proposta (todos os participantes devem concordar)",
+      "wireError": "Falha ao confirmar: {message} ({code})",
+      "timeoutError": "A solicitação de confirmação expirou. Verifique sua conexão e tente novamente.",
+      "gateTooltip": "Não é possível confirmar ainda: {reason}",
+      "errorRoleLabel": "Erro de confirmação",
+      "reason": "{reason, select, sessionNotConnected {a sessão não está conectada — reconectando…} proposalMetaDisagreement {esta proposta está marcada como meta-discordância; resolva antes de confirmar} noCurrentParticipants {nenhum participante entrou na sessão ainda} participantsNotVoted {um ou mais participantes ainda não votaram em todos os aspectos} participantsDisagree {um ou mais participantes não concordaram em todos os aspectos} structuralSubKindNotSupported {este tipo de proposta ainda não é suportado para confirmação} other {desconhecido}}"
+    },
     "modeBanner": {
       "idle": {
         "label": "Ocioso",

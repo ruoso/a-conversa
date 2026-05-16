@@ -316,6 +316,7 @@ task moderator_ui "Moderator UI" {
     task mod_commit_button "Commit button per proposal — enabled only when all agree" {
       effort 1d
       allocate team
+      complete 100
       depends !mod_vote_indicators_in_sidebar, backend.websocket_protocol.ws_commit_message
     }
     task mod_proposal_filter_search "Filter / search pending proposals" {

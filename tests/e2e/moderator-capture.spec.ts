@@ -954,4 +954,71 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     await expect(chip.getByTestId('proposal-facet-vote-indicator-row')).toHaveCount(0);
     await expect(chip.locator('[data-vote-indicator]')).toHaveCount(0);
   });
+
+  // Refinement: tasks/refinements/moderator-ui/mod_commit_button.md
+  //
+  // Commit-button no-vote-yet disabled-baseline cover (Decision §10
+  // option (a) — drive the moderator UI alone; the cross-context
+  // vote-and-enable case is registered as deferred-e2e debt against
+  // `participant_ui.part_pw_concurrent_with_moderator`).
+  //
+  // The freshly-proposed row appears in the pane; the per-row commit
+  // button is `data-commit-state="disabled"` with a gate reason of
+  // either `'no-current-participants'` (no debaters joined) or
+  // `'participants-not-voted'` (debaters joined but no votes). The
+  // exact reason depends on whether the compose stack seeds debater
+  // participants for the test session; the assertion accepts either
+  // since both prove the gate works.
+  test('alice: propose a free-floating new statement; the per-row commit button is disabled with the right gate reason', async ({
+    page,
+  }) => {
+    await loginAs(page, { username: TEST_USERNAME });
+    await page.goto('/sessions/new');
+    await expect(page.getByTestId('route-create-session')).toBeVisible();
+
+    await page
+      .getByTestId('create-session-topic-input')
+      .fill('Commit-button disabled-baseline e2e regression check.');
+    await page.getByTestId('create-session-submit').click();
+    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
+    await expect(page.getByTestId('route-operate')).toBeVisible();
+
+    // Drive the same propose chain — produces a `classify-node`
+    // proposal whose row mounts the commit button.
+    const wording = 'The proposed minimum wage would raise prices for everyone.';
+    const textarea = page.getByTestId('capture-text-input-textarea');
+    await textarea.fill(wording);
+    await page.getByTestId('classification-palette-button-fact').click();
+    const submitKey = process.platform === 'darwin' ? 'Meta+Enter' : 'Control+Enter';
+    await textarea.press(submitKey);
+
+    // Wait for the row to land.
+    await expect
+      .poll(async () => page.getByTestId('pending-proposal-row').count(), { timeout: 10_000 })
+      .toBe(1);
+
+    // The row's commit button is present.
+    const button = page.getByTestId('commit-button');
+    await expect(button).toHaveCount(1);
+
+    // The button is disabled (no debaters joined, no votes — the gate
+    // blocks). The disabled visual carries `data-commit-state="disabled"`
+    // + a gate reason; the button's `disabled` attribute is set so a
+    // click is a no-op.
+    await expect(button).toBeDisabled();
+    await expect(button).toHaveAttribute('data-commit-state', 'disabled');
+
+    // Gate reason is either `no-current-participants` or
+    // `participants-not-voted` — both are valid blocking states for a
+    // freshly-proposed row in the dev compose stack, and both prove
+    // the gate works.
+    const reason = await button.getAttribute('data-commit-gate-reason');
+    expect(['no-current-participants', 'participants-not-voted']).toContain(reason);
+
+    // Tooltip is set with the localized gate-reason text (the en-US
+    // template is "Cannot commit yet: …").
+    const tooltip = await button.getAttribute('title');
+    expect(tooltip).toBeTruthy();
+    expect(tooltip).toContain('Cannot commit yet');
+  });
 });

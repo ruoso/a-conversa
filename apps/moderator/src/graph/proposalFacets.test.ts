@@ -25,9 +25,16 @@
 import { describe, expect, it } from 'vitest';
 import type { ProposalPayload } from '@a-conversa/shared-types';
 
-import { derivePerProposalFacets, type VotesByFacetIndex } from './proposalFacets';
+import {
+  deriveAllAgree,
+  deriveCurrentParticipants,
+  derivePerProposalFacets,
+  type ProposalFacetEntry,
+  type VotesByFacetIndex,
+} from './proposalFacets';
 import type { FacetName, FacetStatus, FacetStatusIndex } from './facetStatus';
 import { EMPTY_VOTES, type Vote } from './selectors';
+import type { Event } from '@a-conversa/shared-types';
 
 const NODE_X = '00000000-0000-4000-8000-00000000000a';
 const NODE_Y = '00000000-0000-4000-8000-00000000000b';
@@ -506,5 +513,223 @@ describe('derivePerProposalFacets — per-participant votes field', () => {
     const a = derivePerProposalFacets(proposal, EMPTY_INDEX, undefined, index);
     const b = derivePerProposalFacets(proposal, EMPTY_INDEX, undefined, index);
     expect(a).toEqual(b);
+  });
+});
+
+// ---------------------------------------------------------------------
+// `deriveCurrentParticipants` tests
+//
+// Refinement: tasks/refinements/moderator-ui/mod_commit_button.md
+// Acceptance criterion 5.1, 5.2: excludes moderator role; excludes left
+// participants. Pure; same `events`-keyed cadence as the other
+// pane-level memos.
+// ---------------------------------------------------------------------
+
+const MODERATOR_ID = '00000000-0000-4000-8000-0000000000a0';
+const DEBATER_A_ID = '00000000-0000-4000-8000-0000000000a1';
+const DEBATER_B_ID = '00000000-0000-4000-8000-0000000000a2';
+const SESSION_ID = '00000000-0000-4000-8000-0000000000aa';
+
+function joinedEvent(
+  seq: number,
+  userId: string,
+  role: 'moderator' | 'debater-A' | 'debater-B',
+): Event {
+  return {
+    id: `00000000-0000-4000-8000-${(seq + 0x1000).toString(16).padStart(12, '0')}`,
+    sessionId: SESSION_ID,
+    sequence: seq,
+    kind: 'participant-joined',
+    actor: userId,
+    payload: {
+      user_id: userId,
+      role,
+      screen_name: `User-${role}`,
+      joined_at: '2026-05-16T00:00:00.000Z',
+    },
+    createdAt: '2026-05-16T00:00:00.000Z',
+  };
+}
+
+function leftEvent(seq: number, userId: string): Event {
+  return {
+    id: `00000000-0000-4000-8000-${(seq + 0x2000).toString(16).padStart(12, '0')}`,
+    sessionId: SESSION_ID,
+    sequence: seq,
+    kind: 'participant-left',
+    actor: userId,
+    payload: {
+      user_id: userId,
+      left_at: '2026-05-16T00:05:00.000Z',
+    },
+    createdAt: '2026-05-16T00:05:00.000Z',
+  };
+}
+
+describe('deriveCurrentParticipants — current non-moderator participants only', () => {
+  it('excludes the moderator role', () => {
+    const events: Event[] = [
+      joinedEvent(1, MODERATOR_ID, 'moderator'),
+      joinedEvent(2, DEBATER_A_ID, 'debater-A'),
+      joinedEvent(3, DEBATER_B_ID, 'debater-B'),
+    ];
+    const out = deriveCurrentParticipants(events);
+    expect(out.has(MODERATOR_ID)).toBe(false);
+    expect(out.has(DEBATER_A_ID)).toBe(true);
+    expect(out.has(DEBATER_B_ID)).toBe(true);
+    expect(out.size).toBe(2);
+  });
+
+  it('excludes participants who emitted participant-left after participant-joined', () => {
+    const events: Event[] = [
+      joinedEvent(1, DEBATER_A_ID, 'debater-A'),
+      joinedEvent(2, DEBATER_B_ID, 'debater-B'),
+      leftEvent(3, DEBATER_A_ID),
+    ];
+    const out = deriveCurrentParticipants(events);
+    expect(out.has(DEBATER_A_ID)).toBe(false);
+    expect(out.has(DEBATER_B_ID)).toBe(true);
+    expect(out.size).toBe(1);
+  });
+
+  it('re-adds a participant who left and then rejoined', () => {
+    const events: Event[] = [
+      joinedEvent(1, DEBATER_A_ID, 'debater-A'),
+      leftEvent(2, DEBATER_A_ID),
+      joinedEvent(3, DEBATER_A_ID, 'debater-A'),
+    ];
+    const out = deriveCurrentParticipants(events);
+    expect(out.has(DEBATER_A_ID)).toBe(true);
+  });
+
+  it('empty event log → empty set', () => {
+    const out = deriveCurrentParticipants([]);
+    expect(out.size).toBe(0);
+  });
+
+  it('purity — two calls with the same input return a set with the same membership', () => {
+    const events: Event[] = [
+      joinedEvent(1, DEBATER_A_ID, 'debater-A'),
+      joinedEvent(2, DEBATER_B_ID, 'debater-B'),
+    ];
+    const a = deriveCurrentParticipants(events);
+    const b = deriveCurrentParticipants(events);
+    expect([...a].sort()).toEqual([...b].sort());
+  });
+});
+
+// ---------------------------------------------------------------------
+// `deriveAllAgree` tests
+//
+// Refinement: tasks/refinements/moderator-ui/mod_commit_button.md
+// Acceptance criteria 5.3–5.7. The predicate mirrors the engine's
+// `commitHandler` rule 4 (unanimous agree across current participants
+// for facet-targeting sub-kinds; structural sub-kinds rejected with
+// `structural-sub-kind-not-supported`).
+// ---------------------------------------------------------------------
+
+/**
+ * Build a facet entry for testing the commit-gate predicate. The
+ * `facet` defaults to `'classification'` (a real facet); structural
+ * sub-kinds set `facet: 'proposal'`.
+ */
+function makeEntry(
+  votes: readonly Vote[],
+  overrides: Partial<ProposalFacetEntry> = {},
+): ProposalFacetEntry {
+  return {
+    facet: 'classification',
+    status: 'proposed',
+    labelKey: 'methodology.facet.classification',
+    votes,
+    ...overrides,
+  };
+}
+
+describe('deriveAllAgree — unanimous agree across current non-moderator participants', () => {
+  it('returns { ok: true } when every entry has every participant voting agree', () => {
+    const entry = makeEntry([
+      { participantId: DEBATER_A_ID, choice: 'agree' },
+      { participantId: DEBATER_B_ID, choice: 'agree' },
+    ]);
+    const out = deriveAllAgree([entry], new Set([DEBATER_A_ID, DEBATER_B_ID]));
+    expect(out.ok).toBe(true);
+  });
+
+  it('returns { ok: false, reason: participants-not-voted } when a participant has no vote on one facet', () => {
+    const entry = makeEntry([{ participantId: DEBATER_A_ID, choice: 'agree' }]);
+    const out = deriveAllAgree([entry], new Set([DEBATER_A_ID, DEBATER_B_ID]));
+    expect(out).toEqual({ ok: false, reason: 'participants-not-voted' });
+  });
+
+  it('returns { ok: false, reason: participants-disagree } when a participant voted dispute', () => {
+    const entry = makeEntry([
+      { participantId: DEBATER_A_ID, choice: 'agree' },
+      { participantId: DEBATER_B_ID, choice: 'dispute' },
+    ]);
+    const out = deriveAllAgree([entry], new Set([DEBATER_A_ID, DEBATER_B_ID]));
+    expect(out).toEqual({ ok: false, reason: 'participants-disagree' });
+  });
+
+  it('returns { ok: false, reason: participants-disagree } when a participant voted withdraw', () => {
+    const entry = makeEntry([
+      { participantId: DEBATER_A_ID, choice: 'agree' },
+      { participantId: DEBATER_B_ID, choice: 'withdraw' },
+    ]);
+    const out = deriveAllAgree([entry], new Set([DEBATER_A_ID, DEBATER_B_ID]));
+    expect(out).toEqual({ ok: false, reason: 'participants-disagree' });
+  });
+
+  it('returns { ok: false, reason: proposal-meta-disagreement } when any entry status is meta-disagreement', () => {
+    const entry = makeEntry(
+      [
+        { participantId: DEBATER_A_ID, choice: 'agree' },
+        { participantId: DEBATER_B_ID, choice: 'agree' },
+      ],
+      { status: 'meta-disagreement' },
+    );
+    const out = deriveAllAgree([entry], new Set([DEBATER_A_ID, DEBATER_B_ID]));
+    expect(out).toEqual({ ok: false, reason: 'proposal-meta-disagreement' });
+  });
+
+  it('returns { ok: false, reason: structural-sub-kind-not-supported } for the synthetic proposal facet', () => {
+    const entry = makeEntry([], { facet: 'proposal', labelKey: 'methodology.facet.proposal' });
+    const out = deriveAllAgree([entry], new Set([DEBATER_A_ID, DEBATER_B_ID]));
+    expect(out).toEqual({ ok: false, reason: 'structural-sub-kind-not-supported' });
+  });
+
+  it('returns { ok: false, reason: no-current-participants } when the participant set is empty', () => {
+    const entry = makeEntry([]);
+    const out = deriveAllAgree([entry], new Set());
+    expect(out).toEqual({ ok: false, reason: 'no-current-participants' });
+  });
+
+  it('ignores votes from non-current participants (e.g., a participant who left)', () => {
+    const entry = makeEntry([
+      { participantId: DEBATER_A_ID, choice: 'agree' },
+      // DEBATER_B left — their stale vote should not gate the result.
+      { participantId: DEBATER_B_ID, choice: 'dispute' },
+    ]);
+    const out = deriveAllAgree([entry], new Set([DEBATER_A_ID]));
+    expect(out.ok).toBe(true);
+  });
+
+  it('meta-disagreement takes priority over participants-not-voted', () => {
+    const entry = makeEntry([], { status: 'meta-disagreement' });
+    const out = deriveAllAgree([entry], new Set([DEBATER_A_ID]));
+    expect(out).toEqual({ ok: false, reason: 'proposal-meta-disagreement' });
+  });
+
+  it('multi-entry — one entry blocks even when other entries are agree', () => {
+    const ok = makeEntry([
+      { participantId: DEBATER_A_ID, choice: 'agree' },
+      { participantId: DEBATER_B_ID, choice: 'agree' },
+    ]);
+    const blocked = makeEntry([{ participantId: DEBATER_A_ID, choice: 'agree' }], {
+      facet: 'substance',
+      labelKey: 'methodology.facet.substance',
+    });
+    const out = deriveAllAgree([ok, blocked], new Set([DEBATER_A_ID, DEBATER_B_ID]));
+    expect(out).toEqual({ ok: false, reason: 'participants-not-voted' });
   });
 });

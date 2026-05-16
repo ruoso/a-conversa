@@ -147,6 +147,14 @@ task frontend_i18n "Frontend internationalization" {
     note "Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit b7c5ff0)."
   }
 
+  task i18n_commit_button_native_review "Native-speaker review of pt-BR + es-419 commit-button strings (8 keys including ICU select for gate reasons)" {
+    effort 0.5d
+    allocate team
+    depends !i18n_per_facet_breakdown_native_review
+    note "Source of debt: mod_commit_button (this commit) — pt-BR and es-419 drafts of the 8 keys under moderator.commitButton.* (7 chrome keys + 1 ICU-select reason key under moderator.commitButton.reason.*) landed flagged PENDING in the *.review.json trackers; replace with native-speaker-reviewed text and sign off the review trackers. UI prose translation (lower bar than methodology terms but still needs native-speaker review, including ICU-select wording per gate reason)."
+    note "Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit b7c5ff0)."
+  }
+
   task i18n_keyboard_shortcuts_policy "Per-locale keyboard shortcut policy for moderator palette" {
     effort 0.5d
     allocate team

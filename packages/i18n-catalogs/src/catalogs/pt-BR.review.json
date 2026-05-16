@@ -115,7 +115,15 @@
     "moderator.proposalList.emptyState",
     "moderator.proposalList.paneAriaLabel",
     "moderator.proposalList.rowAriaLabel",
-    "moderator.proposalList.systemAuthor"
+    "moderator.proposalList.systemAuthor",
+    "moderator.commitButton.label",
+    "moderator.commitButton.inFlightLabel",
+    "moderator.commitButton.ariaLabel",
+    "moderator.commitButton.wireError",
+    "moderator.commitButton.timeoutError",
+    "moderator.commitButton.gateTooltip",
+    "moderator.commitButton.errorRoleLabel",
+    "moderator.commitButton.reason"
   ],
   "signed_off": []
 }

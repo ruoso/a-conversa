@@ -34,6 +34,12 @@ import { formatRelativeTime, __resetFormatterCache } from '@a-conversa/i18n-cata
 import { PendingProposalsPane } from './PendingProposalsPane';
 import { initI18n } from '../i18n';
 import { useWsStore } from '../ws/wsStore';
+import { resetCommitStore, useCommitStore } from './useCommitAction';
+import { WsClientProvider } from '../ws/WsClientProvider';
+import type { SendFn, WsClient, WsClientStatus } from '../ws/client';
+import type { WsEnvelopeUnion, WsMessagePayloadMap, WsMessageType } from '@a-conversa/shared-types';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import type { ReactElement, ReactNode } from 'react';
 
 const SESSION = '00000000-0000-4000-8000-0000000000a1';
 const OTHER_SESSION = '00000000-0000-4000-8000-0000000000a2';
@@ -99,10 +105,69 @@ const classifyNodeValue: ProposalPayload = {
   classification: 'value',
 };
 
+// A minimal, no-op WS client for tests that exercise the pane's
+// rendering surface without exercising the commit-button's WS round-
+// trip. The commit-action hook calls `useWsClient()` from inside each
+// `<PendingProposalRow>` — without a provider, the hook throws. The
+// stub returns `'open'` from `status()` so any sibling subscription
+// that reads it would observe a healthy socket.
+function makeStubWsClient(): WsClient {
+  const send: SendFn = (): Promise<WsEnvelopeUnion> =>
+    new Promise<WsEnvelopeUnion>(() => {
+      /* never resolves — tests that exercise the click path use a real spy */
+    });
+  return {
+    status: (): WsClientStatus => 'open',
+    connect: (): void => undefined,
+    close: (): void => undefined,
+    send,
+    trackSession: () => Promise.resolve(),
+    untrackSession: () => Promise.resolve(),
+    onEnvelope: () => () => undefined,
+    url: '/api/ws',
+  };
+}
+
+/**
+ * Render the pane inside the providers it needs:
+ *   - `<MemoryRouter>` so the row's `useCommitAction` hook can read
+ *     the `:id` route param;
+ *   - `<WsClientProvider>` (with an optional injected client) so
+ *     `useCommitAction`'s `useWsClient()` call succeeds.
+ */
+function renderPane(
+  options: {
+    sessionIdOverride?: string;
+    nowMs?: number;
+    client?: WsClient;
+  } = {},
+): { client: WsClient } {
+  const sessionPath = options.sessionIdOverride ?? SESSION;
+  const client = options.client ?? makeStubWsClient();
+  function Wrapper({ children }: { children: ReactNode }): ReactElement {
+    return (
+      <MemoryRouter initialEntries={[`/sessions/${sessionPath}/operate`]}>
+        <WsClientProvider auth={{ status: 'authenticated' }} client={client}>
+          <Routes>
+            <Route path="/sessions/:id/operate" element={children} />
+          </Routes>
+        </WsClientProvider>
+      </MemoryRouter>
+    );
+  }
+  render(
+    <Wrapper>
+      <PendingProposalsPane sessionId={SESSION} nowMs={options.nowMs ?? NOW_MS} />
+    </Wrapper>,
+  );
+  return { client };
+}
+
 beforeEach(async () => {
   // Reset the WS store to the documented initial state so each test
   // starts from an empty `sessionState`.
   useWsStore.getState().reset();
+  resetCommitStore();
   await initI18n('en-US');
   await i18next.changeLanguage('en-US');
 });
@@ -113,7 +178,7 @@ afterEach(() => {
 
 describe('PendingProposalsPane — empty state', () => {
   it('renders the localized empty-state paragraph when the event log is empty', () => {
-    render(<PendingProposalsPane sessionId={SESSION} nowMs={NOW_MS} />);
+    renderPane();
     const empty = screen.getByTestId('pending-proposals-pane-empty');
     expect(empty.textContent).toBe('No pending proposals');
     // No list, no rows.
@@ -122,7 +187,7 @@ describe('PendingProposalsPane — empty state', () => {
   });
 
   it('renders the localized aria-label on the container', () => {
-    render(<PendingProposalsPane sessionId={SESSION} nowMs={NOW_MS} />);
+    renderPane();
     const container = screen.getByTestId('pending-proposals-pane');
     expect(container.getAttribute('aria-label')).toBe('Pending proposals list');
   });
@@ -144,7 +209,7 @@ describe('PendingProposalsPane — empty state', () => {
         createdAt: '2026-05-16T00:01:00.000Z',
       });
     });
-    render(<PendingProposalsPane sessionId={SESSION} nowMs={NOW_MS} />);
+    renderPane();
     expect(screen.getByTestId('pending-proposals-pane-empty')).toBeTruthy();
   });
 });
@@ -154,7 +219,7 @@ describe('PendingProposalsPane — single row rendering', () => {
     act(() => {
       useWsStore.getState().applyEvent(proposalEvent(1, PROPOSAL_P, classifyNodeFact));
     });
-    render(<PendingProposalsPane sessionId={SESSION} nowMs={NOW_MS} />);
+    renderPane();
     const rows = screen.getAllByTestId('pending-proposal-row');
     expect(rows).toHaveLength(1);
     expect(rows[0]?.getAttribute('data-proposal-id')).toBe(PROPOSAL_P);
@@ -171,7 +236,7 @@ describe('PendingProposalsPane — single row rendering', () => {
     act(() => {
       useWsStore.getState().applyEvent(proposalEvent(1, PROPOSAL_P, classifyNodeFact));
     });
-    render(<PendingProposalsPane sessionId={SESSION} nowMs={NOW_MS} />);
+    renderPane();
     expect(screen.getByTestId('pending-proposal-row-kind').textContent).toBe(
       i18next.t('methodology.kind.fact'),
     );
@@ -183,7 +248,7 @@ describe('PendingProposalsPane — single row rendering', () => {
         .getState()
         .applyEvent(proposalEvent(1, PROPOSAL_P, classifyNodeFact, { actor: null }));
     });
-    render(<PendingProposalsPane sessionId={SESSION} nowMs={NOW_MS} />);
+    renderPane();
     expect(screen.getByTestId('pending-proposal-row-author').textContent).toBe('System');
   });
 });
@@ -197,7 +262,7 @@ describe('PendingProposalsPane — multi-row ordering and lifecycle', () => {
         .getState()
         .applyEvent(proposalEvent(3, PROPOSAL_R, classifyNodeFact, { actor: ACTOR_BOB }));
     });
-    render(<PendingProposalsPane sessionId={SESSION} nowMs={NOW_MS} />);
+    renderPane();
     const rows = screen.getAllByTestId('pending-proposal-row');
     expect(rows).toHaveLength(3);
     expect(rows.map((r) => r.getAttribute('data-proposal-id'))).toEqual([
@@ -212,7 +277,7 @@ describe('PendingProposalsPane — multi-row ordering and lifecycle', () => {
       useWsStore.getState().applyEvent(proposalEvent(1, PROPOSAL_P, classifyNodeFact));
       useWsStore.getState().applyEvent(proposalEvent(2, PROPOSAL_Q, classifyNodeValue));
     });
-    render(<PendingProposalsPane sessionId={SESSION} nowMs={NOW_MS} />);
+    renderPane();
     expect(screen.getAllByTestId('pending-proposal-row')).toHaveLength(2);
     act(() => {
       useWsStore.getState().applyEvent(commitEvent(3, PROPOSAL_P));
@@ -226,7 +291,7 @@ describe('PendingProposalsPane — multi-row ordering and lifecycle', () => {
     act(() => {
       useWsStore.getState().applyEvent(proposalEvent(1, PROPOSAL_P, classifyNodeFact));
     });
-    render(<PendingProposalsPane sessionId={SESSION} nowMs={NOW_MS} />);
+    renderPane();
     expect(screen.getAllByTestId('pending-proposal-row')).toHaveLength(1);
     act(() => {
       useWsStore.getState().applyEvent(commitEvent(2, PROPOSAL_P));
@@ -236,7 +301,7 @@ describe('PendingProposalsPane — multi-row ordering and lifecycle', () => {
   });
 
   it('updates in real time when a proposal event lands AFTER mount (store push)', () => {
-    render(<PendingProposalsPane sessionId={SESSION} nowMs={NOW_MS} />);
+    renderPane();
     expect(screen.queryByTestId('pending-proposal-row')).toBeNull();
     // Push the event into the store AFTER the initial render — the
     // pane re-renders on the Zustand subscription firing.
@@ -257,7 +322,7 @@ describe('PendingProposalsPane — session isolation', () => {
         .getState()
         .applyEvent(proposalEvent(2, PROPOSAL_Q, classifyNodeValue, { sessionId: OTHER_SESSION }));
     });
-    render(<PendingProposalsPane sessionId={SESSION} nowMs={NOW_MS} />);
+    renderPane();
     const rows = screen.getAllByTestId('pending-proposal-row');
     expect(rows).toHaveLength(1);
     expect(rows[0]?.getAttribute('data-proposal-id')).toBe(PROPOSAL_P);
@@ -362,7 +427,7 @@ describe('PendingProposalsPane — all eleven proposal sub-kinds resolve to a no
       act(() => {
         useWsStore.getState().applyEvent(proposalEvent(1, PROPOSAL_P, sub.payload));
       });
-      render(<PendingProposalsPane sessionId={SESSION} nowMs={NOW_MS} />);
+      renderPane();
       const chip = screen.getByTestId('pending-proposal-row-kind');
       const summary = screen.getByTestId('pending-proposal-row-summary');
       expect(chip.textContent).toBeTruthy();
@@ -379,7 +444,7 @@ describe('PendingProposalsPane — author column', () => {
         .getState()
         .applyEvent(proposalEvent(1, PROPOSAL_P, classifyNodeFact, { actor: ACTOR_BOB }));
     });
-    render(<PendingProposalsPane sessionId={SESSION} nowMs={NOW_MS} />);
+    renderPane();
     const author = screen.getByTestId('pending-proposal-row-author');
     expect(author.textContent).toBe(ACTOR_BOB.slice(0, 8));
     expect(author.textContent?.length).toBe(8);
@@ -400,7 +465,7 @@ describe('PendingProposalsPane — timestamp formatting goes through formatRelat
         .getState()
         .applyEvent(proposalEvent(1, PROPOSAL_P, classifyNodeFact, { createdAt }));
     });
-    render(<PendingProposalsPane sessionId={SESSION} nowMs={NOW_MS} />);
+    renderPane();
     const expectedSecondsAgo = Math.round((NOW_MS - Date.parse(createdAt)) / 1000);
     const expected = formatRelativeTime(-expectedSecondsAgo, 'second');
     expect(screen.getByTestId('pending-proposal-row-timestamp').textContent).toBe(expected);
@@ -412,7 +477,7 @@ describe('PendingProposalsPane — timestamp formatting goes through formatRelat
         .getState()
         .applyEvent(proposalEvent(1, PROPOSAL_P, classifyNodeFact, { createdAt: 'not-a-date' }));
     });
-    render(<PendingProposalsPane sessionId={SESSION} nowMs={NOW_MS} />);
+    renderPane();
     expect(screen.getByTestId('pending-proposal-row-timestamp').textContent).toBe('not-a-date');
   });
 });
@@ -443,7 +508,7 @@ describe('PendingProposalsPane — per-facet breakdown integration', () => {
       useWsStore.getState().applyEvent(proposalEvent(1, PROPOSAL_P, classifyNodeFact));
       useWsStore.getState().applyEvent(proposalEvent(2, PROPOSAL_Q, editWording));
     });
-    render(<PendingProposalsPane sessionId={SESSION} nowMs={NOW_MS} />);
+    renderPane();
     const rows = screen.getAllByTestId('pending-proposal-row');
     expect(rows).toHaveLength(2);
     // Each row has its own breakdown container.
@@ -466,7 +531,7 @@ describe('PendingProposalsPane — per-facet breakdown integration', () => {
     act(() => {
       useWsStore.getState().applyEvent(proposalEvent(1, PROPOSAL_P, classifyNodeFact));
     });
-    render(<PendingProposalsPane sessionId={SESSION} nowMs={NOW_MS} />);
+    renderPane();
     // Before any server frame, the chip is the default `proposed`.
     expect(screen.getByTestId('proposal-facet-row').getAttribute('data-facet-status')).toBe(
       'proposed',
@@ -490,7 +555,7 @@ describe('PendingProposalsPane — per-facet breakdown integration', () => {
     act(() => {
       useWsStore.getState().applyEvent(proposalEvent(1, PROPOSAL_P, classifyNodeFact));
     });
-    render(<PendingProposalsPane sessionId={SESSION} nowMs={NOW_MS} />);
+    renderPane();
     // The header's four test ids must still resolve — the breakdown
     // is additive, not a replacement.
     expect(screen.getByTestId('pending-proposal-row-kind')).toBeTruthy();
@@ -547,7 +612,7 @@ describe('PendingProposalsPane — per-participant vote indicators integration',
     act(() => {
       useWsStore.getState().applyEvent(proposalEvent(1, PROPOSAL_P, classifyNodeFact));
     });
-    render(<PendingProposalsPane sessionId={SESSION} nowMs={NOW_MS} />);
+    renderPane();
     // The chip is present but the indicator row is omitted entirely
     // until a vote lands.
     expect(screen.getByTestId('proposal-facet-row')).toBeTruthy();
@@ -558,7 +623,7 @@ describe('PendingProposalsPane — per-participant vote indicators integration',
     act(() => {
       useWsStore.getState().applyEvent(proposalEvent(1, PROPOSAL_P, classifyNodeFact));
     });
-    render(<PendingProposalsPane sessionId={SESSION} nowMs={NOW_MS} />);
+    renderPane();
     // No vote yet → no indicator.
     expect(screen.queryByTestId('proposal-facet-vote-indicator-row')).toBeNull();
 
@@ -601,7 +666,7 @@ describe('PendingProposalsPane — per-participant vote indicators integration',
         }),
       );
     });
-    render(<PendingProposalsPane sessionId={SESSION} nowMs={NOW_MS} />);
+    renderPane();
     const indicators = screen
       .getByTestId('proposal-facet-vote-indicator-row')
       .querySelectorAll('[data-vote-indicator]');
@@ -637,7 +702,7 @@ describe('PendingProposalsPane — per-participant vote indicators integration',
         perFacetStatus: { classification: 'disputed' },
       });
     });
-    render(<PendingProposalsPane sessionId={SESSION} nowMs={NOW_MS} />);
+    renderPane();
     const chip = screen.getByTestId('proposal-facet-row');
     expect(chip.getAttribute('data-facet-status')).toBe('disputed');
     // Indicator row still resolves and carries the agree dot.
@@ -679,5 +744,279 @@ describe('PendingProposalsPane — i18n catalog parity', () => {
       }
     }
     await i18next.changeLanguage('en-US');
+  });
+});
+
+// Refinement: tasks/refinements/moderator-ui/mod_commit_button.md
+//
+// The pane now mounts a per-row commit button inside each
+// `<PendingProposalRow>`'s header. These cases pin:
+//   (a) disabled baseline — a freshly-proposed row's button is disabled
+//       with the right `data-commit-gate-reason` (no votes yet AND no
+//       debaters joined → `no-current-participants`);
+//   (b) enables when every current debater has voted agree on every
+//       facet — pushes `participant-joined` events + a `proposal` event
+//       + two `vote` events into the store; asserts the row's button
+//       flips to `data-commit-state="enabled"`;
+//   (c) click sends the canonical `commit` envelope shape — uses a
+//       spied client so the test can inspect the payload;
+//   (d) meta-disagreement-marked row's button is disabled with the
+//       right reason regardless of vote state.
+describe('PendingProposalsPane — commit button per row', () => {
+  function joinedEvent(
+    seq: number,
+    userId: string,
+    role: 'moderator' | 'debater-A' | 'debater-B',
+  ): Event {
+    return {
+      id: envId('j', seq),
+      sessionId: SESSION,
+      sequence: seq,
+      kind: 'participant-joined',
+      actor: userId,
+      payload: {
+        user_id: userId,
+        role,
+        screen_name: `User-${role}`,
+        joined_at: '2026-05-16T00:00:00.000Z',
+      },
+      createdAt: '2026-05-16T00:00:00.000Z',
+    };
+  }
+
+  function voteEvent(opts: {
+    seq: number;
+    proposalEnvelopeId: string;
+    participant: string;
+    choice: 'agree' | 'dispute' | 'withdraw';
+  }): Event {
+    return {
+      id: envId('v', opts.seq),
+      sessionId: SESSION,
+      sequence: opts.seq,
+      kind: 'vote',
+      actor: opts.participant,
+      payload: {
+        proposal_id: opts.proposalEnvelopeId,
+        participant: opts.participant,
+        vote: opts.choice,
+        voted_at: '2026-05-16T00:01:05.000Z',
+      },
+      createdAt: '2026-05-16T00:01:05.000Z',
+    };
+  }
+
+  const DEBATER_A = '00000000-0000-4000-8000-0000000000d1';
+  const DEBATER_B = '00000000-0000-4000-8000-0000000000d2';
+
+  it('disabled baseline — a freshly-proposed row has a disabled commit button', () => {
+    act(() => {
+      useWsStore.getState().setConnectionStatus('open');
+      useWsStore.getState().applyEvent(proposalEvent(1, PROPOSAL_P, classifyNodeFact));
+    });
+    renderPane();
+    const button = screen.getByTestId('commit-button');
+    // Disabled because no debaters joined yet → `no-current-participants`
+    // wins over `participants-not-voted`.
+    expect(button.getAttribute('data-commit-state')).toBe('disabled');
+    expect(button.getAttribute('data-commit-gate-reason')).toBe('no-current-participants');
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+    // Tooltip is set.
+    expect(button.getAttribute('title')).toBeTruthy();
+    expect(button.getAttribute('data-proposal-id')).toBe(PROPOSAL_P);
+  });
+
+  it('disabled with participants-not-voted reason when debaters have joined but not voted', () => {
+    act(() => {
+      useWsStore.getState().setConnectionStatus('open');
+      useWsStore.getState().applyEvent(joinedEvent(1, DEBATER_A, 'debater-A'));
+      useWsStore.getState().applyEvent(joinedEvent(2, DEBATER_B, 'debater-B'));
+      useWsStore.getState().applyEvent(proposalEvent(3, PROPOSAL_P, classifyNodeFact));
+    });
+    renderPane();
+    const button = screen.getByTestId('commit-button');
+    expect(button.getAttribute('data-commit-state')).toBe('disabled');
+    expect(button.getAttribute('data-commit-gate-reason')).toBe('participants-not-voted');
+  });
+
+  it('enables when every current debater has voted agree on every facet', () => {
+    act(() => {
+      useWsStore.getState().setConnectionStatus('open');
+      useWsStore.getState().applyEvent(joinedEvent(1, DEBATER_A, 'debater-A'));
+      useWsStore.getState().applyEvent(joinedEvent(2, DEBATER_B, 'debater-B'));
+      useWsStore.getState().applyEvent(proposalEvent(3, PROPOSAL_P, classifyNodeFact));
+      useWsStore.getState().applyEvent(
+        voteEvent({
+          seq: 4,
+          proposalEnvelopeId: PROPOSAL_P,
+          participant: DEBATER_A,
+          choice: 'agree',
+        }),
+      );
+      useWsStore.getState().applyEvent(
+        voteEvent({
+          seq: 5,
+          proposalEnvelopeId: PROPOSAL_P,
+          participant: DEBATER_B,
+          choice: 'agree',
+        }),
+      );
+    });
+    renderPane();
+    const button = screen.getByTestId('commit-button');
+    expect(button.getAttribute('data-commit-state')).toBe('enabled');
+    expect(button.getAttribute('data-commit-gate-reason')).toBeNull();
+    expect(button.getAttribute('aria-disabled')).toBe('false');
+    // No tooltip in the enabled state (Decision §3).
+    expect(button.getAttribute('title')).toBeNull();
+  });
+
+  it('disabled with participants-disagree reason when one debater voted dispute', () => {
+    act(() => {
+      useWsStore.getState().setConnectionStatus('open');
+      useWsStore.getState().applyEvent(joinedEvent(1, DEBATER_A, 'debater-A'));
+      useWsStore.getState().applyEvent(joinedEvent(2, DEBATER_B, 'debater-B'));
+      useWsStore.getState().applyEvent(proposalEvent(3, PROPOSAL_P, classifyNodeFact));
+      useWsStore.getState().applyEvent(
+        voteEvent({
+          seq: 4,
+          proposalEnvelopeId: PROPOSAL_P,
+          participant: DEBATER_A,
+          choice: 'agree',
+        }),
+      );
+      useWsStore.getState().applyEvent(
+        voteEvent({
+          seq: 5,
+          proposalEnvelopeId: PROPOSAL_P,
+          participant: DEBATER_B,
+          choice: 'dispute',
+        }),
+      );
+    });
+    renderPane();
+    const button = screen.getByTestId('commit-button');
+    expect(button.getAttribute('data-commit-state')).toBe('disabled');
+    expect(button.getAttribute('data-commit-gate-reason')).toBe('participants-disagree');
+  });
+
+  it('session-not-connected wins as the outer gate regardless of vote state', () => {
+    act(() => {
+      // Connection is `'idle'` (the default after reset) — anything
+      // other than `'open'` triggers the outer gate.
+      useWsStore.getState().applyEvent(joinedEvent(1, DEBATER_A, 'debater-A'));
+      useWsStore.getState().applyEvent(joinedEvent(2, DEBATER_B, 'debater-B'));
+      useWsStore.getState().applyEvent(proposalEvent(3, PROPOSAL_P, classifyNodeFact));
+      useWsStore.getState().applyEvent(
+        voteEvent({
+          seq: 4,
+          proposalEnvelopeId: PROPOSAL_P,
+          participant: DEBATER_A,
+          choice: 'agree',
+        }),
+      );
+      useWsStore.getState().applyEvent(
+        voteEvent({
+          seq: 5,
+          proposalEnvelopeId: PROPOSAL_P,
+          participant: DEBATER_B,
+          choice: 'agree',
+        }),
+      );
+    });
+    renderPane();
+    const button = screen.getByTestId('commit-button');
+    expect(button.getAttribute('data-commit-state')).toBe('disabled');
+    expect(button.getAttribute('data-commit-gate-reason')).toBe('session-not-connected');
+  });
+
+  it('click sends the canonical commit envelope shape', () => {
+    // Spy WS client — captures each `send` call's payload so we can
+    // inspect the envelope shape.
+    const sendCalls: Array<{ type: WsMessageType; payload: unknown }> = [];
+    const spyClient: WsClient = {
+      status: () => 'open',
+      connect: () => undefined,
+      close: () => undefined,
+      send: <T extends WsMessageType>(
+        type: T,
+        payload: WsMessagePayloadMap[T],
+      ): Promise<WsEnvelopeUnion> => {
+        sendCalls.push({ type, payload });
+        return new Promise<WsEnvelopeUnion>(() => {
+          /* never resolves — we only assert the send was made */
+        });
+      },
+      trackSession: () => Promise.resolve(),
+      untrackSession: () => Promise.resolve(),
+      onEnvelope: () => () => undefined,
+      url: '/api/ws',
+    };
+    act(() => {
+      useWsStore.getState().setConnectionStatus('open');
+      useWsStore.getState().applyEvent(joinedEvent(1, DEBATER_A, 'debater-A'));
+      useWsStore.getState().applyEvent(joinedEvent(2, DEBATER_B, 'debater-B'));
+      useWsStore.getState().applyEvent(proposalEvent(3, PROPOSAL_P, classifyNodeFact));
+      useWsStore.getState().applyEvent(
+        voteEvent({
+          seq: 4,
+          proposalEnvelopeId: PROPOSAL_P,
+          participant: DEBATER_A,
+          choice: 'agree',
+        }),
+      );
+      useWsStore.getState().applyEvent(
+        voteEvent({
+          seq: 5,
+          proposalEnvelopeId: PROPOSAL_P,
+          participant: DEBATER_B,
+          choice: 'agree',
+        }),
+      );
+    });
+    renderPane({ client: spyClient });
+    const button = screen.getByTestId('commit-button');
+    expect(button.getAttribute('data-commit-state')).toBe('enabled');
+    act(() => {
+      button.click();
+    });
+    expect(sendCalls.length).toBe(1);
+    expect(sendCalls[0]?.type).toBe('commit');
+    const payload = sendCalls[0]?.payload as {
+      sessionId: string;
+      expectedSequence: number;
+      proposalId: string;
+    };
+    expect(payload.sessionId).toBe(SESSION);
+    expect(payload.proposalId).toBe(PROPOSAL_P);
+    // After 5 events the high-water mark is sequence 5.
+    expect(payload.expectedSequence).toBe(5);
+    // Module-scoped in-flight set tracks the click.
+    expect(useCommitStore.getState().committing.has(PROPOSAL_P)).toBe(true);
+    // Button is in the in-flight visual state.
+    expect(button.getAttribute('data-commit-state')).toBe('in-flight');
+    expect(button.textContent).toBe('Committing…');
+  });
+
+  it('meta-disagreement-marked proposal renders a disabled button with the proposal-meta-disagreement reason', () => {
+    act(() => {
+      useWsStore.getState().setConnectionStatus('open');
+      useWsStore.getState().applyEvent(joinedEvent(1, DEBATER_A, 'debater-A'));
+      useWsStore.getState().applyEvent(joinedEvent(2, DEBATER_B, 'debater-B'));
+      useWsStore.getState().applyEvent(proposalEvent(3, PROPOSAL_P, classifyNodeFact));
+      // Push a server `proposal-status` frame with the
+      // `meta-disagreement` facet status — the chip + commit gate both
+      // read this.
+      useWsStore.getState().applyProposalStatus({
+        sessionId: SESSION,
+        proposalId: PROPOSAL_P,
+        sequence: 4,
+        perFacetStatus: { classification: 'meta-disagreement' },
+      });
+    });
+    renderPane();
+    const button = screen.getByTestId('commit-button');
+    expect(button.getAttribute('data-commit-state')).toBe('disabled');
+    expect(button.getAttribute('data-commit-gate-reason')).toBe('proposal-meta-disagreement');
   });
 });

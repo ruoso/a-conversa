@@ -36,7 +36,7 @@
 // catalog key (not pre-translated prose); the component calls
 // `t(labelKey)` at render time.
 
-import type { ProposalPayload } from '@a-conversa/shared-types';
+import type { Event, ProposalPayload } from '@a-conversa/shared-types';
 
 import type { FacetName, FacetStatus, FacetStatusIndex } from './facetStatus.js';
 import { EMPTY_VOTES, type Vote } from './selectors.js';
@@ -296,4 +296,168 @@ export function derivePerProposalFacets(
       votes: EMPTY_VOTES,
     },
   ];
+}
+
+// ---------------------------------------------------------------------
+// Commit-gate predicate
+//
+// Refinement: tasks/refinements/moderator-ui/mod_commit_button.md
+//
+// The per-row commit button reads `deriveAllAgree(entries,
+// currentParticipantIds)` to decide its enabled-or-not state. The
+// predicate mirrors the engine's `commitHandler` rule 4 (unanimous
+// agree across current participants for the four facet-targeting
+// sub-kinds; structural sub-kinds rejected with
+// `'illegal-state-transition'`) — Decision §1.
+//
+// The connection-status check (`session-not-connected`) is an OUTER
+// gate the row component applies BEFORE calling this predicate — see
+// Decision §1.b. The reason is included in the union so the row
+// component can surface a uniform `CommitGateReason` shape regardless
+// of whether the gate is "internal" (per-row vote state) or "outer"
+// (session-level connection).
+//
+// Pure: no closure over time, no `Date.now()`, no `Math.random()`.
+// ---------------------------------------------------------------------
+
+/**
+ * Discriminated set of blocking reasons surfaced to the row component
+ * so it can render the localized tooltip text (one ICU `select` key
+ * with six arms — see `moderator.commitButton.reason`).
+ *
+ * Priority order (the FIRST blocking reason wins; the row component
+ * checks `session-not-connected` first, then this predicate fires the
+ * remaining reasons in the order declared below):
+ *
+ *   1. `'session-not-connected'` — outer gate; not produced by
+ *      `deriveAllAgree` (the predicate has no business reading the WS
+ *      connection status). Included in the union for the row
+ *      component to surface uniformly.
+ *   2. `'proposal-meta-disagreement'` — any entry's `status` is
+ *      `'meta-disagreement'`. Cannot commit until the moderator
+ *      resolves the meta-disagreement (out-of-scope flow).
+ *   3. `'structural-sub-kind-not-supported'` — any entry's `facet` is
+ *      the synthetic `'proposal'` lifecycle entry (structural
+ *      sub-kinds; the engine's `commitHandler` returns
+ *      `'illegal-state-transition'` for these).
+ *   4. `'no-current-participants'` — no debaters joined (defensive;
+ *      the engine would degenerate to true over the empty set, but
+ *      the moderator's intent on an empty session is ambiguous).
+ *   5. `'participants-not-voted'` — some current participant has no
+ *      vote on some facet.
+ *   6. `'participants-disagree'` — some current participant has voted
+ *      `'dispute'` or `'withdraw'` on some facet.
+ */
+export type CommitGateReason =
+  | 'session-not-connected'
+  | 'proposal-meta-disagreement'
+  | 'no-current-participants'
+  | 'participants-not-voted'
+  | 'participants-disagree'
+  | 'structural-sub-kind-not-supported';
+
+/**
+ * Discriminated result of the commit-gate predicate. `ok: true` means
+ * every entry has every current participant voting `'agree'`; `ok:
+ * false` carries the highest-priority blocking reason.
+ */
+export type CommitGate =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly reason: CommitGateReason };
+
+/**
+ * Pure predicate evaluating "is every current participant voting
+ * `'agree'` on every facet of this proposal?". Decision §1 sub-rules:
+ *
+ *   - The moderator's own vote does NOT count — the caller supplies a
+ *     `currentParticipantIds` set already filtered to non-moderator
+ *     roles (see `deriveCurrentParticipants`).
+ *   - `'withdraw'` blocks commit the same as `'dispute'` (the
+ *     methodology engine requires explicit `'agree'`).
+ *   - Structural sub-kinds (the synthetic `'proposal'` lifecycle
+ *     entry) get a "not supported" reason because the engine's
+ *     `commitHandler` returns `'illegal-state-transition'` for them.
+ *   - Meta-disagreement-marked entries get the
+ *     `'proposal-meta-disagreement'` reason regardless of vote state.
+ */
+export function deriveAllAgree(
+  entries: readonly ProposalFacetEntry[],
+  currentParticipantIds: ReadonlySet<string>,
+): CommitGate {
+  // Priority 1: meta-disagreement on any entry — even if every vote is
+  // `'agree'`, the proposal cannot commit until the moderator resolves
+  // the meta-disagreement. Walk all entries first (the cheap structural
+  // check) so the reason wins over the per-participant checks.
+  for (const entry of entries) {
+    if (entry.status === 'meta-disagreement') {
+      return { ok: false, reason: 'proposal-meta-disagreement' };
+    }
+  }
+  // Priority 2: structural sub-kind — the synthetic `'proposal'`
+  // lifecycle entry signals a sub-kind the engine's `commitHandler`
+  // rejects with `'illegal-state-transition'`.
+  for (const entry of entries) {
+    if (entry.facet === 'proposal') {
+      return { ok: false, reason: 'structural-sub-kind-not-supported' };
+    }
+  }
+  // Priority 3: no debaters joined yet.
+  if (currentParticipantIds.size === 0) {
+    return { ok: false, reason: 'no-current-participants' };
+  }
+  // Priorities 4 + 5 are entwined — we walk participants × entries and
+  // either find a missing vote (priority 4) or a non-agree vote
+  // (priority 5). The first missing-vote wins over the first
+  // disagree-vote (Decision §1), so we walk in two passes: first for
+  // missing votes, then for disagree votes.
+  for (const entry of entries) {
+    const voters = new Set<string>();
+    for (const vote of entry.votes) voters.add(vote.participantId);
+    for (const participantId of currentParticipantIds) {
+      if (!voters.has(participantId)) {
+        return { ok: false, reason: 'participants-not-voted' };
+      }
+    }
+  }
+  for (const entry of entries) {
+    for (const vote of entry.votes) {
+      if (!currentParticipantIds.has(vote.participantId)) continue;
+      if (vote.choice !== 'agree') {
+        return { ok: false, reason: 'participants-disagree' };
+      }
+    }
+  }
+  return { ok: true };
+}
+
+/**
+ * Walk the session's event log once and return the set of currently
+ * joined NON-moderator participant ids. The pane memoizes this on the
+ * same `events` reference as `facetStatusIndex` and
+ * `votesByFacetIndex` so the cost is one O(events) pass per pane
+ * render shared across all rows.
+ *
+ * Sub-rules (Decision §1.a):
+ *
+ *   - The moderator's role is excluded — the engine's
+ *     `currentParticipants` helper does the same. Only `'debater-A'`
+ *     and `'debater-B'` count toward unanimity.
+ *   - `'participant-left'` cancels a prior `'participant-joined'` for
+ *     the same user id; a subsequent rejoin re-adds them.
+ *   - Pure: no closure over time, no `Date.now()`.
+ */
+export function deriveCurrentParticipants(events: readonly Event[]): ReadonlySet<string> {
+  const current = new Set<string>();
+  for (const event of events) {
+    if (event.kind === 'participant-joined') {
+      // Exclude the moderator — only debaters vote (Decision §1.a).
+      if (event.payload.role === 'moderator') continue;
+      current.add(event.payload.user_id);
+      continue;
+    }
+    if (event.kind === 'participant-left') {
+      current.delete(event.payload.user_id);
+    }
+  }
+  return current;
 }

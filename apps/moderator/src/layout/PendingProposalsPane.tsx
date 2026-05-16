@@ -62,8 +62,15 @@ import {
 } from '../graph/pendingProposals';
 import { computeFacetStatuses, type FacetStatusIndex } from '../graph/facetStatus';
 import { projectVotesByFacet } from '../graph/selectors';
-import type { VotesByFacetIndex } from '../graph/proposalFacets';
+import {
+  deriveAllAgree,
+  deriveCurrentParticipants,
+  derivePerProposalFacets,
+  type CommitGateReason,
+  type VotesByFacetIndex,
+} from '../graph/proposalFacets';
 import { ProposalFacetBreakdown } from './ProposalFacetBreakdown';
+import { useCommitAction } from './useCommitAction';
 
 /**
  * Props for the pane. The `sessionId` is threaded through from the
@@ -95,6 +102,27 @@ const SUMMARY_CLASSES = 'flex-1 truncate text-sm';
 const AUTHOR_CLASSES = 'flex-shrink-0 text-xs text-slate-500';
 const TIMESTAMP_CLASSES = 'flex-shrink-0 text-xs text-slate-500';
 const EMPTY_STATE_CLASSES = 'italic text-slate-500';
+// Per `mod_commit_button` Decision §2 + §3 — secondary-density button,
+// emerald-700 palette ("commit / land" semantically — green for "go").
+// WCAG AA: white-on-emerald-700 ≈ 5.96:1 (pass); slate-500-on-slate-100
+// (disabled) ≈ 5.36:1 (pass).
+const COMMIT_BUTTON_CLASSES =
+  'flex-shrink-0 inline-flex items-center gap-1 rounded border border-emerald-700 bg-emerald-700 px-2 py-0.5 text-xs font-medium text-white shadow-sm hover:bg-emerald-800 hover:border-emerald-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700 disabled:cursor-not-allowed disabled:opacity-50 disabled:border-slate-300 disabled:bg-slate-100 disabled:text-slate-500';
+const COMMIT_WIRE_ERROR_CLASSES = 'text-xs text-red-700';
+
+/**
+ * Reason-tag → ICU `select` arm-name in `moderator.commitButton.reason`.
+ * The catalog stores all six arms in one ICU `{select}` block under a
+ * single key — Decision §8 + per-arm names in the en-US `select` block.
+ */
+const COMMIT_REASON_SELECT_ARM: Readonly<Record<CommitGateReason, string>> = {
+  'session-not-connected': 'sessionNotConnected',
+  'proposal-meta-disagreement': 'proposalMetaDisagreement',
+  'no-current-participants': 'noCurrentParticipants',
+  'participants-not-voted': 'participantsNotVoted',
+  'participants-disagree': 'participantsDisagree',
+  'structural-sub-kind-not-supported': 'structuralSubKindNotSupported',
+};
 
 /**
  * Map the proposal sub-kind to a `methodology.kind.<kind>` catalog
@@ -210,6 +238,8 @@ function PendingProposalRow(props: {
   readonly facetStatusIndex: FacetStatusIndex;
   readonly serverPerFacetStatus: Record<string, string> | undefined;
   readonly votesByFacetIndex: VotesByFacetIndex;
+  readonly currentParticipantIds: ReadonlySet<string>;
+  readonly connectionOpen: boolean;
 }): ReactElement {
   const {
     row,
@@ -219,11 +249,78 @@ function PendingProposalRow(props: {
     facetStatusIndex,
     serverPerFacetStatus,
     votesByFacetIndex,
+    currentParticipantIds,
+    connectionOpen,
   } = props;
+  // The commit-button + tooltip + wire-error region need ICU
+  // interpolation; the parent's `t` prop is the narrow
+  // `(key: string) => string` shape the kind-chip / summary helpers
+  // already consume. Pull the full `t` off `useTranslation()` for the
+  // commit-side rendering so we can pass `{ reason }` / `{ code,
+  // message }` options.
+  const { t: tFull } = useTranslation();
   const chip = kindChipText(row.proposal, t);
   const summary = summaryText(row.proposal);
   const author = authorText(row.actor, systemAuthorLabel);
   const ago = relativeTimeFor(row.createdAt, nowMs);
+
+  // Per `mod_commit_button` — derive the row's facet entries once for
+  // the breakdown AND the commit-gate predicate. The breakdown
+  // component re-derives internally today; threading the entries down
+  // is a future refactor (the duplicate derivation is O(facets-per-row)
+  // which is at most 1).
+  const entries = derivePerProposalFacets(
+    row.proposal,
+    facetStatusIndex,
+    serverPerFacetStatus,
+    votesByFacetIndex,
+  );
+  // Outer connection-status gate (Decision §1.b) — applied BEFORE
+  // calling `deriveAllAgree` so the predicate stays pure (no WS-status
+  // argument).
+  const gate = !connectionOpen
+    ? ({ ok: false, reason: 'session-not-connected' } as const)
+    : deriveAllAgree(entries, currentParticipantIds);
+
+  const { commit, inFlight, lastError } = useCommitAction(row.proposalEventId);
+
+  const commitState: 'disabled' | 'enabled' | 'in-flight' = inFlight
+    ? 'in-flight'
+    : gate.ok
+      ? 'enabled'
+      : 'disabled';
+  const commitDisabled = commitState !== 'enabled';
+  const commitLabel = inFlight
+    ? tFull('moderator.commitButton.inFlightLabel')
+    : tFull('moderator.commitButton.label');
+  const commitAriaLabel = tFull('moderator.commitButton.ariaLabel');
+
+  // Tooltip text — only when the gate blocks (the enabled state has no
+  // `title` decoration, per Decision §3).
+  let commitTitle: string | undefined;
+  let commitGateReasonAttr: string | undefined;
+  if (!gate.ok) {
+    commitGateReasonAttr = gate.reason;
+    const reasonText = tFull('moderator.commitButton.reason', {
+      reason: COMMIT_REASON_SELECT_ARM[gate.reason],
+    });
+    commitTitle = tFull('moderator.commitButton.gateTooltip', { reason: reasonText });
+  }
+
+  // Wire-error message text. The localized template interpolates
+  // `{code}` + `{message}`; the timeout case uses the pre-localized
+  // fallback already on `lastError.message`.
+  let wireMessage: string | undefined;
+  if (lastError !== undefined) {
+    wireMessage =
+      lastError.code === 'timeout'
+        ? lastError.message
+        : tFull('moderator.commitButton.wireError', {
+            code: lastError.code,
+            message: lastError.message,
+          });
+  }
+
   return (
     <li
       data-testid="pending-proposal-row"
@@ -244,6 +341,23 @@ function PendingProposalRow(props: {
         <span data-testid="pending-proposal-row-timestamp" className={TIMESTAMP_CLASSES}>
           {ago}
         </span>
+        <button
+          type="button"
+          data-testid="commit-button"
+          data-proposal-id={row.proposalEventId}
+          data-commit-state={commitState}
+          data-commit-gate-reason={commitGateReasonAttr}
+          disabled={commitDisabled}
+          aria-disabled={commitDisabled}
+          aria-label={commitAriaLabel}
+          title={commitTitle}
+          onClick={() => {
+            void commit();
+          }}
+          className={COMMIT_BUTTON_CLASSES}
+        >
+          {commitLabel}
+        </button>
       </div>
       <ProposalFacetBreakdown
         row={row}
@@ -251,6 +365,16 @@ function PendingProposalRow(props: {
         serverPerFacetStatus={serverPerFacetStatus}
         votesByFacetIndex={votesByFacetIndex}
       />
+      {wireMessage !== undefined ? (
+        <p
+          data-testid="commit-button-wire-error"
+          data-proposal-id={row.proposalEventId}
+          role="alert"
+          className={COMMIT_WIRE_ERROR_CLASSES}
+        >
+          {wireMessage}
+        </p>
+      ) : null}
     </li>
   );
 }
@@ -297,6 +421,19 @@ export function PendingProposalsPane(props: PendingProposalsPaneProps): ReactEle
   // `projectVotesByFacet(events)` pass) plus per-row lookups.
   const votesByFacetIndex = useMemo(() => projectVotesByFacet(events ?? []), [events]);
 
+  // Per `mod_commit_button` Decision §1.a, the set of currently-joined
+  // NON-moderator participant ids is the cardinality the commit gate
+  // requires unanimous `'agree'` over. Same `events`-keyed memo
+  // pattern; one O(events) walk shared across every row's gate
+  // computation per render.
+  const currentParticipantIds = useMemo(() => deriveCurrentParticipants(events ?? []), [events]);
+
+  // The outer connection-status gate (Decision §1.b) is read from the
+  // top-level WS store; threaded down so each row's button surfaces a
+  // uniform `data-commit-gate-reason="session-not-connected"` when the
+  // socket is anything other than `'open'`.
+  const connectionOpen = useWsStore((state) => state.connectionStatus === 'open');
+
   const resolvedNowMs = nowMs ?? Date.now();
   const systemAuthorLabel = t('moderator.proposalList.systemAuthor');
   const paneAriaLabel = t('moderator.proposalList.paneAriaLabel');
@@ -332,6 +469,8 @@ export function PendingProposalsPane(props: PendingProposalsPaneProps): ReactEle
             facetStatusIndex={facetStatusIndex}
             serverPerFacetStatus={pendingProposals?.[row.proposalEventId]?.perFacetStatus}
             votesByFacetIndex={votesByFacetIndex}
+            currentParticipantIds={currentParticipantIds}
+            connectionOpen={connectionOpen}
           />
         ))}
       </ol>
