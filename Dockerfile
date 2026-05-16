@@ -45,6 +45,7 @@ RUN corepack enable \
 # Workspace topology — root + per-workspace manifests + lockfile.
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY apps/server/package.json        ./apps/server/package.json
+COPY apps/root/package.json          ./apps/root/package.json
 COPY apps/moderator/package.json     ./apps/moderator/package.json
 COPY apps/participant/package.json   ./apps/participant/package.json
 COPY apps/audience/package.json      ./apps/audience/package.json
@@ -119,6 +120,7 @@ RUN corepack enable \
 # Manifests + lockfile, again — needed for `pnpm install --prod`.
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY apps/server/package.json        ./apps/server/package.json
+COPY apps/root/package.json          ./apps/root/package.json
 COPY apps/moderator/package.json     ./apps/moderator/package.json
 COPY apps/participant/package.json   ./apps/participant/package.json
 COPY apps/audience/package.json      ./apps/audience/package.json
@@ -134,6 +136,7 @@ RUN pnpm install --frozen-lockfile --prod --ignore-scripts
 # Carry the compiled outputs from the build stage. Source `.ts/.tsx`
 # does not ship; only emitted JS + .d.ts.
 COPY --from=build /app/apps/server/dist            ./apps/server/dist
+COPY --from=build /app/apps/root/dist              ./apps/root/dist
 COPY --from=build /app/packages/shared-types/dist  ./packages/shared-types/dist
 
 # The migration runner (both the startup gate and the standalone
@@ -145,25 +148,22 @@ COPY --from=build /app/packages/shared-types/dist  ./packages/shared-types/dist
 # migration files" error (which is the gate doing its job).
 COPY --from=build /app/apps/server/migrations      ./apps/server/migrations
 
-# Moderator SPA bundle — the Fastify server's
+# Root app + moderator surface bundle — the Fastify server's
 # `staticFrontendsPlugin` (registered last in
 # `apps/server/src/server.ts` per
 # tasks/refinements/backend/serve_static_frontends.md) serves these
 # static assets from the same process as the JSON API, so the
 # deployment is a single origin (one hostname + port answers both
-# `/` HTML and `/api/sessions` JSON). The server fails fast at boot if
+# `/` HTML, `/_surfaces/*` bundle assets, and `/api/sessions` JSON). The server fails fast at boot if
 # the dist tree is absent; an image that strips this layer would
 # crash at startup instead of silently degrading to a JSON-only API.
 #
-# The `MODERATOR_DIST_DIR` env var can override this location at
+# The `ROOT_DIST_DIR` / `MODERATOR_DIST_DIR` env vars can override these locations at
 # runtime; the default the plugin resolves to
-# `apps/moderator/dist` relative to the server's compiled output,
-# which under this image layout is `/app/apps/moderator/dist`.
-#
-# Participant, audience, and replay don't have a `dist/` yet
-# (stubbed apps) — when their bundlers land, add the matching
-# `COPY --from=build /app/apps/<name>/dist ./apps/<name>/dist`
-# line and a matching frontend entry in the static-frontends plugin.
+# `apps/root/dist` and `apps/moderator/dist` relative to the server's
+# compiled output, which under this image layout are
+# `/app/apps/root/dist` and `/app/apps/moderator/dist`.
+COPY --from=build /app/apps/root/dist              ./apps/root/dist
 COPY --from=build /app/apps/moderator/dist         ./apps/moderator/dist
 
 # Drop privileges. The `node` user (uid 1000) ships with the official

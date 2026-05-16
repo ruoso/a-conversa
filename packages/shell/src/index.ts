@@ -12,9 +12,11 @@
 // ─── auth ───────────────────────────────────────────────────────────────
 export {
   AuthProvider,
+  AuthValueProvider,
   useAuth,
   type AuthContextValue,
   type AuthError,
+  type AuthValueProviderProps,
   type AuthProviderProps,
   type AuthStatus,
   type AuthUser,

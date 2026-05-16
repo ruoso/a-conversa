@@ -27,7 +27,7 @@
 //      invite view, sees the moderator slot pre-filled with "alice"
 //      and both debater slots empty, copies the Debater A link,
 //      verifies the clipboard contents match the expected URL shape,
-//      clicks "Enter session", lands on /sessions/<id>/operate with
+//      clicks "Enter session", lands on /m/sessions/<id>/operate with
 //      the graph canvas mounted.
 //   2. URL-shape — alice creates a session, the Debater A invite link
 //      input value matches the expected URL pattern. A pure URL-shape
@@ -50,12 +50,12 @@ const DEBATER_A_USER_ID = '00000000-0000-4000-8000-0000000000a1';
 const DEBATER_B_USER_ID = '00000000-0000-4000-8000-0000000000b1';
 
 /**
- * Extract the session id from the current `/sessions/<uuid>/invite`
+ * Extract the session id from the current `/m/sessions/<uuid>/invite`
  * URL. The session id is required to address the per-session slice of
  * the WS store via the `seedParticipants` helper.
  */
 function sessionIdFromInviteUrl(url: string): string {
-  const match = url.match(/\/sessions\/([0-9a-f-]+)\/invite$/);
+  const match = url.match(/\/m\/sessions\/([0-9a-f-]+)\/invite$/);
   if (match === null) {
     throw new Error(`URL did not match the invite shape: ${url}`);
   }
@@ -77,7 +77,7 @@ test.describe('Invite-participants flow — moderator creates a session, lands o
     await loginAs(page, { username: TEST_USERNAME });
 
     // 2. Create a session via the form route.
-    await page.goto('/sessions/new');
+    await page.goto('/m/sessions/new');
     await expect(page.getByTestId('route-create-session')).toBeVisible();
     const topic = 'Should universal basic income replace existing welfare programs?';
     await page.getByTestId('create-session-topic-input').fill(topic);
@@ -86,7 +86,7 @@ test.describe('Invite-participants flow — moderator creates a session, lands o
     // 3. URL settles on the invite view (NOT the operate canvas — that
     //    was the pre-`mod_invite_participants` behavior; this spec is
     //    the regression for the amendment).
-    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
     await expect(page.getByTestId('route-invite-participants')).toBeVisible();
     await expect(page.getByTestId('route-title')).toHaveText('Invite participants');
 
@@ -116,7 +116,7 @@ test.describe('Invite-participants flow — moderator creates a session, lands o
 
     // 7. Verify the clipboard carries the expected URL shape.
     const clipboardText = await page.evaluate(() => navigator.clipboard.readText());
-    expect(clipboardText).toMatch(/\/sessions\/[0-9a-f-]+\/invite\?role=debater-A$/);
+    expect(clipboardText).toMatch(/\/p\/sessions\/[0-9a-f-]+\/invite\?role=debater-A$/);
 
     // 8. mod_session_lobby: the Enter-session button is strict-gated.
     //    Assert the gate state with both debaters absent: disabled,
@@ -155,27 +155,27 @@ test.describe('Invite-participants flow — moderator creates a session, lands o
 
     // 11. Click "Enter session" → land on the operate canvas.
     await enterButton.click();
-    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
     await expect(page.getByTestId('route-operate')).toBeVisible();
     await expect(page.getByTestId('graph-canvas-root')).toBeVisible();
   });
 
-  test('the Debater A invite link input value matches <origin>/sessions/<uuid>/invite?role=debater-A', async ({
+  test('the Debater A invite link input value matches <origin>/p/sessions/<uuid>/invite?role=debater-A', async ({
     page,
     context,
   }) => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
 
     await loginAs(page, { username: TEST_USERNAME });
-    await page.goto('/sessions/new');
+    await page.goto('/m/sessions/new');
     await page.getByTestId('create-session-topic-input').fill('URL shape sanity check');
     await page.getByTestId('create-session-submit').click();
-    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
 
     const linkInput = page.locator('[data-testid="invite-link-input"][data-role="debater-A"]');
     await expect(linkInput).toBeVisible();
     const inputValue = await linkInput.inputValue();
-    expect(inputValue).toMatch(/\/sessions\/[0-9a-f-]+\/invite\?role=debater-A$/);
+    expect(inputValue).toMatch(/\/p\/sessions\/[0-9a-f-]+\/invite\?role=debater-A$/);
   });
 
   // mod_session_lobby — strict-gate scenario: the Enter button starts
@@ -187,10 +187,10 @@ test.describe('Invite-participants flow — moderator creates a session, lands o
     page,
   }) => {
     await loginAs(page, { username: TEST_USERNAME });
-    await page.goto('/sessions/new');
+    await page.goto('/m/sessions/new');
     await page.getByTestId('create-session-topic-input').fill('Strict gate progression check.');
     await page.getByTestId('create-session-submit').click();
-    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
     await expect(page.getByTestId('route-invite-participants')).toBeVisible();
 
     const sessionId = sessionIdFromInviteUrl(page.url());
@@ -239,10 +239,10 @@ test.describe('Invite-participants flow — moderator creates a session, lands o
     page,
   }) => {
     await loginAs(page, { username: TEST_USERNAME });
-    await page.goto('/sessions/new');
+    await page.goto('/m/sessions/new');
     await page.getByTestId('create-session-topic-input').fill('Re-disable on leave check.');
     await page.getByTestId('create-session-submit').click();
-    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
 
     const sessionId = sessionIdFromInviteUrl(page.url());
     const enterButton = page.getByTestId('invite-enter-session');

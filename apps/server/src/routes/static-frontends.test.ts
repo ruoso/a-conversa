@@ -42,12 +42,14 @@ import type { FastifyInstance } from 'fastify';
 
 import { createServer } from '../server.js';
 import {
+  ROOT_DIST_DIR_ENV,
   MODERATOR_DIST_DIR_ENV,
+  resolveRootDistDir,
   resolveModeratorDistDir,
   staticFrontendsPlugin,
 } from './static-frontends.js';
 
-describe('static-frontends plugin — moderator served at /', () => {
+describe('static-frontends plugin — root served at /', () => {
   let app: FastifyInstance;
 
   beforeAll(async () => {
@@ -64,7 +66,7 @@ describe('static-frontends plugin — moderator served at /', () => {
     await app.close();
   });
 
-  it('GET / returns the moderator SPA index.html with no-cache', async () => {
+  it('GET / returns the root app index.html with no-cache', async () => {
     const response = await app.inject({ method: 'GET', url: '/' });
     expect(response.statusCode).toBe(200);
     expect(response.headers['content-type']).toMatch(/text\/html/);
@@ -91,6 +93,34 @@ describe('static-frontends plugin — moderator served at /', () => {
     // entire dist tree.
     const cacheControl = String(assetResp.headers['cache-control'] ?? '');
     expect(cacheControl).toMatch(/max-age=/);
+  });
+
+  it('GET /_surfaces/manifest.json returns the moderator surface manifest', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/_surfaces/manifest.json',
+      headers: { accept: 'application/json' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['content-type']).toMatch(/application\/json/);
+    const body = response.json<{
+      surfaces?: { moderator?: { moduleUrl?: string; styleUrls?: string[] } };
+    }>();
+    expect(body.surfaces?.moderator?.moduleUrl).toBe('/_surfaces/moderator/moderator.js');
+    expect(body.surfaces?.moderator?.styleUrls).toEqual([
+      '/_surfaces/moderator/assets/moderator.css',
+    ]);
+  });
+
+  it('GET /_surfaces/moderator/moderator.js returns the moderator surface bundle', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/_surfaces/moderator/moderator.js',
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['content-type']).toMatch(/application\/javascript|text\/javascript/);
   });
 
   it('GET /healthz still returns the canonical JSON envelope (API precedence)', async () => {
@@ -234,6 +264,11 @@ describe('static-frontends plugin — fail-fast at boot', () => {
 });
 
 describe('resolveModeratorDistDir', () => {
+  it('honors the ROOT_DIST_DIR env override when set (absolute path)', () => {
+    const override = '/opt/a-conversa/root/dist';
+    expect(resolveRootDistDir({ [ROOT_DIST_DIR_ENV]: override })).toBe(override);
+  });
+
   it('honors the MODERATOR_DIST_DIR env override when set (absolute path)', () => {
     const override = '/opt/a-conversa/moderator/dist';
     expect(resolveModeratorDistDir({ [MODERATOR_DIST_DIR_ENV]: override })).toBe(override);

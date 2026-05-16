@@ -17,9 +17,9 @@
 //
 // Two scenarios:
 //
-//   1. happy path — alice logs in, navigates to /sessions/new,
+//   1. happy path — alice logs in, navigates to /m/sessions/new,
 //      fills a topic + selects private, submits, waits for the URL to
-//      settle on /sessions/<uuid>/invite (was /operate before
+//      settle on /m/sessions/<uuid>/invite (was /operate before
 //      `mod_invite_participants` amended the post-201 navigation).
 //      The deeper graph-canvas-mounted assertion moved to
 //      `invite-participants-flow.spec.ts`, which drives the chain all
@@ -40,7 +40,7 @@ import { loginAs } from './fixtures/auth';
 const TEST_USERNAME = 'alice';
 
 test.describe('Create-session flow — moderator creates a session and lands on the invite view', () => {
-  test('alice logs in, navigates to /sessions/new, submits topic + private privacy, lands on /sessions/<id>/invite (the invite-participants view)', async ({
+  test('alice logs in, navigates to /m/sessions/new, submits topic + private privacy, lands on /m/sessions/<id>/invite (the invite-participants view)', async ({
     page,
   }) => {
     // 1. Login. After this, the page context's cookie jar carries
@@ -50,7 +50,7 @@ test.describe('Create-session flow — moderator creates a session and lands on 
     // 2. Navigate to the form route. The route is gated by
     //    `<RequireAuth mode="authenticated-only">`; the gate sees the
     //    cookie-bearing /api/auth/me 200 response and renders children.
-    await page.goto('/sessions/new');
+    await page.goto('/m/sessions/new');
     await expect(page.getByTestId('route-create-session')).toBeVisible();
     await expect(page.getByTestId('route-title')).toHaveText('Create a session');
 
@@ -67,7 +67,7 @@ test.describe('Create-session flow — moderator creates a session and lands on 
 
     // 5. Submit. The form POSTs /api/sessions, the backend handler
     //    returns 201 with `{ id, ... }`, and the form calls `useNavigate`
-    //    onto /sessions/<id>/invite (the invite-participants view —
+    //    onto /m/sessions/<id>/invite (the invite-participants view —
     //    was /operate before `mod_invite_participants` amended the
     //    post-201 navigation target).
     await page.getByTestId('create-session-submit').click();
@@ -75,7 +75,7 @@ test.describe('Create-session flow — moderator creates a session and lands on 
     // 6. Wait for the navigation to settle. The session id is the
     //    server-generated UUID we don't know in advance; match the URL
     //    pattern (lowercase hex + hyphens per RFC 4122 stringification).
-    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
 
     // 7. Assert the invite route mounted. The deeper graph-canvas
     //    assertion moved to `invite-participants-flow.spec.ts` (which
@@ -89,7 +89,7 @@ test.describe('Create-session flow — moderator creates a session and lands on 
     page,
   }) => {
     await loginAs(page, { username: TEST_USERNAME });
-    await page.goto('/sessions/new');
+    await page.goto('/m/sessions/new');
 
     // The submit button is disabled by default (empty topic). Type
     // whitespace only — the trim-then-length-zero rule keeps it

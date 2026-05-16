@@ -28,7 +28,7 @@
 // **Setup pattern.** The spec uses `loginAs` from `fixtures/auth.ts`
 // to drive the OIDC handshake against the dev compose stack's Authelia.
 // It then creates a fresh session via `POST /api/sessions`. Once on
-// `/sessions/<id>/operate`, the spec seeds a synthetic node and edge
+// `/m/sessions/<id>/operate`, the spec seeds a synthetic node and edge
 // into the moderator's Zustand WS store via the `wsStoreSeed.ts`
 // helper — this bypasses the server-side capture-flow protocol (which
 // isn't fully implemented yet on the moderator side) and gets the
@@ -89,7 +89,7 @@ test.describe.serial('moderator hover details', () => {
 
     // 3. Navigate to the operate route. The auth gate (route-level)
     //    must let an authenticated user through to the canvas.
-    await page.goto(`/sessions/${session.id}/operate`);
+    await page.goto(`/m/sessions/${session.id}/operate`);
     await expect(
       page.getByTestId('graph-canvas-root'),
       'graph-canvas-root must mount on the operate route',

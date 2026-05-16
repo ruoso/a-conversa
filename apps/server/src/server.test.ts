@@ -108,10 +108,10 @@ describe('createServer', () => {
     expect(typeof app.httpErrors.notFound).toBe('function');
   });
 
-  it('GET / serves the moderator SPA index.html (single-origin deployment)', async () => {
+  it('GET / serves the root host index.html (single-origin deployment)', async () => {
     // The previous `{ status: 'ok' }` bootstrap smoke at `/` is gone
-    // — `staticFrontendsPlugin` mounts the moderator's `dist/` at the
-    // root. The compiled `index.html` shipped by Vite contains the
+    // — `staticFrontendsPlugin` now mounts the root host's `dist/` at
+    // the root. The compiled `index.html` shipped by Vite contains the
     // `<div id="root"></div>` mount point and a `<script type="module"
     // src="/assets/index-<hash>.js">` tag. Pin the structural markers
     // rather than the full HTML so a future bundler change (hash-suffix
@@ -126,7 +126,7 @@ describe('createServer', () => {
     expect(response.headers['content-type']).toMatch(/text\/html/);
     const body = response.body;
     expect(body).toContain('<div id="root"></div>');
-    expect(body).toContain('a-conversa');
+    expect(body).toContain('A Conversa - Root');
   });
 
   it('OPTIONS /healthz advertises CORS via @fastify/cors', async () => {

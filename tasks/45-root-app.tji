@@ -31,6 +31,7 @@ task root_app "Root app (apps/root/)" {
   task root_moderator_cutover "Root auth + moderator mount cutover" {
     effort 5d
     allocate team
+    complete 100
     depends !root_pkg_skeleton, moderator_ui.mod_shell, shell_package.shell_mount_contract, shell_package.shell_substrate_extraction, backend.auth.session_token_management
     note -8<-
       Refinement: tasks/refinements/root-app/root_moderator_cutover.md

@@ -13,6 +13,9 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
+  define: {
+    'process.env.NODE_ENV': JSON.stringify('production'),
+  },
   plugins: [react(), tailwindcss()],
   server: {
     port: 5173,
@@ -31,5 +34,18 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: true,
+    cssCodeSplit: false,
+    lib: {
+      entry: 'src/main.tsx',
+      formats: ['es'],
+      fileName: () => 'moderator.js',
+    },
+    rollupOptions: {
+      output: {
+        inlineDynamicImports: true,
+        assetFileNames: (assetInfo) =>
+          assetInfo.name === 'style.css' ? 'moderator.css' : 'assets/[name][extname]',
+      },
+    },
   },
 });

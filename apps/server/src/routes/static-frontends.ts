@@ -1,7 +1,5 @@
-// Fastify plugin serving the frontend SPAs' built `dist/` directories
-// from the same process as the JSON API — the single-origin
-// deployment that the moderator, participant, audience, and replay
-// surfaces share with the API at the same hostname + port.
+// Fastify plugin serving the root app and surface bundles from the same
+// process as the JSON API.
 //
 // Refinement: tasks/refinements/backend/serve_static_frontends.md
 // ADRs:        docs/adr/0023-web-framework-fastify.md,
@@ -90,11 +88,7 @@ import type { FastifyInstance, FastifyPluginAsync, FastifyReply, FastifyRequest 
 import { sendNotFoundEnvelope } from '../error-handler.js';
 
 /**
- * One entry per frontend SPA that the server should serve. Today the
- * moderator is the only frontend with a real bundle; participant,
- * audience, and replay are stubs. When their `vite build` produces
- * `dist/`, add an entry here (or wire it through
- * `resolveDefaultFrontends`) and the bundle is served.
+ * One entry per frontend app whose static files should be served.
  */
 export interface FrontendEntry {
   /**
@@ -131,11 +125,30 @@ export interface StaticFrontendsPluginOptions {
   readonly frontends?: readonly FrontendEntry[];
 }
 
+export interface SurfaceEntry {
+  readonly surfaceId: string;
+  readonly urlPrefix: string;
+  readonly distDir: string;
+  readonly moduleFileName: string;
+  readonly styleFileNames?: readonly string[];
+  readonly label?: string;
+}
+
+export interface SurfaceManifestEntry {
+  readonly moduleUrl: string;
+  readonly styleUrls?: readonly string[];
+}
+
+export interface SurfaceManifest {
+  readonly surfaces: Readonly<Record<string, SurfaceManifestEntry>>;
+}
+
 /**
  * Env var name production reads to override the resolver's default
  * path to the moderator's `dist/`. Exported so tests assert against
  * the same constant the resolver consults.
  */
+export const ROOT_DIST_DIR_ENV = 'ROOT_DIST_DIR';
 export const MODERATOR_DIST_DIR_ENV = 'MODERATOR_DIST_DIR';
 
 /**
@@ -165,17 +178,24 @@ const __dirname = dirname(__filename);
  * `apps/server/src/routes/static-frontends.ts` because both layouts
  * share the same three-up-then-into-moderator topology.
  */
-export function resolveModeratorDistDir(env: NodeJS.ProcessEnv = process.env): string {
-  const override = env[MODERATOR_DIST_DIR_ENV];
+function resolveWorkspaceDistDir(
+  envKey: string,
+  appName: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  const override = env[envKey];
   if (typeof override === 'string' && override.length > 0) {
     return isAbsolute(override) ? override : resolve(process.cwd(), override);
   }
-  // Source layout: apps/server/src/routes/static-frontends.ts
-  //   → ../../../moderator/dist
-  // Compiled layout: apps/server/dist/routes/static-frontends.js
-  //   → ../../../moderator/dist  (same shape; both `src/routes/` and
-  //   `dist/routes/` are three levels below `apps/`)
-  return resolve(__dirname, '..', '..', '..', 'moderator', 'dist');
+  return resolve(__dirname, '..', '..', '..', appName, 'dist');
+}
+
+export function resolveRootDistDir(env: NodeJS.ProcessEnv = process.env): string {
+  return resolveWorkspaceDistDir(ROOT_DIST_DIR_ENV, 'root', env);
+}
+
+export function resolveModeratorDistDir(env: NodeJS.ProcessEnv = process.env): string {
+  return resolveWorkspaceDistDir(MODERATOR_DIST_DIR_ENV, 'moderator', env);
 }
 
 /**
@@ -190,8 +210,23 @@ export function resolveDefaultFrontends(
   return [
     {
       urlPrefix: '/',
-      distDir: resolveModeratorDistDir(env),
+      distDir: resolveRootDistDir(env),
       defaultIndex: 'index.html',
+      label: 'root',
+    },
+  ];
+}
+
+export function resolveDefaultSurfaces(
+  env: NodeJS.ProcessEnv = process.env,
+): readonly SurfaceEntry[] {
+  return [
+    {
+      surfaceId: 'moderator',
+      urlPrefix: '/_surfaces/moderator/',
+      distDir: resolveModeratorDistDir(env),
+      moduleFileName: 'moderator.js',
+      styleFileNames: ['assets/moderator.css'],
       label: 'moderator',
     },
   ];
@@ -231,6 +266,49 @@ function validateFrontend(entry: FrontendEntry): void {
         `The dist directory exists but the SPA bundler did not emit ${entry.defaultIndex}.`,
     );
   }
+}
+
+function validateSurface(entry: SurfaceEntry): void {
+  const label = entry.label ?? entry.surfaceId;
+  if (!existsSync(entry.distDir)) {
+    throw new Error(
+      `serve_static_frontends: surface "${label}" distDir does not exist: ${entry.distDir}. ` +
+        `Set ${MODERATOR_DIST_DIR_ENV} or run \`pnpm -F @a-conversa/moderator build\`.`,
+    );
+  }
+  const stats = statSync(entry.distDir);
+  if (!stats.isDirectory()) {
+    throw new Error(
+      `serve_static_frontends: surface "${label}" distDir is not a directory: ${entry.distDir}.`,
+    );
+  }
+  const modulePath = resolve(entry.distDir, entry.moduleFileName);
+  if (!existsSync(modulePath)) {
+    throw new Error(
+      `serve_static_frontends: surface "${label}" is missing its module entry: ${modulePath}.`,
+    );
+  }
+  for (const styleFile of entry.styleFileNames ?? []) {
+    const stylePath = resolve(entry.distDir, styleFile);
+    if (!existsSync(stylePath)) {
+      throw new Error(
+        `serve_static_frontends: surface "${label}" is missing its stylesheet: ${stylePath}.`,
+      );
+    }
+  }
+}
+
+function buildSurfaceManifest(surfaces: readonly SurfaceEntry[]): SurfaceManifest {
+  const entries: Record<string, SurfaceManifestEntry> = {};
+  for (const surface of surfaces) {
+    entries[surface.surfaceId] = {
+      moduleUrl: `${surface.urlPrefix}${surface.moduleFileName}`,
+      styleUrls: (surface.styleFileNames ?? []).map(
+        (fileName) => `${surface.urlPrefix}${fileName}`,
+      ),
+    };
+  }
+  return { surfaces: entries };
 }
 
 /**
@@ -349,6 +427,7 @@ const staticFrontendsPluginAsync: FastifyPluginAsync<StaticFrontendsPluginOption
   opts,
 ) => {
   const frontends = opts.frontends ?? resolveDefaultFrontends(process.env);
+  const surfaces = resolveDefaultSurfaces(process.env);
   if (frontends.length === 0) {
     // Still own the root-scope not-found handler — errorHandlerPlugin
     // deliberately does NOT install one (see error-handler.ts), so we
@@ -368,6 +447,9 @@ const staticFrontendsPluginAsync: FastifyPluginAsync<StaticFrontendsPluginOption
   // env var BEFORE the server binds a port.
   for (const entry of frontends) {
     validateFrontend(entry);
+  }
+  for (const surface of surfaces) {
+    validateSurface(surface);
   }
 
   // Register a @fastify/static plugin for each frontend. The first
@@ -415,6 +497,33 @@ const staticFrontendsPluginAsync: FastifyPluginAsync<StaticFrontendsPluginOption
     });
     first = false;
   }
+
+  for (const surface of surfaces) {
+    await app.register(fastifyStatic, {
+      root: surface.distDir,
+      prefix: surface.urlPrefix,
+      list: false,
+      wildcard: false,
+      dotfiles: 'deny',
+      acceptRanges: true,
+      contentType: true,
+      cacheControl: true,
+      maxAge: '1y',
+      immutable: true,
+      decorateReply: false,
+      schemaHide: true,
+    });
+  }
+
+  const manifest = buildSurfaceManifest(surfaces);
+
+  app.get('/_surfaces/manifest.json', async (_request, reply) => {
+    reply
+      .status(200)
+      .type('application/json; charset=utf-8')
+      .header('Cache-Control', 'no-cache, must-revalidate')
+      .send(manifest);
+  });
 
   // Install the SPA-aware not-found handler. Fastify's
   // `setNotFoundHandler` accepts a single handler at the root scope;

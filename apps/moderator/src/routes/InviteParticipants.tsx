@@ -307,12 +307,12 @@ function InviteParticipantsRouteInner(props: InviteParticipantsRouteInnerProps):
     (role: SlotRole): string => {
       // Compute from `window.location.origin` so a tunneled / port-forwarded
       // dev URL still produces a copyable working link. The query-string
-      // role hint is what the future self-claim flow reads.
+      // role hint is what the participant-facing self-claim flow reads.
       const origin =
         typeof window !== 'undefined' && typeof window.location !== 'undefined'
           ? window.location.origin
           : '';
-      return `${origin}/sessions/${sessionId}/invite?role=${role}`;
+      return `${origin}/p/sessions/${sessionId}/invite?role=${role}`;
     },
     [sessionId],
   );

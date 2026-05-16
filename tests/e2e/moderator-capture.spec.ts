@@ -1,5 +1,5 @@
 // End-to-end moderator capture-pane spec — drives the bottom-strip
-// statement-wording textarea on `/sessions/<id>/operate`.
+// statement-wording textarea on `/m/sessions/<id>/operate`.
 //
 // Refinement: tasks/refinements/moderator-ui/mod_capture_text_input.md
 // ADRs:        docs/adr/0008-e2e-framework-playwright.md
@@ -48,13 +48,13 @@ const TEST_USERNAME = 'alice';
 // here we seed both debaters via the dev-only `window.__aConversaWsStore`
 // test seam so the click on `invite-enter-session` proceeds. The session
 // id is extracted from the current URL (Playwright already settled on
-// /sessions/<uuid>/invite by the time this helper runs).
+// /m/sessions/<uuid>/invite by the time this helper runs).
 const GATE_DEBATER_A_USER_ID = '00000000-0000-4000-8000-0000000000a1';
 const GATE_DEBATER_B_USER_ID = '00000000-0000-4000-8000-0000000000b1';
 
 async function seedInviteParticipantsForGate(page: Page): Promise<void> {
   const url = page.url();
-  const match = url.match(/\/sessions\/([0-9a-f-]+)\/invite$/);
+  const match = url.match(/\/m\/sessions\/([0-9a-f-]+)\/invite$/);
   if (match === null) {
     throw new Error(`seedInviteParticipantsForGate: URL did not match the invite shape: ${url}`);
   }
@@ -80,7 +80,7 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     //    that this spec stays focused on the capture-pane textarea
     //    surface rather than threading a fixture across files.
     await loginAs(page, { username: TEST_USERNAME });
-    await page.goto('/sessions/new');
+    await page.goto('/m/sessions/new');
     await expect(page.getByTestId('route-create-session')).toBeVisible();
 
     const topic = 'Capture-pane textarea regression check.';
@@ -89,14 +89,14 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     // mod_invite_participants amended the post-201 navigation target to
     // /sessions/<id>/invite; click 'Enter session' from there to reach
     // the operate canvas (where this spec's assertions live).
-    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
     // mod_session_lobby strict-gated the Enter button: it stays disabled
     // until both debaters joined. Seed both via the WS test seam so the
     // gate opens (this spec's assertions all live on /operate; the
     // gate's behavior is exercised by tests/e2e/invite-participants-flow).
     await seedInviteParticipantsForGate(page);
     await page.getByTestId('invite-enter-session').click();
-    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, {
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/operate$/, {
       timeout: 10_000,
     });
     await expect(page.getByTestId('route-operate')).toBeVisible();
@@ -149,7 +149,7 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     page,
   }) => {
     await loginAs(page, { username: TEST_USERNAME });
-    await page.goto('/sessions/new');
+    await page.goto('/m/sessions/new');
     await expect(page.getByTestId('route-create-session')).toBeVisible();
 
     await page
@@ -159,14 +159,14 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     // mod_invite_participants amended the post-201 navigation target to
     // /sessions/<id>/invite; click 'Enter session' from there to reach
     // the operate canvas (where this spec's assertions live).
-    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
     // mod_session_lobby strict-gated the Enter button: it stays disabled
     // until both debaters joined. Seed both via the WS test seam so the
     // gate opens (this spec's assertions all live on /operate; the
     // gate's behavior is exercised by tests/e2e/invite-participants-flow).
     await seedInviteParticipantsForGate(page);
     await page.getByTestId('invite-enter-session').click();
-    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
     await expect(page.getByTestId('route-operate')).toBeVisible();
 
     const textarea = page.getByTestId('capture-text-input-textarea');
@@ -207,7 +207,7 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     page,
   }) => {
     await loginAs(page, { username: TEST_USERNAME });
-    await page.goto('/sessions/new');
+    await page.goto('/m/sessions/new');
     await expect(page.getByTestId('route-create-session')).toBeVisible();
 
     await page
@@ -217,14 +217,14 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     // mod_invite_participants amended the post-201 navigation target to
     // /sessions/<id>/invite; click 'Enter session' from there to reach
     // the operate canvas (where this spec's assertions live).
-    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
     // mod_session_lobby strict-gated the Enter button: it stays disabled
     // until both debaters joined. Seed both via the WS test seam so the
     // gate opens (this spec's assertions all live on /operate; the
     // gate's behavior is exercised by tests/e2e/invite-participants-flow).
     await seedInviteParticipantsForGate(page);
     await page.getByTestId('invite-enter-session').click();
-    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, {
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/operate$/, {
       timeout: 10_000,
     });
     await expect(page.getByTestId('route-operate')).toBeVisible();
@@ -306,7 +306,7 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     page,
   }) => {
     await loginAs(page, { username: TEST_USERNAME });
-    await page.goto('/sessions/new');
+    await page.goto('/m/sessions/new');
     await expect(page.getByTestId('route-create-session')).toBeVisible();
 
     await page
@@ -316,14 +316,14 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     // mod_invite_participants amended the post-201 navigation target to
     // /sessions/<id>/invite; click 'Enter session' from there to reach
     // the operate canvas (where this spec's assertions live).
-    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
     // mod_session_lobby strict-gated the Enter button: it stays disabled
     // until both debaters joined. Seed both via the WS test seam so the
     // gate opens (this spec's assertions all live on /operate; the
     // gate's behavior is exercised by tests/e2e/invite-participants-flow).
     await seedInviteParticipantsForGate(page);
     await page.getByTestId('invite-enter-session').click();
-    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, {
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/operate$/, {
       timeout: 10_000,
     });
     await expect(page.getByTestId('route-operate')).toBeVisible();
@@ -348,7 +348,7 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
 
     // 4. Extract the session id from the URL and seed two nodes.
     const url = new URL(page.url());
-    const sessionId = url.pathname.split('/')[2] ?? '';
+    const sessionId = url.pathname.split('/')[3] ?? '';
     expect(sessionId, 'session id must be parsed from the URL').toBeTruthy();
 
     const NODE_ID_1 = '11111111-1111-4111-8111-111111111101';
@@ -399,7 +399,7 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     page,
   }) => {
     await loginAs(page, { username: TEST_USERNAME });
-    await page.goto('/sessions/new');
+    await page.goto('/m/sessions/new');
     await expect(page.getByTestId('route-create-session')).toBeVisible();
 
     await page
@@ -409,14 +409,14 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     // mod_invite_participants amended the post-201 navigation target to
     // /sessions/<id>/invite; click 'Enter session' from there to reach
     // the operate canvas (where this spec's assertions live).
-    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
     // mod_session_lobby strict-gated the Enter button: it stays disabled
     // until both debaters joined. Seed both via the WS test seam so the
     // gate opens (this spec's assertions all live on /operate; the
     // gate's behavior is exercised by tests/e2e/invite-participants-flow).
     await seedInviteParticipantsForGate(page);
     await page.getByTestId('invite-enter-session').click();
-    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, {
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/operate$/, {
       timeout: 10_000,
     });
     await expect(page.getByTestId('route-operate')).toBeVisible();
@@ -445,7 +445,7 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
 
     // 4. Seed two nodes.
     const url = new URL(page.url());
-    const sessionId = url.pathname.split('/')[2] ?? '';
+    const sessionId = url.pathname.split('/')[3] ?? '';
     expect(sessionId, 'session id must be parsed from the URL').toBeTruthy();
 
     const NODE_ID_1 = '22222222-2222-4222-8222-222222222201';
@@ -529,7 +529,7 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     page,
   }) => {
     await loginAs(page, { username: TEST_USERNAME });
-    await page.goto('/sessions/new');
+    await page.goto('/m/sessions/new');
     await expect(page.getByTestId('route-create-session')).toBeVisible();
 
     await page
@@ -539,14 +539,14 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     // mod_invite_participants amended the post-201 navigation target to
     // /sessions/<id>/invite; click 'Enter session' from there to reach
     // the operate canvas (where this spec's assertions live).
-    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
     // mod_session_lobby strict-gated the Enter button: it stays disabled
     // until both debaters joined. Seed both via the WS test seam so the
     // gate opens (this spec's assertions all live on /operate; the
     // gate's behavior is exercised by tests/e2e/invite-participants-flow).
     await seedInviteParticipantsForGate(page);
     await page.getByTestId('invite-enter-session').click();
-    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, {
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/operate$/, {
       timeout: 10_000,
     });
     await expect(page.getByTestId('route-operate')).toBeVisible();
@@ -580,7 +580,7 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
 
     // 4. Seed two nodes so the auto-suggest can stage a target.
     const url = new URL(page.url());
-    const sessionId = url.pathname.split('/')[2] ?? '';
+    const sessionId = url.pathname.split('/')[3] ?? '';
     expect(sessionId, 'session id must be parsed from the URL').toBeTruthy();
 
     const NODE_ID_1 = '33333333-3333-4333-8333-333333333301';
@@ -725,7 +725,7 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     page,
   }) => {
     await loginAs(page, { username: TEST_USERNAME });
-    await page.goto('/sessions/new');
+    await page.goto('/m/sessions/new');
     await expect(page.getByTestId('route-create-session')).toBeVisible();
 
     await page
@@ -735,14 +735,14 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     // mod_invite_participants amended the post-201 navigation target to
     // /sessions/<id>/invite; click 'Enter session' from there to reach
     // the operate canvas (where this spec's assertions live).
-    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
     // mod_session_lobby strict-gated the Enter button: it stays disabled
     // until both debaters joined. Seed both via the WS test seam so the
     // gate opens (this spec's assertions all live on /operate; the
     // gate's behavior is exercised by tests/e2e/invite-participants-flow).
     await seedInviteParticipantsForGate(page);
     await page.getByTestId('invite-enter-session').click();
-    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
     await expect(page.getByTestId('route-operate')).toBeVisible();
 
     // 2. The propose button mounts visible but disabled on the empty
@@ -774,7 +774,7 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     // 5. Extract the session id from the URL so step 7's WS-store probe
     //    can index the right per-session slice.
     const url = new URL(page.url());
-    const sessionId = url.pathname.split('/')[2] ?? '';
+    const sessionId = url.pathname.split('/')[3] ?? '';
     expect(sessionId, 'session id must be parsed from the URL').toBeTruthy();
 
     // 6. Fire Cmd/Ctrl+Enter from the textarea. The capture pane clears
@@ -860,7 +860,7 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     page,
   }) => {
     await loginAs(page, { username: TEST_USERNAME });
-    await page.goto('/sessions/new');
+    await page.goto('/m/sessions/new');
     await expect(page.getByTestId('route-create-session')).toBeVisible();
 
     await page
@@ -870,14 +870,14 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     // mod_invite_participants amended the post-201 navigation target to
     // /sessions/<id>/invite; click 'Enter session' from there to reach
     // the operate canvas (where this spec's assertions live).
-    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
     // mod_session_lobby strict-gated the Enter button: it stays disabled
     // until both debaters joined. Seed both via the WS test seam so the
     // gate opens (this spec's assertions all live on /operate; the
     // gate's behavior is exercised by tests/e2e/invite-participants-flow).
     await seedInviteParticipantsForGate(page);
     await page.getByTestId('invite-enter-session').click();
-    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
     await expect(page.getByTestId('route-operate')).toBeVisible();
 
     // The pane mounts with the empty state because the freshly-created
@@ -936,7 +936,7 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     page,
   }) => {
     await loginAs(page, { username: TEST_USERNAME });
-    await page.goto('/sessions/new');
+    await page.goto('/m/sessions/new');
     await expect(page.getByTestId('route-create-session')).toBeVisible();
 
     await page
@@ -946,14 +946,14 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     // mod_invite_participants amended the post-201 navigation target to
     // /sessions/<id>/invite; click 'Enter session' from there to reach
     // the operate canvas (where this spec's assertions live).
-    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
     // mod_session_lobby strict-gated the Enter button: it stays disabled
     // until both debaters joined. Seed both via the WS test seam so the
     // gate opens (this spec's assertions all live on /operate; the
     // gate's behavior is exercised by tests/e2e/invite-participants-flow).
     await seedInviteParticipantsForGate(page);
     await page.getByTestId('invite-enter-session').click();
-    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
     await expect(page.getByTestId('route-operate')).toBeVisible();
 
     // Drive the same propose chain as the prior test — the chain
@@ -1018,7 +1018,7 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     page,
   }) => {
     await loginAs(page, { username: TEST_USERNAME });
-    await page.goto('/sessions/new');
+    await page.goto('/m/sessions/new');
     await expect(page.getByTestId('route-create-session')).toBeVisible();
 
     await page
@@ -1028,14 +1028,14 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     // mod_invite_participants amended the post-201 navigation target to
     // /sessions/<id>/invite; click 'Enter session' from there to reach
     // the operate canvas (where this spec's assertions live).
-    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
     // mod_session_lobby strict-gated the Enter button: it stays disabled
     // until both debaters joined. Seed both via the WS test seam so the
     // gate opens (this spec's assertions all live on /operate; the
     // gate's behavior is exercised by tests/e2e/invite-participants-flow).
     await seedInviteParticipantsForGate(page);
     await page.getByTestId('invite-enter-session').click();
-    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
     await expect(page.getByTestId('route-operate')).toBeVisible();
 
     // Drive the same propose chain as the per-facet breakdown cover —
@@ -1100,7 +1100,7 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     page,
   }) => {
     await loginAs(page, { username: TEST_USERNAME });
-    await page.goto('/sessions/new');
+    await page.goto('/m/sessions/new');
     await expect(page.getByTestId('route-create-session')).toBeVisible();
 
     await page
@@ -1110,14 +1110,14 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     // mod_invite_participants amended the post-201 navigation target to
     // /sessions/<id>/invite; click 'Enter session' from there to reach
     // the operate canvas (where this spec's assertions live).
-    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
     // mod_session_lobby strict-gated the Enter button: it stays disabled
     // until both debaters joined. Seed both via the WS test seam so the
     // gate opens (this spec's assertions all live on /operate; the
     // gate's behavior is exercised by tests/e2e/invite-participants-flow).
     await seedInviteParticipantsForGate(page);
     await page.getByTestId('invite-enter-session').click();
-    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
     await expect(page.getByTestId('route-operate')).toBeVisible();
 
     // Drive the same propose chain — produces a `classify-node`
@@ -1176,7 +1176,7 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     page,
   }) => {
     await loginAs(page, { username: TEST_USERNAME });
-    await page.goto('/sessions/new');
+    await page.goto('/m/sessions/new');
     await expect(page.getByTestId('route-create-session')).toBeVisible();
 
     await page
@@ -1186,14 +1186,14 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     // mod_invite_participants amended the post-201 navigation target to
     // /sessions/<id>/invite; click 'Enter session' from there to reach
     // the operate canvas (where this spec's assertions live).
-    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
     // mod_session_lobby strict-gated the Enter button: it stays disabled
     // until both debaters joined. Seed both via the WS test seam so the
     // gate opens (this spec's assertions all live on /operate; the
     // gate's behavior is exercised by tests/e2e/invite-participants-flow).
     await seedInviteParticipantsForGate(page);
     await page.getByTestId('invite-enter-session').click();
-    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
     await expect(page.getByTestId('route-operate')).toBeVisible();
 
     // The filter strip mounts pinned above the conditional empty-state
@@ -1367,20 +1367,20 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     page,
   }) => {
     await loginAs(page, { username: TEST_USERNAME });
-    await page.goto('/sessions/new');
+    await page.goto('/m/sessions/new');
     await expect(page.getByTestId('route-create-session')).toBeVisible();
 
     await page
       .getByTestId('create-session-topic-input')
       .fill('Axiom-mark action e2e regression check.');
     await page.getByTestId('create-session-submit').click();
-    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
     // Seed the two debaters so the gate opens AND the submenu has
     // participants to list. seedInviteParticipantsForGate names them
     // 'ben' / 'maria' — the submenu will surface those screen names.
     await seedInviteParticipantsForGate(page);
     await page.getByTestId('invite-enter-session').click();
-    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
     await expect(page.getByTestId('route-operate')).toBeVisible();
 
     // The full-chain assertion needs the dev-only WS-store seam to be
@@ -1398,7 +1398,7 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
 
     // Extract the session id from the URL.
     const url = new URL(page.url());
-    const sessionId = url.pathname.split('/')[2] ?? '';
+    const sessionId = url.pathname.split('/')[3] ?? '';
     expect(sessionId, 'session id must be parsed from the URL').toBeTruthy();
 
     // Re-seed the two debaters into the WS store AFTER reaching
@@ -1562,17 +1562,17 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     page,
   }) => {
     await loginAs(page, { username: TEST_USERNAME });
-    await page.goto('/sessions/new');
+    await page.goto('/m/sessions/new');
     await expect(page.getByTestId('route-create-session')).toBeVisible();
 
     await page
       .getByTestId('create-session-topic-input')
       .fill('Pending axiom-mark render e2e regression check.');
     await page.getByTestId('create-session-submit').click();
-    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
     await seedInviteParticipantsForGate(page);
     await page.getByTestId('invite-enter-session').click();
-    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
     await expect(page.getByTestId('route-operate')).toBeVisible();
 
     if (!(await isWsStoreReachable(page))) {
@@ -1584,7 +1584,7 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     }
 
     const url = new URL(page.url());
-    const sessionId = url.pathname.split('/')[2] ?? '';
+    const sessionId = url.pathname.split('/')[3] ?? '';
     expect(sessionId, 'session id must be parsed from the URL').toBeTruthy();
 
     // Seed one node into the WS store via the existing helper.
@@ -1691,17 +1691,17 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     page,
   }) => {
     await loginAs(page, { username: TEST_USERNAME });
-    await page.goto('/sessions/new');
+    await page.goto('/m/sessions/new');
     await expect(page.getByTestId('route-create-session')).toBeVisible();
 
     await page
       .getByTestId('create-session-topic-input')
       .fill('Decompose-mode entry e2e regression check.');
     await page.getByTestId('create-session-submit').click();
-    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
     await seedInviteParticipantsForGate(page);
     await page.getByTestId('invite-enter-session').click();
-    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
     await expect(page.getByTestId('route-operate')).toBeVisible();
 
     if (!(await isWsStoreReachable(page))) {
@@ -1714,7 +1714,7 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
 
     // Extract the session id from the URL.
     const url = new URL(page.url());
-    const sessionId = url.pathname.split('/')[2] ?? '';
+    const sessionId = url.pathname.split('/')[3] ?? '';
     expect(sessionId, 'session id must be parsed from the URL').toBeTruthy();
 
     // Seed ONE node into the WS store. The wording is what the
@@ -1781,17 +1781,17 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     page,
   }) => {
     await loginAs(page, { username: TEST_USERNAME });
-    await page.goto('/sessions/new');
+    await page.goto('/m/sessions/new');
     await expect(page.getByTestId('route-create-session')).toBeVisible();
 
     await page
       .getByTestId('create-session-topic-input')
       .fill('Multi-component capture e2e regression check.');
     await page.getByTestId('create-session-submit').click();
-    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
     await seedInviteParticipantsForGate(page);
     await page.getByTestId('invite-enter-session').click();
-    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
     await expect(page.getByTestId('route-operate')).toBeVisible();
 
     if (!(await isWsStoreReachable(page))) {
@@ -1803,7 +1803,7 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     }
 
     const url = new URL(page.url());
-    const sessionId = url.pathname.split('/')[2] ?? '';
+    const sessionId = url.pathname.split('/')[3] ?? '';
 
     // Seed a parent node so the right-click + propose-decompose menu
     // item has a target to fire against.
@@ -1910,17 +1910,17 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     page,
   }) => {
     await loginAs(page, { username: TEST_USERNAME });
-    await page.goto('/sessions/new');
+    await page.goto('/m/sessions/new');
     await expect(page.getByTestId('route-create-session')).toBeVisible();
 
     await page
       .getByTestId('create-session-topic-input')
       .fill('Propose-decomposition e2e regression check.');
     await page.getByTestId('create-session-submit').click();
-    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
     await seedInviteParticipantsForGate(page);
     await page.getByTestId('invite-enter-session').click();
-    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
     await expect(page.getByTestId('route-operate')).toBeVisible();
 
     if (!(await isWsStoreReachable(page))) {
@@ -1932,7 +1932,7 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     }
 
     const url = new URL(page.url());
-    const sessionId = url.pathname.split('/')[2] ?? '';
+    const sessionId = url.pathname.split('/')[3] ?? '';
 
     // Seed a parent node so the right-click + propose-decompose menu
     // item has a target to fire against.
@@ -2013,17 +2013,17 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     page,
   }) => {
     await loginAs(page, { username: TEST_USERNAME });
-    await page.goto('/sessions/new');
+    await page.goto('/m/sessions/new');
     await expect(page.getByTestId('route-create-session')).toBeVisible();
 
     await page
       .getByTestId('create-session-topic-input')
       .fill('Propose-interpretive-split e2e regression check.');
     await page.getByTestId('create-session-submit').click();
-    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
     await seedInviteParticipantsForGate(page);
     await page.getByTestId('invite-enter-session').click();
-    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
     await expect(page.getByTestId('route-operate')).toBeVisible();
 
     if (!(await isWsStoreReachable(page))) {
@@ -2035,7 +2035,7 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     }
 
     const url = new URL(page.url());
-    const sessionId = url.pathname.split('/')[2] ?? '';
+    const sessionId = url.pathname.split('/')[3] ?? '';
 
     // Seed a parent node so the right-click + propose-interpretive-split
     // menu item has a target to fire against.

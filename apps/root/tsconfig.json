@@ -11,5 +11,6 @@
     "noEmit": false,
     "types": ["vite/client"]
   },
-  "include": ["src"]
+  "include": ["src"],
+  "references": [{ "path": "../../packages/i18n-catalogs" }, { "path": "../../packages/shell" }]
 }

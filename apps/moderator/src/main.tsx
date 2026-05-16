@@ -1,6 +1,4 @@
-// Moderator app entry point. Initialises i18n (ADR 0024) before
-// mounting the React tree so the first paint already has the active
-// locale resolved.
+// Moderator surface entry point.
 //
 // Refinement: tasks/refinements/moderator-ui/mod_app_skeleton.md +
 //   tasks/refinements/shell-package/shell_substrate_extraction.md
@@ -14,28 +12,27 @@
 // walks `navigator.languages` (canonicalizing onto the v1 supported
 // set) and finally falls back to `en-US`.
 //
-// Provider order rationale (per shell_substrate_extraction.md Decisions):
-// i18n outermost (auth error messages localize off `t`; the auth
-// provider's children — including RequireAuth's loading-frame DOM —
-// render localized strings); then auth (the WS connection's open-or-
-// not gate is driven by `auth.status === 'authenticated'`); then
-// BrowserRouter (route components consume both providers). The WS
-// provider stays per-route (Operate + InviteParticipants) per the
-// explicit rationale at `routes/Operate.tsx` lines 38–46.
+// The root host owns the top-level auth/i18n providers and passes their
+// live values into `mount(props)`. Because the moderator mounts in a
+// separate React root, it bridges those values back into shell context
+// locally with `<AuthValueProvider>` and `<I18nProvider>`.
 
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
-import { negotiateAuthenticatedLocale } from '@a-conversa/i18n-catalogs';
-import { AuthProvider, createI18nInstance, I18nProvider } from '@a-conversa/shell';
+import {
+  AuthValueProvider,
+  I18nProvider,
+  type I18nInstance,
+  type MountFn,
+  type SurfaceModule,
+} from '@a-conversa/shell';
 
 import './index.css';
 import { App } from './App';
 import { useWsStore } from './ws/wsStore';
 
-async function bootstrap(): Promise<void> {
-  const i18n = await createI18nInstance(negotiateAuthenticatedLocale());
-
+export const mount: MountFn = (props) => {
   // Expose the WS store on `window` so the Playwright e2e specs in
   // `tests/e2e/` can seed synthetic events into the moderator canvas
   // without spinning up the full server-side capture flow.
@@ -57,21 +54,30 @@ async function bootstrap(): Promise<void> {
   // is one extra property assignment on `window` per page load.
   (window as unknown as { __aConversaWsStore?: typeof useWsStore }).__aConversaWsStore = useWsStore;
 
-  const rootElement = document.getElementById('root');
-  if (!rootElement) {
-    throw new Error('Root element #root not found in index.html');
-  }
-  ReactDOM.createRoot(rootElement).render(
+  const root = ReactDOM.createRoot(props.container);
+  root.render(
     <React.StrictMode>
-      <I18nProvider i18n={i18n}>
-        <AuthProvider>
-          <BrowserRouter>
+      <I18nProvider i18n={props.i18n as I18nInstance}>
+        <AuthValueProvider value={props.auth}>
+          <BrowserRouter basename={props.routerBasePath}>
             <App />
           </BrowserRouter>
-        </AuthProvider>
+        </AuthValueProvider>
       </I18nProvider>
     </React.StrictMode>,
   );
-}
 
-void bootstrap();
+  return () => {
+    root.unmount();
+  };
+};
+
+const moderatorSurface: SurfaceModule = {
+  mount,
+  meta: {
+    displayName: 'Moderator',
+    requiredAuthLevel: 'authenticated',
+  },
+};
+
+export default moderatorSurface;

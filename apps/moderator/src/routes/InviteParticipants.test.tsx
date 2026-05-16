@@ -381,7 +381,7 @@ describe('InviteParticipants route — invite link', () => {
     global.fetch = stubSessionFetch(okSessionResponse);
   });
 
-  it('invite link shape is <origin>/sessions/<id>/invite?role=<role>', async () => {
+  it('invite link shape is <origin>/p/sessions/<id>/invite?role=<role>', async () => {
     renderRoute();
     await waitFor(() => {
       expect(screen.getByTestId('invite-session-topic')).toBeTruthy();
@@ -390,13 +390,13 @@ describe('InviteParticipants route — invite link', () => {
       .getAllByTestId<HTMLInputElement>('invite-link-input')
       .find((el) => el.getAttribute('data-role') === 'debater-A');
     expect(inputA?.value).toBe(
-      `${window.location.origin}/sessions/${SESSION_ID}/invite?role=debater-A`,
+      `${window.location.origin}/p/sessions/${SESSION_ID}/invite?role=debater-A`,
     );
     const inputB = screen
       .getAllByTestId<HTMLInputElement>('invite-link-input')
       .find((el) => el.getAttribute('data-role') === 'debater-B');
     expect(inputB?.value).toBe(
-      `${window.location.origin}/sessions/${SESSION_ID}/invite?role=debater-B`,
+      `${window.location.origin}/p/sessions/${SESSION_ID}/invite?role=debater-B`,
     );
   });
 
@@ -418,7 +418,7 @@ describe('InviteParticipants route — invite link', () => {
       await Promise.resolve();
     });
     expect(writeTextSpy).toHaveBeenCalledWith(
-      `${window.location.origin}/sessions/${SESSION_ID}/invite?role=debater-A`,
+      `${window.location.origin}/p/sessions/${SESSION_ID}/invite?role=debater-A`,
     );
   });
 

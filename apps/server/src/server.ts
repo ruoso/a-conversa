@@ -548,10 +548,9 @@ export async function createServer(options: CreateServerOptions = {}): Promise<F
   // tasks/refinements/backend/ws_proposal_status_broadcast.md.
   await app.register(wsProposalStatusBroadcastPlugin);
 
-  // Static-frontends plugin — serves the moderator SPA's `dist/`
-  // (and any future participant / audience / replay bundles) from the
-  // same Fastify process as the JSON API. Single-origin deployment
-  // per the refinement.
+  // Static-frontends plugin — serves the root app at `/` plus the
+  // surface bundles under `/_surfaces/*` from the same Fastify process
+  // as the JSON API. Single-origin deployment per ADR 0026.
   //
   // **Registered LAST on purpose.** Fastify matches routes in
   // registration order; the wildcard static handler would shadow API
@@ -562,16 +561,16 @@ export async function createServer(options: CreateServerOptions = {}): Promise<F
   //
   // The plugin also installs an SPA-aware `setNotFoundHandler` that
   // overrides the canonical one from `errorHandlerPlugin`: HTML
-  // requests for unknown paths get the moderator's `index.html` (so
-  // React Router can render the route client-side); JSON / curl
+  // requests for unknown paths get the root app's `index.html` (so the
+  // host router can render the route client-side); JSON / curl
   // clients still get the canonical `{ error: { code: 'not-found',
   // message: 'Route not found' } }` envelope.
   //
   // Fail-fast at boot: a missing or unreadable `dist/` (or its
   // `index.html`) throws here, BEFORE `app.listen(...)`. The runtime
-  // image copies `apps/moderator/dist` into the container; a stripped
-  // image without it produces a clear startup error rather than 404s
-  // on every HTML request.
+  // image copies both `apps/root/dist` and `apps/moderator/dist` into
+  // the container; a stripped image without either produces a clear
+  // startup error rather than 404s on every HTML request.
   //
   // Refinement: tasks/refinements/backend/serve_static_frontends.md.
   await app.register(staticFrontendsPlugin);

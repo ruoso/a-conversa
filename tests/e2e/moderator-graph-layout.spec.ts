@@ -154,7 +154,7 @@ test.describe.serial('moderator graph layout (dagre, TB)', () => {
     expect(session.id, 'session id must be present in the response').toBeTruthy();
 
     // 3. Navigate to the operate route.
-    await page.goto(`/sessions/${session.id}/operate`);
+    await page.goto(`/m/sessions/${session.id}/operate`);
     await expect(
       page.getByTestId('graph-canvas-root'),
       'graph-canvas-root must mount on the operate route',
@@ -331,7 +331,7 @@ test.describe.serial('moderator graph layout (dagre, TB)', () => {
     const session = (await createResp.json()) as CreatedSession;
     expect(session.id, 'session id must be present in the response').toBeTruthy();
 
-    await page.goto(`/sessions/${session.id}/operate`);
+    await page.goto(`/m/sessions/${session.id}/operate`);
     await expect(
       page.getByTestId('graph-canvas-root'),
       'graph-canvas-root must mount on the operate route',
@@ -496,7 +496,7 @@ test.describe.serial('moderator graph layout (dagre, TB)', () => {
     const session = (await createResp.json()) as CreatedSession;
     expect(session.id, 'session id must be present in the response').toBeTruthy();
 
-    await page.goto(`/sessions/${session.id}/operate`);
+    await page.goto(`/m/sessions/${session.id}/operate`);
     await expect(
       page.getByTestId('graph-canvas-root'),
       'graph-canvas-root must mount on the operate route',
@@ -666,7 +666,7 @@ test.describe.serial('moderator graph layout (dagre, TB)', () => {
     const session = (await createResp.json()) as CreatedSession;
     expect(session.id, 'session id must be present in the response').toBeTruthy();
 
-    await page.goto(`/sessions/${session.id}/operate`);
+    await page.goto(`/m/sessions/${session.id}/operate`);
     await expect(
       page.getByTestId('graph-canvas-root'),
       'graph-canvas-root must mount on the operate route',
