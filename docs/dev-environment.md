@@ -4,7 +4,7 @@ A walkthrough of the dev environment as it stands today: what to install, what `
 
 Audience: a contributor cloning the repo for the first time, or someone debugging a dev-env hiccup.
 
-Out of scope: production deployment (owned by [`deployment.deployment_docs`](../tasks/30-deployment.tji)) and per-test database isolation (owned by [`foundation.test_infra.test_db_provisioning`](../tasks/refinements/foundation/test_db_provisioning.md)).
+Out of scope: production deployment (owned by [`deployment.deployment_docs`](../tasks/70-deployment.tji)) and per-test database isolation (owned by [`foundation.test_infra.test_db_provisioning`](../tasks/refinements/foundation/test_db_provisioning.md)).
 
 ## Prerequisites
 
@@ -48,7 +48,7 @@ To undo the entry later, edit `/etc/hosts` and remove the line. Compose stops wo
 
 Three services on one user-defined bridge network ([`compose.yaml`](../compose.yaml), [ADR 0018](adr/0018-compose-file-three-service-dev-stack.md)):
 
-- **`app`** — built from the root [`Dockerfile`](../Dockerfile) ([ADR 0015](adr/0015-dockerfile-multi-stage-pnpm-corepack.md)). Multi-stage build: pnpm via Corepack in the build stage, slim runtime.
+- **`app`** — built from the root [`Dockerfile`](../Dockerfile) ([ADR 0015](adr/0015-dockerfile-multi-stage-pnpm-corepack.md)). Multi-stage build: pnpm via Corepack in the build stage, slim runtime. Runs the Fastify server ([ADR 0023](adr/0023-web-framework-fastify.md)) on :3000; applies pending migrations on startup; `/healthz` flips to 200 once the server is serving. Compose healthcheck targets `/healthz`.
 - **`postgres`** — upstream `postgres:16-alpine` ([ADR 0016](adr/0016-postgres-upstream-alpine.md)). Config notes: [`infra/postgres/README.md`](../infra/postgres/README.md). Init scripts mounted from `infra/postgres/initdb/`.
 - **`authelia`** — upstream `authelia/authelia:4.39` in users-file mode ([ADR 0017](adr/0017-mock-oauth-authelia-users-file.md)). Config notes: [`infra/authelia/README.md`](../infra/authelia/README.md). Mounts `configuration.yml` and `users.yml` read-only.
 
@@ -70,15 +70,18 @@ The [`Makefile`](../Makefile) wraps `pnpm` and `docker compose` with friendlier 
 | `make install` | `pnpm install -r` across all workspaces.                                                    | First clone, or after pulling lockfile changes.          |
 | `make check`   | Runs the full static-analysis bundle: `lint`, `format:check`, `typecheck`, `typecheck:tools`, `typecheck:tests`. Same target the pre-commit hook and CI invoke. | Anytime you want the exact contract CI will enforce.    |
 | `make test`    | Runs Vitest, Cucumber, and Playwright smokes in sequence.                                   | Before committing or pushing.                            |
-| `make up`      | Brings up `postgres + authelia + app` with the dev compose override (`NODE_ENV=development`); waits ~30s for healthy; prints the URL banner + the `/etc/hosts` notice if `authelia.aconversa.local` is missing. | Day-to-day dev work — the dev override relaxes the production-mode boot gates so `.env.example`'s placeholder secret boots without rotation. |
+| `make test:e2e` | Runs the full Playwright e2e suite against an already-running server (assumes `make up`). Default base URL `http://localhost:3000`; override with `PLAYWRIGHT_BASE_URL`. | Iterating on e2e specs once the stack is up.            |
+| `make test:e2e:compose` | Brings up compose in prod-mode, waits for `/healthz`, runs e2e, tears down with `down -v` regardless of outcome. | Realistic local e2e (mirrors the CI `e2e-playwright` job). |
+| `make up`      | Brings up `postgres + authelia + app` with the dev compose override (`NODE_ENV=development`); sleeps 30s for services to settle; prints the URL banner + the `/etc/hosts` notice if `authelia.aconversa.local` is missing. | Day-to-day dev work — the dev override relaxes the production-mode boot gates so `.env.example`'s placeholder secret boots without rotation. |
 | `make up-prod-mode` | Same as `make up` but **without** the dev override. Production-mode boot gates (`SESSION_TOKEN_SECRET` strength, CORS lockdown, WS Origin allowlist) all armed. | Reproducing a CI failure locally, or smoking the production-config path. Used by CI's `e2e-playwright` job and by `make test:e2e:compose`. |
 | `make up-app`  | Alias for `make up` (back-compat; the old `up`/`up-app` split is gone).                      | Existing muscle memory.                                  |
-| `make migrate` | Applies pending DB migrations against the running `postgres` (forward-only; [ADR 0020](adr/0020-migrations-node-pg-migrate-forward-only.md)). | After `make up`, before exercising anything that talks to the schema. |
+| `make migrate` | Applies pending DB migrations against the running `postgres` (forward-only; [ADR 0020](adr/0020-migrations-node-pg-migrate-forward-only.md)). Usually unnecessary — `make up` applies migrations on app startup via the startup-migration gate. | After `make up` only when you need to re-run migrations against the host shell's connection. |
 | `make down`    | `docker compose down`. Volumes preserved.                                                   | Stopping the stack at end of session.                    |
 | `make down-v`  | `docker compose down -v`. Volumes dropped.                                                  | Resetting to a clean stack (drops Postgres + Authelia state). |
 | `make logs`    | `docker compose logs -f`.                                                                   | Watching service output live.                            |
 | `make ps`      | `docker compose ps`.                                                                        | Quick health check on running services.                  |
 | `make seed`    | Runs the seed-data script (currently a stub — see [`seed_data_script`](../tasks/refinements/foundation/seed_data_script.md)). | Loads the walkthrough fixture once the script lands.    |
+| `make unblocked` | Lists, per milestone, the leaf tasks currently READY to pick up. Resolves the WBS dep graph via `tj3`; pass `MILESTONE=<id>` to scope to a single milestone. See [`scripts/unblocked.ts`](../scripts/unblocked.ts). | Picking the next task to work on; consumed by the orchestrator session ([ORCHESTRATOR.md](../ORCHESTRATOR.md)). |
 | `make clean`   | Removes `node_modules` (root + workspaces) and build artefacts.                             | Recovering from a corrupted install.                     |
 
 The `up` / `up-prod-mode` split keeps local dev ergonomic without weakening CI: `make up` uses the dev compose override ([`compose.dev.yaml`](../compose.dev.yaml)) so `NODE_ENV=development` relaxes the production-mode boot gates (the `SESSION_TOKEN_SECRET` placeholder denylist, the CORS lockdown that requires `APP_BASE_URL`, the WS Origin allowlist, the pino JSON-output mode, the cookie `Secure` attribute). `make up-prod-mode` skips that override so CI — which runs `make up-prod-mode` in the `e2e-playwright` job — exercises the exact boot-gate set production ships. The `up-app` alias is preserved for muscle memory; the rationale for the dropped `up`/`up-app` split lives in [`one_command_script` Status](../tasks/refinements/foundation/one_command_script.md#status) and [ADR 0018 Amendments](adr/0018-compose-file-three-service-dev-stack.md#amendments).
@@ -141,6 +144,8 @@ pnpm run test:e2e       # run every project (smoke-node, chromium-<locale>, chro
 make down               # stop the stack (volumes preserved between iterations)
 ```
 
+Or, in one shot: `make test:e2e:compose` brings the stack up (in prod-mode), waits for `/healthz`, runs the suite, and tears down with `down -v` regardless of outcome — same recipe the CI `e2e-playwright` job runs.
+
 **Note on test-DB cleanup.** The `auth-flow` spec's new-user scenario creates a `users` row on its first run; the returning-user scenario then re-uses it. The four scenarios share state within a single suite run (the spec uses `test.describe.serial(...)` to pin the order). To reset between iterations you have two options:
 
 - `make down-v && make up-prod-mode` — drops both named volumes (`aconversa-postgres-data`, `aconversa-authelia-data`), guaranteeing a fresh users table and a fresh Authelia sqlite store. Slower (cold compose start) but bulletproof.
@@ -160,42 +165,46 @@ CI uses the first option unconditionally (`make down-v` runs in the teardown ste
 | `pnpm run typecheck:tools` | Typecheck the standalone `scripts/` programs.    |
 | `pnpm run typecheck:tests` | Typecheck the test sources under `tests/`.       |
 
-The pre-commit hook ([ADR 0014](adr/0014-pre-commit-hooks-husky-lint-staged.md)) runs `lint-staged` (ESLint `--fix` + Prettier `--write` on staged files), then `pnpm run lint` (full repo), then the three `tsc -b` invocations. The whole-repo lint catches the failure mode where a config or upstream-type change invalidates a file nobody staged — `lint-staged` alone can't see it. **Tests are intentionally not in the hook** — kept fast on purpose; the CI smoke step catches what the hook deliberately skips. `pnpm run check` / `make check` is the unified entry point both dev and CI invoke.
+The pre-commit hook ([ADR 0014](adr/0014-pre-commit-hooks-husky-lint-staged.md)) runs `lint-staged` (ESLint `--fix` + Prettier `--write` on staged files), then `pnpm run lint` (full repo), then the three `tsc -b` invocations. When `.tji`/`.tjp` files are staged the hook also runs `tj3 --silent project.tjp` and rejects the commit on any `Warning:`/`Error:` line — keeps the WBS warning-free. The whole-repo lint catches the failure mode where a config or upstream-type change invalidates a file nobody staged — `lint-staged` alone can't see it. **Tests are intentionally not in the hook** — kept fast on purpose; the CI smoke step catches what the hook deliberately skips. `pnpm run check` / `make check` is the unified entry point both dev and CI invoke.
 
 ## Workspace layout
 
-Five workspaces ([ADR 0010](adr/0010-directory-layout-pnpm-workspaces.md), [`pnpm-workspace.yaml`](../pnpm-workspace.yaml)):
+Workspaces ([ADR 0010](adr/0010-directory-layout-pnpm-workspaces.md), [`pnpm-workspace.yaml`](../pnpm-workspace.yaml) — `apps/*` + `packages/*`):
 
 ```
 apps/
-  audience/
-  moderator/
-  participant/
-  server/
+  audience/        # broadcast surface (planned; placeholder)
+  moderator/       # moderator surface (in active build, M4)
+  participant/     # debater tablet surface (planned; placeholder)
+  server/          # Fastify HTTP/WebSocket backend + startup migrations
 packages/
-  shared-types/
+  i18n-catalogs/   # shared i18next setup + per-locale message catalogs (ADR 0024)
+  shared-types/    # zod-validated event envelope + shared TS types (ADR 0021)
+  shell/           # micro-frontend substrate: auth chrome, i18n bootstrap, WS client (ADR 0026, in flight)
+  test-fixtures/   # shared test seed helpers consumed by Vitest/Cucumber/Playwright
 ```
 
-Today these are placeholders; real code lands per workspace as the WBS unfolds.
+Per [ADR 0026](adr/0026-micro-frontend-root-app.md) a new `apps/root/` workspace (the thin root app that dynamic-imports surface bundles by URL prefix) is in flight; the four surfaces will migrate to per-prefix URLs (`/m/*`, `/p/*`, `/a/*`) as that pivot lands. The placeholder surfaces become Vite library-mode bundles consumed by the root.
 
 ## What's not yet runnable end-to-end
 
 Be honest about today's reality:
 
-- The `app` container's runtime entry point is a stub ([ADR 0015](adr/0015-dockerfile-multi-stage-pnpm-corepack.md)) that exits 0 immediately. With `restart: unless-stopped`, `make up-app` therefore loops the container in a tight restart cycle. The split with `make up` (which only brings up `postgres + authelia`) keeps the working subset quiet.
-- Full-stack `make up` (with the app folded back in) becomes the norm once [`backend.api_skeleton`](../tasks/refinements/backend/api_skeleton.md) lands.
+- The participant, audience, and replay-test surfaces are placeholder workspaces; only the moderator surface has functional UI today (M4 work in flight). Until the M5/M6 surfaces land, e2e flows that exercise them are unimplemented.
+- The micro-frontend pivot ([ADR 0026](adr/0026-micro-frontend-root-app.md)) is in flight: `packages/shell/` and `apps/root/` are under construction, surfaces currently still ship from their own `apps/<surface>/` workspaces, and the URL prefixes (`/m/*`, `/p/*`, `/a/*`) will land alongside the moderator-refactor task.
 - `make seed` is a stub (see [`seed_data_script` Status](../tasks/refinements/foundation/seed_data_script.md#status)) until the fixture-loader and the event-append API both exist.
 
 ## Troubleshooting
 
 - **Pre-commit hook isn't firing.** Husky's hook lives under `.husky/_/pre-commit`. If the hook directory is stale (e.g., after a Husky version bump), `rm -rf .husky/_ && pnpm install` re-runs the `prepare` script and rewires it.
-- **Authelia health check is slow on first boot.** Authelia takes ~12s to settle on a cold start; the 15s `sleep` in `make up` is heuristic-tuned for this. If you see Authelia still `starting` in `make ps`, give it another 10s and re-check.
+- **Authelia health check is slow on first boot.** Authelia takes ~12s to settle on a cold start; the 30s `sleep` in `make up` covers it along with the app's startup-migration step. If you see Authelia still `starting` in `make ps` after `make up` returns, give it another 10s and re-check.
 - **Port 5432 or 9091 already in use.** Override the host-side port mapping in a personal `compose.override.yaml` (Compose auto-loads it, gitignored) rather than editing the committed `compose.yaml`. See [`infra/postgres/README.md`](../infra/postgres/README.md#port).
 - **`.env` got out of date.** `make up` auto-creates `.env` only when missing — it does not clobber. To resync, `rm .env && make up` regenerates from the current `.env.example`.
 - **Stale Postgres or Authelia state is causing weird behavior.** `make down-v` drops both named volumes; the next `make up` re-initialises from scratch (Postgres re-runs `initdb`, Authelia rebuilds its sqlite store).
 
 ## Where to learn more
 
-- [docs/adr/](adr/) — the eighteen Architecture Decision Records that justify every choice above.
-- [tasks/](../tasks/) — the work breakdown structure, including refinement notes for each completed and planned task.
+- [docs/adr/](adr/) — the Architecture Decision Records that justify every choice above (26 and counting).
+- [tasks/](../tasks/) — the work breakdown structure, including refinement notes for each completed and planned task. [`make unblocked`](#make-targets) is the entry point for picking the next leaf.
+- [ORCHESTRATOR.md](../ORCHESTRATOR.md) — startup prompt for the orchestrator session that drives WBS work forward, using `make unblocked` as its window into "what's ready to pick up."
 - [DESIGN.md](../DESIGN.md) and [docs/architecture.md](architecture.md) — the design and engineering shape the dev environment is built to support.
