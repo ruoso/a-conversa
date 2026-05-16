@@ -299,6 +299,7 @@ task moderator_ui "Moderator UI" {
     task mod_proposal_list "List of in-flight proposals" {
       effort 1d
       allocate team
+      complete 100
     }
     task mod_per_facet_breakdown "Per-facet breakdown of each proposal" {
       effort 1d

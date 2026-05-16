@@ -65,6 +65,7 @@ import { ProposeAction } from '../layout/ProposeAction';
 import { useProposeAction } from '../layout/useProposeAction';
 import { GraphCanvasPane } from '../graph/GraphCanvasPane';
 import { ModeBanner } from '../layout/ModeBanner';
+import { PendingProposalsPane } from '../layout/PendingProposalsPane';
 import { RightSidebar } from '../layout/RightSidebar';
 import { WsClientProvider, useWsClient } from '../ws/WsClientProvider';
 
@@ -137,7 +138,9 @@ function OperateRouteInner(props: { sessionId: string }): ReactElement {
             proposeAction={<ProposeAction />}
           />
         }
-        rightSidebar={<RightSidebar />}
+        rightSidebar={
+          <RightSidebar pendingProposalsSlot={<PendingProposalsPane sessionId={sessionId} />} />
+        }
       />
     </main>
   );

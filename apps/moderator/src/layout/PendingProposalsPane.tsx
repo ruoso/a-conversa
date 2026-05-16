@@ -1,0 +1,283 @@
+// `<PendingProposalsPane>` — the right-sidebar pane that lists every
+// in-flight proposal for the current session.
+//
+// Refinement: tasks/refinements/moderator-ui/mod_proposal_list.md
+// Design doc: docs/moderator-ui.md (right-sidebar panes, F1 step 4)
+//
+// Mounts into `<RightSidebar>`'s `pendingProposalsSlot` (per
+// `mod_right_sidebar`). The pane closes the visible feedback loop after
+// a successful propose — the freshly-proposed item appears at the top
+// of the list within the same `event-applied` broadcast the capture
+// pane optimistically-clears on.
+//
+// Surface:
+//
+//   - Container: `<div data-testid="pending-proposals-pane">` with a
+//     localized `aria-label`. Scrollable inside the slot via
+//     `overflow-y: auto; max-h-full` so a long list scrolls inside the
+//     right-sidebar's height-bounded body.
+//   - Empty state: `<p data-testid="pending-proposals-pane-empty">`
+//     with the `moderator.proposalList.emptyState` catalog string.
+//     Visible from first render — no loading state.
+//   - List: `<ol role="list">` with one
+//     `<li data-testid="pending-proposal-row" data-proposal-id="...">`
+//     per surviving proposal (newest-first). Each row shows: a kind
+//     chip, the wording-or-summary string (truncated), the 8-char
+//     author prefix, and a relative-time timestamp.
+//
+// The selector (`derivePendingProposals`) is wrapped in a `useMemo`
+// keyed on the `events` array reference so the derived list reference
+// stays stable across renders when the log hasn't grown — siblings'
+// future `React.memo`-wrapped row components and any virtualization
+// stay cheap (Constraints).
+//
+// **No business logic** (Constraints): the pane reads `useWsStore`
+// only; it does not touch `wsClient.send`, the capture store, or the
+// methodology engine. It is a pure derived view of the event log.
+//
+// **No selection / click handler** (Constraints): the `<li>` is a
+// plain non-interactive list item in v1. Siblings
+// (`mod_per_facet_breakdown`, `mod_commit_button`,
+// `mod_vote_indicators_in_sidebar`, `mod_proposal_filter_search`)
+// will add interactivity / per-facet rendering / commit button on top
+// of the row contract this task establishes.
+//
+// **Real-time updates via Zustand subscription** (Decision §8): the
+// component subscribes to `useWsStore` with a selector that reads
+// `sessionState[sessionId].events`. Zustand's reference-equality check
+// re-renders only when the events array reference changes, which
+// happens on each `applyEvent` write (the WS writer creates a new
+// array via `[...session.events, event]`).
+
+import { useMemo, type ReactElement } from 'react';
+import { useTranslation } from 'react-i18next';
+import type { ProposalPayload } from '@a-conversa/shared-types';
+import { formatRelativeTime } from '@a-conversa/i18n-catalogs';
+
+import { useWsStore } from '../ws/wsStore';
+import {
+  derivePendingProposals,
+  type PendingProposalRow as PendingProposalRowData,
+} from '../graph/pendingProposals';
+
+/**
+ * Props for the pane. The `sessionId` is threaded through from the
+ * mounting site (`<OperateRoute>`) so the pane subscribes to the right
+ * per-session slice of `useWsStore`.
+ */
+export interface PendingProposalsPaneProps {
+  /** The session whose events drive the pane's contents. */
+  readonly sessionId: string;
+  /**
+   * Optional reference time for relative-time formatting. Lets callers
+   * (notably the component test) inject a deterministic "now" so the
+   * relative-time string is stable across test runs. Defaults to
+   * `Date.now()` at render time.
+   */
+  readonly nowMs?: number;
+}
+
+const PANE_CONTAINER_CLASSES = 'flex max-h-full flex-col gap-1 overflow-y-auto text-slate-700';
+const LIST_CLASSES = 'm-0 flex list-none flex-col gap-1 p-0';
+const ROW_CLASSES = 'flex items-center gap-2 rounded border border-slate-200 bg-white px-2 py-1';
+const KIND_CHIP_CLASSES =
+  'flex-shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-xs font-medium text-slate-700';
+const SUMMARY_CLASSES = 'flex-1 truncate text-sm';
+const AUTHOR_CLASSES = 'flex-shrink-0 text-xs text-slate-500';
+const TIMESTAMP_CLASSES = 'flex-shrink-0 text-xs text-slate-500';
+const EMPTY_STATE_CLASSES = 'italic text-slate-500';
+
+/**
+ * Map the proposal sub-kind to a `methodology.kind.<kind>` catalog
+ * key when the sub-kind is a `classify-node` (Decision §7 reuses the
+ * existing `methodology.kind.*` keys for the five-way classification);
+ * otherwise return a short literal label (the structural sub-kinds
+ * have not yet reached the wire from a capture flow, so this task
+ * deliberately keeps the catalog footprint proportional to what's
+ * actually reachable — Decision §7).
+ */
+function kindChipText(proposal: ProposalPayload, t: (key: string) => string): string {
+  if (proposal.kind === 'classify-node') {
+    return t(`methodology.kind.${proposal.classification}`);
+  }
+  // Per Decision §7, the structural sub-kinds (decompose, axiom-mark,
+  // meta-move, break-edge, amend-node, annotate, set-substance,
+  // edit-wording, interpretive-split) keep a hard-coded English
+  // placeholder until their own capture-flow tasks register summary
+  // catalog keys. The literal sub-kind name is a defensible v1.
+  return proposal.kind;
+}
+
+/**
+ * Pick a one-line summary string per sub-kind (Decision §5). The
+ * selector emits the full proposal payload; the row component decides
+ * what to render. For `classify-node`, the chip already shows the
+ * classification — the summary column falls back to the node id
+ * prefix (the moderator UI does not yet have a client-side
+ * node-wording resolver in the pane — Decision §5).
+ *
+ * For sub-kinds carrying a free-text field (`edit-wording`,
+ * `amend-node`, `meta-move`, `annotate`, components of `decompose` /
+ * `interpretive-split`), the row renders that text. The Tailwind
+ * `truncate` class handles overflow at the column level.
+ */
+function summaryText(proposal: ProposalPayload): string {
+  switch (proposal.kind) {
+    case 'classify-node':
+      // The chip already shows the classification; the summary falls
+      // back to a node-id prefix (Decision §5).
+      return `node ${proposal.node_id.slice(0, 8)}`;
+    case 'set-node-substance':
+      return `Set substance = ${proposal.value} (node ${proposal.node_id.slice(0, 8)})`;
+    case 'set-edge-substance':
+      return `Set substance = ${proposal.value} (edge ${proposal.edge_id.slice(0, 8)})`;
+    case 'edit-wording':
+      return proposal.new_wording;
+    case 'amend-node':
+      return proposal.new_content;
+    case 'meta-move':
+      return `${proposal.meta_kind}: ${proposal.content}`;
+    case 'annotate':
+      return `${proposal.annotation_kind}: ${proposal.content}`;
+    case 'decompose':
+      return `Decompose into ${String(proposal.components.length)} components`;
+    case 'interpretive-split':
+      return `Split into ${String(proposal.readings.length)} readings`;
+    case 'axiom-mark':
+      return `Axiom-mark (participant ${proposal.participant.slice(0, 8)})`;
+    case 'break-edge':
+      return `Break edge ${proposal.edge_id.slice(0, 8)}`;
+    default: {
+      // Exhaustively narrowed; this is a runtime safety net for callers
+      // that bypass TypeScript (e.g. tests that build malformed events).
+      const unknown = proposal as { kind: string };
+      return unknown.kind;
+    }
+  }
+}
+
+/**
+ * Format the author column — 8-char UUID prefix in v1, or a localized
+ * "System" label if `actor === null` (a system-emitted proposal
+ * envelope; not expected today but the envelope shape allows it —
+ * Decision §6).
+ */
+function authorText(actor: string | null, systemLabel: string): string {
+  if (actor === null) return systemLabel;
+  return actor.slice(0, 8);
+}
+
+/**
+ * Compute the relative-time string for the row's timestamp column.
+ * `formatRelativeTime`'s sign convention is past = negative, so we
+ * pass `secondsAgo` as a negative number (and let the formatter pick
+ * the appropriate unit / wording via `numeric: 'auto'`).
+ *
+ * The seconds-resolution is chosen because the freshly-proposed item
+ * lands at the top of the list within tens of ms of the propose
+ * gesture; rounding to minutes would surface "0 minutes ago" for the
+ * first ~60s after a propose, which is uninformative.
+ */
+function relativeTimeFor(createdAt: string, nowMs: number): string {
+  const createdMs = Date.parse(createdAt);
+  // Defensive — an invalid ISO string parses to NaN; the formatter
+  // would throw. Surface a stable fallback rather than crash the pane.
+  if (Number.isNaN(createdMs)) return createdAt;
+  const secondsAgo = Math.round((nowMs - createdMs) / 1000);
+  return formatRelativeTime(-secondsAgo, 'second');
+}
+
+/**
+ * One row in the list. Co-located inside this file (Decision §3 —
+ * small enough not to warrant its own file in v1). Sibling tasks will
+ * wrap / extend / re-shape this row contract; the `data-testid` +
+ * `data-proposal-id` attributes are the stable seam.
+ */
+function PendingProposalRow(props: {
+  readonly row: PendingProposalRowData;
+  readonly nowMs: number;
+  readonly systemAuthorLabel: string;
+  readonly t: (key: string) => string;
+}): ReactElement {
+  const { row, nowMs, systemAuthorLabel, t } = props;
+  const chip = kindChipText(row.proposal, t);
+  const summary = summaryText(row.proposal);
+  const author = authorText(row.actor, systemAuthorLabel);
+  const ago = relativeTimeFor(row.createdAt, nowMs);
+  return (
+    <li
+      data-testid="pending-proposal-row"
+      data-proposal-id={row.proposalEventId}
+      className={ROW_CLASSES}
+      title={summary}
+    >
+      <span data-testid="pending-proposal-row-kind" className={KIND_CHIP_CLASSES}>
+        {chip}
+      </span>
+      <span data-testid="pending-proposal-row-summary" className={SUMMARY_CLASSES}>
+        {summary}
+      </span>
+      <span data-testid="pending-proposal-row-author" className={AUTHOR_CLASSES}>
+        {author}
+      </span>
+      <span data-testid="pending-proposal-row-timestamp" className={TIMESTAMP_CLASSES}>
+        {ago}
+      </span>
+    </li>
+  );
+}
+
+export function PendingProposalsPane(props: PendingProposalsPaneProps): ReactElement {
+  const { sessionId, nowMs } = props;
+  const { t } = useTranslation();
+
+  // Zustand selector — read only the per-session events array. The
+  // store creates a new array reference on each `applyEvent` write
+  // (`[...session.events, event]`), so the reference-equality check
+  // re-renders the pane the moment a new event lands.
+  const events = useWsStore((state) => state.sessionState[sessionId]?.events);
+
+  // `useMemo` keyed on the events reference so the derived row list
+  // stays referentially stable across renders when the log hasn't
+  // grown (Constraints). `events ?? []` keeps the hook stable when
+  // the session has not yet been touched.
+  const rows = useMemo(() => derivePendingProposals(events ?? []), [events]);
+
+  const resolvedNowMs = nowMs ?? Date.now();
+  const systemAuthorLabel = t('moderator.proposalList.systemAuthor');
+  const paneAriaLabel = t('moderator.proposalList.paneAriaLabel');
+
+  if (rows.length === 0) {
+    return (
+      <div
+        data-testid="pending-proposals-pane"
+        aria-label={paneAriaLabel}
+        className={PANE_CONTAINER_CLASSES}
+      >
+        <p data-testid="pending-proposals-pane-empty" className={EMPTY_STATE_CLASSES}>
+          {t('moderator.proposalList.emptyState')}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      data-testid="pending-proposals-pane"
+      aria-label={paneAriaLabel}
+      className={PANE_CONTAINER_CLASSES}
+    >
+      <ol data-testid="pending-proposals-pane-list" role="list" className={LIST_CLASSES}>
+        {rows.map((row) => (
+          <PendingProposalRow
+            key={row.proposalEventId}
+            row={row}
+            nowMs={resolvedNowMs}
+            systemAuthorLabel={systemAuthorLabel}
+            t={t}
+          />
+        ))}
+      </ol>
+    </div>
+  );
+}

@@ -191,6 +191,12 @@
         "sessionMissing": "no session is loaded"
       }
     },
+    "proposalList": {
+      "emptyState": "No pending proposals",
+      "paneAriaLabel": "Pending proposals list",
+      "rowAriaLabel": "{kind} by {author}, {ago}",
+      "systemAuthor": "System"
+    },
     "modeBanner": {
       "idle": {
         "label": "Idle",

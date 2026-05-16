@@ -697,4 +697,74 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
         kinds: expect.arrayContaining(['proposal']),
       });
   });
+
+  // Refinement: tasks/refinements/moderator-ui/mod_proposal_list.md
+  //
+  // Pending-proposals pane regression cover. Extends the propose-action
+  // chain above: after the propose envelope reaches the server and the
+  // `event-applied` broadcast lands the `proposal` event in
+  // `useWsStore.sessionState[sessionId].events`, the right-sidebar's
+  // pending-proposals pane derives a row from that event and renders
+  // it as the first (and only) `<li data-testid="pending-proposal-row">`
+  // inside `pending-proposals-pane-list`. The row's kind chip shows
+  // the classification label (en-US: "Fact" for the `classify-node`
+  // path the chain produces).
+  //
+  // The assertion polls with `expect.poll` to tolerate the WS round-
+  // trip latency, mirroring the `__aConversaWsStore` probe pattern
+  // used in the propose-action cover above.
+  test('alice: propose a free-floating new statement; the pending-proposals pane shows the new row at the top', async ({
+    page,
+  }) => {
+    await loginAs(page, { username: TEST_USERNAME });
+    await page.goto('/sessions/new');
+    await expect(page.getByTestId('route-create-session')).toBeVisible();
+
+    await page
+      .getByTestId('create-session-topic-input')
+      .fill('Pending proposals pane e2e regression check.');
+    await page.getByTestId('create-session-submit').click();
+    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
+    await expect(page.getByTestId('route-operate')).toBeVisible();
+
+    // The pane mounts with the empty state because the freshly-created
+    // session has no proposals yet. (The empty state replaces the
+    // `mod_right_sidebar` "Coming soon" placeholder the moment the
+    // slot is filled.)
+    await expect(page.getByTestId('pending-proposals-pane-empty')).toBeVisible();
+
+    // Drive the propose chain: type wording, pick a classification,
+    // fire Cmd/Ctrl+Enter. This is the same sequence the prior test
+    // pins for the capture pane; here we re-do it because the
+    // pending-proposals row only appears AFTER the propose round-trip
+    // resolves and the `event-applied` broadcast lands.
+    const wording = 'The proposed minimum wage would raise prices for everyone.';
+    const textarea = page.getByTestId('capture-text-input-textarea');
+    await textarea.fill(wording);
+    await page.getByTestId('classification-palette-button-fact').click();
+    const submitKey = process.platform === 'darwin' ? 'Meta+Enter' : 'Control+Enter';
+    await textarea.press(submitKey);
+
+    // Skip the assertion when the WS store is unreachable — same
+    // fallback contract as the propose-action cover above.
+    if (!(await isWsStoreReachable(page))) {
+      test.skip(
+        true,
+        'window.__aConversaWsStore is not reachable — the dev-only attachment did not fire. Full-chain assertion deferred to the seed-infrastructure environment.',
+      );
+      return;
+    }
+
+    // Poll the pane until one row appears. The wait covers the WS
+    // round-trip + the React commit; the existing propose-action
+    // cover above uses the same 10s budget.
+    await expect
+      .poll(async () => page.getByTestId('pending-proposal-row').count(), { timeout: 10_000 })
+      .toBe(1);
+
+    // The row's kind chip resolves to the en-US `methodology.kind.fact`
+    // label ("Fact"); the empty-state paragraph is no longer rendered.
+    await expect(page.getByTestId('pending-proposals-pane-empty')).toHaveCount(0);
+    await expect(page.getByTestId('pending-proposal-row-kind')).toHaveText('Fact');
+  });
 });

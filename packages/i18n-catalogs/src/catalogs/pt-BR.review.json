@@ -108,7 +108,11 @@
     "moderator.proposeAction.reason.targetWithoutRole",
     "moderator.proposeAction.reason.roleWithoutTarget",
     "moderator.proposeAction.reason.notConnected",
-    "moderator.proposeAction.reason.sessionMissing"
+    "moderator.proposeAction.reason.sessionMissing",
+    "moderator.proposalList.emptyState",
+    "moderator.proposalList.paneAriaLabel",
+    "moderator.proposalList.rowAriaLabel",
+    "moderator.proposalList.systemAuthor"
   ],
   "signed_off": []
 }

@@ -191,6 +191,12 @@
         "sessionMissing": "nenhuma sessão carregada"
       }
     },
+    "proposalList": {
+      "emptyState": "Nenhuma proposta pendente",
+      "paneAriaLabel": "Lista de propostas pendentes",
+      "rowAriaLabel": "{kind} por {author}, {ago}",
+      "systemAuthor": "Sistema"
+    },
     "modeBanner": {
       "idle": {
         "label": "Ocioso",
