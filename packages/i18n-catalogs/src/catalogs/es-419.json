@@ -387,6 +387,17 @@
         "description": "Marca una afirmación como posición de base de la cual el participante no cederá."
       }
     },
+    "diagnostic": {
+      "isOughtPrompt": {
+        "ariaLabel": "Verificación diagnóstica ser-deber",
+        "question": "¿Este enunciado en disputa carga una afirmación de deber que deba separarse de lo que es?",
+        "guidance": "Si sí, encamina hacia la descomposición de la afirmación normativa. Si no, continúa elicitando la garantía que une los datos con la afirmación.",
+        "action": {
+          "decompose": "Siguiente sugerido: descomponer la afirmación normativa",
+          "warrant": "Siguiente sugerido: elicitar la garantía"
+        }
+      }
+    },
     "contextMenu": {
       "node": {
         "proposeVote": "Proponer votación",

@@ -75,6 +75,7 @@ import { ProposeInterpretiveSplitAction } from '../layout/ProposeInterpretiveSpl
 import { useProposeAction } from '../layout/useProposeAction';
 import { GraphCanvasPane } from '../graph/GraphCanvasPane';
 import { ModeBanner } from '../layout/ModeBanner';
+import { IsOughtPrompt } from '../layout/IsOughtPrompt';
 import { PendingProposalsPane } from '../layout/PendingProposalsPane';
 import { RightSidebar } from '../layout/RightSidebar';
 import { useCaptureStore } from '../stores/captureStore';
@@ -153,6 +154,7 @@ function OperateRouteInner(props: { sessionId: string }): ReactElement {
             modeBanner={
               <>
                 <ModeBanner />
+                <IsOughtPrompt />
                 <DecomposeModeExitButton />
                 <InterpretiveSplitModeExitButton />
               </>

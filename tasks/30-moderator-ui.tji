@@ -363,6 +363,7 @@ task moderator_ui "Moderator UI" {
     task mod_is_ought_prompt "Is-ought check prompt" {
       effort 0.5d
       allocate team
+      complete 100
     }
     task mod_disputation_test_display "Disputation-test indicator (data vs. claim)" {
       effort 0.5d

@@ -387,6 +387,17 @@
         "description": "Mark a statement as a bedrock position the participant will not retreat from."
       }
     },
+    "diagnostic": {
+      "isOughtPrompt": {
+        "ariaLabel": "Is-ought diagnostic check",
+        "question": "Does this disputed wording carry an ought-claim that needs to be separated from what is?",
+        "guidance": "If yes, route toward decomposition of the normative claim. If no, continue by eliciting the warrant that links data to the claim.",
+        "action": {
+          "decompose": "Suggested next: decompose the normative claim",
+          "warrant": "Suggested next: elicit the warrant"
+        }
+      }
+    },
     "contextMenu": {
       "node": {
         "proposeVote": "Propose vote",

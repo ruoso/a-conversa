@@ -387,6 +387,17 @@
         "description": "Marque uma afirmação como posição de base da qual o participante não recuará."
       }
     },
+    "diagnostic": {
+      "isOughtPrompt": {
+        "ariaLabel": "Verificação diagnóstica ser-dever",
+        "question": "Esta formulação em disputa carrega uma afirmação de dever que precisa ser separada do que é?",
+        "guidance": "Se sim, encaminhe para decomposição da afirmação normativa. Se não, continue elicindo a garantia que liga os dados à afirmação.",
+        "action": {
+          "decompose": "Próximo sugerido: decompor a afirmação normativa",
+          "warrant": "Próximo sugerido: elicitar a garantia"
+        }
+      }
+    },
     "contextMenu": {
       "node": {
         "proposeVote": "Propor votação",
