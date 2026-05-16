@@ -49,6 +49,7 @@ import {
   projectVotesByFacet,
   selectAnnotations,
   selectEdgesForSession,
+  selectNodeWordingById,
 } from './selectors.js';
 
 const SESSION = '00000000-0000-4000-8000-0000000000a1';
@@ -1297,5 +1298,96 @@ describe('projectVotesByFacet', () => {
     expect(result.get(NODE_VOTE_1)!.get('wording')).toEqual([
       { participantId: VOTE_PARTICIPANT_A, choice: 'withdraw' },
     ]);
+  });
+});
+
+// -- selectNodeWordingById -------------------------------------------
+//
+// Refinement: tasks/refinements/moderator-ui/mod_target_auto_suggest.md
+//
+// The capture-target chip resolves the staged target's display label
+// via this selector. Cases pin the three documented branches: matching
+// `node-created` → wording string; no matching event → null;
+// last-wording-wins on duplicate `node-created` for the same id.
+
+describe('selectNodeWordingById', () => {
+  it('returns the wording for a matching node-created event', () => {
+    const events: Event[] = [
+      {
+        id: '00000000-0000-4000-8000-000000000201',
+        sessionId: SESSION,
+        sequence: 1,
+        kind: 'node-created',
+        actor: ACTOR,
+        payload: {
+          node_id: 'n-target',
+          wording: 'The proposed minimum wage would raise prices for everyone.',
+          created_by: ACTOR,
+          created_at: '2026-05-11T00:00:00.000Z',
+        },
+        createdAt: '2026-05-11T00:00:00.000Z',
+      },
+    ];
+    expect(selectNodeWordingById(events, 'n-target')).toBe(
+      'The proposed minimum wage would raise prices for everyone.',
+    );
+  });
+
+  it('returns null when no matching node-created event exists', () => {
+    const events: Event[] = [
+      {
+        id: '00000000-0000-4000-8000-000000000202',
+        sessionId: SESSION,
+        sequence: 1,
+        kind: 'node-created',
+        actor: ACTOR,
+        payload: {
+          node_id: 'n-other',
+          wording: 'irrelevant wording',
+          created_by: ACTOR,
+          created_at: '2026-05-11T00:00:00.000Z',
+        },
+        createdAt: '2026-05-11T00:00:00.000Z',
+      },
+    ];
+    expect(selectNodeWordingById(events, 'n-missing')).toBeNull();
+  });
+
+  it('returns the latest wording when multiple node-created events exist for the same id (last-write-wins)', () => {
+    // Duplicate `node-created` events for the same node id would be a
+    // wire-protocol violation, but the selector remains deterministic:
+    // the *last* one seen wins. Mirrors the rest of the projection
+    // rules' last-write-wins semantics.
+    const events: Event[] = [
+      {
+        id: '00000000-0000-4000-8000-000000000203',
+        sessionId: SESSION,
+        sequence: 1,
+        kind: 'node-created',
+        actor: ACTOR,
+        payload: {
+          node_id: 'n-dup',
+          wording: 'first wording',
+          created_by: ACTOR,
+          created_at: '2026-05-11T00:00:00.000Z',
+        },
+        createdAt: '2026-05-11T00:00:00.000Z',
+      },
+      {
+        id: '00000000-0000-4000-8000-000000000204',
+        sessionId: SESSION,
+        sequence: 2,
+        kind: 'node-created',
+        actor: ACTOR,
+        payload: {
+          node_id: 'n-dup',
+          wording: 'second wording',
+          created_by: ACTOR,
+          created_at: '2026-05-11T00:00:00.000Z',
+        },
+        createdAt: '2026-05-11T00:00:00.000Z',
+      },
+    ];
+    expect(selectNodeWordingById(events, 'n-dup')).toBe('second wording');
   });
 });

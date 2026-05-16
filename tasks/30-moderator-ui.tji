@@ -272,6 +272,7 @@ task moderator_ui "Moderator UI" {
     task mod_target_auto_suggest "Auto-suggest most-recently-active node as target" {
       effort 1d
       allocate team
+      complete 100
     }
     task mod_target_clear_override "One-gesture clear override of auto-suggested target" {
       effort 0.5d

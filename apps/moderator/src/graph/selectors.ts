@@ -167,6 +167,37 @@ export function selectAnnotations(state: WsState, sessionId: string): Annotation
 }
 
 /**
+ * Resolve the current wording for a single node by id from a session's
+ * event log.
+ *
+ * Refinement: tasks/refinements/moderator-ui/mod_target_auto_suggest.md
+ *
+ * Walks the events linearly, picks every `node-created` envelope for
+ * the requested id, and returns the *last* one seen (mirrors the rest
+ * of the projection rules' "last-write-wins" semantics; duplicate
+ * `node-created` events for the same id would be a wire-protocol
+ * violation but the selector is deterministic regardless). Returns
+ * `null` when no `node-created` event for the id exists in the slice.
+ *
+ * The cost is one O(N) scan per call. The single consumer
+ * (`<CaptureTargetChip>`) calls this once per render when the staged
+ * target is non-null; for sessions with thousands of events the cost
+ * is trivial compared to the React render the chip already pays.
+ *
+ * Pure function over `Event[]`; reuses the events slice the consumer
+ * already has via `useWsStore`.
+ */
+export function selectNodeWordingById(events: readonly Event[], nodeId: string): string | null {
+  let wording: string | null = null;
+  for (const event of events) {
+    if (event.kind !== 'node-created') continue;
+    if (event.payload.node_id !== nodeId) continue;
+    wording = event.payload.wording;
+  }
+  return wording;
+}
+
+/**
  * Pure projection from an `Event[]` slice to the `Annotation[]` shape.
  *
  * Exported separately so `projectNodes` in `GraphCanvasPane.tsx` can

@@ -1,7 +1,8 @@
 // Operate route for `/sessions/:id/operate` — the moderator console.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_classification_palette.md
-// (prior:     tasks/refinements/moderator-ui/mod_capture_text_input.md,
+// Refinement: tasks/refinements/moderator-ui/mod_target_auto_suggest.md
+// (prior:     tasks/refinements/moderator-ui/mod_classification_palette.md,
+//             tasks/refinements/moderator-ui/mod_capture_text_input.md,
 //             tasks/refinements/moderator-ui/mod_edge_rendering.md,
 //             tasks/refinements/moderator-ui/mod_node_rendering.md,
 //             tasks/refinements/moderator-ui/mod_graph_canvas_pane.md,
@@ -17,11 +18,14 @@
 // `<BottomStripCapture>` (`mod_bottom_strip_capture`) into the bottom
 // strip with `<ModeBanner>` (`mod_mode_banner`) filling the strip's
 // `modeBanner` sub-slot, `<CaptureTextInput>` (`mod_capture_text_input`)
-// filling the strip's `textInput` sub-slot, and
+// filling the strip's `textInput` sub-slot,
 // `<ClassificationPalette>` (`mod_classification_palette`) filling the
-// strip's `classificationPalette` sub-slot. The session id from the
-// route param threads into the canvas so the node + edge projection
-// layers subscribe to the right per-session slice.
+// strip's `classificationPalette` sub-slot, and
+// `<CaptureTargetChip>` (`mod_target_auto_suggest`) filling the
+// strip's `edgeRoleSelector` sub-slot (until `mod_edge_role_selector`
+// lands and composes alongside). The session id from the route param
+// threads into the canvas so the node + edge projection layers
+// subscribe to the right per-session slice.
 //
 // `route-operate` and `session-id` test ids are preserved so the
 // router-level `App.test.tsx` cases continue to pass — `session-id`
@@ -41,6 +45,7 @@ import { useParams } from 'react-router-dom';
 
 import { OperateLayout } from '../layout/OperateLayout';
 import { BottomStripCapture } from '../layout/BottomStripCapture';
+import { CaptureTargetChip } from '../layout/CaptureTargetChip';
 import { CaptureTextInput } from '../layout/CaptureTextInput';
 import { ClassificationPalette } from '../layout/ClassificationPalette';
 import { GraphCanvasPane } from '../graph/GraphCanvasPane';
@@ -76,6 +81,7 @@ export function OperateRoute(): ReactElement {
             modeBanner={<ModeBanner />}
             textInput={<CaptureTextInput onSubmit={noopSubmit} />}
             classificationPalette={<ClassificationPalette />}
+            edgeRoleSelector={<CaptureTargetChip />}
           />
         }
         rightSidebar={<RightSidebar />}

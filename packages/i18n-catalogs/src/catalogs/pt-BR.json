@@ -159,6 +159,12 @@
       "shortcutHint": "Ou pressione F / P / V / N / D",
       "unsetAria": "Limpar classificação"
     },
+    "captureTargetChip": {
+      "empty": "Sem alvo ainda",
+      "suggested": "Alvo: {label}",
+      "overrideMarkerAria": "Substituição (alvo definido manualmente)",
+      "ariaLabel": "Alvo da aresta — sugerido automaticamente a partir do nó selecionado mais recentemente"
+    },
     "modeBanner": {
       "idle": {
         "label": "Ocioso",

@@ -159,6 +159,12 @@
       "shortcutHint": "Or press F / P / V / N / D",
       "unsetAria": "Clear classification"
     },
+    "captureTargetChip": {
+      "empty": "No target yet",
+      "suggested": "Target: {label}",
+      "overrideMarkerAria": "Override (manually staged target)",
+      "ariaLabel": "Edge target — auto-suggested from the most recently selected node"
+    },
     "modeBanner": {
       "idle": {
         "label": "Idle",

@@ -84,7 +84,11 @@
     "moderator.classificationPalette.legend",
     "moderator.classificationPalette.kindButtonAriaLabel",
     "moderator.classificationPalette.shortcutHint",
-    "moderator.classificationPalette.unsetAria"
+    "moderator.classificationPalette.unsetAria",
+    "moderator.captureTargetChip.empty",
+    "moderator.captureTargetChip.suggested",
+    "moderator.captureTargetChip.overrideMarkerAria",
+    "moderator.captureTargetChip.ariaLabel"
   ],
   "signed_off": []
 }

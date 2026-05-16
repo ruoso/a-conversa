@@ -159,6 +159,12 @@
       "shortcutHint": "O presiona F / P / V / N / D",
       "unsetAria": "Limpiar clasificación"
     },
+    "captureTargetChip": {
+      "empty": "Sin objetivo todavía",
+      "suggested": "Objetivo: {label}",
+      "overrideMarkerAria": "Anulación (objetivo definido manualmente)",
+      "ariaLabel": "Objetivo del borde — sugerido automáticamente desde el nodo seleccionado más recientemente"
+    },
     "modeBanner": {
       "idle": {
         "label": "Inactivo",
