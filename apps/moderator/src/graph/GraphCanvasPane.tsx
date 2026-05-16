@@ -261,15 +261,52 @@ export function buildEdgeMenuItems(target: ContextMenuState['target']): readonly
  * statement" — mirrors the "new node" empty-canvas affordance in
  * desktop graph editors. Downstream review may add additional pane
  * actions; the menu shell already accepts an arbitrary `items` array.
+ *
+ * **`onCreateStatement` seam.** The canvas threads in a real handler
+ * that focuses the bottom-strip capture textarea (ad-hoc fix for the
+ * pane-menu placeholder shipped in `mod_context_menus`). When omitted
+ * (direct unit-test invocations from `buildPaneMenuItems.test.tsx`),
+ * the legacy `actionStub` is used so the existing factory-shape cases
+ * keep passing without each test having to thread a stub. Capture-pane
+ * state (text / classification / target / role) is deliberately NOT
+ * cleared — the menu only re-orients the operator's focus to the pane;
+ * the auto-stage target chip is a convenience the moderator may want
+ * to keep on a fresh wording.
  */
-export function buildPaneMenuItems(target: ContextMenuState['target']): readonly MenuItem[] {
+export function buildPaneMenuItems(
+  target: ContextMenuState['target'],
+  onCreateStatement?: () => void,
+): readonly MenuItem[] {
   return [
     {
       id: 'create-statement',
       labelKey: 'moderator.contextMenu.pane.createStatement',
-      onSelect: () => actionStub('create-statement', target),
+      onSelect: onCreateStatement ?? (() => actionStub('create-statement', target)),
     },
   ];
+}
+
+/**
+ * Focus the bottom-strip capture textarea. Ad-hoc fix for the pane
+ * context-menu "Create new statement" item — the menu's `onClose`
+ * fires synchronously right after `onSelect`, and the
+ * `<GraphContextMenu>` listens at the window level for the same
+ * `mousedown` that opens it, so an immediate `.focus()` can race with
+ * the close-path's React state churn. Defer to the next animation
+ * frame so the menu unmounts first, then focus the textarea.
+ *
+ * The textarea's `data-testid` is set in `CaptureTextInput.tsx`; the
+ * selector here is the single source of truth used by both this
+ * focus seam and the Playwright spec.
+ */
+export function focusCaptureTextarea(): void {
+  if (typeof window === 'undefined') return;
+  requestAnimationFrame(() => {
+    const el = document.querySelector<HTMLTextAreaElement>(
+      '[data-testid="capture-text-input-textarea"]',
+    );
+    el?.focus();
+  });
 }
 
 /**
@@ -808,7 +845,9 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
   // Build the menu items for whatever the context menu currently targets.
   // The `items` are rebuilt on every render the menu is open, but that's
   // fine — the per-item `onSelect` closes over `contextMenu.target` and
-  // gets fresh `target` data each render.
+  // gets fresh `target` data each render. The pane menu's "Create new
+  // statement" item is wired to `focusCaptureTextarea` (ad-hoc fix for
+  // the placeholder `actionStub` that shipped in `mod_context_menus`).
   let menuItems: readonly MenuItem[] = [];
   if (contextMenu !== null) {
     if (contextMenu.target.kind === 'node') {
@@ -816,7 +855,7 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
     } else if (contextMenu.target.kind === 'edge') {
       menuItems = buildEdgeMenuItems(contextMenu.target);
     } else {
-      menuItems = buildPaneMenuItems(contextMenu.target);
+      menuItems = buildPaneMenuItems(contextMenu.target, focusCaptureTextarea);
     }
   }
 

@@ -125,6 +125,7 @@ import {
   handlePaneClick,
   projectNodes,
 } from './GraphCanvasPane';
+import { CaptureTextInput } from '../layout/CaptureTextInput';
 import { STATEMENT_NODE_TYPE } from './StatementNode';
 import { applyLayout } from './layoutEngine';
 import { projectDiagnosticHighlights } from './diagnosticHighlights';
@@ -953,6 +954,17 @@ describe('GraphCanvasPane — context-menu item factories (mod_context_menus)', 
     expect(items[0]?.labelKey).toBe('moderator.contextMenu.pane.createStatement');
   });
 
+  it('buildPaneMenuItems wires create-statement to the onCreateStatement handler when provided', () => {
+    // Ad-hoc fix seam: the canvas threads in a real handler that focuses
+    // the capture textarea. Without the optional argument, the legacy
+    // actionStub is used (covered by the stub-onSelect case below).
+    const handler = vi.fn();
+    const items = buildPaneMenuItems({ kind: 'pane', id: null }, handler);
+    expect(items).toHaveLength(1);
+    items[0]?.onSelect();
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
   it('every menu-item stub onSelect runs without throwing (console.info placeholder)', () => {
     // Refinement decision: each stub `console.info`s and is replaced by
     // downstream tasks. Pin that the stubs are callable today — a future
@@ -1061,6 +1073,54 @@ describe('GraphCanvasPane — context-menu wire-up (mod_context_menus)', () => {
     expect(menu.getAttribute('data-target-kind')).toBe('pane');
     expect(menu.getAttribute('data-target-id')).toBe('');
     expect(screen.getByTestId('graph-context-menu-item-create-statement')).toBeTruthy();
+  });
+
+  it('selecting the pane menu "Create new statement" item focuses the capture textarea', () => {
+    // Ad-hoc fix regression cover: the pane menu item shipped in
+    // `mod_context_menus` had its onSelect set to a placeholder
+    // actionStub. The canvas now threads a real handler that focuses
+    // the bottom-strip capture textarea via `requestAnimationFrame`.
+    //
+    // The textarea lives in `<CaptureTextInput>`, which the moderator
+    // shell mounts inside the bottom-strip slot. Rendering both the
+    // canvas and the capture-text-input side-by-side here mirrors the
+    // production tree well enough to drive the focus seam end-to-end
+    // without the rest of the layout chrome.
+    const rafSpy = vi
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((cb: FrameRequestCallback): number => {
+        cb(0);
+        return 0;
+      });
+    try {
+      render(
+        <>
+          <GraphCanvasPane sessionId={SESSION_ID} />
+          <CaptureTextInput />
+        </>,
+      );
+      const textarea = screen.getByTestId('capture-text-input-textarea');
+      expect(document.activeElement).not.toBe(textarea);
+
+      const paneEl = document.querySelector('.react-flow__pane');
+      expect(paneEl).toBeTruthy();
+      if (paneEl === null) return;
+      act(() => {
+        fireEvent.contextMenu(paneEl, { clientX: 50, clientY: 75 });
+      });
+
+      const item = screen.getByTestId('graph-context-menu-item-create-statement');
+      act(() => {
+        fireEvent.click(item);
+      });
+
+      // The menu closes on item-click; the focus lands on the textarea
+      // inside the rAF callback (mocked to fire synchronously above).
+      expect(document.activeElement).toBe(textarea);
+      expect(screen.queryByTestId('graph-context-menu')).toBeNull();
+    } finally {
+      rafSpy.mockRestore();
+    }
   });
 
   it('clicking a menu item closes the menu (action stubs are fire-and-close)', () => {

@@ -100,6 +100,52 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     await expect(textarea).toHaveValue(`${wording}\n`);
   });
 
+  // Ad-hoc fix regression cover (no refinement — outside the WBS):
+  //
+  // The pane right-click "Create new statement" item shipped with a
+  // placeholder `actionStub` onSelect that only logged to console
+  // (commit 67feb20, `mod_context_menus`). The fix replaces the stub
+  // with a real handler that focuses the bottom-strip capture textarea
+  // via `requestAnimationFrame`. This spec pins the bridge: right-click
+  // the canvas → click the menu item → textarea is focused.
+  test('alice: pane right-click "Create new statement" focuses the capture textarea', async ({
+    page,
+  }) => {
+    await loginAs(page, { username: TEST_USERNAME });
+    await page.goto('/sessions/new');
+    await expect(page.getByTestId('route-create-session')).toBeVisible();
+
+    await page
+      .getByTestId('create-session-topic-input')
+      .fill('Pane context-menu focus-bridge regression check.');
+    await page.getByTestId('create-session-submit').click();
+    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
+    await expect(page.getByTestId('route-operate')).toBeVisible();
+
+    const textarea = page.getByTestId('capture-text-input-textarea');
+    await expect(textarea).toBeVisible();
+
+    // Move focus elsewhere so the not-focused precondition is clean.
+    // Clicking the canvas root (not the pane right-click target — a
+    // plain left-click) deselects without focusing the textarea.
+    await page.getByTestId('graph-canvas-root').click();
+    await expect(textarea).not.toBeFocused();
+
+    // Right-click the ReactFlow pane background to open the pane menu.
+    const pane = page.locator('.react-flow__pane');
+    await expect(pane).toBeVisible();
+    await pane.click({ button: 'right', position: { x: 50, y: 50 } });
+
+    const menuItem = page.getByTestId('graph-context-menu-item-create-statement');
+    await expect(menuItem).toBeVisible();
+    await menuItem.click();
+
+    // The menu closes on item-click, then the rAF-deferred focus lands
+    // on the capture textarea.
+    await expect(page.getByTestId('graph-context-menu')).toHaveCount(0);
+    await expect(textarea).toBeFocused();
+  });
+
   // Refinement: tasks/refinements/moderator-ui/mod_classification_palette.md
   //
   // The classification-palette regression cover. Pins:
