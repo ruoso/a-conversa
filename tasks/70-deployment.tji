@@ -9,6 +9,7 @@ task deployment "Deployment" {
     task prod_dockerfile "Production Dockerfile (multi-stage build)" {
       effort 1d
       allocate team
+      depends moderator_ui.mod_extract_to_mountable_library, root_app.root_dispatcher, backend.api_skeleton.serve_static_frontends_multi_surface
     }
     task prod_image_minimization "Minimize production image (size + attack surface)" {
       effort 1d
