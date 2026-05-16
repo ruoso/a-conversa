@@ -359,6 +359,111 @@ export function groupAxiomMarksByNode(marks: readonly AxiomMark[]): Map<string, 
 }
 
 /**
+ * Camel-cased projection of one **pending** (proposed-but-not-yet-
+ * committed) axiom-mark on a node.
+ *
+ * Refinement: tasks/refinements/moderator-ui/mod_axiom_mark_pending_render.md
+ *
+ * Parallel to `AxiomMark` (the committed-side projection) but keyed on
+ * the proposal-event id rather than the commit-event id. A node may
+ * carry multiple pending records (one per uncommitted axiom-mark
+ * proposal targeting it); each renders as a separate dashed-faded
+ * dot on the moderator's canvas.
+ *
+ * `proposalEventId` is the stable join key back to the proposal
+ * envelope — future per-mark vote / tooltip-detail tasks can resolve
+ * it via the events log without re-walking everything. `proposedAt`
+ * carries the proposal envelope's `createdAt` so per-mark sorting
+ * has the timestamp without re-walking the log (same rationale as
+ * `AxiomMark.committedAt`).
+ */
+export interface PendingAxiomMark {
+  readonly proposalEventId: string;
+  readonly nodeId: string;
+  readonly participantId: string;
+  readonly proposedAt: string;
+}
+
+/**
+ * Module-scope shared empty pending-axiom-mark array. Hands a stable
+ * reference to consumers (the node projection's `data.pendingAxiomMarks`
+ * default) so React / ReactFlow memoization doesn't see a fresh array
+ * on every projection pass. Same rationale as `EMPTY_AXIOM_MARKS`.
+ */
+export const EMPTY_PENDING_AXIOM_MARKS: readonly PendingAxiomMark[] = Object.freeze([]);
+
+/**
+ * Pure projection from a session's event log to the `PendingAxiomMark[]`
+ * shape — i.e. the in-flight axiom-mark proposals that have not yet been
+ * committed or escalated to meta-disagreement.
+ *
+ * Walks `events` once. For each `proposal` event whose inner proposal is
+ * `axiom-mark`, records the (nodeId, participantId, proposedAt) tuple
+ * against the proposal envelope id. For each `commit` or
+ * `meta-disagreement-marked` event whose `proposal_id` matches a
+ * recorded axiom-mark proposal, removes the entry (mirrors
+ * `derivePendingProposals`'s two-terminator handling per Decision §1 of
+ * the pending-render refinement).
+ *
+ * The surviving entries are emitted in proposal-arrival order — the
+ * typical debate scenario "A proposes axiom-mark on N9 first, then B
+ * proposes theirs" renders A's pending dot before B's.
+ *
+ * Per Decision §2, the selector does NOT enforce per-participant
+ * uniqueness: two pending axiom-mark proposals from the same
+ * `(node, participant)` pair both surface as separate entries. The
+ * propose-side validator's rule 4 only rejects when a *committed*
+ * duplicate exists; the rendering must handle the pre-engine-validation
+ * transient gracefully (two dots, both dashed-faded, until one commits).
+ */
+export function projectPendingAxiomMarks(events: readonly Event[]): PendingAxiomMark[] {
+  // Map from proposal envelope id → the pending record. Linked-Map
+  // iteration preserves proposal-arrival order so the emitted output
+  // tracks the proposal sequence (NOT terminator sequence — pending
+  // means "not yet terminated").
+  const pending = new Map<string, PendingAxiomMark>();
+  for (const event of events) {
+    if (event.kind === 'proposal') {
+      const inner = event.payload.proposal;
+      if (inner.kind === 'axiom-mark') {
+        pending.set(event.id, {
+          proposalEventId: event.id,
+          nodeId: inner.node_id,
+          participantId: inner.participant,
+          proposedAt: event.createdAt,
+        });
+      }
+      continue;
+    }
+    if (event.kind === 'commit' || event.kind === 'meta-disagreement-marked') {
+      pending.delete(event.payload.proposal_id);
+      continue;
+    }
+  }
+  return Array.from(pending.values());
+}
+
+/**
+ * Bucket pending axiom-marks by their target node id. Same `Map`-vs-
+ * `Object` rationale as `groupAxiomMarksByNode` — UUID keys + `O(1)`
+ * `get` lookups during the per-node enrichment pass in `projectNodes`.
+ */
+export function groupPendingAxiomMarksByNode(
+  marks: readonly PendingAxiomMark[],
+): Map<string, PendingAxiomMark[]> {
+  const out = new Map<string, PendingAxiomMark[]>();
+  for (const mark of marks) {
+    const existing = out.get(mark.nodeId);
+    if (existing) {
+      existing.push(mark);
+    } else {
+      out.set(mark.nodeId, [mark]);
+    }
+  }
+  return out;
+}
+
+/**
  * The Tailwind color triple for a single per-participant axiom-mark
  * badge. Each entry is a complete Tailwind class string so the JIT
  * scanner picks them up at build time (Tailwind's content-aware

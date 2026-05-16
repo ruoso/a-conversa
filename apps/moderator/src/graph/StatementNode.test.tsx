@@ -54,7 +54,7 @@ import {
 } from './StatementNode';
 import type { DiagnosticHighlight } from './diagnosticHighlights';
 import type { FacetName, FacetStatus } from './facetStatus';
-import type { Annotation, AxiomMark, Vote } from './selectors';
+import type { Annotation, AxiomMark, PendingAxiomMark, Vote } from './selectors';
 import { initI18n } from '../i18n';
 import { useSelectionStore } from '../stores';
 
@@ -78,11 +78,17 @@ function makeNodeProps(overrides: {
   id?: string;
   data: Omit<
     StatementNodeData,
-    'annotations' | 'facetStatuses' | 'axiomMarks' | 'votesByFacet' | 'diagnosticHighlight'
+    | 'annotations'
+    | 'facetStatuses'
+    | 'axiomMarks'
+    | 'pendingAxiomMarks'
+    | 'votesByFacet'
+    | 'diagnosticHighlight'
   > & {
     annotations?: readonly Annotation[];
     facetStatuses?: Readonly<Partial<Record<FacetName, FacetStatus>>>;
     axiomMarks?: readonly AxiomMark[];
+    pendingAxiomMarks?: readonly PendingAxiomMark[];
     votesByFacet?: Readonly<Partial<Record<FacetName, readonly Vote[]>>>;
     diagnosticHighlight?: DiagnosticHighlight;
   };
@@ -92,6 +98,7 @@ function makeNodeProps(overrides: {
     annotations = [],
     facetStatuses = {},
     axiomMarks = [],
+    pendingAxiomMarks = [],
     votesByFacet = {},
     diagnosticHighlight,
     ...rest
@@ -101,8 +108,16 @@ function makeNodeProps(overrides: {
   // optional property.
   const data: StatementNodeData =
     diagnosticHighlight === undefined
-      ? { ...rest, annotations, facetStatuses, axiomMarks, votesByFacet }
-      : { ...rest, annotations, facetStatuses, axiomMarks, votesByFacet, diagnosticHighlight };
+      ? { ...rest, annotations, facetStatuses, axiomMarks, pendingAxiomMarks, votesByFacet }
+      : {
+          ...rest,
+          annotations,
+          facetStatuses,
+          axiomMarks,
+          pendingAxiomMarks,
+          votesByFacet,
+          diagnosticHighlight,
+        };
   return {
     id,
     type: STATEMENT_NODE_TYPE,
@@ -932,6 +947,170 @@ describe('StatementNode — axiom-mark decoration row (mod_axiom_mark_decoration
     const axiomIsBeforeAnnotation =
       (axiomRow.compareDocumentPosition(annotationRow) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
     expect(axiomIsBeforeAnnotation).toBe(true);
+  });
+});
+
+describe('StatementNode — pending axiom-mark decoration row (mod_axiom_mark_pending_render)', () => {
+  // The pending-axiom-mark badge row surfaces IN-FLIGHT per-participant
+  // axiom-mark proposals on the node card. Decision §4 — the row sits
+  // IMMEDIATELY ABOVE the committed `axiom-mark-list-node-{id}` row so
+  // the eye scans "what is being proposed" before "what is on record".
+  // The container is omitted from the DOM when no pending axiom-marks
+  // exist, mirroring the committed / annotation / facet-pill row pattern.
+
+  const PENDING_PARTICIPANT_A = '00000000-0000-4000-8000-000000000001';
+  const PENDING_PARTICIPANT_B = '00000000-0000-4000-8000-000000000002';
+  const PENDING_PROPOSAL_X = 'cccccccc-cccc-4ccc-8ccc-cccccccccc01';
+  const PENDING_PROPOSAL_Y = 'cccccccc-cccc-4ccc-8ccc-cccccccccc02';
+
+  function makePendingMark(
+    overrides: Partial<PendingAxiomMark> & { participantId: string; proposalEventId: string },
+  ): PendingAxiomMark {
+    return {
+      proposalEventId: overrides.proposalEventId,
+      nodeId: overrides.nodeId ?? 'node-test-1',
+      participantId: overrides.participantId,
+      proposedAt: overrides.proposedAt ?? '2026-05-16T00:00:00.000Z',
+    };
+  }
+
+  it('does not render the pending-axiom-mark list container when the node has no pending axiom-marks', () => {
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-no-pending',
+          data: { wording: 'plain', kind: 'fact' },
+        })}
+      />,
+    );
+    expect(screen.queryByTestId('pending-axiom-mark-list-node-n-no-pending')).toBeNull();
+  });
+
+  it('renders one pending-axiom-mark badge with the right testid + data-pending="true" when the node has one pending mark', () => {
+    const mark = makePendingMark({
+      nodeId: 'n-one-pending',
+      participantId: PENDING_PARTICIPANT_A,
+      proposalEventId: PENDING_PROPOSAL_X,
+    });
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-one-pending',
+          data: {
+            wording: 'a proposed-bedrock statement',
+            kind: 'value',
+            pendingAxiomMarks: [mark],
+          },
+        })}
+      />,
+    );
+    expect(screen.getByTestId('pending-axiom-mark-list-node-n-one-pending')).toBeTruthy();
+    const badge = screen.getByTestId(
+      `pending-axiom-mark-badge-n-one-pending-${PENDING_PARTICIPANT_A}`,
+    );
+    expect(badge.getAttribute('data-pending')).toBe('true');
+  });
+
+  it('renders multiple pending-axiom-mark badges in proposal-arrival order', () => {
+    const marks: PendingAxiomMark[] = [
+      makePendingMark({
+        nodeId: 'n-multi-pending',
+        participantId: PENDING_PARTICIPANT_A,
+        proposalEventId: PENDING_PROPOSAL_X,
+      }),
+      makePendingMark({
+        nodeId: 'n-multi-pending',
+        participantId: PENDING_PARTICIPANT_B,
+        proposalEventId: PENDING_PROPOSAL_Y,
+      }),
+    ];
+    const { container } = render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-multi-pending',
+          data: { wording: 'two-in-flight', kind: 'value', pendingAxiomMarks: marks },
+        })}
+      />,
+    );
+    const ids = Array.from(
+      container.querySelectorAll('[data-testid^="pending-axiom-mark-badge-n-multi-pending-"]'),
+    ).map((el) => el.getAttribute('data-participant-id'));
+    expect(ids).toEqual([PENDING_PARTICIPANT_A, PENDING_PARTICIPANT_B]);
+  });
+
+  it('renders the pending row ABOVE the committed axiom-mark row when both are present (Decision §4)', () => {
+    // Pending (forward-looking) above committed (backward-looking) —
+    // the lifecycle-in-motion before the lifecycle-on-record.
+    const pendingMark = makePendingMark({
+      nodeId: 'n-both-axiom-rows',
+      participantId: PENDING_PARTICIPANT_A,
+      proposalEventId: PENDING_PROPOSAL_X,
+    });
+    const committedMark: AxiomMark = {
+      nodeId: 'n-both-axiom-rows',
+      participantId: PENDING_PARTICIPANT_B,
+      committedAt: '2026-05-11T00:00:00.000Z',
+    };
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-both-axiom-rows',
+          data: {
+            wording: 'both lifecycle states',
+            kind: 'value',
+            pendingAxiomMarks: [pendingMark],
+            axiomMarks: [committedMark],
+          },
+        })}
+      />,
+    );
+    const pendingRow = screen.getByTestId('pending-axiom-mark-list-node-n-both-axiom-rows');
+    const committedRow = screen.getByTestId('axiom-mark-list-node-n-both-axiom-rows');
+    // DOCUMENT_POSITION_FOLLOWING (4) means "other follows this" —
+    // i.e. pendingRow comes BEFORE committedRow in the DOM.
+    const pendingIsBeforeCommitted =
+      (pendingRow.compareDocumentPosition(committedRow) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+    expect(pendingIsBeforeCommitted).toBe(true);
+  });
+
+  it('renders both pending AND committed badges for the same participant on the same node (pre-engine-validation transient)', () => {
+    // Edge case in v1: engine rule 4 rejects a second-from-same-participant
+    // once a commit lands, but the rendering must handle the
+    // pre-engine-validation transient gracefully — Anna has a committed
+    // mark on this node AND has a second proposal still in flight.
+    const pendingMark = makePendingMark({
+      nodeId: 'n-same-participant-both',
+      participantId: PENDING_PARTICIPANT_A,
+      proposalEventId: PENDING_PROPOSAL_X,
+    });
+    const committedMark: AxiomMark = {
+      nodeId: 'n-same-participant-both',
+      participantId: PENDING_PARTICIPANT_A,
+      committedAt: '2026-05-11T00:00:00.000Z',
+    };
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-same-participant-both',
+          data: {
+            wording: 'same-participant transient',
+            kind: 'value',
+            pendingAxiomMarks: [pendingMark],
+            axiomMarks: [committedMark],
+          },
+        })}
+      />,
+    );
+    // Both badges render — one in the pending row, one in the
+    // committed row — under different testid shapes.
+    expect(
+      screen.getByTestId(
+        `pending-axiom-mark-badge-n-same-participant-both-${PENDING_PARTICIPANT_A}`,
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByTestId(`axiom-mark-badge-n-same-participant-both-${PENDING_PARTICIPANT_A}`),
+    ).toBeTruthy();
   });
 });
 

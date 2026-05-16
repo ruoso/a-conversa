@@ -88,11 +88,14 @@ import { computeFacetStatuses, EMPTY_FACET_STATUSES } from './facetStatus.js';
 import {
   EMPTY_ANNOTATIONS,
   EMPTY_AXIOM_MARKS,
+  EMPTY_PENDING_AXIOM_MARKS,
   EMPTY_VOTES_BY_FACET,
   groupAnnotationsByNode,
   groupAxiomMarksByNode,
+  groupPendingAxiomMarksByNode,
   projectAnnotations,
   projectAxiomMarks,
+  projectPendingAxiomMarks,
   projectVotesByFacet,
   selectEdgesForSession,
 } from './selectors.js';
@@ -381,6 +384,16 @@ export function projectNodes(
   // `mod_axiom_mark_decoration`.
   const axiomMarksByNode = groupAxiomMarksByNode(projectAxiomMarks(events));
 
+  // Pending axiom-mark enrichment — same up-front-pass pattern as the
+  // committed enrichment above. The pending projection walks the event
+  // log once; per-node bucketing produces a `Map<nodeId,
+  // PendingAxiomMark[]>` the main loop reads via `O(1)` `get`. Empty /
+  // absent → the shared `EMPTY_PENDING_AXIOM_MARKS` reference (stable
+  // identity keeps React / ReactFlow memoization clean for the common
+  // "no pending axiom-mark targets this node" case). Refinement:
+  // `mod_axiom_mark_pending_render`.
+  const pendingAxiomMarksByNode = groupPendingAxiomMarksByNode(projectPendingAxiomMarks(events));
+
   // Per-facet `FacetStatus` index for state-styling (refinement
   // `mod_proposed_state_styling`). Same single-pass-up-front pattern as
   // the annotation enrichment: cheaper than threading through the main
@@ -399,6 +412,8 @@ export function projectNodes(
       const facetStatuses =
         facetStatusIndex.nodes.get(event.payload.node_id) ?? EMPTY_FACET_STATUSES;
       const axiomMarks = axiomMarksByNode.get(event.payload.node_id) ?? EMPTY_AXIOM_MARKS;
+      const pendingAxiomMarks =
+        pendingAxiomMarksByNode.get(event.payload.node_id) ?? EMPTY_PENDING_AXIOM_MARKS;
       // Convert the per-node `Map<FacetName, Vote[]>` returned by
       // `projectVotesByFacet` to the `StatementNodeData.votesByFacet`
       // partial-record shape the renderer consumes. Empty / absent →
@@ -423,6 +438,7 @@ export function projectNodes(
               annotations,
               facetStatuses,
               axiomMarks,
+              pendingAxiomMarks,
               votesByFacet,
             }
           : {
@@ -431,6 +447,7 @@ export function projectNodes(
               annotations,
               facetStatuses,
               axiomMarks,
+              pendingAxiomMarks,
               votesByFacet,
               diagnosticHighlight,
             };

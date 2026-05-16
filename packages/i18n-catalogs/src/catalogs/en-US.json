@@ -92,7 +92,9 @@
     "axiomMark": {
       "label": "Axiom mark",
       "tooltip": "Axiom marked by {participantId}",
-      "srLabel": "Axiom mark from participant {participantId}"
+      "srLabel": "Axiom mark from participant {participantId}",
+      "pendingTooltip": "Pending axiom mark by {participantId}",
+      "pendingSrLabel": "Pending axiom mark from participant {participantId} — not yet committed"
     },
     "voteIndicator": {
       "label": "Participant {participantId} voted {choice}"

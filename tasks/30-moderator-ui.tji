@@ -399,7 +399,9 @@ task moderator_ui "Moderator UI" {
     task mod_axiom_mark_pending_render "Pending axiom-mark decoration" {
       effort 0.5d
       allocate team
+      complete 100
       depends !mod_axiom_mark_action
+      note "Refinement: tasks/refinements/moderator-ui/mod_axiom_mark_pending_render.md"
     }
   }
 

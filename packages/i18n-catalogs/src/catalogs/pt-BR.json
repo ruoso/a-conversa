@@ -92,7 +92,9 @@
     "axiomMark": {
       "label": "Marca de axioma",
       "tooltip": "Axioma marcado por {participantId}",
-      "srLabel": "Marca de axioma do participante {participantId}"
+      "srLabel": "Marca de axioma do participante {participantId}",
+      "pendingTooltip": "Marca de axioma pendente por {participantId}",
+      "pendingSrLabel": "Marca de axioma pendente do participante {participantId} — ainda não confirmada"
     },
     "voteIndicator": {
       "label": "Participante {participantId} votou {choice}"

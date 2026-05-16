@@ -1525,4 +1525,145 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     }, sessionId);
     expect(eventKinds).not.toContain('proposal');
   });
+
+  // Refinement: tasks/refinements/moderator-ui/mod_axiom_mark_pending_render.md
+  //
+  // Pending axiom-mark render e2e cover. Drives the full chain from a
+  // seeded participant-as-actor axiom-mark proposal in the WS store to
+  // the dashed-faded badge surfacing inside the target node card.
+  //
+  // **Why a synthetic seed instead of driving through the moderator
+  // action chain** (Decision §7 of the pending-render refinement +
+  // Decision §1 of the parent action refinement): the moderator-side
+  // action ALWAYS hits engine rule 3 (`axiom-mark-not-self`) in v1
+  // because the proposal's `participant` is one of the seeded debaters
+  // but the requester is the moderator (alice). The action's wire
+  // round-trip is exercised by the sibling axiom-mark-action test above;
+  // here we sidestep the engine rejection by writing the proposal
+  // envelope directly into the events array the projection consumes —
+  // the `actor` is one of the seeded debater user-ids (NOT the
+  // moderator's), so the projection-side rendering chain runs against
+  // a "what if rule 3 were lifted" event log. This is a v1 e2e shortcut
+  // (Decision §7(c) — the alternative of disabling rule 3 at the server
+  // would diverge test environment from production semantics, defeating
+  // the spirit of ADR 0022).
+  //
+  // Asserts:
+  //   - The `pending-axiom-mark-list-node-{nodeId}` container renders
+  //     on the seeded node card.
+  //   - A badge with `data-pending="true"` and
+  //     `data-participant-id="{seededDebaterId}"` surfaces under that
+  //     container.
+  //
+  // Skip-gates on `__aConversaWsStore` reachability via the same
+  // `test.skip(true, …)` pattern as the predecessor's seeded-graph
+  // cases (Decision §7 + the existing axiom-mark-action cover above).
+  test('alice: seed a participant-as-actor axiom-mark proposal directly → the pending badge surfaces on the node card with data-pending="true"', async ({
+    page,
+  }) => {
+    await loginAs(page, { username: TEST_USERNAME });
+    await page.goto('/sessions/new');
+    await expect(page.getByTestId('route-create-session')).toBeVisible();
+
+    await page
+      .getByTestId('create-session-topic-input')
+      .fill('Pending axiom-mark render e2e regression check.');
+    await page.getByTestId('create-session-submit').click();
+    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    await seedInviteParticipantsForGate(page);
+    await page.getByTestId('invite-enter-session').click();
+    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
+    await expect(page.getByTestId('route-operate')).toBeVisible();
+
+    if (!(await isWsStoreReachable(page))) {
+      test.skip(
+        true,
+        'window.__aConversaWsStore is not reachable — the dev-only attachment did not fire. Full-chain assertion deferred to the seed-infrastructure environment.',
+      );
+      return;
+    }
+
+    const url = new URL(page.url());
+    const sessionId = url.pathname.split('/')[2] ?? '';
+    expect(sessionId, 'session id must be parsed from the URL').toBeTruthy();
+
+    // Seed one node into the WS store via the existing helper.
+    const SEED_NODE_ID = '88888888-8888-4888-8888-888888888889';
+    await seedWsStore(page, {
+      sessionId,
+      nodes: [{ nodeId: SEED_NODE_ID, wording: 'Pending axiom-mark target seed node' }],
+    });
+
+    // Wait for the seeded node card to render on the canvas.
+    const nodeCard = page.getByTestId(`statement-node-${SEED_NODE_ID}`);
+    await expect(nodeCard).toBeVisible({ timeout: 10_000 });
+
+    // Seed a synthetic axiom-mark `proposal` envelope directly into the
+    // events array. `actor` = one of the seeded debater user-ids so the
+    // synthetic event reads as "this participant proposed an axiom-mark
+    // on themselves" — the projection accepts it the same as it would
+    // accept any real propose envelope. Bypasses the engine's rule 3
+    // entirely (we never call the propose handler).
+    const SEED_PROPOSAL_ID = '77777777-7777-4777-8777-777777777771';
+    await page.evaluate(
+      ({ sessionId, proposalId, nodeId, participantId }) => {
+        const store = (
+          window as unknown as {
+            __aConversaWsStore?: {
+              getState(): {
+                applyEvent(event: unknown): boolean;
+                sessionState: Record<string, { events: unknown[]; lastAppliedSequence: number }>;
+              };
+            };
+          }
+        ).__aConversaWsStore;
+        if (store === undefined) {
+          throw new Error(
+            'pending-axiom-mark e2e: __aConversaWsStore is undefined after the reachability gate.',
+          );
+        }
+        const createdAt = '2026-05-16T00:00:00.000Z';
+        const existing = store.getState().sessionState[sessionId];
+        const sequence = (existing?.lastAppliedSequence ?? 0) + 1;
+        store.getState().applyEvent({
+          id: proposalId,
+          sessionId,
+          sequence,
+          kind: 'proposal',
+          actor: participantId,
+          payload: {
+            proposal: {
+              kind: 'axiom-mark',
+              node_id: nodeId,
+              participant: participantId,
+            },
+          },
+          createdAt,
+        });
+      },
+      {
+        sessionId,
+        proposalId: SEED_PROPOSAL_ID,
+        nodeId: SEED_NODE_ID,
+        participantId: GATE_DEBATER_A_USER_ID,
+      },
+    );
+
+    // Assert the pending badge surfaces on the node card. The
+    // `pending-axiom-mark-list-node-{nodeId}` container renders only
+    // when at least one pending axiom-mark targets the node (no empty
+    // container — mirrors the committed row pattern).
+    const pendingRow = page.getByTestId(`pending-axiom-mark-list-node-${SEED_NODE_ID}`);
+    await expect(pendingRow).toBeVisible({ timeout: 10_000 });
+
+    // The badge surfaces with the correct testid + the
+    // `data-pending="true"` seam + the `data-participant-id` matching
+    // the seeded debater user id.
+    const pendingBadge = page.getByTestId(
+      `pending-axiom-mark-badge-${SEED_NODE_ID}-${GATE_DEBATER_A_USER_ID}`,
+    );
+    await expect(pendingBadge).toBeVisible();
+    await expect(pendingBadge).toHaveAttribute('data-pending', 'true');
+    await expect(pendingBadge).toHaveAttribute('data-participant-id', GATE_DEBATER_A_USER_ID);
+  });
 });

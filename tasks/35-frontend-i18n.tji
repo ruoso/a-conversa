@@ -187,6 +187,14 @@ task frontend_i18n "Frontend internationalization" {
     note "Surfaced via tech-debt registration policy in ORCHESTRATOR.md (this commit)."
   }
 
+  task i18n_axiom_mark_pending_render_native_review "Native-speaker review of pt-BR + es-419 pending-axiom-mark strings (2 new keys under methodology.axiomMark.*)" {
+    effort 0.5d
+    allocate team
+    depends !i18n_axiom_mark_action_native_review
+    note "Source of debt: mod_axiom_mark_pending_render (this commit) — pt-BR and es-419 drafts of the 2 new keys under methodology.axiomMark.* (pendingTooltip, pendingSrLabel) landed flagged PENDING in the *.review.json trackers; replace with native-speaker-reviewed text and sign off the review trackers. Methodology vocabulary translation — the localized phrasing must read as a clear proposed-state extension of the existing committed-state tooltip / aria-label (so the moderator hearing the screen-reader callout perceives the lifecycle distinction 'pending' vs 'committed' as continuous with the methodology's 'proposed → committed' agreement lifecycle)."
+    note "Surfaced via tech-debt registration policy in ORCHESTRATOR.md (this commit)."
+  }
+
   task i18n_keyboard_shortcuts_policy "Per-locale keyboard shortcut policy for moderator palette" {
     effort 0.5d
     allocate team

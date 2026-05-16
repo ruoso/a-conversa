@@ -23,13 +23,14 @@ import i18next from 'i18next';
 import { HoverPopover } from './HoverPopover';
 import type { StatementNodeData } from './StatementNode';
 import type { StatementEdgeData } from './selectors';
-import type { AxiomMark, Annotation } from './selectors';
+import type { AxiomMark, Annotation, PendingAxiomMark } from './selectors';
 import type { FacetName, FacetStatus } from './facetStatus';
 import { initI18n } from '../i18n';
 
 function nodeData(overrides: Partial<StatementNodeData> & { wording: string }): StatementNodeData {
   const emptyAnnotations: readonly Annotation[] = [];
   const emptyAxiomMarks: readonly AxiomMark[] = [];
+  const emptyPendingAxiomMarks: readonly PendingAxiomMark[] = [];
   const emptyFacets: Readonly<Partial<Record<FacetName, FacetStatus>>> = {};
   return {
     wording: overrides.wording,
@@ -37,6 +38,7 @@ function nodeData(overrides: Partial<StatementNodeData> & { wording: string }): 
     annotations: overrides.annotations ?? emptyAnnotations,
     facetStatuses: overrides.facetStatuses ?? emptyFacets,
     axiomMarks: overrides.axiomMarks ?? emptyAxiomMarks,
+    pendingAxiomMarks: overrides.pendingAxiomMarks ?? emptyPendingAxiomMarks,
     votesByFacet: overrides.votesByFacet ?? {},
     ...(overrides.diagnosticHighlight !== undefined
       ? { diagnosticHighlight: overrides.diagnosticHighlight }

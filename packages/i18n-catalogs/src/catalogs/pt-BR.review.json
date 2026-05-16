@@ -158,6 +158,8 @@
     "moderator.axiomMarkAction.errorBanner.timeout",
     "moderator.axiomMarkAction.errorBanner.unknown",
     "moderator.axiomMarkAction.errorBanner.notSelf",
+    "methodology.axiomMark.pendingTooltip",
+    "methodology.axiomMark.pendingSrLabel",
     "moderator.proposalFilter.textPlaceholder",
     "moderator.proposalFilter.textAriaLabel",
     "moderator.proposalFilter.clearTextAriaLabel",

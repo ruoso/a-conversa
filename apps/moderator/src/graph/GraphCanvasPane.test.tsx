@@ -396,6 +396,7 @@ describe('projectNodes — pure projection from events to ReactFlow nodes', () =
       annotations: [],
       facetStatuses: {},
       axiomMarks: [],
+      pendingAxiomMarks: [],
       votesByFacet: {},
     });
     expect(nodes[1]?.id).toBe(NODE_B);
@@ -405,6 +406,7 @@ describe('projectNodes — pure projection from events to ReactFlow nodes', () =
       annotations: [],
       facetStatuses: {},
       axiomMarks: [],
+      pendingAxiomMarks: [],
       votesByFacet: {},
     });
   });
@@ -823,6 +825,86 @@ describe('GraphCanvasPane — axiom-mark badges (mod_axiom_mark_decoration)', ()
     const badge = screen.getByTestId(`axiom-mark-badge-${NODE_A}-${PARTICIPANT_A}`);
     expect(badge.getAttribute('data-participant-id')).toBe(PARTICIPANT_A);
     expect(badge.textContent).toBe('A');
+  });
+});
+
+// -- Pending axiom-mark decoration (mod_axiom_mark_pending_render) ----
+//
+// `projectNodes` enriches each emitted node's `data.pendingAxiomMarks`
+// from the pending axiom-mark projection — the same single-up-front-
+// pass pattern the committed enrichment uses. The pending badge is
+// rendered by `<StatementNode>` from that field. These cases pin both:
+//
+//   - The projection-level enrichment (a node gets the matching
+//     pending marks; a commit removes the entry).
+//   - The end-to-end render path through the canvas: a node-created +
+//     pending axiom-mark proposal (no commit) renders the pending
+//     badge inside the node card.
+
+describe('projectNodes — pending axiom-mark enrichment (mod_axiom_mark_pending_render)', () => {
+  it('attaches a pending axiom-mark to the matching node data.pendingAxiomMarks', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'a proposed-bedrock statement' }),
+      makeAxiomMarkProposal({
+        sequence: 2,
+        envelopeId: AXIOM_PROPOSAL_A,
+        nodeId: NODE_A,
+        participantId: PARTICIPANT_A,
+      }),
+      // No commit, no meta-disagreement-marked — the proposal stays
+      // pending.
+    ];
+    const nodes = projectNodes(events);
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0]?.data.pendingAxiomMarks).toHaveLength(1);
+    expect(nodes[0]?.data.pendingAxiomMarks[0]?.participantId).toBe(PARTICIPANT_A);
+    expect(nodes[0]?.data.pendingAxiomMarks[0]?.nodeId).toBe(NODE_A);
+    expect(nodes[0]?.data.pendingAxiomMarks[0]?.proposalEventId).toBe(AXIOM_PROPOSAL_A);
+  });
+
+  it('leaves data.pendingAxiomMarks empty after the commit terminator (the proposal moved from pending to committed)', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'a' }),
+      makeAxiomMarkProposal({
+        sequence: 2,
+        envelopeId: AXIOM_PROPOSAL_A,
+        nodeId: NODE_A,
+        participantId: PARTICIPANT_A,
+      }),
+      makeCommit({ sequence: 3, proposalEnvelopeId: AXIOM_PROPOSAL_A }),
+    ];
+    const nodes = projectNodes(events);
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0]?.data.pendingAxiomMarks).toEqual([]);
+    // Sanity — the committed-side enrichment surfaces it as committed.
+    expect(nodes[0]?.data.axiomMarks).toHaveLength(1);
+  });
+});
+
+describe('GraphCanvasPane — pending axiom-mark badges (mod_axiom_mark_pending_render)', () => {
+  it('renders a pending axiom-mark badge inside the target node card after an uncommitted axiom-mark proposal', () => {
+    const store = useWsStore.getState();
+    store.applyEvent(makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'pending bedrock' }));
+    store.applyEvent(
+      makeAxiomMarkProposal({
+        sequence: 2,
+        envelopeId: AXIOM_PROPOSAL_A,
+        nodeId: NODE_A,
+        participantId: PARTICIPANT_A,
+      }),
+    );
+    // No commit yet — the proposal is pending.
+    render(<GraphCanvasPane sessionId={SESSION_ID} />);
+    // The pending badge list container renders on the node card and
+    // contains the per-participant pending badge. The badge stamps
+    // `data-pending="true"` (the new stable seam from Decision §5).
+    expect(screen.getByTestId(`pending-axiom-mark-list-node-${NODE_A}`)).toBeTruthy();
+    const badge = screen.getByTestId(`pending-axiom-mark-badge-${NODE_A}-${PARTICIPANT_A}`);
+    expect(badge.getAttribute('data-participant-id')).toBe(PARTICIPANT_A);
+    expect(badge.getAttribute('data-pending')).toBe('true');
+    expect(badge.textContent).toBe('A');
+    // The committed row is NOT present until the commit lands.
+    expect(screen.queryByTestId(`axiom-mark-list-node-${NODE_A}`)).toBeNull();
   });
 });
 

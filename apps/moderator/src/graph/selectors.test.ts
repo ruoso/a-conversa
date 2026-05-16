@@ -45,7 +45,9 @@ import {
   groupAnnotationsByEdge,
   groupAnnotationsByNode,
   groupAxiomMarksByNode,
+  groupPendingAxiomMarksByNode,
   projectAxiomMarks,
+  projectPendingAxiomMarks,
   projectVotesByFacet,
   selectAnnotations,
   selectEdgesForSession,
@@ -928,6 +930,269 @@ describe('groupAxiomMarksByNode', () => {
       PARTICIPANT_B,
     ]);
     expect(grouped.get(NODE_Y)?.map((m) => m.participantId)).toEqual([PARTICIPANT_A]);
+  });
+});
+
+// -- projectPendingAxiomMarks / groupPendingAxiomMarksByNode ----------
+//
+// Refinement: tasks/refinements/moderator-ui/mod_axiom_mark_pending_render.md
+//
+// The pending-axiom-mark projection mirrors `projectAxiomMarks` but
+// surfaces the IN-FLIGHT (proposed-but-not-committed) entries instead of
+// the committed ones. Two terminators remove an entry from the pending
+// set: `commit` and `meta-disagreement-marked` (per Decision §1, mirrors
+// `derivePendingProposals`'s two-terminator handling).
+//
+// Cases:
+//  1. Empty event log → [].
+//  2. An axiom-mark proposal with no terminator surfaces as one entry
+//     with the right (proposalEventId, nodeId, participantId, proposedAt).
+//  3. A `commit` referencing the proposal removes the entry.
+//  4. A `meta-disagreement-marked` referencing the proposal removes
+//     the entry (the second terminator).
+//  5. Two proposals from different participants on the same node both
+//     surface as separate pending entries.
+//  6. Two proposals from the SAME participant on the same node both
+//     surface (Decision §2 — selector does not enforce per-participant
+//     uniqueness on the pending set; the validator's rule 4 only rejects
+//     committed duplicates).
+//  7. Non-axiom-mark proposals are ignored.
+//  8. Emission order matches proposal-arrival order.
+//  9. groupPendingAxiomMarksByNode buckets correctly.
+
+function makeMetaDisagreementMarked(opts: {
+  sequence: number;
+  proposalEnvelopeId: string;
+  markedAt?: string;
+}): Event {
+  return {
+    id: `00000000-0000-4000-8000-${(0x900 + opts.sequence).toString(16).padStart(12, '0')}`,
+    sessionId: SESSION,
+    sequence: opts.sequence,
+    kind: 'meta-disagreement-marked',
+    actor: ACTOR,
+    payload: {
+      proposal_id: opts.proposalEnvelopeId,
+      moderator: ACTOR,
+      marked_at: opts.markedAt ?? '2026-05-11T00:00:00.000Z',
+    },
+    createdAt: opts.markedAt ?? '2026-05-11T00:00:00.000Z',
+  };
+}
+
+describe('projectPendingAxiomMarks', () => {
+  it('returns [] for an empty event log', () => {
+    expect(projectPendingAxiomMarks([])).toEqual([]);
+  });
+
+  it('emits one PendingAxiomMark for an axiom-mark proposal with no terminator', () => {
+    const events: Event[] = [
+      makeAxiomMarkProposal({
+        sequence: 1,
+        envelopeId: PROPOSAL_AX_A_X,
+        nodeId: NODE_X,
+        participantId: PARTICIPANT_A,
+      }),
+    ];
+    const pending = projectPendingAxiomMarks(events);
+    expect(pending).toHaveLength(1);
+    expect(pending[0]).toEqual({
+      proposalEventId: PROPOSAL_AX_A_X,
+      nodeId: NODE_X,
+      participantId: PARTICIPANT_A,
+      proposedAt: '2026-05-11T00:00:00.000Z',
+    });
+  });
+
+  it('removes the entry when a commit terminator references the proposal', () => {
+    const events: Event[] = [
+      makeAxiomMarkProposal({
+        sequence: 1,
+        envelopeId: PROPOSAL_AX_A_X,
+        nodeId: NODE_X,
+        participantId: PARTICIPANT_A,
+      }),
+      makeCommit({ sequence: 2, proposalEnvelopeId: PROPOSAL_AX_A_X }),
+    ];
+    expect(projectPendingAxiomMarks(events)).toEqual([]);
+  });
+
+  it('removes the entry when a meta-disagreement-marked terminator references the proposal', () => {
+    const events: Event[] = [
+      makeAxiomMarkProposal({
+        sequence: 1,
+        envelopeId: PROPOSAL_AX_A_X,
+        nodeId: NODE_X,
+        participantId: PARTICIPANT_A,
+      }),
+      makeMetaDisagreementMarked({ sequence: 2, proposalEnvelopeId: PROPOSAL_AX_A_X }),
+    ];
+    expect(projectPendingAxiomMarks(events)).toEqual([]);
+  });
+
+  it('surfaces two pending entries when two different participants propose on the same node', () => {
+    const events: Event[] = [
+      makeAxiomMarkProposal({
+        sequence: 1,
+        envelopeId: PROPOSAL_AX_A_X,
+        nodeId: NODE_X,
+        participantId: PARTICIPANT_A,
+      }),
+      makeAxiomMarkProposal({
+        sequence: 2,
+        envelopeId: PROPOSAL_AX_B_X,
+        nodeId: NODE_X,
+        participantId: PARTICIPANT_B,
+      }),
+    ];
+    const pending = projectPendingAxiomMarks(events);
+    expect(pending.map((m) => m.participantId)).toEqual([PARTICIPANT_A, PARTICIPANT_B]);
+    expect(pending.every((m) => m.nodeId === NODE_X)).toBe(true);
+  });
+
+  it('surfaces two pending entries when the SAME participant has two pending proposals on the same node (no per-participant dedup)', () => {
+    // Decision §2 — the rendering reflects the projection truth; if two
+    // pending proposals exist (even from the same participant on the
+    // same node), two dots render. A future propose-side tightening
+    // that adds a "no duplicate pending" rule would naturally collapse
+    // this case to one without any selector change.
+    const events: Event[] = [
+      makeAxiomMarkProposal({
+        sequence: 1,
+        envelopeId: PROPOSAL_AX_A_X,
+        nodeId: NODE_X,
+        participantId: PARTICIPANT_A,
+      }),
+      makeAxiomMarkProposal({
+        sequence: 2,
+        envelopeId: PROPOSAL_AX_A_Y, // reuse a different envelope id but same (node, participant)
+        nodeId: NODE_X,
+        participantId: PARTICIPANT_A,
+      }),
+    ];
+    const pending = projectPendingAxiomMarks(events);
+    expect(pending).toHaveLength(2);
+    expect(pending.map((m) => m.proposalEventId)).toEqual([PROPOSAL_AX_A_X, PROPOSAL_AX_A_Y]);
+  });
+
+  it('ignores non-axiom-mark proposals in a mixed log', () => {
+    // A `classify-node` proposal does not produce a pending entry — the
+    // axiom-mark projection is the dispatch on `inner.kind`.
+    const events: Event[] = [
+      makeNodeCreated(1, NODE_X),
+      {
+        id: '00000000-0000-4000-8000-0000000000d2',
+        sessionId: SESSION,
+        sequence: 2,
+        kind: 'proposal',
+        actor: ACTOR,
+        payload: {
+          proposal: { kind: 'classify-node', node_id: NODE_X, classification: 'fact' },
+        },
+        createdAt: '2026-05-11T00:00:00.000Z',
+      },
+      makeAxiomMarkProposal({
+        sequence: 3,
+        envelopeId: PROPOSAL_AX_A_X,
+        nodeId: NODE_X,
+        participantId: PARTICIPANT_A,
+      }),
+    ];
+    const pending = projectPendingAxiomMarks(events);
+    expect(pending).toHaveLength(1);
+    expect(pending[0]?.proposalEventId).toBe(PROPOSAL_AX_A_X);
+  });
+
+  it('emits surviving entries in proposal-arrival order', () => {
+    const events: Event[] = [
+      makeAxiomMarkProposal({
+        sequence: 1,
+        envelopeId: PROPOSAL_AX_A_X,
+        nodeId: NODE_X,
+        participantId: PARTICIPANT_A,
+      }),
+      makeAxiomMarkProposal({
+        sequence: 2,
+        envelopeId: PROPOSAL_AX_B_X,
+        nodeId: NODE_X,
+        participantId: PARTICIPANT_B,
+      }),
+      makeAxiomMarkProposal({
+        sequence: 3,
+        envelopeId: PROPOSAL_AX_A_Y,
+        nodeId: NODE_Y,
+        participantId: PARTICIPANT_A,
+      }),
+    ];
+    const pending = projectPendingAxiomMarks(events);
+    expect(pending.map((m) => m.proposalEventId)).toEqual([
+      PROPOSAL_AX_A_X,
+      PROPOSAL_AX_B_X,
+      PROPOSAL_AX_A_Y,
+    ]);
+  });
+
+  it('keeps the surviving entry when a commit references an unrelated proposal', () => {
+    // The terminator's `proposal_id` must match a recorded axiom-mark
+    // proposal id; an unrelated commit (e.g. a classify-node commit) is
+    // a no-op for the pending axiom-mark set.
+    const events: Event[] = [
+      makeAxiomMarkProposal({
+        sequence: 1,
+        envelopeId: PROPOSAL_AX_A_X,
+        nodeId: NODE_X,
+        participantId: PARTICIPANT_A,
+      }),
+      makeCommit({ sequence: 2, proposalEnvelopeId: PROPOSAL_AX_UNCOMMITTED }),
+    ];
+    const pending = projectPendingAxiomMarks(events);
+    expect(pending).toHaveLength(1);
+    expect(pending[0]?.proposalEventId).toBe(PROPOSAL_AX_A_X);
+  });
+});
+
+describe('groupPendingAxiomMarksByNode', () => {
+  it('buckets pending axiom-marks under their target node id', () => {
+    const events: Event[] = [
+      makeAxiomMarkProposal({
+        sequence: 1,
+        envelopeId: PROPOSAL_AX_A_X,
+        nodeId: NODE_X,
+        participantId: PARTICIPANT_A,
+      }),
+      makeAxiomMarkProposal({
+        sequence: 2,
+        envelopeId: PROPOSAL_AX_B_X,
+        nodeId: NODE_X,
+        participantId: PARTICIPANT_B,
+      }),
+      makeAxiomMarkProposal({
+        sequence: 3,
+        envelopeId: PROPOSAL_AX_A_Y,
+        nodeId: NODE_Y,
+        participantId: PARTICIPANT_A,
+      }),
+    ];
+    const grouped = groupPendingAxiomMarksByNode(projectPendingAxiomMarks(events));
+    expect(grouped.get(NODE_X)?.map((m) => m.participantId)).toEqual([
+      PARTICIPANT_A,
+      PARTICIPANT_B,
+    ]);
+    expect(grouped.get(NODE_Y)?.map((m) => m.participantId)).toEqual([PARTICIPANT_A]);
+  });
+
+  it('omits nodes that have no pending axiom-marks', () => {
+    const events: Event[] = [
+      makeAxiomMarkProposal({
+        sequence: 1,
+        envelopeId: PROPOSAL_AX_A_X,
+        nodeId: NODE_X,
+        participantId: PARTICIPANT_A,
+      }),
+    ];
+    const grouped = groupPendingAxiomMarksByNode(projectPendingAxiomMarks(events));
+    expect(grouped.has(NODE_X)).toBe(true);
+    expect(grouped.has(NODE_Y)).toBe(false);
   });
 });
 

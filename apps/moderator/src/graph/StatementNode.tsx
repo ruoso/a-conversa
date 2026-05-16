@@ -50,9 +50,16 @@ import { AnnotationBadge } from './AnnotationBadge.js';
 import { AxiomMarkBadge } from './AxiomMarkBadge.js';
 import { FacetPill } from './FacetPill.js';
 import { HoverPopover } from './HoverPopover.js';
+import { PendingAxiomMarkBadge } from './PendingAxiomMarkBadge.js';
 import type { DiagnosticHighlight } from './diagnosticHighlights.js';
 import type { FacetName, FacetStatus } from './facetStatus.js';
-import { EMPTY_VOTES, type Annotation, type AxiomMark, type Vote } from './selectors.js';
+import {
+  EMPTY_VOTES,
+  type Annotation,
+  type AxiomMark,
+  type PendingAxiomMark,
+  type Vote,
+} from './selectors.js';
 
 /**
  * Canonical reading order for the per-facet pill row. Matches the
@@ -113,6 +120,20 @@ export interface StatementNodeData {
    * annotation row). Refinement: `mod_axiom_mark_decoration`.
    */
   readonly axiomMarks: readonly AxiomMark[];
+  /**
+   * In-flight per-participant axiom-mark proposals on this node — i.e.
+   * proposals whose `kind === 'axiom-mark'` have been emitted but not
+   * yet terminated by a `commit` / `meta-disagreement-marked` event.
+   * Each entry renders as a separate **dashed-faded** badge in a row
+   * positioned IMMEDIATELY ABOVE the committed `axiomMarks` row (per
+   * `mod_axiom_mark_pending_render` Decision §4 — pending dots sit above
+   * committed dots so the eye scans "what is being proposed" before
+   * "what is on record"). Empty when no pending axiom-mark targets the
+   * node — the badge row is omitted from the DOM in that case (no empty
+   * container, same pattern as the committed axiom-mark / annotation
+   * rows). Refinement: `mod_axiom_mark_pending_render`.
+   */
+  readonly pendingAxiomMarks: readonly PendingAxiomMark[];
   /**
    * Per-facet `Vote[]` index for this node — one entry per facet that
    * has at least one vote on its pending proposal. Each entry is the
@@ -200,6 +221,7 @@ export function StatementNode(props: NodeProps<StatementNodeData>): ReactElement
     annotations,
     facetStatuses,
     axiomMarks,
+    pendingAxiomMarks,
     votesByFacet,
     diagnosticHighlight,
   } = data;
@@ -413,6 +435,32 @@ export function StatementNode(props: NodeProps<StatementNodeData>): ReactElement
       >
         {kindLabel}
       </p>
+      {pendingAxiomMarks.length > 0 ? (
+        // Pending axiom-mark badge row — rendered IMMEDIATELY ABOVE the
+        // committed `axiom-mark-list-node-{id}` row. The pending row
+        // surfaces in-flight per-participant axiom-mark proposals as
+        // dashed-faded dots that share their participant's color with
+        // the committed badge, so the visual lifecycle reads as
+        // "dashed-faded dot → solid dot" once the moderator commits.
+        // Per Decision §4 of `mod_axiom_mark_pending_render`: pending
+        // (forward-looking) above committed (backward-looking). Per
+        // Decision §2: the key uses `proposalEventId` (NOT
+        // `participantId`) because the propose-side validator's rule 4
+        // only rejects on COMMITTED duplicates — two pending proposals
+        // from the same `(node, participant)` pair are renderable as
+        // separate dots until the engine commits one. The container is
+        // omitted from the DOM when the list is empty (no empty
+        // container — mirrors the committed / annotation / facet-pill
+        // row pattern).
+        <div
+          data-testid={`pending-axiom-mark-list-node-${id}`}
+          className="mt-1 flex flex-wrap gap-1"
+        >
+          {pendingAxiomMarks.map((mark) => (
+            <PendingAxiomMarkBadge key={mark.proposalEventId} mark={mark} />
+          ))}
+        </div>
+      ) : null}
       {axiomMarks.length > 0 ? (
         // Axiom-mark badge row — rendered ABOVE the annotation row.
         // Axiom-marks are methodology-disposition (load-bearing for
