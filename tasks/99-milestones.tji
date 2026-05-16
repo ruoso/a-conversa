@@ -39,6 +39,12 @@ task milestones "Milestones" {
     note "Production hardening + test pinning + DoS controls rolling up the three independent M3 security reviews (auth + secrets, input validation / DoS, test-coverage gaps). Source documents live at docs/security/m3-review/. Blocks M9 — the public network surface should not be exposed before this milestone."
   }
 
+  task m_manual_lobby_smoke "Manual lobby smoke: a human user can drive a session through invite-and-lobby" {
+    milestone
+    depends !m_backend_mvp, shell_package.shell_auth_context, shell_package.shell_screen_name_form, shell_package.shell_login_logout_components, shell_package.shell_i18n_bootstrap, root_app.root_pkg_skeleton, root_app.root_providers, root_app.root_login_route, root_app.root_screen_name_route, root_app.root_logout_route, root_app.root_callback_return_to, root_app.root_manifest_loader, root_app.root_dispatcher, moderator_ui.mod_extract_to_mountable_library, backend.api_skeleton.serve_static_frontends_multi_surface, backend.session_management.list_session_participants_endpoint, backend.session_management.session_invite_self_claim_endpoint, participant_ui.part_shell.part_app_skeleton, participant_ui.part_shell.part_auth_flow, participant_ui.part_shell.part_landscape_layout, participant_ui.part_shell.part_status_indicator, participant_ui.part_session_join.part_invite_acceptance, participant_ui.part_session_join.part_lobby_view
+    note "Earliest point at which a human can manually drive: moderator creates session, generates invite URLs, two debaters open the URLs in browsers, authenticate, land in the lobby, and the moderator sees both joined. Strictly smaller than M4/M5; useful as both an orchestrator priority signal (it numbers below M4 so the orchestrator picks lobby-path leaves first naturally) and a manual-testing readiness checkpoint."
+  }
+
   task m_moderator_mvp "M4: Moderator MVP" {
     milestone
     depends !m_backend_mvp, moderator_ui.mod_capture_flow, moderator_ui.mod_pending_proposals_pane, moderator_ui.mod_decompose_flow, moderator_ui.mod_diagnostic_flow, moderator_ui.mod_axiom_mark_flow, moderator_ui.mod_session_setup, moderator_ui.mod_extract_to_mountable_library
