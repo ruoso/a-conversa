@@ -431,6 +431,12 @@
     "placeholder": {
       "title": "Painel do participante",
       "body": "Carregando…"
+    },
+    "identity": {
+      "signedInAs": "Conectado(a) como {name}"
+    },
+    "notAuthenticated": {
+      "body": "Parece que você saiu. Atualize a página para entrar novamente."
     }
   },
   "diagnostics": {

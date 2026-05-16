@@ -431,6 +431,12 @@
     "placeholder": {
       "title": "Participant surface",
       "body": "Loading…"
+    },
+    "identity": {
+      "signedInAs": "Signed in as {name}"
+    },
+    "notAuthenticated": {
+      "body": "You appear to have signed out. Refresh the page to sign in again."
     }
   },
   "diagnostics": {

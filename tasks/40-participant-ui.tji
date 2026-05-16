@@ -52,6 +52,7 @@ task participant_ui "Participant (debater) UI" {
     task part_auth_flow "Wire participant surface to shell's AuthContext" {
       effort 0.25d
       allocate team
+      complete 100
       depends !part_app_skeleton, shell_package.shell_substrate_extraction
       note "Reshaped under ADR 0026: the OAuth callback handling, login/logout, and screen-name capture all live in apps/root/ + @aconversa/shell. The participant surface only consumes useAuth() from shell for role-gating; the auth UX itself is the root's responsibility (was: implementing the auth callback handling inside the participant workspace, 1d)."
     }

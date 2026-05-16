@@ -431,6 +431,12 @@
     "placeholder": {
       "title": "Panel del participante",
       "body": "Cargando…"
+    },
+    "identity": {
+      "signedInAs": "Conectado(a) como {name}"
+    },
+    "notAuthenticated": {
+      "body": "Parece que cerraste sesión. Actualiza la página para iniciar sesión nuevamente."
     }
   },
   "diagnostics": {

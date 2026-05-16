@@ -205,7 +205,9 @@
     "moderator.modeBanner.interpretive-split.description",
     "moderator.contextMenu.node.proposeInterpretiveSplit",
     "participant.placeholder.title",
-    "participant.placeholder.body"
+    "participant.placeholder.body",
+    "participant.identity.signedInAs",
+    "participant.notAuthenticated.body"
   ],
   "signed_off": []
 }

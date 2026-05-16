@@ -1,10 +1,12 @@
 // End-to-end placeholder spec for the participant surface skeleton.
 //
 // Refinement: tasks/refinements/participant-ui/part_app_skeleton.md
+//              tasks/refinements/participant-ui/part_auth_flow.md
 // ADRs:        docs/adr/0008-e2e-framework-playwright.md
 //              docs/adr/0022-no-throwaway-verifications.md
 //              docs/adr/0026-micro-frontend-root-app.md
-// TaskJuggler: participant_ui.part_shell.part_app_skeleton
+// TaskJuggler: participant_ui.part_shell.part_app_skeleton,
+//              participant_ui.part_shell.part_auth_flow
 //
 // **What this spec pins.** The skeleton's job is to make the
 // moderator's already-emitted invite URLs (`/p/sessions/:id/invite?role=...`,
@@ -16,13 +18,15 @@
 // routerBasePath="/p" />` route, the surface's wildcard route renders,
 // and the placeholder testid is visible.
 //
-// **Scope.** One scenario, en-US only. The cross-locale placeholder
-// text is covered at the catalog parity layer. The unauthenticated
-// → `/login` deflection is `SurfaceHost`'s responsibility and is
-// already pinned by the existing root-host e2e coverage under `/m/*`
-// (`tests/e2e/create-session-flow.spec.ts` exercises the same
-// `rememberReturnTo` path); a `/p/*` mirror would duplicate coverage
-// without pinning surface-specific behavior.
+// **Scope.** The `part_app_skeleton` scenario is one en-US case for the
+// authenticated placeholder. `part_auth_flow` extends the spec with two
+// additional scenarios:
+//   (a) authenticated visit surfaces the host-supplied `screenName`
+//       under the stable `participant-identity` testid;
+//   (b) unauthenticated visit deflects to `/login` and remembers the
+//       original `/p/...` URL under `sessionStorage['a-conversa:return-to']`.
+// The cross-locale placeholder text is covered at the catalog parity
+// layer.
 //
 // **Auth.** The Playwright project that runs this spec
 // (`chromium-participant-skeleton` in `playwright.config.ts`) depends
@@ -30,7 +34,9 @@
 // dance and persists the cookie jar to `AUTH_STORAGE_STATE_PATH`.
 // `page.context()` therefore already carries `aconversa-session`
 // before the first navigation; the spec does not need to call
-// `loginAs` itself.
+// `loginAs` itself. The unauthenticated-deflection scenario opts out of
+// the bootstrap jar via `test.use({ storageState: { ... } })` so the
+// context starts cookie-free for the SPA's auth probe.
 
 import { expect, test } from '@playwright/test';
 
@@ -62,5 +68,86 @@ test.describe('Participant surface skeleton — invite URL reaches the placehold
     // main; pin the en-US text so a regression in the i18n bridge
     // (host-supplied i18n not reaching the surface) surfaces here.
     await expect(page.locator('h1').first()).toHaveText('Participant surface');
+  });
+
+  test('authenticated visit surfaces the host-supplied screenName under participant-identity', async ({
+    page,
+  }) => {
+    // Read the seeded user's `screenName` from `/api/auth/me` (the
+    // canonical authenticated-shape probe) before navigating, so the
+    // assertion below stays decoupled from which Authelia fixture user
+    // the shared `setup-auth` project happened to seed. The probe
+    // also doubles as a precondition check: if `setup-auth` didn't
+    // land the cookie jar, this read fails before the navigation does
+    // and makes the regression class obvious.
+    const meResponse = await page.request.get('/api/auth/me');
+    expect(
+      meResponse.status(),
+      'GET /api/auth/me must return 200 inside the chromium-participant-skeleton project',
+    ).toBe(200);
+    const me = (await meResponse.json()) as { userId: string; screenName: string };
+    expect(me.screenName).toBeTruthy();
+
+    await page.goto(`/p/sessions/${SESSION_ID}/invite?role=debater-A`);
+
+    // Wait for the placeholder before reading the identity row to keep
+    // the assertion order deterministic — the identity row is a child
+    // of the placeholder main per the `part_auth_flow` refinement
+    // Component-shape section.
+    await expect(page.getByTestId('route-participant-placeholder')).toBeVisible({
+      timeout: 15_000,
+    });
+
+    const identity = page.getByTestId('participant-identity');
+    await expect(
+      identity,
+      'the participant surface must surface the host-supplied screenName under participant-identity',
+    ).toBeVisible();
+    await expect(identity).toContainText(me.screenName);
+
+    // Belt-and-suspenders: the defensive panel must NOT be visible in
+    // the authenticated branch (the not-authenticated guard is only
+    // for the mid-mount status-flip / malformed-provider edges).
+    await expect(page.getByTestId('participant-not-authenticated')).toHaveCount(0);
+  });
+});
+
+test.describe('Participant surface skeleton — unauthenticated visit deflects to host login', () => {
+  // Run with a fresh, cookie-free context so the SPA's `useAuth()`
+  // probe (`GET /api/auth/me`) returns 401 and the host's
+  // `SurfaceHost` deflects to `/login` via `<Navigate to="/login" />`
+  // after `rememberReturnTo(...)`. Without this override the project's
+  // default `storageState` would short-circuit through `setup-auth`'s
+  // persisted jar and the deflection branch would never fire.
+  test.use({ storageState: { cookies: [], origins: [] } });
+
+  test('unauthenticated visit to /p/... lands on /login with the deep link remembered', async ({
+    page,
+  }) => {
+    const inviteUrl = `/p/sessions/${SESSION_ID}/invite?role=debater-A`;
+    await page.goto(inviteUrl);
+
+    // The host's `SurfaceHost` branch reads `auth.status ===
+    // 'unauthenticated'`, calls `rememberReturnTo(location.pathname +
+    // location.search + location.hash)`, then renders `<Navigate
+    // to="/login" replace />`. The browser settles on `/login`.
+    await page.waitForURL((url) => url.pathname === '/login', { timeout: 15_000 });
+
+    await expect(
+      page.getByTestId('auth-login-button'),
+      'the root host must surface the SSO affordance on /login',
+    ).toBeVisible({ timeout: 15_000 });
+
+    // `rememberReturnTo` writes to `sessionStorage` under the
+    // `a-conversa:return-to` key (see
+    // `apps/root/src/surfaces/SurfaceHost.tsx`). Read it back from the
+    // page's session storage to pin the deep-link round-trip contract.
+    const rememberedReturnTo = await page.evaluate(() =>
+      window.sessionStorage.getItem('a-conversa:return-to'),
+    );
+    expect(
+      rememberedReturnTo,
+      'SurfaceHost must remember the original /p/... URL so post-login navigation lands the debater back on the invite',
+    ).toBe(inviteUrl);
   });
 });
