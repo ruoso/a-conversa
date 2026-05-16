@@ -13,8 +13,14 @@
   },
   "include": ["src"],
   "references": [
-    { "path": "../../packages/shared-types" },
-    { "path": "../../packages/i18n-catalogs" },
-    { "path": "../../packages/shell" }
+    {
+      "path": "../../packages/shared-types"
+    },
+    {
+      "path": "../../packages/i18n-catalogs"
+    },
+    {
+      "path": "../../packages/shell"
+    }
   ]
 }
