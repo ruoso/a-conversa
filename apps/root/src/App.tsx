@@ -83,8 +83,15 @@ function LandingRoute(): ReactElement {
           {t('auth.login.title')}
         </h1>
         <p className="mt-3 text-slate-600">Micro-frontend host app</p>
-        <div className="mt-6">
-          <LoginButton className="inline-flex rounded-full bg-slate-900 px-5 py-3 text-sm font-medium text-white" />
+        <div className="mt-6 flex flex-wrap gap-3">
+          <Link
+            to="/m/sessions/new"
+            data-testid="root-start-session"
+            className="inline-flex rounded-full bg-slate-900 px-5 py-3 text-sm font-medium text-white"
+          >
+            {t('moderator.createSession.title')}
+          </Link>
+          <LoginButton className="inline-flex rounded-full border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700" />
         </div>
       </div>
     </main>

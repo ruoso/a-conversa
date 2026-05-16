@@ -30,7 +30,7 @@
 //   - `/api/auth/me` growing an extra field (no-profile-data-policy
 //     regression) — caught by the exact-shape assertion.
 //
-// **Scenario ordering — `test.describe.serial`.** The four scenarios
+// **Scenario ordering — `test.describe.serial`.** The five scenarios
 // share the compose stack's `users` table state within a CI run:
 //
 //   1. new-user — CREATES the `users` row for `alice` (the OIDC
@@ -46,6 +46,14 @@
 //      state=bogus&code=irrelevant')` and asserts the 400
 //      `auth-state-invalid` envelope. Pure HTTP, no browser
 //      navigation — fast and isolated.
+//   5. landing-to-lobby — drives the full UI chain from the root
+//      landing page through the start-session affordance, the
+//      sessionStorage-mediated return-to, the OIDC dance (new-user
+//      branch for `ben`), the create-session form, and into the
+//      moderator's session-lobby (invite-participants) view. Sits in
+//      the serial block so its OIDC dance is rate-limited together
+//      with the dances above; uses `ben` (the first non-alice seeded
+//      dev user) so the new-user branch fires fresh.
 //
 // Ordering matters because Authelia's users-file mode has no
 // programmatic user-creation API; the `users` row IS the test
@@ -205,5 +213,93 @@ test.describe.serial('OAuth flow integration — full handshake against Authelia
       body.error?.code,
       '/api/auth/callback bogus-state envelope must carry code auth-state-invalid',
     ).toBe('auth-state-invalid');
+  });
+
+  test('landing-to-lobby: unauthenticated visitor on / clicks start-session, completes OIDC, lands on /m/sessions/new, submits a topic, ends on the session lobby', async ({
+    browser,
+  }) => {
+    // Fresh browser context — no shared cookies or sessionStorage from
+    // the alice scenarios above. ben is one of the six seeded dev users
+    // in `infra/authelia/users.yml`; the alice rows from scenarios 1–3
+    // do not interfere because the users-table key is the OIDC subject,
+    // and ben's subject has not been seen before.
+    const context = await browser.newContext({ ignoreHTTPSErrors: true });
+    const page = await context.newPage();
+    try {
+      // 1. Unauthenticated visitor lands on the root SPA.
+      //    `LandingRoute` renders the unauthenticated variant: the
+      //    `root-start-session` link plus the secondary `LoginButton`.
+      await page.goto('/');
+      const startSessionLink = page.getByTestId('root-start-session');
+      await expect(
+        startSessionLink,
+        'unauthenticated / must render the start-session link',
+      ).toBeVisible({ timeout: 10_000 });
+      expect(
+        await startSessionLink.getAttribute('href'),
+        'start-session link must point at /m/sessions/new',
+      ).toBe('/m/sessions/new');
+
+      // 2. Click the link. React Router intercepts the navigation
+      //    (it's a <Link>, not a plain <a>), so the browser routes
+      //    client-side to /m/sessions/new. `SurfaceHost` matches
+      //    `/m/*`, sees `auth.status === 'unauthenticated'`,
+      //    `rememberReturnTo('/m/sessions/new')` writes the path into
+      //    sessionStorage, and the `<Navigate to="/login">` settles
+      //    the URL on /login with the SPA's LoginRoute mounted.
+      await startSessionLink.click();
+      await page.waitForURL(/\/login$/, { timeout: 10_000 });
+      await expect(
+        page.getByTestId('auth-login-button'),
+        '/login must render the SSO login button after the start-session bounce',
+      ).toBeVisible({ timeout: 10_000 });
+
+      // 3. Drive the OIDC dance. `loginAs` runs the full
+      //    `/api/auth/login` → Authelia → callback → screen-name (new
+      //    user) chain. Its final `page.goto('/login')` re-mounts the
+      //    SPA's `LoginRoute`, which reads the sessionStorage
+      //    return-to set in step 2 and renders `<Navigate to=
+      //    "/m/sessions/new" replace />` — closing the loop.
+      await loginAs(page, { username: 'ben' });
+
+      // 4. URL settles on /m/sessions/new — the remembered return-to.
+      //    `SurfaceHost` re-mounts (now authenticated) and the
+      //    moderator surface boots; the moderator's `/sessions/new`
+      //    route renders `CreateSessionRoute`.
+      await page.waitForURL(/\/m\/sessions\/new$/, { timeout: 15_000 });
+      await expect(
+        page.getByTestId('route-create-session'),
+        'remembered return-to must land us on the moderator create-session form',
+      ).toBeVisible({ timeout: 15_000 });
+
+      // 5. Fill and submit the form. The default privacy ('public')
+      //    is fine — the privacy-private branch is exercised by
+      //    `create-session-flow.spec.ts`.
+      const topic = 'Should hybrid work be the default for knowledge work?';
+      await page.getByTestId('create-session-topic-input').fill(topic);
+      await page.getByTestId('create-session-submit').click();
+
+      // 6. Land on the invite-participants view — the session lobby
+      //    per the `mod_session_lobby` refinement (the invite view is
+      //    where the moderator waits for both debaters to ready up
+      //    before the operate canvas opens).
+      await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 15_000 });
+      await expect(
+        page.getByTestId('route-invite-participants'),
+        'the lobby (invite-participants view) must mount after the create-session submit',
+      ).toBeVisible();
+
+      // 7. Moderator slot is pre-filled with `ben` — the host-as-
+      //    moderator row landed at session creation, and the WS
+      //    catch-up replay populates the slot from the per-session
+      //    event slice. Pins that the auth chain carried the
+      //    correct user identity all the way through.
+      await expect(
+        page.locator('[data-testid="invite-slot-occupant"][data-role="moderator"]'),
+        'moderator slot must show the authenticated user (ben)',
+      ).toHaveText('ben', { timeout: 15_000 });
+    } finally {
+      await context.close();
+    }
   });
 });

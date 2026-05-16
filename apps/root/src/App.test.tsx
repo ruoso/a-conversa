@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { cleanup, screen, waitFor } from '@testing-library/react';
 
 import App from './App';
 import { getTestI18n, renderWithProviders } from './testing/renderWithProviders';
@@ -9,6 +9,7 @@ beforeAll(async () => {
 });
 
 afterEach(() => {
+  cleanup();
   vi.restoreAllMocks();
   window.sessionStorage.clear();
   window.history.replaceState({}, '', '/');
@@ -21,6 +22,17 @@ describe('root app routes', () => {
     await waitFor(() => {
       expect(screen.getByTestId('auth-login-button')).toBeTruthy();
     });
+  });
+
+  it('renders a start-session link on the unauthenticated landing route', async () => {
+    renderWithProviders(<App />, { initialEntries: ['/'] });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('root-start-session')).toBeTruthy();
+    });
+    const link = screen.getByTestId('root-start-session');
+    expect(link.getAttribute('href')).toBe('/m/sessions/new');
+    expect(screen.getByTestId('auth-login-button')).toBeTruthy();
   });
 
   it('renders the screen-name route for needs-screen-name users', async () => {
