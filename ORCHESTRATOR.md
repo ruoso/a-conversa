@@ -18,8 +18,9 @@ If the orchestrator finds itself about to call `Edit`, `Write`, `Grep`, `WebFetc
 
 ## Mission
 
-Drive `a-conversa` forward by closing **every milestone in `tasks/99-milestones.tji` except `m_deployment_ready` (M9)**. M10 (`m_first_show_recorded`) depends on M9 and is therefore also out of scope. M0–M3 + M3-review are already `complete 100`; the in-scope milestone ids (used as `MILESTONE=<id>` arguments to `make unblocked`) are:
+Drive `a-conversa` forward by closing **every in-scope milestone in `tasks/99-milestones.tji`**. Out of scope: `m_deployment_ready` (M9), `m_first_show_recorded` (M10, depends on M9), and `m_backend_review` (M3-review — still has open leaves under `backend_hardening`, but its only forward edge is into M9, so its work is out of this loop's scope). M0–M3 are `complete 100`. The in-scope milestone ids (used as `MILESTONE=<id>` arguments to `make unblocked`, in pick order) are:
 
+- `m_manual_lobby_smoke` (manual lobby smoke — strictly smaller than M4/M5; pick its READY leaves first so a human can drive invite-and-lobby end-to-end as soon as possible, per its own milestone note)
 - `m_moderator_mvp` (M4)
 - `m_participant_mvp` (M5)
 - `m_audience_mvp` (M6)
@@ -51,7 +52,7 @@ Stop when no eligible leaf remains in M4..M8 (mission complete), or when a sub-a
 
 ## Task picking — the orchestrator's only direct work
 
-The orchestrator walks the in-scope milestones in lowest-number-first order — M4 (moderator MVP), M5 (participant MVP), M6 (audience MVP), M7 (end-to-end), M8 (replay MVP) — and runs `make unblocked MILESTONE=<id>` against each in turn. The first milestone with a non-empty READY list is the source for this iteration's pick.
+The orchestrator walks the in-scope milestones in the pick order listed under §Mission — `m_manual_lobby_smoke` first, then M4 → M8 — and runs `make unblocked MILESTONE=<id>` against each in turn. The first milestone with a non-empty READY list is the source for this iteration's pick.
 
 `make unblocked` already enforces the two structural eligibility properties: the listed leaves are not `complete 100` and have every predecessor `complete 100`. The orchestrator only adds the **scope filter**: skip any READY leaf whose id starts with `deployment.` (the M9 / out-of-scope rule).
 
@@ -123,9 +124,11 @@ Brief:
 > Ritual:
 >
 > 1. Append a `## Status` block to `<refinement path>`. Format: `**Done** — <today's date>.` followed by 4–8 bullets summarizing what landed, citing artifact paths. Do not rewrite earlier sections of the refinement. The implementation summary from the prior step is: `<Implementer's return summary>`.
-> 2. Add `complete 100` immediately after `allocate team` in the matching task block in `tasks/<NN>-<area>.tji`. Confirm `tj3 project.tjp 2>&1 | grep -iE "error|fatal"` is silent.
+> 2. Add `complete 100` immediately after `allocate team` in the matching task block in `tasks/<NN>-<area>.tji`.
 > 3. If the task is the last unmet dependency of a milestone in `tasks/99-milestones.tji`, add `complete 100` to that milestone too. Check by walking the milestone's `depends` list and confirming every other entry is also `complete 100`.
-> 4. **Register tech-debt tasks in the WBS.** If the Implementer's summary or the Status block names a follow-up task (typically deferred-e2e debt pointing at a provisional `<task_name>`, or any other "future task X will close this"), add that task to the appropriate `tasks/<NN>-<area>.tji` file in the same commit. Use a stable kebab/snake_case id, give it an effort estimate (`0.5d`/`1d`), an `allocate team` line, a `depends` list reflecting the real prerequisites, and a `note` line citing the source-of-debt refinement + commit. Do NOT add `complete 100` (the task is deliberately open). Confirm `tj3 project.tjp` stays silent after the addition. The orchestrator's next pick-task pass will see the new leaf and route it through the normal loop.
+> 4. **Register tech-debt tasks in the WBS.** If the Implementer's summary or the Status block names a follow-up task (typically deferred-e2e debt pointing at a provisional `<task_name>`, or any other "future task X will close this"), add that task to the appropriate `tasks/<NN>-<area>.tji` file in the same commit. Use a stable kebab/snake_case id, give it an effort estimate (`0.5d`/`1d`), an `allocate team` line, a `depends` list reflecting the real prerequisites, and a `note` line citing the source-of-debt refinement + commit. Do NOT add `complete 100` (the task is deliberately open). The orchestrator's next pick-task pass will see the new leaf and route it through the normal loop.
+>
+> WBS validation is handled by the pre-commit hook: it runs `tj3 --silent project.tjp` whenever a `.tji`/`.tjp` is staged and fails the commit on any `Warning:` or `Error:` line (strictly stricter than a `grep -iE "error|fatal"`). No separate manual `tj3` invocation in this ritual.
 >
 > Commit (one task = one commit):
 >
@@ -188,9 +191,9 @@ The orchestrator does NOT stop for routine design questions; those are decided i
 The orchestrator does not verify these itself; the first sub-agent that needs each tool surfaces a failure if missing. Listed here so a human reader knows the baseline:
 
 - `pnpm@9.15.4` via Corepack (pinned in root `package.json`).
-- Node 20 LTS.
+- Node 20+ (last verified on 20.19.2 per `docs/dev-environment.md`; no `.nvmrc` / `engines` pin).
 - Docker + Docker Compose (`make up` works).
-- Playwright Chromium installed locally (`pnpm exec playwright install chromium`). Without it, `make test` silently no-ops the browser specs — the trap that hid `mod_route_auth_gate`'s failing assertion before. Sub-agents that run Playwright confirm it's installed before invoking.
+- Playwright Chromium installed locally (`pnpm exec playwright install chromium`). Without it, `pnpm run test:e2e:smoke` (and `make test`, which invokes it) fail with a Chromium-not-found error rather than silently passing. The historical `mod_route_auth_gate` regression landed before the gap was closed; sub-agents that run Playwright still confirm it's installed before invoking.
 - `tj3` (TaskJuggler) available. The pre-commit hook runs `tj3 --silent project.tjp` whenever a `.tji`/`.tjp` file is staged and fails the commit on any `Warning:`/`Error:` line — the WBS baseline is kept warning-free. `make unblocked` (the orchestrator's only window into the WBS) shells out to `tj3` internally; if `tj3` is missing, `make unblocked` fails and the orchestrator halts via the tooling-gap stop condition.
 
 ## Reference paths passed to sub-agents
@@ -201,6 +204,7 @@ The orchestrator does NOT read these — but every sub-agent's brief should refe
 - `tasks/refinements/README.md` — refinement shape + ritual.
 - `docs/adr/README.md` — ADR convention.
 - `docs/dev-environment.md` — make targets + compose stack + pre-commit hook.
+- `ORCHESTRATOR.md` — UI-stream e2e policy, tech-debt registration policy, test-output handling rule (sub-agent briefs below cite sections of this file by name).
 
 Per-iteration, the orchestrator also passes:
 
