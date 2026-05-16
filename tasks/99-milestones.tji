@@ -41,14 +41,14 @@ task milestones "Milestones" {
 
   task m_manual_lobby_smoke "M3-lobby: Manual lobby smoke — a human user can drive a session through invite-and-lobby" {
     milestone
-    depends !m_backend_mvp, shell_package.shell_substrate_extraction, root_app.root_pkg_skeleton, root_app.root_providers, root_app.root_login_route, root_app.root_screen_name_route, root_app.root_logout_route, root_app.root_callback_return_to, root_app.root_manifest_loader, root_app.root_dispatcher, moderator_ui.mod_extract_to_mountable_library, backend.api_skeleton.serve_static_frontends_multi_surface, backend.session_management.list_session_participants_endpoint, backend.session_management.session_invite_self_claim_endpoint, participant_ui.part_shell.part_app_skeleton, participant_ui.part_shell.part_auth_flow, participant_ui.part_shell.part_landscape_layout, participant_ui.part_shell.part_status_indicator, participant_ui.part_session_join.part_invite_acceptance, participant_ui.part_session_join.part_lobby_view
+    depends !m_backend_mvp, shell_package.shell_substrate_extraction, root_app.root_pkg_skeleton, root_app.root_moderator_cutover, backend.api_skeleton.serve_static_frontends_multi_surface, backend.session_management.list_session_participants_endpoint, backend.session_management.session_invite_self_claim_endpoint, participant_ui.part_shell.part_app_skeleton, participant_ui.part_shell.part_auth_flow, participant_ui.part_shell.part_landscape_layout, participant_ui.part_shell.part_status_indicator, participant_ui.part_session_join.part_invite_acceptance, participant_ui.part_session_join.part_lobby_view
     note "Earliest point at which a human can manually drive: moderator creates session, generates invite URLs, two debaters open the URLs in browsers, authenticate, land in the lobby, and the moderator sees both joined. Strictly smaller than M4/M5; useful as both an orchestrator priority signal (it numbers below M4 so the orchestrator picks lobby-path leaves first naturally) and a manual-testing readiness checkpoint."
   }
 
   task m_moderator_mvp "M4: Moderator MVP" {
     milestone
-    depends !m_backend_mvp, moderator_ui.mod_capture_flow, moderator_ui.mod_pending_proposals_pane, moderator_ui.mod_decompose_flow, moderator_ui.mod_diagnostic_flow, moderator_ui.mod_axiom_mark_flow, moderator_ui.mod_session_setup, moderator_ui.mod_extract_to_mountable_library
-    note "A moderator can run a session: create session, capture statements, classify, decompose, run diagnostics, axiom-mark, commit. Enough to drive a debate from the operator side. Reopened on 2026-05-16 by the ADR 0026 micro-frontend pivot: now also depends on mod_extract_to_mountable_library, which converts apps/moderator from standalone SPA to mountable Vite-library bundle and repaths routes under /m/*."
+    depends !m_backend_mvp, moderator_ui.mod_capture_flow, moderator_ui.mod_pending_proposals_pane, moderator_ui.mod_decompose_flow, moderator_ui.mod_diagnostic_flow, moderator_ui.mod_axiom_mark_flow, moderator_ui.mod_session_setup, root_app.root_moderator_cutover
+    note "A moderator can run a session: create session, capture statements, classify, decompose, run diagnostics, axiom-mark, commit. Enough to drive a debate from the operator side. Reopened on 2026-05-16 by the ADR 0026 micro-frontend pivot: now also depends on root_moderator_cutover, which lands the root-host auth/dispatch wiring and the moderator mountable-library route cutover as one public-contract-preserving transition."
   }
 
   task m_participant_mvp "M5: Participant MVP" {

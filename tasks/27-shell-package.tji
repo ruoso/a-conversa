@@ -13,10 +13,9 @@
 # this group read top-to-bottom in build order.
 #
 # Net source of every leaf: extracted from apps/moderator/src/ during the
-# moderator refactor (moderator_ui.mod_extract_to_mountable_library); the
-# shell-package leaves below land the extracted code in
-# packages/shell/src/ first, and the moderator refactor then deletes the
-# moderator-local copies and rewires imports.
+# root/moderator cutover (root_app.root_moderator_cutover); the shell-package
+# leaves below land the extracted code in packages/shell/src/ first, and the
+# cutover task then deletes the moderator-local copies and rewires imports.
 
 task shell_package "Shell package (@aconversa/shell)" {
   task shell_pkg_skeleton "packages/shell workspace skeleton" {
@@ -57,7 +56,7 @@ task shell_package "Shell package (@aconversa/shell)" {
 
       Lands packages/shell/src/{auth,screen-name,login-logout,i18n,ws,error-mapper}/ with full vitest coverage, deletes the moderator-local copies, rewires ~10 moderator imports, wraps moderator main.tsx in the shell provider tree (AuthProvider + I18nProvider + WsProvider as required by the shell-side implementations), updates moderator test wrappers once, drops the obsolete no-profile-data audit block that greps a file that no longer exists.
 
-      Leaves the moderator's mountable-library refactor proper (Vite library mode, mount() export, URL prefix migration /sessions/:id/* → /m/sessions/:id/*, deletion of moderator-local index.html + main.tsx bootstrap) to the separate mod_extract_to_mountable_library task.
+      Leaves the root/moderator cutover proper (root-host auth routes + manifest/dispatcher, moderator Vite library mode + mount() export, URL prefix migration /sessions/:id/* → /m/sessions/:id/*, deletion of moderator-local index.html + main.tsx bootstrap) to the separate root_moderator_cutover task.
     ->8-
   }
 }

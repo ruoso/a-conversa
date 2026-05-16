@@ -28,54 +28,21 @@ task root_app "Root app (apps/root/)" {
     ->8-
   }
 
-  task root_providers "Top-level providers (AuthProvider + I18nProvider + BrowserRouter)" {
-    effort 0.5d
+  task root_moderator_cutover "Root auth + moderator mount cutover" {
+    effort 5d
     allocate team
-    depends !root_pkg_skeleton, shell_package.shell_substrate_extraction
+    depends !root_pkg_skeleton, moderator_ui.mod_shell, shell_package.shell_mount_contract, shell_package.shell_substrate_extraction, backend.auth.session_token_management
     note -8<-
-      Refinement: tasks/refinements/root-app/root_providers.md
+      Refinement: tasks/refinements/root-app/root_moderator_cutover.md
 
-      Wires AuthProvider + I18nProvider + BrowserRouter at the top of the tree. ADR 0026.
-    ->8-
-  }
-
-  task root_login_route "/login route" {
-    effort 0.25d
-    allocate team
-    depends !root_providers, shell_package.shell_substrate_extraction
-    note -8<-
-      Refinement: tasks/refinements/root-app/root_login_route.md
-
-      Renders shell.LoginButton. ADR 0026.
-    ->8-
-  }
-
-  task root_screen_name_route "/screen-name route" {
-    effort 0.25d
-    allocate team
-    depends !root_providers, shell_package.shell_substrate_extraction
-    note -8<-
-      Refinement: tasks/refinements/root-app/root_screen_name_route.md
-
-      Renders shell.ScreenNameForm. ADR 0026.
-    ->8-
-  }
-
-  task root_logout_route "/logout route" {
-    effort 0.25d
-    allocate team
-    depends !root_providers, shell_package.shell_substrate_extraction
-    note -8<-
-      Refinement: tasks/refinements/root-app/root_logout_route.md
-
-      POSTs /auth/logout, reloads to /login. ADR 0026.
+      Lands the public-contract-preserving ADR 0026 cutover as one leaf: root-level AuthProvider + I18nProvider + BrowserRouter wiring; the /login, /screen-name, /logout, and /auth/callback routes; the surface-manifest loader; the /m/* dispatcher; and the moderator extraction to a mount(props): UnmountFn bundle. The moderator's standalone auth chrome is deleted and its routes move from /sessions/:id/* to /m/sessions/:id/* in the SAME commit the root host starts serving the replacement shell/routes, so existing route-level tests stay attached to one coherent transition instead of spanning an awkward intermediate state.
     ->8-
   }
 
   task root_landing "/ route (authenticated + unauthenticated states)" {
     effort 0.5d
     allocate team
-    depends !root_providers
+    depends !root_moderator_cutover
     note -8<-
       Refinement: tasks/refinements/root-app/root_landing.md
 
@@ -83,43 +50,10 @@ task root_app "Root app (apps/root/)" {
     ->8-
   }
 
-  task root_callback_return_to "/auth/callback handling with return_to query" {
-    effort 0.5d
-    allocate team
-    depends !root_providers, backend.auth.session_token_management
-    note -8<-
-      Refinement: tasks/refinements/root-app/root_callback_return_to.md
-
-      /auth/callback reads return_to query parameter and routes accordingly post-auth so an invite-clicker lands back at their invite page after auth. ADR 0026.
-    ->8-
-  }
-
-  task root_manifest_loader "Surface-bundle manifest loader" {
-    effort 0.5d
-    allocate team
-    depends !root_providers, shell_package.shell_mount_contract
-    note -8<-
-      Refinement: tasks/refinements/root-app/root_manifest_loader.md
-
-      Fetches /_surfaces/manifest.json at boot and exposes loadSurface(prefix): Promise<SurfaceModule>. ADR 0026.
-    ->8-
-  }
-
-  task root_dispatcher "URL-prefix-based surface dispatcher" {
-    effort 1d
-    allocate team
-    depends !root_manifest_loader
-    note -8<-
-      Refinement: tasks/refinements/root-app/root_dispatcher.md
-
-      /m/* -> moderator, /p/* -> participant, /a/* -> audience. Calls loadSurface() then mount(). Handles unmount on URL change. ADR 0026.
-    ->8-
-  }
-
   task root_tests "Root app unit + Playwright smoke" {
     effort 1d
     allocate team
-    depends !root_dispatcher, foundation.test_infra
+    depends !root_moderator_cutover, foundation.test_infra
     note -8<-
       Refinement: tasks/refinements/root-app/root_tests.md
 

@@ -371,7 +371,7 @@ task moderator_ui "Moderator UI" {
   }
 
   task mod_diagnostic_flow "F3 — Run a diagnostic test" {
-    depends !mod_capture_flow, !mod_extract_to_mountable_library, frontend_i18n.i18n_diagnostic_descriptions
+    depends !mod_capture_flow, root_app.root_moderator_cutover, frontend_i18n.i18n_diagnostic_descriptions
     task mod_operationalization_mode "Operationalization mode" {
       effort 1d
       allocate team
@@ -397,7 +397,7 @@ task moderator_ui "Moderator UI" {
   }
 
   task mod_draw_edge_flow "F4 — Draw an edge" {
-    depends !mod_graph_rendering, !mod_extract_to_mountable_library, backend.websocket_protocol.ws_propose_message
+    depends !mod_graph_rendering, root_app.root_moderator_cutover, backend.websocket_protocol.ws_propose_message
     task mod_drag_to_create_edge "Drag from source to target gesture" {
       effort 2d
       allocate team
@@ -427,7 +427,7 @@ task moderator_ui "Moderator UI" {
   }
 
   task mod_defeater_flow "F6 — Capture a defeater" {
-    depends !mod_capture_flow, !mod_extract_to_mountable_library, data_and_methodology.methodology_engine.defeater_capture_logic
+    depends !mod_capture_flow, root_app.root_moderator_cutover, data_and_methodology.methodology_engine.defeater_capture_logic
     task mod_capture_defeater_mode "Capture-defeater mode with target selected" {
       effort 1d
       allocate team
@@ -445,7 +445,7 @@ task moderator_ui "Moderator UI" {
   }
 
   task mod_diagnostic_resolution_flow "F7 — Resolve a structural diagnostic" {
-    depends !mod_diagnostic_flow, !mod_extract_to_mountable_library, data_and_methodology.diagnostics.blocking_vs_advisory_classification, frontend_i18n.i18n_diagnostic_descriptions
+    depends !mod_diagnostic_flow, root_app.root_moderator_cutover, data_and_methodology.diagnostics.blocking_vs_advisory_classification, frontend_i18n.i18n_diagnostic_descriptions
     task mod_diagnostic_flag_pane "Diagnostic flags pane in sidebar" {
       effort 1d
       allocate team
@@ -468,7 +468,7 @@ task moderator_ui "Moderator UI" {
   }
 
   task mod_meta_move_flow "F8 — Capture a meta-move" {
-    depends !mod_capture_flow, !mod_extract_to_mountable_library, data_and_methodology.methodology_engine.meta_move_logic
+    depends !mod_capture_flow, root_app.root_moderator_cutover, data_and_methodology.methodology_engine.meta_move_logic
     task mod_meta_move_action "Capture meta-move action with target selected" {
       effort 1d
       allocate team
@@ -486,7 +486,7 @@ task moderator_ui "Moderator UI" {
   }
 
   task mod_snapshot_flow "F10 — Snapshot a segment" {
-    depends !mod_capture_flow, !mod_extract_to_mountable_library, backend.websocket_protocol.ws_snapshot_message
+    depends !mod_capture_flow, root_app.root_moderator_cutover, backend.websocket_protocol.ws_snapshot_message
     task mod_snapshot_action "Snapshot action (button + shortcut)" {
       effort 0.5d
       allocate team
@@ -504,7 +504,7 @@ task moderator_ui "Moderator UI" {
   }
 
   task mod_change_history_pane "Change history pane" {
-    depends !mod_layout.mod_right_sidebar, !mod_extract_to_mountable_library, backend.replay_endpoints.get_session_log
+    depends !mod_layout.mod_right_sidebar, root_app.root_moderator_cutover, backend.replay_endpoints.get_session_log
     task mod_history_scroller "Reverse-chronological event scroller" {
       effort 1d
       allocate team
@@ -527,7 +527,7 @@ task moderator_ui "Moderator UI" {
   }
 
   task mod_keyboard_shortcuts "Keyboard shortcuts" {
-    depends !mod_capture_flow, !mod_decompose_flow, !mod_diagnostic_flow, !mod_snapshot_flow, !mod_extract_to_mountable_library
+    depends !mod_capture_flow, !mod_decompose_flow, !mod_diagnostic_flow, !mod_snapshot_flow, root_app.root_moderator_cutover
     task mod_global_keymap "Global keymap — kind shortcuts, propose, commit, snapshot, esc" {
       effort 1d
       allocate team
@@ -540,7 +540,7 @@ task moderator_ui "Moderator UI" {
   }
 
   task mod_annotation_ui "Annotation UI" {
-    depends !mod_graph_rendering, !mod_extract_to_mountable_library, data_and_methodology.methodology_engine.annotation_logic
+    depends !mod_graph_rendering, root_app.root_moderator_cutover, data_and_methodology.methodology_engine.annotation_logic
     task mod_render_annotations "Render annotations on entities" {
       effort 1d
       allocate team
@@ -582,7 +582,7 @@ task moderator_ui "Moderator UI" {
   }
 
   task mod_tests "Moderator UI tests" {
-    depends !mod_capture_flow, !mod_decompose_flow, !mod_diagnostic_flow, !mod_pending_proposals_pane, !mod_extract_to_mountable_library, foundation.test_infra
+    depends !mod_capture_flow, !mod_decompose_flow, !mod_diagnostic_flow, !mod_pending_proposals_pane, root_app.root_moderator_cutover, foundation.test_infra
 
     task mod_unit_tests "Unit tests (components in isolation)" {
       task mod_unit_capture_pane "Capture pane component" {
@@ -710,16 +710,4 @@ task moderator_ui "Moderator UI" {
     ->8-
   }
 
-  task mod_extract_to_mountable_library "Extract moderator to mountable Vite-library bundle (ADR 0026 refactor)" {
-    effort 3d
-    allocate team
-    depends !mod_shell, shell_package.shell_mount_contract, shell_package.shell_substrate_extraction
-    note -8<-
-      Refinement: tasks/refinements/moderator-ui/mod_extract_to_mountable_library.md
-
-      Converts apps/moderator from a standalone SPA to a Vite-library bundle exporting mount(props): UnmountFn. Deletes the moderator-local auth chrome (apps/moderator/src/auth/, routes/Login.tsx, routes/ScreenName.tsx, the RequireAuth wrapper, the auth-related chunk of App.tsx) — those now live in packages/shell/ + apps/root/. Deletes apps/moderator/src/ws/client.ts in favor of the shared @aconversa/shell WS client. Repaths all moderator routes from /sessions/:id/* to /m/sessions/:id/* (including /sessions/new -> /m/sessions/new, /sessions/:id/setup -> /m/sessions/:id/setup, /sessions/:id/invite -> /m/sessions/:id/invite, /sessions/:id/lobby -> /m/sessions/:id/lobby). Updates the just-landed mod_invite_participants invite URL shape to /p/sessions/:id/invite?role=<role> (participant-facing entry point). Updates all moderator Playwright tests for the new /m/* path prefix.
-
-      ADR 0026 — micro-frontend root app + lazy-loaded surface bundles. Source-of-debt: the implicit standalone-SPA architecture under which moderator landed, now superseded.
-    ->8-
-  }
 }
