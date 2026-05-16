@@ -393,6 +393,8 @@ task moderator_ui "Moderator UI" {
     task mod_axiom_mark_action "Axiom-mark action with proposing participant" {
       effort 1d
       allocate team
+      complete 100
+      note "Refinement: tasks/refinements/moderator-ui/mod_axiom_mark_action.md"
     }
     task mod_axiom_mark_pending_render "Pending axiom-mark decoration" {
       effort 0.5d

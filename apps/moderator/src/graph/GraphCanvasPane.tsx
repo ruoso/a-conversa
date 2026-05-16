@@ -74,6 +74,7 @@ import 'reactflow/dist/style.css';
 
 import { useSelectionStore } from '../stores/index.js';
 import { useWsStore, type WsState } from '../ws/wsStore.js';
+import { AxiomMarkSubmenu } from '../layout/AxiomMarkSubmenu.js';
 import { STATEMENT_NODE_TYPE, StatementNode, type StatementNodeData } from './StatementNode.js';
 import { edgeTypes } from './edgeTypes.js';
 import { GraphContextMenu, type MenuItem } from './GraphContextMenu.js';
@@ -197,8 +198,23 @@ function actionStub(action: string, target: ContextMenuState['target']): void {
  * node-scope vocabulary; downstream tasks replace each item's
  * `onSelect` with the real handler. Exported for direct testing without
  * a React tree.
+ *
+ * **`onOpenAxiomMarkSubmenu` seam (mod_axiom_mark_action).** The
+ * canvas threads in a real handler that flips its `axiomMarkSubmenu`
+ * state to `true` — the parent menu's `axiom-mark` item then opens
+ * the participant-picker `<AxiomMarkSubmenu>` at the cursor instead
+ * of calling the legacy `actionStub`. When omitted (direct unit-test
+ * invocations of `buildNodeMenuItems`), the legacy stub is used so
+ * the existing factory-shape cases keep passing without each test
+ * having to thread an opener stub. Decision §2 of the refinement
+ * records the placement strategy (the menu item's `onSelect` flips a
+ * per-render `submenuOpen` flag rather than firing a proposal
+ * directly).
  */
-export function buildNodeMenuItems(target: ContextMenuState['target']): readonly MenuItem[] {
+export function buildNodeMenuItems(
+  target: ContextMenuState['target'],
+  onOpenAxiomMarkSubmenu?: () => void,
+): readonly MenuItem[] {
   return [
     {
       id: 'propose-vote',
@@ -223,7 +239,7 @@ export function buildNodeMenuItems(target: ContextMenuState['target']): readonly
     {
       id: 'axiom-mark',
       labelKey: 'moderator.contextMenu.node.axiomMark',
-      onSelect: () => actionStub('axiom-mark', target),
+      onSelect: onOpenAxiomMarkSubmenu ?? (() => actionStub('axiom-mark', target)),
     },
   ];
 }
@@ -583,6 +599,29 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
   // click handlers below; cleared by the menu's `onClose`. Refinement:
   // `mod_context_menus`.
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  // Axiom-mark submenu state — `null` when the participant-picker
+  // submenu is not open. Set when the node menu's `axiom-mark` item is
+  // selected; cleared by the submenu's `onClose` (outside-click /
+  // Escape) or by closing the parent context menu. Refinement:
+  // `mod_axiom_mark_action` Decision §2 — the submenu is a sibling
+  // render to `<GraphContextMenu>`, not a nested item, and its
+  // open-state lives alongside `contextMenu` on the canvas (same
+  // transient-UI-fact rationale `mod_context_menus` used).
+  const [axiomMarkSubmenu, setAxiomMarkSubmenu] = useState<{
+    readonly nodeId: string;
+    readonly x: number;
+    readonly y: number;
+  } | null>(null);
+  const closeAxiomMarkSubmenu = useCallback(() => setAxiomMarkSubmenu(null), []);
+  // **Important:** `closeContextMenu` does NOT cascade-close the
+  // submenu. The `<GraphContextMenu>` shell calls `onClose` after a
+  // menu item's `onSelect` runs (including the axiom-mark item that
+  // OPENS the submenu); cascading here would unmount the submenu in
+  // the same React commit, defeating the whole flow. The submenu
+  // owns its own outside-click / Escape close-path (mirrors the
+  // parent menu's identical handlers) and dismisses itself
+  // independently when the moderator clicks elsewhere or presses
+  // Escape.
   const closeContextMenu = useCallback(() => setContextMenu(null), []);
 
   // Right-click handlers. Each `preventDefault()`s the native browser
@@ -594,6 +633,9 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
   const handleNodeContextMenu = useCallback((event: ReactMouseEvent, node: Node): void => {
     event.preventDefault();
     useSelectionStore.getState().select({ kind: 'node', id: node.id });
+    // A fresh right-click dismisses any stale axiom-mark submenu from
+    // a prior gesture before opening the new parent menu.
+    setAxiomMarkSubmenu(null);
     setContextMenu({
       target: { kind: 'node', id: node.id },
       x: event.clientX,
@@ -603,6 +645,7 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
   const handleEdgeContextMenu = useCallback((event: ReactMouseEvent, edge: Edge): void => {
     event.preventDefault();
     useSelectionStore.getState().select({ kind: 'edge', id: edge.id });
+    setAxiomMarkSubmenu(null);
     setContextMenu({
       target: { kind: 'edge', id: edge.id },
       x: event.clientX,
@@ -611,6 +654,7 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
   }, []);
   const handlePaneContextMenu = useCallback((event: ReactMouseEvent): void => {
     event.preventDefault();
+    setAxiomMarkSubmenu(null);
     setContextMenu({
       target: { kind: 'pane', id: null },
       x: event.clientX,
@@ -848,10 +892,29 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
   // gets fresh `target` data each render. The pane menu's "Create new
   // statement" item is wired to `focusCaptureTextarea` (ad-hoc fix for
   // the placeholder `actionStub` that shipped in `mod_context_menus`).
+  // The node menu's `axiom-mark` item is wired to the canvas's
+  // `axiomMarkSubmenu` opener (refinement `mod_axiom_mark_action`).
   let menuItems: readonly MenuItem[] = [];
   if (contextMenu !== null) {
     if (contextMenu.target.kind === 'node') {
-      menuItems = buildNodeMenuItems(contextMenu.target);
+      const nodeIdForSubmenu = contextMenu.target.id;
+      const submenuX = contextMenu.x;
+      const submenuY = contextMenu.y;
+      menuItems = buildNodeMenuItems(contextMenu.target, () => {
+        // Open the participant-picker submenu at a slight inset from
+        // the parent menu's cursor coordinates so the two surfaces
+        // don't overlap their borders. The parent context menu's
+        // close-path runs synchronously right after this `onSelect`
+        // (the menu shell auto-closes on item activation); we set the
+        // submenu state inside the same React commit so the submenu
+        // mounts on the next render alongside the closed parent.
+        if (nodeIdForSubmenu === null) return;
+        setAxiomMarkSubmenu({
+          nodeId: nodeIdForSubmenu,
+          x: submenuX + 16,
+          y: submenuY + 16,
+        });
+      });
     } else if (contextMenu.target.kind === 'edge') {
       menuItems = buildEdgeMenuItems(contextMenu.target);
     } else {
@@ -911,6 +974,15 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
           targetId={contextMenu.target.id}
           items={menuItems}
           onClose={closeContextMenu}
+        />
+      ) : null}
+      {axiomMarkSubmenu !== null ? (
+        <AxiomMarkSubmenu
+          nodeId={axiomMarkSubmenu.nodeId}
+          x={axiomMarkSubmenu.x}
+          y={axiomMarkSubmenu.y}
+          events={events}
+          onClose={closeAxiomMarkSubmenu}
         />
       ) : null}
     </div>

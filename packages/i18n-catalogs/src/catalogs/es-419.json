@@ -268,6 +268,18 @@
       "errorRoleLabel": "Error de confirmación",
       "reason": "{reason, select, sessionNotConnected {la sesión no está conectada — reconectando…} proposalMetaDisagreement {esta propuesta está marcada como meta-desacuerdo; resuélvelo antes de confirmar} noCurrentParticipants {ningún participante se ha unido a la sesión todavía} participantsNotVoted {uno o más participantes no han votado en cada aspecto} participantsDisagree {uno o más participantes no han concordado en cada aspecto} structuralSubKindNotSupported {este tipo de propuesta aún no admite confirmación} other {desconocido}}"
     },
+    "axiomMarkAction": {
+      "submenu": {
+        "header": "Marcar como axioma para…",
+        "empty": "Ningún debatedor se ha unido aún",
+        "participantLabel": "{participantName}"
+      },
+      "errorBanner": {
+        "timeout": "La solicitud de marcado expiró — vuelve a intentarlo",
+        "unknown": "No se pudo marcar el axioma — por favor reintenta",
+        "notSelf": "Las marcas de axioma son personales — el debatedor debe proponer esto desde su propia tableta"
+      }
+    },
     "proposalFilter": {
       "textPlaceholder": "Filtrar propuestas…",
       "textAriaLabel": "Filtrar propuestas pendientes por texto",
