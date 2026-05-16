@@ -2,4 +2,21 @@ pnpm exec lint-staged \
   && pnpm run lint \
   && pnpm run typecheck \
   && pnpm run typecheck:tools \
-  && pnpm run typecheck:tests
+  && pnpm run typecheck:tests \
+  || exit 1
+
+# TaskJuggler syntax check — gated on staged .tji/.tjp files.
+# tj3 exits 0 on warnings, so we grep stderr/stdout for Warning:/Error: ourselves.
+if git diff --cached --name-only --diff-filter=ACMR | grep -qE '\.tj[pi]$'; then
+  if ! command -v tj3 >/dev/null 2>&1; then
+    echo "pre-commit: tj3 (TaskJuggler) not found in PATH; required to validate staged .tji/.tjp files." >&2
+    exit 1
+  fi
+  tj3_out=$(tj3 --silent project.tjp 2>&1)
+  tj3_rc=$?
+  if [ $tj3_rc -ne 0 ] || printf '%s\n' "$tj3_out" | grep -qE '(^|: )(Warning|Error):'; then
+    echo "pre-commit: tj3 reported warnings/errors on project.tjp:" >&2
+    printf '%s\n' "$tj3_out" | grep -E '(^|: )(Warning|Error):' >&2
+    exit 1
+  fi
+fi

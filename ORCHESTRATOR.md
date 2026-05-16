@@ -197,7 +197,7 @@ The orchestrator does not verify these itself; the first sub-agent that needs ea
 - Node 20 LTS.
 - Docker + Docker Compose (`make up` works).
 - Playwright Chromium installed locally (`pnpm exec playwright install chromium`). Without it, `make test` silently no-ops the browser specs — the trap that hid `mod_route_auth_gate`'s failing assertion before. Sub-agents that run Playwright confirm it's installed before invoking.
-- `tj3` (TaskJuggler) available.
+- `tj3` (TaskJuggler) available. The pre-commit hook runs `tj3 --silent project.tjp` whenever a `.tji`/`.tjp` file is staged and fails the commit on any `Warning:`/`Error:` line — the WBS baseline is kept warning-free.
 
 ## Reference paths passed to sub-agents
 
