@@ -34,6 +34,13 @@ import { strict as assert } from 'node:assert';
 import { PENDING_COOKIE_NAME } from '../../../apps/server/src/auth/index.js';
 import type { AConversaWorld, QueryResult } from '../support/world.js';
 
+// The auth app stood up by `backend-oauth-callback.steps.ts` uses
+// `http://authelia:9091` as the OIDC issuer URL; the handler's
+// `namespacedOauthSubject` builds the stored `oauth_subject` as
+// `<issuer-origin>:<sub>`. Mirror that here so the post-callback row
+// lookup matches the upserted row exactly.
+const OIDC_ISSUER_ORIGIN = 'http://authelia:9091';
+
 // Local view onto the shared scratch state created by
 // `backend-oauth-callback.steps.ts`. Re-declared here as a structural
 // shape rather than imported because Cucumber's step files share the
@@ -126,15 +133,33 @@ Given(
     s.stubSub = sub;
 
     // Run /auth/callback — this inserts the user with the
-    // <pending> placeholder AND issues the pending cookie.
+    // <pending> placeholder AND issues the pending cookie. Per
+    // tasks/refinements/backend/auth_callback_new_user_browser_redirect.md
+    // the new-user response is a 302 to `/screen-name?from=callback`
+    // with the pending-cookie Set-Cookie attached; the response body
+    // is empty, so the user id comes from the DB rather than the body.
     const callbackResp = await app.inject({
       method: 'GET',
       url: `/api/auth/callback?code=AUTHCODE&state=${encodeURIComponent(stateParam)}`,
     });
-    assert.equal(callbackResp.statusCode, 200, `callback failed: ${callbackResp.body}`);
-    const body = JSON.parse(callbackResp.body) as { userId?: string };
-    assert.ok(body.userId, 'callback response missing userId');
-    s.callbackUserId = body.userId;
+    assert.equal(
+      callbackResp.statusCode,
+      302,
+      `callback failed: status=${callbackResp.statusCode} body=${callbackResp.body}`,
+    );
+
+    // Compute the namespaced oauth_subject the handler upserted (the
+    // issuer URL's full origin + ':' + the stubbed sub) and look up
+    // the resulting row's id.
+    const namespacedSubject = `${OIDC_ISSUER_ORIGIN}:${sub}`;
+    const userRow = (await this.db.query('SELECT id FROM users WHERE oauth_subject = $1', [
+      namespacedSubject,
+    ])) as QueryResult<{ id: string }>;
+    assert.ok(
+      userRow.rows[0]?.id,
+      `expected a users row for oauth_subject=${namespacedSubject} after callback`,
+    );
+    s.callbackUserId = userRow.rows[0].id;
 
     // Pull the pending-cookie value off Set-Cookie so the
     // screen-name POST can replay it.

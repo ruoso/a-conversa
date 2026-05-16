@@ -24,9 +24,8 @@ Feature: OIDC callback handler — full handshake against a stubbed issuer
     Then the response status is 302
     And the Location header points at "http://authelia:9091/auth"
     When I GET the callback URL with the stored state and a stubbed sub "alice"
-    Then the response status is 200
-    And the response body's oauthSubject is "http://authelia:9091:alice"
-    And the response body's sub is "alice"
+    Then the response status is 302
+    And the Location header points at "http://localhost:3000/screen-name?from=callback"
     And a users row exists with oauth_subject "http://authelia:9091:alice"
     And the users row's screen_name is "<pending>"
 

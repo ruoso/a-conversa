@@ -18,7 +18,8 @@ Feature: No-OAuth-profile-data policy — id_token claims never leak
   Scenario: callback with profile-claim-bearing id_token — users row carries only screen_name + oauth_subject
     When I GET /auth/login
     And I GET the callback URL with the stored state and a stubbed sub "alice"
-    Then the response status is 200
+    Then the response status is 302
+    And the Location header points at "http://localhost:3000/screen-name?from=callback"
     And the response body contains none of the profile-claim values
     And the users row for "http://authelia:9091:alice" carries only id, oauth_subject, screen_name, created_at, deleted_at
     And the users row for "http://authelia:9091:alice" has screen_name "<pending>"

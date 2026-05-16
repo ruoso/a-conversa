@@ -7,9 +7,12 @@ Feature: Platform session-token — issuance, validation, and lifecycle
   The OIDC callback decides which cookie to issue based on the
   upserted row's screen_name: a returning user (non-`<pending>`) gets
   the session cookie + a 302 to APP_BASE_URL; a new user (`<pending>`)
-  gets the short-lived pending cookie + a 200 body with
-  `needsScreenName: true`. POST /auth/screen-name issues the session
-  cookie on success; POST /auth/logout clears it.
+  gets the short-lived pending cookie + a 302 to
+  `APP_BASE_URL/screen-name?from=callback` (per
+  tasks/refinements/backend/auth_callback_new_user_browser_redirect.md,
+  superseding the original 200 + `needsScreenName: true` JSON shape).
+  POST /auth/screen-name issues the session cookie on success;
+  POST /auth/logout clears it.
   Refinement: tasks/refinements/backend/session_token_management.md
   ADRs:        docs/adr/0002-auth-self-hosted-oidc-authelia.md,
                docs/adr/0022-no-throwaway-verifications.md,
@@ -30,8 +33,8 @@ Feature: Platform session-token — issuance, validation, and lifecycle
   Scenario: new user — callback issues the pending cookie, no session cookie yet
     When I GET /auth/login
     And I GET the callback URL with the stored state and a stubbed sub "newcomer"
-    Then the response status is 200
-    And the response body's needsScreenName is true
+    Then the response status is 302
+    And the Location header points at "http://localhost:3000/screen-name?from=callback"
     And the response sets a aconversa-auth-pending cookie
     And the response does NOT set a aconversa-session cookie
 
