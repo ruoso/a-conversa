@@ -132,7 +132,7 @@ import { projectDiagnosticHighlights } from './diagnosticHighlights';
 import { selectEdgesForSession } from './selectors';
 import { useWsStore } from '../ws/wsStore';
 import { useCaptureStore, useSelectionStore } from '../stores';
-import { initI18n } from '../i18n';
+import { createI18nInstance } from '@a-conversa/shell';
 
 beforeAll(() => {
   // ReactFlow's core observes each node container with `ResizeObserver`
@@ -328,7 +328,7 @@ beforeEach(async () => {
   useWsStore.getState().reset();
   useSelectionStore.getState().clear();
   useCaptureStore.getState().reset();
-  await initI18n('en-US');
+  await createI18nInstance('en-US');
   await i18next.changeLanguage('en-US');
 });
 

@@ -36,7 +36,7 @@ import i18next from 'i18next';
 import { ModeBanner } from './ModeBanner';
 import { BottomStripCapture } from './BottomStripCapture';
 import { useCaptureStore, type CaptureMode } from '../stores/captureStore';
-import { initI18n } from '../i18n';
+import { createI18nInstance } from '@a-conversa/shell';
 
 const MODES: readonly CaptureMode[] = [
   'idle',
@@ -81,7 +81,7 @@ beforeEach(async () => {
   // helper that bypasses `text` / `classification` — `reset()` does
   // exactly that and is the closest API.
   useCaptureStore.getState().reset();
-  await initI18n('en-US');
+  await createI18nInstance('en-US');
   await i18next.changeLanguage('en-US');
 });
 

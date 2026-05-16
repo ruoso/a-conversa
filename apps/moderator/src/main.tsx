@@ -2,8 +2,10 @@
 // mounting the React tree so the first paint already has the active
 // locale resolved.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_app_skeleton.md
-// ADRs:       0003 (React), 0024 (react-i18next + ICU)
+// Refinement: tasks/refinements/moderator-ui/mod_app_skeleton.md +
+//   tasks/refinements/shell-package/shell_substrate_extraction.md
+//   (the i18n bootstrap + auth provider now come from @a-conversa/shell).
+// ADRs:       0003 (React), 0024 (react-i18next + ICU), 0026 (root app).
 //
 // Locale resolution goes through `negotiateAuthenticatedLocale()` from
 // `@a-conversa/i18n-catalogs` (see refinement
@@ -11,19 +13,28 @@
 // the `aconversa_locale` cookie wins outright; otherwise the chain
 // walks `navigator.languages` (canonicalizing onto the v1 supported
 // set) and finally falls back to `en-US`.
+//
+// Provider order rationale (per shell_substrate_extraction.md Decisions):
+// i18n outermost (auth error messages localize off `t`; the auth
+// provider's children — including RequireAuth's loading-frame DOM —
+// render localized strings); then auth (the WS connection's open-or-
+// not gate is driven by `auth.status === 'authenticated'`); then
+// BrowserRouter (route components consume both providers). The WS
+// provider stays per-route (Operate + InviteParticipants) per the
+// explicit rationale at `routes/Operate.tsx` lines 38–46.
 
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import { negotiateAuthenticatedLocale } from '@a-conversa/i18n-catalogs';
+import { AuthProvider, createI18nInstance, I18nProvider } from '@a-conversa/shell';
 
 import './index.css';
 import { App } from './App';
-import { initI18n } from './i18n';
 import { useWsStore } from './ws/wsStore';
 
 async function bootstrap(): Promise<void> {
-  await initI18n(negotiateAuthenticatedLocale());
+  const i18n = await createI18nInstance(negotiateAuthenticatedLocale());
 
   // Expose the WS store on `window` so the Playwright e2e specs in
   // `tests/e2e/` can seed synthetic events into the moderator canvas
@@ -52,9 +63,13 @@ async function bootstrap(): Promise<void> {
   }
   ReactDOM.createRoot(rootElement).render(
     <React.StrictMode>
-      <BrowserRouter>
-        <App />
-      </BrowserRouter>
+      <I18nProvider i18n={i18n}>
+        <AuthProvider>
+          <BrowserRouter>
+            <App />
+          </BrowserRouter>
+        </AuthProvider>
+      </I18nProvider>
     </React.StrictMode>,
   );
 }

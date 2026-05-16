@@ -34,7 +34,7 @@ import i18next from 'i18next';
 import { EdgeRoleSelector } from './EdgeRoleSelector';
 import { CaptureTextInput } from './CaptureTextInput';
 import { useCaptureStore } from '../stores/captureStore';
-import { initI18n } from '../i18n';
+import { createI18nInstance } from '@a-conversa/shell';
 
 const EN_ROLE_LABELS: Record<string, string> = {
   supports: 'Supports',
@@ -70,7 +70,7 @@ const STAGED_TARGET = 'n-1';
 
 beforeEach(async () => {
   useCaptureStore.getState().reset();
-  await initI18n('en-US');
+  await createI18nInstance('en-US');
   await i18next.changeLanguage('en-US');
 });
 

@@ -1,30 +1,31 @@
-// `createWsClient` — the moderator console's typed WebSocket client.
+// `createWsClient` — the shell-supplied typed WebSocket client.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_ws_client.md
+// Refinement: tasks/refinements/shell-package/shell_substrate_extraction.md
+//   (Decisions §"WsStore extraction shape" — option C, the client is
+//   parameterized over a `WsStoreLike<BaseWsStoreState>` handle).
 // Canonical wire spec: docs/ws-protocol.md
 // Schema source of truth: packages/shared-types/src/ws-envelope.ts
 //
-// Responsibilities:
-//   1. Open a single `/ws` connection (cookie attached by the browser on
-//      same-origin upgrade automatically).
-//   2. Serialize outbound envelopes via `serializeWsEnvelope` and parse
-//      inbound frames via `parseWsEnvelopeJson` — both from
-//      `@a-conversa/shared-types`. This module never re-implements the
-//      envelope schema.
-//   3. Correlate `inResponseTo` ack/result/error envelopes back to the
-//      originating request via an in-memory `pending` Map keyed by the
-//      sender-minted `id`.
-//   4. Dispatch every inbound envelope into the `useWsStore` Zustand slice
-//      (server-state surface) and emit a per-envelope callback so consumers
-//      can subscribe imperatively.
-//   5. On `close`, reconnect with exponential backoff (250ms × 2^n capped
-//      at 30s, reset on every successful `hello`); on the new connection,
-//      resume every tracked subscription and issue a `catch-up` envelope
-//      keyed off the last-applied sequence per session.
+// Hoisted from `apps/moderator/src/ws/client.ts`. Two changes from the
+// moderator-side version:
+//   1. The hard import of `./wsStore.js` is replaced with a `store:
+//      WsStoreLike<BaseWsStoreState>` option. The moderator passes its
+//      richer `useWsStore`; the shell's default ships in `./defaultStore.ts`.
+//   2. The default for `store` is `createDefaultWsStore()` so callers
+//      that don't need projection-specific extensions get a working
+//      client out of the box.
 //
-// The module is browser-only (uses `WebSocket` + `crypto.randomUUID`); tests
-// inject a `makeSocket` factory + a `randomId` generator + scheduling
-// hooks so the logic runs under happy-dom without touching real network.
+// Responsibilities are otherwise identical to the moderator-side version:
+// open one `/ws` connection, serialize via `serializeWsEnvelope`, parse
+// via `parseWsEnvelopeJson`, correlate request/response via in-memory
+// pending map, dispatch inbound envelopes into the store, reconnect on
+// close with exponential backoff, resume tracked subscriptions on hello.
+//
+// The two test seams the moderator's client carries — `makeSocket`
+// factory injection and per-test `scheduleTimeout`/`cancelTimeout`
+// overrides — survive verbatim. The shell's test suite uses them; the
+// moderator's existing test infrastructure (which migrated here)
+// continues to use them too.
 
 import {
   parseWsEnvelopeJson,
@@ -36,7 +37,8 @@ import {
   type WsMessageType,
 } from '@a-conversa/shared-types';
 
-import { useWsStore } from './wsStore.js';
+import { createDefaultWsStore } from './defaultStore.js';
+import type { BaseWsStoreState, WsStoreLike } from './store-contract.js';
 
 /**
  * Per-call config for `send`. `timeoutMs` overrides the client-default
@@ -68,7 +70,7 @@ export type WsFactory = (url: string) => WsLike;
 
 /**
  * Client-internal status. Mirrors the value the store publishes via
- * `useWsStore.getState().connectionStatus`.
+ * `store.getState().connectionStatus`.
  */
 export type WsClientStatus = 'idle' | 'connecting' | 'open' | 'reconnecting' | 'closed';
 
@@ -76,7 +78,7 @@ export type WsClientStatus = 'idle' | 'connecting' | 'open' | 'reconnecting' | '
 export type EnvelopeHandler = (envelope: WsEnvelopeUnion) => void;
 
 /**
- * Configuration for the moderator WS client. `url` defaults to `/ws`
+ * Configuration for the WS client. `url` defaults to `/ws`
  * (same-origin); tests override `makeSocket` + `randomId` + scheduling
  * hooks to drive the reconnect schedule deterministically.
  */
@@ -92,7 +94,7 @@ export interface CreateWsClientOptions {
   maxBackoffMs?: number;
   /** Whether reconnect-on-close is enabled. Default `true`. */
   autoReconnect?: boolean;
-  /** Setter for the inbound-envelope dispatch fanout — defaults to writing to `useWsStore`. */
+  /** Setter for the inbound-envelope dispatch fanout. */
   onEnvelope?: EnvelopeHandler;
   /** Notifier for status transitions. */
   onStatusChange?: (status: WsClientStatus) => void;
@@ -100,6 +102,13 @@ export interface CreateWsClientOptions {
   scheduleTimeout?: (cb: () => void, delayMs: number) => unknown;
   /** Test seam: cancel a previously scheduled callback. Defaults to `clearTimeout`. */
   cancelTimeout?: (handle: unknown) => void;
+  /**
+   * Store handle the client dispatches into. Defaults to a fresh
+   * `createDefaultWsStore()` if not supplied. The moderator passes its
+   * `useWsStore` (which extends `BaseWsStoreState`); future surfaces
+   * supply their own.
+   */
+  store?: WsStoreLike<BaseWsStoreState>;
 }
 
 /**
@@ -177,45 +186,6 @@ const DEFAULT_MAX_BACKOFF_MS = 30_000;
 /** Browser `WebSocket.OPEN` readyState constant. */
 const WS_OPEN = 1;
 
-/**
- * Default-bridge to the Zustand store. The client always dispatches into
- * the store; the optional `onEnvelope` callback fires AFTER store writes
- * so subscribers see the post-write state.
- */
-function dispatchToStore(envelope: WsEnvelopeUnion): void {
-  const store = useWsStore.getState();
-  switch (envelope.type) {
-    case 'hello':
-      store.setConnectionId(envelope.payload.connectionId);
-      return;
-    case 'event-applied':
-      store.applyEvent(envelope.payload.event);
-      return;
-    case 'snapshot-state':
-      store.applySnapshot(envelope.payload.sessionId, envelope.payload.sequence);
-      return;
-    case 'proposal-status':
-      store.applyProposalStatus(envelope.payload);
-      return;
-    case 'diagnostic':
-      store.applyDiagnostic(envelope.payload);
-      return;
-    case 'error':
-      if (envelope.inResponseTo === undefined) {
-        // Only un-correlated errors land in the slice; correlated errors
-        // reject the originating send-promise and the caller decides how
-        // to surface them.
-        store.recordError(envelope.payload);
-      }
-      return;
-    default:
-      // Acks/results (`subscribed`, `proposed`, etc.) are correlated to a
-      // pending request and resolved at the call site; no store write
-      // required here.
-      return;
-  }
-}
-
 function nativeRandomId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID();
@@ -238,8 +208,8 @@ function defaultMakeSocket(url: string): WsLike {
 }
 
 /**
- * Construct a moderator WS client. The client is inert until `connect()`
- * is called; the provider component (`WsClientProvider.tsx`) owns when
+ * Construct a WS client. The client is inert until `connect()` is
+ * called; the provider component (`WsClientProvider.tsx`) owns when
  * that happens (post-auth).
  */
 export function createWsClient(options: CreateWsClientOptions = {}): WsClient {
@@ -255,6 +225,7 @@ export function createWsClient(options: CreateWsClientOptions = {}): WsClient {
     onStatusChange,
     scheduleTimeout = (cb, delay) => setTimeout(cb, delay),
     cancelTimeout = (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+    store = createDefaultWsStore(),
   } = options;
 
   let socket: WsLike | undefined;
@@ -266,10 +237,49 @@ export function createWsClient(options: CreateWsClientOptions = {}): WsClient {
   const externalHandlers = new Set<EnvelopeHandler>();
   if (externalDispatch) externalHandlers.add(externalDispatch);
 
+  /**
+   * Default-bridge to the injected store. The client always dispatches
+   * into the store; the optional `onEnvelope` callback fires AFTER store
+   * writes so subscribers see the post-write state.
+   */
+  function dispatchToStore(envelope: WsEnvelopeUnion): void {
+    const s = store.getState();
+    switch (envelope.type) {
+      case 'hello':
+        s.setConnectionId(envelope.payload.connectionId);
+        return;
+      case 'event-applied':
+        s.applyEvent(envelope.payload.event);
+        return;
+      case 'snapshot-state':
+        s.applySnapshot(envelope.payload.sessionId, envelope.payload.sequence);
+        return;
+      case 'proposal-status':
+        s.applyProposalStatus(envelope.payload);
+        return;
+      case 'diagnostic':
+        s.applyDiagnostic(envelope.payload);
+        return;
+      case 'error':
+        if (envelope.inResponseTo === undefined) {
+          // Only un-correlated errors land in the slice; correlated
+          // errors reject the originating send-promise and the caller
+          // decides how to surface them.
+          s.recordError(envelope.payload);
+        }
+        return;
+      default:
+        // Acks/results (`subscribed`, `proposed`, etc.) are correlated
+        // to a pending request and resolved at the call site; no store
+        // write required here.
+        return;
+    }
+  }
+
   function setStatus(next: WsClientStatus): void {
     if (status === next) return;
     status = next;
-    useWsStore.getState().setConnectionStatus(next);
+    store.getState().setConnectionStatus(next);
     onStatusChange?.(next);
   }
 
@@ -285,7 +295,7 @@ export function createWsClient(options: CreateWsClientOptions = {}): WsClient {
         handler(envelope);
       } catch (err) {
         // External-handler bugs must not break the receive loop.
-        console.warn('moderator ws: onEnvelope handler threw', err);
+        console.warn('ws: onEnvelope handler threw', err);
       }
     }
     if (envelope.type === 'hello') {
@@ -350,7 +360,7 @@ export function createWsClient(options: CreateWsClientOptions = {}): WsClient {
       envelope = parseWsEnvelopeJson(text);
     } catch (err) {
       if (err instanceof WsEnvelopeValidationError) {
-        console.warn('moderator ws: dropping malformed inbound frame', err.message);
+        console.warn('ws: dropping malformed inbound frame', err.message);
         return;
       }
       throw err;
@@ -362,7 +372,7 @@ export function createWsClient(options: CreateWsClientOptions = {}): WsClient {
   }
 
   function resumeSubscriptions(): void {
-    const state = useWsStore.getState();
+    const state = store.getState();
     for (const sessionId of state.subscriptions) {
       const session = state.sessionState[sessionId];
       const sinceSequence = session?.lastAppliedSequence ?? 0;
@@ -372,7 +382,7 @@ export function createWsClient(options: CreateWsClientOptions = {}): WsClient {
       void send('subscribe', { sessionId }).then(
         () => send('catch-up', { sessionId, sinceSequence }),
         (err: unknown) => {
-          console.warn('moderator ws: subscribe-resume failed', sessionId, err);
+          console.warn('ws: subscribe-resume failed', sessionId, err);
         },
       );
     }
@@ -465,10 +475,10 @@ export function createWsClient(options: CreateWsClientOptions = {}): WsClient {
   };
 
   async function trackSession(sessionId: string): Promise<void> {
-    const newlyTracked = useWsStore.getState().trackSubscription(sessionId);
+    const newlyTracked = store.getState().trackSubscription(sessionId);
     if (!newlyTracked) return;
     if (socket?.readyState === WS_OPEN && status === 'open') {
-      const session = useWsStore.getState().sessionState[sessionId];
+      const session = store.getState().sessionState[sessionId];
       const sinceSequence = session?.lastAppliedSequence ?? 0;
       await send('subscribe', { sessionId });
       await send('catch-up', { sessionId, sinceSequence });
@@ -478,14 +488,14 @@ export function createWsClient(options: CreateWsClientOptions = {}): WsClient {
   }
 
   async function untrackSession(sessionId: string): Promise<void> {
-    useWsStore.getState().untrackSubscription(sessionId);
+    store.getState().untrackSubscription(sessionId);
     if (socket?.readyState === WS_OPEN && status === 'open') {
       try {
         await send('unsubscribe', { sessionId });
       } catch (err) {
         // The server is best-effort about unsubscribe acks. We logged
         // intent already; failure here is recoverable.
-        console.warn('moderator ws: unsubscribe ack failed', sessionId, err);
+        console.warn('ws: unsubscribe ack failed', sessionId, err);
       }
     }
   }

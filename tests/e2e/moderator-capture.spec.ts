@@ -1894,9 +1894,13 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
   // commit cycle (which is what creates a node server-side) is itself
   // blocked for decompose-side commit per the open question in
   // `tasks/refinements/data-and-methodology/decomposition_logic.md`.
-  // So the propose envelope DOES reach the server, but rule 1 rejects
-  // with `target-entity-not-found` — proving the round-trip
-  // completed. The hook's snapshot-restore then re-mounts the
+  // So the propose envelope DOES reach the server, but either:
+  //   - rule 1 rejects with `target-entity-not-found`, or
+  //   - the universal sequence gate rejects earlier with
+  //     `sequence-mismatch` when `seedWsStore` leaves the local
+  //     `lastAppliedSequence` ahead of the server-side high-water mark.
+  // Both codes prove the round-trip completed. The hook's
+  // snapshot-restore then re-mounts the
   // decompose grid with the prior state and surfaces the wire-error
   // region — both observable here. Per the predecessor
   // `mod_propose_action_refinement_amendment` lesson, we explicitly do
@@ -1969,11 +1973,12 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     // (the `seedWsStore` fixture writes via `applyEvent`, not the
     // real Postgres event log). The hook's snapshot-restore re-mounts
     // the decompose grid + surfaces the wire-error region inline. The
-    // `target-entity-not-found` code carried by the wire-error proves
-    // the round-trip completed.
+    // Either `target-entity-not-found` (validator rule 1) or
+    // `sequence-mismatch` (dispatcher pre-validation gate) proves the
+    // round-trip completed.
     const wireError = page.getByTestId('propose-decomposition-action-wire-error');
     await expect(wireError).toBeVisible({ timeout: 10_000 });
-    await expect(wireError).toContainText('target-entity-not-found');
+    await expect(wireError).toContainText(/target-entity-not-found|sequence-mismatch/);
 
     // Snapshot restore re-mounted the decompose grid (mode flipped
     // back to 'decompose' after the typed rejection landed). The two
@@ -1996,9 +2001,11 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
   // §7 of the refinement records the full-chain e2e scope choice).
   //
   // The seeded parent node (via `seedWsStore`) does NOT exist in the
-  // server's Postgres event log, so `validateInterpretiveSplitProposal`
-  // rule 1 (parent-node-exists) rejects with
-  // `target-entity-not-found` — the wire-error region surfaces the
+  // server's Postgres event log, so either
+  // `validateInterpretiveSplitProposal` rule 1 rejects with
+  // `target-entity-not-found`, or the dispatcher's universal sequence
+  // gate rejects earlier with `sequence-mismatch` when local sequence
+  // state gets ahead of the server. The wire-error region surfaces the
   // typed code which proves the round-trip completed. Snapshot
   // restore re-mounts the readings grid with the moderator's typed
   // rows; both assertions cover the full propose-side surface.
@@ -2071,7 +2078,7 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     // snapshot restore re-mounts the grid with the moderator's rows.
     const wireError = page.getByTestId('propose-interpretive-split-action-wire-error');
     await expect(wireError).toBeVisible({ timeout: 10_000 });
-    await expect(wireError).toContainText('target-entity-not-found');
+    await expect(wireError).toContainText(/target-entity-not-found|sequence-mismatch/);
 
     await expect(page.getByTestId('interpretive-split-readings-grid')).toBeVisible();
     await expect(page.getByTestId('interpretive-split-reading-text-0')).toHaveValue(

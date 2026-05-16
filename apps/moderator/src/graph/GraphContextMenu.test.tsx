@@ -24,7 +24,7 @@
 //      targets.
 //
 // The component reads `useTranslation` for labels; tests bootstrap
-// i18next via `initI18n('en-US')` and switch locales with
+// i18next via `createI18nInstance('en-US')` and switch locales with
 // `i18next.changeLanguage` for the parity cases.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -32,10 +32,10 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import i18next from 'i18next';
 
 import { GraphContextMenu, type MenuItem } from './GraphContextMenu';
-import { initI18n } from '../i18n';
+import { createI18nInstance } from '@a-conversa/shell';
 
 beforeEach(async () => {
-  await initI18n('en-US');
+  await createI18nInstance('en-US');
   await i18next.changeLanguage('en-US');
 });
 

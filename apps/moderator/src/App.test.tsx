@@ -1,7 +1,7 @@
 // Smoke test for the moderator app skeleton + auth flow.
 //
 // Covers:
-//   1. `initI18n` boots react-i18next + ICU off the canonical
+//   1. `createI18nInstance` boots react-i18next + ICU off the canonical
 //      `@a-conversa/i18n-catalogs` config and resolves the
 //      `chrome.hello` example key per locale.
 //   2. The router renders the four routes (`/login`, `/screen-name`,
@@ -15,20 +15,17 @@
 //
 // Per ADR 0022 this is a committed test, not a throwaway probe.
 
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen, cleanup, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { act, fireEvent, screen, cleanup, waitFor } from '@testing-library/react';
 import i18next from 'i18next';
 
 import { App } from './App';
-import { initI18n } from './i18n';
+import { getTestI18n, renderWithProviders } from './testing/renderWithProviders';
 
 beforeAll(async () => {
-  await initI18n('en-US');
+  // Bootstraps the test-scope i18n instance the renderWithProviders helper
+  // shares across cases.
+  await getTestI18n();
 });
 
 // ────────────────────────────────────────────────────────────────────────
@@ -160,11 +157,7 @@ describe('moderator router', () => {
   });
 
   it('renders the login route when the path is /login', async () => {
-    render(
-      <MemoryRouter initialEntries={['/login']}>
-        <App />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<App />, { initialEntries: ['/login'] });
     expect(screen.getByTestId('route-login')).toBeTruthy();
     // After the auth hook resolves to unauthenticated, the login button
     // is rendered.
@@ -174,11 +167,7 @@ describe('moderator router', () => {
   });
 
   it('redirects unknown paths to /login', async () => {
-    render(
-      <MemoryRouter initialEntries={['/unknown-path']}>
-        <App />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<App />, { initialEntries: ['/unknown-path'] });
     expect(screen.getByTestId('route-login')).toBeTruthy();
     await waitFor(() => {
       expect(screen.getByTestId('auth-login-button')).toBeTruthy();
@@ -198,11 +187,7 @@ describe('moderator router', () => {
         { status: 200, headers: { 'content-type': 'application/json' } },
       ),
     );
-    render(
-      <MemoryRouter initialEntries={['/sessions/sess-123/lobby']}>
-        <App />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<App />, { initialEntries: ['/sessions/sess-123/lobby'] });
     await waitFor(() => {
       expect(screen.getByTestId('route-lobby')).toBeTruthy();
     });
@@ -221,11 +206,7 @@ describe('moderator router', () => {
         { status: 200, headers: { 'content-type': 'application/json' } },
       ),
     );
-    render(
-      <MemoryRouter initialEntries={['/sessions/sess-456/operate']}>
-        <App />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<App />, { initialEntries: ['/sessions/sess-456/operate'] });
     await waitFor(() => {
       expect(screen.getByTestId('route-operate')).toBeTruthy();
     });
@@ -250,11 +231,7 @@ describe('moderator router', () => {
           ),
         ),
       );
-      render(
-        <MemoryRouter initialEntries={['/sessions/new']}>
-          <App />
-        </MemoryRouter>,
-      );
+      renderWithProviders(<App />, { initialEntries: ['/sessions/new'] });
       await waitFor(() => {
         expect(screen.getByTestId('route-create-session')).toBeTruthy();
       });
@@ -263,11 +240,7 @@ describe('moderator router', () => {
 
     it('redirects to /login when /api/auth/me reports unauthenticated', async () => {
       global.fetch = vi.fn(() => Promise.resolve(new Response('', { status: 401 })));
-      render(
-        <MemoryRouter initialEntries={['/sessions/new']}>
-          <App />
-        </MemoryRouter>,
-      );
+      renderWithProviders(<App />, { initialEntries: ['/sessions/new'] });
       await waitFor(() => {
         expect(screen.getByTestId('route-login')).toBeTruthy();
       });
@@ -285,11 +258,7 @@ describe('moderator router', () => {
           ),
         ),
       );
-      render(
-        <MemoryRouter initialEntries={['/sessions/new']}>
-          <App />
-        </MemoryRouter>,
-      );
+      renderWithProviders(<App />, { initialEntries: ['/sessions/new'] });
       await waitFor(() => {
         expect(screen.getByTestId('route-screen-name')).toBeTruthy();
       });
@@ -343,11 +312,7 @@ describe('moderator router', () => {
             { status: 200, headers: { 'content-type': 'application/json' } },
           ),
       );
-      render(
-        <MemoryRouter initialEntries={['/sessions/abc-123/invite']}>
-          <App />
-        </MemoryRouter>,
-      );
+      renderWithProviders(<App />, { initialEntries: ['/sessions/abc-123/invite'] });
       await waitFor(() => {
         expect(screen.getByTestId('route-invite-participants')).toBeTruthy();
       });
@@ -356,11 +321,7 @@ describe('moderator router', () => {
 
     it('redirects to /login when /api/auth/me reports unauthenticated', async () => {
       global.fetch = stubAuthAndSession(() => new Response('', { status: 401 }));
-      render(
-        <MemoryRouter initialEntries={['/sessions/abc-123/invite']}>
-          <App />
-        </MemoryRouter>,
-      );
+      renderWithProviders(<App />, { initialEntries: ['/sessions/abc-123/invite'] });
       await waitFor(() => {
         expect(screen.getByTestId('route-login')).toBeTruthy();
       });
@@ -377,11 +338,7 @@ describe('moderator router', () => {
             { status: 200, headers: { 'content-type': 'application/json' } },
           ),
       );
-      render(
-        <MemoryRouter initialEntries={['/sessions/abc-123/invite']}>
-          <App />
-        </MemoryRouter>,
-      );
+      renderWithProviders(<App />, { initialEntries: ['/sessions/abc-123/invite'] });
       await waitFor(() => {
         expect(screen.getByTestId('route-screen-name')).toBeTruthy();
       });
@@ -393,11 +350,7 @@ describe('Login route — auth states', () => {
   it('renders the login button for an unauthenticated caller', async () => {
     global.fetch = vi.fn().mockResolvedValue(new Response('', { status: 401 }));
 
-    render(
-      <MemoryRouter initialEntries={['/login']}>
-        <App />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<App />, { initialEntries: ['/login'] });
     await waitFor(() => {
       const btn = screen.getByTestId('auth-login-button');
       expect(btn.getAttribute('href')).toBe('/api/auth/login');
@@ -409,11 +362,7 @@ describe('Login route — auth states', () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response('', { status: 401 }));
     global.fetch = fetchMock;
 
-    render(
-      <MemoryRouter initialEntries={['/login']}>
-        <App />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<App />, { initialEntries: ['/login'] });
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalled();
     });
@@ -434,11 +383,7 @@ describe('Login route — auth states', () => {
       ),
     );
 
-    render(
-      <MemoryRouter initialEntries={['/login']}>
-        <App />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<App />, { initialEntries: ['/login'] });
     await waitFor(() => {
       expect(screen.getByTestId('auth-welcome').textContent).toBe('Welcome, alice');
     });
@@ -465,11 +410,7 @@ describe('Login route — auth states', () => {
       ),
     );
 
-    render(
-      <MemoryRouter initialEntries={['/login']}>
-        <App />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<App />, { initialEntries: ['/login'] });
     await waitFor(() => {
       expect(screen.getByTestId('auth-welcome').textContent).toBe('Welcome, bob');
     });
@@ -499,11 +440,7 @@ describe('Login route — auth states', () => {
       ),
     );
 
-    render(
-      <MemoryRouter initialEntries={['/login']}>
-        <App />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<App />, { initialEntries: ['/login'] });
     await waitFor(() => {
       expect(screen.getByTestId('route-screen-name')).toBeTruthy();
     });
@@ -521,11 +458,7 @@ describe('Login route — auth states', () => {
       ),
     );
 
-    render(
-      <MemoryRouter initialEntries={['/login']}>
-        <App />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<App />, { initialEntries: ['/login'] });
     await waitFor(() => {
       expect(screen.getByTestId('auth-welcome').textContent).toBe('Bem-vinda(o), carol');
     });
@@ -556,11 +489,7 @@ describe('Login route — auth states', () => {
       .mockResolvedValueOnce(new Response('', { status: 204 }));
     global.fetch = fetchMock;
 
-    render(
-      <MemoryRouter initialEntries={['/login']}>
-        <App />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<App />, { initialEntries: ['/login'] });
     await waitFor(() => {
       expect(screen.getByTestId('auth-logout-button')).toBeTruthy();
     });
@@ -587,11 +516,7 @@ describe('ScreenName route — form behavior', () => {
   it('disables submit when the input is empty or whitespace-only', async () => {
     global.fetch = stubAuthMeNeedsScreenName();
 
-    render(
-      <MemoryRouter initialEntries={['/screen-name']}>
-        <App />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<App />, { initialEntries: ['/screen-name'] });
     const submit = await screen.findByTestId<HTMLButtonElement>('screen-name-submit');
     const input = screen.getByTestId<HTMLInputElement>('screen-name-input');
 
@@ -626,11 +551,7 @@ describe('ScreenName route — form behavior', () => {
     );
     global.fetch = fetchMock;
 
-    render(
-      <MemoryRouter initialEntries={['/screen-name']}>
-        <App />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<App />, { initialEntries: ['/screen-name'] });
     const input = await screen.findByTestId('screen-name-input');
     fireEvent.change(input, { target: { value: '  alice  ' } });
     await act(async () => {
@@ -651,11 +572,7 @@ describe('ScreenName route — form behavior', () => {
   it('renders the localized too-long error when input exceeds 64 characters', async () => {
     global.fetch = stubAuthMeNeedsScreenName();
 
-    render(
-      <MemoryRouter initialEntries={['/screen-name']}>
-        <App />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<App />, { initialEntries: ['/screen-name'] });
     const input = await screen.findByTestId('screen-name-input');
     // 65 visible characters (no surrounding whitespace).
     fireEvent.change(input, { target: { value: 'a'.repeat(65) } });
@@ -685,11 +602,7 @@ describe('ScreenName route — form behavior', () => {
     );
     global.fetch = fetchMock;
 
-    render(
-      <MemoryRouter initialEntries={['/screen-name']}>
-        <App />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<App />, { initialEntries: ['/screen-name'] });
     const input = await screen.findByTestId('screen-name-input');
     fireEvent.change(input, { target: { value: 'alice' } });
     await act(async () => {
@@ -718,11 +631,7 @@ describe('ScreenName route — form behavior', () => {
     );
     global.fetch = fetchMock;
 
-    render(
-      <MemoryRouter initialEntries={['/screen-name']}>
-        <App />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<App />, { initialEntries: ['/screen-name'] });
     const input = await screen.findByTestId('screen-name-input');
     fireEvent.change(input, { target: { value: 'alice' } });
     await act(async () => {
@@ -748,11 +657,7 @@ describe('ScreenName route — form behavior', () => {
     );
     global.fetch = fetchMock;
 
-    render(
-      <MemoryRouter initialEntries={['/screen-name']}>
-        <App />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<App />, { initialEntries: ['/screen-name'] });
     const input = await screen.findByTestId('screen-name-input');
     fireEvent.change(input, { target: { value: 'alice' } });
     await act(async () => {
@@ -769,11 +674,7 @@ describe('ScreenName route — form behavior', () => {
   it('caps the textbox at 256 characters via maxLength', async () => {
     global.fetch = stubAuthMeNeedsScreenName();
 
-    render(
-      <MemoryRouter initialEntries={['/screen-name']}>
-        <App />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<App />, { initialEntries: ['/screen-name'] });
     const input = await screen.findByTestId<HTMLInputElement>('screen-name-input');
     expect(input.maxLength).toBe(256);
   });
@@ -798,11 +699,7 @@ describe('ScreenName route — client-side mirror of backend validation', () => 
     const fetchMock = stubAuthMeNeedsScreenName();
     global.fetch = fetchMock;
 
-    render(
-      <MemoryRouter initialEntries={['/screen-name']}>
-        <App />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<App />, { initialEntries: ['/screen-name'] });
     const input = await screen.findByTestId('screen-name-input');
     // 'alice' + RLO + 'admin' — the audience-broadcast-spoof case from
     // F-010. The client mirror catches it before the POST.
@@ -825,11 +722,7 @@ describe('ScreenName route — client-side mirror of backend validation', () => 
     const fetchMock = stubAuthMeNeedsScreenName();
     global.fetch = fetchMock;
 
-    render(
-      <MemoryRouter initialEntries={['/screen-name']}>
-        <App />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<App />, { initialEntries: ['/screen-name'] });
     const input = await screen.findByTestId('screen-name-input');
     fireEvent.change(input, { target: { value: 'alice‍bob' } });
     await act(async () => {
@@ -849,11 +742,7 @@ describe('ScreenName route — client-side mirror of backend validation', () => 
     const fetchMock = stubAuthMeNeedsScreenName();
     global.fetch = fetchMock;
 
-    render(
-      <MemoryRouter initialEntries={['/screen-name']}>
-        <App />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<App />, { initialEntries: ['/screen-name'] });
     const input = await screen.findByTestId('screen-name-input');
     fireEvent.change(input, { target: { value: 'alice\u0000' } });
     await act(async () => {
@@ -882,11 +771,7 @@ describe('ScreenName route — client-side mirror of backend validation', () => 
     );
     global.fetch = fetchMock;
 
-    render(
-      <MemoryRouter initialEntries={['/screen-name']}>
-        <App />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<App />, { initialEntries: ['/screen-name'] });
     const input = await screen.findByTestId('screen-name-input');
     // U+FB01 LATIN SMALL LIGATURE FI — NFKC decomposes to U+0066 U+0069.
     fireEvent.change(input, { target: { value: 'ﬁle' } });
@@ -921,11 +806,7 @@ describe('ScreenName route — client-side mirror of backend validation', () => 
     );
     global.fetch = fetchMock;
 
-    render(
-      <MemoryRouter initialEntries={['/screen-name']}>
-        <App />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<App />, { initialEntries: ['/screen-name'] });
     const input = await screen.findByTestId('screen-name-input');
     fireEvent.change(input, { target: { value: 'alice' } });
     await act(async () => {
@@ -962,22 +843,14 @@ describe('ScreenName route — accessibility + helper text + focus', () => {
   });
 
   it('renders the character-count helper with 0/64 on mount', async () => {
-    render(
-      <MemoryRouter initialEntries={['/screen-name']}>
-        <App />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<App />, { initialEntries: ['/screen-name'] });
     await waitFor(() => {
       expect(screen.getByTestId('screen-name-helper').textContent).toBe('0/64 characters');
     });
   });
 
   it('updates the character-count helper as the user types (trimmed length)', async () => {
-    render(
-      <MemoryRouter initialEntries={['/screen-name']}>
-        <App />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<App />, { initialEntries: ['/screen-name'] });
     const input = await screen.findByTestId('screen-name-input');
     fireEvent.change(input, { target: { value: '  alice  ' } });
     await waitFor(() => {
@@ -988,21 +861,13 @@ describe('ScreenName route — accessibility + helper text + focus', () => {
   });
 
   it('sets aria-describedby on the input pointing to helper + error ids', async () => {
-    render(
-      <MemoryRouter initialEntries={['/screen-name']}>
-        <App />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<App />, { initialEntries: ['/screen-name'] });
     const input = await screen.findByTestId<HTMLInputElement>('screen-name-input');
     expect(input.getAttribute('aria-describedby')).toBe('screen-name-helper screen-name-error');
   });
 
   it('toggles aria-invalid on the input when an error is shown', async () => {
-    render(
-      <MemoryRouter initialEntries={['/screen-name']}>
-        <App />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<App />, { initialEntries: ['/screen-name'] });
     const input = await screen.findByTestId<HTMLInputElement>('screen-name-input');
     expect(input.getAttribute('aria-invalid')).toBe('false');
     fireEvent.change(input, { target: { value: 'alice‮admin' } });
@@ -1021,11 +886,7 @@ describe('ScreenName route — accessibility + helper text + focus', () => {
   });
 
   it('sets autoComplete=off and inputMode=text on the input', async () => {
-    render(
-      <MemoryRouter initialEntries={['/screen-name']}>
-        <App />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<App />, { initialEntries: ['/screen-name'] });
     const input = await screen.findByTestId<HTMLInputElement>('screen-name-input');
     // A screen name is not a stored credential; off is the right hint.
     expect(input.getAttribute('autocomplete')).toBe('off');
@@ -1034,11 +895,7 @@ describe('ScreenName route — accessibility + helper text + focus', () => {
   });
 
   it('marks the error region with role=alert AND aria-live=polite + aria-atomic', async () => {
-    render(
-      <MemoryRouter initialEntries={['/screen-name']}>
-        <App />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<App />, { initialEntries: ['/screen-name'] });
     const input = await screen.findByTestId('screen-name-input');
     fireEvent.change(input, { target: { value: 'alice\u0000' } });
     await act(async () => {
@@ -1057,11 +914,7 @@ describe('ScreenName route — accessibility + helper text + focus', () => {
   });
 
   it('focuses the input on mount', async () => {
-    render(
-      <MemoryRouter initialEntries={['/screen-name']}>
-        <App />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<App />, { initialEntries: ['/screen-name'] });
     await waitFor(() => {
       const input = screen.getByTestId<HTMLInputElement>('screen-name-input');
       // The `useEffect` runs after the initial render; assert focus
@@ -1082,11 +935,7 @@ describe('ScreenName route — accessibility + helper text + focus', () => {
     );
     global.fetch = fetchMock;
 
-    render(
-      <MemoryRouter initialEntries={['/screen-name']}>
-        <App />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<App />, { initialEntries: ['/screen-name'] });
     const input = await screen.findByTestId<HTMLInputElement>('screen-name-input');
     fireEvent.change(input, { target: { value: 'alice' } });
     // Click the submit button (focus shifts to it from the input).
@@ -1105,30 +954,7 @@ describe('ScreenName route — accessibility + helper text + focus', () => {
   });
 });
 
-describe('no-profile-data audit on the moderator client', () => {
-  it('useAuth.ts contains no OIDC profile-claim identifiers', () => {
-    // Symmetric with `apps/server/src/auth/no-profile-data.test.ts`'s
-    // Invariant 3 — a grep over the auth hook source confirms it
-    // doesn't read any OIDC profile claim. The list mirrors the
-    // backend audit's `PROFILE_DATA_VALUES` plus a few claim-name
-    // aliases the client should never read off `/auth/me`.
-    const here = fileURLToPath(import.meta.url);
-    const path = resolve(here, '..', 'auth', 'useAuth.ts');
-    const text = readFileSync(path, 'utf8');
-    const forbidden = [
-      'email',
-      'picture',
-      'given_name',
-      'givenName',
-      'family_name',
-      'familyName',
-      'preferred_username',
-      'preferredUsername',
-      'oauthSubject',
-      'fetchUserInfo',
-    ];
-    for (const ident of forbidden) {
-      expect(text, `useAuth.ts must not reference ${ident}`).not.toContain(ident);
-    }
-  });
-});
+// The no-profile-data audit on the auth source moved to
+// `packages/shell/src/auth/auth.test.tsx` along with the auth
+// subsystem. The moderator's `useAuth` is now an import from
+// `@a-conversa/shell`; the invariant is the shell's to keep.

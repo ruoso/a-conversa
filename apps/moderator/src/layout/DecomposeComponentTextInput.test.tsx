@@ -16,11 +16,11 @@ import { MAX_METHODOLOGY_TEXT_LENGTH } from '@a-conversa/shared-types';
 
 import { DecomposeComponentTextInput } from './DecomposeComponentTextInput';
 import { useCaptureStore } from '../stores/captureStore';
-import { initI18n } from '../i18n';
+import { createI18nInstance } from '@a-conversa/shell';
 
 beforeEach(async () => {
   useCaptureStore.getState().reset();
-  await initI18n('en-US');
+  await createI18nInstance('en-US');
   await i18next.changeLanguage('en-US');
   act(() => {
     useCaptureStore.getState().enterDecomposeMode('n1');

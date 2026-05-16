@@ -32,7 +32,7 @@ import type { FacetName, FacetStatus, FacetStatusIndex } from '../graph/facetSta
 import type { PendingProposalRow } from '../graph/pendingProposals';
 import type { VotesByFacetIndex } from '../graph/proposalFacets';
 import type { Vote } from '../graph/selectors';
-import { initI18n } from '../i18n';
+import { createI18nInstance } from '@a-conversa/shell';
 
 const NODE_X = '00000000-0000-4000-8000-00000000000a';
 const NODE_Y = '00000000-0000-4000-8000-00000000000b';
@@ -87,7 +87,7 @@ function row(proposal: ProposalPayload, proposalEventId = PROPOSAL_P): PendingPr
 }
 
 beforeEach(async () => {
-  await initI18n('en-US');
+  await createI18nInstance('en-US');
   await i18next.changeLanguage('en-US');
 });
 

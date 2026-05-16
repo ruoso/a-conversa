@@ -1,24 +1,20 @@
-// `useWsStore` — server-state Zustand slice fed by the moderator's
-// WebSocket client (see `./client.ts`).
+// `useWsStore` — moderator-side server-state Zustand slice fed by the
+// shell's WebSocket client.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_ws_client.md
+// Refinement: tasks/refinements/moderator-ui/mod_ws_client.md +
+//   tasks/refinements/shell-package/shell_substrate_extraction.md
+//   (Decisions §"WsStore extraction shape" — option C: the moderator's
+//   store stays in the moderator workspace because it imports the
+//   moderator-side `diagnosticIdentityKey` helper; the shell's WS client
+//   is parameterized over a `WsStoreLike<BaseWsStoreState>` handle and
+//   the moderator passes this store to `<WsClientProvider>` /
+//   `createWsClient`).
 //
-// The slice holds:
-//   - The connection-level status (idle / connecting / open / reconnecting /
-//     closed) and the latest `connectionId` minted server-side.
-//   - The set of `sessionId`s the consumer asked to follow. This set is the
-//     resume-list used by the reconnection logic in `client.ts`.
-//   - Per-session server-state derived from inbound envelopes:
-//     `lastAppliedSequence`, the live event log, per-proposal status, and
-//     the latest diagnostic snapshot.
-//   - The latest UNSOLICITED `error` envelope (correlated errors reject
-//     the send-promise; only un-correlated server-side errors land here).
-//
-// The slice is intentionally append-only on writes — the client reducer is
-// the only writer; UI components are pure readers. Dedupe of replay-vs-live
-// `event-applied` frames is enforced here so the contract holds across
-// both the live broadcast path and the catch-up replay path (see
-// `docs/ws-protocol.md`, "Reconnection / catch-up flow").
+// The slice extends `BaseWsStoreState` (from `@a-conversa/shell`) and
+// adds the moderator-specific `activeDiagnostics` projection on top.
+// The shell client only ever touches the base methods; the
+// `activeDiagnostics` map is read by `<GraphCanvasPane>` for the
+// per-entity diagnostic halo.
 
 import { create } from 'zustand';
 import type {
@@ -27,82 +23,39 @@ import type {
   Event,
   ProposalStatusPayload,
 } from '@a-conversa/shared-types';
+import type { BaseWsSessionState, BaseWsStoreState } from '@a-conversa/shell';
 
 import { diagnosticIdentityKey } from '../graph/diagnosticHighlights.js';
 import { withDevtools } from '../stores/devtools.js';
 
 /**
- * Connection-level status for the WS surface. UI affordances (a reconnect
- * banner, a "live" badge) switch on this.
+ * Re-export the shell's `WsConnectionStatus` under the moderator's
+ * historical name so internal imports continue to resolve.
  */
-export type WsConnectionStatus = 'idle' | 'connecting' | 'open' | 'reconnecting' | 'closed';
+export type { WsConnectionStatus } from '@a-conversa/shell';
 
 /**
- * The per-session server-state the client maintains. `events` is the full
- * dedup'd event log received over the wire (live + replay merged). Other
- * UI surfaces project off it (the change-history pane reads `events`
- * verbatim; the pending-proposals pane reads `pendingProposals`).
+ * Moderator-specific extension of `BaseWsSessionState`: adds the
+ * `activeDiagnostics` map keyed by `diagnosticIdentityKey(payload)`.
+ * An entry is added/replaced on each `'fired'` envelope and removed on
+ * each `'cleared'` envelope. Read by `<GraphCanvasPane>` to drive the
+ * per-entity diagnostic halo on nodes / edges.
+ *
+ * `lastDiagnostic` (inherited from the base) stays the "last envelope
+ * seen" slot for backward compat with the existing `client.test.ts`
+ * test; this map is the "active set" surface.
  */
-export interface WsSessionState {
-  /** High-water mark of `event.sequence` seen for this session. */
-  lastAppliedSequence: number;
-  /** Dedup'd event log, in arrival order. */
-  events: Event[];
-  /** Per-proposal status frames keyed by `proposalId`. */
-  pendingProposals: Record<string, ProposalStatusPayload>;
-  /** Latest diagnostic snapshot envelope, if any. */
-  lastDiagnostic?: DiagnosticPayload;
-  /**
-   * Active diagnostics for this session, keyed by the canonical
-   * identity key (`diagnosticIdentityKey(payload)`). An entry is
-   * added/replaced on each `'fired'` envelope and removed on each
-   * `'cleared'` envelope. Refinement:
-   * `tasks/refinements/moderator-ui/mod_diagnostic_highlighting.md`.
-   *
-   * Read by `<GraphCanvasPane>` to drive the per-entity diagnostic
-   * halo on nodes / edges. `lastDiagnostic` (above) stays the
-   * "last envelope seen" slot for backward compat with the existing
-   * `client.test.ts` test; this map is the new "active set" surface.
-   */
+export interface WsSessionState extends BaseWsSessionState {
   activeDiagnostics: ReadonlyMap<string, DiagnosticPayload>;
 }
 
-export interface WsState {
-  /** Connection-level status. */
-  connectionStatus: WsConnectionStatus;
-  /** `connectionId` from the latest `hello`. */
-  connectionId: string | undefined;
-  /** Session ids the consumer asked to follow (used as resume list). */
-  subscriptions: ReadonlySet<string>;
-  /** Per-session server-state. */
+/**
+ * Moderator-side store state. Extends `BaseWsStoreState` (the contract
+ * the shell client consumes) and re-narrows `sessionState` to the
+ * richer `WsSessionState` shape that includes `activeDiagnostics`.
+ */
+export interface WsState extends BaseWsStoreState {
   sessionState: Record<string, WsSessionState>;
-  /** Latest UNSOLICITED error envelope (no `inResponseTo`). */
-  lastError: ErrorPayload | undefined;
-
-  // ── client-side writers (called by `client.ts` only) ─────────────────
-
-  setConnectionStatus: (status: WsConnectionStatus) => void;
-  setConnectionId: (id: string | undefined) => void;
-  /** Track a session in the resume list. Returns `true` if newly added. */
-  trackSubscription: (sessionId: string) => boolean;
-  /** Drop a session from the resume list. */
-  untrackSubscription: (sessionId: string) => void;
-  /**
-   * Apply an `event-applied` payload's event. Idempotent — duplicates
-   * (replay-vs-live overlap) are dropped silently. Returns `true` when
-   * the event was actually applied, `false` when it was deduped.
-   */
-  applyEvent: (event: Event) => boolean;
-  /** Replace per-session state from a `snapshot-state` payload. */
-  applySnapshot: (sessionId: string, sequence: number) => void;
-  /** Record a `proposal-status` envelope. */
-  applyProposalStatus: (payload: ProposalStatusPayload) => void;
-  /** Record a `diagnostic` envelope. */
-  applyDiagnostic: (payload: DiagnosticPayload) => void;
-  /** Record an unsolicited `error` envelope. */
-  recordError: (payload: ErrorPayload | undefined) => void;
-  /** Hard reset — used on logout / unmount. */
-  reset: () => void;
 }
 
 const initialState: Pick<
@@ -154,7 +107,7 @@ export const useWsStore = create<WsState>()(
         return { subscriptions: next };
       }),
 
-    applyEvent: (event) => {
+    applyEvent: (event: Event) => {
       let applied = false;
       set((state) => {
         const session = ensureSession(state, event.sessionId);
@@ -188,7 +141,7 @@ export const useWsStore = create<WsState>()(
         };
       }),
 
-    applyProposalStatus: (payload) =>
+    applyProposalStatus: (payload: ProposalStatusPayload) =>
       set((state) => {
         const session = ensureSession(state, payload.sessionId);
         const nextSession: WsSessionState = {
@@ -203,24 +156,25 @@ export const useWsStore = create<WsState>()(
         };
       }),
 
-    applyDiagnostic: (payload) =>
+    applyDiagnostic: (payload: DiagnosticPayload) =>
       set((state) => {
         const session = ensureSession(state, payload.sessionId);
         // Compute the canonical identity key for the active-set delta.
-        // `fired` adds/replaces the entry under the key; `cleared` removes
-        // the entry. `lastDiagnostic` always updates to the latest
-        // envelope (cleared envelopes included — the slot's contract is
-        // "last envelope seen", not "last fired diagnostic"; the
-        // pre-existing `client.test.ts` reader continues to work).
+        // `fired` adds/replaces the entry under the key; `cleared`
+        // removes the entry. `lastDiagnostic` always updates to the
+        // latest envelope (cleared envelopes included — the slot's
+        // contract is "last envelope seen", not "last fired diagnostic";
+        // the pre-existing `client.test.ts` reader continues to work).
         const key = diagnosticIdentityKey(payload);
         const nextActive = new Map(session.activeDiagnostics);
         if (payload.status === 'fired') {
           nextActive.set(key, payload);
         } else {
-          // `cleared` — remove the entry if present. An unknown key is a
-          // no-op (the diff machinery on the server may emit a `cleared`
-          // for a diagnostic this client never saw `fired` for, e.g. on
-          // first connect; we tolerate the no-op silently).
+          // `cleared` — remove the entry if present. An unknown key is
+          // a no-op (the diff machinery on the server may emit a
+          // `cleared` for a diagnostic this client never saw `fired`
+          // for, e.g. on first connect; we tolerate the no-op
+          // silently).
           nextActive.delete(key);
         }
         const nextSession: WsSessionState = {
@@ -233,7 +187,7 @@ export const useWsStore = create<WsState>()(
         };
       }),
 
-    recordError: (payload) => set({ lastError: payload }),
+    recordError: (payload: ErrorPayload | undefined) => set({ lastError: payload }),
 
     reset: () => set({ ...initialState, subscriptions: new Set<string>() }),
   })),

@@ -60,9 +60,9 @@ import { create } from 'zustand';
 import type { ProposalPayload, StatementKind } from '@a-conversa/shared-types';
 
 import { useCaptureStore } from '../stores/captureStore';
-import { useWsClient } from '../ws/WsClientProvider';
+import { useWsClient } from '@a-conversa/shell';
 import { useWsStore } from '../ws/wsStore';
-import { WsRequestError, WsRequestTimeoutError } from '../ws/client';
+import { WsRequestError, WsRequestTimeoutError } from '@a-conversa/shell';
 
 /**
  * The discriminated set of validation-gate failure reasons. Each maps

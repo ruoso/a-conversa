@@ -40,9 +40,9 @@ import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router-dom';
 import { create } from 'zustand';
 
-import { useWsClient } from '../ws/WsClientProvider';
+import { useWsClient } from '@a-conversa/shell';
 import { useWsStore } from '../ws/wsStore';
-import { WsRequestError, WsRequestTimeoutError } from '../ws/client';
+import { WsRequestError, WsRequestTimeoutError } from '@a-conversa/shell';
 
 /**
  * Wire-error shape surfaced on `lastErrorFor(participantId)`. `code` is

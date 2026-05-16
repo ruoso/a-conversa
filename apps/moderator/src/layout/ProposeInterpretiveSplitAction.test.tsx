@@ -23,16 +23,16 @@ import { ProposeInterpretiveSplitAction } from './ProposeInterpretiveSplitAction
 import { resetProposeInterpretiveSplitError } from './useProposeProposalAction';
 import { useCaptureStore } from '../stores/captureStore';
 import { useWsStore } from '../ws/wsStore';
-import { WsClientProvider } from '../ws/WsClientProvider';
-import type { SendFn, WsClient, WsClientStatus } from '../ws/client';
+import { WsClientProvider } from '@a-conversa/shell';
+import type { SendFn, WsClient, WsClientStatus } from '@a-conversa/shell';
 import type { WsEnvelopeUnion, WsMessagePayloadMap, WsMessageType } from '@a-conversa/shared-types';
-import { initI18n } from '../i18n';
+import { createI18nInstance } from '@a-conversa/shell';
 
 const SESSION_ID = '11111111-1111-4111-8111-111111111111';
 const PARENT_NODE_ID = '22222222-2222-4222-8222-222222222222';
 
 beforeAll(async () => {
-  await initI18n('en-US');
+  await createI18nInstance('en-US');
   await i18next.changeLanguage('en-US');
 });
 

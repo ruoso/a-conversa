@@ -39,7 +39,7 @@ import { MAX_METHODOLOGY_TEXT_LENGTH } from '@a-conversa/shared-types';
 
 import { CaptureTextInput } from './CaptureTextInput';
 import { useCaptureStore } from '../stores/captureStore';
-import { initI18n } from '../i18n';
+import { createI18nInstance } from '@a-conversa/shell';
 
 const EN_LABEL = 'Statement wording';
 const EN_PLACEHOLDER = 'Type the statement wording here…';
@@ -50,7 +50,7 @@ beforeEach(async () => {
   // starts from an empty `text` slice. `reset()` returns every slice
   // to the initial-state object.
   useCaptureStore.getState().reset();
-  await initI18n('en-US');
+  await createI18nInstance('en-US');
   await i18next.changeLanguage('en-US');
 });
 

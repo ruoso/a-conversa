@@ -17,8 +17,15 @@
     "typecheck": "tsc -b"
   },
   "peerDependencies": {
+    "@a-conversa/i18n-catalogs": "workspace:*",
+    "@a-conversa/shared-types": "workspace:^",
+    "i18next": "^26.1.0",
+    "i18next-icu": "^2.4.3",
     "react": "*",
-    "react-dom": "*"
+    "react-dom": "*",
+    "react-i18next": "^17.0.7",
+    "react-router-dom": "^7.15.0",
+    "zustand": "^5.0.13"
   },
   "devDependencies": {
     "vite": "8.0.12"

@@ -53,8 +53,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } 
 import { useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 
-import { useAuth } from '../auth/useAuth';
-import { WsClientProvider, useWsClient } from '../ws/WsClientProvider';
+import { useAuth } from '@a-conversa/shell';
+import { WsClientProvider, useWsClient } from '@a-conversa/shell';
 import { useWsStore } from '../ws/wsStore';
 import type { Event } from '@a-conversa/shared-types';
 
@@ -143,8 +143,19 @@ export function InviteParticipantsRoute(): ReactElement {
   // The provider's internal `useEffect` no-ops when
   // `auth.status !== 'authenticated'`, so router-level tests that
   // bypass the gate still render cleanly.
+  //
+  // The moderator's `useWsStore` is passed as the WS client's store so the
+  // shell client dispatches inbound envelopes into the moderator-side
+  // slice (which extends `BaseWsStoreState` with the moderator-specific
+  // `activeDiagnostics` projection). The slot reducer below reads from
+  // the same store — without this prop the reducer never sees any
+  // `participant-joined` events and the moderator slot stays empty.
   return (
-    <WsClientProvider auth={{ status: auth.status }}>
+    <WsClientProvider
+      auth={{ status: auth.status }}
+      clientOptions={{ store: useWsStore }}
+      store={useWsStore}
+    >
       <InviteParticipantsRouteInner sessionId={id} />
     </WsClientProvider>
   );

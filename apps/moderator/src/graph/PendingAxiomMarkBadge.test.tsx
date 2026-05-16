@@ -38,7 +38,7 @@ import i18next from 'i18next';
 
 import { PendingAxiomMarkBadge } from './PendingAxiomMarkBadge';
 import { axiomMarkColorFor, type PendingAxiomMark } from './selectors';
-import { initI18n } from '../i18n';
+import { createI18nInstance } from '@a-conversa/shell';
 
 const NODE_ID = '00000000-0000-4000-8000-000000000a02';
 // PARTICIPANT_A and PARTICIPANT_B hash to two distinct palette buckets
@@ -60,7 +60,7 @@ function makeMark(overrides: Partial<PendingAxiomMark> = {}): PendingAxiomMark {
 }
 
 beforeEach(async () => {
-  await initI18n('en-US');
+  await createI18nInstance('en-US');
   await i18next.changeLanguage('en-US');
 });
 

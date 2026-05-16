@@ -65,7 +65,7 @@ import type { ReactElement, ReactNode } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 
-import { useAuth } from './useAuth';
+import { useAuth } from '@a-conversa/shell';
 
 export type RequireAuthMode = 'authenticated-only' | 'needs-screen-name-only';
 

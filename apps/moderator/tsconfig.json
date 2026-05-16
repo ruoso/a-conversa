@@ -14,6 +14,7 @@
   "include": ["src"],
   "references": [
     { "path": "../../packages/shared-types" },
-    { "path": "../../packages/i18n-catalogs" }
+    { "path": "../../packages/i18n-catalogs" },
+    { "path": "../../packages/shell" }
   ]
 }

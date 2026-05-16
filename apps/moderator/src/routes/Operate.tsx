@@ -59,7 +59,7 @@
 import { useEffect, type ReactElement } from 'react';
 import { useParams } from 'react-router-dom';
 
-import { useAuth } from '../auth/useAuth';
+import { useAuth } from '@a-conversa/shell';
 import { OperateLayout } from '../layout/OperateLayout';
 import { BottomStripCapture } from '../layout/BottomStripCapture';
 import { CaptureTargetAndRole } from '../layout/CaptureTargetAndRole';
@@ -79,7 +79,8 @@ import { IsOughtPrompt } from '../layout/IsOughtPrompt';
 import { PendingProposalsPane } from '../layout/PendingProposalsPane';
 import { RightSidebar } from '../layout/RightSidebar';
 import { useCaptureStore } from '../stores/captureStore';
-import { WsClientProvider, useWsClient } from '../ws/WsClientProvider';
+import { WsClientProvider, useWsClient } from '@a-conversa/shell';
+import { useWsStore } from '../ws/wsStore';
 
 export function OperateRoute(): ReactElement {
   const auth = useAuth();
@@ -90,8 +91,19 @@ export function OperateRoute(): ReactElement {
   // precondition in normal flow, but the inert-when-not-authed
   // contract keeps the route robust to test renders that bypass the
   // gate (e.g., `App.test.tsx`'s router-level cases).
+  //
+  // The moderator's `useWsStore` is passed as the WS client's store so the
+  // shell client dispatches inbound envelopes into the moderator-side
+  // slice (which extends `BaseWsStoreState` with the moderator-specific
+  // `activeDiagnostics` projection). Without this prop the client would
+  // write to its own default in-package store and the moderator's
+  // `useWsStore` consumers would never see any updates.
   return (
-    <WsClientProvider auth={{ status: auth.status }}>
+    <WsClientProvider
+      auth={{ status: auth.status }}
+      clientOptions={{ store: useWsStore }}
+      store={useWsStore}
+    >
       <OperateRouteInner sessionId={id} />
     </WsClientProvider>
   );

@@ -5,7 +5,7 @@ import i18next from 'i18next';
 import { BottomStripCapture } from './BottomStripCapture';
 import { IsOughtPrompt } from './IsOughtPrompt';
 import { useCaptureStore, type CaptureMode } from '../stores/captureStore';
-import { initI18n } from '../i18n';
+import { createI18nInstance } from '@a-conversa/shell';
 
 const DIAGNOSTIC_MODES: readonly CaptureMode[] = [
   'operationalization',
@@ -23,7 +23,7 @@ const NON_DIAGNOSTIC_MODES: readonly CaptureMode[] = [
 
 beforeEach(async () => {
   useCaptureStore.getState().reset();
-  await initI18n('en-US');
+  await createI18nInstance('en-US');
   await i18next.changeLanguage('en-US');
 });
 

@@ -25,7 +25,7 @@ import i18next from 'i18next';
 import ReactFlow, { Position, type Edge, type Node } from 'reactflow';
 import 'reactflow/dist/style.css';
 
-import { initI18n } from '../i18n';
+import { createI18nInstance } from '@a-conversa/shell';
 import { edgeTypes } from './edgeTypes';
 import type { Annotation, StatementEdgeData } from './selectors';
 import type { DiagnosticHighlight } from './diagnosticHighlights';
@@ -214,7 +214,7 @@ beforeAll(async () => {
     };
   };
 
-  await initI18n('en-US');
+  await createI18nInstance('en-US');
 });
 
 beforeEach(async () => {

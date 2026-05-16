@@ -23,10 +23,10 @@ import i18next from 'i18next';
 
 import { VoteIndicator } from './VoteIndicator';
 import { axiomMarkColorFor } from './selectors';
-import { initI18n } from '../i18n';
+import { createI18nInstance } from '@a-conversa/shell';
 
 beforeEach(async () => {
-  await initI18n('en-US');
+  await createI18nInstance('en-US');
   await i18next.changeLanguage('en-US');
 });
 

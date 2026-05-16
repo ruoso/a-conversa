@@ -32,11 +32,11 @@ import type { Event, ProposalPayload } from '@a-conversa/shared-types';
 import { formatRelativeTime, __resetFormatterCache } from '@a-conversa/i18n-catalogs';
 
 import { PendingProposalsPane } from './PendingProposalsPane';
-import { initI18n } from '../i18n';
+import { createI18nInstance } from '@a-conversa/shell';
 import { useWsStore } from '../ws/wsStore';
 import { resetCommitStore, useCommitStore } from './useCommitAction';
-import { WsClientProvider } from '../ws/WsClientProvider';
-import type { SendFn, WsClient, WsClientStatus } from '../ws/client';
+import { WsClientProvider } from '@a-conversa/shell';
+import type { SendFn, WsClient, WsClientStatus } from '@a-conversa/shell';
 import type { WsEnvelopeUnion, WsMessagePayloadMap, WsMessageType } from '@a-conversa/shared-types';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import type { ReactElement, ReactNode } from 'react';
@@ -168,7 +168,7 @@ beforeEach(async () => {
   // starts from an empty `sessionState`.
   useWsStore.getState().reset();
   resetCommitStore();
-  await initI18n('en-US');
+  await createI18nInstance('en-US');
   await i18next.changeLanguage('en-US');
 });
 

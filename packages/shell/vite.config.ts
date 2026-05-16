@@ -29,7 +29,18 @@ export default defineConfig({
       fileName: 'index',
     },
     rollupOptions: {
-      external: ['react', 'react-dom', 'react/jsx-runtime'],
+      external: [
+        'react',
+        'react-dom',
+        'react/jsx-runtime',
+        'react-router-dom',
+        'i18next',
+        'react-i18next',
+        'i18next-icu',
+        'zustand',
+        '@a-conversa/i18n-catalogs',
+        '@a-conversa/shared-types',
+      ],
     },
   },
 });

@@ -46,11 +46,11 @@ import {
   type UseAxiomMarkActionResult,
 } from './useAxiomMarkAction';
 import { useWsStore } from '../ws/wsStore';
-import { WsClientProvider } from '../ws/WsClientProvider';
-import { WsRequestError, WsRequestTimeoutError } from '../ws/client';
-import type { SendFn, WsClient, WsClientStatus } from '../ws/client';
+import { WsClientProvider } from '@a-conversa/shell';
+import { WsRequestError, WsRequestTimeoutError } from '@a-conversa/shell';
+import type { SendFn, WsClient, WsClientStatus } from '@a-conversa/shell';
 import type { WsEnvelopeUnion, WsMessagePayloadMap, WsMessageType } from '@a-conversa/shared-types';
-import { initI18n } from '../i18n';
+import { createI18nInstance } from '@a-conversa/shell';
 
 const SESSION_ID = '11111111-1111-4111-8111-111111111111';
 const NODE_ID = '22222222-2222-4222-8222-222222222222';
@@ -58,7 +58,7 @@ const PARTICIPANT_A = '33333333-3333-4333-8333-333333333333';
 const PARTICIPANT_B = '44444444-4444-4444-8444-444444444444';
 
 beforeAll(async () => {
-  await initI18n('en-US');
+  await createI18nInstance('en-US');
 });
 
 interface ProposeCall {
@@ -331,7 +331,7 @@ describe('useAxiomMarkAction — error paths', () => {
     const lastError = probe.result.lastErrorFor(PARTICIPANT_A);
     expect(lastError?.code).toBe('timeout');
     // The localized timeout text is the en-US chrome string set at
-    // `initI18n('en-US')` startup.
+    // `createI18nInstance('en-US')` startup.
     expect(lastError?.message).toBe('The mark request timed out — try again');
   });
 

@@ -25,7 +25,7 @@ import type { StatementNodeData } from './StatementNode';
 import type { StatementEdgeData } from './selectors';
 import type { AxiomMark, Annotation, PendingAxiomMark } from './selectors';
 import type { FacetName, FacetStatus } from './facetStatus';
-import { initI18n } from '../i18n';
+import { createI18nInstance } from '@a-conversa/shell';
 
 function nodeData(overrides: Partial<StatementNodeData> & { wording: string }): StatementNodeData {
   const emptyAnnotations: readonly Annotation[] = [];
@@ -62,7 +62,7 @@ function edgeData(overrides: Partial<StatementEdgeData> = {}): StatementEdgeData
 }
 
 beforeEach(async () => {
-  await initI18n('en-US');
+  await createI18nInstance('en-US');
   await i18next.changeLanguage('en-US');
 });
 
@@ -360,7 +360,7 @@ describe('HoverPopover — edge target rendering', () => {
     // removed the legacy `removeResource` method; `addResource` with
     // the key-as-value is the supported way to simulate a miss while
     // keeping the rest of the catalog intact.) The next test's
-    // `beforeEach` calls `initI18n('en-US')` which resets the resource
+    // `beforeEach` calls `createI18nInstance('en-US')` which resets the resource
     // store, so the override does not leak across tests.
     const missKey = 'methodology.edgeRole.supports.description';
     i18next.addResource('en-US', 'translation', missKey, missKey);

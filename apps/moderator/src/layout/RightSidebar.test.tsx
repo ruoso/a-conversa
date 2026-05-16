@@ -30,13 +30,13 @@ import i18next from 'i18next';
 
 import { RightSidebar } from './RightSidebar';
 import { useUiStore } from '../stores/uiStore';
-import { initI18n } from '../i18n';
+import { createI18nInstance } from '@a-conversa/shell';
 
 beforeEach(async () => {
   // Reset the active pane to the store's documented default so each
   // test starts from the same active-pane baseline.
   useUiStore.setState({ activeSidebarPane: 'pending-proposals' });
-  await initI18n('en-US');
+  await createI18nInstance('en-US');
   await i18next.changeLanguage('en-US');
 });
 

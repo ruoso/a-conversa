@@ -20,7 +20,7 @@ import type { Event } from '@a-conversa/shared-types';
 import { InterpretiveSplitModeExitButton } from './InterpretiveSplitModeExitButton';
 import { useCaptureStore } from '../stores/captureStore';
 import { useWsStore } from '../ws/wsStore';
-import { initI18n } from '../i18n';
+import { createI18nInstance } from '@a-conversa/shell';
 
 const SESSION_ID = '00000000-0000-4000-8000-000000000001';
 const NODE_A = '00000000-0000-4000-8000-00000000000a';
@@ -59,7 +59,7 @@ function renderWithRoute(): ReturnType<typeof render> {
 beforeEach(async () => {
   useWsStore.getState().reset();
   useCaptureStore.getState().reset();
-  await initI18n('en-US');
+  await createI18nInstance('en-US');
   await i18next.changeLanguage('en-US');
 });
 

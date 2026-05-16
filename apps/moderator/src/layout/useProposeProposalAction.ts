@@ -41,7 +41,7 @@ import {
   validateProposalRows,
   type DecomposeComponent,
 } from '../stores/captureStore';
-import { useWsClient } from '../ws/WsClientProvider';
+import { useWsClient } from '@a-conversa/shell';
 import { useWsStore } from '../ws/wsStore';
 import { toWireError, type WireError } from './useProposeAction';
 import type { ProposalMode } from './ProposalModeExitAffordance';

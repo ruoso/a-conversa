@@ -47,9 +47,9 @@ import {
   type UseAxiomMarkActionResult,
   type WireError,
 } from './useAxiomMarkAction';
-import { WsClientProvider } from '../ws/WsClientProvider';
-import type { WsClient, WsClientStatus } from '../ws/client';
-import { initI18n } from '../i18n';
+import { WsClientProvider } from '@a-conversa/shell';
+import type { WsClient, WsClientStatus } from '@a-conversa/shell';
+import { createI18nInstance } from '@a-conversa/shell';
 
 const SESSION_ID = '11111111-1111-4111-8111-111111111111';
 const NODE_ID = '22222222-2222-4222-8222-222222222222';
@@ -59,7 +59,7 @@ const BEN_ID = '00000000-0000-4000-8000-0000000000b1';
 const CARLA_ID = '00000000-0000-4000-8000-0000000000c1';
 
 beforeAll(async () => {
-  await initI18n('en-US');
+  await createI18nInstance('en-US');
 });
 
 beforeEach(async () => {

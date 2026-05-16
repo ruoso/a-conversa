@@ -15,11 +15,11 @@ import i18next from 'i18next';
 
 import { DecomposeComponentRow } from './DecomposeComponentRow';
 import { useCaptureStore } from '../stores/captureStore';
-import { initI18n } from '../i18n';
+import { createI18nInstance } from '@a-conversa/shell';
 
 beforeEach(async () => {
   useCaptureStore.getState().reset();
-  await initI18n('en-US');
+  await createI18nInstance('en-US');
   await i18next.changeLanguage('en-US');
   // Seed two rows so per-row reads inside the text input + picker have
   // a slice to bind to.

@@ -25,14 +25,45 @@
 // route's `useAuth` each fire one) don't trip on body-already-consumed.
 
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { cleanup, screen, waitFor } from '@testing-library/react';
 
 import { App } from '../App';
-import { initI18n } from '../i18n';
+import { getTestI18n, renderWithProviders } from '../testing/renderWithProviders';
 
 beforeAll(async () => {
-  await initI18n('en-US');
+  await getTestI18n();
+});
+
+// `WebSocket` polyfill — happy-dom does NOT expose `WebSocket` as a
+// constructor. When the `authenticated`-status branch of the
+// /sessions/abc/operate or /login routes mounts, the per-route
+// `<WsClientProvider>` calls `client.connect()`, which calls
+// `new WebSocket(url)`. Without a polyfill the throw cascades into
+// React's effect-commit machinery.
+class FakeWebSocketCtor {
+  readyState = 0;
+  constructor(_url: string) {
+    /* no-op */
+  }
+  close(): void {
+    /* no-op */
+  }
+  send(): void {
+    /* no-op */
+  }
+  addEventListener(): void {
+    /* no-op */
+  }
+  removeEventListener(): void {
+    /* no-op */
+  }
+}
+const originalWebSocket = (globalThis as { WebSocket?: unknown }).WebSocket;
+beforeAll(() => {
+  (globalThis as { WebSocket?: unknown }).WebSocket = FakeWebSocketCtor;
+});
+afterAll(() => {
+  (globalThis as { WebSocket?: unknown }).WebSocket = originalWebSocket;
 });
 
 afterEach(() => {
@@ -112,11 +143,7 @@ describe('RequireAuth — /screen-name (mode: needs-screen-name-only)', () => {
   it('/screen-name with loading status renders the placeholder DOM', () => {
     global.fetch = fetchPendingForever();
 
-    render(
-      <MemoryRouter initialEntries={['/screen-name']}>
-        <App />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<App />, { initialEntries: ['/screen-name'] });
     // Loading-frame DOM mirrors Login.tsx:31-38 — `route-login` main +
     // `route-title` + `auth-checking` testids, all i18n-resolved.
     expect(screen.getByTestId('route-login')).toBeTruthy();
@@ -127,11 +154,7 @@ describe('RequireAuth — /screen-name (mode: needs-screen-name-only)', () => {
   it('/screen-name with unauthenticated status redirects to /login', async () => {
     global.fetch = fetchUnauthenticated();
 
-    render(
-      <MemoryRouter initialEntries={['/screen-name']}>
-        <App />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<App />, { initialEntries: ['/screen-name'] });
     // After the gate redirects to /login, the Login route renders the
     // SSO button (the unauthenticated branch of its in-component switch).
     await waitFor(() => {
@@ -142,11 +165,7 @@ describe('RequireAuth — /screen-name (mode: needs-screen-name-only)', () => {
   it('/screen-name with needs-screen-name status renders the form', async () => {
     global.fetch = fetchNeedsScreenName();
 
-    render(
-      <MemoryRouter initialEntries={['/screen-name']}>
-        <App />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<App />, { initialEntries: ['/screen-name'] });
     // The accepting branch — children render.
     await waitFor(() => {
       expect(screen.getByTestId('route-screen-name')).toBeTruthy();
@@ -156,11 +175,7 @@ describe('RequireAuth — /screen-name (mode: needs-screen-name-only)', () => {
   it('/screen-name with authenticated status redirects to /login', async () => {
     global.fetch = fetchAuthenticated();
 
-    render(
-      <MemoryRouter initialEntries={['/screen-name']}>
-        <App />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<App />, { initialEntries: ['/screen-name'] });
     // The Login route renders the welcome banner for an authed user;
     // assert on that testid to prove the navigation landed.
     await waitFor(() => {
@@ -173,11 +188,7 @@ describe('RequireAuth — /sessions/:id/lobby (mode: authenticated-only)', () =>
   it('/sessions/abc/lobby with loading status renders the placeholder DOM', () => {
     global.fetch = fetchPendingForever();
 
-    render(
-      <MemoryRouter initialEntries={['/sessions/abc/lobby']}>
-        <App />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<App />, { initialEntries: ['/sessions/abc/lobby'] });
     expect(screen.getByTestId('route-login')).toBeTruthy();
     expect(screen.getByTestId('route-title').textContent).toBe('Sign in');
     expect(screen.getByTestId('auth-checking').textContent).toBe('Checking session…');
@@ -186,11 +197,7 @@ describe('RequireAuth — /sessions/:id/lobby (mode: authenticated-only)', () =>
   it('/sessions/abc/lobby with unauthenticated status redirects to /login', async () => {
     global.fetch = fetchUnauthenticated();
 
-    render(
-      <MemoryRouter initialEntries={['/sessions/abc/lobby']}>
-        <App />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<App />, { initialEntries: ['/sessions/abc/lobby'] });
     await waitFor(() => {
       expect(screen.getByTestId('auth-login-button')).toBeTruthy();
     });
@@ -199,11 +206,7 @@ describe('RequireAuth — /sessions/:id/lobby (mode: authenticated-only)', () =>
   it('/sessions/abc/lobby with needs-screen-name status redirects to /screen-name', async () => {
     global.fetch = fetchNeedsScreenName();
 
-    render(
-      <MemoryRouter initialEntries={['/sessions/abc/lobby']}>
-        <App />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<App />, { initialEntries: ['/sessions/abc/lobby'] });
     // The half-authed user lands on the screen-name form rather than an
     // empty lobby canvas.
     await waitFor(() => {
@@ -214,11 +217,7 @@ describe('RequireAuth — /sessions/:id/lobby (mode: authenticated-only)', () =>
   it('/sessions/abc/lobby with authenticated status renders the lobby', async () => {
     global.fetch = fetchAuthenticated();
 
-    render(
-      <MemoryRouter initialEntries={['/sessions/abc/lobby']}>
-        <App />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<App />, { initialEntries: ['/sessions/abc/lobby'] });
     await waitFor(() => {
       expect(screen.getByTestId('route-lobby')).toBeTruthy();
     });
@@ -233,11 +232,7 @@ describe('RequireAuth — /sessions/:id/operate (mode: authenticated-only)', () 
   it('/sessions/abc/operate with loading status renders the placeholder DOM', () => {
     global.fetch = fetchPendingForever();
 
-    render(
-      <MemoryRouter initialEntries={['/sessions/abc/operate']}>
-        <App />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<App />, { initialEntries: ['/sessions/abc/operate'] });
     expect(screen.getByTestId('route-login')).toBeTruthy();
     expect(screen.getByTestId('route-title').textContent).toBe('Sign in');
     expect(screen.getByTestId('auth-checking').textContent).toBe('Checking session…');
@@ -246,11 +241,7 @@ describe('RequireAuth — /sessions/:id/operate (mode: authenticated-only)', () 
   it('/sessions/abc/operate with unauthenticated status redirects to /login', async () => {
     global.fetch = fetchUnauthenticated();
 
-    render(
-      <MemoryRouter initialEntries={['/sessions/abc/operate']}>
-        <App />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<App />, { initialEntries: ['/sessions/abc/operate'] });
     await waitFor(() => {
       expect(screen.getByTestId('auth-login-button')).toBeTruthy();
     });
@@ -259,11 +250,7 @@ describe('RequireAuth — /sessions/:id/operate (mode: authenticated-only)', () 
   it('/sessions/abc/operate with needs-screen-name status redirects to /screen-name', async () => {
     global.fetch = fetchNeedsScreenName();
 
-    render(
-      <MemoryRouter initialEntries={['/sessions/abc/operate']}>
-        <App />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<App />, { initialEntries: ['/sessions/abc/operate'] });
     await waitFor(() => {
       expect(screen.getByTestId('route-screen-name')).toBeTruthy();
     });
@@ -272,11 +259,7 @@ describe('RequireAuth — /sessions/:id/operate (mode: authenticated-only)', () 
   it('/sessions/abc/operate with authenticated status renders the operate console', async () => {
     global.fetch = fetchAuthenticated();
 
-    render(
-      <MemoryRouter initialEntries={['/sessions/abc/operate']}>
-        <App />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<App />, { initialEntries: ['/sessions/abc/operate'] });
     await waitFor(() => {
       expect(screen.getByTestId('route-operate')).toBeTruthy();
     });
@@ -292,11 +275,7 @@ describe('RequireAuth — /login is not wrapped by the gate', () => {
     // /login route — the welcome banner renders without bouncing.
     global.fetch = fetchAuthenticated();
 
-    render(
-      <MemoryRouter initialEntries={['/login']}>
-        <App />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<App />, { initialEntries: ['/login'] });
     await waitFor(() => {
       expect(screen.getByTestId('auth-welcome').textContent).toBe('Welcome, alice');
     });

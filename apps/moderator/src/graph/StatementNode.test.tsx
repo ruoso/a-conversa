@@ -55,7 +55,7 @@ import {
 import type { DiagnosticHighlight } from './diagnosticHighlights';
 import type { FacetName, FacetStatus } from './facetStatus';
 import type { Annotation, AxiomMark, PendingAxiomMark, Vote } from './selectors';
-import { initI18n } from '../i18n';
+import { createI18nInstance } from '@a-conversa/shell';
 import { useSelectionStore } from '../stores';
 
 // Local `render(...)` shadow that wraps every render in a
@@ -152,7 +152,7 @@ function makeAnnotation(overrides: Partial<Annotation> & { id: string }): Annota
 }
 
 beforeEach(async () => {
-  await initI18n('en-US');
+  await createI18nInstance('en-US');
   await i18next.changeLanguage('en-US');
   // Reset the selection store between cases so the per-card `isSelected`
   // selector returns `false` by default — the bulk of these tests assume

@@ -25,7 +25,7 @@ import i18next from 'i18next';
 
 import { AxiomMarkBadge } from './AxiomMarkBadge';
 import { axiomMarkColorFor, type AxiomMark } from './selectors';
-import { initI18n } from '../i18n';
+import { createI18nInstance } from '@a-conversa/shell';
 
 const NODE_ID = '00000000-0000-4000-8000-000000000a01';
 // PARTICIPANT_A and PARTICIPANT_B hash to two distinct palette buckets
@@ -45,7 +45,7 @@ function makeMark(overrides: Partial<AxiomMark> = {}): AxiomMark {
 }
 
 beforeEach(async () => {
-  await initI18n('en-US');
+  await createI18nInstance('en-US');
   await i18next.changeLanguage('en-US');
 });
 

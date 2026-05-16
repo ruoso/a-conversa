@@ -48,6 +48,7 @@ task shell_package "Shell package (@aconversa/shell)" {
   task shell_substrate_extraction "Extract auth + screen-name + login/logout + i18n + WS + error-mapper substrate from apps/moderator into @a-conversa/shell, rewire moderator imports, wrap moderator main.tsx in shell providers, keep all moderator tests green" {
     effort 7d
     allocate team
+    complete 100
     depends !shell_pkg_skeleton, !shell_mount_contract, backend.auth.session_token_management, frontend_i18n.i18n_catalog_workflow, frontend_i18n.i18n_error_code_catalog, backend.websocket_protocol.ws_message_envelope
     note -8<-
       Refinement: tasks/refinements/shell-package/shell_substrate_extraction.md

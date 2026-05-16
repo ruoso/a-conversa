@@ -25,10 +25,10 @@ import { cleanup, render } from '@testing-library/react';
 import i18next from 'i18next';
 
 import { FacetPill } from './FacetPill';
-import { initI18n } from '../i18n';
+import { createI18nInstance } from '@a-conversa/shell';
 
 beforeEach(async () => {
-  await initI18n('en-US');
+  await createI18nInstance('en-US');
   await i18next.changeLanguage('en-US');
 });
 

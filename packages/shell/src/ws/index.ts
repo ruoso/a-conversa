@@ -1,6 +1,6 @@
-// Barrel for the moderator's WebSocket client surface.
+// Barrel for the shell's WebSocket subsystem.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_ws_client.md
+// Refinement: tasks/refinements/shell-package/shell_substrate_extraction.md
 
 export {
   createWsClient,
@@ -16,14 +16,15 @@ export {
   type WsLike,
 } from './client.js';
 export {
-  useWsStore,
-  type WsConnectionStatus,
-  type WsSessionState,
-  type WsState,
-} from './wsStore.js';
-export {
   WsClientProvider,
   useWsClient,
   type WsClientAuthState,
   type WsClientProviderProps,
 } from './WsClientProvider.js';
+export { createDefaultWsStore } from './defaultStore.js';
+export type {
+  BaseWsSessionState,
+  BaseWsStoreState,
+  WsConnectionStatus,
+  WsStoreLike,
+} from './store-contract.js';

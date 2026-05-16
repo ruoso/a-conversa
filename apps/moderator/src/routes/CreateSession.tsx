@@ -30,6 +30,8 @@ import { useEffect, useRef, useState, type ReactElement } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 
+import { mapCreateSessionError } from '@a-conversa/shell';
+
 /**
  * The backend's body-schema cap on `topic`. Matches the
  * `createSessionBodySchema.properties.topic.maxLength` value from
@@ -49,32 +51,9 @@ const MAX_TOPIC_LENGTH = 256;
  */
 type Privacy = 'public' | 'private';
 
-/**
- * Map a backend `ErrorEnvelope.code` (or fallback status) onto a
- * localization key under the `moderator.createSession.errors`
- * namespace. Unknown codes fall back to the generic message. The
- * mapping table lives in
- * `tasks/refinements/moderator-ui/mod_create_session_form.md`
- * (Constraints → POST behavior → "error-code mapping table").
- */
-function errorCodeToI18nKey(code: string, status: number): string {
-  if (code === 'validation-failed') {
-    return 'moderator.createSession.errors.validation';
-  }
-  if (code === 'auth-required') {
-    return 'moderator.createSession.errors.unauthenticated';
-  }
-  // Status 401 without a recognized code still surfaces as unauthenticated;
-  // this protects against an envelope shape regression where the code
-  // disappears but the status is correct.
-  if (status === 401) {
-    return 'moderator.createSession.errors.unauthenticated';
-  }
-  if (status === 400) {
-    return 'moderator.createSession.errors.validation';
-  }
-  return 'moderator.createSession.errors.generic';
-}
+// The error-code → i18n-key mapper lives in `@a-conversa/shell` as
+// `mapCreateSessionError` — shared with future surfaces that POST to
+// `/api/sessions`.
 
 export function CreateSessionRoute(): ReactElement {
   const { t } = useTranslation();
@@ -166,7 +145,7 @@ export function CreateSessionRoute(): ReactElement {
       } catch {
         // Body wasn't JSON. Fall through to generic.
       }
-      setErrorKey(errorCodeToI18nKey(code, response.status));
+      setErrorKey(mapCreateSessionError(code, response.status));
       topicRef.current?.focus();
     } catch {
       setErrorKey('moderator.createSession.errors.network');

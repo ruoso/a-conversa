@@ -23,7 +23,7 @@ import { MemoryRouter } from 'react-router-dom';
 import i18next from 'i18next';
 
 import { CreateSessionRoute } from './CreateSession';
-import { initI18n } from '../i18n';
+import { createI18nInstance } from '@a-conversa/shell';
 
 // ────────────────────────────────────────────────────────────────────────
 // Mock `react-router-dom`'s `useNavigate` so the test can capture the
@@ -40,7 +40,7 @@ vi.mock('react-router-dom', async () => {
 });
 
 beforeAll(async () => {
-  await initI18n('en-US');
+  await createI18nInstance('en-US');
 });
 
 afterEach(() => {

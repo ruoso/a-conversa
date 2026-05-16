@@ -23,7 +23,7 @@ import { CaptureTargetChip } from './CaptureTargetChip';
 import { useCaptureStore } from '../stores/captureStore';
 import { useSelectionStore } from '../stores/selectionStore';
 import { useWsStore } from '../ws/wsStore';
-import { initI18n } from '../i18n';
+import { createI18nInstance } from '@a-conversa/shell';
 
 const SESSION_ID = 'test-session';
 const ACTOR = '00000000-0000-4000-8000-0000000000aa';
@@ -87,7 +87,7 @@ beforeEach(async () => {
   useCaptureStore.setState(captureInitial, true);
   useSelectionStore.setState(selectionInitial, true);
   useWsStore.setState(wsInitial, true);
-  await initI18n('en-US');
+  await createI18nInstance('en-US');
   await i18next.changeLanguage('en-US');
 });
 

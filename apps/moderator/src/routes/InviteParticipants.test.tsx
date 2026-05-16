@@ -23,10 +23,10 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import i18next from 'i18next';
 
 import { InviteParticipantsRoute } from './InviteParticipants';
-import { initI18n } from '../i18n';
+import { AuthProvider, createI18nInstance } from '@a-conversa/shell';
 import { useWsStore } from '../ws/wsStore';
-import { WsClientProvider } from '../ws/WsClientProvider';
-import type { WsClient } from '../ws/client';
+import { WsClientProvider } from '@a-conversa/shell';
+import type { WsClient } from '@a-conversa/shell';
 
 // ────────────────────────────────────────────────────────────────────────
 // Mock `useNavigate` so the test can capture navigation calls. Other
@@ -42,7 +42,43 @@ vi.mock('react-router-dom', async () => {
 });
 
 beforeAll(async () => {
-  await initI18n('en-US');
+  await createI18nInstance('en-US');
+});
+
+// ────────────────────────────────────────────────────────────────────────
+// `WebSocket` polyfill — happy-dom does NOT expose `WebSocket` as a
+// constructor. The `<InviteParticipantsRoute>` mounts its own inner
+// `<WsClientProvider>` driven by `useAuth()`; when `/api/auth/me`
+// resolves to authenticated, the inner provider's auto-constructed
+// client calls `new WebSocket(url)`. The outer test wrap supplies a
+// fake client but the inner provider sees the route's own
+// `<WsClientProvider>` mount and constructs a default one. The file-
+// wide polyfill makes the inert default safe.
+// ────────────────────────────────────────────────────────────────────────
+class FakeWebSocketCtor {
+  readyState = 0;
+  constructor(_url: string) {
+    /* no-op */
+  }
+  close(): void {
+    /* no-op */
+  }
+  send(): void {
+    /* no-op */
+  }
+  addEventListener(): void {
+    /* no-op */
+  }
+  removeEventListener(): void {
+    /* no-op */
+  }
+}
+const originalWebSocket = (globalThis as { WebSocket?: unknown }).WebSocket;
+beforeAll(() => {
+  (globalThis as { WebSocket?: unknown }).WebSocket = FakeWebSocketCtor;
+});
+afterAll(() => {
+  (globalThis as { WebSocket?: unknown }).WebSocket = originalWebSocket;
 });
 
 // Reset the WS store between tests so seeded events don't leak across
@@ -93,23 +129,42 @@ function createFakeClient(): WsClient {
 function renderRoute(): { client: WsClient } {
   const client = createFakeClient();
   render(
-    <MemoryRouter initialEntries={[`/sessions/${SESSION_ID}/invite`]}>
-      <WsClientProvider auth={{ status: 'authenticated' }} client={client}>
-        <Routes>
-          <Route path="/sessions/:id/invite" element={<InviteParticipantsRoute />} />
-        </Routes>
-      </WsClientProvider>
-    </MemoryRouter>,
+    <AuthProvider>
+      <MemoryRouter initialEntries={[`/sessions/${SESSION_ID}/invite`]}>
+        <WsClientProvider auth={{ status: 'authenticated' }} client={client}>
+          <Routes>
+            <Route path="/sessions/:id/invite" element={<InviteParticipantsRoute />} />
+          </Routes>
+        </WsClientProvider>
+      </MemoryRouter>
+    </AuthProvider>,
   );
   return { client };
 }
 
 /**
- * Build a `fetch` stub that returns a freshly-constructed `Response`
- * each call. Mirrors the pattern in `CreateSession.test.tsx`.
+ * Build a `fetch` stub that routes `/api/auth/me` to an authenticated
+ * response and `/api/sessions/:id` to the caller's `builder()`. After
+ * the shell-substrate extraction the route mounts inside `<AuthProvider>`
+ * (or in the InviteParticipants test, we render it inside an
+ * `<AuthProvider>` so `useAuth()` resolves); the provider fires
+ * `/api/auth/me` on mount and the bare session stub would 404 that.
  */
 function stubSessionFetch(builder: () => Response): ReturnType<typeof vi.fn> {
-  return vi.fn(() => Promise.resolve(builder()));
+  return vi.fn((url: string) => {
+    if (url === '/api/auth/me') {
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            userId: HOST_USER_ID,
+            screenName: 'alice',
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      );
+    }
+    return Promise.resolve(builder());
+  });
 }
 
 function okSessionResponse(): Response {

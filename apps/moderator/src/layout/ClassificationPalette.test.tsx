@@ -30,7 +30,7 @@ import i18next from 'i18next';
 import { ClassificationPalette } from './ClassificationPalette';
 import { CaptureTextInput } from './CaptureTextInput';
 import { useCaptureStore } from '../stores/captureStore';
-import { initI18n } from '../i18n';
+import { createI18nInstance } from '@a-conversa/shell';
 
 const EN_KIND_LABELS: Record<string, string> = {
   fact: 'Fact',
@@ -52,7 +52,7 @@ const CANONICAL_ORDER = ['fact', 'predictive', 'value', 'normative', 'definition
 
 beforeEach(async () => {
   useCaptureStore.getState().reset();
-  await initI18n('en-US');
+  await createI18nInstance('en-US');
   await i18next.changeLanguage('en-US');
 });
 

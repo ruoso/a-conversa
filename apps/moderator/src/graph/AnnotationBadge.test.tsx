@@ -24,7 +24,7 @@ import type { AnnotationKind } from '@a-conversa/shared-types';
 
 import { AnnotationBadge } from './AnnotationBadge';
 import type { Annotation } from './selectors';
-import { initI18n } from '../i18n';
+import { createI18nInstance } from '@a-conversa/shell';
 
 const ALL_KINDS: readonly AnnotationKind[] = ['note', 'reframe', 'scope-change', 'stance'];
 
@@ -65,7 +65,7 @@ function makeAnnotation(overrides: Partial<Annotation> & { id: string }): Annota
 }
 
 beforeEach(async () => {
-  await initI18n('en-US');
+  await createI18nInstance('en-US');
   await i18next.changeLanguage('en-US');
 });
 

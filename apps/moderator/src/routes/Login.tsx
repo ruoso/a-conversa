@@ -1,28 +1,29 @@
 // Login route for the moderator console.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_auth_flow.md
+// Refinement: tasks/refinements/moderator-ui/mod_auth_flow.md +
+//   tasks/refinements/shell-package/shell_substrate_extraction.md
+//   (the SSO `<a>` extracted to `<LoginButton>` in `@a-conversa/shell`;
+//   the four-state switch + welcome banner + logout button stay in the
+//   moderator).
 // ADRs:        docs/adr/0002-auth-self-hosted-oidc-authelia.md
 // TaskJuggler: moderator_ui.mod_shell.mod_auth_flow
 //
 // Renders one of four states off `useAuth()`:
 //
 //   - `loading`            → "Checking session…" placeholder.
-//   - `unauthenticated`    → a "Sign in with SSO" anchor that
-//                            navigates to `/auth/login` (full-page
-//                            navigation; the OIDC dance is cross-origin
-//                            so `fetch` cannot follow the 302).
+//   - `unauthenticated`    → `<LoginButton />` from `@a-conversa/shell`
+//                            (full-page navigation to `/api/auth/login`;
+//                            the OIDC dance is cross-origin so `fetch`
+//                            cannot follow the 302).
 //   - `needs-screen-name`  → `<Navigate to="/screen-name" replace />`.
 //   - `authenticated`      → a welcome banner with the user's screen
 //                            name plus a logout button.
-//
-// `mod_state_management` will replace `useAuth()`'s internals with a
-// Zustand subscription; the call-site code below does not change.
 
 import type { ReactElement } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 
-import { useAuth } from '../auth/useAuth';
+import { LoginButton, useAuth } from '@a-conversa/shell';
 
 export function LoginRoute(): ReactElement {
   const { t } = useTranslation();
@@ -61,15 +62,10 @@ export function LoginRoute(): ReactElement {
 
   // Default branch: unauthenticated (or an unexpected status — fall
   // back to the login affordance rather than rendering a blank screen).
-  // An `<a>` element triggers a full-page navigation, which is what the
-  // OIDC handshake needs (Authelia is a foreign origin; `fetch` can't
-  // follow the redirect into it).
   return (
     <main data-testid="route-login">
       <h1 data-testid="route-title">{t('auth.login.title')}</h1>
-      <a href="/api/auth/login" data-testid="auth-login-button" role="button">
-        {t('auth.login.button')}
-      </a>
+      <LoginButton />
     </main>
   );
 }

@@ -33,18 +33,18 @@ import {
   type UseCommitActionResult,
 } from './useCommitAction';
 import { useWsStore } from '../ws/wsStore';
-import { WsClientProvider } from '../ws/WsClientProvider';
-import { WsRequestError, WsRequestTimeoutError } from '../ws/client';
-import type { SendFn, WsClient, WsClientStatus } from '../ws/client';
+import { WsClientProvider } from '@a-conversa/shell';
+import { WsRequestError, WsRequestTimeoutError } from '@a-conversa/shell';
+import type { SendFn, WsClient, WsClientStatus } from '@a-conversa/shell';
 import type { WsEnvelopeUnion, WsMessagePayloadMap, WsMessageType } from '@a-conversa/shared-types';
-import { initI18n } from '../i18n';
+import { createI18nInstance } from '@a-conversa/shell';
 
 const SESSION_ID = '11111111-1111-4111-8111-111111111111';
 const PROPOSAL_ID = '22222222-2222-4222-8222-222222222222';
 const PROPOSAL_ID_ALT = '33333333-3333-4333-8333-333333333333';
 
 beforeAll(async () => {
-  await initI18n('en-US');
+  await createI18nInstance('en-US');
 });
 
 interface CommitCall {
@@ -304,7 +304,7 @@ describe('useCommitAction — error paths', () => {
     });
     expect(probe.result.lastError?.code).toBe('timeout');
     // The localized timeout text is the en-US chrome string set at
-    // `initI18n('en-US')` startup.
+    // `createI18nInstance('en-US')` startup.
     expect(probe.result.lastError?.message).toBe(
       'The commit request timed out. Check your connection and try again.',
     );
