@@ -326,6 +326,9 @@ function formatEffort(days: number): string {
 }
 
 function main(): void {
+  const argv = process.argv.slice(2).filter((a) => a.length > 0);
+  const filterArg = argv[0];
+
   const rows = runTj3();
   const g = buildGraph(rows);
 
@@ -337,10 +340,27 @@ function main(): void {
   const declared = readMilestoneOrder();
   const milestoneIds = new Set(declared.filter((id) => g.byId.has(id)));
 
+  let filterId: string | undefined;
+  if (filterArg !== undefined) {
+    const qualified = filterArg.startsWith('milestones.') ? filterArg : `milestones.${filterArg}`;
+    if (!milestoneIds.has(qualified)) {
+      process.stderr.write(`unblocked: milestone not found: ${filterArg}\n`);
+      process.stderr.write(`Available milestones:\n`);
+      for (const id of declared) {
+        if (milestoneIds.has(id)) {
+          process.stderr.write(`  ${id.replace(/^milestones\./, '')}\n`);
+        }
+      }
+      process.exit(1);
+    }
+    filterId = qualified;
+  }
+
   const gatingMemo = new Map<string, string[]>();
   const lines: string[] = [];
 
   for (const msId of declared) {
+    if (filterId !== undefined && msId !== filterId) continue;
     const ms = g.byId.get(msId);
     if (ms === undefined) continue;
     if (!milestoneIds.has(msId)) continue;

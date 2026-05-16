@@ -39,6 +39,7 @@ help:
 	@echo "  make seed           seed the dev database (stub — see foundation.dev_env.seed_data_script)"
 	@echo "  make unblocked      list, per milestone, the leaf tasks that are currently unblocked"
 	@echo "                      (uses tj3 to resolve the WBS dep graph; see scripts/unblocked.ts)"
+	@echo "                      pass MILESTONE=<id> to scope to one milestone"
 	@echo "  make clean          remove build artifacts and caches"
 
 install:
@@ -190,8 +191,10 @@ seed:
 # List currently-unblocked leaf tasks, grouped by milestone. Uses tj3
 # (TaskJuggler) to resolve the WBS dep graph — see the header comment in
 # `scripts/unblocked.ts` for the approach.
+# Pass MILESTONE=<id> to scope to a single milestone (bare id or
+# `milestones.<id>` both accepted), e.g. `make unblocked MILESTONE=m_backend_review`.
 unblocked:
-	@pnpm run unblocked
+	@pnpm run unblocked $(MILESTONE)
 
 clean:
 	@rm -rf node_modules apps/*/node_modules packages/*/node_modules
