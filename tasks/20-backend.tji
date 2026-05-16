@@ -52,9 +52,13 @@ task backend "Backend" {
       allocate team
       complete 100
       depends !serve_static_frontends
-      note "Refinement: tasks/refinements/backend/serve_static_frontends_path_collision_fix.md"
-      note "Source of debt: mod_create_session_form (this commit) — `/sessions/new` returned 400 from Fastify's GET /sessions/:id UUID params validator BEFORE the static-frontends SPA fallback could fire, forcing the moderator route to `/sessions/new/setup` as a 3-segment workaround. Any future 2-segment SPA route under /sessions/* will hit the same wall. Options: (a) move all session API routes under /api/sessions/*; (b) gate the params validator on the Accept header (validate UUID only for application/json, fall through to SPA for text/html); (c) explicitly exempt named segments like /sessions/new from validation. Choose under refinement."
-      note "Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit b7c5ff0)."
+      note -8<-
+        Refinement: tasks/refinements/backend/serve_static_frontends_path_collision_fix.md
+
+        Source of debt: mod_create_session_form (this commit) — `/sessions/new` returned 400 from Fastify's GET /sessions/:id UUID params validator BEFORE the static-frontends SPA fallback could fire, forcing the moderator route to `/sessions/new/setup` as a 3-segment workaround. Any future 2-segment SPA route under /sessions/* will hit the same wall. Options: (a) move all session API routes under /api/sessions/*; (b) gate the params validator on the Accept header (validate UUID only for application/json, fall through to SPA for text/html); (c) explicitly exempt named segments like /sessions/new from validation. Choose under refinement.
+
+        Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit b7c5ff0).
+      ->8-
     }
     task serve_static_frontends_multi_surface "Extend static-frontends plugin to serve root app + per-surface bundles (ADR 0026)" {
       effort 0.5d
@@ -71,8 +75,11 @@ task backend "Backend" {
       effort 2d
       allocate team
       complete 100
-      note "Generic OAuth client + wiring for Google, GitHub, GitLab."
-      note "Refinement: tasks/refinements/backend/oauth_provider_config.md"
+      note -8<-
+        Generic OAuth client + wiring for Google, GitHub, GitLab.
+
+        Refinement: tasks/refinements/backend/oauth_provider_config.md
+      ->8-
     }
     task oauth_callback_handler "OAuth callback handler" {
       effort 1d
@@ -100,8 +107,11 @@ task backend "Backend" {
       allocate team
       complete 100
       depends !oauth_callback_handler
-      note "Audit + tests confirming we use OAuth purely as auth signal."
-      note "Refinement: tasks/refinements/backend/no_profile_data_policy.md"
+      note -8<-
+        Audit + tests confirming we use OAuth purely as auth signal.
+
+        Refinement: tasks/refinements/backend/no_profile_data_policy.md
+      ->8-
     }
     task auth_middleware "Middleware enforcing authentication on protected endpoints" {
       effort 1d
@@ -162,15 +172,21 @@ task backend "Backend" {
       effort 0.5d
       allocate team
       depends !get_session_endpoint
-      note "Source of debt: mod_invite_participants Status block (this commit) — the moderator's invite view at /sessions/:id/invite currently derives slot occupancy from WS catch-up replay of participant-joined / participant-left events via client.trackSession(sessionId). That path is correct for live sessions but degrades on tab-return after long idle (the WS reconnects and replays from sinceSequence:0, but cold-load shape consistency with the rest of the session-management surface is the canonical REST seam). This endpoint returns the current participants array as a list of SessionParticipantResponse rows (id, sessionId, userId, role, joinedAt, leftAt)."
-      note "Surfaced via tech-debt registration policy in ORCHESTRATOR.md (this commit)."
+      note -8<-
+        Source of debt: mod_invite_participants Status block (this commit) — the moderator's invite view at /sessions/:id/invite currently derives slot occupancy from WS catch-up replay of participant-joined / participant-left events via client.trackSession(sessionId). That path is correct for live sessions but degrades on tab-return after long idle (the WS reconnects and replays from sinceSequence:0, but cold-load shape consistency with the rest of the session-management surface is the canonical REST seam). This endpoint returns the current participants array as a list of SessionParticipantResponse rows (id, sessionId, userId, role, joinedAt, leftAt).
+
+        Surfaced via tech-debt registration policy in ORCHESTRATOR.md (this commit).
+      ->8-
     }
     task session_invite_self_claim_endpoint "POST /sessions/:id/invite/claim — debater self-claims a role slot when arriving via invite URL" {
       effort 1d
       allocate team
       depends !participant_assignment, !list_session_participants_endpoint
-      note "Source of debt: mod_invite_participants Status block (this commit) — the moderator's invite view generates shareable links of shape <origin>/sessions/<id>/invite?role=<role>; the debater opens the link, logs in, and needs a self-claim endpoint to take the slot (the existing POST /api/sessions/:id/participants is host-only and requires a userId the debater can't supply). Body { role: 'debater-A' | 'debater-B' }; authenticated caller's userId is implicit from request.authUser.id. Reuses the transactional shape from participant_assignment (SELECT ... FOR UPDATE + role-availability check + INSERT + participant-joined event + COMMIT). Refinement should decide: whether self-claim requires private-visibility-or-host-invited, and how slot-already-filled errors surface to the debater. This is the debater-side endpoint that completes the invite → claim loop."
-      note "Surfaced via tech-debt registration policy in ORCHESTRATOR.md (this commit)."
+      note -8<-
+        Source of debt: mod_invite_participants Status block (this commit) — the moderator's invite view generates shareable links of shape <origin>/sessions/<id>/invite?role=<role>; the debater opens the link, logs in, and needs a self-claim endpoint to take the slot (the existing POST /api/sessions/:id/participants is host-only and requires a userId the debater can't supply). Body { role: 'debater-A' | 'debater-B' }; authenticated caller's userId is implicit from request.authUser.id. Reuses the transactional shape from participant_assignment (SELECT ... FOR UPDATE + role-availability check + INSERT + participant-joined event + COMMIT). Refinement should decide: whether self-claim requires private-visibility-or-host-invited, and how slot-already-filled errors surface to the debater. This is the debater-side endpoint that completes the invite → claim loop.
+
+        Surfaced via tech-debt registration policy in ORCHESTRATOR.md (this commit).
+      ->8-
     }
   }
 

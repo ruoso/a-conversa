@@ -26,8 +26,11 @@ task frontend_i18n "Frontend internationalization" {
     allocate team
     complete 100
     depends !i18n_library_choice
-    note "Creates packages/i18n-catalogs/ with en-US.json / pt-BR.json / es-419.json"
-    note "Refinement: tasks/refinements/frontend-i18n/i18n_catalog_workflow.md"
+    note -8<-
+      Creates packages/i18n-catalogs/ with en-US.json / pt-BR.json / es-419.json
+
+      Refinement: tasks/refinements/frontend-i18n/i18n_catalog_workflow.md
+    ->8-
   }
 
   task i18n_locale_negotiation "Locale detection + selection rules" {
@@ -35,8 +38,11 @@ task frontend_i18n "Frontend internationalization" {
     allocate team
     complete 100
     depends !i18n_library_choice
-    note "URL prefix for audience; user preference for moderator/participant; cookie persistence"
-    note "Refinement: tasks/refinements/frontend-i18n/i18n_locale_negotiation.md"
+    note -8<-
+      URL prefix for audience; user preference for moderator/participant; cookie persistence
+
+      Refinement: tasks/refinements/frontend-i18n/i18n_locale_negotiation.md
+    ->8-
   }
 
   task i18n_methodology_glossary "Canonical en-US -> pt-BR / es-419 glossary" {
@@ -44,9 +50,13 @@ task frontend_i18n "Frontend internationalization" {
     allocate team
     complete 100
     depends !i18n_catalog_workflow
-    note "fact / predictive / value / normative / definitional + edge roles + states + diagnostics"
-    note "Requires native-speaker + philosophical review per locale (see Risks)"
-    note "Refinement: tasks/refinements/frontend-i18n/i18n_methodology_glossary.md"
+    note -8<-
+      fact / predictive / value / normative / definitional + edge roles + states + diagnostics
+
+      Requires native-speaker + philosophical review per locale (see Risks)
+
+      Refinement: tasks/refinements/frontend-i18n/i18n_methodology_glossary.md
+    ->8-
   }
 
   task i18n_methodology_role_descriptions "Add methodology.edgeRole.<role>.description entries to all v1 locale catalogs" {
@@ -54,177 +64,244 @@ task frontend_i18n "Frontend internationalization" {
     allocate team
     complete 100
     depends !i18n_methodology_glossary
-    note "Source of debt: mod_edge_popover_full_target_wording (this commit) — the moderator edge popover wires a conditional render of methodology.edgeRole.<role>.description via i18next t.exists(). Once these entries land in en-US.json / pt-BR.json / es-419.json for the seven edge roles (supports, rebuts, qualifies, bridges-from, bridges-to, defines, contradicts), the popover automatically surfaces a one-sentence role description on hover; until then the key-existence check yields the role label alone."
-    note "Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit b7c5ff0)."
-    note "Refinement: tasks/refinements/frontend-i18n/i18n_methodology_role_descriptions.md"
+    note -8<-
+      Source of debt: mod_edge_popover_full_target_wording (this commit) — the moderator edge popover wires a conditional render of methodology.edgeRole.<role>.description via i18next t.exists(). Once these entries land in en-US.json / pt-BR.json / es-419.json for the seven edge roles (supports, rebuts, qualifies, bridges-from, bridges-to, defines, contradicts), the popover automatically surfaces a one-sentence role description on hover; until then the key-existence check yields the role label alone.
+
+      Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit b7c5ff0).
+
+      Refinement: tasks/refinements/frontend-i18n/i18n_methodology_role_descriptions.md
+    ->8-
   }
 
   task i18n_methodology_role_descriptions_native_review "Native-speaker review of pt-BR + es-419 edge-role descriptions" {
     effort 1d
     allocate team
     depends !i18n_methodology_role_descriptions
-    note "Source of debt: i18n_methodology_role_descriptions (this commit) — pt-BR and es-419 description drafts landed flagged PENDING in the *.review.json trackers; replace with native-speaker-reviewed text and sign off the review trackers. Methodology + philosophical accuracy review per locale."
-    note "Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit b7c5ff0)."
+    note -8<-
+      Source of debt: i18n_methodology_role_descriptions (this commit) — pt-BR and es-419 description drafts landed flagged PENDING in the *.review.json trackers; replace with native-speaker-reviewed text and sign off the review trackers. Methodology + philosophical accuracy review per locale.
+
+      Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit b7c5ff0).
+    ->8-
   }
 
   task i18n_create_session_form_native_review "Native-speaker review of pt-BR + es-419 create-session-form strings" {
     effort 0.5d
     allocate team
     depends !i18n_methodology_role_descriptions_native_review
-    note "Source of debt: mod_create_session_form (this commit) — pt-BR and es-419 drafts of the 15 keys under moderator.createSession.* landed flagged PENDING in the *.review.json trackers; replace with native-speaker-reviewed text and sign off the review trackers. UI prose translation (lower bar than methodology terms but still needs review)."
-    note "Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit b7c5ff0)."
+    note -8<-
+      Source of debt: mod_create_session_form (this commit) — pt-BR and es-419 drafts of the 15 keys under moderator.createSession.* landed flagged PENDING in the *.review.json trackers; replace with native-speaker-reviewed text and sign off the review trackers. UI prose translation (lower bar than methodology terms but still needs review).
+
+      Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit b7c5ff0).
+    ->8-
   }
 
   task i18n_layout_tidy_action_native_review "Native-speaker review of pt-BR + es-419 layout-tidy-action button strings" {
     effort 0.5d
     allocate team
     depends !i18n_create_session_form_native_review
-    note "Source of debt: mod_layout_tidy_action (this commit) — pt-BR and es-419 drafts of the 3 keys under moderator.graph.tidyUp.* landed flagged PENDING in the *.review.json trackers; replace with native-speaker-reviewed text and sign off the review trackers. UI prose translation (lower bar than methodology terms but still needs review)."
-    note "Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit b7c5ff0)."
+    note -8<-
+      Source of debt: mod_layout_tidy_action (this commit) — pt-BR and es-419 drafts of the 3 keys under moderator.graph.tidyUp.* landed flagged PENDING in the *.review.json trackers; replace with native-speaker-reviewed text and sign off the review trackers. UI prose translation (lower bar than methodology terms but still needs review).
+
+      Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit b7c5ff0).
+    ->8-
   }
 
   task i18n_capture_text_input_native_review "Native-speaker review of pt-BR + es-419 capture-text-input strings" {
     effort 0.5d
     allocate team
     depends !i18n_layout_tidy_action_native_review
-    note "Source of debt: mod_capture_text_input (this commit) — pt-BR and es-419 drafts of the 4 keys under moderator.captureTextInput.* landed flagged PENDING in the *.review.json trackers; replace with native-speaker-reviewed text and sign off the review trackers. UI prose translation (lower bar than methodology terms but still needs review)."
-    note "Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit b7c5ff0)."
+    note -8<-
+      Source of debt: mod_capture_text_input (this commit) — pt-BR and es-419 drafts of the 4 keys under moderator.captureTextInput.* landed flagged PENDING in the *.review.json trackers; replace with native-speaker-reviewed text and sign off the review trackers. UI prose translation (lower bar than methodology terms but still needs review).
+
+      Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit b7c5ff0).
+    ->8-
   }
 
   task i18n_classification_palette_native_review "Native-speaker review of pt-BR + es-419 classification-palette strings" {
     effort 0.5d
     allocate team
     depends !i18n_capture_text_input_native_review
-    note "Source of debt: mod_classification_palette (this commit) — pt-BR and es-419 drafts of the 5 keys under moderator.classificationPalette.* landed flagged PENDING in the *.review.json trackers; replace with native-speaker-reviewed text and sign off the review trackers. UI prose translation (lower bar than methodology terms but still needs review)."
-    note "Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit b7c5ff0)."
+    note -8<-
+      Source of debt: mod_classification_palette (this commit) — pt-BR and es-419 drafts of the 5 keys under moderator.classificationPalette.* landed flagged PENDING in the *.review.json trackers; replace with native-speaker-reviewed text and sign off the review trackers. UI prose translation (lower bar than methodology terms but still needs review).
+
+      Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit b7c5ff0).
+    ->8-
   }
 
   task i18n_target_auto_suggest_native_review "Native-speaker review of pt-BR + es-419 capture-target-chip strings" {
     effort 0.5d
     allocate team
     depends !i18n_classification_palette_native_review
-    note "Source of debt: mod_target_auto_suggest (this commit) — pt-BR and es-419 drafts of the 4 keys under moderator.captureTargetChip.* landed flagged PENDING in the *.review.json trackers; replace with native-speaker-reviewed text and sign off the review trackers. UI prose translation (lower bar than methodology terms but still needs review)."
-    note "Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit b7c5ff0)."
+    note -8<-
+      Source of debt: mod_target_auto_suggest (this commit) — pt-BR and es-419 drafts of the 4 keys under moderator.captureTargetChip.* landed flagged PENDING in the *.review.json trackers; replace with native-speaker-reviewed text and sign off the review trackers. UI prose translation (lower bar than methodology terms but still needs review).
+
+      Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit b7c5ff0).
+    ->8-
   }
 
   task i18n_target_clear_override_native_review "Native-speaker review of pt-BR + es-419 capture-target-chip clear-button strings" {
     effort 0.5d
     allocate team
     depends !i18n_target_auto_suggest_native_review
-    note "Source of debt: mod_target_clear_override (this commit) — pt-BR and es-419 drafts of the 2 new keys under moderator.captureTargetChip.{clearAria, clearTitle} landed flagged PENDING in the *.review.json trackers; replace with native-speaker-reviewed text and sign off the review trackers. UI prose translation (lower bar than methodology terms but still needs review)."
-    note "Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit b7c5ff0)."
+    note -8<-
+      Source of debt: mod_target_clear_override (this commit) — pt-BR and es-419 drafts of the 2 new keys under moderator.captureTargetChip.{clearAria, clearTitle} landed flagged PENDING in the *.review.json trackers; replace with native-speaker-reviewed text and sign off the review trackers. UI prose translation (lower bar than methodology terms but still needs review).
+
+      Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit b7c5ff0).
+    ->8-
   }
 
   task i18n_edge_role_selector_native_review "Native-speaker review of pt-BR + es-419 edge-role-palette strings" {
     effort 0.5d
     allocate team
     depends !i18n_target_clear_override_native_review
-    note "Source of debt: mod_edge_role_selector (this commit) — pt-BR and es-419 drafts of the 6 keys under moderator.edgeRolePalette.* landed flagged PENDING in the *.review.json trackers; replace with native-speaker-reviewed text and sign off the review trackers. UI prose translation (lower bar than methodology terms but still needs review)."
-    note "Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit b7c5ff0)."
+    note -8<-
+      Source of debt: mod_edge_role_selector (this commit) — pt-BR and es-419 drafts of the 6 keys under moderator.edgeRolePalette.* landed flagged PENDING in the *.review.json trackers; replace with native-speaker-reviewed text and sign off the review trackers. UI prose translation (lower bar than methodology terms but still needs review).
+
+      Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit b7c5ff0).
+    ->8-
   }
 
   task i18n_propose_action_native_review "Native-speaker review of pt-BR + es-419 propose-action strings" {
     effort 0.5d
     allocate team
     depends !i18n_edge_role_selector_native_review
-    note "Source of debt: mod_propose_action (this commit) — pt-BR and es-419 drafts of the 12 keys under moderator.proposeAction.* landed flagged PENDING in the *.review.json trackers; replace with native-speaker-reviewed text and sign off the review trackers. UI prose translation (lower bar than methodology terms but still needs review)."
-    note "Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit b7c5ff0)."
+    note -8<-
+      Source of debt: mod_propose_action (this commit) — pt-BR and es-419 drafts of the 12 keys under moderator.proposeAction.* landed flagged PENDING in the *.review.json trackers; replace with native-speaker-reviewed text and sign off the review trackers. UI prose translation (lower bar than methodology terms but still needs review).
+
+      Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit b7c5ff0).
+    ->8-
   }
 
   task i18n_proposal_list_native_review "Native-speaker review of pt-BR + es-419 proposal-list strings" {
     effort 0.5d
     allocate team
     depends !i18n_propose_action_native_review
-    note "Source of debt: mod_proposal_list (this commit) — pt-BR and es-419 drafts of the 4 keys under moderator.proposalList.* landed flagged PENDING in the *.review.json trackers; replace with native-speaker-reviewed text and sign off the review trackers. UI prose translation (lower bar than methodology terms but still needs review)."
-    note "Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit b7c5ff0)."
+    note -8<-
+      Source of debt: mod_proposal_list (this commit) — pt-BR and es-419 drafts of the 4 keys under moderator.proposalList.* landed flagged PENDING in the *.review.json trackers; replace with native-speaker-reviewed text and sign off the review trackers. UI prose translation (lower bar than methodology terms but still needs review).
+
+      Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit b7c5ff0).
+    ->8-
   }
 
   task i18n_per_facet_breakdown_native_review "Native-speaker review of pt-BR + es-419 facet-state + facet-proposal strings" {
     effort 0.5d
     allocate team
     depends !i18n_proposal_list_native_review
-    note "Source of debt: mod_per_facet_breakdown (this commit) — pt-BR and es-419 drafts of the 3 new methodology keys (methodology.facetState.committed, methodology.facetState.withdrawn, methodology.facet.proposal) landed flagged PENDING in the *.review.json trackers; replace with native-speaker-reviewed text and sign off the review trackers. Methodology + philosophical accuracy review per locale."
-    note "Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit b7c5ff0)."
+    note -8<-
+      Source of debt: mod_per_facet_breakdown (this commit) — pt-BR and es-419 drafts of the 3 new methodology keys (methodology.facetState.committed, methodology.facetState.withdrawn, methodology.facet.proposal) landed flagged PENDING in the *.review.json trackers; replace with native-speaker-reviewed text and sign off the review trackers. Methodology + philosophical accuracy review per locale.
+
+      Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit b7c5ff0).
+    ->8-
   }
 
   task i18n_commit_button_native_review "Native-speaker review of pt-BR + es-419 commit-button strings (8 keys including ICU select for gate reasons)" {
     effort 0.5d
     allocate team
     depends !i18n_per_facet_breakdown_native_review
-    note "Source of debt: mod_commit_button (this commit) — pt-BR and es-419 drafts of the 8 keys under moderator.commitButton.* (7 chrome keys + 1 ICU-select reason key under moderator.commitButton.reason.*) landed flagged PENDING in the *.review.json trackers; replace with native-speaker-reviewed text and sign off the review trackers. UI prose translation (lower bar than methodology terms but still needs native-speaker review, including ICU-select wording per gate reason)."
-    note "Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit b7c5ff0)."
+    note -8<-
+      Source of debt: mod_commit_button (this commit) — pt-BR and es-419 drafts of the 8 keys under moderator.commitButton.* (7 chrome keys + 1 ICU-select reason key under moderator.commitButton.reason.*) landed flagged PENDING in the *.review.json trackers; replace with native-speaker-reviewed text and sign off the review trackers. UI prose translation (lower bar than methodology terms but still needs native-speaker review, including ICU-select wording per gate reason).
+
+      Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit b7c5ff0).
+    ->8-
   }
 
   task i18n_proposal_filter_search_native_review "Native-speaker review of pt-BR + es-419 proposal-filter strings (5 keys including 3-arm ICU select for state chip)" {
     effort 0.5d
     allocate team
     depends !i18n_commit_button_native_review
-    note "Source of debt: mod_proposal_filter_search (this commit) — pt-BR and es-419 drafts of the 5 keys under moderator.proposalFilter.* (textPlaceholder, textAriaLabel, clearTextAriaLabel, stateChipLabel [ICU 3-arm select: all / ready / disputed], noMatches) landed flagged PENDING in the *.review.json trackers; replace with native-speaker-reviewed text and sign off the review trackers. UI prose translation (lower bar than methodology terms but still needs native-speaker review, including the ICU-select wording per state arm)."
-    note "Surfaced via tech-debt registration policy in ORCHESTRATOR.md (this commit)."
+    note -8<-
+      Source of debt: mod_proposal_filter_search (this commit) — pt-BR and es-419 drafts of the 5 keys under moderator.proposalFilter.* (textPlaceholder, textAriaLabel, clearTextAriaLabel, stateChipLabel [ICU 3-arm select: all / ready / disputed], noMatches) landed flagged PENDING in the *.review.json trackers; replace with native-speaker-reviewed text and sign off the review trackers. UI prose translation (lower bar than methodology terms but still needs native-speaker review, including the ICU-select wording per state arm).
+
+      Surfaced via tech-debt registration policy in ORCHESTRATOR.md (this commit).
+    ->8-
   }
 
   task i18n_invite_participants_native_review "Native-speaker review of pt-BR + es-419 invite-participants strings (19 keys)" {
     effort 0.5d
     allocate team
     depends !i18n_proposal_filter_search_native_review
-    note "Source of debt: mod_invite_participants (this commit) — pt-BR and es-419 drafts of the 19 keys under moderator.invite.* (18 scoped in the refinement's catalog table + 1 a11y inputAriaLabel surfaced during implementation per the refinement's a11y section, lines 240-242) landed flagged PENDING in the *.review.json trackers; replace with native-speaker-reviewed text and sign off the review trackers. UI prose translation (lower bar than methodology terms but still needs native-speaker review)."
-    note "Surfaced via tech-debt registration policy in ORCHESTRATOR.md (this commit)."
+    note -8<-
+      Source of debt: mod_invite_participants (this commit) — pt-BR and es-419 drafts of the 19 keys under moderator.invite.* (18 scoped in the refinement's catalog table + 1 a11y inputAriaLabel surfaced during implementation per the refinement's a11y section, lines 240-242) landed flagged PENDING in the *.review.json trackers; replace with native-speaker-reviewed text and sign off the review trackers. UI prose translation (lower bar than methodology terms but still needs native-speaker review).
+
+      Surfaced via tech-debt registration policy in ORCHESTRATOR.md (this commit).
+    ->8-
   }
 
   task i18n_session_lobby_native_review "Native-speaker review of pt-BR + es-419 session-lobby strings (9 new keys under moderator.invite.lobby.*)" {
     effort 0.5d
     allocate team
     depends !i18n_invite_participants_native_review
-    note "Source of debt: mod_session_lobby (this commit) — pt-BR and es-419 drafts of the 9 new keys under moderator.invite.lobby.* (ready.{present,pending}, bothReady.banner, disabledTooltip.{awaiting-A,awaiting-B,awaiting-both}, enterHint.{ready,awaiting-A,awaiting-B,awaiting-both}) landed flagged PENDING in the *.review.json trackers; replace with native-speaker-reviewed text and sign off the review trackers. UI prose translation (lower bar than methodology terms but still needs native-speaker review)."
-    note "Surfaced via tech-debt registration policy in ORCHESTRATOR.md (this commit)."
+    note -8<-
+      Source of debt: mod_session_lobby (this commit) — pt-BR and es-419 drafts of the 9 new keys under moderator.invite.lobby.* (ready.{present,pending}, bothReady.banner, disabledTooltip.{awaiting-A,awaiting-B,awaiting-both}, enterHint.{ready,awaiting-A,awaiting-B,awaiting-both}) landed flagged PENDING in the *.review.json trackers; replace with native-speaker-reviewed text and sign off the review trackers. UI prose translation (lower bar than methodology terms but still needs native-speaker review).
+
+      Surfaced via tech-debt registration policy in ORCHESTRATOR.md (this commit).
+    ->8-
   }
 
   task i18n_axiom_mark_action_native_review "Native-speaker review of pt-BR + es-419 axiom-mark-action strings (6 new keys under moderator.axiomMarkAction.*)" {
     effort 0.5d
     allocate team
     depends !i18n_session_lobby_native_review
-    note "Source of debt: mod_axiom_mark_action (this commit) — pt-BR and es-419 drafts of the 6 new keys under moderator.axiomMarkAction.* (submenu.{header,empty,participantLabel}, errorBanner.{timeout,unknown,notSelf}) landed flagged PENDING in the *.review.json trackers; replace with native-speaker-reviewed text and sign off the review trackers. UI prose translation (lower bar than methodology terms but still needs native-speaker review, including the personal-axiom invariant in the notSelf message — the localized phrasing must convey the methodology semantic that axiom-marks are per-participant and cannot be proposed on someone else's behalf)."
-    note "Surfaced via tech-debt registration policy in ORCHESTRATOR.md (this commit)."
+    note -8<-
+      Source of debt: mod_axiom_mark_action (this commit) — pt-BR and es-419 drafts of the 6 new keys under moderator.axiomMarkAction.* (submenu.{header,empty,participantLabel}, errorBanner.{timeout,unknown,notSelf}) landed flagged PENDING in the *.review.json trackers; replace with native-speaker-reviewed text and sign off the review trackers. UI prose translation (lower bar than methodology terms but still needs native-speaker review, including the personal-axiom invariant in the notSelf message — the localized phrasing must convey the methodology semantic that axiom-marks are per-participant and cannot be proposed on someone else's behalf).
+
+      Surfaced via tech-debt registration policy in ORCHESTRATOR.md (this commit).
+    ->8-
   }
 
   task i18n_axiom_mark_pending_render_native_review "Native-speaker review of pt-BR + es-419 pending-axiom-mark strings (2 new keys under methodology.axiomMark.*)" {
     effort 0.5d
     allocate team
     depends !i18n_axiom_mark_action_native_review
-    note "Source of debt: mod_axiom_mark_pending_render (this commit) — pt-BR and es-419 drafts of the 2 new keys under methodology.axiomMark.* (pendingTooltip, pendingSrLabel) landed flagged PENDING in the *.review.json trackers; replace with native-speaker-reviewed text and sign off the review trackers. Methodology vocabulary translation — the localized phrasing must read as a clear proposed-state extension of the existing committed-state tooltip / aria-label (so the moderator hearing the screen-reader callout perceives the lifecycle distinction 'pending' vs 'committed' as continuous with the methodology's 'proposed → committed' agreement lifecycle)."
-    note "Surfaced via tech-debt registration policy in ORCHESTRATOR.md (this commit)."
+    note -8<-
+      Source of debt: mod_axiom_mark_pending_render (this commit) — pt-BR and es-419 drafts of the 2 new keys under methodology.axiomMark.* (pendingTooltip, pendingSrLabel) landed flagged PENDING in the *.review.json trackers; replace with native-speaker-reviewed text and sign off the review trackers. Methodology vocabulary translation — the localized phrasing must read as a clear proposed-state extension of the existing committed-state tooltip / aria-label (so the moderator hearing the screen-reader callout perceives the lifecycle distinction 'pending' vs 'committed' as continuous with the methodology's 'proposed → committed' agreement lifecycle).
+
+      Surfaced via tech-debt registration policy in ORCHESTRATOR.md (this commit).
+    ->8-
   }
 
   task i18n_decompose_mode_native_review "Native-speaker review of pt-BR + es-419 decompose-mode strings" {
     effort 0.5d
     allocate team
     depends !i18n_axiom_mark_pending_render_native_review
-    note "Source of debt: mod_decompose_mode (this commit) — pt-BR and es-419 drafts of the 3 new keys under moderator.decompose.* landed flagged PENDING in the *.review.json trackers; replace with native-speaker-reviewed text and sign off the review trackers. UI prose translation (lower bar than methodology terms but still needs native-speaker review)."
-    note "Surfaced via tech-debt registration policy in ORCHESTRATOR.md (this commit)."
+    note -8<-
+      Source of debt: mod_decompose_mode (this commit) — pt-BR and es-419 drafts of the 3 new keys under moderator.decompose.* landed flagged PENDING in the *.review.json trackers; replace with native-speaker-reviewed text and sign off the review trackers. UI prose translation (lower bar than methodology terms but still needs native-speaker review).
+
+      Surfaced via tech-debt registration policy in ORCHESTRATOR.md (this commit).
+    ->8-
   }
 
   task i18n_multi_component_capture_native_review "Native-speaker review of pt-BR + es-419 decompose-components strings" {
     effort 0.5d
     allocate team
     depends !i18n_decompose_mode_native_review
-    note "Source of debt: mod_multi_component_capture (this commit) — pt-BR and es-419 drafts of the 5 new keys under moderator.decomposeComponents.* landed flagged PENDING in the *.review.json trackers; replace with native-speaker-reviewed text and sign off the review trackers. UI prose translation (lower bar than methodology terms but still needs native-speaker review)."
-    note "Surfaced via tech-debt registration policy in ORCHESTRATOR.md (this commit)."
+    note -8<-
+      Source of debt: mod_multi_component_capture (this commit) — pt-BR and es-419 drafts of the 5 new keys under moderator.decomposeComponents.* landed flagged PENDING in the *.review.json trackers; replace with native-speaker-reviewed text and sign off the review trackers. UI prose translation (lower bar than methodology terms but still needs native-speaker review).
+
+      Surfaced via tech-debt registration policy in ORCHESTRATOR.md (this commit).
+    ->8-
   }
 
   task i18n_propose_decomposition_native_review "Native-speaker review of pt-BR + es-419 decompose-proposal strings" {
     effort 0.5d
     allocate team
     depends !i18n_multi_component_capture_native_review
-    note "Source of debt: mod_propose_decomposition (this commit) — pt-BR and es-419 drafts of the 10 new keys under moderator.decomposeProposal.* landed flagged PENDING in the *.review.json trackers; replace with native-speaker-reviewed text and sign off the review trackers. UI prose translation (lower bar than methodology terms but still needs native-speaker review)."
-    note "Surfaced via tech-debt registration policy in ORCHESTRATOR.md (this commit)."
+    note -8<-
+      Source of debt: mod_propose_decomposition (this commit) — pt-BR and es-419 drafts of the 10 new keys under moderator.decomposeProposal.* landed flagged PENDING in the *.review.json trackers; replace with native-speaker-reviewed text and sign off the review trackers. UI prose translation (lower bar than methodology terms but still needs native-speaker review).
+
+      Surfaced via tech-debt registration policy in ORCHESTRATOR.md (this commit).
+    ->8-
   }
 
   task i18n_interpretive_split_mode_native_review "Native-speaker review of pt-BR + es-419 interpretive-split strings" {
     effort 0.5d
     allocate team
     depends !i18n_propose_decomposition_native_review
-    note "Source of debt: mod_interpretive_split_mode (this commit) — pt-BR and es-419 drafts of the 21 new keys under moderator.interpretiveSplit.* landed flagged PENDING in the *.review.json trackers; replace with native-speaker-reviewed text and sign off the review trackers. UI prose translation (lower bar than methodology terms but still needs native-speaker review)."
-    note "Surfaced via tech-debt registration policy in ORCHESTRATOR.md (this commit)."
+    note -8<-
+      Source of debt: mod_interpretive_split_mode (this commit) — pt-BR and es-419 drafts of the 21 new keys under moderator.interpretiveSplit.* landed flagged PENDING in the *.review.json trackers; replace with native-speaker-reviewed text and sign off the review trackers. UI prose translation (lower bar than methodology terms but still needs native-speaker review).
+
+      Surfaced via tech-debt registration policy in ORCHESTRATOR.md (this commit).
+    ->8-
   }
 
   task i18n_keyboard_shortcuts_policy "Per-locale keyboard shortcut policy for moderator palette" {
@@ -232,8 +309,11 @@ task frontend_i18n "Frontend internationalization" {
     allocate team
     complete 100
     depends !i18n_methodology_glossary
-    note "Decide: keep English mnemonic shortcuts regardless of locale, OR rebind per locale"
-    note "Refinement: tasks/refinements/frontend-i18n/i18n_keyboard_shortcuts_policy.md"
+    note -8<-
+      Decide: keep English mnemonic shortcuts regardless of locale, OR rebind per locale
+
+      Refinement: tasks/refinements/frontend-i18n/i18n_keyboard_shortcuts_policy.md
+    ->8-
   }
 
   task i18n_date_time_formatting "Locale-aware Intl.DateTimeFormat / Intl.NumberFormat plumbing" {
@@ -241,9 +321,13 @@ task frontend_i18n "Frontend internationalization" {
     allocate team
     complete 100
     depends !i18n_locale_negotiation
-    note "A small util module in packages/i18n-catalogs/ (or a sibling utils package)"
-    note "Refinement: tasks/refinements/frontend-i18n/i18n_date_time_formatting.md"
-    note "Landed 2026-05-11: packages/i18n-catalogs/src/format.ts + 37 vitest cases"
+    note -8<-
+      A small util module in packages/i18n-catalogs/ (or a sibling utils package)
+
+      Refinement: tasks/refinements/frontend-i18n/i18n_date_time_formatting.md
+
+      Landed 2026-05-11: packages/i18n-catalogs/src/format.ts + 37 vitest cases
+    ->8-
   }
 
   task i18n_diagnostic_descriptions "Diagnostic kind -> localized description templates" {
@@ -251,8 +335,11 @@ task frontend_i18n "Frontend internationalization" {
     allocate team
     complete 100
     depends !i18n_methodology_glossary
-    note "cycle / contradiction / multi-warrant / dangling-claim / coherency-hint"
-    note "Refinement: tasks/refinements/frontend-i18n/i18n_diagnostic_descriptions.md"
+    note -8<-
+      cycle / contradiction / multi-warrant / dangling-claim / coherency-hint
+
+      Refinement: tasks/refinements/frontend-i18n/i18n_diagnostic_descriptions.md
+    ->8-
   }
 
   task i18n_audience_typography "Confirm broadcast typography covers diacritics for all three locales" {
@@ -260,9 +347,13 @@ task frontend_i18n "Frontend internationalization" {
     allocate team
     complete 100
     depends !i18n_catalog_workflow, audience.aud_graph_rendering.aud_clean_typography
-    note "Visual smoke: c-cedilla, tilde-a, tilde-o, n-tilde, accented vowels render crisply at OBS broadcast resolution"
-    note "Refinement: tasks/refinements/frontend-i18n/i18n_audience_typography.md"
-    note "Lands typography policy (Inter + system fallback) as data in packages/i18n-catalogs; visual-smoke half deferred to aud_clean_typography + aud_visual_regression"
+    note -8<-
+      Visual smoke: c-cedilla, tilde-a, tilde-o, n-tilde, accented vowels render crisply at OBS broadcast resolution
+
+      Refinement: tasks/refinements/frontend-i18n/i18n_audience_typography.md
+
+      Lands typography policy (Inter + system fallback) as data in packages/i18n-catalogs; visual-smoke half deferred to aud_clean_typography + aud_visual_regression
+    ->8-
   }
 
   task i18n_error_code_catalog "Frontend ApiError code -> localized message mapping" {
@@ -270,8 +361,11 @@ task frontend_i18n "Frontend internationalization" {
     allocate team
     complete 100
     depends !i18n_catalog_workflow, backend.api_skeleton.error_handling
-    note "Mirrors apps/server/src/errors.ts code set; one entry per code per locale"
-    note "Refinement: tasks/refinements/frontend-i18n/i18n_error_code_catalog.md"
+    note -8<-
+      Mirrors apps/server/src/errors.ts code set; one entry per code per locale
+
+      Refinement: tasks/refinements/frontend-i18n/i18n_error_code_catalog.md
+    ->8-
   }
 
   task i18n_testing "Playwright + visual-regression coverage across locales" {
@@ -279,8 +373,12 @@ task frontend_i18n "Frontend internationalization" {
     allocate team
     complete 100
     depends !i18n_locale_negotiation, foundation.test_infra.playwright_setup
-    note "Per-locale smoke run on the four surfaces; visual regression baselines per locale"
-    note "Refinement: tasks/refinements/frontend-i18n/i18n_testing.md"
-    note "Landed 2026-05-11: real Playwright wiring (per-locale Chromium projects, single-origin Fastify); CI e2e-playwright job; make test:e2e + test:e2e:compose; README updated"
+    note -8<-
+      Per-locale smoke run on the four surfaces; visual regression baselines per locale
+
+      Refinement: tasks/refinements/frontend-i18n/i18n_testing.md
+
+      Landed 2026-05-11: real Playwright wiring (per-locale Chromium projects, single-origin Fastify); CI e2e-playwright job; make test:e2e + test:e2e:compose; README updated
+    ->8-
   }
 }

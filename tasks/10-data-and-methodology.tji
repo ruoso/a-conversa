@@ -228,15 +228,21 @@ task data_and_methodology "Data and methodology" {
       effort 1d
       allocate team
       complete 100
-      note "Builds a small rule set; rules can be added over time."
-      note "Refinement: tasks/refinements/data-and-methodology/coherency_hint_detection.md"
+      note -8<-
+        Builds a small rule set; rules can be added over time.
+
+        Refinement: tasks/refinements/data-and-methodology/coherency_hint_detection.md
+      ->8-
     }
     task pending_consequences_stub "Stub: detect agreed-substance edges with unagreed-substance source" {
       effort 0.5d
       allocate team
       complete 100
-      note "Out of scope for v1 per data-model.md, but the detector is a small addition once the rest is in place."
-      note "Refinement: tasks/refinements/data-and-methodology/pending_consequences_stub.md"
+      note -8<-
+        Out of scope for v1 per data-model.md, but the detector is a small addition once the rest is in place.
+
+        Refinement: tasks/refinements/data-and-methodology/pending_consequences_stub.md
+      ->8-
     }
     task diagnostic_event_emission "Emit diagnostic-fired events to subscribers" {
       effort 1d
@@ -316,8 +322,11 @@ task data_and_methodology "Data and methodology" {
       allocate team
       complete 100
       depends !agreement_state_machine
-      note "Reword preserves node ID; restructure creates a new node and old edges don't follow."
-      note "Refinement: tasks/refinements/data-and-methodology/reword_vs_restructure.md"
+      note -8<-
+        Reword preserves node ID; restructure creates a new node and old edges don't follow.
+
+        Refinement: tasks/refinements/data-and-methodology/reword_vs_restructure.md
+      ->8-
     }
     task defeater_capture_logic "Defeater capture — node + rebuts edge with pre-committed substance" {
       effort 1d

@@ -33,9 +33,13 @@ task audience "Audience and broadcast" {
       effort 1d
       allocate team
       depends shell_package.shell_mount_contract, frontend_i18n.i18n_locale_negotiation
-      note "Refinement: tasks/refinements/audience/aud_app_skeleton.md"
-      note "Reshaped under ADR 0026: audience builds as a Vite-library bundle exporting mount(props): UnmountFn; no own index.html or DOM bootstrap. i18n now bootstraps in @aconversa/shell and is passed in via MountProps (locale negotiation still uses the URL prefix per i18n_locale_negotiation.md; the audience surface reads its locale from the URL and configures the shared i18n instance accordingly)."
-      note "Locale comes from URL prefix per i18n_locale_negotiation.md; under ADR 0026 the per-session prefix becomes /a/sessions/:id, with the locale segment handled inside the audience surface's basename-scoped routes."
+      note -8<-
+        Refinement: tasks/refinements/audience/aud_app_skeleton.md
+
+        Reshaped under ADR 0026: audience builds as a Vite-library bundle exporting mount(props): UnmountFn; no own index.html or DOM bootstrap. i18n now bootstraps in @aconversa/shell and is passed in via MountProps (locale negotiation still uses the URL prefix per i18n_locale_negotiation.md; the audience surface reads its locale from the URL and configures the shared i18n instance accordingly).
+
+        Locale comes from URL prefix per i18n_locale_negotiation.md; under ADR 0026 the per-session prefix becomes /a/sessions/:id, with the locale segment handled inside the audience surface's basename-scoped routes.
+      ->8-
     }
     task aud_ws_client "Wire audience surface to shell's WS client (read-only subscription)" {
       effort 0.5d
@@ -52,9 +56,11 @@ task audience "Audience and broadcast" {
       effort 0.5d
       allocate team
       depends !aud_app_skeleton
-      note "Public sessions render to anyone with the URL; private sessions auth-gate."
+      note -8<-
+        Public sessions render to anyone with the URL; private sessions auth-gate.
 
-      note "Refinement: tasks/refinements/audience/aud_no_auth_for_public.md"
+        Refinement: tasks/refinements/audience/aud_no_auth_for_public.md
+      ->8-
     }
     task aud_auth_for_private "Wire audience surface to shell's AuthContext for private sessions" {
       effort 0.5d

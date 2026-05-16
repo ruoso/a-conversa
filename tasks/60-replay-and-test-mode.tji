@@ -34,8 +34,11 @@ task replay_test "Replay and test mode" {
       effort 2d
       allocate team
       depends frontend_i18n.i18n_catalog_workflow
-      note "Same renderer as live audience; switches the input from live event stream to log-replay."
-      note "Locale comes from URL prefix: /{locale}/replay/{id}, mirroring the audience surface."
+      note -8<-
+        Same renderer as live audience; switches the input from live event stream to log-replay.
+
+        Locale comes from URL prefix: /{locale}/replay/{id}, mirroring the audience surface.
+      ->8-
     }
     task replay_playback_controls "Play / pause / step controls" {
       effort 1d

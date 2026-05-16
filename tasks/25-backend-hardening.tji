@@ -19,63 +19,90 @@ task backend_hardening "M3-review hardening (security audit follow-ups)" {
       effort 1d
       allocate team
       complete 100
-      note "Source: docs/security/m3-review/auth.md F-002"
-      note "Refinement: tasks/refinements/backend-hardening/ws_origin_allowlist.md"
+      note -8<-
+        Source: docs/security/m3-review/auth.md F-002
+
+        Refinement: tasks/refinements/backend-hardening/ws_origin_allowlist.md
+      ->8-
     }
     task prod_cors_lockdown "Tighten CORS to APP_BASE_URL in production builds" {
       effort 0.5d
       allocate team
       complete 100
-      note "Source: docs/security/m3-review/auth.md F-003"
-      note "Refinement: tasks/refinements/backend-hardening/prod_cors_lockdown.md"
+      note -8<-
+        Source: docs/security/m3-review/auth.md F-003
+
+        Refinement: tasks/refinements/backend-hardening/prod_cors_lockdown.md
+      ->8-
     }
     task session_secret_strength_check "Boot-time SESSION_TOKEN_SECRET strength enforcement" {
       effort 0.5d
       allocate team
       complete 100
-      note "Source: docs/security/m3-review/auth.md F-004"
-      note "Refinement: tasks/refinements/backend-hardening/session_secret_strength_check.md"
+      note -8<-
+        Source: docs/security/m3-review/auth.md F-004
+
+        Refinement: tasks/refinements/backend-hardening/session_secret_strength_check.md
+      ->8-
     }
     task jwt_revocation_jti_denylist "Per-session JWT revocation via jti + denylist table" {
       effort 3d
       allocate team
       complete 100
-      note "Source: docs/security/m3-review/auth.md F-001 + F-006; docs/security/m3-review/coverage.md G-005"
-      note "Refinement: tasks/refinements/backend-hardening/jwt_revocation_jti_denylist.md"
+      note -8<-
+        Source: docs/security/m3-review/auth.md F-001 + F-006; docs/security/m3-review/coverage.md G-005
+
+        Refinement: tasks/refinements/backend-hardening/jwt_revocation_jti_denylist.md
+      ->8-
     }
     task multi_instance_flow_state "Cross-instance OIDC flow-state backing store" {
       effort 2d
       allocate team
-      note "Source: docs/security/m3-review/auth.md F-005"
-      note "Refinement: tasks/refinements/backend-hardening/multi_instance_flow_state.md"
+      note -8<-
+        Source: docs/security/m3-review/auth.md F-005
+
+        Refinement: tasks/refinements/backend-hardening/multi_instance_flow_state.md
+      ->8-
     }
     task pino_redact_config "Configure Pino redact for cookie / authorization / token fields" {
       effort 0.25d
       allocate team
       complete 100
-      note "Source: docs/security/m3-review/auth.md F-012; docs/security/m3-review/inputs.md F-007"
-      note "Refinement: tasks/refinements/backend-hardening/pino_redact_config.md"
+      note -8<-
+        Source: docs/security/m3-review/auth.md F-012; docs/security/m3-review/inputs.md F-007
+
+        Refinement: tasks/refinements/backend-hardening/pino_redact_config.md
+      ->8-
     }
     task iat_exp_invariant_check "Pin iat<exp + max-TTL invariant in verifySessionToken" {
       effort 0.25d
       allocate team
       complete 100
-      note "Source: docs/security/m3-review/auth.md F-009"
-      note "Refinement: tasks/refinements/backend-hardening/iat_exp_invariant_check.md"
+      note -8<-
+        Source: docs/security/m3-review/auth.md F-009
+
+        Refinement: tasks/refinements/backend-hardening/iat_exp_invariant_check.md
+      ->8-
     }
     task cookie_value_safe_charset "Assert cookie-value safe charset in cookie builders" {
       effort 0.25d
       allocate team
       complete 100
-      note "Source: docs/security/m3-review/auth.md F-011"
-      note "Refinement: tasks/refinements/backend-hardening/cookie_value_safe_charset.md"
+      note -8<-
+        Source: docs/security/m3-review/auth.md F-011
+
+        Refinement: tasks/refinements/backend-hardening/cookie_value_safe_charset.md
+      ->8-
     }
     task oauth_subject_full_namespacing "Namespace oauth_subject by full issuer URL (not hostname only)" {
       effort 0.25d
       allocate team
       complete 100
-      note "Source: docs/security/m3-review/auth.md F-008"
-      note "Refinement: tasks/refinements/backend-hardening/oauth_subject_full_namespacing.md"
+      note -8<-
+        Source: docs/security/m3-review/auth.md F-008
+
+        Refinement: tasks/refinements/backend-hardening/oauth_subject_full_namespacing.md
+      ->8-
     }
   }
 
@@ -85,23 +112,32 @@ task backend_hardening "M3-review hardening (security audit follow-ups)" {
       effort 1d
       allocate team
       complete 100
-      note "Source: docs/security/m3-review/coverage.md G-001"
-      note "Refinement: tasks/refinements/backend-hardening/privacy_flip_subscription_prune.md"
+      note -8<-
+        Source: docs/security/m3-review/coverage.md G-001
+
+        Refinement: tasks/refinements/backend-hardening/privacy_flip_subscription_prune.md
+      ->8-
     }
     task user_soft_delete_ws_close "Close WS connections of soft-deleted users" {
       effort 1d
       allocate team
       complete 100
-      note "Source: docs/security/m3-review/coverage.md G-003"
-      note "Refinement: tasks/refinements/backend-hardening/user_soft_delete_ws_close.md"
+      note -8<-
+        Source: docs/security/m3-review/coverage.md G-003
+
+        Refinement: tasks/refinements/backend-hardening/user_soft_delete_ws_close.md
+      ->8-
     }
     task catch_up_revoked_visibility_pin "Pin catch-up rejects after visibility-revoke" {
       effort 0.25d
       allocate team
       complete 100
       depends !privacy_flip_subscription_prune
-      note "Source: docs/security/m3-review/coverage.md G-002"
-      note "Refinement: tasks/refinements/backend-hardening/catch_up_revoked_visibility_pin.md"
+      note -8<-
+        Source: docs/security/m3-review/coverage.md G-002
+
+        Refinement: tasks/refinements/backend-hardening/catch_up_revoked_visibility_pin.md
+      ->8-
     }
   }
 
@@ -110,57 +146,81 @@ task backend_hardening "M3-review hardening (security audit follow-ups)" {
       effort 0.25d
       allocate team
       complete 100
-      note "Source: docs/security/m3-review/inputs.md F-002"
-      note "Refinement: tasks/refinements/backend-hardening/fastify_body_limit.md"
+      note -8<-
+        Source: docs/security/m3-review/inputs.md F-002
+
+        Refinement: tasks/refinements/backend-hardening/fastify_body_limit.md
+      ->8-
     }
     task user_text_length_caps "Add max-length to user-authored text fields (wording / content)" {
       effort 0.5d
       allocate team
       complete 100
-      note "Source: docs/security/m3-review/inputs.md F-003"
-      note "Refinement: tasks/refinements/backend-hardening/user_text_length_caps.md"
+      note -8<-
+        Source: docs/security/m3-review/inputs.md F-003
+
+        Refinement: tasks/refinements/backend-hardening/user_text_length_caps.md
+      ->8-
     }
     task catch_up_event_limit "Add LIMIT + per-connection rate-limit to catch-up replay" {
       effort 0.5d
       allocate team
       complete 100
-      note "Source: docs/security/m3-review/inputs.md F-004 + F-005"
-      note "Refinement: tasks/refinements/backend-hardening/catch_up_event_limit.md"
+      note -8<-
+        Source: docs/security/m3-review/inputs.md F-004 + F-005
+
+        Refinement: tasks/refinements/backend-hardening/catch_up_event_limit.md
+      ->8-
     }
     task subscription_cap_per_connection "Cap concurrent subscriptions per WS connection" {
       effort 0.25d
       allocate team
       complete 100
-      note "Source: docs/security/m3-review/inputs.md F-001"
-      note "Refinement: tasks/refinements/backend-hardening/subscription_cap_per_connection.md"
+      note -8<-
+        Source: docs/security/m3-review/inputs.md F-001
+
+        Refinement: tasks/refinements/backend-hardening/subscription_cap_per_connection.md
+      ->8-
     }
     task list_sessions_offset_cap "Cap ?offset in GET /sessions" {
       effort 0.25d
       allocate team
       complete 100
-      note "Source: docs/security/m3-review/coverage.md G-013"
-      note "Refinement: tasks/refinements/backend-hardening/list_sessions_offset_cap.md"
+      note -8<-
+        Source: docs/security/m3-review/coverage.md G-013
+
+        Refinement: tasks/refinements/backend-hardening/list_sessions_offset_cap.md
+      ->8-
     }
     task flow_state_map_bound "Cap flow-state Map size to fail-fast on abuse" {
       effort 0.25d
       allocate team
       complete 100
-      note "Source: docs/security/m3-review/inputs.md F-006"
-      note "Refinement: tasks/refinements/backend-hardening/flow_state_map_bound.md"
+      note -8<-
+        Source: docs/security/m3-review/inputs.md F-006
+
+        Refinement: tasks/refinements/backend-hardening/flow_state_map_bound.md
+      ->8-
     }
     task auth_me_cache_control "Cache-Control: no-store on /auth/me + sibling identity endpoints" {
       effort 0.25d
       allocate team
       complete 100
-      note "Source: docs/security/m3-review/coverage.md G-019"
-      note "Refinement: tasks/refinements/backend-hardening/auth_me_cache_control.md"
+      note -8<-
+        Source: docs/security/m3-review/coverage.md G-019
+
+        Refinement: tasks/refinements/backend-hardening/auth_me_cache_control.md
+      ->8-
     }
     task ilike_topic_search_protection "Bound ILIKE-on-topic search abuse" {
       effort 0.5d
       allocate team
       complete 100
-      note "Source: docs/security/m3-review/inputs.md F-013"
-      note "Refinement: tasks/refinements/backend-hardening/ilike_topic_search_protection.md"
+      note -8<-
+        Source: docs/security/m3-review/inputs.md F-013
+
+        Refinement: tasks/refinements/backend-hardening/ilike_topic_search_protection.md
+      ->8-
     }
   }
 
@@ -169,22 +229,31 @@ task backend_hardening "M3-review hardening (security audit follow-ups)" {
       effort 0.5d
       allocate team
       complete 100
-      note "Source: docs/security/m3-review/auth.md F-010"
-      note "Refinement: tasks/refinements/backend-hardening/screen_name_nfkc_normalization.md"
+      note -8<-
+        Source: docs/security/m3-review/auth.md F-010
+
+        Refinement: tasks/refinements/backend-hardening/screen_name_nfkc_normalization.md
+      ->8-
     }
     task wire_error_no_echo "Stop echoing client-supplied `type` in unknown-message-type errors" {
       effort 0.25d
       allocate team
       complete 100
-      note "Source: docs/security/m3-review/inputs.md F-009"
-      note "Refinement: tasks/refinements/backend-hardening/wire_error_no_echo.md"
+      note -8<-
+        Source: docs/security/m3-review/inputs.md F-009
+
+        Refinement: tasks/refinements/backend-hardening/wire_error_no_echo.md
+      ->8-
     }
     task defensive_500_message_sanitize "Sanitize defensive 500 sentinel messages on the wire" {
       effort 0.25d
       allocate team
       complete 100
-      note "Source: docs/security/m3-review/inputs.md F-008"
-      note "Refinement: tasks/refinements/backend-hardening/defensive_500_message_sanitize.md"
+      note -8<-
+        Source: docs/security/m3-review/inputs.md F-008
+
+        Refinement: tasks/refinements/backend-hardening/defensive_500_message_sanitize.md
+      ->8-
     }
   }
 
@@ -193,71 +262,101 @@ task backend_hardening "M3-review hardening (security audit follow-ups)" {
       effort 0.25d
       allocate team
       complete 100
-      note "Source: docs/security/m3-review/coverage.md G-007"
-      note "Refinement: tasks/refinements/backend-hardening/actor_spoof_propose_pin.md"
+      note -8<-
+        Source: docs/security/m3-review/coverage.md G-007
+
+        Refinement: tasks/refinements/backend-hardening/actor_spoof_propose_pin.md
+      ->8-
     }
     task s_to_c_type_rejection_pin "Test: S→C-only WS types rejected when sent C→S" {
       effort 0.25d
       allocate team
       complete 100
-      note "Source: docs/security/m3-review/coverage.md G-008; docs/security/m3-review/inputs.md F-010"
-      note "Refinement: tasks/refinements/backend-hardening/s_to_c_type_rejection_pin.md"
+      note -8<-
+        Source: docs/security/m3-review/coverage.md G-008; docs/security/m3-review/inputs.md F-010
+
+        Refinement: tasks/refinements/backend-hardening/s_to_c_type_rejection_pin.md
+      ->8-
     }
     task logout_no_revocation_pin "Test: pin the logout-doesn't-revoke trade-off (until denylist lands)" {
       effort 0.25d
       allocate team
       complete 100
-      note "Source: docs/security/m3-review/coverage.md G-005"
-      note "Refinement: tasks/refinements/backend-hardening/logout_no_revocation_pin.md"
+      note -8<-
+        Source: docs/security/m3-review/coverage.md G-005
+
+        Refinement: tasks/refinements/backend-hardening/logout_no_revocation_pin.md
+      ->8-
     }
     task bytewise_404_vs_private_pin "Test: bytewise-identical 404 vs private-403 responses" {
       effort 0.25d
       allocate team
       complete 100
-      note "Source: docs/security/m3-review/coverage.md G-014"
-      note "Refinement: tasks/refinements/backend-hardening/bytewise_404_vs_private_pin.md"
+      note -8<-
+        Source: docs/security/m3-review/coverage.md G-014
+
+        Refinement: tasks/refinements/backend-hardening/bytewise_404_vs_private_pin.md
+      ->8-
     }
     task catch_up_boundary_values_pin "Test: catch-up boundary values (negative / NaN / huge)" {
       effort 0.25d
       allocate team
       complete 100
-      note "Source: docs/security/m3-review/coverage.md G-006"
-      note "Refinement: tasks/refinements/backend-hardening/catch_up_boundary_values_pin.md"
+      note -8<-
+        Source: docs/security/m3-review/coverage.md G-006
+
+        Refinement: tasks/refinements/backend-hardening/catch_up_boundary_values_pin.md
+      ->8-
     }
     task duplicate_envelope_id_pin "Test: duplicate envelope id behavior pinned" {
       effort 0.25d
       allocate team
       complete 100
-      note "Source: docs/security/m3-review/coverage.md G-009"
-      note "Refinement: tasks/refinements/backend-hardening/duplicate_envelope_id_pin.md"
+      note -8<-
+        Source: docs/security/m3-review/coverage.md G-009
+
+        Refinement: tasks/refinements/backend-hardening/duplicate_envelope_id_pin.md
+      ->8-
     }
     task bigint_sequence_overflow_pin "Test: behavior at session_events.sequence near 2^53" {
       effort 0.5d
       allocate team
       complete 100
-      note "Source: docs/security/m3-review/coverage.md G-010"
-      note "Refinement: tasks/refinements/backend-hardening/bigint_sequence_overflow_pin.md"
+      note -8<-
+        Source: docs/security/m3-review/coverage.md G-010
+
+        Refinement: tasks/refinements/backend-hardening/bigint_sequence_overflow_pin.md
+      ->8-
     }
     task pending_cookie_clock_skew_pin "Test: pending-cookie behavior under server clock skew" {
       effort 0.25d
       allocate team
       complete 100
-      note "Source: docs/security/m3-review/coverage.md G-011"
-      note "Refinement: tasks/refinements/backend-hardening/pending_cookie_clock_skew_pin.md"
+      note -8<-
+        Source: docs/security/m3-review/coverage.md G-011
+
+        Refinement: tasks/refinements/backend-hardening/pending_cookie_clock_skew_pin.md
+      ->8-
     }
     task oidc_state_replay_explicit_pin "Test: pin OIDC state-replay rejection explicitly" {
       effort 0.25d
       allocate team
       complete 100
-      note "Source: docs/security/m3-review/coverage.md G-012"
-      note "Refinement: tasks/refinements/backend-hardening/oidc_state_replay_explicit_pin.md"
+      note -8<-
+        Source: docs/security/m3-review/coverage.md G-012
+
+        Refinement: tasks/refinements/backend-hardening/oidc_state_replay_explicit_pin.md
+      ->8-
     }
     task diagnostic_sync_dispatch_pin "Test: pin DiagnosticBus synchronous-dispatch contract" {
       effort 0.25d
       allocate team
       complete 100
-      note "Source: docs/security/m3-review/coverage.md G-016"
-      note "Refinement: tasks/refinements/backend-hardening/diagnostic_sync_dispatch_pin.md"
+      note -8<-
+        Source: docs/security/m3-review/coverage.md G-016
+
+        Refinement: tasks/refinements/backend-hardening/diagnostic_sync_dispatch_pin.md
+      ->8-
     }
   }
 
@@ -266,16 +365,22 @@ task backend_hardening "M3-review hardening (security audit follow-ups)" {
       effort 2d
       allocate team
       complete 100
-      note "Source: docs/security/m3-review/coverage.md G-004 + G-018"
-      note "Refinement: tasks/refinements/backend-hardening/concurrent_write_test_harness.md"
+      note -8<-
+        Source: docs/security/m3-review/coverage.md G-004 + G-018
+
+        Refinement: tasks/refinements/backend-hardening/concurrent_write_test_harness.md
+      ->8-
     }
     task inclusion_source_toctou_pin "Decide + pin TOCTOU behavior for entity-inclusion source visibility" {
       effort 0.5d
       allocate team
       complete 100
       depends !concurrent_write_test_harness
-      note "Source: docs/security/m3-review/coverage.md G-017"
-      note "Refinement: tasks/refinements/backend-hardening/inclusion_source_toctou_pin.md"
+      note -8<-
+        Source: docs/security/m3-review/coverage.md G-017
+
+        Refinement: tasks/refinements/backend-hardening/inclusion_source_toctou_pin.md
+      ->8-
     }
   }
 
@@ -284,36 +389,51 @@ task backend_hardening "M3-review hardening (security audit follow-ups)" {
       effort 0.25d
       allocate team
       complete 100
-      note "Source: docs/security/m3-review/auth.md F-014"
-      note "Refinement: tasks/refinements/backend-hardening/host_moderator_role_note.md"
+      note -8<-
+        Source: docs/security/m3-review/auth.md F-014
+
+        Refinement: tasks/refinements/backend-hardening/host_moderator_role_note.md
+      ->8-
     }
     task auth_callback_next_param_note "Doc note: any future ?next= param must be same-origin-validated" {
       effort 0.25d
       allocate team
       complete 100
-      note "Source: docs/security/m3-review/auth.md F-013"
-      note "Refinement: tasks/refinements/backend-hardening/auth_callback_next_param_note.md"
+      note -8<-
+        Source: docs/security/m3-review/auth.md F-013
+
+        Refinement: tasks/refinements/backend-hardening/auth_callback_next_param_note.md
+      ->8-
     }
     task session_events_growth_policy_note "Doc note: session_events unbounded-growth policy + future archive trigger" {
       effort 0.25d
       allocate team
       complete 100
-      note "Source: docs/security/m3-review/inputs.md F-011"
-      note "Refinement: tasks/refinements/backend-hardening/session_events_growth_policy_note.md"
+      note -8<-
+        Source: docs/security/m3-review/inputs.md F-011
+
+        Refinement: tasks/refinements/backend-hardening/session_events_growth_policy_note.md
+      ->8-
     }
     task entity_inclusion_render_policy "Methodology decision: cross-session entity render policy (transitive privacy)" {
       effort 0.5d
       allocate team
       complete 100
-      note "Source: docs/security/m3-review/coverage.md G-015"
-      note "Refinement: tasks/refinements/backend-hardening/entity_inclusion_render_policy.md"
+      note -8<-
+        Source: docs/security/m3-review/coverage.md G-015
+
+        Refinement: tasks/refinements/backend-hardening/entity_inclusion_render_policy.md
+      ->8-
     }
     task flow_state_sweep_cadence_note "Doc note: flow-state sweep cadence + the 60s timing-observation window" {
       effort 0.25d
       allocate team
       complete 100
-      note "Source: docs/security/m3-review/inputs.md F-012"
-      note "Refinement: tasks/refinements/backend-hardening/flow_state_sweep_cadence_note.md"
+      note -8<-
+        Source: docs/security/m3-review/inputs.md F-012
+
+        Refinement: tasks/refinements/backend-hardening/flow_state_sweep_cadence_note.md
+      ->8-
     }
   }
 }
