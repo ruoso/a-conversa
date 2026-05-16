@@ -77,9 +77,9 @@
 // the bundle in `apps/moderator/dist`; a stripped image without it
 // would crash at boot rather than silently serve a JSON-only API.
 
-import { existsSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, statSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { dirname, isAbsolute, resolve } from 'node:path';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import fastifyStatic from '@fastify/static';
@@ -125,13 +125,46 @@ export interface StaticFrontendsPluginOptions {
   readonly frontends?: readonly FrontendEntry[];
 }
 
+/**
+ * One surface served as a micro-frontend module (loaded by the root
+ * shell via `import(moduleUrl)`).
+ *
+ * The module + style filenames are content-hashed at build time so the
+ * browser cache invalidates when the bundle changes (per ADR-class
+ * concern: a fixed `moderator.js` cached `max-age=1y immutable` would
+ * pin returning users to stale code for up to a year after a deploy).
+ * The server resolves the actual hashed filenames at boot by scanning
+ * `distDir` against each pattern; exactly one file must match per
+ * pattern. The discovered names then flow into the surface manifest at
+ * `/_surfaces/manifest.json`, which is itself served `no-cache` so the
+ * fresh names reach returning browsers on their next visit.
+ */
 export interface SurfaceEntry {
   readonly surfaceId: string;
   readonly urlPrefix: string;
   readonly distDir: string;
-  readonly moduleFileName: string;
-  readonly styleFileNames?: readonly string[];
+  /**
+   * Regex matched against POSIX-style file paths relative to `distDir`
+   * (forward slashes, no leading `./`). Must match exactly one file.
+   */
+  readonly moduleFilePattern: RegExp;
+  /**
+   * Zero or more regexes for stylesheets that accompany the module.
+   * Each pattern must match exactly one file under `distDir`.
+   */
+  readonly styleFilePatterns?: readonly RegExp[];
   readonly label?: string;
+}
+
+/**
+ * A `SurfaceEntry` after `validateAndResolveSurface` has resolved each pattern
+ * against the on-disk dist. The plugin threads these (not the raw
+ * patterns) into the manifest builder.
+ */
+interface ResolvedSurface {
+  readonly entry: SurfaceEntry;
+  readonly moduleFile: string;
+  readonly styleFiles: readonly string[];
 }
 
 export interface SurfaceManifestEntry {
@@ -225,8 +258,14 @@ export function resolveDefaultSurfaces(
       surfaceId: 'moderator',
       urlPrefix: '/_surfaces/moderator/',
       distDir: resolveModeratorDistDir(env),
-      moduleFileName: 'moderator.js',
-      styleFileNames: ['assets/moderator.css'],
+      // Vite library mode emits the entry as `moderator-<hash>.js` at
+      // the dist root and the CSS as `assets/moderator-<hash>.css` —
+      // see `apps/moderator/vite.config.ts`. The hashes are base64-url
+      // (alnum + `_` + `-`), typically 8 chars; the patterns accept
+      // any non-empty alnum/`_`/`-` run to stay tolerant of Rollup's
+      // hash-length tuning.
+      moduleFilePattern: /^moderator-[A-Za-z0-9_-]+\.js$/,
+      styleFilePatterns: [/^assets\/moderator-[A-Za-z0-9_-]+\.css$/],
       label: 'moderator',
     },
   ];
@@ -268,7 +307,58 @@ function validateFrontend(entry: FrontendEntry): void {
   }
 }
 
-function validateSurface(entry: SurfaceEntry): void {
+/**
+ * Walk `distDir` recursively and yield every regular file as a POSIX
+ * path relative to `distDir`. Used by `discoverSingleFile` to scan for
+ * the hashed surface bundle. Synchronous + tiny scope — the surface
+ * dists hold a handful of files (entry, css, sourcemap, occasional
+ * asset). Node 20's `readdirSync({ recursive: true })` would do the
+ * same job but its return shape (a flat string list) gives less
+ * control over how directories are descended.
+ */
+function* walkRelFiles(distDir: string, subPath = ''): Generator<string> {
+  const absDir = subPath === '' ? distDir : join(distDir, subPath);
+  for (const entry of readdirSync(absDir, { withFileTypes: true })) {
+    const rel = subPath === '' ? entry.name : `${subPath}/${entry.name}`;
+    if (entry.isDirectory()) {
+      yield* walkRelFiles(distDir, rel);
+    } else if (entry.isFile()) {
+      yield rel;
+    }
+  }
+}
+
+/**
+ * Find the single file under `distDir` whose POSIX-relative path
+ * matches `pattern`. Throws on zero or multiple matches so a misnamed
+ * bundle or a stale dist surfaces at boot rather than as a runtime 404
+ * (zero matches) or an indeterministic manifest URL (multiple matches
+ * — a sign that the dist dir was not cleaned between builds and now
+ * holds bundles from two different commits).
+ */
+function discoverSingleFile(distDir: string, pattern: RegExp, label: string, kind: string): string {
+  const matches: string[] = [];
+  for (const rel of walkRelFiles(distDir)) {
+    if (pattern.test(rel)) {
+      matches.push(rel);
+    }
+  }
+  if (matches.length === 0) {
+    throw new Error(
+      `serve_static_frontends: surface "${label}" ${kind} pattern ${String(pattern)} did not match any file under ${distDir}. ` +
+        `Rebuild the surface (\`pnpm -F @a-conversa/moderator build\`) or fix the pattern.`,
+    );
+  }
+  if (matches.length > 1) {
+    throw new Error(
+      `serve_static_frontends: surface "${label}" ${kind} pattern ${String(pattern)} matched ${String(matches.length)} files under ${distDir}: ${matches.join(', ')}. ` +
+        `The dist directory likely holds bundles from more than one build — clean it and rebuild.`,
+    );
+  }
+  return matches[0] as string;
+}
+
+function validateAndResolveSurface(entry: SurfaceEntry): ResolvedSurface {
   const label = entry.label ?? entry.surfaceId;
   if (!existsSync(entry.distDir)) {
     throw new Error(
@@ -282,30 +372,19 @@ function validateSurface(entry: SurfaceEntry): void {
       `serve_static_frontends: surface "${label}" distDir is not a directory: ${entry.distDir}.`,
     );
   }
-  const modulePath = resolve(entry.distDir, entry.moduleFileName);
-  if (!existsSync(modulePath)) {
-    throw new Error(
-      `serve_static_frontends: surface "${label}" is missing its module entry: ${modulePath}.`,
-    );
-  }
-  for (const styleFile of entry.styleFileNames ?? []) {
-    const stylePath = resolve(entry.distDir, styleFile);
-    if (!existsSync(stylePath)) {
-      throw new Error(
-        `serve_static_frontends: surface "${label}" is missing its stylesheet: ${stylePath}.`,
-      );
-    }
-  }
+  const moduleFile = discoverSingleFile(entry.distDir, entry.moduleFilePattern, label, 'module');
+  const styleFiles = (entry.styleFilePatterns ?? []).map((pattern) =>
+    discoverSingleFile(entry.distDir, pattern, label, 'style'),
+  );
+  return { entry, moduleFile, styleFiles };
 }
 
-function buildSurfaceManifest(surfaces: readonly SurfaceEntry[]): SurfaceManifest {
+function buildSurfaceManifest(surfaces: readonly ResolvedSurface[]): SurfaceManifest {
   const entries: Record<string, SurfaceManifestEntry> = {};
   for (const surface of surfaces) {
-    entries[surface.surfaceId] = {
-      moduleUrl: `${surface.urlPrefix}${surface.moduleFileName}`,
-      styleUrls: (surface.styleFileNames ?? []).map(
-        (fileName) => `${surface.urlPrefix}${fileName}`,
-      ),
+    entries[surface.entry.surfaceId] = {
+      moduleUrl: `${surface.entry.urlPrefix}${surface.moduleFile}`,
+      styleUrls: surface.styleFiles.map((fileName) => `${surface.entry.urlPrefix}${fileName}`),
     };
   }
   return { surfaces: entries };
@@ -444,13 +523,12 @@ const staticFrontendsPluginAsync: FastifyPluginAsync<StaticFrontendsPluginOption
 
   // Fail-fast: every configured frontend must have a real dist on
   // disk. Catches the Dockerfile copy step regressing or a misset
-  // env var BEFORE the server binds a port.
+  // env var BEFORE the server binds a port. Surface validation also
+  // discovers the actual hashed bundle filenames (see ResolvedSurface).
   for (const entry of frontends) {
     validateFrontend(entry);
   }
-  for (const surface of surfaces) {
-    validateSurface(surface);
-  }
+  const resolvedSurfaces = surfaces.map(validateAndResolveSurface);
 
   // Register a @fastify/static plugin for each frontend. The first
   // registration decorates `reply.sendFile`; subsequent ones pass
@@ -498,10 +576,10 @@ const staticFrontendsPluginAsync: FastifyPluginAsync<StaticFrontendsPluginOption
     first = false;
   }
 
-  for (const surface of surfaces) {
+  for (const surface of resolvedSurfaces) {
     await app.register(fastifyStatic, {
-      root: surface.distDir,
-      prefix: surface.urlPrefix,
+      root: surface.entry.distDir,
+      prefix: surface.entry.urlPrefix,
       list: false,
       wildcard: false,
       dotfiles: 'deny',
@@ -515,7 +593,7 @@ const staticFrontendsPluginAsync: FastifyPluginAsync<StaticFrontendsPluginOption
     });
   }
 
-  const manifest = buildSurfaceManifest(surfaces);
+  const manifest = buildSurfaceManifest(resolvedSurfaces);
 
   app.get('/_surfaces/manifest.json', async (_request, reply) => {
     reply

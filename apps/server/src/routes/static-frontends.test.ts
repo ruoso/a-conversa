@@ -95,7 +95,13 @@ describe('static-frontends plugin — root served at /', () => {
     expect(cacheControl).toMatch(/max-age=/);
   });
 
-  it('GET /_surfaces/manifest.json returns the moderator surface manifest', async () => {
+  it('GET /_surfaces/manifest.json returns the moderator surface manifest with hash-busted URLs', async () => {
+    // The manifest's role is to point the root shell at the current
+    // moderator bundle. The exact filename carries a content hash
+    // (`moderator-<hash>.js`, see `apps/moderator/vite.config.ts` and
+    // the `static-frontends` plugin's `discoverSingleFile` boot scan)
+    // — pin the prefix + extension so a regression in the discovery
+    // or in the build's hashing fails here.
     const response = await app.inject({
       method: 'GET',
       url: '/_surfaces/manifest.json',
@@ -104,23 +110,41 @@ describe('static-frontends plugin — root served at /', () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.headers['content-type']).toMatch(/application\/json/);
+    // Manifest is served `no-cache` so a deploy's fresh URL reaches
+    // returning browsers immediately — pin that too, since the whole
+    // hash-bust story collapses if the manifest itself gets cached.
+    expect(response.headers['cache-control']).toMatch(/no-cache/);
     const body = response.json<{
       surfaces?: { moderator?: { moduleUrl?: string; styleUrls?: string[] } };
     }>();
-    expect(body.surfaces?.moderator?.moduleUrl).toBe('/_surfaces/moderator/moderator.js');
-    expect(body.surfaces?.moderator?.styleUrls).toEqual([
-      '/_surfaces/moderator/assets/moderator.css',
-    ]);
+    expect(body.surfaces?.moderator?.moduleUrl).toMatch(
+      /^\/_surfaces\/moderator\/moderator-[A-Za-z0-9_-]+\.js$/,
+    );
+    const styleUrls = body.surfaces?.moderator?.styleUrls ?? [];
+    expect(styleUrls).toHaveLength(1);
+    expect(styleUrls[0]).toMatch(/^\/_surfaces\/moderator\/assets\/moderator-[A-Za-z0-9_-]+\.css$/);
   });
 
-  it('GET /_surfaces/moderator/moderator.js returns the moderator surface bundle', async () => {
-    const response = await app.inject({
+  it('GET <discovered moderator module URL> returns the surface bundle', async () => {
+    // The actual filename is unknown a priori (it carries a content
+    // hash). Read the manifest, then fetch the URL it advertises.
+    const manifest = await app.inject({
       method: 'GET',
-      url: '/_surfaces/moderator/moderator.js',
+      url: '/_surfaces/manifest.json',
+      headers: { accept: 'application/json' },
     });
+    const body = manifest.json<{
+      surfaces?: { moderator?: { moduleUrl?: string } };
+    }>();
+    const moduleUrl = body.surfaces?.moderator?.moduleUrl;
+    expect(moduleUrl, 'manifest must advertise a moderator moduleUrl').toBeDefined();
 
+    const response = await app.inject({ method: 'GET', url: moduleUrl as string });
     expect(response.statusCode).toBe(200);
     expect(response.headers['content-type']).toMatch(/application\/javascript|text\/javascript/);
+    // Hashed bundle assets are immutable-cached for a year — that's
+    // safe precisely because the URL changes on every build.
+    expect(String(response.headers['cache-control'] ?? '')).toMatch(/max-age=/);
   });
 
   it('GET /healthz still returns the canonical JSON envelope (API precedence)', async () => {

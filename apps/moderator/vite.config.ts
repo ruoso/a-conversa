@@ -38,13 +38,22 @@ export default defineConfig({
     lib: {
       entry: 'src/main.tsx',
       formats: ['es'],
+      // `entryFileNames` below overrides this. Kept as a defensive
+      // default for the lib-mode contract.
       fileName: () => 'moderator.js',
     },
     rollupOptions: {
       output: {
         inlineDynamicImports: true,
+        // Content-hash the entry bundle and the surface stylesheet so a
+        // deploy that changes the moderator code invalidates the
+        // browser cache. The server's `static-frontends` plugin
+        // discovers the actual hashed names at boot and reflects them
+        // in the surface manifest (which is itself served `no-cache`,
+        // so returning users pick up the new URLs on their next visit).
+        entryFileNames: 'moderator-[hash].js',
         assetFileNames: (assetInfo) =>
-          assetInfo.name === 'style.css' ? 'moderator.css' : 'assets/[name][extname]',
+          assetInfo.name === 'style.css' ? 'moderator-[hash].css' : 'assets/[name]-[hash][extname]',
       },
     },
   },
