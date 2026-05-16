@@ -79,7 +79,12 @@
     "moderator.captureTextInput.label",
     "moderator.captureTextInput.placeholder",
     "moderator.captureTextInput.ariaLabel",
-    "moderator.captureTextInput.helper"
+    "moderator.captureTextInput.helper",
+    "moderator.classificationPalette.ariaLabel",
+    "moderator.classificationPalette.legend",
+    "moderator.classificationPalette.kindButtonAriaLabel",
+    "moderator.classificationPalette.shortcutHint",
+    "moderator.classificationPalette.unsetAria"
   ],
   "signed_off": []
 }

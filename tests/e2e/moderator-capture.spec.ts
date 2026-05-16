@@ -98,4 +98,91 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     await textarea.press('Enter');
     await expect(textarea).toHaveValue(`${wording}\n`);
   });
+
+  // Refinement: tasks/refinements/moderator-ui/mod_classification_palette.md
+  //
+  // The classification-palette regression cover. Pins:
+  //   - the five buttons render in canonical order with aria-pressed=false,
+  //   - click flips aria-pressed and is mutually-exclusive,
+  //   - keyboard shortcut switches the selection,
+  //   - the editable-target guard keeps `f` typed inside the wording
+  //     textarea out of the palette (the just-landed
+  //     `mod_capture_text_input` consumes plain `f` as a character),
+  //   - re-click toggles off (Decision §4).
+  test('alice picks a classification by click and by keyboard shortcut; selection is mutually exclusive', async ({
+    page,
+  }) => {
+    await loginAs(page, { username: TEST_USERNAME });
+    await page.goto('/sessions/new');
+    await expect(page.getByTestId('route-create-session')).toBeVisible();
+
+    await page
+      .getByTestId('create-session-topic-input')
+      .fill('Classification palette regression check.');
+    await page.getByTestId('create-session-submit').click();
+    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, {
+      timeout: 10_000,
+    });
+    await expect(page.getByTestId('route-operate')).toBeVisible();
+
+    // 2. The palette mounts with five buttons in canonical order, all
+    //    unselected. The scaffold's `[classification]` placeholder is
+    //    gone now that `<ClassificationPalette>` fills the slot.
+    const palette = page.getByTestId('classification-palette');
+    await expect(palette).toBeVisible();
+    const KINDS = ['fact', 'predictive', 'value', 'normative', 'definitional'] as const;
+    for (const kind of KINDS) {
+      await expect(page.getByTestId(`classification-palette-button-${kind}`)).toHaveAttribute(
+        'aria-pressed',
+        'false',
+      );
+    }
+
+    // 3. Click `fact` → its aria-pressed flips true; others stay false.
+    await page.getByTestId('classification-palette-button-fact').click();
+    await expect(page.getByTestId('classification-palette-button-fact')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    for (const kind of KINDS) {
+      if (kind === 'fact') continue;
+      await expect(page.getByTestId(`classification-palette-button-${kind}`)).toHaveAttribute(
+        'aria-pressed',
+        'false',
+      );
+    }
+
+    // 4. Press `v` → palette switches to `value`.
+    await page.keyboard.press('v');
+    await expect(page.getByTestId('classification-palette-button-value')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await expect(page.getByTestId('classification-palette-button-fact')).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+
+    // 5. Focus the capture textarea, type `f` → the textarea's value
+    //    gains `"f"`; the palette stays on `value` (the editable-target
+    //    guard suppresses the shortcut).
+    const textarea = page.getByTestId('capture-text-input-textarea');
+    await textarea.focus();
+    await textarea.fill('');
+    await page.keyboard.press('f');
+    await expect(textarea).toHaveValue('f');
+    await expect(page.getByTestId('classification-palette-button-value')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+
+    // 6. Re-click the selected button → toggles off.
+    await page.getByTestId('classification-palette-button-value').click();
+    for (const kind of KINDS) {
+      await expect(page.getByTestId(`classification-palette-button-${kind}`)).toHaveAttribute(
+        'aria-pressed',
+        'false',
+      );
+    }
+  });
 });

@@ -152,6 +152,13 @@
       "ariaLabel": "Compose the wording for a new statement to propose to the debate",
       "helper": "{used}/{max} characters"
     },
+    "classificationPalette": {
+      "ariaLabel": "Statement classification — pick a kind for the new statement",
+      "legend": "Statement kind",
+      "kindButtonAriaLabel": "{label} ({key})",
+      "shortcutHint": "Or press F / P / V / N / D",
+      "unsetAria": "Clear classification"
+    },
     "modeBanner": {
       "idle": {
         "label": "Idle",

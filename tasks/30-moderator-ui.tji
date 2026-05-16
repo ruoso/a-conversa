@@ -266,6 +266,7 @@ task moderator_ui "Moderator UI" {
     task mod_classification_palette "Classification palette + keyboard shortcuts" {
       effort 1d
       allocate team
+      complete 100
       depends frontend_i18n.i18n_methodology_glossary, frontend_i18n.i18n_keyboard_shortcuts_policy
     }
     task mod_target_auto_suggest "Auto-suggest most-recently-active node as target" {

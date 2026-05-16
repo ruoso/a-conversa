@@ -152,6 +152,13 @@
       "ariaLabel": "Componha o texto de uma nova declaração para propor ao debate",
       "helper": "{used}/{max} caracteres"
     },
+    "classificationPalette": {
+      "ariaLabel": "Classificação da declaração — escolha um tipo para a nova declaração",
+      "legend": "Tipo de declaração",
+      "kindButtonAriaLabel": "{label} ({key})",
+      "shortcutHint": "Ou pressione F / P / V / N / D",
+      "unsetAria": "Limpar classificação"
+    },
     "modeBanner": {
       "idle": {
         "label": "Ocioso",

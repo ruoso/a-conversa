@@ -152,6 +152,13 @@
       "ariaLabel": "Redacta el texto de un nuevo enunciado para proponerlo al debate",
       "helper": "{used}/{max} caracteres"
     },
+    "classificationPalette": {
+      "ariaLabel": "Clasificación del enunciado — elige un tipo para el nuevo enunciado",
+      "legend": "Tipo de enunciado",
+      "kindButtonAriaLabel": "{label} ({key})",
+      "shortcutHint": "O presiona F / P / V / N / D",
+      "unsetAria": "Limpiar clasificación"
+    },
     "modeBanner": {
       "idle": {
         "label": "Inactivo",
