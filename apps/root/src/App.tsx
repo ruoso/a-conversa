@@ -233,6 +233,7 @@ export default function App(): ReactElement {
       <Route path="/logout" element={<LogoutRoute />} />
       <Route path="/auth/callback" element={<AuthCallbackRoute />} />
       <Route path="/m/*" element={<SurfaceHost surfaceId="moderator" routerBasePath="/m" />} />
+      <Route path="/p/*" element={<SurfaceHost surfaceId="participant" routerBasePath="/p" />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

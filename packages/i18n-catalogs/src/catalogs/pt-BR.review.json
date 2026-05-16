@@ -203,7 +203,9 @@
     "moderator.interpretiveSplit.propose.reason.readingsInvalid",
     "moderator.modeBanner.interpretive-split.label",
     "moderator.modeBanner.interpretive-split.description",
-    "moderator.contextMenu.node.proposeInterpretiveSplit"
+    "moderator.contextMenu.node.proposeInterpretiveSplit",
+    "participant.placeholder.title",
+    "participant.placeholder.body"
   ],
   "signed_off": []
 }

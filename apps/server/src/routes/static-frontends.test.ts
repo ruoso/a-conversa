@@ -125,6 +125,38 @@ describe('static-frontends plugin — root served at /', () => {
     expect(styleUrls[0]).toMatch(/^\/_surfaces\/moderator\/assets\/moderator-[A-Za-z0-9_-]+\.css$/);
   });
 
+  it('GET /_surfaces/manifest.json lists the participant surface with hash-busted URLs', async () => {
+    // The participant entry is the second wired surface (after the
+    // moderator). Per `tasks/refinements/participant-ui/part_app_skeleton.md`
+    // the entry's filenames mirror the moderator's shape — pin the
+    // same prefix + extension regex against the participant URL so a
+    // regression in the discovery or in the build's hashing fails
+    // here just like for the moderator. The CI / dev story: `pnpm -F
+    // @a-conversa/participant build` is a prerequisite for this case,
+    // the same way the moderator-equivalent above relies on a prior
+    // `pnpm -F @a-conversa/moderator build`.
+    const response = await app.inject({
+      method: 'GET',
+      url: '/_surfaces/manifest.json',
+      headers: { accept: 'application/json' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['content-type']).toMatch(/application\/json/);
+    expect(response.headers['cache-control']).toMatch(/no-cache/);
+    const body = response.json<{
+      surfaces?: { participant?: { moduleUrl?: string; styleUrls?: string[] } };
+    }>();
+    expect(body.surfaces?.participant?.moduleUrl).toMatch(
+      /^\/_surfaces\/participant\/participant-[A-Za-z0-9_-]+\.js$/,
+    );
+    const styleUrls = body.surfaces?.participant?.styleUrls ?? [];
+    expect(styleUrls).toHaveLength(1);
+    expect(styleUrls[0]).toMatch(
+      /^\/_surfaces\/participant\/assets\/participant-[A-Za-z0-9_-]+\.css$/,
+    );
+  });
+
   it('GET <discovered moderator module URL> returns the surface bundle', async () => {
     // The actual filename is unknown a priori (it carries a content
     // hash). Read the manifest, then fetch the URL it advertises.

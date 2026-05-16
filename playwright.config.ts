@@ -289,5 +289,26 @@ export default defineConfig({
         storageState: AUTH_STORAGE_STATE_PATH,
       },
     },
+    // Participant skeleton e2e (participant_ui.part_shell.part_app_skeleton,
+    // refinement `tasks/refinements/participant-ui/part_app_skeleton.md`).
+    // Drives a logged-in browser to a `/p/sessions/<uuid>/invite?role=...`
+    // URL (the shape the moderator's `InviteParticipants.tsx` emits)
+    // and asserts the participant surface's placeholder route renders.
+    // Same browser profile as `chromium-create-session` — single locale
+    // en-US (cross-locale text is covered at the catalog-parity layer),
+    // `ignoreHTTPSErrors` for the OIDC redirect (irrelevant once the
+    // shared `setup-auth` storage state hits, but kept for parity), and
+    // the bootstrap auth jar via `setup-auth`.
+    {
+      name: 'chromium-participant-skeleton',
+      testMatch: /participant-skeleton-smoke\.spec\.ts$/,
+      dependencies: ['setup-auth'],
+      use: {
+        ...devices['Desktop Chrome'],
+        locale: 'en-US',
+        ignoreHTTPSErrors: true,
+        storageState: AUTH_STORAGE_STATE_PATH,
+      },
+    },
   ],
 });

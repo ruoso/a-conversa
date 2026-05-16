@@ -28,6 +28,7 @@ task participant_ui "Participant (debater) UI" {
     task part_app_skeleton "Participant surface as a mountable library (entry, build, mount() export)" {
       effort 1d
       allocate team
+      complete 100
       depends shell_package.shell_mount_contract
       note -8<-
         Refinement: tasks/refinements/participant-ui/part_app_skeleton.md

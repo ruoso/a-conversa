@@ -304,6 +304,13 @@ task frontend_i18n "Frontend internationalization" {
     ->8-
   }
 
+  task i18n_participant_placeholder_native_review "Native-speaker review of pt-BR + es-419 participant-placeholder strings (2 new keys under participant.placeholder.*)" {
+    effort 0.25d
+    allocate team
+    depends !i18n_interpretive_split_mode_native_review
+    note "Native-speaker review of pt-BR + es-419 entries for participant.placeholder.title and participant.placeholder.body added in part_app_skeleton (this commit). Source refinement: tasks/refinements/participant-ui/part_app_skeleton.md."
+  }
+
   task i18n_keyboard_shortcuts_policy "Per-locale keyboard shortcut policy for moderator palette" {
     effort 0.5d
     allocate team

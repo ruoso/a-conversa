@@ -427,6 +427,12 @@
       }
     }
   },
+  "participant": {
+    "placeholder": {
+      "title": "Painel do participante",
+      "body": "Carregando…"
+    }
+  },
   "diagnostics": {
     "cycle": {
       "title": "Ciclo em apoios",
