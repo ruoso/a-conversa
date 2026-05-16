@@ -13,7 +13,7 @@
     }
   },
   "scripts": {
-    "build": "vite build && tsc --emitDeclarationOnly -p tsconfig.json",
+    "build": "vite build && tsc -b tsconfig.json --emitDeclarationOnly --force",
     "typecheck": "tsc -b"
   },
   "peerDependencies": {
@@ -28,6 +28,8 @@
     "zustand": "^5.0.13"
   },
   "devDependencies": {
+    "@a-conversa/i18n-catalogs": "workspace:*",
+    "@a-conversa/shared-types": "workspace:^",
     "vite": "8.0.12"
   }
 }

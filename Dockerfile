@@ -48,6 +48,7 @@ COPY apps/server/package.json        ./apps/server/package.json
 COPY apps/moderator/package.json     ./apps/moderator/package.json
 COPY apps/participant/package.json   ./apps/participant/package.json
 COPY apps/audience/package.json      ./apps/audience/package.json
+COPY apps/root/package.json          ./apps/root/package.json
 COPY packages/shared-types/package.json ./packages/shared-types/package.json
 COPY packages/i18n-catalogs/package.json ./packages/i18n-catalogs/package.json
 COPY packages/shell/package.json     ./packages/shell/package.json
@@ -121,6 +122,7 @@ COPY apps/server/package.json        ./apps/server/package.json
 COPY apps/moderator/package.json     ./apps/moderator/package.json
 COPY apps/participant/package.json   ./apps/participant/package.json
 COPY apps/audience/package.json      ./apps/audience/package.json
+COPY apps/root/package.json          ./apps/root/package.json
 COPY packages/shared-types/package.json ./packages/shared-types/package.json
 COPY packages/i18n-catalogs/package.json ./packages/i18n-catalogs/package.json
 COPY packages/shell/package.json     ./packages/shell/package.json

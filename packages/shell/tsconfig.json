@@ -10,5 +10,6 @@
     "rootDir": "src",
     "noEmit": false
   },
-  "include": ["src"]
+  "include": ["src"],
+  "references": [{ "path": "../shared-types" }, { "path": "../i18n-catalogs" }]
 }
