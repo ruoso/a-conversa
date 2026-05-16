@@ -564,13 +564,20 @@ export function selectEdgesForSession(
 // handlers/vote.ts` rule 4: latest vote per `(proposal, participant)`
 // wins; agree↔dispute switches are legal and surface as the new arm.
 //
-// **Scope**: node-targeting facet sub-kinds only (`classify-node`,
-// `set-node-substance`, `edit-wording`, `amend-node`). Edge-substance
-// votes are not surfaced here — the edge surface doesn't render an
-// in-pill indicator row in v1; a separate task can extend if needed.
-// Structural sub-kinds (`decompose`, `interpretive-split`, `axiom-mark`,
-// `meta-move`, `break-edge`, `annotate`) contribute nothing — they don't
-// target a (node, facet) pair.
+// **Scope**: facet-targeting sub-kinds (`classify-node`,
+// `set-node-substance`, `edit-wording`, `amend-node`,
+// `set-edge-substance`). Edge-substance votes are bucketed under the
+// edge id alongside node-keyed buckets — node and edge UUIDs share the
+// same outer-map keyspace because they are disjoint by construction
+// (UUID-v4 collisions are not modeled). Refinement:
+// `mod_vote_indicators_in_sidebar` Decision §4 — the sidebar surface
+// renders one chip per pending proposal regardless of entity kind and
+// needs per-participant votes for edge-substance proposals too; the
+// existing graph consumer (which only ever looks up node ids in the
+// map) is unaffected because edge UUIDs simply don't appear in its
+// lookups. Structural sub-kinds (`decompose`, `interpretive-split`,
+// `axiom-mark`, `meta-move`, `break-edge`, `annotate`) contribute
+// nothing — they don't target a (entity, facet) pair.
 
 /**
  * One participant's vote on a facet's pending proposal, projected for
@@ -605,23 +612,38 @@ export const EMPTY_VOTES_BY_FACET: Readonly<Partial<Record<FacetName, readonly V
 export const EMPTY_VOTES: readonly Vote[] = Object.freeze([]);
 
 /**
- * Decode the (nodeId, facet) target of a proposal payload for vote
- * projection. Only the four node-targeting facet sub-kinds produce a
- * target; every other sub-kind (edge-substance, structural sub-kinds)
- * returns `null` so the caller drops the proposal from the projection.
+ * Decode the (entityKind, entityId, facet) target of a proposal payload
+ * for vote projection. The five facet-targeting sub-kinds resolve to a
+ * target — four node-keyed (`classify-node`, `set-node-substance`,
+ * `edit-wording`, `amend-node`) and one edge-keyed
+ * (`set-edge-substance`). Structural sub-kinds return `null` so the
+ * caller drops the proposal from the projection.
+ *
+ * Refinement: `mod_vote_indicators_in_sidebar` Decision §4 — the
+ * `set-edge-substance` arm is the additive extension that lets the
+ * sidebar surface render the per-participant dot row on edge-substance
+ * proposal chips. Node ids and edge ids share the outer-map keyspace
+ * because UUIDs don't collide across entity types; the `entityKind`
+ * field is preserved on the return value for type-narrowing parity with
+ * `proposalFacets.facetTargetOf`, even though the projection's
+ * downstream accumulator only consumes `entityId`.
  */
-function voteTargetOf(proposal: ProposalPayload): { nodeId: string; facet: FacetName } | null {
+function voteTargetOf(
+  proposal: ProposalPayload,
+): { entityKind: 'node' | 'edge'; entityId: string; facet: FacetName } | null {
   switch (proposal.kind) {
     case 'classify-node':
-      return { nodeId: proposal.node_id, facet: 'classification' };
+      return { entityKind: 'node', entityId: proposal.node_id, facet: 'classification' };
     case 'set-node-substance':
-      return { nodeId: proposal.node_id, facet: 'substance' };
+      return { entityKind: 'node', entityId: proposal.node_id, facet: 'substance' };
+    case 'set-edge-substance':
+      return { entityKind: 'edge', entityId: proposal.edge_id, facet: 'substance' };
     case 'edit-wording':
     case 'amend-node':
-      return { nodeId: proposal.node_id, facet: 'wording' };
+      return { entityKind: 'node', entityId: proposal.node_id, facet: 'wording' };
     default:
-      // edge-substance, decompose, interpretive-split, axiom-mark,
-      // meta-move, break-edge, annotate — no per-node-facet target.
+      // decompose, interpretive-split, axiom-mark, meta-move,
+      // break-edge, annotate — no per-(entity, facet) target.
       return null;
   }
 }
@@ -646,11 +668,16 @@ function voteTargetOf(proposal: ProposalPayload): { nodeId: string; facet: Facet
  * referencing an unknown proposal are silently dropped.
  */
 export function projectVotesByFacet(events: readonly Event[]): Map<string, Map<FacetName, Vote[]>> {
-  // proposal envelope id → (nodeId, facet) target.
-  const proposalTarget = new Map<string, { nodeId: string; facet: FacetName }>();
-  // per-(nodeId, facet) accumulator: keeps both an ordered list of
+  // proposal envelope id → (entityKind, entityId, facet) target.
+  const proposalTarget = new Map<
+    string,
+    { entityKind: 'node' | 'edge'; entityId: string; facet: FacetName }
+  >();
+  // per-(entityId, facet) accumulator: keeps both an ordered list of
   // votes and a participantId → index map for in-place overwrite of a
-  // participant's latest arm without disturbing arrival order.
+  // participant's latest arm without disturbing arrival order. The
+  // outer-map key is `entityId` (node UUID OR edge UUID — disjoint
+  // keyspaces per Decision §4).
   const out = new Map<string, Map<FacetName, Vote[]>>();
   const positionIndex = new Map<string, Map<FacetName, Map<string, number>>>();
 
@@ -664,28 +691,28 @@ export function projectVotesByFacet(events: readonly Event[]): Map<string, Map<F
     if (event.kind === 'vote') {
       const target = proposalTarget.get(event.payload.proposal_id);
       if (target === undefined) continue;
-      const { nodeId, facet } = target;
+      const { entityId, facet } = target;
 
-      let perNode = out.get(nodeId);
-      if (perNode === undefined) {
-        perNode = new Map();
-        out.set(nodeId, perNode);
+      let perEntity = out.get(entityId);
+      if (perEntity === undefined) {
+        perEntity = new Map();
+        out.set(entityId, perEntity);
       }
-      let perFacet = perNode.get(facet);
+      let perFacet = perEntity.get(facet);
       if (perFacet === undefined) {
         perFacet = [];
-        perNode.set(facet, perFacet);
+        perEntity.set(facet, perFacet);
       }
 
-      let perNodePositions = positionIndex.get(nodeId);
-      if (perNodePositions === undefined) {
-        perNodePositions = new Map();
-        positionIndex.set(nodeId, perNodePositions);
+      let perEntityPositions = positionIndex.get(entityId);
+      if (perEntityPositions === undefined) {
+        perEntityPositions = new Map();
+        positionIndex.set(entityId, perEntityPositions);
       }
-      let perFacetPositions = perNodePositions.get(facet);
+      let perFacetPositions = perEntityPositions.get(facet);
       if (perFacetPositions === undefined) {
         perFacetPositions = new Map();
-        perNodePositions.set(facet, perFacetPositions);
+        perEntityPositions.set(facet, perFacetPositions);
       }
 
       const participantId = event.payload.participant;

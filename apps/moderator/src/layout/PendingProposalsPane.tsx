@@ -61,6 +61,8 @@ import {
   type PendingProposalRow as PendingProposalRowData,
 } from '../graph/pendingProposals';
 import { computeFacetStatuses, type FacetStatusIndex } from '../graph/facetStatus';
+import { projectVotesByFacet } from '../graph/selectors';
+import type { VotesByFacetIndex } from '../graph/proposalFacets';
 import { ProposalFacetBreakdown } from './ProposalFacetBreakdown';
 
 /**
@@ -207,8 +209,17 @@ function PendingProposalRow(props: {
   readonly t: (key: string) => string;
   readonly facetStatusIndex: FacetStatusIndex;
   readonly serverPerFacetStatus: Record<string, string> | undefined;
+  readonly votesByFacetIndex: VotesByFacetIndex;
 }): ReactElement {
-  const { row, nowMs, systemAuthorLabel, t, facetStatusIndex, serverPerFacetStatus } = props;
+  const {
+    row,
+    nowMs,
+    systemAuthorLabel,
+    t,
+    facetStatusIndex,
+    serverPerFacetStatus,
+    votesByFacetIndex,
+  } = props;
   const chip = kindChipText(row.proposal, t);
   const summary = summaryText(row.proposal);
   const author = authorText(row.actor, systemAuthorLabel);
@@ -238,6 +249,7 @@ function PendingProposalRow(props: {
         row={row}
         facetStatusIndex={facetStatusIndex}
         serverPerFacetStatus={serverPerFacetStatus}
+        votesByFacetIndex={votesByFacetIndex}
       />
     </li>
   );
@@ -276,6 +288,15 @@ export function PendingProposalsPane(props: PendingProposalsPaneProps): ReactEle
   // O(rows × facets-per-row) for the per-row derivations.
   const facetStatusIndex = useMemo(() => computeFacetStatuses(events ?? []), [events]);
 
+  // Per `mod_vote_indicators_in_sidebar` Decision §3 + §10, the
+  // per-(entityId, facet) vote bucket is computed ONCE per pane
+  // render via the same `events`-keyed memo pattern. Each row's
+  // breakdown derivation reads this shared index — adding the
+  // sidebar consumer is `O(events)` for the projection walk
+  // (matched against the graph canvas's own
+  // `projectVotesByFacet(events)` pass) plus per-row lookups.
+  const votesByFacetIndex = useMemo(() => projectVotesByFacet(events ?? []), [events]);
+
   const resolvedNowMs = nowMs ?? Date.now();
   const systemAuthorLabel = t('moderator.proposalList.systemAuthor');
   const paneAriaLabel = t('moderator.proposalList.paneAriaLabel');
@@ -310,6 +331,7 @@ export function PendingProposalsPane(props: PendingProposalsPaneProps): ReactEle
             t={t}
             facetStatusIndex={facetStatusIndex}
             serverPerFacetStatus={pendingProposals?.[row.proposalEventId]?.perFacetStatus}
+            votesByFacetIndex={votesByFacetIndex}
           />
         ))}
       </ol>

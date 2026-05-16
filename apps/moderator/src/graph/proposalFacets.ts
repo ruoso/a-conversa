@@ -39,6 +39,7 @@
 import type { ProposalPayload } from '@a-conversa/shared-types';
 
 import type { FacetName, FacetStatus, FacetStatusIndex } from './facetStatus.js';
+import { EMPTY_VOTES, type Vote } from './selectors.js';
 
 /**
  * The set of facet names the breakdown can surface. Extends
@@ -75,6 +76,23 @@ export interface ProposalFacetEntry {
    * `t(labelKey)` at render time; the selector does not pre-translate.
    */
   readonly labelKey: string;
+  /**
+   * Per-participant votes on this facet's pending proposal, in arrival
+   * order (the projection's stable position semantics — each
+   * participant's FIRST vote arrival pins their position; subsequent
+   * arm-switches overwrite in place).
+   *
+   * For facet-targeting sub-kinds, populated from the
+   * `votesByFacetIndex` lookup on `(entityId, facet)`. For structural
+   * sub-kinds (synthetic `'proposal'` lifecycle entry), always
+   * `EMPTY_VOTES` — structural proposals don't carry per-(entity,
+   * facet) votes today (Decision §5). The component omits the
+   * indicator row when this array is empty (mirrors the empty-row
+   * omission rule on the graph pill).
+   *
+   * Refinement: `mod_vote_indicators_in_sidebar` Decisions §1 + §5.
+   */
+  readonly votes: readonly Vote[];
 }
 
 /**
@@ -198,6 +216,24 @@ function labelKeyFor(facet: LifecycleFacetName): string {
 }
 
 /**
+ * Per-participant vote index keyed by `(entityId, facet)` —
+ * `projectVotesByFacet(events)`'s return shape (re-stated here to
+ * avoid forcing the selector's caller through the projection import
+ * just to spell the parameter type). Refinement:
+ * `mod_vote_indicators_in_sidebar` Decision §4.
+ */
+export type VotesByFacetIndex = ReadonlyMap<string, ReadonlyMap<FacetName, readonly Vote[]>>;
+
+/**
+ * Module-scope shared empty `VotesByFacetIndex` — hands a stable
+ * reference to callers (notably tests that exercise the selector
+ * without a populated index, and the selector's own default-parameter
+ * fall-through that older call sites use before the pane rolls out
+ * the threaded value).
+ */
+const EMPTY_VOTES_BY_FACET_INDEX: VotesByFacetIndex = new Map();
+
+/**
  * Derive the per-facet entries for a single pending proposal.
  *
  * @param proposal The proposal payload (the discriminated-union sub-kind).
@@ -207,6 +243,12 @@ function labelKeyFor(facet: LifecycleFacetName): string {
  * @param serverPerFacetStatus Per-proposal server-broadcast status map
  *   (from `useWsStore.sessionState[id].pendingProposals[proposalId].perFacetStatus`).
  *   `undefined` when no server frame has landed for this proposal id.
+ * @param votesByFacetIndex Per-(entityId, facet) vote bucket from
+ *   `projectVotesByFacet(events)`. Defaults to an empty map so the
+ *   handful of call sites that were authored before the sidebar
+ *   indicator task landed continue to compile / behave as before
+ *   (every entry's `votes` field collapses to `EMPTY_VOTES`).
+ *   Refinement: `mod_vote_indicators_in_sidebar`.
  * @returns The facet entries the breakdown component renders. Always at
  *   least one entry (Decision §7 — facet-targeting sub-kinds emit one
  *   real facet entry, structural sub-kinds emit one synthetic
@@ -216,15 +258,23 @@ export function derivePerProposalFacets(
   proposal: ProposalPayload,
   facetStatusIndex: FacetStatusIndex,
   serverPerFacetStatus: Record<string, string> | undefined,
+  votesByFacetIndex: VotesByFacetIndex = EMPTY_VOTES_BY_FACET_INDEX,
 ): readonly ProposalFacetEntry[] {
   const target = facetTargetOf(proposal);
   if (target) {
     const status = resolveStatus(target.facet, target, facetStatusIndex, serverPerFacetStatus);
+    // Lookup keyed by `entityId` (node id OR edge id — UUIDs are
+    // disjoint by construction; the projection extension in
+    // Decision §4 unifies node and edge buckets under the same
+    // outer map). The shared `EMPTY_VOTES` reference keeps React /
+    // memoization stable for the common no-votes-yet case.
+    const votes = votesByFacetIndex.get(target.entityId)?.get(target.facet) ?? EMPTY_VOTES;
     return [
       {
         facet: target.facet,
         status,
         labelKey: labelKeyFor(target.facet),
+        votes,
       },
     ];
   }
@@ -232,13 +282,18 @@ export function derivePerProposalFacets(
   // (Decision §4). Status resolution still consults the server frame
   // (a future broadcast tightening may carry a `'proposal'` keyed
   // status); the client-mirror lookup is skipped because the mirror
-  // does not track structural proposals.
+  // does not track structural proposals. The synthetic chip never
+  // carries per-participant votes today (Decision §5 — structural
+  // proposals don't have a `(entity, facet)` pair to bucket by); a
+  // future broadcast tightening would change the default to a real
+  // lookup.
   const status = resolveStatus('proposal', null, facetStatusIndex, serverPerFacetStatus);
   return [
     {
       facet: 'proposal',
       status,
       labelKey: labelKeyFor('proposal'),
+      votes: EMPTY_VOTES,
     },
   ];
 }

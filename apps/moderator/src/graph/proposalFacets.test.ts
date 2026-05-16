@@ -25,13 +25,26 @@
 import { describe, expect, it } from 'vitest';
 import type { ProposalPayload } from '@a-conversa/shared-types';
 
-import { derivePerProposalFacets } from './proposalFacets';
+import { derivePerProposalFacets, type VotesByFacetIndex } from './proposalFacets';
 import type { FacetName, FacetStatus, FacetStatusIndex } from './facetStatus';
+import { EMPTY_VOTES, type Vote } from './selectors';
 
 const NODE_X = '00000000-0000-4000-8000-00000000000a';
 const NODE_Y = '00000000-0000-4000-8000-00000000000b';
 const EDGE_E = '00000000-0000-4000-8000-00000000000e';
 const PARTICIPANT_A = '00000000-0000-4000-8000-0000000000c1';
+const PARTICIPANT_B = '00000000-0000-4000-8000-0000000000c2';
+const PARTICIPANT_C = '00000000-0000-4000-8000-0000000000c3';
+
+const EMPTY_VOTES_INDEX: VotesByFacetIndex = new Map();
+
+function votesIndexWith(
+  entityId: string,
+  facet: FacetName,
+  votes: readonly Vote[],
+): VotesByFacetIndex {
+  return new Map([[entityId, new Map([[facet, votes]])]]);
+}
 
 const EMPTY_INDEX: FacetStatusIndex = {
   nodes: new Map(),
@@ -323,5 +336,175 @@ describe('derivePerProposalFacets — entity-kind isolation for substance', () =
     };
     const out = derivePerProposalFacets(proposal, indexWithEdge, undefined);
     expect(out[0]?.status).toBe('agreed');
+  });
+});
+
+// Refinement: tasks/refinements/moderator-ui/mod_vote_indicators_in_sidebar.md
+//
+// The selector grows a fourth `votesByFacetIndex` parameter and a fourth
+// `votes: readonly Vote[]` field on each `ProposalFacetEntry`. These
+// cases pin the contract enumerated in the refinement's Acceptance
+// criteria:
+//   - (a) each facet-targeting sub-kind's `votes` field defaults to
+//     `EMPTY_VOTES` when the index is empty;
+//   - (b) when the index carries a vote for the (entityId, facet) pair,
+//     the field surfaces it;
+//   - (c) the structural `'proposal'` synthetic entry always emits
+//     `EMPTY_VOTES` regardless of the index;
+//   - (d) `set-edge-substance` resolves votes from the same index keyed
+//     by `edge_id` (Decision §4);
+//   - (e) the selector remains pure (two calls with the same args
+//     return deep-equal outputs);
+//   - (f) two participants on the same facet surface in arrival order.
+describe('derivePerProposalFacets — per-participant votes field', () => {
+  it('defaults to EMPTY_VOTES when the index is empty (classify-node)', () => {
+    const proposal: ProposalPayload = {
+      kind: 'classify-node',
+      node_id: NODE_X,
+      classification: 'fact',
+    };
+    const out = derivePerProposalFacets(proposal, EMPTY_INDEX, undefined, EMPTY_VOTES_INDEX);
+    expect(out[0]?.votes).toBe(EMPTY_VOTES);
+  });
+
+  it('defaults to EMPTY_VOTES when the index argument is omitted (back-compat)', () => {
+    // Older callers that pre-date the sidebar indicator task pass three
+    // arguments; the new parameter has a default of an empty map, so
+    // the `votes` field still resolves to the shared `EMPTY_VOTES`
+    // reference.
+    const proposal: ProposalPayload = {
+      kind: 'classify-node',
+      node_id: NODE_X,
+      classification: 'fact',
+    };
+    const out = derivePerProposalFacets(proposal, EMPTY_INDEX, undefined);
+    expect(out[0]?.votes).toBe(EMPTY_VOTES);
+  });
+
+  it('surfaces the matching (nodeId, facet) bucket for classify-node', () => {
+    const proposal: ProposalPayload = {
+      kind: 'classify-node',
+      node_id: NODE_X,
+      classification: 'fact',
+    };
+    const votes: readonly Vote[] = [{ participantId: PARTICIPANT_A, choice: 'agree' }];
+    const index = votesIndexWith(NODE_X, 'classification', votes);
+    const out = derivePerProposalFacets(proposal, EMPTY_INDEX, undefined, index);
+    expect(out[0]?.votes).toEqual(votes);
+  });
+
+  it('surfaces the matching (nodeId, facet) bucket for set-node-substance', () => {
+    const proposal: ProposalPayload = {
+      kind: 'set-node-substance',
+      node_id: NODE_X,
+      value: 'agreed',
+    };
+    const votes: readonly Vote[] = [{ participantId: PARTICIPANT_A, choice: 'dispute' }];
+    const index = votesIndexWith(NODE_X, 'substance', votes);
+    const out = derivePerProposalFacets(proposal, EMPTY_INDEX, undefined, index);
+    expect(out[0]?.votes).toEqual(votes);
+  });
+
+  it('surfaces the matching (nodeId, facet) bucket for edit-wording', () => {
+    const proposal: ProposalPayload = {
+      kind: 'edit-wording',
+      edit_kind: 'reword',
+      node_id: NODE_X,
+      new_wording: 'updated',
+    };
+    const votes: readonly Vote[] = [{ participantId: PARTICIPANT_A, choice: 'withdraw' }];
+    const index = votesIndexWith(NODE_X, 'wording', votes);
+    const out = derivePerProposalFacets(proposal, EMPTY_INDEX, undefined, index);
+    expect(out[0]?.votes).toEqual(votes);
+  });
+
+  it('surfaces the matching (edgeId, facet) bucket for set-edge-substance', () => {
+    // Decision §4 — the index is keyed by `entityId` (node UUID OR edge
+    // UUID — disjoint keyspaces). The set-edge-substance selector
+    // resolves its target to `entityId = edge_id`, then reads the same
+    // map. The projection extension and the selector extension agree on
+    // the keying scheme; this case is the round-trip cover.
+    const proposal: ProposalPayload = {
+      kind: 'set-edge-substance',
+      edge_id: EDGE_E,
+      value: 'agreed',
+    };
+    const votes: readonly Vote[] = [
+      { participantId: PARTICIPANT_A, choice: 'agree' },
+      { participantId: PARTICIPANT_B, choice: 'dispute' },
+    ];
+    const index = votesIndexWith(EDGE_E, 'substance', votes);
+    const out = derivePerProposalFacets(proposal, EMPTY_INDEX, undefined, index);
+    expect(out[0]?.votes).toEqual(votes);
+  });
+
+  it('preserves arrival order across multiple participants', () => {
+    const proposal: ProposalPayload = {
+      kind: 'classify-node',
+      node_id: NODE_X,
+      classification: 'fact',
+    };
+    const votes: readonly Vote[] = [
+      { participantId: PARTICIPANT_A, choice: 'agree' },
+      { participantId: PARTICIPANT_B, choice: 'dispute' },
+      { participantId: PARTICIPANT_C, choice: 'withdraw' },
+    ];
+    const index = votesIndexWith(NODE_X, 'classification', votes);
+    const out = derivePerProposalFacets(proposal, EMPTY_INDEX, undefined, index);
+    expect(out[0]?.votes.map((v) => v.participantId)).toEqual([
+      PARTICIPANT_A,
+      PARTICIPANT_B,
+      PARTICIPANT_C,
+    ]);
+  });
+
+  it('an index entry for a different facet on the same entity is not picked up', () => {
+    // classify-node targets `classification`; the index carries a vote
+    // for the same node's `substance` facet — they don't cross.
+    const proposal: ProposalPayload = {
+      kind: 'classify-node',
+      node_id: NODE_X,
+      classification: 'fact',
+    };
+    const votes: readonly Vote[] = [{ participantId: PARTICIPANT_A, choice: 'agree' }];
+    const index = votesIndexWith(NODE_X, 'substance', votes);
+    const out = derivePerProposalFacets(proposal, EMPTY_INDEX, undefined, index);
+    expect(out[0]?.votes).toBe(EMPTY_VOTES);
+  });
+
+  it('structural sub-kind always emits EMPTY_VOTES regardless of the index', () => {
+    // Decision §5 — structural proposals don't carry per-(entity, facet)
+    // votes today; the synthetic `'proposal'` lifecycle chip's `votes`
+    // field is always the shared empty reference.
+    const proposal: ProposalPayload = {
+      kind: 'axiom-mark',
+      node_id: NODE_X,
+      participant: PARTICIPANT_A,
+    };
+    // Even if the index happened to carry an entry under the node id
+    // (it shouldn't — `projectVotesByFacet` doesn't bucket axiom-mark
+    // proposals — but a defensive test for the synthetic entry's
+    // contract), the selector still returns EMPTY_VOTES.
+    const votes: readonly Vote[] = [{ participantId: PARTICIPANT_A, choice: 'agree' }];
+    const index = votesIndexWith(NODE_X, 'classification', votes);
+    const out = derivePerProposalFacets(proposal, EMPTY_INDEX, undefined, index);
+    expect(out[0]?.facet).toBe('proposal');
+    expect(out[0]?.votes).toBe(EMPTY_VOTES);
+  });
+
+  it('purity — two calls with the same args return deep-equal outputs (votes too)', () => {
+    const proposal: ProposalPayload = {
+      kind: 'classify-node',
+      node_id: NODE_X,
+      classification: 'fact',
+    };
+    const votes: readonly Vote[] = [
+      { participantId: PARTICIPANT_A, choice: 'agree' },
+      { participantId: PARTICIPANT_B, choice: 'dispute' },
+    ];
+    const index = votesIndexWith(NODE_X, 'classification', votes);
+    const a = derivePerProposalFacets(proposal, EMPTY_INDEX, undefined, index);
+    const b = derivePerProposalFacets(proposal, EMPTY_INDEX, undefined, index);
+    expect(a).toEqual(b);
   });
 });

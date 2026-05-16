@@ -503,6 +503,150 @@ describe('PendingProposalsPane — per-facet breakdown integration', () => {
   });
 });
 
+// Refinement: tasks/refinements/moderator-ui/mod_vote_indicators_in_sidebar.md
+//
+// The pane now threads a `votesByFacetIndex` memo
+// (`projectVotesByFacet(events)`) into every row's
+// `<ProposalFacetBreakdown>`, so each chip grows a per-participant
+// indicator row when votes for its `(entityId, facet)` pair land in
+// the event log. These cases pin:
+//   (a) push a `proposal` + a `vote` event into `useWsStore` via
+//       `applyEvent`; the row's breakdown chip grows one indicator
+//       with the expected `data-choice`;
+//   (b) two participants on the same facet render two indicators in
+//       arrival order;
+//   (c) the chip's `data-facet-status` remains correct alongside the
+//       indicator row (no regression from the predecessor's
+//       facet-status assertions);
+//   (d) Decision §7 — the no-vote-yet baseline: a freshly proposed
+//       item has zero indicators in its chip.
+describe('PendingProposalsPane — per-participant vote indicators integration', () => {
+  function voteEvent(opts: {
+    seq: number;
+    proposalEnvelopeId: string;
+    participant: string;
+    choice: 'agree' | 'dispute' | 'withdraw';
+  }): Event {
+    return {
+      id: envId('v', opts.seq),
+      sessionId: SESSION,
+      sequence: opts.seq,
+      kind: 'vote',
+      actor: opts.participant,
+      payload: {
+        proposal_id: opts.proposalEnvelopeId,
+        participant: opts.participant,
+        vote: opts.choice,
+        voted_at: '2026-05-16T00:01:05.000Z',
+      },
+      createdAt: '2026-05-16T00:01:05.000Z',
+    };
+  }
+
+  it('the freshly-proposed chip starts with zero indicators (no-vote-yet baseline)', () => {
+    act(() => {
+      useWsStore.getState().applyEvent(proposalEvent(1, PROPOSAL_P, classifyNodeFact));
+    });
+    render(<PendingProposalsPane sessionId={SESSION} nowMs={NOW_MS} />);
+    // The chip is present but the indicator row is omitted entirely
+    // until a vote lands.
+    expect(screen.getByTestId('proposal-facet-row')).toBeTruthy();
+    expect(screen.queryByTestId('proposal-facet-vote-indicator-row')).toBeNull();
+  });
+
+  it('one vote landing via applyEvent grows one indicator with the expected data-choice', () => {
+    act(() => {
+      useWsStore.getState().applyEvent(proposalEvent(1, PROPOSAL_P, classifyNodeFact));
+    });
+    render(<PendingProposalsPane sessionId={SESSION} nowMs={NOW_MS} />);
+    // No vote yet → no indicator.
+    expect(screen.queryByTestId('proposal-facet-vote-indicator-row')).toBeNull();
+
+    act(() => {
+      useWsStore.getState().applyEvent(
+        voteEvent({
+          seq: 2,
+          proposalEnvelopeId: PROPOSAL_P,
+          participant: PARTICIPANT_A,
+          choice: 'agree',
+        }),
+      );
+    });
+
+    const indicatorRow = screen.getByTestId('proposal-facet-vote-indicator-row');
+    const indicators = indicatorRow.querySelectorAll('[data-vote-indicator]');
+    expect(indicators).toHaveLength(1);
+    expect(indicators[0]?.getAttribute('data-participant-id')).toBe(PARTICIPANT_A);
+    expect(indicators[0]?.getAttribute('data-choice')).toBe('agree');
+  });
+
+  it('two participants voting on the same facet render two indicators in arrival order', () => {
+    const PARTICIPANT_B = '00000000-0000-4000-8000-0000000000c2';
+    act(() => {
+      useWsStore.getState().applyEvent(proposalEvent(1, PROPOSAL_P, classifyNodeFact));
+      useWsStore.getState().applyEvent(
+        voteEvent({
+          seq: 2,
+          proposalEnvelopeId: PROPOSAL_P,
+          participant: PARTICIPANT_A,
+          choice: 'agree',
+        }),
+      );
+      useWsStore.getState().applyEvent(
+        voteEvent({
+          seq: 3,
+          proposalEnvelopeId: PROPOSAL_P,
+          participant: PARTICIPANT_B,
+          choice: 'dispute',
+        }),
+      );
+    });
+    render(<PendingProposalsPane sessionId={SESSION} nowMs={NOW_MS} />);
+    const indicators = screen
+      .getByTestId('proposal-facet-vote-indicator-row')
+      .querySelectorAll('[data-vote-indicator]');
+    expect(indicators).toHaveLength(2);
+    expect(Array.from(indicators).map((el) => el.getAttribute('data-participant-id'))).toEqual([
+      PARTICIPANT_A,
+      PARTICIPANT_B,
+    ]);
+    expect(Array.from(indicators).map((el) => el.getAttribute('data-choice'))).toEqual([
+      'agree',
+      'dispute',
+    ]);
+  });
+
+  it("the chip's data-facet-status stays in sync alongside the indicator row (no regression)", () => {
+    act(() => {
+      useWsStore.getState().applyEvent(proposalEvent(1, PROPOSAL_P, classifyNodeFact));
+      useWsStore.getState().applyEvent(
+        voteEvent({
+          seq: 2,
+          proposalEnvelopeId: PROPOSAL_P,
+          participant: PARTICIPANT_A,
+          choice: 'agree',
+        }),
+      );
+      // Server `proposal-status` envelope says `disputed` — the chip's
+      // status reflects the server frame; the indicator row still
+      // surfaces the per-participant detail.
+      useWsStore.getState().applyProposalStatus({
+        sessionId: SESSION,
+        proposalId: PROPOSAL_P,
+        sequence: 2,
+        perFacetStatus: { classification: 'disputed' },
+      });
+    });
+    render(<PendingProposalsPane sessionId={SESSION} nowMs={NOW_MS} />);
+    const chip = screen.getByTestId('proposal-facet-row');
+    expect(chip.getAttribute('data-facet-status')).toBe('disputed');
+    // Indicator row still resolves and carries the agree dot.
+    const indicators = chip.querySelectorAll('[data-vote-indicator]');
+    expect(indicators).toHaveLength(1);
+    expect(indicators[0]?.getAttribute('data-choice')).toBe('agree');
+  });
+});
+
 describe('PendingProposalsPane — i18n catalog parity', () => {
   const KEYS = [
     'moderator.proposalList.emptyState',

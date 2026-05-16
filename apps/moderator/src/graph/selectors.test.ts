@@ -1261,7 +1261,14 @@ describe('projectVotesByFacet', () => {
     expect(result.size).toBe(0);
   });
 
-  it('silently drops a vote on an edge-substance proposal (edges are out of scope)', () => {
+  // Refinement: tasks/refinements/moderator-ui/mod_vote_indicators_in_sidebar.md
+  // Decision §4 — the projection now buckets `set-edge-substance` votes
+  // under the edge id (alongside the existing node-keyed buckets). The
+  // outer-map key is `entityId` (node UUID OR edge UUID — disjoint
+  // keyspaces). The graph consumer (which only ever looks up node ids)
+  // is unaffected; the sidebar consumer (this task) reads edge buckets
+  // via the same lookup.
+  it('buckets a vote on a set-edge-substance proposal under the edge id', () => {
     const events: Event[] = [
       makeSetEdgeSubstanceProposal({
         sequence: 1,
@@ -1276,8 +1283,49 @@ describe('projectVotesByFacet', () => {
       }),
     ];
     const result = projectVotesByFacet(events);
-    // No node bucket; edges are not surfaced by this projection.
-    expect(result.size).toBe(0);
+    const perEdge = result.get(EDGE_VOTE_1);
+    expect(perEdge).toBeDefined();
+    expect(perEdge!.get('substance')).toEqual([
+      { participantId: VOTE_PARTICIPANT_A, choice: 'agree' },
+    ]);
+  });
+
+  it('node-keyed and edge-keyed buckets coexist without interference', () => {
+    // Mixed log — node-substance and edge-substance proposals each
+    // receive a vote. Both surface in the projection under their
+    // respective entity ids; neither lookup picks up the other's
+    // bucket. The graph consumer's node-only lookup is unaffected.
+    const events: Event[] = [
+      makeSetNodeSubstanceProposal({
+        sequence: 1,
+        envelopeId: PROPOSAL_SUBSTANCE_1,
+        nodeId: NODE_VOTE_1,
+      }),
+      makeSetEdgeSubstanceProposal({
+        sequence: 2,
+        envelopeId: PROPOSAL_EDGE_SUBSTANCE,
+        edgeId: EDGE_VOTE_1,
+      }),
+      makeVote({
+        sequence: 3,
+        proposalEnvelopeId: PROPOSAL_SUBSTANCE_1,
+        participantId: VOTE_PARTICIPANT_A,
+        vote: 'agree',
+      }),
+      makeVote({
+        sequence: 4,
+        proposalEnvelopeId: PROPOSAL_EDGE_SUBSTANCE,
+        participantId: VOTE_PARTICIPANT_B,
+        vote: 'dispute',
+      }),
+    ];
+    const result = projectVotesByFacet(events);
+    expect(result.get(NODE_VOTE_1)!.get('substance')).toEqual([
+      { participantId: VOTE_PARTICIPANT_A, choice: 'agree' },
+    ]);
+    expect(result.get(EDGE_VOTE_1)!.get('substance')).toEqual([
+      { participantId: VOTE_PARTICIPANT_B, choice: 'dispute' },
+    ]);
   });
 
   it('records a withdraw arm distinctly (per methodology, withdraw is its own arm)', () => {

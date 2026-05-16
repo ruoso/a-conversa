@@ -882,4 +882,76 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
       .and(page.locator('[data-facet-name="classification"]'));
     await expect(chip).toHaveAttribute('data-facet-status', 'proposed');
   });
+
+  // Refinement: tasks/refinements/moderator-ui/mod_vote_indicators_in_sidebar.md
+  // Decision §7 — scope this e2e block to the no-vote-yet baseline only;
+  // the cross-context "vote-and-see-it-land" assertion belongs in
+  // `participant_ui.part_pw_concurrent_with_moderator`
+  // (`tasks/40-participant-ui.tji:334`), which already scopes the
+  // cross-context Playwright work (a debater tablet alongside the
+  // moderator UI). The positive case (vote arrives → indicator
+  // appears) is unit-tested at Vitest level via direct `applyEvent`
+  // pushes (`PendingProposalsPane.test.tsx`).
+  //
+  // The assertion polls with the same 10s budget the per-facet
+  // breakdown cover above uses: after the propose lands, the
+  // `classification` chip's `proposal-facet-vote-indicator-row`
+  // either is absent OR has zero `data-vote-indicator` children.
+  test('alice: propose a free-floating new statement; the per-facet chip starts with no vote-indicator row (no-vote-yet baseline)', async ({
+    page,
+  }) => {
+    await loginAs(page, { username: TEST_USERNAME });
+    await page.goto('/sessions/new');
+    await expect(page.getByTestId('route-create-session')).toBeVisible();
+
+    await page
+      .getByTestId('create-session-topic-input')
+      .fill('Vote-indicator no-vote-yet baseline e2e regression check.');
+    await page.getByTestId('create-session-submit').click();
+    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
+    await expect(page.getByTestId('route-operate')).toBeVisible();
+
+    // Drive the same propose chain as the per-facet breakdown cover —
+    // produces a `classify-node` proposal whose chip targets the
+    // `classification` facet.
+    const wording = 'The proposed minimum wage would raise prices for everyone.';
+    const textarea = page.getByTestId('capture-text-input-textarea');
+    await textarea.fill(wording);
+    await page.getByTestId('classification-palette-button-fact').click();
+    const submitKey = process.platform === 'darwin' ? 'Meta+Enter' : 'Control+Enter';
+    await textarea.press(submitKey);
+
+    if (!(await isWsStoreReachable(page))) {
+      test.skip(
+        true,
+        'window.__aConversaWsStore is not reachable — the dev-only attachment did not fire. Full-chain assertion deferred to the seed-infrastructure environment.',
+      );
+      return;
+    }
+
+    // Wait for the chip to land first.
+    await expect
+      .poll(
+        async () =>
+          page
+            .getByTestId('proposal-facet-row')
+            .and(page.locator('[data-facet-name="classification"]'))
+            .count(),
+        { timeout: 10_000 },
+      )
+      .toBe(1);
+
+    // The no-vote-yet baseline: the chip's indicator row container is
+    // either absent (the component omits the empty container) OR
+    // present with zero indicator children. The component omits the
+    // container per Decision §2 + the empty-row omission rule, so the
+    // expected count of `proposal-facet-vote-indicator-row` nested
+    // inside the chip is 0; the `data-vote-indicator` descendant count
+    // is also 0.
+    const chip = page
+      .getByTestId('proposal-facet-row')
+      .and(page.locator('[data-facet-name="classification"]'));
+    await expect(chip.getByTestId('proposal-facet-vote-indicator-row')).toHaveCount(0);
+    await expect(chip.locator('[data-vote-indicator]')).toHaveCount(0);
+  });
 });
