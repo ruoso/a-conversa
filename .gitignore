@@ -42,10 +42,13 @@ tests/e2e/.auth/
 .DS_Store
 *.swp
 
-# TaskJuggler generated reports (from `tj3 -o`)
-# Scoped to the report directory only — do NOT ignore *.html globally,
-# since downstream docs/static assets may legitimately ship HTML.
-report/
+# TaskJuggler generated reports (written to the `report/` directory via the
+# project's `outputdir` setting in project.tjp). Scoped to that directory
+# only — do NOT ignore *.html globally, since downstream docs/static assets
+# may legitimately ship HTML. The directory itself is kept in the tree via a
+# `.gitkeep` sentinel so tj3 has a place to write to on a fresh checkout.
+report/*
+!report/.gitkeep
 
 # Local-dev compose stack
 # Placeholder: data-volume mounts (e.g., a `data/` directory for the

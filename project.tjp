@@ -2,24 +2,30 @@
 #
 # This TaskJuggler project file is used as a structured way to talk about the
 # individual tasks in building a-conversa. It is not (currently) used for real
-# scheduling — there are no calendars, no resources beyond a single placeholder,
-# and no reports configured. The tj3 binary should still parse the file, which
-# lets us validate structure and dependencies.
+# scheduling — there are no calendars, no resources beyond a single placeholder.
+# The tj3 binary parses the file so we can validate structure and dependencies,
+# and emits a single HTML task report to `report/` (gitignored) so the run is
+# warning-free. The generated HTML is not committed.
 
 project aconversa "a-conversa" 2026-05-01 +5y {
   timezone "America/New_York"
   numberformat "-" "" "," "." 1
   currencyformat "(" ")" "," "." 0
+  # Send any generated report output to the gitignored `report/` directory at
+  # the repo root so it never gets accidentally committed.
+  outputdir "report"
 }
 
-# We don't need to generate this all the time, uncomment when you want to see it.
-#taskreport gantt "Gantt Chart" {
-#  formats html
-#  headline "Simple Gantt Chart"
-#  columns bsi, name, status, chart
-#  loadunit hours
-#}
-#
+# Minimal task report. tj3 warns ("This project has no reports defined") if
+# nothing is declared, so we keep a single lightweight Gantt-style report
+# here. It writes `report/gantt.html` (gitignored). Tweak columns or formats
+# if you actually want to consume the output.
+taskreport gantt "Gantt Chart" {
+  formats html
+  headline "a-conversa Work Breakdown"
+  columns bsi, name, status, chart
+  loadunit hours
+}
 
 # Single placeholder resource. TaskJuggler requires at least one resource for
 # `effort`-based tasks to be syntactically valid. We are not allocating real
