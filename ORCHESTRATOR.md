@@ -2,47 +2,47 @@
 
 This file is the startup prompt for an orchestrator session. Point a fresh Claude Code session at this file (or paste it as the first message) and the agent operates per the rules below.
 
-## Hard rule — only the WBS lives in orchestrator context
+## Hard rule — the orchestrator does not read the WBS directly
 
-The orchestrator is controlling the **Work Breakdown Structure** (`project.tjp` + `tasks/*.tji` + `tasks/99-milestones.tji`). That, and only that, is allowed in its context. Refinement documents, source code, test output, commit messages, log lines, CI artifacts — all of those are sub-agent territory. The orchestrator never reads them directly; sub-agents work with them and return a short summary that the orchestrator carries forward.
+The orchestrator controls the **Work Breakdown Structure** (`project.tjp` + `tasks/*.tji` + `tasks/99-milestones.tji`) but **never reads those files itself**. Its only window into the WBS is `make unblocked`, which prints, per milestone, the leaf tasks that are currently ready to pick up (see `scripts/unblocked.ts`). The full task definitions, dependency graphs, refinement documents, source code, test output — all of those are sub-agent territory. Sub-agents read them and return short summaries that the orchestrator carries forward.
 
 **Tools the orchestrator uses:**
 
-- `Read` — **only** on `project.tjp`, `tasks/99-milestones.tji`, and `tasks/<NN>-<area>.tji` files. Never on a refinement, never on source, never on a log.
+- `Bash` — **only** to run `make unblocked` (optionally with `MILESTONE=<id>` to scope to one milestone). No other shell commands.
 - `Agent` — dispatches every concrete action.
 - `TaskCreate` / `TaskUpdate` / `TaskList` / `TaskGet` — orchestrator self-tracking (iteration step state). Not the WBS — these are conversation-internal.
 - `AskUserQuestion` — stop-condition surfaces only.
 
-If the orchestrator finds itself about to call `Edit`, `Write`, `Bash`, `Grep`, `WebFetch`, or any other tool — or finds itself about to `Read` a non-WBS path — it instead spawns a sub-agent for that step. No exceptions.
+If the orchestrator finds itself about to call `Read`, `Edit`, `Write`, `Grep`, `WebFetch`, any other `Bash` command, or any other tool — it instead spawns a sub-agent for that step. No exceptions.
 
 ## Mission
 
-Drive `a-conversa` forward by closing **every milestone in `tasks/99-milestones.tji` except `m_deployment_ready` (M9)**. M10 depends on M9 and is therefore also out of scope. M0–M3 + M3-review are already `complete 100`; the in-scope work is M4 (moderator MVP), M5 (participant MVP), M6 (audience MVP), M7 (end-to-end), M8 (replay MVP).
+Drive `a-conversa` forward by closing **every milestone in `tasks/99-milestones.tji` except `m_deployment_ready` (M9)**. M10 (`m_first_show_recorded`) depends on M9 and is therefore also out of scope. M0–M3 + M3-review are already `complete 100`; the in-scope milestone ids (used as `MILESTONE=<id>` arguments to `make unblocked`) are:
 
-Do **not** touch any task under `deployment.*` in `tasks/70-deployment.tji`. Skip it even when its dependencies are satisfied.
+- `m_moderator_mvp` (M4)
+- `m_participant_mvp` (M5)
+- `m_audience_mvp` (M6)
+- `m_end_to_end_debate` (M7)
+- `m_replay_mvp` (M8)
+
+Do **not** touch any task under `deployment.*` in `tasks/70-deployment.tji`. Skip any READY leaf whose id begins with `deployment.` even when `make unblocked` lists it (it can appear under in-scope milestones via transitive dependency edges).
 
 ## Session start
 
-Once, at the top of the session, the orchestrator reads the WBS into its context:
+The orchestrator does NOT load the WBS at session start. The whole context it carries is this file plus its own iteration-tracking. WBS state is read on demand, one milestone at a time, via `make unblocked MILESTONE=<id>` when picking the next task.
 
-- `project.tjp` (the include list).
-- Every `tasks/<NN>-<area>.tji` file.
-- `tasks/99-milestones.tji`.
-
-That's the whole context the orchestrator carries — task names, dependency edges, completion markers, milestone definitions. Nothing else.
-
-Refinements exist at `tasks/refinements/<area>/<task_name>.md` (path convention from `tasks/refinements/README.md`). The orchestrator KNOWS that path mapping but does not read those files; it only passes the path to sub-agents.
+Refinements exist at `tasks/refinements/<area>/<task_name>.md` (path convention from `tasks/refinements/README.md`). The orchestrator KNOWS that path mapping — `<area>` is the first dot-segment of the fully-qualified task id, `<task_name>` is the last segment — but does not read refinement files; it only passes the path to sub-agents.
 
 ## Loop shape — one WBS task per iteration
 
 Each iteration is three sub-agent calls. The orchestrator drives the sequence, decides which task to dispatch, and tracks state via `TaskCreate`/`TaskUpdate`. It does no other work directly.
 
-1. **Pick next task** — the orchestrator selects from its in-context WBS (no sub-agent).
+1. **Pick next task** — the orchestrator runs `make unblocked MILESTONE=<id>` (no sub-agent) and picks from the READY list.
 2. **Write refinement** — `Refinement-Writer` sub-agent.
 3. **Implement** — `Implementer` sub-agent (runs its own verification before returning).
 4. **Run ritual + commit (local only)** — `Closer` sub-agent.
 
-When the Closer returns, the orchestrator updates its in-context WBS model (the just-closed leaf is now `complete 100`; check whether that closes its parent milestone) and starts the next iteration at step 1.
+When the Closer returns, the orchestrator does NOT update an in-memory WBS model. The next iteration's pick step re-runs `make unblocked` against the current on-disk state, so the freshly-closed leaf and any newly-unblocked successors are reflected automatically.
 
 **The orchestrator does NOT push and does NOT watch CI.** The human user pushes to `origin/main` manually, in batches, and observes CI themselves. Sub-agents commit locally only. If the user reports a CI failure on a prior commit, that gets dispatched ad-hoc as a fix task — not as part of the orchestrator's loop.
 
@@ -50,13 +50,11 @@ Stop when no eligible leaf remains in M4..M8 (mission complete), or when a sub-a
 
 ## Task picking — the orchestrator's only direct work
 
-The orchestrator walks its in-context WBS and selects the next leaf with all three properties:
+The orchestrator walks the in-scope milestones in lowest-number-first order — M4 (moderator MVP), M5 (participant MVP), M6 (audience MVP), M7 (end-to-end), M8 (replay MVP) — and runs `make unblocked MILESTONE=<id>` against each in turn. The first milestone with a non-empty READY list is the source for this iteration's pick.
 
-1. Not yet `complete 100`.
-2. Every `depends` target transitively `complete 100`.
-3. Falls under a milestone in M4..M8 — skip any leaf whose only milestone path goes through `m_deployment_ready` or anything under `deployment.*`.
+`make unblocked` already enforces the two structural eligibility properties: the listed leaves are not `complete 100` and have every predecessor `complete 100`. The orchestrator only adds the **scope filter**: skip any READY leaf whose id starts with `deployment.` (the M9 / out-of-scope rule).
 
-Selection priority: lowest-numbered milestone first. **Within a milestone, use judgment to pick the leaf that generates the least amount of tech debt**, where "tech debt" means deferred assertions, missing seams that successor tasks will have to work around, or open tech-debt tasks (per the tech-debt registration policy below) that another task's e2e or refinement explicitly depends on.
+**Within the READY list, use judgment to pick the leaf that generates the least amount of tech debt**, where "tech debt" means deferred assertions, missing seams that successor tasks will have to work around, or open tech-debt tasks (per the tech-debt registration policy below) that another task's e2e or refinement explicitly depends on.
 
 Heuristics, in rough order of weight:
 
@@ -68,7 +66,7 @@ Heuristics, in rough order of weight:
 
 When picking, state the reasoning in one or two sentences before dispatching the Refinement-Writer — this makes the pick auditable and lets the user redirect if the intuition is off. Don't dispatch silently.
 
-The selected task's `<task_id>`, the path `tasks/<NN>-<area>.tji` it lives in, the predecessor task ids (with their refinement paths `tasks/refinements/<area>/<predecessor>.md`), and the refinement path it will produce (`tasks/refinements/<area>/<task_name>.md`) are the only data the orchestrator passes downstream. No file contents, no code excerpts.
+The orchestrator passes the selected task's fully-qualified `<task_id>` and the refinement path it will produce (`tasks/refinements/<area>/<task_name>.md`, derived from the task id) to the Refinement-Writer. The Refinement-Writer is responsible for locating the task's `.tji` block, predecessor list, and any other WBS context it needs — the orchestrator does not pre-extract or pass those.
 
 ## Sub-agent briefs
 
@@ -78,7 +76,7 @@ Each brief below is what the orchestrator passes to the `Agent` call's `prompt`.
 
 Brief:
 
-> Write the refinement document for `<task_id>` at `tasks/refinements/<area>/<task_name>.md` following the shape in `tasks/refinements/README.md`. Read sibling refinements in the same area and the predecessor refinements at `<predecessor refinement paths>` for style and decision continuity. Also read any ADRs they cite.
+> Write the refinement document for `<task_id>` at `tasks/refinements/<area>/<task_name>.md` following the shape in `tasks/refinements/README.md`. First locate the task's block in the matching `tasks/<NN>-<area>.tji` file (the area is the first dot-segment of `<task_id>`) to get the effort estimate, dependency list, and any embedded notes. Then read sibling refinements in the same area and the predecessor refinements (`tasks/refinements/<area>/<predecessor>.md` for each predecessor in the `depends` list) for style and decision continuity. Also read any ADRs they cite.
 >
 > Cover, in order: TaskJuggler back-link, Effort estimate, Inherited dependencies (settled/pending), What this task is, Why it needs to be done, Inputs / context (real file paths with line numbers — no invented references), Constraints / requirements, Acceptance criteria (testable; reference ADR 0022), Decisions (with rationale for chosen options against alternatives), Open questions (`(none — all decided)` if everything settled).
 >
@@ -172,19 +170,14 @@ Example shape for one iteration:
 
 Reset the list at the start of each iteration (mark prior tasks `deleted` once they're no longer relevant).
 
-## Updating the orchestrator's WBS model
+## Updating the orchestrator's WBS view
 
-After the Closer reports done, the orchestrator updates its in-context WBS view:
-
-- The just-closed leaf flips to `complete 100`.
-- If the Closer reports milestone propagation, that milestone also flips to `complete 100`.
-
-The orchestrator does NOT re-read the `.tji` files to verify — the Closer is trusted. The model lives in the orchestrator's context as plain text; updates are mental, not via `Edit`. If the orchestrator suspects its model has drifted from the on-disk state (e.g. after a long session with many iterations), it may `Read` the relevant `.tji` file once to re-sync — but only as a refresh action, not routine.
+After the Closer reports done, the orchestrator does NOT maintain an in-memory WBS view. The next iteration's pick step re-runs `make unblocked MILESTONE=<id>` against the current on-disk state, which already reflects the freshly-closed leaf, any milestone propagation the Closer did, and any newly-unblocked successors. There is no drift to manage.
 
 ## Stop conditions
 
-- **Mission complete** — no eligible leaf remains in M4..M8. Orchestrator dispatches one final `End-of-Mission` sub-agent (brief in §End-of-mission below), then stops.
-- **Tooling gap** — a sub-agent reports `docker`, `tj3`, or `pnpm` is unusable. Surface via `AskUserQuestion`, halt until user replies.
+- **Mission complete** — `make unblocked MILESTONE=<id>` for every milestone in M4..M8 shows no eligible leaf (either ALL GATING WORK COMPLETE, or every READY leaf is filtered by the `deployment.*` scope rule). Orchestrator dispatches one final `End-of-Mission` sub-agent (brief in §End-of-mission below), then stops.
+- **Tooling gap** — `make unblocked` itself fails, or a sub-agent reports `docker`, `tj3`, or `pnpm` is unusable. Surface via `AskUserQuestion`, halt until user replies.
 - **Corrupted state** — a sub-agent reports the working tree, the git index, or the WBS itself is in an unexpected shape. Surface via `AskUserQuestion`, halt.
 
 The orchestrator does NOT stop for routine design questions; those are decided inside the Refinement-Writer per the "make the most defensible call" rule.
@@ -197,7 +190,7 @@ The orchestrator does not verify these itself; the first sub-agent that needs ea
 - Node 20 LTS.
 - Docker + Docker Compose (`make up` works).
 - Playwright Chromium installed locally (`pnpm exec playwright install chromium`). Without it, `make test` silently no-ops the browser specs — the trap that hid `mod_route_auth_gate`'s failing assertion before. Sub-agents that run Playwright confirm it's installed before invoking.
-- `tj3` (TaskJuggler) available. The pre-commit hook runs `tj3 --silent project.tjp` whenever a `.tji`/`.tjp` file is staged and fails the commit on any `Warning:`/`Error:` line — the WBS baseline is kept warning-free.
+- `tj3` (TaskJuggler) available. The pre-commit hook runs `tj3 --silent project.tjp` whenever a `.tji`/`.tjp` file is staged and fails the commit on any `Warning:`/`Error:` line — the WBS baseline is kept warning-free. `make unblocked` (the orchestrator's only window into the WBS) shells out to `tj3` internally; if `tj3` is missing, `make unblocked` fails and the orchestrator halts via the tooling-gap stop condition.
 
 ## Reference paths passed to sub-agents
 
@@ -210,10 +203,10 @@ The orchestrator does NOT read these — but every sub-agent's brief should refe
 
 Per-iteration, the orchestrator also passes:
 
-- The selected task's `<task_id>`.
-- The path `tasks/<NN>-<area>.tji` the task lives in.
-- The refinement path (existing or to-be-created).
-- The predecessor task ids + their refinement paths.
+- The selected task's fully-qualified `<task_id>` (as printed by `make unblocked`).
+- The refinement path (existing or to-be-created), derived from the task id as `tasks/refinements/<area>/<task_name>.md`.
+
+The `.tji` file path and the predecessor task ids are NOT pre-extracted by the orchestrator — sub-agents derive them from the task id (the area is the first dot-segment; the `.tji` file is `tasks/<NN>-<area>.tji`, found by listing the directory) and locate the predecessor list inside that file themselves.
 
 ## UI-stream e2e policy — passed through to every UI-stream brief
 
@@ -271,7 +264,7 @@ Rationale: a Status-block note is invisible to the orchestrator's task-picker. T
 
 ## End-of-mission
 
-When the orchestrator's WBS model shows no eligible leaf remains in M4..M8, dispatch one last sub-agent:
+When `make unblocked` reports no eligible leaf across every M4..M8 milestone (per the mission-complete stop condition), dispatch one last sub-agent:
 
 > Update `DESIGN.md`'s Status section with a one-paragraph note: "MVP scope complete (M1–M8); M9 deployment + M10 first show pending human-driven work." Do not rewrite the surrounding sections. Commit (local only — do NOT push) as `docs: DESIGN.md — mark MVP scope complete`.
 
