@@ -289,6 +289,13 @@
       },
       "banner": {
         "targetWording": "Descomponiendo {nodeWording}"
+      },
+      "components": {
+        "rowLabel": "Componente {index}",
+        "textPlaceholder": "Texto del componente…",
+        "classificationLegend": "Tipo del componente",
+        "addRow": "Añadir componente",
+        "removeRowAria": "Eliminar componente {index}"
       }
     },
     "proposalFilter": {

@@ -21,9 +21,77 @@
 // methodology validation lives in the engine and lands via events.
 
 import { create } from 'zustand';
-import type { EdgeRole, StatementKind } from '@a-conversa/shared-types';
+import {
+  MAX_METHODOLOGY_TEXT_LENGTH,
+  type EdgeRole,
+  type StatementKind,
+} from '@a-conversa/shared-types';
 
 import { withDevtools } from './devtools.js';
+
+/**
+ * Per-row decompose-mode capture shape. One entry per component the
+ * moderator is composing in `mod_multi_component_capture`'s grid.
+ *
+ * The slice typed as `ReadonlyArray<DecomposeComponent>` is the UI side
+ * of the `proposalComponentSchema` contract in
+ * `packages/shared-types/src/events/proposals.ts` — the eventual
+ * `propose: decompose` envelope's `components` field is built from
+ * these rows by `mod_propose_decomposition` (sibling, next task).
+ *
+ * Refinement: tasks/refinements/moderator-ui/mod_multi_component_capture.md
+ */
+export interface DecomposeComponent {
+  text: string;
+  classification: StatementKind | null;
+}
+
+/**
+ * Lower bound for the decompose components array — mirrors the Zod
+ * schema's `.min(2)` constraint at
+ * `packages/shared-types/src/events/proposals.ts`. Enforced at the UI
+ * layer for early feedback (disable per-row remove buttons at the
+ * minimum) AND inside the store for defensive no-op on direct calls.
+ */
+const MINIMUM_DECOMPOSE_COMPONENTS = 2;
+
+/**
+ * Upper bound — mirrors `.max(10)`. Enforced symmetrically.
+ */
+const MAXIMUM_DECOMPOSE_COMPONENTS = 10;
+
+/**
+ * Build the two-empty-row seed shape `enterDecomposeMode` plants into
+ * the slice on mode entry. Returns a fresh array each call so the
+ * `set()` carries a new reference (Zustand triggers subscribers on
+ * reference identity).
+ */
+function createEmptyDecomposeComponents(): DecomposeComponent[] {
+  return [
+    { text: '', classification: null },
+    { text: '', classification: null },
+  ];
+}
+
+/**
+ * Free-function validator the sibling `mod_propose_decomposition` will
+ * import to gate the propose button. Returns `true` iff every row has
+ * non-empty trimmed text AND a non-null classification AND the array
+ * length is within `[MINIMUM_DECOMPOSE_COMPONENTS,
+ * MAXIMUM_DECOMPOSE_COMPONENTS]`.
+ *
+ * Decision §8 of the refinement records why this lives in the store
+ * module rather than a sibling validator file.
+ */
+export function validateDecomposeComponents(
+  components: ReadonlyArray<DecomposeComponent>,
+): boolean {
+  if (components.length < MINIMUM_DECOMPOSE_COMPONENTS) return false;
+  if (components.length > MAXIMUM_DECOMPOSE_COMPONENTS) return false;
+  return components.every((c) => c.text.trim().length > 0 && c.classification !== null);
+}
+
+export { MINIMUM_DECOMPOSE_COMPONENTS, MAXIMUM_DECOMPOSE_COMPONENTS };
 
 /**
  * Modes the bottom-strip capture pane can be in. Each mode changes the
@@ -84,6 +152,24 @@ export interface CaptureState {
    * Refinement: `tasks/refinements/moderator-ui/mod_decompose_mode.md`.
    */
   decomposeTargetNodeId: string | null;
+  /**
+   * Per-row capture state for the decompose flow's multi-component
+   * grid. Empty array outside decompose mode; initialized to two empty
+   * rows by `enterDecomposeMode`; cleared back to `[]` by
+   * `exitDecomposeMode` / `reset`. Each row carries the wording the
+   * moderator is composing for that component and its proposed
+   * classification (null until they pick a kind).
+   *
+   * The slice's shape mirrors the eventual envelope's
+   * `proposalComponentSchema` items in
+   * `packages/shared-types/src/events/proposals.ts`; the sibling
+   * `mod_propose_decomposition` task builds the envelope from these
+   * rows and runs `validateDecomposeComponents` (exported from this
+   * module) to gate the propose button.
+   *
+   * Refinement: `tasks/refinements/moderator-ui/mod_multi_component_capture.md`.
+   */
+  decomposeComponents: ReadonlyArray<DecomposeComponent>;
 
   setText: (text: string) => void;
   setClassification: (classification: StatementKind | null) => void;
@@ -123,6 +209,41 @@ export interface CaptureState {
    * Refinement: `tasks/refinements/moderator-ui/mod_decompose_mode.md`.
    */
   exitDecomposeMode: () => void;
+  /**
+   * Write the per-row text for `decomposeComponents[index]`. Defensive
+   * `slice(0, MAX_METHODOLOGY_TEXT_LENGTH)` clamp mirrors
+   * `<CaptureTextInput>`'s paste-bypass defense.
+   *
+   * Refinement: `tasks/refinements/moderator-ui/mod_multi_component_capture.md`.
+   */
+  setDecomposeComponentText: (index: number, text: string) => void;
+  /**
+   * Write the per-row classification for `decomposeComponents[index]`.
+   * `null` clears the kind for that row.
+   *
+   * Refinement: `tasks/refinements/moderator-ui/mod_multi_component_capture.md`.
+   */
+  setDecomposeComponentClassification: (
+    index: number,
+    classification: StatementKind | null,
+  ) => void;
+  /**
+   * Append one empty row to `decomposeComponents`. No-op when the
+   * array is already at `MAXIMUM_DECOMPOSE_COMPONENTS` rows; the
+   * consumer disables the button but the store defends the invariant.
+   *
+   * Refinement: `tasks/refinements/moderator-ui/mod_multi_component_capture.md`.
+   */
+  addDecomposeComponent: () => void;
+  /**
+   * Remove the indexed row from `decomposeComponents`. No-op when the
+   * array is at the minimum `MINIMUM_DECOMPOSE_COMPONENTS` rows; the
+   * consumer disables the per-row remove button but the store defends
+   * the invariant.
+   *
+   * Refinement: `tasks/refinements/moderator-ui/mod_multi_component_capture.md`.
+   */
+  removeDecomposeComponent: (index: number) => void;
   /** Reset the pane to a fresh idle state — called after a successful propose. */
   reset: () => void;
 }
@@ -136,6 +257,7 @@ const initialCaptureState: Pick<
   | 'mode'
   | 'proposing'
   | 'decomposeTargetNodeId'
+  | 'decomposeComponents'
 > = {
   text: '',
   classification: null,
@@ -144,6 +266,7 @@ const initialCaptureState: Pick<
   mode: 'idle',
   proposing: false,
   decomposeTargetNodeId: null,
+  decomposeComponents: [],
 };
 
 export const useCaptureStore = create<CaptureState>()(
@@ -167,12 +290,60 @@ export const useCaptureStore = create<CaptureState>()(
         classification: null,
         targetEntityId: null,
         edgeRole: null,
+        // Two-empty-row seed (mod_multi_component_capture Decision §1):
+        // the grid mounts with the minimum number of rows the moderator
+        // will fill in. The store carries the invariant so the route
+        // doesn't have to seed on mount.
+        decomposeComponents: createEmptyDecomposeComponents(),
       }),
     exitDecomposeMode: () =>
       set({
         mode: 'idle',
         decomposeTargetNodeId: null,
+        // Clear the per-row capture state so the grid is empty on the
+        // next mode entry. The reset is symmetric with the seed in
+        // `enterDecomposeMode`.
+        decomposeComponents: [],
       }),
+    setDecomposeComponentText: (index, text) =>
+      set((state) => ({
+        decomposeComponents: state.decomposeComponents.map((component, i) =>
+          i === index
+            ? {
+                ...component,
+                text:
+                  text.length > MAX_METHODOLOGY_TEXT_LENGTH
+                    ? text.slice(0, MAX_METHODOLOGY_TEXT_LENGTH)
+                    : text,
+              }
+            : component,
+        ),
+      })),
+    setDecomposeComponentClassification: (index, classification) =>
+      set((state) => ({
+        decomposeComponents: state.decomposeComponents.map((component, i) =>
+          i === index ? { ...component, classification } : component,
+        ),
+      })),
+    addDecomposeComponent: () =>
+      set((state) =>
+        state.decomposeComponents.length >= MAXIMUM_DECOMPOSE_COMPONENTS
+          ? state
+          : {
+              decomposeComponents: [
+                ...state.decomposeComponents,
+                { text: '', classification: null },
+              ],
+            },
+      ),
+    removeDecomposeComponent: (index) =>
+      set((state) =>
+        state.decomposeComponents.length <= MINIMUM_DECOMPOSE_COMPONENTS
+          ? state
+          : {
+              decomposeComponents: state.decomposeComponents.filter((_, i) => i !== index),
+            },
+      ),
     reset: () => set({ ...initialCaptureState }),
   })),
 );

@@ -289,6 +289,13 @@
       },
       "banner": {
         "targetWording": "Decomposing {nodeWording}"
+      },
+      "components": {
+        "rowLabel": "Component {index}",
+        "textPlaceholder": "Component wording…",
+        "classificationLegend": "Component kind",
+        "addRow": "Add component",
+        "removeRowAria": "Remove component {index}"
       }
     },
     "proposalFilter": {

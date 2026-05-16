@@ -12,7 +12,8 @@
 //             tasks/refinements/moderator-ui/mod_bottom_strip_capture.md,
 //             tasks/refinements/moderator-ui/mod_mode_banner.md,
 //             tasks/refinements/moderator-ui/mod_right_sidebar.md,
-//             tasks/refinements/moderator-ui/mod_decompose_mode.md)
+//             tasks/refinements/moderator-ui/mod_decompose_mode.md,
+//             tasks/refinements/moderator-ui/mod_multi_component_capture.md)
 //
 // Composes the three-pane `<OperateLayout>` (`mod_layout_shell`) with
 // `<GraphCanvasPane sessionId={id} />` (`mod_graph_canvas_pane` +
@@ -62,6 +63,7 @@ import { BottomStripCapture } from '../layout/BottomStripCapture';
 import { CaptureTargetAndRole } from '../layout/CaptureTargetAndRole';
 import { CaptureTextInput } from '../layout/CaptureTextInput';
 import { ClassificationPalette } from '../layout/ClassificationPalette';
+import { DecomposeComponentsGrid } from '../layout/DecomposeComponentsGrid';
 import { DecomposeModeExitButton } from '../layout/DecomposeModeExitButton';
 import { ProposeAction } from '../layout/ProposeAction';
 import { useProposeAction } from '../layout/useProposeAction';
@@ -69,6 +71,7 @@ import { GraphCanvasPane } from '../graph/GraphCanvasPane';
 import { ModeBanner } from '../layout/ModeBanner';
 import { PendingProposalsPane } from '../layout/PendingProposalsPane';
 import { RightSidebar } from '../layout/RightSidebar';
+import { useCaptureStore } from '../stores/captureStore';
 import { WsClientProvider, useWsClient } from '../ws/WsClientProvider';
 
 export function OperateRoute(): ReactElement {
@@ -101,6 +104,14 @@ function OperateRouteInner(props: { sessionId: string }): ReactElement {
   const { sessionId } = props;
   const client = useWsClient();
   const { propose } = useProposeAction();
+  // Read the mode to drive the bottom-strip slot swap. In decompose
+  // mode the `textInput` slot mounts `<DecomposeComponentsGrid>`
+  // (mod_multi_component_capture) and the `classificationPalette` +
+  // `edgeRoleSelector` slots collapse to `null` so the grid can
+  // stretch across the strip's body width — Decision §3 of
+  // mod_multi_component_capture.md.
+  const mode = useCaptureStore((s) => s.mode);
+  const isDecomposeMode = mode === 'decompose';
 
   useEffect(() => {
     if (sessionId === '') return;
@@ -134,14 +145,18 @@ function OperateRouteInner(props: { sessionId: string }): ReactElement {
               </>
             }
             textInput={
-              <CaptureTextInput
-                onSubmit={() => {
-                  void propose();
-                }}
-              />
+              isDecomposeMode ? (
+                <DecomposeComponentsGrid />
+              ) : (
+                <CaptureTextInput
+                  onSubmit={() => {
+                    void propose();
+                  }}
+                />
+              )
             }
-            classificationPalette={<ClassificationPalette />}
-            edgeRoleSelector={<CaptureTargetAndRole />}
+            classificationPalette={isDecomposeMode ? null : <ClassificationPalette />}
+            edgeRoleSelector={isDecomposeMode ? null : <CaptureTargetAndRole />}
             proposeAction={<ProposeAction />}
           />
         }

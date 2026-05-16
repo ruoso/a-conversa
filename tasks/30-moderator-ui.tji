@@ -337,6 +337,7 @@ task moderator_ui "Moderator UI" {
     task mod_multi_component_capture "Multi-component capture (wording + kind for each)" {
       effort 1d
       allocate team
+      complete 100
       depends !mod_decompose_mode
     }
     task mod_propose_decomposition "Propose decomposition action" {

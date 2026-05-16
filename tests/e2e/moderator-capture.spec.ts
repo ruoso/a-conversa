@@ -1766,4 +1766,109 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     await expect(page.getByTestId('mode-banner')).toHaveAttribute('data-mode', 'idle');
     await expect(page.getByTestId('decompose-mode-exit')).toHaveCount(0);
   });
+
+  // Refinement: tasks/refinements/moderator-ui/mod_multi_component_capture.md
+  //
+  // Multi-component capture grid e2e cover. Extends the mode-entry
+  // scenario above by driving the per-row textareas + per-row pickers
+  // + the add-row / remove-row buttons. Per the refinement's UI-stream
+  // e2e scoping, the propose-decomposition envelope has not landed
+  // yet, so this test asserts only the capture-state chain: two empty
+  // rows initialize on entry; the moderator can type into the per-row
+  // textareas + click the per-row pickers + click add-row / remove-row;
+  // Esc clears the state.
+  test('alice: enter decompose mode → multi-component grid captures 2 rows → add row → remove row → Esc clears state', async ({
+    page,
+  }) => {
+    await loginAs(page, { username: TEST_USERNAME });
+    await page.goto('/sessions/new');
+    await expect(page.getByTestId('route-create-session')).toBeVisible();
+
+    await page
+      .getByTestId('create-session-topic-input')
+      .fill('Multi-component capture e2e regression check.');
+    await page.getByTestId('create-session-submit').click();
+    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    await seedInviteParticipantsForGate(page);
+    await page.getByTestId('invite-enter-session').click();
+    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
+    await expect(page.getByTestId('route-operate')).toBeVisible();
+
+    if (!(await isWsStoreReachable(page))) {
+      test.skip(
+        true,
+        'window.__aConversaWsStore is not reachable — the dev-only attachment did not fire.',
+      );
+      return;
+    }
+
+    const url = new URL(page.url());
+    const sessionId = url.pathname.split('/')[2] ?? '';
+
+    // Seed a parent node so the right-click + propose-decompose menu
+    // item has a target to fire against.
+    const SEED_NODE_ID = '88888888-8888-4888-8888-888888888899';
+    const SEED_WORDING = 'Workers should earn a living wage with fair benefits.';
+    await seedWsStore(page, {
+      sessionId,
+      nodes: [{ nodeId: SEED_NODE_ID, wording: SEED_WORDING }],
+    });
+
+    const nodeCard = page.getByTestId(`statement-node-${SEED_NODE_ID}`);
+    await expect(nodeCard).toBeVisible({ timeout: 10_000 });
+
+    // Enter decompose mode via the context menu.
+    await nodeCard.click({ button: 'right' });
+    await page.getByTestId('graph-context-menu-item-propose-decompose').click();
+    await expect(page.getByTestId('mode-banner')).toHaveAttribute('data-mode', 'decompose');
+
+    // The grid mounts inside the bottom-strip text-input slot with
+    // two empty rows.
+    await expect(page.getByTestId('decompose-components-grid')).toBeVisible();
+    await expect(page.getByTestId('decompose-component-row-0')).toBeVisible();
+    await expect(page.getByTestId('decompose-component-row-1')).toBeVisible();
+    await expect(page.getByTestId('decompose-component-row-2')).toHaveCount(0);
+
+    // The F1 palette is hidden (the route's conditional swap collapsed
+    // the classificationPalette slot to null).
+    await expect(page.getByTestId('classification-palette')).toHaveCount(0);
+
+    // Per-row remove buttons are disabled at the minimum 2 rows.
+    await expect(page.getByTestId('decompose-component-row-remove-0')).toBeDisabled();
+    await expect(page.getByTestId('decompose-component-row-remove-1')).toBeDisabled();
+
+    // Type into component 1 + pick its kind.
+    await page.getByTestId('decompose-component-text-0').fill('Workers should earn a living wage.');
+    await page.getByTestId('decompose-component-classification-0-button-value').click();
+    await expect(
+      page.getByTestId('decompose-component-classification-0-button-value'),
+    ).toHaveAttribute('aria-pressed', 'true');
+
+    // Add a third row.
+    await page.getByTestId('decompose-components-add-row').click();
+    await expect(page.getByTestId('decompose-component-row-2')).toBeVisible();
+
+    // Now the per-row remove buttons are enabled.
+    await expect(page.getByTestId('decompose-component-row-remove-0')).toBeEnabled();
+    await expect(page.getByTestId('decompose-component-row-remove-2')).toBeEnabled();
+
+    // Type into component 2 + pick its kind.
+    await page
+      .getByTestId('decompose-component-text-1')
+      .fill('Workers should receive fair benefits.');
+    await page.getByTestId('decompose-component-classification-1-button-normative').click();
+
+    // Remove the empty third row.
+    await page.getByTestId('decompose-component-row-remove-2').click();
+    await expect(page.getByTestId('decompose-component-row-2')).toHaveCount(0);
+
+    // Press Escape — the mode-aware keymap clears all decompose state.
+    await page.locator('body').focus();
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('mode-banner')).toHaveAttribute('data-mode', 'idle');
+    await expect(page.getByTestId('decompose-components-grid')).toHaveCount(0);
+
+    // The F1 capture surface is back.
+    await expect(page.getByTestId('capture-text-input-textarea')).toBeVisible();
+  });
 });

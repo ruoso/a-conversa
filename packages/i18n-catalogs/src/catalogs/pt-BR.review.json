@@ -167,7 +167,12 @@
     "moderator.proposalFilter.noMatches",
     "moderator.decompose.exit.ariaLabel",
     "moderator.decompose.exit.tooltip",
-    "moderator.decompose.banner.targetWording"
+    "moderator.decompose.banner.targetWording",
+    "moderator.decompose.components.rowLabel",
+    "moderator.decompose.components.textPlaceholder",
+    "moderator.decompose.components.classificationLegend",
+    "moderator.decompose.components.addRow",
+    "moderator.decompose.components.removeRowAria"
   ],
   "signed_off": []
 }
