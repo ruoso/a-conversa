@@ -58,25 +58,39 @@ export interface CaptureState {
   edgeRole: EdgeRole | null;
   /** Current capture-pane mode. */
   mode: CaptureMode;
+  /**
+   * True while a propose round-trip is in flight; observable from
+   * sibling components so they can de-emphasize the inputs during the
+   * round-trip. v1 does NOT disable the inputs (see
+   * `tasks/refinements/moderator-ui/mod_propose_action.md` Decision §5);
+   * the slice carries the signal for future consumers (toast surface,
+   * retry banner). Reset to `false` by `reset()` via the spread of
+   * `initialCaptureState`.
+   *
+   * Refinement: `tasks/refinements/moderator-ui/mod_propose_action.md`.
+   */
+  proposing: boolean;
 
   setText: (text: string) => void;
   setClassification: (classification: StatementKind | null) => void;
   setTargetEntityId: (id: string | null) => void;
   setEdgeRole: (role: EdgeRole | null) => void;
   setMode: (mode: CaptureMode) => void;
+  setProposing: (value: boolean) => void;
   /** Reset the pane to a fresh idle state — called after a successful propose. */
   reset: () => void;
 }
 
 const initialCaptureState: Pick<
   CaptureState,
-  'text' | 'classification' | 'targetEntityId' | 'edgeRole' | 'mode'
+  'text' | 'classification' | 'targetEntityId' | 'edgeRole' | 'mode' | 'proposing'
 > = {
   text: '',
   classification: null,
   targetEntityId: null,
   edgeRole: null,
   mode: 'idle',
+  proposing: false,
 };
 
 export const useCaptureStore = create<CaptureState>()(
@@ -87,6 +101,7 @@ export const useCaptureStore = create<CaptureState>()(
     setTargetEntityId: (targetEntityId) => set({ targetEntityId }),
     setEdgeRole: (edgeRole) => set({ edgeRole }),
     setMode: (mode) => set({ mode }),
+    setProposing: (proposing) => set({ proposing }),
     reset: () => set({ ...initialCaptureState }),
   })),
 );

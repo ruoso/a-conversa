@@ -38,13 +38,14 @@ afterEach(() => {
 });
 
 describe('useCaptureStore', () => {
-  it('starts with empty text, no classification, no target, no edge role, idle mode', () => {
+  it('starts with empty text, no classification, no target, no edge role, idle mode, not proposing', () => {
     const state = useCaptureStore.getState();
     expect(state.text).toBe('');
     expect(state.classification).toBeNull();
     expect(state.targetEntityId).toBeNull();
     expect(state.edgeRole).toBeNull();
     expect(state.mode).toBe('idle');
+    expect(state.proposing).toBe(false);
   });
 
   it('setters mutate the corresponding slice', () => {
@@ -60,6 +61,21 @@ describe('useCaptureStore', () => {
     expect(state.targetEntityId).toBe('node-1');
     expect(state.edgeRole).toBe('supports');
     expect(state.mode).toBe('capture-statement');
+  });
+
+  // Refinement: tasks/refinements/moderator-ui/mod_propose_action.md
+  it('setProposing toggles the proposing slice', () => {
+    expect(useCaptureStore.getState().proposing).toBe(false);
+    useCaptureStore.getState().setProposing(true);
+    expect(useCaptureStore.getState().proposing).toBe(true);
+    useCaptureStore.getState().setProposing(false);
+    expect(useCaptureStore.getState().proposing).toBe(false);
+  });
+
+  it('reset() returns proposing to false even if it was true', () => {
+    useCaptureStore.getState().setProposing(true);
+    useCaptureStore.getState().reset();
+    expect(useCaptureStore.getState().proposing).toBe(false);
   });
 
   // Refinement: tasks/refinements/moderator-ui/mod_edge_role_selector.md

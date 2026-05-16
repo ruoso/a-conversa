@@ -96,7 +96,19 @@
     "moderator.edgeRolePalette.roleButtonAriaLabel",
     "moderator.edgeRolePalette.shortcutHint",
     "moderator.edgeRolePalette.unsetAria",
-    "moderator.edgeRolePalette.hiddenHelp"
+    "moderator.edgeRolePalette.hiddenHelp",
+    "moderator.proposeAction.label",
+    "moderator.proposeAction.inFlightLabel",
+    "moderator.proposeAction.ariaLabel",
+    "moderator.proposeAction.validationError",
+    "moderator.proposeAction.wireError",
+    "moderator.proposeAction.timeoutError",
+    "moderator.proposeAction.reason.textEmpty",
+    "moderator.proposeAction.reason.classificationMissing",
+    "moderator.proposeAction.reason.targetWithoutRole",
+    "moderator.proposeAction.reason.roleWithoutTarget",
+    "moderator.proposeAction.reason.notConnected",
+    "moderator.proposeAction.reason.sessionMissing"
   ],
   "signed_off": []
 }

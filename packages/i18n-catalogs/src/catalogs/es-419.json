@@ -175,6 +175,22 @@
       "unsetAria": "Limpiar rol del enlace",
       "hiddenHelp": "Elige primero un objetivo para seleccionar un rol de enlace."
     },
+    "proposeAction": {
+      "label": "Proponer",
+      "inFlightLabel": "Proponiendo…",
+      "ariaLabel": "Proponer la captura en curso como propuesta en el grafo",
+      "validationError": "No se puede proponer: {reason}",
+      "wireError": "Falló la propuesta: {message} ({code})",
+      "timeoutError": "La solicitud de propuesta expiró. Verifica tu conexión y vuelve a intentarlo.",
+      "reason": {
+        "textEmpty": "escribe el enunciado primero",
+        "classificationMissing": "elige una clasificación (F / P / V / N / D)",
+        "targetWithoutRole": "elige un rol de enlace (S / R / Q / B / G / E / X) para el objetivo seleccionado — o presiona Esc para quitar el objetivo",
+        "roleWithoutTarget": "hay un rol de enlace seleccionado pero no hay objetivo — haz clic en un nodo o presiona Esc para limpiar el rol",
+        "notConnected": "la sesión no está conectada — reconectando…",
+        "sessionMissing": "no hay sesión cargada"
+      }
+    },
     "modeBanner": {
       "idle": {
         "label": "Inactivo",

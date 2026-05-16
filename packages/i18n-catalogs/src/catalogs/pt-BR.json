@@ -175,6 +175,22 @@
       "unsetAria": "Limpar papel da aresta",
       "hiddenHelp": "Escolha primeiro um alvo para selecionar um papel de aresta."
     },
+    "proposeAction": {
+      "label": "Propor",
+      "inFlightLabel": "Propondo…",
+      "ariaLabel": "Propor a captura em andamento como uma proposta no grafo",
+      "validationError": "Não foi possível propor: {reason}",
+      "wireError": "Falha ao propor: {message} ({code})",
+      "timeoutError": "A solicitação de proposta expirou. Verifique sua conexão e tente novamente.",
+      "reason": {
+        "textEmpty": "digite o texto primeiro",
+        "classificationMissing": "escolha uma classificação (F / P / V / N / D)",
+        "targetWithoutRole": "escolha um papel de aresta (S / R / Q / B / G / E / X) para o alvo selecionado — ou pressione Esc para remover o alvo",
+        "roleWithoutTarget": "um papel de aresta está selecionado mas não há alvo — clique em um nó ou pressione Esc para limpar o papel",
+        "notConnected": "a sessão não está conectada — reconectando…",
+        "sessionMissing": "nenhuma sessão carregada"
+      }
+    },
     "modeBanner": {
       "idle": {
         "label": "Ocioso",

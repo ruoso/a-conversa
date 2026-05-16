@@ -547,4 +547,154 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     await expect(page.getByTestId('capture-target-chip-label')).toHaveText('No target yet');
     await expect(page.getByTestId('edge-role-selector')).toHaveCount(0);
   });
+
+  // Refinement: tasks/refinements/moderator-ui/mod_propose_action.md
+  //
+  // The propose-action regression cover. Pins the full free-floating
+  // chain end-to-end against the dev compose stack:
+  //
+  //   - the propose button mounts visible but disabled on a fresh
+  //     session (the validation gate fires on the empty draft),
+  //   - the validation-error region surfaces the localized text-empty
+  //     reason while the textarea is empty,
+  //   - typing wording + picking a classification enables the button,
+  //   - Cmd/Ctrl+Enter inside the textarea fires the propose round-trip,
+  //   - the capture pane clears optimistically (textarea, classification
+  //     palette aria-pressed all return to the empty state),
+  //   - the WS store accumulates the server-emitted `proposal` event for
+  //     the session, asserted via the dev-only `window.__aConversaWsStore`
+  //     seam.
+  //
+  // CORRECTION: an earlier revision of this spec asserted
+  // `expect.arrayContaining(['node-created', 'proposal'])`, parroting a
+  // claim in the refinement that the server emits paired
+  // `node-created` / `entity-included` events inline on propose. That
+  // claim does NOT match the canonical wire contract. Per
+  // `tasks/refinements/backend/ws_propose_message.md` and
+  // `apps/server/src/methodology/handlers/propose.ts`, the propose
+  // handler emits **exactly one** `proposal` event — structural entity
+  // creation (`node-created`, `entity-included`, `edge-created`) is a
+  // commit-time fan-out, not a propose-time fan-out. See
+  // `tasks/refinements/data-and-methodology/commit_logic.md` (the
+  // write-side validates intent; the projection's `handleCommit` applies
+  // the structural effect on the read side, gated by the commit handler
+  // running AFTER unanimous-agree). Future readers: do NOT re-add
+  // `node-created` to the assertion below without first changing the
+  // server's propose handler — the contract is "propose stages a
+  // proposal; commit creates the entity."
+  //
+  // Decision §10 in the refinement: drive the real dev compose stack
+  // rather than mocking the WS boundary — the unit-level Vitest cases
+  // (`useProposeAction.test.tsx`, `ProposeAction.test.tsx`) cover the
+  // mocked surface; this spec covers the wire end-to-end so a
+  // serialization or schema drift between client and server is caught.
+  test('alice: propose a free-floating new statement; envelope reaches the server and the capture pane clears', async ({
+    page,
+  }) => {
+    await loginAs(page, { username: TEST_USERNAME });
+    await page.goto('/sessions/new');
+    await expect(page.getByTestId('route-create-session')).toBeVisible();
+
+    await page
+      .getByTestId('create-session-topic-input')
+      .fill('Propose action e2e regression check.');
+    await page.getByTestId('create-session-submit').click();
+    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
+    await expect(page.getByTestId('route-operate')).toBeVisible();
+
+    // 2. The propose button mounts visible but disabled on the empty
+    //    draft. The validation-error region renders the text-empty
+    //    reason. Both gates are observable before any keystroke lands.
+    const button = page.getByTestId('propose-action-button');
+    await expect(button).toBeVisible();
+    await expect(button).toBeDisabled();
+    await expect(page.getByTestId('propose-action-validation-error')).toContainText(
+      'type the wording first',
+    );
+
+    // 3. Type wording → the validation-error region updates to
+    //    classification-missing; the button stays disabled.
+    const wording = 'The proposed minimum wage would raise prices for everyone.';
+    const textarea = page.getByTestId('capture-text-input-textarea');
+    await textarea.fill(wording);
+    await expect(page.getByTestId('propose-action-validation-error')).toContainText(
+      'pick a classification',
+    );
+    await expect(button).toBeDisabled();
+
+    // 4. Pick a classification → the validation-error region disappears
+    //    and the button enables.
+    await page.getByTestId('classification-palette-button-fact').click();
+    await expect(page.getByTestId('propose-action-validation-error')).toHaveCount(0);
+    await expect(button).toBeEnabled();
+
+    // 5. Extract the session id from the URL so step 7's WS-store probe
+    //    can index the right per-session slice.
+    const url = new URL(page.url());
+    const sessionId = url.pathname.split('/')[2] ?? '';
+    expect(sessionId, 'session id must be parsed from the URL').toBeTruthy();
+
+    // 6. Fire Cmd/Ctrl+Enter from the textarea. The capture pane clears
+    //    optimistically — textarea empties, every classification button
+    //    returns to aria-pressed=false. The propose envelope is in
+    //    flight against the server.
+    const submitKey = process.platform === 'darwin' ? 'Meta+Enter' : 'Control+Enter';
+    await textarea.press(submitKey);
+    await expect(textarea).toHaveValue('');
+    for (const kind of ['fact', 'predictive', 'value', 'normative', 'definitional']) {
+      await expect(page.getByTestId(`classification-palette-button-${kind}`)).toHaveAttribute(
+        'aria-pressed',
+        'false',
+      );
+    }
+
+    // 7. The server's `event-applied` broadcast lands in
+    //    `useWsStore.sessionState[<id>]`. Probe the dev-only
+    //    `window.__aConversaWsStore` seam to confirm the event log
+    //    accumulated the `proposal` event for the session. The propose
+    //    handler emits exactly one event per envelope (see leading
+    //    comment for the corrected contract).
+    if (!(await isWsStoreReachable(page))) {
+      test.skip(
+        true,
+        'window.__aConversaWsStore is not reachable — the dev-only attachment did not fire. Full-chain assertion deferred to the seed-infrastructure environment.',
+      );
+      return;
+    }
+    await expect
+      .poll(
+        async () =>
+          page.evaluate((sid) => {
+            const store = (
+              window as unknown as {
+                __aConversaWsStore?: {
+                  getState(): {
+                    sessionState: Record<
+                      string,
+                      { lastAppliedSequence: number; events: Array<{ kind: string }> }
+                    >;
+                  };
+                };
+              }
+            ).__aConversaWsStore;
+            const session = store?.getState().sessionState[sid];
+            return {
+              lastSequence: session?.lastAppliedSequence ?? 0,
+              kinds: (session?.events ?? []).map((e) => e.kind),
+            };
+          }, sessionId),
+        { timeout: 10_000 },
+      )
+      .toMatchObject({
+        // The propose handler appends exactly one event per envelope —
+        // a `proposal` carrying the `classify-node` payload. Structural
+        // entity-creation events (`node-created`, `entity-included`,
+        // `edge-created`) are commit-time effects per
+        // `tasks/refinements/data-and-methodology/commit_logic.md` and
+        // are NOT emitted on propose. See the leading comment on this
+        // test for the contract correction.
+        lastSequence: expect.any(Number),
+        kinds: expect.arrayContaining(['proposal']),
+      });
+  });
 });

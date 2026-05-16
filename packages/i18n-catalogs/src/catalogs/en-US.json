@@ -175,6 +175,22 @@
       "unsetAria": "Clear edge role",
       "hiddenHelp": "Pick a target first to choose an edge role."
     },
+    "proposeAction": {
+      "label": "Propose",
+      "inFlightLabel": "Proposing…",
+      "ariaLabel": "Propose the in-progress capture as a proposal on the graph",
+      "validationError": "Cannot propose: {reason}",
+      "wireError": "Propose failed: {message} ({code})",
+      "timeoutError": "The propose request timed out. Check your connection and try again.",
+      "reason": {
+        "textEmpty": "type the wording first",
+        "classificationMissing": "pick a classification (F / P / V / N / D)",
+        "targetWithoutRole": "pick an edge role (S / R / Q / B / G / E / X) for the staged target — or press Esc to drop the target",
+        "roleWithoutTarget": "an edge role is selected but no target — click a node or press Esc to clear the role",
+        "notConnected": "the session is not connected — reconnecting…",
+        "sessionMissing": "no session is loaded"
+      }
+    },
     "modeBanner": {
       "idle": {
         "label": "Idle",
