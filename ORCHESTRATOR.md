@@ -20,7 +20,7 @@ If the orchestrator finds itself about to call `Edit`, `Write`, `Grep`, `WebFetc
 
 Drive `a-conversa` forward by closing **every in-scope milestone in `tasks/99-milestones.tji`**. Out of scope: `m_deployment_ready` (M9), `m_first_show_recorded` (M10, depends on M9), and `m_backend_review` (M3-review — still has open leaves under `backend_hardening`, but its only forward edge is into M9, so its work is out of this loop's scope). M0–M3 are `complete 100`. The in-scope milestone ids (used as `MILESTONE=<id>` arguments to `make unblocked`, in pick order) are:
 
-- `m_manual_lobby_smoke` (manual lobby smoke — strictly smaller than M4/M5; pick its READY leaves first so a human can drive invite-and-lobby end-to-end as soon as possible, per its own milestone note)
+- `m_manual_lobby_smoke` (M3-lobby — strictly smaller than M4/M5; pick its READY leaves first so a human can drive invite-and-lobby end-to-end as soon as possible, per its own milestone note)
 - `m_moderator_mvp` (M4)
 - `m_participant_mvp` (M5)
 - `m_audience_mvp` (M6)
@@ -52,7 +52,7 @@ Stop when no eligible leaf remains in M4..M8 (mission complete), or when a sub-a
 
 ## Task picking — the orchestrator's only direct work
 
-The orchestrator walks the in-scope milestones in the pick order listed under §Mission — `m_manual_lobby_smoke` first, then M4 → M8 — and runs `make unblocked MILESTONE=<id>` against each in turn. The first milestone with a non-empty READY list is the source for this iteration's pick.
+The orchestrator walks the in-scope milestones in the pick order listed under §Mission — `m_manual_lobby_smoke` (M3-lobby) first, then M4 → M8 — and runs `make unblocked MILESTONE=<id>` against each in turn. The first milestone with a non-empty READY list is the source for this iteration's pick.
 
 `make unblocked` already enforces the two structural eligibility properties: the listed leaves are not `complete 100` and have every predecessor `complete 100`. The orchestrator only adds the **scope filter**: skip any READY leaf whose id starts with `deployment.` (the M9 / out-of-scope rule).
 
