@@ -61,10 +61,16 @@ export interface FacetPillProps {
  * predecessor refinements; if those refinements ever change a frame
  * branch, the per-pill mirror needs to follow.
  */
-const PILL_BASE_CLASSNAME =
+// Exported so the sidebar's `<ProposalFacetBreakdown>` chips
+// (per `tasks/refinements/moderator-ui/mod_per_facet_breakdown.md`,
+// Decision §11) can mirror the graph pill's per-status vocabulary
+// verbatim. Sharing the constant — vs duplicating the map — means a
+// future state-styling refinement that retunes the graph pill
+// automatically propagates to the sidebar in the same commit.
+export const PILL_BASE_CLASSNAME =
   'inline-flex items-center rounded-full border bg-white px-1.5 py-0.5 text-[10px] uppercase tracking-wide whitespace-nowrap';
 
-const PILL_STATUS_CLASSNAME: Readonly<Record<FacetStatus, string>> = {
+export const PILL_STATUS_CLASSNAME: Readonly<Record<FacetStatus, string>> = {
   proposed: 'border-dashed border-slate-400 text-slate-500 opacity-60',
   agreed: 'border-solid border-slate-700 text-slate-700 opacity-100',
   disputed: 'border-solid border-rose-600 text-rose-700 ring-1 ring-rose-500 opacity-100',

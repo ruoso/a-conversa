@@ -1,7 +1,8 @@
 // `<PendingProposalsPane>` — the right-sidebar pane that lists every
 // in-flight proposal for the current session.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_proposal_list.md
+// Refinement: tasks/refinements/moderator-ui/mod_per_facet_breakdown.md
+// (prior:     tasks/refinements/moderator-ui/mod_proposal_list.md)
 // Design doc: docs/moderator-ui.md (right-sidebar panes, F1 step 4)
 //
 // Mounts into `<RightSidebar>`'s `pendingProposalsSlot` (per
@@ -59,6 +60,8 @@ import {
   derivePendingProposals,
   type PendingProposalRow as PendingProposalRowData,
 } from '../graph/pendingProposals';
+import { computeFacetStatuses, type FacetStatusIndex } from '../graph/facetStatus';
+import { ProposalFacetBreakdown } from './ProposalFacetBreakdown';
 
 /**
  * Props for the pane. The `sessionId` is threaded through from the
@@ -79,7 +82,11 @@ export interface PendingProposalsPaneProps {
 
 const PANE_CONTAINER_CLASSES = 'flex max-h-full flex-col gap-1 overflow-y-auto text-slate-700';
 const LIST_CLASSES = 'm-0 flex list-none flex-col gap-1 p-0';
-const ROW_CLASSES = 'flex items-center gap-2 rounded border border-slate-200 bg-white px-2 py-1';
+// Per `mod_per_facet_breakdown` Decision §2 / Constraints, the row
+// grew from a single-line flex container to a two-line stack: the
+// header keeps its one-line shape; the breakdown sits below it.
+const ROW_CLASSES = 'flex flex-col gap-1 rounded border border-slate-200 bg-white px-2 py-1';
+const ROW_HEADER_CLASSES = 'flex items-center gap-2';
 const KIND_CHIP_CLASSES =
   'flex-shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-xs font-medium text-slate-700';
 const SUMMARY_CLASSES = 'flex-1 truncate text-sm';
@@ -198,8 +205,10 @@ function PendingProposalRow(props: {
   readonly nowMs: number;
   readonly systemAuthorLabel: string;
   readonly t: (key: string) => string;
+  readonly facetStatusIndex: FacetStatusIndex;
+  readonly serverPerFacetStatus: Record<string, string> | undefined;
 }): ReactElement {
-  const { row, nowMs, systemAuthorLabel, t } = props;
+  const { row, nowMs, systemAuthorLabel, t, facetStatusIndex, serverPerFacetStatus } = props;
   const chip = kindChipText(row.proposal, t);
   const summary = summaryText(row.proposal);
   const author = authorText(row.actor, systemAuthorLabel);
@@ -211,18 +220,25 @@ function PendingProposalRow(props: {
       className={ROW_CLASSES}
       title={summary}
     >
-      <span data-testid="pending-proposal-row-kind" className={KIND_CHIP_CLASSES}>
-        {chip}
-      </span>
-      <span data-testid="pending-proposal-row-summary" className={SUMMARY_CLASSES}>
-        {summary}
-      </span>
-      <span data-testid="pending-proposal-row-author" className={AUTHOR_CLASSES}>
-        {author}
-      </span>
-      <span data-testid="pending-proposal-row-timestamp" className={TIMESTAMP_CLASSES}>
-        {ago}
-      </span>
+      <div className={ROW_HEADER_CLASSES}>
+        <span data-testid="pending-proposal-row-kind" className={KIND_CHIP_CLASSES}>
+          {chip}
+        </span>
+        <span data-testid="pending-proposal-row-summary" className={SUMMARY_CLASSES}>
+          {summary}
+        </span>
+        <span data-testid="pending-proposal-row-author" className={AUTHOR_CLASSES}>
+          {author}
+        </span>
+        <span data-testid="pending-proposal-row-timestamp" className={TIMESTAMP_CLASSES}>
+          {ago}
+        </span>
+      </div>
+      <ProposalFacetBreakdown
+        row={row}
+        facetStatusIndex={facetStatusIndex}
+        serverPerFacetStatus={serverPerFacetStatus}
+      />
     </li>
   );
 }
@@ -237,11 +253,28 @@ export function PendingProposalsPane(props: PendingProposalsPaneProps): ReactEle
   // re-renders the pane the moment a new event lands.
   const events = useWsStore((state) => state.sessionState[sessionId]?.events);
 
+  // Second Zustand selector — read the per-proposal server-broadcast
+  // `proposal-status` map (new read in
+  // `tasks/refinements/moderator-ui/mod_per_facet_breakdown.md`). The
+  // reference-equality check re-renders the pane when a new
+  // `proposal-status` envelope lands (the writer
+  // `applyProposalStatus` creates a fresh object each call). Two
+  // separate subscriptions keep each cell narrow per the established
+  // moderator-pane convention.
+  const pendingProposals = useWsStore((state) => state.sessionState[sessionId]?.pendingProposals);
+
   // `useMemo` keyed on the events reference so the derived row list
   // stays referentially stable across renders when the log hasn't
   // grown (Constraints). `events ?? []` keeps the hook stable when
   // the session has not yet been touched.
   const rows = useMemo(() => derivePendingProposals(events ?? []), [events]);
+
+  // Per `mod_per_facet_breakdown` Decision §8, the facet-status index
+  // is computed ONCE per pane render, keyed on the events reference.
+  // Each row's breakdown derivation memoizes on top of this shared
+  // index, so the total cost is O(events) for the walk plus
+  // O(rows × facets-per-row) for the per-row derivations.
+  const facetStatusIndex = useMemo(() => computeFacetStatuses(events ?? []), [events]);
 
   const resolvedNowMs = nowMs ?? Date.now();
   const systemAuthorLabel = t('moderator.proposalList.systemAuthor');
@@ -275,6 +308,8 @@ export function PendingProposalsPane(props: PendingProposalsPaneProps): ReactEle
             nowMs={resolvedNowMs}
             systemAuthorLabel={systemAuthorLabel}
             t={t}
+            facetStatusIndex={facetStatusIndex}
+            serverPerFacetStatus={pendingProposals?.[row.proposalEventId]?.perFacetStatus}
           />
         ))}
       </ol>

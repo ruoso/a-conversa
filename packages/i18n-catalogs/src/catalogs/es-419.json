@@ -68,12 +68,15 @@
       "proposed": "Propuesta",
       "agreed": "Acordada",
       "disputed": "En disputa",
-      "meta-disagreement": "Meta-desacuerdo"
+      "meta-disagreement": "Meta-desacuerdo",
+      "committed": "Consolidada",
+      "withdrawn": "Retirada"
     },
     "facet": {
       "wording": "Redacción",
       "classification": "Clasificación",
-      "substance": "Sustancia"
+      "substance": "Sustancia",
+      "proposal": "Proposición"
     },
     "voteChoice": {
       "agree": "De acuerdo",

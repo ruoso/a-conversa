@@ -1,0 +1,327 @@
+// Tests for `derivePerProposalFacets` — the pure selector behind the
+// right-sidebar's per-proposal facet breakdown.
+//
+// Refinement: tasks/refinements/moderator-ui/mod_per_facet_breakdown.md
+//
+// Per ADR 0022 these are committed Vitest cases. They pin the selector
+// contract enumerated in the refinement's Acceptance criteria:
+//
+//   (a) Each of the four facet-targeting sub-kinds emits one entry
+//       with the expected `facet` value
+//       (classify-node → classification; set-node-substance → substance;
+//       set-edge-substance → substance; edit-wording → wording).
+//   (b) Each of the seven structural sub-kinds emits one entry with
+//       `facet: 'proposal'`.
+//   (c) Server `serverPerFacetStatus[facet]` overrides the client
+//       mirror value.
+//   (d) Client mirror value is used when `serverPerFacetStatus` is
+//       undefined OR does not carry the facet.
+//   (e) Default-to-`'proposed'` when neither surface carries the facet.
+//   (f) The function is pure (two calls with the same inputs return
+//       deep-equal outputs).
+//   (g) The `labelKey` field is the canonical `methodology.facet.<facet>`
+//       form for both real facets and the synthetic `'proposal'` entry.
+
+import { describe, expect, it } from 'vitest';
+import type { ProposalPayload } from '@a-conversa/shared-types';
+
+import { derivePerProposalFacets } from './proposalFacets';
+import type { FacetName, FacetStatus, FacetStatusIndex } from './facetStatus';
+
+const NODE_X = '00000000-0000-4000-8000-00000000000a';
+const NODE_Y = '00000000-0000-4000-8000-00000000000b';
+const EDGE_E = '00000000-0000-4000-8000-00000000000e';
+const PARTICIPANT_A = '00000000-0000-4000-8000-0000000000c1';
+
+const EMPTY_INDEX: FacetStatusIndex = {
+  nodes: new Map(),
+  edges: new Map(),
+};
+
+function indexWith(
+  entityKind: 'node' | 'edge',
+  entityId: string,
+  facet: FacetName,
+  status: FacetStatus,
+): FacetStatusIndex {
+  const inner: Partial<Record<FacetName, FacetStatus>> = { [facet]: status };
+  if (entityKind === 'node') {
+    return {
+      nodes: new Map([[entityId, inner]]),
+      edges: new Map(),
+    };
+  }
+  return {
+    nodes: new Map(),
+    edges: new Map([[entityId, inner]]),
+  };
+}
+
+describe('derivePerProposalFacets — facet-targeting sub-kinds emit the expected facet entry', () => {
+  it('classify-node → one entry { facet: "classification" }', () => {
+    const proposal: ProposalPayload = {
+      kind: 'classify-node',
+      node_id: NODE_X,
+      classification: 'fact',
+    };
+    const out = derivePerProposalFacets(proposal, EMPTY_INDEX, undefined);
+    expect(out).toHaveLength(1);
+    expect(out[0]?.facet).toBe('classification');
+    expect(out[0]?.labelKey).toBe('methodology.facet.classification');
+  });
+
+  it('set-node-substance → one entry { facet: "substance" }', () => {
+    const proposal: ProposalPayload = {
+      kind: 'set-node-substance',
+      node_id: NODE_X,
+      value: 'agreed',
+    };
+    const out = derivePerProposalFacets(proposal, EMPTY_INDEX, undefined);
+    expect(out).toHaveLength(1);
+    expect(out[0]?.facet).toBe('substance');
+    expect(out[0]?.labelKey).toBe('methodology.facet.substance');
+  });
+
+  it('set-edge-substance → one entry { facet: "substance" }', () => {
+    const proposal: ProposalPayload = {
+      kind: 'set-edge-substance',
+      edge_id: EDGE_E,
+      value: 'agreed',
+    };
+    const out = derivePerProposalFacets(proposal, EMPTY_INDEX, undefined);
+    expect(out).toHaveLength(1);
+    expect(out[0]?.facet).toBe('substance');
+    expect(out[0]?.labelKey).toBe('methodology.facet.substance');
+  });
+
+  it('edit-wording (reword) → one entry { facet: "wording" }', () => {
+    const proposal: ProposalPayload = {
+      kind: 'edit-wording',
+      edit_kind: 'reword',
+      node_id: NODE_X,
+      new_wording: 'updated wording',
+    };
+    const out = derivePerProposalFacets(proposal, EMPTY_INDEX, undefined);
+    expect(out).toHaveLength(1);
+    expect(out[0]?.facet).toBe('wording');
+    expect(out[0]?.labelKey).toBe('methodology.facet.wording');
+  });
+
+  it('edit-wording (restructure) → one entry { facet: "wording" }', () => {
+    const proposal: ProposalPayload = {
+      kind: 'edit-wording',
+      edit_kind: 'restructure',
+      node_id: NODE_X,
+      new_wording: 'rebuilt wording',
+      new_node_id: NODE_Y,
+    };
+    const out = derivePerProposalFacets(proposal, EMPTY_INDEX, undefined);
+    expect(out).toHaveLength(1);
+    expect(out[0]?.facet).toBe('wording');
+  });
+});
+
+describe('derivePerProposalFacets — structural sub-kinds emit one synthetic "proposal" entry', () => {
+  const cases: { name: string; payload: ProposalPayload }[] = [
+    {
+      name: 'decompose',
+      payload: {
+        kind: 'decompose',
+        parent_node_id: NODE_X,
+        components: [
+          { wording: 'first', classification: 'fact' },
+          { wording: 'second', classification: 'fact' },
+        ],
+      },
+    },
+    {
+      name: 'interpretive-split',
+      payload: {
+        kind: 'interpretive-split',
+        parent_node_id: NODE_X,
+        readings: [
+          { wording: 'reading 1', classification: 'value' },
+          { wording: 'reading 2', classification: 'value' },
+        ],
+      },
+    },
+    {
+      name: 'axiom-mark',
+      payload: { kind: 'axiom-mark', node_id: NODE_X, participant: PARTICIPANT_A },
+    },
+    {
+      name: 'meta-move',
+      payload: {
+        kind: 'meta-move',
+        meta_kind: 'reframe',
+        content: 'reframing',
+        target_kind: 'node',
+        target_id: NODE_X,
+      },
+    },
+    {
+      name: 'break-edge',
+      payload: { kind: 'break-edge', edge_id: EDGE_E },
+    },
+    {
+      name: 'amend-node',
+      payload: { kind: 'amend-node', node_id: NODE_X, new_content: 'amended' },
+    },
+    {
+      name: 'annotate',
+      payload: {
+        kind: 'annotate',
+        target_kind: 'node',
+        target_id: NODE_X,
+        annotation_kind: 'note',
+        content: 'a clarifying note',
+      },
+    },
+  ];
+
+  for (const { name, payload } of cases) {
+    it(`${name} → one entry { facet: "proposal", labelKey: "methodology.facet.proposal" }`, () => {
+      const out = derivePerProposalFacets(payload, EMPTY_INDEX, undefined);
+      expect(out).toHaveLength(1);
+      expect(out[0]?.facet).toBe('proposal');
+      expect(out[0]?.labelKey).toBe('methodology.facet.proposal');
+    });
+  }
+});
+
+describe('derivePerProposalFacets — status precedence: server → client mirror → default', () => {
+  const classifyNode: ProposalPayload = {
+    kind: 'classify-node',
+    node_id: NODE_X,
+    classification: 'fact',
+  };
+
+  it('server perFacetStatus overrides client mirror for the same facet', () => {
+    const clientIndex = indexWith('node', NODE_X, 'classification', 'agreed');
+    const server: Record<string, string> = { classification: 'disputed' };
+    const out = derivePerProposalFacets(classifyNode, clientIndex, server);
+    expect(out[0]?.status).toBe('disputed');
+  });
+
+  it('client mirror is used when server perFacetStatus is undefined', () => {
+    const clientIndex = indexWith('node', NODE_X, 'classification', 'agreed');
+    const out = derivePerProposalFacets(classifyNode, clientIndex, undefined);
+    expect(out[0]?.status).toBe('agreed');
+  });
+
+  it('client mirror is used when server perFacetStatus is present but does not carry the facet', () => {
+    const clientIndex = indexWith('node', NODE_X, 'classification', 'agreed');
+    // Server frame carries another facet but not the one this proposal
+    // targets — should fall through to the client mirror.
+    const server: Record<string, string> = { substance: 'disputed' };
+    const out = derivePerProposalFacets(classifyNode, clientIndex, server);
+    expect(out[0]?.status).toBe('agreed');
+  });
+
+  it('default-to-"proposed" when neither server nor client carries the facet', () => {
+    const out = derivePerProposalFacets(classifyNode, EMPTY_INDEX, undefined);
+    expect(out[0]?.status).toBe('proposed');
+  });
+
+  it('default-to-"proposed" when the server map exists but is empty and the client mirror is empty', () => {
+    const out = derivePerProposalFacets(classifyNode, EMPTY_INDEX, {});
+    expect(out[0]?.status).toBe('proposed');
+  });
+
+  it('server value that is not a known FacetStatus falls through to client / default', () => {
+    // Defensive — the wire schema is `Record<string, string>` per the
+    // shared-types declaration; if a value lands that is not one of
+    // the six FacetStatus values, the selector ignores it (rather
+    // than surfacing a malformed status) and falls back to the
+    // client mirror / default.
+    const clientIndex = indexWith('node', NODE_X, 'classification', 'agreed');
+    const server: Record<string, string> = { classification: 'not-a-real-status' };
+    const out = derivePerProposalFacets(classifyNode, clientIndex, server);
+    expect(out[0]?.status).toBe('agreed');
+  });
+
+  it('structural sub-kind status resolves through server frame when present', () => {
+    // The synthetic 'proposal' facet name can still be carried by a
+    // future tightening of the broadcast; today it stays 'proposed'
+    // by default.
+    const proposal: ProposalPayload = {
+      kind: 'decompose',
+      parent_node_id: NODE_X,
+      components: [
+        { wording: 'first', classification: 'fact' },
+        { wording: 'second', classification: 'fact' },
+      ],
+    };
+    const server: Record<string, string> = { proposal: 'committed' };
+    const out = derivePerProposalFacets(proposal, EMPTY_INDEX, server);
+    expect(out[0]?.status).toBe('committed');
+  });
+
+  it('structural sub-kind defaults to "proposed" with no server frame', () => {
+    const proposal: ProposalPayload = {
+      kind: 'axiom-mark',
+      node_id: NODE_X,
+      participant: PARTICIPANT_A,
+    };
+    const out = derivePerProposalFacets(proposal, EMPTY_INDEX, undefined);
+    expect(out[0]?.status).toBe('proposed');
+  });
+});
+
+describe('derivePerProposalFacets — purity', () => {
+  it('two calls with the same inputs return deep-equal outputs', () => {
+    const proposal: ProposalPayload = {
+      kind: 'classify-node',
+      node_id: NODE_X,
+      classification: 'fact',
+    };
+    const index = indexWith('node', NODE_X, 'classification', 'disputed');
+    const server: Record<string, string> = { classification: 'agreed' };
+    const a = derivePerProposalFacets(proposal, index, server);
+    const b = derivePerProposalFacets(proposal, index, server);
+    expect(a).toEqual(b);
+  });
+
+  it('does not mutate its inputs', () => {
+    const proposal: ProposalPayload = {
+      kind: 'classify-node',
+      node_id: NODE_X,
+      classification: 'fact',
+    };
+    const index = indexWith('node', NODE_X, 'classification', 'disputed');
+    const server: Record<string, string> = { classification: 'agreed' };
+    const serverBefore = { ...server };
+    derivePerProposalFacets(proposal, index, server);
+    expect(server).toEqual(serverBefore);
+    // The index's inner maps stay the same shape (no spurious entries).
+    expect(index.nodes.get(NODE_X)).toEqual({ classification: 'disputed' });
+  });
+});
+
+describe('derivePerProposalFacets — entity-kind isolation for substance', () => {
+  it('a set-node-substance proposal does not pick up a same-id edge substance status from the mirror', () => {
+    // Same entity id collision (extremely unlikely in practice — node
+    // ids and edge ids share the UUID namespace) — the selector
+    // disambiguates via entityKind.
+    const indexWithEdge = indexWith('edge', NODE_X, 'substance', 'agreed');
+    const proposal: ProposalPayload = {
+      kind: 'set-node-substance',
+      node_id: NODE_X,
+      value: 'disputed',
+    };
+    const out = derivePerProposalFacets(proposal, indexWithEdge, undefined);
+    // The node side of the mirror has no entry, so the default applies.
+    expect(out[0]?.status).toBe('proposed');
+  });
+
+  it('a set-edge-substance proposal picks up the edge mirror entry', () => {
+    const indexWithEdge = indexWith('edge', EDGE_E, 'substance', 'agreed');
+    const proposal: ProposalPayload = {
+      kind: 'set-edge-substance',
+      edge_id: EDGE_E,
+      value: 'agreed',
+    };
+    const out = derivePerProposalFacets(proposal, indexWithEdge, undefined);
+    expect(out[0]?.status).toBe('agreed');
+  });
+});

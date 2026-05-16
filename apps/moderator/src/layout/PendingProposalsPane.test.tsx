@@ -417,6 +417,92 @@ describe('PendingProposalsPane — timestamp formatting goes through formatRelat
   });
 });
 
+// Per-facet breakdown integration coverage —
+// `tasks/refinements/moderator-ui/mod_per_facet_breakdown.md`.
+// The pane now renders a `<ProposalFacetBreakdown>` inside each
+// `<PendingProposalRow>`'s body, beneath the existing one-line header.
+// These cases pin:
+//   (a) multi-facet — two pending proposals of distinct sub-kinds
+//       each surface the expected facet chip;
+//   (b) server-precedence — pushing a `proposal-status` envelope via
+//       `applyProposalStatus` updates the chip's `data-facet-status`
+//       to the server value (not the client mirror);
+//   (c) header-unaffected — the existing one-line header test ids
+//       (`pending-proposal-row-kind`, `-summary`, `-author`,
+//       `-timestamp`) all remain on the page after the breakdown
+//       lands beneath them.
+describe('PendingProposalsPane — per-facet breakdown integration', () => {
+  it('renders one facet chip per row for two pending proposals of distinct sub-kinds', () => {
+    const editWording: ProposalPayload = {
+      kind: 'edit-wording',
+      edit_kind: 'reword',
+      node_id: NODE_X,
+      new_wording: 'updated wording',
+    };
+    act(() => {
+      useWsStore.getState().applyEvent(proposalEvent(1, PROPOSAL_P, classifyNodeFact));
+      useWsStore.getState().applyEvent(proposalEvent(2, PROPOSAL_Q, editWording));
+    });
+    render(<PendingProposalsPane sessionId={SESSION} nowMs={NOW_MS} />);
+    const rows = screen.getAllByTestId('pending-proposal-row');
+    expect(rows).toHaveLength(2);
+    // Each row has its own breakdown container.
+    const breakdowns = screen.getAllByTestId('proposal-facet-breakdown');
+    expect(breakdowns).toHaveLength(2);
+    // The newer proposal (PROPOSAL_Q, edit-wording) renders first;
+    // its breakdown surfaces a `wording` chip.
+    const firstChip = breakdowns[0]?.querySelector('[data-testid="proposal-facet-row"]');
+    expect(firstChip?.getAttribute('data-facet-name')).toBe('wording');
+    // The older proposal (PROPOSAL_P, classify-node) renders second;
+    // its breakdown surfaces a `classification` chip.
+    const secondChip = breakdowns[1]?.querySelector('[data-testid="proposal-facet-row"]');
+    expect(secondChip?.getAttribute('data-facet-name')).toBe('classification');
+    // Both chips default to `proposed` (no votes yet).
+    expect(firstChip?.getAttribute('data-facet-status')).toBe('proposed');
+    expect(secondChip?.getAttribute('data-facet-status')).toBe('proposed');
+  });
+
+  it('the chip data-facet-status reflects the server perFacetStatus after applyProposalStatus pushes a frame', () => {
+    act(() => {
+      useWsStore.getState().applyEvent(proposalEvent(1, PROPOSAL_P, classifyNodeFact));
+    });
+    render(<PendingProposalsPane sessionId={SESSION} nowMs={NOW_MS} />);
+    // Before any server frame, the chip is the default `proposed`.
+    expect(screen.getByTestId('proposal-facet-row').getAttribute('data-facet-status')).toBe(
+      'proposed',
+    );
+    // Push a `proposal-status` envelope — the pane re-renders on the
+    // Zustand subscription firing.
+    act(() => {
+      useWsStore.getState().applyProposalStatus({
+        sessionId: SESSION,
+        proposalId: PROPOSAL_P,
+        sequence: 1,
+        perFacetStatus: { classification: 'disputed' },
+      });
+    });
+    expect(screen.getByTestId('proposal-facet-row').getAttribute('data-facet-status')).toBe(
+      'disputed',
+    );
+  });
+
+  it('the existing one-line header test ids remain on the page after the breakdown is added', () => {
+    act(() => {
+      useWsStore.getState().applyEvent(proposalEvent(1, PROPOSAL_P, classifyNodeFact));
+    });
+    render(<PendingProposalsPane sessionId={SESSION} nowMs={NOW_MS} />);
+    // The header's four test ids must still resolve — the breakdown
+    // is additive, not a replacement.
+    expect(screen.getByTestId('pending-proposal-row-kind')).toBeTruthy();
+    expect(screen.getByTestId('pending-proposal-row-summary')).toBeTruthy();
+    expect(screen.getByTestId('pending-proposal-row-author')).toBeTruthy();
+    expect(screen.getByTestId('pending-proposal-row-timestamp')).toBeTruthy();
+    // And the breakdown surface mounts alongside.
+    expect(screen.getByTestId('proposal-facet-breakdown')).toBeTruthy();
+    expect(screen.getByTestId('proposal-facet-row')).toBeTruthy();
+  });
+});
+
 describe('PendingProposalsPane — i18n catalog parity', () => {
   const KEYS = [
     'moderator.proposalList.emptyState',

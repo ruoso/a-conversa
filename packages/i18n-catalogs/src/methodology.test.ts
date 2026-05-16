@@ -58,13 +58,24 @@ const METHODOLOGY_VALUES = {
     'defines',
     'contradicts',
   ],
-  facetState: ['proposed', 'agreed', 'disputed', 'meta-disagreement'],
+  // Per-facet `FacetStatus` enum entries. The first four are the
+  // agreement-layer statuses shipped by
+  // `i18n_methodology_glossary`; `committed` + `withdrawn` are the
+  // closed-lifecycle statuses landed by
+  // `tasks/refinements/moderator-ui/mod_per_facet_breakdown.md`
+  // (Decision §10) — the per-facet breakdown's chip uses these for
+  // the `aria-label` + screen-reader prose alongside the visual
+  // border / ring / opacity vocabulary.
+  facetState: ['proposed', 'agreed', 'disputed', 'meta-disagreement', 'committed', 'withdrawn'],
   // Per-facet identifiers. Refinement:
   // `tasks/refinements/moderator-ui/mod_per_facet_state_visualization.md`.
   // The moderator's per-facet pill row resolves
   // `methodology.facet.<name>` for each pill; the round-trip below
-  // pins every locale's catalog entry for the three v1 facets.
-  facet: ['wording', 'classification', 'substance'],
+  // pins every locale's catalog entry for the three v1 facets. The
+  // `proposal` entry is the synthetic lifecycle facet name used by
+  // `tasks/refinements/moderator-ui/mod_per_facet_breakdown.md`'s
+  // structural-sub-kind chips (Decision §4 + §10).
+  facet: ['wording', 'classification', 'substance', 'proposal'],
   voteChoice: ['agree', 'dispute', 'withdraw'],
   // Per-participant vote-indicator verb-form fragments. Refinement:
   // `tasks/refinements/moderator-ui/mod_vote_indicators_on_graph.md`.

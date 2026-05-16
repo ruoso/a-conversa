@@ -68,12 +68,15 @@
       "proposed": "Proposed",
       "agreed": "Agreed",
       "disputed": "Disputed",
-      "meta-disagreement": "Meta-disagreement"
+      "meta-disagreement": "Meta-disagreement",
+      "committed": "Committed",
+      "withdrawn": "Withdrawn"
     },
     "facet": {
       "wording": "Wording",
       "classification": "Classification",
-      "substance": "Substance"
+      "substance": "Substance",
+      "proposal": "Proposal"
     },
     "voteChoice": {
       "agree": "Agree",

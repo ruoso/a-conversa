@@ -813,4 +813,73 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     await expect(page.getByTestId('pending-proposals-pane-empty')).toHaveCount(0);
     await expect(page.getByTestId('pending-proposal-row-kind')).toHaveText('Fact');
   });
+
+  // Refinement: tasks/refinements/moderator-ui/mod_per_facet_breakdown.md
+  //
+  // Per-facet breakdown e2e cover. Extends the pending-proposals row
+  // chain above: after the propose chain lands the `classify-node`
+  // proposal in the right-sidebar, the row body grows a
+  // `<ProposalFacetBreakdown>` whose single chip surfaces the
+  // `classification` facet at status `'proposed'` (no votes yet).
+  //
+  // The assertion polls with `expect.poll` for the chip count and
+  // attribute values, mirroring the 10s budget the predecessor test
+  // established.
+  test('alice: propose a free-floating new statement; the per-facet breakdown shows a "classification" chip at status "proposed"', async ({
+    page,
+  }) => {
+    await loginAs(page, { username: TEST_USERNAME });
+    await page.goto('/sessions/new');
+    await expect(page.getByTestId('route-create-session')).toBeVisible();
+
+    await page
+      .getByTestId('create-session-topic-input')
+      .fill('Per-facet breakdown pane e2e regression check.');
+    await page.getByTestId('create-session-submit').click();
+    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
+    await expect(page.getByTestId('route-operate')).toBeVisible();
+
+    // Drive the same propose chain as the prior test — the chain
+    // produces a `classify-node` proposal, so the breakdown's single
+    // chip targets the `classification` facet.
+    const wording = 'The proposed minimum wage would raise prices for everyone.';
+    const textarea = page.getByTestId('capture-text-input-textarea');
+    await textarea.fill(wording);
+    await page.getByTestId('classification-palette-button-fact').click();
+    const submitKey = process.platform === 'darwin' ? 'Meta+Enter' : 'Control+Enter';
+    await textarea.press(submitKey);
+
+    // Skip the assertion when the WS store is unreachable — same
+    // fallback contract as the propose-action and pending-proposals
+    // covers above.
+    if (!(await isWsStoreReachable(page))) {
+      test.skip(
+        true,
+        'window.__aConversaWsStore is not reachable — the dev-only attachment did not fire. Full-chain assertion deferred to the seed-infrastructure environment.',
+      );
+      return;
+    }
+
+    // Poll until the per-facet `classification` chip appears. The wait
+    // covers the WS round-trip + the React commit; once the row lands
+    // the breakdown mounts beneath the header with one chip.
+    await expect
+      .poll(
+        async () =>
+          page
+            .getByTestId('proposal-facet-row')
+            .and(page.locator('[data-facet-name="classification"]'))
+            .count(),
+        { timeout: 10_000 },
+      )
+      .toBe(1);
+
+    // The chip's status attribute is `'proposed'` — no votes have
+    // arrived yet, so the precedence chain (server → client mirror →
+    // default) lands on the Rule-7 default.
+    const chip = page
+      .getByTestId('proposal-facet-row')
+      .and(page.locator('[data-facet-name="classification"]'));
+    await expect(chip).toHaveAttribute('data-facet-status', 'proposed');
+  });
 });
