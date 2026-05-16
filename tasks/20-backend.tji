@@ -64,8 +64,11 @@ task backend "Backend" {
       effort 0.5d
       allocate team
       depends !serve_static_frontends
-      note "Refinement: tasks/refinements/backend/serve_static_frontends_multi_surface.md"
-      note "Extends the serve_static_frontends plugin to: (a) serve apps/root/dist/index.html for non-API + non-/_surfaces/* paths; (b) serve apps/root/dist/assets/* for root's chunked assets; (c) serve per-surface bundles under /_surfaces/{moderator,participant,audience,replay-test}/[hash].js (plus CSS sidecars) with long-lived cache headers; (d) serve /_surfaces/manifest.json mapping each surface to its current hashed bundle URL. The root reads the manifest at boot. ADR 0026 — micro-frontend root app + lazy-loaded surface bundles."
+      note -8<-
+        Refinement: tasks/refinements/backend/serve_static_frontends_multi_surface.md
+
+        Extends the serve_static_frontends plugin to: (a) serve apps/root/dist/index.html for non-API + non-/_surfaces/* paths; (b) serve apps/root/dist/assets/* for root's chunked assets; (c) serve per-surface bundles under /_surfaces/{moderator,participant,audience,replay-test}/[hash].js (plus CSS sidecars) with long-lived cache headers; (d) serve /_surfaces/manifest.json mapping each surface to its current hashed bundle URL. The root reads the manifest at boot. ADR 0026 — micro-frontend root app + lazy-loaded surface bundles.
+      ->8-
     }
   }
 
