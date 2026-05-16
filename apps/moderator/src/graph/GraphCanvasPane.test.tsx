@@ -131,7 +131,7 @@ import { applyLayout } from './layoutEngine';
 import { projectDiagnosticHighlights } from './diagnosticHighlights';
 import { selectEdgesForSession } from './selectors';
 import { useWsStore } from '../ws/wsStore';
-import { useSelectionStore } from '../stores';
+import { useCaptureStore, useSelectionStore } from '../stores';
 import { initI18n } from '../i18n';
 
 beforeAll(() => {
@@ -327,6 +327,7 @@ function makeEdgeCreated(opts: {
 beforeEach(async () => {
   useWsStore.getState().reset();
   useSelectionStore.getState().clear();
+  useCaptureStore.getState().reset();
   await initI18n('en-US');
   await i18next.changeLanguage('en-US');
 });
@@ -335,6 +336,7 @@ afterEach(() => {
   cleanup();
   useWsStore.getState().reset();
   useSelectionStore.getState().clear();
+  useCaptureStore.getState().reset();
 });
 
 describe('GraphCanvasPane — ReactFlow mount', () => {
@@ -1067,6 +1069,78 @@ describe('GraphCanvasPane — context-menu item factories (mod_context_menus)', 
     } finally {
       infoSpy.mockRestore();
     }
+  });
+
+  // Refinement: tasks/refinements/moderator-ui/mod_decompose_mode.md
+  //
+  // The propose-decompose item gains an optional handler-factory
+  // parameter (same shape as `onOpenAxiomMarkSubmenu`). When omitted,
+  // the legacy stub path is retained — pin both branches so the
+  // factory-extension cannot regress.
+  it('buildNodeMenuItems (no extra args) wires propose-decompose to the legacy actionStub', () => {
+    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    try {
+      const items = buildNodeMenuItems({ kind: 'node', id: NODE_A });
+      const decompose = items.find((it) => it.id === 'propose-decompose');
+      expect(decompose).toBeDefined();
+      decompose?.onSelect();
+      // The stub's signature is `actionStub('propose-decompose', target)`;
+      // it logs via console.info exactly once per activation.
+      expect(infoSpy).toHaveBeenCalledTimes(1);
+      expect(infoSpy.mock.calls[0]?.[0]).toContain('propose-decompose');
+    } finally {
+      infoSpy.mockRestore();
+    }
+  });
+
+  it('buildNodeMenuItems wires propose-decompose to onEnterDecomposeMode when supplied', () => {
+    const onEnter = vi.fn<(nodeId: string) => void>();
+    const items = buildNodeMenuItems({ kind: 'node', id: NODE_A }, undefined, onEnter);
+    const decompose = items.find((it) => it.id === 'propose-decompose');
+    expect(decompose).toBeDefined();
+    decompose?.onSelect();
+    expect(onEnter).toHaveBeenCalledTimes(1);
+    expect(onEnter).toHaveBeenCalledWith(NODE_A);
+  });
+});
+
+// Refinement: tasks/refinements/moderator-ui/mod_decompose_mode.md
+//
+// End-to-end wire-up of the propose-decompose context menu item:
+// right-click a rendered node → click "Propose decompose" → the
+// capture store flips mode to 'decompose' and stashes the right-clicked
+// node id in `decomposeTargetNodeId`. The canvas's
+// `enterDecomposeMode` callback (threaded into `buildNodeMenuItems`)
+// is the bridge under test.
+describe('GraphCanvasPane — propose-decompose mode entry (mod_decompose_mode)', () => {
+  it('right-clicking a node and clicking "Propose decompose" enters decompose mode for that node', () => {
+    useWsStore.getState().applyEvent(
+      makeNodeCreated({
+        sequence: 1,
+        nodeId: NODE_A,
+        wording: 'A statement to decompose.',
+      }),
+    );
+    render(<GraphCanvasPane sessionId={SESSION_ID} />);
+    expect(useCaptureStore.getState().mode).toBe('idle');
+    expect(useCaptureStore.getState().decomposeTargetNodeId).toBeNull();
+
+    const card = screen.getByTestId(`statement-node-${NODE_A}`);
+    act(() => {
+      fireEvent.contextMenu(card, { clientX: 10, clientY: 20 });
+    });
+    const decomposeItem = screen.getByTestId('graph-context-menu-item-propose-decompose');
+    expect(decomposeItem).toBeTruthy();
+
+    act(() => {
+      fireEvent.click(decomposeItem);
+    });
+
+    // The store flipped atomically to decompose mode for the
+    // right-clicked node. The menu auto-closes on item activation
+    // (per the menu shell contract — covered separately).
+    expect(useCaptureStore.getState().mode).toBe('decompose');
+    expect(useCaptureStore.getState().decomposeTargetNodeId).toBe(NODE_A);
   });
 });
 

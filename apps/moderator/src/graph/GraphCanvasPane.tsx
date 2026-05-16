@@ -72,7 +72,7 @@ import type { Event, StatementKind } from '@a-conversa/shared-types';
 
 import 'reactflow/dist/style.css';
 
-import { useSelectionStore } from '../stores/index.js';
+import { useCaptureStore, useSelectionStore } from '../stores/index.js';
 import { useWsStore, type WsState } from '../ws/wsStore.js';
 import { AxiomMarkSubmenu } from '../layout/AxiomMarkSubmenu.js';
 import { STATEMENT_NODE_TYPE, StatementNode, type StatementNodeData } from './StatementNode.js';
@@ -213,10 +213,22 @@ function actionStub(action: string, target: ContextMenuState['target']): void {
  * records the placement strategy (the menu item's `onSelect` flips a
  * per-render `submenuOpen` flag rather than firing a proposal
  * directly).
+ *
+ * **`onEnterDecomposeMode` seam (mod_decompose_mode).** Same shape as
+ * the axiom-mark seam: the canvas threads in a callback that
+ * dispatches to `useCaptureStore.getState().enterDecomposeMode(nodeId)`
+ * — the parent menu's `propose-decompose` item then atomically flips
+ * `mode` to `'decompose'` + sets `decomposeTargetNodeId` + clears the
+ * F1 capture-flow slices (Decision §6 of the refinement). When
+ * omitted (direct unit-test invocations of `buildNodeMenuItems`), the
+ * legacy stub is used so the existing factory-shape cases keep
+ * passing without each test having to thread a handler. Decision §2
+ * of `mod_decompose_mode.md` records the placement.
  */
 export function buildNodeMenuItems(
   target: ContextMenuState['target'],
   onOpenAxiomMarkSubmenu?: () => void,
+  onEnterDecomposeMode?: (nodeId: string) => void,
 ): readonly MenuItem[] {
   return [
     {
@@ -227,7 +239,10 @@ export function buildNodeMenuItems(
     {
       id: 'propose-decompose',
       labelKey: 'moderator.contextMenu.node.proposeDecompose',
-      onSelect: () => actionStub('propose-decompose', target),
+      onSelect:
+        target.kind === 'node' && target.id !== null && onEnterDecomposeMode
+          ? () => onEnterDecomposeMode(target.id as string)
+          : () => actionStub('propose-decompose', target),
     },
     {
       id: 'propose-meta-disagreement',
@@ -630,6 +645,14 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
     readonly y: number;
   } | null>(null);
   const closeAxiomMarkSubmenu = useCallback(() => setAxiomMarkSubmenu(null), []);
+  // Stable mode-entry callback for the node context menu's
+  // `propose-decompose` item. Dispatches to the global capture store
+  // (no canvas-local state — decompose-mode lives on `useCaptureStore`).
+  // Refinement: `mod_decompose_mode`.
+  const enterDecomposeMode = useCallback(
+    (nodeId: string) => useCaptureStore.getState().enterDecomposeMode(nodeId),
+    [],
+  );
   // **Important:** `closeContextMenu` does NOT cascade-close the
   // submenu. The `<GraphContextMenu>` shell calls `onClose` after a
   // menu item's `onSelect` runs (including the axiom-mark item that
@@ -917,21 +940,26 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
       const nodeIdForSubmenu = contextMenu.target.id;
       const submenuX = contextMenu.x;
       const submenuY = contextMenu.y;
-      menuItems = buildNodeMenuItems(contextMenu.target, () => {
-        // Open the participant-picker submenu at a slight inset from
-        // the parent menu's cursor coordinates so the two surfaces
-        // don't overlap their borders. The parent context menu's
-        // close-path runs synchronously right after this `onSelect`
-        // (the menu shell auto-closes on item activation); we set the
-        // submenu state inside the same React commit so the submenu
-        // mounts on the next render alongside the closed parent.
-        if (nodeIdForSubmenu === null) return;
-        setAxiomMarkSubmenu({
-          nodeId: nodeIdForSubmenu,
-          x: submenuX + 16,
-          y: submenuY + 16,
-        });
-      });
+      menuItems = buildNodeMenuItems(
+        contextMenu.target,
+        () => {
+          // Open the participant-picker submenu at a slight inset from
+          // the parent menu's cursor coordinates so the two surfaces
+          // don't overlap their borders. The parent context menu's
+          // close-path runs synchronously right after this `onSelect`
+          // (the menu shell auto-closes on item activation); we set
+          // the submenu state inside the same React commit so the
+          // submenu mounts on the next render alongside the closed
+          // parent.
+          if (nodeIdForSubmenu === null) return;
+          setAxiomMarkSubmenu({
+            nodeId: nodeIdForSubmenu,
+            x: submenuX + 16,
+            y: submenuY + 16,
+          });
+        },
+        enterDecomposeMode,
+      );
     } else if (contextMenu.target.kind === 'edge') {
       menuItems = buildEdgeMenuItems(contextMenu.target);
     } else {

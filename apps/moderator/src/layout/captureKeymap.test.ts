@@ -19,6 +19,7 @@ import {
 } from '@a-conversa/i18n-catalogs';
 
 import { attachCaptureKeymap, SHORTCUT_TO_EDGE_ROLE, SHORTCUT_TO_KIND } from './captureKeymap';
+import { useCaptureStore } from '../stores/captureStore';
 
 describe('captureKeymap — SHORTCUT_TO_KIND inverse table', () => {
   it('is the inverse of KIND_TO_SHORTCUT', () => {
@@ -434,5 +435,105 @@ describe('captureKeymap — onPickEdgeRole handler', () => {
     expect(onPickKind).toHaveBeenCalledWith('fact');
     expect(onPickEdgeRole).toHaveBeenCalledTimes(1);
     expect(onPickEdgeRole).toHaveBeenCalledWith('supports');
+  });
+});
+
+// Refinement: tasks/refinements/moderator-ui/mod_decompose_mode.md
+//
+// Mode-aware Escape dispatch. The `onExitMode` handler the F2 decompose
+// flow registers takes priority over `onClearTarget` when the capture
+// store's mode is `'decompose'`. When mode is `'idle'` (the F1 default),
+// the existing `onClearTarget` dispatch is unchanged — the cases below
+// pin both branches so the priority logic cannot regress.
+describe('captureKeymap — onExitMode handler (mode-aware Escape)', () => {
+  let detach: (() => void) | null = null;
+
+  beforeEach(() => {
+    // Reset the store so each test starts at mode === 'idle' — the
+    // tests below explicitly set decompose mode where needed.
+    useCaptureStore.getState().reset();
+  });
+
+  afterEach(() => {
+    if (detach !== null) {
+      detach();
+      detach = null;
+    }
+    document.body.innerHTML = '';
+    useCaptureStore.getState().reset();
+  });
+
+  it('routes Escape to onExitMode when mode === decompose', () => {
+    const onExitMode = vi.fn<() => void>();
+    useCaptureStore.getState().enterDecomposeMode('n1');
+    detach = attachCaptureKeymap({ onExitMode });
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(onExitMode).toHaveBeenCalledTimes(1);
+  });
+
+  it('does NOT route Escape to onExitMode when mode === idle', () => {
+    const onExitMode = vi.fn<() => void>();
+    // mode is the default 'idle' after the reset in beforeEach.
+    detach = attachCaptureKeymap({ onExitMode });
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(onExitMode).not.toHaveBeenCalled();
+  });
+
+  it('decompose-exit takes priority over target-clear when both handlers are registered (Decision §5)', () => {
+    const onExitMode = vi.fn<() => void>();
+    const onClearTarget = vi.fn<() => void>();
+    useCaptureStore.getState().enterDecomposeMode('n1');
+    detach = attachCaptureKeymap({ onExitMode, onClearTarget });
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(onExitMode).toHaveBeenCalledTimes(1);
+    expect(onClearTarget).not.toHaveBeenCalled();
+  });
+
+  it('when mode === idle and both handlers are registered, Escape routes to onClearTarget only', () => {
+    const onExitMode = vi.fn<() => void>();
+    const onClearTarget = vi.fn<() => void>();
+    detach = attachCaptureKeymap({ onExitMode, onClearTarget });
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(onClearTarget).toHaveBeenCalledTimes(1);
+    expect(onExitMode).not.toHaveBeenCalled();
+  });
+
+  it('Escape with onExitMode only (no onClearTarget) does nothing when mode is idle', () => {
+    const onExitMode = vi.fn<() => void>();
+    detach = attachCaptureKeymap({ onExitMode });
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(onExitMode).not.toHaveBeenCalled();
+  });
+
+  it('Escape with onExitMode only fires the handler when mode flips to decompose mid-mount', () => {
+    const onExitMode = vi.fn<() => void>();
+    detach = attachCaptureKeymap({ onExitMode });
+    // First, mode is idle — Escape is a no-op.
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(onExitMode).not.toHaveBeenCalled();
+    // Then mode flips to decompose — next Escape fires the handler.
+    useCaptureStore.getState().enterDecomposeMode('n1');
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(onExitMode).toHaveBeenCalledTimes(1);
+  });
+
+  it('preventDefault is called on a matched Escape (keystroke consumed)', () => {
+    const onExitMode = vi.fn<() => void>();
+    useCaptureStore.getState().enterDecomposeMode('n1');
+    detach = attachCaptureKeymap({ onExitMode });
+    const ev = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    document.dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBe(true);
+  });
+
+  it('Escape bails on editable-target when mode === decompose (same guard as onClearTarget)', () => {
+    const onExitMode = vi.fn<() => void>();
+    useCaptureStore.getState().enterDecomposeMode('n1');
+    const textarea = document.createElement('textarea');
+    document.body.appendChild(textarea);
+    textarea.focus();
+    detach = attachCaptureKeymap({ onExitMode });
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(onExitMode).not.toHaveBeenCalled();
   });
 });

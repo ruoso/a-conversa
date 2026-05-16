@@ -332,6 +332,7 @@ task moderator_ui "Moderator UI" {
     task mod_decompose_mode "Enter decomposition mode for selected node" {
       effort 1d
       allocate team
+      complete 100
     }
     task mod_multi_component_capture "Multi-component capture (wording + kind for each)" {
       effort 1d

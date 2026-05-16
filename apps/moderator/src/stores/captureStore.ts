@@ -1,15 +1,17 @@
 // `useCaptureStore` — local UI state for the bottom-strip capture pane.
 //
 // Refinement: tasks/refinements/moderator-ui/mod_state_management.md
-// (also:      tasks/refinements/moderator-ui/mod_edge_role_selector.md)
+// (also:      tasks/refinements/moderator-ui/mod_edge_role_selector.md,
+//             tasks/refinements/moderator-ui/mod_decompose_mode.md)
 //
 // Holds the in-progress proposal the moderator is composing: the
 // statement text, its classification (StatementKind from
 // `@a-conversa/shared-types`), the target node it will hang off (if
 // any), the edge role connecting the new statement to that target (if
-// any), and the current capture mode banner. None of this is server
-// state — it is reset locally as soon as the moderator clicks
-// "Propose" (the actual server round-trip is owned by
+// any), the per-mode target slices (e.g. `decomposeTargetNodeId`), and
+// the current capture mode banner. None of this is server state — it
+// is reset locally as soon as the moderator clicks "Propose" (the
+// actual server round-trip is owned by
 // `mod_capture_flow.mod_propose_action`).
 //
 // Downstream consumers (`mod_capture_flow`, `mod_classification_palette`,
@@ -70,6 +72,18 @@ export interface CaptureState {
    * Refinement: `tasks/refinements/moderator-ui/mod_propose_action.md`.
    */
   proposing: boolean;
+  /**
+   * The id of the node currently being decomposed when `mode ===
+   * 'decompose'`; `null` otherwise. Set atomically by
+   * `enterDecomposeMode(nodeId)` and cleared by `exitDecomposeMode()` /
+   * `reset()`. The sibling `mod_multi_component_capture` task reads
+   * this to know which parent the captured components are replacing;
+   * `mod_propose_decomposition` reads it when building the propose
+   * envelope's `parent_node_id`.
+   *
+   * Refinement: `tasks/refinements/moderator-ui/mod_decompose_mode.md`.
+   */
+  decomposeTargetNodeId: string | null;
 
   setText: (text: string) => void;
   setClassification: (classification: StatementKind | null) => void;
@@ -77,13 +91,51 @@ export interface CaptureState {
   setEdgeRole: (role: EdgeRole | null) => void;
   setMode: (mode: CaptureMode) => void;
   setProposing: (value: boolean) => void;
+  /**
+   * Set `decomposeTargetNodeId` directly. Direct callers should prefer
+   * the coupled helpers (`enterDecomposeMode` / `exitDecomposeMode`)
+   * that maintain the mode-flip + F1-clear invariants; this setter
+   * exists for symmetry with the other slices and for test seams that
+   * need to mutate the slice without invoking the coupled mode
+   * transition.
+   *
+   * Refinement: `tasks/refinements/moderator-ui/mod_decompose_mode.md`.
+   */
+  setDecomposeTargetNodeId: (id: string | null) => void;
+  /**
+   * Enter decompose mode for `nodeId`. Atomic multi-field update:
+   * sets `mode = 'decompose'`, `decomposeTargetNodeId = nodeId`, and
+   * clears the F1 capture-flow slices (`text`, `classification`,
+   * `targetEntityId`, `edgeRole`) so a stale F1 draft does not bleed
+   * through into the decompose flow. Single `set()` so subscribers
+   * observe one transition.
+   *
+   * Refinement: `tasks/refinements/moderator-ui/mod_decompose_mode.md`
+   * (Decision §6 records the F1-clear coupling rationale).
+   */
+  enterDecomposeMode: (nodeId: string) => void;
+  /**
+   * Exit decompose mode. Atomic update: sets `mode = 'idle'`,
+   * `decomposeTargetNodeId = null`. The F1 slices are NOT
+   * re-populated (entering decompose already cleared them; cancelling
+   * decompose returns the operator to an empty idle).
+   *
+   * Refinement: `tasks/refinements/moderator-ui/mod_decompose_mode.md`.
+   */
+  exitDecomposeMode: () => void;
   /** Reset the pane to a fresh idle state — called after a successful propose. */
   reset: () => void;
 }
 
 const initialCaptureState: Pick<
   CaptureState,
-  'text' | 'classification' | 'targetEntityId' | 'edgeRole' | 'mode' | 'proposing'
+  | 'text'
+  | 'classification'
+  | 'targetEntityId'
+  | 'edgeRole'
+  | 'mode'
+  | 'proposing'
+  | 'decomposeTargetNodeId'
 > = {
   text: '',
   classification: null,
@@ -91,6 +143,7 @@ const initialCaptureState: Pick<
   edgeRole: null,
   mode: 'idle',
   proposing: false,
+  decomposeTargetNodeId: null,
 };
 
 export const useCaptureStore = create<CaptureState>()(
@@ -102,6 +155,24 @@ export const useCaptureStore = create<CaptureState>()(
     setEdgeRole: (edgeRole) => set({ edgeRole }),
     setMode: (mode) => set({ mode }),
     setProposing: (proposing) => set({ proposing }),
+    setDecomposeTargetNodeId: (decomposeTargetNodeId) => set({ decomposeTargetNodeId }),
+    enterDecomposeMode: (nodeId) =>
+      set({
+        mode: 'decompose',
+        decomposeTargetNodeId: nodeId,
+        // F1-coupling clear (Decision §6 of mod_decompose_mode.md):
+        // a stale in-progress F1 draft must not bleed into the
+        // decompose flow.
+        text: '',
+        classification: null,
+        targetEntityId: null,
+        edgeRole: null,
+      }),
+    exitDecomposeMode: () =>
+      set({
+        mode: 'idle',
+        decomposeTargetNodeId: null,
+      }),
     reset: () => set({ ...initialCaptureState }),
   })),
 );

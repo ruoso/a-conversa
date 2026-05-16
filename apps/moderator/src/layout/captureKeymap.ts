@@ -59,6 +59,8 @@ import {
   type MethodologyKind,
 } from '@a-conversa/i18n-catalogs';
 
+import { useCaptureStore } from '../stores/captureStore.js';
+
 /**
  * Handlers the capture pane wires into the keymap. Each handler is
  * optional so a future task can add a new handler without forcing
@@ -86,8 +88,22 @@ export interface CaptureKeymapHandlers {
    * Refinement: tasks/refinements/moderator-ui/mod_edge_role_selector.md
    */
   onPickEdgeRole?: (role: EdgeRole) => void;
+  /**
+   * Exit the current capture-pane mode (decompose / future
+   * interpretive-split / other future modes that own their own Escape
+   * semantics). Triggered by `Escape` under the same modifier-bail /
+   * editable-target / repeat-skip guards as `onClearTarget`. When
+   * `useCaptureStore.getState().mode === 'decompose'` (and future
+   * modes), this handler takes priority over `onClearTarget` — the
+   * operator's mental model is "I'm in a mode; Escape leaves the
+   * mode," and the staged-target chip the F1 clearer surfaces is below
+   * the operator's current attention while in a sub-mode.
+   *
+   * Refinement: tasks/refinements/moderator-ui/mod_decompose_mode.md
+   * (Decision §5 records the priority order).
+   */
+  onExitMode?: () => void;
   // future: onSubmit?: () => void;
-  // future: onExitMode?: () => void;
   // future: onDecompose?: () => void;
 }
 
@@ -196,17 +212,31 @@ export function attachCaptureKeymap(handlers: CaptureKeymapHandlers): () => void
       return;
     }
 
-    // 8. `Esc` routes to `onClearTarget` when registered. The branch
-    // sits after the kind / role matches because the shortcut tables
-    // contain only letter keys; `Escape` never collides. The branch is
-    // gated on `handlers.onClearTarget !== undefined` so consumers
-    // that did not register for clear (e.g., the classification palette)
-    // do not observe Esc.
-    if (key === 'escape' && handlers.onClearTarget !== undefined) {
-      // 6. Consume the keystroke.
-      event.preventDefault();
-      handlers.onClearTarget();
-      return;
+    // 8. `Esc` routes mode-aware: when `useCaptureStore.getState().mode
+    // === 'decompose'` (and future sub-modes that own their own
+    // Escape semantics), the registered `onExitMode` handler takes
+    // priority over `onClearTarget`. Decision §5 of
+    // `mod_decompose_mode.md` records the rationale: the operator's
+    // mental model in a sub-mode is "Escape leaves the mode," not
+    // "Escape clears my staged target" — and the F1-clear coupling
+    // on `enterDecomposeMode` already cleared any staged target, so
+    // `onClearTarget` would be a no-op anyway. The branch sits after
+    // the kind / role matches because the shortcut tables contain
+    // only letter keys; `Escape` never collides.
+    if (key === 'escape') {
+      const mode = useCaptureStore.getState().mode;
+      if (mode === 'decompose' && handlers.onExitMode !== undefined) {
+        // 6. Consume the keystroke.
+        event.preventDefault();
+        handlers.onExitMode();
+        return;
+      }
+      if (handlers.onClearTarget !== undefined) {
+        // 6. Consume the keystroke.
+        event.preventDefault();
+        handlers.onClearTarget();
+        return;
+      }
     }
   }
 

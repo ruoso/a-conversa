@@ -282,6 +282,15 @@
         "notSelf": "Axiom-marks are personal — the debater must propose this from their own tablet"
       }
     },
+    "decompose": {
+      "exit": {
+        "ariaLabel": "Exit decompose mode",
+        "tooltip": "Cancel decomposition (Esc)"
+      },
+      "banner": {
+        "targetWording": "Decomposing {nodeWording}"
+      }
+    },
     "proposalFilter": {
       "textPlaceholder": "Filter proposals…",
       "textAriaLabel": "Filter pending proposals by text",

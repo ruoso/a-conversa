@@ -11,7 +11,8 @@
 //             tasks/refinements/moderator-ui/mod_layout_shell.md,
 //             tasks/refinements/moderator-ui/mod_bottom_strip_capture.md,
 //             tasks/refinements/moderator-ui/mod_mode_banner.md,
-//             tasks/refinements/moderator-ui/mod_right_sidebar.md)
+//             tasks/refinements/moderator-ui/mod_right_sidebar.md,
+//             tasks/refinements/moderator-ui/mod_decompose_mode.md)
 //
 // Composes the three-pane `<OperateLayout>` (`mod_layout_shell`) with
 // `<GraphCanvasPane sessionId={id} />` (`mod_graph_canvas_pane` +
@@ -61,6 +62,7 @@ import { BottomStripCapture } from '../layout/BottomStripCapture';
 import { CaptureTargetAndRole } from '../layout/CaptureTargetAndRole';
 import { CaptureTextInput } from '../layout/CaptureTextInput';
 import { ClassificationPalette } from '../layout/ClassificationPalette';
+import { DecomposeModeExitButton } from '../layout/DecomposeModeExitButton';
 import { ProposeAction } from '../layout/ProposeAction';
 import { useProposeAction } from '../layout/useProposeAction';
 import { GraphCanvasPane } from '../graph/GraphCanvasPane';
@@ -125,7 +127,12 @@ function OperateRouteInner(props: { sessionId: string }): ReactElement {
         graphPane={<GraphCanvasPane sessionId={sessionId} />}
         bottomStrip={
           <BottomStripCapture
-            modeBanner={<ModeBanner />}
+            modeBanner={
+              <>
+                <ModeBanner />
+                <DecomposeModeExitButton />
+              </>
+            }
             textInput={
               <CaptureTextInput
                 onSubmit={() => {

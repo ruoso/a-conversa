@@ -1666,4 +1666,104 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     await expect(pendingBadge).toHaveAttribute('data-pending', 'true');
     await expect(pendingBadge).toHaveAttribute('data-participant-id', GATE_DEBATER_A_USER_ID);
   });
+
+  // Refinement: tasks/refinements/moderator-ui/mod_decompose_mode.md
+  //
+  // Decompose-mode entry e2e cover. Asserts the mode-entry + mode-exit
+  // chain only — per the refinement's UI-stream e2e scoping, the
+  // multi-component capture UI + the propose-decomposition envelope
+  // have not landed yet, so the chain-completing assertions belong to
+  // those sibling tasks' refinements.
+  //
+  // The scenario:
+  //   1. Login + create session + bridge past the lobby gate.
+  //   2. Seed one node into the WS store via the `__aConversaWsStore`
+  //      seam (same template as the axiom-mark e2es earlier in this
+  //      file).
+  //   3. Right-click the seeded node → click "Propose decompose" in
+  //      the menu.
+  //   4. Assert the mode banner reads "Decompose" + the exit-button
+  //      surfaces + the target-wording overlay shows the seeded
+  //      wording.
+  //   5. Press Escape → assert the mode banner reverts to "Idle" +
+  //      the exit-button is gone.
+  test('alice: right-click a seeded node → "Propose decompose" flips mode banner to "Decompose" + Esc returns to idle', async ({
+    page,
+  }) => {
+    await loginAs(page, { username: TEST_USERNAME });
+    await page.goto('/sessions/new');
+    await expect(page.getByTestId('route-create-session')).toBeVisible();
+
+    await page
+      .getByTestId('create-session-topic-input')
+      .fill('Decompose-mode entry e2e regression check.');
+    await page.getByTestId('create-session-submit').click();
+    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    await seedInviteParticipantsForGate(page);
+    await page.getByTestId('invite-enter-session').click();
+    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
+    await expect(page.getByTestId('route-operate')).toBeVisible();
+
+    if (!(await isWsStoreReachable(page))) {
+      test.skip(
+        true,
+        'window.__aConversaWsStore is not reachable — the dev-only attachment did not fire. Full-chain assertion deferred to the seed-infrastructure environment.',
+      );
+      return;
+    }
+
+    // Extract the session id from the URL.
+    const url = new URL(page.url());
+    const sessionId = url.pathname.split('/')[2] ?? '';
+    expect(sessionId, 'session id must be parsed from the URL').toBeTruthy();
+
+    // Seed ONE node into the WS store. The wording is what the
+    // target-wording overlay surfaces under the mode banner.
+    const SEED_NODE_ID = '88888888-8888-4888-8888-88888888888d';
+    const SEED_WORDING = 'Workers should earn a living wage.';
+    await seedWsStore(page, {
+      sessionId,
+      nodes: [{ nodeId: SEED_NODE_ID, wording: SEED_WORDING }],
+    });
+
+    // Wait for the seeded node card to render on the canvas.
+    const nodeCard = page.getByTestId(`statement-node-${SEED_NODE_ID}`);
+    await expect(nodeCard).toBeVisible({ timeout: 10_000 });
+
+    // Before the right-click: mode banner is at idle, no exit button
+    // is in the DOM.
+    await expect(page.getByTestId('mode-banner')).toHaveAttribute('data-mode', 'idle');
+    await expect(page.getByTestId('decompose-mode-exit')).toHaveCount(0);
+
+    // Right-click the node card to open the context menu.
+    await nodeCard.click({ button: 'right' });
+    const contextMenu = page.getByTestId('graph-context-menu');
+    await expect(contextMenu).toBeVisible();
+    const decomposeItem = page.getByTestId('graph-context-menu-item-propose-decompose');
+    await expect(decomposeItem).toBeVisible();
+
+    // Click the propose-decompose item — the parent menu closes and
+    // the capture store flips to decompose mode.
+    await decomposeItem.click();
+
+    // The mode banner now reads "Decompose" + carries data-mode.
+    await expect(page.getByTestId('mode-banner')).toHaveAttribute('data-mode', 'decompose');
+    await expect(page.getByTestId('mode-banner-label')).toHaveText('Decompose');
+    // The exit-button surfaces alongside the banner with the
+    // target-wording overlay reading the seeded wording.
+    await expect(page.getByTestId('decompose-mode-exit')).toBeVisible();
+    await expect(page.getByTestId('decompose-mode-target-wording')).toContainText(SEED_WORDING);
+
+    // Press Escape — the mode-aware keymap routes Esc to
+    // exitDecomposeMode (priority over onClearTarget per Decision §5).
+    // Focus the document body first so the editable-target guard
+    // doesn't swallow the keystroke (the right-clicked node card may
+    // hold focus from the selection ring).
+    await page.locator('body').focus();
+    await page.keyboard.press('Escape');
+
+    // Mode reverts to idle; the exit-button unmounts.
+    await expect(page.getByTestId('mode-banner')).toHaveAttribute('data-mode', 'idle');
+    await expect(page.getByTestId('decompose-mode-exit')).toHaveCount(0);
+  });
 });

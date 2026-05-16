@@ -282,6 +282,15 @@
         "notSelf": "Las marcas de axioma son personales — el debatedor debe proponer esto desde su propia tableta"
       }
     },
+    "decompose": {
+      "exit": {
+        "ariaLabel": "Salir del modo de descomposición",
+        "tooltip": "Cancelar descomposición (Esc)"
+      },
+      "banner": {
+        "targetWording": "Descomponiendo {nodeWording}"
+      }
+    },
     "proposalFilter": {
       "textPlaceholder": "Filtrar propuestas…",
       "textAriaLabel": "Filtrar propuestas pendientes por texto",
