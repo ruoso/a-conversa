@@ -52,7 +52,12 @@
 // strict-mode double-mount and avoids the re-attach storm during fast
 // typing.
 
-import { KIND_TO_SHORTCUT, type MethodologyKind } from '@a-conversa/i18n-catalogs';
+import {
+  EDGE_ROLE_TO_SHORTCUT,
+  KIND_TO_SHORTCUT,
+  type EdgeRole,
+  type MethodologyKind,
+} from '@a-conversa/i18n-catalogs';
 
 /**
  * Handlers the capture pane wires into the keymap. Each handler is
@@ -70,6 +75,17 @@ export interface CaptureKeymapHandlers {
    * Refinement: tasks/refinements/moderator-ui/mod_target_clear_override.md
    */
   onClearTarget?: () => void;
+  /**
+   * Pick an edge role. The edge-role selector wires this; triggered by
+   * the role's english-mnemonic letter (`s`/`r`/`q`/`b`/`g`/`e`/`x`)
+   * under the same modifier-bail / editable-target / repeat-skip
+   * guards as `onPickKind`. The visibility-gate
+   * (`targetEntityId !== null`) lives in the consumer's handler closure
+   * — the keymap module stays a pure key-dispatch layer.
+   *
+   * Refinement: tasks/refinements/moderator-ui/mod_edge_role_selector.md
+   */
+  onPickEdgeRole?: (role: EdgeRole) => void;
   // future: onSubmit?: () => void;
   // future: onExitMode?: () => void;
   // future: onDecompose?: () => void;
@@ -84,6 +100,24 @@ export const SHORTCUT_TO_KIND: Readonly<Record<string, MethodologyKind>> = (() =
   const out: Record<string, MethodologyKind> = {};
   for (const [kind, key] of Object.entries(KIND_TO_SHORTCUT)) {
     out[key] = kind as MethodologyKind;
+  }
+  return out;
+})();
+
+/**
+ * The inverse of `EDGE_ROLE_TO_SHORTCUT`. Materialised once at module
+ * load. The edge-role selector + tests use this to resolve a pressed
+ * key to its role without an O(7) linear scan per keystroke.
+ *
+ * The kind and role tables are disjoint by construction
+ * (`EDGE_ROLE_TO_SHORTCUT` Decision §7 in `mod_edge_role_selector.md`);
+ * the test suite asserts the invariant so a future edit cannot
+ * silently introduce a cross-table collision.
+ */
+export const SHORTCUT_TO_EDGE_ROLE: Readonly<Record<string, EdgeRole>> = (() => {
+  const out: Record<string, EdgeRole> = {};
+  for (const [role, key] of Object.entries(EDGE_ROLE_TO_SHORTCUT)) {
+    out[key] = role as EdgeRole;
   }
   return out;
 })();
@@ -144,12 +178,30 @@ export function attachCaptureKeymap(handlers: CaptureKeymapHandlers): () => void
       return;
     }
 
-    // 7. `Esc` routes to `onClearTarget` when registered. The branch
-    // sits after the kind-match because the shortcut table contains
-    // only letter keys; `Escape` never collides. The branch is gated on
-    // `handlers.onClearTarget !== undefined` so consumers that did not
-    // register for clear (e.g., the classification palette) do not
-    // observe Esc.
+    // 7. Route to edge-role handler when the key is in the role
+    // shortcut table. The kind-match branch runs first because the two
+    // tables MUST NOT share any key (Decision §7 in
+    // `mod_edge_role_selector.md` records the collision-avoidance
+    // proof; `keyboard-shortcuts.test.ts` regression-locks it). The
+    // branch is gated on `handlers.onPickEdgeRole !== undefined` so
+    // other consumers (the palette, the chip) do not observe role keys
+    // they did not register for. The visibility-gate
+    // (`targetEntityId !== null`) is the consumer's responsibility —
+    // the selector applies it inside its handler closure.
+    const role = SHORTCUT_TO_EDGE_ROLE[key];
+    if (role !== undefined && handlers.onPickEdgeRole !== undefined) {
+      // 6. Consume the keystroke.
+      event.preventDefault();
+      handlers.onPickEdgeRole(role);
+      return;
+    }
+
+    // 8. `Esc` routes to `onClearTarget` when registered. The branch
+    // sits after the kind / role matches because the shortcut tables
+    // contain only letter keys; `Escape` never collides. The branch is
+    // gated on `handlers.onClearTarget !== undefined` so consumers
+    // that did not register for clear (e.g., the classification palette)
+    // do not observe Esc.
     if (key === 'escape' && handlers.onClearTarget !== undefined) {
       // 6. Consume the keystroke.
       event.preventDefault();

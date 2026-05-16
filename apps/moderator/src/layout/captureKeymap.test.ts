@@ -10,12 +10,15 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  EDGE_ROLE_TO_SHORTCUT,
+  EDGE_ROLES,
   KIND_TO_SHORTCUT,
   METHODOLOGY_KINDS,
+  type EdgeRole,
   type MethodologyKind,
 } from '@a-conversa/i18n-catalogs';
 
-import { attachCaptureKeymap, SHORTCUT_TO_KIND } from './captureKeymap';
+import { attachCaptureKeymap, SHORTCUT_TO_EDGE_ROLE, SHORTCUT_TO_KIND } from './captureKeymap';
 
 describe('captureKeymap — SHORTCUT_TO_KIND inverse table', () => {
   it('is the inverse of KIND_TO_SHORTCUT', () => {
@@ -297,5 +300,139 @@ describe('captureKeymap — onClearTarget handler', () => {
     expect(onPickKind).toHaveBeenCalledTimes(1);
     expect(onPickKind).toHaveBeenCalledWith('fact');
     expect(onClearTarget).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Refinement: tasks/refinements/moderator-ui/mod_edge_role_selector.md
+//
+// These cases lock the s/r/q/b/g/e/x → onPickEdgeRole routing the
+// edge-role selector consumes. They sit inside the same
+// `attachCaptureKeymap` listener as the kind and Esc branches and
+// inherit the same modifier-bail / editable-target / repeat-skip
+// guards. The visibility-gate (`targetEntityId !== null`) is the
+// consumer's responsibility — it lives in the selector's handler
+// closure, not in the keymap module — so these cases assert the pure
+// dispatch behaviour.
+describe('captureKeymap — SHORTCUT_TO_EDGE_ROLE inverse table', () => {
+  it('is the inverse of EDGE_ROLE_TO_SHORTCUT', () => {
+    for (const role of EDGE_ROLES) {
+      const key = EDGE_ROLE_TO_SHORTCUT[role];
+      expect(SHORTCUT_TO_EDGE_ROLE[key]).toBe(role);
+    }
+  });
+
+  it('covers every role in EDGE_ROLES', () => {
+    const reverseValues = new Set(Object.values(SHORTCUT_TO_EDGE_ROLE));
+    for (const role of EDGE_ROLES) {
+      expect(reverseValues.has(role)).toBe(true);
+    }
+  });
+
+  it('has exactly seven entries (one per role)', () => {
+    expect(Object.keys(SHORTCUT_TO_EDGE_ROLE).length).toBe(EDGE_ROLES.length);
+  });
+});
+
+describe('captureKeymap — onPickEdgeRole handler', () => {
+  let detach: (() => void) | null = null;
+  let onPickEdgeRole: ReturnType<typeof vi.fn<(role: EdgeRole) => void>>;
+
+  beforeEach(() => {
+    onPickEdgeRole = vi.fn();
+  });
+
+  afterEach(() => {
+    if (detach !== null) {
+      detach();
+      detach = null;
+    }
+    document.body.innerHTML = '';
+  });
+
+  it('routes a plain `s` keypress to onPickEdgeRole(`supports`)', () => {
+    detach = attachCaptureKeymap({ onPickEdgeRole });
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 's', bubbles: true }));
+    expect(onPickEdgeRole).toHaveBeenCalledTimes(1);
+    expect(onPickEdgeRole).toHaveBeenCalledWith('supports');
+  });
+
+  it('routes each role shortcut to its matching role', () => {
+    detach = attachCaptureKeymap({ onPickEdgeRole });
+    for (const role of EDGE_ROLES) {
+      onPickEdgeRole.mockClear();
+      const key = EDGE_ROLE_TO_SHORTCUT[role];
+      document.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+      expect(onPickEdgeRole).toHaveBeenCalledWith(role);
+    }
+  });
+
+  it('matches case-insensitively (uppercase `S` -> supports)', () => {
+    detach = attachCaptureKeymap({ onPickEdgeRole });
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'S', bubbles: true }));
+    expect(onPickEdgeRole).toHaveBeenCalledTimes(1);
+    expect(onPickEdgeRole).toHaveBeenCalledWith('supports');
+  });
+
+  it('bails when metaKey is held (Cmd+S passes through)', () => {
+    detach = attachCaptureKeymap({ onPickEdgeRole });
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 's', metaKey: true, bubbles: true }),
+    );
+    expect(onPickEdgeRole).not.toHaveBeenCalled();
+  });
+
+  it('bails when ctrlKey is held (Ctrl+S passes through)', () => {
+    detach = attachCaptureKeymap({ onPickEdgeRole });
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true }),
+    );
+    expect(onPickEdgeRole).not.toHaveBeenCalled();
+  });
+
+  it('bails when altKey is held (Alt+S passes through)', () => {
+    detach = attachCaptureKeymap({ onPickEdgeRole });
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 's', altKey: true, bubbles: true }));
+    expect(onPickEdgeRole).not.toHaveBeenCalled();
+  });
+
+  it('bails when document.activeElement is a textarea (editable-target guard)', () => {
+    const textarea = document.createElement('textarea');
+    document.body.appendChild(textarea);
+    textarea.focus();
+    expect(document.activeElement).toBe(textarea);
+
+    detach = attachCaptureKeymap({ onPickEdgeRole });
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 's', bubbles: true }));
+    expect(onPickEdgeRole).not.toHaveBeenCalled();
+  });
+
+  it('returns a detach function that removes the listener', () => {
+    detach = attachCaptureKeymap({ onPickEdgeRole });
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 's', bubbles: true }));
+    expect(onPickEdgeRole).toHaveBeenCalledTimes(1);
+
+    detach();
+    detach = null;
+    onPickEdgeRole.mockClear();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 's', bubbles: true }));
+    expect(onPickEdgeRole).not.toHaveBeenCalled();
+  });
+
+  it('does not throw when a role key fires but no onPickEdgeRole handler is registered', () => {
+    detach = attachCaptureKeymap({});
+    expect(() => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 's', bubbles: true }));
+    }).not.toThrow();
+  });
+
+  it('a registered onPickEdgeRole alongside onPickKind both route their keys (no collision)', () => {
+    const onPickKind = vi.fn<(kind: MethodologyKind) => void>();
+    detach = attachCaptureKeymap({ onPickKind, onPickEdgeRole });
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', bubbles: true }));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 's', bubbles: true }));
+    expect(onPickKind).toHaveBeenCalledTimes(1);
+    expect(onPickKind).toHaveBeenCalledWith('fact');
+    expect(onPickEdgeRole).toHaveBeenCalledTimes(1);
+    expect(onPickEdgeRole).toHaveBeenCalledWith('supports');
   });
 });

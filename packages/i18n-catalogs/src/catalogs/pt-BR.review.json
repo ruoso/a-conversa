@@ -90,7 +90,13 @@
     "moderator.captureTargetChip.overrideMarkerAria",
     "moderator.captureTargetChip.ariaLabel",
     "moderator.captureTargetChip.clearAria",
-    "moderator.captureTargetChip.clearTitle"
+    "moderator.captureTargetChip.clearTitle",
+    "moderator.edgeRolePalette.ariaLabel",
+    "moderator.edgeRolePalette.legend",
+    "moderator.edgeRolePalette.roleButtonAriaLabel",
+    "moderator.edgeRolePalette.shortcutHint",
+    "moderator.edgeRolePalette.unsetAria",
+    "moderator.edgeRolePalette.hiddenHelp"
   ],
   "signed_off": []
 }

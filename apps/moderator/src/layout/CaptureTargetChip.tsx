@@ -41,7 +41,9 @@
 // **Clear gesture.** In the filled state the chip also renders a small
 // `×` button (testid `capture-target-chip-clear`). Clicking it — or
 // pressing `Esc` while focus is outside an editable target — calls
-// `setTargetEntityId(null)` and bumps `userHasClearedRef` so the
+// `setTargetEntityId(null)` AND `setEdgeRole(null)` (coupled clear per
+// `mod_edge_role_selector.md` Decision §5: a role-without-target state
+// is methodologically nonsensical) and bumps `userHasClearedRef` so the
 // auto-stage effect does not immediately re-suggest from the still-
 // selected node. The Esc binding routes through
 // `attachCaptureKeymap`'s `onClearTarget` handler, which inherits the
@@ -116,6 +118,7 @@ export function CaptureTargetChip(): ReactElement {
 
   const stagedTargetId = useCaptureStore((s) => s.targetEntityId);
   const setTargetEntityId = useCaptureStore((s) => s.setTargetEntityId);
+  const setEdgeRole = useCaptureStore((s) => s.setEdgeRole);
   const recentlyActiveNodeId = useSelectionStore(selectMostRecentlyActiveNodeId);
   const events = useWsStore((s) => s.sessionState[sessionId]?.events ?? EMPTY_EVENTS);
 
@@ -136,8 +139,14 @@ export function CaptureTargetChip(): ReactElement {
 
   const handleClear = useCallback(() => {
     setTargetEntityId(null);
+    // Coupled clear per `mod_edge_role_selector.md` Decision §5: the
+    // edge role is only meaningful while a target is staged, so the
+    // single clear sink nulls both slices in one step. Both the ×
+    // button and the Esc keyboard gesture reach this handler, so the
+    // contract is symmetric across both affordances.
+    setEdgeRole(null);
     userHasClearedRef.current = true;
-  }, [setTargetEntityId]);
+  }, [setTargetEntityId, setEdgeRole]);
 
   // Hold the latest clear handler in a ref so the document-level
   // listener (attached once on mount) can read fresh values without

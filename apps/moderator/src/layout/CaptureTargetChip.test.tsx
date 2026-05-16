@@ -425,6 +425,55 @@ describe('CaptureTargetChip — Esc gesture', () => {
   });
 });
 
+// Refinement: tasks/refinements/moderator-ui/mod_edge_role_selector.md
+//
+// The chip's `handleClear` callback was extended (this commit) to also
+// null the new `edgeRole` slice (Decision §5: a role-without-target
+// state is methodologically nonsensical, so the single clear sink
+// nulls both slices in one step). Both affordances (× button, Esc)
+// reach the same handler, so the contract is symmetric.
+describe('CaptureTargetChip — coupled clear (target + edgeRole)', () => {
+  it('× button clears both targetEntityId and edgeRole', () => {
+    seedEvents([makeNodeCreated(1, 'n-1', SHORT_WORDING)]);
+    renderChip();
+    act(() => {
+      useSelectionStore.setState({ selected: { kind: 'node', id: 'n-1' } });
+    });
+    act(() => {
+      useCaptureStore.getState().setEdgeRole('supports');
+    });
+    expect(useCaptureStore.getState().targetEntityId).toBe('n-1');
+    expect(useCaptureStore.getState().edgeRole).toBe('supports');
+
+    act(() => {
+      fireEvent.click(screen.getByTestId('capture-target-chip-clear'));
+    });
+
+    expect(useCaptureStore.getState().targetEntityId).toBeNull();
+    expect(useCaptureStore.getState().edgeRole).toBeNull();
+  });
+
+  it('Esc keydown clears both targetEntityId and edgeRole', () => {
+    seedEvents([makeNodeCreated(1, 'n-1', SHORT_WORDING)]);
+    renderChip();
+    act(() => {
+      useSelectionStore.setState({ selected: { kind: 'node', id: 'n-1' } });
+    });
+    act(() => {
+      useCaptureStore.getState().setEdgeRole('rebuts');
+    });
+    expect(useCaptureStore.getState().targetEntityId).toBe('n-1');
+    expect(useCaptureStore.getState().edgeRole).toBe('rebuts');
+
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+
+    expect(useCaptureStore.getState().targetEntityId).toBeNull();
+    expect(useCaptureStore.getState().edgeRole).toBeNull();
+  });
+});
+
 describe('CaptureTargetChip — re-engagement after clear', () => {
   it('a new node selection after clear re-engages the auto-stage path', () => {
     seedEvents([makeNodeCreated(1, 'n-1', 'first node'), makeNodeCreated(2, 'n-2', 'second node')]);

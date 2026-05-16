@@ -386,4 +386,165 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
       'Target: Clear-gesture node one',
     );
   });
+
+  // Refinement: tasks/refinements/moderator-ui/mod_edge_role_selector.md
+  //
+  // The edge-role-selector regression cover. Pins:
+  //   - the no-target gate: with no staged target the selector is
+  //     absent from the DOM; role-shortcut keypresses are no-ops,
+  //   - seeded-graph happy path (click): seed two nodes, click node 1
+  //     → chip auto-suggests → selector renders → click `supports`
+  //     button → aria-pressed flips true; other six stay false,
+  //   - keyboard shortcut: press `r` → `rebuts` aria-pressed flips
+  //     true; previously-selected `supports` flips false,
+  //   - editable-target bail: focus the wording textarea, press `s` →
+  //     textarea value gains the literal "s" character; selector
+  //     selection unchanged,
+  //   - coupled clear: with both target and role staged, press Esc →
+  //     chip flips to empty state → selector returns null (no DOM).
+  test('alice: edge-role selector — gate, click, keyboard, editable-target bail, coupled clear', async ({
+    page,
+  }) => {
+    await loginAs(page, { username: TEST_USERNAME });
+    await page.goto('/sessions/new');
+    await expect(page.getByTestId('route-create-session')).toBeVisible();
+
+    await page
+      .getByTestId('create-session-topic-input')
+      .fill('Edge role selector regression check.');
+    await page.getByTestId('create-session-submit').click();
+    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, {
+      timeout: 10_000,
+    });
+    await expect(page.getByTestId('route-operate')).toBeVisible();
+
+    // 2. No-target gate: the wrapper mounts; the selector is absent
+    //    from the DOM (the visibility gate returns null when
+    //    targetEntityId === null). The chip mounts in its empty state.
+    await expect(page.getByTestId('capture-target-and-role')).toBeVisible();
+    await expect(page.getByTestId('capture-target-chip')).toBeVisible();
+    await expect(page.getByTestId('edge-role-selector')).toHaveCount(0);
+
+    // Pressing a role-shortcut key with no target is a no-op (the
+    // handler closure short-circuits on the visibility gate; the
+    // selector is absent from the DOM but the listener is still
+    // attached). The selector DOM stays absent.
+    await page.keyboard.press('s');
+    await expect(page.getByTestId('edge-role-selector')).toHaveCount(0);
+
+    // 3. Probe the WS-store seed path (same pattern as the predecessor
+    //    specs). If the dev-only attachment didn't fire, skip the
+    //    seeded-graph cases — the no-target gate above still gates the
+    //    visibility-collapse contract.
+    const seedAvailable = await isWsStoreReachable(page);
+    if (!seedAvailable) {
+      test.skip(
+        true,
+        'window.__aConversaWsStore is not reachable — the dev-only attachment did not fire. Seeded-graph cases deferred to a future seed-infrastructure task.',
+      );
+      return;
+    }
+
+    // 4. Seed two nodes so the auto-suggest can stage a target.
+    const url = new URL(page.url());
+    const sessionId = url.pathname.split('/')[2] ?? '';
+    expect(sessionId, 'session id must be parsed from the URL').toBeTruthy();
+
+    const NODE_ID_1 = '33333333-3333-4333-8333-333333333301';
+    const NODE_ID_2 = '33333333-3333-4333-8333-333333333302';
+    const WORDING_1 = 'Edge-role node one.';
+    const WORDING_2 = 'Edge-role node two.';
+    await seedWsStore(page, {
+      sessionId,
+      nodes: [
+        { nodeId: NODE_ID_1, wording: WORDING_1 },
+        { nodeId: NODE_ID_2, wording: WORDING_2 },
+      ],
+    });
+
+    // 5. Click node 1 → chip auto-suggests → selector renders with
+    //    seven buttons, all aria-pressed=false.
+    const node1 = page.getByTestId(`statement-node-${NODE_ID_1}`);
+    await expect(node1, 'seeded node 1 must render').toBeVisible({ timeout: 10_000 });
+    await node1.click();
+    await expect(page.getByTestId('capture-target-chip-label')).toContainText(
+      'Target: Edge-role node one',
+    );
+    await expect(page.getByTestId('edge-role-selector')).toBeVisible();
+    const ROLES = [
+      'supports',
+      'rebuts',
+      'qualifies',
+      'bridges-from',
+      'bridges-to',
+      'defines',
+      'contradicts',
+    ] as const;
+    for (const role of ROLES) {
+      await expect(page.getByTestId(`edge-role-selector-button-${role}`)).toHaveAttribute(
+        'aria-pressed',
+        'false',
+      );
+    }
+
+    // 6. Click `supports` → its aria-pressed flips true; others stay
+    //    false. Mutually exclusive.
+    await page.getByTestId('edge-role-selector-button-supports').click();
+    await expect(page.getByTestId('edge-role-selector-button-supports')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    for (const role of ROLES) {
+      if (role === 'supports') continue;
+      await expect(page.getByTestId(`edge-role-selector-button-${role}`)).toHaveAttribute(
+        'aria-pressed',
+        'false',
+      );
+    }
+
+    // 7. Press `r` (no modifier) → selector switches to `rebuts`.
+    await page.keyboard.press('r');
+    await expect(page.getByTestId('edge-role-selector-button-rebuts')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await expect(page.getByTestId('edge-role-selector-button-supports')).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+
+    // 8. Editable-target bail: focus the wording textarea, type `s` →
+    //    the textarea's value gains "s"; the selector stays on
+    //    `rebuts` (the editable-target guard suppresses the shortcut).
+    const textarea = page.getByTestId('capture-text-input-textarea');
+    await textarea.focus();
+    await textarea.fill('');
+    await page.keyboard.press('s');
+    await expect(textarea).toHaveValue('s');
+    await expect(page.getByTestId('edge-role-selector-button-rebuts')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+
+    // 9. Coupled clear via Esc — blur the textarea first so the
+    //    keymap's editable-target guard does NOT swallow the Esc.
+    //    Clicking the node card moves focus out of the textarea
+    //    (and re-engages the auto-stage path; the chip stays on
+    //    node 1's wording because the userHasClearedRef logic only
+    //    blocks immediate re-suggestion right after a clear). The
+    //    role slice carries over from step 7.
+    await node1.click();
+    await expect(page.getByTestId('capture-target-chip-label')).toContainText(
+      'Target: Edge-role node one',
+    );
+    await expect(page.getByTestId('edge-role-selector-button-rebuts')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await page.keyboard.press('Escape');
+    // Coupled clear: chip flips to empty state AND selector returns
+    // null (the role slice nulls alongside the target slice).
+    await expect(page.getByTestId('capture-target-chip-label')).toHaveText('No target yet');
+    await expect(page.getByTestId('edge-role-selector')).toHaveCount(0);
+  });
 });

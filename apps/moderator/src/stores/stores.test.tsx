@@ -38,11 +38,12 @@ afterEach(() => {
 });
 
 describe('useCaptureStore', () => {
-  it('starts with empty text, no classification, no target, idle mode', () => {
+  it('starts with empty text, no classification, no target, no edge role, idle mode', () => {
     const state = useCaptureStore.getState();
     expect(state.text).toBe('');
     expect(state.classification).toBeNull();
     expect(state.targetEntityId).toBeNull();
+    expect(state.edgeRole).toBeNull();
     expect(state.mode).toBe('idle');
   });
 
@@ -50,21 +51,33 @@ describe('useCaptureStore', () => {
     useCaptureStore.getState().setText('the sky is blue');
     useCaptureStore.getState().setClassification('fact');
     useCaptureStore.getState().setTargetEntityId('node-1');
+    useCaptureStore.getState().setEdgeRole('supports');
     useCaptureStore.getState().setMode('capture-statement');
 
     const state = useCaptureStore.getState();
     expect(state.text).toBe('the sky is blue');
     expect(state.classification).toBe('fact');
     expect(state.targetEntityId).toBe('node-1');
+    expect(state.edgeRole).toBe('supports');
     expect(state.mode).toBe('capture-statement');
   });
 
-  it('reset() returns the store to its initial state', () => {
+  // Refinement: tasks/refinements/moderator-ui/mod_edge_role_selector.md
+  it('setEdgeRole accepts null (toggle-off path)', () => {
+    useCaptureStore.getState().setEdgeRole('rebuts');
+    expect(useCaptureStore.getState().edgeRole).toBe('rebuts');
+    useCaptureStore.getState().setEdgeRole(null);
+    expect(useCaptureStore.getState().edgeRole).toBeNull();
+  });
+
+  it('reset() returns the store to its initial state (including edgeRole)', () => {
     useCaptureStore.getState().setText('something');
+    useCaptureStore.getState().setEdgeRole('qualifies');
     useCaptureStore.getState().setMode('decompose');
     useCaptureStore.getState().reset();
     const state = useCaptureStore.getState();
     expect(state.text).toBe('');
+    expect(state.edgeRole).toBeNull();
     expect(state.mode).toBe('idle');
   });
 });

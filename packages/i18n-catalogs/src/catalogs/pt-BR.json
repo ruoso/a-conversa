@@ -167,6 +167,14 @@
       "clearAria": "Limpar alvo",
       "clearTitle": "Limpar alvo selecionado (Esc)"
     },
+    "edgeRolePalette": {
+      "ariaLabel": "Papel da aresta — escolha como a nova declaração se conecta ao alvo",
+      "legend": "Papel da aresta",
+      "roleButtonAriaLabel": "{label} ({key})",
+      "shortcutHint": "Ou pressione S / R / Q / B / G / E / X",
+      "unsetAria": "Limpar papel da aresta",
+      "hiddenHelp": "Escolha primeiro um alvo para selecionar um papel de aresta."
+    },
     "modeBanner": {
       "idle": {
         "label": "Ocioso",

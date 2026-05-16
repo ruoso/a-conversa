@@ -283,6 +283,7 @@ task moderator_ui "Moderator UI" {
     task mod_edge_role_selector "Edge role selector for connecting to existing structure" {
       effort 1d
       allocate team
+      complete 100
     }
     task mod_propose_action "Propose action — emits multiple events at once" {
       effort 2d

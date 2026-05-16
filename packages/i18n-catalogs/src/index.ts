@@ -40,8 +40,13 @@ export {
   KIND_TO_SHORTCUT,
   METHODOLOGY_KINDS,
   type MethodologyKind,
+  EDGE_ROLES,
+  type EdgeRole,
+  EDGE_ROLE_TO_SHORTCUT,
+  type ShortcutMatrixRow,
   buildShortcutMatrix,
   getShortcutForKind,
+  getShortcutForEdgeRole,
 } from './keyboard-shortcuts.js';
 
 export {

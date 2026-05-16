@@ -167,6 +167,14 @@
       "clearAria": "Borrar objetivo",
       "clearTitle": "Borrar objetivo seleccionado (Esc)"
     },
+    "edgeRolePalette": {
+      "ariaLabel": "Rol del enlace — elige cómo el nuevo enunciado se conecta al objetivo",
+      "legend": "Rol del enlace",
+      "roleButtonAriaLabel": "{label} ({key})",
+      "shortcutHint": "O presiona S / R / Q / B / G / E / X",
+      "unsetAria": "Limpiar rol del enlace",
+      "hiddenHelp": "Elige primero un objetivo para seleccionar un rol de enlace."
+    },
     "modeBanner": {
       "idle": {
         "label": "Inactivo",

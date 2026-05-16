@@ -167,6 +167,14 @@
       "clearAria": "Clear target",
       "clearTitle": "Clear staged target (Esc)"
     },
+    "edgeRolePalette": {
+      "ariaLabel": "Edge role — pick how the new statement connects to the target",
+      "legend": "Edge role",
+      "roleButtonAriaLabel": "{label} ({key})",
+      "shortcutHint": "Or press S / R / Q / B / G / E / X",
+      "unsetAria": "Clear edge role",
+      "hiddenHelp": "Pick a target first to choose an edge role."
+    },
     "modeBanner": {
       "idle": {
         "label": "Idle",
