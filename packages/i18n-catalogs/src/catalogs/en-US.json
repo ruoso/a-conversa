@@ -296,6 +296,20 @@
         "classificationLegend": "Component kind",
         "addRow": "Add component",
         "removeRowAria": "Remove component {index}"
+      },
+      "propose": {
+        "label": "Propose decomposition",
+        "inFlightLabel": "Proposing decomposition…",
+        "ariaLabel": "Propose the captured decomposition as a proposal on the graph",
+        "validationError": "Cannot propose decomposition: {reason}",
+        "wireError": "Propose decomposition failed: {message} ({code})",
+        "timeoutError": "The propose decomposition request timed out. Check your connection and try again.",
+        "reason": {
+          "sessionMissing": "no session is loaded",
+          "notConnected": "the session is not connected — reconnecting…",
+          "targetMissing": "no parent node selected for decomposition",
+          "componentsInvalid": "every component needs wording and a classification (2–10 rows)"
+        }
       }
     },
     "proposalFilter": {

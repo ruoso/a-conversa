@@ -191,8 +191,15 @@ function buildSetEdgeSubstanceProposal(args: { edgeId: string }): ProposalPayloa
  * gets a localized fallback message; anything else lands as
  * `'unknown'`. The `timeoutText` is pre-resolved by the caller (so the
  * function stays React-free and easy to test).
+ *
+ * Re-exported (`export function`) so sibling propose hooks
+ * (`useProposeDecompositionAction` and any future flow with the same
+ * round-trip shape) consume the single canonical mapping rather than
+ * duplicating it. Decision §11 of
+ * `tasks/refinements/moderator-ui/mod_propose_decomposition.md` records
+ * the helper-reuse-via-re-export rationale.
  */
-function toWireError(err: unknown, timeoutText: string): WireError {
+export function toWireError(err: unknown, timeoutText: string): WireError {
   if (err instanceof WsRequestError) {
     return { code: err.code, message: err.message };
   }

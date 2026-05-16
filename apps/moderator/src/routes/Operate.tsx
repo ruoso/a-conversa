@@ -1,7 +1,8 @@
 // Operate route for `/sessions/:id/operate` — the moderator console.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_propose_action.md
-// (prior:     tasks/refinements/moderator-ui/mod_edge_role_selector.md,
+// Refinement: tasks/refinements/moderator-ui/mod_propose_decomposition.md
+// (prior:     tasks/refinements/moderator-ui/mod_propose_action.md,
+//             tasks/refinements/moderator-ui/mod_edge_role_selector.md,
 //             tasks/refinements/moderator-ui/mod_target_auto_suggest.md,
 //             tasks/refinements/moderator-ui/mod_classification_palette.md,
 //             tasks/refinements/moderator-ui/mod_capture_text_input.md,
@@ -66,6 +67,7 @@ import { ClassificationPalette } from '../layout/ClassificationPalette';
 import { DecomposeComponentsGrid } from '../layout/DecomposeComponentsGrid';
 import { DecomposeModeExitButton } from '../layout/DecomposeModeExitButton';
 import { ProposeAction } from '../layout/ProposeAction';
+import { ProposeDecompositionAction } from '../layout/ProposeDecompositionAction';
 import { useProposeAction } from '../layout/useProposeAction';
 import { GraphCanvasPane } from '../graph/GraphCanvasPane';
 import { ModeBanner } from '../layout/ModeBanner';
@@ -157,7 +159,7 @@ function OperateRouteInner(props: { sessionId: string }): ReactElement {
             }
             classificationPalette={isDecomposeMode ? null : <ClassificationPalette />}
             edgeRoleSelector={isDecomposeMode ? null : <CaptureTargetAndRole />}
-            proposeAction={<ProposeAction />}
+            proposeAction={isDecomposeMode ? <ProposeDecompositionAction /> : <ProposeAction />}
           />
         }
         rightSidebar={

@@ -343,6 +343,7 @@ task moderator_ui "Moderator UI" {
     task mod_propose_decomposition "Propose decomposition action" {
       effort 1d
       allocate team
+      complete 100
       depends !mod_multi_component_capture
     }
     task mod_interpretive_split_mode "Interpretive-split mode (analogous flow)" {

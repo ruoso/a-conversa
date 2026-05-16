@@ -172,7 +172,17 @@
     "moderator.decompose.components.textPlaceholder",
     "moderator.decompose.components.classificationLegend",
     "moderator.decompose.components.addRow",
-    "moderator.decompose.components.removeRowAria"
+    "moderator.decompose.components.removeRowAria",
+    "moderator.decompose.propose.label",
+    "moderator.decompose.propose.inFlightLabel",
+    "moderator.decompose.propose.ariaLabel",
+    "moderator.decompose.propose.validationError",
+    "moderator.decompose.propose.wireError",
+    "moderator.decompose.propose.timeoutError",
+    "moderator.decompose.propose.reason.sessionMissing",
+    "moderator.decompose.propose.reason.notConnected",
+    "moderator.decompose.propose.reason.targetMissing",
+    "moderator.decompose.propose.reason.componentsInvalid"
   ],
   "signed_off": []
 }

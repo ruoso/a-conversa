@@ -1871,4 +1871,119 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     // The F1 capture surface is back.
     await expect(page.getByTestId('capture-text-input-textarea')).toBeVisible();
   });
+
+  // mod_propose_decomposition — the F2 capstone: enter decompose mode,
+  // fill 2 rows, click the propose-decomposition button, assert the
+  // propose envelope reaches the real dev-compose server and the
+  // optimistic clear fires. Decision §9 of
+  // `tasks/refinements/moderator-ui/mod_propose_decomposition.md`
+  // records the full-chain compose-stack scope.
+  //
+  // **What this spec proves (full chain):**
+  //   client envelope construction → WS serialization → server's
+  //   `validateDecomposeProposal` (`apps/server/src/methodology/handlers/propose.ts:312-356`)
+  //   → server's `error` response → client's wire-error surfacing.
+  //
+  // **Why we assert the wire-error region, not a successful `proposal`
+  // event:** the decompose validator's rule 1 requires the parent node
+  // to actually exist server-side (`projection.getNode(parent_node_id)`
+  // must return a record). The `seedWsStore` fixture seeds only the
+  // moderator's client-side Zustand store via `applyEvent`; it does
+  // NOT write to the real Postgres-backed event log. There is no e2e
+  // fixture today for seeding a real server-side node, and a real
+  // commit cycle (which is what creates a node server-side) is itself
+  // blocked for decompose-side commit per the open question in
+  // `tasks/refinements/data-and-methodology/decomposition_logic.md`.
+  // So the propose envelope DOES reach the server, but rule 1 rejects
+  // with `target-entity-not-found` — proving the round-trip
+  // completed. The hook's snapshot-restore then re-mounts the
+  // decompose grid with the prior state and surfaces the wire-error
+  // region — both observable here. Per the predecessor
+  // `mod_propose_action_refinement_amendment` lesson, we explicitly do
+  // NOT assert the actual decomposition events fire (those are
+  // commit-time, not propose-time).
+  test('alice: enter decompose mode → fill 2 rows → propose decomposition → envelope reaches the server (wire-error region surfaces the typed rejection)', async ({
+    page,
+  }) => {
+    await loginAs(page, { username: TEST_USERNAME });
+    await page.goto('/sessions/new');
+    await expect(page.getByTestId('route-create-session')).toBeVisible();
+
+    await page
+      .getByTestId('create-session-topic-input')
+      .fill('Propose-decomposition e2e regression check.');
+    await page.getByTestId('create-session-submit').click();
+    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    await seedInviteParticipantsForGate(page);
+    await page.getByTestId('invite-enter-session').click();
+    await page.waitForURL(/\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
+    await expect(page.getByTestId('route-operate')).toBeVisible();
+
+    if (!(await isWsStoreReachable(page))) {
+      test.skip(
+        true,
+        'window.__aConversaWsStore is not reachable — the dev-only attachment did not fire.',
+      );
+      return;
+    }
+
+    const url = new URL(page.url());
+    const sessionId = url.pathname.split('/')[2] ?? '';
+
+    // Seed a parent node so the right-click + propose-decompose menu
+    // item has a target to fire against.
+    const SEED_NODE_ID = '99999999-9999-4999-9999-999999999911';
+    const SEED_WORDING = 'Workers should earn a living wage with fair benefits.';
+    await seedWsStore(page, {
+      sessionId,
+      nodes: [{ nodeId: SEED_NODE_ID, wording: SEED_WORDING }],
+    });
+
+    const nodeCard = page.getByTestId(`statement-node-${SEED_NODE_ID}`);
+    await expect(nodeCard).toBeVisible({ timeout: 10_000 });
+
+    // Enter decompose mode via the context menu.
+    await nodeCard.click({ button: 'right' });
+    await page.getByTestId('graph-context-menu-item-propose-decompose').click();
+    await expect(page.getByTestId('decompose-components-grid')).toBeVisible();
+
+    // The propose-decomposition button is mounted (slot swap on
+    // `mode === 'decompose'`) and disabled at empty rows.
+    await expect(page.getByTestId('propose-decomposition-action-button')).toBeDisabled();
+
+    // Fill the two component rows.
+    await page.getByTestId('decompose-component-text-0').fill('Workers should earn a living wage.');
+    await page.getByTestId('decompose-component-classification-0-button-value').click();
+    await page
+      .getByTestId('decompose-component-text-1')
+      .fill('Workers should receive fair benefits.');
+    await page.getByTestId('decompose-component-classification-1-button-normative').click();
+
+    // Both rows filled — the button enables.
+    await expect(page.getByTestId('propose-decomposition-action-button')).toBeEnabled();
+    await page.getByTestId('propose-decomposition-action-button').click();
+
+    // The propose envelope reached the server: the server's
+    // `validateDecomposeProposal` rule 1 (parent-node-exists) rejects
+    // because the seeded node only exists in the client-side WS store
+    // (the `seedWsStore` fixture writes via `applyEvent`, not the
+    // real Postgres event log). The hook's snapshot-restore re-mounts
+    // the decompose grid + surfaces the wire-error region inline. The
+    // `target-entity-not-found` code carried by the wire-error proves
+    // the round-trip completed.
+    const wireError = page.getByTestId('propose-decomposition-action-wire-error');
+    await expect(wireError).toBeVisible({ timeout: 10_000 });
+    await expect(wireError).toContainText('target-entity-not-found');
+
+    // Snapshot restore re-mounted the decompose grid (mode flipped
+    // back to 'decompose' after the typed rejection landed). The two
+    // rows the moderator filled are restored verbatim.
+    await expect(page.getByTestId('decompose-components-grid')).toBeVisible();
+    await expect(page.getByTestId('decompose-component-text-0')).toHaveValue(
+      'Workers should earn a living wage.',
+    );
+    await expect(page.getByTestId('decompose-component-text-1')).toHaveValue(
+      'Workers should receive fair benefits.',
+    );
+  });
 });

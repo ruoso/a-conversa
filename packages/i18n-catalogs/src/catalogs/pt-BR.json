@@ -296,6 +296,20 @@
         "classificationLegend": "Tipo do componente",
         "addRow": "Adicionar componente",
         "removeRowAria": "Remover componente {index}"
+      },
+      "propose": {
+        "label": "Propor decomposição",
+        "inFlightLabel": "Propondo decomposição…",
+        "ariaLabel": "Propor a decomposição capturada como uma proposta no grafo",
+        "validationError": "Não foi possível propor a decomposição: {reason}",
+        "wireError": "Falha ao propor decomposição: {message} ({code})",
+        "timeoutError": "A solicitação de proposta de decomposição expirou. Verifique sua conexão e tente novamente.",
+        "reason": {
+          "sessionMissing": "nenhuma sessão carregada",
+          "notConnected": "a sessão não está conectada — reconectando…",
+          "targetMissing": "nenhum nó pai selecionado para decomposição",
+          "componentsInvalid": "cada componente precisa de texto e classificação (2–10 linhas)"
+        }
       }
     },
     "proposalFilter": {

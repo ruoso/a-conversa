@@ -296,6 +296,20 @@
         "classificationLegend": "Tipo del componente",
         "addRow": "Añadir componente",
         "removeRowAria": "Eliminar componente {index}"
+      },
+      "propose": {
+        "label": "Proponer descomposición",
+        "inFlightLabel": "Proponiendo descomposición…",
+        "ariaLabel": "Proponer la descomposición capturada como propuesta en el grafo",
+        "validationError": "No se puede proponer la descomposición: {reason}",
+        "wireError": "Falló al proponer descomposición: {message} ({code})",
+        "timeoutError": "La solicitud de proponer descomposición expiró. Verifica tu conexión y vuelve a intentarlo.",
+        "reason": {
+          "sessionMissing": "no hay sesión cargada",
+          "notConnected": "la sesión no está conectada — reconectando…",
+          "targetMissing": "no hay nodo padre seleccionado para la descomposición",
+          "componentsInvalid": "cada componente necesita texto y clasificación (2–10 filas)"
+        }
       }
     },
     "proposalFilter": {

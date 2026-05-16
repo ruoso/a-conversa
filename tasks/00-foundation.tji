@@ -122,6 +122,13 @@ task foundation "Foundation" {
       allocate team
       note "Refinement: tasks/refinements/foundation/test_db_provisioning.md"
     }
+    task e2e_server_node_seed_fixture "Server-side node-seed fixture for Playwright tests to land green-path proposals" {
+      effort 0.5d
+      allocate team
+      depends !playwright_test_helpers
+      note "Source of debt: mod_propose_decomposition Status block (this commit) — seedWsStore writes only to the client store, so propose-flow e2e tests cannot land green-path proposal events against a server-side parent-node-exists validator."
+      note "Without this fixture, future propose-flow e2e tests for decompose/edit-wording/amend-node/break-edge/axiom-mark/annotate can only assert rejection branches against client-store-seeded data (today only classify-node — universal-pass — can land a green-path proposal e2e)."
+    }
   }
 
   task repo_skeleton "Repository skeleton" {
