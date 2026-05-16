@@ -123,6 +123,16 @@ task backend "Backend" {
       depends !session_token_management
       note "Refinement: tasks/refinements/backend/auth_middleware.md"
     }
+    task auth_callback_new_user_browser_redirect "New-user OAuth callback must redirect the browser, not render raw JSON" {
+      effort 0.5d
+      allocate team
+      depends !oauth_callback_handler, !screen_name_collection
+      note -8<-
+        Refinement: tasks/refinements/backend/auth_callback_new_user_browser_redirect.md
+
+        Resolves the "raw JSON renders in browser after new-user callback" UX gap acknowledged in tasks/refinements/moderator-ui/mod_auth_flow.md (Decisions §last bullet, Open questions §1). GET /api/auth/callback today returns a 200 JSON body { sub, oauthSubject, userId, needsScreenName: true } on the new-user branch — in a real browser this dead-ends the user on a JSON view (confirmed by a tester 2026-05-16). Amends the handler to 302-redirect (pending cookie still set) to a SPA route that renders the screen-name form, and amends apps/root/src/App.tsx's ScreenNameRoute to render the form for a pending-cookie visitor whose /api/auth/me returns 401. Required for m_manual_lobby_smoke — a first-login human cannot reach the lobby today. Gated as priority 1000 to surface ahead of the rest of m_manual_lobby_smoke's open leaves.
+      ->8-
+    }
   }
 
   task session_management "Session management endpoints" {
