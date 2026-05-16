@@ -199,6 +199,7 @@ task backend "Backend" {
     task session_invite_self_claim_endpoint "POST /sessions/:id/invite/claim — debater self-claims a role slot when arriving via invite URL" {
       effort 1d
       allocate team
+      complete 100
       depends !participant_assignment, !list_session_participants_endpoint
       note -8<-
         Source of debt: mod_invite_participants Status block (this commit) — the moderator's invite view generates shareable links of shape <origin>/sessions/<id>/invite?role=<role>; the debater opens the link, logs in, and needs a self-claim endpoint to take the slot (the existing POST /api/sessions/:id/participants is host-only and requires a userId the debater can't supply). Body { role: 'debater-A' | 'debater-B' }; authenticated caller's userId is implicit from request.authUser.id. Reuses the transactional shape from participant_assignment (SELECT ... FOR UPDATE + role-availability check + INSERT + participant-joined event + COMMIT). Refinement should decide: whether self-claim requires private-visibility-or-host-invited, and how slot-already-filled errors surface to the debater. This is the debater-side endpoint that completes the invite → claim loop.

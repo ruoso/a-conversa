@@ -14,6 +14,7 @@
 //   - PATCH /api/sessions/:id/privacy — host toggles the session privacy.
 //   - POST /api/sessions/:id/participants — assign a debater participant (host-only).
 //   - DELETE /api/sessions/:id/participants/:userId — remove a participant (host or self).
+//   - POST /api/sessions/:id/invite/claim — self-claim a debater participant slot via an invite URL.
 //   - GET /api/sessions/:id/participants — list a session's participant rows (visibility-gated).
 //
 // Refinements: tasks/refinements/backend/create_session_endpoint.md,
@@ -23,7 +24,8 @@
 //              tasks/refinements/backend/end_session_endpoint.md,
 //              tasks/refinements/backend/session_privacy_toggle.md,
 //              tasks/refinements/backend/participant_assignment.md,
-//              tasks/refinements/backend/list_session_participants_endpoint.md
+//              tasks/refinements/backend/list_session_participants_endpoint.md,
+//              tasks/refinements/backend/session_invite_self_claim_endpoint.md
 // ADRs:        docs/adr/0020-postgres-write-path-locking-and-event-ordering.md,
 //              docs/adr/0021-event-envelope-discriminated-union-with-zod.md,
 //              docs/adr/0022-no-throwaway-verifications.md,
@@ -771,6 +773,47 @@ const assignParticipantBodySchema = {
       description:
         'The role the user fills. `moderator` is reserved for the session host ' +
         'and assigned implicitly at session creation; it is NOT a valid value here.',
+    },
+  },
+} as const;
+
+/**
+ * Request body schema for `POST /sessions/:id/invite/claim`. JSON
+ * Schema attached to `schema.body`; Fastify's validator rejects
+ * malformed bodies with a `validation` error that the centralized
+ * handler renders as the canonical `validation-failed` envelope.
+ *
+ * The self-claim body deliberately OMITS `userId` — the caller's id
+ * is implicit from `request.authUser.id` (the session-cookie's
+ * verified subject). `additionalProperties: false` documents intent
+ * at the schema layer; the platform's Fastify-Ajv default
+ * (`@fastify/ajv-compiler`'s `removeAdditional: true`) actually
+ * strips smuggled fields silently rather than rejecting them with
+ * 400. The security property — a client cannot self-claim on behalf
+ * of another user — is enforced by the handler always reading
+ * `request.authUser.id` (the session-cookie's verified subject) and
+ * never the body's contents.
+ *
+ * The `role` enum mirrors `assignParticipantBodySchema`'s: only
+ * `debater-A` and `debater-B` are claimable; `moderator` is reserved
+ * for the session host and assigned implicitly at session creation
+ * (per `tasks/refinements/backend/participant_assignment.md` Option
+ * A). A self-claim with `role: 'moderator'` returns 400
+ * `validation-failed` from Ajv's enum check.
+ */
+const selfClaimParticipantBodySchema = {
+  type: 'object',
+  required: ['role'],
+  additionalProperties: false,
+  properties: {
+    role: {
+      type: 'string',
+      enum: ['debater-A', 'debater-B'],
+      description:
+        'The role the caller is claiming. `moderator` is reserved for the session ' +
+        'host and assigned implicitly at session creation; it is NOT a valid value ' +
+        'here. The caller is identified implicitly from the session cookie — there ' +
+        'is no `userId` field.',
     },
   },
 } as const;
@@ -2539,6 +2582,323 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = asy
       }
 
       return reply.code(200).send(participantRowToResponse(updated));
+    },
+  );
+
+  // ----------------------------------------------------------------
+  // POST /sessions/:id/invite/claim — authenticated debater self-claims
+  // a debater role slot via the moderator's invite URL.
+  // ----------------------------------------------------------------
+  //
+  // Refinement: tasks/refinements/backend/session_invite_self_claim_endpoint.md.
+  //
+  // The moderator shares the session's invite URL
+  // (`<origin>/sessions/<id>/invite?role=<role>`) out-of-band; the
+  // debater follows the link, authenticates via OAuth, lands on the
+  // participant-UI claim view (open WBS leaf
+  // `participant_ui.part_session_join.part_invite_acceptance`), and
+  // POSTs the role they want to claim against this endpoint. The
+  // caller's user id is implicit from `request.authUser` — the body
+  // carries only `{ role }`.
+  //
+  // The transaction lifts the `POST /sessions/:id/participants` scaffold
+  // near-verbatim — the only differences are:
+  //   - The authority check inverts: the HOST is BLOCKED from self-
+  //     claiming a debater slot (they already hold the moderator slot
+  //     via the create-session amendment); the non-host visible caller
+  //     is the allowed self-claimer.
+  //   - The source of the `userId` is the caller (`request.authUser.id`),
+  //     not the body.
+  //   - The actor on the emitted `participant-joined` envelope is the
+  //     caller themselves — ADR 0021's canonical "self-action" shape:
+  //     replay queries distinguish a self-claim from a host-driven
+  //     assignment by `actor === payload.user_id`.
+  //
+  // Visibility rule: public sessions are claimable by any authenticated
+  // user (the moderator's invite URL is the social trust channel; the
+  // role-availability index gates against spam). Private sessions are
+  // claimable only by callers who can already see them (the host —
+  // blocked at step 5 below — or a current/past participant). No
+  // tokenized invitations in v1; the platform's privacy model is the
+  // gate.
+  //
+  // Failure modes — every code reused from existing `RejectionReason`s
+  // (no additions to the union):
+  //   - 401 `auth-required` (middleware-owned).
+  //   - 400 `validation-failed` (Fastify): non-UUID `:id`,
+  //     missing/invalid `role`, body's role is `'moderator'`.
+  //     NB: the platform's Fastify-Ajv default is
+  //     `removeAdditional: true` (per `@fastify/ajv-compiler`'s
+  //     defaults), so a body that includes a smuggled `userId` (or
+  //     any other field) is stripped silently rather than rejected
+  //     with 400. The `additionalProperties: false` declaration on
+  //     `selfClaimParticipantBodySchema` documents intent at the
+  //     schema layer; the actual security property (the caller
+  //     cannot smuggle another user's id) is enforced by the
+  //     handler always using `request.authUser.id` (never the body).
+  //   - 404 `not-found`: session does not exist OR exists-but-invisible
+  //     (existence-non-leak; identical envelope to unknown-id).
+  //   - 409 `session-already-ended`: lifecycle.
+  //   - 403 `not-a-moderator`: the host attempted to self-claim a
+  //     debater slot (`not-a-moderator` is repurposed — "you ARE the
+  //     moderator; you cannot also be a debater"; see Decisions in the
+  //     refinement for why this is the right reuse over adding a new
+  //     `is-the-moderator` code).
+  //   - 409 `role-already-filled`: another active occupant already
+  //     holds the requested role.
+  //   - 409 `user-already-joined`: the caller already holds an active
+  //     role in this session.
+  app.post(
+    '/api/sessions/:id/invite/claim',
+    {
+      preHandler: app.authenticate,
+      schema: {
+        tags: ['sessions'],
+        summary: 'Self-claim a debater participant slot via an invite URL',
+        description:
+          'An authenticated debater who arrived at the session via the moderator-' +
+          'shared invite URL posts the role they want to claim. The server INSERTs a ' +
+          '`session_participants` row for the caller AND emits a `participant-joined` ' +
+          'event into `session_events` at the next available sequence, in a single ' +
+          'transaction. The caller is identified implicitly from the session cookie ' +
+          '(`request.authUser.id`); the body carries only `{ role }`.\n\n' +
+          'Visibility-then-lifecycle-then-self-claim ordering: invisible private ' +
+          'sessions return 404 `not-found` (existence-non-leak). An ended session ' +
+          'returns 409 `session-already-ended`. The session host attempting to self-' +
+          'claim a debater slot returns 403 `not-a-moderator` (they already hold the ' +
+          'moderator slot via implicit assignment at session creation). A role ' +
+          'already filled returns 409 `role-already-filled`. A caller already holding ' +
+          'an active role returns 409 `user-already-joined`.\n\n' +
+          'Public sessions are claimable by any authenticated user; private sessions ' +
+          'are claimable only by callers who can already see them (a current or past ' +
+          'participant). v1 does NOT support tokenized invitations — the moderator-' +
+          'shared URL relies on out-of-band trust and the role-availability index for ' +
+          'structural protection.\n\n' +
+          'Returns 401 `auth-required` when no valid session cookie is present.',
+        security: [{ cookieAuth: [] }],
+        params: sessionIdParamsSchema,
+        body: selfClaimParticipantBodySchema,
+        response: {
+          200: sessionParticipantResponseRef,
+          '4xx': errorEnvelopeRef,
+          '5xx': errorEnvelopeRef,
+        },
+      },
+    },
+    async (request, reply) => {
+      const auth = request.authUser;
+      if (auth === undefined) {
+        throw new ApiError(
+          500,
+          'internal-error',
+          'auth middleware did not populate request.authUser',
+        );
+      }
+      const callerUserId = auth.id;
+      const callerScreenName = auth.screenName;
+
+      const params = request.params as { id: string };
+      const sessionId = params.id;
+      const body = request.body as {
+        role: 'debater-A' | 'debater-B';
+      };
+      const targetRole = body.role;
+
+      // Events appended inside the transaction. Emitted to the WS
+      // broadcast bus after COMMIT (post-commit-emit invariant — see
+      // tasks/refinements/backend/ws_event_broadcast.md).
+      const appendedEvents: Event[] = [];
+
+      const inserted = await withTransaction(ensurePool(), async (client) => {
+        // 1. Visibility-gated SELECT ... FOR UPDATE — same predicate
+        //    the host-only POST uses. The FOR UPDATE row lock
+        //    serialises concurrent claims on the same session and the
+        //    same role slot; the partial unique index is the safety
+        //    net behind the pre-checks below.
+        const lookup = await client.query<{
+          id: string;
+          host_user_id: string;
+          ended_at: Date | string | null;
+        }>(
+          `SELECT id, host_user_id, ended_at
+           FROM sessions
+           WHERE id = $1
+             AND ${visibilityWhereFragment(2)}
+           FOR UPDATE`,
+          [sessionId, callerUserId],
+        );
+        const existing = lookup.rows[0];
+        if (existing === undefined) {
+          // Zero rows — either the id doesn't exist OR it does but
+          // isn't visible to this caller. Both collapse into 404 so
+          // the response doesn't leak the existence of private
+          // sessions (mirrors `get_session_endpoint`'s 404-not-403
+          // decision).
+          throw ApiError.notFound('session not found or not visible');
+        }
+
+        // 2. Lifecycle — an ended session cannot accept new
+        //    participants. Reuses `session-already-ended` for
+        //    vocabulary consistency with the end / privacy / host-only
+        //    POST endpoints. Checked BEFORE the host-self-claim block
+        //    so an ended session's host hitting this endpoint still
+        //    gets the lifecycle 409 (the more informative failure
+        //    mode for the moderator).
+        if (existing.ended_at !== null) {
+          throw new ApiError(
+            409,
+            'session-already-ended',
+            'cannot claim a participant slot in an ended session',
+          );
+        }
+
+        // 3. Block the host from self-claiming a debater slot. The
+        //    host is structurally bound to the moderator role for the
+        //    session's lifetime (per `participant_assignment`'s
+        //    Option A and the `cannot-remove-moderator` 403 in the
+        //    DELETE endpoint). The user-availability partial unique
+        //    index would catch this anyway, but the typed 403 with a
+        //    clearer message is more honest about the failure mode.
+        //    `not-a-moderator` is repurposed for "you ARE the
+        //    moderator; you cannot also be a debater" — see the
+        //    refinement's Decisions §"Reuse `not-a-moderator` for
+        //    host-tries-to-self-claim".
+        if (existing.host_user_id === callerUserId) {
+          throw new ApiError(
+            403,
+            'not-a-moderator',
+            'the session host already holds the moderator slot and cannot self-claim a debater slot',
+          );
+        }
+
+        // 4. User-availability pre-check — partial unique index
+        //    `session_participants_active_user_idx` covers
+        //    `(session_id, user_id) WHERE left_at IS NULL`. CHECKED
+        //    BEFORE the role-availability check (inverting the order
+        //    of the host-only POST). Rationale: the self-claim's
+        //    caller IS the target user; if they already hold an
+        //    active role in this session — even the same role they
+        //    are trying to claim again — the more informative error
+        //    is "you are already in this session"
+        //    (`user-already-joined`) rather than "this slot is
+        //    taken" (`role-already-filled`, which would otherwise
+        //    fire first on a repeat-same-role self-claim because the
+        //    same row satisfies both predicates). This matches the
+        //    refinement's Decisions §"Not idempotent: repeat POST
+        //    returns 409" — the UI's discriminator for "you are
+        //    already in" vs. "this slot was just taken by someone
+        //    else" relies on the typed code.
+        const userCheck = await client.query<{ id: string }>(
+          `SELECT id
+           FROM session_participants
+           WHERE session_id = $1 AND user_id = $2 AND left_at IS NULL
+           LIMIT 1`,
+          [sessionId, callerUserId],
+        );
+        if (userCheck.rows.length > 0) {
+          throw new ApiError(
+            409,
+            'user-already-joined',
+            'caller is already an active participant in this session',
+          );
+        }
+
+        // 5. Role-availability pre-check — partial unique index
+        //    `session_participants_active_role_idx` covers
+        //    `(session_id, role) WHERE left_at IS NULL`. Runs AFTER
+        //    the user-availability check so a repeat-self-claim on
+        //    the same role surfaces as `user-already-joined`, not
+        //    `role-already-filled`. A foreign-user collision (caller
+        //    is not yet in the session, but the role is taken by
+        //    someone else) still surfaces here as
+        //    `role-already-filled`, which is the discriminator the
+        //    participant-UI uses to render "this slot was just
+        //    taken; please contact the moderator".
+        const roleCheck = await client.query<{ id: string }>(
+          `SELECT id
+           FROM session_participants
+           WHERE session_id = $1 AND role = $2 AND left_at IS NULL
+           LIMIT 1`,
+          [sessionId, targetRole],
+        );
+        if (roleCheck.rows.length > 0) {
+          throw new ApiError(
+            409,
+            'role-already-filled',
+            `role '${targetRole}' is already filled in this session`,
+          );
+        }
+
+        // 6. INSERT the new `session_participants` row. The DB fills
+        //    `id` (gen_random_uuid()), `joined_at` (NOW()) and
+        //    `left_at` (NULL). RETURNING surfaces the whole row so
+        //    the response and event payload share a single source of
+        //    truth.
+        const participantInsert = await client.query<SessionParticipantsRow>(
+          `INSERT INTO session_participants (session_id, user_id, role)
+           VALUES ($1, $2, $3)
+           RETURNING id, session_id, user_id, role, joined_at, left_at`,
+          [sessionId, callerUserId, targetRole],
+        );
+        const participantRow = participantInsert.rows[0];
+        if (participantRow === undefined) {
+          throw new ApiError(500, 'internal-error', 'session_participants insert returned no row');
+        }
+        const joinedAtIso = toIsoString(participantRow.joined_at);
+
+        // 7. MAX(sequence)+1 inside the transaction (ADR 0020). The
+        //    UNIQUE (session_id, sequence) constraint is the safety
+        //    net for concurrent appenders; the FOR UPDATE row lock
+        //    earlier in the transaction is the primary serialisation
+        //    mechanism for the session-management surface.
+        const maxRes = await client.query<{ max_seq: number | string | null }>(
+          `SELECT COALESCE(MAX(sequence), 0) AS max_seq
+           FROM session_events
+           WHERE session_id = $1`,
+          [sessionId],
+        );
+        const rawMax = maxRes.rows[0]?.max_seq ?? 0;
+        const maxSeq = typeof rawMax === 'string' ? Number.parseInt(rawMax, 10) : rawMax;
+        const nextSeq = maxSeq + 1;
+
+        // 8. Build the `participant-joined` envelope, run
+        //    `validateEvent`, INSERT. `actor` is the caller (the
+        //    joining debater) — they took the action; ADR 0021's
+        //    canonical "self-action" shape. A replay query
+        //    distinguishes self-claim from host-driven assignment by
+        //    `actor === payload.user_id` (self-claim) vs.
+        //    `actor !== payload.user_id` (host-driven).
+        const eventId = randomUUID();
+        const eventCreatedAtIso = new Date(nowFn()).toISOString();
+        const envelope = {
+          id: eventId,
+          sessionId,
+          sequence: nextSeq,
+          kind: 'participant-joined' as const,
+          actor: callerUserId,
+          payload: {
+            user_id: callerUserId,
+            role: targetRole,
+            screen_name: callerScreenName,
+            joined_at: joinedAtIso,
+          },
+          createdAt: eventCreatedAtIso,
+        };
+        validateEvent(envelope);
+        // INSERT via centralized helper + collect for post-COMMIT
+        // broadcast emit.
+        appendedEvents.push(await appendSessionEvent(client, envelope));
+
+        return participantRow;
+      });
+
+      // Post-commit broadcast emit (see
+      // tasks/refinements/backend/ws_event_broadcast.md).
+      for (const evt of appendedEvents) {
+        app.wsBroadcast.emit({ event: evt });
+      }
+
+      return reply.code(200).send(participantRowToResponse(inserted));
     },
   );
 

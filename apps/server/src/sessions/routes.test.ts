@@ -3698,6 +3698,512 @@ describe('DELETE /sessions/:id/participants/:userId — host or self removal', (
 });
 
 // =============================================================
+// POST /sessions/:id/invite/claim — debater self-claims a slot
+// =============================================================
+//
+// Refinement: tasks/refinements/backend/session_invite_self_claim_endpoint.md.
+//
+// Coverage (11 cases):
+//   1. Authenticated + visible public session + valid debater-A role
+//      → 200 + SessionParticipantResponse with userId === caller.id
+//      and role === 'debater-A'; the participant-joined event lands at
+//      the next sequence with actor === caller.id.
+//   2. No auth cookie → 401 auth-required.
+//   3. Unknown id → 404 not-found.
+//   4. Private session NOT visible to caller → 404 not-found (existence-
+//      non-leak: identical envelope to unknown-id).
+//   5. Private session VISIBLE to caller as a historical participant
+//      → 200 (re-join succeeds via F5 — old row's left_at is set, so
+//      both partial unique indexes are released).
+//   6. Host attempts to self-claim a debater slot → 403 not-a-moderator.
+//   7. Ended session → 409 session-already-ended.
+//   8. Role already filled by another debater → 409 role-already-filled.
+//   9. Caller already holds the OTHER debater slot (active) → 409
+//      user-already-joined.
+//  10. Body shape errors (3 sub-assertions): missing role / body
+//      includes userId / role is 'moderator' → 400 validation-failed.
+//  11. Non-UUID path param → 400 validation-failed.
+
+describe('POST /sessions/:id/invite/claim — debater self-claims a slot', () => {
+  async function buildWithSeed(opts: {
+    users: UserRow[];
+    sessions: SessionRow[];
+    participants?: SessionParticipantRow[];
+    events?: SessionEventRow[];
+  }): Promise<BuiltApp> {
+    const built = await buildApp({ users: opts.users });
+    built.store.sessions.push(...opts.sessions);
+    if (opts.participants !== undefined) {
+      built.store.participants.push(...opts.participants);
+    }
+    if (opts.events !== undefined) {
+      built.store.events.push(...opts.events);
+    }
+    return built;
+  }
+
+  let built: BuiltApp | undefined;
+  afterEach(async () => {
+    if (built !== undefined) {
+      await built.app.close();
+      built = undefined;
+    }
+  });
+
+  // Reusable fixtures — Alice is the host (the implicit moderator from
+  // the create-session amendment); Ben is the debater self-claiming a
+  // slot; Carol is a third party for "role already filled by someone
+  // else" scenarios.
+  const CAROL_ID = '33333333-3333-4333-8333-333333333333';
+
+  const SESSION_ID = '00000000-0000-4000-8000-3333aaaa0001';
+  const PUBLIC_ACTIVE: SessionRow = {
+    id: SESSION_ID,
+    host_user_id: ALICE_ID,
+    privacy: 'public',
+    topic: 'A claimable debate',
+    created_at: new Date('2026-05-09T10:00:00.000Z'),
+    ended_at: null,
+  };
+  const PUBLIC_ENDED: SessionRow = {
+    id: '00000000-0000-4000-8000-3333aaaa0002',
+    host_user_id: ALICE_ID,
+    privacy: 'public',
+    topic: 'An ended debate',
+    created_at: new Date('2026-05-08T10:00:00.000Z'),
+    ended_at: new Date('2026-05-08T11:00:00.000Z'),
+  };
+  const PRIVATE_ACTIVE: SessionRow = {
+    id: '00000000-0000-4000-8000-3333aaaa0003',
+    host_user_id: ALICE_ID,
+    privacy: 'private',
+    topic: 'A private debate',
+    created_at: new Date('2026-05-09T10:00:00.000Z'),
+    ended_at: null,
+  };
+
+  // The host's pre-existing moderator participant + the create-session
+  // events. Mirrors what the create-session transaction would produce.
+  const MODERATOR_PARTICIPANT: SessionParticipantRow = {
+    id: '00000000-0000-4000-9000-300000000001',
+    session_id: SESSION_ID,
+    user_id: ALICE_ID,
+    role: 'moderator',
+    joined_at: new Date('2026-05-09T10:00:00.001Z'),
+    left_at: null,
+  };
+  const SESSION_CREATED_EVENT: SessionEventRow = {
+    id: '77777777-7777-4777-8777-777777777001',
+    session_id: SESSION_ID,
+    sequence: 1,
+    kind: 'session-created',
+    actor: ALICE_ID,
+    payload: {
+      host_user_id: ALICE_ID,
+      privacy: 'public',
+      topic: 'A claimable debate',
+      created_at: '2026-05-09T10:00:00.000Z',
+    },
+    created_at: new Date('2026-05-09T10:00:00.001Z'),
+  };
+  const MODERATOR_JOINED_EVENT: SessionEventRow = {
+    id: '77777777-7777-4777-8777-777777777002',
+    session_id: SESSION_ID,
+    sequence: 2,
+    kind: 'participant-joined',
+    actor: ALICE_ID,
+    payload: {
+      user_id: ALICE_ID,
+      role: 'moderator',
+      screen_name: 'alice',
+      joined_at: '2026-05-09T10:00:00.001Z',
+    },
+    created_at: new Date('2026-05-09T10:00:00.002Z'),
+  };
+
+  function aliceBenSeed(): {
+    users: UserRow[];
+    sessions: SessionRow[];
+    participants: SessionParticipantRow[];
+    events: SessionEventRow[];
+  } {
+    return {
+      users: [
+        { id: ALICE_ID, oauth_subject: 'authelia:alice', screen_name: 'alice', deleted_at: null },
+        { id: BEN_ID, oauth_subject: 'authelia:ben', screen_name: 'ben', deleted_at: null },
+      ],
+      sessions: [PUBLIC_ACTIVE],
+      participants: [MODERATOR_PARTICIPANT],
+      events: [SESSION_CREATED_EVENT, MODERATOR_JOINED_EVENT],
+    };
+  }
+
+  it('returns 200 + the new participant row + a participant-joined event when an authenticated debater claims debater-A on a visible public session', async () => {
+    built = await buildWithSeed(aliceBenSeed());
+    const token = await signSessionToken({ sub: BEN_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'POST',
+      url: `/api/sessions/${SESSION_ID}/invite/claim`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+      payload: { role: 'debater-A' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{
+      id?: string;
+      sessionId?: string;
+      userId?: string;
+      role?: string;
+      joinedAt?: string;
+      leftAt?: string | null;
+    }>();
+    expect(typeof body.id).toBe('string');
+    expect(body.sessionId).toBe(SESSION_ID);
+    expect(body.userId).toBe(BEN_ID);
+    expect(body.role).toBe('debater-A');
+    expect(typeof body.joinedAt).toBe('string');
+    expect(body.leftAt).toBeNull();
+
+    // The new active row landed for Ben.
+    const benRow = built.store.participants.find(
+      (p) =>
+        p.session_id === SESSION_ID &&
+        p.user_id === BEN_ID &&
+        (p.left_at === null || p.left_at === undefined),
+    );
+    expect(benRow?.role).toBe('debater-A');
+
+    // The participant-joined event lands at sequence=3 with the
+    // caller (Ben) as the actor — ADR 0021's self-action shape.
+    const benJoinedEvent = built.store.events.find(
+      (e) => e.kind === 'participant-joined' && e.payload?.['user_id'] === BEN_ID,
+    );
+    expect(benJoinedEvent).toBeDefined();
+    expect(benJoinedEvent?.sequence).toBe(3);
+    expect(benJoinedEvent?.actor).toBe(BEN_ID);
+    const payload = benJoinedEvent?.payload as Record<string, unknown>;
+    expect(payload['role']).toBe('debater-A');
+    expect(payload['screen_name']).toBe('ben');
+    expect(typeof payload['joined_at']).toBe('string');
+
+    // Transaction shape — no ROLLBACK.
+    expect(built.store.trace[0]).toBe('BEGIN');
+    expect(built.store.trace[built.store.trace.length - 1]).toBe('COMMIT');
+    expect(built.store.trace).not.toContain('ROLLBACK');
+  });
+
+  it('returns 401 auth-required when no session cookie is supplied', async () => {
+    built = await buildWithSeed(aliceBenSeed());
+    const response = await built.app.inject({
+      method: 'POST',
+      url: `/api/sessions/${SESSION_ID}/invite/claim`,
+      payload: { role: 'debater-A' },
+    });
+    expect(response.statusCode).toBe(401);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('auth-required');
+    // No participant row landed.
+    expect(built.store.participants.filter((p) => p.user_id === BEN_ID)).toHaveLength(0);
+  });
+
+  it('returns 404 not-found when the session id is unknown', async () => {
+    built = await buildWithSeed(aliceBenSeed());
+    const token = await signSessionToken({ sub: BEN_ID }, TEST_SECRET);
+    const unknownId = '00000000-0000-4000-8000-ffffffff0099';
+    const response = await built.app.inject({
+      method: 'POST',
+      url: `/api/sessions/${unknownId}/invite/claim`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+      payload: { role: 'debater-A' },
+    });
+    expect(response.statusCode).toBe(404);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('not-found');
+    expect(built.store.trace).toContain('ROLLBACK');
+  });
+
+  it('returns 404 not-found when a private session is not visible to the caller (existence-non-leak)', async () => {
+    const seed = aliceBenSeed();
+    // Add the private session and its host moderator row (so the
+    // session exists in the store) but DO NOT make Ben a participant —
+    // he can't see it.
+    seed.sessions = [PRIVATE_ACTIVE];
+    seed.participants = [
+      {
+        id: '00000000-0000-4000-9000-300000000010',
+        session_id: PRIVATE_ACTIVE.id,
+        user_id: ALICE_ID,
+        role: 'moderator',
+        joined_at: new Date('2026-05-09T10:00:00.001Z'),
+        left_at: null,
+      },
+    ];
+    built = await buildWithSeed(seed);
+    const token = await signSessionToken({ sub: BEN_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'POST',
+      url: `/api/sessions/${PRIVATE_ACTIVE.id}/invite/claim`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+      payload: { role: 'debater-A' },
+    });
+    expect(response.statusCode).toBe(404);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('not-found');
+    // No new row landed.
+    expect(
+      built.store.participants.filter(
+        (p) => p.session_id === PRIVATE_ACTIVE.id && p.user_id === BEN_ID,
+      ),
+    ).toHaveLength(0);
+    expect(built.store.trace).toContain('ROLLBACK');
+  });
+
+  it('returns 200 when the caller is a historical participant on a private session (F5 re-join via fresh row)', async () => {
+    const seed = aliceBenSeed();
+    // Private session; Ben WAS a participant (left_at set) so he can
+    // still see it via the visibility predicate — and per F5 he can
+    // self-claim again via a fresh INSERT.
+    seed.sessions = [PRIVATE_ACTIVE];
+    seed.participants = [
+      {
+        id: '00000000-0000-4000-9000-300000000020',
+        session_id: PRIVATE_ACTIVE.id,
+        user_id: ALICE_ID,
+        role: 'moderator',
+        joined_at: new Date('2026-05-09T10:00:00.001Z'),
+        left_at: null,
+      },
+      {
+        id: '00000000-0000-4000-9000-300000000021',
+        session_id: PRIVATE_ACTIVE.id,
+        user_id: BEN_ID,
+        role: 'debater-A',
+        joined_at: new Date('2026-05-09T10:00:01.000Z'),
+        left_at: new Date('2026-05-09T10:00:05.000Z'),
+      },
+    ];
+    built = await buildWithSeed(seed);
+    const token = await signSessionToken({ sub: BEN_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'POST',
+      url: `/api/sessions/${PRIVATE_ACTIVE.id}/invite/claim`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+      payload: { role: 'debater-A' },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{ userId?: string; role?: string; leftAt?: string | null }>();
+    expect(body.userId).toBe(BEN_ID);
+    expect(body.role).toBe('debater-A');
+    expect(body.leftAt).toBeNull();
+
+    // Both rows exist — the historical row (left_at set) plus the
+    // fresh active row.
+    const benRows = built.store.participants.filter(
+      (p) => p.session_id === PRIVATE_ACTIVE.id && p.user_id === BEN_ID,
+    );
+    expect(benRows.length).toBeGreaterThanOrEqual(2);
+    const activeBenRow = benRows.find((p) => p.left_at === null || p.left_at === undefined);
+    expect(activeBenRow).toBeDefined();
+  });
+
+  it('returns 403 not-a-moderator when the host attempts to self-claim a debater slot', async () => {
+    built = await buildWithSeed(aliceBenSeed());
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'POST',
+      url: `/api/sessions/${SESSION_ID}/invite/claim`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+      payload: { role: 'debater-A' },
+    });
+    expect(response.statusCode).toBe(403);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('not-a-moderator');
+    // The host gained no debater row.
+    expect(
+      built.store.participants.filter(
+        (p) =>
+          p.session_id === SESSION_ID &&
+          p.user_id === ALICE_ID &&
+          (p.role === 'debater-A' || p.role === 'debater-B'),
+      ),
+    ).toHaveLength(0);
+    expect(built.store.trace).toContain('ROLLBACK');
+  });
+
+  it('returns 409 session-already-ended when the session has ended', async () => {
+    const seed = aliceBenSeed();
+    seed.sessions.push(PUBLIC_ENDED);
+    built = await buildWithSeed(seed);
+    const token = await signSessionToken({ sub: BEN_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'POST',
+      url: `/api/sessions/${PUBLIC_ENDED.id}/invite/claim`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+      payload: { role: 'debater-A' },
+    });
+    expect(response.statusCode).toBe(409);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('session-already-ended');
+    expect(built.store.trace).toContain('ROLLBACK');
+  });
+
+  it('returns 409 role-already-filled when another debater holds the requested role', async () => {
+    const seed = aliceBenSeed();
+    seed.users.push({
+      id: CAROL_ID,
+      oauth_subject: 'authelia:carol',
+      screen_name: 'carol',
+      deleted_at: null,
+    });
+    seed.participants.push({
+      id: '00000000-0000-4000-9000-300000000030',
+      session_id: SESSION_ID,
+      user_id: CAROL_ID,
+      role: 'debater-A',
+      joined_at: new Date('2026-05-09T10:00:01.000Z'),
+      left_at: null,
+    });
+    built = await buildWithSeed(seed);
+    const token = await signSessionToken({ sub: BEN_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'POST',
+      url: `/api/sessions/${SESSION_ID}/invite/claim`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+      payload: { role: 'debater-A' },
+    });
+    expect(response.statusCode).toBe(409);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('role-already-filled');
+    expect(built.store.participants.filter((p) => p.user_id === BEN_ID)).toHaveLength(0);
+    expect(built.store.trace).toContain('ROLLBACK');
+  });
+
+  it('returns 409 user-already-joined when the caller already holds an active role in this session', async () => {
+    const seed = aliceBenSeed();
+    // Ben already holds debater-A (active); his attempt to claim
+    // debater-B trips the user-availability pre-check.
+    seed.participants.push({
+      id: '00000000-0000-4000-9000-300000000040',
+      session_id: SESSION_ID,
+      user_id: BEN_ID,
+      role: 'debater-A',
+      joined_at: new Date('2026-05-09T10:00:01.000Z'),
+      left_at: null,
+    });
+    built = await buildWithSeed(seed);
+    const token = await signSessionToken({ sub: BEN_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'POST',
+      url: `/api/sessions/${SESSION_ID}/invite/claim`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+      payload: { role: 'debater-B' },
+    });
+    expect(response.statusCode).toBe(409);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('user-already-joined');
+    // No new debater-B row landed.
+    expect(
+      built.store.participants.filter((p) => p.user_id === BEN_ID && p.role === 'debater-B'),
+    ).toHaveLength(0);
+    expect(built.store.trace).toContain('ROLLBACK');
+  });
+
+  it('returns 400 validation-failed for malformed bodies (missing role / role=moderator) and silently strips smuggled userId fields', async () => {
+    // Three sub-assertions on the body schema's failure modes:
+    //   1. Body missing `role` → 400 validation-failed (Ajv required-
+    //      property check).
+    //   2. Body with `role: 'moderator'` → 400 validation-failed (Ajv
+    //      enum-violation check).
+    //   3. Body with a smuggled `userId` field → the platform's
+    //      Fastify-Ajv default is `removeAdditional: true`
+    //      (`@fastify/ajv-compiler`'s default), so unknown fields are
+    //      stripped silently rather than rejected. The
+    //      `additionalProperties: false` declaration on
+    //      `selfClaimParticipantBodySchema` documents intent at the
+    //      schema layer; the actual security property (the caller
+    //      cannot smuggle another user's id) is enforced by the
+    //      handler always using `request.authUser.id` (never the body).
+    //      We pin this by asserting that a request with a smuggled
+    //      `userId` still succeeds — and the resulting row's `userId`
+    //      is the CALLER's id (BEN), NOT the smuggled value (ALICE).
+    built = await buildWithSeed(aliceBenSeed());
+    const token = await signSessionToken({ sub: BEN_ID }, TEST_SECRET);
+
+    // Sub-assertion 1: body missing role entirely.
+    const missing = await built.app.inject({
+      method: 'POST',
+      url: `/api/sessions/${SESSION_ID}/invite/claim`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+      payload: {},
+    });
+    expect(missing.statusCode).toBe(400);
+    expect(missing.json<{ error?: { code?: string } }>().error?.code).toBe('validation-failed');
+
+    // Sub-assertion 2: body's role is 'moderator' — outside the enum.
+    const mod = await built.app.inject({
+      method: 'POST',
+      url: `/api/sessions/${SESSION_ID}/invite/claim`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+      payload: { role: 'moderator' },
+    });
+    expect(mod.statusCode).toBe(400);
+    expect(mod.json<{ error?: { code?: string } }>().error?.code).toBe('validation-failed');
+
+    // No participant row landed for either 400 sub-case.
+    expect(built.store.participants.filter((p) => p.user_id === BEN_ID)).toHaveLength(0);
+
+    // Sub-assertion 3: smuggled `userId` is stripped; the caller (Ben)
+    // is the one who lands in the participants table, NOT Alice (whose
+    // id was smuggled). This pins the security property the schema's
+    // `additionalProperties: false` documents — the caller can never
+    // claim a slot on behalf of another user via this endpoint.
+    const smuggled = await built.app.inject({
+      method: 'POST',
+      url: `/api/sessions/${SESSION_ID}/invite/claim`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+      payload: { role: 'debater-A', userId: ALICE_ID },
+    });
+    expect(smuggled.statusCode).toBe(200);
+    const smuggledBody = smuggled.json<{ userId?: string }>();
+    expect(smuggledBody.userId).toBe(BEN_ID);
+    // Confirm the inserted row carries Ben's id (caller), not Alice's
+    // (the smuggled value).
+    const benRow = built.store.participants.find(
+      (p) =>
+        p.session_id === SESSION_ID &&
+        p.user_id === BEN_ID &&
+        p.role === 'debater-A' &&
+        (p.left_at === null || p.left_at === undefined),
+    );
+    expect(benRow).toBeDefined();
+    // No row landed for Alice as a debater (she remains only as the
+    // implicit moderator from the seed).
+    expect(
+      built.store.participants.filter(
+        (p) =>
+          p.session_id === SESSION_ID &&
+          p.user_id === ALICE_ID &&
+          (p.role === 'debater-A' || p.role === 'debater-B'),
+      ),
+    ).toHaveLength(0);
+  });
+
+  it('returns 400 validation-failed when the :id path param is not a UUID', async () => {
+    built = await buildWithSeed(aliceBenSeed());
+    const token = await signSessionToken({ sub: BEN_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'POST',
+      url: `/api/sessions/not-a-uuid/invite/claim`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+      payload: { role: 'debater-A' },
+    });
+    expect(response.statusCode).toBe(400);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('validation-failed');
+  });
+});
+
+// =============================================================
 // GET /sessions/:id/participants — list a session's participants
 // =============================================================
 //
