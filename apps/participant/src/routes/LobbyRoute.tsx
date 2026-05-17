@@ -49,16 +49,20 @@
 //
 // The route is observational only — no buttons that POST, no
 // inline forms, no write paths on the WS subscription. The lobby
-// gives way to the live debate surface in a future leaf when the
-// moderator triggers a start-debate event; this leaf installs the
-// substrate (open WS subscription) the future handler will sit on.
+// gives way to the live debate surface via the auto-navigation
+// handler added by `part_session_start_handoff` (the `useEffect`
+// inside `<LobbyRouteAuthenticatedBody>` below): when the first
+// content event (`node-created` / `edge-created` /
+// `entity-included` / `proposal` / `commit`) arrives over the
+// open WS subscription, the lobby `replace`-navigates the debater
+// to `/sessions/${id}` so the operate route mounts.
 
-import { useEffect, useMemo, useState, type ReactElement } from 'react';
-import { useParams } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 
 import { useAuth, useWsClient } from '@a-conversa/shell';
-import type { Event } from '@a-conversa/shared-types';
+import type { Event, EventKind } from '@a-conversa/shared-types';
 
 import { useWsStore } from '../ws/wsStore';
 import { ParticipantLayout } from '../layout/ParticipantLayout';
@@ -73,6 +77,33 @@ import { ParticipantStatusIndicator } from '../layout/ParticipantStatusIndicator
  */
 const SLOT_ROLES = ['moderator', 'debater-A', 'debater-B'] as const;
 type SlotRole = (typeof SLOT_ROLES)[number];
+
+/**
+ * Event kinds whose arrival in the per-session events slice proves the
+ * moderator has transitioned the session out of the lobby and into the
+ * operate canvas. Triggers the participant lobby's auto-navigation to
+ * `/sessions/${id}` (the operate route).
+ *
+ * The five kinds in this list are emitted exclusively by the
+ * moderator's operate-mode capture / propose / commit flows — no
+ * lobby / invite / create-session route in the app can produce them.
+ * Their arrival is a sufficient proxy for "the moderator is in
+ * operate mode" without requiring a dedicated `debate-started` wire
+ * event (which would be a multi-day protocol addition per
+ * `part_session_start_handoff.md` Decision §1).
+ *
+ * Per ADR 0027, `node-created` / `edge-created` fire at propose-time,
+ * so the very first propose in operate triggers the handoff — which is
+ * the correct semantics (the debater needs to be watching the proposal
+ * the moment it is made).
+ */
+const CONTENT_EVENT_KINDS: readonly EventKind[] = [
+  'node-created',
+  'edge-created',
+  'entity-included',
+  'proposal',
+  'commit',
+];
 
 interface SlotOccupant {
   readonly userId: string;
@@ -382,6 +413,47 @@ function LobbyRouteAuthenticatedBody(props: LobbyRouteAuthenticatedBodyProps): R
     () => mergeSlots(httpRows, wsOccupants, events ?? []),
     [httpRows, wsOccupants, events],
   );
+
+  // ── Auto-navigation handoff to the operate route ────────────────
+  // Watches the per-session WS `events` slice for the first content
+  // event (`node-created` / `edge-created` / `entity-included` /
+  // `proposal` / `commit`) and navigates the debater from
+  // `/sessions/${id}/lobby` to `/sessions/${id}` once it arrives.
+  //
+  // Triggered off the existing WS subscription the lobby installed
+  // via `client.trackSession` (see line 209) — no new subscription,
+  // no new HTTP fetch, no new dependency on the moderator's local
+  // navigate gesture. The five trigger kinds are emitted exclusively
+  // by the moderator's operate-mode capture / propose / commit
+  // flows, so their arrival is a sufficient proxy for "the moderator
+  // is in operate mode."
+  //
+  // See `tasks/refinements/participant-ui/part_session_start_handoff.md`
+  // Decision §1 for the rationale against minting a dedicated
+  // `debate-started` wire event, and Decision §3 for the `{ replace:
+  // true }` posture + `useRef<boolean>` re-fire guard.
+  const navigate = useNavigate();
+  const handoffFiredRef = useRef<boolean>(false);
+  useEffect(() => {
+    if (handoffFiredRef.current) return;
+    if (id === '') return;
+    const eventsList = events ?? [];
+    // Single-pass scan — `.some()` short-circuits on the first match
+    // (cost is O(events) worst case, with `events` bounded by the
+    // lobby's lifetime — a few `participant-joined` /
+    // `participant-left` events for the slot fill phase, then the
+    // first content event triggers the navigate). The ref guard
+    // catches the case where a subsequent event arrives between
+    // this effect running and React Router actually unmounting the
+    // lobby (the navigate is idempotent; the guard is belt-and-
+    // suspenders against a wasted call).
+    const triggered = eventsList.some((event) =>
+      (CONTENT_EVENT_KINDS as readonly string[]).includes(event.kind),
+    );
+    if (!triggered) return;
+    handoffFiredRef.current = true;
+    void navigate(`/sessions/${id}`, { replace: true });
+  }, [events, id, navigate]);
 
   const debaterAPresent = slots['debater-A'] !== undefined;
   const debaterBPresent = slots['debater-B'] !== undefined;

@@ -33,9 +33,27 @@ import {
   type I18nInstance,
   type WsClient,
 } from '@a-conversa/shell';
+import type { EventKind } from '@a-conversa/shared-types';
 
 import { LobbyRoute } from './LobbyRoute';
 import { useWsStore } from '../ws/wsStore';
+
+// ────────────────────────────────────────────────────────────────────────
+// Mock `react-router-dom`'s `useNavigate` so the auto-navigation handoff
+// cases (`part_session_start_handoff`) can pin the navigate target
+// without wrapping the route in a routes-graph that defines the operate
+// destination. `useParams` + `MemoryRouter` keep their real
+// implementations. Mirrors the pattern at
+// `apps/participant/src/routes/InviteAcceptanceRoute.test.tsx:42-55`.
+// ────────────────────────────────────────────────────────────────────────
+const navigateSpy = vi.fn();
+vi.mock('react-router-dom', async () => {
+  const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
+  return {
+    ...actual,
+    useNavigate: () => navigateSpy,
+  };
+});
 
 const SESSION_ID = '00000000-0000-4000-8000-0000000000aa';
 const HOST_USER_ID = '00000000-0000-4000-8000-000000000001';
@@ -81,6 +99,7 @@ afterAll(() => {
 afterEach(() => {
   cleanup();
   useWsStore.getState().reset();
+  navigateSpy.mockReset();
 });
 
 function stubFetch(
@@ -519,4 +538,368 @@ describe('LobbyRoute — HTTP-prefetched debater leaves via WS', () => {
     // debater-A is still present (only B left).
     expect(screen.getByTestId('lobby-participant-debater-A')).toBeTruthy();
   });
+});
+
+// ────────────────────────────────────────────────────────────────────────
+// Auto-navigation handoff to the operate route.
+//
+// Refinement: tasks/refinements/participant-ui/part_session_start_handoff.md
+//   The `<LobbyRouteAuthenticatedBody>`'s new `useEffect` watches the
+//   per-session events slice and `replace`-navigates the debater to
+//   `/sessions/${id}` when the first content event lands. Cases pin
+//   the five trigger kinds (Decision §2), the no-fire on lobby-
+//   lifecycle / session-lifecycle events, the exactly-once guarantee
+//   (Decision §3 ref guard), the catch-up replay path, and the not-
+//   authenticated guard branch.
+// ────────────────────────────────────────────────────────────────────────
+
+// Sequence counter offset above the lifecycle seeds (1-9) used by the
+// existing cases — keeps sequence numbers monotonic across helpers when
+// a case seeds both lifecycle + content events.
+const CONTENT_EVENT_KINDS_LIST: readonly EventKind[] = [
+  'node-created',
+  'edge-created',
+  'entity-included',
+  'proposal',
+  'commit',
+];
+
+// Build a content event of the given kind with a minimal-but-valid
+// payload. Each branch mirrors the canonical payload shape from
+// `packages/shared-types/src/events.ts`; the handler only reads
+// `event.kind` so the payload contents do not affect the test outcome,
+// but the shapes match what the WS reducer would land in production.
+function buildContentEvent(
+  kind: EventKind,
+  sequence: number,
+): Parameters<ReturnType<typeof useWsStore.getState>['applyEvent']>[0] {
+  const id = `00000000-0000-4000-8000-${sequence.toString().padStart(12, '0')}`;
+  const actor = '00000000-0000-4000-8000-00000000aaaa';
+  const nodeId = '11111111-1111-4111-8111-111111111111';
+  const edgeId = '22222222-2222-4222-8222-222222222222';
+  const targetId = '33333333-3333-4333-8333-333333333333';
+  const createdAt = '2026-05-17T00:00:00.000Z';
+  const common = { id, sessionId: SESSION_ID, sequence, actor, createdAt };
+  if (kind === 'node-created') {
+    return {
+      ...common,
+      kind: 'node-created',
+      payload: {
+        node_id: nodeId,
+        wording: 'seeded wording',
+        created_by: actor,
+        created_at: createdAt,
+      },
+    };
+  }
+  if (kind === 'edge-created') {
+    return {
+      ...common,
+      kind: 'edge-created',
+      payload: {
+        edge_id: edgeId,
+        role: 'supports',
+        source_node_id: nodeId,
+        target_node_id: targetId,
+        created_by: actor,
+        created_at: createdAt,
+      },
+    };
+  }
+  if (kind === 'entity-included') {
+    return {
+      ...common,
+      kind: 'entity-included',
+      payload: {
+        entity_kind: 'node',
+        entity_id: nodeId,
+        included_by: actor,
+        included_at: createdAt,
+      },
+    };
+  }
+  if (kind === 'proposal') {
+    return {
+      ...common,
+      kind: 'proposal',
+      payload: {
+        proposal: {
+          kind: 'classify-node',
+          node_id: nodeId,
+          classification: 'fact',
+        },
+      },
+    };
+  }
+  if (kind === 'commit') {
+    return {
+      ...common,
+      kind: 'commit',
+      payload: {
+        proposal_id: id,
+        moderator: actor,
+        committed_at: createdAt,
+      },
+    };
+  }
+  throw new Error(`buildContentEvent: unsupported kind ${kind}`);
+}
+
+function seedContentEvent(kind: EventKind, sequence: number): void {
+  act(() => {
+    useWsStore.getState().applyEvent(buildContentEvent(kind, sequence));
+  });
+}
+
+describe('LobbyRoute — auto-navigation handoff to operate route', () => {
+  it('(l) does not navigate when only lobby-lifecycle events have arrived', async () => {
+    global.fetch = stubFetch();
+    renderRoute();
+    seedJoined(1, 'moderator', HOST_USER_ID, 'alice');
+    seedJoined(2, 'debater-A', CALLER_USER_ID, 'ben');
+    seedJoined(3, 'debater-B', OTHER_DEBATER_USER_ID, 'carol');
+    seedLeft(4, OTHER_DEBATER_USER_ID);
+    // Wait for the loaded render so any pending effects have run.
+    await waitFor(() => {
+      expect(screen.getByTestId('lobby-participant-debater-A')).toBeTruthy();
+    });
+    expect(navigateSpy).not.toHaveBeenCalled();
+  });
+
+  describe.each(CONTENT_EVENT_KINDS_LIST)(
+    '(m) navigates on first content event of kind %s',
+    (kind) => {
+      it(`navigates to /sessions/:id with { replace: true } on first ${kind}`, async () => {
+        global.fetch = stubFetch();
+        renderRoute();
+        seedJoined(1, 'moderator', HOST_USER_ID, 'alice');
+        seedJoined(2, 'debater-A', CALLER_USER_ID, 'ben');
+        await waitFor(() => {
+          expect(screen.getByTestId('lobby-participant-debater-A')).toBeTruthy();
+        });
+        expect(navigateSpy).not.toHaveBeenCalled();
+        seedContentEvent(kind, 100);
+        await waitFor(() => {
+          expect(navigateSpy).toHaveBeenCalledWith(`/sessions/${SESSION_ID}`, { replace: true });
+        });
+        expect(navigateSpy).toHaveBeenCalledTimes(1);
+      });
+    },
+  );
+
+  it('(n) navigation fires exactly once when multiple content events arrive', async () => {
+    global.fetch = stubFetch();
+    renderRoute();
+    seedJoined(1, 'moderator', HOST_USER_ID, 'alice');
+    seedJoined(2, 'debater-A', CALLER_USER_ID, 'ben');
+    await waitFor(() => {
+      expect(screen.getByTestId('lobby-participant-debater-A')).toBeTruthy();
+    });
+    seedContentEvent('node-created', 100);
+    seedContentEvent('edge-created', 101);
+    seedContentEvent('proposal', 102);
+    await waitFor(() => {
+      expect(navigateSpy).toHaveBeenCalledWith(`/sessions/${SESSION_ID}`, { replace: true });
+    });
+    // The ref guard short-circuits subsequent effect runs after the
+    // first navigate fires — exactly one call across all three events.
+    expect(navigateSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('(o) navigation fires on a content event interleaved with lobby events', async () => {
+    global.fetch = stubFetch();
+    renderRoute();
+    seedJoined(1, 'moderator', HOST_USER_ID, 'alice');
+    seedJoined(2, 'debater-A', CALLER_USER_ID, 'ben');
+    await waitFor(() => {
+      expect(screen.getByTestId('lobby-participant-debater-A')).toBeTruthy();
+    });
+    expect(navigateSpy).not.toHaveBeenCalled();
+    seedContentEvent('node-created', 100);
+    seedLeft(101, OTHER_DEBATER_USER_ID);
+    await waitFor(() => {
+      expect(navigateSpy).toHaveBeenCalledWith(`/sessions/${SESSION_ID}`, { replace: true });
+    });
+    expect(navigateSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('(p) navigation fires when content events are present in the catch-up replay (seeded before mount)', async () => {
+    global.fetch = stubFetch();
+    // Simulate a debater whose WS reconnect picks up a replay
+    // including events from after the moderator already captured —
+    // the content event is already in the events slice on mount, the
+    // effect's first tick must catch it.
+    act(() => {
+      useWsStore.getState().applyEvent(buildContentEvent('node-created', 100));
+    });
+    renderRoute();
+    await waitFor(() => {
+      expect(navigateSpy).toHaveBeenCalledWith(`/sessions/${SESSION_ID}`, { replace: true });
+    });
+    expect(navigateSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('(q) navigation does NOT fire from the not-authenticated guard branch', async () => {
+    global.fetch = stubFetch();
+    const notAuthAuth: AuthContextValue = {
+      status: 'unauthenticated',
+      refresh: () => undefined,
+      logout: () => undefined,
+    };
+    renderRoute({ auth: notAuthAuth });
+    // The guard renders the `not-authenticated` body branch, NOT the
+    // authenticated body that owns the auto-navigation effect.
+    await waitFor(() => {
+      const root = screen.getByTestId('route-lobby');
+      expect(root.getAttribute('data-state')).toBe('not-authenticated');
+    });
+    seedContentEvent('node-created', 100);
+    // Give any spurious effect a tick to misfire (it shouldn't).
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(navigateSpy).not.toHaveBeenCalled();
+  });
+
+  it('(r) navigation does NOT fire on session-ended', async () => {
+    global.fetch = stubFetch();
+    renderRoute();
+    seedJoined(1, 'moderator', HOST_USER_ID, 'alice');
+    seedJoined(2, 'debater-A', CALLER_USER_ID, 'ben');
+    await waitFor(() => {
+      expect(screen.getByTestId('lobby-participant-debater-A')).toBeTruthy();
+    });
+    act(() => {
+      useWsStore.getState().applyEvent({
+        id: '00000000-0000-4000-8000-000000000100',
+        sessionId: SESSION_ID,
+        sequence: 100,
+        kind: 'session-ended',
+        actor: HOST_USER_ID,
+        payload: {
+          ended_at: '2026-05-17T00:00:00.000Z',
+        },
+        createdAt: '2026-05-17T00:00:00.000Z',
+      });
+    });
+    // Give the effect a tick to misfire (it shouldn't).
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(navigateSpy).not.toHaveBeenCalled();
+  });
+
+  // ──────────────────────────────────────────────────────────────────
+  // Negative-trigger pins: each of the 8 non-trigger event kinds is
+  // seeded individually; the navigate spy must remain silent. This
+  // pins the `CONTENT_EVENT_KINDS` constant against accidental
+  // expansion (e.g. a future ambivalent maintainer adding
+  // `participant-joined` to the trigger set would break case (l) and
+  // each of these probes).
+  // ──────────────────────────────────────────────────────────────────
+  const NON_TRIGGER_KINDS: readonly {
+    kind: EventKind;
+    payload: unknown;
+  }[] = [
+    {
+      kind: 'session-created',
+      payload: {
+        host_user_id: HOST_USER_ID,
+        topic: 'topic',
+        privacy: 'public',
+      },
+    },
+    {
+      kind: 'participant-joined',
+      payload: {
+        user_id: OTHER_DEBATER_USER_ID,
+        role: 'debater-B' as const,
+        screen_name: 'carol',
+        joined_at: '2026-05-17T00:00:00.000Z',
+      },
+    },
+    {
+      kind: 'participant-left',
+      payload: {
+        user_id: OTHER_DEBATER_USER_ID,
+        left_at: '2026-05-17T00:00:00.000Z',
+      },
+    },
+    {
+      kind: 'annotation-created',
+      payload: {
+        annotation_id: '11111111-1111-4111-8111-111111111111',
+        target_kind: 'node' as const,
+        target_id: '22222222-2222-4222-8222-222222222222',
+        kind: 'note' as const,
+        body: 'note',
+        created_by: HOST_USER_ID,
+        created_at: '2026-05-17T00:00:00.000Z',
+      },
+    },
+    {
+      kind: 'vote',
+      payload: {
+        proposal_id: '11111111-1111-4111-8111-111111111111',
+        voter: HOST_USER_ID,
+        vote: 'agree' as const,
+      },
+    },
+    {
+      kind: 'meta-disagreement-marked',
+      payload: {
+        proposal_id: '11111111-1111-4111-8111-111111111111',
+        marked_by: HOST_USER_ID,
+        marked_at: '2026-05-17T00:00:00.000Z',
+      },
+    },
+    {
+      kind: 'snapshot-created',
+      payload: {
+        snapshot_id: '11111111-1111-4111-8111-111111111111',
+        sequence: 100,
+        created_at: '2026-05-17T00:00:00.000Z',
+      },
+    },
+    {
+      kind: 'entity-removed',
+      payload: {
+        entity_kind: 'node' as const,
+        entity_id: '11111111-1111-4111-8111-111111111111',
+        removed_by: HOST_USER_ID,
+        removed_at: '2026-05-17T00:00:00.000Z',
+      },
+    },
+  ];
+
+  describe.each(NON_TRIGGER_KINDS)(
+    '(s) does NOT navigate on non-trigger event kind %s',
+    ({ kind, payload }) => {
+      it(`stays silent when only ${kind} arrives`, async () => {
+        global.fetch = stubFetch();
+        renderRoute();
+        seedJoined(1, 'moderator', HOST_USER_ID, 'alice');
+        seedJoined(2, 'debater-A', CALLER_USER_ID, 'ben');
+        await waitFor(() => {
+          expect(screen.getByTestId('lobby-participant-debater-A')).toBeTruthy();
+        });
+        act(() => {
+          // The `payload` is shape-correct for its `kind` per the
+          // canonical Zod schemas, but the parameterized `NON_TRIGGER_KINDS`
+          // table mixes 8 different `EventKind` values whose payloads
+          // do not all unify under a single type; the cast lets the
+          // parameterized loop share one `applyEvent` call site.
+          const envelope = {
+            id: '00000000-0000-4000-8000-000000000100',
+            sessionId: SESSION_ID,
+            sequence: 100,
+            kind,
+            actor: HOST_USER_ID,
+            payload,
+            createdAt: '2026-05-17T00:00:00.000Z',
+          } as unknown as Parameters<ReturnType<typeof useWsStore.getState>['applyEvent']>[0];
+          useWsStore.getState().applyEvent(envelope);
+        });
+        // Give the effect a tick to misfire (it shouldn't).
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        expect(navigateSpy).not.toHaveBeenCalled();
+      });
+    },
+  );
 });

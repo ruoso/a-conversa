@@ -1,14 +1,18 @@
 // End-to-end spec for the participant operate route's read-mostly
 // graph view.
 //
-// Refinement: tasks/refinements/participant-ui/part_graph_render.md
-//              (Decision §6 — one scenario, seed-via-WS-store flavour:
-//              the moderator's start-debate gesture is `mod_session_lobby`'s
-//              deliverable and the participant-side handler that
-//              consumes the resulting transition is `part_session_start_handoff`'s
-//              future deliverable; this spec only proves the rendering
-//              surface, so direct `page.goto('/p/sessions/${id}')` +
-//              `window.__aConversaWsStore` seed is sufficient).
+// Refinements: tasks/refinements/participant-ui/part_graph_render.md
+//              (Decision §6 — one scenario, seed-via-WS-store flavour
+//              for the rendering surface),
+//              tasks/refinements/participant-ui/part_session_start_handoff.md
+//              (Decision §1 — the lobby's auto-navigation `useEffect`
+//              consumes the first content event in the per-session
+//              WS slice and `replace`-navigates the debater to the
+//              operate route; this spec now seeds the trigger event
+//              from the lobby and asserts the URL change, rather than
+//              doing a manual `page.goto('/p/sessions/${id}')` —
+//              paying down the tech debt the predecessor spec
+//              registered).
 // ADRs:        docs/adr/0004-graph-libraries-reactflow-and-cytoscape.md
 //              docs/adr/0008-e2e-framework-playwright.md
 //              docs/adr/0017-mock-oauth-authelia-users-file.md
@@ -16,32 +20,34 @@
 //              docs/adr/0026-micro-frontend-root-app.md
 //              docs/adr/0027-entity-and-facet-layers-strict-separation.md
 // TaskJuggler: participant_ui.part_graph_view.part_graph_render
+//              + participant_ui.part_graph_view.part_session_start_handoff
 //
 // **What this spec pins.** The chain a debater walks once the route
 // lands:
 //
 //   1. alice creates a public session via the same-origin API.
 //   2. ben claims the debater-A slot via the invite-acceptance route
-//      (same path the lobby spec uses).
-//   3. The spec seeds two events into ben's per-session WS store via
-//      the `window.__aConversaWsStore` test seam: one `node-created`
-//      with a known wording, and one `edge-created` referencing the
-//      seeded node and an unknown target id (Cytoscape tolerates
-//      dangling endpoints gracefully).
-//   4. ben navigates to `/p/sessions/${sessionId}` (the operate
-//      route's URL). The route renders the standard
-//      `<ParticipantLayout>` + `<GraphView>` body.
-//   5. The spec asserts:
+//      (same path the lobby spec uses); he lands on the lobby.
+//   3. The spec seeds a `node-created` event into ben's per-session
+//      WS store via the `window.__aConversaWsStore` test seam while
+//      he is in the lobby — simulating the moderator clicking
+//      "Enter session" + capturing the first statement. The lobby's
+//      auto-navigation `useEffect` (per `part_session_start_handoff`)
+//      detects the first content event and `replace`-navigates to
+//      `/p/sessions/${sessionId}` (the operate route's URL).
+//   4. The spec asserts the auto-navigation completed:
+//      - URL has flipped to `/p/sessions/${sessionId}`.
 //      - `route-operate` testid visible (the wrapper carries it).
 //      - `participant-graph-root` testid visible (the Cytoscape
 //        container).
-//      - The seeded wording text is visible inside the canvas
-//        (Cytoscape's default `label` mode draws labels via SVG
-//        `<text>` overlays which Playwright's `getByText` finds).
-//      - The em-dash placeholder (`—`) is visible for the unclassified
-//        node's kind tag.
-//      - The role label (`Supports`, the en-US methodology glossary
-//        entry for the seeded edge's `supports` role) is visible.
+//   5. The spec then seeds an `edge-created` event referencing the
+//      seeded node and an unknown target id (Cytoscape tolerates
+//      dangling endpoints gracefully) so the rendering assertions
+//      can pin both kinds.
+//   6. The spec asserts the WS store slice carries both seeded events
+//      and that the Cytoscape canvas layers are present inside the
+//      `participant-graph-root` container (visual regression on
+//      rendered pixels is owned by `part_vr_state_styling`).
 
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
 
@@ -126,31 +132,21 @@ test.describe('Participant operate route — read-mostly graph render', () => {
       });
       await expect(page.getByTestId('route-lobby')).toBeVisible({ timeout: 15_000 });
 
-      // 4. Navigate to the operate route. The participant has no
-      //    auto-handoff from lobby → operate today (that's
-      //    `part_session_start_handoff`'s future deliverable per
-      //    Decision §6); the URL change drives the route swap.
-      await page.goto(`/p/sessions/${sessionId}`);
-      await expect(page.getByTestId('route-operate')).toBeVisible({ timeout: 15_000 });
-      await expect(page.getByTestId('participant-graph-root')).toBeVisible({ timeout: 15_000 });
-
-      // 5. Seed a node-created + edge-created event into ben's per-
-      //    session WS store via the `__aConversaWsStore` test seam.
-      //    The Cytoscape canvas re-projects on every events change, so
-      //    the seeded elements appear without a network round-trip.
+      // 4. From the lobby, seed the moderator's first capture (a
+      //    `node-created` event) into ben's per-session WS store via
+      //    the `__aConversaWsStore` test seam. This simulates the
+      //    moderator clicking "Enter session" + capturing the first
+      //    statement; the participant lobby's auto-navigation
+      //    `useEffect` (per
+      //    `tasks/refinements/participant-ui/part_session_start_handoff.md`)
+      //    detects the first content event in the events slice and
+      //    `replace`-navigates the debater to the operate route URL.
       const NODE_ID = '11111111-1111-4111-8111-111111111111';
       const EDGE_ID = '22222222-2222-4222-8222-222222222222';
       const UNKNOWN_TARGET_ID = '33333333-3333-4333-8333-333333333333';
       const ACTOR_ID = '44444444-4444-4444-8444-444444444444';
       await page.evaluate(
-        (seed: {
-          sessionId: string;
-          nodeId: string;
-          edgeId: string;
-          unknownTargetId: string;
-          actorId: string;
-          wording: string;
-        }) => {
+        (seed: { sessionId: string; nodeId: string; actorId: string; wording: string }) => {
           const store = (
             window as unknown as {
               __aConversaWsStore?: {
@@ -164,8 +160,8 @@ test.describe('Participant operate route — read-mostly graph render', () => {
             throw new Error('__aConversaWsStore is not exposed on window');
           }
           const apply = store.getState().applyEvent.bind(store.getState());
-          // High sequence numbers guard against the dedup branch in the
-          // WS store's `applyEvent` — the per-session subscription
+          // High sequence numbers guard against the dedup branch in
+          // the WS store's `applyEvent` — the per-session subscription
           // landed by the lobby's `trackSession` call has already
           // applied lifecycle events (the moderator's session-created,
           // each `participant-joined`), so `lastAppliedSequence` is
@@ -186,6 +182,49 @@ test.describe('Participant operate route — read-mostly graph render', () => {
             },
             createdAt: '2026-05-17T00:00:00.000Z',
           });
+        },
+        {
+          sessionId,
+          nodeId: NODE_ID,
+          actorId: ACTOR_ID,
+          wording: NODE_WORDING,
+        },
+      );
+
+      // 5. Wait for the auto-navigation handoff to complete. The
+      //    `{ replace: true }` posture means the browser URL flips
+      //    without a back-stack push.
+      await page.waitForURL((url) => url.pathname === `/p/sessions/${sessionId}`, {
+        timeout: 15_000,
+      });
+      await expect(page.getByTestId('route-operate')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('participant-graph-root')).toBeVisible({ timeout: 15_000 });
+
+      // 6. Seed the companion `edge-created` event so the rendering
+      //    pin can verify both kinds landed in the slice. The
+      //    Cytoscape canvas re-projects on every events change, so
+      //    the seeded edge appears without a network round-trip.
+      await page.evaluate(
+        (seed: {
+          sessionId: string;
+          nodeId: string;
+          edgeId: string;
+          unknownTargetId: string;
+          actorId: string;
+        }) => {
+          const store = (
+            window as unknown as {
+              __aConversaWsStore?: {
+                getState: () => {
+                  applyEvent: (event: unknown) => void;
+                };
+              };
+            }
+          ).__aConversaWsStore;
+          if (!store) {
+            throw new Error('__aConversaWsStore is not exposed on window');
+          }
+          const apply = store.getState().applyEvent.bind(store.getState());
           apply({
             id: '66666666-6666-4666-8666-666666666666',
             sessionId: seed.sessionId,
@@ -209,11 +248,10 @@ test.describe('Participant operate route — read-mostly graph render', () => {
           edgeId: EDGE_ID,
           unknownTargetId: UNKNOWN_TARGET_ID,
           actorId: ACTOR_ID,
-          wording: NODE_WORDING,
         },
       );
 
-      // 6. The Cytoscape canvas paints the seeded wording, the em-dash
+      // 7. The Cytoscape canvas paints the seeded wording, the em-dash
       //    placeholder for the unclassified kind, and the localized
       //    role label. Cytoscape's default renderer paints to a
       //    `<canvas>`, not SVG `<text>`, so the labels live in pixel
@@ -266,7 +304,7 @@ test.describe('Participant operate route — read-mostly graph render', () => {
         target_node_id: UNKNOWN_TARGET_ID,
       });
 
-      // 7. Belt-and-suspenders: the Cytoscape `<canvas>` layers must
+      // 8. Belt-and-suspenders: the Cytoscape `<canvas>` layers must
       //    exist inside the `participant-graph-root` container. The
       //    renderer mounts three layered `<canvas>` elements per
       //    instance (node-body / drag / select layers); presence is
