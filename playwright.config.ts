@@ -301,7 +301,12 @@ export default defineConfig({
     // the bootstrap auth jar via `setup-auth`.
     {
       name: 'chromium-participant-skeleton',
-      testMatch: /participant-skeleton-smoke\.spec\.ts$/,
+      // `part_invite_acceptance` widens the testMatch to also accept
+      // `participant-invite-acceptance.spec.ts` — same browser profile
+      // (single locale en-US, ignoreHTTPSErrors for the OIDC redirect,
+      // bootstrap auth jar from setup-auth), no new project. Decision §7
+      // of the refinement.
+      testMatch: /participant-(skeleton-smoke|invite-acceptance)\.spec\.ts$/,
       dependencies: ['setup-auth'],
       use: {
         ...devices['Desktop Chrome'],

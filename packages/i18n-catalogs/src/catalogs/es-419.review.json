@@ -213,7 +213,23 @@
     "participant.statusIndicator.connecting",
     "participant.statusIndicator.open",
     "participant.statusIndicator.reconnecting",
-    "participant.statusIndicator.closed"
+    "participant.statusIndicator.closed",
+    "participant.inviteAcceptance.title",
+    "participant.inviteAcceptance.hint",
+    "participant.inviteAcceptance.joinButton",
+    "participant.inviteAcceptance.joining",
+    "participant.inviteAcceptance.goToLobby",
+    "participant.inviteAcceptance.roleLabels.debaterA",
+    "participant.inviteAcceptance.roleLabels.debaterB",
+    "participant.inviteAcceptance.errors.invalidUrl",
+    "participant.inviteAcceptance.errors.notFound",
+    "participant.inviteAcceptance.errors.sessionAlreadyEnded",
+    "participant.inviteAcceptance.errors.notAModerator",
+    "participant.inviteAcceptance.errors.roleAlreadyFilled",
+    "participant.inviteAcceptance.errors.userAlreadyJoined",
+    "participant.inviteAcceptance.errors.generic",
+    "participant.inviteAcceptance.errors.network",
+    "participant.lobbyPlaceholder.body"
   ],
   "signed_off": []
 }

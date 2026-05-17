@@ -1,50 +1,38 @@
-// Participant surface route tree (placeholder).
+// Participant surface route tree.
 //
 // Refinement: tasks/refinements/participant-ui/part_app_skeleton.md
 //              tasks/refinements/participant-ui/part_auth_flow.md
 //              tasks/refinements/participant-ui/part_landscape_layout.md
+//              tasks/refinements/participant-ui/part_invite_acceptance.md
 // ADRs:        0002 (no profile data — only `screenName` reaches the DOM),
 //              0022 (no throwaway verifications — the identity testid +
 //                    not-authenticated testid + four layout-region
-//                    testids are the pinned seams),
+//                    testids + the new route-invite-acceptance /
+//                    lobby-placeholder testids are the pinned seams),
 //              0026 (host owns auth chrome; surface only reads the
 //                    host-supplied `useAuth()`).
 //
-// The skeleton wires a single wildcard route that absorbs every URL
-// under `/p/*` (the participant surface's basename, set in the root
-// host's `<SurfaceHost surfaceId="participant" routerBasePath="/p" />`
-// route at `apps/root/src/App.tsx`). The placeholder testid
-// `route-participant-placeholder` is the stable selector anchor for
-// the Vitest mount-boundary case + the Playwright placeholder spec.
+// `part_invite_acceptance` extends the wildcard-only route tree with
+// two new entries above the catch-all:
 //
-// On top of the placeholder, `part_auth_flow` adds the participant's
-// first useful read of the host-supplied auth state: `useAuth()` is
-// consumed inside the surface, and the authenticated user's
-// `screenName` is surfaced under the stable `participant-identity`
-// testid. A defensive `participant-not-authenticated` panel covers the
-// sub-paint window where the host's auth value flips after mount but
-// before the `SurfaceHost` cleanup tears the surface down (see Decision
-// §3 of the `part_auth_flow` refinement).
+//   - `<Route path="/sessions/:id/invite" element={<InviteAcceptanceRoute />} />`
+//     — the claim route that turns the moderator's invite URL into a
+//     `session_participants` row + a `participant-joined` event.
+//   - `<Route path="/sessions/:id/lobby" element={<LobbyPlaceholderRoute />} />`
+//     — placeholder destination for the success navigation; replaced
+//     by `participant_ui.part_session_join.part_lobby_view`.
 //
-// `part_landscape_layout` wraps the placeholder body inside a
-// landscape-grid scaffold (`<ParticipantLayout>`): a slim header on
-// top + the placeholder body in the main region + an empty footer
-// reserved for `part_status_indicator`'s chip. The identity row that
-// `part_auth_flow` landed inside the body migrates up into the
-// chrome header (`<ParticipantChrome>`) so it persists across every
-// URL once downstream leaves replace the wildcard body.
+// The wildcard `<Route path="*">` stays as the catch-all so any other
+// URL under `/p/*` still renders the existing placeholder chrome +
+// body. The placeholder route's chrome is composed from the extracted
+// `<ParticipantChrome>` (Decision §9 of part_invite_acceptance) so
+// every route in the tree consumes the same header markup.
 //
-// Future leaves replace this wildcard with the real participant route
+// Future leaves replace the wildcard with the real participant route
 // tree:
 //
-//   - `part_session_join.part_invite_acceptance` lands the
-//     `/sessions/:id/invite?role=...` claim flow.
-//   - `part_session_join.part_lobby_view` lands the pre-debate lobby.
+//   - `part_session_join.part_lobby_view` replaces `<LobbyPlaceholderRoute>`.
 //   - `part_graph_view` + `part_voting` land the operate view.
-//
-// When those routes ship, the placeholder testid disappears, but the
-// chrome (`<ParticipantLayout>` with `<ParticipantChrome>` in the
-// header + `<StatusIndicator />` in the footer) persists.
 
 import type { ReactElement } from 'react';
 import { Route, Routes } from 'react-router-dom';
@@ -53,36 +41,10 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from '@a-conversa/shell';
 
 import { ParticipantLayout } from './layout/ParticipantLayout';
+import { ParticipantChrome } from './layout/ParticipantChrome';
 import { ParticipantStatusIndicator } from './layout/ParticipantStatusIndicator';
-
-function ParticipantChrome(): ReactElement {
-  // Chrome content for the header row: left-aligned product label +
-  // right-aligned identity affordance. Mirrors the `part_auth_flow`
-  // `useAuth()` consumption shape exactly (status switch first, then
-  // `.user !== undefined` belt-and-suspenders, then `.screenName`
-  // access). Reuses the existing `participant.identity.signedInAs` ICU
-  // key — no new key for the identity row.
-  //
-  // When unauthenticated, the chrome renders the product label only
-  // (no identity row). The "not authenticated" body panel still lives
-  // inside `<PlaceholderRouteBody>` (route content), not the chrome
-  // — auth-state messaging belongs in the content region per
-  // `part_auth_flow` Decision §3.
-  const { t } = useTranslation();
-  const auth = useAuth();
-  return (
-    <>
-      <span className="text-sm font-semibold text-slate-800">
-        {t('participant.chrome.productLabel')}
-      </span>
-      {auth.status === 'authenticated' && auth.user !== undefined ? (
-        <span data-testid="participant-identity" className="text-sm text-slate-700">
-          {t('participant.identity.signedInAs', { name: auth.user.screenName })}
-        </span>
-      ) : null}
-    </>
-  );
-}
+import { InviteAcceptanceRoute } from './routes/InviteAcceptanceRoute';
+import { LobbyPlaceholderRoute } from './routes/LobbyPlaceholderRoute';
 
 function PlaceholderRouteBody(): ReactElement {
   // Existing body from `part_auth_flow`: the placeholder title, the
@@ -142,6 +104,8 @@ function PlaceholderRoute(): ReactElement {
 export function App(): ReactElement {
   return (
     <Routes>
+      <Route path="/sessions/:id/invite" element={<InviteAcceptanceRoute />} />
+      <Route path="/sessions/:id/lobby" element={<LobbyPlaceholderRoute />} />
       <Route path="*" element={<PlaceholderRoute />} />
     </Routes>
   );

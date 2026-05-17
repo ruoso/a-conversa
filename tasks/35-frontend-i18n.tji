@@ -332,6 +332,13 @@ task frontend_i18n "Frontend internationalization" {
     note "Native-speaker review of pt-BR + es-419 entries for the five participant.statusIndicator.* keys (idle, connecting, open, reconnecting, closed) added in part_status_indicator (this commit). Source refinement: tasks/refinements/participant-ui/part_status_indicator.md. Per Decision §6 of that refinement."
   }
 
+  task i18n_participant_invite_acceptance_native_review "Native-speaker review of pt-BR + es-419 participant-invite-acceptance strings (13 new keys under participant.inviteAcceptance.* and participant.lobby.*)" {
+    effort 0.25d
+    allocate team
+    depends !i18n_participant_status_indicator_native_review
+    note "Native-speaker review of pt-BR + es-419 draft entries for the 13 participant.inviteAcceptance.* / participant.lobby.* keys added in part_invite_acceptance (this commit). Source refinement: tasks/refinements/participant-ui/part_invite_acceptance.md. Per Decision §10 of that refinement."
+  }
+
   task i18n_keyboard_shortcuts_policy "Per-locale keyboard shortcut policy for moderator palette" {
     effort 0.5d
     allocate team

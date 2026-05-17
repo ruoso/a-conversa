@@ -2,6 +2,14 @@
 //
 // Refinement: tasks/refinements/participant-ui/part_app_skeleton.md
 //              tasks/refinements/participant-ui/part_auth_flow.md
+//              tasks/refinements/participant-ui/part_invite_acceptance.md
+//                 (amends the chrome assertions to read off the
+//                 invite-acceptance route's testid rather than the
+//                 placeholder testid — the URL the original scenarios
+//                 use now matches the new claim route; the chrome
+//                 itself is unchanged and so are the chip / identity
+//                 assertions, mirroring the mount.test.tsx surgical
+//                 amendment in Decision §8).
 // ADRs:        docs/adr/0008-e2e-framework-playwright.md
 //              docs/adr/0022-no-throwaway-verifications.md
 //              docs/adr/0026-micro-frontend-root-app.md
@@ -11,12 +19,24 @@
 // **What this spec pins.** The skeleton's job is to make the
 // moderator's already-emitted invite URLs (`/p/sessions/:id/invite?role=...`,
 // see `apps/moderator/src/routes/InviteParticipants.tsx`) reachable
-// from a logged-in browser. Before this leaf lands, those URLs
-// fall through the root host's `*` catch-all and redirect to `/`.
-// After it lands, the same URL resolves into the participant surface
-// mounted by the root's `<SurfaceHost surfaceId="participant"
-// routerBasePath="/p" />` route, the surface's wildcard route renders,
-// and the placeholder testid is visible.
+// from a logged-in browser. Before `part_app_skeleton` landed, those
+// URLs fell through the root host's `*` catch-all and redirected to
+// `/`. After it landed, the same URL resolved into the participant
+// surface mounted by the root's `<SurfaceHost surfaceId="participant"
+// routerBasePath="/p" />` route, the surface's wildcard route
+// rendered, and the placeholder testid was visible.
+//
+// **`part_invite_acceptance` amendment.** The wildcard placeholder is
+// no longer the route that matches the canonical invite URL shape —
+// `<InviteAcceptanceRoute>` is. The skeleton assertions that pinned
+// the surface-bundle mount + the chrome shape stay valid because the
+// chrome composition is identical (same `<ParticipantLayout>` + same
+// `<ParticipantChrome>` + same status chip in the footer); the
+// testid the route renders changed from `route-participant-placeholder`
+// to `route-invite-acceptance`. The not-found / claim-flow behaviour
+// of the new route is pinned by `participant-invite-acceptance.spec.ts`,
+// not here — this spec's scope stays "the bundle mounts and the chrome
+// renders for the canonical invite URL".
 //
 // **Scope.** The `part_app_skeleton` scenario is one en-US case for the
 // authenticated placeholder. `part_auth_flow` extends the spec with two
@@ -46,8 +66,8 @@ import { expect, test } from '@playwright/test';
 // matches the moderator's `InviteParticipants.tsx` URL shape.
 const SESSION_ID = '00000000-0000-4000-8000-000000000099';
 
-test.describe('Participant surface skeleton — invite URL reaches the placeholder', () => {
-  test('authenticated user hits /p/sessions/<uuid>/invite?role=debater-A and sees the placeholder', async ({
+test.describe('Participant surface skeleton — invite URL reaches the surface bundle', () => {
+  test('authenticated user hits /p/sessions/<uuid>/invite?role=debater-A and sees the invite-acceptance route render', async ({
     page,
   }) => {
     // Navigate directly to the participant invite URL shape the
@@ -55,19 +75,27 @@ test.describe('Participant surface skeleton — invite URL reaches the placehold
     // `apps/moderator/src/routes/InviteParticipants.tsx`). The root
     // host's `/p/*` route, the `SurfaceHost` dispatcher's dynamic-
     // import of the participant bundle, the surface's `mount(props)`
-    // boundary, and the `BrowserRouter`-scoped wildcard route must
-    // all line up for the placeholder testid to appear.
+    // boundary, and the `BrowserRouter`-scoped route table must all
+    // line up for the route testid to appear.
+    //
+    // After `part_invite_acceptance`, the URL matches the new
+    // `<InviteAcceptanceRoute>` (testid `route-invite-acceptance`)
+    // rather than the wildcard placeholder. The chrome composition is
+    // unchanged, so the chip / identity / region assertions below stay
+    // valid; this assertion swaps to the new testid.
     await page.goto(`/p/sessions/${SESSION_ID}/invite?role=debater-A`);
 
     await expect(
-      page.getByTestId('route-participant-placeholder'),
-      'the surface bundle must mount and render the placeholder route',
+      page.getByTestId('route-invite-acceptance'),
+      'the surface bundle must mount and render the invite-acceptance route for the canonical invite URL',
     ).toBeVisible({ timeout: 15_000 });
 
-    // The placeholder title is the first <h1> inside the placeholder
-    // main; pin the en-US text so a regression in the i18n bridge
-    // (host-supplied i18n not reaching the surface) surfaces here.
-    await expect(page.locator('h1').first()).toHaveText('Participant surface');
+    // The invite-acceptance route's title is the first <h1> inside
+    // the route body; pin the en-US text so a regression in the i18n
+    // bridge (host-supplied i18n not reaching the surface) surfaces
+    // here. The string is `participant.inviteAcceptance.title`
+    // (en-US: "Join this debate").
+    await expect(page.locator('h1').first()).toHaveText('Join this debate');
 
     // `part_landscape_layout`: the placeholder body is wrapped in a
     // landscape-grid chrome shell. Pin the four named-region testids
@@ -175,11 +203,13 @@ test.describe('Participant surface skeleton — invite URL reaches the placehold
 
     await page.goto(`/p/sessions/${SESSION_ID}/invite?role=debater-A`);
 
-    // Wait for the placeholder before reading the identity row to keep
-    // the assertion order deterministic — the identity row is a child
-    // of the placeholder main per the `part_auth_flow` refinement
-    // Component-shape section.
-    await expect(page.getByTestId('route-participant-placeholder')).toBeVisible({
+    // Wait for the route before reading the identity row to keep the
+    // assertion order deterministic. After `part_invite_acceptance`
+    // the URL matches the new claim route (testid
+    // `route-invite-acceptance`); the chrome composition is identical,
+    // so the identity row is still a child of the chrome header
+    // regardless of which route body renders.
+    await expect(page.getByTestId('route-invite-acceptance')).toBeVisible({
       timeout: 15_000,
     });
 

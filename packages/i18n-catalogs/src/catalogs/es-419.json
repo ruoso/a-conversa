@@ -447,6 +447,30 @@
       "open": "En vivo",
       "reconnecting": "Reconectando…",
       "closed": "Desconectado"
+    },
+    "inviteAcceptance": {
+      "title": "Unirse a este debate",
+      "hint": "Estás uniéndote a este debate como {role} como {name}",
+      "joinButton": "Unirse a este debate",
+      "joining": "Uniéndose…",
+      "goToLobby": "Ir a la sala de espera",
+      "roleLabels": {
+        "debaterA": "Debatiente A",
+        "debaterB": "Debatiente B"
+      },
+      "errors": {
+        "invalidUrl": "Este enlace de invitación está malformado. Pide un nuevo enlace a tu moderador.",
+        "notFound": "Esta sesión no se ha encontrado — revisa el enlace de invitación con tu moderador.",
+        "sessionAlreadyEnded": "Este debate ya ha terminado.",
+        "notAModerator": "Eres el moderador de la sesión; no puedes ser también debatiente. Inicia sesión con otro usuario para unirte como debatiente.",
+        "roleAlreadyFilled": "Este lugar acaba de ser ocupado. Intenta actualizar la página o contacta a tu moderador.",
+        "userAlreadyJoined": "Ya estás en esta sesión.",
+        "generic": "No se pudo unir a la sesión. Por favor, inténtalo de nuevo.",
+        "network": "No se pudo alcanzar el servidor. Por favor, inténtalo de nuevo."
+      }
+    },
+    "lobbyPlaceholder": {
+      "body": "Estás en la sala de espera."
     }
   },
   "diagnostics": {

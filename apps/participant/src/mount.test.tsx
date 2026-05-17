@@ -3,6 +3,7 @@
 // Refinement: tasks/refinements/participant-ui/part_app_skeleton.md
 //              tasks/refinements/participant-ui/part_auth_flow.md
 //              tasks/refinements/participant-ui/part_ws_client.md
+//              tasks/refinements/participant-ui/part_invite_acceptance.md
 // ADRs:        0022 (no throwaway verifications — this case IS the
 //                    regression pin for the moderator-mirrored shape).
 //
@@ -17,6 +18,17 @@
 // `setConnectionStatus('open')` writer fires — proving the
 // source-hook swap landed end-to-end (App.tsx → layout footer slot →
 // chip → useWsStore selector).
+//
+// `part_invite_acceptance` amendment (Decision §8): the existing URL
+// (`/p/sessions/<uuid>/invite?role=debater-A`) now matches the new
+// `<InviteAcceptanceRoute>` instead of the wildcard placeholder. The
+// `route-participant-placeholder` assertion is replaced with a
+// `route-invite-acceptance` assertion (the new route's testid). The
+// chrome assertions (identity row, layout regions, status chip) stay
+// because the chrome composition is the same. The two unauthenticated-
+// branch cases keep their original assertions because the
+// invite-acceptance route's own not-authenticated guard renders the
+// same `participant-not-authenticated` testid the placeholder did.
 
 import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -97,11 +109,16 @@ describe('participant surface mount()', () => {
       routerBasePath: '/p',
     });
 
+    // `part_invite_acceptance`: the URL now matches the new claim
+    // route, so the asserted testid is `route-invite-acceptance` (the
+    // placeholder testid is no longer rendered for this URL — the
+    // placeholder body still exists for any URL not matching the
+    // /sessions/:id/invite or /sessions/:id/lobby routes).
     await waitFor(() => {
-      expect(screen.getByTestId('route-participant-placeholder')).toBeTruthy();
+      expect(screen.getByTestId('route-invite-acceptance')).toBeTruthy();
     });
 
-    // `part_auth_flow`: the placeholder also surfaces the host-supplied
+    // `part_auth_flow`: the chrome surfaces the host-supplied
     // `screenName` under the stable `participant-identity` testid. The
     // assertion pins that the surface reads `auth.user.screenName`
     // through the shell's `useAuth()` and does not invent its own
@@ -172,8 +189,13 @@ describe('participant surface mount()', () => {
       routerBasePath: '/p',
     });
 
+    // The new invite-acceptance route renders its own
+    // `route-invite-acceptance` wrapper with `data-state="not-authenticated"`
+    // when auth is unauthenticated; the defensive
+    // `participant-not-authenticated` testid lives inside that wrapper
+    // (same panel content as the placeholder's not-authenticated branch).
     await waitFor(() => {
-      expect(screen.getByTestId('route-participant-placeholder')).toBeTruthy();
+      expect(screen.getByTestId('route-invite-acceptance')).toBeTruthy();
     });
 
     // The defensive panel must render and the identity row must NOT —
@@ -215,8 +237,12 @@ describe('participant surface mount()', () => {
       routerBasePath: '/p',
     });
 
+    // Same shift as the prior case: the URL matches the invite-acceptance
+    // route now, and that route's own defensive branch renders the
+    // `participant-not-authenticated` panel under a `route-invite-acceptance`
+    // wrapper.
     await waitFor(() => {
-      expect(screen.getByTestId('route-participant-placeholder')).toBeTruthy();
+      expect(screen.getByTestId('route-invite-acceptance')).toBeTruthy();
     });
 
     expect(screen.getByTestId('participant-not-authenticated')).toBeTruthy();

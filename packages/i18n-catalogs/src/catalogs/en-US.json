@@ -447,6 +447,30 @@
       "open": "Live",
       "reconnecting": "Reconnecting…",
       "closed": "Disconnected"
+    },
+    "inviteAcceptance": {
+      "title": "Join this debate",
+      "hint": "You're joining this debate as {role} as {name}",
+      "joinButton": "Join this debate",
+      "joining": "Joining…",
+      "goToLobby": "Go to lobby",
+      "roleLabels": {
+        "debaterA": "Debater A",
+        "debaterB": "Debater B"
+      },
+      "errors": {
+        "invalidUrl": "This invite link is malformed. Ask your moderator for a new link.",
+        "notFound": "This session could not be found — check the invite link with your moderator.",
+        "sessionAlreadyEnded": "This debate has already ended.",
+        "notAModerator": "You are the session's moderator; you cannot also be a debater. Sign in as a different user to join as a debater.",
+        "roleAlreadyFilled": "This slot was just taken. Try refreshing or contact your moderator.",
+        "userAlreadyJoined": "You are already in this session.",
+        "generic": "Could not join the session. Please try again.",
+        "network": "Could not reach the server. Please try again."
+      }
+    },
+    "lobbyPlaceholder": {
+      "body": "You're in the lobby."
     }
   },
   "diagnostics": {
