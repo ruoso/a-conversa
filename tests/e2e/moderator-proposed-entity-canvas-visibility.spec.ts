@@ -185,22 +185,26 @@ test.describe('mod_proposed_entity_canvas_visibility — proposed entities rende
 
     // Both nodes (the prior target + the new source) must surface, and
     // both must carry `data-facet-status="proposed"`.
-    //
-    // **Edge visibility is OUT OF SCOPE for this commit cluster.** The
-    // `set-edge-substance` proposal payload does not carry the edge
-    // endpoints (source/target/role) today; the server can't mint a
-    // matching `edge-created` event at propose-time without those
-    // fields. Extending the payload is a follow-up
-    // (`mod_set_edge_substance_endpoint_carriage`). For now this
-    // scenario asserts only the source-node visibility, which is the
-    // load-bearing regression cover: prior to the fix the source node
-    // would not appear on the canvas at all.
     const nodes = page.getByTestId(/^statement-node-[0-9a-f-]+$/);
     await expect(nodes).toHaveCount(2, { timeout: 15_000 });
     for (const handle of await nodes.elementHandles()) {
       const status = await handle.getAttribute('data-facet-status');
       expect(status).toBe('proposed');
     }
+
+    // Per `mod_set_edge_substance_endpoint_carriage` the
+    // `set-edge-substance` propose now carries the three endpoint
+    // fields inline, and the propose handler emits `edge-created` +
+    // `entity-included` at propose-time. The canvas projector
+    // (`apps/moderator/src/graph/StatementEdge.tsx`) stamps
+    // `data-facet-status="proposed"` on the role-label pill while the
+    // substance facet is in `proposed` state. Assert: exactly one
+    // edge label surfaces; it carries `data-facet-status="proposed"`.
+    const edgeLabels = page.locator('[data-testid^="graph-edge-label-"]');
+    await expect(edgeLabels).toHaveCount(1, { timeout: 15_000 });
+    await expect(edgeLabels.first()).toHaveAttribute('data-facet-status', 'proposed', {
+      timeout: 15_000,
+    });
   });
 
   // Scenario 3 (2-component decompose propose-time visibility) and

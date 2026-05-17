@@ -303,6 +303,7 @@ task moderator_ui "Moderator UI" {
     task mod_set_edge_substance_endpoint_carriage "Extend setEdgeSubstanceProposalSchema with source_node_id / target_node_id / role for connecting-edge propose-time emission" {
       effort 0.5d
       allocate team
+      complete 100
       depends !mod_proposed_entity_canvas_visibility
       note -8<-
         Source of debt: tasks/refinements/moderator-ui/mod_proposed_entity_canvas_visibility.md D2 — the connecting `set-edge-substance` proposal sub-kind needs source_node_id + target_node_id + role on the payload schema so the propose handler can fire `edge-created` + `entity-included` at propose-time alongside the `proposal` envelope (parallel to the free-floating classify-node fan-out this commit landed). Until this lands, the connecting-edge case only has the source node propose-time-visible; the edge itself appears only on commit. The Playwright e2e's node-source-visibility-on-connecting-propose scenario is green, but the full edge-visibility-on-propose contract is open until this task ships. Must also extend `entitiesToRetractForWithdraw` in apps/server/src/ws/handlers/withdraw.ts with the matching withdraw arm (lockstep with propose-time emission).

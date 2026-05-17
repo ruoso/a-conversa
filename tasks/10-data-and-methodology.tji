@@ -356,6 +356,18 @@ task data_and_methodology "Data and methodology" {
       depends !agreement_state_machine
       note "Refinement: tasks/refinements/data-and-methodology/annotation_logic.md"
     }
+    task set_edge_substance_endpoint_validation "Methodology validator for set-edge-substance connecting case — cross-field referential check on source/target/role" {
+      effort 0.5d
+      allocate team
+      depends !agreement_state_machine, moderator_ui.mod_graph_rendering.mod_set_edge_substance_endpoint_carriage
+      note -8<-
+        Source of debt: tasks/refinements/moderator-ui/mod_set_edge_substance_endpoint_carriage.md D2 — the propose handler's set-edge-substance structural-event builder threads the new endpoint fields through to the emitted edge-created envelope but does NOT cross-check that source_node_id / target_node_id reference existing visible nodes on the projection, nor that the proposed role is valid for the source / target kinds. Per D2 the structural-event builder's job is wire-shape emission, not methodology validation — landing a defensive check there would put cross-field validation in two places once the methodology validator exists. The current commit's validateEvent schema-on-write pass on the emitted edge-created envelope catches malformed UUIDs / enum values; the deeper referential check is deferred to this task.
+
+        Scope: extend the methodology validator arm for set-edge-substance (currently the universal-pass placeholder per propose.ts L1106-1112) with cross-field referential checks: projection.getNode(source_node_id) !== undefined && projection.getNode(target_node_id) !== undefined && role-source-target-compatibility per the methodology contract. Surface typed rejections (e.g. 'source-node-not-found', 'target-node-not-found', 'role-incompatible') consumed by the engine's universal-pass plumbing.
+
+        Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit landing mod_set_edge_substance_endpoint_carriage).
+      ->8-
+    }
   }
 
   task replay_primitive "Render-at-log-position primitive" {

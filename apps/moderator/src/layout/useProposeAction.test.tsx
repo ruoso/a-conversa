@@ -383,7 +383,7 @@ describe('useProposeAction — connecting success path', () => {
     expect(fake.pendingCount()).toBe(1);
     const first = fake.calls[0]?.payload as {
       expectedSequence: number;
-      proposal: { kind: string };
+      proposal: { kind: string; node_id?: string };
     };
     expect(first.expectedSequence).toBe(5);
     expect(first.proposal.kind).toBe('classify-node');
@@ -410,13 +410,32 @@ describe('useProposeAction — connecting success path', () => {
     expect(fake.calls.length).toBe(2);
     const second = fake.calls[1]?.payload as {
       expectedSequence: number;
-      proposal: { kind: string; edge_id: string; value: string };
+      proposal: {
+        kind: string;
+        edge_id: string;
+        value: string;
+        source_node_id?: string;
+        target_node_id?: string;
+        role?: string;
+      };
     };
     expect(second.expectedSequence).toBe(6);
     expect(second.proposal.kind).toBe('set-edge-substance');
     expect(second.proposal.value).toBe('agreed');
     expect(typeof second.proposal.edge_id).toBe('string');
     expect(second.proposal.edge_id.length).toBeGreaterThan(0);
+    // Per `mod_set_edge_substance_endpoint_carriage` the second
+    // envelope's payload carries the three endpoint fields inline:
+    // `source_node_id` is the just-minted source UUID from the first
+    // envelope; `target_node_id` matches `useCaptureStore.targetEntityId`
+    // (the existing node the moderator clicked); `role` matches
+    // `useCaptureStore.edgeRole` (the role they selected via the
+    // `<EdgeRoleSelector>`). Pin all three.
+    const firstPayload = first.proposal as { node_id?: string };
+    expect(typeof second.proposal.source_node_id).toBe('string');
+    expect(second.proposal.source_node_id).toBe(firstPayload.node_id);
+    expect(second.proposal.target_node_id).toBe('44444444-4444-4444-8444-444444444444');
+    expect(second.proposal.role).toBe('supports');
 
     // Resolve the second ack.
     act(() => {

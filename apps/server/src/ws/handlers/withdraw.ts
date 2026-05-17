@@ -51,16 +51,19 @@
 //      one `entity-removed` event. The mapping is the INVERSE of
 //      `buildStructuralEventsForPropose` (in
 //      `apps/server/src/methodology/handlers/propose.ts`) — the two
-//      MUST stay in sync. The v1 mapping covers the only sub-kind
-//      that emits structural events today: a `classify-node`
-//      proposal whose payload carries a `wording` AND whose `node_id`
-//      didn't pre-exist on the projection emits exactly one
-//      `entity-removed(node)`. Every other sub-kind emits zero
-//      structural retractions (the proposal envelope itself remains
-//      in the event log + `pendingProposals` — see D5). When the
-//      propose-emission tech-debt (`mod_set_edge_substance_endpoint_carriage`
-//      etc.) grows the per-sub-kind emission, this handler's
-//      retraction mapping MUST grow in lockstep.
+//      MUST stay in sync. The v1 mapping covers two sub-kinds: a
+//      `classify-node` proposal whose payload carries a `wording`
+//      AND whose `node_id` didn't pre-exist on the projection emits
+//      exactly one `entity-removed(node)`; a `set-edge-substance`
+//      proposal whose payload carries the three optional endpoint
+//      fields (`source_node_id`, `target_node_id`, `role`) AND whose
+//      `edge_id` resolves to an existing edge on the projection emits
+//      exactly one `entity-removed(edge)`. Every other sub-kind
+//      emits zero structural retractions (the proposal envelope
+//      itself remains in the event log + `pendingProposals` — see
+//      D5). When the remaining propose-emission tech-debt grows (the
+//      decompose + interpretive-split arms), this handler's retraction
+//      mapping MUST grow in lockstep.
 //
 //   4. **Multi-event sequence allocation.** The handler may emit zero,
 //      one, or more `entity-removed` events per withdraw. Each
@@ -418,10 +421,23 @@ export function registerWithdrawProposalHandlers(
  *     propose handler only emits `node-created` + `entity-included`
  *     when the same predicate holds, per
  *     `buildStructuralEventsForPropose`'s `classify-node` arm.)
+ *   - `set-edge-substance` with the three optional endpoint fields
+ *     (`source_node_id`, `target_node_id`, `role`) present AND
+ *     `edge_id` resolving to an existing edge on the projection →
+ *     retract the edge. The propose handler emits `edge-created` +
+ *     `entity-included` for the connecting case (the four-branch
+ *     fresh-edge predicate); withdrawing retracts the edge entity
+ *     via `entity-removed(edge)`. Mirrors the `classify-node` arm:
+ *     the endpoint-presence is the propose-time signal; the
+ *     projector-side existence check guards against double-retraction
+ *     (the projector's `handleEntityRemoved` would reject anyway).
  *   - Every other sub-kind → retract nothing. The proposal envelope
  *     event itself remains in the event log + `pendingProposals`
  *     (per D5 of the refinement); the entity layer has nothing to
- *     retract because nothing was minted at propose-time.
+ *     retract because nothing was minted at propose-time. When the
+ *     remaining propose-emission tech-debt grows (the decompose +
+ *     interpretive-split arms), the matching retraction arms land
+ *     here in lockstep.
  */
 interface EntityRetractionTarget {
   entityKind: 'node' | 'edge' | 'annotation';
@@ -465,7 +481,33 @@ function entitiesToRetractForWithdraw(
       }
       break;
     }
-    case 'set-edge-substance':
+    case 'set-edge-substance': {
+      // Mirror of `buildStructuralEventsForPropose`'s
+      // `set-edge-substance` arm: the propose handler emits
+      // `edge-created` + `entity-included` only when the three
+      // endpoint fields are present AND `projection.getEdge(edge_id)`
+      // returned `undefined` at propose-time. By withdraw-time the
+      // log replay has rebuilt the edge on the projection (if it was
+      // minted at propose-time), so the right withdraw-side gate is
+      // "did the propose payload carry the endpoints" — the same
+      // signal the propose handler used. The `getEdge !== undefined`
+      // defensive check guards against a missing-entity retraction
+      // (the projector's `handleEntityRemoved` would reject anyway).
+      const edgeId = payload.edge_id;
+      const sourceNodeId = payload.source_node_id;
+      const targetNodeId = payload.target_node_id;
+      const role = payload.role;
+      const edge = projection.getEdge(edgeId);
+      if (
+        sourceNodeId !== undefined &&
+        targetNodeId !== undefined &&
+        role !== undefined &&
+        edge !== undefined
+      ) {
+        targets.push({ entityKind: 'edge', entityId: edgeId });
+      }
+      break;
+    }
     case 'set-node-substance':
     case 'edit-wording':
     case 'axiom-mark':

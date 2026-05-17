@@ -43,7 +43,7 @@
 import { z } from 'zod';
 
 import { MAX_METHODOLOGY_TEXT_LENGTH } from '../limits.js';
-import { annotationKindSchema } from './enums.js';
+import { annotationKindSchema, edgeRoleSchema } from './enums.js';
 
 // -- StatementKind ---------------------------------------------------
 //
@@ -110,13 +110,46 @@ export type SetNodeSubstanceProposal = z.infer<typeof setNodeSubstanceProposalSc
 
 // -- Sub-kind: set-edge-substance ------------------------------------
 //
-// Propose a substance value for an edge. Same shape as node-substance
-// but addressing an edge.
+// Propose a substance value for an edge. Same base shape as
+// node-substance but addressing an edge, plus three OPTIONAL endpoint
+// fields (`source_node_id`, `target_node_id`, `role`) used by the
+// connecting-edge case.
+//
+// **Wire-shape evolution.** Pre-ADR-0027, set-edge-substance carried
+// only `edge_id` + `value` — the connecting case minted the edge
+// client-side and the edge surfaced on the canvas only after commit.
+// That flow violated `docs/methodology.md` L57 ("A proposed change
+// appears on the graph in `proposed` state from the moment it is
+// made"). The optional `source_node_id` / `target_node_id` / `role`
+// fields reinstate the methodology contract: the client passes the
+// endpoints inline; the server emits `edge-created` + `entity-included`
+// + `proposal` in one envelope chain so subscribers see the proposed
+// edge immediately.
+//
+// The fields are `.optional()` (not required) because the sub-kind
+// serves two distinct use-cases on the wire:
+//   (a) Proposing the substance for a freshly-minted edge (the
+//       connecting case) — all three endpoint fields are present and
+//       the propose handler emits `edge-created` + `entity-included`.
+//   (b) Proposing a substance re-vote against an extant edge (e.g.
+//       the defeater-precommit flow in
+//       `apps/server/src/methodology/handlers/proposeDefeaterPreCommit.test.ts`)
+//       — none of the endpoint fields are present and the propose
+//       handler emits only the `proposal` envelope.
+// The propose handler discriminates via the fresh-edge predicate
+// `projection.getEdge(edge_id) === undefined && source_node_id !==
+// undefined && target_node_id !== undefined && role !== undefined`.
+// The `role` field reuses `edgeRoleSchema` so the proposal payload and
+// the matching `edgeCreatedPayloadSchema` share one source of truth
+// for the seven-value vocabulary.
 
 export const setEdgeSubstanceProposalSchema = z.object({
   kind: z.literal('set-edge-substance'),
   edge_id: z.string().uuid(),
   value: z.enum(['agreed', 'disputed']),
+  source_node_id: z.string().uuid().optional(),
+  target_node_id: z.string().uuid().optional(),
+  role: edgeRoleSchema.optional(),
 });
 
 export type SetEdgeSubstanceProposal = z.infer<typeof setEdgeSubstanceProposalSchema>;

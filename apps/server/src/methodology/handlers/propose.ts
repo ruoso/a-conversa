@@ -1227,25 +1227,24 @@ export const proposeHandler: Validator<ProposeAction> = (
 // long as the proposal is pending). When the node already exists
 // (a re-classify against a committed node), no structural events fire.
 //
-// **set-edge-substance**: the proposal carries `edge_id`. If the
-// edge doesn't exist yet (the connecting case where a new statement
-// is being proposed with an edge to an existing target), the propose
-// flow currently passes through two proposals back-to-back
-// (`classify-node` for the source node + `set-edge-substance` for
-// the edge). The `set-edge-substance` arm here would mint
-// `edge-created` + `entity-included` if it had the source/target/role
-// fields, but `setEdgeSubstanceProposalSchema` doesn't carry them
-// today — the v1 `useProposeAction` client mints them client-side
-// and passes the connecting case as a *single* proposal with the
-// existing `set-edge-substance` shape, leaving the source/target
-// resolution to the engine. Per refinement Open Questions: extending
-// the propose payload to carry the edge endpoints is a follow-up
-// (`mod_set_edge_substance_endpoint_carriage`); for now the
-// `set-edge-substance` arm cannot mint a fresh `edge-created` without
-// those fields. The connecting-case canvas visibility instead lands
-// via the source-node `classify-node` propose's `node-created` event
-// alone — the edge surfaces post-commit, matching the prior contract
-// for the edge but unblocking the source-node visibility.
+// **set-edge-substance**: the proposal carries `edge_id` plus three
+// OPTIONAL endpoint fields (`source_node_id`, `target_node_id`,
+// `role`) per ADR 0027 (entity vs facet layer separation). When all
+// four predicate branches hold — `projection.getEdge(edge_id) ===
+// undefined && source_node_id !== undefined && target_node_id !==
+// undefined && role !== undefined` — the connecting-edge fan-out
+// fires: emit `edge-created` + `entity-included` so the canvas
+// projector renders the proposed edge in `proposed` state immediately
+// (the facet status derives `proposed` so long as the proposal is
+// pending). The four-branch predicate is symmetric with the
+// `classify-node` arm's `getNode === undefined && wording !==
+// undefined` predicate: endpoint-absence OR pre-existing edge → no
+// structural fan-out (substance-only re-vote against an extant edge,
+// e.g. the defeater-precommit flow at
+// `apps/server/src/methodology/handlers/proposeDefeaterPreCommit.test.ts`).
+// The lockstep `entitiesToRetractForWithdraw` arm in
+// `apps/server/src/ws/handlers/withdraw.ts` is the inverse — see D3
+// of `tasks/refinements/backend/ws_withdraw_proposal_message.md`.
 //
 // **decompose / interpretive-split**: each component / reading needs
 // a fresh `node-created` + `entity-included`. The proposal payload
@@ -1311,14 +1310,55 @@ function buildStructuralEventsForPropose(
       break;
     }
     case 'set-edge-substance': {
-      // See header comment — the v1 proposal payload doesn't carry
-      // edge endpoints (source/target/role) so we can't mint a
-      // `edge-created` here. The connecting-case source node IS
-      // covered: the client's two-envelope `classify-node` +
-      // `set-edge-substance` chain produces the source node via the
-      // first envelope's `node-created` emission above. Extending
-      // this arm is the follow-up
-      // `mod_set_edge_substance_endpoint_carriage`.
+      const edgeId = action.proposal.edge_id;
+      const sourceNodeId = action.proposal.source_node_id;
+      const targetNodeId = action.proposal.target_node_id;
+      const role = action.proposal.role;
+      if (
+        projection.getEdge(edgeId) === undefined &&
+        sourceNodeId !== undefined &&
+        targetNodeId !== undefined &&
+        role !== undefined
+      ) {
+        // Connecting-edge case — the client minted a fresh edge id
+        // and supplied the three endpoint fields. Mint
+        // `edge-created` + `entity-included` so the canvas projector
+        // renders the proposed edge in `proposed` state immediately.
+        // Symmetric with the `classify-node` arm above; see the
+        // header docblock for the four-branch predicate rationale.
+        const edgeCreated: EventToAppendEnvelope<'edge-created'> = {
+          id: randomUUID(),
+          sessionId: action.sessionId,
+          sequence: seq(events.length),
+          kind: 'edge-created',
+          actor: action.actor,
+          payload: {
+            edge_id: edgeId,
+            role,
+            source_node_id: sourceNodeId,
+            target_node_id: targetNodeId,
+            created_by: action.requester,
+            created_at: action.createdAt,
+          },
+          createdAt: action.createdAt,
+        };
+        events.push(edgeCreated);
+        const entityIncluded: EventToAppendEnvelope<'entity-included'> = {
+          id: randomUUID(),
+          sessionId: action.sessionId,
+          sequence: seq(events.length),
+          kind: 'entity-included',
+          actor: action.actor,
+          payload: {
+            entity_kind: 'edge',
+            entity_id: edgeId,
+            included_by: action.requester,
+            included_at: action.createdAt,
+          },
+          createdAt: action.createdAt,
+        };
+        events.push(entityIncluded);
+      }
       break;
     }
     default:

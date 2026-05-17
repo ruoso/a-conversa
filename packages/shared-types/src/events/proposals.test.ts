@@ -105,6 +105,65 @@ describe('proposal payload — set-edge-substance', () => {
     const result = proposalPayloadSchema.safeParse({ ...valid, value: 'agreed-with-caveat' });
     expect(result.success).toBe(false);
   });
+
+  // Per `mod_set_edge_substance_endpoint_carriage` the schema gains
+  // three optional endpoint fields used by the connecting-edge case.
+  // The substance-only re-vote shape (no endpoints) stays valid; the
+  // connecting case round-trips with all three present; malformed
+  // values on the new fields are rejected.
+  describe('endpoint carriage (mod_set_edge_substance_endpoint_carriage)', () => {
+    const connecting = {
+      ...valid,
+      source_node_id: NODE_ID,
+      target_node_id: NODE_ID_2,
+      role: 'supports' as const,
+    };
+
+    it('round-trips the connecting shape with source_node_id + target_node_id + role', () => {
+      expect(roundTrip(connecting)).toEqual(connecting);
+    });
+
+    it('accepts the substance-only shape (no endpoint fields) for the defeater-precommit / re-vote case', () => {
+      const result = proposalPayloadSchema.safeParse(valid);
+      expect(result.success).toBe(true);
+    });
+
+    it('rejects a non-UUID source_node_id', () => {
+      const result = proposalPayloadSchema.safeParse({
+        ...connecting,
+        source_node_id: 'not-a-uuid',
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('rejects a non-UUID target_node_id', () => {
+      const result = proposalPayloadSchema.safeParse({
+        ...connecting,
+        target_node_id: 'not-a-uuid',
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it("rejects an invalid role ('invalid-role')", () => {
+      const result = proposalPayloadSchema.safeParse({ ...connecting, role: 'invalid-role' });
+      expect(result.success).toBe(false);
+    });
+
+    it('accepts each of the seven EdgeRole values', () => {
+      for (const role of [
+        'supports',
+        'rebuts',
+        'qualifies',
+        'bridges-from',
+        'bridges-to',
+        'defines',
+        'contradicts',
+      ] as const) {
+        const result = proposalPayloadSchema.safeParse({ ...connecting, role });
+        expect(result.success).toBe(true);
+      }
+    });
+  });
 });
 
 describe('proposal payload — edit-wording (reword)', () => {

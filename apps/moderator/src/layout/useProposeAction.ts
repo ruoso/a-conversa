@@ -57,7 +57,7 @@ import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router-dom';
 import { create } from 'zustand';
-import type { ProposalPayload, StatementKind } from '@a-conversa/shared-types';
+import type { EdgeRole, ProposalPayload, StatementKind } from '@a-conversa/shared-types';
 
 import { useCaptureStore } from '../stores/captureStore';
 import { useWsClient } from '@a-conversa/shell';
@@ -188,12 +188,31 @@ function buildClassifyNodeProposal(args: {
  * vote is the subsequent step. The wire shape requires the field, and
  * `'agreed'` is the methodology default for a fresh proposal (the engine
  * will reject if the substance is disallowed for the role).
+ *
+ * Per ADR 0027, the three endpoint fields (`sourceNodeId`,
+ * `targetNodeId`, `role`) ride inline so the server's propose handler
+ * can mint the matching `edge-created` + `entity-included` events at
+ * propose-time alongside the `proposal` envelope, and the canvas
+ * projector renders the proposed edge immediately. The wire schema
+ * marks the three fields as `.optional()` (the substance-only re-vote
+ * shape against an extant edge omits them), but the builder's
+ * connecting-case caller already knows it's connecting + has all three
+ * values in lexical scope, so the builder parameters are REQUIRED to
+ * fail loudly at the call site if a refactor breaks the wiring (D5).
  */
-function buildSetEdgeSubstanceProposal(args: { edgeId: string }): ProposalPayload {
+function buildSetEdgeSubstanceProposal(args: {
+  edgeId: string;
+  sourceNodeId: string;
+  targetNodeId: string;
+  role: EdgeRole;
+}): ProposalPayload {
   return {
     kind: 'set-edge-substance',
     edge_id: args.edgeId,
     value: 'agreed',
+    source_node_id: args.sourceNodeId,
+    target_node_id: args.targetNodeId,
+    role: args.role,
   };
 }
 
@@ -395,11 +414,23 @@ export function useProposeAction(): UseProposeActionResult {
       if (isConnecting) {
         // Second envelope — `set-edge-substance`. Reads the
         // post-first-broadcast high-water mark for its
-        // `expectedSequence` token.
+        // `expectedSequence` token. Per ADR 0027 the three endpoint
+        // fields ride inline (`nodeId` is the just-minted source from
+        // the first envelope; `targetEntityIdNow` is the existing
+        // target the moderator clicked; `edgeRoleNow` is the role
+        // they selected) so the server emits `edge-created` +
+        // `entity-included` + `proposal` and the canvas projector
+        // renders the proposed edge immediately. The non-null
+        // assertions are pinned by the `isConnecting` gate above.
         await client.send('propose', {
           sessionId: sessionIdNow,
           expectedSequence: lastAppliedSequenceForCall(),
-          proposal: buildSetEdgeSubstanceProposal({ edgeId }),
+          proposal: buildSetEdgeSubstanceProposal({
+            edgeId,
+            sourceNodeId: nodeId,
+            targetNodeId: targetEntityIdNow,
+            role: edgeRoleNow,
+          }),
         });
       }
 

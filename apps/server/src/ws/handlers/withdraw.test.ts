@@ -54,18 +54,28 @@ const NON_PROPOSER_SESSION_ID = '00000000-0000-4000-8000-0000000010a3';
 const COMMITTED_PROPOSAL_SESSION_ID = '00000000-0000-4000-8000-0000000010a4';
 const META_DISAGREE_SESSION_ID = '00000000-0000-4000-8000-0000000010a5';
 const NO_EMIT_SESSION_ID = '00000000-0000-4000-8000-0000000010a6';
+// Session seeded with a connecting `set-edge-substance` propose that
+// minted an edge at propose-time (per
+// `mod_set_edge_substance_endpoint_carriage`). Used for the
+// edge-retraction withdraw test.
+const EDGE_WITHDRAW_SESSION_ID = '00000000-0000-4000-8000-0000000010a7';
 
 const NODE_ID = '00000000-0000-4000-8000-0000000010b1';
 const COMMITTED_NODE_ID = '00000000-0000-4000-8000-0000000010b2';
 const META_NODE_ID = '00000000-0000-4000-8000-0000000010b3';
 const NON_PROPOSER_NODE_ID = '00000000-0000-4000-8000-0000000010b4';
 const NO_EMIT_NODE_ID = '00000000-0000-4000-8000-0000000010b5';
+// Nodes + edge id for the connecting-edge withdraw test.
+const EDGE_WITHDRAW_TARGET_NODE_ID = '00000000-0000-4000-8000-0000000010b6';
+const EDGE_WITHDRAW_SOURCE_NODE_ID = '00000000-0000-4000-8000-0000000010b7';
+const EDGE_WITHDRAW_EDGE_ID = '00000000-0000-4000-8000-0000000010b8';
 
 const PROPOSAL_EVENT_ID = '00000000-0000-4000-8000-0000000010c1';
 const COMMITTED_PROPOSAL_EVENT_ID = '00000000-0000-4000-8000-0000000010c2';
 const META_PROPOSAL_EVENT_ID = '00000000-0000-4000-8000-0000000010c3';
 const NON_PROPOSER_PROPOSAL_EVENT_ID = '00000000-0000-4000-8000-0000000010c4';
 const NO_EMIT_PROPOSAL_EVENT_ID = '00000000-0000-4000-8000-0000000010c5';
+const EDGE_WITHDRAW_PROPOSAL_EVENT_ID = '00000000-0000-4000-8000-0000000010c6';
 
 const OTHER_HOST_ID = '00000000-0000-4000-8000-0000000010d1';
 const DEBATER_A_ID = '00000000-0000-4000-8000-0000000010d2';
@@ -173,6 +183,12 @@ function makeWithdrawPool(): { pool: DbPool; store: Store } {
       },
       {
         id: NO_EMIT_SESSION_ID,
+        host_user_id: FIXTURE_USER_ID,
+        privacy: 'public',
+        ended_at: null,
+      },
+      {
+        id: EDGE_WITHDRAW_SESSION_ID,
         host_user_id: FIXTURE_USER_ID,
         privacy: 'public',
         ended_at: null,
@@ -714,6 +730,154 @@ function makeWithdrawPool(): { pool: DbPool; store: Store } {
           },
         },
         created_at: t(3),
+      },
+
+      // ---- EDGE_WITHDRAW_SESSION_ID ----
+      // FIXTURE_USER_ID hosts + proposes a connecting
+      // `set-edge-substance` per
+      // `mod_set_edge_substance_endpoint_carriage`. Pre-state: target
+      // node + source node both already on the canvas. The propose-
+      // time fan-out emitted `edge-created` + `entity-included` for
+      // the fresh edge alongside the `proposal` envelope. Used for
+      // the connecting-edge withdraw test (one
+      // `entity-removed(edge)` lands at seq 10). MAX(sequence) = 9.
+      {
+        id: '00000000-0000-4000-8000-00000001ff01',
+        session_id: EDGE_WITHDRAW_SESSION_ID,
+        sequence: 1,
+        kind: 'session-created',
+        actor: FIXTURE_USER_ID,
+        payload: {
+          host_user_id: FIXTURE_USER_ID,
+          privacy: 'public',
+          topic: 'Edge-withdraw test',
+          created_at: t(0).toISOString(),
+        },
+        created_at: t(0),
+      },
+      {
+        id: '00000000-0000-4000-8000-00000001ff02',
+        session_id: EDGE_WITHDRAW_SESSION_ID,
+        sequence: 2,
+        kind: 'participant-joined',
+        actor: FIXTURE_USER_ID,
+        payload: {
+          user_id: FIXTURE_USER_ID,
+          role: 'moderator',
+          screen_name: FIXTURE_SCREEN_NAME,
+          joined_at: t(1).toISOString(),
+        },
+        created_at: t(1),
+      },
+      // Target node (pre-existing) — visible on the canvas before the
+      // connecting propose.
+      {
+        id: '00000000-0000-4000-8000-00000001ff03',
+        session_id: EDGE_WITHDRAW_SESSION_ID,
+        sequence: 3,
+        kind: 'node-created',
+        actor: FIXTURE_USER_ID,
+        payload: {
+          node_id: EDGE_WITHDRAW_TARGET_NODE_ID,
+          wording: 'Target claim.',
+          created_by: FIXTURE_USER_ID,
+          created_at: t(2).toISOString(),
+        },
+        created_at: t(2),
+      },
+      {
+        id: '00000000-0000-4000-8000-00000001ff04',
+        session_id: EDGE_WITHDRAW_SESSION_ID,
+        sequence: 4,
+        kind: 'entity-included',
+        actor: FIXTURE_USER_ID,
+        payload: {
+          entity_kind: 'node',
+          entity_id: EDGE_WITHDRAW_TARGET_NODE_ID,
+          included_by: FIXTURE_USER_ID,
+          included_at: t(2).toISOString(),
+        },
+        created_at: t(2),
+      },
+      // Source node — the first envelope of the two-envelope chain
+      // just minted this.
+      {
+        id: '00000000-0000-4000-8000-00000001ff05',
+        session_id: EDGE_WITHDRAW_SESSION_ID,
+        sequence: 5,
+        kind: 'node-created',
+        actor: FIXTURE_USER_ID,
+        payload: {
+          node_id: EDGE_WITHDRAW_SOURCE_NODE_ID,
+          wording: 'Source claim.',
+          created_by: FIXTURE_USER_ID,
+          created_at: t(2).toISOString(),
+        },
+        created_at: t(2),
+      },
+      {
+        id: '00000000-0000-4000-8000-00000001ff06',
+        session_id: EDGE_WITHDRAW_SESSION_ID,
+        sequence: 6,
+        kind: 'entity-included',
+        actor: FIXTURE_USER_ID,
+        payload: {
+          entity_kind: 'node',
+          entity_id: EDGE_WITHDRAW_SOURCE_NODE_ID,
+          included_by: FIXTURE_USER_ID,
+          included_at: t(2).toISOString(),
+        },
+        created_at: t(2),
+      },
+      // The connecting propose-time fan-out — `edge-created` +
+      // `entity-included(edge)` + `proposal`.
+      {
+        id: '00000000-0000-4000-8000-00000001ff07',
+        session_id: EDGE_WITHDRAW_SESSION_ID,
+        sequence: 7,
+        kind: 'edge-created',
+        actor: FIXTURE_USER_ID,
+        payload: {
+          edge_id: EDGE_WITHDRAW_EDGE_ID,
+          role: 'supports',
+          source_node_id: EDGE_WITHDRAW_SOURCE_NODE_ID,
+          target_node_id: EDGE_WITHDRAW_TARGET_NODE_ID,
+          created_by: FIXTURE_USER_ID,
+          created_at: t(2).toISOString(),
+        },
+        created_at: t(2),
+      },
+      {
+        id: '00000000-0000-4000-8000-00000001ff08',
+        session_id: EDGE_WITHDRAW_SESSION_ID,
+        sequence: 8,
+        kind: 'entity-included',
+        actor: FIXTURE_USER_ID,
+        payload: {
+          entity_kind: 'edge',
+          entity_id: EDGE_WITHDRAW_EDGE_ID,
+          included_by: FIXTURE_USER_ID,
+          included_at: t(2).toISOString(),
+        },
+        created_at: t(2),
+      },
+      {
+        id: EDGE_WITHDRAW_PROPOSAL_EVENT_ID,
+        session_id: EDGE_WITHDRAW_SESSION_ID,
+        sequence: 9,
+        kind: 'proposal',
+        actor: FIXTURE_USER_ID,
+        payload: {
+          proposal: {
+            kind: 'set-edge-substance',
+            edge_id: EDGE_WITHDRAW_EDGE_ID,
+            value: 'agreed',
+            source_node_id: EDGE_WITHDRAW_SOURCE_NODE_ID,
+            target_node_id: EDGE_WITHDRAW_TARGET_NODE_ID,
+            role: 'supports',
+          },
+        },
+        created_at: t(2),
       },
     ],
   };
@@ -1350,6 +1514,119 @@ describe('ws_withdraw_proposal_message — handler integration', () => {
         (e) => e.session_id === NON_PROPOSER_SESSION_ID,
       ).length;
       expect(eventCount).toBe(6);
+    } finally {
+      ws.terminate();
+    }
+  });
+
+  // Per `mod_set_edge_substance_endpoint_carriage` the
+  // propose-handler now emits `edge-created` + `entity-included` for
+  // the connecting `set-edge-substance` case (three optional endpoint
+  // fields present, projection.getEdge returns undefined). The
+  // inverse-pair invariant (D3 of
+  // `ws_withdraw_proposal_message.md`) requires the
+  // `entitiesToRetractForWithdraw` switch to grow a matching
+  // `'set-edge-substance' → entity-removed(edge)` arm in lockstep.
+  // This test pins that arm: withdrawing a connecting
+  // `set-edge-substance` proposal emits exactly one
+  // `entity-removed(edge)` event whose `entity_id` matches the
+  // proposal's `edge_id`.
+  it('subscribed + visible + proposer + connecting set-edge-substance propose → one entity-removed(edge) + event-applied broadcast + proposal-withdrawn ack on the same socket', async () => {
+    const cookie = await fixtureCookieHeader();
+    const { ws, next } = await openWsClient(app, cookie);
+    try {
+      await next(); // hello
+
+      ws.send(subscribeFrame(SUB_MSG_ID, EDGE_WITHDRAW_SESSION_ID));
+      const subAck = JSON.parse(await next()) as { type?: unknown };
+      expect(subAck.type).toBe('subscribed');
+
+      // MAX(sequence) = 9; the single entity-removed(edge) lands at seq 10.
+      ws.send(
+        withdrawFrame(
+          WITHDRAW_MSG_ID,
+          EDGE_WITHDRAW_SESSION_ID,
+          9,
+          EDGE_WITHDRAW_PROPOSAL_EVENT_ID,
+        ),
+      );
+
+      // Proposer receives BOTH `event-applied` broadcast AND the
+      // `proposal-withdrawn` ack (proposer is also a subscriber).
+      const frames: Record<string, unknown>[] = [];
+      for (let i = 0; i < 2; i++) {
+        const raw = await next();
+        frames.push(JSON.parse(raw) as Record<string, unknown>);
+      }
+      const types = frames.map((f) => f.type);
+      expect(types).toContain('proposal-withdrawn');
+      expect(types).toContain('event-applied');
+
+      // `proposal-withdrawn` ack assertions.
+      const ack = frames.find((f) => f.type === 'proposal-withdrawn') as
+        | {
+            id?: unknown;
+            inResponseTo?: unknown;
+            payload?: {
+              sessionId?: unknown;
+              proposalEventId?: unknown;
+              removedEventCount?: unknown;
+            };
+          }
+        | undefined;
+      expect(ack?.inResponseTo).toBe(WITHDRAW_MSG_ID);
+      expect(ack?.id).toMatch(UUID_V4_PATTERN);
+      expect(ack?.payload?.sessionId).toBe(EDGE_WITHDRAW_SESSION_ID);
+      expect(ack?.payload?.proposalEventId).toBe(EDGE_WITHDRAW_PROPOSAL_EVENT_ID);
+      expect(ack?.payload?.removedEventCount).toBe(1);
+
+      // `event-applied` broadcast carries an `entity-removed(edge)`
+      // for EDGE_WITHDRAW_EDGE_ID.
+      const applied = frames.find((f) => f.type === 'event-applied') as
+        | {
+            payload?: {
+              event?: {
+                kind?: unknown;
+                sequence?: unknown;
+                sessionId?: unknown;
+                actor?: unknown;
+                payload?: {
+                  entity_kind?: unknown;
+                  entity_id?: unknown;
+                  removed_by?: unknown;
+                  removed_at?: unknown;
+                };
+              };
+            };
+          }
+        | undefined;
+      expect(applied?.payload?.event?.kind).toBe('entity-removed');
+      expect(applied?.payload?.event?.sequence).toBe(10);
+      expect(applied?.payload?.event?.sessionId).toBe(EDGE_WITHDRAW_SESSION_ID);
+      expect(applied?.payload?.event?.actor).toBe(FIXTURE_USER_ID);
+      const innerPayload = applied?.payload?.event?.payload;
+      expect(innerPayload?.entity_kind).toBe('edge');
+      expect(innerPayload?.entity_id).toBe(EDGE_WITHDRAW_EDGE_ID);
+      expect(innerPayload?.removed_by).toBe(FIXTURE_USER_ID);
+      expect(typeof innerPayload?.removed_at).toBe('string');
+
+      // The entity-removed event was appended to the store at seq 10.
+      const appended = store.events.find(
+        (e) => e.session_id === EDGE_WITHDRAW_SESSION_ID && e.sequence === 10,
+      );
+      expect(appended).toBeDefined();
+      expect(appended?.kind).toBe('entity-removed');
+      expect(appended?.actor).toBe(FIXTURE_USER_ID);
+      const appendedPayload = appended?.payload as
+        | {
+            entity_kind?: unknown;
+            entity_id?: unknown;
+            removed_by?: unknown;
+          }
+        | undefined;
+      expect(appendedPayload?.entity_kind).toBe('edge');
+      expect(appendedPayload?.entity_id).toBe(EDGE_WITHDRAW_EDGE_ID);
+      expect(appendedPayload?.removed_by).toBe(FIXTURE_USER_ID);
     } finally {
       ws.terminate();
     }
