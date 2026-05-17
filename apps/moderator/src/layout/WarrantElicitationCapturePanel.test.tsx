@@ -13,10 +13,17 @@
 // `data-warrant-elicitation-route` seam for the F2 / F4 / F7 wirings).
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import {
+  cleanup,
+  fireEvent,
+  render as rtlRender,
+  screen,
+  type RenderOptions,
+  type RenderResult,
+} from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import i18next from 'i18next';
-import type { ReactElement } from 'react';
+import { act, type ReactElement } from 'react';
 import { MAX_METHODOLOGY_TEXT_LENGTH, type Event } from '@a-conversa/shared-types';
 
 import {
@@ -48,7 +55,27 @@ function makeNodeCreated(opts: { sequence: number; nodeId: string; wording: stri
   };
 }
 
-function renderWithRoute(): ReturnType<typeof render> {
+// Async `render(...)` shadow. `useTranslation()` schedules a
+// microtask-deferred setState when its internal i18next subscription
+// registers on mount; the deferred update fires AFTER the synchronous
+// render's act() wrapper closes, so React emits "An update to
+// <Component> was not wrapped in act(...)". `await act(async () =>
+// { ... })` flushes pending microtasks before the act block resolves,
+// absorbing the deferred update inside the wrapper.
+async function render(ui: ReactElement, options?: RenderOptions): Promise<RenderResult> {
+  let result!: RenderResult;
+  // `act` takes the async (microtask-flushing) path when the callback
+  // returns a thenable — `return Promise.resolve()` is enough; no
+  // `async` keyword (which would trip `require-await` since the body
+  // does not await anything).
+  await act(() => {
+    result = rtlRender(ui, options);
+    return Promise.resolve();
+  });
+  return result;
+}
+
+async function renderWithRoute(): Promise<RenderResult> {
   function RouteHost(): ReactElement {
     return <WarrantElicitationCapturePanel />;
   }
@@ -86,21 +113,21 @@ describe('WarrantElicitationCapturePanel — render gating', () => {
     'axiom-mark',
   ];
   for (const m of nonMatchingModes) {
-    it(`renders null when mode is ${m}`, () => {
+    it(`renders null when mode is ${m}`, async () => {
       act(() => {
         useCaptureStore.setState({ mode: m });
       });
-      const { container } = renderWithRoute();
+      const { container } = await renderWithRoute();
       expect(container.firstChild).toBeNull();
       expect(screen.queryByTestId('warrant-elicitation-capture-panel')).toBeNull();
     });
   }
 
-  it('renders the panel root with the target-node-id seam when mode is warrant-elicitation', () => {
+  it('renders the panel root with the target-node-id seam when mode is warrant-elicitation', async () => {
     act(() => {
       useCaptureStore.getState().enterWarrantElicitationMode(NODE_A);
     });
-    renderWithRoute();
+    await renderWithRoute();
     const root = screen.getByTestId('warrant-elicitation-capture-panel');
     expect(root).toBeTruthy();
     expect(root.getAttribute('data-warrant-elicitation-target-node-id')).toBe(NODE_A);
@@ -108,66 +135,66 @@ describe('WarrantElicitationCapturePanel — render gating', () => {
 });
 
 describe('WarrantElicitationCapturePanel — prompt + guidance + target wording', () => {
-  it('renders the ICU-templated prompt question header with the target wording interpolated when the events log carries a matching node-created event', () => {
+  it('renders the ICU-templated prompt question header with the target wording interpolated when the events log carries a matching node-created event', async () => {
     useWsStore
       .getState()
       .applyEvent(makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'the disputed claim' }));
     act(() => {
       useCaptureStore.getState().enterWarrantElicitationMode(NODE_A);
     });
-    renderWithRoute();
+    await renderWithRoute();
     expect(screen.getByTestId('warrant-elicitation-prompt-question').textContent).toBe(
       'What\'s the unstated bridge from "the disputed claim" to your conclusion?',
     );
   });
 
-  it('falls back to the generic prompt question when the events log lacks a matching node-created event (resolver-tolerance, Decision §D5)', () => {
+  it('falls back to the generic prompt question when the events log lacks a matching node-created event (resolver-tolerance, Decision §D5)', async () => {
     act(() => {
       useCaptureStore.getState().enterWarrantElicitationMode(NODE_A);
     });
-    renderWithRoute();
+    await renderWithRoute();
     expect(screen.getByTestId('warrant-elicitation-prompt-question').textContent).toBe(
       "What's the unstated bridge from the target to your conclusion?",
     );
   });
 
-  it('renders the localized guidance row', () => {
+  it('renders the localized guidance row', async () => {
     act(() => {
       useCaptureStore.getState().enterWarrantElicitationMode(NODE_A);
     });
-    renderWithRoute();
+    await renderWithRoute();
     const guidance = screen.getByTestId('warrant-elicitation-prompt-guidance');
     expect(guidance.textContent).toContain('bridges-from');
     expect(guidance.textContent).toContain('bridges-to');
   });
 
-  it('renders the target-wording overlay when the events log carries a matching node-created event', () => {
+  it('renders the target-wording overlay when the events log carries a matching node-created event', async () => {
     useWsStore
       .getState()
       .applyEvent(makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'the disputed claim' }));
     act(() => {
       useCaptureStore.getState().enterWarrantElicitationMode(NODE_A);
     });
-    renderWithRoute();
+    await renderWithRoute();
     const overlay = screen.getByTestId('warrant-elicitation-target-wording');
     expect(overlay.textContent).toBe('Eliciting warrant for: the disputed claim');
   });
 
-  it('renders no target-wording overlay when the events log lacks a matching node-created event (resolver-tolerance)', () => {
+  it('renders no target-wording overlay when the events log lacks a matching node-created event (resolver-tolerance)', async () => {
     act(() => {
       useCaptureStore.getState().enterWarrantElicitationMode(NODE_A);
     });
-    renderWithRoute();
+    await renderWithRoute();
     expect(screen.queryByTestId('warrant-elicitation-target-wording')).toBeNull();
   });
 });
 
 describe('WarrantElicitationCapturePanel — transcription textarea', () => {
-  it('typing into the textarea updates its value', () => {
+  it('typing into the textarea updates its value', async () => {
     act(() => {
       useCaptureStore.getState().enterWarrantElicitationMode(NODE_A);
     });
-    renderWithRoute();
+    await renderWithRoute();
     const textarea = screen.getByTestId<HTMLTextAreaElement>('warrant-elicitation-answer-textarea');
     expect(textarea.value).toBe('');
     act(() => {
@@ -180,11 +207,11 @@ describe('WarrantElicitationCapturePanel — transcription textarea', () => {
     ).toBe('the unstated bridge is: minimum-wage workers spend their wages locally');
   });
 
-  it('clamps over-long input to MAX_METHODOLOGY_TEXT_LENGTH (defensive paste-bypass)', () => {
+  it('clamps over-long input to MAX_METHODOLOGY_TEXT_LENGTH (defensive paste-bypass)', async () => {
     act(() => {
       useCaptureStore.getState().enterWarrantElicitationMode(NODE_A);
     });
-    renderWithRoute();
+    await renderWithRoute();
     const textarea = screen.getByTestId<HTMLTextAreaElement>('warrant-elicitation-answer-textarea');
     const oversize = 'x'.repeat(MAX_METHODOLOGY_TEXT_LENGTH + 50);
     act(() => {
@@ -197,11 +224,11 @@ describe('WarrantElicitationCapturePanel — transcription textarea', () => {
 });
 
 describe('WarrantElicitationCapturePanel — action chips', () => {
-  it('renders all three action chips in canonical order, each disabled + aria-disabled, each carrying the data-warrant-elicitation-route seam', () => {
+  it('renders all three action chips in canonical order, each disabled + aria-disabled, each carrying the data-warrant-elicitation-route seam', async () => {
     act(() => {
       useCaptureStore.getState().enterWarrantElicitationMode(NODE_A);
     });
-    renderWithRoute();
+    await renderWithRoute();
     const actions = screen.getByTestId('warrant-elicitation-actions');
     const buttons = Array.from(actions.querySelectorAll<HTMLButtonElement>('button'));
     expect(buttons.map((b) => b.getAttribute('data-warrant-elicitation-route'))).toEqual([
@@ -219,11 +246,11 @@ describe('WarrantElicitationCapturePanel — action chips', () => {
     }
   });
 
-  it('clicking an action chip is a no-op (mode does not change — placeholder discipline)', () => {
+  it('clicking an action chip is a no-op (mode does not change — placeholder discipline)', async () => {
     act(() => {
       useCaptureStore.getState().enterWarrantElicitationMode(NODE_A);
     });
-    renderWithRoute();
+    await renderWithRoute();
     const before = useCaptureStore.getState().mode;
     expect(before).toBe('warrant-elicitation');
     for (const route of WARRANT_ELICITATION_ROUTES) {
@@ -294,7 +321,7 @@ describe('WarrantElicitationCapturePanel — i18n locale parity', () => {
       act(() => {
         useCaptureStore.getState().enterWarrantElicitationMode(NODE_A);
       });
-      renderWithRoute();
+      await renderWithRoute();
 
       expect(screen.getByTestId('warrant-elicitation-prompt-question').textContent).toBe(
         questionTemplated,
@@ -319,7 +346,10 @@ describe('WarrantElicitationCapturePanel — i18n locale parity', () => {
         );
       }
 
-      await i18next.changeLanguage('en-US');
+      // No trailing `await i18next.changeLanguage('en-US')` — `beforeEach`
+      // already resets the language for the next case, and triggering a
+      // language change on a still-mounted component here would fire a
+      // setState outside an act(...) wrapper.
     });
   }
 });

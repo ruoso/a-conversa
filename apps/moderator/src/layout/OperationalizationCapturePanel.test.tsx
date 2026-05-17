@@ -11,10 +11,17 @@
 // `data-operationalization-route` seam for the F5 / F6 / F7 wirings).
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import {
+  cleanup,
+  fireEvent,
+  render as rtlRender,
+  screen,
+  type RenderOptions,
+  type RenderResult,
+} from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import i18next from 'i18next';
-import type { ReactElement } from 'react';
+import { act, type ReactElement } from 'react';
 import { MAX_METHODOLOGY_TEXT_LENGTH, type Event } from '@a-conversa/shared-types';
 
 import {
@@ -46,7 +53,27 @@ function makeNodeCreated(opts: { sequence: number; nodeId: string; wording: stri
   };
 }
 
-function renderWithRoute(): ReturnType<typeof render> {
+// Async `render(...)` shadow. `useTranslation()` schedules a
+// microtask-deferred setState when its internal i18next subscription
+// registers on mount; the deferred update fires AFTER the synchronous
+// render's act() wrapper closes, so React emits "An update to
+// <Component> was not wrapped in act(...)". `await act(async () =>
+// { ... })` flushes pending microtasks before the act block resolves,
+// absorbing the deferred update inside the wrapper.
+async function render(ui: ReactElement, options?: RenderOptions): Promise<RenderResult> {
+  let result!: RenderResult;
+  // `act` takes the async (microtask-flushing) path when the callback
+  // returns a thenable — `return Promise.resolve()` is enough; no
+  // `async` keyword (which would trip `require-await` since the body
+  // does not await anything).
+  await act(() => {
+    result = rtlRender(ui, options);
+    return Promise.resolve();
+  });
+  return result;
+}
+
+async function renderWithRoute(): Promise<RenderResult> {
   function RouteHost(): ReactElement {
     return <OperationalizationCapturePanel />;
   }
@@ -84,21 +111,21 @@ describe('OperationalizationCapturePanel — render gating', () => {
     'axiom-mark',
   ];
   for (const m of nonMatchingModes) {
-    it(`renders null when mode is ${m}`, () => {
+    it(`renders null when mode is ${m}`, async () => {
       act(() => {
         useCaptureStore.setState({ mode: m });
       });
-      const { container } = renderWithRoute();
+      const { container } = await renderWithRoute();
       expect(container.firstChild).toBeNull();
       expect(screen.queryByTestId('operationalization-capture-panel')).toBeNull();
     });
   }
 
-  it('renders the panel root with the target-node-id seam when mode is operationalization', () => {
+  it('renders the panel root with the target-node-id seam when mode is operationalization', async () => {
     act(() => {
       useCaptureStore.getState().enterOperationalizationMode(NODE_A);
     });
-    renderWithRoute();
+    await renderWithRoute();
     const root = screen.getByTestId('operationalization-capture-panel');
     expect(root).toBeTruthy();
     expect(root.getAttribute('data-operationalization-target-node-id')).toBe(NODE_A);
@@ -106,27 +133,27 @@ describe('OperationalizationCapturePanel — render gating', () => {
 });
 
 describe('OperationalizationCapturePanel — prompt + guidance + target wording', () => {
-  it('renders the localized prompt question header', () => {
+  it('renders the localized prompt question header', async () => {
     act(() => {
       useCaptureStore.getState().enterOperationalizationMode(NODE_A);
     });
-    renderWithRoute();
+    await renderWithRoute();
     expect(screen.getByTestId('operationalization-prompt-question').textContent).toBe(
       'What evidence would change your mind on this?',
     );
   });
 
-  it('renders the localized guidance row', () => {
+  it('renders the localized guidance row', async () => {
     act(() => {
       useCaptureStore.getState().enterOperationalizationMode(NODE_A);
     });
-    renderWithRoute();
+    await renderWithRoute();
     const guidance = screen.getByTestId('operationalization-prompt-guidance');
     expect(guidance.textContent).toContain('Empirical evidence');
     expect(guidance.textContent).toContain('axiom-mark');
   });
 
-  it('renders the target-wording overlay when the events log carries a matching node-created event', () => {
+  it('renders the target-wording overlay when the events log carries a matching node-created event', async () => {
     useWsStore
       .getState()
       .applyEvent(
@@ -135,12 +162,12 @@ describe('OperationalizationCapturePanel — prompt + guidance + target wording'
     act(() => {
       useCaptureStore.getState().enterOperationalizationMode(NODE_A);
     });
-    renderWithRoute();
+    await renderWithRoute();
     const overlay = screen.getByTestId('operationalization-target-wording');
     expect(overlay.textContent).toBe('Operationalizing: the disputed wording');
   });
 
-  it('renders no target-wording overlay when the events log lacks a matching node-created event (resolver-tolerance)', () => {
+  it('renders no target-wording overlay when the events log lacks a matching node-created event (resolver-tolerance)', async () => {
     // The resolver returns `null` when there is no matching event; the
     // panel renders no overlay (mirrors `<ProposalModeExitAffordance>`
     // tolerance — the staleness window between the moderator entering
@@ -148,17 +175,17 @@ describe('OperationalizationCapturePanel — prompt + guidance + target wording'
     act(() => {
       useCaptureStore.getState().enterOperationalizationMode(NODE_A);
     });
-    renderWithRoute();
+    await renderWithRoute();
     expect(screen.queryByTestId('operationalization-target-wording')).toBeNull();
   });
 });
 
 describe('OperationalizationCapturePanel — transcription textarea', () => {
-  it('typing into the textarea updates its value', () => {
+  it('typing into the textarea updates its value', async () => {
     act(() => {
       useCaptureStore.getState().enterOperationalizationMode(NODE_A);
     });
-    renderWithRoute();
+    await renderWithRoute();
     const textarea = screen.getByTestId<HTMLTextAreaElement>('operationalization-answer-textarea');
     expect(textarea.value).toBe('');
     act(() => {
@@ -169,11 +196,11 @@ describe('OperationalizationCapturePanel — transcription textarea', () => {
     ).toBe('the participant said: nothing');
   });
 
-  it('clamps over-long input to MAX_METHODOLOGY_TEXT_LENGTH (defensive paste-bypass)', () => {
+  it('clamps over-long input to MAX_METHODOLOGY_TEXT_LENGTH (defensive paste-bypass)', async () => {
     act(() => {
       useCaptureStore.getState().enterOperationalizationMode(NODE_A);
     });
-    renderWithRoute();
+    await renderWithRoute();
     const textarea = screen.getByTestId<HTMLTextAreaElement>('operationalization-answer-textarea');
     const oversize = 'x'.repeat(MAX_METHODOLOGY_TEXT_LENGTH + 50);
     act(() => {
@@ -186,11 +213,11 @@ describe('OperationalizationCapturePanel — transcription textarea', () => {
 });
 
 describe('OperationalizationCapturePanel — action chips', () => {
-  it('renders all five action chips in canonical order, each disabled + aria-disabled, each carrying the data-operationalization-route seam', () => {
+  it('renders all five action chips in canonical order, each disabled + aria-disabled, each carrying the data-operationalization-route seam', async () => {
     act(() => {
       useCaptureStore.getState().enterOperationalizationMode(NODE_A);
     });
-    renderWithRoute();
+    await renderWithRoute();
     const actions = screen.getByTestId('operationalization-actions');
     const buttons = Array.from(actions.querySelectorAll<HTMLButtonElement>('button'));
     expect(buttons.map((b) => b.getAttribute('data-operationalization-route'))).toEqual([
@@ -210,11 +237,11 @@ describe('OperationalizationCapturePanel — action chips', () => {
     }
   });
 
-  it('clicking an action chip is a no-op (mode does not change — placeholder discipline)', () => {
+  it('clicking an action chip is a no-op (mode does not change — placeholder discipline)', async () => {
     act(() => {
       useCaptureStore.getState().enterOperationalizationMode(NODE_A);
     });
-    renderWithRoute();
+    await renderWithRoute();
     const before = useCaptureStore.getState().mode;
     expect(before).toBe('operationalization');
     for (const route of OPERATIONALIZATION_ROUTES) {
@@ -279,7 +306,7 @@ describe('OperationalizationCapturePanel — i18n locale parity', () => {
       act(() => {
         useCaptureStore.getState().enterOperationalizationMode(NODE_A);
       });
-      renderWithRoute();
+      await renderWithRoute();
 
       expect(screen.getByTestId('operationalization-prompt-question').textContent).toBe(question);
       const textarea = screen.getByTestId('operationalization-answer-textarea');
@@ -297,7 +324,10 @@ describe('OperationalizationCapturePanel — i18n locale parity', () => {
         expect(question).not.toBe('What evidence would change your mind on this?');
       }
 
-      await i18next.changeLanguage('en-US');
+      // No trailing `await i18next.changeLanguage('en-US')` — `beforeEach`
+      // already resets the language for the next case, and triggering a
+      // language change on a still-mounted component here would fire a
+      // setState outside an act(...) wrapper.
     });
   }
 });
