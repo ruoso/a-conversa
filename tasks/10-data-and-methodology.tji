@@ -377,7 +377,7 @@ task data_and_methodology "Data and methodology" {
   }
 
   task data_methodology_tests "Tests for data + methodology" {
-    depends !event_types, !projection, !diagnostics, !methodology_engine, foundation.test_infra
+    depends !event_types, !projection, !diagnostics, !methodology_engine
 
     task dm_unit_tests "Unit tests" {
       task event_serialization_unit "Round-trip event serialization" {

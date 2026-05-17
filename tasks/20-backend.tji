@@ -385,7 +385,7 @@ task backend "Backend" {
   }
 
   task backend_tests "Backend tests" {
-    depends !api_skeleton, !auth, !session_management, !websocket_protocol, foundation.test_infra
+    depends !api_skeleton, !auth, !session_management, !websocket_protocol
 
     task be_unit_tests "Unit tests" {
       task auth_unit "Auth helpers, session-token logic" {

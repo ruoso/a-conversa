@@ -251,7 +251,7 @@ task participant_ui "Participant (debater) UI" {
   }
 
   task part_tests "Participant UI tests" {
-    depends !part_voting, !part_withdraw, !part_axiom_mark_from_tablet, foundation.test_infra
+    depends !part_voting, !part_withdraw, !part_axiom_mark_from_tablet
 
     task part_unit_tests "Unit tests (components in isolation)" {
       task part_unit_graph_view "Graph view components" {

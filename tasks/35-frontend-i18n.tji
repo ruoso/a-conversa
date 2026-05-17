@@ -400,7 +400,7 @@ task frontend_i18n "Frontend internationalization" {
     effort 2d
     allocate team
     complete 100
-    depends !i18n_locale_negotiation, foundation.test_infra.playwright_setup
+    depends !i18n_locale_negotiation
     note -8<-
       Per-locale smoke run on the four surfaces; visual regression baselines per locale
 

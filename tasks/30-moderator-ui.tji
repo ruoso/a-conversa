@@ -588,7 +588,7 @@ task moderator_ui "Moderator UI" {
   }
 
   task mod_tests "Moderator UI tests" {
-    depends !mod_capture_flow, !mod_decompose_flow, !mod_diagnostic_flow, !mod_pending_proposals_pane, root_app.root_moderator_cutover, foundation.test_infra
+    depends !mod_capture_flow, !mod_decompose_flow, !mod_diagnostic_flow, !mod_pending_proposals_pane, root_app.root_moderator_cutover
 
     task mod_unit_tests "Unit tests (components in isolation)" {
       task mod_unit_capture_pane "Capture pane component" {
