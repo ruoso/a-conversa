@@ -317,5 +317,31 @@ export default defineConfig({
         storageState: AUTH_STORAGE_STATE_PATH,
       },
     },
+    // Cross-surface lobby + start-debate spec — three real browser
+    // contexts (alice + ben + maria) prove the moderator-lobby's
+    // Enter-session click after both debaters self-claim through
+    // their own surfaces. The spec lives in its own project so its
+    // testMatch doesn't bleed into either the moderator-side
+    // `chromium-create-session` (which still drives the WS-store-seed
+    // flavour for the gate-only contract) or the participant-side
+    // `chromium-participant-skeleton`. Same browser profile as both:
+    // single locale en-US (text assertions are role-labels +
+    // localized strings already pinned by the catalog parity layer),
+    // `ignoreHTTPSErrors` for the OIDC self-signed cert, and the
+    // bootstrap `setup-auth` storage state (each scenario allocates
+    // its own freshContext with an empty jar to drive per-user
+    // dances; the project-level storageState is what `loginAs`'s
+    // short-circuit probe reads on contexts that DON'T override it).
+    {
+      name: 'chromium-cross-surface',
+      testMatch: /cross-surface-lobby-start\.spec\.ts$/,
+      dependencies: ['setup-auth'],
+      use: {
+        ...devices['Desktop Chrome'],
+        locale: 'en-US',
+        ignoreHTTPSErrors: true,
+        storageState: AUTH_STORAGE_STATE_PATH,
+      },
+    },
   ],
 });
