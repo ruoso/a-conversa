@@ -1,9 +1,11 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { cleanup, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, screen, waitFor } from '@testing-library/react';
 import i18next from 'i18next';
+import type { DiagnosticPayload } from '@a-conversa/shared-types';
 
 import { App } from './App';
 import { getTestI18n, renderWithProviders } from './testing/renderWithProviders';
+import { useWsStore } from './ws/wsStore';
 
 beforeAll(async () => {
   await getTestI18n();
@@ -151,5 +153,45 @@ describe('moderator mounted router', () => {
     await waitFor(() => {
       expect(screen.getByTestId('route-create-session')).toBeTruthy();
     });
+  });
+});
+
+describe('moderator operate route — diagnostic-flags sidebar slot', () => {
+  // Refinement: tasks/refinements/moderator-ui/mod_diagnostic_methodology_suggestions.md
+  // Acceptance #5 (smoke): with an active diagnostic in `useWsStore`,
+  // the `<RightSidebar>`'s `diagnostic-flags` pane body contains the
+  // `<DiagnosticSuggestionsPanel>` (data-testid="diagnostic-suggestions-panel").
+  // Per-render behavior is covered by `DiagnosticSuggestionsPanel.test.tsx`;
+  // this case only pins the slot-mount wiring through `Operate.tsx`.
+
+  it('renders the suggestions panel inside the diagnostic-flags pane body when a diagnostic is active', async () => {
+    global.fetch = fetchAuthenticated();
+    const sessionId = '00000000-0000-4000-8000-000000abcdef';
+
+    // Reset and prime the moderator's WS store with one blocking cycle.
+    act(() => {
+      useWsStore.getState().reset();
+    });
+    const cyclePayload: DiagnosticPayload = {
+      sessionId,
+      kind: 'cycle',
+      severity: 'blocking',
+      status: 'fired',
+      sequence: 1,
+      diagnostic: { kind: 'cycle', nodes: ['n-a', 'n-b', 'n-c'] },
+    };
+    act(() => {
+      useWsStore.getState().applyDiagnostic(cyclePayload);
+    });
+
+    renderWithProviders(<App />, { initialEntries: [`/sessions/${sessionId}/operate`] });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('route-operate')).toBeTruthy();
+    });
+    const paneBody = screen.getByTestId('right-sidebar-pane-body-diagnostic-flags');
+    const panel = screen.getByTestId('diagnostic-suggestions-panel');
+    expect(paneBody.contains(panel)).toBe(true);
+    expect(panel.getAttribute('data-diagnostic-kind')).toBe('cycle');
   });
 });

@@ -76,6 +76,7 @@ import { useProposeAction } from '../layout/useProposeAction';
 import { GraphCanvasPane } from '../graph/GraphCanvasPane';
 import { ModeBanner } from '../layout/ModeBanner';
 import { IsOughtPrompt } from '../layout/IsOughtPrompt';
+import { DiagnosticSuggestionsPanel } from '../layout/DiagnosticSuggestionsPanel';
 import { PendingProposalsPane } from '../layout/PendingProposalsPane';
 import { RightSidebar } from '../layout/RightSidebar';
 import { useCaptureStore } from '../stores/captureStore';
@@ -200,7 +201,10 @@ function OperateRouteInner(props: { sessionId: string }): ReactElement {
           />
         }
         rightSidebar={
-          <RightSidebar pendingProposalsSlot={<PendingProposalsPane sessionId={sessionId} />} />
+          <RightSidebar
+            pendingProposalsSlot={<PendingProposalsPane sessionId={sessionId} />}
+            diagnosticFlagsSlot={<DiagnosticSuggestionsPanel sessionId={sessionId} />}
+          />
         }
       />
     </main>

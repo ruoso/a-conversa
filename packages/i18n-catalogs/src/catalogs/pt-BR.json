@@ -405,6 +405,23 @@
           "claim": "Afirmação",
           "unsettled": "Em disputa"
         }
+      },
+      "suggestions": {
+        "panelHeader": "Sugestões metodológicas",
+        "panelAriaLabel": "Sugestões metodológicas para {kind}",
+        "empty": "Sem diagnósticos ativos",
+        "move": {
+          "break-edge": "Romper uma aresta de apoio",
+          "decompose": "Decompor um nó",
+          "axiom-mark": "Marcar como axioma um nó",
+          "amend": "Emendar um nó",
+          "axiom-mark-both": "Ambos os lados marcam como axioma",
+          "prompt-for-support": "Solicitar apoio",
+          "mark-conceded": "Marcar como concedido",
+          "review-configuration": "Revisar configuração",
+          "repair-configuration": "Reparar configuração",
+          "leave-as-intentional": "Manter como intencional"
+        }
       }
     },
     "contextMenu": {

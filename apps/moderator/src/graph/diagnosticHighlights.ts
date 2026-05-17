@@ -60,13 +60,13 @@ export type DiagnosticHighlightKind = WsDiagnosticKind;
 // invariant.
 
 /** Mirrors server `CycleDiagnosticEntry`. */
-interface WireCycleDiagnostic {
+export interface WireCycleDiagnostic {
   kind: 'cycle';
   nodes: readonly string[];
 }
 
 /** Mirrors server `ContradictionDiagnosticEntry`. */
-interface WireContradictionDiagnostic {
+export interface WireContradictionDiagnostic {
   kind: 'contradiction';
   nodeA: string;
   nodeB: string;
@@ -74,7 +74,7 @@ interface WireContradictionDiagnostic {
 }
 
 /** Mirrors server `MultiWarrantDiagnosticEntry`. */
-interface WireMultiWarrantDiagnostic {
+export interface WireMultiWarrantDiagnostic {
   kind: 'multi-warrant';
   dataNodeId: string;
   claimNodeId: string;
@@ -82,39 +82,39 @@ interface WireMultiWarrantDiagnostic {
 }
 
 /** Mirrors server `DanglingClaimDiagnosticEntry`. */
-interface WireDanglingClaimDiagnostic {
+export interface WireDanglingClaimDiagnostic {
   kind: 'dangling-claim';
   nodeId: string;
 }
 
 /** Mirrors `IncompleteWarrantMissingBridgesToHint`. */
-interface WireIncompleteWarrantMissingBridgesToHint {
+export interface WireIncompleteWarrantMissingBridgesToHint {
   kind: 'incomplete-warrant-missing-bridges-to';
   warrantNodeId: string;
   dataNodeId: string;
 }
 
 /** Mirrors `IncompleteWarrantMissingBridgesFromHint`. */
-interface WireIncompleteWarrantMissingBridgesFromHint {
+export interface WireIncompleteWarrantMissingBridgesFromHint {
   kind: 'incomplete-warrant-missing-bridges-from';
   warrantNodeId: string;
   claimNodeId: string;
 }
 
 /** Mirrors `SelfContradictsHint`. */
-interface WireSelfContradictsHint {
+export interface WireSelfContradictsHint {
   kind: 'self-contradicts';
   edgeId: string;
   nodeId: string;
 }
 
-type WireCoherencyHint =
+export type WireCoherencyHint =
   | WireIncompleteWarrantMissingBridgesToHint
   | WireIncompleteWarrantMissingBridgesFromHint
   | WireSelfContradictsHint;
 
 /** Mirrors server `CoherencyHintDiagnosticEntry`. */
-interface WireCoherencyHintDiagnostic {
+export interface WireCoherencyHintDiagnostic {
   kind: 'coherency-hint';
   hint: WireCoherencyHint;
 }
@@ -124,8 +124,13 @@ interface WireCoherencyHintDiagnostic {
  * surfaced diagnostic kinds. The wire envelope types `diagnostic` as
  * `unknown` (the same trade-off `snapshot-state.projection` makes); this
  * union is the moderator-side narrowing the projection walks.
+ *
+ * Exported so sibling pure-modules (e.g. `diagnosticSuggestions.ts`) can
+ * narrow on the same shapes without re-mirroring — per
+ * `mod_diagnostic_methodology_suggestions` Decision §D7 the single drift
+ * surface stays single.
  */
-type WireDiagnostic =
+export type WireDiagnostic =
   | WireCycleDiagnostic
   | WireContradictionDiagnostic
   | WireMultiWarrantDiagnostic

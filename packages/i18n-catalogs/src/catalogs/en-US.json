@@ -405,6 +405,23 @@
           "claim": "Claim",
           "unsettled": "Unsettled"
         }
+      },
+      "suggestions": {
+        "panelHeader": "Methodology suggestions",
+        "panelAriaLabel": "Methodology suggestions for {kind}",
+        "empty": "No active diagnostics",
+        "move": {
+          "break-edge": "Break a supports edge",
+          "decompose": "Decompose a node",
+          "axiom-mark": "Axiom-mark a node",
+          "amend": "Amend a node",
+          "axiom-mark-both": "Both sides axiom-mark",
+          "prompt-for-support": "Prompt for support",
+          "mark-conceded": "Mark as conceded",
+          "review-configuration": "Review configuration",
+          "repair-configuration": "Repair configuration",
+          "leave-as-intentional": "Leave as intentional"
+        }
       }
     },
     "contextMenu": {

@@ -457,7 +457,9 @@ task moderator_ui "Moderator UI" {
     task mod_diagnostic_methodology_suggestions "Methodology suggestions per diagnostic kind" {
       effort 1d
       allocate team
+      complete 100
       depends data_and_methodology.diagnostics.diagnostic_event_emission
+      note "Refinement: tasks/refinements/moderator-ui/mod_diagnostic_methodology_suggestions.md"
     }
   }
 
@@ -524,11 +526,13 @@ task moderator_ui "Moderator UI" {
       effort 0.5d
       allocate team
       depends !mod_diagnostic_flag_pane
+      note "Inherits the affected-entity seam contract from moderator_ui.mod_diagnostic_flow.mod_diagnostic_methodology_suggestions (Decisions §D5 of tasks/refinements/moderator-ui/mod_diagnostic_methodology_suggestions.md): this task will add data-suggestion-affected-nodes / data-suggestion-affected-edges (or equivalent) seams on the suggestions-panel chip row (or its successor in mod_diagnostic_flag_pane), computed via the already-shipped affectedEntities(payload) helper in apps/moderator/src/graph/diagnosticHighlights.ts, so a click on a suggestion or flag focuses the canvas on the affected region."
     }
     task mod_resolution_path_picker "UI to pick resolution path (decompose / amend / break-edge / accept-as-bedrock)" {
       effort 2d
       allocate team
       depends !mod_diagnostic_focus_action
+      note "Inherits the chip-wiring contract from moderator_ui.mod_diagnostic_flow.mod_diagnostic_methodology_suggestions (Decisions §D3 of tasks/refinements/moderator-ui/mod_diagnostic_methodology_suggestions.md): this task owns turning the disabled-placeholder suggestion chips into real propose-action handlers + the engine-side resolution events. The chip identifiers pinned by the suggestions panel (break-edge, decompose, axiom-mark, amend, axiom-mark-both, prompt-for-support, mark-conceded, review-configuration, repair-configuration, leave-as-intentional) and the stable data-suggestion-move / data-suggestion-diagnostic-kind seams are the contract this picker switches on; flipping disabled={false} + adding onClick handlers should be the diff shape, not a markup refactor."
     }
   }
 
@@ -734,7 +738,7 @@ task moderator_ui "Moderator UI" {
       task mod_pw_diagnostic_flow "Playwright: run a diagnostic test end-to-end" {
         effort 1.5d
         allocate team
-        note "Inherits deferred-e2e debt from moderator_ui.mod_diagnostic_flow.mod_is_ought_prompt and moderator_ui.mod_diagnostic_flow.mod_disputation_test_display (Acceptance #7-#8 of tasks/refinements/moderator-ui/mod_disputation_test_display.md): the spec MUST cover an end-to-end disputation scenario asserting (a) a node with an agreed substance facet renders the 'Data' chip and the data-hover-popover-section='disputation' row, and (b) a node with a disputed substance facet renders the 'Claim' chip and matching popover row. Stable seams: data-disputation-chip, data-disputation-outcome, data-hover-popover-section='disputation'. Reaching the chip surface end-to-end requires the standalone set-node-substance propose-UI work (part of F3 / F7 operationalization-mode capture) — add that as a prerequisite when it lands."
+        note "Inherits deferred-e2e debt from moderator_ui.mod_diagnostic_flow.mod_is_ought_prompt and moderator_ui.mod_diagnostic_flow.mod_disputation_test_display (Acceptance #7-#8 of tasks/refinements/moderator-ui/mod_disputation_test_display.md): the spec MUST cover an end-to-end disputation scenario asserting (a) a node with an agreed substance facet renders the 'Data' chip and the data-hover-popover-section='disputation' row, and (b) a node with a disputed substance facet renders the 'Claim' chip and matching popover row. Stable seams: data-disputation-chip, data-disputation-outcome, data-hover-popover-section='disputation'. Reaching the chip surface end-to-end requires the standalone set-node-substance propose-UI work (part of F3 / F7 operationalization-mode capture) — add that as a prerequisite when it lands. Also inherits deferred-e2e debt from moderator_ui.mod_diagnostic_flow.mod_diagnostic_methodology_suggestions (Acceptance #7 of tasks/refinements/moderator-ui/mod_diagnostic_methodology_suggestions.md): with at least one active blocking diagnostic in the session, the moderator's 'diagnostic-flags' sidebar pane MUST contain a data-testid='diagnostic-suggestions-panel' element whose data-diagnostic-kind matches the fired diagnostic's kind and whose chip row contains the kind-specific move chips in canonical order (cycle → break-edge/decompose/axiom-mark; contradiction → decompose/amend/axiom-mark-both; multi-warrant → decompose; dangling-claim → prompt-for-support/mark-conceded; coherency-hint → review-configuration/repair-configuration/leave-as-intentional). Stable seams: data-testid='diagnostic-suggestions-panel', data-suggestion-move='<move>', data-suggestion-diagnostic-kind='<kind>', data-diagnostic-severity='<severity>'. Picker-side chip wiring (chips fire real propose actions) is owned by mod_resolution_path_picker, not this task."
       }
       task mod_pw_axiom_mark "Playwright: axiom-mark flow" {
         effort 1d
