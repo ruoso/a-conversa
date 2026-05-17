@@ -5,11 +5,14 @@
 //              tasks/refinements/participant-ui/part_landscape_layout.md
 //              tasks/refinements/participant-ui/part_invite_acceptance.md
 //              tasks/refinements/participant-ui/part_lobby_view.md
+//              tasks/refinements/participant-ui/part_graph_render.md
 // ADRs:        0002 (no profile data — only `screenName` reaches the DOM),
+//              0004 (Cytoscape.js for the read-mostly participant tablet —
+//                    the operate route's graph surface uses it),
 //              0022 (no throwaway verifications — the identity testid +
 //                    not-authenticated testid + four layout-region
-//                    testids + the route-invite-acceptance / route-lobby
-//                    testids are the pinned seams),
+//                    testids + the route-invite-acceptance / route-lobby /
+//                    route-operate testids are the pinned seams),
 //              0026 (host owns auth chrome; surface only reads the
 //                    host-supplied `useAuth()`).
 //
@@ -28,16 +31,33 @@
 //     `participant-left` overlays. New keys under the
 //     `participant.lobby.*` namespace.
 //
+// `part_graph_render` adds the operate route between the lobby entry
+// and the catch-all:
+//
+//   - `<Route path="/sessions/:id" element={<OperateRoute />} />`
+//     — the read-mostly live-debate surface a debater watches after
+//     the moderator starts the debate. The route mounts the per-session
+//     `trackSession` / `untrackSession` lifecycle (idempotent with the
+//     lobby's prior call) and renders `<GraphView>` inside the standard
+//     `<ParticipantLayout>` chrome. Cytoscape renders the live graph
+//     from the per-session `useWsStore` slice.
+//
 // The wildcard `<Route path="*">` stays as the catch-all so any other
 // URL under `/p/*` still renders the existing placeholder chrome +
 // body. The placeholder route's chrome is composed from the extracted
 // `<ParticipantChrome>` (Decision §9 of part_invite_acceptance) so
 // every route in the tree consumes the same header markup.
 //
-// Future leaves replace the wildcard with the real participant route
-// tree:
+// Future leaves layer onto the operate route:
 //
-//   - `part_graph_view` + `part_voting` land the operate view.
+//   - `part_per_facet_state_styling` / `part_axiom_mark_decoration` /
+//     `part_annotation_render` / `part_diagnostic_highlights` extend
+//     `<GraphView>`'s stylesheet + projection with the per-facet state,
+//     axiom marks, annotations, and diagnostic halos.
+//   - `part_pan_zoom_tap` + `part_entity_detail_panel` wire pan/zoom
+//     bounds and tap-to-detail handlers via the `cyRef` seam.
+//   - `part_voting.*` adds the per-facet voting buttons.
+//   - `part_pending_proposals.*` adds the pending-proposal pane.
 
 import type { ReactElement } from 'react';
 import { Route, Routes } from 'react-router-dom';
@@ -50,6 +70,7 @@ import { ParticipantChrome } from './layout/ParticipantChrome';
 import { ParticipantStatusIndicator } from './layout/ParticipantStatusIndicator';
 import { InviteAcceptanceRoute } from './routes/InviteAcceptanceRoute';
 import { LobbyRoute } from './routes/LobbyRoute';
+import { OperateRoute } from './routes/OperateRoute';
 
 function PlaceholderRouteBody(): ReactElement {
   // Existing body from `part_auth_flow`: the placeholder title, the
@@ -111,6 +132,7 @@ export function App(): ReactElement {
     <Routes>
       <Route path="/sessions/:id/invite" element={<InviteAcceptanceRoute />} />
       <Route path="/sessions/:id/lobby" element={<LobbyRoute />} />
+      <Route path="/sessions/:id" element={<OperateRoute />} />
       <Route path="*" element={<PlaceholderRoute />} />
     </Routes>
   );

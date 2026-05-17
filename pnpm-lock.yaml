@@ -188,6 +188,9 @@ importers:
       '@a-conversa/shell':
         specifier: workspace:*
         version: link:../../packages/shell
+      cytoscape:
+        specifier: 3.33.3
+        version: 3.33.3
       i18next:
         specifier: 26.1.0
         version: 26.1.0(typescript@6.0.3)

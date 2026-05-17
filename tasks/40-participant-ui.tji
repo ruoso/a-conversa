@@ -80,6 +80,20 @@ task participant_ui "Participant (debater) UI" {
     task part_graph_render "Render the live graph (same conventions as audience view)" {
       effort 2d
       allocate team
+      complete 100
+      note "Refinement: tasks/refinements/participant-ui/part_graph_render.md"
+    }
+    task part_session_start_handoff "Participant-side auto-navigation from moderator's debate-started signal (lobby -> operate)" {
+      effort 0.5d
+      allocate team
+      depends !part_graph_render, participant_ui.part_session_join.part_lobby_view_ws_absence_merge_fix, moderator_ui.mod_session_setup.mod_session_lobby
+      note -8<-
+        Source of debt: tasks/refinements/participant-ui/part_graph_render.md Decision §6 — the Playwright spec for part_graph_render today drives the participant onto /p/sessions/:id with a manual page.goto() because the participant lobby has no handler that listens for the moderator's start-debate signal and auto-navigates. The moderator-side gesture itself ships with mod_session_lobby (settled — the "Enter session" button at mod_session_setup.mod_session_lobby navigates the MODERATOR to /m/sessions/:id/operate and is asserted by tests/e2e/cross-surface-lobby-start.spec.ts:195).
+
+        Scope: add a participant-side useEffect inside LobbyRoute (or a co-located handler) that subscribes to a debate-started-style event on the per-session WS slice and navigates the debater from /p/sessions/:id/lobby to /p/sessions/:id when it lands; drop the manual page.goto from tests/e2e/participant-graph-render.spec.ts and assert the auto-navigation instead. May require a small backend event-shape clarification (whether the moderator's "Enter session" already broadcasts a wire event the participant lobby can subscribe to, or whether a new ws event needs minting) — investigate during refinement.
+
+        Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit landing part_graph_render).
+      ->8-
     }
     task part_per_facet_state_styling "Per-facet state styling (proposed / agreed / disputed / meta-disagreement)" {
       effort 1d

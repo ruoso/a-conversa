@@ -1,0 +1,358 @@
+// Vitest cases for `<GraphView>`.
+//
+// Refinement: tasks/refinements/participant-ui/part_graph_render.md
+//              (Test layers per ADR 0022 — twelve cases per the
+//              refinement's "Tests pin" sketch).
+// ADRs:        0022 (no throwaway verifications — the projection's
+//              algorithmic behaviour is pinned at the pure
+//              `projectGraph.test.ts` layer; this layer pins the
+//              React-mount + Cytoscape sync behaviour the component
+//              owns).
+//
+// Cytoscape ships a `headless: true` mode for Node, but the component
+// uses the DOM container path. happy-dom supplies the DOM; the
+// `ResizeObserver` stub mirrors the moderator's `StatementEdge.test.tsx`
+// pattern. The test consumes the `cyRef` callback prop to capture the
+// live Cytoscape instance and asserts against its `cy.elements()`
+// API — same observability seam downstream tasks
+// (`part_pan_zoom_tap`, `part_entity_detail_panel`) consume in
+// production.
+
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, render } from '@testing-library/react';
+import type { Core } from 'cytoscape';
+import type { EdgeRole, Event, StatementKind } from '@a-conversa/shared-types';
+
+import { I18nProvider, createI18nInstance, type I18nInstance } from '@a-conversa/shell';
+
+import { GraphView } from './GraphView';
+import { installCytoscapeTestEnv, type CytoscapeTestEnvRestoreHandle } from './cytoscapeTestEnv';
+import { useWsStore } from '../ws/wsStore';
+
+const SESSION_ID = '00000000-0000-4000-8000-0000000000aa';
+const ANOTHER_SESSION_ID = '00000000-0000-4000-8000-0000000000bb';
+const NODE_A = '00000000-0000-4000-8000-00000000000a';
+const NODE_B = '00000000-0000-4000-8000-00000000000b';
+const EDGE_A = '00000000-0000-4000-8000-00000000000e';
+const PROPOSAL_A = '00000000-0000-4000-8000-0000000000a1';
+const ACTOR = '00000000-0000-4000-8000-0000000000aa';
+
+function nodeCreatedEvent(opts: {
+  sequence: number;
+  nodeId: string;
+  wording: string;
+  sessionId?: string;
+}): Event {
+  return {
+    id: `00000000-0000-4000-8000-${(0x100 + opts.sequence).toString(16).padStart(12, '0')}`,
+    sessionId: opts.sessionId ?? SESSION_ID,
+    sequence: opts.sequence,
+    kind: 'node-created',
+    actor: ACTOR,
+    payload: {
+      node_id: opts.nodeId,
+      wording: opts.wording,
+      created_by: ACTOR,
+      created_at: '2026-05-17T00:00:00.000Z',
+    },
+    createdAt: '2026-05-17T00:00:00.000Z',
+  };
+}
+
+function edgeCreatedEvent(opts: {
+  sequence: number;
+  edgeId: string;
+  source: string;
+  target: string;
+  role?: EdgeRole;
+  sessionId?: string;
+}): Event {
+  return {
+    id: `00000000-0000-4000-8000-${(0x300 + opts.sequence).toString(16).padStart(12, '0')}`,
+    sessionId: opts.sessionId ?? SESSION_ID,
+    sequence: opts.sequence,
+    kind: 'edge-created',
+    actor: ACTOR,
+    payload: {
+      edge_id: opts.edgeId,
+      role: opts.role ?? 'supports',
+      source_node_id: opts.source,
+      target_node_id: opts.target,
+      created_by: ACTOR,
+      created_at: '2026-05-17T00:00:00.000Z',
+    },
+    createdAt: '2026-05-17T00:00:00.000Z',
+  };
+}
+
+function classifyProposalEvent(opts: {
+  sequence: number;
+  envelopeId: string;
+  nodeId: string;
+  classification: StatementKind;
+}): Event {
+  return {
+    id: opts.envelopeId,
+    sessionId: SESSION_ID,
+    sequence: opts.sequence,
+    kind: 'proposal',
+    actor: ACTOR,
+    payload: {
+      proposal: {
+        kind: 'classify-node',
+        node_id: opts.nodeId,
+        classification: opts.classification,
+      },
+    },
+    createdAt: '2026-05-17T00:00:00.000Z',
+  };
+}
+
+function commitEvent(opts: { sequence: number; proposalEnvelopeId: string }): Event {
+  return {
+    id: `00000000-0000-4000-8000-${(0x200 + opts.sequence).toString(16).padStart(12, '0')}`,
+    sessionId: SESSION_ID,
+    sequence: opts.sequence,
+    kind: 'commit',
+    actor: ACTOR,
+    payload: {
+      proposal_id: opts.proposalEnvelopeId,
+      moderator: ACTOR,
+      committed_at: '2026-05-17T00:00:00.000Z',
+    },
+    createdAt: '2026-05-17T00:00:00.000Z',
+  };
+}
+
+function seedEvent(event: Event): void {
+  act(() => {
+    useWsStore.getState().applyEvent(event);
+  });
+}
+
+let i18nInstance: I18nInstance;
+let cytoscapeEnvHandle: CytoscapeTestEnvRestoreHandle | null = null;
+
+beforeAll(async () => {
+  i18nInstance = await createI18nInstance('en-US');
+  cytoscapeEnvHandle = installCytoscapeTestEnv();
+});
+
+afterAll(() => {
+  cytoscapeEnvHandle?.restore();
+  cytoscapeEnvHandle = null;
+});
+
+afterEach(() => {
+  cleanup();
+  useWsStore.getState().reset();
+});
+
+interface RenderResult {
+  getCy: () => Core;
+  setCy: (cy: Core | null) => void;
+  cyRef: (cy: Core | null) => void;
+}
+
+function renderView(opts: { sessionId?: string } = {}): RenderResult {
+  const id = opts.sessionId ?? SESSION_ID;
+  let captured: Core | null = null;
+  const cyRef = (cy: Core | null): void => {
+    captured = cy;
+  };
+  render(
+    <I18nProvider i18n={i18nInstance}>
+      <GraphView sessionId={id} cyRef={cyRef} />
+    </I18nProvider>,
+  );
+  return {
+    getCy: () => {
+      if (captured === null) throw new Error('cy instance not captured');
+      return captured;
+    },
+    setCy: (cy: Core | null) => {
+      captured = cy;
+    },
+    cyRef,
+  };
+}
+
+describe('GraphView — mount + container testid', () => {
+  it('(a) mounts without crashing on an empty session', () => {
+    const result = renderView();
+    expect(result.getCy().elements().length).toBe(0);
+  });
+
+  it('(k) renders the participant-graph-root testid on the outer container', () => {
+    renderView();
+    // The cy instance was captured; the container carries the testid.
+    const root = document.querySelector('[data-testid="participant-graph-root"]');
+    expect(root).not.toBeNull();
+  });
+
+  it('(l) leaves Cytoscape pan + zoom defaults enabled', () => {
+    const result = renderView();
+    const cy = result.getCy();
+    expect(cy.userPanningEnabled()).toBe(true);
+    expect(cy.userZoomingEnabled()).toBe(true);
+  });
+});
+
+describe('GraphView — node projection', () => {
+  it('(b) renders one Cytoscape node per node-created event in the seeded slice', () => {
+    const result = renderView();
+    seedEvent(
+      nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'UBI lifts welfare floor' }),
+    );
+    seedEvent(
+      nodeCreatedEvent({ sequence: 2, nodeId: NODE_B, wording: 'Means-tested aid stigmatises' }),
+    );
+    const cy = result.getCy();
+    expect(cy.nodes().length).toBe(2);
+  });
+
+  it('(c) carries the wording on the node data', () => {
+    const result = renderView();
+    seedEvent(
+      nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'UBI lifts welfare floor' }),
+    );
+    const cy = result.getCy();
+    const node = cy.getElementById(NODE_A);
+    expect(node.data('wording')).toBe('UBI lifts welfare floor');
+  });
+
+  it('(d) keeps kind: null until a classify-node proposal commit lands', () => {
+    const result = renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(
+      classifyProposalEvent({
+        sequence: 2,
+        envelopeId: PROPOSAL_A,
+        nodeId: NODE_A,
+        classification: 'fact',
+      }),
+    );
+    const cy = result.getCy();
+    const node = cy.getElementById(NODE_A);
+    expect(node.data('kind')).toBeNull();
+    // The localized kind label is the em-dash placeholder.
+    expect(node.data('kindLabel')).toBe('—');
+  });
+
+  it('(e) flips kind to the committed classification once the commit lands', () => {
+    const result = renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(
+      classifyProposalEvent({
+        sequence: 2,
+        envelopeId: PROPOSAL_A,
+        nodeId: NODE_A,
+        classification: 'normative',
+      }),
+    );
+    seedEvent(commitEvent({ sequence: 3, proposalEnvelopeId: PROPOSAL_A }));
+    const cy = result.getCy();
+    const node = cy.getElementById(NODE_A);
+    expect(node.data('kind')).toBe('normative');
+    // The localized kind label flips to the en-US methodology glossary
+    // entry (the catalog ships `methodology.kind.normative: 'Normative'`).
+    expect(node.data('kindLabel')).toBe('Normative');
+  });
+});
+
+describe('GraphView — edge projection', () => {
+  it('(f) renders one Cytoscape edge per edge-created with source / target / role', () => {
+    const result = renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(nodeCreatedEvent({ sequence: 2, nodeId: NODE_B, wording: 'B' }));
+    seedEvent(
+      edgeCreatedEvent({
+        sequence: 3,
+        edgeId: EDGE_A,
+        source: NODE_A,
+        target: NODE_B,
+        role: 'rebuts',
+      }),
+    );
+    const cy = result.getCy();
+    expect(cy.edges().length).toBe(1);
+    const edge = cy.getElementById(EDGE_A);
+    expect(edge.data('source')).toBe(NODE_A);
+    expect(edge.data('target')).toBe(NODE_B);
+    expect(edge.data('role')).toBe('rebuts');
+    // The localized role label is the en-US methodology glossary entry
+    // (`methodology.edgeRole.rebuts.label: 'Rebuts'`).
+    expect(edge.data('roleLabel')).toBe('Rebuts');
+  });
+
+  it('(g) keeps node-created events from contributing to the edge collection', () => {
+    const result = renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(nodeCreatedEvent({ sequence: 2, nodeId: NODE_B, wording: 'B' }));
+    const cy = result.getCy();
+    expect(cy.nodes().length).toBe(2);
+    expect(cy.edges().length).toBe(0);
+  });
+});
+
+describe('GraphView — resilience + lifecycle', () => {
+  it('(h) renders an empty graph when the per-session slice is absent', () => {
+    const result = renderView();
+    const cy = result.getCy();
+    expect(cy.elements().length).toBe(0);
+  });
+
+  it('(i) does not crash when an edge-created references unknown source / target ids', () => {
+    const result = renderView();
+    // Cytoscape's default behaviour: emit an `add` warning for dangling
+    // edge endpoints, but otherwise carry on. To keep the warnings-as-
+    // errors setup clean, silence console.warn for this case. The
+    // assertion is "the component doesn't throw and continues to render
+    // the nodes it does have".
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      seedEvent(
+        edgeCreatedEvent({
+          sequence: 1,
+          edgeId: EDGE_A,
+          source: 'unknown-source',
+          target: 'unknown-target',
+        }),
+      );
+      const cy = result.getCy();
+      // The component itself did not throw — that's the contract being
+      // asserted. Whether Cytoscape decides to keep the dangling edge
+      // or drop it is library-internal; both are acceptable.
+      expect(cy.nodes().length).toBe(0);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('(j) clears the prior graph before painting the new one when the session prop changes', () => {
+    // Seed the first session and render against it.
+    seedEvent(
+      nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A', sessionId: SESSION_ID }),
+    );
+    const result = renderView({ sessionId: SESSION_ID });
+    const cyFirst = result.getCy();
+    expect(cyFirst.nodes().length).toBe(1);
+    cleanup();
+    // Re-render against a different session id with a different
+    // seeded node. The second mount must NOT carry the prior session's
+    // element over.
+    seedEvent(
+      nodeCreatedEvent({
+        sequence: 2,
+        nodeId: NODE_B,
+        wording: 'B',
+        sessionId: ANOTHER_SESSION_ID,
+      }),
+    );
+    const result2 = renderView({ sessionId: ANOTHER_SESSION_ID });
+    const cySecond = result2.getCy();
+    expect(cySecond.nodes().length).toBe(1);
+    expect(cySecond.getElementById(NODE_B).length).toBe(1);
+    expect(cySecond.getElementById(NODE_A).length).toBe(0);
+  });
+});

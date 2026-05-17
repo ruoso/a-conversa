@@ -13,6 +13,7 @@
     "@a-conversa/i18n-catalogs": "workspace:*",
     "@a-conversa/shared-types": "workspace:^",
     "@a-conversa/shell": "workspace:*",
+    "cytoscape": "3.33.3",
     "i18next": "26.1.0",
     "i18next-icu": "2.4.3",
     "react": "18.3.1",
