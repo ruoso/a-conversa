@@ -71,6 +71,8 @@ import { InterpretiveSplitModeExitButton } from '../layout/InterpretiveSplitMode
 import { InterpretiveSplitReadingsGrid } from '../layout/InterpretiveSplitReadingsGrid';
 import { OperationalizationCapturePanel } from '../layout/OperationalizationCapturePanel';
 import { OperationalizationModeExitButton } from '../layout/OperationalizationModeExitButton';
+import { WarrantElicitationCapturePanel } from '../layout/WarrantElicitationCapturePanel';
+import { WarrantElicitationModeExitButton } from '../layout/WarrantElicitationModeExitButton';
 import { ProposeAction } from '../layout/ProposeAction';
 import { ProposeDecompositionAction } from '../layout/ProposeDecompositionAction';
 import { ProposeInterpretiveSplitAction } from '../layout/ProposeInterpretiveSplitAction';
@@ -145,6 +147,11 @@ function OperateRouteInner(props: { sessionId: string }): ReactElement {
   // tied to the structural-restructure modes (decompose, interpretive
   // split) and adds this sibling gate for the diagnostic-test mode.
   const isOperationalizationMode = mode === 'operationalization';
+  // Parallel gate for warrant-elicitation mode — Decision §D2 of
+  // mod_warrant_elicitation_mode.md mirrors the operationalization-mode
+  // gate verbatim (both are diagnostic-test modes with the unified
+  // capture-panel + per-mode exit-button slot-swap shape).
+  const isWarrantElicitationMode = mode === 'warrant-elicitation';
 
   useEffect(() => {
     if (sessionId === '') return;
@@ -178,10 +185,13 @@ function OperateRouteInner(props: { sessionId: string }): ReactElement {
                 <DecomposeModeExitButton />
                 <InterpretiveSplitModeExitButton />
                 <OperationalizationModeExitButton />
+                <WarrantElicitationModeExitButton />
               </>
             }
             textInput={
-              isOperationalizationMode ? (
+              isWarrantElicitationMode ? (
+                <WarrantElicitationCapturePanel />
+              ) : isOperationalizationMode ? (
                 <OperationalizationCapturePanel />
               ) : isProposalMode ? (
                 isInterpretiveSplitMode ? (
@@ -198,17 +208,21 @@ function OperateRouteInner(props: { sessionId: string }): ReactElement {
               )
             }
             classificationPalette={
-              isOperationalizationMode || isProposalMode ? null : <ClassificationPalette />
+              isWarrantElicitationMode || isOperationalizationMode || isProposalMode ? null : (
+                <ClassificationPalette />
+              )
             }
             edgeRoleSelector={
-              isOperationalizationMode || isProposalMode ? null : <CaptureTargetAndRole />
+              isWarrantElicitationMode || isOperationalizationMode || isProposalMode ? null : (
+                <CaptureTargetAndRole />
+              )
             }
             proposeAction={
               isDecomposeMode ? (
                 <ProposeDecompositionAction />
               ) : isInterpretiveSplitMode ? (
                 <ProposeInterpretiveSplitAction />
-              ) : isOperationalizationMode ? null : (
+              ) : isOperationalizationMode || isWarrantElicitationMode ? null : (
                 <ProposeAction />
               )
             }

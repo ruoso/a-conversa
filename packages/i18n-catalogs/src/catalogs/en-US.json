@@ -365,6 +365,28 @@
         "route-no-signal": "No signal yet"
       }
     },
+    "warrantElicitation": {
+      "exit": {
+        "ariaLabel": "Exit warrant elicitation mode",
+        "tooltip": "Exit warrant elicitation mode (Esc)"
+      },
+      "banner": {
+        "targetWording": "Eliciting warrant for: {nodeWording}"
+      },
+      "prompt": {
+        "question": "What's the unstated bridge from \"{nodeWording}\" to your conclusion?",
+        "questionGeneric": "What's the unstated bridge from the target to your conclusion?",
+        "guidance": "The articulated bridge becomes a new node with bridges-from and bridges-to edges connecting the data and the claim — often the actual disagreement once surfaced."
+      },
+      "answer": {
+        "placeholder": "Type the participant's articulated bridge..."
+      },
+      "action": {
+        "route-create-warrant-node": "Create warrant node",
+        "route-decompose-claim": "Decompose the claim",
+        "route-defer": "Defer — no clear bridge"
+      }
+    },
     "proposalFilter": {
       "textPlaceholder": "Filter proposals…",
       "textAriaLabel": "Filter pending proposals by text",
@@ -453,6 +475,7 @@
         "proposeDecompose": "Propose decompose",
         "proposeInterpretiveSplit": "Propose interpretive split",
         "runOperationalization": "Run operationalization test",
+        "runWarrantElicitation": "Elicit warrant",
         "proposeMetaDisagreement": "Propose meta-disagreement",
         "annotate": "Annotate",
         "axiomMark": "Mark as axiom"

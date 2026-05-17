@@ -259,3 +259,67 @@ describe('moderator operate route — operationalization mode slot-swap (mod_ope
     expect(screen.getByTestId('mode-banner')).toBeTruthy();
   });
 });
+
+describe('moderator operate route — warrant-elicitation mode slot-swap (mod_warrant_elicitation_mode)', () => {
+  // Refinement: tasks/refinements/moderator-ui/mod_warrant_elicitation_mode.md
+  //
+  // Integration smoke: with the capture store in
+  // `mode === 'warrant-elicitation'` and a target node id set, the
+  // bottom-strip's `textInput` slot swaps to
+  // `<WarrantElicitationCapturePanel>`; the `modeBanner` slot mounts
+  // `<WarrantElicitationModeExitButton>` alongside the existing
+  // `<ModeBanner>` + `<IsOughtPrompt>` (the prompt already gates on
+  // `mode === 'warrant-elicitation'`). With mode === 'idle' none of the
+  // warrant-elicitation seams are present.
+
+  it('mounts the capture panel + exit button + co-existing banner + is-ought prompt when mode is warrant-elicitation', async () => {
+    global.fetch = fetchAuthenticated();
+    const sessionId = '00000000-0000-4000-8000-0000000abce0';
+    const nodeId = '00000000-0000-4000-8000-000000aabbce';
+
+    act(() => {
+      useWsStore.getState().reset();
+      useCaptureStore.getState().reset();
+    });
+    act(() => {
+      useCaptureStore.getState().enterWarrantElicitationMode(nodeId);
+    });
+
+    renderWithProviders(<App />, { initialEntries: [`/sessions/${sessionId}/operate`] });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('route-operate')).toBeTruthy();
+    });
+
+    expect(screen.getByTestId('warrant-elicitation-capture-panel')).toBeTruthy();
+    expect(screen.getByTestId('warrant-elicitation-mode-exit')).toBeTruthy();
+    expect(screen.getByTestId('mode-banner')).toBeTruthy();
+    expect(screen.getByTestId('is-ought-prompt')).toBeTruthy();
+
+    // Cleanup so subsequent tests start at idle.
+    act(() => {
+      useCaptureStore.getState().reset();
+    });
+  });
+
+  it('does NOT mount the warrant-elicitation seams when mode is idle (negative slot-swap case)', async () => {
+    global.fetch = fetchAuthenticated();
+    const sessionId = '00000000-0000-4000-8000-0000000abce1';
+
+    act(() => {
+      useWsStore.getState().reset();
+      useCaptureStore.getState().reset();
+    });
+
+    renderWithProviders(<App />, { initialEntries: [`/sessions/${sessionId}/operate`] });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('route-operate')).toBeTruthy();
+    });
+
+    expect(screen.queryByTestId('warrant-elicitation-capture-panel')).toBeNull();
+    expect(screen.queryByTestId('warrant-elicitation-mode-exit')).toBeNull();
+    // The base banner is unconditional even in idle mode.
+    expect(screen.getByTestId('mode-banner')).toBeTruthy();
+  });
+});

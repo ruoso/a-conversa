@@ -229,7 +229,10 @@ export function attachCaptureKeymap(handlers: CaptureKeymapHandlers): () => void
     if (key === 'escape') {
       const mode = useCaptureStore.getState().mode;
       if (
-        (mode === 'decompose' || mode === 'interpretive-split' || mode === 'operationalization') &&
+        (mode === 'decompose' ||
+          mode === 'interpretive-split' ||
+          mode === 'operationalization' ||
+          mode === 'warrant-elicitation') &&
         handlers.onExitMode !== undefined
       ) {
         // 6. Consume the keystroke.

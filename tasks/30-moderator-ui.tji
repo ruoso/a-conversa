@@ -459,6 +459,7 @@ task moderator_ui "Moderator UI" {
     task mod_warrant_elicitation_mode "Warrant-elicitation mode" {
       effort 1d
       allocate team
+      complete 100
       note "Compose on the 3-mode <ProposalModeExitAffordance> + StructuralProposalMode alias (Exclude<ProposalMode, 'operationalization'>) seam landed in the commit closing moderator_ui.mod_diagnostic_flow.mod_operationalization_mode: widen ProposalMode once more to include 'warrant-elicitation', add a per-mode MODE_KEYS entry + selector branches + a thin <WarrantElicitationModeExitButton> wrapper, keep the structural-family components (decompose / interpretive-split) narrowed onto StructuralProposalMode."
     }
     task mod_diagnostic_methodology_suggestions "Methodology suggestions per diagnostic kind" {

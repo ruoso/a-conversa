@@ -240,6 +240,21 @@ function actionStub(action: string, target: ContextMenuState['target']): void {
  * handler is omitted (direct unit-test invocations), the legacy stub
  * is used; when the disabled flag is omitted, the item defaults to
  * enabled (the legacy unit-test factory shape).
+ *
+ * **`onEnterWarrantElicitationMode` seam (mod_warrant_elicitation_mode).**
+ * Verbatim mirror of the operationalization seam: the canvas threads
+ * in a callback that dispatches to
+ * `useCaptureStore.getState().enterWarrantElicitationMode(nodeId)` —
+ * the parent menu's `run-warrant-elicitation-test` item (inserted
+ * between `run-operationalization-test` and `propose-meta-disagreement`
+ * per Decision §D1) then atomically flips `mode` to
+ * `'warrant-elicitation'` + sets `warrantElicitationTargetNodeId` +
+ * clears the F1 capture-flow slices. Per Decision §D1 the item shares
+ * the same `disputationOutcome(node.facetStatuses.substance) !==
+ * 'claim'` gate predicate as the operationalization item but is threaded
+ * through an independent `disabledRunWarrantElicitationTest` boolean
+ * so a future divergence of the warrant-elicitation gate is a one-line
+ * change at the call site.
  */
 export function buildNodeMenuItems(
   target: ContextMenuState['target'],
@@ -248,6 +263,8 @@ export function buildNodeMenuItems(
   onEnterInterpretiveSplitMode?: (nodeId: string) => void,
   onEnterOperationalizationMode?: (nodeId: string) => void,
   disabledRunOperationalizationTest?: boolean,
+  onEnterWarrantElicitationMode?: (nodeId: string) => void,
+  disabledRunWarrantElicitationTest?: boolean,
 ): readonly MenuItem[] {
   return [
     {
@@ -279,6 +296,15 @@ export function buildNodeMenuItems(
           ? () => onEnterOperationalizationMode(target.id as string)
           : () => actionStub('run-operationalization-test', target),
       disabled: disabledRunOperationalizationTest ?? false,
+    },
+    {
+      id: 'run-warrant-elicitation-test',
+      labelKey: 'moderator.contextMenu.node.runWarrantElicitation',
+      onSelect:
+        target.kind === 'node' && target.id !== null && onEnterWarrantElicitationMode
+          ? () => onEnterWarrantElicitationMode(target.id as string)
+          : () => actionStub('run-warrant-elicitation-test', target),
+      disabled: disabledRunWarrantElicitationTest ?? false,
     },
     {
       id: 'propose-meta-disagreement',
@@ -703,6 +729,13 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
     (nodeId: string) => useCaptureStore.getState().enterOperationalizationMode(nodeId),
     [],
   );
+  // Sibling stable mode-entry callback for the new
+  // `run-warrant-elicitation-test` item. Refinement:
+  // `mod_warrant_elicitation_mode`.
+  const enterWarrantElicitationMode = useCallback(
+    (nodeId: string) => useCaptureStore.getState().enterWarrantElicitationMode(nodeId),
+    [],
+  );
   // **Important:** `closeContextMenu` does NOT cascade-close the
   // submenu. The `<GraphContextMenu>` shell calls `onClose` after a
   // menu item's `onSelect` runs (including the axiom-mark item that
@@ -1003,6 +1036,13 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
           : (nodes.find((n) => n.id === contextMenu.target.id) ?? null);
       const substanceStatus = targetNode?.data.facetStatuses.substance;
       const disabledRunOperationalizationTest = disputationOutcome(substanceStatus) !== 'claim';
+      // Independent constant for the warrant-elicitation gate per
+      // mod_warrant_elicitation_mode.md Decision §D1 — same predicate
+      // as the operationalization gate today (both contested-claim
+      // methodology contexts via `disputationOutcome`), but a separate
+      // boolean so a future divergence (if warrant-elicitation later
+      // narrows to `'meta-disagreement'` only) is a one-line change.
+      const disabledRunWarrantElicitationTest = disputationOutcome(substanceStatus) !== 'claim';
       menuItems = buildNodeMenuItems(
         contextMenu.target,
         () => {
@@ -1025,6 +1065,8 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
         enterInterpretiveSplitMode,
         enterOperationalizationMode,
         disabledRunOperationalizationTest,
+        enterWarrantElicitationMode,
+        disabledRunWarrantElicitationTest,
       );
     } else if (contextMenu.target.kind === 'edge') {
       menuItems = buildEdgeMenuItems(contextMenu.target);

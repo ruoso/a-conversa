@@ -583,4 +583,28 @@ describe('captureKeymap — onExitMode handler (mode-aware Escape)', () => {
     expect(onExitMode).toHaveBeenCalledTimes(1);
     expect(onClearTarget).not.toHaveBeenCalled();
   });
+
+  // Refinement: tasks/refinements/moderator-ui/mod_warrant_elicitation_mode.md
+  //
+  // The mode-aware Escape early-return generalises to also route
+  // `onExitMode` when `mode === 'warrant-elicitation'` (the fourth F3
+  // mode). The Escape priority over `onClearTarget` mirrors the
+  // decompose / interpretive-split / operationalization branches.
+  it('routes Escape to onExitMode when mode === warrant-elicitation', () => {
+    const onExitMode = vi.fn<() => void>();
+    useCaptureStore.getState().enterWarrantElicitationMode('n1');
+    detach = attachCaptureKeymap({ onExitMode });
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(onExitMode).toHaveBeenCalledTimes(1);
+  });
+
+  it('warrant-elicitation exit takes priority over target-clear when both handlers are registered', () => {
+    const onExitMode = vi.fn<() => void>();
+    const onClearTarget = vi.fn<() => void>();
+    useCaptureStore.getState().enterWarrantElicitationMode('n1');
+    detach = attachCaptureKeymap({ onExitMode, onClearTarget });
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(onExitMode).toHaveBeenCalledTimes(1);
+    expect(onClearTarget).not.toHaveBeenCalled();
+  });
 });

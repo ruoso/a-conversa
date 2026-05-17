@@ -48,6 +48,7 @@ task milestones "Milestones" {
 
   task m_moderator_mvp "M4: Moderator MVP" {
     milestone
+    complete 100
     depends !m_backend_mvp, moderator_ui.mod_capture_flow, moderator_ui.mod_pending_proposals_pane, moderator_ui.mod_decompose_flow, moderator_ui.mod_diagnostic_flow, moderator_ui.mod_axiom_mark_flow, moderator_ui.mod_session_setup, moderator_ui.mod_graph_rendering.mod_proposed_entity_canvas_visibility, root_app.root_moderator_cutover
     note "A moderator can run a session: create session, capture statements, classify, decompose, run diagnostics, axiom-mark, commit. Enough to drive a debate from the operator side. Reopened on 2026-05-16 by the ADR 0026 micro-frontend pivot: now also depends on root_moderator_cutover, which lands the root-host auth/dispatch wiring and the moderator mountable-library route cutover as one public-contract-preserving transition. Reopened again on 2026-05-16 by mod_proposed_entity_canvas_visibility: a manual-browser smoke surfaced that proposed statements were not actually reaching the canvas (they appeared only in the pending-proposals sidebar), violating the design contract in docs/methodology.md L57 and docs/moderator-ui.md L46; that task lands a failing-first Playwright e2e plus the protocol/projector fix that makes it pass."
   }

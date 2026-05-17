@@ -365,6 +365,28 @@
         "route-no-signal": "Sin señal aún"
       }
     },
+    "warrantElicitation": {
+      "exit": {
+        "ariaLabel": "Salir del modo de elicitación de garantía",
+        "tooltip": "Salir del modo de elicitación de garantía (Esc)"
+      },
+      "banner": {
+        "targetWording": "Elicitando garantía para: {nodeWording}"
+      },
+      "prompt": {
+        "question": "¿Cuál es el puente no declarado de \"{nodeWording}\" hasta tu conclusión?",
+        "questionGeneric": "¿Cuál es el puente no declarado del objetivo hasta tu conclusión?",
+        "guidance": "El puente articulado se convierte en un nuevo nodo con aristas bridges-from y bridges-to que conectan los datos y la afirmación — a menudo el verdadero desacuerdo una vez explicitado."
+      },
+      "answer": {
+        "placeholder": "Escribe el puente articulado por el participante..."
+      },
+      "action": {
+        "route-create-warrant-node": "Crear nodo de garantía",
+        "route-decompose-claim": "Descomponer la afirmación",
+        "route-defer": "Aplazar — sin puente claro"
+      }
+    },
     "proposalFilter": {
       "textPlaceholder": "Filtrar propuestas…",
       "textAriaLabel": "Filtrar propuestas pendientes por texto",
@@ -453,6 +475,7 @@
         "proposeDecompose": "Proponer descomposición",
         "proposeInterpretiveSplit": "Proponer división interpretativa",
         "runOperationalization": "Ejecutar prueba de operacionalización",
+        "runWarrantElicitation": "Elicitar la garantía",
         "proposeMetaDisagreement": "Proponer meta-desacuerdo",
         "annotate": "Anotar",
         "axiomMark": "Marcar como axioma"

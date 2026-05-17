@@ -26,23 +26,35 @@ import { useCaptureStore } from '../stores/captureStore';
 import { useWsStore } from '../ws/wsStore';
 import { attachCaptureKeymap } from './captureKeymap';
 
-export type ProposalMode = 'decompose' | 'interpretive-split' | 'operationalization';
+export type ProposalMode =
+  | 'decompose'
+  | 'interpretive-split'
+  | 'operationalization'
+  | 'warrant-elicitation';
 
 /**
  * Narrower type for the structural-restructure proposal modes — decompose
  * + interpretive-split share the multi-row-grid + propose-action shape;
- * operationalization is a diagnostic-test mode with a different body and
- * no propose-action wiring (the F5 / F6 / F7 owners replace the
- * placeholder route chips). Components that work over the multi-row
- * grid (`<DecomposeComponentsGrid>`, `<DecomposeComponentRow>`, the
- * per-mode classification picker + text input, `<ProposeAction>`, the
- * `useProposeProposalAction` hook) accept this narrower type so they
- * don't have to handle the operationalization branch.
+ * operationalization + warrant-elicitation are diagnostic-test modes with
+ * a different body and no propose-action wiring (the F2 / F4 / F5 / F6 /
+ * F7 owners replace the placeholder route chips). Components that work
+ * over the multi-row grid (`<DecomposeComponentsGrid>`,
+ * `<DecomposeComponentRow>`, the per-mode classification picker + text
+ * input, `<ProposeAction>`, the `useProposeProposalAction` hook) accept
+ * this narrower type so they don't have to handle the diagnostic-mode
+ * branches.
  *
  * Introduced by `tasks/refinements/moderator-ui/mod_operationalization_mode.md`
- * Decision §D2 when the `ProposalMode` union widened from 2 to 3 modes.
+ * Decision §D2 when the `ProposalMode` union widened from 2 to 3 modes;
+ * the exclusion list widened to also drop `'warrant-elicitation'` per
+ * `tasks/refinements/moderator-ui/mod_warrant_elicitation_mode.md`
+ * Decision §D2 so the alias's *meaning* ("structural-restructure modes
+ * only") is preserved across the 4-mode union.
  */
-export type StructuralProposalMode = Exclude<ProposalMode, 'operationalization'>;
+export type StructuralProposalMode = Exclude<
+  ProposalMode,
+  'operationalization' | 'warrant-elicitation'
+>;
 
 /**
  * Resolve the operator-facing wording for the proposal-target node by
@@ -94,6 +106,11 @@ const MODE_KEYS = {
     tooltip: 'moderator.operationalization.exit.tooltip',
     targetWording: 'moderator.operationalization.banner.targetWording',
   },
+  'warrant-elicitation': {
+    ariaLabel: 'moderator.warrantElicitation.exit.ariaLabel',
+    tooltip: 'moderator.warrantElicitation.exit.tooltip',
+    targetWording: 'moderator.warrantElicitation.banner.targetWording',
+  },
 } as const;
 
 export interface ProposalModeExitAffordanceProps {
@@ -106,20 +123,33 @@ export function ProposalModeExitAffordance(
   const { mode: targetMode } = props;
   const { t } = useTranslation();
   const mode = useCaptureStore((s) => s.mode);
-  const targetNodeId = useCaptureStore((s) =>
-    targetMode === 'decompose'
-      ? s.decomposeTargetNodeId
-      : targetMode === 'interpretive-split'
-        ? s.interpretiveSplitTargetNodeId
-        : s.operationalizationTargetNodeId,
-  );
-  const exitMode = useCaptureStore((s) =>
-    targetMode === 'decompose'
-      ? s.exitDecomposeMode
-      : targetMode === 'interpretive-split'
-        ? s.exitInterpretiveSplitMode
-        : s.exitOperationalizationMode,
-  );
+  // 4-arm switch per mod_warrant_elicitation_mode.md Decision §D2 —
+  // a switch is more readable than a 4-arm nested ternary and pays off
+  // if a fifth mode ever lands.
+  const targetNodeId = useCaptureStore((s) => {
+    switch (targetMode) {
+      case 'decompose':
+        return s.decomposeTargetNodeId;
+      case 'interpretive-split':
+        return s.interpretiveSplitTargetNodeId;
+      case 'operationalization':
+        return s.operationalizationTargetNodeId;
+      case 'warrant-elicitation':
+        return s.warrantElicitationTargetNodeId;
+    }
+  });
+  const exitMode = useCaptureStore((s) => {
+    switch (targetMode) {
+      case 'decompose':
+        return s.exitDecomposeMode;
+      case 'interpretive-split':
+        return s.exitInterpretiveSplitMode;
+      case 'operationalization':
+        return s.exitOperationalizationMode;
+      case 'warrant-elicitation':
+        return s.exitWarrantElicitationMode;
+    }
+  });
   const { id: sessionId = '' } = useParams<{ id: string }>();
   const events = useWsStore((state) => state.sessionState[sessionId]?.events ?? EMPTY_EVENTS);
 

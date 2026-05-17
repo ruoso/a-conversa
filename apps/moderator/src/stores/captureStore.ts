@@ -381,6 +381,52 @@ export interface CaptureState {
    */
   exitOperationalizationMode: () => void;
 
+  /**
+   * The id of the node currently being warrant-elicited when `mode ===
+   * 'warrant-elicitation'`; `null` otherwise. Set atomically by
+   * `enterWarrantElicitationMode(nodeId)` and cleared by
+   * `exitWarrantElicitationMode()` / `reset()`. The
+   * `<WarrantElicitationCapturePanel>` reads this to surface the target
+   * wording overlay; the future F2 / F4 / F7 route wirings will read it
+   * when promoting a captured route to a real propose action.
+   *
+   * Refinement:
+   * `tasks/refinements/moderator-ui/mod_warrant_elicitation_mode.md`.
+   */
+  warrantElicitationTargetNodeId: string | null;
+
+  /**
+   * Set `warrantElicitationTargetNodeId` directly. Direct callers
+   * should prefer the coupled helpers
+   * (`enterWarrantElicitationMode` / `exitWarrantElicitationMode`);
+   * this setter mirrors `setOperationalizationTargetNodeId` /
+   * `setDecomposeTargetNodeId` for symmetry / test seams.
+   */
+  setWarrantElicitationTargetNodeId: (id: string | null) => void;
+  /**
+   * Enter warrant-elicitation mode for `nodeId`. Atomic multi-field
+   * update mirroring `enterOperationalizationMode` /
+   * `enterDecomposeMode`: sets `mode = 'warrant-elicitation'`,
+   * `warrantElicitationTargetNodeId = nodeId`, and clears the F1
+   * capture-flow slices so a stale F1 draft does not bleed into the
+   * warrant-elicitation flow.
+   *
+   * Unlike the proposal modes there is no per-row seed (warrant-
+   * elicitation is single-textarea, and the answer textarea's value is
+   * local component state per Decision §D7 of the refinement).
+   *
+   * Refinement:
+   * `tasks/refinements/moderator-ui/mod_warrant_elicitation_mode.md`.
+   */
+  enterWarrantElicitationMode: (nodeId: string) => void;
+  /**
+   * Exit warrant-elicitation mode. Atomic update mirroring
+   * `exitOperationalizationMode` / `exitDecomposeMode`: sets
+   * `mode = 'idle'`, `warrantElicitationTargetNodeId = null`. The F1
+   * slices are NOT re-populated.
+   */
+  exitWarrantElicitationMode: () => void;
+
   /** Reset the pane to a fresh idle state — called after a successful propose. */
   reset: () => void;
 }
@@ -398,6 +444,7 @@ const initialCaptureState: Pick<
   | 'interpretiveSplitTargetNodeId'
   | 'interpretiveSplitReadings'
   | 'operationalizationTargetNodeId'
+  | 'warrantElicitationTargetNodeId'
 > = {
   text: '',
   classification: null,
@@ -410,6 +457,7 @@ const initialCaptureState: Pick<
   interpretiveSplitTargetNodeId: null,
   interpretiveSplitReadings: [],
   operationalizationTargetNodeId: null,
+  warrantElicitationTargetNodeId: null,
 };
 
 export const useCaptureStore = create<CaptureState>()(
@@ -570,6 +618,26 @@ export const useCaptureStore = create<CaptureState>()(
       set({
         mode: 'idle',
         operationalizationTargetNodeId: null,
+      }),
+    setWarrantElicitationTargetNodeId: (warrantElicitationTargetNodeId) =>
+      set({ warrantElicitationTargetNodeId }),
+    enterWarrantElicitationMode: (nodeId) =>
+      set({
+        mode: 'warrant-elicitation',
+        warrantElicitationTargetNodeId: nodeId,
+        // F1-coupling clear (mirrors enterOperationalizationMode /
+        // enterDecomposeMode / enterInterpretiveSplitMode — Decision
+        // §D4 of mod_warrant_elicitation_mode.md): a stale in-progress
+        // F1 draft must not bleed into the warrant-elicitation flow.
+        text: '',
+        classification: null,
+        targetEntityId: null,
+        edgeRole: null,
+      }),
+    exitWarrantElicitationMode: () =>
+      set({
+        mode: 'idle',
+        warrantElicitationTargetNodeId: null,
       }),
     reset: () => set({ ...initialCaptureState }),
   })),

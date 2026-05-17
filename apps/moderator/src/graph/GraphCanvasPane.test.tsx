@@ -1000,13 +1000,14 @@ describe('GraphCanvasPane — selection visual layer (mod_selection)', () => {
 // downstream tasks that replace each stub with a real handler can swap
 // the `onSelect` body without changing this contract.
 describe('GraphCanvasPane — context-menu item factories (mod_context_menus)', () => {
-  it('buildNodeMenuItems returns the seven node-scope actions in order (run-operationalization-test lands between propose-interpretive-split and propose-meta-disagreement per mod_operationalization_mode Decision §D5)', () => {
+  it('buildNodeMenuItems returns the eight node-scope actions in order (run-warrant-elicitation-test lands between run-operationalization-test and propose-meta-disagreement per mod_warrant_elicitation_mode Decision §D1)', () => {
     const items = buildNodeMenuItems({ kind: 'node', id: NODE_A });
     expect(items.map((it) => it.id)).toEqual([
       'propose-vote',
       'propose-decompose',
       'propose-interpretive-split',
       'run-operationalization-test',
+      'run-warrant-elicitation-test',
       'propose-meta-disagreement',
       'annotate',
       'axiom-mark',
@@ -1016,6 +1017,7 @@ describe('GraphCanvasPane — context-menu item factories (mod_context_menus)', 
       'moderator.contextMenu.node.proposeDecompose',
       'moderator.contextMenu.node.proposeInterpretiveSplit',
       'moderator.contextMenu.node.runOperationalization',
+      'moderator.contextMenu.node.runWarrantElicitation',
       'moderator.contextMenu.node.proposeMetaDisagreement',
       'moderator.contextMenu.node.annotate',
       'moderator.contextMenu.node.axiomMark',
@@ -1068,9 +1070,9 @@ describe('GraphCanvasPane — context-menu item factories (mod_context_menus)', 
       for (const item of buildPaneMenuItems({ kind: 'pane', id: null })) {
         expect(() => item.onSelect()).not.toThrow();
       }
-      // 7 + 3 + 1 = 11 stub fires (the node menu grew by the
-      // run-operationalization-test item — mod_operationalization_mode).
-      expect(infoSpy).toHaveBeenCalledTimes(11);
+      // 8 + 3 + 1 = 12 stub fires (the node menu grew by the
+      // run-warrant-elicitation-test item — mod_warrant_elicitation_mode).
+      expect(infoSpy).toHaveBeenCalledTimes(12);
     } finally {
       infoSpy.mockRestore();
     }
@@ -1219,6 +1221,92 @@ describe('GraphCanvasPane — context-menu item factories (mod_context_menus)', 
     );
     const op = items.find((it) => it.id === 'run-operationalization-test');
     expect(op?.disabled).toBe(true);
+  });
+
+  // Refinement: tasks/refinements/moderator-ui/mod_warrant_elicitation_mode.md
+  //
+  // The run-warrant-elicitation-test item adds a sixth optional handler
+  // parameter to `buildNodeMenuItems` (peer to the operationalization
+  // seam) plus a seventh `disabled` boolean argument computed by the
+  // canvas call site from `disputationOutcome(node.facetStatuses.substance)`.
+  // When omitted, the legacy stub path is retained and the item is enabled.
+  it('buildNodeMenuItems (no extra args) wires run-warrant-elicitation-test to the legacy actionStub', () => {
+    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    try {
+      const items = buildNodeMenuItems({ kind: 'node', id: NODE_A });
+      const we = items.find((it) => it.id === 'run-warrant-elicitation-test');
+      expect(we).toBeDefined();
+      we?.onSelect();
+      expect(infoSpy).toHaveBeenCalledTimes(1);
+      expect(infoSpy.mock.calls[0]?.[0]).toContain('run-warrant-elicitation-test');
+    } finally {
+      infoSpy.mockRestore();
+    }
+  });
+
+  it('buildNodeMenuItems wires run-warrant-elicitation-test to onEnterWarrantElicitationMode when supplied (node target)', () => {
+    const onEnter = vi.fn<(nodeId: string) => void>();
+    const items = buildNodeMenuItems(
+      { kind: 'node', id: NODE_A },
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      onEnter,
+    );
+    const we = items.find((it) => it.id === 'run-warrant-elicitation-test');
+    expect(we).toBeDefined();
+    we?.onSelect();
+    expect(onEnter).toHaveBeenCalledTimes(1);
+    expect(onEnter).toHaveBeenCalledWith(NODE_A);
+  });
+
+  it('buildNodeMenuItems falls back to actionStub for run-warrant-elicitation-test on non-node targets', () => {
+    const onEnter = vi.fn<(nodeId: string) => void>();
+    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    try {
+      const items = buildNodeMenuItems(
+        { kind: 'pane', id: null },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        onEnter,
+      );
+      const we = items.find((it) => it.id === 'run-warrant-elicitation-test');
+      expect(we).toBeDefined();
+      we?.onSelect();
+      expect(onEnter).not.toHaveBeenCalled();
+      expect(
+        infoSpy.mock.calls.some((c) => String(c[0]).includes('run-warrant-elicitation-test')),
+      ).toBe(true);
+    } finally {
+      infoSpy.mockRestore();
+    }
+  });
+
+  it('buildNodeMenuItems defaults the run-warrant-elicitation-test item to enabled when the disabled flag is omitted', () => {
+    const items = buildNodeMenuItems({ kind: 'node', id: NODE_A });
+    const we = items.find((it) => it.id === 'run-warrant-elicitation-test');
+    expect(we).toBeDefined();
+    expect(we?.disabled).toBe(false);
+  });
+
+  it('buildNodeMenuItems marks run-warrant-elicitation-test as disabled when the disabled flag is true', () => {
+    const items = buildNodeMenuItems(
+      { kind: 'node', id: NODE_A },
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      true,
+    );
+    const we = items.find((it) => it.id === 'run-warrant-elicitation-test');
+    expect(we?.disabled).toBe(true);
   });
 });
 
@@ -1498,6 +1586,211 @@ describe('GraphCanvasPane — run-operationalization-test entry (mod_operational
   });
 });
 
+// Refinement: tasks/refinements/moderator-ui/mod_warrant_elicitation_mode.md
+//
+// End-to-end wire-up of the run-warrant-elicitation-test context menu
+// item plus the methodology gate. The gate computation at the canvas
+// call site reads `node.data.facetStatuses.substance` and disables the
+// item unless `disputationOutcome(...) === 'claim'`. Same predicate as
+// the operationalization gate today (Decision §D1) — these cases pin
+// (a) the disabled-when-no-substance default,
+// (b) the disabled-when-data path (substance facet agreed),
+// (c) the enabled-when-claim path (substance facet disputed via a
+//     dispute vote on a `set-node-substance` proposal),
+// (d) the click-through wiring to `enterWarrantElicitationMode`.
+describe('GraphCanvasPane — run-warrant-elicitation-test entry (mod_warrant_elicitation_mode)', () => {
+  const PARTICIPANT_A = '00000000-0000-4000-8000-0000000000c1';
+  const PARTICIPANT_B = '00000000-0000-4000-8000-0000000000c2';
+  const SUBSTANCE_PROPOSAL = '00000000-0000-4000-8000-0000000000d1';
+
+  function makeParticipantJoined(opts: {
+    sequence: number;
+    userId: string;
+    role: 'debater-A' | 'debater-B';
+  }): Event {
+    return {
+      id: `00000000-0000-4000-8000-${(0x700 + opts.sequence).toString(16).padStart(12, '0')}`,
+      sessionId: SESSION_ID,
+      sequence: opts.sequence,
+      kind: 'participant-joined',
+      actor: opts.userId,
+      payload: {
+        user_id: opts.userId,
+        screen_name: `user-${opts.sequence}`,
+        role: opts.role,
+        joined_at: '2026-05-11T00:00:00.000Z',
+      },
+      createdAt: '2026-05-11T00:00:00.000Z',
+    };
+  }
+
+  function makeSetNodeSubstanceProposal(opts: {
+    sequence: number;
+    envelopeId: string;
+    nodeId: string;
+    value: 'agreed' | 'disputed';
+  }): Event {
+    return {
+      id: opts.envelopeId,
+      sessionId: SESSION_ID,
+      sequence: opts.sequence,
+      kind: 'proposal',
+      actor: ACTOR,
+      payload: {
+        proposal: {
+          kind: 'set-node-substance',
+          node_id: opts.nodeId,
+          value: opts.value,
+        },
+      },
+      createdAt: '2026-05-11T00:00:00.000Z',
+    };
+  }
+
+  function makeVote(opts: {
+    sequence: number;
+    proposalId: string;
+    participant: string;
+    vote: 'agree' | 'dispute' | 'withdraw';
+  }): Event {
+    return {
+      id: `00000000-0000-4000-8000-${(0x800 + opts.sequence).toString(16).padStart(12, '0')}`,
+      sessionId: SESSION_ID,
+      sequence: opts.sequence,
+      kind: 'vote',
+      actor: opts.participant,
+      payload: {
+        proposal_id: opts.proposalId,
+        participant: opts.participant,
+        vote: opts.vote,
+        voted_at: '2026-05-11T00:00:10.000Z',
+      },
+      createdAt: '2026-05-11T00:00:10.000Z',
+    };
+  }
+
+  it('right-clicking a node whose substance facet is absent renders the item disabled (no disputation reading yet)', () => {
+    useWsStore.getState().applyEvent(
+      makeNodeCreated({
+        sequence: 1,
+        nodeId: NODE_A,
+        wording: 'A statement with no substance facet.',
+      }),
+    );
+    render(<GraphCanvasPane sessionId={SESSION_ID} />);
+
+    const card = screen.getByTestId(`statement-node-${NODE_A}`);
+    act(() => {
+      fireEvent.contextMenu(card, { clientX: 10, clientY: 20 });
+    });
+    const item = screen.getByTestId('graph-context-menu-item-run-warrant-elicitation-test');
+    expect(item).toBeTruthy();
+    expect(item.hasAttribute('disabled')).toBe(true);
+    expect(item.getAttribute('aria-disabled')).toBe('true');
+
+    // Click is a no-op on the disabled item — the mode does not change.
+    act(() => {
+      fireEvent.click(item);
+    });
+    expect(useCaptureStore.getState().mode).toBe('idle');
+    expect(useCaptureStore.getState().warrantElicitationTargetNodeId).toBeNull();
+  });
+
+  it('right-clicking a node whose substance facet is agreed (disputation outcome data) renders the item disabled', () => {
+    const store = useWsStore.getState();
+    store.applyEvent(
+      makeParticipantJoined({ sequence: 1, userId: PARTICIPANT_A, role: 'debater-A' }),
+    );
+    store.applyEvent(
+      makeParticipantJoined({ sequence: 2, userId: PARTICIPANT_B, role: 'debater-B' }),
+    );
+    store.applyEvent(
+      makeNodeCreated({ sequence: 3, nodeId: NODE_A, wording: 'Agreed-substance node.' }),
+    );
+    store.applyEvent(
+      makeSetNodeSubstanceProposal({
+        sequence: 4,
+        envelopeId: SUBSTANCE_PROPOSAL,
+        nodeId: NODE_A,
+        value: 'agreed',
+      }),
+    );
+    store.applyEvent(
+      makeVote({
+        sequence: 5,
+        proposalId: SUBSTANCE_PROPOSAL,
+        participant: PARTICIPANT_A,
+        vote: 'agree',
+      }),
+    );
+    store.applyEvent(
+      makeVote({
+        sequence: 6,
+        proposalId: SUBSTANCE_PROPOSAL,
+        participant: PARTICIPANT_B,
+        vote: 'agree',
+      }),
+    );
+    render(<GraphCanvasPane sessionId={SESSION_ID} />);
+
+    const card = screen.getByTestId(`statement-node-${NODE_A}`);
+    act(() => {
+      fireEvent.contextMenu(card, { clientX: 10, clientY: 20 });
+    });
+    const item = screen.getByTestId('graph-context-menu-item-run-warrant-elicitation-test');
+    expect(item.hasAttribute('disabled')).toBe(true);
+    expect(item.getAttribute('aria-disabled')).toBe('true');
+  });
+
+  it('right-clicking a node whose substance facet is disputed (disputation outcome claim) renders the item enabled and a click enters warrant-elicitation mode', () => {
+    const store = useWsStore.getState();
+    store.applyEvent(
+      makeParticipantJoined({ sequence: 1, userId: PARTICIPANT_A, role: 'debater-A' }),
+    );
+    store.applyEvent(
+      makeParticipantJoined({ sequence: 2, userId: PARTICIPANT_B, role: 'debater-B' }),
+    );
+    store.applyEvent(
+      makeNodeCreated({ sequence: 3, nodeId: NODE_A, wording: 'Disputed-substance node.' }),
+    );
+    store.applyEvent(
+      makeSetNodeSubstanceProposal({
+        sequence: 4,
+        envelopeId: SUBSTANCE_PROPOSAL,
+        nodeId: NODE_A,
+        value: 'disputed',
+      }),
+    );
+    // One dispute vote is enough to flip the facet to 'disputed'.
+    store.applyEvent(
+      makeVote({
+        sequence: 5,
+        proposalId: SUBSTANCE_PROPOSAL,
+        participant: PARTICIPANT_A,
+        vote: 'dispute',
+      }),
+    );
+    render(<GraphCanvasPane sessionId={SESSION_ID} />);
+    expect(useCaptureStore.getState().mode).toBe('idle');
+    expect(useCaptureStore.getState().warrantElicitationTargetNodeId).toBeNull();
+
+    const card = screen.getByTestId(`statement-node-${NODE_A}`);
+    act(() => {
+      fireEvent.contextMenu(card, { clientX: 10, clientY: 20 });
+    });
+    const item = screen.getByTestId('graph-context-menu-item-run-warrant-elicitation-test');
+    expect(item.hasAttribute('disabled')).toBe(false);
+    expect(item.getAttribute('aria-disabled')).toBe('false');
+
+    act(() => {
+      fireEvent.click(item);
+    });
+
+    expect(useCaptureStore.getState().mode).toBe('warrant-elicitation');
+    expect(useCaptureStore.getState().warrantElicitationTargetNodeId).toBe(NODE_A);
+  });
+});
+
 // -- Context-menu wire-up (mod_context_menus) -------------------------
 //
 // The handlers wire ReactFlow's `onNodeContextMenu` / `onEdgeContextMenu`
@@ -1545,6 +1838,7 @@ describe('GraphCanvasPane — context-menu wire-up (mod_context_menus)', () => {
     expect(screen.getByTestId('graph-context-menu-item-propose-decompose')).toBeTruthy();
     expect(screen.getByTestId('graph-context-menu-item-propose-interpretive-split')).toBeTruthy();
     expect(screen.getByTestId('graph-context-menu-item-run-operationalization-test')).toBeTruthy();
+    expect(screen.getByTestId('graph-context-menu-item-run-warrant-elicitation-test')).toBeTruthy();
     expect(screen.getByTestId('graph-context-menu-item-propose-meta-disagreement')).toBeTruthy();
     expect(screen.getByTestId('graph-context-menu-item-annotate')).toBeTruthy();
     expect(screen.getByTestId('graph-context-menu-item-axiom-mark')).toBeTruthy();

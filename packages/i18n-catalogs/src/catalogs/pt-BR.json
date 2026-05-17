@@ -365,6 +365,28 @@
         "route-no-signal": "Sem sinal ainda"
       }
     },
+    "warrantElicitation": {
+      "exit": {
+        "ariaLabel": "Sair do modo de elicitação de garantia",
+        "tooltip": "Sair do modo de elicitação de garantia (Esc)"
+      },
+      "banner": {
+        "targetWording": "Elicitando garantia para: {nodeWording}"
+      },
+      "prompt": {
+        "question": "Qual é a ponte não declarada de \"{nodeWording}\" para a sua conclusão?",
+        "questionGeneric": "Qual é a ponte não declarada do alvo para a sua conclusão?",
+        "guidance": "A ponte articulada torna-se um novo nó com arestas bridges-from e bridges-to conectando os dados e a afirmação — frequentemente o verdadeiro desacordo uma vez explicitado."
+      },
+      "answer": {
+        "placeholder": "Digite a ponte articulada pelo participante..."
+      },
+      "action": {
+        "route-create-warrant-node": "Criar nó de garantia",
+        "route-decompose-claim": "Decompor a alegação",
+        "route-defer": "Adiar — sem ponte clara"
+      }
+    },
     "proposalFilter": {
       "textPlaceholder": "Filtrar propostas…",
       "textAriaLabel": "Filtrar propostas pendentes por texto",
@@ -453,6 +475,7 @@
         "proposeDecompose": "Propor decomposição",
         "proposeInterpretiveSplit": "Propor divisão interpretativa",
         "runOperationalization": "Executar teste de operacionalização",
+        "runWarrantElicitation": "Eliciar a garantia",
         "proposeMetaDisagreement": "Propor meta-desacordo",
         "annotate": "Anotar",
         "axiomMark": "Marcar como axioma"

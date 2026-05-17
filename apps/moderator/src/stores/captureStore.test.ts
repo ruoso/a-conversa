@@ -564,3 +564,94 @@ describe('useCaptureStore — operationalization-mode slice (mod_operationalizat
     expect(state.operationalizationTargetNodeId).toBe('op-target');
   });
 });
+
+describe('useCaptureStore — warrant-elicitation-mode slice (mod_warrant_elicitation_mode)', () => {
+  it('warrantElicitationTargetNodeId is null in the initial state', () => {
+    expect(useCaptureStore.getState().warrantElicitationTargetNodeId).toBeNull();
+  });
+
+  it('setWarrantElicitationTargetNodeId mutates the slice without flipping mode', () => {
+    useCaptureStore.getState().setWarrantElicitationTargetNodeId('n-direct');
+    const state = useCaptureStore.getState();
+    expect(state.warrantElicitationTargetNodeId).toBe('n-direct');
+    // The direct setter is a pure slice mutation — mode stays idle.
+    expect(state.mode).toBe('idle');
+    useCaptureStore.getState().setWarrantElicitationTargetNodeId(null);
+    expect(useCaptureStore.getState().warrantElicitationTargetNodeId).toBeNull();
+  });
+
+  it('enterWarrantElicitationMode(nodeId) flips mode to warrant-elicitation, stashes the target id, clears F1 slices', () => {
+    // Seed every F1 slice so we can assert the atomic clear.
+    useCaptureStore.getState().setText('a stale draft wording');
+    useCaptureStore.getState().setClassification('fact');
+    useCaptureStore.getState().setTargetEntityId('node-stale');
+    useCaptureStore.getState().setEdgeRole('supports');
+
+    useCaptureStore.getState().enterWarrantElicitationMode('n1');
+
+    const state = useCaptureStore.getState();
+    expect(state.mode).toBe('warrant-elicitation');
+    expect(state.warrantElicitationTargetNodeId).toBe('n1');
+    expect(state.text).toBe('');
+    expect(state.classification).toBeNull();
+    expect(state.targetEntityId).toBeNull();
+    expect(state.edgeRole).toBeNull();
+  });
+
+  it('enterWarrantElicitationMode uses a single set() — subscribers observe exactly one transition per call', () => {
+    let notifications = 0;
+    const unsubscribe = useCaptureStore.subscribe(() => {
+      notifications += 1;
+    });
+    try {
+      useCaptureStore.getState().enterWarrantElicitationMode('n1');
+      expect(notifications).toBe(1);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('exitWarrantElicitationMode reverts mode to idle and clears warrantElicitationTargetNodeId', () => {
+    useCaptureStore.getState().enterWarrantElicitationMode('n1');
+    expect(useCaptureStore.getState().mode).toBe('warrant-elicitation');
+    useCaptureStore.getState().exitWarrantElicitationMode();
+    const state = useCaptureStore.getState();
+    expect(state.mode).toBe('idle');
+    expect(state.warrantElicitationTargetNodeId).toBeNull();
+  });
+
+  it('exitWarrantElicitationMode does NOT re-populate the F1 slices (mirrors exitOperationalizationMode discipline)', () => {
+    useCaptureStore.getState().setText('would have been a draft');
+    useCaptureStore.getState().enterWarrantElicitationMode('n1');
+    useCaptureStore.getState().exitWarrantElicitationMode();
+    const state = useCaptureStore.getState();
+    expect(state.text).toBe('');
+    expect(state.classification).toBeNull();
+    expect(state.targetEntityId).toBeNull();
+    expect(state.edgeRole).toBeNull();
+  });
+
+  it('reset() clears warrantElicitationTargetNodeId even after entering warrant-elicitation mode', () => {
+    useCaptureStore.getState().enterWarrantElicitationMode('n1');
+    expect(useCaptureStore.getState().warrantElicitationTargetNodeId).toBe('n1');
+    useCaptureStore.getState().reset();
+    const state = useCaptureStore.getState();
+    expect(state.mode).toBe('idle');
+    expect(state.warrantElicitationTargetNodeId).toBeNull();
+  });
+
+  it('enterWarrantElicitationMode then enterOperationalizationMode flips mode but leaves warrantElicitationTargetNodeId stale (per-slice ownership)', () => {
+    // Cross-mode invariant — the warrant-elicitation slice is owned by
+    // its own enter/exit pair; an external mode flip (e.g. into
+    // operationalization) leaves the stale target id alone. Mirrors
+    // the existing decompose / interpretive-split / operationalization
+    // mutual-state behavior. Pin the invariant so a cross-mode-clear
+    // refactor is a deliberate change.
+    useCaptureStore.getState().enterWarrantElicitationMode('we-target');
+    useCaptureStore.getState().enterOperationalizationMode('op-target');
+    const state = useCaptureStore.getState();
+    expect(state.mode).toBe('operationalization');
+    expect(state.operationalizationTargetNodeId).toBe('op-target');
+    expect(state.warrantElicitationTargetNodeId).toBe('we-target');
+  });
+});
