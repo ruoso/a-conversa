@@ -447,6 +447,8 @@ task moderator_ui "Moderator UI" {
     task mod_disputation_test_display "Disputation-test indicator (data vs. claim)" {
       effort 0.5d
       allocate team
+      complete 100
+      note "Refinement: tasks/refinements/moderator-ui/mod_disputation_test_display.md"
     }
     task mod_warrant_elicitation_mode "Warrant-elicitation mode" {
       effort 1d
@@ -732,6 +734,7 @@ task moderator_ui "Moderator UI" {
       task mod_pw_diagnostic_flow "Playwright: run a diagnostic test end-to-end" {
         effort 1.5d
         allocate team
+        note "Inherits deferred-e2e debt from moderator_ui.mod_diagnostic_flow.mod_is_ought_prompt and moderator_ui.mod_diagnostic_flow.mod_disputation_test_display (Acceptance #7-#8 of tasks/refinements/moderator-ui/mod_disputation_test_display.md): the spec MUST cover an end-to-end disputation scenario asserting (a) a node with an agreed substance facet renders the 'Data' chip and the data-hover-popover-section='disputation' row, and (b) a node with a disputed substance facet renders the 'Claim' chip and matching popover row. Stable seams: data-disputation-chip, data-disputation-outcome, data-hover-popover-section='disputation'. Reaching the chip surface end-to-end requires the standalone set-node-substance propose-UI work (part of F3 / F7 operationalization-mode capture) — add that as a prerequisite when it lands."
       }
       task mod_pw_axiom_mark "Playwright: axiom-mark flow" {
         effort 1d

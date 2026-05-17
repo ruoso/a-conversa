@@ -48,10 +48,12 @@ import type { StatementKind } from '@a-conversa/shared-types';
 import { useSelectionStore } from '../stores/index.js';
 import { AnnotationBadge } from './AnnotationBadge.js';
 import { AxiomMarkBadge } from './AxiomMarkBadge.js';
+import { DisputationTestChip } from './DisputationTestChip.js';
 import { FacetPill } from './FacetPill.js';
 import { HoverPopover } from './HoverPopover.js';
 import { PendingAxiomMarkBadge } from './PendingAxiomMarkBadge.js';
 import type { DiagnosticHighlight } from './diagnosticHighlights.js';
+import { disputationOutcome } from './disputationOutcome.js';
 import type { FacetName, FacetStatus } from './facetStatus.js';
 import {
   EMPTY_VOTES,
@@ -369,6 +371,24 @@ export function StatementNode(props: NodeProps<StatementNodeData>): ReactElement
     return [<FacetPill key={facet} facet={facet} status={status} votes={votes} />];
   });
 
+  // Disputation-test methodology-label chip. Refinement:
+  // `mod_disputation_test_display`. The chip is a *read* of the
+  // substance facet — it surfaces the methodology's `data | claim |
+  // unsettled` vocabulary alongside the substance pill's wire vocab
+  // (`agreed | disputed | ...`). The two layers compose; neither
+  // overwrites the other. The chip is omitted (no DOM presence) when
+  // `disputationOutcome` returns `null` — i.e. when no substance
+  // facet activity has touched the node. Mirrors the empty-row
+  // omission rule used by the per-facet pill row / annotation /
+  // axiom-mark rows.
+  //
+  // Mount placement: inside the per-facet pill row, immediately after
+  // the substance pill (the last pill in `FACET_RENDER_ORDER`). The
+  // chip lives inside a `data-disputation-chip-slot=""` wrapper so
+  // downstream tests can assert the chip's position relative to the
+  // pill row without scanning sibling text content.
+  const disputationChipOutcome = disputationOutcome(facetStatuses.substance);
+
   return (
     <div
       data-testid={`statement-node-${id}`}
@@ -417,6 +437,11 @@ export function StatementNode(props: NodeProps<StatementNodeData>): ReactElement
       {facetPills.length > 0 ? (
         <div data-testid={`facet-pill-row-node-${id}`} className="mb-1 flex flex-wrap gap-1">
           {facetPills}
+          {disputationChipOutcome !== null ? (
+            <span data-disputation-chip-slot="" className="inline-flex">
+              <DisputationTestChip outcome={disputationChipOutcome} />
+            </span>
+          ) : null}
         </div>
       ) : null}
       <p

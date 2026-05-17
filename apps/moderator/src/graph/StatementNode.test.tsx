@@ -1292,6 +1292,170 @@ describe('StatementNode — per-facet state visualization (mod_per_facet_state_v
   });
 });
 
+describe('StatementNode — disputation-test chip (mod_disputation_test_display)', () => {
+  // The methodology's `data | claim | unsettled` chip sits inside the
+  // per-facet pill row, immediately AFTER the substance pill. The chip
+  // is the methodology-vocabulary overlay on top of the existing
+  // substance facet pill (the pill carries the wire vocab; the chip
+  // carries the methodology vocab). The chip is omitted from the DOM
+  // when no substance facet activity has touched the node (mirrors the
+  // empty-row omission rule).
+
+  it('renders the chip with data-disputation-outcome="data" when substance is agreed (immediately after the substance pill)', () => {
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-disp-data',
+          data: {
+            wording: 'substance agreed',
+            kind: 'fact',
+            facetStatuses: { substance: 'agreed' },
+          },
+        })}
+      />,
+    );
+    const row = screen.getByTestId('facet-pill-row-node-n-disp-data');
+    // Chip is present, with the right outcome attribute.
+    const slot = row.querySelector('[data-disputation-chip-slot]');
+    expect(slot).not.toBeNull();
+    const chip = row.querySelector('[data-disputation-chip]');
+    expect(chip).not.toBeNull();
+    expect(chip!.getAttribute('data-disputation-outcome')).toBe('data');
+    // DOM order: the substance pill comes BEFORE the chip-slot wrapper.
+    // `DOCUMENT_POSITION_FOLLOWING` (4): "other follows this" — i.e.
+    // pill comes BEFORE slot in the DOM.
+    const substancePill = Array.from(row.querySelectorAll<HTMLElement>('[data-facet-pill]')).find(
+      (p) => p.getAttribute('data-facet-name') === 'substance',
+    );
+    expect(substancePill).toBeTruthy();
+    const pillIsBeforeSlot =
+      (substancePill!.compareDocumentPosition(slot!) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+    expect(pillIsBeforeSlot).toBe(true);
+  });
+
+  it('renders the chip with data-disputation-outcome="claim" when substance is disputed', () => {
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-disp-claim',
+          data: {
+            wording: 'substance disputed',
+            kind: 'fact',
+            facetStatuses: { substance: 'disputed' },
+          },
+        })}
+      />,
+    );
+    const row = screen.getByTestId('facet-pill-row-node-n-disp-claim');
+    const chip = row.querySelector('[data-disputation-chip]');
+    expect(chip).not.toBeNull();
+    expect(chip!.getAttribute('data-disputation-outcome')).toBe('claim');
+  });
+
+  it('renders the chip with data-disputation-outcome="claim" when substance is meta-disagreement AND the substance pill keeps its violet border', () => {
+    // Per refinement: the chip and the per-facet pill layer compose;
+    // neither overwrites the other. The meta-disagreement pill keeps its
+    // violet double-border palette while the chip surfaces the
+    // methodology-vocabulary `Claim` outcome.
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-disp-meta',
+          data: {
+            wording: 'substance meta-disagreement',
+            kind: 'fact',
+            facetStatuses: { substance: 'meta-disagreement' },
+          },
+        })}
+      />,
+    );
+    const row = screen.getByTestId('facet-pill-row-node-n-disp-meta');
+    const chip = row.querySelector('[data-disputation-chip]');
+    expect(chip).not.toBeNull();
+    expect(chip!.getAttribute('data-disputation-outcome')).toBe('claim');
+    // The substance pill retains its violet meta-disagreement border —
+    // the chip is a separate layer.
+    const substancePill = Array.from(row.querySelectorAll<HTMLElement>('[data-facet-pill]')).find(
+      (p) => p.getAttribute('data-facet-name') === 'substance',
+    );
+    expect(substancePill).toBeTruthy();
+    expect(substancePill!.className).toContain('border-violet-600');
+    expect(substancePill!.className).toContain('border-double');
+  });
+
+  it('does NOT render the chip when facetStatuses is empty / has no substance entry', () => {
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-no-chip',
+          data: {
+            wording: 'no substance facet activity',
+            kind: 'fact',
+            // No facetStatuses at all → no pill row, no chip.
+          },
+        })}
+      />,
+    );
+    // The pill row is not rendered at all (empty facetStatuses → no
+    // pills); the chip's wrapper is consequently also absent.
+    expect(screen.queryByTestId('facet-pill-row-node-n-no-chip')).toBeNull();
+    expect(document.querySelector('[data-disputation-chip]')).toBeNull();
+    expect(document.querySelector('[data-disputation-chip-slot]')).toBeNull();
+  });
+
+  it('does NOT render the chip when facetStatuses has wording/classification only (no substance entry)', () => {
+    // Even when the pill row IS rendered (other facets have status),
+    // the chip is still omitted when no substance entry exists — the
+    // methodology label is scoped to the substance facet's lifecycle.
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-non-substance',
+          data: {
+            wording: 'wording proposed, no substance',
+            kind: 'fact',
+            facetStatuses: { wording: 'proposed', classification: 'agreed' },
+          },
+        })}
+      />,
+    );
+    const row = screen.getByTestId('facet-pill-row-node-n-non-substance');
+    // Pill row renders (wording + classification pills) but no chip.
+    expect(row.querySelectorAll('[data-facet-pill]').length).toBe(2);
+    expect(row.querySelector('[data-disputation-chip]')).toBeNull();
+    expect(row.querySelector('[data-disputation-chip-slot]')).toBeNull();
+  });
+
+  it('renders BOTH the chip and the amber diagnostic halo when substance is agreed AND a blocking diagnostic fires (independent layers)', () => {
+    // Per refinement: the disputation-test chip and the diagnostic
+    // highlight are independent layers — both compose simultaneously
+    // and neither overwrites the other.
+    render(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-chip-and-diag',
+          data: {
+            wording: 'agreed substance with diagnostic',
+            kind: 'fact',
+            facetStatuses: { substance: 'agreed' },
+            diagnosticHighlight: { severity: 'blocking', kinds: ['cycle'] },
+          },
+        })}
+      />,
+    );
+    // Chip present.
+    const row = screen.getByTestId('facet-pill-row-node-n-chip-and-diag');
+    const chip = row.querySelector('[data-disputation-chip]');
+    expect(chip).not.toBeNull();
+    expect(chip!.getAttribute('data-disputation-outcome')).toBe('data');
+    // Diagnostic halo classes present on the card root.
+    const card = screen.getByTestId('statement-node-n-chip-and-diag');
+    expect(card.getAttribute('data-diagnostic-severity')).toBe('blocking');
+    expect(card.className).toContain('ring-amber-500/80');
+    expect(card.className).toContain('motion-safe:animate-pulse');
+  });
+});
+
 describe('StatementNode — per-participant vote indicators (mod_vote_indicators_on_graph)', () => {
   // The in-pill vote-indicator row surfaces WHO voted WHAT on each
   // facet's pending proposal. Per-participant outer ring color (from

@@ -396,6 +396,15 @@
           "decompose": "Suggested next: decompose the normative claim",
           "warrant": "Suggested next: elicit the warrant"
         }
+      },
+      "disputationTest": {
+        "label": "Disputation test",
+        "chipAriaLabel": "Disputation test outcome: {outcome}",
+        "outcome": {
+          "data": "Data",
+          "claim": "Claim",
+          "unsettled": "Unsettled"
+        }
       }
     },
     "contextMenu": {

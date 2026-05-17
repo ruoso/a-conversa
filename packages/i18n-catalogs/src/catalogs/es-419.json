@@ -396,6 +396,15 @@
           "decompose": "Siguiente sugerido: descomponer la afirmación normativa",
           "warrant": "Siguiente sugerido: elicitar la garantía"
         }
+      },
+      "disputationTest": {
+        "label": "Prueba de disputación",
+        "chipAriaLabel": "Resultado de la prueba de disputación: {outcome}",
+        "outcome": {
+          "data": "Dato",
+          "claim": "Afirmación",
+          "unsettled": "En disputa"
+        }
       }
     },
     "contextMenu": {

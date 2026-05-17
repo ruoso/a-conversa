@@ -64,6 +64,7 @@ import { useTranslation } from 'react-i18next';
 
 import { axiomMarkColorFor, type StatementEdgeData } from './selectors.js';
 import type { StatementNodeData } from './StatementNode.js';
+import { disputationOutcome } from './disputationOutcome.js';
 import type { FacetName } from './facetStatus.js';
 
 /**
@@ -166,6 +167,16 @@ export function HoverPopover(props: HoverPopoverProps): ReactElement {
     // existing per-participant template) per participant; the line is
     // omitted entirely when no axiom-mark touches this node.
     const hasAxiomMarks = axiomMarks.length > 0;
+    // Disputation-test row. Refinement:
+    // `mod_disputation_test_display`. Surfaces the methodology label
+    // (`Data | Claim | Unsettled`) for the node's substance facet,
+    // mirroring the inline chip on the node card. Placement: after the
+    // per-facet rows, before the axiom-marks section — keeps the
+    // "substance pill → methodology label" reading order consistent
+    // between the card and the popover. Edge target does NOT get this
+    // row (the methodology's data-vs-claim distinction is a node-scoped
+    // concept per refinement Decision §6).
+    const disputationOutcomeForNode = disputationOutcome(facetStatuses.substance);
     // Active-diagnostic line. Mirrors the content `mod_diagnostic_
     // highlighting` previously stamped on the native `title` attribute
     // (which this task removes from the entity): the severity on its
@@ -200,6 +211,21 @@ export function HoverPopover(props: HoverPopoverProps): ReactElement {
         {facetRows.length > 0 ? (
           <div data-hover-popover-section="facets" className="flex flex-col gap-0.5">
             {facetRows}
+          </div>
+        ) : null}
+        {disputationOutcomeForNode !== null ? (
+          <div
+            data-hover-popover-section="disputation"
+            data-hover-popover-disputation-outcome={disputationOutcomeForNode}
+            className="text-xs text-slate-700"
+          >
+            <span className="font-medium text-slate-500">
+              {t('moderator.diagnostic.disputationTest.label')}
+              {': '}
+            </span>
+            <span>
+              {t(`moderator.diagnostic.disputationTest.outcome.${disputationOutcomeForNode}`)}
+            </span>
           </div>
         ) : null}
         {hasAxiomMarks ? (

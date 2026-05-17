@@ -478,3 +478,127 @@ describe('HoverPopover — test seams', () => {
     expect(style.toLowerCase()).toContain('pointer-events: none');
   });
 });
+
+// -- Disputation-test row (mod_disputation_test_display) --------------
+//
+// The methodology-label row sits between the per-facet rows and the
+// axiom-marks section. It mirrors the inline `<DisputationTestChip>`
+// on the node card: the substance pill carries the wire vocab
+// (`agreed | disputed | ...`); the disputation row carries the
+// methodology's narrative vocab (`Data | Claim | Unsettled`). The
+// row is node-only — the edge popover never renders it (refinement
+// Decision §6: the methodology's data-vs-claim distinction is a
+// node-scoped concept).
+
+describe('HoverPopover — disputation-test row (mod_disputation_test_display)', () => {
+  it('renders the disputation row with the "Data" label when a node has substance: agreed', () => {
+    render(
+      <HoverPopover
+        id="n-disp-data"
+        target={{
+          kind: 'node',
+          data: nodeData({ wording: 'w', facetStatuses: { substance: 'agreed' } }),
+        }}
+      />,
+    );
+    const popover = screen.getByTestId('hover-popover-n-disp-data');
+    const row = popover.querySelector('[data-hover-popover-section="disputation"]');
+    expect(row).not.toBeNull();
+    expect(row!.getAttribute('data-hover-popover-disputation-outcome')).toBe('data');
+    expect(row!.textContent).toContain('Disputation test');
+    expect(row!.textContent).toContain('Data');
+  });
+
+  it('renders the disputation row with the "Claim" label when a node has substance: disputed', () => {
+    render(
+      <HoverPopover
+        id="n-disp-claim"
+        target={{
+          kind: 'node',
+          data: nodeData({ wording: 'w', facetStatuses: { substance: 'disputed' } }),
+        }}
+      />,
+    );
+    const row = screen
+      .getByTestId('hover-popover-n-disp-claim')
+      .querySelector('[data-hover-popover-section="disputation"]');
+    expect(row).not.toBeNull();
+    expect(row!.getAttribute('data-hover-popover-disputation-outcome')).toBe('claim');
+    expect(row!.textContent).toContain('Claim');
+  });
+
+  it('renders the disputation row with the "Unsettled" label when a node has substance: proposed', () => {
+    render(
+      <HoverPopover
+        id="n-disp-unsettled"
+        target={{
+          kind: 'node',
+          data: nodeData({ wording: 'w', facetStatuses: { substance: 'proposed' } }),
+        }}
+      />,
+    );
+    const row = screen
+      .getByTestId('hover-popover-n-disp-unsettled')
+      .querySelector('[data-hover-popover-section="disputation"]');
+    expect(row).not.toBeNull();
+    expect(row!.getAttribute('data-hover-popover-disputation-outcome')).toBe('unsettled');
+    expect(row!.textContent).toContain('Unsettled');
+  });
+
+  it('does NOT render the disputation row when the node has no substance facet entry', () => {
+    render(
+      <HoverPopover
+        id="n-no-disp"
+        target={{
+          kind: 'node',
+          data: nodeData({ wording: 'w', facetStatuses: { wording: 'proposed' } }),
+        }}
+      />,
+    );
+    const popover = screen.getByTestId('hover-popover-n-no-disp');
+    expect(popover.querySelector('[data-hover-popover-section="disputation"]')).toBeNull();
+  });
+
+  it('does NOT render the disputation row on an edge popover (regardless of edge substance facet status)', () => {
+    // Edge popover with substance: agreed — the disputation-test
+    // vocabulary is a node-scoped methodology concept, so the row
+    // is never rendered for edges (refinement Decision §6).
+    render(
+      <HoverPopover
+        id="edge-disp"
+        target={{ kind: 'edge', data: edgeData({ facetStatuses: { substance: 'agreed' } }) }}
+      />,
+    );
+    const popover = screen.getByTestId('hover-popover-edge-disp');
+    expect(popover.querySelector('[data-hover-popover-section="disputation"]')).toBeNull();
+  });
+
+  it('resolves the disputation label + outcome across the three v1 locales (en-US / pt-BR / es-419)', async () => {
+    for (const { locale, label, outcome } of [
+      { locale: 'en-US' as const, label: 'Disputation test', outcome: 'Data' },
+      { locale: 'pt-BR' as const, label: 'Teste de disputação', outcome: 'Dado' },
+      { locale: 'es-419' as const, label: 'Prueba de disputación', outcome: 'Dato' },
+    ]) {
+      await i18next.changeLanguage(locale);
+      const { unmount } = render(
+        <HoverPopover
+          id={`n-disp-${locale}`}
+          target={{
+            kind: 'node',
+            data: nodeData({ wording: 'w', facetStatuses: { substance: 'agreed' } }),
+          }}
+        />,
+      );
+      const row = screen
+        .getByTestId(`hover-popover-n-disp-${locale}`)
+        .querySelector('[data-hover-popover-section="disputation"]');
+      expect(row, `disputation row in ${locale}`).not.toBeNull();
+      expect(row!.textContent).toContain(label);
+      expect(row!.textContent).toContain(outcome);
+      // Negative pin: catalog miss would surface the raw key.
+      expect(row!.textContent).not.toContain('moderator.diagnostic.disputationTest');
+      unmount();
+    }
+    await i18next.changeLanguage('en-US');
+  });
+});
