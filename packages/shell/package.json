@@ -30,6 +30,6 @@
   "devDependencies": {
     "@a-conversa/i18n-catalogs": "workspace:*",
     "@a-conversa/shared-types": "workspace:^",
-    "vite": "8.0.12"
+    "vite": "8.0.13"
   }
 }
