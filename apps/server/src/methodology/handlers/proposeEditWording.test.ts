@@ -366,8 +366,16 @@ describe('propose edit-wording — rule 3: no conflicting pending proposal', () 
           kind: 'decompose',
           parent_node_id: NODE_ID,
           components: [
-            { wording: 'A decompose component one.', classification: 'fact' },
-            { wording: 'A decompose component two.', classification: 'value' },
+            {
+              wording: 'A decompose component one.',
+              classification: 'fact',
+              node_id: '00000000-0000-4000-8000-00000000e051',
+            },
+            {
+              wording: 'A decompose component two.',
+              classification: 'value',
+              node_id: '00000000-0000-4000-8000-00000000e052',
+            },
           ],
         },
       }),
@@ -392,8 +400,16 @@ describe('propose edit-wording — rule 3: no conflicting pending proposal', () 
           kind: 'interpretive-split',
           parent_node_id: NODE_ID,
           readings: [
-            { wording: 'A reading one.', classification: 'fact' },
-            { wording: 'A reading two.', classification: 'value' },
+            {
+              wording: 'A reading one.',
+              classification: 'fact',
+              node_id: '00000000-0000-4000-8000-00000000e053',
+            },
+            {
+              wording: 'A reading two.',
+              classification: 'value',
+              node_id: '00000000-0000-4000-8000-00000000e054',
+            },
           ],
         },
       }),
@@ -442,8 +458,16 @@ describe('propose edit-wording — rule 3: no conflicting pending proposal', () 
           kind: 'decompose',
           parent_node_id: NODE_ID,
           components: [
-            { wording: 'A decompose component one.', classification: 'fact' },
-            { wording: 'A decompose component two.', classification: 'value' },
+            {
+              wording: 'A decompose component one.',
+              classification: 'fact',
+              node_id: '00000000-0000-4000-8000-00000000e051',
+            },
+            {
+              wording: 'A decompose component two.',
+              classification: 'value',
+              node_id: '00000000-0000-4000-8000-00000000e052',
+            },
           ],
         },
       }),
@@ -468,8 +492,16 @@ describe('propose edit-wording — rule 3: no conflicting pending proposal', () 
           kind: 'interpretive-split',
           parent_node_id: NODE_ID,
           readings: [
-            { wording: 'A reading one.', classification: 'fact' },
-            { wording: 'A reading two.', classification: 'value' },
+            {
+              wording: 'A reading one.',
+              classification: 'fact',
+              node_id: '00000000-0000-4000-8000-00000000e053',
+            },
+            {
+              wording: 'A reading two.',
+              classification: 'value',
+              node_id: '00000000-0000-4000-8000-00000000e054',
+            },
           ],
         },
       }),

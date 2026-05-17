@@ -244,8 +244,16 @@ describe('propose meta-move — rule 2 (node): target-entity-visible', () => {
           kind: 'decompose',
           parent_node_id: NODE_A_ID,
           components: [
-            { wording: 'Prior decompose component one.', classification: 'fact' },
-            { wording: 'Prior decompose component two.', classification: 'value' },
+            {
+              wording: 'Prior decompose component one.',
+              classification: 'fact',
+              node_id: '00000000-0000-4000-8000-00000000e021',
+            },
+            {
+              wording: 'Prior decompose component two.',
+              classification: 'value',
+              node_id: '00000000-0000-4000-8000-00000000e022',
+            },
           ],
         },
       }),

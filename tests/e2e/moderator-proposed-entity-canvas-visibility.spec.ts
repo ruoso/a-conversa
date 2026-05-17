@@ -207,30 +207,76 @@ test.describe('mod_proposed_entity_canvas_visibility — proposed entities rende
     });
   });
 
-  // Scenario 3 (2-component decompose propose-time visibility) and
-  // Scenario 4 (propose-then-withdraw 3-context flow) are the
-  // authoritative end-state contracts per ADR 0027 §52-56 but depend
-  // on follow-up infrastructure beyond the single-statement /
-  // connecting-edge fix landing in this commit cluster:
+  test('Scenario 3: 2-component decompose propose → parent + 2 children all render with data-facet-status="proposed"', async ({
+    page,
+  }) => {
+    // Per `mod_decompose_propose_time_canvas_visibility`, the propose
+    // handler emits per-component `node-created` + `entity-included`
+    // for `decompose` at propose-time alongside the `proposal`
+    // envelope. The canvas projector renders the proposed components
+    // in `proposed` state immediately. The parent stays visible
+    // during the proposed window (per `docs/methodology.md` L84 +
+    // `docs/data-model.md` L282-285 — the parent flips invisible
+    // only on commit). This scenario asserts the three-node canvas
+    // state after a 2-component decompose propose.
+    const parentWording = 'Workers should earn a living wage and receive fair benefits.';
+    await moderatorReachOperate(
+      page,
+      'Scenario 3 — 2-component decompose propose-time canvas-visibility check.',
+    );
+
+    // Step 1 — propose the parent statement (free-floating
+    // classify-node). One `statement-node-*` testid surfaces.
+    await proposeStatement(page, parentWording);
+    const oneNode = page.getByTestId(/^statement-node-[0-9a-f-]+$/);
+    await expect(oneNode).toHaveCount(1, { timeout: 15_000 });
+
+    // Step 2 — right-click the parent node to open the graph
+    // context menu; click the Decompose menu item to enter
+    // decompose-mode against the parent.
+    const parentNode = oneNode.first();
+    await parentNode.click({ button: 'right' });
+    await expect(page.getByTestId('graph-context-menu')).toBeVisible();
+    await page.getByTestId('graph-context-menu-item-propose-decompose').click();
+
+    // Step 3 — fill the two default decompose-component rows (the
+    // grid seeds 2 empty rows on mode-entry per
+    // `mod_decompose_mode`). Pick a classification per row.
+    await expect(page.getByTestId('decompose-component-row-0')).toBeVisible();
+    await page.getByTestId('decompose-component-text-0').fill('Workers should earn a living wage.');
+    await page.getByTestId('decompose-component-classification-0-button-value').click();
+    await page
+      .getByTestId('decompose-component-text-1')
+      .fill('Workers should receive fair benefits.');
+    await page.getByTestId('decompose-component-classification-1-button-normative').click();
+
+    // Step 4 — click the Propose-decomposition button. The propose
+    // handler emits 2 × (node-created + entity-included) + the
+    // proposal envelope. The canvas now shows the parent + the two
+    // proposed children, all `data-facet-status="proposed"`.
+    await page.getByTestId('propose-decomposition-action-button').click();
+
+    const nodes = page.getByTestId(/^statement-node-[0-9a-f-]+$/);
+    await expect(nodes).toHaveCount(3, { timeout: 15_000 });
+    for (const handle of await nodes.elementHandles()) {
+      const status = await handle.getAttribute('data-facet-status');
+      expect(status).toBe('proposed');
+    }
+  });
+
+  // Scenario 4 (propose-then-withdraw 3-context flow) remains
+  // deferred per the parent refinement: it needs the participant-side
+  // withdraw gesture (M5 leaf) AND the cross-surface 3-context test
+  // fixture (re-using `cross-surface-lobby-start.spec.ts:46-95`'s
+  // shape). The follow-up task is `mod_withdraw_proposal_gesture`;
+  // the wire-layer `withdraw-proposal` handler + the
+  // `entity-removed` event lifecycle ship in this commit cluster
+  // (Vitest + Cucumber coverage pin the wire contract).
   //
-  //   - Scenario 3 needs multi-entity decompose propose-time emission
-  //     (per-component server-minted ids + payload-level carriage so
-  //     the withdraw flow can later reference them by id). The
-  //     follow-up task is
-  //     `mod_decompose_propose_time_canvas_visibility`.
-  //
-  //   - Scenario 4 needs the participant-side withdraw gesture (M5
-  //     leaf) AND the cross-surface 3-context test fixture (re-using
-  //     `cross-surface-lobby-start.spec.ts:46-95`'s shape). The
-  //     follow-up task is `mod_withdraw_proposal_gesture`; the
-  //     wire-layer `withdraw-proposal` handler + the `entity-removed`
-  //     event lifecycle ship in this commit cluster (Vitest +
-  //     Cucumber coverage pin the wire contract).
-  //
-  // Both scenarios are intentionally LEFT OUT of this Playwright file
-  // — re-adding them as silent `test.fixme` would violate the
-  // refinement's D6 ("Failing-first e2e is a real failing test, not a
-  // `test.fixme` or `test.fail()` annotation"). The follow-up
-  // refinements MUST scope their own Playwright cells per the
-  // tech-debt registration policy (see ORCHESTRATOR.md).
+  // The scenario is intentionally LEFT OUT — re-adding it as silent
+  // `test.fixme` would violate the refinement's D6 ("Failing-first
+  // e2e is a real failing test, not a `test.fixme` or `test.fail()`
+  // annotation"). The follow-up refinement MUST scope its own
+  // Playwright cell per the tech-debt registration policy (see
+  // ORCHESTRATOR.md).
 });

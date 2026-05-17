@@ -368,8 +368,16 @@ describe('PendingProposalsPane — all eleven proposal sub-kinds resolve to a no
         kind: 'decompose',
         parent_node_id: NODE_X,
         components: [
-          { wording: 'first component', classification: 'fact' },
-          { wording: 'second component', classification: 'fact' },
+          {
+            wording: 'first component',
+            classification: 'fact',
+            node_id: '00000000-0000-4000-8000-00000000f031',
+          },
+          {
+            wording: 'second component',
+            classification: 'fact',
+            node_id: '00000000-0000-4000-8000-00000000f032',
+          },
         ],
       },
     },
@@ -379,8 +387,16 @@ describe('PendingProposalsPane — all eleven proposal sub-kinds resolve to a no
         kind: 'interpretive-split',
         parent_node_id: NODE_X,
         readings: [
-          { wording: 'reading one', classification: 'value' },
-          { wording: 'reading two', classification: 'value' },
+          {
+            wording: 'reading one',
+            classification: 'value',
+            node_id: '00000000-0000-4000-8000-00000000f033',
+          },
+          {
+            wording: 'reading two',
+            classification: 'value',
+            node_id: '00000000-0000-4000-8000-00000000f034',
+          },
         ],
       },
     },

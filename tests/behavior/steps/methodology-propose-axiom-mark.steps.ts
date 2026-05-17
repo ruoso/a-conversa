@@ -187,8 +187,16 @@ Given(
           kind: 'decompose',
           parent_node_id: PAM_NODE_ID,
           components: [
-            { wording: 'Prior decompose component one.', classification: 'fact' },
-            { wording: 'Prior decompose component two.', classification: 'value' },
+            {
+              wording: 'Prior decompose component one.',
+              classification: 'fact',
+              node_id: '00000000-0000-4000-8000-000000cc0031',
+            },
+            {
+              wording: 'Prior decompose component two.',
+              classification: 'value',
+              node_id: '00000000-0000-4000-8000-000000cc0032',
+            },
           ],
         },
       },

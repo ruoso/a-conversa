@@ -198,16 +198,44 @@ export type EditWordingProposal = z.infer<typeof editWordingProposalSchema>;
 
 // -- Component shape used by decompose / interpretive-split ----------
 //
-// Each component / reading is a wording + classification pair. The
-// resulting node is created at commit time by the methodology engine
-// (decomposition_logic / interpretive_split_logic); ids are assigned
-// then.
+// Each component / reading is a wording + classification + per-component
+// node id triple. The per-component `node_id` is minted client-side
+// at envelope-build-time inside the moderator's `buildProposal()`
+// helper (see `apps/moderator/src/layout/useProposeProposalAction.ts`);
+// the server's propose handler reads each id from the payload and
+// emits a `node-created` + `entity-included` pair per component at
+// propose-time so the canvas projector renders each proposed component
+// in `proposed` state immediately. Refinement:
+// `tasks/refinements/moderator-ui/mod_decompose_propose_time_canvas_visibility.md`.
+//
+// **Wire-shape evolution.** Pre-ADR-0027, decompose / interpretive-
+// split component objects carried only `wording` + `classification`;
+// per-component IDs were assigned by the methodology engine at
+// commit-time. That flow violated `docs/methodology.md` L57 — the
+// components didn't appear on the canvas until commit. The `node_id`
+// field reinstates the methodology contract: the client mints a UUID
+// per component and passes it inline; the server emits `node-created`
+// + `entity-included` per component at propose-time.
+//
+// **`node_id` is REQUIRED, not `.optional()`.** Unlike the
+// `set-edge-substance` precedent (where `.optional()` was forced by
+// the two-shape requirement of that sub-kind — connecting case carries
+// endpoints, substance-only re-vote doesn't), the `decompose` /
+// `interpretive-split` sub-kinds have a SINGLE shape on the wire:
+// every envelope mints fresh component nodes. There is no "decompose
+// re-vote" use-case; making the field required catches missing-ID
+// bugs at envelope-parse time and aligns with the methodology
+// contract that decompose introduces N component entities. See
+// Decision D1 of the refinement.
 
 export const proposalComponentSchema = z.object({
   // Methodology-text cap per F-003 — see `limits.ts`. Each component
   // is a wording in its own right, so the per-string cap applies.
   wording: z.string().min(1).max(MAX_METHODOLOGY_TEXT_LENGTH),
   classification: statementKindSchema,
+  // Per-component node id minted client-side at envelope-build-time
+  // per ADR 0027 — see the docblock above for the rationale.
+  node_id: z.string().uuid(),
 });
 
 export type ProposalComponent = z.infer<typeof proposalComponentSchema>;

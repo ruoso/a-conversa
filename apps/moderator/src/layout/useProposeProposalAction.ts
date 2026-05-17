@@ -127,13 +127,48 @@ const MODE_CONFIG = {
 } as const;
 
 /**
+ * Generate a client-side UUID v4. Delegates to `crypto.randomUUID()`
+ * when available (every modern browser), with a deterministic-shape
+ * fallback for environments that lack the API. Mirrors the helper at
+ * `useProposeAction.ts:144` — duplicated rather than imported because
+ * the two hooks are independent module-scope entry points; if a third
+ * consumer needs the helper the right time to extract it is then.
+ */
+function randomUuid(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  const hex = (n: number): string => n.toString(16).padStart(2, '0');
+  const bytes = new Uint8Array(16);
+  for (let i = 0; i < 16; i += 1) bytes[i] = Math.floor(Math.random() * 256);
+  bytes[6] = (bytes[6]! & 0x0f) | 0x40;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const b = Array.from(bytes, hex);
+  return `${b[0]}${b[1]}${b[2]}${b[3]}-${b[4]}${b[5]}-${b[6]}${b[7]}-${b[8]}${b[9]}-${b[10]}${b[11]}${b[12]}${b[13]}${b[14]}${b[15]}`;
+}
+
+/**
  * Build the proposal payload for the envelope. Maps the store's
- * per-row `text` field to the wire's `wording` field; switches the
- * `kind` + per-row array field name on `mode`.
+ * per-row `text` field to the wire's `wording` field; mints a fresh
+ * per-component `node_id` per row; switches the `kind` + per-row
+ * array field name on `mode`.
  *
  * `validateProposalRows` is called immediately before this, so
  * `classification` is known non-null here; the `!` narrowing reflects
  * that established invariant.
+ *
+ * **Per-component UUIDs are minted CLIENT-side at envelope-build-time**
+ * per Decision D2 of `mod_decompose_propose_time_canvas_visibility`.
+ * Each invocation mints fresh UUIDs — a propose-error-then-retry
+ * mints new IDs, which is the correct behavior for a propose retry
+ * (the snapshot-restore path doesn't carry the IDs because the
+ * per-row state doesn't store them — they're derived here at
+ * envelope-build-time). Mirrors the `classify-node` pattern in
+ * `useProposeAction.ts`'s `buildClassifyNodeProposal`. The server's
+ * propose handler reads each `node_id` from the payload and emits
+ * `node-created` + `entity-included` per component at propose-time
+ * so the canvas projector renders each proposed component in
+ * `proposed` state immediately (ADR 0027).
  */
 function buildProposal(args: {
   mode: ProposalMode;
@@ -143,6 +178,7 @@ function buildProposal(args: {
   const wireRows = args.rows.map((row) => ({
     wording: row.text,
     classification: row.classification!,
+    node_id: randomUuid(),
   }));
   if (args.mode === 'decompose') {
     return {

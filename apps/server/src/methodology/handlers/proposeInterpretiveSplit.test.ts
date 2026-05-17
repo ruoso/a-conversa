@@ -137,6 +137,16 @@ function seedSession(): ReturnType<typeof createEmptyProjection> {
   return projection;
 }
 
+// Deterministic UUID per index — used to seed the per-reading
+// `node_id` on the test fixtures so the existing validator-rule cases
+// stay reproducible after the wire-shape addition lands per
+// `mod_decompose_propose_time_canvas_visibility`. None of the four
+// validator rules consult `node_id`; this is structural-shape only.
+function readingId(index: number): string {
+  const hex = index.toString(16).padStart(12, '0');
+  return `00000000-0000-4000-8000-${hex}`;
+}
+
 // Build a well-formed propose-interpretive-split action at the next-
 // expected sequence. The two-reading payload is the minimum that
 // passes the upstream Zod schema (`min(2)`).
@@ -159,10 +169,12 @@ function makeSplitAction(
         {
           wording: 'Welfare deficits are our evidence for constitutive capacities (epistemic).',
           classification: 'fact',
+          node_id: readingId(0xd01),
         },
         {
           wording: 'Capability-frustration just is welfare loss, ontologically (metaphysical).',
           classification: 'definitional',
+          node_id: readingId(0xd02),
         },
       ],
     },
@@ -211,8 +223,16 @@ describe('propose interpretive-split — rule 2: parent-node-visible', () => {
           kind: 'interpretive-split',
           parent_node_id: PARENT_NODE_ID,
           readings: [
-            { wording: 'Prior reading one.', classification: 'fact' },
-            { wording: 'Prior reading two.', classification: 'value' },
+            {
+              wording: 'Prior reading one.',
+              classification: 'fact',
+              node_id: readingId(0xd11),
+            },
+            {
+              wording: 'Prior reading two.',
+              classification: 'value',
+              node_id: readingId(0xd12),
+            },
           ],
         },
       }),
@@ -256,8 +276,16 @@ describe('propose interpretive-split — rule 3: no conflicting pending proposal
           kind: 'interpretive-split',
           parent_node_id: PARENT_NODE_ID,
           readings: [
-            { wording: 'First-proposal reading one.', classification: 'fact' },
-            { wording: 'First-proposal reading two.', classification: 'value' },
+            {
+              wording: 'First-proposal reading one.',
+              classification: 'fact',
+              node_id: readingId(0xd21),
+            },
+            {
+              wording: 'First-proposal reading two.',
+              classification: 'value',
+              node_id: readingId(0xd22),
+            },
           ],
         },
       }),
@@ -283,8 +311,16 @@ describe('propose interpretive-split — rule 3: no conflicting pending proposal
           kind: 'decompose',
           parent_node_id: PARENT_NODE_ID,
           components: [
-            { wording: 'A decompose component one.', classification: 'fact' },
-            { wording: 'A decompose component two.', classification: 'value' },
+            {
+              wording: 'A decompose component one.',
+              classification: 'fact',
+              node_id: readingId(0xd31),
+            },
+            {
+              wording: 'A decompose component two.',
+              classification: 'value',
+              node_id: readingId(0xd32),
+            },
           ],
         },
       }),
@@ -384,8 +420,16 @@ describe('propose interpretive-split — rule 3: no conflicting pending proposal
           kind: 'interpretive-split',
           parent_node_id: PARENT_NODE_ID,
           readings: [
-            { wording: 'First parent reading one.', classification: 'fact' },
-            { wording: 'First parent reading two.', classification: 'value' },
+            {
+              wording: 'First parent reading one.',
+              classification: 'fact',
+              node_id: readingId(0xd41),
+            },
+            {
+              wording: 'First parent reading two.',
+              classification: 'value',
+              node_id: readingId(0xd42),
+            },
           ],
         },
       }),
@@ -403,18 +447,27 @@ describe('propose interpretive-split — rule 3: no conflicting pending proposal
 // ---------------------------------------------------------------
 
 describe('propose interpretive-split — accept path', () => {
-  it('accepts a well-formed interpretive-split proposal and emits one proposal event', () => {
+  // Per `mod_decompose_propose_time_canvas_visibility`, the propose
+  // handler emits per-reading `node-created` + `entity-included`
+  // fan-out at propose-time alongside the `proposal` envelope. For
+  // the 2-reading fixture below, that's 5 events: [node-created(r1),
+  // entity-included(r1), node-created(r2), entity-included(r2),
+  // proposal]. The dedicated structural-fan-out test below pins the
+  // ordering + payload shape; this case retains the high-level
+  // assertion that the proposal envelope itself is well-formed.
+  it('accepts a well-formed interpretive-split proposal and emits the structural fan-out + the proposal envelope', () => {
     const p = seedSession();
     const action = makeSplitAction(p);
     const r = validateAction(p, action);
     expect(r.ok).toBe(true);
     if (r.ok) {
-      expect(r.events).toHaveLength(1);
-      const ev = r.events[0]!;
+      // 2 readings × (node-created + entity-included) + 1 proposal = 5 events.
+      expect(r.events).toHaveLength(5);
+      const ev = r.events[4]!;
       expect(ev.kind).toBe('proposal');
       expect(ev.id).toBe(NEW_EVENT_ID);
       expect(ev.sessionId).toBe(SESSION_ID);
-      expect(ev.sequence).toBe(action.sequence);
+      expect(ev.sequence).toBe(action.sequence + 4);
       expect(ev.actor).toBe(DEBATER_A_ID);
       expect(ev.createdAt).toBe(T9);
       if (ev.kind === 'proposal') {
@@ -435,6 +488,7 @@ describe('propose interpretive-split — accept path', () => {
     const readings = Array.from({ length: 10 }, (_, i) => ({
       wording: `Reading ${i + 1}.`,
       classification: 'fact' as const,
+      node_id: readingId(0xa00 + i),
     }));
     const action: ProposeAction = {
       kind: 'propose',
@@ -456,6 +510,92 @@ describe('propose interpretive-split — accept path', () => {
 });
 
 // ---------------------------------------------------------------
+// Propose-time structural fan-out — per
+// `mod_decompose_propose_time_canvas_visibility`. The propose handler
+// emits one `node-created` + one `entity-included` per reading in
+// `proposal.readings` array order, followed by the `proposal`
+// envelope as the last event. Total event count: 2N+1.
+// ---------------------------------------------------------------
+
+describe('propose interpretive-split — propose-time structural fan-out (mod_decompose_propose_time_canvas_visibility)', () => {
+  it('2-reading interpretive-split emits node-created + entity-included per reading, in array order, followed by the proposal envelope', () => {
+    const p = seedSession();
+    const action = makeSplitAction(p);
+    const r1NodeId =
+      action.proposal.kind === 'interpretive-split' ? action.proposal.readings[0]!.node_id : '';
+    const r2NodeId =
+      action.proposal.kind === 'interpretive-split' ? action.proposal.readings[1]!.node_id : '';
+
+    const r = validateAction(p, action);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+
+    expect(r.events).toHaveLength(5);
+
+    const [r1Created, r1Included, r2Created, r2Included, proposalEvent] = r.events as [
+      Event,
+      Event,
+      Event,
+      Event,
+      Event,
+    ];
+
+    expect(r1Created.kind).toBe('node-created');
+    expect(r1Created.sequence).toBe(action.sequence);
+    if (r1Created.kind === 'node-created') {
+      expect(r1Created.payload.node_id).toBe(r1NodeId);
+      expect(r1Created.payload.wording).toBe(
+        'Welfare deficits are our evidence for constitutive capacities (epistemic).',
+      );
+      expect(r1Created.payload.created_by).toBe(DEBATER_A_ID);
+    }
+
+    expect(r1Included.kind).toBe('entity-included');
+    expect(r1Included.sequence).toBe(action.sequence + 1);
+    if (r1Included.kind === 'entity-included') {
+      expect(r1Included.payload.entity_kind).toBe('node');
+      expect(r1Included.payload.entity_id).toBe(r1NodeId);
+    }
+
+    expect(r2Created.kind).toBe('node-created');
+    expect(r2Created.sequence).toBe(action.sequence + 2);
+    if (r2Created.kind === 'node-created') {
+      expect(r2Created.payload.node_id).toBe(r2NodeId);
+    }
+
+    expect(r2Included.kind).toBe('entity-included');
+    expect(r2Included.sequence).toBe(action.sequence + 3);
+    if (r2Included.kind === 'entity-included') {
+      expect(r2Included.payload.entity_kind).toBe('node');
+      expect(r2Included.payload.entity_id).toBe(r2NodeId);
+    }
+
+    expect(proposalEvent.kind).toBe('proposal');
+    expect(proposalEvent.id).toBe(NEW_EVENT_ID);
+    expect(proposalEvent.sequence).toBe(action.sequence + 4);
+  });
+
+  it('emitted node-created payloads carry the IDs from the proposal payload (client-minted; not server-minted)', () => {
+    // Pins D2 of the refinement on the interpretive-split arm.
+    const p = seedSession();
+    const action = makeSplitAction(p);
+    const readingNodeIds =
+      action.proposal.kind === 'interpretive-split'
+        ? action.proposal.readings.map((r) => r.node_id)
+        : [];
+
+    const r = validateAction(p, action);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+
+    const nodeCreatedIds = r.events
+      .filter((e): e is Extract<Event, { kind: 'node-created' }> => e.kind === 'node-created')
+      .map((e) => e.payload.node_id);
+    expect(nodeCreatedIds).toEqual(readingNodeIds);
+  });
+});
+
+// ---------------------------------------------------------------
 // Layering pin — the Zod schema enforces 2..10 readings and non-empty
 // wording. The methodology validator is never reached for those
 // failures because the structural validator (ADR 0021) runs first.
@@ -467,7 +607,13 @@ describe('propose interpretive-split — structural shape (upstream Zod layering
     const result = interpretiveSplitProposalSchema.safeParse({
       kind: 'interpretive-split',
       parent_node_id: PARENT_NODE_ID,
-      readings: [{ wording: 'Only one reading.', classification: 'fact' }],
+      readings: [
+        {
+          wording: 'Only one reading.',
+          classification: 'fact',
+          node_id: readingId(0xb01),
+        },
+      ],
     });
     expect(result.success).toBe(false);
   });
@@ -476,6 +622,7 @@ describe('propose interpretive-split — structural shape (upstream Zod layering
     const readings = Array.from({ length: 11 }, (_, i) => ({
       wording: `Reading ${i + 1}.`,
       classification: 'fact' as const,
+      node_id: readingId(0xb10 + i),
     }));
     const result = interpretiveSplitProposalSchema.safeParse({
       kind: 'interpretive-split',
@@ -490,8 +637,8 @@ describe('propose interpretive-split — structural shape (upstream Zod layering
       kind: 'interpretive-split',
       parent_node_id: PARENT_NODE_ID,
       readings: [
-        { wording: '', classification: 'fact' },
-        { wording: 'Second reading.', classification: 'value' },
+        { wording: '', classification: 'fact', node_id: readingId(0xb21) },
+        { wording: 'Second reading.', classification: 'value', node_id: readingId(0xb22) },
       ],
     });
     expect(result.success).toBe(false);

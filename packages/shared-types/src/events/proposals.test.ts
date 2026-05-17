@@ -221,11 +221,20 @@ describe('proposal payload — edit-wording (restructure)', () => {
 });
 
 describe('proposal payload — decompose', () => {
-  const validComponent = { wording: 'Sub-claim A.', classification: 'fact' as const };
+  const COMPONENT_ID_A = 'cccccccc-cccc-4ccc-8ccc-cccccccccca1';
+  const COMPONENT_ID_B = 'cccccccc-cccc-4ccc-8ccc-cccccccccca2';
+  const validComponent = {
+    wording: 'Sub-claim A.',
+    classification: 'fact' as const,
+    node_id: COMPONENT_ID_A,
+  };
   const valid = {
     kind: 'decompose' as const,
     parent_node_id: NODE_ID,
-    components: [validComponent, { wording: 'Sub-claim B.', classification: 'value' as const }],
+    components: [
+      validComponent,
+      { wording: 'Sub-claim B.', classification: 'value' as const, node_id: COMPONENT_ID_B },
+    ],
   };
 
   it('round-trips a well-formed payload through JSON', () => {
@@ -241,6 +250,7 @@ describe('proposal payload — decompose', () => {
     const eleven = Array.from({ length: 11 }, (_, i) => ({
       wording: `Sub-claim ${String(i)}.`,
       classification: 'fact' as const,
+      node_id: `cccccccc-cccc-4ccc-8ccc-cccccccccc${i.toString(16).padStart(2, '0')}`,
     }));
     const result = proposalPayloadSchema.safeParse({ ...valid, components: eleven });
     expect(result.success).toBe(false);
@@ -250,8 +260,8 @@ describe('proposal payload — decompose', () => {
     const result = proposalPayloadSchema.safeParse({
       ...valid,
       components: [
-        { wording: '', classification: 'fact' as const },
-        { wording: 'Ok.', classification: 'fact' as const },
+        { wording: '', classification: 'fact' as const, node_id: COMPONENT_ID_A },
+        { wording: 'Ok.', classification: 'fact' as const, node_id: COMPONENT_ID_B },
       ],
     });
     expect(result.success).toBe(false);
@@ -261,20 +271,63 @@ describe('proposal payload — decompose', () => {
     const result = proposalPayloadSchema.safeParse({
       ...valid,
       components: [
-        { wording: 'Ok.', classification: 'opinion' },
-        { wording: 'Also ok.', classification: 'fact' as const },
+        { wording: 'Ok.', classification: 'opinion', node_id: COMPONENT_ID_A },
+        { wording: 'Also ok.', classification: 'fact' as const, node_id: COMPONENT_ID_B },
       ],
     });
     expect(result.success).toBe(false);
   });
+
+  // Per `mod_decompose_propose_time_canvas_visibility` D1: `node_id`
+  // is a REQUIRED field on each `proposalComponentSchema` element.
+  // The three cases below pin (a) the required-ness (missing field
+  // is rejected), (b) the UUID-shape validation (non-UUID string is
+  // rejected), and (c) the round-trip of the new field.
+  it('rejects a component missing the required node_id field', () => {
+    const result = proposalPayloadSchema.safeParse({
+      ...valid,
+      components: [
+        { wording: 'Has id.', classification: 'fact' as const, node_id: COMPONENT_ID_A },
+        // Intentionally missing node_id on second component.
+        { wording: 'Missing id.', classification: 'fact' as const },
+      ],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a component whose node_id is not a UUID', () => {
+    const result = proposalPayloadSchema.safeParse({
+      ...valid,
+      components: [
+        { wording: 'Bad id.', classification: 'fact' as const, node_id: 'not-a-uuid' },
+        { wording: 'Has id.', classification: 'fact' as const, node_id: COMPONENT_ID_B },
+      ],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('preserves each component node_id through a JSON round-trip', () => {
+    const parsed = roundTrip(valid) as { components: Array<{ node_id: string }> };
+    expect(parsed.components[0]!.node_id).toBe(COMPONENT_ID_A);
+    expect(parsed.components[1]!.node_id).toBe(COMPONENT_ID_B);
+  });
 });
 
 describe('proposal payload — interpretive-split', () => {
-  const validReading = { wording: 'Reading A.', classification: 'definitional' as const };
+  const READING_ID_A = 'cccccccc-cccc-4ccc-8ccc-cccccccccdb1';
+  const READING_ID_B = 'cccccccc-cccc-4ccc-8ccc-cccccccccdb2';
+  const validReading = {
+    wording: 'Reading A.',
+    classification: 'definitional' as const,
+    node_id: READING_ID_A,
+  };
   const valid = {
     kind: 'interpretive-split' as const,
     parent_node_id: NODE_ID,
-    readings: [validReading, { wording: 'Reading B.', classification: 'value' as const }],
+    readings: [
+      validReading,
+      { wording: 'Reading B.', classification: 'value' as const, node_id: READING_ID_B },
+    ],
   };
 
   it('round-trips a well-formed payload through JSON', () => {
@@ -290,9 +343,42 @@ describe('proposal payload — interpretive-split', () => {
     const eleven = Array.from({ length: 11 }, (_, i) => ({
       wording: `Reading ${String(i)}.`,
       classification: 'value' as const,
+      node_id: `cccccccc-cccc-4ccc-8ccc-cccccccccdb${i.toString(16).padStart(2, '0')}`,
     }));
     const result = proposalPayloadSchema.safeParse({ ...valid, readings: eleven });
     expect(result.success).toBe(false);
+  });
+
+  // Per `mod_decompose_propose_time_canvas_visibility` D1: `node_id`
+  // is REQUIRED on each `proposalComponentSchema` element. Symmetric
+  // round-trip + required + UUID-shape cases for the readings array.
+  it('rejects a reading missing the required node_id field', () => {
+    const result = proposalPayloadSchema.safeParse({
+      ...valid,
+      readings: [
+        { wording: 'Has id.', classification: 'fact' as const, node_id: READING_ID_A },
+        // Intentionally missing node_id on second reading.
+        { wording: 'Missing id.', classification: 'fact' as const },
+      ],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a reading whose node_id is not a UUID', () => {
+    const result = proposalPayloadSchema.safeParse({
+      ...valid,
+      readings: [
+        { wording: 'Bad id.', classification: 'fact' as const, node_id: 'not-a-uuid' },
+        { wording: 'Has id.', classification: 'fact' as const, node_id: READING_ID_B },
+      ],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('preserves each reading node_id through a JSON round-trip', () => {
+    const parsed = roundTrip(valid) as { readings: Array<{ node_id: string }> };
+    expect(parsed.readings[0]!.node_id).toBe(READING_ID_A);
+    expect(parsed.readings[1]!.node_id).toBe(READING_ID_B);
   });
 });
 

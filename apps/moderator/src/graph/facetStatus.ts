@@ -202,16 +202,64 @@ export function computeFacetStatuses(events: readonly Event[]): FacetStatusIndex
     }
     if (event.kind === 'proposal') {
       const target = targetOf(event.payload.proposal);
-      if (target === null) continue;
-      proposalTarget.set(event.id, target);
-      const state = getOrCreateFacetState(
-        nodeStates,
-        edgeStates,
-        target.entityKind,
-        target.entityId,
-        target.facet,
-      );
-      state.hasProposal = true;
+      if (target !== null) {
+        proposalTarget.set(event.id, target);
+        const state = getOrCreateFacetState(
+          nodeStates,
+          edgeStates,
+          target.entityKind,
+          target.entityId,
+          target.facet,
+        );
+        state.hasProposal = true;
+      }
+      // Per `mod_decompose_propose_time_canvas_visibility`: a
+      // pending decompose / interpretive-split proposal introduces N
+      // component nodes (via the propose-time fan-out at
+      // `apps/server/src/methodology/handlers/propose.ts`); each
+      // component's classification facet is `proposed` while the
+      // decompose / interpretive-split proposal is pending. (The
+      // parent's classification facet is unaffected — the parent is
+      // not the target of these proposals.) Without this branch the
+      // component nodes would render with NO `data-facet-status`
+      // attribute, violating the methodology contract that proposed
+      // entities surface with `data-facet-status="proposed"` per
+      // ADR 0027 + `mod_proposed_entity_canvas_visibility` Acceptance
+      // criteria L103.
+      //
+      // This is purely a status-derivation rule (no per-component
+      // proposal envelope is emitted at the wire layer — the single
+      // `decompose` envelope carries the components inline). On
+      // commit / withdraw of the decompose proposal, the component
+      // nodes either persist (commit — the components are now real)
+      // or get retracted (withdraw — `entity-removed(node)` per
+      // component lands per `entitiesToRetractForWithdraw` in
+      // `apps/server/src/ws/handlers/withdraw.ts`); either way the
+      // facet status update is consistent.
+      const proposal = event.payload.proposal;
+      if (proposal.kind === 'decompose') {
+        for (const component of proposal.components) {
+          const state = getOrCreateFacetState(
+            nodeStates,
+            edgeStates,
+            'node',
+            component.node_id,
+            'classification',
+          );
+          state.hasProposal = true;
+        }
+      } else if (proposal.kind === 'interpretive-split') {
+        for (const reading of proposal.readings) {
+          const state = getOrCreateFacetState(
+            nodeStates,
+            edgeStates,
+            'node',
+            reading.node_id,
+            'classification',
+          );
+          state.hasProposal = true;
+        }
+      }
       continue;
     }
     if (event.kind === 'vote') {

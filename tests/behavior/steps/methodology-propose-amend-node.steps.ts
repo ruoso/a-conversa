@@ -219,8 +219,16 @@ async function insertPendingDecompose(world: AConversaWorld): Promise<void> {
         kind: 'decompose',
         parent_node_id: PAN_NODE_A_ID,
         components: [
-          { wording: 'Component one of NODE_A.', classification: 'fact' },
-          { wording: 'Component two of NODE_A.', classification: 'value' },
+          {
+            wording: 'Component one of NODE_A.',
+            classification: 'fact',
+            node_id: '00000000-0000-4000-8000-000000cc0001',
+          },
+          {
+            wording: 'Component two of NODE_A.',
+            classification: 'value',
+            node_id: '00000000-0000-4000-8000-000000cc0002',
+          },
         ],
       },
     },

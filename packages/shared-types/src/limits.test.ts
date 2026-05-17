@@ -171,8 +171,16 @@ describe('limits — methodology-text cap (10 KiB)', () => {
       const result = decomposeProposalSchema.safeParse({
         ...base,
         components: [
-          { wording: repeat(MAX_METHODOLOGY_TEXT_LENGTH), classification: 'fact' as const },
-          { wording: 'Other half.', classification: 'value' as const },
+          {
+            wording: repeat(MAX_METHODOLOGY_TEXT_LENGTH),
+            classification: 'fact' as const,
+            node_id: '00000000-0000-4000-8000-000000000c01',
+          },
+          {
+            wording: 'Other half.',
+            classification: 'value' as const,
+            node_id: '00000000-0000-4000-8000-000000000c02',
+          },
         ],
       });
       expect(result.success).toBe(true);
@@ -182,8 +190,16 @@ describe('limits — methodology-text cap (10 KiB)', () => {
       const result = decomposeProposalSchema.safeParse({
         ...base,
         components: [
-          { wording: repeat(MAX_METHODOLOGY_TEXT_LENGTH + 1), classification: 'fact' as const },
-          { wording: 'Other half.', classification: 'value' as const },
+          {
+            wording: repeat(MAX_METHODOLOGY_TEXT_LENGTH + 1),
+            classification: 'fact' as const,
+            node_id: '00000000-0000-4000-8000-000000000c03',
+          },
+          {
+            wording: 'Other half.',
+            classification: 'value' as const,
+            node_id: '00000000-0000-4000-8000-000000000c04',
+          },
         ],
       });
       expect(result.success).toBe(false);
@@ -200,8 +216,16 @@ describe('limits — methodology-text cap (10 KiB)', () => {
       const result = interpretiveSplitProposalSchema.safeParse({
         ...base,
         readings: [
-          { wording: repeat(MAX_METHODOLOGY_TEXT_LENGTH), classification: 'fact' as const },
-          { wording: 'Alternative reading.', classification: 'value' as const },
+          {
+            wording: repeat(MAX_METHODOLOGY_TEXT_LENGTH),
+            classification: 'fact' as const,
+            node_id: '00000000-0000-4000-8000-000000000c05',
+          },
+          {
+            wording: 'Alternative reading.',
+            classification: 'value' as const,
+            node_id: '00000000-0000-4000-8000-000000000c06',
+          },
         ],
       });
       expect(result.success).toBe(true);
@@ -211,8 +235,16 @@ describe('limits — methodology-text cap (10 KiB)', () => {
       const result = interpretiveSplitProposalSchema.safeParse({
         ...base,
         readings: [
-          { wording: repeat(MAX_METHODOLOGY_TEXT_LENGTH + 1), classification: 'fact' as const },
-          { wording: 'Alternative reading.', classification: 'value' as const },
+          {
+            wording: repeat(MAX_METHODOLOGY_TEXT_LENGTH + 1),
+            classification: 'fact' as const,
+            node_id: '00000000-0000-4000-8000-000000000c07',
+          },
+          {
+            wording: 'Alternative reading.',
+            classification: 'value' as const,
+            node_id: '00000000-0000-4000-8000-000000000c08',
+          },
         ],
       });
       expect(result.success).toBe(false);

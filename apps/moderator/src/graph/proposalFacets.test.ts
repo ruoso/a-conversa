@@ -149,8 +149,16 @@ describe('derivePerProposalFacets — structural sub-kinds emit one synthetic "p
         kind: 'decompose',
         parent_node_id: NODE_X,
         components: [
-          { wording: 'first', classification: 'fact' },
-          { wording: 'second', classification: 'fact' },
+          {
+            wording: 'first',
+            classification: 'fact',
+            node_id: '00000000-0000-4000-8000-00000000f041',
+          },
+          {
+            wording: 'second',
+            classification: 'fact',
+            node_id: '00000000-0000-4000-8000-00000000f042',
+          },
         ],
       },
     },
@@ -160,8 +168,16 @@ describe('derivePerProposalFacets — structural sub-kinds emit one synthetic "p
         kind: 'interpretive-split',
         parent_node_id: NODE_X,
         readings: [
-          { wording: 'reading 1', classification: 'value' },
-          { wording: 'reading 2', classification: 'value' },
+          {
+            wording: 'reading 1',
+            classification: 'value',
+            node_id: '00000000-0000-4000-8000-00000000f043',
+          },
+          {
+            wording: 'reading 2',
+            classification: 'value',
+            node_id: '00000000-0000-4000-8000-00000000f044',
+          },
         ],
       },
     },
@@ -268,8 +284,16 @@ describe('derivePerProposalFacets — status precedence: server → client mirro
       kind: 'decompose',
       parent_node_id: NODE_X,
       components: [
-        { wording: 'first', classification: 'fact' },
-        { wording: 'second', classification: 'fact' },
+        {
+          wording: 'first',
+          classification: 'fact',
+          node_id: '00000000-0000-4000-8000-00000000f051',
+        },
+        {
+          wording: 'second',
+          classification: 'fact',
+          node_id: '00000000-0000-4000-8000-00000000f052',
+        },
       ],
     };
     const server: Record<string, string> = { proposal: 'committed' };

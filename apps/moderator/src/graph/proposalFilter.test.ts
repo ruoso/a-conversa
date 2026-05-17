@@ -554,8 +554,16 @@ describe('matchesProposalFilter — text branch matches summaryText for each of 
         kind: 'decompose',
         parent_node_id: NODE_X,
         components: [
-          { wording: 'first component', classification: 'fact' },
-          { wording: 'second component', classification: 'fact' },
+          {
+            wording: 'first component',
+            classification: 'fact',
+            node_id: '00000000-0000-4000-8000-00000000f011',
+          },
+          {
+            wording: 'second component',
+            classification: 'fact',
+            node_id: '00000000-0000-4000-8000-00000000f012',
+          },
         ],
       },
       query: 'decompose',
@@ -566,8 +574,16 @@ describe('matchesProposalFilter — text branch matches summaryText for each of 
         kind: 'interpretive-split',
         parent_node_id: NODE_X,
         readings: [
-          { wording: 'reading one', classification: 'value' },
-          { wording: 'reading two', classification: 'value' },
+          {
+            wording: 'reading one',
+            classification: 'value',
+            node_id: '00000000-0000-4000-8000-00000000f013',
+          },
+          {
+            wording: 'reading two',
+            classification: 'value',
+            node_id: '00000000-0000-4000-8000-00000000f014',
+          },
         ],
       },
       query: 'split',

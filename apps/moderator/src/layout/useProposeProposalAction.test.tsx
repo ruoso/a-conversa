@@ -180,7 +180,7 @@ afterEach(() => {
 });
 
 describe('useProposeProposalAction — mode="interpretive-split" envelope shape', () => {
-  it('constructs an envelope with kind: "interpretive-split" and a readings (NOT components) field; per-row text → wording rename applied', () => {
+  it('constructs an envelope with kind: "interpretive-split" and a readings (NOT components) field; per-row text → wording rename applied; per-reading node_id minted client-side', () => {
     const fake = makeFakeClient();
     const probe = renderProbe(fake.client, 'interpretive-split');
     act(() => {
@@ -198,17 +198,32 @@ describe('useProposeProposalAction — mode="interpretive-split" envelope shape'
       proposal: {
         kind: string;
         parent_node_id: string;
-        readings?: Array<{ wording: string; classification: string }>;
+        readings?: Array<{ wording: string; classification: string; node_id: string }>;
         components?: unknown;
       };
     };
     expect(payload.sessionId).toBe(SESSION_ID);
     expect(payload.proposal.kind).toBe('interpretive-split');
     expect(payload.proposal.parent_node_id).toBe(PARENT_NODE_ID);
-    expect(payload.proposal.readings).toEqual([
-      { wording: 'Welfare deficits are our evidence for capacities.', classification: 'fact' },
-      { wording: 'Capability-frustration just is welfare loss.', classification: 'value' },
-    ]);
+    expect(payload.proposal.readings).toHaveLength(2);
+    expect(payload.proposal.readings![0]!.wording).toBe(
+      'Welfare deficits are our evidence for capacities.',
+    );
+    expect(payload.proposal.readings![0]!.classification).toBe('fact');
+    expect(payload.proposal.readings![1]!.wording).toBe(
+      'Capability-frustration just is welfare loss.',
+    );
+    expect(payload.proposal.readings![1]!.classification).toBe('value');
+    // Per `mod_decompose_propose_time_canvas_visibility` D2, the
+    // per-reading `node_id` is minted client-side at envelope-build
+    // time. Pin the UUID-v4 shape (not a deterministic ID match)
+    // because the mint strategy is not test-coupled.
+    const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    expect(payload.proposal.readings![0]!.node_id).toMatch(UUID_V4);
+    expect(payload.proposal.readings![1]!.node_id).toMatch(UUID_V4);
+    // The two readings must have DISTINCT ids (defensive against a
+    // shared/stale-state regression in the mint loop).
+    expect(payload.proposal.readings![0]!.node_id).not.toBe(payload.proposal.readings![1]!.node_id);
     expect(payload.proposal.components).toBeUndefined();
     act(() => {
       fake.resolveNext({ sequence: 1 });
@@ -216,6 +231,54 @@ describe('useProposeProposalAction — mode="interpretive-split" envelope shape'
     return act(async () => {
       await proposePromise;
     });
+  });
+
+  // Per `mod_decompose_propose_time_canvas_visibility` D2: a retry
+  // after a failed propose mints FRESH ids — the per-row state
+  // doesn't carry the ids (they're derived at envelope-build-time),
+  // so a second invocation of buildProposal mints a new set. This
+  // pins the "fresh ids per attempt" contract from D2's rationale.
+  it('mints fresh per-reading node_id values on each propose call (no carry-over from prior invocations)', async () => {
+    const fake = makeFakeClient();
+    const probe = renderProbe(fake.client, 'interpretive-split');
+    act(() => {
+      primeValidInterpretiveSplit();
+    });
+    let firstPromise: Promise<void> | undefined;
+    act(() => {
+      firstPromise = probe.result.propose();
+    });
+    expect(fake.calls.length).toBe(1);
+    const firstPayload = fake.calls[0]?.payload as {
+      proposal: { readings?: Array<{ node_id: string }> };
+    };
+    const firstIds = firstPayload.proposal.readings!.map((r) => r.node_id);
+
+    // Reject the first attempt — buildProposal's catch path restores
+    // the per-row state + flips `proposing` back to false.
+    act(() => {
+      fake.rejectNext(
+        new WsRequestError({
+          code: 'illegal-state-transition',
+          message: 'retry me',
+        }),
+      );
+    });
+    await act(async () => {
+      await firstPromise;
+    });
+    // Issue a second propose against the restored per-row state —
+    // buildProposal mints a fresh set of ids.
+    act(() => {
+      void probe.result.propose();
+    });
+    expect(fake.calls.length).toBe(2);
+    const secondPayload = fake.calls[1]?.payload as {
+      proposal: { readings?: Array<{ node_id: string }> };
+    };
+    const secondIds = secondPayload.proposal.readings!.map((r) => r.node_id);
+    expect(secondIds[0]).not.toBe(firstIds[0]);
+    expect(secondIds[1]).not.toBe(firstIds[1]);
   });
 
   it('optimistic-clear under mode="interpretive-split" calls exitInterpretiveSplitMode (NOT exitDecomposeMode)', () => {

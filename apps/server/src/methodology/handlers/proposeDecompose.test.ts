@@ -131,6 +131,16 @@ function seedSession(): ReturnType<typeof createEmptyProjection> {
   return projection;
 }
 
+// Deterministic UUID per index — used to seed the per-component
+// `node_id` on the test fixtures so the existing validator-rule cases
+// stay reproducible after the wire-shape addition lands per
+// `mod_decompose_propose_time_canvas_visibility`. None of the four
+// validator rules consult `node_id`; this is structural-shape only.
+function componentId(index: number): string {
+  const hex = index.toString(16).padStart(12, '0');
+  return `00000000-0000-4000-8000-${hex}`;
+}
+
 // Build a well-formed propose-decompose action at the next-expected
 // sequence. The two-component payload is the minimum that passes the
 // upstream Zod schema (`min(2)`).
@@ -150,8 +160,16 @@ function makeDecomposeAction(
       kind: 'decompose',
       parent_node_id: overrides.parentNodeId ?? PARENT_NODE_ID,
       components: [
-        { wording: 'Zoos do more good (fact).', classification: 'fact' },
-        { wording: 'Doing more good is praiseworthy (value).', classification: 'value' },
+        {
+          wording: 'Zoos do more good (fact).',
+          classification: 'fact',
+          node_id: componentId(0xc01),
+        },
+        {
+          wording: 'Doing more good is praiseworthy (value).',
+          classification: 'value',
+          node_id: componentId(0xc02),
+        },
       ],
     },
   };
@@ -205,8 +223,16 @@ describe('propose decompose — rule 2: parent-node-visible', () => {
           kind: 'decompose',
           parent_node_id: PARENT_NODE_ID,
           components: [
-            { wording: 'Prior component one.', classification: 'fact' },
-            { wording: 'Prior component two.', classification: 'value' },
+            {
+              wording: 'Prior component one.',
+              classification: 'fact',
+              node_id: componentId(0xc11),
+            },
+            {
+              wording: 'Prior component two.',
+              classification: 'value',
+              node_id: componentId(0xc12),
+            },
           ],
         },
       }),
@@ -248,8 +274,16 @@ describe('propose decompose — rule 3: no conflicting decompose pending', () =>
           kind: 'decompose',
           parent_node_id: PARENT_NODE_ID,
           components: [
-            { wording: 'First proposal component one.', classification: 'fact' },
-            { wording: 'First proposal component two.', classification: 'value' },
+            {
+              wording: 'First proposal component one.',
+              classification: 'fact',
+              node_id: componentId(0xc21),
+            },
+            {
+              wording: 'First proposal component two.',
+              classification: 'value',
+              node_id: componentId(0xc22),
+            },
           ],
         },
       }),
@@ -283,8 +317,16 @@ describe('propose decompose — rule 3: no conflicting decompose pending', () =>
           kind: 'interpretive-split',
           parent_node_id: PARENT_NODE_ID,
           readings: [
-            { wording: 'Reading one — epistemic.', classification: 'fact' },
-            { wording: 'Reading two — metaphysical.', classification: 'value' },
+            {
+              wording: 'Reading one — epistemic.',
+              classification: 'fact',
+              node_id: componentId(0xc31),
+            },
+            {
+              wording: 'Reading two — metaphysical.',
+              classification: 'value',
+              node_id: componentId(0xc32),
+            },
           ],
         },
       }),
@@ -384,8 +426,16 @@ describe('propose decompose — rule 3: no conflicting decompose pending', () =>
           kind: 'decompose',
           parent_node_id: PARENT_NODE_ID,
           components: [
-            { wording: 'First parent component one.', classification: 'fact' },
-            { wording: 'First parent component two.', classification: 'value' },
+            {
+              wording: 'First parent component one.',
+              classification: 'fact',
+              node_id: componentId(0xc41),
+            },
+            {
+              wording: 'First parent component two.',
+              classification: 'value',
+              node_id: componentId(0xc42),
+            },
           ],
         },
       }),
@@ -403,18 +453,27 @@ describe('propose decompose — rule 3: no conflicting decompose pending', () =>
 // ---------------------------------------------------------------
 
 describe('propose decompose — accept path', () => {
-  it('accepts a well-formed decompose proposal and emits one proposal event', () => {
+  // Per `mod_decompose_propose_time_canvas_visibility`, the propose
+  // handler emits per-component `node-created` + `entity-included`
+  // fan-out at propose-time alongside the `proposal` envelope. For
+  // the 2-component fixture below, that's 5 events: [node-created(c1),
+  // entity-included(c1), node-created(c2), entity-included(c2),
+  // proposal]. The dedicated structural-fan-out test below pins the
+  // ordering + payload shape; this case retains the high-level
+  // assertion that the proposal envelope itself is well-formed.
+  it('accepts a well-formed decompose proposal and emits the structural fan-out + the proposal envelope', () => {
     const p = seedSession();
     const action = makeDecomposeAction(p);
     const r = validateAction(p, action);
     expect(r.ok).toBe(true);
     if (r.ok) {
-      expect(r.events).toHaveLength(1);
-      const ev = r.events[0]!;
+      // 2 components × (node-created + entity-included) + 1 proposal = 5 events.
+      expect(r.events).toHaveLength(5);
+      const ev = r.events[4]!;
       expect(ev.kind).toBe('proposal');
       expect(ev.id).toBe(NEW_EVENT_ID);
       expect(ev.sessionId).toBe(SESSION_ID);
-      expect(ev.sequence).toBe(action.sequence);
+      expect(ev.sequence).toBe(action.sequence + 4);
       expect(ev.actor).toBe(DEBATER_A_ID);
       expect(ev.createdAt).toBe(T9);
       if (ev.kind === 'proposal') {
@@ -436,6 +495,7 @@ describe('propose decompose — accept path', () => {
     const components = Array.from({ length: 10 }, (_, i) => ({
       wording: `Component ${i + 1}.`,
       classification: 'fact' as const,
+      node_id: componentId(0xa00 + i),
     }));
     const action: ProposeAction = {
       kind: 'propose',
@@ -457,6 +517,108 @@ describe('propose decompose — accept path', () => {
 });
 
 // ---------------------------------------------------------------
+// Propose-time structural fan-out — per
+// `mod_decompose_propose_time_canvas_visibility`. The propose handler
+// emits one `node-created` + one `entity-included` per component in
+// `proposal.components` array order, followed by the `proposal`
+// envelope as the last event. Total event count: 2N+1.
+// ---------------------------------------------------------------
+
+describe('propose decompose — propose-time structural fan-out (mod_decompose_propose_time_canvas_visibility)', () => {
+  it('2-component decompose emits node-created + entity-included per component, in array order, followed by the proposal envelope', () => {
+    const p = seedSession();
+    const action = makeDecomposeAction(p);
+    const c1NodeId =
+      action.proposal.kind === 'decompose' ? action.proposal.components[0]!.node_id : '';
+    const c2NodeId =
+      action.proposal.kind === 'decompose' ? action.proposal.components[1]!.node_id : '';
+
+    const r = validateAction(p, action);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+
+    // 5 events in order: node-created(c1), entity-included(c1),
+    // node-created(c2), entity-included(c2), proposal.
+    expect(r.events).toHaveLength(5);
+
+    const [c1Created, c1Included, c2Created, c2Included, proposalEvent] = r.events as [
+      Event,
+      Event,
+      Event,
+      Event,
+      Event,
+    ];
+
+    // Component 1 — node-created.
+    expect(c1Created.kind).toBe('node-created');
+    expect(c1Created.sessionId).toBe(SESSION_ID);
+    expect(c1Created.sequence).toBe(action.sequence);
+    expect(c1Created.actor).toBe(DEBATER_A_ID);
+    expect(c1Created.createdAt).toBe(T9);
+    if (c1Created.kind === 'node-created') {
+      expect(c1Created.payload.node_id).toBe(c1NodeId);
+      expect(c1Created.payload.wording).toBe('Zoos do more good (fact).');
+      expect(c1Created.payload.created_by).toBe(DEBATER_A_ID);
+      expect(c1Created.payload.created_at).toBe(T9);
+    }
+
+    // Component 1 — entity-included.
+    expect(c1Included.kind).toBe('entity-included');
+    expect(c1Included.sequence).toBe(action.sequence + 1);
+    if (c1Included.kind === 'entity-included') {
+      expect(c1Included.payload.entity_kind).toBe('node');
+      expect(c1Included.payload.entity_id).toBe(c1NodeId);
+      expect(c1Included.payload.included_by).toBe(DEBATER_A_ID);
+      expect(c1Included.payload.included_at).toBe(T9);
+    }
+
+    // Component 2 — node-created.
+    expect(c2Created.kind).toBe('node-created');
+    expect(c2Created.sequence).toBe(action.sequence + 2);
+    if (c2Created.kind === 'node-created') {
+      expect(c2Created.payload.node_id).toBe(c2NodeId);
+      expect(c2Created.payload.wording).toBe('Doing more good is praiseworthy (value).');
+    }
+
+    // Component 2 — entity-included.
+    expect(c2Included.kind).toBe('entity-included');
+    expect(c2Included.sequence).toBe(action.sequence + 3);
+    if (c2Included.kind === 'entity-included') {
+      expect(c2Included.payload.entity_kind).toBe('node');
+      expect(c2Included.payload.entity_id).toBe(c2NodeId);
+    }
+
+    // Proposal envelope — last slot.
+    expect(proposalEvent.kind).toBe('proposal');
+    expect(proposalEvent.id).toBe(NEW_EVENT_ID);
+    expect(proposalEvent.sequence).toBe(action.sequence + 4);
+  });
+
+  it('emitted node-created payloads carry the IDs from the proposal payload (client-minted; not server-minted)', () => {
+    // Pins D2 of the refinement: the propose handler reads
+    // `node_id` from each component on the wire payload and emits
+    // it byte-identical on the `node-created` envelope. This is the
+    // contract the moderator's optimistic-clear path relies on —
+    // the proposer's own canvas resolves the component IDs from the
+    // locally-broadcast `event-applied` envelopes by the IDs the
+    // client already minted.
+    const p = seedSession();
+    const action = makeDecomposeAction(p);
+    const componentNodeIds =
+      action.proposal.kind === 'decompose' ? action.proposal.components.map((c) => c.node_id) : [];
+
+    const r = validateAction(p, action);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+
+    const nodeCreatedIds = r.events
+      .filter((e): e is Extract<Event, { kind: 'node-created' }> => e.kind === 'node-created')
+      .map((e) => e.payload.node_id);
+    expect(nodeCreatedIds).toEqual(componentNodeIds);
+  });
+});
+
+// ---------------------------------------------------------------
 // Layering pin — the Zod schema enforces 2..10 components and non-
 // empty wording. The methodology validator is never reached for those
 // failures because the structural validator (ADR 0021) runs first.
@@ -472,7 +634,13 @@ describe('propose decompose — structural shape (upstream Zod layering)', () =>
     const result = decomposeProposalSchema.safeParse({
       kind: 'decompose',
       parent_node_id: PARENT_NODE_ID,
-      components: [{ wording: 'Only one component.', classification: 'fact' }],
+      components: [
+        {
+          wording: 'Only one component.',
+          classification: 'fact',
+          node_id: componentId(0xb01),
+        },
+      ],
     });
     expect(result.success).toBe(false);
   });
@@ -481,6 +649,7 @@ describe('propose decompose — structural shape (upstream Zod layering)', () =>
     const components = Array.from({ length: 11 }, (_, i) => ({
       wording: `Component ${i + 1}.`,
       classification: 'fact' as const,
+      node_id: componentId(0xb10 + i),
     }));
     const result = decomposeProposalSchema.safeParse({
       kind: 'decompose',
@@ -495,8 +664,8 @@ describe('propose decompose — structural shape (upstream Zod layering)', () =>
       kind: 'decompose',
       parent_node_id: PARENT_NODE_ID,
       components: [
-        { wording: '', classification: 'fact' },
-        { wording: 'Second component.', classification: 'value' },
+        { wording: '', classification: 'fact', node_id: componentId(0xb21) },
+        { wording: 'Second component.', classification: 'value', node_id: componentId(0xb22) },
       ],
     });
     expect(result.success).toBe(false);

@@ -186,8 +186,16 @@ Given(
           kind: 'decompose',
           parent_node_id: PIS_PARENT_NODE_ID,
           components: [
-            { wording: 'Prior decompose component one.', classification: 'fact' },
-            { wording: 'Prior decompose component two.', classification: 'value' },
+            {
+              wording: 'Prior decompose component one.',
+              classification: 'fact',
+              node_id: '00000000-0000-4000-8000-000000bb0001',
+            },
+            {
+              wording: 'Prior decompose component two.',
+              classification: 'value',
+              node_id: '00000000-0000-4000-8000-000000bb0002',
+            },
           ],
         },
       },
@@ -229,8 +237,16 @@ Given(
           kind: 'decompose',
           parent_node_id: PIS_PARENT_NODE_ID,
           components: [
-            { wording: 'Pending decompose component one.', classification: 'fact' },
-            { wording: 'Pending decompose component two.', classification: 'value' },
+            {
+              wording: 'Pending decompose component one.',
+              classification: 'fact',
+              node_id: '00000000-0000-4000-8000-000000bb0003',
+            },
+            {
+              wording: 'Pending decompose component two.',
+              classification: 'value',
+              node_id: '00000000-0000-4000-8000-000000bb0004',
+            },
           ],
         },
       },
@@ -260,8 +276,16 @@ When(
         kind: 'interpretive-split',
         parent_node_id: PIS_PARENT_NODE_ID,
         readings: [
-          { wording: 'Reading one (fact).', classification: 'fact' },
-          { wording: 'Reading two (definitional).', classification: 'definitional' },
+          {
+            wording: 'Reading one (fact).',
+            classification: 'fact',
+            node_id: '00000000-0000-4000-8000-000000bb0005',
+          },
+          {
+            wording: 'Reading two (definitional).',
+            classification: 'definitional',
+            node_id: '00000000-0000-4000-8000-000000bb0006',
+          },
         ],
       },
     };
@@ -285,8 +309,16 @@ When(
         kind: 'interpretive-split',
         parent_node_id: PIS_PARENT_NODE_ID,
         readings: [
-          { wording: 'Retry reading one.', classification: 'fact' },
-          { wording: 'Retry reading two.', classification: 'value' },
+          {
+            wording: 'Retry reading one.',
+            classification: 'fact',
+            node_id: '00000000-0000-4000-8000-000000bb0007',
+          },
+          {
+            wording: 'Retry reading two.',
+            classification: 'value',
+            node_id: '00000000-0000-4000-8000-000000bb0008',
+          },
         ],
       },
     };
@@ -310,8 +342,16 @@ When(
         kind: 'interpretive-split',
         parent_node_id: PIS_PARENT_NODE_ID,
         readings: [
-          { wording: 'Conflicting reading one.', classification: 'fact' },
-          { wording: 'Conflicting reading two.', classification: 'value' },
+          {
+            wording: 'Conflicting reading one.',
+            classification: 'fact',
+            node_id: '00000000-0000-4000-8000-000000bb0009',
+          },
+          {
+            wording: 'Conflicting reading two.',
+            classification: 'value',
+            node_id: '00000000-0000-4000-8000-000000bb000a',
+          },
         ],
       },
     };

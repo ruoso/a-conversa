@@ -431,13 +431,31 @@ export function registerWithdrawProposalHandlers(
  *     the endpoint-presence is the propose-time signal; the
  *     projector-side existence check guards against double-retraction
  *     (the projector's `handleEntityRemoved` would reject anyway).
+ *   - `decompose` → walk `payload.components` in array order; for
+ *     each component whose `node_id` resolves to an extant node on
+ *     the projection, push one `{ entityKind: 'node', entityId:
+ *     component.node_id }` retraction target. The propose handler's
+ *     `decompose` arm emitted `node-created` + `entity-included`
+ *     per component at propose-time (per
+ *     `mod_decompose_propose_time_canvas_visibility`); withdrawing
+ *     retracts each component node via `entity-removed(node)`. The
+ *     parent node's visibility is UNCHANGED here (it never flipped
+ *     at propose-time — the propose-time emission doesn't touch
+ *     the parent per the methodology contract). The
+ *     `projection.getNode !== undefined` defensive check guards
+ *     against missing-entity retraction (the projector's
+ *     `handleEntityRemoved` would reject anyway).
+ *   - `interpretive-split` → identical shape to `decompose`, but
+ *     walks `payload.readings` instead of `payload.components`.
+ *     Both arms share the same `proposalComponentSchema` per-element
+ *     shape and the same per-element retraction logic; kept as
+ *     separate `case` blocks for symmetry with the propose-handler's
+ *     per-sub-kind switch (mirrors D5 of
+ *     `mod_decompose_propose_time_canvas_visibility`).
  *   - Every other sub-kind → retract nothing. The proposal envelope
  *     event itself remains in the event log + `pendingProposals`
  *     (per D5 of the refinement); the entity layer has nothing to
- *     retract because nothing was minted at propose-time. When the
- *     remaining propose-emission tech-debt grows (the decompose +
- *     interpretive-split arms), the matching retraction arms land
- *     here in lockstep.
+ *     retract because nothing was minted at propose-time.
  */
 interface EntityRetractionTarget {
   entityKind: 'node' | 'edge' | 'annotation';
@@ -508,6 +526,45 @@ function entitiesToRetractForWithdraw(
       }
       break;
     }
+    case 'decompose': {
+      // Mirror of `buildStructuralEventsForPropose`'s `decompose`
+      // arm: the propose handler emits `node-created` +
+      // `entity-included` per component at propose-time using the
+      // client-minted `node_id` carried inline on each
+      // `payload.components[i]` (per
+      // `mod_decompose_propose_time_canvas_visibility`). By
+      // withdraw-time the log replay has rebuilt each component
+      // node on the projection; the right withdraw-side gate is
+      // "for each component whose `node_id` resolves on the
+      // projection, retract." The `getNode !== undefined`
+      // defensive check guards against missing-entity retraction
+      // (the projector's `handleEntityRemoved` would reject
+      // anyway). The parent node is intentionally NOT retracted —
+      // the propose-time emission never touched its visibility
+      // (the parent flips invisible only on commit per
+      // `apps/server/src/projection/replay.ts:691-711`).
+      for (const component of payload.components) {
+        if (projection.getNode(component.node_id) !== undefined) {
+          targets.push({ entityKind: 'node', entityId: component.node_id });
+        }
+      }
+      break;
+    }
+    case 'interpretive-split': {
+      // Symmetric arm to `decompose` — walks `payload.readings`
+      // instead of `payload.components`. Both arms share the same
+      // `proposalComponentSchema` per-element shape and the same
+      // per-element retraction logic; kept as separate `case`
+      // blocks for symmetry with the propose-handler's per-sub-kind
+      // switch (per D5 of
+      // `mod_decompose_propose_time_canvas_visibility`).
+      for (const reading of payload.readings) {
+        if (projection.getNode(reading.node_id) !== undefined) {
+          targets.push({ entityKind: 'node', entityId: reading.node_id });
+        }
+      }
+      break;
+    }
     case 'set-node-substance':
     case 'edit-wording':
     case 'axiom-mark':
@@ -515,14 +572,12 @@ function entitiesToRetractForWithdraw(
     case 'break-edge':
     case 'amend-node':
     case 'annotate':
-    case 'decompose':
-    case 'interpretive-split':
       // No structural events emitted at propose-time for these
       // sub-kinds today (see `buildStructuralEventsForPropose`'s
-      // header). When the propose-emission tech-debt lands the
+      // header). When future propose-emission tech-debt lands the
       // corresponding `node-created` / `edge-created` /
-      // `annotation-created` arms (per the tasks named in D3 of the
-      // refinement), the matching retraction arms land here.
+      // `annotation-created` arms, the matching retraction arms
+      // land here.
       break;
   }
 

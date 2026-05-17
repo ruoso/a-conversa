@@ -1447,14 +1447,29 @@ export const proposeHandler: Validator<ProposeAction> = (
 // of `tasks/refinements/backend/ws_withdraw_proposal_message.md`.
 //
 // **decompose / interpretive-split**: each component / reading needs
-// a fresh `node-created` + `entity-included`. The proposal payload
-// does NOT carry per-component ids today, so the engine mints them
-// here and the commit handler reads them back from the projection's
-// pending-proposals record. Per refinement Open Questions: a payload
-// extension that carries the minted ids inline is a follow-up
-// (`mod_decompose_propose_time_canvas_visibility`); for now the
-// arms below emit nothing and the regression cover (scenario 3 of
-// the failing-first Playwright spec) stays scoped as that follow-up.
+// a fresh `node-created` + `entity-included` pair at propose-time so
+// the canvas projector renders the proposed components in `proposed`
+// state immediately per `docs/methodology.md` L57. The per-component
+// `node_id` is minted client-side at envelope-build-time inside the
+// moderator's `buildProposal()` helper (per Decision D2 of
+// `mod_decompose_propose_time_canvas_visibility`); each arm walks
+// `action.proposal.components` (or `.readings`) in array order and
+// emits one `node-created` + one `entity-included` per element. For
+// a 2-component decompose, the emitted events array contains 5
+// envelopes in order: `node-created(c1)`, `entity-included(c1)`,
+// `node-created(c2)`, `entity-included(c2)`, `proposal`. For N
+// components the count is 2N+1. There is no source-decomposition
+// edge minted by the propose-time fan-out — decompose is a
+// structural restructuring, not an additive edge minting (per
+// `docs/methodology.md` L84 + `docs/data-model.md` L84-87). The
+// parent node's visibility is UNCHANGED at propose-time — the
+// parent stays visible during the proposed window and flips
+// invisible only on commit per the existing `handleCommit` arm at
+// `apps/server/src/projection/replay.ts:691-711`. The lockstep
+// `entitiesToRetractForWithdraw` arms in
+// `apps/server/src/ws/handlers/withdraw.ts` are the inverse — see
+// D3 of `tasks/refinements/backend/ws_withdraw_proposal_message.md`
+// and D4 of `tasks/refinements/moderator-ui/mod_decompose_propose_time_canvas_visibility.md`.
 // ---------------------------------------------------------------
 
 function buildStructuralEventsForPropose(
@@ -1552,6 +1567,101 @@ function buildStructuralEventsForPropose(
           payload: {
             entity_kind: 'edge',
             entity_id: edgeId,
+            included_by: action.requester,
+            included_at: action.createdAt,
+          },
+          createdAt: action.createdAt,
+        };
+        events.push(entityIncluded);
+      }
+      break;
+    }
+    case 'decompose': {
+      // Per-component fan-out: walk the proposal's `components`
+      // array in order and emit one `node-created` + one
+      // `entity-included` per component. The client-minted
+      // `node_id` per component is the canonical identity (per D2
+      // of `mod_decompose_propose_time_canvas_visibility`). The
+      // emitted pair-per-component groups the structural events for
+      // one entity into adjacent sequence slots (mirrors the
+      // `classify-node` arm's pair order; see D3). The parent
+      // node's visibility is UNCHANGED here — the parent flips
+      // invisible only on commit per the existing `handleCommit`
+      // arm at `apps/server/src/projection/replay.ts:691-711`. No
+      // defensive `projection.getNode(component.node_id) ===
+      // undefined` predicate (per D6); the client mints fresh
+      // UUIDs every envelope-build so a collision would mean a
+      // UUID-v4 collision (effectively impossible).
+      for (const component of action.proposal.components) {
+        const nodeCreated: EventToAppendEnvelope<'node-created'> = {
+          id: randomUUID(),
+          sessionId: action.sessionId,
+          sequence: seq(events.length),
+          kind: 'node-created',
+          actor: action.actor,
+          payload: {
+            node_id: component.node_id,
+            wording: component.wording,
+            created_by: action.requester,
+            created_at: action.createdAt,
+          },
+          createdAt: action.createdAt,
+        };
+        events.push(nodeCreated);
+        const entityIncluded: EventToAppendEnvelope<'entity-included'> = {
+          id: randomUUID(),
+          sessionId: action.sessionId,
+          sequence: seq(events.length),
+          kind: 'entity-included',
+          actor: action.actor,
+          payload: {
+            entity_kind: 'node',
+            entity_id: component.node_id,
+            included_by: action.requester,
+            included_at: action.createdAt,
+          },
+          createdAt: action.createdAt,
+        };
+        events.push(entityIncluded);
+      }
+      break;
+    }
+    case 'interpretive-split': {
+      // Symmetric arm to `decompose` — the `readings` array carries
+      // the same `proposalComponentSchema` shape, so the per-reading
+      // fan-out emits the same `node-created` + `entity-included`
+      // pair per element. Kept as a separate `case` block (rather
+      // than collapsed with `decompose` into a shared loop) per D5:
+      // the per-sub-kind switch shape mirrors the rest of this
+      // builder (`classify-node`, `set-edge-substance`) where every
+      // existing arm is a self-contained `case` block. The
+      // `readings`-vs-`components` field-name difference is the only
+      // distinction; both arms are otherwise identical.
+      for (const reading of action.proposal.readings) {
+        const nodeCreated: EventToAppendEnvelope<'node-created'> = {
+          id: randomUUID(),
+          sessionId: action.sessionId,
+          sequence: seq(events.length),
+          kind: 'node-created',
+          actor: action.actor,
+          payload: {
+            node_id: reading.node_id,
+            wording: reading.wording,
+            created_by: action.requester,
+            created_at: action.createdAt,
+          },
+          createdAt: action.createdAt,
+        };
+        events.push(nodeCreated);
+        const entityIncluded: EventToAppendEnvelope<'entity-included'> = {
+          id: randomUUID(),
+          sessionId: action.sessionId,
+          sequence: seq(events.length),
+          kind: 'entity-included',
+          actor: action.actor,
+          payload: {
+            entity_kind: 'node',
+            entity_id: reading.node_id,
             included_by: action.requester,
             included_at: action.createdAt,
           },

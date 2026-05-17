@@ -59,6 +59,12 @@ const NO_EMIT_SESSION_ID = '00000000-0000-4000-8000-0000000010a6';
 // `mod_set_edge_substance_endpoint_carriage`). Used for the
 // edge-retraction withdraw test.
 const EDGE_WITHDRAW_SESSION_ID = '00000000-0000-4000-8000-0000000010a7';
+// Sessions seeded with the per-component fan-out from a decompose /
+// interpretive-split propose (per
+// `mod_decompose_propose_time_canvas_visibility`). Used for the
+// per-component-retraction withdraw tests.
+const DECOMPOSE_WITHDRAW_SESSION_ID = '00000000-0000-4000-8000-0000000010a8';
+const SPLIT_WITHDRAW_SESSION_ID = '00000000-0000-4000-8000-0000000010a9';
 
 const NODE_ID = '00000000-0000-4000-8000-0000000010b1';
 const COMMITTED_NODE_ID = '00000000-0000-4000-8000-0000000010b2';
@@ -69,6 +75,14 @@ const NO_EMIT_NODE_ID = '00000000-0000-4000-8000-0000000010b5';
 const EDGE_WITHDRAW_TARGET_NODE_ID = '00000000-0000-4000-8000-0000000010b6';
 const EDGE_WITHDRAW_SOURCE_NODE_ID = '00000000-0000-4000-8000-0000000010b7';
 const EDGE_WITHDRAW_EDGE_ID = '00000000-0000-4000-8000-0000000010b8';
+// Parent + component / reading node ids for the decompose / interpretive-
+// split withdraw tests.
+const DECOMPOSE_PARENT_NODE_ID = '00000000-0000-4000-8000-0000000010b9';
+const DECOMPOSE_COMPONENT_A_NODE_ID = '00000000-0000-4000-8000-0000000010ba';
+const DECOMPOSE_COMPONENT_B_NODE_ID = '00000000-0000-4000-8000-0000000010bb';
+const SPLIT_PARENT_NODE_ID = '00000000-0000-4000-8000-0000000010bc';
+const SPLIT_READING_A_NODE_ID = '00000000-0000-4000-8000-0000000010bd';
+const SPLIT_READING_B_NODE_ID = '00000000-0000-4000-8000-0000000010be';
 
 const PROPOSAL_EVENT_ID = '00000000-0000-4000-8000-0000000010c1';
 const COMMITTED_PROPOSAL_EVENT_ID = '00000000-0000-4000-8000-0000000010c2';
@@ -76,6 +90,8 @@ const META_PROPOSAL_EVENT_ID = '00000000-0000-4000-8000-0000000010c3';
 const NON_PROPOSER_PROPOSAL_EVENT_ID = '00000000-0000-4000-8000-0000000010c4';
 const NO_EMIT_PROPOSAL_EVENT_ID = '00000000-0000-4000-8000-0000000010c5';
 const EDGE_WITHDRAW_PROPOSAL_EVENT_ID = '00000000-0000-4000-8000-0000000010c6';
+const DECOMPOSE_WITHDRAW_PROPOSAL_EVENT_ID = '00000000-0000-4000-8000-0000000010c7';
+const SPLIT_WITHDRAW_PROPOSAL_EVENT_ID = '00000000-0000-4000-8000-0000000010c8';
 
 const OTHER_HOST_ID = '00000000-0000-4000-8000-0000000010d1';
 const DEBATER_A_ID = '00000000-0000-4000-8000-0000000010d2';
@@ -189,6 +205,18 @@ function makeWithdrawPool(): { pool: DbPool; store: Store } {
       },
       {
         id: EDGE_WITHDRAW_SESSION_ID,
+        host_user_id: FIXTURE_USER_ID,
+        privacy: 'public',
+        ended_at: null,
+      },
+      {
+        id: DECOMPOSE_WITHDRAW_SESSION_ID,
+        host_user_id: FIXTURE_USER_ID,
+        privacy: 'public',
+        ended_at: null,
+      },
+      {
+        id: SPLIT_WITHDRAW_SESSION_ID,
         host_user_id: FIXTURE_USER_ID,
         privacy: 'public',
         ended_at: null,
@@ -878,6 +906,304 @@ function makeWithdrawPool(): { pool: DbPool; store: Store } {
           },
         },
         created_at: t(2),
+      },
+
+      // ---- DECOMPOSE_WITHDRAW_SESSION_ID ----
+      // FIXTURE_USER_ID hosts + decomposes a parent into 2 components
+      // per `mod_decompose_propose_time_canvas_visibility`. Pre-state:
+      // the parent node already exists (committed via a prior
+      // classify-node cycle, simplified here to a direct `node-created`
+      // + `entity-included` pair). The propose-time fan-out emitted
+      // per-component `node-created` + `entity-included` for both
+      // components, followed by the `proposal` envelope.
+      // MAX(sequence) = 9.
+      {
+        id: '00000000-0000-4000-8000-0000000200a01',
+        session_id: DECOMPOSE_WITHDRAW_SESSION_ID,
+        sequence: 1,
+        kind: 'session-created',
+        actor: FIXTURE_USER_ID,
+        payload: {
+          host_user_id: FIXTURE_USER_ID,
+          privacy: 'public',
+          topic: 'Decompose-withdraw test',
+          created_at: t(0).toISOString(),
+        },
+        created_at: t(0),
+      },
+      {
+        id: '00000000-0000-4000-8000-0000000200a02',
+        session_id: DECOMPOSE_WITHDRAW_SESSION_ID,
+        sequence: 2,
+        kind: 'participant-joined',
+        actor: FIXTURE_USER_ID,
+        payload: {
+          user_id: FIXTURE_USER_ID,
+          role: 'moderator',
+          screen_name: FIXTURE_SCREEN_NAME,
+          joined_at: t(1).toISOString(),
+        },
+        created_at: t(1),
+      },
+      // Parent node — already on the canvas before the decompose
+      // propose lands.
+      {
+        id: '00000000-0000-4000-8000-0000000200a03',
+        session_id: DECOMPOSE_WITHDRAW_SESSION_ID,
+        sequence: 3,
+        kind: 'node-created',
+        actor: FIXTURE_USER_ID,
+        payload: {
+          node_id: DECOMPOSE_PARENT_NODE_ID,
+          wording: 'Parent claim to decompose.',
+          created_by: FIXTURE_USER_ID,
+          created_at: t(2).toISOString(),
+        },
+        created_at: t(2),
+      },
+      {
+        id: '00000000-0000-4000-8000-0000000200a04',
+        session_id: DECOMPOSE_WITHDRAW_SESSION_ID,
+        sequence: 4,
+        kind: 'entity-included',
+        actor: FIXTURE_USER_ID,
+        payload: {
+          entity_kind: 'node',
+          entity_id: DECOMPOSE_PARENT_NODE_ID,
+          included_by: FIXTURE_USER_ID,
+          included_at: t(2).toISOString(),
+        },
+        created_at: t(2),
+      },
+      // Propose-time fan-out — component A node-created + entity-included.
+      {
+        id: '00000000-0000-4000-8000-0000000200a05',
+        session_id: DECOMPOSE_WITHDRAW_SESSION_ID,
+        sequence: 5,
+        kind: 'node-created',
+        actor: FIXTURE_USER_ID,
+        payload: {
+          node_id: DECOMPOSE_COMPONENT_A_NODE_ID,
+          wording: 'Component A wording.',
+          created_by: FIXTURE_USER_ID,
+          created_at: t(3).toISOString(),
+        },
+        created_at: t(3),
+      },
+      {
+        id: '00000000-0000-4000-8000-0000000200a06',
+        session_id: DECOMPOSE_WITHDRAW_SESSION_ID,
+        sequence: 6,
+        kind: 'entity-included',
+        actor: FIXTURE_USER_ID,
+        payload: {
+          entity_kind: 'node',
+          entity_id: DECOMPOSE_COMPONENT_A_NODE_ID,
+          included_by: FIXTURE_USER_ID,
+          included_at: t(3).toISOString(),
+        },
+        created_at: t(3),
+      },
+      // Propose-time fan-out — component B node-created + entity-included.
+      {
+        id: '00000000-0000-4000-8000-0000000200a07',
+        session_id: DECOMPOSE_WITHDRAW_SESSION_ID,
+        sequence: 7,
+        kind: 'node-created',
+        actor: FIXTURE_USER_ID,
+        payload: {
+          node_id: DECOMPOSE_COMPONENT_B_NODE_ID,
+          wording: 'Component B wording.',
+          created_by: FIXTURE_USER_ID,
+          created_at: t(3).toISOString(),
+        },
+        created_at: t(3),
+      },
+      {
+        id: '00000000-0000-4000-8000-0000000200a08',
+        session_id: DECOMPOSE_WITHDRAW_SESSION_ID,
+        sequence: 8,
+        kind: 'entity-included',
+        actor: FIXTURE_USER_ID,
+        payload: {
+          entity_kind: 'node',
+          entity_id: DECOMPOSE_COMPONENT_B_NODE_ID,
+          included_by: FIXTURE_USER_ID,
+          included_at: t(3).toISOString(),
+        },
+        created_at: t(3),
+      },
+      // The decompose proposal envelope itself — carries per-component
+      // node_id values per `mod_decompose_propose_time_canvas_visibility`.
+      {
+        id: DECOMPOSE_WITHDRAW_PROPOSAL_EVENT_ID,
+        session_id: DECOMPOSE_WITHDRAW_SESSION_ID,
+        sequence: 9,
+        kind: 'proposal',
+        actor: FIXTURE_USER_ID,
+        payload: {
+          proposal: {
+            kind: 'decompose',
+            parent_node_id: DECOMPOSE_PARENT_NODE_ID,
+            components: [
+              {
+                wording: 'Component A wording.',
+                classification: 'fact',
+                node_id: DECOMPOSE_COMPONENT_A_NODE_ID,
+              },
+              {
+                wording: 'Component B wording.',
+                classification: 'value',
+                node_id: DECOMPOSE_COMPONENT_B_NODE_ID,
+              },
+            ],
+          },
+        },
+        created_at: t(3),
+      },
+
+      // ---- SPLIT_WITHDRAW_SESSION_ID ----
+      // FIXTURE_USER_ID hosts + interpretively-splits a parent into 2
+      // readings per `mod_decompose_propose_time_canvas_visibility`.
+      // Same shape as the decompose seed but with the `readings` array
+      // on the proposal payload. MAX(sequence) = 9.
+      {
+        id: '00000000-0000-4000-8000-0000000200b01',
+        session_id: SPLIT_WITHDRAW_SESSION_ID,
+        sequence: 1,
+        kind: 'session-created',
+        actor: FIXTURE_USER_ID,
+        payload: {
+          host_user_id: FIXTURE_USER_ID,
+          privacy: 'public',
+          topic: 'Interpretive-split-withdraw test',
+          created_at: t(0).toISOString(),
+        },
+        created_at: t(0),
+      },
+      {
+        id: '00000000-0000-4000-8000-0000000200b02',
+        session_id: SPLIT_WITHDRAW_SESSION_ID,
+        sequence: 2,
+        kind: 'participant-joined',
+        actor: FIXTURE_USER_ID,
+        payload: {
+          user_id: FIXTURE_USER_ID,
+          role: 'moderator',
+          screen_name: FIXTURE_SCREEN_NAME,
+          joined_at: t(1).toISOString(),
+        },
+        created_at: t(1),
+      },
+      {
+        id: '00000000-0000-4000-8000-0000000200b03',
+        session_id: SPLIT_WITHDRAW_SESSION_ID,
+        sequence: 3,
+        kind: 'node-created',
+        actor: FIXTURE_USER_ID,
+        payload: {
+          node_id: SPLIT_PARENT_NODE_ID,
+          wording: 'Parent claim to interpretively split.',
+          created_by: FIXTURE_USER_ID,
+          created_at: t(2).toISOString(),
+        },
+        created_at: t(2),
+      },
+      {
+        id: '00000000-0000-4000-8000-0000000200b04',
+        session_id: SPLIT_WITHDRAW_SESSION_ID,
+        sequence: 4,
+        kind: 'entity-included',
+        actor: FIXTURE_USER_ID,
+        payload: {
+          entity_kind: 'node',
+          entity_id: SPLIT_PARENT_NODE_ID,
+          included_by: FIXTURE_USER_ID,
+          included_at: t(2).toISOString(),
+        },
+        created_at: t(2),
+      },
+      {
+        id: '00000000-0000-4000-8000-0000000200b05',
+        session_id: SPLIT_WITHDRAW_SESSION_ID,
+        sequence: 5,
+        kind: 'node-created',
+        actor: FIXTURE_USER_ID,
+        payload: {
+          node_id: SPLIT_READING_A_NODE_ID,
+          wording: 'Reading A wording.',
+          created_by: FIXTURE_USER_ID,
+          created_at: t(3).toISOString(),
+        },
+        created_at: t(3),
+      },
+      {
+        id: '00000000-0000-4000-8000-0000000200b06',
+        session_id: SPLIT_WITHDRAW_SESSION_ID,
+        sequence: 6,
+        kind: 'entity-included',
+        actor: FIXTURE_USER_ID,
+        payload: {
+          entity_kind: 'node',
+          entity_id: SPLIT_READING_A_NODE_ID,
+          included_by: FIXTURE_USER_ID,
+          included_at: t(3).toISOString(),
+        },
+        created_at: t(3),
+      },
+      {
+        id: '00000000-0000-4000-8000-0000000200b07',
+        session_id: SPLIT_WITHDRAW_SESSION_ID,
+        sequence: 7,
+        kind: 'node-created',
+        actor: FIXTURE_USER_ID,
+        payload: {
+          node_id: SPLIT_READING_B_NODE_ID,
+          wording: 'Reading B wording.',
+          created_by: FIXTURE_USER_ID,
+          created_at: t(3).toISOString(),
+        },
+        created_at: t(3),
+      },
+      {
+        id: '00000000-0000-4000-8000-0000000200b08',
+        session_id: SPLIT_WITHDRAW_SESSION_ID,
+        sequence: 8,
+        kind: 'entity-included',
+        actor: FIXTURE_USER_ID,
+        payload: {
+          entity_kind: 'node',
+          entity_id: SPLIT_READING_B_NODE_ID,
+          included_by: FIXTURE_USER_ID,
+          included_at: t(3).toISOString(),
+        },
+        created_at: t(3),
+      },
+      {
+        id: SPLIT_WITHDRAW_PROPOSAL_EVENT_ID,
+        session_id: SPLIT_WITHDRAW_SESSION_ID,
+        sequence: 9,
+        kind: 'proposal',
+        actor: FIXTURE_USER_ID,
+        payload: {
+          proposal: {
+            kind: 'interpretive-split',
+            parent_node_id: SPLIT_PARENT_NODE_ID,
+            readings: [
+              {
+                wording: 'Reading A wording.',
+                classification: 'fact',
+                node_id: SPLIT_READING_A_NODE_ID,
+              },
+              {
+                wording: 'Reading B wording.',
+                classification: 'value',
+                node_id: SPLIT_READING_B_NODE_ID,
+              },
+            ],
+          },
+        },
+        created_at: t(3),
       },
     ],
   };
@@ -1627,6 +1953,185 @@ describe('ws_withdraw_proposal_message — handler integration', () => {
       expect(appendedPayload?.entity_kind).toBe('edge');
       expect(appendedPayload?.entity_id).toBe(EDGE_WITHDRAW_EDGE_ID);
       expect(appendedPayload?.removed_by).toBe(FIXTURE_USER_ID);
+    } finally {
+      ws.terminate();
+    }
+  });
+
+  // Per `mod_decompose_propose_time_canvas_visibility` the propose
+  // handler now emits per-component `node-created` + `entity-included`
+  // for `decompose` and `interpretive-split` at propose-time. The
+  // inverse-pair invariant (D3 of `ws_withdraw_proposal_message.md` +
+  // D4 of `mod_decompose_propose_time_canvas_visibility.md`) requires
+  // the `entitiesToRetractForWithdraw` switch to grow matching
+  // `'decompose' → N × entity-removed(node)` and
+  // `'interpretive-split' → N × entity-removed(node)` arms in
+  // lockstep. These two tests pin those arms.
+  it('subscribed + visible + proposer + 2-component decompose propose → two entity-removed(node) events + event-applied broadcasts + proposal-withdrawn ack with removedEventCount: 2', async () => {
+    const cookie = await fixtureCookieHeader();
+    const { ws, next } = await openWsClient(app, cookie);
+    try {
+      await next(); // hello
+
+      ws.send(subscribeFrame(SUB_MSG_ID, DECOMPOSE_WITHDRAW_SESSION_ID));
+      const subAck = JSON.parse(await next()) as { type?: unknown };
+      expect(subAck.type).toBe('subscribed');
+
+      // MAX(sequence) = 9; the two entity-removed events land at seq 10 + 11.
+      ws.send(
+        withdrawFrame(
+          WITHDRAW_MSG_ID,
+          DECOMPOSE_WITHDRAW_SESSION_ID,
+          9,
+          DECOMPOSE_WITHDRAW_PROPOSAL_EVENT_ID,
+        ),
+      );
+
+      // Proposer receives 2 `event-applied` broadcasts + 1 ack — 3 frames total.
+      const frames: Record<string, unknown>[] = [];
+      for (let i = 0; i < 3; i++) {
+        const raw = await next();
+        frames.push(JSON.parse(raw) as Record<string, unknown>);
+      }
+      const types = frames.map((f) => f.type);
+      expect(types).toContain('proposal-withdrawn');
+      expect(types.filter((t) => t === 'event-applied')).toHaveLength(2);
+
+      // Ack assertions.
+      const ack = frames.find((f) => f.type === 'proposal-withdrawn') as
+        | {
+            inResponseTo?: unknown;
+            payload?: {
+              sessionId?: unknown;
+              proposalEventId?: unknown;
+              removedEventCount?: unknown;
+            };
+          }
+        | undefined;
+      expect(ack?.inResponseTo).toBe(WITHDRAW_MSG_ID);
+      expect(ack?.payload?.sessionId).toBe(DECOMPOSE_WITHDRAW_SESSION_ID);
+      expect(ack?.payload?.proposalEventId).toBe(DECOMPOSE_WITHDRAW_PROPOSAL_EVENT_ID);
+      expect(ack?.payload?.removedEventCount).toBe(2);
+
+      // The two event-applied broadcasts carry `entity-removed(node)`
+      // for the two components, in proposal-payload array order.
+      const applieds = frames.filter((f) => f.type === 'event-applied') as Array<{
+        payload?: {
+          event?: {
+            kind?: unknown;
+            sequence?: unknown;
+            payload?: { entity_kind?: unknown; entity_id?: unknown; removed_by?: unknown };
+          };
+        };
+      }>;
+      // Sort by sequence to be deterministic regardless of arrival order.
+      const sorted = applieds
+        .slice()
+        .sort(
+          (a, b) => (a.payload?.event?.sequence as number) - (b.payload?.event?.sequence as number),
+        );
+      expect(sorted[0]?.payload?.event?.kind).toBe('entity-removed');
+      expect(sorted[0]?.payload?.event?.sequence).toBe(10);
+      expect(sorted[0]?.payload?.event?.payload?.entity_kind).toBe('node');
+      expect(sorted[0]?.payload?.event?.payload?.entity_id).toBe(DECOMPOSE_COMPONENT_A_NODE_ID);
+      expect(sorted[0]?.payload?.event?.payload?.removed_by).toBe(FIXTURE_USER_ID);
+
+      expect(sorted[1]?.payload?.event?.kind).toBe('entity-removed');
+      expect(sorted[1]?.payload?.event?.sequence).toBe(11);
+      expect(sorted[1]?.payload?.event?.payload?.entity_kind).toBe('node');
+      expect(sorted[1]?.payload?.event?.payload?.entity_id).toBe(DECOMPOSE_COMPONENT_B_NODE_ID);
+
+      // The parent node is NOT retracted — the propose-time emission
+      // never touched its visibility (the parent flips invisible only
+      // on commit per `apps/server/src/projection/replay.ts:691-711`).
+      const removedEntityIds = store.events
+        .filter(
+          (e) => e.session_id === DECOMPOSE_WITHDRAW_SESSION_ID && e.kind === 'entity-removed',
+        )
+        .map((e) => (e.payload as { entity_id?: string }).entity_id);
+      expect(removedEntityIds).not.toContain(DECOMPOSE_PARENT_NODE_ID);
+      expect(removedEntityIds).toContain(DECOMPOSE_COMPONENT_A_NODE_ID);
+      expect(removedEntityIds).toContain(DECOMPOSE_COMPONENT_B_NODE_ID);
+    } finally {
+      ws.terminate();
+    }
+  });
+
+  it('subscribed + visible + proposer + 2-reading interpretive-split propose → two entity-removed(node) events + event-applied broadcasts + proposal-withdrawn ack with removedEventCount: 2', async () => {
+    const cookie = await fixtureCookieHeader();
+    const { ws, next } = await openWsClient(app, cookie);
+    try {
+      await next(); // hello
+
+      ws.send(subscribeFrame(SUB_MSG_ID, SPLIT_WITHDRAW_SESSION_ID));
+      const subAck = JSON.parse(await next()) as { type?: unknown };
+      expect(subAck.type).toBe('subscribed');
+
+      // MAX(sequence) = 9; the two entity-removed events land at seq 10 + 11.
+      ws.send(
+        withdrawFrame(
+          WITHDRAW_MSG_ID,
+          SPLIT_WITHDRAW_SESSION_ID,
+          9,
+          SPLIT_WITHDRAW_PROPOSAL_EVENT_ID,
+        ),
+      );
+
+      const frames: Record<string, unknown>[] = [];
+      for (let i = 0; i < 3; i++) {
+        const raw = await next();
+        frames.push(JSON.parse(raw) as Record<string, unknown>);
+      }
+      const types = frames.map((f) => f.type);
+      expect(types).toContain('proposal-withdrawn');
+      expect(types.filter((t) => t === 'event-applied')).toHaveLength(2);
+
+      const ack = frames.find((f) => f.type === 'proposal-withdrawn') as
+        | {
+            inResponseTo?: unknown;
+            payload?: {
+              sessionId?: unknown;
+              proposalEventId?: unknown;
+              removedEventCount?: unknown;
+            };
+          }
+        | undefined;
+      expect(ack?.inResponseTo).toBe(WITHDRAW_MSG_ID);
+      expect(ack?.payload?.sessionId).toBe(SPLIT_WITHDRAW_SESSION_ID);
+      expect(ack?.payload?.proposalEventId).toBe(SPLIT_WITHDRAW_PROPOSAL_EVENT_ID);
+      expect(ack?.payload?.removedEventCount).toBe(2);
+
+      const applieds = frames.filter((f) => f.type === 'event-applied') as Array<{
+        payload?: {
+          event?: {
+            kind?: unknown;
+            sequence?: unknown;
+            payload?: { entity_kind?: unknown; entity_id?: unknown };
+          };
+        };
+      }>;
+      const sorted = applieds
+        .slice()
+        .sort(
+          (a, b) => (a.payload?.event?.sequence as number) - (b.payload?.event?.sequence as number),
+        );
+      expect(sorted[0]?.payload?.event?.kind).toBe('entity-removed');
+      expect(sorted[0]?.payload?.event?.sequence).toBe(10);
+      expect(sorted[0]?.payload?.event?.payload?.entity_kind).toBe('node');
+      expect(sorted[0]?.payload?.event?.payload?.entity_id).toBe(SPLIT_READING_A_NODE_ID);
+
+      expect(sorted[1]?.payload?.event?.kind).toBe('entity-removed');
+      expect(sorted[1]?.payload?.event?.sequence).toBe(11);
+      expect(sorted[1]?.payload?.event?.payload?.entity_kind).toBe('node');
+      expect(sorted[1]?.payload?.event?.payload?.entity_id).toBe(SPLIT_READING_B_NODE_ID);
+
+      // The parent node is NOT retracted.
+      const removedEntityIds = store.events
+        .filter((e) => e.session_id === SPLIT_WITHDRAW_SESSION_ID && e.kind === 'entity-removed')
+        .map((e) => (e.payload as { entity_id?: string }).entity_id);
+      expect(removedEntityIds).not.toContain(SPLIT_PARENT_NODE_ID);
+      expect(removedEntityIds).toContain(SPLIT_READING_A_NODE_ID);
+      expect(removedEntityIds).toContain(SPLIT_READING_B_NODE_ID);
     } finally {
       ws.terminate();
     }

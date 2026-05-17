@@ -258,17 +258,22 @@ describe('useProposeDecompositionAction — success path', () => {
       proposal: {
         kind: string;
         parent_node_id: string;
-        components: Array<{ wording: string; classification: string }>;
+        components: Array<{ wording: string; classification: string; node_id: string }>;
       };
     };
     expect(payload.sessionId).toBe(SESSION_ID);
     expect(payload.expectedSequence).toBe(0);
     expect(payload.proposal.kind).toBe('decompose');
     expect(payload.proposal.parent_node_id).toBe(PARENT_NODE_ID);
-    expect(payload.proposal.components).toEqual([
-      { wording: 'Workers should earn a living wage.', classification: 'value' },
-      { wording: 'Workers should receive fair benefits.', classification: 'normative' },
-    ]);
+    // Wording + classification round-trip (the per-row `text` → `wording`
+    // rename is the load-bearing assertion); per-component `node_id` is
+    // pinned by shape in the dedicated test below + by the UUID regex
+    // assertion at the call site.
+    expect(payload.proposal.components).toHaveLength(2);
+    expect(payload.proposal.components[0]!.wording).toBe('Workers should earn a living wage.');
+    expect(payload.proposal.components[0]!.classification).toBe('value');
+    expect(payload.proposal.components[1]!.wording).toBe('Workers should receive fair benefits.');
+    expect(payload.proposal.components[1]!.classification).toBe('normative');
 
     // Resolve the ack.
     act(() => {
@@ -279,6 +284,35 @@ describe('useProposeDecompositionAction — success path', () => {
     });
     expect(probe.result.inFlight).toBe(false);
     expect(probe.result.lastError).toBeUndefined();
+  });
+
+  // Per `mod_decompose_propose_time_canvas_visibility` D2: the
+  // per-component `node_id` is minted CLIENT-side at envelope-build-
+  // time inside `useProposeProposalAction.ts`'s `buildProposal()`.
+  // Each invocation mints fresh UUIDs (a retry mints new ids — see
+  // the symmetric interpretive-split test in
+  // `useProposeProposalAction.test.tsx`). This test pins the shape:
+  // each component on the envelope carries a UUID-v4 `node_id`.
+  it('mints a UUID-shaped node_id per component at envelope-build-time (client-side mint per D2)', () => {
+    const fake = makeFakeClient();
+    const probe = renderProbe(fake.client);
+    act(() => {
+      primeValidDecompose();
+    });
+    act(() => {
+      void probe.result.propose();
+    });
+    expect(fake.calls.length).toBe(1);
+    const payload = fake.calls[0]?.payload as {
+      proposal: { components: Array<{ node_id: string }> };
+    };
+    const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    expect(payload.proposal.components).toHaveLength(2);
+    expect(payload.proposal.components[0]!.node_id).toMatch(UUID_V4);
+    expect(payload.proposal.components[1]!.node_id).toMatch(UUID_V4);
+    expect(payload.proposal.components[0]!.node_id).not.toBe(
+      payload.proposal.components[1]!.node_id,
+    );
   });
 
   it('optimistically clears the decompose slices via exitDecomposeMode BEFORE the WS promise resolves', () => {

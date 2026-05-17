@@ -480,8 +480,16 @@ Given(
           kind: 'decompose',
           parent_node_id: parentId,
           components: [
-            { wording: 'first component', classification: 'fact' },
-            { wording: 'second component', classification: 'fact' },
+            {
+              wording: 'first component',
+              classification: 'fact',
+              node_id: '00000000-0000-4000-8000-000000cc0011',
+            },
+            {
+              wording: 'second component',
+              classification: 'fact',
+              node_id: '00000000-0000-4000-8000-000000cc0012',
+            },
           ],
         },
       },

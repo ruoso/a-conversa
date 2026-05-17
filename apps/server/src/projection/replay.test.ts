@@ -708,8 +708,16 @@ describe('commit effects — structural', () => {
         kind: 'decompose',
         parent_node_id: NODE_ID_1,
         components: [
-          { wording: 'c1', classification: 'fact' },
-          { wording: 'c2', classification: 'fact' },
+          {
+            wording: 'c1',
+            classification: 'fact',
+            node_id: '00000000-0000-4000-8000-00000000c001',
+          },
+          {
+            wording: 'c2',
+            classification: 'fact',
+            node_id: '00000000-0000-4000-8000-00000000c002',
+          },
         ],
       },
       2,
@@ -741,8 +749,16 @@ describe('commit effects — structural', () => {
         kind: 'interpretive-split',
         parent_node_id: NODE_ID_1,
         readings: [
-          { wording: 'reading1', classification: 'fact' },
-          { wording: 'reading2', classification: 'fact' },
+          {
+            wording: 'reading1',
+            classification: 'fact',
+            node_id: '00000000-0000-4000-8000-00000000c003',
+          },
+          {
+            wording: 'reading2',
+            classification: 'fact',
+            node_id: '00000000-0000-4000-8000-00000000c004',
+          },
         ],
       },
       2,

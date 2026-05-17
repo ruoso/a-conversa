@@ -196,8 +196,16 @@ Given(
           kind: 'decompose',
           parent_node_id: PD_PARENT_NODE_ID,
           components: [
-            { wording: 'Prior component one.', classification: 'fact' },
-            { wording: 'Prior component two.', classification: 'value' },
+            {
+              wording: 'Prior component one.',
+              classification: 'fact',
+              node_id: '00000000-0000-4000-8000-000000aa0001',
+            },
+            {
+              wording: 'Prior component two.',
+              classification: 'value',
+              node_id: '00000000-0000-4000-8000-000000aa0002',
+            },
           ],
         },
       },
@@ -239,8 +247,16 @@ When(
         kind: 'decompose',
         parent_node_id: PD_PARENT_NODE_ID,
         components: [
-          { wording: 'Component one (fact).', classification: 'fact' },
-          { wording: 'Component two (value).', classification: 'value' },
+          {
+            wording: 'Component one (fact).',
+            classification: 'fact',
+            node_id: '00000000-0000-4000-8000-000000aa0003',
+          },
+          {
+            wording: 'Component two (value).',
+            classification: 'value',
+            node_id: '00000000-0000-4000-8000-000000aa0004',
+          },
         ],
       },
     };
@@ -264,8 +280,16 @@ When(
         kind: 'decompose',
         parent_node_id: PD_UNKNOWN_NODE_ID,
         components: [
-          { wording: 'Component one.', classification: 'fact' },
-          { wording: 'Component two.', classification: 'value' },
+          {
+            wording: 'Component one.',
+            classification: 'fact',
+            node_id: '00000000-0000-4000-8000-000000aa0005',
+          },
+          {
+            wording: 'Component two.',
+            classification: 'value',
+            node_id: '00000000-0000-4000-8000-000000aa0006',
+          },
         ],
       },
     };
@@ -289,8 +313,16 @@ When(
         kind: 'decompose',
         parent_node_id: PD_PARENT_NODE_ID,
         components: [
-          { wording: 'Retry component one.', classification: 'fact' },
-          { wording: 'Retry component two.', classification: 'value' },
+          {
+            wording: 'Retry component one.',
+            classification: 'fact',
+            node_id: '00000000-0000-4000-8000-000000aa0007',
+          },
+          {
+            wording: 'Retry component two.',
+            classification: 'value',
+            node_id: '00000000-0000-4000-8000-000000aa0008',
+          },
         ],
       },
     };

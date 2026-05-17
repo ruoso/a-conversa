@@ -455,8 +455,16 @@ describe('applyEventIncremental — change-feed coverage by discriminator', () =
           kind: 'decompose',
           parent_node_id: NODE_ID_1,
           components: [
-            { wording: 'c1', classification: 'fact' },
-            { wording: 'c2', classification: 'fact' },
+            {
+              wording: 'c1',
+              classification: 'fact',
+              node_id: '00000000-0000-4000-8000-00000000d001',
+            },
+            {
+              wording: 'c2',
+              classification: 'fact',
+              node_id: '00000000-0000-4000-8000-00000000d002',
+            },
           ],
         },
       }),

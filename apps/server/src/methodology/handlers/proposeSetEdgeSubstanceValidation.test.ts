@@ -209,8 +209,16 @@ function seedSessionWithSupersededSource(): ReturnType<typeof createEmptyProject
         kind: 'decompose',
         parent_node_id: SOURCE_NODE_ID,
         components: [
-          { wording: 'Prior split component one.', classification: 'fact' },
-          { wording: 'Prior split component two.', classification: 'value' },
+          {
+            wording: 'Prior split component one.',
+            classification: 'fact',
+            node_id: '00000000-0000-4000-8000-00000000e041',
+          },
+          {
+            wording: 'Prior split component two.',
+            classification: 'value',
+            node_id: '00000000-0000-4000-8000-00000000e042',
+          },
         ],
       },
     }),
@@ -236,8 +244,16 @@ function seedSessionWithSupersededTarget(): ReturnType<typeof createEmptyProject
         kind: 'decompose',
         parent_node_id: TARGET_NODE_ID,
         components: [
-          { wording: 'Prior split component one.', classification: 'fact' },
-          { wording: 'Prior split component two.', classification: 'value' },
+          {
+            wording: 'Prior split component one.',
+            classification: 'fact',
+            node_id: '00000000-0000-4000-8000-00000000e041',
+          },
+          {
+            wording: 'Prior split component two.',
+            classification: 'value',
+            node_id: '00000000-0000-4000-8000-00000000e042',
+          },
         ],
       },
     }),

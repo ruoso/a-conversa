@@ -350,6 +350,15 @@ task backend "Backend" {
         Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit landing mod_proposed_entity_canvas_visibility).
       ->8-
     }
+    task facet_status_server_decompose_component_facets "Server-side symmetric arm: derive per-component classification:'proposed' facets for pending decompose / interpretive-split in apps/server/src/projection/facet-status.ts" {
+      effort 1d
+      allocate team
+      depends !ws_proposal_status_broadcast
+      note -8<-
+        Source of debt: tasks/refinements/moderator-ui/mod_decompose_propose_time_canvas_visibility.md D5 + facetStatus.ts moderator-only mirror — the per-component `classification: 'proposed'` derivation for pending decompose / interpretive-split currently lives on the moderator client side only (apps/moderator/src/graph/facetStatus.ts walks the decompose / interpretive-split proposal payload and synthesizes per-component facet rows in `proposed` state during the proposed window). The server-side proposal-status broadcast emitter at apps/server/src/projection/facet-status.ts does NOT carry the symmetric arm — it derives facets from committed events only — so any non-moderator surface (participant_ui / audience) that consumes the `proposal-status` broadcast for facet styling will under-report the component facets until this arm lands. Closing this task grows the server-side walk-the-decompose-payload arm so client- and server-side derivations stay in lockstep beyond v1, and removes the moderator-only special-case from the client. Logical prerequisite (not encoded as depends to avoid the backend → moderator_ui cycle): moderator_ui.mod_graph_rendering.mod_decompose_propose_time_canvas_visibility — the propose-time fan-out this task mirrors lands there (commit landing mod_decompose_propose_time_canvas_visibility).
+        Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit landing mod_decompose_propose_time_canvas_visibility).
+      ->8-
+    }
   }
 
   task replay_endpoints "Replay and history endpoints" {

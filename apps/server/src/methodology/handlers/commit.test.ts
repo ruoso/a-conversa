@@ -426,8 +426,16 @@ describe('commit handler — structural-sub-kind boundary', () => {
           kind: 'decompose',
           parent_node_id: NODE_ID_STRUCT,
           components: [
-            { wording: 'Component one.', classification: 'fact' },
-            { wording: 'Component two.', classification: 'value' },
+            {
+              wording: 'Component one.',
+              classification: 'fact',
+              node_id: '00000000-0000-4000-8000-00000000e031',
+            },
+            {
+              wording: 'Component two.',
+              classification: 'value',
+              node_id: '00000000-0000-4000-8000-00000000e032',
+            },
           ],
         },
       }),

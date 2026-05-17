@@ -160,8 +160,16 @@ describe('ProposalFacetBreakdown — structural sub-kind renders synthetic "prop
       kind: 'decompose',
       parent_node_id: NODE_X,
       components: [
-        { wording: 'first', classification: 'fact' },
-        { wording: 'second', classification: 'fact' },
+        {
+          wording: 'first',
+          classification: 'fact',
+          node_id: '00000000-0000-4000-8000-00000000f021',
+        },
+        {
+          wording: 'second',
+          classification: 'fact',
+          node_id: '00000000-0000-4000-8000-00000000f022',
+        },
       ],
     };
     render(
