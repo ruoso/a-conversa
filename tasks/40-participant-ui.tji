@@ -129,6 +129,7 @@ task participant_ui "Participant (debater) UI" {
     task part_e2e_user_pool_expansion "Expand Authelia dev user pool so participant e2e specs can drop describe.serial" {
       effort 0.5d
       allocate team
+      complete 100
       depends !part_annotation_render
       note -8<-
         Source of debt: tasks/refinements/participant-ui/part_annotation_render.md Decision §6 — the 4th Playwright block in tests/e2e/participant-graph-render.spec.ts exhausted the 6-user Authelia dev pool (alice+ben / maria+dave / frank+erin), forcing the spec file to flip to `test.describe.serial` (wall-clock ~33.5s under one worker vs the prior ~14s/block under fullyParallel). The placement here under part_graph_view reflects where the wall was first hit, but the consumer pattern is cross-cutting: any future participant e2e spec (or sibling spec adding a 4th+ block needing fresh OIDC dances) will face the same exhaustion. Confirmed during the part_annotation_render adoption (commit landing part_annotation_render).

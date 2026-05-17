@@ -1,6 +1,6 @@
 # Authelia users database — DEV ONLY
 #
-# Six dev accounts for local development. All use the same dev password
+# Twelve dev accounts for local development. All use the same dev password
 # (see infra/authelia/README.md) so contributors can log in immediately
 # after `make up` without a credential vault.
 #
@@ -13,7 +13,16 @@
 #   docker run --rm authelia/authelia:latest \
 #     authelia crypto hash generate argon2 --password 'aconversa-dev'
 #
-# All six users share the same hash because the dev password is shared.
+# All twelve users share the same hash because the dev password is shared.
+#
+# The pool was originally seeded with six users by
+# `tasks/refinements/foundation/dockerfile_mock_oauth.md`; it was expanded
+# to twelve by
+# `tasks/refinements/participant-ui/part_e2e_user_pool_expansion.md` so
+# the participant-UI Playwright suite could drop `test.describe.serial`
+# on `tests/e2e/participant-graph-render.spec.ts` and run its four
+# blocks in parallel again, each with a distinct `{ creator, debater }`
+# pair to avoid the in-file `users` upsert race.
 
 users:
   alice:
@@ -50,5 +59,41 @@ users:
     displayname: 'Frank Example'
     password: '$argon2id$v=19$m=65536,t=3,p=4$JpiWZ31afMmtrS72rVRXrA$jy30rqZRty9UwAL/7WVCmC1nK7N9FlgW/J3fQ021BPs'
     email: frank@aconversa.local
+    groups:
+      - dev
+  grace:
+    displayname: 'Grace Example'
+    password: '$argon2id$v=19$m=65536,t=3,p=4$JpiWZ31afMmtrS72rVRXrA$jy30rqZRty9UwAL/7WVCmC1nK7N9FlgW/J3fQ021BPs'
+    email: grace@aconversa.local
+    groups:
+      - dev
+  henry:
+    displayname: 'Henry Example'
+    password: '$argon2id$v=19$m=65536,t=3,p=4$JpiWZ31afMmtrS72rVRXrA$jy30rqZRty9UwAL/7WVCmC1nK7N9FlgW/J3fQ021BPs'
+    email: henry@aconversa.local
+    groups:
+      - dev
+  ivan:
+    displayname: 'Ivan Example'
+    password: '$argon2id$v=19$m=65536,t=3,p=4$JpiWZ31afMmtrS72rVRXrA$jy30rqZRty9UwAL/7WVCmC1nK7N9FlgW/J3fQ021BPs'
+    email: ivan@aconversa.local
+    groups:
+      - dev
+  julia:
+    displayname: 'Julia Example'
+    password: '$argon2id$v=19$m=65536,t=3,p=4$JpiWZ31afMmtrS72rVRXrA$jy30rqZRty9UwAL/7WVCmC1nK7N9FlgW/J3fQ021BPs'
+    email: julia@aconversa.local
+    groups:
+      - dev
+  kate:
+    displayname: 'Kate Example'
+    password: '$argon2id$v=19$m=65536,t=3,p=4$JpiWZ31afMmtrS72rVRXrA$jy30rqZRty9UwAL/7WVCmC1nK7N9FlgW/J3fQ021BPs'
+    email: kate@aconversa.local
+    groups:
+      - dev
+  leo:
+    displayname: 'Leo Example'
+    password: '$argon2id$v=19$m=65536,t=3,p=4$JpiWZ31afMmtrS72rVRXrA$jy30rqZRty9UwAL/7WVCmC1nK7N9FlgW/J3fQ021BPs'
+    email: leo@aconversa.local
     groups:
       - dev

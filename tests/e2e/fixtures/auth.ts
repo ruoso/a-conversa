@@ -96,13 +96,39 @@ const AUTHELIA_SUBMIT_NAME = /^Sign in$/i;
 
 /**
  * The dev-only shared password baked into `infra/authelia/users.yml`
- * for the six seeded dev users (per ADR 0017). Hard-coded here rather
- * than read from env — the value is committed in the public repo
- * (the file's header acknowledges it as dev-only), and treating it as
- * a secret would be theater. Production Authelia uses a different
- * users backend and never sees this value.
+ * for the twelve seeded dev users (per ADR 0017). Hard-coded here
+ * rather than read from env — the value is committed in the public
+ * repo (the file's header acknowledges it as dev-only), and treating
+ * it as a secret would be theater. Production Authelia uses a
+ * different users backend and never sees this value.
  */
 export const AUTHELIA_DEV_PASSWORD = 'aconversa-dev';
+
+/**
+ * The 12 dev-only Authelia users seeded in `infra/authelia/users.yml`,
+ * in source order. Maintained as a single source of truth so spec
+ * authors can iterate or pick from a freelist without hard-coding the
+ * roster. The 6-user → 12-user expansion is documented in
+ * `tasks/refinements/participant-ui/part_e2e_user_pool_expansion.md`;
+ * the underlying ADR is `docs/adr/0017-mock-oauth-authelia-users-file.md`.
+ *
+ * Every entry is a valid {@link LoginAsOptions.username} and
+ * authenticates with {@link AUTHELIA_DEV_PASSWORD}.
+ */
+export const DEV_USER_POOL: readonly string[] = [
+  'alice',
+  'ben',
+  'maria',
+  'dave',
+  'erin',
+  'frank',
+  'grace',
+  'henry',
+  'ivan',
+  'julia',
+  'kate',
+  'leo',
+] as const;
 
 /**
  * Options accepted by {@link loginAs}.
@@ -111,7 +137,10 @@ export interface LoginAsOptions {
   /**
    * Authelia username. Must be one of the seeded dev users in
    * `infra/authelia/users.yml` — `alice`, `ben`, `maria`, `dave`,
-   * `erin`, `frank` (per ADR 0017).
+   * `erin`, `frank`, `grace`, `henry`, `ivan`, `julia`, `kate`,
+   * `leo` (per ADR 0017 +
+   * `tasks/refinements/participant-ui/part_e2e_user_pool_expansion.md`).
+   * The canonical roster lives in {@link DEV_USER_POOL}.
    */
   readonly username: string;
   /**

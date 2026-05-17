@@ -100,20 +100,27 @@ async function freshContext(browser: Browser): Promise<BrowserContext> {
   });
 }
 
-// `.serial` modifier: the four `test()` blocks below run sequentially
-// within a single Playwright worker. Per
-// `tasks/refinements/participant-ui/part_annotation_render.md` Decision
-// §6, the 6-user Authelia dev pool is exhausted by blocks 1-3 (alice +
-// ben / maria + dave / frank + erin); block 4 reuses `alice` + `ben`,
-// and `.serial` is the cheap fix for the in-file per-session
-// `users` upsert race that would otherwise pit block-1 against block-4
-// under the default `fullyParallel: true`. Wall-clock impact: spec
-// file grows by ~one block's worth (~14s) — total still well under
-// the per-spec Playwright budget. Do NOT flip back to plain
-// `test.describe` without addressing the user-pool exhaustion (split
-// to a separate spec file with its own `setup-auth` or expand the
-// dev users list in `infra/authelia/users.yml`).
-test.describe.serial('Participant operate route — read-mostly graph render', () => {
+// The four `test()` blocks below run in parallel under Playwright's
+// default `fullyParallel: true` posture. Each block claims a distinct
+// `{ creator, debater }` pair from the 12-user Authelia dev pool
+// (`infra/authelia/users.yml`) to avoid the in-file per-session
+// `users` upsert race that surfaces when two blocks within the same
+// worker claim the same user-id concurrently.
+//
+// Pair assignment (source: tests/e2e/fixtures/auth.ts DEV_USER_POOL):
+//   block 1: alice + ben
+//   block 2: maria + dave
+//   block 3: frank + erin
+//   block 4: grace + henry
+//
+// History: blocks 1-3 saturated the original 6-user pool; block 4
+// (added by `part_annotation_render`) initially reused alice+ben and
+// flipped the describe to `.serial` (wall-clock ~33.5s under one
+// worker). The pool was expanded to 12 by
+// `tasks/refinements/participant-ui/part_e2e_user_pool_expansion.md`,
+// freeing block 4 to use a fresh pair and the describe to revert to
+// parallel execution (wall-clock recovered to ~14s/block).
+test.describe('Participant operate route — read-mostly graph render', () => {
   test('alice creates a session, ben claims debater-A, seeded WS events render as Cytoscape nodes + edges with localized labels', async ({
     browser,
   }) => {
@@ -738,7 +745,7 @@ test.describe.serial('Participant operate route — read-mostly graph render', (
     }
   });
 
-  test('alice creates a session, ben claims debater-A, seeded annotation-created events surface data-has-annotation + data-annotation-count on the targeted node and edge', async ({
+  test('grace creates a session, henry claims debater-A, seeded annotation-created events surface data-has-annotation + data-annotation-count on the targeted node and edge', async ({
     browser,
   }) => {
     // Refinement: tasks/refinements/participant-ui/part_annotation_render.md
@@ -754,10 +761,12 @@ test.describe.serial('Participant operate route — read-mostly graph render', (
     //    UI-stream e2e policy, the route is reachable and the
     //    per-target mirror is in place so the e2e is in scope.)
     //
-    // Reuses `alice` + `ben` (the block-1 pair) per Decision §6 — the
-    // 6-user Authelia dev pool is exhausted by blocks 1-3 and the
-    // describe is `.serial` (top of file) so the within-worker
-    // execution order eliminates the user-creation race.
+    // Uses `grace` + `henry` — a fresh pair from the 12-user dev pool
+    // expansion (`infra/authelia/users.yml`; see
+    // `tasks/refinements/participant-ui/part_e2e_user_pool_expansion.md`).
+    // Distinct from blocks 1-3 so the four blocks run in parallel under
+    // `fullyParallel: true` without racing on the shared user-creation
+    // path.
     const context = await freshContext(browser);
     const page = await context.newPage();
     try {
@@ -765,18 +774,18 @@ test.describe.serial('Participant operate route — read-mostly graph render', (
       const NODE_A_WORDING = 'UBI lifts the welfare floor';
       const NODE_B_WORDING = 'Means-tested aid stigmatises';
 
-      // 1. Alice creates the session.
-      const alice = await loginAs(page, { username: 'alice' });
-      expect(alice.screenName.toLowerCase()).toBe('alice');
+      // 1. Grace creates the session.
+      const grace = await loginAs(page, { username: 'grace' });
+      expect(grace.screenName.toLowerCase()).toBe('grace');
       const sessionId = await createSession(page, { topic: TOPIC, privacy: 'public' });
 
       // 2. Log out + drop cookies so the next dance is fresh.
       await logoutAndClearAllCookies(page);
 
-      // 3. Ben authenticates and claims debater-A through the invite
+      // 3. Henry authenticates and claims debater-A through the invite
       //    acceptance flow.
-      const ben = await loginAs(page, { username: 'ben' });
-      expect(ben.screenName.toLowerCase()).toBe('ben');
+      const henry = await loginAs(page, { username: 'henry' });
+      expect(henry.screenName.toLowerCase()).toBe('henry');
       await page.goto(`/p/sessions/${sessionId}/invite?role=debater-A`);
       await expect(page.getByTestId('route-invite-acceptance')).toBeVisible({ timeout: 15_000 });
       const joinButton = page.getByTestId('invite-acceptance-join-button');
