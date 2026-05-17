@@ -280,4 +280,207 @@ test.describe('Participant operate route — read-mostly graph render', () => {
       await context.close();
     }
   });
+
+  test('maria creates a session, dave claims debater-A, seeded WS events + classify-node + set-edge-substance proposals surface "proposed" rollup on the status mirror', async ({
+    browser,
+  }) => {
+    // Refinement: tasks/refinements/participant-ui/part_per_facet_state_styling.md
+    //   (Decision §5 — second test() block in the existing describe;
+    //    seeds a classify-node proposal alongside a node-created and a
+    //    set-edge-substance alongside an edge-created; asserts the
+    //    DOM mirror surfaces `data-rollup-status="proposed"` per
+    //    Decision §4. Per ORCHESTRATOR.md UI-stream e2e policy, the
+    //    route is reachable so the e2e is in scope.)
+    //
+    // Uses `maria` + `dave` (not `alice` + `ben`) so that the two
+    // `test()` blocks in this describe can run in parallel under
+    // Playwright's `fullyParallel: true` without racing on the
+    // shared user-creation path inside Authelia + the server. Block-
+    // 1 owns alice + ben; block-2 owns maria + dave.
+    const context = await freshContext(browser);
+    const page = await context.newPage();
+    try {
+      const TOPIC = 'Per-facet state styling reaches the participant tablet';
+      const NODE_WORDING = 'UBI lifts the welfare floor';
+      const NODE_B_WORDING = 'Means-tested aid stigmatises';
+
+      // 1. Maria creates the session.
+      const maria = await loginAs(page, { username: 'maria' });
+      expect(maria.screenName.toLowerCase()).toBe('maria');
+      const sessionId = await createSession(page, { topic: TOPIC, privacy: 'public' });
+
+      // 2. Log out + drop cookies so the next dance is fresh.
+      await logoutAndClearAllCookies(page);
+
+      // 3. Dave authenticates and claims debater-A through the invite
+      //    acceptance flow (same path the block-1 walks).
+      const dave = await loginAs(page, { username: 'dave' });
+      expect(dave.screenName.toLowerCase()).toBe('dave');
+      await page.goto(`/p/sessions/${sessionId}/invite?role=debater-A`);
+      await expect(page.getByTestId('route-invite-acceptance')).toBeVisible({ timeout: 15_000 });
+      const joinButton = page.getByTestId('invite-acceptance-join-button');
+      await expect(joinButton).toBeEnabled();
+      await joinButton.click();
+      await page.waitForURL((url) => url.pathname === `/p/sessions/${sessionId}/lobby`, {
+        timeout: 15_000,
+      });
+      await expect(page.getByTestId('route-lobby')).toBeVisible({ timeout: 15_000 });
+
+      // 4. Navigate to the operate route.
+      await page.goto(`/p/sessions/${sessionId}`);
+      await expect(page.getByTestId('route-operate')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('participant-graph-root')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('participant-graph-status-mirror')).toBeAttached({
+        timeout: 15_000,
+      });
+
+      // 5. Seed two node-created events + a classify-node proposal +
+      //    an edge-created + a set-edge-substance proposal into ben's
+      //    WS store. The classify-node proposal has no votes, so the
+      //    derivation lands `classification: 'proposed'` on NODE_A and
+      //    `substance: 'proposed'` on EDGE_A.
+      const NODE_A_ID = '11111111-1111-4111-8111-111111111111';
+      const NODE_B_ID = '22222222-2222-4222-8222-222222222222';
+      const EDGE_ID = '33333333-3333-4333-8333-333333333333';
+      const CLASSIFY_PROPOSAL_ID = '44444444-4444-4444-8444-444444444444';
+      const SUBSTANCE_PROPOSAL_ID = '55555555-5555-4555-8555-555555555555';
+      const ACTOR_ID = '66666666-6666-4666-8666-666666666666';
+      await page.evaluate(
+        (seed: {
+          sessionId: string;
+          nodeAId: string;
+          nodeBId: string;
+          edgeId: string;
+          classifyProposalId: string;
+          substanceProposalId: string;
+          actorId: string;
+          wordingA: string;
+          wordingB: string;
+        }) => {
+          const store = (
+            window as unknown as {
+              __aConversaWsStore?: {
+                getState: () => {
+                  applyEvent: (event: unknown) => void;
+                };
+              };
+            }
+          ).__aConversaWsStore;
+          if (!store) {
+            throw new Error('__aConversaWsStore is not exposed on window');
+          }
+          const apply = store.getState().applyEvent.bind(store.getState());
+          // High sequence numbers guard against the dedup branch in
+          // the WS store — the live subscription has already played
+          // lifecycle events (session-created + participant-joined).
+          apply({
+            id: '77777777-7777-4777-8777-777777777771',
+            sessionId: seed.sessionId,
+            sequence: 1_000_001,
+            kind: 'node-created',
+            actor: seed.actorId,
+            payload: {
+              node_id: seed.nodeAId,
+              wording: seed.wordingA,
+              created_by: seed.actorId,
+              created_at: '2026-05-17T00:00:00.000Z',
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+          apply({
+            id: '77777777-7777-4777-8777-777777777772',
+            sessionId: seed.sessionId,
+            sequence: 1_000_002,
+            kind: 'node-created',
+            actor: seed.actorId,
+            payload: {
+              node_id: seed.nodeBId,
+              wording: seed.wordingB,
+              created_by: seed.actorId,
+              created_at: '2026-05-17T00:00:00.000Z',
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+          apply({
+            id: seed.classifyProposalId,
+            sessionId: seed.sessionId,
+            sequence: 1_000_003,
+            kind: 'proposal',
+            actor: seed.actorId,
+            payload: {
+              proposal: {
+                kind: 'classify-node',
+                node_id: seed.nodeAId,
+                classification: 'fact',
+              },
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+          apply({
+            id: '77777777-7777-4777-8777-777777777773',
+            sessionId: seed.sessionId,
+            sequence: 1_000_004,
+            kind: 'edge-created',
+            actor: seed.actorId,
+            payload: {
+              edge_id: seed.edgeId,
+              role: 'supports',
+              source_node_id: seed.nodeAId,
+              target_node_id: seed.nodeBId,
+              created_by: seed.actorId,
+              created_at: '2026-05-17T00:00:00.000Z',
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+          apply({
+            id: seed.substanceProposalId,
+            sessionId: seed.sessionId,
+            sequence: 1_000_005,
+            kind: 'proposal',
+            actor: seed.actorId,
+            payload: {
+              proposal: {
+                kind: 'set-edge-substance',
+                edge_id: seed.edgeId,
+                value: 'agreed',
+              },
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+        },
+        {
+          sessionId,
+          nodeAId: NODE_A_ID,
+          nodeBId: NODE_B_ID,
+          edgeId: EDGE_ID,
+          classifyProposalId: CLASSIFY_PROPOSAL_ID,
+          substanceProposalId: SUBSTANCE_PROPOSAL_ID,
+          actorId: ACTOR_ID,
+          wordingA: NODE_WORDING,
+          wordingB: NODE_B_WORDING,
+        },
+      );
+
+      // 6. The DOM mirror surfaces the per-entity rollup status. Cytoscape
+      //    paints to <canvas>; the mirror is the testability seam per
+      //    Decision §4.
+      const nodeMirror = page.locator(
+        `[data-testid="participant-node-status"][data-node-id="${NODE_A_ID}"]`,
+      );
+      await expect(nodeMirror).toHaveAttribute('data-rollup-status', 'proposed', {
+        timeout: 15_000,
+      });
+      await expect(nodeMirror).toHaveAttribute('data-facet-classification', 'proposed');
+
+      const edgeMirror = page.locator(
+        `[data-testid="participant-edge-status"][data-edge-id="${EDGE_ID}"]`,
+      );
+      await expect(edgeMirror).toHaveAttribute('data-rollup-status', 'proposed', {
+        timeout: 15_000,
+      });
+      await expect(edgeMirror).toHaveAttribute('data-facet-substance', 'proposed');
+    } finally {
+      await context.close();
+    }
+  });
 });

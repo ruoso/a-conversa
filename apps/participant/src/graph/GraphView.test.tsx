@@ -304,11 +304,12 @@ describe('GraphView — resilience + lifecycle', () => {
 
   it('(i) does not crash when an edge-created references unknown source / target ids', () => {
     const result = renderView();
-    // Cytoscape's default behaviour: emit an `add` warning for dangling
-    // edge endpoints, but otherwise carry on. To keep the warnings-as-
-    // errors setup clean, silence console.warn for this case. The
-    // assertion is "the component doesn't throw and continues to render
-    // the nodes it does have".
+    // The participant's `<GraphView>` proactively filters dangling
+    // edges (per the projector's lenient-projection invariant) before
+    // calling `cy.json({ elements })`. Cytoscape never sees the
+    // dangling edge so no warning fires — but to keep the
+    // warnings-as-errors setup robust against future changes in the
+    // filter location, silence console.warn for this case.
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     try {
       seedEvent(
@@ -354,5 +355,192 @@ describe('GraphView — resilience + lifecycle', () => {
     expect(cySecond.nodes().length).toBe(1);
     expect(cySecond.getElementById(NODE_B).length).toBe(1);
     expect(cySecond.getElementById(NODE_A).length).toBe(0);
+  });
+});
+
+// -------------------------------------------------------------------
+// Per-facet state styling — added by
+// `participant_ui.part_graph_view.part_per_facet_state_styling`.
+// Refinement: tasks/refinements/participant-ui/part_per_facet_state_styling.md
+//
+// Nine new cases pinning the test-mirror seam (Decision §4) and the
+// Cytoscape stylesheet's `[rollupStatus = '<status>']` selector path.
+// -------------------------------------------------------------------
+
+function classifyProposalEventOnly(opts: {
+  sequence: number;
+  envelopeId: string;
+  nodeId: string;
+  classification: StatementKind;
+}): Event {
+  return classifyProposalEvent(opts);
+}
+
+function setEdgeSubstanceProposalEvent(opts: {
+  sequence: number;
+  envelopeId: string;
+  edgeId: string;
+}): Event {
+  return {
+    id: opts.envelopeId,
+    sessionId: SESSION_ID,
+    sequence: opts.sequence,
+    kind: 'proposal',
+    actor: ACTOR,
+    payload: {
+      proposal: {
+        kind: 'set-edge-substance',
+        edge_id: opts.edgeId,
+        value: 'agreed',
+      },
+    },
+    createdAt: '2026-05-17T00:00:00.000Z',
+  };
+}
+
+describe('GraphView — per-facet status mirror', () => {
+  it('(m) the test mirror is present in the DOM after mount', () => {
+    renderView();
+    const mirror = document.querySelector('[data-testid="participant-graph-status-mirror"]');
+    expect(mirror).not.toBeNull();
+  });
+
+  it('(n) the test mirror carries aria-hidden="true" so screen readers skip it', () => {
+    renderView();
+    const mirror = document.querySelector('[data-testid="participant-graph-status-mirror"]');
+    expect(mirror?.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('(o) the mirror emits one <li participant-node-status> per emitted node', () => {
+    renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(nodeCreatedEvent({ sequence: 2, nodeId: NODE_B, wording: 'B' }));
+    const items = document.querySelectorAll('[data-testid="participant-node-status"]');
+    expect(items.length).toBe(2);
+    const nodeIds = Array.from(items).map((el) => el.getAttribute('data-node-id'));
+    expect(nodeIds).toEqual(expect.arrayContaining([NODE_A, NODE_B]));
+  });
+
+  it('(p) the mirror emits one <li participant-edge-status> per emitted edge', () => {
+    renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(nodeCreatedEvent({ sequence: 2, nodeId: NODE_B, wording: 'B' }));
+    seedEvent(
+      edgeCreatedEvent({
+        sequence: 3,
+        edgeId: EDGE_A,
+        source: NODE_A,
+        target: NODE_B,
+      }),
+    );
+    const items = document.querySelectorAll('[data-testid="participant-edge-status"]');
+    expect(items.length).toBe(1);
+    expect(items[0]?.getAttribute('data-edge-id')).toBe(EDGE_A);
+  });
+
+  it('(q) the node mirror surfaces data-rollup-status="proposed" when a classify-node proposal is seeded (no votes)', () => {
+    renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(
+      classifyProposalEventOnly({
+        sequence: 2,
+        envelopeId: PROPOSAL_A,
+        nodeId: NODE_A,
+        classification: 'fact',
+      }),
+    );
+    const item = document.querySelector(
+      `[data-testid="participant-node-status"][data-node-id="${NODE_A}"]`,
+    );
+    expect(item).not.toBeNull();
+    expect(item?.getAttribute('data-rollup-status')).toBe('proposed');
+    expect(item?.getAttribute('data-facet-classification')).toBe('proposed');
+    expect(item?.getAttribute('data-facet-substance')).toBe('');
+    expect(item?.getAttribute('data-facet-wording')).toBe('');
+  });
+
+  it('(r) the edge mirror surfaces data-rollup-status / data-facet-substance from a set-edge-substance proposal', () => {
+    const EDGE_B = '00000000-0000-4000-8000-000000000abe';
+    const PROPOSAL_B = '00000000-0000-4000-8000-000000000ab2';
+    renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(nodeCreatedEvent({ sequence: 2, nodeId: NODE_B, wording: 'B' }));
+    seedEvent(
+      edgeCreatedEvent({
+        sequence: 3,
+        edgeId: EDGE_B,
+        source: NODE_A,
+        target: NODE_B,
+      }),
+    );
+    seedEvent(
+      setEdgeSubstanceProposalEvent({
+        sequence: 4,
+        envelopeId: PROPOSAL_B,
+        edgeId: EDGE_B,
+      }),
+    );
+    const item = document.querySelector(
+      `[data-testid="participant-edge-status"][data-edge-id="${EDGE_B}"]`,
+    );
+    expect(item).not.toBeNull();
+    expect(item?.getAttribute('data-rollup-status')).toBe('proposed');
+    expect(item?.getAttribute('data-facet-substance')).toBe('proposed');
+  });
+
+  it('(s) the node mirror surfaces empty-string for absent facets (decision §4 sentinel)', () => {
+    renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    // No proposals — every per-facet attribute is the empty string and
+    // the rollup is 'none'.
+    const item = document.querySelector(
+      `[data-testid="participant-node-status"][data-node-id="${NODE_A}"]`,
+    );
+    expect(item).not.toBeNull();
+    expect(item?.getAttribute('data-rollup-status')).toBe('none');
+    expect(item?.getAttribute('data-facet-classification')).toBe('');
+    expect(item?.getAttribute('data-facet-substance')).toBe('');
+    expect(item?.getAttribute('data-facet-wording')).toBe('');
+  });
+
+  it('(t) Cytoscape carries the same data.rollupStatus the mirror surfaces (no drift)', () => {
+    const result = renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(
+      classifyProposalEventOnly({
+        sequence: 2,
+        envelopeId: PROPOSAL_A,
+        nodeId: NODE_A,
+        classification: 'value',
+      }),
+    );
+    const cy = result.getCy();
+    const cyNode = cy.getElementById(NODE_A);
+    expect(cyNode.data('rollupStatus')).toBe('proposed');
+    const mirrorItem = document.querySelector(
+      `[data-testid="participant-node-status"][data-node-id="${NODE_A}"]`,
+    );
+    expect(mirrorItem?.getAttribute('data-rollup-status')).toBe('proposed');
+  });
+
+  it('(u) a session prop change clears the prior mirror entries before painting the new session', () => {
+    seedEvent(
+      nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A', sessionId: SESSION_ID }),
+    );
+    renderView({ sessionId: SESSION_ID });
+    expect(document.querySelectorAll('[data-testid="participant-node-status"]').length).toBe(1);
+    cleanup();
+    seedEvent(
+      nodeCreatedEvent({
+        sequence: 2,
+        nodeId: NODE_B,
+        wording: 'B',
+        sessionId: ANOTHER_SESSION_ID,
+      }),
+    );
+    renderView({ sessionId: ANOTHER_SESSION_ID });
+    const items = document.querySelectorAll('[data-testid="participant-node-status"]');
+    expect(items.length).toBe(1);
+    expect(items[0]?.getAttribute('data-node-id')).toBe(NODE_B);
   });
 });

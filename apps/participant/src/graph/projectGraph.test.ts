@@ -1,8 +1,12 @@
 // Vitest cases for the participant's pure `projectGraph` projection.
 //
 // Refinement: tasks/refinements/participant-ui/part_graph_render.md
-//              (Test layers per ADR 0022 — ten cases per the
+//              (Test layers per ADR 0022 — original ten cases per the
 //              refinement's "Tests pin" sketch).
+// Refinement: tasks/refinements/participant-ui/part_per_facet_state_styling.md
+//              (Constraints — signature widens to take a
+//              `FacetStatusIndex`; eight new cases added covering
+//              the per-facet stamping + rollup behaviour.)
 // ADRs:        0022 (no throwaway verifications — the projection's
 //              behaviour is fully pinned at this pure layer; the
 //              `<GraphView>` mount tests then assert the Cytoscape
@@ -16,6 +20,7 @@ import { describe, expect, it } from 'vitest';
 import type { EdgeRole, Event, StatementKind } from '@a-conversa/shared-types';
 
 import { projectGraph } from './projectGraph';
+import type { FacetName, FacetStatus, FacetStatusIndex } from './facetStatus';
 
 const SESSION_ID = '00000000-0000-4000-8000-000000000001';
 const NODE_A = '00000000-0000-4000-8000-00000000000a';
@@ -23,6 +28,36 @@ const NODE_B = '00000000-0000-4000-8000-00000000000b';
 const EDGE_A = '00000000-0000-4000-8000-00000000000e';
 const PROPOSAL_A = '00000000-0000-4000-8000-0000000000a1';
 const ACTOR = '00000000-0000-4000-8000-0000000000aa';
+
+/**
+ * Empty `FacetStatusIndex` — the baseline argument for tests that don't
+ * care about the per-facet stamping. Built fresh per test invocation
+ * (the Maps are mutable internally — though this projector never
+ * writes to them — and downstream tests must not share Map references).
+ */
+function emptyIndex(): FacetStatusIndex {
+  return { nodes: new Map(), edges: new Map() };
+}
+
+/**
+ * Build a `FacetStatusIndex` from convenient literal records. Each
+ * entity record is a partial facet record (e.g.
+ * `{ classification: 'proposed' }`); the helper wraps it in a Map.
+ */
+function indexFromLiterals(opts: {
+  nodes?: Record<string, Partial<Record<FacetName, FacetStatus>>>;
+  edges?: Record<string, Partial<Record<FacetName, FacetStatus>>>;
+}): FacetStatusIndex {
+  const nodes = new Map<string, Partial<Record<FacetName, FacetStatus>>>();
+  for (const [id, record] of Object.entries(opts.nodes ?? {})) {
+    nodes.set(id, record);
+  }
+  const edges = new Map<string, Partial<Record<FacetName, FacetStatus>>>();
+  for (const [id, record] of Object.entries(opts.edges ?? {})) {
+    edges.set(id, record);
+  }
+  return { nodes, edges };
+}
 
 function makeNodeCreated(opts: { sequence: number; nodeId: string; wording: string }): Event {
   return {
@@ -124,24 +159,29 @@ function makeParticipantJoined(opts: { sequence: number; userId: string }): Even
 
 describe('projectGraph — pure projection from events to Cytoscape elements', () => {
   it('(a) returns empty arrays for an empty event log', () => {
-    expect(projectGraph([])).toEqual({ nodes: [], edges: [] });
+    expect(projectGraph([], emptyIndex())).toEqual({ nodes: [], edges: [] });
   });
 
-  it('(b) emits one node descriptor per node-created event with kind: null', () => {
+  it('(b) emits one node descriptor per node-created event with kind: null and rollup "none" when index is empty', () => {
     const events: Event[] = [
       makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'UBI lifts welfare floor' }),
     ];
-    const { nodes, edges } = projectGraph(events);
+    const { nodes, edges } = projectGraph(events, emptyIndex());
     expect(edges).toEqual([]);
-    expect(nodes).toEqual([
-      {
-        group: 'nodes',
-        data: { id: NODE_A, wording: 'UBI lifts welfare floor', kind: null },
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0]).toMatchObject({
+      group: 'nodes',
+      data: {
+        id: NODE_A,
+        wording: 'UBI lifts welfare floor',
+        kind: null,
+        rollupStatus: 'none',
       },
-    ]);
+    });
+    expect(nodes[0]?.data.facetStatuses).toEqual({});
   });
 
-  it('(c) emits one edge descriptor per edge-created event with source / target / role', () => {
+  it('(c) emits one edge descriptor per edge-created event with source / target / role / rollup "none"', () => {
     const events: Event[] = [
       makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
       makeNodeCreated({ sequence: 2, nodeId: NODE_B, wording: 'B' }),
@@ -153,13 +193,19 @@ describe('projectGraph — pure projection from events to Cytoscape elements', (
         role: 'rebuts',
       }),
     ];
-    const { edges } = projectGraph(events);
-    expect(edges).toEqual([
-      {
-        group: 'edges',
-        data: { id: EDGE_A, source: NODE_A, target: NODE_B, role: 'rebuts' },
+    const { edges } = projectGraph(events, emptyIndex());
+    expect(edges).toHaveLength(1);
+    expect(edges[0]).toMatchObject({
+      group: 'edges',
+      data: {
+        id: EDGE_A,
+        source: NODE_A,
+        target: NODE_B,
+        role: 'rebuts',
+        rollupStatus: 'none',
       },
-    ]);
+    });
+    expect(edges[0]?.data.facetStatuses).toEqual({});
   });
 
   it('(d) projects a mixed event log into both nodes and edges in their respective arrival orders', () => {
@@ -176,7 +222,7 @@ describe('projectGraph — pure projection from events to Cytoscape elements', (
       }),
       makeNodeCreated({ sequence: 4, nodeId: NODE_B, wording: 'B' }),
     ];
-    const { nodes, edges } = projectGraph(events);
+    const { nodes, edges } = projectGraph(events, emptyIndex());
     expect(nodes.map((n) => n.data.id)).toEqual([NODE_A, NODE_B]);
     expect(edges.map((e) => e.data.id)).toEqual([EDGE_A, EDGE_B]);
   });
@@ -191,7 +237,7 @@ describe('projectGraph — pure projection from events to Cytoscape elements', (
         classification: 'fact',
       }),
     ];
-    const { nodes } = projectGraph(events);
+    const { nodes } = projectGraph(events, emptyIndex());
     expect(nodes).toHaveLength(1);
     expect(nodes[0]?.data.kind).toBeNull();
   });
@@ -207,7 +253,7 @@ describe('projectGraph — pure projection from events to Cytoscape elements', (
       }),
       makeCommit({ sequence: 3, proposalEnvelopeId: PROPOSAL_A }),
     ];
-    const { nodes } = projectGraph(events);
+    const { nodes } = projectGraph(events, emptyIndex());
     expect(nodes).toHaveLength(1);
     expect(nodes[0]?.data.kind).toBe('normative');
   });
@@ -217,7 +263,7 @@ describe('projectGraph — pure projection from events to Cytoscape elements', (
       makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
       makeCommit({ sequence: 2, proposalEnvelopeId: PROPOSAL_A }),
     ];
-    const { nodes } = projectGraph(events);
+    const { nodes } = projectGraph(events, emptyIndex());
     expect(nodes).toHaveLength(1);
     expect(nodes[0]?.data.kind).toBeNull();
   });
@@ -236,7 +282,7 @@ describe('projectGraph — pure projection from events to Cytoscape elements', (
         }),
         makeCommit({ sequence: 3, proposalEnvelopeId: proposalId }),
       ];
-      const { nodes } = projectGraph(events);
+      const { nodes } = projectGraph(events, emptyIndex());
       expect(nodes).toHaveLength(1);
       expect(nodes[0]?.data.kind).toBe(kind);
     }
@@ -265,7 +311,7 @@ describe('projectGraph — pure projection from events to Cytoscape elements', (
           role,
         }),
       ];
-      const { edges } = projectGraph(events);
+      const { edges } = projectGraph(events, emptyIndex());
       expect(edges).toHaveLength(1);
       expect(edges[0]?.data.role).toBe(role);
     });
@@ -285,8 +331,93 @@ describe('projectGraph — pure projection from events to Cytoscape elements', (
       makeParticipantJoined({ sequence: 3, userId: ACTOR }),
       makeCommit({ sequence: 4, proposalEnvelopeId: PROPOSAL_A }),
     ];
-    const { nodes } = projectGraph(events);
+    const { nodes } = projectGraph(events, emptyIndex());
     expect(nodes).toHaveLength(1);
     expect(nodes[0]?.data.kind).toBe('value');
+  });
+});
+
+describe('projectGraph — per-facet status stamping (part_per_facet_state_styling)', () => {
+  it('(k) threads facetStatuses.classification through onto the emitted node when the index carries the entry', () => {
+    const events: Event[] = [makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' })];
+    const index = indexFromLiterals({
+      nodes: { [NODE_A]: { classification: 'proposed' } },
+    });
+    const { nodes } = projectGraph(events, index);
+    expect(nodes[0]?.data.facetStatuses).toEqual({ classification: 'proposed' });
+  });
+
+  it('(l) threads facetStatuses.substance through onto the emitted node', () => {
+    const events: Event[] = [makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' })];
+    const index = indexFromLiterals({
+      nodes: { [NODE_A]: { substance: 'agreed' } },
+    });
+    const { nodes } = projectGraph(events, index);
+    expect(nodes[0]?.data.facetStatuses).toEqual({ substance: 'agreed' });
+  });
+
+  it('(m) threads facetStatuses.wording through onto the emitted node', () => {
+    const events: Event[] = [makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' })];
+    const index = indexFromLiterals({
+      nodes: { [NODE_A]: { wording: 'disputed' } },
+    });
+    const { nodes } = projectGraph(events, index);
+    expect(nodes[0]?.data.facetStatuses).toEqual({ wording: 'disputed' });
+  });
+
+  it('(n) threads facetStatuses.substance through onto the emitted edge', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeNodeCreated({ sequence: 2, nodeId: NODE_B, wording: 'B' }),
+      makeEdgeCreated({ sequence: 3, edgeId: EDGE_A, source: NODE_A, target: NODE_B }),
+    ];
+    const index = indexFromLiterals({
+      edges: { [EDGE_A]: { substance: 'proposed' } },
+    });
+    const { edges } = projectGraph(events, index);
+    expect(edges[0]?.data.facetStatuses).toEqual({ substance: 'proposed' });
+    expect(edges[0]?.data.rollupStatus).toBe('proposed');
+  });
+
+  it('(o) rollupStatus reads "proposed" when any facet is proposed', () => {
+    const events: Event[] = [makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' })];
+    const index = indexFromLiterals({
+      nodes: { [NODE_A]: { classification: 'proposed', substance: 'agreed' } },
+    });
+    const { nodes } = projectGraph(events, index);
+    expect(nodes[0]?.data.rollupStatus).toBe('proposed');
+  });
+
+  it('(p) rollupStatus reads "agreed" when all facets are agreed', () => {
+    const events: Event[] = [makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' })];
+    const index = indexFromLiterals({
+      nodes: { [NODE_A]: { classification: 'agreed', substance: 'agreed' } },
+    });
+    const { nodes } = projectGraph(events, index);
+    expect(nodes[0]?.data.rollupStatus).toBe('agreed');
+  });
+
+  it('(q) rollupStatus reads "none" (sentinel string) when the per-entity record is empty / absent', () => {
+    const events: Event[] = [makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' })];
+    // The index has no entry at all for NODE_A.
+    const { nodes } = projectGraph(events, emptyIndex());
+    expect(nodes[0]?.data.rollupStatus).toBe('none');
+    // Also when the entry is present but the record is empty.
+    const indexEmptyRecord = indexFromLiterals({ nodes: { [NODE_A]: {} } });
+    const { nodes: nodes2 } = projectGraph(events, indexEmptyRecord);
+    expect(nodes2[0]?.data.rollupStatus).toBe('none');
+  });
+
+  it('(r) multi-facet node (classification proposed, substance agreed) rolls up to "proposed" per ROLLUP_PRIORITY order', () => {
+    const events: Event[] = [makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' })];
+    const index = indexFromLiterals({
+      nodes: { [NODE_A]: { classification: 'proposed', substance: 'agreed' } },
+    });
+    const { nodes } = projectGraph(events, index);
+    expect(nodes[0]?.data.rollupStatus).toBe('proposed');
+    expect(nodes[0]?.data.facetStatuses).toEqual({
+      classification: 'proposed',
+      substance: 'agreed',
+    });
   });
 });

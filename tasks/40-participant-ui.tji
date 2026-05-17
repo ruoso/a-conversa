@@ -98,6 +98,7 @@ task participant_ui "Participant (debater) UI" {
     task part_per_facet_state_styling "Per-facet state styling (proposed / agreed / disputed / meta-disagreement)" {
       effort 1d
       allocate team
+      complete 100
       depends !part_graph_render
     }
     task part_axiom_mark_decoration "Render per-participant axiom-marks" {
