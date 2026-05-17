@@ -356,28 +356,90 @@ function handleProposal(
   changes.push({ kind: 'pending-proposal-added', proposalId: proposalEventId });
 }
 
-// Resolve the (entity, facet) target of a proposal payload for the
-// four facet-targeting proposal sub-kinds. Returns `null` for the
-// other (structural / multi-entity) sub-kinds — votes against those
-// still flow through `handleVote` for referential checks and the
-// change-feed entry, but no per-facet state is written. Owned by
-// `per_facet_status_derivation`.
+// Resolve the (entity, facet) target(s) of a proposal payload.
+//
+// Owned by `per_facet_status_derivation` +
+// `replay_decompose_commit_marks_component_classification_committed`.
+//
+// Returns a `readonly FacetTarget[]`:
+//
+//   - A 1-element array for the four single-target sub-kinds
+//     (`classify-node`, `set-node-substance`, `set-edge-substance`,
+//     `edit-wording`).
+//   - An N-element array for the two multi-component sub-kinds
+//     (`decompose` — one per component; `interpretive-split` — one per
+//     reading). Each per-component target addresses the component's
+//     classification facet; per D6 of the
+//     `replay_decompose_commit_marks_component_classification_committed`
+//     refinement (mirroring the broadcast-side D6), wording + substance
+//     facets are NOT included — wording is set at `node-created` time
+//     directly, and substance has no value until a future
+//     `set-node-substance` proposal commits against the component.
+//   - An empty array for the five purely-structural sub-kinds
+//     (`axiom-mark`, `meta-move`, `break-edge`, `amend-node`,
+//     `annotate`).
+//
+// The plural-helper shape mirrors the broadcast-side
+// `facetTargetsForProposal` at `apps/server/src/ws/broadcast/proposal-status.ts`;
+// see D2 of the refinement for the rename rationale (single-call-site loop
+// avoids per-sub-kind branching at three handlers).
+//
+// Per the refinement's D4, per-component stamping uses the parent proposal
+// event's id (`payload.proposal_id` in `handleCommit`'s scope), NOT a
+// synthesized per-component id. Per D5, `committedAt` uses the commit
+// event's `committed_at`.
 interface FacetTarget {
   entityKind: 'node' | 'edge' | 'annotation';
   entityId: string;
   facet: FacetName;
 }
 
-function facetTargetForProposal(proposal: ProposalPayload): FacetTarget | null {
+function facetTargetsForProposal(proposal: ProposalPayload): readonly FacetTarget[] {
   switch (proposal.kind) {
     case 'classify-node':
-      return { entityKind: 'node', entityId: proposal.node_id, facet: 'classification' };
+      return [{ entityKind: 'node', entityId: proposal.node_id, facet: 'classification' }];
     case 'set-node-substance':
-      return { entityKind: 'node', entityId: proposal.node_id, facet: 'substance' };
+      return [{ entityKind: 'node', entityId: proposal.node_id, facet: 'substance' }];
     case 'set-edge-substance':
-      return { entityKind: 'edge', entityId: proposal.edge_id, facet: 'substance' };
+      return [{ entityKind: 'edge', entityId: proposal.edge_id, facet: 'substance' }];
     case 'edit-wording':
-      return { entityKind: 'node', entityId: proposal.node_id, facet: 'wording' };
+      return [{ entityKind: 'node', entityId: proposal.node_id, facet: 'wording' }];
+    case 'decompose':
+      return proposal.components.map((component) => ({
+        entityKind: 'node' as const,
+        entityId: component.node_id,
+        facet: 'classification' as const,
+      }));
+    case 'interpretive-split':
+      return proposal.readings.map((reading) => ({
+        entityKind: 'node' as const,
+        entityId: reading.node_id,
+        facet: 'classification' as const,
+      }));
+    default:
+      // axiom-mark, meta-move, break-edge, amend-node, annotate —
+      // purely-structural sub-kinds with no facet target.
+      return [];
+  }
+}
+
+// Per D2 of the refinement: `handleVote` and
+// `handleMetaDisagreementMarked` target only the four single-target
+// sub-kinds — votes / meta-disagreement on a decompose / interpretive-
+// split apply to the parent proposal as a whole, not per-component
+// facets (per-component vote-recording would be a category error per
+// `docs/methodology.md`). The wrapper returns the single target for
+// those four sub-kinds and `null` for everything else (including the
+// two multi-component sub-kinds and the five structural sub-kinds).
+function firstFacetTargetForVote(proposal: ProposalPayload): FacetTarget | null {
+  switch (proposal.kind) {
+    case 'classify-node':
+    case 'set-node-substance':
+    case 'set-edge-substance':
+    case 'edit-wording': {
+      const targets = facetTargetsForProposal(proposal);
+      return targets[0] ?? null;
+    }
     default:
       return null;
   }
@@ -442,8 +504,13 @@ function handleVote(
   // break-edge, amend-node, annotate) are structural — their per-
   // participant agreement state is owned by their downstream
   // methodology-engine tasks; this dispatcher does not touch a
-  // facet for them.
-  const target = facetTargetForProposal(proposalPayload);
+  // facet for them. Per D2 of
+  // `replay_decompose_commit_marks_component_classification_committed`,
+  // votes against decompose / interpretive-split target the parent
+  // proposal as a whole, so the `firstFacetTargetForVote` wrapper
+  // returns `null` for those sub-kinds even though the plural helper
+  // returns N per-component targets.
+  const target = firstFacetTargetForVote(proposalPayload);
   if (target !== null) {
     const facet = facetStateForTarget(projection, target);
     if (facet === null) {
@@ -472,12 +539,21 @@ function handleCommit(
   }
   applyCommittedProposal(projection, pending.payload, changes);
 
-  // Record the commit on the affected facet's `committedProposalEventId`
-  // and `committedAt` for the four facet-targeting sub-kinds, so
-  // `deriveFacetStatus` can identify "was committed once" without a
-  // log re-walk. Owned by `per_facet_status_derivation`.
-  const target = facetTargetForProposal(pending.payload);
-  if (target !== null) {
+  // Record the commit on the affected facet(s)'
+  // `committedProposalEventId` and `committedAt` so `deriveFacetStatus`
+  // can identify "was committed once" without a log re-walk. Owned by
+  // `per_facet_status_derivation` +
+  // `replay_decompose_commit_marks_component_classification_committed`.
+  //
+  // The four single-target sub-kinds stamp one facet; the two multi-
+  // component sub-kinds (`decompose`, `interpretive-split`) stamp N
+  // per-component classification facets with the SAME
+  // `(committedProposalEventId, committedAt)` pair — the parent
+  // proposal commits ONCE, expressed N times for the N components
+  // (receivers correlate per-component via `node.id`, per D4 of the
+  // refinement). The five structural sub-kinds return `[]` from
+  // `facetTargetsForProposal` and stamp nothing.
+  for (const target of facetTargetsForProposal(pending.payload)) {
     const facet = facetStateForTarget(projection, target);
     if (facet !== null) {
       facet.committedProposalEventId = payload.proposal_id;
@@ -523,8 +599,13 @@ function handleMetaDisagreementMarked(
   // Transition the affected facet's underlying agreement state to
   // `meta-disagreement` for the four facet-targeting sub-kinds, so
   // `deriveFacetStatus` returns `meta-disagreement` directly. Owned
-  // by `per_facet_status_derivation`.
-  const target = facetTargetForProposal(pending.payload);
+  // by `per_facet_status_derivation`. Per D2 of
+  // `replay_decompose_commit_marks_component_classification_committed`,
+  // meta-disagreement on a decompose / interpretive-split marks the
+  // proposal as a whole (not per-component facets) — the
+  // `firstFacetTargetForVote` wrapper returns `null` for those sub-
+  // kinds.
+  const target = firstFacetTargetForVote(pending.payload);
   if (target !== null) {
     const facet = facetStateForTarget(projection, target);
     if (facet !== null) {

@@ -987,14 +987,16 @@ describe('buildProposalStatusBroadcastListener — per-component fan-out for dec
   });
 
   it('Case D — committed decompose emits N envelopes per the standard derivation rules', async () => {
-    // Per the projection's `applyCommittedProposal` decompose arm
-    // (`apps/server/src/projection/replay.ts`): commit of a decompose
-    // sets `parent.visible = false` and does NOT touch the component
-    // nodes' classification facets directly. The component nodes'
-    // `classificationFacet.committedProposalEventId` therefore stays
-    // `null` post-commit, and `deriveFacetStatus` returns whatever
-    // it would for an un-voted, un-committed facet — `'proposed'` per
-    // rule 7. The wire-shape contract being pinned by this case is:
+    // Per the projection's `handleCommit` per-facet stamping loop
+    // (`apps/server/src/projection/replay.ts`, the plural
+    // `facetTargetsForProposal` helper landed in
+    // `replay_decompose_commit_marks_component_classification_committed`):
+    // commit of a decompose sets `parent.visible = false` AND stamps
+    // each component's `classificationFacet.committedProposalEventId`
+    // + `committedAt` with the parent proposal event's id and the
+    // commit event's `committed_at`. `deriveFacetStatus` rule 5 then
+    // returns `'committed'` for each component's classification facet.
+    // The wire-shape contract being pinned by this case is:
     //
     //   1. The listener fires N envelopes per component on a commit
     //      trigger for a decompose proposal (per-component
@@ -1002,15 +1004,11 @@ describe('buildProposalStatusBroadcastListener — per-component fan-out for dec
     //      lifecycle transitions).
     //   2. Each envelope carries `payload.sequence` == the commit
     //      event's sequence (NOT the propose event's sequence).
-    //   3. Each envelope carries the derivation's current return
-    //      value for the per-component facet — observable post-commit
-    //      regardless of the specific status value.
-    //
-    // The exact `perFacetStatus` value depends on whether a future
-    // task extends `applyCommittedProposal` to mark per-component
-    // facets committed; today it stays `'proposed'`. The assertion
-    // here is on multiplicity + sequence; the status value is
-    // sanity-checked against `deriveFacetStatus`'s actual output.
+    //   3. Each envelope's `perFacetStatus` is exactly
+    //      `{ classification: 'committed' }` — the value, not just the
+    //      shape, is pinned, because the projector's per-component
+    //      stamping is the cross-layer contract this listener depends
+    //      on.
     const subscriptions = new WsSubscriptionRegistry();
     const connectionSenders = new WsConnectionSenderRegistry();
     const captured = setupConnection(subscriptions, connectionSenders, CONN_1, SESSION_A);
@@ -1056,12 +1054,10 @@ describe('buildProposalStatusBroadcastListener — per-component fan-out for dec
       // proposal event's.
       expect(env.payload.sequence).toBe(20);
       // The `perFacetStatus` key is `classification` (the only facet
-      // emitted per D6); the value is whatever `deriveFacetStatus`
-      // returns for the component's classification facet on the
-      // post-commit projection. Today that's `'proposed'` because
-      // the decompose commit doesn't mark per-component facets
-      // committed (see the docblock at the top of this case).
-      expect(Object.keys(env.payload.perFacetStatus)).toEqual(['classification']);
+      // emitted per D6) and the value is `'committed'` — pinned by
+      // the projector's per-component stamping in
+      // `replay_decompose_commit_marks_component_classification_committed`.
+      expect(env.payload.perFacetStatus).toEqual({ classification: 'committed' });
     }
 
     // Distinct UUIDs per envelope.

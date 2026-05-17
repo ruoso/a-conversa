@@ -19,6 +19,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { Event } from '@a-conversa/shared-types';
 
+import { deriveFacetStatus } from './facet-status.js';
 import { createEmptyProjection } from './projection.js';
 import { applyEvent, projectFromLog, ReplayError } from './replay.js';
 
@@ -859,6 +860,317 @@ describe('commit effects — structural', () => {
     );
     const projection = projectFromLog(events, SESSION_ID);
     expect(projection.getNode(NODE_ID_1)?.wording).toBe('amended');
+  });
+
+  // -------------------------------------------------------------
+  // Per-component facet-stamping cover for the two multi-component
+  // sub-kinds (`decompose`, `interpretive-split`). Refinement:
+  // tasks/refinements/data-and-methodology/
+  //   replay_decompose_commit_marks_component_classification_committed.md
+  // TaskJuggler:
+  // data_and_methodology.methodology_engine.
+  //   replay_decompose_commit_marks_component_classification_committed
+  //
+  // Per the refinement's D1: the per-component stamping happens at
+  // the `handleCommit` call-site via the renamed plural
+  // `facetTargetsForProposal` helper. Each component's classification
+  // facet gets stamped with the parent decompose / interpretive-split
+  // proposal event's id (per D4) and the commit event's `committed_at`
+  // (per D5). Together with `deriveFacetStatus` rule 5 this flips
+  // each component's classification facet from `'proposed'` to
+  // `'committed'` post-commit.
+  // -------------------------------------------------------------
+
+  it('decompose commit stamps per-component classification facets with committedProposalEventId + committedAt', () => {
+    const C1 = '00000000-0000-4000-8000-00000000c001';
+    const C2 = '00000000-0000-4000-8000-00000000c002';
+    const events: Event[] = [
+      makeEvent(1, 'node-created', DEBATER_A_ID, T0, {
+        node_id: NODE_ID_1,
+        wording: 'parent',
+        created_by: DEBATER_A_ID,
+        created_at: T0,
+      }),
+      makeEvent(2, 'participant-joined', MODERATOR_ID, T0, {
+        user_id: MODERATOR_ID,
+        role: 'moderator',
+        screen_name: 'Mod',
+        joined_at: T0,
+      }),
+      // Components are emitted by the propose handler as paired
+      // `node-created` + `entity-included` events ahead of the
+      // proposal event itself (per commit 166b407). Their facets
+      // start as `'proposed'`.
+      makeEvent(3, 'node-created', DEBATER_A_ID, T0, {
+        node_id: C1,
+        wording: 'c1',
+        created_by: DEBATER_A_ID,
+        created_at: T0,
+      }),
+      makeEvent(4, 'entity-included', MODERATOR_ID, T0, {
+        entity_kind: 'node',
+        entity_id: C1,
+        included_by: MODERATOR_ID,
+        included_at: T0,
+      }),
+      makeEvent(5, 'node-created', DEBATER_A_ID, T0, {
+        node_id: C2,
+        wording: 'c2',
+        created_by: DEBATER_A_ID,
+        created_at: T0,
+      }),
+      makeEvent(6, 'entity-included', MODERATOR_ID, T0, {
+        entity_kind: 'node',
+        entity_id: C2,
+        included_by: MODERATOR_ID,
+        included_at: T0,
+      }),
+    ];
+    seedNodeAndProposal(
+      events,
+      PROPOSAL_ID_1,
+      {
+        kind: 'decompose',
+        parent_node_id: NODE_ID_1,
+        components: [
+          { wording: 'c1', classification: 'fact', node_id: C1 },
+          { wording: 'c2', classification: 'fact', node_id: C2 },
+        ],
+      },
+      7,
+    );
+    events.push(
+      makeEvent(8, 'commit', MODERATOR_ID, T2, {
+        proposal_id: PROPOSAL_ID_1,
+        moderator: MODERATOR_ID,
+        committed_at: T2,
+      }),
+    );
+
+    const projection = projectFromLog(events, SESSION_ID);
+
+    // Both components' classification facets carry the SAME
+    // commit pair — the parent proposal commits ONCE, expressed N
+    // times for the N components (per D4 of the refinement).
+    const c1 = projection.getNode(C1);
+    const c2 = projection.getNode(C2);
+    expect(c1?.classificationFacet.committedProposalEventId).toBe(PROPOSAL_ID_1);
+    expect(c1?.classificationFacet.committedAt).toBe(T2);
+    expect(c2?.classificationFacet.committedProposalEventId).toBe(PROPOSAL_ID_1);
+    expect(c2?.classificationFacet.committedAt).toBe(T2);
+
+    // `deriveFacetStatus` rule 5 returns `'committed'` once the
+    // marker is stamped and no current dispute / withdraw exists.
+    expect(deriveFacetStatus(projection, 'node', C1, 'classification')).toBe('committed');
+    expect(deriveFacetStatus(projection, 'node', C2, 'classification')).toBe('committed');
+
+    // The parent's classification facet is NOT touched by the
+    // decompose commit — its commit-state derives from its own
+    // prior `classify-node` commit (which this fixture doesn't
+    // include, so the parent's marker stays `null`).
+    const parent = projection.getNode(NODE_ID_1);
+    expect(parent?.classificationFacet.committedProposalEventId).toBeNull();
+    expect(parent?.classificationFacet.committedAt).toBeNull();
+
+    // Structural-arm behaviour preserved.
+    expect(parent?.visible).toBe(false);
+  });
+
+  it('interpretive-split commit stamps per-reading classification facets with committedProposalEventId + committedAt', () => {
+    const R1 = '00000000-0000-4000-8000-00000000c003';
+    const R2 = '00000000-0000-4000-8000-00000000c004';
+    const R3 = '00000000-0000-4000-8000-00000000c005';
+    const events: Event[] = [
+      makeEvent(1, 'node-created', DEBATER_A_ID, T0, {
+        node_id: NODE_ID_1,
+        wording: 'ambiguous',
+        created_by: DEBATER_A_ID,
+        created_at: T0,
+      }),
+      makeEvent(2, 'participant-joined', MODERATOR_ID, T0, {
+        user_id: MODERATOR_ID,
+        role: 'moderator',
+        screen_name: 'Mod',
+        joined_at: T0,
+      }),
+      makeEvent(3, 'node-created', DEBATER_A_ID, T0, {
+        node_id: R1,
+        wording: 'reading1',
+        created_by: DEBATER_A_ID,
+        created_at: T0,
+      }),
+      makeEvent(4, 'entity-included', MODERATOR_ID, T0, {
+        entity_kind: 'node',
+        entity_id: R1,
+        included_by: MODERATOR_ID,
+        included_at: T0,
+      }),
+      makeEvent(5, 'node-created', DEBATER_A_ID, T0, {
+        node_id: R2,
+        wording: 'reading2',
+        created_by: DEBATER_A_ID,
+        created_at: T0,
+      }),
+      makeEvent(6, 'entity-included', MODERATOR_ID, T0, {
+        entity_kind: 'node',
+        entity_id: R2,
+        included_by: MODERATOR_ID,
+        included_at: T0,
+      }),
+      makeEvent(7, 'node-created', DEBATER_A_ID, T0, {
+        node_id: R3,
+        wording: 'reading3',
+        created_by: DEBATER_A_ID,
+        created_at: T0,
+      }),
+      makeEvent(8, 'entity-included', MODERATOR_ID, T0, {
+        entity_kind: 'node',
+        entity_id: R3,
+        included_by: MODERATOR_ID,
+        included_at: T0,
+      }),
+    ];
+    seedNodeAndProposal(
+      events,
+      PROPOSAL_ID_1,
+      {
+        kind: 'interpretive-split',
+        parent_node_id: NODE_ID_1,
+        readings: [
+          { wording: 'reading1', classification: 'fact', node_id: R1 },
+          { wording: 'reading2', classification: 'fact', node_id: R2 },
+          { wording: 'reading3', classification: 'fact', node_id: R3 },
+        ],
+      },
+      9,
+    );
+    events.push(
+      makeEvent(10, 'commit', MODERATOR_ID, T2, {
+        proposal_id: PROPOSAL_ID_1,
+        moderator: MODERATOR_ID,
+        committed_at: T2,
+      }),
+    );
+
+    const projection = projectFromLog(events, SESSION_ID);
+
+    for (const readingId of [R1, R2, R3]) {
+      const reading = projection.getNode(readingId);
+      expect(reading?.classificationFacet.committedProposalEventId).toBe(PROPOSAL_ID_1);
+      expect(reading?.classificationFacet.committedAt).toBe(T2);
+      expect(deriveFacetStatus(projection, 'node', readingId, 'classification')).toBe('committed');
+    }
+
+    // Structural-arm behaviour preserved.
+    expect(projection.getNode(NODE_ID_1)?.visible).toBe(false);
+  });
+
+  it('decompose commit replay round-trip preserves per-component committed-state deterministically', () => {
+    const C1 = '00000000-0000-4000-8000-00000000c001';
+    const C2 = '00000000-0000-4000-8000-00000000c002';
+    const events: Event[] = [
+      makeEvent(1, 'node-created', DEBATER_A_ID, T0, {
+        node_id: NODE_ID_1,
+        wording: 'parent',
+        created_by: DEBATER_A_ID,
+        created_at: T0,
+      }),
+      makeEvent(2, 'node-created', DEBATER_A_ID, T0, {
+        node_id: C1,
+        wording: 'c1',
+        created_by: DEBATER_A_ID,
+        created_at: T0,
+      }),
+      makeEvent(3, 'entity-included', MODERATOR_ID, T0, {
+        entity_kind: 'node',
+        entity_id: C1,
+        included_by: MODERATOR_ID,
+        included_at: T0,
+      }),
+      makeEvent(4, 'node-created', DEBATER_A_ID, T0, {
+        node_id: C2,
+        wording: 'c2',
+        created_by: DEBATER_A_ID,
+        created_at: T0,
+      }),
+      makeEvent(5, 'entity-included', MODERATOR_ID, T0, {
+        entity_kind: 'node',
+        entity_id: C2,
+        included_by: MODERATOR_ID,
+        included_at: T0,
+      }),
+    ];
+    seedNodeAndProposal(
+      events,
+      PROPOSAL_ID_1,
+      {
+        kind: 'decompose',
+        parent_node_id: NODE_ID_1,
+        components: [
+          { wording: 'c1', classification: 'fact', node_id: C1 },
+          { wording: 'c2', classification: 'fact', node_id: C2 },
+        ],
+      },
+      6,
+    );
+    events.push(
+      makeEvent(7, 'commit', MODERATOR_ID, T2, {
+        proposal_id: PROPOSAL_ID_1,
+        moderator: MODERATOR_ID,
+        committed_at: T2,
+      }),
+    );
+
+    const projectionA = projectFromLog(events, SESSION_ID);
+    const projectionB = projectFromLog(events, SESSION_ID);
+
+    // Per-component stamping is deterministic across replays —
+    // the same log produces identical projection state for both
+    // components' classification facets.
+    expect(projectionA.getNode(C1)?.classificationFacet.committedProposalEventId).toBe(
+      projectionB.getNode(C1)?.classificationFacet.committedProposalEventId,
+    );
+    expect(projectionA.getNode(C1)?.classificationFacet.committedAt).toBe(
+      projectionB.getNode(C1)?.classificationFacet.committedAt,
+    );
+    expect(projectionA.getNode(C2)?.classificationFacet.committedProposalEventId).toBe(
+      projectionB.getNode(C2)?.classificationFacet.committedProposalEventId,
+    );
+    expect(projectionA.getNode(C2)?.classificationFacet.committedAt).toBe(
+      projectionB.getNode(C2)?.classificationFacet.committedAt,
+    );
+  });
+
+  it('classify-node commit still stamps committedProposalEventId on the classificationFacet (single-target regression)', () => {
+    // Single-target sub-kinds remain unchanged by the plural-
+    // helper rename per the refinement's Case 4. This regression
+    // pins that the four single-target sub-kinds keep their
+    // 1-element-array stamping behaviour.
+    const events: Event[] = [
+      makeEvent(1, 'node-created', DEBATER_A_ID, T0, {
+        node_id: NODE_ID_1,
+        wording: 'a',
+        created_by: DEBATER_A_ID,
+        created_at: T0,
+      }),
+    ];
+    seedNodeAndProposal(
+      events,
+      PROPOSAL_ID_1,
+      { kind: 'classify-node', node_id: NODE_ID_1, classification: 'fact' },
+      2,
+    );
+    events.push(
+      makeEvent(3, 'commit', MODERATOR_ID, T2, {
+        proposal_id: PROPOSAL_ID_1,
+        moderator: MODERATOR_ID,
+        committed_at: T2,
+      }),
+    );
+    const projection = projectFromLog(events, SESSION_ID);
+    const node = projection.getNode(NODE_ID_1);
+    expect(node?.classificationFacet.committedProposalEventId).toBe(PROPOSAL_ID_1);
+    expect(node?.classificationFacet.committedAt).toBe(T2);
   });
 });
 
