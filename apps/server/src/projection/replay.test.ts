@@ -100,6 +100,70 @@ describe('applyEvent — session-created / session-ended', () => {
   });
 });
 
+describe('applyEvent — session-mode-changed (ADR 0028)', () => {
+  it('initial currentMode is "lobby" before any session-mode-changed event applies', () => {
+    const projection = createEmptyProjection(SESSION_ID);
+    expect(projection.currentMode).toBe('lobby');
+  });
+
+  it('session-mode-changed with new_mode "operate" flips currentMode and emits a change-feed entry', () => {
+    const projection = createEmptyProjection(SESSION_ID);
+    applyEvent(
+      projection,
+      makeEvent(1, 'session-created', HOST_ID, T0, {
+        host_user_id: HOST_ID,
+        privacy: 'public',
+        topic: 'Test debate',
+        created_at: T0,
+      }),
+    );
+    expect(projection.currentMode).toBe('lobby');
+
+    const changes = applyEvent(
+      projection,
+      makeEvent(2, 'session-mode-changed', MODERATOR_ID, T1, {
+        previous_mode: 'lobby',
+        new_mode: 'operate',
+        changed_by: MODERATOR_ID,
+        changed_at: T1,
+      }),
+    );
+    expect(projection.currentMode).toBe('operate');
+    const transition = changes.find((c) => c.kind === 'session-mode-changed');
+    expect(transition).toBeDefined();
+    if (transition?.kind === 'session-mode-changed') {
+      expect(transition.previousMode).toBe('lobby');
+      expect(transition.newMode).toBe('operate');
+    }
+  });
+
+  it('replay-order invariance: applying the same event log step-by-step yields the same currentMode', () => {
+    const projectionA = createEmptyProjection(SESSION_ID);
+    const projectionB = createEmptyProjection(SESSION_ID);
+    const events = [
+      makeEvent(1, 'session-created', HOST_ID, T0, {
+        host_user_id: HOST_ID,
+        privacy: 'public',
+        topic: 'Test debate',
+        created_at: T0,
+      }),
+      makeEvent(2, 'session-mode-changed', MODERATOR_ID, T1, {
+        previous_mode: 'lobby' as const,
+        new_mode: 'operate' as const,
+        changed_by: MODERATOR_ID,
+        changed_at: T1,
+      }),
+    ];
+    for (const event of events) applyEvent(projectionA, event);
+    projectFromLog(events, SESSION_ID);
+    const projB = projectFromLog(events, SESSION_ID);
+    void projectionB;
+    expect(projectionA.currentMode).toBe('operate');
+    expect(projB.currentMode).toBe('operate');
+    expect(projectionA.currentMode).toBe(projB.currentMode);
+  });
+});
+
 describe('applyEvent — participant-joined / participant-left', () => {
   it('joined adds the participant; left flips their leftAt', () => {
     const projection = createEmptyProjection(SESSION_ID);

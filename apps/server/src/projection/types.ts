@@ -150,6 +150,17 @@ export interface NewAnnotationInput {
 
 export type SessionState = 'open' | 'ended';
 
+// `SessionMode` — the lobby/operate phase the moderator has advanced
+// the session into. Per ADR 0028 the lobby → operate transition is
+// signalled by a dedicated `session-mode-changed` wire event; the
+// projector flips the field on the event's arrival. Default `'lobby'`
+// on construction so a fresh projection (or a projection rebuilt from
+// an event log predating the event kind) reads honestly without a
+// projector-arm assumption.
+//
+// Refinement: tasks/refinements/participant-ui/part_session_start_handoff_dedicated_event.md
+export type SessionMode = 'lobby' | 'operate';
+
 export type ParticipantRole = 'moderator' | 'debater-A' | 'debater-B';
 
 export interface ParticipantRecord {
@@ -199,6 +210,18 @@ export type ChangeEntityKind = 'node' | 'edge' | 'annotation';
 export interface SessionStateChanged {
   kind: 'session-state-changed';
   state: SessionState;
+}
+
+// Per ADR 0028 — the projector's `session-mode-changed` arm appends
+// this entry to the change feed when a `'session-mode-changed'` event
+// applies. Downstream consumers (the future replay surface; a
+// hypothetical operator dashboard) read it to highlight the
+// transition; the participant lobby's auto-navigation `useEffect`
+// reads the event directly off the WS slice, not via the change feed.
+export interface SessionModeChanged {
+  kind: 'session-mode-changed';
+  previousMode: SessionMode;
+  newMode: SessionMode;
 }
 
 export interface ParticipantJoinedChange {
@@ -298,6 +321,7 @@ export interface NodeWordingUpdatedChange {
 
 export type ProjectionChange =
   | SessionStateChanged
+  | SessionModeChanged
   | ParticipantJoinedChange
   | ParticipantLeftChange
   | NodeAddedChange

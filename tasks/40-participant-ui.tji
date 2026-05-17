@@ -101,6 +101,7 @@ task participant_ui "Participant (debater) UI" {
     task part_session_start_handoff_dedicated_event "Replace first-content-event heuristic with dedicated session-mode-changed wire event" {
       effort 2d
       allocate team
+      complete 100
       depends !part_session_start_handoff
       note -8<-
         Replace the first-content-event heuristic introduced by `part_session_start_handoff` with a dedicated `session-mode-changed` wire event: new event kind in `eventKinds` + payload schema + server handler + broadcast + Cucumber pin + SQL CHECK migration + ADR for the protocol addition. Source: tasks/refinements/participant-ui/part_session_start_handoff.md (Decisions §1 + §4) + this commit.

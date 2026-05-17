@@ -514,7 +514,7 @@ function InviteParticipantsRouteInner(props: InviteParticipantsRouteInnerProps):
     [inviteUrlFor],
   );
 
-  const handleEnterSession = useCallback((): void => {
+  const handleEnterSession = useCallback(async (): Promise<void> => {
     if (sessionId === '') return;
     // Defense-in-depth: the button carries `disabled={!bothDebatersPresent}`
     // so the native attribute already blocks click events when the
@@ -522,6 +522,27 @@ function InviteParticipantsRouteInner(props: InviteParticipantsRouteInnerProps):
     // future refactor swaps the native disabled attribute for
     // `aria-disabled` (which doesn't block clicks).
     if (!bothDebatersPresent) return;
+    // Per ADR 0028 / `part_session_start_handoff_dedicated_event`
+    // Decision §3: POST to `/api/sessions/${sessionId}/start` BEFORE
+    // navigating locally so the `session-mode-changed` event has been
+    // committed + broadcast by the time the moderator's operate route
+    // mounts. The fetch is `await`ed but its failure is non-fatal —
+    // a backend hiccup should not strand the moderator in the lobby
+    // with a non-functional "Enter session" button. The participant-
+    // side `CONTENT_EVENT_KINDS` heuristic (the predecessor's
+    // fallback predicate, retained per Decision §7) catches the
+    // moderator's first capture and gets the participant onto the
+    // operate route either way.
+    try {
+      await fetch(`/api/sessions/${sessionId}/start`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+    } catch {
+      // Silent fallback: a network failure or unhandled rejection
+      // falls through to the local navigate. The participant-side
+      // heuristic is the safety net (see comment above).
+    }
     void navigate(`/sessions/${sessionId}/operate`, { replace: false });
   }, [bothDebatersPresent, navigate, sessionId]);
 
@@ -748,7 +769,16 @@ function InviteParticipantsRouteInner(props: InviteParticipantsRouteInnerProps):
             <button
               type="button"
               data-testid="invite-enter-session"
-              onClick={handleEnterSession}
+              onClick={() => {
+                // The handler returns a `Promise<void>` (it awaits a
+                // fetch to `/api/sessions/:id/start` per ADR 0028
+                // before navigating). React's `onClick` expects a
+                // void-returning callback; wrap with `void` so the
+                // returned promise is intentionally fired-and-
+                // forgotten — the navigate runs regardless of the
+                // POST outcome (silent fallback per Decision §3).
+                void handleEnterSession();
+              }}
               disabled={!bothDebatersPresent}
               aria-describedby="invite-enter-session-hint"
               title={

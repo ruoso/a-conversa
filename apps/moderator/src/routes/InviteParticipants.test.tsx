@@ -561,7 +561,181 @@ describe('InviteParticipants route — enter-session button', () => {
       expect(button.disabled).toBe(false);
     });
     fireEvent.click(screen.getByTestId('invite-enter-session'));
-    expect(navigateSpy).toHaveBeenCalledWith(`/sessions/${SESSION_ID}/operate`, { replace: false });
+    await waitFor(() => {
+      expect(navigateSpy).toHaveBeenCalledWith(`/sessions/${SESSION_ID}/operate`, {
+        replace: false,
+      });
+    });
+  });
+
+  // Per ADR 0028 / part_session_start_handoff_dedicated_event Decision §3:
+  // the handler POSTs to `/api/sessions/:id/start` BEFORE navigating.
+  // These cases pin the fetch URL/method/credentials posture and the
+  // navigate-anyway-on-failure fallback.
+  describe('session-mode-changed POST handoff (ADR 0028)', () => {
+    it('POSTs /api/sessions/:id/start with credentials: include then navigates locally on success', async () => {
+      const calls: { url: string; init: RequestInit | undefined }[] = [];
+      global.fetch = vi.fn((input: URL | RequestInfo, init?: RequestInit) => {
+        const url =
+          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        calls.push({ url, init });
+        if (url === '/api/auth/me') {
+          return Promise.resolve(
+            new Response(JSON.stringify({ userId: HOST_USER_ID, screenName: 'alice' }), {
+              status: 200,
+              headers: { 'content-type': 'application/json' },
+            }),
+          );
+        }
+        if (url === `/api/sessions/${SESSION_ID}/participants`) {
+          return Promise.resolve(okParticipantsResponse([]));
+        }
+        if (url === `/api/sessions/${SESSION_ID}/start`) {
+          return Promise.resolve(new Response('', { status: 200 }));
+        }
+        return Promise.resolve(okSessionResponse());
+      });
+      renderRoute();
+      await waitFor(() => {
+        expect(screen.getByTestId('invite-enter-session')).toBeTruthy();
+      });
+      act(() => {
+        seedParticipantJoined(1, 'debater-A', DEBATER_A_ID, 'ben');
+        seedParticipantJoined(2, 'debater-B', DEBATER_B_ID, 'maria');
+      });
+      await waitFor(() => {
+        const button = screen.getByTestId<HTMLButtonElement>('invite-enter-session');
+        expect(button.disabled).toBe(false);
+      });
+      fireEvent.click(screen.getByTestId('invite-enter-session'));
+      await waitFor(() => {
+        expect(navigateSpy).toHaveBeenCalledWith(`/sessions/${SESSION_ID}/operate`, {
+          replace: false,
+        });
+      });
+      const startCall = calls.find((c) => c.url === `/api/sessions/${SESSION_ID}/start`);
+      expect(startCall).toBeDefined();
+      expect(startCall?.init?.method).toBe('POST');
+      expect(startCall?.init?.credentials).toBe('include');
+    });
+
+    it('navigates anyway when the start POST resolves non-2xx (silent fallback per Decision §3)', async () => {
+      global.fetch = vi.fn((input: URL | RequestInfo) => {
+        const url =
+          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (url === '/api/auth/me') {
+          return Promise.resolve(
+            new Response(JSON.stringify({ userId: HOST_USER_ID, screenName: 'alice' }), {
+              status: 200,
+              headers: { 'content-type': 'application/json' },
+            }),
+          );
+        }
+        if (url === `/api/sessions/${SESSION_ID}/participants`) {
+          return Promise.resolve(okParticipantsResponse([]));
+        }
+        if (url === `/api/sessions/${SESSION_ID}/start`) {
+          return Promise.resolve(new Response('', { status: 500 }));
+        }
+        return Promise.resolve(okSessionResponse());
+      });
+      renderRoute();
+      await waitFor(() => {
+        expect(screen.getByTestId('invite-enter-session')).toBeTruthy();
+      });
+      act(() => {
+        seedParticipantJoined(1, 'debater-A', DEBATER_A_ID, 'ben');
+        seedParticipantJoined(2, 'debater-B', DEBATER_B_ID, 'maria');
+      });
+      await waitFor(() => {
+        const button = screen.getByTestId<HTMLButtonElement>('invite-enter-session');
+        expect(button.disabled).toBe(false);
+      });
+      fireEvent.click(screen.getByTestId('invite-enter-session'));
+      // Local navigate still fires even though the POST returned 500.
+      await waitFor(() => {
+        expect(navigateSpy).toHaveBeenCalledWith(`/sessions/${SESSION_ID}/operate`, {
+          replace: false,
+        });
+      });
+    });
+
+    it('navigates anyway when the start POST rejects (network failure caught by try/catch)', async () => {
+      global.fetch = vi.fn((input: URL | RequestInfo) => {
+        const url =
+          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (url === '/api/auth/me') {
+          return Promise.resolve(
+            new Response(JSON.stringify({ userId: HOST_USER_ID, screenName: 'alice' }), {
+              status: 200,
+              headers: { 'content-type': 'application/json' },
+            }),
+          );
+        }
+        if (url === `/api/sessions/${SESSION_ID}/participants`) {
+          return Promise.resolve(okParticipantsResponse([]));
+        }
+        if (url === `/api/sessions/${SESSION_ID}/start`) {
+          return Promise.reject(new Error('network down'));
+        }
+        return Promise.resolve(okSessionResponse());
+      });
+      renderRoute();
+      await waitFor(() => {
+        expect(screen.getByTestId('invite-enter-session')).toBeTruthy();
+      });
+      act(() => {
+        seedParticipantJoined(1, 'debater-A', DEBATER_A_ID, 'ben');
+        seedParticipantJoined(2, 'debater-B', DEBATER_B_ID, 'maria');
+      });
+      await waitFor(() => {
+        const button = screen.getByTestId<HTMLButtonElement>('invite-enter-session');
+        expect(button.disabled).toBe(false);
+      });
+      fireEvent.click(screen.getByTestId('invite-enter-session'));
+      await waitFor(() => {
+        expect(navigateSpy).toHaveBeenCalledWith(`/sessions/${SESSION_ID}/operate`, {
+          replace: false,
+        });
+      });
+    });
+
+    it('does NOT POST to /start when bothDebatersPresent is false (handler short-circuits before fetch)', async () => {
+      const calls: string[] = [];
+      global.fetch = vi.fn((input: URL | RequestInfo) => {
+        const url =
+          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        calls.push(url);
+        if (url === '/api/auth/me') {
+          return Promise.resolve(
+            new Response(JSON.stringify({ userId: HOST_USER_ID, screenName: 'alice' }), {
+              status: 200,
+              headers: { 'content-type': 'application/json' },
+            }),
+          );
+        }
+        if (url === `/api/sessions/${SESSION_ID}/participants`) {
+          return Promise.resolve(okParticipantsResponse([]));
+        }
+        return Promise.resolve(okSessionResponse());
+      });
+      renderRoute();
+      await waitFor(() => {
+        expect(screen.getByTestId('invite-enter-session')).toBeTruthy();
+      });
+      // No debaters seeded — the button stays disabled. `fireEvent.click`
+      // on a native-disabled button does not dispatch the React click
+      // handler, so the handler's inner `if (!bothDebatersPresent) return`
+      // guard does not run either — but the assertion against the
+      // calls list confirms NO POST to /start ever fired regardless of
+      // which guard short-circuited.
+      const button = screen.getByTestId<HTMLButtonElement>('invite-enter-session');
+      expect(button.disabled).toBe(true);
+      fireEvent.click(button);
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      expect(calls.find((u) => u === `/api/sessions/${SESSION_ID}/start`)).toBeUndefined();
+      expect(navigateSpy).not.toHaveBeenCalled();
+    });
   });
 
   // Amended case 15 (per `mod_session_lobby` Decision §2) — inverted

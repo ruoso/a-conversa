@@ -22,6 +22,7 @@ import {
   participantLeftPayloadSchema,
   sessionCreatedPayloadSchema,
   sessionEndedPayloadSchema,
+  sessionModeChangedPayloadSchema,
   snapshotCreatedPayloadSchema,
   validateEvent,
   votePayloadSchema,
@@ -838,10 +839,75 @@ describe('placeholder payload schemas', () => {
       // emitted by the proposal-withdraw flow to retract propose-time-
       // minted entities from the structure.
       'entity-removed',
+      // Added by part_session_start_handoff_dedicated_event (ADR 0028) —
+      // emitted by `POST /api/sessions/:id/start` when the moderator
+      // advances the session from the lobby into the operate canvas.
+      'session-mode-changed',
     ] as const;
     for (const kind of expectedKinds) {
       expect(eventPayloadSchemas[kind]).toBeDefined();
     }
+  });
+});
+
+describe('session-mode-changed payload schema', () => {
+  const valid = {
+    previous_mode: 'lobby' as const,
+    new_mode: 'operate' as const,
+    changed_by: USER_ID,
+    changed_at: '2026-05-17T12:00:00Z',
+  };
+
+  it('round-trips a well-formed payload through JSON', () => {
+    const parsed = sessionModeChangedPayloadSchema.parse(valid);
+    const wire = JSON.parse(JSON.stringify(parsed)) as unknown;
+    expect(sessionModeChangedPayloadSchema.parse(wire)).toEqual(valid);
+  });
+
+  it('accepts the reverse transition (operate → lobby)', () => {
+    const reverse = { ...valid, previous_mode: 'operate' as const, new_mode: 'lobby' as const };
+    const result = sessionModeChangedPayloadSchema.safeParse(reverse);
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects an unknown mode value via validateEvent and names the kind', () => {
+    const envelope = {
+      id: EVENT_ID,
+      sessionId: SESSION_ID,
+      sequence: 10,
+      kind: 'session-mode-changed' as const,
+      actor: USER_ID,
+      payload: { ...valid, new_mode: 'concluded' },
+      createdAt: '2026-05-17T12:00:00Z',
+    };
+    let caught: unknown;
+    try {
+      validateEvent(envelope);
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(EventValidationError);
+    expect((caught as Error).message).toContain("'session-mode-changed'");
+  });
+
+  it('rejects a missing changed_by', () => {
+    const { changed_by: _ignored, ...partial } = valid;
+    void _ignored;
+    const result = sessionModeChangedPayloadSchema.safeParse(partial);
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a non-UUID changed_by', () => {
+    const result = sessionModeChangedPayloadSchema.safeParse({
+      ...valid,
+      changed_by: 'not-a-uuid',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a non-ISO changed_at', () => {
+    const result = sessionModeChangedPayloadSchema.safeParse({ ...valid, changed_at: 'tomorrow' });
+    expect(result.success).toBe(false);
   });
 });
 
@@ -988,6 +1054,12 @@ const REPRESENTATIVE_PAYLOADS: Record<EventKind, unknown> = {
     entity_id: NODE_ID,
     removed_by: USER_ID,
     removed_at: '2026-05-10T12:34:56Z',
+  },
+  'session-mode-changed': {
+    previous_mode: 'lobby',
+    new_mode: 'operate',
+    changed_by: USER_ID,
+    changed_at: '2026-05-17T12:00:00Z',
   },
 };
 

@@ -125,6 +125,12 @@ const REPRESENTATIVE_PAYLOADS: Record<EventKind, unknown> = {
     removed_by: USER_ID,
     removed_at: '2026-05-10T12:34:56Z',
   },
+  'session-mode-changed': {
+    previous_mode: 'lobby',
+    new_mode: 'operate',
+    changed_by: USER_ID,
+    changed_at: '2026-05-17T12:00:00Z',
+  },
 };
 
 /** Build a full envelope around a payload for the given kind. */
@@ -421,6 +427,7 @@ const PAYLOAD_CORRUPTIONS: Record<EventKind, (base: Record<string, unknown>) => 
   'meta-disagreement-marked': (base) => ({ ...base, proposal_id: 'not-a-uuid' }),
   'snapshot-created': (base) => ({ ...base, log_position: -1 }),
   'entity-removed': (base) => ({ ...base, entity_kind: 'attribute' }),
+  'session-mode-changed': (base) => ({ ...base, new_mode: 'concluded' }),
 };
 
 describe('validateEvent — payload-level failure per kind', () => {

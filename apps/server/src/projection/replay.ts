@@ -65,6 +65,7 @@ import type {
   ProposalEnvelopePayload,
   ProposalPayload,
   SessionEndedPayload,
+  SessionModeChangedPayload,
   SnapshotCreatedPayload,
   VotePayload,
   CommitPayload,
@@ -127,6 +128,28 @@ function handleSessionEnded(
 ): void {
   projection.setSessionState('ended');
   changes.push({ kind: 'session-state-changed', state: 'ended' });
+}
+
+// Per ADR 0028 — flips the projection's `currentMode` field to the
+// event's `new_mode`. The participant lobby's auto-navigation
+// `useEffect` reads the event off the per-session WS slice directly
+// (the projection field is the projector's mirror, not the UI's
+// trigger surface); the field's first read sites are the future
+// replay surface and the new endpoint's idempotency check (read
+// `currentMode`; if already the requested mode, return without
+// emitting a second event).
+function handleSessionModeChanged(
+  projection: Projection,
+  payload: SessionModeChangedPayload,
+  changes: ProjectionChange[],
+): void {
+  const previousMode = projection.currentMode;
+  projection.setCurrentMode(payload.new_mode);
+  changes.push({
+    kind: 'session-mode-changed',
+    previousMode,
+    newMode: payload.new_mode,
+  });
 }
 
 function handleParticipantJoined(
@@ -972,6 +995,9 @@ export function applyEvent(projection: Projection, event: Event): ProjectionChan
         break;
       case 'entity-removed':
         handleEntityRemoved(projection, event.payload, changes);
+        break;
+      case 'session-mode-changed':
+        handleSessionModeChanged(projection, event.payload, changes);
         break;
     }
   } catch (cause) {

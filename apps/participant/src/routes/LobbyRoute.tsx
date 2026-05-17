@@ -51,11 +51,18 @@
 // inline forms, no write paths on the WS subscription. The lobby
 // gives way to the live debate surface via the auto-navigation
 // handler added by `part_session_start_handoff` (the `useEffect`
-// inside `<LobbyRouteAuthenticatedBody>` below): when the first
-// content event (`node-created` / `edge-created` /
-// `entity-included` / `proposal` / `commit`) arrives over the
-// open WS subscription, the lobby `replace`-navigates the debater
-// to `/sessions/${id}` so the operate route mounts.
+// inside `<LobbyRouteAuthenticatedBody>` below): when a
+// `session-mode-changed` event with `new_mode === 'operate'`
+// arrives over the open WS subscription, the lobby
+// `replace`-navigates the debater to `/sessions/${id}` so the
+// operate route mounts. The predecessor's `CONTENT_EVENT_KINDS`
+// heuristic (`node-created` / `edge-created` / `entity-included` /
+// `proposal` / `commit`) is retained as a defense-in-depth
+// fallback per ADR 0028 — replay-correctness for pre-event
+// historical sessions + safety net for a moderator-side POST
+// failure (`handleEnterSession` falls back to a local navigate on
+// POST failure; the fallback predicate catches the moderator's
+// first capture and gets the participant onto the operate route).
 
 import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -415,42 +422,61 @@ function LobbyRouteAuthenticatedBody(props: LobbyRouteAuthenticatedBodyProps): R
   );
 
   // ── Auto-navigation handoff to the operate route ────────────────
-  // Watches the per-session WS `events` slice for the first content
-  // event (`node-created` / `edge-created` / `entity-included` /
-  // `proposal` / `commit`) and navigates the debater from
-  // `/sessions/${id}/lobby` to `/sessions/${id}` once it arrives.
+  // Watches the per-session WS `events` slice for the primary
+  // trigger — a `session-mode-changed` event with `new_mode ===
+  // 'operate'` (per ADR 0028) — OR the fallback heuristic — any
+  // event whose kind is in `CONTENT_EVENT_KINDS` (per
+  // `part_session_start_handoff`'s Decision §2 — the predecessor's
+  // first-content-event heuristic). On either match the lobby
+  // `replace`-navigates the debater from `/sessions/${id}/lobby`
+  // to `/sessions/${id}` so the operate route mounts.
   //
   // Triggered off the existing WS subscription the lobby installed
-  // via `client.trackSession` (see line 209) — no new subscription,
-  // no new HTTP fetch, no new dependency on the moderator's local
-  // navigate gesture. The five trigger kinds are emitted exclusively
-  // by the moderator's operate-mode capture / propose / commit
-  // flows, so their arrival is a sufficient proxy for "the moderator
-  // is in operate mode."
+  // via `client.trackSession` — no new subscription, no new HTTP
+  // fetch.
   //
-  // See `tasks/refinements/participant-ui/part_session_start_handoff.md`
-  // Decision §1 for the rationale against minting a dedicated
-  // `debate-started` wire event, and Decision §3 for the `{ replace:
-  // true }` posture + `useRef<boolean>` re-fire guard.
+  // **Primary vs. fallback ordering** (per
+  // `part_session_start_handoff_dedicated_event` Decision §7 +
+  // ADR 0028): the primary `session-mode-changed` predicate
+  // short-circuits the fallback; the fallback only runs when no
+  // matching primary event is present in the slice. Both paths are
+  // pinned individually by Vitest cases. The fallback stays in
+  // place as defense-in-depth for (a) replay of historical sessions
+  // without the new event and (b) the moderator-side POST failing
+  // (Decision §3 — `handleEnterSession` silently falls back to a
+  // local navigate; the fallback predicate catches the moderator's
+  // first capture).
+  //
+  // `useRef<boolean>` exactly-once guard catches the case where a
+  // subsequent event arrives between this effect running and React
+  // Router actually unmounting the lobby (the navigate is
+  // idempotent; the guard is belt-and-suspenders against a wasted
+  // call AND against the primary+fallback double-fire — both
+  // predicates writing through the same guard).
   const navigate = useNavigate();
   const handoffFiredRef = useRef<boolean>(false);
   useEffect(() => {
     if (handoffFiredRef.current) return;
     if (id === '') return;
     const eventsList = events ?? [];
-    // Single-pass scan — `.some()` short-circuits on the first match
-    // (cost is O(events) worst case, with `events` bounded by the
-    // lobby's lifetime — a few `participant-joined` /
-    // `participant-left` events for the slot fill phase, then the
-    // first content event triggers the navigate). The ref guard
-    // catches the case where a subsequent event arrives between
-    // this effect running and React Router actually unmounting the
-    // lobby (the navigate is idempotent; the guard is belt-and-
-    // suspenders against a wasted call).
-    const triggered = eventsList.some((event) =>
-      (CONTENT_EVENT_KINDS as readonly string[]).includes(event.kind),
+    // Primary trigger: a dedicated `session-mode-changed` event
+    // with `new_mode: 'operate'` is the canonical signal that the
+    // moderator has advanced the session out of the lobby. The
+    // payload-shape narrowing (`event.kind === 'session-mode-changed'`)
+    // gives TypeScript the discriminated-union slice needed to read
+    // `.payload.new_mode` directly.
+    const modeChanged = eventsList.some(
+      (event) => event.kind === 'session-mode-changed' && event.payload.new_mode === 'operate',
     );
-    if (!triggered) return;
+    // Fallback trigger: the predecessor's first-content-event
+    // heuristic. Short-circuited under the primary so the
+    // exactly-once guard isn't relied on to suppress a double-fire
+    // — the predicates are mutually exclusive within a single
+    // effect run.
+    const contentTriggered =
+      !modeChanged &&
+      eventsList.some((event) => (CONTENT_EVENT_KINDS as readonly string[]).includes(event.kind));
+    if (!modeChanged && !contentTriggered) return;
     handoffFiredRef.current = true;
     void navigate(`/sessions/${id}`, { replace: true });
   }, [events, id, navigate]);

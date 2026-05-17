@@ -149,6 +149,14 @@ export const eventKinds = [
   // Entity removal (per ADR 0027 — proposal-withdraw removes
   // propose-time-minted entities from the structure)
   'entity-removed',
+  // Session-mode transition (per ADR 0028 — the moderator advances
+  // the session out of the lobby into the operate canvas; the
+  // participant lobby's auto-navigation `useEffect` consumes the
+  // event as its primary trigger). The event is bidirectional in
+  // the wire vocabulary (the payload's `previous_mode`/`new_mode`
+  // pair describes a transition between the two-mode v1 enum), even
+  // though v1 only emits `lobby → operate`.
+  'session-mode-changed',
 ] as const;
 
 export type EventKind = (typeof eventKinds)[number];
@@ -444,6 +452,37 @@ export const entityRemovedPayloadSchema = z.object({
 
 export type EntityRemovedPayload = z.infer<typeof entityRemovedPayloadSchema>;
 
+// -- Session-mode-changed event payload schema -----------------------
+//
+// Per ADR 0028 — a dedicated event emitted by the moderator-only
+// `POST /api/sessions/:id/start` endpoint at the precise moment the
+// session advances out of the lobby into the operate canvas. The
+// participant lobby's auto-navigation `useEffect` consumes the event
+// as its primary trigger; the predecessor's `CONTENT_EVENT_KINDS`
+// heuristic stays as a defense-in-depth fallback (Decision §7 of
+// `part_session_start_handoff_dedicated_event.md`).
+//
+// Two-mode v1 enum (`{ lobby, operate }`); the `previous_mode` field
+// is intentionally redundant with the projector's prior state so a
+// wire-trace reader knows the full transition shape from one event in
+// isolation. Forward-compatible with a future `'concluded'` /
+// `'paused'` value (the closed Zod enum is the source of truth;
+// widening is a one-line change + a SQL migration + an ADR amendment
+// per the [ADR amendment-pass rule](../../../docs/adr/README.md)).
+//
+// Refinement: tasks/refinements/participant-ui/part_session_start_handoff_dedicated_event.md
+export const sessionModeSchema = z.enum(['lobby', 'operate']);
+export type SessionMode = z.infer<typeof sessionModeSchema>;
+
+export const sessionModeChangedPayloadSchema = z.object({
+  previous_mode: sessionModeSchema,
+  new_mode: sessionModeSchema,
+  changed_by: z.string().uuid(),
+  changed_at: z.string().datetime({ offset: true }),
+});
+
+export type SessionModeChangedPayload = z.infer<typeof sessionModeChangedPayloadSchema>;
+
 // The registry. Keys are exhaustive over `EventKind` (TypeScript
 // enforces this via the explicit type annotation).
 export const eventPayloadSchemas: Record<EventKind, z.ZodTypeAny> = {
@@ -469,6 +508,8 @@ export const eventPayloadSchemas: Record<EventKind, z.ZodTypeAny> = {
   'snapshot-created': snapshotCreatedPayloadSchema,
   // Owned by mod_proposed_entity_canvas_visibility (ADR 0027)
   'entity-removed': entityRemovedPayloadSchema,
+  // Owned by part_session_start_handoff_dedicated_event (ADR 0028)
+  'session-mode-changed': sessionModeChangedPayloadSchema,
 };
 
 // -- Per-kind payload type map ---------------------------------------
@@ -494,6 +535,7 @@ export interface EventPayloadMap {
   'meta-disagreement-marked': MetaDisagreementMarkedPayload;
   'snapshot-created': SnapshotCreatedPayload;
   'entity-removed': EntityRemovedPayload;
+  'session-mode-changed': SessionModeChangedPayload;
 }
 
 export type PayloadFor<K extends EventKind> = EventPayloadMap[K];

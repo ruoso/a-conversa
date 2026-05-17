@@ -536,6 +536,30 @@ function makeMemoryPool(initialUsers: UserRow[]): {
     }
     if (
       text.includes('FROM session_events') &&
+      text.includes('WHERE session_id = $1') &&
+      text.includes('AND kind = $2') &&
+      text.includes('ORDER BY sequence DESC') &&
+      text.includes('LIMIT 1') &&
+      !text.includes('MAX(sequence)')
+    ) {
+      // The `POST /sessions/:id/start` idempotency check: read the
+      // latest event of a given kind (e.g. 'session-mode-changed') to
+      // determine the current mode without re-walking the full log.
+      const sessionId = p[0] as string;
+      const kind = p[1] as string;
+      const matches = store.events
+        .filter((e) => e.session_id === sessionId && e.kind === kind)
+        .sort((a, b) => b.sequence - a.sequence);
+      const latest = matches[0];
+      if (latest === undefined) {
+        return Promise.resolve({ rows: [] as TRow[] });
+      }
+      return Promise.resolve({
+        rows: [{ payload: latest.payload }] as unknown as TRow[],
+      });
+    }
+    if (
+      text.includes('FROM session_events') &&
       text.includes('MAX(sequence)') &&
       text.includes('WHERE session_id = $1')
     ) {
@@ -2480,6 +2504,365 @@ describe('POST /sessions/:id/end — moderator ends the session', () => {
     // the handler ran, so no BEGIN.
     expect(built.store.trace).toHaveLength(0);
     expect(built.store.events.filter((e) => e.kind === 'session-ended')).toHaveLength(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// POST /sessions/:id/start — moderator advances the session out of the
+// lobby. Per ADR 0028 the transition is signalled by a dedicated
+// `session-mode-changed` wire event; the participant lobby's auto-
+// navigation `useEffect` consumes the event as its primary trigger
+// for the lobby → operate handoff.
+//
+// Coverage (per part_session_start_handoff_dedicated_event.md →
+// Acceptance criteria §3):
+//   - Host starts an active session → 200 + session row; the
+//     session-mode-changed event lands at MAX(sequence)+1; the
+//     transaction trace is BEGIN…COMMIT.
+//   - Non-host (visible but not host) → 403 `not-a-moderator`; no
+//     writes; trace ends with ROLLBACK.
+//   - Non-participant on a private session → 404 `not-found`
+//     (existence-non-leak rule).
+//   - Ended session → 422 `session-already-ended`.
+//   - Idempotent re-POST against an already-started session → 200
+//     with NO second event emitted (Decision §5).
+//   - Unknown id → 404 `not-found`.
+// ─────────────────────────────────────────────────────────────────────
+describe('POST /sessions/:id/start — moderator starts the session', () => {
+  async function buildWithSeed(opts: {
+    users: UserRow[];
+    sessions: SessionRow[];
+    participants?: SessionParticipantRow[];
+    events?: SessionEventRow[];
+  }): Promise<BuiltApp> {
+    const built = await buildApp({ users: opts.users });
+    built.store.sessions.push(...opts.sessions);
+    if (opts.participants !== undefined) {
+      built.store.participants.push(...opts.participants);
+    }
+    if (opts.events !== undefined) {
+      built.store.events.push(...opts.events);
+    }
+    return built;
+  }
+
+  let built: BuiltApp | undefined;
+  afterEach(async () => {
+    if (built !== undefined) {
+      await built.app.close();
+      built = undefined;
+    }
+  });
+
+  const PUBLIC_ACTIVE: SessionRow = {
+    id: '00000000-0000-4000-8000-ffff00000001',
+    host_user_id: ALICE_ID,
+    privacy: 'public',
+    topic: 'A debate to start',
+    created_at: new Date('2026-05-15T10:00:00.000Z'),
+    ended_at: null,
+  };
+  const PUBLIC_ENDED: SessionRow = {
+    id: '00000000-0000-4000-8000-ffff00000002',
+    host_user_id: ALICE_ID,
+    privacy: 'public',
+    topic: 'Already ended',
+    created_at: new Date('2026-05-14T10:00:00.000Z'),
+    ended_at: new Date('2026-05-14T11:00:00.000Z'),
+  };
+  const PRIVATE_BENS: SessionRow = {
+    id: '00000000-0000-4000-8000-ffff00000003',
+    host_user_id: BEN_ID,
+    privacy: 'private',
+    topic: "Ben's private session",
+    created_at: new Date('2026-05-15T12:00:00.000Z'),
+    ended_at: null,
+  };
+
+  const SESSION_CREATED_EVENT: SessionEventRow = {
+    id: '99999999-9999-4999-8999-99999999f001',
+    session_id: PUBLIC_ACTIVE.id,
+    sequence: 1,
+    kind: 'session-created',
+    actor: ALICE_ID,
+    payload: {
+      host_user_id: ALICE_ID,
+      privacy: 'public',
+      topic: 'A debate to start',
+      created_at: '2026-05-15T10:00:00.000Z',
+    },
+    created_at: new Date('2026-05-15T10:00:00.001Z'),
+  };
+
+  it('returns 200 + the camelCase session shape and emits a session-mode-changed event at MAX(sequence)+1', async () => {
+    built = await buildWithSeed({
+      users: [
+        {
+          id: ALICE_ID,
+          oauth_subject: 'authelia:alice',
+          screen_name: 'alice',
+          deleted_at: null,
+        },
+      ],
+      sessions: [PUBLIC_ACTIVE],
+      events: [SESSION_CREATED_EVENT],
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'POST',
+      url: `/api/sessions/${PUBLIC_ACTIVE.id}/start`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{
+      id?: string;
+      hostUserId?: string;
+      privacy?: string;
+      topic?: string;
+      createdAt?: string;
+      endedAt?: string | null;
+    }>();
+    expect(body.id).toBe(PUBLIC_ACTIVE.id);
+    expect(body.hostUserId).toBe(ALICE_ID);
+    expect(body.endedAt).toBeNull();
+
+    // The session-mode-changed event landed at sequence=2 (the
+    // pre-existing session-created sat at sequence=1, so MAX+1 = 2).
+    const modeChangedEvents = built.store.events.filter(
+      (e) => e.session_id === PUBLIC_ACTIVE.id && e.kind === 'session-mode-changed',
+    );
+    expect(modeChangedEvents).toHaveLength(1);
+    const event = modeChangedEvents[0];
+    expect(event?.sequence).toBe(2);
+    expect(event?.actor).toBe(ALICE_ID);
+    const payload = event?.payload as Record<string, unknown>;
+    expect(payload?.['previous_mode']).toBe('lobby');
+    expect(payload?.['new_mode']).toBe('operate');
+    expect(payload?.['changed_by']).toBe(ALICE_ID);
+    expect(typeof payload?.['changed_at']).toBe('string');
+
+    // Transaction shape: BEGIN …work… COMMIT, no ROLLBACK.
+    expect(built.store.trace[0]).toBe('BEGIN');
+    expect(built.store.trace[built.store.trace.length - 1]).toBe('COMMIT');
+    expect(built.store.trace).not.toContain('ROLLBACK');
+  });
+
+  it('returns 403 not-a-moderator when the caller is visible but is not the host', async () => {
+    built = await buildWithSeed({
+      users: [
+        {
+          id: ALICE_ID,
+          oauth_subject: 'authelia:alice',
+          screen_name: 'alice',
+          deleted_at: null,
+        },
+        {
+          id: BEN_ID,
+          oauth_subject: 'authelia:ben',
+          screen_name: 'ben',
+          deleted_at: null,
+        },
+      ],
+      sessions: [PUBLIC_ACTIVE],
+      events: [SESSION_CREATED_EVENT],
+    });
+    const token = await signSessionToken({ sub: BEN_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'POST',
+      url: `/api/sessions/${PUBLIC_ACTIVE.id}/start`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(403);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('not-a-moderator');
+
+    expect(
+      built.store.events.filter(
+        (e) => e.session_id === PUBLIC_ACTIVE.id && e.kind === 'session-mode-changed',
+      ),
+    ).toHaveLength(0);
+    expect(built.store.trace).toContain('ROLLBACK');
+  });
+
+  it('returns 404 (NOT 403) when the session is private and the caller is not host/participant', async () => {
+    built = await buildWithSeed({
+      users: [
+        {
+          id: ALICE_ID,
+          oauth_subject: 'authelia:alice',
+          screen_name: 'alice',
+          deleted_at: null,
+        },
+        {
+          id: BEN_ID,
+          oauth_subject: 'authelia:ben',
+          screen_name: 'ben',
+          deleted_at: null,
+        },
+      ],
+      sessions: [PRIVATE_BENS],
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'POST',
+      url: `/api/sessions/${PRIVATE_BENS.id}/start`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(404);
+    expect(response.statusCode).not.toBe(403);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('not-found');
+    expect(built.store.trace).toContain('ROLLBACK');
+  });
+
+  it('returns 422 session-already-ended when the host attempts to start an ended session', async () => {
+    built = await buildWithSeed({
+      users: [
+        {
+          id: ALICE_ID,
+          oauth_subject: 'authelia:alice',
+          screen_name: 'alice',
+          deleted_at: null,
+        },
+      ],
+      sessions: [PUBLIC_ENDED],
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'POST',
+      url: `/api/sessions/${PUBLIC_ENDED.id}/start`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(422);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('session-already-ended');
+    expect(
+      built.store.events.filter(
+        (e) => e.session_id === PUBLIC_ENDED.id && e.kind === 'session-mode-changed',
+      ),
+    ).toHaveLength(0);
+    expect(built.store.trace).toContain('ROLLBACK');
+  });
+
+  it('is idempotent on re-POST: a second start against an already-started session returns 200 with NO second event', async () => {
+    // Seed an already-started session by pre-loading a
+    // session-mode-changed event at sequence=2. The endpoint reads
+    // the per-session event log inside the transaction; finding the
+    // `new_mode: 'operate'` short-circuits the event append.
+    const ALREADY_STARTED_EVENT: SessionEventRow = {
+      id: '99999999-9999-4999-8999-99999999f002',
+      session_id: PUBLIC_ACTIVE.id,
+      sequence: 2,
+      kind: 'session-mode-changed',
+      actor: ALICE_ID,
+      payload: {
+        previous_mode: 'lobby',
+        new_mode: 'operate',
+        changed_by: ALICE_ID,
+        changed_at: '2026-05-15T10:30:00.000Z',
+      },
+      created_at: new Date('2026-05-15T10:30:00.001Z'),
+    };
+    built = await buildWithSeed({
+      users: [
+        {
+          id: ALICE_ID,
+          oauth_subject: 'authelia:alice',
+          screen_name: 'alice',
+          deleted_at: null,
+        },
+      ],
+      sessions: [PUBLIC_ACTIVE],
+      events: [SESSION_CREATED_EVENT, ALREADY_STARTED_EVENT],
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'POST',
+      url: `/api/sessions/${PUBLIC_ACTIVE.id}/start`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{ id?: string }>();
+    expect(body.id).toBe(PUBLIC_ACTIVE.id);
+    // Crucial: no second session-mode-changed event landed; the
+    // total count stays at 1 (the seeded one).
+    const modeChangedEvents = built.store.events.filter(
+      (e) => e.session_id === PUBLIC_ACTIVE.id && e.kind === 'session-mode-changed',
+    );
+    expect(modeChangedEvents).toHaveLength(1);
+    expect(modeChangedEvents[0]?.id).toBe(ALREADY_STARTED_EVENT.id);
+  });
+
+  it('returns 404 not-found when the id does not exist', async () => {
+    built = await buildWithSeed({
+      users: [
+        {
+          id: ALICE_ID,
+          oauth_subject: 'authelia:alice',
+          screen_name: 'alice',
+          deleted_at: null,
+        },
+      ],
+      sessions: [],
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const unknownId = '00000000-0000-4000-8000-ffffffffff09';
+    const response = await built.app.inject({
+      method: 'POST',
+      url: `/api/sessions/${unknownId}/start`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(404);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('not-found');
+  });
+
+  it('returns 400 validation-failed when the path :id is not a UUID', async () => {
+    built = await buildWithSeed({
+      users: [
+        {
+          id: ALICE_ID,
+          oauth_subject: 'authelia:alice',
+          screen_name: 'alice',
+          deleted_at: null,
+        },
+      ],
+      sessions: [],
+    });
+    const token = await signSessionToken({ sub: ALICE_ID }, TEST_SECRET);
+    const response = await built.app.inject({
+      method: 'POST',
+      url: '/api/sessions/not-a-uuid/start',
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    expect(response.statusCode).toBe(400);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('validation-failed');
+  });
+
+  it('returns 401 auth-required when no session cookie is present', async () => {
+    built = await buildWithSeed({
+      users: [
+        {
+          id: ALICE_ID,
+          oauth_subject: 'authelia:alice',
+          screen_name: 'alice',
+          deleted_at: null,
+        },
+      ],
+      sessions: [PUBLIC_ACTIVE],
+    });
+    const response = await built.app.inject({
+      method: 'POST',
+      url: `/api/sessions/${PUBLIC_ACTIVE.id}/start`,
+    });
+    expect(response.statusCode).toBe(401);
+    const body = response.json<{ error?: { code?: string } }>();
+    expect(body.error?.code).toBe('auth-required');
+
+    expect(built.store.trace).toHaveLength(0);
+    expect(built.store.events.filter((e) => e.kind === 'session-mode-changed')).toHaveLength(0);
   });
 });
 

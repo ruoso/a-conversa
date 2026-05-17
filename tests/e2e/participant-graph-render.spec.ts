@@ -6,13 +6,15 @@
 //              for the rendering surface),
 //              tasks/refinements/participant-ui/part_session_start_handoff.md
 //              (Decision §1 — the lobby's auto-navigation `useEffect`
-//              consumes the first content event in the per-session
-//              WS slice and `replace`-navigates the debater to the
-//              operate route; this spec now seeds the trigger event
-//              from the lobby and asserts the URL change, rather than
-//              doing a manual `page.goto('/p/sessions/${id}')` —
-//              paying down the tech debt the predecessor spec
-//              registered).
+//              consumes a per-session WS event and `replace`-navigates
+//              the debater to the operate route),
+//              tasks/refinements/participant-ui/part_session_start_handoff_dedicated_event.md
+//              (Decision §1 + ADR 0028 — the canonical trigger is now
+//              the dedicated `session-mode-changed` event with
+//              `new_mode: 'operate'`; the predecessor's
+//              `CONTENT_EVENT_KINDS` heuristic stays as a fallback
+//              but the spec seeds the dedicated event as the primary
+//              path to pin the new contract end-to-end).
 // ADRs:        docs/adr/0004-graph-libraries-reactflow-and-cytoscape.md
 //              docs/adr/0008-e2e-framework-playwright.md
 //              docs/adr/0017-mock-oauth-authelia-users-file.md
@@ -28,13 +30,16 @@
 //   1. alice creates a public session via the same-origin API.
 //   2. ben claims the debater-A slot via the invite-acceptance route
 //      (same path the lobby spec uses); he lands on the lobby.
-//   3. The spec seeds a `node-created` event into ben's per-session
-//      WS store via the `window.__aConversaWsStore` test seam while
-//      he is in the lobby — simulating the moderator clicking
-//      "Enter session" + capturing the first statement. The lobby's
-//      auto-navigation `useEffect` (per `part_session_start_handoff`)
-//      detects the first content event and `replace`-navigates to
-//      `/p/sessions/${sessionId}` (the operate route's URL).
+//   3. The spec seeds a `session-mode-changed` event with
+//      `new_mode: 'operate'` into ben's per-session WS store via the
+//      `window.__aConversaWsStore` test seam while he is in the
+//      lobby — simulating the moderator clicking "Enter session"
+//      which POSTs to `/api/sessions/:id/start` (the server emits the
+//      event the participant's lobby observes). The lobby's
+//      auto-navigation `useEffect` (per ADR 0028) detects the
+//      dedicated mode-changed event as its primary trigger and
+//      `replace`-navigates to `/p/sessions/${sessionId}` (the operate
+//      route's URL).
 //   4. The spec asserts the auto-navigation completed:
 //      - URL has flipped to `/p/sessions/${sessionId}`.
 //      - `route-operate` testid visible (the wrapper carries it).
@@ -132,21 +137,24 @@ test.describe('Participant operate route — read-mostly graph render', () => {
       });
       await expect(page.getByTestId('route-lobby')).toBeVisible({ timeout: 15_000 });
 
-      // 4. From the lobby, seed the moderator's first capture (a
-      //    `node-created` event) into ben's per-session WS store via
-      //    the `__aConversaWsStore` test seam. This simulates the
-      //    moderator clicking "Enter session" + capturing the first
-      //    statement; the participant lobby's auto-navigation
-      //    `useEffect` (per
-      //    `tasks/refinements/participant-ui/part_session_start_handoff.md`)
-      //    detects the first content event in the events slice and
-      //    `replace`-navigates the debater to the operate route URL.
+      // 4. From the lobby, seed the moderator's "Enter session" gesture
+      //    (a `session-mode-changed` event with `new_mode: 'operate'`)
+      //    into ben's per-session WS store via the
+      //    `__aConversaWsStore` test seam. Per ADR 0028 this is the
+      //    canonical trigger for the lobby → operate auto-navigation;
+      //    the participant lobby's `useEffect` detects the dedicated
+      //    event as its primary trigger and `replace`-navigates the
+      //    debater to the operate route URL. The predecessor's
+      //    `CONTENT_EVENT_KINDS` heuristic is retained as a
+      //    defense-in-depth fallback (Decision §7 of
+      //    `part_session_start_handoff_dedicated_event.md`) but this
+      //    spec pins the primary path.
       const NODE_ID = '11111111-1111-4111-8111-111111111111';
       const EDGE_ID = '22222222-2222-4222-8222-222222222222';
       const UNKNOWN_TARGET_ID = '33333333-3333-4333-8333-333333333333';
       const ACTOR_ID = '44444444-4444-4444-8444-444444444444';
       await page.evaluate(
-        (seed: { sessionId: string; nodeId: string; actorId: string; wording: string }) => {
+        (seed: { sessionId: string; actorId: string }) => {
           const store = (
             window as unknown as {
               __aConversaWsStore?: {
@@ -169,25 +177,23 @@ test.describe('Participant operate route — read-mostly graph render', () => {
           // subscription's high-water mark without coordinating with
           // server state.
           apply({
-            id: '55555555-5555-4555-8555-555555555555',
+            id: '55555555-5555-4555-8555-555555555550',
             sessionId: seed.sessionId,
-            sequence: 1_000_001,
-            kind: 'node-created',
+            sequence: 1_000_000,
+            kind: 'session-mode-changed',
             actor: seed.actorId,
             payload: {
-              node_id: seed.nodeId,
-              wording: seed.wording,
-              created_by: seed.actorId,
-              created_at: '2026-05-17T00:00:00.000Z',
+              previous_mode: 'lobby',
+              new_mode: 'operate',
+              changed_by: seed.actorId,
+              changed_at: '2026-05-17T00:00:00.000Z',
             },
             createdAt: '2026-05-17T00:00:00.000Z',
           });
         },
         {
           sessionId,
-          nodeId: NODE_ID,
           actorId: ACTOR_ID,
-          wording: NODE_WORDING,
         },
       );
 
@@ -200,10 +206,12 @@ test.describe('Participant operate route — read-mostly graph render', () => {
       await expect(page.getByTestId('route-operate')).toBeVisible({ timeout: 15_000 });
       await expect(page.getByTestId('participant-graph-root')).toBeVisible({ timeout: 15_000 });
 
-      // 6. Seed the companion `edge-created` event so the rendering
-      //    pin can verify both kinds landed in the slice. The
-      //    Cytoscape canvas re-projects on every events change, so
-      //    the seeded edge appears without a network round-trip.
+      // 6. Now that the operate route has mounted, seed a `node-created`
+      //    + `edge-created` pair so the Cytoscape canvas has elements
+      //    to render. Per the refinement (§ "the spec still seeds a
+      //    node-created AFTER the navigation has fired") this happens
+      //    POST-navigation so the operate route's first paint sees
+      //    something to draw.
       await page.evaluate(
         (seed: {
           sessionId: string;
@@ -211,6 +219,7 @@ test.describe('Participant operate route — read-mostly graph render', () => {
           edgeId: string;
           unknownTargetId: string;
           actorId: string;
+          wording: string;
         }) => {
           const store = (
             window as unknown as {
@@ -225,6 +234,20 @@ test.describe('Participant operate route — read-mostly graph render', () => {
             throw new Error('__aConversaWsStore is not exposed on window');
           }
           const apply = store.getState().applyEvent.bind(store.getState());
+          apply({
+            id: '55555555-5555-4555-8555-555555555555',
+            sessionId: seed.sessionId,
+            sequence: 1_000_001,
+            kind: 'node-created',
+            actor: seed.actorId,
+            payload: {
+              node_id: seed.nodeId,
+              wording: seed.wording,
+              created_by: seed.actorId,
+              created_at: '2026-05-17T00:00:00.000Z',
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
           apply({
             id: '66666666-6666-4666-8666-666666666666',
             sessionId: seed.sessionId,
@@ -248,6 +271,7 @@ test.describe('Participant operate route — read-mostly graph render', () => {
           edgeId: EDGE_ID,
           unknownTargetId: UNKNOWN_TARGET_ID,
           actorId: ACTOR_ID,
+          wording: NODE_WORDING,
         },
       );
 

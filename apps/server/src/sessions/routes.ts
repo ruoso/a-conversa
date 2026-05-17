@@ -1930,6 +1930,197 @@ const sessionsRoutesPluginAsync: FastifyPluginAsync<SessionsRoutesOptions> = asy
     },
   );
 
+  // ───────────────────────────────────────────────────────────────
+  // POST /api/sessions/:id/start — moderator advances the session out
+  // of the lobby into the operate canvas. Per ADR 0028 the transition
+  // is signalled by a dedicated `session-mode-changed` wire event.
+  //
+  // Refinement: tasks/refinements/participant-ui/part_session_start_handoff_dedicated_event.md
+  // ADRs: docs/adr/0028-session-mode-changed-wire-event.md,
+  //       docs/adr/0020-postgres-write-path-locking-and-event-ordering.md,
+  //       docs/adr/0021-event-envelope-discriminated-union-with-zod.md
+  //
+  // Shape: host-only (403 `not-a-moderator` for non-host), visibility-
+  // gated (404 `not-found` for invisible-or-non-existent), state-gated
+  // (422 `session-already-ended` for ended sessions), idempotent on
+  // re-POST (200 with the session row; NO second event emitted — the
+  // projection's `currentMode` field is read to short-circuit the
+  // event-append path).
+  //
+  // Sibling to the existing `POST /api/sessions/:id/end` block above;
+  // same transactional shape (FOR UPDATE on `sessions`, MAX(sequence)
+  // +1 allocator, `validateEvent`, `appendSessionEvent`, post-commit
+  // `app.wsBroadcast.emit({ event })`).
+  // ───────────────────────────────────────────────────────────────
+  app.post(
+    '/api/sessions/:id/start',
+    {
+      preHandler: app.authenticate,
+      schema: {
+        tags: ['sessions'],
+        summary: 'Advance the session out of the lobby (host-only)',
+        description:
+          'Advances the session from the `lobby` mode into the `operate` mode by ' +
+          'emitting a `session-mode-changed` event into `session_events` at the next ' +
+          'available sequence. Only the session host (the moderator at v1) may start ' +
+          'the session. Per ADR 0028 the participant lobby surface consumes the event ' +
+          'as the primary trigger for its auto-navigation to the operate route.\n\n' +
+          'Visibility-then-authority ordering: invisible sessions (private + caller is ' +
+          'neither host nor participant) return 404 `not-found` BEFORE any authority ' +
+          'check, preserving the existence-non-leak property. Visible-but-not-host ' +
+          'returns 403 `not-a-moderator`. An already-ended session returns 422 ' +
+          '`session-already-ended` (the operate phase cannot follow a terminal end).\n\n' +
+          'Idempotent on re-POST: a second POST against a session already in the ' +
+          '`operate` mode returns 200 with the session row WITHOUT emitting a second ' +
+          'event (per Decision §5). The check reads the per-session event log inside ' +
+          'the transaction and short-circuits when the latest `session-mode-changed` ' +
+          "payload's `new_mode` is already `'operate'`.\n\n" +
+          'Returns 401 `auth-required` when no valid session cookie is present; ' +
+          '400 `validation-failed` when the path `:id` is not a UUID.',
+        security: [{ cookieAuth: [] }],
+        params: sessionIdParamsSchema,
+        response: {
+          200: sessionResponseRef,
+          '4xx': errorEnvelopeRef,
+          '5xx': errorEnvelopeRef,
+        },
+      },
+    },
+    async (request, reply) => {
+      const auth = request.authUser;
+      if (auth === undefined) {
+        throw new ApiError(
+          500,
+          'internal-error',
+          'auth middleware did not populate request.authUser',
+        );
+      }
+      const userId = auth.id;
+
+      const params = request.params as { id: string };
+      const sessionId = params.id;
+
+      const appendedEvents: Event[] = [];
+
+      const sessionRow = await withTransaction(ensurePool(), async (client) => {
+        // 1. Visibility-gated SELECT ... FOR UPDATE. Same predicate as
+        //    every sibling endpoint; the existence-non-leak rule
+        //    carries through (404 BEFORE any authority check fires).
+        const lookup = await client.query<{
+          id: string;
+          host_user_id: string;
+          privacy: string;
+          topic: string;
+          created_at: Date | string;
+          ended_at: Date | string | null;
+        }>(
+          `SELECT id, host_user_id, privacy, topic, created_at, ended_at
+           FROM sessions
+           WHERE id = $1
+             AND ${visibilityWhereFragment(2)}
+           FOR UPDATE`,
+          [sessionId, userId],
+        );
+        const existing = lookup.rows[0];
+        if (existing === undefined) {
+          throw ApiError.notFound('session not found or not visible');
+        }
+
+        // 2. Authority — only the host may start the session.
+        if (existing.host_user_id !== userId) {
+          throw new ApiError(403, 'not-a-moderator', 'only the session host may start the session');
+        }
+
+        // 3. State — an ended session cannot be re-started. The 422
+        //    code mirrors the rejection vocabulary the refinement
+        //    settled on; the body's `error.code` is the canonical
+        //    `session-already-ended` shared with the end-session
+        //    endpoint's pre-422 rejection.
+        if (existing.ended_at !== null) {
+          throw new ApiError(422, 'session-already-ended', 'session has already ended');
+        }
+
+        // 4. Idempotency check — read the per-session event log and
+        //    determine the current mode. A session whose latest
+        //    `session-mode-changed.new_mode` is `'operate'` is already
+        //    in the requested mode; a re-POST returns 200 with the
+        //    session row and emits NO second event (Decision §5).
+        //    The default mode (no `session-mode-changed` events yet)
+        //    is `'lobby'` per ADR 0028.
+        const latestModeRes = await client.query<{ payload: Record<string, unknown> }>(
+          `SELECT payload
+           FROM session_events
+           WHERE session_id = $1
+             AND kind = $2
+           ORDER BY sequence DESC
+           LIMIT 1`,
+          [sessionId, 'session-mode-changed'],
+        );
+        const latestModePayload = latestModeRes.rows[0]?.payload;
+        const currentMode =
+          latestModePayload !== undefined && typeof latestModePayload['new_mode'] === 'string'
+            ? latestModePayload['new_mode']
+            : 'lobby';
+        if (currentMode === 'operate') {
+          // Already in the operate mode — no-op success. Return the
+          // session row unchanged; no event emitted; no broadcast.
+          return existing;
+        }
+
+        // 5. Application-managed monotonic sequence allocator (ADR
+        //    0020). Same pattern as the end-session endpoint.
+        const maxRes = await client.query<{ max_seq: number | string | null }>(
+          `SELECT COALESCE(MAX(sequence), 0) AS max_seq
+           FROM session_events
+           WHERE session_id = $1`,
+          [sessionId],
+        );
+        const rawMax = maxRes.rows[0]?.max_seq ?? 0;
+        const maxSeq = typeof rawMax === 'string' ? Number.parseInt(rawMax, 10) : rawMax;
+        const nextSeq = maxSeq + 1;
+
+        // 6. Build the `session-mode-changed` envelope and run it
+        //    through `validateEvent` (the schema-on-write contract per
+        //    ADR 0021). The `previous_mode` field carries the prior
+        //    state read above (defaults to `'lobby'`) — redundant with
+        //    the projector's prior state but self-describing on the
+        //    wire (Decision §6 of the refinement; ADR 0028).
+        const eventId = randomUUID();
+        const eventCreatedAtIso = new Date(nowFn()).toISOString();
+        const envelope = {
+          id: eventId,
+          sessionId: existing.id,
+          sequence: nextSeq,
+          kind: 'session-mode-changed' as const,
+          actor: userId,
+          payload: {
+            previous_mode: 'lobby' as const,
+            new_mode: 'operate' as const,
+            changed_by: userId,
+            changed_at: eventCreatedAtIso,
+          },
+          createdAt: eventCreatedAtIso,
+        };
+        validateEvent(envelope);
+
+        // 7. INSERT the event row via the centralized
+        //    `appendSessionEvent` helper. Collected for the post-COMMIT
+        //    WS broadcast emit.
+        appendedEvents.push(await appendSessionEvent(client, envelope));
+
+        return existing;
+      });
+
+      // Post-commit broadcast emit (post-commit-emit invariant — see
+      // tasks/refinements/backend/ws_event_broadcast.md).
+      for (const evt of appendedEvents) {
+        app.wsBroadcast.emit({ event: evt });
+      }
+
+      return reply.code(200).send(sessionRowToResponse(sessionRow));
+    },
+  );
+
   app.patch(
     '/api/sessions/:id/privacy',
     {

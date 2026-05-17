@@ -903,3 +903,172 @@ describe('LobbyRoute — auto-navigation handoff to operate route', () => {
     },
   );
 });
+
+// ────────────────────────────────────────────────────────────────────────
+// Auto-navigation handoff — primary trigger via `session-mode-changed`.
+//
+// Per ADR 0028 / part_session_start_handoff_dedicated_event:
+//   - Primary trigger: `kind === 'session-mode-changed'` AND
+//     `payload.new_mode === 'operate'` → navigate.
+//   - Primary takes precedence: a `session-mode-changed` event AND a
+//     subsequent content event together must fire navigate EXACTLY ONCE
+//     (the useRef<boolean> guard + the short-circuited fallback both
+//     enforce this).
+//   - Negative: `session-mode-changed` with `new_mode: 'lobby'` does NOT
+//     trigger (only `new_mode: 'operate'` is the canonical signal).
+//   - Negative: a malformed payload (missing `new_mode`) does NOT trigger.
+// ────────────────────────────────────────────────────────────────────────
+
+function seedSessionModeChanged(
+  sequence: number,
+  newMode: 'lobby' | 'operate',
+  changedBy: string = HOST_USER_ID,
+): void {
+  act(() => {
+    useWsStore.getState().applyEvent({
+      id: `00000000-0000-4000-8000-${sequence.toString().padStart(12, '0')}`,
+      sessionId: SESSION_ID,
+      sequence,
+      kind: 'session-mode-changed',
+      actor: changedBy,
+      payload: {
+        previous_mode: 'lobby',
+        new_mode: newMode,
+        changed_by: changedBy,
+        changed_at: '2026-05-17T00:00:00.000Z',
+      },
+      createdAt: '2026-05-17T00:00:00.000Z',
+    });
+  });
+}
+
+describe('LobbyRoute — primary trigger via session-mode-changed (ADR 0028)', () => {
+  it('(t) navigates to /sessions/:id with { replace: true } on session-mode-changed with new_mode: operate', async () => {
+    global.fetch = stubFetch();
+    renderRoute();
+    seedJoined(1, 'moderator', HOST_USER_ID, 'alice');
+    seedJoined(2, 'debater-A', CALLER_USER_ID, 'ben');
+    await waitFor(() => {
+      expect(screen.getByTestId('lobby-participant-debater-A')).toBeTruthy();
+    });
+    expect(navigateSpy).not.toHaveBeenCalled();
+    seedSessionModeChanged(100, 'operate');
+    await waitFor(() => {
+      expect(navigateSpy).toHaveBeenCalledWith(`/sessions/${SESSION_ID}`, { replace: true });
+    });
+    expect(navigateSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('(u) does NOT navigate on session-mode-changed with new_mode: lobby', async () => {
+    global.fetch = stubFetch();
+    renderRoute();
+    seedJoined(1, 'moderator', HOST_USER_ID, 'alice');
+    seedJoined(2, 'debater-A', CALLER_USER_ID, 'ben');
+    await waitFor(() => {
+      expect(screen.getByTestId('lobby-participant-debater-A')).toBeTruthy();
+    });
+    seedSessionModeChanged(100, 'lobby');
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(navigateSpy).not.toHaveBeenCalled();
+  });
+
+  it('(v) primary short-circuits the fallback: a content event arriving AFTER session-mode-changed does NOT cause a second navigate', async () => {
+    global.fetch = stubFetch();
+    renderRoute();
+    seedJoined(1, 'moderator', HOST_USER_ID, 'alice');
+    seedJoined(2, 'debater-A', CALLER_USER_ID, 'ben');
+    await waitFor(() => {
+      expect(screen.getByTestId('lobby-participant-debater-A')).toBeTruthy();
+    });
+    // Primary fires first.
+    seedSessionModeChanged(100, 'operate');
+    await waitFor(() => {
+      expect(navigateSpy).toHaveBeenCalledWith(`/sessions/${SESSION_ID}`, { replace: true });
+    });
+    expect(navigateSpy).toHaveBeenCalledTimes(1);
+    // A content event later in the same lobby lifetime — the
+    // useRef<boolean> guard prevents a second navigate.
+    seedContentEvent('node-created', 101);
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(navigateSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('(w) primary takes precedence over fallback when both predicates would match: navigate fires exactly once via the primary path', async () => {
+    global.fetch = stubFetch();
+    renderRoute();
+    seedJoined(1, 'moderator', HOST_USER_ID, 'alice');
+    seedJoined(2, 'debater-A', CALLER_USER_ID, 'ben');
+    await waitFor(() => {
+      expect(screen.getByTestId('lobby-participant-debater-A')).toBeTruthy();
+    });
+    // Seed BOTH a session-mode-changed AND a content event in the same
+    // batch. The effect runs once after the batch lands; both
+    // predicates would match independently, but the useRef guard
+    // ensures exactly one navigate fires.
+    seedSessionModeChanged(100, 'operate');
+    seedContentEvent('node-created', 101);
+    await waitFor(() => {
+      expect(navigateSpy).toHaveBeenCalledWith(`/sessions/${SESSION_ID}`, { replace: true });
+    });
+    expect(navigateSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('(x) primary trigger fires when the session-mode-changed event is present in the catch-up replay (seeded before mount)', async () => {
+    global.fetch = stubFetch();
+    act(() => {
+      useWsStore.getState().applyEvent({
+        id: '00000000-0000-4000-8000-000000000100',
+        sessionId: SESSION_ID,
+        sequence: 100,
+        kind: 'session-mode-changed',
+        actor: HOST_USER_ID,
+        payload: {
+          previous_mode: 'lobby',
+          new_mode: 'operate',
+          changed_by: HOST_USER_ID,
+          changed_at: '2026-05-17T00:00:00.000Z',
+        },
+        createdAt: '2026-05-17T00:00:00.000Z',
+      });
+    });
+    renderRoute();
+    await waitFor(() => {
+      expect(navigateSpy).toHaveBeenCalledWith(`/sessions/${SESSION_ID}`, { replace: true });
+    });
+    expect(navigateSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('(y) malformed session-mode-changed payload (missing new_mode) does NOT trigger navigation', async () => {
+    global.fetch = stubFetch();
+    renderRoute();
+    seedJoined(1, 'moderator', HOST_USER_ID, 'alice');
+    seedJoined(2, 'debater-A', CALLER_USER_ID, 'ben');
+    await waitFor(() => {
+      expect(screen.getByTestId('lobby-participant-debater-A')).toBeTruthy();
+    });
+    act(() => {
+      // A payload missing `new_mode` would never get past `validateEvent`
+      // in production, but we model "the malformed envelope somehow
+      // arrived in the slice" defensively here — the predicate's
+      // `event.payload.new_mode === 'operate'` check stays safe under
+      // an undefined payload field.
+      const envelope = {
+        id: '00000000-0000-4000-8000-000000000100',
+        sessionId: SESSION_ID,
+        sequence: 100,
+        kind: 'session-mode-changed',
+        actor: HOST_USER_ID,
+        payload: {
+          previous_mode: 'lobby',
+          // new_mode intentionally omitted
+          changed_by: HOST_USER_ID,
+          changed_at: '2026-05-17T00:00:00.000Z',
+        },
+        createdAt: '2026-05-17T00:00:00.000Z',
+      } as unknown as Parameters<ReturnType<typeof useWsStore.getState>['applyEvent']>[0];
+      useWsStore.getState().applyEvent(envelope);
+    });
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(navigateSpy).not.toHaveBeenCalled();
+  });
+});

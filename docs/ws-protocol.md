@@ -354,6 +354,11 @@ The `reason` enum (`unsubscribedReasons` in [`packages/shared-types/src/ws-envel
 
 Clients MUST dedupe by `event.sequence` (handles replay-vs-live overlap during catch-up). See [Broadcasts + ordering invariants](#broadcasts--ordering-invariants) and [`ws_event_broadcast.md`](../tasks/refinements/backend/ws_event_broadcast.md).
 
+The wrapped `event.kind` discriminator is one of the values registered in [`packages/shared-types/src/events.ts`](../packages/shared-types/src/events.ts) (`eventKinds`); the per-kind payload schema lives in the same module's `eventPayloadSchemas` registry. Each `Event` envelope mirrors the canonical [SQL CHECK constraint](../apps/server/migrations/0010_session_events.sql) on the `session_events` table; widening the `kind` enum requires a forward-only migration ([ADR 0020](adr/0020-postgres-write-path-locking-and-event-ordering.md)) + a per-kind ADR. Notable additions beyond the v1 baseline:
+
+- `'entity-removed'` — emitted by the [`withdraw-proposal`](#withdraw-proposal) handler per [ADR 0027](adr/0027-entity-and-facet-layers-strict-separation.md); one per entity the propose-time fan-out minted. Payload: `{ entity_kind: 'node' | 'edge' | 'annotation', entity_id, removed_by, removed_at }`.
+- `'session-mode-changed'` — emitted by the host-only `POST /api/sessions/:id/start` HTTP endpoint per [ADR 0028](adr/0028-session-mode-changed-wire-event.md) when the moderator advances the session from `'lobby'` into `'operate'`. Payload: `{ previous_mode: 'lobby' | 'operate', new_mode: 'lobby' | 'operate', changed_by, changed_at }`. The participant lobby's auto-navigation `useEffect` consumes this event as its primary trigger for the lobby → operate handoff; the predecessor's first-content-event heuristic is retained as a defense-in-depth fallback (Decision §7 of [`part_session_start_handoff_dedicated_event.md`](../tasks/refinements/participant-ui/part_session_start_handoff_dedicated_event.md)).
+
 ### `proposal-status`
 
 - **Direction**: S→C unsolicited (derived).

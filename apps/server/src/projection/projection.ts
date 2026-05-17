@@ -21,6 +21,7 @@ import type {
   ProjectedAnnotation,
   ProjectedEdge,
   ProjectedNode,
+  SessionMode,
   SessionState,
   SnapshotRecord,
   UnresolvedMetaDisagreement,
@@ -120,6 +121,16 @@ export class Projection {
 
   #sessionState: SessionState = 'open';
 
+  // Per ADR 0028 — the current lobby/operate phase. Default `'lobby'`
+  // on construction so the field reads honestly for a fresh projection
+  // (or one rebuilt from an event log predating the new event kind);
+  // flipped by the projector's `session-mode-changed` arm. The new
+  // `POST /api/sessions/:id/start` endpoint reads this field as its
+  // idempotency check — a re-POST against a session already in
+  // `'operate'` returns the session row without emitting a second
+  // event.
+  #currentMode: SessionMode = 'lobby';
+
   // The sequence of the most recently applied event. `0` means
   // "no events yet"; the first valid event is sequence 1. The
   // `project_incrementally` task owns the contract around this
@@ -137,6 +148,14 @@ export class Projection {
 
   setSessionState(state: SessionState): void {
     this.#sessionState = state;
+  }
+
+  get currentMode(): SessionMode {
+    return this.#currentMode;
+  }
+
+  setCurrentMode(mode: SessionMode): void {
+    this.#currentMode = mode;
   }
 
   get lastAppliedSequence(): number {
