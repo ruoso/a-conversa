@@ -58,12 +58,16 @@ describe('wsMessageTypes vocabulary', () => {
     // ack) came from `ws_reconnection_handling` — the server-side
     // surface for state catch-up on reconnect; the slice-replay path
     // reuses `event-applied` for replay frames and the snapshot-
-    // fallback path reuses `snapshot-state`. The vocabulary is laid
-    // out per the three-group union-extension convention documented
-    // in `ws-envelope.ts` (server-emitted / request / ack-or-result);
-    // future sibling message-type tasks append at the corresponding
-    // group's tail. The assertion pins the current state so an
-    // accidental widening is loud.
+    // fallback path reuses `snapshot-state`. `withdraw-proposal`
+    // (client → server) and `proposal-withdrawn` (server → client
+    // ack) came from `ws_withdraw_proposal_message` — the proposer-
+    // only retraction surface that emits `entity-removed` events for
+    // every entity the propose-time fan-out minted (per ADR 0027).
+    // The vocabulary is laid out per the three-group union-extension
+    // convention documented in `ws-envelope.ts` (server-emitted /
+    // request / ack-or-result); future sibling message-type tasks
+    // append at the corresponding group's tail. The assertion pins
+    // the current state so an accidental widening is loud.
     expect([...wsMessageTypes]).toEqual([
       'hello',
       'subscribe',
@@ -74,6 +78,7 @@ describe('wsMessageTypes vocabulary', () => {
       'mark-meta-disagreement',
       'snapshot',
       'catch-up',
+      'withdraw-proposal',
       'subscribed',
       'unsubscribed',
       'proposed',
@@ -82,6 +87,7 @@ describe('wsMessageTypes vocabulary', () => {
       'meta-disagreement-marked',
       'snapshot-state',
       'caught-up',
+      'proposal-withdrawn',
       'event-applied',
       'error',
       'diagnostic',

@@ -80,13 +80,15 @@ import {
 //
 //   - **Group B — client → server request types**: `'subscribe'`,
 //     `'unsubscribe'`, `'propose'`, `'vote'`, `'commit'`,
-//     `'mark-meta-disagreement'`, `'snapshot'`. Future sibling tasks
-//     append their request type at this group's tail.
+//     `'mark-meta-disagreement'`, `'snapshot'`, `'catch-up'`,
+//     `'withdraw-proposal'`. Future sibling tasks append their request
+//     type at this group's tail.
 //   - **Group C — server → client ack/result types** correlated via
 //     `inResponseTo`: `'subscribed'`, `'unsubscribed'`, `'proposed'`,
 //     `'voted'`, `'committed'`, `'meta-disagreement-marked'`,
-//     `'snapshot-state'`. Future sibling tasks append their
-//     ack/result type at this group's tail.
+//     `'snapshot-state'`, `'caught-up'`, `'proposal-withdrawn'`.
+//     Future sibling tasks append their ack/result type at this
+//     group's tail.
 //   - **Group A — server-emitted unsolicited frames**: `'hello'`,
 //     `'event-applied'`, `'error'`. The server originates these;
 //     `inResponseTo` is absent on `hello`/`event-applied`, optional on
@@ -117,6 +119,7 @@ export const wsMessageTypes = [
   'mark-meta-disagreement',
   'snapshot',
   'catch-up',
+  'withdraw-proposal',
   // Group C — server → client ack / result types correlated via
   // `inResponseTo`. Append future sibling ack/result types at this
   // group's tail.
@@ -128,6 +131,7 @@ export const wsMessageTypes = [
   'meta-disagreement-marked',
   'snapshot-state',
   'caught-up',
+  'proposal-withdrawn',
   // Group A — server-emitted unsolicited broadcast + the canonical
   // error envelope (which `inResponseTo` echoes when correlated).
   'event-applied',
@@ -884,6 +888,136 @@ export const caughtUpPayloadSchema = z.object({
 
 export type CaughtUpPayload = z.infer<typeof caughtUpPayloadSchema>;
 
+// -- withdraw-proposal / proposal-withdrawn payloads ---------------
+//
+// `withdraw-proposal` (client → server): the original proposer asks
+// the server to retract a pending proposal they made. Per ADR 0027
+// the entity layer and the facet layer are strictly separate — when
+// a proposer rescinds their intent BEFORE the proposal commits, the
+// entities the propose-time fan-out minted (e.g. a `node-created` +
+// `entity-included` for a free-floating `classify-node`) must leave
+// the structure via explicit `entity-removed` events rather than
+// vanishing via an implicit projector rule. The server-side handler
+// derives "which entities to retract" by re-running the same
+// per-sub-kind mapping `buildStructuralEventsForPropose` (in
+// `apps/server/src/methodology/handlers/propose.ts`) used to emit
+// them at propose-time. The two functions are inverses and MUST stay
+// in sync; the propose-emission tech-debt that grows the per-sub-kind
+// emission grows this handler's retraction mapping in lockstep.
+//
+// **Owned by `ws_withdraw_proposal_message`.** This task adds
+// `withdraw-proposal` to Group B and `proposal-withdrawn` to Group C
+// of the union-extension convention documented in `wsMessageTypes`
+// above. Mirrors the commit / mark-meta-disagreement shapes — the
+// handler skeleton + dispatcher-seam error path + dual-signal
+// contract are identical (only the authority predicate, the
+// per-sub-kind retraction mapping, and the ack envelope type
+// differ).
+//
+// **Proposer-only authority.** The handler enforces "only the
+// original proposer may withdraw" by matching `connection.user.id`
+// against the projection's `PendingProposal.proposer` field. A
+// subscribed non-proposer attempting withdraw receives a wire `error`
+// envelope with `code: 'forbidden'` and a message naming both the
+// requester and the original proposer. Decision D1 of the refinement
+// settles "keep the gate at the protocol layer + reuse `forbidden`
+// rather than mint a new engine `RejectionReason`" — see the
+// refinement Decisions for the alternatives weighed.
+//
+// **Proposer identity comes from the connection, not the payload.**
+// The wire `withdraw-proposal` payload carries `{ sessionId,
+// expectedSequence, proposalEventId }` — no `proposerId` field. The
+// handler reads `connection.user.id` and uses it as the authority
+// match key + the `removed_by` field on every constructed
+// `entity-removed` event. Symmetric with propose (no `proposerId`),
+// vote (no `voterId`), commit (no `moderatorId`), and
+// mark-meta-disagreement (no `markerId`). Pinned by a Vitest case
+// that sends an extra `proposerId` field naming the real proposer —
+// the closed Zod schema strips it; even if it didn't the handler
+// ignores it.
+
+/**
+ * Client → server. Asks the server to retract a pending proposal the
+ * requester is the original proposer of. The client must have already
+ * sent a successful `subscribe` for the same session (the server
+ * enforces); otherwise the wire response is an `error` envelope with
+ * `code: 'forbidden'`.
+ *
+ * Authority + state checks the handler enforces:
+ *
+ *   - Proposer-only authority: a non-proposer attempting withdraw
+ *     receives `code: 'forbidden'` (status 403).
+ *   - Proposal-not-found (the `proposalEventId` doesn't match any
+ *     pending or committed proposal): wire `code:
+ *     'proposal-not-found'` (status 404, via the synthesised
+ *     `RejectedValidationResult` routed through
+ *     `rejectedToApiError`).
+ *   - Proposal-already-committed / proposal-already-meta-disagreement
+ *     (the proposal has left the pending state): wire `code` of the
+ *     same name (status 422). These reuse the existing engine
+ *     `RejectionReason` codes via synthesised rejections so client
+ *     branching stays uniform with commit / mark-meta-disagreement.
+ *   - Sequence-mismatch (optimistic-concurrency check fails inside
+ *     the FOR UPDATE'd transaction): wire `code:
+ *     'sequence-mismatch'` (status 409). Mirrors propose / commit's
+ *     optimistic-concurrency surface.
+ *
+ * On success the server sends two server-emitted envelopes to the
+ * proposer:
+ *
+ *   1. A `proposal-withdrawn` ack (this envelope's request-response
+ *      pair), correlated via `inResponseTo`. Carries `{ sessionId,
+ *      proposalEventId, removedEventCount }` so the client clears
+ *      its in-flight withdraw state.
+ *   2. Zero or more `event-applied` broadcasts (one per emitted
+ *      `entity-removed` event). For the v1 per-sub-kind mapping,
+ *      `classify-node` with a wording emits exactly one removal (for
+ *      the propose-time-minted node); every other sub-kind emits
+ *      zero removals (the proposal envelope itself remains in the
+ *      event log + in `pendingProposals` — see D5). Every connection
+ *      in `connectionsForSession(sessionId)` — including the
+ *      proposer — receives each broadcast.
+ *
+ * The proposal envelope event itself is NOT retracted by this
+ * handler — history is replay-authoritative + immutable per ADR
+ * 0020. The projector's response to the entity retractions
+ * (flipping `node.visible` / `edge.visible` off via
+ * `handleEntityRemoved`) is what removes the proposal from the
+ * canvas + the sidebar. See D5 of the refinement for the rationale.
+ */
+export const wsWithdrawProposalPayloadSchema = z.object({
+  sessionId: z.string().uuid(),
+  expectedSequence: z.number().int().nonnegative(),
+  proposalEventId: z.string().uuid(),
+});
+
+export type WsWithdrawProposalPayload = z.infer<typeof wsWithdrawProposalPayloadSchema>;
+
+/**
+ * Server → client ack. Echoes the originating `withdraw-proposal`
+ * envelope's `id` via `inResponseTo`. Payload carries the
+ * `proposalEventId` the client targeted (so the client can correlate
+ * the ack against its in-flight withdraw request) + the count of
+ * `entity-removed` events the handler emitted (so the client can
+ * pair this ack against the matching `event-applied` broadcasts —
+ * zero for the no-entity-introduced sub-kinds; one for
+ * `classify-node` with a wording).
+ *
+ * The `removedEventCount` field is informational only; clients
+ * consume the entity-removal effects via the per-event
+ * `event-applied` broadcasts (and the local incremental
+ * `applyEvent` against the broadcast's `entity-removed` event). The
+ * field exists so a client can assert end-of-broadcast on the
+ * removal stream without polling.
+ */
+export const proposalWithdrawnPayloadSchema = z.object({
+  sessionId: z.string().uuid(),
+  proposalEventId: z.string().uuid(),
+  removedEventCount: z.number().int().nonnegative(),
+});
+
+export type ProposalWithdrawnPayload = z.infer<typeof proposalWithdrawnPayloadSchema>;
+
 // -- event-applied payload -----------------------------------------
 //
 // `event-applied` (server → client): emitted by the broadcast surface
@@ -1236,6 +1370,7 @@ export const wsMessagePayloadSchemas: Record<WsMessageType, z.ZodTypeAny> = {
   'mark-meta-disagreement': wsMarkMetaDisagreementPayloadSchema,
   snapshot: snapshotPayloadSchema,
   'catch-up': catchUpPayloadSchema,
+  'withdraw-proposal': wsWithdrawProposalPayloadSchema,
   // Group C — server → client ack/result payload schemas.
   subscribed: subscribedPayloadSchema,
   unsubscribed: unsubscribedPayloadSchema,
@@ -1245,6 +1380,7 @@ export const wsMessagePayloadSchemas: Record<WsMessageType, z.ZodTypeAny> = {
   'meta-disagreement-marked': metaDisagreementMarkedAckPayloadSchema,
   'snapshot-state': snapshotStatePayloadSchema,
   'caught-up': caughtUpPayloadSchema,
+  'proposal-withdrawn': proposalWithdrawnPayloadSchema,
   // The outer event envelope is checked; the per-kind payload inside
   // the event is `z.unknown()` per the schema in `events.ts` and is
   // re-validated by `validateEvent` on the receiving side. Server-side
@@ -1274,6 +1410,7 @@ export interface WsMessagePayloadMap {
   'mark-meta-disagreement': WsMarkMetaDisagreementPayload;
   snapshot: SnapshotPayload;
   'catch-up': CatchUpPayload;
+  'withdraw-proposal': WsWithdrawProposalPayload;
   // Group C — server → client ack/result payload types.
   subscribed: SubscribedPayload;
   unsubscribed: UnsubscribedPayload;
@@ -1283,6 +1420,7 @@ export interface WsMessagePayloadMap {
   'meta-disagreement-marked': MetaDisagreementMarkedAckPayload;
   'snapshot-state': SnapshotStatePayload;
   'caught-up': CaughtUpPayload;
+  'proposal-withdrawn': ProposalWithdrawnPayload;
   'event-applied': EventAppliedPayload;
   error: ErrorPayload;
   diagnostic: DiagnosticPayload;

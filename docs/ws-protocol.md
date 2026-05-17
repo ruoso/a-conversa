@@ -190,6 +190,24 @@ No `at: <sequence>` parameter in v1 — the historical-point query is documented
 
 Clients MUST dedupe `event-applied` frames by `event.sequence` — the per-event `sequence` is the single source of truth for ordering across replay-vs-live. See [Reconnection / catch-up flow](#reconnection--catch-up-flow) and [`ws_reconnection_handling.md`](../tasks/refinements/backend/ws_reconnection_handling.md).
 
+### `withdraw-proposal`
+
+- **Direction**: C→S request.
+- **Payload schema**: `wsWithdrawProposalPayloadSchema` — `{ sessionId, expectedSequence, proposalEventId }`.
+- **When**: the original proposer asks the server to retract a pending proposal they made before it commits. Must be preceded by a successful `subscribe`.
+- **Authority**: proposer-only — the handler enforces "only the original proposer may withdraw" by matching `connection.user.id` against the projection's `PendingProposal.proposer` field (derived from `event.actor` of the original `proposal` event at projection time). A subscribed non-proposer attempting withdraw receives [`error`](#error) with `code: 'forbidden'`. Per [ADR 0027](adr/0027-entity-and-facet-layers-strict-separation.md), the handler emits one `entity-removed` event per entity the propose-time fan-out minted (the INVERSE of `buildStructuralEventsForPropose`). The proposal envelope event itself is NOT retracted — history is replay-authoritative + immutable per ADR 0021 / ADR 0020. The proposer identity comes from the authenticated connection — the wire payload has NO `proposerId` field.
+- **Correlation**: closes with [`proposal-withdrawn`](#proposal-withdrawn) ack (correlated) AND zero or more [`event-applied`](#event-applied) broadcasts (one per emitted `entity-removed` event — see ADR 0027 for the per-sub-kind mapping; today only free-floating `classify-node` emits anything at propose-time).
+- **Engine-rejection wire codes**: [`proposal-not-found`](#methodology-rejectionreason-codes) (404), [`proposal-already-committed`](#methodology-rejectionreason-codes) (422), [`proposal-already-meta-disagreement`](#methodology-rejectionreason-codes) (422), [`sequence-mismatch`](#methodology-rejectionreason-codes) (409), [`forbidden`](#http-apierror-codes-kebab-case) (proposer-only authority gate, 403).
+- **Owner**: [`apps/server/src/ws/handlers/withdraw.ts`](../apps/server/src/ws/handlers/withdraw.ts).
+
+```json
+{
+  "type": "withdraw-proposal",
+  "id": "…",
+  "payload": { "sessionId": "…", "expectedSequence": 5, "proposalEventId": "…" }
+}
+```
+
 ### `subscribed`
 
 - **Direction**: S→C ack.
@@ -305,6 +323,19 @@ The `reason` enum (`unsubscribedReasons` in [`packages/shared-types/src/ws-envel
 ```
 
 `throughSequence` is the boundary: any `event-applied` with `sequence <= throughSequence` is part of the replay; anything `>` is live. `fromSnapshot: true` indicates the snapshot-fallback path ran (and `eventCount` will be `0`).
+
+### `proposal-withdrawn`
+
+- **Direction**: S→C ack.
+- **Payload schema**: `proposalWithdrawnPayloadSchema` — `{ sessionId, proposalEventId, removedEventCount }`.
+- **When**: after a successful [`withdraw-proposal`](#withdraw-proposal), sent on the proposer's socket alongside zero or more matching [`event-applied`](#event-applied) broadcasts (one per emitted `entity-removed` event).
+- **Correlation**: `inResponseTo` echoes the originating [`withdraw-proposal`](#withdraw-proposal)'s `id`. `removedEventCount` is informational so the client can pair the ack against the matching broadcasts without polling — zero for sub-kinds that introduced no entities at propose-time; one for free-floating `classify-node` today (the per-sub-kind mapping grows in lockstep with the propose-time emission tech-debt — see [ADR 0027](adr/0027-entity-and-facet-layers-strict-separation.md)).
+- **Owner**: [`apps/server/src/ws/handlers/withdraw.ts`](../apps/server/src/ws/handlers/withdraw.ts).
+
+```json
+{ "type": "proposal-withdrawn", "id": "…", "inResponseTo": "…",
+  "payload": { "sessionId": "…", "proposalEventId": "…", "removedEventCount": 1 } }
+```
 
 ### `event-applied`
 

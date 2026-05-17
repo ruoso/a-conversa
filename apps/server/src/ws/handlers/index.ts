@@ -41,6 +41,7 @@ import { registerProposeHandlers } from './propose.js';
 import { registerSnapshotHandlers } from './snapshot.js';
 import { registerSubscribeHandlers } from './subscribe.js';
 import { registerVoteHandlers } from './vote.js';
+import { registerWithdrawProposalHandlers } from './withdraw.js';
 
 export {
   buildSubscribeHandler,
@@ -86,6 +87,9 @@ export {
   WS_TOO_MANY_CATCH_UP_REQUESTS_CODE,
 } from './catch-up.js';
 export type { CatchUpHandlerOptions } from './catch-up.js';
+
+export { buildWithdrawProposalHandler, registerWithdrawProposalHandlers } from './withdraw.js';
+export type { WithdrawProposalHandlerOptions } from './withdraw.js';
 
 /**
  * Options accepted by `wsHandlersPlugin`. Production callers pass `{}`
@@ -260,6 +264,24 @@ const wsHandlersPluginAsync: FastifyPluginAsync<WsHandlersOptions> = (
     log: app.log,
     maxCatchUpEvents: catchUpThreshold,
     rateLimitPerWindow: catchUpRateLimit,
+    ...(opts.now !== undefined ? { now: opts.now } : {}),
+  });
+
+  // Register the withdraw-proposal handler — proposer-only retraction
+  // of a pending proposal. Structurally mirrors the commit /
+  // mark-meta-disagreement registration (same gate stack + dual-signal
+  // contract + dispatcher-seam error path). The handler enforces the
+  // authority + state predicates directly (per D1 of the refinement:
+  // no engine routing for v1); it emits one `entity-removed` event
+  // per entity the propose-time fan-out minted (per ADR 0027) — the
+  // INVERSE of `buildStructuralEventsForPropose`.
+  registerWithdrawProposalHandlers(app.wsDispatcher, {
+    get pool() {
+      return ensurePool();
+    },
+    registry: app.wsSubscriptions,
+    broadcast: app.wsBroadcast,
+    log: app.log,
     ...(opts.now !== undefined ? { now: opts.now } : {}),
   });
 
