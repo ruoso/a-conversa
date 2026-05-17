@@ -99,7 +99,7 @@ function OperateRouteBody({ id }: { id: string }): ReactElement {
 
   return (
     <div data-testid="route-operate" className="h-full w-full">
-      <GraphView sessionId={id} />
+      <GraphView sessionId={id} currentParticipantId={auth.user.userId} />
     </div>
   );
 }

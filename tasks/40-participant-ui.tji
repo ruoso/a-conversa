@@ -153,6 +153,7 @@ task participant_ui "Participant (debater) UI" {
     task part_own_vote_indicators "This debater's own per-facet vote indicators on graph" {
       effort 1d
       allocate team
+      complete 100
       depends !part_per_facet_state_styling
     }
     task part_other_vote_indicators "Other participants' vote indicators on graph (real-time, pre-commit)" {

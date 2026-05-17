@@ -27,6 +27,16 @@
 //              added covering the per-target
 //              `diagnosticHighlight` stamping on BOTH nodes AND edges
 //              per Decision §1's structural symmetry.)
+// Refinement: tasks/refinements/participant-ui/part_own_vote_indicators.md
+//              (Constraints — signature widens AGAIN to take a seventh
+//              `ownVoteIndex: OwnVoteIndex` argument; existing cases
+//              pass the shared `EMPTY_OWN_VOTES` reference; 5 new
+//              cases added covering the per-target `ownVote` stamping
+//              on BOTH nodes AND edges per Decision §1's structural
+//              symmetry — agree / dispute / 'none' baseline, edge-
+//              targeted vote, survival through a classify-node commit,
+//              and orthogonal composition with the per-facet rollup
+//              status.)
 // ADRs:        0022 (no throwaway verifications — the projection's
 //              behaviour is fully pinned at this pure layer; the
 //              `<GraphView>` mount tests then assert the Cytoscape
@@ -50,6 +60,7 @@ import {
   type DiagnosticHighlightSeverity,
 } from './diagnosticHighlights';
 import type { FacetName, FacetStatus, FacetStatusIndex } from './facetStatus';
+import { EMPTY_OWN_VOTES, type OwnVote, type OwnVoteIndex } from './ownVotes';
 
 const SESSION_ID = '00000000-0000-4000-8000-000000000001';
 const NODE_A = '00000000-0000-4000-8000-00000000000a';
@@ -267,6 +278,7 @@ describe('projectGraph — pure projection from events to Cytoscape elements', (
         emptyAnnotationIndex(),
         emptyAnnotationIndex(),
         EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+        EMPTY_OWN_VOTES,
       ),
     ).toEqual({ nodes: [], edges: [] });
   });
@@ -282,6 +294,7 @@ describe('projectGraph — pure projection from events to Cytoscape elements', (
       emptyAnnotationIndex(),
       emptyAnnotationIndex(),
       EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      EMPTY_OWN_VOTES,
     );
     expect(edges).toEqual([]);
     expect(nodes).toHaveLength(1);
@@ -316,6 +329,7 @@ describe('projectGraph — pure projection from events to Cytoscape elements', (
       emptyAnnotationIndex(),
       emptyAnnotationIndex(),
       EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      EMPTY_OWN_VOTES,
     );
     expect(edges).toHaveLength(1);
     expect(edges[0]).toMatchObject({
@@ -352,6 +366,7 @@ describe('projectGraph — pure projection from events to Cytoscape elements', (
       emptyAnnotationIndex(),
       emptyAnnotationIndex(),
       EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      EMPTY_OWN_VOTES,
     );
     expect(nodes.map((n) => n.data.id)).toEqual([NODE_A, NODE_B]);
     expect(edges.map((e) => e.data.id)).toEqual([EDGE_A, EDGE_B]);
@@ -374,6 +389,7 @@ describe('projectGraph — pure projection from events to Cytoscape elements', (
       emptyAnnotationIndex(),
       emptyAnnotationIndex(),
       EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      EMPTY_OWN_VOTES,
     );
     expect(nodes).toHaveLength(1);
     expect(nodes[0]?.data.kind).toBeNull();
@@ -397,6 +413,7 @@ describe('projectGraph — pure projection from events to Cytoscape elements', (
       emptyAnnotationIndex(),
       emptyAnnotationIndex(),
       EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      EMPTY_OWN_VOTES,
     );
     expect(nodes).toHaveLength(1);
     expect(nodes[0]?.data.kind).toBe('normative');
@@ -414,6 +431,7 @@ describe('projectGraph — pure projection from events to Cytoscape elements', (
       emptyAnnotationIndex(),
       emptyAnnotationIndex(),
       EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      EMPTY_OWN_VOTES,
     );
     expect(nodes).toHaveLength(1);
     expect(nodes[0]?.data.kind).toBeNull();
@@ -440,6 +458,7 @@ describe('projectGraph — pure projection from events to Cytoscape elements', (
         emptyAnnotationIndex(),
         emptyAnnotationIndex(),
         EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+        EMPTY_OWN_VOTES,
       );
       expect(nodes).toHaveLength(1);
       expect(nodes[0]?.data.kind).toBe(kind);
@@ -476,6 +495,7 @@ describe('projectGraph — pure projection from events to Cytoscape elements', (
         emptyAnnotationIndex(),
         emptyAnnotationIndex(),
         EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+        EMPTY_OWN_VOTES,
       );
       expect(edges).toHaveLength(1);
       expect(edges[0]?.data.role).toBe(role);
@@ -503,6 +523,7 @@ describe('projectGraph — pure projection from events to Cytoscape elements', (
       emptyAnnotationIndex(),
       emptyAnnotationIndex(),
       EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      EMPTY_OWN_VOTES,
     );
     expect(nodes).toHaveLength(1);
     expect(nodes[0]?.data.kind).toBe('value');
@@ -522,6 +543,7 @@ describe('projectGraph — per-facet status stamping (part_per_facet_state_styli
       emptyAnnotationIndex(),
       emptyAnnotationIndex(),
       EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      EMPTY_OWN_VOTES,
     );
     expect(nodes[0]?.data.facetStatuses).toEqual({ classification: 'proposed' });
   });
@@ -538,6 +560,7 @@ describe('projectGraph — per-facet status stamping (part_per_facet_state_styli
       emptyAnnotationIndex(),
       emptyAnnotationIndex(),
       EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      EMPTY_OWN_VOTES,
     );
     expect(nodes[0]?.data.facetStatuses).toEqual({ substance: 'agreed' });
   });
@@ -554,6 +577,7 @@ describe('projectGraph — per-facet status stamping (part_per_facet_state_styli
       emptyAnnotationIndex(),
       emptyAnnotationIndex(),
       EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      EMPTY_OWN_VOTES,
     );
     expect(nodes[0]?.data.facetStatuses).toEqual({ wording: 'disputed' });
   });
@@ -574,6 +598,7 @@ describe('projectGraph — per-facet status stamping (part_per_facet_state_styli
       emptyAnnotationIndex(),
       emptyAnnotationIndex(),
       EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      EMPTY_OWN_VOTES,
     );
     expect(edges[0]?.data.facetStatuses).toEqual({ substance: 'proposed' });
     expect(edges[0]?.data.rollupStatus).toBe('proposed');
@@ -591,6 +616,7 @@ describe('projectGraph — per-facet status stamping (part_per_facet_state_styli
       emptyAnnotationIndex(),
       emptyAnnotationIndex(),
       EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      EMPTY_OWN_VOTES,
     );
     expect(nodes[0]?.data.rollupStatus).toBe('proposed');
   });
@@ -607,6 +633,7 @@ describe('projectGraph — per-facet status stamping (part_per_facet_state_styli
       emptyAnnotationIndex(),
       emptyAnnotationIndex(),
       EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      EMPTY_OWN_VOTES,
     );
     expect(nodes[0]?.data.rollupStatus).toBe('agreed');
   });
@@ -621,6 +648,7 @@ describe('projectGraph — per-facet status stamping (part_per_facet_state_styli
       emptyAnnotationIndex(),
       emptyAnnotationIndex(),
       EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      EMPTY_OWN_VOTES,
     );
     expect(nodes[0]?.data.rollupStatus).toBe('none');
     // Also when the entry is present but the record is empty.
@@ -632,6 +660,7 @@ describe('projectGraph — per-facet status stamping (part_per_facet_state_styli
       emptyAnnotationIndex(),
       emptyAnnotationIndex(),
       EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      EMPTY_OWN_VOTES,
     );
     expect(nodes2[0]?.data.rollupStatus).toBe('none');
   });
@@ -648,6 +677,7 @@ describe('projectGraph — per-facet status stamping (part_per_facet_state_styli
       emptyAnnotationIndex(),
       emptyAnnotationIndex(),
       EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      EMPTY_OWN_VOTES,
     );
     expect(nodes[0]?.data.rollupStatus).toBe('proposed');
     expect(nodes[0]?.data.facetStatuses).toEqual({
@@ -670,6 +700,7 @@ describe('projectGraph — axiom-mark stamping (part_axiom_mark_decoration)', ()
       emptyAnnotationIndex(),
       emptyAnnotationIndex(),
       EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      EMPTY_OWN_VOTES,
     );
     expect(nodes).toHaveLength(2);
     expect(nodes[0]?.data.isAxiom).toBe(false);
@@ -686,6 +717,7 @@ describe('projectGraph — axiom-mark stamping (part_axiom_mark_decoration)', ()
       emptyAnnotationIndex(),
       emptyAnnotationIndex(),
       EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      EMPTY_OWN_VOTES,
     );
     expect(nodes).toHaveLength(1);
     expect(nodes[0]?.data.isAxiom).toBe(true);
@@ -704,6 +736,7 @@ describe('projectGraph — axiom-mark stamping (part_axiom_mark_decoration)', ()
       emptyAnnotationIndex(),
       emptyAnnotationIndex(),
       EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      EMPTY_OWN_VOTES,
     );
     expect(nodes).toHaveLength(2);
     const byId = new Map(nodes.map((n) => [n.data.id, n.data.isAxiom]));
@@ -730,6 +763,7 @@ describe('projectGraph — axiom-mark stamping (part_axiom_mark_decoration)', ()
       emptyAnnotationIndex(),
       emptyAnnotationIndex(),
       EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      EMPTY_OWN_VOTES,
     );
     expect(nodes).toHaveLength(1);
     // Both the classification AND the axiom-mark survive.
@@ -759,6 +793,7 @@ describe('projectGraph — axiom-mark stamping (part_axiom_mark_decoration)', ()
       emptyAnnotationIndex(),
       emptyAnnotationIndex(),
       EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      EMPTY_OWN_VOTES,
     );
     expect(edges).toHaveLength(1);
     expect((edges[0]?.data as unknown as Record<string, unknown>).isAxiom).toBeUndefined();
@@ -778,6 +813,7 @@ describe('projectGraph — annotation stamping (part_annotation_render)', () => 
       emptyAnnotationIndex(),
       emptyAnnotationIndex(),
       EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      EMPTY_OWN_VOTES,
     );
     expect(nodes).toHaveLength(2);
     expect(nodes[0]?.data.hasAnnotation).toBe(false);
@@ -796,6 +832,7 @@ describe('projectGraph — annotation stamping (part_annotation_render)', () => 
       nodeAnnotationIndex,
       emptyAnnotationIndex(),
       EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      EMPTY_OWN_VOTES,
     );
     expect(nodes).toHaveLength(1);
     expect(nodes[0]?.data.hasAnnotation).toBe(true);
@@ -812,6 +849,7 @@ describe('projectGraph — annotation stamping (part_annotation_render)', () => 
       nodeAnnotationIndex,
       emptyAnnotationIndex(),
       EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      EMPTY_OWN_VOTES,
     );
     expect(nodes[0]?.data.hasAnnotation).toBe(true);
     expect(nodes[0]?.data.annotationCount).toBe(3);
@@ -836,6 +874,7 @@ describe('projectGraph — annotation stamping (part_annotation_render)', () => 
       emptyAnnotationIndex(),
       edgeAnnotationIndex,
       EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      EMPTY_OWN_VOTES,
     );
     expect(edges).toHaveLength(1);
     expect(edges[0]?.data.hasAnnotation).toBe(true);
@@ -861,6 +900,7 @@ describe('projectGraph — annotation stamping (part_annotation_render)', () => 
       nodeAnnotationIndex,
       emptyAnnotationIndex(),
       EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      EMPTY_OWN_VOTES,
     );
     expect(nodes).toHaveLength(1);
     // Both the classification AND the annotation pair survive.
@@ -889,6 +929,7 @@ describe('projectGraph — annotation stamping (part_annotation_render)', () => 
       nodeAnnotationIndex,
       emptyAnnotationIndex(),
       EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      EMPTY_OWN_VOTES,
     );
     const byId = new Map(nodes.map((n) => [n.data.id, n.data]));
     expect(byId.get(NODE_A)?.hasAnnotation).toBe(true);
@@ -957,6 +998,7 @@ describe('projectGraph — diagnostic-highlight stamping (part_diagnostic_highli
       emptyAnnotationIndex(),
       emptyAnnotationIndex(),
       EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      EMPTY_OWN_VOTES,
     );
     expect(nodes).toHaveLength(2);
     expect(nodes[0]?.data.diagnosticHighlight).toBeNull();
@@ -976,6 +1018,7 @@ describe('projectGraph — diagnostic-highlight stamping (part_diagnostic_highli
       emptyAnnotationIndex(),
       emptyAnnotationIndex(),
       index,
+      EMPTY_OWN_VOTES,
     );
     expect(nodes).toHaveLength(1);
     expect(nodes[0]?.data.diagnosticHighlight).toEqual({
@@ -1005,6 +1048,7 @@ describe('projectGraph — diagnostic-highlight stamping (part_diagnostic_highli
       emptyAnnotationIndex(),
       emptyAnnotationIndex(),
       index,
+      EMPTY_OWN_VOTES,
     );
     expect(edges).toHaveLength(1);
     expect(edges[0]?.data.diagnosticHighlight).toEqual({
@@ -1031,6 +1075,7 @@ describe('projectGraph — diagnostic-highlight stamping (part_diagnostic_highli
       emptyAnnotationIndex(),
       emptyAnnotationIndex(),
       index,
+      EMPTY_OWN_VOTES,
     );
     expect(nodes[0]?.data.diagnosticHighlight?.severity).toBe('blocking');
   });
@@ -1049,6 +1094,7 @@ describe('projectGraph — diagnostic-highlight stamping (part_diagnostic_highli
       emptyAnnotationIndex(),
       emptyAnnotationIndex(),
       index,
+      EMPTY_OWN_VOTES,
     );
     expect(nodes[0]?.data.diagnosticHighlight?.kinds).toEqual(['cycle', 'multi-warrant']);
   });
@@ -1074,6 +1120,7 @@ describe('projectGraph — diagnostic-highlight stamping (part_diagnostic_highli
       emptyAnnotationIndex(),
       emptyAnnotationIndex(),
       index,
+      EMPTY_OWN_VOTES,
     );
     expect(nodes).toHaveLength(1);
     // Both the classification AND the diagnostic-highlight pair survive.
@@ -1082,5 +1129,173 @@ describe('projectGraph — diagnostic-highlight stamping (part_diagnostic_highli
       severity: 'advisory',
       kinds: ['dangling-claim'],
     });
+  });
+});
+
+// -------------------------------------------------------------------
+// Own-vote stamping — added by
+// `participant_ui.part_graph_view.part_own_vote_indicators`.
+// Refinement: tasks/refinements/participant-ui/part_own_vote_indicators.md
+//
+// Five new cases pinning the per-target `ownVote` stamping on BOTH
+// nodes AND edges (Decision §1 symmetry), the dispute / agree / 'none'
+// values flowing from the `OwnVoteIndex` argument onto each emitted
+// element's `data.ownVote` slot, and orthogonal composition with the
+// per-facet rollup status (Decision §1).
+// -------------------------------------------------------------------
+
+/**
+ * Build an `OwnVoteIndex` from literal records. The projector only
+ * consults `.nodes.get(id)` / `.edges.get(id)`, so each entry's
+ * `OwnVote` sentinel flows through verbatim.
+ */
+function ownVoteIndexFromLiterals(opts: {
+  nodes?: Record<string, OwnVote>;
+  edges?: Record<string, OwnVote>;
+}): OwnVoteIndex {
+  const nodes = new Map<string, OwnVote>();
+  for (const [id, value] of Object.entries(opts.nodes ?? {})) {
+    nodes.set(id, value);
+  }
+  const edges = new Map<string, OwnVote>();
+  for (const [id, value] of Object.entries(opts.edges ?? {})) {
+    edges.set(id, value);
+  }
+  return { nodes, edges };
+}
+
+describe('projectGraph — own-vote stamping (part_own_vote_indicators)', () => {
+  it('(mm) stamps ownVote: "none" on every node + edge by default (empty own-vote index)', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeNodeCreated({ sequence: 2, nodeId: NODE_B, wording: 'B' }),
+      makeEdgeCreated({
+        sequence: 3,
+        edgeId: EDGE_A,
+        source: NODE_A,
+        target: NODE_B,
+      }),
+    ];
+    const { nodes, edges } = projectGraph(
+      events,
+      emptyIndex(),
+      emptyAxiomIndex(),
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      EMPTY_OWN_VOTES,
+    );
+    expect(nodes).toHaveLength(2);
+    expect(nodes[0]?.data.ownVote).toBe('none');
+    expect(nodes[1]?.data.ownVote).toBe('none');
+    expect(edges[0]?.data.ownVote).toBe('none');
+  });
+
+  it('(nn) stamps the right ownVote on a node when the index targets it', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeNodeCreated({ sequence: 2, nodeId: NODE_B, wording: 'B' }),
+    ];
+    const ownVotes = ownVoteIndexFromLiterals({
+      nodes: { [NODE_A]: 'agree', [NODE_B]: 'dispute' },
+    });
+    const { nodes } = projectGraph(
+      events,
+      emptyIndex(),
+      emptyAxiomIndex(),
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      ownVotes,
+    );
+    expect(nodes).toHaveLength(2);
+    const byId = new Map(nodes.map((n) => [n.data.id, n.data.ownVote]));
+    expect(byId.get(NODE_A)).toBe('agree');
+    expect(byId.get(NODE_B)).toBe('dispute');
+  });
+
+  it('(oo) stamps the right ownVote on an edge when the index targets it', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeNodeCreated({ sequence: 2, nodeId: NODE_B, wording: 'B' }),
+      makeEdgeCreated({
+        sequence: 3,
+        edgeId: EDGE_A,
+        source: NODE_A,
+        target: NODE_B,
+      }),
+    ];
+    const ownVotes = ownVoteIndexFromLiterals({
+      edges: { [EDGE_A]: 'dispute' },
+    });
+    const { edges, nodes } = projectGraph(
+      events,
+      emptyIndex(),
+      emptyAxiomIndex(),
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      ownVotes,
+    );
+    expect(edges).toHaveLength(1);
+    expect(edges[0]?.data.ownVote).toBe('dispute');
+    // Sibling nodes untouched by the edge-targeted vote stay at the
+    // 'none' baseline.
+    expect(nodes[0]?.data.ownVote).toBe('none');
+    expect(nodes[1]?.data.ownVote).toBe('none');
+  });
+
+  it('(pp) ownVote survives a classify-node commit (the spread in the commit branch preserves it)', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeClassifyProposal({
+        sequence: 2,
+        envelopeId: PROPOSAL_A,
+        nodeId: NODE_A,
+        classification: 'fact',
+      }),
+      makeCommit({ sequence: 3, proposalEnvelopeId: PROPOSAL_A }),
+    ];
+    const ownVotes = ownVoteIndexFromLiterals({
+      nodes: { [NODE_A]: 'agree' },
+    });
+    const { nodes } = projectGraph(
+      events,
+      emptyIndex(),
+      emptyAxiomIndex(),
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      ownVotes,
+    );
+    expect(nodes).toHaveLength(1);
+    // Both the classification AND the own-vote survive the spread.
+    expect(nodes[0]?.data.kind).toBe('fact');
+    expect(nodes[0]?.data.ownVote).toBe('agree');
+  });
+
+  it('(qq) ownVote: "dispute" composes orthogonally with rollupStatus: "agreed" (per-participant ≠ per-facet rollup)', () => {
+    // Sanity check that the per-(local-participant, target) field
+    // doesn't interfere with the per-facet aggregate-rollup status: a
+    // participant can individually dispute on a facet that the
+    // aggregate has rolled up to 'agreed' (other participants tipped
+    // the aggregate while this participant remains the holdout).
+    const events: Event[] = [makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' })];
+    const facetIndex = indexFromLiterals({
+      nodes: { [NODE_A]: { classification: 'agreed' } },
+    });
+    const ownVotes = ownVoteIndexFromLiterals({ nodes: { [NODE_A]: 'dispute' } });
+    const { nodes } = projectGraph(
+      events,
+      facetIndex,
+      emptyAxiomIndex(),
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      ownVotes,
+    );
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0]?.data.rollupStatus).toBe('agreed');
+    expect(nodes[0]?.data.ownVote).toBe('dispute');
   });
 });

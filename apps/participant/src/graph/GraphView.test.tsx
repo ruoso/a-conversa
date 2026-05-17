@@ -43,6 +43,8 @@ const NODE_B = '00000000-0000-4000-8000-00000000000b';
 const EDGE_A = '00000000-0000-4000-8000-00000000000e';
 const PROPOSAL_A = '00000000-0000-4000-8000-0000000000a1';
 const ACTOR = '00000000-0000-4000-8000-0000000000aa';
+const ME = '00000000-0000-4000-8000-0000000000ad';
+const SOMEONE_ELSE = '00000000-0000-4000-8000-0000000000ae';
 
 function nodeCreatedEvent(opts: {
   sequence: number;
@@ -161,15 +163,18 @@ interface RenderResult {
   cyRef: (cy: Core | null) => void;
 }
 
-function renderView(opts: { sessionId?: string } = {}): RenderResult {
+function renderView(
+  opts: { sessionId?: string; currentParticipantId?: string } = {},
+): RenderResult {
   const id = opts.sessionId ?? SESSION_ID;
+  const participantId = opts.currentParticipantId ?? ME;
   let captured: Core | null = null;
   const cyRef = (cy: Core | null): void => {
     captured = cy;
   };
   render(
     <I18nProvider i18n={i18nInstance}>
-      <GraphView sessionId={id} cyRef={cyRef} />
+      <GraphView sessionId={id} currentParticipantId={participantId} cyRef={cyRef} />
     </I18nProvider>,
   );
   return {
@@ -1118,5 +1123,252 @@ describe('GraphView — diagnostic-highlight overlay', () => {
     );
     expect(item2?.getAttribute('data-diagnostic-severity')).toBe('none');
     expect(item2?.getAttribute('data-diagnostic-kinds')).toBe('');
+  });
+});
+
+// -------------------------------------------------------------------
+// Own-vote overlay — added by
+// `participant_ui.part_graph_view.part_own_vote_indicators`.
+// Refinement: tasks/refinements/participant-ui/part_own_vote_indicators.md
+//
+// Six new cases pinning the per-target `data-own-vote` mirror attribute
+// (Decision §5) on BOTH node AND edge rows (Decision §1 — structural
+// symmetry), the corresponding `data.ownVote` field on the Cytoscape
+// element set, and the four new `node[ownVote = "..."]` /
+// `edge[ownVote = "..."]` stylesheet selectors (Decision §3).
+// -------------------------------------------------------------------
+
+function setEdgeSubstanceProposalEventOwn(opts: {
+  sequence: number;
+  envelopeId: string;
+  edgeId: string;
+}): Event {
+  return {
+    id: opts.envelopeId,
+    sessionId: SESSION_ID,
+    sequence: opts.sequence,
+    kind: 'proposal',
+    actor: ACTOR,
+    payload: {
+      proposal: {
+        kind: 'set-edge-substance',
+        edge_id: opts.edgeId,
+        value: 'agreed',
+      },
+    },
+    createdAt: '2026-05-17T00:00:00.000Z',
+  };
+}
+
+function voteEvent(opts: {
+  sequence: number;
+  proposalId: string;
+  participant: string;
+  vote: 'agree' | 'dispute' | 'withdraw';
+}): Event {
+  return {
+    id: `00000000-0000-4000-8000-${(0x700 + opts.sequence).toString(16).padStart(12, '0')}`,
+    sessionId: SESSION_ID,
+    sequence: opts.sequence,
+    kind: 'vote',
+    actor: opts.participant,
+    payload: {
+      proposal_id: opts.proposalId,
+      participant: opts.participant,
+      vote: opts.vote,
+      voted_at: '2026-05-17T00:00:00.000Z',
+    },
+    createdAt: '2026-05-17T00:00:00.000Z',
+  };
+}
+
+describe('GraphView — own-vote overlay', () => {
+  it('(nn) the node mirror carries data-own-vote="none" by default', () => {
+    renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    const item = document.querySelector(
+      `[data-testid="participant-node-status"][data-node-id="${NODE_A}"]`,
+    );
+    expect(item).not.toBeNull();
+    expect(item?.getAttribute('data-own-vote')).toBe('none');
+  });
+
+  it('(oo) when the current participant votes agree on a classify-node proposal, the node mirror reports data-own-vote="agree"', () => {
+    renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(
+      classifyProposalEvent({
+        sequence: 2,
+        envelopeId: PROPOSAL_A,
+        nodeId: NODE_A,
+        classification: 'fact',
+      }),
+    );
+    seedEvent(
+      voteEvent({
+        sequence: 3,
+        proposalId: PROPOSAL_A,
+        participant: ME,
+        vote: 'agree',
+      }),
+    );
+    const item = document.querySelector(
+      `[data-testid="participant-node-status"][data-node-id="${NODE_A}"]`,
+    );
+    expect(item?.getAttribute('data-own-vote')).toBe('agree');
+  });
+
+  it('(pp) when the current participant retakes the vote to dispute, the node mirror reports data-own-vote="dispute" (latest-wins)', () => {
+    renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(
+      classifyProposalEvent({
+        sequence: 2,
+        envelopeId: PROPOSAL_A,
+        nodeId: NODE_A,
+        classification: 'fact',
+      }),
+    );
+    seedEvent(
+      voteEvent({
+        sequence: 3,
+        proposalId: PROPOSAL_A,
+        participant: ME,
+        vote: 'agree',
+      }),
+    );
+    seedEvent(
+      voteEvent({
+        sequence: 4,
+        proposalId: PROPOSAL_A,
+        participant: ME,
+        vote: 'dispute',
+      }),
+    );
+    const item = document.querySelector(
+      `[data-testid="participant-node-status"][data-node-id="${NODE_A}"]`,
+    );
+    expect(item?.getAttribute('data-own-vote')).toBe('dispute');
+  });
+
+  it('(qq) when the current participant disputes a set-edge-substance proposal, the edge mirror reports data-own-vote="dispute"', () => {
+    const EDGE_OWN = '00000000-0000-4000-8000-000000000abe';
+    const SUBSTANCE_PROPOSAL = '00000000-0000-4000-8000-000000000ab2';
+    renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(nodeCreatedEvent({ sequence: 2, nodeId: NODE_B, wording: 'B' }));
+    seedEvent(
+      edgeCreatedEvent({
+        sequence: 3,
+        edgeId: EDGE_OWN,
+        source: NODE_A,
+        target: NODE_B,
+      }),
+    );
+    seedEvent(
+      setEdgeSubstanceProposalEventOwn({
+        sequence: 4,
+        envelopeId: SUBSTANCE_PROPOSAL,
+        edgeId: EDGE_OWN,
+      }),
+    );
+    seedEvent(
+      voteEvent({
+        sequence: 5,
+        proposalId: SUBSTANCE_PROPOSAL,
+        participant: ME,
+        vote: 'dispute',
+      }),
+    );
+    const item = document.querySelector(
+      `[data-testid="participant-edge-status"][data-edge-id="${EDGE_OWN}"]`,
+    );
+    expect(item?.getAttribute('data-own-vote')).toBe('dispute');
+  });
+
+  it('(rr) Cytoscape carries the same data.ownVote the mirror surfaces (no drift); another participant\'s vote stays "none" for me', () => {
+    const result = renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(nodeCreatedEvent({ sequence: 2, nodeId: NODE_B, wording: 'B' }));
+    seedEvent(
+      classifyProposalEvent({
+        sequence: 3,
+        envelopeId: PROPOSAL_A,
+        nodeId: NODE_A,
+        classification: 'fact',
+      }),
+    );
+    const PROPOSAL_B = '00000000-0000-4000-8000-0000000000b1';
+    seedEvent(
+      classifyProposalEvent({
+        sequence: 4,
+        envelopeId: PROPOSAL_B,
+        nodeId: NODE_B,
+        classification: 'fact',
+      }),
+    );
+    // ME votes agree on NODE_A's classify-node proposal.
+    seedEvent(
+      voteEvent({
+        sequence: 5,
+        proposalId: PROPOSAL_A,
+        participant: ME,
+        vote: 'agree',
+      }),
+    );
+    // SOMEONE_ELSE votes on NODE_B's classify-node proposal — the
+    // per-participant filter means this MUST NOT surface on ME's
+    // mirror.
+    seedEvent(
+      voteEvent({
+        sequence: 6,
+        proposalId: PROPOSAL_B,
+        participant: SOMEONE_ELSE,
+        vote: 'agree',
+      }),
+    );
+    const cy = result.getCy();
+    expect(cy.getElementById(NODE_A).data('ownVote')).toBe('agree');
+    expect(cy.getElementById(NODE_B).data('ownVote')).toBe('none');
+    const nodeAMirror = document.querySelector(
+      `[data-testid="participant-node-status"][data-node-id="${NODE_A}"]`,
+    );
+    const nodeBMirror = document.querySelector(
+      `[data-testid="participant-node-status"][data-node-id="${NODE_B}"]`,
+    );
+    expect(nodeAMirror?.getAttribute('data-own-vote')).toBe('agree');
+    // The per-participant filter contract: another participant's vote
+    // on NODE_B does NOT change my own-vote on NODE_B.
+    expect(nodeBMirror?.getAttribute('data-own-vote')).toBe('none');
+  });
+
+  it('(ss) STYLESHEET contains the four own-vote selectors with the expected text-outline overrides', () => {
+    const sheet = STYLESHEET as unknown as ReadonlyArray<{
+      selector: string;
+      style: Record<string, unknown>;
+    }>;
+    const nodeAgree = sheet.find((entry) => entry.selector === 'node[ownVote = "agree"]');
+    expect(nodeAgree).toBeDefined();
+    expect(nodeAgree?.style['text-outline-color']).toBe('#10b981');
+    expect(nodeAgree?.style['text-outline-width']).toBe(3);
+    expect(nodeAgree?.style['text-outline-opacity']).toBe(1);
+
+    const nodeDispute = sheet.find((entry) => entry.selector === 'node[ownVote = "dispute"]');
+    expect(nodeDispute).toBeDefined();
+    expect(nodeDispute?.style['text-outline-color']).toBe('#e11d48');
+    expect(nodeDispute?.style['text-outline-width']).toBe(3);
+    expect(nodeDispute?.style['text-outline-opacity']).toBe(1);
+
+    const edgeAgree = sheet.find((entry) => entry.selector === 'edge[ownVote = "agree"]');
+    expect(edgeAgree).toBeDefined();
+    expect(edgeAgree?.style['text-outline-color']).toBe('#10b981');
+    expect(edgeAgree?.style['text-outline-width']).toBe(2);
+    expect(edgeAgree?.style['text-outline-opacity']).toBe(1);
+
+    const edgeDispute = sheet.find((entry) => entry.selector === 'edge[ownVote = "dispute"]');
+    expect(edgeDispute).toBeDefined();
+    expect(edgeDispute?.style['text-outline-color']).toBe('#e11d48');
+    expect(edgeDispute?.style['text-outline-width']).toBe(2);
+    expect(edgeDispute?.style['text-outline-opacity']).toBe(1);
   });
 });

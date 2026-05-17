@@ -1289,4 +1289,305 @@ test.describe('Participant operate route — read-mostly graph render', () => {
       await context.close();
     }
   });
+
+  test('kate creates a session, leo claims debater-A, seeded vote events by leo on facet-targeting proposals surface data-own-vote and a kate-only vote stays "none" for leo', async ({
+    browser,
+  }) => {
+    // Refinement: tasks/refinements/participant-ui/part_own_vote_indicators.md
+    //   (Decision §6 — sixth test() block in the existing describe;
+    //    seeds two node-created events, one edge-created, three
+    //    proposals (classify-node on NODE_A, set-edge-substance on
+    //    EDGE_AB, classify-node on NODE_B), and three votes — leo's
+    //    agree on P1 (NODE_A), leo's dispute on P2 (EDGE_AB), and
+    //    kate's agree on P3 (NODE_B). Asserts the DOM mirror
+    //    surfaces `data-own-vote="agree"` on NODE_A (leo's vote),
+    //    `data-own-vote="dispute"` on EDGE_AB (leo's vote), and
+    //    `data-own-vote="none"` on NODE_B (only kate voted; the
+    //    per-participant filter excludes others). Per ORCHESTRATOR.md
+    //    UI-stream e2e policy: the route is reachable, the per-target
+    //    mirror is in place, the `vote` envelope reaches the
+    //    participant's WS connection (already pinned by
+    //    `ws-vote.feature` + `ws-proposal-status.feature`); the e2e
+    //    is in scope. The spec asserts via the DOM mirror, not canvas
+    //    pixels.)
+    //
+    // Uses `kate` + `leo` — the explicit earmark from
+    // `tasks/refinements/participant-ui/part_e2e_user_pool_expansion.md`
+    // and the predecessor `part_diagnostic_highlights` refinement.
+    // Distinct from blocks 1-5 so the six blocks run in parallel
+    // under `fullyParallel: true` without racing on the shared user-
+    // creation path. This exhausts the 12-user pool: alice+ben,
+    // maria+dave, frank+erin, grace+henry, ivan+julia, kate+leo.
+    const context = await freshContext(browser);
+    const page = await context.newPage();
+    try {
+      const TOPIC = 'Own-vote indicators reach the participant tablet';
+      const NODE_A_WORDING = 'UBI lifts the welfare floor';
+      const NODE_B_WORDING = 'Means-tested aid stigmatises';
+
+      // 1. Kate creates the session.
+      const kate = await loginAs(page, { username: 'kate' });
+      expect(kate.screenName.toLowerCase()).toBe('kate');
+      const sessionId = await createSession(page, { topic: TOPIC, privacy: 'public' });
+
+      // 2. Log out + drop cookies so the next dance is fresh.
+      await logoutAndClearAllCookies(page);
+
+      // 3. Leo authenticates and claims debater-A through the invite
+      //    acceptance flow.
+      const leo = await loginAs(page, { username: 'leo' });
+      expect(leo.screenName.toLowerCase()).toBe('leo');
+      await page.goto(`/p/sessions/${sessionId}/invite?role=debater-A`);
+      await expect(page.getByTestId('route-invite-acceptance')).toBeVisible({ timeout: 15_000 });
+      const joinButton = page.getByTestId('invite-acceptance-join-button');
+      await expect(joinButton).toBeEnabled();
+      await joinButton.click();
+      await page.waitForURL((url) => url.pathname === `/p/sessions/${sessionId}/lobby`, {
+        timeout: 15_000,
+      });
+      await expect(page.getByTestId('route-lobby')).toBeVisible({ timeout: 15_000 });
+
+      // 4. Navigate to the operate route.
+      await page.goto(`/p/sessions/${sessionId}`);
+      await expect(page.getByTestId('route-operate')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('participant-graph-root')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('participant-graph-status-mirror')).toBeAttached({
+        timeout: 15_000,
+      });
+
+      // 5. Seed the events: two `node-created`, one `edge-created`,
+      //    three proposals (classify-node on NODE_A, set-edge-substance
+      //    on EDGE_AB, classify-node on NODE_B), and three votes —
+      //    leo's agree on P1, leo's dispute on P2, kate's agree on P3
+      //    (the per-participant filter contract: kate's vote MUST
+      //    NOT surface in leo's own-vote indicator).
+      const NODE_A_ID = '11111111-1111-4111-8111-111111111111';
+      const NODE_B_ID = '22222222-2222-4222-8222-222222222222';
+      const EDGE_AB_ID = '33333333-3333-4333-8333-333333333333';
+      const P1_ID = '44444444-4444-4444-8444-444444444441';
+      const P2_ID = '44444444-4444-4444-8444-444444444442';
+      const P3_ID = '44444444-4444-4444-8444-444444444443';
+      const ACTOR_ID = '55555555-5555-4555-8555-555555555555';
+      // The current participant's UUID is `leo.userId` (the
+      // server-stamped vote.payload.participant on leo's votes). The
+      // OTHER participant's id is `kate.userId`. Both reach the
+      // participant-side projection via the events log; the
+      // projection's filter narrows to `voter.id === leo.userId`.
+      await page.evaluate(
+        (seed: {
+          sessionId: string;
+          nodeAId: string;
+          nodeBId: string;
+          edgeAbId: string;
+          p1Id: string;
+          p2Id: string;
+          p3Id: string;
+          actorId: string;
+          leoId: string;
+          kateId: string;
+          wordingA: string;
+          wordingB: string;
+        }) => {
+          const store = (
+            window as unknown as {
+              __aConversaWsStore?: {
+                getState: () => {
+                  applyEvent: (event: unknown) => void;
+                };
+              };
+            }
+          ).__aConversaWsStore;
+          if (!store) {
+            throw new Error('__aConversaWsStore is not exposed on window');
+          }
+          const apply = store.getState().applyEvent.bind(store.getState());
+
+          // Two node-created events.
+          apply({
+            id: '66666666-6666-4666-8666-666666666661',
+            sessionId: seed.sessionId,
+            sequence: 1_000_001,
+            kind: 'node-created',
+            actor: seed.actorId,
+            payload: {
+              node_id: seed.nodeAId,
+              wording: seed.wordingA,
+              created_by: seed.actorId,
+              created_at: '2026-05-17T00:00:00.000Z',
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+          apply({
+            id: '66666666-6666-4666-8666-666666666662',
+            sessionId: seed.sessionId,
+            sequence: 1_000_002,
+            kind: 'node-created',
+            actor: seed.actorId,
+            payload: {
+              node_id: seed.nodeBId,
+              wording: seed.wordingB,
+              created_by: seed.actorId,
+              created_at: '2026-05-17T00:00:00.000Z',
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+          // One edge-created (NODE_A → NODE_B).
+          apply({
+            id: '66666666-6666-4666-8666-666666666663',
+            sessionId: seed.sessionId,
+            sequence: 1_000_003,
+            kind: 'edge-created',
+            actor: seed.actorId,
+            payload: {
+              edge_id: seed.edgeAbId,
+              role: 'supports',
+              source_node_id: seed.nodeAId,
+              target_node_id: seed.nodeBId,
+              created_by: seed.actorId,
+              created_at: '2026-05-17T00:00:00.000Z',
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+          // P1: classify-node on NODE_A.
+          apply({
+            id: seed.p1Id,
+            sessionId: seed.sessionId,
+            sequence: 1_000_004,
+            kind: 'proposal',
+            actor: seed.actorId,
+            payload: {
+              proposal: {
+                kind: 'classify-node',
+                node_id: seed.nodeAId,
+                classification: 'fact',
+              },
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+          // P2: set-edge-substance on EDGE_AB.
+          apply({
+            id: seed.p2Id,
+            sessionId: seed.sessionId,
+            sequence: 1_000_005,
+            kind: 'proposal',
+            actor: seed.actorId,
+            payload: {
+              proposal: {
+                kind: 'set-edge-substance',
+                edge_id: seed.edgeAbId,
+                value: 'agreed',
+              },
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+          // P3: classify-node on NODE_B.
+          apply({
+            id: seed.p3Id,
+            sessionId: seed.sessionId,
+            sequence: 1_000_006,
+            kind: 'proposal',
+            actor: seed.actorId,
+            payload: {
+              proposal: {
+                kind: 'classify-node',
+                node_id: seed.nodeBId,
+                classification: 'fact',
+              },
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+          // Leo's agree on P1 (NODE_A's classify-node proposal).
+          apply({
+            id: '66666666-6666-4666-8666-666666666667',
+            sessionId: seed.sessionId,
+            sequence: 1_000_007,
+            kind: 'vote',
+            actor: seed.leoId,
+            payload: {
+              proposal_id: seed.p1Id,
+              participant: seed.leoId,
+              vote: 'agree',
+              voted_at: '2026-05-17T00:00:00.000Z',
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+          // Leo's dispute on P2 (EDGE_AB's set-edge-substance proposal).
+          apply({
+            id: '66666666-6666-4666-8666-666666666668',
+            sessionId: seed.sessionId,
+            sequence: 1_000_008,
+            kind: 'vote',
+            actor: seed.leoId,
+            payload: {
+              proposal_id: seed.p2Id,
+              participant: seed.leoId,
+              vote: 'dispute',
+              voted_at: '2026-05-17T00:00:00.000Z',
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+          // Kate's agree on P3 (NODE_B's classify-node proposal) —
+          // the per-participant filter contract: this MUST NOT
+          // surface on leo's own-vote indicator.
+          apply({
+            id: '66666666-6666-4666-8666-666666666669',
+            sessionId: seed.sessionId,
+            sequence: 1_000_009,
+            kind: 'vote',
+            actor: seed.kateId,
+            payload: {
+              proposal_id: seed.p3Id,
+              participant: seed.kateId,
+              vote: 'agree',
+              voted_at: '2026-05-17T00:00:00.000Z',
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+        },
+        {
+          sessionId,
+          nodeAId: NODE_A_ID,
+          nodeBId: NODE_B_ID,
+          edgeAbId: EDGE_AB_ID,
+          p1Id: P1_ID,
+          p2Id: P2_ID,
+          p3Id: P3_ID,
+          actorId: ACTOR_ID,
+          leoId: leo.userId,
+          kateId: kate.userId,
+          wordingA: NODE_A_WORDING,
+          wordingB: NODE_B_WORDING,
+        },
+      );
+
+      // 6. The DOM mirror surfaces the per-target own-vote signal.
+      //    Cytoscape paints to <canvas>; the mirror is the testability
+      //    seam per Decision §5. The three-entity assertion table:
+      //      NODE_A: leo voted agree on P1 → data-own-vote="agree".
+      //      EDGE_AB: leo voted dispute on P2 → data-own-vote="dispute".
+      //      NODE_B: only kate voted (on P3); leo did NOT → the
+      //              per-participant filter contract surfaces
+      //              data-own-vote="none" on NODE_B for leo's mirror.
+      const nodeAMirror = page.locator(
+        `[data-testid="participant-node-status"][data-node-id="${NODE_A_ID}"]`,
+      );
+      await expect(nodeAMirror).toHaveAttribute('data-own-vote', 'agree', {
+        timeout: 15_000,
+      });
+
+      const edgeAbMirror = page.locator(
+        `[data-testid="participant-edge-status"][data-edge-id="${EDGE_AB_ID}"]`,
+      );
+      await expect(edgeAbMirror).toHaveAttribute('data-own-vote', 'dispute', {
+        timeout: 15_000,
+      });
+
+      const nodeBMirror = page.locator(
+        `[data-testid="participant-node-status"][data-node-id="${NODE_B_ID}"]`,
+      );
+      await expect(nodeBMirror).toHaveAttribute('data-own-vote', 'none');
+    } finally {
+      await context.close();
+    }
+  });
 });

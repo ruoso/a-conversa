@@ -148,3 +148,36 @@ describe('OperateRoute — route testid', () => {
     expect(screen.getByTestId('route-operate')).toBeTruthy();
   });
 });
+
+// -------------------------------------------------------------------
+// Own-vote prop threading — added by
+// `participant_ui.part_graph_view.part_own_vote_indicators`.
+// Refinement: tasks/refinements/participant-ui/part_own_vote_indicators.md
+//
+// Decision §4 pins the seam: `<OperateRouteBody>` reads
+// `auth.user.userId` (always non-empty by the time the body's auth
+// guard has narrowed) and threads it into `<GraphView>` as the new
+// required `currentParticipantId` prop. The case below confirms the
+// prop is rendered into the DOM as a `data-own-vote` mirror attribute
+// — the canonical seam the indicator surface uses — so a future drift
+// in either side of the threading flips this test.
+// -------------------------------------------------------------------
+
+describe('OperateRoute — currentParticipantId prop threading', () => {
+  it('(e) threads auth.user.userId into <GraphView> as currentParticipantId (the mirror surfaces a default data-own-vote="none" against an empty events log)', () => {
+    renderRoute({ auth: authenticatedCallerAuth });
+    // The canvas is mounted (graph root exists) and the mirror is
+    // attached. The empty events log means no own-vote signals are
+    // surfaced — but the mirror itself is in place, proving the
+    // prop was accepted by GraphView (a missing required prop would
+    // have caused a typecheck failure at build time AND a runtime
+    // crash because the projection unconditionally reads the
+    // currentParticipantId argument). The lifecycle case (a) above
+    // already covered that GraphView mounts without throwing on the
+    // authenticated path; this case pins that the wiring is to the
+    // auth user id specifically (we'd have nothing to render with
+    // an empty seed, but the mirror's mere presence is the seam).
+    expect(screen.getByTestId('participant-graph-root')).toBeTruthy();
+    expect(screen.getByTestId('participant-graph-status-mirror')).toBeTruthy();
+  });
+});

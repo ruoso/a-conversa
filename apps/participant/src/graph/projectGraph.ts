@@ -43,6 +43,16 @@
 //    two of the five surfaced diagnostic kinds (`contradiction` and
 //    `coherency-hint.self-contradicts`) touch edges in addition to
 //    nodes.)
+// Refinement: tasks/refinements/participant-ui/part_own_vote_indicators.md
+//   (Constraints — `projectGraph` signature widens AGAIN to take a
+//    seventh `ownVoteIndex: OwnVoteIndex` argument. Every emitted node
+//    AND edge `data` carries `ownVote: OwnVote` (`'agree' | 'dispute' |
+//    'none'`) stamped from the per-target bucket — Decision §1
+//    symmetry: votes target both kinds per the wire
+//    `set-edge-substance` proposal sub-kind. The sentinel `'none'`
+//    covers both "no vote by the current participant" and "the
+//    proposal envelope hasn't yet arrived" defensively, so Cytoscape's
+//    `[ownVote = "..."]` selectors have a stable value to match.)
 // ADRs:
 //   - 0004 (Cytoscape.js for the read-mostly participant tablet);
 //   - 0021 (event envelope shape — the shell client validates incoming
@@ -79,6 +89,7 @@ import {
   type FacetStatus,
   type FacetStatusIndex,
 } from './facetStatus';
+import { type OwnVote, type OwnVoteIndex } from './ownVotes';
 
 /**
  * The per-node payload `projectGraph` emits on each `node-created`
@@ -151,6 +162,20 @@ export interface ParticipantNodeData {
    * (Decision §1).
    */
   readonly diagnosticHighlight: DiagnosticHighlight | null;
+  /**
+   * Current participant's at-a-glance own-vote disposition on this
+   * node, rolled up across every facet-targeting proposal that
+   * references the node. Sourced from `ownVoteIndex.nodes`. Drives the
+   * `node[ownVote = "agree"]` / `node[ownVote = "dispute"]` Cytoscape
+   * stylesheet branches (the text-outline label-stroke per
+   * Decision §3 of `part_own_vote_indicators`) AND the
+   * `data-own-vote="agree|dispute|none"` mirror attribute (Decision §5).
+   * The `'none'` sentinel covers "no recordable vote by the current
+   * participant" AND "the latest vote arm was `'withdraw'`" (per
+   * Decision §1 — withdrawal collapses to the un-voted baseline at
+   * the at-a-glance layer).
+   */
+  readonly ownVote: OwnVote;
 }
 
 /**
@@ -210,6 +235,22 @@ export interface ParticipantEdgeData {
    * per Decision §1.
    */
   readonly diagnosticHighlight: DiagnosticHighlight | null;
+  /**
+   * Current participant's at-a-glance own-vote disposition on this
+   * edge, rolled up across every facet-targeting proposal that
+   * references the edge (today only the `set-edge-substance`
+   * sub-kind). Sourced from `ownVoteIndex.edges`. Drives the
+   * `edge[ownVote = "agree"]` / `edge[ownVote = "dispute"]` Cytoscape
+   * stylesheet branches (the text-outline label-stroke per Decision §3
+   * of `part_own_vote_indicators`) AND the
+   * `data-own-vote="agree|dispute|none"` mirror attribute.
+   *
+   * Symmetric with `ParticipantNodeData.ownVote` per Decision §1 — the
+   * wire `proposal` family targets both node entities AND edge entities
+   * via the `set-edge-substance` sub-kind; the participant's at-a-
+   * glance own-vote ring paints on both kinds.
+   */
+  readonly ownVote: OwnVote;
 }
 
 /**
@@ -287,6 +328,7 @@ export function projectGraph(
   nodeAnnotationIndex: ReadonlyMap<string, readonly Annotation[]>,
   edgeAnnotationIndex: ReadonlyMap<string, readonly Annotation[]>,
   diagnosticHighlightIndex: DiagnosticHighlightIndex,
+  ownVoteIndex: OwnVoteIndex,
 ): {
   nodes: ParticipantNodeElement[];
   edges: ParticipantEdgeElement[];
@@ -317,6 +359,7 @@ export function projectGraph(
           hasAnnotation: nodeHasAnnotation(nodeAnnotationIndex, event.payload.node_id),
           annotationCount: annotationCountFor(nodeAnnotationIndex, event.payload.node_id),
           diagnosticHighlight: diagnosticHighlightIndex.nodes.get(event.payload.node_id) ?? null,
+          ownVote: ownVoteIndex.nodes.get(event.payload.node_id) ?? 'none',
         },
       };
       nodeIndexById.set(event.payload.node_id, nodes.length);
@@ -338,6 +381,7 @@ export function projectGraph(
           hasAnnotation: edgeHasAnnotation(edgeAnnotationIndex, event.payload.edge_id),
           annotationCount: annotationCountFor(edgeAnnotationIndex, event.payload.edge_id),
           diagnosticHighlight: diagnosticHighlightIndex.edges.get(event.payload.edge_id) ?? null,
+          ownVote: ownVoteIndex.edges.get(event.payload.edge_id) ?? 'none',
         },
       };
       edges.push(element);

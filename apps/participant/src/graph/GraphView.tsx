@@ -50,6 +50,24 @@
 //              `data-diagnostic-kinds="<csv>"` attributes per Decision §5.
 //              Symmetric across node + edge target kinds per Decision §1
 //              — two of five surfaced kinds touch edges.)
+// Refinement: tasks/refinements/participant-ui/part_own_vote_indicators.md
+//              (Stylesheet grows FOUR selectors per Decision §3 — one per
+//              `(target-kind × choice)` cell: `node[ownVote = "agree"]`
+//              + `dispute` paint emerald / rose label-outline strokes;
+//              `edge[ownVote = ...]` paints the same per-choice outline
+//              on the edge midpoint label. A seventh `useMemo` derives
+//              `ownVoteIndex = projectOwnVotes(events, currentParticipantId)`
+//              and threads it into `projectGraph` as the seventh
+//              argument. The component grows a new required
+//              `currentParticipantId: string` prop (Decision §4 — the
+//              auth-aware code stays in `<OperateRouteBody>`; the canvas
+//              receives the resolved UUID). The mirror `<li
+//              participant-node-status>` AND `<li participant-edge-status>`
+//              BOTH grow a `data-own-vote="agree|dispute|none"`
+//              attribute per Decision §5. Symmetric across node + edge
+//              target kinds per Decision §1 — the wire `proposal`
+//              family targets both via the `set-edge-substance`
+//              sub-kind.)
 // ADRs:
 //   - 0004 (Cytoscape.js for the read-mostly participant tablet);
 //   - 0024 (react-i18next + ICU — `methodology.kind.*` and
@@ -107,6 +125,7 @@ import { groupAnnotationsByEdge, groupAnnotationsByNode, projectAnnotations } fr
 import { groupAxiomMarksByNode, projectAxiomMarks } from './axiomMarks';
 import { projectDiagnosticHighlights, type DiagnosticHighlight } from './diagnosticHighlights';
 import { computeFacetStatuses, type FacetStatus } from './facetStatus';
+import { projectOwnVotes, type OwnVote } from './ownVotes';
 import {
   projectGraph,
   type ParticipantEdgeElement,
@@ -433,6 +452,65 @@ export const STYLESHEET: StylesheetJson = [
       'underlay-padding': 2,
     },
   },
+  // Own-vote overlay — per Decision §3 of
+  // `tasks/refinements/participant-ui/part_own_vote_indicators.md`.
+  // Four selectors, one per `(target-kind × choice)` cell. Cytoscape's
+  // `[<key> = "<value>"]` data-equality selector matches on the flat
+  // `data.ownVote` field stamped by `projectGraph`'s `node-created` /
+  // `edge-created` branches. `'none'` hits no override and stays at the
+  // baseline (the label-outline stays unstyled).
+  //
+  // Composition with the prior layers (per Decision §3): the
+  // own-vote signal paints `text-outline-*` — a colored stroke around
+  // the label text — which none of the five prior overlays touch.
+  // Border / background / outline / overlay / underlay are owned by
+  // the rollup / axiom / annotation / diagnostic layers; `text-outline-*`
+  // is the unclaimed family. Composition on a worst-case node
+  // (axiom-marked + annotated + per-status disputed + blocking
+  // diagnostic + local-participant disputed) reads as: rose-tinted
+  // background (per-status) + amber overlay (annotation) + amber-700
+  // double border at width 4 opacity 0.9 (diagnostic + axiom-mark
+  // composed) + rose-600 label stroke at width 3 (own-vote).
+  //
+  // Per-choice color: emerald-500 (`#10b981`) for agree, matching the
+  // moderator's `bg-emerald-500` per-arm convention; rose-600
+  // (`#e11d48`) for dispute, matching the per-status `disputed`
+  // border color AND the moderator's `bg-rose-500` per-arm fill.
+  // Edge widths are smaller (2 vs 3) than node widths because the
+  // edge midpoint label is smaller (10px vs 12px); the relative
+  // scale stays the same.
+  {
+    selector: 'node[ownVote = "agree"]',
+    style: {
+      'text-outline-color': '#10b981', // emerald-500
+      'text-outline-width': 3,
+      'text-outline-opacity': 1,
+    },
+  },
+  {
+    selector: 'node[ownVote = "dispute"]',
+    style: {
+      'text-outline-color': '#e11d48', // rose-600
+      'text-outline-width': 3,
+      'text-outline-opacity': 1,
+    },
+  },
+  {
+    selector: 'edge[ownVote = "agree"]',
+    style: {
+      'text-outline-color': '#10b981', // emerald-500
+      'text-outline-width': 2,
+      'text-outline-opacity': 1,
+    },
+  },
+  {
+    selector: 'edge[ownVote = "dispute"]',
+    style: {
+      'text-outline-color': '#e11d48', // rose-600
+      'text-outline-width': 2,
+      'text-outline-opacity': 1,
+    },
+  },
 ];
 
 export interface GraphViewProps {
@@ -442,6 +520,20 @@ export interface GraphViewProps {
    * through.
    */
   readonly sessionId: string;
+  /**
+   * Current participant's UUID. Required (not optional) per Decision §4
+   * of `part_own_vote_indicators`: the routing component
+   * (`<OperateRouteBody>`) runs the auth guard
+   * (`auth.status === 'authenticated' && auth.user !== undefined`)
+   * BEFORE mounting the canvas, so the prop is always a non-empty UUID
+   * by the time `<GraphView>` renders. Making the prop required keeps
+   * the auth-presence invariant at the type-system layer instead of
+   * the canvas-rendering-time branch. The own-vote projection filters
+   * `vote` events by `voter.id === currentParticipantId` so the
+   * participant's at-a-glance own-vote ring only fires on the local
+   * participant's votes.
+   */
+  readonly currentParticipantId: string;
   /**
    * Optional callback receiving the Cytoscape `Core` handle. Mounts to
    * `null` on unmount. Reserved for downstream tasks
@@ -539,7 +631,24 @@ function diagnosticKindsAttr(highlight: DiagnosticHighlight | null): string {
   return highlight?.kinds.join(',') ?? '';
 }
 
-export function GraphView({ sessionId, cyRef }: GraphViewProps): ReactElement {
+/**
+ * Render a `data-own-vote` attribute value. Passthrough — `OwnVote` is
+ * already the closed-sentinel set the mirror surfaces. The helper
+ * exists for symmetry with `rollupAttr` / `axiomAttr` /
+ * `hasAnnotationAttr` / `diagnosticSeverityAttr` so the mirror render
+ * reads uniformly. Per Decision §5: the literal `"none"` branch is
+ * what the explicit "we asserted not-voted-by-me" Playwright probe
+ * matches against (omit-when-empty would lose that branch).
+ */
+function ownVoteAttr(value: OwnVote): 'agree' | 'dispute' | 'none' {
+  return value;
+}
+
+export function GraphView({
+  sessionId,
+  currentParticipantId,
+  cyRef,
+}: GraphViewProps): ReactElement {
   const { t } = useTranslation();
   const events = useWsStore((state) => state.sessionState[sessionId]?.events ?? EMPTY_EVENTS);
   const cyInstanceRef = useRef<Core | null>(null);
@@ -615,6 +724,20 @@ export function GraphView({ sessionId, cyRef }: GraphViewProps): ReactElement {
     [activeDiagnostics],
   );
 
+  // Own-vote derivation. Per Decision §1 + §2 of
+  // `part_own_vote_indicators` — single-pass walk over the events log
+  // filters `vote` envelopes by `voter.id === currentParticipantId`,
+  // resolves each known proposal to its `(entity, facet)` target, and
+  // rolls per-facet votes up to a single per-entity `OwnVote` sentinel
+  // with dispute-wins tie-break. The memo's dependency on
+  // `currentParticipantId` re-runs the projection if the prop changes
+  // (e.g. a re-login by a different debater on the same session — the
+  // route already remounts on auth flips so this is defensive).
+  const ownVoteIndex = useMemo(
+    () => projectOwnVotes(events, currentParticipantId),
+    [events, currentParticipantId],
+  );
+
   // Raw projection — the per-element data the test mirror surfaces
   // verbatim and the localized memo below enriches for Cytoscape. Split
   // from the localized memo so the mirror has access to the per-element
@@ -637,6 +760,7 @@ export function GraphView({ sessionId, cyRef }: GraphViewProps): ReactElement {
         nodeAnnotationIndex,
         edgeAnnotationIndex,
         diagnosticHighlightIndex,
+        ownVoteIndex,
       ),
     [
       events,
@@ -645,6 +769,7 @@ export function GraphView({ sessionId, cyRef }: GraphViewProps): ReactElement {
       nodeAnnotationIndex,
       edgeAnnotationIndex,
       diagnosticHighlightIndex,
+      ownVoteIndex,
     ],
   );
 
@@ -743,6 +868,7 @@ export function GraphView({ sessionId, cyRef }: GraphViewProps): ReactElement {
             data-annotation-count={annotationCountAttr(node.data.annotationCount)}
             data-diagnostic-severity={diagnosticSeverityAttr(node.data.diagnosticHighlight)}
             data-diagnostic-kinds={diagnosticKindsAttr(node.data.diagnosticHighlight)}
+            data-own-vote={ownVoteAttr(node.data.ownVote)}
           />
         ))}
         {renderedEdges.map((edge) => (
@@ -756,6 +882,7 @@ export function GraphView({ sessionId, cyRef }: GraphViewProps): ReactElement {
             data-annotation-count={annotationCountAttr(edge.data.annotationCount)}
             data-diagnostic-severity={diagnosticSeverityAttr(edge.data.diagnosticHighlight)}
             data-diagnostic-kinds={diagnosticKindsAttr(edge.data.diagnosticHighlight)}
+            data-own-vote={ownVoteAttr(edge.data.ownVote)}
           />
         ))}
       </ul>
