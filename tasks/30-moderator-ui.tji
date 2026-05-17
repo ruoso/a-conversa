@@ -168,6 +168,27 @@ task moderator_ui "Moderator UI" {
       complete 100
       note "Refinement: tasks/refinements/moderator-ui/mod_proposed_state_styling.md"
     }
+    task mod_proposed_entity_canvas_visibility "Render proposed entities on the graph canvas from the moment of proposal (failing-first e2e + protocol fix per ADR 0027)" {
+      effort 3.5d
+      allocate team
+      depends !mod_proposed_state_styling
+      note -8<-
+        Refinement: tasks/refinements/moderator-ui/mod_proposed_entity_canvas_visibility.md
+
+        Source of debt: surfaced 2026-05-16 from a manual-browser observation by daniel@ruoso.com — the moderator proposed a free-floating new statement and it appeared in the pending-proposals sidebar but NOT on the graph canvas, with the UI implying the node would not show until participants voted. Per docs/methodology.md L57 ("A proposed change appears on the graph in `proposed` state from the moment it is made") and docs/moderator-ui.md L46 ("The graph shows the new node and edge in `proposed` state. The pending-proposals pane fills in"), the design intent is immediate canvas render in proposed state. Per docs/data-model.md (Node visibility) graph visibility is decoupled from facet status — only structural events (decompose / interpretive-split / break-edge / edit-wording.restructure) flip visibility off, never lack-of-votes.
+
+        Cause of the gap: per tasks/refinements/backend/ws_propose_message.md and apps/server/src/methodology/handlers/propose.ts the propose handler emits **exactly one** `proposal` event today; structural creation (`node-created`, `entity-included`, `edge-created`) is a commit-time fan-out, not a propose-time fan-out (documented in the L686-717 prose comment on the existing `mod_pw_propose_action_envelope` test). The client canvas walks `node-created` events to render nodes, so a propose with no commit produces a sidebar entry but no canvas node — the live behavior observed. Unit tests at apps/moderator/src/graph/GraphCanvasPane.test.tsx L713 / L887 / L689 pass because they seed `node-created` events into the WS store directly; they do not exercise the live propose→render path. No existing Playwright spec asserts canvas state after a propose (tests/e2e/moderator-capture.spec.ts only checks the sidebar).
+
+        Resolution principle: ADR 0027 ("Entity and facet layers are strictly separate", docs/adr/0027-entity-and-facet-layers-strict-separation.md, landed 2026-05-16) — propose-time emits structural events (node-created / entity-included / edge-created) for new entities; commit becomes a pure facet-state transition; withdraw emits matching entity-removed events (new event kind added to the SQL CHECK + eventKinds registry). This task lands the runtime change the ADR mandates.
+
+        Scope of this task (test + fix in one shipping unit, per the refinement's D1–D5):
+          1. **Failing-first Playwright e2e** under tests/e2e/ covering four scenarios: free-floating single-node propose, propose-with-new-edge, 2-component decomposition propose, propose-then-withdraw. Each asserts canvas state via `getByTestId('statement-node-<nodeId>')` + `data-facet-status="proposed"`. Run once against the pre-fix runtime, confirm it fails, commit the spec red.
+          2. **Land the protocol fix per ADR 0027.** Propose handler emits structural events for new entities; commit handler stops re-emitting them (except genuine commit-time creations like edit-wording.restructure); withdraw handler emits entity-removed events; new entity-removed event kind added to SQL CHECK (forward-only migration per ADR 0020) + eventKinds registry + payload schemas. Audit pass: every consumer of node-created/edge-created/entity-included is checked for the assumption "if I see this event, the entity is committed-real" and migrated to read facet state via facet-status helpers instead.
+          3. **Re-run the e2e and watch it pass.** Update GraphCanvasPane.test.tsx and any sibling unit tests if the projector seeding pattern changes. Amend tasks/refinements/backend/ws_propose_message.md and tasks/refinements/backend/commit_logic.md to point at ADR 0027 and remove the "propose stages, commit creates" language.
+
+        Sibling relationship: `mod_proposed_state_styling` (this task's dependency) assumed entities reach the canvas; this task makes that assumption actually hold for proposed entities. The two together implement the design contract end-to-end.
+      ->8-
+    }
     task mod_agreed_state_styling "Agreed state styling (solid, full color)" {
       effort 0.5d
       allocate team

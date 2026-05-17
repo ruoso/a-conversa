@@ -1,0 +1,60 @@
+# 0027 — Entity and facet layers are strictly separate
+
+- **Date**: 2026-05-16
+- **Status**: Accepted
+
+## Context
+
+The event log (per [ADR 0021](0021-event-envelope-discriminated-union-with-zod.md)) carries two architecturally distinct kinds of state changes that the original implementation conflated:
+
+1. **Entity-layer events** — `node-created`, `edge-created`, `annotation-created`, `entity-included`. They represent the *structural* fact that an entity has entered the graph. The projection layer at [`apps/server/src/projection/replay.ts`](../../apps/server/src/projection/replay.ts) walks them to materialize the canvas-visible structure; the `entity-included.visible` flag in [`apps/server/src/projection/types.ts`](../../apps/server/src/projection/types.ts) tracks per-session visibility; structural commits (`decompose`, `interpretive-split`, `break-edge`, `edit-wording.restructure`) flip visibility off.
+
+2. **Facet-layer events** — `proposal`, `vote`, `commit`, `meta-disagreement-marked`. They represent the *agreement* state of an entity's facets (classification / substance / wording). The derivation at [`apps/server/src/projection/facet-status.ts`](../../apps/server/src/projection/facet-status.ts) walks them to produce the per-facet `FacetStatus` (`proposed | agreed | disputed | committed | withdrawn | meta-disagreement`); the moderator-side mirror lives at [`apps/moderator/src/graph/facetStatus.ts`](../../apps/moderator/src/graph/facetStatus.ts) ([ADR 0021 amendment-pass-target]).
+
+The design documents have always treated these as distinct: [`docs/data-model.md`](../../docs/data-model.md)'s **Node visibility** section pins entity visibility to `entity-included` + structural events (vote-quorum is explicitly NOT a visibility predicate); [`docs/methodology.md`](../../docs/methodology.md) L57 states "A proposed change appears on the graph in `proposed` state from the moment it is made"; [`docs/moderator-ui.md`](../../docs/moderator-ui.md) L46 promises "The graph shows the new node and edge in `proposed` state. The pending-proposals pane fills in." All three are consistent with: the entity exists in the structure from the moment of proposal; its agreement state is what's still being negotiated.
+
+The implementation drifted away from this principle. Per [`tasks/refinements/backend/ws_propose_message.md`](../../tasks/refinements/backend/ws_propose_message.md) and [`apps/server/src/methodology/handlers/propose.ts`](../../apps/server/src/methodology/handlers/propose.ts), the propose handler today emits **only** a `proposal` event; the structural events (`node-created`, `entity-included`, `edge-created`) are emitted by the commit handler. The client canvas walks `node-created` events to render nodes, so a propose with no commit produces a pending-proposals sidebar entry but no canvas node — a violation of the design contract surfaced 2026-05-16 by a manual-browser smoke. Unit tests at `apps/moderator/src/graph/GraphCanvasPane.test.tsx` (L713 / L887 / L689) pass because they seed `node-created` directly into the WS store; the live propose→render path was never exercised end-to-end.
+
+The deeper diagnosis: the facet layer exists *precisely so the entity layer doesn't have to carry agreement state*. By gating structural events on commit, the implementation made the entity layer carry an agreement-state concern (commit-vs-uncommitted), which is the facet layer's job. The two layers were collapsed where they should have stayed strict.
+
+## Decision
+
+**The entity layer and the facet layer are architecturally separate. Entity-layer events fire on entity lifecycle (creation, inclusion, removal), independent of facet agreement state. Facet-layer events fire on agreement state changes (propose, vote, commit, meta-disagreement-mark), independent of entity lifecycle.** The two layers compose at the projection: a canvas-rendered entity carries per-facet agreement statuses derived from facet events; styling per [ADR 0021] mirror + the `mod_proposed_state_styling` task applies the `'proposed' | 'agreed' | 'disputed' | 'committed' | 'withdrawn' | 'meta-disagreement'` visual contract on top of the structural entity.
+
+Concrete consequences for handlers and event kinds:
+
+1. **Propose-time emits structural events for new entities.** When a proposal introduces new entities (a `classify-node` for a fresh node, an edge to an existing target, a `decompose` with N components + M edges, an `interpretive-split` with the analogous shape), the propose handler emits the corresponding `node-created` / `entity-included` / `edge-created` events alongside the `proposal` envelope. The entities enter the structure at proposal-time; their facets begin life in `proposed`.
+
+2. **Commit becomes a pure facet-state transition.** The commit handler emits `commit` (and any methodology-required follow-up structural events that genuinely create *new* entities at commit-time — e.g., the new node id minted by `edit-wording.restructure` is a genuine commit-time creation under the existing Node visibility rules). It does NOT re-emit structural events for entities that were already created at propose-time. Committed facets transition to `agreed` then `committed` per the existing `deriveFacetStatus` rules; the entity's structural presence is unchanged.
+
+3. **Withdraw / rejection emits removal events.** When a proposal is withdrawn (proposer rescinds, moderator cancels, propose-window expires), the propose-time-created entities leave the structure via `entity-removed` events — a new event kind added to the [`apps/server/migrations/0010_session_events.sql`](../../apps/server/migrations/0010_session_events.sql) `CHECK` constraint and the [`packages/shared-types/src/events.ts`](../../packages/shared-types/src/events.ts) `eventKinds` registry (paired sub-shapes for node and edge as the payload schema decides). Projectors flip the entity's visibility off on `entity-removed`. The alternative — implicit derivation from "proposal withdrawn AND no committed facets" — is rejected because it pushes a multi-step derivation rule into every projector (moderator, participant, audience) and makes "why isn't this entity visible?" a multi-step query instead of a single-event lookup.
+
+4. **Projectors / diagnostic engines / replay read facet state, not structural-event timing, to determine commit-status.** Any consumer that asks "is this entity committed?" reads the entity's facets via `facetStatus.ts` / `facet-status.ts`, not the timing of its `node-created` event. The "I've seen `node-created` therefore the entity is real" assumption that the original implementation relied on is now explicitly invalid; the audit pass enforcing this is part of the `mod_proposed_entity_canvas_visibility` task that lands the runtime change.
+
+Alternatives considered and rejected:
+
+- **Client-side ghost synthesis** (each projector composes a virtual node from the `proposal` event when no authoritative `node-created` has landed). Rejected: duplicates a branch across three projector implementations (moderator + participant + audience); introduces id-reconciliation at commit-time (ghost id vs server-allocated real id); keeps the entity-layer-as-commit-record confusion alive in the protocol while papering over it in the client.
+
+- **New `proposed-entity-placeholder` event kind** that the commit handler consumes and replaces with a real `node-created`. Rejected: adds an event kind to maintain when the existing `node-created` already means what we need it to mean once the propose-vs-commit timing constraint is removed; net more code than firing the existing event earlier.
+
+- **Refinement-doc-only amendment** (correct `ws_propose_message.md`, leave the principle implicit). Rejected: the original implementation got the propose-vs-commit timing wrong because the principle wasn't visible enough; burying the correction in a refinement-doc amendment risks the same drift recurring in every future event-kind decision. An ADR is the smallest unit of "future readers can find this by name when about to make the same mistake."
+
+## Consequences
+
+- **Wire-shape change in propose / commit / withdraw handlers.** The propose handler grows a structural-event emission step for any proposal sub-kind that introduces new entities. The commit handler loses its structural-event fan-out (except for the genuine commit-time-only creations like `edit-wording.restructure`'s new node id). A withdraw handler emerges (or the existing one is amended) to emit `entity-removed`. Implementation lands in the `moderator_ui.mod_graph_rendering.mod_proposed_entity_canvas_visibility` task ([refinement](../../tasks/refinements/moderator-ui/mod_proposed_entity_canvas_visibility.md)).
+
+- **New event kind: `entity-removed`.** Added to the SQL `CHECK` constraint at `apps/server/migrations/0010_session_events.sql` (via a new forward-only migration per [ADR 0020](0020-migrations-node-pg-migrate-forward-only.md)) and to the `eventKinds` registry / `eventPayloadSchemas` in `packages/shared-types/src/events.ts`. Payload sub-shapes distinguish node vs edge vs annotation removals.
+
+- **Refinement amendments.** `tasks/refinements/backend/ws_propose_message.md` and `tasks/refinements/backend/commit_logic.md` are amended in place to remove the "propose stages, commit creates" language and point at this ADR as the source of truth. The `ws_propose_message_refinement_amendment` follow-up that was previously surfaced (and the analogous `mod_propose_action_refinement_amendment` already on the WBS) are folded into the same amendment pass — they were corrections to the same underlying timing claim.
+
+- **Amendment-pass note on ADR 0021.** The event envelope ADR does not pin when each event kind fires; an `## Amendments` entry on ADR 0021 points forward to this ADR for the timing semantics of structural events, and notes the `entity-removed` addition to the kinds list.
+
+- **All three frontend surfaces benefit transitively.** The moderator's canvas projector already renders any `node-created` it sees; once propose-time emits them, the canvas renders proposed entities immediately. The participant and audience surfaces share the projection model and inherit the same correctness automatically. The per-facet `data-facet-status="proposed"` styling from `mod_proposed_state_styling` applies as soon as entities reach the canvas.
+
+- **Multi-entity proposals (`decompose`, `interpretive-split`) work without special-casing.** Under this ADR the propose handler walks the proposal's child specs and emits one structural event per child; projectors already handle arbitrary numbers of structural events. The original target node remains visible alongside the proposed components during the proposed window — the intended UX for evaluating "what this would become" alongside "what it is now" — and only flips off on commit per the existing Node visibility rules.
+
+- **Future event-kind decisions follow the same separation.** When a new entity kind is added (e.g., if a future ADR introduces a new structural object), the principle is unambiguous: it gets a structural event for its lifecycle and facet events for its agreement state, never a single event that does both.
+
+## Stack-validation tests
+
+The `mod_proposed_entity_canvas_visibility` task lands the executable validation: a Playwright e2e under `tests/e2e/` that proposes a free-floating statement, a propose-with-edge, a 2-component decomposition, and a propose-then-withdraw — asserting in each case that the canvas reflects the entity-layer state independent of agreement state. The e2e is committed red first (against the pre-fix runtime) then green (after the protocol change), per [ADR 0022](0022-no-throwaway-verifications.md). Sibling unit tests at `apps/moderator/src/graph/GraphCanvasPane.test.tsx` continue to assert the styling contract from `mod_proposed_state_styling`; they're updated to seed `proposal`-time `node-created` events rather than commit-time ones once the runtime change lands.
