@@ -28,11 +28,35 @@
 // `i18next.changeLanguage` for the parity cases.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import {
+  cleanup,
+  fireEvent,
+  render as rtlRender,
+  screen,
+  type RenderOptions,
+  type RenderResult,
+} from '@testing-library/react';
 import i18next from 'i18next';
+import { act, type ReactElement } from 'react';
 
 import { GraphContextMenu, type MenuItem } from './GraphContextMenu';
 import { createI18nInstance } from '@a-conversa/shell';
+
+// Async render shadow: `useTranslation()` schedules a microtask-deferred
+// setState on mount; `await act(async () => ...)` flushes it inside the
+// wrapper so React doesn't emit act() warnings.
+async function render(ui: ReactElement, options?: RenderOptions): Promise<RenderResult> {
+  let result!: RenderResult;
+  // `act` takes the async (microtask-flushing) path when the callback
+  // returns a thenable — `return Promise.resolve()` is enough; no
+  // `async` keyword (which would trip `require-await` since the body
+  // does not await anything).
+  await act(() => {
+    result = rtlRender(ui, options);
+    return Promise.resolve();
+  });
+  return result;
+}
 
 beforeEach(async () => {
   await createI18nInstance('en-US');
@@ -59,8 +83,8 @@ function makeItems(onSelectSpy?: (id: string) => void): MenuItem[] {
 }
 
 describe('GraphContextMenu — rendering', () => {
-  it('renders at the requested {x, y} via position: fixed', () => {
-    render(
+  it('renders at the requested {x, y} via position: fixed', async () => {
+    await render(
       <GraphContextMenu
         x={123}
         y={456}
@@ -76,8 +100,8 @@ describe('GraphContextMenu — rendering', () => {
     expect(root.style.left).toBe('123px');
   });
 
-  it('stamps data-target-kind and data-target-id on the menu root', () => {
-    render(
+  it('stamps data-target-kind and data-target-id on the menu root', async () => {
+    await render(
       <GraphContextMenu
         x={0}
         y={0}
@@ -92,8 +116,8 @@ describe('GraphContextMenu — rendering', () => {
     expect(root.getAttribute('data-target-id')).toBe('edge-42');
   });
 
-  it('stamps an empty data-target-id when targetId is null (pane menu)', () => {
-    render(
+  it('stamps an empty data-target-id when targetId is null (pane menu)', async () => {
+    await render(
       <GraphContextMenu
         x={0}
         y={0}
@@ -114,8 +138,8 @@ describe('GraphContextMenu — rendering', () => {
     expect(root.getAttribute('data-target-id')).toBe('');
   });
 
-  it('renders one button per item with the stable data-testid and localized label', () => {
-    render(
+  it('renders one button per item with the stable data-testid and localized label', async () => {
+    await render(
       <GraphContextMenu
         x={0}
         y={0}
@@ -135,10 +159,10 @@ describe('GraphContextMenu — rendering', () => {
 });
 
 describe('GraphContextMenu — item activation', () => {
-  it('clicking a menu item fires onSelect then onClose', () => {
+  it('clicking a menu item fires onSelect then onClose', async () => {
     const onSelectSpy = vi.fn<(id: string) => void>();
     const onClose = vi.fn<() => void>();
-    render(
+    await render(
       <GraphContextMenu
         x={0}
         y={0}
@@ -156,9 +180,9 @@ describe('GraphContextMenu — item activation', () => {
 });
 
 describe('GraphContextMenu — close behavior', () => {
-  it('a window mousedown outside the menu calls onClose', () => {
+  it('a window mousedown outside the menu calls onClose', async () => {
     const onClose = vi.fn<() => void>();
-    render(
+    await render(
       <GraphContextMenu
         x={0}
         y={0}
@@ -174,9 +198,9 @@ describe('GraphContextMenu — close behavior', () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
-  it('a mousedown inside the menu does NOT call onClose', () => {
+  it('a mousedown inside the menu does NOT call onClose', async () => {
     const onClose = vi.fn<() => void>();
-    render(
+    await render(
       <GraphContextMenu
         x={0}
         y={0}
@@ -192,9 +216,9 @@ describe('GraphContextMenu — close behavior', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it('Escape key calls onClose', () => {
+  it('Escape key calls onClose', async () => {
     const onClose = vi.fn<() => void>();
-    render(
+    await render(
       <GraphContextMenu
         x={0}
         y={0}
@@ -208,9 +232,9 @@ describe('GraphContextMenu — close behavior', () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
-  it('a non-Escape key does NOT call onClose', () => {
+  it('a non-Escape key does NOT call onClose', async () => {
     const onClose = vi.fn<() => void>();
-    render(
+    await render(
       <GraphContextMenu
         x={0}
         y={0}
@@ -225,9 +249,9 @@ describe('GraphContextMenu — close behavior', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it('removes window listeners on unmount', () => {
+  it('removes window listeners on unmount', async () => {
     const onClose = vi.fn<() => void>();
-    const { unmount } = render(
+    const { unmount } = await render(
       <GraphContextMenu
         x={0}
         y={0}
@@ -310,7 +334,7 @@ describe('GraphContextMenu — localized labels (catalog parity)', () => {
         // Encode the labelKey as a stable test id — strip the dots so
         // it's a safe data-testid suffix.
         const id = `lbl-${labelKey.replace(/\./g, '_')}`;
-        render(
+        await render(
           <GraphContextMenu
             x={0}
             y={0}
@@ -322,7 +346,9 @@ describe('GraphContextMenu — localized labels (catalog parity)', () => {
         );
         const button = screen.getByTestId(`graph-context-menu-item-${id}`);
         expect(button.textContent).toBe(expectedPerLocale[locale]);
-        await i18next.changeLanguage('en-US');
+        await act(async () => {
+          await i18next.changeLanguage('en-US');
+        });
       });
     }
   }

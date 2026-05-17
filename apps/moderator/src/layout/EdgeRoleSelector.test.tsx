@@ -28,13 +28,42 @@
 //      detaches.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import {
+  cleanup,
+  fireEvent,
+  render as rtlRender,
+  screen,
+  type RenderOptions,
+  type RenderResult,
+} from '@testing-library/react';
+import { act, type ReactElement } from 'react';
 import i18next from 'i18next';
 
 import { EdgeRoleSelector } from './EdgeRoleSelector';
 import { CaptureTextInput } from './CaptureTextInput';
 import { useCaptureStore } from '../stores/captureStore';
 import { createI18nInstance } from '@a-conversa/shell';
+
+// Local `render(...)` shadow. `useTranslation()` schedules a
+// microtask-deferred setState when its internal i18next subscription
+// registers on mount. The deferred update fires AFTER the synchronous
+// render's act() wrapper closes, so React emits "An update to
+// <Component> was not wrapped in act(...)" once
+// `globalThis.IS_REACT_ACT_ENVIRONMENT = true`. `await act(async () =>
+// { ... })` flushes pending microtasks before the act block resolves,
+// absorbing the deferred update inside the wrapper.
+async function render(ui: ReactElement, options?: RenderOptions): Promise<RenderResult> {
+  let result!: RenderResult;
+  // `act` takes the async (microtask-flushing) path when the callback
+  // returns a thenable — `return Promise.resolve()` is enough; no
+  // `async` keyword (which would trip `require-await` since the body
+  // does not await anything).
+  await act(() => {
+    result = rtlRender(ui, options);
+    return Promise.resolve();
+  });
+  return result;
+}
 
 const EN_ROLE_LABELS: Record<string, string> = {
   supports: 'Supports',
@@ -79,16 +108,16 @@ afterEach(() => {
 });
 
 describe('EdgeRoleSelector — visibility gate', () => {
-  it('returns null when no target is staged (queryByTestId resolves null)', () => {
-    render(<EdgeRoleSelector />);
+  it('returns null when no target is staged (queryByTestId resolves null)', async () => {
+    await render(<EdgeRoleSelector />);
     expect(screen.queryByTestId('edge-role-selector')).toBeNull();
   });
 
-  it('renders the wrapper, seven buttons, seven key chips, and the shortcut hint when a target is staged', () => {
+  it('renders the wrapper, seven buttons, seven key chips, and the shortcut hint when a target is staged', async () => {
     act(() => {
       useCaptureStore.getState().setTargetEntityId(STAGED_TARGET);
     });
-    render(<EdgeRoleSelector />);
+    await render(<EdgeRoleSelector />);
     expect(screen.getByTestId('edge-role-selector')).toBeTruthy();
     for (const role of CANONICAL_ORDER) {
       expect(screen.getByTestId(`edge-role-selector-button-${role}`)).toBeTruthy();
@@ -97,19 +126,19 @@ describe('EdgeRoleSelector — visibility gate', () => {
     expect(screen.getByTestId('edge-role-selector-shortcut-hint')).toBeTruthy();
   });
 
-  it('renders the labelled `group` role for the buttons', () => {
+  it('renders the labelled `group` role for the buttons', async () => {
     act(() => {
       useCaptureStore.getState().setTargetEntityId(STAGED_TARGET);
     });
-    render(<EdgeRoleSelector />);
+    await render(<EdgeRoleSelector />);
     expect(screen.getByRole('group', { name: /Edge role/ })).toBeTruthy();
   });
 
-  it('clearing the target slice after render collapses the selector to null DOM', () => {
+  it('clearing the target slice after render collapses the selector to null DOM', async () => {
     act(() => {
       useCaptureStore.getState().setTargetEntityId(STAGED_TARGET);
     });
-    render(<EdgeRoleSelector />);
+    await render(<EdgeRoleSelector />);
     expect(screen.getByTestId('edge-role-selector')).toBeTruthy();
     act(() => {
       useCaptureStore.getState().setTargetEntityId(null);
@@ -125,40 +154,40 @@ describe('EdgeRoleSelector — render structure', () => {
     });
   });
 
-  it('renders all seven buttons in the canonical EDGE_ROLES order', () => {
-    render(<EdgeRoleSelector />);
+  it('renders all seven buttons in the canonical EDGE_ROLES order', async () => {
+    await render(<EdgeRoleSelector />);
     const buttons = Array.from(
       document.querySelectorAll<HTMLButtonElement>('[data-testid^="edge-role-selector-button-"]'),
     );
     expect(buttons.map((b) => b.getAttribute('data-role'))).toEqual([...CANONICAL_ORDER]);
   });
 
-  it('each button has type="button" so it never accidentally submits a wrapping form', () => {
-    render(<EdgeRoleSelector />);
+  it('each button has type="button" so it never accidentally submits a wrapping form', async () => {
+    await render(<EdgeRoleSelector />);
     for (const role of CANONICAL_ORDER) {
       const btn = screen.getByTestId<HTMLButtonElement>(`edge-role-selector-button-${role}`);
       expect(btn.getAttribute('type')).toBe('button');
     }
   });
 
-  it("each button's visible label is the localized methodology.edgeRole.<role>.label string", () => {
-    render(<EdgeRoleSelector />);
+  it("each button's visible label is the localized methodology.edgeRole.<role>.label string", async () => {
+    await render(<EdgeRoleSelector />);
     for (const role of CANONICAL_ORDER) {
       const btn = screen.getByTestId<HTMLButtonElement>(`edge-role-selector-button-${role}`);
       expect(btn.textContent).toContain(EN_ROLE_LABELS[role]);
     }
   });
 
-  it("each button's key chip is the uppercase mnemonic", () => {
-    render(<EdgeRoleSelector />);
+  it("each button's key chip is the uppercase mnemonic", async () => {
+    await render(<EdgeRoleSelector />);
     for (const role of CANONICAL_ORDER) {
       const chip = screen.getByTestId(`edge-role-selector-key-chip-${role}`);
       expect(chip.textContent).toBe(EN_SHORTCUT_KEYS[role]);
     }
   });
 
-  it("each button's aria-label composes the localized label and key", () => {
-    render(<EdgeRoleSelector />);
+  it("each button's aria-label composes the localized label and key", async () => {
+    await render(<EdgeRoleSelector />);
     for (const role of CANONICAL_ORDER) {
       const btn = screen.getByTestId<HTMLButtonElement>(`edge-role-selector-button-${role}`);
       expect(btn.getAttribute('aria-label')).toBe(
@@ -167,8 +196,8 @@ describe('EdgeRoleSelector — render structure', () => {
     }
   });
 
-  it("each button's title is the localized methodology.edgeRole.<role>.description string", () => {
-    render(<EdgeRoleSelector />);
+  it("each button's title is the localized methodology.edgeRole.<role>.description string", async () => {
+    await render(<EdgeRoleSelector />);
     for (const role of CANONICAL_ORDER) {
       const btn = screen.getByTestId<HTMLButtonElement>(`edge-role-selector-button-${role}`);
       const title = btn.getAttribute('title');
@@ -178,8 +207,8 @@ describe('EdgeRoleSelector — render structure', () => {
     }
   });
 
-  it('renders the shortcut hint text', () => {
-    render(<EdgeRoleSelector />);
+  it('renders the shortcut hint text', async () => {
+    await render(<EdgeRoleSelector />);
     expect(screen.getByTestId('edge-role-selector-shortcut-hint').textContent).toBe(
       'Or press S / R / Q / B / G / E / X',
     );
@@ -193,11 +222,11 @@ describe('EdgeRoleSelector — store wiring (click)', () => {
     });
   });
 
-  it('aria-pressed reflects the store on mount when a role is pre-selected', () => {
+  it('aria-pressed reflects the store on mount when a role is pre-selected', async () => {
     act(() => {
       useCaptureStore.getState().setEdgeRole('rebuts');
     });
-    render(<EdgeRoleSelector />);
+    await render(<EdgeRoleSelector />);
     expect(
       screen.getByTestId('edge-role-selector-button-rebuts').getAttribute('aria-pressed'),
     ).toBe('true');
@@ -209,8 +238,8 @@ describe('EdgeRoleSelector — store wiring (click)', () => {
     }
   });
 
-  it('click on an unselected button writes the slice', () => {
-    render(<EdgeRoleSelector />);
+  it('click on an unselected button writes the slice', async () => {
+    await render(<EdgeRoleSelector />);
     fireEvent.click(screen.getByTestId('edge-role-selector-button-supports'));
     expect(useCaptureStore.getState().edgeRole).toBe('supports');
     expect(
@@ -218,11 +247,11 @@ describe('EdgeRoleSelector — store wiring (click)', () => {
     ).toBe('true');
   });
 
-  it('click on the currently-selected button toggles off (Decision §4)', () => {
+  it('click on the currently-selected button toggles off (Decision §4)', async () => {
     act(() => {
       useCaptureStore.getState().setEdgeRole('qualifies');
     });
-    render(<EdgeRoleSelector />);
+    await render(<EdgeRoleSelector />);
     fireEvent.click(screen.getByTestId('edge-role-selector-button-qualifies'));
     expect(useCaptureStore.getState().edgeRole).toBeNull();
     for (const role of CANONICAL_ORDER) {
@@ -232,11 +261,11 @@ describe('EdgeRoleSelector — store wiring (click)', () => {
     }
   });
 
-  it('clicking a different button switches the selection', () => {
+  it('clicking a different button switches the selection', async () => {
     act(() => {
       useCaptureStore.getState().setEdgeRole('supports');
     });
-    render(<EdgeRoleSelector />);
+    await render(<EdgeRoleSelector />);
     fireEvent.click(screen.getByTestId('edge-role-selector-button-rebuts'));
     expect(useCaptureStore.getState().edgeRole).toBe('rebuts');
     expect(
@@ -247,8 +276,8 @@ describe('EdgeRoleSelector — store wiring (click)', () => {
     ).toBe('true');
   });
 
-  it('reset() returns every button to aria-pressed=false (and the selector collapses to null DOM because targetEntityId nulls too)', () => {
-    render(<EdgeRoleSelector />);
+  it('reset() returns every button to aria-pressed=false (and the selector collapses to null DOM because targetEntityId nulls too)', async () => {
+    await render(<EdgeRoleSelector />);
     fireEvent.click(screen.getByTestId('edge-role-selector-button-defines'));
     expect(useCaptureStore.getState().edgeRole).toBe('defines');
     act(() => {
@@ -261,8 +290,8 @@ describe('EdgeRoleSelector — store wiring (click)', () => {
     expect(screen.queryByTestId('edge-role-selector')).toBeNull();
   });
 
-  it('updates aria-pressed when the store is mutated programmatically', () => {
-    render(<EdgeRoleSelector />);
+  it('updates aria-pressed when the store is mutated programmatically', async () => {
+    await render(<EdgeRoleSelector />);
     expect(
       screen.getByTestId('edge-role-selector-button-bridges-to').getAttribute('aria-pressed'),
     ).toBe('false');
@@ -282,14 +311,14 @@ describe('EdgeRoleSelector — store wiring (keyboard shortcut)', () => {
     });
   });
 
-  it('pressing `s` writes the supports role', () => {
-    render(<EdgeRoleSelector />);
+  it('pressing `s` writes the supports role', async () => {
+    await render(<EdgeRoleSelector />);
     fireEvent.keyDown(document, { key: 's' });
     expect(useCaptureStore.getState().edgeRole).toBe('supports');
   });
 
-  it('routes every role shortcut to its matching role', () => {
-    render(<EdgeRoleSelector />);
+  it('routes every role shortcut to its matching role', async () => {
+    await render(<EdgeRoleSelector />);
     for (const role of CANONICAL_ORDER) {
       act(() => {
         useCaptureStore.getState().setEdgeRole(null);
@@ -301,23 +330,23 @@ describe('EdgeRoleSelector — store wiring (keyboard shortcut)', () => {
     }
   });
 
-  it('is case-insensitive — uppercase `S` (shift held) still picks supports', () => {
-    render(<EdgeRoleSelector />);
+  it('is case-insensitive — uppercase `S` (shift held) still picks supports', async () => {
+    await render(<EdgeRoleSelector />);
     fireEvent.keyDown(document, { key: 'S', shiftKey: true });
     expect(useCaptureStore.getState().edgeRole).toBe('supports');
   });
 
-  it('visibility-gate: ignores role shortcut when targetEntityId is null', () => {
+  it('visibility-gate: ignores role shortcut when targetEntityId is null', async () => {
     act(() => {
       useCaptureStore.getState().setTargetEntityId(null);
     });
-    render(<EdgeRoleSelector />);
+    await render(<EdgeRoleSelector />);
     fireEvent.keyDown(document, { key: 's' });
     expect(useCaptureStore.getState().edgeRole).toBeNull();
   });
 
-  it('ignores `s` when focus is on a textarea (editable-target guard)', () => {
-    render(
+  it('ignores `s` when focus is on a textarea (editable-target guard)', async () => {
+    await render(
       <>
         <CaptureTextInput />
         <EdgeRoleSelector />
@@ -331,70 +360,70 @@ describe('EdgeRoleSelector — store wiring (keyboard shortcut)', () => {
     expect(useCaptureStore.getState().edgeRole).toBeNull();
   });
 
-  it('ignores `s` when metaKey is held (Cmd+S passes through)', () => {
-    render(<EdgeRoleSelector />);
+  it('ignores `s` when metaKey is held (Cmd+S passes through)', async () => {
+    await render(<EdgeRoleSelector />);
     fireEvent.keyDown(document, { key: 's', metaKey: true });
     expect(useCaptureStore.getState().edgeRole).toBeNull();
   });
 
-  it('ignores `s` when ctrlKey is held (Ctrl+S passes through)', () => {
-    render(<EdgeRoleSelector />);
+  it('ignores `s` when ctrlKey is held (Ctrl+S passes through)', async () => {
+    await render(<EdgeRoleSelector />);
     fireEvent.keyDown(document, { key: 's', ctrlKey: true });
     expect(useCaptureStore.getState().edgeRole).toBeNull();
   });
 
-  it('ignores `s` when altKey is held (Alt+S passes through)', () => {
-    render(<EdgeRoleSelector />);
+  it('ignores `s` when altKey is held (Alt+S passes through)', async () => {
+    await render(<EdgeRoleSelector />);
     fireEvent.keyDown(document, { key: 's', altKey: true });
     expect(useCaptureStore.getState().edgeRole).toBeNull();
   });
 
-  it('re-press of the currently-selected role is a no-op (Decision §4)', () => {
+  it('re-press of the currently-selected role is a no-op (Decision §4)', async () => {
     act(() => {
       useCaptureStore.getState().setEdgeRole('supports');
     });
-    render(<EdgeRoleSelector />);
+    await render(<EdgeRoleSelector />);
     fireEvent.keyDown(document, { key: 's' });
     expect(useCaptureStore.getState().edgeRole).toBe('supports');
   });
 
-  it('pressing a different role shortcut while one is selected switches the slice', () => {
+  it('pressing a different role shortcut while one is selected switches the slice', async () => {
     act(() => {
       useCaptureStore.getState().setEdgeRole('supports');
     });
-    render(<EdgeRoleSelector />);
+    await render(<EdgeRoleSelector />);
     fireEvent.keyDown(document, { key: 'r' });
     expect(useCaptureStore.getState().edgeRole).toBe('rebuts');
   });
 
-  it('ignores auto-repeat keystrokes (event.repeat=true skipped)', () => {
-    render(<EdgeRoleSelector />);
+  it('ignores auto-repeat keystrokes (event.repeat=true skipped)', async () => {
+    await render(<EdgeRoleSelector />);
     fireEvent.keyDown(document, { key: 's', repeat: true });
     expect(useCaptureStore.getState().edgeRole).toBeNull();
   });
 });
 
 describe('EdgeRoleSelector — listener lifecycle', () => {
-  it('unmount detaches the listener — subsequent s does not write', () => {
+  it('unmount detaches the listener — subsequent s does not write', async () => {
     act(() => {
       useCaptureStore.getState().setTargetEntityId(STAGED_TARGET);
     });
-    const { unmount } = render(<EdgeRoleSelector />);
+    const { unmount } = await render(<EdgeRoleSelector />);
     unmount();
     fireEvent.keyDown(document, { key: 's' });
     expect(useCaptureStore.getState().edgeRole).toBeNull();
   });
 
-  it('re-mounting attaches a fresh listener', () => {
+  it('re-mounting attaches a fresh listener', async () => {
     act(() => {
       useCaptureStore.getState().setTargetEntityId(STAGED_TARGET);
     });
-    const { unmount } = render(<EdgeRoleSelector />);
+    const { unmount } = await render(<EdgeRoleSelector />);
     unmount();
     fireEvent.keyDown(document, { key: 's' });
     expect(useCaptureStore.getState().edgeRole).toBeNull();
 
-    render(<EdgeRoleSelector />);
+    await render(<EdgeRoleSelector />);
     fireEvent.keyDown(document, { key: 'r' });
     expect(useCaptureStore.getState().edgeRole).toBe('rebuts');
   });
@@ -429,13 +458,19 @@ describe('EdgeRoleSelector — i18n catalog parity', () => {
 
   it('per-locale render: no raw catalog-key string nor [t-missing] in the selector DOM', async () => {
     for (const locale of LOCALES) {
-      await i18next.changeLanguage(locale);
+      // `cleanup()` first so the previous iteration's mounted component
+      // is detached before `changeLanguage` triggers its subscribers'
+      // setStates — otherwise the deferred update lands on a still-
+      // mounted tree outside act().
       cleanup();
+      await act(async () => {
+        await i18next.changeLanguage(locale);
+      });
       useCaptureStore.getState().reset();
       act(() => {
         useCaptureStore.getState().setTargetEntityId(STAGED_TARGET);
       });
-      render(<EdgeRoleSelector />);
+      await render(<EdgeRoleSelector />);
       const wrapper = screen.getByTestId('edge-role-selector');
       expect(wrapper.textContent).not.toContain('moderator.edgeRolePalette');
       expect(wrapper.textContent).not.toContain('methodology.edgeRole.');
@@ -447,23 +482,31 @@ describe('EdgeRoleSelector — i18n catalog parity', () => {
         expect(btn.textContent).toContain(String(glossary));
       }
     }
-    await i18next.changeLanguage('en-US');
+    cleanup();
+    await act(async () => {
+      await i18next.changeLanguage('en-US');
+    });
   });
 
   it('shortcut KEY is identical across locales (english-mnemonic policy)', async () => {
     for (const locale of LOCALES) {
-      await i18next.changeLanguage(locale);
       cleanup();
+      await act(async () => {
+        await i18next.changeLanguage(locale);
+      });
       useCaptureStore.getState().reset();
       act(() => {
         useCaptureStore.getState().setTargetEntityId(STAGED_TARGET);
       });
-      render(<EdgeRoleSelector />);
+      await render(<EdgeRoleSelector />);
       for (const role of CANONICAL_ORDER) {
         const chip = screen.getByTestId(`edge-role-selector-key-chip-${role}`);
         expect(chip.textContent).toBe(EN_SHORTCUT_KEYS[role]);
       }
     }
-    await i18next.changeLanguage('en-US');
+    cleanup();
+    await act(async () => {
+      await i18next.changeLanguage('en-US');
+    });
   });
 });

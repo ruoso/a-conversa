@@ -19,11 +19,37 @@
 //      naturally in each locale.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { cleanup, render } from '@testing-library/react';
+import {
+  cleanup,
+  render as rtlRender,
+  type RenderOptions,
+  type RenderResult,
+} from '@testing-library/react';
 import i18next from 'i18next';
+import { act, type ReactElement } from 'react';
 
 import { DisputationTestChip } from './DisputationTestChip';
 import { createI18nInstance } from '@a-conversa/shell';
+
+// Local `render(...)` shadow. `useTranslation()` schedules a
+// microtask-deferred setState when its internal i18next subscription
+// registers on mount. The deferred update fires AFTER the synchronous
+// render's act() wrapper closes, so React emits "An update to
+// <Component> was not wrapped in act(...)". `await act(async () => { ... })`
+// flushes pending microtasks before the act block resolves, absorbing
+// the deferred update inside the wrapper.
+async function render(ui: ReactElement, options?: RenderOptions): Promise<RenderResult> {
+  let result!: RenderResult;
+  // `act` takes the async (microtask-flushing) path when the callback
+  // returns a thenable — `return Promise.resolve()` is enough; no
+  // `async` keyword (which would trip `require-await` since the body
+  // does not await anything).
+  await act(() => {
+    result = rtlRender(ui, options);
+    return Promise.resolve();
+  });
+  return result;
+}
 
 beforeEach(async () => {
   await createI18nInstance('en-US');
@@ -45,21 +71,21 @@ function getChip(): HTMLElement {
 }
 
 describe('DisputationTestChip — seam attributes', () => {
-  it('stamps data-disputation-chip + data-disputation-outcome="data"', () => {
-    render(<DisputationTestChip outcome="data" />);
+  it('stamps data-disputation-chip + data-disputation-outcome="data"', async () => {
+    await render(<DisputationTestChip outcome="data" />);
     const chip = getChip();
     expect(chip.getAttribute('data-disputation-chip')).toBe('');
     expect(chip.getAttribute('data-disputation-outcome')).toBe('data');
   });
 
-  it('stamps data-disputation-outcome="claim"', () => {
-    render(<DisputationTestChip outcome="claim" />);
+  it('stamps data-disputation-outcome="claim"', async () => {
+    await render(<DisputationTestChip outcome="claim" />);
     const chip = getChip();
     expect(chip.getAttribute('data-disputation-outcome')).toBe('claim');
   });
 
-  it('stamps data-disputation-outcome="unsettled"', () => {
-    render(<DisputationTestChip outcome="unsettled" />);
+  it('stamps data-disputation-outcome="unsettled"', async () => {
+    await render(<DisputationTestChip outcome="unsettled" />);
     const chip = getChip();
     expect(chip.getAttribute('data-disputation-outcome')).toBe('unsettled');
   });
@@ -70,8 +96,8 @@ describe('DisputationTestChip — per-outcome styling branches', () => {
   // rationale (sky / rose / slate). Pin the load-bearing class fragments
   // so a refactor doesn't accidentally drop one.
 
-  it('data branch applies sky palette (border-sky-600 + bg-sky-50 + text-sky-800 + border-solid)', () => {
-    render(<DisputationTestChip outcome="data" />);
+  it('data branch applies sky palette (border-sky-600 + bg-sky-50 + text-sky-800 + border-solid)', async () => {
+    await render(<DisputationTestChip outcome="data" />);
     const chip = getChip();
     expect(chip.className).toContain('border-solid');
     expect(chip.className).toContain('border-sky-600');
@@ -79,8 +105,8 @@ describe('DisputationTestChip — per-outcome styling branches', () => {
     expect(chip.className).toContain('text-sky-800');
   });
 
-  it('claim branch applies rose palette (border-rose-600 + bg-rose-50 + text-rose-800 + border-solid)', () => {
-    render(<DisputationTestChip outcome="claim" />);
+  it('claim branch applies rose palette (border-rose-600 + bg-rose-50 + text-rose-800 + border-solid)', async () => {
+    await render(<DisputationTestChip outcome="claim" />);
     const chip = getChip();
     expect(chip.className).toContain('border-solid');
     expect(chip.className).toContain('border-rose-600');
@@ -88,8 +114,8 @@ describe('DisputationTestChip — per-outcome styling branches', () => {
     expect(chip.className).toContain('text-rose-800');
   });
 
-  it('unsettled branch applies slate palette (border-slate-400 + bg-slate-50 + text-slate-600 + border-dashed)', () => {
-    render(<DisputationTestChip outcome="unsettled" />);
+  it('unsettled branch applies slate palette (border-slate-400 + bg-slate-50 + text-slate-600 + border-dashed)', async () => {
+    await render(<DisputationTestChip outcome="unsettled" />);
     const chip = getChip();
     expect(chip.className).toContain('border-dashed');
     expect(chip.className).toContain('border-slate-400');
@@ -100,8 +126,8 @@ describe('DisputationTestChip — per-outcome styling branches', () => {
     expect(chip.className).not.toContain('border-rose-600');
   });
 
-  it('shares the structural pill baseline across all outcomes (inline-flex + rounded-full + uppercase)', () => {
-    render(<DisputationTestChip outcome="data" />);
+  it('shares the structural pill baseline across all outcomes (inline-flex + rounded-full + uppercase)', async () => {
+    await render(<DisputationTestChip outcome="data" />);
     const chip = getChip();
     expect(chip.className).toContain('inline-flex');
     expect(chip.className).toContain('rounded-full');
@@ -124,41 +150,43 @@ describe('DisputationTestChip — localized outcome label', () => {
     unsettled: { 'en-US': 'Unsettled', 'pt-BR': 'Em disputa', 'es-419': 'En disputa' },
   };
 
-  it('renders the data label as "Data" in en-US', () => {
-    render(<DisputationTestChip outcome="data" />);
+  it('renders the data label as "Data" in en-US', async () => {
+    await render(<DisputationTestChip outcome="data" />);
     expect(getChip().textContent).toBe(EXPECTED.data['en-US']);
   });
 
-  it('renders the claim label as "Claim" in en-US', () => {
-    render(<DisputationTestChip outcome="claim" />);
+  it('renders the claim label as "Claim" in en-US', async () => {
+    await render(<DisputationTestChip outcome="claim" />);
     expect(getChip().textContent).toBe(EXPECTED.claim['en-US']);
   });
 
-  it('renders the unsettled label as "Unsettled" in en-US', () => {
-    render(<DisputationTestChip outcome="unsettled" />);
+  it('renders the unsettled label as "Unsettled" in en-US', async () => {
+    await render(<DisputationTestChip outcome="unsettled" />);
     expect(getChip().textContent).toBe(EXPECTED.unsettled['en-US']);
   });
 
   // Three cross-locale label cases for the data outcome (refinement
   // Constraints / requirements explicitly lists this triplet).
+  // The trailing `changeLanguage('en-US')` reset is redundant with the
+  // beforeEach (which re-establishes en-US before each test), so it is
+  // omitted — leaving it would fire a state-mutating call AFTER render
+  // with a still-mounted component, tripping an act() warning.
   it('renders the data label as "Dado" in pt-BR', async () => {
     await i18next.changeLanguage('pt-BR');
-    render(<DisputationTestChip outcome="data" />);
+    await render(<DisputationTestChip outcome="data" />);
     expect(getChip().textContent).toBe(EXPECTED.data['pt-BR']);
-    await i18next.changeLanguage('en-US');
   });
 
   it('renders the data label as "Dato" in es-419', async () => {
     await i18next.changeLanguage('es-419');
-    render(<DisputationTestChip outcome="data" />);
+    await render(<DisputationTestChip outcome="data" />);
     expect(getChip().textContent).toBe(EXPECTED.data['es-419']);
-    await i18next.changeLanguage('en-US');
   });
 });
 
 describe('DisputationTestChip — aria-label (ICU template)', () => {
-  it('resolves the chipAriaLabel template with the localized outcome substituted (en-US)', () => {
-    render(<DisputationTestChip outcome="data" />);
+  it('resolves the chipAriaLabel template with the localized outcome substituted (en-US)', async () => {
+    await render(<DisputationTestChip outcome="data" />);
     const chip = getChip();
     const ariaLabel = chip.getAttribute('aria-label');
     expect(ariaLabel).not.toBeNull();
@@ -172,22 +200,20 @@ describe('DisputationTestChip — aria-label (ICU template)', () => {
 
   it('resolves the aria label with the localized outcome in pt-BR', async () => {
     await i18next.changeLanguage('pt-BR');
-    render(<DisputationTestChip outcome="claim" />);
+    await render(<DisputationTestChip outcome="claim" />);
     const ariaLabel = getChip().getAttribute('aria-label');
     expect(ariaLabel).not.toBeNull();
     expect(ariaLabel!).toContain('Afirmação');
     // Negative pin: no wire identifier leaked into the aria label.
     expect(ariaLabel!).not.toContain('claim');
-    await i18next.changeLanguage('en-US');
   });
 
   it('resolves the aria label with the localized outcome in es-419', async () => {
     await i18next.changeLanguage('es-419');
-    render(<DisputationTestChip outcome="unsettled" />);
+    await render(<DisputationTestChip outcome="unsettled" />);
     const ariaLabel = getChip().getAttribute('aria-label');
     expect(ariaLabel).not.toBeNull();
     expect(ariaLabel!).toContain('En disputa');
     expect(ariaLabel!).not.toContain('unsettled');
-    await i18next.changeLanguage('en-US');
   });
 });

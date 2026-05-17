@@ -33,7 +33,7 @@
 // pinned at the call-site SQL level (per ADR 0022's discipline of
 // committing the verification with the code).
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { DbPool } from '../db.js';
 import {
@@ -254,13 +254,19 @@ describe('startDenylistSweeper', () => {
         return Promise.reject(new Error('boom'));
       },
     };
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const handle = startDenylistSweeper(failingPool, 60 * 60 * 1000);
     try {
       const removed = await handle.sweepNow();
       // Caught + logged; returns 0 so the periodic loop continues.
       expect(removed).toBe(0);
+      expect(errorSpy).toHaveBeenCalledWith(
+        '[auth_token_denylist sweep failed]',
+        expect.objectContaining({ message: 'boom' }),
+      );
     } finally {
       handle.stop();
+      errorSpy.mockRestore();
     }
   });
 });

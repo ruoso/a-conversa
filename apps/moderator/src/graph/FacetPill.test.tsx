@@ -21,11 +21,38 @@
 // a ReactFlow wrapper.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { cleanup, render } from '@testing-library/react';
+import {
+  cleanup,
+  render as rtlRender,
+  type RenderOptions,
+  type RenderResult,
+} from '@testing-library/react';
 import i18next from 'i18next';
+import { act, type ReactElement } from 'react';
 
 import { FacetPill } from './FacetPill';
 import { createI18nInstance } from '@a-conversa/shell';
+
+// Local `render(...)` shadow that absorbs the microtask-deferred
+// `useTranslation()` setState into an `act(...)` boundary. Without this
+// wrapper, the synchronous `rtlRender(...)` closes its internal act
+// block before i18next's subscription-registration setState fires, and
+// React (with `IS_REACT_ACT_ENVIRONMENT = true` from the global
+// `vitest.setup.ts`) emits "An update to <Component> was not wrapped
+// in act(...)". Awaiting an async `act` block flushes pending
+// microtasks before resolving, capturing the deferred update.
+async function render(ui: ReactElement, options?: RenderOptions): Promise<RenderResult> {
+  let result!: RenderResult;
+  // `act` takes the async (microtask-flushing) path when the callback
+  // returns a thenable — `return Promise.resolve()` is enough; no
+  // `async` keyword (which would trip `require-await` since the body
+  // does not await anything).
+  await act(() => {
+    result = rtlRender(ui, options);
+    return Promise.resolve();
+  });
+  return result;
+}
 
 beforeEach(async () => {
   await createI18nInstance('en-US');
@@ -53,23 +80,23 @@ function getPill(): HTMLElement {
 }
 
 describe('FacetPill — seam attributes', () => {
-  it('stamps data-facet-pill + data-facet-name="wording" + data-facet-status="proposed"', () => {
-    render(<FacetPill facet="wording" status="proposed" />);
+  it('stamps data-facet-pill + data-facet-name="wording" + data-facet-status="proposed"', async () => {
+    await render(<FacetPill facet="wording" status="proposed" />);
     const pill = getPill();
     expect(pill.getAttribute('data-facet-pill')).toBe('');
     expect(pill.getAttribute('data-facet-name')).toBe('wording');
     expect(pill.getAttribute('data-facet-status')).toBe('proposed');
   });
 
-  it('stamps data-facet-name="classification" + data-facet-status="agreed"', () => {
-    render(<FacetPill facet="classification" status="agreed" />);
+  it('stamps data-facet-name="classification" + data-facet-status="agreed"', async () => {
+    await render(<FacetPill facet="classification" status="agreed" />);
     const pill = getPill();
     expect(pill.getAttribute('data-facet-name')).toBe('classification');
     expect(pill.getAttribute('data-facet-status')).toBe('agreed');
   });
 
-  it('stamps data-facet-name="substance" + data-facet-status="disputed"', () => {
-    render(<FacetPill facet="substance" status="disputed" />);
+  it('stamps data-facet-name="substance" + data-facet-status="disputed"', async () => {
+    await render(<FacetPill facet="substance" status="disputed" />);
     const pill = getPill();
     expect(pill.getAttribute('data-facet-name')).toBe('substance');
     expect(pill.getAttribute('data-facet-status')).toBe('disputed');
@@ -85,8 +112,8 @@ describe('FacetPill — per-status styling branches', () => {
   // pill is the per-facet record, unlike the whole-card frame which
   // falls back to baseline for closed statuses.
 
-  it('proposed branch applies border-dashed + border-slate-400 + text-slate-500 + opacity-60', () => {
-    render(<FacetPill facet="wording" status="proposed" />);
+  it('proposed branch applies border-dashed + border-slate-400 + text-slate-500 + opacity-60', async () => {
+    await render(<FacetPill facet="wording" status="proposed" />);
     const pill = getPill();
     expect(pill.className).toContain('border-dashed');
     expect(pill.className).toContain('border-slate-400');
@@ -94,8 +121,8 @@ describe('FacetPill — per-status styling branches', () => {
     expect(pill.className).toContain('opacity-60');
   });
 
-  it('agreed branch applies border-solid + border-slate-700 + text-slate-700 + opacity-100', () => {
-    render(<FacetPill facet="wording" status="agreed" />);
+  it('agreed branch applies border-solid + border-slate-700 + text-slate-700 + opacity-100', async () => {
+    await render(<FacetPill facet="wording" status="agreed" />);
     const pill = getPill();
     expect(pill.className).toContain('border-solid');
     expect(pill.className).toContain('border-slate-700');
@@ -104,8 +131,8 @@ describe('FacetPill — per-status styling branches', () => {
     expect(pill.className).not.toContain('border-dashed');
   });
 
-  it('disputed branch applies border-solid + border-rose-600 + text-rose-700 + ring-1 + ring-rose-500 + opacity-100', () => {
-    render(<FacetPill facet="classification" status="disputed" />);
+  it('disputed branch applies border-solid + border-rose-600 + text-rose-700 + ring-1 + ring-rose-500 + opacity-100', async () => {
+    await render(<FacetPill facet="classification" status="disputed" />);
     const pill = getPill();
     expect(pill.className).toContain('border-solid');
     expect(pill.className).toContain('border-rose-600');
@@ -116,8 +143,8 @@ describe('FacetPill — per-status styling branches', () => {
     expect(pill.className).not.toContain('border-dashed');
   });
 
-  it('meta-disagreement branch applies border-double + border-violet-600 + text-violet-700 + ring-1 + ring-violet-400 + opacity-100', () => {
-    render(<FacetPill facet="substance" status="meta-disagreement" />);
+  it('meta-disagreement branch applies border-double + border-violet-600 + text-violet-700 + ring-1 + ring-violet-400 + opacity-100', async () => {
+    await render(<FacetPill facet="substance" status="meta-disagreement" />);
     const pill = getPill();
     expect(pill.className).toContain('border-double');
     expect(pill.className).toContain('border-violet-600');
@@ -130,8 +157,8 @@ describe('FacetPill — per-status styling branches', () => {
     expect(pill.className).not.toContain('border-rose-600');
   });
 
-  it('committed branch applies border-solid + border-slate-400 + text-slate-600 + opacity-90 (closed; slightly faded)', () => {
-    render(<FacetPill facet="wording" status="committed" />);
+  it('committed branch applies border-solid + border-slate-400 + text-slate-600 + opacity-90 (closed; slightly faded)', async () => {
+    await render(<FacetPill facet="wording" status="committed" />);
     const pill = getPill();
     expect(pill.className).toContain('border-solid');
     expect(pill.className).toContain('border-slate-400');
@@ -140,8 +167,8 @@ describe('FacetPill — per-status styling branches', () => {
     expect(pill.className).not.toContain('border-dashed');
   });
 
-  it('withdrawn branch applies border-dashed + border-slate-400 + text-slate-500 + opacity-50 (closed; retracted)', () => {
-    render(<FacetPill facet="wording" status="withdrawn" />);
+  it('withdrawn branch applies border-dashed + border-slate-400 + text-slate-500 + opacity-50 (closed; retracted)', async () => {
+    await render(<FacetPill facet="wording" status="withdrawn" />);
     const pill = getPill();
     expect(pill.className).toContain('border-dashed');
     expect(pill.className).toContain('border-slate-400');
@@ -177,11 +204,15 @@ describe('FacetPill — localized facet-name label', () => {
   for (const locale of LOCALES) {
     for (const facet of FACETS) {
       it(`renders ${facet} as "${EXPECTED[facet][locale]}" in ${locale}`, async () => {
+        // `changeLanguage` runs BEFORE `render`, so no `<FacetPill>` is
+        // mounted yet — no act() wrapper needed for this call. The
+        // trailing reset to `en-US` is dropped: the next test's
+        // `beforeEach` handles it, and resetting WHILE a `<FacetPill>`
+        // is still mounted would fire an unwrapped setState (Recipe B).
         await i18next.changeLanguage(locale);
-        render(<FacetPill facet={facet} status="proposed" />);
+        await render(<FacetPill facet={facet} status="proposed" />);
         const pill = getPill();
         expect(pill.textContent).toBe(EXPECTED[facet][locale]);
-        await i18next.changeLanguage('en-US');
       });
     }
   }
@@ -191,19 +222,18 @@ describe('FacetPill — localized facet-name label', () => {
     // v1 locales — no cognate collisions for `wording` / `classification`
     // / `substance`.
     await i18next.changeLanguage('pt-BR');
-    render(<FacetPill facet="wording" status="agreed" />);
+    await render(<FacetPill facet="wording" status="agreed" />);
     const pill = getPill();
     expect(pill.textContent).toBe('Redação');
     expect(pill.textContent).not.toBe('Wording');
-    await i18next.changeLanguage('en-US');
   });
 });
 
 describe('FacetPill — base structural classes', () => {
   // Pin the structural baseline (inline-flex pill shape) so a refactor
   // doesn't accidentally drop the pill's chip appearance.
-  it('applies the baseline rounded-full + border + uppercase pill classes', () => {
-    render(<FacetPill facet="wording" status="proposed" />);
+  it('applies the baseline rounded-full + border + uppercase pill classes', async () => {
+    await render(<FacetPill facet="wording" status="proposed" />);
     const pill = getPill();
     expect(pill.className).toContain('inline-flex');
     expect(pill.className).toContain('rounded-full');
@@ -221,15 +251,15 @@ describe('FacetPill — in-pill vote-indicator row (mod_vote_indicators_on_graph
   const PARTICIPANT_B = '00000000-0000-4000-8000-000000000002';
   const PARTICIPANT_C = '00000000-0000-4000-8000-000000000003';
 
-  it('does not render the vote-indicator row when votes is empty / undefined', () => {
-    render(<FacetPill facet="wording" status="proposed" />);
+  it('does not render the vote-indicator row when votes is empty / undefined', async () => {
+    await render(<FacetPill facet="wording" status="proposed" />);
     const pill = getPill();
     expect(pill.querySelector('[data-vote-indicator-row]')).toBeNull();
     expect(pill.querySelector('[data-vote-indicator]')).toBeNull();
   });
 
-  it('renders one indicator inside the pill when one vote is passed', () => {
-    render(
+  it('renders one indicator inside the pill when one vote is passed', async () => {
+    await render(
       <FacetPill
         facet="wording"
         status="proposed"
@@ -245,8 +275,8 @@ describe('FacetPill — in-pill vote-indicator row (mod_vote_indicators_on_graph
     expect(indicators[0]?.getAttribute('data-choice')).toBe('agree');
   });
 
-  it('renders three indicators with distinct data-choice values for mixed agree + dispute + withdraw votes', () => {
-    render(
+  it('renders three indicators with distinct data-choice values for mixed agree + dispute + withdraw votes', async () => {
+    await render(
       <FacetPill
         facet="substance"
         status="disputed"
@@ -272,10 +302,10 @@ describe('FacetPill — in-pill vote-indicator row (mod_vote_indicators_on_graph
     ]);
   });
 
-  it('preserves the per-status pill className branches when votes are present (no styling regression)', () => {
+  it('preserves the per-status pill className branches when votes are present (no styling regression)', async () => {
     // Sanity: adding a vote-indicator row inside the pill must NOT
     // disturb the pill's per-status border / ring / opacity branch.
-    render(
+    await render(
       <FacetPill
         facet="classification"
         status="disputed"

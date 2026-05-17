@@ -282,8 +282,6 @@ describe('layoutEngine — performance budget', () => {
     // catches a real order-of-magnitude regression (10 ms → 2000 ms
     // is a 200× slowdown) while not failing on cold-cache noise.
     expect(elapsed).toBeLessThan(2000);
-    // Log the actual duration so a future tightening pass has data.
-    console.log(`[layoutEngine.perf] 100-node layout in ${elapsed.toFixed(2)} ms`);
   });
 });
 

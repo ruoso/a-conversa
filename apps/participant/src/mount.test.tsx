@@ -102,11 +102,14 @@ describe('participant surface mount()', () => {
       '/p/sessions/00000000-0000-4000-8000-000000000099/invite?role=debater-A',
     );
 
-    const unmount = mount({
-      container,
-      auth,
-      i18n: i18n as unknown as I18n,
-      routerBasePath: '/p',
+    let unmount!: () => void;
+    act(() => {
+      unmount = mount({
+        container,
+        auth,
+        i18n: i18n as unknown as I18n,
+        routerBasePath: '/p',
+      });
     });
 
     // `part_invite_acceptance`: the URL now matches the new claim
@@ -161,7 +164,9 @@ describe('participant surface mount()', () => {
     });
     expect(statusIndicator.getAttribute('data-status')).toBe('open');
 
-    unmount();
+    act(() => {
+      unmount();
+    });
     expect(container.innerHTML).toBe('');
   });
 
@@ -182,11 +187,14 @@ describe('participant surface mount()', () => {
       '/p/sessions/00000000-0000-4000-8000-000000000099/invite?role=debater-A',
     );
 
-    const unmount = mount({
-      container,
-      auth,
-      i18n: i18n as unknown as I18n,
-      routerBasePath: '/p',
+    let unmount!: () => void;
+    act(() => {
+      unmount = mount({
+        container,
+        auth,
+        i18n: i18n as unknown as I18n,
+        routerBasePath: '/p',
+      });
     });
 
     // The new invite-acceptance route renders its own
@@ -204,7 +212,9 @@ describe('participant surface mount()', () => {
     expect(screen.getByTestId('participant-not-authenticated')).toBeTruthy();
     expect(screen.queryByTestId('participant-identity')).toBeNull();
 
-    unmount();
+    act(() => {
+      unmount();
+    });
     expect(container.innerHTML).toBe('');
   });
 
@@ -230,11 +240,14 @@ describe('participant surface mount()', () => {
       '/p/sessions/00000000-0000-4000-8000-000000000099/invite?role=debater-A',
     );
 
-    const unmount = mount({
-      container,
-      auth,
-      i18n: i18n as unknown as I18n,
-      routerBasePath: '/p',
+    let unmount!: () => void;
+    act(() => {
+      unmount = mount({
+        container,
+        auth,
+        i18n: i18n as unknown as I18n,
+        routerBasePath: '/p',
+      });
     });
 
     // Same shift as the prior case: the URL matches the invite-acceptance
@@ -248,7 +261,9 @@ describe('participant surface mount()', () => {
     expect(screen.getByTestId('participant-not-authenticated')).toBeTruthy();
     expect(screen.queryByTestId('participant-identity')).toBeNull();
 
-    unmount();
+    act(() => {
+      unmount();
+    });
     expect(container.innerHTML).toBe('');
   });
 });

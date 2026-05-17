@@ -28,6 +28,26 @@ export async function loadSurfaceManifest(): Promise<SurfaceManifest> {
   return manifest;
 }
 
+export function injectStyles(styleUrls: readonly string[]): HTMLLinkElement[] {
+  const links: HTMLLinkElement[] = [];
+  for (const styleUrl of styleUrls) {
+    const existing = document.head.querySelector<HTMLLinkElement>(
+      `link[data-surface-style="${styleUrl}"]`,
+    );
+    if (existing) {
+      links.push(existing);
+      continue;
+    }
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = styleUrl;
+    link.dataset.surfaceStyle = styleUrl;
+    document.head.appendChild(link);
+    links.push(link);
+  }
+  return links;
+}
+
 export async function importSurfaceModule(moduleUrl: string): Promise<SurfaceModule> {
   const imported = (await import(/* @vite-ignore */ moduleUrl)) as Partial<SurfaceModule>;
   if (typeof imported.mount !== 'function') {

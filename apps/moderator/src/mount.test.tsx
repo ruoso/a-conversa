@@ -1,3 +1,4 @@
+import { act } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, screen, waitFor } from '@testing-library/react';
 
@@ -28,18 +29,23 @@ describe('moderator surface mount()', () => {
     document.body.appendChild(container);
     window.history.replaceState({}, '', '/m/sessions/new');
 
-    const unmount = mount({
-      container,
-      auth,
-      i18n: i18n as unknown as I18n,
-      routerBasePath: '/m',
+    let unmount!: () => void;
+    act(() => {
+      unmount = mount({
+        container,
+        auth,
+        i18n: i18n as unknown as I18n,
+        routerBasePath: '/m',
+      });
     });
 
     await waitFor(() => {
       expect(screen.getByTestId('route-create-session')).toBeTruthy();
     });
 
-    unmount();
+    act(() => {
+      unmount();
+    });
     expect(container.innerHTML).toBe('');
   });
 });

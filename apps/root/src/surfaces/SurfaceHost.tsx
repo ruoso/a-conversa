@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 
 import { useAuth, type I18n } from '@a-conversa/shell';
 
-import { importSurfaceModule, loadSurfaceManifest } from './manifest';
+import { importSurfaceModule, injectStyles, loadSurfaceManifest } from './manifest';
 
 const RETURN_TO_KEY = 'a-conversa:return-to';
 
@@ -36,26 +36,6 @@ export function takeRememberedReturnTo(): string | undefined {
   const remembered = sanitizeReturnTo(window.sessionStorage.getItem(RETURN_TO_KEY));
   window.sessionStorage.removeItem(RETURN_TO_KEY);
   return remembered;
-}
-
-function injectStyles(styleUrls: readonly string[]): HTMLLinkElement[] {
-  const links: HTMLLinkElement[] = [];
-  for (const styleUrl of styleUrls) {
-    const existing = document.head.querySelector<HTMLLinkElement>(
-      `link[data-surface-style="${styleUrl}"]`,
-    );
-    if (existing) {
-      links.push(existing);
-      continue;
-    }
-    const link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = styleUrl;
-    link.dataset.surfaceStyle = styleUrl;
-    document.head.appendChild(link);
-    links.push(link);
-  }
-  return links;
 }
 
 export interface SurfaceHostProps {

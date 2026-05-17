@@ -18,12 +18,39 @@
 //      across the three v1 locales.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { cleanup, render } from '@testing-library/react';
+import {
+  cleanup,
+  render as rtlRender,
+  type RenderOptions,
+  type RenderResult,
+} from '@testing-library/react';
 import i18next from 'i18next';
+import { act, type ReactElement } from 'react';
 
 import { VoteIndicator } from './VoteIndicator';
 import { axiomMarkColorFor } from './selectors';
 import { createI18nInstance } from '@a-conversa/shell';
+
+// Local async `render(...)` shadow. `useTranslation()` schedules a
+// microtask-deferred setState when its internal i18next subscription
+// registers on mount. The deferred update fires AFTER a synchronous
+// `render()`'s act() wrapper closes, so React (with
+// `IS_REACT_ACT_ENVIRONMENT = true`) emits "An update to <Component>
+// was not wrapped in act(...)". `await act(async () => { ... })`
+// flushes pending microtasks before the act block resolves, absorbing
+// the deferred update inside the wrapper.
+async function render(ui: ReactElement, options?: RenderOptions): Promise<RenderResult> {
+  let result!: RenderResult;
+  // `act` takes the async (microtask-flushing) path when the callback
+  // returns a thenable — `return Promise.resolve()` is enough; no
+  // `async` keyword (which would trip `require-await` since the body
+  // does not await anything).
+  await act(() => {
+    result = rtlRender(ui, options);
+    return Promise.resolve();
+  });
+  return result;
+}
 
 beforeEach(async () => {
   await createI18nInstance('en-US');
@@ -48,44 +75,44 @@ const PARTICIPANT_A = '00000000-0000-4000-8000-000000000001';
 const PARTICIPANT_B = '00000000-0000-4000-8000-000000000002';
 
 describe('VoteIndicator — seam attributes', () => {
-  it('stamps data-vote-indicator + data-participant-id + data-choice="agree"', () => {
-    render(<VoteIndicator participantId={PARTICIPANT_A} choice="agree" />);
+  it('stamps data-vote-indicator + data-participant-id + data-choice="agree"', async () => {
+    await render(<VoteIndicator participantId={PARTICIPANT_A} choice="agree" />);
     const indicator = getIndicator();
     expect(indicator.getAttribute('data-vote-indicator')).toBe('');
     expect(indicator.getAttribute('data-participant-id')).toBe(PARTICIPANT_A);
     expect(indicator.getAttribute('data-choice')).toBe('agree');
   });
 
-  it('stamps data-choice="dispute" for a dispute vote', () => {
-    render(<VoteIndicator participantId={PARTICIPANT_A} choice="dispute" />);
+  it('stamps data-choice="dispute" for a dispute vote', async () => {
+    await render(<VoteIndicator participantId={PARTICIPANT_A} choice="dispute" />);
     expect(getIndicator().getAttribute('data-choice')).toBe('dispute');
   });
 
-  it('stamps data-choice="withdraw" for a withdraw vote', () => {
-    render(<VoteIndicator participantId={PARTICIPANT_A} choice="withdraw" />);
+  it('stamps data-choice="withdraw" for a withdraw vote', async () => {
+    await render(<VoteIndicator participantId={PARTICIPANT_A} choice="withdraw" />);
     expect(getIndicator().getAttribute('data-choice')).toBe('withdraw');
   });
 });
 
 describe('VoteIndicator — per-choice inner-fill classes', () => {
-  it('agree applies bg-emerald-500', () => {
-    render(<VoteIndicator participantId={PARTICIPANT_A} choice="agree" />);
+  it('agree applies bg-emerald-500', async () => {
+    await render(<VoteIndicator participantId={PARTICIPANT_A} choice="agree" />);
     const indicator = getIndicator();
     expect(indicator.className).toContain('bg-emerald-500');
     expect(indicator.className).not.toContain('bg-rose-500');
     expect(indicator.className).not.toContain('bg-slate-400');
   });
 
-  it('dispute applies bg-rose-500', () => {
-    render(<VoteIndicator participantId={PARTICIPANT_A} choice="dispute" />);
+  it('dispute applies bg-rose-500', async () => {
+    await render(<VoteIndicator participantId={PARTICIPANT_A} choice="dispute" />);
     const indicator = getIndicator();
     expect(indicator.className).toContain('bg-rose-500');
     expect(indicator.className).not.toContain('bg-emerald-500');
     expect(indicator.className).not.toContain('bg-slate-400');
   });
 
-  it('withdraw applies bg-slate-400 (the methodology "agreed-then-retracted" gray)', () => {
-    render(<VoteIndicator participantId={PARTICIPANT_A} choice="withdraw" />);
+  it('withdraw applies bg-slate-400 (the methodology "agreed-then-retracted" gray)', async () => {
+    await render(<VoteIndicator participantId={PARTICIPANT_A} choice="withdraw" />);
     const indicator = getIndicator();
     expect(indicator.className).toContain('bg-slate-400');
     expect(indicator.className).not.toContain('bg-emerald-500');
@@ -99,27 +126,33 @@ describe('VoteIndicator — per-participant outer-ring color (deterministic)', (
   // Same participant → same ring color; distinct participants → typically
   // distinct (six buckets means a 7+ participant session aliases).
 
-  it('reuses axiomMarkColorFor — the ring class matches the participant color helper', () => {
-    render(<VoteIndicator participantId={PARTICIPANT_A} choice="agree" />);
+  it('reuses axiomMarkColorFor — the ring class matches the participant color helper', async () => {
+    await render(<VoteIndicator participantId={PARTICIPANT_A} choice="agree" />);
     const indicator = getIndicator();
     const expected = axiomMarkColorFor(PARTICIPANT_A);
     expect(indicator.className).toContain(expected.ring);
   });
 
-  it('different participant ids produce different ring classes (chosen so buckets differ)', () => {
+  it('different participant ids produce different ring classes (chosen so buckets differ)', async () => {
     // PARTICIPANT_A trailing "1" and PARTICIPANT_B trailing "2": hash sum
     // differs by 1, mod 6 → different palette buckets.
     const colorA = axiomMarkColorFor(PARTICIPANT_A);
     const colorB = axiomMarkColorFor(PARTICIPANT_B);
     expect(colorA.ring).not.toBe(colorB.ring);
 
-    const { container, rerender } = render(
+    const { container, rerender } = await render(
       <VoteIndicator participantId={PARTICIPANT_A} choice="agree" />,
     );
     const indicatorA = container.querySelector<HTMLElement>('[data-vote-indicator]');
     expect(indicatorA?.className).toContain(colorA.ring);
 
-    rerender(<VoteIndicator participantId={PARTICIPANT_B} choice="agree" />);
+    // Same `act`-callback pattern as the `render` shadow above: return a
+    // resolved Promise so `act` takes the async (microtask-flushing) path
+    // without an `async` keyword (which would trip `require-await`).
+    await act(() => {
+      rerender(<VoteIndicator participantId={PARTICIPANT_B} choice="agree" />);
+      return Promise.resolve();
+    });
     const indicatorB = container.querySelector<HTMLElement>('[data-vote-indicator]');
     expect(indicatorB?.className).toContain(colorB.ring);
     expect(indicatorB?.className).not.toContain(colorA.ring);
@@ -127,8 +160,8 @@ describe('VoteIndicator — per-participant outer-ring color (deterministic)', (
 });
 
 describe('VoteIndicator — base structural classes', () => {
-  it('applies the baseline rounded-full + ring-1 + small-dot classes', () => {
-    render(<VoteIndicator participantId={PARTICIPANT_A} choice="agree" />);
+  it('applies the baseline rounded-full + ring-1 + small-dot classes', async () => {
+    await render(<VoteIndicator participantId={PARTICIPANT_A} choice="agree" />);
     const indicator = getIndicator();
     expect(indicator.className).toContain('inline-block');
     expect(indicator.className).toContain('rounded-full');
@@ -137,8 +170,8 @@ describe('VoteIndicator — base structural classes', () => {
     expect(indicator.className).toContain('w-2');
   });
 
-  it('sets role="img" and a non-empty aria-label + title', () => {
-    render(<VoteIndicator participantId={PARTICIPANT_A} choice="agree" />);
+  it('sets role="img" and a non-empty aria-label + title', async () => {
+    await render(<VoteIndicator participantId={PARTICIPANT_A} choice="agree" />);
     const indicator = getIndicator();
     expect(indicator.getAttribute('role')).toBe('img');
     const ariaLabel = indicator.getAttribute('aria-label');
@@ -151,7 +184,7 @@ describe('VoteIndicator — base structural classes', () => {
 describe('VoteIndicator — localized aria-label (cross-locale)', () => {
   it('en-US: "Participant <uuid> voted agree"', async () => {
     await i18next.changeLanguage('en-US');
-    render(<VoteIndicator participantId={PARTICIPANT_A} choice="agree" />);
+    await render(<VoteIndicator participantId={PARTICIPANT_A} choice="agree" />);
     expect(getIndicator().getAttribute('aria-label')).toBe(
       `Participant ${PARTICIPANT_A} voted agree`,
     );
@@ -159,25 +192,29 @@ describe('VoteIndicator — localized aria-label (cross-locale)', () => {
 
   it('pt-BR: "Participante <uuid> votou concordou"', async () => {
     await i18next.changeLanguage('pt-BR');
-    render(<VoteIndicator participantId={PARTICIPANT_A} choice="agree" />);
+    await render(<VoteIndicator participantId={PARTICIPANT_A} choice="agree" />);
     expect(getIndicator().getAttribute('aria-label')).toBe(
       `Participante ${PARTICIPANT_A} votou concordou`,
     );
-    await i18next.changeLanguage('en-US');
+    await act(async () => {
+      await i18next.changeLanguage('en-US');
+    });
   });
 
   it('es-419: "Participante <uuid> votó concordó"', async () => {
     await i18next.changeLanguage('es-419');
-    render(<VoteIndicator participantId={PARTICIPANT_A} choice="agree" />);
+    await render(<VoteIndicator participantId={PARTICIPANT_A} choice="agree" />);
     expect(getIndicator().getAttribute('aria-label')).toBe(
       `Participante ${PARTICIPANT_A} votó concordó`,
     );
-    await i18next.changeLanguage('en-US');
+    await act(async () => {
+      await i18next.changeLanguage('en-US');
+    });
   });
 
   it('en-US dispute reads "Participant <uuid> voted dispute"', async () => {
     await i18next.changeLanguage('en-US');
-    render(<VoteIndicator participantId={PARTICIPANT_A} choice="dispute" />);
+    await render(<VoteIndicator participantId={PARTICIPANT_A} choice="dispute" />);
     expect(getIndicator().getAttribute('aria-label')).toBe(
       `Participant ${PARTICIPANT_A} voted dispute`,
     );
@@ -185,10 +222,12 @@ describe('VoteIndicator — localized aria-label (cross-locale)', () => {
 
   it('pt-BR withdraw reads "Participante <uuid> votou retirou"', async () => {
     await i18next.changeLanguage('pt-BR');
-    render(<VoteIndicator participantId={PARTICIPANT_A} choice="withdraw" />);
+    await render(<VoteIndicator participantId={PARTICIPANT_A} choice="withdraw" />);
     expect(getIndicator().getAttribute('aria-label')).toBe(
       `Participante ${PARTICIPANT_A} votou retirou`,
     );
-    await i18next.changeLanguage('en-US');
+    await act(async () => {
+      await i18next.changeLanguage('en-US');
+    });
   });
 });

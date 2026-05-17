@@ -33,12 +33,39 @@
 //      pending under the fade).
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import {
+  cleanup,
+  render as rtlRender,
+  screen,
+  type RenderOptions,
+  type RenderResult,
+} from '@testing-library/react';
 import i18next from 'i18next';
+import { act, type ReactElement } from 'react';
 
 import { PendingAxiomMarkBadge } from './PendingAxiomMarkBadge';
 import { axiomMarkColorFor, type PendingAxiomMark } from './selectors';
 import { createI18nInstance } from '@a-conversa/shell';
+
+// Local `render(...)` shadow that flushes the microtask-deferred
+// setState scheduled by `useTranslation()` (react-i18next subscribes
+// to the i18next instance on mount, which schedules a deferred state
+// update). Wrapping `rtlRender(...)` in `await act(async () => …)`
+// absorbs that deferred update inside the act block, eliminating the
+// "An update to <Component> was not wrapped in act(...)" warning that
+// surfaces now that `globalThis.IS_REACT_ACT_ENVIRONMENT = true`.
+async function render(ui: ReactElement, options?: RenderOptions): Promise<RenderResult> {
+  let result!: RenderResult;
+  // `act` takes the async (microtask-flushing) path when the callback
+  // returns a thenable — `return Promise.resolve()` is enough; no
+  // `async` keyword (which would trip `require-await` since the body
+  // does not await anything).
+  await act(() => {
+    result = rtlRender(ui, options);
+    return Promise.resolve();
+  });
+  return result;
+}
 
 const NODE_ID = '00000000-0000-4000-8000-000000000a02';
 // PARTICIPANT_A and PARTICIPANT_B hash to two distinct palette buckets
@@ -87,74 +114,71 @@ describe('PendingAxiomMarkBadge — localized tooltip per locale', () => {
   for (const locale of ['en-US', 'pt-BR', 'es-419'] as const) {
     it(`renders the localized tooltip for ${locale}`, async () => {
       await i18next.changeLanguage(locale);
-      render(<PendingAxiomMarkBadge mark={makeMark()} />);
+      await render(<PendingAxiomMarkBadge mark={makeMark()} />);
       const badge = screen.getByTestId(`pending-axiom-mark-badge-${NODE_ID}-${PARTICIPANT_A}`);
       expect(badge.getAttribute('title')).toBe(EXPECTED[locale].tooltip);
-      await i18next.changeLanguage('en-US');
     });
 
     it(`renders the localized aria-label for ${locale}`, async () => {
       await i18next.changeLanguage(locale);
-      render(<PendingAxiomMarkBadge mark={makeMark()} />);
+      await render(<PendingAxiomMarkBadge mark={makeMark()} />);
       const badge = screen.getByTestId(`pending-axiom-mark-badge-${NODE_ID}-${PARTICIPANT_A}`);
       expect(badge.getAttribute('aria-label')).toBe(EXPECTED[locale].srLabel);
-      await i18next.changeLanguage('en-US');
     });
 
     it(`renders the visible "A" glyph for ${locale}`, async () => {
       await i18next.changeLanguage(locale);
-      render(<PendingAxiomMarkBadge mark={makeMark()} />);
+      await render(<PendingAxiomMarkBadge mark={makeMark()} />);
       const badge = screen.getByTestId(`pending-axiom-mark-badge-${NODE_ID}-${PARTICIPANT_A}`);
       expect(badge.textContent).toBe('A');
-      await i18next.changeLanguage('en-US');
     });
   }
 });
 
 describe('PendingAxiomMarkBadge — data attributes', () => {
-  it('exposes `data-participant-id` matching the participantId prop', () => {
-    render(<PendingAxiomMarkBadge mark={makeMark({ participantId: PARTICIPANT_B })} />);
+  it('exposes `data-participant-id` matching the participantId prop', async () => {
+    await render(<PendingAxiomMarkBadge mark={makeMark({ participantId: PARTICIPANT_B })} />);
     const badge = screen.getByTestId(`pending-axiom-mark-badge-${NODE_ID}-${PARTICIPANT_B}`);
     expect(badge.getAttribute('data-participant-id')).toBe(PARTICIPANT_B);
   });
 
-  it('stamps `data-pending="true"` on every pending badge', () => {
+  it('stamps `data-pending="true"` on every pending badge', async () => {
     // Decision §5 — distinct boolean attribute for the "this is the
     // pending variant" seam. Distinct from `data-facet-status` (which
     // is reserved for the per-facet state machine — axiom-marks are
     // not facets per `mod_axiom_mark_decoration` Decision).
-    render(<PendingAxiomMarkBadge mark={makeMark()} />);
+    await render(<PendingAxiomMarkBadge mark={makeMark()} />);
     const badge = screen.getByTestId(`pending-axiom-mark-badge-${NODE_ID}-${PARTICIPANT_A}`);
     expect(badge.getAttribute('data-pending')).toBe('true');
   });
 
-  it('exposes a testid of the form `pending-axiom-mark-badge-{nodeId}-{participantId}`', () => {
+  it('exposes a testid of the form `pending-axiom-mark-badge-{nodeId}-{participantId}`', async () => {
     // Distinct from the committed `axiom-mark-badge-{nodeId}-…` testid
     // shape so existing committed-side tests stay stable (Decision §5).
     const mark = makeMark({ nodeId: NODE_ID, participantId: PARTICIPANT_A });
-    render(<PendingAxiomMarkBadge mark={mark} />);
+    await render(<PendingAxiomMarkBadge mark={mark} />);
     expect(screen.getByTestId(`pending-axiom-mark-badge-${NODE_ID}-${PARTICIPANT_A}`)).toBeTruthy();
   });
 });
 
 describe('PendingAxiomMarkBadge — per-participant deterministic color survives the overlay', () => {
-  it('applies the same Tailwind background class for the same participantId across two renders', () => {
+  it('applies the same Tailwind background class for the same participantId across two renders', async () => {
     const expectedColor = axiomMarkColorFor(PARTICIPANT_A);
-    const { unmount } = render(<PendingAxiomMarkBadge mark={makeMark()} />);
+    const { unmount } = await render(<PendingAxiomMarkBadge mark={makeMark()} />);
     const first = screen.getByTestId(`pending-axiom-mark-badge-${NODE_ID}-${PARTICIPANT_A}`);
     const firstClassName = first.className;
     expect(firstClassName).toContain(expectedColor.bg);
     expect(firstClassName).toContain(expectedColor.text);
     expect(firstClassName).toContain(expectedColor.ring);
     unmount();
-    render(<PendingAxiomMarkBadge mark={makeMark()} />);
+    await render(<PendingAxiomMarkBadge mark={makeMark()} />);
     const second = screen.getByTestId(`pending-axiom-mark-badge-${NODE_ID}-${PARTICIPANT_A}`);
     expect(second.className).toBe(firstClassName);
   });
 
-  it('applies a different background class for a different participantId', () => {
-    render(<PendingAxiomMarkBadge mark={makeMark({ participantId: PARTICIPANT_A })} />);
-    render(
+  it('applies a different background class for a different participantId', async () => {
+    await render(<PendingAxiomMarkBadge mark={makeMark({ participantId: PARTICIPANT_A })} />);
+    await render(
       <PendingAxiomMarkBadge
         mark={makeMark({
           proposalEventId: 'cccccccc-cccc-4ccc-8ccc-cccccccccc02',
@@ -173,12 +197,12 @@ describe('PendingAxiomMarkBadge — per-participant deterministic color survives
 });
 
 describe('PendingAxiomMarkBadge — proposed-state overlay composition', () => {
-  it('includes `border-dashed` AND `opacity-60` (the proposed-state visual contract per mod_proposed_state_styling)', () => {
+  it('includes `border-dashed` AND `opacity-60` (the proposed-state visual contract per mod_proposed_state_styling)', async () => {
     // Decision §3 — the proposed-state overlay is the dashed slate
     // border + opacity-60 fade. Both classes must be present so the
     // visual vocabulary matches the rest of the proposed-state surface
     // (the card frame + facet pills).
-    render(<PendingAxiomMarkBadge mark={makeMark()} />);
+    await render(<PendingAxiomMarkBadge mark={makeMark()} />);
     const badge = screen.getByTestId(`pending-axiom-mark-badge-${NODE_ID}-${PARTICIPANT_A}`);
     expect(badge.className).toContain('border-dashed');
     expect(badge.className).toContain('opacity-60');
@@ -189,14 +213,14 @@ describe('PendingAxiomMarkBadge — proposed-state overlay composition', () => {
     expect(badge.className).toContain('border-slate-400');
   });
 
-  it('keeps the per-participant background + ring under the overlay (attribution survives the fade)', () => {
+  it('keeps the per-participant background + ring under the overlay (attribution survives the fade)', async () => {
     // Decision §3 — losing per-participant attribution at the moment
     // the moderator most needs to anticipate the vote flow was
     // explicitly rejected. The participant-color background + ring stay
     // underneath the dashed slate border + opacity-60 overlay so the
     // moderator can still identify whose mark is pending.
     const color = axiomMarkColorFor(PARTICIPANT_A);
-    render(<PendingAxiomMarkBadge mark={makeMark()} />);
+    await render(<PendingAxiomMarkBadge mark={makeMark()} />);
     const badge = screen.getByTestId(`pending-axiom-mark-badge-${NODE_ID}-${PARTICIPANT_A}`);
     // `bg-…-100` (background) AND `ring-…-300` (ring halo) both
     // present despite the proposed-state overlay.

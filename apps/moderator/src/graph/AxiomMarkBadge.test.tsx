@@ -20,12 +20,40 @@
 //      participantId twice produces the same Tailwind background class.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import {
+  cleanup,
+  render as rtlRender,
+  screen,
+  type RenderOptions,
+  type RenderResult,
+} from '@testing-library/react';
 import i18next from 'i18next';
+import { act, type ReactElement } from 'react';
 
 import { AxiomMarkBadge } from './AxiomMarkBadge';
 import { axiomMarkColorFor, type AxiomMark } from './selectors';
 import { createI18nInstance } from '@a-conversa/shell';
+
+// Local `render(...)` shadow that wraps the synchronous testing-library
+// render in `await act(async () => { ... })`. `useTranslation()`
+// schedules a microtask-deferred setState when its internal i18next
+// subscription registers on mount; the deferred update fires AFTER the
+// synchronous render's act() wrapper closes, so with
+// `IS_REACT_ACT_ENVIRONMENT = true` React emits "An update to
+// <Component> was not wrapped in act(...)". Flushing pending microtasks
+// inside the async act block absorbs the deferred update.
+async function render(ui: ReactElement, options?: RenderOptions): Promise<RenderResult> {
+  let result!: RenderResult;
+  // `act` takes the async (microtask-flushing) path when the callback
+  // returns a thenable — `return Promise.resolve()` is enough; no
+  // `async` keyword (which would trip `require-await` since the body
+  // does not await anything).
+  await act(() => {
+    result = rtlRender(ui, options);
+    return Promise.resolve();
+  });
+  return result;
+}
 
 const NODE_ID = '00000000-0000-4000-8000-000000000a01';
 // PARTICIPANT_A and PARTICIPANT_B hash to two distinct palette buckets
@@ -73,51 +101,56 @@ describe('AxiomMarkBadge — localized tooltip per locale', () => {
   } as const;
 
   for (const locale of ['en-US', 'pt-BR', 'es-419'] as const) {
+    // The trailing `await i18next.changeLanguage('en-US')` resets that
+    // used to live at the end of each case here were redundant with the
+    // `beforeEach` reset above — and worse, they fired a microtask-
+    // deferred setState on the still-mounted `<AxiomMarkBadge>` AFTER
+    // the synchronous body returned, surfacing as "An update to
+    // AxiomMarkBadgeImpl was not wrapped in act(...)" warnings now that
+    // `IS_REACT_ACT_ENVIRONMENT = true`. Dropped in favor of the
+    // `beforeEach` reset (Recipe B).
     it(`renders the localized tooltip for ${locale}`, async () => {
       await i18next.changeLanguage(locale);
-      render(<AxiomMarkBadge mark={makeMark()} />);
+      await render(<AxiomMarkBadge mark={makeMark()} />);
       const badge = screen.getByTestId(`axiom-mark-badge-${NODE_ID}-${PARTICIPANT_A}`);
       expect(badge.getAttribute('title')).toBe(EXPECTED[locale].tooltip);
-      await i18next.changeLanguage('en-US');
     });
 
     it(`renders the localized aria-label for ${locale}`, async () => {
       await i18next.changeLanguage(locale);
-      render(<AxiomMarkBadge mark={makeMark()} />);
+      await render(<AxiomMarkBadge mark={makeMark()} />);
       const badge = screen.getByTestId(`axiom-mark-badge-${NODE_ID}-${PARTICIPANT_A}`);
       expect(badge.getAttribute('aria-label')).toBe(EXPECTED[locale].srLabel);
-      await i18next.changeLanguage('en-US');
     });
 
     it(`renders the visible "A" glyph for ${locale}`, async () => {
       await i18next.changeLanguage(locale);
-      render(<AxiomMarkBadge mark={makeMark()} />);
+      await render(<AxiomMarkBadge mark={makeMark()} />);
       const badge = screen.getByTestId(`axiom-mark-badge-${NODE_ID}-${PARTICIPANT_A}`);
       expect(badge.textContent).toBe('A');
-      await i18next.changeLanguage('en-US');
     });
   }
 });
 
 describe('AxiomMarkBadge — data attributes', () => {
-  it('exposes `data-participant-id` matching the participantId prop', () => {
-    render(<AxiomMarkBadge mark={makeMark({ participantId: PARTICIPANT_B })} />);
+  it('exposes `data-participant-id` matching the participantId prop', async () => {
+    await render(<AxiomMarkBadge mark={makeMark({ participantId: PARTICIPANT_B })} />);
     const badge = screen.getByTestId(`axiom-mark-badge-${NODE_ID}-${PARTICIPANT_B}`);
     expect(badge.getAttribute('data-participant-id')).toBe(PARTICIPANT_B);
   });
 
-  it('exposes a testid of the form `axiom-mark-badge-{nodeId}-{participantId}`', () => {
+  it('exposes a testid of the form `axiom-mark-badge-{nodeId}-{participantId}`', async () => {
     const mark = makeMark({ nodeId: NODE_ID, participantId: PARTICIPANT_A });
-    render(<AxiomMarkBadge mark={mark} />);
+    await render(<AxiomMarkBadge mark={mark} />);
     expect(screen.getByTestId(`axiom-mark-badge-${NODE_ID}-${PARTICIPANT_A}`)).toBeTruthy();
   });
 });
 
 describe('AxiomMarkBadge — per-participant deterministic color', () => {
-  it('applies the same Tailwind background class for the same participantId across two renders', () => {
+  it('applies the same Tailwind background class for the same participantId across two renders', async () => {
     const expectedColor = axiomMarkColorFor(PARTICIPANT_A);
     // First render — capture the className.
-    const { unmount } = render(<AxiomMarkBadge mark={makeMark()} />);
+    const { unmount } = await render(<AxiomMarkBadge mark={makeMark()} />);
     const first = screen.getByTestId(`axiom-mark-badge-${NODE_ID}-${PARTICIPANT_A}`);
     const firstClassName = first.className;
     expect(firstClassName).toContain(expectedColor.bg);
@@ -125,18 +158,18 @@ describe('AxiomMarkBadge — per-participant deterministic color', () => {
     expect(firstClassName).toContain(expectedColor.ring);
     unmount();
     // Second render — same participantId → same className.
-    render(<AxiomMarkBadge mark={makeMark()} />);
+    await render(<AxiomMarkBadge mark={makeMark()} />);
     const second = screen.getByTestId(`axiom-mark-badge-${NODE_ID}-${PARTICIPANT_A}`);
     expect(second.className).toBe(firstClassName);
   });
 
-  it('applies a different background class for a different participantId (when palette buckets differ)', () => {
+  it('applies a different background class for a different participantId (when palette buckets differ)', async () => {
     // PARTICIPANT_A and PARTICIPANT_B hash to different palette buckets
     // (sum-of-hex-digits: A→13%6=1 amber, B→14%6=2 emerald). Pin the
     // distinctness so a future palette / hash refactor doesn't silently
     // collapse them.
-    render(<AxiomMarkBadge mark={makeMark({ participantId: PARTICIPANT_A })} />);
-    render(<AxiomMarkBadge mark={makeMark({ participantId: PARTICIPANT_B })} />);
+    await render(<AxiomMarkBadge mark={makeMark({ participantId: PARTICIPANT_A })} />);
+    await render(<AxiomMarkBadge mark={makeMark({ participantId: PARTICIPANT_B })} />);
     const a = screen.getByTestId(`axiom-mark-badge-${NODE_ID}-${PARTICIPANT_A}`);
     const b = screen.getByTestId(`axiom-mark-badge-${NODE_ID}-${PARTICIPANT_B}`);
     const aColor = axiomMarkColorFor(PARTICIPANT_A);

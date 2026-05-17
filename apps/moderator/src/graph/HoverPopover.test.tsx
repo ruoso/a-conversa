@@ -17,8 +17,15 @@
 //   - Wording truncation at 60 chars for the edge endpoint template.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import {
+  cleanup,
+  render as rtlRender,
+  screen,
+  type RenderOptions,
+  type RenderResult,
+} from '@testing-library/react';
 import i18next from 'i18next';
+import { act, type ReactElement } from 'react';
 
 import { HoverPopover } from './HoverPopover';
 import type { StatementNodeData } from './StatementNode';
@@ -70,11 +77,34 @@ afterEach(() => {
   cleanup();
 });
 
+// Local `render(...)` shadow that wraps the synchronous testing-library
+// render in `await act(async () => { ... })`. `useTranslation()` (used
+// transitively by `<HoverPopover>`) schedules a microtask-deferred
+// setState when its internal i18next subscription registers on mount;
+// that deferred update fires AFTER the synchronous render's act()
+// wrapper closes, so React emits the "An update to <Component> was not
+// wrapped in act(...)" warning under the
+// `IS_REACT_ACT_ENVIRONMENT = true` global. Awaiting an async act block
+// flushes pending microtasks before resolving, absorbing the deferred
+// update inside the wrapper.
+async function render(ui: ReactElement, options?: RenderOptions): Promise<RenderResult> {
+  let result!: RenderResult;
+  // `act` takes the async (microtask-flushing) path when the callback
+  // returns a thenable — `return Promise.resolve()` is enough; no
+  // `async` keyword (which would trip `require-await` since the body
+  // does not await anything).
+  await act(() => {
+    result = rtlRender(ui, options);
+    return Promise.resolve();
+  });
+  return result;
+}
+
 // -- Node target ------------------------------------------------------
 
 describe('HoverPopover — node target rendering', () => {
-  it('renders the wording paragraph + em-dash kind placeholder when minimal data is given', () => {
-    render(
+  it('renders the wording paragraph + em-dash kind placeholder when minimal data is given', async () => {
+    await render(
       <HoverPopover
         id="n-minimal"
         target={{ kind: 'node', data: nodeData({ wording: 'minimal node wording' }) }}
@@ -90,8 +120,8 @@ describe('HoverPopover — node target rendering', () => {
     expect(popover.querySelector('[data-hover-popover-section="diagnostic"]')).toBeNull();
   });
 
-  it('renders the localized kind via methodology.kind.<kind>', () => {
-    render(
+  it('renders the localized kind via methodology.kind.<kind>', async () => {
+    await render(
       <HoverPopover
         id="n-fact"
         target={{ kind: 'node', data: nodeData({ wording: 'w', kind: 'fact' }) }}
@@ -103,7 +133,7 @@ describe('HoverPopover — node target rendering', () => {
 
   it('renders kind localized across locales (pt-BR + es-419)', async () => {
     await i18next.changeLanguage('pt-BR');
-    const { rerender } = render(
+    const { rerender } = await render(
       <HoverPopover
         id="n-pt"
         target={{ kind: 'node', data: nodeData({ wording: 'w', kind: 'fact' }) }}
@@ -111,19 +141,23 @@ describe('HoverPopover — node target rendering', () => {
     );
     expect(screen.getByTestId('hover-popover-n-pt').textContent).toContain('Fato');
 
-    await i18next.changeLanguage('es-419');
-    rerender(
-      <HoverPopover
-        id="n-pt"
-        target={{ kind: 'node', data: nodeData({ wording: 'w', kind: 'fact' }) }}
-      />,
-    );
+    await act(async () => {
+      await i18next.changeLanguage('es-419');
+      rerender(
+        <HoverPopover
+          id="n-pt"
+          target={{ kind: 'node', data: nodeData({ wording: 'w', kind: 'fact' }) }}
+        />,
+      );
+    });
     expect(screen.getByTestId('hover-popover-n-pt').textContent).toContain('Hecho');
-    await i18next.changeLanguage('en-US');
+    await act(async () => {
+      await i18next.changeLanguage('en-US');
+    });
   });
 
-  it('renders one facet row when facetStatuses has one entry', () => {
-    render(
+  it('renders one facet row when facetStatuses has one entry', async () => {
+    await render(
       <HoverPopover
         id="n-facet"
         target={{
@@ -140,8 +174,8 @@ describe('HoverPopover — node target rendering', () => {
     expect(rows[0]?.textContent).toContain('Disputed');
   });
 
-  it('renders facet rows in canonical reading order (wording → classification → substance)', () => {
-    render(
+  it('renders facet rows in canonical reading order (wording → classification → substance)', async () => {
+    await render(
       <HoverPopover
         id="n-multi-facet"
         target={{
@@ -166,10 +200,10 @@ describe('HoverPopover — node target rendering', () => {
     ]);
   });
 
-  it('renders the axiom-mark line with each participant id when axiomMarks is non-empty', () => {
+  it('renders the axiom-mark line with each participant id when axiomMarks is non-empty', async () => {
     const PA = '00000000-0000-4000-8000-000000000001';
     const PB = '00000000-0000-4000-8000-000000000002';
-    render(
+    await render(
       <HoverPopover
         id="n-ax"
         target={{
@@ -191,8 +225,8 @@ describe('HoverPopover — node target rendering', () => {
     expect(axiomSection!.textContent).toContain(PB);
   });
 
-  it('renders the diagnostic section with severity + joined kind titles', () => {
-    render(
+  it('renders the diagnostic section with severity + joined kind titles', async () => {
+    await render(
       <HoverPopover
         id="n-diag"
         target={{
@@ -226,8 +260,8 @@ describe('HoverPopover — node target rendering', () => {
 // existence on the edge surface.
 
 describe('HoverPopover — edge target rendering', () => {
-  it('renders the role headline and the endpoint references row with source/target ids', () => {
-    render(
+  it('renders the role headline and the endpoint references row with source/target ids', async () => {
+    await render(
       <HoverPopover
         id="edge-1"
         target={{
@@ -252,7 +286,7 @@ describe('HoverPopover — edge target rendering', () => {
 
   it('renders the role headline localized across locales (pt-BR / es-419)', async () => {
     await i18next.changeLanguage('pt-BR');
-    const { rerender } = render(
+    const { rerender } = await render(
       <HoverPopover
         id="edge-locale"
         target={{
@@ -263,24 +297,28 @@ describe('HoverPopover — edge target rendering', () => {
     );
     expect(screen.getByTestId('hover-popover-edge-locale').textContent).toContain('Apoia');
 
-    await i18next.changeLanguage('es-419');
-    rerender(
-      <HoverPopover
-        id="edge-locale"
-        target={{
-          kind: 'edge',
-          data: edgeData({ role: 'supports', sourceId: 'src-1', targetId: 'tgt-1' }),
-        }}
-      />,
-    );
+    await act(async () => {
+      await i18next.changeLanguage('es-419');
+      rerender(
+        <HoverPopover
+          id="edge-locale"
+          target={{
+            kind: 'edge',
+            data: edgeData({ role: 'supports', sourceId: 'src-1', targetId: 'tgt-1' }),
+          }}
+        />,
+      );
+    });
     expect(screen.getByTestId('hover-popover-edge-locale').textContent).toContain('Apoya');
-    await i18next.changeLanguage('en-US');
+    await act(async () => {
+      await i18next.changeLanguage('en-US');
+    });
   });
 
   it('renders endpoint ids in the endpoints row consistently across locales (template is locale-identical)', async () => {
     for (const locale of ['en-US', 'pt-BR', 'es-419'] as const) {
       await i18next.changeLanguage(locale);
-      const { unmount } = render(
+      const { unmount } = await render(
         <HoverPopover
           id={`edge-${locale}`}
           target={{
@@ -301,8 +339,8 @@ describe('HoverPopover — edge target rendering', () => {
     await i18next.changeLanguage('en-US');
   });
 
-  it('stamps data-hover-popover-source-id / data-hover-popover-target-id on the endpoints row', () => {
-    render(
+  it('stamps data-hover-popover-source-id / data-hover-popover-target-id on the endpoints row', async () => {
+    await render(
       <HoverPopover
         id="edge-seam"
         target={{
@@ -319,12 +357,12 @@ describe('HoverPopover — edge target rendering', () => {
     expect(endpoints!.getAttribute('data-hover-popover-target-id')).toBe('tgt-1');
   });
 
-  it('does NOT render source/target wordings on the edge popover (regardless of wording length)', () => {
+  it('does NOT render source/target wordings on the edge popover (regardless of wording length)', async () => {
     const longSource =
       'A source wording that is significantly longer than 60 characters so this test catches any re-introduction of the prior truncate path';
     const longTarget =
       'A target wording that is similarly long so neither slice prefix appears in the rendered DOM under any path';
-    render(
+    await render(
       <HoverPopover
         id="edge-no-wordings"
         target={{
@@ -349,7 +387,7 @@ describe('HoverPopover — edge target rendering', () => {
     expect(popover.textContent).not.toContain('…');
   });
 
-  it('does NOT render the role-description section when the catalog lacks methodology.edgeRole.<role>.description', () => {
+  it('does NOT render the role-description section when the catalog lacks methodology.edgeRole.<role>.description', async () => {
     // The canonical catalog now carries a description for every role
     // (`i18n_methodology_role_descriptions`). To keep the omitted-DOM
     // branch covered we shadow the `supports.description` resource with
@@ -364,7 +402,7 @@ describe('HoverPopover — edge target rendering', () => {
     // store, so the override does not leak across tests.
     const missKey = 'methodology.edgeRole.supports.description';
     i18next.addResource('en-US', 'translation', missKey, missKey);
-    render(
+    await render(
       <HoverPopover
         id="edge-no-desc"
         target={{
@@ -377,13 +415,13 @@ describe('HoverPopover — edge target rendering', () => {
     expect(popover.querySelector('[data-hover-popover-section="role-description"]')).toBeNull();
   });
 
-  it('renders the role-description section when the catalog DOES carry methodology.edgeRole.<role>.description', () => {
+  it('renders the role-description section when the catalog DOES carry methodology.edgeRole.<role>.description', async () => {
     // The canonical catalog (post `i18n_methodology_role_descriptions`)
     // carries a description for every role. The popover renders the
     // description paragraph iff the lookup resolves to something OTHER
     // than the literal key string. No `addResource()` injection needed:
     // the en-US `qualifies.description` entry from the catalog suffices.
-    render(
+    await render(
       <HoverPopover
         id="edge-with-desc"
         target={{
@@ -401,8 +439,8 @@ describe('HoverPopover — edge target rendering', () => {
     expect(desc!.textContent).toContain('Source hedges the scope or degree of target');
   });
 
-  it('renders the substance facet row when facetStatuses has substance', () => {
-    render(
+  it('renders the substance facet row when facetStatuses has substance', async () => {
+    await render(
       <HoverPopover
         id="edge-facet"
         target={{
@@ -419,8 +457,8 @@ describe('HoverPopover — edge target rendering', () => {
     expect(rows[0]?.textContent).toContain('Agreed');
   });
 
-  it('renders the diagnostic section on edges identically to nodes', () => {
-    render(
+  it('renders the diagnostic section on edges identically to nodes', async () => {
+    await render(
       <HoverPopover
         id="edge-diag"
         target={{
@@ -442,8 +480,8 @@ describe('HoverPopover — edge target rendering', () => {
 // -- Test seams -------------------------------------------------------
 
 describe('HoverPopover — test seams', () => {
-  it('stamps role="tooltip" + id="hover-popover-<id>" on the root', () => {
-    render(
+  it('stamps role="tooltip" + id="hover-popover-<id>" on the root', async () => {
+    await render(
       <HoverPopover id="seam-1" target={{ kind: 'node', data: nodeData({ wording: 'w' }) }} />,
     );
     const popover = screen.getByTestId('hover-popover-seam-1');
@@ -451,8 +489,8 @@ describe('HoverPopover — test seams', () => {
     expect(popover.getAttribute('id')).toBe('hover-popover-seam-1');
   });
 
-  it('stamps data-hover-target-kind="node" for a node target', () => {
-    render(
+  it('stamps data-hover-target-kind="node" for a node target', async () => {
+    await render(
       <HoverPopover id="seam-node" target={{ kind: 'node', data: nodeData({ wording: 'w' }) }} />,
     );
     expect(
@@ -460,15 +498,15 @@ describe('HoverPopover — test seams', () => {
     ).toBe('node');
   });
 
-  it('stamps data-hover-target-kind="edge" for an edge target', () => {
-    render(<HoverPopover id="seam-edge" target={{ kind: 'edge', data: edgeData() }} />);
+  it('stamps data-hover-target-kind="edge" for an edge target', async () => {
+    await render(<HoverPopover id="seam-edge" target={{ kind: 'edge', data: edgeData() }} />);
     expect(
       screen.getByTestId('hover-popover-seam-edge').getAttribute('data-hover-target-kind'),
     ).toBe('edge');
   });
 
-  it('applies pointer-events: none on the popover root (click-through requirement)', () => {
-    render(
+  it('applies pointer-events: none on the popover root (click-through requirement)', async () => {
+    await render(
       <HoverPopover id="seam-pe" target={{ kind: 'node', data: nodeData({ wording: 'w' }) }} />,
     );
     const popover = screen.getByTestId('hover-popover-seam-pe');
@@ -491,8 +529,8 @@ describe('HoverPopover — test seams', () => {
 // node-scoped concept).
 
 describe('HoverPopover — disputation-test row (mod_disputation_test_display)', () => {
-  it('renders the disputation row with the "Data" label when a node has substance: agreed', () => {
-    render(
+  it('renders the disputation row with the "Data" label when a node has substance: agreed', async () => {
+    await render(
       <HoverPopover
         id="n-disp-data"
         target={{
@@ -509,8 +547,8 @@ describe('HoverPopover — disputation-test row (mod_disputation_test_display)',
     expect(row!.textContent).toContain('Data');
   });
 
-  it('renders the disputation row with the "Claim" label when a node has substance: disputed', () => {
-    render(
+  it('renders the disputation row with the "Claim" label when a node has substance: disputed', async () => {
+    await render(
       <HoverPopover
         id="n-disp-claim"
         target={{
@@ -527,8 +565,8 @@ describe('HoverPopover — disputation-test row (mod_disputation_test_display)',
     expect(row!.textContent).toContain('Claim');
   });
 
-  it('renders the disputation row with the "Unsettled" label when a node has substance: proposed', () => {
-    render(
+  it('renders the disputation row with the "Unsettled" label when a node has substance: proposed', async () => {
+    await render(
       <HoverPopover
         id="n-disp-unsettled"
         target={{
@@ -545,8 +583,8 @@ describe('HoverPopover — disputation-test row (mod_disputation_test_display)',
     expect(row!.textContent).toContain('Unsettled');
   });
 
-  it('does NOT render the disputation row when the node has no substance facet entry', () => {
-    render(
+  it('does NOT render the disputation row when the node has no substance facet entry', async () => {
+    await render(
       <HoverPopover
         id="n-no-disp"
         target={{
@@ -559,11 +597,11 @@ describe('HoverPopover — disputation-test row (mod_disputation_test_display)',
     expect(popover.querySelector('[data-hover-popover-section="disputation"]')).toBeNull();
   });
 
-  it('does NOT render the disputation row on an edge popover (regardless of edge substance facet status)', () => {
+  it('does NOT render the disputation row on an edge popover (regardless of edge substance facet status)', async () => {
     // Edge popover with substance: agreed — the disputation-test
     // vocabulary is a node-scoped methodology concept, so the row
     // is never rendered for edges (refinement Decision §6).
-    render(
+    await render(
       <HoverPopover
         id="edge-disp"
         target={{ kind: 'edge', data: edgeData({ facetStatuses: { substance: 'agreed' } }) }}
@@ -580,7 +618,7 @@ describe('HoverPopover — disputation-test row (mod_disputation_test_display)',
       { locale: 'es-419' as const, label: 'Prueba de disputación', outcome: 'Dato' },
     ]) {
       await i18next.changeLanguage(locale);
-      const { unmount } = render(
+      const { unmount } = await render(
         <HoverPopover
           id={`n-disp-${locale}`}
           target={{

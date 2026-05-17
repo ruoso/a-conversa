@@ -13,7 +13,6 @@ beforeAll(async () => {
 
 afterEach(() => {
   vi.restoreAllMocks();
-  document.head.querySelectorAll('link[data-surface-style]').forEach((node) => node.remove());
 });
 
 describe('SurfaceHost', () => {
@@ -39,6 +38,7 @@ describe('SurfaceHost', () => {
       },
     });
     vi.spyOn(manifestModule, 'importSurfaceModule').mockResolvedValue({ mount });
+    const injectStylesSpy = vi.spyOn(manifestModule, 'injectStyles').mockReturnValue([]);
 
     renderWithProviders(<SurfaceHost surfaceId="moderator" routerBasePath="/m" />, {
       auth,
@@ -50,9 +50,7 @@ describe('SurfaceHost', () => {
     });
     const firstCall = mount.mock.calls.at(0) as [{ routerBasePath: string }] | undefined;
     expect(firstCall?.[0].routerBasePath).toBe('/m');
-    expect(
-      document.head.querySelector('link[data-surface-style="/_surfaces/moderator/moderator.css"]'),
-    ).not.toBeNull();
+    expect(injectStylesSpy).toHaveBeenCalledWith(['/_surfaces/moderator/moderator.css']);
   });
 
   it('renders an error state when the manifest omits the requested surface', async () => {

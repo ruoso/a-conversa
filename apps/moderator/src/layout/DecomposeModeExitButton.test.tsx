@@ -11,10 +11,17 @@
 // both fire `exitDecomposeMode`.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import {
+  cleanup,
+  fireEvent,
+  render as rtlRender,
+  screen,
+  type RenderOptions,
+  type RenderResult,
+} from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import i18next from 'i18next';
-import type { ReactElement } from 'react';
+import { act, type ReactElement } from 'react';
 import type { Event } from '@a-conversa/shared-types';
 
 import { DecomposeModeExitButton, resolveDecomposeTargetWording } from './DecomposeModeExitButton';
@@ -45,11 +52,35 @@ function makeNodeCreated(opts: { sequence: number; nodeId: string; wording: stri
 }
 
 /**
+ * Local `render(...)` shadow that wraps every render in an
+ * `await act(async () => { ... })`. `useTranslation()` (via
+ * `ProposalModeExitAffordance`) schedules a microtask-deferred setState
+ * when its internal i18next subscription registers on mount; the
+ * deferred update fires AFTER a synchronous render's act() wrapper
+ * closes, so React emits "An update to <Component> was not wrapped in
+ * act(...)". `await act(async () => { ... })` flushes pending
+ * microtasks before the act block resolves, absorbing the deferred
+ * update inside the wrapper.
+ */
+async function render(ui: ReactElement, options?: RenderOptions): Promise<RenderResult> {
+  let result!: RenderResult;
+  // `act` takes the async (microtask-flushing) path when the callback
+  // returns a thenable — `return Promise.resolve()` is enough; no
+  // `async` keyword (which would trip `require-await` since the body
+  // does not await anything).
+  await act(() => {
+    result = rtlRender(ui, options);
+    return Promise.resolve();
+  });
+  return result;
+}
+
+/**
  * Render `<DecomposeModeExitButton>` inside a `<MemoryRouter>` that
  * pins the URL to `/sessions/<id>/operate` so the component's
  * `useParams<{ id: string }>` resolves to the seeded SESSION_ID.
  */
-function renderWithRoute(): ReturnType<typeof render> {
+async function renderWithRoute(): Promise<RenderResult> {
   function RouteHost(): ReactElement {
     return <DecomposeModeExitButton />;
   }
@@ -98,20 +129,20 @@ describe('resolveDecomposeTargetWording — events-log walk', () => {
 });
 
 describe('DecomposeModeExitButton — render gating', () => {
-  it('renders null when mode is idle', () => {
-    const { container } = renderWithRoute();
+  it('renders null when mode is idle', async () => {
+    const { container } = await renderWithRoute();
     expect(container.firstChild).toBeNull();
     expect(screen.queryByTestId('decompose-mode-exit')).toBeNull();
   });
 
-  it('renders the button + overlay when mode is decompose and a matching node-created event exists', () => {
+  it('renders the button + overlay when mode is decompose and a matching node-created event exists', async () => {
     useWsStore
       .getState()
       .applyEvent(makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'parent wording' }));
     act(() => {
       useCaptureStore.getState().enterDecomposeMode(NODE_A);
     });
-    renderWithRoute();
+    await renderWithRoute();
 
     const button = screen.getByTestId('decompose-mode-exit');
     expect(button).toBeTruthy();
@@ -121,14 +152,14 @@ describe('DecomposeModeExitButton — render gating', () => {
     expect(overlay.textContent).toBe('Decomposing parent wording');
   });
 
-  it('renders the button with an empty overlay when no matching node-created event exists', () => {
+  it('renders the button with an empty overlay when no matching node-created event exists', async () => {
     // mode === 'decompose' AND decomposeTargetNodeId is set, but the
     // events log doesn't yet contain the matching node-created event
     // (the defended-against transient inconsistency).
     act(() => {
       useCaptureStore.getState().enterDecomposeMode('not-in-events');
     });
-    renderWithRoute();
+    await renderWithRoute();
 
     expect(screen.getByTestId('decompose-mode-exit')).toBeTruthy();
     const overlay = screen.getByTestId('decompose-mode-target-wording');
@@ -137,14 +168,14 @@ describe('DecomposeModeExitButton — render gating', () => {
 });
 
 describe('DecomposeModeExitButton — exit gestures', () => {
-  it('clicking the button calls exitDecomposeMode and unmounts the button', () => {
+  it('clicking the button calls exitDecomposeMode and unmounts the button', async () => {
     useWsStore
       .getState()
       .applyEvent(makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'w' }));
     act(() => {
       useCaptureStore.getState().enterDecomposeMode(NODE_A);
     });
-    renderWithRoute();
+    await renderWithRoute();
     expect(screen.getByTestId('decompose-mode-exit')).toBeTruthy();
 
     act(() => {
@@ -156,14 +187,14 @@ describe('DecomposeModeExitButton — exit gestures', () => {
     expect(screen.queryByTestId('decompose-mode-exit')).toBeNull();
   });
 
-  it('Escape keypress fires exitDecomposeMode while mode is decompose', () => {
+  it('Escape keypress fires exitDecomposeMode while mode is decompose', async () => {
     useWsStore
       .getState()
       .applyEvent(makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'w' }));
     act(() => {
       useCaptureStore.getState().enterDecomposeMode(NODE_A);
     });
-    renderWithRoute();
+    await renderWithRoute();
     expect(useCaptureStore.getState().mode).toBe('decompose');
 
     act(() => {
@@ -206,15 +237,21 @@ describe('DecomposeModeExitButton — i18n locale parity', () => {
       act(() => {
         useCaptureStore.getState().enterDecomposeMode(NODE_A);
       });
-      renderWithRoute();
+      await renderWithRoute();
 
       const button = screen.getByTestId('decompose-mode-exit');
       expect(button.getAttribute('aria-label')).toBe(ariaLabel);
       expect(button.getAttribute('title')).toBe(tooltip);
       expect(screen.getByTestId('decompose-mode-target-wording').textContent).toBe(overlay);
 
-      // Restore en-US for downstream tests.
-      await i18next.changeLanguage('en-US');
+      // Restore en-US for downstream tests. Wrapped in act(...) because
+      // the still-mounted `<ProposalModeExitAffordance>`'s `useTranslation()`
+      // subscription schedules a setState in response to the language
+      // change; without act() it would fire after `it` resolves but
+      // before `afterEach` cleanup, surfacing as an act() warning.
+      await act(async () => {
+        await i18next.changeLanguage('en-US');
+      });
     });
   }
 

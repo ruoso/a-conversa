@@ -14,7 +14,15 @@
 //   - Per-locale parity round-trip for the four new catalog keys.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import {
+  cleanup,
+  fireEvent,
+  render as rtlRender,
+  screen,
+  type RenderOptions,
+  type RenderResult,
+} from '@testing-library/react';
+import { act, type ReactElement } from 'react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import i18next from 'i18next';
 import type { Event } from '@a-conversa/shared-types';
@@ -69,7 +77,26 @@ function seedEvents(events: Event[]): void {
   }));
 }
 
-function renderChip(): ReturnType<typeof render> {
+// Async render shadow — `useTranslation()` schedules a microtask-deferred
+// setState when its internal i18next subscription registers on mount.
+// The deferred update fires AFTER a synchronous render's act() wrapper
+// closes, so React emits "An update to <Component> was not wrapped in
+// act(...)". `await act(async () => { ... })` flushes pending microtasks
+// before the act block resolves, absorbing the deferred update.
+async function render(ui: ReactElement, options?: RenderOptions): Promise<RenderResult> {
+  let result!: RenderResult;
+  // `act` takes the async (microtask-flushing) path when the callback
+  // returns a thenable — `return Promise.resolve()` is enough; no
+  // `async` keyword (which would trip `require-await` since the body
+  // does not await anything).
+  await act(() => {
+    result = rtlRender(ui, options);
+    return Promise.resolve();
+  });
+  return result;
+}
+
+async function renderChip(): Promise<RenderResult> {
   return render(
     <MemoryRouter initialEntries={[`/sessions/${SESSION_ID}/operate`]}>
       <Routes>
@@ -96,13 +123,13 @@ afterEach(() => {
 });
 
 describe('CaptureTargetChip — render structure', () => {
-  it('renders the wrapper testid', () => {
-    renderChip();
+  it('renders the wrapper testid', async () => {
+    await renderChip();
     expect(screen.getByTestId('capture-target-chip')).toBeTruthy();
   });
 
-  it('exposes the localized aria-label on the wrapper', () => {
-    renderChip();
+  it('exposes the localized aria-label on the wrapper', async () => {
+    await renderChip();
     expect(screen.getByTestId('capture-target-chip').getAttribute('aria-label')).toBe(
       'Edge target — auto-suggested from the most recently selected node',
     );
@@ -110,27 +137,27 @@ describe('CaptureTargetChip — render structure', () => {
 });
 
 describe('CaptureTargetChip — empty state', () => {
-  it('renders the localized empty-state label when both stores are empty', () => {
-    renderChip();
+  it('renders the localized empty-state label when both stores are empty', async () => {
+    await renderChip();
     expect(screen.getByTestId('capture-target-chip-label').textContent).toBe('No target yet');
   });
 
-  it('carries the dimmed text-slate-400 class in the empty state', () => {
-    renderChip();
+  it('carries the dimmed text-slate-400 class in the empty state', async () => {
+    await renderChip();
     const chip = screen.getByTestId('capture-target-chip');
     expect(chip.className).toContain('text-slate-400');
   });
 
-  it('does NOT render the override marker in the empty state', () => {
-    renderChip();
+  it('does NOT render the override marker in the empty state', async () => {
+    await renderChip();
     expect(screen.queryByTestId('capture-target-chip-override-marker')).toBeNull();
   });
 });
 
 describe('CaptureTargetChip — auto-stage from node selection', () => {
-  it('auto-stages the selected node id onto useCaptureStore.targetEntityId', () => {
+  it('auto-stages the selected node id onto useCaptureStore.targetEntityId', async () => {
     seedEvents([makeNodeCreated(1, 'n-1', SHORT_WORDING)]);
-    renderChip();
+    await renderChip();
     act(() => {
       useSelectionStore.setState({ selected: { kind: 'node', id: 'n-1' } });
     });
@@ -141,9 +168,9 @@ describe('CaptureTargetChip — auto-stage from node selection', () => {
     expect(screen.queryByTestId('capture-target-chip-override-marker')).toBeNull();
   });
 
-  it('updates the slice when the selection moves to a different node', () => {
+  it('updates the slice when the selection moves to a different node', async () => {
     seedEvents([makeNodeCreated(1, 'n-1', 'first node'), makeNodeCreated(2, 'n-2', 'second node')]);
-    renderChip();
+    await renderChip();
     act(() => {
       useSelectionStore.setState({ selected: { kind: 'node', id: 'n-1' } });
     });
@@ -159,8 +186,8 @@ describe('CaptureTargetChip — auto-stage from node selection', () => {
 });
 
 describe('CaptureTargetChip — non-node selections do not auto-stage', () => {
-  it('edge selection does NOT write to the target slice', () => {
-    renderChip();
+  it('edge selection does NOT write to the target slice', async () => {
+    await renderChip();
     act(() => {
       useSelectionStore.setState({ selected: { kind: 'edge', id: 'e-1' } });
     });
@@ -168,8 +195,8 @@ describe('CaptureTargetChip — non-node selections do not auto-stage', () => {
     expect(screen.getByTestId('capture-target-chip-label').textContent).toBe('No target yet');
   });
 
-  it('annotation selection does NOT write to the target slice', () => {
-    renderChip();
+  it('annotation selection does NOT write to the target slice', async () => {
+    await renderChip();
     act(() => {
       useSelectionStore.setState({ selected: { kind: 'annotation', id: 'a-1' } });
     });
@@ -177,9 +204,9 @@ describe('CaptureTargetChip — non-node selections do not auto-stage', () => {
     expect(screen.getByTestId('capture-target-chip-label').textContent).toBe('No target yet');
   });
 
-  it('preserves an existing auto-suggested id when an edge is selected afterwards', () => {
+  it('preserves an existing auto-suggested id when an edge is selected afterwards', async () => {
     seedEvents([makeNodeCreated(1, 'n-1', SHORT_WORDING)]);
-    renderChip();
+    await renderChip();
     act(() => {
       useSelectionStore.setState({ selected: { kind: 'node', id: 'n-1' } });
     });
@@ -195,9 +222,9 @@ describe('CaptureTargetChip — non-node selections do not auto-stage', () => {
 });
 
 describe('CaptureTargetChip — pane-click does not clear the chip', () => {
-  it('clearing the selection store does NOT clear the staged target', () => {
+  it('clearing the selection store does NOT clear the staged target', async () => {
     seedEvents([makeNodeCreated(1, 'n-1', SHORT_WORDING)]);
-    renderChip();
+    await renderChip();
     act(() => {
       useSelectionStore.setState({ selected: { kind: 'node', id: 'n-1' } });
     });
@@ -213,13 +240,13 @@ describe('CaptureTargetChip — pane-click does not clear the chip', () => {
 });
 
 describe('CaptureTargetChip — override no-stomp contract', () => {
-  it('an override survives subsequent node selections (Decision §5)', () => {
+  it('an override survives subsequent node selections (Decision §5)', async () => {
     seedEvents([
       makeNodeCreated(1, 'n-1', 'first'),
       makeNodeCreated(2, 'n-2', 'second'),
       makeNodeCreated(3, 'n-other', 'manually chosen target'),
     ]);
-    renderChip();
+    await renderChip();
     // 1. Auto-suggest fires after a deliberate selection of n-1.
     act(() => {
       useSelectionStore.setState({ selected: { kind: 'node', id: 'n-1' } });
@@ -248,18 +275,18 @@ describe('CaptureTargetChip — override no-stomp contract', () => {
     expect(screen.getByTestId('capture-target-chip-override-marker')).toBeTruthy();
   });
 
-  it('override marker is invisible when staged equals the auto-suggestion', () => {
+  it('override marker is invisible when staged equals the auto-suggestion', async () => {
     seedEvents([makeNodeCreated(1, 'n-1', SHORT_WORDING)]);
-    renderChip();
+    await renderChip();
     act(() => {
       useSelectionStore.setState({ selected: { kind: 'node', id: 'n-1' } });
     });
     expect(screen.queryByTestId('capture-target-chip-override-marker')).toBeNull();
   });
 
-  it('override marker carries the localized aria-label', () => {
+  it('override marker carries the localized aria-label', async () => {
     seedEvents([makeNodeCreated(1, 'n-1', 'first'), makeNodeCreated(2, 'n-2', 'second')]);
-    renderChip();
+    await renderChip();
     act(() => {
       useSelectionStore.setState({ selected: { kind: 'node', id: 'n-1' } });
     });
@@ -273,9 +300,9 @@ describe('CaptureTargetChip — override no-stomp contract', () => {
 });
 
 describe('CaptureTargetChip — reset clears the chip', () => {
-  it('reset() returns the chip to the empty state', () => {
+  it('reset() returns the chip to the empty state', async () => {
     seedEvents([makeNodeCreated(1, 'n-1', SHORT_WORDING)]);
-    renderChip();
+    await renderChip();
     act(() => {
       useSelectionStore.setState({ selected: { kind: 'node', id: 'n-1' } });
     });
@@ -291,9 +318,9 @@ describe('CaptureTargetChip — reset clears the chip', () => {
 });
 
 describe('CaptureTargetChip — wording label resolution', () => {
-  it('truncates wording longer than 32 characters and appends an ellipsis', () => {
+  it('truncates wording longer than 32 characters and appends an ellipsis', async () => {
     seedEvents([makeNodeCreated(1, 'n-long', LONG_WORDING)]);
-    renderChip();
+    await renderChip();
     act(() => {
       useSelectionStore.setState({ selected: { kind: 'node', id: 'n-long' } });
     });
@@ -302,10 +329,10 @@ describe('CaptureTargetChip — wording label resolution', () => {
     );
   });
 
-  it('falls back to the raw node id when no node-created event exists for the staged target', () => {
+  it('falls back to the raw node id when no node-created event exists for the staged target', async () => {
     // No events seeded — the lookup returns null and the chip falls
     // back to rendering the raw id.
-    renderChip();
+    await renderChip();
     act(() => {
       useSelectionStore.setState({ selected: { kind: 'node', id: 'n-missing' } });
     });
@@ -322,9 +349,9 @@ describe('CaptureTargetChip — wording label resolution', () => {
 // re-engagement test pins that a NEW node selection after the clear
 // re-engages the auto-stage path.
 describe('CaptureTargetChip — × button gesture', () => {
-  it('renders the × button in the filled state with a localized aria-label and title', () => {
+  it('renders the × button in the filled state with a localized aria-label and title', async () => {
     seedEvents([makeNodeCreated(1, 'n-1', SHORT_WORDING)]);
-    renderChip();
+    await renderChip();
     act(() => {
       useSelectionStore.setState({ selected: { kind: 'node', id: 'n-1' } });
     });
@@ -335,14 +362,14 @@ describe('CaptureTargetChip — × button gesture', () => {
     expect(clearButton.getAttribute('title')).toBe('Clear staged target (Esc)');
   });
 
-  it('does NOT render the × button in the empty state', () => {
-    renderChip();
+  it('does NOT render the × button in the empty state', async () => {
+    await renderChip();
     expect(screen.queryByTestId('capture-target-chip-clear')).toBeNull();
   });
 
-  it('clicking the × button clears the slice and flips the chip to empty state', () => {
+  it('clicking the × button clears the slice and flips the chip to empty state', async () => {
     seedEvents([makeNodeCreated(1, 'n-1', SHORT_WORDING)]);
-    renderChip();
+    await renderChip();
     act(() => {
       useSelectionStore.setState({ selected: { kind: 'node', id: 'n-1' } });
     });
@@ -357,12 +384,12 @@ describe('CaptureTargetChip — × button gesture', () => {
     expect(screen.queryByTestId('capture-target-chip-clear')).toBeNull();
   });
 
-  it('clicking × during an override produces a clean empty state (no marker, no button)', () => {
+  it('clicking × during an override produces a clean empty state (no marker, no button)', async () => {
     seedEvents([
       makeNodeCreated(1, 'n-1', 'first'),
       makeNodeCreated(2, 'n-other', 'manually chosen target'),
     ]);
-    renderChip();
+    await renderChip();
     act(() => {
       useSelectionStore.setState({ selected: { kind: 'node', id: 'n-1' } });
     });
@@ -383,9 +410,9 @@ describe('CaptureTargetChip — × button gesture', () => {
 });
 
 describe('CaptureTargetChip — Esc gesture', () => {
-  it('Esc keydown clears the slice when no editable target has focus', () => {
+  it('Esc keydown clears the slice when no editable target has focus', async () => {
     seedEvents([makeNodeCreated(1, 'n-1', SHORT_WORDING)]);
-    renderChip();
+    await renderChip();
     act(() => {
       useSelectionStore.setState({ selected: { kind: 'node', id: 'n-1' } });
     });
@@ -399,9 +426,9 @@ describe('CaptureTargetChip — Esc gesture', () => {
     expect(screen.getByTestId('capture-target-chip-label').textContent).toBe('No target yet');
   });
 
-  it('Esc keydown bails when a textarea is the active element (editable-target guard)', () => {
+  it('Esc keydown bails when a textarea is the active element (editable-target guard)', async () => {
     seedEvents([makeNodeCreated(1, 'n-1', SHORT_WORDING)]);
-    renderChip();
+    await renderChip();
     act(() => {
       useSelectionStore.setState({ selected: { kind: 'node', id: 'n-1' } });
     });
@@ -433,9 +460,9 @@ describe('CaptureTargetChip — Esc gesture', () => {
 // nulls both slices in one step). Both affordances (× button, Esc)
 // reach the same handler, so the contract is symmetric.
 describe('CaptureTargetChip — coupled clear (target + edgeRole)', () => {
-  it('× button clears both targetEntityId and edgeRole', () => {
+  it('× button clears both targetEntityId and edgeRole', async () => {
     seedEvents([makeNodeCreated(1, 'n-1', SHORT_WORDING)]);
-    renderChip();
+    await renderChip();
     act(() => {
       useSelectionStore.setState({ selected: { kind: 'node', id: 'n-1' } });
     });
@@ -453,9 +480,9 @@ describe('CaptureTargetChip — coupled clear (target + edgeRole)', () => {
     expect(useCaptureStore.getState().edgeRole).toBeNull();
   });
 
-  it('Esc keydown clears both targetEntityId and edgeRole', () => {
+  it('Esc keydown clears both targetEntityId and edgeRole', async () => {
     seedEvents([makeNodeCreated(1, 'n-1', SHORT_WORDING)]);
-    renderChip();
+    await renderChip();
     act(() => {
       useSelectionStore.setState({ selected: { kind: 'node', id: 'n-1' } });
     });
@@ -475,9 +502,9 @@ describe('CaptureTargetChip — coupled clear (target + edgeRole)', () => {
 });
 
 describe('CaptureTargetChip — re-engagement after clear', () => {
-  it('a new node selection after clear re-engages the auto-stage path', () => {
+  it('a new node selection after clear re-engages the auto-stage path', async () => {
     seedEvents([makeNodeCreated(1, 'n-1', 'first node'), makeNodeCreated(2, 'n-2', 'second node')]);
-    renderChip();
+    await renderChip();
 
     // Auto-suggest n-1.
     act(() => {
@@ -502,9 +529,9 @@ describe('CaptureTargetChip — re-engagement after clear', () => {
     expect(screen.queryByTestId('capture-target-chip-override-marker')).toBeNull();
   });
 
-  it('staying on the same node after clear does NOT re-suggest', () => {
+  it('staying on the same node after clear does NOT re-suggest', async () => {
     seedEvents([makeNodeCreated(1, 'n-1', SHORT_WORDING)]);
-    renderChip();
+    await renderChip();
     act(() => {
       useSelectionStore.setState({ selected: { kind: 'node', id: 'n-1' } });
     });
@@ -521,9 +548,9 @@ describe('CaptureTargetChip — re-engagement after clear', () => {
     expect(screen.getByTestId('capture-target-chip-label').textContent).toBe('No target yet');
   });
 
-  it('pane-click after clear does NOT re-suggest', () => {
+  it('pane-click after clear does NOT re-suggest', async () => {
     seedEvents([makeNodeCreated(1, 'n-1', SHORT_WORDING)]);
-    renderChip();
+    await renderChip();
     act(() => {
       useSelectionStore.setState({ selected: { kind: 'node', id: 'n-1' } });
     });
@@ -571,15 +598,23 @@ describe('CaptureTargetChip — i18n catalog parity', () => {
 
   it('per-locale render: no raw catalog-key string nor [t-missing] in the chip DOM', async () => {
     for (const locale of LOCALES) {
-      await i18next.changeLanguage(locale);
+      // `i18next.changeLanguage` notifies subscribed `useTranslation()`
+      // hooks on already-mounted chips from a previous loop iteration —
+      // wrap in `act(async)` so React absorbs the resulting setState
+      // before the assertion phase.
+      await act(async () => {
+        await i18next.changeLanguage(locale);
+      });
       cleanup();
       seedEvents([makeNodeCreated(1, 'n-1', SHORT_WORDING)]);
       useCaptureStore.setState({ ...captureInitial, targetEntityId: 'n-1' }, true);
-      renderChip();
+      await renderChip();
       const chip = screen.getByTestId('capture-target-chip');
       expect(chip.textContent).not.toContain('moderator.captureTargetChip');
       expect(chip.textContent).not.toContain('[t-missing]');
     }
-    await i18next.changeLanguage('en-US');
+    await act(async () => {
+      await i18next.changeLanguage('en-US');
+    });
   });
 });

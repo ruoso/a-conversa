@@ -42,7 +42,7 @@ import {
   type RenderResult,
 } from '@testing-library/react';
 import i18next from 'i18next';
-import { type ReactElement } from 'react';
+import { act, type ReactElement } from 'react';
 import { ReactFlowProvider, type NodeProps } from 'reactflow';
 import type { StatementKind } from '@a-conversa/shared-types';
 
@@ -64,8 +64,24 @@ import { useSelectionStore } from '../stores';
 // existing `render(<StatementNode {...} />)` call shape — only the
 // wrapper is new (and transparent to assertions: `<ReactFlowProvider>`
 // itself renders nothing in the DOM, just a context).
-function render(ui: ReactElement, options?: RenderOptions): RenderResult {
-  return rtlRender(ui, { wrapper: ReactFlowProvider, ...options });
+async function render(ui: ReactElement, options?: RenderOptions): Promise<RenderResult> {
+  // `useTranslation()` schedules a microtask-deferred setState when its
+  // internal i18next subscription registers on mount. The deferred
+  // update fires AFTER the synchronous render's act() wrapper closes,
+  // so React emits "An update to <Component> was not wrapped in
+  // act(...)". `await act(async () => { ... })` flushes pending
+  // microtasks before the act block resolves, absorbing the deferred
+  // update inside the wrapper.
+  let result!: RenderResult;
+  // `act` takes the async (microtask-flushing) path when the callback
+  // returns a thenable — `return Promise.resolve()` is enough; no
+  // `async` keyword (which would trip `require-await` since the body
+  // does not await anything).
+  await act(() => {
+    result = rtlRender(ui, { wrapper: ReactFlowProvider, ...options });
+    return Promise.resolve();
+  });
+  return result;
 }
 
 // Build a minimum `NodeProps<StatementNodeData>` value for tests.
@@ -167,8 +183,8 @@ afterEach(() => {
 });
 
 describe('StatementNode — rendering', () => {
-  it('renders the wording verbatim', () => {
-    render(
+  it('renders the wording verbatim', async () => {
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-001',
@@ -181,8 +197,8 @@ describe('StatementNode — rendering', () => {
     );
   });
 
-  it('renders all three statement-node-* test ids keyed by the node id', () => {
-    render(
+  it('renders all three statement-node-* test ids keyed by the node id', async () => {
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-002',
@@ -195,8 +211,8 @@ describe('StatementNode — rendering', () => {
     expect(screen.getByTestId('statement-node-kind-n-002')).toBeTruthy();
   });
 
-  it('renders an em-dash placeholder when kind is null', () => {
-    render(
+  it('renders an em-dash placeholder when kind is null', async () => {
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-003',
@@ -234,11 +250,10 @@ describe('StatementNode — localized kind label', () => {
       it(`renders ${kind} as "${EXPECTED[kind][locale]}" in ${locale}`, async () => {
         await i18next.changeLanguage(locale);
         const id = `n-${locale}-${kind}`;
-        render(<StatementNode {...makeNodeProps({ id, data: { wording: 'w', kind } })} />);
+        await render(<StatementNode {...makeNodeProps({ id, data: { wording: 'w', kind } })} />);
         expect(screen.getByTestId(`statement-node-kind-${id}`).textContent).toBe(
           EXPECTED[kind][locale],
         );
-        await i18next.changeLanguage('en-US');
       });
     }
   }
@@ -250,19 +265,18 @@ describe('StatementNode — localized kind label', () => {
     // mirroring the structural-only sanity check in
     // `packages/i18n-catalogs/src/methodology.test.ts`.
     await i18next.changeLanguage('pt-BR');
-    render(
+    await render(
       <StatementNode {...makeNodeProps({ id: 'pt-fact', data: { wording: 'w', kind: 'fact' } })} />,
     );
     expect(screen.getByTestId('statement-node-kind-pt-fact').textContent).toBe('Fato');
     // Sanity: differs from en-US "Fact".
     expect(screen.getByTestId('statement-node-kind-pt-fact').textContent).not.toBe('Fact');
-    await i18next.changeLanguage('en-US');
   });
 });
 
 describe('StatementNode — annotation badge decoration row', () => {
-  it('does not render the badge list container when the node has no annotations', () => {
-    render(
+  it('does not render the badge list container when the node has no annotations', async () => {
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-no-annotations',
@@ -274,14 +288,14 @@ describe('StatementNode — annotation badge decoration row', () => {
     expect(screen.queryByTestId('annotation-badge-list-node-n-no-annotations')).toBeNull();
   });
 
-  it('renders one annotation badge with the matching test id when the node has one annotation', () => {
+  it('renders one annotation badge with the matching test id when the node has one annotation', async () => {
     const annotation = makeAnnotation({
       id: 'anno-1',
       kind: 'note',
       content: 'see footnote 3',
       targetNodeId: 'n-with-annotation',
     });
-    render(
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-with-annotation',
@@ -304,7 +318,7 @@ describe('StatementNode — annotation badge decoration row', () => {
     );
   });
 
-  it('renders multiple annotation badges in arrival order', () => {
+  it('renders multiple annotation badges in arrival order', async () => {
     const annotations: Annotation[] = [
       makeAnnotation({
         id: 'anno-a',
@@ -325,7 +339,7 @@ describe('StatementNode — annotation badge decoration row', () => {
         content: 'third',
       }),
     ];
-    const { container } = render(
+    const { container } = await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-many',
@@ -353,8 +367,8 @@ describe('StatementNode — proposed-state styling (mod_proposed_state_styling)'
   // regardless of the active locale.
   const LOCALES = ['en-US', 'pt-BR', 'es-419'] as const;
 
-  it('applies border-dashed + opacity-60 + data-facet-status="proposed" when classification facet is proposed', () => {
-    render(
+  it('applies border-dashed + opacity-60 + data-facet-status="proposed" when classification facet is proposed', async () => {
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-proposed-1',
@@ -372,8 +386,8 @@ describe('StatementNode — proposed-state styling (mod_proposed_state_styling)'
     expect(card.getAttribute('data-facet-status')).toBe('proposed');
   });
 
-  it('omits the proposed-state styling when facetStatuses is empty', () => {
-    render(
+  it('omits the proposed-state styling when facetStatuses is empty', async () => {
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-baseline',
@@ -391,8 +405,8 @@ describe('StatementNode — proposed-state styling (mod_proposed_state_styling)'
     expect(card.getAttribute('data-facet-status')).toBeNull();
   });
 
-  it('treats "any facet proposed" as proposed even if another facet is agreed (card-level rollup)', () => {
-    render(
+  it('treats "any facet proposed" as proposed even if another facet is agreed (card-level rollup)', async () => {
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-mixed',
@@ -409,7 +423,7 @@ describe('StatementNode — proposed-state styling (mod_proposed_state_styling)'
     expect(card.className).toContain('border-dashed');
   });
 
-  it('picks the highest-priority status when multiple non-proposed facets are present (rollup order: proposed > meta-disagreement > disputed > agreed > committed > withdrawn)', () => {
+  it('picks the highest-priority status when multiple non-proposed facets are present (rollup order: proposed > meta-disagreement > disputed > agreed > committed > withdrawn)', async () => {
     // Updated under refinement `mod_agreed_state_styling`. The earlier
     // assertion ("no `data-facet-status` when nothing is proposed") was
     // written before the rollup priority order was decided; with the
@@ -419,7 +433,7 @@ describe('StatementNode — proposed-state styling (mod_proposed_state_styling)'
     // attribute (the stable seam for `mod_disputed_state_styling` to
     // extend) but does not apply proposed-state classes — that branch
     // requires an actually-proposed facet.
-    render(
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-all-resolved',
@@ -443,7 +457,7 @@ describe('StatementNode — proposed-state styling (mod_proposed_state_styling)'
   for (const locale of LOCALES) {
     it(`applies the proposed-state styling regardless of active locale (${locale})`, async () => {
       await i18next.changeLanguage(locale);
-      render(
+      await render(
         <StatementNode
           {...makeNodeProps({
             id: `n-locale-${locale}`,
@@ -458,7 +472,6 @@ describe('StatementNode — proposed-state styling (mod_proposed_state_styling)'
       const card = screen.getByTestId(`statement-node-n-locale-${locale}`);
       expect(card.getAttribute('data-facet-status')).toBe('proposed');
       expect(card.className).toContain('border-dashed');
-      await i18next.changeLanguage('en-US');
     });
   }
 });
@@ -475,8 +488,8 @@ describe('StatementNode — agreed-state styling (mod_agreed_state_styling)', ()
   // the stable seam for downstream tests / styling tasks.
   const LOCALES = ['en-US', 'pt-BR', 'es-419'] as const;
 
-  it('applies border-solid + border-slate-700 + opacity-100 + data-facet-status="agreed" when classification facet is agreed', () => {
-    render(
+  it('applies border-solid + border-slate-700 + opacity-100 + data-facet-status="agreed" when classification facet is agreed', async () => {
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-agreed-1',
@@ -496,8 +509,8 @@ describe('StatementNode — agreed-state styling (mod_agreed_state_styling)', ()
     expect(card.getAttribute('data-facet-status')).toBe('agreed');
   });
 
-  it('applies agreed styling when every facet is agreed (rollup pick from a uniform set)', () => {
-    render(
+  it('applies agreed styling when every facet is agreed (rollup pick from a uniform set)', async () => {
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-agreed-all',
@@ -518,8 +531,8 @@ describe('StatementNode — agreed-state styling (mod_agreed_state_styling)', ()
     expect(card.className).toContain('border-slate-700');
   });
 
-  it('proposed wins over agreed in the card-level rollup (proposed has higher priority than agreed)', () => {
-    render(
+  it('proposed wins over agreed in the card-level rollup (proposed has higher priority than agreed)', async () => {
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-proposed-over-agreed',
@@ -538,8 +551,8 @@ describe('StatementNode — agreed-state styling (mod_agreed_state_styling)', ()
     expect(card.className).toContain('border-dashed');
   });
 
-  it('agreed beats committed in the card-level rollup (closed facets sort last)', () => {
-    render(
+  it('agreed beats committed in the card-level rollup (closed facets sort last)', async () => {
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-agreed-over-committed',
@@ -559,7 +572,7 @@ describe('StatementNode — agreed-state styling (mod_agreed_state_styling)', ()
   for (const locale of LOCALES) {
     it(`applies the agreed-state styling regardless of active locale (${locale})`, async () => {
       await i18next.changeLanguage(locale);
-      render(
+      await render(
         <StatementNode
           {...makeNodeProps({
             id: `n-agreed-locale-${locale}`,
@@ -574,7 +587,6 @@ describe('StatementNode — agreed-state styling (mod_agreed_state_styling)', ()
       const card = screen.getByTestId(`statement-node-n-agreed-locale-${locale}`);
       expect(card.getAttribute('data-facet-status')).toBe('agreed');
       expect(card.className).toContain('border-slate-700');
-      await i18next.changeLanguage('en-US');
     });
   }
 });
@@ -589,8 +601,8 @@ describe('StatementNode — disputed-state styling (mod_disputed_state_styling)'
   // explicit defense against any inherited dim opacity.
   const LOCALES = ['en-US', 'pt-BR', 'es-419'] as const;
 
-  it('applies border-solid + border-rose-600 + ring-2 + ring-rose-500 + data-facet-status="disputed" when classification facet is disputed', () => {
-    render(
+  it('applies border-solid + border-rose-600 + ring-2 + ring-rose-500 + data-facet-status="disputed" when classification facet is disputed', async () => {
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-disputed-1',
@@ -612,8 +624,8 @@ describe('StatementNode — disputed-state styling (mod_disputed_state_styling)'
     expect(card.getAttribute('data-facet-status')).toBe('disputed');
   });
 
-  it('disputed beats agreed in the card-level rollup (priority chain wired through to the className branch)', () => {
-    render(
+  it('disputed beats agreed in the card-level rollup (priority chain wired through to the className branch)', async () => {
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-disputed-over-agreed',
@@ -635,8 +647,8 @@ describe('StatementNode — disputed-state styling (mod_disputed_state_styling)'
     expect(card.className).not.toContain('border-slate-700');
   });
 
-  it('proposed wins over disputed (the rollup priority is unchanged by this task)', () => {
-    render(
+  it('proposed wins over disputed (the rollup priority is unchanged by this task)', async () => {
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-proposed-over-disputed',
@@ -660,7 +672,7 @@ describe('StatementNode — disputed-state styling (mod_disputed_state_styling)'
   for (const locale of LOCALES) {
     it(`applies the disputed-state styling regardless of active locale (${locale})`, async () => {
       await i18next.changeLanguage(locale);
-      render(
+      await render(
         <StatementNode
           {...makeNodeProps({
             id: `n-disputed-locale-${locale}`,
@@ -676,7 +688,6 @@ describe('StatementNode — disputed-state styling (mod_disputed_state_styling)'
       expect(card.getAttribute('data-facet-status')).toBe('disputed');
       expect(card.className).toContain('border-rose-600');
       expect(card.className).toContain('ring-rose-500');
-      await i18next.changeLanguage('en-US');
     });
   }
 });
@@ -694,8 +705,8 @@ describe('StatementNode — meta-disagreement-state styling (mod_meta_disagreeme
   // against any inherited dim opacity.
   const LOCALES = ['en-US', 'pt-BR', 'es-419'] as const;
 
-  it('applies border-double + border-violet-600 + ring-2 + ring-violet-400 + data-facet-status="meta-disagreement" when classification facet is meta-disagreement', () => {
-    render(
+  it('applies border-double + border-violet-600 + ring-2 + ring-violet-400 + data-facet-status="meta-disagreement" when classification facet is meta-disagreement', async () => {
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-meta-1',
@@ -720,8 +731,8 @@ describe('StatementNode — meta-disagreement-state styling (mod_meta_disagreeme
     expect(card.getAttribute('data-facet-status')).toBe('meta-disagreement');
   });
 
-  it('meta-disagreement beats disputed in the card-level rollup (priority chain wired through to the className branch)', () => {
-    render(
+  it('meta-disagreement beats disputed in the card-level rollup (priority chain wired through to the className branch)', async () => {
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-meta-over-disputed',
@@ -746,8 +757,8 @@ describe('StatementNode — meta-disagreement-state styling (mod_meta_disagreeme
     expect(card.className).not.toContain('ring-rose-500');
   });
 
-  it('proposed wins over meta-disagreement (the rollup priority is unchanged by this task)', () => {
-    render(
+  it('proposed wins over meta-disagreement (the rollup priority is unchanged by this task)', async () => {
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-proposed-over-meta',
@@ -773,7 +784,7 @@ describe('StatementNode — meta-disagreement-state styling (mod_meta_disagreeme
   for (const locale of LOCALES) {
     it(`applies the meta-disagreement-state styling regardless of active locale (${locale})`, async () => {
       await i18next.changeLanguage(locale);
-      render(
+      await render(
         <StatementNode
           {...makeNodeProps({
             id: `n-meta-locale-${locale}`,
@@ -790,7 +801,6 @@ describe('StatementNode — meta-disagreement-state styling (mod_meta_disagreeme
       expect(card.className).toContain('border-double');
       expect(card.className).toContain('border-violet-600');
       expect(card.className).toContain('ring-violet-400');
-      await i18next.changeLanguage('en-US');
     });
   }
 });
@@ -863,8 +873,8 @@ describe('StatementNode — axiom-mark decoration row (mod_axiom_mark_decoration
   const PARTICIPANT_A = '00000000-0000-4000-8000-000000000001';
   const PARTICIPANT_B = '00000000-0000-4000-8000-000000000002';
 
-  it('does not render the axiom-mark list container when the node has no axiom-marks', () => {
-    render(
+  it('does not render the axiom-mark list container when the node has no axiom-marks', async () => {
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-no-axioms',
@@ -875,9 +885,9 @@ describe('StatementNode — axiom-mark decoration row (mod_axiom_mark_decoration
     expect(screen.queryByTestId('axiom-mark-list-node-n-no-axioms')).toBeNull();
   });
 
-  it('renders one axiom-mark badge with the right testid when the node has one axiom-mark', () => {
+  it('renders one axiom-mark badge with the right testid when the node has one axiom-mark', async () => {
     const mark = makeAxiomMark({ nodeId: 'n-one-axiom', participantId: PARTICIPANT_A });
-    render(
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-one-axiom',
@@ -893,12 +903,12 @@ describe('StatementNode — axiom-mark decoration row (mod_axiom_mark_decoration
     expect(screen.getByTestId(`axiom-mark-badge-n-one-axiom-${PARTICIPANT_A}`)).toBeTruthy();
   });
 
-  it('renders multiple axiom-mark badges in arrival order (per-participant uniqueness — both participants surface)', () => {
+  it('renders multiple axiom-mark badges in arrival order (per-participant uniqueness — both participants surface)', async () => {
     const marks: AxiomMark[] = [
       makeAxiomMark({ nodeId: 'n-multi', participantId: PARTICIPANT_A }),
       makeAxiomMark({ nodeId: 'n-multi', participantId: PARTICIPANT_B }),
     ];
-    const { container } = render(
+    const { container } = await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-multi',
@@ -912,7 +922,7 @@ describe('StatementNode — axiom-mark decoration row (mod_axiom_mark_decoration
     expect(ids).toEqual([PARTICIPANT_A, PARTICIPANT_B]);
   });
 
-  it('renders the axiom-mark row above the annotation row when both are present', () => {
+  it('renders the axiom-mark row above the annotation row when both are present', async () => {
     // Visual hierarchy: axiom-marks (methodology-disposition) above
     // annotations (commentary). Pin the DOM order so a future refactor
     // doesn't silently invert it.
@@ -926,7 +936,7 @@ describe('StatementNode — axiom-mark decoration row (mod_axiom_mark_decoration
       createdBy: PARTICIPANT_A,
       createdAt: '2026-05-11T00:00:00.000Z',
     };
-    render(
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-both',
@@ -974,8 +984,8 @@ describe('StatementNode — pending axiom-mark decoration row (mod_axiom_mark_pe
     };
   }
 
-  it('does not render the pending-axiom-mark list container when the node has no pending axiom-marks', () => {
-    render(
+  it('does not render the pending-axiom-mark list container when the node has no pending axiom-marks', async () => {
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-no-pending',
@@ -986,13 +996,13 @@ describe('StatementNode — pending axiom-mark decoration row (mod_axiom_mark_pe
     expect(screen.queryByTestId('pending-axiom-mark-list-node-n-no-pending')).toBeNull();
   });
 
-  it('renders one pending-axiom-mark badge with the right testid + data-pending="true" when the node has one pending mark', () => {
+  it('renders one pending-axiom-mark badge with the right testid + data-pending="true" when the node has one pending mark', async () => {
     const mark = makePendingMark({
       nodeId: 'n-one-pending',
       participantId: PENDING_PARTICIPANT_A,
       proposalEventId: PENDING_PROPOSAL_X,
     });
-    render(
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-one-pending',
@@ -1011,7 +1021,7 @@ describe('StatementNode — pending axiom-mark decoration row (mod_axiom_mark_pe
     expect(badge.getAttribute('data-pending')).toBe('true');
   });
 
-  it('renders multiple pending-axiom-mark badges in proposal-arrival order', () => {
+  it('renders multiple pending-axiom-mark badges in proposal-arrival order', async () => {
     const marks: PendingAxiomMark[] = [
       makePendingMark({
         nodeId: 'n-multi-pending',
@@ -1024,7 +1034,7 @@ describe('StatementNode — pending axiom-mark decoration row (mod_axiom_mark_pe
         proposalEventId: PENDING_PROPOSAL_Y,
       }),
     ];
-    const { container } = render(
+    const { container } = await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-multi-pending',
@@ -1038,7 +1048,7 @@ describe('StatementNode — pending axiom-mark decoration row (mod_axiom_mark_pe
     expect(ids).toEqual([PENDING_PARTICIPANT_A, PENDING_PARTICIPANT_B]);
   });
 
-  it('renders the pending row ABOVE the committed axiom-mark row when both are present (Decision §4)', () => {
+  it('renders the pending row ABOVE the committed axiom-mark row when both are present (Decision §4)', async () => {
     // Pending (forward-looking) above committed (backward-looking) —
     // the lifecycle-in-motion before the lifecycle-on-record.
     const pendingMark = makePendingMark({
@@ -1051,7 +1061,7 @@ describe('StatementNode — pending axiom-mark decoration row (mod_axiom_mark_pe
       participantId: PENDING_PARTICIPANT_B,
       committedAt: '2026-05-11T00:00:00.000Z',
     };
-    render(
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-both-axiom-rows',
@@ -1073,7 +1083,7 @@ describe('StatementNode — pending axiom-mark decoration row (mod_axiom_mark_pe
     expect(pendingIsBeforeCommitted).toBe(true);
   });
 
-  it('renders both pending AND committed badges for the same participant on the same node (pre-engine-validation transient)', () => {
+  it('renders both pending AND committed badges for the same participant on the same node (pre-engine-validation transient)', async () => {
     // Edge case in v1: engine rule 4 rejects a second-from-same-participant
     // once a commit lands, but the rendering must handle the
     // pre-engine-validation transient gracefully — Anna has a committed
@@ -1088,7 +1098,7 @@ describe('StatementNode — pending axiom-mark decoration row (mod_axiom_mark_pe
       participantId: PENDING_PARTICIPANT_A,
       committedAt: '2026-05-11T00:00:00.000Z',
     };
-    render(
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-same-participant-both',
@@ -1123,8 +1133,8 @@ describe('StatementNode — per-facet state visualization (mod_per_facet_state_v
   // omitted entirely when `facetStatuses` is empty (mirrors the
   // annotation / axiom-mark row pattern).
 
-  it('does not render the facet-pill row when facetStatuses is empty', () => {
-    render(
+  it('does not render the facet-pill row when facetStatuses is empty', async () => {
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-no-facets',
@@ -1136,8 +1146,8 @@ describe('StatementNode — per-facet state visualization (mod_per_facet_state_v
     expect(screen.queryByTestId('facet-pill-row-node-n-no-facets')).toBeNull();
   });
 
-  it('renders a single wording pill when only wording is proposed', () => {
-    render(
+  it('renders a single wording pill when only wording is proposed', async () => {
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-wording-only',
@@ -1158,8 +1168,8 @@ describe('StatementNode — per-facet state visualization (mod_per_facet_state_v
     expect(pill.getAttribute('data-facet-status')).toBe('proposed');
   });
 
-  it('renders three pills in canonical order (wording → classification → substance)', () => {
-    render(
+  it('renders three pills in canonical order (wording → classification → substance)', async () => {
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-three-facets',
@@ -1190,8 +1200,8 @@ describe('StatementNode — per-facet state visualization (mod_per_facet_state_v
     expect(pills[2]?.getAttribute('data-facet-status')).toBe('proposed');
   });
 
-  it('renders independent per-facet statuses when statuses are mixed (one disputed + two committed)', () => {
-    render(
+  it('renders independent per-facet statuses when statuses are mixed (one disputed + two committed)', async () => {
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-mixed-closed',
@@ -1230,13 +1240,13 @@ describe('StatementNode — per-facet state visualization (mod_per_facet_state_v
     expect(disputedPill?.className).toContain('ring-1');
   });
 
-  it('coexists with the whole-card frame styling (rollup + per-pill render independently)', () => {
+  it('coexists with the whole-card frame styling (rollup + per-pill render independently)', async () => {
     // When one facet is proposed and another is disputed, the whole-card
     // frame rolls up to PROPOSED (the highest-priority status), so the
     // card frame paints dashed-slate. Independently, the disputed pill
     // still carries the red-marker classes — the rollup and the per-pill
     // detail are TWO separate signals and must coexist.
-    render(
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-frame-and-pills',
@@ -1266,11 +1276,11 @@ describe('StatementNode — per-facet state visualization (mod_per_facet_state_v
     expect(disputedPill?.className).toContain('ring-rose-500');
   });
 
-  it('renders the facet-pill row ABOVE the wording paragraph', () => {
+  it('renders the facet-pill row ABOVE the wording paragraph', async () => {
     // Visual hierarchy: per-facet detail leads (the methodology's
     // structural axis), then the wording paragraph (the content). Pin
     // the DOM order so a future refactor doesn't silently invert it.
-    render(
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-order-check',
@@ -1301,8 +1311,8 @@ describe('StatementNode — disputation-test chip (mod_disputation_test_display)
   // when no substance facet activity has touched the node (mirrors the
   // empty-row omission rule).
 
-  it('renders the chip with data-disputation-outcome="data" when substance is agreed (immediately after the substance pill)', () => {
-    render(
+  it('renders the chip with data-disputation-outcome="data" when substance is agreed (immediately after the substance pill)', async () => {
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-disp-data',
@@ -1333,8 +1343,8 @@ describe('StatementNode — disputation-test chip (mod_disputation_test_display)
     expect(pillIsBeforeSlot).toBe(true);
   });
 
-  it('renders the chip with data-disputation-outcome="claim" when substance is disputed', () => {
-    render(
+  it('renders the chip with data-disputation-outcome="claim" when substance is disputed', async () => {
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-disp-claim',
@@ -1352,12 +1362,12 @@ describe('StatementNode — disputation-test chip (mod_disputation_test_display)
     expect(chip!.getAttribute('data-disputation-outcome')).toBe('claim');
   });
 
-  it('renders the chip with data-disputation-outcome="claim" when substance is meta-disagreement AND the substance pill keeps its violet border', () => {
+  it('renders the chip with data-disputation-outcome="claim" when substance is meta-disagreement AND the substance pill keeps its violet border', async () => {
     // Per refinement: the chip and the per-facet pill layer compose;
     // neither overwrites the other. The meta-disagreement pill keeps its
     // violet double-border palette while the chip surfaces the
     // methodology-vocabulary `Claim` outcome.
-    render(
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-disp-meta',
@@ -1383,8 +1393,8 @@ describe('StatementNode — disputation-test chip (mod_disputation_test_display)
     expect(substancePill!.className).toContain('border-double');
   });
 
-  it('does NOT render the chip when facetStatuses is empty / has no substance entry', () => {
-    render(
+  it('does NOT render the chip when facetStatuses is empty / has no substance entry', async () => {
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-no-chip',
@@ -1403,11 +1413,11 @@ describe('StatementNode — disputation-test chip (mod_disputation_test_display)
     expect(document.querySelector('[data-disputation-chip-slot]')).toBeNull();
   });
 
-  it('does NOT render the chip when facetStatuses has wording/classification only (no substance entry)', () => {
+  it('does NOT render the chip when facetStatuses has wording/classification only (no substance entry)', async () => {
     // Even when the pill row IS rendered (other facets have status),
     // the chip is still omitted when no substance entry exists — the
     // methodology label is scoped to the substance facet's lifecycle.
-    render(
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-non-substance',
@@ -1426,11 +1436,11 @@ describe('StatementNode — disputation-test chip (mod_disputation_test_display)
     expect(row.querySelector('[data-disputation-chip-slot]')).toBeNull();
   });
 
-  it('renders BOTH the chip and the amber diagnostic halo when substance is agreed AND a blocking diagnostic fires (independent layers)', () => {
+  it('renders BOTH the chip and the amber diagnostic halo when substance is agreed AND a blocking diagnostic fires (independent layers)', async () => {
     // Per refinement: the disputation-test chip and the diagnostic
     // highlight are independent layers — both compose simultaneously
     // and neither overwrites the other.
-    render(
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-chip-and-diag',
@@ -1469,8 +1479,8 @@ describe('StatementNode — per-participant vote indicators (mod_vote_indicators
   const PARTICIPANT_A = '00000000-0000-4000-8000-000000000001';
   const PARTICIPANT_B = '00000000-0000-4000-8000-000000000002';
 
-  it('renders no vote-indicator rows when votesByFacet is empty', () => {
-    render(
+  it('renders no vote-indicator rows when votesByFacet is empty', async () => {
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-no-votes',
@@ -1488,8 +1498,8 @@ describe('StatementNode — per-participant vote indicators (mod_vote_indicators
     expect(row.querySelector('[data-vote-indicator-row]')).toBeNull();
   });
 
-  it('renders one indicator inside the wording pill when a single participant agrees on wording', () => {
-    render(
+  it('renders one indicator inside the wording pill when a single participant agrees on wording', async () => {
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-one-vote',
@@ -1516,8 +1526,8 @@ describe('StatementNode — per-participant vote indicators (mod_vote_indicators
     expect(indicator.getAttribute('data-choice')).toBe('agree');
   });
 
-  it('renders one indicator row per pill when votes land on two different facets', () => {
-    render(
+  it('renders one indicator row per pill when votes land on two different facets', async () => {
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-two-facets',
@@ -1546,8 +1556,8 @@ describe('StatementNode — per-participant vote indicators (mod_vote_indicators
     expect(substanceIndicators[0]?.getAttribute('data-choice')).toBe('dispute');
   });
 
-  it('renders mixed votes (agree + dispute) with distinct data-choice values on the same pill', () => {
-    render(
+  it('renders mixed votes (agree + dispute) with distinct data-choice values on the same pill', async () => {
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-mixed-votes',
@@ -1572,8 +1582,8 @@ describe('StatementNode — per-participant vote indicators (mod_vote_indicators
     expect(choices).toEqual(['agree', 'dispute']);
   });
 
-  it('renders a withdrawn vote with the gray choice color and data-choice="withdraw"', () => {
-    render(
+  it('renders a withdrawn vote with the gray choice color and data-choice="withdraw"', async () => {
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-withdrawn',
@@ -1609,8 +1619,8 @@ describe('StatementNode — per-participant vote indicators (mod_vote_indicators
 // path — the visual layer the moderator sees when a node is selected.
 
 describe('StatementNode — click-to-select visual state (mod_selection)', () => {
-  it('stamps data-selected="false" on a node when nothing is selected', () => {
-    render(
+  it('stamps data-selected="false" on a node when nothing is selected', async () => {
+    await render(
       <StatementNode {...makeNodeProps({ id: 'n-unsel', data: { wording: 'w', kind: 'fact' } })} />,
     );
     const card = screen.getByTestId('statement-node-n-unsel');
@@ -1619,9 +1629,9 @@ describe('StatementNode — click-to-select visual state (mod_selection)', () =>
     expect(card.className).not.toContain('ring-sky-500');
   });
 
-  it('stamps data-selected="true" and the sky-500 ring on the node when its id is selected', () => {
+  it('stamps data-selected="true" and the sky-500 ring on the node when its id is selected', async () => {
     useSelectionStore.getState().select({ kind: 'node', id: 'n-sel' });
-    render(
+    await render(
       <StatementNode {...makeNodeProps({ id: 'n-sel', data: { wording: 'w', kind: 'fact' } })} />,
     );
     const card = screen.getByTestId('statement-node-n-sel');
@@ -1630,9 +1640,9 @@ describe('StatementNode — click-to-select visual state (mod_selection)', () =>
     expect(card.className).toContain('ring-sky-500');
   });
 
-  it('does not select a node when a DIFFERENT node is the current selection', () => {
+  it('does not select a node when a DIFFERENT node is the current selection', async () => {
     useSelectionStore.getState().select({ kind: 'node', id: 'some-other-node' });
-    render(
+    await render(
       <StatementNode {...makeNodeProps({ id: 'n-other', data: { wording: 'w', kind: 'fact' } })} />,
     );
     const card = screen.getByTestId('statement-node-n-other');
@@ -1640,11 +1650,11 @@ describe('StatementNode — click-to-select visual state (mod_selection)', () =>
     expect(card.className).not.toContain('ring-sky-500');
   });
 
-  it('does not select a node when an EDGE with the same id is selected', () => {
+  it('does not select a node when an EDGE with the same id is selected', async () => {
     // Edge-kind selection must not bleed into node selection — the
     // `kind` discriminator on `Selection` is load-bearing.
     useSelectionStore.getState().select({ kind: 'edge', id: 'n-shared-id' });
-    render(
+    await render(
       <StatementNode
         {...makeNodeProps({ id: 'n-shared-id', data: { wording: 'w', kind: 'fact' } })}
       />,
@@ -1654,14 +1664,14 @@ describe('StatementNode — click-to-select visual state (mod_selection)', () =>
     expect(card.className).not.toContain('ring-sky-500');
   });
 
-  it('preserves the existing status-styling classes when also selected (additive layer)', () => {
+  it('preserves the existing status-styling classes when also selected (additive layer)', async () => {
     // The selection ring composes ON TOP of the status ring (e.g.
     // `ring-2 ring-rose-500` for disputed) — both classnames must
     // remain present so Tailwind's last-wins precedence picks up the
     // sky-500 ring color + ring-4 width without dropping the underlying
     // status border.
     useSelectionStore.getState().select({ kind: 'node', id: 'n-disputed-sel' });
-    render(
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-disputed-sel',
@@ -1696,8 +1706,8 @@ describe('StatementNode — click-to-select visual state (mod_selection)', () =>
 // diagnostic, `", "`-joined for several.
 
 describe('StatementNode — diagnostic highlight (mod_diagnostic_highlighting)', () => {
-  it('has no data-diagnostic-severity attribute and no amber ring when diagnosticHighlight is undefined', () => {
-    render(
+  it('has no data-diagnostic-severity attribute and no amber ring when diagnosticHighlight is undefined', async () => {
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-no-diag',
@@ -1713,8 +1723,8 @@ describe('StatementNode — diagnostic highlight (mod_diagnostic_highlighting)',
     expect(card.getAttribute('title')).toBeNull();
   });
 
-  it('stamps data-diagnostic-severity="blocking" + the amber blocking ring classes', () => {
-    render(
+  it('stamps data-diagnostic-severity="blocking" + the amber blocking ring classes', async () => {
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-block',
@@ -1735,8 +1745,8 @@ describe('StatementNode — diagnostic highlight (mod_diagnostic_highlighting)',
     expect(card.className).toContain('motion-safe:animate-pulse');
   });
 
-  it('stamps data-diagnostic-severity="advisory" + the amber advisory ring classes (no pulse)', () => {
-    render(
+  it('stamps data-diagnostic-severity="advisory" + the amber advisory ring classes (no pulse)', async () => {
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-adv',
@@ -1758,12 +1768,12 @@ describe('StatementNode — diagnostic highlight (mod_diagnostic_highlighting)',
     expect(card.className).not.toContain('animate-pulse');
   });
 
-  it('composes with the disputed status ring (both rings present, neither overwrites)', () => {
+  it('composes with the disputed status ring (both rings present, neither overwrites)', async () => {
     // A node with substance disputed (rose ring) AND a blocking
     // diagnostic (amber ring) MUST keep both classnames in the
     // composed className — they read as separate visual layers per
     // the refinement's "layer ordering" decision.
-    render(
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-dispute-diag',
@@ -1787,9 +1797,9 @@ describe('StatementNode — diagnostic highlight (mod_diagnostic_highlighting)',
     expect(card.getAttribute('data-diagnostic-severity')).toBe('blocking');
   });
 
-  it('composes with the sky-500 selection ring (both selection + diagnostic rings present)', () => {
+  it('composes with the sky-500 selection ring (both selection + diagnostic rings present)', async () => {
     useSelectionStore.getState().select({ kind: 'node', id: 'n-sel-diag' });
-    render(
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-sel-diag',
@@ -1818,8 +1828,8 @@ describe('StatementNode — diagnostic highlight (mod_diagnostic_highlighting)',
   // surface in the popover content with the same content + same
   // cross-locale wiring as the prior `title`-attribute baseline.
 
-  it('does NOT stamp a native title attribute for a single-kind highlight (superseded by hover popover)', () => {
-    render(
+  it('does NOT stamp a native title attribute for a single-kind highlight (superseded by hover popover)', async () => {
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-cycle-no-title',
@@ -1838,8 +1848,8 @@ describe('StatementNode — diagnostic highlight (mod_diagnostic_highlighting)',
     expect(card.getAttribute('data-diagnostic-severity')).toBe('blocking');
   });
 
-  it('does NOT stamp a native title attribute for a multi-kind highlight (superseded by hover popover)', () => {
-    render(
+  it('does NOT stamp a native title attribute for a multi-kind highlight (superseded by hover popover)', async () => {
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-multi-no-title',
@@ -1856,8 +1866,8 @@ describe('StatementNode — diagnostic highlight (mod_diagnostic_highlighting)',
     expect(card.getAttribute('data-diagnostic-severity')).toBe('blocking');
   });
 
-  it('renders the localized diagnostic title inside the popover on hover (single kind, en-US)', () => {
-    render(
+  it('renders the localized diagnostic title inside the popover on hover (single kind, en-US)', async () => {
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-cycle-popover',
@@ -1876,8 +1886,8 @@ describe('StatementNode — diagnostic highlight (mod_diagnostic_highlighting)',
     expect(popover.textContent).toContain('Cycle in supports');
   });
 
-  it('joins multi-kind diagnostic titles inside the popover with ", "', () => {
-    render(
+  it('joins multi-kind diagnostic titles inside the popover with ", "', async () => {
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-multi-popover',
@@ -1906,7 +1916,7 @@ describe('StatementNode — diagnostic highlight (mod_diagnostic_highlighting)',
   for (const locale of ['en-US', 'pt-BR', 'es-419'] as const) {
     it(`resolves the cycle title in ${locale} inside the popover`, async () => {
       await i18next.changeLanguage(locale);
-      render(
+      await render(
         <StatementNode
           {...makeNodeProps({
             id: `n-cycle-popover-${locale}`,
@@ -1922,7 +1932,6 @@ describe('StatementNode — diagnostic highlight (mod_diagnostic_highlighting)',
       fireEvent.mouseEnter(card);
       const popover = screen.getByTestId(`hover-popover-n-cycle-popover-${locale}`);
       expect(popover.textContent).toContain(CYCLE_TITLE_BY_LOCALE[locale]);
-      await i18next.changeLanguage('en-US');
     });
   }
 });
@@ -1938,8 +1947,8 @@ describe('StatementNode — diagnostic highlight (mod_diagnostic_highlighting)',
 // a11y lie). Refinement: `mod_hover_details`.
 
 describe('StatementNode — hover popover wiring (mod_hover_details)', () => {
-  it('does not render the hover popover by default', () => {
-    render(
+  it('does not render the hover popover by default', async () => {
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-popover-default',
@@ -1953,8 +1962,8 @@ describe('StatementNode — hover popover wiring (mod_hover_details)', () => {
     expect(card.getAttribute('aria-describedby')).toBeNull();
   });
 
-  it('renders the popover on mouseenter and removes it on mouseleave', () => {
-    render(
+  it('renders the popover on mouseenter and removes it on mouseleave', async () => {
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-popover-mouse',
@@ -1971,8 +1980,8 @@ describe('StatementNode — hover popover wiring (mod_hover_details)', () => {
     expect(card.getAttribute('aria-describedby')).toBeNull();
   });
 
-  it('renders the popover on focus and removes it on blur (keyboard parity)', () => {
-    render(
+  it('renders the popover on focus and removes it on blur (keyboard parity)', async () => {
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-popover-focus',
@@ -1987,9 +1996,9 @@ describe('StatementNode — hover popover wiring (mod_hover_details)', () => {
     expect(screen.queryByTestId('hover-popover-n-popover-focus')).toBeNull();
   });
 
-  it('keeps data-selected / data-facet-status / data-diagnostic-severity stamps while the popover is open', () => {
+  it('keeps data-selected / data-facet-status / data-diagnostic-severity stamps while the popover is open', async () => {
     useSelectionStore.getState().select({ kind: 'node', id: 'n-popover-stamps' });
-    render(
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-popover-stamps',
@@ -2012,10 +2021,10 @@ describe('StatementNode — hover popover wiring (mod_hover_details)', () => {
     expect(card.getAttribute('data-diagnostic-severity')).toBe('blocking');
   });
 
-  it('renders the full wording inside the popover', () => {
+  it('renders the full wording inside the popover', async () => {
     const longWording =
       'A sufficiently long wording that the card might wrap; the popover renders the full content without truncation so the moderator can read the entire statement at a glance.';
-    render(
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-popover-wording',
@@ -2029,8 +2038,8 @@ describe('StatementNode — hover popover wiring (mod_hover_details)', () => {
     expect(popover.textContent).toContain(longWording);
   });
 
-  it('stamps role="tooltip" and data-hover-target-kind="node" on the popover', () => {
-    render(
+  it('stamps role="tooltip" and data-hover-target-kind="node" on the popover', async () => {
+    await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-popover-attrs',
@@ -2059,8 +2068,8 @@ describe('StatementNode — ReactFlow Handle anchors (mod_node_handle_rendering)
   // the test asserts both so a future library shift in one stamp doesn't
   // silently regress the contract.
 
-  it('renders exactly two handles on a baseline node (one top target + one bottom source)', () => {
-    const { container } = render(
+  it('renders exactly two handles on a baseline node (one top target + one bottom source)', async () => {
+    const { container } = await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-handles-base',
@@ -2072,8 +2081,8 @@ describe('StatementNode — ReactFlow Handle anchors (mod_node_handle_rendering)
     expect(handles.length).toBe(2);
   });
 
-  it('renders a target handle at Position.Top (data-handlepos="top" + react-flow__handle-top class)', () => {
-    const { container } = render(
+  it('renders a target handle at Position.Top (data-handlepos="top" + react-flow__handle-top class)', async () => {
+    const { container } = await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-handles-top',
@@ -2086,8 +2095,8 @@ describe('StatementNode — ReactFlow Handle anchors (mod_node_handle_rendering)
     expect(topHandle?.className).toContain('react-flow__handle-top');
   });
 
-  it('renders a source handle at Position.Bottom (data-handlepos="bottom" + react-flow__handle-bottom class)', () => {
-    const { container } = render(
+  it('renders a source handle at Position.Bottom (data-handlepos="bottom" + react-flow__handle-bottom class)', async () => {
+    const { container } = await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-handles-bottom',
@@ -2100,12 +2109,12 @@ describe('StatementNode — ReactFlow Handle anchors (mod_node_handle_rendering)
     expect(bottomHandle?.className).toContain('react-flow__handle-bottom');
   });
 
-  it('composes with the diagnostic-halo ring without losing either handle', () => {
+  it('composes with the diagnostic-halo ring without losing either handle', async () => {
     // Render a node carrying a blocking diagnostic; both the amber-ring
     // className stack AND the two handles must still render. This pins
     // that the new children don't disrupt the diagnostic-highlighting
     // layer (refinement `mod_diagnostic_highlighting`).
-    const { container } = render(
+    const { container } = await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-handles-diag',
@@ -2127,8 +2136,8 @@ describe('StatementNode — ReactFlow Handle anchors (mod_node_handle_rendering)
     expect(container.querySelector('[data-handlepos="bottom"]')).not.toBeNull();
   });
 
-  it('composes with the hover popover (both handles render simultaneously with the open popover)', () => {
-    const { container } = render(
+  it('composes with the hover popover (both handles render simultaneously with the open popover)', async () => {
+    const { container } = await render(
       <StatementNode
         {...makeNodeProps({
           id: 'n-handles-hover',
@@ -2160,8 +2169,8 @@ describe('StatementNode — ReactFlow Handle anchors (mod_node_handle_rendering)
     'meta-disagreement',
   ];
   for (const status of STATUSES_FOR_HANDLE_COMPOSITION) {
-    it(`renders both handles when the card rollup is "${status}"`, () => {
-      const { container } = render(
+    it(`renders both handles when the card rollup is "${status}"`, async () => {
+      const { container } = await render(
         <StatementNode
           {...makeNodeProps({
             id: `n-handles-status-${status}`,

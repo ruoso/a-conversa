@@ -18,13 +18,40 @@
 //      `mod_hover_details` task ships a richer card.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import {
+  cleanup,
+  render as rtlRender,
+  screen,
+  type RenderOptions,
+  type RenderResult,
+} from '@testing-library/react';
 import i18next from 'i18next';
+import { act, type ReactElement } from 'react';
 import type { AnnotationKind } from '@a-conversa/shared-types';
 
 import { AnnotationBadge } from './AnnotationBadge';
 import type { Annotation } from './selectors';
 import { createI18nInstance } from '@a-conversa/shell';
+
+// `useTranslation()` schedules a microtask-deferred setState when its
+// internal i18next subscription registers on mount. The deferred update
+// fires AFTER the synchronous render's act() wrapper closes, so React
+// emits "An update to <Component> was not wrapped in act(...)". Wrapping
+// the render in `await act(async () => { ... })` flushes pending
+// microtasks before the act block resolves, absorbing the deferred
+// update inside the wrapper.
+async function render(ui: ReactElement, options?: RenderOptions): Promise<RenderResult> {
+  let result!: RenderResult;
+  // `act` takes the async (microtask-flushing) path when the callback
+  // returns a thenable — `return Promise.resolve()` is enough; no
+  // `async` keyword (which would trip `require-await` since the body
+  // does not await anything).
+  await act(() => {
+    result = rtlRender(ui, options);
+    return Promise.resolve();
+  });
+  return result;
+}
 
 const ALL_KINDS: readonly AnnotationKind[] = ['note', 'reframe', 'scope-change', 'stance'];
 
@@ -83,12 +110,11 @@ describe('AnnotationBadge — localized kind label per kind × locale', () => {
           kind,
           content: 'body text',
         });
-        render(<AnnotationBadge annotation={annotation} />);
+        await render(<AnnotationBadge annotation={annotation} />);
         const badge = screen.getByTestId(`annotation-badge-${annotation.id}`);
         expect(badge.textContent).toBe(LABELS_BY_LOCALE[locale][kind]);
         expect(badge.getAttribute('data-annotation-kind')).toBe(kind);
         expect(badge.getAttribute('title')).toBe('body text');
-        await i18next.changeLanguage('en-US');
       });
     }
   }
