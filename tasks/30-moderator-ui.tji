@@ -171,6 +171,7 @@ task moderator_ui "Moderator UI" {
     task mod_proposed_entity_canvas_visibility "Render proposed entities on the graph canvas from the moment of proposal (failing-first e2e + protocol fix per ADR 0027)" {
       effort 3.5d
       allocate team
+      complete 100
       depends !mod_proposed_state_styling
       note -8<-
         Refinement: tasks/refinements/moderator-ui/mod_proposed_entity_canvas_visibility.md
@@ -289,6 +290,24 @@ task moderator_ui "Moderator UI" {
       allocate team
       complete 100
       note "Refinement: tasks/refinements/moderator-ui/mod_hover_details.md"
+    }
+    task mod_decompose_propose_time_canvas_visibility "Multi-entity decompose / interpretive-split: propose-time canvas visibility for child components" {
+      effort 1d
+      allocate team
+      depends !mod_proposed_entity_canvas_visibility
+      note -8<-
+        Source of debt: tasks/refinements/moderator-ui/mod_proposed_entity_canvas_visibility.md D3 — multi-entity decompose / interpretive-split propose-time emission was scoped into the parent task but landed deferred (the Playwright e2e ships with only the free-floating + connecting-node-source scenarios green; the 2-component decomposition propose scenario is documented as deferred in the spec body, not as test.fixme). Closing this task lands per-component `node-created` + `entity-included` emissions at propose-time for decompose / interpretive-split, requires per-component IDs in the proposal payload so the structural events have stable refs, exercises the withdraw round-trip across multiple entities (per-component `entity-removed`), and lifts the deferred Playwright scenario to a hard expectation.
+        Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit landing mod_proposed_entity_canvas_visibility).
+      ->8-
+    }
+    task mod_set_edge_substance_endpoint_carriage "Extend setEdgeSubstanceProposalSchema with source_node_id / target_node_id / role for connecting-edge propose-time emission" {
+      effort 0.5d
+      allocate team
+      depends !mod_proposed_entity_canvas_visibility
+      note -8<-
+        Source of debt: tasks/refinements/moderator-ui/mod_proposed_entity_canvas_visibility.md D2 — the connecting `set-edge-substance` proposal sub-kind needs source_node_id + target_node_id + role on the payload schema so the propose handler can fire `edge-created` + `entity-included` at propose-time alongside the `proposal` envelope (parallel to the free-floating classify-node fan-out this commit landed). Until this lands, the connecting-edge case only has the source node propose-time-visible; the edge itself appears only on commit. The Playwright e2e's node-source-visibility-on-connecting-propose scenario is green, but the full edge-visibility-on-propose contract is open until this task ships.
+        Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit landing mod_proposed_entity_canvas_visibility).
+      ->8-
     }
   }
 
@@ -735,6 +754,17 @@ task moderator_ui "Moderator UI" {
       Source of debt: mod_propose_action Status block (this commit) — refinement claim that propose emits paired node-created/entity-included/edge-created events is WRONG per tasks/refinements/backend/ws_propose_message.md + tasks/refinements/backend/commit_logic.md. The e2e test was corrected to pin the actual contract; the refinement doc body and the apps/moderator/src/layout/useProposeAction.ts:347-353 code comment still claim the wrong shape and need updating. Methodology + doc-hygiene task; no implementation change required (the runtime already emits the correct envelope).
 
       Surfaced via tech-debt registration policy in ORCHESTRATOR.md (this commit).
+    ->8-
+  }
+
+  task mod_withdraw_proposal_gesture "Proposer-side withdraw-proposal gesture wiring (UI + dispatch through WS)" {
+    effort 1d
+    allocate team
+    depends !mod_graph_rendering.mod_proposed_entity_canvas_visibility, backend.websocket_protocol.ws_withdraw_proposal_message
+    note -8<-
+      Source of debt: tasks/refinements/moderator-ui/mod_proposed_entity_canvas_visibility.md D4 + D7 — the `entity-removed` event kind + payload schema + SQL migration landed in the commit that closes mod_proposed_entity_canvas_visibility, but the proposer-side UI gesture that dispatches the WS `withdraw-proposal` message is unimplemented. Per D7 only the original proposer (identified by action.actor on the original proposal event) may withdraw; engine + handler enforce, but the gesture surface is missing. Closes the propose-then-withdraw scenario (Scenario 4) that ships deferred in the e2e at tests/e2e/moderator-proposed-entity-canvas-visibility.spec.ts.
+
+      Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit landing mod_proposed_entity_canvas_visibility).
     ->8-
   }
 

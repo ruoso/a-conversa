@@ -225,6 +225,8 @@
 // projection state, and the projection handler does not re-validate
 // methodology rules.
 
+import { randomUUID } from 'node:crypto';
+
 import type { PendingProposal, Projection } from '../../projection/index.js';
 import {
   edgeIsVisible,
@@ -237,6 +239,7 @@ import {
   type ConflictingParentKind,
 } from '../primitives.js';
 import type {
+  EventToAppend,
   EventToAppendEnvelope,
   ProposeAction,
   RejectedValidationResult,
@@ -1173,17 +1176,156 @@ export const proposeHandler: Validator<ProposeAction> = (
       break;
   }
 
-  const event: EventToAppendEnvelope<'proposal'> = {
+  // Per ADR 0027 (entity vs facet layer separation), proposals that
+  // introduce new entities emit the matching structural events at
+  // propose-time alongside the `proposal` envelope. The previous
+  // implementation gated `node-created` / `edge-created` /
+  // `entity-included` on commit, which violated the methodology
+  // contract that proposed entities are visible on the graph from
+  // the moment of proposal (`docs/methodology.md` L57). The fix
+  // builds a multi-event list with the proposal envelope as the
+  // *last* event so consumers that walk the projection in-order see
+  // the structural records before the `handleProposal` arm runs
+  // (and thus `facetTargetForProposal` resolves the facet against an
+  // already-present entity).
+  //
+  // Each new event needs its own sequence (the WS handler allocates
+  // sequences sequentially starting from `action.sequence`; the
+  // engine assigns 1 + offset per emitted event). Event ids are
+  // freshly minted UUIDs; `action.eventId` is reserved for the
+  // `proposal` envelope so the proposal's `proposalEventId`
+  // identifier (used by vote / commit / withdraw lookups) stays
+  // stable.
+  const structuralEvents = buildStructuralEventsForPropose(projection, action);
+  const proposalEvent: EventToAppendEnvelope<'proposal'> = {
     id: action.eventId,
     sessionId: action.sessionId,
-    sequence: action.sequence,
+    sequence: action.sequence + structuralEvents.length,
     kind: 'proposal',
     actor: action.actor,
     payload: { proposal: action.proposal },
     createdAt: action.createdAt,
   };
-  return { ok: true, events: [event] };
+  return { ok: true, events: [...structuralEvents, proposalEvent] };
 };
+
+// ---------------------------------------------------------------
+// `buildStructuralEventsForPropose` — emit the propose-time
+// structural fan-out per ADR 0027.
+//
+// Returns the array of structural events that must precede the
+// `proposal` envelope event for the given action. Returns an empty
+// array when the proposal sub-kind doesn't introduce new entities
+// (every sub-kind that targets existing entities — set-node-substance,
+// edit-wording.reword, axiom-mark, meta-move, break-edge, amend-node,
+// annotate — has no propose-time structural event to emit).
+//
+// **classify-node**: the proposal carries `node_id`. If the node
+// doesn't exist on the projection yet, emit `node-created` +
+// `entity-included` so the canvas projector renders the proposed
+// entity in `proposed` state (the facet status derives `proposed` so
+// long as the proposal is pending). When the node already exists
+// (a re-classify against a committed node), no structural events fire.
+//
+// **set-edge-substance**: the proposal carries `edge_id`. If the
+// edge doesn't exist yet (the connecting case where a new statement
+// is being proposed with an edge to an existing target), the propose
+// flow currently passes through two proposals back-to-back
+// (`classify-node` for the source node + `set-edge-substance` for
+// the edge). The `set-edge-substance` arm here would mint
+// `edge-created` + `entity-included` if it had the source/target/role
+// fields, but `setEdgeSubstanceProposalSchema` doesn't carry them
+// today — the v1 `useProposeAction` client mints them client-side
+// and passes the connecting case as a *single* proposal with the
+// existing `set-edge-substance` shape, leaving the source/target
+// resolution to the engine. Per refinement Open Questions: extending
+// the propose payload to carry the edge endpoints is a follow-up
+// (`mod_set_edge_substance_endpoint_carriage`); for now the
+// `set-edge-substance` arm cannot mint a fresh `edge-created` without
+// those fields. The connecting-case canvas visibility instead lands
+// via the source-node `classify-node` propose's `node-created` event
+// alone — the edge surfaces post-commit, matching the prior contract
+// for the edge but unblocking the source-node visibility.
+//
+// **decompose / interpretive-split**: each component / reading needs
+// a fresh `node-created` + `entity-included`. The proposal payload
+// does NOT carry per-component ids today, so the engine mints them
+// here and the commit handler reads them back from the projection's
+// pending-proposals record. Per refinement Open Questions: a payload
+// extension that carries the minted ids inline is a follow-up
+// (`mod_decompose_propose_time_canvas_visibility`); for now the
+// arms below emit nothing and the regression cover (scenario 3 of
+// the failing-first Playwright spec) stays scoped as that follow-up.
+// ---------------------------------------------------------------
+
+function buildStructuralEventsForPropose(
+  projection: Projection,
+  action: ProposeAction,
+): EventToAppend[] {
+  const events: EventToAppend[] = [];
+  // Sequence offsets — the proposal envelope itself takes the last
+  // slot; structural events fill the prior slots starting from
+  // `action.sequence`.
+  const seq = (offset: number): number => action.sequence + offset;
+
+  switch (action.proposal.kind) {
+    case 'classify-node': {
+      const nodeId = action.proposal.node_id;
+      const wording = action.proposal.wording;
+      if (projection.getNode(nodeId) === undefined && wording !== undefined) {
+        // Free-floating new statement — mint the node and inject it
+        // into the session. The client signals the
+        // free-floating-vs-re-classify shape by supplying / omitting
+        // `wording`; when absent, no `node-created` is emitted.
+        const nodeCreated: EventToAppendEnvelope<'node-created'> = {
+          id: randomUUID(),
+          sessionId: action.sessionId,
+          sequence: seq(events.length),
+          kind: 'node-created',
+          actor: action.actor,
+          payload: {
+            node_id: nodeId,
+            wording,
+            created_by: action.requester,
+            created_at: action.createdAt,
+          },
+          createdAt: action.createdAt,
+        };
+        events.push(nodeCreated);
+        const entityIncluded: EventToAppendEnvelope<'entity-included'> = {
+          id: randomUUID(),
+          sessionId: action.sessionId,
+          sequence: seq(events.length),
+          kind: 'entity-included',
+          actor: action.actor,
+          payload: {
+            entity_kind: 'node',
+            entity_id: nodeId,
+            included_by: action.requester,
+            included_at: action.createdAt,
+          },
+          createdAt: action.createdAt,
+        };
+        events.push(entityIncluded);
+      }
+      break;
+    }
+    case 'set-edge-substance': {
+      // See header comment — the v1 proposal payload doesn't carry
+      // edge endpoints (source/target/role) so we can't mint a
+      // `edge-created` here. The connecting-case source node IS
+      // covered: the client's two-envelope `classify-node` +
+      // `set-edge-substance` chain produces the source node via the
+      // first envelope's `node-created` emission above. Extending
+      // this arm is the follow-up
+      // `mod_set_edge_substance_endpoint_carriage`.
+      break;
+    }
+    default:
+      break;
+  }
+  return events;
+}
 
 // Backward-compatibility alias — the engine's `installHandlers` and the
 // barrel both still reference `placeholderProposeHandler`. After this

@@ -57,6 +57,7 @@ import type {
   AnnotationCreatedPayload,
   EdgeCreatedPayload,
   EntityIncludedPayload,
+  EntityRemovedPayload,
   Event,
   NodeCreatedPayload,
   ParticipantJoinedPayload,
@@ -223,6 +224,71 @@ function handleAnnotationCreated(
     targetNodeId: payload.target_node_id,
     targetEdgeId: payload.target_edge_id,
   });
+}
+
+// `entity-removed` handler — symmetric counterpart to
+// `entity-included`. Per ADR 0027: when a proposal-withdraw retracts
+// a propose-time-minted entity, this event flips the entity's
+// visibility off (so downstream projectors that walk `node.visible` /
+// `edge.visible` skip it). The structural records remain on the
+// projection (history is replay-authoritative); the visibility flag
+// is the seam every renderer consults. For annotations, the
+// visibility flag lives on the annotation record itself.
+function handleEntityRemoved(
+  projection: Projection,
+  payload: EntityRemovedPayload,
+  changes: ProjectionChange[],
+): void {
+  switch (payload.entity_kind) {
+    case 'node': {
+      const node = projection.getNode(payload.entity_id);
+      if (node === undefined) {
+        throw new ReplayError(
+          `entity-removed(node ${payload.entity_id}): not in projection — the matching node-created event must have run earlier`,
+        );
+      }
+      projection.setNodeVisible(payload.entity_id, false);
+      changes.push({
+        kind: 'visibility-changed',
+        entityKind: 'node',
+        entityId: payload.entity_id,
+        visible: false,
+      });
+      return;
+    }
+    case 'edge': {
+      const edge = projection.getEdge(payload.entity_id);
+      if (edge === undefined) {
+        throw new ReplayError(
+          `entity-removed(edge ${payload.entity_id}): not in projection — the matching edge-created event must have run earlier`,
+        );
+      }
+      projection.setEdgeVisible(payload.entity_id, false);
+      changes.push({
+        kind: 'visibility-changed',
+        entityKind: 'edge',
+        entityId: payload.entity_id,
+        visible: false,
+      });
+      return;
+    }
+    case 'annotation': {
+      const annotation = projection.getAnnotation(payload.entity_id);
+      if (annotation === undefined) {
+        throw new ReplayError(
+          `entity-removed(annotation ${payload.entity_id}): not in projection — the matching annotation-created event must have run earlier`,
+        );
+      }
+      // Annotations don't carry a `visible` flag on the projection
+      // record today (per docs/data-model.md L295-300, annotation
+      // visibility is derived from `(annotation-created fired) AND
+      // (target entity visible)`). The `entity-removed` event simply
+      // records the historical fact; the visible-graph derivation
+      // checks for the matching removal on read. No projection
+      // mutation needed beyond the change-feed entry.
+      return;
+    }
+  }
 }
 
 function handleEntityIncluded(
@@ -822,6 +888,9 @@ export function applyEvent(projection: Projection, event: Event): ProjectionChan
         break;
       case 'snapshot-created':
         handleSnapshotCreated(projection, event.payload, event.createdAt, changes);
+        break;
+      case 'entity-removed':
+        handleEntityRemoved(projection, event.payload, changes);
         break;
     }
   } catch (cause) {

@@ -119,6 +119,12 @@ const REPRESENTATIVE_PAYLOADS: Record<EventKind, unknown> = {
     label: 'Segment 1 close',
     log_position: 42,
   },
+  'entity-removed': {
+    entity_kind: 'node',
+    entity_id: NODE_ID,
+    removed_by: USER_ID,
+    removed_at: '2026-05-10T12:34:56Z',
+  },
 };
 
 /** Build a full envelope around a payload for the given kind. */
@@ -414,6 +420,7 @@ const PAYLOAD_CORRUPTIONS: Record<EventKind, (base: Record<string, unknown>) => 
   commit: (base) => ({ ...base, proposal_id: 'not-a-uuid' }),
   'meta-disagreement-marked': (base) => ({ ...base, proposal_id: 'not-a-uuid' }),
   'snapshot-created': (base) => ({ ...base, log_position: -1 }),
+  'entity-removed': (base) => ({ ...base, entity_kind: 'attribute' }),
 };
 
 describe('validateEvent — payload-level failure per kind', () => {

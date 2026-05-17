@@ -339,6 +339,16 @@ task backend "Backend" {
       depends !ws_propose_message, !ws_vote_message, !ws_commit_message, !ws_event_broadcast
       note "Refinement: tasks/refinements/backend/ws_protocol_documentation.md"
     }
+    task ws_withdraw_proposal_message "Withdraw-proposal message: client → server (proposer-only authority, emits entity-removed events)" {
+      effort 0.5d
+      allocate team
+      depends !ws_propose_message, !ws_message_envelope
+      note -8<-
+        Source of debt: tasks/refinements/moderator-ui/mod_proposed_entity_canvas_visibility.md D4 + D7 — the `entity-removed` event kind + payload schema + SQL migration landed in the commit that closes mod_proposed_entity_canvas_visibility (kind appended to packages/shared-types/src/events.ts; payload schema in packages/shared-types/src/events/proposals.ts; migration at apps/server/migrations/0012_session_events_entity_removed.sql; projector handler in apps/server/src/projection/replay.ts). The WS handler that consumes `withdraw-proposal` from the wire, validates proposer-only authority (rejection `'not-proposer'` mapped to wire 403), checks the proposal is still `'proposed'`, and emits one `entity-removed` per propose-time-created entity + `proposal-withdrawn` ack is unimplemented. This task lands the handler at apps/server/src/ws/handlers/withdraw.ts mirroring the propose / commit / vote skeleton plus the Cucumber wire-path coverage at tests/behavior/backend/ws-withdraw.feature.
+
+        Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit landing mod_proposed_entity_canvas_visibility).
+      ->8-
+    }
   }
 
   task replay_endpoints "Replay and history endpoints" {

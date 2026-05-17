@@ -285,28 +285,34 @@ export function buildProposeHandler(
       if (!result.ok) {
         throw rejectedToApiError(result);
       }
-      // The engine emits exactly one `proposal` event for a propose
-      // action today (per `methodology/handlers/propose.ts`); the
-      // structural fan-out for decompose / interpretive-split is the
-      // commit-time projection-application's responsibility, not the
-      // propose-time engine output. Defensive check anyway.
-      if (result.events.length !== 1) {
+      // Per ADR 0027 the engine may emit MORE than one event per
+      // propose action: a free-floating `classify-node` produces
+      // `node-created` + `entity-included` + `proposal`; a connecting
+      // case may add `edge-created` + `entity-included`. The
+      // proposal envelope is always the last event in the returned
+      // list (its sequence is `action.sequence +
+      // structuralEvents.length`); the WS ack carries that last
+      // event's sequence / id so the proposer's request-response
+      // correlation lands on the proposal envelope, mirroring the
+      // pre-ADR-0027 single-event ack shape.
+      if (result.events.length === 0) {
+        throw new Error('ws-propose: engine produced 0 events (expected at least 1)');
+      }
+      const proposalEnvelopeEvent = result.events[result.events.length - 1]!;
+      if (proposalEnvelopeEvent.kind !== 'proposal') {
         throw new Error(
-          `ws-propose: engine produced ${String(result.events.length)} events (expected 1)`,
+          `ws-propose: last emitted event is '${proposalEnvelopeEvent.kind}' (expected 'proposal')`,
         );
       }
-      const emitted = result.events[0]!;
 
       // 6. Schema-on-write — every row in `session_events` is
-      //    structurally valid by construction (ADR 0021). The engine's
-      //    output is well-typed, but `validateEvent` is the canonical
-      //    gate: if a future engine arm drifts from the persisted
-      //    shape, the test surface here surfaces the drift loudly.
-      validateEvent(emitted);
-
-      // 7. INSERT via the centralized append helper. The returned
-      //    event is collected for the post-COMMIT broadcast emit.
-      appendedEvents.push(await appendSessionEvent(client, emitted));
+      //    structurally valid by construction (ADR 0021). Validate +
+      //    append each engine-emitted event in order so subscribers
+      //    see structural events before the `proposal` envelope.
+      for (const emitted of result.events) {
+        validateEvent(emitted);
+        appendedEvents.push(await appendSessionEvent(client, emitted));
+      }
 
       return eventId;
     });
@@ -323,13 +329,20 @@ export function buildProposeHandler(
     for (const evt of appendedEvents) {
       opts.broadcast.emit({ event: evt });
     }
+    // The `proposal` envelope event is always the last in
+    // `appendedEvents` (the engine emits structural events first per
+    // ADR 0027). The ack carries the proposal envelope's sequence so
+    // the client's request-response correlation lands on the proposal
+    // (the structural events that precede it are observed via
+    // `event-applied` broadcasts).
+    const proposalEnvelope = appendedEvents[appendedEvents.length - 1]!;
     const ack: WsEnvelope<'proposed'> = {
       type: 'proposed',
       id: randomUUID(),
       inResponseTo: envelope.id,
       payload: {
         sessionId,
-        sequence: appendedEvents[0]!.sequence,
+        sequence: proposalEnvelope.sequence,
         eventId: proposalEventId,
       },
     };

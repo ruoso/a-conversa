@@ -280,7 +280,8 @@ export default defineConfig({
     //   `authelia.aconversa.local`.
     {
       name: 'chromium-create-session',
-      testMatch: /(create-session-flow|moderator-capture|invite-participants-flow)\.spec\.ts$/,
+      testMatch:
+        /(create-session-flow|moderator-capture|invite-participants-flow|moderator-proposed-entity-canvas-visibility)\.spec\.ts$/,
       dependencies: ['setup-auth'],
       use: {
         ...devices['Desktop Chrome'],

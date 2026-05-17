@@ -157,16 +157,28 @@ function randomUuid(): string {
 
 /**
  * Build a `classify-node` proposal payload for the new statement node.
+ *
+ * Per ADR 0027, the wording is sent inline on a free-floating propose
+ * so the server can mint the matching `node-created` event at
+ * propose-time and the canvas projector renders the entity in
+ * `proposed` state immediately. When `wording` is absent (a
+ * re-classify of an existing node), the engine emits no
+ * `node-created`.
  */
 function buildClassifyNodeProposal(args: {
   nodeId: string;
   classification: StatementKind;
+  wording?: string;
 }): ProposalPayload {
-  return {
+  const payload: ProposalPayload & { wording?: string } = {
     kind: 'classify-node',
     node_id: args.nodeId,
     classification: args.classification,
   };
+  if (args.wording !== undefined && args.wording !== '') {
+    payload.wording = args.wording;
+  }
+  return payload;
 }
 
 /**
@@ -371,6 +383,12 @@ export function useProposeAction(): UseProposeActionResult {
         proposal: buildClassifyNodeProposal({
           nodeId,
           classification: classificationNow,
+          // Per ADR 0027, the wording rides inline so the server
+          // emits `node-created` + `entity-included` at propose-time
+          // and the canvas projector renders the proposed node
+          // immediately. The wording was snapshotted above via
+          // `textNow`.
+          wording: textNow,
         }),
       });
 

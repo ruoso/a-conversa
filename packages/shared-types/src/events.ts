@@ -146,6 +146,9 @@ export const eventKinds = [
   'meta-disagreement-marked',
   // Snapshots
   'snapshot-created',
+  // Entity removal (per ADR 0027 — proposal-withdraw removes
+  // propose-time-minted entities from the structure)
+  'entity-removed',
 ] as const;
 
 export type EventKind = (typeof eventKinds)[number];
@@ -420,6 +423,27 @@ export const snapshotCreatedPayloadSchema = z.object({
 
 export type SnapshotCreatedPayload = z.infer<typeof snapshotCreatedPayloadSchema>;
 
+// -- Entity removal event payload schema -----------------------------
+//
+// Per ADR 0027 — when a proposal is withdrawn before commit, the
+// propose-time-minted entities leave the structure via explicit
+// `entity-removed` events (one per entity the proposal introduced).
+// The payload mirrors `entity-included`'s shape with a `removed_by` /
+// `removed_at` pair instead of `included_by` / `included_at`, so a
+// projector that handles inclusion can mechanically extend to handle
+// removal. The `entity_kind` discriminator covers node / edge /
+// annotation per the same enum used by `entity-included`.
+//
+// Refinement: tasks/refinements/moderator-ui/mod_proposed_entity_canvas_visibility.md
+export const entityRemovedPayloadSchema = z.object({
+  entity_kind: entityKindSchema,
+  entity_id: z.string().uuid(),
+  removed_by: z.string().uuid(),
+  removed_at: z.string().datetime({ offset: true }),
+});
+
+export type EntityRemovedPayload = z.infer<typeof entityRemovedPayloadSchema>;
+
 // The registry. Keys are exhaustive over `EventKind` (TypeScript
 // enforces this via the explicit type annotation).
 export const eventPayloadSchemas: Record<EventKind, z.ZodTypeAny> = {
@@ -443,6 +467,8 @@ export const eventPayloadSchemas: Record<EventKind, z.ZodTypeAny> = {
   'meta-disagreement-marked': metaDisagreementMarkedPayloadSchema,
   // Owned by snapshot_events
   'snapshot-created': snapshotCreatedPayloadSchema,
+  // Owned by mod_proposed_entity_canvas_visibility (ADR 0027)
+  'entity-removed': entityRemovedPayloadSchema,
 };
 
 // -- Per-kind payload type map ---------------------------------------
@@ -467,6 +493,7 @@ export interface EventPayloadMap {
   commit: CommitPayload;
   'meta-disagreement-marked': MetaDisagreementMarkedPayload;
   'snapshot-created': SnapshotCreatedPayload;
+  'entity-removed': EntityRemovedPayload;
 }
 
 export type PayloadFor<K extends EventKind> = EventPayloadMap[K];

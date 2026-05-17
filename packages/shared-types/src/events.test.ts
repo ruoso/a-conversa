@@ -834,6 +834,10 @@ describe('placeholder payload schemas', () => {
       'commit',
       'meta-disagreement-marked',
       'snapshot-created',
+      // Added by mod_proposed_entity_canvas_visibility (ADR 0027) —
+      // emitted by the proposal-withdraw flow to retract propose-time-
+      // minted entities from the structure.
+      'entity-removed',
     ] as const;
     for (const kind of expectedKinds) {
       expect(eventPayloadSchemas[kind]).toBeDefined();
@@ -978,6 +982,12 @@ const REPRESENTATIVE_PAYLOADS: Record<EventKind, unknown> = {
     snapshot_id: SNAPSHOT_ID,
     label: 'Segment 1 close',
     log_position: 42,
+  },
+  'entity-removed': {
+    entity_kind: 'node',
+    entity_id: NODE_ID,
+    removed_by: USER_ID,
+    removed_at: '2026-05-10T12:34:56Z',
   },
 };
 
