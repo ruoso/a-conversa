@@ -84,11 +84,40 @@ interface SessionResponse {
 }
 
 /**
- * Per-slot occupant — the screen name of the user currently assigned
- * to the role. `undefined` means the slot is empty (only meaningful
- * for the two debater roles; the moderator slot is always filled).
+ * Per-slot occupant — the `{ userId, screenName }` pair of the user
+ * currently assigned to the role. `undefined` means the slot is empty
+ * (only meaningful for the two debater roles; the moderator slot is
+ * always filled at session creation).
+ *
+ * The pair shape (carrying `userId`) is load-bearing for the
+ * HTTP-prefetch + WS-overlay merge: the participants-list endpoint
+ * (`GET /api/sessions/:id/participants`) returns rows with `userId`
+ * but does not denormalize `screenName`; the WS event payload IS the
+ * canonical display-name source. Carrying both fields lets the merge
+ * filter HTTP rows against WS-derived `participant-left` events
+ * (Decision §6 of `mod_invite_participants_rest_prefetch.md`).
+ *
+ * Shape mirrors the participant lobby's at
+ * `apps/participant/src/routes/LobbyRoute.tsx:77-82`.
  */
-type SlotOccupants = Readonly<Record<SlotRole, string | undefined>>;
+interface SlotOccupant {
+  readonly userId: string;
+  readonly screenName: string;
+}
+type SlotOccupants = { [K in SlotRole]?: SlotOccupant };
+
+/**
+ * The shape of a single row in the HTTP prefetch's projected output
+ * — the `{ userId, role, screenName }` triple the merge consumes.
+ * `screenName` is the empty string when the endpoint omits it (the
+ * current endpoint contract; the WS overlay fills it from the
+ * `participant-joined` payload).
+ */
+interface ParticipantRow {
+  readonly userId: string;
+  readonly role: SlotRole;
+  readonly screenName: string;
+}
 
 /**
  * Walk the session's event log once and collapse `participant-joined`
@@ -111,7 +140,7 @@ function deriveSlotOccupants(events: readonly Event[]): SlotOccupants {
   // only when the leaver matches the current occupant (otherwise a
   // stale `participant-left` could erase a fresh `participant-joined`
   // for a different user in the same role).
-  const occupants: { [K in SlotRole]?: { userId: string; screenName: string } } = {};
+  const occupants: SlotOccupants = {};
   for (const event of events) {
     if (event.kind === 'participant-joined') {
       const role = event.payload.role;
@@ -129,11 +158,59 @@ function deriveSlotOccupants(events: readonly Event[]): SlotOccupants {
       }
     }
   }
-  return {
-    moderator: occupants.moderator?.screenName,
-    'debater-A': occupants['debater-A']?.screenName,
-    'debater-B': occupants['debater-B']?.screenName,
-  };
+  return occupants;
+}
+
+/**
+ * Merge the HTTP-prefetch row set with the WS-derived slot map. The
+ * HTTP prefetch is the cold-load source of truth (it tells us which
+ * slots are filled even before the WS catch-up replay arrives); the
+ * WS event stream is the live overlay (its events carry the canonical
+ * `screen_name` from the joined-payload, and they reflect every
+ * subsequent change). Both are merged into a single per-render slot
+ * map — WS wins on collisions, since its events are more recent than
+ * the HTTP snapshot.
+ *
+ * Diverges from the participant lobby's `mergeSlots` at
+ * `apps/participant/src/routes/LobbyRoute.tsx:150-163` by also
+ * propagating WS-derived absences: the participant lobby's merge
+ * iterates HTTP rows then overlays WS, so a WS-derived
+ * `participant-left` (which deletes the key from `wsOccupants`)
+ * doesn't override the HTTP row — the slot stays "alive" from the
+ * HTTP prefetch's view. This implementation walks the event log a
+ * second pass to derive a `wsAbsentUserIds` set, then filters HTTP
+ * rows against it before applying. See Decision §6 of
+ * `tasks/refinements/moderator-ui/mod_invite_participants_rest_prefetch.md`.
+ */
+function mergeSlots(
+  httpRows: readonly ParticipantRow[],
+  wsOccupants: SlotOccupants,
+  events: readonly Event[],
+): SlotOccupants {
+  // Derive the "latest signal per user id" map from the event log: a
+  // user whose most recent event is `participant-left` has departed;
+  // a user whose most recent event is `participant-joined` (after a
+  // possible prior leave) is present. The merge filters HTTP rows
+  // against the "left" subset so a WS-derived absence overrides the
+  // HTTP prefetch's stale "still here" row.
+  const latest = new Map<string, 'joined' | 'left'>();
+  for (const event of events) {
+    if (event.kind === 'participant-joined') {
+      latest.set(event.payload.user_id, 'joined');
+    } else if (event.kind === 'participant-left') {
+      latest.set(event.payload.user_id, 'left');
+    }
+  }
+  const merged: SlotOccupants = {};
+  for (const row of httpRows) {
+    if (latest.get(row.userId) === 'left') continue;
+    merged[row.role] = { userId: row.userId, screenName: row.screenName };
+  }
+  for (const role of SLOT_ROLES) {
+    const wsSlot = wsOccupants[role];
+    if (wsSlot !== undefined) merged[role] = wsSlot;
+  }
+  return merged;
 }
 
 export function InviteParticipantsRoute(): ReactElement {
@@ -244,7 +321,94 @@ function InviteParticipantsRouteInner(props: InviteParticipantsRouteInnerProps):
     };
   }, [sessionId, retryNonce]);
 
-  // ── Slot occupants — derived from the WS event stream ────────────
+  // ── HTTP fetch for the participants list ─────────────────────────
+  //
+  // Cold-load seed for the slot map. The WS subscription above already
+  // catch-up-replays `participant-joined` / `participant-left` events,
+  // but the replay races first paint (per the predecessor's race note);
+  // this prefetch resolves the slot map's "filled?" state from the
+  // server's authoritative active rows without waiting on the WS
+  // round-trip. Mirrors the participant lobby's pattern at
+  // `apps/participant/src/routes/LobbyRoute.tsx:273-342`.
+  //
+  // The endpoint does NOT denormalize `screenName` today; the WS
+  // overlay fills it from the `participant-joined` payload. Active
+  // rows are those with `leftAt === null` per the endpoint contract;
+  // the active-only filter is the client's job (historical rows from
+  // leave-and-rejoin are present in the response).
+  const [participantsStatus, setParticipantsStatus] = useState<FetchStatus>('loading');
+  const [httpRows, setHttpRows] = useState<readonly ParticipantRow[]>([]);
+  const [participantsRetryNonce, setParticipantsRetryNonce] = useState<number>(0);
+
+  useEffect(() => {
+    if (sessionId === '') return;
+    let cancelled = false;
+    setParticipantsStatus('loading');
+    setHttpRows([]);
+    void (async () => {
+      try {
+        const response = await fetch(`/api/sessions/${sessionId}/participants`, {
+          method: 'GET',
+          credentials: 'include',
+          headers: {
+            Accept: 'application/json',
+          },
+        });
+        if (cancelled) return;
+        if (response.status !== 200) {
+          setParticipantsStatus('error');
+          return;
+        }
+        const body = (await response.json()) as unknown;
+        if (cancelled) return;
+        if (
+          body === null ||
+          typeof body !== 'object' ||
+          !Array.isArray((body as { participants?: unknown }).participants)
+        ) {
+          setParticipantsStatus('error');
+          return;
+        }
+        const rawParticipants = (body as { participants: readonly unknown[] }).participants;
+        const rows: ParticipantRow[] = [];
+        for (const raw of rawParticipants) {
+          if (raw === null || typeof raw !== 'object') continue;
+          const row = raw as {
+            userId?: unknown;
+            role?: unknown;
+            leftAt?: unknown;
+            // The participants-list endpoint does not denormalize
+            // `screen_name` today (see refinement Inputs / context);
+            // the WS event overlay is the canonical display-name
+            // source. Accept the optional key for forward compat (a
+            // future endpoint amendment that adds the denormalization
+            // will populate it).
+            screenName?: unknown;
+          };
+          if (typeof row.userId !== 'string') continue;
+          if (typeof row.role !== 'string') continue;
+          if (!(SLOT_ROLES as readonly string[]).includes(row.role)) continue;
+          // Skip historical rows; the active-only filter is the
+          // client's job per the endpoint's contract.
+          if (row.leftAt !== null) continue;
+          rows.push({
+            userId: row.userId,
+            role: row.role as SlotRole,
+            screenName: typeof row.screenName === 'string' ? row.screenName : '',
+          });
+        }
+        setHttpRows(rows);
+        setParticipantsStatus('loaded');
+      } catch {
+        if (!cancelled) setParticipantsStatus('error');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId, participantsRetryNonce]);
+
+  // ── Slot occupants — HTTP prefetch merged with the WS overlay ────
   // Subscribing to the per-session event slice keeps the view in sync
   // with live `participant-joined` / `participant-left` broadcasts AND
   // the catch-up replay that `trackSession` triggers above. The
@@ -252,8 +416,18 @@ function InviteParticipantsRouteInner(props: InviteParticipantsRouteInnerProps):
   // inside the selector, which would mint a fresh empty array on every
   // render and trip Zustand's reference-equality bailout — same
   // convention `PendingProposalsPane.tsx` follows).
+  //
+  // The merge composition: HTTP rows seed the slot map; the WS overlay
+  // wins on collision (more recent + carries the canonical screen
+  // name); WS-derived `participant-left` absences override HTTP-row
+  // presence (per Decision §6 of
+  // `mod_invite_participants_rest_prefetch.md`).
   const events = useWsStore((state) => state.sessionState[sessionId]?.events);
-  const occupants = useMemo(() => deriveSlotOccupants(events ?? []), [events]);
+  const wsOccupants = useMemo(() => deriveSlotOccupants(events ?? []), [events]);
+  const occupants = useMemo(
+    () => mergeSlots(httpRows, wsOccupants, events ?? []),
+    [httpRows, wsOccupants, events],
+  );
 
   // ── Gate derivations for mod_session_lobby ───────────────────────
   //
@@ -352,7 +526,13 @@ function InviteParticipantsRouteInner(props: InviteParticipantsRouteInnerProps):
   }, [bothDebatersPresent, navigate, sessionId]);
 
   const handleRetry = useCallback((): void => {
+    // Bump BOTH retry nonces so a single retry click recovers from
+    // whichever fetch(es) failed. Per Decision §3 of
+    // `mod_invite_participants_rest_prefetch.md` the moderator's
+    // existing single error region + single retry button is preserved
+    // (no second testid, no new i18n key); both effects re-fire.
     setRetryNonce((n) => n + 1);
+    setParticipantsRetryNonce((n) => n + 1);
   }, []);
 
   return (
@@ -361,13 +541,15 @@ function InviteParticipantsRouteInner(props: InviteParticipantsRouteInnerProps):
         {t('moderator.invite.title')}
       </h1>
 
-      {fetchStatus === 'loading' && (
-        <p data-testid="invite-loading" aria-live="polite" className="text-gray-700">
-          {t('moderator.invite.loading')}
-        </p>
-      )}
+      {(fetchStatus === 'loading' || participantsStatus === 'loading') &&
+        fetchStatus !== 'error' &&
+        participantsStatus !== 'error' && (
+          <p data-testid="invite-loading" aria-live="polite" className="text-gray-700">
+            {t('moderator.invite.loading')}
+          </p>
+        )}
 
-      {fetchStatus === 'error' && (
+      {(fetchStatus === 'error' || participantsStatus === 'error') && (
         <div className="flex flex-col gap-2">
           <p
             data-testid="invite-error"
@@ -388,7 +570,7 @@ function InviteParticipantsRouteInner(props: InviteParticipantsRouteInnerProps):
         </div>
       )}
 
-      {fetchStatus === 'loaded' && session !== undefined && (
+      {fetchStatus === 'loaded' && participantsStatus === 'loaded' && session !== undefined && (
         <>
           <section data-testid="invite-session-header" className="mb-6">
             <p data-testid="invite-session-topic" className="text-lg font-medium">
@@ -404,8 +586,8 @@ function InviteParticipantsRouteInner(props: InviteParticipantsRouteInnerProps):
 
           <div className="flex flex-col gap-4">
             {SLOT_ROLES.map((role) => {
-              const occupantScreenName = occupants[role];
-              const isFilled = occupantScreenName !== undefined;
+              const occupant = occupants[role];
+              const isFilled = occupant !== undefined;
               const showCopyAffordance = role !== 'moderator';
               // The empty-state caption is only meaningful for the
               // debater slots (per the refinement: "only applicable to
@@ -436,7 +618,7 @@ function InviteParticipantsRouteInner(props: InviteParticipantsRouteInnerProps):
                       data-role={role}
                       className="text-gray-800"
                     >
-                      {occupantScreenName}
+                      {occupant.screenName}
                     </p>
                   )}
                   {showEmptyState && (

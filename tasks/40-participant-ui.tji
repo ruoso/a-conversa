@@ -252,6 +252,18 @@ task participant_ui "Participant (debater) UI" {
       complete 100
       depends !part_invite_acceptance
     }
+    task part_lobby_view_ws_absence_merge_fix "Backport WS-absence-propagating mergeSlots fix to participant lobby" {
+      effort 0.25d
+      allocate team
+      depends !part_lobby_view, moderator_ui.mod_session_setup.mod_invite_participants_rest_prefetch
+      note -8<-
+        Source of debt: tasks/refinements/moderator-ui/mod_invite_participants_rest_prefetch.md Decision §6 — the moderator's adoption of HTTP-prefetch + WS-overlay diverges from the participant lobby's mergeSlots by walking the event log a second pass to derive a "WS-left and not rejoined" user-id set, then filtering HTTP rows against it. The participant lobby's current merge at apps/participant/src/routes/LobbyRoute.tsx:150-163 ships with the original (buggy) shape — a WS participant-left does NOT override an HTTP-prefetched row carrying the leaver. Confirmed during the moderator adoption (commit landing mod_invite_participants_rest_prefetch).
+
+        Scope: copy the moderator's mergeSlots(httpRows, wsOccupants, events) shape into LobbyRoute.tsx (the moderator's helper is the canonical fixed pattern); add the matching Vitest case mirroring InviteParticipants.test.tsx case 9 (`participant-left` event removes a debater slot that was filled by the HTTP prefetch).
+
+        Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit landing mod_invite_participants_rest_prefetch).
+      ->8-
+    }
   }
 
   task part_tests "Participant UI tests" {

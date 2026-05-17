@@ -144,13 +144,26 @@ function renderRoute(): { client: WsClient } {
 
 /**
  * Build a `fetch` stub that routes `/api/auth/me` to an authenticated
- * response and `/api/sessions/:id` to the caller's `builder()`. After
- * the shell-substrate extraction the route mounts inside `<AuthProvider>`
- * (or in the InviteParticipants test, we render it inside an
- * `<AuthProvider>` so `useAuth()` resolves); the provider fires
- * `/api/auth/me` on mount and the bare session stub would 404 that.
+ * response, `/api/sessions/:id/participants` to the participants
+ * builder (default: empty list), and `/api/sessions/:id` to the
+ * session builder. After the shell-substrate extraction the route
+ * mounts inside `<AuthProvider>` (or in the InviteParticipants test,
+ * we render it inside an `<AuthProvider>` so `useAuth()` resolves);
+ * the provider fires `/api/auth/me` on mount and the bare session
+ * stub would 404 that.
+ *
+ * The participants-list branch was added for
+ * `mod_invite_participants_rest_prefetch`: the route now issues a
+ * second GET to `/api/sessions/:id/participants` on mount alongside
+ * the existing session-header GET, and the slot map is fed by
+ * `mergeSlots(httpRows, wsOccupants, events)`. The default empty
+ * list keeps the pre-existing WS-only seed cases valid (the merge's
+ * WS overlay continues to be the sole source of slot fill).
  */
-function stubSessionFetch(builder: () => Response): ReturnType<typeof vi.fn> {
+function stubSessionFetch(
+  builder: () => Response,
+  participantsBuilder: () => Response = () => okParticipantsResponse([]),
+): ReturnType<typeof vi.fn> {
   return vi.fn((url: string) => {
     if (url === '/api/auth/me') {
       return Promise.resolve(
@@ -162,6 +175,9 @@ function stubSessionFetch(builder: () => Response): ReturnType<typeof vi.fn> {
           { status: 200, headers: { 'content-type': 'application/json' } },
         ),
       );
+    }
+    if (url === `/api/sessions/${SESSION_ID}/participants`) {
+      return Promise.resolve(participantsBuilder());
     }
     return Promise.resolve(builder());
   });
@@ -176,6 +192,41 @@ function okSessionResponse(): Response {
       topic: 'Should UBI replace welfare?',
       createdAt: '2026-05-16T00:00:00.000Z',
       endedAt: null,
+    }),
+    { status: 200, headers: { 'content-type': 'application/json' } },
+  );
+}
+
+/**
+ * Build a `200 OK` `/api/sessions/:id/participants` response from a
+ * list of row partials. Each partial provides at minimum `userId` +
+ * `role`; `leftAt` defaults to `null` (active row) and `screenName`
+ * is omitted by default (mirrors the current endpoint contract — the
+ * endpoint does not denormalize screen names yet, so the WS overlay
+ * is the canonical display-name source).
+ */
+function okParticipantsResponse(
+  rows: ReadonlyArray<{
+    userId: string;
+    role: 'moderator' | 'debater-A' | 'debater-B';
+    leftAt?: string | null;
+    screenName?: string;
+  }>,
+): Response {
+  return new Response(
+    JSON.stringify({
+      participants: rows.map((row, index) => {
+        const body: Record<string, unknown> = {
+          id: `00000000-0000-4000-8000-${(index + 1000).toString().padStart(12, '0')}`,
+          sessionId: SESSION_ID,
+          userId: row.userId,
+          role: row.role,
+          joinedAt: '2026-05-16T00:00:00.000Z',
+          leftAt: row.leftAt === undefined ? null : row.leftAt,
+        };
+        if (row.screenName !== undefined) body.screenName = row.screenName;
+        return body;
+      }),
     }),
     { status: 200, headers: { 'content-type': 'application/json' } },
   );
@@ -267,10 +318,22 @@ describe('InviteParticipants route — fetch lifecycle', () => {
   });
 
   it('retry button re-triggers the fetch', async () => {
-    let calls = 0;
-    global.fetch = vi.fn(() => {
-      calls += 1;
-      if (calls === 1) return Promise.reject(new TypeError('NetworkError'));
+    let sessionCalls = 0;
+    global.fetch = vi.fn((input: URL | RequestInfo) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (url === '/api/auth/me') {
+        return Promise.resolve(
+          new Response(JSON.stringify({ userId: HOST_USER_ID, screenName: 'alice' }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          }),
+        );
+      }
+      if (url === `/api/sessions/${SESSION_ID}/participants`) {
+        return Promise.resolve(okParticipantsResponse([]));
+      }
+      sessionCalls += 1;
+      if (sessionCalls === 1) return Promise.reject(new TypeError('NetworkError'));
       return Promise.resolve(okSessionResponse());
     });
     renderRoute();
@@ -281,7 +344,7 @@ describe('InviteParticipants route — fetch lifecycle', () => {
     await waitFor(() => {
       expect(screen.getByTestId('invite-session-topic')).toBeTruthy();
     });
-    expect(calls).toBeGreaterThanOrEqual(2);
+    expect(sessionCalls).toBeGreaterThanOrEqual(2);
   });
 });
 
@@ -892,5 +955,333 @@ describe('InviteParticipants route — i18n key resolution', () => {
     await i18next.changeLanguage('es-419');
     expect(i18next.t('moderator.invite.title')).toBe('Invitar participantes');
     await i18next.changeLanguage('en-US');
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────
+// HTTP-prefetch + merge cases — appended for
+// `moderator_ui.mod_session_setup.mod_invite_participants_rest_prefetch`.
+//
+// The route now issues a second GET on mount —
+// `GET /api/sessions/:id/participants` — alongside the existing
+// session-header GET, and the slot map is fed by
+// `mergeSlots(httpRows, wsOccupants, events)` (HTTP seeds; WS overlays
+// on collision; WS-derived `participant-left` absences override HTTP
+// rows per Decision §6 of the refinement).
+//
+// The 10 cases below pin each requirement bullet from the refinement's
+// "Test layers per ADR 0022 → Vitest" list (cases 1-10).
+// ────────────────────────────────────────────────────────────────────────
+describe('InviteParticipants route — HTTP prefetch + merge (mod_invite_participants_rest_prefetch)', () => {
+  it('case 1 — renders the loading state while the participants HTTP fetch is in flight', async () => {
+    // Session header resolves; participants GET is left pending. The
+    // loading composition (per Decision §5) requires BOTH fetches to
+    // resolve before the loaded branch fires; assert the loading
+    // affordance stays up and no slot sections render.
+    global.fetch = vi.fn((input: URL | RequestInfo) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (url === '/api/auth/me') {
+        return Promise.resolve(
+          new Response(JSON.stringify({ userId: HOST_USER_ID, screenName: 'alice' }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          }),
+        );
+      }
+      if (url === `/api/sessions/${SESSION_ID}/participants`) {
+        return new Promise<Response>(() => {
+          /* never resolves */
+        });
+      }
+      return Promise.resolve(okSessionResponse());
+    });
+    renderRoute();
+    await waitFor(() => {
+      expect(screen.getByTestId('invite-loading')).toBeTruthy();
+    });
+    // Slot sections only render in the loaded branch.
+    expect(screen.queryAllByTestId('invite-slot').length).toBe(0);
+  });
+
+  it('case 2 — renders the loaded state when both fetches resolve; WS overlay fills the screen name', async () => {
+    // HTTP prefetch returns the moderator + both debaters (active
+    // rows, no screenName per the current endpoint contract). The
+    // route renders the loaded branch with the slot map seeded from
+    // HTTP (each slot is "filled" via merge presence) but the
+    // rendered text is empty until the WS overlay arrives. The case
+    // then seeds the WS catch-up replay (one event per role) and
+    // asserts the screen names land.
+    global.fetch = stubSessionFetch(okSessionResponse, () =>
+      okParticipantsResponse([
+        { userId: HOST_USER_ID, role: 'moderator' },
+        { userId: DEBATER_A_ID, role: 'debater-A' },
+        { userId: DEBATER_B_ID, role: 'debater-B' },
+      ]),
+    );
+    renderRoute();
+    await waitFor(() => {
+      expect(screen.getByTestId('invite-session-topic')).toBeTruthy();
+    });
+    // Three slot sections — all filled (via HTTP presence even
+    // before the WS overlay).
+    const occupants = screen.getAllByTestId('invite-slot-occupant');
+    expect(occupants.length).toBe(3);
+    // Now seed the WS catch-up replay — screen names land.
+    act(() => {
+      seedParticipantJoined(1, 'moderator', HOST_USER_ID, 'alice');
+      seedParticipantJoined(2, 'debater-A', DEBATER_A_ID, 'ben');
+      seedParticipantJoined(3, 'debater-B', DEBATER_B_ID, 'maria');
+    });
+    await waitFor(() => {
+      const mod = screen
+        .getAllByTestId('invite-slot-occupant')
+        .find((el) => el.getAttribute('data-role') === 'moderator');
+      expect(mod?.textContent).toBe('alice');
+    });
+    const a = screen
+      .getAllByTestId('invite-slot-occupant')
+      .find((el) => el.getAttribute('data-role') === 'debater-A');
+    const b = screen
+      .getAllByTestId('invite-slot-occupant')
+      .find((el) => el.getAttribute('data-role') === 'debater-B');
+    expect(a?.textContent).toBe('ben');
+    expect(b?.textContent).toBe('maria');
+  });
+
+  it('case 3 — renders the error state when the participants HTTP fetch fails', async () => {
+    // Session GET 200; participants GET 500 → error branch fires
+    // (per Decision §5: error when EITHER fetch fails).
+    global.fetch = stubSessionFetch(okSessionResponse, () => new Response('boom', { status: 500 }));
+    renderRoute();
+    await waitFor(() => {
+      expect(screen.getByTestId('invite-error')).toBeTruthy();
+    });
+    expect(screen.getByTestId('invite-retry')).toBeTruthy();
+    // No slots rendered while in the error branch.
+    expect(screen.queryAllByTestId('invite-slot').length).toBe(0);
+  });
+
+  it('case 4 — retry button re-triggers BOTH fetches (HTTP prefetch + session header)', async () => {
+    // First attempt: session GET 200; participants GET 500 → error.
+    // Click retry; both effects re-fire because the handler bumps
+    // both nonces (per Decision §3). Second attempt: both 200 →
+    // loaded with both debaters from HTTP.
+    let participantsCalls = 0;
+    let sessionCalls = 0;
+    global.fetch = vi.fn((input: URL | RequestInfo) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (url === '/api/auth/me') {
+        return Promise.resolve(
+          new Response(JSON.stringify({ userId: HOST_USER_ID, screenName: 'alice' }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          }),
+        );
+      }
+      if (url === `/api/sessions/${SESSION_ID}/participants`) {
+        participantsCalls += 1;
+        if (participantsCalls === 1) {
+          return Promise.resolve(new Response('boom', { status: 500 }));
+        }
+        return Promise.resolve(
+          okParticipantsResponse([
+            { userId: HOST_USER_ID, role: 'moderator' },
+            { userId: DEBATER_A_ID, role: 'debater-A' },
+            { userId: DEBATER_B_ID, role: 'debater-B' },
+          ]),
+        );
+      }
+      sessionCalls += 1;
+      return Promise.resolve(okSessionResponse());
+    });
+    renderRoute();
+    await waitFor(() => {
+      expect(screen.getByTestId('invite-retry')).toBeTruthy();
+    });
+    fireEvent.click(screen.getByTestId('invite-retry'));
+    await waitFor(() => {
+      expect(screen.getByTestId('invite-session-topic')).toBeTruthy();
+    });
+    // Both effects re-fired.
+    expect(participantsCalls).toBeGreaterThanOrEqual(2);
+    expect(sessionCalls).toBeGreaterThanOrEqual(2);
+    // Three slot sections rendered (HTTP-only fill — no WS events
+    // seeded).
+    expect(screen.getAllByTestId('invite-slot-occupant').length).toBe(3);
+  });
+
+  it('case 5 — HTTP prefetch seeds the gate before any WS event arrives', async () => {
+    // Session GET 200; participants GET returns rows for moderator +
+    // both debaters (active, no screenName). The strict gate's
+    // `bothDebatersPresent` predicate is a pure presence check on the
+    // merged occupants — it evaluates true from HTTP alone, even
+    // with empty screenName strings. Assert the Enter button is
+    // enabled AND the "both ready" banner is in the DOM, all from
+    // the prefetch path with no WS event seeded.
+    global.fetch = stubSessionFetch(okSessionResponse, () =>
+      okParticipantsResponse([
+        { userId: HOST_USER_ID, role: 'moderator' },
+        { userId: DEBATER_A_ID, role: 'debater-A' },
+        { userId: DEBATER_B_ID, role: 'debater-B' },
+      ]),
+    );
+    renderRoute();
+    await waitFor(() => {
+      const button = screen.getByTestId<HTMLButtonElement>('invite-enter-session');
+      expect(button.disabled).toBe(false);
+    });
+    expect(screen.queryByTestId('invite-both-ready-banner')).toBeTruthy();
+  });
+
+  it('case 6 — WS event wins on collision with HTTP-prefetched screen name', async () => {
+    // HTTP prefetch returns a debater-A row with screenName='old-name'
+    // (the future denormalized endpoint shape, simulated via the
+    // optional screenName field). WS event arrives with
+    // participant-joined(debater-A, screen_name='new-name'). Assert
+    // the slot text is 'new-name' (WS wins).
+    global.fetch = stubSessionFetch(okSessionResponse, () =>
+      okParticipantsResponse([{ userId: DEBATER_A_ID, role: 'debater-A', screenName: 'old-name' }]),
+    );
+    renderRoute();
+    await waitFor(() => {
+      const occupant = screen
+        .getAllByTestId('invite-slot-occupant')
+        .find((el) => el.getAttribute('data-role') === 'debater-A');
+      expect(occupant?.textContent).toBe('old-name');
+    });
+    act(() => {
+      seedParticipantJoined(1, 'debater-A', DEBATER_A_ID, 'new-name');
+    });
+    await waitFor(() => {
+      const occupant = screen
+        .getAllByTestId('invite-slot-occupant')
+        .find((el) => el.getAttribute('data-role') === 'debater-A');
+      expect(occupant?.textContent).toBe('new-name');
+    });
+  });
+
+  it('case 7 — WS overlay fills the empty screenName from the HTTP prefetch', async () => {
+    // HTTP returns a debater-A row with no screenName (the actual
+    // current endpoint shape). WS event arrives later with
+    // participant-joined(debater-A, screen_name='ben'). Assert the
+    // slot text flips from empty to 'ben'.
+    global.fetch = stubSessionFetch(okSessionResponse, () =>
+      okParticipantsResponse([{ userId: DEBATER_A_ID, role: 'debater-A' }]),
+    );
+    renderRoute();
+    await waitFor(() => {
+      const occupant = screen
+        .getAllByTestId('invite-slot-occupant')
+        .find((el) => el.getAttribute('data-role') === 'debater-A');
+      expect(occupant).toBeTruthy();
+    });
+    // Empty screenName before the WS overlay arrives.
+    const occupantBefore = screen
+      .getAllByTestId('invite-slot-occupant')
+      .find((el) => el.getAttribute('data-role') === 'debater-A');
+    expect(occupantBefore?.textContent).toBe('');
+    act(() => {
+      seedParticipantJoined(1, 'debater-A', DEBATER_A_ID, 'ben');
+    });
+    await waitFor(() => {
+      const occupant = screen
+        .getAllByTestId('invite-slot-occupant')
+        .find((el) => el.getAttribute('data-role') === 'debater-A');
+      expect(occupant?.textContent).toBe('ben');
+    });
+  });
+
+  it('case 8 — HTTP-prefetched row with leftAt !== null is NOT rendered (active filter)', async () => {
+    // Participants response includes a debater-A row with a non-null
+    // leftAt (historical row from a prior leave-and-rejoin pair).
+    // Assert the active-row filter drops it and the slot renders the
+    // empty caption instead.
+    global.fetch = stubSessionFetch(okSessionResponse, () =>
+      okParticipantsResponse([
+        {
+          userId: DEBATER_A_ID,
+          role: 'debater-A',
+          leftAt: '2026-05-16T01:00:00.000Z',
+        },
+      ]),
+    );
+    renderRoute();
+    await waitFor(() => {
+      expect(screen.getByTestId('invite-session-topic')).toBeTruthy();
+    });
+    const occupantA = screen
+      .queryAllByTestId('invite-slot-occupant')
+      .find((el) => el.getAttribute('data-role') === 'debater-A');
+    expect(occupantA).toBeUndefined();
+    const emptyA = screen
+      .getAllByTestId('invite-slot-empty')
+      .find((el) => el.getAttribute('data-role') === 'debater-A');
+    expect(emptyA?.textContent).toBe('Awaiting Debater A');
+  });
+
+  it('case 9 — participant-left event removes a debater slot filled by the HTTP prefetch', async () => {
+    // HTTP prefetch returns both debaters as active. WS arrives with
+    // participant-left(debater-A). The merge MUST respect WS-derived
+    // absences (Decision §6's `latest` map filter) so the HTTP row
+    // doesn't outlive the WS leave. Assert the slot returns to
+    // empty.
+    global.fetch = stubSessionFetch(okSessionResponse, () =>
+      okParticipantsResponse([
+        { userId: DEBATER_A_ID, role: 'debater-A' },
+        { userId: DEBATER_B_ID, role: 'debater-B' },
+      ]),
+    );
+    renderRoute();
+    await waitFor(() => {
+      const occupantA = screen
+        .getAllByTestId('invite-slot-occupant')
+        .find((el) => el.getAttribute('data-role') === 'debater-A');
+      expect(occupantA).toBeTruthy();
+    });
+    act(() => {
+      seedParticipantLeft(1, DEBATER_A_ID);
+    });
+    await waitFor(() => {
+      const occupantA = screen
+        .queryAllByTestId('invite-slot-occupant')
+        .find((el) => el.getAttribute('data-role') === 'debater-A');
+      expect(occupantA).toBeUndefined();
+    });
+    const emptyA = screen
+      .getAllByTestId('invite-slot-empty')
+      .find((el) => el.getAttribute('data-role') === 'debater-A');
+    expect(emptyA?.textContent).toBe('Awaiting Debater A');
+    // debater-B is still present (only A left).
+    const occupantB = screen
+      .getAllByTestId('invite-slot-occupant')
+      .find((el) => el.getAttribute('data-role') === 'debater-B');
+    expect(occupantB).toBeTruthy();
+  });
+
+  it('case 10 — concurrent HTTP fetch + WS catch-up — no flicker; WS screen name wins on the merged occupant', async () => {
+    // Seed a WS event BEFORE the route mounts so the catch-up state
+    // is already present in the store when the HTTP fetch resolves.
+    // The merge's `useMemo` over [httpRows, wsOccupants, events]
+    // settles to a single occupant pair (WS wins on collision); the
+    // rendered text is the WS screen name with no intermediate empty
+    // render. Pins the reference-equality stability of the merge
+    // across the two-source update.
+    seedParticipantJoined(1, 'debater-A', DEBATER_A_ID, 'ben');
+    global.fetch = stubSessionFetch(okSessionResponse, () =>
+      okParticipantsResponse([{ userId: DEBATER_A_ID, role: 'debater-A' }]),
+    );
+    renderRoute();
+    await waitFor(() => {
+      const occupant = screen
+        .getAllByTestId('invite-slot-occupant')
+        .find((el) => el.getAttribute('data-role') === 'debater-A');
+      expect(occupant?.textContent).toBe('ben');
+    });
+    // Confirm the WS name held; the HTTP row's empty screenName did
+    // NOT clobber the WS overlay's 'ben'.
+    const occupant = screen
+      .getAllByTestId('invite-slot-occupant')
+      .find((el) => el.getAttribute('data-role') === 'debater-A');
+    expect(occupant?.textContent).toBe('ben');
   });
 });
