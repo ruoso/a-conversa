@@ -86,6 +86,8 @@ Brief:
 >
 > **For UI-stream tasks** (`moderator_ui.*`, `participant_ui.*`, `audience.*`, `replay_test.*`): scope a Playwright e2e spec under Acceptance criteria by default. If the component is not yet reachable from any user flow, you may defer the e2e — but you MUST then (a) say so explicitly under Acceptance criteria, naming the unit/component coverage that stands in, and (b) identify the future WBS task(s) that will make this component reachable and that MUST inherit the deferred e2e debt. See the "UI-stream e2e policy" section of `ORCHESTRATOR.md` for the full rule. When this task IS the wiring task for a previously-deferred component, search the WBS and sibling refinements for "deferred e2e" markers and include those scenarios in your scoped spec.
 >
+> **For backend / WS / projector / methodology-engine tasks**: if the task changes wire behavior, broadcast shape, or projector output observable at the system seam, scope a Cucumber scenario under Acceptance criteria (the way `ws_withdraw_proposal_message` did). Vitest-only coverage is acceptable for internal helpers and validators consumed by other unit-tested code — but for anything that crosses the protocol or replay boundary, Cucumber is the right pin. See "Behavior + e2e coverage growth" in `ORCHESTRATOR.md` for the trend the orchestrator is watching.
+>
 > Leave the `## Status` heading present with placeholder text `_pending implementation_`. The Closer step appends the real Status block.
 >
 > Do NOT edit any file outside `tasks/refinements/` and (when an ADR is needed) `docs/adr/`. Do NOT touch the `.tji` files — the orchestrator owns the WBS shape; the refinement document is your output.
@@ -113,7 +115,7 @@ Brief:
 >
 > If verification fails, fix the implementation (not the test) and re-run until green. If a verification gap is in the test infrastructure itself, fix that infrastructure — but do not document it in the refinement's Status block (that's the Closer's job; just report the fix in your summary).
 
-Must return (≤ 8 lines): files created / edited (paths only), Vitest test-count delta (before → after), e2e suite result (pass / fail / not-run-not-required), one-line summary of what shipped.
+Must return (≤ 8 lines): files created / edited (paths only), test-count deltas across all three suites — Vitest (before → after), Cucumber scenario count (before → after, or `unchanged` if not touched), Playwright spec/scenario count (before → after, or `unchanged` if not touched) — e2e suite result (pass / fail / not-run-not-required), one-line summary of what shipped.
 
 ### 3. Closer
 
@@ -227,6 +229,14 @@ Applies to every task under `moderator_ui.*`, `participant_ui.*`, `audience.*`, 
 **Wiring tasks inherit deferred e2e debt.** When a UI-stream task wires a previously-deferred component into a reachable flow (adds a route, hooks an event, mounts a subtree), the Refinement-Writer reads the WBS for older `note` lines or refinement Status blocks that flag deferred e2e against this wiring task and includes those scenarios in the new Playwright spec.
 
 **Visual-regression is not a substitute for Playwright.** A `mod_vr_*` / `aud_vr_*` / `part_vr_*` sibling task captures pixel-level appearance — Playwright captures *behavior*. Both can coexist; only Playwright satisfies the e2e policy.
+
+## Behavior + e2e coverage growth — don't lose sight of it
+
+A trend the orchestrator must watch: as work climbs the UI stack, refinements drift toward Vitest-only coverage and defer Cucumber + Playwright. Vitest pins unit behavior; Cucumber pins protocol / replay / projection behavior at the system seam; Playwright pins what a human actually sees. Each task should ask: which suite is the right pin for this contract? The Implementer's return template now reports deltas for all three so the orchestrator can see the trend across iterations — if Cucumber and Playwright counts stay flat across many backend / UI-stream commits, the orchestrator should call it out in the next pick reasoning and steer toward a task that grows the lagging suite.
+
+- **Backend / WS / projector / methodology-engine tasks**: prefer Cucumber when the contract is observable at the protocol or replay layer (the way `ws_withdraw_proposal_message` did). Vitest-only is fine for internal helpers and validators consumed by other unit-tested code — but if the task changes wire behavior, broadcast shape, or projector output, a Cucumber scenario is the right pin. When in doubt, add one.
+- **UI-stream tasks**: the UI-stream e2e policy above requires Playwright by default. Read "not yet reachable" strictly — it means **no route renders the component AND no event surface drives it**. If the component IS rendered (even in a disabled / inert state), a thin Playwright spec that asserts component-presence + affordance-state-from-route is better than full deferral. Full deferral to `mod_pw_*` is the exception, not the default.
+- **Watch the inherited-debt count on `mod_pw_*` (and similar) catch-all e2e tasks.** Before deferring to a future Playwright task, check how many prior refinements already point at it. If it's inheriting from 2+ refinements already, pay debt down instead — either land a small Playwright spec inline, or split the deferral target into multiple smaller future tasks. A single `mod_pw_diagnostic_flow` task that inherits five refinements' worth of deferred coverage is a planning-debt time bomb.
 
 ## Test output handling — passed through to every brief that runs a verification
 
