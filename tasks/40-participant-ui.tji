@@ -67,6 +67,7 @@ task participant_ui "Participant (debater) UI" {
     task part_status_indicator "Persistent status indicator (role, screen name, pending count)" {
       effort 1d
       allocate team
+      complete 100
       depends !part_landscape_layout
       note "Refinement: tasks/refinements/participant-ui/part_status_indicator.md"
     }

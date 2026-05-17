@@ -53,6 +53,7 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from '@a-conversa/shell';
 
 import { ParticipantLayout } from './layout/ParticipantLayout';
+import { ParticipantStatusIndicator } from './layout/ParticipantStatusIndicator';
 
 function ParticipantChrome(): ReactElement {
   // Chrome content for the header row: left-aligned product label +
@@ -133,7 +134,7 @@ function PlaceholderRoute(): ReactElement {
     <ParticipantLayout
       header={<ParticipantChrome />}
       main={<PlaceholderRouteBody />}
-      footer={null}
+      footer={<ParticipantStatusIndicator />}
     />
   );
 }

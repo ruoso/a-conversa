@@ -76,7 +76,17 @@ describe('participant surface mount()', () => {
     expect(screen.getByTestId('participant-layout-root')).toBeTruthy();
     expect(screen.getByTestId('participant-header')).toBeTruthy();
     expect(screen.getByTestId('participant-main')).toBeTruthy();
-    expect(screen.getByTestId('participant-footer')).toBeTruthy();
+    const footer = screen.getByTestId('participant-footer');
+    expect(footer).toBeTruthy();
+
+    // `part_status_indicator`: the persistent connection-state chip is
+    // mounted inside the footer slot. Pins the App.tsx → layout
+    // footer slot → chip wiring end-to-end, not just the chip in
+    // isolation. The stubbed source (Decision §2 of the refinement)
+    // reports `'connecting'` as the initial state.
+    const statusIndicator = screen.getByTestId('participant-status-indicator');
+    expect(footer.contains(statusIndicator)).toBe(true);
+    expect(statusIndicator.getAttribute('data-status')).toBe('connecting');
 
     unmount();
     expect(container.innerHTML).toBe('');

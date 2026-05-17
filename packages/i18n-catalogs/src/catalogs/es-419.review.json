@@ -208,7 +208,12 @@
     "participant.placeholder.body",
     "participant.identity.signedInAs",
     "participant.notAuthenticated.body",
-    "participant.chrome.productLabel"
+    "participant.chrome.productLabel",
+    "participant.statusIndicator.idle",
+    "participant.statusIndicator.connecting",
+    "participant.statusIndicator.open",
+    "participant.statusIndicator.reconnecting",
+    "participant.statusIndicator.closed"
   ],
   "signed_off": []
 }

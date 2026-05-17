@@ -440,6 +440,13 @@
     },
     "chrome": {
       "productLabel": "A Conversa — Participante"
+    },
+    "statusIndicator": {
+      "idle": "Sem conexão",
+      "connecting": "Conectando…",
+      "open": "Ao vivo",
+      "reconnecting": "Reconectando…",
+      "closed": "Desconectado"
     }
   },
   "diagnostics": {

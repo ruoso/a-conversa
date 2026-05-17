@@ -92,10 +92,17 @@ test.describe('Participant surface skeleton — invite URL reaches the placehold
     // delivers.
     await expect(layoutHeader.getByTestId('participant-identity')).toBeVisible();
 
-    // The footer slot is reserved for `part_status_indicator`'s chip
-    // and lands empty today. A regression that paints content into the
-    // footer prematurely (or wires a stub placeholder) surfaces here.
-    await expect(layoutFooter).toBeEmpty();
+    // `part_status_indicator`: the footer slot now carries the
+    // persistent connection-state chip. The chip's source seam is a
+    // stub today that reports `'connecting'` between page-load and the
+    // real `useWsStore` wiring (Decision §2 of the refinement); pin
+    // the initial state + the en-US label so a regression that strips
+    // the chip (or wires a different stub) surfaces at the
+    // user-perspective layer.
+    const statusIndicator = layoutFooter.getByTestId('participant-status-indicator');
+    await expect(statusIndicator).toBeVisible();
+    await expect(statusIndicator).toHaveAttribute('data-status', 'connecting');
+    await expect(statusIndicator).toContainText('Connecting…');
   });
 
   test('authenticated visit surfaces the host-supplied screenName under participant-identity', async ({
