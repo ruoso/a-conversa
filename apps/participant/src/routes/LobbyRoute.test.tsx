@@ -452,3 +452,71 @@ describe('LobbyRoute — moderator badge rendering', () => {
     expect(screen.getByTestId('lobby-participant-debater-B-badge').textContent).toBe('Debater B');
   });
 });
+
+describe('LobbyRoute — HTTP-prefetched debater leaves via WS', () => {
+  it('(k) participant-left event removes a debater slot that was filled by the HTTP prefetch', async () => {
+    // HTTP prefetch returns BOTH debaters as active. WS arrives with
+    // participant-left(OTHER_DEBATER_USER_ID). The merge MUST respect
+    // WS-derived absences (the moderator's Decision §6 `latest`-map
+    // filter, ported here) so the HTTP row doesn't outlive the WS
+    // leave. Assert the debater-B slot returns to empty within one
+    // render of the leave event.
+    //
+    // Mirrors `apps/moderator/src/routes/InviteParticipants.test.tsx`
+    // case 9 verbatim, adjusted for the participant's `stubFetch` +
+    // `seedLeft` helpers and the participant's `lobby-participant-*`
+    // testids.
+    global.fetch = stubFetch({
+      participants: () =>
+        new Response(
+          JSON.stringify({
+            participants: [
+              {
+                id: 'p-mod',
+                sessionId: SESSION_ID,
+                userId: HOST_USER_ID,
+                role: 'moderator',
+                joinedAt: '2026-05-16T00:00:00.000Z',
+                leftAt: null,
+              },
+              {
+                id: 'p-debater-a',
+                sessionId: SESSION_ID,
+                userId: CALLER_USER_ID,
+                role: 'debater-A',
+                joinedAt: '2026-05-16T00:00:01.000Z',
+                leftAt: null,
+              },
+              {
+                id: 'p-debater-b',
+                sessionId: SESSION_ID,
+                userId: OTHER_DEBATER_USER_ID,
+                role: 'debater-B',
+                joinedAt: '2026-05-16T00:00:02.000Z',
+                leftAt: null,
+              },
+            ],
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+    });
+    renderRoute();
+    // Wait for the prefetch to land both debater rows.
+    await waitFor(() => {
+      expect(screen.getByTestId('lobby-participant-debater-B')).toBeTruthy();
+    });
+    // The other debater leaves via WS.
+    seedLeft(1, OTHER_DEBATER_USER_ID);
+    // The slot returns to empty within one render of the leave event.
+    await waitFor(() => {
+      expect(screen.queryByTestId('lobby-participant-debater-B')).toBeNull();
+    });
+    // The waiting hint reappears with "Debater B" in its text.
+    const hint = screen.getByTestId('lobby-waiting-for-debater');
+    expect(hint.textContent).toContain('Debater B');
+    // The both-debaters-present banner is gone.
+    expect(screen.queryByTestId('lobby-both-debaters-present')).toBeNull();
+    // debater-A is still present (only B left).
+    expect(screen.getByTestId('lobby-participant-debater-A')).toBeTruthy();
+  });
+});

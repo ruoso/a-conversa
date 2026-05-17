@@ -146,13 +146,43 @@ function deriveSlotOccupants(events: readonly Event[]): SlotOccupants {
  * every subsequent change). Both are merged into a single per-render
  * slot map — WS wins on collisions, since its events are more recent
  * than the HTTP snapshot.
+ *
+ * Ported line-for-line from the moderator's
+ * `apps/moderator/src/routes/InviteParticipants.tsx:185-214`
+ * (`mod_invite_participants_rest_prefetch` Decision §6 +
+ * `part_lobby_view_ws_absence_merge_fix` Decision §1). The third
+ * `events` arg carries the WS event log so the merge can derive a
+ * "latest signal per user id" map and filter HTTP rows whose latest
+ * WS event is `participant-left` — otherwise a WS-derived absence
+ * (which `deriveSlotOccupants` reflects as a deleted key in
+ * `wsOccupants`) would not override the HTTP-prefetched "still here"
+ * row, leaving the departed debater alive forever in the merged
+ * view. Both surfaces (moderator + participant) now carry the same
+ * three-arg shape; the convergence is the precondition for the
+ * future extraction into `@a-conversa/shell`.
  */
 function mergeSlots(
   httpRows: readonly ParticipantRow[],
   wsOccupants: SlotOccupants,
+  events: readonly Event[],
 ): SlotOccupants {
+  // Derive the "latest signal per user id" map from the event log: a
+  // user whose most recent event is `participant-left` has departed;
+  // a user whose most recent event is `participant-joined` (after a
+  // possible prior leave) is present. The merge filters HTTP rows
+  // against the "left" subset so a WS-derived absence overrides the
+  // HTTP prefetch's stale "still here" row.
+  const latest = new Map<string, 'joined' | 'left'>();
+  for (const event of events) {
+    if (event.kind === 'participant-joined') {
+      latest.set(event.payload.user_id, 'joined');
+    } else if (event.kind === 'participant-left') {
+      latest.set(event.payload.user_id, 'left');
+    }
+  }
   const merged: SlotOccupants = {};
   for (const row of httpRows) {
+    if (latest.get(row.userId) === 'left') continue;
     merged[row.role] = { userId: row.userId, screenName: row.screenName };
   }
   for (const role of SLOT_ROLES) {
@@ -348,7 +378,10 @@ function LobbyRouteAuthenticatedBody(props: LobbyRouteAuthenticatedBodyProps): R
   // bailout. Same convention the moderator's invite view follows.
   const events = useWsStore((state) => state.sessionState[id]?.events);
   const wsOccupants = useMemo(() => deriveSlotOccupants(events ?? []), [events]);
-  const slots = useMemo(() => mergeSlots(httpRows, wsOccupants), [httpRows, wsOccupants]);
+  const slots = useMemo(
+    () => mergeSlots(httpRows, wsOccupants, events ?? []),
+    [httpRows, wsOccupants, events],
+  );
 
   const debaterAPresent = slots['debater-A'] !== undefined;
   const debaterBPresent = slots['debater-B'] !== undefined;

@@ -59,4 +59,19 @@ task shell_package "Shell package (@aconversa/shell)" {
       Leaves the root/moderator cutover proper (root-host auth routes + manifest/dispatcher, moderator Vite library mode + mount() export, URL prefix migration /sessions/:id/* → /m/sessions/:id/*, deletion of moderator-local index.html + main.tsx bootstrap) to the separate root_moderator_cutover task.
     ->8-
   }
+
+  task shared_shell_extract_merge_slots_and_derive_slot_occupants "Extract mergeSlots + deriveSlotOccupants helpers into @a-conversa/shell once the audience view becomes the third caller" {
+    effort 0.5d
+    allocate team
+    depends !shell_substrate_extraction, audience.aud_shell.aud_state_management, audience.aud_graph_rendering
+    note -8<-
+      Source of debt: tasks/refinements/participant-ui/part_lobby_view_ws_absence_merge_fix.md Decision §7 + the moderator-side prior deferrals at tasks/refinements/moderator-ui/mod_invite_participants_rest_prefetch.md Decision §8 and tasks/refinements/participant-ui/part_lobby_view.md Decision §6. The convergence precondition is now met (commit landing part_lobby_view_ws_absence_merge_fix): moderator (apps/moderator/src/routes/InviteParticipants.tsx:185-214) and participant (apps/participant/src/routes/LobbyRoute.tsx:164-193) both carry the identical three-arg mergeSlots(httpRows, wsOccupants, events) shape with the same latest-signal-per-userId filter, plus the same deriveSlotOccupants(events) reducer for WS-derived presence.
+
+      Deferred-until-third-caller policy: extracting a helper with only two callers risks ossifying the wrong shape; extracting at three callers gives confidence the API is right. The audience surface is the natural third caller — when it lands the per-session participant-list display (likely as part of aud_graph_rendering's per-participant axiom-mark decoration + the rendered debater nameplates), it will need the same HTTP-prefetch + WS-overlay merge composition. This leaf depends on the audience shell + graph-rendering tasks so the orchestrator surfaces it once those tasks are done.
+
+      Scope: lift both helpers (function signatures, latest-map walk, HTTP-row filter, WS-overlay loop, deriveSlotOccupants reducer) into packages/shell/src/slots/ with full vitest coverage; replace the two existing copies (moderator + participant) with imports from @a-conversa/shell; the future audience caller inherits the same import path. No protocol or wire-format change; no methodology change.
+
+      Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit landing part_lobby_view_ws_absence_merge_fix).
+    ->8-
+  }
 }
