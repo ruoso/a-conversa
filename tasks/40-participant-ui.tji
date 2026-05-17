@@ -47,6 +47,7 @@ task participant_ui "Participant (debater) UI" {
     task part_ws_client "Wire participant surface to shell's WS client" {
       effort 0.5d
       allocate team
+      complete 100
       depends !part_state_management, shell_package.shell_substrate_extraction
       note "Reshaped under ADR 0026: the underlying WS client implementation now lives in @aconversa/shell. This leaf wires the participant surface's subscription / vote / withdraw send paths to the shared client (was: re-implementing the WS client inside the participant workspace, 2d)."
     }

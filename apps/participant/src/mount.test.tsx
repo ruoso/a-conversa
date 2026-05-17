@@ -2,6 +2,7 @@
 //
 // Refinement: tasks/refinements/participant-ui/part_app_skeleton.md
 //              tasks/refinements/participant-ui/part_auth_flow.md
+//              tasks/refinements/participant-ui/part_ws_client.md
 // ADRs:        0022 (no throwaway verifications — this case IS the
 //                    regression pin for the moderator-mirrored shape).
 //
@@ -11,19 +12,61 @@
 // `participant-identity` assertion and appends two new cases pinning
 // the defensive in-component guard (unauthenticated mid-mount + the
 // belt-and-suspenders `auth.user === undefined` malformed-provider
-// edge).
+// edge). `part_ws_client` extends the existing authenticated case
+// with an assertion that the chip re-renders when the store's
+// `setConnectionStatus('open')` writer fires — proving the
+// source-hook swap landed end-to-end (App.tsx → layout footer slot →
+// chip → useWsStore selector).
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { act } from 'react';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { cleanup, screen, waitFor } from '@testing-library/react';
 
 import { createI18nInstance, type AuthContextValue, type I18n } from '@a-conversa/shell';
 
 import { mount } from './main';
+import { useWsStore } from './ws/wsStore';
+
+// happy-dom does not ship a `WebSocket` implementation; the surface's
+// `<WsClientProvider>` auto-constructs a client whose `connect()` calls
+// `new WebSocket(url)` when the host hands authenticated auth. Replace
+// the global with a no-op stub for the duration of this file so the
+// provider's effect runs without throwing. The stub never fires
+// `onopen` / `onmessage`, so the store's `setConnectionStatus` writer
+// only fires for transitions the test drives explicitly via
+// `useWsStore.getState().setConnectionStatus(...)`.
+class StubWebSocket {
+  static readonly CONNECTING = 0;
+  static readonly OPEN = 1;
+  static readonly CLOSING = 2;
+  static readonly CLOSED = 3;
+  readyState = StubWebSocket.CONNECTING;
+  onopen: ((ev: unknown) => unknown) | null = null;
+  onclose: ((ev: unknown) => unknown) | null = null;
+  onerror: ((ev: unknown) => unknown) | null = null;
+  onmessage: ((ev: unknown) => unknown) | null = null;
+  constructor(public readonly url: string) {}
+  send(): void {
+    // no-op
+  }
+  close(): void {
+    this.readyState = StubWebSocket.CLOSED;
+  }
+}
+
+const previousWebSocket = (globalThis as { WebSocket?: unknown }).WebSocket;
+
+beforeEach(() => {
+  (globalThis as { WebSocket?: unknown }).WebSocket = StubWebSocket;
+});
 
 afterEach(() => {
   cleanup();
   document.body.innerHTML = '';
   window.history.replaceState({}, '', '/');
+  // Reset the participant's WS store so per-case writers don't bleed.
+  useWsStore.getState().reset();
+  (globalThis as { WebSocket?: unknown }).WebSocket = previousWebSocket;
 });
 
 describe('participant surface mount()', () => {
@@ -82,11 +125,24 @@ describe('participant surface mount()', () => {
     // `part_status_indicator`: the persistent connection-state chip is
     // mounted inside the footer slot. Pins the App.tsx → layout
     // footer slot → chip wiring end-to-end, not just the chip in
-    // isolation. The stubbed source (Decision §2 of the refinement)
-    // reports `'connecting'` as the initial state.
+    // isolation.
+    //
+    // `part_ws_client`: after the source-hook swap, the chip reads
+    // `useWsStore((s) => s.connectionStatus)`. Under JSDOM/happy-dom
+    // with the stubbed `WebSocket` (which never fires `onopen`), the
+    // provider's `connect()` flips the store to `'connecting'`; the
+    // chip mirrors it. Then drive `setConnectionStatus('open')` and
+    // assert the chip re-renders — proves the source-hook swap
+    // landed end-to-end and the chip subscribes to the store
+    // selector.
     const statusIndicator = screen.getByTestId('participant-status-indicator');
     expect(footer.contains(statusIndicator)).toBe(true);
-    expect(statusIndicator.getAttribute('data-status')).toBe('connecting');
+    expect(['idle', 'connecting']).toContain(statusIndicator.getAttribute('data-status'));
+
+    act(() => {
+      useWsStore.getState().setConnectionStatus('open');
+    });
+    expect(statusIndicator.getAttribute('data-status')).toBe('open');
 
     unmount();
     expect(container.innerHTML).toBe('');

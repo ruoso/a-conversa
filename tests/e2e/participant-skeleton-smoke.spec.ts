@@ -92,17 +92,67 @@ test.describe('Participant surface skeleton — invite URL reaches the placehold
     // delivers.
     await expect(layoutHeader.getByTestId('participant-identity')).toBeVisible();
 
-    // `part_status_indicator`: the footer slot now carries the
-    // persistent connection-state chip. The chip's source seam is a
-    // stub today that reports `'connecting'` between page-load and the
-    // real `useWsStore` wiring (Decision §2 of the refinement); pin
-    // the initial state + the en-US label so a regression that strips
-    // the chip (or wires a different stub) surfaces at the
-    // user-perspective layer.
+    // `part_status_indicator` + `part_ws_client`: the footer slot
+    // carries the persistent connection-state chip. After
+    // `part_ws_client` wired the real `useWsStore` source, the chip's
+    // first paint is one of `'connecting'` (the moment the provider
+    // calls `connect()`) or `'open'` (if the WS handshake against the
+    // live compose stack completes before Playwright reads
+    // `data-status`). The strict `'connecting'` assertion would race
+    // the handshake — per Decision §2 of `part_status_indicator` and
+    // Decision §3 of `part_ws_client`, the assertion is
+    // transition-tolerant: accept either valid initial state. The
+    // deterministic transition pin lives in the dedicated scenario
+    // below.
     const statusIndicator = layoutFooter.getByTestId('participant-status-indicator');
     await expect(statusIndicator).toBeVisible();
-    await expect(statusIndicator).toHaveAttribute('data-status', 'connecting');
-    await expect(statusIndicator).toContainText('Connecting…');
+    await expect
+      .poll(() => statusIndicator.getAttribute('data-status'), { timeout: 5_000 })
+      .toMatch(/^(connecting|open)$/);
+  });
+
+  test('chip surfaces the connection-state transition end-to-end', async ({ page }) => {
+    // `part_ws_client` Acceptance §11 + Decision §3: pin the full
+    // connecting → open → closed transition end-to-end against the
+    // live compose stack. The first half (`'connecting'` initial
+    // observation + `'open'` after the WS handshake) exercises the
+    // real `/api/ws` upgrade through the provider's `connect()` path
+    // against the `make up` server. The second half drives the store
+    // imperatively via the `window.__aConversaWsStore` global the
+    // participant `main.tsx` exposes (mirroring the moderator's
+    // pattern), proving the chip re-renders on a store update without
+    // depending on a server-side wire-tear path.
+    await page.goto(`/p/sessions/${SESSION_ID}/invite?role=debater-A`);
+
+    const chip = page.getByTestId('participant-status-indicator');
+    await expect(chip).toBeVisible({ timeout: 15_000 });
+
+    // Initial paint may be 'connecting' or already 'open' depending
+    // on the handshake speed against the live compose stack — either
+    // is a valid transient observation.
+    await expect
+      .poll(() => chip.getAttribute('data-status'), { timeout: 5_000 })
+      .toMatch(/^(connecting|open)$/);
+
+    // The WS handshake completes against the make-up compose stack;
+    // the chip must reach 'open' within the polling window.
+    await expect.poll(() => chip.getAttribute('data-status'), { timeout: 15_000 }).toBe('open');
+    await expect(chip).toContainText('Live');
+
+    // Imperatively drive the store to 'closed' (mirroring the
+    // moderator's `wsStoreSeed` helper pattern). The chip's source
+    // hook re-renders on the next React tick.
+    await page.evaluate(() => {
+      const w = window as unknown as {
+        __aConversaWsStore: {
+          getState: () => { setConnectionStatus: (s: string) => void };
+        };
+      };
+      w.__aConversaWsStore.getState().setConnectionStatus('closed');
+    });
+
+    await expect.poll(() => chip.getAttribute('data-status'), { timeout: 5_000 }).toBe('closed');
+    await expect(chip).toContainText('Disconnected');
   });
 
   test('authenticated visit surfaces the host-supplied screenName under participant-identity', async ({

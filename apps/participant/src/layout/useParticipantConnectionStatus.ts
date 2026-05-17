@@ -2,23 +2,29 @@
 // status-indicator chip and the WS subsystem.
 //
 // Refinement: tasks/refinements/participant-ui/part_status_indicator.md
-//   (Decision §2 — stubbed source today, one-line swap when
-//   `part_ws_client` lands).
+//   (Decision §2 — the swap from the stubbed `'connecting'` to the
+//   real `useWsStore` source was pre-committed as part_ws_client's
+//   closer).
+//              tasks/refinements/participant-ui/part_ws_client.md
+//   (this swap landed; the chip now reflects real connection state).
 //
-// Today: returns `'connecting'` (a sentinel "we know something is meant
-// to happen here; it hasn't yet" value that matches what a real WS
-// would report between mount and the first `'open'`). Decision §2
-// explains why this is preferable to `'idle'` or `'open'` as a stub.
+// Reads `connectionStatus` off the participant's `useWsStore`
+// singleton. The store is fed by the shell's `<WsClientProvider>`
+// mounted at the surface boundary in `apps/participant/src/main.tsx`;
+// the provider's `useEffect` calls `client.connect()` when
+// `auth.status === 'authenticated'` at first hand-off, and
+// `client.close()` on surface unmount.
 //
-// Tomorrow (after `part_ws_client` lands and a participant-local
-// `useWsStore` becomes callable): replace the body with
-// `return useWsStore((s) => s.connectionStatus);`. The component above
-// changes zero lines.
+// History: this file initially shipped under `part_status_indicator`
+// returning the literal `'connecting'` so the chip rendered the
+// honest sentinel between page-load and the (then-pending) WS wiring.
+// `part_ws_client` made the singleton store-fed; the body below is
+// the one-line swap to the real reader.
 
 import type { WsConnectionStatus } from '@a-conversa/shell';
 
+import { useWsStore } from '../ws/wsStore.js';
+
 export function useParticipantConnectionStatus(): WsConnectionStatus {
-  // Stubbed source — see Decision §2. The future implementation reads
-  // from `useWsStore((s) => s.connectionStatus)`.
-  return 'connecting';
+  return useWsStore((s) => s.connectionStatus);
 }
