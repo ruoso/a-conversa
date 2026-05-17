@@ -69,6 +69,8 @@ import { DecomposeComponentsGrid } from '../layout/DecomposeComponentsGrid';
 import { DecomposeModeExitButton } from '../layout/DecomposeModeExitButton';
 import { InterpretiveSplitModeExitButton } from '../layout/InterpretiveSplitModeExitButton';
 import { InterpretiveSplitReadingsGrid } from '../layout/InterpretiveSplitReadingsGrid';
+import { OperationalizationCapturePanel } from '../layout/OperationalizationCapturePanel';
+import { OperationalizationModeExitButton } from '../layout/OperationalizationModeExitButton';
 import { ProposeAction } from '../layout/ProposeAction';
 import { ProposeDecompositionAction } from '../layout/ProposeDecompositionAction';
 import { ProposeInterpretiveSplitAction } from '../layout/ProposeInterpretiveSplitAction';
@@ -138,6 +140,11 @@ function OperateRouteInner(props: { sessionId: string }): ReactElement {
   // slot swaps the two modes share — Decision §5 of
   // mod_interpretive_split_mode.
   const isProposalMode = isDecomposeMode || isInterpretiveSplitMode;
+  // Parallel gate for operationalization mode — Decision §D6 of
+  // mod_operationalization_mode.md keeps `isProposalMode` semantically
+  // tied to the structural-restructure modes (decompose, interpretive
+  // split) and adds this sibling gate for the diagnostic-test mode.
+  const isOperationalizationMode = mode === 'operationalization';
 
   useEffect(() => {
     if (sessionId === '') return;
@@ -170,10 +177,13 @@ function OperateRouteInner(props: { sessionId: string }): ReactElement {
                 <IsOughtPrompt />
                 <DecomposeModeExitButton />
                 <InterpretiveSplitModeExitButton />
+                <OperationalizationModeExitButton />
               </>
             }
             textInput={
-              isProposalMode ? (
+              isOperationalizationMode ? (
+                <OperationalizationCapturePanel />
+              ) : isProposalMode ? (
                 isInterpretiveSplitMode ? (
                   <InterpretiveSplitReadingsGrid />
                 ) : (
@@ -187,14 +197,18 @@ function OperateRouteInner(props: { sessionId: string }): ReactElement {
                 />
               )
             }
-            classificationPalette={isProposalMode ? null : <ClassificationPalette />}
-            edgeRoleSelector={isProposalMode ? null : <CaptureTargetAndRole />}
+            classificationPalette={
+              isOperationalizationMode || isProposalMode ? null : <ClassificationPalette />
+            }
+            edgeRoleSelector={
+              isOperationalizationMode || isProposalMode ? null : <CaptureTargetAndRole />
+            }
             proposeAction={
               isDecomposeMode ? (
                 <ProposeDecompositionAction />
               ) : isInterpretiveSplitMode ? (
                 <ProposeInterpretiveSplitAction />
-              ) : (
+              ) : isOperationalizationMode ? null : (
                 <ProposeAction />
               )
             }

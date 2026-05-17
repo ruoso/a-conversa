@@ -32,7 +32,7 @@ import {
   useCaptureStore,
 } from '../stores/captureStore';
 import { DecomposeComponentRow } from './DecomposeComponentRow';
-import type { ProposalMode } from './ProposalModeExitAffordance';
+import type { StructuralProposalMode } from './ProposalModeExitAffordance';
 
 export interface DecomposeComponentsGridProps {
   /**
@@ -40,7 +40,7 @@ export interface DecomposeComponentsGridProps {
    * helpers, the per-mode `data-testid`s, and the per-mode label keys
    * all switch on this prop.
    */
-  mode: ProposalMode;
+  mode: StructuralProposalMode;
 }
 
 const MODE_CONFIG = {

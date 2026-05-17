@@ -44,7 +44,7 @@ import {
 import { useWsClient } from '@a-conversa/shell';
 import { useWsStore } from '../ws/wsStore';
 import { toWireError, type WireError } from './useProposeAction';
-import type { ProposalMode } from './ProposalModeExitAffordance';
+import type { StructuralProposalMode } from './ProposalModeExitAffordance';
 
 /**
  * Shared four-reason union surfaced by both decompose- and
@@ -171,7 +171,7 @@ function randomUuid(): string {
  * `proposed` state immediately (ADR 0027).
  */
 function buildProposal(args: {
-  mode: ProposalMode;
+  mode: StructuralProposalMode;
   parentNodeId: string;
   rows: ReadonlyArray<DecomposeComponent>;
 }): ProposalPayload {
@@ -195,7 +195,7 @@ function buildProposal(args: {
 }
 
 export interface UseProposeProposalActionArgs {
-  mode: ProposalMode;
+  mode: StructuralProposalMode;
 }
 
 export function useProposeProposalAction(

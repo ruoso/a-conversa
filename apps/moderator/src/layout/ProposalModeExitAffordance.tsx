@@ -26,7 +26,23 @@ import { useCaptureStore } from '../stores/captureStore';
 import { useWsStore } from '../ws/wsStore';
 import { attachCaptureKeymap } from './captureKeymap';
 
-export type ProposalMode = 'decompose' | 'interpretive-split';
+export type ProposalMode = 'decompose' | 'interpretive-split' | 'operationalization';
+
+/**
+ * Narrower type for the structural-restructure proposal modes — decompose
+ * + interpretive-split share the multi-row-grid + propose-action shape;
+ * operationalization is a diagnostic-test mode with a different body and
+ * no propose-action wiring (the F5 / F6 / F7 owners replace the
+ * placeholder route chips). Components that work over the multi-row
+ * grid (`<DecomposeComponentsGrid>`, `<DecomposeComponentRow>`, the
+ * per-mode classification picker + text input, `<ProposeAction>`, the
+ * `useProposeProposalAction` hook) accept this narrower type so they
+ * don't have to handle the operationalization branch.
+ *
+ * Introduced by `tasks/refinements/moderator-ui/mod_operationalization_mode.md`
+ * Decision §D2 when the `ProposalMode` union widened from 2 to 3 modes.
+ */
+export type StructuralProposalMode = Exclude<ProposalMode, 'operationalization'>;
 
 /**
  * Resolve the operator-facing wording for the proposal-target node by
@@ -73,6 +89,11 @@ const MODE_KEYS = {
     tooltip: 'moderator.interpretiveSplit.exit.tooltip',
     targetWording: 'moderator.interpretiveSplit.banner.targetWording',
   },
+  operationalization: {
+    ariaLabel: 'moderator.operationalization.exit.ariaLabel',
+    tooltip: 'moderator.operationalization.exit.tooltip',
+    targetWording: 'moderator.operationalization.banner.targetWording',
+  },
 } as const;
 
 export interface ProposalModeExitAffordanceProps {
@@ -86,10 +107,18 @@ export function ProposalModeExitAffordance(
   const { t } = useTranslation();
   const mode = useCaptureStore((s) => s.mode);
   const targetNodeId = useCaptureStore((s) =>
-    targetMode === 'decompose' ? s.decomposeTargetNodeId : s.interpretiveSplitTargetNodeId,
+    targetMode === 'decompose'
+      ? s.decomposeTargetNodeId
+      : targetMode === 'interpretive-split'
+        ? s.interpretiveSplitTargetNodeId
+        : s.operationalizationTargetNodeId,
   );
   const exitMode = useCaptureStore((s) =>
-    targetMode === 'decompose' ? s.exitDecomposeMode : s.exitInterpretiveSplitMode,
+    targetMode === 'decompose'
+      ? s.exitDecomposeMode
+      : targetMode === 'interpretive-split'
+        ? s.exitInterpretiveSplitMode
+        : s.exitOperationalizationMode,
   );
   const { id: sessionId = '' } = useParams<{ id: string }>();
   const events = useWsStore((state) => state.sessionState[sessionId]?.events ?? EMPTY_EVENTS);

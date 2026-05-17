@@ -5,6 +5,7 @@ import type { DiagnosticPayload } from '@a-conversa/shared-types';
 
 import { App } from './App';
 import { getTestI18n, renderWithProviders } from './testing/renderWithProviders';
+import { useCaptureStore } from './stores/captureStore';
 import { useWsStore } from './ws/wsStore';
 
 beforeAll(async () => {
@@ -193,5 +194,68 @@ describe('moderator operate route — diagnostic-flags sidebar slot', () => {
     const panel = screen.getByTestId('diagnostic-suggestions-panel');
     expect(paneBody.contains(panel)).toBe(true);
     expect(panel.getAttribute('data-diagnostic-kind')).toBe('cycle');
+  });
+});
+
+describe('moderator operate route — operationalization mode slot-swap (mod_operationalization_mode)', () => {
+  // Refinement: tasks/refinements/moderator-ui/mod_operationalization_mode.md
+  //
+  // Integration smoke: with the capture store in
+  // `mode === 'operationalization'` and a target node id set, the
+  // bottom-strip's `textInput` slot swaps to
+  // `<OperationalizationCapturePanel>`; the `modeBanner` slot mounts
+  // `<OperationalizationModeExitButton>` alongside the existing
+  // `<ModeBanner>` + `<IsOughtPrompt>`. With mode === 'idle' none of
+  // the operationalization seams are present.
+
+  it('mounts the capture panel + exit button + co-existing banner + is-ought prompt when mode is operationalization', async () => {
+    global.fetch = fetchAuthenticated();
+    const sessionId = '00000000-0000-4000-8000-0000000abcde';
+    const nodeId = '00000000-0000-4000-8000-000000aabbcc';
+
+    act(() => {
+      useWsStore.getState().reset();
+      useCaptureStore.getState().reset();
+    });
+    act(() => {
+      useCaptureStore.getState().enterOperationalizationMode(nodeId);
+    });
+
+    renderWithProviders(<App />, { initialEntries: [`/sessions/${sessionId}/operate`] });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('route-operate')).toBeTruthy();
+    });
+
+    expect(screen.getByTestId('operationalization-capture-panel')).toBeTruthy();
+    expect(screen.getByTestId('operationalization-mode-exit')).toBeTruthy();
+    expect(screen.getByTestId('mode-banner')).toBeTruthy();
+    expect(screen.getByTestId('is-ought-prompt')).toBeTruthy();
+
+    // Cleanup so subsequent tests start at idle.
+    act(() => {
+      useCaptureStore.getState().reset();
+    });
+  });
+
+  it('does NOT mount the operationalization seams when mode is idle (negative slot-swap case)', async () => {
+    global.fetch = fetchAuthenticated();
+    const sessionId = '00000000-0000-4000-8000-0000000abcdf';
+
+    act(() => {
+      useWsStore.getState().reset();
+      useCaptureStore.getState().reset();
+    });
+
+    renderWithProviders(<App />, { initialEntries: [`/sessions/${sessionId}/operate`] });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('route-operate')).toBeTruthy();
+    });
+
+    expect(screen.queryByTestId('operationalization-capture-panel')).toBeNull();
+    expect(screen.queryByTestId('operationalization-mode-exit')).toBeNull();
+    // The base banner is unconditional even in idle mode.
+    expect(screen.getByTestId('mode-banner')).toBeTruthy();
   });
 });

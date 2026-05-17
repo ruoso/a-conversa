@@ -1,0 +1,204 @@
+// Tests for `<OperationalizationModeExitButton>` — operationalization-
+// mode exit affordance + target-wording overlay.
+//
+// Refinement: tasks/refinements/moderator-ui/mod_operationalization_mode.md
+// ADRs:        docs/adr/0022-no-throwaway-verifications.md
+//              docs/adr/0024-frontend-i18n-react-i18next-with-icu.md
+//
+// Sibling test file to `DecomposeModeExitButton.test.tsx` /
+// `InterpretiveSplitModeExitButton.test.tsx`. The component is a thin
+// wrapper over `<ProposalModeExitAffordance mode="operationalization">`;
+// assertions mirror the sibling-side surface with the per-mode
+// `data-testid`s + per-mode catalog keys.
+
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import i18next from 'i18next';
+import type { ReactElement } from 'react';
+import type { Event } from '@a-conversa/shared-types';
+
+import { OperationalizationModeExitButton } from './OperationalizationModeExitButton';
+import { useCaptureStore, type CaptureMode } from '../stores/captureStore';
+import { useWsStore } from '../ws/wsStore';
+import { createI18nInstance } from '@a-conversa/shell';
+
+const SESSION_ID = '00000000-0000-4000-8000-000000000001';
+const NODE_A = '00000000-0000-4000-8000-00000000000a';
+const ACTOR = '00000000-0000-4000-8000-0000000000aa';
+
+function makeNodeCreated(opts: { sequence: number; nodeId: string; wording: string }): Event {
+  return {
+    id: `00000000-0000-4000-8000-${(0x100 + opts.sequence).toString(16).padStart(12, '0')}`,
+    sessionId: SESSION_ID,
+    sequence: opts.sequence,
+    kind: 'node-created',
+    actor: ACTOR,
+    payload: {
+      node_id: opts.nodeId,
+      wording: opts.wording,
+      created_by: ACTOR,
+      created_at: '2026-05-11T00:00:00.000Z',
+    },
+    createdAt: '2026-05-11T00:00:00.000Z',
+  };
+}
+
+function renderWithRoute(): ReturnType<typeof render> {
+  function RouteHost(): ReactElement {
+    return <OperationalizationModeExitButton />;
+  }
+  return render(
+    <MemoryRouter initialEntries={[`/sessions/${SESSION_ID}/operate`]}>
+      <Routes>
+        <Route path="/sessions/:id/operate" element={<RouteHost />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
+beforeEach(async () => {
+  useWsStore.getState().reset();
+  useCaptureStore.getState().reset();
+  await createI18nInstance('en-US');
+  await i18next.changeLanguage('en-US');
+});
+
+afterEach(() => {
+  cleanup();
+  useWsStore.getState().reset();
+  useCaptureStore.getState().reset();
+});
+
+describe('OperationalizationModeExitButton — render gating', () => {
+  it('renders null when mode is idle', () => {
+    const { container } = renderWithRoute();
+    expect(container.firstChild).toBeNull();
+    expect(screen.queryByTestId('operationalization-mode-exit')).toBeNull();
+  });
+
+  // Parametric coverage: the button must NOT render for any of the
+  // eight non-matching `CaptureMode` values. Pinning each mode keeps
+  // a future CaptureMode extension from accidentally rendering the
+  // exit button outside its proper mode.
+  const nonMatchingModes: readonly CaptureMode[] = [
+    'idle',
+    'capture-statement',
+    'decompose',
+    'interpretive-split',
+    'capture-defeater',
+    'warrant-elicitation',
+    'meta-move',
+    'axiom-mark',
+  ];
+  for (const m of nonMatchingModes) {
+    it(`renders null when mode is ${m} (does NOT cross-bleed across modes)`, () => {
+      act(() => {
+        useCaptureStore.setState({ mode: m });
+      });
+      renderWithRoute();
+      expect(screen.queryByTestId('operationalization-mode-exit')).toBeNull();
+    });
+  }
+
+  it('renders the button + overlay when mode is operationalization and a matching node-created event exists', () => {
+    useWsStore
+      .getState()
+      .applyEvent(makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'parent wording' }));
+    act(() => {
+      useCaptureStore.getState().enterOperationalizationMode(NODE_A);
+    });
+    renderWithRoute();
+
+    const button = screen.getByTestId('operationalization-mode-exit');
+    expect(button).toBeTruthy();
+    expect(button.getAttribute('aria-label')).toBe('Exit operationalization mode');
+    expect(button.getAttribute('title')).toBe('Exit operationalization mode (Esc)');
+    const overlay = screen.getByTestId('operationalization-mode-target-wording');
+    expect(overlay.textContent).toBe('Operationalizing: parent wording');
+  });
+});
+
+describe('OperationalizationModeExitButton — exit gestures', () => {
+  it('clicking the button calls exitOperationalizationMode and unmounts the button', () => {
+    useWsStore
+      .getState()
+      .applyEvent(makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'w' }));
+    act(() => {
+      useCaptureStore.getState().enterOperationalizationMode(NODE_A);
+    });
+    renderWithRoute();
+    expect(screen.getByTestId('operationalization-mode-exit')).toBeTruthy();
+
+    act(() => {
+      fireEvent.click(screen.getByTestId('operationalization-mode-exit'));
+    });
+
+    expect(useCaptureStore.getState().mode).toBe('idle');
+    expect(useCaptureStore.getState().operationalizationTargetNodeId).toBeNull();
+    expect(screen.queryByTestId('operationalization-mode-exit')).toBeNull();
+  });
+
+  it('Escape keypress fires exitOperationalizationMode while mode is operationalization', () => {
+    useWsStore
+      .getState()
+      .applyEvent(makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'w' }));
+    act(() => {
+      useCaptureStore.getState().enterOperationalizationMode(NODE_A);
+    });
+    renderWithRoute();
+    expect(useCaptureStore.getState().mode).toBe('operationalization');
+
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+
+    expect(useCaptureStore.getState().mode).toBe('idle');
+    expect(useCaptureStore.getState().operationalizationTargetNodeId).toBeNull();
+  });
+});
+
+describe('OperationalizationModeExitButton — i18n locale parity', () => {
+  const cases = [
+    {
+      locale: 'en-US',
+      ariaLabel: 'Exit operationalization mode',
+      tooltip: 'Exit operationalization mode (Esc)',
+      overlay: 'Operationalizing: parent wording',
+    },
+    {
+      locale: 'pt-BR',
+      ariaLabel: 'Sair do modo de operacionalização',
+      tooltip: 'Sair do modo de operacionalização (Esc)',
+      overlay: 'Operacionalizando: parent wording',
+    },
+    {
+      locale: 'es-419',
+      ariaLabel: 'Salir del modo de operacionalización',
+      tooltip: 'Salir del modo de operacionalización (Esc)',
+      overlay: 'Operacionalizando: parent wording',
+    },
+  ] as const;
+
+  for (const { locale, ariaLabel, tooltip, overlay } of cases) {
+    it(`${locale} — aria-label / tooltip / overlay resolve to localized strings`, async () => {
+      await i18next.changeLanguage(locale);
+      useWsStore
+        .getState()
+        .applyEvent(makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'parent wording' }));
+      act(() => {
+        useCaptureStore.getState().enterOperationalizationMode(NODE_A);
+      });
+      renderWithRoute();
+
+      const button = screen.getByTestId('operationalization-mode-exit');
+      expect(button.getAttribute('aria-label')).toBe(ariaLabel);
+      expect(button.getAttribute('title')).toBe(tooltip);
+      expect(screen.getByTestId('operationalization-mode-target-wording').textContent).toBe(
+        overlay,
+      );
+
+      await i18next.changeLanguage('en-US');
+    });
+  }
+});

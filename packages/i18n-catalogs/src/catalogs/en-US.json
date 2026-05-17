@@ -342,6 +342,29 @@
         }
       }
     },
+    "operationalization": {
+      "exit": {
+        "ariaLabel": "Exit operationalization mode",
+        "tooltip": "Exit operationalization mode (Esc)"
+      },
+      "banner": {
+        "targetWording": "Operationalizing: {nodeWording}"
+      },
+      "prompt": {
+        "question": "What evidence would change your mind on this?",
+        "guidance": "Empirical evidence routes to re-classification; a different value or principle routes to re-classification; truth-by-meaning routes to re-classification; 'nothing could change my mind' routes to axiom-mark; specific retraction conditions route to defeater capture."
+      },
+      "answer": {
+        "placeholder": "Type the participant's verbal answer..."
+      },
+      "action": {
+        "route-axiom-mark": "Mark as axiom",
+        "route-defeater": "Capture as defeater",
+        "route-reclassify": "Re-classify",
+        "route-decompose": "Decompose",
+        "route-no-signal": "No signal yet"
+      }
+    },
     "proposalFilter": {
       "textPlaceholder": "Filter proposals…",
       "textAriaLabel": "Filter pending proposals by text",
@@ -429,6 +452,7 @@
         "proposeVote": "Propose vote",
         "proposeDecompose": "Propose decompose",
         "proposeInterpretiveSplit": "Propose interpretive split",
+        "runOperationalization": "Run operationalization test",
         "proposeMetaDisagreement": "Propose meta-disagreement",
         "annotate": "Annotate",
         "axiomMark": "Mark as axiom"

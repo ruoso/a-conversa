@@ -335,6 +335,52 @@ export interface CaptureState {
   /** Remove the indexed row from `interpretiveSplitReadings` (no-op at the minimum). */
   removeInterpretiveSplitReading: (index: number) => void;
 
+  /**
+   * The id of the node currently being operationalized when `mode ===
+   * 'operationalization'`; `null` otherwise. Set atomically by
+   * `enterOperationalizationMode(nodeId)` and cleared by
+   * `exitOperationalizationMode()` / `reset()`. The
+   * `<OperationalizationCapturePanel>` reads this to surface the target
+   * wording overlay; the future F5 / F6 / F7 answer-route wirings will
+   * read it when promoting a captured route to a real propose action.
+   *
+   * Refinement:
+   * `tasks/refinements/moderator-ui/mod_operationalization_mode.md`.
+   */
+  operationalizationTargetNodeId: string | null;
+
+  /**
+   * Set `operationalizationTargetNodeId` directly. Direct callers
+   * should prefer the coupled helpers (`enterOperationalizationMode` /
+   * `exitOperationalizationMode`); this setter mirrors
+   * `setDecomposeTargetNodeId` /
+   * `setInterpretiveSplitTargetNodeId` for symmetry / test seams.
+   */
+  setOperationalizationTargetNodeId: (id: string | null) => void;
+  /**
+   * Enter operationalization mode for `nodeId`. Atomic multi-field
+   * update mirroring `enterDecomposeMode` /
+   * `enterInterpretiveSplitMode`: sets `mode = 'operationalization'`,
+   * `operationalizationTargetNodeId = nodeId`, and clears the F1
+   * capture-flow slices so a stale F1 draft does not bleed into the
+   * operationalization flow.
+   *
+   * Unlike the proposal modes there is no per-row seed (operationalization
+   * is single-textarea, and the answer textarea's value is local
+   * component state per Decision §D7 of the refinement).
+   *
+   * Refinement:
+   * `tasks/refinements/moderator-ui/mod_operationalization_mode.md`.
+   */
+  enterOperationalizationMode: (nodeId: string) => void;
+  /**
+   * Exit operationalization mode. Atomic update mirroring
+   * `exitDecomposeMode` / `exitInterpretiveSplitMode`: sets
+   * `mode = 'idle'`, `operationalizationTargetNodeId = null`. The F1
+   * slices are NOT re-populated.
+   */
+  exitOperationalizationMode: () => void;
+
   /** Reset the pane to a fresh idle state — called after a successful propose. */
   reset: () => void;
 }
@@ -351,6 +397,7 @@ const initialCaptureState: Pick<
   | 'decomposeComponents'
   | 'interpretiveSplitTargetNodeId'
   | 'interpretiveSplitReadings'
+  | 'operationalizationTargetNodeId'
 > = {
   text: '',
   classification: null,
@@ -362,6 +409,7 @@ const initialCaptureState: Pick<
   decomposeComponents: [],
   interpretiveSplitTargetNodeId: null,
   interpretiveSplitReadings: [],
+  operationalizationTargetNodeId: null,
 };
 
 export const useCaptureStore = create<CaptureState>()(
@@ -503,6 +551,26 @@ export const useCaptureStore = create<CaptureState>()(
               ),
             },
       ),
+    setOperationalizationTargetNodeId: (operationalizationTargetNodeId) =>
+      set({ operationalizationTargetNodeId }),
+    enterOperationalizationMode: (nodeId) =>
+      set({
+        mode: 'operationalization',
+        operationalizationTargetNodeId: nodeId,
+        // F1-coupling clear (mirrors enterDecomposeMode /
+        // enterInterpretiveSplitMode — Decision §D4 of
+        // mod_operationalization_mode.md): a stale in-progress F1 draft
+        // must not bleed into the operationalization flow.
+        text: '',
+        classification: null,
+        targetEntityId: null,
+        edgeRole: null,
+      }),
+    exitOperationalizationMode: () =>
+      set({
+        mode: 'idle',
+        operationalizationTargetNodeId: null,
+      }),
     reset: () => set({ ...initialCaptureState }),
   })),
 );

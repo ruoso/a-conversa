@@ -283,7 +283,11 @@ task moderator_ui "Moderator UI" {
       allocate team
       complete 100
       depends !mod_selection
-      note "Refinement: tasks/refinements/moderator-ui/mod_context_menus.md"
+      note -8<-
+        Refinement: tasks/refinements/moderator-ui/mod_context_menus.md
+
+        Hygiene note: the shared <GraphContextMenu> MenuItem shape now supports a `disabled: boolean` field with click-guard + `aria-disabled` plumbing (landed in the commit closing moderator_ui.mod_diagnostic_flow.mod_operationalization_mode, used by the methodology-gated 'run-operationalization-test' item). Future per-item gating that wants "always render, methodology-gate the enabled state" can reuse the same field rather than re-inventing it. No behavioral change to existing items.
+      ->8-
     }
     task mod_hover_details "Hover details for nodes and edges" {
       effort 0.5d
@@ -438,6 +442,8 @@ task moderator_ui "Moderator UI" {
     task mod_operationalization_mode "Operationalization mode" {
       effort 1d
       allocate team
+      complete 100
+      note "Refinement: tasks/refinements/moderator-ui/mod_operationalization_mode.md"
     }
     task mod_is_ought_prompt "Is-ought check prompt" {
       effort 0.5d
@@ -453,6 +459,7 @@ task moderator_ui "Moderator UI" {
     task mod_warrant_elicitation_mode "Warrant-elicitation mode" {
       effort 1d
       allocate team
+      note "Compose on the 3-mode <ProposalModeExitAffordance> + StructuralProposalMode alias (Exclude<ProposalMode, 'operationalization'>) seam landed in the commit closing moderator_ui.mod_diagnostic_flow.mod_operationalization_mode: widen ProposalMode once more to include 'warrant-elicitation', add a per-mode MODE_KEYS entry + selector branches + a thin <WarrantElicitationModeExitButton> wrapper, keep the structural-family components (decompose / interpretive-split) narrowed onto StructuralProposalMode."
     }
     task mod_diagnostic_methodology_suggestions "Methodology suggestions per diagnostic kind" {
       effort 1d

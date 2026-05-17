@@ -24,7 +24,7 @@ import {
 } from '@a-conversa/i18n-catalogs';
 
 import { useCaptureStore } from '../stores/captureStore';
-import type { ProposalMode } from './ProposalModeExitAffordance';
+import type { StructuralProposalMode } from './ProposalModeExitAffordance';
 
 const SELECTED_CLASSES =
   'inline-flex items-center gap-1 rounded border border-blue-600 bg-blue-600 px-2 py-1 text-xs font-medium text-white shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700';
@@ -48,7 +48,7 @@ const MODE_CONFIG = {
 
 export interface DecomposeComponentClassificationPickerProps {
   /** Which proposal mode this picker serves. */
-  mode: ProposalMode;
+  mode: StructuralProposalMode;
   /** Zero-indexed row position in the active mode's slice. */
   index: number;
 }

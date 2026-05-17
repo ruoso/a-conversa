@@ -342,6 +342,29 @@
         }
       }
     },
+    "operationalization": {
+      "exit": {
+        "ariaLabel": "Sair do modo de operacionalização",
+        "tooltip": "Sair do modo de operacionalização (Esc)"
+      },
+      "banner": {
+        "targetWording": "Operacionalizando: {nodeWording}"
+      },
+      "prompt": {
+        "question": "Que evidência mudaria sua opinião sobre isso?",
+        "guidance": "Evidência empírica encaminha para reclassificação; um valor ou princípio diferente encaminha para reclassificação; verdade por significado encaminha para reclassificação; 'nada mudaria minha opinião' encaminha para marca de axioma; condições específicas de retratação encaminham para captura de refutação."
+      },
+      "answer": {
+        "placeholder": "Digite a resposta verbal do participante..."
+      },
+      "action": {
+        "route-axiom-mark": "Marcar como axioma",
+        "route-defeater": "Capturar como refutação",
+        "route-reclassify": "Reclassificar",
+        "route-decompose": "Decompor",
+        "route-no-signal": "Sem sinal ainda"
+      }
+    },
     "proposalFilter": {
       "textPlaceholder": "Filtrar propostas…",
       "textAriaLabel": "Filtrar propostas pendentes por texto",
@@ -429,6 +452,7 @@
         "proposeVote": "Propor votação",
         "proposeDecompose": "Propor decomposição",
         "proposeInterpretiveSplit": "Propor divisão interpretativa",
+        "runOperationalization": "Executar teste de operacionalização",
         "proposeMetaDisagreement": "Propor meta-desacordo",
         "annotate": "Anotar",
         "axiomMark": "Marcar como axioma"

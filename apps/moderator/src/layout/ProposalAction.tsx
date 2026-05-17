@@ -16,7 +16,7 @@ import { useTranslation } from 'react-i18next';
 
 import { useProposeProposalAction } from './useProposeProposalAction';
 import type { ProposalValidationErrorReason } from './useProposeProposalAction';
-import type { ProposalMode } from './ProposalModeExitAffordance';
+import type { StructuralProposalMode } from './ProposalModeExitAffordance';
 
 const BUTTON_CLASSES =
   'inline-flex items-center gap-1 rounded border border-blue-700 bg-blue-700 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-blue-800 hover:border-blue-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700 disabled:cursor-not-allowed disabled:opacity-50';
@@ -36,7 +36,7 @@ interface ModeConfig {
   readonly reasonKeys: Readonly<Record<ProposalValidationErrorReason, string>>;
 }
 
-const MODE_CONFIG: Readonly<Record<ProposalMode, ModeConfig>> = {
+const MODE_CONFIG: Readonly<Record<StructuralProposalMode, ModeConfig>> = {
   decompose: {
     testidPrefix: 'propose-decomposition-action',
     labelKey: 'moderator.decompose.propose.label',
@@ -86,7 +86,7 @@ function isMacPlatform(): boolean {
 }
 
 export interface ProposalActionProps {
-  mode: ProposalMode;
+  mode: StructuralProposalMode;
 }
 
 export function ProposalAction(props: ProposalActionProps): ReactElement {

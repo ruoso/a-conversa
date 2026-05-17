@@ -18,7 +18,7 @@ import { useTranslation } from 'react-i18next';
 import { MAX_METHODOLOGY_TEXT_LENGTH } from '@a-conversa/shared-types';
 
 import { useCaptureStore } from '../stores/captureStore';
-import type { ProposalMode } from './ProposalModeExitAffordance';
+import type { StructuralProposalMode } from './ProposalModeExitAffordance';
 
 const MAX_HEIGHT_PX = 72;
 
@@ -37,7 +37,7 @@ const MODE_CONFIG = {
 
 export interface DecomposeComponentTextInputProps {
   /** Which proposal mode this input serves. */
-  mode: ProposalMode;
+  mode: StructuralProposalMode;
   /** Zero-indexed row position in the active mode's slice. */
   index: number;
 }

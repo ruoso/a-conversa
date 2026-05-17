@@ -18,7 +18,7 @@ import { useTranslation } from 'react-i18next';
 
 import { DecomposeComponentClassificationPicker } from './DecomposeComponentClassificationPicker';
 import { DecomposeComponentTextInput } from './DecomposeComponentTextInput';
-import type { ProposalMode } from './ProposalModeExitAffordance';
+import type { StructuralProposalMode } from './ProposalModeExitAffordance';
 
 const MODE_KEYS = {
   decompose: {
@@ -39,7 +39,7 @@ const MODE_KEYS = {
 
 export interface DecomposeComponentRowProps {
   /** Which proposal mode this row serves. */
-  mode: ProposalMode;
+  mode: StructuralProposalMode;
   /** Zero-indexed row position in the active mode's slice. */
   index: number;
   /**

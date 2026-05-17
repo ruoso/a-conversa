@@ -29,6 +29,14 @@ import { useTranslation } from 'react-i18next';
  * `data-testid` and the React key); `labelKey` resolves through
  * `useTranslation` to the localized label; `onSelect` is the action
  * the moderator picked — fired before the menu closes.
+ *
+ * Optional `disabled` (`mod_operationalization_mode`) renders the
+ * button as `disabled` + `aria-disabled="true"`, kept in the menu's
+ * tab order so the moderator learns the option exists even when its
+ * methodology gate is not currently satisfied. The selection path
+ * skips `onSelect` when the item is disabled (defensive — the
+ * underlying `<button disabled>` already blocks click events; the
+ * guard pins the contract for tests).
  */
 export interface MenuItem {
   /** Stable per-menu identifier — used for `data-testid` and `key`. */
@@ -37,6 +45,12 @@ export interface MenuItem {
   readonly labelKey: string;
   /** Action handler — fired when the moderator selects this item. */
   readonly onSelect: () => void;
+  /**
+   * Methodology / availability gate. When `true` the rendered button
+   * is `disabled` + `aria-disabled="true"` and the click path skips
+   * `onSelect`. Optional and defaults to `false`.
+   */
+  readonly disabled?: boolean;
 }
 
 export interface GraphContextMenuProps {
@@ -109,8 +123,13 @@ export function GraphContextMenu(props: GraphContextMenuProps): ReactElement {
             type="button"
             role="menuitem"
             data-testid={`graph-context-menu-item-${item.id}`}
-            className="block w-full px-3 py-1.5 text-left text-sm text-slate-900 hover:bg-slate-100"
+            disabled={item.disabled ?? false}
+            aria-disabled={item.disabled ?? false}
+            className="block w-full px-3 py-1.5 text-left text-sm text-slate-900 hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-400 disabled:hover:bg-transparent"
             onClick={() => {
+              if (item.disabled === true) {
+                return;
+              }
               item.onSelect();
               onClose();
             }}

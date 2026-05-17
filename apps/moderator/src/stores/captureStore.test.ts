@@ -473,3 +473,94 @@ describe('useCaptureStore — interpretive-split slice (mod_interpretive_split_m
     expect(state.interpretiveSplitReadings[0]?.text).toBe('row-0');
   });
 });
+
+describe('useCaptureStore — operationalization-mode slice (mod_operationalization_mode)', () => {
+  it('operationalizationTargetNodeId is null in the initial state', () => {
+    expect(useCaptureStore.getState().operationalizationTargetNodeId).toBeNull();
+  });
+
+  it('setOperationalizationTargetNodeId mutates the slice without flipping mode', () => {
+    useCaptureStore.getState().setOperationalizationTargetNodeId('n-direct');
+    const state = useCaptureStore.getState();
+    expect(state.operationalizationTargetNodeId).toBe('n-direct');
+    // The direct setter is a pure slice mutation — mode stays idle.
+    expect(state.mode).toBe('idle');
+    useCaptureStore.getState().setOperationalizationTargetNodeId(null);
+    expect(useCaptureStore.getState().operationalizationTargetNodeId).toBeNull();
+  });
+
+  it('enterOperationalizationMode(nodeId) flips mode to operationalization, stashes the target id, clears F1 slices', () => {
+    // Seed every F1 slice so we can assert the atomic clear.
+    useCaptureStore.getState().setText('a stale draft wording');
+    useCaptureStore.getState().setClassification('fact');
+    useCaptureStore.getState().setTargetEntityId('node-stale');
+    useCaptureStore.getState().setEdgeRole('supports');
+
+    useCaptureStore.getState().enterOperationalizationMode('n1');
+
+    const state = useCaptureStore.getState();
+    expect(state.mode).toBe('operationalization');
+    expect(state.operationalizationTargetNodeId).toBe('n1');
+    expect(state.text).toBe('');
+    expect(state.classification).toBeNull();
+    expect(state.targetEntityId).toBeNull();
+    expect(state.edgeRole).toBeNull();
+  });
+
+  it('enterOperationalizationMode uses a single set() — subscribers observe exactly one transition per call', () => {
+    let notifications = 0;
+    const unsubscribe = useCaptureStore.subscribe(() => {
+      notifications += 1;
+    });
+    try {
+      useCaptureStore.getState().enterOperationalizationMode('n1');
+      expect(notifications).toBe(1);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('exitOperationalizationMode reverts mode to idle and clears operationalizationTargetNodeId', () => {
+    useCaptureStore.getState().enterOperationalizationMode('n1');
+    expect(useCaptureStore.getState().mode).toBe('operationalization');
+    useCaptureStore.getState().exitOperationalizationMode();
+    const state = useCaptureStore.getState();
+    expect(state.mode).toBe('idle');
+    expect(state.operationalizationTargetNodeId).toBeNull();
+  });
+
+  it('exitOperationalizationMode does NOT re-populate the F1 slices (mirrors exitDecomposeMode discipline)', () => {
+    useCaptureStore.getState().setText('would have been a draft');
+    useCaptureStore.getState().enterOperationalizationMode('n1');
+    useCaptureStore.getState().exitOperationalizationMode();
+    const state = useCaptureStore.getState();
+    expect(state.text).toBe('');
+    expect(state.classification).toBeNull();
+    expect(state.targetEntityId).toBeNull();
+    expect(state.edgeRole).toBeNull();
+  });
+
+  it('reset() clears operationalizationTargetNodeId even after entering operationalization mode', () => {
+    useCaptureStore.getState().enterOperationalizationMode('n1');
+    expect(useCaptureStore.getState().operationalizationTargetNodeId).toBe('n1');
+    useCaptureStore.getState().reset();
+    const state = useCaptureStore.getState();
+    expect(state.mode).toBe('idle');
+    expect(state.operationalizationTargetNodeId).toBeNull();
+  });
+
+  it('enterOperationalizationMode then enterDecomposeMode flips mode but leaves operationalizationTargetNodeId stale (per-slice ownership)', () => {
+    // The operationalization slice is owned by its own enter/exit pair;
+    // an external mode flip (e.g. into decompose) leaves the stale
+    // target id alone — the next enterOperationalizationMode overwrites
+    // it. This mirrors the decompose / interpretive-split mutual-state
+    // behavior. Pin the invariant so a cross-mode-clear refactor is a
+    // deliberate change.
+    useCaptureStore.getState().enterOperationalizationMode('op-target');
+    useCaptureStore.getState().enterDecomposeMode('decompose-target');
+    const state = useCaptureStore.getState();
+    expect(state.mode).toBe('decompose');
+    expect(state.decomposeTargetNodeId).toBe('decompose-target');
+    expect(state.operationalizationTargetNodeId).toBe('op-target');
+  });
+});

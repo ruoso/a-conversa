@@ -559,4 +559,28 @@ describe('captureKeymap — onExitMode handler (mode-aware Escape)', () => {
     expect(onExitMode).toHaveBeenCalledTimes(1);
     expect(onClearTarget).not.toHaveBeenCalled();
   });
+
+  // Refinement: tasks/refinements/moderator-ui/mod_operationalization_mode.md
+  //
+  // The mode-aware Escape early-return generalises to also route
+  // `onExitMode` when `mode === 'operationalization'` (the third F3
+  // mode). The Escape priority over `onClearTarget` mirrors the
+  // decompose / interpretive-split branches.
+  it('routes Escape to onExitMode when mode === operationalization', () => {
+    const onExitMode = vi.fn<() => void>();
+    useCaptureStore.getState().enterOperationalizationMode('n1');
+    detach = attachCaptureKeymap({ onExitMode });
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(onExitMode).toHaveBeenCalledTimes(1);
+  });
+
+  it('operationalization exit takes priority over target-clear when both handlers are registered', () => {
+    const onExitMode = vi.fn<() => void>();
+    const onClearTarget = vi.fn<() => void>();
+    useCaptureStore.getState().enterOperationalizationMode('n1');
+    detach = attachCaptureKeymap({ onExitMode, onClearTarget });
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(onExitMode).toHaveBeenCalledTimes(1);
+    expect(onClearTarget).not.toHaveBeenCalled();
+  });
 });

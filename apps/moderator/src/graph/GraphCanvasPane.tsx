@@ -85,6 +85,7 @@ import {
   type DiagnosticHighlightIndex,
 } from './diagnosticHighlights.js';
 import { computeFacetStatuses, EMPTY_FACET_STATUSES } from './facetStatus.js';
+import { disputationOutcome } from './disputationOutcome.js';
 import {
   EMPTY_ANNOTATIONS,
   EMPTY_AXIOM_MARKS,
@@ -224,12 +225,29 @@ function actionStub(action: string, target: ContextMenuState['target']): void {
  * legacy stub is used so the existing factory-shape cases keep
  * passing without each test having to thread a handler. Decision §2
  * of `mod_decompose_mode.md` records the placement.
+ *
+ * **`onEnterOperationalizationMode` seam (mod_operationalization_mode).**
+ * Same shape as the decompose / interpretive-split seams: the canvas
+ * threads in a callback that dispatches to
+ * `useCaptureStore.getState().enterOperationalizationMode(nodeId)` —
+ * the parent menu's `run-operationalization-test` item then atomically
+ * flips `mode` to `'operationalization'` + sets
+ * `operationalizationTargetNodeId` + clears the F1 capture-flow
+ * slices. Per Decision §D5 the item is **always rendered** but the
+ * canvas precomputes the `disabled` flag from
+ * `disputationOutcome(node.facetStatuses.substance) !== 'claim'` and
+ * threads it through `disabledRunOperationalizationTest`. When the
+ * handler is omitted (direct unit-test invocations), the legacy stub
+ * is used; when the disabled flag is omitted, the item defaults to
+ * enabled (the legacy unit-test factory shape).
  */
 export function buildNodeMenuItems(
   target: ContextMenuState['target'],
   onOpenAxiomMarkSubmenu?: () => void,
   onEnterDecomposeMode?: (nodeId: string) => void,
   onEnterInterpretiveSplitMode?: (nodeId: string) => void,
+  onEnterOperationalizationMode?: (nodeId: string) => void,
+  disabledRunOperationalizationTest?: boolean,
 ): readonly MenuItem[] {
   return [
     {
@@ -252,6 +270,15 @@ export function buildNodeMenuItems(
         target.kind === 'node' && target.id !== null && onEnterInterpretiveSplitMode
           ? () => onEnterInterpretiveSplitMode(target.id as string)
           : () => actionStub('propose-interpretive-split', target),
+    },
+    {
+      id: 'run-operationalization-test',
+      labelKey: 'moderator.contextMenu.node.runOperationalization',
+      onSelect:
+        target.kind === 'node' && target.id !== null && onEnterOperationalizationMode
+          ? () => onEnterOperationalizationMode(target.id as string)
+          : () => actionStub('run-operationalization-test', target),
+      disabled: disabledRunOperationalizationTest ?? false,
     },
     {
       id: 'propose-meta-disagreement',
@@ -669,6 +696,13 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
     (nodeId: string) => useCaptureStore.getState().enterInterpretiveSplitMode(nodeId),
     [],
   );
+  // Sibling stable mode-entry callback for the new
+  // `run-operationalization-test` item. Refinement:
+  // `mod_operationalization_mode`.
+  const enterOperationalizationMode = useCallback(
+    (nodeId: string) => useCaptureStore.getState().enterOperationalizationMode(nodeId),
+    [],
+  );
   // **Important:** `closeContextMenu` does NOT cascade-close the
   // submenu. The `<GraphContextMenu>` shell calls `onClose` after a
   // menu item's `onSelect` runs (including the axiom-mark item that
@@ -956,6 +990,19 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
       const nodeIdForSubmenu = contextMenu.target.id;
       const submenuX = contextMenu.x;
       const submenuY = contextMenu.y;
+      // Methodology-gate computation for the
+      // `run-operationalization-test` item. Per Decision §D5 of
+      // mod_operationalization_mode.md, the item is always rendered
+      // but disabled unless the target node's substance facet maps to
+      // `'claim'` via `disputationOutcome(...)`. The gate runs at the
+      // call site so the factory stays a pure shape function (the
+      // factory accepts the precomputed `disabled` boolean).
+      const targetNode =
+        contextMenu.target.id === null
+          ? null
+          : (nodes.find((n) => n.id === contextMenu.target.id) ?? null);
+      const substanceStatus = targetNode?.data.facetStatuses.substance;
+      const disabledRunOperationalizationTest = disputationOutcome(substanceStatus) !== 'claim';
       menuItems = buildNodeMenuItems(
         contextMenu.target,
         () => {
@@ -976,6 +1023,8 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
         },
         enterDecomposeMode,
         enterInterpretiveSplitMode,
+        enterOperationalizationMode,
+        disabledRunOperationalizationTest,
       );
     } else if (contextMenu.target.kind === 'edge') {
       menuItems = buildEdgeMenuItems(contextMenu.target);
