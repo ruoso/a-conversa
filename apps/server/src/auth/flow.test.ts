@@ -351,7 +351,13 @@ describe('flow-state capacity cap (M3-review inputs.md F-006)', () => {
       // Neither the cap value nor the current size should appear.
       expect(message).not.toMatch(/\b3\b/);
       // And a future `JSON.stringify(err)` should not carry a cap.
-      const serialized = JSON.stringify(err, Object.getOwnPropertyNames(err));
+      // Exclude `stack` — it inherently contains line numbers from the
+      // throwing frame and is not attacker-useful state; the check is
+      // for custom data fields (e.g., `err.cap = 3`).
+      const serialized = JSON.stringify(
+        err,
+        Object.getOwnPropertyNames(err).filter((p) => p !== 'stack'),
+      );
       expect(serialized).not.toMatch(/\b3\b/);
     }
   });
