@@ -39,6 +39,7 @@ task participant_ui "Participant (debater) UI" {
     task part_state_management "State management setup" {
       effort 1d
       allocate team
+      complete 100
       depends !part_app_skeleton
 
       note "Refinement: tasks/refinements/participant-ui/part_state_management.md"
