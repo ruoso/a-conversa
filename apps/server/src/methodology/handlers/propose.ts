@@ -8,6 +8,7 @@
 // Refinement: tasks/refinements/data-and-methodology/break_edge_logic.md
 // Refinement: tasks/refinements/data-and-methodology/amend_node_logic.md
 // Refinement: tasks/refinements/data-and-methodology/annotation_logic.md
+// Refinement: tasks/refinements/data-and-methodology/set_edge_substance_endpoint_validation.md
 // TaskJuggler: data_and_methodology.methodology_engine.decomposition_logic
 // TaskJuggler: data_and_methodology.methodology_engine.interpretive_split_logic
 // TaskJuggler: data_and_methodology.methodology_engine.axiom_mark_logic
@@ -16,6 +17,7 @@
 // TaskJuggler: data_and_methodology.methodology_engine.break_edge_logic
 // TaskJuggler: data_and_methodology.methodology_engine.amend_node_logic
 // TaskJuggler: data_and_methodology.methodology_engine.annotation_logic
+// TaskJuggler: data_and_methodology.methodology_engine.set_edge_substance_endpoint_validation
 //
 // The propose action carries one of the eleven proposal sub-kinds. Per
 // the methodology framework (agreement_state_machine), the handler runs
@@ -197,12 +199,35 @@
 //     paths remain available; resolving the redundancy is an ADR-
 //     level decision out of scope here. See annotation_logic.md.
 //
-//   - For the other three sub-kinds (`classify-node`,
-//     `set-node-substance`, `set-edge-substance`): the universal-pass
-//     placeholder path. Each sub-kind's sibling task will tighten its
-//     arm as it lands. The placeholder builds the same one-event
-//     envelope the original handler always built — no methodology-
-//     specific gating.
+//   - For the `set-edge-substance` sub-kind: the real propose-side
+//     validator per `set_edge_substance_endpoint_validation`. Two
+//     phases (see `validateSetEdgeSubstanceProposal` below for the
+//     rule comments):
+//       1. Symmetry — if any of the three optional endpoint fields
+//          (`source_node_id`, `target_node_id`, `role`) is present,
+//          all three MUST be present. A partial payload signals
+//          client malformation. → `'illegal-state-transition'`.
+//       2. Referential (only when all three endpoint fields are
+//          present):
+//            2a. Source-node-visible. → `'target-entity-not-found'`.
+//            2b. Target-node-visible. → `'target-entity-not-found'`.
+//            2c. Agreement-with-existing-edge — when `edge_id` already
+//                names a projected edge, the carried `(source, target,
+//                role)` triple MUST equal the projected edge's triple.
+//                → `'illegal-state-transition'`.
+//     Substance-only re-vote (zero endpoint fields) short-circuits in
+//     Phase 1 (the antecedent is false) and skips Phase 2 entirely —
+//     so `proposeDefeaterPreCommit.test.ts` stays green. Role-vs-
+//     source/target compatibility (rule 2d) is NOT enforced in v1 per
+//     the refinement's D3; the design docs treat role-pair patterns
+//     as advisory coherency hints, not validator-rejection dimensions
+//     (`docs/data-model.md` L147-153).
+//
+//   - For the other two sub-kinds (`classify-node`,
+//     `set-node-substance`): the universal-pass placeholder path.
+//     Each sub-kind's sibling task will tighten its arm as it lands.
+//     The placeholder builds the same one-event envelope the original
+//     handler always built — no methodology-specific gating.
 //
 // **Scope: propose-side only.** This handler validates the propose
 // action and emits the proposal envelope event. The commit-time
@@ -1101,13 +1126,176 @@ function validateAnnotateProposal(
 }
 
 // ---------------------------------------------------------------
+// `validateSetEdgeSubstanceProposal` — the propose-side validator for
+// the `set-edge-substance` proposal sub-kind.
+//
+// **Sub-kind context.** Per ADR 0027 (entity / facet layer separation)
+// the `set-edge-substance` payload carries `edge_id` + `value`
+// (substance vote) plus three OPTIONAL endpoint fields
+// (`source_node_id`, `target_node_id`, `role`). The optional fields
+// serve the **connecting-edge** shape: a moderator proposing the first
+// substance vote against a freshly-minted edge passes the endpoints
+// inline so the structural-event builder (at the bottom of this file)
+// emits `edge-created` + `entity-included` propose-time, putting the
+// proposed edge on the canvas immediately per
+// `docs/methodology.md` L57. The substance-only re-vote shape (e.g.
+// the defeater-precommit flow) carries zero endpoint fields — only
+// `edge_id` + `value`.
+//
+// The structural-event builder is wire-shape emission; it does NOT
+// methodology-validate the carried endpoints. This validator closes
+// that gap per `mod_set_edge_substance_endpoint_carriage.md`'s D2.
+//
+// Rules run in two phases driven by the same fresh-edge predicate the
+// builder uses:
+//
+//   1. **Symmetry (payload-only).** If any of the three endpoint
+//      fields is present, all three MUST be present. A partial payload
+//      (two-of-three) signals client malformation. →
+//      `'illegal-state-transition'`, detail names the missing field(s).
+//      Short-circuits before any projection lookup.
+//
+//   2. **Referential (projection-indexing).** When all three endpoint
+//      fields are present, three sub-rules run in order:
+//      2a. **Source-node-visible.** `nodeIsVisible(projection,
+//          source_node_id) === true` — the source either doesn't exist
+//          on the projection or has been superseded by a prior
+//          decompose / interpretive-split / restructure. →
+//          `'target-entity-not-found'`.
+//      2b. **Target-node-visible.** Symmetric to 2a against
+//          `target_node_id`. → `'target-entity-not-found'`.
+//      2c. **Agreement-with-existing-edge.** When
+//          `projection.getEdge(edge_id) !== undefined` the carried
+//          triple MUST equal the projected edge's `(sourceNodeId,
+//          targetNodeId, role)` triple. Disagreement is structurally
+//          incoherent (entity identity is fixed at `edge-created` time
+//          per ADR 0027) — a substance-only re-vote with a payload
+//          that lies about the endpoints would silently corrupt
+//          downstream consumers. → `'illegal-state-transition'`, detail
+//          names both triples.
+//
+// **Substance-only re-vote stays valid.** A proposal carrying zero
+// endpoint fields satisfies Phase 1 trivially (antecedent false) and
+// skips Phase 2 entirely. The `proposeDefeaterPreCommit.test.ts`
+// baseline test passes without modification.
+//
+// **No new `RejectionReason` in v1 per D2.** Both reused codes
+// (`'target-entity-not-found'`, `'illegal-state-transition'`) line up
+// with the failure modes; the `detail` string carries the kind-
+// specific specificity exactly as `break_edge_logic` /
+// `amend_node_logic` / `meta_move_logic` do. The parent refinement's
+// D2 suggestion of `'source-node-not-found'` / `'target-node-not-found'`
+// / `'role-incompatible'` codes was a sketch; the v1 choice follows
+// the sibling precedent of reusing existing codes.
+//
+// **Role-source/target compatibility (rule 2d) is NOT implemented in
+// v1 per D3.** Per `docs/data-model.md` L147-153 the role-vs-kind
+// compatibility patterns are documented as advisory coherency
+// guidance, NOT blocking validator rules ("the system never blocks;
+// it nudges"). Promoting role compatibility to a hard rejection
+// contradicts that design principle. The proper home for role-pair
+// logic is the `diagnostics.coherency_hint_detection` task; this
+// validator's v1 stops at rule 2c.
+//
+// **Layering.** The validator runs BEFORE the structural-event
+// builder in `proposeHandler`'s control flow. A rejected proposal
+// emits nothing (neither entity-layer nor facet-layer events),
+// keeping the inverse-pair invariant with `entitiesToRetractForWithdraw`
+// (see `withdraw.ts`) trivially satisfied: there is nothing to
+// withdraw for a rejected proposal.
+//
+// Rule X — structural payload shape (`edge_id` UUID, each present
+// endpoint field a UUID, `role` (if present) one of the seven
+// `edgeRoleSchema` enum values) — is enforced upstream by
+// `setEdgeSubstanceProposalSchema` per ADR 0021. This validator does
+// not re-check structural shape.
+// ---------------------------------------------------------------
+
+function validateSetEdgeSubstanceProposal(
+  projection: Projection,
+  action: ProposeAction,
+): RejectedValidationResult | null {
+  if (action.proposal.kind !== 'set-edge-substance') {
+    // Defensive — the dispatcher gates this. Never reached at runtime.
+    return null;
+  }
+  const proposal = action.proposal;
+  const edgeId = proposal.edge_id;
+  const sourceNodeId = proposal.source_node_id;
+  const targetNodeId = proposal.target_node_id;
+  const role = proposal.role;
+
+  // Phase 1 — symmetry. If any endpoint field is present, all three
+  // must be present. Short-circuits before any projection lookup; the
+  // substance-only re-vote shape (all three absent) passes trivially.
+  const anyPresent = sourceNodeId !== undefined || targetNodeId !== undefined || role !== undefined;
+  const allPresent = sourceNodeId !== undefined && targetNodeId !== undefined && role !== undefined;
+  if (anyPresent && !allPresent) {
+    const missing: string[] = [];
+    if (sourceNodeId === undefined) missing.push('source_node_id');
+    if (targetNodeId === undefined) missing.push('target_node_id');
+    if (role === undefined) missing.push('role');
+    return {
+      ok: false,
+      reason: 'illegal-state-transition',
+      detail: `propose set-edge-substance: partial endpoint payload against edge_id ${edgeId} — when any of (source_node_id, target_node_id, role) is present, all three must be present; missing: ${missing.join(', ')}`,
+    };
+  }
+
+  // Substance-only re-vote: no endpoint fields → no further checks.
+  if (!allPresent) return null;
+
+  // Phase 2 — referential checks (run only when all three endpoint
+  // fields are present).
+
+  // Rule 2a — source node exists and is currently visible.
+  if (!nodeIsVisible(projection, sourceNodeId)) {
+    return {
+      ok: false,
+      reason: 'target-entity-not-found',
+      detail: `propose set-edge-substance: source_node_id ${sourceNodeId} does not reference a visible node in session ${projection.sessionId} (either unknown or superseded by a prior decompose / interpretive-split / restructure)`,
+    };
+  }
+
+  // Rule 2b — target node exists and is currently visible.
+  if (!nodeIsVisible(projection, targetNodeId)) {
+    return {
+      ok: false,
+      reason: 'target-entity-not-found',
+      detail: `propose set-edge-substance: target_node_id ${targetNodeId} does not reference a visible node in session ${projection.sessionId} (either unknown or superseded by a prior decompose / interpretive-split / restructure)`,
+    };
+  }
+
+  // Rule 2c — agreement with existing edge (when edge_id already
+  // names a projected edge). The carried triple MUST equal the
+  // projected edge's `(sourceNodeId, targetNodeId, role)` triple;
+  // entity identity is fixed at `edge-created` time per ADR 0027.
+  const existingEdge = projection.getEdge(edgeId);
+  if (existingEdge !== undefined) {
+    if (
+      existingEdge.sourceNodeId !== sourceNodeId ||
+      existingEdge.targetNodeId !== targetNodeId ||
+      existingEdge.role !== role
+    ) {
+      return {
+        ok: false,
+        reason: 'illegal-state-transition',
+        detail: `propose set-edge-substance: carried endpoint triple disagrees with the projected edge ${edgeId} — carried (source=${sourceNodeId}, target=${targetNodeId}, role=${role}) vs projected (source=${existingEdge.sourceNodeId}, target=${existingEdge.targetNodeId}, role=${existingEdge.role}); entity identity is fixed at edge-created time per ADR 0027`,
+      };
+    }
+  }
+
+  return null;
+}
+
+// ---------------------------------------------------------------
 // The handler.
 //
 // Switches on `action.proposal.kind`. The `decompose`,
 // `interpretive-split`, `axiom-mark`, `meta-move`, `edit-wording`,
-// `break-edge`, `amend-node`, and `annotate` arms run their real
-// validators. The remaining three arms (`classify-node`,
-// `set-node-substance`, `set-edge-substance`) fall through to the
+// `break-edge`, `amend-node`, `annotate`, and `set-edge-substance`
+// arms run their real validators. The remaining two arms
+// (`classify-node`, `set-node-substance`) fall through to the
 // universal-pass placeholder path — their sibling tasks will tighten
 // them as they land.
 // ---------------------------------------------------------------
@@ -1169,9 +1357,14 @@ export const proposeHandler: Validator<ProposeAction> = (
       if (rejection !== null) return rejection;
       break;
     }
-    // The other three sub-kinds (`classify-node`, `set-node-substance`,
-    // `set-edge-substance`) fall through to the placeholder emission.
-    // Each sub-kind's sibling task tightens its arm as it lands.
+    case 'set-edge-substance': {
+      const rejection = validateSetEdgeSubstanceProposal(projection, action);
+      if (rejection !== null) return rejection;
+      break;
+    }
+    // The other two sub-kinds (`classify-node`, `set-node-substance`)
+    // fall through to the placeholder emission. Each sub-kind's sibling
+    // task tightens its arm as it lands.
     default:
       break;
   }
@@ -1242,6 +1435,13 @@ export const proposeHandler: Validator<ProposeAction> = (
 // structural fan-out (substance-only re-vote against an extant edge,
 // e.g. the defeater-precommit flow at
 // `apps/server/src/methodology/handlers/proposeDefeaterPreCommit.test.ts`).
+// The cross-field referential check (symmetry of the three endpoint
+// fields, source / target visibility, and agreement with an extant
+// edge's projected `(source, target, role)` triple) is enforced by
+// `validateSetEdgeSubstanceProposal` in the dispatcher above; this
+// builder runs against an already-validated payload and never sees a
+// partial endpoint payload, a source / target that doesn't reference
+// a visible node, or a triple that disagrees with the projected edge.
 // The lockstep `entitiesToRetractForWithdraw` arm in
 // `apps/server/src/ws/handlers/withdraw.ts` is the inverse — see D3
 // of `tasks/refinements/backend/ws_withdraw_proposal_message.md`.
@@ -1371,11 +1571,11 @@ function buildStructuralEventsForPropose(
 // barrel both still reference `placeholderProposeHandler`. After this
 // task the symbol is no longer a placeholder for the `decompose`,
 // `interpretive-split`, `axiom-mark`, `meta-move`, `edit-wording`,
-// `break-edge`, `amend-node`, or `annotate` arms (it's the real
-// validator there), but the name is preserved so the import sites in
-// `engine.ts` and `handlers/index.ts` don't need to churn ahead of the
-// remaining three sibling sub-kind tasks (`classify-node`,
-// `set-node-substance`, `set-edge-substance`). Once those tighten, the
+// `break-edge`, `amend-node`, `annotate`, or `set-edge-substance` arms
+// (it's the real validator there), but the name is preserved so the
+// import sites in `engine.ts` and `handlers/index.ts` don't need to
+// churn ahead of the remaining two sibling sub-kind tasks
+// (`classify-node`, `set-node-substance`). Once those tighten, the
 // alias and the file comment header should be revisited.
 export const placeholderProposeHandler = proposeHandler;
 

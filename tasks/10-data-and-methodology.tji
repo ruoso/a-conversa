@@ -359,6 +359,7 @@ task data_and_methodology "Data and methodology" {
     task set_edge_substance_endpoint_validation "Methodology validator for set-edge-substance connecting case — cross-field referential check on source/target/role" {
       effort 0.5d
       allocate team
+      complete 100
       depends !agreement_state_machine, moderator_ui.mod_graph_rendering.mod_set_edge_substance_endpoint_carriage
       note -8<-
         Source of debt: tasks/refinements/moderator-ui/mod_set_edge_substance_endpoint_carriage.md D2 — the propose handler's set-edge-substance structural-event builder threads the new endpoint fields through to the emitted edge-created envelope but does NOT cross-check that source_node_id / target_node_id reference existing visible nodes on the projection, nor that the proposed role is valid for the source / target kinds. Per D2 the structural-event builder's job is wire-shape emission, not methodology validation — landing a defensive check there would put cross-field validation in two places once the methodology validator exists. The current commit's validateEvent schema-on-write pass on the emitted edge-created envelope catches malformed UUIDs / enum values; the deeper referential check is deferred to this task.
