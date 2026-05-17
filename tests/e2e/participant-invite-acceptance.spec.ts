@@ -15,8 +15,11 @@
 //      `f07d456`) returns 200 for an authenticated, visible, non-host
 //      caller against a session whose target role is available.
 //   3. The route's post-success navigation lands the debater on the
-//      placeholder lobby route (testid `lobby-placeholder`, session id
-//      under `session-id`).
+//      real lobby route (testid `route-lobby`); the session id round-
+//      trips through the URL (`page.waitForURL`), no in-body testid
+//      for the id (the placeholder's `lobby-placeholder` /
+//      `session-id` testids were retired by `part_lobby_view` per its
+//      Decision §8).
 //   4. The not-found code path renders the discriminating
 //      `invite-acceptance-error-not-found` panel.
 //
@@ -105,7 +108,7 @@ test.describe('Participant invite-acceptance route — happy path', () => {
   // dance per CI run, and this construction extends that to two
   // (alice's dance lands a fresh JWT that we then revoke; alice's
   // shared bootstrap JWT is untouched).
-  test('alice creates a private session, ben follows the invite URL, claims debater-A, lands on the lobby placeholder', async ({
+  test('alice creates a private session, ben follows the invite URL, claims debater-A, lands on the lobby', async ({
     browser,
   }) => {
     const context = await browser.newContext({
@@ -181,16 +184,21 @@ test.describe('Participant invite-acceptance route — happy path', () => {
       await expect(joinButton).toBeEnabled();
       await joinButton.click();
 
-      // 8. URL settles on the lobby placeholder route under the same
-      //    `/p` basename.
+      // 8. URL settles on the real lobby route under the same
+      //    `/p` basename. The URL-based assertion pins the session-id
+      //    round-trip (the placeholder's body-level `session-id`
+      //    testid was retired by `part_lobby_view` Decision §8 —
+      //    the URL is the canonical id source).
       await page.waitForURL((url) => url.pathname === `/p/sessions/${sessionId}/lobby`, {
         timeout: 15_000,
       });
 
-      // 9. The lobby placeholder testid renders + the session id round-
-      //    trips into the dedicated `session-id` testid.
-      await expect(page.getByTestId('lobby-placeholder')).toBeVisible();
-      await expect(page.getByTestId('session-id')).toHaveText(sessionId);
+      // 9. The lobby route's stable testid renders. The full lobby
+      //    surface contract (topic line, participants list, waiting
+      //    hints, live-update path) is pinned by
+      //    `participant-lobby.spec.ts` — this assertion only confirms
+      //    the post-claim navigation lands cleanly.
+      await expect(page.getByTestId('route-lobby')).toBeVisible({ timeout: 15_000 });
     } finally {
       await context.close();
     }
@@ -224,7 +232,7 @@ test.describe('Participant invite-acceptance route — not-found terminal path',
     // The terminal branch hides the join button and never navigates
     // away from the invite URL.
     await expect(page.getByTestId('invite-acceptance-join-button')).toHaveCount(0);
-    await expect(page.getByTestId('lobby-placeholder')).toHaveCount(0);
+    await expect(page.getByTestId('route-lobby')).toHaveCount(0);
     expect(page.url()).toContain(`/p/sessions/${NON_EXISTENT_SESSION_ID}/invite`);
   });
 });

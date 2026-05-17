@@ -4,11 +4,12 @@
 //              tasks/refinements/participant-ui/part_auth_flow.md
 //              tasks/refinements/participant-ui/part_landscape_layout.md
 //              tasks/refinements/participant-ui/part_invite_acceptance.md
+//              tasks/refinements/participant-ui/part_lobby_view.md
 // ADRs:        0002 (no profile data — only `screenName` reaches the DOM),
 //              0022 (no throwaway verifications — the identity testid +
 //                    not-authenticated testid + four layout-region
-//                    testids + the new route-invite-acceptance /
-//                    lobby-placeholder testids are the pinned seams),
+//                    testids + the route-invite-acceptance / route-lobby
+//                    testids are the pinned seams),
 //              0026 (host owns auth chrome; surface only reads the
 //                    host-supplied `useAuth()`).
 //
@@ -18,9 +19,14 @@
 //   - `<Route path="/sessions/:id/invite" element={<InviteAcceptanceRoute />} />`
 //     — the claim route that turns the moderator's invite URL into a
 //     `session_participants` row + a `participant-joined` event.
-//   - `<Route path="/sessions/:id/lobby" element={<LobbyPlaceholderRoute />} />`
-//     — placeholder destination for the success navigation; replaced
-//     by `participant_ui.part_session_join.part_lobby_view`.
+//   - `<Route path="/sessions/:id/lobby" element={<LobbyRoute />} />`
+//     — the participant's pre-debate lobby. The post-claim
+//     navigation in `<InviteAcceptanceRoute>` lands here; the route
+//     reads the path's `:id`, prefetches `GET /api/sessions/:id` +
+//     `GET /api/sessions/:id/participants`, and subscribes to the
+//     per-session WS for live `participant-joined` /
+//     `participant-left` overlays. New keys under the
+//     `participant.lobby.*` namespace.
 //
 // The wildcard `<Route path="*">` stays as the catch-all so any other
 // URL under `/p/*` still renders the existing placeholder chrome +
@@ -31,7 +37,6 @@
 // Future leaves replace the wildcard with the real participant route
 // tree:
 //
-//   - `part_session_join.part_lobby_view` replaces `<LobbyPlaceholderRoute>`.
 //   - `part_graph_view` + `part_voting` land the operate view.
 
 import type { ReactElement } from 'react';
@@ -44,7 +49,7 @@ import { ParticipantLayout } from './layout/ParticipantLayout';
 import { ParticipantChrome } from './layout/ParticipantChrome';
 import { ParticipantStatusIndicator } from './layout/ParticipantStatusIndicator';
 import { InviteAcceptanceRoute } from './routes/InviteAcceptanceRoute';
-import { LobbyPlaceholderRoute } from './routes/LobbyPlaceholderRoute';
+import { LobbyRoute } from './routes/LobbyRoute';
 
 function PlaceholderRouteBody(): ReactElement {
   // Existing body from `part_auth_flow`: the placeholder title, the
@@ -105,7 +110,7 @@ export function App(): ReactElement {
   return (
     <Routes>
       <Route path="/sessions/:id/invite" element={<InviteAcceptanceRoute />} />
-      <Route path="/sessions/:id/lobby" element={<LobbyPlaceholderRoute />} />
+      <Route path="/sessions/:id/lobby" element={<LobbyRoute />} />
       <Route path="*" element={<PlaceholderRoute />} />
     </Routes>
   );

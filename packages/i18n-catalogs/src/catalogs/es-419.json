@@ -469,8 +469,23 @@
         "network": "No se pudo alcanzar el servidor. Por favor, inténtalo de nuevo."
       }
     },
-    "lobbyPlaceholder": {
-      "body": "Estás en la sala de espera."
+    "lobby": {
+      "title": "Sala de espera",
+      "topicLabel": "Debatiendo:",
+      "participantsHeading": "Participantes",
+      "waitingForDebater": "Esperando a que {role} se una…",
+      "bothDebatersPresent": "Ambos debatientes están aquí — esperando a que el moderador inicie el debate.",
+      "emptyState": "Eres el primero en llegar.",
+      "roleBadges": {
+        "moderator": "Moderador",
+        "debaterA": "Debatiente A",
+        "debaterB": "Debatiente B"
+      },
+      "errors": {
+        "sessionFetchFailed": "No se pudieron cargar los detalles de la sesión.",
+        "participantsFetchFailed": "No se pudo cargar la lista de participantes.",
+        "retry": "Reintentar"
+      }
     }
   },
   "diagnostics": {

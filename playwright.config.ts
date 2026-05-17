@@ -302,11 +302,13 @@ export default defineConfig({
     {
       name: 'chromium-participant-skeleton',
       // `part_invite_acceptance` widens the testMatch to also accept
-      // `participant-invite-acceptance.spec.ts` — same browser profile
-      // (single locale en-US, ignoreHTTPSErrors for the OIDC redirect,
-      // bootstrap auth jar from setup-auth), no new project. Decision §7
-      // of the refinement.
-      testMatch: /participant-(skeleton-smoke|invite-acceptance)\.spec\.ts$/,
+      // `participant-invite-acceptance.spec.ts`; `part_lobby_view`
+      // widens it again to accept `participant-lobby.spec.ts` (the
+      // milestone-closing two-scenario spec for `m_manual_lobby_smoke`).
+      // Same browser profile (single locale en-US, ignoreHTTPSErrors
+      // for the OIDC redirect, bootstrap auth jar from setup-auth);
+      // no new project. Decisions §7 of both refinements.
+      testMatch: /participant-(skeleton-smoke|invite-acceptance|lobby)\.spec\.ts$/,
       dependencies: ['setup-auth'],
       use: {
         ...devices['Desktop Chrome'],

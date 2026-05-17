@@ -249,6 +249,7 @@ task participant_ui "Participant (debater) UI" {
     task part_lobby_view "Pre-debate lobby" {
       effort 0.5d
       allocate team
+      complete 100
       depends !part_invite_acceptance
     }
   }

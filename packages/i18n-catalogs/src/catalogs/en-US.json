@@ -469,8 +469,23 @@
         "network": "Could not reach the server. Please try again."
       }
     },
-    "lobbyPlaceholder": {
-      "body": "You're in the lobby."
+    "lobby": {
+      "title": "Lobby",
+      "topicLabel": "Debating:",
+      "participantsHeading": "Participants",
+      "waitingForDebater": "Waiting for {role} to join…",
+      "bothDebatersPresent": "Both debaters are here — waiting for the moderator to start the debate.",
+      "emptyState": "You're the first to arrive.",
+      "roleBadges": {
+        "moderator": "Moderator",
+        "debaterA": "Debater A",
+        "debaterB": "Debater B"
+      },
+      "errors": {
+        "sessionFetchFailed": "Could not load the session details.",
+        "participantsFetchFailed": "Could not load the participants list.",
+        "retry": "Try again"
+      }
     }
   },
   "diagnostics": {
