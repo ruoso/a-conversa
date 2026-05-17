@@ -236,6 +236,21 @@ export function computeFacetStatuses(events: readonly Event[]): FacetStatusIndex
       // component lands per `entitiesToRetractForWithdraw` in
       // `apps/server/src/ws/handlers/withdraw.ts`); either way the
       // facet status update is consistent.
+      //
+      // **Server-side symmetric arm.** The server-side
+      // `facetTargetsForProposal` in
+      // `apps/server/src/ws/broadcast/proposal-status.ts` is the
+      // source of truth for non-moderator surfaces (participant +
+      // audience) consuming the `proposal-status` broadcast directly
+      // — it walks the same `components` / `readings` arrays and
+      // emits one `proposal-status` envelope per component. This
+      // moderator-side mirror remains the in-place derivation for the
+      // moderator's `computeFacetStatuses(events)` consumer
+      // (`GraphCanvasPane.tsx` + `PendingProposalsPane.tsx`) until a
+      // future task migrates the moderator onto the broadcast path.
+      // See refinement
+      // `tasks/refinements/backend/facet_status_server_decompose_component_facets.md`
+      // D5 for the rationale on keeping both arms in lockstep.
       const proposal = event.payload.proposal;
       if (proposal.kind === 'decompose') {
         for (const component of proposal.components) {

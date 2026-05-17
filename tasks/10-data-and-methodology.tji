@@ -356,6 +356,18 @@ task data_and_methodology "Data and methodology" {
       depends !agreement_state_machine
       note "Refinement: tasks/refinements/data-and-methodology/annotation_logic.md"
     }
+    task replay_decompose_commit_marks_component_classification_committed "Extend applyCommittedProposal's decompose / interpretive-split arms to mark per-component classification facets committed (closes Case D status-value gap)" {
+      effort 0.5d
+      allocate team
+      depends !decomposition_logic, !interpretive_split_logic, backend.websocket_protocol.facet_status_server_decompose_component_facets
+      note -8<-
+        Source of debt: tasks/refinements/backend/facet_status_server_decompose_component_facets.md Status block (commit landing facet_status_server_decompose_component_facets) — the refinement's Case D acceptance criterion asserts `perFacetStatus: { classification: 'committed' }` post-commit of a decompose proposal, but production code (apps/server/src/projection/replay.ts's `applyCommittedProposal` decompose arm) only flips `parent.visible = false` and does NOT touch the component nodes' classification facets. Each component's `classificationFacet.committedProposalEventId` therefore stays `null` post-commit, and `deriveFacetStatus` returns `'proposed'` (rule 7) rather than `'committed'` (rule 5). The Case D test as-landed asserts multiplicity + sequence + facet-key shape (NOT the status value), pending this task.
+
+        Scope: extend `applyCommittedProposal`'s decompose arm (and the symmetric interpretive-split arm) at apps/server/src/projection/replay.ts to set `component.classificationFacet.committedProposalEventId = parentProposalEventId` (the decompose / interpretive-split proposal event's id) for each component / reading node when the proposal commits. Tighten the Case D Vitest assertion to expect `{ classification: 'committed' }` once the projection arm produces it. Re-verify the moderator-side `facetStatus.ts` mirror's decompose / interpretive-split arm produces the same status (the mirror reads committed-state similarly).
+
+        Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit landing facet_status_server_decompose_component_facets).
+      ->8-
+    }
     task set_edge_substance_endpoint_validation "Methodology validator for set-edge-substance connecting case — cross-field referential check on source/target/role" {
       effort 0.5d
       allocate team

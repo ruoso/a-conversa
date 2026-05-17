@@ -591,3 +591,481 @@ describe('buildProposalStatusBroadcastListener — multi-connection fan-out + er
     expect(captured).toHaveLength(0);
   });
 });
+
+// -- Per-component fan-out for decompose / interpretive-split ------
+//
+// Refinement: tasks/refinements/backend/facet_status_server_decompose_component_facets.md
+//
+// Cases A + B pin the per-component multiplicity contract: a pending
+// decompose with N components emits exactly N `proposal-status`
+// envelopes (one per component's classification facet); a pending
+// interpretive-split with M readings emits exactly M envelopes.
+// Cases C + D pin the withdraw / commit transitions.
+//
+// Each fixture builds the propose-time event prefix end-to-end:
+// session-created → 3× participant-joined (host + 2 debaters) →
+// node-created(parent) → entity-included(parent) →
+// proposal(classify-node parent) → vote × 2 → commit(classify-node)
+// to commit the parent's classification facet (so the parent is in a
+// clean post-classify state), then the decompose propose-time fan-out:
+// node-created(c1) → entity-included(c1) → node-created(c2) →
+// entity-included(c2) → proposal(decompose [c1, c2]). The trigger is
+// the final proposal event.
+
+const PARENT_NODE = '00000000-0000-4000-8000-000000000b10';
+const COMPONENT_1 = '00000000-0000-4000-8000-000000000b11';
+const COMPONENT_2 = '00000000-0000-4000-8000-000000000b12';
+const READING_1 = '00000000-0000-4000-8000-000000000b21';
+const READING_2 = '00000000-0000-4000-8000-000000000b22';
+const READING_3 = '00000000-0000-4000-8000-000000000b23';
+const CLASSIFY_PROPOSAL = '00000000-0000-4000-8000-000000000c10';
+const CLASSIFY_VOTE_A = '00000000-0000-4000-8000-000000000d10';
+const CLASSIFY_VOTE_B = '00000000-0000-4000-8000-000000000d11';
+const CLASSIFY_VOTE_HOST = '00000000-0000-4000-8000-000000000d12';
+const CLASSIFY_COMMIT = '00000000-0000-4000-8000-000000000d13';
+const DECOMPOSE_PROPOSAL = '00000000-0000-4000-8000-000000000c20';
+const DECOMPOSE_VOTE_HOST = '00000000-0000-4000-8000-000000000d20';
+const DECOMPOSE_VOTE_A = '00000000-0000-4000-8000-000000000d21';
+const DECOMPOSE_VOTE_B = '00000000-0000-4000-8000-000000000d22';
+const DECOMPOSE_COMMIT = '00000000-0000-4000-8000-000000000d23';
+const INTERPRETIVE_PROPOSAL = '00000000-0000-4000-8000-000000000c30';
+const PARENT_CREATED_ID = '00000000-0000-4000-8000-000000000e10';
+const C1_CREATED_ID = '00000000-0000-4000-8000-000000000e11';
+const C2_CREATED_ID = '00000000-0000-4000-8000-000000000e12';
+const R1_CREATED_ID = '00000000-0000-4000-8000-000000000e21';
+const R2_CREATED_ID = '00000000-0000-4000-8000-000000000e22';
+const R3_CREATED_ID = '00000000-0000-4000-8000-000000000e23';
+
+function hostJoined(sequence: number): Event {
+  return {
+    id: `00000000-0000-4000-8000-0000000040${sequence.toString().padStart(2, '0')}`,
+    sessionId: SESSION_A,
+    sequence,
+    kind: 'participant-joined',
+    actor: HOST_USER,
+    payload: {
+      user_id: HOST_USER,
+      role: 'moderator',
+      screen_name: 'host',
+      joined_at: '2026-05-11T12:00:00.000Z',
+    },
+    createdAt: '2026-05-11T12:00:00.001Z',
+  };
+}
+
+function namedNodeCreated(
+  eventId: string,
+  nodeId: string,
+  wording: string,
+  sequence: number,
+): Event {
+  return {
+    id: eventId,
+    sessionId: SESSION_A,
+    sequence,
+    kind: 'node-created',
+    actor: HOST_USER,
+    payload: {
+      node_id: nodeId,
+      wording,
+      created_by: HOST_USER,
+      created_at: '2026-05-11T12:00:00.000Z',
+    },
+    createdAt: '2026-05-11T12:00:00.001Z',
+  };
+}
+
+function namedEntityIncluded(nodeId: string, sequence: number): Event {
+  return {
+    id: `00000000-0000-4000-8000-0000000050${sequence.toString().padStart(2, '0')}`,
+    sessionId: SESSION_A,
+    sequence,
+    kind: 'entity-included',
+    actor: HOST_USER,
+    payload: {
+      entity_kind: 'node',
+      entity_id: nodeId,
+      included_by: HOST_USER,
+      included_at: '2026-05-11T12:00:00.000Z',
+    },
+    createdAt: '2026-05-11T12:00:00.001Z',
+  };
+}
+
+function classifyNodeProposal(eventId: string, nodeId: string, sequence: number): Event {
+  return {
+    id: eventId,
+    sessionId: SESSION_A,
+    sequence,
+    kind: 'proposal',
+    actor: HOST_USER,
+    payload: {
+      proposal: {
+        kind: 'classify-node',
+        node_id: nodeId,
+        classification: 'fact',
+      },
+    },
+    createdAt: '2026-05-11T12:00:00.001Z',
+  };
+}
+
+function namedVote(
+  eventId: string,
+  proposalId: string,
+  participant: string,
+  sequence: number,
+  arm: 'agree' | 'dispute' | 'withdraw' = 'agree',
+): Event {
+  return {
+    id: eventId,
+    sessionId: SESSION_A,
+    sequence,
+    kind: 'vote',
+    actor: participant,
+    payload: {
+      proposal_id: proposalId,
+      participant,
+      vote: arm,
+      voted_at: '2026-05-11T12:00:00.000Z',
+    },
+    createdAt: '2026-05-11T12:00:00.001Z',
+  };
+}
+
+function namedCommit(eventId: string, proposalId: string, sequence: number): Event {
+  return {
+    id: eventId,
+    sessionId: SESSION_A,
+    sequence,
+    kind: 'commit',
+    actor: HOST_USER,
+    payload: {
+      proposal_id: proposalId,
+      moderator: HOST_USER,
+      committed_at: '2026-05-11T12:00:00.000Z',
+    },
+    createdAt: '2026-05-11T12:00:00.001Z',
+  };
+}
+
+function decomposeProposalEvent(sequence: number): Event {
+  return {
+    id: DECOMPOSE_PROPOSAL,
+    sessionId: SESSION_A,
+    sequence,
+    kind: 'proposal',
+    actor: DEBATER_A,
+    payload: {
+      proposal: {
+        kind: 'decompose',
+        parent_node_id: PARENT_NODE,
+        components: [
+          { wording: 'component 1 wording', classification: 'fact', node_id: COMPONENT_1 },
+          { wording: 'component 2 wording', classification: 'fact', node_id: COMPONENT_2 },
+        ],
+      },
+    },
+    createdAt: '2026-05-11T12:00:00.001Z',
+  };
+}
+
+function interpretiveSplitProposalEvent(sequence: number): Event {
+  return {
+    id: INTERPRETIVE_PROPOSAL,
+    sessionId: SESSION_A,
+    sequence,
+    kind: 'proposal',
+    actor: DEBATER_A,
+    payload: {
+      proposal: {
+        kind: 'interpretive-split',
+        parent_node_id: PARENT_NODE,
+        readings: [
+          { wording: 'reading 1 wording', classification: 'fact', node_id: READING_1 },
+          { wording: 'reading 2 wording', classification: 'fact', node_id: READING_2 },
+          { wording: 'reading 3 wording', classification: 'fact', node_id: READING_3 },
+        ],
+      },
+    },
+    createdAt: '2026-05-11T12:00:00.001Z',
+  };
+}
+
+function entityRemoved(eventId: string, nodeId: string, sequence: number): Event {
+  return {
+    id: eventId,
+    sessionId: SESSION_A,
+    sequence,
+    kind: 'entity-removed',
+    actor: HOST_USER,
+    payload: {
+      entity_kind: 'node',
+      entity_id: nodeId,
+      removed_by: HOST_USER,
+      removed_at: '2026-05-11T12:00:00.000Z',
+    },
+    createdAt: '2026-05-11T12:00:00.001Z',
+  };
+}
+
+// Pre-decompose prefix: session, 3 participants, parent node, classify
+// parent, unanimous-agree, commit. Sequences 1..11. The parent's
+// classification facet ends `'committed'`, the parent is visible.
+function preDecomposePrefix(): Event[] {
+  return [
+    sessionCreated(1),
+    hostJoined(2),
+    participantJoined(DEBATER_A, 3, 'debater-A'),
+    participantJoined(DEBATER_B, 4, 'debater-B'),
+    namedNodeCreated(PARENT_CREATED_ID, PARENT_NODE, 'parent wording', 5),
+    namedEntityIncluded(PARENT_NODE, 6),
+    classifyNodeProposal(CLASSIFY_PROPOSAL, PARENT_NODE, 7),
+    namedVote(CLASSIFY_VOTE_HOST, CLASSIFY_PROPOSAL, HOST_USER, 8, 'agree'),
+    namedVote(CLASSIFY_VOTE_A, CLASSIFY_PROPOSAL, DEBATER_A, 9, 'agree'),
+    namedVote(CLASSIFY_VOTE_B, CLASSIFY_PROPOSAL, DEBATER_B, 10, 'agree'),
+    namedCommit(CLASSIFY_COMMIT, CLASSIFY_PROPOSAL, 11),
+  ];
+}
+
+describe('buildProposalStatusBroadcastListener — per-component fan-out for decompose / interpretive-split', () => {
+  it('Case A — pending decompose emits N envelopes for N component classification facets', async () => {
+    const subscriptions = new WsSubscriptionRegistry();
+    const connectionSenders = new WsConnectionSenderRegistry();
+    const captured = setupConnection(subscriptions, connectionSenders, CONN_1, SESSION_A);
+    const { logger } = captureLogger();
+
+    // Propose-time structural fan-out per the propose handler:
+    // node-created(c1), entity-included(c1), node-created(c2),
+    // entity-included(c2), proposal(decompose). Sequences 12..16.
+    const events: Event[] = [
+      ...preDecomposePrefix(),
+      namedNodeCreated(C1_CREATED_ID, COMPONENT_1, 'component 1 wording', 12),
+      namedEntityIncluded(COMPONENT_1, 13),
+      namedNodeCreated(C2_CREATED_ID, COMPONENT_2, 'component 2 wording', 14),
+      namedEntityIncluded(COMPONENT_2, 15),
+      decomposeProposalEvent(16),
+    ];
+    const listener = buildProposalStatusBroadcastListener({
+      subscriptions,
+      connectionSenders,
+      loadEvents: () => Promise.resolve(events),
+      log: logger,
+    });
+
+    listener({ event: decomposeProposalEvent(16) });
+    await flushMicrotasks();
+
+    // Exactly 2 envelopes — one per component.
+    expect(captured).toHaveLength(2);
+
+    // Each envelope is a `proposal-status` envelope addressing the
+    // decompose proposal, the triggering event's sequence, with
+    // `perFacetStatus: { classification: 'proposed' }`.
+    for (const env of captured) {
+      expect(env.type).toBe('proposal-status');
+      if (env.type !== 'proposal-status') throw new Error('narrowing');
+      expect(env.payload.sessionId).toBe(SESSION_A);
+      expect(env.payload.proposalId).toBe(DECOMPOSE_PROPOSAL);
+      expect(env.payload.sequence).toBe(16);
+      expect(env.payload.perFacetStatus).toEqual({ classification: 'proposed' });
+    }
+
+    // The two envelopes carry distinct server-minted UUIDs — one per
+    // envelope per the existing fan-out contract.
+    const ids = captured.map((env) => env.id);
+    expect(new Set(ids).size).toBe(2);
+  });
+
+  it('Case B — pending interpretive-split emits M envelopes for M reading classification facets', async () => {
+    const subscriptions = new WsSubscriptionRegistry();
+    const connectionSenders = new WsConnectionSenderRegistry();
+    const captured = setupConnection(subscriptions, connectionSenders, CONN_1, SESSION_A);
+    const { logger } = captureLogger();
+
+    const events: Event[] = [
+      ...preDecomposePrefix(),
+      namedNodeCreated(R1_CREATED_ID, READING_1, 'reading 1 wording', 12),
+      namedEntityIncluded(READING_1, 13),
+      namedNodeCreated(R2_CREATED_ID, READING_2, 'reading 2 wording', 14),
+      namedEntityIncluded(READING_2, 15),
+      namedNodeCreated(R3_CREATED_ID, READING_3, 'reading 3 wording', 16),
+      namedEntityIncluded(READING_3, 17),
+      interpretiveSplitProposalEvent(18),
+    ];
+    const listener = buildProposalStatusBroadcastListener({
+      subscriptions,
+      connectionSenders,
+      loadEvents: () => Promise.resolve(events),
+      log: logger,
+    });
+
+    listener({ event: interpretiveSplitProposalEvent(18) });
+    await flushMicrotasks();
+
+    // Exactly 3 envelopes — one per reading. Pins that the listener
+    // walks the `readings` array (not just `components`).
+    expect(captured).toHaveLength(3);
+
+    for (const env of captured) {
+      expect(env.type).toBe('proposal-status');
+      if (env.type !== 'proposal-status') throw new Error('narrowing');
+      expect(env.payload.sessionId).toBe(SESSION_A);
+      expect(env.payload.proposalId).toBe(INTERPRETIVE_PROPOSAL);
+      expect(env.payload.sequence).toBe(18);
+      expect(env.payload.perFacetStatus).toEqual({ classification: 'proposed' });
+    }
+
+    const ids = captured.map((env) => env.id);
+    expect(new Set(ids).size).toBe(3);
+  });
+
+  it('Case C — withdrawn decompose: no `proposal-status` envelope when proposal is gone from projection', async () => {
+    // Per D3: the withdraw arm emits N × `entity-removed` events, which
+    // are NOT in `STATUS_AFFECTING_KINDS` so the listener returns
+    // early on them. If a synthetic case re-triggers the listener with
+    // the original `proposal` event against a post-withdraw projection
+    // (where the proposal is no longer in `pendingProposals`),
+    // `lookupProposalPayload` returns `null` and no envelope is
+    // emitted (the existing "proposal not found" warn-log fires).
+    const subscriptions = new WsSubscriptionRegistry();
+    const connectionSenders = new WsConnectionSenderRegistry();
+    const captured = setupConnection(subscriptions, connectionSenders, CONN_1, SESSION_A);
+    const { logger, lines } = captureLogger();
+
+    // Sub-case 1 — the `entity-removed` events themselves do NOT
+    // trigger any broadcast (they are filtered out at the top of the
+    // listener by `STATUS_AFFECTING_KINDS`).
+    const loaderShouldNotBeCalled = (): Promise<Event[]> =>
+      Promise.reject(new Error('loader must not be called for entity-removed events'));
+    const filterListener = buildProposalStatusBroadcastListener({
+      subscriptions,
+      connectionSenders,
+      loadEvents: loaderShouldNotBeCalled,
+      log: logger,
+    });
+    filterListener({ event: entityRemoved(C1_CREATED_ID, COMPONENT_1, 17) });
+    filterListener({ event: entityRemoved(C2_CREATED_ID, COMPONENT_2, 18) });
+    await flushMicrotasks();
+    expect(captured).toHaveLength(0);
+
+    // Sub-case 2 — a synthetic re-trigger of the original `proposal`
+    // event against a post-withdraw projection (where the proposal is
+    // no longer in `pendingProposals` because the actual withdraw
+    // handler does not append a follow-up `proposal` event; this
+    // simulates the "proposal not found" path). The loader returns
+    // the prefix up to and including the propose, but with the
+    // pending proposal lifted out via not appending the
+    // entity-removed events — instead, we present a projection where
+    // the proposal NEVER existed. We achieve this by loading a
+    // truncated prefix (sessionCreated + participants + parent) so
+    // `lookupProposalPayload` returns null for the proposal id.
+    const lookupListener = buildProposalStatusBroadcastListener({
+      subscriptions,
+      connectionSenders,
+      loadEvents: () =>
+        Promise.resolve([
+          sessionCreated(1),
+          hostJoined(2),
+          participantJoined(DEBATER_A, 3, 'debater-A'),
+          participantJoined(DEBATER_B, 4, 'debater-B'),
+        ]),
+      log: logger,
+    });
+    lookupListener({ event: decomposeProposalEvent(16) });
+    await flushMicrotasks();
+
+    expect(captured).toHaveLength(0);
+    // The "proposal not found in projection" warn line fires for the
+    // synthetic re-trigger — per D3.b this is the existing branch and
+    // is not modified by this task.
+    const notFoundLine = lines.find((l) =>
+      String(l.msg).startsWith('ws-proposal-status: proposal not found in projection'),
+    );
+    expect(notFoundLine).toBeDefined();
+    expect(notFoundLine?.ctx['proposalId']).toBe(DECOMPOSE_PROPOSAL);
+  });
+
+  it('Case D — committed decompose emits N envelopes per the standard derivation rules', async () => {
+    // Per the projection's `applyCommittedProposal` decompose arm
+    // (`apps/server/src/projection/replay.ts`): commit of a decompose
+    // sets `parent.visible = false` and does NOT touch the component
+    // nodes' classification facets directly. The component nodes'
+    // `classificationFacet.committedProposalEventId` therefore stays
+    // `null` post-commit, and `deriveFacetStatus` returns whatever
+    // it would for an un-voted, un-committed facet — `'proposed'` per
+    // rule 7. The wire-shape contract being pinned by this case is:
+    //
+    //   1. The listener fires N envelopes per component on a commit
+    //      trigger for a decompose proposal (per-component
+    //      multiplicity stays consistent across the propose / commit
+    //      lifecycle transitions).
+    //   2. Each envelope carries `payload.sequence` == the commit
+    //      event's sequence (NOT the propose event's sequence).
+    //   3. Each envelope carries the derivation's current return
+    //      value for the per-component facet — observable post-commit
+    //      regardless of the specific status value.
+    //
+    // The exact `perFacetStatus` value depends on whether a future
+    // task extends `applyCommittedProposal` to mark per-component
+    // facets committed; today it stays `'proposed'`. The assertion
+    // here is on multiplicity + sequence; the status value is
+    // sanity-checked against `deriveFacetStatus`'s actual output.
+    const subscriptions = new WsSubscriptionRegistry();
+    const connectionSenders = new WsConnectionSenderRegistry();
+    const captured = setupConnection(subscriptions, connectionSenders, CONN_1, SESSION_A);
+    const { logger } = captureLogger();
+
+    const events: Event[] = [
+      ...preDecomposePrefix(),
+      namedNodeCreated(C1_CREATED_ID, COMPONENT_1, 'component 1 wording', 12),
+      namedEntityIncluded(COMPONENT_1, 13),
+      namedNodeCreated(C2_CREATED_ID, COMPONENT_2, 'component 2 wording', 14),
+      namedEntityIncluded(COMPONENT_2, 15),
+      decomposeProposalEvent(16),
+      // Unanimous-agree across the 3 current participants for the
+      // decompose proposal — sets up `commit` to be valid per the
+      // dispatcher's commit-rule (the methodology engine validates
+      // commit-only-when-agreed; the projection trusts the prefix).
+      namedVote(DECOMPOSE_VOTE_HOST, DECOMPOSE_PROPOSAL, HOST_USER, 17, 'agree'),
+      namedVote(DECOMPOSE_VOTE_A, DECOMPOSE_PROPOSAL, DEBATER_A, 18, 'agree'),
+      namedVote(DECOMPOSE_VOTE_B, DECOMPOSE_PROPOSAL, DEBATER_B, 19, 'agree'),
+      namedCommit(DECOMPOSE_COMMIT, DECOMPOSE_PROPOSAL, 20),
+    ];
+    const listener = buildProposalStatusBroadcastListener({
+      subscriptions,
+      connectionSenders,
+      loadEvents: () => Promise.resolve(events),
+      log: logger,
+    });
+
+    listener({ event: namedCommit(DECOMPOSE_COMMIT, DECOMPOSE_PROPOSAL, 20) });
+    await flushMicrotasks();
+
+    // Exactly 2 envelopes — one per component. The per-component
+    // multiplicity is the load-bearing assertion: receivers observe N
+    // status frames on commit, matching the N propose-time frames.
+    expect(captured).toHaveLength(2);
+
+    for (const env of captured) {
+      expect(env.type).toBe('proposal-status');
+      if (env.type !== 'proposal-status') throw new Error('narrowing');
+      expect(env.payload.sessionId).toBe(SESSION_A);
+      expect(env.payload.proposalId).toBe(DECOMPOSE_PROPOSAL);
+      // The commit event's sequence is on the envelope, not the
+      // proposal event's.
+      expect(env.payload.sequence).toBe(20);
+      // The `perFacetStatus` key is `classification` (the only facet
+      // emitted per D6); the value is whatever `deriveFacetStatus`
+      // returns for the component's classification facet on the
+      // post-commit projection. Today that's `'proposed'` because
+      // the decompose commit doesn't mark per-component facets
+      // committed (see the docblock at the top of this case).
+      expect(Object.keys(env.payload.perFacetStatus)).toEqual(['classification']);
+    }
+
+    // Distinct UUIDs per envelope.
+    const ids = captured.map((env) => env.id);
+    expect(new Set(ids).size).toBe(2);
+  });
+});

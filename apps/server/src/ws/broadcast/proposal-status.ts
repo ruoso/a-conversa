@@ -41,18 +41,32 @@
 // per-facet status and the listener returns early — no broadcast.
 //
 // **Facet-targeting vs. structural proposals.** Of the eleven proposal
-// sub-kinds in `events/proposals.ts`, only four target a per-facet
-// state:
+// sub-kinds in `events/proposals.ts`, six contribute facet targets:
 //
-//   - `classify-node`         → node.classification
-//   - `set-node-substance`    → node.substance
-//   - `set-edge-substance`    → edge.substance
-//   - `edit-wording`          → node.wording
+//   - `classify-node`         → node.classification (1 target)
+//   - `set-node-substance`    → node.substance      (1 target)
+//   - `set-edge-substance`    → edge.substance      (1 target)
+//   - `edit-wording`          → node.wording        (1 target)
+//   - `decompose`             → N × node.classification (one per component)
+//   - `interpretive-split`    → N × node.classification (one per reading)
 //
-// The remaining seven (axiom-mark / decompose / interpretive-split /
-// meta-move / break-edge / amend-node / annotate) are structural — they
-// have no facet target and `deriveFacetStatus` cannot answer for them.
-// The subscriber skips those: no broadcast.
+// The remaining five (axiom-mark / meta-move / break-edge / amend-node /
+// annotate) are structural — they have no facet target and
+// `deriveFacetStatus` cannot answer for them. The subscriber skips
+// those: no broadcast.
+//
+// **Per-component fan-out for decompose / interpretive-split.** Per the
+// refinement at `tasks/refinements/backend/facet_status_server_decompose_component_facets.md`
+// the listener emits one envelope per component (not one envelope with
+// N component facets). All N envelopes share the same `proposalId` +
+// `sequence` but carry distinct server-minted UUIDs; each envelope's
+// `perFacetStatus` is keyed by `FacetName` (the wire shape is
+// unchanged) and carries the per-component classification status the
+// projection derives. The moderator-side client mirror at
+// `apps/moderator/src/graph/facetStatus.ts` walks the same per-component
+// derivation locally; this server-side arm is the symmetric source for
+// the participant + audience surfaces that consume the broadcast
+// directly.
 //
 // **Source of truth for the status value.** `deriveFacetStatus(...)`
 // from `apps/server/src/projection/facet-status.ts`. The wire payload
@@ -181,30 +195,60 @@ interface FacetTarget {
 }
 
 /**
- * Map a proposal payload to its (entityKind, entityId, facet) target,
- * or `null` for the seven structural sub-kinds that target no facet.
- * Mirrors the private `facetTargetForProposal` in
- * `apps/server/src/projection/replay.ts` — the canonical version lives
- * there and is internal to the dispatcher; this re-statement is the
- * derived broadcast's projection of the same rule. Keeping both
- * narrow + structural avoids exporting an unstable private helper out
- * of `replay.ts`.
+ * Map a proposal payload to its per-target list of (entityKind,
+ * entityId, facet) facets. Returns:
+ *
+ *   - A 1-element array for the four single-target sub-kinds
+ *     (`classify-node`, `set-node-substance`, `set-edge-substance`,
+ *     `edit-wording`).
+ *   - An N-element array for the two multi-component sub-kinds
+ *     (`decompose` — one per component; `interpretive-split` — one per
+ *     reading). Each per-component target addresses the component's
+ *     classification facet; per D6 of the refinement, the wording +
+ *     substance facets are NOT emitted in v1 (the moderator-side mirror
+ *     at `apps/moderator/src/graph/facetStatus.ts:239-262` walks the
+ *     same classification-only scope, and this arm stays in lockstep).
+ *   - An empty array for the five structural sub-kinds (`axiom-mark`,
+ *     `meta-move`, `break-edge`, `amend-node`, `annotate`).
+ *
+ * Per the refinement's D7, the per-component iteration order mirrors
+ * the proposal's `components` / `readings` array order — the same
+ * convention the propose handler uses for the per-component
+ * `node-created` + `entity-included` fan-out.
+ *
+ * Mirrors the per-component arm at
+ * `apps/moderator/src/graph/facetStatus.ts:239-262`. The private
+ * `facetTargetForProposal` in `apps/server/src/projection/replay.ts`
+ * remains the canonical single-target helper for the dispatcher;
+ * keeping both narrow + structural avoids exporting an unstable
+ * private helper out of `replay.ts`.
  */
-function facetTargetForProposal(payload: ProposalPayload): FacetTarget | null {
+function facetTargetsForProposal(payload: ProposalPayload): readonly FacetTarget[] {
   switch (payload.kind) {
     case 'classify-node':
-      return { entityKind: 'node', entityId: payload.node_id, facet: 'classification' };
+      return [{ entityKind: 'node', entityId: payload.node_id, facet: 'classification' }];
     case 'set-node-substance':
-      return { entityKind: 'node', entityId: payload.node_id, facet: 'substance' };
+      return [{ entityKind: 'node', entityId: payload.node_id, facet: 'substance' }];
     case 'set-edge-substance':
-      return { entityKind: 'edge', entityId: payload.edge_id, facet: 'substance' };
+      return [{ entityKind: 'edge', entityId: payload.edge_id, facet: 'substance' }];
     case 'edit-wording':
-      return { entityKind: 'node', entityId: payload.node_id, facet: 'wording' };
+      return [{ entityKind: 'node', entityId: payload.node_id, facet: 'wording' }];
+    case 'decompose':
+      return payload.components.map((component) => ({
+        entityKind: 'node' as const,
+        entityId: component.node_id,
+        facet: 'classification' as const,
+      }));
+    case 'interpretive-split':
+      return payload.readings.map((reading) => ({
+        entityKind: 'node' as const,
+        entityId: reading.node_id,
+        facet: 'classification' as const,
+      }));
     default:
-      // axiom-mark, decompose, interpretive-split, meta-move,
-      // break-edge, amend-node, annotate — structural sub-kinds with
-      // no facet target.
-      return null;
+      // axiom-mark, meta-move, break-edge, amend-node, annotate —
+      // structural sub-kinds with no facet target.
+      return [];
   }
 }
 
@@ -337,71 +381,88 @@ async function deriveAndFanOut(
     return;
   }
 
-  const target = facetTargetForProposal(payload);
-  if (target === null) {
-    // Structural sub-kind — no facet, no broadcast. Not an error;
+  const targets = facetTargetsForProposal(payload);
+  if (targets.length === 0) {
+    // Structural sub-kind — no facets, no broadcast. Not an error;
     // the methodology has no `FacetStatus` to surface for axiom-mark
-    // / decompose / etc., so the wire frame would be empty.
+    // / meta-move / break-edge / amend-node / annotate, so no wire
+    // frame is emitted.
     return;
   }
 
-  let status: FacetStatus;
-  try {
-    status = deriveFacetStatus(projection, target.entityKind, target.entityId, target.facet);
-  } catch (err) {
-    opts.log.warn(
-      {
-        err,
-        sessionId,
-        proposalId,
-        eventKind: event.kind,
-        eventSequence: event.sequence,
-        target,
-      },
-      'ws-proposal-status: deriveFacetStatus threw — skipping derived broadcast',
-    );
-    return;
-  }
-
-  // Build the envelope ONCE per fan-out (same convention as
-  // `event-applied.ts`). The server-minted UUID `id` correlates the
-  // fan-out across logs.
-  const envelope: WsEnvelope<'proposal-status'> = {
-    type: 'proposal-status',
-    id: randomUUID(),
-    payload: {
-      sessionId,
-      proposalId,
-      sequence: event.sequence,
-      perFacetStatus: { [target.facet]: status },
-    },
-  };
-
-  for (const connectionId of connectionIds) {
-    const sender = opts.connectionSenders.get(connectionId);
-    if (sender === undefined) {
-      // Close-race window — connection unregistered between the
-      // initial snapshot and this iteration. Skip, same as
-      // `event-applied.ts`.
-      continue;
-    }
+  // Per target: derive status and fan out one envelope. Per the
+  // refinement's D2, each envelope shares the same `proposalId` +
+  // `sequence` but carries a distinct server-minted UUID `id`. Per
+  // D7, iteration order mirrors the proposal's `components` /
+  // `readings` array order — matching the propose handler's
+  // structural-event fan-out order so receivers observe a consistent
+  // per-component ordering between the `event-applied` and
+  // `proposal-status` streams.
+  for (const target of targets) {
+    let status: FacetStatus;
     try {
-      sender(envelope);
+      status = deriveFacetStatus(projection, target.entityKind, target.entityId, target.facet);
     } catch (err) {
-      // Per-connection error isolation — one bad socket does not
-      // break the fan-out.
       opts.log.warn(
         {
           err,
-          connectionId,
           sessionId,
           proposalId,
-          messageId: envelope.id,
           eventKind: event.kind,
           eventSequence: event.sequence,
+          target,
         },
-        'ws-proposal-status-send-failed — skipping connection (one bad socket does not break fan-out)',
+        'ws-proposal-status: deriveFacetStatus threw — skipping derived broadcast for target',
       );
+      // Per-target error isolation: one failed derivation does not
+      // abort the rest of the fan-out. Mirror of the per-connection
+      // error-isolation contract.
+      continue;
+    }
+
+    // Build the envelope ONCE per target per fan-out (server-minted
+    // UUID per envelope per the existing fan-out contract; receivers
+    // de-duplicate by `id` if a reconnect replays). The same envelope
+    // reference is shared across all subscribed connections for this
+    // target.
+    const envelope: WsEnvelope<'proposal-status'> = {
+      type: 'proposal-status',
+      id: randomUUID(),
+      payload: {
+        sessionId,
+        proposalId,
+        sequence: event.sequence,
+        perFacetStatus: { [target.facet]: status },
+      },
+    };
+
+    for (const connectionId of connectionIds) {
+      const sender = opts.connectionSenders.get(connectionId);
+      if (sender === undefined) {
+        // Close-race window — connection unregistered between the
+        // initial snapshot and this iteration. Skip, same as
+        // `event-applied.ts`.
+        continue;
+      }
+      try {
+        sender(envelope);
+      } catch (err) {
+        // Per-connection error isolation — one bad socket does not
+        // break the fan-out (and a send-failure on target i does not
+        // abort the dispatch for target i+1).
+        opts.log.warn(
+          {
+            err,
+            connectionId,
+            sessionId,
+            proposalId,
+            messageId: envelope.id,
+            eventKind: event.kind,
+            eventSequence: event.sequence,
+          },
+          'ws-proposal-status-send-failed — skipping connection (one bad socket does not break fan-out)',
+        );
+      }
     }
   }
 }
