@@ -12,6 +12,13 @@
 //              `axiomMarkIndex`; existing cases pass the empty index
 //              via the `emptyAxiomIndex()` factory; 5 new cases added
 //              covering the `isAxiom` stamping behaviour.)
+// Refinement: tasks/refinements/participant-ui/part_annotation_render.md
+//              (Constraints — signature widens AGAIN to take
+//              `nodeAnnotationIndex` + `edgeAnnotationIndex`; existing
+//              cases pass empty indexes via `emptyAnnotationIndex()`;
+//              6 new cases added covering the per-target
+//              `hasAnnotation` + `annotationCount` stamping on BOTH
+//              nodes AND edges per Decision §1's structural symmetry.)
 // ADRs:        0022 (no throwaway verifications — the projection's
 //              behaviour is fully pinned at this pure layer; the
 //              `<GraphView>` mount tests then assert the Cytoscape
@@ -25,6 +32,7 @@ import { describe, expect, it } from 'vitest';
 import type { EdgeRole, Event, StatementKind } from '@a-conversa/shared-types';
 
 import { projectGraph } from './projectGraph';
+import type { Annotation } from './annotations';
 import type { AxiomMark } from './axiomMarks';
 import type { FacetName, FacetStatus, FacetStatusIndex } from './facetStatus';
 
@@ -70,6 +78,48 @@ function axiomIndexFromIds(nodeIds: readonly string[]): ReadonlyMap<string, read
         committedAt: '2026-05-17T00:00:00.000Z',
       },
     ]);
+  }
+  return out;
+}
+
+/**
+ * Empty annotation index — the baseline argument for tests that don't
+ * care about annotation stamping. Built fresh per call so the Map is
+ * never shared across tests.
+ */
+function emptyAnnotationIndex(): ReadonlyMap<string, readonly Annotation[]> {
+  return new Map<string, readonly Annotation[]>();
+}
+
+/**
+ * Build an annotation index from a literal `{ id: count }` record. The
+ * projector consumes `annotationCountFor(grouped, id)` so the per-id
+ * length matters; the synthetic `Annotation` body details are
+ * irrelevant to the stamping (only `targetNodeId` / `targetEdgeId`
+ * routing matters at the bucketer layer, which has already run before
+ * this index reaches the projector).
+ */
+function annotationIndexFromCounts(
+  counts: Record<string, number>,
+): ReadonlyMap<string, readonly Annotation[]> {
+  const out = new Map<string, readonly Annotation[]>();
+  for (const [id, count] of Object.entries(counts)) {
+    const list: Annotation[] = [];
+    for (let i = 0; i < count; i += 1) {
+      list.push({
+        id: `anno-${id}-${i}`,
+        kind: 'note',
+        content: 'body',
+        // The bucketer's already routed the annotation to either index;
+        // the projector only reads count/presence here. The XOR fields
+        // are arbitrary synthetics.
+        targetNodeId: id,
+        targetEdgeId: null,
+        createdBy: '00000000-0000-4000-8000-0000000000ff',
+        createdAt: '2026-05-17T00:00:00.000Z',
+      });
+    }
+    out.set(id, list);
   }
   return out;
 }
@@ -194,14 +244,28 @@ function makeParticipantJoined(opts: { sequence: number; userId: string }): Even
 
 describe('projectGraph — pure projection from events to Cytoscape elements', () => {
   it('(a) returns empty arrays for an empty event log', () => {
-    expect(projectGraph([], emptyIndex(), emptyAxiomIndex())).toEqual({ nodes: [], edges: [] });
+    expect(
+      projectGraph(
+        [],
+        emptyIndex(),
+        emptyAxiomIndex(),
+        emptyAnnotationIndex(),
+        emptyAnnotationIndex(),
+      ),
+    ).toEqual({ nodes: [], edges: [] });
   });
 
   it('(b) emits one node descriptor per node-created event with kind: null and rollup "none" when index is empty', () => {
     const events: Event[] = [
       makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'UBI lifts welfare floor' }),
     ];
-    const { nodes, edges } = projectGraph(events, emptyIndex(), emptyAxiomIndex());
+    const { nodes, edges } = projectGraph(
+      events,
+      emptyIndex(),
+      emptyAxiomIndex(),
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+    );
     expect(edges).toEqual([]);
     expect(nodes).toHaveLength(1);
     expect(nodes[0]).toMatchObject({
@@ -228,7 +292,13 @@ describe('projectGraph — pure projection from events to Cytoscape elements', (
         role: 'rebuts',
       }),
     ];
-    const { edges } = projectGraph(events, emptyIndex(), emptyAxiomIndex());
+    const { edges } = projectGraph(
+      events,
+      emptyIndex(),
+      emptyAxiomIndex(),
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+    );
     expect(edges).toHaveLength(1);
     expect(edges[0]).toMatchObject({
       group: 'edges',
@@ -257,7 +327,13 @@ describe('projectGraph — pure projection from events to Cytoscape elements', (
       }),
       makeNodeCreated({ sequence: 4, nodeId: NODE_B, wording: 'B' }),
     ];
-    const { nodes, edges } = projectGraph(events, emptyIndex(), emptyAxiomIndex());
+    const { nodes, edges } = projectGraph(
+      events,
+      emptyIndex(),
+      emptyAxiomIndex(),
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+    );
     expect(nodes.map((n) => n.data.id)).toEqual([NODE_A, NODE_B]);
     expect(edges.map((e) => e.data.id)).toEqual([EDGE_A, EDGE_B]);
   });
@@ -272,7 +348,13 @@ describe('projectGraph — pure projection from events to Cytoscape elements', (
         classification: 'fact',
       }),
     ];
-    const { nodes } = projectGraph(events, emptyIndex(), emptyAxiomIndex());
+    const { nodes } = projectGraph(
+      events,
+      emptyIndex(),
+      emptyAxiomIndex(),
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+    );
     expect(nodes).toHaveLength(1);
     expect(nodes[0]?.data.kind).toBeNull();
   });
@@ -288,7 +370,13 @@ describe('projectGraph — pure projection from events to Cytoscape elements', (
       }),
       makeCommit({ sequence: 3, proposalEnvelopeId: PROPOSAL_A }),
     ];
-    const { nodes } = projectGraph(events, emptyIndex(), emptyAxiomIndex());
+    const { nodes } = projectGraph(
+      events,
+      emptyIndex(),
+      emptyAxiomIndex(),
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+    );
     expect(nodes).toHaveLength(1);
     expect(nodes[0]?.data.kind).toBe('normative');
   });
@@ -298,7 +386,13 @@ describe('projectGraph — pure projection from events to Cytoscape elements', (
       makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
       makeCommit({ sequence: 2, proposalEnvelopeId: PROPOSAL_A }),
     ];
-    const { nodes } = projectGraph(events, emptyIndex(), emptyAxiomIndex());
+    const { nodes } = projectGraph(
+      events,
+      emptyIndex(),
+      emptyAxiomIndex(),
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+    );
     expect(nodes).toHaveLength(1);
     expect(nodes[0]?.data.kind).toBeNull();
   });
@@ -317,7 +411,13 @@ describe('projectGraph — pure projection from events to Cytoscape elements', (
         }),
         makeCommit({ sequence: 3, proposalEnvelopeId: proposalId }),
       ];
-      const { nodes } = projectGraph(events, emptyIndex(), emptyAxiomIndex());
+      const { nodes } = projectGraph(
+        events,
+        emptyIndex(),
+        emptyAxiomIndex(),
+        emptyAnnotationIndex(),
+        emptyAnnotationIndex(),
+      );
       expect(nodes).toHaveLength(1);
       expect(nodes[0]?.data.kind).toBe(kind);
     }
@@ -346,7 +446,13 @@ describe('projectGraph — pure projection from events to Cytoscape elements', (
           role,
         }),
       ];
-      const { edges } = projectGraph(events, emptyIndex(), emptyAxiomIndex());
+      const { edges } = projectGraph(
+        events,
+        emptyIndex(),
+        emptyAxiomIndex(),
+        emptyAnnotationIndex(),
+        emptyAnnotationIndex(),
+      );
       expect(edges).toHaveLength(1);
       expect(edges[0]?.data.role).toBe(role);
     });
@@ -366,7 +472,13 @@ describe('projectGraph — pure projection from events to Cytoscape elements', (
       makeParticipantJoined({ sequence: 3, userId: ACTOR }),
       makeCommit({ sequence: 4, proposalEnvelopeId: PROPOSAL_A }),
     ];
-    const { nodes } = projectGraph(events, emptyIndex(), emptyAxiomIndex());
+    const { nodes } = projectGraph(
+      events,
+      emptyIndex(),
+      emptyAxiomIndex(),
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+    );
     expect(nodes).toHaveLength(1);
     expect(nodes[0]?.data.kind).toBe('value');
   });
@@ -378,7 +490,13 @@ describe('projectGraph — per-facet status stamping (part_per_facet_state_styli
     const index = indexFromLiterals({
       nodes: { [NODE_A]: { classification: 'proposed' } },
     });
-    const { nodes } = projectGraph(events, index, emptyAxiomIndex());
+    const { nodes } = projectGraph(
+      events,
+      index,
+      emptyAxiomIndex(),
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+    );
     expect(nodes[0]?.data.facetStatuses).toEqual({ classification: 'proposed' });
   });
 
@@ -387,7 +505,13 @@ describe('projectGraph — per-facet status stamping (part_per_facet_state_styli
     const index = indexFromLiterals({
       nodes: { [NODE_A]: { substance: 'agreed' } },
     });
-    const { nodes } = projectGraph(events, index, emptyAxiomIndex());
+    const { nodes } = projectGraph(
+      events,
+      index,
+      emptyAxiomIndex(),
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+    );
     expect(nodes[0]?.data.facetStatuses).toEqual({ substance: 'agreed' });
   });
 
@@ -396,7 +520,13 @@ describe('projectGraph — per-facet status stamping (part_per_facet_state_styli
     const index = indexFromLiterals({
       nodes: { [NODE_A]: { wording: 'disputed' } },
     });
-    const { nodes } = projectGraph(events, index, emptyAxiomIndex());
+    const { nodes } = projectGraph(
+      events,
+      index,
+      emptyAxiomIndex(),
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+    );
     expect(nodes[0]?.data.facetStatuses).toEqual({ wording: 'disputed' });
   });
 
@@ -409,7 +539,13 @@ describe('projectGraph — per-facet status stamping (part_per_facet_state_styli
     const index = indexFromLiterals({
       edges: { [EDGE_A]: { substance: 'proposed' } },
     });
-    const { edges } = projectGraph(events, index, emptyAxiomIndex());
+    const { edges } = projectGraph(
+      events,
+      index,
+      emptyAxiomIndex(),
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+    );
     expect(edges[0]?.data.facetStatuses).toEqual({ substance: 'proposed' });
     expect(edges[0]?.data.rollupStatus).toBe('proposed');
   });
@@ -419,7 +555,13 @@ describe('projectGraph — per-facet status stamping (part_per_facet_state_styli
     const index = indexFromLiterals({
       nodes: { [NODE_A]: { classification: 'proposed', substance: 'agreed' } },
     });
-    const { nodes } = projectGraph(events, index, emptyAxiomIndex());
+    const { nodes } = projectGraph(
+      events,
+      index,
+      emptyAxiomIndex(),
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+    );
     expect(nodes[0]?.data.rollupStatus).toBe('proposed');
   });
 
@@ -428,18 +570,36 @@ describe('projectGraph — per-facet status stamping (part_per_facet_state_styli
     const index = indexFromLiterals({
       nodes: { [NODE_A]: { classification: 'agreed', substance: 'agreed' } },
     });
-    const { nodes } = projectGraph(events, index, emptyAxiomIndex());
+    const { nodes } = projectGraph(
+      events,
+      index,
+      emptyAxiomIndex(),
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+    );
     expect(nodes[0]?.data.rollupStatus).toBe('agreed');
   });
 
   it('(q) rollupStatus reads "none" (sentinel string) when the per-entity record is empty / absent', () => {
     const events: Event[] = [makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' })];
     // The index has no entry at all for NODE_A.
-    const { nodes } = projectGraph(events, emptyIndex(), emptyAxiomIndex());
+    const { nodes } = projectGraph(
+      events,
+      emptyIndex(),
+      emptyAxiomIndex(),
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+    );
     expect(nodes[0]?.data.rollupStatus).toBe('none');
     // Also when the entry is present but the record is empty.
     const indexEmptyRecord = indexFromLiterals({ nodes: { [NODE_A]: {} } });
-    const { nodes: nodes2 } = projectGraph(events, indexEmptyRecord, emptyAxiomIndex());
+    const { nodes: nodes2 } = projectGraph(
+      events,
+      indexEmptyRecord,
+      emptyAxiomIndex(),
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+    );
     expect(nodes2[0]?.data.rollupStatus).toBe('none');
   });
 
@@ -448,7 +608,13 @@ describe('projectGraph — per-facet status stamping (part_per_facet_state_styli
     const index = indexFromLiterals({
       nodes: { [NODE_A]: { classification: 'proposed', substance: 'agreed' } },
     });
-    const { nodes } = projectGraph(events, index, emptyAxiomIndex());
+    const { nodes } = projectGraph(
+      events,
+      index,
+      emptyAxiomIndex(),
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+    );
     expect(nodes[0]?.data.rollupStatus).toBe('proposed');
     expect(nodes[0]?.data.facetStatuses).toEqual({
       classification: 'proposed',
@@ -463,7 +629,13 @@ describe('projectGraph — axiom-mark stamping (part_axiom_mark_decoration)', ()
       makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
       makeNodeCreated({ sequence: 2, nodeId: NODE_B, wording: 'B' }),
     ];
-    const { nodes } = projectGraph(events, emptyIndex(), emptyAxiomIndex());
+    const { nodes } = projectGraph(
+      events,
+      emptyIndex(),
+      emptyAxiomIndex(),
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+    );
     expect(nodes).toHaveLength(2);
     expect(nodes[0]?.data.isAxiom).toBe(false);
     expect(nodes[1]?.data.isAxiom).toBe(false);
@@ -472,7 +644,13 @@ describe('projectGraph — axiom-mark stamping (part_axiom_mark_decoration)', ()
   it('(t) stamps isAxiom: true on a node the axiom index targets', () => {
     const events: Event[] = [makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' })];
     const axiomIndex = axiomIndexFromIds([NODE_A]);
-    const { nodes } = projectGraph(events, emptyIndex(), axiomIndex);
+    const { nodes } = projectGraph(
+      events,
+      emptyIndex(),
+      axiomIndex,
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+    );
     expect(nodes).toHaveLength(1);
     expect(nodes[0]?.data.isAxiom).toBe(true);
   });
@@ -483,7 +661,13 @@ describe('projectGraph — axiom-mark stamping (part_axiom_mark_decoration)', ()
       makeNodeCreated({ sequence: 2, nodeId: NODE_B, wording: 'B' }),
     ];
     const axiomIndex = axiomIndexFromIds([NODE_A]);
-    const { nodes } = projectGraph(events, emptyIndex(), axiomIndex);
+    const { nodes } = projectGraph(
+      events,
+      emptyIndex(),
+      axiomIndex,
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+    );
     expect(nodes).toHaveLength(2);
     const byId = new Map(nodes.map((n) => [n.data.id, n.data.isAxiom]));
     expect(byId.get(NODE_A)).toBe(true);
@@ -502,7 +686,13 @@ describe('projectGraph — axiom-mark stamping (part_axiom_mark_decoration)', ()
       makeCommit({ sequence: 3, proposalEnvelopeId: PROPOSAL_A }),
     ];
     const axiomIndex = axiomIndexFromIds([NODE_A]);
-    const { nodes } = projectGraph(events, emptyIndex(), axiomIndex);
+    const { nodes } = projectGraph(
+      events,
+      emptyIndex(),
+      axiomIndex,
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+    );
     expect(nodes).toHaveLength(1);
     // Both the classification AND the axiom-mark survive.
     expect(nodes[0]?.data.kind).toBe('fact');
@@ -524,8 +714,143 @@ describe('projectGraph — axiom-mark stamping (part_axiom_mark_decoration)', ()
     // carry the boolean — wire schema is node-only per
     // `axiomMarkProposalSchema`.
     const axiomIndex = axiomIndexFromIds([NODE_A, NODE_B]);
-    const { edges } = projectGraph(events, emptyIndex(), axiomIndex);
+    const { edges } = projectGraph(
+      events,
+      emptyIndex(),
+      axiomIndex,
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+    );
     expect(edges).toHaveLength(1);
     expect((edges[0]?.data as unknown as Record<string, unknown>).isAxiom).toBeUndefined();
+  });
+});
+
+describe('projectGraph — annotation stamping (part_annotation_render)', () => {
+  it('(aa) stamps hasAnnotation: false + annotationCount: 0 on every node by default (empty annotation indexes)', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeNodeCreated({ sequence: 2, nodeId: NODE_B, wording: 'B' }),
+    ];
+    const { nodes } = projectGraph(
+      events,
+      emptyIndex(),
+      emptyAxiomIndex(),
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+    );
+    expect(nodes).toHaveLength(2);
+    expect(nodes[0]?.data.hasAnnotation).toBe(false);
+    expect(nodes[0]?.data.annotationCount).toBe(0);
+    expect(nodes[1]?.data.hasAnnotation).toBe(false);
+    expect(nodes[1]?.data.annotationCount).toBe(0);
+  });
+
+  it('(bb) stamps hasAnnotation: true + annotationCount: 1 on a node the annotation index targets with one entry', () => {
+    const events: Event[] = [makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' })];
+    const nodeAnnotationIndex = annotationIndexFromCounts({ [NODE_A]: 1 });
+    const { nodes } = projectGraph(
+      events,
+      emptyIndex(),
+      emptyAxiomIndex(),
+      nodeAnnotationIndex,
+      emptyAnnotationIndex(),
+    );
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0]?.data.hasAnnotation).toBe(true);
+    expect(nodes[0]?.data.annotationCount).toBe(1);
+  });
+
+  it('(cc) stamps annotationCount: 3 on a node with three annotations targeting it', () => {
+    const events: Event[] = [makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' })];
+    const nodeAnnotationIndex = annotationIndexFromCounts({ [NODE_A]: 3 });
+    const { nodes } = projectGraph(
+      events,
+      emptyIndex(),
+      emptyAxiomIndex(),
+      nodeAnnotationIndex,
+      emptyAnnotationIndex(),
+    );
+    expect(nodes[0]?.data.hasAnnotation).toBe(true);
+    expect(nodes[0]?.data.annotationCount).toBe(3);
+  });
+
+  it('(dd) stamps hasAnnotation + annotationCount on edges symmetrically with nodes', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeNodeCreated({ sequence: 2, nodeId: NODE_B, wording: 'B' }),
+      makeEdgeCreated({
+        sequence: 3,
+        edgeId: EDGE_A,
+        source: NODE_A,
+        target: NODE_B,
+      }),
+    ];
+    const edgeAnnotationIndex = annotationIndexFromCounts({ [EDGE_A]: 2 });
+    const { edges } = projectGraph(
+      events,
+      emptyIndex(),
+      emptyAxiomIndex(),
+      emptyAnnotationIndex(),
+      edgeAnnotationIndex,
+    );
+    expect(edges).toHaveLength(1);
+    expect(edges[0]?.data.hasAnnotation).toBe(true);
+    expect(edges[0]?.data.annotationCount).toBe(2);
+  });
+
+  it('(ee) hasAnnotation + annotationCount survive a classify-node commit (spread in the commit branch preserves the fields)', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeClassifyProposal({
+        sequence: 2,
+        envelopeId: PROPOSAL_A,
+        nodeId: NODE_A,
+        classification: 'fact',
+      }),
+      makeCommit({ sequence: 3, proposalEnvelopeId: PROPOSAL_A }),
+    ];
+    const nodeAnnotationIndex = annotationIndexFromCounts({ [NODE_A]: 2 });
+    const { nodes } = projectGraph(
+      events,
+      emptyIndex(),
+      emptyAxiomIndex(),
+      nodeAnnotationIndex,
+      emptyAnnotationIndex(),
+    );
+    expect(nodes).toHaveLength(1);
+    // Both the classification AND the annotation pair survive.
+    expect(nodes[0]?.data.kind).toBe('fact');
+    expect(nodes[0]?.data.hasAnnotation).toBe(true);
+    expect(nodes[0]?.data.annotationCount).toBe(2);
+  });
+
+  it('(ff) sibling nodes / edges not targeted by any annotation get hasAnnotation: false + annotationCount: 0', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeNodeCreated({ sequence: 2, nodeId: NODE_B, wording: 'B' }),
+      makeEdgeCreated({
+        sequence: 3,
+        edgeId: EDGE_A,
+        source: NODE_A,
+        target: NODE_B,
+      }),
+    ];
+    // Index targets NODE_A only; NODE_B + EDGE_A are untargeted.
+    const nodeAnnotationIndex = annotationIndexFromCounts({ [NODE_A]: 1 });
+    const { nodes, edges } = projectGraph(
+      events,
+      emptyIndex(),
+      emptyAxiomIndex(),
+      nodeAnnotationIndex,
+      emptyAnnotationIndex(),
+    );
+    const byId = new Map(nodes.map((n) => [n.data.id, n.data]));
+    expect(byId.get(NODE_A)?.hasAnnotation).toBe(true);
+    expect(byId.get(NODE_A)?.annotationCount).toBe(1);
+    expect(byId.get(NODE_B)?.hasAnnotation).toBe(false);
+    expect(byId.get(NODE_B)?.annotationCount).toBe(0);
+    expect(edges[0]?.data.hasAnnotation).toBe(false);
+    expect(edges[0]?.data.annotationCount).toBe(0);
   });
 });

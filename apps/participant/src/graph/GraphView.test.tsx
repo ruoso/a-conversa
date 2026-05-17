@@ -21,7 +21,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, render } from '@testing-library/react';
 import type { Core } from 'cytoscape';
-import type { EdgeRole, Event, StatementKind } from '@a-conversa/shared-types';
+import type { AnnotationKind, EdgeRole, Event, StatementKind } from '@a-conversa/shared-types';
 
 import { I18nProvider, createI18nInstance, type I18nInstance } from '@a-conversa/shell';
 
@@ -673,5 +673,203 @@ describe('GraphView — axiom-mark overlay', () => {
     expect(axiomEntry).toBeDefined();
     expect(axiomEntry?.style['border-style']).toBe('double');
     expect(axiomEntry?.style['border-width']).toBe(3);
+  });
+});
+
+// -------------------------------------------------------------------
+// Annotation overlay — added by
+// `participant_ui.part_graph_view.part_annotation_render`.
+// Refinement: tasks/refinements/participant-ui/part_annotation_render.md
+//
+// Six new cases pinning the per-target `data-has-annotation` +
+// `data-annotation-count` mirror attributes (Decision §5) on BOTH node
+// AND edge rows (Decision §1 — structural symmetry), the corresponding
+// `data.hasAnnotation` / `data.annotationCount` fields on the Cytoscape
+// element set, and the new `node[?hasAnnotation]` / `edge[?hasAnnotation]`
+// stylesheet selectors.
+// -------------------------------------------------------------------
+
+function annotationCreatedEvent(opts: {
+  sequence: number;
+  annotationId: string;
+  kind: AnnotationKind;
+  targetNodeId: string | null;
+  targetEdgeId: string | null;
+}): Event {
+  return {
+    id: `00000000-0000-4000-8000-${(0x500 + opts.sequence).toString(16).padStart(12, '0')}`,
+    sessionId: SESSION_ID,
+    sequence: opts.sequence,
+    kind: 'annotation-created',
+    actor: ACTOR,
+    payload: {
+      annotation_id: opts.annotationId,
+      kind: opts.kind,
+      content: 'annotation body',
+      target_node_id: opts.targetNodeId,
+      target_edge_id: opts.targetEdgeId,
+      created_by: ACTOR,
+      created_at: '2026-05-17T00:00:00.000Z',
+    },
+    createdAt: '2026-05-17T00:00:00.000Z',
+  };
+}
+
+const ANNO_NODE_1 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa101';
+const ANNO_NODE_2 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa102';
+const ANNO_NODE_3 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa103';
+const ANNO_EDGE_1 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa201';
+
+describe('GraphView — annotation overlay', () => {
+  it('(aa) the node mirror carries data-has-annotation="false" + data-annotation-count="0" by default', () => {
+    renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    const item = document.querySelector(
+      `[data-testid="participant-node-status"][data-node-id="${NODE_A}"]`,
+    );
+    expect(item).not.toBeNull();
+    expect(item?.getAttribute('data-has-annotation')).toBe('false');
+    expect(item?.getAttribute('data-annotation-count')).toBe('0');
+  });
+
+  it('(bb) when one annotation targets the node, the mirror reports data-has-annotation="true" + data-annotation-count="1"', () => {
+    renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(
+      annotationCreatedEvent({
+        sequence: 2,
+        annotationId: ANNO_NODE_1,
+        kind: 'note',
+        targetNodeId: NODE_A,
+        targetEdgeId: null,
+      }),
+    );
+    const item = document.querySelector(
+      `[data-testid="participant-node-status"][data-node-id="${NODE_A}"]`,
+    );
+    expect(item?.getAttribute('data-has-annotation')).toBe('true');
+    expect(item?.getAttribute('data-annotation-count')).toBe('1');
+  });
+
+  it('(cc) when three annotations target the node, the mirror reports data-annotation-count="3"', () => {
+    renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(
+      annotationCreatedEvent({
+        sequence: 2,
+        annotationId: ANNO_NODE_1,
+        kind: 'note',
+        targetNodeId: NODE_A,
+        targetEdgeId: null,
+      }),
+    );
+    seedEvent(
+      annotationCreatedEvent({
+        sequence: 3,
+        annotationId: ANNO_NODE_2,
+        kind: 'reframe',
+        targetNodeId: NODE_A,
+        targetEdgeId: null,
+      }),
+    );
+    seedEvent(
+      annotationCreatedEvent({
+        sequence: 4,
+        annotationId: ANNO_NODE_3,
+        kind: 'stance',
+        targetNodeId: NODE_A,
+        targetEdgeId: null,
+      }),
+    );
+    const item = document.querySelector(
+      `[data-testid="participant-node-status"][data-node-id="${NODE_A}"]`,
+    );
+    expect(item?.getAttribute('data-has-annotation')).toBe('true');
+    expect(item?.getAttribute('data-annotation-count')).toBe('3');
+  });
+
+  it('(dd) the per-edge mirror carries data-has-annotation + data-annotation-count for edge-targeted annotations', () => {
+    renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(nodeCreatedEvent({ sequence: 2, nodeId: NODE_B, wording: 'B' }));
+    seedEvent(
+      edgeCreatedEvent({
+        sequence: 3,
+        edgeId: EDGE_A,
+        source: NODE_A,
+        target: NODE_B,
+      }),
+    );
+    seedEvent(
+      annotationCreatedEvent({
+        sequence: 4,
+        annotationId: ANNO_EDGE_1,
+        kind: 'stance',
+        targetNodeId: null,
+        targetEdgeId: EDGE_A,
+      }),
+    );
+    const item = document.querySelector(
+      `[data-testid="participant-edge-status"][data-edge-id="${EDGE_A}"]`,
+    );
+    expect(item?.getAttribute('data-has-annotation')).toBe('true');
+    expect(item?.getAttribute('data-annotation-count')).toBe('1');
+    // And node B (unannotated) carries the explicit "false" / "0"
+    // baseline so the mirror's symmetry is observable.
+    const nodeB = document.querySelector(
+      `[data-testid="participant-node-status"][data-node-id="${NODE_B}"]`,
+    );
+    expect(nodeB?.getAttribute('data-has-annotation')).toBe('false');
+    expect(nodeB?.getAttribute('data-annotation-count')).toBe('0');
+  });
+
+  it('(ee) Cytoscape carries the same data.hasAnnotation + data.annotationCount the mirror surfaces (no drift)', () => {
+    const result = renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(
+      annotationCreatedEvent({
+        sequence: 2,
+        annotationId: ANNO_NODE_1,
+        kind: 'note',
+        targetNodeId: NODE_A,
+        targetEdgeId: null,
+      }),
+    );
+    seedEvent(
+      annotationCreatedEvent({
+        sequence: 3,
+        annotationId: ANNO_NODE_2,
+        kind: 'reframe',
+        targetNodeId: NODE_A,
+        targetEdgeId: null,
+      }),
+    );
+    const cy = result.getCy();
+    const cyNode = cy.getElementById(NODE_A);
+    expect(cyNode.data('hasAnnotation')).toBe(true);
+    expect(cyNode.data('annotationCount')).toBe(2);
+    const mirrorItem = document.querySelector(
+      `[data-testid="participant-node-status"][data-node-id="${NODE_A}"]`,
+    );
+    expect(mirrorItem?.getAttribute('data-has-annotation')).toBe('true');
+    expect(mirrorItem?.getAttribute('data-annotation-count')).toBe('2');
+  });
+
+  it('(ff) STYLESHEET contains node[?hasAnnotation] + edge[?hasAnnotation] selectors with the expected overlay / underlay overrides', () => {
+    const sheet = STYLESHEET as unknown as ReadonlyArray<{
+      selector: string;
+      style: Record<string, unknown>;
+    }>;
+    const nodeEntry = sheet.find((entry) => entry.selector === 'node[?hasAnnotation]');
+    expect(nodeEntry).toBeDefined();
+    expect(nodeEntry?.style['overlay-color']).toBe('#f59e0b');
+    expect(nodeEntry?.style['overlay-opacity']).toBe(0.15);
+    expect(nodeEntry?.style['overlay-padding']).toBe(4);
+    const edgeEntry = sheet.find((entry) => entry.selector === 'edge[?hasAnnotation]');
+    expect(edgeEntry).toBeDefined();
+    expect(edgeEntry?.style.width).toBe(4);
+    expect(edgeEntry?.style['underlay-color']).toBe('#f59e0b');
+    expect(edgeEntry?.style['underlay-opacity']).toBe(0.25);
+    expect(edgeEntry?.style['underlay-padding']).toBe(3);
   });
 });

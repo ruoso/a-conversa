@@ -122,7 +122,21 @@ task participant_ui "Participant (debater) UI" {
     task part_annotation_render "Render annotations on entities" {
       effort 0.5d
       allocate team
+      complete 100
       depends !part_graph_render
+      note "Refinement: tasks/refinements/participant-ui/part_annotation_render.md"
+    }
+    task part_e2e_user_pool_expansion "Expand Authelia dev user pool so participant e2e specs can drop describe.serial" {
+      effort 0.5d
+      allocate team
+      depends !part_annotation_render
+      note -8<-
+        Source of debt: tasks/refinements/participant-ui/part_annotation_render.md Decision §6 — the 4th Playwright block in tests/e2e/participant-graph-render.spec.ts exhausted the 6-user Authelia dev pool (alice+ben / maria+dave / frank+erin), forcing the spec file to flip to `test.describe.serial` (wall-clock ~33.5s under one worker vs the prior ~14s/block under fullyParallel). The placement here under part_graph_view reflects where the wall was first hit, but the consumer pattern is cross-cutting: any future participant e2e spec (or sibling spec adding a 4th+ block needing fresh OIDC dances) will face the same exhaustion. Confirmed during the part_annotation_render adoption (commit landing part_annotation_render).
+
+        Scope (cheap fix): expand infra/authelia/users.yml with 2 more dev user pairs (e.g. greta+henry, ivy+jack) and add them to tests/e2e/fixtures/auth.ts so the participant e2e suites can stay parallel as more blocks land. The principled fix — a dedicated round-robin auth helper that allocates from a larger pool dynamically — is explicitly out of scope; revisit only if the cheap path proves insufficient.
+
+        Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit landing part_annotation_render).
+      ->8-
     }
     task part_diagnostic_highlights "Diagnostic flag highlights on graph" {
       effort 0.5d

@@ -26,6 +26,14 @@
 //    schema is node-only per `axiomMarkProposalSchema`. Decision §4
 //    explains why the boolean lives on `data` rather than as a
 //    Cytoscape class.)
+// Refinement: tasks/refinements/participant-ui/part_annotation_render.md
+//   (Constraints — `projectGraph` signature widens AGAIN to take a
+//    `nodeAnnotationIndex` + `edgeAnnotationIndex` pair (fourth and
+//    fifth arguments). Every emitted node AND edge `data` carries
+//    `hasAnnotation: boolean` + `annotationCount: number` stamped from
+//    the per-target bucket. The structural divergence from
+//    `part_axiom_mark_decoration` — annotations target both kinds per
+//    the wire schema XOR — is noted in Decision §1.)
 // ADRs:
 //   - 0004 (Cytoscape.js for the read-mostly participant tablet);
 //   - 0021 (event envelope shape — the shell client validates incoming
@@ -47,6 +55,12 @@
 import type { ElementDefinition } from 'cytoscape';
 import type { EdgeRole, Event, StatementKind } from '@a-conversa/shared-types';
 
+import {
+  annotationCountFor,
+  edgeHasAnnotation,
+  nodeHasAnnotation,
+  type Annotation,
+} from './annotations';
 import { type AxiomMark, nodeHasAxiomMark } from './axiomMarks';
 import {
   cardRollupStatus,
@@ -93,6 +107,25 @@ export interface ParticipantNodeData {
    * `data-is-axiom="true|false"` mirror attribute (Decision §5).
    */
   readonly isAxiom: boolean;
+  /**
+   * `true` iff at least one committed annotation targets the node.
+   * Sourced from the `nodeAnnotationIndex` argument via
+   * `nodeHasAnnotation`. Drives the `node[?hasAnnotation]` Cytoscape
+   * stylesheet branch (the amber overlay per Decision §3 of
+   * `part_annotation_render`) AND the
+   * `data-has-annotation="true|false"` mirror attribute (Decision §5).
+   */
+  readonly hasAnnotation: boolean;
+  /**
+   * Total count of committed annotations targeting this node (any kind,
+   * any author). Sourced from the `nodeAnnotationIndex` argument via
+   * `annotationCountFor`. Drives the `data-annotation-count="<n>"`
+   * mirror attribute (Decision §5). The at-a-glance card layer carries
+   * presence + count; the per-annotation breakdown (kind / content /
+   * author list) is the future entity-detail-panel consumer's concern
+   * (Decision §1).
+   */
+  readonly annotationCount: number;
 }
 
 /**
@@ -117,6 +150,27 @@ export interface ParticipantEdgeData {
   readonly facetStatuses: Readonly<Partial<Record<FacetName, FacetStatus>>>;
   /** Highest-priority facet status, or `'none'` (sentinel) when empty. */
   readonly rollupStatus: FacetStatus | 'none';
+  /**
+   * `true` iff at least one committed annotation targets the edge.
+   * Sourced from the `edgeAnnotationIndex` argument via
+   * `edgeHasAnnotation`. Drives the `edge[?hasAnnotation]` Cytoscape
+   * stylesheet branch (the amber halo per Decision §3 of
+   * `part_annotation_render`) AND the
+   * `data-has-annotation="true|false"` mirror attribute.
+   *
+   * Symmetric with `ParticipantNodeData.hasAnnotation` — annotations
+   * target both nodes AND edges per the wire schema's XOR (Decision §1
+   * of `part_annotation_render` documents the divergence from
+   * `part_axiom_mark_decoration`, which is node-only).
+   */
+  readonly hasAnnotation: boolean;
+  /**
+   * Total count of committed annotations targeting this edge. Sourced
+   * from the `edgeAnnotationIndex` argument via `annotationCountFor`.
+   * Drives the `data-annotation-count="<n>"` mirror attribute.
+   * Symmetric with `ParticipantNodeData.annotationCount`.
+   */
+  readonly annotationCount: number;
 }
 
 /**
@@ -191,6 +245,8 @@ export function projectGraph(
   events: readonly Event[],
   facetStatusIndex: FacetStatusIndex,
   axiomMarkIndex: ReadonlyMap<string, readonly AxiomMark[]>,
+  nodeAnnotationIndex: ReadonlyMap<string, readonly Annotation[]>,
+  edgeAnnotationIndex: ReadonlyMap<string, readonly Annotation[]>,
 ): {
   nodes: ParticipantNodeElement[];
   edges: ParticipantEdgeElement[];
@@ -218,6 +274,8 @@ export function projectGraph(
           facetStatuses: slot.facetStatuses,
           rollupStatus: slot.rollupStatus,
           isAxiom: nodeHasAxiomMark(axiomMarkIndex, event.payload.node_id),
+          hasAnnotation: nodeHasAnnotation(nodeAnnotationIndex, event.payload.node_id),
+          annotationCount: annotationCountFor(nodeAnnotationIndex, event.payload.node_id),
         },
       };
       nodeIndexById.set(event.payload.node_id, nodes.length);
@@ -236,6 +294,8 @@ export function projectGraph(
           role: event.payload.role,
           facetStatuses: slot.facetStatuses,
           rollupStatus: slot.rollupStatus,
+          hasAnnotation: edgeHasAnnotation(edgeAnnotationIndex, event.payload.edge_id),
+          annotationCount: annotationCountFor(edgeAnnotationIndex, event.payload.edge_id),
         },
       };
       edges.push(element);

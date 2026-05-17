@@ -100,7 +100,20 @@ async function freshContext(browser: Browser): Promise<BrowserContext> {
   });
 }
 
-test.describe('Participant operate route — read-mostly graph render', () => {
+// `.serial` modifier: the four `test()` blocks below run sequentially
+// within a single Playwright worker. Per
+// `tasks/refinements/participant-ui/part_annotation_render.md` Decision
+// §6, the 6-user Authelia dev pool is exhausted by blocks 1-3 (alice +
+// ben / maria + dave / frank + erin); block 4 reuses `alice` + `ben`,
+// and `.serial` is the cheap fix for the in-file per-session
+// `users` upsert race that would otherwise pit block-1 against block-4
+// under the default `fullyParallel: true`. Wall-clock impact: spec
+// file grows by ~one block's worth (~14s) — total still well under
+// the per-spec Playwright budget. Do NOT flip back to plain
+// `test.describe` without addressing the user-pool exhaustion (split
+// to a separate spec file with its own `setup-auth` or expand the
+// dev users list in `infra/authelia/users.yml`).
+test.describe.serial('Participant operate route — read-mostly graph render', () => {
   test('alice creates a session, ben claims debater-A, seeded WS events render as Cytoscape nodes + edges with localized labels', async ({
     browser,
   }) => {
@@ -720,6 +733,245 @@ test.describe('Participant operate route — read-mostly graph render', () => {
       await expect(unmarkedNodeMirror).toHaveAttribute('data-is-axiom', 'false', {
         timeout: 15_000,
       });
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('alice creates a session, ben claims debater-A, seeded annotation-created events surface data-has-annotation + data-annotation-count on the targeted node and edge', async ({
+    browser,
+  }) => {
+    // Refinement: tasks/refinements/participant-ui/part_annotation_render.md
+    //   (Decision §6 — fourth test() block in the existing describe;
+    //    seeds two node-created events, one edge-created, and three
+    //    annotation-created events (two targeting NODE_A so the count
+    //    rises to 2; one targeting the EDGE with count 1); asserts the
+    //    DOM mirror surfaces `data-has-annotation="true"` +
+    //    `data-annotation-count="2"` on NODE_A,
+    //    `data-has-annotation="false"` + `data-annotation-count="0"`
+    //    on NODE_B, and `data-has-annotation="true"` +
+    //    `data-annotation-count="1"` on the EDGE. Per ORCHESTRATOR.md
+    //    UI-stream e2e policy, the route is reachable and the
+    //    per-target mirror is in place so the e2e is in scope.)
+    //
+    // Reuses `alice` + `ben` (the block-1 pair) per Decision §6 — the
+    // 6-user Authelia dev pool is exhausted by blocks 1-3 and the
+    // describe is `.serial` (top of file) so the within-worker
+    // execution order eliminates the user-creation race.
+    const context = await freshContext(browser);
+    const page = await context.newPage();
+    try {
+      const TOPIC = 'Annotation rendering reaches the participant tablet';
+      const NODE_A_WORDING = 'UBI lifts the welfare floor';
+      const NODE_B_WORDING = 'Means-tested aid stigmatises';
+
+      // 1. Alice creates the session.
+      const alice = await loginAs(page, { username: 'alice' });
+      expect(alice.screenName.toLowerCase()).toBe('alice');
+      const sessionId = await createSession(page, { topic: TOPIC, privacy: 'public' });
+
+      // 2. Log out + drop cookies so the next dance is fresh.
+      await logoutAndClearAllCookies(page);
+
+      // 3. Ben authenticates and claims debater-A through the invite
+      //    acceptance flow.
+      const ben = await loginAs(page, { username: 'ben' });
+      expect(ben.screenName.toLowerCase()).toBe('ben');
+      await page.goto(`/p/sessions/${sessionId}/invite?role=debater-A`);
+      await expect(page.getByTestId('route-invite-acceptance')).toBeVisible({ timeout: 15_000 });
+      const joinButton = page.getByTestId('invite-acceptance-join-button');
+      await expect(joinButton).toBeEnabled();
+      await joinButton.click();
+      await page.waitForURL((url) => url.pathname === `/p/sessions/${sessionId}/lobby`, {
+        timeout: 15_000,
+      });
+      await expect(page.getByTestId('route-lobby')).toBeVisible({ timeout: 15_000 });
+
+      // 4. Navigate to the operate route.
+      await page.goto(`/p/sessions/${sessionId}`);
+      await expect(page.getByTestId('route-operate')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('participant-graph-root')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('participant-graph-status-mirror')).toBeAttached({
+        timeout: 15_000,
+      });
+
+      // 5. Seed the events: two `node-created`, one `edge-created`,
+      //    two `annotation-created` targeting NODE_A (kinds `note`
+      //    + `reframe` to exercise the kind multiplicity), and one
+      //    `annotation-created` targeting the EDGE (kind `stance`).
+      //    The wire schema's XOR (target_node_id / target_edge_id,
+      //    exactly one non-null) is the projector's routing key.
+      const NODE_A_ID = '11111111-1111-4111-8111-111111111111';
+      const NODE_B_ID = '22222222-2222-4222-8222-222222222222';
+      const EDGE_ID = '33333333-3333-4333-8333-333333333333';
+      const ANNO_NODE_1_ID = '44444444-4444-4444-8444-444444444441';
+      const ANNO_NODE_2_ID = '44444444-4444-4444-8444-444444444442';
+      const ANNO_EDGE_1_ID = '44444444-4444-4444-8444-444444444443';
+      const ACTOR_ID = '55555555-5555-4555-8555-555555555555';
+      await page.evaluate(
+        (seed: {
+          sessionId: string;
+          nodeAId: string;
+          nodeBId: string;
+          edgeId: string;
+          annoNode1Id: string;
+          annoNode2Id: string;
+          annoEdge1Id: string;
+          actorId: string;
+          wordingA: string;
+          wordingB: string;
+        }) => {
+          const store = (
+            window as unknown as {
+              __aConversaWsStore?: {
+                getState: () => {
+                  applyEvent: (event: unknown) => void;
+                };
+              };
+            }
+          ).__aConversaWsStore;
+          if (!store) {
+            throw new Error('__aConversaWsStore is not exposed on window');
+          }
+          const apply = store.getState().applyEvent.bind(store.getState());
+          // High sequence numbers guard against the dedup branch.
+          apply({
+            id: '66666666-6666-4666-8666-666666666661',
+            sessionId: seed.sessionId,
+            sequence: 1_000_001,
+            kind: 'node-created',
+            actor: seed.actorId,
+            payload: {
+              node_id: seed.nodeAId,
+              wording: seed.wordingA,
+              created_by: seed.actorId,
+              created_at: '2026-05-17T00:00:00.000Z',
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+          apply({
+            id: '66666666-6666-4666-8666-666666666662',
+            sessionId: seed.sessionId,
+            sequence: 1_000_002,
+            kind: 'node-created',
+            actor: seed.actorId,
+            payload: {
+              node_id: seed.nodeBId,
+              wording: seed.wordingB,
+              created_by: seed.actorId,
+              created_at: '2026-05-17T00:00:00.000Z',
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+          apply({
+            id: '66666666-6666-4666-8666-666666666663',
+            sessionId: seed.sessionId,
+            sequence: 1_000_003,
+            kind: 'edge-created',
+            actor: seed.actorId,
+            payload: {
+              edge_id: seed.edgeId,
+              role: 'supports',
+              source_node_id: seed.nodeAId,
+              target_node_id: seed.nodeBId,
+              created_by: seed.actorId,
+              created_at: '2026-05-17T00:00:00.000Z',
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+          apply({
+            id: '66666666-6666-4666-8666-666666666664',
+            sessionId: seed.sessionId,
+            sequence: 1_000_004,
+            kind: 'annotation-created',
+            actor: seed.actorId,
+            payload: {
+              annotation_id: seed.annoNode1Id,
+              kind: 'note',
+              content: 'see also F-003',
+              target_node_id: seed.nodeAId,
+              target_edge_id: null,
+              created_by: seed.actorId,
+              created_at: '2026-05-17T00:00:00.000Z',
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+          apply({
+            id: '66666666-6666-4666-8666-666666666665',
+            sessionId: seed.sessionId,
+            sequence: 1_000_005,
+            kind: 'annotation-created',
+            actor: seed.actorId,
+            payload: {
+              annotation_id: seed.annoNode2Id,
+              kind: 'reframe',
+              content: 'reframe the welfare framing',
+              target_node_id: seed.nodeAId,
+              target_edge_id: null,
+              created_by: seed.actorId,
+              created_at: '2026-05-17T00:00:00.000Z',
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+          apply({
+            id: '66666666-6666-4666-8666-666666666666',
+            sessionId: seed.sessionId,
+            sequence: 1_000_006,
+            kind: 'annotation-created',
+            actor: seed.actorId,
+            payload: {
+              annotation_id: seed.annoEdge1Id,
+              kind: 'stance',
+              content: 'edge stance noted',
+              target_node_id: null,
+              target_edge_id: seed.edgeId,
+              created_by: seed.actorId,
+              created_at: '2026-05-17T00:00:00.000Z',
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+        },
+        {
+          sessionId,
+          nodeAId: NODE_A_ID,
+          nodeBId: NODE_B_ID,
+          edgeId: EDGE_ID,
+          annoNode1Id: ANNO_NODE_1_ID,
+          annoNode2Id: ANNO_NODE_2_ID,
+          annoEdge1Id: ANNO_EDGE_1_ID,
+          actorId: ACTOR_ID,
+          wordingA: NODE_A_WORDING,
+          wordingB: NODE_B_WORDING,
+        },
+      );
+
+      // 6. The DOM mirror surfaces the per-target annotation signal.
+      //    Cytoscape paints to <canvas>; the mirror is the testability
+      //    seam per Decision §5. The doubly-annotated NODE_A reports
+      //    count 2; the unannotated NODE_B reports the explicit
+      //    "false" / "0" baseline; the singly-annotated EDGE reports
+      //    count 1.
+      const annotatedNodeMirror = page.locator(
+        `[data-testid="participant-node-status"][data-node-id="${NODE_A_ID}"]`,
+      );
+      await expect(annotatedNodeMirror).toHaveAttribute('data-has-annotation', 'true', {
+        timeout: 15_000,
+      });
+      await expect(annotatedNodeMirror).toHaveAttribute('data-annotation-count', '2');
+
+      const unannotatedNodeMirror = page.locator(
+        `[data-testid="participant-node-status"][data-node-id="${NODE_B_ID}"]`,
+      );
+      await expect(unannotatedNodeMirror).toHaveAttribute('data-has-annotation', 'false');
+      await expect(unannotatedNodeMirror).toHaveAttribute('data-annotation-count', '0');
+
+      const annotatedEdgeMirror = page.locator(
+        `[data-testid="participant-edge-status"][data-edge-id="${EDGE_ID}"]`,
+      );
+      await expect(annotatedEdgeMirror).toHaveAttribute('data-has-annotation', 'true', {
+        timeout: 15_000,
+      });
+      await expect(annotatedEdgeMirror).toHaveAttribute('data-annotation-count', '1');
     } finally {
       await context.close();
     }

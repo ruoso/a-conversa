@@ -19,6 +19,21 @@
 //              and threads it into `projectGraph` as the third argument.
 //              The mirror `<li participant-node-status>` grows a
 //              `data-is-axiom="true|false"` attribute per Decision §5.)
+// Refinement: tasks/refinements/participant-ui/part_annotation_render.md
+//              (Stylesheet grows TWO selectors per Decision §3:
+//              `node[?hasAnnotation]` paints an amber `overlay-*` wash
+//              over the node body; `edge[?hasAnnotation]` paints an
+//              amber `underlay-*` halo + width bump on the edge stroke.
+//              Two new `useMemo`s split a single
+//              `projectAnnotations(events)` walk into
+//              `nodeAnnotationIndex` + `edgeAnnotationIndex` and thread
+//              them into `projectGraph` as the fourth and fifth
+//              arguments. The mirror `<li participant-node-status>` AND
+//              the mirror `<li participant-edge-status>` BOTH grow
+//              `data-has-annotation="true|false"` +
+//              `data-annotation-count="<n>"` attributes per Decision §5.
+//              Symmetric across node + edge target kinds per Decision §1
+//              — annotations target both per the wire schema XOR.)
 // ADRs:
 //   - 0004 (Cytoscape.js for the read-mostly participant tablet);
 //   - 0024 (react-i18next + ICU — `methodology.kind.*` and
@@ -72,6 +87,7 @@ import { useTranslation } from 'react-i18next';
 import type { Event } from '@a-conversa/shared-types';
 
 import { useWsStore } from '../ws/wsStore';
+import { groupAnnotationsByEdge, groupAnnotationsByNode, projectAnnotations } from './annotations';
 import { groupAxiomMarksByNode, projectAxiomMarks } from './axiomMarks';
 import { computeFacetStatuses, type FacetStatus } from './facetStatus';
 import {
@@ -301,6 +317,45 @@ export const STYLESHEET: StylesheetJson = [
       'border-width': 3,
     },
   },
+  // Annotation overlay — Cytoscape's `[?<flag>]` selector matches when
+  // `data.<flag>` is truthy. Composes WITH the per-status branches +
+  // the axiom-mark overlay above per Decision §3 of
+  // `tasks/refinements/participant-ui/part_annotation_render.md`:
+  // the node side uses Cytoscape's `overlay-*` properties, which paint
+  // a translucent layer OVER the node body without disturbing the
+  // border / fill / opacity owned by the per-status branch beneath. An
+  // amber-500 wash at 15% opacity reads as "this node carries
+  // meta-commentary" while preserving the rollup signal. The hue
+  // matches the moderator's `AnnotationBadge` palette
+  // (`bg-amber-100 text-amber-900`) so the colour identity stays
+  // consistent across surfaces for the eventual entity-detail-panel
+  // hand-off.
+  {
+    selector: 'node[?hasAnnotation]',
+    style: {
+      'overlay-color': '#f59e0b', // amber-500
+      'overlay-opacity': 0.15,
+      'overlay-padding': 4,
+    },
+  },
+  // Annotation overlay (edges). Cytoscape edges don't accept
+  // `overlay-*` properties, so the signal layers via `underlay-*`
+  // (an amber halo painted BEHIND the stroke) + a width bump (1 → 4).
+  // The bumped width composes cleanly with the per-status `line-color`
+  // beneath (a disputed annotated edge stays rose-600 but reads
+  // thicker; an agreed annotated edge stays slate-700 but reads
+  // thicker). Alternatives (linear-gradient stroke; dashed flip) were
+  // rejected per Decision §3 because they would clobber the per-status
+  // `line-color` / `line-style` the rollup branch owns.
+  {
+    selector: 'edge[?hasAnnotation]',
+    style: {
+      width: 4,
+      'underlay-color': '#f59e0b', // amber-500
+      'underlay-opacity': 0.25,
+      'underlay-padding': 3,
+    },
+  },
 ];
 
 export interface GraphViewProps {
@@ -358,6 +413,28 @@ function axiomAttr(value: boolean): 'true' | 'false' {
   return value ? 'true' : 'false';
 }
 
+/**
+ * Render a `data-has-annotation` attribute value. Same explicit
+ * `"true"` / `"false"` posture as `axiomAttr` (Decision §5 of
+ * `part_annotation_render`); the explicit `"false"` branch keeps the
+ * mirror reader-friendly and gives Playwright an explicit
+ * "we asserted not-annotated" selector instead of an absence-of-
+ * attribute probe.
+ */
+function hasAnnotationAttr(value: boolean): 'true' | 'false' {
+  return value ? 'true' : 'false';
+}
+
+/**
+ * Render a `data-annotation-count` attribute value. Same string-
+ * passthrough posture as `rollupAttr`: `String(0)` for the zero case
+ * (explicit `"0"`, NOT omit-when-empty per Decision §5); `String(N)`
+ * for nonzero counts. Symmetric across node + edge mirror rows.
+ */
+function annotationCountAttr(value: number): string {
+  return String(value);
+}
+
 export function GraphView({ sessionId, cyRef }: GraphViewProps): ReactElement {
   const { t } = useTranslation();
   const events = useWsStore((state) => state.sessionState[sessionId]?.events ?? EMPTY_EVENTS);
@@ -404,6 +481,18 @@ export function GraphView({ sessionId, cyRef }: GraphViewProps): ReactElement {
   // attribution is the entity-detail-panel consumer's concern.
   const axiomMarkIndex = useMemo(() => groupAxiomMarksByNode(projectAxiomMarks(events)), [events]);
 
+  // Annotation derivation. The single `projectAnnotations(events)` walk
+  // runs once per events change; the two bucketers split its output
+  // into per-target indexes (Decision §7 of `part_annotation_render` —
+  // the O(n) walk is paid once, not twice, since the two bucketers
+  // share the same input). Decision §1 — the projection consults
+  // BOTH indexes to stamp the per-target boolean + count on both
+  // element kinds, mirroring the wire schema's XOR (annotations
+  // target either a node OR an edge, never both).
+  const annotations = useMemo(() => projectAnnotations(events), [events]);
+  const nodeAnnotationIndex = useMemo(() => groupAnnotationsByNode(annotations), [annotations]);
+  const edgeAnnotationIndex = useMemo(() => groupAnnotationsByEdge(annotations), [annotations]);
+
   // Raw projection — the per-element data the test mirror surfaces
   // verbatim and the localized memo below enriches for Cytoscape. Split
   // from the localized memo so the mirror has access to the per-element
@@ -418,8 +507,15 @@ export function GraphView({ sessionId, cyRef }: GraphViewProps): ReactElement {
     nodes: ParticipantNodeElement[];
     edges: ParticipantEdgeElement[];
   }>(
-    () => projectGraph(events, facetStatusIndex, axiomMarkIndex),
-    [events, facetStatusIndex, axiomMarkIndex],
+    () =>
+      projectGraph(
+        events,
+        facetStatusIndex,
+        axiomMarkIndex,
+        nodeAnnotationIndex,
+        edgeAnnotationIndex,
+      ),
+    [events, facetStatusIndex, axiomMarkIndex, nodeAnnotationIndex, edgeAnnotationIndex],
   );
 
   // Element sync — runs on every events / translation change. Cytoscape's
@@ -503,6 +599,8 @@ export function GraphView({ sessionId, cyRef }: GraphViewProps): ReactElement {
             data-facet-substance={facetAttr(node.data.facetStatuses.substance)}
             data-facet-wording={facetAttr(node.data.facetStatuses.wording)}
             data-is-axiom={axiomAttr(node.data.isAxiom)}
+            data-has-annotation={hasAnnotationAttr(node.data.hasAnnotation)}
+            data-annotation-count={annotationCountAttr(node.data.annotationCount)}
           />
         ))}
         {renderedEdges.map((edge) => (
@@ -512,6 +610,8 @@ export function GraphView({ sessionId, cyRef }: GraphViewProps): ReactElement {
             data-edge-id={edge.data.id}
             data-rollup-status={rollupAttr(edge.data.rollupStatus)}
             data-facet-substance={facetAttr(edge.data.facetStatuses.substance)}
+            data-has-annotation={hasAnnotationAttr(edge.data.hasAnnotation)}
+            data-annotation-count={annotationCountAttr(edge.data.annotationCount)}
           />
         ))}
       </ul>
