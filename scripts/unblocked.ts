@@ -30,9 +30,15 @@
 //      which is the only container that uses `milestone` in our WBS —
 //      see tasks/99-milestones.tji).
 //   5. For each milestone, compute its **gating set of leaves** by
-//      walking precursors, expanding container precursors to their
-//      contained leaves, and expanding milestone-on-milestone
-//      precursors to that other milestone's gating set.
+//      walking precursors transitively: container precursors expand
+//      to their contained leaves, milestone-on-milestone precursors
+//      expand to that other milestone's gating set, and every leaf
+//      added to the set has its own precursors walked the same way.
+//      The transitive walk is what catches inherited container-level
+//      deps — e.g. a leaf X named explicitly by the milestone may
+//      inherit `depends !ParentTask` from its `.tji` parent block; the
+//      sibling leaves under ParentTask must complete for X to complete,
+//      so they belong in the gating set even when not named directly.
 //   6. Within the gating set, a leaf is **unblocked** iff its own
 //      direct precursor set (expanded to leaves) is fully complete and
 //      the leaf itself is incomplete. Print those, plus counts for the
@@ -251,22 +257,35 @@ function milestoneGatingSet(
   if (ms === undefined) return [];
   const seen = new Set<string>();
   const out: string[] = [];
-  for (const pre of ms.precursorIds) {
-    if (milestoneIds.has(pre)) {
-      for (const leaf of milestoneGatingSet(g, pre, milestoneIds, memo)) {
-        if (!seen.has(leaf)) {
-          seen.add(leaf);
-          out.push(leaf);
-        }
+  const queue: string[] = [];
+  const addLeaf = (leafId: string): void => {
+    if (seen.has(leafId)) return;
+    seen.add(leafId);
+    out.push(leafId);
+    queue.push(leafId);
+  };
+  const expandPrecursor = (preId: string): void => {
+    if (milestoneIds.has(preId)) {
+      for (const leaf of milestoneGatingSet(g, preId, milestoneIds, memo)) {
+        addLeaf(leaf);
       }
     } else {
-      for (const leaf of expandToLeaves(g, pre, milestoneIds)) {
-        if (!seen.has(leaf)) {
-          seen.add(leaf);
-          out.push(leaf);
-        }
+      for (const leaf of expandToLeaves(g, preId, milestoneIds)) {
+        addLeaf(leaf);
       }
     }
+  };
+  for (const pre of ms.precursorIds) expandPrecursor(pre);
+  // Transitive predecessor closure: a leaf inherits its `.tji` parent's
+  // container-level depends, which may point at sibling containers whose
+  // leaves are not directly named by the milestone. Those sibling leaves
+  // still gate the milestone (the milestone-named leaf can't complete
+  // until they do), so they belong in the gating set.
+  while (queue.length > 0) {
+    const leafId = queue.shift()!;
+    const leaf = g.byId.get(leafId);
+    if (leaf === undefined) continue;
+    for (const pre of leaf.precursorIds) expandPrecursor(pre);
   }
   memo.set(msId, out);
   return out;
