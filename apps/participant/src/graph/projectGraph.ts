@@ -18,6 +18,14 @@
 //    literal sentinel string `'none'` when the per-entity record is
 //    empty so Cytoscape's selectors have a stable value to match — see
 //    Decision §4.)
+// Refinement: tasks/refinements/participant-ui/part_axiom_mark_decoration.md
+//   (Constraints — `projectGraph` signature widens AGAIN to take an
+//    `axiomMarkIndex: ReadonlyMap<string, readonly AxiomMark[]>` third
+//    argument; every emitted node `data` carries `isAxiom: boolean`
+//    stamped via `nodeHasAxiomMark`. Edges carry no axiom-mark — wire
+//    schema is node-only per `axiomMarkProposalSchema`. Decision §4
+//    explains why the boolean lives on `data` rather than as a
+//    Cytoscape class.)
 // ADRs:
 //   - 0004 (Cytoscape.js for the read-mostly participant tablet);
 //   - 0021 (event envelope shape — the shell client validates incoming
@@ -39,6 +47,7 @@
 import type { ElementDefinition } from 'cytoscape';
 import type { EdgeRole, Event, StatementKind } from '@a-conversa/shared-types';
 
+import { type AxiomMark, nodeHasAxiomMark } from './axiomMarks';
 import {
   cardRollupStatus,
   EMPTY_FACET_STATUSES,
@@ -75,6 +84,15 @@ export interface ParticipantNodeData {
   readonly facetStatuses: Readonly<Partial<Record<FacetName, FacetStatus>>>;
   /** Highest-priority facet status, or `'none'` (sentinel) when empty. */
   readonly rollupStatus: FacetStatus | 'none';
+  /**
+   * `true` iff at least one committed axiom-mark targets the node.
+   * Sourced from the `axiomMarkIndex` argument via
+   * `nodeHasAxiomMark`. Drives the `node[?isAxiom]` Cytoscape
+   * stylesheet branch (the boolean overlay per Decision §3 of
+   * `part_axiom_mark_decoration`) AND the
+   * `data-is-axiom="true|false"` mirror attribute (Decision §5).
+   */
+  readonly isAxiom: boolean;
 }
 
 /**
@@ -172,6 +190,7 @@ function resolveFacetSlot(
 export function projectGraph(
   events: readonly Event[],
   facetStatusIndex: FacetStatusIndex,
+  axiomMarkIndex: ReadonlyMap<string, readonly AxiomMark[]>,
 ): {
   nodes: ParticipantNodeElement[];
   edges: ParticipantEdgeElement[];
@@ -198,6 +217,7 @@ export function projectGraph(
           kind: null,
           facetStatuses: slot.facetStatuses,
           rollupStatus: slot.rollupStatus,
+          isAxiom: nodeHasAxiomMark(axiomMarkIndex, event.payload.node_id),
         },
       };
       nodeIndexById.set(event.payload.node_id, nodes.length);

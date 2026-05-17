@@ -25,7 +25,7 @@ import type { EdgeRole, Event, StatementKind } from '@a-conversa/shared-types';
 
 import { I18nProvider, createI18nInstance, type I18nInstance } from '@a-conversa/shell';
 
-import { GraphView } from './GraphView';
+import { GraphView, STYLESHEET } from './GraphView';
 import { installCytoscapeTestEnv, type CytoscapeTestEnvRestoreHandle } from './cytoscapeTestEnv';
 import { useWsStore } from '../ws/wsStore';
 
@@ -542,5 +542,136 @@ describe('GraphView — per-facet status mirror', () => {
     const items = document.querySelectorAll('[data-testid="participant-node-status"]');
     expect(items.length).toBe(1);
     expect(items[0]?.getAttribute('data-node-id')).toBe(NODE_B);
+  });
+});
+
+// -------------------------------------------------------------------
+// Axiom-mark decoration — added by
+// `participant_ui.part_graph_view.part_axiom_mark_decoration`.
+// Refinement: tasks/refinements/participant-ui/part_axiom_mark_decoration.md
+//
+// Five new cases pinning the boolean `data-is-axiom` mirror attribute,
+// the `data.isAxiom` field on the Cytoscape element set, and the
+// `node[?isAxiom]` stylesheet selector (module-scope constant
+// testable directly).
+// -------------------------------------------------------------------
+
+function axiomMarkProposalEvent(opts: {
+  sequence: number;
+  envelopeId: string;
+  nodeId: string;
+  participantId: string;
+}): Event {
+  return {
+    id: opts.envelopeId,
+    sessionId: SESSION_ID,
+    sequence: opts.sequence,
+    kind: 'proposal',
+    actor: opts.participantId,
+    payload: {
+      proposal: {
+        kind: 'axiom-mark',
+        node_id: opts.nodeId,
+        participant: opts.participantId,
+      },
+    },
+    createdAt: '2026-05-17T00:00:00.000Z',
+  };
+}
+
+const PARTICIPANT_X = '00000000-0000-4000-8000-0000000000c1';
+const PARTICIPANT_Y = '00000000-0000-4000-8000-0000000000c2';
+const AXIOM_PROPOSAL_X = '00000000-0000-4000-8000-000000000ab1';
+const AXIOM_PROPOSAL_Y = '00000000-0000-4000-8000-000000000ab2';
+
+describe('GraphView — axiom-mark overlay', () => {
+  it('(v) the node mirror carries data-is-axiom="false" by default', () => {
+    renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    const item = document.querySelector(
+      `[data-testid="participant-node-status"][data-node-id="${NODE_A}"]`,
+    );
+    expect(item).not.toBeNull();
+    expect(item?.getAttribute('data-is-axiom')).toBe('false');
+  });
+
+  it('(w) when a committed axiom-mark targets the node, the mirror reports data-is-axiom="true"', () => {
+    renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(
+      axiomMarkProposalEvent({
+        sequence: 2,
+        envelopeId: AXIOM_PROPOSAL_X,
+        nodeId: NODE_A,
+        participantId: PARTICIPANT_X,
+      }),
+    );
+    seedEvent(commitEvent({ sequence: 3, proposalEnvelopeId: AXIOM_PROPOSAL_X }));
+    const item = document.querySelector(
+      `[data-testid="participant-node-status"][data-node-id="${NODE_A}"]`,
+    );
+    expect(item?.getAttribute('data-is-axiom')).toBe('true');
+  });
+
+  it('(x) when two participants mark the same node, the mirror still reports data-is-axiom="true" (boolean OR)', () => {
+    renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(
+      axiomMarkProposalEvent({
+        sequence: 2,
+        envelopeId: AXIOM_PROPOSAL_X,
+        nodeId: NODE_A,
+        participantId: PARTICIPANT_X,
+      }),
+    );
+    seedEvent(commitEvent({ sequence: 3, proposalEnvelopeId: AXIOM_PROPOSAL_X }));
+    seedEvent(
+      axiomMarkProposalEvent({
+        sequence: 4,
+        envelopeId: AXIOM_PROPOSAL_Y,
+        nodeId: NODE_A,
+        participantId: PARTICIPANT_Y,
+      }),
+    );
+    seedEvent(commitEvent({ sequence: 5, proposalEnvelopeId: AXIOM_PROPOSAL_Y }));
+    const item = document.querySelector(
+      `[data-testid="participant-node-status"][data-node-id="${NODE_A}"]`,
+    );
+    expect(item?.getAttribute('data-is-axiom')).toBe('true');
+  });
+
+  it('(y) Cytoscape carries the same data.isAxiom the mirror surfaces (no drift)', () => {
+    const result = renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(
+      axiomMarkProposalEvent({
+        sequence: 2,
+        envelopeId: AXIOM_PROPOSAL_X,
+        nodeId: NODE_A,
+        participantId: PARTICIPANT_X,
+      }),
+    );
+    seedEvent(commitEvent({ sequence: 3, proposalEnvelopeId: AXIOM_PROPOSAL_X }));
+    const cy = result.getCy();
+    const cyNode = cy.getElementById(NODE_A);
+    expect(cyNode.data('isAxiom')).toBe(true);
+    const mirrorItem = document.querySelector(
+      `[data-testid="participant-node-status"][data-node-id="${NODE_A}"]`,
+    );
+    expect(mirrorItem?.getAttribute('data-is-axiom')).toBe('true');
+  });
+
+  it('(z) STYLESHEET contains the node[?isAxiom] selector with double border + width 3', () => {
+    // Cytoscape's `StylesheetJson` is a discriminated union that does
+    // not directly assign to our narrow shape; cross through `unknown`
+    // for the inspection coercion.
+    const sheet = STYLESHEET as unknown as ReadonlyArray<{
+      selector: string;
+      style: Record<string, unknown>;
+    }>;
+    const axiomEntry = sheet.find((entry) => entry.selector === 'node[?isAxiom]');
+    expect(axiomEntry).toBeDefined();
+    expect(axiomEntry?.style['border-style']).toBe('double');
+    expect(axiomEntry?.style['border-width']).toBe(3);
   });
 });

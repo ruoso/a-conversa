@@ -545,4 +545,183 @@ test.describe('Participant operate route — read-mostly graph render', () => {
       await context.close();
     }
   });
+
+  test('frank creates a session, erin claims debater-A, a committed axiom-mark proposal surfaces as data-is-axiom="true" on the marked node and "false" on the unmarked one', async ({
+    browser,
+  }) => {
+    // Refinement: tasks/refinements/participant-ui/part_axiom_mark_decoration.md
+    //   (Decision §6 — third test() block in the existing describe;
+    //    seeds two node-created events plus an axiom-mark proposal
+    //    + commit pair on the first node; asserts the DOM mirror
+    //    surfaces `data-is-axiom="true"` on NODE_A and
+    //    `data-is-axiom="false"` on NODE_B. Per ORCHESTRATOR.md
+    //    UI-stream e2e policy, the route is reachable and the
+    //    per-node mirror is in place so the e2e is in scope.)
+    //
+    // Uses `frank` + `erin` (the next pair of pre-existing Authelia
+    // dev users beyond `alice`+`ben` / `maria`+`dave`) so the three
+    // `test()` blocks in this describe can run in parallel under
+    // Playwright's `fullyParallel: true` without racing on the
+    // shared user-creation path. Block-1 owns alice+ben; block-2
+    // owns maria+dave; block-3 owns frank+erin.
+    const context = await freshContext(browser);
+    const page = await context.newPage();
+    try {
+      const TOPIC = 'Axiom-mark decoration reaches the participant tablet';
+      const NODE_A_WORDING = 'Liberty is the ultimate value';
+      const NODE_B_WORDING = 'Equality matters but is secondary';
+
+      // 1. Frank creates the session.
+      const frank = await loginAs(page, { username: 'frank' });
+      expect(frank.screenName.toLowerCase()).toBe('frank');
+      const sessionId = await createSession(page, { topic: TOPIC, privacy: 'public' });
+
+      // 2. Log out + drop cookies so the next dance is fresh.
+      await logoutAndClearAllCookies(page);
+
+      // 3. Erin authenticates and claims debater-A through the invite
+      //    acceptance flow.
+      const erin = await loginAs(page, { username: 'erin' });
+      expect(erin.screenName.toLowerCase()).toBe('erin');
+      await page.goto(`/p/sessions/${sessionId}/invite?role=debater-A`);
+      await expect(page.getByTestId('route-invite-acceptance')).toBeVisible({ timeout: 15_000 });
+      const joinButton = page.getByTestId('invite-acceptance-join-button');
+      await expect(joinButton).toBeEnabled();
+      await joinButton.click();
+      await page.waitForURL((url) => url.pathname === `/p/sessions/${sessionId}/lobby`, {
+        timeout: 15_000,
+      });
+      await expect(page.getByTestId('route-lobby')).toBeVisible({ timeout: 15_000 });
+
+      // 4. Navigate to the operate route.
+      await page.goto(`/p/sessions/${sessionId}`);
+      await expect(page.getByTestId('route-operate')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('participant-graph-root')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('participant-graph-status-mirror')).toBeAttached({
+        timeout: 15_000,
+      });
+
+      // 5. Seed the events: two `node-created` events, one
+      //    `axiom-mark` proposal targeting NODE_A, and one matching
+      //    commit so the axiom-mark actually lands (the rendering
+      //    rule per the refinement is "render committed only").
+      const NODE_A_ID = '11111111-1111-4111-8111-111111111111';
+      const NODE_B_ID = '22222222-2222-4222-8222-222222222222';
+      const AXIOM_PROPOSAL_ID = '33333333-3333-4333-8333-333333333333';
+      const PARTICIPANT_ID = '44444444-4444-4444-8444-444444444444';
+      const ACTOR_ID = '55555555-5555-4555-8555-555555555555';
+      await page.evaluate(
+        (seed: {
+          sessionId: string;
+          nodeAId: string;
+          nodeBId: string;
+          axiomProposalId: string;
+          participantId: string;
+          actorId: string;
+          wordingA: string;
+          wordingB: string;
+        }) => {
+          const store = (
+            window as unknown as {
+              __aConversaWsStore?: {
+                getState: () => {
+                  applyEvent: (event: unknown) => void;
+                };
+              };
+            }
+          ).__aConversaWsStore;
+          if (!store) {
+            throw new Error('__aConversaWsStore is not exposed on window');
+          }
+          const apply = store.getState().applyEvent.bind(store.getState());
+          // High sequence numbers guard against the dedup branch.
+          apply({
+            id: '66666666-6666-4666-8666-666666666661',
+            sessionId: seed.sessionId,
+            sequence: 1_000_001,
+            kind: 'node-created',
+            actor: seed.actorId,
+            payload: {
+              node_id: seed.nodeAId,
+              wording: seed.wordingA,
+              created_by: seed.actorId,
+              created_at: '2026-05-17T00:00:00.000Z',
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+          apply({
+            id: '66666666-6666-4666-8666-666666666662',
+            sessionId: seed.sessionId,
+            sequence: 1_000_002,
+            kind: 'node-created',
+            actor: seed.actorId,
+            payload: {
+              node_id: seed.nodeBId,
+              wording: seed.wordingB,
+              created_by: seed.actorId,
+              created_at: '2026-05-17T00:00:00.000Z',
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+          apply({
+            id: seed.axiomProposalId,
+            sessionId: seed.sessionId,
+            sequence: 1_000_003,
+            kind: 'proposal',
+            actor: seed.participantId,
+            payload: {
+              proposal: {
+                kind: 'axiom-mark',
+                node_id: seed.nodeAId,
+                participant: seed.participantId,
+              },
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+          apply({
+            id: '66666666-6666-4666-8666-666666666664',
+            sessionId: seed.sessionId,
+            sequence: 1_000_004,
+            kind: 'commit',
+            actor: seed.actorId,
+            payload: {
+              proposal_id: seed.axiomProposalId,
+              moderator: seed.actorId,
+              committed_at: '2026-05-17T00:00:00.000Z',
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+        },
+        {
+          sessionId,
+          nodeAId: NODE_A_ID,
+          nodeBId: NODE_B_ID,
+          axiomProposalId: AXIOM_PROPOSAL_ID,
+          participantId: PARTICIPANT_ID,
+          actorId: ACTOR_ID,
+          wordingA: NODE_A_WORDING,
+          wordingB: NODE_B_WORDING,
+        },
+      );
+
+      // 6. The DOM mirror surfaces the boolean axiom signal per node.
+      //    Cytoscape paints to <canvas>; the mirror is the
+      //    testability seam per Decision §5.
+      const markedNodeMirror = page.locator(
+        `[data-testid="participant-node-status"][data-node-id="${NODE_A_ID}"]`,
+      );
+      await expect(markedNodeMirror).toHaveAttribute('data-is-axiom', 'true', {
+        timeout: 15_000,
+      });
+
+      const unmarkedNodeMirror = page.locator(
+        `[data-testid="participant-node-status"][data-node-id="${NODE_B_ID}"]`,
+      );
+      await expect(unmarkedNodeMirror).toHaveAttribute('data-is-axiom', 'false', {
+        timeout: 15_000,
+      });
+    } finally {
+      await context.close();
+    }
+  });
 });

@@ -7,6 +7,11 @@
 //              (Constraints — signature widens to take a
 //              `FacetStatusIndex`; eight new cases added covering
 //              the per-facet stamping + rollup behaviour.)
+// Refinement: tasks/refinements/participant-ui/part_axiom_mark_decoration.md
+//              (Constraints — signature widens AGAIN to take an
+//              `axiomMarkIndex`; existing cases pass the empty index
+//              via the `emptyAxiomIndex()` factory; 5 new cases added
+//              covering the `isAxiom` stamping behaviour.)
 // ADRs:        0022 (no throwaway verifications — the projection's
 //              behaviour is fully pinned at this pure layer; the
 //              `<GraphView>` mount tests then assert the Cytoscape
@@ -20,6 +25,7 @@ import { describe, expect, it } from 'vitest';
 import type { EdgeRole, Event, StatementKind } from '@a-conversa/shared-types';
 
 import { projectGraph } from './projectGraph';
+import type { AxiomMark } from './axiomMarks';
 import type { FacetName, FacetStatus, FacetStatusIndex } from './facetStatus';
 
 const SESSION_ID = '00000000-0000-4000-8000-000000000001';
@@ -37,6 +43,35 @@ const ACTOR = '00000000-0000-4000-8000-0000000000aa';
  */
 function emptyIndex(): FacetStatusIndex {
   return { nodes: new Map(), edges: new Map() };
+}
+
+/**
+ * Empty axiom-mark index — the baseline argument for tests that don't
+ * care about axiom stamping. Built fresh per call so the Map is never
+ * shared across tests.
+ */
+function emptyAxiomIndex(): ReadonlyMap<string, readonly AxiomMark[]> {
+  return new Map<string, readonly AxiomMark[]>();
+}
+
+/**
+ * Build an axiom-mark index from a literal record. The participant's
+ * `projectGraph` only consults the `nodeHasAxiomMark` boolean — but the
+ * factory carries one synthetic `AxiomMark` per listed node so the
+ * Map's `length > 0` invariant holds.
+ */
+function axiomIndexFromIds(nodeIds: readonly string[]): ReadonlyMap<string, readonly AxiomMark[]> {
+  const out = new Map<string, readonly AxiomMark[]>();
+  for (const nodeId of nodeIds) {
+    out.set(nodeId, [
+      {
+        nodeId,
+        participantId: '00000000-0000-4000-8000-0000000000ff',
+        committedAt: '2026-05-17T00:00:00.000Z',
+      },
+    ]);
+  }
+  return out;
 }
 
 /**
@@ -159,14 +194,14 @@ function makeParticipantJoined(opts: { sequence: number; userId: string }): Even
 
 describe('projectGraph — pure projection from events to Cytoscape elements', () => {
   it('(a) returns empty arrays for an empty event log', () => {
-    expect(projectGraph([], emptyIndex())).toEqual({ nodes: [], edges: [] });
+    expect(projectGraph([], emptyIndex(), emptyAxiomIndex())).toEqual({ nodes: [], edges: [] });
   });
 
   it('(b) emits one node descriptor per node-created event with kind: null and rollup "none" when index is empty', () => {
     const events: Event[] = [
       makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'UBI lifts welfare floor' }),
     ];
-    const { nodes, edges } = projectGraph(events, emptyIndex());
+    const { nodes, edges } = projectGraph(events, emptyIndex(), emptyAxiomIndex());
     expect(edges).toEqual([]);
     expect(nodes).toHaveLength(1);
     expect(nodes[0]).toMatchObject({
@@ -193,7 +228,7 @@ describe('projectGraph — pure projection from events to Cytoscape elements', (
         role: 'rebuts',
       }),
     ];
-    const { edges } = projectGraph(events, emptyIndex());
+    const { edges } = projectGraph(events, emptyIndex(), emptyAxiomIndex());
     expect(edges).toHaveLength(1);
     expect(edges[0]).toMatchObject({
       group: 'edges',
@@ -222,7 +257,7 @@ describe('projectGraph — pure projection from events to Cytoscape elements', (
       }),
       makeNodeCreated({ sequence: 4, nodeId: NODE_B, wording: 'B' }),
     ];
-    const { nodes, edges } = projectGraph(events, emptyIndex());
+    const { nodes, edges } = projectGraph(events, emptyIndex(), emptyAxiomIndex());
     expect(nodes.map((n) => n.data.id)).toEqual([NODE_A, NODE_B]);
     expect(edges.map((e) => e.data.id)).toEqual([EDGE_A, EDGE_B]);
   });
@@ -237,7 +272,7 @@ describe('projectGraph — pure projection from events to Cytoscape elements', (
         classification: 'fact',
       }),
     ];
-    const { nodes } = projectGraph(events, emptyIndex());
+    const { nodes } = projectGraph(events, emptyIndex(), emptyAxiomIndex());
     expect(nodes).toHaveLength(1);
     expect(nodes[0]?.data.kind).toBeNull();
   });
@@ -253,7 +288,7 @@ describe('projectGraph — pure projection from events to Cytoscape elements', (
       }),
       makeCommit({ sequence: 3, proposalEnvelopeId: PROPOSAL_A }),
     ];
-    const { nodes } = projectGraph(events, emptyIndex());
+    const { nodes } = projectGraph(events, emptyIndex(), emptyAxiomIndex());
     expect(nodes).toHaveLength(1);
     expect(nodes[0]?.data.kind).toBe('normative');
   });
@@ -263,7 +298,7 @@ describe('projectGraph — pure projection from events to Cytoscape elements', (
       makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
       makeCommit({ sequence: 2, proposalEnvelopeId: PROPOSAL_A }),
     ];
-    const { nodes } = projectGraph(events, emptyIndex());
+    const { nodes } = projectGraph(events, emptyIndex(), emptyAxiomIndex());
     expect(nodes).toHaveLength(1);
     expect(nodes[0]?.data.kind).toBeNull();
   });
@@ -282,7 +317,7 @@ describe('projectGraph — pure projection from events to Cytoscape elements', (
         }),
         makeCommit({ sequence: 3, proposalEnvelopeId: proposalId }),
       ];
-      const { nodes } = projectGraph(events, emptyIndex());
+      const { nodes } = projectGraph(events, emptyIndex(), emptyAxiomIndex());
       expect(nodes).toHaveLength(1);
       expect(nodes[0]?.data.kind).toBe(kind);
     }
@@ -311,7 +346,7 @@ describe('projectGraph — pure projection from events to Cytoscape elements', (
           role,
         }),
       ];
-      const { edges } = projectGraph(events, emptyIndex());
+      const { edges } = projectGraph(events, emptyIndex(), emptyAxiomIndex());
       expect(edges).toHaveLength(1);
       expect(edges[0]?.data.role).toBe(role);
     });
@@ -331,7 +366,7 @@ describe('projectGraph — pure projection from events to Cytoscape elements', (
       makeParticipantJoined({ sequence: 3, userId: ACTOR }),
       makeCommit({ sequence: 4, proposalEnvelopeId: PROPOSAL_A }),
     ];
-    const { nodes } = projectGraph(events, emptyIndex());
+    const { nodes } = projectGraph(events, emptyIndex(), emptyAxiomIndex());
     expect(nodes).toHaveLength(1);
     expect(nodes[0]?.data.kind).toBe('value');
   });
@@ -343,7 +378,7 @@ describe('projectGraph — per-facet status stamping (part_per_facet_state_styli
     const index = indexFromLiterals({
       nodes: { [NODE_A]: { classification: 'proposed' } },
     });
-    const { nodes } = projectGraph(events, index);
+    const { nodes } = projectGraph(events, index, emptyAxiomIndex());
     expect(nodes[0]?.data.facetStatuses).toEqual({ classification: 'proposed' });
   });
 
@@ -352,7 +387,7 @@ describe('projectGraph — per-facet status stamping (part_per_facet_state_styli
     const index = indexFromLiterals({
       nodes: { [NODE_A]: { substance: 'agreed' } },
     });
-    const { nodes } = projectGraph(events, index);
+    const { nodes } = projectGraph(events, index, emptyAxiomIndex());
     expect(nodes[0]?.data.facetStatuses).toEqual({ substance: 'agreed' });
   });
 
@@ -361,7 +396,7 @@ describe('projectGraph — per-facet status stamping (part_per_facet_state_styli
     const index = indexFromLiterals({
       nodes: { [NODE_A]: { wording: 'disputed' } },
     });
-    const { nodes } = projectGraph(events, index);
+    const { nodes } = projectGraph(events, index, emptyAxiomIndex());
     expect(nodes[0]?.data.facetStatuses).toEqual({ wording: 'disputed' });
   });
 
@@ -374,7 +409,7 @@ describe('projectGraph — per-facet status stamping (part_per_facet_state_styli
     const index = indexFromLiterals({
       edges: { [EDGE_A]: { substance: 'proposed' } },
     });
-    const { edges } = projectGraph(events, index);
+    const { edges } = projectGraph(events, index, emptyAxiomIndex());
     expect(edges[0]?.data.facetStatuses).toEqual({ substance: 'proposed' });
     expect(edges[0]?.data.rollupStatus).toBe('proposed');
   });
@@ -384,7 +419,7 @@ describe('projectGraph — per-facet status stamping (part_per_facet_state_styli
     const index = indexFromLiterals({
       nodes: { [NODE_A]: { classification: 'proposed', substance: 'agreed' } },
     });
-    const { nodes } = projectGraph(events, index);
+    const { nodes } = projectGraph(events, index, emptyAxiomIndex());
     expect(nodes[0]?.data.rollupStatus).toBe('proposed');
   });
 
@@ -393,18 +428,18 @@ describe('projectGraph — per-facet status stamping (part_per_facet_state_styli
     const index = indexFromLiterals({
       nodes: { [NODE_A]: { classification: 'agreed', substance: 'agreed' } },
     });
-    const { nodes } = projectGraph(events, index);
+    const { nodes } = projectGraph(events, index, emptyAxiomIndex());
     expect(nodes[0]?.data.rollupStatus).toBe('agreed');
   });
 
   it('(q) rollupStatus reads "none" (sentinel string) when the per-entity record is empty / absent', () => {
     const events: Event[] = [makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' })];
     // The index has no entry at all for NODE_A.
-    const { nodes } = projectGraph(events, emptyIndex());
+    const { nodes } = projectGraph(events, emptyIndex(), emptyAxiomIndex());
     expect(nodes[0]?.data.rollupStatus).toBe('none');
     // Also when the entry is present but the record is empty.
     const indexEmptyRecord = indexFromLiterals({ nodes: { [NODE_A]: {} } });
-    const { nodes: nodes2 } = projectGraph(events, indexEmptyRecord);
+    const { nodes: nodes2 } = projectGraph(events, indexEmptyRecord, emptyAxiomIndex());
     expect(nodes2[0]?.data.rollupStatus).toBe('none');
   });
 
@@ -413,11 +448,84 @@ describe('projectGraph — per-facet status stamping (part_per_facet_state_styli
     const index = indexFromLiterals({
       nodes: { [NODE_A]: { classification: 'proposed', substance: 'agreed' } },
     });
-    const { nodes } = projectGraph(events, index);
+    const { nodes } = projectGraph(events, index, emptyAxiomIndex());
     expect(nodes[0]?.data.rollupStatus).toBe('proposed');
     expect(nodes[0]?.data.facetStatuses).toEqual({
       classification: 'proposed',
       substance: 'agreed',
     });
+  });
+});
+
+describe('projectGraph — axiom-mark stamping (part_axiom_mark_decoration)', () => {
+  it('(s) stamps isAxiom: false on every node by default (empty axiom index)', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeNodeCreated({ sequence: 2, nodeId: NODE_B, wording: 'B' }),
+    ];
+    const { nodes } = projectGraph(events, emptyIndex(), emptyAxiomIndex());
+    expect(nodes).toHaveLength(2);
+    expect(nodes[0]?.data.isAxiom).toBe(false);
+    expect(nodes[1]?.data.isAxiom).toBe(false);
+  });
+
+  it('(t) stamps isAxiom: true on a node the axiom index targets', () => {
+    const events: Event[] = [makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' })];
+    const axiomIndex = axiomIndexFromIds([NODE_A]);
+    const { nodes } = projectGraph(events, emptyIndex(), axiomIndex);
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0]?.data.isAxiom).toBe(true);
+  });
+
+  it('(u) stamps isAxiom: false on the other nodes when only one is targeted', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeNodeCreated({ sequence: 2, nodeId: NODE_B, wording: 'B' }),
+    ];
+    const axiomIndex = axiomIndexFromIds([NODE_A]);
+    const { nodes } = projectGraph(events, emptyIndex(), axiomIndex);
+    expect(nodes).toHaveLength(2);
+    const byId = new Map(nodes.map((n) => [n.data.id, n.data.isAxiom]));
+    expect(byId.get(NODE_A)).toBe(true);
+    expect(byId.get(NODE_B)).toBe(false);
+  });
+
+  it('(v) isAxiom survives a classify-node commit (the spread in the commit branch preserves the boolean)', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeClassifyProposal({
+        sequence: 2,
+        envelopeId: PROPOSAL_A,
+        nodeId: NODE_A,
+        classification: 'fact',
+      }),
+      makeCommit({ sequence: 3, proposalEnvelopeId: PROPOSAL_A }),
+    ];
+    const axiomIndex = axiomIndexFromIds([NODE_A]);
+    const { nodes } = projectGraph(events, emptyIndex(), axiomIndex);
+    expect(nodes).toHaveLength(1);
+    // Both the classification AND the axiom-mark survive.
+    expect(nodes[0]?.data.kind).toBe('fact');
+    expect(nodes[0]?.data.isAxiom).toBe(true);
+  });
+
+  it('(w) edges carry no isAxiom field — ParticipantEdgeData does not include the property', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeNodeCreated({ sequence: 2, nodeId: NODE_B, wording: 'B' }),
+      makeEdgeCreated({
+        sequence: 3,
+        edgeId: EDGE_A,
+        source: NODE_A,
+        target: NODE_B,
+      }),
+    ];
+    // Even when the axiom index has entries for nodes, edges never
+    // carry the boolean — wire schema is node-only per
+    // `axiomMarkProposalSchema`.
+    const axiomIndex = axiomIndexFromIds([NODE_A, NODE_B]);
+    const { edges } = projectGraph(events, emptyIndex(), axiomIndex);
+    expect(edges).toHaveLength(1);
+    expect((edges[0]?.data as unknown as Record<string, unknown>).isAxiom).toBeUndefined();
   });
 });

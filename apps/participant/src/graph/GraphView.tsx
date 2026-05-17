@@ -10,6 +10,15 @@
 //              mirror so DOM-end tests can assert against the per-entity
 //              status the Cytoscape canvas paints — Decision §4 covers
 //              the testability rationale.)
+// Refinement: tasks/refinements/participant-ui/part_axiom_mark_decoration.md
+//              (Stylesheet grows ONE `node[?isAxiom]` overlay selector
+//              per Decision §3 — paints `border-style: 'double'` +
+//              `border-width: 3` on top of the per-status border-color /
+//              fill / opacity. A third `useMemo` derives
+//              `axiomMarkIndex = groupAxiomMarksByNode(projectAxiomMarks(events))`
+//              and threads it into `projectGraph` as the third argument.
+//              The mirror `<li participant-node-status>` grows a
+//              `data-is-axiom="true|false"` attribute per Decision §5.)
 // ADRs:
 //   - 0004 (Cytoscape.js for the read-mostly participant tablet);
 //   - 0024 (react-i18next + ICU — `methodology.kind.*` and
@@ -63,6 +72,7 @@ import { useTranslation } from 'react-i18next';
 import type { Event } from '@a-conversa/shared-types';
 
 import { useWsStore } from '../ws/wsStore';
+import { groupAxiomMarksByNode, projectAxiomMarks } from './axiomMarks';
 import { computeFacetStatuses, type FacetStatus } from './facetStatus';
 import {
   projectGraph,
@@ -107,7 +117,7 @@ const EMPTY_EVENTS: readonly Event[] = Object.freeze([]);
  * `outline-*` standing in for Tailwind's `ring-*`; the tinted fill
  * compensating for the lack of a true box-shadow ring).
  */
-const STYLESHEET: StylesheetJson = [
+export const STYLESHEET: StylesheetJson = [
   {
     selector: 'node',
     style: {
@@ -268,6 +278,29 @@ const STYLESHEET: StylesheetJson = [
       opacity: 0.5,
     },
   },
+  // Axiom-mark overlay — Cytoscape's `[?<flag>]` selector matches when
+  // `data.<flag>` is truthy. Composes WITH the per-status branches
+  // above per Decision §3 of
+  // `tasks/refinements/participant-ui/part_axiom_mark_decoration.md`:
+  // the axiom overlay overrides `border-style` + `border-width`
+  // WITHOUT touching `border-color` / `background-color` / `opacity` /
+  // `outline-*` — those stay owned by the per-status branch beneath,
+  // so the composition is "rollup paints colour + opacity; axiom
+  // paints the double border on top". An axiom-marked `agreed` node
+  // reads as "slate-700 double border 3px" (slate-700 from the
+  // agreed branch; double-3 from this overlay). The one cross-layer
+  // interaction worth noting: the `meta-disagreement` branch ALSO
+  // uses `border-style: 'double'`; a node that is both
+  // meta-disagreement AND axiom-marked composes to "violet double
+  // border, width 3" — still unambiguous (violet = meta-disagreement;
+  // bumped width = axiom emphasis), and the case is empirically rare.
+  {
+    selector: 'node[?isAxiom]',
+    style: {
+      'border-style': 'double',
+      'border-width': 3,
+    },
+  },
 ];
 
 export interface GraphViewProps {
@@ -313,6 +346,18 @@ function facetAttr(value: FacetStatus | undefined): string {
   return value ?? '';
 }
 
+/**
+ * Render a `data-is-axiom` attribute value. Explicit `"true"` /
+ * `"false"` (not omit-when-false) keeps the mirror symmetric with the
+ * existing `data-rollup-status` / `data-facet-*` sentinel posture
+ * (Decision §5 of `part_axiom_mark_decoration`); Playwright's
+ * `[data-is-axiom="false"]` probe gives tests an explicit
+ * "we asserted not-axiom" branch.
+ */
+function axiomAttr(value: boolean): 'true' | 'false' {
+  return value ? 'true' : 'false';
+}
+
 export function GraphView({ sessionId, cyRef }: GraphViewProps): ReactElement {
   const { t } = useTranslation();
   const events = useWsStore((state) => state.sessionState[sessionId]?.events ?? EMPTY_EVENTS);
@@ -351,6 +396,14 @@ export function GraphView({ sessionId, cyRef }: GraphViewProps): ReactElement {
   // derivation cost is paid once per WS frame, not per render.
   const facetStatusIndex = useMemo(() => computeFacetStatuses(events), [events]);
 
+  // Axiom-mark index. Computed once per events change so the projector
+  // can stamp the `isAxiom` boolean on every emitted node without
+  // re-walking the log per node. Decision §3 of
+  // `part_axiom_mark_decoration` — the at-a-glance card layer carries
+  // only the boolean signal; the per-participant chromatic
+  // attribution is the entity-detail-panel consumer's concern.
+  const axiomMarkIndex = useMemo(() => groupAxiomMarksByNode(projectAxiomMarks(events)), [events]);
+
   // Raw projection — the per-element data the test mirror surfaces
   // verbatim and the localized memo below enriches for Cytoscape. Split
   // from the localized memo so the mirror has access to the per-element
@@ -364,7 +417,10 @@ export function GraphView({ sessionId, cyRef }: GraphViewProps): ReactElement {
   const projected = useMemo<{
     nodes: ParticipantNodeElement[];
     edges: ParticipantEdgeElement[];
-  }>(() => projectGraph(events, facetStatusIndex), [events, facetStatusIndex]);
+  }>(
+    () => projectGraph(events, facetStatusIndex, axiomMarkIndex),
+    [events, facetStatusIndex, axiomMarkIndex],
+  );
 
   // Element sync — runs on every events / translation change. Cytoscape's
   // `cy.json({ elements })` bulk-replaces the element set; a layout pass
@@ -446,6 +502,7 @@ export function GraphView({ sessionId, cyRef }: GraphViewProps): ReactElement {
             data-facet-classification={facetAttr(node.data.facetStatuses.classification)}
             data-facet-substance={facetAttr(node.data.facetStatuses.substance)}
             data-facet-wording={facetAttr(node.data.facetStatuses.wording)}
+            data-is-axiom={axiomAttr(node.data.isAxiom)}
           />
         ))}
         {renderedEdges.map((edge) => (

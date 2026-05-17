@@ -116,6 +116,7 @@ task participant_ui "Participant (debater) UI" {
     task part_axiom_mark_decoration "Render per-participant axiom-marks" {
       effort 0.5d
       allocate team
+      complete 100
       depends !part_graph_render
     }
     task part_annotation_render "Render annotations on entities" {
