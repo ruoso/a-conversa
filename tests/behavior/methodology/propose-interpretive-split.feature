@@ -15,13 +15,15 @@ Feature: methodology engine — propose interpretive-split handler against a DB-
     # Three participants joined; a node was created and the parent is
     # currently visible. A debater constructs a propose-interpretive-split
     # action; the handler validates against the DB-projected projection
-    # and returns Valid with one proposal event whose payload mirrors the
-    # action's interpretive-split payload.
+    # and returns Valid with the per-reading structural fan-out
+    # (`node-created` + `entity-included` per reading, in array order)
+    # followed by the `proposal` envelope — 2N+1 events for N readings
+    # per ADR 0027 (entity vs facet layer separation).
     Given a seeded session with three participants and a visible candidate-parent node for propose-interpretive-split tests
     When a debater constructs a propose-interpretive-split action against the visible parent
     And the methodology engine validates the propose action against the projected session
     Then the validation result is Valid
-    And the result carries a single proposal event for the interpretive-split action
+    And the result carries the interpretive-split structural fan-out and proposal envelope
 
   Scenario: a propose-interpretive-split against an already-decomposed parent is rejected as illegal-state-transition
     # Three participants joined; a node was created and a prior decompose

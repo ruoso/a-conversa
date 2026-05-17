@@ -368,18 +368,54 @@ When(
 // ---------------------------------------------------------------
 
 Then(
-  'the result carries a single proposal event for the interpretive-split action',
+  'the result carries the interpretive-split structural fan-out and proposal envelope',
   function (this: AConversaWorld) {
     const result = this.scratch['methodologyResult'] as ValidationResult;
     assert.ok(result.ok, `expected Valid, got ${JSON.stringify(result)}`);
     if (!result.ok) return;
-    assert.equal(result.events.length, 1, 'expected exactly one event');
-    const ev = result.events[0]!;
-    assert.equal(ev.kind, 'proposal');
-    assert.equal(ev.sessionId, PIS_SESSION_ID);
-    assert.equal(ev.id, PIS_NEW_EVENT_ID);
-    if (ev.kind === 'proposal') {
-      const inner = ev.payload.proposal;
+    const action = this.scratch['proposeAction'] as ProposeAction;
+    assert.equal(action.proposal.kind, 'interpretive-split');
+    if (action.proposal.kind !== 'interpretive-split') return;
+    const r1NodeId = action.proposal.readings[0]!.node_id;
+    const r2NodeId = action.proposal.readings[1]!.node_id;
+
+    // Per ADR 0027 a 2-reading interpretive-split emits 5 events in
+    // order: node-created(r1), entity-included(r1), node-created(r2),
+    // entity-included(r2), proposal.
+    assert.equal(result.events.length, 5, 'expected 2N+1 = 5 events');
+    const [r1Created, r1Included, r2Created, r2Included, proposalEvent] =
+      result.events as readonly [Event, Event, Event, Event, Event];
+
+    assert.equal(r1Created.kind, 'node-created');
+    assert.equal(r1Created.sessionId, PIS_SESSION_ID);
+    assert.equal(r1Created.sequence, action.sequence);
+    if (r1Created.kind === 'node-created') {
+      assert.equal(r1Created.payload.node_id, r1NodeId);
+    }
+    assert.equal(r1Included.kind, 'entity-included');
+    assert.equal(r1Included.sequence, action.sequence + 1);
+    if (r1Included.kind === 'entity-included') {
+      assert.equal(r1Included.payload.entity_kind, 'node');
+      assert.equal(r1Included.payload.entity_id, r1NodeId);
+    }
+    assert.equal(r2Created.kind, 'node-created');
+    assert.equal(r2Created.sequence, action.sequence + 2);
+    if (r2Created.kind === 'node-created') {
+      assert.equal(r2Created.payload.node_id, r2NodeId);
+    }
+    assert.equal(r2Included.kind, 'entity-included');
+    assert.equal(r2Included.sequence, action.sequence + 3);
+    if (r2Included.kind === 'entity-included') {
+      assert.equal(r2Included.payload.entity_kind, 'node');
+      assert.equal(r2Included.payload.entity_id, r2NodeId);
+    }
+
+    assert.equal(proposalEvent.kind, 'proposal');
+    assert.equal(proposalEvent.sessionId, PIS_SESSION_ID);
+    assert.equal(proposalEvent.id, PIS_NEW_EVENT_ID);
+    assert.equal(proposalEvent.sequence, action.sequence + 4);
+    if (proposalEvent.kind === 'proposal') {
+      const inner = proposalEvent.payload.proposal;
       assert.equal(inner.kind, 'interpretive-split');
       if (inner.kind === 'interpretive-split') {
         assert.equal(inner.parent_node_id, PIS_PARENT_NODE_ID);

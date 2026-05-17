@@ -15,13 +15,15 @@ Feature: methodology engine — propose decompose handler against a DB-projected
     # Three participants joined; a node was created and the parent is
     # currently visible. A debater constructs a propose-decompose action;
     # the handler validates against the DB-projected projection and
-    # returns Valid with one proposal event whose payload mirrors the
-    # action's decompose payload.
+    # returns Valid with the per-component structural fan-out
+    # (`node-created` + `entity-included` per component, in array order)
+    # followed by the `proposal` envelope — 2N+1 events for N components
+    # per ADR 0027 (entity vs facet layer separation).
     Given a seeded session with three participants and a visible candidate-parent node for propose-decompose tests
     When a debater constructs a propose-decompose action against the visible parent
     And the methodology engine validates the propose action against the projected session
     Then the validation result is Valid
-    And the result carries a single proposal event for the decompose action
+    And the result carries the decompose structural fan-out and proposal envelope
 
   Scenario: a propose-decompose against an unknown node is rejected as target-entity-not-found
     # Three participants joined; no node matching the proposed

@@ -344,18 +344,54 @@ When(
 // ---------------------------------------------------------------
 
 Then(
-  'the result carries a single proposal event for the decompose action',
+  'the result carries the decompose structural fan-out and proposal envelope',
   function (this: AConversaWorld) {
     const result = this.scratch['methodologyResult'] as ValidationResult;
     assert.ok(result.ok, `expected Valid, got ${JSON.stringify(result)}`);
     if (!result.ok) return;
-    assert.equal(result.events.length, 1, 'expected exactly one event');
-    const ev = result.events[0]!;
-    assert.equal(ev.kind, 'proposal');
-    assert.equal(ev.sessionId, PD_SESSION_ID);
-    assert.equal(ev.id, PD_NEW_EVENT_ID);
-    if (ev.kind === 'proposal') {
-      const inner = ev.payload.proposal;
+    const action = this.scratch['proposeAction'] as ProposeAction;
+    assert.equal(action.proposal.kind, 'decompose');
+    if (action.proposal.kind !== 'decompose') return;
+    const c1NodeId = action.proposal.components[0]!.node_id;
+    const c2NodeId = action.proposal.components[1]!.node_id;
+
+    // Per ADR 0027 a 2-component decompose emits 5 events in order:
+    // node-created(c1), entity-included(c1), node-created(c2),
+    // entity-included(c2), proposal.
+    assert.equal(result.events.length, 5, 'expected 2N+1 = 5 events');
+    const [c1Created, c1Included, c2Created, c2Included, proposalEvent] =
+      result.events as readonly [Event, Event, Event, Event, Event];
+
+    assert.equal(c1Created.kind, 'node-created');
+    assert.equal(c1Created.sessionId, PD_SESSION_ID);
+    assert.equal(c1Created.sequence, action.sequence);
+    if (c1Created.kind === 'node-created') {
+      assert.equal(c1Created.payload.node_id, c1NodeId);
+    }
+    assert.equal(c1Included.kind, 'entity-included');
+    assert.equal(c1Included.sequence, action.sequence + 1);
+    if (c1Included.kind === 'entity-included') {
+      assert.equal(c1Included.payload.entity_kind, 'node');
+      assert.equal(c1Included.payload.entity_id, c1NodeId);
+    }
+    assert.equal(c2Created.kind, 'node-created');
+    assert.equal(c2Created.sequence, action.sequence + 2);
+    if (c2Created.kind === 'node-created') {
+      assert.equal(c2Created.payload.node_id, c2NodeId);
+    }
+    assert.equal(c2Included.kind, 'entity-included');
+    assert.equal(c2Included.sequence, action.sequence + 3);
+    if (c2Included.kind === 'entity-included') {
+      assert.equal(c2Included.payload.entity_kind, 'node');
+      assert.equal(c2Included.payload.entity_id, c2NodeId);
+    }
+
+    assert.equal(proposalEvent.kind, 'proposal');
+    assert.equal(proposalEvent.sessionId, PD_SESSION_ID);
+    assert.equal(proposalEvent.id, PD_NEW_EVENT_ID);
+    assert.equal(proposalEvent.sequence, action.sequence + 4);
+    if (proposalEvent.kind === 'proposal') {
+      const inner = proposalEvent.payload.proposal;
       assert.equal(inner.kind, 'decompose');
       if (inner.kind === 'decompose') {
         assert.equal(inner.parent_node_id, PD_PARENT_NODE_ID);
