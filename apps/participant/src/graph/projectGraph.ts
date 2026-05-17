@@ -34,6 +34,15 @@
 //    the per-target bucket. The structural divergence from
 //    `part_axiom_mark_decoration` — annotations target both kinds per
 //    the wire schema XOR — is noted in Decision §1.)
+// Refinement: tasks/refinements/participant-ui/part_diagnostic_highlights.md
+//   (Constraints — `projectGraph` signature widens AGAIN to take a
+//    sixth `diagnosticHighlightIndex: DiagnosticHighlightIndex`
+//    argument. Every emitted node AND edge `data` carries
+//    `diagnosticHighlight: DiagnosticHighlight | null` stamped from the
+//    per-target bucket. Symmetric across node + edge per Decision §1 —
+//    two of the five surfaced diagnostic kinds (`contradiction` and
+//    `coherency-hint.self-contradicts`) touch edges in addition to
+//    nodes.)
 // ADRs:
 //   - 0004 (Cytoscape.js for the read-mostly participant tablet);
 //   - 0021 (event envelope shape — the shell client validates incoming
@@ -62,6 +71,7 @@ import {
   type Annotation,
 } from './annotations';
 import { type AxiomMark, nodeHasAxiomMark } from './axiomMarks';
+import { type DiagnosticHighlight, type DiagnosticHighlightIndex } from './diagnosticHighlights';
 import {
   cardRollupStatus,
   EMPTY_FACET_STATUSES,
@@ -126,6 +136,21 @@ export interface ParticipantNodeData {
    * (Decision §1).
    */
   readonly annotationCount: number;
+  /**
+   * Per-entity diagnostic-highlight rollup, or `null` when no active
+   * structural diagnostic touches this node. Sourced from the
+   * `diagnosticHighlightIndex.nodes` argument. Drives the
+   * `node[diagnosticSeverity = "..."]` Cytoscape stylesheet branches
+   * (the amber border overlay per Decision §3 of
+   * `part_diagnostic_highlights`) AND the
+   * `data-diagnostic-severity` / `data-diagnostic-kinds` mirror
+   * attributes (Decision §5). The at-a-glance card layer carries the
+   * rolled-up severity + the deduped kind list; the per-kind
+   * localized prose (`diagnostics.<kind>.title` / `.description` /
+   * etc.) is the future entity-detail-panel consumer's concern
+   * (Decision §1).
+   */
+  readonly diagnosticHighlight: DiagnosticHighlight | null;
 }
 
 /**
@@ -171,6 +196,20 @@ export interface ParticipantEdgeData {
    * Symmetric with `ParticipantNodeData.annotationCount`.
    */
   readonly annotationCount: number;
+  /**
+   * Per-entity diagnostic-highlight rollup, or `null` when no active
+   * structural diagnostic touches this edge. Sourced from the
+   * `diagnosticHighlightIndex.edges` argument. Drives the
+   * `edge[diagnosticSeverity = "..."]` Cytoscape stylesheet branches
+   * (the amber underlay halo per Decision §3 of
+   * `part_diagnostic_highlights`) AND the
+   * `data-diagnostic-severity` / `data-diagnostic-kinds` mirror
+   * attributes. Symmetric with `ParticipantNodeData.diagnosticHighlight`
+   * — two of the surfaced diagnostic kinds touch edges
+   * (`contradiction.edges` and `coherency-hint.self-contradicts.edgeId`)
+   * per Decision §1.
+   */
+  readonly diagnosticHighlight: DiagnosticHighlight | null;
 }
 
 /**
@@ -247,6 +286,7 @@ export function projectGraph(
   axiomMarkIndex: ReadonlyMap<string, readonly AxiomMark[]>,
   nodeAnnotationIndex: ReadonlyMap<string, readonly Annotation[]>,
   edgeAnnotationIndex: ReadonlyMap<string, readonly Annotation[]>,
+  diagnosticHighlightIndex: DiagnosticHighlightIndex,
 ): {
   nodes: ParticipantNodeElement[];
   edges: ParticipantEdgeElement[];
@@ -276,6 +316,7 @@ export function projectGraph(
           isAxiom: nodeHasAxiomMark(axiomMarkIndex, event.payload.node_id),
           hasAnnotation: nodeHasAnnotation(nodeAnnotationIndex, event.payload.node_id),
           annotationCount: annotationCountFor(nodeAnnotationIndex, event.payload.node_id),
+          diagnosticHighlight: diagnosticHighlightIndex.nodes.get(event.payload.node_id) ?? null,
         },
       };
       nodeIndexById.set(event.payload.node_id, nodes.length);
@@ -296,6 +337,7 @@ export function projectGraph(
           rollupStatus: slot.rollupStatus,
           hasAnnotation: edgeHasAnnotation(edgeAnnotationIndex, event.payload.edge_id),
           annotationCount: annotationCountFor(edgeAnnotationIndex, event.payload.edge_id),
+          diagnosticHighlight: diagnosticHighlightIndex.edges.get(event.payload.edge_id) ?? null,
         },
       };
       edges.push(element);

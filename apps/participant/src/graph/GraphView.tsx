@@ -34,6 +34,22 @@
 //              `data-annotation-count="<n>"` attributes per Decision §5.
 //              Symmetric across node + edge target kinds per Decision §1
 //              — annotations target both per the wire schema XOR.)
+// Refinement: tasks/refinements/participant-ui/part_diagnostic_highlights.md
+//              (Stylesheet grows FOUR selectors per Decision §3 — one per
+//              `(target-kind × severity)` cell:
+//              `node[diagnosticSeverity = "blocking"]` + advisory paint
+//              amber border overrides; `edge[diagnosticSeverity = ...]`
+//              paints an amber `underlay-*` halo + width bump on the
+//              edge stroke. A sixth `useMemo` derives
+//              `diagnosticHighlightIndex = projectDiagnosticHighlights(activeDiagnostics)`
+//              from the participant-widened `activeDiagnostics` slot
+//              and threads it into `projectGraph` as the sixth argument.
+//              The mirror `<li participant-node-status>` AND
+//              `<li participant-edge-status>` BOTH grow
+//              `data-diagnostic-severity="blocking|advisory|none"` +
+//              `data-diagnostic-kinds="<csv>"` attributes per Decision §5.
+//              Symmetric across node + edge target kinds per Decision §1
+//              — two of five surfaced kinds touch edges.)
 // ADRs:
 //   - 0004 (Cytoscape.js for the read-mostly participant tablet);
 //   - 0024 (react-i18next + ICU — `methodology.kind.*` and
@@ -84,11 +100,12 @@
 import { useEffect, useMemo, useRef, type ReactElement } from 'react';
 import cytoscape, { type Core, type ElementDefinition, type StylesheetJson } from 'cytoscape';
 import { useTranslation } from 'react-i18next';
-import type { Event } from '@a-conversa/shared-types';
+import type { DiagnosticPayload, Event } from '@a-conversa/shared-types';
 
 import { useWsStore } from '../ws/wsStore';
 import { groupAnnotationsByEdge, groupAnnotationsByNode, projectAnnotations } from './annotations';
 import { groupAxiomMarksByNode, projectAxiomMarks } from './axiomMarks';
+import { projectDiagnosticHighlights, type DiagnosticHighlight } from './diagnosticHighlights';
 import { computeFacetStatuses, type FacetStatus } from './facetStatus';
 import {
   projectGraph,
@@ -104,6 +121,14 @@ import {
  * Same idiom the moderator's `GraphCanvasPane` uses.
  */
 const EMPTY_EVENTS: readonly Event[] = Object.freeze([]);
+
+/**
+ * Stable empty-`activeDiagnostics` reference for the per-session
+ * selector. Mirrors the moderator's `EMPTY_*` idiom so the diagnostic-
+ * highlight memo stays reference-stable when the per-session slice does
+ * not yet exist (Zustand's reference-equality bailout).
+ */
+const EMPTY_DIAGNOSTICS_MAP: ReadonlyMap<string, DiagnosticPayload> = Object.freeze(new Map());
 
 /**
  * Cytoscape stylesheet — declared at module scope so the reference
@@ -356,6 +381,58 @@ export const STYLESHEET: StylesheetJson = [
       'underlay-padding': 3,
     },
   },
+  // Diagnostic-highlight overlay — per Decision §3 of
+  // `tasks/refinements/participant-ui/part_diagnostic_highlights.md`.
+  // Four selectors, one per `(target-kind × severity)` cell. Cytoscape's
+  // `[<key> = "<value>"]` data-equality selector matches on the flat
+  // `data.diagnosticSeverity` sibling slot (the selector grammar cannot
+  // reach into nested `data.diagnosticHighlight.severity`; the localized
+  // `elements` memo derives the flat slot from the nested object).
+  //
+  // Composition with the prior layers (per Decision §3): the diagnostic
+  // ring REPLACES `border-color`/`border-width`/`border-opacity` on the
+  // node body (overriding the per-status rollup colour because the
+  // engine's structural signal outranks the agreement-state signal); it
+  // does NOT touch `border-style`, so an axiom-marked AND diagnosed
+  // node still reads as "double" (axiom-mark) at width 4 amber-700
+  // (blocking). On edges the diagnostic uses `underlay-*` like the
+  // annotation overlay; because diagnostic appears later in the
+  // stylesheet, the diagnostic underlay wins when both fire on the
+  // same edge.
+  {
+    selector: 'node[diagnosticSeverity = "blocking"]',
+    style: {
+      'border-color': '#b45309', // amber-700
+      'border-width': 4,
+      'border-opacity': 0.9,
+    },
+  },
+  {
+    selector: 'node[diagnosticSeverity = "advisory"]',
+    style: {
+      'border-color': '#fbbf24', // amber-400
+      'border-width': 2,
+      'border-opacity': 0.7,
+    },
+  },
+  {
+    selector: 'edge[diagnosticSeverity = "blocking"]',
+    style: {
+      width: 5,
+      'underlay-color': '#b45309', // amber-700
+      'underlay-opacity': 0.45,
+      'underlay-padding': 4,
+    },
+  },
+  {
+    selector: 'edge[diagnosticSeverity = "advisory"]',
+    style: {
+      width: 3,
+      'underlay-color': '#fbbf24', // amber-400
+      'underlay-opacity': 0.3,
+      'underlay-padding': 2,
+    },
+  },
 ];
 
 export interface GraphViewProps {
@@ -435,6 +512,33 @@ function annotationCountAttr(value: number): string {
   return String(value);
 }
 
+/**
+ * Render a `data-diagnostic-severity` attribute value. Explicit
+ * `"blocking"` / `"advisory"` / `"none"` (not omit-when-null) keeps the
+ * mirror symmetric with the existing sentinel-string posture
+ * (Decision §5 of `part_diagnostic_highlights`). The literal `"none"`
+ * branch is what the explicit "we asserted not-flagged" Playwright
+ * probe matches against.
+ */
+function diagnosticSeverityAttr(
+  highlight: DiagnosticHighlight | null,
+): 'blocking' | 'advisory' | 'none' {
+  return highlight?.severity ?? 'none';
+}
+
+/**
+ * Render a `data-diagnostic-kinds` attribute value. Encounter-order
+ * comma-joined sentinel list (`""` for no-kinds; `"cycle"` for one,
+ * `"cycle,contradiction"` for two, etc.). The encounter order matches
+ * the projection's rollup contract — diagnostic envelopes land in a
+ * defined order via the map's insertion order, and the rollup preserves
+ * that order while deduping. Decision §5 documents the explicit
+ * `""` posture (not omit-when-empty).
+ */
+function diagnosticKindsAttr(highlight: DiagnosticHighlight | null): string {
+  return highlight?.kinds.join(',') ?? '';
+}
+
 export function GraphView({ sessionId, cyRef }: GraphViewProps): ReactElement {
   const { t } = useTranslation();
   const events = useWsStore((state) => state.sessionState[sessionId]?.events ?? EMPTY_EVENTS);
@@ -493,6 +597,24 @@ export function GraphView({ sessionId, cyRef }: GraphViewProps): ReactElement {
   const nodeAnnotationIndex = useMemo(() => groupAnnotationsByNode(annotations), [annotations]);
   const edgeAnnotationIndex = useMemo(() => groupAnnotationsByEdge(annotations), [annotations]);
 
+  // Diagnostic-highlight derivation. Per Decision §2 of
+  // `part_diagnostic_highlights` the participant's WS store carries an
+  // `activeDiagnostics` map per session, maintained by the widened
+  // `applyDiagnostic` reducer (`fired` adds, `cleared` removes). The
+  // per-session selector reads that map (defaulting to the frozen empty
+  // ref to keep Zustand's reference-equality bailout stable), then the
+  // memo projects it into a `DiagnosticHighlightIndex` once per map
+  // change. Decision §7 — the active set is the only correct source;
+  // `lastDiagnostic` carries one envelope, not the set, and the events
+  // log carries no diagnostic kind.
+  const activeDiagnostics = useWsStore(
+    (state) => state.sessionState[sessionId]?.activeDiagnostics ?? EMPTY_DIAGNOSTICS_MAP,
+  );
+  const diagnosticHighlightIndex = useMemo(
+    () => projectDiagnosticHighlights(activeDiagnostics),
+    [activeDiagnostics],
+  );
+
   // Raw projection — the per-element data the test mirror surfaces
   // verbatim and the localized memo below enriches for Cytoscape. Split
   // from the localized memo so the mirror has access to the per-element
@@ -514,8 +636,16 @@ export function GraphView({ sessionId, cyRef }: GraphViewProps): ReactElement {
         axiomMarkIndex,
         nodeAnnotationIndex,
         edgeAnnotationIndex,
+        diagnosticHighlightIndex,
       ),
-    [events, facetStatusIndex, axiomMarkIndex, nodeAnnotationIndex, edgeAnnotationIndex],
+    [
+      events,
+      facetStatusIndex,
+      axiomMarkIndex,
+      nodeAnnotationIndex,
+      edgeAnnotationIndex,
+      diagnosticHighlightIndex,
+    ],
   );
 
   // Element sync — runs on every events / translation change. Cytoscape's
@@ -540,11 +670,20 @@ export function GraphView({ sessionId, cyRef }: GraphViewProps): ReactElement {
   }, [projected]);
 
   const elements = useMemo<ElementDefinition[]>(() => {
+    // The localized memo also derives a flat `diagnosticSeverity` slot
+    // for Cytoscape's per-data-value selector to match on (Decision §4
+    // of `part_diagnostic_highlights` — the selector grammar cannot
+    // reach into the nested `diagnosticHighlight` object, so severity
+    // is exposed as a sibling primitive). `'none'` is the sentinel
+    // string for the no-diagnostic baseline — keeps the
+    // `node[diagnosticSeverity = "blocking"]` / `"advisory"` selectors
+    // from accidentally firing on entities with no active diagnostic.
     const localizedNodes: ElementDefinition[] = projected.nodes.map((node) => ({
       group: 'nodes',
       data: {
         ...node.data,
         kindLabel: node.data.kind === null ? '—' : t(`methodology.kind.${node.data.kind}`),
+        diagnosticSeverity: node.data.diagnosticHighlight?.severity ?? 'none',
       },
     }));
     const localizedEdges: ElementDefinition[] = renderedEdges.map((edge) => ({
@@ -552,6 +691,7 @@ export function GraphView({ sessionId, cyRef }: GraphViewProps): ReactElement {
       data: {
         ...edge.data,
         roleLabel: t(`methodology.edgeRole.${edge.data.role}.label`),
+        diagnosticSeverity: edge.data.diagnosticHighlight?.severity ?? 'none',
       },
     }));
     return [...localizedNodes, ...localizedEdges];
@@ -601,6 +741,8 @@ export function GraphView({ sessionId, cyRef }: GraphViewProps): ReactElement {
             data-is-axiom={axiomAttr(node.data.isAxiom)}
             data-has-annotation={hasAnnotationAttr(node.data.hasAnnotation)}
             data-annotation-count={annotationCountAttr(node.data.annotationCount)}
+            data-diagnostic-severity={diagnosticSeverityAttr(node.data.diagnosticHighlight)}
+            data-diagnostic-kinds={diagnosticKindsAttr(node.data.diagnosticHighlight)}
           />
         ))}
         {renderedEdges.map((edge) => (
@@ -612,6 +754,8 @@ export function GraphView({ sessionId, cyRef }: GraphViewProps): ReactElement {
             data-facet-substance={facetAttr(edge.data.facetStatuses.substance)}
             data-has-annotation={hasAnnotationAttr(edge.data.hasAnnotation)}
             data-annotation-count={annotationCountAttr(edge.data.annotationCount)}
+            data-diagnostic-severity={diagnosticSeverityAttr(edge.data.diagnosticHighlight)}
+            data-diagnostic-kinds={diagnosticKindsAttr(edge.data.diagnosticHighlight)}
           />
         ))}
       </ul>

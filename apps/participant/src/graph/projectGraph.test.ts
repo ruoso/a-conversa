@@ -19,6 +19,14 @@
 //              6 new cases added covering the per-target
 //              `hasAnnotation` + `annotationCount` stamping on BOTH
 //              nodes AND edges per Decision §1's structural symmetry.)
+// Refinement: tasks/refinements/participant-ui/part_diagnostic_highlights.md
+//              (Constraints — signature widens AGAIN to take a sixth
+//              `diagnosticHighlightIndex: DiagnosticHighlightIndex`
+//              argument; existing cases pass the shared
+//              `EMPTY_DIAGNOSTIC_HIGHLIGHTS` reference; 6 new cases
+//              added covering the per-target
+//              `diagnosticHighlight` stamping on BOTH nodes AND edges
+//              per Decision §1's structural symmetry.)
 // ADRs:        0022 (no throwaway verifications — the projection's
 //              behaviour is fully pinned at this pure layer; the
 //              `<GraphView>` mount tests then assert the Cytoscape
@@ -34,6 +42,13 @@ import type { EdgeRole, Event, StatementKind } from '@a-conversa/shared-types';
 import { projectGraph } from './projectGraph';
 import type { Annotation } from './annotations';
 import type { AxiomMark } from './axiomMarks';
+import {
+  EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+  type DiagnosticHighlight,
+  type DiagnosticHighlightIndex,
+  type DiagnosticHighlightKind,
+  type DiagnosticHighlightSeverity,
+} from './diagnosticHighlights';
 import type { FacetName, FacetStatus, FacetStatusIndex } from './facetStatus';
 
 const SESSION_ID = '00000000-0000-4000-8000-000000000001';
@@ -251,6 +266,7 @@ describe('projectGraph — pure projection from events to Cytoscape elements', (
         emptyAxiomIndex(),
         emptyAnnotationIndex(),
         emptyAnnotationIndex(),
+        EMPTY_DIAGNOSTIC_HIGHLIGHTS,
       ),
     ).toEqual({ nodes: [], edges: [] });
   });
@@ -265,6 +281,7 @@ describe('projectGraph — pure projection from events to Cytoscape elements', (
       emptyAxiomIndex(),
       emptyAnnotationIndex(),
       emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
     );
     expect(edges).toEqual([]);
     expect(nodes).toHaveLength(1);
@@ -298,6 +315,7 @@ describe('projectGraph — pure projection from events to Cytoscape elements', (
       emptyAxiomIndex(),
       emptyAnnotationIndex(),
       emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
     );
     expect(edges).toHaveLength(1);
     expect(edges[0]).toMatchObject({
@@ -333,6 +351,7 @@ describe('projectGraph — pure projection from events to Cytoscape elements', (
       emptyAxiomIndex(),
       emptyAnnotationIndex(),
       emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
     );
     expect(nodes.map((n) => n.data.id)).toEqual([NODE_A, NODE_B]);
     expect(edges.map((e) => e.data.id)).toEqual([EDGE_A, EDGE_B]);
@@ -354,6 +373,7 @@ describe('projectGraph — pure projection from events to Cytoscape elements', (
       emptyAxiomIndex(),
       emptyAnnotationIndex(),
       emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
     );
     expect(nodes).toHaveLength(1);
     expect(nodes[0]?.data.kind).toBeNull();
@@ -376,6 +396,7 @@ describe('projectGraph — pure projection from events to Cytoscape elements', (
       emptyAxiomIndex(),
       emptyAnnotationIndex(),
       emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
     );
     expect(nodes).toHaveLength(1);
     expect(nodes[0]?.data.kind).toBe('normative');
@@ -392,6 +413,7 @@ describe('projectGraph — pure projection from events to Cytoscape elements', (
       emptyAxiomIndex(),
       emptyAnnotationIndex(),
       emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
     );
     expect(nodes).toHaveLength(1);
     expect(nodes[0]?.data.kind).toBeNull();
@@ -417,6 +439,7 @@ describe('projectGraph — pure projection from events to Cytoscape elements', (
         emptyAxiomIndex(),
         emptyAnnotationIndex(),
         emptyAnnotationIndex(),
+        EMPTY_DIAGNOSTIC_HIGHLIGHTS,
       );
       expect(nodes).toHaveLength(1);
       expect(nodes[0]?.data.kind).toBe(kind);
@@ -452,6 +475,7 @@ describe('projectGraph — pure projection from events to Cytoscape elements', (
         emptyAxiomIndex(),
         emptyAnnotationIndex(),
         emptyAnnotationIndex(),
+        EMPTY_DIAGNOSTIC_HIGHLIGHTS,
       );
       expect(edges).toHaveLength(1);
       expect(edges[0]?.data.role).toBe(role);
@@ -478,6 +502,7 @@ describe('projectGraph — pure projection from events to Cytoscape elements', (
       emptyAxiomIndex(),
       emptyAnnotationIndex(),
       emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
     );
     expect(nodes).toHaveLength(1);
     expect(nodes[0]?.data.kind).toBe('value');
@@ -496,6 +521,7 @@ describe('projectGraph — per-facet status stamping (part_per_facet_state_styli
       emptyAxiomIndex(),
       emptyAnnotationIndex(),
       emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
     );
     expect(nodes[0]?.data.facetStatuses).toEqual({ classification: 'proposed' });
   });
@@ -511,6 +537,7 @@ describe('projectGraph — per-facet status stamping (part_per_facet_state_styli
       emptyAxiomIndex(),
       emptyAnnotationIndex(),
       emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
     );
     expect(nodes[0]?.data.facetStatuses).toEqual({ substance: 'agreed' });
   });
@@ -526,6 +553,7 @@ describe('projectGraph — per-facet status stamping (part_per_facet_state_styli
       emptyAxiomIndex(),
       emptyAnnotationIndex(),
       emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
     );
     expect(nodes[0]?.data.facetStatuses).toEqual({ wording: 'disputed' });
   });
@@ -545,6 +573,7 @@ describe('projectGraph — per-facet status stamping (part_per_facet_state_styli
       emptyAxiomIndex(),
       emptyAnnotationIndex(),
       emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
     );
     expect(edges[0]?.data.facetStatuses).toEqual({ substance: 'proposed' });
     expect(edges[0]?.data.rollupStatus).toBe('proposed');
@@ -561,6 +590,7 @@ describe('projectGraph — per-facet status stamping (part_per_facet_state_styli
       emptyAxiomIndex(),
       emptyAnnotationIndex(),
       emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
     );
     expect(nodes[0]?.data.rollupStatus).toBe('proposed');
   });
@@ -576,6 +606,7 @@ describe('projectGraph — per-facet status stamping (part_per_facet_state_styli
       emptyAxiomIndex(),
       emptyAnnotationIndex(),
       emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
     );
     expect(nodes[0]?.data.rollupStatus).toBe('agreed');
   });
@@ -589,6 +620,7 @@ describe('projectGraph — per-facet status stamping (part_per_facet_state_styli
       emptyAxiomIndex(),
       emptyAnnotationIndex(),
       emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
     );
     expect(nodes[0]?.data.rollupStatus).toBe('none');
     // Also when the entry is present but the record is empty.
@@ -599,6 +631,7 @@ describe('projectGraph — per-facet status stamping (part_per_facet_state_styli
       emptyAxiomIndex(),
       emptyAnnotationIndex(),
       emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
     );
     expect(nodes2[0]?.data.rollupStatus).toBe('none');
   });
@@ -614,6 +647,7 @@ describe('projectGraph — per-facet status stamping (part_per_facet_state_styli
       emptyAxiomIndex(),
       emptyAnnotationIndex(),
       emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
     );
     expect(nodes[0]?.data.rollupStatus).toBe('proposed');
     expect(nodes[0]?.data.facetStatuses).toEqual({
@@ -635,6 +669,7 @@ describe('projectGraph — axiom-mark stamping (part_axiom_mark_decoration)', ()
       emptyAxiomIndex(),
       emptyAnnotationIndex(),
       emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
     );
     expect(nodes).toHaveLength(2);
     expect(nodes[0]?.data.isAxiom).toBe(false);
@@ -650,6 +685,7 @@ describe('projectGraph — axiom-mark stamping (part_axiom_mark_decoration)', ()
       axiomIndex,
       emptyAnnotationIndex(),
       emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
     );
     expect(nodes).toHaveLength(1);
     expect(nodes[0]?.data.isAxiom).toBe(true);
@@ -667,6 +703,7 @@ describe('projectGraph — axiom-mark stamping (part_axiom_mark_decoration)', ()
       axiomIndex,
       emptyAnnotationIndex(),
       emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
     );
     expect(nodes).toHaveLength(2);
     const byId = new Map(nodes.map((n) => [n.data.id, n.data.isAxiom]));
@@ -692,6 +729,7 @@ describe('projectGraph — axiom-mark stamping (part_axiom_mark_decoration)', ()
       axiomIndex,
       emptyAnnotationIndex(),
       emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
     );
     expect(nodes).toHaveLength(1);
     // Both the classification AND the axiom-mark survive.
@@ -720,6 +758,7 @@ describe('projectGraph — axiom-mark stamping (part_axiom_mark_decoration)', ()
       axiomIndex,
       emptyAnnotationIndex(),
       emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
     );
     expect(edges).toHaveLength(1);
     expect((edges[0]?.data as unknown as Record<string, unknown>).isAxiom).toBeUndefined();
@@ -738,6 +777,7 @@ describe('projectGraph — annotation stamping (part_annotation_render)', () => 
       emptyAxiomIndex(),
       emptyAnnotationIndex(),
       emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
     );
     expect(nodes).toHaveLength(2);
     expect(nodes[0]?.data.hasAnnotation).toBe(false);
@@ -755,6 +795,7 @@ describe('projectGraph — annotation stamping (part_annotation_render)', () => 
       emptyAxiomIndex(),
       nodeAnnotationIndex,
       emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
     );
     expect(nodes).toHaveLength(1);
     expect(nodes[0]?.data.hasAnnotation).toBe(true);
@@ -770,6 +811,7 @@ describe('projectGraph — annotation stamping (part_annotation_render)', () => 
       emptyAxiomIndex(),
       nodeAnnotationIndex,
       emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
     );
     expect(nodes[0]?.data.hasAnnotation).toBe(true);
     expect(nodes[0]?.data.annotationCount).toBe(3);
@@ -793,6 +835,7 @@ describe('projectGraph — annotation stamping (part_annotation_render)', () => 
       emptyAxiomIndex(),
       emptyAnnotationIndex(),
       edgeAnnotationIndex,
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
     );
     expect(edges).toHaveLength(1);
     expect(edges[0]?.data.hasAnnotation).toBe(true);
@@ -817,6 +860,7 @@ describe('projectGraph — annotation stamping (part_annotation_render)', () => 
       emptyAxiomIndex(),
       nodeAnnotationIndex,
       emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
     );
     expect(nodes).toHaveLength(1);
     // Both the classification AND the annotation pair survive.
@@ -844,6 +888,7 @@ describe('projectGraph — annotation stamping (part_annotation_render)', () => 
       emptyAxiomIndex(),
       nodeAnnotationIndex,
       emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
     );
     const byId = new Map(nodes.map((n) => [n.data.id, n.data]));
     expect(byId.get(NODE_A)?.hasAnnotation).toBe(true);
@@ -852,5 +897,190 @@ describe('projectGraph — annotation stamping (part_annotation_render)', () => 
     expect(byId.get(NODE_B)?.annotationCount).toBe(0);
     expect(edges[0]?.data.hasAnnotation).toBe(false);
     expect(edges[0]?.data.annotationCount).toBe(0);
+  });
+});
+
+// -------------------------------------------------------------------
+// Diagnostic-highlight stamping — added by
+// `participant_ui.part_graph_view.part_diagnostic_highlights`.
+// Refinement: tasks/refinements/participant-ui/part_diagnostic_highlights.md
+//
+// Six new cases pinning the per-target `diagnosticHighlight` stamping
+// on BOTH nodes AND edges (Decision §1 symmetry), with the
+// rolled-up severity + deduped kinds list flowing from the
+// `DiagnosticHighlightIndex` argument onto each emitted element's
+// `data.diagnosticHighlight` slot.
+// -------------------------------------------------------------------
+
+/**
+ * Build a `DiagnosticHighlightIndex` from literal records. The projector
+ * only consults `.nodes.get(id)` / `.edges.get(id)`, so each entry's
+ * `severity` + `kinds` shape is what flows through.
+ */
+function diagnosticIndexFromLiterals(opts: {
+  nodes?: Record<
+    string,
+    { severity: DiagnosticHighlightSeverity; kinds: readonly DiagnosticHighlightKind[] }
+  >;
+  edges?: Record<
+    string,
+    { severity: DiagnosticHighlightSeverity; kinds: readonly DiagnosticHighlightKind[] }
+  >;
+}): DiagnosticHighlightIndex {
+  const nodes = new Map<string, DiagnosticHighlight>();
+  for (const [id, record] of Object.entries(opts.nodes ?? {})) {
+    nodes.set(id, record);
+  }
+  const edges = new Map<string, DiagnosticHighlight>();
+  for (const [id, record] of Object.entries(opts.edges ?? {})) {
+    edges.set(id, record);
+  }
+  return { nodes, edges };
+}
+
+describe('projectGraph — diagnostic-highlight stamping (part_diagnostic_highlights)', () => {
+  it('(gg) stamps diagnosticHighlight: null on every node + edge by default (empty diagnostic index)', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeNodeCreated({ sequence: 2, nodeId: NODE_B, wording: 'B' }),
+      makeEdgeCreated({
+        sequence: 3,
+        edgeId: EDGE_A,
+        source: NODE_A,
+        target: NODE_B,
+      }),
+    ];
+    const { nodes, edges } = projectGraph(
+      events,
+      emptyIndex(),
+      emptyAxiomIndex(),
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+    );
+    expect(nodes).toHaveLength(2);
+    expect(nodes[0]?.data.diagnosticHighlight).toBeNull();
+    expect(nodes[1]?.data.diagnosticHighlight).toBeNull();
+    expect(edges[0]?.data.diagnosticHighlight).toBeNull();
+  });
+
+  it('(hh) stamps the right DiagnosticHighlight on a node when the index targets it', () => {
+    const events: Event[] = [makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' })];
+    const index = diagnosticIndexFromLiterals({
+      nodes: { [NODE_A]: { severity: 'blocking', kinds: ['cycle'] } },
+    });
+    const { nodes } = projectGraph(
+      events,
+      emptyIndex(),
+      emptyAxiomIndex(),
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+      index,
+    );
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0]?.data.diagnosticHighlight).toEqual({
+      severity: 'blocking',
+      kinds: ['cycle'],
+    });
+  });
+
+  it('(ii) stamps the right DiagnosticHighlight on an edge when the index targets it', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeNodeCreated({ sequence: 2, nodeId: NODE_B, wording: 'B' }),
+      makeEdgeCreated({
+        sequence: 3,
+        edgeId: EDGE_A,
+        source: NODE_A,
+        target: NODE_B,
+      }),
+    ];
+    const index = diagnosticIndexFromLiterals({
+      edges: { [EDGE_A]: { severity: 'blocking', kinds: ['contradiction'] } },
+    });
+    const { edges } = projectGraph(
+      events,
+      emptyIndex(),
+      emptyAxiomIndex(),
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+      index,
+    );
+    expect(edges).toHaveLength(1);
+    expect(edges[0]?.data.diagnosticHighlight).toEqual({
+      severity: 'blocking',
+      kinds: ['contradiction'],
+    });
+  });
+
+  it('(jj) per-severity rollup is preserved through the projection (blocking flows through)', () => {
+    // The projector reads the already-rolled-up severity from the
+    // index; the rollup logic lives in `projectDiagnosticHighlights`
+    // (covered by `diagnosticHighlights.test.ts`). This case pins that
+    // the stamped value matches the index entry — no silent demotion.
+    const events: Event[] = [makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' })];
+    const index = diagnosticIndexFromLiterals({
+      nodes: {
+        [NODE_A]: { severity: 'blocking', kinds: ['cycle', 'coherency-hint'] },
+      },
+    });
+    const { nodes } = projectGraph(
+      events,
+      emptyIndex(),
+      emptyAxiomIndex(),
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+      index,
+    );
+    expect(nodes[0]?.data.diagnosticHighlight?.severity).toBe('blocking');
+  });
+
+  it('(kk) per-kind list is preserved through the projection (encounter order kept)', () => {
+    const events: Event[] = [makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' })];
+    const index = diagnosticIndexFromLiterals({
+      nodes: {
+        [NODE_A]: { severity: 'blocking', kinds: ['cycle', 'multi-warrant'] },
+      },
+    });
+    const { nodes } = projectGraph(
+      events,
+      emptyIndex(),
+      emptyAxiomIndex(),
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+      index,
+    );
+    expect(nodes[0]?.data.diagnosticHighlight?.kinds).toEqual(['cycle', 'multi-warrant']);
+  });
+
+  it('(ll) diagnosticHighlight survives a classify-node commit (the spread in the commit branch preserves it)', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeClassifyProposal({
+        sequence: 2,
+        envelopeId: PROPOSAL_A,
+        nodeId: NODE_A,
+        classification: 'fact',
+      }),
+      makeCommit({ sequence: 3, proposalEnvelopeId: PROPOSAL_A }),
+    ];
+    const index = diagnosticIndexFromLiterals({
+      nodes: { [NODE_A]: { severity: 'advisory', kinds: ['dangling-claim'] } },
+    });
+    const { nodes } = projectGraph(
+      events,
+      emptyIndex(),
+      emptyAxiomIndex(),
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+      index,
+    );
+    expect(nodes).toHaveLength(1);
+    // Both the classification AND the diagnostic-highlight pair survive.
+    expect(nodes[0]?.data.kind).toBe('fact');
+    expect(nodes[0]?.data.diagnosticHighlight).toEqual({
+      severity: 'advisory',
+      kinds: ['dangling-claim'],
+    });
   });
 });

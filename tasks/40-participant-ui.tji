@@ -142,6 +142,7 @@ task participant_ui "Participant (debater) UI" {
     task part_diagnostic_highlights "Diagnostic flag highlights on graph" {
       effort 0.5d
       allocate team
+      complete 100
       depends !part_graph_render
     }
     task part_pan_zoom_tap "Pan, zoom, and tap-to-detail interactions" {

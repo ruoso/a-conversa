@@ -112,6 +112,7 @@ async function freshContext(browser: Browser): Promise<BrowserContext> {
 //   block 2: maria + dave
 //   block 3: frank + erin
 //   block 4: grace + henry
+//   block 5: ivan + julia    (added by part_diagnostic_highlights)
 //
 // History: blocks 1-3 saturated the original 6-user pool; block 4
 // (added by `part_annotation_render`) initially reused alice+ben and
@@ -981,6 +982,309 @@ test.describe('Participant operate route — read-mostly graph render', () => {
         timeout: 15_000,
       });
       await expect(annotatedEdgeMirror).toHaveAttribute('data-annotation-count', '1');
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('ivan creates a session, julia claims debater-A, fired + cleared diagnostic envelopes surface data-diagnostic-severity + data-diagnostic-kinds on the affected entities', async ({
+    browser,
+  }) => {
+    // Refinement: tasks/refinements/participant-ui/part_diagnostic_highlights.md
+    //   (Decision §6 — fifth test() block in the existing describe;
+    //    seeds three node-created events, one edge-created, a fired
+    //    cycle (blocking), a fired contradiction (blocking), a fired
+    //    multi-warrant (advisory), then a cleared multi-warrant to pin
+    //    both the fired AND cleared paths inside one block; asserts the
+    //    DOM mirror surfaces `data-diagnostic-severity="blocking"` +
+    //    `data-diagnostic-kinds` containing the right kinds on flagged
+    //    entities and the explicit `"none"` / `""` baseline on the
+    //    unflagged NODE_D. Per ORCHESTRATOR.md UI-stream e2e policy:
+    //    the route is reachable, the per-target mirror is in place
+    //    (settled by the predecessor leaves), AND the wire envelope
+    //    reaches the participant (the server fans diagnostic envelopes
+    //    out to every subscribed WS connection per session); the e2e
+    //    is in scope.)
+    //
+    // Uses `ivan` + `julia` — the explicit earmark from
+    // `tasks/refinements/participant-ui/part_e2e_user_pool_expansion.md`
+    // line 42. Distinct from blocks 1-4 so the five blocks run in
+    // parallel under `fullyParallel: true` without racing on the shared
+    // user-creation path.
+    const context = await freshContext(browser);
+    const page = await context.newPage();
+    try {
+      const TOPIC = 'Diagnostic highlights reach the participant tablet';
+      const NODE_A_WORDING = 'UBI lifts the welfare floor';
+      const NODE_B_WORDING = 'Means-tested aid stigmatises';
+      const NODE_C_WORDING = 'Behavioural-economics nudges suffice';
+      const NODE_D_WORDING = 'An unflagged baseline node';
+
+      // 1. Ivan creates the session.
+      const ivan = await loginAs(page, { username: 'ivan' });
+      expect(ivan.screenName.toLowerCase()).toBe('ivan');
+      const sessionId = await createSession(page, { topic: TOPIC, privacy: 'public' });
+
+      // 2. Log out + drop cookies so the next dance is fresh.
+      await logoutAndClearAllCookies(page);
+
+      // 3. Julia authenticates and claims debater-A through the invite
+      //    acceptance flow.
+      const julia = await loginAs(page, { username: 'julia' });
+      expect(julia.screenName.toLowerCase()).toBe('julia');
+      await page.goto(`/p/sessions/${sessionId}/invite?role=debater-A`);
+      await expect(page.getByTestId('route-invite-acceptance')).toBeVisible({ timeout: 15_000 });
+      const joinButton = page.getByTestId('invite-acceptance-join-button');
+      await expect(joinButton).toBeEnabled();
+      await joinButton.click();
+      await page.waitForURL((url) => url.pathname === `/p/sessions/${sessionId}/lobby`, {
+        timeout: 15_000,
+      });
+      await expect(page.getByTestId('route-lobby')).toBeVisible({ timeout: 15_000 });
+
+      // 4. Navigate to the operate route.
+      await page.goto(`/p/sessions/${sessionId}`);
+      await expect(page.getByTestId('route-operate')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('participant-graph-root')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('participant-graph-status-mirror')).toBeAttached({
+        timeout: 15_000,
+      });
+
+      // 5. Seed the events + diagnostic envelopes via the exposed WS
+      //    store handle. The same `applyEvent` path the prior blocks
+      //    use; `applyDiagnostic` is the widened reducer landed by
+      //    `part_diagnostic_highlights` Decision §2.
+      const NODE_A_ID = '11111111-1111-4111-8111-111111111111';
+      const NODE_B_ID = '22222222-2222-4222-8222-222222222222';
+      const NODE_C_ID = '33333333-3333-4333-8333-333333333333';
+      const NODE_D_ID = '44444444-4444-4444-8444-444444444444';
+      const EDGE_AB_ID = '55555555-5555-4555-8555-555555555555';
+      const ACTOR_ID = '66666666-6666-4666-8666-666666666666';
+      await page.evaluate(
+        (seed: {
+          sessionId: string;
+          nodeAId: string;
+          nodeBId: string;
+          nodeCId: string;
+          nodeDId: string;
+          edgeAbId: string;
+          actorId: string;
+          wordingA: string;
+          wordingB: string;
+          wordingC: string;
+          wordingD: string;
+        }) => {
+          const store = (
+            window as unknown as {
+              __aConversaWsStore?: {
+                getState: () => {
+                  applyEvent: (event: unknown) => void;
+                  applyDiagnostic: (payload: unknown) => void;
+                };
+              };
+            }
+          ).__aConversaWsStore;
+          if (!store) {
+            throw new Error('__aConversaWsStore is not exposed on window');
+          }
+          const state = store.getState();
+          const applyEvent = state.applyEvent.bind(state);
+          const applyDiagnostic = state.applyDiagnostic.bind(state);
+
+          // Four node-created events (NODE_D is unflagged baseline).
+          applyEvent({
+            id: '77777777-7777-4777-8777-777777777771',
+            sessionId: seed.sessionId,
+            sequence: 1_000_001,
+            kind: 'node-created',
+            actor: seed.actorId,
+            payload: {
+              node_id: seed.nodeAId,
+              wording: seed.wordingA,
+              created_by: seed.actorId,
+              created_at: '2026-05-17T00:00:00.000Z',
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+          applyEvent({
+            id: '77777777-7777-4777-8777-777777777772',
+            sessionId: seed.sessionId,
+            sequence: 1_000_002,
+            kind: 'node-created',
+            actor: seed.actorId,
+            payload: {
+              node_id: seed.nodeBId,
+              wording: seed.wordingB,
+              created_by: seed.actorId,
+              created_at: '2026-05-17T00:00:00.000Z',
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+          applyEvent({
+            id: '77777777-7777-4777-8777-777777777773',
+            sessionId: seed.sessionId,
+            sequence: 1_000_003,
+            kind: 'node-created',
+            actor: seed.actorId,
+            payload: {
+              node_id: seed.nodeCId,
+              wording: seed.wordingC,
+              created_by: seed.actorId,
+              created_at: '2026-05-17T00:00:00.000Z',
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+          applyEvent({
+            id: '77777777-7777-4777-8777-777777777774',
+            sessionId: seed.sessionId,
+            sequence: 1_000_004,
+            kind: 'node-created',
+            actor: seed.actorId,
+            payload: {
+              node_id: seed.nodeDId,
+              wording: seed.wordingD,
+              created_by: seed.actorId,
+              created_at: '2026-05-17T00:00:00.000Z',
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+          // One edge-created (NODE_A → NODE_B, contradicts role).
+          applyEvent({
+            id: '77777777-7777-4777-8777-777777777775',
+            sessionId: seed.sessionId,
+            sequence: 1_000_005,
+            kind: 'edge-created',
+            actor: seed.actorId,
+            payload: {
+              edge_id: seed.edgeAbId,
+              role: 'contradicts',
+              source_node_id: seed.nodeAId,
+              target_node_id: seed.nodeBId,
+              created_by: seed.actorId,
+              created_at: '2026-05-17T00:00:00.000Z',
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+
+          // Fired cycle (blocking) on [A, B, C].
+          applyDiagnostic({
+            sessionId: seed.sessionId,
+            kind: 'cycle',
+            severity: 'blocking',
+            status: 'fired',
+            sequence: 2_000_001,
+            diagnostic: {
+              kind: 'cycle',
+              nodes: [seed.nodeAId, seed.nodeBId, seed.nodeCId],
+            },
+          });
+          // Fired contradiction (blocking) on (A, B) over EDGE_AB.
+          applyDiagnostic({
+            sessionId: seed.sessionId,
+            kind: 'contradiction',
+            severity: 'blocking',
+            status: 'fired',
+            sequence: 2_000_002,
+            diagnostic: {
+              kind: 'contradiction',
+              nodeA: seed.nodeAId,
+              nodeB: seed.nodeBId,
+              edges: [seed.edgeAbId],
+            },
+          });
+          // Fired multi-warrant (advisory) on C-data, A-claim,
+          // [B]-warrants.
+          applyDiagnostic({
+            sessionId: seed.sessionId,
+            kind: 'multi-warrant',
+            severity: 'advisory',
+            status: 'fired',
+            sequence: 2_000_003,
+            diagnostic: {
+              kind: 'multi-warrant',
+              dataNodeId: seed.nodeCId,
+              claimNodeId: seed.nodeAId,
+              warrantNodeIds: [seed.nodeBId],
+            },
+          });
+          // Cleared the multi-warrant identity (so we pin both fired
+          // AND cleared paths inside this block).
+          applyDiagnostic({
+            sessionId: seed.sessionId,
+            kind: 'multi-warrant',
+            severity: 'advisory',
+            status: 'cleared',
+            sequence: 2_000_004,
+            diagnostic: {
+              kind: 'multi-warrant',
+              dataNodeId: seed.nodeCId,
+              claimNodeId: seed.nodeAId,
+              warrantNodeIds: [seed.nodeBId],
+            },
+          });
+        },
+        {
+          sessionId,
+          nodeAId: NODE_A_ID,
+          nodeBId: NODE_B_ID,
+          nodeCId: NODE_C_ID,
+          nodeDId: NODE_D_ID,
+          edgeAbId: EDGE_AB_ID,
+          actorId: ACTOR_ID,
+          wordingA: NODE_A_WORDING,
+          wordingB: NODE_B_WORDING,
+          wordingC: NODE_C_WORDING,
+          wordingD: NODE_D_WORDING,
+        },
+      );
+
+      // 6. The DOM mirror surfaces the per-target diagnostic signal.
+      //    Cytoscape paints to <canvas>; the mirror is the testability
+      //    seam per Decision §5. After the seeds:
+      //      NODE_A: cycle (blocking) + contradiction (blocking) →
+      //              severity="blocking", kinds contains both.
+      //      NODE_B: cycle + contradiction → same severity + kinds
+      //              as NODE_A.
+      //      NODE_C: cycle only (multi-warrant was cleared) →
+      //              severity="blocking", kinds="cycle".
+      //      NODE_D: untouched → severity="none", kinds="".
+      //      EDGE_AB: contradiction → severity="blocking",
+      //              kinds="contradiction".
+      const nodeAMirror = page.locator(
+        `[data-testid="participant-node-status"][data-node-id="${NODE_A_ID}"]`,
+      );
+      await expect(nodeAMirror).toHaveAttribute('data-diagnostic-severity', 'blocking', {
+        timeout: 15_000,
+      });
+      const nodeAKinds = await nodeAMirror.getAttribute('data-diagnostic-kinds');
+      expect(nodeAKinds).toContain('cycle');
+      expect(nodeAKinds).toContain('contradiction');
+
+      const nodeBMirror = page.locator(
+        `[data-testid="participant-node-status"][data-node-id="${NODE_B_ID}"]`,
+      );
+      await expect(nodeBMirror).toHaveAttribute('data-diagnostic-severity', 'blocking');
+      const nodeBKinds = await nodeBMirror.getAttribute('data-diagnostic-kinds');
+      expect(nodeBKinds).toContain('cycle');
+      expect(nodeBKinds).toContain('contradiction');
+
+      const nodeCMirror = page.locator(
+        `[data-testid="participant-node-status"][data-node-id="${NODE_C_ID}"]`,
+      );
+      await expect(nodeCMirror).toHaveAttribute('data-diagnostic-severity', 'blocking');
+      await expect(nodeCMirror).toHaveAttribute('data-diagnostic-kinds', 'cycle');
+
+      const nodeDMirror = page.locator(
+        `[data-testid="participant-node-status"][data-node-id="${NODE_D_ID}"]`,
+      );
+      await expect(nodeDMirror).toHaveAttribute('data-diagnostic-severity', 'none');
+      await expect(nodeDMirror).toHaveAttribute('data-diagnostic-kinds', '');
+
+      const edgeAbMirror = page.locator(
+        `[data-testid="participant-edge-status"][data-edge-id="${EDGE_AB_ID}"]`,
+      );
+      await expect(edgeAbMirror).toHaveAttribute('data-diagnostic-severity', 'blocking');
+      await expect(edgeAbMirror).toHaveAttribute('data-diagnostic-kinds', 'contradiction');
     } finally {
       await context.close();
     }

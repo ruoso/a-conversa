@@ -21,12 +21,19 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, render } from '@testing-library/react';
 import type { Core } from 'cytoscape';
-import type { AnnotationKind, EdgeRole, Event, StatementKind } from '@a-conversa/shared-types';
+import type {
+  AnnotationKind,
+  DiagnosticPayload,
+  EdgeRole,
+  Event,
+  StatementKind,
+} from '@a-conversa/shared-types';
 
 import { I18nProvider, createI18nInstance, type I18nInstance } from '@a-conversa/shell';
 
 import { GraphView, STYLESHEET } from './GraphView';
 import { installCytoscapeTestEnv, type CytoscapeTestEnvRestoreHandle } from './cytoscapeTestEnv';
+import { type DiagnosticHighlight } from './diagnosticHighlights';
 import { useWsStore } from '../ws/wsStore';
 
 const SESSION_ID = '00000000-0000-4000-8000-0000000000aa';
@@ -871,5 +878,245 @@ describe('GraphView — annotation overlay', () => {
     expect(edgeEntry?.style['underlay-color']).toBe('#f59e0b');
     expect(edgeEntry?.style['underlay-opacity']).toBe(0.25);
     expect(edgeEntry?.style['underlay-padding']).toBe(3);
+  });
+});
+
+// -------------------------------------------------------------------
+// Diagnostic-highlight overlay — added by
+// `participant_ui.part_graph_view.part_diagnostic_highlights`.
+// Refinement: tasks/refinements/participant-ui/part_diagnostic_highlights.md
+//
+// Seven new cases pinning the per-target `data-diagnostic-severity` +
+// `data-diagnostic-kinds` mirror attributes (Decision §5) on BOTH node
+// AND edge rows (Decision §1 — structural symmetry), the corresponding
+// `data.diagnosticHighlight` + `data.diagnosticSeverity` fields on the
+// Cytoscape element set, the four new
+// `node[diagnosticSeverity = "..."]` / `edge[diagnosticSeverity = "..."]`
+// stylesheet selectors (Decision §3), and the reactive update path
+// through the widened `applyDiagnostic` reducer (a `cleared` envelope
+// drops the entity's mirror back to the `"none"` baseline).
+// -------------------------------------------------------------------
+
+function firedCycleDiagnostic(opts: {
+  nodes: readonly string[];
+  sequence?: number;
+}): DiagnosticPayload {
+  return {
+    sessionId: SESSION_ID,
+    kind: 'cycle',
+    severity: 'blocking',
+    status: 'fired',
+    sequence: opts.sequence ?? 1,
+    diagnostic: { kind: 'cycle', nodes: opts.nodes },
+  };
+}
+
+function clearedCycleDiagnostic(opts: {
+  nodes: readonly string[];
+  sequence?: number;
+}): DiagnosticPayload {
+  return {
+    sessionId: SESSION_ID,
+    kind: 'cycle',
+    severity: 'blocking',
+    status: 'cleared',
+    sequence: opts.sequence ?? 2,
+    diagnostic: { kind: 'cycle', nodes: opts.nodes },
+  };
+}
+
+function firedMultiWarrantDiagnostic(opts: {
+  dataNodeId: string;
+  claimNodeId: string;
+  warrantNodeIds: readonly string[];
+  sequence?: number;
+}): DiagnosticPayload {
+  return {
+    sessionId: SESSION_ID,
+    kind: 'multi-warrant',
+    severity: 'advisory',
+    status: 'fired',
+    sequence: opts.sequence ?? 3,
+    diagnostic: {
+      kind: 'multi-warrant',
+      dataNodeId: opts.dataNodeId,
+      claimNodeId: opts.claimNodeId,
+      warrantNodeIds: opts.warrantNodeIds,
+    },
+  };
+}
+
+function firedContradictionDiagnostic(opts: {
+  nodeA: string;
+  nodeB: string;
+  edges: readonly string[];
+  sequence?: number;
+}): DiagnosticPayload {
+  return {
+    sessionId: SESSION_ID,
+    kind: 'contradiction',
+    severity: 'blocking',
+    status: 'fired',
+    sequence: opts.sequence ?? 4,
+    diagnostic: {
+      kind: 'contradiction',
+      nodeA: opts.nodeA,
+      nodeB: opts.nodeB,
+      edges: opts.edges,
+    },
+  };
+}
+
+function seedDiagnostic(payload: DiagnosticPayload): void {
+  act(() => {
+    useWsStore.getState().applyDiagnostic(payload);
+  });
+}
+
+describe('GraphView — diagnostic-highlight overlay', () => {
+  it('(gg) the node mirror carries data-diagnostic-severity="none" + data-diagnostic-kinds="" by default', () => {
+    renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    const item = document.querySelector(
+      `[data-testid="participant-node-status"][data-node-id="${NODE_A}"]`,
+    );
+    expect(item).not.toBeNull();
+    expect(item?.getAttribute('data-diagnostic-severity')).toBe('none');
+    expect(item?.getAttribute('data-diagnostic-kinds')).toBe('');
+  });
+
+  it('(hh) when a cycle diagnostic fires targeting the node, the mirror reports severity="blocking" + kinds="cycle"', () => {
+    renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedDiagnostic(firedCycleDiagnostic({ nodes: [NODE_A] }));
+    const item = document.querySelector(
+      `[data-testid="participant-node-status"][data-node-id="${NODE_A}"]`,
+    );
+    expect(item?.getAttribute('data-diagnostic-severity')).toBe('blocking');
+    expect(item?.getAttribute('data-diagnostic-kinds')).toBe('cycle');
+  });
+
+  it('(ii) when cycle + multi-warrant both fire on the same node, the mirror reports blocking + encounter-ordered kinds', () => {
+    // Blocking (cycle) wins over advisory (multi-warrant); kinds are
+    // recorded in encounter order — cycle first, multi-warrant second.
+    renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(nodeCreatedEvent({ sequence: 2, nodeId: NODE_B, wording: 'B' }));
+    seedDiagnostic(firedCycleDiagnostic({ nodes: [NODE_A] }));
+    seedDiagnostic(
+      firedMultiWarrantDiagnostic({
+        dataNodeId: NODE_A,
+        claimNodeId: NODE_B,
+        warrantNodeIds: [],
+      }),
+    );
+    const item = document.querySelector(
+      `[data-testid="participant-node-status"][data-node-id="${NODE_A}"]`,
+    );
+    expect(item?.getAttribute('data-diagnostic-severity')).toBe('blocking');
+    expect(item?.getAttribute('data-diagnostic-kinds')).toBe('cycle,multi-warrant');
+  });
+
+  it('(jj) the edge mirror surfaces data-diagnostic-severity + data-diagnostic-kinds for contradiction edges', () => {
+    renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(nodeCreatedEvent({ sequence: 2, nodeId: NODE_B, wording: 'B' }));
+    seedEvent(
+      edgeCreatedEvent({
+        sequence: 3,
+        edgeId: EDGE_A,
+        source: NODE_A,
+        target: NODE_B,
+      }),
+    );
+    seedDiagnostic(
+      firedContradictionDiagnostic({
+        nodeA: NODE_A,
+        nodeB: NODE_B,
+        edges: [EDGE_A],
+      }),
+    );
+    const item = document.querySelector(
+      `[data-testid="participant-edge-status"][data-edge-id="${EDGE_A}"]`,
+    );
+    expect(item?.getAttribute('data-diagnostic-severity')).toBe('blocking');
+    expect(item?.getAttribute('data-diagnostic-kinds')).toBe('contradiction');
+  });
+
+  it('(kk) Cytoscape carries the same data.diagnosticHighlight + data.diagnosticSeverity the mirror surfaces (no drift)', () => {
+    const result = renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedDiagnostic(firedCycleDiagnostic({ nodes: [NODE_A] }));
+    const cy = result.getCy();
+    const cyNode = cy.getElementById(NODE_A);
+    expect(cyNode.data('diagnosticSeverity')).toBe('blocking');
+    const highlight = cyNode.data('diagnosticHighlight') as DiagnosticHighlight | null;
+    expect(highlight).not.toBeNull();
+    expect(highlight?.severity).toBe('blocking');
+    expect(highlight?.kinds).toEqual(['cycle']);
+    const mirrorItem = document.querySelector(
+      `[data-testid="participant-node-status"][data-node-id="${NODE_A}"]`,
+    );
+    expect(mirrorItem?.getAttribute('data-diagnostic-severity')).toBe('blocking');
+    expect(mirrorItem?.getAttribute('data-diagnostic-kinds')).toBe('cycle');
+  });
+
+  it('(ll) STYLESHEET contains the four diagnostic selectors with the expected border / underlay overrides', () => {
+    const sheet = STYLESHEET as unknown as ReadonlyArray<{
+      selector: string;
+      style: Record<string, unknown>;
+    }>;
+    const nodeBlocking = sheet.find(
+      (entry) => entry.selector === 'node[diagnosticSeverity = "blocking"]',
+    );
+    expect(nodeBlocking).toBeDefined();
+    expect(nodeBlocking?.style['border-color']).toBe('#b45309');
+    expect(nodeBlocking?.style['border-width']).toBe(4);
+    expect(nodeBlocking?.style['border-opacity']).toBe(0.9);
+
+    const nodeAdvisory = sheet.find(
+      (entry) => entry.selector === 'node[diagnosticSeverity = "advisory"]',
+    );
+    expect(nodeAdvisory).toBeDefined();
+    expect(nodeAdvisory?.style['border-color']).toBe('#fbbf24');
+    expect(nodeAdvisory?.style['border-width']).toBe(2);
+    expect(nodeAdvisory?.style['border-opacity']).toBe(0.7);
+
+    const edgeBlocking = sheet.find(
+      (entry) => entry.selector === 'edge[diagnosticSeverity = "blocking"]',
+    );
+    expect(edgeBlocking).toBeDefined();
+    expect(edgeBlocking?.style.width).toBe(5);
+    expect(edgeBlocking?.style['underlay-color']).toBe('#b45309');
+    expect(edgeBlocking?.style['underlay-opacity']).toBe(0.45);
+    expect(edgeBlocking?.style['underlay-padding']).toBe(4);
+
+    const edgeAdvisory = sheet.find(
+      (entry) => entry.selector === 'edge[diagnosticSeverity = "advisory"]',
+    );
+    expect(edgeAdvisory).toBeDefined();
+    expect(edgeAdvisory?.style.width).toBe(3);
+    expect(edgeAdvisory?.style['underlay-color']).toBe('#fbbf24');
+    expect(edgeAdvisory?.style['underlay-opacity']).toBe(0.3);
+    expect(edgeAdvisory?.style['underlay-padding']).toBe(2);
+  });
+
+  it('(mm) a cleared envelope for a previously-fired diagnostic drops the mirror back to severity="none" + kinds=""', () => {
+    renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedDiagnostic(firedCycleDiagnostic({ nodes: [NODE_A], sequence: 1 }));
+    const item = document.querySelector(
+      `[data-testid="participant-node-status"][data-node-id="${NODE_A}"]`,
+    );
+    expect(item?.getAttribute('data-diagnostic-severity')).toBe('blocking');
+    seedDiagnostic(clearedCycleDiagnostic({ nodes: [NODE_A], sequence: 2 }));
+    // The reactive update flows through `applyDiagnostic`'s widened
+    // reducer (cleared removes the entry from the active map); the
+    // memo re-runs; the mirror flips back to the "none" baseline.
+    const item2 = document.querySelector(
+      `[data-testid="participant-node-status"][data-node-id="${NODE_A}"]`,
+    );
+    expect(item2?.getAttribute('data-diagnostic-severity')).toBe('none');
+    expect(item2?.getAttribute('data-diagnostic-kinds')).toBe('');
   });
 });
