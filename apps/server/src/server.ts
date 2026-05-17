@@ -64,6 +64,7 @@
 // Sibling tasks register their routes on the instance returned here.
 
 import cors from '@fastify/cors';
+import rateLimit from '@fastify/rate-limit';
 import sensible from '@fastify/sensible';
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
 
@@ -76,6 +77,7 @@ import {
 } from './auth/index.js';
 import { getDefaultPool } from './db.js';
 import { closeUserConnections } from './ws/connection.js';
+import { ApiError } from './errors.js';
 import { errorHandlerPlugin } from './error-handler.js';
 import { createLoggerOptions } from './logger.js';
 import { openapiPlugin } from './openapi.js';
@@ -188,6 +190,83 @@ export function resolveBodyLimit(env: BodyLimitEnv = process.env): number {
   const parsed = Number.parseInt(raw, 10);
   if (!Number.isFinite(parsed) || parsed <= 0) {
     return DEFAULT_BODY_LIMIT_BYTES;
+  }
+  return parsed;
+}
+
+/**
+ * Default per-IP request ceiling for the in-process rate limiter. 1000
+ * requests / 60 s ≈ 16/s per IP — generous enough that a logged-in
+ * user driving a SPA (page navigations triggering bundled asset
+ * requests through `@fastify/static`, the JSON API, the OIDC callback
+ * leg) never bumps the limit; tight enough that a sustained flood from
+ * a single source gets a `429` before reaching any DB / OIDC code
+ * path. Production sites that front the server behind a CDN or LB
+ * should still rate-limit at the deployment edge; this layer is the
+ * in-process guarantee that closes the CodeQL `js/missing-rate-limiting`
+ * gap on every HTTP handler.
+ *
+ * Closes: GitHub code-scanning alerts #2–#9 on `apps/server/src/auth/routes.ts`
+ * and `apps/server/src/sessions/routes.ts` (rule `js/missing-rate-limiting`).
+ * Refinement:
+ *   tasks/refinements/backend-hardening/missing_rate_limiting.md.
+ */
+export const DEFAULT_RATE_LIMIT_MAX = 1000;
+
+/**
+ * Default rolling-window length (milliseconds) the rate limiter counts
+ * over. 60 s mirrors the `per-minute` mental model operators carry; the
+ * env override accepts millisecond values so a deployment that wants a
+ * `per-second` knob can set e.g. `1000` (1 second window) without
+ * code change.
+ */
+export const DEFAULT_RATE_LIMIT_TIME_WINDOW_MS = 60_000;
+
+/** Env var name the resolver consults for the per-window ceiling. */
+export const RATE_LIMIT_MAX_ENV = 'RATE_LIMIT_MAX_PER_WINDOW';
+
+/** Env var name the resolver consults for the window length. */
+export const RATE_LIMIT_TIME_WINDOW_ENV = 'RATE_LIMIT_TIME_WINDOW_MS';
+
+/**
+ * Subset of `process.env` consumed by `resolveRateLimitMax` and
+ * `resolveRateLimitTimeWindowMs`. Typed so callers can pass
+ * `process.env` directly (same pattern as `BodyLimitEnv`).
+ */
+export interface RateLimitEnv {
+  readonly RATE_LIMIT_MAX_PER_WINDOW?: string | undefined;
+  readonly RATE_LIMIT_TIME_WINDOW_MS?: string | undefined;
+}
+
+/**
+ * Resolve the per-IP per-window request ceiling. Mirrors
+ * `resolveBodyLimit` — absent / empty / unparseable / non-positive
+ * fall back to `DEFAULT_RATE_LIMIT_MAX`.
+ */
+export function resolveRateLimitMax(env: RateLimitEnv = process.env): number {
+  const raw = env.RATE_LIMIT_MAX_PER_WINDOW;
+  if (raw === undefined || raw === '') {
+    return DEFAULT_RATE_LIMIT_MAX;
+  }
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_RATE_LIMIT_MAX;
+  }
+  return parsed;
+}
+
+/**
+ * Resolve the rate-limit rolling-window length in milliseconds.
+ * Same fallback semantics as `resolveRateLimitMax`.
+ */
+export function resolveRateLimitTimeWindowMs(env: RateLimitEnv = process.env): number {
+  const raw = env.RATE_LIMIT_TIME_WINDOW_MS;
+  if (raw === undefined || raw === '') {
+    return DEFAULT_RATE_LIMIT_TIME_WINDOW_MS;
+  }
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_RATE_LIMIT_TIME_WINDOW_MS;
   }
   return parsed;
 }
@@ -381,6 +460,55 @@ export async function createServer(options: CreateServerOptions = {}): Promise<F
   // Fastify's default serializer. Refinement:
   // tasks/refinements/backend/error_handling.md.
   await app.register(errorHandlerPlugin);
+
+  // Global per-IP rate limiter — closes the CodeQL
+  // `js/missing-rate-limiting` gap surfaced on every route handler in
+  // `auth/routes.ts` and `sessions/routes.ts` (GitHub code-scanning
+  // alerts #2–#9). Registered AFTER `errorHandlerPlugin` so the
+  // `errorResponseBuilder` below can throw `ApiError(429, ...)` and
+  // have the canonical envelope handler serialize it; registered
+  // BEFORE every route plugin so the plugin's `onRequest` hook is
+  // attached to the root scope and applies to every subsequently
+  // registered route by default.
+  //
+  // Key (default `request.ip`) + max (`DEFAULT_RATE_LIMIT_MAX`) +
+  // timeWindow (`DEFAULT_RATE_LIMIT_TIME_WINDOW_MS`) are intentionally
+  // generous — the in-process layer is the framework-boundary guard
+  // that the code-scanning rule recognises; deployments that need a
+  // tighter ceiling should tune the env vars or front the server with
+  // an edge LB / WAF. The `/healthz` path is allow-listed so
+  // compose / k8s liveness probes never get throttled (a probe storm
+  // counts against the same per-IP bucket otherwise, and a `429` on
+  // `/healthz` reads as a service outage to the orchestrator).
+  //
+  // The `errorResponseBuilder` rethrows as `ApiError(429,
+  // 'rate-limited', ...)` so the response body follows the project's
+  // canonical `{ error: { code, message } }` envelope. The plugin
+  // still emits its own informative `retry-after` + `x-ratelimit-*`
+  // response headers — those layer on top of the envelope without
+  // colliding with the body shape.
+  //
+  // Refinement:
+  //   tasks/refinements/backend-hardening/missing_rate_limiting.md.
+  await app.register(rateLimit, {
+    max: resolveRateLimitMax(process.env),
+    timeWindow: resolveRateLimitTimeWindowMs(process.env),
+    // `allowList` accepts either an array of literal IPs OR a
+    // predicate `(req, key) => boolean`. Path-level allow-listing
+    // needs the predicate form — the array form compares against the
+    // resolved key (default `request.ip`), not the URL. Skipping
+    // `/healthz` keeps compose / k8s liveness probes free; a probe
+    // storm at the same per-IP bucket would otherwise read as a
+    // service outage to the orchestrator.
+    allowList: (request) => request.url === '/healthz',
+    errorResponseBuilder: (_request, context) => {
+      throw new ApiError(
+        429,
+        'rate-limited',
+        `rate limit exceeded; retry after ${String(context.after)}`,
+      );
+    },
+  });
 
   // OpenAPI generator + Swagger UI. Registered BEFORE the route
   // plugins so `@fastify/swagger` sees each route's `schema` block

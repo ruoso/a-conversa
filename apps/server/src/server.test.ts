@@ -45,8 +45,14 @@ import {
   BODY_LIMIT_ENV,
   createServer,
   DEFAULT_BODY_LIMIT_BYTES,
+  DEFAULT_RATE_LIMIT_MAX,
+  DEFAULT_RATE_LIMIT_TIME_WINDOW_MS,
+  RATE_LIMIT_MAX_ENV,
+  RATE_LIMIT_TIME_WINDOW_ENV,
   resolveBodyLimit,
   resolveCorsOptions,
+  resolveRateLimitMax,
+  resolveRateLimitTimeWindowMs,
 } from './server.js';
 
 /**
@@ -496,5 +502,156 @@ describe('createServer — bodyLimit lockdown (inputs.md F-002)', () => {
         await app.close();
       }
     });
+  });
+});
+
+// ---- Rate-limit lockdown: closes CodeQL js/missing-rate-limiting ----
+//
+// The unit tests pin the pure helpers; the integration tests pin the
+// observable wire behaviour of a built server (a flood crosses the
+// per-IP threshold and gets `429` under the canonical envelope; the
+// `/healthz` allow-list keeps probes free; an under-threshold request
+// is unaffected). Mirrors the bodyLimit lockdown block above.
+
+describe('resolveRateLimitMax', () => {
+  it('returns DEFAULT_RATE_LIMIT_MAX when RATE_LIMIT_MAX_PER_WINDOW is absent', () => {
+    expect(resolveRateLimitMax({})).toBe(DEFAULT_RATE_LIMIT_MAX);
+  });
+
+  it('returns the default when RATE_LIMIT_MAX_PER_WINDOW is the empty string', () => {
+    expect(resolveRateLimitMax({ RATE_LIMIT_MAX_PER_WINDOW: '' })).toBe(DEFAULT_RATE_LIMIT_MAX);
+  });
+
+  it('returns the default when RATE_LIMIT_MAX_PER_WINDOW is unparseable', () => {
+    expect(resolveRateLimitMax({ RATE_LIMIT_MAX_PER_WINDOW: 'NaN' })).toBe(DEFAULT_RATE_LIMIT_MAX);
+    expect(resolveRateLimitMax({ RATE_LIMIT_MAX_PER_WINDOW: 'not-a-number' })).toBe(
+      DEFAULT_RATE_LIMIT_MAX,
+    );
+  });
+
+  it('returns the default when RATE_LIMIT_MAX_PER_WINDOW is zero or negative', () => {
+    expect(resolveRateLimitMax({ RATE_LIMIT_MAX_PER_WINDOW: '0' })).toBe(DEFAULT_RATE_LIMIT_MAX);
+    expect(resolveRateLimitMax({ RATE_LIMIT_MAX_PER_WINDOW: '-1' })).toBe(DEFAULT_RATE_LIMIT_MAX);
+  });
+
+  it('returns the parsed positive integer otherwise', () => {
+    expect(resolveRateLimitMax({ RATE_LIMIT_MAX_PER_WINDOW: '5' })).toBe(5);
+    expect(resolveRateLimitMax({ RATE_LIMIT_MAX_PER_WINDOW: '10000' })).toBe(10000);
+  });
+
+  it('exports RATE_LIMIT_MAX_ENV as the env var name the resolver consults', () => {
+    expect(RATE_LIMIT_MAX_ENV).toBe('RATE_LIMIT_MAX_PER_WINDOW');
+  });
+});
+
+describe('resolveRateLimitTimeWindowMs', () => {
+  it('returns DEFAULT_RATE_LIMIT_TIME_WINDOW_MS when RATE_LIMIT_TIME_WINDOW_MS is absent', () => {
+    expect(resolveRateLimitTimeWindowMs({})).toBe(DEFAULT_RATE_LIMIT_TIME_WINDOW_MS);
+  });
+
+  it('returns the default when RATE_LIMIT_TIME_WINDOW_MS is empty / unparseable / non-positive', () => {
+    expect(resolveRateLimitTimeWindowMs({ RATE_LIMIT_TIME_WINDOW_MS: '' })).toBe(
+      DEFAULT_RATE_LIMIT_TIME_WINDOW_MS,
+    );
+    expect(resolveRateLimitTimeWindowMs({ RATE_LIMIT_TIME_WINDOW_MS: 'NaN' })).toBe(
+      DEFAULT_RATE_LIMIT_TIME_WINDOW_MS,
+    );
+    expect(resolveRateLimitTimeWindowMs({ RATE_LIMIT_TIME_WINDOW_MS: '0' })).toBe(
+      DEFAULT_RATE_LIMIT_TIME_WINDOW_MS,
+    );
+    expect(resolveRateLimitTimeWindowMs({ RATE_LIMIT_TIME_WINDOW_MS: '-1' })).toBe(
+      DEFAULT_RATE_LIMIT_TIME_WINDOW_MS,
+    );
+  });
+
+  it('returns the parsed positive integer otherwise', () => {
+    expect(resolveRateLimitTimeWindowMs({ RATE_LIMIT_TIME_WINDOW_MS: '1000' })).toBe(1000);
+    expect(resolveRateLimitTimeWindowMs({ RATE_LIMIT_TIME_WINDOW_MS: '300000' })).toBe(300_000);
+  });
+
+  it('exports RATE_LIMIT_TIME_WINDOW_ENV as the env var name the resolver consults', () => {
+    expect(RATE_LIMIT_TIME_WINDOW_ENV).toBe('RATE_LIMIT_TIME_WINDOW_MS');
+  });
+});
+
+describe('createServer — rate-limit lockdown (CodeQL js/missing-rate-limiting)', () => {
+  it('returns 429 with the canonical envelope after the per-IP ceiling trips', async () => {
+    // Drive a tight ceiling (2 requests / 60 s) via the env so the
+    // test confirms the resolver actually threads through to the
+    // plugin and that the 3rd request lands on the canonical 429.
+    // Picks `GET /` because it is a registered route (the root SPA via
+    // `staticFrontendsPlugin`) — `@fastify/rate-limit` attaches its
+    // global `onRequest` hook to *registered* routes, so an unknown
+    // path would route to the not-found handler without ever
+    // entering the bucket.
+    await withEnv(
+      { RATE_LIMIT_MAX_PER_WINDOW: '2', RATE_LIMIT_TIME_WINDOW_MS: '60000' },
+      async () => {
+        const app = await createServer({ logger: false });
+        await app.ready();
+        try {
+          // First two requests stay under the limit. We do NOT assert
+          // on the status here; we only care that the bucket fills.
+          await app.inject({ method: 'GET', url: '/' });
+          await app.inject({ method: 'GET', url: '/' });
+          // The third request crosses the threshold and gets the
+          // canonical 429 envelope via the `errorResponseBuilder` +
+          // the error-handler plugin.
+          const response = await app.inject({ method: 'GET', url: '/' });
+          expect(response.statusCode).toBe(429);
+          const body = response.json<{ error?: { code?: string; message?: string } }>();
+          expect(body.error?.code).toBe('rate-limited');
+          expect(typeof body.error?.message).toBe('string');
+        } finally {
+          await app.close();
+        }
+      },
+    );
+  });
+
+  it('keeps the /healthz allow-list past the per-IP ceiling (probes stay free)', async () => {
+    // Compose / k8s healthchecks hit `/healthz` on every probe
+    // interval; throttling those reads as a service outage. The
+    // global rate-limit registration above sets `allowList: ['/healthz']`
+    // so probes never count against the per-IP bucket. Tight ceiling
+    // env to make the test fast (any unguarded path is throttled at
+    // the 3rd request; if `/healthz` were in the bucket we'd see the
+    // 3rd response come back 429 too).
+    await withEnv(
+      { RATE_LIMIT_MAX_PER_WINDOW: '2', RATE_LIMIT_TIME_WINDOW_MS: '60000' },
+      async () => {
+        const app = await createServer({ logger: false });
+        await app.ready();
+        try {
+          for (let i = 0; i < 5; i += 1) {
+            const response = await app.inject({ method: 'GET', url: '/healthz' });
+            expect(response.statusCode).toBe(200);
+          }
+        } finally {
+          await app.close();
+        }
+      },
+    );
+  });
+
+  it('leaves under-threshold requests unaffected (regression)', async () => {
+    // With the default ceiling and a single GET, the rate-limit hook
+    // is a no-op — the route's normal status (401 here, because the
+    // auth middleware rejects an unauthenticated `/api/auth/me`) is
+    // what we observe. Pins that the plugin registration didn't
+    // accidentally hijack the response on the happy path.
+    await withEnv(
+      { RATE_LIMIT_MAX_PER_WINDOW: undefined, RATE_LIMIT_TIME_WINDOW_MS: undefined },
+      async () => {
+        const app = await createServer({ logger: false });
+        await app.ready();
+        try {
+          const response = await app.inject({ method: 'GET', url: '/api/auth/me' });
+          expect(response.statusCode).not.toBe(429);
+        } finally {
+          await app.close();
+        }
+      },
+    );
   });
 });

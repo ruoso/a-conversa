@@ -222,6 +222,16 @@ task backend_hardening "M3-review hardening (security audit follow-ups)" {
         Refinement: tasks/refinements/backend-hardening/ilike_topic_search_protection.md
       ->8-
     }
+    task missing_rate_limiting "Register global per-IP rate limiter on the HTTP surface" {
+      effort 0.25d
+      allocate team
+      complete 100
+      note -8<-
+        Source: GitHub code-scanning alerts #2-#9 (rule js/missing-rate-limiting)
+
+        Refinement: tasks/refinements/backend-hardening/missing_rate_limiting.md
+      ->8-
+    }
   }
 
   task data_hygiene "Input sanitization + identifier hygiene" {
