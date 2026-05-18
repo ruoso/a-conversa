@@ -109,7 +109,11 @@ Brief:
 > - Do NOT touch any `.tji` file or the refinement's `## Status` section — that's the Closer's job.
 > - Do NOT commit — the Closer does that too.
 >
-> Before returning, run the verification the refinement's Acceptance criteria require, at minimum: `pnpm run check`, `pnpm run test:smoke`, and `pnpm -F <affected-workspace> build` where relevant. If the refinement requires Cucumber or Playwright layers, run them too. For Playwright suites, bring the compose stack up (`make up`), run, then tear down with `make down-v` so the runner is clean.
+> Before returning, run the verification the refinement's Acceptance criteria require, at minimum: `pnpm run check`, `pnpm run test:smoke`, and `pnpm -F <affected-workspace> build` where relevant.
+>
+> **Always run all three suites, even when the change seems purely local to one of them.** That means Vitest (`pnpm run test:smoke`), Cucumber (`pnpm run test:bdd` — or the project's equivalent), AND Playwright (`make up` → run → `make down-v`) on EVERY task, regardless of whether the refinement names the cross-suite as in-scope. Subtle regressions ride into the wrong suite all the time — a "pure UI refactor" silently breaks a Cucumber projector pin; a "pure shell-extraction" silently breaks a Playwright class-purge assertion; a "pure Cucumber scenario addition" silently breaks a Vitest module-boundary test. The only cost of running all three is wall-clock; the cost of skipping is shipping a broken commit on top of green-looking local verification. The refinement may DEFER e2e *additions* (no new spec needed) but you still RUN the existing e2e suite to confirm no regression. Same for Cucumber.
+>
+> For Playwright suites, bring the compose stack up (`make up`), run, then tear down with `make down-v` so the runner is clean.
 >
 > **Test output handling (mandatory):** redirect every verification command to a file (`<command> > /tmp/<run>.log 2>&1`) and then dispatch an `Explore` sub-agent with the file path to extract pass/fail and failing-test excerpts. Do NOT pipe to `tail`. Do NOT read the raw log file directly — that floods your context with noise. The Explore agent's tight report is what you act on.
 >
@@ -144,6 +148,8 @@ Brief:
 > Verification:
 >   - `pnpm run check` — green.
 >   - `pnpm run test:smoke` — <count> passing (<delta>).
+>   - `pnpm run test:bdd` — <count> scenarios passing (<delta or "unchanged">).
+>   - `pnpm run test:e2e:smoke` — <count> green (<delta or "unchanged">). Compose stack: `make up` → run → `make down-v`.
 >   - <task-specific verification if any>.
 >
 > Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
