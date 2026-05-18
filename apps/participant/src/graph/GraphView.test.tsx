@@ -18,6 +18,7 @@
 // (`part_pan_zoom_tap`, `part_entity_detail_panel`) consume in
 // production.
 
+import * as React from 'react';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, render } from '@testing-library/react';
 import type { Core } from 'cytoscape';
@@ -33,7 +34,13 @@ import { I18nProvider, createI18nInstance, type I18nInstance } from '@a-conversa
 
 import { GraphView, MAX_ZOOM, MIN_ZOOM, STYLESHEET, handleTap } from './GraphView';
 import { installCytoscapeTestEnv, type CytoscapeTestEnvRestoreHandle } from './cytoscapeTestEnv';
-import { type DiagnosticHighlight } from './diagnosticHighlights';
+import { projectDiagnosticHighlights, type DiagnosticHighlight } from './diagnosticHighlights';
+import { groupAnnotationsByEdge, groupAnnotationsByNode, projectAnnotations } from './annotations';
+import { groupAxiomMarksByNode, projectAxiomMarks } from './axiomMarks';
+import { computeFacetStatuses } from './facetStatus';
+import { projectOwnVotes } from './ownVotes';
+import { projectOtherVotes } from './otherVotes';
+import { projectGraph } from './projectGraph';
 import { useSelectionStore } from '../stores/selectionStore';
 import { useWsStore } from '../ws/wsStore';
 
@@ -169,6 +176,97 @@ interface RenderResult {
   cyRef: (cy: Core | null) => void;
 }
 
+/**
+ * Per Decision §2 of `part_entity_detail_panel`, `<GraphView>` no
+ * longer derives the projection chain internally — the route hoist
+ * threads the projection outputs in as props. The tests preserved
+ * their `useWsStore` seeding pattern; this thin wrapper re-runs the
+ * projector inside the React render so the test's existing
+ * `seedEvent(...)` mutations still drive what `<GraphView>` paints,
+ * without bloating the per-test factory with explicit projection
+ * scaffolding.
+ */
+function ProjectingGraphView(props: {
+  sessionId: string;
+  currentParticipantId: string;
+  cyRef: (cy: Core | null) => void;
+}): React.ReactElement {
+  const events = useWsStore(
+    (state) => state.sessionState[props.sessionId]?.events ?? EMPTY_TEST_EVENTS,
+  );
+  const activeDiagnostics = useWsStore(
+    (state) => state.sessionState[props.sessionId]?.activeDiagnostics ?? EMPTY_TEST_DIAGNOSTICS,
+  );
+  const facetStatusIndex = React.useMemo(() => computeFacetStatuses(events), [events]);
+  const axiomMarkIndex = React.useMemo(
+    () => groupAxiomMarksByNode(projectAxiomMarks(events)),
+    [events],
+  );
+  const annotations = React.useMemo(() => projectAnnotations(events), [events]);
+  const nodeAnnotationIndex = React.useMemo(
+    () => groupAnnotationsByNode(annotations),
+    [annotations],
+  );
+  const edgeAnnotationIndex = React.useMemo(
+    () => groupAnnotationsByEdge(annotations),
+    [annotations],
+  );
+  const diagnosticHighlightIndex = React.useMemo(
+    () => projectDiagnosticHighlights(activeDiagnostics),
+    [activeDiagnostics],
+  );
+  const ownVoteIndex = React.useMemo(
+    () => projectOwnVotes(events, props.currentParticipantId),
+    [events, props.currentParticipantId],
+  );
+  const othersVoteIndex = React.useMemo(
+    () => projectOtherVotes(events, props.currentParticipantId),
+    [events, props.currentParticipantId],
+  );
+  const projected = React.useMemo(
+    () =>
+      projectGraph(
+        events,
+        facetStatusIndex,
+        axiomMarkIndex,
+        nodeAnnotationIndex,
+        edgeAnnotationIndex,
+        diagnosticHighlightIndex,
+        ownVoteIndex,
+        othersVoteIndex,
+      ),
+    [
+      events,
+      facetStatusIndex,
+      axiomMarkIndex,
+      nodeAnnotationIndex,
+      edgeAnnotationIndex,
+      diagnosticHighlightIndex,
+      ownVoteIndex,
+      othersVoteIndex,
+    ],
+  );
+  return (
+    <GraphView
+      sessionId={props.sessionId}
+      currentParticipantId={props.currentParticipantId}
+      projectedNodes={projected.nodes}
+      projectedEdges={projected.edges}
+      facetStatusIndex={facetStatusIndex}
+      axiomMarkIndex={axiomMarkIndex}
+      nodeAnnotationIndex={nodeAnnotationIndex}
+      edgeAnnotationIndex={edgeAnnotationIndex}
+      diagnosticHighlightIndex={diagnosticHighlightIndex}
+      ownVoteIndex={ownVoteIndex}
+      othersVoteIndex={othersVoteIndex}
+      cyRef={props.cyRef}
+    />
+  );
+}
+
+const EMPTY_TEST_EVENTS: readonly Event[] = Object.freeze([]);
+const EMPTY_TEST_DIAGNOSTICS: ReadonlyMap<string, DiagnosticPayload> = Object.freeze(new Map());
+
 function renderView(
   opts: { sessionId?: string; currentParticipantId?: string } = {},
 ): RenderResult {
@@ -180,7 +278,7 @@ function renderView(
   };
   render(
     <I18nProvider i18n={i18nInstance}>
-      <GraphView sessionId={id} currentParticipantId={participantId} cyRef={cyRef} />
+      <ProjectingGraphView sessionId={id} currentParticipantId={participantId} cyRef={cyRef} />
     </I18nProvider>,
   );
   return {

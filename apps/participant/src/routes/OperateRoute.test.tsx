@@ -82,9 +82,13 @@ afterAll(() => {
   cytoscapeEnvHandle = null;
 });
 
-afterEach(() => {
+afterEach(async () => {
   cleanup();
   useWsStore.getState().reset();
+  // Reset the selection store so the next test's panel starts in the
+  // empty-state baseline.
+  const { useSelectionStore } = await import('../stores/selectionStore');
+  useSelectionStore.getState().clear();
 });
 
 function renderRoute(opts: { auth?: AuthContextValue } = {}): FakeClient {
@@ -179,5 +183,72 @@ describe('OperateRoute — currentParticipantId prop threading', () => {
     // an empty seed, but the mirror's mere presence is the seam).
     expect(screen.getByTestId('participant-graph-root')).toBeTruthy();
     expect(screen.getByTestId('participant-graph-status-mirror')).toBeTruthy();
+  });
+});
+
+// -------------------------------------------------------------------
+// Two-column layout + projection hoist — added by
+// `participant_ui.part_graph_view.part_entity_detail_panel`.
+// Refinement: tasks/refinements/participant-ui/part_entity_detail_panel.md
+//
+// Decision §1 pins the layout: the authenticated body renders a flex
+// container with `<GraphView>` on the left (`flex-1`) and
+// `<EntityDetailPanel>` on the right (`w-80`). Decision §2 pins the
+// projection chain hoist: the route runs the projection ONCE per
+// `events` change and threads the outputs into BOTH children.
+// -------------------------------------------------------------------
+
+describe('OperateRoute — two-sibling layout (graph + entity detail panel)', () => {
+  it('(f) renders BOTH GraphView and EntityDetailPanel as siblings in the route body', () => {
+    renderRoute({ auth: authenticatedCallerAuth });
+    expect(screen.getByTestId('participant-graph-root')).toBeTruthy();
+    expect(screen.getByTestId('participant-detail-panel')).toBeTruthy();
+  });
+
+  it('(g) places the GraphView region with flex-1 and the panel with w-80 inside the route-operate flex container', () => {
+    renderRoute({ auth: authenticatedCallerAuth });
+    const route = screen.getByTestId('route-operate');
+    expect(route.className).toContain('flex');
+    const graphRegion = screen.getByTestId('route-operate-graph-region');
+    expect(graphRegion.className).toContain('flex-1');
+    const panel = screen.getByTestId('participant-detail-panel');
+    expect(panel.className).toContain('w-80');
+  });
+});
+
+describe('OperateRoute — entity detail panel selection-change re-render', () => {
+  it('(h) the panel transitions from empty-state to detail-body when a selection lands in the store', async () => {
+    renderRoute({ auth: authenticatedCallerAuth });
+    // Initial paint — no selection — empty state.
+    expect(screen.getByTestId('participant-detail-panel').getAttribute('data-state')).toBe('empty');
+    // Seed a node + select it. The route's projection hoist surfaces
+    // the node to the panel; the panel re-renders with the detail body.
+    const { act } = await import('@testing-library/react');
+    const { useWsStore: storeImport } = await import('../ws/wsStore');
+    const { useSelectionStore } = await import('../stores/selectionStore');
+    const NODE_ID = '00000000-0000-4000-8000-00000000000a';
+    act(() => {
+      storeImport.getState().applyEvent({
+        id: '00000000-0000-4000-8000-000000000101',
+        sessionId: SESSION_ID,
+        sequence: 1,
+        kind: 'node-created',
+        actor: '00000000-0000-4000-8000-000000000000',
+        payload: {
+          node_id: NODE_ID,
+          wording: 'A wording',
+          created_by: '00000000-0000-4000-8000-000000000000',
+          created_at: '2026-05-17T00:00:00.000Z',
+        },
+        createdAt: '2026-05-17T00:00:00.000Z',
+      });
+      useSelectionStore.getState().select({ kind: 'node', id: NODE_ID });
+    });
+    expect(screen.getByTestId('participant-detail-panel').getAttribute('data-state')).toBe(
+      'detail',
+    );
+    expect(screen.getByTestId('participant-detail-panel-identity-wording').textContent).toBe(
+      'A wording',
+    );
   });
 });

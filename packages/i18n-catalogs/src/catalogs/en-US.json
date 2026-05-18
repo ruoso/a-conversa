@@ -559,6 +559,22 @@
         "participantsFetchFailed": "Could not load the participants list.",
         "retry": "Try again"
       }
+    },
+    "detailPanel": {
+      "emptyState": "Tap a node or edge to see its detail.",
+      "staleEntity": "This element is no longer present.",
+      "identity": {
+        "node": "Node",
+        "edge": "Edge"
+      },
+      "sectionTitle": {
+        "facets": "Facets",
+        "axiomMarks": "Bedrock for",
+        "annotations": "Annotations",
+        "diagnostics": "Active diagnostics",
+        "ownVote": "Your vote",
+        "otherVotes": "Other participants"
+      }
     }
   },
   "diagnostics": {

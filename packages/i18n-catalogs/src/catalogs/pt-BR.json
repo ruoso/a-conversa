@@ -559,6 +559,22 @@
         "participantsFetchFailed": "Não foi possível carregar a lista de participantes.",
         "retry": "Tentar novamente"
       }
+    },
+    "detailPanel": {
+      "emptyState": "Toque em um nó ou aresta para ver seus detalhes.",
+      "staleEntity": "Este elemento não está mais presente.",
+      "identity": {
+        "node": "Nó",
+        "edge": "Aresta"
+      },
+      "sectionTitle": {
+        "facets": "Facetas",
+        "axiomMarks": "Axioma para",
+        "annotations": "Anotações",
+        "diagnostics": "Diagnósticos ativos",
+        "ownVote": "Seu voto",
+        "otherVotes": "Outros participantes"
+      }
     }
   },
   "diagnostics": {

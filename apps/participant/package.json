@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@a-conversa/i18n-catalogs": "workspace:*",
+    "@a-conversa/moderator": "workspace:*",
     "@a-conversa/shared-types": "workspace:^",
     "@a-conversa/shell": "workspace:*",
     "cytoscape": "3.33.3",

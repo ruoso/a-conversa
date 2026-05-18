@@ -60,6 +60,21 @@ task shell_package "Shell package (@aconversa/shell)" {
     ->8-
   }
 
+  task extract_facet_pill "Extract <FacetPill> + PILL_*_CLASSNAME from @a-conversa/moderator into @a-conversa/shell once the audience surface becomes the third caller" {
+    effort 0.5d
+    allocate team
+    depends participant_ui.part_graph_view.part_entity_detail_panel, audience.aud_shell.aud_app_skeleton
+    note -8<-
+      Extract `<FacetPill>` + `PILL_*_CLASSNAME` from `@a-conversa/moderator` into `@a-conversa/shell` once the audience surface becomes the third caller. Today `apps/participant` carries a workspace runtime dependency on `apps/moderator` purely for this import — structurally awkward (a UI surface depending on a peer UI surface for a leaf component). The participant adopted the cross-workspace import as a deliberate tactical move (Decision §6 of part_entity_detail_panel — "import vs reimplement"); reimplementing the FacetPill primitive in the participant workspace would have duplicated the per-facet-state palette + the `PILL_*_CLASSNAME` vocabulary the moderator already ships. The principled fix is shell-extraction once the third caller exists.
+
+      Deferred-until-third-caller policy: extracting a primitive with only two callers risks ossifying the wrong shape; extracting at three callers gives confidence the API is right. The audience surface is the natural third caller — when it lands per-facet rendering (likely as part of aud_graph_rendering's per-facet state styling work), it will need the same FacetPill vocabulary. This leaf depends on the audience shell so the orchestrator surfaces it once that task is done.
+
+      Scope: lift `<FacetPill>` + the `PILL_BASE_CLASSNAME` / `PILL_STATUS_CLASSNAME` palette out of `apps/moderator/src/graph/FacetPill.tsx` into `packages/shell/src/facet-pill/` (or similar) with full vitest coverage; replace the moderator's local copy + the participant's cross-workspace import with imports from `@a-conversa/shell`; drop the `@a-conversa/moderator` workspace dependency from `apps/participant/package.json`; drop the `exports."./graph/FacetPill"` entry from `apps/moderator/package.json`; the future audience caller inherits the same import path. No protocol or wire-format change; no methodology change.
+
+      Source: tasks/refinements/participant-ui/part_entity_detail_panel.md + this commit.
+    ->8-
+  }
+
   task shared_shell_extract_merge_slots_and_derive_slot_occupants "Extract mergeSlots + deriveSlotOccupants helpers into @a-conversa/shell once the audience view becomes the third caller" {
     effort 0.5d
     allocate team

@@ -2528,4 +2528,314 @@ test.describe('Participant operate route — read-mostly graph render', () => {
       await context.close();
     }
   });
+
+  test('henry (block-10, block-4 role-swap) navigates to operate with the test-mode flag, the entity-detail-panel surfaces identity + rollup + facet + annotation + diagnostic rows when grace taps a seeded node', async ({
+    browser,
+  }) => {
+    // Refinement: tasks/refinements/participant-ui/part_entity_detail_panel.md
+    //   (Decision §7 — TENTH test() block. The 12-user dev pool is
+    //    exhausted; this block adopts the block-4 role-swap pattern
+    //    (`henry + grace` — inverse of block 4's `grace + henry`) to
+    //    keep parallel execution under `fullyParallel: true` race-free.
+    //
+    //    Asserts the entity-detail-panel surfaces:
+    //      - the panel testid + the empty-state body before any tap;
+    //      - on tap of NODE_A: identity row, rollup badge with
+    //        data-rollup-status="proposed" (from a classify-node
+    //        proposal seeded against the node), per-facet pill row,
+    //        annotation row with the annotation kind label + content
+    //        text, and the diagnostic row with the localized title;
+    //      - on tap of NODE_B: the panel content swaps (different id);
+    //      - on empty-canvas tap: the panel returns to the empty-state.
+    //
+    //    Per ORCHESTRATOR.md UI-stream e2e policy: the panel is the
+    //    debater's user-visible surface for the per-entity drill-down
+    //    detail every prior overlay leaf deferred; the e2e is the
+    //    end-to-end pin against the per-section render.)
+    const context = await freshContext(browser);
+    const page = await context.newPage();
+    try {
+      const TOPIC = 'Entity detail panel reaches the participant tablet';
+      const NODE_A_WORDING = 'UBI lifts the welfare floor';
+      const NODE_B_WORDING = 'Means-tested aid stigmatises';
+
+      // 1. Henry creates the session (the creator role; block-4 inverse).
+      const henry = await loginAs(page, { username: 'henry' });
+      expect(henry.screenName.toLowerCase()).toBe('henry');
+      const sessionId = await createSession(page, { topic: TOPIC, privacy: 'public' });
+
+      // 2. Log out + drop cookies so the next dance is fresh.
+      await logoutAndClearAllCookies(page);
+
+      // 3. Grace authenticates and claims debater-A through the invite
+      //    acceptance flow. Grace becomes the navigating current
+      //    participant whose tablet the spec asserts against.
+      const grace = await loginAs(page, { username: 'grace' });
+      expect(grace.screenName.toLowerCase()).toBe('grace');
+      await page.goto(`/p/sessions/${sessionId}/invite?role=debater-A`);
+      await expect(page.getByTestId('route-invite-acceptance')).toBeVisible({ timeout: 15_000 });
+      const joinButton = page.getByTestId('invite-acceptance-join-button');
+      await expect(joinButton).toBeEnabled();
+      await joinButton.click();
+      await page.waitForURL((url) => url.pathname === `/p/sessions/${sessionId}/lobby`, {
+        timeout: 15_000,
+      });
+      await expect(page.getByTestId('route-lobby')).toBeVisible({ timeout: 15_000 });
+
+      // 4. Navigate to the operate route WITH the test-mode flag so
+      //    `<GraphView>` exposes the live cy instance on `window`
+      //    (the same seam blocks 9 + 10 share for synthetic taps).
+      await page.goto(`/p/sessions/${sessionId}?aconversaTestMode=1`);
+      await expect(page.getByTestId('route-operate')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('participant-graph-root')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('participant-detail-panel')).toBeVisible({ timeout: 15_000 });
+
+      // 5. Baseline — before any tap, the panel renders the empty-state.
+      await expect(page.getByTestId('participant-detail-panel')).toHaveAttribute(
+        'data-state',
+        'empty',
+        { timeout: 15_000 },
+      );
+      await expect(page.getByTestId('participant-detail-panel-empty-state')).toBeVisible();
+
+      // 6. Seed the events: a participant-joined for grace (so the
+      //    roster resolves her screen name), two node-created (NODE_A
+      //    + NODE_B), a classify-node proposal on NODE_A (so the
+      //    rollup is "proposed" + the facet pill row carries
+      //    classification), an annotation-created on NODE_A, and a
+      //    fired diagnostic (cycle) touching NODE_A. NODE_B stays
+      //    bare so the panel-swap assertion has a clean contrast
+      //    surface.
+      const NODE_A_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+      const NODE_B_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+      const PROPOSAL_A_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+      const ANNO_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+      const ACTOR_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+      const GRACE_USER_ID = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+      await page.evaluate(
+        (seed: {
+          sessionId: string;
+          nodeAId: string;
+          nodeBId: string;
+          proposalAId: string;
+          annoId: string;
+          actorId: string;
+          graceUserId: string;
+          wordingA: string;
+          wordingB: string;
+        }) => {
+          const store = (
+            window as unknown as {
+              __aConversaWsStore?: {
+                getState: () => {
+                  applyEvent: (event: unknown) => void;
+                  applyDiagnostic?: (payload: unknown) => void;
+                };
+              };
+            }
+          ).__aConversaWsStore;
+          if (!store) {
+            throw new Error('__aConversaWsStore is not exposed on window');
+          }
+          const apply = store.getState().applyEvent.bind(store.getState());
+          apply({
+            id: '99999999-9999-4999-8999-999999999a01',
+            sessionId: seed.sessionId,
+            sequence: 4_000_001,
+            kind: 'participant-joined',
+            actor: seed.graceUserId,
+            payload: {
+              user_id: seed.graceUserId,
+              role: 'debater-A',
+              screen_name: 'grace',
+              joined_at: '2026-05-17T00:00:00.000Z',
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+          apply({
+            id: '99999999-9999-4999-8999-999999999a02',
+            sessionId: seed.sessionId,
+            sequence: 4_000_002,
+            kind: 'node-created',
+            actor: seed.actorId,
+            payload: {
+              node_id: seed.nodeAId,
+              wording: seed.wordingA,
+              created_by: seed.actorId,
+              created_at: '2026-05-17T00:00:00.000Z',
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+          apply({
+            id: '99999999-9999-4999-8999-999999999a03',
+            sessionId: seed.sessionId,
+            sequence: 4_000_003,
+            kind: 'node-created',
+            actor: seed.actorId,
+            payload: {
+              node_id: seed.nodeBId,
+              wording: seed.wordingB,
+              created_by: seed.actorId,
+              created_at: '2026-05-17T00:00:00.000Z',
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+          apply({
+            id: seed.proposalAId,
+            sessionId: seed.sessionId,
+            sequence: 4_000_004,
+            kind: 'proposal',
+            actor: seed.actorId,
+            payload: {
+              proposal: {
+                kind: 'classify-node',
+                node_id: seed.nodeAId,
+                classification: 'fact',
+              },
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+          apply({
+            id: '99999999-9999-4999-8999-999999999a05',
+            sessionId: seed.sessionId,
+            sequence: 4_000_005,
+            kind: 'annotation-created',
+            actor: seed.actorId,
+            payload: {
+              annotation_id: seed.annoId,
+              kind: 'note',
+              content: 'panel-side annotation prose',
+              target_node_id: seed.nodeAId,
+              target_edge_id: null,
+              created_by: seed.graceUserId,
+              created_at: '2026-05-17T00:00:00.000Z',
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+          // Fire a cycle diagnostic touching NODE_A so the panel's
+          // diagnostic row renders the localized title + description.
+          // Wire envelope shape per `apps/server/src/diagnostics/event-emission.ts`:
+          // outer fields carry severity / status / sequence + a nested
+          // `diagnostic` describing the per-kind payload.
+          const applyDiag = store.getState().applyDiagnostic;
+          if (applyDiag) {
+            applyDiag({
+              sessionId: seed.sessionId,
+              kind: 'cycle',
+              severity: 'blocking',
+              status: 'fired',
+              sequence: 4_000_010,
+              diagnostic: {
+                kind: 'cycle',
+                nodes: [seed.nodeAId],
+              },
+            });
+          }
+        },
+        {
+          sessionId,
+          nodeAId: NODE_A_ID,
+          nodeBId: NODE_B_ID,
+          proposalAId: PROPOSAL_A_ID,
+          annoId: ANNO_ID,
+          actorId: ACTOR_ID,
+          graceUserId: GRACE_USER_ID,
+          wordingA: NODE_A_WORDING,
+          wordingB: NODE_B_WORDING,
+        },
+      );
+
+      // 7. Synthetic tap on NODE_A — the panel transitions to the
+      //    detail-body and surfaces identity + rollup + facet pill +
+      //    annotation + diagnostic rows.
+      await page.evaluate((nodeId: string) => {
+        const cy = (
+          window as unknown as {
+            __aConversaCyInstance?: {
+              getElementById: (id: string) => { emit: (event: string) => unknown };
+            };
+          }
+        ).__aConversaCyInstance;
+        if (!cy) {
+          throw new Error('__aConversaCyInstance is not exposed on window');
+        }
+        cy.getElementById(nodeId).emit('tap');
+      }, NODE_A_ID);
+
+      const panel = page.getByTestId('participant-detail-panel');
+      await expect(panel).toHaveAttribute('data-state', 'detail', { timeout: 15_000 });
+      await expect(panel).toHaveAttribute('data-entity-id', NODE_A_ID);
+      await expect(panel).toHaveAttribute('data-entity-kind', 'node');
+
+      // Identity row — wording text.
+      await expect(page.getByTestId('participant-detail-panel-identity-wording')).toHaveText(
+        NODE_A_WORDING,
+      );
+
+      // Rollup badge — classify-node proposal puts the rollup in
+      // `proposed` (no votes have landed yet).
+      await expect(page.getByTestId('participant-detail-panel-rollup-badge')).toHaveAttribute(
+        'data-rollup-status',
+        'proposed',
+      );
+
+      // Per-facet pill row — at least one pill present (the classify-
+      // node proposal contributes the classification facet).
+      const facetRow = page.getByTestId('participant-detail-panel-facet-row');
+      await expect(facetRow).toBeVisible();
+      await expect(facetRow.locator('[data-facet-pill]').first()).toBeVisible();
+
+      // Annotation row — kind + content + author.
+      const annotationRow = page.getByTestId('participant-detail-panel-annotation-row').first();
+      await expect(annotationRow).toBeVisible();
+      await expect(annotationRow).toHaveAttribute('data-annotation-kind', 'note');
+      await expect(annotationRow).toContainText('panel-side annotation prose');
+
+      // Diagnostic row — localized cycle title.
+      const diagnosticRow = page.getByTestId('participant-detail-panel-diagnostic-row').first();
+      await expect(diagnosticRow).toBeVisible();
+      await expect(diagnosticRow).toHaveAttribute('data-diagnostic-kind', 'cycle');
+
+      // 8. Synthetic tap on NODE_B — the panel content swaps; the
+      //    rollup section omits entirely (no proposal targets NODE_B)
+      //    AND the annotation / diagnostic sections also omit.
+      await page.evaluate((nodeId: string) => {
+        const cy = (
+          window as unknown as {
+            __aConversaCyInstance?: {
+              getElementById: (id: string) => { emit: (event: string) => unknown };
+            };
+          }
+        ).__aConversaCyInstance;
+        if (!cy) {
+          throw new Error('__aConversaCyInstance is not exposed on window');
+        }
+        cy.getElementById(nodeId).emit('tap');
+      }, NODE_B_ID);
+
+      await expect(panel).toHaveAttribute('data-entity-id', NODE_B_ID, { timeout: 15_000 });
+      await expect(page.getByTestId('participant-detail-panel-identity-wording')).toHaveText(
+        NODE_B_WORDING,
+      );
+
+      // 9. Synthetic tap on the empty canvas — the panel returns to
+      //    the empty-state body.
+      await page.evaluate(() => {
+        const cy = (
+          window as unknown as {
+            __aConversaCyInstance?: { emit: (event: string) => unknown };
+          }
+        ).__aConversaCyInstance;
+        if (!cy) {
+          throw new Error('__aConversaCyInstance is not exposed on window');
+        }
+        cy.emit('tap');
+      });
+
+      await expect(panel).toHaveAttribute('data-state', 'empty', { timeout: 15_000 });
+      await expect(page.getByTestId('participant-detail-panel-empty-state')).toBeVisible();
+    } finally {
+      await context.close();
+    }
+  });
 });

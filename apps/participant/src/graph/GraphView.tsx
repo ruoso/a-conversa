@@ -191,22 +191,16 @@ import cytoscape, {
   type StylesheetJson,
 } from 'cytoscape';
 import { useTranslation } from 'react-i18next';
-import type { DiagnosticPayload, Event } from '@a-conversa/shared-types';
 
 import { useSelectionStore, type Selection } from '../stores/selectionStore';
-import { useWsStore } from '../ws/wsStore';
-import { groupAnnotationsByEdge, groupAnnotationsByNode, projectAnnotations } from './annotations';
-import { groupAxiomMarksByNode, projectAxiomMarks } from './axiomMarks';
-import { projectDiagnosticHighlights, type DiagnosticHighlight } from './diagnosticHighlights';
-import { computeFacetStatuses, type FacetStatus } from './facetStatus';
+import { type Annotation } from './annotations';
+import { type AxiomMark } from './axiomMarks';
+import { type DiagnosticHighlight, type DiagnosticHighlightIndex } from './diagnosticHighlights';
+import { type FacetStatus, type FacetStatusIndex } from './facetStatus';
 import { OtherVotesOverlay } from './OtherVotesOverlay';
-import { projectOwnVotes, type OwnVote } from './ownVotes';
-import { projectOtherVotes } from './otherVotes';
-import {
-  projectGraph,
-  type ParticipantEdgeElement,
-  type ParticipantNodeElement,
-} from './projectGraph';
+import { type OwnVote, type OwnVoteIndex } from './ownVotes';
+import { type OthersVoteIndex } from './otherVotes';
+import { type ParticipantEdgeElement, type ParticipantNodeElement } from './projectGraph';
 
 /**
  * Zoom-range bounds for the Cytoscape mount config, pinned per Decision §2
@@ -225,23 +219,6 @@ import {
  */
 export const MIN_ZOOM = 0.1;
 export const MAX_ZOOM = 2.5;
-
-/**
- * Stable empty-events reference for the per-session selector. Zustand
- * bails out of re-renders when the selector return value is
- * referentially equal; minting a fresh `[]` inside the selector would
- * defeat the bailout and force a re-render on every store mutation.
- * Same idiom the moderator's `GraphCanvasPane` uses.
- */
-const EMPTY_EVENTS: readonly Event[] = Object.freeze([]);
-
-/**
- * Stable empty-`activeDiagnostics` reference for the per-session
- * selector. Mirrors the moderator's `EMPTY_*` idiom so the diagnostic-
- * highlight memo stays reference-stable when the per-session slice does
- * not yet exist (Zustand's reference-equality bailout).
- */
-const EMPTY_DIAGNOSTICS_MAP: ReadonlyMap<string, DiagnosticPayload> = Object.freeze(new Map());
 
 /**
  * Cytoscape stylesheet — declared at module scope so the reference
@@ -642,9 +619,15 @@ export const STYLESHEET: StylesheetJson = [
 
 export interface GraphViewProps {
   /**
-   * The id of the session whose event log feeds the projection. The
-   * route reads the id from the URL via `useParams` and threads it
-   * through.
+   * The id of the session whose event log feeds the projection. Threaded
+   * through purely as a stable identifier for the per-mount Cytoscape
+   * lifecycle + the DOM mirror's `data-session-id` attribution; the
+   * projection itself is now sourced from props (Decision §2 of
+   * `part_entity_detail_panel` — the projection chain hoisted to
+   * `<OperateRoute>` so `<GraphView>` and `<EntityDetailPanel>` share
+   * the memos. The session id is still threaded for the lifecycle
+   * effect's dependency tracking + to keep the prop signature stable
+   * for any future seam that needs the session-level identity).
    */
   readonly sessionId: string;
   /**
@@ -655,12 +638,49 @@ export interface GraphViewProps {
    * BEFORE mounting the canvas, so the prop is always a non-empty UUID
    * by the time `<GraphView>` renders. Making the prop required keeps
    * the auth-presence invariant at the type-system layer instead of
-   * the canvas-rendering-time branch. The own-vote projection filters
-   * `vote` events by `voter.id === currentParticipantId` so the
-   * participant's at-a-glance own-vote ring only fires on the local
-   * participant's votes.
+   * the canvas-rendering-time branch. The own-vote projection (now
+   * hoisted to the route) filters `vote` events by
+   * `voter.id === currentParticipantId` so the participant's at-a-
+   * glance own-vote ring only fires on the local participant's votes.
    */
   readonly currentParticipantId: string;
+  /**
+   * Projection chain outputs threaded down from `<OperateRoute>` per
+   * Decision §2 of `part_entity_detail_panel`. Each output was an
+   * internal `useMemo` in this component before the hoist; lifting them
+   * up means BOTH `<GraphView>` and `<EntityDetailPanel>` share the
+   * SAME memo identities so the per-events-change projector runs ONCE
+   * per WS frame, not twice.
+   *
+   * The projection helpers stay where they live (`apps/participant/src/graph/`);
+   * only the call sites move. The Cytoscape mount + sync flow + DOM
+   * mirror + tap handler + stylesheet inside this component are
+   * unchanged — only the data-source seam moved from internal-memo to
+   * prop-read.
+   */
+  readonly projectedNodes: readonly ParticipantNodeElement[];
+  /** Edges from `projectGraph` (pre-dangling-filter); see `projectedNodes`. */
+  readonly projectedEdges: readonly ParticipantEdgeElement[];
+  /**
+   * Per-entity per-facet status index from `computeFacetStatuses(events)`.
+   * Currently unused inside `<GraphView>` (the projector handles the
+   * stamp); accepted as a prop to keep the prop signature complete for
+   * any future seam that needs the per-entity facet record without re-
+   * reading the projection's element data.
+   */
+  readonly facetStatusIndex: FacetStatusIndex;
+  /** Per-node axiom-mark bucket from `groupAxiomMarksByNode(projectAxiomMarks(events))`. */
+  readonly axiomMarkIndex: ReadonlyMap<string, readonly AxiomMark[]>;
+  /** Per-node annotation bucket from `groupAnnotationsByNode(projectAnnotations(events))`. */
+  readonly nodeAnnotationIndex: ReadonlyMap<string, readonly Annotation[]>;
+  /** Per-edge annotation bucket from `groupAnnotationsByEdge(projectAnnotations(events))`. */
+  readonly edgeAnnotationIndex: ReadonlyMap<string, readonly Annotation[]>;
+  /** Per-entity diagnostic-highlight rollup from `projectDiagnosticHighlights(activeDiagnostics)`. */
+  readonly diagnosticHighlightIndex: DiagnosticHighlightIndex;
+  /** Per-entity own-vote rollup from `projectOwnVotes(events, currentParticipantId)`. */
+  readonly ownVoteIndex: OwnVoteIndex;
+  /** Per-entity other-voters list from `projectOtherVotes(events, currentParticipantId)`. */
+  readonly othersVoteIndex: OthersVoteIndex;
   /**
    * Optional callback receiving the Cytoscape `Core` handle. Mounts to
    * `null` on unmount. Reserved for downstream tasks
@@ -879,12 +899,20 @@ function shouldExposeCyTestSeam(): boolean {
 }
 
 export function GraphView({
-  sessionId,
-  currentParticipantId,
+  sessionId: _sessionId,
+  currentParticipantId: _currentParticipantId,
+  projectedNodes,
+  projectedEdges,
+  facetStatusIndex: _facetStatusIndex,
+  axiomMarkIndex: _axiomMarkIndex,
+  nodeAnnotationIndex: _nodeAnnotationIndex,
+  edgeAnnotationIndex: _edgeAnnotationIndex,
+  diagnosticHighlightIndex: _diagnosticHighlightIndex,
+  ownVoteIndex: _ownVoteIndex,
+  othersVoteIndex: _othersVoteIndex,
   cyRef,
 }: GraphViewProps): ReactElement {
   const { t } = useTranslation();
-  const events = useWsStore((state) => state.sessionState[sessionId]?.events ?? EMPTY_EVENTS);
   // Decision §7 of `part_pan_zoom_tap` — the localized `elements` memo
   // and the DOM mirror BOTH read the selection slot. The `selected`
   // value drives the `data-selected` attribute (via `selectedFlag`) and
@@ -987,118 +1015,18 @@ export function GraphView({
     // intent for the human reviewer.
   }, []);
 
-  // Per-facet status index. Computed once per events change so the
-  // derivation cost is paid once per WS frame, not per render.
-  const facetStatusIndex = useMemo(() => computeFacetStatuses(events), [events]);
-
-  // Axiom-mark index. Computed once per events change so the projector
-  // can stamp the `isAxiom` boolean on every emitted node without
-  // re-walking the log per node. Decision §3 of
-  // `part_axiom_mark_decoration` — the at-a-glance card layer carries
-  // only the boolean signal; the per-participant chromatic
-  // attribution is the entity-detail-panel consumer's concern.
-  const axiomMarkIndex = useMemo(() => groupAxiomMarksByNode(projectAxiomMarks(events)), [events]);
-
-  // Annotation derivation. The single `projectAnnotations(events)` walk
-  // runs once per events change; the two bucketers split its output
-  // into per-target indexes (Decision §7 of `part_annotation_render` —
-  // the O(n) walk is paid once, not twice, since the two bucketers
-  // share the same input). Decision §1 — the projection consults
-  // BOTH indexes to stamp the per-target boolean + count on both
-  // element kinds, mirroring the wire schema's XOR (annotations
-  // target either a node OR an edge, never both).
-  const annotations = useMemo(() => projectAnnotations(events), [events]);
-  const nodeAnnotationIndex = useMemo(() => groupAnnotationsByNode(annotations), [annotations]);
-  const edgeAnnotationIndex = useMemo(() => groupAnnotationsByEdge(annotations), [annotations]);
-
-  // Diagnostic-highlight derivation. Per Decision §2 of
-  // `part_diagnostic_highlights` the participant's WS store carries an
-  // `activeDiagnostics` map per session, maintained by the widened
-  // `applyDiagnostic` reducer (`fired` adds, `cleared` removes). The
-  // per-session selector reads that map (defaulting to the frozen empty
-  // ref to keep Zustand's reference-equality bailout stable), then the
-  // memo projects it into a `DiagnosticHighlightIndex` once per map
-  // change. Decision §7 — the active set is the only correct source;
-  // `lastDiagnostic` carries one envelope, not the set, and the events
-  // log carries no diagnostic kind.
-  const activeDiagnostics = useWsStore(
-    (state) => state.sessionState[sessionId]?.activeDiagnostics ?? EMPTY_DIAGNOSTICS_MAP,
-  );
-  const diagnosticHighlightIndex = useMemo(
-    () => projectDiagnosticHighlights(activeDiagnostics),
-    [activeDiagnostics],
-  );
-
-  // Own-vote derivation. Per Decision §1 + §2 of
-  // `part_own_vote_indicators` — single-pass walk over the events log
-  // filters `vote` envelopes by `voter.id === currentParticipantId`,
-  // resolves each known proposal to its `(entity, facet)` target, and
-  // rolls per-facet votes up to a single per-entity `OwnVote` sentinel
-  // with dispute-wins tie-break. The memo's dependency on
-  // `currentParticipantId` re-runs the projection if the prop changes
-  // (e.g. a re-login by a different debater on the same session — the
-  // route already remounts on auth flips so this is defensive).
-  const ownVoteIndex = useMemo(
-    () => projectOwnVotes(events, currentParticipantId),
-    [events, currentParticipantId],
-  );
-
-  // Other-vote derivation. Parallel to `ownVoteIndex` above —
-  // single-pass walk over the events log filters `vote` envelopes by
-  // `voter.id !== currentParticipantId` (the inverse of the own-vote
-  // filter), resolves each known proposal to its `(entity, facet)`
-  // target, and accumulates per-(entity, voter) rolled-up choices in
-  // first-vote-arrival order per Decision §5 of
-  // `part_other_vote_indicators`. The memo's dependency on
-  // `currentParticipantId` re-runs the projection if the prop changes
-  // (defensive — the route already remounts on auth flips). The
-  // projection's output (`OthersVoteIndex`) threads into the
-  // `projectGraph` call below as the eighth argument; the per-entity
-  // list is stamped onto every emitted node + edge `data` object
-  // (Decision §1 — symmetric across both kinds; same justification as
-  // `ownVote`'s symmetry since the wire-side `proposal-target` covers
-  // both via the `set-edge-substance` sub-kind).
-  const othersVoteIndex = useMemo(
-    () => projectOtherVotes(events, currentParticipantId),
-    [events, currentParticipantId],
-  );
-
-  // Raw projection — the per-element data the test mirror surfaces
-  // verbatim and the localized memo below enriches for Cytoscape. Split
-  // from the localized memo so the mirror has access to the per-element
-  // status without re-running the projector. Dangling-edge filtering
-  // runs at the localized layer (Cytoscape's `cy.add` complains about
-  // unknown endpoints); the mirror lists exactly what the projector
-  // emits before the filter — but the localized memo below also drops
-  // dangling edges from the mirror to keep the two collections in
-  // lockstep so a test can sanity-check the mirror against Cytoscape's
-  // element set.
+  // The projection chain (per-facet status index, axiom-mark index,
+  // node + edge annotation indexes, diagnostic-highlight index, own-
+  // vote index, other-voter index, plus the final `projectGraph` call)
+  // is hoisted to `<OperateRoute>` per Decision §2 of
+  // `part_entity_detail_panel`. Both `<GraphView>` AND
+  // `<EntityDetailPanel>` consume the SAME memo outputs via the route's
+  // prop-thread; the projection runs ONCE per `events` change, not
+  // twice. The route owns the memo lifetime; the component reads.
   const projected = useMemo<{
-    nodes: ParticipantNodeElement[];
-    edges: ParticipantEdgeElement[];
-  }>(
-    () =>
-      projectGraph(
-        events,
-        facetStatusIndex,
-        axiomMarkIndex,
-        nodeAnnotationIndex,
-        edgeAnnotationIndex,
-        diagnosticHighlightIndex,
-        ownVoteIndex,
-        othersVoteIndex,
-      ),
-    [
-      events,
-      facetStatusIndex,
-      axiomMarkIndex,
-      nodeAnnotationIndex,
-      edgeAnnotationIndex,
-      diagnosticHighlightIndex,
-      ownVoteIndex,
-      othersVoteIndex,
-    ],
-  );
+    nodes: readonly ParticipantNodeElement[];
+    edges: readonly ParticipantEdgeElement[];
+  }>(() => ({ nodes: projectedNodes, edges: projectedEdges }), [projectedNodes, projectedEdges]);
 
   // Element sync — runs on every events / translation change. Cytoscape's
   // `cy.json({ elements })` bulk-replaces the element set; a layout pass
