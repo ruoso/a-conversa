@@ -113,6 +113,10 @@ async function freshContext(browser: Browser): Promise<BrowserContext> {
 //   block 3: frank + erin
 //   block 4: grace + henry
 //   block 5: ivan + julia    (added by part_diagnostic_highlights)
+//   block 6: kate + leo      (added by part_own_vote_indicators)
+//   block 7: ben + alice     (added by part_other_vote_indicators; block-1 role-swap)
+//   block 8: dave + maria    (added by part_other_vote_indicators_canvas_dots; block-2 role-swap)
+//   block 9: erin + frank    (added by part_pan_zoom_tap; block-3 role-swap)
 //
 // History: blocks 1-3 saturated the original 6-user pool; block 4
 // (added by `part_annotation_render`) initially reused alice+ben and
@@ -2265,6 +2269,261 @@ test.describe('Participant operate route — read-mostly graph render', () => {
       await expect(nodeAMirror).toHaveCount(2);
       await expect(nodeAMirror.nth(0)).toHaveAttribute('data-voter-id', SYNTHETIC_VOTER_X);
       await expect(nodeAMirror.nth(1)).toHaveAttribute('data-voter-id', SYNTHETIC_VOTER_Y);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('erin (block-9, block-3 role-swap) navigates to operate with the test-mode flag, synthetic taps via window.__aConversaCyInstance write through to the data-selected DOM mirror', async ({
+    browser,
+  }) => {
+    // Refinement: tasks/refinements/participant-ui/part_pan_zoom_tap.md
+    //   (Decision §11 — NINTH test() block. The 12-user pool is
+    //    exhausted; this block adopts the block-3 role-swap pattern
+    //    (`erin + frank` — inverse of block 3's `frank + erin`) to
+    //    keep parallel execution under `fullyParallel: true` race-free.
+    //
+    //    Decision §8 — synthetic `cy.emit('tap', ...)` via the
+    //    `window.__aConversaCyInstance` test seam, NOT real
+    //    `page.mouse.click(x, y)` against the canvas at a position
+    //    computed from `cy.getElementById(id).renderedPosition()`. The
+    //    seam pins the tap mechanically without coordinate arithmetic
+    //    (avoids the happy-dom-vs-real-browser layout drift named by
+    //    `part_other_vote_indicators_canvas_dots` Decision §6).
+    //
+    //    Decision §9 — the seam is gated on a URL query parameter
+    //    (`?aconversaTestMode=1`); the spec navigates with the flag,
+    //    and `<GraphView>`'s mount effect lights up the seam.
+    //
+    //    Per ORCHESTRATOR.md UI-stream e2e policy: the route is
+    //    reachable, the tap surface is exposed via the test seam, the
+    //    `data-selected` mirror is assertable — the e2e is in scope.
+    //
+    //    Decision §12 — no in-browser pan/zoom assertion; the Vitest
+    //    cy-config readback (cases pz-a..pz-e) pins the same contract
+    //    at a fraction of the wall-clock cost.)
+    const context = await freshContext(browser);
+    const page = await context.newPage();
+    try {
+      const TOPIC = 'Pan / zoom / tap-to-select reaches the participant tablet';
+      const NODE_A_WORDING = 'UBI lifts the welfare floor';
+      const NODE_B_WORDING = 'Means-tested aid stigmatises';
+
+      // 1. Erin creates the session (the creator role; block-3 inverse —
+      //    block 3 had frank as creator + erin as debater-A; block 9
+      //    swaps the roles).
+      const erin = await loginAs(page, { username: 'erin' });
+      expect(erin.screenName.toLowerCase()).toBe('erin');
+      const sessionId = await createSession(page, { topic: TOPIC, privacy: 'public' });
+
+      // 2. Log out + drop cookies so the next dance is fresh.
+      await logoutAndClearAllCookies(page);
+
+      // 3. Frank authenticates and claims debater-A through the invite
+      //    acceptance flow. Frank becomes the navigating current
+      //    participant whose tablet the spec asserts against.
+      const frank = await loginAs(page, { username: 'frank' });
+      expect(frank.screenName.toLowerCase()).toBe('frank');
+      await page.goto(`/p/sessions/${sessionId}/invite?role=debater-A`);
+      await expect(page.getByTestId('route-invite-acceptance')).toBeVisible({ timeout: 15_000 });
+      const joinButton = page.getByTestId('invite-acceptance-join-button');
+      await expect(joinButton).toBeEnabled();
+      await joinButton.click();
+      await page.waitForURL((url) => url.pathname === `/p/sessions/${sessionId}/lobby`, {
+        timeout: 15_000,
+      });
+      await expect(page.getByTestId('route-lobby')).toBeVisible({ timeout: 15_000 });
+
+      // 4. Navigate to the operate route WITH the test-mode flag set so
+      //    `<GraphView>` exposes the live cy instance on `window`
+      //    (Decision §9). Production browser sessions never see the
+      //    flag and the seam stays dormant.
+      await page.goto(`/p/sessions/${sessionId}?aconversaTestMode=1`);
+      await expect(page.getByTestId('route-operate')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('participant-graph-root')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('participant-graph-status-mirror')).toBeAttached({
+        timeout: 15_000,
+      });
+
+      // 5. Seed the events per Decision §11: two `node-created`
+      //    (NODE_A, NODE_B) + one `edge-created` (EDGE_AB).
+      const NODE_A_ID = '11111111-1111-4111-8111-111111111199';
+      const NODE_B_ID = '22222222-2222-4222-8222-222222222299';
+      const EDGE_AB_ID = '33333333-3333-4333-8333-333333333399';
+      const ACTOR_ID = '55555555-5555-4555-8555-555555555599';
+      await page.evaluate(
+        (seed: {
+          sessionId: string;
+          nodeAId: string;
+          nodeBId: string;
+          edgeAbId: string;
+          actorId: string;
+          wordingA: string;
+          wordingB: string;
+        }) => {
+          const store = (
+            window as unknown as {
+              __aConversaWsStore?: {
+                getState: () => {
+                  applyEvent: (event: unknown) => void;
+                };
+              };
+            }
+          ).__aConversaWsStore;
+          if (!store) {
+            throw new Error('__aConversaWsStore is not exposed on window');
+          }
+          const apply = store.getState().applyEvent.bind(store.getState());
+          apply({
+            id: '99999999-9999-4999-8999-999999999991',
+            sessionId: seed.sessionId,
+            sequence: 3_000_001,
+            kind: 'node-created',
+            actor: seed.actorId,
+            payload: {
+              node_id: seed.nodeAId,
+              wording: seed.wordingA,
+              created_by: seed.actorId,
+              created_at: '2026-05-17T00:00:00.000Z',
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+          apply({
+            id: '99999999-9999-4999-8999-999999999992',
+            sessionId: seed.sessionId,
+            sequence: 3_000_002,
+            kind: 'node-created',
+            actor: seed.actorId,
+            payload: {
+              node_id: seed.nodeBId,
+              wording: seed.wordingB,
+              created_by: seed.actorId,
+              created_at: '2026-05-17T00:00:00.000Z',
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+          apply({
+            id: '99999999-9999-4999-8999-999999999993',
+            sessionId: seed.sessionId,
+            sequence: 3_000_003,
+            kind: 'edge-created',
+            actor: seed.actorId,
+            payload: {
+              edge_id: seed.edgeAbId,
+              role: 'supports',
+              source_node_id: seed.nodeAId,
+              target_node_id: seed.nodeBId,
+              created_by: seed.actorId,
+              created_at: '2026-05-17T00:00:00.000Z',
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+        },
+        {
+          sessionId,
+          nodeAId: NODE_A_ID,
+          nodeBId: NODE_B_ID,
+          edgeAbId: EDGE_AB_ID,
+          actorId: ACTOR_ID,
+          wordingA: NODE_A_WORDING,
+          wordingB: NODE_B_WORDING,
+        },
+      );
+
+      // 6. Baseline — before any tap every row reads
+      //    `data-selected="false"`. The mirror's explicit-false branch
+      //    per Decision §7 means the assertion does not rely on
+      //    attribute absence.
+      const nodeARow = page.locator(
+        `[data-testid="participant-node-status"][data-node-id="${NODE_A_ID}"]`,
+      );
+      const nodeBRow = page.locator(
+        `[data-testid="participant-node-status"][data-node-id="${NODE_B_ID}"]`,
+      );
+      const edgeRow = page.locator(
+        `[data-testid="participant-edge-status"][data-edge-id="${EDGE_AB_ID}"]`,
+      );
+      await expect(nodeARow).toHaveAttribute('data-selected', 'false', { timeout: 15_000 });
+      await expect(nodeBRow).toHaveAttribute('data-selected', 'false');
+      await expect(edgeRow).toHaveAttribute('data-selected', 'false');
+
+      // 7. Synthetic tap on NODE_A via the `window.__aConversaCyInstance`
+      //    seam. `cy.emit('tap', ...)` runs the registered `handleTap`
+      //    synchronously; React's reconciler picks up the resulting
+      //    store update on the next microtask tick.
+      await page.evaluate((nodeId: string) => {
+        const cy = (
+          window as unknown as {
+            __aConversaCyInstance?: {
+              getElementById: (id: string) => unknown;
+              emit: (event: string, extra: unknown[]) => unknown;
+            };
+          }
+        ).__aConversaCyInstance;
+        if (!cy) {
+          throw new Error('__aConversaCyInstance is not exposed on window');
+        }
+        const element = cy.getElementById(nodeId) as {
+          emit: (event: string, extra?: unknown[]) => unknown;
+        };
+        // Cytoscape's `singular.emit('tap')` dispatches a `tap` event
+        // whose `event.target` is the calling singular — drives the
+        // node branch of `handleTap` exactly as a real tap would.
+        element.emit('tap');
+      }, NODE_A_ID);
+
+      // 8. NODE_A's row flips to `data-selected="true"`; NODE_B and
+      //    the edge stay `"false"`.
+      await expect(nodeARow).toHaveAttribute('data-selected', 'true', { timeout: 15_000 });
+      await expect(nodeBRow).toHaveAttribute('data-selected', 'false');
+      await expect(edgeRow).toHaveAttribute('data-selected', 'false');
+
+      // 9. Synthetic tap on the EDGE — single-selection: NODE_A flips
+      //    back to "false", the edge flips to "true", NODE_B stays
+      //    "false".
+      await page.evaluate((edgeId: string) => {
+        const cy = (
+          window as unknown as {
+            __aConversaCyInstance?: {
+              getElementById: (id: string) => unknown;
+              emit: (event: string, extra: unknown[]) => unknown;
+            };
+          }
+        ).__aConversaCyInstance;
+        if (!cy) {
+          throw new Error('__aConversaCyInstance is not exposed on window');
+        }
+        const element = cy.getElementById(edgeId) as {
+          emit: (event: string, extra?: unknown[]) => unknown;
+        };
+        element.emit('tap');
+      }, EDGE_AB_ID);
+
+      await expect(edgeRow).toHaveAttribute('data-selected', 'true', { timeout: 15_000 });
+      await expect(nodeARow).toHaveAttribute('data-selected', 'false');
+      await expect(nodeBRow).toHaveAttribute('data-selected', 'false');
+
+      // 10. Synthetic tap on the cy core (empty canvas) — every row
+      //     flips back to `data-selected="false"`. The core path
+      //     emits via the cy instance itself (not via an element);
+      //     `handleTap` discriminates on `event.target === event.cy`.
+      await page.evaluate(() => {
+        const cy = (
+          window as unknown as {
+            __aConversaCyInstance?: {
+              emit: (event: string, extra?: unknown[]) => unknown;
+            };
+          }
+        ).__aConversaCyInstance;
+        if (!cy) {
+          throw new Error('__aConversaCyInstance is not exposed on window');
+        }
+        cy.emit('tap');
+      });
+
+      await expect(nodeARow).toHaveAttribute('data-selected', 'false', { timeout: 15_000 });
+      await expect(nodeBRow).toHaveAttribute('data-selected', 'false');
+      await expect(edgeRow).toHaveAttribute('data-selected', 'false');
     } finally {
       await context.close();
     }

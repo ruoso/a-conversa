@@ -31,9 +31,10 @@ import type {
 
 import { I18nProvider, createI18nInstance, type I18nInstance } from '@a-conversa/shell';
 
-import { GraphView, STYLESHEET } from './GraphView';
+import { GraphView, MAX_ZOOM, MIN_ZOOM, STYLESHEET, handleTap } from './GraphView';
 import { installCytoscapeTestEnv, type CytoscapeTestEnvRestoreHandle } from './cytoscapeTestEnv';
 import { type DiagnosticHighlight } from './diagnosticHighlights';
+import { useSelectionStore } from '../stores/selectionStore';
 import { useWsStore } from '../ws/wsStore';
 
 const SESSION_ID = '00000000-0000-4000-8000-0000000000aa';
@@ -155,6 +156,11 @@ afterAll(() => {
 afterEach(() => {
   cleanup();
   useWsStore.getState().reset();
+  // Clear any selection written by `handleTap` so the next test's
+  // baseline reads cleanly. The selection store has no `reset()`
+  // helper; `clear()` resets the slot to `null`, which is the
+  // store's initial state.
+  useSelectionStore.getState().clear();
 });
 
 interface RenderResult {
@@ -1709,5 +1715,259 @@ describe('GraphView — canvas-side other-vote dot row overlay', () => {
     const overlay = document.querySelector('[data-testid="participant-other-votes-overlay"]');
     expect(overlay).not.toBeNull();
     expect(overlay?.querySelectorAll('[data-canvas-vote-dots]').length).toBe(0);
+  });
+});
+
+// -------------------------------------------------------------------
+// Pan + zoom + tap-to-select wiring — added by
+// `participant_ui.part_graph_view.part_pan_zoom_tap`.
+// Refinement: tasks/refinements/participant-ui/part_pan_zoom_tap.md
+//
+// 13 new cases pin: (1) the 7 explicit Cytoscape mount-config flags
+// (pan/zoom on, box-select off, single-select, ungrabbable, MIN_ZOOM /
+// MAX_ZOOM bounds — Decisions §1 + §2 + §3); (2) the `handleTap`
+// three-branch discriminator + store-write semantics (Decisions §5 +
+// §6); (3) the DOM mirror's additive `data-selected` attribute on both
+// node + edge row kinds (Decision §7); (4) the `STYLESHEET`'s two new
+// `:selected` selectors (Decision §4); (5) the `<OtherVotesOverlay>`
+// `pointer-events: none` cross-layer posture (Decision §10) so a
+// future overlay regression that drops the class is caught here.
+// -------------------------------------------------------------------
+
+describe('GraphView — part_pan_zoom_tap (pan + zoom + tap-to-select)', () => {
+  it('(pz-a) cy.userPanningEnabled() returns true after mount', () => {
+    const result = renderView();
+    expect(result.getCy().userPanningEnabled()).toBe(true);
+  });
+
+  it('(pz-b) cy.userZoomingEnabled() returns true after mount', () => {
+    const result = renderView();
+    expect(result.getCy().userZoomingEnabled()).toBe(true);
+  });
+
+  it('(pz-c) cy.minZoom() / cy.maxZoom() return the exported MIN_ZOOM / MAX_ZOOM constants', () => {
+    const result = renderView();
+    const cy = result.getCy();
+    expect(cy.minZoom()).toBe(MIN_ZOOM);
+    expect(cy.maxZoom()).toBe(MAX_ZOOM);
+    // Source-of-truth pin: the constants exported from GraphView.tsx
+    // are the empirical participant-tablet calibration from
+    // `part_pan_zoom_tap` Decision §2 (mirrors moderator's
+    // mod_pan_zoom).
+    expect(MIN_ZOOM).toBe(0.1);
+    expect(MAX_ZOOM).toBe(2.5);
+  });
+
+  it('(pz-d) cy.boxSelectionEnabled() returns false after mount', () => {
+    const result = renderView();
+    expect(result.getCy().boxSelectionEnabled()).toBe(false);
+  });
+
+  it('(pz-e) cy.autoungrabify() returns true after mount', () => {
+    const result = renderView();
+    expect(result.getCy().autoungrabify()).toBe(true);
+  });
+
+  it('(pz-f) handleTap on a node writes { kind: "node", id } to useSelectionStore AND adds the node to cy:selected', () => {
+    const result = renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    const cy = result.getCy();
+    const node = cy.getElementById(NODE_A);
+    expect(node.length).toBe(1);
+    act(() => {
+      handleTap({
+        target: node,
+        cy,
+      } as unknown as Parameters<typeof handleTap>[0]);
+    });
+    expect(useSelectionStore.getState().selected).toEqual({ kind: 'node', id: NODE_A });
+    // Cytoscape's internal selection set picks up the explicit
+    // `.select()` call inside `handleTap`.
+    expect(cy.$(':selected').contains(node)).toBe(true);
+  });
+
+  it('(pz-g) handleTap on an edge writes { kind: "edge", id } to useSelectionStore AND adds the edge to cy:selected', () => {
+    const result = renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(nodeCreatedEvent({ sequence: 2, nodeId: NODE_B, wording: 'B' }));
+    seedEvent(edgeCreatedEvent({ sequence: 3, edgeId: EDGE_A, source: NODE_A, target: NODE_B }));
+    const cy = result.getCy();
+    const edge = cy.getElementById(EDGE_A);
+    expect(edge.length).toBe(1);
+    act(() => {
+      handleTap({
+        target: edge,
+        cy,
+      } as unknown as Parameters<typeof handleTap>[0]);
+    });
+    expect(useSelectionStore.getState().selected).toEqual({ kind: 'edge', id: EDGE_A });
+    expect(cy.$(':selected').contains(edge)).toBe(true);
+  });
+
+  it('(pz-h) handleTap on the cy core (empty canvas) clears the store AND unselects every cy element', () => {
+    const result = renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    const cy = result.getCy();
+    const node = cy.getElementById(NODE_A);
+    // Set a prior selection so the empty-canvas branch has something
+    // to clear.
+    act(() => {
+      handleTap({
+        target: node,
+        cy,
+      } as unknown as Parameters<typeof handleTap>[0]);
+    });
+    expect(useSelectionStore.getState().selected).not.toBeNull();
+    expect(cy.$(':selected').length).toBeGreaterThan(0);
+    // Empty-canvas tap.
+    act(() => {
+      handleTap({
+        target: cy,
+        cy,
+      } as unknown as Parameters<typeof handleTap>[0]);
+    });
+    expect(useSelectionStore.getState().selected).toBeNull();
+    expect(cy.$(':selected').length).toBe(0);
+  });
+
+  it('(pz-i) tapping a different element after a prior tap unselects the prior element (single-selection)', () => {
+    const result = renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(nodeCreatedEvent({ sequence: 2, nodeId: NODE_B, wording: 'B' }));
+    const cy = result.getCy();
+    const nodeA = cy.getElementById(NODE_A);
+    const nodeB = cy.getElementById(NODE_B);
+    // Tap NODE_A first.
+    act(() => {
+      handleTap({
+        target: nodeA,
+        cy,
+      } as unknown as Parameters<typeof handleTap>[0]);
+    });
+    expect(useSelectionStore.getState().selected).toEqual({ kind: 'node', id: NODE_A });
+    // Then tap NODE_B — single-selection: NODE_A must drop out of
+    // the selection set, NODE_B must be the sole `:selected`.
+    act(() => {
+      handleTap({
+        target: nodeB,
+        cy,
+      } as unknown as Parameters<typeof handleTap>[0]);
+    });
+    expect(useSelectionStore.getState().selected).toEqual({ kind: 'node', id: NODE_B });
+    expect(cy.$(':selected').contains(nodeA)).toBe(false);
+    expect(cy.$(':selected').contains(nodeB)).toBe(true);
+    expect(cy.$(':selected').length).toBe(1);
+  });
+
+  it('(pz-j) the DOM mirror <li> rows carry data-selected="true" on the matching row and "false" on the rest', () => {
+    const result = renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(nodeCreatedEvent({ sequence: 2, nodeId: NODE_B, wording: 'B' }));
+    seedEvent(edgeCreatedEvent({ sequence: 3, edgeId: EDGE_A, source: NODE_A, target: NODE_B }));
+    // Before any tap — every row reads "false".
+    const initialNodeARow = document.querySelector(
+      `[data-testid="participant-node-status"][data-node-id="${NODE_A}"]`,
+    );
+    expect(initialNodeARow?.getAttribute('data-selected')).toBe('false');
+    const initialEdgeRow = document.querySelector(
+      `[data-testid="participant-edge-status"][data-edge-id="${EDGE_A}"]`,
+    );
+    expect(initialEdgeRow?.getAttribute('data-selected')).toBe('false');
+    // Tap NODE_A.
+    const cy = result.getCy();
+    act(() => {
+      handleTap({
+        target: cy.getElementById(NODE_A),
+        cy,
+      } as unknown as Parameters<typeof handleTap>[0]);
+    });
+    const nodeARow = document.querySelector(
+      `[data-testid="participant-node-status"][data-node-id="${NODE_A}"]`,
+    );
+    const nodeBRow = document.querySelector(
+      `[data-testid="participant-node-status"][data-node-id="${NODE_B}"]`,
+    );
+    const edgeRow = document.querySelector(
+      `[data-testid="participant-edge-status"][data-edge-id="${EDGE_A}"]`,
+    );
+    expect(nodeARow?.getAttribute('data-selected')).toBe('true');
+    expect(nodeBRow?.getAttribute('data-selected')).toBe('false');
+    expect(edgeRow?.getAttribute('data-selected')).toBe('false');
+    // Tap the edge — NODE_A row flips back to "false", edge row to
+    // "true" (single-selection semantic surfaces through the mirror).
+    act(() => {
+      handleTap({
+        target: cy.getElementById(EDGE_A),
+        cy,
+      } as unknown as Parameters<typeof handleTap>[0]);
+    });
+    const nodeARowAfter = document.querySelector(
+      `[data-testid="participant-node-status"][data-node-id="${NODE_A}"]`,
+    );
+    const edgeRowAfter = document.querySelector(
+      `[data-testid="participant-edge-status"][data-edge-id="${EDGE_A}"]`,
+    );
+    expect(nodeARowAfter?.getAttribute('data-selected')).toBe('false');
+    expect(edgeRowAfter?.getAttribute('data-selected')).toBe('true');
+  });
+
+  it('(pz-k) STYLESHEET contains a node:selected selector AND an edge:selected selector', () => {
+    const selectors = (STYLESHEET as Array<{ selector: string }>).map((entry) => entry.selector);
+    expect(selectors).toContain('node:selected');
+    expect(selectors).toContain('edge:selected');
+  });
+
+  it('(pz-l) the selected-state stylesheet entries claim only the documented primitives (z-index + background-blacken / line-color / target-arrow-color / width)', () => {
+    const nodeSelected = (
+      STYLESHEET as Array<{ selector: string; style: Record<string, unknown> }>
+    ).find((entry) => entry.selector === 'node:selected');
+    const edgeSelected = (
+      STYLESHEET as Array<{ selector: string; style: Record<string, unknown> }>
+    ).find((entry) => entry.selector === 'edge:selected');
+    expect(nodeSelected).toBeDefined();
+    expect(edgeSelected).toBeDefined();
+    // Node side: previously-unclaimed primitives only — z-index +
+    // background-blacken. NOT any of the rollup / axiom / annotation /
+    // diagnostic / own-vote claims (border-*, background-color,
+    // opacity, outline-*, overlay-*, text-outline-*).
+    const nodeKeys = Object.keys(nodeSelected?.style ?? {}).sort();
+    expect(nodeKeys).toEqual(['background-blacken', 'z-index']);
+    // Edge side: recoverable overrides (line-color +
+    // target-arrow-color + width) + z-index. The line/arrow color is
+    // a recoverable override because the per-status branch's value
+    // restores when the element unselects.
+    const edgeKeys = Object.keys(edgeSelected?.style ?? {}).sort();
+    expect(edgeKeys).toEqual(['line-color', 'target-arrow-color', 'width', 'z-index']);
+  });
+
+  it('(pz-n) cy.emit("tap") on a node propagates to the registered handler and writes the selection (validates the __aConversaCyInstance seam path used by the Playwright spec)', () => {
+    const result = renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    const cy = result.getCy();
+    const node = cy.getElementById(NODE_A);
+    expect(node.length).toBe(1);
+    // Validates the e2e wiring: `element.emit('tap')` runs Cytoscape's
+    // emit pipeline through to the `cy.on('tap', handleTap)`
+    // registration installed by the mount effect — same path the
+    // Playwright spec's `page.evaluate(...)` walks via the
+    // `window.__aConversaCyInstance` test seam.
+    act(() => {
+      node.emit('tap');
+    });
+    expect(useSelectionStore.getState().selected).toEqual({ kind: 'node', id: NODE_A });
+  });
+
+  it('(pz-m) <OtherVotesOverlay> root carries pointer-events: none so taps reach the Cytoscape canvas', () => {
+    // Decision §10 — cross-layer verification. The overlay sits ABOVE
+    // the Cytoscape canvas mount; if the `pointer-events-none`
+    // Tailwind class drops (or a higher-specificity rule shadows it),
+    // taps that originate in the overlay's screen-space rectangle
+    // would be captured by the overlay instead of propagating to the
+    // canvas — silently breaking tap-to-select on entities under the
+    // overlay's dot row.
+    renderView();
+    const overlay = document.querySelector('[data-testid="participant-other-votes-overlay"]');
+    expect(overlay).not.toBeNull();
+    expect(overlay?.getAttribute('class') ?? '').toContain('pointer-events-none');
   });
 });

@@ -148,6 +148,7 @@ task participant_ui "Participant (debater) UI" {
     task part_pan_zoom_tap "Pan, zoom, and tap-to-detail interactions" {
       effort 1d
       allocate team
+      complete 100
       depends !part_graph_render
     }
     task part_own_vote_indicators "This debater's own per-facet vote indicators on graph" {

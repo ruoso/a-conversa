@@ -86,6 +86,36 @@
 //              unchanged — the two surfaces are independent renderings
 //              of the same per-voter data, deliberately not consolidated
 //              per Decision §8.)
+// Refinement: tasks/refinements/participant-ui/part_pan_zoom_tap.md
+//              (Mount config grows 7 explicit flags per Decisions §1
+//              + §2 + §3: `userPanningEnabled: true`, `userZoomingEnabled:
+//              true`, `minZoom: MIN_ZOOM`, `maxZoom: MAX_ZOOM`,
+//              `boxSelectionEnabled: false`, `selectionType: 'single'`,
+//              `autoungrabify: true`. The one-shot mount effect also
+//              calls `cy.on('tap', handleTap)` after mount and
+//              `cy.removeListener('tap', handleTap)` in the cleanup;
+//              `handleTap` is a module-scope exported function that
+//              discriminates on `event.target` (core / node / edge)
+//              and writes the selection through to `useSelectionStore`
+//              while also syncing Cytoscape's internal `:selected`
+//              set. `STYLESHEET` grows two new selectors —
+//              `node:selected` (z-index bump + slight
+//              `background-blacken` lightening) and `edge:selected`
+//              (sky-500 line/arrow color override + width bump) —
+//              claiming previously-unclaimed primitives so composition
+//              with every prior layer stays clean. The localized
+//              `elements` memo stamps a flat `selected: boolean` slot
+//              on each Cytoscape data record. The DOM mirror grows a
+//              `data-selected="true|false"` attribute on both `<li>`
+//              row kinds, derived via the `selectedFlag` helper —
+//              symmetric with the existing `axiomAttr` family per
+//              Decision §7. A `window.__aConversaCyInstance` test
+//              seam (gated on `import.meta.env.MODE === 'test'` OR a
+//              `?aconversaTestMode=1` URL query parameter per
+//              Decisions §8 + §9) exposes the live cy instance so the
+//              Playwright spec can dispatch synthetic `cy.emit('tap',
+//              ...)` events without coordinate arithmetic. The seam
+//              never lights up in production browser sessions.)
 // Refinement: tasks/refinements/participant-ui/part_other_vote_indicators.md
 //              (Stylesheet UNCHANGED — Decision §3 ships DOM-mirror-only
 //              for v0; canvas-side rendering is deferred to a future
@@ -154,10 +184,16 @@
 // users + screen readers (`aria-hidden="true"` + `sr-only`).
 
 import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
-import cytoscape, { type Core, type ElementDefinition, type StylesheetJson } from 'cytoscape';
+import cytoscape, {
+  type Core,
+  type ElementDefinition,
+  type EventObject,
+  type StylesheetJson,
+} from 'cytoscape';
 import { useTranslation } from 'react-i18next';
 import type { DiagnosticPayload, Event } from '@a-conversa/shared-types';
 
+import { useSelectionStore, type Selection } from '../stores/selectionStore';
 import { useWsStore } from '../ws/wsStore';
 import { groupAnnotationsByEdge, groupAnnotationsByNode, projectAnnotations } from './annotations';
 import { groupAxiomMarksByNode, projectAxiomMarks } from './axiomMarks';
@@ -171,6 +207,24 @@ import {
   type ParticipantEdgeElement,
   type ParticipantNodeElement,
 } from './projectGraph';
+
+/**
+ * Zoom-range bounds for the Cytoscape mount config, pinned per Decision §2
+ * of `tasks/refinements/participant-ui/part_pan_zoom_tap.md`.
+ *
+ * Cytoscape's library defaults are `[1e-50, 1e50]` — unbounded, which
+ * allows degenerate zoom levels (sub-pixel nodes at one extreme,
+ * single-node-fills-viewport at the other). The empirical
+ * `[0.1, 2.5]` range mirrors the moderator's `mod_pan_zoom`
+ * calibration verbatim — same dagre-vs-cose layout span × viewport-size
+ * ratio applies because the participant uses Cytoscape `width: 200,
+ * height: 80` per `part_graph_render`'s STYLESHEET, and the close-read
+ * 2.5x cap on a 200px-wide card matches the moderator's 2.5x cap on a
+ * `max-w-[18rem]` (288px) card. Exported so `GraphView.test.tsx`
+ * imports the same source-of-truth value the cy mount config consumes.
+ */
+export const MIN_ZOOM = 0.1;
+export const MAX_ZOOM = 2.5;
 
 /**
  * Stable empty-events reference for the per-session selector. Zustand
@@ -551,6 +605,39 @@ export const STYLESHEET: StylesheetJson = [
       'text-outline-opacity': 1,
     },
   },
+  // Selected-state overlay — per Decision §4 of
+  // `tasks/refinements/participant-ui/part_pan_zoom_tap.md`. Cytoscape's
+  // built-in `:selected` pseudo-class fires when an element is in the
+  // cy instance's selection set. The tap handler (`handleTap` below)
+  // synchronises the cy selection set with the participant
+  // `useSelectionStore` so the stylesheet's `:selected` pseudo and the
+  // DOM mirror's `data-selected` attribute stay in lockstep.
+  //
+  // Composes with every prior layer because it claims previously-
+  // unclaimed primitives for nodes (`z-index` and `background-blacken`,
+  // neither touched by rollup / axiom / annotation / diagnostic / own-vote)
+  // and uses recoverable overrides for edges (`line-color` /
+  // `target-arrow-color` / `width` snap back to the per-status branch's
+  // values when the element is unselected; Cytoscape's selector cascade
+  // restores the prior values automatically because no `:selected`
+  // selector matches anymore). The sky-500 hue matches the moderator's
+  // `mod_selection` ring color for cross-surface visual consistency.
+  {
+    selector: 'node:selected',
+    style: {
+      'z-index': 10,
+      'background-blacken': -0.15, // negative value lightens; subtle
+    },
+  },
+  {
+    selector: 'edge:selected',
+    style: {
+      'z-index': 10,
+      'line-color': '#0ea5e9', // sky-500
+      'target-arrow-color': '#0ea5e9',
+      width: 4,
+    },
+  },
 ];
 
 export interface GraphViewProps {
@@ -684,6 +771,113 @@ function ownVoteAttr(value: OwnVote): 'agree' | 'dispute' | 'none' {
   return value;
 }
 
+/**
+ * Render a `data-selected` attribute value for a node / edge mirror row.
+ *
+ * Refinement: tasks/refinements/participant-ui/part_pan_zoom_tap.md
+ *              (Decision §7 — additive `data-selected` on the existing
+ *              `<li>` rows; explicit `"true"` / `"false"` posture,
+ *              symmetric with the `axiomAttr` / `hasAnnotationAttr`
+ *              family so Playwright's `[data-selected="false"]` probe
+ *              has an explicit "we asserted not-selected" branch).
+ *
+ * Returns `"true"` iff the store's `selected` slot matches the row's
+ * `(kind, id)` tuple; `"false"` otherwise (including the no-selection
+ * case where `selected === null`).
+ */
+function selectedFlag(
+  id: string,
+  selected: Selection | null,
+  kind: 'node' | 'edge',
+): 'true' | 'false' {
+  return selected?.kind === kind && selected.id === id ? 'true' : 'false';
+}
+
+/**
+ * Cytoscape `tap` event handler — discriminates on the target kind and
+ * writes through to the participant `useSelectionStore`.
+ *
+ * Refinement: tasks/refinements/participant-ui/part_pan_zoom_tap.md
+ *              (Decision §5 — single `cy.on('tap', handleTap)`
+ *              registration with `event.target` discrimination, vs
+ *              three selector-qualified `cy.on('tap', 'node', ...)` /
+ *              `'edge'` / `'core'` handlers. One registration, one
+ *              cleanup. Decision §6 — module-scope export ensures
+ *              referential stability across renders and gives the
+ *              Vitest cases a direct entry point.)
+ *
+ * Three branches:
+ *
+ *   - `target === cy` (empty-canvas tap): unselect every cy element +
+ *     `useSelectionStore.getState().clear()`.
+ *   - `target.isNode()` (node tap): defensively unselect any prior
+ *     `:selected` (single-selection semantic — `selectionType: 'single'`
+ *     covers this internally too, but the explicit call defends against
+ *     version skew); `target.select()`; write
+ *     `{ kind: 'node', id: target.id() }` to the store.
+ *   - `target.isEdge()` (edge tap): symmetric with the node branch.
+ *
+ * Unknown target kinds — defensive no-op. Cytoscape only emits `tap`
+ * on core / node / edge today; the silent branch keeps a forward-
+ * compatible posture without a behaviour change.
+ */
+export function handleTap(event: EventObject): void {
+  const target = event.target as unknown;
+  const cy = event.cy;
+  if (target === cy) {
+    cy.elements().unselect();
+    useSelectionStore.getState().clear();
+    return;
+  }
+  // Cytoscape's `Singular` API carries `isNode()` / `isEdge()`; guard
+  // the runtime calls with `typeof === 'function'` to keep the
+  // unknown-target branch unreachable for any future target shape.
+  const targetWithIsNode = target as { isNode?: () => boolean; isEdge?: () => boolean };
+  if (typeof targetWithIsNode.isNode === 'function' && targetWithIsNode.isNode()) {
+    const node = target as { id: () => string; select: () => unknown };
+    cy.$(':selected')
+      .not(target as never)
+      .unselect();
+    node.select();
+    useSelectionStore.getState().select({ kind: 'node', id: node.id() });
+    return;
+  }
+  if (typeof targetWithIsNode.isEdge === 'function' && targetWithIsNode.isEdge()) {
+    const edge = target as { id: () => string; select: () => unknown };
+    cy.$(':selected')
+      .not(target as never)
+      .unselect();
+    edge.select();
+    useSelectionStore.getState().select({ kind: 'edge', id: edge.id() });
+    return;
+  }
+}
+
+/**
+ * URL-query-parameter gate for the `window.__aConversaCyInstance`
+ * test seam (per Decision §9 of `part_pan_zoom_tap`). The Playwright
+ * spec navigates with `?aconversaTestMode=1`; under that flag the
+ * mount effect exposes the live cy instance on `window` so the spec
+ * can dispatch synthetic `cy.emit('tap', ...)` events without
+ * coordinate arithmetic. Vitest sets `import.meta.env.MODE === 'test'`
+ * which also lights up the seam.
+ *
+ * In production builds the gate is FALSE on every page load — the
+ * window property never lands and the cy instance is not leaked into
+ * the page's global scope.
+ */
+function shouldExposeCyTestSeam(): boolean {
+  // `import.meta.env.MODE` is the Vitest-supplied mode in the unit
+  // test environment. `'test'` covers the Vitest path; the URL-query
+  // branch covers the Playwright path. The dev / production browser
+  // path hits neither and the seam stays dormant.
+  const env = (import.meta as unknown as { env?: { MODE?: string } }).env;
+  if (env?.MODE === 'test') return true;
+  if (typeof window === 'undefined') return false;
+  const search = window.location.search;
+  return search.includes('aconversaTestMode');
+}
+
 export function GraphView({
   sessionId,
   currentParticipantId,
@@ -691,6 +885,17 @@ export function GraphView({
 }: GraphViewProps): ReactElement {
   const { t } = useTranslation();
   const events = useWsStore((state) => state.sessionState[sessionId]?.events ?? EMPTY_EVENTS);
+  // Decision §7 of `part_pan_zoom_tap` — the localized `elements` memo
+  // and the DOM mirror BOTH read the selection slot. The `selected`
+  // value drives the `data-selected` attribute (via `selectedFlag`) and
+  // is also stamped onto each Cytoscape data record so a downstream
+  // selector cascade (or the dev-tools inspector) can see what the
+  // component believes is selected at any moment. The cy
+  // `:selected` pseudo-class is driven separately by the `handleTap`
+  // call to `target.select()` — the two paths stay in lockstep because
+  // `handleTap` writes to the store AND to the cy selection set in the
+  // same call.
+  const selected = useSelectionStore((state) => state.selected);
   const cyInstanceRef = useRef<Core | null>(null);
   // Decision §2 of `part_other_vote_indicators_canvas_dots` —
   // `cyInstanceRef` (a plain `useRef`) is React-invisible: mutating the
@@ -708,6 +913,16 @@ export function GraphView({
   // One-shot mount of the Cytoscape instance. The `useEffect`'s empty
   // dependency array keeps the instance stable across the component's
   // lifetime; element sync happens in a separate effect below.
+  //
+  // The 7 explicit mount-config flags + the `handleTap` registration
+  // are pinned per
+  // `tasks/refinements/participant-ui/part_pan_zoom_tap.md` Decisions
+  // §1 + §3 + §5. The values match Cytoscape's documented defaults for
+  // pan/zoom (pinned explicitly so the contract does not drift across
+  // library upgrades) and pin the read-mostly contract for
+  // selection/grab (box-select OFF, single-select, ungrabbable). The
+  // zoom range pins `[MIN_ZOOM, MAX_ZOOM]` (Decision §2 — see the
+  // module-scope constants above).
   useEffect(() => {
     const container = containerRef.current;
     if (container === null) return;
@@ -716,11 +931,48 @@ export function GraphView({
       style: STYLESHEET,
       elements: [],
       layout: { name: 'preset' },
+      // Pan / zoom — pinned ON explicitly (Decision §1).
+      userPanningEnabled: true,
+      userZoomingEnabled: true,
+      // Zoom range — widened from Cytoscape's `[1e-50, 1e50]` defaults
+      // to the empirical participant-tablet calibration (Decision §2).
+      minZoom: MIN_ZOOM,
+      maxZoom: MAX_ZOOM,
+      // Selection — single-tap, no box-select (Decision §3a + §3b).
+      // The detail panel surfaces one entity at a time per the
+      // methodology's tap-an-entity-see-its-facets loop.
+      boxSelectionEnabled: false,
+      selectionType: 'single',
+      // Grab — read-mostly surface; the moderator owns positions via
+      // `cose` re-layouts. Manual node drags would visually
+      // desynchronise from every other surface and fight the layout
+      // engine (Decision §3c).
+      autoungrabify: true,
     });
+    cy.on('tap', handleTap);
     cyInstanceRef.current = cy;
     setCyInstance(cy);
     cyRef?.(cy);
+    // Test seam — expose the live cy instance on `window` so the
+    // Playwright spec (and Vitest, transitively) can dispatch
+    // synthetic `cy.emit('tap', ...)` events without coordinate
+    // arithmetic. Gated per `shouldExposeCyTestSeam()` so production
+    // browser sessions never see the seam (Decision §8 + §9).
+    const exposeSeam = shouldExposeCyTestSeam();
+    if (exposeSeam && typeof window !== 'undefined') {
+      (window as unknown as { __aConversaCyInstance?: Core }).__aConversaCyInstance = cy;
+    }
     return () => {
+      // Clean up the test seam FIRST so a doubled-mount under React
+      // strict-mode does not leave a dangling reference to the
+      // about-to-be-destroyed cy instance.
+      if (exposeSeam && typeof window !== 'undefined') {
+        const w = window as unknown as { __aConversaCyInstance?: Core };
+        if (w.__aConversaCyInstance === cy) {
+          delete w.__aConversaCyInstance;
+        }
+      }
+      cy.removeListener('tap', handleTap);
       cy.destroy();
       cyInstanceRef.current = null;
       setCyInstance(null);
@@ -878,12 +1130,23 @@ export function GraphView({
     // string for the no-diagnostic baseline — keeps the
     // `node[diagnosticSeverity = "blocking"]` / `"advisory"` selectors
     // from accidentally firing on entities with no active diagnostic.
+    //
+    // The flat `selected: boolean` slot (per Decision §7 of
+    // `part_pan_zoom_tap`) carries the source-of-truth for the
+    // mirror's `data-selected` attribute reads. The Cytoscape
+    // stylesheet's `:selected` pseudo-class fires off Cytoscape's
+    // INTERNAL selection set (synced by `handleTap`), so the
+    // `data.selected` flag is the React-rendering source-of-truth
+    // (DOM mirror) and the cy selection set is the Cytoscape-rendering
+    // source-of-truth (canvas paint); the tap handler keeps them
+    // synchronised.
     const localizedNodes: ElementDefinition[] = projected.nodes.map((node) => ({
       group: 'nodes',
       data: {
         ...node.data,
         kindLabel: node.data.kind === null ? '—' : t(`methodology.kind.${node.data.kind}`),
         diagnosticSeverity: node.data.diagnosticHighlight?.severity ?? 'none',
+        selected: selected?.kind === 'node' && selected.id === node.data.id,
       },
     }));
     const localizedEdges: ElementDefinition[] = renderedEdges.map((edge) => ({
@@ -892,10 +1155,11 @@ export function GraphView({
         ...edge.data,
         roleLabel: t(`methodology.edgeRole.${edge.data.role}.label`),
         diagnosticSeverity: edge.data.diagnosticHighlight?.severity ?? 'none',
+        selected: selected?.kind === 'edge' && selected.id === edge.data.id,
       },
     }));
     return [...localizedNodes, ...localizedEdges];
-  }, [projected, renderedEdges, t]);
+  }, [projected, renderedEdges, selected, t]);
 
   useEffect(() => {
     const cy = cyInstanceRef.current;
@@ -967,6 +1231,7 @@ export function GraphView({
             data-diagnostic-severity={diagnosticSeverityAttr(node.data.diagnosticHighlight)}
             data-diagnostic-kinds={diagnosticKindsAttr(node.data.diagnosticHighlight)}
             data-own-vote={ownVoteAttr(node.data.ownVote)}
+            data-selected={selectedFlag(node.data.id, selected, 'node')}
           >
             {/*
              * Nested `<ul data-other-votes>` per Decision §6 of
@@ -1002,6 +1267,7 @@ export function GraphView({
             data-diagnostic-severity={diagnosticSeverityAttr(edge.data.diagnosticHighlight)}
             data-diagnostic-kinds={diagnosticKindsAttr(edge.data.diagnosticHighlight)}
             data-own-vote={ownVoteAttr(edge.data.ownVote)}
+            data-selected={selectedFlag(edge.data.id, selected, 'edge')}
           >
             {/*
              * Nested `<ul data-other-votes>` per Decision §6 —
