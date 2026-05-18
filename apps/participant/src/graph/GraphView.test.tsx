@@ -1372,3 +1372,252 @@ describe('GraphView — own-vote overlay', () => {
     expect(edgeDispute?.style['text-outline-opacity']).toBe(1);
   });
 });
+
+// -------------------------------------------------------------------
+// Other-vote overlay — added by
+// `participant_ui.part_graph_view.part_other_vote_indicators`.
+// Refinement: tasks/refinements/participant-ui/part_other_vote_indicators.md
+//
+// Six new cases pinning the per-target nested `<ul data-other-votes>`
+// mirror (Decision §6) on BOTH node AND edge rows (Decision §1 —
+// structural symmetry): empty default, single agree by an other
+// participant, two distinct other voters in first-vote-arrival order,
+// arm-switching keeps the original position (Decision §5),
+// edge-targeted per-other-voter list, and the per-participant filter
+// excludes the current participant's vote from the list.
+// -------------------------------------------------------------------
+
+function setEdgeSubstanceProposalEventOther(opts: {
+  sequence: number;
+  envelopeId: string;
+  edgeId: string;
+}): Event {
+  return {
+    id: opts.envelopeId,
+    sessionId: SESSION_ID,
+    sequence: opts.sequence,
+    kind: 'proposal',
+    actor: ACTOR,
+    payload: {
+      proposal: {
+        kind: 'set-edge-substance',
+        edge_id: opts.edgeId,
+        value: 'agreed',
+      },
+    },
+    createdAt: '2026-05-17T00:00:00.000Z',
+  };
+}
+
+function voteEventOther(opts: {
+  sequence: number;
+  proposalId: string;
+  participant: string;
+  vote: 'agree' | 'dispute' | 'withdraw';
+}): Event {
+  return {
+    id: `00000000-0000-4000-8000-${(0x900 + opts.sequence).toString(16).padStart(12, '0')}`,
+    sessionId: SESSION_ID,
+    sequence: opts.sequence,
+    kind: 'vote',
+    actor: opts.participant,
+    payload: {
+      proposal_id: opts.proposalId,
+      participant: opts.participant,
+      vote: opts.vote,
+      voted_at: '2026-05-17T00:00:00.000Z',
+    },
+    createdAt: '2026-05-17T00:00:00.000Z',
+  };
+}
+
+const OTHER_VOTER_A = '00000000-0000-4000-8000-0000000000a1';
+const OTHER_VOTER_B = '00000000-0000-4000-8000-0000000000b1';
+
+describe('GraphView — other-vote overlay', () => {
+  it('(tt) the per-node mirror renders an empty nested <ul data-other-votes> by default', () => {
+    renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    const item = document.querySelector(
+      `[data-testid="participant-node-status"][data-node-id="${NODE_A}"]`,
+    );
+    expect(item).not.toBeNull();
+    const otherVotesList = item?.querySelector('ul[data-other-votes]');
+    // The <ul> itself MUST be present (the explicit empty-list
+    // contract — Decision §6); the count of children MUST be 0.
+    expect(otherVotesList).not.toBeNull();
+    expect(otherVotesList?.querySelectorAll('li[data-other-vote]').length).toBe(0);
+  });
+
+  it('(uu) when an OTHER participant votes agree on a classify-node proposal, the node mirror has one <li data-other-vote data-voter-id="..." data-vote="agree"> in the nested <ul>', () => {
+    renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(
+      classifyProposalEvent({
+        sequence: 2,
+        envelopeId: PROPOSAL_A,
+        nodeId: NODE_A,
+        classification: 'fact',
+      }),
+    );
+    seedEvent(
+      voteEventOther({
+        sequence: 3,
+        proposalId: PROPOSAL_A,
+        participant: OTHER_VOTER_A,
+        vote: 'agree',
+      }),
+    );
+    const item = document.querySelector(
+      `[data-testid="participant-node-status"][data-node-id="${NODE_A}"]`,
+    );
+    const voteEntries = item?.querySelectorAll('ul[data-other-votes] li[data-other-vote]');
+    expect(voteEntries?.length).toBe(1);
+    expect(voteEntries?.[0]?.getAttribute('data-voter-id')).toBe(OTHER_VOTER_A);
+    expect(voteEntries?.[0]?.getAttribute('data-vote')).toBe('agree');
+  });
+
+  it('(vv) two distinct other voters surface as TWO <li> entries in first-vote-arrival order (Decision §5)', () => {
+    renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(
+      classifyProposalEvent({
+        sequence: 2,
+        envelopeId: PROPOSAL_A,
+        nodeId: NODE_A,
+        classification: 'fact',
+      }),
+    );
+    // OTHER_VOTER_A votes first → index 0.
+    seedEvent(
+      voteEventOther({
+        sequence: 3,
+        proposalId: PROPOSAL_A,
+        participant: OTHER_VOTER_A,
+        vote: 'agree',
+      }),
+    );
+    // OTHER_VOTER_B votes second → index 1.
+    seedEvent(
+      voteEventOther({
+        sequence: 4,
+        proposalId: PROPOSAL_A,
+        participant: OTHER_VOTER_B,
+        vote: 'dispute',
+      }),
+    );
+    const item = document.querySelector(
+      `[data-testid="participant-node-status"][data-node-id="${NODE_A}"]`,
+    );
+    const voteEntries = item?.querySelectorAll('ul[data-other-votes] li[data-other-vote]');
+    expect(voteEntries?.length).toBe(2);
+    expect(voteEntries?.[0]?.getAttribute('data-voter-id')).toBe(OTHER_VOTER_A);
+    expect(voteEntries?.[0]?.getAttribute('data-vote')).toBe('agree');
+    expect(voteEntries?.[1]?.getAttribute('data-voter-id')).toBe(OTHER_VOTER_B);
+    expect(voteEntries?.[1]?.getAttribute('data-vote')).toBe('dispute');
+  });
+
+  it('(ww) when the same other voter switches arm, the nested <ul> still has ONE <li> with the latest arm, at the original position (Decision §5)', () => {
+    renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(
+      classifyProposalEvent({
+        sequence: 2,
+        envelopeId: PROPOSAL_A,
+        nodeId: NODE_A,
+        classification: 'fact',
+      }),
+    );
+    seedEvent(
+      voteEventOther({
+        sequence: 3,
+        proposalId: PROPOSAL_A,
+        participant: OTHER_VOTER_A,
+        vote: 'agree',
+      }),
+    );
+    seedEvent(
+      voteEventOther({
+        sequence: 4,
+        proposalId: PROPOSAL_A,
+        participant: OTHER_VOTER_A,
+        vote: 'dispute',
+      }),
+    );
+    const item = document.querySelector(
+      `[data-testid="participant-node-status"][data-node-id="${NODE_A}"]`,
+    );
+    const voteEntries = item?.querySelectorAll('ul[data-other-votes] li[data-other-vote]');
+    expect(voteEntries?.length).toBe(1);
+    expect(voteEntries?.[0]?.getAttribute('data-voter-id')).toBe(OTHER_VOTER_A);
+    expect(voteEntries?.[0]?.getAttribute('data-vote')).toBe('dispute');
+  });
+
+  it('(xx) when an OTHER participant disputes a set-edge-substance proposal, the edge mirror has one <li data-vote="dispute"> in the nested <ul>', () => {
+    const EDGE_OTHER = '00000000-0000-4000-8000-000000000ace';
+    const SUBSTANCE_PROPOSAL = '00000000-0000-4000-8000-000000000ac2';
+    renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(nodeCreatedEvent({ sequence: 2, nodeId: NODE_B, wording: 'B' }));
+    seedEvent(
+      edgeCreatedEvent({
+        sequence: 3,
+        edgeId: EDGE_OTHER,
+        source: NODE_A,
+        target: NODE_B,
+      }),
+    );
+    seedEvent(
+      setEdgeSubstanceProposalEventOther({
+        sequence: 4,
+        envelopeId: SUBSTANCE_PROPOSAL,
+        edgeId: EDGE_OTHER,
+      }),
+    );
+    seedEvent(
+      voteEventOther({
+        sequence: 5,
+        proposalId: SUBSTANCE_PROPOSAL,
+        participant: OTHER_VOTER_A,
+        vote: 'dispute',
+      }),
+    );
+    const item = document.querySelector(
+      `[data-testid="participant-edge-status"][data-edge-id="${EDGE_OTHER}"]`,
+    );
+    const voteEntries = item?.querySelectorAll('ul[data-other-votes] li[data-other-vote]');
+    expect(voteEntries?.length).toBe(1);
+    expect(voteEntries?.[0]?.getAttribute('data-voter-id')).toBe(OTHER_VOTER_A);
+    expect(voteEntries?.[0]?.getAttribute('data-vote')).toBe('dispute');
+  });
+
+  it('(yy) votes by the CURRENT participant do NOT appear in the nested <ul> (per-participant filter excludes self)', () => {
+    renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(
+      classifyProposalEvent({
+        sequence: 2,
+        envelopeId: PROPOSAL_A,
+        nodeId: NODE_A,
+        classification: 'fact',
+      }),
+    );
+    // Only the current participant (`ME`) votes; the filter
+    // (`voter.id !== currentParticipantId`) drops the vote so the
+    // nested <ul> stays empty.
+    seedEvent(
+      voteEventOther({
+        sequence: 3,
+        proposalId: PROPOSAL_A,
+        participant: ME,
+        vote: 'agree',
+      }),
+    );
+    const item = document.querySelector(
+      `[data-testid="participant-node-status"][data-node-id="${NODE_A}"]`,
+    );
+    const otherVotesList = item?.querySelector('ul[data-other-votes]');
+    expect(otherVotesList).not.toBeNull();
+    expect(otherVotesList?.querySelectorAll('li[data-other-vote]').length).toBe(0);
+  });
+});

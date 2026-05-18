@@ -53,6 +53,22 @@
 //    covers both "no vote by the current participant" and "the
 //    proposal envelope hasn't yet arrived" defensively, so Cytoscape's
 //    `[ownVote = "..."]` selectors have a stable value to match.)
+// Refinement: tasks/refinements/participant-ui/part_other_vote_indicators.md
+//   (Constraints — `projectGraph` signature widens AGAIN to take an
+//    eighth `othersVoteIndex: OthersVoteIndex` argument. Every emitted
+//    node AND edge `data` carries `otherVotes: readonly OtherVote[]`
+//    stamped from the per-target bucket — Decision §1 symmetry: votes
+//    target both kinds per the wire `proposal` family. The default for
+//    an entity with no other-votes is the shared
+//    `EMPTY_OTHER_VOTES_LIST` reference (NOT a fresh `[]`) so the
+//    projection's reference-equality bailout stays stable per the
+//    prior leaves' `EMPTY_*` discipline. Per Decision §3 the field is
+//    NOT consumed by any Cytoscape stylesheet selector at v0; the
+//    DOM mirror's nested `<ul data-other-votes>` is the load-bearing
+//    surface. The future `part_other_vote_indicators_canvas_dots`
+//    leaf reads the same field off the Cytoscape element record via
+//    the `...node.data` / `...edge.data` spread in the localized
+//    `elements` memo.)
 // ADRs:
 //   - 0004 (Cytoscape.js for the read-mostly participant tablet);
 //   - 0021 (event envelope shape — the shell client validates incoming
@@ -90,6 +106,7 @@ import {
   type FacetStatusIndex,
 } from './facetStatus';
 import { type OwnVote, type OwnVoteIndex } from './ownVotes';
+import { EMPTY_OTHER_VOTES_LIST, type OtherVote, type OthersVoteIndex } from './otherVotes';
 
 /**
  * The per-node payload `projectGraph` emits on each `node-created`
@@ -176,6 +193,34 @@ export interface ParticipantNodeData {
    * the at-a-glance layer).
    */
   readonly ownVote: OwnVote;
+  /**
+   * Per-entity list of OTHER participants' at-a-glance votes on this
+   * node, rolled up across every facet-targeting proposal that
+   * references the node. Sourced from `othersVoteIndex.nodes`. Each
+   * entry is `{ participantId, choice: 'agree' | 'dispute' }`. The
+   * `'withdraw'` arm REMOVES the voter's entry from the list per
+   * Decision §1 of `part_other_vote_indicators` — withdrawal
+   * collapses to the un-voted baseline at the at-a-glance layer.
+   * First-vote-arrival sort order per Decision §5; arm-switching by
+   * the same voter overwrites in-place at the original position
+   * (mirrors the moderator's `positionIndex` posture).
+   *
+   * NOT consumed by any Cytoscape stylesheet selector at v0
+   * (Decision §3 — DOM-mirror-only). The mirror render in
+   * `GraphView.tsx` surfaces the list as a nested
+   * `<ul data-other-votes>` per `<li>` row carrying per-voter
+   * `<li data-other-vote data-voter-id="..." data-vote="...">`
+   * children (Decision §6). The future
+   * `part_other_vote_indicators_canvas_dots` polish leaf reads the
+   * same field off the Cytoscape element record (carried through the
+   * `...node.data` spread in `GraphView.tsx`'s localized memo).
+   *
+   * Defaults to the shared `EMPTY_OTHER_VOTES_LIST` frozen reference
+   * for an entity with no recordable other-votes — keeps the
+   * memoization stable across re-projection passes for the no-vote
+   * baseline.
+   */
+  readonly otherVotes: readonly OtherVote[];
 }
 
 /**
@@ -251,6 +296,24 @@ export interface ParticipantEdgeData {
    * glance own-vote ring paints on both kinds.
    */
   readonly ownVote: OwnVote;
+  /**
+   * Per-entity list of OTHER participants' at-a-glance votes on this
+   * edge, rolled up across every facet-targeting proposal that
+   * references the edge (today only the `set-edge-substance`
+   * sub-kind). Sourced from `othersVoteIndex.edges`. Each entry is
+   * `{ participantId, choice: 'agree' | 'dispute' }`. The `'withdraw'`
+   * arm REMOVES the voter's entry from the list per Decision §1 of
+   * `part_other_vote_indicators`. First-vote-arrival sort order per
+   * Decision §5.
+   *
+   * Symmetric with `ParticipantNodeData.otherVotes` per Decision §1 —
+   * the wire `proposal` family targets both node + edge entities; the
+   * per-entity per-other-voter row paints on both kinds.
+   *
+   * Defaults to the shared `EMPTY_OTHER_VOTES_LIST` frozen reference
+   * for an edge with no recordable other-votes.
+   */
+  readonly otherVotes: readonly OtherVote[];
 }
 
 /**
@@ -329,6 +392,7 @@ export function projectGraph(
   edgeAnnotationIndex: ReadonlyMap<string, readonly Annotation[]>,
   diagnosticHighlightIndex: DiagnosticHighlightIndex,
   ownVoteIndex: OwnVoteIndex,
+  othersVoteIndex: OthersVoteIndex,
 ): {
   nodes: ParticipantNodeElement[];
   edges: ParticipantEdgeElement[];
@@ -360,6 +424,7 @@ export function projectGraph(
           annotationCount: annotationCountFor(nodeAnnotationIndex, event.payload.node_id),
           diagnosticHighlight: diagnosticHighlightIndex.nodes.get(event.payload.node_id) ?? null,
           ownVote: ownVoteIndex.nodes.get(event.payload.node_id) ?? 'none',
+          otherVotes: othersVoteIndex.nodes.get(event.payload.node_id) ?? EMPTY_OTHER_VOTES_LIST,
         },
       };
       nodeIndexById.set(event.payload.node_id, nodes.length);
@@ -382,6 +447,7 @@ export function projectGraph(
           annotationCount: annotationCountFor(edgeAnnotationIndex, event.payload.edge_id),
           diagnosticHighlight: diagnosticHighlightIndex.edges.get(event.payload.edge_id) ?? null,
           ownVote: ownVoteIndex.edges.get(event.payload.edge_id) ?? 'none',
+          otherVotes: othersVoteIndex.edges.get(event.payload.edge_id) ?? EMPTY_OTHER_VOTES_LIST,
         },
       };
       edges.push(element);

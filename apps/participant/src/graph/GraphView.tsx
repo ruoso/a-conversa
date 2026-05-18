@@ -68,6 +68,26 @@
 //              target kinds per Decision §1 — the wire `proposal`
 //              family targets both via the `set-edge-substance`
 //              sub-kind.)
+// Refinement: tasks/refinements/participant-ui/part_other_vote_indicators.md
+//              (Stylesheet UNCHANGED — Decision §3 ships DOM-mirror-only
+//              for v0; canvas-side rendering is deferred to a future
+//              polish leaf `part_other_vote_indicators_canvas_dots`.
+//              An EIGHTH `useMemo` derives `othersVoteIndex =
+//              projectOtherVotes(events, currentParticipantId)` and
+//              threads it into `projectGraph` as the eighth argument.
+//              The `currentParticipantId` prop is REUSED verbatim from
+//              `part_own_vote_indicators` Decision §4 — no new prop,
+//              no new threading. The mirror `<li participant-node-status>`
+//              AND `<li participant-edge-status>` BOTH grow a nested
+//              `<ul data-other-votes>` child carrying one
+//              `<li data-other-vote data-voter-id="..." data-vote="...">`
+//              per other voter (Decision §6 — explicit nested-list
+//              rather than comma-separated attribute string, to keep
+//              per-voter assertions composable in Playwright; empty
+//              list still renders the `<ul>` with no children so the
+//              absent-children probe matches `… ul[data-other-votes]
+//              li` count of 0). Symmetric across node + edge target
+//              kinds per Decision §1.)
 // ADRs:
 //   - 0004 (Cytoscape.js for the read-mostly participant tablet);
 //   - 0024 (react-i18next + ICU — `methodology.kind.*` and
@@ -126,6 +146,7 @@ import { groupAxiomMarksByNode, projectAxiomMarks } from './axiomMarks';
 import { projectDiagnosticHighlights, type DiagnosticHighlight } from './diagnosticHighlights';
 import { computeFacetStatuses, type FacetStatus } from './facetStatus';
 import { projectOwnVotes, type OwnVote } from './ownVotes';
+import { projectOtherVotes } from './otherVotes';
 import {
   projectGraph,
   type ParticipantEdgeElement,
@@ -738,6 +759,26 @@ export function GraphView({
     [events, currentParticipantId],
   );
 
+  // Other-vote derivation. Parallel to `ownVoteIndex` above —
+  // single-pass walk over the events log filters `vote` envelopes by
+  // `voter.id !== currentParticipantId` (the inverse of the own-vote
+  // filter), resolves each known proposal to its `(entity, facet)`
+  // target, and accumulates per-(entity, voter) rolled-up choices in
+  // first-vote-arrival order per Decision §5 of
+  // `part_other_vote_indicators`. The memo's dependency on
+  // `currentParticipantId` re-runs the projection if the prop changes
+  // (defensive — the route already remounts on auth flips). The
+  // projection's output (`OthersVoteIndex`) threads into the
+  // `projectGraph` call below as the eighth argument; the per-entity
+  // list is stamped onto every emitted node + edge `data` object
+  // (Decision §1 — symmetric across both kinds; same justification as
+  // `ownVote`'s symmetry since the wire-side `proposal-target` covers
+  // both via the `set-edge-substance` sub-kind).
+  const othersVoteIndex = useMemo(
+    () => projectOtherVotes(events, currentParticipantId),
+    [events, currentParticipantId],
+  );
+
   // Raw projection — the per-element data the test mirror surfaces
   // verbatim and the localized memo below enriches for Cytoscape. Split
   // from the localized memo so the mirror has access to the per-element
@@ -761,6 +802,7 @@ export function GraphView({
         edgeAnnotationIndex,
         diagnosticHighlightIndex,
         ownVoteIndex,
+        othersVoteIndex,
       ),
     [
       events,
@@ -770,6 +812,7 @@ export function GraphView({
       edgeAnnotationIndex,
       diagnosticHighlightIndex,
       ownVoteIndex,
+      othersVoteIndex,
     ],
   );
 
@@ -869,7 +912,28 @@ export function GraphView({
             data-diagnostic-severity={diagnosticSeverityAttr(node.data.diagnosticHighlight)}
             data-diagnostic-kinds={diagnosticKindsAttr(node.data.diagnosticHighlight)}
             data-own-vote={ownVoteAttr(node.data.ownVote)}
-          />
+          >
+            {/*
+             * Nested `<ul data-other-votes>` per Decision §6 of
+             * `part_other_vote_indicators`. Renders one
+             * `<li data-other-vote …>` per other voter in the per-
+             * entity list. Empty list still renders the `<ul>` with
+             * no children so Playwright's absent-children probe
+             * (`… ul[data-other-votes] li` count of 0) matches the
+             * intentional empty state distinct from a projector bug
+             * that omits the `<ul>` entirely.
+             */}
+            <ul data-other-votes>
+              {node.data.otherVotes.map((vote) => (
+                <li
+                  key={vote.participantId}
+                  data-other-vote
+                  data-voter-id={vote.participantId}
+                  data-vote={vote.choice}
+                />
+              ))}
+            </ul>
+          </li>
         ))}
         {renderedEdges.map((edge) => (
           <li
@@ -883,7 +947,22 @@ export function GraphView({
             data-diagnostic-severity={diagnosticSeverityAttr(edge.data.diagnosticHighlight)}
             data-diagnostic-kinds={diagnosticKindsAttr(edge.data.diagnosticHighlight)}
             data-own-vote={ownVoteAttr(edge.data.ownVote)}
-          />
+          >
+            {/*
+             * Nested `<ul data-other-votes>` per Decision §6 —
+             * symmetric across node + edge row kinds per Decision §1.
+             */}
+            <ul data-other-votes>
+              {edge.data.otherVotes.map((vote) => (
+                <li
+                  key={vote.participantId}
+                  data-other-vote
+                  data-voter-id={vote.participantId}
+                  data-vote={vote.choice}
+                />
+              ))}
+            </ul>
+          </li>
         ))}
       </ul>
     </>

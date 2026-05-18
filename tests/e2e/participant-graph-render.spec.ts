@@ -1590,4 +1590,359 @@ test.describe('Participant operate route — read-mostly graph render', () => {
       await context.close();
     }
   });
+
+  test("alice (block-7) navigates to operate, seeded vote events by synthetic-UUID OTHER voters surface per-voter <li data-other-vote …> entries; alice's own vote stays out of the other-votes list", async ({
+    browser,
+  }) => {
+    // Refinement: tasks/refinements/participant-ui/part_other_vote_indicators.md
+    //   (Decision §7 — SEVENTH test() block. The 12-user Authelia dev
+    //    pool was exhausted by block 6 (kate+leo); block 7 REUSES the
+    //    alice+ben pair (same pair as block 1) AND synthesizes
+    //    additional OTHER-voter UUIDs at the event-seed layer. The
+    //    projection compares `voter.id !== currentParticipantId` as a
+    //    string-equality check; the per-`vote` `participantId` is a
+    //    UUID string and the projection does NOT validate against the
+    //    `participant-joined` event log. Synthetic UUIDs at the seed
+    //    layer behave indistinguishably from real per-user UUIDs at
+    //    the projection layer. Per-block-isolated `freshContext` +
+    //    `createSession` ensures different sessions per block — no
+    //    race on session state even though both blocks 1 and 7 use
+    //    alice + ben. Decision §3 — DOM-mirror-only assertions; no
+    //    canvas pixels.
+    //
+    //    Per ORCHESTRATOR.md UI-stream e2e policy: the route is
+    //    reachable, the per-target nested `<ul data-other-votes>`
+    //    mirror is in place, the `vote` envelope reaches the
+    //    participant's WS connection (already pinned by
+    //    `ws-vote.feature` + `ws-proposal-status.feature`); the e2e
+    //    is in scope.)
+    //
+    // Pair reuse note: alice + ben are also used by block 1. Block 1
+    // has alice as creator + ben as debater-A (ben is the navigating
+    // current participant); block 7 inverts to ben as creator + alice
+    // as debater-A (alice is the navigating current participant). The
+    // shared user-creation path in Authelia / the server runs once
+    // per OIDC dance; both blocks may race on concurrent logins for
+    // the same user under `fullyParallel: true`. If observed flaky,
+    // the fallback is to expand the user pool (a future leaf
+    // `part_e2e_user_pool_expansion_v2`) OR to mark only block-7's
+    // inner describe `.serial`. This block ships under the
+    // `fullyParallel` posture first per Decision §7 (a).
+    const context = await freshContext(browser);
+    const page = await context.newPage();
+    try {
+      const TOPIC = 'Other-vote indicators reach the participant tablet';
+      const NODE_A_WORDING = 'UBI lifts the welfare floor';
+      const NODE_B_WORDING = 'Means-tested aid stigmatises';
+
+      // 1. Ben creates the session (the creator role; not the
+      //    navigating participant per Decision §7's inverse-of-block-1
+      //    posture).
+      const ben = await loginAs(page, { username: 'ben' });
+      expect(ben.screenName.toLowerCase()).toBe('ben');
+      const sessionId = await createSession(page, { topic: TOPIC, privacy: 'public' });
+
+      // 2. Log out + drop cookies so the next dance is fresh.
+      await logoutAndClearAllCookies(page);
+
+      // 3. Alice authenticates and claims debater-A through the
+      //    invite acceptance flow. Alice becomes the navigating
+      //    current participant whose tablet the spec asserts against.
+      const alice = await loginAs(page, { username: 'alice' });
+      expect(alice.screenName.toLowerCase()).toBe('alice');
+      await page.goto(`/p/sessions/${sessionId}/invite?role=debater-A`);
+      await expect(page.getByTestId('route-invite-acceptance')).toBeVisible({ timeout: 15_000 });
+      const joinButton = page.getByTestId('invite-acceptance-join-button');
+      await expect(joinButton).toBeEnabled();
+      await joinButton.click();
+      await page.waitForURL((url) => url.pathname === `/p/sessions/${sessionId}/lobby`, {
+        timeout: 15_000,
+      });
+      await expect(page.getByTestId('route-lobby')).toBeVisible({ timeout: 15_000 });
+
+      // 4. Navigate to the operate route.
+      await page.goto(`/p/sessions/${sessionId}`);
+      await expect(page.getByTestId('route-operate')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('participant-graph-root')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('participant-graph-status-mirror')).toBeAttached({
+        timeout: 15_000,
+      });
+
+      // 5. Seed the events per Decision §7:
+      //
+      //      - Two node-created (NODE_A, NODE_B).
+      //      - One edge-created (EDGE_AB, NODE_A → NODE_B).
+      //      - Three proposals:
+      //          P1: classify-node on NODE_A.
+      //          P2: set-edge-substance on EDGE_AB.
+      //          P3: classify-node on NODE_B.
+      //      - Four votes:
+      //          SYNTHETIC_VOTER_X agree on P1 (NODE_A's first other vote).
+      //          SYNTHETIC_VOTER_Y dispute on P1 (NODE_A's second other vote).
+      //          SYNTHETIC_VOTER_X dispute on P2 (EDGE_AB's only other vote).
+      //          alice.userId agree on P3 (NODE_B's only vote, by the
+      //                                   CURRENT participant — MUST be
+      //                                   filtered out of the other-
+      //                                   votes list).
+      const NODE_A_ID = '11111111-1111-4111-8111-111111111111';
+      const NODE_B_ID = '22222222-2222-4222-8222-222222222222';
+      const EDGE_AB_ID = '33333333-3333-4333-8333-333333333333';
+      const P1_ID = '44444444-4444-4444-8444-444444444441';
+      const P2_ID = '44444444-4444-4444-8444-444444444442';
+      const P3_ID = '44444444-4444-4444-8444-444444444443';
+      const ACTOR_ID = '55555555-5555-4555-8555-555555555555';
+      // Synthetic OTHER-voter UUIDs. Distinct from alice.userId AND
+      // ben.userId. The projection compares UUID strings only — it
+      // does not validate the voter UUID against the per-session
+      // participant-joined log, so synthetic UUIDs flow through the
+      // projection as ordinary other-voter entries.
+      const SYNTHETIC_VOTER_X = '77777777-7777-4777-8777-777777777771';
+      const SYNTHETIC_VOTER_Y = '77777777-7777-4777-8777-777777777772';
+      await page.evaluate(
+        (seed: {
+          sessionId: string;
+          nodeAId: string;
+          nodeBId: string;
+          edgeAbId: string;
+          p1Id: string;
+          p2Id: string;
+          p3Id: string;
+          actorId: string;
+          aliceId: string;
+          voterXId: string;
+          voterYId: string;
+          wordingA: string;
+          wordingB: string;
+        }) => {
+          const store = (
+            window as unknown as {
+              __aConversaWsStore?: {
+                getState: () => {
+                  applyEvent: (event: unknown) => void;
+                };
+              };
+            }
+          ).__aConversaWsStore;
+          if (!store) {
+            throw new Error('__aConversaWsStore is not exposed on window');
+          }
+          const apply = store.getState().applyEvent.bind(store.getState());
+
+          // Two node-created events.
+          apply({
+            id: '88888888-8888-4888-8888-888888888881',
+            sessionId: seed.sessionId,
+            sequence: 1_000_001,
+            kind: 'node-created',
+            actor: seed.actorId,
+            payload: {
+              node_id: seed.nodeAId,
+              wording: seed.wordingA,
+              created_by: seed.actorId,
+              created_at: '2026-05-17T00:00:00.000Z',
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+          apply({
+            id: '88888888-8888-4888-8888-888888888882',
+            sessionId: seed.sessionId,
+            sequence: 1_000_002,
+            kind: 'node-created',
+            actor: seed.actorId,
+            payload: {
+              node_id: seed.nodeBId,
+              wording: seed.wordingB,
+              created_by: seed.actorId,
+              created_at: '2026-05-17T00:00:00.000Z',
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+          // One edge-created (NODE_A → NODE_B).
+          apply({
+            id: '88888888-8888-4888-8888-888888888883',
+            sessionId: seed.sessionId,
+            sequence: 1_000_003,
+            kind: 'edge-created',
+            actor: seed.actorId,
+            payload: {
+              edge_id: seed.edgeAbId,
+              role: 'supports',
+              source_node_id: seed.nodeAId,
+              target_node_id: seed.nodeBId,
+              created_by: seed.actorId,
+              created_at: '2026-05-17T00:00:00.000Z',
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+          // P1: classify-node on NODE_A.
+          apply({
+            id: seed.p1Id,
+            sessionId: seed.sessionId,
+            sequence: 1_000_004,
+            kind: 'proposal',
+            actor: seed.actorId,
+            payload: {
+              proposal: {
+                kind: 'classify-node',
+                node_id: seed.nodeAId,
+                classification: 'fact',
+              },
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+          // P2: set-edge-substance on EDGE_AB.
+          apply({
+            id: seed.p2Id,
+            sessionId: seed.sessionId,
+            sequence: 1_000_005,
+            kind: 'proposal',
+            actor: seed.actorId,
+            payload: {
+              proposal: {
+                kind: 'set-edge-substance',
+                edge_id: seed.edgeAbId,
+                value: 'agreed',
+              },
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+          // P3: classify-node on NODE_B.
+          apply({
+            id: seed.p3Id,
+            sessionId: seed.sessionId,
+            sequence: 1_000_006,
+            kind: 'proposal',
+            actor: seed.actorId,
+            payload: {
+              proposal: {
+                kind: 'classify-node',
+                node_id: seed.nodeBId,
+                classification: 'fact',
+              },
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+          // SYNTHETIC_VOTER_X agree on P1 (NODE_A's first other vote).
+          apply({
+            id: '88888888-8888-4888-8888-888888888887',
+            sessionId: seed.sessionId,
+            sequence: 1_000_007,
+            kind: 'vote',
+            actor: seed.voterXId,
+            payload: {
+              proposal_id: seed.p1Id,
+              participant: seed.voterXId,
+              vote: 'agree',
+              voted_at: '2026-05-17T00:00:00.000Z',
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+          // SYNTHETIC_VOTER_Y dispute on P1 (NODE_A's second other vote;
+          // distinct voter, first-vote-arrival places them at index 1).
+          apply({
+            id: '88888888-8888-4888-8888-888888888888',
+            sessionId: seed.sessionId,
+            sequence: 1_000_008,
+            kind: 'vote',
+            actor: seed.voterYId,
+            payload: {
+              proposal_id: seed.p1Id,
+              participant: seed.voterYId,
+              vote: 'dispute',
+              voted_at: '2026-05-17T00:00:00.000Z',
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+          // SYNTHETIC_VOTER_X dispute on P2 (EDGE_AB's only other vote).
+          apply({
+            id: '88888888-8888-4888-8888-888888888889',
+            sessionId: seed.sessionId,
+            sequence: 1_000_009,
+            kind: 'vote',
+            actor: seed.voterXId,
+            payload: {
+              proposal_id: seed.p2Id,
+              participant: seed.voterXId,
+              vote: 'dispute',
+              voted_at: '2026-05-17T00:00:00.000Z',
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+          // alice.userId agree on P3 (NODE_B's only vote, by the
+          // CURRENT participant — the per-participant filter MUST
+          // exclude this from the other-votes list).
+          apply({
+            id: '88888888-8888-4888-8888-88888888888a',
+            sessionId: seed.sessionId,
+            sequence: 1_000_010,
+            kind: 'vote',
+            actor: seed.aliceId,
+            payload: {
+              proposal_id: seed.p3Id,
+              participant: seed.aliceId,
+              vote: 'agree',
+              voted_at: '2026-05-17T00:00:00.000Z',
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+        },
+        {
+          sessionId,
+          nodeAId: NODE_A_ID,
+          nodeBId: NODE_B_ID,
+          edgeAbId: EDGE_AB_ID,
+          p1Id: P1_ID,
+          p2Id: P2_ID,
+          p3Id: P3_ID,
+          actorId: ACTOR_ID,
+          aliceId: alice.userId,
+          voterXId: SYNTHETIC_VOTER_X,
+          voterYId: SYNTHETIC_VOTER_Y,
+          wordingA: NODE_A_WORDING,
+          wordingB: NODE_B_WORDING,
+        },
+      );
+
+      // 6. Assert the DOM mirror surfaces the per-other-voter rows
+      //    per Decision §6:
+      //      NODE_A: TWO <li data-other-vote> entries (X agree at
+      //              index 0, Y dispute at index 1 — first-vote-
+      //              arrival per Decision §5).
+      //      EDGE_AB: ONE <li data-other-vote data-vote="dispute"> entry
+      //               (X's edge vote).
+      //      NODE_B: ZERO <li data-other-vote> entries (the only vote
+      //              was alice's, the current participant — confirms
+      //              the per-participant filter excludes self).
+      const nodeAOtherVotes = page.locator(
+        `[data-testid="participant-node-status"][data-node-id="${NODE_A_ID}"] ul[data-other-votes] li[data-other-vote]`,
+      );
+      // Wait for the first entry to land before reading the count to
+      // avoid a race between the seed evaluate() returning and React's
+      // re-render.
+      await expect(nodeAOtherVotes.first()).toBeAttached({ timeout: 15_000 });
+      await expect(nodeAOtherVotes).toHaveCount(2);
+      await expect(nodeAOtherVotes.nth(0)).toHaveAttribute('data-voter-id', SYNTHETIC_VOTER_X);
+      await expect(nodeAOtherVotes.nth(0)).toHaveAttribute('data-vote', 'agree');
+      await expect(nodeAOtherVotes.nth(1)).toHaveAttribute('data-voter-id', SYNTHETIC_VOTER_Y);
+      await expect(nodeAOtherVotes.nth(1)).toHaveAttribute('data-vote', 'dispute');
+
+      const edgeAbOtherVotes = page.locator(
+        `[data-testid="participant-edge-status"][data-edge-id="${EDGE_AB_ID}"] ul[data-other-votes] li[data-other-vote]`,
+      );
+      await expect(edgeAbOtherVotes).toHaveCount(1);
+      await expect(edgeAbOtherVotes.nth(0)).toHaveAttribute('data-voter-id', SYNTHETIC_VOTER_X);
+      await expect(edgeAbOtherVotes.nth(0)).toHaveAttribute('data-vote', 'dispute');
+
+      const nodeBOtherVotes = page.locator(
+        `[data-testid="participant-node-status"][data-node-id="${NODE_B_ID}"] ul[data-other-votes] li[data-other-vote]`,
+      );
+      // The empty-list contract — the <ul> still renders with zero
+      // children. The probe matches the absent-children branch
+      // distinct from "the <ul> is missing entirely" (which would be
+      // a projector bug per Decision §6).
+      await expect(nodeBOtherVotes).toHaveCount(0);
+    } finally {
+      await context.close();
+    }
+  });
 });
