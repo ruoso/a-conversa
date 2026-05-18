@@ -45,6 +45,7 @@ task audience "Audience and broadcast" {
     task aud_ws_client "Wire audience surface to shell's WS client (read-only subscription)" {
       effort 0.5d
       allocate team
+      complete 100
       depends !aud_app_skeleton, shell_package.shell_substrate_extraction, backend.websocket_protocol.ws_subscribe_to_session
       note "Reshaped under ADR 0026: the underlying WS client implementation lives in @aconversa/shell. This leaf wires the audience surface's read-only subscription path to the shared client (was: re-implementing the WS client inside the audience workspace, 1d)."
     }
