@@ -240,7 +240,9 @@
     "participant.lobby.roleBadges.debaterB",
     "participant.lobby.errors.sessionFetchFailed",
     "participant.lobby.errors.participantsFetchFailed",
-    "participant.lobby.errors.retry"
+    "participant.lobby.errors.retry",
+    "audience.placeholder.title",
+    "audience.placeholder.body"
   ],
   "signed_off": []
 }

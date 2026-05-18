@@ -190,6 +190,7 @@ export interface SurfaceManifest {
 export const ROOT_DIST_DIR_ENV = 'ROOT_DIST_DIR';
 export const MODERATOR_DIST_DIR_ENV = 'MODERATOR_DIST_DIR';
 export const PARTICIPANT_DIST_DIR_ENV = 'PARTICIPANT_DIST_DIR';
+export const AUDIENCE_DIST_DIR_ENV = 'AUDIENCE_DIST_DIR';
 
 /**
  * Compile-time location of this module. Used to resolve the default
@@ -242,6 +243,10 @@ export function resolveParticipantDistDir(env: NodeJS.ProcessEnv = process.env):
   return resolveWorkspaceDistDir(PARTICIPANT_DIST_DIR_ENV, 'participant', env);
 }
 
+export function resolveAudienceDistDir(env: NodeJS.ProcessEnv = process.env): string {
+  return resolveWorkspaceDistDir(AUDIENCE_DIST_DIR_ENV, 'audience', env);
+}
+
 /**
  * The default list of frontends, resolved from the environment. Today
  * only the moderator is wired (the other three apps don't have a
@@ -290,6 +295,19 @@ export function resolveDefaultSurfaces(
       moduleFilePattern: /^participant-[A-Za-z0-9_-]+\.js$/,
       styleFilePatterns: [/^assets\/participant-[A-Za-z0-9_-]+\.css$/],
       label: 'participant',
+    },
+    {
+      surfaceId: 'audience',
+      urlPrefix: '/_surfaces/audience/',
+      distDir: resolveAudienceDistDir(env),
+      // Vite library mode emits the entry as `audience-<hash>.js` at
+      // the dist root and the CSS as `assets/audience-<hash>.css` —
+      // see `apps/audience/vite.config.ts`. Same hash regex as the
+      // moderator + participant (base64-url, tolerant of Rollup's
+      // hash-length tuning).
+      moduleFilePattern: /^audience-[A-Za-z0-9_-]+\.js$/,
+      styleFilePatterns: [/^assets\/audience-[A-Za-z0-9_-]+\.css$/],
+      label: 'audience',
     },
   ];
 }

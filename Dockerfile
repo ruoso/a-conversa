@@ -166,6 +166,7 @@ COPY --from=build /app/apps/server/migrations      ./apps/server/migrations
 COPY --from=build /app/apps/root/dist              ./apps/root/dist
 COPY --from=build /app/apps/moderator/dist         ./apps/moderator/dist
 COPY --from=build /app/apps/participant/dist       ./apps/participant/dist
+COPY --from=build /app/apps/audience/dist          ./apps/audience/dist
 
 # Drop privileges. The `node` user (uid 1000) ships with the official
 # image and owns nothing under /app — that's fine for the read-only

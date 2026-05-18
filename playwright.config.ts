@@ -321,6 +321,29 @@ export default defineConfig({
         storageState: AUTH_STORAGE_STATE_PATH,
       },
     },
+    // Audience skeleton e2e (audience.aud_shell.aud_app_skeleton, refinement
+    // `tasks/refinements/audience/aud_app_skeleton.md`). Drives a logged-in
+    // browser to `/a/sessions/<uuid>` and asserts the audience surface's
+    // placeholder route renders. Mirrors the `chromium-participant-skeleton`
+    // shape — single locale en-US (cross-locale text is covered at the
+    // catalog-parity layer), `ignoreHTTPSErrors` for the OIDC redirect
+    // (irrelevant once the shared `setup-auth` storage state hits, but
+    // kept for parity), and the bootstrap auth jar via `setup-auth`.
+    // Future audience leaves widen the `testMatch` (the way
+    // `chromium-participant-skeleton` widened to accept
+    // `participant-invite-acceptance` / `participant-lobby` /
+    // `participant-graph-render` over successive refinements).
+    {
+      name: 'chromium-audience-skeleton',
+      testMatch: /audience-skeleton-smoke\.spec\.ts$/,
+      dependencies: ['setup-auth'],
+      use: {
+        ...devices['Desktop Chrome'],
+        locale: 'en-US',
+        ignoreHTTPSErrors: true,
+        storageState: AUTH_STORAGE_STATE_PATH,
+      },
+    },
     // Cross-surface lobby + start-debate spec — three real browser
     // contexts (alice + ben + maria) prove the moderator-lobby's
     // Enter-session click after both debaters self-claim through

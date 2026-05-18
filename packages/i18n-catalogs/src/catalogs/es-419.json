@@ -577,6 +577,12 @@
       }
     }
   },
+  "audience": {
+    "placeholder": {
+      "title": "Panel de la audiencia",
+      "body": "Cargando…"
+    }
+  },
   "diagnostics": {
     "cycle": {
       "title": "Ciclo en apoyos",

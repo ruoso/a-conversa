@@ -346,6 +346,13 @@ task frontend_i18n "Frontend internationalization" {
     note "Native-speaker review of pt-BR + es-419 draft entries for the 12 participant.lobby.* keys added in part_lobby_view (this commit): title, topicLabel, participantsHeading, bothDebatersPresent, waitingForDebater, emptyState, roleBadges.{moderator, debaterA, debaterB}, errors.{sessionFetchFailed, participantsFetchFailed, retry}. The prior part_invite_acceptance leaf folded the now-removed placeholder body into the same participant.lobby.* namespace; this leaf covers the real lobby's drafts, which superseded the placeholder rows in the *.review.json trackers. Source refinement: tasks/refinements/participant-ui/part_lobby_view.md."
   }
 
+  task i18n_audience_placeholder_native_review "Native-speaker review of pt-BR + es-419 audience-placeholder strings (2 new keys under audience.placeholder.*)" {
+    effort 0.25d
+    allocate team
+    depends !i18n_participant_lobby_native_review, audience.aud_shell.aud_app_skeleton
+    note "Native review of pt-BR + es-419 translations for audience.placeholder.title + audience.placeholder.body keys introduced by aud_app_skeleton. Mirror the participant native-review process. Source: tasks/refinements/audience/aud_app_skeleton.md + this commit."
+  }
+
   task i18n_keyboard_shortcuts_policy "Per-locale keyboard shortcut policy for moderator palette" {
     effort 0.5d
     allocate team

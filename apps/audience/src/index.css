@@ -1,0 +1,20 @@
+/* Global stylesheet for the audience surface.
+ *
+ * Refinement: tasks/refinements/audience/aud_app_skeleton.md
+ * ADRs:       0005 (Tailwind with shared tokens), 0026 (micro-frontend pivot).
+ *
+ * Imports Tailwind v4 utilities (the `@tailwindcss/vite` plugin in
+ * `vite.config.ts` compiles the bundle's class candidates). The body /
+ * html / #root reset claims the full viewport so the surface's future
+ * full-height layouts (the OBS broadcast canvas, the live graph
+ * viewport) see real height.
+ */
+
+@import 'tailwindcss';
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}

@@ -157,6 +157,35 @@ describe('static-frontends plugin — root served at /', () => {
     );
   });
 
+  it('GET /_surfaces/manifest.json lists the audience surface with hash-busted URLs', async () => {
+    // The audience entry is the third wired surface (after moderator
+    // and participant). Per `tasks/refinements/audience/aud_app_skeleton.md`
+    // the entry's filenames mirror the participant + moderator shape —
+    // pin the same prefix + extension regex against the audience URL
+    // so a regression in the discovery or in the build's hashing fails
+    // here just like for the other two surfaces. The CI / dev story:
+    // `pnpm -F @a-conversa/audience build` is a prerequisite for this
+    // case.
+    const response = await app.inject({
+      method: 'GET',
+      url: '/_surfaces/manifest.json',
+      headers: { accept: 'application/json' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['content-type']).toMatch(/application\/json/);
+    expect(response.headers['cache-control']).toMatch(/no-cache/);
+    const body = response.json<{
+      surfaces?: { audience?: { moduleUrl?: string; styleUrls?: string[] } };
+    }>();
+    expect(body.surfaces?.audience?.moduleUrl).toMatch(
+      /^\/_surfaces\/audience\/audience-[A-Za-z0-9_-]+\.js$/,
+    );
+    const styleUrls = body.surfaces?.audience?.styleUrls ?? [];
+    expect(styleUrls).toHaveLength(1);
+    expect(styleUrls[0]).toMatch(/^\/_surfaces\/audience\/assets\/audience-[A-Za-z0-9_-]+\.css$/);
+  });
+
   it('GET <discovered moderator module URL> returns the surface bundle', async () => {
     // The actual filename is unknown a priori (it carries a content
     // hash). Read the manifest, then fetch the URL it advertises.

@@ -577,6 +577,12 @@
       }
     }
   },
+  "audience": {
+    "placeholder": {
+      "title": "Audience surface",
+      "body": "Loading…"
+    }
+  },
   "diagnostics": {
     "cycle": {
       "title": "Cycle in supports",
