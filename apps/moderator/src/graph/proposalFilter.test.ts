@@ -34,7 +34,7 @@ import { summaryText } from './proposalSummary';
 import type { PendingProposalRow } from './pendingProposals';
 import { deriveAllAgree, derivePerProposalFacets, type VotesByFacetIndex } from './proposalFacets';
 import type { FacetName, FacetStatus, FacetStatusIndex } from './facetStatus';
-import type { Vote } from './selectors';
+import type { Vote } from '@a-conversa/shell';
 
 const NODE_X = '00000000-0000-4000-8000-00000000000a';
 const NODE_Y = '00000000-0000-4000-8000-00000000000b';

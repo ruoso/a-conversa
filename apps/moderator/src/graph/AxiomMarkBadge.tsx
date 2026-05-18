@@ -38,7 +38,9 @@
 import { memo, type ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { axiomMarkColorFor, type AxiomMark } from './selectors.js';
+import { axiomMarkColorFor } from '@a-conversa/shell';
+
+import type { AxiomMark } from './selectors.js';
 
 export interface AxiomMarkBadgeProps {
   readonly mark: AxiomMark;

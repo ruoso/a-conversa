@@ -38,10 +38,10 @@
 import { describe, expect, it } from 'vitest';
 import type { AnnotationKind, EdgeRole, Event } from '@a-conversa/shared-types';
 
+import { AXIOM_MARK_PALETTE_SIZE, axiomMarkColorFor } from '@a-conversa/shell';
+
 import type { WsState } from '../ws/wsStore.js';
 import {
-  AXIOM_MARK_PALETTE_SIZE,
-  axiomMarkColorFor,
   groupAnnotationsByEdge,
   groupAnnotationsByNode,
   groupAxiomMarksByNode,

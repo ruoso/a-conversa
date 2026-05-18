@@ -1,11 +1,14 @@
 // `<VoteIndicator>` — small per-participant vote dot rendered inside a
 // facet pill.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_vote_indicators_on_graph.md
-// (prior:     tasks/refinements/moderator-ui/mod_per_facet_state_visualization.md,
-//             tasks/refinements/moderator-ui/mod_axiom_mark_decoration.md)
+// Refinement: tasks/refinements/shell-package/extract_facet_pill.md
+//             (lifted from apps/moderator/src/graph/VoteIndicator.tsx;
+//              prior moderator-side: tasks/refinements/moderator-ui/mod_vote_indicators_on_graph.md,
+//              tasks/refinements/moderator-ui/mod_per_facet_state_visualization.md,
+//              tasks/refinements/moderator-ui/mod_axiom_mark_decoration.md)
 // ADRs:       docs/adr/0004-graph-libraries-reactflow-and-cytoscape.md
 //             docs/adr/0024-frontend-i18n-react-i18next-with-icu.md
+//             docs/adr/0026-micro-frontend-root-app.md
 //
 // Per the methodology (`docs/methodology.md` § "Votes / Withdrawal"),
 // every facet-targeting proposal accumulates per-participant votes:
@@ -39,7 +42,7 @@
 import { memo, type ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { axiomMarkColorFor } from './selectors.js';
+import { axiomMarkColorFor } from './participant-color.js';
 
 export interface VoteIndicatorProps {
   readonly participantId: string;

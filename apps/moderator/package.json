@@ -3,13 +3,6 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "exports": {
-    "./graph/FacetPill": {
-      "source": "./src/graph/FacetPill.tsx",
-      "types": "./src/graph/FacetPill.tsx",
-      "default": "./src/graph/FacetPill.tsx"
-    }
-  },
   "scripts": {
     "dev": "vite",
     "build": "vite build && tsc -b --force",

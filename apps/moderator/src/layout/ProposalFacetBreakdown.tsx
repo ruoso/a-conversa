@@ -40,11 +40,11 @@
 import { memo, useMemo, type ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { PILL_BASE_CLASSNAME, PILL_STATUS_CLASSNAME } from '../graph/FacetPill.js';
+import { PILL_BASE_CLASSNAME, PILL_STATUS_CLASSNAME, VoteIndicator } from '@a-conversa/shell';
+
 import type { FacetStatusIndex } from '../graph/facetStatus.js';
 import type { PendingProposalRow } from '../graph/pendingProposals.js';
 import { derivePerProposalFacets, type VotesByFacetIndex } from '../graph/proposalFacets.js';
-import { VoteIndicator } from '../graph/VoteIndicator.js';
 
 export interface ProposalFacetBreakdownProps {
   /** The pending-proposal row this breakdown belongs to. */

@@ -24,6 +24,12 @@
 
 import type { Edge } from 'reactflow';
 import type { AnnotationKind, EdgeRole, Event, ProposalPayload } from '@a-conversa/shared-types';
+// `Vote` is imported from the shell after the `extract_facet_pill` lift
+// (refinement Decision §3 — the in-pill render-dependency chain ships
+// with `<FacetPill>` in `@a-conversa/shell`). The remaining selector
+// exports (annotations / axiom-marks / votes-by-facet projection helpers)
+// stay here as moderator-graph-specific.
+import type { Vote } from '@a-conversa/shell';
 
 import {
   computeFacetStatuses,
@@ -463,95 +469,12 @@ export function groupPendingAxiomMarksByNode(
   return out;
 }
 
-/**
- * The Tailwind color triple for a single per-participant axiom-mark
- * badge. Each entry is a complete Tailwind class string so the JIT
- * scanner picks them up at build time (Tailwind's content-aware
- * extraction can't see strings interpolated at runtime — every class
- * has to appear literally somewhere in the source).
- *
- * The shape is the public contract: `bg` paints the badge background,
- * `text` paints the centered "A" glyph, `ring` lays a 1-px halo so two
- * adjacent same-colored badges remain separable in the rare per-
- * participant collision (six buckets means a session with seven+
- * participants would alias — the halo keeps the visual stable).
- */
-export interface AxiomMarkColor {
-  readonly bg: string;
-  readonly text: string;
-  readonly ring: string;
-}
-
-/**
- * The six-color palette for per-participant axiom-marks. Chosen to (a)
- * be pairwise distinguishable, (b) not collide with the methodology-
- * state palette (slate / rose / violet) or the annotation badge (the
- * shape difference — rounded-square here vs. rounded-pill there — is
- * the primary seam, so amber 100/900 is acceptable to share with the
- * annotation badge as long as the shape stays distinct). See the
- * refinement's "Decisions" for the palette rationale.
- *
- * Indexed by hash bucket; `axiomMarkColorFor` selects by `hash(uuid) % 6`.
- * Frozen at module scope so the references stay stable across calls.
- */
-const AXIOM_MARK_PALETTE: readonly AxiomMarkColor[] = Object.freeze([
-  Object.freeze({ bg: 'bg-sky-100', text: 'text-sky-900', ring: 'ring-sky-300' }),
-  Object.freeze({ bg: 'bg-amber-100', text: 'text-amber-900', ring: 'ring-amber-300' }),
-  Object.freeze({ bg: 'bg-emerald-100', text: 'text-emerald-900', ring: 'ring-emerald-300' }),
-  Object.freeze({ bg: 'bg-fuchsia-100', text: 'text-fuchsia-900', ring: 'ring-fuchsia-300' }),
-  Object.freeze({ bg: 'bg-cyan-100', text: 'text-cyan-900', ring: 'ring-cyan-300' }),
-  Object.freeze({ bg: 'bg-lime-100', text: 'text-lime-900', ring: 'ring-lime-300' }),
-]);
-
-/**
- * Number of color buckets in the per-participant palette. Exported via
- * `AXIOM_MARK_PALETTE.length` so the test suite can assert against the
- * canonical count without re-declaring it.
- */
-export const AXIOM_MARK_PALETTE_SIZE = AXIOM_MARK_PALETTE.length;
-
-/**
- * Deterministic per-participant color assignment.
- *
- * Hashes the UUID by summing its hex-digit values (after stripping the
- * dashes / non-hex characters) and picks a palette bucket via
- * `hash % AXIOM_MARK_PALETTE.length`. Same `participantId` always yields
- * the same color across renders / refreshes / browsers / surfaces — the
- * color is a stable property of the participant identity, not of the
- * session join order. Different participants typically get different
- * colors; the 6-bucket palette means a 7+-participant session aliases
- * (the ring halo keeps adjacent same-colored badges separable in that
- * rare case).
- *
- * The hash is stateless and decoupled from any cross-surface coordination
- * — the participant tablet, audience surface, and server-side diagnostic
- * snapshot all arrive at the same color for the same participant without
- * sharing a session-scoped palette assignment. See the refinement's
- * "Decisions" for why hash-based is preferred over a per-session palette.
- */
-export function axiomMarkColorFor(participantId: string): AxiomMarkColor {
-  let hash = 0;
-  for (let i = 0; i < participantId.length; i++) {
-    const ch = participantId.charCodeAt(i);
-    // Sum hex-digit values only (0-9, a-f, A-F). Skip the dashes that
-    // separate UUID groups. Non-hex characters in a well-formed UUID are
-    // dashes; skipping them keeps the hash deterministic for any UUID
-    // formatting variant (with / without dashes, upper / lower case).
-    let digit: number;
-    if (ch >= 48 && ch <= 57)
-      digit = ch - 48; // '0'-'9' → 0-9
-    else if (ch >= 97 && ch <= 102)
-      digit = 10 + (ch - 97); // 'a'-'f' → 10-15
-    else if (ch >= 65 && ch <= 70)
-      digit = 10 + (ch - 65); // 'A'-'F' → 10-15
-    else continue;
-    hash = (hash + digit) >>> 0; // unsigned 32-bit; sum can't overflow for a 36-char UUID
-  }
-  // `palette[i] ?? palette[0]` keeps the return non-undefined for
-  // TypeScript's strict-null mode; the index is always in range.
-  const bucket = hash % AXIOM_MARK_PALETTE.length;
-  return AXIOM_MARK_PALETTE[bucket] ?? AXIOM_MARK_PALETTE[0]!;
-}
+// `AxiomMarkColor` interface, `AXIOM_MARK_PALETTE`, `AXIOM_MARK_PALETTE_SIZE`,
+// and the `axiomMarkColorFor` deterministic per-participant color hash
+// lifted into `@a-conversa/shell/facet-pill/participant-color.ts` per the
+// `extract_facet_pill` refinement Decision §3. Consumers (the moderator's
+// `<AxiomMarkBadge>` / `<PendingAxiomMarkBadge>` / `<HoverPopover>` /
+// `<VoteIndicator>` / tests) import directly from `@a-conversa/shell`.
 
 /**
  * Project the per-session WS event log into the ReactFlow edge list.
@@ -684,20 +607,10 @@ export function selectEdgesForSession(
 // `axiom-mark`, `meta-move`, `break-edge`, `annotate`) contribute
 // nothing — they don't target a (entity, facet) pair.
 
-/**
- * One participant's vote on a facet's pending proposal, projected for
- * rendering. Mirrors the `vote` event payload, narrowed to the two
- * fields the indicator surface consumes.
- *
- * `choice` uses `'choice'` (not `'vote'`) as the field name so the seam
- * attribute `data-choice` on the indicator span reads naturally; the
- * wire payload's `vote` field name is preserved in the read of
- * `event.payload.vote` and renamed at the projection boundary.
- */
-export interface Vote {
-  readonly participantId: string;
-  readonly choice: 'agree' | 'dispute' | 'withdraw';
-}
+// `Vote` interface and `EMPTY_VOTES` constant lifted into
+// `@a-conversa/shell/facet-pill/vote-indicator.ts` per the
+// `extract_facet_pill` refinement Decision §3. The moderator imports
+// both directly from `@a-conversa/shell` (see the top-of-file import).
 
 /**
  * Module-scope shared empty vote-by-facet record. Hands a stable
@@ -708,13 +621,6 @@ export interface Vote {
  */
 export const EMPTY_VOTES_BY_FACET: Readonly<Partial<Record<FacetName, readonly Vote[]>>> =
   Object.freeze({});
-
-/**
- * Module-scope shared empty per-facet votes array. Used as the
- * default fallback for facets with no votes; keeps the reference
- * stable across renders.
- */
-export const EMPTY_VOTES: readonly Vote[] = Object.freeze([]);
 
 /**
  * Decode the (entityKind, entityId, facet) target of a proposal payload

@@ -44,8 +44,8 @@ import i18next from 'i18next';
 import { act, type ReactElement } from 'react';
 
 import { PendingAxiomMarkBadge } from './PendingAxiomMarkBadge';
-import { axiomMarkColorFor, type PendingAxiomMark } from './selectors';
-import { createI18nInstance } from '@a-conversa/shell';
+import type { PendingAxiomMark } from './selectors';
+import { axiomMarkColorFor, createI18nInstance } from '@a-conversa/shell';
 
 // Local `render(...)` shadow that flushes the microtask-deferred
 // setState scheduled by `useTranslation()` (react-i18next subscribes

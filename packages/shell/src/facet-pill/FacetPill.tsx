@@ -1,13 +1,16 @@
 // `<FacetPill>` — small bordered chip rendering ONE facet's status on a
 // statement node card.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_vote_indicators_on_graph.md
-// (prior:     tasks/refinements/moderator-ui/mod_per_facet_state_visualization.md,
-//             tasks/refinements/moderator-ui/mod_disputed_state_styling.md,
-//             tasks/refinements/moderator-ui/mod_agreed_state_styling.md,
-//             tasks/refinements/moderator-ui/mod_proposed_state_styling.md)
+// Refinement: tasks/refinements/shell-package/extract_facet_pill.md
+//             (lifted from apps/moderator/src/graph/FacetPill.tsx;
+//              prior moderator-side: tasks/refinements/moderator-ui/mod_vote_indicators_on_graph.md,
+//              tasks/refinements/moderator-ui/mod_per_facet_state_visualization.md,
+//              tasks/refinements/moderator-ui/mod_disputed_state_styling.md,
+//              tasks/refinements/moderator-ui/mod_agreed_state_styling.md,
+//              tasks/refinements/moderator-ui/mod_proposed_state_styling.md)
 // ADRs:       docs/adr/0004-graph-libraries-reactflow-and-cytoscape.md
 //             docs/adr/0024-frontend-i18n-react-i18next-with-icu.md
+//             docs/adr/0026-micro-frontend-root-app.md
 //
 // Per the methodology (`docs/methodology.md` § "Facets"), every node has
 // three facets — `wording`, `classification`, `substance` — each with its
@@ -36,8 +39,8 @@
 import { memo, type ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import type { FacetName, FacetStatus } from './facetStatus.js';
-import { EMPTY_VOTES, type Vote } from './selectors.js';
+import type { FacetName, FacetStatus } from './types.js';
+import { EMPTY_VOTES, type Vote } from './vote-indicator.js';
 import { VoteIndicator } from './VoteIndicator.js';
 
 export interface FacetPillProps {

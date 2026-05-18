@@ -54,8 +54,8 @@ import {
 } from './StatementNode';
 import type { DiagnosticHighlight } from './diagnosticHighlights';
 import type { FacetName, FacetStatus } from './facetStatus';
-import type { Annotation, AxiomMark, PendingAxiomMark, Vote } from './selectors';
-import { createI18nInstance } from '@a-conversa/shell';
+import type { Annotation, AxiomMark, PendingAxiomMark } from './selectors';
+import { createI18nInstance, type Vote } from '@a-conversa/shell';
 import { useSelectionStore } from '../stores';
 
 // Local `render(...)` shadow that wraps every render in a

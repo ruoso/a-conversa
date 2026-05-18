@@ -44,7 +44,9 @@
 import { memo, type ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { axiomMarkColorFor, type PendingAxiomMark } from './selectors.js';
+import { axiomMarkColorFor } from '@a-conversa/shell';
+
+import type { PendingAxiomMark } from './selectors.js';
 
 export interface PendingAxiomMarkBadgeProps {
   readonly mark: PendingAxiomMark;

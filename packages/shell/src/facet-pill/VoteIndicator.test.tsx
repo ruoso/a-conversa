@@ -1,7 +1,9 @@
 // Tests for `<VoteIndicator>` — the small per-participant vote dot
 // rendered inside facet pills.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_vote_indicators_on_graph.md
+// Refinement: tasks/refinements/shell-package/extract_facet_pill.md
+//             (lifted from apps/moderator/src/graph/VoteIndicator.test.tsx;
+//              prior moderator-side: tasks/refinements/moderator-ui/mod_vote_indicators_on_graph.md)
 //
 // Per ADR 0022 these are committed Vitest cases, not throwaway probes.
 // They lock in:
@@ -27,9 +29,9 @@ import {
 import i18next from 'i18next';
 import { act, type ReactElement } from 'react';
 
-import { VoteIndicator } from './VoteIndicator';
-import { axiomMarkColorFor } from './selectors';
-import { createI18nInstance } from '@a-conversa/shell';
+import { VoteIndicator } from './VoteIndicator.js';
+import { axiomMarkColorFor } from './participant-color.js';
+import { createI18nInstance } from '../i18n/index.js';
 
 // Local async `render(...)` shadow. `useTranslation()` schedules a
 // microtask-deferred setState when its internal i18next subscription

@@ -26,13 +26,16 @@ import i18next from 'i18next';
 import type { ProposalPayload } from '@a-conversa/shared-types';
 
 import { ProposalFacetBreakdown } from './ProposalFacetBreakdown';
-import { PILL_BASE_CLASSNAME, PILL_STATUS_CLASSNAME } from '../graph/FacetPill';
-import { VoteIndicator } from '../graph/VoteIndicator';
+import {
+  PILL_BASE_CLASSNAME,
+  PILL_STATUS_CLASSNAME,
+  VoteIndicator,
+  createI18nInstance,
+  type Vote,
+} from '@a-conversa/shell';
 import type { FacetName, FacetStatus, FacetStatusIndex } from '../graph/facetStatus';
 import type { PendingProposalRow } from '../graph/pendingProposals';
 import type { VotesByFacetIndex } from '../graph/proposalFacets';
-import type { Vote } from '../graph/selectors';
-import { createI18nInstance } from '@a-conversa/shell';
 
 const NODE_X = '00000000-0000-4000-8000-00000000000a';
 const NODE_Y = '00000000-0000-4000-8000-00000000000b';

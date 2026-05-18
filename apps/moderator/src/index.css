@@ -16,6 +16,11 @@
 
 @import 'tailwindcss';
 
+/* Per tasks/refinements/shell-package/extract_facet_pill.md — Tailwind
+ * scans the shared shell source so PILL_*_CLASSNAME literals (and any
+ * other shell-side Tailwind class strings) get JIT'd. */
+@source '../../../packages/shell/src/**/*.{ts,tsx}';
+
 html,
 body,
 #root {

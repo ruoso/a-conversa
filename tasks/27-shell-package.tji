@@ -63,6 +63,7 @@ task shell_package "Shell package (@aconversa/shell)" {
   task extract_facet_pill "Extract <FacetPill> + PILL_*_CLASSNAME from @a-conversa/moderator into @a-conversa/shell once the audience surface becomes the third caller" {
     effort 0.5d
     allocate team
+    complete 100
     depends participant_ui.part_graph_view.part_entity_detail_panel, audience.aud_shell.aud_app_skeleton
     note -8<-
       Extract `<FacetPill>` + `PILL_*_CLASSNAME` from `@a-conversa/moderator` into `@a-conversa/shell` once the audience surface becomes the third caller. Today `apps/participant` carries a workspace runtime dependency on `apps/moderator` purely for this import — structurally awkward (a UI surface depending on a peer UI surface for a leaf component). The participant adopted the cross-workspace import as a deliberate tactical move (Decision §6 of part_entity_detail_panel — "import vs reimplement"); reimplementing the FacetPill primitive in the participant workspace would have duplicated the per-facet-state palette + the `PILL_*_CLASSNAME` vocabulary the moderator already ships. The principled fix is shell-extraction once the third caller exists.
@@ -72,6 +73,24 @@ task shell_package "Shell package (@aconversa/shell)" {
       Scope: lift `<FacetPill>` + the `PILL_BASE_CLASSNAME` / `PILL_STATUS_CLASSNAME` palette out of `apps/moderator/src/graph/FacetPill.tsx` into `packages/shell/src/facet-pill/` (or similar) with full vitest coverage; replace the moderator's local copy + the participant's cross-workspace import with imports from `@a-conversa/shell`; drop the `@a-conversa/moderator` workspace dependency from `apps/participant/package.json`; drop the `exports."./graph/FacetPill"` entry from `apps/moderator/package.json`; the future audience caller inherits the same import path. No protocol or wire-format change; no methodology change.
 
       Source: tasks/refinements/participant-ui/part_entity_detail_panel.md + this commit.
+    ->8-
+  }
+
+  task extract_facet_status_rules "Collapse computeFacetStatuses + the seven facet-state derivation rules into @a-conversa/shell once audience becomes the fourth caller" {
+    effort 1d
+    allocate team
+    depends !extract_facet_pill, audience.aud_graph_rendering
+    note -8<-
+      Collapse `computeFacetStatuses` + the seven facet-state derivation rules into `@a-conversa/shell` once the audience surface adds the 4th caller (server + moderator + participant + audience). The rule-set walker is ~410 lines mirrored across three sites today. Deferred until audience triggers the fourth implementation. Source: tasks/refinements/shell-package/extract_facet_pill.md (Decision §2) + this commit.
+    ->8-
+  }
+
+  task extract_cytoscape_projectors "Lift projectAnnotations + projectAxiomMarks + projectPendingAxiomMarks + projectVotesByFacet + groupAnnotationsBy* into @a-conversa/shell once audience graph rendering becomes the third or fourth caller" {
+    effort 1d
+    allocate team
+    depends !extract_facet_pill, audience.aud_graph_rendering
+    note -8<-
+      Lift `projectAnnotations` + `projectAxiomMarks` + `projectPendingAxiomMarks` + `projectVotesByFacet` + `groupAnnotationsBy*` (and siblings) into `@a-conversa/shell` when audience graph rendering becomes the third or fourth caller. Today these projectors are mirrored across moderator + participant graph views. Source: tasks/refinements/shell-package/extract_facet_pill.md (Decision §8) + this commit.
     ->8-
   }
 

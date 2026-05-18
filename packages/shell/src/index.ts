@@ -80,4 +80,21 @@ export type {
   WebSocketClient,
 } from './mount-contract/index.js';
 
+// ─── facet-pill ──────────────────────────────────────────────────────────
+export {
+  FacetPill,
+  PILL_BASE_CLASSNAME,
+  PILL_STATUS_CLASSNAME,
+  VoteIndicator,
+  axiomMarkColorFor,
+  AXIOM_MARK_PALETTE_SIZE,
+  EMPTY_VOTES,
+  type FacetPillProps,
+  type VoteIndicatorProps,
+  type AxiomMarkColor,
+  type FacetName,
+  type FacetStatus,
+  type Vote,
+} from './facet-pill/index.js';
+
 export const SHELL_PACKAGE_VERSION = '0.1.0' as const;

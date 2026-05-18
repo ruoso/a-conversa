@@ -1,7 +1,9 @@
 // Tests for `<FacetPill>` — the small bordered chip that surfaces ONE
 // facet's status on a node card.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_per_facet_state_visualization.md
+// Refinement: tasks/refinements/shell-package/extract_facet_pill.md
+//             (lifted from apps/moderator/src/graph/FacetPill.test.tsx;
+//              prior moderator-side: tasks/refinements/moderator-ui/mod_per_facet_state_visualization.md)
 //
 // Per ADR 0022 these are committed Vitest cases, not throwaway probes.
 // They lock in:
@@ -30,8 +32,8 @@ import {
 import i18next from 'i18next';
 import { act, type ReactElement } from 'react';
 
-import { FacetPill } from './FacetPill';
-import { createI18nInstance } from '@a-conversa/shell';
+import { FacetPill } from './FacetPill.js';
+import { createI18nInstance } from '../i18n/index.js';
 
 // Local `render(...)` shadow that absorbs the microtask-deferred
 // `useTranslation()` setState into an `act(...)` boundary. Without this

@@ -31,8 +31,8 @@ import i18next from 'i18next';
 import { act, type ReactElement } from 'react';
 
 import { AxiomMarkBadge } from './AxiomMarkBadge';
-import { axiomMarkColorFor, type AxiomMark } from './selectors';
-import { createI18nInstance } from '@a-conversa/shell';
+import type { AxiomMark } from './selectors';
+import { axiomMarkColorFor, createI18nInstance } from '@a-conversa/shell';
 
 // Local `render(...)` shadow that wraps the synchronous testing-library
 // render in `await act(async () => { ... })`. `useTranslation()`

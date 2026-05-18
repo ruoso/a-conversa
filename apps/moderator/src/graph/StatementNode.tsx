@@ -45,23 +45,18 @@ import { useTranslation } from 'react-i18next';
 import { Handle, Position, type NodeProps } from 'reactflow';
 import type { StatementKind } from '@a-conversa/shared-types';
 
+import { FacetPill, EMPTY_VOTES, type Vote } from '@a-conversa/shell';
+
 import { useSelectionStore } from '../stores/index.js';
 import { AnnotationBadge } from './AnnotationBadge.js';
 import { AxiomMarkBadge } from './AxiomMarkBadge.js';
 import { DisputationTestChip } from './DisputationTestChip.js';
-import { FacetPill } from './FacetPill.js';
 import { HoverPopover } from './HoverPopover.js';
 import { PendingAxiomMarkBadge } from './PendingAxiomMarkBadge.js';
 import type { DiagnosticHighlight } from './diagnosticHighlights.js';
 import { disputationOutcome } from './disputationOutcome.js';
 import type { FacetName, FacetStatus } from './facetStatus.js';
-import {
-  EMPTY_VOTES,
-  type Annotation,
-  type AxiomMark,
-  type PendingAxiomMark,
-  type Vote,
-} from './selectors.js';
+import { type Annotation, type AxiomMark, type PendingAxiomMark } from './selectors.js';
 
 /**
  * Canonical reading order for the per-facet pill row. Matches the

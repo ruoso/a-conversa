@@ -11,21 +11,10 @@
 //              stale-entity branch + an action-slot reservation for the
 //              future voting / axiom-mark leaves.)
 //
-// Cross-workspace import: `<FacetPill>` + `PILL_BASE_CLASSNAME` /
-// `PILL_STATUS_CLASSNAME` come from the moderator workspace per
-// Decision §4. To make the import resolvable at both Vite build time
-// and TypeScript typecheck time, the participant workspace declares a
-// `workspace:*` dependency on `@a-conversa/moderator` AND a
-// `tsconfig.references` entry pointing at the moderator's tsconfig;
-// the moderator's package.json `exports` field maps the
-// `./graph/FacetPill` sub-path to the source `.tsx` file (the same
-// `source` pattern `@a-conversa/shell` uses). Precedent:
-// `apps/moderator/src/layout/ProposalFacetBreakdown.tsx:43` imports
-// the same constants WITHIN the moderator workspace; this leaf reads
-// the SAME source from a sibling workspace. If a future audience
-// surface becomes the third caller, extracting the pill into
-// `@a-conversa/shell` is the natural move — at that point the
-// per-workspace dep can drop in favor of the shell export.
+// Refinement: tasks/refinements/shell-package/extract_facet_pill.md —
+// discharged the predecessor's Decision §6 deferral by lifting
+// `<FacetPill>` + `PILL_*_CLASSNAME` into `@a-conversa/shell` and
+// dropping the participant → moderator workspace edge.
 //
 // ADRs:
 //   - 0003 (React);
@@ -64,11 +53,7 @@ import { memo, useEffect, useMemo, type ReactElement, type ReactNode } from 'rea
 import { useTranslation } from 'react-i18next';
 import type { Event } from '@a-conversa/shared-types';
 
-import {
-  FacetPill,
-  PILL_BASE_CLASSNAME,
-  PILL_STATUS_CLASSNAME,
-} from '@a-conversa/moderator/graph/FacetPill';
+import { FacetPill, PILL_BASE_CLASSNAME, PILL_STATUS_CLASSNAME } from '@a-conversa/shell';
 import type { Annotation } from '../graph/annotations';
 import type { AxiomMark } from '../graph/axiomMarks';
 import type { FacetName, FacetStatus } from '../graph/facetStatus';

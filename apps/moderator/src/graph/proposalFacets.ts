@@ -37,9 +37,9 @@
 // `t(labelKey)` at render time.
 
 import type { Event, ProposalPayload } from '@a-conversa/shared-types';
+import { EMPTY_VOTES, type Vote } from '@a-conversa/shell';
 
 import type { FacetName, FacetStatus, FacetStatusIndex } from './facetStatus.js';
-import { EMPTY_VOTES, type Vote } from './selectors.js';
 
 /**
  * The set of facet names the breakdown can surface. Extends
