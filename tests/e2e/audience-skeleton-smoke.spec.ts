@@ -65,3 +65,37 @@ test.describe('Audience surface skeleton — /a/sessions/:id reaches the surface
     await expect(page.locator('h1').first()).toHaveText('Audience surface');
   });
 });
+
+// `aud_no_auth_for_public` — the host now honors a surface's declared
+// `meta.requiredAuthLevel: 'public'` and mounts the audience surface
+// for anonymous visitors, skipping the `/login` deflection that the
+// authenticated-default-gated surfaces still apply. This describe
+// block scopes an empty cookie jar via `test.use` so the browser
+// context starts genuinely unauthenticated, then proves the canonical
+// audience URL renders the placeholder anyway — and that the URL
+// stays on `/a/...` (no implicit redirect to `/login`). The default
+// project-level `storageState` (the bootstrap auth jar from
+// `setup-auth`) is overridden for THIS describe block only; the
+// authenticated scenario above keeps using the project-level state.
+// See Decision §7 of the refinement.
+test.describe('Audience surface skeleton — anonymous visitor reaches the placeholder', () => {
+  test.use({ storageState: { cookies: [], origins: [] } });
+
+  test('anonymous browser hits /a/sessions/<uuid> and sees the placeholder without bouncing to /login', async ({
+    page,
+  }) => {
+    await page.goto(`/a/sessions/${SESSION_ID}`);
+
+    await expect(
+      page.getByTestId('route-audience-placeholder'),
+      'the audience surface must mount for anonymous visitors when the surface declares requiredAuthLevel="public"',
+    ).toBeVisible({ timeout: 15_000 });
+
+    // Pin the URL stayed on `/a/...` — no implicit redirect to
+    // `/login`. The host's `rememberReturnTo` write must also have
+    // been skipped (Decision §6), but the URL pin is the directly-
+    // observable proof; the `rememberReturnTo` pin is in the Vitest
+    // case.
+    expect(new URL(page.url()).pathname).toBe(`/a/sessions/${SESSION_ID}`);
+  });
+});

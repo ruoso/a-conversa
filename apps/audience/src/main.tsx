@@ -21,12 +21,13 @@
 // Playwright assertion is deferred to `aud_graph_rendering.aud_cytoscape_init`
 // per Decision §10).
 //
-// `requiredAuthLevel: 'public'` declares the audience's eventual policy
-// (most audience views render for public-session viewers without auth),
-// even though `SurfaceHost` does not yet read the meta hint. Encoding
-// the intent at the contract layer makes the `aud_no_auth_for_public`
-// widening a one-place change (host reads `meta.requiredAuthLevel`)
-// instead of a contract change. See Decision §5 of the refinement.
+// `requiredAuthLevel: 'public'` is the audience's policy: the host
+// (`apps/root/src/surfaces/SurfaceHost.tsx`) reads this hint and skips
+// the redirect-to-`/login` gate for anonymous visitors after
+// `aud_no_auth_for_public` landed. The placeholder route renders for
+// any visitor; private-session enforcement is the server's
+// responsibility (the WS upgrade still authenticates today; anonymous
+// live-event delivery is deferred to `aud_anonymous_ws_subscribe`).
 
 import React from 'react';
 import ReactDOM from 'react-dom/client';
@@ -53,12 +54,16 @@ export const mount: MountFn = (props) => {
           {/*
            * `<WsClientProvider>` mounts the audience surface's single
            * WS client. The provider's internal effect opens the
-           * connection iff `auth.status === 'authenticated'` — today's
-           * `SurfaceHost` still hard-gates on authenticated at first
-           * hand-off; `aud_no_auth_for_public` will widen that path
-           * for public-session anonymous viewers, at which point this
-           * mount's auth-prop semantics need to be reconsidered (see
-           * Decision §5 of the refinement).
+           * connection iff `auth.status === 'authenticated'`. The
+           * host now honors `meta.requiredAuthLevel: 'public'` and
+           * mounts the audience surface for anonymous visitors
+           * (`aud_no_auth_for_public` landed), so the surface sees
+           * `props.auth.status === 'unauthenticated'` for those
+           * callers; the provider's connect step short-circuits and
+           * no socket is opened. Live-event delivery for anonymous
+           * viewers is the explicitly-deferred
+           * `aud_anonymous_ws_subscribe` leaf's scope (server-side
+           * WS upgrade widening + per-session privacy enforcement).
            *
            * `audienceWsStore` is passed in both `clientOptions.store`
            * (for inbound envelope dispatch by the auto-constructed

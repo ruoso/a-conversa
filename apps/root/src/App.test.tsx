@@ -2,6 +2,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { cleanup, screen, waitFor } from '@testing-library/react';
 
 import App from './App';
+import * as manifestModule from './surfaces/manifest';
 import { getTestI18n, renderWithProviders } from './testing/renderWithProviders';
 
 beforeAll(async () => {
@@ -70,6 +71,26 @@ describe('root app routes', () => {
   });
 
   it('redirects protected moderator paths to /login and remembers the target', async () => {
+    // After `aud_no_auth_for_public` re-sequenced `SurfaceHost` to read
+    // `meta.requiredAuthLevel` AFTER the dynamic import, the deflection
+    // path runs only once the manifest + module resolve. Mock both so
+    // the moderator surface's resolved meta declares `'authenticated'`
+    // and the host deflects (without this mock the jsdom fetch fails
+    // with ECONNREFUSED and the host renders the error UI instead).
+    vi.spyOn(manifestModule, 'loadSurfaceManifest').mockResolvedValue({
+      surfaces: {
+        moderator: {
+          moduleUrl: '/_surfaces/moderator/moderator.js',
+          styleUrls: [],
+        },
+      },
+    });
+    vi.spyOn(manifestModule, 'importSurfaceModule').mockResolvedValue({
+      mount: () => () => undefined,
+      meta: { requiredAuthLevel: 'authenticated' },
+    });
+    vi.spyOn(manifestModule, 'injectStyles').mockReturnValue([]);
+
     renderWithProviders(<App />, { initialEntries: ['/m/sessions/new'] });
 
     await waitFor(() => {

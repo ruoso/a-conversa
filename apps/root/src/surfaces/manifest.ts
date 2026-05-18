@@ -49,9 +49,22 @@ export function injectStyles(styleUrls: readonly string[]): HTMLLinkElement[] {
 }
 
 export async function importSurfaceModule(moduleUrl: string): Promise<SurfaceModule> {
-  const imported = (await import(/* @vite-ignore */ moduleUrl)) as Partial<SurfaceModule>;
-  if (typeof imported.mount !== 'function') {
+  // Vite library mode emits surface bundles with BOTH a named `mount`
+  // export AND a `default` export holding the full `SurfaceModule`
+  // object `{ mount, meta }`. The named-only `imported` namespace has
+  // `mount` reachable but `meta` only via `imported.default.meta` —
+  // so the host must prefer the default export when present so
+  // surface-level meta (e.g. `requiredAuthLevel: 'public'` read by
+  // `SurfaceHost` per `aud_no_auth_for_public`) is reachable.
+  const imported = (await import(/* @vite-ignore */ moduleUrl)) as Partial<SurfaceModule> & {
+    readonly default?: Partial<SurfaceModule>;
+  };
+  const surface: Partial<SurfaceModule> =
+    imported.default !== undefined && typeof imported.default.mount === 'function'
+      ? imported.default
+      : imported;
+  if (typeof surface.mount !== 'function') {
     throw new Error(`surface module ${moduleUrl} did not export mount()`);
   }
-  return imported as SurfaceModule;
+  return surface as SurfaceModule;
 }
