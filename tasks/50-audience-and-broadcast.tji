@@ -52,6 +52,7 @@ task audience "Audience and broadcast" {
     task aud_state_management "State management for live event stream" {
       effort 1d
       allocate team
+      complete 100
       depends !aud_ws_client
     }
     task aud_no_auth_for_public "No auth for public-session viewer page" {
