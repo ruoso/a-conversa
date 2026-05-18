@@ -166,6 +166,7 @@ task participant_ui "Participant (debater) UI" {
     task part_other_vote_indicators_canvas_dots "Canvas-side per-other-voter dot row (v1 visual polish on top of v0 DOM mirror)" {
       effort 1d
       allocate team
+      complete 100
       depends !part_other_vote_indicators
       note -8<-
         Canvas-side per-other-voter dot row, deferred from `part_other_vote_indicators` (DOM-mirror was v0 per Decision §3). Reads the existing `otherVotes` readonly OtherVote list field stamped on each Cytoscape element data record (no projection refactor needed). Default approach: React DOM overlay positioned via `cy.elements().renderedPosition()`. Source: tasks/refinements/participant-ui/part_other_vote_indicators.md (Decision §3) + this commit.

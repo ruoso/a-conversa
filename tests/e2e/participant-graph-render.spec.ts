@@ -1945,4 +1945,328 @@ test.describe('Participant operate route — read-mostly graph render', () => {
       await context.close();
     }
   });
+
+  test('dave (block-8, block-2 role-swap) navigates to operate, seeded vote events by synthetic-UUID OTHER voters surface per-element <div data-canvas-vote-dots> entries with per-voter dots on the Cytoscape overlay', async ({
+    browser,
+  }) => {
+    // Refinement: tasks/refinements/participant-ui/part_other_vote_indicators_canvas_dots.md
+    //   (Decision §7 — EIGHTH test() block. The 12-user Authelia dev
+    //    pool was exhausted by block 6 (kate+leo); block 7 pioneered
+    //    the role-swap pattern with alice+ben (the inverse of block 1)
+    //    plus synthetic-UUID voter seeding. This block adopts the same
+    //    pattern with `dave + maria` — the inverse of block 2's
+    //    `maria + dave` orientation. Per-block-isolated `freshContext` +
+    //    `createSession` ensures different sessions per block — no
+    //    race on session state even though the username pair re-appears.
+    //
+    //    Decision §6 — DOM-attribute assertions on
+    //    `<div data-canvas-vote-dots data-element-id="...">` +
+    //    `<span data-canvas-vote-dot data-voter-id="..." data-vote="...">`;
+    //    no position arithmetic in the assertion (the coordinate values
+    //    are sensitive to happy-dom-vs-real-browser layout drift;
+    //    per-voter attribute presence + ordering carries the load-
+    //    bearing signal).
+    //
+    //    Per ORCHESTRATOR.md UI-stream e2e policy: the route is
+    //    reachable, the per-target nested `<ul data-other-votes>`
+    //    mirror is in place from the predecessor, the canvas overlay
+    //    component is in scope — the e2e is in scope, not deferred.
+    //    The block also cross-checks the dot order matches the DOM
+    //    mirror's `<li data-other-vote>` order (per Decision §8 —
+    //    the two surfaces are independent renderings of the same per-
+    //    voter data; the sort-order pin would catch any future
+    //    desynchronisation).)
+    const context = await freshContext(browser);
+    const page = await context.newPage();
+    try {
+      const TOPIC = 'Other-vote canvas dots reach the participant tablet';
+      const NODE_A_WORDING = 'UBI lifts the welfare floor';
+      const NODE_B_WORDING = 'Means-tested aid stigmatises';
+
+      // 1. Dave creates the session (the creator role; block-2 inverse —
+      //    block 2 had maria as creator + dave as debater-A; block 8
+      //    swaps the roles).
+      const dave = await loginAs(page, { username: 'dave' });
+      expect(dave.screenName.toLowerCase()).toBe('dave');
+      const sessionId = await createSession(page, { topic: TOPIC, privacy: 'public' });
+
+      // 2. Log out + drop cookies so the next dance is fresh.
+      await logoutAndClearAllCookies(page);
+
+      // 3. Maria authenticates and claims debater-A through the
+      //    invite acceptance flow. Maria becomes the navigating
+      //    current participant whose tablet the spec asserts against.
+      const maria = await loginAs(page, { username: 'maria' });
+      expect(maria.screenName.toLowerCase()).toBe('maria');
+      await page.goto(`/p/sessions/${sessionId}/invite?role=debater-A`);
+      await expect(page.getByTestId('route-invite-acceptance')).toBeVisible({ timeout: 15_000 });
+      const joinButton = page.getByTestId('invite-acceptance-join-button');
+      await expect(joinButton).toBeEnabled();
+      await joinButton.click();
+      await page.waitForURL((url) => url.pathname === `/p/sessions/${sessionId}/lobby`, {
+        timeout: 15_000,
+      });
+      await expect(page.getByTestId('route-lobby')).toBeVisible({ timeout: 15_000 });
+
+      // 4. Navigate to the operate route + assert the overlay container
+      //    is mounted.
+      await page.goto(`/p/sessions/${sessionId}`);
+      await expect(page.getByTestId('route-operate')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('participant-graph-root')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('participant-other-votes-overlay')).toBeAttached({
+        timeout: 15_000,
+      });
+      await expect(page.getByTestId('participant-graph-status-mirror')).toBeAttached({
+        timeout: 15_000,
+      });
+
+      // 5. Seed the events per Decision §7:
+      //
+      //      - Two node-created (NODE_A, NODE_B).
+      //      - One edge-created (EDGE_AB, NODE_A → NODE_B).
+      //      - Three proposals:
+      //          P1: classify-node on NODE_A.
+      //          P2: set-edge-substance on EDGE_AB.
+      //          P3: classify-node on NODE_B.
+      //      - Three votes (block 7 had a fourth alice-self vote on
+      //        P3; this block omits it — NODE_B's empty-list early-
+      //        exit branch is assertion-checked below regardless):
+      //          SYNTHETIC_VOTER_X agree on P1 (NODE_A's first other vote).
+      //          SYNTHETIC_VOTER_Y dispute on P1 (NODE_A's second other vote).
+      //          SYNTHETIC_VOTER_X dispute on P2 (EDGE_AB's only other vote).
+      const NODE_A_ID = '11111111-1111-4111-8111-1111111111d8';
+      const NODE_B_ID = '22222222-2222-4222-8222-2222222222d8';
+      const EDGE_AB_ID = '33333333-3333-4333-8333-3333333333d8';
+      const P1_ID = '44444444-4444-4444-8444-44444444448d';
+      const P2_ID = '44444444-4444-4444-8444-44444444448e';
+      const P3_ID = '44444444-4444-4444-8444-44444444448f';
+      const ACTOR_ID = '55555555-5555-4555-8555-555555555d88';
+      // Synthetic OTHER-voter UUIDs. Distinct from maria.userId AND
+      // dave.userId. Distinct from block 7's `7777…7771` / `…7772` so
+      // the parallel blocks don't share voter identities across the
+      // describe.
+      const SYNTHETIC_VOTER_X = '77777777-7777-4777-8777-7777777778d1';
+      const SYNTHETIC_VOTER_Y = '77777777-7777-4777-8777-7777777778d2';
+      await page.evaluate(
+        (seed: {
+          sessionId: string;
+          nodeAId: string;
+          nodeBId: string;
+          edgeAbId: string;
+          p1Id: string;
+          p2Id: string;
+          p3Id: string;
+          actorId: string;
+          voterXId: string;
+          voterYId: string;
+          wordingA: string;
+          wordingB: string;
+        }) => {
+          const store = (
+            window as unknown as {
+              __aConversaWsStore?: {
+                getState: () => {
+                  applyEvent: (event: unknown) => void;
+                };
+              };
+            }
+          ).__aConversaWsStore;
+          if (!store) {
+            throw new Error('__aConversaWsStore is not exposed on window');
+          }
+          const apply = store.getState().applyEvent.bind(store.getState());
+
+          apply({
+            id: '88888888-8888-4888-8888-8888888888d1',
+            sessionId: seed.sessionId,
+            sequence: 2_000_001,
+            kind: 'node-created',
+            actor: seed.actorId,
+            payload: {
+              node_id: seed.nodeAId,
+              wording: seed.wordingA,
+              created_by: seed.actorId,
+              created_at: '2026-05-17T00:00:00.000Z',
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+          apply({
+            id: '88888888-8888-4888-8888-8888888888d2',
+            sessionId: seed.sessionId,
+            sequence: 2_000_002,
+            kind: 'node-created',
+            actor: seed.actorId,
+            payload: {
+              node_id: seed.nodeBId,
+              wording: seed.wordingB,
+              created_by: seed.actorId,
+              created_at: '2026-05-17T00:00:00.000Z',
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+          apply({
+            id: '88888888-8888-4888-8888-8888888888d3',
+            sessionId: seed.sessionId,
+            sequence: 2_000_003,
+            kind: 'edge-created',
+            actor: seed.actorId,
+            payload: {
+              edge_id: seed.edgeAbId,
+              role: 'supports',
+              source_node_id: seed.nodeAId,
+              target_node_id: seed.nodeBId,
+              created_by: seed.actorId,
+              created_at: '2026-05-17T00:00:00.000Z',
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+          apply({
+            id: seed.p1Id,
+            sessionId: seed.sessionId,
+            sequence: 2_000_004,
+            kind: 'proposal',
+            actor: seed.actorId,
+            payload: {
+              proposal: {
+                kind: 'classify-node',
+                node_id: seed.nodeAId,
+                classification: 'fact',
+              },
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+          apply({
+            id: seed.p2Id,
+            sessionId: seed.sessionId,
+            sequence: 2_000_005,
+            kind: 'proposal',
+            actor: seed.actorId,
+            payload: {
+              proposal: {
+                kind: 'set-edge-substance',
+                edge_id: seed.edgeAbId,
+                value: 'agreed',
+              },
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+          apply({
+            id: seed.p3Id,
+            sessionId: seed.sessionId,
+            sequence: 2_000_006,
+            kind: 'proposal',
+            actor: seed.actorId,
+            payload: {
+              proposal: {
+                kind: 'classify-node',
+                node_id: seed.nodeBId,
+                classification: 'fact',
+              },
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+          // SYNTHETIC_VOTER_X agree on P1 (NODE_A's first other vote).
+          apply({
+            id: '88888888-8888-4888-8888-8888888888d7',
+            sessionId: seed.sessionId,
+            sequence: 2_000_007,
+            kind: 'vote',
+            actor: seed.voterXId,
+            payload: {
+              proposal_id: seed.p1Id,
+              participant: seed.voterXId,
+              vote: 'agree',
+              voted_at: '2026-05-17T00:00:00.000Z',
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+          // SYNTHETIC_VOTER_Y dispute on P1 (NODE_A's second other vote).
+          apply({
+            id: '88888888-8888-4888-8888-8888888888d8',
+            sessionId: seed.sessionId,
+            sequence: 2_000_008,
+            kind: 'vote',
+            actor: seed.voterYId,
+            payload: {
+              proposal_id: seed.p1Id,
+              participant: seed.voterYId,
+              vote: 'dispute',
+              voted_at: '2026-05-17T00:00:00.000Z',
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+          // SYNTHETIC_VOTER_X dispute on P2 (EDGE_AB's only other vote).
+          apply({
+            id: '88888888-8888-4888-8888-8888888888d9',
+            sessionId: seed.sessionId,
+            sequence: 2_000_009,
+            kind: 'vote',
+            actor: seed.voterXId,
+            payload: {
+              proposal_id: seed.p2Id,
+              participant: seed.voterXId,
+              vote: 'dispute',
+              voted_at: '2026-05-17T00:00:00.000Z',
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+        },
+        {
+          sessionId,
+          nodeAId: NODE_A_ID,
+          nodeBId: NODE_B_ID,
+          edgeAbId: EDGE_AB_ID,
+          p1Id: P1_ID,
+          p2Id: P2_ID,
+          p3Id: P3_ID,
+          actorId: ACTOR_ID,
+          voterXId: SYNTHETIC_VOTER_X,
+          voterYId: SYNTHETIC_VOTER_Y,
+          wordingA: NODE_A_WORDING,
+          wordingB: NODE_B_WORDING,
+        },
+      );
+
+      // 6. Assert the canvas overlay surfaces the expected per-element
+      //    dot row containers + per-voter dots in first-vote-arrival
+      //    order. The overlay's commit runs inside rAF + React's
+      //    reconciler tick; `toBeAttached` / `toHaveCount` await the
+      //    settled DOM state.
+      const nodeAOverlay = page.locator(`[data-canvas-vote-dots][data-element-id="${NODE_A_ID}"]`);
+      await expect(nodeAOverlay).toHaveCount(1, { timeout: 15_000 });
+      const nodeADots = nodeAOverlay.locator('[data-canvas-vote-dot]');
+      await expect(nodeADots).toHaveCount(2);
+      await expect(nodeADots.nth(0)).toHaveAttribute('data-voter-id', SYNTHETIC_VOTER_X);
+      await expect(nodeADots.nth(0)).toHaveAttribute('data-vote', 'agree');
+      await expect(nodeADots.nth(1)).toHaveAttribute('data-voter-id', SYNTHETIC_VOTER_Y);
+      await expect(nodeADots.nth(1)).toHaveAttribute('data-vote', 'dispute');
+
+      const edgeAbOverlay = page.locator(
+        `[data-canvas-vote-dots][data-element-id="${EDGE_AB_ID}"]`,
+      );
+      await expect(edgeAbOverlay).toHaveCount(1);
+      const edgeAbDots = edgeAbOverlay.locator('[data-canvas-vote-dot]');
+      await expect(edgeAbDots).toHaveCount(1);
+      await expect(edgeAbDots.nth(0)).toHaveAttribute('data-voter-id', SYNTHETIC_VOTER_X);
+      await expect(edgeAbDots.nth(0)).toHaveAttribute('data-vote', 'dispute');
+
+      // NODE_B has no other-participant votes — the overlay short-
+      // circuits and does NOT emit a `<div data-canvas-vote-dots>` for it.
+      const nodeBOverlay = page.locator(`[data-canvas-vote-dots][data-element-id="${NODE_B_ID}"]`);
+      await expect(nodeBOverlay).toHaveCount(0);
+
+      // Cross-check (Decision §8) — the DOM-mirror nested-list order
+      // matches the canvas dot order for NODE_A. The two surfaces are
+      // independent renderings of the same per-voter data; this probe
+      // would catch any future desynchronisation.
+      const nodeAMirror = page.locator(
+        `[data-testid="participant-node-status"][data-node-id="${NODE_A_ID}"] ul[data-other-votes] li[data-other-vote]`,
+      );
+      await expect(nodeAMirror).toHaveCount(2);
+      await expect(nodeAMirror.nth(0)).toHaveAttribute('data-voter-id', SYNTHETIC_VOTER_X);
+      await expect(nodeAMirror.nth(1)).toHaveAttribute('data-voter-id', SYNTHETIC_VOTER_Y);
+    } finally {
+      await context.close();
+    }
+  });
 });

@@ -68,6 +68,24 @@
 //              target kinds per Decision §1 — the wire `proposal`
 //              family targets both via the `set-edge-substance`
 //              sub-kind.)
+// Refinement: tasks/refinements/participant-ui/part_other_vote_indicators_canvas_dots.md
+//              (Stylesheet UNCHANGED — the canvas-side dot row paints
+//              OUTSIDE the Cytoscape canvas entirely, as a sibling DOM
+//              `<OtherVotesOverlay>` component absolutely-positioned
+//              inside the `participant-graph-root` containing block.
+//              `participant-graph-root` grows `relative` to its
+//              className so it becomes the overlay's positioning
+//              ancestor; the overlay receives the live Cytoscape
+//              `Core` handle via the `cyInstance` `useState` slot
+//              (lifted from the existing `cyInstanceRef` per Decision §2).
+//              The overlay reads `data.otherVotes` from each Cytoscape
+//              element and paints one DOM row per element with
+//              non-empty votes; per-arm color encoding only (emerald-500
+//              agree, rose-500 dispute) per Decision §4. The DOM mirror
+//              `<ul data-other-votes>` from the predecessor is
+//              unchanged — the two surfaces are independent renderings
+//              of the same per-voter data, deliberately not consolidated
+//              per Decision §8.)
 // Refinement: tasks/refinements/participant-ui/part_other_vote_indicators.md
 //              (Stylesheet UNCHANGED — Decision §3 ships DOM-mirror-only
 //              for v0; canvas-side rendering is deferred to a future
@@ -135,7 +153,7 @@
 // the mirror is the testability seam). The mirror is invisible to
 // users + screen readers (`aria-hidden="true"` + `sr-only`).
 
-import { useEffect, useMemo, useRef, type ReactElement } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import cytoscape, { type Core, type ElementDefinition, type StylesheetJson } from 'cytoscape';
 import { useTranslation } from 'react-i18next';
 import type { DiagnosticPayload, Event } from '@a-conversa/shared-types';
@@ -145,6 +163,7 @@ import { groupAnnotationsByEdge, groupAnnotationsByNode, projectAnnotations } fr
 import { groupAxiomMarksByNode, projectAxiomMarks } from './axiomMarks';
 import { projectDiagnosticHighlights, type DiagnosticHighlight } from './diagnosticHighlights';
 import { computeFacetStatuses, type FacetStatus } from './facetStatus';
+import { OtherVotesOverlay } from './OtherVotesOverlay';
 import { projectOwnVotes, type OwnVote } from './ownVotes';
 import { projectOtherVotes } from './otherVotes';
 import {
@@ -673,6 +692,17 @@ export function GraphView({
   const { t } = useTranslation();
   const events = useWsStore((state) => state.sessionState[sessionId]?.events ?? EMPTY_EVENTS);
   const cyInstanceRef = useRef<Core | null>(null);
+  // Decision §2 of `part_other_vote_indicators_canvas_dots` —
+  // `cyInstanceRef` (a plain `useRef`) is React-invisible: mutating the
+  // ref doesn't trigger re-renders, so a consumer downstream of the
+  // mount effect (like `<OtherVotesOverlay>`) cannot KNOW when the cy
+  // instance becomes available. The `useState` slot solves the
+  // visibility problem: the one-shot mount effect calls
+  // `setCyInstance(cy)` alongside the existing imperative ref-mutation,
+  // and consumers downstream re-render when the instance lands. The
+  // existing `cyRef` callback continues to fire for external consumers
+  // (a future `part_pan_zoom_tap` / `part_entity_detail_panel`).
+  const [cyInstance, setCyInstance] = useState<Core | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   // One-shot mount of the Cytoscape instance. The `useEffect`'s empty
@@ -688,10 +718,12 @@ export function GraphView({
       layout: { name: 'preset' },
     });
     cyInstanceRef.current = cy;
+    setCyInstance(cy);
     cyRef?.(cy);
     return () => {
       cy.destroy();
       cyInstanceRef.current = null;
+      setCyInstance(null);
       cyRef?.(null);
     };
     // The `cyRef` callback is intentionally NOT a dependency — the
@@ -895,7 +927,30 @@ export function GraphView({
 
   return (
     <>
-      <div ref={containerRef} data-testid="participant-graph-root" className="h-full w-full" />
+      {/*
+       * `participant-graph-root` grows `relative` per Decision §3 of
+       * `part_other_vote_indicators_canvas_dots`. The sibling
+       * `<OtherVotesOverlay>` uses `position: absolute` and `inset-0`
+       * to fill the same rectangle the Cytoscape canvas occupies; the
+       * `relative` declaration makes this container the overlay's
+       * positioning ancestor (without it the overlay would resolve
+       * to the viewport's initial containing block).
+       */}
+      <div
+        ref={containerRef}
+        data-testid="participant-graph-root"
+        className="relative h-full w-full"
+      />
+      {/*
+       * The DOM overlay sibling. Reads `data.otherVotes` from each
+       * Cytoscape element and paints one DOM row per element with
+       * non-empty votes. `pointer-events: none` so clicks pass through
+       * to the canvas. Rendering AFTER the canvas mount means the
+       * overlay paints visually ABOVE the canvas in natural DOM
+       * stacking; the absolute positioning + pointer-events-none
+       * keep clicks intact.
+       */}
+      <OtherVotesOverlay cy={cyInstance} containerRef={containerRef} />
       <ul data-testid="participant-graph-status-mirror" aria-hidden="true" className="sr-only">
         {projected.nodes.map((node) => (
           <li

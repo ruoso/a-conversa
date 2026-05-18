@@ -2,6 +2,14 @@
 // `<GraphView>` (directly or transitively through `<OperateRoute>`).
 //
 // Refinement: tasks/refinements/participant-ui/part_graph_render.md
+// Refinement: tasks/refinements/participant-ui/part_other_vote_indicators_canvas_dots.md
+//              (Decision §6 — adds a `requestAnimationFrame` /
+//              `cancelAnimationFrame` polyfill backed by
+//              `queueMicrotask` so the `<OtherVotesOverlay>`'s
+//              rAF-batched re-render flow runs synchronously enough
+//              under Vitest for the post-rAF state to be observable
+//              without `await`-ing real timers. Production runs the
+//              browser-supplied rAF.)
 //
 // Cytoscape's `CanvasRenderer` calls `canvas.getContext('2d')` once
 // per layer at mount and throws `Could not create canvas of type 2d`
@@ -21,12 +29,20 @@ export interface CytoscapeTestEnvRestoreHandle {
   readonly restore: () => void;
 }
 
+type RafCallback = (timestamp: number) => void;
+
 export function installCytoscapeTestEnv(): CytoscapeTestEnvRestoreHandle {
   const originalResizeObserver = (globalThis as { ResizeObserver?: typeof ResizeObserver })
     .ResizeObserver;
   const originalGetContext = HTMLCanvasElement.prototype.getContext.bind(
     HTMLCanvasElement.prototype,
   );
+  const originalRequestAnimationFrame = (
+    globalThis as { requestAnimationFrame?: (cb: RafCallback) => number }
+  ).requestAnimationFrame;
+  const originalCancelAnimationFrame = (
+    globalThis as { cancelAnimationFrame?: (handle: number) => void }
+  ).cancelAnimationFrame;
 
   if (typeof originalResizeObserver === 'undefined') {
     class NoopResizeObserver {
@@ -41,6 +57,37 @@ export function installCytoscapeTestEnv(): CytoscapeTestEnvRestoreHandle {
       }
     }
     (globalThis as { ResizeObserver?: unknown }).ResizeObserver = NoopResizeObserver;
+  }
+
+  // requestAnimationFrame / cancelAnimationFrame polyfill — happy-dom
+  // does not ship either. `<OtherVotesOverlay>` (and any future overlay
+  // following the same singleton-handle rAF batching idiom) needs both
+  // surfaces to exist; the test envelope shims them with a
+  // `queueMicrotask`-backed callback so post-rAF state is observable
+  // without `await`-ing real timers. Each scheduled callback gets a
+  // monotonic handle so `cancelAnimationFrame(handle)` can pre-empt
+  // its execution before the microtask runs.
+  if (typeof originalRequestAnimationFrame === 'undefined') {
+    let nextHandle = 1;
+    const cancelled = new Set<number>();
+    const rafPolyfill = (cb: RafCallback): number => {
+      const handle = nextHandle++;
+      queueMicrotask(() => {
+        if (cancelled.has(handle)) {
+          cancelled.delete(handle);
+          return;
+        }
+        cb(performance.now());
+      });
+      return handle;
+    };
+    const cafPolyfill = (handle: number): void => {
+      cancelled.add(handle);
+    };
+    (globalThis as { requestAnimationFrame?: (cb: RafCallback) => number }).requestAnimationFrame =
+      rafPolyfill;
+    (globalThis as { cancelAnimationFrame?: (handle: number) => void }).cancelAnimationFrame =
+      cafPolyfill;
   }
 
   HTMLCanvasElement.prototype.getContext = function getContextStub(
@@ -105,6 +152,19 @@ export function installCytoscapeTestEnv(): CytoscapeTestEnvRestoreHandle {
           originalResizeObserver;
       }
       HTMLCanvasElement.prototype.getContext = originalGetContext;
+      if (originalRequestAnimationFrame === undefined) {
+        delete (globalThis as { requestAnimationFrame?: unknown }).requestAnimationFrame;
+      } else {
+        (
+          globalThis as { requestAnimationFrame?: (cb: RafCallback) => number }
+        ).requestAnimationFrame = originalRequestAnimationFrame;
+      }
+      if (originalCancelAnimationFrame === undefined) {
+        delete (globalThis as { cancelAnimationFrame?: unknown }).cancelAnimationFrame;
+      } else {
+        (globalThis as { cancelAnimationFrame?: (handle: number) => void }).cancelAnimationFrame =
+          originalCancelAnimationFrame;
+      }
     },
   };
 }

@@ -1621,3 +1621,93 @@ describe('GraphView — other-vote overlay', () => {
     expect(otherVotesList?.querySelectorAll('li[data-other-vote]').length).toBe(0);
   });
 });
+
+// -------------------------------------------------------------------
+// Canvas-side per-other-voter dot row overlay — added by
+// `participant_ui.part_graph_view.part_other_vote_indicators_canvas_dots`.
+// Refinement: tasks/refinements/participant-ui/part_other_vote_indicators_canvas_dots.md
+//
+// Four new cases pin the integration of `<OtherVotesOverlay>` into the
+// `<GraphView>` return JSX: the overlay mounts as a sibling of the
+// canvas, the `participant-graph-root` containing block becomes
+// `relative` (so the absolute-positioned overlay anchors inside the
+// graph root), and the overlay surfaces per-element dot-row containers
+// keyed by Cytoscape element id when the `data.otherVotes` field is
+// populated. The per-component behaviours of the overlay itself
+// (rAF batching, listener cleanup, per-arm color mapping) are pinned
+// at the dedicated `OtherVotesOverlay.test.tsx` layer.
+// -------------------------------------------------------------------
+
+describe('GraphView — canvas-side other-vote dot row overlay', () => {
+  it('(zz1) the overlay is mounted as a sibling of the canvas inside the graph root after mount', () => {
+    renderView();
+    const overlay = document.querySelector('[data-testid="participant-other-votes-overlay"]');
+    expect(overlay).not.toBeNull();
+  });
+
+  it('(zz2) the participant-graph-root container carries the `relative` positioning ancestor class', () => {
+    renderView();
+    const root = document.querySelector('[data-testid="participant-graph-root"]');
+    expect(root).not.toBeNull();
+    const className = root?.getAttribute('class') ?? '';
+    expect(className).toContain('relative');
+  });
+
+  it('(zz3) when a node has non-empty otherVotes, the overlay renders one <div data-canvas-vote-dots> with the per-voter dot count', async () => {
+    renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(
+      classifyProposalEvent({
+        sequence: 2,
+        envelopeId: PROPOSAL_A,
+        nodeId: NODE_A,
+        classification: 'fact',
+      }),
+    );
+    seedEvent(
+      voteEventOther({
+        sequence: 3,
+        proposalId: PROPOSAL_A,
+        participant: OTHER_VOTER_A,
+        vote: 'agree',
+      }),
+    );
+    seedEvent(
+      voteEventOther({
+        sequence: 4,
+        proposalId: PROPOSAL_A,
+        participant: OTHER_VOTER_B,
+        vote: 'dispute',
+      }),
+    );
+    // The overlay's commit runs inside a rAF; the happy-dom polyfill
+    // schedules via `queueMicrotask`, so a few microtask drains
+    // (wrapped in `act`) flush the commit + React's resulting re-render.
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const container = document.querySelector(
+      `[data-canvas-vote-dots][data-element-id="${NODE_A}"]`,
+    );
+    expect(container).not.toBeNull();
+    const dots = container?.querySelectorAll('[data-canvas-vote-dot]');
+    expect(dots?.length).toBe(2);
+    expect(dots?.[0]?.getAttribute('data-voter-id')).toBe(OTHER_VOTER_A);
+    expect(dots?.[0]?.getAttribute('data-vote')).toBe('agree');
+    expect(dots?.[1]?.getAttribute('data-voter-id')).toBe(OTHER_VOTER_B);
+    expect(dots?.[1]?.getAttribute('data-vote')).toBe('dispute');
+  });
+
+  it('(zz4) the overlay short-circuits to an empty render when no element has non-empty otherVotes (early-exit branch)', () => {
+    renderView();
+    // Two un-voted nodes — the overlay wrapper renders but contains
+    // zero `<div data-canvas-vote-dots>` entries.
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(nodeCreatedEvent({ sequence: 2, nodeId: NODE_B, wording: 'B' }));
+    const overlay = document.querySelector('[data-testid="participant-other-votes-overlay"]');
+    expect(overlay).not.toBeNull();
+    expect(overlay?.querySelectorAll('[data-canvas-vote-dots]').length).toBe(0);
+  });
+});
