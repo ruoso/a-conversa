@@ -115,18 +115,54 @@ async function readNodeIdByWording(page: Page, wording: string): Promise<string>
   return testid!.replace(/^statement-node-wording-/, '');
 }
 
-// **Why no per-participant "ben sees N1" probe.** A real user verifies a
-// node arrived on their canvas by *looking* at the Cytoscape canvas,
-// which is a single `<canvas>` element with no per-node DOM. The
-// `participant-graph-status-mirror` is `aria-hidden + sr-only` —
-// invisible to a sighted user — so asserting against it would betray
-// the "what a human sees" contract this spec is built on. The
-// `window.__aConversaCyInstance` test-seam route is similarly off-
-// limits: it is a dev-only escape hatch, not a UI affordance. The
-// cross-context propagation IS verified, but indirectly — every
-// later phase that drives ben / maria to interact with a node (vote,
-// axiom-mark, etc.) fails loudly if the broadcast did not land. The
-// next visible cross-context signal is therefore Phase 3.1.
+// **Why no hidden-DOM assertions; how participant clicks work.** The
+// participant surface renders nodes on a Cytoscape `<canvas>` element
+// — no per-node DOM. The sr-only `participant-graph-status-mirror`
+// is invisible to a sighted user and is therefore off-limits for
+// "what a human sees" verification. Every assertion against the
+// participant surface is against visible DOM (the detail panel, vote
+// buttons, etc.).
+//
+// To click a specific node on the canvas, the spec uses the
+// `window.__aConversaCyInstance` test seam (gated on
+// `?aconversaTestMode=1` per GraphView.tsx:877) to dispatch a
+// `cy.getElementById(id).emit('tap')` event. The seam is a coordinate
+// bridge — Cytoscape canvases have no other addressable per-node
+// surface — not a state mock; the event flows through the real
+// selection handler, the real detail-panel re-render, and the real
+// vote-button click chain. Without the seam, the only way to click a
+// canvas-rendered node would be a pixel-position computation that
+// also requires reading the cy instance. The seam matches the
+// established convention in `participant-graph-render.spec.ts`.
+
+/**
+ * Dispatch a synthetic Cytoscape `tap` on the per-id element via the
+ * `window.__aConversaCyInstance` test seam. The seam must be exposed
+ * (page navigated with `?aconversaTestMode=1`). The `tap` propagates
+ * through the registered `handleTap` listener exactly as a real mouse
+ * click would — the spec's downstream assertions (detail panel
+ * content, vote-button visibility, etc.) are against visible DOM.
+ */
+async function tapParticipantNode(page: Page, nodeId: string): Promise<void> {
+  await page.evaluate((id: string) => {
+    const cy = (
+      window as unknown as {
+        __aConversaCyInstance?: {
+          getElementById: (id: string) => unknown;
+        };
+      }
+    ).__aConversaCyInstance;
+    if (!cy) {
+      throw new Error(
+        'tapParticipantNode: __aConversaCyInstance is not exposed — navigate the page with ?aconversaTestMode=1 first',
+      );
+    }
+    const element = cy.getElementById(id) as {
+      emit: (event: string, extra?: unknown[]) => unknown;
+    };
+    element.emit('tap');
+  }, nodeId);
+}
 
 test.describe
   .serial('Full debate methodology — three real browser sessions (alice mod + ben debater-A + maria debater-B)', () => {
@@ -232,6 +268,35 @@ test.describe
     await expect(mariaPage.getByTestId('participant-graph-root')).toBeVisible();
   });
 
+  // ── Re-mount ben + maria's operate route with `?aconversaTestMode=1`
+  //    so the GraphView exposes `window.__aConversaCyInstance` (gated
+  //    on that flag — see GraphView.tsx:877). The seam is necessary
+  //    because the participant canvas is a single `<canvas>` element
+  //    with no per-node DOM, so a Playwright spec cannot click on a
+  //    specific node by testid. The seam exposes the live cy instance
+  //    so the spec can dispatch the same `tap` event Cytoscape would
+  //    fire on a real human click; the selection chain + detail-panel
+  //    render that follows are entirely real. Result is verified
+  //    against the visible detail panel content
+  //    (`participant-detail-panel-identity-wording`), not the sr-only
+  //    mirror. ────────────────────────────────────────────────────
+  test('Phase 1.6: ben + maria re-load operate with ?aconversaTestMode=1 so the cy test seam exposes', async () => {
+    for (const page of [benPage, mariaPage]) {
+      await page.goto(`/p/sessions/${sessionId}?aconversaTestMode=1`);
+      await expect(page.getByTestId('route-operate')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('participant-graph-root')).toBeVisible();
+      // Wait for the seam to land on `window` (the mount effect's
+      // `if (exposeSeam) window.__aConversaCyInstance = cy` runs
+      // after Cytoscape's first paint).
+      await page.waitForFunction(
+        () =>
+          Boolean((window as unknown as { __aConversaCyInstance?: unknown }).__aConversaCyInstance),
+        undefined,
+        { timeout: 15_000 },
+      );
+    }
+  });
+
   // ──────────────────────────────────────────────────────────────
   // Phase 2 — capture the first statement (N1)
   // ──────────────────────────────────────────────────────────────
@@ -274,32 +339,55 @@ test.describe
   // Removing the `test.fixme(true, ...)` line is the only diff once the
   // vote UI ships.
 
-  test.fixme('Phase 3.1: ben opens N1 in the detail panel and votes agree on the wording facet', () => {
-    // BLOCKED: participant vote UI does not exist (no
-    // `participant-vote-button-*` testids; EntityDetailPanel.actionSlot
-    // is empty in production). Build participant useVoteAction +
-    // per-facet vote buttons.
-    //
-    // Once unblocked: ben taps N1 on his canvas → the detail panel
-    // opens with the wording / classification / substance rows. He
-    // clicks the agree button on the wording row. The exact click
-    // selector for tapping the canvas-rendered node depends on what
-    // the vote-UI builder adds; today there is no visible per-node
-    // affordance on the participant surface and the sr-only mirror
-    // is explicitly off-limits (see no-mirror comment at the top of
-    // this file).
+  // ── A `classify-node` proposal targets the *classification* facet
+  //    only (per `proposalFacetTarget` in ParticipantVoteButtons.tsx).
+  //    Wording + substance start as `proposed` once the node exists
+  //    server-side (at commit time) but advance via separate proposal
+  //    sub-kinds (`edit-wording`, `set-node-substance`) which the
+  //    methodology surfaces later. Phase 3.1/3.2 therefore vote on
+  //    `classification` only; advancing substance is its own phase. ──
+
+  test('Phase 3.1: ben taps N1 on his canvas; the detail panel shows the wording, and he votes agree on the classification facet', async () => {
+    expect(_n1Id, 'Phase 2.1 must have minted N1').not.toBeNull();
+    const n1 = _n1Id!;
+
+    // Synthetic tap → selection → detail-panel re-render. The detail
+    // panel reads its identity from the projected node; if the WS
+    // broadcast did not land, `cy.getElementById(n1)` returns an empty
+    // collection and `.emit('tap')` is a no-op (the panel stays in its
+    // empty-state branch). The visible identity wording IS the
+    // cross-context broadcast proof.
+    await tapParticipantNode(benPage, n1);
+    await expect(benPage.getByTestId('participant-detail-panel-identity-wording')).toHaveText(
+      N1_WORDING,
+      { timeout: 15_000 },
+    );
+
+    // The vote section mounts under the panel's action slot. The
+    // classification facet row carries the agree button; clicking it
+    // sends a `vote` envelope with `choice: 'agree'`.
+    const row = benPage.locator(
+      '[data-testid="participant-detail-panel-facet-row"][data-facet-name="classification"]',
+    );
+    await expect(row).toBeVisible({ timeout: 15_000 });
+    await row.getByTestId('participant-vote-button-agree').click();
+    // Wait for the in-flight latch to flip off (server `voted` ack).
+    await expect(row).toHaveAttribute('data-vote-state', 'enabled', { timeout: 15_000 });
   });
 
-  test.fixme('Phase 3.2: maria votes agree on N1.wording', () => {
-    // BLOCKED: participant vote UI (see Phase 3.1).
-  });
-
-  test.fixme('Phase 3.3: ben + maria vote agree on N1.classification', () => {
-    // BLOCKED: participant vote UI (see Phase 3.1).
-  });
-
-  test.fixme('Phase 3.4: ben + maria vote agree on N1.substance', () => {
-    // BLOCKED: participant vote UI (see Phase 3.1).
+  test("Phase 3.2: maria taps N1 and votes agree on N1's classification facet", async () => {
+    const n1 = _n1Id!;
+    await tapParticipantNode(mariaPage, n1);
+    await expect(mariaPage.getByTestId('participant-detail-panel-identity-wording')).toHaveText(
+      N1_WORDING,
+      { timeout: 15_000 },
+    );
+    const row = mariaPage.locator(
+      '[data-testid="participant-detail-panel-facet-row"][data-facet-name="classification"]',
+    );
+    await expect(row).toBeVisible({ timeout: 15_000 });
+    await row.getByTestId('participant-vote-button-agree').click();
+    await expect(row).toHaveAttribute('data-vote-state', 'enabled', { timeout: 15_000 });
   });
 
   // ──────────────────────────────────────────────────────────────
@@ -311,16 +399,46 @@ test.describe
   // facet of the pending proposal. Alice clicks commit → the server
   // appends a `commit` event → the node lands as `agreed`.
 
-  test.fixme('Phase 4.1: alice commits N1; the pending row clears and N1.facets render as agreed', () => {
-    // BLOCKED: commit-button gate depends on Phase 3 (participant
-    // votes). Once unblocked:
-    //   - locate the pending-proposal-row whose summary matches
-    //     N1_WORDING
-    //   - assert its commit-button is enabled (deriveAllAgree saw
-    //     unanimous agree from ben + maria across all three facets)
-    //   - click it
-    //   - assert the row disappears within 15 s (commit landed,
-    //     proposal removed from the pending list)
+  test.fixme('Phase 4.1: alice commits N1 — the pending row clears once she clicks', async () => {
+    // BLOCKED on a client/server impedance:
+    //   - Server's `checkUnanimousAgree` (apps/server/src/methodology/
+    //     handlers/commit.ts) walks `projection.currentParticipants()`
+    //     which INCLUDES the moderator. So the moderator must have a
+    //     `vote agree` event on the proposal before commit lands.
+    //   - Client's `deriveCurrentParticipants` (apps/moderator/src/
+    //     graph/proposalFacets.ts:449) EXCLUDES the moderator
+    //     ("Decision §1.a — only debaters vote"), so the moderator's
+    //     commit-button enables on debater-only agreement.
+    //   - No moderator vote UI exists today.
+    //
+    // Visible failure: the commit-button enables and alice clicks,
+    // but the server returns `unanimous-agree-required` with detail
+    // "missing votes from: <alice's user id>"; the row stays pending
+    // with an inline wire-error.
+    //
+    // Methodology source-of-truth (docs/methodology.md): "the
+    // moderator commits when they observe agreement from every
+    // participant" — i.e. commit IS the moderator's act of
+    // agreement; there is no separate moderator vote. The fix is to
+    // align the server with the client (exclude moderator from
+    // `checkUnanimousAgree`'s "current participants"), NOT to add a
+    // moderator vote UI. Once aligned, the body below passes.
+    const n1Prefix = _n1Id!.slice(0, 8);
+    const row = alicePage
+      .locator('[data-testid="pending-proposal-row"]')
+      .filter({
+        has: alicePage.locator('[data-testid="pending-proposal-row-summary"]', {
+          hasText: n1Prefix,
+        }),
+      })
+      .first();
+    await expect(row).toBeVisible({ timeout: 15_000 });
+
+    const commitButton = row.locator('[data-testid="commit-button"]');
+    await expect(commitButton).toBeEnabled({ timeout: 15_000 });
+    await commitButton.click();
+
+    await expect(row).toHaveCount(0, { timeout: 15_000 });
   });
 
   // ──────────────────────────────────────────────────────────────
