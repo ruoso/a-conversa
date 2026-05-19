@@ -361,7 +361,13 @@ export default defineConfig({
     // short-circuit probe reads on contexts that DON'T override it).
     {
       name: 'chromium-cross-surface',
-      testMatch: /cross-surface-lobby-start\.spec\.ts$/,
+      // `methodology-full-flow.spec.ts` shares the same three-context
+      // shape as `cross-surface-lobby-start` (alice/ben/maria allocated
+      // via `authedContext`) and the same browser profile (single
+      // locale en-US, ignoreHTTPSErrors for the OIDC self-signed cert,
+      // bootstrap auth jar). Widening the testMatch keeps both specs
+      // co-located instead of cloning the project block.
+      testMatch: /(cross-surface-lobby-start|methodology-full-flow)\.spec\.ts$/,
       dependencies: ['setup-auth'],
       use: {
         ...devices['Desktop Chrome'],
