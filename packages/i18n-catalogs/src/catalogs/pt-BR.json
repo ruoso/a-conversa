@@ -278,6 +278,14 @@
       "timeoutError": "A solicitação de marcação expirou. Verifique sua conexão e tente novamente.",
       "errorRoleLabel": "Erro ao marcar meta-discordância"
     },
+    "withdrawProposalButton": {
+      "label": "Retirar",
+      "inFlightLabel": "Retirando…",
+      "ariaLabel": "Retirar esta proposta (apenas quem propôs pode retirá-la)",
+      "wireError": "Falha ao retirar: {message} ({code})",
+      "timeoutError": "A solicitação de retirada expirou. Verifique sua conexão e tente novamente.",
+      "errorRoleLabel": "Erro de retirada"
+    },
     "axiomMarkAction": {
       "submenu": {
         "header": "Marcar como axioma para…",

@@ -35,7 +35,8 @@ import { PendingProposalsPane } from './PendingProposalsPane';
 import { createI18nInstance } from '@a-conversa/shell';
 import { useWsStore } from '../ws/wsStore';
 import { resetCommitStore, useCommitStore } from './useCommitAction';
-import { WsClientProvider } from '@a-conversa/shell';
+import { resetWithdrawProposalStore } from './useWithdrawProposalAction';
+import { AuthValueProvider, WsClientProvider } from '@a-conversa/shell';
 import type { SendFn, WsClient, WsClientStatus } from '@a-conversa/shell';
 import type { WsEnvelopeUnion, WsMessagePayloadMap, WsMessageType } from '@a-conversa/shared-types';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -140,18 +141,35 @@ function renderPane(
     sessionIdOverride?: string;
     nowMs?: number;
     client?: WsClient;
+    /**
+     * Optional authenticated userId — defaults to `ACTOR`, which is
+     * the actor on every proposal event the test fixtures emit. Tests
+     * that need to exercise the proposer-only withdraw-button guard
+     * from a non-proposer perspective override this.
+     */
+    authUserId?: string;
   } = {},
 ): { client: WsClient } {
   const sessionPath = options.sessionIdOverride ?? SESSION;
   const client = options.client ?? makeStubWsClient();
+  const userId = options.authUserId ?? ACTOR;
   function Wrapper({ children }: { children: ReactNode }): ReactElement {
     return (
       <MemoryRouter initialEntries={[`/sessions/${sessionPath}/operate`]}>
-        <WsClientProvider auth={{ status: 'authenticated' }} client={client}>
-          <Routes>
-            <Route path="/sessions/:id/operate" element={children} />
-          </Routes>
-        </WsClientProvider>
+        <AuthValueProvider
+          value={{
+            status: 'authenticated',
+            user: { userId, screenName: 'Tester' },
+            refresh: () => undefined,
+            logout: () => undefined,
+          }}
+        >
+          <WsClientProvider auth={{ status: 'authenticated' }} client={client}>
+            <Routes>
+              <Route path="/sessions/:id/operate" element={children} />
+            </Routes>
+          </WsClientProvider>
+        </AuthValueProvider>
       </MemoryRouter>
     );
   }
@@ -168,6 +186,7 @@ beforeEach(async () => {
   // starts from an empty `sessionState`.
   useWsStore.getState().reset();
   resetCommitStore();
+  resetWithdrawProposalStore();
   await createI18nInstance('en-US');
   await i18next.changeLanguage('en-US');
 });

@@ -278,6 +278,14 @@
       "timeoutError": "The mark request timed out. Check your connection and try again.",
       "errorRoleLabel": "Mark meta-disagreement error"
     },
+    "withdrawProposalButton": {
+      "label": "Withdraw",
+      "inFlightLabel": "Withdrawing…",
+      "ariaLabel": "Withdraw this proposal (only the original proposer may withdraw)",
+      "wireError": "Withdraw failed: {message} ({code})",
+      "timeoutError": "The withdraw request timed out. Check your connection and try again.",
+      "errorRoleLabel": "Withdraw error"
+    },
     "axiomMarkAction": {
       "submenu": {
         "header": "Mark as axiom for…",

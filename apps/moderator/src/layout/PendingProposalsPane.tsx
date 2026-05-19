@@ -79,6 +79,8 @@ import { summaryText } from '../graph/proposalSummary';
 import { ProposalFacetBreakdown } from './ProposalFacetBreakdown';
 import { useCommitAction } from './useCommitAction';
 import { useMarkMetaDisagreementAction } from './useMarkMetaDisagreementAction';
+import { useWithdrawProposalAction } from './useWithdrawProposalAction';
+import { useAuth } from '@a-conversa/shell';
 
 /**
  * Props for the pane. The `sessionId` is threaded through from the
@@ -135,14 +137,23 @@ const EMPTY_STATE_CLASSES = 'italic text-slate-500';
 const COMMIT_BUTTON_CLASSES =
   'flex-shrink-0 inline-flex items-center gap-1 rounded border border-emerald-700 bg-emerald-700 px-2 py-0.5 text-xs font-medium text-white shadow-sm hover:bg-emerald-800 hover:border-emerald-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700 disabled:cursor-not-allowed disabled:opacity-50 disabled:border-slate-300 disabled:bg-slate-100 disabled:text-slate-500';
 const COMMIT_WIRE_ERROR_CLASSES = 'text-xs text-red-700';
-// Per task — secondary-density button, amber-700 palette ("escape
-// hatch" — the moderator declares the disagreement irreducible after
-// methodology has been exhausted). WCAG AA: white-on-amber-700 ≈
-// 5.18:1 (pass). Visually distinct from the emerald commit chip so the
-// two row-level actions read as distinct affordances at a glance.
+// Mark-meta-disagreement button — secondary-density, amber-700
+// palette ("escape hatch" — the moderator declares the disagreement
+// irreducible after methodology has been exhausted). WCAG AA:
+// white-on-amber-700 ≈ 5.18:1 (pass). Visually distinct from the
+// emerald commit chip so the two row-level actions read as distinct
+// affordances at a glance.
 const MARK_META_BUTTON_CLASSES =
   'flex-shrink-0 inline-flex items-center gap-1 rounded border border-amber-700 bg-amber-700 px-2 py-0.5 text-xs font-medium text-white shadow-sm hover:bg-amber-800 hover:border-amber-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-700 disabled:cursor-not-allowed disabled:opacity-50 disabled:border-slate-300 disabled:bg-slate-100 disabled:text-slate-500';
 const MARK_META_WIRE_ERROR_CLASSES = 'text-xs text-red-700';
+// Withdraw button — secondary-density, slate outline ("retract / cancel",
+// semantically the inverse of commit). Outlined rather than filled so
+// it's visually subordinate to the commit button. WCAG AA:
+// slate-700-on-white ≈ 12.6:1 (pass); slate-500-on-slate-100
+// (disabled) ≈ 5.36:1 (pass).
+const WITHDRAW_BUTTON_CLASSES =
+  'flex-shrink-0 inline-flex items-center gap-1 rounded border border-slate-400 bg-white px-2 py-0.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 hover:border-slate-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400 disabled:cursor-not-allowed disabled:opacity-50 disabled:border-slate-300 disabled:bg-slate-100 disabled:text-slate-500';
+const WITHDRAW_WIRE_ERROR_CLASSES = 'text-xs text-red-700';
 
 /**
  * Reason-tag → ICU `select` arm-name in `moderator.commitButton.reason`.
@@ -279,6 +290,19 @@ function PendingProposalRow(props: {
     inFlight: markInFlight,
     lastError: markLastError,
   } = useMarkMetaDisagreementAction(row.proposalEventId);
+  const {
+    withdraw,
+    inFlight: withdrawInFlight,
+    lastError: withdrawLastError,
+  } = useWithdrawProposalAction(row.proposalEventId);
+  const auth = useAuth();
+  // Proposer-only UX guard: show the withdraw button only when the
+  // current authenticated user is the original proposer. The server's
+  // `forbidden` gate is the authority — this is a UX-affordance hide.
+  const isProposer =
+    auth.status === 'authenticated' &&
+    auth.user?.userId !== undefined &&
+    row.actor === auth.user.userId;
 
   const commitState: 'disabled' | 'enabled' | 'in-flight' = inFlight
     ? 'in-flight'
@@ -317,14 +341,9 @@ function PendingProposalRow(props: {
           });
   }
 
-  // Mark-meta-disagreement button surface — the methodology gates
-  // (`not-a-moderator`, `proposal-not-found`, `proposal-already-
-  // committed`, `proposal-already-meta-disagreement`, `illegal-state-
-  // transition`, `methodology-not-exhausted`) are enforced server-side,
-  // so the UI button is unconditionally enabled once the connection is
-  // open and no mark is in flight. The amber palette + distinct label
-  // signal it as the escape-hatch action distinct from the green
-  // commit chip.
+  // Mark-meta-disagreement button — methodology gates enforced
+  // server-side; UI button is unconditionally enabled once the
+  // connection is open and no mark is in flight.
   const markState: 'disabled' | 'enabled' | 'in-flight' = markInFlight
     ? 'in-flight'
     : connectionOpen
@@ -344,6 +363,26 @@ function PendingProposalRow(props: {
         : tFull('moderator.markMetaDisagreementButton.wireError', {
             code: markLastError.code,
             message: markLastError.message,
+          });
+  }
+
+  // Withdraw button — no client-side gate; only the server's
+  // proposer-only `forbidden` check is authoritative.
+  const withdrawState: 'enabled' | 'in-flight' = withdrawInFlight ? 'in-flight' : 'enabled';
+  const withdrawDisabled = withdrawState !== 'enabled';
+  const withdrawLabel = withdrawInFlight
+    ? tFull('moderator.withdrawProposalButton.inFlightLabel')
+    : tFull('moderator.withdrawProposalButton.label');
+  const withdrawAriaLabel = tFull('moderator.withdrawProposalButton.ariaLabel');
+
+  let withdrawWireMessage: string | undefined;
+  if (withdrawLastError !== undefined) {
+    withdrawWireMessage =
+      withdrawLastError.code === 'timeout'
+        ? withdrawLastError.message
+        : tFull('moderator.withdrawProposalButton.wireError', {
+            code: withdrawLastError.code,
+            message: withdrawLastError.message,
           });
   }
 
@@ -399,6 +438,23 @@ function PendingProposalRow(props: {
         >
           {markLabel}
         </button>
+        {isProposer ? (
+          <button
+            type="button"
+            data-testid="withdraw-proposal-button"
+            data-proposal-id={row.proposalEventId}
+            data-withdraw-state={withdrawState}
+            disabled={withdrawDisabled}
+            aria-disabled={withdrawDisabled}
+            aria-label={withdrawAriaLabel}
+            onClick={() => {
+              void withdraw();
+            }}
+            className={WITHDRAW_BUTTON_CLASSES}
+          >
+            {withdrawLabel}
+          </button>
+        ) : null}
       </div>
       <ProposalFacetBreakdown
         row={row}
@@ -424,6 +480,16 @@ function PendingProposalRow(props: {
           className={MARK_META_WIRE_ERROR_CLASSES}
         >
           {markWireMessage}
+        </p>
+      ) : null}
+      {withdrawWireMessage !== undefined ? (
+        <p
+          data-testid="withdraw-proposal-button-wire-error"
+          data-proposal-id={row.proposalEventId}
+          role="alert"
+          className={WITHDRAW_WIRE_ERROR_CLASSES}
+        >
+          {withdrawWireMessage}
         </p>
       ) : null}
     </li>
