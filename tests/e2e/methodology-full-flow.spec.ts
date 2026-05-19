@@ -438,22 +438,76 @@ test.describe
   //    implicitly by Phase 5.3 (when ben + maria interact with N2 to
   //    vote). See the no-mirror comment at the top of this file. ──
 
-  test.fixme('Phase 5.3: ben + maria vote agree on every facet of N2; alice commits', () => {
-    // BLOCKED: depends on Phase 3 participant vote UI.
-    // Once unblocked: mirror Phase 3.1..3.4 + Phase 4.1 for N2.
+  test('Phase 5.3: ben + maria vote agree on N2.classification; alice commits', async () => {
+    const n2 = _n2Id!;
+
+    for (const page of [benPage, mariaPage]) {
+      await tapParticipantNode(page, n2);
+      await expect(page.getByTestId('participant-detail-panel-identity-wording')).toHaveText(
+        N2_WORDING,
+        { timeout: 15_000 },
+      );
+      const row = page.locator(
+        '[data-testid="participant-detail-panel-facet-row"][data-facet-name="classification"]',
+      );
+      await expect(row).toBeVisible({ timeout: 15_000 });
+      await row.getByTestId('participant-vote-button-agree').click();
+      await expect(row).toHaveAttribute('data-vote-state', 'enabled', { timeout: 15_000 });
+    }
+
+    // Alice commits N2's proposal.
+    const n2Prefix = n2.slice(0, 8);
+    const row = alicePage
+      .locator('[data-testid="pending-proposal-row"]')
+      .filter({
+        has: alicePage.locator('[data-testid="pending-proposal-row-summary"]', {
+          hasText: n2Prefix,
+        }),
+      })
+      .first();
+    await expect(row).toBeVisible({ timeout: 15_000 });
+    const commitButton = row.locator('[data-testid="commit-button"]');
+    await expect(commitButton).toBeEnabled({ timeout: 15_000 });
+    await commitButton.click();
+    await expect(row).toHaveCount(0, { timeout: 15_000 });
   });
 
-  test.fixme('Phase 5.4: alice proposes a `supports` edge N2 → N1 by clicking N1 as the target and picking the role', () => {
-    // BLOCKED: edge proposal validator requires the target node to
-    // exist server-side (committed). Depends on Phase 4.1 (commit N1).
-    //
-    // Once unblocked: alice clicks N1 on her canvas (the
-    // `statement-node-<n1Id>` card is a real DOM element on the
-    // moderator's ReactFlow canvas — fine to query by testid). The
-    // capture-target chip auto-suggests N1. She picks edge role
-    // `supports`, types the supporting wording, picks the
-    // classification, and clicks propose. The propose envelope
-    // lands; the edge renders on alice's canvas.
+  test('Phase 5.4: alice proposes a `supports` edge N2 → N1 by clicking N1 as the target and picking the role', async () => {
+    const n1 = _n1Id!;
+    // First nudge the layout — the auto-layout can leave freshly
+    // proposed cards stacked, and an overlapping card otherwise
+    // intercepts the click on N1. "Tidy up" is the user-facing button
+    // that triggers the dagre re-layout.
+    await alicePage.getByTestId('graph-tidy-up-button').click();
+
+    // Click N1's wording text (a real DOM element with a stable
+    // testid on the moderator's ReactFlow canvas). Clicking the
+    // wording is what a human aims at when picking a target node.
+    await alicePage.getByTestId(`statement-node-wording-${n1}`).click();
+    await expect(alicePage.getByTestId('capture-target-chip')).toBeVisible({ timeout: 15_000 });
+
+    // Pick the supports edge role. The selector mounts once the target
+    // is staged. Per the UI's edge-role-selector contract, the role
+    // chip flips aria-pressed on click.
+    await alicePage.getByTestId('edge-role-selector-button-supports').click();
+    await expect(alicePage.getByTestId('edge-role-selector-button-supports')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+
+    // Type a wording for the new node that the edge originates from.
+    // The `propose` envelope mints a new node AND attaches a supports
+    // edge from it to N1 in one shot.
+    const edgeWording = 'Wolves directly reduced elk overgrazing on aspen seedlings.';
+    await alicePage.getByTestId('capture-text-input-textarea').fill(edgeWording);
+    await alicePage.getByTestId('classification-palette-button-fact').click();
+    await alicePage.getByTestId('propose-action-button').click();
+
+    // The new source node renders on alice's canvas with the typed
+    // wording.
+    const sourceId = await readNodeIdByWording(alicePage, edgeWording);
+    expect(sourceId).toBeTruthy();
+    expect(sourceId).not.toBe(n1);
   });
 
   // ──────────────────────────────────────────────────────────────
