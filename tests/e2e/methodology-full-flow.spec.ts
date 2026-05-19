@@ -399,30 +399,11 @@ test.describe
   // facet of the pending proposal. Alice clicks commit → the server
   // appends a `commit` event → the node lands as `agreed`.
 
-  test.fixme('Phase 4.1: alice commits N1 — the pending row clears once she clicks', async () => {
-    // BLOCKED on a client/server impedance:
-    //   - Server's `checkUnanimousAgree` (apps/server/src/methodology/
-    //     handlers/commit.ts) walks `projection.currentParticipants()`
-    //     which INCLUDES the moderator. So the moderator must have a
-    //     `vote agree` event on the proposal before commit lands.
-    //   - Client's `deriveCurrentParticipants` (apps/moderator/src/
-    //     graph/proposalFacets.ts:449) EXCLUDES the moderator
-    //     ("Decision §1.a — only debaters vote"), so the moderator's
-    //     commit-button enables on debater-only agreement.
-    //   - No moderator vote UI exists today.
-    //
-    // Visible failure: the commit-button enables and alice clicks,
-    // but the server returns `unanimous-agree-required` with detail
-    // "missing votes from: <alice's user id>"; the row stays pending
-    // with an inline wire-error.
-    //
-    // Methodology source-of-truth (docs/methodology.md): "the
-    // moderator commits when they observe agreement from every
-    // participant" — i.e. commit IS the moderator's act of
-    // agreement; there is no separate moderator vote. The fix is to
-    // align the server with the client (exclude moderator from
-    // `checkUnanimousAgree`'s "current participants"), NOT to add a
-    // moderator vote UI. Once aligned, the body below passes.
+  test('Phase 4.1: alice commits N1 — the pending row clears once she clicks', async () => {
+    // After server-side alignment in commit 7f68719 — checkUnanimousAgree
+    // now excludes the moderator from the per-participant agreement
+    // walk, matching the methodology's "commit IS the moderator's
+    // act of agreement" intent (docs/methodology.md §"The commit step").
     const n1Prefix = _n1Id!.slice(0, 8);
     const row = alicePage
       .locator('[data-testid="pending-proposal-row"]')
