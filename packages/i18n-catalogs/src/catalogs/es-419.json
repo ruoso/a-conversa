@@ -599,7 +599,8 @@
         "diagnostics": "Diagnósticos activos",
         "ownVote": "Tu voto",
         "otherVotes": "Otros participantes",
-        "vote": "Emite tu voto"
+        "vote": "Emite tu voto",
+        "markAxiom": "Mis axiomas"
       }
     },
     "voteButton": {
@@ -612,6 +613,14 @@
       "timeoutError": "La solicitud de voto expiró. Revisa tu conexión e inténtalo de nuevo.",
       "errorRoleLabel": "Error de voto",
       "noPendingProposal": "No hay una propuesta pendiente en esta faceta."
+    },
+    "axiomMarkButton": {
+      "label": "Marcar como mi axioma",
+      "inFlightLabel": "Marcando…",
+      "ariaLabel": "Marcar esta afirmación como uno de mis axiomas (base para mí)",
+      "wireError": "La marca de axioma falló: {message} ({code})",
+      "timeoutError": "La solicitud de marca de axioma expiró. Revisa tu conexión e inténtalo de nuevo.",
+      "errorRoleLabel": "Error de marca de axioma"
     }
   },
   "audience": {

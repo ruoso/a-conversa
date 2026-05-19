@@ -599,7 +599,8 @@
         "diagnostics": "Active diagnostics",
         "ownVote": "Your vote",
         "otherVotes": "Other participants",
-        "vote": "Cast your vote"
+        "vote": "Cast your vote",
+        "markAxiom": "My axioms"
       }
     },
     "voteButton": {
@@ -612,6 +613,14 @@
       "timeoutError": "The vote request timed out. Check your connection and try again.",
       "errorRoleLabel": "Vote error",
       "noPendingProposal": "No pending proposal on this facet."
+    },
+    "axiomMarkButton": {
+      "label": "Mark as my axiom",
+      "inFlightLabel": "Marking…",
+      "ariaLabel": "Mark this statement as one of my axioms (bedrock for me)",
+      "wireError": "Axiom-mark failed: {message} ({code})",
+      "timeoutError": "The axiom-mark request timed out. Check your connection and try again.",
+      "errorRoleLabel": "Axiom-mark error"
     }
   },
   "audience": {

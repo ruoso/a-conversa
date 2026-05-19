@@ -58,6 +58,7 @@ import { ParticipantChrome } from '../layout/ParticipantChrome';
 import { ParticipantStatusIndicator } from '../layout/ParticipantStatusIndicator';
 import { GraphView } from '../graph/GraphView';
 import { EntityDetailPanel } from '../detail';
+import { ParticipantAxiomMarkButton } from '../detail/ParticipantAxiomMarkButton';
 import { ParticipantVoteButtons } from '../detail/ParticipantVoteButtons';
 import { useSelectionStore } from '../stores/selectionStore';
 import {
@@ -247,10 +248,38 @@ function OperateRouteAuthenticatedBody({
   // component is responsible for the empty-state branch (no pending
   // proposals → renders nothing); we always pass it down when there's
   // a node/edge selection so the slot reservation stays alive.
+  //
+  // The axiom-mark button is node-only (edges have no axiom-mark
+  // semantic per `docs/methodology.md` §"Axioms / terminal values").
+  // We pre-compute `alreadyMarked` here so the button can suppress
+  // itself when the current participant already holds a committed
+  // mark on this node (the panel's `axiomMarks` attribution section
+  // surfaces the existing mark; no second affordance needed).
   const selected = useSelectionStore((s) => s.selected);
-  const voteSlot =
+  const voteButtons =
     selected !== null && (selected.kind === 'node' || selected.kind === 'edge') ? (
       <ParticipantVoteButtons events={events} entityKind={selected.kind} entityId={selected.id} />
+    ) : null;
+  const axiomMarkButton =
+    selected !== null && selected.kind === 'node'
+      ? (() => {
+          const marks = axiomMarkIndex.get(selected.id) ?? [];
+          const alreadyMarked = marks.some((mark) => mark.participantId === currentParticipantId);
+          return (
+            <ParticipantAxiomMarkButton
+              nodeId={selected.id}
+              currentParticipantId={currentParticipantId}
+              alreadyMarked={alreadyMarked}
+            />
+          );
+        })()
+      : null;
+  const actionSlot =
+    voteButtons !== null || axiomMarkButton !== null ? (
+      <div className="flex flex-col gap-3">
+        {voteButtons}
+        {axiomMarkButton}
+      </div>
     ) : undefined;
 
   return (
@@ -280,7 +309,7 @@ function OperateRouteAuthenticatedBody({
         edgeAnnotationIndex={edgeAnnotationIndex}
         ownVoteIndex={ownVoteIndex}
         othersVoteIndex={othersVoteIndex}
-        actionSlot={voteSlot}
+        actionSlot={actionSlot}
       />
     </div>
   );
