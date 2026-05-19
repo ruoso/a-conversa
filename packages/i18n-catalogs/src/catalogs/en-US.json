@@ -315,6 +315,29 @@
         "illegalStateTransition": "The target entity is no longer visible and cannot be annotated"
       }
     },
+    "editWordingAction": {
+      "submenu": {
+        "header": "Edit wording",
+        "wordingLabel": "New wording",
+        "editKindLegend": "Edit kind",
+        "reword": {
+          "label": "Reword",
+          "description": "Same statement, clearer phrasing — preserves the node."
+        },
+        "restructure": {
+          "label": "Restructure",
+          "description": "Meaningfully different statement — supersedes the original."
+        },
+        "submitLabel": "Propose edit",
+        "inFlightLabel": "Proposing edit…"
+      },
+      "errorBanner": {
+        "timeout": "The edit request timed out — try again",
+        "unknown": "Could not propose the edit — please retry",
+        "targetNotFound": "The target node no longer exists — it may have been superseded",
+        "illegalStateTransition": "Cannot edit this wording right now — another edit / decompose / split may be pending"
+      }
+    },
     "decompose": {
       "exit": {
         "ariaLabel": "Exit decompose mode",
@@ -507,6 +530,7 @@
         "proposeVote": "Propose vote",
         "proposeDecompose": "Propose decompose",
         "proposeInterpretiveSplit": "Propose interpretive split",
+        "proposeEditWording": "Edit wording",
         "runOperationalization": "Run operationalization test",
         "runWarrantElicitation": "Elicit warrant",
         "proposeMetaDisagreement": "Propose meta-disagreement",

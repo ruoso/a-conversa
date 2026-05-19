@@ -77,6 +77,7 @@ import { useWsStore, type WsState } from '../ws/wsStore.js';
 import { AxiomMarkSubmenu } from '../layout/AxiomMarkSubmenu.js';
 import { AnnotateSubmenu } from '../layout/AnnotateSubmenu.js';
 import type { AnnotateTargetKind } from '../layout/useAnnotateAction.js';
+import { EditWordingSubmenu } from '../layout/EditWordingSubmenu.js';
 import { STATEMENT_NODE_TYPE, StatementNode, type StatementNodeData } from './StatementNode.js';
 import { edgeTypes } from './edgeTypes.js';
 import { GraphContextMenu, type MenuItem } from './GraphContextMenu.js';
@@ -268,6 +269,7 @@ export function buildNodeMenuItems(
   onEnterWarrantElicitationMode?: (nodeId: string) => void,
   disabledRunWarrantElicitationTest?: boolean,
   onOpenAnnotateSubmenu?: () => void,
+  onOpenEditWordingSubmenu?: () => void,
 ): readonly MenuItem[] {
   return [
     {
@@ -290,6 +292,18 @@ export function buildNodeMenuItems(
         target.kind === 'node' && target.id !== null && onEnterInterpretiveSplitMode
           ? () => onEnterInterpretiveSplitMode(target.id as string)
           : () => actionStub('propose-interpretive-split', target),
+    },
+    {
+      // Refinement: edit-wording submenu (mod_edit_wording_action). Same
+      // `onOpenSubmenu?` shape as the axiom-mark seam — the canvas
+      // threads in a handler that flips its `editWordingSubmenu` state
+      // to non-null; the parent menu's `propose-edit-wording` item then
+      // opens the `<EditWordingSubmenu>` at the cursor. When omitted
+      // (direct unit-test invocations), the legacy `actionStub` runs so
+      // the existing factory-shape cases keep their stub-fire posture.
+      id: 'propose-edit-wording',
+      labelKey: 'moderator.contextMenu.node.proposeEditWording',
+      onSelect: onOpenEditWordingSubmenu ?? (() => actionStub('propose-edit-wording', target)),
     },
     {
       id: 'run-operationalization-test',
@@ -713,11 +727,7 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
     readonly y: number;
   } | null>(null);
   const closeAxiomMarkSubmenu = useCallback(() => setAxiomMarkSubmenu(null), []);
-  // Annotate submenu state — `null` when the per-target annotate
-  // submenu is not open. Set when a node OR edge menu's `annotate`
-  // item is selected; cleared by the submenu's `onClose` (outside-
-  // click / Escape / successful submit). Sibling render to the parent
-  // context menu (same posture as the axiom-mark submenu).
+  // Annotate submenu state.
   const [annotateSubmenu, setAnnotateSubmenu] = useState<{
     readonly targetId: string;
     readonly targetKind: AnnotateTargetKind;
@@ -725,6 +735,14 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
     readonly y: number;
   } | null>(null);
   const closeAnnotateSubmenu = useCallback(() => setAnnotateSubmenu(null), []);
+  // Edit-wording submenu state.
+  const [editWordingSubmenu, setEditWordingSubmenu] = useState<{
+    readonly nodeId: string;
+    readonly x: number;
+    readonly y: number;
+    readonly currentWording: string;
+  } | null>(null);
+  const closeEditWordingSubmenu = useCallback(() => setEditWordingSubmenu(null), []);
   // Stable mode-entry callback for the node context menu's
   // `propose-decompose` item. Dispatches to the global capture store
   // (no canvas-local state — decompose-mode lives on `useCaptureStore`).
@@ -778,6 +796,7 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
     // submenu from a prior gesture before opening the new parent menu.
     setAxiomMarkSubmenu(null);
     setAnnotateSubmenu(null);
+    setEditWordingSubmenu(null);
     setContextMenu({
       target: { kind: 'node', id: node.id },
       x: event.clientX,
@@ -789,6 +808,7 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
     useSelectionStore.getState().select({ kind: 'edge', id: edge.id });
     setAxiomMarkSubmenu(null);
     setAnnotateSubmenu(null);
+    setEditWordingSubmenu(null);
     setContextMenu({
       target: { kind: 'edge', id: edge.id },
       x: event.clientX,
@@ -799,6 +819,7 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
     event.preventDefault();
     setAxiomMarkSubmenu(null);
     setAnnotateSubmenu(null);
+    setEditWordingSubmenu(null);
     setContextMenu({
       target: { kind: 'pane', id: null },
       x: event.clientX,
@@ -1090,17 +1111,24 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
         disabledRunWarrantElicitationTest,
         () => {
           // Open the annotate submenu against the right-clicked node.
-          // Same sibling-submenu posture as the axiom-mark submenu —
-          // the parent menu's close-path runs synchronously right
-          // after this `onSelect`; we set the submenu state inside
-          // the same React commit so the submenu mounts on the next
-          // render alongside the closed parent.
           if (nodeIdForSubmenu === null) return;
           setAnnotateSubmenu({
             targetId: nodeIdForSubmenu,
             targetKind: 'node',
             x: submenuX + 16,
             y: submenuY + 16,
+          });
+        },
+        () => {
+          // Open the edit-wording submenu at a slight inset; the
+          // textarea pre-fills with the current wording.
+          if (nodeIdForSubmenu === null) return;
+          const currentWording = targetNode?.data.wording ?? '';
+          setEditWordingSubmenu({
+            nodeId: nodeIdForSubmenu,
+            x: submenuX + 16,
+            y: submenuY + 16,
+            currentWording,
           });
         },
       );
@@ -1194,6 +1222,15 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
           x={annotateSubmenu.x}
           y={annotateSubmenu.y}
           onClose={closeAnnotateSubmenu}
+        />
+      ) : null}
+      {editWordingSubmenu !== null ? (
+        <EditWordingSubmenu
+          nodeId={editWordingSubmenu.nodeId}
+          x={editWordingSubmenu.x}
+          y={editWordingSubmenu.y}
+          currentWording={editWordingSubmenu.currentWording}
+          onClose={closeEditWordingSubmenu}
         />
       ) : null}
     </div>

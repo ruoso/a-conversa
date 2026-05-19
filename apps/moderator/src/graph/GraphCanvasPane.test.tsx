@@ -1000,12 +1000,13 @@ describe('GraphCanvasPane — selection visual layer (mod_selection)', () => {
 // downstream tasks that replace each stub with a real handler can swap
 // the `onSelect` body without changing this contract.
 describe('GraphCanvasPane — context-menu item factories (mod_context_menus)', () => {
-  it('buildNodeMenuItems returns the eight node-scope actions in order (run-warrant-elicitation-test lands between run-operationalization-test and propose-meta-disagreement per mod_warrant_elicitation_mode Decision §D1)', () => {
+  it('buildNodeMenuItems returns the nine node-scope actions in order (propose-edit-wording lands between propose-interpretive-split and run-operationalization-test per mod_edit_wording_action)', () => {
     const items = buildNodeMenuItems({ kind: 'node', id: NODE_A });
     expect(items.map((it) => it.id)).toEqual([
       'propose-vote',
       'propose-decompose',
       'propose-interpretive-split',
+      'propose-edit-wording',
       'run-operationalization-test',
       'run-warrant-elicitation-test',
       'propose-meta-disagreement',
@@ -1016,6 +1017,7 @@ describe('GraphCanvasPane — context-menu item factories (mod_context_menus)', 
       'moderator.contextMenu.node.proposeVote',
       'moderator.contextMenu.node.proposeDecompose',
       'moderator.contextMenu.node.proposeInterpretiveSplit',
+      'moderator.contextMenu.node.proposeEditWording',
       'moderator.contextMenu.node.runOperationalization',
       'moderator.contextMenu.node.runWarrantElicitation',
       'moderator.contextMenu.node.proposeMetaDisagreement',
@@ -1070,9 +1072,9 @@ describe('GraphCanvasPane — context-menu item factories (mod_context_menus)', 
       for (const item of buildPaneMenuItems({ kind: 'pane', id: null })) {
         expect(() => item.onSelect()).not.toThrow();
       }
-      // 8 + 3 + 1 = 12 stub fires (the node menu grew by the
-      // run-warrant-elicitation-test item — mod_warrant_elicitation_mode).
-      expect(infoSpy).toHaveBeenCalledTimes(12);
+      // 9 + 3 + 1 = 13 stub fires (the node menu grew by the
+      // propose-edit-wording item — mod_edit_wording_action).
+      expect(infoSpy).toHaveBeenCalledTimes(13);
     } finally {
       infoSpy.mockRestore();
     }

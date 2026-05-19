@@ -315,6 +315,29 @@
         "illegalStateTransition": "A entidade alvo não está mais visível e não pode ser anotada"
       }
     },
+    "editWordingAction": {
+      "submenu": {
+        "header": "Editar redação",
+        "wordingLabel": "Nova redação",
+        "editKindLegend": "Tipo de edição",
+        "reword": {
+          "label": "Reformular",
+          "description": "Mesma afirmação, fraseado mais claro — preserva o nó."
+        },
+        "restructure": {
+          "label": "Reestruturar",
+          "description": "Afirmação significativamente diferente — substitui a original."
+        },
+        "submitLabel": "Propor edição",
+        "inFlightLabel": "Propondo edição…"
+      },
+      "errorBanner": {
+        "timeout": "A solicitação de edição expirou — tente novamente",
+        "unknown": "Não foi possível propor a edição — por favor tente novamente",
+        "targetNotFound": "O nó alvo não existe mais — pode ter sido substituído",
+        "illegalStateTransition": "Não é possível editar esta redação agora — outra edição / decomposição / divisão pode estar pendente"
+      }
+    },
     "decompose": {
       "exit": {
         "ariaLabel": "Sair do modo de decomposição",
@@ -507,6 +530,7 @@
         "proposeVote": "Propor votação",
         "proposeDecompose": "Propor decomposição",
         "proposeInterpretiveSplit": "Propor divisão interpretativa",
+        "proposeEditWording": "Editar redação",
         "runOperationalization": "Executar teste de operacionalização",
         "runWarrantElicitation": "Eliciar a garantia",
         "proposeMetaDisagreement": "Propor meta-desacordo",
