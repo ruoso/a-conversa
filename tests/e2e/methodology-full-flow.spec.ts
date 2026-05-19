@@ -514,18 +514,51 @@ test.describe
   // Phase 6 — decomposition (split a node into components)
   // ──────────────────────────────────────────────────────────────
 
-  test.fixme('Phase 6.1: alice proposes a 2-row decomposition of N1 via the right-click context menu', () => {
-    // BLOCKED: decompose proposal validator requires N1 to exist
-    // server-side (committed). Depends on Phase 4.1.
-    //
-    // Once unblocked: alice right-clicks N1 on her canvas → context
-    // menu opens → click "Propose decompose" item → decompose-grid
-    // mounts with two empty rows. Fill row 0 + classification, row 1
-    // + classification, click propose-decomposition-action-button.
+  test('Phase 6.1: alice proposes a 2-row decomposition of N1 via the right-click context menu', async () => {
+    const n1 = _n1Id!;
+    // Nudge the layout — every new propose adds a card that the
+    // dagre layout doesn't re-run automatically; without a tidy-up
+    // pass, cards stack and the click hits the wrong card.
+    await alicePage.getByTestId('graph-tidy-up-button').click();
+    // Right-click N1's wording cell to open the context menu.
+    await alicePage.getByTestId(`statement-node-wording-${n1}`).click({ button: 'right' });
+    await expect(alicePage.getByTestId('graph-context-menu')).toBeVisible();
+    await alicePage.getByTestId('graph-context-menu-item-propose-decompose').click();
+    await expect(alicePage.getByTestId('decompose-components-grid')).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(alicePage.getByTestId('mode-banner')).toHaveAttribute('data-mode', 'decompose');
+
+    // Two components — the classic fact/fact decomposition from the
+    // methodology doc's worked example (Wolves → reduced browsing →
+    // restored aspen recruitment).
+    await alicePage
+      .getByTestId('decompose-component-text-0')
+      .fill('Wolf reintroduction reduced elk browsing pressure.');
+    await alicePage.getByTestId('decompose-component-classification-0-button-fact').click();
+    await alicePage
+      .getByTestId('decompose-component-text-1')
+      .fill('Reduced elk browsing pressure restored aspen recruitment.');
+    await alicePage.getByTestId('decompose-component-classification-1-button-fact').click();
+
+    await alicePage.getByTestId('propose-decomposition-action-button').click();
+
+    // The mode banner returns to idle once the propose envelope's ack
+    // lands (the grid unmounts; the capture pane returns).
+    await expect(alicePage.getByTestId('mode-banner')).toHaveAttribute('data-mode', 'idle', {
+      timeout: 15_000,
+    });
   });
 
   test.fixme('Phase 6.2: ben + maria vote agree on the decomposition; alice commits; N1 is replaced by two component nodes', () => {
-    // BLOCKED: depends on Phase 6.1 (proposal landing) + participant vote UI.
+    // BLOCKED: the `decompose` proposal sub-kind is structural — per
+    // ParticipantVoteButtons.tsx:122, `proposalFacetTarget` returns
+    // null for decompose, so the participant vote UI does NOT render
+    // an agree button for it. And the server's commit handler rejects
+    // structural sub-kinds with `illegal-state-transition` (see
+    // apps/server/src/methodology/handlers/commit.ts:148 — "structural
+    // sub-kind ... deferred to a sibling"). The full
+    // decomposition_logic land is pending.
   });
 
   // ──────────────────────────────────────────────────────────────
