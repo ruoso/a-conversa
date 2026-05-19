@@ -238,18 +238,25 @@ export async function loginAs(
   const deadlineMs = Date.now() + timeoutMs;
 
   // 0. Storage-state short-circuit. The setup project
-  //    (`tests/e2e/global-auth.setup.ts`) drives a single OIDC dance
-  //    per project and writes the resulting cookie jar to
-  //    `AUTH_STORAGE_STATE_PATH`; every consuming project loads that
-  //    file as its `storageState`, so the page's cookie jar already
-  //    carries `aconversa-session` before the first navigation. The
-  //    `/api/auth/me === 200` probe is the canonical "the platform
-  //    accepts this cookie" check; on a hit we skip the dance entirely
-  //    (avoids hammering Authelia's per-IP rate limiter, which is what
-  //    surfaced as `OAUTH_RESPONSE_IS_NOT_CONFORM` → 500 callback →
-  //    bogus `auth-pending-cookie-invalid` failure in the original
-  //    flake). On a miss (no storage state, expired cookie, or a
-  //    different user wanted) we fall through to the full dance.
+  //    (`tests/e2e/global-auth.setup.ts`) drives one OIDC dance per
+  //    dev user and writes the resulting cookie jars to
+  //    `authStorageStatePath(<username>)`; every consuming project
+  //    loads alice's jar at project-level so the page's cookie jar
+  //    already carries `aconversa-session` for alice before the first
+  //    navigation. The `/api/auth/me === 200` probe is the canonical
+  //    "the platform accepts this cookie" check; on a hit we skip the
+  //    dance entirely (avoids hammering Authelia's per-IP rate
+  //    limiter, which is what surfaced as `OAUTH_RESPONSE_IS_NOT_CONFORM`
+  //    → 500 callback → bogus `auth-pending-cookie-invalid` failure
+  //    in the original flake). On a miss (no storage state, expired
+  //    cookie, or a different user wanted) we fall through to the
+  //    full OIDC dance below. Tests that want to drive a fresh non-
+  //    default user without an OIDC dance should pre-seed the jar
+  //    explicitly via `authedContext(browser, username)` rather than
+  //    relying on `loginAs` to short-circuit — `loginAs` runs the
+  //    real dance for any cookie-free context so the resulting JWT
+  //    is the test's own (and its eventual logout doesn't denylist
+  //    the shared bootstrap JTI).
   const probe = await page.request.get('/api/auth/me');
   if (probe.status() === 200) {
     const body = (await probe.json()) as { userId: string; screenName: string };

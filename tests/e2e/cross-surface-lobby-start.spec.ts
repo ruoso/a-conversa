@@ -38,15 +38,18 @@
 // spec adds the third (moderator) context that closes the loop with
 // the Enter-session click.
 //
-// **OIDC dance budget.** Three fresh OIDC dances per CI run (alice for
-// the moderator context, ben for debater-A, maria for debater-B). The
-// sibling `participant-lobby.spec.ts` already pays four; one more for
-// the moderator's start-the-debate click is within the Authelia rate-
-// limit budget.
+// **OIDC dance budget.** Zero per-test dances. Each per-user context
+// loads the pre-seeded jar `global-auth.setup.ts` wrote during the
+// one-time bootstrap (via `authedContext(browser, username)`). The
+// historical "three fresh dances per run" model tripped Authelia's
+// per-IP rate limiter under parallel workers (the limiter response
+// surfaces as `OAUTH_RESPONSE_IS_NOT_CONFORM` inside
+// `apps/server/src/auth/flow.ts` → 500 on `/api/auth/callback`); pre-
+// seeded jars confine all OIDC traffic to the serial setup spec.
 
-import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
-import { loginAs } from './fixtures/auth';
+import { authedContext } from './fixtures/authed-context';
 
 const TOPIC = 'Should universal basic income replace existing welfare programs? (cross-surface)';
 
@@ -71,42 +74,22 @@ async function createSession(page: Page): Promise<string> {
   return body.id;
 }
 
-/**
- * Allocate a fresh browser context with an empty cookie jar. The
- * project-level `setup-auth` storage state is explicitly overridden so
- * each context drives its own fresh OIDC dance — otherwise every
- * fresh context would inherit the bootstrap `alice` JWT, and any
- * logout would land that JWT on the server-side `auth_token_denylist`
- * and break every other test in the project. Mirrors the pattern used
- * in `participant-lobby.spec.ts:92-97` and
- * `participant-invite-acceptance.spec.ts:111-122`.
- */
-async function freshContext(browser: Browser): Promise<BrowserContext> {
-  return browser.newContext({
-    ignoreHTTPSErrors: true,
-    storageState: { cookies: [], origins: [] },
-  });
-}
-
 test.describe('Cross-surface lobby + start-debate gesture (three real browser contexts)', () => {
   test('alice (moderator) sees the Enter button enable as ben + maria join via their own contexts; clicking it navigates to the operate canvas', async ({
     browser,
   }) => {
     // ── Allocate all three contexts up-front so the `finally` teardown
-    //    is reliable even if an early step throws. Each gets an empty
-    //    cookie jar; `loginAs` will drive a fresh OIDC dance per
-    //    context. ────────────────────────────────────────────────────
-    const aliceContext = await freshContext(browser);
+    //    is reliable even if an early step throws. Each loads its own
+    //    pre-seeded jar — no per-test OIDC dance. ────────────────────
+    const aliceContext = await authedContext(browser, 'alice');
     const alicePage = await aliceContext.newPage();
-    const benContext = await freshContext(browser);
+    const benContext = await authedContext(browser, 'ben');
     const benPage = await benContext.newPage();
-    const mariaContext = await freshContext(browser);
+    const mariaContext = await authedContext(browser, 'maria');
     const mariaPage = await mariaContext.newPage();
 
     try {
-      // ── Step 1. Alice authenticates and creates a public session. ──
-      const alice = await loginAs(alicePage, { username: 'alice' });
-      expect(alice.screenName).toBe('alice');
+      // ── Step 1. Alice creates a public session. ────────────────────
       const sessionId = await createSession(alicePage);
 
       // ── Step 2. Alice lands on the moderator's invite/lobby view. ──
@@ -133,8 +116,6 @@ test.describe('Cross-surface lobby + start-debate gesture (three real browser co
       //    same construction at lines 168 + 216. Reading the input
       //    value would also work, but constructing is more robust to
       //    a future testid rename. ───────────────────────────────────
-      const ben = await loginAs(benPage, { username: 'ben' });
-      expect(ben.screenName).toBe('ben');
       await benPage.goto(`/p/sessions/${sessionId}/invite?role=debater-A`);
       await expect(benPage.getByTestId('route-invite-acceptance')).toBeVisible({
         timeout: 15_000,
@@ -150,8 +131,6 @@ test.describe('Cross-surface lobby + start-debate gesture (three real browser co
       });
 
       // ── Step 5. Maria (debater B) does the same in her own context. ─
-      const maria = await loginAs(mariaPage, { username: 'maria' });
-      expect(maria.screenName).toBe('maria');
       await mariaPage.goto(`/p/sessions/${sessionId}/invite?role=debater-B`);
       await expect(mariaPage.getByTestId('route-invite-acceptance')).toBeVisible({
         timeout: 15_000,
@@ -200,14 +179,25 @@ test.describe('Cross-surface lobby + start-debate gesture (three real browser co
       // — M4 work pending. The URL + route testid prove the moderator
       // surface advanced to the operate stage.
 
-      // ── Step 8. Ben + maria stay in their lobby views — correct M3
-      //    behavior; they don't transition to a live-debate view until
-      //    M5 lands it. This is a regression guard, not a feature
-      //    assertion: if a future change accidentally couples the
-      //    moderator's enter click to a participant-side route change,
-      //    this assertion fails distinctly from the other steps. ────
-      expect(benPage.url()).toContain(`/p/sessions/${sessionId}/lobby`);
-      expect(mariaPage.url()).toContain(`/p/sessions/${sessionId}/lobby`);
+      // ── Step 8. Ben + maria auto-navigate from their lobbies to the
+      //    operate route — the coupling the original test guarded
+      //    against has since become the intended behavior. Per
+      //    `part_session_start_handoff_dedicated_event` (refinement
+      //    `tasks/refinements/participant-ui/part_session_start_handoff_dedicated_event.md`,
+      //    commit `d8d8d26`), alice's Enter click awaits
+      //    `POST /api/sessions/:id/start` which emits a
+      //    `session-mode-changed` event with `new_mode === 'operate'`;
+      //    each participant lobby's `useEffect` watches for that
+      //    event and `replace`-navigates to `/p/sessions/${id}` so the
+      //    debater is already on the operate route when the first
+      //    propose lands. This assertion now pins the auto-handoff
+      //    contract end-to-end across three real browser contexts. ──
+      await benPage.waitForURL((url) => url.pathname === `/p/sessions/${sessionId}`, {
+        timeout: 15_000,
+      });
+      await mariaPage.waitForURL((url) => url.pathname === `/p/sessions/${sessionId}`, {
+        timeout: 15_000,
+      });
     } finally {
       await mariaContext.close();
       await benContext.close();

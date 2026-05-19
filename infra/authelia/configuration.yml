@@ -28,6 +28,36 @@ server:
   tls:
     certificate: /config/tls/cert.pem
     key: /config/tls/key.pem
+  # Endpoint rate-limits. Authelia's defaults are tuned for a single
+  # human user against a shared deployment; the Playwright e2e suite
+  # opens ~12 setup-auth OIDC dances + dozens of multi-context
+  # scenarios from a single source IP (the test host), which trips
+  # the default `/api/oidc/token` bucket and surfaces inside
+  # `openid-client` as `OAUTH_RESPONSE_IS_NOT_CONFORM` → 500 callback
+  # on the application server.
+  #
+  # **`enable: false` does not work for the OIDC token endpoint** in
+  # Authelia v4.39. The route registration at
+  # `internal/server/handlers.go` wires `NewIPRateLimit(...)` directly
+  # rather than the `NewRateLimit(...)` variant that honors the
+  # enable flag — so the only way to keep the buckets from
+  # triggering is to override them with values high enough that the
+  # e2e workload never trips them. The buckets below are sized for
+  # ~12 setup dances + ~30 runtime dances per `make up` cycle, with
+  # a 100× safety margin on top. The dev compose stack is not
+  # internet-exposed, so the security floor the default buckets
+  # enforce is moot here. Production Authelia (ADR 0002) is a
+  # separate config and retains the upstream defaults.
+  endpoints:
+    rate_limits:
+      openid_connect_token:
+        buckets:
+          - period: '1 minute'
+            requests: 10000
+      openid_connect_pushed_authorization_request:
+        buckets:
+          - period: '1 minute'
+            requests: 10000
 
 log:
   level: info

@@ -32,23 +32,27 @@
 //      This second scenario IS the manual-smoke proof for
 //      `m_manual_lobby_smoke`.
 //
-// **Why two contexts.** A second `browser.newContext()` gives the
-// second debater an independent cookie jar + WS connection, faithful
-// to the manual chain a human moderator would drive (open two
-// incognito windows, log in as two different debaters). The single-
-// context fallback (driving the second claim via `page.request.post`)
-// retains the participant-side WS-live-update pin but is less
-// faithful to the user flow.
+// **Why multiple contexts.** Each `browser.newContext()` gives the
+// driven user an independent cookie jar + WS connection, faithful to
+// the manual chain a human moderator would drive (open two incognito
+// windows, log in as two different debaters). Both scenarios use
+// `authedContext(browser, username)` to load the pre-seeded jar for
+// each user — no per-test OIDC dance.
 //
-// **OIDC dance budget.** Per the refinement's Decision §7 the
-// scenarios cost 4 fresh OIDC dances per CI run (alice for session-
-// create in each scenario, ben for debater-A in each scenario, plus
-// maria once for debater-B in scenario 2). Within the Authelia rate-
-// limit budget; the invite-acceptance spec already pays 2 dances.
+// **OIDC dance budget.** Zero per-test dances. Both scenarios open
+// their per-user contexts via `authedContext(browser, username)` which
+// loads the pre-seeded jar `global-auth.setup.ts` wrote during the
+// one-time bootstrap. The historical "alice + ben + maria each pay a
+// fresh dance" model tripped Authelia's per-IP rate limiter under
+// parallel workers (the limiter response surfaces as
+// `OAUTH_RESPONSE_IS_NOT_CONFORM` inside `apps/server/src/auth/flow.ts`
+// → 500 on `/api/auth/callback`); pre-seeded jars confine all OIDC
+// traffic to the serial setup spec and let cross-context tests run
+// reliably under any worker count.
 
-import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
-import { loginAs } from './fixtures/auth';
+import { authedContext } from './fixtures/authed-context';
 
 /**
  * Create a session via the same-origin API. Mirrors what the moderator
@@ -69,97 +73,78 @@ async function createSession(
   return body.id;
 }
 
-/**
- * Log the current user out and drop every cookie so the next
- * `loginAs` drives a fresh OIDC dance. Mirrors the invite-acceptance
- * spec's helper at `participant-invite-acceptance.spec.ts:85-91`.
- */
-async function logoutAndClearAllCookies(page: Page): Promise<void> {
-  const response = await page.request.post('/api/auth/logout');
-  expect([200, 204], 'logoutAndClearAllCookies: unexpected status').toContain(response.status());
-  await page.context().clearCookies();
-}
-
-/**
- * Allocate a fresh browser context with an empty cookie jar. The
- * `setup-auth` storage state from the project-level `use.storageState`
- * is explicitly overridden — without that override, every fresh
- * context would inherit the bootstrap alice JWT and our logout step
- * would land it on the server-side `auth_token_denylist`, breaking
- * every other test in the project. Mirrors the invite-acceptance
- * spec's pattern at `participant-invite-acceptance.spec.ts:111-120`.
- */
-async function freshContext(browser: Browser): Promise<BrowserContext> {
-  return browser.newContext({
-    ignoreHTTPSErrors: true,
-    storageState: { cookies: [], origins: [] },
-  });
-}
-
 test.describe('Participant lobby route — single-debater happy path', () => {
   test('alice creates a public session, ben claims debater-A, lands on the lobby with topic + moderator + own row + waiting hint', async ({
     browser,
   }) => {
-    const context = await freshContext(browser);
-    const page = await context.newPage();
+    const TOPIC = 'Should universal basic income replace existing welfare programs?';
+
+    // ── Context 0: alice (pre-seeded jar) creates the session. ──────
+    const aliceContext = await authedContext(browser, 'alice');
+    const alicePage = await aliceContext.newPage();
+    let sessionId: string;
     try {
-      const TOPIC = 'Should universal basic income replace existing welfare programs?';
+      const sessionResponse = await alicePage.request.get('/api/auth/me');
+      expect(sessionResponse.status()).toBe(200);
+      const aliceBody = (await sessionResponse.json()) as { screenName: string };
+      expect(aliceBody.screenName).toBe('alice');
+      sessionId = await createSession(alicePage, { topic: TOPIC, privacy: 'public' });
+    } finally {
+      await aliceContext.close();
+    }
 
-      // 1. Alice authenticates and creates a public session.
-      const alice = await loginAs(page, { username: 'alice' });
-      expect(alice.screenName).toBe('alice');
-      const sessionId = await createSession(page, { topic: TOPIC, privacy: 'public' });
+    // ── Context 1: ben (pre-seeded jar) follows the debater-A invite. ─
+    const benContext = await authedContext(browser, 'ben');
+    const benPage = await benContext.newPage();
+    try {
+      await benPage.goto(`/p/sessions/${sessionId}/invite?role=debater-A`);
 
-      // 2. Alice logs out + clears cookies so the next dance is fresh.
-      await logoutAndClearAllCookies(page);
-
-      // 3. Ben authenticates and follows the debater-A invite URL.
-      const ben = await loginAs(page, { username: 'ben' });
-      expect(ben.screenName).toBe('ben');
-      await page.goto(`/p/sessions/${sessionId}/invite?role=debater-A`);
-
-      // 4. Ben clicks join; the invite route POSTs the claim and
-      //    navigates to the lobby URL.
-      await expect(page.getByTestId('route-invite-acceptance')).toBeVisible({
+      // Ben clicks join; the invite route POSTs the claim and
+      // navigates to the lobby URL.
+      await expect(benPage.getByTestId('route-invite-acceptance')).toBeVisible({
         timeout: 15_000,
       });
-      const joinButton = page.getByTestId('invite-acceptance-join-button');
+      const joinButton = benPage.getByTestId('invite-acceptance-join-button');
       await expect(joinButton).toBeEnabled();
       await joinButton.click();
-      await page.waitForURL((url) => url.pathname === `/p/sessions/${sessionId}/lobby`, {
+      await benPage.waitForURL((url) => url.pathname === `/p/sessions/${sessionId}/lobby`, {
         timeout: 15_000,
       });
 
-      // 5. The lobby renders with the route's stable testid.
-      await expect(page.getByTestId('route-lobby')).toBeVisible({ timeout: 15_000 });
+      // The lobby renders with the route's stable testid.
+      await expect(benPage.getByTestId('route-lobby')).toBeVisible({ timeout: 15_000 });
 
-      // 6. The session topic surfaces under the dedicated testid.
-      await expect(page.getByTestId('lobby-topic')).toContainText(TOPIC, {
+      // The session topic surfaces under the dedicated testid.
+      await expect(benPage.getByTestId('lobby-topic')).toContainText(TOPIC, {
         timeout: 15_000,
       });
 
-      // 7. The moderator row carries alice's screen name + the
-      //    Moderator badge.
-      await expect(page.getByTestId('lobby-participant-moderator-name')).toHaveText('alice', {
+      // The moderator row carries alice's screen name + the
+      // Moderator badge.
+      await expect(benPage.getByTestId('lobby-participant-moderator-name')).toHaveText('alice', {
         timeout: 15_000,
       });
-      await expect(page.getByTestId('lobby-participant-moderator-badge')).toHaveText('Moderator');
+      await expect(benPage.getByTestId('lobby-participant-moderator-badge')).toHaveText(
+        'Moderator',
+      );
 
-      // 8. Ben's row carries his screen name + the Debater A badge.
-      await expect(page.getByTestId('lobby-participant-debater-A-name')).toHaveText('ben', {
+      // Ben's row carries his screen name + the Debater A badge.
+      await expect(benPage.getByTestId('lobby-participant-debater-A-name')).toHaveText('ben', {
         timeout: 15_000,
       });
-      await expect(page.getByTestId('lobby-participant-debater-A-badge')).toHaveText('Debater A');
+      await expect(benPage.getByTestId('lobby-participant-debater-A-badge')).toHaveText(
+        'Debater A',
+      );
 
-      // 9. Debater B is missing → waiting hint references the missing
-      //    debater (the role label is the localized "Debater B" string).
-      await expect(page.getByTestId('lobby-waiting-for-debater')).toContainText('Debater B');
+      // Debater B is missing → waiting hint references the missing
+      // debater (the role label is the localized "Debater B" string).
+      await expect(benPage.getByTestId('lobby-waiting-for-debater')).toContainText('Debater B');
 
-      // 10. The both-debaters-present line is absent (debater-B
-      //     hasn't joined yet).
-      await expect(page.getByTestId('lobby-both-debaters-present')).toHaveCount(0);
+      // The both-debaters-present line is absent (debater-B
+      // hasn't joined yet).
+      await expect(benPage.getByTestId('lobby-both-debaters-present')).toHaveCount(0);
     } finally {
-      await context.close();
+      await benContext.close();
     }
   });
 });
@@ -171,29 +156,26 @@ test.describe('Participant lobby route — two-debater cross-context live update
     const TOPIC =
       'Should universal basic income replace existing welfare programs? (live-update scenario)';
 
-    // ── Context 0: alice creates the session + logs out. ────────────
-    const aliceContext = await freshContext(browser);
+    // ── Context 0: alice (pre-seeded jar) creates the session. ──────
+    const aliceContext = await authedContext(browser, 'alice');
     const alicePage = await aliceContext.newPage();
     let sessionId: string;
     try {
-      const alice = await loginAs(alicePage, { username: 'alice' });
-      expect(alice.screenName).toBe('alice');
       sessionId = await createSession(alicePage, { topic: TOPIC, privacy: 'public' });
     } finally {
       await aliceContext.close();
     }
 
-    // ── Context 1: ben claims debater-A and stays on the lobby. ─────
-    const benContext = await freshContext(browser);
+    // ── Context 1: ben (pre-seeded jar) claims debater-A and stays on
+    //    the lobby. ───────────────────────────────────────────────────
+    const benContext = await authedContext(browser, 'ben');
     const benPage = await benContext.newPage();
-    // ── Context 2: maria claims debater-B (allocated up-front so the
-    //    teardown is reliable in `finally`). ───────────────────────────
-    const mariaContext = await freshContext(browser);
+    // ── Context 2: maria (pre-seeded jar) claims debater-B (allocated
+    //    up-front so the teardown is reliable in `finally`). ─────────
+    const mariaContext = await authedContext(browser, 'maria');
     const mariaPage = await mariaContext.newPage();
     try {
-      // 1. Ben authenticates and claims debater-A.
-      const ben = await loginAs(benPage, { username: 'ben' });
-      expect(ben.screenName).toBe('ben');
+      // 1. Ben claims debater-A.
       await benPage.goto(`/p/sessions/${sessionId}/invite?role=debater-A`);
       await expect(benPage.getByTestId('route-invite-acceptance')).toBeVisible({
         timeout: 15_000,
@@ -213,9 +195,7 @@ test.describe('Participant lobby route — two-debater cross-context live update
       await expect(benPage.getByTestId('lobby-participant-debater-B')).toHaveCount(0);
       await expect(benPage.getByTestId('lobby-waiting-for-debater')).toContainText('Debater B');
 
-      // 3. Carol authenticates in her own context and claims debater-B.
-      const maria = await loginAs(mariaPage, { username: 'maria' });
-      expect(maria.screenName).toBe('maria');
+      // 3. Maria claims debater-B in her own context.
       await mariaPage.goto(`/p/sessions/${sessionId}/invite?role=debater-B`);
       await expect(mariaPage.getByTestId('route-invite-acceptance')).toBeVisible({
         timeout: 15_000,

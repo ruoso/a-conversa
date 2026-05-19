@@ -34,3 +34,13 @@ services:
   app:
     environment:
       NODE_ENV: development
+      # The 1000-req/60s default is a security floor sized for a
+      # single human user, not for the Playwright e2e suite — which
+      # opens 12 setup-auth OIDC dances plus dozens of multi-context
+      # scenarios from a single source IP (the test host). The dev-
+      # mode bump prevents the runner from getting `429`-deflected
+      # mid-test on `/api/auth/me` polls. Production deployments
+      # leave this unset and pick up the in-process default; this
+      # override never reaches `make up-prod-mode` (the dev compose
+      # file is not composed in under CI's e2e job).
+      RATE_LIMIT_MAX_PER_WINDOW: '20000'

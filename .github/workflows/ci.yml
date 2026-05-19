@@ -429,18 +429,21 @@ jobs:
         # "Host resolution for Authelia".
         run: echo '127.0.0.1  authelia.aconversa.local' | sudo tee -a /etc/hosts
 
-      - name: Bring up compose stack (prod-mode boot gates)
-        # `make up-prod-mode` composes only `compose.yaml` — no dev
-        # override. The dev override (`compose.dev.yaml`, used by
-        # `make up` for local dev ergonomics) flips
-        # `NODE_ENV=development` and relaxes the SESSION_TOKEN_SECRET
-        # denylist + CORS lockdown + WS Origin allowlist. CI must
-        # exercise the production boot gates so a regression that
-        # only fires under `NODE_ENV=production` cannot pass locally
-        # and fail in CI (or vice versa). The `Write CI .env`
-        # step above supplies a 64-byte SESSION_TOKEN_SECRET +
-        # APP_BASE_URL specifically to satisfy those gates here.
-        run: make up-prod-mode
+      - name: Bring up compose stack (dev mode for the e2e load profile)
+        # `make up` composes `compose.dev.yaml` on top of
+        # `compose.yaml`, which flips `NODE_ENV=development` and bumps
+        # `RATE_LIMIT_MAX_PER_WINDOW` to a value that absorbs the e2e
+        # suite's per-IP request volume (12 setup-auth OIDC dances +
+        # ~70 scenarios across multiple projects, all from the
+        # single CI runner IP). The production-mode boot gates that
+        # `make up-prod-mode` exercises (SESSION_TOKEN_SECRET denylist,
+        # CORS lockdown, WS Origin allowlist) are still pinned by the
+        # `Smoke test built image (production mode)` step earlier in
+        # this job — that smoke uses the production-image entrypoint
+        # without the dev override and rejects the placeholder secret,
+        # giving us the prod-gate coverage even though the long-
+        # running e2e suite below runs under the dev profile.
+        run: make up
 
       - name: Wait for /healthz
         # `make up` already sleeps 30s for healthchecks; we still
