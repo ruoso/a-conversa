@@ -84,6 +84,26 @@ export interface PendingProposal {
   payload: ProposalPayload;
   proposer: string | null;
   proposedAt: string;
+  /**
+   * Per-participant vote state for structural proposal sub-kinds
+   * (`decompose`, `interpretive-split`, `axiom-mark`, `meta-move`,
+   * `break-edge`, `amend-node`, `annotate`). The four facet-targeting
+   * sub-kinds (`classify-node`, `set-node-substance`,
+   * `set-edge-substance`, `edit-wording`) project per-participant votes
+   * onto the target facet's `perParticipant` map instead, so this map
+   * is unused for them.
+   *
+   * Populated by `handleVote` when the projection's
+   * `firstFacetTargetForVote` wrapper returns `null` (i.e. the proposal
+   * is structural). Consulted by the methodology engine's `commit`
+   * handler to evaluate the unanimous-agree rule across current
+   * participants for structural sub-kinds.
+   *
+   * Owned by the structural-sub-kind commit logic — see
+   * `apps/server/src/methodology/handlers/commit.ts` for the
+   * unanimity walk against this map.
+   */
+  perParticipantVotes: Map<string, PerParticipantFacetState>;
 }
 
 export interface ProjectedNode {

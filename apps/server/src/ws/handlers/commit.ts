@@ -240,27 +240,33 @@ export function buildCommitHandler(
         // `non-moderator → not-a-moderator` unit test.
         throw rejectedToApiError(result);
       }
-      // The engine emits exactly ONE `commit` event for a commit
-      // action today (per `methodology/handlers/commit.ts` — the
-      // returned `events: [commitEvent]`). The read-side projection's
-      // `handleCommit` does the facet-marking + proposal-state
-      // transition, but that runs on every subscriber's local
-      // incremental `applyEvent` against the broadcast — no additional
-      // wire frames here. Defensive check anyway in case a future
-      // engine arm drifts.
-      if (result.events.length !== 1) {
+      // The engine emits at least one event per commit action: the
+      // `commit` envelope. Some structural sub-kinds (`annotate`)
+      // additionally emit paired entity-creation events that precede
+      // the commit envelope so the incremental `applyEvent` projects
+      // the new entity BEFORE `handleCommit` runs. The commit envelope
+      // is always the LAST event in the returned list (its sequence is
+      // `action.sequence + structuralEvents.length`); the WS ack
+      // carries that last event's id so the moderator's request-
+      // response correlation lands on the commit envelope.
+      if (result.events.length === 0) {
+        throw new Error('ws-commit: engine produced 0 events (expected at least 1)');
+      }
+      const commitEnvelopeEvent = result.events[result.events.length - 1]!;
+      if (commitEnvelopeEvent.kind !== 'commit') {
         throw new Error(
-          `ws-commit: engine produced ${String(result.events.length)} events (expected 1)`,
+          `ws-commit: last emitted event is '${commitEnvelopeEvent.kind}' (expected 'commit')`,
         );
       }
-      const emitted = result.events[0]!;
 
       // 6. Schema-on-write — every row in `session_events` is
-      //    structurally valid by construction (ADR 0021).
-      validateEvent(emitted);
-
-      // 7. INSERT via the centralized append helper.
-      appendedEvents.push(await appendSessionEvent(client, emitted));
+      //    structurally valid by construction (ADR 0021). Validate +
+      //    append each engine-emitted event in order so subscribers
+      //    see structural events before the `commit` envelope.
+      for (const emitted of result.events) {
+        validateEvent(emitted);
+        appendedEvents.push(await appendSessionEvent(client, emitted));
+      }
 
       return eventId;
     });
@@ -272,13 +278,19 @@ export function buildCommitHandler(
     for (const evt of appendedEvents) {
       opts.broadcast.emit({ event: evt });
     }
+    // The `commit` envelope is always the LAST event in `appendedEvents`
+    // (the engine emits any structural fan-out before the commit
+    // envelope, mirroring the propose handler's structural-then-envelope
+    // shape). The ack carries the commit envelope's sequence so the
+    // client's request-response correlation lands on the commit.
+    const commitEnvelope = appendedEvents[appendedEvents.length - 1]!;
     const ack: WsEnvelope<'committed'> = {
       type: 'committed',
       id: randomUUID(),
       inResponseTo: envelope.id,
       payload: {
         sessionId,
-        sequence: appendedEvents[0]!.sequence,
+        sequence: commitEnvelope.sequence,
         eventId: commitEventId,
       },
     };

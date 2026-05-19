@@ -374,6 +374,7 @@ function handleProposal(
     payload: payload.proposal,
     proposer,
     proposedAt,
+    perParticipantVotes: new Map(),
   };
   projection.addPendingProposal(pending);
   changes.push({ kind: 'pending-proposal-added', proposalId: proposalEventId });
@@ -546,6 +547,20 @@ function handleVote(
       proposalEventId: payload.proposal_id,
       votedAt: payload.voted_at,
     });
+    return;
+  }
+  // Structural sub-kind — no per-facet target. Record the vote on the
+  // pending proposal's `perParticipantVotes` map so the commit handler's
+  // unanimous-agree walk has a state to consult. The four facet-targeting
+  // sub-kinds returned a non-null target above and never reach this branch.
+  // Withdraw / dispute / re-vote all overwrite the entry in place, matching
+  // the per-facet semantics on the four facet-targeting sub-kinds.
+  if (pending !== undefined) {
+    pending.perParticipantVotes.set(payload.participant, {
+      vote,
+      proposalEventId: payload.proposal_id,
+      votedAt: payload.voted_at,
+    });
   }
 }
 
@@ -560,7 +575,7 @@ function handleCommit(
       `commit: proposal ${payload.proposal_id} is not pending in this projection`,
     );
   }
-  applyCommittedProposal(projection, pending.payload, changes);
+  applyCommittedProposal(projection, pending.payload, payload, changes);
 
   // Record the commit on the affected facet(s)'
   // `committedProposalEventId` and `committedAt` so `deriveFacetStatus`
@@ -679,6 +694,7 @@ function handleSnapshotCreated(
 function applyCommittedProposal(
   projection: Projection,
   proposal: ProposalPayload,
+  commit: CommitPayload,
   changes: ProjectionChange[],
 ): void {
   switch (proposal.kind) {
@@ -844,8 +860,8 @@ function applyCommittedProposal(
         throw new ReplayError(`commit/axiom-mark: node ${proposal.node_id} not present`);
       }
       node.axiomMarks.set(proposal.participant, {
-        proposalEventId: '',
-        markedAt: '',
+        proposalEventId: commit.proposal_id,
+        markedAt: commit.committed_at,
       });
       changes.push({
         kind: 'axiom-mark-added',

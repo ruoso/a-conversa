@@ -431,55 +431,268 @@ describe('commit handler — participant-leaves-after-voting semantics', () => {
 });
 
 // ---------------------------------------------------------------
-// Structural-sub-kind boundary.
+// Structural-sub-kind commits.
 //
-// `decompose` (and the other structural sub-kinds) doesn't have per-
-// participant vote state on the projection — `handleVote` writes the
-// `perParticipant` map only for the four facet-targeting sub-kinds.
-// commit_logic defers to the sibling sub-kind handler and returns
-// `'illegal-state-transition'` with a sub-kind-naming detail.
+// Per docs/methodology.md every change to the graph requires unanimous
+// agreement — structural moves (decompose, interpretive-split,
+// axiom-mark, annotate) are not special-cased. The commit handler
+// accepts these sub-kinds when every current participant has voted
+// agree on the pending proposal (`perParticipantVotes` populated by
+// `handleVote`).
+//
+// Axiom-mark is special: the participant whose bedrock is declared
+// doesn't vote separately — their proposal IS the declaration. The
+// unanimity walk excludes that participant from the required set.
 // ---------------------------------------------------------------
 
-describe('commit handler — structural-sub-kind boundary', () => {
-  it('rejects a commit on a decompose proposal with illegal-state-transition and a sub-kind-naming detail', () => {
+const COMPONENT_NODE_ID_1 = '00000000-0000-4000-8000-00000000e031';
+const COMPONENT_NODE_ID_2 = '00000000-0000-4000-8000-00000000e032';
+
+// Apply propose-time `node-created` + `entity-included` for a structural
+// component / reading, mirroring `buildStructuralEventsForPropose`.
+function applyComponentCreate(
+  projection: ReturnType<typeof createEmptyProjection>,
+  nodeId: string,
+  wording: string,
+): void {
+  applyEvent(
+    projection,
+    makeEvent(nextSequence(projection), 'node-created', DEBATER_A_ID, T2, {
+      node_id: nodeId,
+      wording,
+      created_by: DEBATER_A_ID,
+      created_at: T2,
+    }),
+  );
+  applyEvent(
+    projection,
+    makeEvent(nextSequence(projection), 'entity-included', DEBATER_A_ID, T2, {
+      entity_kind: 'node',
+      entity_id: nodeId,
+      included_by: DEBATER_A_ID,
+      included_at: T2,
+    }),
+  );
+}
+
+// Seed the parent node a structural proposal targets.
+function seedStructuralParent(
+  projection: ReturnType<typeof createEmptyProjection>,
+  nodeId: string,
+  wording: string,
+): void {
+  applyEvent(
+    projection,
+    makeEvent(nextSequence(projection), 'node-created', DEBATER_A_ID, T2, {
+      node_id: nodeId,
+      wording,
+      created_by: DEBATER_A_ID,
+      created_at: T2,
+    }),
+  );
+}
+
+// Apply a vote against the supplied proposal id at the next sequence.
+function voteStructural(
+  projection: ReturnType<typeof createEmptyProjection>,
+  participant: string,
+  vote: 'agree' | 'dispute' | 'withdraw',
+  proposalId: string,
+): void {
+  applyEvent(
+    projection,
+    makeEvent(nextSequence(projection), 'vote', participant, T9, {
+      proposal_id: proposalId,
+      participant,
+      vote,
+      voted_at: T9,
+    }),
+  );
+}
+
+describe('commit handler — structural sub-kind: decompose', () => {
+  it('accepts a commit on a fully-agreed decompose proposal and emits the commit event', () => {
     const p = seedSession();
-    // Add a second node and a decompose proposal at sequence 7.
-    applyEvent(
-      p,
-      makeEvent(nextSequence(p), 'node-created', DEBATER_A_ID, T2, {
-        node_id: NODE_ID_STRUCT,
-        wording: 'Parent to decompose.',
-        created_by: DEBATER_A_ID,
-        created_at: T2,
-      }),
-    );
+    seedStructuralParent(p, NODE_ID_STRUCT, 'Parent to decompose.');
+    // Propose-time fan-out — components land via `node-created` +
+    // `entity-included` per ADR 0027.
+    applyComponentCreate(p, COMPONENT_NODE_ID_1, 'Component one.');
+    applyComponentCreate(p, COMPONENT_NODE_ID_2, 'Component two.');
     applyEvent(p, {
       ...makeEvent(nextSequence(p), 'proposal', DEBATER_A_ID, T3, {
         proposal: {
           kind: 'decompose',
           parent_node_id: NODE_ID_STRUCT,
           components: [
-            {
-              wording: 'Component one.',
-              classification: 'fact',
-              node_id: '00000000-0000-4000-8000-00000000e031',
-            },
-            {
-              wording: 'Component two.',
-              classification: 'value',
-              node_id: '00000000-0000-4000-8000-00000000e032',
-            },
+            { wording: 'Component one.', classification: 'fact', node_id: COMPONENT_NODE_ID_1 },
+            { wording: 'Component two.', classification: 'value', node_id: COMPONENT_NODE_ID_2 },
           ],
         },
       }),
       id: PROPOSAL_ID_STRUCT,
     });
+    // Unanimous agree across the three current participants.
+    voteStructural(p, MODERATOR_ID, 'agree', PROPOSAL_ID_STRUCT);
+    voteStructural(p, DEBATER_A_ID, 'agree', PROPOSAL_ID_STRUCT);
+    voteStructural(p, DEBATER_B_ID, 'agree', PROPOSAL_ID_STRUCT);
+    const action = makeCommitAction(p, MODERATOR_ID, PROPOSAL_ID_STRUCT);
+    const r = validateAction(p, action);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.events).toHaveLength(1);
+      const ev = r.events[0]!;
+      expect(ev.kind).toBe('commit');
+      if (ev.kind === 'commit') {
+        expect(ev.payload.proposal_id).toBe(PROPOSAL_ID_STRUCT);
+      }
+    }
+  });
+
+  it('rejects a decompose commit when a participant has not voted', () => {
+    const p = seedSession();
+    seedStructuralParent(p, NODE_ID_STRUCT, 'Parent to decompose.');
+    applyComponentCreate(p, COMPONENT_NODE_ID_1, 'Component one.');
+    applyComponentCreate(p, COMPONENT_NODE_ID_2, 'Component two.');
+    applyEvent(p, {
+      ...makeEvent(nextSequence(p), 'proposal', DEBATER_A_ID, T3, {
+        proposal: {
+          kind: 'decompose',
+          parent_node_id: NODE_ID_STRUCT,
+          components: [
+            { wording: 'Component one.', classification: 'fact', node_id: COMPONENT_NODE_ID_1 },
+            { wording: 'Component two.', classification: 'value', node_id: COMPONENT_NODE_ID_2 },
+          ],
+        },
+      }),
+      id: PROPOSAL_ID_STRUCT,
+    });
+    voteStructural(p, MODERATOR_ID, 'agree', PROPOSAL_ID_STRUCT);
+    voteStructural(p, DEBATER_A_ID, 'agree', PROPOSAL_ID_STRUCT);
+    // DEBATER_B_ID hasn't voted.
     const action = makeCommitAction(p, MODERATOR_ID, PROPOSAL_ID_STRUCT);
     const r = validateAction(p, action);
     expect(r.ok).toBe(false);
     if (!r.ok) {
-      expect(r.reason).toBe('illegal-state-transition');
-      expect(r.detail).toContain('decompose');
+      expect(r.reason).toBe('unanimous-agree-required');
+      expect(r.detail).toContain(DEBATER_B_ID);
+    }
+  });
+});
+
+describe('commit handler — structural sub-kind: interpretive-split', () => {
+  it('accepts a commit on a fully-agreed interpretive-split proposal', () => {
+    const p = seedSession();
+    seedStructuralParent(p, NODE_ID_STRUCT, 'Parent to re-read.');
+    applyComponentCreate(p, COMPONENT_NODE_ID_1, 'Reading one.');
+    applyComponentCreate(p, COMPONENT_NODE_ID_2, 'Reading two.');
+    applyEvent(p, {
+      ...makeEvent(nextSequence(p), 'proposal', DEBATER_A_ID, T3, {
+        proposal: {
+          kind: 'interpretive-split',
+          parent_node_id: NODE_ID_STRUCT,
+          readings: [
+            { wording: 'Reading one.', classification: 'fact', node_id: COMPONENT_NODE_ID_1 },
+            { wording: 'Reading two.', classification: 'value', node_id: COMPONENT_NODE_ID_2 },
+          ],
+        },
+      }),
+      id: PROPOSAL_ID_STRUCT,
+    });
+    voteStructural(p, MODERATOR_ID, 'agree', PROPOSAL_ID_STRUCT);
+    voteStructural(p, DEBATER_A_ID, 'agree', PROPOSAL_ID_STRUCT);
+    voteStructural(p, DEBATER_B_ID, 'agree', PROPOSAL_ID_STRUCT);
+    const action = makeCommitAction(p, MODERATOR_ID, PROPOSAL_ID_STRUCT);
+    const r = validateAction(p, action);
+    expect(r.ok).toBe(true);
+  });
+});
+
+describe('commit handler — structural sub-kind: axiom-mark', () => {
+  it('accepts a commit on a fully-agreed axiom-mark proposal; the declared participant does not need to vote', () => {
+    const p = seedSession();
+    // DEBATER_A_ID declares N1 as their axiom. Per the methodology
+    // "we all agree that this participant holds this node as bedrock"
+    // — the proposer IS the declarer. Only the other participants
+    // need to vote agree.
+    applyEvent(p, {
+      ...makeEvent(nextSequence(p), 'proposal', DEBATER_A_ID, T3, {
+        proposal: {
+          kind: 'axiom-mark',
+          node_id: NODE_ID_1,
+          participant: DEBATER_A_ID,
+        },
+      }),
+      id: PROPOSAL_ID_STRUCT,
+    });
+    voteStructural(p, MODERATOR_ID, 'agree', PROPOSAL_ID_STRUCT);
+    voteStructural(p, DEBATER_B_ID, 'agree', PROPOSAL_ID_STRUCT);
+    // DEBATER_A_ID intentionally does NOT vote — they're the declarer.
+    const action = makeCommitAction(p, MODERATOR_ID, PROPOSAL_ID_STRUCT);
+    const r = validateAction(p, action);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.events).toHaveLength(1);
+      expect(r.events[0]!.kind).toBe('commit');
+    }
+  });
+
+  it('rejects an axiom-mark commit when one non-declarer participant has not voted', () => {
+    const p = seedSession();
+    applyEvent(p, {
+      ...makeEvent(nextSequence(p), 'proposal', DEBATER_A_ID, T3, {
+        proposal: {
+          kind: 'axiom-mark',
+          node_id: NODE_ID_1,
+          participant: DEBATER_A_ID,
+        },
+      }),
+      id: PROPOSAL_ID_STRUCT,
+    });
+    voteStructural(p, MODERATOR_ID, 'agree', PROPOSAL_ID_STRUCT);
+    // DEBATER_B_ID missing.
+    const action = makeCommitAction(p, MODERATOR_ID, PROPOSAL_ID_STRUCT);
+    const r = validateAction(p, action);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.reason).toBe('unanimous-agree-required');
+      expect(r.detail).toContain(DEBATER_B_ID);
+    }
+  });
+});
+
+describe('commit handler — structural sub-kind: annotate', () => {
+  it('accepts a commit on a fully-agreed annotate proposal and emits annotation-created + commit', () => {
+    const p = seedSession();
+    applyEvent(p, {
+      ...makeEvent(nextSequence(p), 'proposal', DEBATER_A_ID, T3, {
+        proposal: {
+          kind: 'annotate',
+          target_kind: 'node',
+          target_id: NODE_ID_1,
+          annotation_kind: 'note',
+          content: 'Context for this node.',
+        },
+      }),
+      id: PROPOSAL_ID_STRUCT,
+    });
+    voteStructural(p, MODERATOR_ID, 'agree', PROPOSAL_ID_STRUCT);
+    voteStructural(p, DEBATER_A_ID, 'agree', PROPOSAL_ID_STRUCT);
+    voteStructural(p, DEBATER_B_ID, 'agree', PROPOSAL_ID_STRUCT);
+    const action = makeCommitAction(p, MODERATOR_ID, PROPOSAL_ID_STRUCT);
+    const r = validateAction(p, action);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      // annotation-created precedes commit; commit envelope is last.
+      expect(r.events).toHaveLength(2);
+      expect(r.events[0]!.kind).toBe('annotation-created');
+      expect(r.events[1]!.kind).toBe('commit');
+      const annotationEvent = r.events[0]!;
+      if (annotationEvent.kind === 'annotation-created') {
+        expect(annotationEvent.payload.content).toBe('Context for this node.');
+        expect(annotationEvent.payload.target_node_id).toBe(NODE_ID_1);
+        expect(annotationEvent.payload.target_edge_id).toBeNull();
+        expect(annotationEvent.payload.kind).toBe('note');
+      }
     }
   });
 });

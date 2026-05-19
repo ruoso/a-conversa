@@ -16,24 +16,38 @@
 //   3. **Proposal is pending.** It must still be live (not already
 //      committed, not in meta-disagreement). → `'proposal-already-committed'`
 //      or `'proposal-already-meta-disagreement'`.
-//   4. **Unanimous agree across current participants.** For the four
-//      facet-targeting proposal sub-kinds (`classify-node`,
-//      `set-node-substance`, `set-edge-substance`, `edit-wording`), the
-//      affected facet's `perParticipant` map must contain a record for
-//      every current participant (`left_at IS NULL`) and every record's
-//      `vote` must be `'agree'`. → `'unanimous-agree-required'`.
+//   4. **Unanimous agree across current participants.** Every change
+//      requires unanimous agreement (docs/methodology.md "Every change
+//      to the graph requires agreement, regardless of what it is.").
+//      The agreement source-of-truth differs by sub-kind:
+//        - For the four facet-targeting sub-kinds (`classify-node`,
+//          `set-node-substance`, `set-edge-substance`, `edit-wording`),
+//          the projection's `handleVote` populates the affected facet's
+//          `perParticipant` map — rule 4 walks it.
+//        - For the structural sub-kinds (`decompose`,
+//          `interpretive-split`, `axiom-mark`, `meta-move`, `break-edge`,
+//          `amend-node`, `annotate`), no facet target exists; instead
+//          `handleVote` populates the pending proposal's
+//          `perParticipantVotes` map and rule 4 walks that. Axiom-mark
+//          is special: the participant whose bedrock is being marked
+//          doesn't vote on it (their proposal IS the declaration; "we
+//          all agree that *this participant* holds this node as bedrock"
+//          — docs/methodology.md "Axioms"). The unanimity walk excludes
+//          the declared participant from the required set for
+//          axiom-mark only.
+//      → `'unanimous-agree-required'`.
 //
-// **Structural-sub-kind boundary.** `decompose`, `interpretive-split`,
-// `axiom-mark`, `meta-move`, `break-edge`, `amend-node`, `annotate` —
-// these sub-kinds don't have per-participant vote state on the
-// projection (the projection's `handleVote` only writes to `perParticipant`
-// for the four facet-targeting sub-kinds). `commit_logic` doesn't know
-// where the per-participant agreement state lives for them; their
-// sibling tasks (`decomposition_logic`, `axiom_mark_logic`, etc.) will
-// register tighter handling as they land. For now, commit-of-structural-
-// sub-kind is rejected with `'illegal-state-transition'` and a
-// sub-kind-naming `detail`. This is the only boundary commit_logic
-// has to draw inside its rule set.
+// **Per-sub-kind event emission on commit.** For most sub-kinds the
+// handler emits exactly one `commit` event; the projection's
+// `applyCommittedProposal` arm applies the structural effect on its
+// own. For `annotate` the handler additionally emits an
+// `annotation-created` event paired with the commit so the annotation
+// entity lands on the projection (the annotation id is freshly minted
+// at commit time; pre-commit no annotation entity exists). All emitted
+// events are appended in order by the WS layer; the projection's
+// incremental `applyEvent` processes the `annotation-created` BEFORE
+// the `commit` so `handleCommit`'s `applyCommittedProposal` finds the
+// annotation in place when needed.
 //
 // **Participant-leaves-after-voting semantics.** A participant who left
 // no longer counts toward rule 4 — neither in the unanimity requirement
@@ -41,9 +55,7 @@
 // (left participants are excluded by construction); for each it asserts
 // a `perParticipant` record with vote `'agree'`. A participant who
 // agreed and then left does not block the commit; their prior agreement
-// is preserved in the per-participant map but not consulted. This stays
-// consistent with `deriveFacetStatus` rule 2 (read-side filtering by
-// current participants).
+// is preserved in the per-participant map but not consulted.
 //
 // **Moderator-excluded-from-unanimity-walk semantics.** Per
 // `docs/methodology.md` § "The commit step" (lines 15–25): the
@@ -67,14 +79,14 @@
 // **write-side** gate (does the request pass methodology rules?).
 // `handleCommit` (in `apps/server/src/projection/replay.ts`) is the
 // **read-side** application that runs AFTER the API layer appends the
-// event this handler emits: it sets the facet value, marks the facet
-// `agreed`, moves the proposal from `pendingProposals` to
-// `committedProposals`, and stamps the facet's
-// `committedProposalEventId` + `committedAt`. The two layers are
+// event this handler emits: it sets the facet value (for facet-
+// targeting sub-kinds), flips parent visibility / records axiom marks
+// (for structural sub-kinds), and moves the proposal from
+// `pendingProposals` to `committedProposals`. The two layers are
 // independent codepaths but compute the same predicate (unanimous-agree
-// across current participants) and stay in sync by construction — rule
-// 4 of this handler is the same predicate `deriveFacetStatus` rule 6
-// evaluates on the read side.
+// across current participants) and stay in sync by construction.
+
+import { randomUUID } from 'node:crypto';
 
 import type { Projection } from '../../projection/index.js';
 import type { FacetName, FacetState } from '../../projection/index.js';
@@ -82,6 +94,7 @@ import type { ProposalPayload } from '@a-conversa/shared-types';
 import { findProposal, requireModerator } from '../primitives.js';
 import type {
   CommitAction,
+  EventToAppend,
   EventToAppendEnvelope,
   RejectedValidationResult,
   ValidationResult,
@@ -148,7 +161,8 @@ function facetStateForTarget(
 }
 
 // ---------------------------------------------------------------
-// Rule 4 — unanimous agree across current participants.
+// Rule 4 — unanimous agree across current participants (facet-targeting
+// sub-kinds variant).
 //
 // Returns `null` on success (rule satisfied), or a `Rejected` carrying
 // `'unanimous-agree-required'` with a `detail` that enumerates which
@@ -157,20 +171,11 @@ function facetStateForTarget(
 // "still waiting on Alice and Bob" rather than just "rejected".
 // ---------------------------------------------------------------
 
-function checkUnanimousAgree(
+function checkUnanimousAgreeFacet(
   projection: Projection,
   proposalPayload: ProposalPayload,
+  target: FacetTarget,
 ): RejectedValidationResult | null {
-  const target = facetTargetForProposal(proposalPayload);
-  if (target === null) {
-    // Structural sub-kind — deferred to a sibling. See file header.
-    return {
-      ok: false,
-      reason: 'illegal-state-transition',
-      detail: `commit of proposal sub-kind '${proposalPayload.kind}' is deferred to the sibling methodology-engine task for that sub-kind; commit_logic does not validate per-participant agreement for non-facet-targeting sub-kinds`,
-    };
-  }
-
   const facet = facetStateForTarget(projection, target);
   if (facet === null) {
     // The pending proposal references an entity that isn't on the
@@ -229,11 +234,127 @@ function checkUnanimousAgree(
   if (nonAgree.length > 0) {
     parts.push('non-agree votes: ' + nonAgree.map((x) => `${x.participant}=${x.vote}`).join(', '));
   }
+  void proposalPayload;
   return {
     ok: false,
     reason: 'unanimous-agree-required',
     detail: `commit requires every current participant to have voted agree on the proposal — ${parts.join('; ')}`,
   };
+}
+
+// ---------------------------------------------------------------
+// Rule 4 — unanimous agree across current participants (structural
+// sub-kinds variant).
+//
+// Walks the pending proposal's `perParticipantVotes` map instead of a
+// facet's `perParticipant` map. Same enumeration shape — missing /
+// non-agree — so the requester's UI can render the same wait-on message.
+//
+// **Axiom-mark exclusion.** Per docs/methodology.md: "Agreement on an
+// axiom mark is roughly: 'we all agree that this participant holds
+// this node as bedrock for this debate'." The participant whose bedrock
+// is being declared is the proposer; their proposal IS the declaration
+// (`validateAxiomMarkProposal` rule 3 enforces `proposal.participant ===
+// action.requester`). They are excluded from the required-voters set
+// here — only the other current participants need to vote agree. All
+// other structural sub-kinds require every current participant
+// (including the proposer) to vote.
+// ---------------------------------------------------------------
+
+function checkUnanimousAgreeStructural(
+  projection: Projection,
+  proposalPayload: ProposalPayload,
+  perParticipantVotes: ReadonlyMap<string, { vote: string }>,
+): RejectedValidationResult | null {
+  const current = projection.currentParticipants();
+  if (current.length === 0) {
+    return {
+      ok: false,
+      reason: 'unanimous-agree-required',
+      detail: 'commit: no current participants to evaluate agreement against',
+    };
+  }
+
+  // Axiom-mark: the declared participant doesn't vote separately on
+  // their own bedrock declaration — the proposal IS the declaration.
+  const excludedParticipant =
+    proposalPayload.kind === 'axiom-mark' ? proposalPayload.participant : null;
+
+  const missing: string[] = [];
+  const nonAgree: { participant: string; vote: string }[] = [];
+  for (const p of current) {
+    if (p.userId === excludedParticipant) continue;
+    const record = perParticipantVotes.get(p.userId);
+    if (!record) {
+      missing.push(p.userId);
+      continue;
+    }
+    if (record.vote !== 'agree') {
+      nonAgree.push({ participant: p.userId, vote: record.vote });
+    }
+  }
+
+  if (missing.length === 0 && nonAgree.length === 0) {
+    return null;
+  }
+
+  const parts: string[] = [];
+  if (missing.length > 0) {
+    parts.push(`missing votes from: ${missing.join(', ')}`);
+  }
+  if (nonAgree.length > 0) {
+    parts.push('non-agree votes: ' + nonAgree.map((x) => `${x.participant}=${x.vote}`).join(', '));
+  }
+  return {
+    ok: false,
+    reason: 'unanimous-agree-required',
+    detail: `commit requires every current participant to have voted agree on the proposal — ${parts.join('; ')}`,
+  };
+}
+
+// ---------------------------------------------------------------
+// Per-sub-kind structural event emission on commit.
+//
+// Most sub-kinds emit nothing beyond the `commit` envelope itself —
+// the projection's `applyCommittedProposal` arm applies the structural
+// effect (parent invisibility, axiom-mark recording, etc.) directly on
+// the receiving side.
+//
+// `annotate` is the exception: the annotation entity has its own
+// lifecycle (its own visibility, its own facets) and so requires a
+// matching `annotation-created` event on the log. The id is minted at
+// commit time (pre-commit no annotation entity exists). The event
+// precedes the `commit` envelope in the returned list so the
+// projection's incremental `applyEvent` sees the annotation lands
+// BEFORE the `handleCommit` arm runs.
+// ---------------------------------------------------------------
+
+function buildStructuralEventsForCommit(
+  proposalPayload: ProposalPayload,
+  action: CommitAction,
+): EventToAppend[] {
+  const events: EventToAppend[] = [];
+  if (proposalPayload.kind === 'annotate') {
+    const annotationCreated: EventToAppendEnvelope<'annotation-created'> = {
+      id: randomUUID(),
+      sessionId: action.sessionId,
+      sequence: action.sequence + events.length,
+      kind: 'annotation-created',
+      actor: action.actor,
+      payload: {
+        annotation_id: randomUUID(),
+        kind: proposalPayload.annotation_kind,
+        content: proposalPayload.content,
+        target_node_id: proposalPayload.target_kind === 'node' ? proposalPayload.target_id : null,
+        target_edge_id: proposalPayload.target_kind === 'edge' ? proposalPayload.target_id : null,
+        created_by: action.requester,
+        created_at: action.createdAt,
+      },
+      createdAt: action.createdAt,
+    };
+    events.push(annotationCreated);
+  }
+  return events;
 }
 
 // ---------------------------------------------------------------
@@ -272,15 +393,31 @@ export const commitHandler: Validator<CommitAction> = (
     };
   }
 
-  // Rule 4 — unanimous agree across current participants.
-  const unanimityRejection = checkUnanimousAgree(projection, found.record.payload);
+  // Rule 4 — unanimous agree across current participants. Dispatch on
+  // facet-targeting vs structural sub-kind (the agreement source
+  // differs; see header comment).
+  const proposalPayload = found.record.payload;
+  const target = facetTargetForProposal(proposalPayload);
+  let unanimityRejection: RejectedValidationResult | null;
+  if (target !== null) {
+    unanimityRejection = checkUnanimousAgreeFacet(projection, proposalPayload, target);
+  } else {
+    unanimityRejection = checkUnanimousAgreeStructural(
+      projection,
+      proposalPayload,
+      found.record.perParticipantVotes,
+    );
+  }
   if (unanimityRejection !== null) return unanimityRejection;
 
-  // Valid — emit one commit event.
-  const event: EventToAppendEnvelope<'commit'> = {
+  // Valid — emit the structural fan-out (if any) followed by the
+  // `commit` envelope. The structural events take the leading
+  // sequence slots; the commit envelope takes the last.
+  const structuralEvents = buildStructuralEventsForCommit(proposalPayload, action);
+  const commitEvent: EventToAppendEnvelope<'commit'> = {
     id: action.eventId,
     sessionId: action.sessionId,
-    sequence: action.sequence,
+    sequence: action.sequence + structuralEvents.length,
     kind: 'commit',
     actor: action.actor,
     payload: {
@@ -290,7 +427,7 @@ export const commitHandler: Validator<CommitAction> = (
     },
     createdAt: action.createdAt,
   };
-  return { ok: true, events: [event] };
+  return { ok: true, events: [...structuralEvents, commitEvent] };
 };
 
 export default commitHandler;

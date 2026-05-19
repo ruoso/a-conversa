@@ -360,6 +360,7 @@ describe('pending proposals', () => {
       payload: { kind: 'classify-node', node_id: NODE_ID_1, classification: 'fact' },
       proposer: USER_ID,
       proposedAt: NOW,
+      perParticipantVotes: new Map(),
     });
 
     expect(projection.getPendingProposal(PROPOSAL_ID_1)?.proposalEventId).toBe(PROPOSAL_ID_1);
@@ -381,6 +382,7 @@ describe('pending proposals', () => {
       },
       proposer: USER_ID,
       proposedAt: NOW,
+      perParticipantVotes: new Map(),
     };
     projection.addPendingProposal(proposal);
     expect(() => projection.addPendingProposal(proposal)).toThrow(ProjectionInvariantError);
