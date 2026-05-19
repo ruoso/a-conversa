@@ -290,6 +290,23 @@
         "notSelf": "Axiom-marks are personal — the debater must propose this from their own tablet"
       }
     },
+    "annotateAction": {
+      "submenu": {
+        "header": "Add annotation",
+        "placeholder": "Type the annotation content…",
+        "inputAriaLabel": "Annotation content",
+        "submit": "Submit",
+        "submitInFlight": "Submitting…"
+      },
+      "errorBanner": {
+        "timeout": "The annotate request timed out — try again",
+        "unknown": "Could not propose the annotation — please retry",
+        "contentEmpty": "Annotation content cannot be empty",
+        "contentTooLong": "Annotation content exceeds the {max} character limit",
+        "targetEntityNotFound": "The target entity could not be found — it may have been removed",
+        "illegalStateTransition": "The target entity is no longer visible and cannot be annotated"
+      }
+    },
     "decompose": {
       "exit": {
         "ariaLabel": "Exit decompose mode",

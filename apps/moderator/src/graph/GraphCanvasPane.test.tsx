@@ -1940,11 +1940,15 @@ describe('GraphCanvasPane — context-menu wire-up (mod_context_menus)', () => {
     });
     expect(screen.getByTestId('graph-context-menu')).toBeTruthy();
 
+    // Use `propose-vote` (a still-stubbed item) rather than `annotate`
+    // (which now opens a submenu requiring `<WsClientProvider>`). The
+    // semantic under test — menu item click closes the parent menu —
+    // is identical for either.
     // Silence the stub's console.info noise while the menu item fires.
     const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => undefined);
     try {
       act(() => {
-        fireEvent.click(screen.getByTestId('graph-context-menu-item-annotate'));
+        fireEvent.click(screen.getByTestId('graph-context-menu-item-propose-vote'));
       });
     } finally {
       infoSpy.mockRestore();

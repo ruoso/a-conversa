@@ -75,6 +75,8 @@ import 'reactflow/dist/style.css';
 import { useCaptureStore, useSelectionStore } from '../stores/index.js';
 import { useWsStore, type WsState } from '../ws/wsStore.js';
 import { AxiomMarkSubmenu } from '../layout/AxiomMarkSubmenu.js';
+import { AnnotateSubmenu } from '../layout/AnnotateSubmenu.js';
+import type { AnnotateTargetKind } from '../layout/useAnnotateAction.js';
 import { STATEMENT_NODE_TYPE, StatementNode, type StatementNodeData } from './StatementNode.js';
 import { edgeTypes } from './edgeTypes.js';
 import { GraphContextMenu, type MenuItem } from './GraphContextMenu.js';
@@ -265,6 +267,7 @@ export function buildNodeMenuItems(
   disabledRunOperationalizationTest?: boolean,
   onEnterWarrantElicitationMode?: (nodeId: string) => void,
   disabledRunWarrantElicitationTest?: boolean,
+  onOpenAnnotateSubmenu?: () => void,
 ): readonly MenuItem[] {
   return [
     {
@@ -314,7 +317,7 @@ export function buildNodeMenuItems(
     {
       id: 'annotate',
       labelKey: 'moderator.contextMenu.node.annotate',
-      onSelect: () => actionStub('annotate', target),
+      onSelect: onOpenAnnotateSubmenu ?? (() => actionStub('annotate', target)),
     },
     {
       id: 'axiom-mark',
@@ -331,7 +334,10 @@ export function buildNodeMenuItems(
  * per-node concept), no decompose (a node operation). Vote / meta-
  * disagreement / annotate are the edge-scope vocabulary.
  */
-export function buildEdgeMenuItems(target: ContextMenuState['target']): readonly MenuItem[] {
+export function buildEdgeMenuItems(
+  target: ContextMenuState['target'],
+  onOpenAnnotateSubmenu?: () => void,
+): readonly MenuItem[] {
   return [
     {
       id: 'propose-vote',
@@ -346,7 +352,7 @@ export function buildEdgeMenuItems(target: ContextMenuState['target']): readonly
     {
       id: 'annotate',
       labelKey: 'moderator.contextMenu.edge.annotate',
-      onSelect: () => actionStub('annotate', target),
+      onSelect: onOpenAnnotateSubmenu ?? (() => actionStub('annotate', target)),
     },
   ];
 }
@@ -707,6 +713,18 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
     readonly y: number;
   } | null>(null);
   const closeAxiomMarkSubmenu = useCallback(() => setAxiomMarkSubmenu(null), []);
+  // Annotate submenu state — `null` when the per-target annotate
+  // submenu is not open. Set when a node OR edge menu's `annotate`
+  // item is selected; cleared by the submenu's `onClose` (outside-
+  // click / Escape / successful submit). Sibling render to the parent
+  // context menu (same posture as the axiom-mark submenu).
+  const [annotateSubmenu, setAnnotateSubmenu] = useState<{
+    readonly targetId: string;
+    readonly targetKind: AnnotateTargetKind;
+    readonly x: number;
+    readonly y: number;
+  } | null>(null);
+  const closeAnnotateSubmenu = useCallback(() => setAnnotateSubmenu(null), []);
   // Stable mode-entry callback for the node context menu's
   // `propose-decompose` item. Dispatches to the global capture store
   // (no canvas-local state — decompose-mode lives on `useCaptureStore`).
@@ -756,9 +774,10 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
   const handleNodeContextMenu = useCallback((event: ReactMouseEvent, node: Node): void => {
     event.preventDefault();
     useSelectionStore.getState().select({ kind: 'node', id: node.id });
-    // A fresh right-click dismisses any stale axiom-mark submenu from
-    // a prior gesture before opening the new parent menu.
+    // A fresh right-click dismisses any stale axiom-mark / annotate
+    // submenu from a prior gesture before opening the new parent menu.
     setAxiomMarkSubmenu(null);
+    setAnnotateSubmenu(null);
     setContextMenu({
       target: { kind: 'node', id: node.id },
       x: event.clientX,
@@ -769,6 +788,7 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
     event.preventDefault();
     useSelectionStore.getState().select({ kind: 'edge', id: edge.id });
     setAxiomMarkSubmenu(null);
+    setAnnotateSubmenu(null);
     setContextMenu({
       target: { kind: 'edge', id: edge.id },
       x: event.clientX,
@@ -778,6 +798,7 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
   const handlePaneContextMenu = useCallback((event: ReactMouseEvent): void => {
     event.preventDefault();
     setAxiomMarkSubmenu(null);
+    setAnnotateSubmenu(null);
     setContextMenu({
       target: { kind: 'pane', id: null },
       x: event.clientX,
@@ -1067,9 +1088,37 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
         disabledRunOperationalizationTest,
         enterWarrantElicitationMode,
         disabledRunWarrantElicitationTest,
+        () => {
+          // Open the annotate submenu against the right-clicked node.
+          // Same sibling-submenu posture as the axiom-mark submenu —
+          // the parent menu's close-path runs synchronously right
+          // after this `onSelect`; we set the submenu state inside
+          // the same React commit so the submenu mounts on the next
+          // render alongside the closed parent.
+          if (nodeIdForSubmenu === null) return;
+          setAnnotateSubmenu({
+            targetId: nodeIdForSubmenu,
+            targetKind: 'node',
+            x: submenuX + 16,
+            y: submenuY + 16,
+          });
+        },
       );
     } else if (contextMenu.target.kind === 'edge') {
-      menuItems = buildEdgeMenuItems(contextMenu.target);
+      const edgeIdForSubmenu = contextMenu.target.id;
+      const submenuX = contextMenu.x;
+      const submenuY = contextMenu.y;
+      menuItems = buildEdgeMenuItems(contextMenu.target, () => {
+        // Open the annotate submenu against the right-clicked edge.
+        // Mirrors the node-menu opener seam above.
+        if (edgeIdForSubmenu === null) return;
+        setAnnotateSubmenu({
+          targetId: edgeIdForSubmenu,
+          targetKind: 'edge',
+          x: submenuX + 16,
+          y: submenuY + 16,
+        });
+      });
     } else {
       menuItems = buildPaneMenuItems(contextMenu.target, focusCaptureTextarea);
     }
@@ -1136,6 +1185,15 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
           y={axiomMarkSubmenu.y}
           events={events}
           onClose={closeAxiomMarkSubmenu}
+        />
+      ) : null}
+      {annotateSubmenu !== null ? (
+        <AnnotateSubmenu
+          targetId={annotateSubmenu.targetId}
+          targetKind={annotateSubmenu.targetKind}
+          x={annotateSubmenu.x}
+          y={annotateSubmenu.y}
+          onClose={closeAnnotateSubmenu}
         />
       ) : null}
     </div>

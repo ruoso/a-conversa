@@ -290,6 +290,23 @@
         "notSelf": "Marcas de axioma são pessoais — o debatedor precisa propor isso a partir do seu próprio tablet"
       }
     },
+    "annotateAction": {
+      "submenu": {
+        "header": "Adicionar anotação",
+        "placeholder": "Digite o conteúdo da anotação…",
+        "inputAriaLabel": "Conteúdo da anotação",
+        "submit": "Enviar",
+        "submitInFlight": "Enviando…"
+      },
+      "errorBanner": {
+        "timeout": "A solicitação de anotação expirou — tente novamente",
+        "unknown": "Não foi possível propor a anotação — por favor tente novamente",
+        "contentEmpty": "O conteúdo da anotação não pode estar vazio",
+        "contentTooLong": "O conteúdo da anotação excede o limite de {max} caracteres",
+        "targetEntityNotFound": "A entidade alvo não foi encontrada — pode ter sido removida",
+        "illegalStateTransition": "A entidade alvo não está mais visível e não pode ser anotada"
+      }
+    },
     "decompose": {
       "exit": {
         "ariaLabel": "Sair do modo de decomposição",
