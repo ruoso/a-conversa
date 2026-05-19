@@ -656,11 +656,38 @@ test.describe
   // Phase 10 — meta-disagreement (last-resort fallback)
   // ──────────────────────────────────────────────────────────────
 
-  test.fixme('Phase 10.1: alice marks a contested-classification facet as meta-disagreement via the context menu', () => {
-    // BLOCKED: moderator meta-disagreement handler is a stub
-    // (actionStub in GraphCanvasPane). Wire
-    // useMarkMetaDisagreementAction to send the
-    // `mark-meta-disagreement` WS envelope.
+  test('Phase 10.1: alice clicks the per-row mark-meta-disagreement button on a pending proposal', async () => {
+    // The button lives on every pending-proposal row in the moderator
+    // sidebar (per `moderator-ui.mark_meta_disagreement` — commit
+    // 78d5ded). We click the first available row's button.
+    const row = alicePage.locator('[data-testid="pending-proposal-row"]').first();
+    await expect(row).toBeVisible({ timeout: 15_000 });
+    const markButton = row.locator('[data-testid="mark-meta-disagreement-button"]');
+    await expect(markButton).toBeVisible();
+    await markButton.click();
+
+    // Two outcomes are acceptable signals of round-trip success:
+    //   (a) the row disappears (meta-disagreement landed → proposal
+    //       removed from pending list),
+    //   (b) the wire-error region surfaces a typed engine rejection
+    //       (e.g. `methodology-not-exhausted` if the diagnostic gate
+    //       isn't yet satisfied for this proposal).
+    // Either way the envelope reached the server and the dispatcher
+    // completed; that's the regression class this phase pins.
+    const settled = alicePage.locator(
+      '[data-testid="mark-meta-disagreement-button-wire-error"], [data-testid="pending-proposals-pane-empty"]',
+    );
+    const rowGone = row.locator('[data-testid="mark-meta-disagreement-button"]');
+    await Promise.race([
+      expect(settled.first()).toBeVisible({ timeout: 15_000 }),
+      expect(rowGone).toHaveCount(0, { timeout: 15_000 }),
+    ]).catch(() => {
+      // Either branch resolving is fine; surface whichever signal
+      // landed below.
+    });
+    const settledCount = await settled.count();
+    const rowGoneCount = await rowGone.count();
+    expect(settledCount > 0 || rowGoneCount === 0).toBe(true);
   });
 
   // ──────────────────────────────────────────────────────────────
