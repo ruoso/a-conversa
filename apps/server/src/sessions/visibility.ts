@@ -178,6 +178,54 @@ export async function canSeeSession(
 }
 
 /**
+ * Boolean predicate — can an ANONYMOUS (no authenticated user) caller
+ * see this session?
+ *
+ * Sibling to `canSeeSession`. Per ADR 0029, the anonymous-WS-subscribe
+ * path widened the WS auth gate so a cookie-less upgrade is no longer
+ * a 401; the audience surface can subscribe to public sessions
+ * anonymously. This predicate encodes the strict "public AND
+ * not-ended" rule for null-user callers:
+ *
+ *   `SELECT 1 FROM sessions WHERE id = $1 AND privacy = 'public' AND ended_at IS NULL`
+ *
+ * The fragment is strictly stricter than `canSeeSession`'s
+ * "public OR host OR participant" — the OR-host / OR-participant
+ * branches collapse to false for a null user, and an anonymous viewer
+ * additionally cannot see an ENDED session (the authenticated path
+ * does not gate on `ended_at` because hosts + participants retain
+ * read access after end-of-session).
+ *
+ * The existence-non-leak rule is preserved: the predicate does NOT
+ * distinguish "doesn't exist" from "exists but not public / ended" —
+ * both return `false`. The subscribe handler renders both as the
+ * canonical `not-found` wire error (see
+ * `apps/server/src/ws/handlers/subscribe.ts`'s existence-non-leak
+ * docblock).
+ *
+ * **No `users.deleted_at` consideration.** Anonymous callers have no
+ * users row to soft-delete; the predicate's null-user input is
+ * structural (the WS auth gate set `request.authUser = undefined`),
+ * not derived from a user lookup.
+ *
+ * @param executor - a query-runner (the request's pool, or a
+ *   transaction client inside `withTransaction`).
+ * @param sessionId - the session id under question (UUID).
+ * @returns `true` iff the session exists AND has `privacy = 'public'`
+ *   AND has `ended_at IS NULL`.
+ */
+export async function canSeeSessionAnonymously(
+  executor: VisibilityExecutor,
+  sessionId: string,
+): Promise<boolean> {
+  const result = await executor.query<{ visible: number }>(
+    `SELECT 1 AS visible FROM sessions WHERE id = $1 AND privacy = 'public' AND ended_at IS NULL LIMIT 1`,
+    [sessionId],
+  );
+  return result.rows.length > 0;
+}
+
+/**
  * Re-export the `DbPool` type so consumers of this module don't need a
  * second import to type the executor argument when they already have a
  * pool in hand. Equivalent to importing `DbPool` from `../db.js`

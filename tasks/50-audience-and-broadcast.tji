@@ -69,6 +69,7 @@ task audience "Audience and broadcast" {
     task aud_anonymous_ws_subscribe "Server-side anonymous WS subscribe with per-session privacy enforcement" {
       effort 0.5d
       allocate team
+      complete 100
       depends !aud_no_auth_for_public, backend.websocket_protocol.ws_subscribe_to_session
       note "Server-side anonymous WS subscribe with per-session privacy enforcement. Audience surface for anonymous visitors mounts the placeholder but `<WsClientProvider>` short-circuits without opening a socket until this leaf lands (the cookie-on-upgrade gate at `apps/server/src/ws/connection.ts:86-104` requires an authenticated session today). Source: tasks/refinements/audience/aud_no_auth_for_public.md (Decision §9) + this commit."
     }

@@ -180,14 +180,24 @@ describe('ws_origin_allowlist — prod-style allowlist (array)', () => {
     }
   });
 
-  it('falls through to the cookie gate (401) when Origin is allowed but no cookie is present', async () => {
-    // Listed Origin + no cookie → the Origin gate passes; the cookie
-    // gate emits the 401. Demonstrates the gates compose (Origin first,
-    // cookie second) without one masking the other.
-    await expect(openWsClient(app, { headers: { origin: ALLOWED } })).rejects.toThrow(
-      /Unexpected server response: 401/,
-    );
-    expect(__getOpenConnectionsForTests()).toHaveLength(0);
+  it('falls through to the cookie gate (anonymous upgrade) when Origin is allowed but no cookie is present', async () => {
+    // Listed Origin + no cookie → the Origin gate passes; per ADR
+    // 0029 + `aud_anonymous_ws_subscribe`, the cookie gate no longer
+    // emits 401 for a missing cookie — it falls through to anonymous
+    // and the upgrade completes with `connection.user === undefined`.
+    // Demonstrates the gates compose (Origin first, cookie second);
+    // anonymous upgrade does NOT relax the Origin contract above.
+    const { ws, next } = await openWsClient(app, { headers: { origin: ALLOWED } });
+    try {
+      const raw = await next();
+      const parsed = JSON.parse(raw) as { type?: unknown };
+      expect(parsed.type).toBe('hello');
+      const open = __getOpenConnectionsForTests();
+      expect(open).toHaveLength(1);
+      expect(open[0]?.user).toBeUndefined();
+    } finally {
+      ws.terminate();
+    }
   });
 });
 
@@ -278,11 +288,26 @@ describe('ws_origin_allowlist — dev sentinel (`*`)', () => {
     }
   });
 
-  it('still rejects an unauthenticated upgrade (the cookie gate runs even in dev)', async () => {
-    await expect(
-      openWsClient(app, { headers: { origin: 'https://anything-goes.example' } }),
-    ).rejects.toThrow(/Unexpected server response: 401/);
-    expect(__getOpenConnectionsForTests()).toHaveLength(0);
+  it('accepts an unauthenticated upgrade as anonymous (the cookie gate now falls through to anonymous per ADR 0029)', async () => {
+    // Per ADR 0029 + `aud_anonymous_ws_subscribe`, the cookie gate
+    // no longer 401s for a missing cookie — it falls through to
+    // anonymous and the upgrade completes. The dev-sentinel Origin
+    // gate accepts any Origin; the cookie gate's anonymous path
+    // accepts the cookie-less upgrade. The connection lands with
+    // `user === undefined`.
+    const { ws, next } = await openWsClient(app, {
+      headers: { origin: 'https://anything-goes.example' },
+    });
+    try {
+      const raw = await next();
+      const parsed = JSON.parse(raw) as { type?: unknown };
+      expect(parsed.type).toBe('hello');
+      const open = __getOpenConnectionsForTests();
+      expect(open).toHaveLength(1);
+      expect(open[0]?.user).toBeUndefined();
+    } finally {
+      ws.terminate();
+    }
   });
 });
 

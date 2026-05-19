@@ -40,7 +40,13 @@ export interface WsClientAuthState {
 }
 
 export interface WsClientProviderProps {
-  /** Current auth state. The client opens iff `status === 'authenticated'`. */
+  /**
+   * Current auth state. By default the client opens iff
+   * `status === 'authenticated'`; surfaces that want to open the
+   * socket for anonymous viewers (the audience-role surface per ADR
+   * 0029) set `allowAnonymous` and the client also opens when
+   * `status === 'unauthenticated'`.
+   */
   readonly auth: WsClientAuthState;
   /** Optional overrides (test seams, custom backoff, etc.). */
   readonly clientOptions?: CreateWsClientOptions;
@@ -58,7 +64,37 @@ export interface WsClientProviderProps {
    * than this prop.
    */
   readonly store?: WsStoreLike<BaseWsStoreState>;
+  /**
+   * Per-surface opt-in for anonymous-WS upgrade. When `true`, the
+   * provider's effect also opens the socket under
+   * `auth.status === 'unauthenticated'` (the audience surface uses
+   * this; the moderator + participant surfaces, which never want an
+   * anonymous WS connection, leave it at the default `false`). Per
+   * ADR 0029.
+   *
+   * Default `false` — existing call sites compile unchanged.
+   */
+  readonly allowAnonymous?: boolean;
   readonly children: ReactNode;
+}
+
+/**
+ * Returns `true` iff the provider's effect should open the socket for
+ * the given auth-status + `allowAnonymous` pair. Centralised so the
+ * boolean is one place to read; the matrix is:
+ *
+ *   - `authenticated`             → always open
+ *   - `unauthenticated` + allow   → open (audience surface)
+ *   - `unauthenticated` + !allow  → skip (moderator + participant)
+ *   - `loading` / `needs-screen-name` → skip (transient)
+ */
+export function shouldOpenWsSocket(
+  status: WsClientAuthState['status'],
+  allowAnonymous: boolean,
+): boolean {
+  if (status === 'authenticated') return true;
+  if (allowAnonymous && status === 'unauthenticated') return true;
+  return false;
 }
 
 const WsClientContext = createContext<WsClient | undefined>(undefined);
@@ -68,7 +104,14 @@ const WsClientContext = createContext<WsClient | undefined>(undefined);
  * the user is authenticated, and tears it down on unmount.
  */
 export function WsClientProvider(props: WsClientProviderProps): ReactElement {
-  const { auth, clientOptions, client: externalClient, store, children } = props;
+  const {
+    auth,
+    clientOptions,
+    client: externalClient,
+    store,
+    allowAnonymous = false,
+    children,
+  } = props;
   const clientRef = useRef<WsClient | undefined>(externalClient);
 
   const client = useMemo(() => {
@@ -83,7 +126,7 @@ export function WsClientProvider(props: WsClientProviderProps): ReactElement {
   }, [externalClient]);
 
   useEffect(() => {
-    if (auth.status !== 'authenticated') return;
+    if (!shouldOpenWsSocket(auth.status, allowAnonymous)) return;
     client.connect();
     return () => {
       client.close();
@@ -94,7 +137,7 @@ export function WsClientProvider(props: WsClientProviderProps): ReactElement {
       const explicit = store ?? clientOptions?.store;
       explicit?.getState().reset();
     };
-  }, [auth.status, client, store, clientOptions]);
+  }, [auth.status, allowAnonymous, client, store, clientOptions]);
 
   return <WsClientContext.Provider value={client}>{children}</WsClientContext.Provider>;
 }

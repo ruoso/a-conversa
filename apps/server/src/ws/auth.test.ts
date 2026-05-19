@@ -7,16 +7,25 @@
 //              docs/adr/0022-no-throwaway-verifications.md
 // TaskJuggler: backend.websocket_protocol.ws_auth_on_connect
 //
-// **Coverage.** The auth-rejection + auth-success surface:
+// **Coverage.** The auth-anonymous-fallback + auth-success surface
+// (per ADR 0029 + `aud_anonymous_ws_subscribe` widening — the WS
+// upgrade gate is no longer 401-on-missing-cookie):
 //
 //   1. No cookie on the upgrade request → the `preValidation` hook
-//      throws `ApiError(401, 'auth-required')`; `@fastify/websocket`'s
-//      pipeline sends the 401 response on the raw upgrade socket and
-//      destroys it; `injectWS` rejects with "Unexpected server
-//      response: 401". No WS handshake completes.
-//   2. Cookie present but the JWT signature is tampered → 401, same
-//      rejection path.
-//   3. Cookie present but the JWT is expired → 401, same path.
+//      sets `request.authUser = undefined` and the upgrade
+//      completes; the connection's context carries `user ===
+//      undefined`. (The privacy boundary moves into the
+//      `canSeeSessionAnonymously` predicate inside the subscribe
+//      handler.)
+//   2. Cookie present but the JWT signature is tampered → same
+//      anonymous fall-through path; upgrade completes with
+//      `user === undefined`. A malicious actor who forged a cookie
+//      gains no privilege beyond what an anonymous viewer already
+//      has (the visibility predicate is strictly
+//      `privacy = 'public' AND ended_at IS NULL`).
+//   3. Cookie present but the JWT is expired → same anonymous
+//      fall-through path; upgrade completes with `user ===
+//      undefined`.
 //   4. Cookie present and valid → the upgrade succeeds and the hello
 //      frame arrives. (Lifecycle regression-pin — proves the auth
 //      gate is purely additive and doesn't break the foundation
@@ -115,7 +124,7 @@ async function buildAuthTestApp(opts?: { now?: () => number }): Promise<FastifyI
   });
 }
 
-describe('ws_auth_on_connect — rejection paths', () => {
+describe('ws_auth_on_connect — anonymous fall-through paths', () => {
   let app: FastifyInstance;
 
   beforeEach(async () => {
@@ -126,42 +135,68 @@ describe('ws_auth_on_connect — rejection paths', () => {
     await app.close();
   });
 
-  it('rejects an upgrade with no cookie (HTTP 401 before the WS handshake)', async () => {
-    // `injectWS` rejects when the server emits a non-101 response —
-    // exactly the surface a real browser sees when the WS handshake
-    // fails. The error message carries the HTTP status the server
-    // sent (`Unexpected server response: 401`).
-    await expect(openWsClient(app)).rejects.toThrow(/Unexpected server response: 401/);
-    // No connection was registered — the gate fired BEFORE the route
-    // handler had a chance to mint the connection-id.
-    expect(__getOpenConnectionsForTests()).toHaveLength(0);
+  it('accepts an upgrade with no cookie as anonymous (user === undefined)', async () => {
+    // Per ADR 0029 + `aud_anonymous_ws_subscribe`, the cookie-less
+    // upgrade no longer 401s; the gate falls through to anonymous
+    // and the connection lands with `user === undefined`. The
+    // privacy boundary is enforced by the subscribe handler via
+    // `canSeeSessionAnonymously` (public + not-ended only).
+    const { ws, next } = await openWsClient(app);
+    try {
+      const raw = await next();
+      const parsed = JSON.parse(raw) as { type?: unknown };
+      expect(parsed.type).toBe('hello');
+      const open = __getOpenConnectionsForTests();
+      expect(open).toHaveLength(1);
+      expect(open[0]?.user).toBeUndefined();
+    } finally {
+      ws.terminate();
+    }
   });
 
-  it('rejects an upgrade with a tampered JWT signature (HTTP 401)', async () => {
+  it('accepts an upgrade with a tampered JWT signature as anonymous (user === undefined)', async () => {
+    // A forged signature does NOT bypass the anonymous-only
+    // visibility check (the SQL fragment is strictly
+    // `privacy = 'public' AND ended_at IS NULL`). The forged-cookie
+    // attacker gains no privilege beyond what a legitimate
+    // anonymous viewer has.
     const validToken = await signSessionToken({ sub: FIXTURE_USER_ID }, TEST_SESSION_SECRET);
     const parts = validToken.split('.');
-    // Forge a same-shape but mathematically-invalid signature segment.
     const fakeSig = Buffer.alloc(32, 0xab).toString('base64url');
     const tampered = `${parts[0]}.${parts[1]}.${fakeSig}`;
-    await expect(
-      openWsClient(app, { headers: { cookie: `${SESSION_COOKIE_NAME}=${tampered}` } }),
-    ).rejects.toThrow(/Unexpected server response: 401/);
-    expect(__getOpenConnectionsForTests()).toHaveLength(0);
+    const { ws, next } = await openWsClient(app, {
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${tampered}` },
+    });
+    try {
+      await next();
+      const open = __getOpenConnectionsForTests();
+      expect(open).toHaveLength(1);
+      expect(open[0]?.user).toBeUndefined();
+    } finally {
+      ws.terminate();
+    }
   });
 
-  it('rejects an upgrade with an expired JWT (HTTP 401)', async () => {
+  it('accepts an upgrade with an expired JWT as anonymous (user === undefined)', async () => {
     // Sign with `now` pinned to 1970 so the token's `exp` is far in
     // the past relative to the verify clock (default `Date.now`).
-    // Even without the secret-pinned verify clock, the token would
-    // be rejected; this case verifies the verify path's expired-token
-    // branch runs.
+    // The expired-cookie path collapses to anonymous; the
+    // `canSeeSessionAnonymously` predicate is the only authority
+    // for an anonymous caller's reachable sessions.
     const token = await signSessionToken({ sub: FIXTURE_USER_ID }, TEST_SESSION_SECRET, {
       now: () => 1_000,
     });
-    await expect(
-      openWsClient(app, { headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` } }),
-    ).rejects.toThrow(/Unexpected server response: 401/);
-    expect(__getOpenConnectionsForTests()).toHaveLength(0);
+    const { ws, next } = await openWsClient(app, {
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    try {
+      await next();
+      const open = __getOpenConnectionsForTests();
+      expect(open).toHaveLength(1);
+      expect(open[0]?.user).toBeUndefined();
+    } finally {
+      ws.terminate();
+    }
   });
 });
 

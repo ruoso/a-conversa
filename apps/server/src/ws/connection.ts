@@ -109,12 +109,7 @@ import fastifyWebsocket from '@fastify/websocket';
 import type { FastifyInstance, FastifyPluginAsync, FastifyRequest } from 'fastify';
 import fp from 'fastify-plugin';
 
-import {
-  authenticateRequest,
-  AUTH_REQUIRED_CODE,
-  AUTH_REQUIRED_MESSAGE,
-  type AuthUser,
-} from '../auth/middleware.js';
+import { authenticateRequest, type AuthUser } from '../auth/middleware.js';
 import { resolveSessionTokenSecret } from '../auth/pending-cookie.js';
 import { getDefaultPool, type DbPool } from '../db.js';
 import { ApiError } from '../errors.js';
@@ -400,26 +395,26 @@ function buildConnectionHandler(
 ): (socket: WebSocket, request: FastifyRequest) => void {
   return (socket, request) => {
     // The `preValidation` auth gate (wired below in `wsRoutePlugin`)
-    // has already verified the platform session cookie and populated
-    // `request.authUser`. If we reach this point, the upgrade is
-    // authenticated; an unauthenticated upgrade would have been
-    // rejected with a 401 envelope by the centralized error handler
-    // BEFORE this handler ever fires (per
-    // tasks/refinements/backend/ws_auth_on_connect.md).
-    //
-    // The defensive narrow below is for the type checker —
-    // `authUser` is optional at the type level (public routes never
-    // populate it) but the gate guarantees population for `/api/ws`. A
-    // missing value here would indicate a wiring bug (the gate was
-    // bypassed); throw so the library's `errorHandler` emits a 1011
-    // and we don't carry on with `undefined`.
+    // has already run. Per ADR 0029 + the
+    // `aud_anonymous_ws_subscribe` refinement, the gate now ACCEPTS
+    // anonymous upgrades — a missing / invalid cookie produces
+    // `request.authUser === undefined` and the upgrade proceeds. The
+    // narrow below is now a real branch, not a wiring-bug check:
+    // anonymous connections carry `ctx.user === undefined` through
+    // the handler surface, and the subscribe / write handlers
+    // discriminate by `connection.user === undefined`. The
+    // origin-allowlist gate (still in the `preValidation` hook
+    // above) is the only upgrade-time reject — off-origin upgrades
+    // get HTTP 403 and never reach this handler.
     const user = request.authUser;
-    if (user === undefined) {
-      throw new Error('ws-auth-gate bypass: request.authUser is undefined inside the WS handler');
-    }
 
     const connectionId = randomUUID();
-    const ctx: WsConnectionContext = { connectionId, socket, user };
+    // `exactOptionalPropertyTypes` distinguishes "property absent"
+    // from "property present with `undefined`" — the
+    // `WsConnectionContext.user?` field must be OMITTED rather than
+    // explicitly `undefined` for an anonymous connection.
+    const ctx: WsConnectionContext =
+      user === undefined ? { connectionId, socket } : { connectionId, socket, user };
     openConnections.add(ctx);
     addToConnectionsByUser(ctx);
 
@@ -443,7 +438,7 @@ function buildConnectionHandler(
     // `@fastify/websocket` only spins one request per upgrade, but
     // future-proof the log vocabulary).
     request.log.info(
-      { connectionId, userId: user.id, screenName: user.screenName },
+      { connectionId, userId: user?.id, screenName: user?.screenName },
       'ws-connection-opened',
     );
 
@@ -565,7 +560,7 @@ function buildConnectionHandler(
       // to a string for the log line. Empty buffers serialise to an
       // empty string, which is the right "no reason given" signal.
       const reason = reasonBuffer.toString('utf8');
-      request.log.info({ connectionId, userId: user.id, code, reason }, 'ws-connection-closed');
+      request.log.info({ connectionId, userId: user?.id, code, reason }, 'ws-connection-closed');
     });
 
     // Unexpected-error path. Triggered today by:
@@ -960,19 +955,33 @@ const wsRoutePlugin: FastifyPluginAsync<{ auth: WsAuthResolvers }> = (app, opts)
 
         const rawHeader = request.headers['cookie'];
         const cookieHeader = typeof rawHeader === 'string' ? rawHeader : undefined;
+        // **Anonymous upgrade is allowed** (per ADR 0029 + refinement
+        // `aud_anonymous_ws_subscribe`). The cookie-on-upgrade contract
+        // documented above is RELAXED for `/api/ws`: a missing or
+        // invalid cookie no longer 401s; instead the upgrade proceeds
+        // with `request.authUser = undefined` and the per-handler
+        // visibility checks (subscribe → `canSeeSessionAnonymously`;
+        // every write handler → wire `forbidden` envelope) enforce the
+        // privacy boundary at the data layer. The origin-allowlist
+        // gate above is unchanged — anonymous upgrade does NOT relax
+        // the same-origin / production-allowlist contract.
+        //
         // Short-circuit BEFORE resolving the pool when no cookie is
         // present. `authenticateRequest` would do the same internally
         // (its first step is `readSessionCookieFromHeader`), but
         // pulling the check up here means the lazy pool resolution
-        // doesn't fire for unauth upgrades — important in tests + dev
-        // where `DATABASE_URL` may not be set and `getDefaultPool()`
-        // throws. The 401 envelope is the same in either path.
+        // doesn't fire for anonymous upgrades — important in tests +
+        // dev where `DATABASE_URL` may not be set and
+        // `getDefaultPool()` throws.
         if (cookieHeader === undefined || cookieHeader === '') {
           request.log.debug(
             { route: '/api/ws' },
-            'ws-auth-on-connect rejected — no session cookie on upgrade request',
+            'ws-auth-on-connect: no session cookie — proceeding as anonymous',
           );
-          throw new ApiError(401, AUTH_REQUIRED_CODE, AUTH_REQUIRED_MESSAGE);
+          // `request.authUser` is left unset (the `exactOptionalPropertyTypes`
+          // distinction: omitted, not explicitly `undefined`). The
+          // connection handler reads it back as `undefined` either way.
+          return;
         }
         const authUser = await authenticateRequest(
           cookieHeader,
@@ -981,14 +990,22 @@ const wsRoutePlugin: FastifyPluginAsync<{ auth: WsAuthResolvers }> = (app, opts)
           auth.now,
         );
         if (authUser === null) {
-          // Debug-only: log the reject so the operator can correlate
-          // the 401 with a request id. The error handler renders the
-          // 401 envelope; this line just adds the context.
+          // Cookie was present but invalid (expired / forged /
+          // soft-deleted user). Treat as anonymous for the
+          // audience-surface case; a malicious actor who forged a
+          // cookie does not bypass the anonymous-only visibility
+          // check (the SQL fragment in `canSeeSessionAnonymously` is
+          // strictly `privacy = 'public' AND ended_at IS NULL`).
+          //
+          // `request.authUser` is left unset (the
+          // `exactOptionalPropertyTypes` distinction: omitted, not
+          // explicitly `undefined`). The connection handler reads it
+          // back as `undefined` either way.
           request.log.debug(
             { route: '/api/ws' },
-            'ws-auth-on-connect rejected — cookie present but verify/lookup failed',
+            'ws-auth-on-connect: cookie present but verify/lookup failed — proceeding as anonymous',
           );
-          throw new ApiError(401, AUTH_REQUIRED_CODE, AUTH_REQUIRED_MESSAGE);
+          return;
         }
         request.authUser = authUser;
       },

@@ -54,3 +54,37 @@ Feature: WebSocket audience subscribe-only contract
     And the client sends a subscribe envelope for session "aaaa1111-aaaa-4aaa-8aaa-aaaa11111103"
     And the audience-typed client raw-sends a propose envelope for session "aaaa1111-aaaa-4aaa-8aaa-aaaa11111103" with expectedSequence 3 targeting node "aaaa1111-aaaa-4aaa-8aaa-aaaa1111ab03"
     Then the audience-typed client receives an audience-publish rejection envelope
+
+  # ---- Anonymous-WS scenarios (per ADR 0029 + aud_anonymous_ws_subscribe) ----
+  #
+  # The anonymous variants of the audience-role wire contract land in
+  # the same feature file (Decision §6). The cookie-on-upgrade gate
+  # now falls through to anonymous on missing/invalid cookie; the
+  # subscribe handler routes via the new `canSeeSessionAnonymously`
+  # predicate (strictly public + not-ended) and the write handlers
+  # reject with `forbidden`. The Background's authenticated cookie
+  # is established but unused by these scenarios — the anonymous
+  # connect step deliberately omits it.
+
+  Scenario: An anonymous (no-cookie) client subscribes to a public session and receives a subscribed ack and live event-applied broadcasts
+    Given a public session owned by "alice-ws" exists with id "aaaa1111-aaaa-4aaa-8aaa-aaaa11111201"
+    When an anonymous (no-cookie) WebSocket client connects to "/api/ws"
+    And the client sends a subscribe envelope for session "aaaa1111-aaaa-4aaa-8aaa-aaaa11111201"
+    Then the client receives a subscribed ack referencing the subscribe envelope
+    When the server emits an event-applied broadcast for session "aaaa1111-aaaa-4aaa-8aaa-aaaa11111201" with sequence 1
+    Then the client receives an event-applied envelope for sequence 1
+
+  Scenario: An anonymous client subscribing to a private session is rejected with not-found
+    Given a private session owned by "alice-ws" exists with id "aaaa1111-aaaa-4aaa-8aaa-aaaa11111203"
+    When an anonymous (no-cookie) WebSocket client connects to "/api/ws"
+    And the client sends a subscribe envelope for session "aaaa1111-aaaa-4aaa-8aaa-aaaa11111203"
+    Then the client receives an error envelope with code "not-found" referencing the subscribe envelope
+
+  Scenario: An anonymous client that subscribed and raw-sends a propose envelope is rejected with forbidden, connection stays open
+    Given a user with oauth_subject "authelia:carol-host-audience" exists with screen_name "carol-host-audience"
+    And a propose-ready session hosted by another user "carol-host-audience" exists with id "aaaa1111-aaaa-4aaa-8aaa-aaaa11111204" and node id "aaaa1111-aaaa-4aaa-8aaa-aaaa1111ab04" — the cucumber-world cookie user is NOT a participant
+    When an anonymous (no-cookie) WebSocket client connects to "/api/ws"
+    And the client sends a subscribe envelope for session "aaaa1111-aaaa-4aaa-8aaa-aaaa11111204"
+    And the audience-typed client raw-sends a propose envelope for session "aaaa1111-aaaa-4aaa-8aaa-aaaa11111204" with expectedSequence 3 targeting node "aaaa1111-aaaa-4aaa-8aaa-aaaa1111ab04"
+    Then the anonymous client receives a forbidden error envelope referencing the propose envelope
+    And the anonymous client connection is still open

@@ -77,7 +77,19 @@ interface AudienceScratch {
   wsLifecycleClient?: WsClient;
   wsAudienceProposeMessageId?: string;
   wsAudienceProposeFrames?: string[];
+  // Carriers shared with `backend-ws-auth.steps.ts` for the
+  // anonymous-connect path (no cookie).
+  wsAuthApp?: { injectWS: AppInjectWS; close: () => Promise<void> };
 }
+
+type AppInjectWS = (
+  path?: string,
+  upgradeContext?: { headers?: Record<string, string> },
+  options?: {
+    onInit?: (ws: WsClient) => void;
+    onOpen?: (ws: WsClient) => void;
+  },
+) => Promise<WsClient>;
 
 function scratch(world: AConversaWorld): AudienceScratch {
   // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
@@ -247,6 +259,64 @@ Given(
 );
 
 // ============================================================
+// Whens — anonymous (no-cookie) connect, mirroring
+// `backend-ws-connection.steps.ts`'s authenticated connect step but
+// deliberately omitting the cookie header. Per ADR 0029 +
+// `aud_anonymous_ws_subscribe`, the WS auth gate falls through to
+// anonymous on a missing cookie and the upgrade completes with
+// `connection.user === undefined`. The step pre-attaches the
+// message listener (same shape as the authenticated step) and waits
+// for the hello frame so the following `client sends a subscribe
+// envelope` step observes a settled connection.
+// ============================================================
+
+When(
+  'an anonymous \\(no-cookie) WebSocket client connects to {string}',
+  async function (this: AConversaWorld, path: string) {
+    const s = scratch(this);
+    const app = s.wsAuthApp;
+    assert.ok(
+      app,
+      'WS auth app not initialized — Given "a ws-auth-gated server is built against the pglite-backed pool" missing',
+    );
+
+    let firstFrameResolve: ((value: string) => void) | null = null;
+    const firstFrame = new Promise<string>((resolve) => {
+      firstFrameResolve = resolve;
+    });
+
+    // NO cookie header — anonymous upgrade per ADR 0029. The gate's
+    // cookie short-circuit falls through to anonymous; the
+    // upgrade completes with `request.authUser === undefined`.
+    const ws = await app.injectWS(
+      path,
+      {},
+      {
+        onInit(client: WsClient) {
+          client.on('message', (data: unknown) => {
+            if (firstFrameResolve) {
+              const fn = firstFrameResolve;
+              firstFrameResolve = null;
+              fn(toUtf8(data));
+            }
+          });
+        },
+      },
+    );
+    s.wsLifecycleClient = ws;
+
+    // Drain the hello frame so the next step observes a settled
+    // connection.
+    await Promise.race([
+      firstFrame,
+      new Promise<string>((_, reject) =>
+        setTimeout(() => reject(new Error('anonymous ws first frame timeout')), 500),
+      ),
+    ]);
+  },
+);
+
+// ============================================================
 // Whens — raw-send a propose envelope on the open client. This step
 // exists to make the test's intent unambiguous: the audience-typed
 // client's TypeScript surface narrowing (Decision §6 of the
@@ -329,6 +399,53 @@ Then(
     );
   },
 );
+
+// ============================================================
+// Thens — anonymous-write rejection (per ADR 0029 +
+// `aud_anonymous_ws_subscribe` Decision §4). An anonymous client
+// that raw-sends a write envelope (e.g. `propose`) receives a wire
+// `error` envelope with `code: 'forbidden'` + `inResponseTo:
+// envelope.id`; the connection stays open per the
+// `ws_error_message`'s connection-stays-open invariant.
+// ============================================================
+
+Then(
+  'the anonymous client receives a forbidden error envelope referencing the propose envelope',
+  async function (this: AConversaWorld) {
+    const s = scratch(this);
+    const queue = ensureAudienceProposeFramesQueue(this);
+    const err = await waitForFrame(queue, (parsed) => parsed.type === 'error');
+    assert.ok(err, 'did not receive an `error` envelope within timeout');
+    assert.equal(
+      err.inResponseTo,
+      s.wsAudienceProposeMessageId,
+      `expected inResponseTo to match the propose envelope's id (${s.wsAudienceProposeMessageId})`,
+    );
+    const payload = err.payload as { code?: unknown; message?: unknown };
+    assert.equal(
+      payload.code,
+      'forbidden',
+      `expected wire code 'forbidden' (the anonymous client cannot write — handler's null-user branch fires before the participant gate), got ${JSON.stringify(payload.code)}`,
+    );
+    assert.ok(
+      typeof payload.message === 'string' && payload.message.length > 0,
+      'expected payload.message to be a non-empty string',
+    );
+  },
+);
+
+Then('the anonymous client connection is still open', function (this: AConversaWorld) {
+  const ws = scratch(this).wsLifecycleClient;
+  assert.ok(ws, 'no ws client — anonymous connect step missing');
+  // The `ws` library's readyState values are: 0 CONNECTING, 1 OPEN,
+  // 2 CLOSING, 3 CLOSED. After a per-envelope rejection the
+  // connection MUST stay OPEN per `ws_error_message`.
+  assert.equal(
+    ws.readyState,
+    1,
+    `expected anonymous connection to stay OPEN (readyState 1) after forbidden rejection, got readyState ${ws.readyState}`,
+  );
+});
 
 // ============================================================
 // Teardown — only the per-feature carriers; the lifecycle client +

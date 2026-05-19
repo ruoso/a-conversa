@@ -411,12 +411,22 @@ describe('pruneSubscribersForPrivateSession', () => {
     }
   });
 
-  it('skips connections without a userId binding (legacy two-arg subscribe) without crashing', async () => {
+  // -- Anonymous-subscriber branch (per ADR 0029 / aud_anonymous_ws_subscribe) --
+  //
+  // After the anonymous-WS-upgrade widening, a connection that
+  // subscribed without a userId IS a genuine anonymous viewer (not a
+  // legacy fixture). The pruner's anonymous branch evicts those
+  // subscribers unconditionally when the session flips to private —
+  // an anonymous viewer can never see a private session by
+  // construction, so the per-subscriber DB round trip is skipped.
+
+  it('evicts an anonymous subscriber when the session flips to private + sends an unsubscribed envelope with reason: privacy-flipped', async () => {
     const subscriptions = new WsSubscriptionRegistry();
     const connectionSenders = new WsConnectionSenderRegistry();
     const sent: WsEnvelopeUnion[] = [];
-    // Legacy fixture: subscribe without a userId. The pruner cannot
-    // evaluate visibility and must skip without throwing.
+    // Anonymous: subscribe without a userId — the production subscribe
+    // handler does this for `connection.user === undefined` per
+    // `apps/server/src/ws/handlers/subscribe.ts`.
     subscriptions.subscribe(CONN_A, SESS_PRIVATE);
     connectionSenders.register(CONN_A, (env) => {
       sent.push(env);
@@ -431,10 +441,60 @@ describe('pruneSubscribersForPrivateSession', () => {
       log: makeFakeLog(),
     });
 
-    // Subscription kept (the pruner cannot prove the user can't see
-    // the session without a userId binding; defensive posture).
-    expect(subscriptions.connectionsForSession(SESS_PRIVATE)).toEqual([CONN_A]);
-    expect(sent).toEqual([]);
+    // The registry entry is gone — anonymous-prune is unconditional.
+    expect(subscriptions.connectionsForSession(SESS_PRIVATE)).toEqual([]);
+    expect(subscriptions.sessionsForConnection(CONN_A)).toEqual([]);
+
+    // The server-initiated `unsubscribed` envelope was sent on
+    // CONN_A's wire.
+    expect(sent).toHaveLength(1);
+    const env = sent[0];
+    expect(env?.type).toBe('unsubscribed');
+    expect(env?.inResponseTo).toBeUndefined();
+    if (env?.type === 'unsubscribed') {
+      expect(env.payload.sessionId).toBe(SESS_PRIVATE);
+      expect(env.payload.reason).toBe('privacy-flipped');
+    }
+  });
+
+  it('does NOT issue a visibility DB query for an anonymous subscriber (the flip-to-private eviction is unconditional)', async () => {
+    const subscriptions = new WsSubscriptionRegistry();
+    const connectionSenders = new WsConnectionSenderRegistry();
+    const sent: WsEnvelopeUnion[] = [];
+    subscriptions.subscribe(CONN_A, SESS_PRIVATE); // anonymous
+    connectionSenders.register(CONN_A, (env) => {
+      sent.push(env);
+    });
+
+    // Spy executor: count the number of `query` calls. The
+    // anonymous-prune branch must NOT call canSeeSession (the answer
+    // is constant "false" by construction); this pins the
+    // no-DB-round-trip property.
+    let queryCalls = 0;
+    const pool: VisibilityExecutor = {
+      query<TRow extends Record<string, unknown> = Record<string, unknown>>(): Promise<{
+        rows: TRow[];
+      }> {
+        queryCalls++;
+        return Promise.resolve({ rows: [] });
+      },
+    };
+
+    await pruneSubscribersForPrivateSession({
+      subscriptions,
+      connectionSenders,
+      pool,
+      sessionId: SESS_PRIVATE,
+      log: makeFakeLog(),
+    });
+
+    // Zero visibility queries — the anonymous branch is a direct
+    // eviction.
+    expect(queryCalls).toBe(0);
+    // The eviction still fired.
+    expect(subscriptions.connectionsForSession(SESS_PRIVATE)).toEqual([]);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.type).toBe('unsubscribed');
   });
 
   it('continues the loop when one connection sender throws (per-connection error isolation)', async () => {

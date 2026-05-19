@@ -91,4 +91,51 @@ describe('WsClientProvider', () => {
     expect(() => render(<Probe />)).toThrow(/useWsClient must be called inside/);
     errorSpy.mockRestore();
   });
+
+  // -- Anonymous-WS opt-in (per ADR 0029 / aud_anonymous_ws_subscribe) --
+  //
+  // The audience surface opts into the anonymous-WS path by passing
+  // `allowAnonymous`. The provider's effect must open the socket
+  // under `auth.status === 'unauthenticated'` when the flag is set,
+  // and must NOT open under the same status when the flag is absent
+  // (moderator + participant surfaces' default posture).
+
+  it('does NOT open the socket under unauthenticated when allowAnonymous is the default (false)', () => {
+    const { client, log } = makeFakeClient();
+    render(
+      <WsClientProvider auth={{ status: 'unauthenticated' }} client={client}>
+        <Probe />
+      </WsClientProvider>,
+    );
+    // Default behavior preserved for moderator/participant call sites.
+    expect(log.connects).toBe(0);
+  });
+
+  it('opens the socket under unauthenticated when allowAnonymous is true (audience opt-in)', () => {
+    const { client, log } = makeFakeClient();
+    render(
+      <WsClientProvider auth={{ status: 'unauthenticated' }} client={client} allowAnonymous>
+        <Probe />
+      </WsClientProvider>,
+    );
+    // The audience surface's mount in `apps/audience/src/main.tsx`
+    // passes `allowAnonymous`; the server-side anonymous-WS-upgrade
+    // path (ADR 0029) is what makes this connect succeed in
+    // production.
+    expect(log.connects).toBe(1);
+  });
+
+  it('closes the client on unmount when opened anonymously via allowAnonymous', () => {
+    const { client, log } = makeFakeClient();
+    const { unmount } = render(
+      <WsClientProvider auth={{ status: 'unauthenticated' }} client={client} allowAnonymous>
+        <Probe />
+      </WsClientProvider>,
+    );
+    expect(log.connects).toBe(1);
+    unmount();
+    // Same teardown semantics as the authenticated path — the
+    // anonymous viewer's disconnect must release the singleton.
+    expect(log.closes).toBe(1);
+  });
 });

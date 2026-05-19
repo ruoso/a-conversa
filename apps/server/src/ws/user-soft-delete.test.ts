@@ -380,21 +380,38 @@ describe('closeUserConnections — soft-delete WS revocation (coverage.md G-003)
     }
   });
 
-  it('rejects a NEW WS upgrade attempt for a soft-deleted user (auth-gate regression pin)', async () => {
+  it('accepts a NEW WS upgrade attempt for a soft-deleted user as anonymous (user binding wiped)', async () => {
+    // Per ADR 0029 + `aud_anonymous_ws_subscribe`, the WS upgrade
+    // gate no longer 401s when the cookie's user fails the
+    // `WHERE deleted_at IS NULL` lookup — it falls through to
+    // anonymous and the upgrade completes with `user === undefined`.
+    // The soft-deleted user gains NO privilege from their forged
+    // cookie: the per-session privacy boundary moves into the
+    // `canSeeSessionAnonymously` predicate (public + not-ended
+    // only), which is strictly stricter than the authenticated
+    // visibility rule the soft-deleted user used to have.
+    //
     // Sign the cookie BEFORE the soft-delete (the JWT itself is
-    // structurally valid; the rejection comes from the
-    // `WHERE deleted_at IS NULL` clause in `authenticateRequest`).
+    // structurally valid; the rejection moves from a 401 to an
+    // anonymous-user mapping).
     const cookie = await fixtureCookieHeader(FIXTURE_USER_ID);
     pool.setUserDeletedAt(FIXTURE_USER_ID, new Date().toISOString());
 
-    // `injectWS` rejects with "Unexpected server response: 401" when
-    // the upgrade gate emits a 401 envelope (per ws_auth_on_connect).
-    await expect(openWsClient(app, { headers: { cookie } })).rejects.toThrow(
-      /Unexpected server response: 401/,
-    );
-    // No connection landed in either inspector.
-    expect(__getConnectionsForUserForTests(FIXTURE_USER_ID)).toHaveLength(0);
-    expect(__getOpenConnectionsForTests()).toHaveLength(0);
+    const { ws, next } = await openWsClient(app, { headers: { cookie } });
+    try {
+      const raw = await next();
+      const parsed = JSON.parse(raw) as { type?: unknown };
+      expect(parsed.type).toBe('hello');
+      // The soft-deleted user is NOT bound to any connection — the
+      // per-user inspector remains empty. The open-connections
+      // inspector has the anonymous connection (user === undefined).
+      expect(__getConnectionsForUserForTests(FIXTURE_USER_ID)).toHaveLength(0);
+      const opens = __getOpenConnectionsForTests();
+      expect(opens).toHaveLength(1);
+      expect(opens[0]?.user).toBeUndefined();
+    } finally {
+      ws.terminate();
+    }
   });
 
   it('returns 0 when the user has no open connections (no-op path)', () => {

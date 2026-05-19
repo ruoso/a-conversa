@@ -390,10 +390,15 @@ export function buildCatchUpHandler(
     const { sessionId, sinceSequence } = envelope.payload;
     const userId = connection.user?.id;
     if (userId === undefined) {
-      // The upgrade-time auth gate populates `connection.user`. Reaching
-      // this branch means a wiring bug — surface as a generic 500-
-      // equivalent via the dispatcher's `onHandlerError` no-leak fallback.
-      throw new Error('ws-catch-up: connection.user is undefined — auth gate bypassed');
+      // Anonymous client (per ADR 0029 + `aud_anonymous_ws_subscribe`).
+      // Anonymous catch-up is deferred (a future
+      // `aud_anonymous_catch_up` leaf will widen the rate-limit
+      // accounting for read-only viewers); for v0 the anonymous
+      // client's catch-up envelope receives a wire `forbidden`. If a
+      // brief disconnect drops events, the viewer simply doesn't see
+      // them — missing events are visually inert for the passive
+      // audience surface.
+      throw ApiError.forbidden('this action requires an authenticated session', { sessionId });
     }
 
     // Gate 0 — per-connection rate limit. Runs BEFORE the subscribe /

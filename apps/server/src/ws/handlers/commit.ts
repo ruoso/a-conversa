@@ -132,10 +132,13 @@ export function buildCommitHandler(
     const { sessionId, expectedSequence, proposalId } = envelope.payload;
     const userId = connection.user?.id;
     if (userId === undefined) {
-      // The upgrade-time auth gate populates `connection.user`. Reaching
-      // this branch means a wiring bug — surface as a generic 500-
-      // equivalent via the dispatcher's `onHandlerError` no-leak fallback.
-      throw new Error('ws-commit: connection.user is undefined — auth gate bypassed');
+      // Anonymous client (per ADR 0029 + `aud_anonymous_ws_subscribe`).
+      // Audience-role connections never write — reject with a wire
+      // `forbidden` envelope so the client sees a typed code. The
+      // dispatcher maps `ApiError.forbidden` to the canonical
+      // `error` envelope with `inResponseTo: envelope.id`; the
+      // connection stays open per `ws_error_message`.
+      throw ApiError.forbidden('this action requires an authenticated session', { sessionId });
     }
 
     // Gate 1 — subscribe-before-act. Identical to the propose/vote

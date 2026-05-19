@@ -24,10 +24,14 @@
 // `requiredAuthLevel: 'public'` is the audience's policy: the host
 // (`apps/root/src/surfaces/SurfaceHost.tsx`) reads this hint and skips
 // the redirect-to-`/login` gate for anonymous visitors after
-// `aud_no_auth_for_public` landed. The placeholder route renders for
-// any visitor; private-session enforcement is the server's
-// responsibility (the WS upgrade still authenticates today; anonymous
-// live-event delivery is deferred to `aud_anonymous_ws_subscribe`).
+// `aud_no_auth_for_public` landed. `allowAnonymous` on the
+// `<WsClientProvider>` is the audience's per-surface opt-in to the
+// anonymous-WS-upgrade path per ADR 0029 + `aud_anonymous_ws_subscribe`:
+// the provider's effect also opens the socket when
+// `auth.status === 'unauthenticated'`. The server's
+// `canSeeSessionAnonymously` predicate gates anonymous subscriptions
+// at the data layer (public + not-ended only); anonymous writes are
+// rejected with a wire `forbidden` envelope.
 
 import React from 'react';
 import ReactDOM from 'react-dom/client';
@@ -53,17 +57,18 @@ export const mount: MountFn = (props) => {
         <AuthValueProvider value={props.auth}>
           {/*
            * `<WsClientProvider>` mounts the audience surface's single
-           * WS client. The provider's internal effect opens the
-           * connection iff `auth.status === 'authenticated'`. The
-           * host now honors `meta.requiredAuthLevel: 'public'` and
-           * mounts the audience surface for anonymous visitors
-           * (`aud_no_auth_for_public` landed), so the surface sees
-           * `props.auth.status === 'unauthenticated'` for those
-           * callers; the provider's connect step short-circuits and
-           * no socket is opened. Live-event delivery for anonymous
-           * viewers is the explicitly-deferred
-           * `aud_anonymous_ws_subscribe` leaf's scope (server-side
-           * WS upgrade widening + per-session privacy enforcement).
+           * WS client. With `allowAnonymous` set, the provider's
+           * effect opens the connection when
+           * `auth.status === 'authenticated'` OR `'unauthenticated'`
+           * — matching the server-side anonymous-WS-upgrade path
+           * landed by `aud_anonymous_ws_subscribe` + ADR 0029. An
+           * authenticated visitor's session cookie still attaches on
+           * upgrade and the server resolves the real `AuthUser`; an
+           * anonymous visitor's cookie-less upgrade succeeds and
+           * `connection.user` stays `undefined` on the server. The
+           * subscribe handler discriminates per-call (public-only
+           * for anonymous via `canSeeSessionAnonymously`; the full
+           * "public OR host OR participant" rule for authenticated).
            *
            * `audienceWsStore` is passed in both `clientOptions.store`
            * (for inbound envelope dispatch by the auto-constructed
@@ -77,6 +82,7 @@ export const mount: MountFn = (props) => {
             auth={{ status: props.auth.status }}
             clientOptions={{ store: audienceWsStore }}
             store={audienceWsStore}
+            allowAnonymous
           >
             <BrowserRouter basename={props.routerBasePath}>
               <App />

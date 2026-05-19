@@ -224,14 +224,15 @@ export class WsSubscriptionRegistry {
    * lifecycle: the binding is allocated when the connection first
    * subscribes and cleared on `removeConnection`.
    *
-   * **Optional binding.** Legacy callers that pass two arguments to
-   * `subscribe(connectionId, sessionId)` produce subscriptions without
-   * a user binding; `userForConnection` returns `undefined` for those.
-   * The pruner skips such entries with a warn log (it cannot evaluate
-   * `canSeeSession` without a userId) — a defensive posture that
-   * keeps existing test fixtures working while production call sites
-   * always pass the userId. Refinement:
-   *   tasks/refinements/backend-hardening/privacy_flip_subscription_prune.md.
+   * **Optional binding.** Anonymous-subscribe callers (per ADR 0029)
+   * and legacy two-argument call sites pass
+   * `subscribe(connectionId, sessionId)` without a userId;
+   * `userForConnection` returns `undefined` for those. The pruner's
+   * anonymous branch evicts such entries unconditionally on a
+   * privacy flip (an anonymous viewer can never see a private
+   * session by construction). Refinement:
+   *   tasks/refinements/backend-hardening/privacy_flip_subscription_prune.md
+   *   tasks/refinements/audience/aud_anonymous_ws_subscribe.md.
    */
   private readonly userByConnection = new Map<string, string>();
   /**
@@ -509,11 +510,14 @@ export interface PruneSubscribersForPrivateSessionOptions {
  * privacy. The predicate is the authoritative gate; this helper just
  * iterates and calls it.
  *
- * **Connections without a userId binding are skipped.** Legacy test
- * fixtures that call `subscribe(connId, sessId)` without a userId
- * produce subscriptions the pruner cannot evaluate; those are skipped
- * with a debug-level log (no eviction, no error). Production call
- * sites always pass the userId.
+ * **Connections without a userId binding are evicted unconditionally.**
+ * Per ADR 0029 + `aud_anonymous_ws_subscribe`, an anonymous subscriber
+ * (`subscribe(connId, sessId)` with no userId argument) can never see
+ * a private session by construction — the
+ * `canSeeSessionAnonymously` predicate is strictly "public AND
+ * not-ended". The pruner's anonymous branch drops the registry entry
+ * and emits `unsubscribed { reason: 'privacy-flipped' }` without a
+ * per-subscriber DB round trip.
  *
  * **`canSeeSession` failure is per-connection.** If the visibility
  * query itself rejects (pool exhausted, intermittent DB error), the
@@ -538,14 +542,46 @@ export async function pruneSubscribersForPrivateSession(
   for (const connectionId of connectionIds) {
     const userId = subscriptions.userForConnection(connectionId);
     if (userId === undefined) {
-      // Subscription has no user binding (legacy test fixture or a
-      // wiring regression that bypassed the production subscribe
-      // handler). Without a userId we cannot evaluate `canSeeSession`;
-      // skip with a debug-level log. Production paths always bind a
-      // userId.
-      log.debug(
-        { sessionId, connectionId },
-        'ws-prune-privacy-flip: skipping connection — no userId binding (legacy fixture or wiring gap)',
+      // **Anonymous subscriber** (per ADR 0029 +
+      // `aud_anonymous_ws_subscribe`). An anonymous viewer can never
+      // see a private session by construction — the
+      // `canSeeSessionAnonymously` predicate is `privacy = 'public'
+      // AND ended_at IS NULL`, which is trivially false on a session
+      // that just flipped to private. The eviction is unconditional;
+      // we skip the per-subscriber DB round trip the authenticated
+      // path runs because the answer is constant.
+      //
+      // Emit the same `unsubscribed { reason: 'privacy-flipped' }`
+      // envelope the authenticated eviction emits + drop the
+      // registry entry. Per-connection error isolation: a send /
+      // sender-missing failure logs at warn level and the loop
+      // continues; the registry is dropped regardless to prevent a
+      // post-flip broadcast leak.
+      const envelope: WsEnvelope<'unsubscribed'> = {
+        type: 'unsubscribed',
+        id: randomUUID(),
+        payload: { sessionId, reason },
+      };
+      const sender = connectionSenders.get(connectionId);
+      if (sender === undefined) {
+        // Defensive: the connection's sender has already been
+        // unregistered (close hook ran between snapshot and this
+        // iteration). Drop the registry entry to match.
+        subscriptions.unsubscribe(connectionId, sessionId);
+        continue;
+      }
+      try {
+        sender(envelope);
+      } catch (err) {
+        log.warn(
+          { err, sessionId, connectionId, anonymous: true },
+          'ws-prune-privacy-flip: anonymous send failed — removing subscription anyway to prevent post-flip broadcast leak',
+        );
+      }
+      subscriptions.unsubscribe(connectionId, sessionId);
+      log.info(
+        { sessionId, connectionId, anonymous: true, reason },
+        'ws-prune-privacy-flip: anonymous subscriber evicted',
       );
       continue;
     }

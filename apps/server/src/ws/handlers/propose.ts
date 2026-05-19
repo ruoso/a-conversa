@@ -159,11 +159,15 @@ export function buildProposeHandler(
     const { sessionId, expectedSequence, proposal } = envelope.payload;
     const userId = connection.user?.id;
     if (userId === undefined) {
-      // The upgrade-time auth gate (`ws_auth_on_connect`) populates
-      // `connection.user`. Reaching this branch means a wiring bug —
-      // surface as a generic 500-equivalent (`internal-error`) via
-      // the dispatcher's `onHandlerError` no-leak fallback.
-      throw new Error('ws-propose: connection.user is undefined — auth gate bypassed');
+      // Anonymous client (per ADR 0029 + `aud_anonymous_ws_subscribe`).
+      // Audience-role connections never write — reject with a wire
+      // `forbidden` envelope so the client sees a typed code, not a
+      // generic `internal-error`. The dispatcher's `onHandlerError`
+      // seam maps `ApiError.forbidden` to the canonical `error`
+      // envelope with `code: 'forbidden'` + `inResponseTo:
+      // envelope.id`. The connection stays open per
+      // `ws_error_message`'s connection-stays-open invariant.
+      throw ApiError.forbidden('this action requires an authenticated session', { sessionId });
     }
 
     // Gate 1 — subscribe-before-act. Reuses `'forbidden'` from the

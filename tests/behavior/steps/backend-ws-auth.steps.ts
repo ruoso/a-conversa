@@ -167,18 +167,42 @@ When(
   async function (this: AConversaWorld, path: string) {
     const s = scratch(this);
     assert.ok(s.wsAuthApp, 'WS auth app not initialized — Given step missing');
-    // `injectWS` rejects when the server emits a non-101 response —
-    // exactly what the WS browser surface sees when the handshake
-    // fails (`Unexpected server response: <status>`). Capturing the
-    // rejection's message keeps the Then step a pure string-match
-    // against the HTTP status the server returned.
+    // Per ADR 0029 + `aud_anonymous_ws_subscribe`, a cookie-less
+    // upgrade is no longer 401 — the gate falls through to
+    // anonymous and the upgrade completes. Capture the hello frame
+    // for the Then step to assert.
+    let firstFrameResolve: ((value: string) => void) | null = null;
+    const firstFrame = new Promise<string>((resolve) => {
+      firstFrameResolve = resolve;
+    });
     try {
-      const ws = await s.wsAuthApp.injectWS(path, {}, {});
-      // Defensive: if the upgrade somehow succeeded, terminate the
-      // socket so the After hook isn't holding an open connection.
-      ws.terminate();
-      assert.fail('expected WS upgrade to be refused, but it succeeded');
+      const ws = await s.wsAuthApp.injectWS(
+        path,
+        {},
+        {
+          onInit(client: WsClient) {
+            client.on('message', (data: unknown) => {
+              if (firstFrameResolve) {
+                const fn = firstFrameResolve;
+                firstFrameResolve = null;
+                fn(toUtf8(data));
+              }
+            });
+          },
+        },
+      );
+      s.wsAuthClient = ws;
+      // Drain the hello frame.
+      const frame = await Promise.race([
+        firstFrame,
+        new Promise<string>((_, reject) =>
+          setTimeout(() => reject(new Error('ws first frame timeout')), 500),
+        ),
+      ]);
+      s.wsAuthFirstFrame = frame;
     } catch (err) {
+      // If the upgrade was unexpectedly refused, capture the
+      // rejection so the Then step can surface a precise failure.
       s.wsAuthRejectionMessage = err instanceof Error ? err.message : String(err);
     }
   },
@@ -248,6 +272,31 @@ Then(
     assert.ok(
       message.includes(String(expectedStatus)),
       `expected rejection message to include HTTP status ${expectedStatus}; got ${JSON.stringify(message)}`,
+    );
+  },
+);
+
+Then(
+  'the WebSocket upgrade completes anonymously and a hello frame arrives',
+  function (this: AConversaWorld) {
+    const s = scratch(this);
+    assert.ok(
+      s.wsAuthRejectionMessage === undefined,
+      `expected anonymous upgrade to complete but it was refused: ${s.wsAuthRejectionMessage ?? ''}`,
+    );
+    assert.ok(s.wsAuthClient, 'no ws client — anonymous connect step did not capture a client');
+    const frame = s.wsAuthFirstFrame;
+    assert.ok(frame, 'no first frame captured for anonymous upgrade');
+    // The canonical envelope shape per `ws_message_envelope` —
+    // `{ type: 'hello', id, payload: { connectionId } }`. The
+    // anonymous-fall-through contract: a hello frame arrives just
+    // like the authenticated path; the difference is server-side
+    // (`request.authUser === undefined`), not on the wire.
+    const parsed = JSON.parse(frame) as { type?: unknown };
+    assert.equal(
+      parsed.type,
+      'hello',
+      `expected first frame to be a hello envelope, got type=${JSON.stringify(parsed.type)}`,
     );
   },
 );

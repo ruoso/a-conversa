@@ -128,10 +128,14 @@ export function buildSnapshotHandler(
     const { sessionId } = envelope.payload;
     const userId = connection.user?.id;
     if (userId === undefined) {
-      // The upgrade-time auth gate populates `connection.user`. Reaching
-      // this branch means a wiring bug — surface as a generic 500-
-      // equivalent via the dispatcher's `onHandlerError` no-leak fallback.
-      throw new Error('ws-snapshot: connection.user is undefined — auth gate bypassed');
+      // Anonymous client (per ADR 0029 + `aud_anonymous_ws_subscribe`).
+      // The snapshot envelope re-uses the visibility predicate; for
+      // an anonymous viewer who could theoretically see a public
+      // session, the snapshot envelope is still deferred to a future
+      // leaf (the snapshot path's accounting + payload shape is
+      // orthogonal to the broadcast-subscribe path). Reject with a
+      // wire `forbidden` envelope so the client sees a typed code.
+      throw ApiError.forbidden('this action requires an authenticated session', { sessionId });
     }
 
     // Gate 1 — subscribe-before-act. Identical to the propose/vote/

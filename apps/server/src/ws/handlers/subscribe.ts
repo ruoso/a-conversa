@@ -44,7 +44,7 @@ import type { FastifyBaseLogger } from 'fastify';
 import type { WsEnvelope } from '@a-conversa/shared-types';
 
 import type { DbPool } from '../../db.js';
-import { canSeeSession } from '../../sessions/visibility.js';
+import { canSeeSession, canSeeSessionAnonymously } from '../../sessions/visibility.js';
 import type { WsConnectionContext } from '../connection.js';
 import { serializeWsEnvelope } from '../envelope.js';
 import type { WsDispatcher } from '../dispatcher.js';
@@ -76,27 +76,32 @@ export function buildSubscribeHandler(
   return async (envelope, connection) => {
     const { sessionId } = envelope.payload;
     const userId = connection.user?.id;
-    if (userId === undefined) {
-      // The auth gate (`ws_auth_on_connect`) populates `connection.user`
-      // before the dispatcher ever sees a message. Reaching this branch
-      // would indicate a wiring bug — log + drop so the connection
-      // stays usable for other messages, but make the issue loud.
-      opts.log.error(
-        {
-          connectionId: connection.connectionId,
-          messageId: envelope.id,
-        },
-        'ws-subscribe: connection.user is undefined — auth gate bypassed',
-      );
-      return;
-    }
 
-    const visible = await canSeeSession(opts.pool, sessionId, userId);
+    // Per ADR 0029 + `aud_anonymous_ws_subscribe`: the auth gate now
+    // accepts anonymous upgrades, so `connection.user` may be
+    // `undefined`. The visibility check splits on that:
+    //
+    //   - authenticated: `canSeeSession(pool, sessionId, userId)` —
+    //     "public OR host OR participant" (the existing rule).
+    //   - anonymous: `canSeeSessionAnonymously(pool, sessionId)` —
+    //     strictly "public AND not-ended". The existence-non-leak
+    //     rule the authenticated path uses is preserved (a private
+    //     session, an ended session, and a nonexistent session all
+    //     collapse to `not-found` for an anonymous probe).
+    //
+    // The registry call drops the `userId` argument when anonymous;
+    // `WsSubscriptionRegistry.subscribe(connId, sessId, userId?)`
+    // accepts the optional shape (see `subscriptions.ts`).
+    const visible =
+      userId === undefined
+        ? await canSeeSessionAnonymously(opts.pool, sessionId)
+        : await canSeeSession(opts.pool, sessionId, userId);
     if (!visible) {
       // Send the canonical `error` envelope (per `ws_error_message`).
       // `code: 'not-found'` inherits the existence-non-leak rule from
-      // `canSeeSession` — the visibility predicate collapses
-      // "doesn't exist" and "exists but not visible" (see
+      // the visibility predicate — both `canSeeSession` and
+      // `canSeeSessionAnonymously` collapse "doesn't exist" and
+      // "exists but not visible" (see
       // `apps/server/src/sessions/visibility.ts`'s docblock for the
       // 404-not-403 decision). `inResponseTo` correlates back to the
       // originating subscribe envelope's `id`.
@@ -106,8 +111,9 @@ export function buildSubscribeHandler(
           userId,
           sessionId,
           messageId: envelope.id,
+          anonymous: userId === undefined,
         },
-        'ws-subscribe rejected — session not visible to user; sending not-found error envelope',
+        'ws-subscribe rejected — session not visible; sending not-found error envelope',
       );
       sendWsError((wire) => connection.socket.send(wire), {
         code: 'not-found',
@@ -118,13 +124,21 @@ export function buildSubscribeHandler(
     }
 
     try {
-      // Pass the authenticated userId so the privacy-flip pruner
+      // Pass the authenticated userId (when present) so the
+      // privacy-flip pruner
       // (`pruneSubscribersForPrivateSession` in `../subscriptions.ts`)
       // can later evaluate `canSeeSession(pool, sessionId, userId)`
       // for this subscriber if the session's privacy flips. Closes
       // `docs/security/m3-review/coverage.md` G-001 in concert with
       // the PATCH `/sessions/:id/privacy` handler. Refinement:
       //   tasks/refinements/backend-hardening/privacy_flip_subscription_prune.md.
+      //
+      // For anonymous subscribers (`userId === undefined`) the
+      // registry stores the (connectionId, sessionId) tuple without a
+      // user binding; the privacy-flip pruner's anonymous branch
+      // evicts those subscribers unconditionally when the session
+      // flips to private (an anonymous viewer can never see a
+      // private session by construction — no DB round trip needed).
       opts.registry.subscribe(connection.connectionId, sessionId, userId);
     } catch (err) {
       if (err instanceof SubscriptionCapacityError) {
