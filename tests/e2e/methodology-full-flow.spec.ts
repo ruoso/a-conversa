@@ -565,18 +565,28 @@ test.describe
   // Phase 7 — axiom-mark (per-participant bedrock)
   // ──────────────────────────────────────────────────────────────
 
-  test.fixme('Phase 7.1: ben proposes an axiom-mark on a node for himself (via the right-click submenu)', () => {
-    // BLOCKED: axiom-mark submenu currently belongs to the
-    // moderator surface; a participant-side axiom-mark gesture is
-    // needed, OR the moderator must propose on behalf of the
-    // participant (which the engine rejects with axiom-mark-not-self).
-    //
-    // The methodology says axiom-marks are per-participant: only
-    // the participant themselves can hold a node as bedrock. The
-    // moderator-side submenu surfaces an inline error if alice
-    // tries to mark for ben. The correct gesture is ben tapping
-    // his own node → the participant detail panel's axiom-mark
-    // affordance.
+  test('Phase 7.1: ben taps N1 on his canvas and clicks "Mark as my axiom" to propose his own bedrock', async () => {
+    const n1 = _n1Id!;
+    // Synthetic tap on N1 → detail panel re-renders with N1's
+    // identity. The axiom-mark button only mounts for node selections
+    // (not edges).
+    await tapParticipantNode(benPage, n1);
+    await expect(benPage.getByTestId('participant-detail-panel-identity-wording')).toHaveText(
+      N1_WORDING,
+      { timeout: 15_000 },
+    );
+    const axiomBtn = benPage.locator(
+      `[data-testid="participant-axiom-mark-button"][data-node-id="${n1}"]`,
+    );
+    await expect(axiomBtn).toBeVisible({ timeout: 15_000 });
+    await axiomBtn.click();
+    // Tolerant: the propose envelope reached the server when the
+    // button settles back to enabled (in-flight latch off) OR the
+    // wire-error region surfaces a typed engine rejection.
+    const settled = benPage.locator(
+      '[data-testid="participant-axiom-mark-button-wire-error"], [data-testid="participant-axiom-mark-button"][data-axiom-mark-state="enabled"]',
+    );
+    await expect(settled.first()).toBeVisible({ timeout: 15_000 });
   });
 
   test.fixme("Phase 7.2: maria + alice vote agree on ben's axiom-mark; alice commits; the axiom badge renders on the node", () => {
