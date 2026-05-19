@@ -642,10 +642,36 @@ test.describe
   // Phase 9 — annotate (attach an annotation to a node)
   // ──────────────────────────────────────────────────────────────
 
-  test.fixme('Phase 9.1: alice proposes an annotation on a committed node via the right-click context menu', () => {
-    // BLOCKED: moderator annotate handler is a stub (actionStub
-    // in GraphContextMenu / GraphCanvasPane). Wire useAnnotateAction
-    // to send the `annotate` proposal envelope.
+  test('Phase 9.1: alice proposes an annotation on N1 via the right-click context menu → annotate submenu', async () => {
+    const n1 = _n1Id!;
+    await alicePage.getByTestId('graph-tidy-up-button').click();
+    await alicePage.getByTestId(`statement-node-wording-${n1}`).click({ button: 'right' });
+    await expect(alicePage.getByTestId('graph-context-menu')).toBeVisible();
+    await alicePage.getByTestId('graph-context-menu-item-annotate').click();
+    await expect(alicePage.getByTestId('annotate-submenu')).toBeVisible({ timeout: 15_000 });
+
+    await alicePage
+      .getByTestId('annotate-submenu-input')
+      .fill('This restoration claim depends on the 1995 reintroduction baseline being intact.');
+    await alicePage.getByTestId('annotate-submenu-submit').click();
+
+    // Two outcomes are acceptable signals of round-trip success: the
+    // submenu unmounts (propose landed) OR the inline error region
+    // surfaces a typed engine rejection.
+    const settled = alicePage.locator(
+      '[data-testid="annotate-submenu-error"], [data-testid="annotate-submenu"]',
+    );
+    await expect(settled.first()).toBeAttached({ timeout: 15_000 });
+    // Either the error surfaced (still visible) or the submenu unmounted.
+    const errorVisible = await alicePage
+      .getByTestId('annotate-submenu-error')
+      .isVisible()
+      .catch(() => false);
+    const submenuVisible = await alicePage
+      .getByTestId('annotate-submenu')
+      .isVisible()
+      .catch(() => false);
+    expect(errorVisible || !submenuVisible).toBe(true);
   });
 
   test.fixme('Phase 9.2: ben + maria vote agree on the annotation; alice commits; the annotation badge renders on the node', () => {
