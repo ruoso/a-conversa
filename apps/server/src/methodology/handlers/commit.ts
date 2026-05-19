@@ -45,6 +45,24 @@
 // consistent with `deriveFacetStatus` rule 2 (read-side filtering by
 // current participants).
 //
+// **Moderator-excluded-from-unanimity-walk semantics.** Per
+// `docs/methodology.md` § "The commit step" (lines 15–25): the
+// moderator's role is structural, not interpretive — "They don't
+// decide whether agreement has been reached on the merits; they enact
+// it once participants have expressed it." The **commit IS the
+// moderator's act of agreement**; there is no separate moderator vote
+// to consult. The rule-4 walk therefore filters
+// `currentParticipants()` to NON-moderator participants ("only
+// debaters vote"), mirroring the client-side `deriveCurrentParticipants`
+// predicate (`apps/moderator/src/graph/proposalFacets.ts`, Decision
+// §1.a). Without this filter, a moderator's commit click is rejected
+// with `'unanimous-agree-required'` listing the moderator as the
+// missing voter even after every debater has voted agree — the
+// methodology's commit step is unreachable on the live wire. The
+// projection-level `currentParticipants()` shape is unchanged (other
+// callers consume every joined participant including the moderator);
+// the filter is at this one callsite only.
+//
 // **Boundary with `replay.ts/handleCommit`.** This handler is the
 // **write-side** gate (does the request pass methodology rules?).
 // `handleCommit` (in `apps/server/src/projection/replay.ts`) is the
@@ -167,16 +185,23 @@ function checkUnanimousAgree(
     };
   }
 
-  const current = projection.currentParticipants();
+  // Filter out the moderator: per `docs/methodology.md` § "The commit
+  // step", commit IS the moderator's act of agreement, so the
+  // moderator is structurally excluded from the per-participant vote
+  // walk. Mirrors `deriveCurrentParticipants` on the client side
+  // (`apps/moderator/src/graph/proposalFacets.ts`, Decision §1.a).
+  const current = projection.currentParticipants().filter((p) => p.role !== 'moderator');
   if (current.length === 0) {
-    // No current participants — the agreement rule has nothing to
-    // satisfy. Defensive: in practice the universal participant gate
-    // rejected the requester before we got here, so `current.length`
-    // is at least 1.
+    // No current non-moderator participants — the agreement rule has
+    // nothing to satisfy from voters. A session with only a moderator
+    // (no debaters) has no per-participant agreement to record; reject
+    // with the unanimity reason so the moderator sees a typed signal
+    // rather than committing into a vacuum.
     return {
       ok: false,
       reason: 'unanimous-agree-required',
-      detail: 'commit: no current participants to evaluate agreement against',
+      detail:
+        "commit: no current non-moderator participants to evaluate agreement against (the moderator is excluded from the unanimity walk; commit is the moderator's act of agreement)",
     };
   }
 

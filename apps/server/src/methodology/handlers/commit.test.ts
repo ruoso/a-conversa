@@ -11,8 +11,16 @@
 //   2. Proposal exists — unknown id rejected.
 //   3. Proposal is pending — already-committed / meta-disagreement
 //      rejected.
-//   4. Unanimous agree across current participants — every current
-//      participant must have voted agree on the affected facet.
+//   4. Unanimous agree across current NON-moderator participants —
+//      every current debater must have voted agree on the affected
+//      facet; the moderator is structurally excluded from the walk
+//      (commit IS the moderator's act of agreement, per
+//      `docs/methodology.md` § "The commit step" lines 15–25 — "the
+//      moderator's role is structural, not interpretive ... they
+//      enact [agreement] once participants have expressed it").
+//      Mirrors `deriveCurrentParticipants` in
+//      `apps/moderator/src/graph/proposalFacets.ts` (Decision §1.a —
+//      "only debaters vote").
 //
 // Plus the chosen semantics for a participant who left after agreeing
 // (left participants don't count, consistent with `deriveFacetStatus`
@@ -173,9 +181,10 @@ function makeCommitAction(
 describe('commit handler — rule 1: moderator gate', () => {
   it('rejects a commit from a debater with not-a-moderator', () => {
     const p = seedSession();
-    // Make the commit valid in every other respect — unanimous agree —
-    // so the only failing rule is the moderator gate.
-    applyVote(p, MODERATOR_ID, 'agree');
+    // Make the commit valid in every other respect — every debater has
+    // voted agree — so the only failing rule is the moderator gate.
+    // (The moderator does NOT vote: commit is the moderator's act of
+    // agreement; see the file header for the methodology rationale.)
     applyVote(p, DEBATER_A_ID, 'agree');
     applyVote(p, DEBATER_B_ID, 'agree');
     const action = makeCommitAction(p, DEBATER_A_ID);
@@ -212,7 +221,6 @@ describe('commit handler — rule 2: proposal exists', () => {
 describe('commit handler — rule 3: proposal is pending', () => {
   it('rejects a commit on an already-committed proposal with proposal-already-committed', () => {
     const p = seedSession();
-    applyVote(p, MODERATOR_ID, 'agree');
     applyVote(p, DEBATER_A_ID, 'agree');
     applyVote(p, DEBATER_B_ID, 'agree');
     applyEvent(
@@ -255,8 +263,8 @@ describe('commit handler — rule 3: proposal is pending', () => {
 // Rule 4 — unanimous agree across current participants.
 // ---------------------------------------------------------------
 
-describe('commit handler — rule 4: unanimous agree', () => {
-  it('rejects when no participant has voted yet (all missing)', () => {
+describe('commit handler — rule 4: unanimous agree (moderator-excluded)', () => {
+  it('rejects when no debater has voted yet (all missing) AND does NOT list the moderator', () => {
     const p = seedSession();
     const action = makeCommitAction(p);
     const r = validateAction(p, action);
@@ -264,15 +272,18 @@ describe('commit handler — rule 4: unanimous agree', () => {
     if (!r.ok) {
       expect(r.reason).toBe('unanimous-agree-required');
       expect(r.detail).toContain('missing votes');
-      expect(r.detail).toContain(MODERATOR_ID);
+      // The moderator is NOT part of the unanimity walk — even though
+      // the moderator has not voted, the rejection must not name them
+      // (commit IS the moderator's act of agreement; there is no
+      // separate moderator vote to be missing).
+      expect(r.detail).not.toContain(MODERATOR_ID);
       expect(r.detail).toContain(DEBATER_A_ID);
       expect(r.detail).toContain(DEBATER_B_ID);
     }
   });
 
-  it('rejects when one participant has voted agree but another has not', () => {
+  it('rejects when one debater has voted agree but another has not', () => {
     const p = seedSession();
-    applyVote(p, MODERATOR_ID, 'agree');
     applyVote(p, DEBATER_A_ID, 'agree');
     // DEBATER_B has not voted.
     const action = makeCommitAction(p);
@@ -282,12 +293,12 @@ describe('commit handler — rule 4: unanimous agree', () => {
       expect(r.reason).toBe('unanimous-agree-required');
       expect(r.detail).toContain('missing votes');
       expect(r.detail).toContain(DEBATER_B_ID);
+      expect(r.detail).not.toContain(MODERATOR_ID);
     }
   });
 
-  it('rejects when one participant has voted dispute', () => {
+  it('rejects when one debater has voted dispute', () => {
     const p = seedSession();
-    applyVote(p, MODERATOR_ID, 'agree');
     applyVote(p, DEBATER_A_ID, 'agree');
     applyVote(p, DEBATER_B_ID, 'dispute');
     const action = makeCommitAction(p);
@@ -300,9 +311,8 @@ describe('commit handler — rule 4: unanimous agree', () => {
     }
   });
 
-  it('rejects when one participant has voted withdraw (without prior commit)', () => {
+  it('rejects when one debater has voted withdraw (without prior commit)', () => {
     const p = seedSession();
-    applyVote(p, MODERATOR_ID, 'agree');
     applyVote(p, DEBATER_A_ID, 'agree');
     applyVote(p, DEBATER_B_ID, 'withdraw');
     const action = makeCommitAction(p);
@@ -314,11 +324,25 @@ describe('commit handler — rule 4: unanimous agree', () => {
     }
   });
 
-  it('accepts when every current participant has voted agree', () => {
+  it('accepts when every CURRENT DEBATER has voted agree (moderator has NOT cast a vote)', () => {
+    // CANONICAL CONTRACT TEST.
+    //
+    // Per `docs/methodology.md` lines 15–25 (§ "The commit step"):
+    //
+    //   "The moderator's role is structural, not interpretive. They
+    //    don't decide whether agreement has been reached on the merits;
+    //    they enact it once participants have expressed it."
+    //
+    // The commit IS the moderator's act of agreement; there is no
+    // separate moderator vote. With every debater voting agree and the
+    // moderator never having cast a vote event, the commit succeeds.
+    // Mirrors `deriveCurrentParticipants` on the client side
+    // (`apps/moderator/src/graph/proposalFacets.ts`, Decision §1.a —
+    // "only debaters vote").
     const p = seedSession();
-    applyVote(p, MODERATOR_ID, 'agree');
     applyVote(p, DEBATER_A_ID, 'agree');
     applyVote(p, DEBATER_B_ID, 'agree');
+    // NOTE: NO moderator vote is cast.
     const action = makeCommitAction(p);
     const r = validateAction(p, action);
     expect(r.ok).toBe(true);
@@ -337,11 +361,20 @@ describe('commit handler — rule 4: unanimous agree', () => {
         expect(ev.payload.committed_at).toBe(T9);
       }
     }
-    // Cross-check with the read-side derivation: at this projection
-    // state the classification facet's overall status would be
-    // `'agreed'` per `deriveFacetStatus` rule 6 — the same predicate
-    // the write-side handler's rule 4 evaluates.
-    expect(deriveFacetStatus(p, 'node', NODE_ID_1, 'classification')).toBe('agreed');
+  });
+
+  it('also accepts when the moderator HAS cast an agree vote alongside the debaters (extra moderator-vote events are harmless to the walk)', () => {
+    // Defensive coverage: clients that incidentally route a moderator
+    // vote event through the wire (legacy clients, replays of older
+    // event logs) must not change the outcome. The walk ignores the
+    // moderator's row regardless of what it contains.
+    const p = seedSession();
+    applyVote(p, MODERATOR_ID, 'agree');
+    applyVote(p, DEBATER_A_ID, 'agree');
+    applyVote(p, DEBATER_B_ID, 'agree');
+    const action = makeCommitAction(p);
+    const r = validateAction(p, action);
+    expect(r.ok).toBe(true);
   });
 });
 
