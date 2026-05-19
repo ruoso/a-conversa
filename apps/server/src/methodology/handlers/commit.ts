@@ -266,12 +266,18 @@ function checkUnanimousAgreeStructural(
   proposalPayload: ProposalPayload,
   perParticipantVotes: ReadonlyMap<string, { vote: string }>,
 ): RejectedValidationResult | null {
-  const current = projection.currentParticipants();
+  // Filter out the moderator: per `docs/methodology.md` § "The commit
+  // step", commit IS the moderator's act of agreement, so the
+  // moderator is structurally excluded from the per-participant vote
+  // walk (mirrors `checkUnanimousAgreeFacet` for facet-bearing sub-
+  // kinds + the client's `deriveCurrentParticipants` predicate).
+  const current = projection.currentParticipants().filter((p) => p.role !== 'moderator');
   if (current.length === 0) {
     return {
       ok: false,
       reason: 'unanimous-agree-required',
-      detail: 'commit: no current participants to evaluate agreement against',
+      detail:
+        "commit: no current non-moderator participants to evaluate agreement against (the moderator is excluded from the unanimity walk; commit is the moderator's act of agreement)",
     };
   }
 

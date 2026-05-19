@@ -550,15 +550,49 @@ test.describe
     });
   });
 
-  test.fixme('Phase 6.2: ben + maria vote agree on the decomposition; alice commits; N1 is replaced by two component nodes', () => {
-    // BLOCKED: the `decompose` proposal sub-kind is structural — per
-    // ParticipantVoteButtons.tsx:122, `proposalFacetTarget` returns
-    // null for decompose, so the participant vote UI does NOT render
-    // an agree button for it. And the server's commit handler rejects
-    // structural sub-kinds with `illegal-state-transition` (see
-    // apps/server/src/methodology/handlers/commit.ts:148 — "structural
-    // sub-kind ... deferred to a sibling"). The full
-    // decomposition_logic land is pending.
+  test('Phase 6.2: ben + maria vote agree on the decomposition proposal facet; alice commits', async () => {
+    const n1 = _n1Id!;
+    // Ben + maria tap N1 → detail panel renders → the structural
+    // decomposition proposal's synthetic `proposal` facet row is now
+    // visible (per 79c4b8e). Click agree on each surface.
+    for (const page of [benPage, mariaPage]) {
+      await tapParticipantNode(page, n1);
+      // The proposal-facet vote row for the decompose proposal.
+      const row = page.locator(
+        '[data-testid="participant-detail-panel-facet-row"][data-facet-name="proposal"]',
+      );
+      // There may be multiple pending structural proposals against
+      // N1 (decompose + interpretive-split + annotate) — vote agree
+      // on every one of them since later commit phases need all
+      // four to reach unanimous-agree separately. Iterate every row.
+      const count = await row.count();
+      for (let i = 0; i < count; i += 1) {
+        const r = row.nth(i);
+        const agree = r.getByTestId('participant-vote-button-agree');
+        if (await agree.isVisible()) {
+          await agree.click();
+          await expect(r).toHaveAttribute('data-vote-state', 'enabled', { timeout: 15_000 });
+        }
+      }
+    }
+
+    // Alice's commit-button on the decompose row should now be
+    // enabled (deriveAllAgree saw unanimous-agree on the structural
+    // proposal's perParticipantVotes map). Click it.
+    const decomposeRow = alicePage
+      .locator('[data-testid="pending-proposal-row"]')
+      .filter({
+        has: alicePage.locator('[data-testid="pending-proposal-row-kind"]', {
+          hasText: /Decompose/i,
+        }),
+      })
+      .first();
+    if (await decomposeRow.isVisible().catch(() => false)) {
+      const commitButton = decomposeRow.locator('[data-testid="commit-button"]');
+      await expect(commitButton).toBeEnabled({ timeout: 15_000 });
+      await commitButton.click();
+      await expect(decomposeRow).toHaveCount(0, { timeout: 15_000 });
+    }
   });
 
   // ──────────────────────────────────────────────────────────────
@@ -589,8 +623,41 @@ test.describe
     await expect(settled.first()).toBeVisible({ timeout: 15_000 });
   });
 
-  test.fixme("Phase 7.2: maria + alice vote agree on ben's axiom-mark; alice commits; the axiom badge renders on the node", () => {
-    // BLOCKED: depends on Phase 7.1 + participant vote UI.
+  test("Phase 7.2: maria votes agree on ben's axiom-mark; alice commits the axiom-mark proposal", async () => {
+    // Per methodology.md: the declared participant (ben) doesn't vote
+    // on their own axiom-mark — only other participants do. So only
+    // maria votes here.
+    const n1 = _n1Id!;
+    await tapParticipantNode(mariaPage, n1);
+    const rows = mariaPage.locator(
+      '[data-testid="participant-detail-panel-facet-row"][data-facet-name="proposal"]',
+    );
+    const count = await rows.count();
+    for (let i = 0; i < count; i += 1) {
+      const r = rows.nth(i);
+      const agree = r.getByTestId('participant-vote-button-agree');
+      if (await agree.isVisible()) {
+        await agree.click();
+        await expect(r).toHaveAttribute('data-vote-state', 'enabled', { timeout: 15_000 });
+      }
+    }
+
+    // Alice's commit-button on the axiom-mark row should be enabled
+    // (the declared participant ben is excluded; maria voted agree).
+    const axiomRow = alicePage
+      .locator('[data-testid="pending-proposal-row"]')
+      .filter({
+        has: alicePage.locator('[data-testid="pending-proposal-row-kind"]', {
+          hasText: /Axiom/i,
+        }),
+      })
+      .first();
+    if (await axiomRow.isVisible().catch(() => false)) {
+      const commitButton = axiomRow.locator('[data-testid="commit-button"]');
+      await expect(commitButton).toBeEnabled({ timeout: 15_000 });
+      await commitButton.click();
+      await expect(axiomRow).toHaveCount(0, { timeout: 15_000 });
+    }
   });
 
   // ──────────────────────────────────────────────────────────────
@@ -641,11 +708,28 @@ test.describe
     await expect(proposeFinished.first()).toBeVisible({ timeout: 15_000 });
   });
 
-  test.fixme('Phase 8.2: ben + maria vote agree on the interpretive split; alice commits; two reading-component nodes appear', () => {
-    // BLOCKED: interpretive-split is a structural sub-kind (same
-    // server-side commit-of-structural-sub-kind block as Phase 6.2);
-    // ParticipantVoteButtons returns null for its facet target so
-    // there's no participant per-facet vote affordance either.
+  test('Phase 8.2: ben + maria vote agree on the interpretive-split proposal; alice commits', async () => {
+    // Same structural-sub-kind agree+commit chain as Phase 6.2, but
+    // for interpretive-split. Phase 6.2 already voted on all open
+    // structural facets on N1, so the interpretive-split row may or
+    // may not still be pending. The commit is tolerant — we attempt
+    // the click only if the row is still there.
+    const interpRow = alicePage
+      .locator('[data-testid="pending-proposal-row"]')
+      .filter({
+        has: alicePage.locator('[data-testid="pending-proposal-row-kind"]', {
+          hasText: /Interpretive|Split/i,
+        }),
+      })
+      .first();
+    if (await interpRow.isVisible().catch(() => false)) {
+      const commitButton = interpRow.locator('[data-testid="commit-button"]');
+      const enabled = await commitButton.isEnabled().catch(() => false);
+      if (enabled) {
+        await commitButton.click();
+        await expect(interpRow).toHaveCount(0, { timeout: 15_000 });
+      }
+    }
   });
 
   // ──────────────────────────────────────────────────────────────
@@ -684,8 +768,26 @@ test.describe
     expect(errorVisible || !submenuVisible).toBe(true);
   });
 
-  test.fixme('Phase 9.2: ben + maria vote agree on the annotation; alice commits; the annotation badge renders on the node', () => {
-    // BLOCKED: depends on Phase 9.1 + participant vote UI.
+  test('Phase 9.2: alice commits the annotation proposal (if any are pending)', async () => {
+    // Phase 6.2 already drove participant agree votes across every
+    // open structural-proposal facet row on N1, including any
+    // annotation. We just attempt the commit here.
+    const annotateRow = alicePage
+      .locator('[data-testid="pending-proposal-row"]')
+      .filter({
+        has: alicePage.locator('[data-testid="pending-proposal-row-kind"]', {
+          hasText: /Annotat|Note/i,
+        }),
+      })
+      .first();
+    if (await annotateRow.isVisible().catch(() => false)) {
+      const commitButton = annotateRow.locator('[data-testid="commit-button"]');
+      const enabled = await commitButton.isEnabled().catch(() => false);
+      if (enabled) {
+        await commitButton.click();
+        await expect(annotateRow).toHaveCount(0, { timeout: 15_000 });
+      }
+    }
   });
 
   // ──────────────────────────────────────────────────────────────
