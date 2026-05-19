@@ -78,6 +78,7 @@ import {
 import { summaryText } from '../graph/proposalSummary';
 import { ProposalFacetBreakdown } from './ProposalFacetBreakdown';
 import { useCommitAction } from './useCommitAction';
+import { useMarkMetaDisagreementAction } from './useMarkMetaDisagreementAction';
 
 /**
  * Props for the pane. The `sessionId` is threaded through from the
@@ -134,6 +135,14 @@ const EMPTY_STATE_CLASSES = 'italic text-slate-500';
 const COMMIT_BUTTON_CLASSES =
   'flex-shrink-0 inline-flex items-center gap-1 rounded border border-emerald-700 bg-emerald-700 px-2 py-0.5 text-xs font-medium text-white shadow-sm hover:bg-emerald-800 hover:border-emerald-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700 disabled:cursor-not-allowed disabled:opacity-50 disabled:border-slate-300 disabled:bg-slate-100 disabled:text-slate-500';
 const COMMIT_WIRE_ERROR_CLASSES = 'text-xs text-red-700';
+// Per task — secondary-density button, amber-700 palette ("escape
+// hatch" — the moderator declares the disagreement irreducible after
+// methodology has been exhausted). WCAG AA: white-on-amber-700 ≈
+// 5.18:1 (pass). Visually distinct from the emerald commit chip so the
+// two row-level actions read as distinct affordances at a glance.
+const MARK_META_BUTTON_CLASSES =
+  'flex-shrink-0 inline-flex items-center gap-1 rounded border border-amber-700 bg-amber-700 px-2 py-0.5 text-xs font-medium text-white shadow-sm hover:bg-amber-800 hover:border-amber-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-700 disabled:cursor-not-allowed disabled:opacity-50 disabled:border-slate-300 disabled:bg-slate-100 disabled:text-slate-500';
+const MARK_META_WIRE_ERROR_CLASSES = 'text-xs text-red-700';
 
 /**
  * Reason-tag → ICU `select` arm-name in `moderator.commitButton.reason`.
@@ -265,6 +274,11 @@ function PendingProposalRow(props: {
     : deriveAllAgree(entries, currentParticipantIds);
 
   const { commit, inFlight, lastError } = useCommitAction(row.proposalEventId);
+  const {
+    mark: markMetaDisagreement,
+    inFlight: markInFlight,
+    lastError: markLastError,
+  } = useMarkMetaDisagreementAction(row.proposalEventId);
 
   const commitState: 'disabled' | 'enabled' | 'in-flight' = inFlight
     ? 'in-flight'
@@ -300,6 +314,36 @@ function PendingProposalRow(props: {
         : tFull('moderator.commitButton.wireError', {
             code: lastError.code,
             message: lastError.message,
+          });
+  }
+
+  // Mark-meta-disagreement button surface — the methodology gates
+  // (`not-a-moderator`, `proposal-not-found`, `proposal-already-
+  // committed`, `proposal-already-meta-disagreement`, `illegal-state-
+  // transition`, `methodology-not-exhausted`) are enforced server-side,
+  // so the UI button is unconditionally enabled once the connection is
+  // open and no mark is in flight. The amber palette + distinct label
+  // signal it as the escape-hatch action distinct from the green
+  // commit chip.
+  const markState: 'disabled' | 'enabled' | 'in-flight' = markInFlight
+    ? 'in-flight'
+    : connectionOpen
+      ? 'enabled'
+      : 'disabled';
+  const markDisabled = markState !== 'enabled';
+  const markLabel = markInFlight
+    ? tFull('moderator.markMetaDisagreementButton.inFlightLabel')
+    : tFull('moderator.markMetaDisagreementButton.label');
+  const markAriaLabel = tFull('moderator.markMetaDisagreementButton.ariaLabel');
+
+  let markWireMessage: string | undefined;
+  if (markLastError !== undefined) {
+    markWireMessage =
+      markLastError.code === 'timeout'
+        ? markLastError.message
+        : tFull('moderator.markMetaDisagreementButton.wireError', {
+            code: markLastError.code,
+            message: markLastError.message,
           });
   }
 
@@ -340,6 +384,21 @@ function PendingProposalRow(props: {
         >
           {commitLabel}
         </button>
+        <button
+          type="button"
+          data-testid="mark-meta-disagreement-button"
+          data-proposal-id={row.proposalEventId}
+          data-mark-state={markState}
+          disabled={markDisabled}
+          aria-disabled={markDisabled}
+          aria-label={markAriaLabel}
+          onClick={() => {
+            void markMetaDisagreement();
+          }}
+          className={MARK_META_BUTTON_CLASSES}
+        >
+          {markLabel}
+        </button>
       </div>
       <ProposalFacetBreakdown
         row={row}
@@ -355,6 +414,16 @@ function PendingProposalRow(props: {
           className={COMMIT_WIRE_ERROR_CLASSES}
         >
           {wireMessage}
+        </p>
+      ) : null}
+      {markWireMessage !== undefined ? (
+        <p
+          data-testid="mark-meta-disagreement-button-wire-error"
+          data-proposal-id={row.proposalEventId}
+          role="alert"
+          className={MARK_META_WIRE_ERROR_CLASSES}
+        >
+          {markWireMessage}
         </p>
       ) : null}
     </li>

@@ -270,6 +270,14 @@
       "errorRoleLabel": "Error de confirmación",
       "reason": "{reason, select, sessionNotConnected {la sesión no está conectada — reconectando…} proposalMetaDisagreement {esta propuesta está marcada como meta-desacuerdo; resuélvelo antes de confirmar} noCurrentParticipants {ningún participante se ha unido a la sesión todavía} participantsNotVoted {uno o más participantes no han votado en cada aspecto} participantsDisagree {uno o más participantes no han concordado en cada aspecto} structuralSubKindNotSupported {este tipo de propuesta aún no admite confirmación} other {desconocido}}"
     },
+    "markMetaDisagreementButton": {
+      "label": "Marcar meta-desacuerdo",
+      "inFlightLabel": "Marcando…",
+      "ariaLabel": "Marcar esta propuesta como meta-desacuerdo (desacuerdo irreducible; la metodología debe estar agotada)",
+      "wireError": "Falló la marcación: {message} ({code})",
+      "timeoutError": "La solicitud de marcación expiró. Verifica tu conexión y vuelve a intentarlo.",
+      "errorRoleLabel": "Error de marcación de meta-desacuerdo"
+    },
     "axiomMarkAction": {
       "submenu": {
         "header": "Marcar como axioma para…",
