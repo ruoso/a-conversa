@@ -46,9 +46,18 @@ import { createI18nInstance } from '@a-conversa/shell';
 
 const SESSION_ID = '11111111-1111-4111-8111-111111111111';
 const NODE_A_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const NODE_COMPONENT_1 = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+const NODE_COMPONENT_2 = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+const EDGE_E_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
 const PROPOSAL_CLASSIFY_ID = '22222222-2222-4222-8222-222222222222';
 const PROPOSAL_REWORD_ID = '33333333-3333-4333-8333-333333333333';
+const PROPOSAL_DECOMPOSE_ID = '44444444-4444-4444-8444-444444444444';
+const PROPOSAL_INTERPRETIVE_SPLIT_ID = '55555555-5555-4555-8555-555555555555';
+const PROPOSAL_AXIOM_MARK_ID = '66666666-6666-4666-8666-666666666666';
+const PROPOSAL_ANNOTATE_ID = '77777777-7777-4777-8777-777777777777';
 const ACTOR_ID = '00000000-0000-4000-8000-0000000000aa';
+const PARTICIPANT_BEN = '00000000-0000-4000-8000-0000000000b1';
+const PARTICIPANT_MARIA = '00000000-0000-4000-8000-0000000000b2';
 
 beforeAll(async () => {
   await createI18nInstance('en-US');
@@ -133,6 +142,106 @@ function editWordingProposalEvent(seq: number): Event {
         node_id: NODE_A_ID,
         sub_kind: 'reword',
         wording: 'Reworded.',
+      },
+    },
+  } as unknown as Event;
+}
+
+function decomposeProposalEvent(seq: number): Event {
+  return {
+    id: PROPOSAL_DECOMPOSE_ID,
+    sessionId: SESSION_ID,
+    sequence: seq,
+    kind: 'proposal',
+    actor: ACTOR_ID,
+    createdAt: '2026-05-17T00:00:02.000Z',
+    payload: {
+      proposal: {
+        kind: 'decompose',
+        parent_node_id: NODE_A_ID,
+        components: [
+          { wording: 'first', classification: 'fact', node_id: NODE_COMPONENT_1 },
+          { wording: 'second', classification: 'fact', node_id: NODE_COMPONENT_2 },
+        ],
+      },
+    },
+  } as unknown as Event;
+}
+
+function interpretiveSplitProposalEvent(seq: number): Event {
+  return {
+    id: PROPOSAL_INTERPRETIVE_SPLIT_ID,
+    sessionId: SESSION_ID,
+    sequence: seq,
+    kind: 'proposal',
+    actor: ACTOR_ID,
+    createdAt: '2026-05-17T00:00:03.000Z',
+    payload: {
+      proposal: {
+        kind: 'interpretive-split',
+        parent_node_id: NODE_A_ID,
+        readings: [
+          { wording: 'reading-1', classification: 'value', node_id: NODE_COMPONENT_1 },
+          { wording: 'reading-2', classification: 'value', node_id: NODE_COMPONENT_2 },
+        ],
+      },
+    },
+  } as unknown as Event;
+}
+
+function axiomMarkProposalEvent(seq: number, declaredParticipant: string): Event {
+  return {
+    id: PROPOSAL_AXIOM_MARK_ID,
+    sessionId: SESSION_ID,
+    sequence: seq,
+    kind: 'proposal',
+    actor: declaredParticipant,
+    createdAt: '2026-05-17T00:00:04.000Z',
+    payload: {
+      proposal: {
+        kind: 'axiom-mark',
+        node_id: NODE_A_ID,
+        participant: declaredParticipant,
+      },
+    },
+  } as unknown as Event;
+}
+
+function annotateNodeProposalEvent(seq: number): Event {
+  return {
+    id: PROPOSAL_ANNOTATE_ID,
+    sessionId: SESSION_ID,
+    sequence: seq,
+    kind: 'proposal',
+    actor: ACTOR_ID,
+    createdAt: '2026-05-17T00:00:05.000Z',
+    payload: {
+      proposal: {
+        kind: 'annotate',
+        target_kind: 'node',
+        target_id: NODE_A_ID,
+        annotation_kind: 'note',
+        content: 'a clarifying note',
+      },
+    },
+  } as unknown as Event;
+}
+
+function annotateEdgeProposalEvent(seq: number): Event {
+  return {
+    id: PROPOSAL_ANNOTATE_ID,
+    sessionId: SESSION_ID,
+    sequence: seq,
+    kind: 'proposal',
+    actor: ACTOR_ID,
+    createdAt: '2026-05-17T00:00:06.000Z',
+    payload: {
+      proposal: {
+        kind: 'annotate',
+        target_kind: 'edge',
+        target_id: EDGE_E_ID,
+        annotation_kind: 'note',
+        content: 'a clarifying edge note',
       },
     },
   } as unknown as Event;
@@ -367,5 +476,182 @@ describe('<ParticipantVoteButtons> — in-flight visual', () => {
     expect(rowAfter.getAttribute('data-vote-state')).toBe('in-flight');
     const agreeBtn = within(rowAfter).getByTestId('participant-vote-button-agree');
     expect(agreeBtn.hasAttribute('disabled')).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------
+// Structural sub-kind support — `decompose`, `interpretive-split`,
+// `axiom-mark`, `annotate` each surface a synthetic `'proposal'` facet
+// row on the targeted entity. Click → wire `vote` envelope carries the
+// structural proposal's event id. The server's `handleVote` populates
+// the pending proposal's `perParticipantVotes` map; the unanimity check
+// in `checkUnanimousAgreeStructural` walks it (per commit `421353f`).
+// ---------------------------------------------------------------------
+
+describe('<ParticipantVoteButtons> — structural sub-kinds surface a "proposal" row', () => {
+  it('decompose proposal on the parent node renders one "proposal" row', () => {
+    const fake = makeFakeClient();
+    const events: Event[] = [decomposeProposalEvent(1)];
+    render(
+      <Wrapper client={fake.client}>
+        <ParticipantVoteButtons events={events} entityKind="node" entityId={NODE_A_ID} />
+      </Wrapper>,
+    );
+    const row = screen.getByTestId('participant-detail-panel-facet-row');
+    expect(row.getAttribute('data-facet-name')).toBe('proposal');
+    expect(row.getAttribute('data-proposal-id')).toBe(PROPOSAL_DECOMPOSE_ID);
+    expect(within(row).getByTestId('participant-vote-button-agree')).toBeDefined();
+    expect(within(row).getByTestId('participant-vote-button-dispute')).toBeDefined();
+    expect(within(row).getByTestId('participant-vote-button-withdraw')).toBeDefined();
+  });
+
+  it('interpretive-split proposal on the parent node renders one "proposal" row', () => {
+    const fake = makeFakeClient();
+    const events: Event[] = [interpretiveSplitProposalEvent(1)];
+    render(
+      <Wrapper client={fake.client}>
+        <ParticipantVoteButtons events={events} entityKind="node" entityId={NODE_A_ID} />
+      </Wrapper>,
+    );
+    const row = screen.getByTestId('participant-detail-panel-facet-row');
+    expect(row.getAttribute('data-facet-name')).toBe('proposal');
+    expect(row.getAttribute('data-proposal-id')).toBe(PROPOSAL_INTERPRETIVE_SPLIT_ID);
+  });
+
+  it('axiom-mark proposal on a node renders one "proposal" row for non-declared participants', () => {
+    const fake = makeFakeClient();
+    // Ben proposes the axiom mark; Maria sees the row (she's not Ben).
+    const events: Event[] = [axiomMarkProposalEvent(1, PARTICIPANT_BEN)];
+    render(
+      <Wrapper client={fake.client}>
+        <ParticipantVoteButtons
+          events={events}
+          entityKind="node"
+          entityId={NODE_A_ID}
+          currentParticipantId={PARTICIPANT_MARIA}
+        />
+      </Wrapper>,
+    );
+    const row = screen.getByTestId('participant-detail-panel-facet-row');
+    expect(row.getAttribute('data-facet-name')).toBe('proposal');
+    expect(row.getAttribute('data-proposal-id')).toBe(PROPOSAL_AXIOM_MARK_ID);
+  });
+
+  it('axiom-mark proposal does NOT render a row for the declared participant', () => {
+    const fake = makeFakeClient();
+    // Ben proposes; the row should not appear when ben is the current
+    // participant — his proposal IS the declaration, he has nothing
+    // to vote on (the server's `checkUnanimousAgreeStructural`
+    // excludes the declared participant from the required-voters set).
+    const events: Event[] = [axiomMarkProposalEvent(1, PARTICIPANT_BEN)];
+    const { container } = render(
+      <Wrapper client={fake.client}>
+        <ParticipantVoteButtons
+          events={events}
+          entityKind="node"
+          entityId={NODE_A_ID}
+          currentParticipantId={PARTICIPANT_BEN}
+        />
+      </Wrapper>,
+    );
+    expect(container.firstChild).toBeNull();
+  });
+
+  it('annotate proposal on a node renders one "proposal" row on the targeted node', () => {
+    const fake = makeFakeClient();
+    const events: Event[] = [annotateNodeProposalEvent(1)];
+    render(
+      <Wrapper client={fake.client}>
+        <ParticipantVoteButtons events={events} entityKind="node" entityId={NODE_A_ID} />
+      </Wrapper>,
+    );
+    const row = screen.getByTestId('participant-detail-panel-facet-row');
+    expect(row.getAttribute('data-facet-name')).toBe('proposal');
+    expect(row.getAttribute('data-proposal-id')).toBe(PROPOSAL_ANNOTATE_ID);
+  });
+
+  it('annotate proposal on an edge renders one "proposal" row on the targeted edge', () => {
+    const fake = makeFakeClient();
+    const events: Event[] = [annotateEdgeProposalEvent(1)];
+    render(
+      <Wrapper client={fake.client}>
+        <ParticipantVoteButtons events={events} entityKind="edge" entityId={EDGE_E_ID} />
+      </Wrapper>,
+    );
+    const row = screen.getByTestId('participant-detail-panel-facet-row');
+    expect(row.getAttribute('data-facet-name')).toBe('proposal');
+    expect(row.getAttribute('data-proposal-id')).toBe(PROPOSAL_ANNOTATE_ID);
+  });
+
+  it('decompose row does NOT render on a sibling component node — only on the parent', () => {
+    const fake = makeFakeClient();
+    const events: Event[] = [decomposeProposalEvent(1)];
+    // Selection on one of the components — no row should appear
+    // (the structural move acts ON the parent, not the children).
+    const { container } = render(
+      <Wrapper client={fake.client}>
+        <ParticipantVoteButtons events={events} entityKind="node" entityId={NODE_COMPONENT_1} />
+      </Wrapper>,
+    );
+    expect(container.firstChild).toBeNull();
+  });
+
+  it('clicking agree on the synthetic "proposal" row fires a vote envelope with the structural proposalId', () => {
+    const fake = makeFakeClient();
+    const events: Event[] = [decomposeProposalEvent(1)];
+    render(
+      <Wrapper client={fake.client}>
+        <ParticipantVoteButtons events={events} entityKind="node" entityId={NODE_A_ID} />
+      </Wrapper>,
+    );
+    const row = screen.getByTestId('participant-detail-panel-facet-row');
+    act(() => {
+      fireEvent.click(within(row).getByTestId('participant-vote-button-agree'));
+    });
+    expect(fake.calls.length).toBe(1);
+    expect(fake.calls[0]?.type).toBe('vote');
+    expect(fake.calls[0]?.payload).toEqual({
+      sessionId: SESSION_ID,
+      expectedSequence: 0,
+      proposalId: PROPOSAL_DECOMPOSE_ID,
+      choice: 'agree',
+    });
+  });
+
+  it('a committed structural proposal stops surfacing its row', () => {
+    const fake = makeFakeClient();
+    const events: Event[] = [decomposeProposalEvent(1), commitEvent(PROPOSAL_DECOMPOSE_ID, 2)];
+    const { container } = render(
+      <Wrapper client={fake.client}>
+        <ParticipantVoteButtons events={events} entityKind="node" entityId={NODE_A_ID} />
+      </Wrapper>,
+    );
+    expect(container.firstChild).toBeNull();
+  });
+});
+
+describe('derivePendingFacetProposals — structural sub-kinds', () => {
+  it('decompose maps the parent node to the synthetic "proposal" facet', () => {
+    const events: Event[] = [decomposeProposalEvent(1)];
+    const out = derivePendingFacetProposals(events, 'node', NODE_A_ID);
+    expect(out.get('proposal')).toBe(PROPOSAL_DECOMPOSE_ID);
+  });
+
+  it('axiom-mark excludes the declared participant when currentParticipantId matches', () => {
+    const events: Event[] = [axiomMarkProposalEvent(1, PARTICIPANT_BEN)];
+    const out = derivePendingFacetProposals(events, 'node', NODE_A_ID, PARTICIPANT_BEN);
+    expect(out.has('proposal')).toBe(false);
+  });
+
+  it('axiom-mark includes the row for any other participant', () => {
+    const events: Event[] = [axiomMarkProposalEvent(1, PARTICIPANT_BEN)];
+    const out = derivePendingFacetProposals(events, 'node', NODE_A_ID, PARTICIPANT_MARIA);
+    expect(out.get('proposal')).toBe(PROPOSAL_AXIOM_MARK_ID);
+  });
+
+  it('annotate on edge maps the edge to the synthetic "proposal" facet', () => {
+    const events: Event[] = [annotateEdgeProposalEvent(1)];
+    const out = derivePendingFacetProposals(events, 'edge', EDGE_E_ID);
+    expect(out.get('proposal')).toBe(PROPOSAL_ANNOTATE_ID);
   });
 });

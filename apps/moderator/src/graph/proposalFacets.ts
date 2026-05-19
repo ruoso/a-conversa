@@ -148,6 +148,23 @@ function facetTargetOf(proposal: ProposalPayload): FacetTarget | null {
 }
 
 /**
+ * Per-proposal-id vote index — `projectVotesByProposal(events)`'s
+ * return shape. Re-stated here so the selector's caller does not need
+ * to import the projection module just to spell the parameter type.
+ *
+ * Keyed on the structural proposal's envelope id; the value is the
+ * per-participant vote list in arrival order. Empty `Map` when no
+ * `vote` events have landed against any structural proposal.
+ */
+export type VotesByProposalIndex = ReadonlyMap<string, readonly Vote[]>;
+
+/**
+ * Shared empty `VotesByProposalIndex` for tests + the default-parameter
+ * fall-through on the selector.
+ */
+const EMPTY_VOTES_BY_PROPOSAL_INDEX: VotesByProposalIndex = new Map();
+
+/**
  * Resolve the per-facet status by precedence: server frame → client
  * mirror → default. Decision §5.
  *
@@ -259,6 +276,8 @@ export function derivePerProposalFacets(
   facetStatusIndex: FacetStatusIndex,
   serverPerFacetStatus: Record<string, string> | undefined,
   votesByFacetIndex: VotesByFacetIndex = EMPTY_VOTES_BY_FACET_INDEX,
+  proposalEventId?: string,
+  votesByProposalIndex: VotesByProposalIndex = EMPTY_VOTES_BY_PROPOSAL_INDEX,
 ): readonly ProposalFacetEntry[] {
   const target = facetTargetOf(proposal);
   if (target) {
@@ -278,22 +297,35 @@ export function derivePerProposalFacets(
       },
     ];
   }
-  // Structural sub-kind (or unknown) — one synthetic lifecycle entry
-  // (Decision §4). Status resolution still consults the server frame
-  // (a future broadcast tightening may carry a `'proposal'` keyed
-  // status); the client-mirror lookup is skipped because the mirror
-  // does not track structural proposals. The synthetic chip never
-  // carries per-participant votes today (Decision §5 — structural
-  // proposals don't have a `(entity, facet)` pair to bucket by); a
-  // future broadcast tightening would change the default to a real
-  // lookup.
+  // Structural sub-kind (or unknown) — one synthetic lifecycle entry.
+  // Status resolution still consults the server frame (a future
+  // broadcast tightening may carry a `'proposal'` keyed status); the
+  // client-mirror lookup is skipped because the mirror does not track
+  // structural proposals.
+  //
+  // Per commit `421353f` the server's `checkUnanimousAgreeStructural`
+  // walks the pending proposal's `perParticipantVotes` map. On the
+  // client side we mirror that map by projecting per-proposal votes
+  // off the event log (see `projectVotesByProposal` in
+  // `apps/moderator/src/graph/selectors.ts`). When the caller threads
+  // the proposal's envelope id + the projection, the structural
+  // entry's `votes` field surfaces the per-participant arms;
+  // `deriveAllAgree` walks them for the commit gate. Older callers
+  // that pre-date this extension pass neither — the `votes` field
+  // collapses to `EMPTY_VOTES` (the historical behaviour) and the
+  // commit gate falls back to `participants-not-voted` until the
+  // caller threads the new arguments through.
   const status = resolveStatus('proposal', null, facetStatusIndex, serverPerFacetStatus);
+  const votes =
+    proposalEventId !== undefined
+      ? (votesByProposalIndex.get(proposalEventId) ?? EMPTY_VOTES)
+      : EMPTY_VOTES;
   return [
     {
       facet: 'proposal',
       status,
       labelKey: labelKeyFor('proposal'),
-      votes: EMPTY_VOTES,
+      votes,
     },
   ];
 }
@@ -336,17 +368,25 @@ export function derivePerProposalFacets(
  *   2. `'proposal-meta-disagreement'` — any entry's `status` is
  *      `'meta-disagreement'`. Cannot commit until the moderator
  *      resolves the meta-disagreement (out-of-scope flow).
- *   3. `'structural-sub-kind-not-supported'` — any entry's `facet` is
- *      the synthetic `'proposal'` lifecycle entry (structural
- *      sub-kinds; the engine's `commitHandler` returns
- *      `'illegal-state-transition'` for these).
- *   4. `'no-current-participants'` — no debaters joined (defensive;
+ *   3. `'no-current-participants'` — no debaters joined (defensive;
  *      the engine would degenerate to true over the empty set, but
  *      the moderator's intent on an empty session is ambiguous).
- *   5. `'participants-not-voted'` — some current participant has no
+ *   4. `'participants-not-voted'` — some current participant has no
  *      vote on some facet.
- *   6. `'participants-disagree'` — some current participant has voted
+ *   5. `'participants-disagree'` — some current participant has voted
  *      `'dispute'` or `'withdraw'` on some facet.
+ *
+ * Historical `'structural-sub-kind-not-supported'` arm: kept in the
+ * union for back-compat with the i18n catalog (one ICU `select` key
+ * with six arms). Per commit `421353f` the server's commit handler now
+ * accepts every structural sub-kind via `checkUnanimousAgreeStructural`
+ * — `deriveAllAgree` no longer returns this reason for known structural
+ * proposals (the predicate walks the proposal's per-participant votes
+ * the same way the server does). The arm continues to exist for the
+ * rare case of an unknown / synthetic `'proposal'` entry that the
+ * caller did not thread per-proposal vote context for; in that
+ * defensive branch the predicate falls through to
+ * `'participants-not-voted'` (no votes recorded), not this reason.
  */
 export type CommitGateReason =
   | 'session-not-connected'
@@ -367,7 +407,7 @@ export type CommitGate =
 
 /**
  * Pure predicate evaluating "is every current participant voting
- * `'agree'` on every facet of this proposal?". Decision §1 sub-rules:
+ * `'agree'` on every facet of this proposal?". Sub-rules:
  *
  *   - The moderator's own vote does NOT count — the caller supplies a
  *     `currentParticipantIds` set already filtered to non-moderator
@@ -375,14 +415,36 @@ export type CommitGate =
  *   - `'withdraw'` blocks commit the same as `'dispute'` (the
  *     methodology engine requires explicit `'agree'`).
  *   - Structural sub-kinds (the synthetic `'proposal'` lifecycle
- *     entry) get a "not supported" reason because the engine's
- *     `commitHandler` returns `'illegal-state-transition'` for them.
+ *     entry) follow the same unanimity rule as facet-targeting
+ *     sub-kinds — per commit `421353f` the server's
+ *     `checkUnanimousAgreeStructural` walks the pending proposal's
+ *     `perParticipantVotes` map; the client mirrors that map via
+ *     `projectVotesByProposal` and the entry's `votes` field carries
+ *     it. The historical `'structural-sub-kind-not-supported'` short
+ *     circuit is gone — the predicate dispatches purely on `entry.votes`.
  *   - Meta-disagreement-marked entries get the
  *     `'proposal-meta-disagreement'` reason regardless of vote state.
+ *   - Axiom-mark special case: per docs/methodology.md § "Axioms /
+ *     terminal values", the participant whose bedrock is being declared
+ *     is the proposer; their proposal IS the declaration. The required
+ *     set excludes them — only the other current participants need to
+ *     vote agree. The server's `checkUnanimousAgreeStructural` applies
+ *     the same exclusion; the client predicate mirrors it when the
+ *     caller passes the proposal payload.
+ *
+ * @param entries The per-facet entries from `derivePerProposalFacets`.
+ * @param currentParticipantIds The set of current non-moderator
+ *   participant ids (from `deriveCurrentParticipants`).
+ * @param proposal Optional proposal payload — when supplied AND the
+ *   proposal is an `axiom-mark`, the declared participant is excluded
+ *   from the required-voters set. When omitted, no exclusion applies
+ *   (legacy behaviour; safe for facet-targeting sub-kinds and for
+ *   non-axiom-mark structural sub-kinds).
  */
 export function deriveAllAgree(
   entries: readonly ProposalFacetEntry[],
   currentParticipantIds: ReadonlySet<string>,
+  proposal?: ProposalPayload,
 ): CommitGate {
   // Priority 1: meta-disagreement on any entry — even if every vote is
   // `'agree'`, the proposal cannot commit until the moderator resolves
@@ -393,27 +455,28 @@ export function deriveAllAgree(
       return { ok: false, reason: 'proposal-meta-disagreement' };
     }
   }
-  // Priority 2: structural sub-kind — the synthetic `'proposal'`
-  // lifecycle entry signals a sub-kind the engine's `commitHandler`
-  // rejects with `'illegal-state-transition'`.
-  for (const entry of entries) {
-    if (entry.facet === 'proposal') {
-      return { ok: false, reason: 'structural-sub-kind-not-supported' };
-    }
-  }
-  // Priority 3: no debaters joined yet.
-  if (currentParticipantIds.size === 0) {
+  // Apply the axiom-mark exclusion to the required set: per
+  // docs/methodology.md, the declared participant doesn't vote on
+  // their own bedrock declaration (their proposal IS the
+  // declaration). Mirrors `checkUnanimousAgreeStructural`'s
+  // `excludedParticipant` filter on the server side.
+  const requiredParticipantIds =
+    proposal?.kind === 'axiom-mark'
+      ? new Set([...currentParticipantIds].filter((id) => id !== proposal.participant))
+      : currentParticipantIds;
+  // Priority 2: no debaters required to vote — this can fire for an
+  // empty session OR an axiom-mark debate where only the declared
+  // participant is present (the exclusion drains the required set).
+  if (requiredParticipantIds.size === 0) {
     return { ok: false, reason: 'no-current-participants' };
   }
-  // Priorities 4 + 5 are entwined — we walk participants × entries and
-  // either find a missing vote (priority 4) or a non-agree vote
-  // (priority 5). The first missing-vote wins over the first
-  // disagree-vote (Decision §1), so we walk in two passes: first for
-  // missing votes, then for disagree votes.
+  // Priorities 3 + 4: walk participants × entries. The first missing
+  // vote wins over the first disagree vote (caller-facing tooltip
+  // priority), so we walk in two passes.
   for (const entry of entries) {
     const voters = new Set<string>();
     for (const vote of entry.votes) voters.add(vote.participantId);
-    for (const participantId of currentParticipantIds) {
+    for (const participantId of requiredParticipantIds) {
       if (!voters.has(participantId)) {
         return { ok: false, reason: 'participants-not-voted' };
       }
@@ -421,7 +484,7 @@ export function deriveAllAgree(
   }
   for (const entry of entries) {
     for (const vote of entry.votes) {
-      if (!currentParticipantIds.has(vote.participantId)) continue;
+      if (!requiredParticipantIds.has(vote.participantId)) continue;
       if (vote.choice !== 'agree') {
         return { ok: false, reason: 'participants-disagree' };
       }

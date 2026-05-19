@@ -44,7 +44,11 @@ import { PILL_BASE_CLASSNAME, PILL_STATUS_CLASSNAME, VoteIndicator } from '@a-co
 
 import type { FacetStatusIndex } from '../graph/facetStatus.js';
 import type { PendingProposalRow } from '../graph/pendingProposals.js';
-import { derivePerProposalFacets, type VotesByFacetIndex } from '../graph/proposalFacets.js';
+import {
+  derivePerProposalFacets,
+  type VotesByFacetIndex,
+  type VotesByProposalIndex,
+} from '../graph/proposalFacets.js';
 
 export interface ProposalFacetBreakdownProps {
   /** The pending-proposal row this breakdown belongs to. */
@@ -77,9 +81,24 @@ export interface ProposalFacetBreakdownProps {
    * is omitted.
    */
   readonly votesByFacetIndex?: VotesByFacetIndex;
+  /**
+   * Per-proposal-id vote bucket — `projectVotesByProposal(events)`'s
+   * return value. Drives the in-chip `<VoteIndicator>` row for
+   * structural sub-kinds (decompose, interpretive-split, axiom-mark,
+   * annotate) on the synthetic `'proposal'` chip — mirrors the
+   * server-side `pendingProposal.perParticipantVotes` map populated by
+   * commit `421353f`.
+   *
+   * Optional with an empty-map default so older render paths continue
+   * to compile / behave as before — the synthetic `'proposal'` chip's
+   * `votes` array collapses to `EMPTY_VOTES` and the indicator row is
+   * omitted (legacy v1 posture).
+   */
+  readonly votesByProposalIndex?: VotesByProposalIndex;
 }
 
 const EMPTY_VOTES_BY_FACET_INDEX: VotesByFacetIndex = new Map();
+const EMPTY_VOTES_BY_PROPOSAL_INDEX: VotesByProposalIndex = new Map();
 
 const BREAKDOWN_CONTAINER_CLASSES = 'flex flex-wrap items-center gap-1';
 
@@ -89,6 +108,7 @@ function ProposalFacetBreakdownImpl(props: ProposalFacetBreakdownProps): ReactEl
     facetStatusIndex,
     serverPerFacetStatus,
     votesByFacetIndex = EMPTY_VOTES_BY_FACET_INDEX,
+    votesByProposalIndex = EMPTY_VOTES_BY_PROPOSAL_INDEX,
   } = props;
   const { t } = useTranslation();
 
@@ -97,8 +117,8 @@ function ProposalFacetBreakdownImpl(props: ProposalFacetBreakdownProps): ReactEl
   // so re-renders that don't change the underlying references skip
   // the work. The `serverPerFacetStatus` reference changes only when a
   // new `proposal-status` envelope lands for this proposal id; the
-  // `votesByFacetIndex` reference changes whenever a new event (any
-  // kind) lands in the session log.
+  // `votesByFacetIndex` and `votesByProposalIndex` references change
+  // whenever a new event (any kind) lands in the session log.
   const entries = useMemo(
     () =>
       derivePerProposalFacets(
@@ -106,8 +126,17 @@ function ProposalFacetBreakdownImpl(props: ProposalFacetBreakdownProps): ReactEl
         facetStatusIndex,
         serverPerFacetStatus,
         votesByFacetIndex,
+        row.proposalEventId,
+        votesByProposalIndex,
       ),
-    [row.proposal, facetStatusIndex, serverPerFacetStatus, votesByFacetIndex],
+    [
+      row.proposal,
+      row.proposalEventId,
+      facetStatusIndex,
+      serverPerFacetStatus,
+      votesByFacetIndex,
+      votesByProposalIndex,
+    ],
   );
 
   return (

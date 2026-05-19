@@ -29,6 +29,7 @@ import {
   deriveAllAgree,
   derivePerProposalFacets,
   type VotesByFacetIndex,
+  type VotesByProposalIndex,
 } from './proposalFacets.js';
 import type { FacetStatusIndex } from './facetStatus.js';
 import type { PendingProposalRow } from './pendingProposals.js';
@@ -94,6 +95,7 @@ export function matchesProposalFilter(
   votesByFacetIndex: VotesByFacetIndex,
   facetStatusIndex: FacetStatusIndex,
   serverPerFacetStatus: Record<string, string> | undefined,
+  votesByProposalIndex?: VotesByProposalIndex,
 ): boolean {
   // Default-fast-path: the predicate is the identity for the default
   // filter (Decision §8). Cheap up-front check that avoids the
@@ -115,18 +117,28 @@ export function matchesProposalFilter(
   // ONCE per call; the pane-level memos pass the same indices that
   // every row's breakdown reads, so the cost is O(facets-per-row)
   // (typically 1) per filter evaluation.
+  //
+  // `votesByProposalIndex` + `row.proposalEventId` thread the
+  // per-proposal vote bucket for structural sub-kinds so the "Ready"
+  // chip and the per-row commit button compute the same signal
+  // for structural proposals too — the gate predicate walks the
+  // `votes` field on the synthetic `'proposal'` entry, populated by
+  // the per-proposal projection (per commit `421353f`).
   const entries = derivePerProposalFacets(
     row.proposal,
     facetStatusIndex,
     serverPerFacetStatus,
     votesByFacetIndex,
+    row.proposalEventId,
+    votesByProposalIndex,
   );
 
   if (filter.state === 'ready') {
     // Reuse the commit-gate predicate exactly so the "Ready" chip and
     // the per-row commit button compute the same signal by
-    // construction (Decision §1.c).
-    return deriveAllAgree(entries, currentParticipantIds).ok;
+    // construction. Pass the proposal payload so the axiom-mark
+    // exclusion stays in lockstep across the two surfaces.
+    return deriveAllAgree(entries, currentParticipantIds, row.proposal).ok;
   }
 
   // filter.state === 'disputed' — any facet entry whose status is

@@ -61,13 +61,14 @@ import {
   type PendingProposalRow as PendingProposalRowData,
 } from '../graph/pendingProposals';
 import { computeFacetStatuses, type FacetStatusIndex } from '../graph/facetStatus';
-import { projectVotesByFacet } from '../graph/selectors';
+import { projectVotesByFacet, projectVotesByProposal } from '../graph/selectors';
 import {
   deriveAllAgree,
   deriveCurrentParticipants,
   derivePerProposalFacets,
   type CommitGateReason,
   type VotesByFacetIndex,
+  type VotesByProposalIndex,
 } from '../graph/proposalFacets';
 import {
   isDefaultFilter,
@@ -240,6 +241,7 @@ function PendingProposalRow(props: {
   readonly facetStatusIndex: FacetStatusIndex;
   readonly serverPerFacetStatus: Record<string, string> | undefined;
   readonly votesByFacetIndex: VotesByFacetIndex;
+  readonly votesByProposalIndex: VotesByProposalIndex;
   readonly currentParticipantIds: ReadonlySet<string>;
   readonly connectionOpen: boolean;
 }): ReactElement {
@@ -251,6 +253,7 @@ function PendingProposalRow(props: {
     facetStatusIndex,
     serverPerFacetStatus,
     votesByFacetIndex,
+    votesByProposalIndex,
     currentParticipantIds,
     connectionOpen,
   } = props;
@@ -276,13 +279,22 @@ function PendingProposalRow(props: {
     facetStatusIndex,
     serverPerFacetStatus,
     votesByFacetIndex,
+    row.proposalEventId,
+    votesByProposalIndex,
   );
   // Outer connection-status gate (Decision §1.b) — applied BEFORE
   // calling `deriveAllAgree` so the predicate stays pure (no WS-status
   // argument).
+  //
+  // The third argument (`row.proposal`) lets the predicate apply the
+  // axiom-mark exclusion when the proposal is `kind: 'axiom-mark'` —
+  // the declared participant doesn't vote on their own bedrock
+  // declaration. Mirrors the server's
+  // `checkUnanimousAgreeStructural`'s `excludedParticipant` filter
+  // (per commit `421353f`).
   const gate = !connectionOpen
     ? ({ ok: false, reason: 'session-not-connected' } as const)
-    : deriveAllAgree(entries, currentParticipantIds);
+    : deriveAllAgree(entries, currentParticipantIds, row.proposal);
 
   const { commit, inFlight, lastError } = useCommitAction(row.proposalEventId);
   const {
@@ -461,6 +473,7 @@ function PendingProposalRow(props: {
         facetStatusIndex={facetStatusIndex}
         serverPerFacetStatus={serverPerFacetStatus}
         votesByFacetIndex={votesByFacetIndex}
+        votesByProposalIndex={votesByProposalIndex}
       />
       {wireMessage !== undefined ? (
         <p
@@ -555,6 +568,16 @@ export function PendingProposalsPane(props: PendingProposalsPaneProps): ReactEle
   // `projectVotesByFacet(events)` pass) plus per-row lookups.
   const votesByFacetIndex = useMemo(() => projectVotesByFacet(events ?? []), [events]);
 
+  // Per-proposal-id vote bucket for structural sub-kinds (decompose,
+  // interpretive-split, axiom-mark, annotate). Same `events`-keyed
+  // memo pattern as `votesByFacetIndex` above — one walk shared across
+  // every row's commit-gate computation per render. Surfaces the
+  // server-side `pendingProposal.perParticipantVotes` map on the
+  // client without a separate WS subscription (per commit `421353f`
+  // the server populates this map for structural proposals; the
+  // moderator UI mirrors the walk from the event log).
+  const votesByProposalIndex = useMemo(() => projectVotesByProposal(events ?? []), [events]);
+
   // Per `mod_commit_button` Decision §1.a, the set of currently-joined
   // NON-moderator participant ids is the cardinality the commit gate
   // requires unanimous `'agree'` over. Same `events`-keyed memo
@@ -597,9 +620,18 @@ export function PendingProposalsPane(props: PendingProposalsPaneProps): ReactEle
         votesByFacetIndex,
         facetStatusIndex,
         pendingProposals?.[row.proposalEventId]?.perFacetStatus,
+        votesByProposalIndex,
       ),
     );
-  }, [rows, filter, currentParticipantIds, votesByFacetIndex, facetStatusIndex, pendingProposals]);
+  }, [
+    rows,
+    filter,
+    currentParticipantIds,
+    votesByFacetIndex,
+    votesByProposalIndex,
+    facetStatusIndex,
+    pendingProposals,
+  ]);
 
   const resolvedNowMs = nowMs ?? Date.now();
   const systemAuthorLabel = t('moderator.proposalList.systemAuthor');
@@ -706,6 +738,7 @@ export function PendingProposalsPane(props: PendingProposalsPaneProps): ReactEle
               facetStatusIndex={facetStatusIndex}
               serverPerFacetStatus={pendingProposals?.[row.proposalEventId]?.perFacetStatus}
               votesByFacetIndex={votesByFacetIndex}
+              votesByProposalIndex={votesByProposalIndex}
               currentParticipantIds={currentParticipantIds}
               connectionOpen={connectionOpen}
             />

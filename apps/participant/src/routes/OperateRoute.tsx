@@ -258,7 +258,12 @@ function OperateRouteAuthenticatedBody({
   const selected = useSelectionStore((s) => s.selected);
   const voteButtons =
     selected !== null && (selected.kind === 'node' || selected.kind === 'edge') ? (
-      <ParticipantVoteButtons events={events} entityKind={selected.kind} entityId={selected.id} />
+      <ParticipantVoteButtons
+        events={events}
+        entityKind={selected.kind}
+        entityId={selected.id}
+        currentParticipantId={currentParticipantId}
+      />
     ) : null;
   const axiomMarkButton =
     selected !== null && selected.kind === 'node'

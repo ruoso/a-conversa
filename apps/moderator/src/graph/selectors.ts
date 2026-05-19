@@ -750,3 +750,91 @@ export function projectVotesByFacet(events: readonly Event[]): Map<string, Map<F
 
   return out;
 }
+
+// ---------------------------------------------------------------------
+// `projectVotesByProposal` — per-proposal-id vote bucket for the
+// structural sub-kinds (`decompose`, `interpretive-split`, `axiom-mark`,
+// `annotate`, etc.). Mirrors `projectVotesByFacet` for the four
+// facet-targeting sub-kinds but keys on proposal id instead of
+// `(entityId, facet)` — structural proposals don't have a
+// `(entity, facet)` pair to bucket by; the unanimity walk is per
+// proposal envelope id.
+//
+// **Methodology semantics**: a structural proposal is fully described
+// by its envelope id; the participant's vote against it carries that
+// id verbatim on the wire. The unanimity gate (`checkUnanimousAgreeStructural`
+// per commit `421353f`) walks the pending proposal's `perParticipantVotes`
+// map — this projection mirrors that map on the client so the
+// moderator-side commit-gate predicate can evaluate the same shape.
+//
+// **Scope**: every proposal kind that is NOT facet-targeting. The
+// projection records the entry, regardless of sub-kind, because a
+// `vote` envelope's `proposal_id` is the canonical reference; the
+// caller (the moderator commit-gate) filters by sub-kind / by the
+// proposal's lifecycle state.
+//
+// **Latest-vote-wins, position-stable**: same arrival-order semantics
+// as `projectVotesByFacet`. The first vote from each participant pins
+// their position; subsequent arm-switches overwrite in place.
+// ---------------------------------------------------------------------
+
+/**
+ * Pure projection from a session's event log to a per-proposal-id
+ * `Vote[]` index. Single-pass over `events`.
+ *
+ * For each `proposal` event, records that the envelope id is a known
+ * proposal. For each subsequent `vote` event referencing a known
+ * proposal id, records the participant's latest vote
+ * (last-write-wins per `(proposal, participant)`).
+ *
+ * Position semantics: the first vote on a proposal from each
+ * participant pins their position; subsequent arm-switches overwrite
+ * in place. Stable order matches the methodology-pinned wire-arrival
+ * order on the server.
+ *
+ * Unknown / out-of-order votes (referencing a proposal id not yet seen
+ * in the log) are silently dropped — the projection is forward-only.
+ */
+export function projectVotesByProposal(events: readonly Event[]): Map<string, Vote[]> {
+  const knownProposals = new Set<string>();
+  const out = new Map<string, Vote[]>();
+  // per-(proposalId) participant → position map, mirroring the
+  // `projectVotesByFacet` convention for in-place overwrite.
+  const positionIndex = new Map<string, Map<string, number>>();
+
+  for (const event of events) {
+    if (event.kind === 'proposal') {
+      knownProposals.add(event.id);
+      continue;
+    }
+    if (event.kind === 'vote') {
+      const proposalId = event.payload.proposal_id;
+      if (!knownProposals.has(proposalId)) continue;
+
+      let perProposal = out.get(proposalId);
+      if (perProposal === undefined) {
+        perProposal = [];
+        out.set(proposalId, perProposal);
+      }
+      let perProposalPositions = positionIndex.get(proposalId);
+      if (perProposalPositions === undefined) {
+        perProposalPositions = new Map();
+        positionIndex.set(proposalId, perProposalPositions);
+      }
+      const participantId = event.payload.participant;
+      const choice = event.payload.vote;
+      const priorIndex = perProposalPositions.get(participantId);
+      if (priorIndex === undefined) {
+        perProposalPositions.set(participantId, perProposal.length);
+        perProposal.push({ participantId, choice });
+      } else {
+        perProposal[priorIndex] = { participantId, choice };
+      }
+      continue;
+    }
+    // commit / meta-disagreement-marked / node-created / etc. — same
+    // posture as `projectVotesByFacet`: the historical vote record
+    // remains surfaced after closure.
+  }
+  return out;
+}

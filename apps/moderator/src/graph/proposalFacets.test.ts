@@ -716,10 +716,45 @@ describe('deriveAllAgree — unanimous agree across current non-moderator partic
     expect(out).toEqual({ ok: false, reason: 'proposal-meta-disagreement' });
   });
 
-  it('returns { ok: false, reason: structural-sub-kind-not-supported } for the synthetic proposal facet', () => {
+  it('returns { ok: false, reason: participants-not-voted } for an empty synthetic proposal facet (no per-proposal votes threaded)', () => {
+    // Per commit `421353f` the server's commit handler accepts every
+    // structural sub-kind via `checkUnanimousAgreeStructural` — the
+    // synthetic `'proposal'` facet entry is no longer auto-blocked.
+    // With no votes threaded through (legacy caller / pre-projection
+    // index), the predicate falls through to the standard
+    // `participants-not-voted` branch.
     const entry = makeEntry([], { facet: 'proposal', labelKey: 'methodology.facet.proposal' });
     const out = deriveAllAgree([entry], new Set([DEBATER_A_ID, DEBATER_B_ID]));
-    expect(out).toEqual({ ok: false, reason: 'structural-sub-kind-not-supported' });
+    expect(out).toEqual({ ok: false, reason: 'participants-not-voted' });
+  });
+
+  it('returns { ok: true } for a structural "proposal" facet when both debaters voted agree', () => {
+    // The server-side `checkUnanimousAgreeStructural` walks the pending
+    // proposal's `perParticipantVotes` map; the client mirrors that
+    // walk via the synthetic `'proposal'` entry's `votes` field
+    // (populated by `derivePerProposalFacets`'s `votesByProposalIndex`
+    // argument). Unanimous agree → gate opens.
+    const entry = makeEntry(
+      [
+        { participantId: DEBATER_A_ID, choice: 'agree' },
+        { participantId: DEBATER_B_ID, choice: 'agree' },
+      ],
+      { facet: 'proposal', labelKey: 'methodology.facet.proposal' },
+    );
+    const out = deriveAllAgree([entry], new Set([DEBATER_A_ID, DEBATER_B_ID]));
+    expect(out.ok).toBe(true);
+  });
+
+  it('returns { ok: false, reason: participants-disagree } for a structural "proposal" with one dispute', () => {
+    const entry = makeEntry(
+      [
+        { participantId: DEBATER_A_ID, choice: 'agree' },
+        { participantId: DEBATER_B_ID, choice: 'dispute' },
+      ],
+      { facet: 'proposal', labelKey: 'methodology.facet.proposal' },
+    );
+    const out = deriveAllAgree([entry], new Set([DEBATER_A_ID, DEBATER_B_ID]));
+    expect(out).toEqual({ ok: false, reason: 'participants-disagree' });
   });
 
   it('returns { ok: false, reason: no-current-participants } when the participant set is empty', () => {
@@ -755,5 +790,178 @@ describe('deriveAllAgree — unanimous agree across current non-moderator partic
     });
     const out = deriveAllAgree([ok, blocked], new Set([DEBATER_A_ID, DEBATER_B_ID]));
     expect(out).toEqual({ ok: false, reason: 'participants-not-voted' });
+  });
+});
+
+// ---------------------------------------------------------------------
+// `deriveAllAgree` — axiom-mark exclusion. Per docs/methodology.md
+// § "Axioms / terminal values": the participant whose bedrock is being
+// declared is the proposer; their proposal IS the declaration. The
+// server's `checkUnanimousAgreeStructural` excludes them from the
+// required-voters set (per commit `421353f`). The client predicate
+// mirrors that exclusion when the caller passes the proposal payload.
+// ---------------------------------------------------------------------
+
+describe('deriveAllAgree — axiom-mark exclusion', () => {
+  it('opens the gate when DEBATER_B voted agree on DEBATER_A’s axiom-mark proposal (A is excluded)', () => {
+    const proposal: ProposalPayload = {
+      kind: 'axiom-mark',
+      node_id: '00000000-0000-4000-8000-00000000aaaa',
+      participant: DEBATER_A_ID,
+    };
+    // The synthetic `'proposal'` entry carries only B's vote — A is
+    // the declared participant and doesn't vote on their own
+    // declaration.
+    const entry = makeEntry([{ participantId: DEBATER_B_ID, choice: 'agree' }], {
+      facet: 'proposal',
+      labelKey: 'methodology.facet.proposal',
+    });
+    const out = deriveAllAgree([entry], new Set([DEBATER_A_ID, DEBATER_B_ID]), proposal);
+    expect(out.ok).toBe(true);
+  });
+
+  it('still requires the other debaters to vote — missing B’s vote blocks', () => {
+    const proposal: ProposalPayload = {
+      kind: 'axiom-mark',
+      node_id: '00000000-0000-4000-8000-00000000aaaa',
+      participant: DEBATER_A_ID,
+    };
+    const entry = makeEntry([], {
+      facet: 'proposal',
+      labelKey: 'methodology.facet.proposal',
+    });
+    const out = deriveAllAgree([entry], new Set([DEBATER_A_ID, DEBATER_B_ID]), proposal);
+    expect(out).toEqual({ ok: false, reason: 'participants-not-voted' });
+  });
+
+  it('ignores A’s vote on their own axiom-mark proposal (the excluded participant doesn’t gate or block)', () => {
+    // Defensive — if A somehow voted dispute on their own axiom-mark
+    // (out-of-band; the participant UI suppresses the row, but a
+    // sibling caller may inject one), the predicate still ignores it
+    // because A is the excluded participant.
+    const proposal: ProposalPayload = {
+      kind: 'axiom-mark',
+      node_id: '00000000-0000-4000-8000-00000000aaaa',
+      participant: DEBATER_A_ID,
+    };
+    const entry = makeEntry(
+      [
+        { participantId: DEBATER_A_ID, choice: 'dispute' },
+        { participantId: DEBATER_B_ID, choice: 'agree' },
+      ],
+      { facet: 'proposal', labelKey: 'methodology.facet.proposal' },
+    );
+    const out = deriveAllAgree([entry], new Set([DEBATER_A_ID, DEBATER_B_ID]), proposal);
+    expect(out.ok).toBe(true);
+  });
+
+  it('returns no-current-participants when the axiom-mark exclusion drains the required set', () => {
+    // Lone-debater session — A is the declared participant; excluding
+    // A leaves no required voters. Surface the typed signal rather
+    // than open the gate against a vacuum.
+    const proposal: ProposalPayload = {
+      kind: 'axiom-mark',
+      node_id: '00000000-0000-4000-8000-00000000aaaa',
+      participant: DEBATER_A_ID,
+    };
+    const entry = makeEntry([], {
+      facet: 'proposal',
+      labelKey: 'methodology.facet.proposal',
+    });
+    const out = deriveAllAgree([entry], new Set([DEBATER_A_ID]), proposal);
+    expect(out).toEqual({ ok: false, reason: 'no-current-participants' });
+  });
+
+  it('non-axiom-mark structural sub-kinds do not apply the exclusion', () => {
+    // `decompose` is a structural sub-kind that DOES require every
+    // current debater (including the proposer) to vote. Confirm the
+    // exclusion is axiom-mark-specific.
+    const proposal: ProposalPayload = {
+      kind: 'decompose',
+      parent_node_id: NODE_X,
+      components: [
+        {
+          wording: 'first',
+          classification: 'fact',
+          node_id: '00000000-0000-4000-8000-00000000f041',
+        },
+        {
+          wording: 'second',
+          classification: 'fact',
+          node_id: '00000000-0000-4000-8000-00000000f042',
+        },
+      ],
+    };
+    // Only B voted — A is required (not excluded) → block on missing.
+    const entry = makeEntry([{ participantId: DEBATER_B_ID, choice: 'agree' }], {
+      facet: 'proposal',
+      labelKey: 'methodology.facet.proposal',
+    });
+    const out = deriveAllAgree([entry], new Set([DEBATER_A_ID, DEBATER_B_ID]), proposal);
+    expect(out).toEqual({ ok: false, reason: 'participants-not-voted' });
+  });
+});
+
+// ---------------------------------------------------------------------
+// `derivePerProposalFacets` — structural sub-kind `votes` field surfaces
+// the matching `votesByProposalIndex` bucket. Added by the structural-
+// commit-UI refinement so the moderator commit-gate predicate can walk
+// per-participant votes for structural proposals the same way it does
+// for facet-targeting ones.
+// ---------------------------------------------------------------------
+
+describe('derivePerProposalFacets — structural sub-kind votes (votesByProposalIndex)', () => {
+  const decomposeProposal: ProposalPayload = {
+    kind: 'decompose',
+    parent_node_id: NODE_X,
+    components: [
+      {
+        wording: 'first',
+        classification: 'fact',
+        node_id: '00000000-0000-4000-8000-00000000f061',
+      },
+      {
+        wording: 'second',
+        classification: 'fact',
+        node_id: '00000000-0000-4000-8000-00000000f062',
+      },
+    ],
+  };
+  const PROPOSAL_ID = '00000000-0000-4000-8000-00000000d001';
+
+  it('surfaces the matching per-proposal votes bucket on the synthetic "proposal" entry', () => {
+    const votes: readonly Vote[] = [
+      { participantId: PARTICIPANT_A, choice: 'agree' },
+      { participantId: PARTICIPANT_B, choice: 'agree' },
+    ];
+    const votesByProposal: ReadonlyMap<string, readonly Vote[]> = new Map([[PROPOSAL_ID, votes]]);
+    const out = derivePerProposalFacets(
+      decomposeProposal,
+      EMPTY_INDEX,
+      undefined,
+      EMPTY_VOTES_INDEX,
+      PROPOSAL_ID,
+      votesByProposal,
+    );
+    expect(out[0]?.facet).toBe('proposal');
+    expect(out[0]?.votes).toEqual(votes);
+  });
+
+  it('defaults to EMPTY_VOTES when the per-proposal index has no entry for the id', () => {
+    const out = derivePerProposalFacets(
+      decomposeProposal,
+      EMPTY_INDEX,
+      undefined,
+      EMPTY_VOTES_INDEX,
+      PROPOSAL_ID,
+      new Map(),
+    );
+    expect(out[0]?.votes).toBe(EMPTY_VOTES);
+  });
+
+  it('back-compat — when the proposalEventId is omitted the structural entry stays at EMPTY_VOTES', () => {
+    const out = derivePerProposalFacets(decomposeProposal, EMPTY_INDEX, undefined);
+    expect(out[0]?.facet).toBe('proposal');
+    expect(out[0]?.votes).toBe(EMPTY_VOTES);
   });
 });

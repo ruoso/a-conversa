@@ -60,6 +60,28 @@ import type { FacetName } from '../graph/facetStatus';
 import { useVoteAction, type VoteChoice } from './useVoteAction';
 
 /**
+ * Facet name surfaced by the per-row affordance. Extends the three real
+ * `FacetName` values (`classification` / `substance` / `wording`) with
+ * the synthetic `'proposal'` lifecycle facet that the four structural
+ * sub-kinds (`decompose`, `interpretive-split`, `axiom-mark`,
+ * `annotate`) map to. Mirrors the moderator-side `LifecycleFacetName`
+ * extension in `apps/moderator/src/graph/proposalFacets.ts` so the
+ * per-facet i18n catalog key `methodology.facet.proposal` is the same
+ * string both surfaces look up.
+ *
+ * Structural sub-kinds don't target a per-facet field on the projection
+ * — the unanimity walk happens against the pending proposal's
+ * `perParticipantVotes` map on the server side (per commit `421353f`).
+ * The synthetic `'proposal'` facet exists solely so the participant has
+ * something to vote on: a row labelled "proposal" with the standard
+ * three vote arms whose `vote` envelope carries the structural
+ * proposal's event id as `proposalId`. The server's `handleVote` reads
+ * the proposal kind and routes the per-participant record onto the
+ * pending proposal's `perParticipantVotes` map.
+ */
+type LifecycleFacetName = FacetName | 'proposal';
+
+/**
  * The three wire arms a vote button can fire. Mirrors
  * `VoteChoice` from `useVoteAction`; redeclared at the row-renderer
  * layer so the iteration order at the component is the locally-owned
@@ -92,20 +114,38 @@ const VOTE_BUTTON_LABEL_KEY: Readonly<Record<VoteChoice, string>> = {
 };
 
 /**
- * Resolve the (entityId, facet) target a proposal payload addresses,
- * or `null` for sub-kinds that do not produce a per-facet vote
- * affordance (decompose, axiom-mark, annotate, ...). Mirrors the
- * private `targetOf` helper in `apps/participant/src/graph/facetStatus.ts:132`
- * verbatim — duplicated rather than exported because the two callers
- * have intentionally distinct return shapes (the facet-status walk
- * needs `entityKind`; this walk does not — the caller already filters
- * by `entityKind` via the `props.entityKind` argument). Keeping the
- * walk inline here keeps the button row decoupled from the projection
- * module's internals.
+ * Resolve the (entityKind, entityId, facet) target a proposal payload
+ * addresses, or `null` for sub-kinds that do not produce a per-row vote
+ * affordance (today `meta-move` and `break-edge` — both still deferred
+ * to their own UI-flow tasks).
+ *
+ * Mirrors the private `targetOf` helper in
+ * `apps/participant/src/graph/facetStatus.ts:132` for the four
+ * facet-targeting sub-kinds (`classify-node`, `set-node-substance`,
+ * `set-edge-substance`, `edit-wording` / `amend-node`).
+ *
+ * For the four structural sub-kinds (`decompose`, `interpretive-split`,
+ * `axiom-mark`, `annotate`) the target carries the synthetic
+ * `'proposal'` facet keyed to the entity the structural move is acting
+ * on — the parent node for decompose / interpretive-split, the node for
+ * axiom-mark, the target node-or-edge for annotate. With that, the
+ * detail-panel row renders a `'proposal'`-facet voting affordance the
+ * other participants click; the per-`vote` envelope carries the
+ * structural proposal's event id, the server's `handleVote` populates
+ * the pending proposal's `perParticipantVotes` map, and the server's
+ * `checkUnanimousAgreeStructural` (per commit `421353f`) walks it on
+ * the commit gate.
+ *
+ * Duplicated from `apps/participant/src/graph/facetStatus.ts:targetOf`
+ * (rather than exported) because the two callers have intentionally
+ * distinct return shapes (the facet-status walk needs `entityKind` for
+ * a different reason; this walk uses it as the lookup key against the
+ * panel's selection). Keeping the walk inline here keeps the button row
+ * decoupled from the projection module's internals.
  */
 function proposalFacetTarget(
   proposal: ProposalPayload,
-): { entityKind: EntityKind; entityId: string; facet: FacetName } | null {
+): { entityKind: EntityKind; entityId: string; facet: LifecycleFacetName } | null {
   switch (proposal.kind) {
     case 'classify-node':
       return { entityKind: 'node', entityId: proposal.node_id, facet: 'classification' };
@@ -117,11 +157,35 @@ function proposalFacetTarget(
     case 'amend-node':
       return { entityKind: 'node', entityId: proposal.node_id, facet: 'wording' };
     case 'decompose':
+      // The structural move replaces `parent_node_id`; the affordance
+      // hangs off that node so other participants see it when they
+      // inspect the entity being decomposed.
+      return { entityKind: 'node', entityId: proposal.parent_node_id, facet: 'proposal' };
     case 'interpretive-split':
+      return { entityKind: 'node', entityId: proposal.parent_node_id, facet: 'proposal' };
     case 'axiom-mark':
+      // Per docs/methodology.md § "Axioms / terminal values": the
+      // axiom mark hangs off the node it marks. The OperateRoute caller
+      // additionally hides the row from the declared participant (see
+      // `currentParticipantId` exclusion in `derivePendingFacetProposals`
+      // below) per the methodology rule "we all agree that *this
+      // participant* holds this node as bedrock" — the declared
+      // participant's proposal IS the declaration.
+      return { entityKind: 'node', entityId: proposal.node_id, facet: 'proposal' };
+    case 'annotate':
+      // `target_kind` discriminates between node and edge annotations;
+      // both produce a row on the targeted entity.
+      return {
+        entityKind: proposal.target_kind,
+        entityId: proposal.target_id,
+        facet: 'proposal',
+      };
     case 'meta-move':
     case 'break-edge':
-    case 'annotate':
+      // Still deferred to their own UI tasks — no participant vote
+      // affordance today. The server side accepts unanimity for these
+      // too (`checkUnanimousAgreeStructural` is sub-kind-agnostic), but
+      // no UI surface drives the per-row gesture yet.
       return null;
     default:
       return null;
@@ -149,28 +213,51 @@ export function derivePendingFacetProposals(
   events: readonly Event[],
   entityKind: EntityKind,
   entityId: string,
-): ReadonlyMap<FacetName, string> {
+  currentParticipantId?: string,
+): ReadonlyMap<LifecycleFacetName, string> {
   // proposalEventId → facet for proposals targeting THIS (entityKind,
   // entityId). Per-facet LATEST-WINS — if two proposals target the
   // same facet, the later proposal's id is the active one (the prior
   // proposal is implicitly superseded for vote-routing purposes).
-  const proposalIdByFacet = new Map<FacetName, string>();
-  const committedProposalIds = new Set<string>();
+  // Includes the synthetic `'proposal'` facet for structural sub-kinds
+  // (decompose, interpretive-split, axiom-mark, annotate).
+  const proposalIdByFacet = new Map<LifecycleFacetName, string>();
+  const closedProposalIds = new Set<string>();
   for (const event of events) {
     if (event.kind === 'proposal') {
       const target = proposalFacetTarget(event.payload.proposal);
       if (target === null) continue;
       if (target.entityKind !== entityKind) continue;
       if (target.entityId !== entityId) continue;
+      // Axiom-mark special case — the participant whose bedrock is
+      // being declared is the proposer; their proposal IS the
+      // declaration. They have nothing to vote on (the server's
+      // `checkUnanimousAgreeStructural` excludes them from the
+      // required set per docs/methodology.md § "Axioms / terminal
+      // values"). Suppress the row for that participant on the client
+      // side so the affordance only appears to the others.
+      if (
+        event.payload.proposal.kind === 'axiom-mark' &&
+        currentParticipantId !== undefined &&
+        event.payload.proposal.participant === currentParticipantId
+      ) {
+        continue;
+      }
       proposalIdByFacet.set(target.facet, event.id);
     } else if (event.kind === 'commit') {
-      committedProposalIds.add(event.payload.proposal_id);
+      closedProposalIds.add(event.payload.proposal_id);
+    } else if (event.kind === 'meta-disagreement-marked') {
+      closedProposalIds.add(event.payload.proposal_id);
     }
   }
-  // Strip committed proposals — they no longer accept votes; the panel
-  // surfaces the agreed-rollup separately.
+  // Strip closed proposals — committed / meta-disagreement proposals
+  // no longer accept votes; the panel surfaces the agreed rollup
+  // separately. (Proposal withdrawal removes the entity itself via
+  // `entity-removed` per ADR 0027, so a withdrawn structural proposal's
+  // target node disappears from the projection and the panel selection
+  // clears — no need for a separate withdrawn-id walk here.)
   for (const [facet, proposalId] of [...proposalIdByFacet.entries()]) {
-    if (committedProposalIds.has(proposalId)) {
+    if (closedProposalIds.has(proposalId)) {
       proposalIdByFacet.delete(facet);
     }
   }
@@ -181,6 +268,15 @@ export interface ParticipantVoteButtonsProps {
   readonly events: readonly Event[];
   readonly entityKind: EntityKind;
   readonly entityId: string;
+  /**
+   * The current debater's user id. Used for the axiom-mark special
+   * case — the declared participant doesn't see a vote row on their
+   * own axiom-mark proposal (their proposal IS the declaration). When
+   * omitted, the axiom-mark suppression is skipped (the row renders
+   * unconditionally, which is the legacy v1 behaviour for the four
+   * facet-targeting sub-kinds that don't need an exclusion).
+   */
+  readonly currentParticipantId?: string;
 }
 
 /**
@@ -190,12 +286,12 @@ export interface ParticipantVoteButtonsProps {
  * affordance is the signal there's nothing to vote on).
  */
 export function ParticipantVoteButtons(props: ParticipantVoteButtonsProps): ReactElement | null {
-  const { events, entityKind, entityId } = props;
+  const { events, entityKind, entityId, currentParticipantId } = props;
   const { t } = useTranslation();
 
   const pendingByFacet = useMemo(
-    () => derivePendingFacetProposals(events, entityKind, entityId),
-    [events, entityKind, entityId],
+    () => derivePendingFacetProposals(events, entityKind, entityId, currentParticipantId),
+    [events, entityKind, entityId, currentParticipantId],
   );
 
   if (pendingByFacet.size === 0) return null;
@@ -217,7 +313,7 @@ export function ParticipantVoteButtons(props: ParticipantVoteButtonsProps): Reac
  * + `data-facet-name` attr; the three buttons are direct children so
  * the spec's nested selector resolves.
  */
-function FacetVoteRow(props: { facet: FacetName; proposalId: string }): ReactElement {
+function FacetVoteRow(props: { facet: LifecycleFacetName; proposalId: string }): ReactElement {
   const { facet, proposalId } = props;
   const { t } = useTranslation();
   const { castVote, inFlight, lastError } = useVoteAction({ proposalId });
