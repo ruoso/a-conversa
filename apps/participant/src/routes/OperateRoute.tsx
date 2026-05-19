@@ -58,6 +58,8 @@ import { ParticipantChrome } from '../layout/ParticipantChrome';
 import { ParticipantStatusIndicator } from '../layout/ParticipantStatusIndicator';
 import { GraphView } from '../graph/GraphView';
 import { EntityDetailPanel } from '../detail';
+import { ParticipantVoteButtons } from '../detail/ParticipantVoteButtons';
+import { useSelectionStore } from '../stores/selectionStore';
 import {
   groupAnnotationsByEdge,
   groupAnnotationsByNode,
@@ -239,6 +241,18 @@ function OperateRouteAuthenticatedBody({
   const panelNodes = useMemo(() => projected.nodes.map((node) => node.data), [projected]);
   const panelEdges = useMemo(() => projected.edges.map((edge) => edge.data), [projected]);
 
+  // Selection drives the vote-buttons component's `(entityKind,
+  // entityId)` bindings. Read here (not inside the slot factory) so
+  // the slot rebinds only when the selection flips. The vote-buttons
+  // component is responsible for the empty-state branch (no pending
+  // proposals → renders nothing); we always pass it down when there's
+  // a node/edge selection so the slot reservation stays alive.
+  const selected = useSelectionStore((s) => s.selected);
+  const voteSlot =
+    selected !== null && (selected.kind === 'node' || selected.kind === 'edge') ? (
+      <ParticipantVoteButtons events={events} entityKind={selected.kind} entityId={selected.id} />
+    ) : undefined;
+
   return (
     <div data-testid="route-operate" className="flex h-full w-full">
       <div data-testid="route-operate-graph-region" className="flex-1 min-w-0">
@@ -266,6 +280,7 @@ function OperateRouteAuthenticatedBody({
         edgeAnnotationIndex={edgeAnnotationIndex}
         ownVoteIndex={ownVoteIndex}
         othersVoteIndex={othersVoteIndex}
+        actionSlot={voteSlot}
       />
     </div>
   );

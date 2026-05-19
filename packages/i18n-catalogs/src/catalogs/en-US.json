@@ -573,8 +573,20 @@
         "annotations": "Annotations",
         "diagnostics": "Active diagnostics",
         "ownVote": "Your vote",
-        "otherVotes": "Other participants"
+        "otherVotes": "Other participants",
+        "vote": "Cast your vote"
       }
+    },
+    "voteButton": {
+      "agreeLabel": "Agree",
+      "disputeLabel": "Dispute",
+      "withdrawLabel": "Withdraw",
+      "inFlightLabel": "Sending…",
+      "ariaLabel": "{choice, select, agree {Agree with this proposal} dispute {Dispute this proposal} withdraw {Withdraw your prior agreement} other {Vote}}",
+      "wireError": "Vote failed: {message} ({code})",
+      "timeoutError": "The vote request timed out. Check your connection and try again.",
+      "errorRoleLabel": "Vote error",
+      "noPendingProposal": "No pending proposal on this facet."
     }
   },
   "audience": {

@@ -2780,8 +2780,12 @@ test.describe('Participant operate route — read-mostly graph render', () => {
       );
 
       // Per-facet pill row — at least one pill present (the classify-
-      // node proposal contributes the classification facet).
-      const facetRow = page.getByTestId('participant-detail-panel-facet-row');
+      // node proposal contributes the classification facet). The pill
+      // row is the FacetPill display; the per-facet vote rows that
+      // host the vote buttons carry `participant-detail-panel-facet-row`
+      // (one per facet) — they're a sibling render under the action
+      // slot, not the pill display.
+      const facetRow = page.getByTestId('participant-detail-panel-facet-pill-row');
       await expect(facetRow).toBeVisible();
       await expect(facetRow.locator('[data-facet-pill]').first()).toBeVisible();
 

@@ -573,8 +573,20 @@
         "annotations": "Anotações",
         "diagnostics": "Diagnósticos ativos",
         "ownVote": "Seu voto",
-        "otherVotes": "Outros participantes"
+        "otherVotes": "Outros participantes",
+        "vote": "Registre seu voto"
       }
+    },
+    "voteButton": {
+      "agreeLabel": "Concordar",
+      "disputeLabel": "Contestar",
+      "withdrawLabel": "Retirar",
+      "inFlightLabel": "Enviando…",
+      "ariaLabel": "{choice, select, agree {Concordar com esta proposta} dispute {Contestar esta proposta} withdraw {Retirar sua concordância anterior} other {Votar}}",
+      "wireError": "O voto falhou: {message} ({code})",
+      "timeoutError": "A requisição de voto expirou. Verifique sua conexão e tente novamente.",
+      "errorRoleLabel": "Erro de voto",
+      "noPendingProposal": "Não há proposta pendente nesta faceta."
     }
   },
   "audience": {

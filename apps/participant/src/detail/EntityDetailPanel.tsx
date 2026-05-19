@@ -424,7 +424,7 @@ function FacetPillRowSection(props: {
         {t('participant.detailPanel.sectionTitle.facets')}
       </h3>
       <div
-        data-testid="participant-detail-panel-facet-row"
+        data-testid="participant-detail-panel-facet-pill-row"
         className="flex flex-wrap items-center gap-1"
       >
         {presentFacets.map((facet) => {
