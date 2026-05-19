@@ -20,7 +20,13 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { DEV_USER_POOL } from '../e2e/fixtures/auth';
+// Import from the playwright-free sibling module rather than from
+// `tests/e2e/fixtures/auth.ts` — the latter top-imports
+// `@playwright/test`, whose happy-dom-side runtime init emits an
+// unresolvable-URL `console.error` that trips `vitest.setup.ts`'s
+// strict console gate. The constants live in `dev-users.ts` precisely
+// so this smoke test can load the roster cleanly.
+import { DEV_USER_POOL } from '../e2e/fixtures/dev-users';
 
 describe('Authelia dev user pool', () => {
   it('exposes exactly 12 users (the 6-user → 12-user expansion landed)', () => {
