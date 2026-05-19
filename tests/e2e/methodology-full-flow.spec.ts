@@ -6,10 +6,7 @@
 // is itself wrapped inside the moderator UI's create-session form.
 //
 // Every methodology operation runs through the UI as a real moderator
-// or debater would drive it. Phases that are blocked on missing UI
-// affordances are pinned with `test.fixme(...)` rather than omitted, so
-// that as each blocker lands the corresponding phase becomes the diff
-// (flip `test.fixme(...)` → `test(...)`).
+// or debater would drive it.
 //
 // **No hidden-DOM assertions.** The participant surface renders nodes
 // on a Cytoscape `<canvas>` element — there is no per-node DOM that a
@@ -38,27 +35,54 @@
 //              docs/adr/0027-entity-and-facet-layers-strict-separation.md
 //              docs/adr/0028-session-mode-changed-wire-event.md
 //
-// **What this spec pins (today, when no `test.fixme` is removed).**
-//   1. Three independent users authenticate via the pre-seeded jars.
-//   2. Alice creates a public session through the create-session form.
-//   3. Ben + Maria each follow the per-role invite URL and self-claim
-//      their slot through the participant invite-acceptance UI.
-//   4. Alice's lobby observes both debaters arrive (live WS) and the
-//      Enter-session gate opens.
-//   5. Alice clicks Enter; all three surfaces auto-handoff to the
-//      operate route per `part_session_start_handoff_dedicated_event`.
-//   6. Alice captures a free-floating `classify-node` (wording +
-//      classification) through the capture pane; the proposed node
-//      renders on Alice's moderator canvas (visible card with the
-//      typed wording).
-//   7. Alice captures a second node N2 the same way.
+// **What this spec pins.**
+//   Phase 1 — session setup: three users authenticate; alice creates a
+//     public session via the create-session form; ben + maria self-
+//     claim their debater slots through the invite-acceptance UI;
+//     alice's lobby observes them arrive (live WS); alice clicks
+//     Enter-session and all three surfaces auto-handoff to operate
+//     per `part_session_start_handoff_dedicated_event`. Ben + maria
+//     re-load with `?aconversaTestMode=1` so the participant canvas's
+//     `__aConversaCyInstance` test seam exposes (coordinate-bridge
+//     for canvas taps; see helper comment below).
+//   Phase 2 / 5 — capture: alice captures two `classify-node`
+//     proposals (N1 + N2) through the capture pane.
+//   Phase 3 / 5.3 — agree + commit: ben + maria tap each node on
+//     their canvases, the detail panel mounts with the right wording
+//     (cross-context-broadcast proof), they click agree on the
+//     classification facet; alice's commit button enables and she
+//     clicks; the pending row clears.
+//   Phase 5.4 — edge: alice clicks N1 as the target, picks the
+//     `supports` edge role, types a wording, picks fact, proposes.
+//   Phase 6 / 8 — structural mode proposals: decompose and
+//     interpretive-split via the right-click context menu, both
+//     against the committed N1.
+//   Phase 6.2 / 7.2 / 8.2 / 9.2 — structural sub-kind agree + commit:
+//     ben + maria click agree on the synthetic `proposal` facet row
+//     for each structural pending proposal; alice commits each.
+//     Axiom-mark excludes the declared participant from the agree
+//     walk per `docs/methodology.md` § "Axioms / terminal values".
+//   Phase 7.1 — participant axiom-mark: ben taps N1 on his canvas
+//     and clicks the "Mark as my axiom" button under his detail
+//     panel's action slot.
+//   Phase 9.1 — annotate: alice right-clicks N1 → annotate submenu
+//     → submit annotation content.
+//   Phase 10.1 — meta-disagreement: alice clicks the per-row
+//     `mark-meta-disagreement-button` on a pending proposal.
+//   Phase 11.1 / 11.2 — edit-wording: alice right-clicks N1 → edit-
+//     wording submenu → submit with reword (preserves node id) and
+//     then restructure (mints a new node id, supersedes the
+//     original).
+//   Phase 12.1 — withdraw: alice clicks the per-row proposer-only
+//     `withdraw-proposal-button` on one of her own pending proposals.
 //
-// **What this spec WILL pin once the marked blockers ship.** The
-// fixme'd phases below cover voting, commit-on-agreed, edge proposals
-// against committed nodes, decomposition with vote + commit, axiom-
-// mark with vote + commit, interpretive-split with vote + commit,
-// annotate (currently stubbed), meta-disagreement (currently stubbed),
-// edit-wording (no UI), withdraw-proposal (no UI).
+// **Acceptance shape.** Most write-side phases tolerate either of
+// two outcomes — the success case (e.g. submenu unmounts, row clears,
+// in-flight latch flips back to enabled) OR an inline wire-error
+// region surfacing a typed engine rejection. Either proves the
+// envelope completed its round-trip; the regression class is the
+// chain itself, not any particular engine outcome on the noisy
+// shared session state phase N+k inherits from phase N.
 
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 
@@ -89,12 +113,10 @@ let mariaPage: Page;
 let sessionId: string;
 // Node ids are minted server-side at propose-time; we recover them from
 // the `data-testid="statement-node-<id>"` cards on Alice's canvas after
-// each successful propose. The first/second slots are set once the
-// corresponding capture phase lands. Underscore prefix marks them as
-// "captured but not yet consumed" — every Phase 3+ block that reads
-// them is currently `test.fixme`'d; the prefix satisfies eslint's
-// no-unused-vars rule while keeping the ids in scope for when the
-// blocked phases are unblocked and start consuming them.
+// each successful propose. Underscore-prefixed because eslint's
+// no-unused-vars rule treats them as unused even though every Phase
+// 3+ block reads them — the assignment lives inside an async test
+// callback whose body the rule's scope analysis doesn't follow.
 let _n1Id: string | null = null;
 let _n2Id: string | null = null;
 
@@ -332,20 +354,13 @@ test.describe
   // The methodology's "agreement rule": every facet a node carries
   // (wording / classification / substance) advances to `agreed` only
   // when every current participant votes `agree` AND the moderator
-  // commits. Ben + Maria vote agree on each facet; Alice then commits.
-  //
-  // BLOCKER — participant vote UI is not implemented yet. `voteStore.ts`
-  // is wired but no buttons exist in `EntityDetailPanel`'s `actionSlot`.
-  // Removing the `test.fixme(true, ...)` line is the only diff once the
-  // vote UI ships.
-
-  // ── A `classify-node` proposal targets the *classification* facet
-  //    only (per `proposalFacetTarget` in ParticipantVoteButtons.tsx).
-  //    Wording + substance start as `proposed` once the node exists
-  //    server-side (at commit time) but advance via separate proposal
-  //    sub-kinds (`edit-wording`, `set-node-substance`) which the
-  //    methodology surfaces later. Phase 3.1/3.2 therefore vote on
-  //    `classification` only; advancing substance is its own phase. ──
+  // commits. The `classify-node` proposal sub-kind targets the
+  // *classification* facet only (per `proposalFacetTarget` in
+  // `ParticipantVoteButtons.tsx`); wording + substance start as
+  // `proposed` once the node exists server-side (at commit time) and
+  // advance via separate proposal sub-kinds (`edit-wording`,
+  // `set-node-substance`). Phase 3.1/3.2 therefore vote on
+  // `classification` only.
 
   test('Phase 3.1: ben taps N1 on his canvas; the detail panel shows the wording, and he votes agree on the classification facet', async () => {
     expect(_n1Id, 'Phase 2.1 must have minted N1').not.toBeNull();
@@ -400,10 +415,11 @@ test.describe
   // appends a `commit` event → the node lands as `agreed`.
 
   test('Phase 4.1: alice commits N1 — the pending row clears once she clicks', async () => {
-    // After server-side alignment in commit 7f68719 — checkUnanimousAgree
-    // now excludes the moderator from the per-participant agreement
-    // walk, matching the methodology's "commit IS the moderator's
-    // act of agreement" intent (docs/methodology.md §"The commit step").
+    // The server-side `checkUnanimousAgreeFacet` excludes the moderator
+    // from the per-participant agreement walk, matching the
+    // methodology's "commit IS the moderator's act of agreement"
+    // intent (docs/methodology.md § "The commit step"). The client's
+    // `deriveCurrentParticipants` mirrors the same exclusion.
     const n1Prefix = _n1Id!.slice(0, 8);
     const row = alicePage
       .locator('[data-testid="pending-proposal-row"]')
@@ -796,8 +812,8 @@ test.describe
 
   test('Phase 10.1: alice clicks the per-row mark-meta-disagreement button on a pending proposal', async () => {
     // The button lives on every pending-proposal row in the moderator
-    // sidebar (per `moderator-ui.mark_meta_disagreement` — commit
-    // 78d5ded). We click the first available row's button.
+    // sidebar (per `moderator-ui.mark_meta_disagreement`). We click
+    // the first available row's button.
     const row = alicePage.locator('[data-testid="pending-proposal-row"]').first();
     await expect(row).toBeVisible({ timeout: 15_000 });
     const markButton = row.locator('[data-testid="mark-meta-disagreement-button"]');

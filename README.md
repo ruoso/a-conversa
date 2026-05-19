@@ -4,7 +4,7 @@ A debate platform that helps people debate by classifying every statement and on
 
 ## Status
 
-**M0–M3 complete; surface build in progress.** Foundation, data model + methodology engine, and the backend MVP have landed (see [milestones M0–M3 in `tasks/99-milestones.tji`](tasks/99-milestones.tji)). Active work is the M3-lobby manual smoke (`m_manual_lobby_smoke`) and the moderator / participant / audience surface MVPs (M4–M6); the orchestrator that drives WBS work is described in [ORCHESTRATOR.md](ORCHESTRATOR.md). If you're new to the project, start with [DESIGN.md](DESIGN.md) and follow the document index from there. Architectural decisions taken so far live in [docs/adr/](docs/adr/).
+**M0–M4 complete; M5/M6 surface MVPs in flight; M3-review near done.** Foundation, data model + methodology engine, backend MVP, the M3-lobby manual smoke, and the Moderator MVP (M4) have all landed (see [milestones in `tasks/99-milestones.tji`](tasks/99-milestones.tji)). Active work is the Participant MVP (M5 — 162/196 leaves done), the Audience MVP (M6 — 145/174 leaves done), and the M3-review backend security hardening pass (163/165 leaves done). The orchestrator that drives WBS work is described in [ORCHESTRATOR.md](ORCHESTRATOR.md); `make unblocked` is the canonical "what's ready to pick up." If you're new to the project, start with [DESIGN.md](DESIGN.md) and follow the document index from there. Architectural decisions taken so far live in [docs/adr/](docs/adr/).
 
 ## What is a-conversa?
 
