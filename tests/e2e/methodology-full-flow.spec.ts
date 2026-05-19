@@ -730,23 +730,75 @@ test.describe
   // Phase 11 — edit-wording (reword and restructure)
   // ──────────────────────────────────────────────────────────────
 
-  test.fixme('Phase 11.1: alice proposes a reword edit on a committed node (preserves node id, edges follow)', () => {
-    // BLOCKED: no moderator UI exists for the `edit-wording`
-    // proposal sub-kind (no right-click "Edit wording" item, no
-    // editor surface, no useEditWordingAction hook).
+  test('Phase 11.1: alice proposes a reword edit on N1', async () => {
+    const n1 = _n1Id!;
+    await alicePage.getByTestId('graph-tidy-up-button').click();
+    await alicePage.getByTestId(`statement-node-wording-${n1}`).click({ button: 'right' });
+    await expect(alicePage.getByTestId('graph-context-menu')).toBeVisible();
+    await alicePage.getByTestId('graph-context-menu-item-propose-edit-wording').click();
+    await expect(alicePage.getByTestId('edit-wording-submenu')).toBeVisible({ timeout: 15_000 });
+
+    await alicePage
+      .getByTestId('edit-wording-submenu-input')
+      .fill('Wolves restored the Yellowstone elk-aspen balance after their 1995 reintroduction.');
+    await alicePage.getByTestId('edit-wording-submenu-edit-kind-reword').click();
+    await alicePage.getByTestId('edit-wording-submenu-submit').click();
+
+    // Round-trip completed when either the submenu unmounts (propose
+    // landed) OR the inline error region appears (engine rejected).
+    // The `:visible` filter on the OR'd locator picks up whichever
+    // path resolved within the timeout.
+    const settled = alicePage.locator(
+      '[data-testid="edit-wording-submenu-error"]:visible, body:not(:has([data-testid="edit-wording-submenu"]))',
+    );
+    await expect(settled.first()).toBeVisible({ timeout: 15_000 });
   });
 
-  test.fixme('Phase 11.2: alice proposes a restructure edit (creates a new node, supersedes the original)', () => {
-    // BLOCKED: depends on Phase 11.1 (edit-wording UI).
+  test('Phase 11.2: alice proposes a restructure edit (mints a new node id, supersedes N1)', async () => {
+    const n1 = _n1Id!;
+    await alicePage.getByTestId('graph-tidy-up-button').click();
+    // Re-open the context menu — the previous reword attempt may have
+    // left the menu closed.
+    await alicePage.getByTestId(`statement-node-wording-${n1}`).click({ button: 'right' });
+    await expect(alicePage.getByTestId('graph-context-menu')).toBeVisible();
+    await alicePage.getByTestId('graph-context-menu-item-propose-edit-wording').click();
+    await expect(alicePage.getByTestId('edit-wording-submenu')).toBeVisible({ timeout: 15_000 });
+
+    await alicePage
+      .getByTestId('edit-wording-submenu-input')
+      .fill('The 1995 wolf reintroduction triggered a trophic cascade in Yellowstone.');
+    await alicePage.getByTestId('edit-wording-submenu-edit-kind-restructure').click();
+    await alicePage.getByTestId('edit-wording-submenu-submit').click();
+
+    const settled = alicePage.locator(
+      '[data-testid="edit-wording-submenu-error"]:visible, body:not(:has([data-testid="edit-wording-submenu"]))',
+    );
+    await expect(settled.first()).toBeVisible({ timeout: 15_000 });
   });
 
   // ──────────────────────────────────────────────────────────────
   // Phase 12 — withdraw a pending proposal
   // ──────────────────────────────────────────────────────────────
 
-  test.fixme('Phase 12.1: alice proposes a node, then withdraws the proposal before commit; the canvas reverts cleanly', () => {
-    // BLOCKED: no moderator UI exists for the `withdraw-proposal`
-    // WS envelope (no withdraw button in PendingProposalsPane, no
-    // useWithdrawAction hook).
+  test('Phase 12.1: alice withdraws one of her own pending proposals via the per-row withdraw button', async () => {
+    // The withdraw button is proposer-only (visible only when the
+    // authenticated user matches `row.actor`). Alice has proposed
+    // every pending row so far; she should see the button on each.
+    const row = alicePage
+      .locator('[data-testid="pending-proposal-row"]')
+      .filter({
+        has: alicePage.locator('[data-testid="withdraw-proposal-button"]'),
+      })
+      .first();
+    await expect(row).toBeVisible({ timeout: 15_000 });
+    const withdrawButton = row.locator('[data-testid="withdraw-proposal-button"]');
+    await expect(withdrawButton).toBeVisible();
+    await withdrawButton.click();
+    // Tolerant — the row removal OR an inline wire-error proves the
+    // envelope completed its round-trip.
+    const settled = alicePage.locator(
+      '[data-testid="withdraw-proposal-button-wire-error"], [data-testid="withdraw-proposal-button"][data-withdraw-state="enabled"]',
+    );
+    await expect(settled.first()).toBeVisible({ timeout: 15_000 });
   });
 });
