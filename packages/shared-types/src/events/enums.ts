@@ -47,3 +47,22 @@ export type AnnotationKind = z.infer<typeof annotationKindSchema>;
 export const entityKindSchema = z.enum(['node', 'edge', 'annotation']);
 
 export type EntityKind = z.infer<typeof entityKindSchema>;
+
+/**
+ * Facet-name enum. Mirrors the projection-layer `FacetName` union at
+ * `apps/server/src/projection/types.ts` (the canonical TS type) — the
+ * two must stay in lockstep.
+ *
+ * Introduced for `withdraw-agreement` (per ADR 0030 §3) and reused by
+ * the downstream per-facet-keying tasks
+ * (`pf_facet_keyed_vote_payload`, `pf_facet_keyed_commit_payload`,
+ * `pf_facet_keyed_meta_disagreement_payload`).
+ *
+ * The shape-facet expansion implied by ADR 0030 §5 is owned by the
+ * downstream projection-refactor tasks; this enum is 3-valued at
+ * landing and widens later in lockstep with the projection-layer
+ * `FacetName`.
+ */
+export const facetNameSchema = z.enum(['classification', 'substance', 'wording']);
+
+export type FacetName = z.infer<typeof facetNameSchema>;

@@ -16,6 +16,7 @@ import {
   eventEnvelopeSchema,
   eventKinds,
   eventPayloadSchemas,
+  facetNameSchema,
   metaDisagreementMarkedPayloadSchema,
   nodeCreatedPayloadSchema,
   participantJoinedPayloadSchema,
@@ -26,6 +27,7 @@ import {
   snapshotCreatedPayloadSchema,
   validateEvent,
   votePayloadSchema,
+  withdrawAgreementPayloadSchema,
 } from './events.js';
 
 // Valid sample UUIDs (v4: version-nibble = 4, variant-nibble in [89ab]).
@@ -843,6 +845,11 @@ describe('placeholder payload schemas', () => {
       // emitted by `POST /api/sessions/:id/start` when the moderator
       // advances the session from the lobby into the operate canvas.
       'session-mode-changed',
+      // Added by pf_withdraw_agreement_event_kind (ADR 0030 §3) —
+      // promoted from `vote.choice = 'withdraw'` to its own top-level
+      // event kind so the per-facet withdrawal transition is a direct
+      // read of the log.
+      'withdraw-agreement',
     ] as const;
     for (const kind of expectedKinds) {
       expect(eventPayloadSchemas[kind]).toBeDefined();
@@ -908,6 +915,123 @@ describe('session-mode-changed payload schema', () => {
   it('rejects a non-ISO changed_at', () => {
     const result = sessionModeChangedPayloadSchema.safeParse({ ...valid, changed_at: 'tomorrow' });
     expect(result.success).toBe(false);
+  });
+});
+
+// -- withdraw-agreement payload schema -------------------------------
+//
+// Per ADR 0030 §3 — promoted from a `vote.choice = 'withdraw'` variant
+// to its own top-level event kind. Payload addresses the targeted
+// facet directly via `(entity_kind, entity_id, facet)`. `entity_kind`
+// is intentionally NARROWER than `entityKindSchema` (no `'annotation'`)
+// because facet-valued proposals only target nodes and edges in v1.
+
+describe('withdraw-agreement payload schema', () => {
+  const valid = {
+    entity_kind: 'node' as const,
+    entity_id: NODE_ID,
+    facet: 'classification' as const,
+    participant: PARTICIPANT_ID,
+    withdrawn_at: '2026-05-10T12:34:56Z',
+  };
+
+  it('round-trips a well-formed payload through JSON', () => {
+    const parsed = withdrawAgreementPayloadSchema.parse(valid);
+    const wire = JSON.parse(JSON.stringify(parsed)) as unknown;
+    expect(withdrawAgreementPayloadSchema.parse(wire)).toEqual(valid);
+  });
+
+  it('accepts edge as entity_kind', () => {
+    const result = withdrawAgreementPayloadSchema.safeParse({
+      ...valid,
+      entity_kind: 'edge',
+      entity_id: EDGE_ID,
+      facet: 'substance',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts substance and wording as facet values', () => {
+    for (const facet of ['substance', 'wording'] as const) {
+      const result = withdrawAgreementPayloadSchema.safeParse({ ...valid, facet });
+      expect(result.success).toBe(true);
+    }
+  });
+
+  it("rejects 'annotation' as entity_kind (narrower than entityKindSchema)", () => {
+    const result = withdrawAgreementPayloadSchema.safeParse({
+      ...valid,
+      entity_kind: 'annotation',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a non-UUID entity_id', () => {
+    const result = withdrawAgreementPayloadSchema.safeParse({ ...valid, entity_id: 'not-a-uuid' });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a non-UUID participant', () => {
+    const result = withdrawAgreementPayloadSchema.safeParse({ ...valid, participant: 'nope' });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects an unknown facet value', () => {
+    const result = withdrawAgreementPayloadSchema.safeParse({ ...valid, facet: 'shape' });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a non-ISO withdrawn_at', () => {
+    const result = withdrawAgreementPayloadSchema.safeParse({ ...valid, withdrawn_at: 'today' });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a missing facet', () => {
+    const { facet: _ignored, ...partial } = valid;
+    void _ignored;
+    const result = withdrawAgreementPayloadSchema.safeParse(partial);
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a missing withdrawn_at', () => {
+    const { withdrawn_at: _ignored, ...partial } = valid;
+    void _ignored;
+    const result = withdrawAgreementPayloadSchema.safeParse(partial);
+    expect(result.success).toBe(false);
+  });
+
+  it('routes a payload-shape error through validateEvent naming the kind', () => {
+    const envelope = {
+      id: EVENT_ID,
+      sessionId: SESSION_ID,
+      sequence: 20,
+      kind: 'withdraw-agreement' as const,
+      actor: PARTICIPANT_ID,
+      payload: { ...valid, entity_kind: 'annotation' },
+      createdAt: '2026-05-10T12:34:56Z',
+    };
+    let caught: unknown;
+    try {
+      validateEvent(envelope);
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(EventValidationError);
+    expect((caught as Error).message).toContain("'withdraw-agreement'");
+  });
+});
+
+describe('facetNameSchema (Zod enum mirror of FacetName)', () => {
+  it('accepts the three v1 facet values', () => {
+    for (const facet of ['classification', 'substance', 'wording'] as const) {
+      expect(facetNameSchema.safeParse(facet).success).toBe(true);
+    }
+  });
+
+  it('rejects values outside the v1 facet vocabulary', () => {
+    for (const facet of ['shape', 'role', 'content', '', null, 42]) {
+      expect(facetNameSchema.safeParse(facet).success).toBe(false);
+    }
   });
 });
 
@@ -1060,6 +1184,13 @@ const REPRESENTATIVE_PAYLOADS: Record<EventKind, unknown> = {
     new_mode: 'operate',
     changed_by: USER_ID,
     changed_at: '2026-05-17T12:00:00Z',
+  },
+  'withdraw-agreement': {
+    entity_kind: 'node',
+    entity_id: NODE_ID,
+    facet: 'classification',
+    participant: PARTICIPANT_ID,
+    withdrawn_at: '2026-05-10T12:34:56Z',
   },
 };
 

@@ -131,6 +131,13 @@ const REPRESENTATIVE_PAYLOADS: Record<EventKind, unknown> = {
     changed_by: USER_ID,
     changed_at: '2026-05-17T12:00:00Z',
   },
+  'withdraw-agreement': {
+    entity_kind: 'node',
+    entity_id: NODE_ID,
+    facet: 'classification',
+    participant: PARTICIPANT_ID,
+    withdrawn_at: '2026-05-10T12:34:56Z',
+  },
 };
 
 /** Build a full envelope around a payload for the given kind. */
@@ -428,6 +435,11 @@ const PAYLOAD_CORRUPTIONS: Record<EventKind, (base: Record<string, unknown>) => 
   'snapshot-created': (base) => ({ ...base, log_position: -1 }),
   'entity-removed': (base) => ({ ...base, entity_kind: 'attribute' }),
   'session-mode-changed': (base) => ({ ...base, new_mode: 'concluded' }),
+  // The narrower `entity_kind: 'node' | 'edge'` enum on the new kind
+  // rejects 'annotation' (deliberately tighter than the entity-removed
+  // and entity-included payloads — facet-valued proposals don't target
+  // annotations in v1).
+  'withdraw-agreement': (base) => ({ ...base, entity_kind: 'annotation' }),
 };
 
 describe('validateEvent — payload-level failure per kind', () => {

@@ -24,6 +24,7 @@ task per_facet_refactor "Per-facet refactor (ADR 0030)" {
     task pf_withdraw_agreement_event_kind "New event kind: withdraw-agreement" {
       effort 0.5d
       allocate team
+      complete 100
       note "Refinement: tasks/refinements/per-facet-refactor/pf_withdraw_agreement_event_kind.md"
     }
     task pf_facet_keyed_vote_payload "Facet-keyed vote payload (discriminated union)" {

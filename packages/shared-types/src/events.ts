@@ -157,6 +157,12 @@ export const eventKinds = [
   // pair describes a transition between the two-mode v1 enum), even
   // though v1 only emits `lobby → operate`.
   'session-mode-changed',
+  // Per-facet agreement withdrawal (per ADR 0030 §3). Promoted from
+  // a `vote.choice = 'withdraw'` variant to its own top-level event
+  // kind so the transition "agreed/committed facet returns to
+  // disputed" is a direct read of the log rather than a derivation
+  // off the proposal-keyed vote shape that ADR 0030 dismantles.
+  'withdraw-agreement',
 ] as const;
 
 export type EventKind = (typeof eventKinds)[number];
@@ -258,10 +264,20 @@ export type ParticipantLeftPayload = z.infer<typeof participantLeftPayloadSchema
 // other's binding before it's been assigned crashes with `Cannot
 // access ... before initialization`. The leaf module breaks the cycle.
 
-export { annotationKindSchema, edgeRoleSchema, entityKindSchema } from './events/enums.js';
-export type { AnnotationKind, EdgeRole, EntityKind } from './events/enums.js';
+export {
+  annotationKindSchema,
+  edgeRoleSchema,
+  entityKindSchema,
+  facetNameSchema,
+} from './events/enums.js';
+export type { AnnotationKind, EdgeRole, EntityKind, FacetName } from './events/enums.js';
 
-import { annotationKindSchema, edgeRoleSchema, entityKindSchema } from './events/enums.js';
+import {
+  annotationKindSchema,
+  edgeRoleSchema,
+  entityKindSchema,
+  facetNameSchema,
+} from './events/enums.js';
 
 export const nodeCreatedPayloadSchema = z.object({
   node_id: z.string().uuid(),
@@ -483,6 +499,37 @@ export const sessionModeChangedPayloadSchema = z.object({
 
 export type SessionModeChangedPayload = z.infer<typeof sessionModeChangedPayloadSchema>;
 
+// -- Withdraw-agreement event payload schema -------------------------
+//
+// Per ADR 0030 §3 — promoted from a `vote.choice = 'withdraw'` variant
+// to its own top-level event kind. Payload addresses the targeted
+// facet directly via `(entity_kind, entity_id, facet)` rather than
+// hanging off a proposal id, matching the per-facet keying ADR 0030
+// is dismantling the proposal-keyed vote shape in favour of.
+//
+// `entity_kind` is intentionally NARROWER than `entityKindSchema`:
+// facet-valued proposals only target nodes and edges (annotations
+// have no facets in v1), so a payload with `entity_kind: 'annotation'`
+// is a category error that the schema rejects at the seam rather than
+// deferring to a downstream invariant violation.
+//
+// `withdrawn_at` mirrors the sibling per-action timestamps
+// (`voted_at`, `committed_at`, `marked_at`): the participant-action-
+// level clock, parallel to how `voted_at` works on the vote payload.
+// The envelope's `createdAt` separately carries the server-clock
+// insert time.
+//
+// Refinement: tasks/refinements/per-facet-refactor/pf_withdraw_agreement_event_kind.md
+export const withdrawAgreementPayloadSchema = z.object({
+  entity_kind: z.enum(['node', 'edge']),
+  entity_id: z.string().uuid(),
+  facet: facetNameSchema,
+  participant: z.string().uuid(),
+  withdrawn_at: z.string().datetime({ offset: true }),
+});
+
+export type WithdrawAgreementPayload = z.infer<typeof withdrawAgreementPayloadSchema>;
+
 // The registry. Keys are exhaustive over `EventKind` (TypeScript
 // enforces this via the explicit type annotation).
 export const eventPayloadSchemas: Record<EventKind, z.ZodTypeAny> = {
@@ -510,6 +557,8 @@ export const eventPayloadSchemas: Record<EventKind, z.ZodTypeAny> = {
   'entity-removed': entityRemovedPayloadSchema,
   // Owned by part_session_start_handoff_dedicated_event (ADR 0028)
   'session-mode-changed': sessionModeChangedPayloadSchema,
+  // Owned by pf_withdraw_agreement_event_kind (ADR 0030 §3)
+  'withdraw-agreement': withdrawAgreementPayloadSchema,
 };
 
 // -- Per-kind payload type map ---------------------------------------
@@ -536,6 +585,7 @@ export interface EventPayloadMap {
   'snapshot-created': SnapshotCreatedPayload;
   'entity-removed': EntityRemovedPayload;
   'session-mode-changed': SessionModeChangedPayload;
+  'withdraw-agreement': WithdrawAgreementPayload;
 }
 
 export type PayloadFor<K extends EventKind> = EventPayloadMap[K];
