@@ -429,26 +429,71 @@ export type VotePayload = z.infer<typeof votePayloadSchema>;
 
 // -- Resolution event payload schemas --------------------------------
 //
-// Owned by `resolution_events`. Refinement:
-// tasks/refinements/data-and-methodology/resolution_events.md.
+// Owned originally by `resolution_events`; the `commit` payload was
+// rewritten per ADR 0030 §2 + §9 + `pf_facet_keyed_commit_payload` into
+// a `target`-discriminated union matching the vote payload's split.
+// Refinements:
+//   - tasks/refinements/data-and-methodology/resolution_events.md
+//     (historical proposal-keyed shape — do not edit).
+//   - tasks/refinements/per-facet-refactor/pf_facet_keyed_commit_payload.md
+//     (this rewrite).
 //
-// Two kinds — `commit` (moderator commits a proposal once every
-// participant is voting `agree`) and `meta-disagreement-marked`
-// (last-resort fallback recording an unresolvable proposal). Both
-// payloads are shape-only here: server-side referential and authority
-// checks (the actor is the moderator; the proposal exists and isn't
-// already resolved; no double-resolve) live in `event_validation` and
-// the methodology engine, not in Zod.
+// Two kinds — `commit` (a proposal is committed once every participant
+// is voting `agree`) and `meta-disagreement-marked` (last-resort
+// fallback recording an unresolvable proposal). Both payloads are
+// shape-only here: server-side referential and authority checks (the
+// actor is the moderator; the proposal exists and isn't already
+// resolved; no double-resolve) live in `event_validation` and the
+// methodology engine, not in Zod.
+//
+// **Commit: two arms, one event kind.** Mirroring the vote split per
+// ADR 0030 §9: a commit's identity has to match its votes' identity.
+//
+//   - `target: 'facet'` — commits against facet-valued proposal sub-
+//     kinds (`classify-node`, `set-node-substance`, `set-edge-substance`,
+//     `edit-wording`). Keyed directly by `(entity_kind, entity_id,
+//     facet)` per ADR 0030 §2 so the commit hangs off the facet itself.
+//     NO `proposal_id` on this arm.
+//   - `target: 'proposal'` — commits against the seven structural
+//     proposal sub-kinds (`decompose`, `interpretive-split`,
+//     `axiom-mark`, `meta-move`, `break-edge`, `amend-node`, `annotate`).
+//     Keyed by `proposal_id` per ADR 0030 §9 — these proposals do not
+//     have a per-facet target the commit could attach to.
+//
+// `committed_by` carries the UUID of the actor that committed (the
+// moderator in v1; the field name is action-shaped rather than
+// role-shaped so a future relaxation does not require a wire rename).
+// `committed_at` is the action-clock ISO-8601 timestamp on both arms
+// (parallel to `voted_at` on the vote payload).
 //
 // Field names mirror the vote schema's style: UUIDs via
 // `z.string().uuid()`, ISO-8601 timestamps via
-// `z.string().datetime({ offset: true })`, with the per-event
-// timestamp named `<verb>ed_at` (`committed_at`, `marked_at`).
-export const commitPayloadSchema = z.object({
-  proposal_id: z.string().uuid(),
-  moderator: z.string().uuid(),
+// `z.string().datetime({ offset: true })`.
+
+export const facetCommitPayloadSchema = z.object({
+  target: z.literal('facet'),
+  entity_kind: z.enum(['node', 'edge']),
+  entity_id: z.string().uuid(),
+  facet: facetNameSchema,
+  committed_by: z.string().uuid(),
   committed_at: z.string().datetime({ offset: true }),
 });
+
+export type FacetCommitPayload = z.infer<typeof facetCommitPayloadSchema>;
+
+export const proposalCommitPayloadSchema = z.object({
+  target: z.literal('proposal'),
+  proposal_id: z.string().uuid(),
+  committed_by: z.string().uuid(),
+  committed_at: z.string().datetime({ offset: true }),
+});
+
+export type ProposalCommitPayload = z.infer<typeof proposalCommitPayloadSchema>;
+
+export const commitPayloadSchema = z.discriminatedUnion('target', [
+  facetCommitPayloadSchema,
+  proposalCommitPayloadSchema,
+]);
 
 export type CommitPayload = z.infer<typeof commitPayloadSchema>;
 

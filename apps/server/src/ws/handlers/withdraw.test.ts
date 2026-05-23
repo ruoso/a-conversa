@@ -545,8 +545,9 @@ function makeWithdrawPool(): { pool: DbPool; store: Store } {
         kind: 'commit',
         actor: FIXTURE_USER_ID,
         payload: {
+          target: 'proposal',
           proposal_id: COMMITTED_PROPOSAL_EVENT_ID,
-          moderator: FIXTURE_USER_ID,
+          committed_by: FIXTURE_USER_ID,
           committed_at: t(6).toISOString(),
         },
         created_at: t(6),

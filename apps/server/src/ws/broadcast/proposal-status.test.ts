@@ -233,8 +233,9 @@ function commitEvent(sequence: number): Event {
     kind: 'commit',
     actor: HOST_USER,
     payload: {
+      target: 'proposal',
       proposal_id: PROPOSAL_1,
-      moderator: HOST_USER,
+      committed_by: HOST_USER,
       committed_at: '2026-05-11T12:00:00.000Z',
     },
     createdAt: '2026-05-11T12:00:00.001Z',
@@ -743,8 +744,9 @@ function namedCommit(eventId: string, proposalId: string, sequence: number): Eve
     kind: 'commit',
     actor: HOST_USER,
     payload: {
+      target: 'proposal',
       proposal_id: proposalId,
-      moderator: HOST_USER,
+      committed_by: HOST_USER,
       committed_at: '2026-05-11T12:00:00.000Z',
     },
     createdAt: '2026-05-11T12:00:00.001Z',

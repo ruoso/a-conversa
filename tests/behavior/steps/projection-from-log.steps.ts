@@ -424,8 +424,9 @@ Given('a commit event for that proposal', async function (this: AConversaWorld) 
     kind: 'commit',
     actor: HOST_ID,
     payload: {
+      target: 'proposal',
       proposal_id: PROPOSAL_CLASSIFY_ID,
-      moderator: HOST_ID,
+      committed_by: HOST_ID,
       committed_at: tsAt(seq),
     },
     createdAt: tsAt(seq),
@@ -507,8 +508,9 @@ Given('a commit event for that decompose proposal', async function (this: AConve
     kind: 'commit',
     actor: HOST_ID,
     payload: {
+      target: 'proposal',
       proposal_id: PROPOSAL_DECOMPOSE_ID,
-      moderator: HOST_ID,
+      committed_by: HOST_ID,
       committed_at: tsAt(seq),
     },
     createdAt: tsAt(seq),

@@ -421,8 +421,9 @@ describe('applyEventIncremental — change-feed coverage by discriminator', () =
     const changes = applyEventIncremental(
       projection,
       makeEvent(3, 'commit', MODERATOR_ID, T2, {
+        target: 'proposal',
         proposal_id: PROPOSAL_ID_1,
-        moderator: MODERATOR_ID,
+        committed_by: MODERATOR_ID,
         committed_at: T2,
       }),
     );
@@ -474,8 +475,9 @@ describe('applyEventIncremental — change-feed coverage by discriminator', () =
     const changes = applyEventIncremental(
       projection,
       makeEvent(3, 'commit', MODERATOR_ID, T2, {
+        target: 'proposal',
         proposal_id: PROPOSAL_ID_1,
-        moderator: MODERATOR_ID,
+        committed_by: MODERATOR_ID,
         committed_at: T2,
       }),
     );
@@ -510,8 +512,9 @@ describe('applyEventIncremental — change-feed coverage by discriminator', () =
     const changes = applyEventIncremental(
       projection,
       makeEvent(3, 'commit', MODERATOR_ID, T2, {
+        target: 'proposal',
         proposal_id: PROPOSAL_ID_1,
-        moderator: MODERATOR_ID,
+        committed_by: MODERATOR_ID,
         committed_at: T2,
       }),
     );
@@ -539,8 +542,9 @@ describe('applyEventIncremental — change-feed coverage by discriminator', () =
     const changes = applyEventIncremental(
       projection,
       makeEvent(3, 'commit', MODERATOR_ID, T2, {
+        target: 'proposal',
         proposal_id: PROPOSAL_ID_1,
-        moderator: MODERATOR_ID,
+        committed_by: MODERATOR_ID,
         committed_at: T2,
       }),
     );
@@ -713,8 +717,9 @@ function buildLog(): Event[] {
   );
   events.push(
     makeEvent(11, 'commit', MODERATOR_ID, T3, {
+      target: 'proposal',
       proposal_id: PROPOSAL_ID_1,
-      moderator: MODERATOR_ID,
+      committed_by: MODERATOR_ID,
       committed_at: T3,
     }),
   );
@@ -726,8 +731,9 @@ function buildLog(): Event[] {
   });
   events.push(
     makeEvent(13, 'commit', MODERATOR_ID, T3, {
+      target: 'proposal',
       proposal_id: PROPOSAL_ID_2,
-      moderator: MODERATOR_ID,
+      committed_by: MODERATOR_ID,
       committed_at: T3,
     }),
   );
@@ -863,8 +869,9 @@ describe('applyEventIncremental and applyEvent share the same dispatcher', () =>
     const changes = applyEventIncremental(
       projection,
       makeEvent(4, 'commit', MODERATOR_ID, T2, {
+        target: 'proposal',
         proposal_id: PROPOSAL_ID_1,
-        moderator: MODERATOR_ID,
+        committed_by: MODERATOR_ID,
         committed_at: T2,
       }),
     );

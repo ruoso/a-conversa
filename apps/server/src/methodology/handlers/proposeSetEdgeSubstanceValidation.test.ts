@@ -227,8 +227,9 @@ function seedSessionWithSupersededSource(): ReturnType<typeof createEmptyProject
   applyEvent(
     projection,
     makeEvent(nextSequence(projection), 'commit', MODERATOR_ID, T9, {
+      target: 'proposal',
       proposal_id: PRIOR_DECOMPOSE_PROPOSAL_ID,
-      moderator: MODERATOR_ID,
+      committed_by: MODERATOR_ID,
       committed_at: T9,
     }),
   );
@@ -262,8 +263,9 @@ function seedSessionWithSupersededTarget(): ReturnType<typeof createEmptyProject
   applyEvent(
     projection,
     makeEvent(nextSequence(projection), 'commit', MODERATOR_ID, T9, {
+      target: 'proposal',
       proposal_id: PRIOR_DECOMPOSE_PROPOSAL_ID,
-      moderator: MODERATOR_ID,
+      committed_by: MODERATOR_ID,
       committed_at: T9,
     }),
   );

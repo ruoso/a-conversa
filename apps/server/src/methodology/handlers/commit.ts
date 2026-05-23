@@ -419,6 +419,22 @@ export const commitHandler: Validator<CommitAction> = (
   // Valid — emit the structural fan-out (if any) followed by the
   // `commit` envelope. The structural events take the leading
   // sequence slots; the commit envelope takes the last.
+  //
+  // TODO(pf_commit_handler_facet_keyed): per ADR 0030 §2 the commit
+  // payload is now a `target`-discriminated union (facet-keyed vs.
+  // proposal-keyed). This handler currently emits the proposal-keyed
+  // arm for ALL commits (including commits against facet-valued
+  // proposal sub-kinds — classify-node / set-node-substance /
+  // set-edge-substance / edit-wording). Per ADR 0030 §2 those commits
+  // should be emitted as `target: 'facet'` with the looked-up
+  // `(entity_kind, entity_id, facet)` derived from the proposal. The
+  // downstream `pf_commit_handler_facet_keyed` task rewires this
+  // handler to consult the projection's pending proposal, derive the
+  // facet target via the shared helper, and emit the appropriate arm.
+  // Today's emission keeps every existing consumer (the projection's
+  // `handleCommit` reading `payload.proposal_id`) on the proposal-keyed
+  // shape — a controlled, schema-valid emit that preserves current
+  // behaviour until that downstream task lands.
   const structuralEvents = buildStructuralEventsForCommit(proposalPayload, action);
   const commitEvent: EventToAppendEnvelope<'commit'> = {
     id: action.eventId,
@@ -427,8 +443,9 @@ export const commitHandler: Validator<CommitAction> = (
     kind: 'commit',
     actor: action.actor,
     payload: {
+      target: 'proposal',
       proposal_id: action.proposalEventId,
-      moderator: action.requester,
+      committed_by: action.requester,
       committed_at: action.committedAt,
     },
     createdAt: action.createdAt,

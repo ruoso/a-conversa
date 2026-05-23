@@ -636,8 +636,9 @@ function buildContentEvent(
       ...common,
       kind: 'commit',
       payload: {
+        target: 'proposal',
         proposal_id: id,
-        moderator: actor,
+        committed_by: actor,
         committed_at: createdAt,
       },
     };

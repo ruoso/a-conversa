@@ -237,8 +237,9 @@ async function emitProposalVotesCommit(
     kind: 'commit',
     actor: HOST_ID,
     payload: {
+      target: 'proposal',
       proposal_id: proposalId,
-      moderator: HOST_ID,
+      committed_by: HOST_ID,
       committed_at: tsAt(seq),
     },
     createdAt: tsAt(seq),

@@ -256,6 +256,7 @@ function commitEvent(proposalId: string, seq: number): Event {
     actor: ACTOR_ID,
     createdAt: '2026-05-17T00:01:00.000Z',
     payload: {
+      target: 'proposal',
       proposal_id: proposalId,
       committed_at: '2026-05-17T00:01:00.000Z',
     },

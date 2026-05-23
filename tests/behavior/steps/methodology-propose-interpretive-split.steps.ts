@@ -207,8 +207,9 @@ Given(
       kind: 'commit',
       actor: PIS_HOST_ID,
       payload: {
+        target: 'proposal',
         proposal_id: PIS_PRIOR_DECOMPOSE_PROPOSAL_ID,
-        moderator: PIS_HOST_ID,
+        committed_by: PIS_HOST_ID,
         committed_at: tsAt(6),
       },
       createdAt: tsAt(6),

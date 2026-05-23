@@ -489,8 +489,9 @@ describe('applyEvent — proposal / vote / commit (classify-node)', () => {
         voted_at: T6,
       }),
       makeEvent(12, 'commit', MODERATOR_ID, T7, {
+        target: 'proposal',
         proposal_id: PROPOSAL_ID_1,
-        moderator: MODERATOR_ID,
+        committed_by: MODERATOR_ID,
         committed_at: T7,
       }),
     ];
@@ -527,8 +528,9 @@ describe('applyEvent — proposal / vote / commit (classify-node)', () => {
       applyEvent(
         projection,
         makeEvent(1, 'commit', MODERATOR_ID, T0, {
+          target: 'proposal',
           proposal_id: PROPOSAL_ID_1,
-          moderator: MODERATOR_ID,
+          committed_by: MODERATOR_ID,
           committed_at: T0,
         }),
       ),
@@ -616,8 +618,9 @@ describe('commit effects — structural', () => {
     );
     events.push(
       makeEvent(3, 'commit', MODERATOR_ID, T2, {
+        target: 'proposal',
         proposal_id: PROPOSAL_ID_1,
-        moderator: MODERATOR_ID,
+        committed_by: MODERATOR_ID,
         committed_at: T2,
       }),
     );
@@ -642,8 +645,9 @@ describe('commit effects — structural', () => {
     );
     events.push(
       makeEvent(3, 'commit', MODERATOR_ID, T2, {
+        target: 'proposal',
         proposal_id: PROPOSAL_ID_1,
-        moderator: MODERATOR_ID,
+        committed_by: MODERATOR_ID,
         committed_at: T2,
       }),
     );
@@ -682,8 +686,9 @@ describe('commit effects — structural', () => {
     );
     events.push(
       makeEvent(5, 'commit', MODERATOR_ID, T2, {
+        target: 'proposal',
         proposal_id: PROPOSAL_ID_1,
-        moderator: MODERATOR_ID,
+        committed_by: MODERATOR_ID,
         committed_at: T2,
       }),
     );
@@ -713,8 +718,9 @@ describe('commit effects — structural', () => {
     );
     events.push(
       makeEvent(3, 'commit', MODERATOR_ID, T2, {
+        target: 'proposal',
         proposal_id: PROPOSAL_ID_1,
-        moderator: MODERATOR_ID,
+        committed_by: MODERATOR_ID,
         committed_at: T2,
       }),
     );
@@ -751,8 +757,9 @@ describe('commit effects — structural', () => {
     );
     events.push(
       makeEvent(4, 'commit', MODERATOR_ID, T3, {
+        target: 'proposal',
         proposal_id: PROPOSAL_ID_1,
-        moderator: MODERATOR_ID,
+        committed_by: MODERATOR_ID,
         committed_at: T3,
       }),
     );
@@ -793,8 +800,9 @@ describe('commit effects — structural', () => {
     );
     events.push(
       makeEvent(3, 'commit', MODERATOR_ID, T2, {
+        target: 'proposal',
         proposal_id: PROPOSAL_ID_1,
-        moderator: MODERATOR_ID,
+        committed_by: MODERATOR_ID,
         committed_at: T2,
       }),
     );
@@ -834,8 +842,9 @@ describe('commit effects — structural', () => {
     );
     events.push(
       makeEvent(3, 'commit', MODERATOR_ID, T2, {
+        target: 'proposal',
         proposal_id: PROPOSAL_ID_1,
-        moderator: MODERATOR_ID,
+        committed_by: MODERATOR_ID,
         committed_at: T2,
       }),
     );
@@ -860,8 +869,9 @@ describe('commit effects — structural', () => {
     );
     events.push(
       makeEvent(3, 'commit', MODERATOR_ID, T2, {
+        target: 'proposal',
         proposal_id: PROPOSAL_ID_1,
-        moderator: MODERATOR_ID,
+        committed_by: MODERATOR_ID,
         committed_at: T2,
       }),
     );
@@ -895,8 +905,9 @@ describe('commit effects — structural', () => {
     seedNodeAndProposal(events, PROPOSAL_ID_1, { kind: 'break-edge', edge_id: EDGE_ID_1 }, 4);
     events.push(
       makeEvent(5, 'commit', MODERATOR_ID, T2, {
+        target: 'proposal',
         proposal_id: PROPOSAL_ID_1,
-        moderator: MODERATOR_ID,
+        committed_by: MODERATOR_ID,
         committed_at: T2,
       }),
     );
@@ -921,8 +932,9 @@ describe('commit effects — structural', () => {
     );
     events.push(
       makeEvent(3, 'commit', MODERATOR_ID, T2, {
+        target: 'proposal',
         proposal_id: PROPOSAL_ID_1,
-        moderator: MODERATOR_ID,
+        committed_by: MODERATOR_ID,
         committed_at: T2,
       }),
     );
@@ -1009,8 +1021,9 @@ describe('commit effects — structural', () => {
     );
     events.push(
       makeEvent(8, 'commit', MODERATOR_ID, T2, {
+        target: 'proposal',
         proposal_id: PROPOSAL_ID_1,
-        moderator: MODERATOR_ID,
+        committed_by: MODERATOR_ID,
         committed_at: T2,
       }),
     );
@@ -1114,8 +1127,9 @@ describe('commit effects — structural', () => {
     );
     events.push(
       makeEvent(10, 'commit', MODERATOR_ID, T2, {
+        target: 'proposal',
         proposal_id: PROPOSAL_ID_1,
-        moderator: MODERATOR_ID,
+        committed_by: MODERATOR_ID,
         committed_at: T2,
       }),
     );
@@ -1183,8 +1197,9 @@ describe('commit effects — structural', () => {
     );
     events.push(
       makeEvent(7, 'commit', MODERATOR_ID, T2, {
+        target: 'proposal',
         proposal_id: PROPOSAL_ID_1,
-        moderator: MODERATOR_ID,
+        committed_by: MODERATOR_ID,
         committed_at: T2,
       }),
     );
@@ -1230,8 +1245,9 @@ describe('commit effects — structural', () => {
     );
     events.push(
       makeEvent(3, 'commit', MODERATOR_ID, T2, {
+        target: 'proposal',
         proposal_id: PROPOSAL_ID_1,
-        moderator: MODERATOR_ID,
+        committed_by: MODERATOR_ID,
         committed_at: T2,
       }),
     );
@@ -1374,8 +1390,9 @@ function buildRandomLog(): Event[] {
   );
   events.push(
     makeEvent(10, 'commit', MODERATOR_ID, T6, {
+      target: 'proposal',
       proposal_id: PROPOSAL_ID_1,
-      moderator: MODERATOR_ID,
+      committed_by: MODERATOR_ID,
       committed_at: T6,
     }),
   );
@@ -1387,8 +1404,9 @@ function buildRandomLog(): Event[] {
   });
   events.push(
     makeEvent(12, 'commit', MODERATOR_ID, T8, {
+      target: 'proposal',
       proposal_id: PROPOSAL_ID_2,
-      moderator: MODERATOR_ID,
+      committed_by: MODERATOR_ID,
       committed_at: T8,
     }),
   );

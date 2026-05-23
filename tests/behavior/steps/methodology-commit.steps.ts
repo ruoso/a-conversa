@@ -267,9 +267,15 @@ Then(
     assert.equal(ev.kind, 'commit');
     assert.equal(ev.sessionId, CL_SESSION_ID);
     assert.equal(ev.id, CL_NEW_EVENT_ID);
-    if (ev.kind === 'commit') {
+    if (ev.kind === 'commit' && ev.payload.target === 'proposal') {
+      // Per ADR 0030 §2 + §9 + `pf_facet_keyed_commit_payload`, the
+      // commit payload is now a `target`-discriminated union. The
+      // methodology engine emits the proposal-keyed arm for every
+      // sub-kind today (per the `TODO(pf_commit_handler_facet_keyed)`
+      // marker in the handler); the facet-keyed arm lands when the
+      // downstream task rewires emission.
       assert.equal(ev.payload.proposal_id, CL_PROPOSAL_ID);
-      assert.equal(ev.payload.moderator, CL_HOST_ID);
+      assert.equal(ev.payload.committed_by, CL_HOST_ID);
       assert.equal(ev.payload.committed_at, tsAt(10));
     }
   },

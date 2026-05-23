@@ -37,6 +37,7 @@ task per_facet_refactor "Per-facet refactor (ADR 0030)" {
     task pf_facet_keyed_commit_payload "Facet-keyed commit payload (discriminated union)" {
       effort 0.5d
       allocate team
+      complete 100
       depends !pf_facet_keyed_vote_payload
       note "Refinement: tasks/refinements/per-facet-refactor/pf_facet_keyed_commit_payload.md"
     }

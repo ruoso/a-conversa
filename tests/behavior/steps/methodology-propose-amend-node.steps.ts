@@ -199,8 +199,9 @@ async function commitContradictsSubstance(world: AConversaWorld): Promise<void> 
     kind: 'commit',
     actor: PAN_HOST_ID,
     payload: {
+      target: 'proposal',
       proposal_id: PAN_SUBSTANCE_PROPOSAL_ID,
-      moderator: PAN_HOST_ID,
+      committed_by: PAN_HOST_ID,
       committed_at: tsAt(8),
     },
     createdAt: tsAt(8),

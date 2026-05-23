@@ -220,8 +220,9 @@ describe('propose axiom-mark — rule 2: node-visible', () => {
     applyEvent(
       p,
       makeEvent(nextSequence(p), 'commit', MODERATOR_ID, T9, {
+        target: 'proposal',
         proposal_id: PRIOR_DECOMPOSE_PROPOSAL_ID,
-        moderator: MODERATOR_ID,
+        committed_by: MODERATOR_ID,
         committed_at: T9,
       }),
     );
@@ -294,8 +295,9 @@ describe('propose axiom-mark — rule 4: no duplicate axiom-mark', () => {
     applyEvent(
       p,
       makeEvent(nextSequence(p), 'commit', MODERATOR_ID, T9, {
+        target: 'proposal',
         proposal_id: PRIOR_AXIOM_MARK_PROPOSAL_ID,
-        moderator: MODERATOR_ID,
+        committed_by: MODERATOR_ID,
         committed_at: T9,
       }),
     );
@@ -364,8 +366,9 @@ describe('propose axiom-mark — accept path', () => {
     applyEvent(
       p,
       makeEvent(nextSequence(p), 'commit', MODERATOR_ID, T9, {
+        target: 'proposal',
         proposal_id: PRIOR_AXIOM_MARK_PROPOSAL_ID,
-        moderator: MODERATOR_ID,
+        committed_by: MODERATOR_ID,
         committed_at: T9,
       }),
     );

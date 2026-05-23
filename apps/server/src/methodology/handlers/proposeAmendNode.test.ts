@@ -182,8 +182,9 @@ function seedSessionWithAgreedContradicts(): ReturnType<typeof createEmptyProjec
   applyEvent(
     projection,
     makeEvent(nextSequence(projection), 'commit', MODERATOR_ID, T4, {
+      target: 'proposal',
       proposal_id: SUBSTANCE_PROPOSAL_ID,
-      moderator: MODERATOR_ID,
+      committed_by: MODERATOR_ID,
       committed_at: T4,
     }),
   );
@@ -325,8 +326,9 @@ describe('propose amend-node — rule 2: node-visible', () => {
     applyEvent(
       p,
       makeEvent(nextSequence(p), 'commit', MODERATOR_ID, T9, {
+        target: 'proposal',
         proposal_id: PRIOR_RESTRUCTURE_PROPOSAL_ID,
-        moderator: MODERATOR_ID,
+        committed_by: MODERATOR_ID,
         committed_at: T9,
       }),
     );
@@ -604,8 +606,9 @@ describe('propose amend-node — rule 4: node-is-party-to-agreed-contradicts', (
     applyEvent(
       p,
       makeEvent(nextSequence(p), 'commit', MODERATOR_ID, T4, {
+        target: 'proposal',
         proposal_id: SUBSTANCE_PROPOSAL_ID,
-        moderator: MODERATOR_ID,
+        committed_by: MODERATOR_ID,
         committed_at: T4,
       }),
     );

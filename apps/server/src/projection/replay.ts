@@ -69,6 +69,7 @@ import type {
   SnapshotCreatedPayload,
   VotePayload,
   CommitPayload,
+  ProposalCommitPayload,
   MetaDisagreementMarkedPayload,
 } from '@a-conversa/shared-types';
 
@@ -592,6 +593,22 @@ function handleCommit(
   payload: CommitPayload,
   changes: ProjectionChange[],
 ): void {
+  // TODO(pf_commit_handler_facet_keyed): per ADR 0030 §2 the commit
+  // payload is now a `target`-discriminated union (facet-keyed vs.
+  // proposal-keyed). The methodology engine's commit handler currently
+  // emits ALL commits on the proposal-keyed arm (see
+  // `apps/server/src/methodology/handlers/commit.ts`'s matching TODO);
+  // until the downstream task lands, this projection handler only
+  // needs to read the proposal-keyed arm. The facet-keyed arm is a
+  // dead branch today and lands a runtime error so any inadvertent
+  // emit during the transition surfaces loudly. The downstream
+  // task rewrites both halves.
+  if (payload.target !== 'proposal') {
+    throw new ReplayError(
+      `commit: target='${payload.target}' arm is not yet implemented in the projection (TODO: pf_commit_handler_facet_keyed)`,
+    );
+  }
+
   const pending = projection.getPendingProposal(payload.proposal_id);
   if (pending === undefined) {
     throw new ReplayError(
@@ -626,7 +643,10 @@ function handleCommit(
     proposalEventId: payload.proposal_id,
     payload: pending.payload,
     committedAt: payload.committed_at,
-    moderator: payload.moderator,
+    // The wire payload's `committed_by` per ADR 0030 §9 maps onto the
+    // projection's pre-existing `moderator` field — the field-rename is
+    // wire-level only; the projection's internal shape is unchanged.
+    moderator: payload.committed_by,
   });
 
   projection.removePendingProposal(payload.proposal_id);
@@ -717,7 +737,14 @@ function handleSnapshotCreated(
 function applyCommittedProposal(
   projection: Projection,
   proposal: ProposalPayload,
-  commit: CommitPayload,
+  // TODO(pf_commit_handler_facet_keyed): narrowed to the proposal-keyed
+  // arm of the discriminated commit payload — the engine emits only
+  // proposal-keyed commits today (see the matching TODO at the
+  // handleCommit call site). When the downstream task lands facet-keyed
+  // emission, this helper will need to read `(entity_kind, entity_id,
+  // facet)` from the facet arm and resolve the structural target via
+  // the projection's pending-proposal map.
+  commit: ProposalCommitPayload,
   changes: ProjectionChange[],
 ): void {
   switch (proposal.kind) {

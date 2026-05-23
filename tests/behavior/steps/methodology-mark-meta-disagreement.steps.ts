@@ -190,8 +190,9 @@ async function insertCommit(
     kind: 'commit',
     actor: moderator,
     payload: {
+      target: 'proposal',
       proposal_id: ML_PROPOSAL_ID,
-      moderator,
+      committed_by: moderator,
       committed_at: tsAt(tsOffset),
     },
     createdAt: tsAt(tsOffset),

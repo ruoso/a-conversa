@@ -771,8 +771,9 @@ function makeCommit(opts: {
     kind: 'commit',
     actor: ACTOR,
     payload: {
+      target: 'proposal',
       proposal_id: opts.proposalEnvelopeId,
-      moderator: ACTOR,
+      committed_by: ACTOR,
       committed_at: opts.committedAt ?? '2026-05-11T00:00:00.000Z',
     },
     createdAt: opts.committedAt ?? '2026-05-11T00:00:00.000Z',

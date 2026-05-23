@@ -191,6 +191,17 @@ function proposalIdFor(event: Event): string | null {
       }
       return null;
     case 'commit':
+      // TODO(pf_commit_handler_facet_keyed): commit payloads are now a
+      // `target`-discriminated union per ADR 0030 §9. The methodology
+      // engine still emits the proposal-keyed arm for every commit;
+      // once the downstream task lands facet-keyed emission, this
+      // needs to resolve the broadcast subject differently (look up
+      // the pending proposal that targets the entity+facet pair).
+      // Until then we read the proposal-keyed arm only.
+      if (event.payload.target === 'proposal') {
+        return event.payload.proposal_id;
+      }
+      return null;
     case 'meta-disagreement-marked':
       return event.payload.proposal_id;
     default:

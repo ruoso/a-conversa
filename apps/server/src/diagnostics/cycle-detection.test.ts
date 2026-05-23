@@ -204,8 +204,9 @@ function commit(projection: Projection, proposalId: string): void {
   applyEvent(
     projection,
     makeEvent(nextSeq(), 'commit', MODERATOR_ID, T7, {
+      target: 'proposal',
       proposal_id: proposalId,
-      moderator: MODERATOR_ID,
+      committed_by: MODERATOR_ID,
       committed_at: T7,
     }),
   );

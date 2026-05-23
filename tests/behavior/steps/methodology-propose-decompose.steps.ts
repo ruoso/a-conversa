@@ -217,8 +217,9 @@ Given(
       kind: 'commit',
       actor: PD_HOST_ID,
       payload: {
+        target: 'proposal',
         proposal_id: PD_PRIOR_DECOMPOSE_PROPOSAL_ID,
-        moderator: PD_HOST_ID,
+        committed_by: PD_HOST_ID,
         committed_at: tsAt(6),
       },
       createdAt: tsAt(6),

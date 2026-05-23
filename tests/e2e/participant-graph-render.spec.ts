@@ -710,8 +710,13 @@ test.describe('Participant operate route — read-mostly graph render', () => {
             kind: 'commit',
             actor: seed.actorId,
             payload: {
+              // Per ADR 0030 §2 + §9 + `pf_facet_keyed_commit_payload`,
+              // the commit payload is now a `target`-discriminated
+              // union. Structural sub-kinds (axiom-mark) emit the
+              // proposal-keyed arm.
+              target: 'proposal',
               proposal_id: seed.axiomProposalId,
-              moderator: seed.actorId,
+              committed_by: seed.actorId,
               committed_at: '2026-05-17T00:00:00.000Z',
             },
             createdAt: '2026-05-17T00:00:00.000Z',

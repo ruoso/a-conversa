@@ -590,8 +590,9 @@ Given(
         sessionId,
         hostId,
         JSON.stringify({
+          target: 'proposal',
           proposal_id: proposalId,
-          moderator: hostId,
+          committed_by: hostId,
           committed_at: t(6),
         }),
         t(6),

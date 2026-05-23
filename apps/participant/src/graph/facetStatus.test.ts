@@ -310,8 +310,9 @@ function commitEvent(seq: number, proposalId: string): Event {
     kind: 'commit',
     actor: ACTOR,
     payload: {
+      target: 'proposal',
       proposal_id: proposalId,
-      moderator: ACTOR,
+      committed_by: ACTOR,
       committed_at: '2026-05-17T00:00:20.000Z',
     },
     createdAt: '2026-05-17T00:00:20.000Z',

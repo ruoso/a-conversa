@@ -262,8 +262,9 @@ describe('propose meta-move — rule 2 (node): target-entity-visible', () => {
     applyEvent(
       p,
       makeEvent(nextSequence(p), 'commit', MODERATOR_ID, T9, {
+        target: 'proposal',
         proposal_id: PRIOR_DECOMPOSE_PROPOSAL_ID,
-        moderator: MODERATOR_ID,
+        committed_by: MODERATOR_ID,
         committed_at: T9,
       }),
     );
@@ -308,8 +309,9 @@ describe('propose meta-move — rule 2 (edge): target-entity-visible', () => {
     applyEvent(
       p,
       makeEvent(nextSequence(p), 'commit', MODERATOR_ID, T9, {
+        target: 'proposal',
         proposal_id: PRIOR_BREAK_EDGE_PROPOSAL_ID,
-        moderator: MODERATOR_ID,
+        committed_by: MODERATOR_ID,
         committed_at: T9,
       }),
     );

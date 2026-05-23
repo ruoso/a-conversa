@@ -111,9 +111,16 @@ const REPRESENTATIVE_PAYLOADS: Record<EventKind, unknown> = {
     choice: 'agree',
     voted_at: '2026-05-10T12:34:56Z',
   },
+  // `commit` is a `target`-discriminated union per ADR 0030 §2 + §9.
+  // The representative is the facet-keyed arm; a dedicated test
+  // (below) covers the proposal-keyed arm round-trip + cross-arm
+  // corruption cases.
   commit: {
-    proposal_id: PROPOSAL_ID,
-    moderator: USER_ID,
+    target: 'facet',
+    entity_kind: 'node',
+    entity_id: NODE_ID,
+    facet: 'classification',
+    committed_by: USER_ID,
     committed_at: '2026-05-10T12:34:56Z',
   },
   'meta-disagreement-marked': {
@@ -441,7 +448,13 @@ const PAYLOAD_CORRUPTIONS: Record<EventKind, (base: Record<string, unknown>) => 
   // corruption — a `target: 'facet'` payload missing entity fields —
   // is exercised separately in `describe('vote — proposal arm + cross-arm')`.
   vote: (base) => ({ ...base, choice: 'maybe' }),
-  commit: (base) => ({ ...base, proposal_id: 'not-a-uuid' }),
+  // Corrupting `entity_kind` to 'annotation' (which the facet arm
+  // rejects — facet-valued proposals only target nodes and edges) is
+  // the cheapest payload-level corruption for the facet arm. The
+  // cross-arm corruption (a `target: 'facet'` payload missing the
+  // entity_id, or a `target: 'proposal'` payload missing proposal_id)
+  // is exercised separately in `describe('validateEvent — commit payload …')`.
+  commit: (base) => ({ ...base, entity_kind: 'annotation' }),
   'meta-disagreement-marked': (base) => ({ ...base, proposal_id: 'not-a-uuid' }),
   'snapshot-created': (base) => ({ ...base, log_position: -1 }),
   'entity-removed': (base) => ({ ...base, entity_kind: 'attribute' }),
@@ -551,6 +564,68 @@ describe('validateEvent — vote payload proposal arm + cross-arm', () => {
     const error = captureError(bad);
     expect(error.code).toBe('payload-invalid');
     expect(error.kind).toBe('vote');
+  });
+});
+
+// -- Commit payload — proposal-keyed arm + cross-arm corruption ------
+//
+// The kind-keyed `REPRESENTATIVE_PAYLOADS['commit']` table entry covers
+// the facet-keyed arm. The proposal-keyed arm (per ADR 0030 §9 — commits
+// against structural proposal sub-kinds) needs its own round-trip pin,
+// and the discriminated union's cross-arm corruptions deserve explicit
+// failure-mode coverage.
+describe('validateEvent — commit payload proposal arm + cross-arm', () => {
+  const proposalArmValid = {
+    target: 'proposal' as const,
+    proposal_id: PROPOSAL_ID,
+    committed_by: USER_ID,
+    committed_at: '2026-05-10T12:34:56Z',
+  };
+
+  it('accepts a proposal-keyed commit envelope', () => {
+    const candidate = envelope('commit', proposalArmValid);
+    const validated = validateEvent(candidate);
+    expect(validated.kind).toBe('commit');
+  });
+
+  it('rejects a facet-arm payload missing entity_id (cross-arm corruption)', () => {
+    const bad = envelope('commit', {
+      target: 'facet',
+      committed_by: USER_ID,
+      committed_at: '2026-05-10T12:34:56Z',
+    });
+    const error = captureError(bad);
+    expect(error.code).toBe('payload-invalid');
+    expect(error.kind).toBe('commit');
+  });
+
+  it('rejects a proposal-arm payload missing proposal_id (cross-arm corruption)', () => {
+    const bad = envelope('commit', {
+      target: 'proposal',
+      committed_by: USER_ID,
+      committed_at: '2026-05-10T12:34:56Z',
+    });
+    const error = captureError(bad);
+    expect(error.code).toBe('payload-invalid');
+    expect(error.kind).toBe('commit');
+  });
+
+  it('rejects a payload missing the target discriminator', () => {
+    const bad = envelope('commit', {
+      proposal_id: PROPOSAL_ID,
+      committed_by: USER_ID,
+      committed_at: '2026-05-10T12:34:56Z',
+    });
+    const error = captureError(bad);
+    expect(error.code).toBe('payload-invalid');
+    expect(error.kind).toBe('commit');
+  });
+
+  it("rejects an unknown target value ('node')", () => {
+    const bad = envelope('commit', { ...proposalArmValid, target: 'node' });
+    const error = captureError(bad);
+    expect(error.code).toBe('payload-invalid');
+    expect(error.kind).toBe('commit');
   });
 });
 

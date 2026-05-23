@@ -245,7 +245,13 @@ export function derivePendingFacetProposals(
       }
       proposalIdByFacet.set(target.facet, event.id);
     } else if (event.kind === 'commit') {
-      closedProposalIds.add(event.payload.proposal_id);
+      // TODO(pf_commit_handler_facet_keyed): commit payloads are now a
+      // `target`-discriminated union. The methodology engine emits
+      // proposal-keyed commits for every sub-kind today; read only
+      // that arm until the downstream task lands facet-keyed emission.
+      if (event.payload.target === 'proposal') {
+        closedProposalIds.add(event.payload.proposal_id);
+      }
     } else if (event.kind === 'meta-disagreement-marked') {
       closedProposalIds.add(event.payload.proposal_id);
     }

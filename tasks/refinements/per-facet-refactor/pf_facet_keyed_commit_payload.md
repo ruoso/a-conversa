@@ -41,3 +41,14 @@ A commit's identity has to match its votes' identity — votes accrue on `(entit
 ## Open questions
 
 (none — all decided per ADR 0030)
+
+## Status
+
+**Done** — 2026-05-23.
+
+- `commitPayloadSchema` rewritten as `z.discriminatedUnion('target', [facetCommitPayloadSchema, proposalCommitPayloadSchema])` in [`packages/shared-types/src/events.ts`](../../../packages/shared-types/src/events.ts), mirroring the predecessor `pf_facet_keyed_vote_payload` split. Facet arm carries `{ target: 'facet', entity_kind, entity_id, facet, committed_by, committed_at }`; proposal arm keeps `{ target: 'proposal', proposal_id, committed_by, committed_at }`. `FacetCommitPayload` + `ProposalCommitPayload` types are exported.
+- Schema-level round-trip + invalid-shape coverage landed in [`packages/shared-types/src/events.test.ts`](../../../packages/shared-types/src/events.test.ts) (three new `describe` blocks). Envelope-level cross-arm + corruption coverage landed in [`apps/server/src/events/validate.test.ts`](../../../apps/server/src/events/validate.test.ts) (`REPRESENTATIVE_PAYLOADS` + `PAYLOAD_CORRUPTIONS` + cross-arm describe).
+- Cucumber behavior coverage added: new [`tests/behavior/methodology/commit-facet-keyed.feature`](../../../tests/behavior/methodology/commit-facet-keyed.feature) + matching step file [`tests/behavior/steps/commit-facet-keyed.steps.ts`](../../../tests/behavior/steps/commit-facet-keyed.steps.ts) (+2 scenarios / +11 steps).
+- Projection ([`apps/server/src/projection/replay.ts`](../../../apps/server/src/projection/replay.ts) `handleCommit` + `applyCommittedProposal`), commit handler ([`apps/server/src/methodology/handlers/commit.ts`](../../../apps/server/src/methodology/handlers/commit.ts) — emits proposal-keyed arm), and proposal-status broadcast ([`apps/server/src/ws/broadcast/proposal-status.ts`](../../../apps/server/src/ws/broadcast/proposal-status.ts)) all narrow on `target === 'proposal'` for now; facet-arm handler emission is deferred to the existing WBS leaf `pf_commit_handler_facet_keyed`.
+- 8 participant + moderator selector/UI files updated to narrow on `target === 'proposal'`; ~30 vitest files, 2 step fixtures, and 1 e2e fixture received mechanical payload-shape updates. 11 source files carry `TODO(pf_commit_handler_facet_keyed)` markers pointing at the downstream task; no new WBS registration required.
+- Verification (this commit): `pnpm run check` green; `pnpm run test:smoke` 4266 passing (+21) / 2 skipped (carryover); `pnpm run test:behavior:smoke` 247 scenarios / 1705 steps (+2 / +11); `pnpm run test:e2e:smoke` 107 green (unchanged) via `make up` → run → `make down-v`.

@@ -97,6 +97,11 @@ export function projectAxiomMarks(events: readonly Event[]): AxiomMark[] {
       continue;
     }
     if (event.kind === 'commit') {
+      // TODO(pf_commit_handler_facet_keyed): commit payloads are now a
+      // `target`-discriminated union. The methodology engine emits
+      // proposal-keyed commits for every sub-kind today; read only
+      // that arm until the downstream task lands facet-keyed emission.
+      if (event.payload.target !== 'proposal') continue;
       const proposal = pending.get(event.payload.proposal_id);
       if (proposal === undefined) continue;
       out.push({

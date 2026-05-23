@@ -210,8 +210,9 @@ Given(
       kind: 'commit',
       actor: HOST_ID,
       payload: {
+        target: 'proposal',
         proposal_id: PROPOSAL_FS_CLASSIFY_ID,
-        moderator: HOST_ID,
+        committed_by: HOST_ID,
         committed_at: tsAt(seq),
       },
       createdAt: tsAt(seq),

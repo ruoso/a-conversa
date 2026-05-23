@@ -241,8 +241,9 @@ describe('propose interpretive-split — rule 2: parent-node-visible', () => {
     applyEvent(
       p,
       makeEvent(nextSequence(p), 'commit', MODERATOR_ID, T9, {
+        target: 'proposal',
         proposal_id: PRIOR_SPLIT_COMMIT_ID,
-        moderator: MODERATOR_ID,
+        committed_by: MODERATOR_ID,
         committed_at: T9,
       }),
     );

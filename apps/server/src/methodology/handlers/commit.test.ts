@@ -227,8 +227,9 @@ describe('commit handler — rule 3: proposal is pending', () => {
     applyEvent(
       p,
       makeEvent(nextSequence(p), 'commit', MODERATOR_ID, T9, {
+        target: 'proposal',
         proposal_id: PROPOSAL_ID_1,
-        moderator: MODERATOR_ID,
+        committed_by: MODERATOR_ID,
         committed_at: T9,
       }),
     );
@@ -356,9 +357,15 @@ describe('commit handler — rule 4: unanimous agree (moderator-excluded)', () =
       expect(ev.sequence).toBe(action.sequence);
       expect(ev.actor).toBe(MODERATOR_ID);
       expect(ev.createdAt).toBe(T9);
-      if (ev.kind === 'commit') {
+      if (ev.kind === 'commit' && ev.payload.target === 'proposal') {
+        // Per ADR 0030 §2 + §9 + `pf_facet_keyed_commit_payload`, the
+        // commit payload is now a `target`-discriminated union. The
+        // methodology engine emits the proposal-keyed arm for every
+        // sub-kind today (per the `TODO(pf_commit_handler_facet_keyed)`
+        // marker in the handler); the facet-keyed arm lands when the
+        // downstream task rewires emission.
         expect(ev.payload.proposal_id).toBe(PROPOSAL_ID_1);
-        expect(ev.payload.moderator).toBe(MODERATOR_ID);
+        expect(ev.payload.committed_by).toBe(MODERATOR_ID);
         expect(ev.payload.committed_at).toBe(T9);
       }
     }
@@ -544,7 +551,7 @@ describe('commit handler — structural sub-kind: decompose', () => {
       expect(r.events).toHaveLength(1);
       const ev = r.events[0]!;
       expect(ev.kind).toBe('commit');
-      if (ev.kind === 'commit') {
+      if (ev.kind === 'commit' && ev.payload.target === 'proposal') {
         expect(ev.payload.proposal_id).toBe(PROPOSAL_ID_STRUCT);
       }
     }

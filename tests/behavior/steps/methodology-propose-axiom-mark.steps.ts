@@ -208,8 +208,9 @@ Given(
       kind: 'commit',
       actor: PAM_HOST_ID,
       payload: {
+        target: 'proposal',
         proposal_id: PAM_PRIOR_DECOMPOSE_PROPOSAL_ID,
-        moderator: PAM_HOST_ID,
+        committed_by: PAM_HOST_ID,
         committed_at: tsAt(6),
       },
       createdAt: tsAt(6),

@@ -195,8 +195,9 @@ async function insertPriorBreakEdgeCommit(world: AConversaWorld): Promise<void> 
     kind: 'commit',
     actor: PBE_HOST_ID,
     payload: {
+      target: 'proposal',
       proposal_id: PBE_PRIOR_BREAK_PROPOSAL_ID,
-      moderator: PBE_HOST_ID,
+      committed_by: PBE_HOST_ID,
       committed_at: tsAt(8),
     },
     createdAt: tsAt(8),

@@ -289,6 +289,11 @@ export function computeFacetStatuses(events: readonly Event[]): FacetStatusIndex
       continue;
     }
     if (event.kind === 'commit') {
+      // TODO(pf_commit_handler_facet_keyed): commit payloads are now a
+      // `target`-discriminated union. The methodology engine emits
+      // proposal-keyed commits for every sub-kind today; read only
+      // that arm until the downstream task lands facet-keyed emission.
+      if (event.payload.target !== 'proposal') continue;
       const target = proposalTarget.get(event.payload.proposal_id);
       if (!target) continue;
       const state = getOrCreateFacetState(
