@@ -216,6 +216,13 @@ const FACET_STATUS_VALUES: ReadonlySet<string> = new Set<FacetStatus>([
   'committed',
   'withdrawn',
   'meta-disagreement',
+  // TODO(pf_projection_facet_status_refactor): empty-state row added by
+  // `pf_awaiting_proposal_facet_status`. Accepted from the server frame
+  // verbatim today; the downstream projection-refactor task will start
+  // emitting it from `deriveFacetStatus`, at which point the wire
+  // contract is the single source of truth and this branch becomes a
+  // pure narrow-helper.
+  'awaiting-proposal',
 ]);
 
 function isFacetStatus(value: string): value is FacetStatus {

@@ -220,6 +220,12 @@ describe('ProposalFacetBreakdown — per-status className mirrors PILL_STATUS_CL
     'meta-disagreement',
     'committed',
     'withdrawn',
+    // TODO(pf_projection_facet_status_refactor): empty-state row added by
+    // `pf_awaiting_proposal_facet_status`. The sidebar chip mirrors the
+    // shell's `<FacetPill>` palette verbatim; the default visual matches
+    // `'proposed'`. The downstream projection-refactor task will revisit
+    // both the chip styling and this matrix.
+    'awaiting-proposal',
   ];
 
   for (const status of statuses) {

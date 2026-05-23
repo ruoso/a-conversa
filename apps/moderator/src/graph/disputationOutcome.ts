@@ -80,6 +80,18 @@ export function disputationOutcome(
       return 'unsettled';
     case 'withdrawn':
       return 'unsettled';
+    // TODO(pf_projection_facet_status_refactor): `'awaiting-proposal'` is
+    // the empty-state row introduced by `pf_awaiting_proposal_facet_status`
+    // — the substance facet exists but has no candidate value yet (no
+    // `set-node-substance` proposal). Per the refinement guidance, this
+    // maps to the same disputation outcome as `'proposed'`: the
+    // disputation test has not produced a result yet because votes can't
+    // land on a non-existent candidate. The downstream
+    // `pf_projection_facet_status_refactor` (and the moderator-UI tasks
+    // that revisit the disputation-test display) will replace this default
+    // when they land real `'awaiting-proposal'` rendering.
+    case 'awaiting-proposal':
+      return 'unsettled';
     default: {
       // Exhaustive-narrow guard — TypeScript proves `substanceStatus`
       // is `never` here. A future `FacetStatus` value addition would

@@ -81,6 +81,17 @@ export const PILL_STATUS_CLASSNAME: Readonly<Record<FacetStatus, string>> = {
     'border-double border-violet-600 text-violet-700 ring-1 ring-violet-400 opacity-100',
   committed: 'border-solid border-slate-400 text-slate-600 opacity-90',
   withdrawn: 'border-dashed border-slate-400 text-slate-500 opacity-50',
+  // TODO(pf_projection_facet_status_refactor): `'awaiting-proposal'` is
+  // the empty-state row introduced by `pf_awaiting_proposal_facet_status`
+  // — the entity exists but no candidate value has been set for the
+  // facet yet (no proposal has been made). For now it renders with the
+  // same visual as `'proposed'` (faded / dashed-slate) as a sensible
+  // default. The downstream UI tasks
+  // (`pf_mod_node_card_classification_affordance`,
+  // `pf_mod_node_card_substance_affordance`,
+  // `pf_part_detail_panel_three_facet_rows`) will replace this default
+  // with the real empty-state visual + per-facet propose affordance.
+  'awaiting-proposal': 'border-dashed border-slate-400 text-slate-500 opacity-60',
 };
 
 function FacetPillImpl(props: FacetPillProps): ReactElement {

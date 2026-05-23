@@ -51,6 +51,7 @@ task per_facet_refactor "Per-facet refactor (ADR 0030)" {
     task pf_awaiting_proposal_facet_status "FacetStatus enum: add awaiting-proposal" {
       effort 0.5d
       allocate team
+      complete 100
       note "Refinement: tasks/refinements/per-facet-refactor/pf_awaiting_proposal_facet_status.md"
     }
   }

@@ -36,9 +36,24 @@ import type { Event, ProposalPayload } from '@a-conversa/shared-types';
 
 /**
  * Per-facet overall-status enum. Mirrors `apps/server/src/projection/types.ts`'s
- * `FacetStatus` verbatim. Six values across the agreement layer (`proposed`,
- * `agreed`, `disputed`, `meta-disagreement`) and the committed layer
- * (`committed`, `withdrawn`).
+ * `FacetStatus` verbatim. Seven values: the agreement layer (`proposed`,
+ * `agreed`, `disputed`, `meta-disagreement`), the committed layer
+ * (`committed`, `withdrawn`), and the empty-state `awaiting-proposal`.
+ *
+ * `'awaiting-proposal'` is added by `pf_awaiting_proposal_facet_status` per
+ * [ADR 0030 §10](../../../../docs/adr/0030-per-facet-vote-keying-and-sequential-capture.md):
+ * the entity exists but no candidate value has been set for that facet yet
+ * (most commonly a freshly-captured node's `classification` and `substance`
+ * facets, before a `classify-node` / `set-node-substance` proposal has been
+ * made). Distinct from `'proposed'`, which means "a candidate has been set
+ * and is gathering votes."
+ *
+ * This file is the moderator's type mirror; the type widening lands here
+ * in lockstep with the server canonical and the participant mirror. The
+ * derivation rules above do NOT yet emit `'awaiting-proposal'` — the
+ * actual emission lands in the downstream
+ * `pf_projection_facet_status_refactor` task, and the consumer UI tasks
+ * close their own exhaustive-switch coverage there.
  */
 export type FacetStatus =
   | 'proposed'
@@ -46,7 +61,8 @@ export type FacetStatus =
   | 'disputed'
   | 'committed'
   | 'withdrawn'
-  | 'meta-disagreement';
+  | 'meta-disagreement'
+  | 'awaiting-proposal';
 
 /**
  * The three facets the moderator's projection tracks per entity. Mirrors

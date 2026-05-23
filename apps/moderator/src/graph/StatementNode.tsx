@@ -191,6 +191,16 @@ export const STATEMENT_NODE_TYPE = 'statement';
  * the rollup logic without re-rendering.
  */
 const ROLLUP_PRIORITY: readonly FacetStatus[] = [
+  // TODO(pf_mod_node_card_classification_affordance): `'awaiting-proposal'`
+  // is the empty-state row introduced by
+  // `pf_awaiting_proposal_facet_status` — the entity exists but no
+  // candidate value has been set for the facet yet. For now it shares
+  // the same rollup priority slot as `'proposed'` (both are pre-agreement
+  // states with no settled record). The downstream moderator-UI tasks
+  // (`pf_mod_node_card_classification_affordance`,
+  // `pf_mod_node_card_substance_affordance`) will revisit the rollup
+  // priority when they land the real empty-state visual.
+  'awaiting-proposal',
   'proposed',
   'meta-disagreement',
   'disputed',

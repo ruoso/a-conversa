@@ -34,13 +34,29 @@ import type {
 // the agreement-layer state plus the commit marker. Keeping the two
 // new values in this single union (rather than a separate enum) lets
 // consumers store one shape regardless of source.
+//
+// `'awaiting-proposal'` is added (additively) by
+// `pf_awaiting_proposal_facet_status` per
+// [ADR 0030 §10](../../../../docs/adr/0030-per-facet-vote-keying-and-sequential-capture.md):
+// the entity exists but no candidate value has been set for that
+// facet yet (most commonly a freshly-captured node's `classification`
+// and `substance` facets, before the moderator has run their
+// respective proposal gestures). This task ships the type widening
+// only; actual emission of the new value from `deriveFacetStatus`
+// lands in the downstream `pf_projection_facet_status_refactor` task.
+// Per ADR 0021's `noFallthroughCasesInSwitch` + `never` default
+// pattern, exhaustive `switch`es over `FacetStatus` in downstream
+// consumers will go red until each consumer task closes its own
+// coverage — that compile-time breakage is the surface against which
+// the per-consumer tasks work, by design.
 export type FacetStatus =
   | 'proposed'
   | 'agreed'
   | 'disputed'
   | 'committed'
   | 'withdrawn'
-  | 'meta-disagreement';
+  | 'meta-disagreement'
+  | 'awaiting-proposal';
 
 export type PerParticipantVote = 'agree' | 'dispute' | 'withdraw';
 
