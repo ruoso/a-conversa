@@ -1,0 +1,43 @@
+# Facet-keyed commit payload
+
+**TaskJuggler entry**: [tasks/15-per-facet-refactor.tji](../../15-per-facet-refactor.tji) — task `per_facet_refactor.schema_and_events.pf_facet_keyed_commit_payload`
+**Effort estimate**: 0.5d
+**Inherited dependencies**: `pf_facet_keyed_vote_payload` (settles the discriminator pattern this refinement adopts).
+
+## What this task is
+
+Rewrite `commitPayloadSchema` to mirror the vote split: facet-valued commits carry `{ target: 'facet', entity_kind, entity_id, facet }`; structural commits keep `{ target: 'proposal', proposal_id }`. Per [ADR 0030 §9](../../../docs/adr/0030-per-facet-vote-keying-and-sequential-capture.md) the structural proposals (decompose / interpretive-split / axiom-mark / annotate / meta-move / break-edge) keep their proposal-keyed commit shape.
+
+## Why it needs to be done
+
+A commit's identity has to match its votes' identity — votes accrue on `(entity, facet)` for facet-valued proposals, so the commit gesture targets the same pair. Without the symmetry, the commit handler can't look up the votes it's committing. The structural-vs-facet split mirrors the vote payload's split; this task lands the matching commit shape.
+
+## Inputs / context
+
+- [ADR 0030 §2, §9](../../../docs/adr/0030-per-facet-vote-keying-and-sequential-capture.md) — facet-keyed envelope decision and structural exception.
+- [`packages/shared-types/src/events.ts:387-393`](../../../packages/shared-types/src/events.ts) — current `commitPayloadSchema`.
+- `pf_facet_keyed_vote_payload` (sibling) — the discriminator pattern this refinement reuses verbatim.
+
+## Constraints / requirements
+
+- Use the same `target: 'facet' | 'proposal'` discriminator the vote schema uses; future readers see one pattern across vote / commit / meta-disagreement-marked.
+- Facet branch: `{ target: 'facet', entity_kind, entity_id, facet }`.
+- Proposal branch: `{ target: 'proposal', proposal_id }`.
+- The `committed_at` ISO8601 timestamp (if currently on the payload) stays on both branches; if it was previously only on the envelope, keep it there.
+- Vitest round-trip + invalid-shape tests cover both branches.
+
+## Acceptance criteria
+
+- `commitPayloadSchema` exports the discriminated union; `FacetCommitPayload` + `ProposalCommitPayload` types are exported.
+- `eventPayloadSchemas['commit']` / `EventPayloadMap['commit']` resolve to the union.
+- The previous proposal-id-only shape no longer parses unmodified — callers must now include `target: 'proposal'` explicitly.
+- `pnpm run test:smoke` green; `make test` green; `tj3 project.tjp` parses clean.
+
+## Decisions
+
+- **Discriminator + shape mirror** the vote schema's choices (per the sibling refinement). One pattern, two consistent envelopes.
+- **No backfill** — pre-release clean break.
+
+## Open questions
+
+(none — all decided per ADR 0030)

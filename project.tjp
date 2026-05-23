@@ -37,6 +37,7 @@ resource team "Team"
 # added between existing ones without renumbering.
 include "tasks/00-foundation.tji"
 include "tasks/10-data-and-methodology.tji"
+include "tasks/15-per-facet-refactor.tji"
 include "tasks/20-backend.tji"
 include "tasks/25-backend-hardening.tji"
 include "tasks/27-shell-package.tji"

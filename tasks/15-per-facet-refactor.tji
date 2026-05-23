@@ -1,0 +1,172 @@
+# 15 — Per-facet refactor (ADR 0030)
+#
+# Coordinated refactor that moves vote / commit / meta-disagreement-marked
+# envelopes from proposal-id keying to (entity, facet) keying for
+# facet-valued proposals, lands `withdraw-agreement` as its own event
+# kind, removes the bundled capture+classify gesture, and re-shapes the
+# moderator + participant UIs to surface sequential per-facet capture.
+#
+# Source of truth: docs/adr/0030-per-facet-vote-keying-and-sequential-capture.md.
+#
+# Per ADR 0030 §9 structural proposals (decompose, interpretive-split,
+# axiom-mark, annotate, meta-move, break-edge) keep their proposal-keyed
+# envelopes; the two patterns coexist by design. The `pf_structural_
+# handlers_unchanged` task pins the structural pin with test surfaces.
+#
+# Numeric slot 15 places the refactor between 10-data-and-methodology and
+# 20-backend because the refactor's center of gravity is event types +
+# projection. Dependencies on backend / moderator-ui / participant-ui
+# tasks live inside the per-task `depends` lines.
+
+task per_facet_refactor "Per-facet refactor (ADR 0030)" {
+
+  task schema_and_events "Schema + event-type layer" {
+    task pf_withdraw_agreement_event_kind "New event kind: withdraw-agreement" {
+      effort 0.5d
+      allocate team
+      note "Refinement: tasks/refinements/per-facet-refactor/pf_withdraw_agreement_event_kind.md"
+    }
+    task pf_facet_keyed_vote_payload "Facet-keyed vote payload (discriminated union)" {
+      effort 0.5d
+      allocate team
+      depends !pf_withdraw_agreement_event_kind
+      note "Refinement: tasks/refinements/per-facet-refactor/pf_facet_keyed_vote_payload.md"
+    }
+    task pf_facet_keyed_commit_payload "Facet-keyed commit payload (discriminated union)" {
+      effort 0.5d
+      allocate team
+      depends !pf_facet_keyed_vote_payload
+      note "Refinement: tasks/refinements/per-facet-refactor/pf_facet_keyed_commit_payload.md"
+    }
+    task pf_facet_keyed_meta_disagreement_payload "Facet-keyed meta-disagreement-marked payload" {
+      effort 0.5d
+      allocate team
+      depends !pf_facet_keyed_vote_payload, !pf_facet_keyed_commit_payload
+      note "Refinement: tasks/refinements/per-facet-refactor/pf_facet_keyed_meta_disagreement_payload.md"
+    }
+    task pf_awaiting_proposal_facet_status "FacetStatus enum: add awaiting-proposal" {
+      effort 0.5d
+      allocate team
+      note "Refinement: tasks/refinements/per-facet-refactor/pf_awaiting_proposal_facet_status.md"
+    }
+  }
+
+  task projection "Server projection layer" {
+    depends !schema_and_events
+    task pf_projection_facet_status_refactor "Rewrite facet-status derivation (server + mirrors)" {
+      effort 2d
+      allocate team
+      note "Refinement: tasks/refinements/per-facet-refactor/pf_projection_facet_status_refactor.md"
+    }
+    task pf_projection_replay_updates "Update replay walker for facet-keyed + withdraw-agreement" {
+      effort 1d
+      allocate team
+      depends !pf_projection_facet_status_refactor
+      note "Refinement: tasks/refinements/per-facet-refactor/pf_projection_replay_updates.md"
+    }
+  }
+
+  task server_handlers "Server handler layer" {
+    depends !projection
+    task pf_capture_emits_inline_wording_only "Propose handler: capture emits inline wording only" {
+      effort 0.5d
+      allocate team
+      note "Refinement: tasks/refinements/per-facet-refactor/pf_capture_emits_inline_wording_only.md"
+    }
+    task pf_sequence_gate_server_enforced "Propose handler: server-enforced sequence gate" {
+      effort 1d
+      allocate team
+      depends !pf_capture_emits_inline_wording_only
+      note "Refinement: tasks/refinements/per-facet-refactor/pf_sequence_gate_server_enforced.md"
+    }
+    task pf_vote_handler_facet_keyed "Vote handler: facet-keyed dispatch" {
+      effort 0.5d
+      allocate team
+      note "Refinement: tasks/refinements/per-facet-refactor/pf_vote_handler_facet_keyed.md"
+    }
+    task pf_commit_handler_facet_keyed "Commit handler: facet-keyed dispatch + unanimity gate" {
+      effort 0.5d
+      allocate team
+      depends !pf_vote_handler_facet_keyed
+      note "Refinement: tasks/refinements/per-facet-refactor/pf_commit_handler_facet_keyed.md"
+    }
+    task pf_withdraw_agreement_handler "Withdraw-agreement handler" {
+      effort 0.5d
+      allocate team
+      depends !pf_commit_handler_facet_keyed
+      note "Refinement: tasks/refinements/per-facet-refactor/pf_withdraw_agreement_handler.md"
+    }
+    task pf_meta_disagreement_handler_facet_keyed "Meta-disagreement-marked handler: facet-keyed dispatch" {
+      effort 0.5d
+      allocate team
+      note "Refinement: tasks/refinements/per-facet-refactor/pf_meta_disagreement_handler_facet_keyed.md"
+    }
+    task pf_structural_handlers_unchanged "Pin + test surfaces for structural proposal-keyed handlers" {
+      effort 0.5d
+      allocate team
+      depends !pf_vote_handler_facet_keyed, !pf_commit_handler_facet_keyed, !pf_meta_disagreement_handler_facet_keyed
+      note "Refinement: tasks/refinements/per-facet-refactor/pf_structural_handlers_unchanged.md"
+    }
+  }
+
+  task moderator_ui "Moderator UI" {
+    depends !server_handlers
+    task pf_mod_capture_pane_wording_only "Capture pane: wording-only (remove classification palette)" {
+      effort 1d
+      allocate team
+      note "Refinement: tasks/refinements/per-facet-refactor/pf_mod_capture_pane_wording_only.md"
+    }
+    task pf_mod_node_card_classification_affordance "Node card: inline classification affordance" {
+      effort 1.5d
+      allocate team
+      depends !pf_mod_capture_pane_wording_only
+      note "Refinement: tasks/refinements/per-facet-refactor/pf_mod_node_card_classification_affordance.md"
+    }
+    task pf_mod_node_card_substance_affordance "Node card: inline substance affordance" {
+      effort 1.5d
+      allocate team
+      depends !pf_mod_node_card_classification_affordance
+      note "Refinement: tasks/refinements/per-facet-refactor/pf_mod_node_card_substance_affordance.md"
+    }
+    task pf_mod_pending_proposals_pane_facet_keyed "Pending-proposals pane: facet-keyed rows + commit dispatch" {
+      effort 1d
+      allocate team
+      note "Refinement: tasks/refinements/per-facet-refactor/pf_mod_pending_proposals_pane_facet_keyed.md"
+    }
+  }
+
+  task participant_ui "Participant UI" {
+    depends !server_handlers
+    task pf_part_detail_panel_three_facet_rows "Detail panel: always-render facet rows + state machine" {
+      effort 1.5d
+      allocate team
+      note "Refinement: tasks/refinements/per-facet-refactor/pf_part_detail_panel_three_facet_rows.md"
+    }
+    task pf_part_withdraw_agreement_action "Withdraw-agreement action hook + button" {
+      effort 0.5d
+      allocate team
+      depends !pf_part_detail_panel_three_facet_rows
+      note "Refinement: tasks/refinements/per-facet-refactor/pf_part_withdraw_agreement_action.md"
+    }
+    task pf_part_vote_action_facet_keyed "useVoteAction: facet-keyed payload" {
+      effort 0.5d
+      allocate team
+      depends !pf_part_detail_panel_three_facet_rows
+      note "Refinement: tasks/refinements/per-facet-refactor/pf_part_vote_action_facet_keyed.md"
+    }
+  }
+
+  task tests "Tests / e2e" {
+    depends !moderator_ui, !participant_ui
+    task pf_e2e_methodology_full_flow_update "methodology-full-flow Playwright: sequential capture rewrite" {
+      effort 2d
+      allocate team
+      note "Refinement: tasks/refinements/per-facet-refactor/pf_e2e_methodology_full_flow_update.md"
+    }
+    task pf_unit_test_audit "Unit-test audit + per-file revise/remove/keep decisions" {
+      effort 1.5d
+      allocate team
+      note "Refinement: tasks/refinements/per-facet-refactor/pf_unit_test_audit.md"
+    }
+  }
+}
