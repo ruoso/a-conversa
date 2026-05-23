@@ -317,9 +317,16 @@ Then(
     assert.equal(ev.sessionId, ML_SESSION_ID);
     assert.equal(ev.id, ML_NEW_EVENT_ID);
     if (ev.kind === 'meta-disagreement-marked') {
-      assert.equal(ev.payload.proposal_id, ML_PROPOSAL_ID);
-      assert.equal(ev.payload.moderator, ML_HOST_ID);
-      assert.equal(ev.payload.marked_at, tsAt(20));
+      // TODO(pf_meta_disagreement_handler_facet_keyed): the methodology
+      // engine emits the proposal-keyed arm for all meta-disagreement
+      // marks today; the downstream task rewires emission for
+      // facet-valued proposal sub-kinds.
+      assert.equal(ev.payload.target, 'proposal');
+      if (ev.payload.target === 'proposal') {
+        assert.equal(ev.payload.proposal_id, ML_PROPOSAL_ID);
+        assert.equal(ev.payload.marked_by, ML_HOST_ID);
+        assert.equal(ev.payload.marked_at, tsAt(20));
+      }
     }
   },
 );

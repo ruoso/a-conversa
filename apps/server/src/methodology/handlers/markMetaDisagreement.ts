@@ -146,6 +146,23 @@ export const markMetaDisagreementHandler: Validator<MarkMetaDisagreementAction> 
   }
 
   // Valid — emit one meta-disagreement-marked event.
+  //
+  // TODO(pf_meta_disagreement_handler_facet_keyed): per ADR 0030 §2 the
+  // meta-disagreement-marked payload is now a `target`-discriminated
+  // union (facet-keyed vs. proposal-keyed). This handler currently emits
+  // the proposal-keyed arm for ALL meta-disagreement marks (including
+  // marks against facet-valued proposal sub-kinds — classify-node /
+  // set-node-substance / set-edge-substance / edit-wording). Per ADR
+  // 0030 §2 those marks should be emitted as `target: 'facet'` with the
+  // looked-up `(entity_kind, entity_id, facet)` derived from the
+  // proposal. The downstream `pf_meta_disagreement_handler_facet_keyed`
+  // task rewires this handler to consult the projection's pending
+  // proposal, derive the facet target via the shared helper, and emit
+  // the appropriate arm. Today's emission keeps every existing consumer
+  // (the projection's `handleMetaDisagreementMarked` reading
+  // `payload.proposal_id`) on the proposal-keyed shape — a controlled,
+  // schema-valid emit that preserves current behaviour until that
+  // downstream task lands.
   const event: EventToAppendEnvelope<'meta-disagreement-marked'> = {
     id: action.eventId,
     sessionId: action.sessionId,
@@ -153,8 +170,9 @@ export const markMetaDisagreementHandler: Validator<MarkMetaDisagreementAction> 
     kind: 'meta-disagreement-marked',
     actor: action.actor,
     payload: {
+      target: 'proposal',
       proposal_id: action.proposalEventId,
-      moderator: action.requester,
+      marked_by: action.requester,
       marked_at: action.markedAt,
     },
     createdAt: action.createdAt,

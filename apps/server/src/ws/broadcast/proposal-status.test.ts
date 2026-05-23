@@ -250,8 +250,9 @@ function metaDisagreementEvent(sequence: number): Event {
     kind: 'meta-disagreement-marked',
     actor: HOST_USER,
     payload: {
+      target: 'proposal',
       proposal_id: PROPOSAL_1,
-      moderator: HOST_USER,
+      marked_by: HOST_USER,
       marked_at: '2026-05-11T12:00:00.000Z',
     },
     createdAt: '2026-05-11T12:00:00.001Z',

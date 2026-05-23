@@ -211,8 +211,9 @@ function markMetaDisagreement(projection: Projection, proposalId: string): void 
   applyEvent(
     projection,
     makeEvent(nextSeq(), 'meta-disagreement-marked', MODERATOR_ID, T8, {
+      target: 'proposal',
       proposal_id: proposalId,
-      moderator: MODERATOR_ID,
+      marked_by: MODERATOR_ID,
       marked_at: T8,
     }),
   );

@@ -1031,14 +1031,141 @@ describe('commit payload schema — discriminator', () => {
   });
 });
 
-describe('meta-disagreement-marked payload schema', () => {
+// -- Meta-disagreement-marked payload schema (per ADR 0030 §2 + §9) --
+//
+// `metaDisagreementMarkedPayloadSchema` is a discriminated union on
+// `target`, mirroring the vote + commit payload splits:
+//
+//   - `target: 'facet'` for marks against facet-valued proposal sub-
+//     kinds (classify-node / set-node-substance / set-edge-substance /
+//     edit-wording). Keyed by `(entity_kind, entity_id, facet)`.
+//   - `target: 'proposal'` for marks against structural proposal sub-
+//     kinds (decompose / interpretive-split / axiom-mark / meta-move /
+//     break-edge / amend-node / annotate). Keyed by `proposal_id`.
+//
+// `marked_by` carries the actor UUID (the moderator in v1; the field
+// is action-shaped rather than role-shaped, matching `committed_by`
+// on the commit payload). `marked_at` is the action-clock ISO-8601
+// timestamp on both arms.
+
+describe('meta-disagreement-marked payload schema — facet-keyed arm', () => {
   const valid = {
-    proposal_id: PROPOSAL_ID,
-    moderator: USER_ID,
+    target: 'facet' as const,
+    entity_kind: 'node' as const,
+    entity_id: NODE_ID,
+    facet: 'classification' as const,
+    marked_by: USER_ID,
     marked_at: '2026-05-10T12:34:56Z',
   };
 
-  it('round-trips a well-formed payload through JSON', () => {
+  it('round-trips a well-formed facet-keyed payload through JSON', () => {
+    const parsed = metaDisagreementMarkedPayloadSchema.parse(valid);
+    const wire = JSON.parse(JSON.stringify(parsed)) as unknown;
+    expect(metaDisagreementMarkedPayloadSchema.parse(wire)).toEqual(valid);
+  });
+
+  it('accepts edge as entity_kind on the facet arm', () => {
+    const result = metaDisagreementMarkedPayloadSchema.safeParse({
+      ...valid,
+      entity_kind: 'edge',
+      entity_id: EDGE_ID,
+      facet: 'substance',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects 'annotation' as entity_kind on the facet arm", () => {
+    const result = metaDisagreementMarkedPayloadSchema.safeParse({
+      ...valid,
+      entity_kind: 'annotation',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects an unknown facet value', () => {
+    const result = metaDisagreementMarkedPayloadSchema.safeParse({
+      ...valid,
+      facet: 'role',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a non-UUID entity_id', () => {
+    const result = metaDisagreementMarkedPayloadSchema.safeParse({
+      ...valid,
+      entity_id: 'not-a-uuid',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a non-UUID marked_by', () => {
+    const result = metaDisagreementMarkedPayloadSchema.safeParse({
+      ...valid,
+      marked_by: 'not-a-uuid',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a non-ISO marked_at', () => {
+    const result = metaDisagreementMarkedPayloadSchema.safeParse({
+      ...valid,
+      marked_at: 'eventually',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a missing marked_at', () => {
+    const { marked_at: _omitted, ...withoutMarkedAt } = valid;
+    void _omitted;
+    const result = metaDisagreementMarkedPayloadSchema.safeParse(withoutMarkedAt);
+    expect(result.success).toBe(false);
+  });
+
+  it('strips proposal_id when present on the facet arm (z.object default)', () => {
+    // The discriminated union strips unknown keys; a facet-arm payload
+    // smuggling a proposal_id from the proposal arm parses but the
+    // proposal_id does not survive — the cross-shape value does not
+    // round-trip.
+    const result = metaDisagreementMarkedPayloadSchema.safeParse({
+      ...valid,
+      proposal_id: PROPOSAL_ID,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).not.toHaveProperty('proposal_id');
+    }
+  });
+
+  it('routes a facet-arm payload-shape error through validateEvent naming the kind', () => {
+    const envelope = {
+      id: EVENT_ID,
+      sessionId: SESSION_ID,
+      sequence: 10,
+      kind: 'meta-disagreement-marked' as const,
+      actor: ACTOR_ID,
+      payload: { ...valid, entity_kind: 'annotation' },
+      createdAt: '2026-05-10T12:34:56Z',
+    };
+    let caught: unknown;
+    try {
+      validateEvent(envelope);
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(EventValidationError);
+    expect((caught as Error).message).toContain("'meta-disagreement-marked'");
+  });
+});
+
+describe('meta-disagreement-marked payload schema — proposal-keyed arm', () => {
+  const valid = {
+    target: 'proposal' as const,
+    proposal_id: PROPOSAL_ID,
+    marked_by: USER_ID,
+    marked_at: '2026-05-10T12:34:56Z',
+  };
+
+  it('round-trips a well-formed proposal-keyed payload through JSON', () => {
     const parsed = metaDisagreementMarkedPayloadSchema.parse(valid);
     const wire = JSON.parse(JSON.stringify(parsed)) as unknown;
     expect(metaDisagreementMarkedPayloadSchema.parse(wire)).toEqual(valid);
@@ -1064,10 +1191,10 @@ describe('meta-disagreement-marked payload schema', () => {
     expect((caught as Error).message).toContain("'meta-disagreement-marked'");
   });
 
-  it('rejects a non-UUID moderator', () => {
+  it('rejects a non-UUID marked_by', () => {
     const result = metaDisagreementMarkedPayloadSchema.safeParse({
       ...valid,
-      moderator: 'not-a-uuid',
+      marked_by: 'not-a-uuid',
     });
     expect(result.success).toBe(false);
   });
@@ -1076,6 +1203,74 @@ describe('meta-disagreement-marked payload schema', () => {
     const result = metaDisagreementMarkedPayloadSchema.safeParse({
       ...valid,
       marked_at: 'eventually',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a missing marked_at', () => {
+    const { marked_at: _omitted, ...withoutMarkedAt } = valid;
+    void _omitted;
+    const result = metaDisagreementMarkedPayloadSchema.safeParse(withoutMarkedAt);
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a missing proposal_id on the proposal arm', () => {
+    const { proposal_id: _omitted, ...withoutProposalId } = valid;
+    void _omitted;
+    const result = metaDisagreementMarkedPayloadSchema.safeParse(withoutProposalId);
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('meta-disagreement-marked payload schema — discriminator', () => {
+  const facetValid = {
+    target: 'facet' as const,
+    entity_kind: 'node' as const,
+    entity_id: NODE_ID,
+    facet: 'classification' as const,
+    marked_by: USER_ID,
+    marked_at: '2026-05-10T12:34:56Z',
+  };
+
+  it('rejects a missing target discriminator', () => {
+    const { target: _omitted, ...withoutTarget } = facetValid;
+    void _omitted;
+    const result = metaDisagreementMarkedPayloadSchema.safeParse(withoutTarget);
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects an unknown target value ('node')", () => {
+    const result = metaDisagreementMarkedPayloadSchema.safeParse({
+      ...facetValid,
+      target: 'node',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a proposal-arm payload lacking proposal_id (cross-arm corruption)', () => {
+    // A `target: 'proposal'` payload with the facet-arm's
+    // entity/facet fields but missing proposal_id fails the
+    // proposal-arm schema because proposal_id is required there.
+    const result = metaDisagreementMarkedPayloadSchema.safeParse({
+      target: 'proposal',
+      entity_kind: 'node',
+      entity_id: NODE_ID,
+      facet: 'classification',
+      marked_by: USER_ID,
+      marked_at: '2026-05-10T12:34:56Z',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a facet-arm payload lacking entity_id (cross-arm corruption)', () => {
+    // A `target: 'facet'` payload with proposal_id but missing
+    // entity_kind / entity_id / facet fails the facet-arm schema
+    // because those fields are required there.
+    const result = metaDisagreementMarkedPayloadSchema.safeParse({
+      target: 'facet',
+      proposal_id: PROPOSAL_ID,
+      marked_by: USER_ID,
+      marked_at: '2026-05-10T12:34:56Z',
     });
     expect(result.success).toBe(false);
   });
@@ -1520,9 +1715,16 @@ const REPRESENTATIVE_PAYLOADS: Record<EventKind, unknown> = {
     committed_by: USER_ID,
     committed_at: '2026-05-10T12:34:56Z',
   },
+  // `meta-disagreement-marked` is a `target`-discriminated union per
+  // ADR 0030 §2 + §9. The representative is the facet-keyed arm; both
+  // arms are covered exhaustively by the dedicated
+  // `meta-disagreement-marked payload schema — *` describes above.
   'meta-disagreement-marked': {
-    proposal_id: PROPOSAL_ID,
-    moderator: USER_ID,
+    target: 'facet',
+    entity_kind: 'node',
+    entity_id: NODE_ID,
+    facet: 'classification',
+    marked_by: USER_ID,
     marked_at: '2026-05-10T12:34:56Z',
   },
   'snapshot-created': {

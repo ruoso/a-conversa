@@ -203,7 +203,17 @@ function proposalIdFor(event: Event): string | null {
       }
       return null;
     case 'meta-disagreement-marked':
-      return event.payload.proposal_id;
+      // TODO(pf_meta_disagreement_handler_facet_keyed): meta-disagreement-marked
+      // payloads are now a `target`-discriminated union per ADR 0030 §2 + §9.
+      // The methodology engine still emits the proposal-keyed arm for
+      // every mark today; once the downstream task lands facet-keyed
+      // emission, this needs to resolve the broadcast subject differently
+      // (look up the proposal that targets the entity+facet pair).
+      // Until then we read the proposal-keyed arm only.
+      if (event.payload.target === 'proposal') {
+        return event.payload.proposal_id;
+      }
+      return null;
     default:
       return null;
   }

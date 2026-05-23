@@ -237,8 +237,9 @@ describe('mark-meta-disagreement handler — rule 3: proposal is pending', () =>
     applyEvent(
       p,
       makeEvent(nextSequence(p), 'meta-disagreement-marked', MODERATOR_ID, T9, {
+        target: 'proposal',
         proposal_id: PROPOSAL_ID_1,
-        moderator: MODERATOR_ID,
+        marked_by: MODERATOR_ID,
         marked_at: T9,
       }),
     );
@@ -301,9 +302,16 @@ describe('mark-meta-disagreement handler — rule 4: methodology-exhaustion gate
       expect(ev.actor).toBe(MODERATOR_ID);
       expect(ev.createdAt).toBe(T9);
       if (ev.kind === 'meta-disagreement-marked') {
-        expect(ev.payload.proposal_id).toBe(PROPOSAL_ID_1);
-        expect(ev.payload.moderator).toBe(MODERATOR_ID);
-        expect(ev.payload.marked_at).toBe(T9);
+        // TODO(pf_meta_disagreement_handler_facet_keyed): the
+        // methodology engine emits the proposal-keyed arm for ALL
+        // meta-disagreement marks today; the downstream task rewires
+        // emission for facet-valued proposal sub-kinds.
+        expect(ev.payload.target).toBe('proposal');
+        if (ev.payload.target === 'proposal') {
+          expect(ev.payload.proposal_id).toBe(PROPOSAL_ID_1);
+          expect(ev.payload.marked_by).toBe(MODERATOR_ID);
+          expect(ev.payload.marked_at).toBe(T9);
+        }
       }
     }
   });

@@ -79,8 +79,9 @@ function metaDisagreementEvent(seq: number, proposalId: string): Event {
     kind: 'meta-disagreement-marked',
     actor: ACTOR,
     payload: {
+      target: 'proposal',
       proposal_id: proposalId,
-      moderator: ACTOR,
+      marked_by: ACTOR,
       marked_at: '2026-05-16T00:00:30.000Z',
     },
     createdAt: '2026-05-16T00:00:30.000Z',

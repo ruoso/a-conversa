@@ -247,8 +247,9 @@ describe('commit handler — rule 3: proposal is pending', () => {
     applyEvent(
       p,
       makeEvent(nextSequence(p), 'meta-disagreement-marked', MODERATOR_ID, T9, {
+        target: 'proposal',
         proposal_id: PROPOSAL_ID_1,
-        moderator: MODERATOR_ID,
+        marked_by: MODERATOR_ID,
         marked_at: T9,
       }),
     );

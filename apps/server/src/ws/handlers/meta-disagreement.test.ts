@@ -948,16 +948,22 @@ describe('ws_meta_disagreement_message — handler integration', () => {
       expect(appended).toBeDefined();
       expect(appended?.kind).toBe('meta-disagreement-marked');
       expect(appended?.actor).toBe(FIXTURE_USER_ID);
-      // The event payload references the proposal + records the moderator.
+      // The event payload references the proposal + records the
+      // moderator. TODO(pf_meta_disagreement_handler_facet_keyed): the
+      // methodology engine emits the proposal-keyed arm for ALL marks
+      // today (per ADR 0030 §2 + §9); facet-arm emission lands in the
+      // downstream handler-rewrite task.
       const appendedPayload = appended?.payload as
         | {
+            target?: unknown;
             proposal_id?: unknown;
-            moderator?: unknown;
+            marked_by?: unknown;
             marked_at?: unknown;
           }
         | undefined;
+      expect(appendedPayload?.target).toBe('proposal');
       expect(appendedPayload?.proposal_id).toBe(PROPOSAL_EVENT_ID);
-      expect(appendedPayload?.moderator).toBe(FIXTURE_USER_ID);
+      expect(appendedPayload?.marked_by).toBe(FIXTURE_USER_ID);
       expect(typeof appendedPayload?.marked_at).toBe('string');
     } finally {
       ws.terminate();

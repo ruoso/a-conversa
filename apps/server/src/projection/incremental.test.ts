@@ -580,8 +580,9 @@ describe('applyEventIncremental — change-feed coverage by discriminator', () =
     const changes = applyEventIncremental(
       projection,
       makeEvent(3, 'meta-disagreement-marked', MODERATOR_ID, T2, {
+        target: 'proposal',
         proposal_id: PROPOSAL_ID_1,
-        moderator: MODERATOR_ID,
+        marked_by: MODERATOR_ID,
         marked_at: T2,
       }),
     );

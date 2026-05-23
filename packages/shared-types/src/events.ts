@@ -497,11 +497,61 @@ export const commitPayloadSchema = z.discriminatedUnion('target', [
 
 export type CommitPayload = z.infer<typeof commitPayloadSchema>;
 
-export const metaDisagreementMarkedPayloadSchema = z.object({
-  proposal_id: z.string().uuid(),
-  moderator: z.string().uuid(),
+// **Meta-disagreement-marked: two arms, one event kind.** Mirroring
+// the vote + commit split per ADR 0030 §2 + §9: a meta-disagreement
+// mark's identity has to match the votes whose impasse it acknowledges.
+//
+//   - `target: 'facet'` — marks against facet-valued proposal sub-kinds
+//     (`classify-node`, `set-node-substance`, `set-edge-substance`,
+//     `edit-wording`). Keyed directly by `(entity_kind, entity_id,
+//     facet)` per ADR 0030 §2 so the meta-disagreement state hangs off
+//     the facet itself rather than off whichever proposal happened to
+//     last touch it. NO `proposal_id` on this arm. The two competing
+//     candidate values for the facet are derived by the projection from
+//     the two most-recent proposals targeting that facet (ADR 0030 §2
+//     sentence 4); they are NOT carried inline in the event payload.
+//   - `target: 'proposal'` — marks against the seven structural
+//     proposal sub-kinds (`decompose`, `interpretive-split`,
+//     `axiom-mark`, `meta-move`, `break-edge`, `amend-node`, `annotate`).
+//     Keyed by `proposal_id` per ADR 0030 §9 — these proposals do not
+//     have a per-facet target the mark could attach to.
+//
+// `marked_by` carries the UUID of the actor that marked (the moderator
+// in v1; the field name is action-shaped rather than role-shaped so a
+// future relaxation does not require a wire rename — mirrors the
+// `committed_by` field on the commit payload). `marked_at` is the
+// action-clock ISO-8601 timestamp on both arms (parallel to
+// `committed_at` on the commit payload and `voted_at` on the vote
+// payload).
+//
+// Field names mirror the vote + commit schemas' style: UUIDs via
+// `z.string().uuid()`, ISO-8601 timestamps via
+// `z.string().datetime({ offset: true })`.
+
+export const facetMetaDisagreementPayloadSchema = z.object({
+  target: z.literal('facet'),
+  entity_kind: z.enum(['node', 'edge']),
+  entity_id: z.string().uuid(),
+  facet: facetNameSchema,
+  marked_by: z.string().uuid(),
   marked_at: z.string().datetime({ offset: true }),
 });
+
+export type FacetMetaDisagreementPayload = z.infer<typeof facetMetaDisagreementPayloadSchema>;
+
+export const proposalMetaDisagreementPayloadSchema = z.object({
+  target: z.literal('proposal'),
+  proposal_id: z.string().uuid(),
+  marked_by: z.string().uuid(),
+  marked_at: z.string().datetime({ offset: true }),
+});
+
+export type ProposalMetaDisagreementPayload = z.infer<typeof proposalMetaDisagreementPayloadSchema>;
+
+export const metaDisagreementMarkedPayloadSchema = z.discriminatedUnion('target', [
+  facetMetaDisagreementPayloadSchema,
+  proposalMetaDisagreementPayloadSchema,
+]);
 
 export type MetaDisagreementMarkedPayload = z.infer<typeof metaDisagreementMarkedPayloadSchema>;
 

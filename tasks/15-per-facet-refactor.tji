@@ -44,6 +44,7 @@ task per_facet_refactor "Per-facet refactor (ADR 0030)" {
     task pf_facet_keyed_meta_disagreement_payload "Facet-keyed meta-disagreement-marked payload" {
       effort 0.5d
       allocate team
+      complete 100
       depends !pf_facet_keyed_vote_payload, !pf_facet_keyed_commit_payload
       note "Refinement: tasks/refinements/per-facet-refactor/pf_facet_keyed_meta_disagreement_payload.md"
     }

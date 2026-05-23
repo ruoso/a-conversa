@@ -845,6 +845,7 @@ describe('LobbyRoute — auto-navigation handoff to operate route', () => {
     {
       kind: 'meta-disagreement-marked',
       payload: {
+        target: 'proposal',
         proposal_id: '11111111-1111-4111-8111-111111111111',
         marked_by: HOST_USER_ID,
         marked_at: '2026-05-17T00:00:00.000Z',

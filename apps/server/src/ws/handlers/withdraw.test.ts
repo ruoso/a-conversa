@@ -679,8 +679,9 @@ function makeWithdrawPool(): { pool: DbPool; store: Store } {
         kind: 'meta-disagreement-marked',
         actor: FIXTURE_USER_ID,
         payload: {
+          target: 'proposal',
           proposal_id: META_PROPOSAL_EVENT_ID,
-          marker: FIXTURE_USER_ID,
+          marked_by: FIXTURE_USER_ID,
           marked_at: t(5).toISOString(),
         },
         created_at: t(5),

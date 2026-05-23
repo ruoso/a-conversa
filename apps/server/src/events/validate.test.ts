@@ -123,9 +123,16 @@ const REPRESENTATIVE_PAYLOADS: Record<EventKind, unknown> = {
     committed_by: USER_ID,
     committed_at: '2026-05-10T12:34:56Z',
   },
+  // `meta-disagreement-marked` is a `target`-discriminated union per
+  // ADR 0030 §2 + §9. The representative is the facet-keyed arm; a
+  // dedicated test (below) covers the proposal-keyed arm round-trip +
+  // cross-arm corruption cases.
   'meta-disagreement-marked': {
-    proposal_id: PROPOSAL_ID,
-    moderator: USER_ID,
+    target: 'facet',
+    entity_kind: 'node',
+    entity_id: NODE_ID,
+    facet: 'classification',
+    marked_by: USER_ID,
     marked_at: '2026-05-10T12:34:56Z',
   },
   'snapshot-created': {
@@ -455,7 +462,13 @@ const PAYLOAD_CORRUPTIONS: Record<EventKind, (base: Record<string, unknown>) => 
   // entity_id, or a `target: 'proposal'` payload missing proposal_id)
   // is exercised separately in `describe('validateEvent — commit payload …')`.
   commit: (base) => ({ ...base, entity_kind: 'annotation' }),
-  'meta-disagreement-marked': (base) => ({ ...base, proposal_id: 'not-a-uuid' }),
+  // Corrupting `entity_kind` to 'annotation' rejects on the facet arm
+  // schema (`z.enum(['node', 'edge'])`) — facet-valued proposals only
+  // target nodes and edges. The cross-arm corruption (a `target:
+  // 'facet'` payload missing entity_id, or a `target: 'proposal'`
+  // payload missing proposal_id) is exercised separately in
+  // `describe('validateEvent — meta-disagreement-marked payload …')`.
+  'meta-disagreement-marked': (base) => ({ ...base, entity_kind: 'annotation' }),
   'snapshot-created': (base) => ({ ...base, log_position: -1 }),
   'entity-removed': (base) => ({ ...base, entity_kind: 'attribute' }),
   'session-mode-changed': (base) => ({ ...base, new_mode: 'concluded' }),
@@ -626,6 +639,68 @@ describe('validateEvent — commit payload proposal arm + cross-arm', () => {
     const error = captureError(bad);
     expect(error.code).toBe('payload-invalid');
     expect(error.kind).toBe('commit');
+  });
+});
+
+// -- Meta-disagreement-marked payload — proposal-keyed arm + cross-arm
+//
+// The kind-keyed `REPRESENTATIVE_PAYLOADS['meta-disagreement-marked']`
+// table entry covers the facet-keyed arm. The proposal-keyed arm (per
+// ADR 0030 §9 — marks against structural proposal sub-kinds) needs its
+// own round-trip pin, and the discriminated union's cross-arm
+// corruptions deserve explicit failure-mode coverage.
+describe('validateEvent — meta-disagreement-marked payload proposal arm + cross-arm', () => {
+  const proposalArmValid = {
+    target: 'proposal' as const,
+    proposal_id: PROPOSAL_ID,
+    marked_by: USER_ID,
+    marked_at: '2026-05-10T12:34:56Z',
+  };
+
+  it('accepts a proposal-keyed meta-disagreement-marked envelope', () => {
+    const candidate = envelope('meta-disagreement-marked', proposalArmValid);
+    const validated = validateEvent(candidate);
+    expect(validated.kind).toBe('meta-disagreement-marked');
+  });
+
+  it('rejects a facet-arm payload missing entity_id (cross-arm corruption)', () => {
+    const bad = envelope('meta-disagreement-marked', {
+      target: 'facet',
+      marked_by: USER_ID,
+      marked_at: '2026-05-10T12:34:56Z',
+    });
+    const error = captureError(bad);
+    expect(error.code).toBe('payload-invalid');
+    expect(error.kind).toBe('meta-disagreement-marked');
+  });
+
+  it('rejects a proposal-arm payload missing proposal_id (cross-arm corruption)', () => {
+    const bad = envelope('meta-disagreement-marked', {
+      target: 'proposal',
+      marked_by: USER_ID,
+      marked_at: '2026-05-10T12:34:56Z',
+    });
+    const error = captureError(bad);
+    expect(error.code).toBe('payload-invalid');
+    expect(error.kind).toBe('meta-disagreement-marked');
+  });
+
+  it('rejects a payload missing the target discriminator', () => {
+    const bad = envelope('meta-disagreement-marked', {
+      proposal_id: PROPOSAL_ID,
+      marked_by: USER_ID,
+      marked_at: '2026-05-10T12:34:56Z',
+    });
+    const error = captureError(bad);
+    expect(error.code).toBe('payload-invalid');
+    expect(error.kind).toBe('meta-disagreement-marked');
+  });
+
+  it("rejects an unknown target value ('node')", () => {
+    const bad = envelope('meta-disagreement-marked', { ...proposalArmValid, target: 'node' });
+    const error = captureError(bad);
+    expect(error.code).toBe('payload-invalid');
+    expect(error.kind).toBe('meta-disagreement-marked');
   });
 });
 

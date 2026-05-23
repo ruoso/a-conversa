@@ -177,8 +177,9 @@ function applyMetaDisagreementMark(
   applyEvent(
     projection,
     makeEvent(nextSequence(projection), 'meta-disagreement-marked', moderator, T9, {
+      target: 'proposal',
       proposal_id: proposalId,
-      moderator,
+      marked_by: moderator,
       marked_at: T9,
     }),
   );

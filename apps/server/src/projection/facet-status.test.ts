@@ -300,8 +300,9 @@ describe('deriveFacetStatus — meta-disagreement', () => {
     applyEvent(
       projection,
       makeEvent(voteSeq++, 'meta-disagreement-marked', MODERATOR_ID, T8, {
+        target: 'proposal',
         proposal_id: PROPOSAL_ID_1,
-        moderator: MODERATOR_ID,
+        marked_by: MODERATOR_ID,
         marked_at: T8,
       }),
     );
@@ -587,8 +588,9 @@ describe('deriveFacetStatus — property-style vs. reference implementation', ()
           applyEvent(
             projection,
             makeEvent(voteSeq++, 'meta-disagreement-marked', MODERATOR_ID, T0, {
+              target: 'proposal',
               proposal_id: PROPOSAL_ID_1,
-              moderator: MODERATOR_ID,
+              marked_by: MODERATOR_ID,
               marked_at: T0,
             }),
           );

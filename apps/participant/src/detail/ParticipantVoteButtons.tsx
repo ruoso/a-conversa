@@ -253,7 +253,13 @@ export function derivePendingFacetProposals(
         closedProposalIds.add(event.payload.proposal_id);
       }
     } else if (event.kind === 'meta-disagreement-marked') {
-      closedProposalIds.add(event.payload.proposal_id);
+      // TODO(pf_meta_disagreement_handler_facet_keyed): meta-disagreement-marked
+      // payloads are now a `target`-discriminated union. The methodology
+      // engine emits proposal-keyed marks for every sub-kind today; read
+      // only that arm until the downstream task lands facet-keyed emission.
+      if (event.payload.target === 'proposal') {
+        closedProposalIds.add(event.payload.proposal_id);
+      }
     }
   }
   // Strip closed proposals — committed / meta-disagreement proposals

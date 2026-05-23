@@ -662,6 +662,21 @@ function handleMetaDisagreementMarked(
   payload: MetaDisagreementMarkedPayload,
   changes: ProjectionChange[],
 ): void {
+  // TODO(pf_meta_disagreement_handler_facet_keyed): meta-disagreement-marked
+  // payloads are now a `target`-discriminated union per ADR 0030 §2 + §9.
+  // The methodology engine still emits the proposal-keyed arm for ALL
+  // meta-disagreement marks (per the matching TODO in
+  // `apps/server/src/methodology/handlers/markMetaDisagreement.ts`);
+  // until the downstream task lands, this projection handler only needs
+  // to read the proposal-keyed arm. The facet-keyed arm is a dead
+  // branch today and lands a runtime error so any inadvertent emit
+  // during the transition surfaces loudly. The downstream task
+  // rewrites both halves.
+  if (payload.target !== 'proposal') {
+    throw new ReplayError(
+      `meta-disagreement-marked: target='${payload.target}' arm is not yet implemented in the projection (TODO: pf_meta_disagreement_handler_facet_keyed)`,
+    );
+  }
   const pending = projection.getPendingProposal(payload.proposal_id);
   if (pending === undefined) {
     throw new ReplayError(
@@ -673,7 +688,10 @@ function handleMetaDisagreementMarked(
     payload: pending.payload,
     proposer: pending.proposer,
     proposedAt: pending.proposedAt,
-    markedBy: payload.moderator,
+    // The wire payload's `marked_by` per ADR 0030 §9 maps onto the
+    // projection's pre-existing `markedBy` field — the field-rename is
+    // wire-level only; the projection's internal shape is unchanged.
+    markedBy: payload.marked_by,
     markedAt: payload.marked_at,
   });
 
