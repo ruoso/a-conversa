@@ -10,7 +10,7 @@ The foundational rule of the format: **all participants — both debaters and th
 
 Anyone may propose any change. The moderator is the sole operator of the tool, so debaters propose verbally and the moderator commits the change once they observe agreement (see "The commit step" below).
 
-Agreement is **per-facet and per-participant**. Each facet of an entity (node wording, classification, substance; edge shape and substance; annotation content) tracks each participant's stance individually. A facet advances to `agreed` only when every current participant is voting `agree` *and* the moderator commits (see "The commit step" below).
+Agreement is **per-facet and per-participant**. Each facet of an entity (node wording, classification, substance; edge shape and substance; annotation content) tracks each participant's stance individually, and each facet's agreement state is keyed by the `(entity, facet)` pair — not by whichever proposal happens to be live against it. A facet advances to `agreed` only when every current participant is voting `agree` *and* the moderator commits (see "The commit step" below). The wire-level shape of facet-keyed votes / commits / meta-marks (and the distinction from structural proposals whose agreement is still proposal-keyed) is settled in [ADR 0030](adr/0030-per-facet-vote-keying-and-sequential-capture.md).
 
 ### The commit step
 
@@ -22,7 +22,7 @@ The explicit commit step matters because:
 - The moderator's role is structural, not interpretive. They don't decide whether agreement has been reached on the merits; they enact it once participants have expressed it.
 - It gives the participants a clear handoff moment: until the moderator commits, you can still object.
 
-A participant may **withdraw agreement** they previously gave. An `agreed` facet transitions back to `disputed`; the original commit and the withdrawal are both recorded in the change history. Withdrawal is allowed because real reasoning has second thoughts, and the format would be brittle if it didn't accommodate them.
+A participant may **withdraw agreement** they previously gave. An `agreed` (or `committed`) facet transitions back to `disputed`; the original commit and the withdrawal are both recorded in the change history. Withdrawal is allowed because real reasoning has second thoughts, and the format would be brittle if it didn't accommodate them. The wire-level event kind that records this gesture is `withdraw-agreement`, distinct from changing a still-uncommitted vote (which is just a fresh `vote` on the live candidate) — see [ADR 0030](adr/0030-per-facet-vote-keying-and-sequential-capture.md).
 
 ## The change lifecycle
 
@@ -32,7 +32,8 @@ A participant may **withdraw agreement** they previously gave. An `agreed` facet
 
 Every proposed change moves through these states:
 
-- `proposed` — someone has proposed the change. **The proposal is visible on the graph in a distinct state from the moment it is made**, awaiting agreement.
+- `awaiting-proposal` — the entity exists in the graph but no candidate value has yet been named for this facet (most commonly a freshly captured node's `classification` and `substance` facets, before the moderator has run a classify / set-substance gesture against them). Distinct from `proposed`: there is nothing yet to agree or dispute. See [ADR 0030](adr/0030-per-facet-vote-keying-and-sequential-capture.md).
+- `proposed` — a candidate value has been named for the facet and is gathering votes. **The proposal is visible on the graph in a distinct state from the moment it is made**, awaiting agreement.
 - `agreed` — all participants have voted `agree` and the moderator has committed; the change has been applied.
 - `disputed` — at least one participant has rejected the proposal. It remains visible while the methodology runs to resolve.
 - `meta-disagreement` — the disagreement turned out to be irreducible; both proposed shapes are carried side by side. Last-resort fallback (see below).
@@ -58,7 +59,7 @@ An **edge** has these facets:
 - **Shape** — what type of edge is it, between which endpoints?
 - **Substance** — does the relation actually hold? (Does the data actually support? Does the contradiction actually obtain? Does the warrant actually license the inference?)
 
-Each facet has its own status (`proposed`/`agreed`/`disputed`/`meta-disagreement`) and runs through the standard lifecycle independently. A node's wording can be `agreed` while its classification is `disputed` and its substance is `proposed` (not yet engaged). The entity as a whole is "fully agreed" only when all its facets are agreed.
+Each facet has its own status (`awaiting-proposal`/`proposed`/`agreed`/`disputed`/`committed`/`withdrawn`/`meta-disagreement`; see [ADR 0030](adr/0030-per-facet-vote-keying-and-sequential-capture.md)) and runs through the standard lifecycle independently. A node's wording can be `agreed` while its classification is `disputed` and its substance is `awaiting-proposal` (no candidate value named yet). The entity as a whole is "fully agreed" only when all its facets are agreed.
 
 This is the distinction the format depends on: "I agree this is a `predictive` claim" (classification facet: agreed) is not the same as "I agree the prediction will hold" (substance facet: separate question, separately tracked). Without facets, conceding the structure would imply conceding the content, which would be wrong.
 
@@ -70,7 +71,7 @@ Disputes are all the same shape — a facet `proposed` and blocked from advancin
 - **Classification dispute** ("that's a value claim, not a fact") → run the diagnostic tests (operationalization, is-ought, disputation, warrant elicitation). Often surfaces compound structure and leads to decomposition.
 - **Compoundness dispute** ("that statement is actually multiple statements") → propose a decomposition; if agreed, the workflow resets on the resulting components.
 - **Edge-shape dispute** ("the edge type should be `qualifies`, not `rebuts`") → re-propose with the corrected type or endpoints.
-- **Substance dispute on a node** ("the claim isn't true / isn't supported") → engaged through edges (support, rebut, contradict, decompose) and the disputation test. A node's `disputed` substance facet is what makes it function as a `claim` rather than as `data`.
+- **Substance dispute on a node** ("the claim isn't true / isn't supported") → the moderator first proposes an initial candidate value for the substance facet via a `set-node-substance` gesture (once classification has been agreed — substance is sequenced behind classification per [ADR 0030](adr/0030-per-facet-vote-keying-and-sequential-capture.md)); from there the dispute is engaged through edges (support, rebut, contradict, decompose) and the disputation test. Edges are how an *already-agreed* substance facet moves back to `disputed`: a `rebuts` edge whose substance gets agreed, for instance, pushes its target's substance back into dispute. A node's `disputed` substance facet is what makes it function as a `claim` rather than as `data`.
 - **Substance dispute on an edge** ("the contradiction doesn't actually hold" / "the data doesn't actually support the claim") → propose a resolution: decompose, amend, mark as bedrock disagreement, or let it stay `disputed`.
 
 Each tool produces further proposed changes that run through the same lifecycle.
@@ -85,17 +86,17 @@ For decomposition specifically: agreeing to decompose N into A + B agrees to the
 
 ### Worked examples
 
-- **Capturing a statement.** Anna says "zoos do more good than harm." Maria proposes a node N1 with that wording → wording facet `proposed`. Everyone agrees the wording is faithful → wording facet `agreed`. Maria proposes classification `normative` → classification facet `proposed`. Everyone agrees → classification facet `agreed`. The substance facet is still `proposed` and gets engaged later through Anna's supports, Ben's rebuttals, and the disputation test. N1 is "fully agreed" only when all three facets land.
+- **Capturing a statement.** Anna says "zoos do more good than harm." Maria captures a node N1 with that wording — the wording is carried *inline on the node-created event itself*, so no separate `propose-wording` step is needed; the node appears on the graph and its wording facet enters `proposed` with that inline value as the candidate. The classification and substance facets enter `awaiting-proposal` (no candidate yet). Everyone agrees the wording is faithful → wording facet `agreed`. *Now* — as a separate moderator gesture, sequenced after wording commits — Maria proposes classification `normative` (a `classify-node` proposal) → classification facet `proposed`. Everyone agrees → classification facet `agreed`. Once classification commits, Maria proposes an initial substance value via a `set-node-substance` gesture → substance facet `proposed`; the substance question gets engaged later through Anna's supports, Ben's rebuttals, and the disputation test. N1 is "fully agreed" only when all three facets land. (Wire-level: votes / commits / meta-marks against each facet are keyed by `(N1, wording)`, `(N1, classification)`, `(N1, substance)` per [ADR 0030](adr/0030-per-facet-vote-keying-and-sequential-capture.md).)
 - **Classification dispute.** Maria proposes N1 is `normative`. Ben disputes — he thinks it's a `value` claim. Classification facet → `disputed`. Diagnostic tests run (operationalization, is-ought, etc.); resolution may be a re-classification, a decomposition into components with different kinds, or `meta-disagreement`. Throughout, N1's wording facet may already be `agreed` and stays so.
 - **Decomposition.** Maria proposes splitting N1 into A + B. Decomposition facet `proposed`. Everyone agrees → N1 is removed, A and B exist. All of A's and B's facets start `proposed`. Each is its own change with its own lifecycle.
-- **Contradicts edge.** Anna proposes a `contradicts` edge between N1 and N2. Shape facet `proposed`. Everyone agrees on the shape → shape facet `agreed`. Substance facet (does the contradiction actually hold?) is `proposed`; if Ben disputes, substance facet → `disputed`; methodology runs (decompose? amend? accept-as-bedrock?). The edge stays visible in `disputed` substance throughout.
+- **Contradicts edge.** Anna proposes a `contradicts` edge between N1 and N2. The role and endpoints are carried inline on the `edge-created` event; the shape facet enters `proposed` with that inline value as its candidate, and the substance facet enters `awaiting-proposal` (sequenced behind shape). Everyone agrees on the shape → shape facet `agreed`. The moderator then proposes an initial substance via `set-edge-substance` → substance facet `proposed`; if Ben disputes, substance facet → `disputed`; methodology runs (decompose? amend? accept-as-bedrock?). The edge stays visible in `disputed` substance throughout.
 - **Axiom-marking.** Ben proposes an axiom mark on N9 for himself. The axiom mark is a graph operation with its own lifecycle. All participants agree (or run methodology — operationalization, etc.) that yes, Ben holds N9 as bedrock → the axiom mark lands. The agreement here is on the *fact of Ben's bedrock commitment*, not on whether N9 is true. Anna may or may not have her own axiom mark on N9 (a separate change with its own lifecycle). N9's other facets are independent.
 
 ## Classification procedure
 
-When a statement is made, the moderator proposes a classification (the value of the node's `classification` facet — its kind: fact / predictive / value / normative / definitional). If all participants accept, the moderator commits and the classification facet lands as `agreed`. If anyone disputes, the classification facet stays `disputed` and the diagnostic tests below run.
+When a statement is made, the moderator first captures the node (wording inline; see "Capturing a statement" above) and the participants agree on the wording. *Once wording has been agreed*, the moderator proposes a classification (the value of the node's `classification` facet — its kind: fact / predictive / value / normative / definitional) as a separate gesture. If all participants accept, the moderator commits and the classification facet lands as `agreed`. If anyone disputes, the classification facet stays `disputed` and the diagnostic tests below run.
 
-The classification is one facet of the node; the node's wording and substance facets each have their own independent agreement workflow.
+The classification is one facet of the node; the node's wording and substance facets each have their own independent agreement workflow, captured in methodology order (wording → classification → substance) per [ADR 0030](adr/0030-per-facet-vote-keying-and-sequential-capture.md).
 
 ### Vocabulary and localization
 
