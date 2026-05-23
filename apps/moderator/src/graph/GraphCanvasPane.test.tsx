@@ -1457,9 +1457,10 @@ describe('GraphCanvasPane — run-operationalization-test entry (mod_operational
       kind: 'vote',
       actor: opts.participant,
       payload: {
+        target: 'proposal' as const,
         proposal_id: opts.proposalId,
         participant: opts.participant,
-        vote: opts.vote,
+        choice: opts.vote as 'agree' | 'dispute',
         voted_at: '2026-05-11T00:00:10.000Z',
       },
       createdAt: '2026-05-11T00:00:10.000Z',
@@ -1662,9 +1663,10 @@ describe('GraphCanvasPane — run-warrant-elicitation-test entry (mod_warrant_el
       kind: 'vote',
       actor: opts.participant,
       payload: {
+        target: 'proposal' as const,
         proposal_id: opts.proposalId,
         participant: opts.participant,
-        vote: opts.vote,
+        choice: opts.vote as 'agree' | 'dispute',
         voted_at: '2026-05-11T00:00:10.000Z',
       },
       createdAt: '2026-05-11T00:00:10.000Z',

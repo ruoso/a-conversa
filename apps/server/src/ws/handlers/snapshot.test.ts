@@ -734,9 +734,10 @@ describe('serializeProjectionForWire — wire-shape pin', () => {
         kind: 'vote',
         actor: DEBATER_A_ID,
         payload: {
+          target: 'proposal' as const,
           proposal_id: PROPOSAL_EVENT_ID,
           participant: DEBATER_A_ID,
-          vote: 'agree',
+          choice: 'agree',
           voted_at: '2026-05-11T10:00:05.000Z',
         },
         createdAt: '2026-05-11T10:00:05.000Z',

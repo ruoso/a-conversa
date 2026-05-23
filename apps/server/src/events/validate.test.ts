@@ -98,10 +98,17 @@ const REPRESENTATIVE_PAYLOADS: Record<EventKind, unknown> = {
       classification: 'fact',
     },
   },
+  // `vote` is a `target`-discriminated union per ADR 0030 §2 + §9.
+  // The representative is the facet-keyed arm; a dedicated test
+  // (below) covers the proposal-keyed arm round-trip + a cross-arm
+  // corruption case.
   vote: {
-    proposal_id: PROPOSAL_ID,
+    target: 'facet',
+    entity_kind: 'node',
+    entity_id: NODE_ID,
+    facet: 'classification',
     participant: PARTICIPANT_ID,
-    vote: 'agree',
+    choice: 'agree',
     voted_at: '2026-05-10T12:34:56Z',
   },
   commit: {
@@ -429,7 +436,11 @@ const PAYLOAD_CORRUPTIONS: Record<EventKind, (base: Record<string, unknown>) => 
   proposal: () => ({
     proposal: { kind: 'classify-node', node_id: 'not-a-uuid', classification: 'fact' },
   }),
-  vote: (base) => ({ ...base, vote: 'maybe' }),
+  // Corrupting `choice` to an unknown value rejects on the facet-arm
+  // schema (`z.enum(['agree', 'dispute'])`). The cross-arm
+  // corruption — a `target: 'facet'` payload missing entity fields —
+  // is exercised separately in `describe('vote — proposal arm + cross-arm')`.
+  vote: (base) => ({ ...base, choice: 'maybe' }),
   commit: (base) => ({ ...base, proposal_id: 'not-a-uuid' }),
   'meta-disagreement-marked': (base) => ({ ...base, proposal_id: 'not-a-uuid' }),
   'snapshot-created': (base) => ({ ...base, log_position: -1 }),
@@ -470,6 +481,79 @@ describe('validateEvent — payload-level failure per kind', () => {
 // it covers the full registry twice (acceptance and one rejection
 // path) without duplicating the kind-by-kind shape knowledge.
 
+// -- Vote payload — proposal-keyed arm + cross-arm corruption --------
+//
+// The kind-keyed `REPRESENTATIVE_PAYLOADS['vote']` table entry covers
+// the facet-keyed arm. The proposal-keyed arm (per ADR 0030 §9 — votes
+// against structural proposal sub-kinds) needs its own round-trip pin,
+// and the discriminated union's cross-arm corruptions deserve explicit
+// failure-mode coverage.
+describe('validateEvent — vote payload proposal arm + cross-arm', () => {
+  const proposalArmValid = {
+    target: 'proposal' as const,
+    proposal_id: PROPOSAL_ID,
+    participant: PARTICIPANT_ID,
+    choice: 'agree' as const,
+    voted_at: '2026-05-10T12:34:56Z',
+  };
+
+  it('accepts a proposal-keyed vote envelope', () => {
+    const candidate = envelope('vote', proposalArmValid);
+    const validated = validateEvent(candidate);
+    expect(validated.kind).toBe('vote');
+  });
+
+  it("rejects 'withdraw' as a vote choice (now its own event kind)", () => {
+    const bad = envelope('vote', { ...proposalArmValid, choice: 'withdraw' });
+    const error = captureError(bad);
+    expect(error.code).toBe('payload-invalid');
+    expect(error.kind).toBe('vote');
+  });
+
+  it('rejects a facet-arm payload missing entity_id (cross-arm corruption)', () => {
+    const bad = envelope('vote', {
+      target: 'facet',
+      participant: PARTICIPANT_ID,
+      choice: 'agree',
+      voted_at: '2026-05-10T12:34:56Z',
+    });
+    const error = captureError(bad);
+    expect(error.code).toBe('payload-invalid');
+    expect(error.kind).toBe('vote');
+  });
+
+  it('rejects a proposal-arm payload missing proposal_id (cross-arm corruption)', () => {
+    const bad = envelope('vote', {
+      target: 'proposal',
+      participant: PARTICIPANT_ID,
+      choice: 'agree',
+      voted_at: '2026-05-10T12:34:56Z',
+    });
+    const error = captureError(bad);
+    expect(error.code).toBe('payload-invalid');
+    expect(error.kind).toBe('vote');
+  });
+
+  it('rejects a payload missing the target discriminator', () => {
+    const bad = envelope('vote', {
+      proposal_id: PROPOSAL_ID,
+      participant: PARTICIPANT_ID,
+      choice: 'agree',
+      voted_at: '2026-05-10T12:34:56Z',
+    });
+    const error = captureError(bad);
+    expect(error.code).toBe('payload-invalid');
+    expect(error.kind).toBe('vote');
+  });
+
+  it("rejects an unknown target value ('node')", () => {
+    const bad = envelope('vote', { ...proposalArmValid, target: 'node' });
+    const error = captureError(bad);
+    expect(error.code).toBe('payload-invalid');
+    expect(error.kind).toBe('vote');
+  });
+});
+
 describe('validateEvent — property-style sweep over every kind', () => {
   it('accepts a representative envelope for every kind', () => {
     for (const kind of eventKinds) {
@@ -496,7 +580,7 @@ describe('validateEvent — property-style sweep over every kind', () => {
 
 describe('EventValidationError JSON shape', () => {
   it('serializes to a stable JSON shape clients can deserialize', () => {
-    const bad = envelope('vote', { ...(REPRESENTATIVE_PAYLOADS.vote as object), vote: 'maybe' });
+    const bad = envelope('vote', { ...(REPRESENTATIVE_PAYLOADS.vote as object), choice: 'maybe' });
     const error = captureError(bad);
     const json = JSON.parse(JSON.stringify(error)) as Record<string, unknown>;
     expect(json.name).toBe('EventValidationError');
@@ -510,7 +594,7 @@ describe('EventValidationError JSON shape', () => {
   });
 
   it('preserves the underlying error as `cause` for server-side logging', () => {
-    const bad = envelope('vote', { ...(REPRESENTATIVE_PAYLOADS.vote as object), vote: 'maybe' });
+    const bad = envelope('vote', { ...(REPRESENTATIVE_PAYLOADS.vote as object), choice: 'maybe' });
     const error = captureError(bad);
     expect(error.cause).toBeDefined();
   });

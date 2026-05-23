@@ -267,6 +267,12 @@ export function computeFacetStatuses(events: readonly Event[]): FacetStatusIndex
       continue;
     }
     if (event.kind === 'vote') {
+      // TODO(pf_vote_handler_facet_keyed): vote payloads are now a
+      // `target`-discriminated union. The methodology engine emits
+      // the proposal-keyed arm for now; the facet-keyed arm is
+      // reserved for the downstream rewrite. Read only the proposal-
+      // keyed arm until that lands.
+      if (event.payload.target !== 'proposal') continue;
       const target = proposalTarget.get(event.payload.proposal_id);
       if (!target) continue;
       const state = getOrCreateFacetState(
@@ -279,7 +285,7 @@ export function computeFacetStatuses(events: readonly Event[]): FacetStatusIndex
       // Latest vote wins (server enforces one-vote-per-participant-per-
       // proposal; this is a no-op for well-formed logs and a defensive
       // last-write-wins for malformed ones).
-      state.perParticipant.set(event.payload.participant, event.payload.vote);
+      state.perParticipant.set(event.payload.participant, event.payload.choice);
       continue;
     }
     if (event.kind === 'commit') {

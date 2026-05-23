@@ -221,9 +221,10 @@ async function emitProposalVotesCommit(
       kind: 'vote',
       actor: voter,
       payload: {
+        target: 'proposal' as const,
         proposal_id: proposalId,
         participant: voter,
-        vote: 'agree',
+        choice: 'agree',
         voted_at: tsAt(seq),
       },
       createdAt: tsAt(seq),
@@ -267,9 +268,10 @@ async function emitProposalPartialVotes(
       kind: 'vote',
       actor: voter,
       payload: {
+        target: 'proposal' as const,
         proposal_id: proposalId,
         participant: voter,
-        vote: 'agree',
+        choice: 'agree',
         voted_at: tsAt(seq),
       },
       createdAt: tsAt(seq),

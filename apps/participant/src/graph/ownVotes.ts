@@ -216,17 +216,20 @@ export function projectOwnVotes(
       continue;
     }
     if (event.kind === 'vote') {
+      // TODO(pf_vote_handler_facet_keyed): vote payloads are now a
+      // `target`-discriminated union. The methodology engine emits
+      // the proposal-keyed arm for now; the facet-keyed arm is
+      // reserved for the downstream rewrite. Read only the proposal-
+      // keyed arm until that lands.
+      if (event.payload.target !== 'proposal') continue;
       if (event.payload.participant !== currentParticipantId) continue;
       const target = proposalTarget.get(event.payload.proposal_id);
       if (target === undefined) continue;
-      // Map the wire arm to the indicator sentinel: `'withdraw'`
-      // collapses to `'none'` per Decision §1.
-      const arm: OwnVote =
-        event.payload.vote === 'agree'
-          ? 'agree'
-          : event.payload.vote === 'dispute'
-            ? 'dispute'
-            : 'none';
+      // Map the wire arm to the indicator sentinel. The `'withdraw'`
+      // choice is gone from the vote-payload `choice` enum (it lives
+      // on its own `withdraw-agreement` event kind now); `'agree'` and
+      // `'dispute'` are the only remaining values.
+      const arm: OwnVote = event.payload.choice === 'agree' ? 'agree' : 'dispute';
       const facetKey = `${target.entityId}|${target.facet}`;
       perFacetVote.set(facetKey, arm);
       let facetKeys = facetsByEntity.get(target.entityId);

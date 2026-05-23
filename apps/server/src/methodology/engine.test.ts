@@ -252,9 +252,10 @@ describe('primitives — findProposal', () => {
       applyEvent(
         p,
         makeEvent(nextSequence(p), 'vote', voter, T9, {
+          target: 'proposal' as const,
           proposal_id: PROPOSAL_ID_1,
           participant: voter,
-          vote: 'agree',
+          choice: 'agree',
           voted_at: T9,
         }),
       );
@@ -416,11 +417,15 @@ describe('validateAction — placeholder per-action handlers', () => {
       expect(ev.sessionId).toBe(SESSION_ID);
       expect(ev.id).toBe(NEW_EVENT_ID);
       expect(ev.actor).toBe(DEBATER_A_ID);
-      // payload narrows by kind discriminator
-      if (ev.kind === 'vote') {
+      // payload narrows by kind discriminator + the new `target`
+      // sub-discriminator (proposal-keyed vs. facet-keyed). The engine
+      // emits the proposal-keyed arm for now per ADR 0030 §9 + the
+      // TODO(pf_vote_handler_facet_keyed) carried in the methodology
+      // handler.
+      if (ev.kind === 'vote' && ev.payload.target === 'proposal') {
         expect(ev.payload.participant).toBe(DEBATER_A_ID);
         expect(ev.payload.proposal_id).toBe(PROPOSAL_ID_1);
-        expect(ev.payload.vote).toBe('agree');
+        expect(ev.payload.choice).toBe('agree');
       }
     }
   });

@@ -502,6 +502,22 @@ function handleVote(
   payload: VotePayload,
   changes: ProjectionChange[],
 ): void {
+  // TODO(pf_vote_handler_facet_keyed): per ADR 0030 §2 the vote
+  // payload is now a `target`-discriminated union (facet-keyed vs.
+  // proposal-keyed). The methodology engine's vote handler currently
+  // emits ALL votes on the proposal-keyed arm (see
+  // `apps/server/src/methodology/handlers/vote.ts`'s matching TODO);
+  // until the downstream task lands, this projection handler only
+  // needs to read the proposal-keyed arm. The facet-keyed arm is a
+  // dead branch today and lands a runtime error so any inadvertent
+  // emit during the transition surfaces loudly. The downstream
+  // task rewrites both halves.
+  if (payload.target !== 'proposal') {
+    throw new ReplayError(
+      `vote: target='${payload.target}' arm is not yet implemented in the projection (TODO: pf_vote_handler_facet_keyed)`,
+    );
+  }
+
   // Look up the proposal in pending OR committed (a `withdraw` vote
   // typically arrives after the proposal has been committed and
   // therefore left `pendingProposals`).
@@ -514,7 +530,14 @@ function handleVote(
   }
   const proposalPayload: ProposalPayload = pending ? pending.payload : committed!.payload;
 
-  const vote: PerParticipantVote = payload.vote;
+  // The new payload's `choice` enum is `'agree' | 'dispute'`. The
+  // existing `PerParticipantVote` union still includes `'withdraw'`
+  // for back-compat with the projection types until
+  // `pf_withdraw_agreement_handler` migrates the withdraw projection
+  // to the dedicated `withdraw-agreement` event handler. The narrower
+  // `'agree' | 'dispute'` happens to be a subtype of
+  // `PerParticipantVote`, so this assignment needs no cast.
+  const vote: PerParticipantVote = payload.choice;
   changes.push({
     kind: 'vote-recorded',
     proposalId: payload.proposal_id,

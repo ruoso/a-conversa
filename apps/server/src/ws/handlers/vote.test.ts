@@ -698,14 +698,19 @@ describe('ws_vote_message — handler integration', () => {
       // The event payload references the proposal + records the voter.
       const appendedPayload = appended?.payload as
         | {
+            target?: unknown;
             proposal_id?: unknown;
             participant?: unknown;
-            vote?: unknown;
+            choice?: unknown;
           }
         | undefined;
+      // The engine emits the proposal-keyed arm of the discriminated
+      // payload union (per ADR 0030 §9 + the TODO(pf_vote_handler_facet_keyed)
+      // carried in `apps/server/src/methodology/handlers/vote.ts`).
+      expect(appendedPayload?.target).toBe('proposal');
       expect(appendedPayload?.proposal_id).toBe(PROPOSAL_EVENT_ID);
       expect(appendedPayload?.participant).toBe(FIXTURE_USER_ID);
-      expect(appendedPayload?.vote).toBe('agree');
+      expect(appendedPayload?.choice).toBe('agree');
     } finally {
       ws.terminate();
     }

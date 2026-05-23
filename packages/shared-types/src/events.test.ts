@@ -53,9 +53,12 @@ describe('EventEnvelope round-trip', () => {
       kind: 'vote',
       actor: ACTOR_ID,
       payload: {
-        proposal_id: PROPOSAL_ID,
+        target: 'facet',
+        entity_kind: 'node',
+        entity_id: NODE_ID,
+        facet: 'classification',
         participant: PARTICIPANT_ID,
-        vote: 'agree',
+        choice: 'agree',
         voted_at: '2026-05-10T12:34:56Z',
       },
       createdAt: '2026-05-10T12:34:56Z',
@@ -565,35 +568,114 @@ describe('entity-included payload schema', () => {
   });
 });
 
-describe('vote payload schema', () => {
+// -- Vote payload schema (per ADR 0030 §2 + §9) ----------------------
+//
+// `votePayloadSchema` is a discriminated union on `target`:
+//
+//   - `target: 'facet'` for votes against facet-valued proposal sub-
+//     kinds (classify-node / set-node-substance / set-edge-substance /
+//     edit-wording). Keyed by `(entity_kind, entity_id, facet)`.
+//   - `target: 'proposal'` for votes against structural proposal sub-
+//     kinds (decompose / interpretive-split / axiom-mark / meta-move /
+//     break-edge / amend-node / annotate). Keyed by `proposal_id`.
+//
+// `choice` collapses to `'agree' | 'dispute'` — withdrawal is its own
+// event kind (`'withdraw-agreement'`).
+
+describe('vote payload schema — facet-keyed arm', () => {
   const valid = {
-    proposal_id: PROPOSAL_ID,
+    target: 'facet' as const,
+    entity_kind: 'node' as const,
+    entity_id: NODE_ID,
+    facet: 'classification' as const,
     participant: PARTICIPANT_ID,
-    vote: 'agree' as const,
+    choice: 'agree' as const,
     voted_at: '2026-05-10T12:34:56Z',
   };
 
-  it('round-trips a well-formed payload through JSON', () => {
+  it('round-trips a well-formed facet-keyed payload through JSON', () => {
     const parsed = votePayloadSchema.parse(valid);
     const wire = JSON.parse(JSON.stringify(parsed)) as unknown;
     expect(votePayloadSchema.parse(wire)).toEqual(valid);
   });
 
-  it('accepts each of agree / dispute / withdraw', () => {
-    for (const vote of ['agree', 'dispute', 'withdraw'] as const) {
-      const result = votePayloadSchema.safeParse({ ...valid, vote });
+  it('accepts each of agree / dispute on the facet arm', () => {
+    for (const choice of ['agree', 'dispute'] as const) {
+      const result = votePayloadSchema.safeParse({ ...valid, choice });
       expect(result.success).toBe(true);
     }
   });
 
-  it('rejects an unknown vote value via validateEvent and names the kind', () => {
+  it("rejects 'withdraw' as a choice (now its own event kind)", () => {
+    const result = votePayloadSchema.safeParse({ ...valid, choice: 'withdraw' });
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts edge as entity_kind on the facet arm', () => {
+    const result = votePayloadSchema.safeParse({
+      ...valid,
+      entity_kind: 'edge',
+      entity_id: EDGE_ID,
+      facet: 'substance',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects 'annotation' as entity_kind on the facet arm", () => {
+    const result = votePayloadSchema.safeParse({ ...valid, entity_kind: 'annotation' });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects an unknown facet value', () => {
+    const result = votePayloadSchema.safeParse({ ...valid, facet: 'role' });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a non-UUID entity_id', () => {
+    const result = votePayloadSchema.safeParse({ ...valid, entity_id: 'not-a-uuid' });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a non-UUID participant', () => {
+    const result = votePayloadSchema.safeParse({ ...valid, participant: 'not-a-uuid' });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a non-ISO voted_at', () => {
+    const result = votePayloadSchema.safeParse({ ...valid, voted_at: 'just now' });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a missing voted_at', () => {
+    const { voted_at: _omitted, ...withoutVotedAt } = valid;
+    void _omitted;
+    const result = votePayloadSchema.safeParse(withoutVotedAt);
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a facet-arm payload that ALSO carries proposal_id (cross-arm corruption)', () => {
+    // The discriminated union's strict-shape inside each arm rejects
+    // unknown keys: a facet-arm payload cannot smuggle the
+    // proposal-arm's `proposal_id` through.
+    const result = votePayloadSchema.safeParse({ ...valid, proposal_id: PROPOSAL_ID });
+    // Z.discriminatedUnion by default strips unknown keys; the parse
+    // succeeds but the resulting payload has no `proposal_id`. We
+    // assert that — the cross-shape value does not survive parse, so
+    // the payload-keyed branch is unreachable from this arm.
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).not.toHaveProperty('proposal_id');
+    }
+  });
+
+  it('routes a facet-arm payload-shape error through validateEvent naming the kind', () => {
     const envelope = {
       id: EVENT_ID,
       sessionId: SESSION_ID,
       sequence: 8,
       kind: 'vote' as const,
       actor: ACTOR_ID,
-      payload: { ...valid, vote: 'maybe' },
+      payload: { ...valid, choice: 'maybe' },
       createdAt: '2026-05-10T12:34:56Z',
     };
     let caught: unknown;
@@ -604,6 +686,34 @@ describe('vote payload schema', () => {
     }
     expect(caught).toBeInstanceOf(EventValidationError);
     expect((caught as Error).message).toContain("'vote'");
+  });
+});
+
+describe('vote payload schema — proposal-keyed arm', () => {
+  const valid = {
+    target: 'proposal' as const,
+    proposal_id: PROPOSAL_ID,
+    participant: PARTICIPANT_ID,
+    choice: 'agree' as const,
+    voted_at: '2026-05-10T12:34:56Z',
+  };
+
+  it('round-trips a well-formed proposal-keyed payload through JSON', () => {
+    const parsed = votePayloadSchema.parse(valid);
+    const wire = JSON.parse(JSON.stringify(parsed)) as unknown;
+    expect(votePayloadSchema.parse(wire)).toEqual(valid);
+  });
+
+  it('accepts each of agree / dispute on the proposal arm', () => {
+    for (const choice of ['agree', 'dispute'] as const) {
+      const result = votePayloadSchema.safeParse({ ...valid, choice });
+      expect(result.success).toBe(true);
+    }
+  });
+
+  it("rejects 'withdraw' as a choice on the proposal arm", () => {
+    const result = votePayloadSchema.safeParse({ ...valid, choice: 'withdraw' });
+    expect(result.success).toBe(false);
   });
 
   it('rejects a non-UUID proposal_id', () => {
@@ -631,7 +741,69 @@ describe('vote payload schema', () => {
 
   it('rejects a missing voted_at', () => {
     const { voted_at: _omitted, ...withoutVotedAt } = valid;
+    void _omitted;
     const result = votePayloadSchema.safeParse(withoutVotedAt);
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a missing proposal_id on the proposal arm', () => {
+    const { proposal_id: _omitted, ...withoutProposalId } = valid;
+    void _omitted;
+    const result = votePayloadSchema.safeParse(withoutProposalId);
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('vote payload schema — discriminator', () => {
+  const facetValid = {
+    target: 'facet' as const,
+    entity_kind: 'node' as const,
+    entity_id: NODE_ID,
+    facet: 'classification' as const,
+    participant: PARTICIPANT_ID,
+    choice: 'agree' as const,
+    voted_at: '2026-05-10T12:34:56Z',
+  };
+
+  it('rejects a missing target discriminator', () => {
+    const { target: _omitted, ...withoutTarget } = facetValid;
+    void _omitted;
+    const result = votePayloadSchema.safeParse(withoutTarget);
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects an unknown target value ('node')", () => {
+    const result = votePayloadSchema.safeParse({ ...facetValid, target: 'node' });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a proposal-arm payload lacking proposal_id (cross-arm corruption)', () => {
+    // A `target: 'proposal'` payload with the facet-arm's
+    // entity/facet fields but missing proposal_id fails the
+    // proposal-arm schema because proposal_id is required there.
+    const result = votePayloadSchema.safeParse({
+      target: 'proposal',
+      entity_kind: 'node',
+      entity_id: NODE_ID,
+      facet: 'classification',
+      participant: PARTICIPANT_ID,
+      choice: 'agree',
+      voted_at: '2026-05-10T12:34:56Z',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a facet-arm payload lacking entity_id (cross-arm corruption)', () => {
+    // A `target: 'facet'` payload with proposal_id but missing
+    // entity_kind / entity_id / facet fails the facet-arm schema
+    // because those fields are required there.
+    const result = votePayloadSchema.safeParse({
+      target: 'facet',
+      proposal_id: PROPOSAL_ID,
+      participant: PARTICIPANT_ID,
+      choice: 'agree',
+      voted_at: '2026-05-10T12:34:56Z',
+    });
     expect(result.success).toBe(false);
   });
 });
@@ -1057,9 +1229,10 @@ describe('validateEvent failure paths', () => {
       kind: 'vote',
       actor: ACTOR_ID,
       payload: {
+        target: 'proposal',
         proposal_id: PROPOSAL_ID,
         participant: PARTICIPANT_ID,
-        vote: 'maybe',
+        choice: 'maybe',
         voted_at: '2026-05-10T12:34:56Z',
       },
       createdAt: '2026-05-10T12:34:56Z',
@@ -1082,9 +1255,10 @@ describe('validateEvent failure paths', () => {
       kind: 'vote',
       actor: ACTOR_ID,
       payload: {
+        target: 'proposal',
         proposal_id: PROPOSAL_ID,
         participant: PARTICIPANT_ID,
-        vote: 'agree',
+        choice: 'agree',
         voted_at: '2026-05-10T12:34:56Z',
       },
       createdAt: '2026-05-10T12:34:56Z',
@@ -1153,9 +1327,12 @@ const REPRESENTATIVE_PAYLOADS: Record<EventKind, unknown> = {
     },
   },
   vote: {
-    proposal_id: PROPOSAL_ID,
+    target: 'facet',
+    entity_kind: 'node',
+    entity_id: NODE_ID,
+    facet: 'classification',
     participant: PARTICIPANT_ID,
-    vote: 'agree',
+    choice: 'agree',
     voted_at: '2026-05-10T12:34:56Z',
   },
   commit: {

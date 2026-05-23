@@ -215,9 +215,10 @@ function voteEvent(
     kind: 'vote',
     actor: participant,
     payload: {
+      target: 'proposal' as const,
       proposal_id: PROPOSAL_1,
       participant,
-      vote: arm,
+      choice: arm as 'agree' | 'dispute',
       voted_at: '2026-05-11T12:00:00.000Z',
     },
     createdAt: '2026-05-11T12:00:00.001Z',
@@ -724,9 +725,10 @@ function namedVote(
     kind: 'vote',
     actor: participant,
     payload: {
+      target: 'proposal' as const,
       proposal_id: proposalId,
       participant,
-      vote: arm,
+      choice: arm as 'agree' | 'dispute',
       voted_at: '2026-05-11T12:00:00.000Z',
     },
     createdAt: '2026-05-11T12:00:00.001Z',

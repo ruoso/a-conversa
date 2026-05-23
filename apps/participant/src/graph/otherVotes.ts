@@ -341,13 +341,19 @@ export function projectOtherVotes(
       continue;
     }
     if (event.kind === 'vote') {
+      // TODO(pf_vote_handler_facet_keyed): vote payloads are now a
+      // `target`-discriminated union. The methodology engine emits
+      // the proposal-keyed arm for now; the facet-keyed arm is
+      // reserved for the downstream rewrite. Read only the proposal-
+      // keyed arm until that lands.
+      if (event.payload.target !== 'proposal') continue;
       const voterId = event.payload.participant;
       if (voterId === currentParticipantId) continue;
       const target = proposalTarget.get(event.payload.proposal_id);
       if (target === undefined) continue;
 
       const facetCompositeKey = `${target.entityId}|${target.facet}|${voterId}`;
-      perFacetVoterArm.set(facetCompositeKey, event.payload.vote);
+      perFacetVoterArm.set(facetCompositeKey, event.payload.choice);
 
       // Maintain the reverse indexes used by the rollup re-derivation.
       let facetKeys = facetKeysByEntity.get(target.entityId);

@@ -370,9 +370,10 @@ Given(
         kind: 'vote',
         actor: voter,
         payload: {
+          target: 'proposal' as const,
           proposal_id: PROPOSAL_INCR_CLASSIFY_ID,
           participant: voter,
-          vote: 'agree',
+          choice: 'agree',
           voted_at: tsAt(seq),
         },
         createdAt: tsAt(seq),

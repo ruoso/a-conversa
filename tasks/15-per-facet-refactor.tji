@@ -30,6 +30,7 @@ task per_facet_refactor "Per-facet refactor (ADR 0030)" {
     task pf_facet_keyed_vote_payload "Facet-keyed vote payload (discriminated union)" {
       effort 0.5d
       allocate team
+      complete 100
       depends !pf_withdraw_agreement_event_kind
       note "Refinement: tasks/refinements/per-facet-refactor/pf_facet_keyed_vote_payload.md"
     }

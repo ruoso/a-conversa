@@ -162,9 +162,10 @@ function voteEvent(opts: {
     kind: 'vote',
     actor: opts.voterId,
     payload: {
+      target: 'proposal' as const,
       proposal_id: opts.proposalId,
       participant: opts.voterId,
-      vote: opts.arm,
+      choice: opts.arm as 'agree' | 'dispute',
       voted_at: '2026-05-17T00:00:00.000Z',
     },
     createdAt: '2026-05-17T00:00:00.000Z',

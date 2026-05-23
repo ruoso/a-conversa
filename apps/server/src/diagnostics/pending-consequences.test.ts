@@ -186,9 +186,10 @@ function castVote(
   applyEvent(
     projection,
     makeEvent(nextSeq(), 'vote', participant, voteTime, {
+      target: 'proposal' as const,
       proposal_id: proposalId,
       participant,
-      vote,
+      choice: vote as 'agree' | 'dispute',
       voted_at: voteTime,
     }),
   );

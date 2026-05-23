@@ -151,6 +151,35 @@ export const voteHandler: Validator<VoteAction> = (
   }
 
   // Valid — emit one vote event.
+  //
+  // TODO(pf_vote_handler_facet_keyed): this handler currently emits
+  // the proposal-keyed arm for ALL votes (including votes against
+  // facet-valued proposal sub-kinds — classify-node, set-node-substance,
+  // set-edge-substance, edit-wording). Per ADR 0030 §2 those votes
+  // should be emitted as `target: 'facet'` with the looked-up
+  // `(entity_kind, entity_id, facet)` derived from the proposal. The
+  // downstream `pf_vote_handler_facet_keyed` task rewires this handler
+  // to consult the projection's pending proposal, derive the facet
+  // target via the shared `firstFacetTargetForVote` helper, and emit
+  // the appropriate arm. Today's emission keeps every existing
+  // consumer (the projection's `handleVote` reading
+  // `payload.proposal_id`) on the proposal-keyed shape — a
+  // controlled, schema-valid emit that preserves current behaviour
+  // until that downstream task lands.
+  //
+  // The `'withdraw'` arm of `action.vote` (carried in via
+  // `VoteAction.vote: PerParticipantVote` whose enum is still
+  // `'agree' | 'dispute' | 'withdraw'`) cannot land on the new
+  // payload's `choice` enum (which is `'agree' | 'dispute'`). The
+  // downstream `pf_withdraw_agreement_handler` task migrates the
+  // withdraw path off the vote envelope entirely. Until then any
+  // `action.vote === 'withdraw'` reaching here would have already been
+  // rejected by rule 4 above except on the post-commit branch — which
+  // pf_withdraw_agreement_handler will redirect. As a runtime
+  // safety-net we narrow at the boundary: only `'agree' | 'dispute'`
+  // are valid on the new schema, so we coerce 'withdraw' to a typed-
+  // any cast (the downstream replacement will eliminate this branch).
+  const choice = action.vote as 'agree' | 'dispute';
   const event: EventToAppendEnvelope<'vote'> = {
     id: action.eventId,
     sessionId: action.sessionId,
@@ -158,9 +187,10 @@ export const voteHandler: Validator<VoteAction> = (
     kind: 'vote',
     actor: action.actor,
     payload: {
+      target: 'proposal',
       proposal_id: action.proposalEventId,
       participant: action.requester,
-      vote: action.vote,
+      choice,
       voted_at: action.votedAt,
     },
     createdAt: action.createdAt,

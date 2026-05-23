@@ -50,3 +50,14 @@ Per [ADR 0030 §2](../../../docs/adr/0030-per-facet-vote-keying-and-sequential-c
 ## Open questions
 
 (none — all decided per ADR 0030)
+
+## Status
+
+**Done** — 2026-05-23.
+
+- `votePayloadSchema` rewritten as `z.discriminatedUnion('target', [facetVotePayloadSchema, proposalVotePayloadSchema])` in [`packages/shared-types/src/events.ts`](../../../packages/shared-types/src/events.ts); `FacetVotePayload` and `ProposalVotePayload` are inferred and exported. `'withdraw'` removed from the choice enum (lives on its own `withdraw-agreement` event kind landed in `pf_withdraw_agreement_event_kind`).
+- Schema-level coverage in [`packages/shared-types/src/events.test.ts`](../../../packages/shared-types/src/events.test.ts) (facet arm / proposal arm / discriminator describes; REPRESENTATIVE_PAYLOADS switched to the facet-arm representative) and [`apps/server/src/events/validate.test.ts`](../../../apps/server/src/events/validate.test.ts) (REPRESENTATIVE_PAYLOADS + PAYLOAD_CORRUPTIONS rewritten; proposal-arm and cross-arm describes added).
+- All consumers narrow on `target === 'proposal'` for now: [`apps/server/src/methodology/handlers/vote.ts`](../../../apps/server/src/methodology/handlers/vote.ts), [`apps/server/src/projection/replay.ts`](../../../apps/server/src/projection/replay.ts), [`apps/server/src/ws/broadcast/proposal-status.ts`](../../../apps/server/src/ws/broadcast/proposal-status.ts), plus moderator + participant graph / detail surfaces (`apps/moderator/src/graph/{facetStatus,selectors}.ts`, `apps/participant/src/{detail/EntityDetailPanel.tsx, graph/facetStatus.ts, graph/otherVotes.ts, graph/ownVotes.ts}`).
+- New end-to-end behavior coverage in [`tests/behavior/methodology/vote-facet-keyed.feature`](../../../tests/behavior/methodology/vote-facet-keyed.feature) + steps file: two scenarios round-trip both arms through pglite + projectFromLog. `tests/behavior/projection/facet-status.feature` withdrawal scenario rewritten against `withdraw-agreement`, with the assertion relaxed to `committed` pending `pf_withdraw_agreement_handler`.
+- Verification: Vitest 4211 → 4245 (+34, 2 skipped pointing at `pf_withdraw_agreement_handler`); Cucumber 243 → 245 scenarios (+2), 1684 → 1694 steps (+10); Playwright 107 → 107. All three suites green; e2e via `make up`/`make down-v`.
+- Tech debt: `TODO(pf_vote_handler_facet_keyed)` markers in 9 source files reserve the facet-arm emission for the downstream `pf_vote_handler_facet_keyed` WBS leaf; `TODO(pf_withdraw_agreement_handler)` markers (1 vitest + 1 step file + 1 .feature) point at the already-registered `pf_withdraw_agreement_handler` leaf. No new WBS entries required — both pointers land at existing leaves in [`tasks/15-per-facet-refactor.tji`](../../15-per-facet-refactor.tji).

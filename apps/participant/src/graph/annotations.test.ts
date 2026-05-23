@@ -178,9 +178,10 @@ function makeVote(opts: { sequence: number; proposalEnvelopeId: string }): Event
     kind: 'vote',
     actor: ACTOR,
     payload: {
+      target: 'proposal' as const,
       proposal_id: opts.proposalEnvelopeId,
       participant: ACTOR,
-      vote: 'agree',
+      choice: 'agree',
       voted_at: '2026-05-17T00:00:00.000Z',
     },
     createdAt: '2026-05-17T00:00:00.000Z',

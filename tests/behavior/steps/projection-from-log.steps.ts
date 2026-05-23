@@ -405,9 +405,10 @@ Given('three agree votes on that proposal', async function (this: AConversaWorld
       kind: 'vote',
       actor: voter,
       payload: {
+        target: 'proposal' as const,
         proposal_id: PROPOSAL_CLASSIFY_ID,
         participant: voter,
-        vote: 'agree',
+        choice: 'agree',
         voted_at: tsAt(seq),
       },
       createdAt: tsAt(seq),

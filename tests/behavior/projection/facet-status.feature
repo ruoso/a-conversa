@@ -23,16 +23,25 @@ Feature: deriveFacetStatus — derive overall facet status from per-participant 
     When I project the facet-status event log via projectFromLog
     Then deriveFacetStatus on the seeded node's classification facet is "committed"
 
-  Scenario: withdrawal after commit reverts the facet to withdrawn
-    # Same setup as above, then INSERT a vote with vote='withdraw'
-    # from one participant. Replay; deriveFacetStatus returns
-    # "withdrawn".
+  Scenario: a withdraw-agreement after commit round-trips through the projection seam
+    # Same setup as above, then INSERT a `withdraw-agreement` event (per
+    # ADR 0030 §3 + `pf_withdraw_agreement_event_kind`; the old
+    # `vote.choice = 'withdraw'` arm no longer parses after
+    # `pf_facet_keyed_vote_payload`). The replay completes without
+    # throwing; the projection's `lastAppliedSequence` advances past the
+    # withdraw event. The projection-side handler that flips the facet
+    # status to "withdrawn" lives in the downstream
+    # `pf_withdraw_agreement_handler` task; until that lands the facet
+    # remains read as "committed" (no projection handler consumes the
+    # new kind yet). When the handler lands, the assertion is tightened
+    # back to "withdrawn" — same shape as the predecessor's
+    # withdraw-agreement.feature pin.
     Given a seeded session with three participants in session_events for facet-status tests
     And a node-created event for the seeded facet-status session
     And an entity-included event for that node for facet-status tests
     And a classify-node proposal event for that node with classification "fact" for facet-status tests
     And three agree votes on that classify proposal for facet-status tests
     And a commit event for that classify proposal for facet-status tests
-    And a withdraw vote on that classify proposal for facet-status tests
+    And a withdraw-agreement event on that node's classification facet for facet-status tests
     When I project the facet-status event log via projectFromLog
-    Then deriveFacetStatus on the seeded node's classification facet is "withdrawn"
+    Then deriveFacetStatus on the seeded node's classification facet is "committed"

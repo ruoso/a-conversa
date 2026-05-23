@@ -169,9 +169,10 @@ async function insertVote(
     kind: 'vote',
     actor: participant,
     payload: {
+      target: 'proposal' as const,
       proposal_id: VL_PROPOSAL_ID,
       participant,
-      vote,
+      choice: vote,
       voted_at: tsAt(tsOffset),
     },
     createdAt: tsAt(tsOffset),
@@ -357,9 +358,9 @@ Then(
     assert.equal(ev.kind, 'vote');
     assert.equal(ev.sessionId, VL_SESSION_ID);
     assert.equal(ev.id, VL_NEW_EVENT_ID);
-    if (ev.kind === 'vote') {
+    if (ev.kind === 'vote' && ev.payload.target === 'proposal') {
       assert.equal(ev.payload.proposal_id, VL_PROPOSAL_ID);
-      assert.equal(ev.payload.vote, expectedVote);
+      assert.equal(ev.payload.choice, expectedVote);
     }
   },
 );

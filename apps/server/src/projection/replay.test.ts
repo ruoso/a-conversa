@@ -468,21 +468,24 @@ describe('applyEvent — proposal / vote / commit (classify-node)', () => {
         id: PROPOSAL_ID_1,
       },
       makeEvent(9, 'vote', MODERATOR_ID, T6, {
+        target: 'proposal' as const,
         proposal_id: PROPOSAL_ID_1,
         participant: MODERATOR_ID,
-        vote: 'agree',
+        choice: 'agree',
         voted_at: T6,
       }),
       makeEvent(10, 'vote', DEBATER_A_ID, T6, {
+        target: 'proposal' as const,
         proposal_id: PROPOSAL_ID_1,
         participant: DEBATER_A_ID,
-        vote: 'agree',
+        choice: 'agree',
         voted_at: T6,
       }),
       makeEvent(11, 'vote', DEBATER_B_ID, T6, {
+        target: 'proposal' as const,
         proposal_id: PROPOSAL_ID_1,
         participant: DEBATER_B_ID,
-        vote: 'agree',
+        choice: 'agree',
         voted_at: T6,
       }),
       makeEvent(12, 'commit', MODERATOR_ID, T7, {
@@ -508,9 +511,10 @@ describe('applyEvent — proposal / vote / commit (classify-node)', () => {
       applyEvent(
         projection,
         makeEvent(1, 'vote', DEBATER_A_ID, T0, {
+          target: 'proposal' as const,
           proposal_id: PROPOSAL_ID_1,
           participant: DEBATER_A_ID,
-          vote: 'agree',
+          choice: 'agree',
           voted_at: T0,
         }),
       ),
@@ -1361,9 +1365,10 @@ function buildRandomLog(): Event[] {
   });
   events.push(
     makeEvent(9, 'vote', MODERATOR_ID, T5, {
+      target: 'proposal' as const,
       proposal_id: PROPOSAL_ID_1,
       participant: MODERATOR_ID,
-      vote: 'agree',
+      choice: 'agree',
       voted_at: T5,
     }),
   );

@@ -147,9 +147,10 @@ function applyVote(
   applyEvent(
     projection,
     makeEvent(nextSequence(projection), 'vote', participant, T9, {
+      target: 'proposal' as const,
       proposal_id: proposalId,
       participant,
-      vote,
+      choice: vote as 'agree' | 'dispute',
       voted_at: T9,
     }),
   );
@@ -502,9 +503,10 @@ function voteStructural(
   applyEvent(
     projection,
     makeEvent(nextSequence(projection), 'vote', participant, T9, {
+      target: 'proposal' as const,
       proposal_id: proposalId,
       participant,
-      vote,
+      choice: vote as 'agree' | 'dispute',
       voted_at: T9,
     }),
   );

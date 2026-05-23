@@ -159,9 +159,10 @@ async function insertVote(
     kind: 'vote',
     actor: participant,
     payload: {
+      target: 'proposal' as const,
       proposal_id: CL_PROPOSAL_ID,
       participant,
-      vote,
+      choice: vote,
       voted_at: tsAt(tsOffset),
     },
     createdAt: tsAt(tsOffset),

@@ -187,9 +187,10 @@ Given(
         kind: 'vote',
         actor: voter,
         payload: {
+          target: 'proposal' as const,
           proposal_id: PROPOSAL_FS_CLASSIFY_ID,
           participant: voter,
-          vote: 'agree',
+          choice: 'agree',
           voted_at: tsAt(seq),
         },
         createdAt: tsAt(seq),
@@ -219,20 +220,26 @@ Given(
 );
 
 Given(
-  'a withdraw vote on that classify proposal for facet-status tests',
+  "a withdraw-agreement event on that node's classification facet for facet-status tests",
   async function (this: AConversaWorld) {
+    // Per ADR 0030 §3 + `pf_withdraw_agreement_event_kind`: withdrawal
+    // is now its own event kind (not a `vote.choice = 'withdraw'`
+    // arm). The downstream `pf_withdraw_agreement_handler` task adds
+    // the projection-side handler that flips the facet status to
+    // `withdrawn`; today the replay no-ops on this kind.
     const seq = this.scratch['fsNextSeq'] as number;
     this.scratch['fsNextSeq'] = seq + 1;
     await insertEventRow(this, FS_SESSION_ID, {
       id: evId(seq * 100 + 5),
       sequence: seq,
-      kind: 'vote',
+      kind: 'withdraw-agreement',
       actor: DEBATER_B_ID,
       payload: {
-        proposal_id: PROPOSAL_FS_CLASSIFY_ID,
+        entity_kind: 'node',
+        entity_id: NODE_FS_ID,
+        facet: 'classification',
         participant: DEBATER_B_ID,
-        vote: 'withdraw',
-        voted_at: tsAt(seq),
+        withdrawn_at: tsAt(seq),
       },
       createdAt: tsAt(seq),
     });

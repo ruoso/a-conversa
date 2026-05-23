@@ -94,9 +94,10 @@ function voteEvent(seq: number, proposalId: string, vote: 'agree' | 'dispute' | 
     kind: 'vote',
     actor: PARTICIPANT_A,
     payload: {
+      target: 'proposal' as const,
       proposal_id: proposalId,
       participant: PARTICIPANT_A,
-      vote,
+      choice: vote as 'agree' | 'dispute',
       voted_at: '2026-05-16T00:00:10.000Z',
     },
     createdAt: '2026-05-16T00:00:10.000Z',

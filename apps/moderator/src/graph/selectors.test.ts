@@ -1348,9 +1348,10 @@ function makeVote(opts: {
     kind: 'vote',
     actor: opts.participantId,
     payload: {
+      target: 'proposal' as const,
       proposal_id: opts.proposalEnvelopeId,
       participant: opts.participantId,
-      vote: opts.vote,
+      choice: opts.vote as 'agree' | 'dispute',
       voted_at: '2026-05-11T00:00:00.000Z',
     },
     createdAt: '2026-05-11T00:00:00.000Z',

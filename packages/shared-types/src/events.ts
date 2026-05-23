@@ -357,29 +357,73 @@ export type EntityIncludedPayload = z.infer<typeof entityIncludedPayloadSchema>;
 
 // -- Vote event payload schema ---------------------------------------
 //
-// Owned by `vote_events`. Refinement:
-// tasks/refinements/data-and-methodology/vote_events.md.
+// Owned originally by `vote_events`; rewritten per ADR 0030 §2 +
+// `pf_facet_keyed_vote_payload` into a `target`-discriminated union.
+// Refinements:
+//   - tasks/refinements/data-and-methodology/vote_events.md (historical
+//     proposal-keyed shape — do not edit).
+//   - tasks/refinements/per-facet-refactor/pf_facet_keyed_vote_payload.md
+//     (this rewrite).
 //
-// Field-name reconciliation from the original worked example:
-// the worked example used `proposal_event_id` and `participant_id`;
-// the refinement is canonical and uses `proposal_id` and `participant`
-// (matching docs/data-model.md — Event types — Votes). A `voted_at`
-// timestamp was also added so vote ordering / withdrawal semantics
-// have an authoritative payload-level clock independent of the
-// envelope's `createdAt`.
+// **Two arms, one event kind.**
 //
-// Validation here is shape-only: the `vote` enum is constrained, and
-// UUIDs / ISO-8601 are checked. Server-side referential checks
-// (`proposal_id` refers to an existing proposal in the same session;
-// a `withdraw` vote is only valid against this participant's prior
-// `agree` on a committed proposal) live in `event_validation` and
-// the methodology engine, not here.
-export const votePayloadSchema = z.object({
-  proposal_id: z.string().uuid(),
+//   - `target: 'facet'` — votes against facet-valued proposal sub-kinds
+//     (`classify-node`, `set-node-substance`, `set-edge-substance`,
+//     `edit-wording`). Keyed directly by `(entity_kind, entity_id,
+//     facet)` per ADR 0030 §2 so the agreement state hangs off the
+//     facet itself rather than off whichever proposal happened to last
+//     touch it. NO `proposal_id` on this arm.
+//   - `target: 'proposal'` — votes against the seven structural
+//     proposal sub-kinds (`decompose`, `interpretive-split`,
+//     `axiom-mark`, `meta-move`, `break-edge`, `amend-node`,
+//     `annotate`). Keyed by `proposal_id` per ADR 0030 §9 — these
+//     proposals do not have a per-facet target the vote could attach
+//     to; the vote applies to the proposal as a whole.
+//
+// **`choice` enum collapses to `'agree' | 'dispute'`.** Withdrawal is
+// no longer a vote variant; it is its own top-level event kind
+// (`'withdraw-agreement'`, per ADR 0030 §3 + `pf_withdraw_agreement_event_kind`).
+//
+// **Why one event kind (discriminated payload) rather than two event
+// kinds.** Matches the precedent already established for `proposal`
+// (one envelope kind; `payload.kind` discriminates). A single
+// discriminator field on the payload is the lightest carriage for two
+// coexisting shapes and keeps the consumer switch shape uniform —
+// `case 'vote': switch (event.payload.target) { ... }`.
+//
+// Validation is shape-only: the `choice` enum is constrained,
+// UUIDs / ISO-8601 are checked, and the discriminated union rejects
+// cross-arm corruptions (a `target: 'facet'` payload with a
+// `proposal_id`, a `target: 'proposal'` payload with an `entity_id`,
+// etc.). Server-side referential checks (the proposal exists, the
+// participant joined, prior-vote rules) live in
+// `apps/server/src/events/validate.ts` and the methodology engine.
+export const facetVotePayloadSchema = z.object({
+  target: z.literal('facet'),
+  entity_kind: z.enum(['node', 'edge']),
+  entity_id: z.string().uuid(),
+  facet: facetNameSchema,
   participant: z.string().uuid(),
-  vote: z.enum(['agree', 'dispute', 'withdraw']),
+  choice: z.enum(['agree', 'dispute']),
   voted_at: z.string().datetime({ offset: true }),
 });
+
+export type FacetVotePayload = z.infer<typeof facetVotePayloadSchema>;
+
+export const proposalVotePayloadSchema = z.object({
+  target: z.literal('proposal'),
+  proposal_id: z.string().uuid(),
+  participant: z.string().uuid(),
+  choice: z.enum(['agree', 'dispute']),
+  voted_at: z.string().datetime({ offset: true }),
+});
+
+export type ProposalVotePayload = z.infer<typeof proposalVotePayloadSchema>;
+
+export const votePayloadSchema = z.discriminatedUnion('target', [
+  facetVotePayloadSchema,
+  proposalVotePayloadSchema,
+]);
 
 export type VotePayload = z.infer<typeof votePayloadSchema>;
 

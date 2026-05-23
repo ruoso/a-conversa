@@ -384,9 +384,10 @@ describe('applyEventIncremental — change-feed coverage by discriminator', () =
     const changes = applyEventIncremental(
       projection,
       makeEvent(3, 'vote', DEBATER_A_ID, T2, {
+        target: 'proposal' as const,
         proposal_id: PROPOSAL_ID_1,
         participant: DEBATER_A_ID,
-        vote: 'agree',
+        choice: 'agree',
         voted_at: T2,
       }),
     );
@@ -703,9 +704,10 @@ function buildLog(): Event[] {
   });
   events.push(
     makeEvent(10, 'vote', MODERATOR_ID, T3, {
+      target: 'proposal' as const,
       proposal_id: PROPOSAL_ID_1,
       participant: MODERATOR_ID,
-      vote: 'agree',
+      choice: 'agree',
       voted_at: T3,
     }),
   );

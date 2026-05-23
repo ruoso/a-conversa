@@ -142,10 +142,16 @@ function deriveOwnFacetVotes(
       continue;
     }
     if (event.kind === 'vote') {
+      // TODO(pf_vote_handler_facet_keyed): vote payloads are now a
+      // `target`-discriminated union. The methodology engine emits
+      // proposal-keyed votes for now; the facet-keyed arm is reserved
+      // for the downstream rewrite. Read only the proposal-keyed arm
+      // until that lands.
+      if (event.payload.target !== 'proposal') continue;
       if (event.payload.participant !== currentParticipantId) continue;
       const facet = proposalTarget.get(event.payload.proposal_id);
       if (facet === undefined) continue;
-      perFacet.set(facet, event.payload.vote);
+      perFacet.set(facet, event.payload.choice);
     }
   }
   const out: OwnFacetVoteMap = {};

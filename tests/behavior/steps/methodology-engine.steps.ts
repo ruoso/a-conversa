@@ -200,10 +200,10 @@ Then(
     assert.equal(ev.kind, 'vote');
     assert.equal(ev.sessionId, ME_SESSION_ID);
     assert.equal(ev.id, ME_NEW_EVENT_ID);
-    if (ev.kind === 'vote') {
+    if (ev.kind === 'vote' && ev.payload.target === 'proposal') {
       assert.equal(ev.payload.proposal_id, ME_PROPOSAL_ID);
       assert.equal(ev.payload.participant, ME_DEBATER_A_ID);
-      assert.equal(ev.payload.vote, 'agree');
+      assert.equal(ev.payload.choice, 'agree');
     }
   },
 );

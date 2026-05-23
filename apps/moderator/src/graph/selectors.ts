@@ -700,6 +700,10 @@ export function projectVotesByFacet(events: readonly Event[]): Map<string, Map<F
       continue;
     }
     if (event.kind === 'vote') {
+      // TODO(pf_vote_handler_facet_keyed): vote payloads are now a
+      // `target`-discriminated union. Read only the proposal-keyed
+      // arm until the downstream task lands facet-keyed emission.
+      if (event.payload.target !== 'proposal') continue;
       const target = proposalTarget.get(event.payload.proposal_id);
       if (target === undefined) continue;
       const { entityId, facet } = target;
@@ -727,7 +731,7 @@ export function projectVotesByFacet(events: readonly Event[]): Map<string, Map<F
       }
 
       const participantId = event.payload.participant;
-      const choice = event.payload.vote;
+      const choice = event.payload.choice;
       const priorIndex = perFacetPositions.get(participantId);
       if (priorIndex === undefined) {
         perFacetPositions.set(participantId, perFacet.length);
@@ -808,6 +812,10 @@ export function projectVotesByProposal(events: readonly Event[]): Map<string, Vo
       continue;
     }
     if (event.kind === 'vote') {
+      // TODO(pf_vote_handler_facet_keyed): vote payloads are now a
+      // `target`-discriminated union. Read only the proposal-keyed
+      // arm until the downstream task lands facet-keyed emission.
+      if (event.payload.target !== 'proposal') continue;
       const proposalId = event.payload.proposal_id;
       if (!knownProposals.has(proposalId)) continue;
 
@@ -822,7 +830,7 @@ export function projectVotesByProposal(events: readonly Event[]): Map<string, Vo
         positionIndex.set(proposalId, perProposalPositions);
       }
       const participantId = event.payload.participant;
-      const choice = event.payload.vote;
+      const choice = event.payload.choice;
       const priorIndex = perProposalPositions.get(participantId);
       if (priorIndex === undefined) {
         perProposalPositions.set(participantId, perProposal.length);

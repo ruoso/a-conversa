@@ -179,6 +179,17 @@ function proposalIdFor(event: Event): string | null {
     case 'proposal':
       return event.id;
     case 'vote':
+      // TODO(pf_vote_handler_facet_keyed): vote payloads are now a
+      // `target`-discriminated union. The methodology engine still
+      // emits the proposal-keyed arm; once the downstream task lands
+      // facet-keyed emission this needs to resolve the broadcast
+      // subject differently (most likely by looking up the proposal
+      // that targets the entity+facet pair). Until then we read the
+      // proposal-keyed arm only.
+      if (event.payload.target === 'proposal') {
+        return event.payload.proposal_id;
+      }
+      return null;
     case 'commit':
     case 'meta-disagreement-marked':
       return event.payload.proposal_id;

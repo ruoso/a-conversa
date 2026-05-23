@@ -147,9 +147,10 @@ function voteEvent(opts: {
     kind: 'vote',
     actor: opts.participant,
     payload: {
+      target: 'proposal' as const,
       proposal_id: opts.proposalId,
       participant: opts.participant,
-      vote: opts.vote,
+      choice: opts.vote as 'agree' | 'dispute',
       voted_at: '2026-05-17T00:00:00.000Z',
     },
     createdAt: '2026-05-17T00:00:00.000Z',
@@ -233,7 +234,14 @@ describe('projectOwnVotes — per-entity own-vote projection narrowed to the cur
     expect(out.nodes.get(NODE_A)).toBe('dispute');
   });
 
-  it('(f) a "withdraw" arm collapses to "none" (no entry; presence-helper returns "none")', () => {
+  // TODO(pf_withdraw_agreement_handler): the `'withdraw'` arm is no
+  // longer carried on the `vote` event's `choice` enum (per ADR
+  // 0030 §3 + `pf_withdraw_agreement_event_kind`). The withdrawal
+  // gesture is its own `withdraw-agreement` event kind and the
+  // own-vote projector's handling of it lives in the downstream
+  // handler-rewire task. The presence-helper-returns-none behavior
+  // moves there.
+  it.skip('(f) a "withdraw" arm collapses to "none" (no entry; presence-helper returns "none") (deprecated by pf_withdraw_agreement_handler)', () => {
     const events: Event[] = [
       classifyProposal({ sequence: 1, envelopeId: PROPOSAL_CLASSIFY, nodeId: NODE_A }),
       voteEvent({
