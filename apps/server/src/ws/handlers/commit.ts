@@ -65,7 +65,7 @@ import { randomUUID } from 'node:crypto';
 
 import type { FastifyBaseLogger } from 'fastify';
 
-import type { Event, WsEnvelope } from '@a-conversa/shared-types';
+import type { Event, FacetName, ProposalPayload, WsEnvelope } from '@a-conversa/shared-types';
 
 import type { DbPool } from '../../db.js';
 import { ApiError, rejectedToApiError } from '../../errors.js';
@@ -73,6 +73,7 @@ import { appendSessionEvent } from '../../events/append.js';
 import { validateEvent } from '../../events/validate.js';
 import { validateAction } from '../../methodology/engine.js';
 import type { CommitAction } from '../../methodology/types.js';
+import type { Projection } from '../../projection/index.js';
 import { projectFromLog } from '../../projection/replay.js';
 import { canSeeSession } from '../../sessions/visibility.js';
 import type { WsBroadcastBus } from '../broadcast/bus.js';
@@ -129,7 +130,7 @@ export function buildCommitHandler(
 ): (envelope: WsEnvelope<'commit'>, connection: WsConnectionContext) => Promise<void> {
   const nowFn = opts.now ?? Date.now;
   return async (envelope, connection) => {
-    const { sessionId, expectedSequence, proposalId } = envelope.payload;
+    const { sessionId, expectedSequence } = envelope.payload;
     const userId = connection.user?.id;
     if (userId === undefined) {
       // Anonymous client (per ADR 0029 + `aud_anonymous_ws_subscribe`).
@@ -210,6 +211,54 @@ export function buildCommitHandler(
       const priorEvents: Event[] = logRes.rows.map(rowToEvent);
       const projection = projectFromLog(priorEvents, sessionId);
 
+      // 4b. Resolve the proposalEventId the methodology engine expects.
+      //     The wire payload is a `target`-discriminated union per ADR
+      //     0030 §2 + §9 (+ refinement
+      //     `pf_mod_pending_proposals_pane_facet_keyed`). The proposal
+      //     arm names the proposal id directly; the facet arm names the
+      //     `(entity_kind, entity_id, facet)` triple and the handler
+      //     looks up the facet's current candidate proposal via the
+      //     projection's `candidateProposalEventId` slot (mirroring the
+      //     vote-facet arm in `apps/server/src/ws/handlers/vote.ts`).
+      //     The engine's `commitHandler` then dispatches on the
+      //     proposal's sub-kind (facet-valued → emit `target: 'facet'`
+      //     event; structural → emit `target: 'proposal'` event).
+      let proposalEventId: string;
+      if (envelope.payload.target === 'facet') {
+        const resolved =
+          resolveFacetCandidateProposalId(
+            projection,
+            envelope.payload.entity_kind,
+            envelope.payload.entity_id,
+            envelope.payload.facet,
+          ) ??
+          // Fallback: walk the event log for an OPEN proposal targeting
+          // this `(entity_kind, entity_id, facet)`. Covers the
+          // `capture-node` arm: the wording facet's candidate is
+          // populated inline on `node-created` but the projection's
+          // `candidateProposalEventId` is null (no facet-targeting
+          // sub-kind drove the candidate — `firstFacetTargetForVote`
+          // returns null for `capture-node`). Mirrors the vote handler's
+          // identical fallback so the commit and vote handlers stay
+          // structurally symmetric on this case.
+          resolveFacetPendingProposalFromLog(
+            priorEvents,
+            envelope.payload.entity_kind,
+            envelope.payload.entity_id,
+            envelope.payload.facet,
+          );
+        if (resolved === null) {
+          throw rejectedToApiError({
+            ok: false,
+            reason: 'proposal-not-found',
+            detail: `commit: facet ${envelope.payload.entity_kind}:${envelope.payload.entity_id}/${envelope.payload.facet} has no current candidate proposal to commit`,
+          });
+        }
+        proposalEventId = resolved;
+      } else {
+        proposalEventId = envelope.payload.proposalId;
+      }
+
       // 5. Build the `MethodologyAction.commit` and run it through the
       //    engine. The moderator identity comes from the AUTHENTICATED
       //    connection — never from the payload (security invariant; see
@@ -227,7 +276,7 @@ export function buildCommitHandler(
         sequence: nextSeq,
         actor: userId,
         createdAt: createdAtIso,
-        proposalEventId: proposalId,
+        proposalEventId,
         committedAt: createdAtIso,
       };
       const result = validateAction(projection, action);
@@ -305,6 +354,126 @@ export function buildCommitHandler(
  */
 export function registerCommitHandlers(dispatcher: WsDispatcher, opts: CommitHandlerOptions): void {
   dispatcher.register('commit', buildCommitHandler(opts));
+}
+
+/**
+ * Resolve the proposal id behind a facet-keyed commit envelope. Reads
+ * `facet.candidateProposalEventId` from the post-replay projection —
+ * the same slot the broadcast pipeline (`resolveFacetKeyedProposalId`
+ * in `apps/server/src/ws/broadcast/proposal-status.ts`) uses to map
+ * facet-keyed events back to their driving proposal. Mirrors the
+ * sibling helper of the same name in
+ * `apps/server/src/ws/handlers/vote.ts`.
+ *
+ * Returns `null` when the entity / facet is absent from the projection
+ * or when the facet has no current candidate (e.g. `awaiting-proposal`);
+ * the caller maps this to a `'proposal-not-found'` rejection so the
+ * wire surface reports a typed error envelope.
+ */
+function resolveFacetCandidateProposalId(
+  projection: Projection,
+  entityKind: 'node' | 'edge',
+  entityId: string,
+  facet: FacetName,
+): string | null {
+  if (entityKind === 'node') {
+    const node = projection.getNode(entityId);
+    if (node === undefined) return null;
+    if (facet === 'classification') return node.classificationFacet.candidateProposalEventId;
+    if (facet === 'substance') return node.substanceFacet.candidateProposalEventId;
+    if (facet === 'wording') return node.wordingFacet.candidateProposalEventId;
+    // Nodes have no `'shape'` facet — the wire schema permits it via
+    // the union but the projection has no slot. Fall through to null.
+    return null;
+  }
+  // entityKind === 'edge'
+  const edge = projection.getEdge(entityId);
+  if (edge === undefined) return null;
+  if (facet === 'substance') return edge.substanceFacet.candidateProposalEventId;
+  if (facet === 'shape') return edge.shapeFacet.candidateProposalEventId;
+  return null;
+}
+
+/**
+ * Walk the session's event log for an OPEN proposal targeting
+ * `(entityKind, entityId, facet)`. Returns the latest (closest-to-tail)
+ * such proposal's event id, or `null` when no open candidate exists.
+ *
+ * Mirrors `resolveFacetPendingProposalFromLog` in
+ * `apps/server/src/ws/handlers/vote.ts` — same single-pass walk, same
+ * latest-wins rule per facet, same close-out by commit / meta-disagreement-
+ * marked. Used as the fallback when `facet.candidateProposalEventId` is
+ * null (the `capture-node` arm: the wording facet's candidate is
+ * populated inline on `node-created` with no driving facet-targeting
+ * proposal — but a `capture-node` proposal IS still the open proposal
+ * whose commit walks against the wording facet).
+ */
+function resolveFacetPendingProposalFromLog(
+  events: readonly Event[],
+  entityKind: 'node' | 'edge',
+  entityId: string,
+  facet: FacetName,
+): string | null {
+  const proposalIdByFacet = new Map<FacetName, string>();
+  const closedProposalIds = new Set<string>();
+  for (const event of events) {
+    if (event.kind === 'proposal') {
+      const target = facetTargetOfProposalPayload(event.payload.proposal);
+      if (target === null) continue;
+      if (target.entityKind !== entityKind) continue;
+      if (target.entityId !== entityId) continue;
+      proposalIdByFacet.set(target.facet, event.id);
+    } else if (event.kind === 'commit') {
+      if (event.payload.target === 'proposal') {
+        closedProposalIds.add(event.payload.proposal_id);
+      } else if (event.payload.entity_kind === entityKind && event.payload.entity_id === entityId) {
+        const proposalId = proposalIdByFacet.get(event.payload.facet);
+        if (proposalId !== undefined) closedProposalIds.add(proposalId);
+      }
+    } else if (event.kind === 'meta-disagreement-marked') {
+      if (event.payload.target === 'proposal') {
+        closedProposalIds.add(event.payload.proposal_id);
+      } else if (event.payload.entity_kind === entityKind && event.payload.entity_id === entityId) {
+        const proposalId = proposalIdByFacet.get(event.payload.facet);
+        if (proposalId !== undefined) closedProposalIds.add(proposalId);
+      }
+    }
+  }
+  const candidate = proposalIdByFacet.get(facet);
+  if (candidate === undefined) return null;
+  if (closedProposalIds.has(candidate)) return null;
+  return candidate;
+}
+
+/**
+ * Resolve the facet target a proposal payload addresses for commit-time
+ * purposes. Covers the four facet-valued sub-kinds (`classify-node` /
+ * `set-node-substance` / `set-edge-substance` / `edit-wording`) AND
+ * `capture-node` (which maps to the wording facet per ADR 0030 §1 +
+ * §4). Returns `null` for structural sub-kinds (which carry no facet
+ * target — they hold the proposal-keyed arm).
+ *
+ * Mirrors the sibling helper of the same name in
+ * `apps/server/src/ws/handlers/vote.ts`.
+ */
+function facetTargetOfProposalPayload(
+  proposal: ProposalPayload,
+): { entityKind: 'node' | 'edge'; entityId: string; facet: FacetName } | null {
+  switch (proposal.kind) {
+    case 'capture-node':
+      return { entityKind: 'node', entityId: proposal.node_id, facet: 'wording' };
+    case 'edit-wording':
+    case 'amend-node':
+      return { entityKind: 'node', entityId: proposal.node_id, facet: 'wording' };
+    case 'classify-node':
+      return { entityKind: 'node', entityId: proposal.node_id, facet: 'classification' };
+    case 'set-node-substance':
+      return { entityKind: 'node', entityId: proposal.node_id, facet: 'substance' };
+    case 'set-edge-substance':
+      return { entityKind: 'edge', entityId: proposal.edge_id, facet: 'substance' };
+    default:
+      return null;
+  }
 }
 
 /**

@@ -78,7 +78,7 @@ import {
 } from '../graph/proposalFilter';
 import { summaryText } from '../graph/proposalSummary';
 import { ProposalFacetBreakdown } from './ProposalFacetBreakdown';
-import { useCommitAction } from './useCommitAction';
+import { useCommitAction, type UseCommitActionArgs } from './useCommitAction';
 import { useMarkMetaDisagreementAction } from './useMarkMetaDisagreementAction';
 import { useWithdrawProposalAction } from './useWithdrawProposalAction';
 import { useAuth } from '@a-conversa/shell';
@@ -155,6 +155,49 @@ const MARK_META_WIRE_ERROR_CLASSES = 'text-xs text-red-700';
 const WITHDRAW_BUTTON_CLASSES =
   'flex-shrink-0 inline-flex items-center gap-1 rounded border border-slate-400 bg-white px-2 py-0.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 hover:border-slate-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400 disabled:cursor-not-allowed disabled:opacity-50 disabled:border-slate-300 disabled:bg-slate-100 disabled:text-slate-500';
 const WITHDRAW_WIRE_ERROR_CLASSES = 'text-xs text-red-700';
+
+/**
+ * Map a `ProposalPayload` to the `useCommitAction` hook input. Mirrors
+ * the per-sub-kind dispatch in
+ * `apps/server/src/methodology/handlers/commit.ts`'s
+ * `facetTargetForProposal` helper + the client-side `facetTargetOf`
+ * helper in `../graph/proposalFacets.ts` — same partition, same triples.
+ * The facet-valued sub-kinds (`capture-node` / `classify-node` /
+ * `set-node-substance` / `set-edge-substance` / `edit-wording`) take
+ * the facet arm; the structural sub-kinds (`decompose` /
+ * `interpretive-split` / `axiom-mark` / `meta-move` / `break-edge` /
+ * `amend-node` / `annotate`) take the proposal arm per ADR 0030 §9.
+ *
+ * The `proposalEventId` argument is the row's stable id — it is the
+ * proposal-arm payload's `proposal_id` AND the proposal-arm fallback
+ * for sub-kinds that have no facet target.
+ */
+function commitTargetForProposal(
+  proposal: ProposalPayload,
+  proposalEventId: string,
+): UseCommitActionArgs {
+  switch (proposal.kind) {
+    case 'capture-node':
+      // Per ADR 0030 §1 + §4 + `pf_mod_node_card_classification_affordance`:
+      // `capture-node` names the wording-facet candidate inline; a
+      // facet-keyed commit on the (node, wording) triple lands the
+      // capture commit.
+      return { entity_kind: 'node', entity_id: proposal.node_id, facet: 'wording' };
+    case 'classify-node':
+      return { entity_kind: 'node', entity_id: proposal.node_id, facet: 'classification' };
+    case 'set-node-substance':
+      return { entity_kind: 'node', entity_id: proposal.node_id, facet: 'substance' };
+    case 'set-edge-substance':
+      return { entity_kind: 'edge', entity_id: proposal.edge_id, facet: 'substance' };
+    case 'edit-wording':
+      return { entity_kind: 'node', entity_id: proposal.node_id, facet: 'wording' };
+    default:
+      // Structural sub-kinds (decompose / interpretive-split /
+      // axiom-mark / meta-move / break-edge / amend-node / annotate)
+      // keep the proposal-keyed arm per ADR 0030 §9.
+      return { proposal_id: proposalEventId };
+  }
+}
 
 /**
  * Reason-tag → ICU `select` arm-name in `moderator.commitButton.reason`.
@@ -296,7 +339,14 @@ function PendingProposalRow(props: {
     ? ({ ok: false, reason: 'session-not-connected' } as const)
     : deriveAllAgree(entries, currentParticipantIds, row.proposal);
 
-  const { commit, inFlight, lastError } = useCommitAction(row.proposalEventId);
+  // Per `pf_mod_pending_proposals_pane_facet_keyed` + ADR 0030 §2 + §9
+  // the commit hook is bound to the row's commit-target: facet-arm for
+  // facet-valued sub-kinds, proposal-arm for structural sub-kinds. The
+  // `commitTargetForProposal` helper above mirrors the partition in
+  // `apps/server/src/methodology/handlers/commit.ts`'s
+  // `facetTargetForProposal` — same triples, same `null`-arm partition.
+  const commitTarget = commitTargetForProposal(row.proposal, row.proposalEventId);
+  const { commit, inFlight, lastError } = useCommitAction(commitTarget);
   const {
     mark: markMetaDisagreement,
     inFlight: markInFlight,

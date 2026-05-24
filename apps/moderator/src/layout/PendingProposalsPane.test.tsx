@@ -1251,9 +1251,13 @@ describe('PendingProposalsPane — commit button per row', () => {
     expect(button.getAttribute('data-commit-gate-reason')).toBe('session-not-connected');
   });
 
-  it('click sends the canonical commit envelope shape', () => {
-    // Spy WS client — captures each `send` call's payload so we can
-    // inspect the envelope shape.
+  it('click on a facet-valued row sends the canonical facet-arm commit envelope shape', () => {
+    // Per `pf_mod_pending_proposals_pane_facet_keyed` + ADR 0030 §2:
+    // a `classify-node` proposal is facet-valued, so its commit button
+    // dispatches a `target: 'facet'` payload keyed by
+    // `(entity_kind, entity_id, facet)` — the (node, NODE_X, classification)
+    // triple here. The proposal id does NOT appear on the wire; the
+    // server resolves the candidate via the facet's current proposal slot.
     const sendCalls: Array<{ type: WsMessageType; payload: unknown }> = [];
     const spyClient: WsClient = {
       status: () => 'open',
@@ -1306,17 +1310,108 @@ describe('PendingProposalsPane — commit button per row', () => {
     const payload = sendCalls[0]?.payload as {
       sessionId: string;
       expectedSequence: number;
-      proposalId: string;
+      target: 'facet';
+      entity_kind: 'node' | 'edge';
+      entity_id: string;
+      facet: string;
     };
     expect(payload.sessionId).toBe(SESSION);
-    expect(payload.proposalId).toBe(PROPOSAL_P);
+    expect(payload.target).toBe('facet');
+    expect(payload.entity_kind).toBe('node');
+    expect(payload.entity_id).toBe(NODE_X);
+    expect(payload.facet).toBe('classification');
+    // No proposalId on the facet arm — the server resolves the
+    // candidate via the facet's current-proposal slot.
+    expect((payload as Record<string, unknown>).proposalId).toBeUndefined();
     // After 5 events the high-water mark is sequence 5.
     expect(payload.expectedSequence).toBe(5);
-    // Module-scoped in-flight set tracks the click.
-    expect(useCommitStore.getState().committing.has(PROPOSAL_P)).toBe(true);
+    // Module-scoped in-flight set tracks the facet-arm slot, NOT the
+    // proposal id.
+    expect(useCommitStore.getState().committing.has(`facet:node:${NODE_X}:classification`)).toBe(
+      true,
+    );
+    expect(useCommitStore.getState().committing.has(PROPOSAL_P)).toBe(false);
     // Button is in the in-flight visual state.
     expect(button.getAttribute('data-commit-state')).toBe('in-flight');
     expect(button.textContent).toBe('Committing…');
+  });
+
+  it('click on a structural row sends the canonical proposal-arm commit envelope shape', () => {
+    // Per `pf_mod_pending_proposals_pane_facet_keyed` + ADR 0030 §9:
+    // structural sub-kinds (decompose / interpretive-split / axiom-mark
+    // / annotate / meta-move / break-edge) keep the proposal-keyed
+    // commit shape. An `axiom-mark` is a representative structural
+    // sub-kind whose unanimity gate excludes the declared participant —
+    // exactly the path the pane's commit-gate predicate already covers.
+    const sendCalls: Array<{ type: WsMessageType; payload: unknown }> = [];
+    const spyClient: WsClient = {
+      status: () => 'open',
+      connect: () => undefined,
+      close: () => undefined,
+      send: <T extends WsMessageType>(
+        type: T,
+        payload: WsMessagePayloadMap[T],
+      ): Promise<WsEnvelopeUnion> => {
+        sendCalls.push({ type, payload });
+        return new Promise<WsEnvelopeUnion>(() => {
+          /* never resolves — we only assert the send was made */
+        });
+      },
+      trackSession: () => Promise.resolve(),
+      untrackSession: () => Promise.resolve(),
+      onEnvelope: () => () => undefined,
+      url: '/api/ws',
+    };
+    const axiomMark: ProposalPayload = {
+      kind: 'axiom-mark',
+      node_id: NODE_X,
+      participant: DEBATER_A,
+    };
+    act(() => {
+      useWsStore.getState().setConnectionStatus('open');
+      useWsStore.getState().applyEvent(joinedEvent(1, DEBATER_A, 'debater-A'));
+      useWsStore.getState().applyEvent(joinedEvent(2, DEBATER_B, 'debater-B'));
+      // Proposer is DEBATER_A (matches the axiom-mark `participant`).
+      useWsStore
+        .getState()
+        .applyEvent(proposalEvent(3, PROPOSAL_P, axiomMark, { actor: DEBATER_A }));
+      // The declared participant (DEBATER_A) doesn't vote on their own
+      // bedrock declaration; DEBATER_B's agreement is sufficient.
+      useWsStore.getState().applyEvent(
+        voteEvent({
+          seq: 4,
+          proposalEnvelopeId: PROPOSAL_P,
+          participant: DEBATER_B,
+          choice: 'agree',
+        }),
+      );
+    });
+    renderPane({ client: spyClient, authUserId: DEBATER_A });
+    const button = screen.getByTestId('commit-button');
+    expect(button.getAttribute('data-commit-state')).toBe('enabled');
+    act(() => {
+      button.click();
+    });
+    expect(sendCalls.length).toBe(1);
+    expect(sendCalls[0]?.type).toBe('commit');
+    const payload = sendCalls[0]?.payload as {
+      sessionId: string;
+      expectedSequence: number;
+      target: 'proposal';
+      proposalId: string;
+    };
+    expect(payload.sessionId).toBe(SESSION);
+    expect(payload.target).toBe('proposal');
+    expect(payload.proposalId).toBe(PROPOSAL_P);
+    // No facet triple on the proposal arm.
+    expect((payload as Record<string, unknown>).entity_kind).toBeUndefined();
+    expect((payload as Record<string, unknown>).facet).toBeUndefined();
+    // After 4 events the high-water mark is sequence 4.
+    expect(payload.expectedSequence).toBe(4);
+    // Module-scoped in-flight set tracks the proposal-arm slot, NOT
+    // any facet slot.
+    expect(useCommitStore.getState().committing.has(`proposal:${PROPOSAL_P}`)).toBe(true);
+    expect(button.getAttribute('data-commit-state')).toBe('in-flight');
   });
 
   it('meta-disagreement-marked proposal renders a disabled button with the proposal-meta-disagreement reason', () => {

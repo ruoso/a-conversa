@@ -66,3 +66,21 @@ Feature: WebSocket commit (client → server, moderator-only)
     When an authenticated WebSocket client connects to "/api/ws"
     And the client sends a commit envelope for session "99999999-9999-4999-8999-999999999904" with expectedSequence 9 on proposal "99999999-9999-4999-8999-9999999999b4"
     Then the client receives an error envelope with code "forbidden" referencing the commit envelope
+
+  Scenario: The moderator commits a unanimously-agreed facet via the facet-arm commit envelope
+    # Per ADR 0030 §2 + §9 (+ `pf_mod_pending_proposals_pane_facet_keyed`)
+    # the moderator's commit button on a facet-valued pending row sends
+    # the `target: 'facet'` arm of the discriminated commit payload —
+    # keyed by `(entity_kind, entity_id, facet)`, no `proposalId` on the
+    # wire. The server resolves the facet's current candidate proposal
+    # via `facet.candidateProposalEventId` (same lookup as the
+    # vote-facet handler), threads it into the methodology engine, and
+    # emits the same dual-signal `committed` ack + `event-applied`
+    # broadcast shape. This scenario pins the wire-end-to-end facet-arm
+    # path against the moderator's pending-proposals pane commit gesture.
+    Given a commit-ready session for "alice-ws" exists with id "99999999-9999-4999-8999-999999999905" and node id "99999999-9999-4999-8999-9999999999a5" and pending proposal id "99999999-9999-4999-8999-9999999999b5" with all participants agreeing
+    When an authenticated WebSocket client connects to "/api/ws"
+    And the client sends a subscribe envelope for session "99999999-9999-4999-8999-999999999905"
+    And the client sends a facet-keyed commit envelope for session "99999999-9999-4999-8999-999999999905" with expectedSequence 9 on the "classification" facet of node "99999999-9999-4999-8999-9999999999a5"
+    Then the client receives a committed ack referencing the commit envelope at sequence 10
+    And the client also receives an event-applied envelope for the commit at sequence 10

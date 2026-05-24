@@ -47,3 +47,19 @@ The pending-proposals pane is the moderator's primary view of in-flight agreemen
 ## Open questions
 
 (none — all decided per ADR 0030)
+
+## Status
+
+**Done** — 2026-05-24.
+
+Moderator pending-proposals pane now dispatches per-row commits via a facet-or-proposal-arm wire envelope per [ADR 0030 §2 + §9](../../../docs/adr/0030-per-facet-vote-keying-and-sequential-capture.md). The WS commit schema is a discriminated union; the server resolves facet-arm commits via `candidateProposalEventId` with a `capture-node` log-walk fallback symmetric to the vote handler. methodology-full-flow Phase 2.3 (alice's capture-node commit) flows through the facet-arm path end-to-end.
+
+Artifacts:
+
+- [`packages/shared-types/src/ws-envelope.ts`](../../../packages/shared-types/src/ws-envelope.ts) — `wsCommitPayloadSchema` split into facet/proposal `discriminatedUnion('target', ...)`.
+- [`apps/server/src/ws/handlers/commit.ts`](../../../apps/server/src/ws/handlers/commit.ts) — dispatch on `payload.target`; facet-arm resolves `candidateProposalEventId` with capture-node log-walk fallback.
+- [`apps/moderator/src/layout/useCommitAction.ts`](../../../apps/moderator/src/layout/useCommitAction.ts) — dual-arm rewrite; per-slot Zustand keying mirroring `useVoteAction`.
+- [`apps/moderator/src/layout/PendingProposalsPane.tsx`](../../../apps/moderator/src/layout/PendingProposalsPane.tsx) — `commitTargetForProposal` helper; row `useCommitAction` bound to the correct arm.
+- Tests: [`apps/moderator/src/layout/useCommitAction.test.tsx`](../../../apps/moderator/src/layout/useCommitAction.test.tsx), [`apps/moderator/src/layout/PendingProposalsPane.test.tsx`](../../../apps/moderator/src/layout/PendingProposalsPane.test.tsx), [`apps/server/src/ws/handlers/commit.test.ts`](../../../apps/server/src/ws/handlers/commit.test.ts), [`tests/behavior/backend/ws-commit.feature`](../../../tests/behavior/backend/ws-commit.feature), [`tests/behavior/steps/backend-ws-commit.steps.ts`](../../../tests/behavior/steps/backend-ws-commit.steps.ts).
+
+Verification: `pnpm run check` green; `pnpm run test:smoke` 4423 passing (+4); `pnpm run test:behavior:smoke` 263 scenarios / 1812 steps (+1 / +9); `pnpm run test:e2e:smoke` 114 + 0 fixme (unchanged).

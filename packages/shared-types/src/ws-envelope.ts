@@ -546,10 +546,11 @@ export type VotedPayload = z.infer<typeof votedPayloadSchema>;
 // `voterId`).
 
 /**
- * Client → server. Asks the server to commit the pending `proposalId`
- * for `sessionId`. The client must have already sent a successful
- * `subscribe` for the same session (the server enforces); otherwise
- * the wire response is an `error` envelope with `code: 'forbidden'`.
+ * Client → server. Asks the server to commit a proposal that has reached
+ * unanimous-agree across all current participants. The client must have
+ * already sent a successful `subscribe` for the same session (the server
+ * enforces); otherwise the wire response is an `error` envelope with
+ * `code: 'forbidden'`.
  *
  * The methodology engine enforces moderator-only authority via the
  * `commitHandler`'s rule-1 `not-a-moderator` gate — a non-moderator
@@ -560,6 +561,27 @@ export type VotedPayload = z.infer<typeof votedPayloadSchema>;
  * / `methodology-not-exhausted` / `illegal-state-transition` for a
  * structural-sub-kind commit) all surface through the same wire
  * `error` envelope with the engine's kebab `code`.
+ *
+ * **Discriminated dual-arm shape** per [ADR 0030 §2 + §9]
+ * (`docs/adr/0030-per-facet-vote-keying-and-sequential-capture.md`) +
+ * the refinement at
+ * `tasks/refinements/per-facet-refactor/pf_mod_pending_proposals_pane_facet_keyed.md`.
+ * Mirrors the vote schema's split:
+ *
+ *   - `target: 'facet'` — names the `(entity_kind, entity_id, facet)`
+ *     triple a facet-valued commit applies to. The server resolves the
+ *     facet's current candidate proposal at handle-time via
+ *     `facet.candidateProposalEventId` (same lookup the vote-facet arm
+ *     uses) and threads the resolved id into the methodology engine's
+ *     `commitHandler`. The engine then emits a `target: 'facet'` event.
+ *   - `target: 'proposal'` — names the structural proposal id directly.
+ *     Used for the structural sub-kinds (`decompose` /
+ *     `interpretive-split` / `axiom-mark` / `annotate` / `meta-move` /
+ *     `break-edge`) per ADR 0030 §9; the engine emits a
+ *     `target: 'proposal'` event.
+ *
+ * Both arms share `sessionId` and `expectedSequence` (the optimistic-
+ * concurrency token).
  *
  * On success the server sends two server-emitted envelopes to the
  * moderator:
@@ -574,18 +596,38 @@ export type VotedPayload = z.infer<typeof votedPayloadSchema>;
  *      receives this.
  *
  * The commit handler emits exactly one `commit` event (the engine's
- * `commitHandler` returns `events: [commitEvent]`). The downstream
- * read-side projection (`handleCommit` in `replay.ts`) marks the
- * affected facet `agreed` + moves the proposal from
+ * `commitHandler` returns `events: [commitEvent]`; `annotate` is the
+ * exception — it also emits a paired `annotation-created`). The
+ * downstream read-side projection (`handleCommit` in `replay.ts`) marks
+ * the affected facet `committed` + moves the proposal from
  * `pendingProposals` to `committedProposals`; that read-side update
  * is driven by every subscriber's local incremental `applyEvent`
  * call on the broadcast — no additional wire frames are required.
  */
-export const wsCommitPayloadSchema = z.object({
+export const wsCommitFacetPayloadSchema = z.object({
   sessionId: z.string().uuid(),
   expectedSequence: z.number().int().nonnegative(),
+  target: z.literal('facet'),
+  entity_kind: z.enum(['node', 'edge']),
+  entity_id: z.string().uuid(),
+  facet: z.enum(['classification', 'substance', 'wording', 'shape']),
+});
+
+export type WsCommitFacetPayload = z.infer<typeof wsCommitFacetPayloadSchema>;
+
+export const wsCommitProposalPayloadSchema = z.object({
+  sessionId: z.string().uuid(),
+  expectedSequence: z.number().int().nonnegative(),
+  target: z.literal('proposal'),
   proposalId: z.string().uuid(),
 });
+
+export type WsCommitProposalPayload = z.infer<typeof wsCommitProposalPayloadSchema>;
+
+export const wsCommitPayloadSchema = z.discriminatedUnion('target', [
+  wsCommitFacetPayloadSchema,
+  wsCommitProposalPayloadSchema,
+]);
 
 export type WsCommitPayload = z.infer<typeof wsCommitPayloadSchema>;
 

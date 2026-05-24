@@ -627,10 +627,57 @@ When(
       JSON.stringify({
         type: 'commit',
         id: messageId,
+        // Per ADR 0030 §2 + §9 (+ `pf_mod_pending_proposals_pane_facet_keyed`)
+        // the commit wire payload is a `target`-discriminated union; the
+        // structural-arm carries `proposalId` directly. Existing feature
+        // scenarios pin the proposal-arm behaviour; facet-arm coverage
+        // lives in `tests/behavior/methodology/commit-facet-keyed.feature`.
         payload: {
           sessionId,
           expectedSequence,
+          target: 'proposal',
           proposalId,
+        },
+      }),
+    );
+  },
+);
+
+/**
+ * Per `pf_mod_pending_proposals_pane_facet_keyed` + ADR 0030 §2:
+ * the moderator's commit button on a facet-valued pending row sends a
+ * `target: 'facet'` envelope keyed by `(entity_kind, entity_id, facet)`.
+ * The server resolves the facet's current candidate proposal via
+ * `facet.candidateProposalEventId` (mirrors the vote-facet path) and
+ * threads the resolved id into the methodology engine's `commitHandler`.
+ */
+When(
+  'the client sends a facet-keyed commit envelope for session {string} with expectedSequence {int} on the {string} facet of node {string}',
+  function (
+    this: AConversaWorld,
+    sessionId: string,
+    expectedSequence: number,
+    facet: string,
+    nodeId: string,
+  ) {
+    const s = scratch(this);
+    const ws = getClient(this);
+    const messageId = randomUUID();
+    s.wsCommitMessageId = messageId;
+
+    ensureCommitFramesQueue(this);
+
+    ws.send(
+      JSON.stringify({
+        type: 'commit',
+        id: messageId,
+        payload: {
+          sessionId,
+          expectedSequence,
+          target: 'facet',
+          entity_kind: 'node',
+          entity_id: nodeId,
+          facet,
         },
       }),
     );

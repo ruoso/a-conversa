@@ -657,7 +657,12 @@ function commitFrame(
   return JSON.stringify({
     type: 'commit',
     id: messageId,
-    payload: { sessionId, expectedSequence, proposalId },
+    // Per ADR 0030 §2 + §9 (+ `pf_mod_pending_proposals_pane_facet_keyed`)
+    // the commit wire payload is a `target`-discriminated union. These
+    // legacy integration cases pin the proposal-arm behaviour (the four
+    // facet-arm-specific gates are covered separately by the dedicated
+    // facet-arm `describe` block below).
+    payload: { sessionId, expectedSequence, target: 'proposal', proposalId },
   });
 }
 
@@ -973,6 +978,7 @@ describe('ws_commit_message — handler integration', () => {
         payload: {
           sessionId: NON_MODERATOR_SESSION_ID,
           expectedSequence: 5,
+          target: 'proposal',
           proposalId: NON_MODERATOR_PROPOSAL_ID,
           moderatorId: OTHER_HOST_ID, // <-- spoof attempt
         },
