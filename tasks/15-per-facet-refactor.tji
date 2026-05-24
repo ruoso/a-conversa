@@ -95,6 +95,7 @@ task per_facet_refactor "Per-facet refactor (ADR 0030)" {
     task pf_commit_handler_facet_keyed "Commit handler: facet-keyed dispatch + unanimity gate" {
       effort 0.5d
       allocate team
+      complete 100
       depends !pf_vote_handler_facet_keyed
       note "Refinement: tasks/refinements/per-facet-refactor/pf_commit_handler_facet_keyed.md"
     }

@@ -193,13 +193,15 @@ function proposalIdFor(event: Event): string | null {
       }
       return null;
     case 'commit':
-      // TODO(pf_commit_handler_facet_keyed): commit payloads are now a
-      // `target`-discriminated union per ADR 0030 §9. The methodology
-      // engine still emits the proposal-keyed arm for every commit;
-      // once the downstream task lands facet-keyed emission, this
-      // needs to resolve the broadcast subject differently (look up
-      // the pending proposal that targets the entity+facet pair).
-      // Until then we read the proposal-keyed arm only.
+      // Per ADR 0030 §2 + §9: commit payloads are a `target`-
+      // discriminated union. The proposal-keyed arm carries `proposal_id`
+      // directly; the facet-keyed arm does not — for facet-keyed
+      // commits the broadcast subject is the proposal that supplied
+      // the facet's current candidate (looked up from the projection at
+      // fan-out time via `facet.candidateProposalEventId`; see
+      // `resolveFacetKeyedProposalId` below). Returning `null` here
+      // for the facet arm defers the lookup to the async tail where
+      // the projection is in scope.
       if (event.payload.target === 'proposal') {
         return event.payload.proposal_id;
       }

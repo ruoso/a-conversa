@@ -90,6 +90,7 @@ import { randomUUID } from 'node:crypto';
 
 import type { Projection } from '../../projection/index.js';
 import type { FacetName, FacetState } from '../../projection/index.js';
+import { deriveFacetStatus } from '../../projection/facet-status.js';
 import type { ProposalPayload } from '@a-conversa/shared-types';
 import { findProposal, requireModerator } from '../primitives.js';
 import type {
@@ -187,6 +188,41 @@ function checkUnanimousAgreeFacet(
       ok: false,
       reason: 'illegal-state-transition',
       detail: `commit: target entity ${target.entityKind}:${target.entityId} for facet '${target.facet}' is not present on the projection`,
+    };
+  }
+
+  // Per the refinement's Constraints / requirements: the facet must
+  // currently be `'agreed'` per `deriveFacetStatus`. This is a cross-
+  // check on top of the perParticipant walk below — they compute the
+  // same predicate (unanimous-agree across current non-moderator
+  // participants) and stay in sync by construction, but the per-status
+  // dispatch here also catches lifecycle states the perParticipant walk
+  // alone cannot (a facet that is already `'committed'` or
+  // `'meta-disagreement'` whose proposal record nevertheless still
+  // appears as `'pending'` in `findProposal` because the facet-keyed
+  // commit / mark does NOT remove the pending proposal record; only
+  // the proposal-keyed arm does — see `apps/server/src/projection/replay.ts`
+  // `handleCommit` / `handleMetaDisagreementMarked` facet arms).
+  const status = deriveFacetStatus(projection, target.entityKind, target.entityId, target.facet);
+  if (status === 'committed') {
+    return {
+      ok: false,
+      reason: 'proposal-already-committed',
+      detail: `commit: facet ${target.entityKind}:${target.entityId}/${target.facet} is already committed (a prior commit landed on the current candidate)`,
+    };
+  }
+  if (status === 'meta-disagreement') {
+    return {
+      ok: false,
+      reason: 'proposal-already-meta-disagreement',
+      detail: `commit: facet ${target.entityKind}:${target.entityId}/${target.facet} has been marked as meta-disagreement`,
+    };
+  }
+  if (status === 'withdrawn') {
+    return {
+      ok: false,
+      reason: 'illegal-state-transition',
+      detail: `commit: facet ${target.entityKind}:${target.entityId}/${target.facet} is in status 'withdrawn' — a fresh candidate must land before a new commit can be considered`,
     };
   }
 
@@ -420,34 +456,53 @@ export const commitHandler: Validator<CommitAction> = (
   // `commit` envelope. The structural events take the leading
   // sequence slots; the commit envelope takes the last.
   //
-  // TODO(pf_commit_handler_facet_keyed): per ADR 0030 §2 the commit
-  // payload is now a `target`-discriminated union (facet-keyed vs.
-  // proposal-keyed). This handler currently emits the proposal-keyed
-  // arm for ALL commits (including commits against facet-valued
-  // proposal sub-kinds — classify-node / set-node-substance /
-  // set-edge-substance / edit-wording). Per ADR 0030 §2 those commits
-  // should be emitted as `target: 'facet'` with the looked-up
-  // `(entity_kind, entity_id, facet)` derived from the proposal. The
-  // downstream `pf_commit_handler_facet_keyed` task rewires this
-  // handler to consult the projection's pending proposal, derive the
-  // facet target via the shared helper, and emit the appropriate arm.
-  // Today's emission keeps every existing consumer (the projection's
-  // `handleCommit` reading `payload.proposal_id`) on the proposal-keyed
-  // shape — a controlled, schema-valid emit that preserves current
-  // behaviour until that downstream task lands.
+  // Per ADR 0030 §2 + §9 the commit payload is a `target`-discriminated
+  // union. Dispatch on proposal sub-kind:
+  //
+  //   - facet-valued sub-kinds (classify-node, set-node-substance,
+  //     set-edge-substance, edit-wording) emit `target: 'facet'` keyed
+  //     by `(entity_kind, entity_id, facet)` per ADR 0030 §2 — the
+  //     commit hangs off the facet itself rather than off the proposal
+  //     id, so withdrawal / re-proposal lifecycles compose cleanly
+  //     against the per-facet state.
+  //   - structural sub-kinds (decompose, interpretive-split, axiom-mark,
+  //     meta-move, break-edge, amend-node, annotate) emit
+  //     `target: 'proposal'` keyed by `proposal_id` per ADR 0030 §9 —
+  //     these proposals have no facet target the commit could attach to.
+  //
+  // The discriminator is derived from the same `facetTargetForProposal`
+  // helper rule 4 used (above): `null` ↔ structural arm, non-null ↔
+  // facet arm. The projection's `handleCommit` walks both arms (per
+  // `pf_projection_replay_updates`); the wire frame here picks the
+  // appropriate shape per sub-kind.
   const structuralEvents = buildStructuralEventsForCommit(proposalPayload, action);
+  const commitPayload =
+    target !== null
+      ? {
+          target: 'facet' as const,
+          // Annotation entities can also carry facets per the projection,
+          // but the four facet-valued proposal sub-kinds only address
+          // node + edge — narrow to that union for the wire payload
+          // (matches `facetCommitPayloadSchema`'s `entity_kind` enum).
+          entity_kind: target.entityKind as 'node' | 'edge',
+          entity_id: target.entityId,
+          facet: target.facet,
+          committed_by: action.requester,
+          committed_at: action.committedAt,
+        }
+      : {
+          target: 'proposal' as const,
+          proposal_id: action.proposalEventId,
+          committed_by: action.requester,
+          committed_at: action.committedAt,
+        };
   const commitEvent: EventToAppendEnvelope<'commit'> = {
     id: action.eventId,
     sessionId: action.sessionId,
     sequence: action.sequence + structuralEvents.length,
     kind: 'commit',
     actor: action.actor,
-    payload: {
-      target: 'proposal',
-      proposal_id: action.proposalEventId,
-      committed_by: action.requester,
-      committed_at: action.committedAt,
-    },
+    payload: commitPayload,
     createdAt: action.createdAt,
   };
   return { ok: true, events: [...structuralEvents, commitEvent] };

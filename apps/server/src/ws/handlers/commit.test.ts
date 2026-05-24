@@ -921,21 +921,26 @@ describe('ws_commit_message — handler integration', () => {
       expect(appended).toBeDefined();
       expect(appended?.kind).toBe('commit');
       expect(appended?.actor).toBe(FIXTURE_USER_ID);
-      // The event payload references the proposal + records the
-      // moderator (per ADR 0030 §2 + §9 + `pf_facet_keyed_commit_payload`
-      // the payload is a `target`-discriminated union; the methodology
-      // engine emits the proposal-keyed arm for every sub-kind today
-      // per the `TODO(pf_commit_handler_facet_keyed)` marker).
+      // The event payload references the target facet + records the
+      // moderator (per ADR 0030 §2 + §9 + `pf_commit_handler_facet_keyed`
+      // the methodology engine now emits the facet-keyed arm for the
+      // four facet-valued sub-kinds — here `classify-node` →
+      // node.classification — keyed by `(entity_kind, entity_id, facet)`
+      // rather than `proposal_id`).
       const appendedPayload = appended?.payload as
         | {
             target?: unknown;
-            proposal_id?: unknown;
+            entity_kind?: unknown;
+            entity_id?: unknown;
+            facet?: unknown;
             committed_by?: unknown;
             committed_at?: unknown;
           }
         | undefined;
-      expect(appendedPayload?.target).toBe('proposal');
-      expect(appendedPayload?.proposal_id).toBe(PROPOSAL_EVENT_ID);
+      expect(appendedPayload?.target).toBe('facet');
+      expect(appendedPayload?.entity_kind).toBe('node');
+      expect(appendedPayload?.entity_id).toBe(NODE_ID);
+      expect(appendedPayload?.facet).toBe('classification');
       expect(appendedPayload?.committed_by).toBe(FIXTURE_USER_ID);
       expect(typeof appendedPayload?.committed_at).toBe('string');
     } finally {

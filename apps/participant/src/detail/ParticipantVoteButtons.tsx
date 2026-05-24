@@ -245,12 +245,20 @@ export function derivePendingFacetProposals(
       }
       proposalIdByFacet.set(target.facet, event.id);
     } else if (event.kind === 'commit') {
-      // TODO(pf_commit_handler_facet_keyed): commit payloads are now a
-      // `target`-discriminated union. The methodology engine emits
-      // proposal-keyed commits for every sub-kind today; read only
-      // that arm until the downstream task lands facet-keyed emission.
+      // Per ADR 0030 §2 + §9: commit payloads are a `target`-
+      // discriminated union. The proposal-keyed arm carries
+      // `proposal_id` directly; the facet-keyed arm names the
+      // `(entity_kind, entity_id, facet)` triple and the proposal
+      // closing it is the most-recent facet-valued proposal for the
+      // same triple — looked up via the `proposalIdByFacet` map this
+      // selector already maintains. The facet arm is only consulted
+      // when the targeted `(entityKind, entityId)` matches this
+      // panel's scope; commits against unrelated facets are ignored.
       if (event.payload.target === 'proposal') {
         closedProposalIds.add(event.payload.proposal_id);
+      } else if (event.payload.entity_kind === entityKind && event.payload.entity_id === entityId) {
+        const proposalId = proposalIdByFacet.get(event.payload.facet);
+        if (proposalId !== undefined) closedProposalIds.add(proposalId);
       }
     } else if (event.kind === 'meta-disagreement-marked') {
       // TODO(pf_meta_disagreement_handler_facet_keyed): meta-disagreement-marked

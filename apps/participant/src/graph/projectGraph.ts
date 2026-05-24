@@ -406,6 +406,12 @@ export function projectGraph(
     string,
     { nodeId: string; classification: StatementKind }
   >();
+  // Map from `node_id` → the most-recent classification candidate value
+  // named by a `classify-node` proposal. Used by the facet-keyed commit
+  // arm (per ADR 0030 §2) to resolve the current candidate without a
+  // `proposal_id` carrier; a new classify-node proposal overwrites the
+  // entry per ADR 0030 §7.
+  const currentClassificationByNode = new Map<string, StatementKind>();
   const edges: ParticipantEdgeElement[] = [];
 
   for (const event of events) {
@@ -461,16 +467,41 @@ export function projectGraph(
           nodeId: inner.node_id,
           classification: inner.classification,
         });
+        // Track the most-recent classification candidate per node so a
+        // facet-keyed commit (per ADR 0030 §2) can resolve the current
+        // candidate without a `proposal_id`. A new classify-node
+        // proposal supersedes the prior candidate per ADR 0030 §7.
+        currentClassificationByNode.set(inner.node_id, inner.classification);
       }
       continue;
     }
 
     if (event.kind === 'commit') {
-      // TODO(pf_commit_handler_facet_keyed): commit payloads are now a
-      // `target`-discriminated union. The methodology engine emits
-      // proposal-keyed commits for every sub-kind today; read only
-      // that arm until the downstream task lands facet-keyed emission.
-      if (event.payload.target !== 'proposal') continue;
+      // Per ADR 0030 §2 + §9: commit payloads are a `target`-
+      // discriminated union. The facet-keyed arm carries
+      // `(entity_kind, entity_id, facet)`; the proposal-keyed arm
+      // carries `proposal_id`. Both flip the matching node's `kind` to
+      // the current classification candidate.
+      if (event.payload.target === 'facet') {
+        if (event.payload.facet !== 'classification') continue;
+        if (event.payload.entity_kind !== 'node') continue;
+        const classification = currentClassificationByNode.get(event.payload.entity_id);
+        if (classification === undefined) continue;
+        const idx = nodeIndexById.get(event.payload.entity_id);
+        if (idx === undefined) continue;
+        const existing = nodes[idx];
+        if (existing === undefined) continue;
+        nodes[idx] = {
+          group: 'nodes',
+          data: {
+            ...existing.data,
+            kind: classification,
+          },
+        };
+        continue;
+      }
+      // target === 'proposal' — structural arm or legacy facet-valued
+      // arm for any proposal-keyed commits still on the log.
       const proposal = pendingClassifications.get(event.payload.proposal_id);
       if (proposal === undefined) continue;
       const idx = nodeIndexById.get(proposal.nodeId);

@@ -333,10 +333,12 @@ export function projectAxiomMarks(events: readonly Event[]): AxiomMark[] {
       continue;
     }
     if (event.kind === 'commit') {
-      // TODO(pf_commit_handler_facet_keyed): commit payloads are now a
-      // `target`-discriminated union. The methodology engine emits
-      // proposal-keyed commits for every sub-kind today; read only
-      // that arm until the downstream task lands facet-keyed emission.
+      // Per ADR 0030 §2 + §9: commit payloads are a `target`-
+      // discriminated union. Axiom-mark is a structural sub-kind per
+      // ADR 0030 §9 — its commits ride the proposal-keyed arm; the
+      // facet-keyed arm targets facet-valued sub-kinds (classify-node,
+      // set-node-substance, set-edge-substance, edit-wording) which
+      // never appear in the `pending` map this selector walks.
       if (event.payload.target !== 'proposal') continue;
       const proposal = pending.get(event.payload.proposal_id);
       if (proposal === undefined) continue;
@@ -447,10 +449,13 @@ export function projectPendingAxiomMarks(events: readonly Event[]): PendingAxiom
       continue;
     }
     if (event.kind === 'commit') {
-      // TODO(pf_commit_handler_facet_keyed): commit payloads are now a
-      // `target`-discriminated union. The methodology engine emits
-      // proposal-keyed commits for every sub-kind today; read only
-      // that arm until the downstream task lands facet-keyed emission.
+      // Per ADR 0030 §2 + §9: commit payloads are a `target`-
+      // discriminated union. The `pending` map tracks axiom-mark
+      // proposals (a structural sub-kind per ADR 0030 §9); their
+      // commits ride the proposal-keyed arm. The facet-keyed arm
+      // targets facet-valued sub-kinds (classify-node /
+      // set-node-substance / set-edge-substance / edit-wording) and
+      // does not terminate axiom-mark proposals.
       if (event.payload.target !== 'proposal') continue;
       pending.delete(event.payload.proposal_id);
       continue;

@@ -23,16 +23,16 @@ Feature: commit payload — facet-keyed and proposal-keyed arms round-trip
   # recovery into a typed envelope, and `projectFromLog` applies the
   # proposal-keyed arm without throwing.
   #
-  # **Projection-side handling of the facet-keyed arm is out of scope.**
-  # The methodology engine still emits the proposal-keyed arm for ALL
-  # commits (per the TODO(pf_commit_handler_facet_keyed) in
-  # `apps/server/src/methodology/handlers/commit.ts`); the projection's
-  # `handleCommit` rejects the facet-keyed arm with a clear runtime
-  # error so any inadvertent emission during the transition surfaces
-  # loudly. The downstream `pf_commit_handler_facet_keyed` task rewires
-  # both halves. Today's pin: the facet-keyed arm round-trips through
-  # the SCHEMA SEAM (insert + read + validateEvent) without the
-  # projection ever consuming it.
+  # **Projection-side handling of both arms is now wired.** The
+  # methodology engine emits `target: 'facet'` for the four facet-valued
+  # sub-kinds and `target: 'proposal'` for the seven structural sub-
+  # kinds per ADR 0030 §2 + §9 (see
+  # `apps/server/src/methodology/handlers/commit.ts`). The wire-and-
+  # replay round-trip pin below remains: inserting both arms directly
+  # into pglite (bypassing the engine) exercises the SCHEMA seam — the
+  # JSONB column, validateEvent recovery, and (for the proposal-keyed
+  # arm) projectFromLog application — independently of the engine's
+  # dispatch choice.
   #
   # Refinement: tasks/refinements/per-facet-refactor/pf_facet_keyed_commit_payload.md
   # ADRs:        docs/adr/0030-per-facet-vote-keying-and-sequential-capture.md,

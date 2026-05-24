@@ -358,16 +358,30 @@ describe('commit handler — rule 4: unanimous agree (moderator-excluded)', () =
       expect(ev.sequence).toBe(action.sequence);
       expect(ev.actor).toBe(MODERATOR_ID);
       expect(ev.createdAt).toBe(T9);
-      if (ev.kind === 'commit' && ev.payload.target === 'proposal') {
-        // Per ADR 0030 §2 + §9 + `pf_facet_keyed_commit_payload`, the
-        // commit payload is now a `target`-discriminated union. The
-        // methodology engine emits the proposal-keyed arm for every
-        // sub-kind today (per the `TODO(pf_commit_handler_facet_keyed)`
-        // marker in the handler); the facet-keyed arm lands when the
-        // downstream task rewires emission.
-        expect(ev.payload.proposal_id).toBe(PROPOSAL_ID_1);
+      if (ev.kind === 'commit' && ev.payload.target === 'facet') {
+        // Per ADR 0030 §2 + §9 + `pf_commit_handler_facet_keyed`, the
+        // commit payload is a `target`-discriminated union. For the
+        // four facet-valued sub-kinds (classify-node /
+        // set-node-substance / set-edge-substance / edit-wording) the
+        // handler emits the facet-keyed arm keyed by
+        // `(entity_kind, entity_id, facet)`. The seed proposal is a
+        // `classify-node` on `NODE_ID_1`; the matching facet is
+        // `node.classification`.
+        expect(ev.payload.entity_kind).toBe('node');
+        expect(ev.payload.entity_id).toBe(NODE_ID_1);
+        expect(ev.payload.facet).toBe('classification');
         expect(ev.payload.committed_by).toBe(MODERATOR_ID);
         expect(ev.payload.committed_at).toBe(T9);
+      } else {
+        // Programmer-error guard: the seed is facet-valued; the handler
+        // MUST emit the facet arm. If a future test reshuffle changes
+        // the seed sub-kind, this branch fails loudly so the
+        // assertion-pattern is updated rather than silently degraded.
+        expect.fail(
+          `expected facet-keyed commit emission for classify-node; got target=${
+            ev.kind === 'commit' ? ev.payload.target : 'non-commit'
+          }`,
+        );
       }
     }
   });
@@ -384,6 +398,115 @@ describe('commit handler — rule 4: unanimous agree (moderator-excluded)', () =
     const action = makeCommitAction(p);
     const r = validateAction(p, action);
     expect(r.ok).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------
+// ADR 0030 §2 + §9 — `target`-discriminated commit emission.
+//
+// The handler emits `target: 'facet'` for the four facet-valued sub-
+// kinds (classify-node / set-node-substance / set-edge-substance /
+// edit-wording) and `target: 'proposal'` for the seven structural sub-
+// kinds (decompose / interpretive-split / axiom-mark / meta-move /
+// break-edge / amend-node / annotate). The dispatcher reads the same
+// `facetTargetForProposal` helper rule 4 uses (`null` ↔ structural arm,
+// non-null ↔ facet arm).
+// ---------------------------------------------------------------
+
+describe('commit handler — facet-arm vs proposal-arm emission per ADR 0030', () => {
+  it('emits the facet-keyed arm for the four facet-valued sub-kinds (classify-node here as canonical)', () => {
+    // The seed's PROPOSAL_ID_1 is a classify-node; the dispatcher emits
+    // `target: 'facet'` keyed by (`node`, NODE_ID_1, `classification`).
+    const p = seedSession();
+    applyVote(p, DEBATER_A_ID, 'agree');
+    applyVote(p, DEBATER_B_ID, 'agree');
+    const action = makeCommitAction(p);
+    const r = validateAction(p, action);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const ev = r.events[r.events.length - 1]!;
+    expect(ev.kind).toBe('commit');
+    if (ev.kind !== 'commit') return;
+    expect(ev.payload.target).toBe('facet');
+    if (ev.payload.target !== 'facet') return;
+    expect(ev.payload.entity_kind).toBe('node');
+    expect(ev.payload.entity_id).toBe(NODE_ID_1);
+    expect(ev.payload.facet).toBe('classification');
+    expect(ev.payload.committed_by).toBe(MODERATOR_ID);
+  });
+
+  it('emits the proposal-keyed arm for structural sub-kinds (axiom-mark here as canonical)', () => {
+    // Seed a parallel structural proposal — axiom-mark — and commit it.
+    // Axiom-mark is a structural sub-kind per ADR 0030 §9: the commit
+    // attaches to the proposal id, not to a facet.
+    const p = seedSession();
+    applyEvent(
+      p,
+      makeEvent(nextSequence(p), 'node-created', DEBATER_A_ID, T2, {
+        node_id: NODE_ID_STRUCT,
+        wording: 'A bedrock claim.',
+        created_by: DEBATER_A_ID,
+        created_at: T2,
+      }),
+    );
+    applyEvent(p, {
+      ...makeEvent(nextSequence(p), 'proposal', DEBATER_A_ID, T3, {
+        proposal: {
+          kind: 'axiom-mark',
+          node_id: NODE_ID_STRUCT,
+          participant: DEBATER_A_ID,
+        },
+      }),
+      id: PROPOSAL_ID_STRUCT,
+    });
+    // For axiom-mark the declared participant (DEBATER_A_ID) is
+    // excluded from the required-voters set per
+    // `checkUnanimousAgreeStructural`. DEBATER_B's agree alone is
+    // sufficient.
+    applyVote(p, DEBATER_B_ID, 'agree', PROPOSAL_ID_STRUCT);
+    const action = makeCommitAction(p, MODERATOR_ID, PROPOSAL_ID_STRUCT);
+    const r = validateAction(p, action);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const ev = r.events[r.events.length - 1]!;
+    expect(ev.kind).toBe('commit');
+    if (ev.kind !== 'commit') return;
+    expect(ev.payload.target).toBe('proposal');
+    if (ev.payload.target !== 'proposal') return;
+    expect(ev.payload.proposal_id).toBe(PROPOSAL_ID_STRUCT);
+    expect(ev.payload.committed_by).toBe(MODERATOR_ID);
+  });
+
+  it('refuses a second commit on the same facet via the facet-status cross-check (the facet is already `committed`)', () => {
+    // First commit lands the facet as `committed`. A second commit
+    // attempt on the same proposal must not land. Per ADR 0030 §2 the
+    // projection's facet-keyed `handleCommit` does NOT remove the
+    // pending proposal (only the proposal-keyed arm does); the
+    // facet-status cross-check inside `checkUnanimousAgreeFacet` is the
+    // gate that catches the duplicate.
+    const p = seedSession();
+    applyVote(p, DEBATER_A_ID, 'agree');
+    applyVote(p, DEBATER_B_ID, 'agree');
+    const firstAction = makeCommitAction(p);
+    const firstResult = validateAction(p, firstAction);
+    expect(firstResult.ok).toBe(true);
+    if (!firstResult.ok) return;
+    // Apply the emitted facet-keyed commit event so the projection's
+    // `handleCommit` stamps the facet `'committed'`.
+    for (const ev of firstResult.events) {
+      applyEvent(p, ev);
+    }
+    expect(deriveFacetStatus(p, 'node', NODE_ID_1, 'classification')).toBe('committed');
+    // Second commit attempt at the next sequence with a fresh event id.
+    const secondAction: CommitAction = {
+      ...makeCommitAction(p),
+      eventId: '11111111-1111-4111-8111-aaaaaaaaaaaa',
+    };
+    const r = validateAction(p, secondAction);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.reason).toBe('proposal-already-committed');
+    }
   });
 });
 

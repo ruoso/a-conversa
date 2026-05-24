@@ -41,3 +41,18 @@ Feature: methodology engine — commit handler against a DB-projected session
     When the moderator constructs a commit action against the pending proposal
     And the methodology engine validates the commit action against the projected session
     Then the validation result is Rejected with reason "unanimous-agree-required"
+
+  Scenario: the engine's facet-keyed commit event lands on the projection and flips the facet status to committed
+    # Per ADR 0030 §2 + `pf_commit_handler_facet_keyed`: for the four
+    # facet-valued sub-kinds (classify-node here as canonical) the
+    # engine emits a `target: 'facet'` commit. The wire layer appends it
+    # to the session log; the projection's `handleCommit` facet arm
+    # stamps the facet `'committed'`. This scenario walks the full
+    # engine → DB → projection → derivation round-trip and asserts the
+    # status flip on the targeted facet.
+    Given a seeded session with three participants, a pending proposal, and three agree votes for commit-logic tests
+    When the moderator constructs a commit action against the pending proposal
+    And the methodology engine validates the commit action against the projected session
+    And the resulting commit event is appended to the session log and the projection is replayed
+    Then the validation result is Valid
+    And the targeted classification facet's derived status is "committed"

@@ -12,13 +12,15 @@
 //   (c) `projectFromLog` advances `lastAppliedSequence` past the
 //       proposal-keyed arm without throwing.
 //
-// **Projection-side handling of the facet-keyed arm is out of scope**
-// for this task. The methodology engine still emits the proposal-keyed
-// arm for ALL commits (per the TODO(pf_commit_handler_facet_keyed) in
-// `apps/server/src/methodology/handlers/commit.ts`); the projection's
-// `handleCommit` rejects the facet-keyed arm with a runtime error so
-// any inadvertent emit during the transition surfaces loudly. The
-// downstream `pf_commit_handler_facet_keyed` task rewires both halves.
+// **Projection-side handling of both arms is now wired** (per the
+// downstream `pf_projection_replay_updates` + `pf_commit_handler_facet_keyed`
+// pair). This step file remains the wire-and-replay round-trip pin for
+// the schema seam — both arms are inserted directly into pglite (rather
+// than via the methodology engine) so the schema seam is exercised
+// independently of the engine's dispatch choice. The engine itself
+// emits `target: 'facet'` for the four facet-valued sub-kinds and
+// `target: 'proposal'` for the seven structural sub-kinds per ADR 0030
+// §2 + §9; see `apps/server/src/methodology/handlers/commit.ts`.
 //
 // Refinement: tasks/refinements/per-facet-refactor/pf_facet_keyed_commit_payload.md
 

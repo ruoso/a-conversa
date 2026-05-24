@@ -114,15 +114,39 @@ export interface PendingProposalRow {
  */
 export function derivePendingProposals(events: readonly Event[]): readonly PendingProposalRow[] {
   // Step 1: collect terminated proposal ids in a single forward pass.
+  // Per ADR 0030 §2 + §9, commit / meta-disagreement-marked payloads are
+  // a `target`-discriminated union. The proposal-keyed arm names the
+  // proposal id directly. The facet-keyed arm names
+  // `(entity_kind, entity_id, facet)`; to terminate the proposal that
+  // supplied the facet's current candidate we track a facet → most-
+  // recent-proposal-id map (a new facet-valued proposal supersedes the
+  // prior candidate per ADR 0030 §7) and resolve through it.
   const terminatedProposalIds = new Set<string>();
+  const currentProposalByFacet = new Map<string, string>();
+  const facetKey = (entityKind: string, entityId: string, facet: string): string =>
+    `${entityKind}|${entityId}|${facet}`;
   for (const event of events) {
+    if (event.kind === 'proposal') {
+      const inner = event.payload.proposal;
+      if (inner.kind === 'classify-node') {
+        currentProposalByFacet.set(facetKey('node', inner.node_id, 'classification'), event.id);
+      } else if (inner.kind === 'set-node-substance') {
+        currentProposalByFacet.set(facetKey('node', inner.node_id, 'substance'), event.id);
+      } else if (inner.kind === 'set-edge-substance') {
+        currentProposalByFacet.set(facetKey('edge', inner.edge_id, 'substance'), event.id);
+      } else if (inner.kind === 'edit-wording') {
+        currentProposalByFacet.set(facetKey('node', inner.node_id, 'wording'), event.id);
+      }
+      continue;
+    }
     if (event.kind === 'commit') {
-      // TODO(pf_commit_handler_facet_keyed): commit payloads are now a
-      // `target`-discriminated union. The methodology engine emits
-      // proposal-keyed commits for every sub-kind today; read only
-      // that arm until the downstream task lands facet-keyed emission.
       if (event.payload.target === 'proposal') {
         terminatedProposalIds.add(event.payload.proposal_id);
+      } else {
+        const proposalId = currentProposalByFacet.get(
+          facetKey(event.payload.entity_kind, event.payload.entity_id, event.payload.facet),
+        );
+        if (proposalId !== undefined) terminatedProposalIds.add(proposalId);
       }
     } else if (event.kind === 'meta-disagreement-marked') {
       // TODO(pf_meta_disagreement_handler_facet_keyed): meta-disagreement-marked

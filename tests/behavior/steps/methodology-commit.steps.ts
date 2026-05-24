@@ -15,6 +15,7 @@ import { strict as assert } from 'node:assert';
 import type { AConversaWorld } from '../support/world.js';
 import { evId, insertEventRow, rowToValidatedEvent, selectEvents } from '../support/event-rows.js';
 import {
+  deriveFacetStatus,
   projectFromLog,
   type Event,
   type Projection,
@@ -267,16 +268,23 @@ Then(
     assert.equal(ev.kind, 'commit');
     assert.equal(ev.sessionId, CL_SESSION_ID);
     assert.equal(ev.id, CL_NEW_EVENT_ID);
-    if (ev.kind === 'commit' && ev.payload.target === 'proposal') {
-      // Per ADR 0030 §2 + §9 + `pf_facet_keyed_commit_payload`, the
-      // commit payload is now a `target`-discriminated union. The
-      // methodology engine emits the proposal-keyed arm for every
-      // sub-kind today (per the `TODO(pf_commit_handler_facet_keyed)`
-      // marker in the handler); the facet-keyed arm lands when the
-      // downstream task rewires emission.
-      assert.equal(ev.payload.proposal_id, CL_PROPOSAL_ID);
+    if (ev.kind === 'commit' && ev.payload.target === 'facet') {
+      // Per ADR 0030 §2 + §9 + `pf_commit_handler_facet_keyed`, the
+      // commit payload is a `target`-discriminated union. The seed
+      // proposal is `classify-node` (a facet-valued sub-kind) so the
+      // methodology engine emits the facet-keyed arm keyed by
+      // (`node`, CL_NODE_ID, `classification`).
+      assert.equal(ev.payload.entity_kind, 'node');
+      assert.equal(ev.payload.entity_id, CL_NODE_ID);
+      assert.equal(ev.payload.facet, 'classification');
       assert.equal(ev.payload.committed_by, CL_HOST_ID);
       assert.equal(ev.payload.committed_at, tsAt(10));
+    } else {
+      assert.fail(
+        `expected facet-keyed commit emission for classify-node; got target=${
+          ev.kind === 'commit' ? ev.payload.target : 'non-commit'
+        }`,
+      );
     }
   },
 );
@@ -288,5 +296,46 @@ Then(
     assert.equal(result.ok, false, `expected Rejected, got ${JSON.stringify(result)}`);
     if (result.ok) return;
     assert.equal(result.reason, reason, `expected reason ${reason}, got ${result.reason}`);
+  },
+);
+
+// ADR 0030 §2 + §9 + `pf_commit_handler_facet_keyed`: the engine's
+// facet-keyed commit lands on the projection; the projection's
+// `handleCommit` facet arm flips the targeted facet's derived status to
+// `'committed'`. This step inserts the emitted commit event back into
+// pglite and re-projects so the derivation reads from the round-tripped
+// log (not from an in-memory projection that bypassed the schema seam).
+
+When(
+  'the resulting commit event is appended to the session log and the projection is replayed',
+  async function (this: AConversaWorld) {
+    const result = this.scratch['methodologyResult'] as ValidationResult;
+    assert.ok(result.ok, `expected Valid before appending, got ${JSON.stringify(result)}`);
+    if (!result.ok) return;
+    assert.equal(result.events.length, 1, 'expected exactly one event to append');
+    const ev = result.events[0]!;
+    assert.equal(ev.kind, 'commit');
+    await insertEventRow(this, CL_SESSION_ID, {
+      id: ev.id,
+      sequence: ev.sequence,
+      kind: ev.kind,
+      actor: ev.actor,
+      payload: ev.payload,
+      createdAt: ev.createdAt,
+    });
+    // Re-project the full log so the derivation reads from the round-
+    // tripped JSONB column (the schema-seam pin).
+    const rows = await selectEvents(this, CL_SESSION_ID);
+    const events: Event[] = rows.map(rowToValidatedEvent);
+    this.scratch['commitProjection'] = projectFromLog(events, CL_SESSION_ID);
+  },
+);
+
+Then(
+  /^the targeted classification facet's derived status is "([^"]+)"$/,
+  function (this: AConversaWorld, expectedStatus: string) {
+    const projection = this.scratch['commitProjection'] as Projection;
+    const status = deriveFacetStatus(projection, 'node', CL_NODE_ID, 'classification');
+    assert.equal(status, expectedStatus);
   },
 );

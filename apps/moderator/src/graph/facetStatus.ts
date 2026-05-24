@@ -427,11 +427,25 @@ export function computeFacetStatuses(events: readonly Event[]): FacetStatusIndex
       continue;
     }
     if (event.kind === 'commit') {
-      // TODO(pf_commit_handler_facet_keyed): commit payloads are now a
-      // `target`-discriminated union. The methodology engine emits
-      // proposal-keyed commits for every sub-kind today; read only
-      // that arm until the downstream task lands facet-keyed emission.
-      if (event.payload.target !== 'proposal') continue;
+      // Per ADR 0030 §2 + §9: commit payloads are a `target`-
+      // discriminated union. The facet-keyed arm carries the
+      // `(entity_kind, entity_id, facet)` triple directly; the
+      // proposal-keyed arm resolves to the facet via the proposal-id
+      // → target map. Both arms flip the per-facet `committed` flag
+      // the derivation reads.
+      if (event.payload.target === 'facet') {
+        const state = getOrCreateFacetState(
+          nodeStates,
+          edgeStates,
+          event.payload.entity_kind,
+          event.payload.entity_id,
+          event.payload.facet,
+        );
+        state.committed = true;
+        continue;
+      }
+      // target === 'proposal' — structural arm or legacy facet-valued
+      // arm for any proposal-keyed commits still on the log.
       const target = proposalTarget.get(event.payload.proposal_id);
       if (!target) continue;
       const state = getOrCreateFacetState(
