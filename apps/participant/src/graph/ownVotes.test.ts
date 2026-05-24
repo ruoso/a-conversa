@@ -35,7 +35,15 @@
 import { describe, expect, it } from 'vitest';
 import type { Event, StatementKind } from '@a-conversa/shared-types';
 
-import { EMPTY_OWN_VOTES, ownVoteForEdge, ownVoteForNode, projectOwnVotes } from './ownVotes';
+import {
+  EMPTY_OWN_FACET_VOTES,
+  EMPTY_OWN_VOTES,
+  ownFacetKey,
+  ownVoteForEdge,
+  ownVoteForNode,
+  projectOwnFacetVotes,
+  projectOwnVotes,
+} from './ownVotes';
 
 const SESSION_ID = '00000000-0000-4000-8000-000000000001';
 const NODE_A = '00000000-0000-4000-8000-00000000000a';
@@ -384,5 +392,209 @@ describe('projectOwnVotes — per-entity own-vote projection narrowed to the cur
       }),
     ];
     expect(projectOwnVotes(noOwnVotes, ME)).toBe(EMPTY_OWN_VOTES);
+  });
+});
+
+describe('projectOwnFacetVotes — per-(entity, facet) own-vote indicator with supersession-clears', () => {
+  // Distinct from projectOwnVotes: per-facet granularity (not rolled up
+  // per entity) AND supersession-clears semantics so the row's vote
+  // button can ask "did I vote on the CURRENT candidate" and re-appear
+  // when a new candidate lands on the facet.
+
+  it('empty event log returns the stable EMPTY_OWN_FACET_VOTES reference', () => {
+    expect(projectOwnFacetVotes([], ME)).toBe(EMPTY_OWN_FACET_VOTES);
+  });
+
+  it('records a proposal-keyed agree vote on a classify-node proposal under the (node, classification) facet key', () => {
+    const events: Event[] = [
+      classifyProposal({ sequence: 1, envelopeId: PROPOSAL_CLASSIFY, nodeId: NODE_A }),
+      voteEvent({
+        sequence: 2,
+        proposalId: PROPOSAL_CLASSIFY,
+        participant: ME,
+        vote: 'agree',
+      }),
+    ];
+    const out = projectOwnFacetVotes(events, ME);
+    expect(out.facets.get(ownFacetKey('node', NODE_A, 'classification'))).toBe('agree');
+    expect(out.proposals.size).toBe(0);
+  });
+
+  it('records a facet-keyed agree vote (no proposal_id on the wire) under the same facet key', () => {
+    const events: Event[] = [
+      classifyProposal({ sequence: 1, envelopeId: PROPOSAL_CLASSIFY, nodeId: NODE_A }),
+      {
+        id: '00000000-0000-4000-8000-000000000601',
+        sessionId: SESSION_ID,
+        sequence: 2,
+        kind: 'vote',
+        actor: ME,
+        payload: {
+          target: 'facet' as const,
+          entity_kind: 'node' as const,
+          entity_id: NODE_A,
+          facet: 'classification' as const,
+          participant: ME,
+          choice: 'agree' as const,
+          voted_at: '2026-05-17T00:00:00.000Z',
+        },
+        createdAt: '2026-05-17T00:00:00.000Z',
+      },
+    ];
+    const out = projectOwnFacetVotes(events, ME);
+    expect(out.facets.get(ownFacetKey('node', NODE_A, 'classification'))).toBe('agree');
+  });
+
+  it('drops a vote by another participant — per-participant filter', () => {
+    const events: Event[] = [
+      classifyProposal({ sequence: 1, envelopeId: PROPOSAL_CLASSIFY, nodeId: NODE_A }),
+      voteEvent({
+        sequence: 2,
+        proposalId: PROPOSAL_CLASSIFY,
+        participant: SOMEONE_ELSE,
+        vote: 'agree',
+      }),
+    ];
+    const out = projectOwnFacetVotes(events, ME);
+    expect(out).toBe(EMPTY_OWN_FACET_VOTES);
+  });
+
+  it('supersession-clears: a NEW facet-valued proposal on the same facet clears the prior own-vote (the button must re-appear for the new candidate)', () => {
+    const NEW_PROPOSAL = '00000000-0000-4000-8000-0000000000d1';
+    const events: Event[] = [
+      classifyProposal({ sequence: 1, envelopeId: PROPOSAL_CLASSIFY, nodeId: NODE_A }),
+      voteEvent({
+        sequence: 2,
+        proposalId: PROPOSAL_CLASSIFY,
+        participant: ME,
+        vote: 'agree',
+      }),
+      // A new candidate lands on the same facet; per ADR 0030 §7 the
+      // server clears the per-participant vote map and the client
+      // mirror must too.
+      classifyProposal({
+        sequence: 3,
+        envelopeId: NEW_PROPOSAL,
+        nodeId: NODE_A,
+        classification: 'value',
+      }),
+    ];
+    const out = projectOwnFacetVotes(events, ME);
+    expect(out.facets.has(ownFacetKey('node', NODE_A, 'classification'))).toBe(false);
+  });
+
+  it('does NOT clear other facets when a proposal supersedes one facet only', () => {
+    const events: Event[] = [
+      // Two proposals on different facets of the same node.
+      classifyProposal({ sequence: 1, envelopeId: PROPOSAL_CLASSIFY, nodeId: NODE_A }),
+      setNodeSubstanceProposal({
+        sequence: 2,
+        envelopeId: PROPOSAL_SUBSTANCE_NODE,
+        nodeId: NODE_A,
+      }),
+      voteEvent({
+        sequence: 3,
+        proposalId: PROPOSAL_CLASSIFY,
+        participant: ME,
+        vote: 'agree',
+      }),
+      voteEvent({
+        sequence: 4,
+        proposalId: PROPOSAL_SUBSTANCE_NODE,
+        participant: ME,
+        vote: 'agree',
+      }),
+      // New classification candidate supersedes — only that facet clears.
+      classifyProposal({
+        sequence: 5,
+        envelopeId: '00000000-0000-4000-8000-0000000000d2',
+        nodeId: NODE_A,
+        classification: 'value',
+      }),
+    ];
+    const out = projectOwnFacetVotes(events, ME);
+    expect(out.facets.has(ownFacetKey('node', NODE_A, 'classification'))).toBe(false);
+    expect(out.facets.get(ownFacetKey('node', NODE_A, 'substance'))).toBe('agree');
+  });
+
+  it('records a structural proposal vote under `proposals` keyed by the proposal envelope id', () => {
+    const STRUCTURAL_PROPOSAL = '00000000-0000-4000-8000-0000000000e1';
+    const events: Event[] = [
+      {
+        id: STRUCTURAL_PROPOSAL,
+        sessionId: SESSION_ID,
+        sequence: 1,
+        kind: 'proposal',
+        actor: ME,
+        payload: {
+          proposal: {
+            kind: 'axiom-mark',
+            node_id: NODE_A,
+            participant: ME,
+          },
+        },
+        createdAt: '2026-05-17T00:00:00.000Z',
+      },
+      voteEvent({
+        sequence: 2,
+        proposalId: STRUCTURAL_PROPOSAL,
+        participant: ME,
+        vote: 'agree',
+      }),
+    ];
+    const out = projectOwnFacetVotes(events, ME);
+    expect(out.proposals.get(STRUCTURAL_PROPOSAL)).toBe('agree');
+    expect(out.facets.size).toBe(0);
+  });
+
+  it('latest-vote-wins on a same-participant retake (e.g. agree then dispute on the same facet)', () => {
+    const events: Event[] = [
+      classifyProposal({ sequence: 1, envelopeId: PROPOSAL_CLASSIFY, nodeId: NODE_A }),
+      voteEvent({
+        sequence: 2,
+        proposalId: PROPOSAL_CLASSIFY,
+        participant: ME,
+        vote: 'agree',
+      }),
+      voteEvent({
+        sequence: 3,
+        proposalId: PROPOSAL_CLASSIFY,
+        participant: ME,
+        vote: 'dispute',
+      }),
+    ];
+    const out = projectOwnFacetVotes(events, ME);
+    expect(out.facets.get(ownFacetKey('node', NODE_A, 'classification'))).toBe('dispute');
+  });
+
+  it('edge facet target: a set-edge-substance vote records under (edge, substance)', () => {
+    const events: Event[] = [
+      setEdgeSubstanceProposal({
+        sequence: 1,
+        envelopeId: PROPOSAL_EDGE_SUBSTANCE,
+        edgeId: EDGE_A,
+      }),
+      voteEvent({
+        sequence: 2,
+        proposalId: PROPOSAL_EDGE_SUBSTANCE,
+        participant: ME,
+        vote: 'agree',
+      }),
+    ];
+    const out = projectOwnFacetVotes(events, ME);
+    expect(out.facets.get(ownFacetKey('edge', EDGE_A, 'substance'))).toBe('agree');
+  });
+
+  it('vote referencing an unknown proposal id is silently dropped', () => {
+    const events: Event[] = [
+      voteEvent({
+        sequence: 1,
+        proposalId: '00000000-0000-4000-8000-0000000000ee',
+        participant: ME,
+        vote: 'agree',
+      }),
+    ];
+    const out = projectOwnFacetVotes(events, ME);
+    expect(out).toBe(EMPTY_OWN_FACET_VOTES);
   });
 });

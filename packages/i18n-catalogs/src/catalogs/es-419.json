@@ -659,7 +659,11 @@
         "markAxiom": "Mis axiomas"
       },
       "facetRow": {
-        "awaitingProposal": "Esperando una propuesta"
+        "awaitingProposal": "Esperando una propuesta",
+        "youVoted": {
+          "agree": "Tu voto: De acuerdo",
+          "dispute": "Tu voto: En desacuerdo"
+        }
       }
     },
     "voteButton": {

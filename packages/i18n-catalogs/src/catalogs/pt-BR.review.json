@@ -293,6 +293,8 @@
     "participant.lobby.errors.participantsFetchFailed",
     "participant.lobby.errors.retry",
     "participant.detailPanel.facetRow.awaitingProposal",
+    "participant.detailPanel.facetRow.youVoted.agree",
+    "participant.detailPanel.facetRow.youVoted.dispute",
     "participant.withdrawAgreementButton.label",
     "participant.withdrawAgreementButton.confirmLabel",
     "participant.withdrawAgreementButton.inFlightLabel",

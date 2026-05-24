@@ -77,6 +77,12 @@ import type {
 } from '@a-conversa/shared-types';
 
 import type { FacetName, FacetStatus, FacetStatusIndex } from '../graph/facetStatus';
+import {
+  EMPTY_OWN_FACET_VOTES,
+  ownFacetKey,
+  projectOwnFacetVotes,
+  type OwnFacetVoteIndex,
+} from '../graph/ownVotes';
 
 import { useVoteAction, type VoteChoice } from './useVoteAction';
 import { useWithdrawAgreementAction } from './useWithdrawAgreementAction';
@@ -139,6 +145,14 @@ const VOTE_BUTTON_TESTID: Readonly<Record<RowVoteChoice, string>> = {
   dispute: 'participant-vote-button-dispute',
   withdraw: 'participant-vote-button-withdraw',
 };
+
+/**
+ * Test id for the "you voted X" indicator that replaces the agree /
+ * dispute / structural buttons on a row once the current participant
+ * has voted on the row's current candidate. Pinned for the e2e suite
+ * so the affordance-vs-indicator branch can be discriminated.
+ */
+const OWN_VOTE_INDICATOR_TESTID = 'participant-detail-panel-facet-row-own-vote';
 
 /**
  * Per-choice i18n label key under `participant.voteButton`. Same
@@ -523,6 +537,20 @@ export function ParticipantVoteButtons(props: ParticipantVoteButtonsProps): Reac
     [events, entityKind, entityId],
   );
 
+  // Per-facet (and per-structural-proposal) own-vote index for the
+  // current participant. Drives the "hide the buttons once you've voted"
+  // affordance on the row — without it, the agree/dispute buttons stay
+  // visible until the FACET STATUS changes (which requires unanimity or
+  // commit), so a single participant's vote sits ambiguous to them.
+  // See `projectOwnFacetVotes` for the supersession-clears semantics.
+  const ownFacetVotes = useMemo<OwnFacetVoteIndex>(
+    () =>
+      currentParticipantId !== undefined && currentParticipantId !== ''
+        ? projectOwnFacetVotes(events, currentParticipantId)
+        : EMPTY_OWN_FACET_VOTES,
+    [events, currentParticipantId],
+  );
+
   // Per-facet status — read from the projection index.
   const facetStatuses = useMemo(() => {
     const map = entityKind === 'node' ? facetStatusIndex.nodes : facetStatusIndex.edges;
@@ -559,6 +587,7 @@ export function ParticipantVoteButtons(props: ParticipantVoteButtonsProps): Reac
         const status = readFacetStatus(facetStatuses, facet, candidates, entityKind);
         const proposalId = pendingByFacet.get(facet);
         const candidateValue = candidateValueFor(facet, candidates);
+        const ownVote = lookupOwnVoteForRow(ownFacetVotes, entityKind, entityId, facet, proposalId);
         return (
           <FacetRow
             key={facet}
@@ -569,6 +598,7 @@ export function ParticipantVoteButtons(props: ParticipantVoteButtonsProps): Reac
             proposalId={proposalId}
             candidateValue={candidateValue}
             currentParticipantId={currentParticipantId}
+            ownVote={ownVote}
           />
         );
       })}
@@ -582,10 +612,42 @@ export function ParticipantVoteButtons(props: ParticipantVoteButtonsProps): Reac
           proposalId={structuralProposalId}
           candidateValue={undefined}
           currentParticipantId={currentParticipantId}
+          ownVote={ownFacetVotes.proposals.get(structuralProposalId)}
         />
       ) : null}
     </section>
   );
+}
+
+/**
+ * Resolve the current participant's vote on a row's current candidate
+ * for the hide-button check.
+ *
+ * - The four real facet rows look up by `(entityKind, entityId, facet)`
+ *   in `ownFacetVotes.facets` — that map already enforces the per-ADR-0030-§7
+ *   supersession-clears semantics (a new proposal lands on the facet ⇒
+ *   the prior vote drops out so the row's buttons re-appear for the new
+ *   candidate).
+ * - The synthetic `'proposal'` row routes through `ownFacetVotes.proposals`
+ *   keyed by the structural proposal envelope id; the caller passes that
+ *   lookup separately because the row's `facet` here is the synthetic
+ *   `'proposal'` and `entityId` is the host entity, not the proposal id.
+ * - Edge `'shape'` rows have no per-row vote affordance today (the
+ *   facet's status is synthesized from the inline carriage), so the
+ *   own-vote lookup is `undefined` and the row's pre-existing branch
+ *   stays unchanged.
+ */
+function lookupOwnVoteForRow(
+  index: OwnFacetVoteIndex,
+  entityKind: EntityKind,
+  entityId: string,
+  facet: LifecycleFacetName,
+  proposalId: string | undefined,
+): 'agree' | 'dispute' | undefined {
+  if (facet === 'proposal' || facet === 'shape') return undefined;
+  void proposalId;
+  if (entityKind !== 'node' && entityKind !== 'edge') return undefined;
+  return index.facets.get(ownFacetKey(entityKind, entityId, facet));
 }
 
 /**
@@ -673,6 +735,17 @@ interface FacetRowProps {
    * `OperateRoute.tsx` caller always threads it.
    */
   readonly currentParticipantId: string | undefined;
+  /**
+   * The current participant's recorded vote on this row's current
+   * candidate (`'agree'` / `'dispute'`), or `undefined` when they
+   * haven't voted yet. When defined, the row collapses the
+   * agree/dispute button branch (`proposed` / `disputed` / `withdrawn`)
+   * to a "you voted" indicator so the affordance doesn't keep inviting
+   * a vote the participant has already cast. Resolved against the
+   * supersession-clearing `OwnFacetVoteIndex` in the parent block, so
+   * a new candidate landing on the facet re-opens the buttons.
+   */
+  readonly ownVote: 'agree' | 'dispute' | undefined;
 }
 
 /**
@@ -701,8 +774,16 @@ interface FacetRowProps {
  * flow has its own follow-up task.
  */
 function FacetRow(props: FacetRowProps): ReactElement {
-  const { facet, entityKind, entityId, status, proposalId, candidateValue, currentParticipantId } =
-    props;
+  const {
+    facet,
+    entityKind,
+    entityId,
+    status,
+    proposalId,
+    candidateValue,
+    currentParticipantId,
+    ownVote,
+  } = props;
   const { t } = useTranslation();
 
   // Two-stage confirmation gesture for the wired withdraw button. The
@@ -818,11 +899,24 @@ function FacetRow(props: FacetRowProps): ReactElement {
       : 'enabled';
 
   // Pick the row's button vocabulary by status. `null` means "no
-  // buttons" (awaiting-proposal + meta-disagreement). The
+  // buttons" (awaiting-proposal + meta-disagreement + pre-commit
+  // states the current participant has already voted on). The
   // `'proposal'` synthetic facet uses the structural three-button
   // shape (kept for back-compat with the pre-refactor wire path).
+  //
+  // Pre-commit hide-after-vote: when the current participant has
+  // recorded a vote on the row's current candidate (`ownVote` is
+  // defined), the agree/dispute branch collapses to `null`. The vote
+  // affordance has done its job — keeping the buttons rendered would
+  // invite a vote the participant has already cast and obscure the
+  // "I voted X" state. The post-commit `withdraw` branch is
+  // intentionally still rendered (the participant can withdraw their
+  // own agreement; the indicator and the affordance are distinct
+  // gestures there).
   const choices = useMemo<readonly RowVoteChoice[] | null>(() => {
-    if (facet === 'proposal') return STRUCTURAL_VOTE_CHOICES;
+    if (facet === 'proposal') {
+      return ownVote !== undefined ? null : STRUCTURAL_VOTE_CHOICES;
+    }
     switch (status) {
       case 'awaiting-proposal':
       case 'meta-disagreement':
@@ -842,11 +936,11 @@ function FacetRow(props: FacetRowProps): ReactElement {
       case 'proposed':
       case 'disputed':
       case 'withdrawn':
-        return FACET_VOTE_CHOICES;
+        return ownVote !== undefined ? null : FACET_VOTE_CHOICES;
       default:
         return null;
     }
-  }, [facet, status]);
+  }, [facet, status, ownVote]);
 
   // No-buttons branch: `awaiting-proposal` (no candidate yet) +
   // `meta-disagreement` (both candidates shown side by side).
@@ -905,6 +999,24 @@ function FacetRow(props: FacetRowProps): ReactElement {
         <span className="text-xs uppercase tracking-wide text-slate-500">
           {t(`methodology.facet.${facet}`)}
         </span>
+        {choices === null && ownVote !== undefined ? (
+          // "You voted X" indicator — replaces the agree / dispute /
+          // structural buttons once the participant has cast a vote on
+          // the row's current candidate. The buttons hide so the
+          // affordance doesn't keep inviting a vote already cast; the
+          // indicator preserves visibility of WHICH way the participant
+          // voted while waiting for the rest of the room to vote and
+          // the moderator to commit. A new candidate landing on the
+          // facet (per ADR 0030 §7) clears the own-vote and the buttons
+          // re-appear automatically.
+          <span
+            data-testid={OWN_VOTE_INDICATOR_TESTID}
+            data-vote-choice={ownVote}
+            className="text-xs font-medium text-slate-600"
+          >
+            {t(`participant.detailPanel.facetRow.youVoted.${ownVote}`)}
+          </span>
+        ) : null}
         {choices !== null ? (
           <div className="flex items-center gap-1">
             {choices.map((choice) => {

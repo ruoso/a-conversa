@@ -599,6 +599,206 @@ describe('<ParticipantVoteButtons> — per-status row content', () => {
 // Vote click → wire envelope
 // --------------------------------------------------------------------
 
+describe('<ParticipantVoteButtons> — own-vote hides the buttons (pre-commit)', () => {
+  // Bug guard: prior to `projectOwnFacetVotes` wiring, the
+  // agree/dispute buttons stayed on the row after the participant
+  // voted and only disappeared once the FACET STATUS transitioned
+  // (which requires unanimity or commit). A single participant's vote
+  // sat ambiguous to them. With the projector wired the row collapses
+  // to a "you voted X" indicator the moment the participant's vote
+  // event lands.
+
+  it('after the current participant votes agree, the classification row hides agree/dispute and surfaces a "you voted" indicator', () => {
+    const fake = makeFakeClient();
+    const events: Event[] = [
+      joinedEvent(1, PARTICIPANT_BEN),
+      joinedEvent(2, PARTICIPANT_MARIA),
+      nodeCreatedEvent(3, 'A first claim'),
+      classifyNodeProposalEvent(4),
+      voteEvent(5, PROPOSAL_CLASSIFY_ID, PARTICIPANT_BEN, 'agree'),
+    ];
+    const facetStatusIndex = computeFacetStatuses(events);
+    render(
+      <Wrapper client={fake.client}>
+        <ParticipantVoteButtons
+          events={events}
+          entityKind="node"
+          entityId={NODE_A_ID}
+          facetStatusIndex={facetStatusIndex}
+          currentParticipantId={PARTICIPANT_BEN}
+        />
+      </Wrapper>,
+    );
+    const classifyRow = screen
+      .getAllByTestId('participant-detail-panel-facet-row')
+      .find((r) => r.getAttribute('data-facet-name') === 'classification');
+    if (!classifyRow) throw new Error('classification row missing');
+    // Status stays `proposed` (Maria hasn't voted yet), but the
+    // buttons are gone for Ben — he already voted.
+    expect(classifyRow.getAttribute('data-facet-status')).toBe('proposed');
+    expect(within(classifyRow).queryByTestId('participant-vote-button-agree')).toBeNull();
+    expect(within(classifyRow).queryByTestId('participant-vote-button-dispute')).toBeNull();
+    const indicator = within(classifyRow).getByTestId(
+      'participant-detail-panel-facet-row-own-vote',
+    );
+    expect(indicator.getAttribute('data-vote-choice')).toBe('agree');
+  });
+
+  it('after the current participant votes dispute, the row hides buttons and the indicator shows dispute', () => {
+    const fake = makeFakeClient();
+    const events: Event[] = [
+      joinedEvent(1, PARTICIPANT_BEN),
+      joinedEvent(2, PARTICIPANT_MARIA),
+      nodeCreatedEvent(3, 'A first claim'),
+      classifyNodeProposalEvent(4),
+      voteEvent(5, PROPOSAL_CLASSIFY_ID, PARTICIPANT_BEN, 'dispute'),
+    ];
+    const facetStatusIndex = computeFacetStatuses(events);
+    render(
+      <Wrapper client={fake.client}>
+        <ParticipantVoteButtons
+          events={events}
+          entityKind="node"
+          entityId={NODE_A_ID}
+          facetStatusIndex={facetStatusIndex}
+          currentParticipantId={PARTICIPANT_BEN}
+        />
+      </Wrapper>,
+    );
+    const classifyRow = screen
+      .getAllByTestId('participant-detail-panel-facet-row')
+      .find((r) => r.getAttribute('data-facet-name') === 'classification');
+    if (!classifyRow) throw new Error('classification row missing');
+    expect(within(classifyRow).queryByTestId('participant-vote-button-agree')).toBeNull();
+    expect(within(classifyRow).queryByTestId('participant-vote-button-dispute')).toBeNull();
+    const indicator = within(classifyRow).getByTestId(
+      'participant-detail-panel-facet-row-own-vote',
+    );
+    expect(indicator.getAttribute('data-vote-choice')).toBe('dispute');
+  });
+
+  it("ANOTHER participant's vote does NOT hide the current participant's buttons", () => {
+    const fake = makeFakeClient();
+    const events: Event[] = [
+      joinedEvent(1, PARTICIPANT_BEN),
+      joinedEvent(2, PARTICIPANT_MARIA),
+      nodeCreatedEvent(3, 'A first claim'),
+      classifyNodeProposalEvent(4),
+      // Maria voted, but Ben (the current participant) hasn't.
+      voteEvent(5, PROPOSAL_CLASSIFY_ID, PARTICIPANT_MARIA, 'agree'),
+    ];
+    const facetStatusIndex = computeFacetStatuses(events);
+    render(
+      <Wrapper client={fake.client}>
+        <ParticipantVoteButtons
+          events={events}
+          entityKind="node"
+          entityId={NODE_A_ID}
+          facetStatusIndex={facetStatusIndex}
+          currentParticipantId={PARTICIPANT_BEN}
+        />
+      </Wrapper>,
+    );
+    const classifyRow = screen
+      .getAllByTestId('participant-detail-panel-facet-row')
+      .find((r) => r.getAttribute('data-facet-name') === 'classification');
+    if (!classifyRow) throw new Error('classification row missing');
+    expect(within(classifyRow).getByTestId('participant-vote-button-agree')).toBeDefined();
+    expect(within(classifyRow).getByTestId('participant-vote-button-dispute')).toBeDefined();
+    expect(
+      within(classifyRow).queryByTestId('participant-detail-panel-facet-row-own-vote'),
+    ).toBeNull();
+  });
+
+  it('a NEW candidate landing on the same facet re-opens the buttons (per ADR 0030 §7 supersession-clears)', () => {
+    const fake = makeFakeClient();
+    const NEW_CLASSIFY_ID = '22222222-2222-4222-8222-22222222ffff';
+    const events: Event[] = [
+      joinedEvent(1, PARTICIPANT_BEN),
+      joinedEvent(2, PARTICIPANT_MARIA),
+      nodeCreatedEvent(3, 'A first claim'),
+      classifyNodeProposalEvent(4),
+      voteEvent(5, PROPOSAL_CLASSIFY_ID, PARTICIPANT_BEN, 'agree'),
+      // A new classification candidate lands — Ben's prior vote is
+      // moot; the buttons must re-appear for the new candidate.
+      {
+        id: NEW_CLASSIFY_ID,
+        sessionId: SESSION_ID,
+        sequence: 6,
+        kind: 'proposal',
+        actor: ACTOR_ID,
+        createdAt: '2026-05-17T00:00:30.000Z',
+        payload: {
+          proposal: {
+            kind: 'classify-node',
+            node_id: NODE_A_ID,
+            classification: 'value',
+          },
+        },
+      } as unknown as Event,
+    ];
+    const facetStatusIndex = computeFacetStatuses(events);
+    render(
+      <Wrapper client={fake.client}>
+        <ParticipantVoteButtons
+          events={events}
+          entityKind="node"
+          entityId={NODE_A_ID}
+          facetStatusIndex={facetStatusIndex}
+          currentParticipantId={PARTICIPANT_BEN}
+        />
+      </Wrapper>,
+    );
+    const classifyRow = screen
+      .getAllByTestId('participant-detail-panel-facet-row')
+      .find((r) => r.getAttribute('data-facet-name') === 'classification');
+    if (!classifyRow) throw new Error('classification row missing');
+    expect(within(classifyRow).getByTestId('participant-vote-button-agree')).toBeDefined();
+    expect(within(classifyRow).getByTestId('participant-vote-button-dispute')).toBeDefined();
+    expect(
+      within(classifyRow).queryByTestId('participant-detail-panel-facet-row-own-vote'),
+    ).toBeNull();
+  });
+
+  it('after the current participant votes on the synthetic "proposal" row, the structural agree/dispute/withdraw buttons hide and the indicator appears', () => {
+    const fake = makeFakeClient();
+    const events: Event[] = [
+      joinedEvent(1, PARTICIPANT_BEN),
+      joinedEvent(2, PARTICIPANT_MARIA),
+      nodeCreatedEvent(3, 'A first claim'),
+      // Ben declares the axiom; Maria (the current participant) votes
+      // agree. The declared participant (Ben) is suppressed from the
+      // row by the axiom-mark special case, so the test runs from
+      // Maria's seat where the synthetic row is visible.
+      axiomMarkProposalEvent(4, PARTICIPANT_BEN),
+      voteEvent(5, PROPOSAL_AXIOM_MARK_ID, PARTICIPANT_MARIA, 'agree'),
+    ];
+    const facetStatusIndex = computeFacetStatuses(events);
+    render(
+      <Wrapper client={fake.client}>
+        <ParticipantVoteButtons
+          events={events}
+          entityKind="node"
+          entityId={NODE_A_ID}
+          facetStatusIndex={facetStatusIndex}
+          currentParticipantId={PARTICIPANT_MARIA}
+        />
+      </Wrapper>,
+    );
+    const proposalRow = screen
+      .getAllByTestId('participant-detail-panel-facet-row')
+      .find((r) => r.getAttribute('data-facet-name') === 'proposal');
+    if (!proposalRow) throw new Error('proposal row missing');
+    expect(within(proposalRow).queryByTestId('participant-vote-button-agree')).toBeNull();
+    expect(within(proposalRow).queryByTestId('participant-vote-button-dispute')).toBeNull();
+    expect(within(proposalRow).queryByTestId('participant-vote-button-withdraw')).toBeNull();
+    const indicator = within(proposalRow).getByTestId(
+      'participant-detail-panel-facet-row-own-vote',
+    );
+    expect(indicator.getAttribute('data-vote-choice')).toBe('agree');
+  });
+});
+
 describe('<ParticipantVoteButtons> — click fires the wire envelope', () => {
   it('clicking agree on a `proposed` row sends one vote envelope with choice="agree"', () => {
     const fake = makeFakeClient();

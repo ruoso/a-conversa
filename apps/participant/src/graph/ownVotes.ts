@@ -310,3 +310,137 @@ export function ownVoteForNode(index: OwnVoteIndex, nodeId: string): OwnVote {
 export function ownVoteForEdge(index: OwnVoteIndex, edgeId: string): OwnVote {
   return index.edges.get(edgeId) ?? 'none';
 }
+
+/**
+ * Per-(entity, facet) and per-(structural proposal) index of the current
+ * participant's recordable vote on the CURRENT candidate. Distinct from
+ * `OwnVoteIndex` in two ways:
+ *
+ *  1. Per-facet granularity (not rolled up per entity), so the per-row
+ *     vote button can ask "did I vote on THIS facet" rather than "did I
+ *     vote anywhere on this entity."
+ *  2. Supersession-clears semantics: when a new facet-valued proposal
+ *     lands on a facet (per ADR 0030 §7 the candidate is replaced AND
+ *     the per-participant vote map clears server-side — see
+ *     `apps/server/src/projection/replay.ts` `handleProposal`), the
+ *     prior vote on that facet drops out of this index. The user has
+ *     not yet voted on the new candidate, so the row's buttons must
+ *     re-appear.
+ *
+ * `facets` is keyed by `${entityKind}|${entityId}|${facet}`; `proposals`
+ * is keyed by the structural proposal envelope id (the sub-kinds without
+ * a facet target — decompose, interpretive-split, axiom-mark, annotate,
+ * meta-move, break-edge — vote per-proposal-id via the proposal-keyed
+ * wire arm).
+ */
+export interface OwnFacetVoteIndex {
+  readonly facets: ReadonlyMap<string, 'agree' | 'dispute'>;
+  readonly proposals: ReadonlyMap<string, 'agree' | 'dispute'>;
+}
+
+/** Stable empty reference for the no-vote baseline (memo bailout). */
+export const EMPTY_OWN_FACET_VOTES: OwnFacetVoteIndex = Object.freeze({
+  facets: new Map<string, 'agree' | 'dispute'>(),
+  proposals: new Map<string, 'agree' | 'dispute'>(),
+});
+
+/** Composite key for the `facets` map. Mirrors the server's facet-target shape. */
+export function ownFacetKey(
+  entityKind: 'node' | 'edge',
+  entityId: string,
+  facet: FacetName,
+): string {
+  return `${entityKind}|${entityId}|${facet}`;
+}
+
+/**
+ * Pure projection from a session's event log to the per-(entity, facet)
+ * and per-(structural proposal) own-vote index for the supplied current
+ * participant. Single-pass over `events`.
+ *
+ * Walk:
+ *
+ * - A facet-targeting `proposal` event (capture-node, classify-node,
+ *   set-node-substance, set-edge-substance, edit-wording, amend-node)
+ *   CLEARS any prior own-vote on that facet — per ADR 0030 §7 the new
+ *   candidate replaces the prior one and the per-participant vote map
+ *   resets server-side; the indicator must mirror that reset so the
+ *   buttons re-appear for the new candidate.
+ * - A structural `proposal` event records the proposal's envelope id
+ *   so a subsequent proposal-keyed vote can resolve to a `proposals`
+ *   entry (the synthetic `'proposal'` row uses this).
+ * - A `vote` event by the current participant records the choice
+ *   against either the named facet (facet-keyed arm) or the prior
+ *   proposal's facet/proposal-id (proposal-keyed arm). Other-
+ *   participant votes are dropped; unknown proposal ids on the
+ *   proposal-keyed arm are dropped.
+ * - `commit` / `meta-disagreement-marked` / `withdraw-agreement`
+ *   do not contribute: a commit closes the proposal but the indicator
+ *   for "did I vote on the current candidate" remains useful (the row
+ *   transitions to `committed` and the button branch changes anyway).
+ *
+ * Returns the stable `EMPTY_OWN_FACET_VOTES` reference when no
+ * current-participant vote contributes — keeps the memo's reference-
+ * equality bailout stable for the no-vote baseline.
+ */
+export function projectOwnFacetVotes(
+  events: readonly Event[],
+  currentParticipantId: string,
+): OwnFacetVoteIndex {
+  const facets = new Map<string, 'agree' | 'dispute'>();
+  const proposals = new Map<string, 'agree' | 'dispute'>();
+  // For proposal-keyed vote resolution: every proposal we've seen, with
+  // its facet target (when one exists). The proposal-keyed vote arm
+  // dispatches through this to find the (entity, facet) it should
+  // record against, mirroring `projectOwnVotes` above.
+  const proposalTarget = new Map<
+    string,
+    { entityKind: 'node' | 'edge'; entityId: string; facet: FacetName } | null
+  >();
+  for (const event of events) {
+    if (event.kind === 'proposal') {
+      const target = voteTargetOf(event.payload.proposal);
+      proposalTarget.set(event.id, target);
+      if (target !== null) {
+        // Supersession-clears: a new candidate on this facet drops the
+        // prior own-vote so the row's buttons re-appear for the new
+        // candidate.
+        facets.delete(ownFacetKey(target.entityKind, target.entityId, target.facet));
+      }
+      continue;
+    }
+    if (event.kind === 'vote') {
+      if (event.payload.participant !== currentParticipantId) continue;
+      const arm: 'agree' | 'dispute' = event.payload.choice === 'agree' ? 'agree' : 'dispute';
+      if (event.payload.target === 'facet') {
+        // Per `pf_shape_facet_wire_vote`: the wire-level `FacetName`
+        // includes `'shape'`; the participant's local `FacetName` is
+        // 3-valued (wording/classification/substance) — drop shape
+        // votes here since the per-row vote affordance does not yet
+        // surface them.
+        if (event.payload.facet === 'shape') continue;
+        facets.set(
+          ownFacetKey(event.payload.entity_kind, event.payload.entity_id, event.payload.facet),
+          arm,
+        );
+        continue;
+      }
+      // Proposal-keyed arm.
+      const target = proposalTarget.get(event.payload.proposal_id);
+      if (target === undefined) continue; // unknown proposal id — drop
+      if (target === null) {
+        // Structural sub-kind — record per-proposal so the synthetic
+        // `'proposal'` row's button can hide.
+        proposals.set(event.payload.proposal_id, arm);
+        continue;
+      }
+      facets.set(ownFacetKey(target.entityKind, target.entityId, target.facet), arm);
+      continue;
+    }
+    // Other event kinds (commit, meta-disagreement-marked,
+    // withdraw-agreement, node-created, edge-created,
+    // annotation-created, etc.) don't update the own-facet-vote index.
+  }
+  if (facets.size === 0 && proposals.size === 0) return EMPTY_OWN_FACET_VOTES;
+  return { facets, proposals };
+}
