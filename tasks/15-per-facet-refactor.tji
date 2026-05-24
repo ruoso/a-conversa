@@ -117,6 +117,7 @@ task per_facet_refactor "Per-facet refactor (ADR 0030)" {
     task pf_structural_handlers_unchanged "Pin + test surfaces for structural proposal-keyed handlers" {
       effort 0.5d
       allocate team
+      complete 100
       depends !pf_vote_handler_facet_keyed, !pf_commit_handler_facet_keyed, !pf_meta_disagreement_handler_facet_keyed
       note "Refinement: tasks/refinements/per-facet-refactor/pf_structural_handlers_unchanged.md"
     }

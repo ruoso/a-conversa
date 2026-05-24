@@ -147,6 +147,16 @@ export const voteHandler: Validator<VoteAction> = (
   // continue to emit `target: 'proposal'` (per ADR 0030 §9 — structural
   // proposals have no facet target so votes attach to the proposal
   // envelope id).
+  //
+  // **Mixed-model intent (pinned by `pf_structural_handlers_unchanged`).**
+  // Structural sub-kinds (`decompose`, `interpretive-split`, `axiom-mark`,
+  // `annotate`, `meta-move`, `break-edge`) intentionally take the
+  // proposal-keyed arm below; the two patterns coexist by design per
+  // ADR 0030 §9. Do NOT facet-key a structural proposal's vote — the
+  // pin tests at `apps/server/src/methodology/handlers/structural-target.test.ts`
+  // will fail loudly if a future refactor flips a structural sub-kind
+  // into the facet arm. See the refinement at
+  // `tasks/refinements/per-facet-refactor/pf_structural_handlers_unchanged.md`.
   const target = facetTargetForProposal(found.record.payload);
 
   if (target !== null) {

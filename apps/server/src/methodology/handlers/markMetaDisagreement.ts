@@ -243,6 +243,21 @@ export const markMetaDisagreementHandler: Validator<MarkMetaDisagreementAction> 
   // `pf_projection_replay_updates`); the wire frame here picks the
   // appropriate shape per sub-kind. `target` is the same `FacetTarget`
   // already computed for the facet-arm cross-check above.
+  //
+  // **Mixed-model intent (pinned by `pf_structural_handlers_unchanged`).**
+  // Structural sub-kinds (`decompose`, `interpretive-split`, `axiom-mark`,
+  // `annotate`, `meta-move`, `break-edge`) intentionally take the
+  // proposal-keyed arm per ADR 0030 §9; the two patterns coexist by
+  // design. The handler-side reject above (rule 4) is the BOUNDARY:
+  // structural-meta-mark methodology semantics are deferred to the
+  // per-sub-kind sibling tasks, so the structural arm of the emission
+  // dispatch below is unreachable today. The arm is preserved so the
+  // wire-shape contract is in place for those sibling tasks to consume.
+  // The pin tests at `apps/server/src/methodology/handlers/structural-target.test.ts`
+  // exercise the projection-arm round-trip (a `meta-disagreement-marked`
+  // event with `target: 'proposal'` lands and the proposal moves to
+  // `unresolvedMetaDisagreements`). See the refinement at
+  // `tasks/refinements/per-facet-refactor/pf_structural_handlers_unchanged.md`.
   const payload =
     target !== null
       ? ({

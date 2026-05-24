@@ -475,6 +475,16 @@ export const commitHandler: Validator<CommitAction> = (
   // facet arm. The projection's `handleCommit` walks both arms (per
   // `pf_projection_replay_updates`); the wire frame here picks the
   // appropriate shape per sub-kind.
+  //
+  // **Mixed-model intent (pinned by `pf_structural_handlers_unchanged`).**
+  // Structural sub-kinds (`decompose`, `interpretive-split`, `axiom-mark`,
+  // `annotate`, `meta-move`, `break-edge`) intentionally take the
+  // proposal-keyed arm below; the two patterns coexist by design per
+  // ADR 0030 §9. Do NOT facet-key a structural commit — the pin tests
+  // at `apps/server/src/methodology/handlers/structural-target.test.ts`
+  // will fail loudly if a future refactor flips a structural sub-kind
+  // into the facet arm. See the refinement at
+  // `tasks/refinements/per-facet-refactor/pf_structural_handlers_unchanged.md`.
   const structuralEvents = buildStructuralEventsForCommit(proposalPayload, action);
   const commitPayload =
     target !== null

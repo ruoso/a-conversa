@@ -46,3 +46,14 @@ This is not a code-change task in the sense of new functionality; it is a verifi
 ## Open questions
 
 (none — all decided per ADR 0030)
+
+## Status
+
+**Done** — 2026-05-24.
+
+- Test surfaces: `apps/server/src/methodology/handlers/structural-target.test.ts` — 13 Vitest cases covering one round-trip per structural sub-kind (`decompose`, `interpretive-split`, `axiom-mark`, `annotate`, `meta-move`, `break-edge`) + a 6-iteration dispatcher loop pinning `target: 'proposal'` emission across all sub-kinds + a meta-disagreement-marked projection-arm round-trip.
+- Cucumber surface: `tests/behavior/methodology/structural-target.feature` + `tests/behavior/steps/methodology-structural-target.steps.ts` — 1 scenario (7 steps) exercising decompose propose + vote agree + commit through pglite via the proposal-keyed arm.
+- Narrative pin comments added at the dispatch sites in `apps/server/src/methodology/handlers/{vote,commit,markMetaDisagreement}.ts` directing future readers to this refinement and ADR 0030 §9; no behavioral change.
+- Handler structural-target arms verified intact: `vote.ts`, `commit.ts`, `markMetaDisagreement.ts` all still route structural sub-kinds through their proposal-keyed envelopes.
+- Verification: `pnpm run check` clean; `pnpm run test:smoke` 4345 passing (+13); `pnpm run test:behavior:smoke` 261 scenarios / 1794 steps (+1 / +7); `pnpm run test:e2e:smoke` 107 green (unchanged).
+- TODO markers: none added, none paid down.
