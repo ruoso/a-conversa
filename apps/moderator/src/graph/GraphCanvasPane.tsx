@@ -28,16 +28,33 @@
 // selection, context menus, draw-edge flow) continue to plug into the
 // same `<ReactFlow>` tree.
 //
-// **Layout note.** Node positioning is delegated to `applyLayout` from
-// `./layoutEngine` (refinement `mod_layout_engine_choice`, pinned by
-// ADR 0025). The engine runs a Sugiyama-style hierarchical layout via
-// `@dagrejs/dagre` on every `useMemo([events, diagnosticHighlights,
-// edges])` tick; positions for previously-laid-out nodes are cached in
-// a `useRef<Map<id, {x, y}>>` so existing nodes never move on
-// incremental events (only new nodes feed dagre alongside the cached
-// neighbours). `projectNodes` no longer emits placeholder grid
-// coordinates — every emitted node starts at `(0, 0)` and the layout
-// pass overwrites that with a dagre-derived placement.
+// **Layout note.** Node positioning is delegated to the dagre-backed
+// engine in `./layoutEngine` (refinement `mod_layout_engine_choice`,
+// pinned by ADR 0025; strategy amended 2026-05-24). Which engine
+// function runs per `useMemo([events, diagnosticHighlights, edges])`
+// tick depends on whether the projection introduces a truly-new node id
+// (an id this canvas instance has never seen, tracked separately from
+// the position cache so a measurement-driven cache eviction is not
+// mistaken for a fresh id):
+//
+// - **Truly-new id present.** Call `relayoutAll(...)`: every node gets
+//   a fresh dagre placement against the new graph structure, the
+//   position cache is reset, and the truly-new ids are staged for the
+//   center-on-new effect that pans the viewport to their centroid while
+//   preserving the moderator's current zoom level.
+// - **No truly-new id.** Call `applyLayout(...)` with the position
+//   cache: cached ids reuse their `{x, y}`, only uncached ids (e.g. an
+//   id whose position cache entry was evicted by the measurement
+//   debounce in `mod_layout_measured_dimensions`) feed dagre. Existing
+//   nodes do NOT move.
+//
+// `projectNodes` emits every node at `(0, 0)`; the layout pass
+// overwrites that with the dagre-derived (or cached) placement. The
+// original "existing nodes never move on incremental events" contract
+// was tried and abandoned — dagre run over (new + cached) nodes
+// without absolute-position constraints produced new placements that
+// did not correspond to the cached coordinate space, so new ids
+// stacked at the origin. See ADR 0025 Amendment 2026-05-24.
 //
 // CSS coupling: `reactflow/dist/style.css` is imported here (not in
 // `main.tsx`) so a surface that doesn't render the canvas doesn't
@@ -81,7 +98,7 @@ import { EditWordingSubmenu } from '../layout/EditWordingSubmenu.js';
 import { STATEMENT_NODE_TYPE, StatementNode, type StatementNodeData } from './StatementNode.js';
 import { edgeTypes } from './edgeTypes.js';
 import { GraphContextMenu, type MenuItem } from './GraphContextMenu.js';
-import { applyLayout } from './layoutEngine.js';
+import { applyLayout, relayoutAll } from './layoutEngine.js';
 import {
   EMPTY_DIAGNOSTIC_HIGHLIGHTS,
   projectDiagnosticHighlights,
@@ -926,6 +943,16 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
   // navigation that unmounts / remounts `<GraphCanvasPane>` starts
   // fresh (intended semantics for "the moderator left and came back").
   const positionCacheRef = useRef<Map<string, XYPosition>>(new Map());
+  // Ids the canvas has ever projected. Distinguishes "truly new"
+  // (never seen by this instance) from "evicted by measurement debounce"
+  // (already known, just lost its cached position so dagre can re-place
+  // it against the measured footprint). Only truly-new ids trigger the
+  // full relayout + center-on-new path below.
+  const knownNodeIdsRef = useRef<Set<string>>(new Set());
+  // Ids staged for the next center-on-new pass. Written from the `nodes`
+  // useMemo when a relayout was triggered by truly-new ids; drained by
+  // the useEffect that calls `setCenter` after the next render commits.
+  const pendingFocusIdsRef = useRef<string[]>([]);
   // Measurement cache — the per-id `{width, height}` map fed to dagre
   // via `LayoutOptions.dimensions`. Populated by the debounced
   // measurement effect below, read inside the `nodes` `useMemo`.
@@ -947,10 +974,41 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
 
   const nodes = useMemo(() => {
     const projected = projectNodes(events, diagnosticHighlights);
-    const laidOut = applyLayout(projected, edges, {
-      cache: positionCacheRef.current,
-      dimensions: measurementCacheRef.current,
-    });
+    // ADR 0025 Amendment 2026-05-24: when at least one projected id is
+    // truly new (never seen by this canvas instance — distinct from a
+    // measurement-driven cache eviction, which removes an id from
+    // `positionCacheRef` but leaves it in `knownNodeIdsRef`), run a
+    // full `relayoutAll` over every node and stage the new ids for the
+    // center-on-new pan below. When no id is truly new (annotations,
+    // votes, facet status, edge-only changes between existing nodes,
+    // measurement-driven evictions), keep the incremental cache path so
+    // `mod_layout_measured_dimensions`' eviction-then-relayout flow
+    // does not churn unrelated nodes.
+    const trulyNewIds: string[] = [];
+    for (const node of projected) {
+      if (!knownNodeIdsRef.current.has(node.id)) {
+        trulyNewIds.push(node.id);
+      }
+    }
+
+    let laidOut: Node<StatementNodeData>[];
+    if (trulyNewIds.length > 0) {
+      laidOut = relayoutAll(projected, edges, {
+        dimensions: measurementCacheRef.current,
+      });
+      // Reset the position cache — every node received a fresh
+      // placement, the prior cache entries are stale.
+      positionCacheRef.current.clear();
+      for (const id of trulyNewIds) {
+        knownNodeIdsRef.current.add(id);
+      }
+      pendingFocusIdsRef.current = trulyNewIds;
+    } else {
+      laidOut = applyLayout(projected, edges, {
+        cache: positionCacheRef.current,
+        dimensions: measurementCacheRef.current,
+      });
+    }
     // Mirror every emitted position into the cache so the NEXT
     // memoization tick reuses these positions for already-laid-out
     // nodes. The mutation does not drive a render (useRef semantics).
@@ -982,14 +1040,62 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
   // reads the post-relayout positions when computing the bounding box.
   // The measurement cache is preserved — only positions are recomputed.
   const { t } = useTranslation();
-  const { fitView } = useReactFlow();
+  const { fitView, getZoom, setCenter } = useReactFlow();
   const handleTidyUp = useCallback((): void => {
     positionCacheRef.current.clear();
+    // Drop any pending center-on-new pan staged by a concurrent
+    // `node-created` event — the explicit tidy-up gesture supersedes
+    // it, and an undrained `setCenter` would override the `fitView`
+    // call below if its RAF fires later.
+    pendingFocusIdsRef.current = [];
     setLayoutRevision((r) => r + 1);
     requestAnimationFrame(() => {
       fitView({ duration: 0, padding: 0.1 });
     });
   }, [fitView]);
+
+  // -- Center-on-new pan (ADR 0025 Amendment 2026-05-24) --------------
+  //
+  // The `nodes` useMemo above stages truly-new ids in `pendingFocusIdsRef`
+  // whenever it took the `relayoutAll` branch. After the resulting render
+  // commits, this effect drains the staged ids, computes the centroid of
+  // their freshly-laid-out positions (read off the `nodes` array we just
+  // returned from the useMemo — same memoization tick), and `setCenter`s
+  // the viewport on that centroid while preserving the moderator's
+  // current zoom. Pan-only (not `fitView`) so the moderator's chosen
+  // zoom level is not disturbed; the relayout itself already framed the
+  // new structure relative to everything else.
+  useEffect(() => {
+    const focusIds = pendingFocusIdsRef.current;
+    if (focusIds.length === 0) return;
+    pendingFocusIdsRef.current = [];
+
+    const measurements = measurementCacheRef.current;
+    let cxSum = 0;
+    let cySum = 0;
+    let count = 0;
+    for (const id of focusIds) {
+      const node = nodes.find((n) => n.id === id);
+      if (node === undefined) continue;
+      const measured = measurements.get(id);
+      const w = measured?.width ?? 288;
+      const h = measured?.height ?? 90;
+      cxSum += node.position.x + w / 2;
+      cySum += node.position.y + h / 2;
+      count += 1;
+    }
+    if (count === 0) return;
+    const cx = cxSum / count;
+    const cy = cySum / count;
+
+    requestAnimationFrame(() => {
+      // Instant pan (no animation) — matches `handleTidyUp`'s
+      // `fitView({ duration: 0 })` pattern and avoids RAF/animation
+      // races when a follow-up viewport command (tidy-up, a sibling
+      // truly-new event) lands within the animation window.
+      setCenter(cx, cy, { zoom: getZoom(), duration: 0 });
+    });
+  }, [nodes, getZoom, setCenter]);
 
   // -- Measurement-driven re-layout (mod_layout_measured_dimensions) --
   //

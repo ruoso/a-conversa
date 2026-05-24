@@ -130,12 +130,8 @@ function rectsOverlap(a: RectSnapshot, b: RectSnapshot): boolean {
   return !(aRight <= b.x || bRight <= a.x || aBottom <= b.y || bBottom <= a.y);
 }
 
-function rectCenter(r: RectSnapshot): { x: number; y: number } {
-  return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
-}
-
 test.describe.serial('moderator graph layout (dagre, TB)', () => {
-  test('seeded graph renders without overlap, TB direction holds, existing nodes do not move on incremental events', async ({
+  test('seeded graph renders without overlap, TB direction holds, full relayout + non-overlap holds when a new node is added', async ({
     page,
   }) => {
     // 1. Log in as a dev user.
@@ -250,11 +246,14 @@ test.describe.serial('moderator graph layout (dagre, TB)', () => {
       ).toBe(true);
     }
 
-    // 9. Stability assertion: snapshot centres of the six original
-    //    cards; seed one more node + one more edge; re-read the same
-    //    centres; assert each moved by ≤ 2 px.
-    const beforeCenters = rects.map((r) => ({ id: r.id, center: rectCenter(r) }));
-
+    // 9. Full-relayout + non-overlap assertion after adding a node.
+    //    Per ADR 0025 Amendment 2026-05-24, introducing a truly-new
+    //    node id triggers `relayoutAll(...)` — every existing card
+    //    receives a fresh dagre placement against the new graph
+    //    structure (so the "existing nodes never move" contract no
+    //    longer holds). What MUST hold post-relayout is the same
+    //    non-overlap invariant the seeded graph passed at step 7,
+    //    extended to include the new node.
     await seedWsStore(page, {
       sessionId: session.id,
       nodes: [
@@ -269,31 +268,28 @@ test.describe.serial('moderator graph layout (dagre, TB)', () => {
       'incremental node card must render',
     ).toBeVisible({ timeout: 10_000 });
 
-    // Wait past the measurement-driven re-layout debounce again — the
-    // new node triggers a measurement event for its own id, which the
-    // debounced effect commits 75 ms later. Existing nodes' positions
-    // stay cached and only the new node's id is evicted, but we wait
-    // here so the snapshot below sees the post-debounce steady state.
-    // Refinement: `mod_layout_measured_dimensions`.
+    // Wait past the measurement-driven re-layout debounce (75 ms +
+    // render cycle + post-render ResizeObserver aftershocks under
+    // headed-browser conditions). The center-on-new pan is instant
+    // (`duration: 0`), so no extra animation budget is needed.
     await page.waitForTimeout(250);
 
-    const rectsAfter = await snapshotCardRects(page, allNodeIds);
-    const afterById = new Map(rectsAfter.map((r) => [r.id, r] as const));
-    for (const { id, center } of beforeCenters) {
-      const r = afterById.get(id);
-      expect(r, `card ${id} must still render after incremental seed`).toBeDefined();
-      if (r === undefined) continue;
-      const c = rectCenter(r);
-      const dx = Math.abs(c.x - center.x);
-      const dy = Math.abs(c.y - center.y);
-      expect(
-        dx,
-        `card ${id} centre x moved by ${dx} px (>2 px tolerance) on incremental layout`,
-      ).toBeLessThanOrEqual(2);
-      expect(
-        dy,
-        `card ${id} centre y moved by ${dy} px (>2 px tolerance) on incremental layout`,
-      ).toBeLessThanOrEqual(2);
+    const allNodeIdsAfter = [...allNodeIds, EXTRA_NODE_ID];
+    const rectsAfter = await snapshotCardRects(page, allNodeIdsAfter);
+    expect(
+      rectsAfter.length,
+      'every card (original six + new) must have a measurable rect after relayout',
+    ).toBe(allNodeIdsAfter.length);
+    for (let i = 0; i < rectsAfter.length; i += 1) {
+      for (let j = i + 1; j < rectsAfter.length; j += 1) {
+        const a = rectsAfter[i];
+        const b = rectsAfter[j];
+        if (a === undefined || b === undefined) continue;
+        expect(
+          rectsOverlap(a, b),
+          `post-relayout cards ${a.id} and ${b.id} must not overlap (a=${JSON.stringify(a)} b=${JSON.stringify(b)})`,
+        ).toBe(false);
+      }
     }
   });
 

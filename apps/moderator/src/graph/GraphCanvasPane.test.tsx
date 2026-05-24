@@ -66,6 +66,7 @@ import type { AnnotationKind, DiagnosticPayload, Event } from '@a-conversa/share
 // `applyLayout` / real `useReactFlow` semantics.
 const sizesAtCall: number[] = [];
 const applyLayoutSpy = vi.fn();
+const relayoutAllSpy = vi.fn();
 vi.mock('./layoutEngine', async () => {
   const actual = await vi.importActual<typeof import('./layoutEngine')>('./layoutEngine');
   return {
@@ -75,6 +76,10 @@ vi.mock('./layoutEngine', async () => {
       sizesAtCall.push(opts?.cache?.size ?? -1);
       applyLayoutSpy(...args);
       return actual.applyLayout(...args);
+    },
+    relayoutAll: (...args: Parameters<typeof actual.relayoutAll>) => {
+      relayoutAllSpy(...args);
+      return actual.relayoutAll(...args);
     },
   };
 });
@@ -2553,6 +2558,7 @@ describe('GraphCanvasPane — tidy-up button (mod_layout_tidy_action)', () => {
     // Reset the mocked-applyLayout spy + the size-at-call side array.
     // Otherwise call counts leak across cases.
     applyLayoutSpy.mockClear();
+    relayoutAllSpy.mockClear();
     sizesAtCall.length = 0;
     fitViewSpy.mockClear();
   });
@@ -2605,10 +2611,14 @@ describe('GraphCanvasPane — tidy-up button (mod_layout_tidy_action)', () => {
   });
 
   it('clicking it bumps layoutRevision so applyLayout re-runs against an empty cache', () => {
-    // The `applyLayoutSpy` is installed at the top of this file by the
-    // `./layoutEngine` mock; it delegates to the real implementation
-    // but captures call args + per-call `cache.size`. The spy was
-    // cleared in `beforeEach`.
+    // Per ADR 0025 Amendment 2026-05-24: on initial mount, every
+    // projected id is truly-new (the canvas's `knownNodeIdsRef` starts
+    // empty), so the canvas calls `relayoutAll` — NOT `applyLayout` —
+    // and seeds `knownNodeIdsRef` from the projection. After the
+    // tidy-up click, the position cache is cleared and the revision
+    // bumped; the next memoization tick sees no truly-new ids (both
+    // ids are already in `knownNodeIdsRef`), so the canvas takes the
+    // `applyLayout` branch with an empty cache.
     useWsStore
       .getState()
       .applyEvent(makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'a' }));
@@ -2616,31 +2626,22 @@ describe('GraphCanvasPane — tidy-up button (mod_layout_tidy_action)', () => {
       .getState()
       .applyEvent(makeNodeCreated({ sequence: 2, nodeId: NODE_B, wording: 'b' }));
     render(<GraphCanvasPane sessionId={SESSION_ID} />);
-    // The initial render populated the cache via at least one
-    // applyLayout call.
+    // Initial mount took the relayoutAll branch; applyLayout was NOT
+    // called yet.
+    expect(applyLayoutSpy.mock.calls.length).toBe(0);
+    expect(relayoutAllSpy.mock.calls.length).toBeGreaterThan(0);
     const callsBeforeClick = applyLayoutSpy.mock.calls.length;
-    expect(callsBeforeClick).toBeGreaterThan(0);
-    // The most-recent pre-click call should have populated the cache;
-    // capture its post-state by reading the call's `options.cache`
-    // argument — Vitest snapshots the OBJECT reference at call time,
-    // and the canvas mutates that same Map after the call returns.
-    const lastBeforeCall = applyLayoutSpy.mock.calls[callsBeforeClick - 1];
-    const cacheBefore = (lastBeforeCall?.[2] as { cache?: Map<string, unknown> } | undefined)
-      ?.cache;
-    expect(cacheBefore).toBeDefined();
-    // The canvas's useMemo writes positions back into the cache after
-    // applyLayout returns, so after the initial render the cache has
-    // entries for both seeded nodes.
-    expect(cacheBefore?.size).toBe(2);
 
     const button = screen.getByTestId('graph-tidy-up-button');
     act(() => {
       fireEvent.click(button);
     });
 
-    // After click, applyLayout was invoked at least once more — the
+    // After click, applyLayout was invoked at least once — the
     // revision bump invalidated the `nodes` `useMemo` and React re-ran
-    // it on the next render.
+    // it on the next render. The two seeded nodes are already in
+    // `knownNodeIdsRef`, so the truly-new check passes through to the
+    // applyLayout branch.
     const callsAfterClick = applyLayoutSpy.mock.calls.length;
     expect(callsAfterClick).toBeGreaterThan(callsBeforeClick);
   });
@@ -2653,21 +2654,9 @@ describe('GraphCanvasPane — tidy-up button (mod_layout_tidy_action)', () => {
       .getState()
       .applyEvent(makeNodeCreated({ sequence: 2, nodeId: NODE_B, wording: 'b' }));
     render(<GraphCanvasPane sessionId={SESSION_ID} />);
-    const callsBefore = applyLayoutSpy.mock.calls.length;
-    expect(callsBefore).toBeGreaterThan(0);
-
-    // Snapshot the cache SIZE AT INVOCATION for each pre-click call.
-    // The canvas writes positions back into the cache AFTER applyLayout
-    // returns, so the snapshot uses each call's recorded size (the
-    // mock factory records `options.cache.size` at call time, captured
-    // in a side array keyed off the call index).
-    const cacheSizesPre = applyLayoutSpy.mock.calls.map(
-      (args) => (args[2] as { cache?: Map<string, unknown> } | undefined)?.cache?.size ?? -1,
-    );
-    // The most-recent pre-click call: the cache had been re-populated
-    // by the previous render's write-back. (Initial pass: 0; subsequent
-    // passes: 2.)
-    expect(cacheSizesPre[cacheSizesPre.length - 1]).toBe(2);
+    // Initial mount took the relayoutAll branch (every id was truly
+    // new); applyLayout was NOT invoked.
+    expect(applyLayoutSpy.mock.calls.length).toBe(0);
 
     const button = screen.getByTestId('graph-tidy-up-button');
     act(() => {
@@ -2676,26 +2665,20 @@ describe('GraphCanvasPane — tidy-up button (mod_layout_tidy_action)', () => {
 
     // The post-click invocation: the click handler cleared the cache
     // synchronously BEFORE the revision bump triggered the useMemo
-    // re-run; the next applyLayout call sees `options.cache.size === 0`.
-    const postClickCall = applyLayoutSpy.mock.calls[callsBefore];
+    // re-run. The next memoization tick has both ids in
+    // `knownNodeIdsRef`, so the canvas takes the applyLayout branch
+    // with an empty cache.
+    const postClickCall = applyLayoutSpy.mock.calls[0];
     expect(postClickCall).toBeDefined();
     const cacheAtPostClick = (postClickCall?.[2] as { cache?: Map<string, unknown> } | undefined)
       ?.cache;
-    // The cache that applyLayout was invoked with: the same Map
-    // reference the canvas held. After the post-click writes, that
-    // Map ends at size 2 again (the canvas wrote positions back for
-    // both nodes). What we need to assert is that at the MOMENT of
-    // invocation the cache was empty — we captured that via the
-    // sizesAtCall side array. The post-click size must equal 0
-    // because the click handler `.clear()`ed the cache before the
-    // revision bump triggered the re-run.
-    // The captured size is the position-cache size AT CALL TIME
-    // (mock factory snapshots it). The most-recent post-click call's
-    // size is exactly 0.
-    expect((applyLayoutSpy as unknown as { sizesAtCall: number[] }).sizesAtCall[callsBefore]).toBe(
-      0,
-    );
     expect(cacheAtPostClick).toBeDefined();
+    // The captured size is the position-cache size AT CALL TIME (the
+    // mock factory snapshots it before delegating to the real
+    // implementation). The post-click size must equal 0 because the
+    // click handler `.clear()`ed the cache before the revision bump
+    // triggered the re-run.
+    expect((applyLayoutSpy as unknown as { sizesAtCall: number[] }).sizesAtCall[0]).toBe(0);
   });
 
   it('clicking it on an empty canvas is a no-op (no throw, applyLayout invoked with empty inputs)', () => {
