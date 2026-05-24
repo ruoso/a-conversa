@@ -21,8 +21,9 @@
 //   5. Latest-vote-wins on a same-(other-)participant retake (agree →
 //      dispute keeps ONE entry with `dispute`; insertion-position
 //      preserved per Decision §5).
-//   6. A `'withdraw'` arm by a voter who previously voted REMOVES the
-//      entry from the per-entity list per Decision §1.
+//   6. (Retired by `pf_unit_test_audit` per ADR 0030 §3 — the legacy
+//      `'withdraw'` vote-choice arm is gone; withdrawal is its own
+//      first-class event kind, surfaced via the facet-status projection.)
 //   7. Two facets on the same entity by the same other voter — one
 //      `'agree'` + one `'dispute'` — rolls up to a single entry with
 //      `'dispute'` (dispute-wins tie-break per Decision §1).
@@ -154,7 +155,7 @@ function voteEvent(opts: {
   sequence: number;
   proposalId: string;
   participant: string;
-  vote: 'agree' | 'dispute' | 'withdraw';
+  vote: 'agree' | 'dispute';
 }): Event {
   return {
     id: `00000000-0000-4000-8000-${(0x500 + opts.sequence).toString(16).padStart(12, '0')}`,
@@ -166,7 +167,7 @@ function voteEvent(opts: {
       target: 'proposal' as const,
       proposal_id: opts.proposalId,
       participant: opts.participant,
-      choice: opts.vote as 'agree' | 'dispute',
+      choice: opts.vote,
       voted_at: '2026-05-17T00:00:00.000Z',
     },
     createdAt: '2026-05-17T00:00:00.000Z',
@@ -265,36 +266,14 @@ describe('projectOtherVotes — per-entity per-OTHER-voter projection narrowed t
     ]);
   });
 
-  it('(f) a "withdraw" arm by an other voter who previously voted REMOVES the entry from the per-entity list (Decision §1)', () => {
-    const events: Event[] = [
-      classifyProposal({ sequence: 1, envelopeId: PROPOSAL_CLASSIFY, nodeId: NODE_A }),
-      voteEvent({
-        sequence: 2,
-        proposalId: PROPOSAL_CLASSIFY,
-        participant: VOTER_X,
-        vote: 'agree',
-      }),
-      // Second voter weighs in so we can also verify the gap-close
-      // semantics — after VOTER_X withdraws, VOTER_Y should be the
-      // SOLE surviving entry (and at position 0 because the gap
-      // closed).
-      voteEvent({
-        sequence: 3,
-        proposalId: PROPOSAL_CLASSIFY,
-        participant: VOTER_Y,
-        vote: 'dispute',
-      }),
-      voteEvent({
-        sequence: 4,
-        proposalId: PROPOSAL_CLASSIFY,
-        participant: VOTER_X,
-        vote: 'withdraw',
-      }),
-    ];
-    const out = projectOtherVotes(events, ME);
-    const list = out.nodes.get(NODE_A);
-    expect(list).toEqual([{ participantId: VOTER_Y, choice: 'dispute' }]);
-  });
+  // Test (f) — the `'withdraw'` vote-choice arm removing a voter from
+  // the per-entity list — was deleted by `pf_unit_test_audit`. Per ADR
+  // 0030 §3 + `pf_facet_keyed_vote_payload` the wire enum collapsed to
+  // `'agree' | 'dispute'` (Zod hard-rejects `'withdraw'` on inbound
+  // validation); withdrawal is its own first-class event kind
+  // (`withdraw-agreement`) that this projector silently drops today.
+  // A future `part_withdraw_indicator` task closes the indicator
+  // hand-off with the new event kind.
 
   it('(g) two facets on the same entity — one agree + one dispute by the same other voter — rolls up to "dispute" (dispute-wins per Decision §1)', () => {
     const events: Event[] = [

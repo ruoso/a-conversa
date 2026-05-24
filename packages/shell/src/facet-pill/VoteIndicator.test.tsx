@@ -10,7 +10,10 @@
 //   1. The seam attributes the test surfaces target
 //      (`data-vote-indicator`, `data-participant-id`, `data-choice`).
 //   2. The per-choice inner-fill classes (emerald = agree, rose =
-//      dispute, slate = withdraw).
+//      dispute). Per ADR 0030 §3 + `pf_unit_test_audit` the legacy
+//      `'withdraw'` arm is retired — withdrawal is its own first-class
+//      event kind (`withdraw-agreement`) surfaced via the facet-status
+//      projection, not via this indicator.
 //   3. The per-participant outer-ring class is deterministic — same
 //      participant id always yields the same ring class, distinct
 //      participants typically yield distinct classes.
@@ -89,11 +92,6 @@ describe('VoteIndicator — seam attributes', () => {
     await render(<VoteIndicator participantId={PARTICIPANT_A} choice="dispute" />);
     expect(getIndicator().getAttribute('data-choice')).toBe('dispute');
   });
-
-  it('stamps data-choice="withdraw" for a withdraw vote', async () => {
-    await render(<VoteIndicator participantId={PARTICIPANT_A} choice="withdraw" />);
-    expect(getIndicator().getAttribute('data-choice')).toBe('withdraw');
-  });
 });
 
 describe('VoteIndicator — per-choice inner-fill classes', () => {
@@ -102,7 +100,6 @@ describe('VoteIndicator — per-choice inner-fill classes', () => {
     const indicator = getIndicator();
     expect(indicator.className).toContain('bg-emerald-500');
     expect(indicator.className).not.toContain('bg-rose-500');
-    expect(indicator.className).not.toContain('bg-slate-400');
   });
 
   it('dispute applies bg-rose-500', async () => {
@@ -110,15 +107,6 @@ describe('VoteIndicator — per-choice inner-fill classes', () => {
     const indicator = getIndicator();
     expect(indicator.className).toContain('bg-rose-500');
     expect(indicator.className).not.toContain('bg-emerald-500');
-    expect(indicator.className).not.toContain('bg-slate-400');
-  });
-
-  it('withdraw applies bg-slate-400 (the methodology "agreed-then-retracted" gray)', async () => {
-    await render(<VoteIndicator participantId={PARTICIPANT_A} choice="withdraw" />);
-    const indicator = getIndicator();
-    expect(indicator.className).toContain('bg-slate-400');
-    expect(indicator.className).not.toContain('bg-emerald-500');
-    expect(indicator.className).not.toContain('bg-rose-500');
   });
 });
 
@@ -220,16 +208,5 @@ describe('VoteIndicator — localized aria-label (cross-locale)', () => {
     expect(getIndicator().getAttribute('aria-label')).toBe(
       `Participant ${PARTICIPANT_A} voted dispute`,
     );
-  });
-
-  it('pt-BR withdraw reads "Participante <uuid> votou retirou"', async () => {
-    await i18next.changeLanguage('pt-BR');
-    await render(<VoteIndicator participantId={PARTICIPANT_A} choice="withdraw" />);
-    expect(getIndicator().getAttribute('aria-label')).toBe(
-      `Participante ${PARTICIPANT_A} votou retirou`,
-    );
-    await act(async () => {
-      await i18next.changeLanguage('en-US');
-    });
   });
 });

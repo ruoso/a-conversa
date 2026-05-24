@@ -385,7 +385,7 @@ describe('ProposalFacetBreakdown — per-participant vote indicators', () => {
     const votes: readonly Vote[] = [
       { participantId: PARTICIPANT_A, choice: 'agree' },
       { participantId: PARTICIPANT_B, choice: 'dispute' },
-      { participantId: PARTICIPANT_C, choice: 'withdraw' },
+      { participantId: PARTICIPANT_C, choice: 'agree' },
     ];
     render(
       <ProposalFacetBreakdown
@@ -405,10 +405,12 @@ describe('ProposalFacetBreakdown — per-participant vote indicators', () => {
       PARTICIPANT_B,
       PARTICIPANT_C,
     ]);
+    // Per ADR 0030 §3 + `pf_unit_test_audit`: the wire `vote.choice`
+    // enum is `'agree' | 'dispute'`; no `'withdraw'` arm.
     expect(Array.from(indicators).map((el) => el.getAttribute('data-choice'))).toEqual([
       'agree',
       'dispute',
-      'withdraw',
+      'agree',
     ]);
   });
 

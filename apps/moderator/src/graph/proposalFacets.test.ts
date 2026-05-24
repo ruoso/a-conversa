@@ -443,7 +443,7 @@ describe('derivePerProposalFacets — per-participant votes field', () => {
       node_id: NODE_X,
       new_wording: 'updated',
     };
-    const votes: readonly Vote[] = [{ participantId: PARTICIPANT_A, choice: 'withdraw' }];
+    const votes: readonly Vote[] = [{ participantId: PARTICIPANT_A, choice: 'dispute' }];
     const index = votesIndexWith(NODE_X, 'wording', votes);
     const out = derivePerProposalFacets(proposal, EMPTY_INDEX, undefined, index);
     expect(out[0]?.votes).toEqual(votes);
@@ -478,7 +478,7 @@ describe('derivePerProposalFacets — per-participant votes field', () => {
     const votes: readonly Vote[] = [
       { participantId: PARTICIPANT_A, choice: 'agree' },
       { participantId: PARTICIPANT_B, choice: 'dispute' },
-      { participantId: PARTICIPANT_C, choice: 'withdraw' },
+      { participantId: PARTICIPANT_C, choice: 'agree' },
     ];
     const index = votesIndexWith(NODE_X, 'classification', votes);
     const out = derivePerProposalFacets(proposal, EMPTY_INDEX, undefined, index);
@@ -695,14 +695,12 @@ describe('deriveAllAgree — unanimous agree across current non-moderator partic
     expect(out).toEqual({ ok: false, reason: 'participants-disagree' });
   });
 
-  it('returns { ok: false, reason: participants-disagree } when a participant voted withdraw', () => {
-    const entry = makeEntry([
-      { participantId: DEBATER_A_ID, choice: 'agree' },
-      { participantId: DEBATER_B_ID, choice: 'withdraw' },
-    ]);
-    const out = deriveAllAgree([entry], new Set([DEBATER_A_ID, DEBATER_B_ID]));
-    expect(out).toEqual({ ok: false, reason: 'participants-disagree' });
-  });
+  // The legacy "participant voted withdraw blocks commit" case was
+  // deleted by `pf_unit_test_audit`: per ADR 0030 §3 +
+  // `pf_facet_keyed_vote_payload` the wire `vote.choice` enum collapsed
+  // to `'agree' | 'dispute'`; withdrawal is its own first-class event
+  // kind (`withdraw-agreement`). The `'dispute'` case above is the
+  // load-bearing pin for the not-agree → participants-disagree path.
 
   it('returns { ok: false, reason: proposal-meta-disagreement } when any entry status is meta-disagreement', () => {
     const entry = makeEntry(

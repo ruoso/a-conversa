@@ -1589,31 +1589,12 @@ describe('StatementNode — per-participant vote indicators (mod_vote_indicators
     expect(choices).toEqual(['agree', 'dispute']);
   });
 
-  it('renders a withdrawn vote with the gray choice color and data-choice="withdraw"', async () => {
-    await render(
-      <StatementNode
-        {...makeNodeProps({
-          id: 'n-withdrawn',
-          data: {
-            wording: 'one withdrew on classification',
-            kind: 'fact',
-            facetStatuses: { classification: 'withdrawn' },
-            votesByFacet: {
-              classification: [{ participantId: PARTICIPANT_A, choice: 'withdraw' }],
-            },
-          },
-        })}
-      />,
-    );
-    const row = screen.getByTestId('facet-pill-row-node-n-withdrawn');
-    const indicator = row.querySelector<HTMLElement>('[data-vote-indicator]');
-    expect(indicator).toBeTruthy();
-    expect(indicator!.getAttribute('data-choice')).toBe('withdraw');
-    expect(indicator!.className).toContain('bg-slate-400');
-    // Not styled as agree (emerald) or dispute (rose).
-    expect(indicator!.className).not.toContain('bg-emerald-500');
-    expect(indicator!.className).not.toContain('bg-rose-500');
-  });
+  // The legacy "renders a withdrawn vote with the gray choice color"
+  // case was deleted by `pf_unit_test_audit`: per ADR 0030 §3 the wire
+  // `vote.choice` enum collapsed to `'agree' | 'dispute'`; the indicator
+  // surface no longer renders a `'withdraw'` arm (withdrawal is its own
+  // first-class event kind, `withdraw-agreement`, surfaced via the
+  // per-facet `'withdrawn'` STATUS — exercised separately).
 });
 
 // -- Click-to-select visual state (mod_selection) ---------------------

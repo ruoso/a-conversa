@@ -16,7 +16,7 @@
 //   4. classify-node + all participants agree → 'agreed'.
 //   5. classify-node + a dispute → 'disputed'.
 //   6. classify-node + all agree + commit → 'committed'.
-//   7. classify-node + commit + a withdraw vote → 'withdrawn'.
+//   7. classify-node + commit + a withdraw-agreement → 'withdrawn'.
 //   8. classify-node + mark-meta-disagreement → 'meta-disagreement'.
 //   9. A left participant's vote is excluded from the agree count.
 //  10. Empty-session facet (no current participants, no votes) → 'proposed'.
@@ -168,7 +168,7 @@ function voteEvent(
   seq: number,
   proposalId: string,
   participant: string,
-  vote: 'agree' | 'dispute' | 'withdraw',
+  vote: 'agree' | 'dispute',
 ): Event {
   return {
     id: envId('v', seq),
@@ -180,7 +180,7 @@ function voteEvent(
       target: 'proposal' as const,
       proposal_id: proposalId,
       participant,
-      choice: vote as 'agree' | 'dispute',
+      choice: vote,
       voted_at: '2026-05-11T00:00:10.000Z',
     },
     createdAt: '2026-05-11T00:00:10.000Z',

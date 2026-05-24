@@ -663,13 +663,11 @@ function handleVote(
   }
   const proposalPayload: ProposalPayload = pending ? pending.payload : committed!.payload;
 
-  // The new payload's `choice` enum is `'agree' | 'dispute'`. The
-  // existing `PerParticipantVote` union still includes `'withdraw'`
-  // for back-compat with the projection types until
-  // `pf_withdraw_agreement_handler` migrates the withdraw projection
-  // to the dedicated `withdraw-agreement` event handler. The narrower
-  // `'agree' | 'dispute'` happens to be a subtype of
-  // `PerParticipantVote`, so this assignment needs no cast.
+  // Per ADR 0030 §3 + `pf_facet_keyed_vote_payload`: the `vote.choice`
+  // enum is `'agree' | 'dispute'`; withdrawal is its own first-class
+  // event kind. `pf_unit_test_audit` retired the legacy `'withdraw'`
+  // arm from the `PerParticipantVote` union, so this is now a same-type
+  // assignment (the union narrowed to match the wire schema).
   const vote: PerParticipantVote = payload.choice;
   changes.push({
     kind: 'vote-recorded',

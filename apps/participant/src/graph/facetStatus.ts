@@ -27,17 +27,21 @@
 // moderator-side header comment names the same lockstep requirement.
 //
 // Walks the per-session event log once and builds a per-entity per-facet
-// `FacetState` then runs the seven derivation rules to produce the final
+// `FacetState` then runs the eight derivation rules to produce the final
 // `FacetStatus` per entity-facet pair. Rules ported from
 // `deriveFacetStatus`:
 //
 //   1. Meta-disagreement on a facet short-circuits to 'meta-disagreement'.
-//   2. Filter votes by current participants (joined and not left).
-//   3. A `withdraw` vote against a committed facet → 'withdrawn'.
-//   4. Any `dispute` vote (or `withdraw` without prior commit) → 'disputed'.
-//   5. Committed (no dispute / withdraw) → 'committed'.
-//   6. All current participants voted `agree` → 'agreed'.
-//   7. Anything else → 'proposed'.
+//   2. No candidate value yet → 'awaiting-proposal'.
+//   3. Filter votes + withdrawals by current participants (joined and not left).
+//   4. A withdraw-agreement against a committed facet → 'withdrawn'.
+//      (Withdrawals come from `withdraw-agreement` events only — per
+//      ADR 0030 §3 the legacy `vote.choice = 'withdraw'` arm is retired;
+//      closed by `pf_unit_test_audit`.)
+//   5. Any `dispute` vote → 'disputed'.
+//   6. Committed (no dispute / withdraw) → 'committed'.
+//   7. All current participants voted `agree` → 'agreed'.
+//   8. Anything else → 'proposed'.
 //
 // Returns `FacetStatusIndex`: two `Map`s — one per entity kind (nodes / edges)
 // — keyed by entity id, each value a `Partial<Record<FacetName, FacetStatus>>`.
@@ -93,7 +97,14 @@ export type FacetStatus =
  */
 export type FacetName = 'classification' | 'substance' | 'wording';
 
-type PerParticipantVote = 'agree' | 'dispute' | 'withdraw';
+// Per ADR 0030 §3 + `pf_facet_keyed_vote_payload` (commit `a2521f6`) +
+// `pf_withdraw_agreement_handler` (commit `8518fff`): `vote.choice`
+// collapsed to `'agree' | 'dispute'`; withdrawal is its own first-class
+// event kind. The legacy `'withdraw'` arm has been retired from this
+// union by `pf_unit_test_audit` — withdrawals are tracked separately on
+// the per-facet `withdrawals` set populated by `withdraw-agreement`
+// events.
+type PerParticipantVote = 'agree' | 'dispute';
 
 /**
  * The output of `computeFacetStatuses`. Per entity kind, a Map of entity id
@@ -536,18 +547,19 @@ function derive(state: InternalFacetState, currentParticipants: Set<string>): Fa
   }
 
   const hasDispute = currentVotes.some((v) => v === 'dispute');
-  const hasLegacyWithdrawVote = currentVotes.some((v) => v === 'withdraw');
 
   // Rule 4: withdraw-agreement against a committed facet → 'withdrawn'.
-  // Back-compat: a legacy `vote.choice = 'withdraw'` against a
-  // committed candidate is also surfaced as `'withdrawn'` until the
-  // methodology engine's emission path migrates to `withdraw-agreement`.
-  if (state.committed && (hasCurrentWithdrawal || hasLegacyWithdrawVote)) {
+  // Per ADR 0030 §3: withdrawal is its own first-class event kind
+  // (`withdraw-agreement`); the legacy `vote.choice = 'withdraw'`
+  // back-compat branch was closed by `pf_unit_test_audit` since the
+  // wire schema's hard rejection + ADR 0030's clean-break migration
+  // mean no legacy `'withdraw'` choice can reach this projection.
+  if (state.committed && hasCurrentWithdrawal) {
     return 'withdrawn';
   }
 
   // Rule 5: any current dispute → disputed.
-  if (hasDispute || (hasLegacyWithdrawVote && !state.committed)) {
+  if (hasDispute) {
     return 'disputed';
   }
 

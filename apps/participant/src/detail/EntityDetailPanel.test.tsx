@@ -189,7 +189,7 @@ function voteEvent(opts: {
   sequence: number;
   proposalId: string;
   voterId: string;
-  arm: 'agree' | 'dispute' | 'withdraw';
+  arm: 'agree' | 'dispute';
 }): Event {
   return {
     id: `00000000-0000-4000-8000-${(0x700 + opts.sequence).toString(16).padStart(12, '0')}`,
@@ -201,7 +201,7 @@ function voteEvent(opts: {
       target: 'proposal' as const,
       proposal_id: opts.proposalId,
       participant: opts.voterId,
-      choice: opts.arm as 'agree' | 'dispute',
+      choice: opts.arm,
       voted_at: '2026-05-17T00:00:00.000Z',
     },
     createdAt: '2026-05-17T00:00:00.000Z',

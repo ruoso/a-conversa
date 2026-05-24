@@ -193,10 +193,16 @@ function applyMetaDisagreementMark(
   );
 }
 
+// Per ADR 0030 §3 + `pf_unit_test_audit`: the wire `vote.choice` enum
+// is `'agree' | 'dispute'`; withdrawal is its own first-class event
+// kind (`withdraw-agreement`). This helper does NOT carry a
+// `'withdraw'` arm — schema rejection is pinned at the wire layer in
+// `apps/server/src/events/validate.test.ts` and
+// `packages/shared-types/src/events.test.ts`.
 function makeVoteAction(
   projection: ReturnType<typeof createEmptyProjection>,
   requester: string,
-  vote: 'agree' | 'dispute' | 'withdraw',
+  vote: 'agree' | 'dispute',
   proposalEventId: string = PROPOSAL_ID_1,
 ): VoteAction {
   return {
@@ -419,68 +425,24 @@ describe('vote handler — dispute arm', () => {
 // ---------------------------------------------------------------
 
 describe('vote handler — withdraw arm', () => {
-  it('rejects a withdraw on a facet-valued proposal with illegal-state-transition (withdraw is no longer a vote choice)', () => {
-    // Per ADR 0030 §3 + `pf_withdraw_agreement_event_kind` /
-    // `pf_vote_handler_facet_keyed`: the `'withdraw'` arm of the vote
-    // payload is deprecated — withdrawal is its own top-level event
-    // kind (`withdraw-agreement`). The seeded `classify-node` is a
-    // facet-valued sub-kind; the facet-arm of the vote handler
-    // rejects withdraw with `'illegal-state-transition'` because
-    // withdraw is no longer a valid `choice` for facet-keyed votes.
-    const p = seedSession();
-    // Even with a prior agree, withdraw is illegal here — the
-    // dedicated `withdraw-agreement` event kind owns the legal path.
-    applyVote(p, DEBATER_A_ID, 'agree');
-    const action = makeVoteAction(p, DEBATER_A_ID, 'withdraw');
-    const r = validateAction(p, action);
-    expect(r.ok).toBe(false);
-    if (!r.ok) {
-      expect(r.reason).toBe('illegal-state-transition');
-      expect(r.detail).toContain('withdraw');
-    }
-  });
-
-  it('rejects a withdraw on a meta-disagreement-marked proposal with proposal-already-meta-disagreement', () => {
-    const p = seedSession();
-    applyMetaDisagreementMark(p);
-    const action = makeVoteAction(p, DEBATER_A_ID, 'withdraw');
-    const r = validateAction(p, action);
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.reason).toBe('proposal-already-meta-disagreement');
-  });
-
-  it('rejects a withdraw on an already-committed facet-valued proposal with proposal-already-committed', () => {
-    // On the facet-arm of the vote handler, a committed facet
-    // refuses ALL further vote-envelope arms — `'withdraw'` would
-    // travel through the dedicated `withdraw-agreement` event kind
-    // per ADR 0030 §3, not through `vote`. The facet's derived
-    // status is checked first, so the rejection here is the
-    // facet-not-votable check (specifically the committed branch),
-    // not the prior-vote check.
-    const p = seedSession();
-    applyVote(p, MODERATOR_ID, 'agree');
-    applyVote(p, DEBATER_A_ID, 'agree');
-    applyVote(p, DEBATER_B_ID, 'agree');
-    applyCommit(p);
-    // A fourth participant joins after commit; they attempt to
-    // withdraw against the committed facet.
-    const LATE_JOINER_ID = '99999999-9999-4999-8999-999999999999';
-    applyEvent(
-      p,
-      makeEvent(nextSequence(p), 'participant-joined', LATE_JOINER_ID, T9, {
-        user_id: LATE_JOINER_ID,
-        role: 'debater-A',
-        screen_name: 'L',
-        joined_at: T9,
-      }),
-    );
-    const action = makeVoteAction(p, LATE_JOINER_ID, 'withdraw');
-    const r = validateAction(p, action);
-    expect(r.ok).toBe(false);
-    if (!r.ok) {
-      expect(r.reason).toBe('proposal-already-committed');
-    }
-  });
+  // Per ADR 0030 §3 + `pf_unit_test_audit`: the legacy `vote.choice =
+  // 'withdraw'` arm is retired. The wire schema hard-rejects
+  // `'withdraw'` on inbound validation (Zod `z.enum(['agree',
+  // 'dispute'])`); `VoteAction.vote` is narrowed to match. The
+  // following three cases — "facet-valued withdraw rejected with
+  // illegal-state-transition", "meta-disagreement withdraw rejected
+  // with proposal-already-meta-disagreement", "committed withdraw
+  // rejected with proposal-already-committed" — used to pin the
+  // methodology engine's rejection of the legacy choice. They are
+  // deleted because the methodology arm cannot be reached: schema
+  // rejection happens at the wire layer (pinned in
+  // `apps/server/src/events/validate.test.ts:rejects 'withdraw' as a
+  // vote choice` + `packages/shared-types/src/events.test.ts`).
+  //
+  // The replacement legal path — `withdraw-agreement` event kind +
+  // projection-side `'withdrawn'` derivation — is pinned by the
+  // surviving "records a withdraw-agreement event on the projection"
+  // case below.
 
   // Per ADR 0030 §3 + `pf_withdraw_agreement_handler`: withdraw is
   // no longer a vote choice — it is its own top-level event kind
@@ -523,42 +485,18 @@ describe('vote handler — withdraw arm', () => {
     expect(deriveFacetStatus(p, 'node', NODE_ID_1, 'classification')).toBe('withdrawn');
   });
 
-  it('rejects a withdraw after a dispute → switch (prior vote is dispute, not agree) with no-prior-agree', () => {
-    // Construct a committed proposal then verify that a different
-    // proposal-state setup (a participant who voted dispute on a
-    // proposal that nevertheless became committed somehow) can't
-    // withdraw — they have a prior vote, but it isn't 'agree'.
-    //
-    // In practice a proposal can't commit without unanimous agree, so
-    // this combination (committed proposal + a participant who voted
-    // dispute) requires the dispute vote to be cast *after* commit on
-    // a pending re-proposal cycle... but that's a different proposal
-    // id. The cleanest way to hit "prior vote != agree on a committed
-    // proposal" is to leverage the agree → dispute switch: DEBATER_A
-    // votes agree, then switches to dispute, leaving the per-facet
-    // record at 'dispute' even though the facet itself never reached
-    // unanimity. The commit can't land in this state, so to test
-    // "withdraw rejected because prior vote is dispute" we'd need to
-    // bypass the commit gate. Instead, this case is asserted on a
-    // proposal that *did* commit via the other two participants while
-    // DEBATER_A voted (then switched to) dispute — but that breaks
-    // commit_logic's unanimity. The closer test: just check that the
-    // priorVote-check rejects when the recorded vote isn't 'agree',
-    // exercised via a `late-joiner who voted dispute` style construction
-    // — but the late-joiner case above already covers `priorVote ===
-    // null`. We skip this combination because the unanimity invariant
-    // makes it unreachable through legal events. The detail-format check
-    // below for the existing reject case ensures the helper's branches
-    // are covered.
+  // Pins the universal gate (not-a-participant) on a committed
+  // proposal. The legacy version of this case exercised the
+  // `'withdraw'` vote-choice arm — `pf_unit_test_audit` rewrote it
+  // against the `'agree'` arm (the universal gate catches the
+  // outsider before any choice-specific branch runs).
+  it('rejects a vote from a non-participant on a committed proposal with not-a-participant', () => {
     const p = seedSession();
     applyVote(p, MODERATOR_ID, 'agree');
     applyVote(p, DEBATER_A_ID, 'agree');
     applyVote(p, DEBATER_B_ID, 'agree');
     applyCommit(p);
-    // Outsider (not joined): the universal gate catches this before
-    // priorVote is checked. Doesn't exercise prior-vote=dispute, but
-    // does exercise the universal-gate branch in concert with withdraw.
-    const action = makeVoteAction(p, OUTSIDER_ID, 'withdraw');
+    const action = makeVoteAction(p, OUTSIDER_ID, 'agree');
     const r = validateAction(p, action);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toBe('not-a-participant');

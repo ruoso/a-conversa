@@ -16,7 +16,7 @@
 //   (d) classify-node + all participants agree → 'agreed'
 //   (e) classify-node + a dispute vote → 'disputed'
 //   (f) classify-node + all agree + commit → 'committed'
-//   (g) committed classify-node + a withdraw → 'withdrawn'
+//   (g) committed classify-node + a withdraw-agreement → 'withdrawn'
 //   (h) classify-node + mark-meta-disagreement → 'meta-disagreement'
 //   (i) a left participant's vote is excluded from the agreement count
 //   (j) set-node-substance proposal → substance facet
@@ -283,7 +283,7 @@ function voteEvent(
   seq: number,
   proposalId: string,
   participant: string,
-  vote: 'agree' | 'dispute' | 'withdraw',
+  vote: 'agree' | 'dispute',
 ): Event {
   return {
     id: envId('v', seq),
@@ -295,7 +295,7 @@ function voteEvent(
       target: 'proposal' as const,
       proposal_id: proposalId,
       participant,
-      choice: vote as 'agree' | 'dispute',
+      choice: vote,
       voted_at: '2026-05-17T00:00:10.000Z',
     },
     createdAt: '2026-05-17T00:00:10.000Z',

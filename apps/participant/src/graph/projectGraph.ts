@@ -188,19 +188,20 @@ export interface ParticipantNodeData {
    * Decision §3 of `part_own_vote_indicators`) AND the
    * `data-own-vote="agree|dispute|none"` mirror attribute (Decision §5).
    * The `'none'` sentinel covers "no recordable vote by the current
-   * participant" AND "the latest vote arm was `'withdraw'`" (per
-   * Decision §1 — withdrawal collapses to the un-voted baseline at
-   * the at-a-glance layer).
+   * participant". (Per ADR 0030 §3 + `pf_unit_test_audit` the legacy
+   * `'withdraw'` vote-choice arm is retired; withdrawal is its own
+   * first-class event kind, `withdraw-agreement`, surfaced via the
+   * facet-status projection, not via this at-a-glance ring.)
    */
   readonly ownVote: OwnVote;
   /**
    * Per-entity list of OTHER participants' at-a-glance votes on this
    * node, rolled up across every facet-targeting proposal that
    * references the node. Sourced from `othersVoteIndex.nodes`. Each
-   * entry is `{ participantId, choice: 'agree' | 'dispute' }`. The
-   * `'withdraw'` arm REMOVES the voter's entry from the list per
-   * Decision §1 of `part_other_vote_indicators` — withdrawal
-   * collapses to the un-voted baseline at the at-a-glance layer.
+   * entry is `{ participantId, choice: 'agree' | 'dispute' }`. Per
+   * ADR 0030 §3 + `pf_unit_test_audit` the wire enum is `'agree' |
+   * 'dispute'` and no `'withdraw'` arm reaches this layer; withdrawal
+   * is its own first-class event kind (`withdraw-agreement`).
    * First-vote-arrival sort order per Decision §5; arm-switching by
    * the same voter overwrites in-place at the original position
    * (mirrors the moderator's `positionIndex` posture).
@@ -301,10 +302,11 @@ export interface ParticipantEdgeData {
    * edge, rolled up across every facet-targeting proposal that
    * references the edge (today only the `set-edge-substance`
    * sub-kind). Sourced from `othersVoteIndex.edges`. Each entry is
-   * `{ participantId, choice: 'agree' | 'dispute' }`. The `'withdraw'`
-   * arm REMOVES the voter's entry from the list per Decision §1 of
-   * `part_other_vote_indicators`. First-vote-arrival sort order per
-   * Decision §5.
+   * `{ participantId, choice: 'agree' | 'dispute' }`. Per ADR 0030 §3 +
+   * `pf_unit_test_audit` the wire enum is `'agree' | 'dispute'` and no
+   * `'withdraw'` arm reaches this layer; withdrawal is its own first-
+   * class event kind (`withdraw-agreement`). First-vote-arrival sort
+   * order per Decision §5.
    *
    * Symmetric with `ParticipantNodeData.otherVotes` per Decision §1 —
    * the wire `proposal` family targets both node + edge entities; the

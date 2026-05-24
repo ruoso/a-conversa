@@ -25,7 +25,9 @@
 //      participants (`leftAt === null`).
 //   4. A current participant in `withdrawals` AND `committedAt !== null`
 //      AND the committed value still matches the current candidate
-//      → `'withdrawn'`.
+//      → `'withdrawn'`. (Withdrawals come from the `withdraw-agreement`
+//      event kind only — per ADR 0030 §3 the legacy `vote.choice =
+//      'withdraw'` arm is retired; closed by `pf_unit_test_audit`.)
 //   5. Any current participant whose most-recent vote is `'dispute'`
 //      → `'disputed'`.
 //   6. `committedAt !== null` AND the committed value still matches the
@@ -177,33 +179,27 @@ export function deriveFacetStatusFromState(
     facetState.committedCandidateValue === facetState.candidateValue;
 
   const hasDispute = currentVotes.some((v) => v === 'dispute');
-  // Per ADR 0030 §3 + `pf_facet_keyed_vote_payload`: the `vote.choice`
-  // enum collapsed to `'agree' | 'dispute'`; `'withdraw'` is no longer
-  // a vote choice — it is its own event kind (`withdraw-agreement`).
-  // For back-compat with logs / tests that still emit the old
-  // `'withdraw'` choice, the derivation treats a `'withdraw'` vote like
-  // a dispute on the current candidate (no settled record yet).
-  const hasLegacyWithdrawVote = currentVotes.some((v) => v === 'withdraw');
+  // Per ADR 0030 §3 + `pf_facet_keyed_vote_payload` (commit `a2521f6`):
+  // `vote.choice` is `'agree' | 'dispute'`; withdrawal is its own first-
+  // class event kind (`withdraw-agreement`). The legacy `'withdraw'` vote
+  // arm has been removed — the audit task `pf_unit_test_audit` closed
+  // the provisional back-compat branch since the wire schema's hard
+  // rejection (Zod enum on inbound validation) + ADR 0030's clean-break
+  // migration policy mean no legacy `'withdraw'` choice can reach the
+  // projection.
 
   // Rule 4: a withdraw-agreement event from a current participant
   // against a committed candidate value sends the facet to `'withdrawn'`.
   // Per ADR 0030 §3: the methodology's withdraw gesture at
   // `docs/methodology.md:25` rescinds a previously-committed agreement;
   // it sends the facet back to disputed semantically, surfaced as
-  // `'withdrawn'`. Back-compat: a legacy `vote.choice = 'withdraw'`
-  // against a committed candidate is also surfaced as `'withdrawn'`
-  // — the methodology engine continues to emit this legacy shape until
-  // `pf_vote_handler_facet_keyed` + `pf_withdraw_agreement_handler`
-  // land the new `withdraw-agreement`-emission path.
-  if (isCurrentCandidateCommitted && (hasCurrentWithdrawal || hasLegacyWithdrawVote)) {
+  // `'withdrawn'`.
+  if (isCurrentCandidateCommitted && hasCurrentWithdrawal) {
     return 'withdrawn';
   }
 
   // Rule 5: any current participant's vote is a dispute → disputed.
-  // A legacy `'withdraw'` vote *without* a prior commit also lands here
-  // (the participant is signalling rejection; the projection has no
-  // commit to surface as `withdrawn`).
-  if (hasDispute || (hasLegacyWithdrawVote && !isCurrentCandidateCommitted)) {
+  if (hasDispute) {
     return 'disputed';
   }
 

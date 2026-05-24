@@ -12,21 +12,21 @@
 //
 // Per the methodology (`docs/methodology.md` § "Votes / Withdrawal"),
 // every facet-targeting proposal accumulates per-participant votes:
-// `agree`, `dispute`, or `withdraw`. The whole-pill border / opacity
-// surfaces the facet's overall STATUS (a function of the votes through
-// the seven derivation rules in `facetStatus.ts`); this indicator
-// surfaces WHO voted WHAT — the ambient "Alice agreed, Bob disputed,
-// Carol withdrew" view on the canvas.
+// `agree` or `dispute`. (Per ADR 0030 §3 +
+// `pf_facet_keyed_vote_payload`: withdrawal is its own first-class event
+// kind, `withdraw-agreement`, tracked on a separate per-facet set —
+// `pf_unit_test_audit` closed the `'withdraw'` vote choice arm.) The
+// whole-pill border / opacity surfaces the facet's overall STATUS (a
+// function of the votes through the eight derivation rules in
+// `facetStatus.ts`); this indicator surfaces WHO voted WHAT — the
+// ambient "Alice agreed, Bob disputed" view on the canvas.
 //
 // **Dual color encoding** (the same design language `mod_axiom_mark_
 // decoration` established):
 //   - Outer ring → deterministic per-participant color via
 //     `axiomMarkColorFor(participantId)` (the six-bucket palette). Same
 //     participant = same ring color across every node and surface.
-//   - Inner fill → choice-keyed: emerald for agree, rose for dispute,
-//     slate-gray for withdraw (the methodology semantics: withdrawn =
-//     the agreement was retracted, the dot grays out but stays as a
-//     record).
+//   - Inner fill → choice-keyed: emerald for agree, rose for dispute.
 //
 // Two readings: scan the inner fills to see the agreement pattern at a
 // glance; look at a specific dot's outer ring to identify the
@@ -46,7 +46,7 @@ import { axiomMarkColorFor } from './participant-color.js';
 
 export interface VoteIndicatorProps {
   readonly participantId: string;
-  readonly choice: 'agree' | 'dispute' | 'withdraw';
+  readonly choice: 'agree' | 'dispute';
 }
 
 /**
@@ -54,14 +54,13 @@ export interface VoteIndicatorProps {
  * string so Tailwind's JIT content scanner picks it up at build time
  * (interpolated runtime strings aren't extracted).
  *
- * Withdraw renders as slate-gray rather than vanishing — the
- * methodology preserves the record of "agreed then retracted" and the
- * indicator must surface that signal too.
+ * Per ADR 0030 §3 + `pf_unit_test_audit`: the legacy `'withdraw'` arm
+ * is retired (its own event kind, `withdraw-agreement`, surfaces via
+ * the facet-status projection — not via a per-participant indicator).
  */
 const CHOICE_FILL_CLASSNAME: Readonly<Record<VoteIndicatorProps['choice'], string>> = {
   agree: 'bg-emerald-500',
   dispute: 'bg-rose-500',
-  withdraw: 'bg-slate-400',
 };
 
 function VoteIndicatorImpl(props: VoteIndicatorProps): ReactElement {

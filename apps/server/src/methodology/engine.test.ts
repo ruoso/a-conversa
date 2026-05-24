@@ -134,11 +134,15 @@ function seedSession(): ReturnType<typeof createEmptyProjection> {
   return projection;
 }
 
-// Construct a `vote` action at the next expected sequence.
+// Construct a `vote` action at the next expected sequence. Per ADR
+// 0030 §3 + `pf_unit_test_audit`: the wire `vote.choice` enum is
+// `'agree' | 'dispute'`; withdrawal is its own first-class event kind
+// (`withdraw-agreement`), so this helper does NOT carry a `'withdraw'`
+// arm.
 function makeVoteAction(
   projection: ReturnType<typeof createEmptyProjection>,
   requester: string,
-  vote: 'agree' | 'dispute' | 'withdraw' = 'agree',
+  vote: 'agree' | 'dispute' = 'agree',
   overrides: Partial<VoteAction> = {},
 ): VoteAction {
   return {

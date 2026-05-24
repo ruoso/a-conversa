@@ -255,45 +255,13 @@ Given(
 // When steps.
 // ---------------------------------------------------------------
 
-When(
-  'a debater who previously voted agree constructs a withdraw action against the committed proposal',
-  function (this: AConversaWorld) {
-    const projection = this.scratch['voteProjection'] as Projection;
-    const action: VoteAction = {
-      kind: 'vote',
-      requester: VL_DEBATER_A_ID,
-      sessionId: VL_SESSION_ID,
-      eventId: VL_NEW_EVENT_ID,
-      sequence: nextSequence(projection),
-      actor: VL_DEBATER_A_ID,
-      createdAt: tsAt(20),
-      proposalEventId: VL_PROPOSAL_ID,
-      vote: 'withdraw',
-      votedAt: tsAt(20),
-    };
-    this.scratch['voteAction'] = action;
-  },
-);
-
-When(
-  'the late-joining debater constructs a withdraw action against the committed proposal',
-  function (this: AConversaWorld) {
-    const projection = this.scratch['voteProjection'] as Projection;
-    const action: VoteAction = {
-      kind: 'vote',
-      requester: VL_LATE_JOINER_ID,
-      sessionId: VL_SESSION_ID,
-      eventId: VL_NEW_EVENT_ID,
-      sequence: nextSequence(projection),
-      actor: VL_LATE_JOINER_ID,
-      createdAt: tsAt(20),
-      proposalEventId: VL_PROPOSAL_ID,
-      vote: 'withdraw',
-      votedAt: tsAt(20),
-    };
-    this.scratch['voteAction'] = action;
-  },
-);
+// Two `When` step defs that constructed a legacy `vote: 'withdraw'`
+// action were deleted by `pf_unit_test_audit` alongside the matching
+// `Scenario` in `methodology/vote.feature`. Per ADR 0030 §3 +
+// `pf_facet_keyed_vote_payload` the wire `vote.choice` enum is
+// `'agree' | 'dispute'`; withdrawal moves through the dedicated
+// `withdraw-agreement` event kind, covered by
+// `tests/behavior/methodology/withdraw-agreement.feature`.
 
 When(
   'a debater constructs an agree action against the committed proposal',

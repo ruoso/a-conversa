@@ -1,5 +1,9 @@
-// `vote` action handler — the real write-side validator for the three
-// vote arms (`agree` / `dispute` / `withdraw`).
+// `vote` action handler — the real write-side validator for the two
+// vote arms (`agree` / `dispute`). Per ADR 0030 §3 +
+// `pf_facet_keyed_vote_payload` + `pf_unit_test_audit`: the legacy
+// `'withdraw'` choice arm is retired (withdrawal is its own first-
+// class event kind, `withdraw-agreement`, handled by
+// `apps/server/src/ws/handlers/withdraw-agreement.ts`).
 //
 // Refinement: tasks/refinements/data-and-methodology/withdrawal_logic.md
 // TaskJuggler: data_and_methodology.methodology_engine.withdrawal_logic
@@ -15,13 +19,10 @@
 //      → `'proposal-not-found'`.
 //   3. **Proposal-state vs. vote-arm matrix.**
 //      - `meta-disagreement` (any arm) → `'proposal-already-meta-disagreement'`.
-//        No votes are accepted on meta-disagreed proposals.
-//      - `committed` + `agree` or `dispute` → `'proposal-already-committed'`.
-//        The commit has landed; only `withdraw` is legal on this proposal.
-//      - `pending` + `withdraw` → `'no-prior-agree'`.
-//        Pending means commit hasn't happened; there is no agree to
-//        withdraw from. Withdrawal is "second thoughts after a commit"
-//        per `docs/methodology.md` line 25.
+//      - `committed` (any arm) → `'proposal-already-committed'`. No
+//        further votes are accepted on a committed proposal; the
+//        `withdraw-agreement` event kind owns the post-commit
+//        withdrawal gesture per ADR 0030 §3.
 //   4. **Per-participant prior-vote check.** Look up the requester's
 //      prior vote on the affected facet (only meaningful for the four
 //      facet-targeting sub-kinds — `classify-node`, `set-node-substance`,
@@ -33,21 +34,14 @@
 //      - `dispute` arm: prior `dispute` on this proposal → `'already-voted'`.
 //        No prior vote OR prior `agree` → accept (agree→dispute switch
 //        is legal).
-//      - `withdraw` arm: prior `agree` on this proposal **required**.
-//        Anything else (no prior vote, prior `dispute`, prior `withdraw`)
-//        → `'no-prior-agree'`. Combined with rule 3's "withdraw only on
-//        committed proposals" constraint, this is the full
-//        "withdrawal requires a prior agree on a committed proposal" rule.
 //
 // **Structural-sub-kind boundary.** For the seven structural sub-kinds
 // (`decompose`, `interpretive-split`, `axiom-mark`, `meta-move`,
 // `break-edge`, `amend-node`, `annotate`), `findParticipantVoteOnProposal`
 // returns `null` — no per-facet vote tracking exists on the projection
 // for these. The rule-4 check is short-circuited as "no prior vote":
-// `agree` / `dispute` accept; `withdraw` rejects with `'no-prior-agree'`.
-// The per-sub-kind sibling tasks (`decomposition_logic`,
-// `axiom_mark_logic`, etc.) will tighten this if they want different
-// semantics for their sub-kind. Documented in the refinement.
+// `agree` / `dispute` accept. The per-sub-kind sibling tasks tighten
+// this if they want different semantics.
 //
 // **Self-vote semantics.** `docs/methodology.md` line 9 says "all
 // participants — both debaters and the moderator — must agree on every
@@ -64,10 +58,9 @@
 // event this handler emits: for the four facet-targeting sub-kinds it
 // updates `facet.perParticipant[participant] = { vote, proposalEventId,
 // votedAt }`; for the structural sub-kinds it no-ops the per-facet
-// write. `deriveFacetStatus` then derives the overall facet status —
-// rule 3 of `deriveFacetStatus` (`wasCommitted && hasWithdraw →
-// 'withdrawn'`) is the read-side mirror of the success condition for
-// the `withdraw` arm here.
+// write. The post-commit withdrawal gesture lives on its own event
+// kind (`withdraw-agreement`), handled by
+// `apps/server/src/ws/handlers/withdraw-agreement.ts`.
 
 import type { ProposalPayload } from '@a-conversa/shared-types';
 
@@ -263,23 +256,11 @@ export const voteHandler: Validator<VoteAction> = (
         detail: `vote: requester ${action.requester} has already voted 'dispute' on facet ${target.entityKind}:${target.entityId}/${target.facet}`,
       };
     }
-    if (action.vote === 'withdraw') {
-      // The `'withdraw'` arm on the vote envelope is deprecated per
-      // ADR 0030 §3 — withdrawal is its own event kind
-      // (`withdraw-agreement`). On the facet-keyed path the vote
-      // schema's `choice` enum is `'agree' | 'dispute'`; a `withdraw`
-      // reaching here is a programmer error (the WS-layer schema
-      // still tolerates the value, but the methodology refuses).
-      // `pf_withdraw_agreement_handler` migrates the wire path.
-      return {
-        ok: false,
-        reason: 'illegal-state-transition',
-        detail: `vote: 'withdraw' is no longer a valid vote choice for facet-keyed votes — use the withdraw-agreement event kind (proposal ${action.proposalEventId}, facet ${target.entityKind}:${target.entityId}/${target.facet})`,
-      };
-    }
-
-    // action.vote is narrowed to 'agree' | 'dispute' here by the
-    // earlier branch returning on 'withdraw'.
+    // Per ADR 0030 §3 + `pf_facet_keyed_vote_payload` + `pf_unit_test_audit`:
+    // `VoteAction.vote` is `'agree' | 'dispute'`; the legacy `'withdraw'`
+    // branch (which used to reject facet-keyed withdraw votes with
+    // `illegal-state-transition`) is unreachable now that the schema
+    // hard-rejects the value upstream.
     const choice = action.vote;
     const event: EventToAppendEnvelope<'vote'> = {
       id: action.eventId,
@@ -314,18 +295,16 @@ export const voteHandler: Validator<VoteAction> = (
       detail: `vote: proposal ${action.proposalEventId} has been marked as meta-disagreement at ${found.record.markedAt}; no votes are accepted on meta-disagreed proposals`,
     };
   }
-  if (found.state === 'committed' && action.vote !== 'withdraw') {
+  if (found.state === 'committed') {
+    // Per ADR 0030 §3 + `pf_unit_test_audit`: the wire `vote.choice`
+    // enum is `'agree' | 'dispute'`; the legacy `'withdraw'` arm is
+    // retired. Any vote arm on a committed proposal is rejected here
+    // (the dedicated `withdraw-agreement` event kind owns the legal
+    // withdraw path).
     return {
       ok: false,
       reason: 'proposal-already-committed',
-      detail: `vote: proposal ${action.proposalEventId} was committed at ${found.record.committedAt}; only 'withdraw' is legal on a committed proposal`,
-    };
-  }
-  if (found.state === 'pending' && action.vote === 'withdraw') {
-    return {
-      ok: false,
-      reason: 'no-prior-agree',
-      detail: `vote: cannot withdraw from proposal ${action.proposalEventId} — it is still pending (no commit has landed; there is no agree to withdraw from)`,
+      detail: `vote: proposal ${action.proposalEventId} was committed at ${found.record.committedAt}; no further votes are accepted (withdrawal is the 'withdraw-agreement' event kind)`,
     };
   }
 
@@ -335,17 +314,10 @@ export const voteHandler: Validator<VoteAction> = (
   // legacy `findParticipantVoteOnProposal` is consequently null here).
   // Read directly from the pending proposal's vote map for structural
   // arms.
-  let priorVote: 'agree' | 'dispute' | 'withdraw' | null = null;
+  let priorVote: 'agree' | 'dispute' | null = null;
   if (found.state === 'pending') {
     const rec = found.record.perParticipantVotes.get(action.requester);
     priorVote = rec?.vote ?? null;
-  } else if (found.state === 'committed') {
-    // Post-commit withdraw path — read the committed proposal's prior
-    // vote record. (The current shape doesn't carry it on the
-    // committed-proposal record; structural proposals only support
-    // commit / withdraw at moderator-only level today. Treat as null
-    // — the withdraw path returns `'no-prior-agree'` below if needed.)
-    priorVote = null;
   }
   if (action.vote === 'agree') {
     if (priorVote === 'agree') {
@@ -363,25 +335,9 @@ export const voteHandler: Validator<VoteAction> = (
         detail: `vote: requester ${action.requester} has already voted 'dispute' on proposal ${action.proposalEventId}`,
       };
     }
-  } else if (action.vote === 'withdraw') {
-    if (priorVote !== 'agree') {
-      const observed =
-        priorVote === null ? 'no prior vote' : `prior vote was '${priorVote}', not 'agree'`;
-      return {
-        ok: false,
-        reason: 'no-prior-agree',
-        detail: `vote: cannot withdraw from proposal ${action.proposalEventId} — withdrawal requires a prior 'agree' from ${action.requester} (${observed})`,
-      };
-    }
   }
 
-  // The `'withdraw'` arm on the vote envelope is deprecated per ADR
-  // 0030 §3 — the wire `choice` enum is `'agree' | 'dispute'`. The
-  // structural-arm `withdraw` branch above remains so any legacy
-  // caller is rejected with `'no-prior-agree'` rather than landing a
-  // schema-invalid payload; the dedicated `withdraw-agreement` event
-  // kind owns the legal withdraw path.
-  const choice = action.vote as 'agree' | 'dispute';
+  const choice = action.vote;
   const event: EventToAppendEnvelope<'vote'> = {
     id: action.eventId,
     sessionId: action.sessionId,

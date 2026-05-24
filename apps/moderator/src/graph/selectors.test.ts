@@ -1367,7 +1367,7 @@ function makeVote(opts: {
   sequence: number;
   proposalEnvelopeId: string;
   participantId: string;
-  vote: 'agree' | 'dispute' | 'withdraw';
+  vote: 'agree' | 'dispute';
 }): Event {
   return {
     id: `00000000-0000-4000-8000-${(0xb00 + opts.sequence).toString(16).padStart(12, '0')}`,
@@ -1379,7 +1379,7 @@ function makeVote(opts: {
       target: 'proposal' as const,
       proposal_id: opts.proposalEnvelopeId,
       participant: opts.participantId,
-      choice: opts.vote as 'agree' | 'dispute',
+      choice: opts.vote,
       voted_at: '2026-05-11T00:00:00.000Z',
     },
     createdAt: '2026-05-11T00:00:00.000Z',
@@ -1530,7 +1530,7 @@ describe('projectVotesByFacet', () => {
         sequence: 4,
         proposalEnvelopeId: PROPOSAL_CLASSIFY_1,
         participantId: VOTE_PARTICIPANT_A,
-        vote: 'withdraw',
+        vote: 'dispute',
       }),
     ];
     const result = projectVotesByFacet(events);
@@ -1538,7 +1538,7 @@ describe('projectVotesByFacet', () => {
       { participantId: VOTE_PARTICIPANT_A, choice: 'agree' },
     ]);
     expect(result.get(NODE_VOTE_2)!.get('wording')).toEqual([
-      { participantId: VOTE_PARTICIPANT_A, choice: 'withdraw' },
+      { participantId: VOTE_PARTICIPANT_A, choice: 'dispute' },
     ]);
   });
 
@@ -1622,25 +1622,11 @@ describe('projectVotesByFacet', () => {
     ]);
   });
 
-  it('records a withdraw arm distinctly (per methodology, withdraw is its own arm)', () => {
-    const events: Event[] = [
-      makeEditWordingProposal({
-        sequence: 1,
-        envelopeId: PROPOSAL_WORDING_1,
-        nodeId: NODE_VOTE_1,
-      }),
-      makeVote({
-        sequence: 2,
-        proposalEnvelopeId: PROPOSAL_WORDING_1,
-        participantId: VOTE_PARTICIPANT_A,
-        vote: 'withdraw',
-      }),
-    ];
-    const result = projectVotesByFacet(events);
-    expect(result.get(NODE_VOTE_1)!.get('wording')).toEqual([
-      { participantId: VOTE_PARTICIPANT_A, choice: 'withdraw' },
-    ]);
-  });
+  // The legacy "records a withdraw arm distinctly" case was deleted by
+  // `pf_unit_test_audit`: per ADR 0030 §3 + `pf_facet_keyed_vote_payload`
+  // the wire `vote.choice` enum collapsed to `'agree' | 'dispute'`;
+  // withdrawal is its own first-class event kind (`withdraw-agreement`)
+  // and no `'withdraw'` choice can land in the projection.
 });
 
 // -- selectNodeWordingById -------------------------------------------

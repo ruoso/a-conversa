@@ -426,6 +426,25 @@ Then(
   },
 );
 
+// Schema-level envelope rejection (e.g. an invalid `choice` value per
+// `pf_unit_test_audit` — the wire schema hard-rejects `'withdraw'`
+// before the connection layer can read the envelope's `id`, so the
+// error envelope has no `inResponseTo`).
+Then(
+  'the client receives a malformed-envelope error envelope',
+  async function (this: AConversaWorld) {
+    const queue = ensureVoteFramesQueue(this);
+    const err = await waitForFrame(queue, (parsed) => parsed.type === 'error');
+    assert.ok(err, `did not receive an \`error\` envelope within timeout`);
+    const payload = err.payload as { code?: unknown; message?: unknown };
+    assert.equal(payload.code, 'malformed-envelope');
+    assert.ok(
+      typeof payload.message === 'string' && payload.message.length > 0,
+      'expected payload.message to be a non-empty string',
+    );
+  },
+);
+
 // ============================================================
 // Teardown — only the per-feature carriers; the lifecycle client +
 // auth app are torn down by their owning step files.

@@ -72,15 +72,13 @@ import { ParticipantVoteButtons } from './ParticipantVoteButtons';
 
 /**
  * Per-facet wire arms surfaced in the own-vote summary. `'agree'` /
- * `'dispute'` / `'withdraw'` mirror the wire `vote` enum verbatim — the
- * panel's own-vote summary shows the per-facet ARM (NOT the dispute-wins
- * rollup the canvas paints), so the `'withdraw'` arm IS surfaced here
- * (the canvas collapses `'withdraw'` to the `'none'` indicator per the
- * predecessor leaf; the panel surfaces the explicit arm). The `'none'`
- * arm here means "no vote on this facet by the current participant"
- * — used as the absence sentinel below.
+ * `'dispute'` mirror the wire `vote.choice` enum verbatim — per ADR
+ * 0030 §3 + `pf_unit_test_audit` the legacy `'withdraw'` arm is retired
+ * (withdrawal is its own first-class event kind, `withdraw-agreement`,
+ * surfaced via the facet-status projection, not via this per-facet
+ * own-vote row).
  */
-type OwnFacetVote = 'agree' | 'dispute' | 'withdraw';
+type OwnFacetVote = 'agree' | 'dispute';
 
 /**
  * Per-facet own-vote breakdown for a single entity. Sparse — only

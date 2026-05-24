@@ -251,7 +251,6 @@ describe('FacetPill — in-pill vote-indicator row (mod_vote_indicators_on_graph
   // otherwise. Pill border / opacity / status classes are unchanged.
   const PARTICIPANT_A = '00000000-0000-4000-8000-000000000001';
   const PARTICIPANT_B = '00000000-0000-4000-8000-000000000002';
-  const PARTICIPANT_C = '00000000-0000-4000-8000-000000000003';
 
   it('does not render the vote-indicator row when votes is empty / undefined', async () => {
     await render(<FacetPill facet="wording" status="proposed" />);
@@ -277,7 +276,11 @@ describe('FacetPill — in-pill vote-indicator row (mod_vote_indicators_on_graph
     expect(indicators[0]?.getAttribute('data-choice')).toBe('agree');
   });
 
-  it('renders three indicators with distinct data-choice values for mixed agree + dispute + withdraw votes', async () => {
+  it('renders multiple indicators with distinct data-choice values for mixed agree + dispute votes', async () => {
+    // Per ADR 0030 §3 + `pf_unit_test_audit`: the wire `choice` enum
+    // is `'agree' | 'dispute'`; withdrawal is its own first-class event
+    // kind (`withdraw-agreement`) surfaced separately, not as an in-pill
+    // indicator.
     await render(
       <FacetPill
         facet="substance"
@@ -285,22 +288,16 @@ describe('FacetPill — in-pill vote-indicator row (mod_vote_indicators_on_graph
         votes={[
           { participantId: PARTICIPANT_A, choice: 'agree' },
           { participantId: PARTICIPANT_B, choice: 'dispute' },
-          { participantId: PARTICIPANT_C, choice: 'withdraw' },
         ]}
       />,
     );
     const pill = getPill();
     const indicators = Array.from(pill.querySelectorAll<HTMLElement>('[data-vote-indicator]'));
-    expect(indicators.length).toBe(3);
-    expect(indicators.map((i) => i.getAttribute('data-choice'))).toEqual([
-      'agree',
-      'dispute',
-      'withdraw',
-    ]);
+    expect(indicators.length).toBe(2);
+    expect(indicators.map((i) => i.getAttribute('data-choice'))).toEqual(['agree', 'dispute']);
     expect(indicators.map((i) => i.getAttribute('data-participant-id'))).toEqual([
       PARTICIPANT_A,
       PARTICIPANT_B,
-      PARTICIPANT_C,
     ]);
   });
 

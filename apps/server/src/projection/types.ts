@@ -58,7 +58,16 @@ export type FacetStatus =
   | 'meta-disagreement'
   | 'awaiting-proposal';
 
-export type PerParticipantVote = 'agree' | 'dispute' | 'withdraw';
+// Per ADR 0030 §3 + `pf_facet_keyed_vote_payload` (commit `a2521f6`) +
+// `pf_withdraw_agreement_handler` (commit `8518fff`): the `vote.choice`
+// enum is `'agree' | 'dispute'`; withdrawal is its own first-class event
+// kind (`withdraw-agreement`). The clean-break migration policy of ADR
+// 0030 retires the legacy `'withdraw'` choice arm — `PerParticipantVote`
+// no longer carries it. Withdrawals are tracked on `FacetState.withdrawals`
+// (a separate `Set<string>` populated by the withdraw-agreement handler),
+// not as a third vote arm. The audit task `pf_unit_test_audit` closed the
+// provisional back-compat the refactor had retained.
+export type PerParticipantVote = 'agree' | 'dispute';
 
 export interface PerParticipantFacetState {
   vote: PerParticipantVote;

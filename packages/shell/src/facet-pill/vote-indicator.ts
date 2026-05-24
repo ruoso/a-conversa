@@ -22,10 +22,18 @@ export { VoteIndicator, type VoteIndicatorProps } from './VoteIndicator.js';
  * attribute `data-choice` on the indicator span reads naturally; the
  * wire payload's `vote` field name is preserved in the read of
  * `event.payload.vote` and renamed at the projection boundary.
+ *
+ * Per ADR 0030 §3 + `pf_facet_keyed_vote_payload` (commit `a2521f6`) +
+ * `pf_unit_test_audit`: `choice` is `'agree' | 'dispute'`; withdrawal is
+ * its own first-class event kind (`withdraw-agreement`), tracked on a
+ * separate per-facet `withdrawals` set on the facet-status projection.
+ * The legacy `'withdraw'` arm was retired by `pf_unit_test_audit` since
+ * the wire schema's hard rejection on inbound validation + the clean-
+ * break migration of ADR 0030 mean no `'withdraw'` choice can land here.
  */
 export interface Vote {
   readonly participantId: string;
-  readonly choice: 'agree' | 'dispute' | 'withdraw';
+  readonly choice: 'agree' | 'dispute';
 }
 
 /**

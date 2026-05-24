@@ -3,10 +3,13 @@
 //
 // Refinement: tasks/refinements/participant-ui/part_other_vote_indicators.md
 //              (Decision §1 — two-arm closed `OtherVote = { participantId,
-//              choice: 'agree' | 'dispute' }`; `'withdraw'` REMOVES the
-//              voter's entry from the per-entity list; per-entity rollup
-//              with dispute-wins tie-break; symmetric across node AND
-//              edge targets. Decision §2 — narrowed participant-side
+//              choice: 'agree' | 'dispute' }`; per-entity rollup with
+//              dispute-wins tie-break; symmetric across node AND edge
+//              targets. Per ADR 0030 §3 + `pf_unit_test_audit`: the
+//              legacy `'withdraw'` vote-choice arm is retired — the
+//              projector consumes only `vote` events; `withdraw-
+//              agreement` events are silently dropped (the audit
+//              catalog labelled this expected pre-`part_withdraw_indicator`). Decision §2 — narrowed participant-side
 //              projection rather than a port of the moderator's full
 //              `projectVotesByFacet`; lives in the participant workspace
 //              today, lifts to `@a-conversa/shell` when the audience
@@ -37,9 +40,10 @@
 //     voter) dispute-wins rollup (Decision §1). The per-facet
 //     granularity stays inside the projector's accumulator; only the
 //     per-entity per-voter projection escapes.
-//   - The `'withdraw'` arm REMOVES the voter's entry from the per-
-//     entity list — when a voter's latest vote on every tracked facet
-//     of the entity is `'withdraw'`, their entry vanishes (Decision §1).
+//   - Per ADR 0030 §3 + `pf_unit_test_audit`: the wire `choice` enum
+//     is `'agree' | 'dispute'`; withdrawal is its own first-class event
+//     kind (`withdraw-agreement`) that this projector silently drops
+//     (handled separately when a downstream task lands the indicator).
 //
 // **Parallel participant-side mirror**: this module also runs alongside
 // `apps/participant/src/graph/ownVotes.ts` — the two projections share
@@ -197,13 +201,14 @@ function rollUpChoice(
  *   is the core "narrowed to OTHER participants" semantic — the
  *   complement of `ownVotes.ts`'s filter direction).
  * - Votes referencing an unknown proposal id are silently dropped.
- * - The `'withdraw'` arm by a voter REMOVES the voter's entry from the
- *   per-entity list per Decision §1 (withdrawal collapses to the un-
- *   voted baseline at the at-a-glance layer). The accumulator tracks
- *   per-(entity, facet, voter) latest arm internally; when the per-
- *   (entity, voter) rollup across every facet touching the entity
- *   resolves to "no agree, no dispute" (only withdraws), the voter is
- *   absent from the per-entity list.
+ * - Per ADR 0030 §3 + `pf_unit_test_audit`: the wire `vote.choice`
+ *   collapsed to `'agree' | 'dispute'`; withdrawal is its own first-
+ *   class event kind (`withdraw-agreement`). This projector consumes
+ *   only `vote` events today — `withdraw-agreement` events are silently
+ *   dropped (per the audit catalog, expected pre-`part_withdraw_indicator`).
+ *   The gap-close branch below survives for future re-vote semantics
+ *   (a voter who has no recorded arm on any facet of the entity is
+ *   absent from the list).
  *
  * Per-entity rollup: a voter who voted on multiple facets of the same
  * entity collapses to a SINGLE entry per (entity, voter) per Decision
@@ -239,8 +244,14 @@ export function projectOtherVotes(
   // (UUIDs are hex-with-dashes; facet names are kebab-case ASCII; the
   // pipe character is unambiguous). Used to apply latest-vote-wins per
   // `(proposal, participant)` BEFORE the per-(entity, voter) rollup
-  // runs.
-  const perFacetVoterArm = new Map<string, 'agree' | 'dispute' | 'withdraw'>();
+  // runs. Per ADR 0030 §3 + `pf_unit_test_audit`: the wire `vote.choice`
+  // collapsed to `'agree' | 'dispute'`; withdrawal is its own first-
+  // class event kind (`withdraw-agreement`), surfaced via the facet-
+  // status projection — the participant's at-a-glance other-votes
+  // projection ignores it (no `withdraw-agreement` handling here —
+  // documented under "Drift risk" above; future
+  // `part_withdraw_indicator` task closes the hand-off).
+  const perFacetVoterArm = new Map<string, 'agree' | 'dispute'>();
   // Reverse index per-entity → set of `entityId|facet|voterId`
   // composites — used to re-derive the per-(entity, voter) rollup on
   // every vote arrival.
@@ -273,7 +284,7 @@ export function projectOtherVotes(
     if (facets !== undefined) {
       for (const facet of facets) {
         const arm = perFacetVoterArm.get(`${entityId}|${facet}|${voterId}`);
-        if (arm === undefined || arm === 'withdraw') continue;
+        if (arm === undefined) continue;
         rolled = rollUpChoice(rolled, arm);
       }
     }

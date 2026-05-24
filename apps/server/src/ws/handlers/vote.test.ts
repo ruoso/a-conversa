@@ -619,17 +619,19 @@ describe('ws_vote_message — handler integration', () => {
     }
   });
 
-  it('echoes the methodology engine `illegal-state-transition` rejection on a withdraw of a facet-valued proposal (withdraw is no longer a vote choice)', async () => {
+  it('rejects a withdraw vote choice at the WS envelope schema layer with `malformed-envelope` (withdraw is no longer a vote choice)', async () => {
     const cookie = await fixtureCookieHeader();
     const { ws, next } = await openWsClient(app, cookie);
     try {
       await next(); // hello
 
-      // The PENDING_SESSION_ID has a pending `classify-node` proposal
-      // (facet-valued). Per ADR 0030 §3 + `pf_vote_handler_facet_keyed`,
-      // the facet-arm of the vote handler rejects the `'withdraw'`
-      // choice with `'illegal-state-transition'` — withdrawal is its
-      // own event kind (`withdraw-agreement`), no longer a vote choice.
+      // Per ADR 0030 §3 + `pf_facet_keyed_vote_payload` + `pf_unit_test_audit`:
+      // the WS `wsVotePayloadSchema` hard-rejects `'withdraw'` as a
+      // vote choice (its enum is `'agree' | 'dispute'`). The
+      // connection layer turns the Zod validation failure into a
+      // canonical `error` envelope with `code: 'malformed-envelope'`
+      // — withdrawal is its own first-class event kind
+      // (`withdraw-agreement`).
       ws.send(subscribeFrame(SUB_MSG_ID, PENDING_SESSION_ID));
       const subAck = JSON.parse(await next()) as { type?: unknown };
       expect(subAck.type).toBe('subscribed');
@@ -638,8 +640,7 @@ describe('ws_vote_message — handler integration', () => {
 
       const err = await readUntilType(next, 'error');
       const payload = err.parsed.payload as { code?: unknown };
-      expect(err.parsed.inResponseTo).toBe(VOTE_MSG_ID);
-      expect(payload.code).toBe('illegal-state-transition');
+      expect(payload.code).toBe('malformed-envelope');
     } finally {
       ws.terminate();
     }

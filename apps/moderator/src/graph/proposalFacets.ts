@@ -423,8 +423,11 @@ export type CommitGate =
  *   - The moderator's own vote does NOT count — the caller supplies a
  *     `currentParticipantIds` set already filtered to non-moderator
  *     roles (see `deriveCurrentParticipants`).
- *   - `'withdraw'` blocks commit the same as `'dispute'` (the
- *     methodology engine requires explicit `'agree'`).
+ *   - Any non-`'agree'` arm blocks commit (the methodology engine
+ *     requires explicit `'agree'`). Per ADR 0030 §3 + `pf_unit_test_audit`
+ *     the wire `vote.choice` enum is `'agree' | 'dispute'`; the legacy
+ *     `'withdraw'` arm is retired (its own first-class event kind,
+ *     `withdraw-agreement`, surfaces via the facet-status projection).
  *   - Structural sub-kinds (the synthetic `'proposal'` lifecycle
  *     entry) follow the same unanimity rule as facet-targeting
  *     sub-kinds — per commit `421353f` the server's

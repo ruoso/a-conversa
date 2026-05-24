@@ -466,10 +466,10 @@ export type ProposedPayload = z.infer<typeof proposedPayloadSchema>;
 // Both arms share `sessionId`, `expectedSequence`, and `choice`. The
 // `choice` enum is `'agree' | 'dispute'` only — withdraw is no longer a
 // vote choice per ADR 0030 §3 (the dedicated `withdraw-agreement` event
-// kind owns the gesture). The legacy `'withdraw'` value is preserved
-// on the schema for back-compat with structural-arm callers in tests;
-// the methodology engine refuses it on the facet arm with
-// `illegal-state-transition`.
+// kind owns the gesture). The legacy `'withdraw'` value was preserved
+// provisionally during the refactor; `pf_unit_test_audit` closed it —
+// the WS schema now hard-rejects `'withdraw'` to match the event
+// payload schema's narrowed enum.
 export const wsVoteFacetPayloadSchema = z.object({
   sessionId: z.string().uuid(),
   expectedSequence: z.number().int().nonnegative(),
@@ -477,7 +477,7 @@ export const wsVoteFacetPayloadSchema = z.object({
   entity_kind: z.enum(['node', 'edge']),
   entity_id: z.string().uuid(),
   facet: z.enum(['classification', 'substance', 'wording', 'shape']),
-  choice: z.enum(['agree', 'dispute', 'withdraw']),
+  choice: z.enum(['agree', 'dispute']),
 });
 
 export type WsVoteFacetPayload = z.infer<typeof wsVoteFacetPayloadSchema>;
@@ -487,7 +487,7 @@ export const wsVoteProposalPayloadSchema = z.object({
   expectedSequence: z.number().int().nonnegative(),
   target: z.literal('proposal'),
   proposalId: z.string().uuid(),
-  choice: z.enum(['agree', 'dispute', 'withdraw']),
+  choice: z.enum(['agree', 'dispute']),
 });
 
 export type WsVoteProposalPayload = z.infer<typeof wsVoteProposalPayloadSchema>;
