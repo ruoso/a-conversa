@@ -137,3 +137,17 @@ identical `pgmigrations` rows because they invoke the same library
 against the same SQL.
 
 Refinement: [tasks/refinements/backend/health_endpoint.md](../../tasks/refinements/backend/health_endpoint.md).
+
+### 2026-05-24 — Production rollback strategy fixed (ADR 0034)
+
+[ADR 0034](0034-releases-calendar-versioning-tag-deploy.md) commits
+to **image rollback, not migration rollback**, as the production
+rollback lever. The forward-only policy this ADR settled stands —
+no `down` migrations are written — and ADR 0034 adds the
+backward-compatibility invariant that makes image rollback safe:
+every migration must be tolerable by the immediately previous
+deployed image. Destructive changes (column drops, renames, type
+narrowing) are split across two consecutive releases. A migration
+safety linter (`prod_migrations.migration_safety_checks`) enforces
+the invariant mechanically. This ADR's decision (forward-only +
+refuse-to-start gate) is unchanged.

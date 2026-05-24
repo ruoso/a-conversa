@@ -86,8 +86,8 @@ task milestones "Milestones" {
 
   task m_deployment_ready "M9: Deployment ready" {
     milestone
-    depends !m_end_to_end_debate, !m_backend_review, deployment.prod_container, deployment.prod_compose, deployment.prod_secrets, deployment.prod_migrations, deployment.observability, deployment.backup_and_export, deployment.deployment_docs
-    note "An always-on cloud server can host live sessions in production. Backups, observability, secrets, and operator docs all in place. Depends on M3-review (backend security hardening) — public network exposure is gated on that work."
+    depends !m_end_to_end_debate, !m_backend_review, deployment.prod_container, deployment.prod_compose, deployment.prod_secrets, deployment.prod_migrations, deployment.observability, deployment.backup_and_export.postgres_backup, deployment.backup_and_export.backup_restore_test, deployment.deployment_docs.obs_setup_guide, deployment.deployment_docs.admin_runbook, deployment.deployment_docs.adr_log
+    note "An always-on cloud server can host live sessions in production. Backups, observability, secrets, and operator docs all in place. Depends on M3-review (backend security hardening) — public network exposure is gated on that work. Two leaves under backup_and_export + deployment_docs are listed individually (not their parent rollups) because deployment.backup_and_export.event_log_export and deployment.deployment_docs.self_host_guide are deferred to post-v1 per the deployment design decisions captured in [ADR 0031](../docs/adr/0031-production-hosting-railway-paas.md) (self-hosting deferred since v1 ships a single hosted instance at a-conversa.org). The two other deferred deployment tasks (deployment.multi_tenant.tenant_isolation_audit, deployment.deployment_tests.load_test) live under rollups M9 never required, so no leaf-list rewrite was needed there."
   }
 
   task m_first_show_recorded "M10: First YouTube show recorded" {
