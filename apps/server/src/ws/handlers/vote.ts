@@ -17,6 +17,22 @@
 // mapping to the wire `error` envelope via the dispatcher's
 // `onHandlerError` seam.
 //
+// **Wire payload is a `target`-discriminated union** per [ADR 0030 §2 +
+// §9](../../../../../docs/adr/0030-per-facet-vote-keying-and-sequential-capture.md)
+// and the refinement at `tasks/refinements/per-facet-refactor/
+// pf_part_vote_action_facet_keyed.md`:
+//
+//   - `target: 'facet'` — names the `(entity_kind, entity_id, facet)`
+//     triple. The handler resolves the facet's current candidate
+//     proposal via `facet.candidateProposalEventId` on the post-replay
+//     projection (mirroring the broadcast-side
+//     `resolveFacetKeyedProposalId` helper) and threads the resolved
+//     id into the `MethodologyAction.vote`. The engine's `voteHandler`
+//     then emits the facet-keyed event arm.
+//   - `target: 'proposal'` — names the proposal id directly. The
+//     handler threads it through unchanged; the engine emits the
+//     proposal-keyed event arm for the structural sub-kinds.
+//
 // The vote handler differs from propose in exactly three places:
 //
 //   1. The action it constructs — `MethodologyAction.vote` instead of
@@ -61,7 +77,7 @@ import { randomUUID } from 'node:crypto';
 
 import type { FastifyBaseLogger } from 'fastify';
 
-import type { Event, WsEnvelope } from '@a-conversa/shared-types';
+import type { Event, FacetName, ProposalPayload, WsEnvelope } from '@a-conversa/shared-types';
 
 import type { DbPool } from '../../db.js';
 import { ApiError, rejectedToApiError } from '../../errors.js';
@@ -69,6 +85,7 @@ import { appendSessionEvent } from '../../events/append.js';
 import { validateEvent } from '../../events/validate.js';
 import { validateAction } from '../../methodology/engine.js';
 import type { VoteAction } from '../../methodology/types.js';
+import type { Projection } from '../../projection/index.js';
 import { projectFromLog } from '../../projection/replay.js';
 import { canSeeSession } from '../../sessions/visibility.js';
 import type { WsBroadcastBus } from '../broadcast/bus.js';
@@ -125,7 +142,7 @@ export function buildVoteHandler(
 ): (envelope: WsEnvelope<'vote'>, connection: WsConnectionContext) => Promise<void> {
   const nowFn = opts.now ?? Date.now;
   return async (envelope, connection) => {
-    const { sessionId, expectedSequence, proposalId, choice } = envelope.payload;
+    const { sessionId, expectedSequence, choice } = envelope.payload;
     const userId = connection.user?.id;
     if (userId === undefined) {
       // Anonymous client (per ADR 0029 + `aud_anonymous_ws_subscribe`).
@@ -206,6 +223,55 @@ export function buildVoteHandler(
       const priorEvents: Event[] = logRes.rows.map(rowToEvent);
       const projection = projectFromLog(priorEvents, sessionId);
 
+      // 4b. Resolve the proposalEventId the methodology engine expects.
+      //     The wire payload is a `target`-discriminated union per ADR
+      //     0030 §2 + §9 (+ refinement
+      //     `pf_part_vote_action_facet_keyed`). The proposal-arm names
+      //     the proposal id directly; the facet-arm names the
+      //     `(entity_kind, entity_id, facet)` triple and the handler
+      //     looks up the facet's current candidate proposal via the
+      //     projection's `candidateProposalEventId` slot. The engine's
+      //     `voteHandler` then dispatches by the proposal's sub-kind
+      //     (facet-valued → emit `target: 'facet'` event; structural →
+      //     emit `target: 'proposal'` event).
+      let proposalEventId: string;
+      if (envelope.payload.target === 'facet') {
+        const resolved =
+          resolveFacetCandidateProposalId(
+            projection,
+            envelope.payload.entity_kind,
+            envelope.payload.entity_id,
+            envelope.payload.facet,
+          ) ??
+          // Fallback: walk the event log for an OPEN proposal targeting
+          // this `(entity_kind, entity_id, facet)`. Covers the
+          // `capture-node` arm: the wording facet's candidate is
+          // populated inline on `node-created` but the projection's
+          // `candidateProposalEventId` is null (no facet-targeting sub-
+          // kind drove the candidate — `firstFacetTargetForVote` returns
+          // null for `capture-node`). The fallback mirrors the
+          // participant-side `derivePendingFacetProposals` walk in
+          // `apps/participant/src/detail/ParticipantVoteButtons.tsx`,
+          // so what the participant's row binds to is what the server
+          // resolves.
+          resolveFacetPendingProposalFromLog(
+            priorEvents,
+            envelope.payload.entity_kind,
+            envelope.payload.entity_id,
+            envelope.payload.facet,
+          );
+        if (resolved === null) {
+          throw rejectedToApiError({
+            ok: false,
+            reason: 'proposal-not-found',
+            detail: `vote: facet ${envelope.payload.entity_kind}:${envelope.payload.entity_id}/${envelope.payload.facet} has no current candidate proposal to vote on`,
+          });
+        }
+        proposalEventId = resolved;
+      } else {
+        proposalEventId = envelope.payload.proposalId;
+      }
+
       // 5. Build the `MethodologyAction.vote` and run it through the
       //    engine. The voter identity comes from the AUTHENTICATED
       //    connection — never from the payload (security invariant; see
@@ -222,7 +288,7 @@ export function buildVoteHandler(
         sequence: nextSeq,
         actor: userId,
         createdAt: createdAtIso,
-        proposalEventId: proposalId,
+        proposalEventId,
         vote: choice,
         votedAt: createdAtIso,
       };
@@ -275,6 +341,139 @@ export function buildVoteHandler(
  */
 export function registerVoteHandlers(dispatcher: WsDispatcher, opts: VoteHandlerOptions): void {
   dispatcher.register('vote', buildVoteHandler(opts));
+}
+
+/**
+ * Resolve the proposal id behind a facet-keyed vote envelope. Reads
+ * `facet.candidateProposalEventId` from the post-replay projection —
+ * the same slot the broadcast pipeline (`resolveFacetKeyedProposalId`
+ * in `apps/server/src/ws/broadcast/proposal-status.ts`) uses to map
+ * facet-keyed events back to their driving proposal.
+ *
+ * Returns `null` when the entity / facet is absent from the projection
+ * or when the facet has no current candidate (e.g.
+ * `awaiting-proposal`); the caller maps this to a `'proposal-not-found'`
+ * rejection so the wire surface reports a typed error envelope.
+ *
+ * Mirrors the broadcast-side helper rather than re-exporting it — the
+ * broadcast variant is keyed on a landed `Event` payload, whereas the
+ * wire-time call here knows only the `(entity_kind, entity_id, facet)`
+ * triple from the request payload. The two implementations stay
+ * structurally identical; a future consolidation would re-export a
+ * single helper.
+ */
+function resolveFacetCandidateProposalId(
+  projection: Projection,
+  entityKind: 'node' | 'edge',
+  entityId: string,
+  facet: FacetName,
+): string | null {
+  if (entityKind === 'node') {
+    const node = projection.getNode(entityId);
+    if (node === undefined) return null;
+    if (facet === 'classification') return node.classificationFacet.candidateProposalEventId;
+    if (facet === 'substance') return node.substanceFacet.candidateProposalEventId;
+    if (facet === 'wording') return node.wordingFacet.candidateProposalEventId;
+    // Nodes have no `'shape'` facet — the wire schema permits it via
+    // the union but the projection has no slot. Fall through to null.
+    return null;
+  }
+  // entityKind === 'edge'
+  const edge = projection.getEdge(entityId);
+  if (edge === undefined) return null;
+  if (facet === 'substance') return edge.substanceFacet.candidateProposalEventId;
+  if (facet === 'shape') return edge.shapeFacet.candidateProposalEventId;
+  return null;
+}
+
+/**
+ * Walk the session's event log for an OPEN proposal targeting
+ * `(entityKind, entityId, facet)`. Returns the latest (closest-to-tail)
+ * such proposal's event id, or `null` when no open candidate exists.
+ *
+ * "Open" means a `proposal` event whose id has not been closed by a
+ * later `commit` (proposal-arm or matching facet-arm) or
+ * `meta-disagreement-marked` event. Mirrors the participant-side
+ * `derivePendingFacetProposals` walk in
+ * `apps/participant/src/detail/ParticipantVoteButtons.tsx` — the same
+ * single-pass shape, the same per-facet latest-wins rule. Used by the
+ * facet-keyed vote handler as the fallback when the projection's
+ * `candidateProposalEventId` slot is null (the `capture-node` arm:
+ * the wording facet's candidate is populated inline on `node-created`
+ * with no driving facet-targeting proposal, so the projection slot
+ * stays null — but a `capture-node` proposal IS still the open proposal
+ * the wording facet's vote is keyed to, per the methodology engine's
+ * `facetTargetForProposal('capture-node') === wording`).
+ */
+function resolveFacetPendingProposalFromLog(
+  events: readonly Event[],
+  entityKind: 'node' | 'edge',
+  entityId: string,
+  facet: FacetName,
+): string | null {
+  // proposalEventId → facet for facet-relevant proposals targeting THIS
+  // (entityKind, entityId). Latest-wins per facet.
+  const proposalIdByFacet = new Map<FacetName, string>();
+  const closedProposalIds = new Set<string>();
+  for (const event of events) {
+    if (event.kind === 'proposal') {
+      const target = facetTargetOfProposalPayload(event.payload.proposal);
+      if (target === null) continue;
+      if (target.entityKind !== entityKind) continue;
+      if (target.entityId !== entityId) continue;
+      proposalIdByFacet.set(target.facet, event.id);
+    } else if (event.kind === 'commit') {
+      if (event.payload.target === 'proposal') {
+        closedProposalIds.add(event.payload.proposal_id);
+      } else if (event.payload.entity_kind === entityKind && event.payload.entity_id === entityId) {
+        const proposalId = proposalIdByFacet.get(event.payload.facet);
+        if (proposalId !== undefined) closedProposalIds.add(proposalId);
+      }
+    } else if (event.kind === 'meta-disagreement-marked') {
+      if (event.payload.target === 'proposal') {
+        closedProposalIds.add(event.payload.proposal_id);
+      } else if (event.payload.entity_kind === entityKind && event.payload.entity_id === entityId) {
+        const proposalId = proposalIdByFacet.get(event.payload.facet);
+        if (proposalId !== undefined) closedProposalIds.add(proposalId);
+      }
+    }
+  }
+  const candidate = proposalIdByFacet.get(facet);
+  if (candidate === undefined) return null;
+  if (closedProposalIds.has(candidate)) return null;
+  return candidate;
+}
+
+/**
+ * Resolve the facet target a proposal payload addresses for vote-time
+ * purposes. Covers the four facet-valued sub-kinds (`classify-node` /
+ * `set-node-substance` / `set-edge-substance` / `edit-wording`) AND
+ * `capture-node` (which maps to the wording facet per ADR 0030 §1 +
+ * §4). Returns `null` for structural sub-kinds (which carry no facet
+ * target — they hold the proposal-keyed arm).
+ *
+ * Mirrors `facetTargetForProposal` in
+ * `apps/server/src/methodology/handlers/vote.ts` — same coverage,
+ * inlined here so the WS-layer fallback stays self-contained.
+ */
+function facetTargetOfProposalPayload(
+  proposal: ProposalPayload,
+): { entityKind: 'node' | 'edge'; entityId: string; facet: FacetName } | null {
+  switch (proposal.kind) {
+    case 'capture-node':
+      return { entityKind: 'node', entityId: proposal.node_id, facet: 'wording' };
+    case 'edit-wording':
+    case 'amend-node':
+      return { entityKind: 'node', entityId: proposal.node_id, facet: 'wording' };
+    case 'classify-node':
+      return { entityKind: 'node', entityId: proposal.node_id, facet: 'classification' };
+    case 'set-node-substance':
+      return { entityKind: 'node', entityId: proposal.node_id, facet: 'substance' };
+    case 'set-edge-substance':
+      return { entityKind: 'edge', entityId: proposal.edge_id, facet: 'substance' };
+    default:
+      return null;
+  }
 }
 
 /**

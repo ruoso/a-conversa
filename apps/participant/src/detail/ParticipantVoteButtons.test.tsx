@@ -622,10 +622,18 @@ describe('<ParticipantVoteButtons> — click fires the wire envelope', () => {
     });
     expect(fake.calls.length).toBe(1);
     expect(fake.calls[0]?.type).toBe('vote');
+    // Per ADR 0030 §2 + `pf_part_vote_action_facet_keyed`: the
+    // `classify-node` proposal is a facet-valued sub-kind; the wire
+    // payload is `target: 'facet'` keyed by
+    // `(entity_kind, entity_id, facet)`. The server resolves the
+    // facet's current candidate proposal at handle-time.
     expect(fake.calls[0]?.payload).toEqual({
       sessionId: SESSION_ID,
       expectedSequence: 0,
-      proposalId: PROPOSAL_CLASSIFY_ID,
+      target: 'facet',
+      entity_kind: 'node',
+      entity_id: NODE_A_ID,
+      facet: 'classification',
       choice: 'agree',
     });
   });
@@ -883,9 +891,14 @@ describe('<ParticipantVoteButtons> — structural sub-kinds surface a "proposal"
     });
     expect(fake.calls.length).toBe(1);
     expect(fake.calls[0]?.type).toBe('vote');
+    // Per ADR 0030 §9 + `pf_part_vote_action_facet_keyed`: structural
+    // sub-kinds (decompose / interpretive-split / axiom-mark / annotate)
+    // keep the proposal-keyed wire arm — the synthetic `'proposal'`
+    // facet row binds the hook to the structural proposal id directly.
     expect(fake.calls[0]?.payload).toEqual({
       sessionId: SESSION_ID,
       expectedSequence: 0,
+      target: 'proposal',
       proposalId: PROPOSAL_DECOMPOSE_ID,
       choice: 'agree',
     });

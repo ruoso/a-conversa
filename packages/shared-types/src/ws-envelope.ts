@@ -438,20 +438,64 @@ export type ProposedPayload = z.infer<typeof proposedPayloadSchema>;
  */
 // Named `wsVotePayloadSchema` (not `votePayloadSchema`) to avoid a
 // collision with `votePayloadSchema` in `./events.ts` (the event-side
-// vote payload, with a different shape — `{ proposal_id, participant,
-// vote, voted_at }`). The two payloads are intentionally distinct —
+// vote payload). The two payloads are intentionally distinct —
 // the wire request carries client-facing field names + the optimistic-
 // concurrency token; the event payload carries the canonical
-// snake-case audit-log shape — but exporting both under the same
-// symbol from `@a-conversa/shared-types` would force re-export
-// gymnastics in `index.ts`. The `Ws` prefix is the same convention
-// `WsEnvelope` and `WsMessageType` use.
-export const wsVotePayloadSchema = z.object({
+// snake-case audit-log shape (with a server-set `voted_at` timestamp)
+// — but exporting both under the same symbol from
+// `@a-conversa/shared-types` would force re-export gymnastics in
+// `index.ts`. The `Ws` prefix is the same convention `WsEnvelope` and
+// `WsMessageType` use.
+//
+// **Discriminated dual-arm shape** per [ADR 0030 §2 + §9]
+// (`docs/adr/0030-per-facet-vote-keying-and-sequential-capture.md`) +
+// the refinement at `tasks/refinements/per-facet-refactor/
+// pf_part_vote_action_facet_keyed.md`:
+//
+//   - `target: 'facet'` — facet-keyed votes. Names the
+//     `(entity_kind, entity_id, facet)` triple the vote attaches to.
+//     The server resolves the current candidate proposal for that
+//     facet at handle-time (a vote does not pin the proposal id on the
+//     wire; the methodology treats agreement as a property of the
+//     facet itself).
+//   - `target: 'proposal'` — proposal-keyed votes. Names the structural
+//     proposal id directly. Used for the structural sub-kinds
+//     (`decompose` / `interpretive-split` / `axiom-mark` / `annotate` /
+//     `meta-move` / `break-edge`) per ADR 0030 §9.
+//
+// Both arms share `sessionId`, `expectedSequence`, and `choice`. The
+// `choice` enum is `'agree' | 'dispute'` only — withdraw is no longer a
+// vote choice per ADR 0030 §3 (the dedicated `withdraw-agreement` event
+// kind owns the gesture). The legacy `'withdraw'` value is preserved
+// on the schema for back-compat with structural-arm callers in tests;
+// the methodology engine refuses it on the facet arm with
+// `illegal-state-transition`.
+export const wsVoteFacetPayloadSchema = z.object({
   sessionId: z.string().uuid(),
   expectedSequence: z.number().int().nonnegative(),
+  target: z.literal('facet'),
+  entity_kind: z.enum(['node', 'edge']),
+  entity_id: z.string().uuid(),
+  facet: z.enum(['classification', 'substance', 'wording', 'shape']),
+  choice: z.enum(['agree', 'dispute', 'withdraw']),
+});
+
+export type WsVoteFacetPayload = z.infer<typeof wsVoteFacetPayloadSchema>;
+
+export const wsVoteProposalPayloadSchema = z.object({
+  sessionId: z.string().uuid(),
+  expectedSequence: z.number().int().nonnegative(),
+  target: z.literal('proposal'),
   proposalId: z.string().uuid(),
   choice: z.enum(['agree', 'dispute', 'withdraw']),
 });
+
+export type WsVoteProposalPayload = z.infer<typeof wsVoteProposalPayloadSchema>;
+
+export const wsVotePayloadSchema = z.discriminatedUnion('target', [
+  wsVoteFacetPayloadSchema,
+  wsVoteProposalPayloadSchema,
+]);
 
 export type WsVotePayload = z.infer<typeof wsVotePayloadSchema>;
 

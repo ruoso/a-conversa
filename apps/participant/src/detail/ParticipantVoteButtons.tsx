@@ -96,27 +96,36 @@ import { useVoteAction, type VoteChoice } from './useVoteAction';
 type LifecycleFacetName = FacetName | 'shape' | 'proposal';
 
 /**
- * The vote-arm vocabulary the row surfaces. Mirrors `VoteChoice` from
- * `useVoteAction`; the row owns its own iteration vocabulary so the
- * component-layer source of truth stays here. The legacy
- * three-button row (agree / dispute / withdraw) splits per ADR 0030
- * §3: withdraw is no longer a vote choice; it is its own gesture
- * landing in the downstream `pf_part_withdraw_agreement_action` task.
- * For statuses where the wired gesture is "vote on the candidate"
- * (`proposed` / `disputed` / `withdrawn`), the row renders agree +
- * dispute. For statuses where the wired gesture is "withdraw your
- * agreement" (`agreed` / `committed`), the row renders a single
- * withdraw button. For `awaiting-proposal` + `meta-disagreement`, no
- * buttons.
+ * Row-local renderer vocabulary. Widens the hook's two-arm `VoteChoice`
+ * (`'agree' | 'dispute'`) with `'withdraw'` to cover the structural-
+ * proposal row + the `agreed` / `committed` rows' placeholder withdraw
+ * button. The hook only fires for `'agree'` / `'dispute'`; the
+ * `'withdraw'` button on a facet row is a placeholder (wired by
+ * `pf_part_withdraw_agreement_action` downstream); the `'withdraw'`
+ * button on the structural-proposal row also lands as a placeholder
+ * here since the hook's API no longer accepts `'withdraw'` per ADR
+ * 0030 §3 (the structural withdraw flow lands in its own follow-up).
+ */
+type RowVoteChoice = VoteChoice | 'withdraw';
+
+/**
+ * The vote-arm vocabulary the row surfaces. The legacy three-button row
+ * (agree / dispute / withdraw) splits per ADR 0030 §3: withdraw is no
+ * longer a vote choice; it is its own gesture landing in the downstream
+ * `pf_part_withdraw_agreement_action` task. For statuses where the
+ * wired gesture is "vote on the candidate" (`proposed` / `disputed` /
+ * `withdrawn`), the row renders agree + dispute. For statuses where
+ * the wired gesture is "withdraw your agreement" (`agreed` /
+ * `committed`), the row renders a single withdraw button (placeholder).
+ * For `awaiting-proposal` + `meta-disagreement`, no buttons.
  *
  * The structural `'proposal'`-facet row keeps the three-button shape
- * for back-compat with the pre-refactor behaviour — the structural
- * proposal flow has not yet migrated off the proposal-keyed vote
- * envelope and the unanimity walk still reads the
- * `perParticipantVotes` map populated by the legacy vote arms.
+ * for back-compat with the pre-refactor behaviour; the withdraw button
+ * is rendered for visual completeness as a placeholder (the
+ * `useVoteAction` hook no longer accepts `'withdraw'` per ADR 0030 §3).
  */
-const STRUCTURAL_VOTE_CHOICES: readonly VoteChoice[] = ['agree', 'dispute', 'withdraw'];
-const FACET_VOTE_CHOICES: readonly VoteChoice[] = ['agree', 'dispute'];
+const STRUCTURAL_VOTE_CHOICES: readonly RowVoteChoice[] = ['agree', 'dispute', 'withdraw'];
+const FACET_VOTE_CHOICES: readonly RowVoteChoice[] = ['agree', 'dispute'];
 
 /**
  * Per-choice testid arms. Spelled out explicitly (rather than computed
@@ -124,7 +133,7 @@ const FACET_VOTE_CHOICES: readonly VoteChoice[] = ['agree', 'dispute'];
  * grep-friendly — searching for `participant-vote-button-agree` lands
  * here and nowhere else.
  */
-const VOTE_BUTTON_TESTID: Readonly<Record<VoteChoice, string>> = {
+const VOTE_BUTTON_TESTID: Readonly<Record<RowVoteChoice, string>> = {
   agree: 'participant-vote-button-agree',
   dispute: 'participant-vote-button-dispute',
   withdraw: 'participant-vote-button-withdraw',
@@ -134,7 +143,7 @@ const VOTE_BUTTON_TESTID: Readonly<Record<VoteChoice, string>> = {
  * Per-choice i18n label key under `participant.voteButton`. Same
  * grep-friendly posture as `VOTE_BUTTON_TESTID`.
  */
-const VOTE_BUTTON_LABEL_KEY: Readonly<Record<VoteChoice, string>> = {
+const VOTE_BUTTON_LABEL_KEY: Readonly<Record<RowVoteChoice, string>> = {
   agree: 'participant.voteButton.agreeLabel',
   dispute: 'participant.voteButton.disputeLabel',
   withdraw: 'participant.voteButton.withdrawLabel',
@@ -672,17 +681,57 @@ interface FacetRowProps {
  * `perParticipantVotes` map on the server.
  */
 function FacetRow(props: FacetRowProps): ReactElement {
-  const { facet, status, proposalId, candidateValue } = props;
+  const { facet, entityKind, entityId, status, proposalId, candidateValue } = props;
   const { t } = useTranslation();
 
-  // The wired vote-action hook. Bound to the row's proposalId when
-  // present; when absent (the `awaiting-proposal` branch and the
-  // edge-shape `committed` fallback), the hook is bound to an empty
-  // string and the buttons are not rendered, so the binding is inert.
-  // TODO(pf_part_vote_action_facet_keyed): rebind to a facet-keyed
-  // hook variant so the vote envelope carries
-  // `(entity_kind, entity_id, facet)` rather than `proposalId`.
-  const { castVote, inFlight, lastError } = useVoteAction({ proposalId: proposalId ?? '' });
+  // The wired vote-action hook is bound per-arm:
+  //
+  //   - The synthetic `'proposal'`-facet row (structural sub-kinds —
+  //     `decompose` / `interpretive-split` / `axiom-mark` / `annotate`)
+  //     binds to the proposal arm: the hook emits
+  //     `{ target: 'proposal', proposalId, choice }` on the wire,
+  //     matching the structural-arm methodology engine path.
+  //   - The four real facet rows (`wording` / `classification` /
+  //     `substance` / `shape`) bind to the facet arm: the hook emits
+  //     `{ target: 'facet', entity_kind, entity_id, facet, choice }`.
+  //     The server resolves the facet's current candidate proposal at
+  //     handle-time per ADR 0030 §2 + the refinement at
+  //     `tasks/refinements/per-facet-refactor/
+  //     pf_part_vote_action_facet_keyed.md`.
+  //
+  // When the row's facet has no candidate yet (the `awaiting-proposal`
+  // branch + the edge-shape inline-carriage `committed` fallback), the
+  // hook is still bound — its `castVote()` is never called from those
+  // branches (no buttons render) so the binding is inert.
+  // The hook's facet arm narrows `entity_kind` to `'node' | 'edge'`
+  // (the methodology has no per-facet vote against annotations today).
+  // The panel does not surface for annotation entities (see
+  // `EntityDetailPanel.tsx`) but the prop type is the wider
+  // `EntityKind`; we narrow defensively before constructing the
+  // facet-arm input.
+  const voteEntityKind: 'node' | 'edge' | null =
+    entityKind === 'node' || entityKind === 'edge' ? entityKind : null;
+  const voteArgs =
+    facet === 'proposal'
+      ? // The synthetic `'proposal'` facet row is only rendered when
+        // `proposalId` is defined (the structural-row caller in
+        // `ParticipantVoteButtons` filters); we fall back to the empty
+        // string for the awaiting branch so the hook binding stays
+        // structurally typed (no buttons render in that branch so the
+        // empty id is never sent to the wire).
+        ({ proposal_id: proposalId ?? '' } as const)
+      : voteEntityKind !== null &&
+          (facet === 'shape' ||
+            facet === 'wording' ||
+            facet === 'classification' ||
+            facet === 'substance')
+        ? ({
+            entity_kind: voteEntityKind,
+            entity_id: entityId,
+            facet,
+          } as const)
+        : ({ proposal_id: '' } as const);
+  const { castVote, inFlight, lastError } = useVoteAction(voteArgs);
 
   const wireMessage = useMemo<string | undefined>(() => {
     if (lastError === undefined) return undefined;
@@ -700,7 +749,7 @@ function FacetRow(props: FacetRowProps): ReactElement {
   // buttons" (awaiting-proposal + meta-disagreement). The
   // `'proposal'` synthetic facet uses the structural three-button
   // shape (kept for back-compat with the pre-refactor wire path).
-  const choices = useMemo<readonly VoteChoice[] | null>(() => {
+  const choices = useMemo<readonly RowVoteChoice[] | null>(() => {
     if (facet === 'proposal') return STRUCTURAL_VOTE_CHOICES;
     switch (status) {
       case 'awaiting-proposal':
@@ -712,12 +761,11 @@ function FacetRow(props: FacetRowProps): ReactElement {
         // single-arm 'withdraw' button with a wired
         // `useWithdrawAgreementAction` hook that emits the
         // `withdraw-agreement` event (per ADR 0030 §3). For now the
-        // arm is a placeholder rendered for visual completeness —
-        // clicking it currently sends a legacy `vote.choice=withdraw`
-        // envelope via `useVoteAction`, which the server's vote
-        // handler accepts as a back-compat path (per ADR 0030
-        // Consequences §2 — the legacy arm stays until the new
-        // gesture lands).
+        // arm is a placeholder rendered for visual completeness.
+        // Clicking it is a no-op — `useVoteAction` no longer accepts
+        // a `'withdraw'` choice (the hook's `VoteChoice` is now
+        // `'agree' | 'dispute'` only per the
+        // `pf_part_vote_action_facet_keyed` refinement).
         return ['withdraw'] as const;
       case 'proposed':
       case 'disputed':
@@ -787,20 +835,33 @@ function FacetRow(props: FacetRowProps): ReactElement {
         {choices !== null ? (
           <div className="flex items-center gap-1">
             {choices.map((choice) => {
-              // For `agreed` / `committed` rows the gesture is a
-              // placeholder withdraw button — the wired
-              // `useWithdrawAgreementAction` hook lands in
-              // `pf_part_withdraw_agreement_action` downstream. The
-              // button renders for visual completeness but does not
-              // emit a `vote` envelope (no `proposalId` to bind).
-              const isPlaceholderWithdraw =
-                choice === 'withdraw' && proposalId === undefined && facet !== 'proposal';
+              // The `'withdraw'` button is ALWAYS a placeholder now —
+              // `useVoteAction`'s `VoteChoice` is `'agree' | 'dispute'`
+              // only per the `pf_part_vote_action_facet_keyed`
+              // refinement. The wired withdraw gesture lands in
+              // `pf_part_withdraw_agreement_action` downstream (for
+              // facet rows) + a structural-arm follow-up (for the
+              // synthetic `'proposal'` row). Until then the button
+              // renders for visual completeness but does NOT emit a
+              // wire envelope on click.
+              const isPlaceholderWithdraw = choice === 'withdraw';
               // Skip rendering the agree / dispute buttons when no
-              // proposalId is available (the row has nothing to vote
-              // on at the wire layer — typically `awaiting-proposal`,
-              // already-filtered above, but defensive against future
-              // status surfaces).
-              if (!isPlaceholderWithdraw && proposalId === undefined) return null;
+              // proposalId is available AND the row is the structural
+              // synthetic `'proposal'` arm (the row needs a proposal
+              // id to bind the wire send to). For real facet rows the
+              // wire send carries the `(entity_kind, entity_id, facet)`
+              // triple instead — the proposalId is irrelevant to the
+              // dispatch — so the agree / dispute buttons render
+              // regardless of proposalId availability.
+              if (!isPlaceholderWithdraw && facet === 'proposal' && proposalId === undefined) {
+                return null;
+              }
+              // `'withdraw'` is no longer a member of the hook's
+              // `VoteChoice`; the click handler never invokes
+              // `castVote('withdraw')`. The narrow happens at the
+              // `isPlaceholderWithdraw` branch above.
+              const wiredChoice: VoteChoice | null =
+                choice === 'agree' ? 'agree' : choice === 'dispute' ? 'dispute' : null;
               return (
                 <button
                   key={choice}
@@ -813,10 +874,10 @@ function FacetRow(props: FacetRowProps): ReactElement {
                   aria-disabled={inFlight || isPlaceholderWithdraw}
                   aria-label={t('participant.voteButton.ariaLabel', { choice })}
                   onClick={
-                    isPlaceholderWithdraw
+                    isPlaceholderWithdraw || wiredChoice === null
                       ? undefined
                       : () => {
-                          void castVote(choice);
+                          void castVote(wiredChoice);
                         }
                   }
                   className={

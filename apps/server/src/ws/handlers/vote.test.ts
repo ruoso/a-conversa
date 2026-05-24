@@ -463,10 +463,16 @@ function voteFrame(
   proposalId: string,
   choice: 'agree' | 'dispute' | 'withdraw',
 ): string {
+  // Wire payload is a `target`-discriminated union per ADR 0030 §2 + §9
+  // (+ `pf_part_vote_action_facet_keyed`). The existing handler-test
+  // scenarios pin the proposal-arm shape; the facet-arm scenarios live
+  // in `methodology/handlers/vote.test.ts` (engine-level) and in the
+  // participant hook tests at
+  // `apps/participant/src/detail/useVoteAction.test.tsx`.
   return JSON.stringify({
     type: 'vote',
     id: messageId,
-    payload: { sessionId, expectedSequence, proposalId, choice },
+    payload: { sessionId, expectedSequence, target: 'proposal', proposalId, choice },
   });
 }
 
@@ -749,6 +755,7 @@ describe('ws_vote_message — handler integration', () => {
         payload: {
           sessionId: VISIBLE_SESSION_ID,
           expectedSequence: 5,
+          target: 'proposal',
           proposalId: PROPOSAL_EVENT_ID,
           choice: 'agree',
           voterId: ANOTHER_PARTICIPANT_ID, // <-- spoof attempt

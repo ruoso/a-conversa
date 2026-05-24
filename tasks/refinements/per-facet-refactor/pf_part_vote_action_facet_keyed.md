@@ -42,3 +42,14 @@ The wire shape changes per [ADR 0030 §2](../../../docs/adr/0030-per-facet-vote-
 ## Open questions
 
 (none — all decided per ADR 0030)
+
+## Status
+
+**Done** — 2026-05-24.
+
+- Rewrote `apps/participant/src/detail/useVoteAction.ts` as a dual-arm hook emitting the `target`-discriminated wire payload per ADR 0030 §2: facet-arm for facet-valued votes, proposal-arm for structural sub-kinds. `VoteChoice` narrowed to `'agree' | 'dispute'`; the `'withdraw'` choice is gone from the hook API (handled by `pf_part_withdraw_agreement_action`). Slot-disjoint per-arm Zustand keys preserve isolation.
+- `apps/participant/src/detail/ParticipantVoteButtons.tsx` call site picks the facet arm for real facet rows and the proposal arm for the synthetic `'proposal'` row; `STRUCTURAL_VOTE_CHOICES` → `RowVoteChoice`; `'withdraw'` remains always-placeholder. Stale `TODO(pf_part_vote_action_facet_keyed)` removed.
+- `packages/shared-types/src/ws-envelope.ts` `wsVotePayloadSchema` is now `z.discriminatedUnion('target', [facet, proposal])`.
+- `apps/server/src/ws/handlers/vote.ts` dispatches on `payload.target`; facet-arm resolves the driving proposal id via `facet.candidateProposalEventId` with a fallback event-log walk for the capture-node case (wording facet's candidate is populated inline on `node-created` with no driving facet-targeting proposal).
+- Vitest coverage: `useVoteAction.test.tsx` rewritten for both arms + isolation case; `ParticipantVoteButtons.test.tsx` payload-shape assertions flipped. `apps/server/src/ws/handlers/vote.test.ts` + `tests/behavior/steps/backend-ws-vote.steps.ts` helpers carry `target: 'proposal'`.
+- Verification: `pnpm run check` green; `pnpm run test:smoke` 4377 passing (+6 new hook-arm + isolation cases), 0 skipped; `pnpm run test:behavior:smoke` 262 / 1803 unchanged; `pnpm run test:e2e:smoke` 111 + 0 fixme unchanged.

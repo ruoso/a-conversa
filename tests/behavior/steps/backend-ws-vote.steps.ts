@@ -295,6 +295,10 @@ When(
     // Ensure the streaming frame queue is attached BEFORE the send.
     ensureVoteFramesQueue(this);
 
+    // Wire payload is a `target`-discriminated union per ADR 0030 §2 +
+    // §9 (+ `pf_part_vote_action_facet_keyed`). The step keyword
+    // ("on proposal {string}") names a proposal-keyed vote; the
+    // facet-arm scenarios live alongside the methodology suite.
     ws.send(
       JSON.stringify({
         type: 'vote',
@@ -302,6 +306,7 @@ When(
         payload: {
           sessionId,
           expectedSequence,
+          target: 'proposal',
           proposalId,
           choice,
         },

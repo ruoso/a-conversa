@@ -175,6 +175,7 @@ task per_facet_refactor "Per-facet refactor (ADR 0030)" {
     task pf_part_vote_action_facet_keyed "useVoteAction: facet-keyed payload" {
       effort 0.5d
       allocate team
+      complete 100
       depends !pf_part_detail_panel_three_facet_rows
       note "Refinement: tasks/refinements/per-facet-refactor/pf_part_vote_action_facet_keyed.md"
     }
