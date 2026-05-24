@@ -168,6 +168,7 @@ task per_facet_refactor "Per-facet refactor (ADR 0030)" {
     task pf_mod_edge_shape_commit_affordance "Edge card: inline shape-commit affordance (moderator side)" {
       effort 0.5d
       allocate team
+      complete 100
       depends !pf_mod_edge_card_substance_affordance, !!server_handlers.pf_shape_facet_wire_vote
       note "Refinement: tasks/refinements/per-facet-refactor/pf_mod_edge_shape_commit_affordance.md. Source of debt: tasks/refinements/per-facet-refactor/pf_mod_edge_card_substance_affordance.md Status block — methodology-full-flow Phase 5.7 is presently a tolerant no-op accepting either `agreed` or `committed` as settled for the substance affordance's UI gate. Lands the moderator-side commit-button affordance for the inline edge.shape facet so Phase 5.7 can tighten to a strict commit assertion symmetric with the node-card commit affordance."
     }

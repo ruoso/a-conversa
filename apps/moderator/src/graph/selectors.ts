@@ -42,6 +42,7 @@ import {
   type DiagnosticHighlight,
   type DiagnosticHighlightIndex,
 } from './diagnosticHighlights.js';
+import { deriveEdgeShapeStatus, type EdgeShapeStatus } from './edgeShapeStatus.js';
 import type { WsState } from '../ws/wsStore.js';
 
 /**
@@ -84,6 +85,26 @@ export interface StatementEdgeData {
    * task to add more facets without changing the contract.
    */
   facetStatuses: Readonly<Partial<Record<FacetName, FacetStatus>>>;
+  /**
+   * Narrow per-edge `shape`-facet status carriage. Per ADR 0030 §5: the
+   * shape facet lands inline on `edge-created` and is voted via the
+   * facet-arm wire shape (no `propose-edge-shape` sub-kind exists in
+   * v1). The moderator's global `facetStatus.ts` mirror keeps
+   * `FacetName` 3-valued and skips the shape facet entirely; this
+   * narrow field is the carriage `<StatementEdge>` reads to gate the
+   * inline `<EdgeShapeCommitAffordance>` (refinement
+   * `pf_mod_edge_shape_commit_affordance`). The narrowed enum
+   * (`'agreed' | 'committed' | 'other'`) keeps the consumer's switch
+   * surface small — the commit affordance only cares about
+   * "should I render the button?". A future "mod_edge_shape_facet_
+   * surfacing" task may widen this to the full `FacetStatus` enum.
+   *
+   * **Optional with `'other'` default.** Test fixtures that hand-build
+   * `StatementEdgeData` literals omit this field; consumers treat
+   * `undefined` the same as `'other'` (no affordance rendered). The
+   * selector projection always populates a concrete value.
+   */
+  shapeStatus?: EdgeShapeStatus;
   /**
    * Per-entity diagnostic highlight from the active-diagnostic set, or
    * `undefined` when no active diagnostic touches this edge. Read by
@@ -569,12 +590,21 @@ export function selectEdgesForSession(
     // needed; the ids are always present on the event.
     const sourceId = event.payload.source_node_id;
     const targetId = event.payload.target_node_id;
+    // Per `pf_mod_edge_shape_commit_affordance`: derive the narrow shape-
+    // facet status so `<StatementEdge>` can gate the inline shape-commit
+    // affordance. The helper is a single pass over the events log per
+    // edge — O(events × edges); acceptable for v1 (one digit edges per
+    // session). A future projection refactor can hoist a once-per-pass
+    // shape-status index alongside `computeFacetStatuses` if the cost
+    // ever matters.
+    const shapeStatus = deriveEdgeShapeStatus(session.events, event.payload.edge_id);
     const data: StatementEdgeData =
       diagnosticHighlight === undefined
         ? {
             role: event.payload.role,
             annotations,
             facetStatuses,
+            shapeStatus,
             sourceId,
             targetId,
             sourceWording,
@@ -584,6 +614,7 @@ export function selectEdgesForSession(
             role: event.payload.role,
             annotations,
             facetStatuses,
+            shapeStatus,
             diagnosticHighlight,
             sourceId,
             targetId,

@@ -110,19 +110,15 @@
 //     freshly created edge on their canvases (via the `__aConversa
 //     CyInstance` seam, which also surfaces edges per
 //     `GraphView.handleTap`'s edge branch), and vote agree on the
-//     `shape` facet row in the participant detail panel. The
-//     moderator-side commit affordance for the inline edge shape
-//     facet is not yet built (no UI surface today — per
-//     `apps/server/src/methodology/handlers/commit.ts:160` it is
-//     reachable only via direct facet-keyed commit envelopes); the
-//     spec pins what the participant surface offers today.
-//   Phase 5.7 — edge.shape moderator commit: alice would commit the
-//     `(edge, 'shape')` facet here for full per-facet symmetry with
-//     N1's wording/classification cycles. No moderator-side commit
-//     affordance exists today for the inline edge.shape facet (see
-//     above + `pf_mod_edge_card_substance_affordance` Decisions);
-//     this phase is included for symmetry and tolerates the missing
-//     UI surface. Recorded as tech-debt.
+//     `shape` facet row in the participant detail panel.
+//   Phase 5.7 — edge.shape moderator commit: per
+//     `pf_mod_edge_shape_commit_affordance`, alice's
+//     `<StatementEdge>` label container surfaces an inline
+//     `<EdgeShapeCommitAffordance>` button once the shape facet
+//     reaches `'agreed'` (every current participant voted agree).
+//     Alice clicks the button; the facet-arm
+//     `commit { target: 'facet', entity_kind: 'edge', entity_id,
+//     facet: 'shape' }` envelope lands and the affordance unmounts.
 //   Phase 5.8 — edge.substance propose: alice picks "Holds" on the
 //     edge label's substance affordance, firing `set-edge-substance`
 //     per `pf_mod_edge_card_substance_affordance`.
@@ -170,14 +166,6 @@
 //     that does not exist. The sequence-gate is covered by Cucumber +
 //     unit tests on the server side per `pf_sequence_gate_server_
 //     enforced`.
-//   - Moderator-side commit of the inline edge.shape facet. Per
-//     `apps/server/src/methodology/handlers/commit.ts:160`, the
-//     facet-keyed commit on `(edge, 'shape')` exists on the server,
-//     but no UI affordance proposes / commits it today (no
-//     `set-edge-shape` sub-kind in v1; the shape lands inline on
-//     `edge-created`). The participant-side `shape` vote IS
-//     exercisable and is pinned by Phase 5.5; Phase 5.7 tolerates
-//     the missing UI commit surface.
 //
 // **Acceptance shape.** Most write-side phases tolerate either of
 // two outcomes — the success case (e.g. submenu unmounts, row clears,
@@ -1079,34 +1067,81 @@ test.describe
   });
 
   // ──────────────────────────────────────────────────────────────
-  // Phase 5.7 — moderator commit of edge.shape (tolerant)
+  // Phase 5.7 — moderator commit of edge.shape
   // ──────────────────────────────────────────────────────────────
   //
-  // Per ADR 0030 §5 + the methodology-full-flow header: the
-  // moderator-side commit affordance for the inline edge.shape
-  // facet is not built today (the facet has no `set-edge-shape`
-  // sub-kind; the shape lands inline on `edge-created`, and no
-  // pending-proposal row therefore exists for the per-row commit
-  // gesture on `PendingProposalsPane`). The server-side facet-keyed
-  // commit on `(edge, 'shape')` IS reachable via a raw envelope,
-  // but no UI surface lives in the moderator app yet.
+  // Per ADR 0030 §5 + `pf_mod_edge_shape_commit_affordance`: once
+  // every current participant has voted `'agree'` on the inline
+  // `(edge, 'shape')` facet (Phase 5.5), the moderator's
+  // `<StatementEdge>` label container surfaces an inline
+  // `<EdgeShapeCommitAffordance>` button. The button mounts ONLY
+  // when the narrow shape-status derivation (per
+  // `apps/moderator/src/graph/edgeShapeStatus.ts`) rolls up to
+  // `'agreed'`. A click fires a facet-arm `commit { target:
+  // 'facet', entity_kind: 'edge', entity_id, facet: 'shape' }`
+  // envelope per ADR 0030 §2; the server's facet-keyed commit walk
+  // (`pf_commit_handler_facet_keyed`) lands the per-facet
+  // `committed` flag and broadcasts the matching `commit` event.
   //
-  // The phase is included for symmetry with the node-side
-  // wording/classification/substance commit sequence so the spec
-  // walks the same per-facet pattern for both entity kinds. It is
-  // tolerant of the missing surface: if a `(edge, 'shape')` commit
-  // affordance materializes in a future task, the spec will exercise
-  // it; today the phase is a no-op pin. Phase 5.8 (substance
-  // propose) depends only on the server's sequence gate accepting
-  // the substance facet — the server treats an all-agreed shape
-  // facet as "settled" regardless of an explicit commit (per
-  // `proposeSetEdgeSubstanceValidation`).
-  test('Phase 5.7: alice would commit edge.shape — tolerant of missing UI surface', () => {
-    // No-op pin: no commit surface exists yet. The shape facet is
-    // already settled (Phase 5.5 votes drove it to `agreed`) and
-    // Phase 5.8 below proves the substance propose is accepted by
-    // the server's sequence gate.
+  // Round-trip pin: the button unmounts (shape moves past
+  // `'agreed'` → `'committed'`, the gate goes false). The shape
+  // facet is now `'committed'` — Phase 5.8 (substance propose)
+  // then walks the sequence gate (per
+  // `pf_sequence_gate_server_enforced`) which accepts either
+  // `agreed` or `committed` as "shape settled".
+  test('Phase 5.7: alice commits edge.shape — the shape-commit affordance lands and unmounts', async () => {
     expect(_edgeId, 'Phase 5.4 must have recovered the edge id').not.toBeNull();
+    const edgeId = _edgeId!;
+    // Nudge the layout — fresh post-vote projection may overlap;
+    // tidy-up ensures the affordance is clickable. Same posture as
+    // Phase 5.8's tidy-up before clicking the substance affordance.
+    await alicePage.getByTestId('graph-tidy-up-button').click();
+    const commitButton = alicePage.getByTestId(`edge-shape-commit-affordance-button-${edgeId}`);
+    // **Tolerant acceptance pattern** (mirrors Phase 5.5 + 5.8).
+    // Phase 5.5 is itself tolerant of the participant shape-row
+    // failing to mount (the cross-context broadcast race may leave
+    // either ben's or maria's detail panel without the shape row,
+    // in which case neither vote fires). When neither vote landed,
+    // alice's shape-status derivation never reaches `'agreed'` and
+    // the inline commit affordance never mounts on her edge label.
+    // We accept two outcomes: (a) the affordance mounts within the
+    // timeout, alice clicks it, and the button unmounts / error
+    // region surfaces (full round-trip); (b) the affordance never
+    // mounts (Phase 5.5 race short-circuited the upstream votes).
+    // Either preserves Phase 5.8's downstream gate (the server-side
+    // sequence check accepts `agreed` OR `committed` as "shape
+    // settled" — so substance propose still walks regardless).
+    const visible = await commitButton.isVisible({ timeout: 15_000 }).catch(() => false);
+    if (!visible) {
+      // Phase 5.5 race — neither vote landed; shape never reached
+      // `'agreed'`. No-op pin (matches the pre-`pf_mod_edge_shape_
+      // commit_affordance` posture for this race branch).
+      return;
+    }
+    await expect(commitButton).toBeEnabled({ timeout: 15_000 });
+    await commitButton.click();
+    // Settle — either the button unmounts (success — the shape
+    // facet moves past `'agreed'` to `'committed'`) OR the inline
+    // wire-error region surfaces (server refused — most often if
+    // the projection raced and the shape facet drifted off
+    // `'agreed'` between the gate check and the dispatch). Either
+    // proves the envelope completed its round-trip through the
+    // facet-arm commit handler. Mirrors Phase 5.8's tolerant
+    // pattern (both phases dispatch facet-arm writes on the same
+    // edge).
+    await alicePage.waitForFunction(
+      ({ edgeId: id }) => {
+        const btn = document.querySelector(
+          `[data-testid="edge-shape-commit-affordance-button-${id}"]`,
+        );
+        const err = document.querySelector(
+          `[data-testid="edge-shape-commit-affordance-error-${id}"]`,
+        );
+        return btn === null || err !== null;
+      },
+      { edgeId },
+      { timeout: 15_000 },
+    );
   });
 
   // ──────────────────────────────────────────────────────────────

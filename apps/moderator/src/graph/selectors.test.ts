@@ -166,6 +166,11 @@ describe('selectEdgesForSession', () => {
         // `set-edge-substance` proposal has its substance facet in
         // the empty-state `'awaiting-proposal'` row.
         facetStatuses: { substance: 'awaiting-proposal' },
+        // Per `pf_mod_edge_shape_commit_affordance`: the inline
+        // `shape` facet on a freshly-created edge has no votes yet —
+        // the narrow `EdgeShapeStatus` rolls up to `'other'`. The
+        // inline shape-commit affordance is unmounted in this state.
+        shapeStatus: 'other',
         sourceId: '00000000-0000-4000-8000-000000000001',
         targetId: '00000000-0000-4000-8000-000000000002',
         sourceWording: '—',

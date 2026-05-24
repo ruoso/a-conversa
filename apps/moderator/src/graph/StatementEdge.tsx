@@ -47,6 +47,7 @@ import { BaseEdge, EdgeLabelRenderer, getBezierPath, type EdgeProps } from 'reac
 import { useSelectionStore } from '../stores/index.js';
 import { AnnotationBadge } from './AnnotationBadge.js';
 import { EdgeCardSubstanceAffordance } from './EdgeCardSubstanceAffordance.js';
+import { EdgeShapeCommitAffordance } from './EdgeShapeCommitAffordance.js';
 import { HoverPopover } from './HoverPopover.js';
 import type { StatementEdgeData } from './selectors.js';
 
@@ -145,6 +146,31 @@ function StatementEdgeImpl(props: EdgeProps<StatementEdgeData>): ReactElement {
   // that admits the in-sequence case and lets the server reject
   // anything else.
   const showSubstanceAffordance = substanceStatus === 'awaiting-proposal';
+
+  // Per-edge inline shape-commit affordance. Per ADR 0030 §5 +
+  // `pf_mod_edge_shape_commit_affordance`: the edge's shape facet
+  // (the carriage of the role) lands inline on `edge-created` and is
+  // voted via the facet-arm wire shape — there is no
+  // `propose-edge-shape` sub-kind in v1, so the inline shape facet
+  // has no row in the pending-proposals pane. Once every current
+  // participant has voted `'agree'` on `(edge, 'shape')`, the
+  // moderator's path forward is to commit the facet so the per-facet
+  // status flips to `'committed'`. The affordance mounts inside the
+  // edge label container; a click fires a facet-arm `commit`
+  // envelope on the `(edge, 'shape')` triple per ADR 0030 §2 +
+  // `pf_commit_handler_facet_keyed`.
+  //
+  // **Gate predicate.** `shapeStatus === 'agreed'`. The narrow per-
+  // edge derivation lives in `deriveEdgeShapeStatus(events, edgeId)`
+  // (in `edgeShapeStatus.ts`); the moderator's global
+  // `facetStatus.ts` mirror skips the shape facet entirely (the local
+  // `FacetName` is 3-valued — wording | classification | substance).
+  // Widening the global mirror is out of scope for this refinement
+  // (recorded as tech-debt for a future "mod_edge_shape_facet_
+  // surfacing" task); a narrow per-edge helper is sufficient for the
+  // commit affordance's gate.
+  const shapeStatus = data?.shapeStatus;
+  const showShapeCommitAffordance = shapeStatus === 'agreed';
 
   const proposedEdgeStyle =
     substanceStatus === 'proposed' ? { strokeDasharray: '6 4', opacity: 0.6 } : undefined;
@@ -258,6 +284,7 @@ function StatementEdgeImpl(props: EdgeProps<StatementEdgeData>): ReactElement {
           >
             {label}
           </div>
+          {showShapeCommitAffordance ? <EdgeShapeCommitAffordance edgeId={id} /> : null}
           {showSubstanceAffordance ? <EdgeCardSubstanceAffordance edgeId={id} /> : null}
           {annotations.length > 0 ? (
             <div
