@@ -110,6 +110,12 @@ interface FacetTarget {
 
 function facetTargetForProposal(proposal: ProposalPayload): FacetTarget | null {
   switch (proposal.kind) {
+    case 'capture-node':
+      // Per ADR 0030 §1 + §4 + `pf_mod_node_card_classification_affordance`:
+      // `capture-node` names the wording-facet candidate inline; a
+      // proposal-keyed meta-disagreement-marked routes onto the wording
+      // facet, symmetric with the vote / commit arms.
+      return { entityKind: 'node', entityId: proposal.node_id, facet: 'wording' };
     case 'classify-node':
       return { entityKind: 'node', entityId: proposal.node_id, facet: 'classification' };
     case 'set-node-substance':

@@ -141,6 +141,7 @@ task per_facet_refactor "Per-facet refactor (ADR 0030)" {
     task pf_mod_node_card_classification_affordance "Node card: inline classification affordance" {
       effort 1.5d
       allocate team
+      complete 100
       depends !pf_mod_capture_pane_wording_only
       note "Refinement: tasks/refinements/per-facet-refactor/pf_mod_node_card_classification_affordance.md"
     }

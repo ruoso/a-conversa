@@ -57,3 +57,15 @@ Per [ADR 0030 §1 + Consequences](../../../docs/adr/0030-per-facet-vote-keying-a
 ## Open questions
 
 (none — all decided per ADR 0030)
+
+## Status
+
+**Done** — 2026-05-24.
+
+- New `apps/moderator/src/graph/NodeCardClassificationPalette.tsx` mounts inline on the moderator's per-node card; visibility is gated on `wording === 'agreed' | 'committed'` AND `classification === 'awaiting-proposal'`, per ADR 0030 §1.
+- New `apps/moderator/src/layout/useProposeClassifyNodeAction.ts` hook fires a `classify-node` propose envelope keyed to the node id (mirrors the existing per-node propose-hook shape).
+- Capture-node proposal mapped to the wording facet across server + client read surfaces (vote/commit/markMetaDisagreement handlers, primitives, replay walker, broadcast proposal-status, moderator + participant facet-status + proposal-facets + pending-proposals selectors, participant vote buttons). This is the missing bridge between the capture-node gesture and the wording-facet agreement flow — needed so the pending row clears on wording commit.
+- i18n catalog keys added under `moderator.classifyNodeAction.*` in en-US (canonical) with PENDING entries flagged in pt-BR + es-419 review.json per the existing i18n review workflow (no new WBS leaf needed).
+- 7 Playwright tests un-fixme'd (4 methodology-full-flow Phase 3.1 / 3.2 / 4.1 / 5.3 + 3 moderator-capture.spec.ts tests); 4 new methodology-full-flow phases added (2.2 wording vote / 2.3 wording commit / 2.4 alice classify / 5.2 N2 wording vote+commit). Vitest 4349 → 4371 (+22). Cucumber 262 / 1803 unchanged.
+- All `TODO(pf_mod_node_card_classification_affordance)` markers cleared.
+- Gates: `pnpm run check` green, `pnpm run test:smoke` 4371 passing, `pnpm run test:behavior:smoke` 262 / 1803, `pnpm run test:e2e:smoke` 111 passed + 0 fixme.

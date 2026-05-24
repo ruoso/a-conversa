@@ -41,6 +41,15 @@ import type { ProposalPayload } from '@a-conversa/shared-types';
  */
 export function summaryText(proposal: ProposalPayload): string {
   switch (proposal.kind) {
+    case 'capture-node':
+      // Per ADR 0030 §1 + `pf_mod_capture_pane_wording_only`: the
+      // capture-pane gesture is wording-only; `capture-node` carries
+      // the captured wording inline but the kind chip already
+      // surfaces the sub-kind label and the pending row's other
+      // chips (per-facet breakdown) carry the wording-facet status.
+      // The summary line falls back to a node-id prefix to mirror
+      // `classify-node` (both sub-kinds key on the same node).
+      return `node ${proposal.node_id.slice(0, 8)}`;
     case 'classify-node':
       // The chip already shows the classification; the summary falls
       // back to a node-id prefix.

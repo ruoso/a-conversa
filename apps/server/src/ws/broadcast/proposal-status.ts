@@ -264,6 +264,13 @@ interface FacetTarget {
  */
 function facetTargetsForProposal(payload: ProposalPayload): readonly FacetTarget[] {
   switch (payload.kind) {
+    case 'capture-node':
+      // Per ADR 0030 §1 + §4 + `pf_mod_node_card_classification_affordance`:
+      // `capture-node` names the wording-facet candidate inline. The
+      // broadcast layer surfaces the wording target so the
+      // `proposal-status` envelope carries the participant-side info
+      // needed for a wording-facet vote / commit walk.
+      return [{ entityKind: 'node', entityId: payload.node_id, facet: 'wording' }];
     case 'classify-node':
       return [{ entityKind: 'node', entityId: payload.node_id, facet: 'classification' }];
     case 'set-node-substance':

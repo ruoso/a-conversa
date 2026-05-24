@@ -52,6 +52,7 @@ import { AnnotationBadge } from './AnnotationBadge.js';
 import { AxiomMarkBadge } from './AxiomMarkBadge.js';
 import { DisputationTestChip } from './DisputationTestChip.js';
 import { HoverPopover } from './HoverPopover.js';
+import { NodeCardClassificationPalette } from './NodeCardClassificationPalette.js';
 import { PendingAxiomMarkBadge } from './PendingAxiomMarkBadge.js';
 import type { DiagnosticHighlight } from './diagnosticHighlights.js';
 import { disputationOutcome } from './disputationOutcome.js';
@@ -394,6 +395,32 @@ export function StatementNode(props: NodeProps<StatementNodeData>): ReactElement
   // pill row without scanning sibling text content.
   const disputationChipOutcome = disputationOutcome(facetStatuses.substance);
 
+  // Per-node-card classification affordance. Per ADR 0030 §1 + §10 +
+  // `pf_mod_node_card_classification_affordance`: when the wording
+  // facet has settled (`agreed` or `committed`) and the classification
+  // facet still awaits a candidate, the moderator's path forward is
+  // to name a classification on this card. The palette mounts inline;
+  // a click fires a `classify-node` propose envelope keyed to the
+  // node id (the hook lives in `useProposeClassifyNodeAction`). Once
+  // a `classify-node` proposal lands, `classification` moves past
+  // `awaiting-proposal` and the palette is no longer rendered (the
+  // per-facet pill row already surfaces the new status).
+  //
+  // The gate predicate (`wording ∈ {agreed, committed}` AND
+  // `classification === 'awaiting-proposal'`) is the UI mirror of the
+  // server's `pf_sequence_gate_server_enforced` — the server is the
+  // integrity boundary, the UI hides the gesture when the server
+  // would reject it. Both sides intentionally fail closed: the gate
+  // hides on any other `wording` status (proposed / disputed /
+  // meta-disagreement / withdrawn / awaiting-proposal — the last
+  // shouldn't reach here per ADR 0030 §4, but the predicate is
+  // symmetric anyway).
+  const wordingStatus = facetStatuses.wording;
+  const classificationStatus = facetStatuses.classification;
+  const showClassificationPalette =
+    (wordingStatus === 'agreed' || wordingStatus === 'committed') &&
+    classificationStatus === 'awaiting-proposal';
+
   return (
     <div
       data-testid={`statement-node-${id}`}
@@ -465,6 +492,7 @@ export function StatementNode(props: NodeProps<StatementNodeData>): ReactElement
       >
         {kindLabel}
       </p>
+      {showClassificationPalette ? <NodeCardClassificationPalette nodeId={id} /> : null}
       {pendingAxiomMarks.length > 0 ? (
         // Pending axiom-mark badge row — rendered IMMEDIATELY ABOVE the
         // committed `axiom-mark-list-node-{id}` row. The pending row

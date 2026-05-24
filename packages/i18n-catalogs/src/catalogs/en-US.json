@@ -298,6 +298,16 @@
         "notSelf": "Axiom-marks are personal — the debater must propose this from their own tablet"
       }
     },
+    "classifyNodeAction": {
+      "paletteAriaLabel": "Classify this statement — pick a kind",
+      "paletteLegend": "Pick a classification",
+      "kindButtonAriaLabel": "{label}",
+      "errorBanner": {
+        "timeout": "The classify request timed out — try again",
+        "unknown": "Could not propose the classification — please retry",
+        "errorRoleLabel": "Classification error"
+      }
+    },
     "annotateAction": {
       "submenu": {
         "header": "Add annotation",

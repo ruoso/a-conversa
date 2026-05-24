@@ -43,6 +43,7 @@ import {
 } from '@testing-library/react';
 import i18next from 'i18next';
 import { act, type ReactElement } from 'react';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { ReactFlowProvider, type NodeProps } from 'reactflow';
 import type { StatementKind } from '@a-conversa/shared-types';
 
@@ -55,8 +56,14 @@ import {
 import type { DiagnosticHighlight } from './diagnosticHighlights';
 import type { FacetName, FacetStatus } from './facetStatus';
 import type { Annotation, AxiomMark, PendingAxiomMark } from './selectors';
-import { createI18nInstance, type Vote } from '@a-conversa/shell';
+import { WsClientProvider, createI18nInstance, type Vote, type WsClient } from '@a-conversa/shell';
 import { useSelectionStore } from '../stores';
+
+// Session id used to satisfy `useParams<{ id: string }>()` for the
+// palette-mount gate cases below. The visibility tests don't dispatch
+// the click, so the actual session id is inert; it only needs to be
+// non-empty for the hook's gate.
+const SESSION_ID_FOR_TESTS = '00000000-0000-4000-8000-0000000000ff';
 
 // Local `render(...)` shadow that wraps every render in a
 // `<ReactFlowProvider>`. The provider is what supplies the Zustand store
@@ -2187,4 +2194,183 @@ describe('StatementNode — ReactFlow Handle anchors (mod_node_handle_rendering)
       expect(container.querySelector('[data-handlepos="bottom"]')).not.toBeNull();
     });
   }
+});
+
+// -- Inline classification palette mount gate
+//    (pf_mod_node_card_classification_affordance) -----------------------
+//
+// `<StatementNode>` mounts the inline `<NodeCardClassificationPalette>`
+// ONLY when `wording ∈ {agreed, committed}` AND `classification ===
+// 'awaiting-proposal'`. The gate predicate pins the methodology's
+// sequential-capture order (wording must settle before classification
+// can be named) on the UI side; the server's
+// `pf_sequence_gate_server_enforced` is the integrity boundary.
+//
+// The palette's internal click-fires-propose contract is covered in
+// `NodeCardClassificationPalette.test.tsx`. The cases here pin ONLY
+// the visibility gate — the palette mounts when eligible, otherwise
+// not.
+
+describe('StatementNode — inline classification palette mount gate (pf_mod_node_card_classification_affordance)', () => {
+  // The palette uses `useWsClient()` + `useParams()` so we wrap renders
+  // in a `<WsClientProvider>` + `<MemoryRouter>` alongside the existing
+  // `<ReactFlowProvider>`. A stub client returns `'open'` and a no-op
+  // `send` — visibility tests don't dispatch clicks.
+  const renderWithProviders = async (ui: ReactElement): Promise<RenderResult> => {
+    // Visibility tests don't dispatch clicks, so `send` never fires.
+    // The stub returns a never-resolving promise to satisfy the
+    // `SendFn` signature without resolving a fake ack.
+    const stubClient: WsClient = {
+      status: () => 'open',
+      connect: () => undefined,
+      close: () => undefined,
+      send: () =>
+        new Promise(() => {
+          /* never resolves; visibility tests don't click */
+        }),
+      trackSession: () => Promise.resolve(),
+      untrackSession: () => Promise.resolve(),
+      onEnvelope: () => () => undefined,
+      url: '/api/ws',
+    };
+    let result!: RenderResult;
+    await act(() => {
+      result = rtlRender(ui, {
+        wrapper: ({ children }) => (
+          <MemoryRouter initialEntries={[`/sessions/${SESSION_ID_FOR_TESTS}/operate`]}>
+            <WsClientProvider auth={{ status: 'authenticated' }} client={stubClient}>
+              <Routes>
+                <Route
+                  path="/sessions/:id/operate"
+                  element={<ReactFlowProvider>{children}</ReactFlowProvider>}
+                />
+              </Routes>
+            </WsClientProvider>
+          </MemoryRouter>
+        ),
+      });
+      return Promise.resolve();
+    });
+    return result;
+  };
+
+  it('mounts the palette when wording is committed AND classification is awaiting-proposal', async () => {
+    await renderWithProviders(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-gate-eligible',
+          data: {
+            wording: 'wording settled',
+            kind: null,
+            facetStatuses: { wording: 'committed', classification: 'awaiting-proposal' },
+          },
+        })}
+      />,
+    );
+    expect(screen.getByTestId('node-card-classification-palette-n-gate-eligible')).toBeTruthy();
+  });
+
+  it('mounts the palette when wording is agreed AND classification is awaiting-proposal', async () => {
+    await renderWithProviders(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-gate-agreed',
+          data: {
+            wording: 'wording agreed',
+            kind: null,
+            facetStatuses: { wording: 'agreed', classification: 'awaiting-proposal' },
+          },
+        })}
+      />,
+    );
+    expect(screen.getByTestId('node-card-classification-palette-n-gate-agreed')).toBeTruthy();
+  });
+
+  it('does NOT mount the palette when wording is proposed (still in flight)', async () => {
+    await renderWithProviders(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-gate-wording-proposed',
+          data: {
+            wording: 'wording still proposed',
+            kind: null,
+            facetStatuses: { wording: 'proposed', classification: 'awaiting-proposal' },
+          },
+        })}
+      />,
+    );
+    expect(
+      screen.queryByTestId('node-card-classification-palette-n-gate-wording-proposed'),
+    ).toBeNull();
+  });
+
+  it('does NOT mount the palette when wording is disputed', async () => {
+    await renderWithProviders(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-gate-wording-disputed',
+          data: {
+            wording: 'wording disputed',
+            kind: null,
+            facetStatuses: { wording: 'disputed', classification: 'awaiting-proposal' },
+          },
+        })}
+      />,
+    );
+    expect(
+      screen.queryByTestId('node-card-classification-palette-n-gate-wording-disputed'),
+    ).toBeNull();
+  });
+
+  it('does NOT mount the palette when classification facet has already been proposed', async () => {
+    await renderWithProviders(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-gate-classification-proposed',
+          data: {
+            wording: 'wording committed',
+            kind: 'fact',
+            facetStatuses: { wording: 'committed', classification: 'proposed' },
+          },
+        })}
+      />,
+    );
+    expect(
+      screen.queryByTestId('node-card-classification-palette-n-gate-classification-proposed'),
+    ).toBeNull();
+  });
+
+  it('does NOT mount the palette when classification facet is already committed', async () => {
+    await renderWithProviders(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-gate-classification-committed',
+          data: {
+            wording: 'wording committed',
+            kind: 'fact',
+            facetStatuses: { wording: 'committed', classification: 'committed' },
+          },
+        })}
+      />,
+    );
+    expect(
+      screen.queryByTestId('node-card-classification-palette-n-gate-classification-committed'),
+    ).toBeNull();
+  });
+
+  it('does NOT mount the palette when both facets are absent (e.g. fresh node before any facet state)', async () => {
+    await renderWithProviders(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-gate-empty',
+          data: {
+            wording: 'no facet states at all',
+            kind: null,
+            // facetStatuses defaults to {}
+          },
+        })}
+      />,
+    );
+    expect(screen.queryByTestId('node-card-classification-palette-n-gate-empty')).toBeNull();
+  });
 });

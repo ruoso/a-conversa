@@ -91,6 +91,18 @@ interface FacetTarget {
 
 function facetTargetForProposal(proposal: ProposalPayload): FacetTarget | null {
   switch (proposal.kind) {
+    case 'capture-node':
+      // Per ADR 0030 §1 + §4 + `pf_mod_node_card_classification_affordance`:
+      // a `capture-node` proposal mints the node entity AND names the
+      // wording-facet candidate inline (the wording rides inline on
+      // `node-created`). Votes / commits against the capture-node
+      // proposal route to the wording facet so the sequential capture
+      // flow (wording → classification → substance) can advance: the
+      // participants vote agree on wording, the moderator commits, the
+      // wording facet lands `'agreed'` / `'committed'`, and the
+      // downstream `classify-node` proposal becomes eligible per the
+      // sequence gate (`pf_sequence_gate_server_enforced`).
+      return { entityKind: 'node', entityId: proposal.node_id, facet: 'wording' };
     case 'classify-node':
       return { entityKind: 'node', entityId: proposal.node_id, facet: 'classification' };
     case 'set-node-substance':

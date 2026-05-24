@@ -147,6 +147,16 @@ function proposalFacetTarget(
   proposal: ProposalPayload,
 ): { entityKind: EntityKind; entityId: string; facet: LifecycleFacetName } | null {
   switch (proposal.kind) {
+    case 'capture-node':
+      // Per ADR 0030 §1 + §4 + `pf_mod_node_card_classification_affordance`:
+      // `capture-node` names the wording-facet candidate inline. The
+      // participant detail panel surfaces a `wording`-facet vote row
+      // for the capture proposal so the sequential capture flow
+      // (wording → classification → substance) can advance —
+      // participants vote agree on the wording, the moderator commits,
+      // and the downstream `classify-node` proposal becomes eligible
+      // per the server's sequence gate.
+      return { entityKind: 'node', entityId: proposal.node_id, facet: 'wording' };
     case 'classify-node':
       return { entityKind: 'node', entityId: proposal.node_id, facet: 'classification' };
     case 'set-node-substance':

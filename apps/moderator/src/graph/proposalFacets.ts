@@ -118,6 +118,13 @@ type FacetTarget = {
 
 function facetTargetOf(proposal: ProposalPayload): FacetTarget | null {
   switch (proposal.kind) {
+    case 'capture-node':
+      // Per ADR 0030 §1 + §4 + `pf_mod_node_card_classification_affordance`:
+      // `capture-node` names the wording-facet candidate inline; the
+      // moderator-side per-facet vote index threads the wording target
+      // so the right-sidebar breakdown surfaces a `wording` chip on the
+      // pending row.
+      return { entityKind: 'node', entityId: proposal.node_id, facet: 'wording' };
     case 'classify-node':
       return { entityKind: 'node', entityId: proposal.node_id, facet: 'classification' };
     case 'set-node-substance':

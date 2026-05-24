@@ -192,25 +192,31 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
 
   // Refinement: tasks/refinements/moderator-ui/mod_classification_palette.md
   //             tasks/refinements/per-facet-refactor/pf_mod_capture_pane_wording_only.md
+  //             tasks/refinements/per-facet-refactor/pf_mod_node_card_classification_affordance.md
   //
-  // The classification-palette regression cover. Pins:
-  //   - the five buttons render in canonical order with aria-pressed=false,
-  //   - click flips aria-pressed and is mutually-exclusive,
-  //   - keyboard shortcut switches the selection,
-  //   - the editable-target guard keeps `f` typed inside the wording
-  //     textarea out of the palette (the just-landed
-  //     `mod_capture_text_input` consumes plain `f` as a character),
-  //   - re-click toggles off (Decision §4).
+  // The classification-palette baseline cover. Per
+  // `pf_mod_capture_pane_wording_only` (ADR 0030 §1) the bottom-strip
+  // palette is retired — the capture-pane gesture is wording-only —
+  // and per `pf_mod_node_card_classification_affordance` the palette
+  // moves INLINE onto the per-node card, gated on the wording facet
+  // having settled (`agreed` / `committed`). This baseline pins the
+  // post-refactor invariant:
   //
-  // **Per `pf_mod_capture_pane_wording_only` (ADR 0030 §1)** the
-  // classification palette is no longer mounted in the bottom strip —
-  // the capture-pane gesture is wording-only. The palette component
-  // stays exported (the per-node card task will mount it inline on a
-  // node card); this regression cover is paused until that task lands
-  // and the per-node-card classification affordance is in place. The
-  // assertions are PRESERVED (not deleted) per ADR 0022 — future
-  // tasks restore them as a per-node-card spec.
-  test.fixme('alice picks a classification by click and by keyboard shortcut; selection is mutually exclusive', async ({
+  //   - The bottom-strip `classification-palette` testid is absent
+  //     (the palette is no longer mounted there).
+  //   - On a freshly captured node (wording still `proposed`), the
+  //     per-node-card palette is NOT mounted (gate fails — wording
+  //     hasn't reached `agreed` / `committed` yet; the server's
+  //     sequence gate refuses `classify-node` and the UI gate
+  //     mirrors it).
+  //
+  // The full per-node-card click-fires-propose contract is exercised
+  // by the methodology-full-flow Phase 2.4 + Phase 5.3 cover (alice
+  // commits wording, then picks a kind on the node card → classify-
+  // node lands). The per-node palette's aria + keyboard + toggle
+  // contract is unit-tested at Vitest level
+  // (`apps/moderator/src/graph/NodeCardClassificationPalette.test.tsx`).
+  test('the bottom-strip classification palette is retired; the per-node-card palette is gated on wording-settled', async ({
     page,
   }) => {
     await loginAs(page, { username: TEST_USERNAME });
@@ -219,16 +225,9 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
 
     await page
       .getByTestId('create-session-topic-input')
-      .fill('Classification palette regression check.');
+      .fill('Classification palette baseline check.');
     await page.getByTestId('create-session-submit').click();
-    // mod_invite_participants amended the post-201 navigation target to
-    // /sessions/<id>/invite; click 'Enter session' from there to reach
-    // the operate canvas (where this spec's assertions live).
     await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
-    // mod_session_lobby strict-gated the Enter button: it stays disabled
-    // until both debaters joined. Seed both via the WS test seam so the
-    // gate opens (this spec's assertions all live on /operate; the
-    // gate's behavior is exercised by tests/e2e/invite-participants-flow).
     await seedInviteParticipantsForGate(page);
     await page.getByTestId('invite-enter-session').click();
     await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/operate$/, {
@@ -236,65 +235,31 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     });
     await expect(page.getByTestId('route-operate')).toBeVisible();
 
-    // 2. The palette mounts with five buttons in canonical order, all
-    //    unselected. The scaffold's `[classification]` placeholder is
-    //    gone now that `<ClassificationPalette>` fills the slot.
-    const palette = page.getByTestId('classification-palette');
-    await expect(palette).toBeVisible();
-    const KINDS = ['fact', 'predictive', 'value', 'normative', 'definitional'] as const;
-    for (const kind of KINDS) {
-      await expect(page.getByTestId(`classification-palette-button-${kind}`)).toHaveAttribute(
-        'aria-pressed',
-        'false',
-      );
-    }
+    // Per `pf_mod_capture_pane_wording_only`: the bottom-strip palette
+    // is gone.
+    await expect(page.getByTestId('classification-palette')).toHaveCount(0);
 
-    // 3. Click `fact` → its aria-pressed flips true; others stay false.
-    await page.getByTestId('classification-palette-button-fact').click();
-    await expect(page.getByTestId('classification-palette-button-fact')).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
-    for (const kind of KINDS) {
-      if (kind === 'fact') continue;
-      await expect(page.getByTestId(`classification-palette-button-${kind}`)).toHaveAttribute(
-        'aria-pressed',
-        'false',
-      );
-    }
+    // Drive the propose chain (wording-only). The captured node
+    // surfaces on the canvas with the wording-facet `proposed`.
+    const wording = 'Classification palette gate baseline.';
+    await page.getByTestId('capture-text-input-textarea').fill(wording);
+    await page.getByTestId('propose-action-button').click();
 
-    // 4. Press `v` → palette switches to `value`.
-    await page.keyboard.press('v');
-    await expect(page.getByTestId('classification-palette-button-value')).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
-    await expect(page.getByTestId('classification-palette-button-fact')).toHaveAttribute(
-      'aria-pressed',
-      'false',
-    );
+    // Wait for the captured node to render on the canvas.
+    const wordingCell = page.locator('[data-testid^="statement-node-wording-"]', {
+      hasText: wording,
+    });
+    await expect(wordingCell).toBeVisible({ timeout: 10_000 });
 
-    // 5. Focus the capture textarea, type `f` → the textarea's value
-    //    gains `"f"`; the palette stays on `value` (the editable-target
-    //    guard suppresses the shortcut).
-    const textarea = page.getByTestId('capture-text-input-textarea');
-    await textarea.focus();
-    await textarea.fill('');
-    await page.keyboard.press('f');
-    await expect(textarea).toHaveValue('f');
-    await expect(page.getByTestId('classification-palette-button-value')).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
-
-    // 6. Re-click the selected button → toggles off.
-    await page.getByTestId('classification-palette-button-value').click();
-    for (const kind of KINDS) {
-      await expect(page.getByTestId(`classification-palette-button-${kind}`)).toHaveAttribute(
-        'aria-pressed',
-        'false',
-      );
-    }
+    // The per-node card palette is NOT mounted while wording is still
+    // `proposed` — gate is `wording ∈ {agreed, committed}` AND
+    // `classification === 'awaiting-proposal'`. Read the node id from
+    // the wording cell's testid suffix and assert the palette container
+    // is absent.
+    const wordingTestId = await wordingCell.getAttribute('data-testid');
+    expect(wordingTestId).toMatch(/^statement-node-wording-[0-9a-f-]+$/);
+    const nodeId = wordingTestId!.replace(/^statement-node-wording-/, '');
+    await expect(page.getByTestId(`node-card-classification-palette-${nodeId}`)).toHaveCount(0);
   });
 
   // Refinement: tasks/refinements/moderator-ui/mod_target_auto_suggest.md
@@ -921,28 +886,23 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
   });
 
   // Refinement: tasks/refinements/moderator-ui/mod_per_facet_breakdown.md
+  //             tasks/refinements/per-facet-refactor/pf_mod_capture_pane_wording_only.md
+  //             tasks/refinements/per-facet-refactor/pf_mod_node_card_classification_affordance.md
   //
   // Per-facet breakdown e2e cover. Extends the pending-proposals row
-  // chain above: after the propose chain lands the `classify-node`
+  // chain above: after the propose chain lands the `capture-node`
   // proposal in the right-sidebar, the row body grows a
   // `<ProposalFacetBreakdown>` whose single chip surfaces the
-  // `classification` facet at status `'proposed'` (no votes yet).
+  // `wording` facet at status `'proposed'` (no votes yet).
   //
-  // The assertion polls with `expect.poll` for the chip count and
-  // attribute values, mirroring the 10s budget the predecessor test
-  // established.
-  // Per `pf_mod_capture_pane_wording_only` (ADR 0030 §1) the capture-
-  // pane gesture is wording-only — the proposal sub-kind is
-  // `capture-node`, which carries NO facet candidate (ADR 0030 §1
-  // "votes against a capture-node proposal aren't a thing"). The
-  // per-facet breakdown's `classification` chip therefore doesn't
-  // surface for a capture-node proposal — the breakdown is the per-
-  // node card's responsibility (downstream task
-  // `pf_mod_node_card_classification_affordance`). The assertion is
-  // PRESERVED (not deleted) per ADR 0022; future tasks restore it as
-  // a per-node-card spec covering the classify-node proposal raised
-  // FROM the per-node card.
-  test.fixme('alice: propose a free-floating new statement; the per-facet breakdown shows a "classification" chip at status "proposed"', async ({
+  // Per `pf_mod_node_card_classification_affordance` (ADR 0030 §1 +
+  // §4) the per-proposal facet-target resolver maps `capture-node` to
+  // the wording facet — the capture-node proposal names the wording-
+  // facet candidate inline. The breakdown's chip therefore surfaces
+  // as `data-facet-name="wording"`. The downstream classification chip
+  // (produced by the per-node-card classify-node gesture) is
+  // exercised by the methodology-full-flow spec.
+  test('alice: propose a free-floating new statement; the per-facet breakdown shows a "wording" chip at status "proposed"', async ({
     page,
   }) => {
     await loginAs(page, { username: TEST_USERNAME });
@@ -966,13 +926,11 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
     await expect(page.getByTestId('route-operate')).toBeVisible();
 
-    // Drive the same propose chain as the prior test — the chain
-    // produces a `classify-node` proposal, so the breakdown's single
-    // chip targets the `classification` facet.
+    // Drive the wording-only propose chain — produces a `capture-node`
+    // proposal whose breakdown chip targets the `wording` facet.
     const wording = 'The proposed minimum wage would raise prices for everyone.';
     const textarea = page.getByTestId('capture-text-input-textarea');
     await textarea.fill(wording);
-    await page.getByTestId('classification-palette-button-fact').click();
     const submitKey = process.platform === 'darwin' ? 'Meta+Enter' : 'Control+Enter';
     await textarea.press(submitKey);
 
@@ -987,15 +945,15 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
       return;
     }
 
-    // Poll until the per-facet `classification` chip appears. The wait
-    // covers the WS round-trip + the React commit; once the row lands
-    // the breakdown mounts beneath the header with one chip.
+    // Poll until the per-facet `wording` chip appears. The wait covers
+    // the WS round-trip + the React commit; once the row lands the
+    // breakdown mounts beneath the header with one chip.
     await expect
       .poll(
         async () =>
           page
             .getByTestId('proposal-facet-row')
-            .and(page.locator('[data-facet-name="classification"]'))
+            .and(page.locator('[data-facet-name="wording"]'))
             .count(),
         { timeout: 10_000 },
       )
@@ -1006,7 +964,7 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     // default) lands on the Rule-7 default.
     const chip = page
       .getByTestId('proposal-facet-row')
-      .and(page.locator('[data-facet-name="classification"]'));
+      .and(page.locator('[data-facet-name="wording"]'));
     await expect(chip).toHaveAttribute('data-facet-status', 'proposed');
   });
 
@@ -1022,14 +980,15 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
   //
   // The assertion polls with the same 10s budget the per-facet
   // breakdown cover above uses: after the propose lands, the
-  // `classification` chip's `proposal-facet-vote-indicator-row`
-  // either is absent OR has zero `data-vote-indicator` children.
-  // Paused per `pf_mod_capture_pane_wording_only` — see the prior
-  // per-facet-breakdown fixme block for rationale (capture-node has
-  // no facet candidate; the classification chip surfaces from a per-
-  // node-card classify-node proposal, handled by downstream task
-  // `pf_mod_node_card_classification_affordance`).
-  test.fixme('alice: propose a free-floating new statement; the per-facet chip starts with no vote-indicator row (no-vote-yet baseline)', async ({
+  // `wording` chip's `proposal-facet-vote-indicator-row` either is
+  // absent OR has zero `data-vote-indicator` children. Per
+  // `pf_mod_node_card_classification_affordance` (ADR 0030 §1 + §4)
+  // the capture-node proposal maps to the wording facet on the per-
+  // proposal facet-target resolver; the chip is therefore the wording
+  // one. The follow-on classification chip surfaces from a per-node-
+  // card classify-node gesture and is exercised in methodology-full-
+  // flow.
+  test('alice: propose a free-floating new statement; the per-facet chip starts with no vote-indicator row (no-vote-yet baseline)', async ({
     page,
   }) => {
     await loginAs(page, { username: TEST_USERNAME });
@@ -1053,13 +1012,11 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
     await expect(page.getByTestId('route-operate')).toBeVisible();
 
-    // Drive the same propose chain as the per-facet breakdown cover —
-    // produces a `classify-node` proposal whose chip targets the
-    // `classification` facet.
+    // Drive the wording-only propose chain — produces a `capture-node`
+    // proposal whose chip targets the `wording` facet.
     const wording = 'The proposed minimum wage would raise prices for everyone.';
     const textarea = page.getByTestId('capture-text-input-textarea');
     await textarea.fill(wording);
-    await page.getByTestId('classification-palette-button-fact').click();
     const submitKey = process.platform === 'darwin' ? 'Meta+Enter' : 'Control+Enter';
     await textarea.press(submitKey);
 
@@ -1077,7 +1034,7 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
         async () =>
           page
             .getByTestId('proposal-facet-row')
-            .and(page.locator('[data-facet-name="classification"]'))
+            .and(page.locator('[data-facet-name="wording"]'))
             .count(),
         { timeout: 10_000 },
       )
@@ -1092,7 +1049,7 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     // is also 0.
     const chip = page
       .getByTestId('proposal-facet-row')
-      .and(page.locator('[data-facet-name="classification"]'));
+      .and(page.locator('[data-facet-name="wording"]'));
     await expect(chip.getByTestId('proposal-facet-vote-indicator-row')).toHaveCount(0);
     await expect(chip.locator('[data-vote-indicator]')).toHaveCount(0);
   });

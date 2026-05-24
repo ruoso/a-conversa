@@ -298,6 +298,16 @@
         "notSelf": "Marcas de axioma são pessoais — o debatedor precisa propor isso a partir do seu próprio tablet"
       }
     },
+    "classifyNodeAction": {
+      "paletteAriaLabel": "Classifique esta afirmação — escolha um tipo",
+      "paletteLegend": "Escolha uma classificação",
+      "kindButtonAriaLabel": "{label}",
+      "errorBanner": {
+        "timeout": "A solicitação de classificação expirou — tente novamente",
+        "unknown": "Não foi possível propor a classificação — por favor tente novamente",
+        "errorRoleLabel": "Erro de classificação"
+      }
+    },
     "annotateAction": {
       "submenu": {
         "header": "Adicionar anotação",

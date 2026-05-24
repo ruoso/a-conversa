@@ -350,32 +350,93 @@ test.describe
   });
 
   // ── Cross-context propagation (ben + maria see N1) is verified
-  //    implicitly by Phase 3.1 — when ben clicks on N1 to vote, the
+  //    implicitly by Phase 2.2 — when ben clicks on N1 to vote, the
   //    click + detail-panel-open chain only succeeds if the broadcast
   //    arrived. See the no-mirror comment at the top of this file. ──
+
+  // ──────────────────────────────────────────────────────────────
+  // Phase 2.2 — debaters vote agree on N1's wording facet
+  // ──────────────────────────────────────────────────────────────
+  //
+  // Per ADR 0030 §1 + `pf_mod_node_card_classification_affordance`:
+  // the per-node-card classification palette is gated on the wording
+  // facet having settled (`agreed` / `committed`) — the server's
+  // sequence gate refuses `classify-node` against an unsettled
+  // wording. The per-facet refactor maps `capture-node` to the wording
+  // facet, so the participant detail panel surfaces a `wording` vote
+  // row on the just-captured node. Ben + maria vote agree; alice
+  // commits in Phase 2.3 below.
+
+  test('Phase 2.2: ben + maria vote agree on N1.wording', async () => {
+    expect(_n1Id, 'Phase 2.1 must have minted N1').not.toBeNull();
+    const n1 = _n1Id!;
+    for (const page of [benPage, mariaPage]) {
+      await tapParticipantNode(page, n1);
+      await expect(page.getByTestId('participant-detail-panel-identity-wording')).toHaveText(
+        N1_WORDING,
+        { timeout: 15_000 },
+      );
+      const row = page.locator(
+        '[data-testid="participant-detail-panel-facet-row"][data-facet-name="wording"]',
+      );
+      await expect(row).toBeVisible({ timeout: 15_000 });
+      await row.getByTestId('participant-vote-button-agree').click();
+      await expect(row).toHaveAttribute('data-vote-state', 'enabled', { timeout: 15_000 });
+    }
+  });
+
+  test('Phase 2.3: alice commits N1.wording — the capture-node row clears', async () => {
+    const n1Prefix = _n1Id!.slice(0, 8);
+    // The capture-node row surfaces with the summary `node <prefix>`
+    // (see `summaryText` for `capture-node`). The classify-node row
+    // for N1 doesn't exist yet (Phase 2.4 fires it after this commit
+    // lands), so the `node <prefix>` filter unambiguously picks the
+    // capture-node row.
+    const row = alicePage
+      .locator('[data-testid="pending-proposal-row"]')
+      .filter({
+        has: alicePage.locator('[data-testid="pending-proposal-row-summary"]', {
+          hasText: n1Prefix,
+        }),
+      })
+      .first();
+    await expect(row).toBeVisible({ timeout: 15_000 });
+    const commitButton = row.locator('[data-testid="commit-button"]');
+    await expect(commitButton).toBeEnabled({ timeout: 15_000 });
+    await commitButton.click();
+    await expect(row).toHaveCount(0, { timeout: 15_000 });
+  });
+
+  test('Phase 2.4: alice clicks fact on N1 node card — fires classify-node', async () => {
+    // Per `pf_mod_node_card_classification_affordance` (ADR 0030 §1 +
+    // §10): once the wording facet is committed, the node card
+    // surfaces an inline classification palette. The moderator picks
+    // a kind; the click dispatches a `classify-node` proposal keyed
+    // to the node id.
+    const n1 = _n1Id!;
+    // Nudge the layout — fresh cards from the post-commit projection
+    // may overlap; tidy-up ensures the palette is clickable.
+    await alicePage.getByTestId('graph-tidy-up-button').click();
+    const factButton = alicePage.getByTestId(`node-card-classification-palette-button-${n1}-fact`);
+    await expect(factButton).toBeVisible({ timeout: 15_000 });
+    await factButton.click();
+    // The palette unmounts once the classify-node proposal lands
+    // (classification facet moves past `awaiting-proposal`); waiting
+    // on the unmount is the round-trip proof.
+    await expect(factButton).toHaveCount(0, { timeout: 15_000 });
+  });
 
   // ──────────────────────────────────────────────────────────────
   // Phase 3 — vote on N1's classification facet
   // ──────────────────────────────────────────────────────────────
   //
-  // Per `pf_mod_capture_pane_wording_only` (ADR 0030 §1), the capture-
-  // pane gesture is wording-only — the capture-node proposal carries
-  // no classification candidate. The classification facet on the
-  // captured node enters life as `'awaiting-proposal'`; voting on
-  // it requires a per-node-card `classify-node` proposal first
-  // (handled by the downstream `pf_mod_node_card_classification_
-  // affordance` task). Until that task lands, Phases 3.1 / 3.2 /
-  // 4.1 cannot run as written — there is no classification candidate
-  // on N1 to vote on, no pending classify-node proposal for alice
-  // to commit. The assertions below are PRESERVED (not deleted) per
-  // the refinement instructions; future tasks will restore them
-  // once the per-node-card affordance lands.
+  // Per ADR 0030 §1 + `pf_mod_node_card_classification_affordance`:
+  // once alice has fired `classify-node` from the node-card palette
+  // (Phase 2.4), the classification facet has a candidate and the
+  // participant detail panel surfaces a `classification` vote row.
+  // Ben + maria vote agree; alice commits in Phase 4.1 below.
 
-  test.fixme('Phase 3.1: ben taps N1 on his canvas; the detail panel shows the wording, and he votes agree on the classification facet', async () => {
-    // Blocked by the missing per-node-card classification affordance
-    // — N1's classification facet has no candidate yet (no
-    // classify-node proposal has been raised). Restore when
-    // `pf_mod_node_card_classification_affordance` lands.
+  test('Phase 3.1: ben taps N1 on his canvas; the detail panel shows the wording, and he votes agree on the classification facet', async () => {
     expect(_n1Id, 'Phase 2.1 must have minted N1').not.toBeNull();
     const n1 = _n1Id!;
 
@@ -403,9 +464,7 @@ test.describe
     await expect(row).toHaveAttribute('data-vote-state', 'enabled', { timeout: 15_000 });
   });
 
-  test.fixme("Phase 3.2: maria taps N1 and votes agree on N1's classification facet", async () => {
-    // Blocked by the missing per-node-card classification affordance
-    // (see Phase 3.1).
+  test("Phase 3.2: maria taps N1 and votes agree on N1's classification facet", async () => {
     const n1 = _n1Id!;
     await tapParticipantNode(mariaPage, n1);
     await expect(mariaPage.getByTestId('participant-detail-panel-identity-wording')).toHaveText(
@@ -428,18 +487,20 @@ test.describe
   // unanimous `agree` from every non-moderator participant on every
   // facet of the pending proposal. Alice clicks commit → the server
   // appends a `commit` event → the node lands as `agreed`.
-  //
-  // Blocked by Phase 3 — without a classify-node proposal + the
-  // unanimous-agree votes on its classification facet, alice has
-  // nothing on her pending list to commit. Restore when
-  // `pf_mod_node_card_classification_affordance` lands.
 
-  test.fixme('Phase 4.1: alice commits N1 — the pending row clears once she clicks', async () => {
+  test('Phase 4.1: alice commits N1 — the pending row clears once she clicks', async () => {
     // The server-side `checkUnanimousAgreeFacet` excludes the moderator
     // from the per-participant agreement walk, matching the
     // methodology's "commit IS the moderator's act of agreement"
     // intent (docs/methodology.md § "The commit step"). The client's
     // `deriveCurrentParticipants` mirrors the same exclusion.
+    //
+    // Per `pf_mod_node_card_classification_affordance` the pending
+    // row that surfaces here is the `classify-node` proposal raised
+    // in Phase 2.4 (the capture-node row already cleared in Phase 2.3
+    // when its wording facet committed). The classify-node summary is
+    // `node <id-prefix>` (see `summaryText` for `classify-node`); the
+    // filter pins to that node id prefix.
     const n1Prefix = _n1Id!.slice(0, 8);
     const row = alicePage
       .locator('[data-testid="pending-proposal-row"]')
@@ -474,14 +535,57 @@ test.describe
   //    implicitly by Phase 5.3 (when ben + maria interact with N2 to
   //    vote). See the no-mirror comment at the top of this file. ──
 
-  test.fixme('Phase 5.3: ben + maria vote agree on N2.classification; alice commits', async () => {
-    // Blocked by the missing per-node-card classification affordance
-    // (see Phase 3 header). The capture-node proposal carries no
-    // classification candidate; without a follow-up classify-node
-    // proposal there is nothing on N2's classification facet to vote
-    // on. Restore when
-    // `pf_mod_node_card_classification_affordance` lands.
+  test('Phase 5.2: ben + maria vote agree on N2.wording; alice commits the wording row', async () => {
+    // Per ADR 0030 §1 + `pf_mod_node_card_classification_affordance`:
+    // the wording facet must settle before the classification facet
+    // can be named. Ben + maria vote agree on the just-captured N2
+    // wording; alice commits the capture-node row.
     const n2 = _n2Id!;
+    for (const page of [benPage, mariaPage]) {
+      await tapParticipantNode(page, n2);
+      await expect(page.getByTestId('participant-detail-panel-identity-wording')).toHaveText(
+        N2_WORDING,
+        { timeout: 15_000 },
+      );
+      const row = page.locator(
+        '[data-testid="participant-detail-panel-facet-row"][data-facet-name="wording"]',
+      );
+      await expect(row).toBeVisible({ timeout: 15_000 });
+      await row.getByTestId('participant-vote-button-agree').click();
+      await expect(row).toHaveAttribute('data-vote-state', 'enabled', { timeout: 15_000 });
+    }
+    // Alice commits N2's capture-node row. The summary is `node
+    // <prefix>` (per `summaryText` for `capture-node`); no classify-
+    // node for N2 exists yet so the `node <prefix>` filter
+    // unambiguously picks the capture-node row.
+    const n2Prefix = n2.slice(0, 8);
+    const row = alicePage
+      .locator('[data-testid="pending-proposal-row"]')
+      .filter({
+        has: alicePage.locator('[data-testid="pending-proposal-row-summary"]', {
+          hasText: n2Prefix,
+        }),
+      })
+      .first();
+    await expect(row).toBeVisible({ timeout: 15_000 });
+    const commitButton = row.locator('[data-testid="commit-button"]');
+    await expect(commitButton).toBeEnabled({ timeout: 15_000 });
+    await commitButton.click();
+    await expect(row).toHaveCount(0, { timeout: 15_000 });
+  });
+
+  test('Phase 5.3: ben + maria vote agree on N2.classification; alice commits', async () => {
+    // Per `pf_mod_node_card_classification_affordance`: alice fires
+    // classify-node from N2's node card (wording settled in Phase
+    // 5.2), then ben + maria vote agree on the classification facet
+    // row, then alice commits the classify-node row.
+    const n2 = _n2Id!;
+    // Alice picks `fact` on N2's node card.
+    await alicePage.getByTestId('graph-tidy-up-button').click();
+    const factButton = alicePage.getByTestId(`node-card-classification-palette-button-${n2}-fact`);
+    await expect(factButton).toBeVisible({ timeout: 15_000 });
+    await factButton.click();
+    await expect(factButton).toHaveCount(0, { timeout: 15_000 });
 
     for (const page of [benPage, mariaPage]) {
       await tapParticipantNode(page, n2);
@@ -497,7 +601,8 @@ test.describe
       await expect(row).toHaveAttribute('data-vote-state', 'enabled', { timeout: 15_000 });
     }
 
-    // Alice commits N2's proposal.
+    // Alice commits N2's classify-node proposal (summary is `node
+    // <id-prefix>`).
     const n2Prefix = n2.slice(0, 8);
     const row = alicePage
       .locator('[data-testid="pending-proposal-row"]')

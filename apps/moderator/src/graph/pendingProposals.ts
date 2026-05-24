@@ -128,7 +128,14 @@ export function derivePendingProposals(events: readonly Event[]): readonly Pendi
   for (const event of events) {
     if (event.kind === 'proposal') {
       const inner = event.payload.proposal;
-      if (inner.kind === 'classify-node') {
+      if (inner.kind === 'capture-node') {
+        // Per ADR 0030 §1 + §4 + `pf_mod_node_card_classification_affordance`:
+        // `capture-node` names the wording-facet candidate inline; a
+        // later facet-keyed commit on the (node, wording) triple
+        // terminates the capture-node proposal so the pending row
+        // clears.
+        currentProposalByFacet.set(facetKey('node', inner.node_id, 'wording'), event.id);
+      } else if (inner.kind === 'classify-node') {
         currentProposalByFacet.set(facetKey('node', inner.node_id, 'classification'), event.id);
       } else if (inner.kind === 'set-node-substance') {
         currentProposalByFacet.set(facetKey('node', inner.node_id, 'substance'), event.id);

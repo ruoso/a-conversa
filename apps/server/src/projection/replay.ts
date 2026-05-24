@@ -505,6 +505,13 @@ interface FacetTarget {
 
 function facetTargetsForProposal(proposal: ProposalPayload): readonly FacetTarget[] {
   switch (proposal.kind) {
+    case 'capture-node':
+      // Per ADR 0030 §1 + §4 + `pf_mod_node_card_classification_affordance`:
+      // `capture-node` names the wording-facet candidate inline. The
+      // replay-time projection threads the wording target so a
+      // facet-keyed commit walk against this proposal resolves cleanly
+      // (symmetric with the vote / commit / mark handlers).
+      return [{ entityKind: 'node', entityId: proposal.node_id, facet: 'wording' }];
     case 'classify-node':
       return [{ entityKind: 'node', entityId: proposal.node_id, facet: 'classification' }];
     case 'set-node-substance':
