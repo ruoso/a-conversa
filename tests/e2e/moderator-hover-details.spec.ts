@@ -48,7 +48,7 @@
 // `test.skip()` referencing a future `playwright_session_seed_helper`
 // task. See the refinement's "Decisions" for the policy.
 
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures/no-scrollbars';
 
 import { loginAs } from './fixtures/auth';
 import { isWsStoreReachable, seedWsStore } from './fixtures/wsStoreSeed';

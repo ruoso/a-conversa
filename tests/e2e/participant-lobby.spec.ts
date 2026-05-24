@@ -50,7 +50,7 @@
 // traffic to the serial setup spec and let cross-context tests run
 // reliably under any worker count.
 
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures/no-scrollbars';
 
 import { authedContext } from './fixtures/authed-context';
 

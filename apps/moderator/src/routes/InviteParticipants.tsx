@@ -557,8 +557,8 @@ function InviteParticipantsRouteInner(props: InviteParticipantsRouteInnerProps):
   }, []);
 
   return (
-    <main data-testid="route-invite-participants" className="mx-auto max-w-2xl p-6">
-      <h1 data-testid="route-title" className="text-2xl font-semibold mb-4">
+    <main data-testid="route-invite-participants" className="mx-auto max-w-2xl p-4">
+      <h1 data-testid="route-title" className="text-2xl font-semibold mb-3">
         {t('moderator.invite.title')}
       </h1>
 
@@ -593,7 +593,7 @@ function InviteParticipantsRouteInner(props: InviteParticipantsRouteInnerProps):
 
       {fetchStatus === 'loaded' && participantsStatus === 'loaded' && session !== undefined && (
         <>
-          <section data-testid="invite-session-header" className="mb-6">
+          <section data-testid="invite-session-header" className="mb-4">
             <p data-testid="invite-session-topic" className="text-lg font-medium">
               {session.topic}
             </p>
@@ -605,7 +605,7 @@ function InviteParticipantsRouteInner(props: InviteParticipantsRouteInnerProps):
             </span>
           </section>
 
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-3">
             {SLOT_ROLES.map((role) => {
               const occupant = occupants[role];
               const isFilled = occupant !== undefined;
@@ -625,7 +625,7 @@ function InviteParticipantsRouteInner(props: InviteParticipantsRouteInnerProps):
                   key={role}
                   data-testid="invite-slot"
                   data-role={role}
-                  className="rounded border border-gray-200 p-4"
+                  className="rounded border border-gray-200 p-3"
                 >
                   <h2
                     data-testid={`invite-slot-role-${role}`}
@@ -682,7 +682,7 @@ function InviteParticipantsRouteInner(props: InviteParticipantsRouteInnerProps):
                     </span>
                   )}
                   {showCopyAffordance && (
-                    <div className="mt-3 flex flex-col gap-2">
+                    <div className="mt-2 flex flex-col gap-2">
                       <div className="flex gap-2">
                         <input
                           data-testid="invite-link-input"
@@ -750,13 +750,13 @@ function InviteParticipantsRouteInner(props: InviteParticipantsRouteInnerProps):
               data-testid="invite-both-ready-banner"
               role="status"
               aria-live="polite"
-              className="mt-4 rounded bg-green-50 border border-green-200 px-3 py-2 text-green-800"
+              className="mt-2 rounded bg-green-50 border border-green-200 px-3 py-1 text-green-800"
             >
               {t('moderator.invite.lobby.bothReady.banner')}
             </p>
           )}
 
-          <div className="mt-6 flex flex-col gap-2">
+          <div className="mt-4 flex flex-col gap-2">
             {/*
               Strict-gated Enter-session button (mod_session_lobby
               Decision §2). Native HTML `disabled` (per Decision §9)

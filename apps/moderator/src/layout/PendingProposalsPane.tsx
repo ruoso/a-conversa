@@ -100,7 +100,16 @@ export interface PendingProposalsPaneProps {
   readonly nowMs?: number;
 }
 
-const PANE_CONTAINER_CLASSES = 'flex max-h-full flex-col gap-1 overflow-y-auto text-slate-700';
+// The pane no longer caps its own height or owns its own scrollbar:
+// the right-sidebar container (`operate-right-sidebar` in OperateLayout)
+// already provides the bounded scroll region. Adding `overflow-y-auto`
+// here turned `overflow-x: visible` into `overflow-x: auto` (CSS spec:
+// a non-visible value on one axis promotes `visible` on the other to
+// `auto`), which painted an unwanted horizontal scrollbar whenever a
+// proposal row's button cluster summed wider than the 20rem sidebar.
+// Letting the sidebar own the scroll means the pane participates in
+// the normal block flow and `overflow-x` stays `visible`.
+const PANE_CONTAINER_CLASSES = 'flex flex-col gap-1 text-slate-700';
 const LIST_CLASSES = 'm-0 flex list-none flex-col gap-1 p-0';
 // Per `mod_proposal_filter_search` Decision §7 — pinned strip above the
 // list with a free-text input (flex-1, consumes available width) and a
@@ -124,7 +133,12 @@ const FILTER_CHIP_ACTIVE_CLASSES = 'border-slate-700 bg-slate-700 text-white';
 // grew from a single-line flex container to a two-line stack: the
 // header keeps its one-line shape; the breakdown sits below it.
 const ROW_CLASSES = 'flex flex-col gap-1 rounded border border-slate-200 bg-white px-2 py-1';
-const ROW_HEADER_CLASSES = 'flex items-center gap-2';
+// `flex-wrap`: kind chip + summary + author + timestamp + commit +
+// mark-meta + withdraw is seven items, and the three buttons alone sum
+// wider than the 20rem sidebar. Wrapping pushes the buttons to a new
+// line when the row narrows, avoiding the horizontal overflow the pane
+// container would otherwise expose as an x-axis scrollbar.
+const ROW_HEADER_CLASSES = 'flex flex-wrap items-center gap-2';
 const KIND_CHIP_CLASSES =
   'flex-shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-xs font-medium text-slate-700';
 const SUMMARY_CLASSES = 'flex-1 truncate text-sm';

@@ -39,7 +39,7 @@
 // covered at the catalog parity layer; the whole-flow chain is
 // locale-independent and too expensive to run 3x.
 
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures/no-scrollbars';
 
 import { loginAs } from './fixtures/auth';
 import { seedParticipants } from './fixtures/wsStoreSeed';

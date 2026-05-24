@@ -43,7 +43,7 @@
 // "moderator sees both debaters joined" scenario inherits to
 // `participant_ui.part_tests.part_e2e_playwright.part_pw_concurrent_with_moderator`.
 
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures/no-scrollbars';
 
 import { loginAs } from './fixtures/auth';
 

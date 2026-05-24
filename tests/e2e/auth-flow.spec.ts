@@ -61,7 +61,7 @@
 // `aconversa-postgres-data` and `aconversa-authelia-data`, so every
 // CI run begins on a clean slate.
 
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures/no-scrollbars';
 
 import { loginAs } from './fixtures/auth';
 

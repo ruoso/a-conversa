@@ -82,11 +82,21 @@ export function CaptureTextInput(props: CaptureTextInputProps): ReactElement {
   // textarea only grows; it never shrinks back). Clamp to
   // `MAX_HEIGHT_PX` — past that, the browser's overflow-y:auto kicks
   // in and an internal scrollbar appears.
+  //
+  // Border allowance: Tailwind's preflight sets `box-sizing: border-box`,
+  // so a height equal to `scrollHeight` covers padding + content but
+  // does NOT cover the 1 px top + 1 px bottom border. The visible
+  // content area ends up 2 px short and the browser paints a vertical
+  // scrollbar even when the auto-grow has just sized to fit. Reading
+  // `offsetHeight - clientHeight` returns the current border height
+  // (clientHeight excludes borders; offsetHeight includes them) and
+  // adding that back closes the gap.
   useLayoutEffect(() => {
     const el = textareaRef.current;
     if (el === null) return;
     el.style.height = 'auto';
-    const desired = Math.min(el.scrollHeight, MAX_HEIGHT_PX);
+    const borderAllowance = el.offsetHeight - el.clientHeight;
+    const desired = Math.min(el.scrollHeight + borderAllowance, MAX_HEIGHT_PX);
     el.style.height = `${String(desired)}px`;
   }, [text]);
 
@@ -127,6 +137,14 @@ export function CaptureTextInput(props: CaptureTextInputProps): ReactElement {
         ref={textareaRef}
         id="capture-text-input"
         data-testid="capture-text-input-textarea"
+        // Past `MAX_HEIGHT_PX` the textarea engages its native
+        // `overflow-y: auto` and paints an internal scrollbar — this
+        // is intentional (the auto-grow cap keeps the bottom strip
+        // from being pushed by long wording). `data-allow-scroll`
+        // opts the element out of the e2e scrollbar harness
+        // (`tests/e2e/fixtures/no-scrollbars.ts`) so this legitimate
+        // long-text scroll is not treated as a layout regression.
+        data-allow-scroll=""
         value={text}
         onChange={handleChange}
         onKeyDown={handleKeyDown}

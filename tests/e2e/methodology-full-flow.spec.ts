@@ -175,7 +175,7 @@
 // chain itself, not any particular engine outcome on the noisy
 // shared session state phase N+k inherits from phase N.
 
-import { expect, test, type BrowserContext, type Page } from '@playwright/test';
+import { expect, test, type BrowserContext, type Page } from './fixtures/no-scrollbars';
 
 import { authedContext } from './fixtures/authed-context';
 

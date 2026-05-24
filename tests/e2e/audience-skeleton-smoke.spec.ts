@@ -31,7 +31,7 @@
 // pinned by sibling specs against `/m/*` and `/p/*` and is not
 // duplicated here (would not add new behaviour coverage at this tier).
 
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures/no-scrollbars';
 
 // A deterministic UUID for the session id segment. The skeleton's
 // wildcard route ignores the segment entirely, so the value is

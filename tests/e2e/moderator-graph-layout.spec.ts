@@ -34,7 +34,7 @@
 // running the spec three times would triple wall-clock cost for zero
 // signal.
 
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures/no-scrollbars';
 
 import { loginAs } from './fixtures/auth';
 import { isWsStoreReachable, seedWsStore } from './fixtures/wsStoreSeed';

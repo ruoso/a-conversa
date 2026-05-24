@@ -47,7 +47,7 @@
 // `apps/server/src/auth/flow.ts` → 500 on `/api/auth/callback`); pre-
 // seeded jars confine all OIDC traffic to the serial setup spec.
 
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures/no-scrollbars';
 
 import { authedContext } from './fixtures/authed-context';
 

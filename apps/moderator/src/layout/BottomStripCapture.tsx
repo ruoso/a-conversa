@@ -89,10 +89,24 @@ export function BottomStripCapture(props: BottomStripCaptureProps): ReactElement
       >
         {modeBanner ?? <span aria-hidden="true">[mode banner]</span>}
       </div>
+      {/*
+        Flex distribution:
+        - text-input grows 2x and floors at 18 rem so the textarea is
+          never squeezed below the placeholder's wrap width (a narrow
+          textarea makes the placeholder wrap into many lines, which
+          inflates `scrollHeight` past `clientHeight` and paints an
+          unwanted internal scrollbar — the scrollbar-harness regression
+          surface this layout was designed to dodge).
+        - edge-role grows 1x and allows shrink past its content
+          (`min-w-0`). Combined with the `flex-wrap` already on the
+          role-button row inside `<EdgeRoleSelector>`, this forces the
+          seven-button row to wrap into multiple rows when narrow,
+          which is what releases width for the text-input slot.
+      */}
       <div className="flex flex-1 items-stretch gap-2 px-3 py-2">
         <div
           data-testid="bottom-strip-text-input"
-          className="flex flex-1 items-center rounded border border-slate-200 bg-white px-2 text-sm text-slate-500"
+          className="flex flex-[2_1_0%] min-w-[18rem] items-center rounded border border-slate-200 bg-white px-2 text-sm text-slate-500"
         >
           {textInput ?? <span aria-hidden="true">[statement text]</span>}
         </div>
@@ -104,7 +118,7 @@ export function BottomStripCapture(props: BottomStripCaptureProps): ReactElement
         </div>
         <div
           data-testid="bottom-strip-edge-role"
-          className="flex items-center rounded border border-slate-200 bg-white px-2 text-sm text-slate-500"
+          className="flex flex-1 min-w-0 items-center rounded border border-slate-200 bg-white px-2 text-sm text-slate-500"
         >
           {edgeRoleSelector ?? <span aria-hidden="true">[edge role]</span>}
         </div>

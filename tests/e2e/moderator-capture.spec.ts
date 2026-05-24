@@ -34,7 +34,7 @@
 // in-progress draft via the textarea's `value` attribute (the same
 // wire as a screen reader on the controlled input).
 
-import { expect, type Page, test } from '@playwright/test';
+import { expect, type Page, test } from './fixtures/no-scrollbars';
 
 import { loginAs } from './fixtures/auth';
 import { isWsStoreReachable, seedParticipants, seedWsStore } from './fixtures/wsStoreSeed';

@@ -57,11 +57,19 @@ export function DecomposeComponentTextInput(props: DecomposeComponentTextInputPr
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
+  // Border allowance: with `box-sizing: border-box` (Tailwind preflight)
+  // a height equal to `scrollHeight` is 2 px short — `scrollHeight`
+  // covers padding + content but not the top + bottom borders, and the
+  // visible content area ends up clipped enough that the browser paints
+  // an internal vertical scrollbar even after the auto-grow ran. Adding
+  // `offsetHeight - clientHeight` (the border height) closes the gap.
+  // Mirrors the fix in `CaptureTextInput.tsx`.
   useLayoutEffect(() => {
     const el = textareaRef.current;
     if (el === null) return;
     el.style.height = 'auto';
-    const desired = Math.min(el.scrollHeight, MAX_HEIGHT_PX);
+    const borderAllowance = el.offsetHeight - el.clientHeight;
+    const desired = Math.min(el.scrollHeight + borderAllowance, MAX_HEIGHT_PX);
     el.style.height = `${String(desired)}px`;
   }, [text]);
 
@@ -74,6 +82,14 @@ export function DecomposeComponentTextInput(props: DecomposeComponentTextInputPr
       ref={textareaRef}
       id={testid}
       data-testid={testid}
+      // Past `MAX_HEIGHT_PX` the textarea engages its native
+      // `overflow-y: auto` and paints an internal scrollbar — this is
+      // intentional (the cap keeps the bottom strip from growing
+      // unbounded as the user types). `data-allow-scroll` opts the
+      // element out of the e2e scrollbar harness
+      // (`tests/e2e/fixtures/no-scrollbars.ts`) so the legitimate
+      // long-content scroll is not treated as a layout regression.
+      data-allow-scroll=""
       value={text}
       onChange={(event) => {
         setText(index, event.target.value);

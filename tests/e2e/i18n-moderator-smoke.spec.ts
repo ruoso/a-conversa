@@ -33,7 +33,7 @@
 // fires) without driving the foreign-origin login flow. Full-stack
 // auth flow tests are a separate task.
 
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures/no-scrollbars';
 
 import { expectationsFor } from './fixtures/locales';
 

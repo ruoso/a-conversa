@@ -54,7 +54,13 @@
 //      `participant-graph-root` container (visual regression on
 //      rendered pixels is owned by `part_vr_state_styling`).
 
-import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
+import {
+  expect,
+  test,
+  type Browser,
+  type BrowserContext,
+  type Page,
+} from './fixtures/no-scrollbars';
 
 import { loginAs } from './fixtures/auth';
 

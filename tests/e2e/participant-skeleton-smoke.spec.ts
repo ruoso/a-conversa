@@ -58,7 +58,7 @@
 // the bootstrap jar via `test.use({ storageState: { ... } })` so the
 // context starts cookie-free for the SPA's auth probe.
 
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures/no-scrollbars';
 
 // A deterministic UUID for the session id segment. The skeleton's
 // wildcard route ignores the segment entirely, so the value is

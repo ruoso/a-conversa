@@ -51,7 +51,7 @@
 // chain has independent coverage; until then, `useProposeAction.test`
 // already pins the per-envelope ordering at the unit layer.
 
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures/no-scrollbars';
 
 import { loginAs } from './fixtures/auth';
 

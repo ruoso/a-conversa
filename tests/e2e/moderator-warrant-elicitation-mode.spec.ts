@@ -32,7 +32,7 @@
 // **Locale.** en-US only; cross-locale matrix is covered at the
 // catalog level (per `tests/e2e/moderator-capture.spec.ts`).
 
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures/no-scrollbars';
 
 import { loginAs } from './fixtures/auth';
 import { seedParticipants } from './fixtures/wsStoreSeed';

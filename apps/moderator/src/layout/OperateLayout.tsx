@@ -29,8 +29,14 @@
 // directly. Flexbox would need a wrapper to group the top row with the
 // bottom row; Grid keeps the shell flat and reads top-to-bottom in JSX.
 //
-// Pixel sizing (`20rem` sidebar width, `6rem` strip height) is a
-// placeholder until `packages/ui-tokens` lands (deferred per ADR 0005).
+// Sidebar width (`20rem`) is a placeholder until `packages/ui-tokens`
+// lands (deferred per ADR 0005). The bottom strip row uses `auto` so
+// the strip sizes to its natural content height — the strip's children
+// (banner + capture row of four boxes + helper paragraph) total well
+// over the previous `6rem` fixed reservation, and a fixed reservation
+// forced an internal scrollbar on every test run. With `auto`, the
+// graph pane (1fr) shrinks to absorb the strip's true height; with no
+// scroll on either pane the page presents zero scrollbars by default.
 
 import type { ReactElement, ReactNode } from 'react';
 
@@ -51,7 +57,7 @@ export function OperateLayout(props: OperateLayoutProps): ReactElement {
       className="grid h-screen w-screen bg-slate-50"
       style={{
         gridTemplateColumns: '1fr 20rem',
-        gridTemplateRows: '1fr 6rem',
+        gridTemplateRows: '1fr auto',
         gridTemplateAreas: '"graph sidebar" "strip strip"',
       }}
     >
@@ -64,6 +70,15 @@ export function OperateLayout(props: OperateLayoutProps): ReactElement {
       </section>
       <aside
         data-testid="operate-right-sidebar"
+        // `data-allow-scroll` opts this region out of the e2e
+        // scrollbar harness (`tests/e2e/fixtures/no-scrollbars.ts`).
+        // The sidebar is the canonical home for unbounded content —
+        // pending proposals (the list can grow to dozens of rows mid-
+        // session), diagnostic flags, change history — and is
+        // designed to be scrollable. `overflow-auto` paints a bar
+        // only when content actually overflows; the opt-out tells the
+        // harness this is intentional rather than a layout bug.
+        data-allow-scroll=""
         className="overflow-auto border-l border-slate-200 bg-slate-100"
         style={{ gridArea: 'sidebar' }}
       >
@@ -71,7 +86,7 @@ export function OperateLayout(props: OperateLayoutProps): ReactElement {
       </aside>
       <footer
         data-testid="operate-bottom-strip"
-        className="overflow-auto border-t border-slate-200 bg-slate-100"
+        className="border-t border-slate-200 bg-slate-100"
         style={{ gridArea: 'strip' }}
       >
         {bottomStrip}
