@@ -38,10 +38,12 @@
 // mistaken for a fresh id):
 //
 // - **Truly-new id present.** Call `relayoutAll(...)`: every node gets
-//   a fresh dagre placement against the new graph structure, the
-//   position cache is reset, and the truly-new ids are staged for the
-//   center-on-new effect that pans the viewport to their centroid while
-//   preserving the moderator's current zoom level.
+//   a fresh dagre placement against the new graph structure and the
+//   position cache is reset. The viewport is NOT auto-panned to the
+//   new node — see ADR 0025 Amendment 2026-05-24 for the history (a
+//   center-on-new pan was tried and surfaced races with concurrent
+//   tidy-up gestures in multi-user sessions; the user clicks "Tidy
+//   up" to recenter).
 // - **No truly-new id.** Call `applyLayout(...)` with the position
 //   cache: cached ids reuse their `{x, y}`, only uncached ids (e.g. an
 //   id whose position cache entry was evicted by the measurement
@@ -947,12 +949,8 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
   // (never seen by this instance) from "evicted by measurement debounce"
   // (already known, just lost its cached position so dagre can re-place
   // it against the measured footprint). Only truly-new ids trigger the
-  // full relayout + center-on-new path below.
+  // full relayout path below.
   const knownNodeIdsRef = useRef<Set<string>>(new Set());
-  // Ids staged for the next center-on-new pass. Written from the `nodes`
-  // useMemo when a relayout was triggered by truly-new ids; drained by
-  // the useEffect that calls `setCenter` after the next render commits.
-  const pendingFocusIdsRef = useRef<string[]>([]);
   // Measurement cache — the per-id `{width, height}` map fed to dagre
   // via `LayoutOptions.dimensions`. Populated by the debounced
   // measurement effect below, read inside the `nodes` `useMemo`.
@@ -1002,7 +1000,6 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
       for (const id of trulyNewIds) {
         knownNodeIdsRef.current.add(id);
       }
-      pendingFocusIdsRef.current = trulyNewIds;
     } else {
       laidOut = applyLayout(projected, edges, {
         cache: positionCacheRef.current,
@@ -1040,62 +1037,14 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
   // reads the post-relayout positions when computing the bounding box.
   // The measurement cache is preserved — only positions are recomputed.
   const { t } = useTranslation();
-  const { fitView, getZoom, setCenter } = useReactFlow();
+  const { fitView } = useReactFlow();
   const handleTidyUp = useCallback((): void => {
     positionCacheRef.current.clear();
-    // Drop any pending center-on-new pan staged by a concurrent
-    // `node-created` event — the explicit tidy-up gesture supersedes
-    // it, and an undrained `setCenter` would override the `fitView`
-    // call below if its RAF fires later.
-    pendingFocusIdsRef.current = [];
     setLayoutRevision((r) => r + 1);
     requestAnimationFrame(() => {
       fitView({ duration: 0, padding: 0.1 });
     });
   }, [fitView]);
-
-  // -- Center-on-new pan (ADR 0025 Amendment 2026-05-24) --------------
-  //
-  // The `nodes` useMemo above stages truly-new ids in `pendingFocusIdsRef`
-  // whenever it took the `relayoutAll` branch. After the resulting render
-  // commits, this effect drains the staged ids, computes the centroid of
-  // their freshly-laid-out positions (read off the `nodes` array we just
-  // returned from the useMemo — same memoization tick), and `setCenter`s
-  // the viewport on that centroid while preserving the moderator's
-  // current zoom. Pan-only (not `fitView`) so the moderator's chosen
-  // zoom level is not disturbed; the relayout itself already framed the
-  // new structure relative to everything else.
-  useEffect(() => {
-    const focusIds = pendingFocusIdsRef.current;
-    if (focusIds.length === 0) return;
-    pendingFocusIdsRef.current = [];
-
-    const measurements = measurementCacheRef.current;
-    let cxSum = 0;
-    let cySum = 0;
-    let count = 0;
-    for (const id of focusIds) {
-      const node = nodes.find((n) => n.id === id);
-      if (node === undefined) continue;
-      const measured = measurements.get(id);
-      const w = measured?.width ?? 288;
-      const h = measured?.height ?? 90;
-      cxSum += node.position.x + w / 2;
-      cySum += node.position.y + h / 2;
-      count += 1;
-    }
-    if (count === 0) return;
-    const cx = cxSum / count;
-    const cy = cySum / count;
-
-    requestAnimationFrame(() => {
-      // Instant pan (no animation) — matches `handleTidyUp`'s
-      // `fitView({ duration: 0 })` pattern and avoids RAF/animation
-      // races when a follow-up viewport command (tidy-up, a sibling
-      // truly-new event) lands within the animation window.
-      setCenter(cx, cy, { zoom: getZoom(), duration: 0 });
-    });
-  }, [nodes, getZoom, setCenter]);
 
   // -- Measurement-driven re-layout (mod_layout_measured_dimensions) --
   //
