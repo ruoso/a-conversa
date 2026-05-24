@@ -102,6 +102,7 @@ task per_facet_refactor "Per-facet refactor (ADR 0030)" {
     task pf_withdraw_agreement_handler "Withdraw-agreement handler" {
       effort 0.5d
       allocate team
+      complete 100
       depends !pf_commit_handler_facet_keyed
       note "Refinement: tasks/refinements/per-facet-refactor/pf_withdraw_agreement_handler.md"
     }

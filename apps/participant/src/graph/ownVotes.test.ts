@@ -18,7 +18,11 @@
 //      as `{ edges: { [edgeId]: 'dispute' } }` (symmetric across node
 //      AND edge targets per Decision §1).
 //   5. Latest-vote-wins on a same-participant retake.
-//   6. A `'withdraw'` vote collapses to `'none'` per Decision §1.
+//   6. A `withdraw-agreement` event is silently dropped by the
+//      vote-only projector (no `case 'withdraw-agreement'` in the
+//      walker) — the prior `'agree'` indicator persists; the
+//      explicit "I withdrew" detail belongs in the future
+//      `part_withdraw_indicator` polish leaf.
 //   7. Two facets on the same entity — one `'agree'` + one `'dispute'`
 //      by the current participant — rolls up to `'dispute'` per
 //      Decision §1's dispute-wins tie-break.
@@ -138,7 +142,7 @@ function voteEvent(opts: {
   sequence: number;
   proposalId: string;
   participant: string;
-  vote: 'agree' | 'dispute' | 'withdraw';
+  vote: 'agree' | 'dispute';
 }): Event {
   return {
     id: `00000000-0000-4000-8000-${(0x500 + opts.sequence).toString(16).padStart(12, '0')}`,
@@ -150,7 +154,7 @@ function voteEvent(opts: {
       target: 'proposal' as const,
       proposal_id: opts.proposalId,
       participant: opts.participant,
-      choice: opts.vote as 'agree' | 'dispute',
+      choice: opts.vote,
       voted_at: '2026-05-17T00:00:00.000Z',
     },
     createdAt: '2026-05-17T00:00:00.000Z',
@@ -234,14 +238,18 @@ describe('projectOwnVotes — per-entity own-vote projection narrowed to the cur
     expect(out.nodes.get(NODE_A)).toBe('dispute');
   });
 
-  // TODO(pf_withdraw_agreement_handler): the `'withdraw'` arm is no
-  // longer carried on the `vote` event's `choice` enum (per ADR
-  // 0030 §3 + `pf_withdraw_agreement_event_kind`). The withdrawal
-  // gesture is its own `withdraw-agreement` event kind and the
-  // own-vote projector's handling of it lives in the downstream
-  // handler-rewire task. The presence-helper-returns-none behavior
-  // moves there.
-  it.skip('(f) a "withdraw" arm collapses to "none" (no entry; presence-helper returns "none") (deprecated by pf_withdraw_agreement_handler)', () => {
+  // Per ADR 0030 §3 + `pf_withdraw_agreement_handler`: the
+  // `'withdraw'` arm is no longer carried on the `vote` event's
+  // `choice` enum — withdrawal is its own `withdraw-agreement` event
+  // kind. The own-vote projector today silently drops the new event
+  // kind (it isn't a `'vote'`). The at-a-glance "I voted agree on
+  // this" indicator therefore STAYS `'agree'` after a withdrawal —
+  // the explicit "I withdrew" detail belongs in the future
+  // `part_withdraw_indicator` polish leaf that introduces a separate
+  // sentinel. This test pins today's behavior: a `withdraw-agreement`
+  // event landing on the log does NOT clear the participant's prior
+  // `'agree'` indicator (the projector is vote-only).
+  it('(f) a withdraw-agreement event does not clear the prior agree indicator (own-vote projector is vote-only — see future part_withdraw_indicator)', () => {
     const events: Event[] = [
       classifyProposal({ sequence: 1, envelopeId: PROPOSAL_CLASSIFY, nodeId: NODE_A }),
       voteEvent({
@@ -250,18 +258,28 @@ describe('projectOwnVotes — per-entity own-vote projection narrowed to the cur
         participant: ME,
         vote: 'agree',
       }),
-      voteEvent({
+      // The new event kind — distinct from `'vote'`. The projector
+      // silently passes over it (no `case 'withdraw-agreement'` in
+      // the walker), so the prior `'agree'` indicator persists.
+      {
+        id: '00000000-0000-4000-8000-0000000005ff',
+        sessionId: SESSION_ID,
         sequence: 3,
-        proposalId: PROPOSAL_CLASSIFY,
-        participant: ME,
-        vote: 'withdraw',
-      }),
+        kind: 'withdraw-agreement',
+        actor: ME,
+        payload: {
+          entity_kind: 'node',
+          entity_id: NODE_A,
+          facet: 'classification',
+          participant: ME,
+          withdrawn_at: '2026-05-17T00:00:00.000Z',
+        },
+        createdAt: '2026-05-17T00:00:00.000Z',
+      },
     ];
     const out = projectOwnVotes(events, ME);
-    // Withdraw collapses to 'none' — the entry is dropped from the map
-    // so a future vote-only consumer sees the indicator as cleared.
-    expect(out.nodes.get(NODE_A)).toBeUndefined();
-    expect(ownVoteForNode(out, NODE_A)).toBe('none');
+    expect(out.nodes.get(NODE_A)).toBe('agree');
+    expect(ownVoteForNode(out, NODE_A)).toBe('agree');
   });
 
   it('(g) two facets on the same entity — one agree + one dispute — rolls up to "dispute" (dispute-wins tie-break per Decision §1)', () => {

@@ -20,6 +20,7 @@ import { strict as assert } from 'node:assert';
 import type { AConversaWorld } from '../support/world.js';
 import { evId, insertEventRow, rowToValidatedEvent, selectEvents } from '../support/event-rows.js';
 import { projectFromLog, type Projection } from '../../../apps/server/src/projection/index.js';
+import { deriveFacetStatus } from '../../../apps/server/src/projection/facet-status.js';
 
 // Distinct UUID prefix from other methodology / projection step files
 // so the shared World doesn't collide across scenarios run in one
@@ -185,5 +186,88 @@ Then(
     const found = events.find((e) => e.id === WA_WITHDRAW_EVENT_ID);
     assert.ok(found, `expected a withdraw-agreement event with id ${WA_WITHDRAW_EVENT_ID}`);
     assert.equal(found.kind, expectedKind);
+  },
+);
+
+// ---- Full commit + withdraw round (pf_withdraw_agreement_handler) ----
+
+const WA_CLASSIFY_PROPOSAL_ID = 'dddddddd-dddd-4ddd-8ddd-ddddddddd00c';
+
+Given(
+  'a classify-node proposal + three agree votes + commit for the withdraw-agreement-test node',
+  async function (this: AConversaWorld) {
+    // Append the full lifecycle the handler-side gate-stack requires
+    // for a withdraw to be lawful: classify-node proposal → three
+    // unanimous agree votes → moderator commit. After this step the
+    // facet's `committedAt` is non-null and each participant has a
+    // recorded `'agree'` on the facet's `perParticipant` map. The
+    // subsequent `withdraw-agreement` event flips the facet to
+    // `'withdrawn'` per ADR 0030 §3 + the projection's rule-4
+    // derivation.
+    let seq = this.scratch['waNextSeq'] as number;
+    // Proposal at next seq, addressed by a well-known id so the votes
+    // can reference it.
+    await insertEventRow(this, WA_SESSION_ID, {
+      id: WA_CLASSIFY_PROPOSAL_ID,
+      sequence: seq,
+      kind: 'proposal',
+      actor: WA_HOST_ID,
+      payload: {
+        proposal: {
+          kind: 'classify-node',
+          node_id: WA_NODE_ID,
+          classification: 'fact',
+        },
+      },
+      createdAt: tsAt(seq),
+    });
+    seq += 1;
+    // Three agree votes (proposal-keyed arm — matches the engine's
+    // current emission per `pf_vote_handler_facet_keyed` not-yet-done
+    // state; the projection's `handleVote` proposal-keyed branch
+    // routes the vote into the facet's `perParticipant` map for
+    // facet-targeting sub-kinds).
+    for (const voter of [WA_HOST_ID, WA_DEBATER_A_ID, WA_DEBATER_B_ID]) {
+      await insertEventRow(this, WA_SESSION_ID, {
+        id: evId(seq * 100 + 7),
+        sequence: seq,
+        kind: 'vote',
+        actor: voter,
+        payload: {
+          target: 'proposal',
+          proposal_id: WA_CLASSIFY_PROPOSAL_ID,
+          participant: voter,
+          choice: 'agree',
+          voted_at: tsAt(seq),
+        },
+        createdAt: tsAt(seq),
+      });
+      seq += 1;
+    }
+    // Moderator commit at the next slot.
+    await insertEventRow(this, WA_SESSION_ID, {
+      id: evId(seq * 100 + 8),
+      sequence: seq,
+      kind: 'commit',
+      actor: WA_HOST_ID,
+      payload: {
+        target: 'proposal',
+        proposal_id: WA_CLASSIFY_PROPOSAL_ID,
+        committed_by: WA_HOST_ID,
+        committed_at: tsAt(seq),
+      },
+      createdAt: tsAt(seq),
+    });
+    seq += 1;
+    this.scratch['waNextSeq'] = seq;
+  },
+);
+
+Then(
+  "deriveFacetStatus on the withdraw-agreement-test node's classification facet is {string}",
+  function (this: AConversaWorld, expectedStatus: string) {
+    const projection = this.scratch['waProjection'] as Projection;
+    const status = deriveFacetStatus(projection, 'node', WA_NODE_ID, 'classification');
+    assert.equal(status, expectedStatus);
   },
 );

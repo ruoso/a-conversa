@@ -52,3 +52,21 @@ Feature: withdraw-agreement event kind — wire-and-replay round-trip through pg
     And I project the withdraw-agreement event log via projectFromLog
     Then the projection's lastAppliedSequence equals the withdraw-agreement event's sequence
     And the withdraw-agreement event round-trips through validateEvent with kind "withdraw-agreement"
+
+  Scenario: a full commit + withdraw round flips the facet to withdrawn
+    # Per `pf_withdraw_agreement_handler`: the dedicated WS handler at
+    # `apps/server/src/ws/handlers/withdraw-agreement.ts` appends a
+    # `withdraw-agreement` event for a participant who previously voted
+    # `agree` on a committed facet. This scenario pins the round-trip
+    # through the same protocol boundary the Vitest handler tests
+    # exercise in-memory, but layered onto the pglite-backed event
+    # table: seed the prerequisite chain (classify-node proposal +
+    # 3 agree votes + commit), then INSERT a `withdraw-agreement`
+    # event, then replay the log via `projectFromLog` and assert the
+    # derivation surfaces `'withdrawn'` for the targeted facet.
+    Given a seeded session with three participants for withdraw-agreement tests
+    And a node-created event for the withdraw-agreement-test node
+    And a classify-node proposal + three agree votes + commit for the withdraw-agreement-test node
+    When a withdraw-agreement event is inserted for the withdraw-agreement-test node's classification facet
+    And I project the withdraw-agreement event log via projectFromLog
+    Then deriveFacetStatus on the withdraw-agreement-test node's classification facet is "withdrawn"

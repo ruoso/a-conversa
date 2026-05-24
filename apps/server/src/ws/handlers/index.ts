@@ -41,6 +41,7 @@ import { registerProposeHandlers } from './propose.js';
 import { registerSnapshotHandlers } from './snapshot.js';
 import { registerSubscribeHandlers } from './subscribe.js';
 import { registerVoteHandlers } from './vote.js';
+import { registerWithdrawAgreementHandlers } from './withdraw-agreement.js';
 import { registerWithdrawProposalHandlers } from './withdraw.js';
 
 export {
@@ -90,6 +91,12 @@ export type { CatchUpHandlerOptions } from './catch-up.js';
 
 export { buildWithdrawProposalHandler, registerWithdrawProposalHandlers } from './withdraw.js';
 export type { WithdrawProposalHandlerOptions } from './withdraw.js';
+
+export {
+  buildWithdrawAgreementHandler,
+  registerWithdrawAgreementHandlers,
+} from './withdraw-agreement.js';
+export type { WithdrawAgreementHandlerOptions } from './withdraw-agreement.js';
 
 /**
  * Options accepted by `wsHandlersPlugin`. Production callers pass `{}`
@@ -276,6 +283,26 @@ const wsHandlersPluginAsync: FastifyPluginAsync<WsHandlersOptions> = (
   // per entity the propose-time fan-out minted (per ADR 0027) — the
   // INVERSE of `buildStructuralEventsForPropose`.
   registerWithdrawProposalHandlers(app.wsDispatcher, {
+    get pool() {
+      return ensurePool();
+    },
+    registry: app.wsSubscriptions,
+    broadcast: app.wsBroadcast,
+    log: app.log,
+    ...(opts.now !== undefined ? { now: opts.now } : {}),
+  });
+
+  // Register the withdraw-agreement handler — participant-only
+  // rescission of a prior agreement on a previously-committed
+  // `(entity, facet)` pair (per ADR 0030 §3 +
+  // `pf_withdraw_agreement_handler`). Structurally mirrors the
+  // withdraw-proposal / commit / mark-meta-disagreement
+  // registration (same gate stack + dual-signal contract +
+  // dispatcher-seam error path). The handler enforces the
+  // actor-must-match-participant + facet-must-be-committed +
+  // prior-'agree'-required predicates directly (per the refinement's
+  // D1: no engine routing for v1).
+  registerWithdrawAgreementHandlers(app.wsDispatcher, {
     get pool() {
       return ensurePool();
     },

@@ -132,7 +132,7 @@ function seedSession(): ReturnType<typeof createEmptyProjection> {
 function applyVote(
   projection: ReturnType<typeof createEmptyProjection>,
   participant: string,
-  vote: 'agree' | 'dispute' | 'withdraw',
+  vote: 'agree' | 'dispute',
   proposalId: string = PROPOSAL_ID_1,
 ): void {
   // The seeded session's proposal is a facet-valued `classify-node`,
@@ -142,12 +142,11 @@ function applyVote(
   // facet-keyed payload has no `proposal_id`); kept on the signature
   // so the structural-vote helpers below stay symmetric.
   void proposalId;
-  // TODO(pf_withdraw_agreement_handler): the `'withdraw'` arm is
-  // deprecated on the vote payload's `choice` enum (it's its own
-  // event kind now per ADR 0030 §3). Tests that still drive the
-  // withdraw branch through this helper rely on the runtime cast
-  // here; the downstream handler-rewire task migrates those tests
-  // to the `withdraw-agreement` event surface.
+  // Per ADR 0030 §3 + `pf_withdraw_agreement_handler`: the
+  // `'withdraw'` arm is gone from the vote payload's `choice` enum.
+  // Callers that want to record a withdrawal use the dedicated
+  // `withdraw-agreement` event kind instead (see the projection-
+  // replay pin in the withdraw-after-commit test above).
   applyEvent(
     projection,
     makeEvent(nextSequence(projection), 'vote', participant, T9, {
@@ -156,7 +155,7 @@ function applyVote(
       entity_id: NODE_ID_1,
       facet: 'classification' as const,
       participant,
-      choice: vote as 'agree' | 'dispute',
+      choice: vote,
       voted_at: T9,
     }),
   );
@@ -483,19 +482,23 @@ describe('vote handler — withdraw arm', () => {
     }
   });
 
-  // TODO(pf_withdraw_agreement_handler): withdraw is no longer a vote
-  // choice (per ADR 0030 §3 + `pf_withdraw_agreement_event_kind`); it
-  // is its own top-level event kind (`'withdraw-agreement'`). The
-  // methodology engine's vote handler still accepts a `vote.action
-  // === 'withdraw'` requester but the emitted event's `choice` enum
-  // is now `'agree' | 'dispute'` and the resulting payload no longer
-  // round-trips through `validateEvent`. The downstream
-  // `pf_withdraw_agreement_handler` task rewires the withdraw path to
-  // emit a `withdraw-agreement` event instead. Re-asserting the
-  // committed → withdrawn transition lives there; today's scope is
-  // limited to the schema rewrite per the orchestrator's
-  // single-task-discipline.
-  it.skip('accepts a withdraw from a participant who previously voted agree on a committed proposal — and the read-side derivation returns withdrawn (deprecated by pf_withdraw_agreement_handler)', () => {
+  // Per ADR 0030 §3 + `pf_withdraw_agreement_handler`: withdraw is
+  // no longer a vote choice — it is its own top-level event kind
+  // (`'withdraw-agreement'`) handled by
+  // `apps/server/src/ws/handlers/withdraw-agreement.ts`. The handler
+  // appends a `withdraw-agreement` event; the projection's
+  // `handleWithdrawAgreement` adds the participant to the facet's
+  // `withdrawals` set; `deriveFacetStatus` rule-4 surfaces
+  // `'withdrawn'` once the withdrawal lands on a committed candidate.
+  //
+  // This test pins the projection-side round-trip the dedicated
+  // handler-layer test at
+  // `apps/server/src/ws/handlers/withdraw-agreement.test.ts` cannot
+  // reach directly: applying a real `withdraw-agreement` event onto
+  // the projection flips the facet status to `'withdrawn'`. The
+  // happy-path validation lives in the WS handler test; this is the
+  // projection-replay pin.
+  it('records a withdraw-agreement event on the projection and the facet status flips to withdrawn', () => {
     const p = seedSession();
     applyVote(p, MODERATOR_ID, 'agree');
     applyVote(p, DEBATER_A_ID, 'agree');
@@ -503,9 +506,21 @@ describe('vote handler — withdraw arm', () => {
     applyCommit(p);
     expect(deriveFacetStatus(p, 'node', NODE_ID_1, 'classification')).toBe('committed');
 
-    const action = makeVoteAction(p, DEBATER_A_ID, 'withdraw');
-    const r = validateAction(p, action);
-    expect(r.ok).toBe(true);
+    // Apply a real `withdraw-agreement` event directly onto the
+    // projection (replay-layer pin). The WS handler test exercises
+    // the wire-shape + gate stack; this exercises the projection
+    // walker's response to the new event kind.
+    applyEvent(
+      p,
+      makeEvent(nextSequence(p), 'withdraw-agreement', DEBATER_A_ID, T9, {
+        entity_kind: 'node' as const,
+        entity_id: NODE_ID_1,
+        facet: 'classification' as const,
+        participant: DEBATER_A_ID,
+        withdrawn_at: T9,
+      }),
+    );
+    expect(deriveFacetStatus(p, 'node', NODE_ID_1, 'classification')).toBe('withdrawn');
   });
 
   it('rejects a withdraw after a dispute → switch (prior vote is dispute, not agree) with no-prior-agree', () => {

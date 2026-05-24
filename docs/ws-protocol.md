@@ -208,6 +208,28 @@ Clients MUST dedupe `event-applied` frames by `event.sequence` — the per-event
 }
 ```
 
+### `withdraw-agreement`
+
+- **Direction**: C→S request.
+- **Payload schema**: `wsWithdrawAgreementPayloadSchema` — `{ sessionId, expectedSequence, entity_kind, entity_id, facet, participant }`.
+- **When**: a participant rescinds a prior agreement on a previously-committed `(entity, facet)` pair. Per [ADR 0030 §3](adr/0030-per-facet-vote-keying-and-sequential-capture.md) + [`docs/methodology.md`](methodology.md) line 25 the gesture is the methodology's "withdraw agreement" — distinct from changing a still-pending vote (which uses the regular `vote` envelope with `choice: 'dispute'`). Must be preceded by a successful `subscribe`.
+- **Authority**: actor-must-match-participant — `connection.user.id` must equal `payload.participant`; a participant only withdraws their OWN agreement. Mismatches reject with `code: 'forbidden'`.
+- **Correlation**: closes with [`agreement-withdrawn`](#agreement-withdrawn) ack (correlated) AND one [`event-applied`](#event-applied) broadcast (the appended `withdraw-agreement` event). On the next `deriveFacetStatus` call against the affected `(entity, facet)`, the projection's rule-4 derivation surfaces `'withdrawn'`.
+- **Engine-rejection wire codes**: [`not-a-participant`](#methodology-rejectionreason-codes) (403, the requester is not a current participant in the session), [`target-entity-not-found`](#methodology-rejectionreason-codes) (404, the `(entity_kind, entity_id, facet)` triple doesn't resolve), [`inapplicable-to-facet`](#methodology-rejectionreason-codes) (422, the facet has not been committed — withdraw is only meaningful against a committed facet per ADR 0030 §3), [`no-prior-agree`](#methodology-rejectionreason-codes) (409, the participant has no recorded `'agree'` vote on the facet), [`sequence-mismatch`](#methodology-rejectionreason-codes) (409), [`forbidden`](#http-apierror-codes-kebab-case) (actor-mismatch or unauth, 403).
+- **Owner**: [`apps/server/src/ws/handlers/withdraw-agreement.ts`](../apps/server/src/ws/handlers/withdraw-agreement.ts).
+
+```json
+{
+  "type": "withdraw-agreement",
+  "id": "…",
+  "payload": {
+    "sessionId": "…", "expectedSequence": 12,
+    "entity_kind": "node", "entity_id": "…",
+    "facet": "classification", "participant": "…"
+  }
+}
+```
+
 ### `subscribed`
 
 - **Direction**: S→C ack.
@@ -335,6 +357,19 @@ The `reason` enum (`unsubscribedReasons` in [`packages/shared-types/src/ws-envel
 ```json
 { "type": "proposal-withdrawn", "id": "…", "inResponseTo": "…",
   "payload": { "sessionId": "…", "proposalEventId": "…", "removedEventCount": 1 } }
+```
+
+### `agreement-withdrawn`
+
+- **Direction**: S→C ack.
+- **Payload schema**: `agreementWithdrawnPayloadSchema` — `{ sessionId, sequence, eventId }`.
+- **When**: after a successful [`withdraw-agreement`](#withdraw-agreement), sent on the participant's socket alongside the matching [`event-applied`](#event-applied) broadcast carrying the appended `withdraw-agreement` event.
+- **Correlation**: `inResponseTo` echoes the originating [`withdraw-agreement`](#withdraw-agreement)'s `id`.
+- **Owner**: [`apps/server/src/ws/handlers/withdraw-agreement.ts`](../apps/server/src/ws/handlers/withdraw-agreement.ts).
+
+```json
+{ "type": "agreement-withdrawn", "id": "…", "inResponseTo": "…",
+  "payload": { "sessionId": "…", "sequence": 18, "eventId": "…" } }
 ```
 
 ### `event-applied`

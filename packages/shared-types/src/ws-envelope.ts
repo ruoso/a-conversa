@@ -120,6 +120,7 @@ export const wsMessageTypes = [
   'snapshot',
   'catch-up',
   'withdraw-proposal',
+  'withdraw-agreement',
   // Group C — server → client ack / result types correlated via
   // `inResponseTo`. Append future sibling ack/result types at this
   // group's tail.
@@ -132,6 +133,7 @@ export const wsMessageTypes = [
   'snapshot-state',
   'caught-up',
   'proposal-withdrawn',
+  'agreement-withdrawn',
   // Group A — server-emitted unsolicited broadcast + the canonical
   // error envelope (which `inResponseTo` echoes when correlated).
   'event-applied',
@@ -1018,6 +1020,119 @@ export const proposalWithdrawnPayloadSchema = z.object({
 
 export type ProposalWithdrawnPayload = z.infer<typeof proposalWithdrawnPayloadSchema>;
 
+// -- withdraw-agreement / agreement-withdrawn payloads -------------
+//
+// `withdraw-agreement` (client → server): a participant rescinds a
+// prior agreement on a previously-committed `(entity, facet)` pair.
+// Per ADR 0030 §3 + `pf_withdraw_agreement_event_kind` the gesture is
+// a top-level event kind distinct from the `vote` envelope's
+// `choice = 'withdraw'` arm (which was collapsed in `pf_facet_keyed_
+// vote_payload`). The handler validates that the participant has a
+// prior `'agree'` vote on a *committed* facet, then appends one
+// `withdraw-agreement` event. The projection's `handleWithdrawAgreement`
+// adds the participant to `FacetState.withdrawals`; the derivation
+// flips the facet's status to `'withdrawn'` (per ADR 0030 §3 +
+// `pf_projection_facet_status_refactor`).
+//
+// **Owned by `pf_withdraw_agreement_handler`.** This task adds
+// `withdraw-agreement` to Group B and `agreement-withdrawn` to Group C
+// of the union-extension convention documented in `wsMessageTypes`
+// above. Mirrors the commit / mark-meta-disagreement shapes — the
+// handler skeleton + dispatcher-seam error path + dual-signal
+// contract are identical (only the per-payload state predicates and
+// the ack envelope type differ).
+//
+// **Participant identity comes from the connection, not the payload.**
+// A participant withdraws only their own prior agreement. The handler
+// reads `connection.user.id` and asserts it matches
+// `payload.participant`; a mismatch surfaces as a wire `forbidden` /
+// `actor-mismatch` rejection.
+
+/**
+ * Client → server. Asks the server to record the participant's
+ * withdrawal of agreement on the targeted `(entity_kind, entity_id,
+ * facet)` pair. The client must have already sent a successful
+ * `subscribe` for the same session (the server enforces); otherwise
+ * the wire response is an `error` envelope with `code: 'forbidden'`.
+ *
+ * Authority + state checks the handler enforces (each a distinct
+ * typed wire `code` per ADR 0029 — the error envelope's discriminator
+ * lets the client branch deterministically):
+ *
+ *   - Anonymous (no `connection.user`): wire `code: 'forbidden'`
+ *     ("this action requires an authenticated session").
+ *   - Not subscribed: wire `code: 'forbidden'` ("not subscribed to
+ *     this session — send a subscribe envelope first").
+ *   - Session not visible: wire `code: 'not-found'` (re-checked
+ *     inside the FOR UPDATE'd transaction).
+ *   - Actor mismatch (`connection.user.id !== payload.participant`):
+ *     wire `code: 'forbidden'` ("a participant can only withdraw
+ *     their own agreement"). The server NEVER lets a participant
+ *     withdraw on someone else's behalf.
+ *   - Not a current participant: wire `code: 'not-a-participant'`
+ *     (the requester is not present in the projection's
+ *     `currentParticipants()` list).
+ *   - Target facet not present: wire `code: 'target-entity-not-found'`
+ *     (the `(entity_kind, entity_id, facet)` triple doesn't resolve
+ *     on the projection).
+ *   - Facet not committed: wire `code: 'inapplicable-to-facet'`
+ *     (per ADR 0030 §3 + `docs/methodology.md:25` — withdraw only
+ *     makes sense against a committed facet; the
+ *     `FacetState.committedAt` field is `null`).
+ *   - No prior agreement: wire `code: 'no-prior-agree'` (the
+ *     participant has no recorded `'agree'` vote on the facet's
+ *     `perParticipant` map; cannot withdraw an agreement one never
+ *     gave).
+ *   - Sequence-mismatch: wire `code: 'sequence-mismatch'`
+ *     (optimistic-concurrency check fails inside the FOR UPDATE'd
+ *     transaction).
+ *
+ * On success the server emits two server-emitted envelopes to the
+ * participant (mirroring the propose / vote / commit dual-signal):
+ *
+ *   1. One `event-applied` broadcast (the appended
+ *      `withdraw-agreement` event). Every connection subscribed to
+ *      `sessionId` — including the participant — receives the
+ *      broadcast. The projection's `handleWithdrawAgreement` runs on
+ *      each subscriber's local `applyEvent`; the facet's status flips
+ *      to `'withdrawn'` on the next `deriveFacetStatus` call.
+ *   2. An `agreement-withdrawn` ack (this envelope's request-response
+ *      pair), correlated via `inResponseTo`. Carries `{ sessionId,
+ *      sequence, eventId }` so the client clears its in-flight
+ *      withdraw-agreement state and (optionally) pairs the ack
+ *      against the matching `event-applied` broadcast.
+ */
+export const wsWithdrawAgreementPayloadSchema = z.object({
+  sessionId: z.string().uuid(),
+  expectedSequence: z.number().int().nonnegative(),
+  entity_kind: z.enum(['node', 'edge']),
+  entity_id: z.string().uuid(),
+  // Mirrors `facetNameSchema` from `./events/enums.ts` — the wire
+  // enum matches the projection-layer `FacetName` (the 3 facets that
+  // a participant can vote on today). When `facetNameSchema` widens
+  // downstream (e.g. to include `'shape'` per ADR 0030 §5), this
+  // enum widens in lockstep with the projection-layer type.
+  facet: z.enum(['classification', 'substance', 'wording']),
+  participant: z.string().uuid(),
+});
+
+export type WsWithdrawAgreementPayload = z.infer<typeof wsWithdrawAgreementPayloadSchema>;
+
+/**
+ * Server → client ack. Echoes the originating `withdraw-agreement`
+ * envelope's `id` via `inResponseTo`. Payload carries `{ sessionId,
+ * sequence, eventId }` — the appended event's sequence + id, so the
+ * client can pair this ack against the matching `event-applied`
+ * broadcast without polling.
+ */
+export const agreementWithdrawnPayloadSchema = z.object({
+  sessionId: z.string().uuid(),
+  sequence: z.number().int().nonnegative(),
+  eventId: z.string().uuid(),
+});
+
+export type AgreementWithdrawnPayload = z.infer<typeof agreementWithdrawnPayloadSchema>;
+
 // -- event-applied payload -----------------------------------------
 //
 // `event-applied` (server → client): emitted by the broadcast surface
@@ -1371,6 +1486,7 @@ export const wsMessagePayloadSchemas: Record<WsMessageType, z.ZodTypeAny> = {
   snapshot: snapshotPayloadSchema,
   'catch-up': catchUpPayloadSchema,
   'withdraw-proposal': wsWithdrawProposalPayloadSchema,
+  'withdraw-agreement': wsWithdrawAgreementPayloadSchema,
   // Group C — server → client ack/result payload schemas.
   subscribed: subscribedPayloadSchema,
   unsubscribed: unsubscribedPayloadSchema,
@@ -1381,6 +1497,7 @@ export const wsMessagePayloadSchemas: Record<WsMessageType, z.ZodTypeAny> = {
   'snapshot-state': snapshotStatePayloadSchema,
   'caught-up': caughtUpPayloadSchema,
   'proposal-withdrawn': proposalWithdrawnPayloadSchema,
+  'agreement-withdrawn': agreementWithdrawnPayloadSchema,
   // The outer event envelope is checked; the per-kind payload inside
   // the event is `z.unknown()` per the schema in `events.ts` and is
   // re-validated by `validateEvent` on the receiving side. Server-side
@@ -1411,6 +1528,7 @@ export interface WsMessagePayloadMap {
   snapshot: SnapshotPayload;
   'catch-up': CatchUpPayload;
   'withdraw-proposal': WsWithdrawProposalPayload;
+  'withdraw-agreement': WsWithdrawAgreementPayload;
   // Group C — server → client ack/result payload types.
   subscribed: SubscribedPayload;
   unsubscribed: UnsubscribedPayload;
@@ -1421,6 +1539,7 @@ export interface WsMessagePayloadMap {
   'snapshot-state': SnapshotStatePayload;
   'caught-up': CaughtUpPayload;
   'proposal-withdrawn': ProposalWithdrawnPayload;
+  'agreement-withdrawn': AgreementWithdrawnPayload;
   'event-applied': EventAppliedPayload;
   error: ErrorPayload;
   diagnostic: DiagnosticPayload;
