@@ -49,3 +49,15 @@ Per [ADR 0030 §1 + Consequences](../../../docs/adr/0030-per-facet-vote-keying-a
 ## Open questions
 
 (none — all decided per ADR 0030)
+
+## Status
+
+**Done** — 2026-05-24.
+
+- New `apps/moderator/src/graph/NodeCardSubstanceAffordance.tsx` mounts inline on the moderator's per-node `StatementNode` card; visibility is gated on `classification ∈ {agreed, committed}` AND `substance === 'awaiting-proposal'`, mirroring the classification affordance's gate-by-predecessor pattern per ADR 0030 §1.
+- New `apps/moderator/src/layout/useProposeSetNodeSubstanceAction.ts` hook fires a `set-node-substance` propose envelope keyed to the node id (per-node Zustand-backed in-flight state mirroring the classification hook shape).
+- Two-button picker — "Holds" / "Doesn't hold" — sends `substance: 'agreed' | 'disputed'` respectively.
+- `apps/moderator/src/graph/StatementNode.tsx` mount-gate + 8 new Vitest cases in `StatementNode.test.tsx`; `GraphCanvasPane.test.tsx` wrapper updated so the substance affordance can reach `useWsClient` via `WsClientProvider` + `MemoryRouter`.
+- i18n catalog keys added under `moderator.setNodeSubstanceAction.*` in en-US (canonical) with 16 PENDING entries flagged in pt-BR + es-419 review.json per the existing i18n review workflow.
+- 3 new Playwright methodology-full-flow phases (4.2 alice clicks "Holds", 4.3 ben+maria vote agree on substance, 4.4 alice commits) sequenced between N1 classification commit and N2 capture.
+- Gates: `pnpm run check` green, `pnpm run test:smoke` 4419 passing (+24), `pnpm run test:behavior:smoke` 262 / 1803 (unchanged), `pnpm run test:e2e:smoke` 114 passed + 0 fixme (+3 substance phases).

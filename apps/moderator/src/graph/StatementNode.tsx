@@ -53,6 +53,7 @@ import { AxiomMarkBadge } from './AxiomMarkBadge.js';
 import { DisputationTestChip } from './DisputationTestChip.js';
 import { HoverPopover } from './HoverPopover.js';
 import { NodeCardClassificationPalette } from './NodeCardClassificationPalette.js';
+import { NodeCardSubstanceAffordance } from './NodeCardSubstanceAffordance.js';
 import { PendingAxiomMarkBadge } from './PendingAxiomMarkBadge.js';
 import type { DiagnosticHighlight } from './diagnosticHighlights.js';
 import { disputationOutcome } from './disputationOutcome.js';
@@ -421,6 +422,34 @@ export function StatementNode(props: NodeProps<StatementNodeData>): ReactElement
     (wordingStatus === 'agreed' || wordingStatus === 'committed') &&
     classificationStatus === 'awaiting-proposal';
 
+  // Per-node-card substance affordance. Per ADR 0030 §1 + §8 + §10 +
+  // `pf_mod_node_card_substance_affordance`: substance is the THIRD
+  // facet in the per-node sequence (wording → classification →
+  // substance). When the classification facet has settled (`agreed`
+  // or `committed`) and the substance facet still awaits a candidate,
+  // the moderator's path forward is to name a substance value on this
+  // card. The affordance mounts inline; a click fires a
+  // `set-node-substance` propose envelope keyed to the node id (the
+  // hook lives in `useProposeSetNodeSubstanceAction`). Once a
+  // `set-node-substance` proposal lands, `substance` moves past
+  // `awaiting-proposal` and the affordance is no longer rendered (the
+  // per-facet pill row + `<DisputationTestChip>` already surface the
+  // candidate value).
+  //
+  // The gate predicate (`classification ∈ {agreed, committed}` AND
+  // `substance === 'awaiting-proposal'`) is the UI mirror of the
+  // server's `pf_sequence_gate_server_enforced` — the server is the
+  // integrity boundary, the UI hides the gesture when the server
+  // would reject it. Both sides intentionally fail closed: the gate
+  // hides on any other `classification` status (proposed / disputed /
+  // meta-disagreement / withdrawn / awaiting-proposal — the last
+  // would have already been short-circuited by the classification
+  // palette's gate, but the predicate is symmetric anyway).
+  const substanceStatus = facetStatuses.substance;
+  const showSubstanceAffordance =
+    (classificationStatus === 'agreed' || classificationStatus === 'committed') &&
+    substanceStatus === 'awaiting-proposal';
+
   return (
     <div
       data-testid={`statement-node-${id}`}
@@ -493,6 +522,7 @@ export function StatementNode(props: NodeProps<StatementNodeData>): ReactElement
         {kindLabel}
       </p>
       {showClassificationPalette ? <NodeCardClassificationPalette nodeId={id} /> : null}
+      {showSubstanceAffordance ? <NodeCardSubstanceAffordance nodeId={id} /> : null}
       {pendingAxiomMarks.length > 0 ? (
         // Pending axiom-mark badge row — rendered IMMEDIATELY ABOVE the
         // committed `axiom-mark-list-node-{id}` row. The pending row

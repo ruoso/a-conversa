@@ -132,7 +132,8 @@ import { projectDiagnosticHighlights } from './diagnosticHighlights';
 import { selectEdgesForSession } from './selectors';
 import { useWsStore } from '../ws/wsStore';
 import { useCaptureStore, useSelectionStore } from '../stores';
-import { createI18nInstance } from '@a-conversa/shell';
+import { createI18nInstance, WsClientProvider, type WsClient } from '@a-conversa/shell';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
 beforeAll(() => {
   // ReactFlow's core observes each node container with `ResizeObserver`
@@ -536,7 +537,40 @@ describe('GraphCanvasPane — events from the WS store render as custom nodes', 
       }),
     );
     store.applyEvent(makeCommit({ sequence: 3, proposalEnvelopeId: PROPOSAL_A }));
-    render(<GraphCanvasPane sessionId={SESSION_ID} />);
+    // Once the classify-node commit lands, classification=committed +
+    // substance=awaiting-proposal — the substance affordance
+    // (`pf_mod_node_card_substance_affordance`) mounts on the node
+    // card, and its `useProposeSetNodeSubstanceAction` hook reads
+    // `useWsClient()`. Wrap the render with a `<WsClientProvider>` +
+    // `<MemoryRouter>` (the affordance also reads the sessionId via
+    // `useParams`). The stub client returns a never-resolving promise
+    // — this assertion is about the kind label, not the affordance's
+    // click behaviour.
+    const stubClient: WsClient = {
+      status: () => 'open',
+      connect: () => undefined,
+      close: () => undefined,
+      send: () =>
+        new Promise(() => {
+          /* never resolves; this test doesn't click the affordance */
+        }),
+      trackSession: () => Promise.resolve(),
+      untrackSession: () => Promise.resolve(),
+      onEnvelope: () => () => undefined,
+      url: '/api/ws',
+    };
+    render(
+      <MemoryRouter initialEntries={[`/m/sessions/${SESSION_ID}/operate`]}>
+        <WsClientProvider auth={{ status: 'authenticated' }} client={stubClient}>
+          <Routes>
+            <Route
+              path="/m/sessions/:id/operate"
+              element={<GraphCanvasPane sessionId={SESSION_ID} />}
+            />
+          </Routes>
+        </WsClientProvider>
+      </MemoryRouter>,
+    );
     // en-US is initialized in beforeEach; `normative` resolves to
     // "Normative" per packages/i18n-catalogs/src/catalogs/en-US.json.
     expect(screen.getByTestId(`statement-node-kind-${NODE_A}`).textContent).toBe('Normative');

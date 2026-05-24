@@ -2374,3 +2374,230 @@ describe('StatementNode — inline classification palette mount gate (pf_mod_nod
     expect(screen.queryByTestId('node-card-classification-palette-n-gate-empty')).toBeNull();
   });
 });
+
+// ── 14. Inline substance-affordance mount gate
+//    (pf_mod_node_card_substance_affordance) -----------------------------
+//
+// `<StatementNode>` mounts the inline `<NodeCardSubstanceAffordance>`
+// ONLY when `classification ∈ {agreed, committed}` AND `substance ===
+// 'awaiting-proposal'`. The gate predicate pins the methodology's
+// sequential-capture order (classification must settle before
+// substance can be named) on the UI side; the server's
+// `pf_sequence_gate_server_enforced` is the integrity boundary.
+//
+// The affordance's internal click-fires-propose contract is covered in
+// `NodeCardSubstanceAffordance.test.tsx`. The cases here pin ONLY the
+// visibility gate — the affordance mounts when eligible, otherwise
+// not.
+
+describe('StatementNode — inline substance affordance mount gate (pf_mod_node_card_substance_affordance)', () => {
+  // The affordance uses `useWsClient()` + `useParams()` so we wrap
+  // renders in a `<WsClientProvider>` + `<MemoryRouter>` alongside the
+  // existing `<ReactFlowProvider>`. A stub client returns `'open'` and
+  // a no-op `send` — visibility tests don't dispatch clicks.
+  const renderWithProviders = async (ui: ReactElement): Promise<RenderResult> => {
+    // Visibility tests don't dispatch clicks, so `send` never fires.
+    // The stub returns a never-resolving promise to satisfy the
+    // `SendFn` signature without resolving a fake ack.
+    const stubClient: WsClient = {
+      status: () => 'open',
+      connect: () => undefined,
+      close: () => undefined,
+      send: () =>
+        new Promise(() => {
+          /* never resolves; visibility tests don't click */
+        }),
+      trackSession: () => Promise.resolve(),
+      untrackSession: () => Promise.resolve(),
+      onEnvelope: () => () => undefined,
+      url: '/api/ws',
+    };
+    let result!: RenderResult;
+    await act(() => {
+      result = rtlRender(ui, {
+        wrapper: ({ children }) => (
+          <MemoryRouter initialEntries={[`/sessions/${SESSION_ID_FOR_TESTS}/operate`]}>
+            <WsClientProvider auth={{ status: 'authenticated' }} client={stubClient}>
+              <Routes>
+                <Route
+                  path="/sessions/:id/operate"
+                  element={<ReactFlowProvider>{children}</ReactFlowProvider>}
+                />
+              </Routes>
+            </WsClientProvider>
+          </MemoryRouter>
+        ),
+      });
+      return Promise.resolve();
+    });
+    return result;
+  };
+
+  it('mounts the affordance when classification is committed AND substance is awaiting-proposal', async () => {
+    await renderWithProviders(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-subst-gate-committed',
+          data: {
+            wording: 'classification settled (committed)',
+            kind: 'fact',
+            facetStatuses: {
+              wording: 'committed',
+              classification: 'committed',
+              substance: 'awaiting-proposal',
+            },
+          },
+        })}
+      />,
+    );
+    expect(
+      screen.getByTestId('node-card-substance-affordance-n-subst-gate-committed'),
+    ).toBeTruthy();
+  });
+
+  it('mounts the affordance when classification is agreed AND substance is awaiting-proposal', async () => {
+    await renderWithProviders(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-subst-gate-agreed',
+          data: {
+            wording: 'classification settled (agreed)',
+            kind: 'fact',
+            facetStatuses: {
+              wording: 'committed',
+              classification: 'agreed',
+              substance: 'awaiting-proposal',
+            },
+          },
+        })}
+      />,
+    );
+    expect(screen.getByTestId('node-card-substance-affordance-n-subst-gate-agreed')).toBeTruthy();
+  });
+
+  it('does NOT mount the affordance when classification is proposed (still in flight)', async () => {
+    await renderWithProviders(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-subst-gate-class-proposed',
+          data: {
+            wording: 'classification still proposed',
+            kind: 'fact',
+            facetStatuses: {
+              wording: 'committed',
+              classification: 'proposed',
+              substance: 'awaiting-proposal',
+            },
+          },
+        })}
+      />,
+    );
+    expect(
+      screen.queryByTestId('node-card-substance-affordance-n-subst-gate-class-proposed'),
+    ).toBeNull();
+  });
+
+  it('does NOT mount the affordance when classification is disputed', async () => {
+    await renderWithProviders(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-subst-gate-class-disputed',
+          data: {
+            wording: 'classification disputed',
+            kind: 'fact',
+            facetStatuses: {
+              wording: 'committed',
+              classification: 'disputed',
+              substance: 'awaiting-proposal',
+            },
+          },
+        })}
+      />,
+    );
+    expect(
+      screen.queryByTestId('node-card-substance-affordance-n-subst-gate-class-disputed'),
+    ).toBeNull();
+  });
+
+  it('does NOT mount the affordance when classification is still awaiting-proposal', async () => {
+    await renderWithProviders(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-subst-gate-class-awaiting',
+          data: {
+            wording: 'wording settled',
+            kind: null,
+            facetStatuses: {
+              wording: 'committed',
+              classification: 'awaiting-proposal',
+              substance: 'awaiting-proposal',
+            },
+          },
+        })}
+      />,
+    );
+    expect(
+      screen.queryByTestId('node-card-substance-affordance-n-subst-gate-class-awaiting'),
+    ).toBeNull();
+  });
+
+  it('does NOT mount the affordance when substance facet has already been proposed', async () => {
+    await renderWithProviders(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-subst-gate-subst-proposed',
+          data: {
+            wording: 'substance already proposed',
+            kind: 'fact',
+            facetStatuses: {
+              wording: 'committed',
+              classification: 'committed',
+              substance: 'proposed',
+            },
+          },
+        })}
+      />,
+    );
+    expect(
+      screen.queryByTestId('node-card-substance-affordance-n-subst-gate-subst-proposed'),
+    ).toBeNull();
+  });
+
+  it('does NOT mount the affordance when substance facet is already committed', async () => {
+    await renderWithProviders(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-subst-gate-subst-committed',
+          data: {
+            wording: 'substance committed',
+            kind: 'fact',
+            facetStatuses: {
+              wording: 'committed',
+              classification: 'committed',
+              substance: 'committed',
+            },
+          },
+        })}
+      />,
+    );
+    expect(
+      screen.queryByTestId('node-card-substance-affordance-n-subst-gate-subst-committed'),
+    ).toBeNull();
+  });
+
+  it('does NOT mount the affordance when all facet states are absent (fresh node)', async () => {
+    await renderWithProviders(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-subst-gate-empty',
+          data: {
+            wording: 'no facet states at all',
+            kind: null,
+            // facetStatuses defaults to {}
+          },
+        })}
+      />,
+    );
+    expect(screen.queryByTestId('node-card-substance-affordance-n-subst-gate-empty')).toBeNull();
+  });
+});

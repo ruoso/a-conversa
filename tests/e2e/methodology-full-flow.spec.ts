@@ -520,6 +520,84 @@ test.describe
   });
 
   // ──────────────────────────────────────────────────────────────
+  // Phase 4.2 / 4.3 / 4.4 — N1's substance facet
+  // ──────────────────────────────────────────────────────────────
+  //
+  // Per ADR 0030 §1 + §8 + `pf_mod_node_card_substance_affordance`:
+  // substance is the THIRD facet in the per-node sequence (wording →
+  // classification → substance). With N1's classification facet
+  // committed (Phase 4.1), the moderator's node card now surfaces an
+  // inline substance affordance ("Holds" / "Doesn't hold"). Alice
+  // picks "holds" (i.e. value=`agreed`) → fires `set-node-substance`;
+  // ben + maria vote agree on N1.substance; alice commits.
+
+  test('Phase 4.2: alice clicks "Holds" on N1 node card — fires set-node-substance with value=agreed', async () => {
+    // Per `pf_mod_node_card_substance_affordance` (ADR 0030 §1 + §8 +
+    // §10): once the classification facet is committed, the node card
+    // surfaces an inline substance affordance. The moderator picks a
+    // value; the click dispatches a `set-node-substance` proposal
+    // keyed to the node id.
+    const n1 = _n1Id!;
+    // Nudge the layout — fresh cards from the post-commit projection
+    // may overlap; tidy-up ensures the affordance is clickable.
+    await alicePage.getByTestId('graph-tidy-up-button').click();
+    const holdsButton = alicePage.getByTestId(`node-card-substance-affordance-button-${n1}-agreed`);
+    await expect(holdsButton).toBeVisible({ timeout: 15_000 });
+    await holdsButton.click();
+    // The affordance unmounts once the set-node-substance proposal
+    // lands (substance facet moves past `awaiting-proposal`); waiting
+    // on the unmount is the round-trip proof.
+    await expect(holdsButton).toHaveCount(0, { timeout: 15_000 });
+  });
+
+  test("Phase 4.3: ben + maria vote agree on N1's substance facet", async () => {
+    // Per ADR 0030 §1 + `pf_mod_node_card_substance_affordance`: once
+    // alice has fired `set-node-substance` from the node-card
+    // affordance, the substance facet has a candidate and the
+    // participant detail panel surfaces a `substance` vote row.
+    const n1 = _n1Id!;
+    for (const page of [benPage, mariaPage]) {
+      await tapParticipantNode(page, n1);
+      await expect(page.getByTestId('participant-detail-panel-identity-wording')).toHaveText(
+        N1_WORDING,
+        { timeout: 15_000 },
+      );
+      const row = page.locator(
+        '[data-testid="participant-detail-panel-facet-row"][data-facet-name="substance"]',
+      );
+      await expect(row).toBeVisible({ timeout: 15_000 });
+      await row.getByTestId('participant-vote-button-agree').click();
+      await expect(row).toHaveAttribute('data-vote-state', 'enabled', { timeout: 15_000 });
+    }
+  });
+
+  test("Phase 4.4: alice commits N1's substance — the pending row clears once she clicks", async () => {
+    // Per `pf_mod_node_card_substance_affordance` the pending row
+    // that surfaces here is the `set-node-substance` proposal raised
+    // in Phase 4.2 (the prior classify-node row cleared in Phase 4.1
+    // when its classification facet committed). The set-node-
+    // substance summary is `Set substance = agreed (node <prefix>)`
+    // per `proposalSummary.ts`; the filter pins to that node id
+    // prefix.
+    const n1Prefix = _n1Id!.slice(0, 8);
+    const row = alicePage
+      .locator('[data-testid="pending-proposal-row"]')
+      .filter({
+        has: alicePage.locator('[data-testid="pending-proposal-row-summary"]', {
+          hasText: n1Prefix,
+        }),
+      })
+      .first();
+    await expect(row).toBeVisible({ timeout: 15_000 });
+
+    const commitButton = row.locator('[data-testid="commit-button"]');
+    await expect(commitButton).toBeEnabled({ timeout: 15_000 });
+    await commitButton.click();
+
+    await expect(row).toHaveCount(0, { timeout: 15_000 });
+  });
+
+  // ──────────────────────────────────────────────────────────────
   // Phase 5 — capture a second node N2 and propose a `supports` edge
   // ──────────────────────────────────────────────────────────────
 

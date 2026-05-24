@@ -308,6 +308,20 @@
         "errorRoleLabel": "Classification error"
       }
     },
+    "setNodeSubstanceAction": {
+      "affordanceAriaLabel": "Set substance — does this claim hold?",
+      "affordanceLegend": "Pick a substance value",
+      "valueButton": {
+        "agreed": "Holds",
+        "disputed": "Doesn't hold"
+      },
+      "valueButtonAriaLabel": "{label}",
+      "errorBanner": {
+        "timeout": "The set-substance request timed out — try again",
+        "unknown": "Could not propose the substance — please retry",
+        "errorRoleLabel": "Substance error"
+      }
+    },
     "annotateAction": {
       "submenu": {
         "header": "Add annotation",

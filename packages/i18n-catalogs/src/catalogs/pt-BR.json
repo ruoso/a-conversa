@@ -308,6 +308,20 @@
         "errorRoleLabel": "Erro de classificação"
       }
     },
+    "setNodeSubstanceAction": {
+      "affordanceAriaLabel": "Definir substância — esta alegação se sustenta?",
+      "affordanceLegend": "Escolha um valor de substância",
+      "valueButton": {
+        "agreed": "Se sustenta",
+        "disputed": "Não se sustenta"
+      },
+      "valueButtonAriaLabel": "{label}",
+      "errorBanner": {
+        "timeout": "A solicitação de definir substância expirou — tente novamente",
+        "unknown": "Não foi possível propor a substância — por favor tente novamente",
+        "errorRoleLabel": "Erro de substância"
+      }
+    },
     "annotateAction": {
       "submenu": {
         "header": "Adicionar anotação",
