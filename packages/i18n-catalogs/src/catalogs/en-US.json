@@ -666,6 +666,16 @@
       "wireError": "Axiom-mark failed: {message} ({code})",
       "timeoutError": "The axiom-mark request timed out. Check your connection and try again.",
       "errorRoleLabel": "Axiom-mark error"
+    },
+    "withdrawAgreementButton": {
+      "label": "Withdraw agreement",
+      "confirmLabel": "Confirm withdraw",
+      "inFlightLabel": "Withdrawing…",
+      "ariaLabel": "Withdraw your prior agreement on this facet",
+      "ariaLabelConfirm": "Tap again to confirm withdrawing your agreement",
+      "wireError": "Withdraw failed: {message} ({code})",
+      "timeoutError": "The withdraw request timed out. Check your connection and try again.",
+      "errorRoleLabel": "Withdraw error"
     }
   },
   "audience": {

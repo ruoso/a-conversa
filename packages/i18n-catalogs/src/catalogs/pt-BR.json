@@ -666,6 +666,16 @@
       "wireError": "A marcação de axioma falhou: {message} ({code})",
       "timeoutError": "A requisição de marcação de axioma expirou. Verifique sua conexão e tente novamente.",
       "errorRoleLabel": "Erro de marcação de axioma"
+    },
+    "withdrawAgreementButton": {
+      "label": "Retirar concordância",
+      "confirmLabel": "Confirmar retirada",
+      "inFlightLabel": "Retirando…",
+      "ariaLabel": "Retirar sua concordância anterior nesta faceta",
+      "ariaLabelConfirm": "Toque novamente para confirmar a retirada da sua concordância",
+      "wireError": "A retirada falhou: {message} ({code})",
+      "timeoutError": "A requisição de retirada expirou. Verifique sua conexão e tente novamente.",
+      "errorRoleLabel": "Erro de retirada"
     }
   },
   "audience": {

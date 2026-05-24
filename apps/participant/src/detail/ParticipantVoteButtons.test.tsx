@@ -40,6 +40,7 @@ import type { ReactElement, ReactNode } from 'react';
 
 import { ParticipantVoteButtons, derivePendingFacetProposals } from './ParticipantVoteButtons';
 import { resetVoteActionStore } from './useVoteAction';
+import { resetWithdrawAgreementActionStore } from './useWithdrawAgreementAction';
 import { useWsStore } from '../ws/wsStore';
 import { WsClientProvider } from '@a-conversa/shell';
 import type { SendFn, WsClient, WsClientStatus } from '@a-conversa/shell';
@@ -353,6 +354,7 @@ function commitEvent(proposalId: string, seq: number): Event {
 beforeEach(() => {
   useWsStore.getState().reset();
   resetVoteActionStore();
+  resetWithdrawAgreementActionStore();
   act(() => {
     useWsStore.getState().setConnectionStatus('open');
   });
@@ -525,7 +527,7 @@ describe('<ParticipantVoteButtons> — per-status row content', () => {
     ).toBe('claim');
   });
 
-  it('a committed classification flips the row to `committed` with the placeholder withdraw button (no agree/dispute)', () => {
+  it('a committed classification flips the row to `committed` with the wired withdraw button (no agree/dispute)', () => {
     const fake = makeFakeClient();
     const events: Event[] = [
       joinedEvent(1, PARTICIPANT_BEN),
@@ -554,8 +556,12 @@ describe('<ParticipantVoteButtons> — per-status row content', () => {
     expect(classifyRow.getAttribute('data-facet-status')).toBe('committed');
     expect(within(classifyRow).queryByTestId('participant-vote-button-agree')).toBeNull();
     expect(within(classifyRow).queryByTestId('participant-vote-button-dispute')).toBeNull();
-    // Placeholder withdraw button — wired by
-    // `pf_part_withdraw_agreement_action` downstream.
+    // Wired withdraw button — fires `withdraw-agreement` via
+    // `useWithdrawAgreementAction` (per
+    // `pf_part_withdraw_agreement_action`). The render-side contract
+    // here just asserts the button is present; the click-side
+    // contract is covered by the "wired withdraw" describe-block
+    // below.
     expect(within(classifyRow).getByTestId('participant-vote-button-withdraw')).toBeDefined();
   });
 
@@ -955,5 +961,193 @@ describe('derivePendingFacetProposals — structural sub-kinds', () => {
     const events: Event[] = [annotateEdgeProposalEvent(1)];
     const out = derivePendingFacetProposals(events, 'edge', EDGE_E_ID);
     expect(out.get('proposal')).toBe(PROPOSAL_ANNOTATE_ID);
+  });
+});
+
+// --------------------------------------------------------------------
+// Wired withdraw button — per `pf_part_withdraw_agreement_action`. On
+// `agreed` / `committed` facet rows the withdraw button binds to
+// `useWithdrawAgreementAction` and fires a `withdraw-agreement` envelope
+// on the second click of a two-stage confirmation gesture. The first
+// click ARMS the button (`data-withdraw-armed="true"`, label flips to
+// the localized confirm label); the second click fires the wire send.
+// --------------------------------------------------------------------
+
+describe('<ParticipantVoteButtons> — wired withdraw button on committed facet rows', () => {
+  const committedClassificationEvents = (): Event[] => [
+    joinedEvent(1, PARTICIPANT_BEN),
+    joinedEvent(2, PARTICIPANT_MARIA),
+    nodeCreatedEvent(3, 'A first claim'),
+    classifyNodeProposalEvent(4),
+    voteEvent(5, PROPOSAL_CLASSIFY_ID, PARTICIPANT_BEN, 'agree'),
+    voteEvent(6, PROPOSAL_CLASSIFY_ID, PARTICIPANT_MARIA, 'agree'),
+    commitEvent(PROPOSAL_CLASSIFY_ID, 7),
+  ];
+
+  it('renders the withdraw button in the idle (un-armed) state on a committed facet row', () => {
+    const fake = makeFakeClient();
+    const events = committedClassificationEvents();
+    const facetStatusIndex = computeFacetStatuses(events);
+    render(
+      <Wrapper client={fake.client}>
+        <ParticipantVoteButtons
+          events={events}
+          entityKind="node"
+          entityId={NODE_A_ID}
+          facetStatusIndex={facetStatusIndex}
+          currentParticipantId={PARTICIPANT_BEN}
+        />
+      </Wrapper>,
+    );
+    const classifyRow = screen
+      .getAllByTestId('participant-detail-panel-facet-row')
+      .find((r) => r.getAttribute('data-facet-name') === 'classification');
+    if (!classifyRow) throw new Error('classification row missing');
+    const withdrawBtn = within(classifyRow).getByTestId('participant-vote-button-withdraw');
+    expect(withdrawBtn.getAttribute('data-withdraw-armed')).toBe('false');
+    expect(withdrawBtn.getAttribute('data-withdraw-state')).toBe('enabled');
+    expect(withdrawBtn.hasAttribute('disabled')).toBe(false);
+  });
+
+  it('first click ARMS the button — flips data-withdraw-armed to "true" but does NOT fire the envelope', () => {
+    const fake = makeFakeClient();
+    const events = committedClassificationEvents();
+    const facetStatusIndex = computeFacetStatuses(events);
+    render(
+      <Wrapper client={fake.client}>
+        <ParticipantVoteButtons
+          events={events}
+          entityKind="node"
+          entityId={NODE_A_ID}
+          facetStatusIndex={facetStatusIndex}
+          currentParticipantId={PARTICIPANT_BEN}
+        />
+      </Wrapper>,
+    );
+    const classifyRow = screen
+      .getAllByTestId('participant-detail-panel-facet-row')
+      .find((r) => r.getAttribute('data-facet-name') === 'classification');
+    if (!classifyRow) throw new Error('classification row missing');
+    const withdrawBtn = within(classifyRow).getByTestId('participant-vote-button-withdraw');
+    act(() => {
+      fireEvent.click(withdrawBtn);
+    });
+    expect(fake.calls.length).toBe(0);
+    const after = screen
+      .getAllByTestId('participant-detail-panel-facet-row')
+      .find((r) => r.getAttribute('data-facet-name') === 'classification');
+    if (!after) throw new Error('classification row missing post-click');
+    const armedBtn = within(after).getByTestId('participant-vote-button-withdraw');
+    expect(armedBtn.getAttribute('data-withdraw-armed')).toBe('true');
+    expect(armedBtn.getAttribute('data-withdraw-state')).toBe('armed');
+  });
+
+  it('second click fires exactly one withdraw-agreement envelope with the canonical six-field payload', () => {
+    const fake = makeFakeClient();
+    const events = committedClassificationEvents();
+    const facetStatusIndex = computeFacetStatuses(events);
+    render(
+      <Wrapper client={fake.client}>
+        <ParticipantVoteButtons
+          events={events}
+          entityKind="node"
+          entityId={NODE_A_ID}
+          facetStatusIndex={facetStatusIndex}
+          currentParticipantId={PARTICIPANT_BEN}
+        />
+      </Wrapper>,
+    );
+    const classifyRow = screen
+      .getAllByTestId('participant-detail-panel-facet-row')
+      .find((r) => r.getAttribute('data-facet-name') === 'classification');
+    if (!classifyRow) throw new Error('classification row missing');
+    const withdrawBtn = within(classifyRow).getByTestId('participant-vote-button-withdraw');
+    // First click — arm.
+    act(() => {
+      fireEvent.click(withdrawBtn);
+    });
+    expect(fake.calls.length).toBe(0);
+    // Second click — fire.
+    const armedRow = screen
+      .getAllByTestId('participant-detail-panel-facet-row')
+      .find((r) => r.getAttribute('data-facet-name') === 'classification');
+    if (!armedRow) throw new Error('classification row missing pre-second-click');
+    const armedBtn = within(armedRow).getByTestId('participant-vote-button-withdraw');
+    act(() => {
+      fireEvent.click(armedBtn);
+    });
+    expect(fake.calls.length).toBe(1);
+    expect(fake.calls[0]?.type).toBe('withdraw-agreement');
+    expect(fake.calls[0]?.payload).toEqual({
+      sessionId: SESSION_ID,
+      expectedSequence: 0,
+      entity_kind: 'node',
+      entity_id: NODE_A_ID,
+      facet: 'classification',
+      participant: PARTICIPANT_BEN,
+    });
+  });
+
+  it('the button is disabled when no currentParticipantId is threaded (defensive guard against the wire payload missing its `participant` field)', () => {
+    const fake = makeFakeClient();
+    const events = committedClassificationEvents();
+    const facetStatusIndex = computeFacetStatuses(events);
+    render(
+      <Wrapper client={fake.client}>
+        <ParticipantVoteButtons
+          events={events}
+          entityKind="node"
+          entityId={NODE_A_ID}
+          facetStatusIndex={facetStatusIndex}
+          // intentionally omitting currentParticipantId
+        />
+      </Wrapper>,
+    );
+    const classifyRow = screen
+      .getAllByTestId('participant-detail-panel-facet-row')
+      .find((r) => r.getAttribute('data-facet-name') === 'classification');
+    if (!classifyRow) throw new Error('classification row missing');
+    const withdrawBtn = within(classifyRow).getByTestId('participant-vote-button-withdraw');
+    expect(withdrawBtn.hasAttribute('disabled')).toBe(true);
+    act(() => {
+      fireEvent.click(withdrawBtn);
+    });
+    // A disabled button's onClick does not fire — no envelope, no
+    // arming.
+    expect(fake.calls.length).toBe(0);
+    expect(withdrawBtn.getAttribute('data-withdraw-armed')).toBe('false');
+  });
+
+  it('the structural "proposal" row keeps its withdraw button as a PLACEHOLDER — clicking does not fire any envelope', () => {
+    // Per ADR 0030 §3 + the file's comments: the structural withdraw
+    // flow is a follow-up; the `'proposal'` facet row's withdraw
+    // button is still a placeholder. This regression test pins the
+    // distinction so a future "wire structural withdraw" task
+    // doesn't silently flip the test expectations on the facet arm.
+    const fake = makeFakeClient();
+    const events: Event[] = [nodeCreatedEvent(1, 'parent'), decomposeProposalEvent(2)];
+    const facetStatusIndex = computeFacetStatuses(events);
+    render(
+      <Wrapper client={fake.client}>
+        <ParticipantVoteButtons
+          events={events}
+          entityKind="node"
+          entityId={NODE_A_ID}
+          facetStatusIndex={facetStatusIndex}
+          currentParticipantId={PARTICIPANT_BEN}
+        />
+      </Wrapper>,
+    );
+    const proposalRow = screen
+      .getAllByTestId('participant-detail-panel-facet-row')
+      .find((r) => r.getAttribute('data-facet-name') === 'proposal');
+    if (!proposalRow) throw new Error('proposal row missing');
+    const withdrawBtn = within(proposalRow).getByTestId('participant-vote-button-withdraw');
+    expect(withdrawBtn.getAttribute('data-placeholder')).toBe('true');
+    expect(withdrawBtn.hasAttribute('disabled')).toBe(true);
+    act(() => {
+      fireEvent.click(withdrawBtn);
+    });
+    expect(fake.calls.length).toBe(0);
   });
 });

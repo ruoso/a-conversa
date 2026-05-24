@@ -48,3 +48,13 @@ A new event kind needs a UI surface that emits it. Without this task, participan
 ## Open questions
 
 (none — all decided per ADR 0030)
+
+## Status
+
+**Done** — 2026-05-24.
+
+- New `apps/participant/src/detail/useWithdrawAgreementAction.ts` hook mirrors `useVoteAction`'s shape: returns `{ withdraw, inFlight, lastError }` keyed by `(entity_kind, entity_id, facet)`; per-slot Zustand-backed in-flight isolation so concurrent withdraws on different facet rows don't collide. On send, dispatches `useWsClient().send('withdraw-agreement', { entity_kind, entity_id, facet, participant })` and surfaces wire / timeout errors as typed `lastError`.
+- `apps/participant/src/detail/ParticipantVoteButtons.tsx` wires the previously-placeholder withdraw button on `agreed` / `committed` facet rows; a row-local two-stage confirmation gesture (per `docs/participant-ui.md` "two-tap…deliberately one extra tap") arms on first tap and fires on second. Threads `currentParticipantId` to `FacetRow`; adds `data-withdraw-state` / `data-withdraw-armed` test hooks plus an inline wire-error region. Stale `TODO(pf_part_withdraw_agreement_action)` removed. The structural `'proposal'` row still renders a non-wired placeholder — withdrawing a proposal-keyed agreement isn't part of ADR 0030's scope (structural sub-kinds retain their proposal-keyed lifecycle).
+- New ADR 0024-compliant catalog entries under `participant.withdrawAgreementButton.*` (label, confirmLabel, inFlightLabel, ariaLabel, ariaLabelConfirm, wireError, timeoutError, errorRoleLabel) in `packages/i18n-catalogs/src/catalogs/{en-US,pt-BR,es-419}.json`; matching PENDING review entries added to `pt-BR.review.json` + `es-419.review.json`.
+- Vitest coverage: new `useWithdrawAgreementAction.test.tsx` (13 cases — success path, failure path, in-flight isolation across slots); `ParticipantVoteButtons.test.tsx` gains a 5-case "wired withdraw button" describe block.
+- Verification: `pnpm run check` green; `pnpm run test:smoke` 4395 passing (+18), 0 skipped; `pnpm run test:behavior:smoke` 262 / 1803 unchanged; `pnpm run test:e2e:smoke` 111 + 0 fixme unchanged.

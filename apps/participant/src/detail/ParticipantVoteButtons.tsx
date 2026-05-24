@@ -66,7 +66,7 @@
 //           edge — the always-rendered shape makes the methodology's
 //           per-facet structure visible from the first frame).
 
-import { useMemo, type ReactElement } from 'react';
+import { useMemo, useState, type ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 import type {
   EdgeRole,
@@ -79,6 +79,7 @@ import type {
 import type { FacetName, FacetStatus, FacetStatusIndex } from '../graph/facetStatus';
 
 import { useVoteAction, type VoteChoice } from './useVoteAction';
+import { useWithdrawAgreementAction } from './useWithdrawAgreementAction';
 
 /**
  * Facet name surfaced by the per-row affordance. Extends the three real
@@ -567,6 +568,7 @@ export function ParticipantVoteButtons(props: ParticipantVoteButtonsProps): Reac
             status={status}
             proposalId={proposalId}
             candidateValue={candidateValue}
+            currentParticipantId={currentParticipantId}
           />
         );
       })}
@@ -579,6 +581,7 @@ export function ParticipantVoteButtons(props: ParticipantVoteButtonsProps): Reac
           status="proposed"
           proposalId={structuralProposalId}
           candidateValue={undefined}
+          currentParticipantId={currentParticipantId}
         />
       ) : null}
     </section>
@@ -660,6 +663,16 @@ interface FacetRowProps {
   readonly status: FacetStatus;
   readonly proposalId: string | undefined;
   readonly candidateValue: string | undefined;
+  /**
+   * The authenticated participant's user id — threaded from the
+   * `<ParticipantVoteButtons>` block to the row. Required for the
+   * `withdraw-agreement` wire payload (per
+   * `wsWithdrawAgreementPayloadSchema`); when omitted, the withdraw
+   * button still renders (for visual completeness on test stubs that
+   * don't thread the prop) but its click is a no-op. The
+   * `OperateRoute.tsx` caller always threads it.
+   */
+  readonly currentParticipantId: string | undefined;
 }
 
 /**
@@ -670,19 +683,37 @@ interface FacetRowProps {
  *
  *   - `awaiting-proposal` → empty-state body, no buttons.
  *   - `proposed` / `disputed` → candidate value + agree/dispute buttons.
- *   - `agreed` / `committed` → candidate value + placeholder withdraw
- *     button (TODO: wired by `pf_part_withdraw_agreement_action`).
+ *   - `agreed` / `committed` → candidate value + wired withdraw button
+ *     (fires `withdraw-agreement` envelope via
+ *     `useWithdrawAgreementAction` per ADR 0030 §3 +
+ *     `pf_part_withdraw_agreement_action`). The button uses a
+ *     two-stage confirmation gesture (first click arms; second click
+ *     fires) — the methodology treats withdrawal as a significant
+ *     gesture so the deliberate extra tap is required.
  *   - `withdrawn` → candidate value + agree/dispute buttons.
  *   - `meta-disagreement` → candidate values, no buttons.
  *
  * The structural `'proposal'`-facet row uses the same three-button
  * shape it had pre-refactor (agree / dispute / withdraw) — the
  * structural unanimity walk still reads the proposal-keyed
- * `perParticipantVotes` map on the server.
+ * `perParticipantVotes` map on the server. The `'withdraw'` arm on
+ * the structural row remains a placeholder; the structural withdraw
+ * flow has its own follow-up task.
  */
 function FacetRow(props: FacetRowProps): ReactElement {
-  const { facet, entityKind, entityId, status, proposalId, candidateValue } = props;
+  const { facet, entityKind, entityId, status, proposalId, candidateValue, currentParticipantId } =
+    props;
   const { t } = useTranslation();
+
+  // Two-stage confirmation gesture for the wired withdraw button. The
+  // first click arms the button (renders the "Confirm withdraw" label);
+  // the second click fires the `withdraw-agreement` envelope. Per the
+  // refinement's Decisions block + the prior `part_withdraw_dialog`
+  // precedent — withdrawal is a significant gesture so a deliberate
+  // extra tap is required. State lives row-local (not on the
+  // module-scoped store) because it's a transient UI gesture, not a
+  // wire-level concern.
+  const [withdrawArmed, setWithdrawArmed] = useState(false);
 
   // The wired vote-action hook is bound per-arm:
   //
@@ -733,6 +764,32 @@ function FacetRow(props: FacetRowProps): ReactElement {
         : ({ proposal_id: '' } as const);
   const { castVote, inFlight, lastError } = useVoteAction(voteArgs);
 
+  // Bind the withdraw-agreement hook for the row. The hook is keyed
+  // by the `(entity_kind, entity_id, facet)` triple; on the structural
+  // `'proposal'`-facet row + on the awaiting-proposal branches the
+  // binding is inert (no withdraw button renders). The hook narrows
+  // `entity_kind` to `'node' | 'edge'` and `facet` to the four wire-
+  // schema values (`classification` / `substance` / `wording` /
+  // `shape`); we pass a defensively-narrowed pair (falling back to
+  // dummy values for the structural `'proposal'` arm where no
+  // withdraw is ever fired — no buttons render on that branch).
+  // `currentParticipantId` is required by the wire payload; the row
+  // gates the button's click on its presence (see below).
+  const withdrawFacet: 'classification' | 'substance' | 'wording' | 'shape' =
+    facet === 'classification' || facet === 'substance' || facet === 'wording' || facet === 'shape'
+      ? facet
+      : 'classification';
+  const {
+    withdraw,
+    inFlight: withdrawInFlight,
+    lastError: withdrawLastError,
+  } = useWithdrawAgreementAction({
+    entity_kind: voteEntityKind ?? 'node',
+    entity_id: entityId,
+    facet: withdrawFacet,
+    participantId: currentParticipantId ?? '',
+  });
+
   const wireMessage = useMemo<string | undefined>(() => {
     if (lastError === undefined) return undefined;
     return lastError.code === 'timeout'
@@ -743,7 +800,22 @@ function FacetRow(props: FacetRowProps): ReactElement {
         });
   }, [lastError, t]);
 
+  const withdrawWireMessage = useMemo<string | undefined>(() => {
+    if (withdrawLastError === undefined) return undefined;
+    return withdrawLastError.code === 'timeout'
+      ? withdrawLastError.message
+      : t('participant.withdrawAgreementButton.wireError', {
+          code: withdrawLastError.code,
+          message: withdrawLastError.message,
+        });
+  }, [withdrawLastError, t]);
+
   const voteState: 'enabled' | 'in-flight' = inFlight ? 'in-flight' : 'enabled';
+  const withdrawState: 'enabled' | 'armed' | 'in-flight' = withdrawInFlight
+    ? 'in-flight'
+    : withdrawArmed
+      ? 'armed'
+      : 'enabled';
 
   // Pick the row's button vocabulary by status. `null` means "no
   // buttons" (awaiting-proposal + meta-disagreement). The
@@ -757,15 +829,15 @@ function FacetRow(props: FacetRowProps): ReactElement {
         return null;
       case 'agreed':
       case 'committed':
-        // TODO(pf_part_withdraw_agreement_action): replace the
-        // single-arm 'withdraw' button with a wired
-        // `useWithdrawAgreementAction` hook that emits the
-        // `withdraw-agreement` event (per ADR 0030 §3). For now the
-        // arm is a placeholder rendered for visual completeness.
-        // Clicking it is a no-op — `useVoteAction` no longer accepts
-        // a `'withdraw'` choice (the hook's `VoteChoice` is now
-        // `'agree' | 'dispute'` only per the
-        // `pf_part_vote_action_facet_keyed` refinement).
+        // The single-arm 'withdraw' button is now WIRED — clicking
+        // arms a two-stage confirmation, and a second click fires
+        // the `withdraw-agreement` envelope via
+        // `useWithdrawAgreementAction` (per ADR 0030 §3 +
+        // `pf_part_withdraw_agreement_action`). On success the row's
+        // status walks to `'withdrawn'` per the projection (Rule 4
+        // in `deriveFacetStatus`); the button disappears as the row
+        // re-renders into the `withdrawn` branch (which renders
+        // agree/dispute buttons instead).
         return ['withdraw'] as const;
       case 'proposed':
       case 'disputed':
@@ -825,6 +897,7 @@ function FacetRow(props: FacetRowProps): ReactElement {
       data-facet-name={facet}
       data-facet-status={status}
       data-vote-state={voteState}
+      data-withdraw-state={withdrawState}
       data-proposal-id={proposalId}
       className="flex flex-col gap-1 rounded border border-slate-200 p-2"
     >
@@ -835,16 +908,23 @@ function FacetRow(props: FacetRowProps): ReactElement {
         {choices !== null ? (
           <div className="flex items-center gap-1">
             {choices.map((choice) => {
-              // The `'withdraw'` button is ALWAYS a placeholder now —
-              // `useVoteAction`'s `VoteChoice` is `'agree' | 'dispute'`
-              // only per the `pf_part_vote_action_facet_keyed`
-              // refinement. The wired withdraw gesture lands in
-              // `pf_part_withdraw_agreement_action` downstream (for
-              // facet rows) + a structural-arm follow-up (for the
-              // synthetic `'proposal'` row). Until then the button
-              // renders for visual completeness but does NOT emit a
-              // wire envelope on click.
-              const isPlaceholderWithdraw = choice === 'withdraw';
+              // The `'withdraw'` button has two flavors:
+              //
+              //   - On the synthetic `'proposal'`-facet row (structural
+              //     sub-kinds) it remains a PLACEHOLDER — the structural
+              //     withdraw flow is a follow-up task; `useVoteAction`'s
+              //     `VoteChoice` is `'agree' | 'dispute'` only so we
+              //     cannot route this through the vote envelope.
+              //   - On a real facet row in the `agreed` / `committed`
+              //     branch it is WIRED to `useWithdrawAgreementAction`
+              //     (per `pf_part_withdraw_agreement_action`). The
+              //     button uses a two-stage confirmation gesture
+              //     (first click arms; second click fires).
+              //
+              // We branch on `facet === 'proposal'` to discriminate the
+              // two cases.
+              const isPlaceholderWithdraw = choice === 'withdraw' && facet === 'proposal';
+              const isWiredWithdraw = choice === 'withdraw' && facet !== 'proposal';
               // Skip rendering the agree / dispute buttons when no
               // proposalId is available AND the row is the structural
               // synthetic `'proposal'` arm (the row needs a proposal
@@ -853,15 +933,85 @@ function FacetRow(props: FacetRowProps): ReactElement {
               // triple instead — the proposalId is irrelevant to the
               // dispatch — so the agree / dispute buttons render
               // regardless of proposalId availability.
-              if (!isPlaceholderWithdraw && facet === 'proposal' && proposalId === undefined) {
+              if (
+                !isPlaceholderWithdraw &&
+                !isWiredWithdraw &&
+                facet === 'proposal' &&
+                proposalId === undefined
+              ) {
                 return null;
               }
               // `'withdraw'` is no longer a member of the hook's
               // `VoteChoice`; the click handler never invokes
               // `castVote('withdraw')`. The narrow happens at the
-              // `isPlaceholderWithdraw` branch above.
+              // `isPlaceholderWithdraw` / `isWiredWithdraw` branches
+              // above.
               const wiredChoice: VoteChoice | null =
                 choice === 'agree' ? 'agree' : choice === 'dispute' ? 'dispute' : null;
+              if (isWiredWithdraw) {
+                // The wired withdraw arm — fires `withdraw-agreement`.
+                // Two-stage gesture: first click arms (re-labels to
+                // "Confirm withdraw"); second click fires the
+                // envelope. A wire-error or success returns the
+                // button to the idle state. Disabled when in-flight
+                // OR when no `currentParticipantId` is available
+                // (the wire payload requires it; the route always
+                // threads it but defensive test stubs may not).
+                const cannotFire =
+                  withdrawInFlight ||
+                  currentParticipantId === undefined ||
+                  currentParticipantId === '';
+                return (
+                  <button
+                    key={choice}
+                    type="button"
+                    data-testid={VOTE_BUTTON_TESTID[choice]}
+                    data-vote-choice={choice}
+                    data-vote-state={voteState}
+                    data-withdraw-state={withdrawState}
+                    data-withdraw-armed={withdrawArmed ? 'true' : 'false'}
+                    disabled={cannotFire}
+                    aria-disabled={cannotFire}
+                    aria-label={
+                      withdrawArmed
+                        ? t('participant.withdrawAgreementButton.ariaLabelConfirm')
+                        : t('participant.withdrawAgreementButton.ariaLabel')
+                    }
+                    onClick={
+                      cannotFire
+                        ? undefined
+                        : () => {
+                            if (!withdrawArmed) {
+                              // First click — arm the button.
+                              setWithdrawArmed(true);
+                              return;
+                            }
+                            // Second click — fire the envelope. The
+                            // hook flips its in-flight slot
+                            // synchronously inside `withdraw()`; we
+                            // disarm after the call so a wire error
+                            // doesn't leave the row stuck in the
+                            // armed state on retry.
+                            setWithdrawArmed(false);
+                            void withdraw();
+                          }
+                    }
+                    className={
+                      withdrawInFlight
+                        ? 'rounded border border-slate-200 bg-slate-100 px-2 py-1 text-xs text-slate-400'
+                        : withdrawArmed
+                          ? 'rounded border border-amber-400 bg-amber-50 px-2 py-1 text-xs text-amber-800 hover:bg-amber-100'
+                          : 'rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 hover:bg-slate-50'
+                    }
+                  >
+                    {withdrawInFlight
+                      ? t('participant.withdrawAgreementButton.inFlightLabel')
+                      : withdrawArmed
+                        ? t('participant.withdrawAgreementButton.confirmLabel')
+                        : t('participant.withdrawAgreementButton.label')}
+                  </button>
+                );
+              }
               return (
                 <button
                   key={choice}
@@ -905,6 +1055,17 @@ function FacetRow(props: FacetRowProps): ReactElement {
           className="text-[10px] text-red-700"
         >
           {wireMessage}
+        </p>
+      ) : null}
+      {withdrawWireMessage !== undefined ? (
+        <p
+          data-testid="participant-withdraw-agreement-button-wire-error"
+          data-facet-name={facet}
+          role="alert"
+          aria-label={t('participant.withdrawAgreementButton.errorRoleLabel')}
+          className="text-[10px] text-red-700"
+        >
+          {withdrawWireMessage}
         </p>
       ) : null}
     </div>

@@ -666,6 +666,16 @@
       "wireError": "La marca de axioma falló: {message} ({code})",
       "timeoutError": "La solicitud de marca de axioma expiró. Revisa tu conexión e inténtalo de nuevo.",
       "errorRoleLabel": "Error de marca de axioma"
+    },
+    "withdrawAgreementButton": {
+      "label": "Retirar acuerdo",
+      "confirmLabel": "Confirmar retiro",
+      "inFlightLabel": "Retirando…",
+      "ariaLabel": "Retirar tu acuerdo previo en esta faceta",
+      "ariaLabelConfirm": "Toca de nuevo para confirmar el retiro de tu acuerdo",
+      "wireError": "El retiro falló: {message} ({code})",
+      "timeoutError": "La solicitud de retiro expiró. Revisa tu conexión e inténtalo de nuevo.",
+      "errorRoleLabel": "Error de retiro"
     }
   },
   "audience": {
