@@ -316,6 +316,26 @@ When(
 );
 
 When(
+  'a debater constructs an agree action against the pending proposal',
+  function (this: AConversaWorld) {
+    const projection = this.scratch['voteProjection'] as Projection;
+    const action: VoteAction = {
+      kind: 'vote',
+      requester: VL_DEBATER_A_ID,
+      sessionId: VL_SESSION_ID,
+      eventId: VL_NEW_EVENT_ID,
+      sequence: nextSequence(projection),
+      actor: VL_DEBATER_A_ID,
+      createdAt: tsAt(20),
+      proposalEventId: VL_PROPOSAL_ID,
+      vote: 'agree',
+      votedAt: tsAt(20),
+    };
+    this.scratch['voteAction'] = action;
+  },
+);
+
+When(
   'an outsider constructs an agree action against the pending proposal',
   function (this: AConversaWorld) {
     const projection = this.scratch['voteProjection'] as Projection;
@@ -363,6 +383,57 @@ Then(
       assert.equal(ev.payload.proposal_id, VL_PROPOSAL_ID);
       assert.equal(ev.payload.choice, expectedVote);
     }
+  },
+);
+
+Then(
+  /^the result carries a single facet-keyed vote event against the classification facet of the node with choice "([^"]+)"$/,
+  function (this: AConversaWorld, expectedChoice: string) {
+    const result = this.scratch['methodologyResult'] as ValidationResult;
+    assert.ok(result.ok, `expected Valid, got ${JSON.stringify(result)}`);
+    if (!result.ok) return;
+    assert.equal(result.events.length, 1, 'expected exactly one event');
+    const ev = result.events[0]!;
+    assert.equal(ev.kind, 'vote');
+    if (ev.kind !== 'vote') return;
+    // Per ADR 0030 §2 + `pf_vote_handler_facet_keyed`: votes against
+    // facet-valued sub-kinds emit `target: 'facet'`. Confirm the
+    // discriminator and the `(entity_kind, entity_id, facet)` triple.
+    assert.equal(ev.payload.target, 'facet');
+    if (ev.payload.target !== 'facet') return;
+    assert.equal(ev.payload.entity_kind, 'node');
+    assert.equal(ev.payload.entity_id, VL_NODE_ID);
+    assert.equal(ev.payload.facet, 'classification');
+    assert.equal(ev.payload.choice, expectedChoice);
+    // The facet arm has no `proposal_id` field — Zod's discriminated
+    // union would reject one if present, and the engine doesn't emit
+    // one.
+    assert.ok(
+      !('proposal_id' in ev.payload),
+      `facet-keyed vote payload must not carry proposal_id: got ${JSON.stringify(ev.payload)}`,
+    );
+
+    // Round-trip pin: apply the resulting event to the projection
+    // and confirm the facet's `perParticipant` map captures the
+    // requester's choice.
+    const projection = this.scratch['voteProjection'] as Projection;
+    applyEvent(projection, {
+      id: ev.id,
+      sessionId: ev.sessionId,
+      sequence: ev.sequence,
+      kind: 'vote',
+      actor: ev.actor,
+      payload: ev.payload,
+      createdAt: ev.createdAt,
+    });
+    const node = projection.getNode(VL_NODE_ID);
+    assert.ok(node, 'expected node to be present after applying vote');
+    const record = node.classificationFacet.perParticipant.get(VL_DEBATER_A_ID);
+    assert.ok(
+      record !== undefined,
+      "expected debater-A's vote to be recorded in the classification facet's perParticipant map",
+    );
+    assert.equal(record.vote, expectedChoice);
   },
 );
 

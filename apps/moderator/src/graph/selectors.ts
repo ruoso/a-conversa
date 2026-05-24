@@ -719,13 +719,21 @@ export function projectVotesByFacet(events: readonly Event[]): Map<string, Map<F
       continue;
     }
     if (event.kind === 'vote') {
-      // TODO(pf_vote_handler_facet_keyed): vote payloads are now a
-      // `target`-discriminated union. Read only the proposal-keyed
-      // arm until the downstream task lands facet-keyed emission.
-      if (event.payload.target !== 'proposal') continue;
-      const target = proposalTarget.get(event.payload.proposal_id);
-      if (target === undefined) continue;
-      const { entityId, facet } = target;
+      // Per ADR 0030 §2: vote payloads are a `target`-discriminated
+      // union. Resolve to the `(entityId, facet)` pair from either
+      // arm — the facet-keyed arm carries it directly; the proposal-
+      // keyed arm looks it up via the proposal-id → target map.
+      let entityId: string;
+      let facet: FacetName;
+      if (event.payload.target === 'facet') {
+        entityId = event.payload.entity_id;
+        facet = event.payload.facet;
+      } else {
+        const target = proposalTarget.get(event.payload.proposal_id);
+        if (target === undefined) continue;
+        entityId = target.entityId;
+        facet = target.facet;
+      }
 
       let perEntity = out.get(entityId);
       if (perEntity === undefined) {
@@ -831,9 +839,13 @@ export function projectVotesByProposal(events: readonly Event[]): Map<string, Vo
       continue;
     }
     if (event.kind === 'vote') {
-      // TODO(pf_vote_handler_facet_keyed): vote payloads are now a
-      // `target`-discriminated union. Read only the proposal-keyed
-      // arm until the downstream task lands facet-keyed emission.
+      // Per ADR 0030 §2 + §9: this projection buckets per-proposal-id
+      // votes for STRUCTURAL sub-kinds only — those still use the
+      // proposal-keyed arm (`target === 'proposal'`). Facet-keyed
+      // votes (`target === 'facet'`) attach to `(entity, facet)` and
+      // have no proposal_id to bucket on — `projectVotesByFacet`
+      // above is the corresponding facet-side projection. Skip the
+      // facet-keyed arm here.
       if (event.payload.target !== 'proposal') continue;
       const proposalId = event.payload.proposal_id;
       if (!knownProposals.has(proposalId)) continue;

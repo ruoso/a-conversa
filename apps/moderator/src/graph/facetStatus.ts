@@ -393,12 +393,24 @@ export function computeFacetStatuses(events: readonly Event[]): FacetStatusIndex
       continue;
     }
     if (event.kind === 'vote') {
-      // TODO(pf_vote_handler_facet_keyed): vote payloads are now a
-      // `target`-discriminated union. The methodology engine emits
-      // the proposal-keyed arm for now; the facet-keyed arm is
-      // reserved for the downstream rewrite. Read only the proposal-
-      // keyed arm until that lands.
-      if (event.payload.target !== 'proposal') continue;
+      // Per ADR 0030 §2: vote payloads are a `target`-discriminated
+      // union. The facet-keyed arm carries the `(entity_kind,
+      // entity_id, facet)` triple directly; the proposal-keyed arm
+      // resolves to the facet via the proposal-id → target map. Both
+      // arms write to the same per-facet `perParticipant` map.
+      if (event.payload.target === 'facet') {
+        const state = getOrCreateFacetState(
+          nodeStates,
+          edgeStates,
+          event.payload.entity_kind,
+          event.payload.entity_id,
+          event.payload.facet,
+        );
+        state.perParticipant.set(event.payload.participant, event.payload.choice);
+        continue;
+      }
+      // target === 'proposal' — structural arm or legacy facet-valued
+      // arm for any proposal-keyed votes still on the log.
       const target = proposalTarget.get(event.payload.proposal_id);
       if (!target) continue;
       const state = getOrCreateFacetState(

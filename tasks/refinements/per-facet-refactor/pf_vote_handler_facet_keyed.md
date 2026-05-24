@@ -52,3 +52,15 @@ The wire shape changes per [ADR 0030 §2](../../../docs/adr/0030-per-facet-vote-
 ## Open questions
 
 (none — all decided per ADR 0030)
+
+## Status
+
+**Done** — 2026-05-23.
+
+- WS `vote` handler at `apps/server/src/methodology/handlers/vote.ts` now dispatches on the `payload.target` discriminator: facet-valued sub-kinds (classify-node / set-node-substance / set-edge-substance / edit-wording) emit `target: 'facet'` keyed by `(entity_kind, entity_id, facet)`; structural sub-kinds (decompose / interpretive-split / axiom-mark / annotate / meta-move / break-edge) retain the proposal-keyed arm per ADR 0030 §9.
+- Facet-arm votes validate the target facet against `deriveFacetStatus` before accepting — only `proposed` and `disputed` are votable. Votes against `committed` / `agreed` / `awaiting-proposal` / `withdrawn` / `meta-disagreement` reject with `illegal-state-transition`; voting `agree` against an `awaiting-proposal` facet is refused per the "no candidate" decision.
+- `apps/server/src/ws/broadcast/proposal-status.ts` grew `resolveFacetKeyedProposalId` so the wire-level `proposal-status` broadcast can map a facet-arm vote back to its driving proposal.
+- Read-side projections consume both arms transparently: moderator + participant `graph/facetStatus.ts`, moderator `selectors.ts`, participant `ownVotes.ts` + `otherVotes.ts`, and `EntityDetailPanel.tsx`.
+- Test coverage lands per ADR 0022: Vitest cases at `apps/server/src/methodology/handlers/vote.test.ts` + `apps/server/src/ws/handlers/vote.test.ts` cover both arms incl. illegal-state-transition rejections; Cucumber + pglite scenarios in `tests/behavior/backend/ws-vote.feature` and `tests/behavior/methodology/vote.feature` round-trip a facet-keyed agree and a withdraw rejection.
+- Suite gates: Vitest 4300 passing (+1), 2 skipped (both now point at `pf_withdraw_agreement_handler`); Cucumber 254 scenarios / 1749 steps (+1 / +3); Playwright 107 green (unchanged).
+- All `TODO(pf_vote_handler_facet_keyed)` markers across the source + test surface are paid down; no new TODOs added.

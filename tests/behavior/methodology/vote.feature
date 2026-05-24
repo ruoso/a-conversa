@@ -16,30 +16,32 @@ Feature: methodology engine — vote handler against a DB-projected session
   #
   # Refinement: tasks/refinements/data-and-methodology/withdrawal_logic.md
 
-  Scenario: a participant withdraws their prior agree on a committed proposal
-    # Three participants joined; classify-node proposal pending; all
-    # three voted agree; moderator commits. A debater then constructs a
-    # withdraw vote against the committed proposal; the handler
-    # validates against the DB-projected projection and returns Valid
-    # with one vote event. After applying the resulting vote event to
-    # the projection, the read-side `deriveFacetStatus` returns
-    # `withdrawn` (rule 3 of facet-status.ts).
+  Scenario: a withdraw vote on a committed facet-valued proposal is rejected as illegal-state-transition
+    # Per ADR 0030 §3 + `pf_vote_handler_facet_keyed`: the `'withdraw'`
+    # arm on the vote envelope's `choice` enum is deprecated —
+    # withdrawal is its own top-level event kind
+    # (`withdraw-agreement`). On the facet-arm of the vote handler
+    # (the seeded classify-node is facet-valued), any `'withdraw'`
+    # request is refused with `illegal-state-transition`. The legal
+    # withdrawal path moves through the dedicated event kind; the
+    # downstream `pf_withdraw_agreement_handler` task wires the new
+    # surface.
     Given a seeded session committed on a classify-node proposal with three agree votes for vote-logic tests
     When a debater who previously voted agree constructs a withdraw action against the committed proposal
     And the methodology engine validates the vote action against the projected session
-    Then the validation result is Valid
-    And the result carries a single vote event with vote value "withdraw"
-    And applying the resulting withdraw event to the projection makes the classification facet read "withdrawn"
+    Then the validation result is Rejected with reason "proposal-already-committed"
 
-  Scenario: a withdraw without a prior agree is rejected as no-prior-agree
+  Scenario: a withdraw vote on a facet-valued committed proposal is rejected (late joiner with no prior agree)
     # Same committed state, but a late joiner (who joined after commit
     # and therefore never voted agree on this proposal) attempts the
-    # withdraw. The handler's rule 4 rejects with `no-prior-agree`.
+    # withdraw. The facet-arm rejects with `proposal-already-committed`
+    # because the facet's derived status is checked BEFORE the prior-
+    # vote check (a committed facet refuses every vote-envelope arm).
     Given a seeded session committed on a classify-node proposal with three agree votes for vote-logic tests
     And a late-joining debater is added after the commit for vote-logic tests
     When the late-joining debater constructs a withdraw action against the committed proposal
     And the methodology engine validates the vote action against the projected session
-    Then the validation result is Rejected with reason "no-prior-agree"
+    Then the validation result is Rejected with reason "proposal-already-committed"
 
   Scenario: an agree on a committed proposal is rejected as proposal-already-committed
     # Same committed state; a debater attempts a fresh agree on the
@@ -59,3 +61,19 @@ Feature: methodology engine — vote handler against a DB-projected session
     When an outsider constructs an agree action against the pending proposal
     And the methodology engine validates the vote action against the projected session
     Then the validation result is Rejected with reason "not-a-participant"
+
+  Scenario: an agree on a facet-valued pending proposal emits the facet-keyed vote arm
+    # Per ADR 0030 §2 + `pf_vote_handler_facet_keyed`: votes against
+    # facet-valued proposal sub-kinds (classify-node here) are emitted
+    # as `target: 'facet'`, keyed by the `(entity_kind, entity_id,
+    # facet)` triple — NOT by `proposal_id`. Round-trip: the engine's
+    # accept path constructs a facet-keyed event; applying the event
+    # to the projection populates the targeted facet's
+    # `perParticipant` map; the read-side derivation surfaces the
+    # status flip on the next call. This scenario covers the facet-
+    # target accept path the refinement's Acceptance criteria pin.
+    Given a seeded session with three participants and a pending classify-node proposal for vote-logic tests
+    When a debater constructs an agree action against the pending proposal
+    And the methodology engine validates the vote action against the projected session
+    Then the validation result is Valid
+    And the result carries a single facet-keyed vote event against the classification facet of the node with choice "agree"

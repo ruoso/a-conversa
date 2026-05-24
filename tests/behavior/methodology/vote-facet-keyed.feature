@@ -22,16 +22,14 @@ Feature: vote payload — facet-keyed and proposal-keyed arms round-trip
   # recovery into a typed envelope, and `projectFromLog` applies the
   # proposal-keyed arm without throwing.
   #
-  # **Projection-side handling of the facet-keyed arm is out of scope.**
-  # The methodology engine still emits the proposal-keyed arm for ALL
-  # votes (per the TODO(pf_vote_handler_facet_keyed) in
-  # `apps/server/src/methodology/handlers/vote.ts`); the projection's
-  # `handleVote` rejects the facet-keyed arm with a clear runtime error
-  # so any inadvertent emission during the transition surfaces loudly.
-  # The downstream `pf_vote_handler_facet_keyed` task rewires both
-  # halves. Today's pin: the facet-keyed arm round-trips through the
-  # SCHEMA SEAM (insert + read + validateEvent) without the projection
-  # ever consuming it.
+  # **Schema-seam-only round-trip pin.** The methodology engine now
+  # emits both arms (facet-keyed for facet-valued sub-kinds; proposal-
+  # keyed for structural sub-kinds) per `pf_vote_handler_facet_keyed`
+  # + ADR 0030 §2 + §9, and the projection's `handleVote` consumes
+  # both arms. This scenario keeps its narrow focus on the schema seam:
+  # both arms round-trip through pglite's JSONB column + `validateEvent`
+  # without re-shaping. The dispatch-side coverage lives in the
+  # methodology engine's Vitest tests + `vote.feature`.
   #
   # Refinement: tasks/refinements/per-facet-refactor/pf_facet_keyed_vote_payload.md
   # ADRs:        docs/adr/0030-per-facet-vote-keying-and-sequential-capture.md,

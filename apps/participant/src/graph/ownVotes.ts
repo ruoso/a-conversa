@@ -216,26 +216,38 @@ export function projectOwnVotes(
       continue;
     }
     if (event.kind === 'vote') {
-      // TODO(pf_vote_handler_facet_keyed): vote payloads are now a
-      // `target`-discriminated union. The methodology engine emits
-      // the proposal-keyed arm for now; the facet-keyed arm is
-      // reserved for the downstream rewrite. Read only the proposal-
-      // keyed arm until that lands.
-      if (event.payload.target !== 'proposal') continue;
+      // Per ADR 0030 §2: vote payloads are a `target`-discriminated
+      // union. The facet-keyed arm carries `(entity_kind, entity_id,
+      // facet)` directly; the proposal-keyed arm looks it up via the
+      // proposal-id → target map. Structural-arm votes have no facet
+      // target and are skipped (their proposal id is absent from
+      // `proposalTarget`).
       if (event.payload.participant !== currentParticipantId) continue;
-      const target = proposalTarget.get(event.payload.proposal_id);
-      if (target === undefined) continue;
+      let entityKind: 'node' | 'edge';
+      let entityId: string;
+      let facet: FacetName;
+      if (event.payload.target === 'facet') {
+        entityKind = event.payload.entity_kind;
+        entityId = event.payload.entity_id;
+        facet = event.payload.facet;
+      } else {
+        const target = proposalTarget.get(event.payload.proposal_id);
+        if (target === undefined) continue;
+        entityKind = target.entityKind;
+        entityId = target.entityId;
+        facet = target.facet;
+      }
       // Map the wire arm to the indicator sentinel. The `'withdraw'`
       // choice is gone from the vote-payload `choice` enum (it lives
       // on its own `withdraw-agreement` event kind now); `'agree'` and
       // `'dispute'` are the only remaining values.
       const arm: OwnVote = event.payload.choice === 'agree' ? 'agree' : 'dispute';
-      const facetKey = `${target.entityId}|${target.facet}`;
+      const facetKey = `${entityId}|${facet}`;
       perFacetVote.set(facetKey, arm);
-      let facetKeys = facetsByEntity.get(target.entityId);
+      let facetKeys = facetsByEntity.get(entityId);
       if (facetKeys === undefined) {
         facetKeys = new Set<string>();
-        facetsByEntity.set(target.entityId, facetKeys);
+        facetsByEntity.set(entityId, facetKeys);
       }
       facetKeys.add(facetKey);
       // Re-derive the per-entity rollup from every facet touching
@@ -248,11 +260,11 @@ export function projectOwnVotes(
         if (v === undefined) continue;
         rolled = rollUp(rolled, v);
       }
-      const bucket = target.entityKind === 'node' ? nodes : edges;
+      const bucket = entityKind === 'node' ? nodes : edges;
       if (rolled === 'none') {
-        bucket.delete(target.entityId);
+        bucket.delete(entityId);
       } else {
-        bucket.set(target.entityId, rolled);
+        bucket.set(entityId, rolled);
       }
       continue;
     }

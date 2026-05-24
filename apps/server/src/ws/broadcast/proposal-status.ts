@@ -179,13 +179,15 @@ function proposalIdFor(event: Event): string | null {
     case 'proposal':
       return event.id;
     case 'vote':
-      // TODO(pf_vote_handler_facet_keyed): vote payloads are now a
-      // `target`-discriminated union. The methodology engine still
-      // emits the proposal-keyed arm; once the downstream task lands
-      // facet-keyed emission this needs to resolve the broadcast
-      // subject differently (most likely by looking up the proposal
-      // that targets the entity+facet pair). Until then we read the
-      // proposal-keyed arm only.
+      // Per ADR 0030 §2: vote payloads are a `target`-discriminated
+      // union. The proposal-keyed arm carries `proposal_id` directly;
+      // the facet-keyed arm does not — for facet-keyed votes the
+      // broadcast subject is the proposal that supplied the facet's
+      // current candidate (looked up from the projection at fan-out
+      // time via `facet.candidateProposalEventId`; see
+      // `resolveFacetVoteProposalId` below). Returning `null` here
+      // for the facet arm defers the lookup to the async tail where
+      // the projection is in scope.
       if (event.payload.target === 'proposal') {
         return event.payload.proposal_id;
       }
@@ -311,6 +313,78 @@ function lookupProposalPayload(projection: Projection, proposalId: string): Prop
 }
 
 /**
+ * Resolve the proposal id behind a facet-keyed vote / commit / meta-
+ * disagreement-marked event by reading `facet.candidateProposalEventId`
+ * from the post-event projection. Returns `null` when the targeted
+ * entity / facet is absent (skip the broadcast — a projection-
+ * invariant violation given the triggering event landed against it),
+ * or when the facet's current candidate came inline-from-creation
+ * (e.g. `node-created.wording` — no proposal supplied it; nothing to
+ * surface as the broadcast subject).
+ *
+ * Only the three facet-keyed event kinds reach this helper today;
+ * other kinds return `null` (the caller pre-filters via
+ * `proposalIdFor` returning a non-null hint).
+ */
+function resolveFacetKeyedProposalId(
+  projection: Projection,
+  event: Event,
+  log: FastifyBaseLogger,
+): string | null {
+  let entityKind: 'node' | 'edge' | 'annotation';
+  let entityId: string;
+  let facet: FacetName;
+  if (event.kind === 'vote' && event.payload.target === 'facet') {
+    entityKind = event.payload.entity_kind;
+    entityId = event.payload.entity_id;
+    facet = event.payload.facet;
+  } else if (event.kind === 'commit' && event.payload.target === 'facet') {
+    entityKind = event.payload.entity_kind;
+    entityId = event.payload.entity_id;
+    facet = event.payload.facet;
+  } else if (event.kind === 'meta-disagreement-marked' && event.payload.target === 'facet') {
+    entityKind = event.payload.entity_kind;
+    entityId = event.payload.entity_id;
+    facet = event.payload.facet;
+  } else {
+    return null;
+  }
+  // Look up the facet's current candidate proposal id. The `null`
+  // case (inline-from-creation candidates — wording on `node-created`,
+  // shape on `edge-created`) is not yet a vote-bearing surface; the
+  // facet has no proposal to surface as the broadcast subject.
+  let candidateProposalEventId: string | null = null;
+  if (entityKind === 'node') {
+    const node = projection.getNode(entityId);
+    if (node === undefined) {
+      log.warn(
+        { sessionId: event.sessionId, entityKind, entityId, facet, eventId: event.id },
+        'ws-proposal-status: facet-keyed event references a node not present in projection — skipping',
+      );
+      return null;
+    }
+    if (facet === 'classification')
+      candidateProposalEventId = node.classificationFacet.candidateProposalEventId;
+    else if (facet === 'substance')
+      candidateProposalEventId = node.substanceFacet.candidateProposalEventId;
+    else if (facet === 'wording')
+      candidateProposalEventId = node.wordingFacet.candidateProposalEventId;
+  } else if (entityKind === 'edge') {
+    const edge = projection.getEdge(entityId);
+    if (edge === undefined) {
+      log.warn(
+        { sessionId: event.sessionId, entityKind, entityId, facet, eventId: event.id },
+        'ws-proposal-status: facet-keyed event references an edge not present in projection — skipping',
+      );
+      return null;
+    }
+    if (facet === 'substance')
+      candidateProposalEventId = edge.substanceFacet.candidateProposalEventId;
+  }
+  return candidateProposalEventId;
+}
+
+/**
  * Build the bus listener that fans out `proposal-status` derived
  * envelopes for events that affect per-facet proposal status.
  *
@@ -335,17 +409,16 @@ export function buildProposalStatusBroadcastListener(
       return;
     }
 
+    // Synchronous proposal-id resolution covers the proposal-keyed
+    // arms (proposal events; proposal-keyed votes / commits /
+    // meta-disagreement marks). The facet-keyed arms carry
+    // `(entity_kind, entity_id, facet)` instead of a `proposal_id` —
+    // for those, the broadcast subject is the proposal that supplied
+    // the facet's current candidate, looked up against the post-event
+    // projection in `deriveAndFanOut`. A `null` here for a
+    // status-affecting kind is therefore the "defer to async tail"
+    // signal, NOT a fatal mis-routing.
     const proposalId = proposalIdFor(event);
-    if (proposalId === null) {
-      // Defensive — the filter above narrows `event.kind`, but a
-      // future widening of the kind set without updating
-      // `proposalIdFor` would surface here. Skip + log.
-      opts.log.warn(
-        { eventKind: event.kind, eventId: event.id, eventSequence: event.sequence },
-        'ws-proposal-status: no proposalId resolvable for status-affecting event kind',
-      );
-      return;
-    }
 
     const sessionId = event.sessionId;
     const connectionIds = opts.subscriptions.connectionsForSession(sessionId);
@@ -373,7 +446,7 @@ export function buildProposalStatusBroadcastListener(
 async function deriveAndFanOut(
   opts: ProposalStatusBroadcastListenerOptions,
   event: Event,
-  proposalId: string,
+  proposalIdHint: string | null,
   sessionId: string,
   connectionIds: readonly string[],
 ): Promise<void> {
@@ -386,12 +459,24 @@ async function deriveAndFanOut(
       {
         err,
         sessionId,
-        proposalId,
+        proposalId: proposalIdHint,
         eventKind: event.kind,
         eventSequence: event.sequence,
       },
       'ws-proposal-status: projection load/replay failed — skipping derived broadcast',
     );
+    return;
+  }
+
+  // Resolve the proposal id for facet-keyed arms. For proposal-keyed
+  // arms `proposalIdHint` is the carrier; for facet-keyed votes /
+  // commits / meta-disagreement marks (where the wire payload has no
+  // `proposal_id`), look up the proposal that supplied the targeted
+  // facet's current candidate via `facet.candidateProposalEventId`.
+  // The current candidate is what the vote / commit / mark acts on;
+  // its supplier proposal is the canonical subject for the broadcast.
+  const proposalId = proposalIdHint ?? resolveFacetKeyedProposalId(projection, event, opts.log);
+  if (proposalId === null) {
     return;
   }
 

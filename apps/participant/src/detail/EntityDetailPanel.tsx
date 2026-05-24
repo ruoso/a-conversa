@@ -142,14 +142,20 @@ function deriveOwnFacetVotes(
       continue;
     }
     if (event.kind === 'vote') {
-      // TODO(pf_vote_handler_facet_keyed): vote payloads are now a
-      // `target`-discriminated union. The methodology engine emits
-      // proposal-keyed votes for now; the facet-keyed arm is reserved
-      // for the downstream rewrite. Read only the proposal-keyed arm
-      // until that lands.
-      if (event.payload.target !== 'proposal') continue;
+      // Per ADR 0030 §2: vote payloads are a `target`-discriminated
+      // union. The facet-keyed arm carries `(entity_kind, entity_id,
+      // facet)` directly; the proposal-keyed arm looks up the facet
+      // via `proposalTarget` (which only records facet-targeting
+      // proposals against THIS entity, so structural-arm votes are
+      // skipped — their proposal id isn't in the map).
       if (event.payload.participant !== currentParticipantId) continue;
-      const facet = proposalTarget.get(event.payload.proposal_id);
+      let facet: FacetName | undefined;
+      if (event.payload.target === 'facet') {
+        if (event.payload.entity_id !== entityId) continue;
+        facet = event.payload.facet;
+      } else {
+        facet = proposalTarget.get(event.payload.proposal_id);
+      }
       if (facet === undefined) continue;
       perFacet.set(facet, event.payload.choice);
     }

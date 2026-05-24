@@ -613,15 +613,17 @@ describe('ws_vote_message — handler integration', () => {
     }
   });
 
-  it('echoes the methodology engine `no-prior-agree` rejection on a withdraw of a still-pending proposal', async () => {
+  it('echoes the methodology engine `illegal-state-transition` rejection on a withdraw of a facet-valued proposal (withdraw is no longer a vote choice)', async () => {
     const cookie = await fixtureCookieHeader();
     const { ws, next } = await openWsClient(app, cookie);
     try {
       await next(); // hello
 
-      // The PENDING_SESSION_ID has a pending proposal (no commit). Even
-      // with a prior agree, withdraw is illegal until commit lands —
-      // per `voteHandler`'s rule 3 (pending + withdraw → no-prior-agree).
+      // The PENDING_SESSION_ID has a pending `classify-node` proposal
+      // (facet-valued). Per ADR 0030 §3 + `pf_vote_handler_facet_keyed`,
+      // the facet-arm of the vote handler rejects the `'withdraw'`
+      // choice with `'illegal-state-transition'` — withdrawal is its
+      // own event kind (`withdraw-agreement`), no longer a vote choice.
       ws.send(subscribeFrame(SUB_MSG_ID, PENDING_SESSION_ID));
       const subAck = JSON.parse(await next()) as { type?: unknown };
       expect(subAck.type).toBe('subscribed');
@@ -631,7 +633,7 @@ describe('ws_vote_message — handler integration', () => {
       const err = await readUntilType(next, 'error');
       const payload = err.parsed.payload as { code?: unknown };
       expect(err.parsed.inResponseTo).toBe(VOTE_MSG_ID);
-      expect(payload.code).toBe('no-prior-agree');
+      expect(payload.code).toBe('illegal-state-transition');
     } finally {
       ws.terminate();
     }
@@ -700,17 +702,25 @@ describe('ws_vote_message — handler integration', () => {
         | {
             target?: unknown;
             proposal_id?: unknown;
+            entity_kind?: unknown;
+            entity_id?: unknown;
+            facet?: unknown;
             participant?: unknown;
             choice?: unknown;
           }
         | undefined;
-      // The engine emits the proposal-keyed arm of the discriminated
-      // payload union (per ADR 0030 §9 + the TODO(pf_vote_handler_facet_keyed)
-      // carried in `apps/server/src/methodology/handlers/vote.ts`).
-      expect(appendedPayload?.target).toBe('proposal');
-      expect(appendedPayload?.proposal_id).toBe(PROPOSAL_EVENT_ID);
+      // The seeded proposal is a `classify-node` (facet-valued). Per
+      // ADR 0030 §2 + `pf_vote_handler_facet_keyed`, the engine now
+      // emits the facet-keyed arm of the discriminated payload union
+      // for votes against facet-valued sub-kinds.
+      expect(appendedPayload?.target).toBe('facet');
+      expect(appendedPayload?.entity_kind).toBe('node');
+      expect(appendedPayload?.entity_id).toBe(NODE_ID);
+      expect(appendedPayload?.facet).toBe('classification');
       expect(appendedPayload?.participant).toBe(FIXTURE_USER_ID);
       expect(appendedPayload?.choice).toBe('agree');
+      // The facet arm has no `proposal_id` field per ADR 0030 §2.
+      expect(appendedPayload?.proposal_id).toBeUndefined();
     } finally {
       ws.terminate();
     }

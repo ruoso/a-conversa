@@ -135,6 +135,13 @@ function applyVote(
   vote: 'agree' | 'dispute' | 'withdraw',
   proposalId: string = PROPOSAL_ID_1,
 ): void {
+  // The seeded session's proposal is a facet-valued `classify-node`,
+  // so seeded votes use the facet-keyed arm per ADR 0030 §2 — this
+  // matches what the methodology engine's vote handler now emits.
+  // The `proposalId` argument is ignored on the facet arm (the
+  // facet-keyed payload has no `proposal_id`); kept on the signature
+  // so the structural-vote helpers below stay symmetric.
+  void proposalId;
   // TODO(pf_withdraw_agreement_handler): the `'withdraw'` arm is
   // deprecated on the vote payload's `choice` enum (it's its own
   // event kind now per ADR 0030 §3). Tests that still drive the
@@ -144,8 +151,10 @@ function applyVote(
   applyEvent(
     projection,
     makeEvent(nextSequence(projection), 'vote', participant, T9, {
-      target: 'proposal' as const,
-      proposal_id: proposalId,
+      target: 'facet' as const,
+      entity_kind: 'node' as const,
+      entity_id: NODE_ID_1,
+      facet: 'classification' as const,
       participant,
       choice: vote as 'agree' | 'dispute',
       voted_at: T9,
@@ -277,7 +286,7 @@ describe('vote handler — agree arm', () => {
     }
   });
 
-  it('accepts a fresh agree from a current participant', () => {
+  it('accepts a fresh agree from a current participant — emits facet-keyed event for the classify-node facet', () => {
     const p = seedSession();
     const action = makeVoteAction(p, DEBATER_A_ID, 'agree');
     const r = validateAction(p, action);
@@ -291,14 +300,18 @@ describe('vote handler — agree arm', () => {
       expect(ev.sequence).toBe(action.sequence);
       expect(ev.actor).toBe(DEBATER_A_ID);
       expect(ev.createdAt).toBe(T9);
-      // The engine emits the proposal-keyed arm per ADR 0030 §9 +
-      // the TODO(pf_vote_handler_facet_keyed) carried in the methodology
-      // handler.
-      if (ev.kind === 'vote' && ev.payload.target === 'proposal') {
-        expect(ev.payload.proposal_id).toBe(PROPOSAL_ID_1);
-        expect(ev.payload.participant).toBe(DEBATER_A_ID);
-        expect(ev.payload.choice).toBe('agree');
-        expect(ev.payload.voted_at).toBe(T9);
+      // The engine now emits the facet-keyed arm for facet-valued
+      // proposal sub-kinds (classify-node here) per ADR 0030 §2.
+      if (ev.kind === 'vote') {
+        expect(ev.payload.target).toBe('facet');
+        if (ev.payload.target === 'facet') {
+          expect(ev.payload.entity_kind).toBe('node');
+          expect(ev.payload.entity_id).toBe(NODE_ID_1);
+          expect(ev.payload.facet).toBe('classification');
+          expect(ev.payload.participant).toBe(DEBATER_A_ID);
+          expect(ev.payload.choice).toBe('agree');
+          expect(ev.payload.voted_at).toBe(T9);
+        }
       }
     }
   });
@@ -312,6 +325,24 @@ describe('vote handler — agree arm', () => {
     expect(r.ok).toBe(true);
     if (r.ok && r.events[0]!.kind === 'vote') {
       expect(r.events[0].payload.choice).toBe('agree');
+    }
+  });
+
+  // ----- facet-keyed emission discriminator coverage ----------------
+
+  it('emits the facet-keyed arm with no proposal_id field (per ADR 0030 §2)', () => {
+    const p = seedSession();
+    const action = makeVoteAction(p, DEBATER_A_ID, 'agree');
+    const r = validateAction(p, action);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.events[0]!.kind === 'vote') {
+      const payload = r.events[0].payload as Record<string, unknown>;
+      expect(payload.target).toBe('facet');
+      // The facet arm carries `entity_kind` / `entity_id` / `facet`
+      // and intentionally has NO `proposal_id` field. The closed Zod
+      // discriminated union would reject it; the engine doesn't
+      // emit it.
+      expect(payload.proposal_id).toBeUndefined();
     }
   });
 });
@@ -389,16 +420,24 @@ describe('vote handler — dispute arm', () => {
 // ---------------------------------------------------------------
 
 describe('vote handler — withdraw arm', () => {
-  it('rejects a withdraw on a still-pending proposal with no-prior-agree', () => {
+  it('rejects a withdraw on a facet-valued proposal with illegal-state-transition (withdraw is no longer a vote choice)', () => {
+    // Per ADR 0030 §3 + `pf_withdraw_agreement_event_kind` /
+    // `pf_vote_handler_facet_keyed`: the `'withdraw'` arm of the vote
+    // payload is deprecated — withdrawal is its own top-level event
+    // kind (`withdraw-agreement`). The seeded `classify-node` is a
+    // facet-valued sub-kind; the facet-arm of the vote handler
+    // rejects withdraw with `'illegal-state-transition'` because
+    // withdraw is no longer a valid `choice` for facet-keyed votes.
     const p = seedSession();
-    // Even with a prior agree, withdraw is illegal until commit lands.
+    // Even with a prior agree, withdraw is illegal here — the
+    // dedicated `withdraw-agreement` event kind owns the legal path.
     applyVote(p, DEBATER_A_ID, 'agree');
     const action = makeVoteAction(p, DEBATER_A_ID, 'withdraw');
     const r = validateAction(p, action);
     expect(r.ok).toBe(false);
     if (!r.ok) {
-      expect(r.reason).toBe('no-prior-agree');
-      expect(r.detail).toContain('pending');
+      expect(r.reason).toBe('illegal-state-transition');
+      expect(r.detail).toContain('withdraw');
     }
   });
 
@@ -411,23 +450,21 @@ describe('vote handler — withdraw arm', () => {
     if (!r.ok) expect(r.reason).toBe('proposal-already-meta-disagreement');
   });
 
-  it('rejects a withdraw from a participant with no prior agree on the committed proposal with no-prior-agree', () => {
-    // To get the proposal to `committed`, three participants must
-    // unanimously agree (rule 4 of commit_logic). Construct that
-    // unanimous state then ask: can a participant who voted *dispute*
-    // withdraw? No — you can't withdraw what you didn't agree to.
-    //
-    // We need a fourth participant who never voted agree but is current
-    // at withdraw time. The cleanest construction: three participants
-    // agree → moderator commits → a fourth participant joins → the
-    // fourth participant attempts to withdraw. They have no prior
-    // record on this facet → rejected with `no-prior-agree`.
+  it('rejects a withdraw on an already-committed facet-valued proposal with proposal-already-committed', () => {
+    // On the facet-arm of the vote handler, a committed facet
+    // refuses ALL further vote-envelope arms — `'withdraw'` would
+    // travel through the dedicated `withdraw-agreement` event kind
+    // per ADR 0030 §3, not through `vote`. The facet's derived
+    // status is checked first, so the rejection here is the
+    // facet-not-votable check (specifically the committed branch),
+    // not the prior-vote check.
     const p = seedSession();
     applyVote(p, MODERATOR_ID, 'agree');
     applyVote(p, DEBATER_A_ID, 'agree');
     applyVote(p, DEBATER_B_ID, 'agree');
     applyCommit(p);
-    // A fourth participant joins after commit.
+    // A fourth participant joins after commit; they attempt to
+    // withdraw against the committed facet.
     const LATE_JOINER_ID = '99999999-9999-4999-8999-999999999999';
     applyEvent(
       p,
@@ -442,8 +479,7 @@ describe('vote handler — withdraw arm', () => {
     const r = validateAction(p, action);
     expect(r.ok).toBe(false);
     if (!r.ok) {
-      expect(r.reason).toBe('no-prior-agree');
-      expect(r.detail).toContain(LATE_JOINER_ID);
+      expect(r.reason).toBe('proposal-already-committed');
     }
   });
 

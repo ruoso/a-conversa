@@ -419,15 +419,23 @@ describe('validateAction — placeholder per-action handlers', () => {
       expect(ev.sessionId).toBe(SESSION_ID);
       expect(ev.id).toBe(NEW_EVENT_ID);
       expect(ev.actor).toBe(DEBATER_A_ID);
-      // payload narrows by kind discriminator + the new `target`
-      // sub-discriminator (proposal-keyed vs. facet-keyed). The engine
-      // emits the proposal-keyed arm for now per ADR 0030 §9 + the
-      // TODO(pf_vote_handler_facet_keyed) carried in the methodology
-      // handler.
-      if (ev.kind === 'vote' && ev.payload.target === 'proposal') {
+      // Payload narrows by kind discriminator + the `target`
+      // sub-discriminator (facet-keyed vs. proposal-keyed). Per ADR
+      // 0030 §2 + `pf_vote_handler_facet_keyed`, votes against
+      // facet-valued sub-kinds (classify-node here) emit the
+      // facet-keyed arm; structural-kind votes emit the proposal-
+      // keyed arm. The seeded proposal is `classify-node`, so the
+      // facet-keyed arm is expected.
+      if (ev.kind === 'vote' && ev.payload.target === 'facet') {
         expect(ev.payload.participant).toBe(DEBATER_A_ID);
-        expect(ev.payload.proposal_id).toBe(PROPOSAL_ID_1);
+        expect(ev.payload.entity_kind).toBe('node');
+        expect(ev.payload.entity_id).toBe(NODE_ID_1);
+        expect(ev.payload.facet).toBe('classification');
         expect(ev.payload.choice).toBe('agree');
+      } else {
+        throw new Error(
+          `expected vote.payload.target === 'facet' for classify-node, got ${JSON.stringify(ev.payload)}`,
+        );
       }
     }
   });

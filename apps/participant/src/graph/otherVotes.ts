@@ -341,37 +341,49 @@ export function projectOtherVotes(
       continue;
     }
     if (event.kind === 'vote') {
-      // TODO(pf_vote_handler_facet_keyed): vote payloads are now a
-      // `target`-discriminated union. The methodology engine emits
-      // the proposal-keyed arm for now; the facet-keyed arm is
-      // reserved for the downstream rewrite. Read only the proposal-
-      // keyed arm until that lands.
-      if (event.payload.target !== 'proposal') continue;
+      // Per ADR 0030 §2: vote payloads are a `target`-discriminated
+      // union. Resolve to the `(entityKind, entityId, facet)` triple
+      // from either arm — the facet-keyed arm carries it directly;
+      // the proposal-keyed arm looks it up via the proposal-id →
+      // target map (structural-arm votes have no facet target and
+      // are skipped).
       const voterId = event.payload.participant;
       if (voterId === currentParticipantId) continue;
-      const target = proposalTarget.get(event.payload.proposal_id);
-      if (target === undefined) continue;
+      let entityKind: 'node' | 'edge';
+      let entityId: string;
+      let facet: FacetName;
+      if (event.payload.target === 'facet') {
+        entityKind = event.payload.entity_kind;
+        entityId = event.payload.entity_id;
+        facet = event.payload.facet;
+      } else {
+        const target = proposalTarget.get(event.payload.proposal_id);
+        if (target === undefined) continue;
+        entityKind = target.entityKind;
+        entityId = target.entityId;
+        facet = target.facet;
+      }
 
-      const facetCompositeKey = `${target.entityId}|${target.facet}|${voterId}`;
+      const facetCompositeKey = `${entityId}|${facet}|${voterId}`;
       perFacetVoterArm.set(facetCompositeKey, event.payload.choice);
 
       // Maintain the reverse indexes used by the rollup re-derivation.
-      let facetKeys = facetKeysByEntity.get(target.entityId);
+      let facetKeys = facetKeysByEntity.get(entityId);
       if (facetKeys === undefined) {
         facetKeys = new Set<string>();
-        facetKeysByEntity.set(target.entityId, facetKeys);
+        facetKeysByEntity.set(entityId, facetKeys);
       }
       facetKeys.add(facetCompositeKey);
 
-      const voterFacetKey = `${target.entityId}|${voterId}`;
+      const voterFacetKey = `${entityId}|${voterId}`;
       let facets = facetsByEntityVoter.get(voterFacetKey);
       if (facets === undefined) {
         facets = new Set<FacetName>();
         facetsByEntityVoter.set(voterFacetKey, facets);
       }
-      facets.add(target.facet);
+      facets.add(facet);
 
-      rerollEntityVoter(target.entityKind, target.entityId, voterId);
+      rerollEntityVoter(entityKind, entityId, voterId);
       continue;
     }
     // Other event kinds (commit, meta-disagreement-marked,

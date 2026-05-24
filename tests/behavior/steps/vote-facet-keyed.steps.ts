@@ -12,13 +12,14 @@
 //   (c) `projectFromLog` advances `lastAppliedSequence` past the
 //       proposal-keyed arm without throwing.
 //
-// **Projection-side handling of the facet-keyed arm is out of scope**
-// for this task. The methodology engine still emits the proposal-keyed
-// arm for ALL votes (per the TODO(pf_vote_handler_facet_keyed) in
-// `apps/server/src/methodology/handlers/vote.ts`); the projection's
-// `handleVote` rejects the facet-keyed arm with a runtime error so any
-// inadvertent emission during the transition surfaces loudly. The
-// downstream `pf_vote_handler_facet_keyed` task rewires both halves.
+// **Scope: schema-seam round-trip only.** Dispatch-side coverage now
+// lives with the methodology engine: per `pf_vote_handler_facet_keyed`,
+// the engine emits the facet-keyed arm for facet-valued proposal sub-
+// kinds and the proposal-keyed arm for structural sub-kinds, and the
+// projection's `handleVote` consumes both arms. This step file's pins
+// remain limited to (a) JSONB round-trip + (b) `validateEvent`
+// recovery + (c) `projectFromLog` advancing past the proposal-keyed
+// arm without throwing.
 //
 // Refinement: tasks/refinements/per-facet-refactor/pf_facet_keyed_vote_payload.md
 

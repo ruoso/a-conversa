@@ -58,12 +58,19 @@ Feature: WebSocket vote (client → server)
     And the client sends a vote envelope for session "88888888-8888-4888-8888-888888888802" with expectedSequence 6 on proposal "88888888-8888-4888-8888-8888888888b2" choosing "agree"
     Then the client receives an error envelope with code "already-voted" referencing the vote envelope
 
-  Scenario: A withdraw of a still-pending proposal is rejected with no-prior-agree
+  Scenario: A withdraw vote on a facet-valued proposal is rejected with illegal-state-transition
+    # Per ADR 0030 §3 + `pf_vote_handler_facet_keyed`: the `'withdraw'`
+    # arm on the vote envelope's `choice` enum is deprecated for
+    # facet-valued proposal sub-kinds — withdrawal is its own event
+    # kind (`withdraw-agreement`). The wire surface still accepts the
+    # `'withdraw'` choice value (schema-level back-compat); the
+    # methodology engine's facet-arm refuses it with
+    # `illegal-state-transition`.
     Given a vote-ready session for "alice-ws" exists with id "88888888-8888-4888-8888-888888888803" and node id "88888888-8888-4888-8888-8888888888a3" and pending proposal id "88888888-8888-4888-8888-8888888888b3"
     When an authenticated WebSocket client connects to "/api/ws"
     And the client sends a subscribe envelope for session "88888888-8888-4888-8888-888888888803"
     And the client sends a vote envelope for session "88888888-8888-4888-8888-888888888803" with expectedSequence 5 on proposal "88888888-8888-4888-8888-8888888888b3" choosing "withdraw"
-    Then the client receives an error envelope with code "no-prior-agree" referencing the vote envelope
+    Then the client receives an error envelope with code "illegal-state-transition" referencing the vote envelope
 
   Scenario: An unsubscribed client cannot vote — receives a forbidden error envelope
     Given a vote-ready session for "alice-ws" exists with id "88888888-8888-4888-8888-888888888804" and node id "88888888-8888-4888-8888-8888888888a4" and pending proposal id "88888888-8888-4888-8888-8888888888b4"
