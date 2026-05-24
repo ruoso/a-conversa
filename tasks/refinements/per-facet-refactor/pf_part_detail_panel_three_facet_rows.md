@@ -56,3 +56,16 @@ Per [ADR 0030 Consequences](../../../docs/adr/0030-per-facet-vote-keying-and-seq
 ## Open questions
 
 (none — all decided per ADR 0030)
+
+## Status
+
+**Done** — 2026-05-24.
+
+- Always-on three-facet-rows shape lands per ADR 0030 §10: node panels render `wording` / `classification` / `substance`; edge panels render `shape` / `substance`. The structural-sub-kind synthetic `'proposal'` row is preserved as a sibling for `decompose` / `interpretive-split` / `axiom-mark` / `annotate` / `meta-move` / `break-edge` gestures.
+- Per-row content is driven by the seven-status state machine: `awaiting-proposal` → empty-state body ("Awaiting a proposal"); `proposed` / `disputed` → agree + dispute against the current candidate; `agreed` / `committed` → placeholder withdraw button; `withdrawn` → agree + dispute (facet back in dispute); `meta-disagreement` → both candidates side by side, no buttons.
+- `proposalFacetTarget` shrunk to the structural-proposal branches only; the facet-targeting sub-kinds now hang off the per-facet rows directly. A new `facetTargetingProposalTarget` helper resolves the facet a facet-targeting proposal addresses.
+- Component now accepts a `facetStatusIndex` prop; `EntityDetailPanel` mounts it directly (was previously mounted via `OperateRoute`'s `actionSlot`). `OperateRoute`'s `actionSlot` now hosts the axiom-mark button only.
+- New i18n key `participant.detailPanel.facetRow.awaitingProposal` in `en-US` / `pt-BR` / `es-419`; `pt-BR.review.json` + `es-419.review.json` carry a PENDING review entry.
+- Vitest: `ParticipantVoteButtons.test.tsx` rewritten to 27 tests covering always-on rows + per-status content + click→wire + in-flight + structural sub-kind synthetic row. Full smoke suite 4371 passed (unchanged). Cucumber 262 / 1803 unchanged. Playwright 111 passed + 0 fixme (unchanged; +1 inline three-row assertion in `tests/e2e/participant-graph-render.spec.ts` block 8).
+- TODO markers (2): `TODO(pf_part_vote_action_facet_keyed)` on the `useVoteAction` binding; `TODO(pf_part_withdraw_agreement_action)` on the placeholder withdraw arm. Both point at existing WBS leaves.
+- Artifacts: `apps/participant/src/detail/ParticipantVoteButtons.tsx` (rewrite); `apps/participant/src/detail/ParticipantVoteButtons.test.tsx` (rewrite); `apps/participant/src/detail/EntityDetailPanel.tsx` + `EntityDetailPanel.test.tsx`; `apps/participant/src/routes/OperateRoute.tsx`; `packages/i18n-catalogs/src/catalogs/{en-US,pt-BR,es-419}.json` + `{pt-BR,es-419}.review.json`; `tests/e2e/participant-graph-render.spec.ts`.

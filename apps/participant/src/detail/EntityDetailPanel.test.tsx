@@ -14,7 +14,17 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { act, cleanup, render, screen } from '@testing-library/react';
 import type { Event } from '@a-conversa/shared-types';
 
-import { I18nProvider, createI18nInstance, type I18nInstance } from '@a-conversa/shell';
+import {
+  I18nProvider,
+  WsClientProvider,
+  createI18nInstance,
+  type I18nInstance,
+  type SendFn,
+  type WsClient,
+  type WsClientStatus,
+} from '@a-conversa/shell';
+import type { WsEnvelopeUnion, WsMessagePayloadMap, WsMessageType } from '@a-conversa/shared-types';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
 import { EntityDetailPanel } from './EntityDetailPanel';
 import type { AxiomMark } from '../graph/axiomMarks';
@@ -24,6 +34,32 @@ import { EMPTY_OWN_VOTES } from '../graph/ownVotes';
 import { EMPTY_OTHERS_VOTES, EMPTY_OTHER_VOTES_LIST } from '../graph/otherVotes';
 import type { ParticipantEdgeData, ParticipantNodeData } from '../graph/projectGraph';
 import { useSelectionStore } from '../stores/selectionStore';
+
+/**
+ * Inert fake `WsClient` for the panel test harness. The
+ * always-on `<ParticipantVoteButtons>` block (mounted by the panel
+ * per `pf_part_detail_panel_three_facet_rows`) calls
+ * `useVoteAction → useWsClient()`; the panel tests don't exercise
+ * vote-click paths, so the fake's `send` returns a
+ * never-resolving promise (same posture as
+ * `ParticipantVoteButtons.test.tsx`'s `makeFakeClient`).
+ */
+function makeInertWsClient(): WsClient {
+  const send: SendFn = <T extends WsMessageType>(
+    _type: T,
+    _payload: WsMessagePayloadMap[T],
+  ): Promise<WsEnvelopeUnion> => new Promise<WsEnvelopeUnion>(() => undefined);
+  return {
+    status: (): WsClientStatus => 'open',
+    connect: () => undefined,
+    close: () => undefined,
+    send,
+    trackSession: () => Promise.resolve(),
+    untrackSession: () => Promise.resolve(),
+    onEnvelope: () => () => undefined,
+    url: '/api/ws',
+  };
+}
 
 const NODE_A_ID = '00000000-0000-4000-8000-00000000000a';
 const NODE_B_ID = '00000000-0000-4000-8000-00000000000b';
@@ -186,20 +222,32 @@ interface RenderOpts {
 }
 
 function renderPanel(opts: RenderOpts = {}): void {
+  const client = makeInertWsClient();
   render(
     <I18nProvider i18n={i18nInstance}>
-      <EntityDetailPanel
-        projectedNodes={opts.projectedNodes ?? []}
-        projectedEdges={opts.projectedEdges ?? []}
-        events={opts.events ?? []}
-        currentParticipantId={opts.currentParticipantId ?? ME}
-        nodeAxiomMarkIndex={opts.nodeAxiomMarkIndex ?? new Map()}
-        nodeAnnotationIndex={opts.nodeAnnotationIndex ?? new Map()}
-        edgeAnnotationIndex={opts.edgeAnnotationIndex ?? new Map()}
-        ownVoteIndex={opts.ownVoteIndex ?? EMPTY_OWN_VOTES}
-        othersVoteIndex={opts.othersVoteIndex ?? EMPTY_OTHERS_VOTES}
-        actionSlot={opts.actionSlot}
-      />
+      <MemoryRouter initialEntries={[`/sessions/${SESSION_ID}`]}>
+        <WsClientProvider auth={{ status: 'authenticated' }} client={client}>
+          <Routes>
+            <Route
+              path="/sessions/:id"
+              element={
+                <EntityDetailPanel
+                  projectedNodes={opts.projectedNodes ?? []}
+                  projectedEdges={opts.projectedEdges ?? []}
+                  events={opts.events ?? []}
+                  currentParticipantId={opts.currentParticipantId ?? ME}
+                  nodeAxiomMarkIndex={opts.nodeAxiomMarkIndex ?? new Map()}
+                  nodeAnnotationIndex={opts.nodeAnnotationIndex ?? new Map()}
+                  edgeAnnotationIndex={opts.edgeAnnotationIndex ?? new Map()}
+                  ownVoteIndex={opts.ownVoteIndex ?? EMPTY_OWN_VOTES}
+                  othersVoteIndex={opts.othersVoteIndex ?? EMPTY_OTHERS_VOTES}
+                  actionSlot={opts.actionSlot}
+                />
+              }
+            />
+          </Routes>
+        </WsClientProvider>
+      </MemoryRouter>
     </I18nProvider>,
   );
 }

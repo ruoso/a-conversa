@@ -2804,6 +2804,40 @@ test.describe('Participant operate route — read-mostly graph render', () => {
       await expect(facetRow).toBeVisible();
       await expect(facetRow.locator('[data-facet-pill]').first()).toBeVisible();
 
+      // Per ADR 0030 §10 +
+      // `pf_part_detail_panel_three_facet_rows`: the always-on
+      // per-facet row block renders three rows for a node panel
+      // (wording / classification / substance) regardless of how many
+      // facets have a proposal. NODE_A here has a classify-node
+      // proposal (so the classification row is `proposed`); the
+      // wording facet has the inline node-created carriage as its
+      // candidate; the substance facet has no proposal yet and the
+      // row renders in the `awaiting-proposal` empty-state branch.
+      const facetRows = page.locator('[data-testid="participant-detail-panel-facet-row"]');
+      await expect(facetRows).toHaveCount(3, { timeout: 15_000 });
+      await expect(
+        page.locator(
+          '[data-testid="participant-detail-panel-facet-row"][data-facet-name="wording"]',
+        ),
+      ).toBeVisible();
+      await expect(
+        page.locator(
+          '[data-testid="participant-detail-panel-facet-row"][data-facet-name="classification"]',
+        ),
+      ).toBeVisible();
+      const substanceRow = page.locator(
+        '[data-testid="participant-detail-panel-facet-row"][data-facet-name="substance"]',
+      );
+      await expect(substanceRow).toBeVisible();
+      // Substance is awaiting-proposal — no candidate value has been
+      // named yet; the empty-state body surfaces here.
+      await expect(substanceRow).toHaveAttribute('data-facet-status', 'awaiting-proposal');
+      await expect(
+        substanceRow.locator(
+          '[data-testid="participant-detail-panel-facet-row-awaiting-proposal"]',
+        ),
+      ).toBeVisible();
+
       // Annotation row — kind + content + author.
       const annotationRow = page.getByTestId('participant-detail-panel-annotation-row').first();
       await expect(annotationRow).toBeVisible();

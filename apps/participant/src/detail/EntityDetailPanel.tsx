@@ -56,7 +56,7 @@ import type { Event } from '@a-conversa/shared-types';
 import { FacetPill, PILL_BASE_CLASSNAME, PILL_STATUS_CLASSNAME } from '@a-conversa/shell';
 import type { Annotation } from '../graph/annotations';
 import type { AxiomMark } from '../graph/axiomMarks';
-import type { FacetName, FacetStatus } from '../graph/facetStatus';
+import type { FacetName, FacetStatus, FacetStatusIndex } from '../graph/facetStatus';
 import type { OwnVoteIndex } from '../graph/ownVotes';
 import type { OthersVoteIndex } from '../graph/otherVotes';
 import type { ParticipantEdgeData, ParticipantNodeData } from '../graph/projectGraph';
@@ -68,6 +68,7 @@ import {
   participantRosterFrom,
   screenNameFor,
 } from './participantRoster';
+import { ParticipantVoteButtons } from './ParticipantVoteButtons';
 
 /**
  * Per-facet wire arms surfaced in the own-vote summary. `'agree'` /
@@ -215,12 +216,42 @@ export interface EntityDetailPanelProps {
   readonly ownVoteIndex: OwnVoteIndex;
   readonly othersVoteIndex: OthersVoteIndex;
   /**
+   * Per-entity per-facet status index from `computeFacetStatuses`.
+   * Threaded through to the always-on `<ParticipantVoteButtons>` row
+   * block (per `pf_part_detail_panel_three_facet_rows` /
+   * [ADR 0030 §10](../../../docs/adr/0030-per-facet-vote-keying-and-sequential-capture.md))
+   * so each per-facet row picks its render branch from the projected
+   * status. Optional with an undefined default so older render paths
+   * (test fixtures predating the always-on shape) compile; when
+   * undefined the row block falls back to `'awaiting-proposal'` for
+   * every facet.
+   */
+  readonly facetStatusIndex?: FacetStatusIndex;
+  /**
    * Reserved for future voting / axiom-mark leaves per Decision §9 /
    * §11. Renders at the bottom of the panel when provided; the panel
    * makes no assumption about the slot's contents.
+   *
+   * Per `pf_part_detail_panel_three_facet_rows` the per-facet row
+   * block (`<ParticipantVoteButtons>`) moved out of the actionSlot
+   * and into the panel body — the rows are part of the panel's
+   * always-on shape per ADR 0030 §10, not an opt-in action. The
+   * actionSlot now hosts the axiom-mark button only.
    */
   readonly actionSlot?: ReactNode;
 }
+
+/**
+ * Stable empty `FacetStatusIndex` used as the panel-level fallback
+ * when no projection result has been threaded through (legacy test
+ * fixtures + the route's first render). Re-using one frozen instance
+ * across re-renders keeps the always-on row block's memo bailout
+ * meaningful (the row block reads the index by reference).
+ */
+const EMPTY_FACET_STATUS_INDEX: FacetStatusIndex = {
+  nodes: new Map(),
+  edges: new Map(),
+};
 
 function EntityDetailPanelImpl(props: EntityDetailPanelProps): ReactElement {
   const {
@@ -233,6 +264,7 @@ function EntityDetailPanelImpl(props: EntityDetailPanelProps): ReactElement {
     edgeAnnotationIndex,
     ownVoteIndex,
     othersVoteIndex,
+    facetStatusIndex,
     actionSlot,
   } = props;
   const { t } = useTranslation();
@@ -365,6 +397,20 @@ function EntityDetailPanelImpl(props: EntityDetailPanelProps): ReactElement {
         roster={roster}
         sectionHeading={t('participant.detailPanel.sectionTitle.otherVotes')}
         voteArmLabel={(arm) => t(`methodology.voteChoice.${arm}`)}
+      />
+      {/* Always-on per-facet row block per ADR 0030 §10 +
+       * `pf_part_detail_panel_three_facet_rows`: nodes render three
+       * rows (wording / classification / substance); edges render two
+       * (shape / substance). Each row's content depends on the
+       * facet's derived status; rendered for both `node` and `edge`
+       * selections (the row block component picks the facet catalog
+       * off `entityKind`). */}
+      <ParticipantVoteButtons
+        events={events}
+        entityKind={selected.kind}
+        entityId={entity.id}
+        facetStatusIndex={facetStatusIndex ?? EMPTY_FACET_STATUS_INDEX}
+        currentParticipantId={currentParticipantId}
       />
       {actionSlot !== undefined ? (
         <div data-testid="participant-detail-panel-action-slot">{actionSlot}</div>

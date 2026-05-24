@@ -163,6 +163,7 @@ task per_facet_refactor "Per-facet refactor (ADR 0030)" {
     task pf_part_detail_panel_three_facet_rows "Detail panel: always-render facet rows + state machine" {
       effort 1.5d
       allocate team
+      complete 100
       note "Refinement: tasks/refinements/per-facet-refactor/pf_part_detail_panel_three_facet_rows.md"
     }
     task pf_part_withdraw_agreement_action "Withdraw-agreement action hook + button" {

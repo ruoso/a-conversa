@@ -643,6 +643,9 @@
         "otherVotes": "Other participants",
         "vote": "Cast your vote",
         "markAxiom": "My axioms"
+      },
+      "facetRow": {
+        "awaitingProposal": "Awaiting a proposal"
       }
     },
     "voteButton": {

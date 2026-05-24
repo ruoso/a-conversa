@@ -1,30 +1,37 @@
-// Tests for `<ParticipantVoteButtons>` — the per-facet vote-button row
-// mounted into `<EntityDetailPanel>`'s `actionSlot`.
-//
-// Refinement: `tasks/refinements/participant-ui/part_voting.md`
-//             (`part_vote_button_per_facet`).
+// Tests for `<ParticipantVoteButtons>` — the participant detail
+// panel's per-facet row block. Per
+// `tasks/refinements/per-facet-refactor/pf_part_detail_panel_three_facet_rows.md`
+// + [ADR 0030 §10](../../../../docs/adr/0030-per-facet-vote-keying-and-sequential-capture.md)
+// nodes always render three rows (wording / classification /
+// substance); edges always render two (shape / substance). Each row's
+// content branches on the row's derived `FacetStatus`. The pre-
+// refactor "render-only-if-pending-proposal" shape is gone.
 //
 // Per ADR 0022 these are committed Vitest cases pinning:
 //
-//   1. **Empty-state branch.** No pending proposals on the selected
-//      entity → component renders `null` (the absence of a vote
-//      affordance is the signal).
-//   2. **Per-facet row contract.** One pending proposal → one row with
-//      `data-testid="participant-detail-panel-facet-row"` +
-//      `data-facet-name="<facet>"` + the three vote buttons as direct
-//      descendants. This is the contract the e2e methodology spec
-//      selects against.
-//   3. **Per-choice button testids.** Each row carries
-//      `participant-vote-button-{agree,dispute,withdraw}` testids on
-//      its three buttons.
+//   1. **Always-on three rows for nodes.** No events at all → three
+//      rows for `wording` / `classification` / `substance`, each in
+//      the `awaiting-proposal` empty-state branch.
+//   2. **Always-on two rows for edges.** No events → two rows for
+//      `shape` / `substance`.
+//   3. **Per-status row content.**
+//      - `proposed` → candidate value + agree / dispute buttons.
+//      - `disputed` → candidate value + agree / dispute buttons.
+//      - `withdrawn` → candidate value + agree / dispute buttons.
+//      - `agreed` / `committed` → candidate value + (placeholder)
+//        withdraw button.
+//      - `awaiting-proposal` → empty-state body, no buttons.
+//      - `meta-disagreement` → no vote buttons.
 //   4. **Click → fires the wire envelope.** Clicking the agree button
-//      sends exactly one `vote` envelope with `choice: 'agree'` for
-//      the row's `proposalId`.
-//   5. **Multiple facets → multiple rows.** Two pending proposals
-//      against the same entity (one classify-node, one edit-wording) →
-//      two rows, each with its own facet name + proposalId binding.
-//   6. **Committed proposal → no row.** A pending proposal that's
-//      later committed disappears from the action slot.
+//      on a `proposed`-row sends exactly one `vote` envelope with
+//      `choice: 'agree'` for the row's `proposalId`.
+//   5. **Structural sub-kinds surface a synthetic `'proposal'` row.**
+//      In addition to the always-on facet rows, decompose /
+//      interpretive-split / axiom-mark / annotate proposals add one
+//      `data-facet-name="proposal"` row carrying the structural
+//      proposal id.
+//   6. **`derivePendingFacetProposals`** still resolves the
+//      proposalId per facet (regression coverage for the helper).
 
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
@@ -43,6 +50,7 @@ import type {
   WsMessageType,
 } from '@a-conversa/shared-types';
 import { createI18nInstance } from '@a-conversa/shell';
+import { computeFacetStatuses, type FacetStatusIndex } from '../graph/facetStatus';
 
 const SESSION_ID = '11111111-1111-4111-8111-111111111111';
 const NODE_A_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -58,6 +66,11 @@ const PROPOSAL_ANNOTATE_ID = '77777777-7777-4777-8777-777777777777';
 const ACTOR_ID = '00000000-0000-4000-8000-0000000000aa';
 const PARTICIPANT_BEN = '00000000-0000-4000-8000-0000000000b1';
 const PARTICIPANT_MARIA = '00000000-0000-4000-8000-0000000000b2';
+
+const EMPTY_FACET_STATUS_INDEX: FacetStatusIndex = {
+  nodes: new Map(),
+  edges: new Map(),
+};
 
 beforeAll(async () => {
   await createI18nInstance('en-US');
@@ -110,6 +123,40 @@ function Wrapper({ children, client }: { children: ReactNode; client: WsClient }
   );
 }
 
+function nodeCreatedEvent(seq: number, wording: string): Event {
+  return {
+    id: `00000000-0000-4000-8000-${seq.toString().padStart(12, '0')}`,
+    sessionId: SESSION_ID,
+    sequence: seq,
+    kind: 'node-created',
+    actor: ACTOR_ID,
+    createdAt: '2026-05-17T00:00:00.000Z',
+    payload: {
+      node_id: NODE_A_ID,
+      wording,
+      created_at: '2026-05-17T00:00:00.000Z',
+    },
+  } as unknown as Event;
+}
+
+function edgeCreatedEvent(seq: number): Event {
+  return {
+    id: `00000000-0000-4000-8000-${(0x600 + seq).toString(16).padStart(12, '0')}`,
+    sessionId: SESSION_ID,
+    sequence: seq,
+    kind: 'edge-created',
+    actor: ACTOR_ID,
+    createdAt: '2026-05-17T00:00:00.000Z',
+    payload: {
+      edge_id: EDGE_E_ID,
+      source_node_id: NODE_A_ID,
+      target_node_id: NODE_COMPONENT_1,
+      role: 'supports',
+      created_at: '2026-05-17T00:00:00.000Z',
+    },
+  } as unknown as Event;
+}
+
 function classifyNodeProposalEvent(seq: number): Event {
   return {
     id: PROPOSAL_CLASSIFY_ID,
@@ -139,9 +186,9 @@ function editWordingProposalEvent(seq: number): Event {
     payload: {
       proposal: {
         kind: 'edit-wording',
+        edit_kind: 'reword',
         node_id: NODE_A_ID,
-        sub_kind: 'reword',
-        wording: 'Reworded.',
+        new_wording: 'Reworded.',
       },
     },
   } as unknown as Event;
@@ -247,6 +294,46 @@ function annotateEdgeProposalEvent(seq: number): Event {
   } as unknown as Event;
 }
 
+function joinedEvent(seq: number, userId: string): Event {
+  return {
+    id: `00000000-0000-4000-8000-${(0x500 + seq).toString(16).padStart(12, '0')}`,
+    sessionId: SESSION_ID,
+    sequence: seq,
+    kind: 'participant-joined',
+    actor: userId,
+    createdAt: '2026-05-17T00:00:00.000Z',
+    payload: {
+      user_id: userId,
+      role: 'debater-A',
+      screen_name: 'P',
+      joined_at: '2026-05-17T00:00:00.000Z',
+    },
+  } as unknown as Event;
+}
+
+function voteEvent(
+  seq: number,
+  proposalId: string,
+  voter: string,
+  arm: 'agree' | 'dispute',
+): Event {
+  return {
+    id: `00000000-0000-4000-8000-${(0x700 + seq).toString(16).padStart(12, '0')}`,
+    sessionId: SESSION_ID,
+    sequence: seq,
+    kind: 'vote',
+    actor: voter,
+    createdAt: '2026-05-17T00:00:00.000Z',
+    payload: {
+      target: 'proposal',
+      proposal_id: proposalId,
+      participant: voter,
+      choice: arm,
+      voted_at: '2026-05-17T00:00:00.000Z',
+    },
+  } as unknown as Event;
+}
+
 function commitEvent(proposalId: string, seq: number): Event {
   return {
     id: `99999999-9999-4999-8999-${seq.toString().padStart(12, '0')}`,
@@ -314,79 +401,222 @@ describe('derivePendingFacetProposals (pure helper)', () => {
   });
 });
 
-describe('<ParticipantVoteButtons> — empty state', () => {
-  it('renders nothing when the selected entity has no pending proposals', () => {
-    const fake = makeFakeClient();
-    const { container } = render(
-      <Wrapper client={fake.client}>
-        <ParticipantVoteButtons events={[]} entityKind="node" entityId={NODE_A_ID} />
-      </Wrapper>,
-    );
-    expect(container.firstChild).toBeNull();
-  });
-});
+// --------------------------------------------------------------------
+// Always-on three-row contract for nodes / two-row for edges
+// --------------------------------------------------------------------
 
-describe('<ParticipantVoteButtons> — per-facet rows', () => {
-  it('renders one row per pending facet with the spec testid + data-facet-name attr', () => {
+describe('<ParticipantVoteButtons> — always-on row block', () => {
+  it('renders three rows for a node (wording / classification / substance) even with no events', () => {
     const fake = makeFakeClient();
-    const events: Event[] = [classifyNodeProposalEvent(1), editWordingProposalEvent(2)];
     render(
       <Wrapper client={fake.client}>
-        <ParticipantVoteButtons events={events} entityKind="node" entityId={NODE_A_ID} />
+        <ParticipantVoteButtons
+          events={[]}
+          entityKind="node"
+          entityId={NODE_A_ID}
+          facetStatusIndex={EMPTY_FACET_STATUS_INDEX}
+        />
+      </Wrapper>,
+    );
+    const rows = screen.getAllByTestId('participant-detail-panel-facet-row');
+    expect(rows.length).toBe(3);
+    const facetNames = rows.map((r) => r.getAttribute('data-facet-name'));
+    expect(facetNames).toEqual(['wording', 'classification', 'substance']);
+    // Every row is in the awaiting-proposal empty-state branch (no
+    // candidate value yet).
+    for (const row of rows) {
+      expect(row.getAttribute('data-facet-status')).toBe('awaiting-proposal');
+      expect(within(row).queryByTestId('participant-vote-button-agree')).toBeNull();
+      expect(
+        within(row).getByTestId('participant-detail-panel-facet-row-awaiting-proposal'),
+      ).toBeDefined();
+    }
+  });
+
+  it('renders two rows for an edge (shape / substance) even with no events', () => {
+    const fake = makeFakeClient();
+    render(
+      <Wrapper client={fake.client}>
+        <ParticipantVoteButtons
+          events={[]}
+          entityKind="edge"
+          entityId={EDGE_E_ID}
+          facetStatusIndex={EMPTY_FACET_STATUS_INDEX}
+        />
       </Wrapper>,
     );
     const rows = screen.getAllByTestId('participant-detail-panel-facet-row');
     expect(rows.length).toBe(2);
     const facetNames = rows.map((r) => r.getAttribute('data-facet-name'));
-    expect(facetNames.sort()).toEqual(['classification', 'wording']);
-  });
-
-  it('each row carries the three vote-button testids as descendants', () => {
-    const fake = makeFakeClient();
-    const events: Event[] = [classifyNodeProposalEvent(1)];
-    render(
-      <Wrapper client={fake.client}>
-        <ParticipantVoteButtons events={events} entityKind="node" entityId={NODE_A_ID} />
-      </Wrapper>,
-    );
-    const row = screen.getByTestId('participant-detail-panel-facet-row');
-    expect(row.getAttribute('data-facet-name')).toBe('classification');
-    expect(row.getAttribute('data-proposal-id')).toBe(PROPOSAL_CLASSIFY_ID);
-    expect(within(row).getByTestId('participant-vote-button-agree')).toBeDefined();
-    expect(within(row).getByTestId('participant-vote-button-dispute')).toBeDefined();
-    expect(within(row).getByTestId('participant-vote-button-withdraw')).toBeDefined();
-  });
-
-  it('does NOT render a row for a proposal that has been committed', () => {
-    const fake = makeFakeClient();
-    const events: Event[] = [
-      classifyNodeProposalEvent(1),
-      editWordingProposalEvent(2),
-      commitEvent(PROPOSAL_CLASSIFY_ID, 3),
-    ];
-    render(
-      <Wrapper client={fake.client}>
-        <ParticipantVoteButtons events={events} entityKind="node" entityId={NODE_A_ID} />
-      </Wrapper>,
-    );
-    const rows = screen.getAllByTestId('participant-detail-panel-facet-row');
-    expect(rows.length).toBe(1);
-    expect(rows[0]?.getAttribute('data-facet-name')).toBe('wording');
-    expect(rows[0]?.getAttribute('data-proposal-id')).toBe(PROPOSAL_REWORD_ID);
+    expect(facetNames).toEqual(['shape', 'substance']);
   });
 });
 
-describe('<ParticipantVoteButtons> — click fires the wire envelope', () => {
-  it('clicking agree sends exactly one vote envelope with choice="agree"', () => {
+// --------------------------------------------------------------------
+// Per-status row content
+// --------------------------------------------------------------------
+
+describe('<ParticipantVoteButtons> — per-status row content', () => {
+  it("a freshly-captured node's wording row is in 'proposed' with agree+dispute buttons; classification / substance are 'awaiting-proposal'", () => {
     const fake = makeFakeClient();
-    const events: Event[] = [classifyNodeProposalEvent(1)];
+    const events: Event[] = [
+      joinedEvent(1, PARTICIPANT_BEN),
+      joinedEvent(2, PARTICIPANT_MARIA),
+      nodeCreatedEvent(3, 'A first claim'),
+    ];
+    const facetStatusIndex = computeFacetStatuses(events);
     render(
       <Wrapper client={fake.client}>
-        <ParticipantVoteButtons events={events} entityKind="node" entityId={NODE_A_ID} />
+        <ParticipantVoteButtons
+          events={events}
+          entityKind="node"
+          entityId={NODE_A_ID}
+          facetStatusIndex={facetStatusIndex}
+        />
       </Wrapper>,
     );
-    const row = screen.getByTestId('participant-detail-panel-facet-row');
-    const agree = within(row).getByTestId('participant-vote-button-agree');
+    const rows = screen.getAllByTestId('participant-detail-panel-facet-row');
+    expect(rows.length).toBe(3);
+    const wordingRow = rows.find((r) => r.getAttribute('data-facet-name') === 'wording');
+    if (!wordingRow) throw new Error('wording row missing');
+    // The wording row should NOT be `awaiting-proposal` — `node-created`
+    // populated the candidate inline (per ADR 0030 §4).
+    expect(wordingRow.getAttribute('data-facet-status')).not.toBe('awaiting-proposal');
+    // Classification + substance are awaiting-proposal (no candidate
+    // yet — neither a classify-node nor a set-node-substance proposal
+    // has landed).
+    const classifyRow = rows.find((r) => r.getAttribute('data-facet-name') === 'classification');
+    const substanceRow = rows.find((r) => r.getAttribute('data-facet-name') === 'substance');
+    if (!classifyRow || !substanceRow) throw new Error('classify/substance row missing');
+    expect(classifyRow.getAttribute('data-facet-status')).toBe('awaiting-proposal');
+    expect(substanceRow.getAttribute('data-facet-status')).toBe('awaiting-proposal');
+  });
+
+  it('a classify-node proposal flips classification to `proposed` and renders agree+dispute buttons + candidate value', () => {
+    const fake = makeFakeClient();
+    const events: Event[] = [
+      joinedEvent(1, PARTICIPANT_BEN),
+      joinedEvent(2, PARTICIPANT_MARIA),
+      nodeCreatedEvent(3, 'A first claim'),
+      classifyNodeProposalEvent(4),
+    ];
+    const facetStatusIndex = computeFacetStatuses(events);
+    render(
+      <Wrapper client={fake.client}>
+        <ParticipantVoteButtons
+          events={events}
+          entityKind="node"
+          entityId={NODE_A_ID}
+          facetStatusIndex={facetStatusIndex}
+        />
+      </Wrapper>,
+    );
+    const classifyRow = screen
+      .getAllByTestId('participant-detail-panel-facet-row')
+      .find((r) => r.getAttribute('data-facet-name') === 'classification');
+    if (!classifyRow) throw new Error('classification row missing');
+    expect(classifyRow.getAttribute('data-facet-status')).toBe('proposed');
+    expect(classifyRow.getAttribute('data-proposal-id')).toBe(PROPOSAL_CLASSIFY_ID);
+    expect(within(classifyRow).getByTestId('participant-vote-button-agree')).toBeDefined();
+    expect(within(classifyRow).getByTestId('participant-vote-button-dispute')).toBeDefined();
+    // The candidate-value display surfaces the classification.
+    expect(
+      within(classifyRow).getByTestId('participant-detail-panel-facet-row-candidate').textContent,
+    ).toBe('claim');
+  });
+
+  it('a committed classification flips the row to `committed` with the placeholder withdraw button (no agree/dispute)', () => {
+    const fake = makeFakeClient();
+    const events: Event[] = [
+      joinedEvent(1, PARTICIPANT_BEN),
+      joinedEvent(2, PARTICIPANT_MARIA),
+      nodeCreatedEvent(3, 'A first claim'),
+      classifyNodeProposalEvent(4),
+      voteEvent(5, PROPOSAL_CLASSIFY_ID, PARTICIPANT_BEN, 'agree'),
+      voteEvent(6, PROPOSAL_CLASSIFY_ID, PARTICIPANT_MARIA, 'agree'),
+      commitEvent(PROPOSAL_CLASSIFY_ID, 7),
+    ];
+    const facetStatusIndex = computeFacetStatuses(events);
+    render(
+      <Wrapper client={fake.client}>
+        <ParticipantVoteButtons
+          events={events}
+          entityKind="node"
+          entityId={NODE_A_ID}
+          facetStatusIndex={facetStatusIndex}
+        />
+      </Wrapper>,
+    );
+    const classifyRow = screen
+      .getAllByTestId('participant-detail-panel-facet-row')
+      .find((r) => r.getAttribute('data-facet-name') === 'classification');
+    if (!classifyRow) throw new Error('classification row missing');
+    expect(classifyRow.getAttribute('data-facet-status')).toBe('committed');
+    expect(within(classifyRow).queryByTestId('participant-vote-button-agree')).toBeNull();
+    expect(within(classifyRow).queryByTestId('participant-vote-button-dispute')).toBeNull();
+    // Placeholder withdraw button — wired by
+    // `pf_part_withdraw_agreement_action` downstream.
+    expect(within(classifyRow).getByTestId('participant-vote-button-withdraw')).toBeDefined();
+  });
+
+  it('a disputed classification still shows agree+dispute (the dispute can flip back)', () => {
+    const fake = makeFakeClient();
+    const events: Event[] = [
+      joinedEvent(1, PARTICIPANT_BEN),
+      joinedEvent(2, PARTICIPANT_MARIA),
+      nodeCreatedEvent(3, 'A first claim'),
+      classifyNodeProposalEvent(4),
+      voteEvent(5, PROPOSAL_CLASSIFY_ID, PARTICIPANT_BEN, 'dispute'),
+    ];
+    const facetStatusIndex = computeFacetStatuses(events);
+    render(
+      <Wrapper client={fake.client}>
+        <ParticipantVoteButtons
+          events={events}
+          entityKind="node"
+          entityId={NODE_A_ID}
+          facetStatusIndex={facetStatusIndex}
+        />
+      </Wrapper>,
+    );
+    const classifyRow = screen
+      .getAllByTestId('participant-detail-panel-facet-row')
+      .find((r) => r.getAttribute('data-facet-name') === 'classification');
+    if (!classifyRow) throw new Error('classification row missing');
+    expect(classifyRow.getAttribute('data-facet-status')).toBe('disputed');
+    expect(within(classifyRow).getByTestId('participant-vote-button-agree')).toBeDefined();
+    expect(within(classifyRow).getByTestId('participant-vote-button-dispute')).toBeDefined();
+  });
+});
+
+// --------------------------------------------------------------------
+// Vote click → wire envelope
+// --------------------------------------------------------------------
+
+describe('<ParticipantVoteButtons> — click fires the wire envelope', () => {
+  it('clicking agree on a `proposed` row sends one vote envelope with choice="agree"', () => {
+    const fake = makeFakeClient();
+    const events: Event[] = [
+      joinedEvent(1, PARTICIPANT_BEN),
+      nodeCreatedEvent(2, 'A first claim'),
+      classifyNodeProposalEvent(3),
+    ];
+    const facetStatusIndex = computeFacetStatuses(events);
+    render(
+      <Wrapper client={fake.client}>
+        <ParticipantVoteButtons
+          events={events}
+          entityKind="node"
+          entityId={NODE_A_ID}
+          facetStatusIndex={facetStatusIndex}
+        />
+      </Wrapper>,
+    );
+    const classifyRow = screen
+      .getAllByTestId('participant-detail-panel-facet-row')
+      .find((r) => r.getAttribute('data-facet-name') === 'classification');
+    if (!classifyRow) throw new Error('classification row missing');
+    const agree = within(classifyRow).getByTestId('participant-vote-button-agree');
     act(() => {
       fireEvent.click(agree);
     });
@@ -400,82 +630,69 @@ describe('<ParticipantVoteButtons> — click fires the wire envelope', () => {
     });
   });
 
-  it('clicking dispute sends choice="dispute"', () => {
+  it('clicking dispute on a `proposed` row sends choice="dispute"', () => {
     const fake = makeFakeClient();
-    const events: Event[] = [classifyNodeProposalEvent(1)];
+    const events: Event[] = [
+      joinedEvent(1, PARTICIPANT_BEN),
+      nodeCreatedEvent(2, 'A first claim'),
+      classifyNodeProposalEvent(3),
+    ];
+    const facetStatusIndex = computeFacetStatuses(events);
     render(
       <Wrapper client={fake.client}>
-        <ParticipantVoteButtons events={events} entityKind="node" entityId={NODE_A_ID} />
+        <ParticipantVoteButtons
+          events={events}
+          entityKind="node"
+          entityId={NODE_A_ID}
+          facetStatusIndex={facetStatusIndex}
+        />
       </Wrapper>,
     );
-    const row = screen.getByTestId('participant-detail-panel-facet-row');
+    const classifyRow = screen
+      .getAllByTestId('participant-detail-panel-facet-row')
+      .find((r) => r.getAttribute('data-facet-name') === 'classification');
+    if (!classifyRow) throw new Error('classification row missing');
     act(() => {
-      fireEvent.click(within(row).getByTestId('participant-vote-button-dispute'));
+      fireEvent.click(within(classifyRow).getByTestId('participant-vote-button-dispute'));
     });
     expect(fake.calls.length).toBe(1);
     expect((fake.calls[0]?.payload as { choice: string }).choice).toBe('dispute');
-  });
-
-  it('clicking withdraw sends choice="withdraw"', () => {
-    const fake = makeFakeClient();
-    const events: Event[] = [classifyNodeProposalEvent(1)];
-    render(
-      <Wrapper client={fake.client}>
-        <ParticipantVoteButtons events={events} entityKind="node" entityId={NODE_A_ID} />
-      </Wrapper>,
-    );
-    const row = screen.getByTestId('participant-detail-panel-facet-row');
-    act(() => {
-      fireEvent.click(within(row).getByTestId('participant-vote-button-withdraw'));
-    });
-    expect(fake.calls.length).toBe(1);
-    expect((fake.calls[0]?.payload as { choice: string }).choice).toBe('withdraw');
-  });
-
-  it('two facet rows fire independent envelopes scoped to each proposalId', () => {
-    const fake = makeFakeClient();
-    const events: Event[] = [classifyNodeProposalEvent(1), editWordingProposalEvent(2)];
-    render(
-      <Wrapper client={fake.client}>
-        <ParticipantVoteButtons events={events} entityKind="node" entityId={NODE_A_ID} />
-      </Wrapper>,
-    );
-    const rows = screen.getAllByTestId('participant-detail-panel-facet-row');
-    const classifyRow = rows.find((r) => r.getAttribute('data-facet-name') === 'classification');
-    const wordingRow = rows.find((r) => r.getAttribute('data-facet-name') === 'wording');
-    if (!classifyRow || !wordingRow) throw new Error('missing facet row');
-    act(() => {
-      fireEvent.click(within(classifyRow).getByTestId('participant-vote-button-agree'));
-    });
-    act(() => {
-      fireEvent.click(within(wordingRow).getByTestId('participant-vote-button-dispute'));
-    });
-    expect(fake.calls.length).toBe(2);
-    expect((fake.calls[0]?.payload as { proposalId: string }).proposalId).toBe(
-      PROPOSAL_CLASSIFY_ID,
-    );
-    expect((fake.calls[1]?.payload as { proposalId: string }).proposalId).toBe(PROPOSAL_REWORD_ID);
   });
 });
 
 describe('<ParticipantVoteButtons> — in-flight visual', () => {
   it('flips data-vote-state to "in-flight" on the clicked row after click', () => {
     const fake = makeFakeClient();
-    const events: Event[] = [classifyNodeProposalEvent(1)];
+    const events: Event[] = [
+      joinedEvent(1, PARTICIPANT_BEN),
+      nodeCreatedEvent(2, 'A first claim'),
+      classifyNodeProposalEvent(3),
+    ];
+    const facetStatusIndex = computeFacetStatuses(events);
     render(
       <Wrapper client={fake.client}>
-        <ParticipantVoteButtons events={events} entityKind="node" entityId={NODE_A_ID} />
+        <ParticipantVoteButtons
+          events={events}
+          entityKind="node"
+          entityId={NODE_A_ID}
+          facetStatusIndex={facetStatusIndex}
+        />
       </Wrapper>,
     );
-    const row = screen.getByTestId('participant-detail-panel-facet-row');
-    expect(row.getAttribute('data-vote-state')).toBe('enabled');
+    const classifyRow = screen
+      .getAllByTestId('participant-detail-panel-facet-row')
+      .find((r) => r.getAttribute('data-facet-name') === 'classification');
+    if (!classifyRow) throw new Error('classification row missing');
+    expect(classifyRow.getAttribute('data-vote-state')).toBe('enabled');
     act(() => {
-      fireEvent.click(within(row).getByTestId('participant-vote-button-agree'));
+      fireEvent.click(within(classifyRow).getByTestId('participant-vote-button-agree'));
     });
-    // After click, the row reflects in-flight; the buttons are disabled.
-    const rowAfter = screen.getByTestId('participant-detail-panel-facet-row');
-    expect(rowAfter.getAttribute('data-vote-state')).toBe('in-flight');
-    const agreeBtn = within(rowAfter).getByTestId('participant-vote-button-agree');
+    const after = screen
+      .getAllByTestId('participant-detail-panel-facet-row')
+      .find((r) => r.getAttribute('data-facet-name') === 'classification');
+    if (!after) throw new Error('classification row missing post-click');
+    expect(after.getAttribute('data-vote-state')).toBe('in-flight');
+    const agreeBtn = within(after).getByTestId('participant-vote-button-agree');
     expect(agreeBtn.hasAttribute('disabled')).toBe(true);
   });
 });
@@ -483,46 +700,62 @@ describe('<ParticipantVoteButtons> — in-flight visual', () => {
 // ---------------------------------------------------------------------
 // Structural sub-kind support — `decompose`, `interpretive-split`,
 // `axiom-mark`, `annotate` each surface a synthetic `'proposal'` facet
-// row on the targeted entity. Click → wire `vote` envelope carries the
-// structural proposal's event id. The server's `handleVote` populates
-// the pending proposal's `perParticipantVotes` map; the unanimity check
-// in `checkUnanimousAgreeStructural` walks it (per commit `421353f`).
+// row on the targeted entity IN ADDITION to the always-on facet rows.
 // ---------------------------------------------------------------------
 
 describe('<ParticipantVoteButtons> — structural sub-kinds surface a "proposal" row', () => {
-  it('decompose proposal on the parent node renders one "proposal" row', () => {
+  it('decompose proposal on the parent node renders one "proposal" row in addition to the 3 always-on facet rows', () => {
     const fake = makeFakeClient();
-    const events: Event[] = [decomposeProposalEvent(1)];
+    const events: Event[] = [nodeCreatedEvent(1, 'parent'), decomposeProposalEvent(2)];
+    const facetStatusIndex = computeFacetStatuses(events);
     render(
       <Wrapper client={fake.client}>
-        <ParticipantVoteButtons events={events} entityKind="node" entityId={NODE_A_ID} />
+        <ParticipantVoteButtons
+          events={events}
+          entityKind="node"
+          entityId={NODE_A_ID}
+          facetStatusIndex={facetStatusIndex}
+        />
       </Wrapper>,
     );
-    const row = screen.getByTestId('participant-detail-panel-facet-row');
-    expect(row.getAttribute('data-facet-name')).toBe('proposal');
-    expect(row.getAttribute('data-proposal-id')).toBe(PROPOSAL_DECOMPOSE_ID);
-    expect(within(row).getByTestId('participant-vote-button-agree')).toBeDefined();
-    expect(within(row).getByTestId('participant-vote-button-dispute')).toBeDefined();
-    expect(within(row).getByTestId('participant-vote-button-withdraw')).toBeDefined();
+    const rows = screen.getAllByTestId('participant-detail-panel-facet-row');
+    expect(rows.length).toBe(4);
+    const proposalRow = rows.find((r) => r.getAttribute('data-facet-name') === 'proposal');
+    if (!proposalRow) throw new Error('proposal row missing');
+    expect(proposalRow.getAttribute('data-proposal-id')).toBe(PROPOSAL_DECOMPOSE_ID);
+    expect(within(proposalRow).getByTestId('participant-vote-button-agree')).toBeDefined();
+    expect(within(proposalRow).getByTestId('participant-vote-button-dispute')).toBeDefined();
+    expect(within(proposalRow).getByTestId('participant-vote-button-withdraw')).toBeDefined();
   });
 
   it('interpretive-split proposal on the parent node renders one "proposal" row', () => {
     const fake = makeFakeClient();
-    const events: Event[] = [interpretiveSplitProposalEvent(1)];
+    const events: Event[] = [nodeCreatedEvent(1, 'parent'), interpretiveSplitProposalEvent(2)];
+    const facetStatusIndex = computeFacetStatuses(events);
     render(
       <Wrapper client={fake.client}>
-        <ParticipantVoteButtons events={events} entityKind="node" entityId={NODE_A_ID} />
+        <ParticipantVoteButtons
+          events={events}
+          entityKind="node"
+          entityId={NODE_A_ID}
+          facetStatusIndex={facetStatusIndex}
+        />
       </Wrapper>,
     );
-    const row = screen.getByTestId('participant-detail-panel-facet-row');
-    expect(row.getAttribute('data-facet-name')).toBe('proposal');
-    expect(row.getAttribute('data-proposal-id')).toBe(PROPOSAL_INTERPRETIVE_SPLIT_ID);
+    const proposalRow = screen
+      .getAllByTestId('participant-detail-panel-facet-row')
+      .find((r) => r.getAttribute('data-facet-name') === 'proposal');
+    if (!proposalRow) throw new Error('proposal row missing');
+    expect(proposalRow.getAttribute('data-proposal-id')).toBe(PROPOSAL_INTERPRETIVE_SPLIT_ID);
   });
 
-  it('axiom-mark proposal on a node renders one "proposal" row for non-declared participants', () => {
+  it('axiom-mark proposal on a node renders the "proposal" row for non-declared participants', () => {
     const fake = makeFakeClient();
-    // Ben proposes the axiom mark; Maria sees the row (she's not Ben).
-    const events: Event[] = [axiomMarkProposalEvent(1, PARTICIPANT_BEN)];
+    const events: Event[] = [
+      nodeCreatedEvent(1, 'parent'),
+      axiomMarkProposalEvent(2, PARTICIPANT_BEN),
+    ];
+    const facetStatusIndex = computeFacetStatuses(events);
     render(
       <Wrapper client={fake.client}>
         <ParticipantVoteButtons
@@ -530,84 +763,123 @@ describe('<ParticipantVoteButtons> — structural sub-kinds surface a "proposal"
           entityKind="node"
           entityId={NODE_A_ID}
           currentParticipantId={PARTICIPANT_MARIA}
+          facetStatusIndex={facetStatusIndex}
         />
       </Wrapper>,
     );
-    const row = screen.getByTestId('participant-detail-panel-facet-row');
-    expect(row.getAttribute('data-facet-name')).toBe('proposal');
-    expect(row.getAttribute('data-proposal-id')).toBe(PROPOSAL_AXIOM_MARK_ID);
+    const proposalRow = screen
+      .getAllByTestId('participant-detail-panel-facet-row')
+      .find((r) => r.getAttribute('data-facet-name') === 'proposal');
+    if (!proposalRow) throw new Error('proposal row missing');
+    expect(proposalRow.getAttribute('data-proposal-id')).toBe(PROPOSAL_AXIOM_MARK_ID);
   });
 
-  it('axiom-mark proposal does NOT render a row for the declared participant', () => {
+  it('axiom-mark proposal does NOT render the "proposal" row for the declared participant (always-on facet rows still render)', () => {
     const fake = makeFakeClient();
-    // Ben proposes; the row should not appear when ben is the current
-    // participant — his proposal IS the declaration, he has nothing
-    // to vote on (the server's `checkUnanimousAgreeStructural`
-    // excludes the declared participant from the required-voters set).
-    const events: Event[] = [axiomMarkProposalEvent(1, PARTICIPANT_BEN)];
-    const { container } = render(
+    const events: Event[] = [
+      nodeCreatedEvent(1, 'parent'),
+      axiomMarkProposalEvent(2, PARTICIPANT_BEN),
+    ];
+    const facetStatusIndex = computeFacetStatuses(events);
+    render(
       <Wrapper client={fake.client}>
         <ParticipantVoteButtons
           events={events}
           entityKind="node"
           entityId={NODE_A_ID}
           currentParticipantId={PARTICIPANT_BEN}
+          facetStatusIndex={facetStatusIndex}
         />
       </Wrapper>,
     );
-    expect(container.firstChild).toBeNull();
+    const rows = screen.getAllByTestId('participant-detail-panel-facet-row');
+    expect(rows.length).toBe(3); // only the always-on facet rows
+    const facetNames = rows.map((r) => r.getAttribute('data-facet-name'));
+    expect(facetNames).toEqual(['wording', 'classification', 'substance']);
   });
 
   it('annotate proposal on a node renders one "proposal" row on the targeted node', () => {
     const fake = makeFakeClient();
-    const events: Event[] = [annotateNodeProposalEvent(1)];
+    const events: Event[] = [nodeCreatedEvent(1, 'parent'), annotateNodeProposalEvent(2)];
+    const facetStatusIndex = computeFacetStatuses(events);
     render(
       <Wrapper client={fake.client}>
-        <ParticipantVoteButtons events={events} entityKind="node" entityId={NODE_A_ID} />
+        <ParticipantVoteButtons
+          events={events}
+          entityKind="node"
+          entityId={NODE_A_ID}
+          facetStatusIndex={facetStatusIndex}
+        />
       </Wrapper>,
     );
-    const row = screen.getByTestId('participant-detail-panel-facet-row');
-    expect(row.getAttribute('data-facet-name')).toBe('proposal');
-    expect(row.getAttribute('data-proposal-id')).toBe(PROPOSAL_ANNOTATE_ID);
+    const proposalRow = screen
+      .getAllByTestId('participant-detail-panel-facet-row')
+      .find((r) => r.getAttribute('data-facet-name') === 'proposal');
+    if (!proposalRow) throw new Error('proposal row missing');
+    expect(proposalRow.getAttribute('data-proposal-id')).toBe(PROPOSAL_ANNOTATE_ID);
   });
 
   it('annotate proposal on an edge renders one "proposal" row on the targeted edge', () => {
     const fake = makeFakeClient();
-    const events: Event[] = [annotateEdgeProposalEvent(1)];
+    const events: Event[] = [edgeCreatedEvent(1), annotateEdgeProposalEvent(2)];
+    const facetStatusIndex = computeFacetStatuses(events);
     render(
       <Wrapper client={fake.client}>
-        <ParticipantVoteButtons events={events} entityKind="edge" entityId={EDGE_E_ID} />
+        <ParticipantVoteButtons
+          events={events}
+          entityKind="edge"
+          entityId={EDGE_E_ID}
+          facetStatusIndex={facetStatusIndex}
+        />
       </Wrapper>,
     );
-    const row = screen.getByTestId('participant-detail-panel-facet-row');
-    expect(row.getAttribute('data-facet-name')).toBe('proposal');
-    expect(row.getAttribute('data-proposal-id')).toBe(PROPOSAL_ANNOTATE_ID);
+    const proposalRow = screen
+      .getAllByTestId('participant-detail-panel-facet-row')
+      .find((r) => r.getAttribute('data-facet-name') === 'proposal');
+    if (!proposalRow) throw new Error('proposal row missing');
+    expect(proposalRow.getAttribute('data-proposal-id')).toBe(PROPOSAL_ANNOTATE_ID);
   });
 
-  it('decompose row does NOT render on a sibling component node — only on the parent', () => {
+  it('decompose row does NOT render on a sibling component node — only on the parent (always-on rows still render)', () => {
     const fake = makeFakeClient();
-    const events: Event[] = [decomposeProposalEvent(1)];
-    // Selection on one of the components — no row should appear
-    // (the structural move acts ON the parent, not the children).
-    const { container } = render(
+    const events: Event[] = [nodeCreatedEvent(1, 'parent'), decomposeProposalEvent(2)];
+    const facetStatusIndex = computeFacetStatuses(events);
+    render(
       <Wrapper client={fake.client}>
-        <ParticipantVoteButtons events={events} entityKind="node" entityId={NODE_COMPONENT_1} />
+        <ParticipantVoteButtons
+          events={events}
+          entityKind="node"
+          entityId={NODE_COMPONENT_1}
+          facetStatusIndex={facetStatusIndex}
+        />
       </Wrapper>,
     );
-    expect(container.firstChild).toBeNull();
+    const rows = screen.getAllByTestId('participant-detail-panel-facet-row');
+    expect(rows.length).toBe(3);
+    const facetNames = rows.map((r) => r.getAttribute('data-facet-name'));
+    expect(facetNames).toEqual(['wording', 'classification', 'substance']);
   });
 
   it('clicking agree on the synthetic "proposal" row fires a vote envelope with the structural proposalId', () => {
     const fake = makeFakeClient();
-    const events: Event[] = [decomposeProposalEvent(1)];
+    const events: Event[] = [nodeCreatedEvent(1, 'parent'), decomposeProposalEvent(2)];
+    const facetStatusIndex = computeFacetStatuses(events);
     render(
       <Wrapper client={fake.client}>
-        <ParticipantVoteButtons events={events} entityKind="node" entityId={NODE_A_ID} />
+        <ParticipantVoteButtons
+          events={events}
+          entityKind="node"
+          entityId={NODE_A_ID}
+          facetStatusIndex={facetStatusIndex}
+        />
       </Wrapper>,
     );
-    const row = screen.getByTestId('participant-detail-panel-facet-row');
+    const proposalRow = screen
+      .getAllByTestId('participant-detail-panel-facet-row')
+      .find((r) => r.getAttribute('data-facet-name') === 'proposal');
+    if (!proposalRow) throw new Error('proposal row missing');
     act(() => {
-      fireEvent.click(within(row).getByTestId('participant-vote-button-agree'));
+      fireEvent.click(within(proposalRow).getByTestId('participant-vote-button-agree'));
     });
     expect(fake.calls.length).toBe(1);
     expect(fake.calls[0]?.type).toBe('vote');
@@ -619,15 +891,31 @@ describe('<ParticipantVoteButtons> — structural sub-kinds surface a "proposal"
     });
   });
 
-  it('a committed structural proposal stops surfacing its row', () => {
+  it('a committed structural proposal stops surfacing its "proposal" row (always-on rows still render)', () => {
     const fake = makeFakeClient();
-    const events: Event[] = [decomposeProposalEvent(1), commitEvent(PROPOSAL_DECOMPOSE_ID, 2)];
-    const { container } = render(
+    const events: Event[] = [
+      nodeCreatedEvent(1, 'parent'),
+      decomposeProposalEvent(2),
+      commitEvent(PROPOSAL_DECOMPOSE_ID, 3),
+    ];
+    const facetStatusIndex = computeFacetStatuses(events);
+    render(
       <Wrapper client={fake.client}>
-        <ParticipantVoteButtons events={events} entityKind="node" entityId={NODE_A_ID} />
+        <ParticipantVoteButtons
+          events={events}
+          entityKind="node"
+          entityId={NODE_A_ID}
+          facetStatusIndex={facetStatusIndex}
+        />
       </Wrapper>,
     );
-    expect(container.firstChild).toBeNull();
+    const rows = screen.getAllByTestId('participant-detail-panel-facet-row');
+    expect(rows.length).toBe(3); // proposal row dropped
+    expect(rows.map((r) => r.getAttribute('data-facet-name'))).toEqual([
+      'wording',
+      'classification',
+      'substance',
+    ]);
   });
 });
 

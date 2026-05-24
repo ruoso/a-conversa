@@ -643,6 +643,9 @@
         "otherVotes": "Outros participantes",
         "vote": "Registre seu voto",
         "markAxiom": "Meus axiomas"
+      },
+      "facetRow": {
+        "awaitingProposal": "Aguardando proposta"
       }
     },
     "voteButton": {

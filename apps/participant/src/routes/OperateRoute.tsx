@@ -59,7 +59,6 @@ import { ParticipantStatusIndicator } from '../layout/ParticipantStatusIndicator
 import { GraphView } from '../graph/GraphView';
 import { EntityDetailPanel } from '../detail';
 import { ParticipantAxiomMarkButton } from '../detail/ParticipantAxiomMarkButton';
-import { ParticipantVoteButtons } from '../detail/ParticipantVoteButtons';
 import { useSelectionStore } from '../stores/selectionStore';
 import {
   groupAnnotationsByEdge,
@@ -242,12 +241,11 @@ function OperateRouteAuthenticatedBody({
   const panelNodes = useMemo(() => projected.nodes.map((node) => node.data), [projected]);
   const panelEdges = useMemo(() => projected.edges.map((edge) => edge.data), [projected]);
 
-  // Selection drives the vote-buttons component's `(entityKind,
-  // entityId)` bindings. Read here (not inside the slot factory) so
-  // the slot rebinds only when the selection flips. The vote-buttons
-  // component is responsible for the empty-state branch (no pending
-  // proposals → renders nothing); we always pass it down when there's
-  // a node/edge selection so the slot reservation stays alive.
+  // Selection drives the action-slot's axiom-mark button binding. Per
+  // `pf_part_detail_panel_three_facet_rows` the per-facet vote rows
+  // moved out of the action slot and into the panel body (always-on
+  // shape per ADR 0030 §10); the action slot now hosts the axiom-mark
+  // button only.
   //
   // The axiom-mark button is node-only (edges have no axiom-mark
   // semantic per `docs/methodology.md` §"Axioms / terminal values").
@@ -256,15 +254,6 @@ function OperateRouteAuthenticatedBody({
   // mark on this node (the panel's `axiomMarks` attribution section
   // surfaces the existing mark; no second affordance needed).
   const selected = useSelectionStore((s) => s.selected);
-  const voteButtons =
-    selected !== null && (selected.kind === 'node' || selected.kind === 'edge') ? (
-      <ParticipantVoteButtons
-        events={events}
-        entityKind={selected.kind}
-        entityId={selected.id}
-        currentParticipantId={currentParticipantId}
-      />
-    ) : null;
   const axiomMarkButton =
     selected !== null && selected.kind === 'node'
       ? (() => {
@@ -280,11 +269,8 @@ function OperateRouteAuthenticatedBody({
         })()
       : null;
   const actionSlot =
-    voteButtons !== null || axiomMarkButton !== null ? (
-      <div className="flex flex-col gap-3">
-        {voteButtons}
-        {axiomMarkButton}
-      </div>
+    axiomMarkButton !== null ? (
+      <div className="flex flex-col gap-3">{axiomMarkButton}</div>
     ) : undefined;
 
   return (
@@ -314,6 +300,7 @@ function OperateRouteAuthenticatedBody({
         edgeAnnotationIndex={edgeAnnotationIndex}
         ownVoteIndex={ownVoteIndex}
         othersVoteIndex={othersVoteIndex}
+        facetStatusIndex={facetStatusIndex}
         actionSlot={actionSlot}
       />
     </div>
