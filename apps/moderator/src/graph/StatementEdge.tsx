@@ -46,6 +46,7 @@ import { BaseEdge, EdgeLabelRenderer, getBezierPath, type EdgeProps } from 'reac
 
 import { useSelectionStore } from '../stores/index.js';
 import { AnnotationBadge } from './AnnotationBadge.js';
+import { EdgeCardSubstanceAffordance } from './EdgeCardSubstanceAffordance.js';
 import { HoverPopover } from './HoverPopover.js';
 import type { StatementEdgeData } from './selectors.js';
 
@@ -120,6 +121,31 @@ function StatementEdgeImpl(props: EdgeProps<StatementEdgeData>): ReactElement {
   // change the stroke style until their own sibling refinements land
   // their styling branches.
   const substanceStatus = facetStatuses.substance;
+
+  // Per-edge-card substance affordance. Per ADR 0030 §1 + §8 + §10 +
+  // `pf_mod_edge_card_substance_affordance`: substance is the SECOND
+  // facet in the per-edge sequence (shape → substance). When the
+  // substance facet still awaits a candidate, the moderator's path
+  // forward is to name a substance value on this edge. The affordance
+  // mounts inline inside the edge-label container; a click fires a
+  // `set-edge-substance` propose envelope keyed to the edge id (the
+  // hook lives in `useProposeSetEdgeSubstanceAction`). Once a
+  // `set-edge-substance` proposal lands, `substance` moves past
+  // `awaiting-proposal` and the affordance is no longer rendered.
+  //
+  // The gate predicate is `substance === 'awaiting-proposal'`. The
+  // simpler predicate (vs. the node-side `classification ∈ {agreed,
+  // committed} AND substance === 'awaiting-proposal'`) is the
+  // practical consequence of the moderator's `facetStatus.ts` mirror
+  // skipping the shape facet entirely today (the local `FacetName`
+  // mirror is 3-valued — wording | classification | substance). The
+  // server's `pf_sequence_gate_server_enforced` is the integrity
+  // boundary that rejects an out-of-sequence `set-edge-substance`
+  // against an unsettled shape; the UI gate is the simplest predicate
+  // that admits the in-sequence case and lets the server reject
+  // anything else.
+  const showSubstanceAffordance = substanceStatus === 'awaiting-proposal';
+
   const proposedEdgeStyle =
     substanceStatus === 'proposed' ? { strokeDasharray: '6 4', opacity: 0.6 } : undefined;
   // `rose-600` — Tailwind palette. Matches the node's `border-rose-600`
@@ -232,6 +258,7 @@ function StatementEdgeImpl(props: EdgeProps<StatementEdgeData>): ReactElement {
           >
             {label}
           </div>
+          {showSubstanceAffordance ? <EdgeCardSubstanceAffordance edgeId={id} /> : null}
           {annotations.length > 0 ? (
             <div
               data-testid={`annotation-badge-list-edge-${id}`}

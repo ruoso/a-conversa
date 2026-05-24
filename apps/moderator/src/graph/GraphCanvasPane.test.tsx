@@ -341,6 +341,43 @@ afterEach(() => {
   useCaptureStore.getState().reset();
 });
 
+/**
+ * Render `<GraphCanvasPane>` wrapped in a `<WsClientProvider>` +
+ * `<MemoryRouter>`. Used by tests that seed an `edge-created` event —
+ * `pf_mod_edge_card_substance_affordance` mounts a substance affordance
+ * inside the edge label whose `useProposeSetEdgeSubstanceAction` hook
+ * reads `useWsClient()`. The stub client returns a never-resolving
+ * promise — these tests are about edge projection / layout, not the
+ * affordance's click behaviour.
+ */
+function renderGraphWithWsClient(): ReturnType<typeof render> {
+  const stubClient: WsClient = {
+    status: () => 'open',
+    connect: () => undefined,
+    close: () => undefined,
+    send: () =>
+      new Promise(() => {
+        /* never resolves; these tests don't click the affordance */
+      }),
+    trackSession: () => Promise.resolve(),
+    untrackSession: () => Promise.resolve(),
+    onEnvelope: () => () => undefined,
+    url: '/api/ws',
+  };
+  return render(
+    <MemoryRouter initialEntries={[`/m/sessions/${SESSION_ID}/operate`]}>
+      <WsClientProvider auth={{ status: 'authenticated' }} client={stubClient}>
+        <Routes>
+          <Route
+            path="/m/sessions/:id/operate"
+            element={<GraphCanvasPane sessionId={SESSION_ID} />}
+          />
+        </Routes>
+      </WsClientProvider>
+    </MemoryRouter>,
+  );
+}
+
 describe('GraphCanvasPane — ReactFlow mount', () => {
   it('renders without throwing', () => {
     expect(() => render(<GraphCanvasPane sessionId={SESSION_ID} />)).not.toThrow();
@@ -609,7 +646,7 @@ describe('GraphCanvasPane — store-derived edges (mod_edge_rendering)', () => {
     store.applyEvent(
       makeEdgeCreated({ sequence: 4, edgeId: 'edge-2', source: NODE_B, target: NODE_A }),
     );
-    render(<GraphCanvasPane sessionId={SESSION_ID} />);
+    renderGraphWithWsClient();
     // The canvas root mounts; that's the wiring this test cares about.
     expect(screen.getByTestId('graph-canvas-root')).toBeTruthy();
     // The store-side projection (which the component subscribes to via
@@ -626,7 +663,7 @@ describe('GraphCanvasPane — store-derived edges (mod_edge_rendering)', () => {
     store.applyEvent(
       makeEdgeCreated({ sequence: 3, edgeId: 'edge-1', source: NODE_A, target: NODE_B }),
     );
-    const { container } = render(<GraphCanvasPane sessionId={SESSION_ID} />);
+    const { container } = renderGraphWithWsClient();
     // Two nodes render to the DOM (handles wiring lands later but the
     // node bodies render today via the custom `StatementNode`).
     expect(container.querySelectorAll('.react-flow__node').length).toBe(2);
@@ -656,7 +693,7 @@ describe('GraphCanvasPane — store-derived edges (mod_edge_rendering)', () => {
     store.applyEvent(
       makeEdgeCreated({ sequence: 3, edgeId: 'edge-1', source: NODE_A, target: NODE_B }),
     );
-    const { container } = render(<GraphCanvasPane sessionId={SESSION_ID} />);
+    const { container } = renderGraphWithWsClient();
     // Both nodes render.
     expect(container.querySelectorAll('.react-flow__node').length).toBe(2);
     // Exactly one edge SVG renders — the projection layer's edge list
@@ -2239,7 +2276,7 @@ describe('GraphCanvasPane — edge wording enrichment end-to-end (mod_hover_deta
     store.applyEvent(
       makeEdgeCreated({ sequence: 3, edgeId: 'edge-wording-e2e', source: NODE_A, target: NODE_B }),
     );
-    render(<GraphCanvasPane sessionId={SESSION_ID} />);
+    renderGraphWithWsClient();
     // The canvas root mounts.
     expect(screen.getByTestId('graph-canvas-root')).toBeTruthy();
     // The selector-side projection (the same one the canvas
@@ -2399,7 +2436,7 @@ describe('GraphCanvasPane — measurement-driven re-layout (mod_layout_measured_
 
     vi.useFakeTimers({ shouldAdvanceTime: true });
 
-    const { container } = render(<GraphCanvasPane sessionId={SESSION_ID} />);
+    const { container } = renderGraphWithWsClient();
 
     // First-paint positions. ReactFlow's synchronous ResizeObserver
     // callback has fired by now (the stub is synchronous), but the

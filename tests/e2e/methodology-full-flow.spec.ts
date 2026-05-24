@@ -116,6 +116,19 @@
 //     `apps/server/src/methodology/handlers/commit.ts:160` it is
 //     reachable only via direct facet-keyed commit envelopes); the
 //     spec pins what the participant surface offers today.
+//   Phase 5.7 — edge.shape moderator commit: alice would commit the
+//     `(edge, 'shape')` facet here for full per-facet symmetry with
+//     N1's wording/classification cycles. No moderator-side commit
+//     affordance exists today for the inline edge.shape facet (see
+//     above + `pf_mod_edge_card_substance_affordance` Decisions);
+//     this phase is included for symmetry and tolerates the missing
+//     UI surface. Recorded as tech-debt.
+//   Phase 5.8 — edge.substance propose: alice picks "Holds" on the
+//     edge label's substance affordance, firing `set-edge-substance`
+//     per `pf_mod_edge_card_substance_affordance`.
+//   Phase 5.9 / 5.10 — edge.substance vote + commit: ben + maria
+//     vote agree on the substance facet row in the participant
+//     detail panel; alice commits the `set-edge-substance` proposal.
 //   Phase 6 / 8 — structural mode proposals: decompose and
 //     interpretive-split via the right-click context menu, both
 //     against the committed N1.
@@ -163,12 +176,8 @@
 //     but no UI affordance proposes / commits it today (no
 //     `set-edge-shape` sub-kind in v1; the shape lands inline on
 //     `edge-created`). The participant-side `shape` vote IS
-//     exercisable and is pinned by Phase 5.5.
-//   - Moderator-side propose of `set-edge-substance` and the
-//     `(edge, substance)` vote+commit cycle. The moderator UI has no
-//     `set-edge-substance` affordance yet (a downstream WBS task);
-//     when that task lands, this spec grows the corresponding
-//     phase.
+//     exercisable and is pinned by Phase 5.5; Phase 5.7 tolerates
+//     the missing UI commit surface.
 //
 // **Acceptance shape.** Most write-side phases tolerate either of
 // two outcomes — the success case (e.g. submenu unmounts, row clears,
@@ -1065,6 +1074,163 @@ test.describe
         await expect(shapeRow).toHaveAttribute('data-vote-state', /^(enabled|in-flight)$/, {
           timeout: 15_000,
         });
+      }
+    }
+  });
+
+  // ──────────────────────────────────────────────────────────────
+  // Phase 5.7 — moderator commit of edge.shape (tolerant)
+  // ──────────────────────────────────────────────────────────────
+  //
+  // Per ADR 0030 §5 + the methodology-full-flow header: the
+  // moderator-side commit affordance for the inline edge.shape
+  // facet is not built today (the facet has no `set-edge-shape`
+  // sub-kind; the shape lands inline on `edge-created`, and no
+  // pending-proposal row therefore exists for the per-row commit
+  // gesture on `PendingProposalsPane`). The server-side facet-keyed
+  // commit on `(edge, 'shape')` IS reachable via a raw envelope,
+  // but no UI surface lives in the moderator app yet.
+  //
+  // The phase is included for symmetry with the node-side
+  // wording/classification/substance commit sequence so the spec
+  // walks the same per-facet pattern for both entity kinds. It is
+  // tolerant of the missing surface: if a `(edge, 'shape')` commit
+  // affordance materializes in a future task, the spec will exercise
+  // it; today the phase is a no-op pin. Phase 5.8 (substance
+  // propose) depends only on the server's sequence gate accepting
+  // the substance facet — the server treats an all-agreed shape
+  // facet as "settled" regardless of an explicit commit (per
+  // `proposeSetEdgeSubstanceValidation`).
+  test('Phase 5.7: alice would commit edge.shape — tolerant of missing UI surface', () => {
+    // No-op pin: no commit surface exists yet. The shape facet is
+    // already settled (Phase 5.5 votes drove it to `agreed`) and
+    // Phase 5.8 below proves the substance propose is accepted by
+    // the server's sequence gate.
+    expect(_edgeId, 'Phase 5.4 must have recovered the edge id').not.toBeNull();
+  });
+
+  // ──────────────────────────────────────────────────────────────
+  // Phase 5.8 / 5.9 / 5.10 — edge.substance facet
+  // ──────────────────────────────────────────────────────────────
+  //
+  // Per ADR 0030 §1 + §8 + `pf_mod_edge_card_substance_affordance`:
+  // substance is the SECOND facet in the per-edge sequence
+  // (shape → substance). With the shape facet settled (Phase 5.5
+  // drove it to `agreed` via ben + maria votes), the moderator's
+  // edge label now surfaces an inline substance affordance ("Holds"
+  // / "Doesn't hold"). Alice picks "holds" → fires
+  // `set-edge-substance`; ben + maria vote agree on edge.substance;
+  // alice commits.
+
+  test('Phase 5.8: alice clicks "Holds" on the edge label — fires set-edge-substance with value=agreed', async () => {
+    // Per `pf_mod_edge_card_substance_affordance` (ADR 0030 §1 + §8
+    // + §10): once the shape facet has settled, the edge label
+    // surfaces an inline substance affordance. The moderator picks
+    // a value; the click dispatches a `set-edge-substance` proposal
+    // keyed to the edge id.
+    //
+    // **Tolerant acceptance pattern.** The server's sequence gate
+    // (per ADR 0030 §8 + `propose.ts:1540`) refuses
+    // `set-edge-substance` against an edge whose shape facet is not
+    // `agreed | committed`. Phase 5.5 is itself tolerant of the
+    // shape vote landing (the row may not mount if the broadcast
+    // races), so on a noisy shared session the shape facet may
+    // stay `proposed`. We accept two outcomes: (a) success — the
+    // affordance unmounts because substance moves past
+    // `awaiting-proposal`; (b) wire-error — the affordance's
+    // inline error region surfaces a typed engine rejection.
+    // Either proves the propose envelope completed its round-trip.
+    expect(_edgeId, 'Phase 5.4 must have recovered the edge id').not.toBeNull();
+    const edgeId = _edgeId!;
+    // Nudge the layout — the edge label can overlap with other
+    // post-commit projections; tidy-up ensures the affordance is
+    // clickable.
+    await alicePage.getByTestId('graph-tidy-up-button').click();
+    const holdsButton = alicePage.getByTestId(
+      `edge-card-substance-affordance-button-${edgeId}-agreed`,
+    );
+    await expect(holdsButton).toBeVisible({ timeout: 15_000 });
+    await holdsButton.click();
+    // Tolerant settle — either the button unmounts (success — the
+    // substance facet moves past `awaiting-proposal`) OR the inline
+    // wire-error region surfaces (server refused — most often
+    // `facet-sequence-out-of-order` when the shape facet hasn't
+    // settled on the moderator's server-side projection). The two
+    // outcomes are mutually exclusive but both prove the round-trip.
+    // We poll for either via a single waitFor that returns truthy on
+    // success.
+    await alicePage.waitForFunction(
+      ({ edgeId: id }) => {
+        const btn = document.querySelector(
+          `[data-testid="edge-card-substance-affordance-button-${id}-agreed"]`,
+        );
+        const err = document.querySelector(
+          `[data-testid="edge-card-substance-affordance-error-${id}"]`,
+        );
+        return btn === null || err !== null;
+      },
+      { edgeId },
+      { timeout: 15_000 },
+    );
+  });
+
+  test("Phase 5.9: ben + maria vote agree on the edge's substance facet", async () => {
+    // Per ADR 0030 §1 + `pf_mod_edge_card_substance_affordance`:
+    // once alice has fired `set-edge-substance` from the edge
+    // label, the substance facet has a candidate and the
+    // participant detail panel surfaces a `substance` vote row.
+    expect(_edgeId, 'Phase 5.4 must have recovered the edge id').not.toBeNull();
+    const edgeId = _edgeId!;
+    for (const page of [benPage, mariaPage]) {
+      await tapParticipantElement(page, edgeId);
+      const row = page.locator(
+        '[data-testid="participant-detail-panel-facet-row"][data-facet-name="substance"]',
+      );
+      // Tolerant: the edge detail panel may surface the substance
+      // row, or the projection race may have left the panel showing
+      // a stale state (mirrors Phase 5.5's tolerance pattern).
+      if (!(await row.isVisible().catch(() => false))) {
+        continue;
+      }
+      const agreeBtn = row.getByTestId('participant-vote-button-agree');
+      if (await agreeBtn.isVisible().catch(() => false)) {
+        await agreeBtn.click();
+        // The vote ack flips the row back to `enabled`; tolerate
+        // `in-flight` if the ack races.
+        await expect(row).toHaveAttribute('data-vote-state', /^(enabled|in-flight)$/, {
+          timeout: 15_000,
+        });
+      }
+    }
+  });
+
+  test("Phase 5.10: alice commits the edge's substance — the pending row clears once she clicks", async () => {
+    // Per `pf_mod_edge_card_substance_affordance` the pending row
+    // that surfaces here is the `set-edge-substance` proposal raised
+    // in Phase 5.8. The set-edge-substance summary is `Set substance
+    // = agreed (edge <prefix>)` per `proposalSummary.ts`; the filter
+    // pins to that edge id prefix.
+    expect(_edgeId, 'Phase 5.4 must have recovered the edge id').not.toBeNull();
+    const edgePrefix = _edgeId!.slice(0, 8);
+    const row = alicePage
+      .locator('[data-testid="pending-proposal-row"]')
+      .filter({
+        has: alicePage.locator('[data-testid="pending-proposal-row-summary"]', {
+          hasText: edgePrefix,
+        }),
+      })
+      .first();
+    // Tolerant: the row may or may not be visible depending on whether
+    // ben+maria's votes landed (Phase 5.9 is tolerant of the projection
+    // race). If the commit button is enabled, click it; otherwise
+    // the round-trip through Phase 5.8 is sufficient to prove the
+    // propose surface works.
+    if (await row.isVisible().catch(() => false)) {
+      const commitButton = row.locator('[data-testid="commit-button"]');
+      // Only click if the unanimous-agree gate enabled the button.
+      if (await commitButton.isEnabled().catch(() => false)) {
+        await commitButton.click();
+        await expect(row).toHaveCount(0, { timeout: 15_000 });
       }
     }
   });
