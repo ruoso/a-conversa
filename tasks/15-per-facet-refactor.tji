@@ -175,6 +175,7 @@ task per_facet_refactor "Per-facet refactor (ADR 0030)" {
     task pf_mod_facet_name_widen_shape "Moderator FacetName: widen local mirror to include 'shape'" {
       effort 0.5d
       allocate team
+      complete 100
       depends !pf_mod_edge_card_substance_affordance
       note "Refinement: tasks/refinements/per-facet-refactor/pf_mod_facet_name_widen_shape.md. Source of debt: tasks/refinements/per-facet-refactor/pf_mod_edge_card_substance_affordance.md Status block + Decisions — the moderator's local FacetName mirror is 3-valued (wording, classification, substance), so the substance affordance's UI gate uses the simpler `substance is awaiting-proposal` predicate rather than the stricter `shape in agreed-or-committed` form. Widening propagates through ~10 consumers + many tests. Low priority — the server's pf_sequence_gate_server_enforced is the integrity boundary."
     }

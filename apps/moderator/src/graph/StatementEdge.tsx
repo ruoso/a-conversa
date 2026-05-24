@@ -134,18 +134,20 @@ function StatementEdgeImpl(props: EdgeProps<StatementEdgeData>): ReactElement {
   // `set-edge-substance` proposal lands, `substance` moves past
   // `awaiting-proposal` and the affordance is no longer rendered.
   //
-  // The gate predicate is `substance === 'awaiting-proposal'`. The
-  // simpler predicate (vs. the node-side `classification ∈ {agreed,
-  // committed} AND substance === 'awaiting-proposal'`) is the
-  // practical consequence of the moderator's `facetStatus.ts` mirror
-  // skipping the shape facet entirely today (the local `FacetName`
-  // mirror is 3-valued — wording | classification | substance). The
-  // server's `pf_sequence_gate_server_enforced` is the integrity
-  // boundary that rejects an out-of-sequence `set-edge-substance`
-  // against an unsettled shape; the UI gate is the simplest predicate
-  // that admits the in-sequence case and lets the server reject
-  // anything else.
-  const showSubstanceAffordance = substanceStatus === 'awaiting-proposal';
+  // **Gate predicate** (post `pf_mod_facet_name_widen_shape`): the
+  // strict per-facet sequence gate is `shape ∈ {agreed, committed}
+  // AND substance === 'awaiting-proposal'`. The widening of the
+  // moderator's local `FacetName` mirror to 4 values lets us read
+  // `shape` off the canonical `facetStatuses` record — the strict
+  // predicate now matches the server-side
+  // `pf_sequence_gate_server_enforced` boundary one-for-one. The
+  // previous looser gate (`substance === 'awaiting-proposal'` only)
+  // also admitted edges with unsettled shape; the server rejected
+  // them, but the UI surfaced the affordance prematurely. The strict
+  // gate eliminates that flash.
+  const shapeStatus = facetStatuses.shape;
+  const isShapeSettled = shapeStatus === 'agreed' || shapeStatus === 'committed';
+  const showSubstanceAffordance = isShapeSettled && substanceStatus === 'awaiting-proposal';
 
   // Per-edge inline shape-commit affordance. Per ADR 0030 §5 +
   // `pf_mod_edge_shape_commit_affordance`: the edge's shape facet
@@ -160,16 +162,13 @@ function StatementEdgeImpl(props: EdgeProps<StatementEdgeData>): ReactElement {
   // envelope on the `(edge, 'shape')` triple per ADR 0030 §2 +
   // `pf_commit_handler_facet_keyed`.
   //
-  // **Gate predicate.** `shapeStatus === 'agreed'`. The narrow per-
-  // edge derivation lives in `deriveEdgeShapeStatus(events, edgeId)`
-  // (in `edgeShapeStatus.ts`); the moderator's global
-  // `facetStatus.ts` mirror skips the shape facet entirely (the local
-  // `FacetName` is 3-valued — wording | classification | substance).
-  // Widening the global mirror is out of scope for this refinement
-  // (recorded as tech-debt for a future "mod_edge_shape_facet_
-  // surfacing" task); a narrow per-edge helper is sufficient for the
-  // commit affordance's gate.
-  const shapeStatus = data?.shapeStatus;
+  // **Gate predicate** (post `pf_mod_facet_name_widen_shape`):
+  // `facetStatuses.shape === 'agreed'`. The widening of the local
+  // `FacetName` mirror lets us read shape status from the canonical
+  // `computeFacetStatuses` index alongside `substance`. The narrow
+  // `deriveEdgeShapeStatus` helper from
+  // `pf_mod_edge_shape_commit_affordance` has been retired in favor
+  // of this canonical read.
   const showShapeCommitAffordance = shapeStatus === 'agreed';
 
   const proposedEdgeStyle =

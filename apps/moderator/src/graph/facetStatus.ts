@@ -84,11 +84,42 @@ export type FacetStatus =
   | 'awaiting-proposal';
 
 /**
- * The three facets the moderator's projection tracks per entity. Mirrors
- * `apps/server/src/projection/types.ts`'s `FacetName`. Nodes in v1 carry
- * all three; edges carry only `substance`.
+ * The four facets the moderator's projection tracks per entity. Mirrors
+ * `apps/server/src/projection/types.ts`'s `FacetName` AND the wire-level
+ * `facetNameSchema` in `@a-conversa/shared-types` (both 4-valued post
+ * `pf_shape_facet_wire_vote`). Nodes in v1 carry `wording` /
+ * `classification` / `substance`; edges carry `shape` (inline carriage of
+ * the role from `edge-created` per ADR 0030 §5) and `substance`.
+ *
+ * The local type intentionally stays a separate `export type` rather
+ * than re-exporting from `@a-conversa/shared-types` so the moderator's
+ * graph layer keeps its self-contained type-mirror posture (the file
+ * also owns the `FacetStatus` enum and the derivation rules — re-
+ * exporting `FacetName` from a different module would split the
+ * vocabulary across two import sources for one logical concept).
+ * Lockstep with the wire enum is enforced by:
+ *
+ *   - The `Event` import (vote / commit / withdraw-agreement /
+ *     meta-disagreement-marked event payloads' `facet` field uses the
+ *     wire enum) — the derivation arms below assign event-payload
+ *     facets directly into this type's slots, so a drift between the
+ *     two values would surface as a TypeScript error.
+ *   - The facet round-trip i18n test in
+ *     `packages/i18n-catalogs/src/methodology.test.ts` pins the four-
+ *     valued vocabulary at the catalog layer (today the test pins
+ *     `wording / classification / substance / proposal` — the shape
+ *     facet does NOT have a `methodology.facet.shape` catalog key
+ *     because the moderator's per-facet pill row / hover popover
+ *     deliberately omit it; see `FACET_RENDER_ORDER` in
+ *     `StatementNode.tsx` + `HoverPopover.tsx`).
+ *
+ * Per `pf_mod_facet_name_widen_shape`: the widening from 3 to 4 values
+ * lets the canonical `computeFacetStatuses` index track the shape facet
+ * for edges, which in turn lets surfaces like `<EdgeShapeCommitAffordance>`
+ * read shape status from the canonical index rather than a narrow
+ * `deriveEdgeShapeStatus` helper.
  */
-export type FacetName = 'classification' | 'substance' | 'wording';
+export type FacetName = 'classification' | 'substance' | 'wording' | 'shape';
 
 type PerParticipantVote = 'agree' | 'dispute' | 'withdraw';
 
@@ -251,6 +282,19 @@ export function computeFacetStatuses(events: readonly Event[]): FacetStatusIndex
 
   for (const event of events) {
     if (event.kind === 'participant-joined') {
+      // Per `deriveCurrentParticipants` in `proposalFacets.ts` + the
+      // methodology semantics in `docs/methodology.md` § "Voting":
+      // only non-moderator participants count toward facet unanimity.
+      // The moderator drives the conversation but does not vote — a
+      // moderator-counted Rule 7 would never fire `'agreed'` until
+      // the moderator personally voted, which the methodology
+      // doesn't model. The retired `deriveEdgeShapeStatus` helper
+      // applied the same filter; consolidating it into the canonical
+      // mirror (per `pf_mod_facet_name_widen_shape`) requires the
+      // filter here too so the inline `<EdgeShapeCommitAffordance>`
+      // gate (`facetStatuses.shape === 'agreed'`) opens correctly
+      // when debaters reach unanimity.
+      if (event.payload.role === 'moderator') continue;
       currentParticipants.add(event.payload.user_id);
       continue;
     }
@@ -288,10 +332,24 @@ export function computeFacetStatuses(events: readonly Event[]): FacetStatusIndex
       continue;
     }
     if (event.kind === 'edge-created') {
-      // Per ADR 0030 §5: edge shape is inline on `edge-created`. The
-      // shape facet is not currently part of `FacetName` so we don't
-      // record it here. The substance facet enters life
-      // `awaiting-proposal` until a `set-edge-substance` proposal lands.
+      // Per ADR 0030 §5: edge shape is inline on `edge-created` — the
+      // shape facet enters life with the inline role as its candidate
+      // (no proposal supplied it). Mirrors the `node-created.wording`
+      // seeding above. Per `pf_mod_facet_name_widen_shape` the local
+      // `FacetName` mirror now matches the wire-level 4-valued enum,
+      // so the shape facet's status flows through `computeFacetStatuses`
+      // alongside `substance` and `<EdgeShapeCommitAffordance>` reads
+      // it off the canonical index.
+      const shapeState = getOrCreateFacetState(
+        nodeStates,
+        edgeStates,
+        'edge',
+        event.payload.edge_id,
+        'shape',
+      );
+      shapeState.hasCandidate = true;
+      // The substance facet enters life `awaiting-proposal` until a
+      // `set-edge-substance` proposal lands.
       getOrCreateFacetState(nodeStates, edgeStates, 'edge', event.payload.edge_id, 'substance');
       continue;
     }
@@ -302,14 +360,11 @@ export function computeFacetStatuses(events: readonly Event[]): FacetStatusIndex
       // `'withdrawn'` when the withdrawal lands on a committed
       // candidate.
       //
-      // Per ADR 0030 §5 + `pf_shape_facet_wire_vote` the wire-level
-      // `FacetName` widened to include `'shape'`; the moderator card
-      // does not surface a shape-facet pill (the local `FacetName`
-      // mirror at this file stays 3-valued), so a shape-facet
-      // withdraw-agreement is skipped at the projection layer here.
-      // A future card-layer task that introduces a shape-facet pill
-      // closes this guard.
-      if (event.payload.facet === 'shape') continue;
+      // Per `pf_mod_facet_name_widen_shape`: the local `FacetName`
+      // mirror is now 4-valued (matching the wire-level enum), so the
+      // shape-facet arm no longer needs a skip guard — withdraw-
+      // agreement events targeting `(edge, 'shape')` flow through the
+      // same machinery as the other three facets.
       const state = getOrCreateFacetState(
         nodeStates,
         edgeStates,
@@ -415,10 +470,12 @@ export function computeFacetStatuses(events: readonly Event[]): FacetStatusIndex
       // resolves to the facet via the proposal-id → target map. Both
       // arms write to the same per-facet `perParticipant` map.
       if (event.payload.target === 'facet') {
-        // Shape-facet votes skipped at the moderator card layer (see
-        // the `withdraw-agreement` arm above for the `'shape'` skip
-        // rationale).
-        if (event.payload.facet === 'shape') continue;
+        // Per `pf_mod_facet_name_widen_shape`: the local `FacetName`
+        // mirror is now 4-valued, so the shape-facet arm no longer
+        // needs a skip guard — votes on `(edge, 'shape')` flow through
+        // the per-participant map the same way the other three facets
+        // do (drives `<EdgeShapeCommitAffordance>`'s gate via the
+        // canonical `computeFacetStatuses` index).
         const state = getOrCreateFacetState(
           nodeStates,
           edgeStates,
@@ -454,10 +511,13 @@ export function computeFacetStatuses(events: readonly Event[]): FacetStatusIndex
       // → target map. Both arms flip the per-facet `committed` flag
       // the derivation reads.
       if (event.payload.target === 'facet') {
-        // Shape-facet commits skipped at the moderator card layer
-        // (see the `withdraw-agreement` arm above for the `'shape'`
-        // skip rationale).
-        if (event.payload.facet === 'shape') continue;
+        // Per `pf_mod_facet_name_widen_shape`: the local `FacetName`
+        // mirror is now 4-valued, so the shape-facet arm no longer
+        // needs a skip guard — commits on `(edge, 'shape')` flow
+        // through the per-facet `committed` flag the same way as the
+        // other three facets (drives the `<EdgeShapeCommitAffordance>`
+        // unmount transition via the canonical `computeFacetStatuses`
+        // index when `shape` moves from `'agreed'` to `'committed'`).
         const state = getOrCreateFacetState(
           nodeStates,
           edgeStates,
@@ -490,10 +550,11 @@ export function computeFacetStatuses(events: readonly Event[]): FacetStatusIndex
       // → target map. Both arms flip the per-facet `metaDisagreement`
       // flag the derivation reads.
       if (event.payload.target === 'facet') {
-        // Shape-facet marks skipped at the moderator card layer (see
-        // the `withdraw-agreement` arm above for the `'shape'` skip
-        // rationale).
-        if (event.payload.facet === 'shape') continue;
+        // Per `pf_mod_facet_name_widen_shape`: the local `FacetName`
+        // mirror is now 4-valued, so the shape-facet arm no longer
+        // needs a skip guard — meta-disagreement marks on `(edge,
+        // 'shape')` flow through the per-facet `metaDisagreement` flag
+        // the same way as the other three facets.
         const state = getOrCreateFacetState(
           nodeStates,
           edgeStates,

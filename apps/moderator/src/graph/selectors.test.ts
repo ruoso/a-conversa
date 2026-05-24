@@ -162,15 +162,15 @@ describe('selectEdgesForSession', () => {
       data: {
         role: 'supports',
         annotations: [],
-        // Per ADR 0030 §10 + the refactor: an edge with no
-        // `set-edge-substance` proposal has its substance facet in
-        // the empty-state `'awaiting-proposal'` row.
-        facetStatuses: { substance: 'awaiting-proposal' },
-        // Per `pf_mod_edge_shape_commit_affordance`: the inline
-        // `shape` facet on a freshly-created edge has no votes yet —
-        // the narrow `EdgeShapeStatus` rolls up to `'other'`. The
-        // inline shape-commit affordance is unmounted in this state.
-        shapeStatus: 'other',
+        // Per ADR 0030 §5 + §10 + `pf_mod_facet_name_widen_shape`: an
+        // edge with no `set-edge-substance` proposal has its substance
+        // facet in the empty-state `'awaiting-proposal'` row. The
+        // shape facet enters life with the inline role as its
+        // candidate (no proposal supplied it) — with no participants
+        // joined in this fixture, the canonical derivation surfaces
+        // `'proposed'` (Rule 8 — hasCandidate but no unanimous-agree
+        // signal across an empty current-participants set).
+        facetStatuses: { substance: 'awaiting-proposal', shape: 'proposed' },
         sourceId: '00000000-0000-4000-8000-000000000001',
         targetId: '00000000-0000-4000-8000-000000000002',
         sourceWording: '—',
@@ -300,13 +300,25 @@ describe('selectEdgesForSession', () => {
     ]);
     const edges = selectEdgesForSession(state, SESSION);
     expect(edges).toHaveLength(1);
-    expect(edges[0]?.data?.facetStatuses).toEqual({ substance: 'proposed' });
+    // Per `pf_mod_facet_name_widen_shape`: the canonical derivation
+    // also tracks the inline `shape` facet — with no participants
+    // joined in this fixture, it surfaces `'proposed'` (Rule 8 —
+    // hasCandidate but no unanimous-agree signal across an empty
+    // current-participants set).
+    expect(edges[0]?.data?.facetStatuses).toEqual({
+      substance: 'proposed',
+      shape: 'proposed',
+    });
   });
 
   it('attaches the awaiting-proposal substance row to an edge with no facet-targeting proposals', () => {
     // Per ADR 0030 §10 + the refactor: an edge with no
     // `set-edge-substance` proposal carries the empty-state
-    // `'awaiting-proposal'` row on its substance facet.
+    // `'awaiting-proposal'` row on its substance facet. Per
+    // `pf_mod_facet_name_widen_shape`: the inline `shape` facet
+    // additionally carries `'proposed'` (Rule 8 — hasCandidate from
+    // `edge-created`, no participants joined in this fixture so the
+    // unanimous-agree comparison degenerates).
     const state = makeState([
       makeEdgeCreated({
         sequence: 1,
@@ -318,7 +330,10 @@ describe('selectEdgesForSession', () => {
     ]);
     const edges = selectEdgesForSession(state, SESSION);
     expect(edges).toHaveLength(1);
-    expect(edges[0]?.data?.facetStatuses).toEqual({ substance: 'awaiting-proposal' });
+    expect(edges[0]?.data?.facetStatuses).toEqual({
+      substance: 'awaiting-proposal',
+      shape: 'proposed',
+    });
   });
 
   // -- Endpoint wording enrichment (mod_hover_details) ----------------

@@ -78,7 +78,20 @@ import type { FacetName } from './facetStatus.js';
  * keeps the popover testable in isolation. Refinement:
  * `mod_per_facet_state_visualization`.
  */
-const FACET_RENDER_ORDER: readonly FacetName[] = ['wording', 'classification', 'substance'];
+// Per `pf_mod_facet_name_widen_shape`: `FacetName` is now 4-valued
+// (`wording | classification | substance | shape`). The popover
+// deliberately omits `'shape'` from its render order — shape lives on
+// edges only (the inline carriage of the role on `edge-created`); the
+// edge popover already surfaces the role label as the headline, so a
+// separate `shape` facet row would duplicate it (and there is no
+// `methodology.facet.shape` catalog key). The lookup-by-iteration body
+// below short-circuits on `status === undefined`, so omitting the
+// value here is the cleanest "ignore the shape facet" shape.
+const FACET_RENDER_ORDER: readonly Exclude<FacetName, 'shape'>[] = [
+  'wording',
+  'classification',
+  'substance',
+];
 
 /**
  * Status set that has a localized `methodology.facetState.<id>` entry

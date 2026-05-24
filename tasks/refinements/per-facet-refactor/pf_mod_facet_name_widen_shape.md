@@ -31,4 +31,31 @@ Source of debt: [`pf_mod_edge_card_substance_affordance.md`](pf_mod_edge_card_su
 
 ## Status
 
-(pending)
+**Done** — 2026-05-24.
+
+Moderator's `FacetName` widened from 3 to 4 values per ADR 0030's canonical wire enum (adds `'shape'`). The canonical `computeFacetStatuses` now tracks the edge shape facet directly, reading from `edge-created` events and the `(entity, facet)`-keyed vote/commit/withdraw stream. The narrow `edgeShapeStatus.ts` helper introduced by `pf_mod_edge_shape_commit_affordance` is retired — the canonical index serves both the commit and substance affordances.
+
+Substance-affordance gate tightened to the strict `shape ∈ {agreed, committed} AND substance === 'awaiting-proposal'` form per ADR 0030 §8 (the predecessor task documented this as deferred debt; now closed).
+
+Parity fix: `currentParticipants` in `facetStatus.ts` now excludes the moderator role so Rule 7 (the unanimous-agree → `'agreed'` transition) fires correctly on debater-only unanimity, matching the retired `deriveEdgeShapeStatus` helper's behavior.
+
+`FACET_RENDER_ORDER` in `StatementNode` + `HoverPopover` narrows to `Exclude<FacetName, 'shape'>` with a defensive comment — shape lives on edges, not nodes, so the node-render order doesn't carry it.
+
+Artifacts:
+
+- `apps/moderator/src/graph/facetStatus.ts` — `FacetName` widened + shape-skip arms removed + edge-created shape seed + moderator-role filter on `currentParticipants`.
+- `apps/moderator/src/graph/selectors.ts` — `shapeStatus` field removed; `deriveEdgeShapeStatus` call removed; shape-skip in `projectVotesByFacet` removed.
+- `apps/moderator/src/graph/StatementEdge.tsx` — gate reads canonical index; substance gate tightened to strict.
+- `apps/moderator/src/graph/StatementNode.tsx` + `HoverPopover.tsx` — `FACET_RENDER_ORDER` narrowed to `Exclude<FacetName, 'shape'>`.
+- `apps/moderator/src/graph/EdgeShapeCommitAffordance.tsx` — comment update.
+- `apps/moderator/src/graph/facetStatus.test.ts` — +5 shape-facet derivation tests.
+- `apps/moderator/src/graph/selectors.test.ts` — fixture updates.
+- `tests/e2e/methodology-full-flow.spec.ts` — Phase 5.8 defensively tolerant of shape-vote race.
+- DELETED: `apps/moderator/src/graph/edgeShapeStatus.ts` + `edgeShapeStatus.test.ts`.
+
+Verification:
+
+- `pnpm run check` — green.
+- `pnpm run test:smoke` — 4450 passing (net −8: −15 retired helper tests + +5 new derivation + +2 fixture-aligned existing), 0 skipped.
+- `pnpm run test:behavior:smoke` — 263 / 1812 (unchanged).
+- `pnpm run test:e2e:smoke` — 121 + 0 fixme (unchanged).

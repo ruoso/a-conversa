@@ -78,7 +78,28 @@ import { type Annotation, type AxiomMark, type PendingAxiomMark } from './select
  *
  * Refinement: `mod_per_facet_state_visualization`.
  */
-const FACET_RENDER_ORDER: readonly FacetName[] = ['wording', 'classification', 'substance'];
+// Per `pf_mod_facet_name_widen_shape`: `FacetName` is now 4-valued
+// (`wording | classification | substance | shape`). The node card
+// deliberately omits `'shape'` from its render order — shape lives on
+// edges only (the inline carriage of the role on `edge-created`), and
+// a node-targeting `facetStatuses['shape']` lookup always returns
+// `undefined`. The lookup-by-iteration body below short-circuits on
+// `status === undefined`, so omitting the value here is the cleanest
+// "ignore the shape facet on node surfaces" shape — no per-iteration
+// guard, no catalog miss on a non-existent `methodology.facet.shape`
+// key.
+//
+// The array element type is explicitly narrowed to the 3-valued
+// `'wording' | 'classification' | 'substance'` sub-union (rather than
+// the 4-valued `FacetName`) so the per-iteration variable type-checks
+// against the shell's `<FacetPill facet={...} />` prop type (which is
+// the same 3-valued union; the shell's `FacetName` deliberately stays
+// 3-valued because node-card pills don't render `'shape'`).
+const FACET_RENDER_ORDER: readonly Exclude<FacetName, 'shape'>[] = [
+  'wording',
+  'classification',
+  'substance',
+];
 
 /**
  * The shape of `data` ReactFlow hands to `<StatementNode>` via

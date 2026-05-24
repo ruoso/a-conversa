@@ -20,13 +20,13 @@
 // surface.
 //
 // **Visibility gate.** The affordance is mounted by `<StatementEdge>`
-// ONLY when the edge's shape status is `'agreed'`. The status is derived
-// narrowly by `deriveEdgeShapeStatus(events, edgeId)` (see
-// `edgeShapeStatus.ts`) — the moderator's global `facetStatus.ts` mirror
-// skips the shape facet entirely (the local `FacetName` is 3-valued), so
-// a NARROW per-edge helper is sufficient for this gate without widening
-// the global mirror. When shape moves to `'committed'` (or any non-
-// agreed state) the affordance unmounts.
+// ONLY when the edge's shape status is `'agreed'`. Post
+// `pf_mod_facet_name_widen_shape` the moderator's `FacetName` mirror
+// is 4-valued (matching the wire-level enum), so the canonical
+// `computeFacetStatuses` index tracks the shape facet alongside
+// substance — the gate reads `facetStatuses.shape === 'agreed'` off the
+// `StatementEdgeData` record directly. When shape moves to
+// `'committed'` (or any non-agreed state) the affordance unmounts.
 //
 // **One button.** Unlike the substance affordance's two-value picker
 // (`agreed | disputed`), commit is a single action — "land the agreed

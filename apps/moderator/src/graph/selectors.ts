@@ -42,7 +42,6 @@ import {
   type DiagnosticHighlight,
   type DiagnosticHighlightIndex,
 } from './diagnosticHighlights.js';
-import { deriveEdgeShapeStatus, type EdgeShapeStatus } from './edgeShapeStatus.js';
 import type { WsState } from '../ws/wsStore.js';
 
 /**
@@ -85,26 +84,6 @@ export interface StatementEdgeData {
    * task to add more facets without changing the contract.
    */
   facetStatuses: Readonly<Partial<Record<FacetName, FacetStatus>>>;
-  /**
-   * Narrow per-edge `shape`-facet status carriage. Per ADR 0030 §5: the
-   * shape facet lands inline on `edge-created` and is voted via the
-   * facet-arm wire shape (no `propose-edge-shape` sub-kind exists in
-   * v1). The moderator's global `facetStatus.ts` mirror keeps
-   * `FacetName` 3-valued and skips the shape facet entirely; this
-   * narrow field is the carriage `<StatementEdge>` reads to gate the
-   * inline `<EdgeShapeCommitAffordance>` (refinement
-   * `pf_mod_edge_shape_commit_affordance`). The narrowed enum
-   * (`'agreed' | 'committed' | 'other'`) keeps the consumer's switch
-   * surface small — the commit affordance only cares about
-   * "should I render the button?". A future "mod_edge_shape_facet_
-   * surfacing" task may widen this to the full `FacetStatus` enum.
-   *
-   * **Optional with `'other'` default.** Test fixtures that hand-build
-   * `StatementEdgeData` literals omit this field; consumers treat
-   * `undefined` the same as `'other'` (no affordance rendered). The
-   * selector projection always populates a concrete value.
-   */
-  shapeStatus?: EdgeShapeStatus;
   /**
    * Per-entity diagnostic highlight from the active-diagnostic set, or
    * `undefined` when no active diagnostic touches this edge. Read by
@@ -590,21 +569,20 @@ export function selectEdgesForSession(
     // needed; the ids are always present on the event.
     const sourceId = event.payload.source_node_id;
     const targetId = event.payload.target_node_id;
-    // Per `pf_mod_edge_shape_commit_affordance`: derive the narrow shape-
-    // facet status so `<StatementEdge>` can gate the inline shape-commit
-    // affordance. The helper is a single pass over the events log per
-    // edge — O(events × edges); acceptable for v1 (one digit edges per
-    // session). A future projection refactor can hoist a once-per-pass
-    // shape-status index alongside `computeFacetStatuses` if the cost
-    // ever matters.
-    const shapeStatus = deriveEdgeShapeStatus(session.events, event.payload.edge_id);
+    // Per `pf_mod_facet_name_widen_shape`: the moderator's local
+    // `FacetName` mirror is now 4-valued (matching the wire-level enum),
+    // so `<StatementEdge>` reads the shape-facet status directly off the
+    // canonical `facetStatuses.shape` slot. The narrow
+    // `deriveEdgeShapeStatus` helper that previously populated a
+    // `shapeStatus` carriage field is retired; the gate for
+    // `<EdgeShapeCommitAffordance>` reads `facetStatuses.shape === 'agreed'`
+    // off the same record that drives the substance affordance gate.
     const data: StatementEdgeData =
       diagnosticHighlight === undefined
         ? {
             role: event.payload.role,
             annotations,
             facetStatuses,
-            shapeStatus,
             sourceId,
             targetId,
             sourceWording,
@@ -614,7 +592,6 @@ export function selectEdgesForSession(
             role: event.payload.role,
             annotations,
             facetStatuses,
-            shapeStatus,
             diagnosticHighlight,
             sourceId,
             targetId,
@@ -765,12 +742,15 @@ export function projectVotesByFacet(events: readonly Event[]): Map<string, Map<F
       let entityId: string;
       let facet: FacetName;
       if (event.payload.target === 'facet') {
-        // Per `pf_shape_facet_wire_vote` the wire-level `FacetName`
-        // includes `'shape'`; the moderator card layer does not
-        // surface a shape-facet pill (the local `FacetName` mirror
-        // stays 3-valued), so shape-facet votes are skipped here. A
-        // future card-layer task closes the guard.
-        if (event.payload.facet === 'shape') continue;
+        // Per `pf_mod_facet_name_widen_shape`: the local `FacetName`
+        // mirror is now 4-valued (matching the wire-level enum), so
+        // shape-facet votes flow through the same per-(entityId, facet)
+        // bucket as the other three facets. The graph consumer (the
+        // node card's per-facet pill row) only ever looks up node ids,
+        // so edge-shape votes simply don't appear in those lookups;
+        // adding them to the index is non-disruptive and lets the
+        // sidebar / future card-layer surfaces opt in without a second
+        // projection pass.
         entityId = event.payload.entity_id;
         facet = event.payload.facet;
       } else {
