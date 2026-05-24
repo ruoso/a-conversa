@@ -568,6 +568,27 @@ function entitiesToRetractForWithdraw(
       }
       break;
     }
+    case 'capture-node': {
+      // Mirror of `buildStructuralEventsForPropose`'s `capture-node`
+      // arm (ADR 0030 §1 wording-only capture): the propose handler
+      // ALWAYS emits `node-created` + `entity-included(node)` for
+      // the captured node, and additionally `edge-created` +
+      // `entity-included(edge)` when `payload.edge` is present. By
+      // withdraw-time the log replay has rebuilt both entities on
+      // the projection; retract the captured node (and the
+      // connecting edge if it was captured alongside).
+      const nodeId = payload.node_id;
+      if (projection.getNode(nodeId) !== undefined) {
+        targets.push({ entityKind: 'node', entityId: nodeId });
+      }
+      if (payload.edge !== undefined) {
+        const edgeId = payload.edge.edge_id;
+        if (projection.getEdge(edgeId) !== undefined) {
+          targets.push({ entityKind: 'edge', entityId: edgeId });
+        }
+      }
+      break;
+    }
     case 'set-node-substance':
     case 'edit-wording':
     case 'axiom-mark':

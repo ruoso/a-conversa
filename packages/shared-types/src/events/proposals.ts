@@ -96,6 +96,66 @@ export const classifyNodeProposalSchema = z.object({
 
 export type ClassifyNodeProposal = z.infer<typeof classifyNodeProposalSchema>;
 
+// -- Sub-kind: capture-node ------------------------------------------
+//
+// **Wording-only capture per ADR 0030 §1.** Capturing a node is a
+// stand-alone gesture that emits the entity-layer record (`node-created`
+// with inline `wording`) WITHOUT bundling a classification proposal.
+// Classification, substance, and (for a connecting capture) edge
+// substance are separate later moderator gestures per the sequential
+// per-facet capture methodology (`docs/methodology.md` L88).
+//
+// **Why a distinct sub-kind instead of widening `classify-node`.** The
+// existing `classify-node` proposal binds a classification candidate
+// value to a (node, classification) facet; the wording field on
+// `classify-node` is the legacy bundled-capture path. `capture-node`
+// carries no facet candidate at all — its job is purely to land the
+// entity-layer record (`node-created` + optional `edge-created`) at
+// propose-time per ADR 0027. Splitting the two avoids the voteless-
+// wording-facet bug ADR 0030 dismantles: votes against a capture-node
+// proposal aren't a thing (the gesture has no facet candidate to
+// agree on), so vote / commit / meta-disagreement handlers route via
+// their existing default branches (no facet target) and reject any
+// vote attempt against a capture-node proposal as "structural" — there
+// is nothing to vote on.
+//
+// **Wire shape.** `node_id` (UUID minted client-side) + `wording`
+// (the captured statement text). The optional `edge` block carries
+// the four edge-shape fields for the capture-with-edge case (per ADR
+// 0030 §5): `edge_id` + `role` + `source_node_id` + `target_node_id`.
+// When `edge` is present the propose handler emits node-created +
+// entity-included(node) + edge-created + entity-included(edge) +
+// proposal; when absent it emits node-created + entity-included(node)
+// + proposal. The proposal envelope itself is the wire-level record
+// of the capture gesture; it carries no facet candidate.
+//
+// **Coexistence with `classify-node`-with-wording (transitional).**
+// The legacy bundled `classify-node`-with-wording path stays alive
+// until the moderator UI catches up (`pf_mod_capture_pane_wording_only`).
+// Once the moderator UI switches to `capture-node` for the wording-
+// only capture gesture, the `wording` field on `classify-node` can be
+// removed and the structural fan-out arm in `buildStructuralEventsFor
+// Propose`'s `classify-node` branch retired.
+// Methodology-text cap per F-003 — see `limits.ts`.
+
+export const captureNodeEdgeShapeSchema = z.object({
+  edge_id: z.string().uuid(),
+  role: edgeRoleSchema,
+  source_node_id: z.string().uuid(),
+  target_node_id: z.string().uuid(),
+});
+
+export type CaptureNodeEdgeShape = z.infer<typeof captureNodeEdgeShapeSchema>;
+
+export const captureNodeProposalSchema = z.object({
+  kind: z.literal('capture-node'),
+  node_id: z.string().uuid(),
+  wording: z.string().min(1).max(MAX_METHODOLOGY_TEXT_LENGTH),
+  edge: captureNodeEdgeShapeSchema.optional(),
+});
+
+export type CaptureNodeProposal = z.infer<typeof captureNodeProposalSchema>;
+
 // -- Sub-kind: set-node-substance ------------------------------------
 //
 // Propose a substance value (`agreed` | `disputed`) for a node.
@@ -375,6 +435,7 @@ export type AnnotateProposal = z.infer<typeof annotateProposalSchema>;
 
 export const proposalPayloadSchema = z.discriminatedUnion('kind', [
   classifyNodeProposalSchema,
+  captureNodeProposalSchema,
   setNodeSubstanceProposalSchema,
   setEdgeSubstanceProposalSchema,
   editWordingProposalSchema,

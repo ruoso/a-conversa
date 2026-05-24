@@ -1289,13 +1289,110 @@ function validateSetEdgeSubstanceProposal(
 }
 
 // ---------------------------------------------------------------
+// `validateCaptureNodeProposal` — the propose-side validator for the
+// `capture-node` proposal sub-kind (ADR 0030 §1 wording-only capture).
+//
+// Capture mints a brand-new entity (node, optionally edge); the
+// validator enforces the uniqueness + reference rules that keep the
+// resulting structural events consistent with the projection.
+//
+// Rules in evaluation order:
+//
+//   1. **node_id does not collide.** `projection.getNode(node_id) ===
+//      undefined`. A `capture-node` against an already-extant node id
+//      is structurally broken (the `node-created` event would
+//      duplicate the entity; the projection's `handleNodeCreated`
+//      enforces uniqueness and would reject anyway). →
+//      `'illegal-state-transition'`.
+//
+//   When the optional `edge` block is present (capture-with-edge per
+//   ADR 0030 §4):
+//
+//   2. **edge_id does not collide.** `projection.getEdge(edge.edge_id)
+//      === undefined`. Same uniqueness argument as rule 1; the edge
+//      identity is fixed at `edge-created` time per ADR 0027.
+//      → `'illegal-state-transition'`.
+//   3. **source/target node references resolve.** Both endpoints must
+//      either (a) exist on the projection as a visible node, OR (b)
+//      equal the just-captured `node_id` (the connecting capture's
+//      common case: capture a new node AND link it to an existing
+//      neighbor via a `supports` / `contradicts` edge). The validator
+//      runs against the pre-emission projection, so the freshly-
+//      captured node is NOT yet visible — the `=== node_id` short-
+//      circuit handles the self-reference case explicitly. →
+//      `'target-entity-not-found'` if neither holds.
+//
+// Rule 4 — structural payload shape (kind, UUIDs, role enum, non-empty
+// wording) — is enforced upstream by `captureNodeProposalSchema` per
+// ADR 0021. This validator does not re-check.
+// ---------------------------------------------------------------
+
+function validateCaptureNodeProposal(
+  projection: Projection,
+  action: ProposeAction,
+): RejectedValidationResult | null {
+  if (action.proposal.kind !== 'capture-node') {
+    // Defensive — the dispatcher gates this. Never reached at runtime.
+    return null;
+  }
+  const proposal = action.proposal;
+  const nodeId = proposal.node_id;
+
+  // Rule 1 — node_id does not collide.
+  if (projection.getNode(nodeId) !== undefined) {
+    return {
+      ok: false,
+      reason: 'illegal-state-transition',
+      detail: `propose capture-node: node_id ${nodeId} already names an existing node in session ${projection.sessionId}; a capture-node must mint a fresh node id`,
+    };
+  }
+
+  if (proposal.edge !== undefined) {
+    const edge = proposal.edge;
+
+    // Rule 2 — edge_id does not collide.
+    if (projection.getEdge(edge.edge_id) !== undefined) {
+      return {
+        ok: false,
+        reason: 'illegal-state-transition',
+        detail: `propose capture-node (with edge): edge_id ${edge.edge_id} already names an existing edge in session ${projection.sessionId}; a capture-with-edge must mint a fresh edge id`,
+      };
+    }
+
+    // Rule 3 — source / target node references resolve. Either the
+    // node exists and is visible OR equals the just-captured node_id
+    // (self-reference for the connecting capture's common case).
+    const sourceRefOk =
+      edge.source_node_id === nodeId || nodeIsVisible(projection, edge.source_node_id);
+    if (!sourceRefOk) {
+      return {
+        ok: false,
+        reason: 'target-entity-not-found',
+        detail: `propose capture-node (with edge): source_node_id ${edge.source_node_id} does not reference a visible node in session ${projection.sessionId} and is not the just-captured node ${nodeId}`,
+      };
+    }
+    const targetRefOk =
+      edge.target_node_id === nodeId || nodeIsVisible(projection, edge.target_node_id);
+    if (!targetRefOk) {
+      return {
+        ok: false,
+        reason: 'target-entity-not-found',
+        detail: `propose capture-node (with edge): target_node_id ${edge.target_node_id} does not reference a visible node in session ${projection.sessionId} and is not the just-captured node ${nodeId}`,
+      };
+    }
+  }
+
+  return null;
+}
+
+// ---------------------------------------------------------------
 // The handler.
 //
 // Switches on `action.proposal.kind`. The `decompose`,
 // `interpretive-split`, `axiom-mark`, `meta-move`, `edit-wording`,
-// `break-edge`, `amend-node`, `annotate`, and `set-edge-substance`
-// arms run their real validators. The remaining two arms
-// (`classify-node`, `set-node-substance`) fall through to the
+// `break-edge`, `amend-node`, `annotate`, `set-edge-substance`, and
+// `capture-node` arms run their real validators. The remaining two
+// arms (`classify-node`, `set-node-substance`) fall through to the
 // universal-pass placeholder path — their sibling tasks will tighten
 // them as they land.
 // ---------------------------------------------------------------
@@ -1359,6 +1456,11 @@ export const proposeHandler: Validator<ProposeAction> = (
     }
     case 'set-edge-substance': {
       const rejection = validateSetEdgeSubstanceProposal(projection, action);
+      if (rejection !== null) return rejection;
+      break;
+    }
+    case 'capture-node': {
+      const rejection = validateCaptureNodeProposal(projection, action);
       if (rejection !== null) return rejection;
       break;
     }
@@ -1487,6 +1589,16 @@ function buildStructuralEventsForPropose(
       const nodeId = action.proposal.node_id;
       const wording = action.proposal.wording;
       if (projection.getNode(nodeId) === undefined && wording !== undefined) {
+        // **TODO(pf_mod_capture_pane_wording_only)** — legacy bundled
+        // capture path. Per ADR 0030 §1 the wording-only capture
+        // gesture is the new `capture-node` proposal sub-kind (see
+        // below); the moderator UI's `useProposeAction` will switch
+        // to it in `pf_mod_capture_pane_wording_only`. Until then,
+        // the bundled `classify-node`-with-wording emission stays
+        // alive so the existing moderator UI continues to compile.
+        // Once the UI migrates, this branch — and the `wording`
+        // field on `classifyNodeProposalSchema` — are retired.
+        //
         // Free-floating new statement — mint the node and inject it
         // into the session. The client signals the
         // free-floating-vs-re-classify shape by supplying / omitting
@@ -1521,6 +1633,103 @@ function buildStructuralEventsForPropose(
           createdAt: action.createdAt,
         };
         events.push(entityIncluded);
+      }
+      break;
+    }
+    case 'capture-node': {
+      // **Capture-a-node path (ADR 0030 §1).** Wording-only capture: emit
+      // the entity-layer record (`node-created` with inline `wording`)
+      // and the inclusion event. NO co-bundled facet proposal — the
+      // classification / substance facets enter life as
+      // `awaiting-proposal` (per ADR 0030 §10); a later moderator
+      // `classify-node` / `set-node-substance` gesture against the
+      // captured node names a candidate value for each facet.
+      //
+      // The capture-with-edge case (ADR 0030 §4) additionally emits
+      // `edge-created` + `entity-included(edge)` so the connecting
+      // edge shows up on the canvas alongside the captured node; the
+      // edge's `shape` facet enters life with the role+endpoints as
+      // its inline value (per ADR 0030 §5), and its substance facet is
+      // `awaiting-proposal` until a later `set-edge-substance`
+      // proposal names a candidate value.
+      //
+      // The trailing `proposal` envelope this handler appends below
+      // serves as the wire-level record of the capture gesture. It
+      // carries no facet target (vote / commit / mark-meta-disagreement
+      // handlers route via their existing default branches and emit
+      // `null` for it); per ADR 0030 §6 the per-facet proposal kinds
+      // own candidate values, and `capture-node` is not one of them.
+      const nodeId = action.proposal.node_id;
+      const wording = action.proposal.wording;
+      const nodeCreated: EventToAppendEnvelope<'node-created'> = {
+        id: randomUUID(),
+        sessionId: action.sessionId,
+        sequence: seq(events.length),
+        kind: 'node-created',
+        actor: action.actor,
+        payload: {
+          node_id: nodeId,
+          wording,
+          created_by: action.requester,
+          created_at: action.createdAt,
+        },
+        createdAt: action.createdAt,
+      };
+      events.push(nodeCreated);
+      const nodeIncluded: EventToAppendEnvelope<'entity-included'> = {
+        id: randomUUID(),
+        sessionId: action.sessionId,
+        sequence: seq(events.length),
+        kind: 'entity-included',
+        actor: action.actor,
+        payload: {
+          entity_kind: 'node',
+          entity_id: nodeId,
+          included_by: action.requester,
+          included_at: action.createdAt,
+        },
+        createdAt: action.createdAt,
+      };
+      events.push(nodeIncluded);
+      const edge = action.proposal.edge;
+      if (edge !== undefined) {
+        // Capture-with-edge — the moderator captured the node AND a
+        // connecting supports / contradicts / etc. edge in one
+        // gesture (ADR 0030 §4 "compound gesture survives"). Emit
+        // `edge-created` carrying the role + endpoints inline (ADR
+        // 0030 §5), followed by `entity-included(edge)`.
+        const edgeCreated: EventToAppendEnvelope<'edge-created'> = {
+          id: randomUUID(),
+          sessionId: action.sessionId,
+          sequence: seq(events.length),
+          kind: 'edge-created',
+          actor: action.actor,
+          payload: {
+            edge_id: edge.edge_id,
+            role: edge.role,
+            source_node_id: edge.source_node_id,
+            target_node_id: edge.target_node_id,
+            created_by: action.requester,
+            created_at: action.createdAt,
+          },
+          createdAt: action.createdAt,
+        };
+        events.push(edgeCreated);
+        const edgeIncluded: EventToAppendEnvelope<'entity-included'> = {
+          id: randomUUID(),
+          sessionId: action.sessionId,
+          sequence: seq(events.length),
+          kind: 'entity-included',
+          actor: action.actor,
+          payload: {
+            entity_kind: 'edge',
+            entity_id: edge.edge_id,
+            included_by: action.requester,
+            included_at: action.createdAt,
+          },
+          createdAt: action.createdAt,
+        };
+        events.push(edgeIncluded);
       }
       break;
     }

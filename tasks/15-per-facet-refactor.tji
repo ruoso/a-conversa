@@ -78,6 +78,7 @@ task per_facet_refactor "Per-facet refactor (ADR 0030)" {
     task pf_capture_emits_inline_wording_only "Propose handler: capture emits inline wording only" {
       effort 0.5d
       allocate team
+      complete 100
       note "Refinement: tasks/refinements/per-facet-refactor/pf_capture_emits_inline_wording_only.md"
     }
     task pf_sequence_gate_server_enforced "Propose handler: server-enforced sequence gate" {

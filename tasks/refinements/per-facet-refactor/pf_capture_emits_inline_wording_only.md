@@ -44,3 +44,15 @@ Per [ADR 0030 §1, §4, §5](../../../docs/adr/0030-per-facet-vote-keying-and-se
 ## Open questions
 
 (none — all decided per ADR 0030)
+
+## Status
+
+**Done** — 2026-05-24.
+
+- New propose sub-kind `capture-node` lands per ADR 0030 §1, §4, §5: wording-only entity-layer emission with optional inline edge shape for the connecting-capture case.
+- Schema in `packages/shared-types/src/events/proposals.ts` (`captureNodeProposalSchema` + nested `captureNodeEdgeShapeSchema`), wired into `proposalPayloadSchema` union and re-exported from `events.ts`.
+- Propose handler (`apps/server/src/methodology/handlers/propose.ts`) grows a `validateCaptureNodeProposal` + `capture-node` arm in the dispatch and in `buildStructuralEventsForPropose`.
+- Withdraw handler (`apps/server/src/ws/handlers/withdraw.ts`) grows a `capture-node` retraction arm.
+- The legacy `classify-node`-with-wording bundle stays alive with a `TODO(pf_mod_capture_pane_wording_only)` marker so the existing moderator UI continues to compile until that downstream task migrates the capture pane to the new sub-kind.
+- Vitest 4314 → 4319 (+5 cases — wording-only emit count, capture-with-edge emit count, rule-1 uniqueness, rule-3 missing target, rule-3 self-reference accept). Cucumber 257 → 259 scenarios (+2). Playwright 107 → 107 (unchanged, green).
+- New artifacts: `apps/server/src/methodology/handlers/proposeCaptureNode.test.ts`, `tests/behavior/methodology/propose-capture-node.feature`, `tests/behavior/steps/methodology-propose-capture-node.steps.ts`.
