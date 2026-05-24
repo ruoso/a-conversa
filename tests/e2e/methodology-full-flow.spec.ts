@@ -1528,21 +1528,17 @@ test.describe
 
     // Two outcomes are acceptable signals of round-trip success: the
     // submenu unmounts (propose landed) OR the inline error region
-    // surfaces a typed engine rejection.
+    // surfaces a typed engine rejection. The OR'd locator with `:visible`
+    // on the error branch and `body:not(:has(...))` on the unmount
+    // branch lets `toBeVisible` *actually wait* for one of the two to
+    // resolve — mirrors the Phase 11.1 pattern. The previous
+    // `toBeAttached(...)` on `[error, submenu]` returned immediately
+    // because the submenu was already attached at click time, so the
+    // assertion below raced React's commit of the error region.
     const settled = alicePage.locator(
-      '[data-testid="annotate-submenu-error"], [data-testid="annotate-submenu"]',
+      '[data-testid="annotate-submenu-error"]:visible, body:not(:has([data-testid="annotate-submenu"]))',
     );
-    await expect(settled.first()).toBeAttached({ timeout: 15_000 });
-    // Either the error surfaced (still visible) or the submenu unmounted.
-    const errorVisible = await alicePage
-      .getByTestId('annotate-submenu-error')
-      .isVisible()
-      .catch(() => false);
-    const submenuVisible = await alicePage
-      .getByTestId('annotate-submenu')
-      .isVisible()
-      .catch(() => false);
-    expect(errorVisible || !submenuVisible).toBe(true);
+    await expect(settled.first()).toBeVisible({ timeout: 15_000 });
   });
 
   test('Phase 9.2: alice commits the annotation proposal (if any are pending)', async () => {
