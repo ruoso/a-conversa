@@ -570,10 +570,15 @@ describe('GraphView — per-facet status mirror', () => {
       `[data-testid="participant-node-status"][data-node-id="${NODE_A}"]`,
     );
     expect(item).not.toBeNull();
+    // Per ADR 0030 §4 + §10: wording is inline from `node-created` →
+    // 'proposed'; the classify-node proposal supplies a classification
+    // candidate → 'proposed'; substance has no proposal yet →
+    // 'awaiting-proposal'. Rollup is 'proposed' (highest-priority
+    // status across the three facets).
     expect(item?.getAttribute('data-rollup-status')).toBe('proposed');
     expect(item?.getAttribute('data-facet-classification')).toBe('proposed');
-    expect(item?.getAttribute('data-facet-substance')).toBe('');
-    expect(item?.getAttribute('data-facet-wording')).toBe('');
+    expect(item?.getAttribute('data-facet-substance')).toBe('awaiting-proposal');
+    expect(item?.getAttribute('data-facet-wording')).toBe('proposed');
   });
 
   it('(r) the edge mirror surfaces data-rollup-status / data-facet-substance from a set-edge-substance proposal', () => {
@@ -605,19 +610,22 @@ describe('GraphView — per-facet status mirror', () => {
     expect(item?.getAttribute('data-facet-substance')).toBe('proposed');
   });
 
-  it('(s) the node mirror surfaces empty-string for absent facets (decision §4 sentinel)', () => {
+  it('(s) the node mirror surfaces awaiting-proposal for empty-state facets (per ADR 0030 §10)', () => {
     renderView();
     seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
-    // No proposals — every per-facet attribute is the empty string and
-    // the rollup is 'none'.
+    // Per ADR 0030 §4 + §10 + the refactor: a fresh node carries the
+    // three facet rows even with no proposals. Wording is the inline
+    // candidate from `node-created` → 'proposed'; classification +
+    // substance have no candidate yet → 'awaiting-proposal'. Rollup is
+    // 'proposed' (the inline wording is the highest-priority status).
     const item = document.querySelector(
       `[data-testid="participant-node-status"][data-node-id="${NODE_A}"]`,
     );
     expect(item).not.toBeNull();
-    expect(item?.getAttribute('data-rollup-status')).toBe('none');
-    expect(item?.getAttribute('data-facet-classification')).toBe('');
-    expect(item?.getAttribute('data-facet-substance')).toBe('');
-    expect(item?.getAttribute('data-facet-wording')).toBe('');
+    expect(item?.getAttribute('data-rollup-status')).toBe('proposed');
+    expect(item?.getAttribute('data-facet-classification')).toBe('awaiting-proposal');
+    expect(item?.getAttribute('data-facet-substance')).toBe('awaiting-proposal');
+    expect(item?.getAttribute('data-facet-wording')).toBe('proposed');
   });
 
   it('(t) Cytoscape carries the same data.rollupStatus the mirror surfaces (no drift)', () => {

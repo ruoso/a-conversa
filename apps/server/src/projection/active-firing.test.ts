@@ -192,7 +192,7 @@ function castVote(
   projection: ReturnType<typeof createEmptyProjection>,
   proposalId: string,
   participant: string,
-  vote: 'agree' | 'dispute' | 'withdraw',
+  vote: 'agree' | 'dispute',
   voteTime: string = T4,
 ): void {
   applyEvent(
@@ -201,7 +201,7 @@ function castVote(
       target: 'proposal' as const,
       proposal_id: proposalId,
       participant,
-      choice: vote as 'agree' | 'dispute',
+      choice: vote,
       voted_at: voteTime,
     }),
   );
@@ -327,6 +327,11 @@ describe('isEdgeActive — both settled', () => {
 // ---------------------------------------------------------------
 
 describe('isEdgeActive — withdrawal disables firing', () => {
+  // Per ADR 0030 §3 + `pf_projection_facet_status_refactor`: withdrawal
+  // is its own first-class event kind (`withdraw-agreement`), keyed by
+  // `(entity, facet, participant)`. A withdrawal against a committed
+  // facet flips the derived status to `'withdrawn'`; the active-firing
+  // gate reads that as "not active."
   it('edge committed then withdrawn → not active', () => {
     resetSeq();
     const projection = seedSessionWithEdge();
@@ -336,8 +341,17 @@ describe('isEdgeActive — withdrawal disables firing', () => {
     proposeSetNodeSubstance(projection, PROP_SOURCE_SUBSTANCE_ID, SOURCE_NODE_ID);
     allAgree(projection, PROP_SOURCE_SUBSTANCE_ID);
     commit(projection, PROP_SOURCE_SUBSTANCE_ID);
-    // Now withdraw on the edge substance.
-    castVote(projection, PROP_EDGE_SUBSTANCE_ID, DEBATER_B_ID, 'withdraw', T8);
+    // Now emit a `withdraw-agreement` event against the edge's substance facet.
+    applyEvent(
+      projection,
+      makeEvent(nextSeq(), 'withdraw-agreement', DEBATER_B_ID, T8, {
+        entity_kind: 'edge',
+        entity_id: EDGE_ID,
+        facet: 'substance',
+        participant: DEBATER_B_ID,
+        withdrawn_at: T8,
+      }),
+    );
     expect(isEdgeActive(projection, EDGE_ID)).toBe(false);
   });
 
@@ -350,7 +364,16 @@ describe('isEdgeActive — withdrawal disables firing', () => {
     proposeSetNodeSubstance(projection, PROP_SOURCE_SUBSTANCE_ID, SOURCE_NODE_ID);
     allAgree(projection, PROP_SOURCE_SUBSTANCE_ID);
     commit(projection, PROP_SOURCE_SUBSTANCE_ID);
-    castVote(projection, PROP_SOURCE_SUBSTANCE_ID, DEBATER_A_ID, 'withdraw', T8);
+    applyEvent(
+      projection,
+      makeEvent(nextSeq(), 'withdraw-agreement', DEBATER_A_ID, T8, {
+        entity_kind: 'node',
+        entity_id: SOURCE_NODE_ID,
+        facet: 'substance',
+        participant: DEBATER_A_ID,
+        withdrawn_at: T8,
+      }),
+    );
     expect(isEdgeActive(projection, EDGE_ID)).toBe(false);
   });
 });
@@ -508,7 +531,7 @@ describe('getActiveFiring — round-trips with isEdgeActive', () => {
 // AND source value === 'agreed'.
 // ---------------------------------------------------------------
 
-type Stance = 'agree' | 'dispute' | 'withdraw';
+type Stance = 'agree' | 'dispute';
 
 function makePrng(seed: number): () => number {
   let s = seed | 0;
@@ -527,6 +550,7 @@ function pick<T>(rand: () => number, arr: readonly T[]): T {
 
 interface FacetSimState {
   votes: Map<string, Stance>;
+  withdrawals: Set<string>;
   committed: boolean;
   metaDisagreement: boolean;
   value: 'agreed' | 'disputed';
@@ -541,10 +565,19 @@ function simulatedStatus(
   for (const [p, v] of state.votes) {
     if (current.has(p)) currentVotes.push(v);
   }
-  const hasWithdraw = currentVotes.some((v) => v === 'withdraw');
+  let hasCurrentWithdrawal = false;
+  for (const p of state.withdrawals) {
+    if (current.has(p)) {
+      hasCurrentWithdrawal = true;
+      break;
+    }
+  }
   const hasDispute = currentVotes.some((v) => v === 'dispute');
-  if (state.committed && hasWithdraw) return 'withdrawn';
-  if (hasDispute || hasWithdraw) return 'disputed';
+  // Per ADR 0030 §3 + the refactor: withdrawn requires a withdrawal
+  // mark AND committed; pre-commit withdrawals are recorded but the
+  // derivation does not surface `'withdrawn'`.
+  if (state.committed && hasCurrentWithdrawal) return 'withdrawn';
+  if (hasDispute) return 'disputed';
   if (state.committed) return 'committed';
   if (current.size > 0 && currentVotes.filter((v) => v === 'agree').length === current.size) {
     return 'agreed';
@@ -600,6 +633,7 @@ describe('isEdgeActive — property-style vs. reference implementation', () => {
               proposeSetEdgeSubstance(projection, proposalId, EDGE_ID, value);
               edgeState = {
                 votes: new Map(),
+                withdrawals: new Set(),
                 committed: false,
                 metaDisagreement: false,
                 value,
@@ -608,6 +642,7 @@ describe('isEdgeActive — property-style vs. reference implementation', () => {
               proposeSetNodeSubstance(projection, proposalId, SOURCE_NODE_ID, value);
               sourceState = {
                 votes: new Map(),
+                withdrawals: new Set(),
                 committed: false,
                 metaDisagreement: false,
                 value,
@@ -622,19 +657,19 @@ describe('isEdgeActive — property-style vs. reference implementation', () => {
           continue;
         }
 
-        if (action < 0.55) {
-          // Vote.
+        if (action < 0.5) {
+          // Vote — under the new model, choices are only `'agree' | 'dispute'`.
           const voter = pick(rand, participants);
-          const stance: Stance = pick(rand, ['agree', 'dispute', 'withdraw'] as const);
+          const stance: Stance = pick(rand, ['agree', 'dispute'] as const);
           castVote(projection, proposalId, voter, stance);
           currentState.votes.set(voter, stance);
-        } else if (action < 0.75) {
+        } else if (action < 0.7) {
           // Commit (only if not committed and not meta).
           if (!currentState.committed) {
             commit(projection, proposalId);
             currentState.committed = true;
           }
-        } else if (action < 0.9) {
+        } else if (action < 0.82) {
           // Mark meta-disagreement (only if not committed and not
           // meta; the dispatcher requires the proposal to still be
           // pending).
@@ -642,6 +677,31 @@ describe('isEdgeActive — property-style vs. reference implementation', () => {
             markMetaDisagreement(projection, proposalId);
             currentState.metaDisagreement = true;
           }
+        } else if (action < 0.95) {
+          // Per ADR 0030 §3 + `pf_projection_facet_status_refactor`:
+          // emit a `withdraw-agreement` event against a random current
+          // participant. The methodology engine enforces "withdraw only
+          // after commit" at the wire; this projection-level property
+          // test exercises both pre- and post-commit cases since the
+          // reference implementation also tracks withdrawals as a set
+          // (Rule 4 only fires when committed AND a current-participant
+          // withdrawal exists).
+          const target =
+            facet === 'edge'
+              ? { entityKind: 'edge' as const, entityId: EDGE_ID }
+              : { entityKind: 'node' as const, entityId: SOURCE_NODE_ID };
+          const participant = pick(rand, participants);
+          applyEvent(
+            projection,
+            makeEvent(nextSeq(), 'withdraw-agreement', participant, T8, {
+              entity_kind: target.entityKind,
+              entity_id: target.entityId,
+              facet: 'substance',
+              participant,
+              withdrawn_at: T8,
+            }),
+          );
+          currentState.withdrawals.add(participant);
         }
         // else: no-op (skip iteration)
 

@@ -220,11 +220,13 @@ describe('ProposalFacetBreakdown — per-status className mirrors PILL_STATUS_CL
     'meta-disagreement',
     'committed',
     'withdrawn',
-    // TODO(pf_projection_facet_status_refactor): empty-state row added by
-    // `pf_awaiting_proposal_facet_status`. The sidebar chip mirrors the
-    // shell's `<FacetPill>` palette verbatim; the default visual matches
-    // `'proposed'`. The downstream projection-refactor task will revisit
-    // both the chip styling and this matrix.
+    // `'awaiting-proposal'` (per ADR 0030 §10). The sidebar chip
+    // mirrors the shell's `<FacetPill>` palette verbatim; the empty-
+    // state visual matches `'proposed'`. The empty-state propose
+    // affordance lives on the moderator's per-node card (downstream
+    // `pf_mod_node_card_classification_affordance` /
+    // `pf_mod_node_card_substance_affordance`), not on the sidebar
+    // chip.
     'awaiting-proposal',
   ];
 

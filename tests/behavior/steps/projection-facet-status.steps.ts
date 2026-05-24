@@ -265,3 +265,21 @@ Then(
     assert.equal(status, expected);
   },
 );
+
+Then(
+  "deriveFacetStatus on the seeded node's substance facet is {string}",
+  function (this: AConversaWorld, expected: string) {
+    const projection = this.scratch['fsProjection'] as Projection;
+    const status = deriveFacetStatus(projection, 'node', NODE_FS_ID, 'substance');
+    assert.equal(status, expected);
+  },
+);
+
+Then(
+  "deriveFacetStatus on the seeded node's wording facet is {string}",
+  function (this: AConversaWorld, expected: string) {
+    const projection = this.scratch['fsProjection'] as Projection;
+    const status = deriveFacetStatus(projection, 'node', NODE_FS_ID, 'wording');
+    assert.equal(status, expected);
+  },
+);

@@ -225,16 +225,16 @@ function reasonForUnsettledStatus(status: FacetStatus): PendingConsequence['reas
   switch (status) {
     case 'proposed':
       return 'source-substance-proposed';
-    // TODO(pf_projection_facet_status_refactor): `'awaiting-proposal'` is
-    // the empty-state row introduced by `pf_awaiting_proposal_facet_status`
-    // — the entity exists but no candidate value has been set for the
-    // substance facet yet (no `set-node-substance` proposal). Semantically
-    // it sits BEFORE `proposed` (no candidate, no votes). For the
-    // pending-consequences diagnostic this is equivalent to `proposed`:
-    // there is no candidate to compute a consequence against and the
-    // source-substance is unsettled. The downstream
-    // `pf_projection_facet_status_refactor` task will revisit this default
-    // when it lands the real emission rules for `'awaiting-proposal'`.
+    // `'awaiting-proposal'` (per ADR 0030 §10) — the substance facet
+    // has no candidate value yet (no `set-node-substance` proposal has
+    // been made). For the pending-consequences diagnostic this is
+    // semantically equivalent to `'proposed'`: there is no candidate to
+    // compute a consequence against and the source-substance is
+    // unsettled. The detector reports `source-substance-proposed` for
+    // both states. (A future refinement could split the discriminator
+    // into a distinct `source-substance-awaiting-proposal` reason; the
+    // pending-consequences diagnostic is a stub today and the existing
+    // reason vocabulary is intentionally narrow.)
     case 'awaiting-proposal':
       return 'source-substance-proposed';
     case 'disputed':

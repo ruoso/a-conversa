@@ -204,6 +204,30 @@ function commitEvent(seq: number, proposalId: string): Event {
   };
 }
 
+function withdrawAgreementEvent(
+  seq: number,
+  entityKind: 'node' | 'edge',
+  entityId: string,
+  facet: 'classification' | 'substance' | 'wording',
+  participant: string,
+): Event {
+  return {
+    id: envId('w', seq),
+    sessionId: SESSION,
+    sequence: seq,
+    kind: 'withdraw-agreement',
+    actor: participant,
+    payload: {
+      entity_kind: entityKind,
+      entity_id: entityId,
+      facet,
+      participant,
+      withdrawn_at: '2026-05-11T00:00:25.000Z',
+    },
+    createdAt: '2026-05-11T00:00:25.000Z',
+  };
+}
+
 function metaDisagreementEvent(seq: number, proposalId: string): Event {
   return {
     id: envId('m', seq),
@@ -290,7 +314,9 @@ describe('computeFacetStatuses — committed-layer states', () => {
     expect(index.nodes.get(NODE_X)?.classification).toBe('committed');
   });
 
-  it('a withdraw vote against a committed facet → withdrawn', () => {
+  it('a withdraw-agreement against a committed facet → withdrawn', () => {
+    // Per ADR 0030 §3: withdrawal is now its own first-class event
+    // kind, keyed by `(entity, facet, participant)`.
     const events: Event[] = [
       joinedEvent(1, PARTICIPANT_A, 'debater-A'),
       joinedEvent(2, PARTICIPANT_B, 'debater-B'),
@@ -298,7 +324,7 @@ describe('computeFacetStatuses — committed-layer states', () => {
       voteEvent(4, PROPOSAL_P, PARTICIPANT_A, 'agree'),
       voteEvent(5, PROPOSAL_P, PARTICIPANT_B, 'agree'),
       commitEvent(6, PROPOSAL_P),
-      voteEvent(7, PROPOSAL_P, PARTICIPANT_A, 'withdraw'),
+      withdrawAgreementEvent(7, 'node', NODE_X, 'classification', PARTICIPANT_A),
     ];
     const index = computeFacetStatuses(events);
     expect(index.nodes.get(NODE_X)?.classification).toBe('withdrawn');

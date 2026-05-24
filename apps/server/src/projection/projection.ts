@@ -12,6 +12,7 @@
 
 import type {
   CommittedProposalRecord,
+  EdgeShape,
   FacetState,
   NewAnnotationInput,
   NewEdgeInput,
@@ -35,20 +36,32 @@ function emptyFacet<TValue>(): FacetState<TValue> {
   return {
     status: 'proposed',
     value: null,
+    candidateValue: null,
+    candidateProposalEventId: null,
     perParticipant: new Map(),
     committedProposalEventId: null,
     committedAt: null,
+    committedCandidateValue: null,
+    withdrawals: new Set(),
+    metaDisagreement: false,
   };
 }
 
 function buildNode(input: NewNodeInput): ProjectedNode {
+  // Per ADR 0030 §4: wording lives inline on `node-created`. The wording
+  // facet enters life with the captured text as its `candidateValue` —
+  // no proposal supplied it (`candidateProposalEventId: null`). The
+  // `classification` and `substance` facets enter life with
+  // `candidateValue: null` (the `'awaiting-proposal'` state per ADR 0030
+  // §10) — they wait for the moderator to run a `classify-node` /
+  // `set-node-substance` proposal against them.
   return {
     id: input.id,
     wording: input.wording,
     createdBy: input.createdBy,
     createdAt: input.createdAt,
     visible: true,
-    wordingFacet: { ...emptyFacet<string>(), value: input.wording },
+    wordingFacet: { ...emptyFacet<string>(), value: input.wording, candidateValue: input.wording },
     classificationFacet: emptyFacet(),
     substanceFacet: emptyFacet(),
     axiomMarks: new Map(),
@@ -56,6 +69,17 @@ function buildNode(input: NewNodeInput): ProjectedNode {
 }
 
 function buildEdge(input: NewEdgeInput): ProjectedEdge {
+  // Per ADR 0030 §5: edge shape (role + endpoints) is an inline
+  // candidate on `edge-created`. The shape facet enters life with the
+  // carriage as its `candidateValue` (no proposal supplied it; the
+  // matching `candidateProposalEventId` is `null`). The substance
+  // facet enters life `awaiting-proposal` (no candidate yet) until a
+  // `set-edge-substance` proposal lands.
+  const shape: EdgeShape = {
+    role: input.role,
+    sourceNodeId: input.sourceNodeId,
+    targetNodeId: input.targetNodeId,
+  };
   return {
     id: input.id,
     role: input.role,
@@ -64,6 +88,7 @@ function buildEdge(input: NewEdgeInput): ProjectedEdge {
     createdBy: input.createdBy,
     createdAt: input.createdAt,
     visible: true,
+    shapeFacet: { ...emptyFacet<EdgeShape>(), value: shape, candidateValue: shape },
     substanceFacet: emptyFacet(),
   };
 }
@@ -83,7 +108,11 @@ function buildAnnotation(input: NewAnnotationInput): ProjectedAnnotation {
     createdBy: input.createdBy,
     createdAt: input.createdAt,
     visible: true,
-    wordingFacet: { ...emptyFacet<string>(), value: input.content },
+    wordingFacet: {
+      ...emptyFacet<string>(),
+      value: input.content,
+      candidateValue: input.content,
+    },
     substanceFacet: emptyFacet(),
   };
 }

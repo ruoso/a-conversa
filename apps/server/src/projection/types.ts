@@ -66,17 +66,83 @@ export interface PerParticipantFacetState {
   votedAt: string;
 }
 
-// `FacetState.committedProposalEventId` / `committedAt` (additive,
-// owned by `per_facet_status_derivation`):
-// populated by `handleCommit` for facet-targeting proposal sub-kinds
-// so `deriveFacetStatus` can identify "was committed once" without
-// re-walking the log. Both default to `null` until a commit lands.
+// `FacetState` shape — owned by `per_facet_status_derivation`, reshaped
+// by `pf_projection_facet_status_refactor` per ADR 0030 §7 + Consequences:
+// the facet's identity is the `(entity_kind, entity_id, facet)` pair, not
+// the proposal id that last touched it. The projection tracks the
+// facet's current candidate value (set by `node-created.wording` /
+// `edge-created.shape` for inline candidates, OR by the latest
+// facet-valued proposal targeting the facet for proposal-derived
+// candidates), the proposal that supplied it (`null` for inline-from-
+// creation), whether the current candidate has been committed (via
+// `committedAt` + `committedCandidateValue` — committing pins the value
+// at commit time so a later proposal supersedes detection is a direct
+// comparison), the per-participant vote map (votes attach to
+// `(entity, facet)`, not to a proposal id), the `metaDisagreement` flag
+// (set when a facet-keyed meta-disagreement-marked event lands), and the
+// per-participant withdrawals set (populated by the new
+// `withdraw-agreement` event kind per ADR 0030 §3).
+//
+// `committedProposalEventId` — retained for back-compat with the
+// snapshot wire shape consumers, mirrors the proposal id that produced
+// the *current commit* (if any). Updated by the commit handler in lock-
+// step with `committedAt`.
+//
+// A new candidate landing on this facet (via a fresh proposal) clears
+// `perParticipant` — old votes were votes against the old candidate
+// per ADR 0030 §7. The commit marker is NOT cleared by a new proposal
+// — instead, a later proposal supersedes the committed value, and the
+// derivation reads `committedCandidateValue !== candidateValue` as
+// "the current candidate has not (yet) been committed."
 export interface FacetState<TValue> {
   status: FacetStatus;
   value: TValue | null;
+  /**
+   * The current candidate value for the facet. `null` while the facet
+   * is `awaiting-proposal` (no candidate yet). Set by inline-creation
+   * events (`node-created.wording`, `edge-created.shape` — `null` for
+   * `classification` / `substance` until a proposal arrives) or by the
+   * latest facet-valued proposal targeting this facet.
+   */
+  candidateValue: TValue | null;
+  /**
+   * The proposal event id that supplied the current `candidateValue`,
+   * if any. `null` when `candidateValue` came inline from creation
+   * (no proposal supplied it) — for wording on `node-created` and
+   * shape on `edge-created`.
+   */
+  candidateProposalEventId: string | null;
   perParticipant: Map<string, PerParticipantFacetState>;
   committedProposalEventId: string | null;
   committedAt: string | null;
+  /**
+   * The value at commit time. Used to detect "is the current candidate
+   * still the committed one, or has a new proposal superseded it?". The
+   * derivation compares `committedCandidateValue` against
+   * `candidateValue` to decide whether to surface `'committed'` (still
+   * the same value) vs. some other state (a fresh candidate has landed
+   * since commit). `null` until a commit lands.
+   */
+  committedCandidateValue: TValue | null;
+  /**
+   * Per-participant withdrawals (populated by `withdraw-agreement`
+   * events per ADR 0030 §3). When a current participant appears in
+   * this set AND the facet's current candidate has been committed,
+   * the derivation surfaces `'withdrawn'` (the participant has
+   * rescinded their agreement on the committed value, returning the
+   * facet to disputed semantically).
+   */
+  withdrawals: Set<string>;
+  /**
+   * Set to `true` by a facet-keyed meta-disagreement-marked event
+   * (or by the proposal-keyed meta-disagreement-marked handler against
+   * a facet-valued proposal during the proposal-keyed → facet-keyed
+   * transition). Distinct from `status === 'meta-disagreement'` because
+   * the status field is the agreement-layer mirror and may be reset
+   * by `'proposed'` when a fresh candidate lands; the flag is the
+   * facet-keyed derivation's signal.
+   */
+  metaDisagreement: boolean;
 }
 
 // Owned by `per_facet_status_derivation`. Records a commit so the
@@ -134,6 +200,22 @@ export interface ProjectedNode {
   axiomMarks: Map<string, AxiomMarkRecord>;
 }
 
+// Per ADR 0030 §5 + `pf_projection_facet_status_refactor`: edge `shape`
+// (role + endpoints) is an inline candidate on `edge-created` — the
+// facet enters life with the carriage as its `candidateValue` and the
+// same lifecycle as the wording facet on a node. v1 has no edge-shape-
+// edit proposal kind, so the facet stays at `'proposed'` (votes can
+// accrue against it) → `'agreed'` → `'committed'` via a future
+// `edit-edge-shape` proposal, if one is ever added. Until then, the
+// facet's `candidateValue` is the inline carriage and the derivation
+// returns `'proposed'` (with no votes / commit) or `'agreed'` / etc.
+// once votes land. See `facetStateForTarget` for the resolution.
+export type EdgeShape = {
+  readonly role: EdgeRole;
+  readonly sourceNodeId: string;
+  readonly targetNodeId: string;
+};
+
 export interface ProjectedEdge {
   id: string;
   role: EdgeRole;
@@ -142,6 +224,7 @@ export interface ProjectedEdge {
   createdBy: string;
   createdAt: string;
   visible: boolean;
+  shapeFacet: FacetState<EdgeShape>;
   substanceFacet: FacetState<'agreed' | 'disputed'>;
 }
 

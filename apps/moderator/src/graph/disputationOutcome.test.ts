@@ -34,12 +34,10 @@ const ALL_FACET_STATUSES = [
   'committed',
   'withdrawn',
   'meta-disagreement',
-  // TODO(pf_projection_facet_status_refactor): empty-state row introduced
-  // by `pf_awaiting_proposal_facet_status`. For now `disputationOutcome`
-  // maps it to `'unsettled'` (same as `'proposed'`) — see the TODO in
-  // `disputationOutcome.ts`. The downstream
-  // `pf_projection_facet_status_refactor` task will revisit the mapping
-  // when it lands real emission rules.
+  // `'awaiting-proposal'` (per ADR 0030 §10) — pre-agreement state
+  // with no candidate value yet. Maps to `'unsettled'` (same as
+  // `'proposed'`) per the documented rationale in
+  // `disputationOutcome.ts`.
   'awaiting-proposal',
 ] as const satisfies readonly FacetStatus[];
 

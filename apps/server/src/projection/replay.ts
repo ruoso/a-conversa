@@ -71,6 +71,7 @@ import type {
   CommitPayload,
   ProposalCommitPayload,
   MetaDisagreementMarkedPayload,
+  WithdrawAgreementPayload,
 } from '@a-conversa/shared-types';
 
 import { Projection, ProjectionInvariantError, createEmptyProjection } from './projection.js';
@@ -379,6 +380,89 @@ function handleProposal(
   };
   projection.addPendingProposal(pending);
   changes.push({ kind: 'pending-proposal-added', proposalId: proposalEventId });
+
+  // Per ADR 0030 §6 + §7 + `pf_projection_facet_status_refactor`:
+  // a facet-valued proposal sets a new candidate value on the targeted
+  // facet AND clears the prior per-participant vote map (the old votes
+  // were votes against the *old* candidate; the new candidate is a
+  // fresh proposal that needs fresh agreement). Withdrawals are NOT
+  // cleared — a withdraw-agreement records a separate gesture against
+  // the committed value; a new candidate landing doesn't change the
+  // historical fact that the participant withdrew. The commit marker
+  // is also left in place; the derivation reads
+  // `committedCandidateValue !== candidateValue` as "the commit is
+  // stale; the current candidate has not (yet) been committed."
+  //
+  // Structural proposals (`decompose`, `interpretive-split`,
+  // `axiom-mark`, `meta-move`, `break-edge`, `amend-node`, `annotate`)
+  // do not name a per-facet candidate value — `firstFacetTargetForVote`
+  // returns `null` for them — and this branch leaves their facets
+  // untouched. Multi-component sub-kinds (decompose / interpretive-
+  // split) carry per-component classification values in their inline
+  // payload that DO populate the per-component classification facet's
+  // candidate; that fan-out is handled below.
+  const proposal = payload.proposal;
+  const facetTarget = firstFacetTargetForVote(proposal);
+  if (facetTarget !== null) {
+    const facet = facetStateForTarget(projection, facetTarget);
+    if (facet !== null) {
+      const candidate = proposalCandidateValue(proposal);
+      facet.candidateValue = candidate;
+      facet.candidateProposalEventId = proposalEventId;
+      facet.perParticipant.clear();
+      // The agreement-layer status is reset to `'proposed'` here so
+      // the snapshot wire shape (which exposes `FacetState.status`
+      // verbatim) reads honestly while the new candidate is gathering
+      // votes. The derivation does NOT rely on this field for the
+      // pre-commit states — it reads the per-participant map directly.
+      facet.status = 'proposed';
+    }
+  }
+
+  // Per-component classification candidate fan-out for `decompose` /
+  // `interpretive-split` proposals. Each component carries its own
+  // classification value inline; the facet enters life with that
+  // value as its candidate (votes accrue against the parent proposal
+  // per ADR 0030 §9, but the facet's `candidateValue` is populated
+  // so the derivation does not surface `'awaiting-proposal'`).
+  if (proposal.kind === 'decompose') {
+    for (const component of proposal.components) {
+      const node = projection.getNode(component.node_id);
+      if (node) {
+        node.classificationFacet.candidateValue = component.classification;
+        node.classificationFacet.candidateProposalEventId = proposalEventId;
+      }
+    }
+  } else if (proposal.kind === 'interpretive-split') {
+    for (const reading of proposal.readings) {
+      const node = projection.getNode(reading.node_id);
+      if (node) {
+        node.classificationFacet.candidateValue = reading.classification;
+        node.classificationFacet.candidateProposalEventId = proposalEventId;
+      }
+    }
+  }
+}
+
+// Extract the candidate value the proposal names on its facet target.
+// Mirrors `firstFacetTargetForVote`'s coverage — the four single-target
+// facet-valued sub-kinds. Returns `null` for everything else (structural
+// sub-kinds and multi-component sub-kinds; multi-component fans out
+// per-component candidates in `handleProposal`'s decompose /
+// interpretive-split arms above).
+function proposalCandidateValue(proposal: ProposalPayload): unknown {
+  switch (proposal.kind) {
+    case 'classify-node':
+      return proposal.classification;
+    case 'set-node-substance':
+      return proposal.value;
+    case 'set-edge-substance':
+      return proposal.value;
+    case 'edit-wording':
+      return proposal.new_wording;
+    default:
+      return null;
+  }
 }
 
 // Resolve the (entity, facet) target(s) of a proposal payload.
@@ -636,6 +720,17 @@ function handleCommit(
     if (facet !== null) {
       facet.committedProposalEventId = payload.proposal_id;
       facet.committedAt = payload.committed_at;
+      // Per ADR 0030 Consequences + `pf_projection_facet_status_refactor`:
+      // pin the value at commit time so the derivation can detect a
+      // later proposal that supersedes the committed candidate (a fresh
+      // candidate landing on the facet leaves the commit marker in
+      // place but no longer matches the candidate; the derivation reads
+      // `committedCandidateValue !== candidateValue` as "the commit is
+      // stale"). The facet's `candidateValue` is the source of truth
+      // here — `facet.value` is the agreement-layer mirror, populated
+      // by `applyCommittedProposal` for the four facet-valued
+      // sub-kinds and may lag the candidate in some edge cases.
+      facet.committedCandidateValue = facet.candidateValue;
     }
   }
 
@@ -709,6 +804,7 @@ function handleMetaDisagreementMarked(
     const facet = facetStateForTarget(projection, target);
     if (facet !== null) {
       facet.status = 'meta-disagreement';
+      facet.metaDisagreement = true;
     }
   }
 
@@ -719,6 +815,41 @@ function handleMetaDisagreementMarked(
     proposalId: payload.proposal_id,
     reason: 'meta-disagreement',
   });
+}
+
+// Per ADR 0030 §3 + `pf_projection_facet_status_refactor`:
+// `withdraw-agreement` is a first-class event kind, distinct from the
+// old `vote.choice = 'withdraw'` arm. The handler records the
+// participant's withdrawal against the target `(entity, facet)` pair;
+// the derivation reads the per-facet `withdrawals` set to surface
+// `'withdrawn'` when the withdrawal lands on a committed candidate.
+// The methodology engine's invariant ("withdraw only valid against a
+// committed facet") is enforced at the propose / vote handlers
+// upstream; this projection handler trusts the validated event.
+function handleWithdrawAgreement(
+  projection: Projection,
+  payload: WithdrawAgreementPayload,
+  _changes: ProjectionChange[],
+): void {
+  const target: FacetTarget = {
+    entityKind: payload.entity_kind,
+    entityId: payload.entity_id,
+    facet: payload.facet,
+  };
+  const facet = facetStateForTarget(projection, target);
+  if (facet === null) {
+    throw new ReplayError(
+      `withdraw-agreement: target ${payload.entity_kind}:${payload.entity_id} facet ${payload.facet} not present`,
+    );
+  }
+  facet.withdrawals.add(payload.participant);
+  // No `ProjectionChange` variant for withdraw-agreement yet — the
+  // change-feed widening lands in a downstream task that grows the
+  // `ProjectionChange` discriminator. The status flip from
+  // `'committed'` → `'withdrawn'` is observable via re-derivation;
+  // callers consuming `deriveFacetStatus` see the new status on the
+  // next call. (Snapshot consumers walk the projection directly and
+  // see the withdrawal set on the facet.)
 }
 
 function handleSnapshotCreated(
@@ -1082,6 +1213,9 @@ export function applyEvent(projection: Projection, event: Event): ProjectionChan
         break;
       case 'session-mode-changed':
         handleSessionModeChanged(projection, event.payload, changes);
+        break;
+      case 'withdraw-agreement':
+        handleWithdrawAgreement(projection, event.payload, changes);
         break;
     }
   } catch (cause) {

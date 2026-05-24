@@ -162,7 +162,10 @@ describe('selectEdgesForSession', () => {
       data: {
         role: 'supports',
         annotations: [],
-        facetStatuses: {},
+        // Per ADR 0030 §10 + the refactor: an edge with no
+        // `set-edge-substance` proposal has its substance facet in
+        // the empty-state `'awaiting-proposal'` row.
+        facetStatuses: { substance: 'awaiting-proposal' },
         sourceId: '00000000-0000-4000-8000-000000000001',
         targetId: '00000000-0000-4000-8000-000000000002',
         sourceWording: '—',
@@ -295,7 +298,10 @@ describe('selectEdgesForSession', () => {
     expect(edges[0]?.data?.facetStatuses).toEqual({ substance: 'proposed' });
   });
 
-  it('leaves facetStatuses empty on an edge with no facet-targeting proposals', () => {
+  it('attaches the awaiting-proposal substance row to an edge with no facet-targeting proposals', () => {
+    // Per ADR 0030 §10 + the refactor: an edge with no
+    // `set-edge-substance` proposal carries the empty-state
+    // `'awaiting-proposal'` row on its substance facet.
     const state = makeState([
       makeEdgeCreated({
         sequence: 1,
@@ -307,7 +313,7 @@ describe('selectEdgesForSession', () => {
     ]);
     const edges = selectEdgesForSession(state, SESSION);
     expect(edges).toHaveLength(1);
-    expect(edges[0]?.data?.facetStatuses).toEqual({});
+    expect(edges[0]?.data?.facetStatuses).toEqual({ substance: 'awaiting-proposal' });
   });
 
   // -- Endpoint wording enrichment (mod_hover_details) ----------------

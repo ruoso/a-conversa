@@ -61,6 +61,7 @@ task per_facet_refactor "Per-facet refactor (ADR 0030)" {
     task pf_projection_facet_status_refactor "Rewrite facet-status derivation (server + mirrors)" {
       effort 2d
       allocate team
+      complete 100
       note "Refinement: tasks/refinements/per-facet-refactor/pf_projection_facet_status_refactor.md"
     }
     task pf_projection_replay_updates "Update replay walker for facet-keyed + withdraw-agreement" {

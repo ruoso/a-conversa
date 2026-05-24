@@ -1,7 +1,8 @@
 // Per-entity per-facet `FacetStatus` derivation for the participant's
 // read-mostly Cytoscape graph.
 //
-// Refinement: tasks/refinements/participant-ui/part_per_facet_state_styling.md
+// Refinement (current shape): tasks/refinements/per-facet-refactor/pf_projection_facet_status_refactor.md
+// Historical: tasks/refinements/participant-ui/part_per_facet_state_styling.md
 //
 // Client-side mirror of `apps/server/src/projection/facet-status.ts`'s
 // `deriveFacetStatus`. This is a verbatim port of the moderator's
@@ -120,10 +121,24 @@ export interface FacetStatusIndex {
  */
 interface InternalFacetState {
   perParticipant: Map<string, PerParticipantVote>;
+  /** Per-participant withdrawals (populated by `withdraw-agreement` events). */
+  withdrawals: Set<string>;
   committed: boolean;
   metaDisagreement: boolean;
-  /** Whether at least one proposal targeting this facet has been seen. */
-  hasProposal: boolean;
+  /**
+   * Whether the facet has any candidate value to vote on. Set to `true`
+   * when a `node-created.wording` populates the wording facet inline,
+   * an `edge-created` populates the shape facet inline, or a facet-
+   * valued proposal targeting this facet lands. Drives the
+   * `'awaiting-proposal'` rule per ADR 0030 §10.
+   */
+  hasCandidate: boolean;
+  /**
+   * The candidate-proposal-event-id supplying the current candidate
+   * value, if any. Used to track vote-reset semantics when a new
+   * facet-valued proposal supersedes the prior candidate.
+   */
+  candidateProposalEventId: string | null;
 }
 
 /** Three-tuple key for the (entity-kind, entity-id, facet) projection. */
@@ -132,9 +147,11 @@ type EntityKind = 'node' | 'edge';
 function emptyFacetState(): InternalFacetState {
   return {
     perParticipant: new Map(),
+    withdrawals: new Set(),
     committed: false,
     metaDisagreement: false,
-    hasProposal: false,
+    hasCandidate: false,
+    candidateProposalEventId: null,
   };
 }
 
@@ -237,6 +254,50 @@ export function computeFacetStatuses(events: readonly Event[]): FacetStatusIndex
       currentParticipants.delete(event.payload.user_id);
       continue;
     }
+    if (event.kind === 'node-created') {
+      // Per ADR 0030 §4: wording is inline on `node-created`. The
+      // wording facet enters life with the captured text as its
+      // candidate. Classification + substance facets remain
+      // `awaiting-proposal` until their respective proposals land.
+      const wordingState = getOrCreateFacetState(
+        nodeStates,
+        edgeStates,
+        'node',
+        event.payload.node_id,
+        'wording',
+      );
+      wordingState.hasCandidate = true;
+      getOrCreateFacetState(
+        nodeStates,
+        edgeStates,
+        'node',
+        event.payload.node_id,
+        'classification',
+      );
+      getOrCreateFacetState(nodeStates, edgeStates, 'node', event.payload.node_id, 'substance');
+      continue;
+    }
+    if (event.kind === 'edge-created') {
+      // Per ADR 0030 §5: edge substance enters life `awaiting-proposal`
+      // until a `set-edge-substance` proposal lands.
+      getOrCreateFacetState(nodeStates, edgeStates, 'edge', event.payload.edge_id, 'substance');
+      continue;
+    }
+    if (event.kind === 'withdraw-agreement') {
+      // Per ADR 0030 §3: withdraw-agreement is keyed by `(entity, facet,
+      // participant)`. The handler records the withdrawal on the
+      // matching facet; the derivation surfaces `'withdrawn'` when the
+      // withdrawal lands on a committed candidate.
+      const state = getOrCreateFacetState(
+        nodeStates,
+        edgeStates,
+        event.payload.entity_kind,
+        event.payload.entity_id,
+        event.payload.facet,
+      );
+      state.withdrawals.add(event.payload.participant);
+      continue;
+    }
     if (event.kind === 'proposal') {
       const target = targetOf(event.payload.proposal);
       if (target !== null) {
@@ -248,7 +309,13 @@ export function computeFacetStatuses(events: readonly Event[]): FacetStatusIndex
           target.entityId,
           target.facet,
         );
-        state.hasProposal = true;
+        // Per ADR 0030 §7: a new facet-valued proposal sets a fresh
+        // candidate AND clears prior per-participant votes (the old
+        // votes were votes against the old candidate). Withdrawals
+        // are NOT cleared.
+        state.hasCandidate = true;
+        state.candidateProposalEventId = event.id;
+        state.perParticipant.clear();
       }
       // A pending decompose / interpretive-split proposal introduces N
       // component nodes via the propose-time fan-out; each component's
@@ -266,7 +333,8 @@ export function computeFacetStatuses(events: readonly Event[]): FacetStatusIndex
             component.node_id,
             'classification',
           );
-          state.hasProposal = true;
+          state.hasCandidate = true;
+          state.candidateProposalEventId = event.id;
         }
       } else if (proposal.kind === 'interpretive-split') {
         for (const reading of proposal.readings) {
@@ -277,7 +345,8 @@ export function computeFacetStatuses(events: readonly Event[]): FacetStatusIndex
             reading.node_id,
             'classification',
           );
-          state.hasProposal = true;
+          state.hasCandidate = true;
+          state.candidateProposalEventId = event.id;
         }
       }
       continue;
@@ -369,7 +438,7 @@ export function computeFacetStatuses(events: readonly Event[]): FacetStatusIndex
 }
 
 /**
- * Apply the seven derivation rules to a single `InternalFacetState`,
+ * Apply the eight derivation rules to a single `InternalFacetState`,
  * given the current participants set. Mirrors
  * `deriveFacetStatus` in `apps/server/src/projection/facet-status.ts`.
  */
@@ -379,46 +448,56 @@ function derive(state: InternalFacetState, currentParticipants: Set<string>): Fa
     return 'meta-disagreement';
   }
 
-  // Rule 2: filter votes to current participants only. Left participants'
-  // votes are historical — the methodology says "current participants"
-  // must agree.
+  // Rule 2: no candidate value yet → `'awaiting-proposal'`.
+  if (!state.hasCandidate) {
+    return 'awaiting-proposal';
+  }
+
+  // Rule 3: filter votes + withdrawals to current participants only.
   const currentVotes: PerParticipantVote[] = [];
   for (const [participantId, vote] of state.perParticipant) {
     if (currentParticipants.has(participantId)) {
       currentVotes.push(vote);
     }
   }
+  let hasCurrentWithdrawal = false;
+  for (const participantId of state.withdrawals) {
+    if (currentParticipants.has(participantId)) {
+      hasCurrentWithdrawal = true;
+      break;
+    }
+  }
 
-  const hasWithdraw = currentVotes.some((v) => v === 'withdraw');
   const hasDispute = currentVotes.some((v) => v === 'dispute');
+  const hasLegacyWithdrawVote = currentVotes.some((v) => v === 'withdraw');
 
-  // Rule 3: withdraw against a committed facet supersedes commit.
-  if (state.committed && hasWithdraw) {
+  // Rule 4: withdraw-agreement against a committed facet → 'withdrawn'.
+  // Back-compat: a legacy `vote.choice = 'withdraw'` against a
+  // committed candidate is also surfaced as `'withdrawn'` until the
+  // methodology engine's emission path migrates to `withdraw-agreement`.
+  if (state.committed && (hasCurrentWithdrawal || hasLegacyWithdrawVote)) {
     return 'withdrawn';
   }
 
-  // Rule 4: any current dispute → disputed. Treat a withdraw without a
-  // prior commit as a dispute (the participant is signalling rejection;
-  // the projection has no commit to surface as `withdrawn`).
-  if (hasDispute || hasWithdraw) {
+  // Rule 5: any current dispute → disputed.
+  if (hasDispute || (hasLegacyWithdrawVote && !state.committed)) {
     return 'disputed';
   }
 
-  // Rule 5: committed (no dispute / withdraw) → committed.
+  // Rule 6: committed (no dispute / withdraw) → committed.
   if (state.committed) {
     return 'committed';
   }
 
-  // Rule 6: every current participant voted agree → agreed. Requires at
-  // least one current participant (an empty-session facet stays
-  // 'proposed').
+  // Rule 7: every current participant voted agree → agreed. Requires at
+  // least one current participant.
   const currentParticipantCount = currentParticipants.size;
   const agreeCount = currentVotes.filter((v) => v === 'agree').length;
   if (currentParticipantCount > 0 && agreeCount === currentParticipantCount) {
     return 'agreed';
   }
 
-  // Rule 7: anything else → proposed.
+  // Rule 8: anything else → proposed.
   return 'proposed';
 }
 
@@ -452,21 +531,20 @@ export const EMPTY_FACET_STATUSES: Readonly<Partial<Record<FacetName, FacetStatu
  * precedence over a normal disputed facet.
  */
 export const ROLLUP_PRIORITY: readonly FacetStatus[] = [
-  // TODO(pf_part_detail_panel_three_facet_rows): `'awaiting-proposal'`
-  // is the empty-state row introduced by
-  // `pf_awaiting_proposal_facet_status` — the entity exists but no
-  // candidate value has been set for the facet yet. For now it shares
-  // the same rollup priority slot as `'proposed'` (both are pre-agreement
-  // states with no settled record). The downstream participant-UI task
-  // (`pf_part_detail_panel_three_facet_rows`) will revisit the rollup
-  // priority when it lands the real empty-state visual.
-  'awaiting-proposal',
   'proposed',
   'meta-disagreement',
   'disputed',
   'agreed',
   'committed',
   'withdrawn',
+  // `'awaiting-proposal'` (per ADR 0030 §10) sorts LAST in the rollup
+  // — it's the empty-state row for a facet with no candidate value
+  // yet. A card with at least one *actively proposed* facet should
+  // surface as `'proposed'`; only when ALL facets are awaiting-proposal
+  // does the card surface the empty-state rollup. The downstream
+  // participant-UI task (`pf_part_detail_panel_three_facet_rows`) may
+  // revisit the visual when it lands the per-facet propose affordance.
+  'awaiting-proposal',
 ];
 
 /**

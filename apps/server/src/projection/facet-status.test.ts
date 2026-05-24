@@ -1,17 +1,21 @@
 // Tests for `deriveFacetStatus`.
 //
-// Refinement: tasks/refinements/data-and-methodology/per_facet_status_derivation.md
-// TaskJuggler: data_and_methodology.projection.per_facet_status_derivation
+// Refinement (current shape): tasks/refinements/per-facet-refactor/pf_projection_facet_status_refactor.md
+// Historical: tasks/refinements/data-and-methodology/per_facet_status_derivation.md
+// TaskJuggler: per_facet_refactor.projection.pf_projection_facet_status_refactor
 //
-// Coverage:
-//   - Empty / unvoted facet → 'proposed'.
+// Coverage (eight rules per ADR 0030 §10 + the refactor refinement):
+//   - Meta-disagreement-marked → 'meta-disagreement'.
+//   - No candidate value (facet awaiting a proposal) → 'awaiting-proposal'.
+//   - Empty / unvoted facet with a candidate → 'proposed'.
 //   - Partial agreement → 'proposed' (missing votes don't auto-agree).
 //   - All current participants agree → 'agreed'.
 //   - Any current participant disputes → 'disputed'.
 //   - All agree + commit → 'committed'.
-//   - Committed + withdraw → 'withdrawn'.
-//   - meta-disagreement-marked → 'meta-disagreement'.
+//   - Committed + withdraw-agreement → 'withdrawn'.
 //   - Participant leaves after voting agree → vote no longer counts.
+//   - New facet-valued proposal lands on a populated facet → prior
+//     per-participant votes cleared (refactor-task contract).
 //   - Property-style: random vote sequences against a fixed
 //     participant set + sometimes-commits — derived status matches a
 //     hand-rolled reference implementation in this file.
@@ -141,7 +145,7 @@ let voteSeq = 7;
 function castVote(
   projection: ReturnType<typeof createEmptyProjection>,
   participant: string,
-  vote: 'agree' | 'dispute' | 'withdraw',
+  vote: 'agree' | 'dispute',
   proposalId: string = PROPOSAL_ID_1,
   voteTime: string = T4,
 ): void {
@@ -151,7 +155,7 @@ function castVote(
       target: 'proposal' as const,
       proposal_id: proposalId,
       participant,
-      choice: vote as 'agree' | 'dispute',
+      choice: vote,
       voted_at: voteTime,
     }),
   );
@@ -273,15 +277,28 @@ describe('deriveFacetStatus — committed (all agreed + commit)', () => {
 // Withdrawn (committed → withdraw).
 // ---------------------------------------------------------------
 
-describe('deriveFacetStatus — withdrawn (committed, then withdraw)', () => {
-  it('agree x3 → commit → one participant withdraws → withdrawn', () => {
+describe('deriveFacetStatus — withdrawn (committed, then withdraw-agreement)', () => {
+  // Per ADR 0030 §3 + `pf_projection_facet_status_refactor`: withdrawal is
+  // its own first-class event kind (`withdraw-agreement`), keyed by
+  // `(entity, facet, participant)`. A withdrawal against a committed
+  // candidate sends the facet to `'withdrawn'`.
+  it('agree x3 → commit → one participant emits withdraw-agreement → withdrawn', () => {
     resetSeq();
     const projection = seedSession();
     castVote(projection, MODERATOR_ID, 'agree');
     castVote(projection, DEBATER_A_ID, 'agree');
     castVote(projection, DEBATER_B_ID, 'agree');
     commit(projection);
-    castVote(projection, DEBATER_B_ID, 'withdraw', PROPOSAL_ID_1, T8);
+    applyEvent(
+      projection,
+      makeEvent(voteSeq++, 'withdraw-agreement', DEBATER_B_ID, T8, {
+        entity_kind: 'node',
+        entity_id: NODE_ID_1,
+        facet: 'classification',
+        participant: DEBATER_B_ID,
+        withdrawn_at: T8,
+      }),
+    );
     expect(deriveFacetStatus(projection, 'node', NODE_ID_1, 'classification')).toBe('withdrawn');
   });
 });
@@ -341,18 +358,145 @@ describe('deriveFacetStatus — left participants do not count', () => {
 });
 
 // ---------------------------------------------------------------
-// Withdraw without prior commit collapses to disputed.
+// Withdraw-agreement without a prior commit does NOT flip to withdrawn.
+//
+// Per ADR 0030 §3 + Rule 4 of the new derivation: `'withdrawn'` requires
+// BOTH a current-participant withdrawal mark AND `committedAt !== null`
+// AND the committed value still matching the current candidate. A
+// stray withdraw-agreement on an uncommitted facet records the mark
+// but the derivation does not surface `'withdrawn'`; the methodology
+// engine's wire-level validation rejects this pre-commit withdraw at
+// the propose handler in practice (this projection-level case exists
+// for defense-in-depth — a misbehaving client / future automation must
+// not derive a settled "withdrawn" state without a commit upstream).
 // ---------------------------------------------------------------
 
-describe('deriveFacetStatus — withdraw without prior commit is treated as dispute', () => {
-  it('participant votes agree then withdraws before commit → disputed', () => {
+describe('deriveFacetStatus — withdraw-agreement without prior commit does not flip to withdrawn', () => {
+  it('participants vote agree then a withdraw-agreement lands pre-commit → still agreed', () => {
     resetSeq();
     const projection = seedSession();
     castVote(projection, MODERATOR_ID, 'agree');
     castVote(projection, DEBATER_A_ID, 'agree');
     castVote(projection, DEBATER_B_ID, 'agree');
-    castVote(projection, DEBATER_B_ID, 'withdraw', PROPOSAL_ID_1, T6);
-    expect(deriveFacetStatus(projection, 'node', NODE_ID_1, 'classification')).toBe('disputed');
+    applyEvent(
+      projection,
+      makeEvent(voteSeq++, 'withdraw-agreement', DEBATER_B_ID, T6, {
+        entity_kind: 'node',
+        entity_id: NODE_ID_1,
+        facet: 'classification',
+        participant: DEBATER_B_ID,
+        withdrawn_at: T6,
+      }),
+    );
+    expect(deriveFacetStatus(projection, 'node', NODE_ID_1, 'classification')).toBe('agreed');
+  });
+});
+
+// ---------------------------------------------------------------
+// Awaiting-proposal (no candidate value yet).
+//
+// Per ADR 0030 §10 + Rule 2 of the new derivation: a facet whose
+// `candidateValue` is `null` (the entity exists but no proposal /
+// inline carriage has named a value) surfaces as `'awaiting-proposal'`.
+// The canonical case is a freshly created node's `classification` and
+// `substance` facets — both null until a `classify-node` /
+// `set-node-substance` proposal lands.
+// ---------------------------------------------------------------
+
+describe('deriveFacetStatus — awaiting-proposal (no candidate value yet)', () => {
+  it('a freshly created node has no candidate on classification → awaiting-proposal', () => {
+    resetSeq();
+    const projection = createEmptyProjection(SESSION_ID);
+    applyEvent(
+      projection,
+      makeEvent(1, 'session-created', HOST_ID, T0, {
+        host_user_id: HOST_ID,
+        privacy: 'public',
+        topic: 't',
+        created_at: T0,
+      }),
+    );
+    applyEvent(
+      projection,
+      makeEvent(2, 'participant-joined', MODERATOR_ID, T1, {
+        user_id: MODERATOR_ID,
+        role: 'moderator',
+        screen_name: 'M',
+        joined_at: T1,
+      }),
+    );
+    applyEvent(
+      projection,
+      makeEvent(3, 'node-created', MODERATOR_ID, T2, {
+        node_id: NODE_ID_1,
+        wording: 'A statement.',
+        created_by: MODERATOR_ID,
+        created_at: T2,
+      }),
+    );
+    // No classify-node proposal has landed yet → no candidate value.
+    expect(deriveFacetStatus(projection, 'node', NODE_ID_1, 'classification')).toBe(
+      'awaiting-proposal',
+    );
+    // Same for substance — no candidate value until a
+    // `set-node-substance` proposal lands.
+    expect(deriveFacetStatus(projection, 'node', NODE_ID_1, 'substance')).toBe('awaiting-proposal');
+    // Wording is inline on `node-created` — `candidateValue` is set
+    // immediately, so the facet is `'proposed'` with no votes.
+    expect(deriveFacetStatus(projection, 'node', NODE_ID_1, 'wording')).toBe('proposed');
+  });
+
+  it('a classify-node proposal flips classification from awaiting-proposal → proposed', () => {
+    resetSeq();
+    const projection = seedSession();
+    // seedSession adds a classify-node proposal; classification should
+    // now read `'proposed'`, not `'awaiting-proposal'`.
+    expect(deriveFacetStatus(projection, 'node', NODE_ID_1, 'classification')).toBe('proposed');
+    // Substance still has no proposal → still awaiting-proposal.
+    expect(deriveFacetStatus(projection, 'node', NODE_ID_1, 'substance')).toBe('awaiting-proposal');
+  });
+});
+
+// ---------------------------------------------------------------
+// Vote reset on a new candidate value.
+//
+// Per ADR 0030 §7 + the refactor refinement: when a second
+// facet-valued proposal lands on the same facet, the prior
+// per-participant vote map is cleared (the old votes were votes
+// against the old candidate; the new candidate is a fresh proposal
+// that needs fresh agreement).
+// ---------------------------------------------------------------
+
+describe('deriveFacetStatus — vote reset on a new candidate', () => {
+  it('a second classify-node proposal clears the prior vote map → back to proposed (no votes)', () => {
+    resetSeq();
+    const projection = seedSession();
+    castVote(projection, MODERATOR_ID, 'agree');
+    castVote(projection, DEBATER_A_ID, 'agree');
+    castVote(projection, DEBATER_B_ID, 'agree');
+    // Three agree votes against PROPOSAL_ID_1 (the seeded classify
+    // "fact" proposal). Facet should read 'agreed' now.
+    expect(deriveFacetStatus(projection, 'node', NODE_ID_1, 'classification')).toBe('agreed');
+
+    // A second classify-node proposal lands on the same facet, with a
+    // different candidate value. The projection clears the prior vote
+    // map; the derivation reads "no current participants have voted"
+    // → 'proposed'.
+    applyEvent(projection, {
+      ...makeEvent(voteSeq++, 'proposal', DEBATER_A_ID, T8, {
+        proposal: { kind: 'classify-node', node_id: NODE_ID_1, classification: 'value' },
+      }),
+      id: PROPOSAL_ID_2,
+    });
+    expect(deriveFacetStatus(projection, 'node', NODE_ID_1, 'classification')).toBe('proposed');
+
+    // Subsequent votes attach to the new candidate (still keyed by
+    // proposal-id in the wire today; the projection routes them via
+    // the proposal target → facet lookup).
+    castVote(projection, MODERATOR_ID, 'agree', PROPOSAL_ID_2, T9);
+    castVote(projection, DEBATER_A_ID, 'agree', PROPOSAL_ID_2, T9);
+    castVote(projection, DEBATER_B_ID, 'agree', PROPOSAL_ID_2, T9);
+    expect(deriveFacetStatus(projection, 'node', NODE_ID_1, 'classification')).toBe('agreed');
   });
 });
 
@@ -444,36 +588,56 @@ describe('deriveFacetStatus — edge substance facet', () => {
 // Property-style: random vote sequences vs. a hand-rolled
 // reference implementation.
 //
-// Reference implementation summary: filter perParticipant by
-// current participants; if facetState.status==='meta-disagreement'
-// → 'meta-disagreement'; else if (committed && any withdraw) →
-// 'withdrawn'; else if (any dispute or any withdraw) → 'disputed';
-// else if committed → 'committed'; else if every current
-// participant voted agree → 'agreed'; else → 'proposed'.
+// Reference implementation summary (new eight-rule shape per ADR 0030
+// §10 + `pf_projection_facet_status_refactor`):
+//   1. metaDisagreement → 'meta-disagreement'.
+//   2. candidateValue === null → 'awaiting-proposal' (not exercised
+//      here — the fixture starts with a classify-node proposal in
+//      place, so the facet has a candidate).
+//   3. Filter perParticipant + withdrawals by current participants.
+//   4. Committed AND any current-participant withdrawal → 'withdrawn'.
+//   5. Any dispute → 'disputed'.
+//   6. Committed (current candidate matches) → 'committed'.
+//   7. All current participants agree → 'agreed'.
+//   8. Otherwise → 'proposed'.
+//
+// Withdrawal is no longer a vote choice — it is a separate
+// `withdraw-agreement` event kind per ADR 0030 §3.
 // ---------------------------------------------------------------
 
-type Stance = 'agree' | 'dispute' | 'withdraw';
+type Stance = 'agree' | 'dispute';
 type Action =
   | { kind: 'vote'; participant: string; vote: Stance; time: string }
   | { kind: 'commit'; time: string }
   | { kind: 'leave'; participant: string; time: string }
-  | { kind: 'meta-disagreement'; time: string };
+  | { kind: 'meta-disagreement'; time: string }
+  | { kind: 'withdraw-agreement'; participant: string; time: string };
 
 function referenceStatus(
   votesByParticipant: Map<string, Stance>,
+  withdrawals: Set<string>,
   currentParticipants: Set<string>,
   committed: boolean,
   metaDisagreement: boolean,
 ): FacetStatus {
   if (metaDisagreement) return 'meta-disagreement';
+  // Candidate is always present in this property-style fixture (the
+  // seeded classify-node proposal supplies it); awaiting-proposal is
+  // exercised in its own describe block above.
   const currentVotes: Stance[] = [];
   for (const [p, v] of votesByParticipant) {
     if (currentParticipants.has(p)) currentVotes.push(v);
   }
-  const hasWithdraw = currentVotes.some((v) => v === 'withdraw');
+  let hasCurrentWithdrawal = false;
+  for (const p of withdrawals) {
+    if (currentParticipants.has(p)) {
+      hasCurrentWithdrawal = true;
+      break;
+    }
+  }
   const hasDispute = currentVotes.some((v) => v === 'dispute');
-  if (committed && hasWithdraw) return 'withdrawn';
-  if (hasDispute || hasWithdraw) return 'disputed';
+  if (committed && hasCurrentWithdrawal) return 'withdrawn';
+  if (hasDispute) return 'disputed';
   if (committed) return 'committed';
   if (
     currentParticipants.size > 0 &&
@@ -513,6 +677,7 @@ describe('deriveFacetStatus — property-style vs. reference implementation', ()
 
       // Reference state.
       const refVotes = new Map<string, Stance>();
+      const refWithdrawals = new Set<string>();
       const refCurrent = new Set(participants);
       let refCommitted = false;
       let refMeta = false;
@@ -521,25 +686,30 @@ describe('deriveFacetStatus — property-style vs. reference implementation', ()
       for (let i = 0; i < 20; i++) {
         const r = rand();
         let action: Action;
-        if (refMeta || (refCommitted && rand() < 0.05)) {
+        if (refMeta) {
           // After meta-disagreement-marked, no further events change
-          // status; after commit, occasionally trigger a withdraw.
-          if (refCommitted && refCurrent.size > 0 && !refMeta) {
+          // status.
+          continue;
+        } else if (refCommitted && r < 0.15) {
+          // Occasionally emit a withdraw-agreement against the
+          // committed candidate (per ADR 0030 §3, withdrawal is its
+          // own event kind, valid only after commit).
+          if (refCurrent.size > 0) {
             action = {
-              kind: 'vote',
+              kind: 'withdraw-agreement',
               participant: pick(rand, [...refCurrent]),
-              vote: 'withdraw',
               time: T0,
             };
           } else {
-            // Skip — re-roll on next iteration.
             continue;
           }
         } else if (r < 0.65) {
+          // Cast a vote — under the new model, choices are only
+          // `'agree' | 'dispute'`.
           action = {
             kind: 'vote',
             participant: pick(rand, participants),
-            vote: pick(rand, ['agree', 'dispute', 'withdraw'] as const),
+            vote: pick(rand, ['agree', 'dispute'] as const),
             time: T0,
           };
         } else if (r < 0.75) {
@@ -595,10 +765,22 @@ describe('deriveFacetStatus — property-style vs. reference implementation', ()
             }),
           );
           refMeta = true;
+        } else if (action.kind === 'withdraw-agreement') {
+          applyEvent(
+            projection,
+            makeEvent(voteSeq++, 'withdraw-agreement', action.participant, T0, {
+              entity_kind: 'node',
+              entity_id: NODE_ID_1,
+              facet: 'classification',
+              participant: action.participant,
+              withdrawn_at: T0,
+            }),
+          );
+          refWithdrawals.add(action.participant);
         }
 
         const derived = deriveFacetStatus(projection, 'node', NODE_ID_1, 'classification');
-        const ref = referenceStatus(refVotes, refCurrent, refCommitted, refMeta);
+        const ref = referenceStatus(refVotes, refWithdrawals, refCurrent, refCommitted, refMeta);
         expect(derived).toBe(ref);
       }
     }

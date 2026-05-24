@@ -19,15 +19,16 @@
 // (`awaiting-proposal`). Three facet names (`wording`, `classification`,
 // `substance`); nodes carry all three, edges carry only `substance` in v1.
 //
-// TODO(pf_projection_facet_status_refactor): `'awaiting-proposal'` was
-// added by `pf_awaiting_proposal_facet_status` per ADR 0030 §10. The
-// shell's `<FacetPill>` currently renders it with the same visual as
-// `'proposed'` (faded / dashed-slate) as a sensible default — see
-// `PILL_STATUS_CLASSNAME` in `FacetPill.tsx`. The downstream UI tasks
-// (`pf_mod_node_card_classification_affordance`,
+// `'awaiting-proposal'` (per ADR 0030 §10) is now emitted from the
+// server's `deriveFacetStatus` for facets with no candidate value
+// yet. The shell's `<FacetPill>` renders it with the same visual as
+// `'proposed'` (faded / dashed-slate) — see `PILL_STATUS_CLASSNAME`
+// in `FacetPill.tsx`. The per-facet propose affordance (the real
+// empty-state surface) is rendered by the moderator's node card and
+// the participant's detail-panel row (downstream UI tasks
+// `pf_mod_node_card_classification_affordance`,
 // `pf_mod_node_card_substance_affordance`,
-// `pf_part_detail_panel_three_facet_rows`) will replace the default with
-// the real empty-state visual + per-facet propose affordance.
+// `pf_part_detail_panel_three_facet_rows`), not by the pill itself.
 
 /**
  * Per-facet overall-status enum. Seven values across the agreement layer
