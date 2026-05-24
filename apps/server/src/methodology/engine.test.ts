@@ -441,7 +441,22 @@ describe('validateAction — placeholder per-action handlers', () => {
   });
 
   it('propose action emits a proposal envelope event', () => {
+    // Per `pf_sequence_gate_server_enforced` + ADR 0030 §8 the
+    // propose handler refuses an out-of-sequence facet-valued
+    // `classify-node` (target node's wording facet is not yet
+    // `'agreed'`/`'committed'`). The seed's NODE_ID_1 wording facet
+    // is `'proposed'` (candidate set inline from `node-created`,
+    // no votes), so a `classify-node` against NODE_ID_1 is refused
+    // by the sequence gate. This smoke test pins the dispatcher
+    // wiring (propose action → emits at least one `proposal`
+    // envelope event), so route through the legacy
+    // classify-node-with-wording bundle exemption (TODO(pf_mod_capture_pane_wording_only)):
+    // a fresh node id + inline `wording` field exempts the gate
+    // since wording is established at propose-time on the same
+    // gesture. The handler emits 3 events (node-created +
+    // entity-included + proposal) on this path per ADR 0027.
     const p = seedSession();
+    const FRESH_NODE_ID = '88888888-8888-4888-8888-888888888888';
     const action: ProposeAction = {
       kind: 'propose',
       requester: DEBATER_A_ID,
@@ -450,16 +465,22 @@ describe('validateAction — placeholder per-action handlers', () => {
       sequence: nextSequence(p),
       actor: DEBATER_A_ID,
       createdAt: T9,
-      proposal: { kind: 'classify-node', node_id: NODE_ID_1, classification: 'value' },
+      proposal: {
+        kind: 'classify-node',
+        node_id: FRESH_NODE_ID,
+        classification: 'value',
+        wording: 'A fresh classification target.',
+      },
     };
     const r = validateAction(p, action);
     expect(r.ok).toBe(true);
     if (r.ok) {
-      expect(r.events).toHaveLength(1);
-      const ev = r.events[0]!;
-      expect(ev.kind).toBe('proposal');
-      if (ev.kind === 'proposal') {
-        const inner = ev.payload.proposal;
+      // Legacy bundle: node-created + entity-included + proposal.
+      expect(r.events).toHaveLength(3);
+      const proposalEvent = r.events[r.events.length - 1]!;
+      expect(proposalEvent.kind).toBe('proposal');
+      if (proposalEvent.kind === 'proposal') {
+        const inner = proposalEvent.payload.proposal;
         expect(inner.kind).toBe('classify-node');
       }
     }

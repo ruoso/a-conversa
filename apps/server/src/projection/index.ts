@@ -58,6 +58,7 @@ export { applyEvent, OutOfOrderEventError, projectFromLog, ReplayError } from '.
 export { applyEventIncremental } from './incremental.js';
 export {
   deriveFacetStatus,
+  deriveFacetStatusFromState,
   FacetStatusDerivationError,
   type DeriveEntityKind,
 } from './facet-status.js';

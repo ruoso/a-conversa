@@ -110,7 +110,27 @@ export function deriveFacetStatus(
   facet: FacetName,
 ): FacetStatus {
   const facetState = resolveFacet(projection, entityKind, entityId, facet);
+  return deriveFacetStatusFromState(projection, facetState);
+}
 
+// `deriveFacetStatusFromState` — same eight-rule derivation, applied to
+// a `FacetState` value the caller already resolved. Exposed for the
+// edge `shape` facet (per ADR 0030 §5 the shape lives inline on
+// `edge-created`; the `FacetName` union does not name it, so the
+// `deriveFacetStatus` lookup path can't reach it). Per
+// `pf_sequence_gate_server_enforced` the propose handler's sequence
+// gate needs the shape facet's derived status to evaluate the
+// `set-edge-substance` arm's predecessor check — it reads the facet
+// directly off `projection.getEdge(edgeId).shapeFacet` and routes
+// through this entry point.
+//
+// The function is pure over `(facetState, projection.currentParticipants())`;
+// it does NOT re-resolve the facet (the caller did) and does NOT walk
+// the entity graph.
+export function deriveFacetStatusFromState(
+  projection: Projection,
+  facetState: FacetState<unknown>,
+): FacetStatus {
   // Rule 1: meta-disagreement on the underlying state short-circuits.
   // Set by the meta-disagreement handler when a facet-keyed
   // meta-disagreement-marked event lands on this facet.

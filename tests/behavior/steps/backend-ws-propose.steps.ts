@@ -251,6 +251,46 @@ When(
   },
 );
 
+// `classify-node` against an EXTANT node id (no inline `wording`
+// field — that's the legacy-bundle exemption path; this step
+// deliberately omits it so the server-enforced per-facet sequence
+// gate (per `pf_sequence_gate_server_enforced` + ADR 0030 §8) fires).
+// The seeded `node-created` event leaves the wording facet at
+// `'proposed'` (inline candidate, no votes); the gate refuses with
+// `facet-sequence-out-of-order` and the connection stays open per
+// ADR 0029.
+When(
+  'the client sends a classify-node propose envelope for session {string} with expectedSequence {int} targeting extant node {string}',
+  function (
+    this: AConversaWorld,
+    sessionId: string,
+    expectedSequence: number,
+    targetNodeId: string,
+  ) {
+    const s = scratch(this);
+    const ws = getClient(this);
+    const messageId = randomUUID();
+    s.wsProposeMessageId = messageId;
+    ensureProposeFramesQueue(this);
+
+    ws.send(
+      JSON.stringify({
+        type: 'propose',
+        id: messageId,
+        payload: {
+          sessionId,
+          expectedSequence,
+          proposal: {
+            kind: 'classify-node',
+            node_id: targetNodeId,
+            classification: 'fact',
+          },
+        },
+      }),
+    );
+  },
+);
+
 // ============================================================
 // Thens
 // ============================================================

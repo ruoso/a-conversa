@@ -49,3 +49,15 @@ Per [ADR 0030 §8](../../../docs/adr/0030-per-facet-vote-keying-and-sequential-c
 ## Open questions
 
 (none — all decided per ADR 0030)
+
+## Status
+
+**Done** — 2026-05-24.
+
+- Propose handler now refuses out-of-sequence `classify-node` and `set-node-substance` proposals with the typed `'facet-sequence-out-of-order'` rejection per ADR 0030 §8; rejection maps to HTTP 422 in `apps/server/src/errors.ts` and propagates through the existing per-sub-kind dispatch ahead of the methodology-engine `validateAction` call. Connection stays open per ADR 0029.
+- New `RejectionReason` value `'facet-sequence-out-of-order'` lands in `apps/server/src/methodology/types.ts` and exhaustive maps in `apps/server/src/errors.test.ts` + `apps/server/src/ws/protocol-docs.test.ts` were widened.
+- `apps/server/src/projection/facet-status.ts` exports a new `deriveFacetStatusFromState` entry point (re-exported from `apps/server/src/projection/index.ts`) that the gate reads to resolve the predecessor facet from the projected state.
+- The legacy `classify-node`-with-wording bundle is exempted with a `TODO(pf_mod_capture_pane_wording_only)` marker; structural and capture-node sub-kinds bypass the gate by design (see header docblock in `apps/server/src/methodology/handlers/propose.ts`).
+- The `set-edge-substance` shape-facet arm of the gate is **deferred** — `facetNameSchema` in `packages/shared-types/src/events/enums.ts` is still 3-valued (no `'shape'`); the call site reads `ProjectedEdge.shapeFacet` for reference but does not reject. Follow-on task `pf_shape_facet_wire_vote` registered to close the gap.
+- Vitest 4319 → 4332 (+13: 12 cases in new `apps/server/src/methodology/handlers/proposeSequenceGate.test.ts` + 1 legacy-bundle exemption smoke). Cucumber 259 → 260 scenarios / 1773 → 1787 steps (new `tests/behavior/backend/ws-propose.feature` scenario + `tests/behavior/steps/backend-ws-propose.steps.ts`). Playwright 107 → 107 (unchanged, green incl. methodology-full-flow Phases 1–12).
+- TODOs added: 1 new `TODO(pf_shape_facet_wire_vote)`. TODOs paid down: 0.

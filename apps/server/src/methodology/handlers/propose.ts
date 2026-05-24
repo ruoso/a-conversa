@@ -253,6 +253,8 @@
 import { randomUUID } from 'node:crypto';
 
 import type { PendingProposal, Projection } from '../../projection/index.js';
+import { deriveFacetStatus, deriveFacetStatusFromState } from '../../projection/index.js';
+import type { FacetStatus } from '../../projection/types.js';
 import {
   edgeIsVisible,
   findConflictingBreakEdgeProposal,
@@ -1386,6 +1388,193 @@ function validateCaptureNodeProposal(
 }
 
 // ---------------------------------------------------------------
+// `validateSequence` — server-enforced per-facet sequence gate per
+// [ADR 0030 §8](../../../../docs/adr/0030-per-facet-vote-keying-and-sequential-capture.md)
+// and `pf_sequence_gate_server_enforced`.
+//
+// The methodology is sequential: a node's classification facet can
+// only accept a candidate once the wording facet is settled; a node's
+// substance facet can only accept a candidate once classification is
+// settled; an edge's substance facet can only accept a candidate once
+// the shape facet is settled. The UI hides the out-of-sequence
+// affordances, but the UI is not the integrity boundary — per ADR
+// 0030 §8 a misbehaving client (or a stale moderator session, or a
+// future automation) could craft a wire envelope that lands an out-of-
+// sequence proposal. This gate is the wire-shape precondition that
+// rejects them.
+//
+// **Gate runs BEFORE the per-sub-kind validators**: the engine's
+// universal checks have already confirmed session / sequence /
+// participant; the per-sub-kind validators assume the wire-shape
+// contract is honored (so they don't re-check predecessor facets).
+// Sequence is part of the wire-shape contract — running it first
+// keeps each layer's responsibility crisp.
+//
+// **Accepting state for the predecessor facet**: `agreed` OR
+// `committed` (per the refinement's Decisions). Both mean "the
+// candidate value is settled enough to anchor the next facet's
+// work"; the methodology doesn't require `committed` specifically to
+// advance.
+//
+// **Gated sub-kinds**:
+//   - `classify-node` — gated on the target node's `wording` facet.
+//   - `set-node-substance` — gated on the target node's
+//     `classification` facet.
+//   - `set-edge-substance` — gated on the target edge's `shape` facet.
+//
+// **NOT gated**:
+//   - `capture-node` — captures a fresh node where no facet exists
+//     yet (the wording is established at propose-time on the
+//     entity-layer carriage).
+//   - The structural sub-kinds (`decompose`, `interpretive-split`,
+//     `axiom-mark`, `annotate`, `meta-move`, `break-edge`) — per
+//     ADR 0030 §9, structural and facet-valued proposals coexist;
+//     the sequence rule applies only to facet-valued advancement.
+//   - `edit-wording` — per the refinement's Decisions, edit-wording
+//     issues against a node whose wording is already `agreed` or
+//     `committed` (it proposes to change the agreed-upon value); it
+//     is not subject to the predecessor-sequence check.
+//   - `amend-node` — same shape as `edit-wording` (in-place wording
+//     update); not subject to the predecessor-sequence check.
+//
+// **Legacy `classify-node`-with-wording bundle exemption** —
+// TODO(pf_mod_capture_pane_wording_only). The legacy classify-node
+// bundle (`wording` field present + `node_id` doesn't yet name a
+// projected node) is the predecessor of the new `capture-node`
+// sub-kind: it establishes the wording AT propose-time as part of
+// the same gesture, so there is no prior wording-facet state to
+// gate against. Once the moderator UI migrates to `capture-node`
+// (downstream task `pf_mod_capture_pane_wording_only`), the
+// `wording` field on `classifyNodeProposalSchema` is retired and
+// this exemption goes away with it; the gate then applies
+// uniformly to every `classify-node` arrival.
+// ---------------------------------------------------------------
+
+const ACCEPTING_PREDECESSOR_STATUSES: ReadonlySet<FacetStatus> = new Set<FacetStatus>([
+  'agreed',
+  'committed',
+]);
+
+function validateSequence(
+  projection: Projection,
+  action: ProposeAction,
+): RejectedValidationResult | null {
+  switch (action.proposal.kind) {
+    case 'classify-node': {
+      const nodeId = action.proposal.node_id;
+      // Legacy bundle exemption — see TODO above. The classify-node
+      // arm's structural-event builder (below) emits `node-created`
+      // when `getNode === undefined && wording !== undefined`; that
+      // path is the predecessor of `capture-node` and establishes
+      // wording AT propose-time, so there is no prior wording-facet
+      // state to gate against. Exempt from the sequence gate until
+      // the moderator UI migrates (per `pf_mod_capture_pane_wording_only`).
+      if (action.proposal.wording !== undefined && projection.getNode(nodeId) === undefined) {
+        return null;
+      }
+      // The node must exist on the projection (Phase 0 — the per-
+      // sub-kind validator will report this as `target-entity-not-
+      // found`; here we just skip the gate so the downstream
+      // validator's clearer message wins).
+      const node = projection.getNode(nodeId);
+      if (node === undefined) {
+        return null;
+      }
+      const wordingStatus = deriveFacetStatus(projection, 'node', nodeId, 'wording');
+      if (!ACCEPTING_PREDECESSOR_STATUSES.has(wordingStatus)) {
+        return {
+          ok: false,
+          reason: 'facet-sequence-out-of-order',
+          detail: `propose classify-node: node ${nodeId}'s wording facet is '${wordingStatus}' (must be 'agreed' or 'committed' to advance to classification per ADR 0030 §8)`,
+        };
+      }
+      return null;
+    }
+    case 'set-node-substance': {
+      const nodeId = action.proposal.node_id;
+      const node = projection.getNode(nodeId);
+      if (node === undefined) {
+        // The per-sub-kind validator (when it lands) will surface a
+        // `'target-entity-not-found'` rejection with the kind-
+        // specific detail; skip the sequence gate so that clearer
+        // message wins.
+        return null;
+      }
+      const classificationStatus = deriveFacetStatus(projection, 'node', nodeId, 'classification');
+      if (!ACCEPTING_PREDECESSOR_STATUSES.has(classificationStatus)) {
+        return {
+          ok: false,
+          reason: 'facet-sequence-out-of-order',
+          detail: `propose set-node-substance: node ${nodeId}'s classification facet is '${classificationStatus}' (must be 'agreed' or 'committed' to advance to substance per ADR 0030 §8)`,
+        };
+      }
+      return null;
+    }
+    case 'set-edge-substance': {
+      const edgeId = action.proposal.edge_id;
+      const edge = projection.getEdge(edgeId);
+      if (edge === undefined) {
+        // The fresh-edge case (connecting-capture / first-substance
+        // against a brand-new edge): no projected edge yet to read a
+        // `shape` facet from. The `validateSetEdgeSubstanceProposal`
+        // referential rules will check that the carried endpoint
+        // triple resolves to visible source / target nodes; the
+        // `edge-created` event the builder emits below carries the
+        // shape inline. Per ADR 0030 §5 the shape facet then enters
+        // life with the carriage as its candidate — there is no
+        // prior shape-facet state to gate against (the gesture
+        // establishes shape AT propose-time on the entity-layer
+        // carriage, mirroring the classify-node-with-wording legacy
+        // bundle exemption above). Skip the gate; the per-sub-kind
+        // validator owns the structural rules.
+        return null;
+      }
+      // **TODO(pf_shape_facet_wire_vote)** — v1 deferral for the
+      // shape-facet gate. ADR 0030 §8 says `set-edge-substance` is
+      // refused while the edge's `shape` facet is not `'agreed'` /
+      // `'committed'`. In v1 the wire-level `facetNameSchema` enum
+      // (per `packages/shared-types/src/events/enums.ts:66`) is
+      // 3-valued (`'classification' | 'substance' | 'wording'`) and
+      // does NOT include `'shape'`; the comment at that file
+      // explicitly defers the shape expansion to "downstream
+      // projection-refactor tasks". Without a wire path to vote on
+      // shape, the gate as specified would lock every
+      // `set-edge-substance` against an extant edge out of the
+      // methodology (a v1 edge's shape facet enters life
+      // `'proposed'` with the inline carriage as its candidate per
+      // `pf_projection_facet_status_refactor` Decisions and stays
+      // there — no votes can accrue, no commit lands, so the
+      // accepting `'agreed'`/`'committed'` states are unreachable).
+      // The defeater-capture flow at `docs/methodology.md` F6 — the
+      // canonical use case for the substance-only re-vote against
+      // an extant edge — would be locked out. Defer the shape-facet
+      // gate until the wire vocabulary catches up; the per-sub-kind
+      // referential rules in `validateSetEdgeSubstanceProposal`
+      // still defend the substance-only re-vote against extant
+      // edges (edge_id resolves; carried endpoint triple agrees
+      // with the projection's triple).
+      //
+      // Reading the facet directly off `ProjectedEdge.shapeFacet`
+      // is preserved as a reference for the future strict gate —
+      // the `deriveFacetStatusFromState` entry point exists exactly
+      // for the shape-facet case (the `FacetName` union does not
+      // name `'shape'`). The `void` cast keeps the symbol live
+      // (it's the call site the future tightening replaces with the
+      // rejection arm).
+      const shapeStatus = deriveFacetStatusFromState(projection, edge.shapeFacet);
+      void shapeStatus;
+      return null;
+    }
+    default:
+      // All other sub-kinds (capture-node, decompose, interpretive-
+      // split, axiom-mark, meta-move, edit-wording, amend-node,
+      // annotate, break-edge) are NOT gated — see the header
+      // docblock for the per-sub-kind rationale.
+      return null;
+  }
+}
+
+// ---------------------------------------------------------------
 // The handler.
 //
 // Switches on `action.proposal.kind`. The `decompose`,
@@ -1411,6 +1600,14 @@ export const proposeHandler: Validator<ProposeAction> = (
   // `action.requester` directly).
   const participant = requireParticipant(projection, action.requester);
   if (!participant.ok) return participant.rejection;
+
+  // Per-facet sequence gate (ADR 0030 §8 +
+  // `pf_sequence_gate_server_enforced`). Runs BEFORE the per-sub-kind
+  // validators so the wire-shape precondition is checked before the
+  // sub-kind-specific rules assume it holds. The gate is read-only
+  // against the projection — no state change on rejection.
+  const sequenceRejection = validateSequence(projection, action);
+  if (sequenceRejection !== null) return sequenceRejection;
 
   // Per-sub-kind dispatch.
   switch (action.proposal.kind) {

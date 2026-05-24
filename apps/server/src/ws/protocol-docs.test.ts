@@ -139,6 +139,8 @@ const REJECTION_REASON_MAP = {
   'inapplicable-to-facet': true,
   'illegal-state-transition': true,
   'methodology-not-exhausted': true,
+  // Per-facet sequence-gate.
+  'facet-sequence-out-of-order': true,
   // Participant-assignment.
   'role-already-filled': true,
   'user-already-joined': true,

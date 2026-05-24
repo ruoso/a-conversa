@@ -55,3 +55,24 @@ Feature: WebSocket propose (client → server)
     And the client sends a subscribe envelope for session "77777777-7777-4777-8777-777777777703"
     And the client sends a propose envelope for session "77777777-7777-4777-8777-777777777703" with expectedSequence 1 targeting node "77777777-7777-4777-8777-777777777ab3"
     Then the client receives an error envelope with code "sequence-mismatch" referencing the propose envelope
+
+  # Server-enforced per-facet sequence gate — per
+  # `pf_sequence_gate_server_enforced` + ADR 0030 §8 the propose
+  # handler is the integrity boundary for the methodology's sequential
+  # capture order. A `classify-node` against a node whose `wording`
+  # facet is not `'agreed'` / `'committed'` is refused with the typed
+  # `facet-sequence-out-of-order` error code; the connection stays
+  # open (per ADR 0029).
+  #
+  # The seeded `propose-ready session` has a `node-created` event at
+  # seq 3 with `wording: 'A claim ...'`; the wording facet's candidate
+  # is the inline value, no votes have been cast, so the facet derives
+  # to `'proposed'`. A `classify-node` against that node id fires the
+  # gate.
+  Scenario: A classify-node against a node whose wording facet is not agreed is refused at the wire (facet-sequence-out-of-order); the connection stays open
+    Given a propose-ready session for "alice-ws" exists with id "77777777-7777-4777-8777-777777777704" and node id "77777777-7777-4777-8777-777777777ab4"
+    When an authenticated WebSocket client connects to "/api/ws"
+    And the client sends a subscribe envelope for session "77777777-7777-4777-8777-777777777704"
+    And the client sends a classify-node propose envelope for session "77777777-7777-4777-8777-777777777704" with expectedSequence 3 targeting extant node "77777777-7777-4777-8777-777777777ab4"
+    Then the client receives an error envelope with code "facet-sequence-out-of-order" referencing the propose envelope
+    And the WebSocket connection is still open

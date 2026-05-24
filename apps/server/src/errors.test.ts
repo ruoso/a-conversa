@@ -131,6 +131,7 @@ describe('rejectedToApiError', () => {
     { reason: 'inapplicable-to-facet', status: 422 },
     { reason: 'illegal-state-transition', status: 422 },
     { reason: 'methodology-not-exhausted', status: 422 },
+    { reason: 'facet-sequence-out-of-order', status: 422 },
   ];
 
   // Sanity: the mapping covers every member of the union. We use a
@@ -162,6 +163,7 @@ describe('rejectedToApiError', () => {
       'inapplicable-to-facet': true,
       'illegal-state-transition': true,
       'methodology-not-exhausted': true,
+      'facet-sequence-out-of-order': true,
       'role-already-filled': true,
       'user-already-joined': true,
       'user-not-found': true,

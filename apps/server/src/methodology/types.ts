@@ -192,6 +192,24 @@ export type RejectionReason =
   | 'inapplicable-to-facet'
   | 'illegal-state-transition'
   | 'methodology-not-exhausted'
+  // Per-facet sequence-gate — owned by
+  // `per_facet_refactor.server_handlers.pf_sequence_gate_server_enforced`
+  // per [ADR 0030 §8](../../../docs/adr/0030-per-facet-vote-keying-and-sequential-capture.md):
+  // the server is the integrity boundary that refuses out-of-sequence
+  // facet-valued proposals. A `classify-node` targeting a node whose
+  // `wording` facet is not `agreed`/`committed`, a `set-node-substance`
+  // targeting a node whose `classification` facet is not
+  // `agreed`/`committed`, or a `set-edge-substance` targeting an edge
+  // whose `shape` facet is not `agreed`/`committed`, are refused with
+  // this typed reason. Distinct from `'illegal-state-transition'`
+  // because the proposal is structurally valid; it's the predecessor
+  // facet whose state forbids advancing — the kebab name reads
+  // honestly at the wire ("the facet sequence is out of order"). The
+  // `detail` string names the offending facet + its current status
+  // (e.g. `"propose classify-node refused: node X's wording facet is
+  // 'proposed' (must be agreed or committed)"`) so debugging clients
+  // (and the future i18n surface) can branch on the exact predecessor.
+  | 'facet-sequence-out-of-order'
   // Participant-assignment specific — owned by
   // `backend.session_management.participant_assignment`. The four codes
   // cover the failure modes of `POST /sessions/:id/participants` (the

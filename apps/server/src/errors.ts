@@ -218,6 +218,13 @@ function statusCodeForRejection(reason: RejectionReason): number {
     case 'entity-already-included':
       return 409;
     // 422 — well-formed but methodology state forbids this transition.
+    // `facet-sequence-out-of-order` (per
+    // `pf_sequence_gate_server_enforced` + ADR 0030 §8): the proposal
+    // is structurally valid but the predecessor facet isn't in
+    // `agreed`/`committed` — the methodology state forbids the
+    // facet-valued proposal advancing yet. Same 422 as the other
+    // methodology-not-yet rejections — it is NOT a structural malformation
+    // (which would be 400) nor a missing entity (404).
     case 'proposal-not-pending':
     case 'proposal-already-committed':
     case 'proposal-already-meta-disagreement':
@@ -225,6 +232,7 @@ function statusCodeForRejection(reason: RejectionReason): number {
     case 'inapplicable-to-facet':
     case 'illegal-state-transition':
     case 'methodology-not-exhausted':
+    case 'facet-sequence-out-of-order':
       return 422;
     default: {
       // Exhaustiveness check — adding a new RejectionReason breaks
