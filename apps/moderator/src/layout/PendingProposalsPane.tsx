@@ -185,9 +185,9 @@ function kindChipText(proposal: ProposalPayload, t: (key: string) => string): st
   }
   // Per Decision §7, the structural sub-kinds (decompose, axiom-mark,
   // meta-move, break-edge, amend-node, annotate, set-substance,
-  // edit-wording, interpretive-split) keep a hard-coded English
-  // placeholder until their own capture-flow tasks register summary
-  // catalog keys. The literal sub-kind name is a defensible v1.
+  // edit-wording, interpretive-split, capture-node) keep a hard-coded
+  // English placeholder until their own capture-flow tasks register
+  // summary catalog keys. The literal sub-kind name is a defensible v1.
   return proposal.kind;
 }
 

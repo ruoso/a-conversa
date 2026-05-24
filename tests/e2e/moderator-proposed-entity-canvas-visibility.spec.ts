@@ -95,21 +95,23 @@ async function moderatorReachOperate(page: Page, topic: string): Promise<string>
 }
 
 /**
- * Drive the propose chain (type wording, pick classification, fire
- * Cmd/Ctrl+Enter). Returns when the capture pane has cleared
- * optimistically — the WS round-trip is in flight.
+ * Drive the propose chain (type wording, fire Cmd/Ctrl+Enter).
+ * Returns when the capture pane has cleared optimistically — the WS
+ * round-trip is in flight. Per `pf_mod_capture_pane_wording_only`
+ * (ADR 0030 §1) the capture-pane gesture is wording-only — the
+ * classification palette is no longer mounted, and the propose-
+ * action validation gate no longer requires a classification pick.
  */
 async function proposeStatement(page: Page, wording: string): Promise<void> {
   const textarea = page.getByTestId('capture-text-input-textarea');
   await textarea.fill(wording);
-  await page.getByTestId('classification-palette-button-fact').click();
   const submitKey = process.platform === 'darwin' ? 'Meta+Enter' : 'Control+Enter';
   await textarea.press(submitKey);
   await expect(textarea).toHaveValue('');
 }
 
 test.describe('mod_proposed_entity_canvas_visibility — proposed entities render on the canvas at propose-time', () => {
-  test('Scenario 1: free-floating classify-node propose → exactly one statement-node renders with data-facet-status="proposed"', async ({
+  test('Scenario 1: free-floating capture-node propose → exactly one statement-node renders with data-facet-status="proposed"', async ({
     page,
   }) => {
     const wording = 'The proposed minimum wage would raise prices for everyone.';
@@ -158,21 +160,21 @@ test.describe('mod_proposed_entity_canvas_visibility — proposed entities rende
     await expect(firstNodes).toHaveCount(1, { timeout: 15_000 });
 
     // Step 2 — capture a second statement that points at the first.
-    // The connecting propose-action mints a fresh edge id and emits
-    // both an `edge-created` and an `entity-included` event alongside
-    // the `proposal` envelope; the source node likewise enters the
-    // graph at propose-time.
+    // Per ADR 0030 §4 the connecting-capture is a single
+    // `capture-node` proposal whose payload's optional `edge` block
+    // carries the role + endpoints inline; the server emits
+    // node-created + entity-included(node) + edge-created +
+    // entity-included(edge) + proposal at propose-time.
     //
     // We drive the "click an existing node to stage it as target"
     // gesture: the canvas's per-card click handler (per
     // `mod_target_auto_suggest`) sets `useCaptureStore.targetEntityId`
     // and the propose-action's edge-role gate opens. Type wording,
-    // pick a classification, pick an edge role, fire submit.
+    // pick an edge role, fire submit.
     await firstNodes.first().click();
 
     const textarea = page.getByTestId('capture-text-input-textarea');
     await textarea.fill(secondWording);
-    await page.getByTestId('classification-palette-button-fact').click();
     // Pick an edge role — `supports` is the methodology default; the
     // edge-role selector test ids follow the
     // `edge-role-selector-button-<role>` shape per `EdgeRoleSelector.tsx`.
@@ -192,17 +194,21 @@ test.describe('mod_proposed_entity_canvas_visibility — proposed entities rende
       expect(status).toBe('proposed');
     }
 
-    // Per `mod_set_edge_substance_endpoint_carriage` the
-    // `set-edge-substance` propose now carries the three endpoint
-    // fields inline, and the propose handler emits `edge-created` +
-    // `entity-included` at propose-time. The canvas projector
-    // (`apps/moderator/src/graph/StatementEdge.tsx`) stamps
-    // `data-facet-status="proposed"` on the role-label pill while the
-    // substance facet is in `proposed` state. Assert: exactly one
-    // edge label surfaces; it carries `data-facet-status="proposed"`.
+    // Per ADR 0030 §4 the connecting-capture is a single
+    // `capture-node` whose inline `edge` block carries the role +
+    // endpoints; the propose handler emits `edge-created` +
+    // `entity-included(edge)` at propose-time. The edge's `shape`
+    // facet enters life with the role+endpoints inline as candidate
+    // (status `'proposed'`); its `substance` facet enters life as
+    // `'awaiting-proposal'` (no candidate, per ADR 0030 §10). The
+    // canvas projector (`StatementEdge.tsx`) stamps the edge's
+    // SUBSTANCE-facet status onto `data-facet-status`, so the
+    // freshly-captured edge carries `'awaiting-proposal'`. Assert:
+    // exactly one edge label surfaces; it carries
+    // `data-facet-status="awaiting-proposal"`.
     const edgeLabels = page.locator('[data-testid^="graph-edge-label-"]');
     await expect(edgeLabels).toHaveCount(1, { timeout: 15_000 });
-    await expect(edgeLabels.first()).toHaveAttribute('data-facet-status', 'proposed', {
+    await expect(edgeLabels.first()).toHaveAttribute('data-facet-status', 'awaiting-proposal', {
       timeout: 15_000,
     });
   });

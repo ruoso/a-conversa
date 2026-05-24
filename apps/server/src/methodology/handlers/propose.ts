@@ -1437,17 +1437,12 @@ function validateCaptureNodeProposal(
 //   - `amend-node` — same shape as `edit-wording` (in-place wording
 //     update); not subject to the predecessor-sequence check.
 //
-// **Legacy `classify-node`-with-wording bundle exemption** —
-// TODO(pf_mod_capture_pane_wording_only). The legacy classify-node
-// bundle (`wording` field present + `node_id` doesn't yet name a
-// projected node) is the predecessor of the new `capture-node`
-// sub-kind: it establishes the wording AT propose-time as part of
-// the same gesture, so there is no prior wording-facet state to
-// gate against. Once the moderator UI migrates to `capture-node`
-// (downstream task `pf_mod_capture_pane_wording_only`), the
-// `wording` field on `classifyNodeProposalSchema` is retired and
-// this exemption goes away with it; the gate then applies
-// uniformly to every `classify-node` arrival.
+// Per `pf_mod_capture_pane_wording_only` (ADR 0030 §1) the legacy
+// `classify-node`-with-wording bundle is retired — capturing a new
+// node is the `capture-node` sub-kind, NOT a bundled gesture. The
+// sequence gate therefore applies UNIFORMLY to every `classify-node`
+// arrival: the target node must exist on the projection AND its
+// wording facet must be `'agreed'` or `'committed'`.
 // ---------------------------------------------------------------
 
 const ACCEPTING_PREDECESSOR_STATUSES: ReadonlySet<FacetStatus> = new Set<FacetStatus>([
@@ -1462,20 +1457,14 @@ function validateSequence(
   switch (action.proposal.kind) {
     case 'classify-node': {
       const nodeId = action.proposal.node_id;
-      // Legacy bundle exemption — see TODO above. The classify-node
-      // arm's structural-event builder (below) emits `node-created`
-      // when `getNode === undefined && wording !== undefined`; that
-      // path is the predecessor of `capture-node` and establishes
-      // wording AT propose-time, so there is no prior wording-facet
-      // state to gate against. Exempt from the sequence gate until
-      // the moderator UI migrates (per `pf_mod_capture_pane_wording_only`).
-      if (action.proposal.wording !== undefined && projection.getNode(nodeId) === undefined) {
-        return null;
-      }
       // The node must exist on the projection (Phase 0 — the per-
       // sub-kind validator will report this as `target-entity-not-
       // found`; here we just skip the gate so the downstream
-      // validator's clearer message wins).
+      // validator's clearer message wins). Per
+      // `pf_mod_capture_pane_wording_only` the legacy
+      // `classify-node`-with-wording bundle is retired — capturing a
+      // new node is the `capture-node` sub-kind. So a fresh node id
+      // here is a real error (no exemption).
       const node = projection.getNode(nodeId);
       if (node === undefined) {
         return null;
@@ -1524,9 +1513,10 @@ function validateSequence(
         // life with the carriage as its candidate — there is no
         // prior shape-facet state to gate against (the gesture
         // establishes shape AT propose-time on the entity-layer
-        // carriage, mirroring the classify-node-with-wording legacy
-        // bundle exemption above). Skip the gate; the per-sub-kind
-        // validator owns the structural rules.
+        // carriage). Skip the gate; the per-sub-kind validator owns
+        // the structural rules. (Per `pf_mod_capture_pane_wording_only`
+        // the analogous legacy-classify-node-with-wording exemption is
+        // retired — capturing a new node is now `capture-node`.)
         return null;
       }
       // Per ADR 0030 §8 + `pf_shape_facet_wire_vote`: refuse
@@ -1704,12 +1694,12 @@ export const proposeHandler: Validator<ProposeAction> = (
 // edit-wording.reword, axiom-mark, meta-move, break-edge, amend-node,
 // annotate — has no propose-time structural event to emit).
 //
-// **classify-node**: the proposal carries `node_id`. If the node
-// doesn't exist on the projection yet, emit `node-created` +
-// `entity-included` so the canvas projector renders the proposed
-// entity in `proposed` state (the facet status derives `proposed` so
-// long as the proposal is pending). When the node already exists
-// (a re-classify against a committed node), no structural events fire.
+// **classify-node**: emits no structural events. Per
+// `pf_mod_capture_pane_wording_only` (ADR 0030 §1) the legacy bundled
+// capture path (the old `wording`-on-classify-node field) is retired —
+// capturing a new node is the `capture-node` sub-kind. A
+// `classify-node` proposal only names a classification candidate
+// against an extant node.
 //
 // **set-edge-substance**: the proposal carries `edge_id` plus three
 // OPTIONAL endpoint fields (`source_node_id`, `target_node_id`,
@@ -1720,11 +1710,9 @@ export const proposeHandler: Validator<ProposeAction> = (
 // fires: emit `edge-created` + `entity-included` so the canvas
 // projector renders the proposed edge in `proposed` state immediately
 // (the facet status derives `proposed` so long as the proposal is
-// pending). The four-branch predicate is symmetric with the
-// `classify-node` arm's `getNode === undefined && wording !==
-// undefined` predicate: endpoint-absence OR pre-existing edge → no
-// structural fan-out (substance-only re-vote against an extant edge,
-// e.g. the defeater-precommit flow at
+// pending). The four-branch predicate: endpoint-absence OR pre-
+// existing edge → no structural fan-out (substance-only re-vote
+// against an extant edge, e.g. the defeater-precommit flow at
 // `apps/server/src/methodology/handlers/proposeDefeaterPreCommit.test.ts`).
 // The cross-field referential check (symmetry of the three endpoint
 // fields, source / target visibility, and agreement with an extant
@@ -1775,54 +1763,15 @@ function buildStructuralEventsForPropose(
 
   switch (action.proposal.kind) {
     case 'classify-node': {
-      const nodeId = action.proposal.node_id;
-      const wording = action.proposal.wording;
-      if (projection.getNode(nodeId) === undefined && wording !== undefined) {
-        // **TODO(pf_mod_capture_pane_wording_only)** — legacy bundled
-        // capture path. Per ADR 0030 §1 the wording-only capture
-        // gesture is the new `capture-node` proposal sub-kind (see
-        // below); the moderator UI's `useProposeAction` will switch
-        // to it in `pf_mod_capture_pane_wording_only`. Until then,
-        // the bundled `classify-node`-with-wording emission stays
-        // alive so the existing moderator UI continues to compile.
-        // Once the UI migrates, this branch — and the `wording`
-        // field on `classifyNodeProposalSchema` — are retired.
-        //
-        // Free-floating new statement — mint the node and inject it
-        // into the session. The client signals the
-        // free-floating-vs-re-classify shape by supplying / omitting
-        // `wording`; when absent, no `node-created` is emitted.
-        const nodeCreated: EventToAppendEnvelope<'node-created'> = {
-          id: randomUUID(),
-          sessionId: action.sessionId,
-          sequence: seq(events.length),
-          kind: 'node-created',
-          actor: action.actor,
-          payload: {
-            node_id: nodeId,
-            wording,
-            created_by: action.requester,
-            created_at: action.createdAt,
-          },
-          createdAt: action.createdAt,
-        };
-        events.push(nodeCreated);
-        const entityIncluded: EventToAppendEnvelope<'entity-included'> = {
-          id: randomUUID(),
-          sessionId: action.sessionId,
-          sequence: seq(events.length),
-          kind: 'entity-included',
-          actor: action.actor,
-          payload: {
-            entity_kind: 'node',
-            entity_id: nodeId,
-            included_by: action.requester,
-            included_at: action.createdAt,
-          },
-          createdAt: action.createdAt,
-        };
-        events.push(entityIncluded);
-      }
+      // Per `pf_mod_capture_pane_wording_only` (ADR 0030 §1), the
+      // legacy `classify-node`-with-wording bundle is retired —
+      // capturing a new node is the `capture-node` sub-kind. A
+      // `classify-node` proposal therefore only names a
+      // classification candidate against an EXTANT node and emits no
+      // structural events at propose-time. The sequence gate
+      // (`validateSequence`) plus per-sub-kind validation ensure the
+      // node exists and the wording facet is settled before the
+      // proposal lands.
       break;
     }
     case 'capture-node': {
@@ -1937,8 +1886,8 @@ function buildStructuralEventsForPropose(
         // and supplied the three endpoint fields. Mint
         // `edge-created` + `entity-included` so the canvas projector
         // renders the proposed edge in `proposed` state immediately.
-        // Symmetric with the `classify-node` arm above; see the
-        // header docblock for the four-branch predicate rationale.
+        // See the header docblock for the four-branch predicate
+        // rationale.
         const edgeCreated: EventToAppendEnvelope<'edge-created'> = {
           id: randomUUID(),
           sessionId: action.sessionId,

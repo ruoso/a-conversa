@@ -93,14 +93,16 @@ const TOPIC =
 
 // ── Initial-capture node content. The methodology doc's worked example
 //    uses "zoos do more good than harm" — we substitute a topical
-//    variant so the test description matches the session topic above. ─
+//    variant so the test description matches the session topic above.
+//    Per `pf_mod_capture_pane_wording_only` (ADR 0030 §1) the capture-
+//    pane gesture is wording-only — no `*_KIND` constants here (the
+//    classification facets land via the per-node card by a downstream
+//    task). ─────────────────────────────────────────────────────────
 const N1_WORDING = 'Reintroducing wolves to Yellowstone restored the elk-aspen balance.';
-const N1_KIND = 'fact'; // capture classification — observable / empirical
 
 // ── A second free-floating node we will use as the target of the
 //    supports edge once N1 is committed. ────────────────────────────
 const N2_WORDING = 'Aspen recovery indicates a healthier riparian ecosystem.';
-const N2_KIND = 'fact';
 
 // ── Module-scoped shared state — survives across the serial test()
 //    blocks. Initialised in beforeAll. ─────────────────────────────
@@ -323,14 +325,19 @@ test.describe
   // Phase 2 — capture the first statement (N1)
   // ──────────────────────────────────────────────────────────────
 
-  test('Phase 2.1: alice captures node N1 — types wording, picks fact, clicks propose', async () => {
-    // Type the wording, pick the classification, click propose. The
-    // propose handler mints a client-side UUID, sends a `classify-node`
-    // proposal envelope, and waits for the server's `proposed` ack +
+  test('Phase 2.1: alice captures node N1 — wording-only capture, clicks propose', async () => {
+    // Per `pf_mod_capture_pane_wording_only` (ADR 0030 §1) the
+    // capture-pane gesture is wording-only — type the wording, click
+    // propose. NO classification pick: the classification palette is
+    // no longer mounted in the bottom strip; classification moves to
+    // the per-node card by a downstream task. The propose handler
+    // mints a client-side UUID, sends a `capture-node` proposal
+    // envelope, and waits for the server's `proposed` ack +
     // `event-applied` broadcast. The optimistic-clear on success
-    // empties the textarea.
+    // empties the textarea. The captured node renders with
+    // `wording: 'proposed'` + `classification: 'awaiting-proposal'`
+    // + `substance: 'awaiting-proposal'`.
     await alicePage.getByTestId('capture-text-input-textarea').fill(N1_WORDING);
-    await alicePage.getByTestId(`classification-palette-button-${N1_KIND}`).click();
     await alicePage.getByTestId('propose-action-button').click();
 
     // The proposed node appears on Alice's canvas. We recover its
@@ -348,21 +355,27 @@ test.describe
   //    arrived. See the no-mirror comment at the top of this file. ──
 
   // ──────────────────────────────────────────────────────────────
-  // Phase 3 — vote on N1's facets (agreement rule)
+  // Phase 3 — vote on N1's classification facet
   // ──────────────────────────────────────────────────────────────
   //
-  // The methodology's "agreement rule": every facet a node carries
-  // (wording / classification / substance) advances to `agreed` only
-  // when every current participant votes `agree` AND the moderator
-  // commits. The `classify-node` proposal sub-kind targets the
-  // *classification* facet only (per `proposalFacetTarget` in
-  // `ParticipantVoteButtons.tsx`); wording + substance start as
-  // `proposed` once the node exists server-side (at commit time) and
-  // advance via separate proposal sub-kinds (`edit-wording`,
-  // `set-node-substance`). Phase 3.1/3.2 therefore vote on
-  // `classification` only.
+  // Per `pf_mod_capture_pane_wording_only` (ADR 0030 §1), the capture-
+  // pane gesture is wording-only — the capture-node proposal carries
+  // no classification candidate. The classification facet on the
+  // captured node enters life as `'awaiting-proposal'`; voting on
+  // it requires a per-node-card `classify-node` proposal first
+  // (handled by the downstream `pf_mod_node_card_classification_
+  // affordance` task). Until that task lands, Phases 3.1 / 3.2 /
+  // 4.1 cannot run as written — there is no classification candidate
+  // on N1 to vote on, no pending classify-node proposal for alice
+  // to commit. The assertions below are PRESERVED (not deleted) per
+  // the refinement instructions; future tasks will restore them
+  // once the per-node-card affordance lands.
 
-  test('Phase 3.1: ben taps N1 on his canvas; the detail panel shows the wording, and he votes agree on the classification facet', async () => {
+  test.fixme('Phase 3.1: ben taps N1 on his canvas; the detail panel shows the wording, and he votes agree on the classification facet', async () => {
+    // Blocked by the missing per-node-card classification affordance
+    // — N1's classification facet has no candidate yet (no
+    // classify-node proposal has been raised). Restore when
+    // `pf_mod_node_card_classification_affordance` lands.
     expect(_n1Id, 'Phase 2.1 must have minted N1').not.toBeNull();
     const n1 = _n1Id!;
 
@@ -390,7 +403,9 @@ test.describe
     await expect(row).toHaveAttribute('data-vote-state', 'enabled', { timeout: 15_000 });
   });
 
-  test("Phase 3.2: maria taps N1 and votes agree on N1's classification facet", async () => {
+  test.fixme("Phase 3.2: maria taps N1 and votes agree on N1's classification facet", async () => {
+    // Blocked by the missing per-node-card classification affordance
+    // (see Phase 3.1).
     const n1 = _n1Id!;
     await tapParticipantNode(mariaPage, n1);
     await expect(mariaPage.getByTestId('participant-detail-panel-identity-wording')).toHaveText(
@@ -413,8 +428,13 @@ test.describe
   // unanimous `agree` from every non-moderator participant on every
   // facet of the pending proposal. Alice clicks commit → the server
   // appends a `commit` event → the node lands as `agreed`.
+  //
+  // Blocked by Phase 3 — without a classify-node proposal + the
+  // unanimous-agree votes on its classification facet, alice has
+  // nothing on her pending list to commit. Restore when
+  // `pf_mod_node_card_classification_affordance` lands.
 
-  test('Phase 4.1: alice commits N1 — the pending row clears once she clicks', async () => {
+  test.fixme('Phase 4.1: alice commits N1 — the pending row clears once she clicks', async () => {
     // The server-side `checkUnanimousAgreeFacet` excludes the moderator
     // from the per-participant agreement walk, matching the
     // methodology's "commit IS the moderator's act of agreement"
@@ -442,9 +462,9 @@ test.describe
   // Phase 5 — capture a second node N2 and propose a `supports` edge
   // ──────────────────────────────────────────────────────────────
 
-  test('Phase 5.1: alice captures node N2', async () => {
+  test('Phase 5.1: alice captures node N2 (wording-only)', async () => {
+    // Wording-only capture per ADR 0030 §1 (see Phase 2.1 comment).
     await alicePage.getByTestId('capture-text-input-textarea').fill(N2_WORDING);
-    await alicePage.getByTestId(`classification-palette-button-${N2_KIND}`).click();
     await alicePage.getByTestId('propose-action-button').click();
     _n2Id = await readNodeIdByWording(alicePage, N2_WORDING);
     await expect(alicePage.getByTestId('capture-text-input-textarea')).toHaveValue('');
@@ -454,7 +474,13 @@ test.describe
   //    implicitly by Phase 5.3 (when ben + maria interact with N2 to
   //    vote). See the no-mirror comment at the top of this file. ──
 
-  test('Phase 5.3: ben + maria vote agree on N2.classification; alice commits', async () => {
+  test.fixme('Phase 5.3: ben + maria vote agree on N2.classification; alice commits', async () => {
+    // Blocked by the missing per-node-card classification affordance
+    // (see Phase 3 header). The capture-node proposal carries no
+    // classification candidate; without a follow-up classify-node
+    // proposal there is nothing on N2's classification facet to vote
+    // on. Restore when
+    // `pf_mod_node_card_classification_affordance` lands.
     const n2 = _n2Id!;
 
     for (const page of [benPage, mariaPage]) {
@@ -512,11 +538,15 @@ test.describe
     );
 
     // Type a wording for the new node that the edge originates from.
-    // The `propose` envelope mints a new node AND attaches a supports
-    // edge from it to N1 in one shot.
+    // Per ADR 0030 §4 the connecting-capture is a SINGLE propose
+    // envelope minting a `capture-node` proposal whose payload's
+    // optional `edge` block carries the role + endpoints inline; the
+    // server emits node-created + entity-included(node) + edge-created
+    // + entity-included(edge) + proposal at propose-time. The
+    // classification + substance facets enter life as
+    // `awaiting-proposal` per ADR 0030 §10 (see Phase 2.1 comment).
     const edgeWording = 'Wolves directly reduced elk overgrazing on aspen seedlings.';
     await alicePage.getByTestId('capture-text-input-textarea').fill(edgeWording);
-    await alicePage.getByTestId('classification-palette-button-fact').click();
     await alicePage.getByTestId('propose-action-button').click();
 
     // The new source node renders on alice's canvas with the typed

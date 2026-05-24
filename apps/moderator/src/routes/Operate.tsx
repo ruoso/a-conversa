@@ -1,7 +1,8 @@
 // Operate route for `/sessions/:id/operate` — the moderator console.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_interpretive_split_mode.md
-// (prior:     tasks/refinements/moderator-ui/mod_propose_decomposition.md,
+// Refinement: tasks/refinements/per-facet-refactor/pf_mod_capture_pane_wording_only.md
+// (prior:     tasks/refinements/moderator-ui/mod_interpretive_split_mode.md,
+//             tasks/refinements/moderator-ui/mod_propose_decomposition.md,
 //             tasks/refinements/moderator-ui/mod_propose_action.md,
 //             tasks/refinements/moderator-ui/mod_edge_role_selector.md,
 //             tasks/refinements/moderator-ui/mod_target_auto_suggest.md,
@@ -25,8 +26,6 @@
 // strip with `<ModeBanner>` (`mod_mode_banner`) filling the strip's
 // `modeBanner` sub-slot, `<CaptureTextInput>` (`mod_capture_text_input`)
 // filling the strip's `textInput` sub-slot,
-// `<ClassificationPalette>` (`mod_classification_palette`) filling the
-// strip's `classificationPalette` sub-slot,
 // `<CaptureTargetAndRole>` (`mod_edge_role_selector` — wraps
 // `<CaptureTargetChip>` from `mod_target_auto_suggest` alongside
 // `<EdgeRoleSelector>`) filling the strip's `edgeRoleSelector`
@@ -34,6 +33,13 @@
 // strip's `proposeAction` sub-slot. The session id from the route
 // param threads into the canvas so the node + edge projection layers
 // subscribe to the right per-session slice.
+//
+// **Per `pf_mod_capture_pane_wording_only`**: the classification
+// palette is NOT mounted in the strip's `classificationPalette`
+// sub-slot — the capture-pane gesture is wording-only per ADR 0030 §1,
+// and classification moves to the per-node card by a downstream task.
+// The `<ClassificationPalette>` component stays exported (the node-card
+// task uses it inline on a node card).
 //
 // **WS provider mount + per-route session lifecycle.** This is the
 // only WS-driving route in v1 (the `/login`, `/screen-name`,
@@ -64,7 +70,6 @@ import { OperateLayout } from '../layout/OperateLayout';
 import { BottomStripCapture } from '../layout/BottomStripCapture';
 import { CaptureTargetAndRole } from '../layout/CaptureTargetAndRole';
 import { CaptureTextInput } from '../layout/CaptureTextInput';
-import { ClassificationPalette } from '../layout/ClassificationPalette';
 import { DecomposeComponentsGrid } from '../layout/DecomposeComponentsGrid';
 import { DecomposeModeExitButton } from '../layout/DecomposeModeExitButton';
 import { InterpretiveSplitModeExitButton } from '../layout/InterpretiveSplitModeExitButton';
@@ -207,11 +212,15 @@ function OperateRouteInner(props: { sessionId: string }): ReactElement {
                 />
               )
             }
-            classificationPalette={
-              isWarrantElicitationMode || isOperationalizationMode || isProposalMode ? null : (
-                <ClassificationPalette />
-              )
-            }
+            // Per `pf_mod_capture_pane_wording_only` (ADR 0030 §1) the
+            // classification palette is no longer mounted in the bottom
+            // strip — the capture-pane gesture is wording-only, and
+            // classification moves to the per-node card by a downstream
+            // task. The `classificationPalette` slot intentionally stays
+            // absent (the `<BottomStripCapture>` scaffold renders its
+            // placeholder when null, which is fine — the slot is
+            // structural).
+            classificationPalette={null}
             edgeRoleSelector={
               isWarrantElicitationMode || isOperationalizationMode || isProposalMode ? null : (
                 <CaptureTargetAndRole />

@@ -120,18 +120,15 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
       `${String(wording.length)}/10000 characters`,
     );
 
-    // 4. Fire Cmd+Enter (macOS) / Ctrl+Enter (everywhere else). The
-    //    consumer-supplied `onSubmit` is a no-op until
-    //    `mod_propose_action` lands; the regression-class assertion
-    //    here is "the gesture is observable" — `preventDefault` fires
-    //    so the textarea's `value` does NOT gain a trailing `\n`.
-    const submitKey = process.platform === 'darwin' ? 'Meta+Enter' : 'Control+Enter';
-    await textarea.press(submitKey);
-    await expect(textarea).toHaveValue(wording);
-
-    // 5. Fire plain Enter at the end of the wording. The native
+    // 4. Fire plain Enter at the end of the wording. The native
     //    textarea behavior inserts a `\n`; the spec pins that this
-    //    path is NOT swallowed by the Cmd/Ctrl+Enter handler.
+    //    path is NOT swallowed by the Cmd/Ctrl+Enter handler. (Per
+    //    `pf_mod_capture_pane_wording_only` / ADR 0030 §1 the
+    //    capture-pane gesture is wording-only — a Cmd/Ctrl+Enter
+    //    here would now FIRE a propose-action round-trip, since the
+    //    only validation gate left is text-empty. The newline
+    //    assertion below stays — it pins the "plain Enter ≠ submit"
+    //    contract.)
     await textarea.press('End');
     await textarea.press('Enter');
     await expect(textarea).toHaveValue(`${wording}\n`);
@@ -194,6 +191,7 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
   });
 
   // Refinement: tasks/refinements/moderator-ui/mod_classification_palette.md
+  //             tasks/refinements/per-facet-refactor/pf_mod_capture_pane_wording_only.md
   //
   // The classification-palette regression cover. Pins:
   //   - the five buttons render in canonical order with aria-pressed=false,
@@ -203,7 +201,16 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
   //     textarea out of the palette (the just-landed
   //     `mod_capture_text_input` consumes plain `f` as a character),
   //   - re-click toggles off (Decision §4).
-  test('alice picks a classification by click and by keyboard shortcut; selection is mutually exclusive', async ({
+  //
+  // **Per `pf_mod_capture_pane_wording_only` (ADR 0030 §1)** the
+  // classification palette is no longer mounted in the bottom strip —
+  // the capture-pane gesture is wording-only. The palette component
+  // stays exported (the per-node card task will mount it inline on a
+  // node card); this regression cover is paused until that task lands
+  // and the per-node-card classification affordance is in place. The
+  // assertions are PRESERVED (not deleted) per ADR 0022 — future
+  // tasks restore them as a per-node-card spec.
+  test.fixme('alice picks a classification by click and by keyboard shortcut; selection is mutually exclusive', async ({
     page,
   }) => {
     await loginAs(page, { username: TEST_USERNAME });
@@ -755,19 +762,14 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
       'type the wording first',
     );
 
-    // 3. Type wording → the validation-error region updates to
-    //    classification-missing; the button stays disabled.
+    // 3. Type wording. Per `pf_mod_capture_pane_wording_only` (ADR
+    //    0030 §1) the capture-pane gesture is wording-only; the
+    //    validation-error region disappears as soon as the wording is
+    //    non-empty (no `classification-missing` gate anymore — that
+    //    moves to the per-node card by a downstream task).
     const wording = 'The proposed minimum wage would raise prices for everyone.';
     const textarea = page.getByTestId('capture-text-input-textarea');
     await textarea.fill(wording);
-    await expect(page.getByTestId('propose-action-validation-error')).toContainText(
-      'pick a classification',
-    );
-    await expect(button).toBeDisabled();
-
-    // 4. Pick a classification → the validation-error region disappears
-    //    and the button enables.
-    await page.getByTestId('classification-palette-button-fact').click();
     await expect(page.getByTestId('propose-action-validation-error')).toHaveCount(0);
     await expect(button).toBeEnabled();
 
@@ -778,18 +780,12 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     expect(sessionId, 'session id must be parsed from the URL').toBeTruthy();
 
     // 6. Fire Cmd/Ctrl+Enter from the textarea. The capture pane clears
-    //    optimistically — textarea empties, every classification button
-    //    returns to aria-pressed=false. The propose envelope is in
-    //    flight against the server.
+    //    optimistically — textarea empties. The propose envelope is in
+    //    flight against the server (a `capture-node` proposal carrying
+    //    the wording inline, per ADR 0030 §1).
     const submitKey = process.platform === 'darwin' ? 'Meta+Enter' : 'Control+Enter';
     await textarea.press(submitKey);
     await expect(textarea).toHaveValue('');
-    for (const kind of ['fact', 'predictive', 'value', 'normative', 'definitional']) {
-      await expect(page.getByTestId(`classification-palette-button-${kind}`)).toHaveAttribute(
-        'aria-pressed',
-        'false',
-      );
-    }
 
     // 7. The server's `event-applied` broadcast lands in
     //    `useWsStore.sessionState[<id>]`. Probe the dev-only
@@ -830,7 +826,8 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
       )
       .toMatchObject({
         // The propose handler appends exactly one event per envelope —
-        // a `proposal` carrying the `classify-node` payload. Structural
+        // a `proposal` carrying the `capture-node` payload (per
+        // ADR 0030 §1 wording-only capture). Structural
         // entity-creation events (`node-created`, `entity-included`,
         // `edge-created`) are commit-time effects per
         // `tasks/refinements/data-and-methodology/commit_logic.md` and
@@ -886,15 +883,14 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     // slot is filled.)
     await expect(page.getByTestId('pending-proposals-pane-empty')).toBeVisible();
 
-    // Drive the propose chain: type wording, pick a classification,
-    // fire Cmd/Ctrl+Enter. This is the same sequence the prior test
-    // pins for the capture pane; here we re-do it because the
-    // pending-proposals row only appears AFTER the propose round-trip
+    // Drive the propose chain: type wording, fire Cmd/Ctrl+Enter. Per
+    // `pf_mod_capture_pane_wording_only` (ADR 0030 §1) the capture-
+    // pane gesture is wording-only — no classification pick. The
+    // pending-proposals row appears AFTER the propose round-trip
     // resolves and the `event-applied` broadcast lands.
     const wording = 'The proposed minimum wage would raise prices for everyone.';
     const textarea = page.getByTestId('capture-text-input-textarea');
     await textarea.fill(wording);
-    await page.getByTestId('classification-palette-button-fact').click();
     const submitKey = process.platform === 'darwin' ? 'Meta+Enter' : 'Control+Enter';
     await textarea.press(submitKey);
 
@@ -915,10 +911,13 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
       .poll(async () => page.getByTestId('pending-proposal-row').count(), { timeout: 10_000 })
       .toBe(1);
 
-    // The row's kind chip resolves to the en-US `methodology.kind.fact`
-    // label ("Fact"); the empty-state paragraph is no longer rendered.
+    // The row's kind chip surfaces the literal sub-kind label for
+    // `capture-node` (per `pf_mod_capture_pane_wording_only` the
+    // capture-pane gesture is wording-only; the proposal is
+    // `capture-node`, not the legacy `classify-node`-with-wording
+    // bundle); the empty-state paragraph is no longer rendered.
     await expect(page.getByTestId('pending-proposals-pane-empty')).toHaveCount(0);
-    await expect(page.getByTestId('pending-proposal-row-kind')).toHaveText('Fact');
+    await expect(page.getByTestId('pending-proposal-row-kind')).toHaveText('capture-node');
   });
 
   // Refinement: tasks/refinements/moderator-ui/mod_per_facet_breakdown.md
@@ -932,7 +931,18 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
   // The assertion polls with `expect.poll` for the chip count and
   // attribute values, mirroring the 10s budget the predecessor test
   // established.
-  test('alice: propose a free-floating new statement; the per-facet breakdown shows a "classification" chip at status "proposed"', async ({
+  // Per `pf_mod_capture_pane_wording_only` (ADR 0030 §1) the capture-
+  // pane gesture is wording-only — the proposal sub-kind is
+  // `capture-node`, which carries NO facet candidate (ADR 0030 §1
+  // "votes against a capture-node proposal aren't a thing"). The
+  // per-facet breakdown's `classification` chip therefore doesn't
+  // surface for a capture-node proposal — the breakdown is the per-
+  // node card's responsibility (downstream task
+  // `pf_mod_node_card_classification_affordance`). The assertion is
+  // PRESERVED (not deleted) per ADR 0022; future tasks restore it as
+  // a per-node-card spec covering the classify-node proposal raised
+  // FROM the per-node card.
+  test.fixme('alice: propose a free-floating new statement; the per-facet breakdown shows a "classification" chip at status "proposed"', async ({
     page,
   }) => {
     await loginAs(page, { username: TEST_USERNAME });
@@ -1014,7 +1024,12 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
   // breakdown cover above uses: after the propose lands, the
   // `classification` chip's `proposal-facet-vote-indicator-row`
   // either is absent OR has zero `data-vote-indicator` children.
-  test('alice: propose a free-floating new statement; the per-facet chip starts with no vote-indicator row (no-vote-yet baseline)', async ({
+  // Paused per `pf_mod_capture_pane_wording_only` — see the prior
+  // per-facet-breakdown fixme block for rationale (capture-node has
+  // no facet candidate; the classification chip surfaces from a per-
+  // node-card classify-node proposal, handled by downstream task
+  // `pf_mod_node_card_classification_affordance`).
+  test.fixme('alice: propose a free-floating new statement; the per-facet chip starts with no vote-indicator row (no-vote-yet baseline)', async ({
     page,
   }) => {
     await loginAs(page, { username: TEST_USERNAME });
@@ -1120,12 +1135,12 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
     await expect(page.getByTestId('route-operate')).toBeVisible();
 
-    // Drive the same propose chain — produces a `classify-node`
-    // proposal whose row mounts the commit button.
+    // Drive the propose chain (wording-only per
+    // `pf_mod_capture_pane_wording_only` / ADR 0030 §1) — produces a
+    // `capture-node` proposal whose row mounts the commit button.
     const wording = 'The proposed minimum wage would raise prices for everyone.';
     const textarea = page.getByTestId('capture-text-input-textarea');
     await textarea.fill(wording);
-    await page.getByTestId('classification-palette-button-fact').click();
     const submitKey = process.platform === 'darwin' ? 'Meta+Enter' : 'Control+Enter';
     await textarea.press(submitKey);
 
@@ -1207,16 +1222,15 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     // 1. Type a unique substring into the filter input.
     await filterInput.fill('minimum wage');
 
-    // 2. Propose a non-matching statement. The capture chain pins the
-    // wording into the textarea + fires Cmd/Ctrl+Enter; the propose
-    // round-trip lands a `classify-node` proposal on the wire whose
-    // `summaryText` is `node <8-char-id>` — does NOT contain the
-    // filter substring.
+    // 2. Propose a non-matching statement. Per
+    // `pf_mod_capture_pane_wording_only` (ADR 0030 §1) the capture-
+    // pane gesture is wording-only; the propose round-trip lands a
+    // `capture-node` proposal on the wire whose `summaryText` is
+    // `node <8-char-id>` — does NOT contain the filter substring.
     const textarea = page.getByTestId('capture-text-input-textarea');
     const submitKey = process.platform === 'darwin' ? 'Meta+Enter' : 'Control+Enter';
 
     await textarea.fill('Public transit funding should increase.');
-    await page.getByTestId('classification-palette-button-fact').click();
     await textarea.press(submitKey);
 
     if (!(await isWsStoreReachable(page))) {

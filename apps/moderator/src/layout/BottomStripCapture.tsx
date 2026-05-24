@@ -1,16 +1,17 @@
 // `<BottomStripCapture>` — bottom-strip capture-pane scaffold.
 //
 // Refinement: tasks/refinements/moderator-ui/mod_bottom_strip_capture.md
+//             tasks/refinements/per-facet-refactor/pf_mod_capture_pane_wording_only.md
 // Design doc: docs/moderator-ui.md (Layout (sketch) — bottom strip)
 //
 // This task lands the empty structural scaffold for the bottom-strip
 // capture pane that `mod_layout_shell` left as a render-prop slot.
 // The pane is the moderator's primary input surface during a session:
-// statement text, classification palette, edge-role selector, and the
-// propose-action button. None of that real content is wired here —
-// the four downstream `mod_capture_flow.*` tasks fill each sub-slot in
-// turn, and `mod_mode_banner` decorates the top edge of the strip
-// with the current `CaptureMode` banner.
+// statement text, edge-role selector, and the propose-action button.
+// None of that real content is wired here — the downstream
+// `mod_capture_flow.*` tasks fill each sub-slot in turn, and
+// `mod_mode_banner` decorates the top edge of the strip with the
+// current `CaptureMode` banner.
 //
 // The scaffold owns:
 //   - The outer pane region (`bottom-strip-capture`) with a labelled
@@ -20,13 +21,18 @@
 //     without reaching back into the shell:
 //       - `bottom-strip-mode-banner`        -> mod_mode_banner
 //       - `bottom-strip-text-input`         -> mod_capture_text_input
-//       - `bottom-strip-classification`     -> mod_classification_palette
+//       - `bottom-strip-classification`     -> (vacated by
+//         `pf_mod_capture_pane_wording_only`; classification moves to
+//         the per-node card)
 //       - `bottom-strip-edge-role`          -> mod_edge_role_selector
 //       - `bottom-strip-propose-action`     -> mod_propose_action
 //   - A placeholder visible-text marker per sub-slot so the pane reads
 //     as "wired but unimplemented" instead of blank — useful for visual
 //     QA during the foundation pass and trivially overridden when the
-//     real content lands.
+//     real content lands. Per `pf_mod_capture_pane_wording_only`, the
+//     classification slot accepts an explicit `null` to suppress the
+//     placeholder (rendering an empty slot); `undefined` (the
+//     foundation-pass default) still shows the placeholder.
 //
 // The scaffold is structure-only: no store reads, no event emission,
 // no i18n catalog keys (the per-sub-slot copy lands with the matching
@@ -41,8 +47,15 @@ export interface BottomStripCaptureProps {
   modeBanner?: ReactNode;
   /** Slot for the statement-text input (`mod_capture_text_input`). */
   textInput?: ReactNode;
-  /** Slot for the classification palette (`mod_classification_palette`). */
-  classificationPalette?: ReactNode;
+  /**
+   * Slot for the classification palette. Per
+   * `pf_mod_capture_pane_wording_only` the capture-pane gesture is
+   * wording-only and this slot stays empty in normal operation;
+   * passing `null` explicitly suppresses the placeholder, passing
+   * `undefined` (the scaffold's foundation-pass default) keeps the
+   * placeholder visible for visual QA.
+   */
+  classificationPalette?: ReactNode | null;
   /** Slot for the edge-role selector (`mod_edge_role_selector`). */
   edgeRoleSelector?: ReactNode;
   /** Slot for the propose-action button (`mod_propose_action`). */
@@ -51,6 +64,18 @@ export interface BottomStripCaptureProps {
 
 export function BottomStripCapture(props: BottomStripCaptureProps): ReactElement {
   const { modeBanner, textInput, classificationPalette, edgeRoleSelector, proposeAction } = props;
+  // Per `pf_mod_capture_pane_wording_only`, an explicit `null` for
+  // `classificationPalette` suppresses the slot's placeholder content
+  // (the capture-pane gesture is wording-only after this task);
+  // `undefined` still renders the foundation-pass placeholder for
+  // visual QA. `===` distinguishes the two cases (the `??` operator
+  // collapses them).
+  const classificationContent =
+    classificationPalette === undefined ? (
+      <span aria-hidden="true">[classification]</span>
+    ) : (
+      classificationPalette
+    );
   return (
     <section
       data-testid="bottom-strip-capture"
@@ -75,7 +100,7 @@ export function BottomStripCapture(props: BottomStripCaptureProps): ReactElement
           data-testid="bottom-strip-classification"
           className="flex items-center rounded border border-slate-200 bg-white px-2 text-sm text-slate-500"
         >
-          {classificationPalette ?? <span aria-hidden="true">[classification]</span>}
+          {classificationContent}
         </div>
         <div
           data-testid="bottom-strip-edge-role"

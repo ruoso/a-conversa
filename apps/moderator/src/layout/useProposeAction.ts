@@ -1,16 +1,26 @@
 // `useProposeAction()` — the moderator's propose-bundle React hook.
 //
 // Refinement: tasks/refinements/moderator-ui/mod_propose_action.md
+//             tasks/refinements/per-facet-refactor/pf_mod_capture_pane_wording_only.md
 // Design doc: docs/moderator-ui.md (F1 capture flow, step 4)
+// ADR:        docs/adr/0030-per-facet-vote-keying-and-sequential-capture.md (§1, §4, §5)
 //
-// Binds the four `useCaptureStore` slices (`text`, `classification`,
-// `targetEntityId`, `edgeRole`) to the WS-write surface
+// Per ADR 0030 §1 (wording-only capture), the capture-pane gesture is a
+// stand-alone `capture-node` proposal — the classification facet enters
+// life as `awaiting-proposal` and is named by a later moderator
+// gesture against the per-node card. The bundled `classify-node`-with-
+// wording path is retired; this hook only mints `capture-node` (with
+// an optional inline `edge` block for the connecting-capture case per
+// ADR 0030 §4).
+//
+// Binds three `useCaptureStore` slices (`text`, `targetEntityId`,
+// `edgeRole`) to the WS-write surface
 // (`useWsClient().send('propose', payload)`). Exposes:
 //
 //   - `propose()` — the gesture handler, called from both the
 //     `<CaptureTextInput>` Cmd/Ctrl+Enter callback and the
 //     `<ProposeAction>` button click.
-//   - `canPropose` — `true` iff the six-gate validation passes AND no
+//   - `canPropose` — `true` iff the validation gates pass AND no
 //     other propose round-trip is in flight.
 //   - `validationError` — the failing-gate reason, or `null`.
 //   - `inFlight` — `true` while the round-trip is in flight.
@@ -19,21 +29,25 @@
 //
 // The hook owns:
 //
-//   - The six-gate validation (Decision §2 in the refinement) — the
-//     gates fire in fixed order: `session-missing` →
-//     `not-connected` → `text-empty` → `classification-missing` →
-//     `target-without-role` → `role-without-target`.
+//   - The validation gates — fire in fixed order:
+//     `session-missing` → `not-connected` → `text-empty` →
+//     `target-without-role` → `role-without-target`. (Per
+//     `pf_mod_capture_pane_wording_only`, classification is no longer
+//     part of the capture gesture, so the `classification-missing`
+//     reason is gone.)
 //   - Client-side `node_id` / `edge_id` UUID generation via
 //     `crypto.randomUUID()` (same primitive `WsClient` uses for
 //     envelope ids).
-//   - The optimistic-clear contract: capture a snapshot of the four
-//     slices before resetting the store; on error, restore the
+//   - The optimistic-clear contract: capture a snapshot of the
+//     capture-store slices before resetting; on error, restore the
 //     snapshot so the moderator can fix and retry without re-typing.
-//   - The sequential-envelope protocol for the connecting case: fire
-//     the `classify-node` envelope first, await the `proposed` ack,
-//     then fire the `set-edge-substance` envelope reading the
-//     post-first-broadcast `lastAppliedSequence` for the second
-//     envelope's `expectedSequence` token.
+//   - A SINGLE-envelope protocol for both the free-floating and the
+//     connecting case: per ADR 0030 §4 the compound capture-with-edge
+//     gesture is one `capture-node` proposal whose payload carries an
+//     optional inline `edge` block, NOT two sequenced envelopes. The
+//     server emits node-created + entity-included(node) + edge-created
+//     + entity-included(edge) + proposal in a single propose
+//     round-trip.
 //   - The in-flight guard: a concurrent `propose()` call while a
 //     prior round-trip is still in flight is a no-op.
 //
@@ -57,7 +71,7 @@ import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router-dom';
 import { create } from 'zustand';
-import type { EdgeRole, ProposalPayload, StatementKind } from '@a-conversa/shared-types';
+import type { EdgeRole, ProposalPayload } from '@a-conversa/shared-types';
 
 import { useCaptureStore } from '../stores/captureStore';
 import { useWsClient } from '@a-conversa/shell';
@@ -68,11 +82,13 @@ import { WsRequestError, WsRequestTimeoutError } from '@a-conversa/shell';
  * The discriminated set of validation-gate failure reasons. Each maps
  * to a localized inline-error message via the
  * `moderator.proposeAction.reason.<reason>` catalog key. The order in
- * `validate()` matches the priority pinned by Decision §2.
+ * `validate()` matches the priority pinned by Decision §2 (with the
+ * `classification-missing` reason removed per
+ * `pf_mod_capture_pane_wording_only` — the capture-pane gesture is
+ * wording-only and classification moves to the per-node card).
  */
 export type ValidationErrorReason =
   | 'text-empty'
-  | 'classification-missing'
   | 'role-without-target'
   | 'target-without-role'
   | 'session-missing'
@@ -156,63 +172,47 @@ function randomUuid(): string {
 }
 
 /**
- * Build a `classify-node` proposal payload for the new statement node.
+ * Build a `capture-node` proposal payload for the new statement node
+ * per ADR 0030 §1 (wording-only capture). The wording rides inline on
+ * the entity-layer carriage so the server emits `node-created` +
+ * `entity-included(node)` + `proposal` at propose-time and the canvas
+ * projector renders the captured node in `proposed`-wording state
+ * immediately. The classification + substance facets enter life as
+ * `awaiting-proposal` (per ADR 0030 §10) and are named by later
+ * per-node moderator gestures.
  *
- * Per ADR 0027, the wording is sent inline on a free-floating propose
- * so the server can mint the matching `node-created` event at
- * propose-time and the canvas projector renders the entity in
- * `proposed` state immediately. When `wording` is absent (a
- * re-classify of an existing node), the engine emits no
- * `node-created`.
+ * For the connecting-capture case (ADR 0030 §4), the optional `edge`
+ * block carries the edge id + role + endpoints inline; the server
+ * emits `edge-created` + `entity-included(edge)` alongside the node
+ * fan-out in a SINGLE round-trip (no second envelope). The connecting
+ * gesture is always FROM the just-captured node — `source_node_id`
+ * equals the freshly-minted `node_id` and `target_node_id` is the
+ * pre-existing node the moderator clicked. The substance facet of the
+ * connecting edge enters life as `awaiting-proposal` (named by a later
+ * `set-edge-substance` against the captured edge).
  */
-function buildClassifyNodeProposal(args: {
+function buildCaptureNodeProposal(args: {
   nodeId: string;
-  classification: StatementKind;
-  wording?: string;
+  wording: string;
+  edge?: { edgeId: string; targetNodeId: string; role: EdgeRole };
 }): ProposalPayload {
-  const payload: ProposalPayload & { wording?: string } = {
-    kind: 'classify-node',
-    node_id: args.nodeId,
-    classification: args.classification,
-  };
-  if (args.wording !== undefined && args.wording !== '') {
-    payload.wording = args.wording;
+  if (args.edge !== undefined) {
+    return {
+      kind: 'capture-node',
+      node_id: args.nodeId,
+      wording: args.wording,
+      edge: {
+        edge_id: args.edge.edgeId,
+        role: args.edge.role,
+        source_node_id: args.nodeId,
+        target_node_id: args.edge.targetNodeId,
+      },
+    };
   }
-  return payload;
-}
-
-/**
- * Build a `set-edge-substance` proposal payload for the connecting
- * edge. v1 always seeds the edge substance as `'agreed'` — the moderator
- * is proposing a new edge with the role they selected; the substance
- * vote is the subsequent step. The wire shape requires the field, and
- * `'agreed'` is the methodology default for a fresh proposal (the engine
- * will reject if the substance is disallowed for the role).
- *
- * Per ADR 0027, the three endpoint fields (`sourceNodeId`,
- * `targetNodeId`, `role`) ride inline so the server's propose handler
- * can mint the matching `edge-created` + `entity-included` events at
- * propose-time alongside the `proposal` envelope, and the canvas
- * projector renders the proposed edge immediately. The wire schema
- * marks the three fields as `.optional()` (the substance-only re-vote
- * shape against an extant edge omits them), but the builder's
- * connecting-case caller already knows it's connecting + has all three
- * values in lexical scope, so the builder parameters are REQUIRED to
- * fail loudly at the call site if a refactor breaks the wiring (D5).
- */
-function buildSetEdgeSubstanceProposal(args: {
-  edgeId: string;
-  sourceNodeId: string;
-  targetNodeId: string;
-  role: EdgeRole;
-}): ProposalPayload {
   return {
-    kind: 'set-edge-substance',
-    edge_id: args.edgeId,
-    value: 'agreed',
-    source_node_id: args.sourceNodeId,
-    target_node_id: args.targetNodeId,
-    role: args.role,
+    kind: 'capture-node',
+    node_id: args.nodeId,
+    wording: args.wording,
   };
 }
 
@@ -247,9 +247,11 @@ export function useProposeAction(): UseProposeActionResult {
   const { t } = useTranslation();
 
   // Capture-store reads (one selector each so React re-subscribes
-  // only when the relevant slice changes).
+  // only when the relevant slice changes). Per
+  // `pf_mod_capture_pane_wording_only` the `classification` slice is
+  // no longer read here — classification is named on the per-node card
+  // by a downstream task.
   const text = useCaptureStore((s) => s.text);
-  const classification = useCaptureStore((s) => s.classification);
   const targetEntityId = useCaptureStore((s) => s.targetEntityId);
   const edgeRole = useCaptureStore((s) => s.edgeRole);
   const proposing = useCaptureStore((s) => s.proposing);
@@ -266,7 +268,10 @@ export function useProposeAction(): UseProposeActionResult {
   const lastError = useProposeErrorStore((s) => s.lastError);
   const setLastError = useProposeErrorStore((s) => s.setLastError);
 
-  // Validation — fixed order per Decision §2.
+  // Validation — fixed order. Per `pf_mod_capture_pane_wording_only`
+  // the `classification-missing` gate is dropped (the capture-pane
+  // gesture is wording-only; classification moves to the per-node
+  // card by a downstream task).
   let validationError: ValidationErrorReason | null = null;
   if (sessionId === '') {
     validationError = 'session-missing';
@@ -274,8 +279,6 @@ export function useProposeAction(): UseProposeActionResult {
     validationError = 'not-connected';
   } else if (text.trim().length === 0) {
     validationError = 'text-empty';
-  } else if (classification === null) {
-    validationError = 'classification-missing';
   } else if (targetEntityId !== null && edgeRole === null) {
     validationError = 'target-without-role';
   } else if (edgeRole !== null && targetEntityId === null) {
@@ -285,17 +288,16 @@ export function useProposeAction(): UseProposeActionResult {
   const canPropose = validationError === null && !proposing;
 
   // Auto-dismiss the wire-error region on any user-modification of the
-  // capture inputs (Decision §6). The effect fires when any of the four
-  // capture slices change. To avoid the snapshot-restore-after-failure
-  // path immediately clearing the just-set `lastError`, we capture the
-  // slice values at the moment `lastError` was set (the snapshot
-  // restore's post-condition); the effect only dismisses when the
-  // current slice values DIFFER from those captured values — i.e., the
-  // moderator typed / picked something after the failure.
+  // capture inputs (Decision §6). The effect fires when any of the
+  // three capture slices change. To avoid the snapshot-restore-after-
+  // failure path immediately clearing the just-set `lastError`, we
+  // capture the slice values at the moment `lastError` was set (the
+  // snapshot restore's post-condition); the effect only dismisses when
+  // the current slice values DIFFER from those captured values — i.e.,
+  // the moderator typed / picked something after the failure.
   const lastErrorRef = useRef<WireError | undefined>(lastError);
   const errorSliceSnapshotRef = useRef<{
     text: string;
-    classification: typeof classification;
     targetEntityId: typeof targetEntityId;
     edgeRole: typeof edgeRole;
   } | null>(null);
@@ -303,7 +305,7 @@ export function useProposeAction(): UseProposeActionResult {
   // and capture the current slice values as the "baseline" — subsequent
   // slice changes that differ from this baseline dismiss the error.
   if (lastError !== undefined && lastErrorRef.current === undefined) {
-    errorSliceSnapshotRef.current = { text, classification, targetEntityId, edgeRole };
+    errorSliceSnapshotRef.current = { text, targetEntityId, edgeRole };
   }
   if (lastError === undefined) {
     errorSliceSnapshotRef.current = null;
@@ -315,7 +317,6 @@ export function useProposeAction(): UseProposeActionResult {
     if (baseline === null) return;
     if (
       baseline.text === text &&
-      baseline.classification === classification &&
       baseline.targetEntityId === targetEntityId &&
       baseline.edgeRole === edgeRole
     ) {
@@ -324,8 +325,8 @@ export function useProposeAction(): UseProposeActionResult {
       return;
     }
     setLastError(undefined);
-    // Dep list is the four slices the moderator is editing.
-  }, [text, classification, targetEntityId, edgeRole, setLastError]);
+    // Dep list is the three capture slices the moderator is editing.
+  }, [text, targetEntityId, edgeRole, setLastError]);
 
   // The propose handler. Closes over the current render's slice values
   // via lexical scope; the in-flight guard short-circuits a re-entry.
@@ -337,7 +338,6 @@ export function useProposeAction(): UseProposeActionResult {
     const sessionIdNow = sessionId;
     const connectionStatusNow = wsState.connectionStatus;
     const textNow = currentState.text;
-    const classificationNow = currentState.classification;
     const targetEntityIdNow = currentState.targetEntityId;
     const edgeRoleNow = currentState.edgeRole;
 
@@ -350,25 +350,24 @@ export function useProposeAction(): UseProposeActionResult {
     if (sessionIdNow === '') return;
     if (connectionStatusNow !== 'open') return;
     if (textNow.trim().length === 0) return;
-    if (classificationNow === null) return;
     if (targetEntityIdNow !== null && edgeRoleNow === null) return;
     if (edgeRoleNow !== null && targetEntityIdNow === null) return;
 
-    // Snapshot the four slices BEFORE the optimistic clear. On any
-    // error path we restore from the snapshot so the moderator can fix
-    // and retry without re-typing (Decision §4).
+    // Snapshot the capture slices BEFORE the optimistic clear. On any
+    // error path we restore from the snapshot so the moderator can
+    // fix and retry without re-typing (Decision §4).
     const snapshot = {
       text: textNow,
-      classification: classificationNow,
       targetEntityId: targetEntityIdNow,
       edgeRole: edgeRoleNow,
     };
 
     // Mint the client-side ids. Held in `propose`'s lexical scope so
-    // the two envelopes (connecting case) reference the same edge id.
+    // the optional `edge` block (connecting-capture case) carries the
+    // same fresh edge id the server emits `edge-created` for.
     const nodeId = randomUuid();
-    const edgeId = targetEntityIdNow !== null ? randomUuid() : undefined;
-    const isConnecting = targetEntityIdNow !== null && edgeRoleNow !== null && edgeId !== undefined;
+    const isConnecting = targetEntityIdNow !== null && edgeRoleNow !== null;
+    const edgeId = isConnecting ? randomUuid() : undefined;
 
     // Optimistic clear + flip in-flight. The moderator's next keystroke
     // immediately begins a new draft; the prior propose is in flight.
@@ -381,69 +380,41 @@ export function useProposeAction(): UseProposeActionResult {
     setProposing(true);
 
     try {
-      // First envelope — `classify-node`. Per
-      // `tasks/refinements/backend/ws_propose_message.md:13` the
-      // server's propose handler appends exactly one event per
-      // envelope — the `proposal` event — via `appendSessionEvent`.
-      // Structural entity-creation events (`node-created`,
-      // `entity-included`, `edge-created`) for the referenced node /
-      // edge do NOT fire here; they fire later on commit per
-      // `tasks/refinements/data-and-methodology/commit_logic.md:13`.
-      // The `event-applied` broadcast for this `proposal` event
-      // lands and updates
-      // `useWsStore.sessionState[sessionId].lastAppliedSequence`
-      // BEFORE the matching `proposed` ack resolves the send-promise
-      // (the WS client dispatches the broadcast into the store via
-      // its `applyEvent` reducer; the broadcast arrives on the
-      // proposer's socket alongside non-proposer subscribers).
+      // Single envelope — `capture-node` (ADR 0030 §1 wording-only
+      // capture). For the connecting-capture case (ADR 0030 §4), the
+      // payload's optional `edge` block carries the edge id + role +
+      // endpoints inline; the server emits node-created +
+      // entity-included(node) + edge-created + entity-included(edge) +
+      // proposal in a single propose round-trip. The non-null
+      // assertions on `edgeRoleNow` / `targetEntityIdNow` / `edgeId`
+      // are pinned by the `isConnecting` predicate above.
+      const proposal =
+        isConnecting && edgeId !== undefined && targetEntityIdNow !== null && edgeRoleNow !== null
+          ? buildCaptureNodeProposal({
+              nodeId,
+              wording: textNow,
+              edge: {
+                edgeId,
+                targetNodeId: targetEntityIdNow,
+                role: edgeRoleNow,
+              },
+            })
+          : buildCaptureNodeProposal({ nodeId, wording: textNow });
       await client.send('propose', {
         sessionId: sessionIdNow,
         expectedSequence: lastAppliedSequenceForCall(),
-        proposal: buildClassifyNodeProposal({
-          nodeId,
-          classification: classificationNow,
-          // Per ADR 0027, the wording rides inline so the server
-          // emits `node-created` + `entity-included` at propose-time
-          // and the canvas projector renders the proposed node
-          // immediately. The wording was snapshotted above via
-          // `textNow`.
-          wording: textNow,
-        }),
+        proposal,
       });
-
-      if (isConnecting) {
-        // Second envelope — `set-edge-substance`. Reads the
-        // post-first-broadcast high-water mark for its
-        // `expectedSequence` token. Per ADR 0027 the three endpoint
-        // fields ride inline (`nodeId` is the just-minted source from
-        // the first envelope; `targetEntityIdNow` is the existing
-        // target the moderator clicked; `edgeRoleNow` is the role
-        // they selected) so the server emits `edge-created` +
-        // `entity-included` + `proposal` and the canvas projector
-        // renders the proposed edge immediately. The non-null
-        // assertions are pinned by the `isConnecting` gate above.
-        await client.send('propose', {
-          sessionId: sessionIdNow,
-          expectedSequence: lastAppliedSequenceForCall(),
-          proposal: buildSetEdgeSubstanceProposal({
-            edgeId,
-            sourceNodeId: nodeId,
-            targetNodeId: targetEntityIdNow,
-            role: edgeRoleNow,
-          }),
-        });
-      }
 
       // Success — clear in-flight, drop any stale wire-error.
       setProposing(false);
       setLastError(undefined);
     } catch (err) {
       // Failure — restore the snapshot and surface the error inline.
-      // Use `setState` rather than the individual setters so the four
+      // Use `setState` rather than the individual setters so the
       // slices land atomically (one re-render, one store transition).
       useCaptureStore.setState({
         text: snapshot.text,
-        classification: snapshot.classification,
         targetEntityId: snapshot.targetEntityId,
         edgeRole: snapshot.edgeRole,
         proposing: false,

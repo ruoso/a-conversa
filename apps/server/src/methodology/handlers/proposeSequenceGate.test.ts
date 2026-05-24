@@ -18,17 +18,16 @@
 //     `pf_shape_facet_wire_vote` + ADR 0030 §8). The fresh-edge case
 //     (`getEdge === undefined`) stays exempt — the connecting-capture
 //     gesture establishes shape AT propose-time on the entity-layer
-//     carriage, mirroring the classify-node-with-wording legacy
-//     bundle exemption above.
+//     carriage. (The analogous legacy-classify-node-with-wording
+//     exemption is retired per `pf_mod_capture_pane_wording_only`.)
 //
 // Each gated arm is tested across the seven non-accepting predecessor
 // statuses (`proposed`, `disputed`, `awaiting-proposal`, `withdrawn`,
 // `meta-disagreement`) plus the symmetric accept paths (`agreed`,
-// `committed`). The gate's exemption for the legacy
-// `classify-node`-with-wording bundle (TODO(pf_mod_capture_pane_wording_only))
-// is pinned too: a fresh node id + inline `wording` field bypasses
-// the gate (wording is established at propose-time on the same
-// gesture; there is no prior wording-facet state to gate against).
+// `committed`). Per `pf_mod_capture_pane_wording_only` (ADR 0030 §1)
+// the legacy `classify-node`-with-wording bundle is retired —
+// capturing a new node is the `capture-node` sub-kind; the gate now
+// applies UNIFORMLY to every `classify-node` arrival.
 //
 // **Wire-level rejection shape.** The gate emits a typed
 // `RejectedValidationResult` with `reason: 'facet-sequence-out-of-order'`
@@ -468,14 +467,17 @@ describe('propose classify-node — sequence gate against wording facet', () => 
     expect(r.ok).toBe(true);
   });
 
-  // **Legacy bundle exemption (TODO(pf_mod_capture_pane_wording_only)).**
-  // A fresh node id + inline `wording` field bypasses the gate because
-  // wording is established AT propose-time on the same gesture; there
-  // is no prior wording-facet state to gate against. Once the
-  // moderator UI migrates to `capture-node` (downstream task), the
-  // `wording` field on `classifyNodeProposalSchema` is retired and
-  // this exemption goes away with it.
-  it('exempts the legacy classify-node-with-wording bundle (fresh node_id + wording field)', () => {
+  // Per `pf_mod_capture_pane_wording_only` (ADR 0030 §1) the legacy
+  // `classify-node`-with-wording bundle is retired — capturing a new
+  // node is the `capture-node` sub-kind. A `classify-node` arriving
+  // against a fresh (non-extant) node id is now treated by the
+  // sequence gate as a missing target (the gate skips and the
+  // per-sub-kind validator's `'target-entity-not-found'` is what
+  // surfaces). Pin the uniform behavior with a representative case:
+  // a `capture-node` (the new path) emits node-created + entity-
+  // included + proposal regardless of any prior wording-facet state
+  // because it captures a brand-new entity.
+  it('capture-node (the replacement for the legacy classify-node-with-wording bundle) bypasses the wording-facet gate by capturing a fresh entity', () => {
     const p = seedSessionWithFreshNode();
     // FRESH_NODE_ID does NOT pre-exist on the projection.
     expect(p.getNode(FRESH_NODE_ID)).toBeUndefined();
@@ -488,17 +490,15 @@ describe('propose classify-node — sequence gate against wording facet', () => 
       actor: DEBATER_A_ID,
       createdAt: T9,
       proposal: {
-        kind: 'classify-node',
+        kind: 'capture-node',
         node_id: FRESH_NODE_ID,
-        classification: 'fact',
-        // The legacy bundle's tell — inline wording at propose-time.
         wording: 'A fresh statement captured inline.',
       },
     };
     const r = validateAction(p, action);
     expect(r.ok).toBe(true);
     if (r.ok) {
-      // Legacy bundle emits node-created + entity-included + proposal.
+      // capture-node emits node-created + entity-included + proposal.
       expect(r.events).toHaveLength(3);
       expect(r.events[0]!.kind).toBe('node-created');
       expect(r.events[1]!.kind).toBe('entity-included');
@@ -585,11 +585,13 @@ describe('propose set-node-substance — sequence gate against classification fa
 //
 // The fresh-edge case (`getEdge === undefined`) is exempt — the
 // connecting-capture gesture establishes shape AT propose-time on the
-// entity-layer carriage, mirroring the classify-node-with-wording
-// legacy bundle exemption. Against an extant edge the gate refuses
-// the proposal while the edge's `shape` facet is not `'agreed'` /
-// `'committed'`; the F6 defeater-capture path operates against a
-// committed shape and therefore passes the gate.
+// entity-layer carriage. (Per `pf_mod_capture_pane_wording_only` the
+// analogous legacy-classify-node-with-wording exemption is retired —
+// the gate applies uniformly to every `classify-node` arrival now.)
+// Against an extant edge the gate refuses the proposal while the
+// edge's `shape` facet is not `'agreed'` / `'committed'`; the F6
+// defeater-capture path operates against a committed shape and
+// therefore passes the gate.
 // ---------------------------------------------------------------
 
 describe('propose set-edge-substance — sequence gate against shape facet', () => {

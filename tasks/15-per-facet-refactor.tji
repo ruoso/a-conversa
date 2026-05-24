@@ -135,6 +135,7 @@ task per_facet_refactor "Per-facet refactor (ADR 0030)" {
     task pf_mod_capture_pane_wording_only "Capture pane: wording-only (remove classification palette)" {
       effort 1d
       allocate team
+      complete 100
       note "Refinement: tasks/refinements/per-facet-refactor/pf_mod_capture_pane_wording_only.md"
     }
     task pf_mod_node_card_classification_affordance "Node card: inline classification affordance" {

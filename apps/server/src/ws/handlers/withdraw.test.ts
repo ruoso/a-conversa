@@ -26,7 +26,7 @@
 //   6. Proposal-already-committed → 422 `proposal-already-committed`.
 //   7. Proposal-already-meta-disagreement → 422
 //      `proposal-already-meta-disagreement`.
-//   8. Successful withdraw (free-floating `classify-node`) → one
+//   8. Successful withdraw (free-floating `capture-node`) → one
 //      `entity-removed(node)` event + `event-applied` broadcast +
 //      `proposal-withdrawn` ack on the same socket. The ack's
 //      `removedEventCount` is 1.
@@ -109,7 +109,7 @@ const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}
 // Five sessions, each seeding a different test path:
 //
 // 1. WITHDRAWABLE_SESSION_ID — public, FIXTURE_USER_ID host/moderator;
-//    a free-floating `classify-node` propose by FIXTURE_USER_ID
+//    a free-floating `capture-node` propose by FIXTURE_USER_ID
 //    already landed (emitted node-created + entity-included +
 //    proposal in that order). Used for the happy-path withdraw test
 //    (one entity-removed(node) is emitted; the ack carries
@@ -225,8 +225,8 @@ function makeWithdrawPool(): { pool: DbPool; store: Store } {
     events: [
       // ---- WITHDRAWABLE_SESSION_ID ----
       // session-created + participant-joined(moderator) + node-created
-      // + entity-included + proposal (= classify-node minted at
-      // propose-time). MAX(sequence) = 5.
+      // + entity-included + proposal (= capture-node minted at
+      // propose-time per ADR 0030 §1). MAX(sequence) = 5.
       {
         id: '00000000-0000-4000-8000-00000001fa01',
         session_id: WITHDRAWABLE_SESSION_ID,
@@ -290,10 +290,16 @@ function makeWithdrawPool(): { pool: DbPool; store: Store } {
         kind: 'proposal',
         actor: FIXTURE_USER_ID,
         payload: {
+          // Per `pf_mod_capture_pane_wording_only` (ADR 0030 §1) the
+          // legacy bundled `classify-node`-with-wording capture path is
+          // retired — capturing a new node is `capture-node`. The
+          // fixture's `node-created` + `entity-included` events (above)
+          // are what the propose-time handler would emit for a
+          // `capture-node`; replaying them keeps the projection
+          // consistent.
           proposal: {
-            kind: 'classify-node',
+            kind: 'capture-node',
             node_id: NODE_ID,
-            classification: 'fact',
             wording: 'A claim under withdraw test.',
           },
         },
@@ -381,9 +387,8 @@ function makeWithdrawPool(): { pool: DbPool; store: Store } {
         actor: OTHER_HOST_ID,
         payload: {
           proposal: {
-            kind: 'classify-node',
+            kind: 'capture-node',
             node_id: NON_PROPOSER_NODE_ID,
-            classification: 'fact',
             wording: 'Foreign proposer claim.',
           },
         },
@@ -485,9 +490,8 @@ function makeWithdrawPool(): { pool: DbPool; store: Store } {
         actor: FIXTURE_USER_ID,
         payload: {
           proposal: {
-            kind: 'classify-node',
+            kind: 'capture-node',
             node_id: COMMITTED_NODE_ID,
-            classification: 'fact',
             wording: 'A committed claim.',
           },
         },
@@ -634,9 +638,8 @@ function makeWithdrawPool(): { pool: DbPool; store: Store } {
         actor: FIXTURE_USER_ID,
         payload: {
           proposal: {
-            kind: 'classify-node',
+            kind: 'capture-node',
             node_id: META_NODE_ID,
-            classification: 'fact',
             wording: 'A meta-disagreed claim.',
           },
         },
@@ -1669,7 +1672,7 @@ describe('ws_withdraw_proposal_message — handler integration', () => {
     }
   });
 
-  it('subscribed + visible + proposer + classify-node propose → one entity-removed(node) + event-applied broadcast + proposal-withdrawn ack on the same socket', async () => {
+  it('subscribed + visible + proposer + capture-node propose → one entity-removed(node) + event-applied broadcast + proposal-withdrawn ack on the same socket', async () => {
     const cookie = await fixtureCookieHeader();
     const { ws, next } = await openWsClient(app, cookie);
     try {
@@ -1679,7 +1682,7 @@ describe('ws_withdraw_proposal_message — handler integration', () => {
       const subAck = JSON.parse(await next()) as { type?: unknown };
       expect(subAck.type).toBe('subscribed');
 
-      // Withdraw the classify-node proposal. MAX(sequence) = 5; the
+      // Withdraw the capture-node proposal. MAX(sequence) = 5; the
       // single entity-removed event lands at seq 6.
       ws.send(withdrawFrame(WITHDRAW_MSG_ID, WITHDRAWABLE_SESSION_ID, 5, PROPOSAL_EVENT_ID));
 

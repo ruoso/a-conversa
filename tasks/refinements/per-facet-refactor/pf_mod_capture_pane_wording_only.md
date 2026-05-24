@@ -53,3 +53,14 @@ The bundled gesture is what produces the voteless-wording-facet bug per [ADR 003
 ## Open questions
 
 (none — all decided per ADR 0030)
+
+## Status
+
+**Done** — 2026-05-24.
+
+- Moderator capture pane no longer mounts the classification palette; the bottom-strip textarea + (optional) edge-target + Propose button mints a single `capture-node` envelope per ADR 0030 §1 (free-floating or with inline `edge` block).
+- `useProposeAction` retires the classification-required validation gate and the `'classification-missing'` reason; remaining gate rules (text non-empty, target+role coupled, session loaded, WS connected) unchanged.
+- Server-side legacy `classify-node`-with-wording bundle retired end-to-end: `wording` field dropped from `classifyNodeProposalSchema`, `buildStructuralEventsForPropose` legacy branch removed, propose sequence-gate legacy-bundle exemption removed, withdraw retraction arm for the legacy bundle is now a no-op.
+- Vitest 4350 → 4349 (−1 retired classification-missing assertion). Cucumber 262 / 1803 unchanged. Playwright 107 → 100 passed + 7 `test.fixme` — inherited debt closed by downstream `pf_mod_node_card_classification_affordance` (methodology-full-flow Phase 3.1 / 3.2 / 4.1 / 5.3 + 3 moderator-capture.spec.ts tests).
+- All 3 `TODO(pf_mod_capture_pane_wording_only)` markers paid down (sequence-gate exemption, `buildStructuralEventsForPropose` legacy branch, test seams); zero new TODOs introduced.
+- Files: moderator UI (`useProposeAction.{ts,test.tsx}`, `ProposeAction.{tsx,test.tsx}`, `BottomStripCapture.{tsx,test.tsx}`, `PendingProposalsPane.tsx`, `routes/Operate.tsx`); server (`methodology/handlers/propose.ts`, `proposeSequenceGate.test.ts`, `engine.test.ts`, `ws/handlers/withdraw.{ts,test.ts}`); shared schema (`packages/shared-types/src/events/proposals.ts`); behavior step (`tests/behavior/steps/backend-ws-withdraw.steps.ts`); e2e specs (`methodology-full-flow.spec.ts`, `moderator-capture.spec.ts`, `moderator-proposed-entity-canvas-visibility.spec.ts`, `moderator-real-capture-flow.spec.ts`, `moderator-warrant-elicitation-mode.spec.ts`).

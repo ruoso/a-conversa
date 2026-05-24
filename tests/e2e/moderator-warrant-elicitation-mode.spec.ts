@@ -89,14 +89,17 @@ async function moderatorReachOperate(page: Page, topic: string): Promise<string>
 }
 
 /**
- * Drive the propose chain (type wording, pick classification, fire
- * Cmd/Ctrl+Enter). Returns when the capture pane has cleared
- * optimistically — the WS round-trip is in flight.
+ * Drive the propose chain (type wording, fire Cmd/Ctrl+Enter).
+ * Returns when the capture pane has cleared optimistically — the WS
+ * round-trip is in flight. Per `pf_mod_capture_pane_wording_only`
+ * (ADR 0030 §1) the capture-pane gesture is wording-only — the
+ * classification palette is no longer mounted in the bottom strip,
+ * and the propose-action gate no longer requires a classification
+ * pick.
  */
 async function proposeStatement(page: Page, wording: string): Promise<void> {
   const textarea = page.getByTestId('capture-text-input-textarea');
   await textarea.fill(wording);
-  await page.getByTestId('classification-palette-button-fact').click();
   const submitKey = process.platform === 'darwin' ? 'Meta+Enter' : 'Control+Enter';
   await textarea.press(submitKey);
   await expect(textarea).toHaveValue('');

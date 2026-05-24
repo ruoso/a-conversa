@@ -63,11 +63,16 @@ const ERROR_REGION_CLASSES = 'mt-1 text-xs text-red-700';
 
 /**
  * Reason-key → catalog-key. The localized message text is interpolated
- * into `moderator.proposeAction.validationError` as `{reason}`.
+ * into `moderator.proposeAction.validationError` as `{reason}`. Per
+ * `pf_mod_capture_pane_wording_only` the `classification-missing`
+ * reason is gone (the capture-pane gesture is wording-only). The
+ * `moderator.proposeAction.reason.classificationMissing` catalog key
+ * stays in the i18n catalogs in case downstream node-card affordances
+ * surface a missing-classification message; this map no longer
+ * references it.
  */
 const REASON_KEYS: Readonly<Record<ValidationErrorReason, string>> = {
   'text-empty': 'moderator.proposeAction.reason.textEmpty',
-  'classification-missing': 'moderator.proposeAction.reason.classificationMissing',
   'target-without-role': 'moderator.proposeAction.reason.targetWithoutRole',
   'role-without-target': 'moderator.proposeAction.reason.roleWithoutTarget',
   'not-connected': 'moderator.proposeAction.reason.notConnected',

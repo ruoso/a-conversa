@@ -78,6 +78,18 @@ describe('BottomStripCapture — bottom-strip capture-pane scaffold', () => {
     expect(slot.contains(screen.getByTestId('class-child'))).toBe(true);
   });
 
+  // Per `pf_mod_capture_pane_wording_only`: passing `null` explicitly to
+  // the `classificationPalette` slot suppresses the foundation-pass
+  // placeholder (the capture-pane gesture is wording-only and the
+  // operate route mounts the slot as `null`). The slot's outer
+  // testid + the labelled-region structure stay intact so downstream
+  // tasks can still target the slot if they ever mount content here.
+  it('renders an empty classification sub-slot when classificationPalette is explicitly null', () => {
+    render(<BottomStripCapture classificationPalette={null} />);
+    const slot = screen.getByTestId('bottom-strip-classification');
+    expect(slot.textContent).toBe('');
+  });
+
   it('routes the edgeRoleSelector child into the edge-role sub-slot', () => {
     render(<BottomStripCapture edgeRoleSelector={<span data-testid="edge-child">E</span>} />);
     const slot = screen.getByTestId('bottom-strip-edge-role');

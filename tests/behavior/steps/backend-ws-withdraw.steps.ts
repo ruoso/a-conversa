@@ -114,12 +114,17 @@ async function lookupUserId(world: AConversaWorld, screenName: string): Promise<
 // ============================================================
 
 /**
- * Seed a withdrawable classify-node session: 1 host (moderator) + a
- * pending free-floating `classify-node` proposal that minted the
- * node at propose-time (so the event log has the full ADR-0027
- * fan-out: node-created + entity-included + proposal). MAX(sequence)
- * = 5 after the seed; the withdraw lands one entity-removed event at
- * sequence 6.
+ * Seed a withdrawable capture-node session: 1 host (moderator) + a
+ * pending free-floating `capture-node` proposal that minted the
+ * node at propose-time per ADR 0030 §1 (so the event log has the
+ * full ADR-0027 fan-out: node-created + entity-included + proposal).
+ * Per `pf_mod_capture_pane_wording_only` the legacy bundled
+ * `classify-node`-with-wording capture path is retired; the cucumber
+ * seed step name is preserved for source-stability across .feature
+ * files that already reference it (the proposal kind in the seeded
+ * event-log row is `capture-node`).
+ * MAX(sequence) = 5 after the seed; the withdraw lands one
+ * entity-removed event at sequence 6.
  */
 Given(
   'a withdrawable classify-node session for {string} exists with id {string} and node id {string} and pending proposal id {string}',
@@ -215,9 +220,8 @@ Given(
         hostId,
         JSON.stringify({
           proposal: {
-            kind: 'classify-node',
+            kind: 'capture-node',
             node_id: nodeId,
-            classification: 'fact',
             wording: 'A claim to withdraw during the cucumber withdraw scenario.',
           },
         }),
@@ -231,7 +235,8 @@ Given(
  * Seed a session where the cucumber user is a DEBATER, not the
  * original proposer (a foreign moderator hosted + proposed). Used
  * for the proposer-only authority gate scenario. MAX(sequence) = 6
- * after the seed.
+ * after the seed. (Per `pf_mod_capture_pane_wording_only` the
+ * seeded proposal kind is `capture-node`.)
  */
 Given(
   'a withdrawable classify-node session hosted by {string} with id {string} and node id {string} and pending proposal id {string} where {string} is a debater',
@@ -355,9 +360,8 @@ Given(
         otherHostId,
         JSON.stringify({
           proposal: {
-            kind: 'classify-node',
+            kind: 'capture-node',
             node_id: nodeId,
-            classification: 'fact',
             wording: 'A foreign-proposed claim.',
           },
         }),
@@ -520,9 +524,8 @@ Given(
         hostId,
         JSON.stringify({
           proposal: {
-            kind: 'classify-node',
+            kind: 'capture-node',
             node_id: nodeId,
-            classification: 'fact',
             wording: 'A claim that already committed.',
           },
         }),

@@ -55,8 +55,8 @@ import { expect, test } from '@playwright/test';
 
 import { loginAs } from './fixtures/auth';
 
-test.describe('Moderator capture protocol — real wording → classify → propose → broadcast → render chain', () => {
-  test('alice types a wording, picks fact, clicks propose; the canvas renders the server-minted proposed node', async ({
+test.describe('Moderator capture protocol — real wording → propose → broadcast → render chain (wording-only per ADR 0030 §1)', () => {
+  test('alice types a wording, clicks propose; the canvas renders the server-minted proposed node', async ({
     page,
   }) => {
     // ── Step 1. Authenticate alice. The project-level storageState
@@ -89,23 +89,23 @@ test.describe('Moderator capture protocol — real wording → classify → prop
     await expect(page.getByTestId('route-operate')).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId('graph-canvas-root')).toBeVisible({ timeout: 15_000 });
 
-    // ── Step 4. Drive the capture UI. Type wording, pick a
-    //    classification. The Propose button stays disabled while the
-    //    six validation gates fail (per `useProposeAction.ts` —
-    //    `not-connected` is one of them), so the textarea fill +
-    //    palette click set the necessary preconditions and Playwright's
-    //    auto-wait on `.click()` handles the WS-connect race. ───────
+    // ── Step 4. Drive the capture UI. Type wording. Per
+    //    `pf_mod_capture_pane_wording_only` (ADR 0030 §1) the
+    //    capture-pane gesture is wording-only — the classification
+    //    palette is no longer mounted in the bottom strip, and the
+    //    propose-action validation gate no longer requires a
+    //    classification pick. Playwright's auto-wait on `.click()`
+    //    handles the WS-connect race. ────────────────────────────────
     const wording = 'The Earth orbits the Sun.';
     await page.getByTestId('capture-text-input-textarea').fill(wording);
-    await page.getByTestId('classification-palette-button-fact').click();
 
     // ── Step 5. Click Propose. This fires the real WS `propose`
-    //    envelope (`classify-node` proposal kind, wording inline per
-    //    ADR 0027). The server emits `node-created` + `proposal` +
-    //    `entity-included` events at propose-time; the moderator's WS
-    //    client applies each via `wsStore.applyEvent`; the canvas
-    //    projection re-derives and emits a `<StatementNode>` for the
-    //    new node. ───────────────────────────────────────────────────
+    //    envelope (`capture-node` proposal kind per ADR 0030 §1,
+    //    wording inline per ADR 0027). The server emits
+    //    `node-created` + `entity-included` + `proposal` events at
+    //    propose-time; the moderator's WS client applies each via
+    //    `wsStore.applyEvent`; the canvas projection re-derives and
+    //    emits a `<StatementNode>` for the new node. ────────────────
     await page.getByTestId('propose-action-button').click();
 
     // ── Step 6. The canonical proof the protocol works end-to-end:

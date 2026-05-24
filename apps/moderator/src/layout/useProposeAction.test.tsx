@@ -1,19 +1,29 @@
 // Tests for `useProposeAction()` — the propose-bundle hook.
 //
 // Refinement: tasks/refinements/moderator-ui/mod_propose_action.md
+//             tasks/refinements/per-facet-refactor/pf_mod_capture_pane_wording_only.md
+// ADR:        docs/adr/0030-per-facet-vote-keying-and-sequential-capture.md (§1, §4)
 //
 // Per ADR 0022 these are committed Vitest cases. They lock in:
 //
 //   1. Validation gates fire in the documented order; `canPropose` is
-//      false unless all six pass.
-//   2. The free-floating success path sends exactly one `propose`
-//      envelope with the right payload shape and the right
-//      `expectedSequence` read from `useWsStore`.
-//   3. The connecting success path sends two envelopes in sequence —
-//      the second after the first ack resolves; the second's
-//      `expectedSequence` reflects the post-first-ack store update.
-//   4. Optimistic clear — the four capture-store slices are reset
-//      BEFORE the WS promise resolves.
+//      false unless every gate passes. Per
+//      `pf_mod_capture_pane_wording_only` the `classification-missing`
+//      gate is dropped (the capture-pane gesture is wording-only;
+//      classification moves to the per-node card by a downstream
+//      task).
+//   2. The free-floating success path sends exactly ONE `propose`
+//      envelope minting a `capture-node` proposal with the wording
+//      inline, NOT the legacy `classify-node`-with-wording bundle
+//      (per ADR 0030 §1).
+//   3. The connecting-capture success path sends exactly ONE `propose`
+//      envelope (no second envelope) minting a `capture-node`
+//      proposal with the inline `edge` block carrying the edge id +
+//      role + endpoints (per ADR 0030 §4). The `source_node_id`
+//      equals the freshly-minted node id; the `target_node_id` equals
+//      the existing node the moderator clicked.
+//   4. Optimistic clear — the capture-store slices are reset BEFORE
+//      the WS promise resolves.
 //   5. Snapshot restore on `WsRequestError` — the slices are
 //      re-populated from the pre-clear snapshot; `lastError` carries
 //      the wire payload's code + message.
@@ -196,22 +206,15 @@ describe('useProposeAction — validation gates', () => {
     expect(probe.result.validationError).toBe('text-empty');
   });
 
-  it('validationError becomes classification-missing once text is non-empty', () => {
+  // Per `pf_mod_capture_pane_wording_only` the `classification-missing`
+  // gate is gone — a non-empty wording with no other staged target is
+  // sufficient for the capture-pane gesture. Classification moves to
+  // the per-node card (downstream task).
+  it('canPropose becomes true once text is set (free-floating wording-only capture)', () => {
     const fake = makeFakeClient();
     const probe = renderProbe(fake.client);
     act(() => {
       useCaptureStore.getState().setText('Hello world');
-    });
-    expect(probe.result.validationError).toBe('classification-missing');
-    expect(probe.result.canPropose).toBe(false);
-  });
-
-  it('canPropose becomes true once both text and classification are set (free-floating)', () => {
-    const fake = makeFakeClient();
-    const probe = renderProbe(fake.client);
-    act(() => {
-      useCaptureStore.getState().setText('Hello world');
-      useCaptureStore.getState().setClassification('fact');
     });
     expect(probe.result.validationError).toBeNull();
     expect(probe.result.canPropose).toBe(true);
@@ -222,7 +225,6 @@ describe('useProposeAction — validation gates', () => {
     const probe = renderProbe(fake.client);
     act(() => {
       useCaptureStore.getState().setText('Hello world');
-      useCaptureStore.getState().setClassification('fact');
       useCaptureStore.getState().setTargetEntityId('node-1');
     });
     expect(probe.result.validationError).toBe('target-without-role');
@@ -235,19 +237,17 @@ describe('useProposeAction — validation gates', () => {
     act(() => {
       useWsStore.getState().setConnectionStatus('reconnecting');
       useCaptureStore.getState().setText('Hello world');
-      useCaptureStore.getState().setClassification('fact');
     });
     expect(probe.result.validationError).toBe('not-connected');
   });
 });
 
-describe('useProposeAction — free-floating success path', () => {
-  it('sends exactly one propose envelope with the expected payload + expectedSequence', async () => {
+describe('useProposeAction — free-floating success path (capture-node, wording-only)', () => {
+  it('sends exactly one propose envelope minting a capture-node with inline wording', async () => {
     const fake = makeFakeClient();
     const probe = renderProbe(fake.client);
     act(() => {
       useCaptureStore.getState().setText('The sky is blue');
-      useCaptureStore.getState().setClassification('fact');
     });
     let proposePromise: Promise<void> | undefined;
     act(() => {
@@ -258,14 +258,26 @@ describe('useProposeAction — free-floating success path', () => {
     const payload = fake.calls[0]?.payload as {
       sessionId: string;
       expectedSequence: number;
-      proposal: { kind: string; node_id: string; classification: string };
+      proposal: {
+        kind: string;
+        node_id: string;
+        wording: string;
+        edge?: unknown;
+      };
     };
     expect(payload.sessionId).toBe(SESSION_ID);
     expect(payload.expectedSequence).toBe(0);
-    expect(payload.proposal.kind).toBe('classify-node');
-    expect(payload.proposal.classification).toBe('fact');
+    // Per ADR 0030 §1 the capture-pane gesture is wording-only — the
+    // proposal sub-kind is `capture-node`, NOT the legacy
+    // `classify-node`-with-wording bundle. The classification facet
+    // enters life as `awaiting-proposal` and is named later by the
+    // per-node card (downstream task).
+    expect(payload.proposal.kind).toBe('capture-node');
+    expect(payload.proposal.wording).toBe('The sky is blue');
     expect(typeof payload.proposal.node_id).toBe('string');
     expect(payload.proposal.node_id.length).toBeGreaterThan(0);
+    // No `edge` block on the free-floating gesture.
+    expect(payload.proposal.edge).toBeUndefined();
 
     // Resolve the ack.
     act(() => {
@@ -283,7 +295,6 @@ describe('useProposeAction — free-floating success path', () => {
     const probe = renderProbe(fake.client);
     act(() => {
       useCaptureStore.getState().setText('Optimistic-clear test');
-      useCaptureStore.getState().setClassification('value');
     });
     act(() => {
       void probe.result.propose();
@@ -291,7 +302,8 @@ describe('useProposeAction — free-floating success path', () => {
     // The store is reset synchronously; the promise has NOT resolved.
     const state = useCaptureStore.getState();
     expect(state.text).toBe('');
-    expect(state.classification).toBeNull();
+    expect(state.targetEntityId).toBeNull();
+    expect(state.edgeRole).toBeNull();
     expect(state.proposing).toBe(true);
     expect(fake.pendingCount()).toBe(1);
   });
@@ -301,7 +313,6 @@ describe('useProposeAction — free-floating success path', () => {
     const probe = renderProbe(fake.client);
     act(() => {
       useCaptureStore.getState().setText('Inflight test');
-      useCaptureStore.getState().setClassification('fact');
     });
     let proposePromise: Promise<void> | undefined;
     act(() => {
@@ -327,7 +338,6 @@ describe('useProposeAction — free-floating success path', () => {
     const probe = renderProbe(fake.client);
     act(() => {
       useCaptureStore.getState().setText('Concurrent re-call test');
-      useCaptureStore.getState().setClassification('fact');
     });
     act(() => {
       void probe.result.propose();
@@ -338,7 +348,6 @@ describe('useProposeAction — free-floating success path', () => {
     // text-empty gate, is what blocks the second call.
     act(() => {
       useCaptureStore.getState().setText('Second attempt');
-      useCaptureStore.getState().setClassification('value');
     });
     act(() => {
       void probe.result.propose();
@@ -347,12 +356,12 @@ describe('useProposeAction — free-floating success path', () => {
   });
 });
 
-describe('useProposeAction — connecting success path', () => {
-  it('sends two envelopes in sequence; the second after the first ack resolves', async () => {
+describe('useProposeAction — connecting-capture success path (capture-node with inline edge)', () => {
+  it('sends exactly one propose envelope minting capture-node with an inline edge block', async () => {
     const fake = makeFakeClient();
     const probe = renderProbe(fake.client);
-    // Seed an existing `lastAppliedSequence` of 5 so the first
-    // envelope reads it as `expectedSequence`.
+    // Seed an existing `lastAppliedSequence` of 5 so the envelope
+    // reads it as `expectedSequence`.
     act(() => {
       useWsStore.getState().applyEvent({
         id: '33333333-3333-4333-8333-000000000005',
@@ -369,7 +378,6 @@ describe('useProposeAction — connecting success path', () => {
         createdAt: '2026-05-11T00:00:00.000Z',
       } as never);
       useCaptureStore.getState().setText('because Y');
-      useCaptureStore.getState().setClassification('value');
       useCaptureStore.getState().setTargetEntityId('44444444-4444-4444-8444-444444444444');
       useCaptureStore.getState().setEdgeRole('supports');
     });
@@ -378,72 +386,49 @@ describe('useProposeAction — connecting success path', () => {
     act(() => {
       proposePromise = probe.result.propose();
     });
-    // Exactly one envelope is in flight; the second waits.
+    // Per ADR 0030 §4 the connecting-capture gesture is ONE
+    // envelope, not two — the propose payload carries an optional
+    // inline `edge` block.
     expect(fake.calls.length).toBe(1);
     expect(fake.pendingCount()).toBe(1);
-    const first = fake.calls[0]?.payload as {
-      expectedSequence: number;
-      proposal: { kind: string; node_id?: string };
-    };
-    expect(first.expectedSequence).toBe(5);
-    expect(first.proposal.kind).toBe('classify-node');
-
-    // Mirror what the real server's `event-applied` broadcast would
-    // do: advance `lastAppliedSequence` between the two acks.
-    act(() => {
-      useWsStore.getState().applyEvent({
-        id: '33333333-3333-4333-8333-000000000006',
-        sessionId: SESSION_ID,
-        sequence: 6,
-        kind: 'proposal',
-        actor: '00000000-0000-4000-8000-0000000000aa',
-        payload: { proposal_id: 'p1', proposal: first.proposal },
-        createdAt: '2026-05-11T00:00:00.000Z',
-      } as never);
-      fake.resolveNext({ sequence: 6 });
-    });
-    // Allow the second send to be queued.
-    await act(async () => {
-      // microtask flush
-      await Promise.resolve();
-    });
-    expect(fake.calls.length).toBe(2);
-    const second = fake.calls[1]?.payload as {
+    const payload = fake.calls[0]?.payload as {
       expectedSequence: number;
       proposal: {
         kind: string;
-        edge_id: string;
-        value: string;
-        source_node_id?: string;
-        target_node_id?: string;
-        role?: string;
+        node_id: string;
+        wording: string;
+        edge?: {
+          edge_id: string;
+          role: string;
+          source_node_id: string;
+          target_node_id: string;
+        };
       };
     };
-    expect(second.expectedSequence).toBe(6);
-    expect(second.proposal.kind).toBe('set-edge-substance');
-    expect(second.proposal.value).toBe('agreed');
-    expect(typeof second.proposal.edge_id).toBe('string');
-    expect(second.proposal.edge_id.length).toBeGreaterThan(0);
-    // Per `mod_set_edge_substance_endpoint_carriage` the second
-    // envelope's payload carries the three endpoint fields inline:
-    // `source_node_id` is the just-minted source UUID from the first
-    // envelope; `target_node_id` matches `useCaptureStore.targetEntityId`
-    // (the existing node the moderator clicked); `role` matches
-    // `useCaptureStore.edgeRole` (the role they selected via the
-    // `<EdgeRoleSelector>`). Pin all three.
-    const firstPayload = first.proposal as { node_id?: string };
-    expect(typeof second.proposal.source_node_id).toBe('string');
-    expect(second.proposal.source_node_id).toBe(firstPayload.node_id);
-    expect(second.proposal.target_node_id).toBe('44444444-4444-4444-8444-444444444444');
-    expect(second.proposal.role).toBe('supports');
+    expect(payload.expectedSequence).toBe(5);
+    expect(payload.proposal.kind).toBe('capture-node');
+    expect(payload.proposal.wording).toBe('because Y');
+    expect(typeof payload.proposal.node_id).toBe('string');
+    expect(payload.proposal.edge).toBeDefined();
+    const edge = payload.proposal.edge!;
+    expect(typeof edge.edge_id).toBe('string');
+    expect(edge.edge_id.length).toBeGreaterThan(0);
+    // Per ADR 0030 §4 + §5 the inline edge block carries the role +
+    // endpoints. The source is the just-captured node; the target is
+    // the node the moderator clicked.
+    expect(edge.role).toBe('supports');
+    expect(edge.source_node_id).toBe(payload.proposal.node_id);
+    expect(edge.target_node_id).toBe('44444444-4444-4444-8444-444444444444');
 
-    // Resolve the second ack.
+    // Resolve the ack.
     act(() => {
-      fake.resolveNext({ sequence: 7 });
+      fake.resolveNext({ sequence: 6 });
     });
     await act(async () => {
       await proposePromise;
     });
+    // No second envelope was queued.
+    expect(fake.calls.length).toBe(1);
     expect(probe.result.inFlight).toBe(false);
   });
 });
@@ -454,7 +439,6 @@ describe('useProposeAction — error paths', () => {
     const probe = renderProbe(fake.client);
     act(() => {
       useCaptureStore.getState().setText('Pre-restore text');
-      useCaptureStore.getState().setClassification('fact');
     });
     let proposePromise: Promise<void> | undefined;
     act(() => {
@@ -475,7 +459,6 @@ describe('useProposeAction — error paths', () => {
     });
     const state = useCaptureStore.getState();
     expect(state.text).toBe('Pre-restore text');
-    expect(state.classification).toBe('fact');
     expect(state.proposing).toBe(false);
     expect(probe.result.lastError?.code).toBe('not-a-participant');
     expect(probe.result.lastError?.message).toContain('not a participant');
@@ -486,7 +469,6 @@ describe('useProposeAction — error paths', () => {
     const probe = renderProbe(fake.client);
     act(() => {
       useCaptureStore.getState().setText('Timeout draft');
-      useCaptureStore.getState().setClassification('predictive');
     });
     let proposePromise: Promise<void> | undefined;
     act(() => {
@@ -500,7 +482,6 @@ describe('useProposeAction — error paths', () => {
     });
     const state = useCaptureStore.getState();
     expect(state.text).toBe('Timeout draft');
-    expect(state.classification).toBe('predictive');
     expect(probe.result.lastError?.code).toBe('timeout');
     expect(probe.result.lastError?.message).toBe(
       'The propose request timed out. Check your connection and try again.',
@@ -509,12 +490,11 @@ describe('useProposeAction — error paths', () => {
 });
 
 describe('useProposeAction — wire-error auto-dismissal', () => {
-  it('lastError clears when the moderator edits any of the four capture inputs', async () => {
+  it('lastError clears when the moderator edits the capture wording slice', async () => {
     const fake = makeFakeClient();
     const probe = renderProbe(fake.client);
     act(() => {
       useCaptureStore.getState().setText('Edit-dismiss test');
-      useCaptureStore.getState().setClassification('fact');
     });
     let proposePromise: Promise<void> | undefined;
     act(() => {

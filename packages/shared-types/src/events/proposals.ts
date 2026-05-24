@@ -67,31 +67,27 @@ export type StatementKind = z.infer<typeof statementKindSchema>;
 
 // -- Sub-kind: classify-node -----------------------------------------
 //
-// Propose a classification for a node. When the `node_id` doesn't yet
-// exist on the projection (the free-floating-statement case), the
-// proposal also introduces the node — the optional `wording` field
-// carries the participant-supplied statement text the server uses to
-// mint the matching `node-created` event at propose-time per ADR 0027
-// (entity vs facet layer separation). When the node already exists
-// (re-classify of a committed node), `wording` is absent and the
-// engine emits no `node-created` (only the `proposal` envelope).
+// Propose a classification for a node that already exists on the
+// projection. Per ADR 0030 §1 (wording-only capture), the bundled
+// `classify-node`-with-wording path is retired — capturing a new node
+// is the `capture-node` proposal sub-kind, NOT a bundled gesture. A
+// `classify-node` proposal therefore only names a classification
+// candidate against an extant node; the engine emits no
+// `node-created` (only the `proposal` envelope).
 //
-// **Wire-shape evolution.** Pre-ADR-0027, classify-node carried only
-// `node_id` + `classification` — the wording was held client-side
-// until commit-time, when a separate flow materialised the node.
-// That flow violated `docs/methodology.md` L57 ("A proposed change
-// appears on the graph in `proposed` state from the moment it is
-// made"). The optional `wording` field reinstates the methodology
-// contract: the client passes the wording inline; the server emits
-// `node-created` + `entity-included` + `proposal` in one envelope
-// chain so subscribers see the proposed entity immediately.
+// **Wire-shape evolution.** Pre-ADR-0030, `classify-node` carried an
+// optional `wording` field that doubled the gesture as a capture-on-
+// propose path. ADR 0030 §1 dismantles the voteless-wording-facet
+// bug that bundling produced; the wording-only capture moves to the
+// `capture-node` sub-kind, and the `wording` field on `classify-node`
+// is gone (the moderator UI's `useProposeAction` switched to
+// `capture-node` per `pf_mod_capture_pane_wording_only`).
 // Methodology-text cap per F-003 — see `limits.ts`.
 
 export const classifyNodeProposalSchema = z.object({
   kind: z.literal('classify-node'),
   node_id: z.string().uuid(),
   classification: statementKindSchema,
-  wording: z.string().min(1).max(MAX_METHODOLOGY_TEXT_LENGTH).optional(),
 });
 
 export type ClassifyNodeProposal = z.infer<typeof classifyNodeProposalSchema>;

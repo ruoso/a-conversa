@@ -51,19 +51,17 @@
 //      one `entity-removed` event. The mapping is the INVERSE of
 //      `buildStructuralEventsForPropose` (in
 //      `apps/server/src/methodology/handlers/propose.ts`) — the two
-//      MUST stay in sync. The v1 mapping covers two sub-kinds: a
-//      `classify-node` proposal whose payload carries a `wording`
-//      AND whose `node_id` didn't pre-exist on the projection emits
-//      exactly one `entity-removed(node)`; a `set-edge-substance`
-//      proposal whose payload carries the three optional endpoint
-//      fields (`source_node_id`, `target_node_id`, `role`) AND whose
-//      `edge_id` resolves to an existing edge on the projection emits
-//      exactly one `entity-removed(edge)`. Every other sub-kind
-//      emits zero structural retractions (the proposal envelope
-//      itself remains in the event log + `pendingProposals` — see
-//      D5). When the remaining propose-emission tech-debt grows (the
-//      decompose + interpretive-split arms), this handler's retraction
-//      mapping MUST grow in lockstep.
+//      MUST stay in sync. The mapping covers `capture-node` (the
+//      wording-only capture per ADR 0030 §1 — always retracts the
+//      captured node + optional connecting edge),
+//      `set-edge-substance` connecting-case (substance-only re-vote
+//      against an extant edge retracts nothing), and `decompose` /
+//      `interpretive-split` (per-component / per-reading node
+//      retraction). `classify-node` emits zero retractions (per
+//      `pf_mod_capture_pane_wording_only` the legacy bundled
+//      capture path is retired). Every other sub-kind emits zero
+//      structural retractions (the proposal envelope itself remains
+//      in the event log + `pendingProposals` — see D5).
 //
 //   4. **Multi-event sequence allocation.** The handler may emit zero,
 //      one, or more `entity-removed` events per withdraw. Each
@@ -419,11 +417,10 @@ export function registerWithdrawProposalHandlers(
  *
  * **v1 coverage**:
  *
- *   - `classify-node` with a `wording` field AND a `node_id` that
- *     doesn't pre-exist on the projection → retract the node. (The
- *     propose handler only emits `node-created` + `entity-included`
- *     when the same predicate holds, per
- *     `buildStructuralEventsForPropose`'s `classify-node` arm.)
+ *   - `classify-node` → retract nothing. Per
+ *     `pf_mod_capture_pane_wording_only` (ADR 0030 §1) the legacy
+ *     bundled capture path is retired; the propose handler's
+ *     `classify-node` arm emits no structural events at propose-time.
  *   - `set-edge-substance` with the three optional endpoint fields
  *     (`source_node_id`, `target_node_id`, `role`) present AND
  *     `edge_id` resolving to an existing edge on the projection →
@@ -473,33 +470,13 @@ function entitiesToRetractForWithdraw(
 
   switch (payload.kind) {
     case 'classify-node': {
-      // Mirror of `buildStructuralEventsForPropose`'s `classify-node`
-      // arm: the propose handler emits `node-created` only when the
-      // node didn't pre-exist AND the payload carried a wording. The
-      // wording-vs-no-wording predicate is the client's signal for
-      // "this is a fresh free-floating statement" vs "re-classify an
-      // already-extant node." Both branches must match here so we
-      // don't retract a pre-extant node that this proposal didn't
-      // mint. Since propose-time the node MAY have been minted, but
-      // by the time we're processing the withdraw a) the node exists
-      // on the projection (we just confirmed the proposal exists +
-      // the projection rebuilt off the log), and b) the
-      // `visible`-flip already happened. The right predicate at
-      // withdraw-time is "did the propose-time payload carry a
-      // wording" — that's the same signal the propose handler used.
-      const nodeId = payload.node_id;
-      const wording = payload.wording;
-      const node = projection.getNode(nodeId);
-      // The node MUST exist on the projection at withdraw-time if it
-      // was minted at propose-time (the log replay rebuilt it). When
-      // `wording !== undefined` AND the projector has a record for
-      // `nodeId`, the propose-time fan-out minted it — retract.
-      // Defensive: if the projection somehow lacks the node, don't
-      // emit a retraction (the projector would reject the event
-      // anyway via `handleEntityRemoved`'s missing-entity check).
-      if (wording !== undefined && node !== undefined) {
-        targets.push({ entityKind: 'node', entityId: nodeId });
-      }
+      // Per `pf_mod_capture_pane_wording_only` (ADR 0030 §1), the
+      // legacy `classify-node`-with-wording bundle is retired —
+      // capturing a new node is the `capture-node` sub-kind. The
+      // propose handler's `classify-node` arm emits no structural
+      // events at propose-time (the proposal only names a
+      // classification candidate against an extant node), so
+      // withdrawing a `classify-node` retracts no entities.
       break;
     }
     case 'set-edge-substance': {

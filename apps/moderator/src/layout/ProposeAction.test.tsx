@@ -178,21 +178,13 @@ describe('ProposeAction — validation-error region', () => {
     expect(screen.getByTestId('propose-action-button').getAttribute('aria-disabled')).toBe('true');
   });
 
-  it('renders the localized classification-missing reason after the text is filled', () => {
-    const fake = makeFakeClient();
-    act(() => {
-      useCaptureStore.getState().setText('Has text');
-    });
-    renderInRoute(fake.client);
-    const region = screen.getByTestId('propose-action-validation-error');
-    expect(region.textContent).toContain('pick a classification');
-  });
-
+  // Per `pf_mod_capture_pane_wording_only` the `classification-missing`
+  // reason is gone — text alone is sufficient to enable propose for the
+  // wording-only capture gesture.
   it('renders the target-without-role reason when target is staged but role is null', () => {
     const fake = makeFakeClient();
     act(() => {
       useCaptureStore.getState().setText('Some wording');
-      useCaptureStore.getState().setClassification('fact');
       useCaptureStore.getState().setTargetEntityId('node-1');
     });
     renderInRoute(fake.client);
@@ -206,7 +198,6 @@ describe('ProposeAction — wire-error region', () => {
     const fake = makeFakeClient();
     act(() => {
       useCaptureStore.getState().setText('Wire-error test');
-      useCaptureStore.getState().setClassification('fact');
     });
     renderInRoute(fake.client);
     // Click the button to fire the propose.
@@ -239,7 +230,6 @@ describe('ProposeAction — in-flight state', () => {
     const fake = makeFakeClient();
     act(() => {
       useCaptureStore.getState().setText('Inflight UI test');
-      useCaptureStore.getState().setClassification('fact');
     });
     renderInRoute(fake.client);
     expect(screen.getByTestId('propose-action-button').textContent).toContain('Propose');
@@ -262,7 +252,6 @@ describe('ProposeAction — click fires propose', () => {
     const fake = makeFakeClient();
     act(() => {
       useCaptureStore.getState().setText('Click-fires-propose');
-      useCaptureStore.getState().setClassification('fact');
     });
     renderInRoute(fake.client);
     act(() => {
