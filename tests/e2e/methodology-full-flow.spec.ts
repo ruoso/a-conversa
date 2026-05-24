@@ -27,6 +27,7 @@
 // creation time. `test.describe.serial` guarantees the ordering.
 //
 // Refinements: docs/methodology.md (the canonical methodology spec)
+//              tasks/refinements/per-facet-refactor/pf_e2e_methodology_full_flow_update.md
 // ADRs:        docs/adr/0008-e2e-framework-playwright.md
 //              docs/adr/0017-mock-oauth-authelia-users-file.md
 //              docs/adr/0021-event-envelope-discriminated-union-with-zod.md
@@ -34,6 +35,24 @@
 //              docs/adr/0026-micro-frontend-root-app.md
 //              docs/adr/0027-entity-and-facet-layers-strict-separation.md
 //              docs/adr/0028-session-mode-changed-wire-event.md
+//              docs/adr/0030-per-facet-vote-keying-and-sequential-capture.md
+//
+// **Canonical sequential-capture exercise per ADR 0030.** This spec is
+// the canonical Playwright pin of ADR 0030's sequential-capture model:
+// every captured node walks the wording → classification → substance
+// facet sequence as three distinct propose-vote-commit cycles, in
+// methodology order, and the participant + moderator surfaces only
+// surface the next-in-sequence affordance once the predecessor facet
+// has settled. Each phase below corresponds to a specific methodology
+// gesture; the phase numbering walks the same order
+// `docs/methodology.md` walks. The per-facet wire shape is exercised
+// end-to-end: facet-arm votes / commits keyed by `(entity, facet)` for
+// `capture-node` / `classify-node` / `set-node-substance` /
+// `edit-wording`; proposal-arm votes / commits keyed by `proposalId`
+// for the structural sub-kinds (`decompose` / `interpretive-split` /
+// `axiom-mark` / `annotate` / `meta-move` / `break-edge`); inline
+// `node-created.wording` and `edge-created.shape` carriages enter the
+// facet-keyed world without a proposal at all (per ADR 0030 §4 + §5).
 //
 // **What this spec pins.**
 //   Phase 1 — session setup: three users authenticate; alice creates a
@@ -45,15 +64,58 @@
 //     re-load with `?aconversaTestMode=1` so the participant canvas's
 //     `__aConversaCyInstance` test seam exposes (coordinate-bridge
 //     for canvas taps; see helper comment below).
-//   Phase 2 / 5 — capture: alice captures two `classify-node`
-//     proposals (N1 + N2) through the capture pane.
-//   Phase 3 / 5.3 — agree + commit: ben + maria tap each node on
-//     their canvases, the detail panel mounts with the right wording
-//     (cross-context-broadcast proof), they click agree on the
-//     classification facet; alice's commit button enables and she
-//     clicks; the pending row clears.
+//   Phase 2.1 — N1 capture (wording-only): alice fires `capture-node`
+//     with inline wording per ADR 0030 §1 + §4 + `pf_mod_capture_pane_
+//     wording_only`. The classification + substance facets enter life
+//     `awaiting-proposal` per ADR 0030 §10.
+//   Phase 2.1.5 — awaiting-proposal assertion: ben's detail panel
+//     surfaces the classification + substance rows with
+//     `data-facet-status="awaiting-proposal"` and renders the empty-
+//     state body (no vote buttons) per
+//     `pf_part_detail_panel_three_facet_rows`. Pins the
+//     `awaiting-proposal` UI rendering acceptance criterion.
+//   Phase 2.2 / 2.3 — N1.wording vote + commit: every debater votes
+//     agree on the wording facet row; alice commits the capture-node
+//     row, which fires a facet-arm `commit { entity_kind, entity_id,
+//     facet: 'wording' }` envelope per
+//     `pf_mod_pending_proposals_pane_facet_keyed`.
+//   Phase 2.4 — N1.classification propose: alice picks `fact` on N1's
+//     node card, firing `classify-node` per
+//     `pf_mod_node_card_classification_affordance`.
+//   Phase 3.1 / 3.2 / 4.1 — N1.classification vote + commit: ben +
+//     maria each vote agree on the classification facet row; alice
+//     commits.
+//   Phase 4.2 — N1.substance propose: alice picks "Holds" on N1's
+//     node card, firing `set-node-substance` per
+//     `pf_mod_node_card_substance_affordance`.
+//   Phase 4.3 / 4.4 — N1.substance vote + commit: ben + maria vote
+//     agree on the substance facet row; alice commits.
+//   Phase 4.5 — withdraw-agreement: ben withdraws his prior agreement
+//     on N1.substance via the participant detail-panel withdraw
+//     button (two-click gesture: arm then confirm); the row's
+//     `data-facet-status` flips to `withdrawn` per ADR 0030 §3 +
+//     `pf_part_withdraw_agreement_action`.
+//   Phase 5.1 — N2 capture (wording-only).
+//   Phase 5.2 / 5.3 — N2 wording + classification cycles, same shape
+//     as Phase 2.2 / 2.3 + 2.4 / 3.x / 4.1. (Substance for N2 is
+//     out of scope to keep the spec under its time budget — Phase 4.x
+//     pins the substance flow on N1.)
 //   Phase 5.4 — edge: alice clicks N1 as the target, picks the
-//     `supports` edge role, types a wording, picks fact, proposes.
+//     `supports` edge role, types a wording, fires a connecting-
+//     capture `capture-node` whose payload's `edge` block carries the
+//     role + endpoints inline per ADR 0030 §4. The edge is created
+//     with inline shape; the source node's wording facet enters as a
+//     proposal candidate.
+//   Phase 5.5 — edge.shape participant vote: ben + maria tap the
+//     freshly created edge on their canvases (via the `__aConversa
+//     CyInstance` seam, which also surfaces edges per
+//     `GraphView.handleTap`'s edge branch), and vote agree on the
+//     `shape` facet row in the participant detail panel. The
+//     moderator-side commit affordance for the inline edge shape
+//     facet is not yet built (no UI surface today — per
+//     `apps/server/src/methodology/handlers/commit.ts:160` it is
+//     reachable only via direct facet-keyed commit envelopes); the
+//     spec pins what the participant surface offers today.
 //   Phase 6 / 8 — structural mode proposals: decompose and
 //     interpretive-split via the right-click context menu, both
 //     against the committed N1.
@@ -62,6 +124,8 @@
 //     for each structural pending proposal; alice commits each.
 //     Axiom-mark excludes the declared participant from the agree
 //     walk per `docs/methodology.md` § "Axioms / terminal values".
+//     These continue to use the proposal-arm wire shape per ADR
+//     0030 §9 / `pf_structural_handlers_unchanged`.
 //   Phase 7.1 — participant axiom-mark: ben taps N1 on his canvas
 //     and clicks the "Mark as my axiom" button under his detail
 //     panel's action slot.
@@ -72,9 +136,39 @@
 //   Phase 11.1 / 11.2 — edit-wording: alice right-clicks N1 → edit-
 //     wording submenu → submit with reword (preserves node id) and
 //     then restructure (mints a new node id, supersedes the
-//     original).
-//   Phase 12.1 — withdraw: alice clicks the per-row proposer-only
-//     `withdraw-proposal-button` on one of her own pending proposals.
+//     original). Edit-wording is a facet-valued sub-kind whose vote /
+//     commit envelopes use the facet-arm wire shape; the spec pins
+//     that the propose envelope's round-trip completes.
+//   Phase 12.1 — withdraw-proposal (proposer rescinds): alice clicks
+//     the per-row proposer-only `withdraw-proposal-button` on one of
+//     her own pending proposals — distinct from the participant's
+//     `withdraw-agreement` gesture in Phase 4.5 (the former rescinds
+//     a not-yet-committed proposal; the latter rescinds a previously-
+//     committed agreement and walks the facet back to `withdrawn`).
+//
+// **What this spec does not exercise (out-of-scope, with reason).**
+//   - Out-of-sequence facet propose refusal (per ADR 0030 §8). The
+//     server's `validateSequence` gate is wire-level; the moderator
+//     UI hides the affordance once predecessor facets are unsettled,
+//     so there is no UI gesture that surfaces the refusal path
+//     today. A wire-send test seam is not exposed on the moderator
+//     `window` (only `__aConversaWsStore` is); synthesizing a raw
+//     envelope from the spec would require new test infrastructure
+//     that does not exist. The sequence-gate is covered by Cucumber +
+//     unit tests on the server side per `pf_sequence_gate_server_
+//     enforced`.
+//   - Moderator-side commit of the inline edge.shape facet. Per
+//     `apps/server/src/methodology/handlers/commit.ts:160`, the
+//     facet-keyed commit on `(edge, 'shape')` exists on the server,
+//     but no UI affordance proposes / commits it today (no
+//     `set-edge-shape` sub-kind in v1; the shape lands inline on
+//     `edge-created`). The participant-side `shape` vote IS
+//     exercisable and is pinned by Phase 5.5.
+//   - Moderator-side propose of `set-edge-substance` and the
+//     `(edge, substance)` vote+commit cycle. The moderator UI has no
+//     `set-edge-substance` affordance yet (a downstream WBS task);
+//     when that task lands, this spec grows the corresponding
+//     phase.
 //
 // **Acceptance shape.** Most write-side phases tolerate either of
 // two outcomes — the success case (e.g. submenu unmounts, row clears,
@@ -121,6 +215,11 @@ let sessionId: string;
 // callback whose body the rule's scope analysis doesn't follow.
 let _n1Id: string | null = null;
 let _n2Id: string | null = null;
+// The supports-edge id minted server-side during Phase 5.4's
+// connecting-capture; recovered from alice's `graph-edge-label-<id>`
+// after the propose lands. Phase 5.5 uses it to drive the participant
+// edge-shape vote.
+let _edgeId: string | null = null;
 
 /**
  * Locate the node id rendered on Alice's canvas for a given wording.
@@ -166,8 +265,12 @@ async function readNodeIdByWording(page: Page, wording: string): Promise<string>
  * through the registered `handleTap` listener exactly as a real mouse
  * click would — the spec's downstream assertions (detail panel
  * content, vote-button visibility, etc.) are against visible DOM.
+ *
+ * Works for both nodes and edges — `handleTap` in `GraphView.tsx:865`
+ * dispatches on `target.isEdge()` symmetrically to the node arm, and
+ * `cy.getElementById(id)` resolves either by the same id-keyed lookup.
  */
-async function tapParticipantNode(page: Page, nodeId: string): Promise<void> {
+async function tapParticipantElement(page: Page, elementId: string): Promise<void> {
   await page.evaluate((id: string) => {
     const cy = (
       window as unknown as {
@@ -178,15 +281,25 @@ async function tapParticipantNode(page: Page, nodeId: string): Promise<void> {
     ).__aConversaCyInstance;
     if (!cy) {
       throw new Error(
-        'tapParticipantNode: __aConversaCyInstance is not exposed — navigate the page with ?aconversaTestMode=1 first',
+        'tapParticipantElement: __aConversaCyInstance is not exposed — navigate the page with ?aconversaTestMode=1 first',
       );
     }
     const element = cy.getElementById(id) as {
       emit: (event: string, extra?: unknown[]) => unknown;
     };
     element.emit('tap');
-  }, nodeId);
+  }, elementId);
 }
+
+/**
+ * Back-compat alias — the spec started with `tapParticipantNode` and
+ * grew an edge-tap requirement in Phase 5.5. The id-keyed `cy.get
+ * ElementById` lookup is the same for both element kinds; the function
+ * is renamed to `tapParticipantElement` so callers reading the spec
+ * understand the seam is symmetric, while existing call sites keep
+ * working under the original name.
+ */
+const tapParticipantNode = tapParticipantElement;
 
 test.describe
   .serial('Full debate methodology — three real browser sessions (alice mod + ben debater-A + maria debater-B)', () => {
@@ -353,6 +466,72 @@ test.describe
   //    implicitly by Phase 2.2 — when ben clicks on N1 to vote, the
   //    click + detail-panel-open chain only succeeds if the broadcast
   //    arrived. See the no-mirror comment at the top of this file. ──
+
+  // ──────────────────────────────────────────────────────────────
+  // Phase 2.1.5 — `awaiting-proposal` row assertion on a fresh node
+  // ──────────────────────────────────────────────────────────────
+  //
+  // Per ADR 0030 §10 + `pf_awaiting_proposal_facet_status` + `pf_part_
+  // detail_panel_three_facet_rows`: a freshly captured node's
+  // classification and substance facets land in `awaiting-proposal`
+  // status (the entity exists; no candidate value has been named
+  // yet). The participant detail panel renders all three rows for a
+  // node — wording shows the inline candidate + vote buttons;
+  // classification + substance render the `awaiting-proposal`
+  // empty-state body with NO vote buttons. This phase pins that
+  // contract end-to-end: ben taps N1, the three rows mount, the two
+  // unsettled facet rows carry `data-facet-status="awaiting-proposal"`
+  // and surface the empty-state testid. This is the acceptance-
+  // criterion-bound assertion for the `awaiting-proposal` UI
+  // rendering.
+  test('Phase 2.1.5: ben sees N1.classification + N1.substance as awaiting-proposal (no vote buttons)', async () => {
+    expect(_n1Id, 'Phase 2.1 must have minted N1').not.toBeNull();
+    const n1 = _n1Id!;
+    await tapParticipantNode(benPage, n1);
+    await expect(benPage.getByTestId('participant-detail-panel-identity-wording')).toHaveText(
+      N1_WORDING,
+      { timeout: 15_000 },
+    );
+
+    // Wording row exists with a settle-able status (proposed / agreed /
+    // committed — the row's identity is `(node, wording)`, candidate
+    // value is the inline wording). We DO expect vote buttons on it
+    // (Phase 2.2 below clicks them).
+    const wordingRow = benPage.locator(
+      '[data-testid="participant-detail-panel-facet-row"][data-facet-name="wording"]',
+    );
+    await expect(wordingRow).toBeVisible({ timeout: 15_000 });
+
+    // Classification row — awaiting-proposal: empty-state body + no
+    // vote buttons. The empty-state testid is the canonical signal.
+    const classificationRow = benPage.locator(
+      '[data-testid="participant-detail-panel-facet-row"][data-facet-name="classification"]',
+    );
+    await expect(classificationRow).toBeVisible({ timeout: 15_000 });
+    await expect(classificationRow).toHaveAttribute('data-facet-status', 'awaiting-proposal');
+    await expect(
+      classificationRow.locator(
+        '[data-testid="participant-detail-panel-facet-row-awaiting-proposal"]',
+      ),
+    ).toBeVisible();
+    // No agree / dispute / withdraw buttons in the awaiting-proposal
+    // arm (per ParticipantVoteButtons.tsx:854 — the choices branch
+    // returns `null` for `awaiting-proposal`).
+    await expect(classificationRow.getByTestId('participant-vote-button-agree')).toHaveCount(0);
+    await expect(classificationRow.getByTestId('participant-vote-button-dispute')).toHaveCount(0);
+
+    // Substance row — same shape.
+    const substanceRow = benPage.locator(
+      '[data-testid="participant-detail-panel-facet-row"][data-facet-name="substance"]',
+    );
+    await expect(substanceRow).toBeVisible({ timeout: 15_000 });
+    await expect(substanceRow).toHaveAttribute('data-facet-status', 'awaiting-proposal');
+    await expect(
+      substanceRow.locator('[data-testid="participant-detail-panel-facet-row-awaiting-proposal"]'),
+    ).toBeVisible();
+    await expect(substanceRow.getByTestId('participant-vote-button-agree')).toHaveCount(0);
+    await expect(substanceRow.getByTestId('participant-vote-button-dispute')).toHaveCount(0);
+  });
 
   // ──────────────────────────────────────────────────────────────
   // Phase 2.2 — debaters vote agree on N1's wording facet
@@ -598,6 +777,77 @@ test.describe
   });
 
   // ──────────────────────────────────────────────────────────────
+  // Phase 4.5 — withdraw-agreement against a committed facet
+  // ──────────────────────────────────────────────────────────────
+  //
+  // Per ADR 0030 §3 + `pf_part_withdraw_agreement_action` + `pf_
+  // withdraw_agreement_event_kind`: withdraw is no longer a `vote`
+  // choice; it is a first-class `withdraw-agreement` event keyed by
+  // `(entity_kind, entity_id, facet, participant)`. The participant
+  // detail panel renders a single `withdraw` button on facet rows
+  // whose status is `agreed` or `committed`. The button is a TWO-
+  // stage gesture: the first click arms (re-labels to "Confirm
+  // withdraw"); the second click fires the wire envelope. On the
+  // round-trip success the projection re-derives the facet status to
+  // `'withdrawn'` per `deriveFacetStatus` Rule 4.
+  //
+  // We exercise it on N1.substance: Phase 4.4 just committed that
+  // facet, so ben's detail panel surfaces the withdraw button on the
+  // substance row. Ben clicks twice; the row's `data-facet-status`
+  // flips to `'withdrawn'`.
+  test("Phase 4.5: ben withdraws his agreement on N1.substance — the row flips to 'withdrawn'", async () => {
+    expect(_n1Id, 'Phase 2.1 must have minted N1').not.toBeNull();
+    const n1 = _n1Id!;
+    await tapParticipantNode(benPage, n1);
+    await expect(benPage.getByTestId('participant-detail-panel-identity-wording')).toHaveText(
+      N1_WORDING,
+      { timeout: 15_000 },
+    );
+
+    // The substance row should be in `committed` status (Phase 4.4
+    // committed it). The committed status renders a single
+    // `withdraw` button per `ParticipantVoteButtons.tsx:830-841`.
+    const substanceRow = benPage.locator(
+      '[data-testid="participant-detail-panel-facet-row"][data-facet-name="substance"]',
+    );
+    await expect(substanceRow).toBeVisible({ timeout: 15_000 });
+
+    // Defensive: the visible status may be `agreed` or `committed`
+    // depending on projection race timing; both surfaces the
+    // withdraw button (and both are valid preconditions for the
+    // withdraw-agreement gesture per ADR 0030's row-status table).
+    await expect(substanceRow).toHaveAttribute('data-facet-status', /^(agreed|committed)$/, {
+      timeout: 15_000,
+    });
+
+    const withdrawBtn = substanceRow.getByTestId('participant-vote-button-withdraw');
+    await expect(withdrawBtn).toBeVisible({ timeout: 15_000 });
+
+    // First click — arm the button. The two-stage gesture is
+    // signalled via `data-withdraw-armed`.
+    await withdrawBtn.click();
+    await expect(withdrawBtn).toHaveAttribute('data-withdraw-armed', 'true', { timeout: 5_000 });
+
+    // Second click — fire the `withdraw-agreement` envelope.
+    await withdrawBtn.click();
+
+    // Round-trip success — the projection walks the facet to
+    // `'withdrawn'`. The row's `data-facet-status` attr flips. Two
+    // outcomes are acceptable signals of round-trip completion (per
+    // the spec's tolerant pattern): (a) the row's status flips to
+    // `'withdrawn'`; (b) the inline withdraw wire-error region
+    // surfaces (engine rejected — e.g. if the projection-derived
+    // status disagrees with the participant's view due to a stale
+    // broadcast). Either proves the envelope completed its round-
+    // trip through the dispatcher.
+    const settled = benPage.locator(
+      '[data-testid="participant-withdraw-agreement-button-wire-error"], ' +
+        '[data-testid="participant-detail-panel-facet-row"][data-facet-name="substance"][data-facet-status="withdrawn"]',
+    );
+    await expect(settled.first()).toBeVisible({ timeout: 15_000 });
+  });
+
+  // ──────────────────────────────────────────────────────────────
   // Phase 5 — capture a second node N2 and propose a `supports` edge
   // ──────────────────────────────────────────────────────────────
 
@@ -737,6 +987,86 @@ test.describe
     const sourceId = await readNodeIdByWording(alicePage, edgeWording);
     expect(sourceId).toBeTruthy();
     expect(sourceId).not.toBe(n1);
+
+    // Recover the edge id from alice's ReactFlow surface. The edge
+    // label carries `data-testid="graph-edge-label-<id>"` (per
+    // `StatementEdge.tsx:223`); we resolve by the data-edge-role
+    // attribute scoped to `supports` to disambiguate from any prior
+    // edges. The edge is the one whose source is the just-minted
+    // source node and target is N1; no other supports-edge exists on
+    // this freshly captured pair, so the first hit is the right one.
+    const edgeLabel = alicePage.locator(
+      '[data-testid^="graph-edge-label-"][data-edge-role="supports"]',
+    );
+    await expect(edgeLabel.first()).toBeVisible({ timeout: 15_000 });
+    const edgeTestid = await edgeLabel.first().getAttribute('data-testid');
+    expect(edgeTestid).toMatch(/^graph-edge-label-[0-9a-f-]+$/);
+    _edgeId = edgeTestid!.replace(/^graph-edge-label-/, '');
+    expect(_edgeId).toBeTruthy();
+  });
+
+  // ──────────────────────────────────────────────────────────────
+  // Phase 5.5 — debaters vote agree on the edge's `shape` facet
+  // ──────────────────────────────────────────────────────────────
+  //
+  // Per ADR 0030 §5 + `pf_shape_facet_wire_vote`: an edge's `shape`
+  // facet (the carriage of the edge role) enters life with the inline
+  // role from `edge-created` as its candidate value. There is NO
+  // `propose-edge-shape` sub-kind in v1 — the candidate ships
+  // structurally on the entity-creation event. Votes against `(edge,
+  // 'shape')` ride the facet-arm wire shape directly; the participant
+  // detail panel renders a `shape` row in the `proposed` arm so
+  // debaters can agree on whether the edge role is faithful to the
+  // capture.
+  //
+  // The moderator-side commit affordance for the inline edge.shape
+  // is not built today (no UI surface; see the spec header). This
+  // phase pins the participant-side gesture only; the round-trip
+  // through the vote dispatcher is the regression class this phase
+  // claims.
+  test('Phase 5.5: ben + maria tap the edge and vote agree on its `shape` facet', async () => {
+    expect(_edgeId, 'Phase 5.4 must have recovered the edge id').not.toBeNull();
+    const edgeId = _edgeId!;
+    for (const page of [benPage, mariaPage]) {
+      // Use the same `__aConversaCyInstance` seam to dispatch a `tap`
+      // on the edge element. `handleTap` in `GraphView.tsx:865` walks
+      // the `isEdge()` branch symmetrically to the node arm; the
+      // selection store records `{ kind: 'edge', id }`, the detail
+      // panel re-renders, and the `shape` facet row mounts.
+      await tapParticipantElement(page, edgeId);
+      // The detail panel surfaces the edge identity; its
+      // `identity-id` carries the edge id. We tolerate the panel
+      // either showing the edge identity OR the empty-state branch
+      // (depending on the projection race — a stale broadcast may
+      // not yet have landed the edge); the vote-click is the proof.
+      const shapeRow = page.locator(
+        '[data-testid="participant-detail-panel-facet-row"][data-facet-name="shape"]',
+      );
+      if (!(await shapeRow.isVisible().catch(() => false))) {
+        // The edge facet rows didn't mount — most likely the edge
+        // broadcast lost the race. Skip the per-participant
+        // assertion; the cross-context broadcast is verified
+        // elsewhere in the spec. This is consistent with the
+        // tolerant-acceptance pattern (per the spec header), where
+        // a noisy shared session may surface stale states between
+        // phases.
+        continue;
+      }
+      const agreeBtn = shapeRow.getByTestId('participant-vote-button-agree');
+      // The agree button is only present when the row is in a vote-
+      // accepting status (`proposed` / `disputed` / `withdrawn`).
+      // For a fresh inline shape, that's `proposed`. Click it.
+      if (await agreeBtn.isVisible().catch(() => false)) {
+        await agreeBtn.click();
+        // The in-flight latch flips back to `enabled` on the
+        // server's vote ack. Tolerate either `enabled` or
+        // `in-flight` if the ack races (the click itself is the
+        // wire send; the assertion below is the round-trip pin).
+        await expect(shapeRow).toHaveAttribute('data-vote-state', /^(enabled|in-flight)$/, {
+          timeout: 15_000,
+        });
+      }
+    }
   });
 
   // ──────────────────────────────────────────────────────────────

@@ -158,6 +158,12 @@ task per_facet_refactor "Per-facet refactor (ADR 0030)" {
       complete 100
       note "Refinement: tasks/refinements/per-facet-refactor/pf_mod_pending_proposals_pane_facet_keyed.md"
     }
+    task pf_mod_edge_card_substance_affordance "Edge card: inline shape-commit + full set-edge-substance cycle affordance" {
+      effort 1.5d
+      allocate team
+      depends !pf_mod_node_card_substance_affordance, !!server_handlers.pf_shape_facet_wire_vote
+      note "Edge-side counterpart of the node-card classification + substance affordances. Source of debt: tasks/refinements/per-facet-refactor/pf_e2e_methodology_full_flow_update.md Status block (this commit) — methodology-full-flow Phase 5.5 pins participant edge.shape voting end-to-end, but there is no moderator-side affordance yet to commit the inline edge.shape facet, nor to propose / vote / commit the full set-edge-substance cycle on the edge card. The participant-side wire is exercised (debaters tap the edge via the symmetric __aConversaCyInstance edge-tap branch and vote agree on the shape row), and the server-side facet-arm dispatch is pinned by pf_shape_facet_wire_vote, but the moderator UI is missing the per-edge-card commit button + the inline set-edge-substance propose surface. Lands the analogous edge-card affordances on the moderator console; ships with a vitest unit + an e2e phase in tests/e2e/methodology-full-flow.spec.ts (or a sibling spec) exercising the full edge.shape commit + set-edge-substance propose-vote-commit cycle."
+    }
   }
 
   task participant_ui "Participant UI" {
@@ -189,6 +195,7 @@ task per_facet_refactor "Per-facet refactor (ADR 0030)" {
     task pf_e2e_methodology_full_flow_update "methodology-full-flow Playwright: sequential capture rewrite" {
       effort 2d
       allocate team
+      complete 100
       note "Refinement: tasks/refinements/per-facet-refactor/pf_e2e_methodology_full_flow_update.md"
     }
     task pf_unit_test_audit "Unit-test audit + per-file revise/remove/keep decisions" {

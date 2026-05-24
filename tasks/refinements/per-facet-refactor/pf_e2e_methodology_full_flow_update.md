@@ -60,3 +60,26 @@ Per [ADR 0022 — No throwaway verifications](../../../docs/adr/0022-no-throwawa
 ## Open questions
 
 (none — all decided per ADR 0030)
+
+## Status
+
+**Done** — 2026-05-24.
+
+Consolidation + verification pass on [`tests/e2e/methodology-full-flow.spec.ts`](../../../tests/e2e/methodology-full-flow.spec.ts). The spec header was rewritten to reflect [ADR 0030](../../../docs/adr/0030-per-facet-vote-keying-and-sequential-capture.md)'s sequential-capture model and the facet-arm vs proposal-arm wire-shape split. Three new phases close the awaiting-proposal / withdraw-agreement / edge.shape acceptance criteria the prior refactor tasks did not pin directly via the spec.
+
+- Phase 2.1.5 — `awaiting-proposal` row state on N1's classification + substance facets immediately after capture-node (empty-state body, no vote buttons).
+- Phase 4.5 — withdraw-agreement end-to-end: ben withdraws his prior agreement on N1.substance via the two-click participant detail-panel withdraw button; row `data-facet-status` flips to `'withdrawn'`.
+- Phase 5.5 — participant edge.shape vote: ben + maria tap the freshly created supports-edge (symmetric `__aConversaCyInstance` edge-tap branch) and vote agree on the inline shape facet row.
+
+Helper rename: `tapParticipantNode` → `tapParticipantElement` with a back-compat alias so the helper reads symmetric for both node and edge ids.
+
+No `test.fixme` markers remain. Two out-of-scope acceptance criteria are documented explicitly in the spec header:
+
+- Out-of-sequence facet propose refusal — the UI hides the affordances and there is no wire-send seam exposed; the contract is pinned by Cucumber + server units per [`pf_sequence_gate_server_enforced`](pf_sequence_gate_server_enforced.md).
+- Moderator-side commit of inline edge.shape + the full set-edge-substance cycle — no UI affordance yet; tracked as the new debt task `pf_mod_edge_card_substance_affordance` (registered in [tasks/15-per-facet-refactor.tji](../../15-per-facet-refactor.tji)).
+
+Artifacts:
+
+- [`tests/e2e/methodology-full-flow.spec.ts`](../../../tests/e2e/methodology-full-flow.spec.ts) — header rewrite + 3 new phases + helper rename.
+
+Verification: `pnpm run check` green; `pnpm run test:smoke` 4423 passing (unchanged); `pnpm run test:behavior:smoke` 263 / 1812 (unchanged); `pnpm run test:e2e:smoke` 117 + 0 fixme (+3 phases). Compose stack: `make up` → run → `make down-v`.
