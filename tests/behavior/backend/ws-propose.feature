@@ -76,3 +76,24 @@ Feature: WebSocket propose (client → server)
     And the client sends a classify-node propose envelope for session "77777777-7777-4777-8777-777777777704" with expectedSequence 3 targeting extant node "77777777-7777-4777-8777-777777777ab4"
     Then the client receives an error envelope with code "facet-sequence-out-of-order" referencing the propose envelope
     And the WebSocket connection is still open
+
+  # Shape-facet arm of the sequence gate — per
+  # `pf_shape_facet_wire_vote` + ADR 0030 §8 the propose handler also
+  # refuses `set-edge-substance` against an extant edge whose `shape`
+  # facet is not `'agreed'` / `'committed'`. The wire vocabulary
+  # (`facetNameSchema`) carries `'shape'` so facet-keyed shape votes /
+  # commits can advance the predecessor state.
+  #
+  # The extended seed adds a second `node-created` (seq 4), an
+  # `edge-created` (seq 5) wiring the two nodes with role `supports`,
+  # and an `entity-included` (seq 6) so the edge is visible. The
+  # edge's shape facet is `'proposed'` (inline candidate from
+  # `edge-created`, no votes); a `set-edge-substance` against that
+  # edge id fires the shape arm of the gate.
+  Scenario: A set-edge-substance against an extant edge whose shape facet is not agreed is refused at the wire (facet-sequence-out-of-order); the connection stays open
+    Given a propose-ready-with-edge session for "alice-ws" exists with id "77777777-7777-4777-8777-777777777705" and node ids "77777777-7777-4777-8777-777777777ab5" and "77777777-7777-4777-8777-777777777ac5" and edge id "77777777-7777-4777-8777-777777777ad5"
+    When an authenticated WebSocket client connects to "/api/ws"
+    And the client sends a subscribe envelope for session "77777777-7777-4777-8777-777777777705"
+    And the client sends a set-edge-substance propose envelope for session "77777777-7777-4777-8777-777777777705" with expectedSequence 6 targeting extant edge "77777777-7777-4777-8777-777777777ad5"
+    Then the client receives an error envelope with code "facet-sequence-out-of-order" referencing the propose envelope
+    And the WebSocket connection is still open

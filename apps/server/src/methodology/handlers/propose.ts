@@ -1529,40 +1529,32 @@ function validateSequence(
         // validator owns the structural rules.
         return null;
       }
-      // **TODO(pf_shape_facet_wire_vote)** — v1 deferral for the
-      // shape-facet gate. ADR 0030 §8 says `set-edge-substance` is
-      // refused while the edge's `shape` facet is not `'agreed'` /
-      // `'committed'`. In v1 the wire-level `facetNameSchema` enum
-      // (per `packages/shared-types/src/events/enums.ts:66`) is
-      // 3-valued (`'classification' | 'substance' | 'wording'`) and
-      // does NOT include `'shape'`; the comment at that file
-      // explicitly defers the shape expansion to "downstream
-      // projection-refactor tasks". Without a wire path to vote on
-      // shape, the gate as specified would lock every
-      // `set-edge-substance` against an extant edge out of the
-      // methodology (a v1 edge's shape facet enters life
-      // `'proposed'` with the inline carriage as its candidate per
-      // `pf_projection_facet_status_refactor` Decisions and stays
-      // there — no votes can accrue, no commit lands, so the
-      // accepting `'agreed'`/`'committed'` states are unreachable).
-      // The defeater-capture flow at `docs/methodology.md` F6 — the
-      // canonical use case for the substance-only re-vote against
-      // an extant edge — would be locked out. Defer the shape-facet
-      // gate until the wire vocabulary catches up; the per-sub-kind
-      // referential rules in `validateSetEdgeSubstanceProposal`
-      // still defend the substance-only re-vote against extant
-      // edges (edge_id resolves; carried endpoint triple agrees
-      // with the projection's triple).
+      // Per ADR 0030 §8 + `pf_shape_facet_wire_vote`: refuse
+      // `set-edge-substance` against an extant edge whose `shape`
+      // facet is not `'agreed'` / `'committed'`. Symmetric with the
+      // classification / wording arms above. The wire vocabulary
+      // (`facetNameSchema`) now carries `'shape'` so a facet-keyed
+      // vote / commit path against `(edge, 'shape')` exists; the
+      // accepting `'agreed'` / `'committed'` predecessor states are
+      // reachable.
       //
-      // Reading the facet directly off `ProjectedEdge.shapeFacet`
-      // is preserved as a reference for the future strict gate —
-      // the `deriveFacetStatusFromState` entry point exists exactly
-      // for the shape-facet case (the `FacetName` union does not
-      // name `'shape'`). The `void` cast keeps the symbol live
-      // (it's the call site the future tightening replaces with the
-      // rejection arm).
+      // The defeater-capture flow at `docs/methodology.md` F6 — the
+      // canonical substance-only re-vote against an extant edge — is
+      // unaffected: F6 operates against an edge whose shape was
+      // committed in a prior round, and `'committed'` is an accepting
+      // predecessor here. Reading the facet directly off
+      // `ProjectedEdge.shapeFacet` via `deriveFacetStatusFromState`
+      // (rather than through the entity-kinded `deriveFacetStatus`
+      // dispatch) preserves the entry-point shape established by
+      // `pf_sequence_gate_server_enforced`.
       const shapeStatus = deriveFacetStatusFromState(projection, edge.shapeFacet);
-      void shapeStatus;
+      if (!ACCEPTING_PREDECESSOR_STATUSES.has(shapeStatus)) {
+        return {
+          ok: false,
+          reason: 'facet-sequence-out-of-order',
+          detail: `propose set-edge-substance: edge ${edgeId}'s shape facet is '${shapeStatus}' (must be 'agreed' or 'committed' to advance to substance per ADR 0030 §8)`,
+        };
+      }
       return null;
     }
     default:

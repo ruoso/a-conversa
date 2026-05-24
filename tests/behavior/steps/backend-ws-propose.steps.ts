@@ -211,6 +211,177 @@ Given(
 );
 
 // ============================================================
+// Givens — seed a propose-ready session that ALSO includes a second
+// node + an extant edge (`supports`, source → target) so the
+// `set-edge-substance` arm of the propose-handler sequence gate (per
+// `pf_shape_facet_wire_vote` + ADR 0030 §8) has an extant edge to
+// fire against. The edge's `shape` facet is `'proposed'` (inline
+// candidate from `edge-created`, no votes); the gate refuses
+// `set-edge-substance` against this edge until the shape facet
+// advances. After this seed MAX(sequence)=6 (session-created +
+// participant-joined + 2× node-created + edge-created + entity-
+// included for the edge). Note `node-created` events do NOT carry an
+// entity-included sibling per `mod_proposed_entity_canvas_visibility`
+// (ADR 0027): nodes are visible at propose-time without inclusion,
+// but the edge needs the `entity-included` to be projected as
+// visible. The host's node-created sibling matches the
+// `propose-ready session` step's "no entity-included on the seeded
+// node" convention so the predicate gate's `visible` check on the
+// second node alone is not load-bearing here.
+// ============================================================
+
+Given(
+  'a propose-ready-with-edge session for {string} exists with id {string} and node ids {string} and {string} and edge id {string}',
+  async function (
+    this: AConversaWorld,
+    hostScreenName: string,
+    sessionId: string,
+    sourceNodeId: string,
+    targetNodeId: string,
+    edgeId: string,
+  ) {
+    const userRes = (await this.db.query('SELECT id FROM users WHERE screen_name = $1 LIMIT 1', [
+      hostScreenName,
+    ])) as QueryResult<{ id: string }>;
+    const hostId = userRes.rows[0]?.id;
+    assert.ok(hostId, `no users row found for screen_name ${hostScreenName}`);
+
+    // Session row.
+    await this.db.query(
+      `INSERT INTO sessions (id, host_user_id, privacy, topic) VALUES ($1, $2, 'public', $3)`,
+      [sessionId, hostId, `Propose-with-edge test (${hostScreenName})`],
+    );
+
+    // Participant row (host as moderator) — needed for the engine's
+    // universal `not-a-participant` gate to PASS for the propose.
+    await this.db.query(
+      `INSERT INTO session_participants (session_id, user_id, role) VALUES ($1, $2, 'moderator')`,
+      [sessionId, hostId],
+    );
+
+    // Seed events: session-created (seq 1) + participant-joined (seq 2)
+    // + 2× node-created (seq 3, 4) + edge-created (seq 5) +
+    // entity-included for the edge (seq 6). After the seed MAX
+    // (sequence)=6 and the propose at seq 7 targets the extant edge.
+    const t0 = '2026-05-11T10:00:00.000Z';
+    const t1 = '2026-05-11T10:00:01.000Z';
+    const t2 = '2026-05-11T10:00:02.000Z';
+    const t3 = '2026-05-11T10:00:03.000Z';
+    const sessionCreatedId = randomUUID();
+    const participantJoinedId = randomUUID();
+    const sourceNodeCreatedId = randomUUID();
+    const targetNodeCreatedId = randomUUID();
+    const edgeCreatedId = randomUUID();
+    const edgeIncludedId = randomUUID();
+
+    await this.db.query(
+      `INSERT INTO session_events
+         (id, session_id, sequence, kind, actor, payload, created_at)
+       VALUES ($1, $2, 1, 'session-created', $3, $4::jsonb, $5)`,
+      [
+        sessionCreatedId,
+        sessionId,
+        hostId,
+        JSON.stringify({
+          host_user_id: hostId,
+          privacy: 'public',
+          topic: `Propose-with-edge test (${hostScreenName})`,
+          created_at: t0,
+        }),
+        t0,
+      ],
+    );
+    await this.db.query(
+      `INSERT INTO session_events
+         (id, session_id, sequence, kind, actor, payload, created_at)
+       VALUES ($1, $2, 2, 'participant-joined', $3, $4::jsonb, $5)`,
+      [
+        participantJoinedId,
+        sessionId,
+        hostId,
+        JSON.stringify({
+          user_id: hostId,
+          role: 'moderator',
+          screen_name: hostScreenName,
+          joined_at: t1,
+        }),
+        t1,
+      ],
+    );
+    await this.db.query(
+      `INSERT INTO session_events
+         (id, session_id, sequence, kind, actor, payload, created_at)
+       VALUES ($1, $2, 3, 'node-created', $3, $4::jsonb, $5)`,
+      [
+        sourceNodeCreatedId,
+        sessionId,
+        hostId,
+        JSON.stringify({
+          node_id: sourceNodeId,
+          wording: 'Source claim for the cucumber set-edge-substance scenario.',
+          created_by: hostId,
+          created_at: t2,
+        }),
+        t2,
+      ],
+    );
+    await this.db.query(
+      `INSERT INTO session_events
+         (id, session_id, sequence, kind, actor, payload, created_at)
+       VALUES ($1, $2, 4, 'node-created', $3, $4::jsonb, $5)`,
+      [
+        targetNodeCreatedId,
+        sessionId,
+        hostId,
+        JSON.stringify({
+          node_id: targetNodeId,
+          wording: 'Target claim for the cucumber set-edge-substance scenario.',
+          created_by: hostId,
+          created_at: t2,
+        }),
+        t2,
+      ],
+    );
+    await this.db.query(
+      `INSERT INTO session_events
+         (id, session_id, sequence, kind, actor, payload, created_at)
+       VALUES ($1, $2, 5, 'edge-created', $3, $4::jsonb, $5)`,
+      [
+        edgeCreatedId,
+        sessionId,
+        hostId,
+        JSON.stringify({
+          edge_id: edgeId,
+          role: 'supports',
+          source_node_id: sourceNodeId,
+          target_node_id: targetNodeId,
+          created_by: hostId,
+          created_at: t2,
+        }),
+        t2,
+      ],
+    );
+    await this.db.query(
+      `INSERT INTO session_events
+         (id, session_id, sequence, kind, actor, payload, created_at)
+       VALUES ($1, $2, 6, 'entity-included', $3, $4::jsonb, $5)`,
+      [
+        edgeIncludedId,
+        sessionId,
+        hostId,
+        JSON.stringify({
+          entity_kind: 'edge',
+          entity_id: edgeId,
+          included_by: hostId,
+          included_at: t3,
+        }),
+        t3,
+      ],
+    );
+  },
+);
+
+// ============================================================
 // Whens — send a propose envelope on the open client.
 // ============================================================
 
@@ -284,6 +455,46 @@ When(
             kind: 'classify-node',
             node_id: targetNodeId,
             classification: 'fact',
+          },
+        },
+      }),
+    );
+  },
+);
+
+// `set-edge-substance` against an EXTANT edge id without endpoint
+// fields — the substance-only re-vote shape. Per
+// `pf_shape_facet_wire_vote` + ADR 0030 §8 the propose-handler
+// sequence gate refuses this proposal while the edge's `shape` facet
+// is not `'agreed'` / `'committed'`. The seeded edge's shape facet is
+// `'proposed'` (inline candidate, no votes); the gate refuses with
+// `facet-sequence-out-of-order` and the connection stays open per
+// ADR 0029.
+When(
+  'the client sends a set-edge-substance propose envelope for session {string} with expectedSequence {int} targeting extant edge {string}',
+  function (
+    this: AConversaWorld,
+    sessionId: string,
+    expectedSequence: number,
+    targetEdgeId: string,
+  ) {
+    const s = scratch(this);
+    const ws = getClient(this);
+    const messageId = randomUUID();
+    s.wsProposeMessageId = messageId;
+    ensureProposeFramesQueue(this);
+
+    ws.send(
+      JSON.stringify({
+        type: 'propose',
+        id: messageId,
+        payload: {
+          sessionId,
+          expectedSequence,
+          proposal: {
+            kind: 'set-edge-substance',
+            edge_id: targetEdgeId,
+            value: 'agreed',
           },
         },
       }),

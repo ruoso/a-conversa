@@ -71,6 +71,7 @@ const NEW_EVENT_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddddd4d';
 const T0 = '2026-05-10T12:00:00Z';
 const T1 = '2026-05-10T12:00:01Z';
 const T2 = '2026-05-10T12:00:02Z';
+const T3 = '2026-05-10T12:00:03Z';
 const T9 = '2026-05-10T12:00:09Z';
 
 function evId(n: number): string {
@@ -174,6 +175,39 @@ function seedDefeaterCapturePreState(): ReturnType<typeof createEmptyProjection>
       target_node_id: TARGET_NODE_ID,
       created_by: DEBATER_B_ID,
       created_at: T2,
+    }),
+  );
+  // Per `pf_shape_facet_wire_vote` + ADR 0030 §8 the propose-handler
+  // sequence gate refuses `set-edge-substance` against an extant edge
+  // whose `shape` facet is not `'agreed'` / `'committed'`. Advance
+  // the rebut edge's shape facet to `'committed'` so F6 step 4's
+  // substance pre-commitment passes the gate. (In the live
+  // methodology F6 step 3 produces the edge; the shape commit lives
+  // between step 3 and step 4 as the participants ratify the
+  // capture's structural shape.)
+  for (const voter of [MODERATOR_ID, DEBATER_A_ID, DEBATER_B_ID]) {
+    applyEvent(
+      projection,
+      makeEvent(nextSequence(projection), 'vote', voter, T3, {
+        target: 'facet' as const,
+        entity_kind: 'edge' as const,
+        entity_id: REBUT_EDGE_ID,
+        facet: 'shape' as const,
+        participant: voter,
+        choice: 'agree' as const,
+        voted_at: T3,
+      }),
+    );
+  }
+  applyEvent(
+    projection,
+    makeEvent(nextSequence(projection), 'commit', MODERATOR_ID, T3, {
+      target: 'facet' as const,
+      entity_kind: 'edge' as const,
+      entity_id: REBUT_EDGE_ID,
+      facet: 'shape' as const,
+      committed_by: MODERATOR_ID,
+      committed_at: T3,
     }),
   );
   return projection;

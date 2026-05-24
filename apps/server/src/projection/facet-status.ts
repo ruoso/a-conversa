@@ -79,14 +79,13 @@ function resolveFacet(
       throw new FacetStatusDerivationError(`edge ${entityId} not present in projection`);
     }
     if (facet === 'substance') return edge.substanceFacet;
-    // Edges carry no `wording` or `classification` facet in v1; the
-    // `shape` facet (role + endpoints) is now a first-class `FacetState`
-    // per ADR 0030 §5 + `pf_projection_facet_status_refactor`. The
-    // `FacetName` union (`'classification' | 'substance' | 'wording'`)
-    // does not currently include `'shape'`; the in-memory edge carries
-    // a `shapeFacet` for the derivation to read but the `FacetName`-
-    // valued call path does not address it until the `FacetName` union
-    // widens (a downstream refactor — out of scope for this task).
+    // Per ADR 0030 §5 + `pf_shape_facet_wire_vote`: the edge `shape`
+    // facet (role + endpoints, inline candidate on `edge-created`) is
+    // now a first-class `FacetName` value alongside `substance`; the
+    // resolver returns the `shapeFacet` state so the seven-rule
+    // derivation runs against it symmetrically.
+    if (facet === 'shape') return edge.shapeFacet;
+    // `wording` / `classification` are not applicable to edges in v1.
     throw new FacetStatusDerivationError(`facet "${facet}" not applicable to edge in v1`);
   }
   if (entityKind === 'annotation') {

@@ -58,11 +58,14 @@ export type EntityKind = z.infer<typeof entityKindSchema>;
  * (`pf_facet_keyed_vote_payload`, `pf_facet_keyed_commit_payload`,
  * `pf_facet_keyed_meta_disagreement_payload`).
  *
- * The shape-facet expansion implied by ADR 0030 §5 is owned by the
- * downstream projection-refactor tasks; this enum is 3-valued at
- * landing and widens later in lockstep with the projection-layer
- * `FacetName`.
+ * The `'shape'` value covers the edge `shape` facet (role + endpoints)
+ * per ADR 0030 §5 — added by `pf_shape_facet_wire_vote` so the wire
+ * vocabulary can carry facet-keyed votes / commits / meta-disagreement
+ * marks / withdraw-agreement payloads targeting an edge's shape, AND
+ * so the propose handler's sequence gate (per ADR 0030 §8) can refuse
+ * `set-edge-substance` against an edge whose `shape` facet is not yet
+ * `'agreed'` / `'committed'`.
  */
-export const facetNameSchema = z.enum(['classification', 'substance', 'wording']);
+export const facetNameSchema = z.enum(['classification', 'substance', 'wording', 'shape']);
 
 export type FacetName = z.infer<typeof facetNameSchema>;

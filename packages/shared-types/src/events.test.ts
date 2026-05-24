@@ -621,6 +621,23 @@ describe('vote payload schema — facet-keyed arm', () => {
     expect(result.success).toBe(true);
   });
 
+  it('round-trips a shape-facet vote against an edge (per pf_shape_facet_wire_vote)', () => {
+    // Per ADR 0030 §5 + `pf_shape_facet_wire_vote` the wire vote
+    // payload accepts `facet: 'shape'` against an edge — that's the
+    // path facet-keyed votes flow through to the projection's
+    // `shapeFacet.perParticipant` map and feed the propose handler's
+    // `set-edge-substance` sequence gate.
+    const shapeVote = {
+      ...valid,
+      entity_kind: 'edge' as const,
+      entity_id: EDGE_ID,
+      facet: 'shape' as const,
+    };
+    const parsed = votePayloadSchema.parse(shapeVote);
+    const wire = JSON.parse(JSON.stringify(parsed)) as unknown;
+    expect(votePayloadSchema.parse(wire)).toEqual(shapeVote);
+  });
+
   it("rejects 'annotation' as entity_kind on the facet arm", () => {
     const result = votePayloadSchema.safeParse({ ...valid, entity_kind: 'annotation' });
     expect(result.success).toBe(false);
@@ -856,6 +873,22 @@ describe('commit payload schema — facet-keyed arm', () => {
     expect(result.success).toBe(true);
   });
 
+  it('round-trips a shape-facet commit against an edge (per pf_shape_facet_wire_vote)', () => {
+    // Per ADR 0030 §5 + `pf_shape_facet_wire_vote`: the moderator
+    // commits the edge's `shape` facet once it's `'agreed'`, gating
+    // the `set-edge-substance` arm of the propose-handler sequence
+    // gate (ADR 0030 §8) downstream.
+    const shapeCommit = {
+      ...valid,
+      entity_kind: 'edge' as const,
+      entity_id: EDGE_ID,
+      facet: 'shape' as const,
+    };
+    const parsed = commitPayloadSchema.parse(shapeCommit);
+    const wire = JSON.parse(JSON.stringify(parsed)) as unknown;
+    expect(commitPayloadSchema.parse(wire)).toEqual(shapeCommit);
+  });
+
   it("rejects 'annotation' as entity_kind on the facet arm", () => {
     const result = commitPayloadSchema.safeParse({ ...valid, entity_kind: 'annotation' });
     expect(result.success).toBe(false);
@@ -1072,6 +1105,21 @@ describe('meta-disagreement-marked payload schema — facet-keyed arm', () => {
       facet: 'substance',
     });
     expect(result.success).toBe(true);
+  });
+
+  it('round-trips a shape-facet meta-disagreement mark against an edge (per pf_shape_facet_wire_vote)', () => {
+    // Per ADR 0030 §5 + `pf_shape_facet_wire_vote`: a moderator may
+    // mark `(edge, 'shape')` as meta-disagreement when the shape
+    // dispute is exhausted, mirroring the three pre-existing facets.
+    const shapeMark = {
+      ...valid,
+      entity_kind: 'edge' as const,
+      entity_id: EDGE_ID,
+      facet: 'shape' as const,
+    };
+    const parsed = metaDisagreementMarkedPayloadSchema.parse(shapeMark);
+    const wire = JSON.parse(JSON.stringify(parsed)) as unknown;
+    expect(metaDisagreementMarkedPayloadSchema.parse(wire)).toEqual(shapeMark);
   });
 
   it("rejects 'annotation' as entity_kind on the facet arm", () => {
@@ -1516,8 +1564,24 @@ describe('withdraw-agreement payload schema', () => {
     expect(result.success).toBe(false);
   });
 
+  it('accepts shape as a facet value (per pf_shape_facet_wire_vote)', () => {
+    // Per ADR 0030 §5 + `pf_shape_facet_wire_vote` the wire-level
+    // `facetNameSchema` carries `'shape'`; a participant who agreed
+    // on an edge's shape and committed it can withdraw that
+    // agreement via this envelope kind symmetrically with the three
+    // pre-existing facets. The edge case below uses an `edge`
+    // entity_kind to match the methodology — shape is edge-keyed.
+    const result = withdrawAgreementPayloadSchema.safeParse({
+      ...valid,
+      entity_kind: 'edge',
+      entity_id: EDGE_ID,
+      facet: 'shape',
+    });
+    expect(result.success).toBe(true);
+  });
+
   it('rejects an unknown facet value', () => {
-    const result = withdrawAgreementPayloadSchema.safeParse({ ...valid, facet: 'shape' });
+    const result = withdrawAgreementPayloadSchema.safeParse({ ...valid, facet: 'role' });
     expect(result.success).toBe(false);
   });
 
@@ -1562,14 +1626,19 @@ describe('withdraw-agreement payload schema', () => {
 });
 
 describe('facetNameSchema (Zod enum mirror of FacetName)', () => {
-  it('accepts the three v1 facet values', () => {
-    for (const facet of ['classification', 'substance', 'wording'] as const) {
+  it('accepts the four facet values (per pf_shape_facet_wire_vote)', () => {
+    // Per ADR 0030 §5 + `pf_shape_facet_wire_vote` the wire vocabulary
+    // includes `'shape'` (the edge `shape` facet — role + endpoints)
+    // alongside the three pre-existing facets so vote / commit /
+    // meta-disagreement / withdraw-agreement payloads can target edge
+    // shapes symmetrically.
+    for (const facet of ['classification', 'substance', 'wording', 'shape'] as const) {
       expect(facetNameSchema.safeParse(facet).success).toBe(true);
     }
   });
 
   it('rejects values outside the v1 facet vocabulary', () => {
-    for (const facet of ['shape', 'role', 'content', '', null, 42]) {
+    for (const facet of ['role', 'content', 'kind', '', null, 42]) {
       expect(facetNameSchema.safeParse(facet).success).toBe(false);
     }
   });

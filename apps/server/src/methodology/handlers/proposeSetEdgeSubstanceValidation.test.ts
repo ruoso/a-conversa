@@ -170,9 +170,14 @@ function seedSession(): ReturnType<typeof createEmptyProjection> {
   return projection;
 }
 
-// Extend the seed with an extant edge `supports`(source → target). Used
-// by the agreement-with-existing-edge cases and the happy-path
-// substance-only re-vote.
+// Extend the seed with an extant edge `supports`(source → target),
+// then vote-agree + commit the edge's `shape` facet on behalf of all
+// three current participants so the propose-handler sequence gate
+// (per `pf_shape_facet_wire_vote` + ADR 0030 §8) accepts
+// `set-edge-substance` proposals against this edge. The substance-only
+// re-vote / agreement-with-existing-edge cases below pin the per-sub-
+// kind validator's rules; without the shape commit the gate would
+// short-circuit those rules with `'facet-sequence-out-of-order'`.
 function seedSessionWithExtantEdge(): ReturnType<typeof createEmptyProjection> {
   const projection = seedSession();
   applyEvent(
@@ -193,6 +198,34 @@ function seedSessionWithExtantEdge(): ReturnType<typeof createEmptyProjection> {
       entity_id: EXTANT_EDGE_ID,
       included_by: DEBATER_A_ID,
       included_at: T2,
+    }),
+  );
+  // Advance the edge's shape facet to `'committed'` so the gate
+  // accepts. Each current participant (moderator + both debaters)
+  // votes agree on `(edge, 'shape')`, then the moderator commits.
+  for (const voter of [MODERATOR_ID, DEBATER_A_ID, DEBATER_B_ID]) {
+    applyEvent(
+      projection,
+      makeEvent(nextSequence(projection), 'vote', voter, T3, {
+        target: 'facet' as const,
+        entity_kind: 'edge' as const,
+        entity_id: EXTANT_EDGE_ID,
+        facet: 'shape' as const,
+        participant: voter,
+        choice: 'agree' as const,
+        voted_at: T3,
+      }),
+    );
+  }
+  applyEvent(
+    projection,
+    makeEvent(nextSequence(projection), 'commit', MODERATOR_ID, T3, {
+      target: 'facet' as const,
+      entity_kind: 'edge' as const,
+      entity_id: EXTANT_EDGE_ID,
+      facet: 'shape' as const,
+      committed_by: MODERATOR_ID,
+      committed_at: T3,
     }),
   );
   return projection;

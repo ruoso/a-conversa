@@ -152,6 +152,14 @@ function deriveOwnFacetVotes(
       let facet: FacetName | undefined;
       if (event.payload.target === 'facet') {
         if (event.payload.entity_id !== entityId) continue;
+        // Per `pf_shape_facet_wire_vote` the wire-level `FacetName`
+        // includes `'shape'`; the participant detail panel does not
+        // surface a shape-facet row today (the local `FacetName`
+        // mirror stays 3-valued — see `apps/participant/src/graph/facetStatus.ts`),
+        // so shape-facet votes are skipped here. A future
+        // `pf_part_detail_panel_shape_facet_row` task closes the
+        // guard.
+        if (event.payload.facet === 'shape') continue;
         facet = event.payload.facet;
       } else {
         facet = proposalTarget.get(event.payload.proposal_id);

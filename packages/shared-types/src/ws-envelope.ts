@@ -1108,11 +1108,13 @@ export const wsWithdrawAgreementPayloadSchema = z.object({
   entity_kind: z.enum(['node', 'edge']),
   entity_id: z.string().uuid(),
   // Mirrors `facetNameSchema` from `./events/enums.ts` — the wire
-  // enum matches the projection-layer `FacetName` (the 3 facets that
-  // a participant can vote on today). When `facetNameSchema` widens
-  // downstream (e.g. to include `'shape'` per ADR 0030 §5), this
-  // enum widens in lockstep with the projection-layer type.
-  facet: z.enum(['classification', 'substance', 'wording']),
+  // enum matches the projection-layer `FacetName`. Per ADR 0030 §5 +
+  // `pf_shape_facet_wire_vote` the `'shape'` value covers the edge
+  // shape facet (role + endpoints), so a participant who agreed on an
+  // edge's shape and committed it can withdraw that agreement via
+  // this envelope kind symmetrically with `classification` /
+  // `substance` / `wording`.
+  facet: z.enum(['classification', 'substance', 'wording', 'shape']),
   participant: z.string().uuid(),
 });
 

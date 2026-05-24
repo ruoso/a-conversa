@@ -57,6 +57,7 @@ const NEW_EVENT_ID = 'dddddddd-dddd-4ddd-8ddd-ddddddee1ddd';
 const T0 = '2026-05-10T12:00:00Z';
 const T1 = '2026-05-10T12:00:01Z';
 const T2 = '2026-05-10T12:00:02Z';
+const T3 = '2026-05-10T12:00:03Z';
 const T9 = '2026-05-10T12:00:09Z';
 
 function evId(n: number): string {
@@ -171,12 +172,16 @@ function seedConnectingEdgePreState(): ReturnType<typeof createEmptyProjection> 
 
 // Seed a pre-state where an extant edge already exists — for the
 // substance-only / re-vote shape (mirrors `proposeDefeaterPreCommit`'s
-// seed but with simpler labels).
+// seed but with simpler labels). Per `pf_shape_facet_wire_vote` + ADR
+// 0030 §8 the propose-handler sequence gate refuses
+// `set-edge-substance` against an edge whose `shape` facet is not
+// `'agreed'` / `'committed'`; the substance-only re-vote cases below
+// need the shape committed so the gate accepts.
 function seedExtantEdgePreState(): ReturnType<typeof createEmptyProjection> {
   const projection = seedConnectingEdgePreState();
   applyEvent(
     projection,
-    makeEvent(9, 'edge-created', DEBATER_A_ID, T2, {
+    makeEvent(nextSequence(projection), 'edge-created', DEBATER_A_ID, T2, {
       edge_id: EXTANT_EDGE_ID,
       role: 'supports',
       source_node_id: SOURCE_NODE_ID,
@@ -187,11 +192,40 @@ function seedExtantEdgePreState(): ReturnType<typeof createEmptyProjection> {
   );
   applyEvent(
     projection,
-    makeEvent(10, 'entity-included', DEBATER_A_ID, T2, {
+    makeEvent(nextSequence(projection), 'entity-included', DEBATER_A_ID, T2, {
       entity_kind: 'edge',
       entity_id: EXTANT_EDGE_ID,
       included_by: DEBATER_A_ID,
       included_at: T2,
+    }),
+  );
+  // Advance the edge's shape facet to `'committed'`: each current
+  // participant votes agree on `(edge, 'shape')`, then the moderator
+  // commits. Mirrors `seedSessionWithExtantEdge` in
+  // `proposeSetEdgeSubstanceValidation.test.ts`.
+  for (const voter of [MODERATOR_ID, DEBATER_A_ID, DEBATER_B_ID]) {
+    applyEvent(
+      projection,
+      makeEvent(nextSequence(projection), 'vote', voter, T3, {
+        target: 'facet' as const,
+        entity_kind: 'edge' as const,
+        entity_id: EXTANT_EDGE_ID,
+        facet: 'shape' as const,
+        participant: voter,
+        choice: 'agree' as const,
+        voted_at: T3,
+      }),
+    );
+  }
+  applyEvent(
+    projection,
+    makeEvent(nextSequence(projection), 'commit', MODERATOR_ID, T3, {
+      target: 'facet' as const,
+      entity_kind: 'edge' as const,
+      entity_id: EXTANT_EDGE_ID,
+      facet: 'shape' as const,
+      committed_by: MODERATOR_ID,
+      committed_at: T3,
     }),
   );
   return projection;

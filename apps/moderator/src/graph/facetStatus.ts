@@ -294,6 +294,15 @@ export function computeFacetStatuses(events: readonly Event[]): FacetStatusIndex
       // matching facet's `withdrawals` set; the derivation surfaces
       // `'withdrawn'` when the withdrawal lands on a committed
       // candidate.
+      //
+      // Per ADR 0030 §5 + `pf_shape_facet_wire_vote` the wire-level
+      // `FacetName` widened to include `'shape'`; the moderator card
+      // does not surface a shape-facet pill (the local `FacetName`
+      // mirror at this file stays 3-valued), so a shape-facet
+      // withdraw-agreement is skipped at the projection layer here.
+      // A future card-layer task that introduces a shape-facet pill
+      // closes this guard.
+      if (event.payload.facet === 'shape') continue;
       const state = getOrCreateFacetState(
         nodeStates,
         edgeStates,
@@ -399,6 +408,10 @@ export function computeFacetStatuses(events: readonly Event[]): FacetStatusIndex
       // resolves to the facet via the proposal-id → target map. Both
       // arms write to the same per-facet `perParticipant` map.
       if (event.payload.target === 'facet') {
+        // Shape-facet votes skipped at the moderator card layer (see
+        // the `withdraw-agreement` arm above for the `'shape'` skip
+        // rationale).
+        if (event.payload.facet === 'shape') continue;
         const state = getOrCreateFacetState(
           nodeStates,
           edgeStates,
@@ -434,6 +447,10 @@ export function computeFacetStatuses(events: readonly Event[]): FacetStatusIndex
       // → target map. Both arms flip the per-facet `committed` flag
       // the derivation reads.
       if (event.payload.target === 'facet') {
+        // Shape-facet commits skipped at the moderator card layer
+        // (see the `withdraw-agreement` arm above for the `'shape'`
+        // skip rationale).
+        if (event.payload.facet === 'shape') continue;
         const state = getOrCreateFacetState(
           nodeStates,
           edgeStates,
@@ -466,6 +483,10 @@ export function computeFacetStatuses(events: readonly Event[]): FacetStatusIndex
       // → target map. Both arms flip the per-facet `metaDisagreement`
       // flag the derivation reads.
       if (event.payload.target === 'facet') {
+        // Shape-facet marks skipped at the moderator card layer (see
+        // the `withdraw-agreement` arm above for the `'shape'` skip
+        // rationale).
+        if (event.payload.facet === 'shape') continue;
         const state = getOrCreateFacetState(
           nodeStates,
           edgeStates,

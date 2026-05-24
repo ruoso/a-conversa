@@ -322,7 +322,17 @@ export interface UnresolvedMetaDisagreement {
 // kind.
 // ---------------------------------------------------------------
 
-export type FacetName = 'classification' | 'substance' | 'wording';
+// Per ADR 0030 §5 + `pf_shape_facet_wire_vote`: the `'shape'` facet
+// (edge role + endpoints, inline candidate on `edge-created`) joins
+// the three pre-existing facets so the per-facet keying applies
+// symmetrically to edges. The widening is mirrored on the wire by
+// `facetNameSchema` in `packages/shared-types/src/events/enums.ts`
+// (the two must stay in lockstep). Consumers with an exhaustive
+// `switch` over `FacetName` close the `'shape'` arm in lock-step;
+// the relevant facet-resolution helpers (`facetStateForTarget`,
+// `resolveFacet`, `lookupFacetState`) gain an `edge.shapeFacet` arm
+// alongside the existing `edge.substanceFacet` arm.
+export type FacetName = 'classification' | 'substance' | 'wording' | 'shape';
 
 export type ChangeEntityKind = 'node' | 'edge' | 'annotation';
 

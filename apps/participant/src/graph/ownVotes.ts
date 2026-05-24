@@ -227,6 +227,12 @@ export function projectOwnVotes(
       let entityId: string;
       let facet: FacetName;
       if (event.payload.target === 'facet') {
+        // Per `pf_shape_facet_wire_vote` the wire-level `FacetName`
+        // includes `'shape'`; the participant own-votes index is
+        // keyed by the local 3-valued `FacetName`, so shape-facet
+        // votes are skipped here (no per-edge shape pill exists at
+        // the participant card layer today).
+        if (event.payload.facet === 'shape') continue;
         entityKind = event.payload.entity_kind;
         entityId = event.payload.entity_id;
         facet = event.payload.facet;

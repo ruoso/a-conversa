@@ -570,6 +570,11 @@ function facetStateForTarget(
     const edge = projection.getEdge(target.entityId);
     if (!edge) return null;
     if (target.facet === 'substance') return edge.substanceFacet;
+    // Per ADR 0030 §5 + `pf_shape_facet_wire_vote`: the edge `shape`
+    // facet is a first-class `FacetName` value; facet-keyed votes /
+    // commits / meta-disagreement marks / withdrawals targeting the
+    // edge's shape resolve to `shapeFacet` here.
+    if (target.facet === 'shape') return edge.shapeFacet;
     return null;
   }
   if (target.entityKind === 'annotation') {

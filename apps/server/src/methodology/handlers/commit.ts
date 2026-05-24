@@ -149,6 +149,13 @@ function facetStateForTarget(
     const edge = projection.getEdge(target.entityId);
     if (!edge) return null;
     if (target.facet === 'substance') return edge.substanceFacet;
+    // Per ADR 0030 §5 + `pf_shape_facet_wire_vote`: a facet-keyed
+    // commit may target the edge's `shape` facet (no proposal sub-kind
+    // produces a shape candidate in v1, so this arm is reachable only
+    // via direct facet-keyed commit envelopes — the per-sub-kind
+    // commit dispatch via `facetTargetForProposal` returns `null` for
+    // shape-targeting commits because no proposal kind names shape).
+    if (target.facet === 'shape') return edge.shapeFacet;
     return null;
   }
   if (target.entityKind === 'annotation') {

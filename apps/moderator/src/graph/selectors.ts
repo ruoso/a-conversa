@@ -734,6 +734,12 @@ export function projectVotesByFacet(events: readonly Event[]): Map<string, Map<F
       let entityId: string;
       let facet: FacetName;
       if (event.payload.target === 'facet') {
+        // Per `pf_shape_facet_wire_vote` the wire-level `FacetName`
+        // includes `'shape'`; the moderator card layer does not
+        // surface a shape-facet pill (the local `FacetName` mirror
+        // stays 3-valued), so shape-facet votes are skipped here. A
+        // future card-layer task closes the guard.
+        if (event.payload.facet === 'shape') continue;
         entityId = event.payload.entity_id;
         facet = event.payload.facet;
       } else {

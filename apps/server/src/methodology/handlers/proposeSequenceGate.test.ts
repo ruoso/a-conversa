@@ -13,11 +13,13 @@
 //     is not `'agreed'` / `'committed'`.
 //   - `set-node-substance` refused while the target node's
 //     `classification` facet is not `'agreed'` / `'committed'`.
-//   - `set-edge-substance` against an extant edge — v1 deferral
-//     (TODO(pf_shape_facet_wire_vote)); the shape-facet gate is
-//     not yet enforced because `facetNameSchema` does not include
-//     `'shape'`. Once the wire vocabulary widens, the gate
-//     activates against the edge's shape facet.
+//   - `set-edge-substance` against an extant edge refused while the
+//     edge's `shape` facet is not `'agreed'` / `'committed'` (per
+//     `pf_shape_facet_wire_vote` + ADR 0030 §8). The fresh-edge case
+//     (`getEdge === undefined`) stays exempt — the connecting-capture
+//     gesture establishes shape AT propose-time on the entity-layer
+//     carriage, mirroring the classify-node-with-wording legacy
+//     bundle exemption above.
 //
 // Each gated arm is tested across the seven non-accepting predecessor
 // statuses (`proposed`, `disputed`, `awaiting-proposal`, `withdrawn`,
@@ -292,6 +294,90 @@ function seedSessionWithClassificationProposed(): ReturnType<typeof createEmptyP
 // surfaces via a `null` `candidateValue`.)
 void WORDING_PROPOSAL_ID;
 
+// Seed a session with three participants, two visible nodes
+// (NODE_ID_1 + TARGET_NODE_ID), and one extant edge (EXTANT_EDGE_ID,
+// supports: NODE_ID_1 → TARGET_NODE_ID). The edge's shape facet is
+// `'proposed'` (inline candidate from `edge-created`, no votes); per
+// `pf_shape_facet_wire_vote` + ADR 0030 §8 the propose-handler
+// sequence gate refuses `set-edge-substance` against this edge until
+// the shape facet advances to `'agreed'` / `'committed'`.
+function seedSessionWithExtantEdgeShapeProposed(): ReturnType<typeof createEmptyProjection> {
+  const projection = seedSessionWithFreshNode();
+  applyEvent(
+    projection,
+    makeEvent(nextSequence(projection), 'node-created', DEBATER_B_ID, T2, {
+      node_id: TARGET_NODE_ID,
+      wording: 'Target of the edge.',
+      created_by: DEBATER_B_ID,
+      created_at: T2,
+    }),
+  );
+  applyEvent(
+    projection,
+    makeEvent(nextSequence(projection), 'entity-included', DEBATER_B_ID, T2, {
+      entity_kind: 'node',
+      entity_id: TARGET_NODE_ID,
+      included_by: DEBATER_B_ID,
+      included_at: T2,
+    }),
+  );
+  applyEvent(
+    projection,
+    makeEvent(nextSequence(projection), 'edge-created', DEBATER_A_ID, T2, {
+      edge_id: EXTANT_EDGE_ID,
+      role: 'supports',
+      source_node_id: NODE_ID_1,
+      target_node_id: TARGET_NODE_ID,
+      created_by: DEBATER_A_ID,
+      created_at: T2,
+    }),
+  );
+  applyEvent(
+    projection,
+    makeEvent(nextSequence(projection), 'entity-included', DEBATER_A_ID, T2, {
+      entity_kind: 'edge',
+      entity_id: EXTANT_EDGE_ID,
+      included_by: DEBATER_A_ID,
+      included_at: T2,
+    }),
+  );
+  return projection;
+}
+
+// Extend `seedSessionWithExtantEdgeShapeProposed` with the three
+// participants voting agree on `(edge, 'shape')` + a moderator commit;
+// the shape facet derives to `'committed'` (Rule 6), so the gate
+// accepts a subsequent `set-edge-substance` against this edge.
+function seedSessionWithExtantEdgeShapeCommitted(): ReturnType<typeof createEmptyProjection> {
+  const projection = seedSessionWithExtantEdgeShapeProposed();
+  for (const voter of [MODERATOR_ID, DEBATER_A_ID, DEBATER_B_ID]) {
+    applyEvent(
+      projection,
+      makeEvent(nextSequence(projection), 'vote', voter, T3, {
+        target: 'facet' as const,
+        entity_kind: 'edge' as const,
+        entity_id: EXTANT_EDGE_ID,
+        facet: 'shape' as const,
+        participant: voter,
+        choice: 'agree' as const,
+        voted_at: T3,
+      }),
+    );
+  }
+  applyEvent(
+    projection,
+    makeEvent(nextSequence(projection), 'commit', MODERATOR_ID, T4, {
+      target: 'facet' as const,
+      entity_kind: 'edge' as const,
+      entity_id: EXTANT_EDGE_ID,
+      facet: 'shape' as const,
+      committed_by: MODERATOR_ID,
+      committed_at: T4,
+    }),
+  );
+  return projection;
+}
+
 // ---------------------------------------------------------------
 // classify-node — wording-facet gate.
 // ---------------------------------------------------------------
@@ -494,23 +580,19 @@ describe('propose set-node-substance — sequence gate against classification fa
 });
 
 // ---------------------------------------------------------------
-// set-edge-substance — v1 shape-facet gate is DEFERRED.
+// set-edge-substance — shape-facet gate (per pf_shape_facet_wire_vote
+// + ADR 0030 §8).
 //
-// **TODO(pf_shape_facet_wire_vote)** per the gate's deferral comment
-// in `propose.ts`. In v1 the wire-level `facetNameSchema` does not
-// include `'shape'`, so the gate as ADR 0030 §8 specifies it would
-// lock out every `set-edge-substance` against an extant edge (the
-// shape facet is unreachable from `'agreed'` / `'committed'` without
-// a vote path). The fresh-edge case (`getEdge === undefined`) is the
-// only path that produces an `edge-created` event in v1; for that
-// case the gate exempts the legacy connecting-bundle (shape is
-// established AT propose-time on the entity-layer carriage). The
-// substance-only re-vote against an extant edge remains accepted at
-// the gate layer; the per-sub-kind referential rules (in
-// `validateSetEdgeSubstanceProposal`) still defend the call site.
+// The fresh-edge case (`getEdge === undefined`) is exempt — the
+// connecting-capture gesture establishes shape AT propose-time on the
+// entity-layer carriage, mirroring the classify-node-with-wording
+// legacy bundle exemption. Against an extant edge the gate refuses
+// the proposal while the edge's `shape` facet is not `'agreed'` /
+// `'committed'`; the F6 defeater-capture path operates against a
+// committed shape and therefore passes the gate.
 // ---------------------------------------------------------------
 
-describe('propose set-edge-substance — sequence gate (v1 shape-facet deferral)', () => {
+describe('propose set-edge-substance — sequence gate against shape facet', () => {
   it('accepts the connecting case (fresh edge — getEdge undefined) — exempted from the gate', () => {
     const p = seedSessionWithFreshNode();
     // Mint a second node so the edge has source + target.
@@ -564,51 +646,8 @@ describe('propose set-edge-substance — sequence gate (v1 shape-facet deferral)
     }
   });
 
-  it('accepts a substance-only re-vote against an extant edge (gate deferred for v1)', () => {
-    const p = seedSessionWithFreshNode();
-    // Mint a second node and the edge.
-    applyEvent(
-      p,
-      makeEvent(nextSequence(p), 'node-created', DEBATER_B_ID, T2, {
-        node_id: TARGET_NODE_ID,
-        wording: 'Target of the edge.',
-        created_by: DEBATER_B_ID,
-        created_at: T2,
-      }),
-    );
-    applyEvent(
-      p,
-      makeEvent(nextSequence(p), 'entity-included', DEBATER_B_ID, T2, {
-        entity_kind: 'node',
-        entity_id: TARGET_NODE_ID,
-        included_by: DEBATER_B_ID,
-        included_at: T2,
-      }),
-    );
-    applyEvent(
-      p,
-      makeEvent(nextSequence(p), 'edge-created', DEBATER_A_ID, T2, {
-        edge_id: EXTANT_EDGE_ID,
-        role: 'supports',
-        source_node_id: NODE_ID_1,
-        target_node_id: TARGET_NODE_ID,
-        created_by: DEBATER_A_ID,
-        created_at: T2,
-      }),
-    );
-    applyEvent(
-      p,
-      makeEvent(nextSequence(p), 'entity-included', DEBATER_A_ID, T2, {
-        entity_kind: 'edge',
-        entity_id: EXTANT_EDGE_ID,
-        included_by: DEBATER_A_ID,
-        included_at: T2,
-      }),
-    );
-    // The extant edge's shape facet is `'proposed'` (inline candidate,
-    // no votes). The v1 gate deferral keeps this substance-only
-    // re-vote accepted; once `pf_shape_facet_wire_vote` lands and
-    // the gate tightens, this scenario flips to a refused arm.
+  it('refuses with facet-sequence-out-of-order against an extant edge whose shape is proposed (inline candidate, no votes)', () => {
+    const p = seedSessionWithExtantEdgeShapeProposed();
     const action: ProposeAction = {
       kind: 'propose',
       requester: DEBATER_A_ID,
@@ -621,6 +660,32 @@ describe('propose set-edge-substance — sequence gate (v1 shape-facet deferral)
         kind: 'set-edge-substance',
         edge_id: EXTANT_EDGE_ID,
         value: 'disputed',
+      },
+    };
+    const r = validateAction(p, action);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.reason).toBe('facet-sequence-out-of-order');
+      expect(r.detail).toContain(EXTANT_EDGE_ID);
+      expect(r.detail).toContain('shape');
+      expect(r.detail).toContain("'proposed'");
+    }
+  });
+
+  it('accepts the substance-only re-vote once the edge shape facet is committed (canonical F6 path)', () => {
+    const p = seedSessionWithExtantEdgeShapeCommitted();
+    const action: ProposeAction = {
+      kind: 'propose',
+      requester: DEBATER_A_ID,
+      sessionId: SESSION_ID,
+      eventId: NEW_EVENT_ID,
+      sequence: nextSequence(p),
+      actor: DEBATER_A_ID,
+      createdAt: T9,
+      proposal: {
+        kind: 'set-edge-substance',
+        edge_id: EXTANT_EDGE_ID,
+        value: 'agreed',
       },
     };
     const r = validateAction(p, action);

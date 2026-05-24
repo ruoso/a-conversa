@@ -257,6 +257,14 @@ export function derivePendingFacetProposals(
       if (event.payload.target === 'proposal') {
         closedProposalIds.add(event.payload.proposal_id);
       } else if (event.payload.entity_kind === entityKind && event.payload.entity_id === entityId) {
+        // Per `pf_shape_facet_wire_vote` the wire-level `FacetName`
+        // includes `'shape'`; the participant's lifecycle map
+        // (`proposalIdByFacet`) is keyed by `LifecycleFacetName`
+        // (the local 3-valued `FacetName` + the `'proposal'`
+        // sentinel) and has no entry for shape today, so a
+        // shape-facet commit cannot close a structural proposal
+        // tracked here — skip it.
+        if (event.payload.facet === 'shape') continue;
         const proposalId = proposalIdByFacet.get(event.payload.facet);
         if (proposalId !== undefined) closedProposalIds.add(proposalId);
       }
@@ -273,6 +281,10 @@ export function derivePendingFacetProposals(
       if (event.payload.target === 'proposal') {
         closedProposalIds.add(event.payload.proposal_id);
       } else if (event.payload.entity_kind === entityKind && event.payload.entity_id === entityId) {
+        // Shape-facet marks skipped (mirrors the commit arm above —
+        // the lifecycle map has no shape entry today, so the mark
+        // cannot close anything tracked here).
+        if (event.payload.facet === 'shape') continue;
         const proposalId = proposalIdByFacet.get(event.payload.facet);
         if (proposalId !== undefined) closedProposalIds.add(proposalId);
       }

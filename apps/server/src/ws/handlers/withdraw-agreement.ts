@@ -403,7 +403,7 @@ function lookupFacetState(
   projection: ReturnType<typeof projectFromLog>,
   entityKind: 'node' | 'edge',
   entityId: string,
-  facet: 'classification' | 'substance' | 'wording',
+  facet: 'classification' | 'substance' | 'wording' | 'shape',
 ): {
   committedAt: string | null;
   perParticipant: Map<string, { vote: 'agree' | 'dispute' | 'withdraw' }>;
@@ -414,18 +414,21 @@ function lookupFacetState(
     if (facet === 'classification') return node.classificationFacet;
     if (facet === 'substance') return node.substanceFacet;
     if (facet === 'wording') return node.wordingFacet;
+    // `'shape'` is not applicable to nodes — falls through to `null`
+    // (surfaces as `target-entity-not-found` at the handler).
     return null;
   }
   // entityKind === 'edge'
   const edge = projection.getEdge(entityId);
   if (!edge) return null;
   if (facet === 'substance') return edge.substanceFacet;
-  // 'classification' / 'wording' are not applicable to edges in v1;
-  // returning `null` surfaces as `target-entity-not-found` at the
-  // handler. Per ADR 0030 §5, edge `shape` is a facet but it lives
-  // inline and isn't part of the wire-level `facetNameSchema` yet
-  // (the projection-layer `FacetName` only carries the 3 voteable
-  // facets); when that widens, this lookup widens in lockstep.
+  // Per ADR 0030 §5 + `pf_shape_facet_wire_vote`: the edge `shape`
+  // facet is a first-class wire-level `FacetName` value; a
+  // withdraw-agreement targeting `(edge, 'shape')` resolves to the
+  // `shapeFacet` state here. `'classification'` / `'wording'` remain
+  // not applicable to edges in v1; returning `null` surfaces as
+  // `target-entity-not-found` at the handler.
+  if (facet === 'shape') return edge.shapeFacet;
   return null;
 }
 

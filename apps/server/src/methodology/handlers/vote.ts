@@ -120,6 +120,12 @@ function facetStateForTarget(
   const edge = projection.getEdge(target.entityId);
   if (!edge) return null;
   if (target.facet === 'substance') return edge.substanceFacet;
+  // Per ADR 0030 §5 + `pf_shape_facet_wire_vote`: facet-keyed votes
+  // may target the edge's `shape` facet directly (no v1 proposal
+  // sub-kind produces a shape candidate via the proposal layer, but
+  // wire-level vote envelopes targeting `(edge, 'shape')` are now
+  // first-class and resolve to the edge's `shapeFacet`).
+  if (target.facet === 'shape') return edge.shapeFacet;
   return null;
 }
 

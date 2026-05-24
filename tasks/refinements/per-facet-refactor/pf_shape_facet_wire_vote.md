@@ -59,4 +59,12 @@ This task closes the loop: widen the enum, then activate the gate against the no
 
 ## Status
 
-_pending implementation_
+**Done** — 2026-05-24.
+
+- `facetNameSchema` in `packages/shared-types/src/events/enums.ts` widened from 3-valued to 4-valued: `['classification', 'substance', 'wording', 'shape']`. The projection-layer `FacetName` mirror in `apps/server/src/projection/types.ts` follows; downstream exhaustive switches over `FacetName` (resolveFacet, facetStateForTarget, lookupFacetState) handle `'shape'` via `edge.shapeFacet`.
+- `set-edge-substance` arm of the propose-handler sequence gate activated symmetrically with the classification / wording arms: refuses when the target edge's `shape` facet is not `'agreed'` / `'committed'`, with the existing `'facet-sequence-out-of-order'` rejection code (no new `RejectionReason`; predecessor-facet name in the message is `'shape'`). The `TODO(pf_shape_facet_wire_vote)` marker in `apps/server/src/methodology/handlers/propose.ts` is gone.
+- Every facet-keyed resolver (vote / commit / meta-disagreement-marked / withdraw-agreement) handles the edge shape facet via `edge.shapeFacet`. Round-trip tests for all four envelope kinds with `facet: 'shape'` added in `packages/shared-types/src/events.test.ts`.
+- New Vitest case in `apps/server/src/methodology/handlers/proposeSequenceGate.test.ts` pins the shape-arm refuse + accept-after-shape-commit paths; three additional propose-handler test files updated for the shape-commit prerequisite in their seeds.
+- New Cucumber scenario in `tests/behavior/backend/ws-propose.feature` (+ steps) pins the wire-level shape arm round (reject `set-edge-substance` against `'proposed'` shape; accept once shape `'committed'`).
+- Client UI mirrors in `apps/{participant,moderator}` (graph selectors, EntityDetailPanel, ParticipantVoteButtons, facetStatus mirrors, otherVotes / ownVotes) defensively skip `'shape'` for now — per-card edge-shape voting surfaces land in `pf_part_detail_panel_three_facet_rows` and the moderator node-card tasks downstream.
+- Vitest 4345 → 4350 (+5); Cucumber 261 → 262 scenarios (+1), 1794 → 1803 steps (+9); Playwright 107 unchanged. All four suite gates green; methodology-full-flow stays green (no F6 defeater-capture regression).

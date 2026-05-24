@@ -124,6 +124,7 @@ task per_facet_refactor "Per-facet refactor (ADR 0030)" {
     task pf_shape_facet_wire_vote "Add 'shape' to facetNameSchema; wire edge-shape facet voting + tighten set-edge-substance sequence gate" {
       effort 0.5d
       allocate team
+      complete 100
       depends !pf_sequence_gate_server_enforced, !pf_vote_handler_facet_keyed
       note "Refinement: tasks/refinements/per-facet-refactor/pf_shape_facet_wire_vote.md"
     }
