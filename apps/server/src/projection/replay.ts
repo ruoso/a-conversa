@@ -587,25 +587,61 @@ function handleVote(
   payload: VotePayload,
   changes: ProjectionChange[],
 ): void {
-  // TODO(pf_vote_handler_facet_keyed): per ADR 0030 §2 the vote
-  // payload is now a `target`-discriminated union (facet-keyed vs.
-  // proposal-keyed). The methodology engine's vote handler currently
-  // emits ALL votes on the proposal-keyed arm (see
-  // `apps/server/src/methodology/handlers/vote.ts`'s matching TODO);
-  // until the downstream task lands, this projection handler only
-  // needs to read the proposal-keyed arm. The facet-keyed arm is a
-  // dead branch today and lands a runtime error so any inadvertent
-  // emit during the transition surfaces loudly. The downstream
-  // task rewrites both halves.
-  if (payload.target !== 'proposal') {
-    throw new ReplayError(
-      `vote: target='${payload.target}' arm is not yet implemented in the projection (TODO: pf_vote_handler_facet_keyed)`,
-    );
+  // Per ADR 0030 §2 + §9 + `pf_projection_replay_updates`: vote payloads
+  // are a `target`-discriminated union. The facet-keyed arm addresses
+  // the `(entity_kind, entity_id, facet)` triple directly; the proposal-
+  // keyed arm addresses a structural proposal id. Each arm writes to a
+  // different store on the projection:
+  //
+  //   - facet arm → `FacetState.perParticipant` on the targeted facet.
+  //   - proposal arm → `PendingProposal.perParticipantVotes` for
+  //     structural sub-kinds; OR the facet's `perParticipant` map for
+  //     facet-valued sub-kinds (the legacy proposal-keyed arm the
+  //     methodology engine emits today per its own
+  //     `pf_vote_handler_facet_keyed` TODO).
+  //
+  // The methodology engine's vote handler still emits the proposal-keyed
+  // arm for ALL votes (per `pf_vote_handler_facet_keyed`); the facet arm
+  // here is the projection-side complement that will accept the new
+  // shape once the engine starts emitting it. Both arms are exercised
+  // by replay.test.ts.
+  if (payload.target === 'facet') {
+    const target: FacetTarget = {
+      entityKind: payload.entity_kind,
+      entityId: payload.entity_id,
+      facet: payload.facet,
+    };
+    const facet = facetStateForTarget(projection, target);
+    if (facet === null) {
+      throw new ReplayError(
+        `vote(facet): target ${payload.entity_kind}:${payload.entity_id} facet ${payload.facet} not present`,
+      );
+    }
+    facet.perParticipant.set(payload.participant, {
+      vote: payload.choice,
+      // The facet-keyed arm carries no `proposal_id`; record the
+      // proposal that supplied the current candidate (or empty string
+      // for inline-candidate facets — wording / shape on creation —
+      // where no proposal supplied it). `PerParticipantFacetState`'s
+      // `proposalEventId` field is informational on this arm; the
+      // derivation reads `vote` only.
+      proposalEventId: facet.candidateProposalEventId ?? '',
+      votedAt: payload.voted_at,
+    });
+    // Change-feed widening for facet-keyed vote events lands in the
+    // downstream change-feed task (the existing `VoteRecordedChange`
+    // discriminator keys by `proposalId`, which the facet arm does not
+    // carry). Snapshot consumers walk the projection directly and see
+    // the updated `perParticipant` map; the derivation surfaces the
+    // status flip on the next `deriveFacetStatus` call.
+    return;
   }
 
-  // Look up the proposal in pending OR committed (a `withdraw` vote
-  // typically arrives after the proposal has been committed and
-  // therefore left `pendingProposals`).
+  // Proposal-keyed arm — the legacy shape the methodology engine emits
+  // for both structural sub-kinds AND facet-valued sub-kinds today.
+  // Look up the proposal in pending OR committed (a withdraw-style
+  // post-commit vote — kept for back-compat until the downstream
+  // engine task migrates the facet-valued vote path).
   const pending = projection.getPendingProposal(payload.proposal_id);
   const committed = pending ? null : projection.getCommittedProposal(payload.proposal_id);
   if (pending === undefined && committed === undefined) {
@@ -677,20 +713,56 @@ function handleCommit(
   payload: CommitPayload,
   changes: ProjectionChange[],
 ): void {
-  // TODO(pf_commit_handler_facet_keyed): per ADR 0030 §2 the commit
-  // payload is now a `target`-discriminated union (facet-keyed vs.
-  // proposal-keyed). The methodology engine's commit handler currently
-  // emits ALL commits on the proposal-keyed arm (see
-  // `apps/server/src/methodology/handlers/commit.ts`'s matching TODO);
-  // until the downstream task lands, this projection handler only
-  // needs to read the proposal-keyed arm. The facet-keyed arm is a
-  // dead branch today and lands a runtime error so any inadvertent
-  // emit during the transition surfaces loudly. The downstream
-  // task rewrites both halves.
-  if (payload.target !== 'proposal') {
-    throw new ReplayError(
-      `commit: target='${payload.target}' arm is not yet implemented in the projection (TODO: pf_commit_handler_facet_keyed)`,
-    );
+  // Per ADR 0030 §2 + §9 + `pf_projection_replay_updates`: commit
+  // payloads are a `target`-discriminated union. Each arm writes to a
+  // different store on the projection:
+  //
+  //   - facet arm → stamps `committedAt` + `committedCandidateValue` on
+  //     the targeted `FacetState` and pins the agreement-layer mirror
+  //     fields (`facet.value`, `facet.status`). NO `PendingProposal` to
+  //     remove (the facet-keyed commit hangs off the facet itself, not
+  //     a proposal id).
+  //   - proposal arm → applies the structural commit effect via
+  //     `applyCommittedProposal`, stamps per-target facets with the
+  //     commit marker (the legacy proposal-keyed arm the methodology
+  //     engine emits today per its own `pf_commit_handler_facet_keyed`
+  //     TODO), removes the pending proposal, and records the
+  //     committed-proposal record.
+  //
+  // The methodology engine's commit handler still emits the proposal-
+  // keyed arm for ALL commits (per `pf_commit_handler_facet_keyed`); the
+  // facet arm here is the projection-side complement ready to accept the
+  // new shape once the engine starts emitting it. Both arms are
+  // exercised by replay.test.ts.
+  if (payload.target === 'facet') {
+    const target: FacetTarget = {
+      entityKind: payload.entity_kind,
+      entityId: payload.entity_id,
+      facet: payload.facet,
+    };
+    const facet = facetStateForTarget(projection, target);
+    if (facet === null) {
+      throw new ReplayError(
+        `commit(facet): target ${payload.entity_kind}:${payload.entity_id} facet ${payload.facet} not present`,
+      );
+    }
+    // Pin the commit marker against the facet's current candidate. The
+    // derivation reads `committedCandidateValue !== candidateValue` as
+    // "a later proposal has superseded the committed candidate." The
+    // agreement-layer mirror (`facet.value`, `facet.status`) is updated
+    // in lockstep so snapshot consumers (which read the mirror) and
+    // derivation consumers (which read the candidate fields) agree.
+    facet.committedAt = payload.committed_at;
+    facet.committedCandidateValue = facet.candidateValue;
+    facet.value = facet.candidateValue;
+    facet.status = 'agreed';
+    // Change-feed widening for facet-keyed commit events lands in the
+    // downstream change-feed task (`FacetUpdatedChange` keys by
+    // `string`-typed value today; pinning the facet-keyed commit's
+    // generic candidate value through the change-feed requires a
+    // discriminator widening). Snapshot consumers walk the projection
+    // directly; the derivation surfaces `'committed'` on the next read.
+    return;
   }
 
   const pending = projection.getPendingProposal(payload.proposal_id);
@@ -757,21 +829,41 @@ function handleMetaDisagreementMarked(
   payload: MetaDisagreementMarkedPayload,
   changes: ProjectionChange[],
 ): void {
-  // TODO(pf_meta_disagreement_handler_facet_keyed): meta-disagreement-marked
-  // payloads are now a `target`-discriminated union per ADR 0030 §2 + §9.
-  // The methodology engine still emits the proposal-keyed arm for ALL
-  // meta-disagreement marks (per the matching TODO in
-  // `apps/server/src/methodology/handlers/markMetaDisagreement.ts`);
-  // until the downstream task lands, this projection handler only needs
-  // to read the proposal-keyed arm. The facet-keyed arm is a dead
-  // branch today and lands a runtime error so any inadvertent emit
-  // during the transition surfaces loudly. The downstream task
-  // rewrites both halves.
-  if (payload.target !== 'proposal') {
-    throw new ReplayError(
-      `meta-disagreement-marked: target='${payload.target}' arm is not yet implemented in the projection (TODO: pf_meta_disagreement_handler_facet_keyed)`,
-    );
+  // Per ADR 0030 §2 + §9 + `pf_projection_replay_updates`: meta-
+  // disagreement-marked payloads are a `target`-discriminated union.
+  // Each arm writes to a different store on the projection:
+  //
+  //   - facet arm → flips `FacetState.metaDisagreement = true` on the
+  //     targeted facet (and pins the agreement-layer status mirror).
+  //     NO `PendingProposal` to remove (the facet-keyed mark hangs off
+  //     the facet itself, not a proposal id).
+  //   - proposal arm → removes the pending proposal, records it in
+  //     `unresolvedMetaDisagreements`, AND flips the facet's
+  //     `metaDisagreement` flag for facet-valued sub-kinds (the legacy
+  //     proposal-keyed arm the methodology engine emits today per its
+  //     own `pf_meta_disagreement_handler_facet_keyed` TODO).
+  //
+  // Both arms are exercised by replay.test.ts.
+  if (payload.target === 'facet') {
+    const target: FacetTarget = {
+      entityKind: payload.entity_kind,
+      entityId: payload.entity_id,
+      facet: payload.facet,
+    };
+    const facet = facetStateForTarget(projection, target);
+    if (facet === null) {
+      throw new ReplayError(
+        `meta-disagreement-marked(facet): target ${payload.entity_kind}:${payload.entity_id} facet ${payload.facet} not present`,
+      );
+    }
+    facet.metaDisagreement = true;
+    facet.status = 'meta-disagreement';
+    // Change-feed widening for facet-keyed meta-disagreement events
+    // lands in the downstream change-feed task (`MetaDisagreementMarkedChange`
+    // keys by `proposalId` which the facet arm does not carry).
+    return;
   }
+
   const pending = projection.getPendingProposal(payload.proposal_id);
   if (pending === undefined) {
     throw new ReplayError(
@@ -886,13 +978,14 @@ function handleSnapshotCreated(
 function applyCommittedProposal(
   projection: Projection,
   proposal: ProposalPayload,
-  // TODO(pf_commit_handler_facet_keyed): narrowed to the proposal-keyed
-  // arm of the discriminated commit payload — the engine emits only
-  // proposal-keyed commits today (see the matching TODO at the
-  // handleCommit call site). When the downstream task lands facet-keyed
-  // emission, this helper will need to read `(entity_kind, entity_id,
-  // facet)` from the facet arm and resolve the structural target via
-  // the projection's pending-proposal map.
+  // Narrowed to the proposal-keyed arm of the discriminated commit
+  // payload per ADR 0030 §9. The facet-keyed arm at `handleCommit`'s
+  // call site does NOT route through this helper — facet-keyed commits
+  // stamp the facet directly without applying a structural effect (the
+  // structural effect is what `applyCommittedProposal` exists for, and
+  // facet-keyed sub-kinds — `classify-node` / `set-node-substance` /
+  // `set-edge-substance` / `edit-wording` — have no proposal-payload
+  // structural fan-out beyond the facet write itself).
   commit: ProposalCommitPayload,
   changes: ProjectionChange[],
 ): void {

@@ -56,3 +56,16 @@ This task is the walker-side companion to `pf_projection_facet_status_refactor` 
 ## Open questions
 
 (none — all decided per ADR 0030)
+
+## Status
+
+**Done** — 2026-05-23.
+
+- Replay walker (`apps/server/src/projection/replay.ts`) accepts both `target: 'facet'` and `target: 'proposal'` arms across `handleVote`, `handleCommit`, and `handleMetaDisagreementMarked`. The facet-keyed arms write into the projection's per-`(entity, facet)` `FacetState` (`perParticipant` / `committedAt` + `committedCandidateValue` / `metaDisagreement`); proposal-keyed arms continue through the existing structural paths.
+- `applyCommittedProposal` helper comment updated to reflect that the facet arm bypasses it (no structural mutation when the commit targets a facet).
+- `withdraw-agreement` projection was already in place from `pf_projection_facet_status_refactor`; nothing further needed here.
+- `apps/server/src/projection/replay.test.ts` grew 4 new describes / 8 new it cases — facet-keyed happy paths + missing-entity error cases + a mixed-arm replay end-to-end that pins `deriveFacetStatus` on top.
+- `tests/behavior/projection/replay-mixed-arm.feature` (+ steps in `tests/behavior/steps/projection-replay-mixed-arm.steps.ts`) round-trips a mixed log (proposal-keyed + facet-keyed votes/commits + withdraw-agreement) through pglite.
+- Projection is now ready for the downstream methodology-engine facet-keyed emission rewrite (`pf_vote_handler_facet_keyed`, `pf_commit_handler_facet_keyed`, `pf_meta_disagreement_handler_facet_keyed`) — those tasks flip the handler emission; the projection already projects what they emit.
+- TODO markers paid down (4): `TODO(pf_vote_handler_facet_keyed)`, `TODO(pf_commit_handler_facet_keyed)`, `TODO(pf_meta_disagreement_handler_facet_keyed)` (replay-side), plus the `applyCommittedProposal` helper-signature comment. The handler-side markers in `apps/server/src/methodology/handlers/*.ts`, `apps/server/src/ws/broadcast/proposal-status.ts`, and UI consumers stay — they belong to the downstream handler tasks.
+- Verification: `pnpm run check` green; `pnpm run test:smoke` 4299 passing (+8) / 2 skipped (carryover); `pnpm run test:behavior:smoke` 253 scenarios / 1746 steps (+1 / +8); `pnpm run test:e2e:smoke` 107 green (unchanged, 1.4m).

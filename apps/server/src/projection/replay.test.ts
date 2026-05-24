@@ -587,6 +587,361 @@ describe('applyEvent — meta-disagreement-marked', () => {
 });
 
 // ---------------------------------------------------------------
+// Facet-keyed arm coverage (pf_projection_replay_updates).
+// Per ADR 0030 §2 + §9 the vote / commit / meta-disagreement-marked
+// payloads are a `target`-discriminated union. The methodology engine
+// emits the proposal-keyed arm today (per the matching downstream
+// `pf_*_handler_facet_keyed` TODOs); these tests pin the projection-
+// side complement that accepts the new shape so the engine-side
+// rewrite can land without a projection re-pass.
+// ---------------------------------------------------------------
+
+// Helper to seed the standard three-participant + one-node bootstrap
+// shared across the facet-keyed arm tests. Returns the next sequence
+// number the caller should use.
+function seedThreeParticipantNode(projection: ReturnType<typeof createEmptyProjection>): number {
+  const events: Event[] = [
+    makeEvent(1, 'session-created', HOST_ID, T0, {
+      host_user_id: HOST_ID,
+      privacy: 'public',
+      topic: 'Test',
+      created_at: T0,
+    }),
+    makeEvent(2, 'participant-joined', MODERATOR_ID, T1, {
+      user_id: MODERATOR_ID,
+      role: 'moderator',
+      screen_name: 'Mod',
+      joined_at: T1,
+    }),
+    makeEvent(3, 'participant-joined', DEBATER_A_ID, T1, {
+      user_id: DEBATER_A_ID,
+      role: 'debater-A',
+      screen_name: 'A',
+      joined_at: T1,
+    }),
+    makeEvent(4, 'participant-joined', DEBATER_B_ID, T1, {
+      user_id: DEBATER_B_ID,
+      role: 'debater-B',
+      screen_name: 'B',
+      joined_at: T1,
+    }),
+    makeEvent(5, 'node-created', DEBATER_A_ID, T2, {
+      node_id: NODE_ID_1,
+      wording: 'Sky is blue.',
+      created_by: DEBATER_A_ID,
+      created_at: T2,
+    }),
+  ];
+  for (const ev of events) applyEvent(projection, ev);
+  return 6;
+}
+
+describe('applyEvent — facet-keyed vote arm', () => {
+  it('facet-keyed vote writes to FacetState.perParticipant directly (no proposal lookup)', () => {
+    const projection = createEmptyProjection(SESSION_ID);
+    let seq = seedThreeParticipantNode(projection);
+    // Land a classify-node proposal so the classification facet has a
+    // candidate value the vote attaches to. The facet-keyed vote does
+    // NOT carry a proposal_id — it addresses the facet directly.
+    applyEvent(projection, {
+      ...makeEvent(seq++, 'proposal', DEBATER_A_ID, T3, {
+        proposal: { kind: 'classify-node', node_id: NODE_ID_1, classification: 'fact' },
+      }),
+      id: PROPOSAL_ID_1,
+    });
+    applyEvent(
+      projection,
+      makeEvent(seq, 'vote', DEBATER_A_ID, T4, {
+        target: 'facet' as const,
+        entity_kind: 'node' as const,
+        entity_id: NODE_ID_1,
+        facet: 'classification' as const,
+        participant: DEBATER_A_ID,
+        choice: 'agree',
+        voted_at: T4,
+      }),
+    );
+    const node = projection.getNode(NODE_ID_1);
+    expect(node?.classificationFacet.perParticipant.get(DEBATER_A_ID)?.vote).toBe('agree');
+    // The facet-keyed vote records the supplying proposal's id (the
+    // candidate proposal) as informational metadata; the derivation
+    // reads `vote` only.
+    expect(node?.classificationFacet.perParticipant.get(DEBATER_A_ID)?.proposalEventId).toBe(
+      PROPOSAL_ID_1,
+    );
+  });
+
+  it('facet-keyed vote against a missing entity throws ReplayError', () => {
+    const projection = createEmptyProjection(SESSION_ID);
+    seedThreeParticipantNode(projection);
+    expect(() =>
+      applyEvent(
+        projection,
+        makeEvent(6, 'vote', DEBATER_A_ID, T3, {
+          target: 'facet' as const,
+          entity_kind: 'node' as const,
+          entity_id: NEW_NODE_ID, // never created
+          facet: 'classification' as const,
+          participant: DEBATER_A_ID,
+          choice: 'agree',
+          voted_at: T3,
+        }),
+      ),
+    ).toThrow(ReplayError);
+  });
+
+  it('facet-keyed vote on an inline-candidate wording facet records with empty proposalEventId', () => {
+    // The wording facet enters life with `candidateProposalEventId =
+    // null` (the wording came inline from node-created, not from a
+    // proposal). A facet-keyed vote against it records empty-string for
+    // the informational proposalEventId field (the derivation only
+    // reads `vote`).
+    const projection = createEmptyProjection(SESSION_ID);
+    const seq = seedThreeParticipantNode(projection);
+    applyEvent(
+      projection,
+      makeEvent(seq, 'vote', DEBATER_A_ID, T3, {
+        target: 'facet' as const,
+        entity_kind: 'node' as const,
+        entity_id: NODE_ID_1,
+        facet: 'wording' as const,
+        participant: DEBATER_A_ID,
+        choice: 'dispute',
+        voted_at: T3,
+      }),
+    );
+    const node = projection.getNode(NODE_ID_1);
+    expect(node?.wordingFacet.perParticipant.get(DEBATER_A_ID)?.vote).toBe('dispute');
+    expect(node?.wordingFacet.perParticipant.get(DEBATER_A_ID)?.proposalEventId).toBe('');
+  });
+});
+
+describe('applyEvent — facet-keyed commit arm', () => {
+  it('facet-keyed commit stamps committedAt + committedCandidateValue + facet.value', () => {
+    const projection = createEmptyProjection(SESSION_ID);
+    let seq = seedThreeParticipantNode(projection);
+    applyEvent(projection, {
+      ...makeEvent(seq++, 'proposal', DEBATER_A_ID, T3, {
+        proposal: { kind: 'classify-node', node_id: NODE_ID_1, classification: 'fact' },
+      }),
+      id: PROPOSAL_ID_1,
+    });
+    applyEvent(
+      projection,
+      makeEvent(seq, 'commit', MODERATOR_ID, T4, {
+        target: 'facet' as const,
+        entity_kind: 'node' as const,
+        entity_id: NODE_ID_1,
+        facet: 'classification' as const,
+        committed_by: MODERATOR_ID,
+        committed_at: T4,
+      }),
+    );
+    const node = projection.getNode(NODE_ID_1);
+    expect(node?.classificationFacet.committedAt).toBe(T4);
+    expect(node?.classificationFacet.committedCandidateValue).toBe('fact');
+    expect(node?.classificationFacet.value).toBe('fact');
+    expect(node?.classificationFacet.status).toBe('agreed');
+    // The facet-keyed commit does NOT add to committedProposals — the
+    // facet-keyed commit hangs off the facet, not a proposal id.
+    expect(projection.committedProposalCount()).toBe(0);
+  });
+
+  it('facet-keyed commit against a missing entity throws ReplayError', () => {
+    const projection = createEmptyProjection(SESSION_ID);
+    seedThreeParticipantNode(projection);
+    expect(() =>
+      applyEvent(
+        projection,
+        makeEvent(6, 'commit', MODERATOR_ID, T3, {
+          target: 'facet' as const,
+          entity_kind: 'node' as const,
+          entity_id: NEW_NODE_ID,
+          facet: 'classification' as const,
+          committed_by: MODERATOR_ID,
+          committed_at: T3,
+        }),
+      ),
+    ).toThrow(ReplayError);
+  });
+});
+
+describe('applyEvent — facet-keyed meta-disagreement-marked arm', () => {
+  it('facet-keyed meta-disagreement flips FacetState.metaDisagreement + status', () => {
+    const projection = createEmptyProjection(SESSION_ID);
+    let seq = seedThreeParticipantNode(projection);
+    applyEvent(projection, {
+      ...makeEvent(seq++, 'proposal', DEBATER_A_ID, T3, {
+        proposal: { kind: 'classify-node', node_id: NODE_ID_1, classification: 'fact' },
+      }),
+      id: PROPOSAL_ID_1,
+    });
+    applyEvent(
+      projection,
+      makeEvent(seq, 'meta-disagreement-marked', MODERATOR_ID, T4, {
+        target: 'facet' as const,
+        entity_kind: 'node' as const,
+        entity_id: NODE_ID_1,
+        facet: 'classification' as const,
+        marked_by: MODERATOR_ID,
+        marked_at: T4,
+      }),
+    );
+    const node = projection.getNode(NODE_ID_1);
+    expect(node?.classificationFacet.metaDisagreement).toBe(true);
+    expect(node?.classificationFacet.status).toBe('meta-disagreement');
+    // The facet-keyed meta-disagreement does NOT record an
+    // unresolvedMetaDisagreement entry — the facet-keyed mark hangs
+    // off the facet, not a proposal id.
+    expect(projection.unresolvedMetaDisagreementCount()).toBe(0);
+  });
+
+  it('facet-keyed meta-disagreement-marked against a missing entity throws ReplayError', () => {
+    const projection = createEmptyProjection(SESSION_ID);
+    seedThreeParticipantNode(projection);
+    expect(() =>
+      applyEvent(
+        projection,
+        makeEvent(6, 'meta-disagreement-marked', MODERATOR_ID, T3, {
+          target: 'facet' as const,
+          entity_kind: 'node' as const,
+          entity_id: NEW_NODE_ID,
+          facet: 'classification' as const,
+          marked_by: MODERATOR_ID,
+          marked_at: T3,
+        }),
+      ),
+    ).toThrow(ReplayError);
+  });
+});
+
+describe('applyEvent — mixed-arm log replay', () => {
+  it('a log mixing proposal-keyed and facet-keyed vote/commit/meta-mark + withdraw replays without throwing', () => {
+    // The methodology engine emits proposal-keyed today; the projection
+    // walker must be ready to accept either arm so the engine-side
+    // rewrite can land independently. This test pins the projection's
+    // arm-tolerance on a single log that mixes:
+    //   - a proposal-keyed vote + commit (today's engine emission);
+    //   - a facet-keyed vote + commit (tomorrow's engine emission);
+    //   - a withdraw-agreement event against the facet-keyed-committed
+    //     facet (already implemented by the predecessor refactor);
+    //   - a facet-keyed meta-disagreement-marked against a different
+    //     facet.
+    const projection = createEmptyProjection(SESSION_ID);
+    let seq = seedThreeParticipantNode(projection);
+
+    // Add a second node so we have two distinct facet targets.
+    applyEvent(
+      projection,
+      makeEvent(seq++, 'node-created', DEBATER_B_ID, T2, {
+        node_id: NODE_ID_2,
+        wording: 'A rebuttal.',
+        created_by: DEBATER_B_ID,
+        created_at: T2,
+      }),
+    );
+
+    // PROPOSAL-KEYED ARM: classify NODE_ID_1.
+    applyEvent(projection, {
+      ...makeEvent(seq++, 'proposal', DEBATER_A_ID, T3, {
+        proposal: { kind: 'classify-node', node_id: NODE_ID_1, classification: 'fact' },
+      }),
+      id: PROPOSAL_ID_1,
+    });
+    for (const voter of [MODERATOR_ID, DEBATER_A_ID, DEBATER_B_ID]) {
+      applyEvent(
+        projection,
+        makeEvent(seq++, 'vote', voter, T4, {
+          target: 'proposal' as const,
+          proposal_id: PROPOSAL_ID_1,
+          participant: voter,
+          choice: 'agree',
+          voted_at: T4,
+        }),
+      );
+    }
+    applyEvent(
+      projection,
+      makeEvent(seq++, 'commit', MODERATOR_ID, T5, {
+        target: 'proposal',
+        proposal_id: PROPOSAL_ID_1,
+        committed_by: MODERATOR_ID,
+        committed_at: T5,
+      }),
+    );
+
+    // FACET-KEYED ARM: classify NODE_ID_2.
+    applyEvent(projection, {
+      ...makeEvent(seq++, 'proposal', DEBATER_A_ID, T6, {
+        proposal: { kind: 'classify-node', node_id: NODE_ID_2, classification: 'value' },
+      }),
+      id: PROPOSAL_ID_2,
+    });
+    for (const voter of [MODERATOR_ID, DEBATER_A_ID, DEBATER_B_ID]) {
+      applyEvent(
+        projection,
+        makeEvent(seq++, 'vote', voter, T7, {
+          target: 'facet' as const,
+          entity_kind: 'node' as const,
+          entity_id: NODE_ID_2,
+          facet: 'classification' as const,
+          participant: voter,
+          choice: 'agree',
+          voted_at: T7,
+        }),
+      );
+    }
+    applyEvent(
+      projection,
+      makeEvent(seq++, 'commit', MODERATOR_ID, T8, {
+        target: 'facet' as const,
+        entity_kind: 'node' as const,
+        entity_id: NODE_ID_2,
+        facet: 'classification' as const,
+        committed_by: MODERATOR_ID,
+        committed_at: T8,
+      }),
+    );
+
+    // WITHDRAW-AGREEMENT against the facet-keyed-committed facet.
+    applyEvent(
+      projection,
+      makeEvent(seq, 'withdraw-agreement', DEBATER_B_ID, T9, {
+        entity_kind: 'node' as const,
+        entity_id: NODE_ID_2,
+        facet: 'classification' as const,
+        participant: DEBATER_B_ID,
+        withdrawn_at: T9,
+      }),
+    );
+
+    // Final state: both nodes' classification facets show the
+    // committed value; node 2's facet has the withdrawal recorded;
+    // node 1's pending proposal is cleared.
+    const node1 = projection.getNode(NODE_ID_1);
+    const node2 = projection.getNode(NODE_ID_2);
+    expect(node1?.classificationFacet.value).toBe('fact');
+    expect(node1?.classificationFacet.status).toBe('agreed');
+    expect(node2?.classificationFacet.value).toBe('value');
+    expect(node2?.classificationFacet.committedAt).toBe(T8);
+    expect(node2?.classificationFacet.withdrawals.has(DEBATER_B_ID)).toBe(true);
+    // PROPOSAL_ID_1 (proposal-keyed) was removed on commit; PROPOSAL_ID_2
+    // (facet-keyed) is NOT touched by the facet-keyed commit — the
+    // facet-keyed commit hangs off the facet, not a proposal id, so
+    // pending-proposal lifecycle is the downstream engine's job (the
+    // engine task that emits facet-keyed commits will pair them with a
+    // proposal-withdrawal / cleanup, per ADR 0030 §9). The projection
+    // walker's contract is to mutate the facet state honestly.
+    expect(projection.getPendingProposal(PROPOSAL_ID_1)).toBeUndefined();
+    expect(projection.getPendingProposal(PROPOSAL_ID_2)).toBeDefined();
+
+    // Derivation surfaces the right statuses on top of the new shapes.
+    expect(deriveFacetStatus(projection, 'node', NODE_ID_1, 'classification')).toBe('committed');
+    expect(deriveFacetStatus(projection, 'node', NODE_ID_2, 'classification')).toBe('withdrawn');
+  });
+});
+
+// ---------------------------------------------------------------
 // Per-proposal-sub-kind structural commit effects.
 // ---------------------------------------------------------------
 
