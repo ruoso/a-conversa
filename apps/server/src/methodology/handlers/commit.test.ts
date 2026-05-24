@@ -477,13 +477,20 @@ describe('commit handler — facet-arm vs proposal-arm emission per ADR 0030', (
     expect(ev.payload.committed_by).toBe(MODERATOR_ID);
   });
 
-  it('refuses a second commit on the same facet via the facet-status cross-check (the facet is already `committed`)', () => {
+  it('refuses a second commit on the same facet — the projection swept the proposal so the engine sees `proposal-not-found`', () => {
     // First commit lands the facet as `committed`. A second commit
-    // attempt on the same proposal must not land. Per ADR 0030 §2 the
-    // projection's facet-keyed `handleCommit` does NOT remove the
-    // pending proposal (only the proposal-keyed arm does); the
-    // facet-status cross-check inside `checkUnanimousAgreeFacet` is the
-    // gate that catches the duplicate.
+    // attempt on the same proposal must not land. The projection's
+    // facet-keyed `handleCommit` clears every pending proposal whose
+    // payload targets the resolved facet (per the facet-resolution
+    // sweep in `apps/server/src/projection/replay.ts`), so the engine's
+    // `findProposal` rule-2 lookup returns `null` for the second
+    // attempt and the request is rejected with `'proposal-not-found'`.
+    // The facet-status cross-check inside `checkUnanimousAgreeFacet`
+    // (rejecting with `'proposal-already-committed'`) stays in the
+    // commit handler as a defense-in-depth for races where a proposal
+    // somehow remains pending while the facet is already resolved;
+    // under steady-state replay the projection sweep is the primary
+    // gate.
     const p = seedSession();
     applyVote(p, DEBATER_A_ID, 'agree');
     applyVote(p, DEBATER_B_ID, 'agree');
@@ -492,11 +499,13 @@ describe('commit handler — facet-arm vs proposal-arm emission per ADR 0030', (
     expect(firstResult.ok).toBe(true);
     if (!firstResult.ok) return;
     // Apply the emitted facet-keyed commit event so the projection's
-    // `handleCommit` stamps the facet `'committed'`.
+    // `handleCommit` stamps the facet `'committed'` and sweeps the
+    // pending proposal.
     for (const ev of firstResult.events) {
       applyEvent(p, ev);
     }
     expect(deriveFacetStatus(p, 'node', NODE_ID_1, 'classification')).toBe('committed');
+    expect(p.getPendingProposal(PROPOSAL_ID_1)).toBeUndefined();
     // Second commit attempt at the next sequence with a fresh event id.
     const secondAction: CommitAction = {
       ...makeCommitAction(p),
@@ -505,7 +514,7 @@ describe('commit handler — facet-arm vs proposal-arm emission per ADR 0030', (
     const r = validateAction(p, secondAction);
     expect(r.ok).toBe(false);
     if (!r.ok) {
-      expect(r.reason).toBe('proposal-already-committed');
+      expect(r.reason).toBe('proposal-not-found');
     }
   });
 });

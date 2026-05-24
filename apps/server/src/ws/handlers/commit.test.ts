@@ -833,7 +833,18 @@ describe('ws_commit_message — handler integration', () => {
     }
   });
 
-  it('echoes the methodology engine `proposal-already-committed` rejection on a duplicate commit', async () => {
+  it('echoes the methodology engine `proposal-not-found` rejection on a duplicate commit (projection swept the proposal)', async () => {
+    // The committable proposal is facet-valued (a classify-node), so
+    // the engine emits a facet-keyed commit per ADR 0030 §2. The
+    // projection's facet-resolution sweep clears the pending proposal
+    // record on the first commit; a second commit attempt on the same
+    // proposal id can't find it in any of `pendingProposals` /
+    // `committedProposals` / `unresolvedMetaDisagreements` and the
+    // engine rejects with `'proposal-not-found'`. Pre-sweep this case
+    // returned `'proposal-already-committed'` via the facet-status
+    // cross-check in `checkUnanimousAgreeFacet`; that cross-check now
+    // serves only as defense-in-depth for race conditions and the
+    // primary lifecycle gate is the projection sweep itself.
     const cookie = await fixtureCookieHeader();
     const { ws, next } = await openWsClient(app, cookie);
     try {
@@ -855,13 +866,13 @@ describe('ws_commit_message — handler integration', () => {
       }
 
       // Second commit on the same proposal — engine rejects with
-      // `proposal-already-committed`. expectedSequence is now 10.
+      // `proposal-not-found`. expectedSequence is now 10.
       ws.send(commitFrame(COMMIT_MSG_ID, COMMITTABLE_SESSION_ID, 10, PROPOSAL_EVENT_ID));
 
       const err = await readUntilType(next, 'error');
       const payload = err.parsed.payload as { code?: unknown };
       expect(err.parsed.inResponseTo).toBe(COMMIT_MSG_ID);
-      expect(payload.code).toBe('proposal-already-committed');
+      expect(payload.code).toBe('proposal-not-found');
     } finally {
       ws.terminate();
     }

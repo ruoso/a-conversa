@@ -325,6 +325,49 @@ function lookupProposalPayload(projection: Projection, proposalId: string): Prop
 }
 
 /**
+ * Read the `(entity_kind, entity_id, facet)` triple off a facet-keyed
+ * vote / commit / meta-disagreement-marked event. Returns `null` for
+ * proposal-keyed and proposal envelopes — those carry no inline facet
+ * target and the broadcast must fall back to walking the payload's
+ * `facetTargetsForProposal`.
+ *
+ * Used as the fallback when `lookupProposalPayload` returns `null` —
+ * after the projection's facet-resolution sweep removes a proposal
+ * (per `apps/server/src/projection/replay.ts` `handleCommit` /
+ * `handleMetaDisagreementMarked`), the proposal payload is no longer
+ * addressable through any projection bucket, but a facet-keyed event
+ * inherently names its single target inline, so the broadcast can
+ * still derive and fan out the `committed` / `meta-disagreement`
+ * status without it.
+ */
+function facetTargetFromEvent(
+  event: Event,
+): { entityKind: 'node' | 'edge' | 'annotation'; entityId: string; facet: FacetName } | null {
+  if (event.kind === 'commit' && event.payload.target === 'facet') {
+    return {
+      entityKind: event.payload.entity_kind,
+      entityId: event.payload.entity_id,
+      facet: event.payload.facet,
+    };
+  }
+  if (event.kind === 'meta-disagreement-marked' && event.payload.target === 'facet') {
+    return {
+      entityKind: event.payload.entity_kind,
+      entityId: event.payload.entity_id,
+      facet: event.payload.facet,
+    };
+  }
+  if (event.kind === 'vote' && event.payload.target === 'facet') {
+    return {
+      entityKind: event.payload.entity_kind,
+      entityId: event.payload.entity_id,
+      facet: event.payload.facet,
+    };
+  }
+  return null;
+}
+
+/**
  * Resolve the proposal id behind a facet-keyed vote / commit / meta-
  * disagreement-marked event by reading `facet.candidateProposalEventId`
  * from the post-event projection. Returns `null` when the targeted
@@ -493,24 +536,43 @@ async function deriveAndFanOut(
   }
 
   const payload = lookupProposalPayload(projection, proposalId);
-  if (payload === null) {
-    // The proposal is not in the projection — this is a projection-
-    // invariant violation given the triggering event referenced it.
-    // Logging + skipping rather than throwing keeps the broadcast
-    // surface from wedging on a bad projection state.
-    opts.log.warn(
-      {
-        sessionId,
-        proposalId,
-        eventKind: event.kind,
-        eventSequence: event.sequence,
-      },
-      'ws-proposal-status: proposal not found in projection — skipping derived broadcast',
-    );
-    return;
+  // Resolve the facet targets to broadcast for. The proposal payload is
+  // the canonical source — its `facetTargetsForProposal` covers the
+  // multi-component fan-out for decompose / interpretive-split. But for
+  // a facet-keyed terminator (commit / meta-disagreement-marked on a
+  // facet), the projection's facet-resolution sweep in `replay.ts`
+  // removes the named proposal from every projection bucket, so
+  // `lookupProposalPayload` returns null. The single facet target is
+  // already in the triggering event itself in that case, so synthesize
+  // it directly rather than skipping the broadcast (the subscriber
+  // needs the `committed` / `meta-disagreement` status surfaced for
+  // its facet view).
+  let targets: readonly {
+    entityKind: 'node' | 'edge' | 'annotation';
+    entityId: string;
+    facet: FacetName;
+  }[];
+  if (payload !== null) {
+    targets = facetTargetsForProposal(payload);
+  } else {
+    const facetTarget = facetTargetFromEvent(event);
+    if (facetTarget === null) {
+      // No payload AND not a facet-keyed event — this is a projection-
+      // invariant violation given the triggering event referenced the
+      // proposal. Log + skip rather than throw.
+      opts.log.warn(
+        {
+          sessionId,
+          proposalId,
+          eventKind: event.kind,
+          eventSequence: event.sequence,
+        },
+        'ws-proposal-status: proposal not found in projection — skipping derived broadcast',
+      );
+      return;
+    }
+    targets = [facetTarget];
   }
-
-  const targets = facetTargetsForProposal(payload);
   if (targets.length === 0) {
     // Structural sub-kind — no facets, no broadcast. Not an error;
     // the methodology has no `FacetStatus` to surface for axiom-mark

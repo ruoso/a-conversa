@@ -56,3 +56,21 @@ Feature: methodology engine — commit handler against a DB-projected session
     And the resulting commit event is appended to the session log and the projection is replayed
     Then the validation result is Valid
     And the targeted classification facet's derived status is "committed"
+
+  Scenario: a facet-keyed commit, on replay, sweeps the pending proposal out of the projection
+    # The projection's facet-resolution sweep (per
+    # `apps/server/src/projection/replay.ts` `handleCommit`) removes
+    # every pending proposal targeting the resolved facet. A subsequent
+    # caller reading `projection.pendingProposals` — notably the
+    # snapshot handler that hydrates the moderator's pending-proposals
+    # pane — must NOT surface a proposal whose commit would now be
+    # rejected by the engine. This scenario rebuilds the projection
+    # from the round-tripped session log and pins the post-replay
+    # pending bucket as empty for the resolved facet.
+    Given a seeded session with three participants, a pending proposal, and three agree votes for commit-logic tests
+    When the moderator constructs a commit action against the pending proposal
+    And the methodology engine validates the commit action against the projected session
+    And the resulting commit event is appended to the session log and the projection is replayed
+    Then the validation result is Valid
+    And the targeted classification facet's derived status is "committed"
+    And the projection has no pending proposals

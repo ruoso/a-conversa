@@ -718,6 +718,50 @@ function handleVote(
   }
 }
 
+// Clear every pending proposal whose payload targets the given facet,
+// emitting one `pending-proposal-cleared` change-feed entry per
+// removal. Called from `handleCommit` / `handleMetaDisagreementMarked`
+// after the targeted facet is stamped.
+//
+// Per ADR 0030 §2 + §7 + §9: a commit or meta-disagreement-marked
+// landing on a facet resolves EVERY pending proposal whose payload
+// names that facet — the methodology engine's `checkUnanimousAgreeFacet`
+// (apps/server/src/methodology/handlers/commit.ts) would reject a
+// subsequent commit attempt on any such proposal with
+// `'proposal-already-committed'` / `'proposal-already-meta-disagreement'`,
+// so leaving them in the `pendingProposals` bucket misleads downstream
+// readers (notably the moderator's pending-proposals pane, which is
+// hydrated from `snapshot.projection.pendingProposals`).
+//
+// Collect the ids before removing so the mutation does not invalidate
+// the iterator. The sweep is a no-op when no pending proposal targets
+// the facet (e.g. an inline-candidate wording facet committed without
+// ever having a `proposal` event).
+function clearPendingProposalsForFacet(
+  projection: Projection,
+  target: FacetTarget,
+  reason: 'commit' | 'meta-disagreement',
+  changes: ProjectionChange[],
+): void {
+  const matchingIds: string[] = [];
+  for (const pending of projection.pendingProposals()) {
+    for (const candidate of facetTargetsForProposal(pending.payload)) {
+      if (
+        candidate.entityKind === target.entityKind &&
+        candidate.entityId === target.entityId &&
+        candidate.facet === target.facet
+      ) {
+        matchingIds.push(pending.proposalEventId);
+        break;
+      }
+    }
+  }
+  for (const id of matchingIds) {
+    projection.removePendingProposal(id);
+    changes.push({ kind: 'pending-proposal-cleared', proposalId: id, reason });
+  }
+}
+
 function handleCommit(
   projection: Projection,
   payload: CommitPayload,
@@ -766,6 +810,10 @@ function handleCommit(
     facet.committedCandidateValue = facet.candidateValue;
     facet.value = facet.candidateValue;
     facet.status = 'agreed';
+    // Sweep every pending proposal whose payload names this facet — they
+    // are now unreachable (the engine's `checkUnanimousAgreeFacet` would
+    // reject a subsequent commit attempt with `'proposal-already-committed'`).
+    clearPendingProposalsForFacet(projection, target, 'commit', changes);
     // Change-feed widening for facet-keyed commit events lands in the
     // downstream change-feed task (`FacetUpdatedChange` keys by
     // `string`-typed value today; pinning the facet-keyed commit's
@@ -781,6 +829,10 @@ function handleCommit(
       `commit: proposal ${payload.proposal_id} is not pending in this projection`,
     );
   }
+  // Capture the facet targets BEFORE applying the structural commit;
+  // some sub-kinds (e.g. edit-wording restructure) flip parent visibility
+  // and the facet lookup helper depends on the node still being addressable.
+  const facetTargets = facetTargetsForProposal(pending.payload);
   applyCommittedProposal(projection, pending.payload, payload, changes);
 
   // Record the commit on the affected facet(s)'
@@ -797,7 +849,7 @@ function handleCommit(
   // (receivers correlate per-component via `node.id`, per D4 of the
   // refinement). The five structural sub-kinds return `[]` from
   // `facetTargetsForProposal` and stamp nothing.
-  for (const target of facetTargetsForProposal(pending.payload)) {
+  for (const target of facetTargets) {
     const facet = facetStateForTarget(projection, target);
     if (facet !== null) {
       facet.committedProposalEventId = payload.proposal_id;
@@ -832,6 +884,16 @@ function handleCommit(
     proposalId: payload.proposal_id,
     reason: 'commit',
   });
+  // For facet-valued proposals, the commit also resolves the facet for
+  // any sibling proposal targeting it (per ADR 0030 §7 a new facet-valued
+  // proposal supersedes the prior candidate as the facet's current value
+  // but leaves the predecessor's `PendingProposal` record sitting in the
+  // bucket; the commit on the superseder resolves the facet for both).
+  // Structural sub-kinds return an empty `facetTargets` and the sweep
+  // is a no-op.
+  for (const target of facetTargets) {
+    clearPendingProposalsForFacet(projection, target, 'commit', changes);
+  }
 }
 
 function handleMetaDisagreementMarked(
@@ -868,6 +930,11 @@ function handleMetaDisagreementMarked(
     }
     facet.metaDisagreement = true;
     facet.status = 'meta-disagreement';
+    // Sweep every pending proposal whose payload names this facet —
+    // they are now unreachable (the engine's `checkUnanimousAgreeFacet`
+    // would reject a subsequent commit attempt with
+    // `'proposal-already-meta-disagreement'`).
+    clearPendingProposalsForFacet(projection, target, 'meta-disagreement', changes);
     // Change-feed widening for facet-keyed meta-disagreement events
     // lands in the downstream change-feed task (`MetaDisagreementMarkedChange`
     // keys by `proposalId` which the facet arm does not carry).
@@ -917,6 +984,13 @@ function handleMetaDisagreementMarked(
     proposalId: payload.proposal_id,
     reason: 'meta-disagreement',
   });
+  // For facet-valued proposals, the meta-disagreement mark also
+  // resolves the facet for any sibling proposal targeting it (per the
+  // same supersession argument the commit arm uses above). Structural
+  // sub-kinds return an empty target list and the sweep is a no-op.
+  for (const sweepTarget of facetTargetsForProposal(pending.payload)) {
+    clearPendingProposalsForFacet(projection, sweepTarget, 'meta-disagreement', changes);
+  }
 }
 
 // Per ADR 0030 §3 + `pf_projection_facet_status_refactor`:

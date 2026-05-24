@@ -925,19 +925,347 @@ describe('applyEvent — mixed-arm log replay', () => {
     expect(node2?.classificationFacet.value).toBe('value');
     expect(node2?.classificationFacet.committedAt).toBe(T8);
     expect(node2?.classificationFacet.withdrawals.has(DEBATER_B_ID)).toBe(true);
-    // PROPOSAL_ID_1 (proposal-keyed) was removed on commit; PROPOSAL_ID_2
-    // (facet-keyed) is NOT touched by the facet-keyed commit — the
-    // facet-keyed commit hangs off the facet, not a proposal id, so
-    // pending-proposal lifecycle is the downstream engine's job (the
-    // engine task that emits facet-keyed commits will pair them with a
-    // proposal-withdrawal / cleanup, per ADR 0030 §9). The projection
-    // walker's contract is to mutate the facet state honestly.
+    // Both proposals are out of the pending bucket: PROPOSAL_ID_1 via
+    // the proposal-keyed commit's direct removal, PROPOSAL_ID_2 via the
+    // facet-keyed commit's facet-resolution sweep. A facet-keyed commit
+    // resolves the facet and any pending proposal whose payload targets
+    // it is unreachable — a subsequent commit attempt on that proposal
+    // would be rejected by `checkUnanimousAgreeFacet`'s `'committed'`
+    // dispatch — so the projection clears the bucket in lockstep with
+    // the facet stamp.
     expect(projection.getPendingProposal(PROPOSAL_ID_1)).toBeUndefined();
-    expect(projection.getPendingProposal(PROPOSAL_ID_2)).toBeDefined();
+    expect(projection.getPendingProposal(PROPOSAL_ID_2)).toBeUndefined();
 
     // Derivation surfaces the right statuses on top of the new shapes.
     expect(deriveFacetStatus(projection, 'node', NODE_ID_1, 'classification')).toBe('committed');
     expect(deriveFacetStatus(projection, 'node', NODE_ID_2, 'classification')).toBe('withdrawn');
+  });
+});
+
+// ---------------------------------------------------------------
+// Facet-resolution sweep — a commit / meta-disagreement-marked event
+// resolves the targeted facet and EVERY pending proposal whose payload
+// names that facet target must leave `pendingProposals` in lockstep.
+// Otherwise a moderator looking at the pending list would see rows
+// whose commit attempt is guaranteed to be rejected (the engine's
+// `checkUnanimousAgreeFacet` short-circuits on a facet whose status
+// is `'committed'` / `'meta-disagreement'` per
+// `apps/server/src/methodology/handlers/commit.ts`).
+//
+// The fix covers both shapes the terminator can take:
+//
+//   - **facet-keyed** terminator → walk `pendingProposals` for any
+//     payload targeting `(entity_kind, entity_id, facet)` and clear
+//     each;
+//   - **proposal-keyed** terminator on a facet-valued sub-kind → clear
+//     the named proposal AND any sibling whose payload targets the same
+//     facet (per ADR 0030 §7 a new facet-valued proposal supersedes the
+//     prior candidate, leaving the predecessor pending under the old
+//     code — the commit on the superseder also resolves the facet, so
+//     the predecessor must clear too).
+// ---------------------------------------------------------------
+
+describe('applyEvent — facet-resolution sweep clears stale pending proposals', () => {
+  it('facet-keyed commit clears the lone pending proposal that targeted the facet', () => {
+    const projection = createEmptyProjection(SESSION_ID);
+    let seq = seedThreeParticipantNode(projection);
+    applyEvent(projection, {
+      ...makeEvent(seq++, 'proposal', DEBATER_A_ID, T3, {
+        proposal: { kind: 'classify-node', node_id: NODE_ID_1, classification: 'fact' },
+      }),
+      id: PROPOSAL_ID_1,
+    });
+    expect(projection.pendingProposalCount()).toBe(1);
+    applyEvent(
+      projection,
+      makeEvent(seq, 'commit', MODERATOR_ID, T4, {
+        target: 'facet' as const,
+        entity_kind: 'node' as const,
+        entity_id: NODE_ID_1,
+        facet: 'classification' as const,
+        committed_by: MODERATOR_ID,
+        committed_at: T4,
+      }),
+    );
+    expect(projection.pendingProposalCount()).toBe(0);
+    expect(projection.getPendingProposal(PROPOSAL_ID_1)).toBeUndefined();
+  });
+
+  it('facet-keyed commit clears EVERY pending proposal targeting the facet (two superseding siblings)', () => {
+    const projection = createEmptyProjection(SESSION_ID);
+    let seq = seedThreeParticipantNode(projection);
+    // Two classify-node proposals on the same facet; the second
+    // supersedes the first as the facet's candidate per ADR 0030 §7,
+    // but the first's `PendingProposal` record stays in the bucket.
+    applyEvent(projection, {
+      ...makeEvent(seq++, 'proposal', DEBATER_A_ID, T3, {
+        proposal: { kind: 'classify-node', node_id: NODE_ID_1, classification: 'fact' },
+      }),
+      id: PROPOSAL_ID_1,
+    });
+    applyEvent(projection, {
+      ...makeEvent(seq++, 'proposal', DEBATER_B_ID, T3, {
+        proposal: { kind: 'classify-node', node_id: NODE_ID_1, classification: 'value' },
+      }),
+      id: PROPOSAL_ID_2,
+    });
+    expect(projection.pendingProposalCount()).toBe(2);
+    applyEvent(
+      projection,
+      makeEvent(seq, 'commit', MODERATOR_ID, T4, {
+        target: 'facet' as const,
+        entity_kind: 'node' as const,
+        entity_id: NODE_ID_1,
+        facet: 'classification' as const,
+        committed_by: MODERATOR_ID,
+        committed_at: T4,
+      }),
+    );
+    expect(projection.pendingProposalCount()).toBe(0);
+    expect(projection.getPendingProposal(PROPOSAL_ID_1)).toBeUndefined();
+    expect(projection.getPendingProposal(PROPOSAL_ID_2)).toBeUndefined();
+  });
+
+  it('proposal-keyed commit on a facet-valued proposal also clears a superseded sibling on the same facet', () => {
+    const projection = createEmptyProjection(SESSION_ID);
+    let seq = seedThreeParticipantNode(projection);
+    applyEvent(projection, {
+      ...makeEvent(seq++, 'proposal', DEBATER_A_ID, T3, {
+        proposal: { kind: 'classify-node', node_id: NODE_ID_1, classification: 'fact' },
+      }),
+      id: PROPOSAL_ID_1,
+    });
+    applyEvent(projection, {
+      ...makeEvent(seq++, 'proposal', DEBATER_B_ID, T3, {
+        proposal: { kind: 'classify-node', node_id: NODE_ID_1, classification: 'value' },
+      }),
+      id: PROPOSAL_ID_2,
+    });
+    // Vote unanimous-agree on the latest candidate so the proposal-
+    // keyed commit's `checkUnanimousAgreeFacet` path is structurally
+    // consistent (the projection-side replay doesn't re-check, but
+    // building a realistic log keeps the test honest).
+    for (const voter of [MODERATOR_ID, DEBATER_A_ID, DEBATER_B_ID]) {
+      applyEvent(
+        projection,
+        makeEvent(seq++, 'vote', voter, T4, {
+          target: 'proposal' as const,
+          proposal_id: PROPOSAL_ID_2,
+          participant: voter,
+          choice: 'agree',
+          voted_at: T4,
+        }),
+      );
+    }
+    applyEvent(
+      projection,
+      makeEvent(seq, 'commit', MODERATOR_ID, T5, {
+        target: 'proposal' as const,
+        proposal_id: PROPOSAL_ID_2,
+        committed_by: MODERATOR_ID,
+        committed_at: T5,
+      }),
+    );
+    expect(projection.pendingProposalCount()).toBe(0);
+    expect(projection.getPendingProposal(PROPOSAL_ID_1)).toBeUndefined();
+    expect(projection.getPendingProposal(PROPOSAL_ID_2)).toBeUndefined();
+  });
+
+  it('proposal-keyed commit on a structural (axiom-mark) proposal does NOT clear pending proposals on the same node', () => {
+    // Axiom-mark and other structural sub-kinds have no facet target,
+    // so the sweep does nothing: pending proposals targeting unrelated
+    // facets on the same node must survive.
+    const projection = createEmptyProjection(SESSION_ID);
+    let seq = seedThreeParticipantNode(projection);
+    // A pending classify-node on the node (targets classification).
+    applyEvent(projection, {
+      ...makeEvent(seq++, 'proposal', DEBATER_A_ID, T3, {
+        proposal: { kind: 'classify-node', node_id: NODE_ID_1, classification: 'fact' },
+      }),
+      id: PROPOSAL_ID_1,
+    });
+    // A pending axiom-mark on the same node (no facet target).
+    applyEvent(projection, {
+      ...makeEvent(seq++, 'proposal', DEBATER_A_ID, T3, {
+        proposal: { kind: 'axiom-mark', node_id: NODE_ID_1, participant: DEBATER_A_ID },
+      }),
+      id: PROPOSAL_ID_2,
+    });
+    for (const voter of [MODERATOR_ID, DEBATER_B_ID]) {
+      applyEvent(
+        projection,
+        makeEvent(seq++, 'vote', voter, T4, {
+          target: 'proposal' as const,
+          proposal_id: PROPOSAL_ID_2,
+          participant: voter,
+          choice: 'agree',
+          voted_at: T4,
+        }),
+      );
+    }
+    applyEvent(
+      projection,
+      makeEvent(seq, 'commit', MODERATOR_ID, T5, {
+        target: 'proposal' as const,
+        proposal_id: PROPOSAL_ID_2,
+        committed_by: MODERATOR_ID,
+        committed_at: T5,
+      }),
+    );
+    expect(projection.getPendingProposal(PROPOSAL_ID_1)).toBeDefined();
+    expect(projection.getPendingProposal(PROPOSAL_ID_2)).toBeUndefined();
+  });
+
+  it('facet-keyed commit clears only the targeted facet — proposals on a different facet of the same node survive', () => {
+    const projection = createEmptyProjection(SESSION_ID);
+    let seq = seedThreeParticipantNode(projection);
+    // classify-node targets classification.
+    applyEvent(projection, {
+      ...makeEvent(seq++, 'proposal', DEBATER_A_ID, T3, {
+        proposal: { kind: 'classify-node', node_id: NODE_ID_1, classification: 'fact' },
+      }),
+      id: PROPOSAL_ID_1,
+    });
+    // set-node-substance targets substance.
+    applyEvent(projection, {
+      ...makeEvent(seq++, 'proposal', DEBATER_B_ID, T3, {
+        proposal: { kind: 'set-node-substance', node_id: NODE_ID_1, value: 'agreed' },
+      }),
+      id: PROPOSAL_ID_2,
+    });
+    applyEvent(
+      projection,
+      makeEvent(seq, 'commit', MODERATOR_ID, T4, {
+        target: 'facet' as const,
+        entity_kind: 'node' as const,
+        entity_id: NODE_ID_1,
+        facet: 'classification' as const,
+        committed_by: MODERATOR_ID,
+        committed_at: T4,
+      }),
+    );
+    expect(projection.getPendingProposal(PROPOSAL_ID_1)).toBeUndefined();
+    expect(projection.getPendingProposal(PROPOSAL_ID_2)).toBeDefined();
+  });
+
+  it('facet-keyed meta-disagreement clears every pending proposal targeting the facet', () => {
+    const projection = createEmptyProjection(SESSION_ID);
+    let seq = seedThreeParticipantNode(projection);
+    applyEvent(projection, {
+      ...makeEvent(seq++, 'proposal', DEBATER_A_ID, T3, {
+        proposal: { kind: 'classify-node', node_id: NODE_ID_1, classification: 'fact' },
+      }),
+      id: PROPOSAL_ID_1,
+    });
+    applyEvent(projection, {
+      ...makeEvent(seq++, 'proposal', DEBATER_B_ID, T3, {
+        proposal: { kind: 'classify-node', node_id: NODE_ID_1, classification: 'value' },
+      }),
+      id: PROPOSAL_ID_2,
+    });
+    applyEvent(
+      projection,
+      makeEvent(seq, 'meta-disagreement-marked', MODERATOR_ID, T4, {
+        target: 'facet' as const,
+        entity_kind: 'node' as const,
+        entity_id: NODE_ID_1,
+        facet: 'classification' as const,
+        marked_by: MODERATOR_ID,
+        marked_at: T4,
+      }),
+    );
+    expect(projection.pendingProposalCount()).toBe(0);
+    expect(projection.getPendingProposal(PROPOSAL_ID_1)).toBeUndefined();
+    expect(projection.getPendingProposal(PROPOSAL_ID_2)).toBeUndefined();
+  });
+
+  it('proposal-keyed meta-disagreement on a facet-valued proposal also clears a superseded sibling on the same facet', () => {
+    const projection = createEmptyProjection(SESSION_ID);
+    let seq = seedThreeParticipantNode(projection);
+    applyEvent(projection, {
+      ...makeEvent(seq++, 'proposal', DEBATER_A_ID, T3, {
+        proposal: { kind: 'classify-node', node_id: NODE_ID_1, classification: 'fact' },
+      }),
+      id: PROPOSAL_ID_1,
+    });
+    applyEvent(projection, {
+      ...makeEvent(seq++, 'proposal', DEBATER_B_ID, T3, {
+        proposal: { kind: 'classify-node', node_id: NODE_ID_1, classification: 'value' },
+      }),
+      id: PROPOSAL_ID_2,
+    });
+    applyEvent(
+      projection,
+      makeEvent(seq, 'meta-disagreement-marked', MODERATOR_ID, T4, {
+        target: 'proposal' as const,
+        proposal_id: PROPOSAL_ID_2,
+        marked_by: MODERATOR_ID,
+        marked_at: T4,
+      }),
+    );
+    expect(projection.pendingProposalCount()).toBe(0);
+    expect(projection.getPendingProposal(PROPOSAL_ID_1)).toBeUndefined();
+    expect(projection.getPendingProposal(PROPOSAL_ID_2)).toBeUndefined();
+  });
+
+  it('projectFromLog replay: a log with a stale predecessor + a committing superseder yields zero pending', () => {
+    // The on-load replay path (projectFromLog) goes through the same
+    // applyEvent dispatcher, but pin the round-trip explicitly: rebuilding
+    // a session from disk must not surface phantom pending proposals.
+    const events: Event[] = [
+      makeEvent(1, 'session-created', HOST_ID, T0, {
+        host_user_id: HOST_ID,
+        privacy: 'public',
+        topic: 'Test',
+        created_at: T0,
+      }),
+      makeEvent(2, 'participant-joined', MODERATOR_ID, T1, {
+        user_id: MODERATOR_ID,
+        role: 'moderator',
+        screen_name: 'Mod',
+        joined_at: T1,
+      }),
+      makeEvent(3, 'participant-joined', DEBATER_A_ID, T1, {
+        user_id: DEBATER_A_ID,
+        role: 'debater-A',
+        screen_name: 'A',
+        joined_at: T1,
+      }),
+      makeEvent(4, 'participant-joined', DEBATER_B_ID, T1, {
+        user_id: DEBATER_B_ID,
+        role: 'debater-B',
+        screen_name: 'B',
+        joined_at: T1,
+      }),
+      makeEvent(5, 'node-created', DEBATER_A_ID, T2, {
+        node_id: NODE_ID_1,
+        wording: 'Sky is blue.',
+        created_by: DEBATER_A_ID,
+        created_at: T2,
+      }),
+      {
+        ...makeEvent(6, 'proposal', DEBATER_A_ID, T3, {
+          proposal: { kind: 'classify-node', node_id: NODE_ID_1, classification: 'fact' },
+        }),
+        id: PROPOSAL_ID_1,
+      },
+      {
+        ...makeEvent(7, 'proposal', DEBATER_B_ID, T3, {
+          proposal: { kind: 'classify-node', node_id: NODE_ID_1, classification: 'value' },
+        }),
+        id: PROPOSAL_ID_2,
+      },
+      makeEvent(8, 'commit', MODERATOR_ID, T4, {
+        target: 'facet' as const,
+        entity_kind: 'node' as const,
+        entity_id: NODE_ID_1,
+        facet: 'classification' as const,
+        committed_by: MODERATOR_ID,
+        committed_at: T4,
+      }),
+    ];
+    const projection = projectFromLog(events, SESSION_ID);
+    expect(projection.pendingProposalCount()).toBe(0);
   });
 });
 

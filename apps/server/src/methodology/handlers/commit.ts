@@ -209,14 +209,13 @@ function checkUnanimousAgreeFacet(
   // currently be `'agreed'` per `deriveFacetStatus`. This is a cross-
   // check on top of the perParticipant walk below — they compute the
   // same predicate (unanimous-agree across current non-moderator
-  // participants) and stay in sync by construction, but the per-status
-  // dispatch here also catches lifecycle states the perParticipant walk
-  // alone cannot (a facet that is already `'committed'` or
-  // `'meta-disagreement'` whose proposal record nevertheless still
-  // appears as `'pending'` in `findProposal` because the facet-keyed
-  // commit / mark does NOT remove the pending proposal record; only
-  // the proposal-keyed arm does — see `apps/server/src/projection/replay.ts`
-  // `handleCommit` / `handleMetaDisagreementMarked` facet arms).
+  // participants) and stay in sync by construction. The per-status
+  // dispatch here is also the engine's defense-in-depth for the rare
+  // race where a pending proposal coexists with an already-resolved
+  // facet: the projection's facet-resolution sweep in `handleCommit` /
+  // `handleMetaDisagreementMarked` (apps/server/src/projection/replay.ts)
+  // removes every pending proposal targeting a resolved facet, so under
+  // steady-state replay this dispatch fires only if that sweep is bypassed.
   const status = deriveFacetStatus(projection, target.entityKind, target.entityId, target.facet);
   if (status === 'committed') {
     return {

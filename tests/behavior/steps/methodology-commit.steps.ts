@@ -339,3 +339,19 @@ Then(
     assert.equal(status, expectedStatus);
   },
 );
+
+// Replay-time pin for the facet-resolution sweep: after the engine's
+// facet-keyed commit is appended and the projection is re-built from
+// the round-tripped log, the pending bucket must be empty for any
+// proposal whose payload targets the resolved facet (per
+// `apps/server/src/projection/replay.ts` `handleCommit` /
+// `handleMetaDisagreementMarked` and the unit pins in `replay.test.ts`
+// `facet-resolution sweep clears stale pending proposals`).
+Then('the projection has no pending proposals', function (this: AConversaWorld) {
+  const projection = this.scratch['commitProjection'] as Projection;
+  assert.equal(
+    projection.pendingProposalCount(),
+    0,
+    `expected pendingProposalCount=0 after replay, got ${projection.pendingProposalCount()}`,
+  );
+});

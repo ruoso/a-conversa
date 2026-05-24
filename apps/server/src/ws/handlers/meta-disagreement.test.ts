@@ -855,7 +855,16 @@ describe('ws_meta_disagreement_message — handler integration', () => {
     }
   });
 
-  it('echoes the methodology engine `proposal-already-meta-disagreement` rejection on a duplicate mark (idempotency check)', async () => {
+  it('echoes the methodology engine `proposal-not-found` rejection on a duplicate mark (projection swept the proposal)', async () => {
+    // The markable proposal is facet-valued (a classify-node), so the
+    // engine emits a facet-keyed meta-disagreement-marked. The
+    // projection's facet-resolution sweep clears the pending proposal
+    // record on the first mark; a second mark attempt on the same
+    // proposal id can't find it and the engine rejects with
+    // `'proposal-not-found'`. Pre-sweep this case returned
+    // `'proposal-already-meta-disagreement'` via the facet-status
+    // cross-check; the cross-check now serves only as defense-in-depth
+    // and the projection sweep is the primary lifecycle gate.
     const cookie = await fixtureCookieHeader();
     const { ws, next } = await openWsClient(app, cookie);
     try {
@@ -877,13 +886,13 @@ describe('ws_meta_disagreement_message — handler integration', () => {
       }
 
       // Second mark on the same proposal — engine rejects with
-      // `proposal-already-meta-disagreement`. expectedSequence is now 8.
+      // `proposal-not-found`. expectedSequence is now 8.
       ws.send(markFrame(MARK_MSG_ID, MARKABLE_SESSION_ID, 8, PROPOSAL_EVENT_ID));
 
       const err = await readUntilType(next, 'error');
       const payload = err.parsed.payload as { code?: unknown };
       expect(err.parsed.inResponseTo).toBe(MARK_MSG_ID);
-      expect(payload.code).toBe('proposal-already-meta-disagreement');
+      expect(payload.code).toBe('proposal-not-found');
     } finally {
       ws.terminate();
     }
