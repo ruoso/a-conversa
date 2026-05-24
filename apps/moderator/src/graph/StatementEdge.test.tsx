@@ -22,7 +22,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import i18next from 'i18next';
-import ReactFlow, { Position, type Edge, type Node } from 'reactflow';
+import ReactFlow, { MarkerType, Position, type Edge, type Node } from 'reactflow';
 import 'reactflow/dist/style.css';
 
 import { createI18nInstance } from '@a-conversa/shell';
@@ -644,6 +644,57 @@ describe('StatementEdge — meta-disagreement-state styling (mod_meta_disagreeme
       expect(style).not.toMatch(/opacity\s*:/i);
     }
     expect(foundVioletDotted).toBe(true);
+  });
+});
+
+// -- Directional arrow marker ----------------------------------------
+//
+// `<StatementEdge>` threads the resolved `markerEnd` URL from
+// `EdgeProps` into `<BaseEdge>` so ReactFlow paints the directional
+// arrowhead on the visible edge path. The selector populates the
+// per-edge `markerEnd` object (color per substance status); these
+// cases pin the DOM contract that the threaded URL lands as the
+// `marker-end` attribute on at least one path inside the
+// `.react-flow__edges` container.
+
+describe('StatementEdge — directional arrow', () => {
+  it('renders a marker-end="url(#…)" attribute on the BaseEdge path when the edge declares markerEnd', async () => {
+    const edge: Edge<StatementEdgeData> = {
+      id: 'edge-with-arrow',
+      source: 'n1',
+      target: 'n2',
+      type: 'statement',
+      markerEnd: { type: MarkerType.ArrowClosed },
+      data: {
+        role: 'supports',
+        annotations: [],
+        facetStatuses: {},
+        sourceId: 'n1',
+        targetId: 'n2',
+        sourceWording: 'A',
+        targetWording: 'B',
+      },
+    };
+    const { container } = render(
+      <div style={{ width: 400, height: 400 }}>
+        <ReactFlow nodes={NODES} edges={[edge]} edgeTypes={edgeTypes} />
+      </div>,
+    );
+    await waitFor(() => screen.getByTestId('graph-edge-label-edge-with-arrow'));
+    // ReactFlow renders multiple paths per edge (interaction stroke +
+    // visible edge); at least one carries the `marker-end` URL. The
+    // marker itself paints as a `<polyline>` inside a `<marker>` def,
+    // so iterating paths reaches the visible edge without picking up
+    // the marker glyph.
+    const paths = container.querySelectorAll('.react-flow__edges path');
+    const markerEnds = Array.from(paths)
+      .map((p) => p.getAttribute('marker-end'))
+      .filter((v): v is string => v !== null && v !== '');
+    expect(markerEnds.length).toBeGreaterThan(0);
+    // ReactFlow's EdgeWrapper resolves `markerEnd` to a single-
+    // quoted CSS URL (`url('#<id>')`), so the regex allows the
+    // single-quote wrapping.
+    expect(markerEnds.every((v) => /^url\('#.+'\)$/.test(v))).toBe(true);
   });
 });
 

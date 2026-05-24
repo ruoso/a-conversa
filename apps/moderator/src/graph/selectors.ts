@@ -22,7 +22,7 @@
 // node projection lives in `GraphCanvasPane.tsx` as `projectNodes` so
 // it can do the per-target annotation enrichment in a single pass.
 
-import type { Edge } from 'reactflow';
+import { MarkerType, type Edge, type EdgeMarker } from 'reactflow';
 import type { AnnotationKind, EdgeRole, Event, ProposalPayload } from '@a-conversa/shared-types';
 // `Vote` is imported from the shell after the `extract_facet_pill` lift
 // (refinement Decision §3 — the in-pill render-dependency chain ships
@@ -598,11 +598,34 @@ export function selectEdgesForSession(
             sourceWording,
             targetWording,
           };
+    // Directional arrow marker. Edges in the methodology are inherently
+    // directional ("statement A `supports` statement B" reads source →
+    // target); the moderator canvas must surface that direction visually
+    // so the role label is not parsed as a symmetric label. ReactFlow
+    // only auto-generates `<marker>` defs for the values it finds on
+    // `edge.markerEnd`, so the field is attached here on the projection
+    // (the consuming `<StatementEdge>` threads it into `<BaseEdge>`).
+    //
+    // Arrow color matches the per-state stroke override in
+    // `<StatementEdge>` so the arrowhead reads as the same signal as the
+    // stroke (`#e11d48` for disputed, `#7c3aed` for meta-disagreement);
+    // every other substance state uses the default arrow color so the
+    // baseline / proposed / agreed / committed / withdrawn arrows match
+    // the BaseEdge default stroke. Parallels the participant Cytoscape
+    // surface, which already wires per-state `target-arrow-color` next to
+    // `line-color` (apps/participant/src/graph/GraphView.tsx).
+    const markerEnd: EdgeMarker =
+      facetStatuses.substance === 'disputed'
+        ? { type: MarkerType.ArrowClosed, color: '#e11d48' }
+        : facetStatuses.substance === 'meta-disagreement'
+          ? { type: MarkerType.ArrowClosed, color: '#7c3aed' }
+          : { type: MarkerType.ArrowClosed };
     out.push({
       id: event.payload.edge_id,
       source: event.payload.source_node_id,
       target: event.payload.target_node_id,
       type: 'statement',
+      markerEnd,
       data,
     });
   }

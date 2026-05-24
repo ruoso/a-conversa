@@ -52,8 +52,18 @@ import { HoverPopover } from './HoverPopover.js';
 import type { StatementEdgeData } from './selectors.js';
 
 function StatementEdgeImpl(props: EdgeProps<StatementEdgeData>): ReactElement {
-  const { id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data, style } =
-    props;
+  const {
+    id,
+    sourceX,
+    sourceY,
+    targetX,
+    targetY,
+    sourcePosition,
+    targetPosition,
+    data,
+    style,
+    markerEnd,
+  } = props;
   const { t } = useTranslation();
 
   // Selection state for this edge. Refinement: `mod_selection`. Same
@@ -202,7 +212,17 @@ function StatementEdgeImpl(props: EdgeProps<StatementEdgeData>): ReactElement {
     style !== undefined || statusEdgeStyle !== undefined
       ? { ...(style ?? {}), ...(statusEdgeStyle ?? {}) }
       : undefined;
-  const baseEdgeStyleProps = mergedStyle === undefined ? {} : { style: mergedStyle };
+  // Conditionally compose the `<BaseEdge>` optional props (`style`,
+  // `markerEnd`). `exactOptionalPropertyTypes` rejects forwarding
+  // `undefined` for either, so each only contributes its key when set.
+  // `markerEnd` is the URL ReactFlow already resolved from the
+  // `edge.markerEnd` field the selector populated — `<StatementEdge>`
+  // just threads it through so `<BaseEdge>` paints the auto-generated
+  // arrow marker on the visible path.
+  const baseEdgeOptionalProps = {
+    ...(mergedStyle === undefined ? {} : { style: mergedStyle }),
+    ...(markerEnd === undefined ? {} : { markerEnd }),
+  };
 
   // Diagnostic-highlight halo on the role-label pill (refinement
   // `mod_diagnostic_highlighting`). Same composition decision as the
@@ -255,7 +275,7 @@ function StatementEdgeImpl(props: EdgeProps<StatementEdgeData>): ReactElement {
 
   return (
     <>
-      <BaseEdge id={id} path={edgePath} {...baseEdgeStyleProps} />
+      <BaseEdge id={id} path={edgePath} {...baseEdgeOptionalProps} />
       <EdgeLabelRenderer>
         <div
           style={{

@@ -36,6 +36,7 @@
 //      correctly and exclude the other-entity annotations.
 
 import { describe, expect, it } from 'vitest';
+import { MarkerType } from 'reactflow';
 import type { AnnotationKind, EdgeRole, Event } from '@a-conversa/shared-types';
 
 import { AXIOM_MARK_PALETTE_SIZE, axiomMarkColorFor } from '@a-conversa/shell';
@@ -149,6 +150,13 @@ describe('selectEdgesForSession', () => {
       source: '00000000-0000-4000-8000-000000000001',
       target: '00000000-0000-4000-8000-000000000002',
       type: 'statement',
+      // Directional arrow marker (per-edge ReactFlow `markerEnd` field).
+      // Baseline edges (no substance override on facetStatuses) use the
+      // default `ArrowClosed` with no color, so ReactFlow paints the
+      // arrow in its built-in default — matching the BaseEdge default
+      // stroke. Per-state color variants are exercised by the dedicated
+      // markerEnd cases further down.
+      markerEnd: { type: MarkerType.ArrowClosed },
       // `annotations` defaults to an empty list (the module-scope
       // shared `EMPTY_ANNOTATIONS` reference) when no annotation event
       // targets this edge. `facetStatuses` defaults to the module-scope
@@ -309,6 +317,184 @@ describe('selectEdgesForSession', () => {
       substance: 'proposed',
       shape: 'proposed',
     });
+  });
+
+  // -- Directional arrow marker ---------------------------------------
+  //
+  // The selector attaches `markerEnd: { type: MarkerType.ArrowClosed }`
+  // to every emitted edge so ReactFlow paints a directional arrowhead
+  // on the visible bezier path. Arrow color matches the per-state
+  // stroke override in `<StatementEdge>`: `#e11d48` for disputed,
+  // `#7c3aed` for meta-disagreement, default (no color) elsewhere.
+  // Parallels the participant Cytoscape surface, which already wires
+  // per-state `target-arrow-color` next to `line-color`.
+
+  it('attaches markerEnd { type: ArrowClosed, color: #e11d48 } when the substance facet is disputed', () => {
+    const edgeId = '44444444-4444-4444-8444-444444444444';
+    const proposalId = '55555555-5555-4555-8555-555555555555';
+    const PARTICIPANT_A = '00000000-0000-4000-8000-0000000000a1';
+    const PARTICIPANT_B = '00000000-0000-4000-8000-0000000000a2';
+    const state = makeState([
+      {
+        id: '00000000-0000-4000-8000-0000000000j1',
+        sessionId: SESSION,
+        sequence: 1,
+        kind: 'participant-joined',
+        actor: ACTOR,
+        payload: {
+          user_id: PARTICIPANT_A,
+          role: 'debater-A',
+          screen_name: 'A',
+          joined_at: '2026-05-11T00:00:00.000Z',
+        },
+        createdAt: '2026-05-11T00:00:00.000Z',
+      },
+      {
+        id: '00000000-0000-4000-8000-0000000000j2',
+        sessionId: SESSION,
+        sequence: 2,
+        kind: 'participant-joined',
+        actor: ACTOR,
+        payload: {
+          user_id: PARTICIPANT_B,
+          role: 'debater-B',
+          screen_name: 'B',
+          joined_at: '2026-05-11T00:00:00.000Z',
+        },
+        createdAt: '2026-05-11T00:00:00.000Z',
+      },
+      makeEdgeCreated({
+        sequence: 3,
+        edgeId,
+        role: 'supports',
+        source: 'n1',
+        target: 'n2',
+      }),
+      {
+        id: proposalId,
+        sessionId: SESSION,
+        sequence: 4,
+        kind: 'proposal',
+        actor: ACTOR,
+        payload: {
+          proposal: { kind: 'set-edge-substance', edge_id: edgeId, value: 'agreed' },
+        },
+        createdAt: '2026-05-11T00:00:00.000Z',
+      },
+      {
+        id: '00000000-0000-4000-8000-0000000000v1',
+        sessionId: SESSION,
+        sequence: 5,
+        kind: 'vote',
+        actor: PARTICIPANT_A,
+        payload: {
+          target: 'proposal' as const,
+          proposal_id: proposalId,
+          participant: PARTICIPANT_A,
+          choice: 'dispute',
+          voted_at: '2026-05-11T00:00:10.000Z',
+        },
+        createdAt: '2026-05-11T00:00:10.000Z',
+      },
+    ]);
+    const edges = selectEdgesForSession(state, SESSION);
+    expect(edges).toHaveLength(1);
+    expect(edges[0]?.data?.facetStatuses?.substance).toBe('disputed');
+    expect(edges[0]?.markerEnd).toEqual({ type: MarkerType.ArrowClosed, color: '#e11d48' });
+  });
+
+  it('attaches markerEnd { type: ArrowClosed, color: #7c3aed } when the substance facet is meta-disagreement', () => {
+    const edgeId = '66666666-6666-4666-8666-666666666666';
+    const proposalId = '77777777-7777-4777-8777-777777777777';
+    const PARTICIPANT_A = '00000000-0000-4000-8000-0000000000a1';
+    const PARTICIPANT_B = '00000000-0000-4000-8000-0000000000a2';
+    const state = makeState([
+      {
+        id: '00000000-0000-4000-8000-0000000000j3',
+        sessionId: SESSION,
+        sequence: 1,
+        kind: 'participant-joined',
+        actor: ACTOR,
+        payload: {
+          user_id: PARTICIPANT_A,
+          role: 'debater-A',
+          screen_name: 'A',
+          joined_at: '2026-05-11T00:00:00.000Z',
+        },
+        createdAt: '2026-05-11T00:00:00.000Z',
+      },
+      {
+        id: '00000000-0000-4000-8000-0000000000j4',
+        sessionId: SESSION,
+        sequence: 2,
+        kind: 'participant-joined',
+        actor: ACTOR,
+        payload: {
+          user_id: PARTICIPANT_B,
+          role: 'debater-B',
+          screen_name: 'B',
+          joined_at: '2026-05-11T00:00:00.000Z',
+        },
+        createdAt: '2026-05-11T00:00:00.000Z',
+      },
+      makeEdgeCreated({
+        sequence: 3,
+        edgeId,
+        role: 'supports',
+        source: 'n1',
+        target: 'n2',
+      }),
+      {
+        id: proposalId,
+        sessionId: SESSION,
+        sequence: 4,
+        kind: 'proposal',
+        actor: ACTOR,
+        payload: {
+          proposal: { kind: 'set-edge-substance', edge_id: edgeId, value: 'agreed' },
+        },
+        createdAt: '2026-05-11T00:00:00.000Z',
+      },
+      {
+        id: '00000000-0000-4000-8000-0000000000m1',
+        sessionId: SESSION,
+        sequence: 5,
+        kind: 'meta-disagreement-marked',
+        actor: ACTOR,
+        payload: {
+          target: 'proposal',
+          proposal_id: proposalId,
+          marked_by: ACTOR,
+          marked_at: '2026-05-11T00:00:20.000Z',
+        },
+        createdAt: '2026-05-11T00:00:20.000Z',
+      },
+    ]);
+    const edges = selectEdgesForSession(state, SESSION);
+    expect(edges).toHaveLength(1);
+    expect(edges[0]?.data?.facetStatuses?.substance).toBe('meta-disagreement');
+    expect(edges[0]?.markerEnd).toEqual({ type: MarkerType.ArrowClosed, color: '#7c3aed' });
+  });
+
+  it('attaches the default-color markerEnd to a baseline edge (no per-state stroke override)', () => {
+    // Awaiting-proposal substance (the default empty-state) falls
+    // through to the default-color marker — no `color` field — so
+    // ReactFlow paints the built-in arrow color matching the
+    // BaseEdge default stroke. Same branch covers proposed / agreed
+    // / committed / withdrawn substance states, none of which override
+    // the stroke in `<StatementEdge>`.
+    const state = makeState([
+      makeEdgeCreated({
+        sequence: 1,
+        edgeId: 'edge-baseline-arrow',
+        role: 'supports',
+        source: 'n1',
+        target: 'n2',
+      }),
+    ]);
+    const edges = selectEdgesForSession(state, SESSION);
+    expect(edges).toHaveLength(1);
+    expect(edges[0]?.markerEnd).toEqual({ type: MarkerType.ArrowClosed });
   });
 
   it('attaches the awaiting-proposal substance row to an edge with no facet-targeting proposals', () => {
