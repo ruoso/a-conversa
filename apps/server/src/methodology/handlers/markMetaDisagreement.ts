@@ -76,7 +76,11 @@
 // codepaths; the projection handler trusts that the methodology
 // validator already gated the event.
 
+import type { ProposalPayload } from '@a-conversa/shared-types';
+
 import type { Projection } from '../../projection/index.js';
+import type { FacetName } from '../../projection/index.js';
+import { deriveFacetStatus } from '../../projection/facet-status.js';
 import {
   findProposal,
   proposalHasAnyDispute,
@@ -90,6 +94,34 @@ import type {
   ValidationResult,
   Validator,
 } from '../types.js';
+
+// Facet-target resolution helper — mirrors the private helper in
+// `primitives.ts` + `handlers/commit.ts` + `handlers/vote.ts`. Kept
+// local rather than re-exported to avoid a wider surface change; a
+// future shared-helper refactor would extract all call sites together.
+// Returns the `(entity_kind, entity_id, facet)` triple for the four
+// facet-valued proposal sub-kinds; `null` for the seven structural
+// sub-kinds.
+interface FacetTarget {
+  entityKind: 'node' | 'edge';
+  entityId: string;
+  facet: FacetName;
+}
+
+function facetTargetForProposal(proposal: ProposalPayload): FacetTarget | null {
+  switch (proposal.kind) {
+    case 'classify-node':
+      return { entityKind: 'node', entityId: proposal.node_id, facet: 'classification' };
+    case 'set-node-substance':
+      return { entityKind: 'node', entityId: proposal.node_id, facet: 'substance' };
+    case 'set-edge-substance':
+      return { entityKind: 'edge', entityId: proposal.edge_id, facet: 'substance' };
+    case 'edit-wording':
+      return { entityKind: 'node', entityId: proposal.node_id, facet: 'wording' };
+    default:
+      return null;
+  }
+}
 
 export const markMetaDisagreementHandler: Validator<MarkMetaDisagreementAction> = (
   projection: Projection,
@@ -145,36 +177,95 @@ export const markMetaDisagreementHandler: Validator<MarkMetaDisagreementAction> 
     };
   }
 
+  // Facet-arm cross-check: the projection's facet-keyed
+  // `handleMetaDisagreementMarked` arm does NOT remove the pending
+  // proposal record (the mark hangs off the facet itself); only the
+  // proposal-keyed arm does. A second mark on the same facet-valued
+  // proposal therefore still finds the proposal as `pending` in
+  // `findProposal` above — rule 3 cannot catch the duplicate. Read the
+  // targeted facet's derived status directly: if it's already
+  // `'meta-disagreement'` (a prior facet-keyed mark landed) or
+  // `'committed'` / `'withdrawn'` (the facet's lifecycle has moved on),
+  // refuse with the appropriate typed rejection before emitting.
+  // Mirrors the cross-check pattern in `checkUnanimousAgreeFacet`
+  // (`apps/server/src/methodology/handlers/commit.ts`) for the
+  // analogous facet-arm second-commit gate.
+  const target = facetTargetForProposal(found.record.payload);
+  if (target !== null) {
+    const status = deriveFacetStatus(projection, target.entityKind, target.entityId, target.facet);
+    if (status === 'meta-disagreement') {
+      return {
+        ok: false,
+        reason: 'proposal-already-meta-disagreement',
+        detail: `mark-meta-disagreement: facet ${target.entityKind}:${target.entityId}/${target.facet} has already been marked as meta-disagreement (a prior facet-keyed mark landed)`,
+      };
+    }
+    if (status === 'committed') {
+      return {
+        ok: false,
+        reason: 'proposal-already-committed',
+        detail: `mark-meta-disagreement: facet ${target.entityKind}:${target.entityId}/${target.facet} is already committed; meta-disagreement is not legal on a committed facet`,
+      };
+    }
+    if (status === 'withdrawn') {
+      return {
+        ok: false,
+        reason: 'illegal-state-transition',
+        detail: `mark-meta-disagreement: facet ${target.entityKind}:${target.entityId}/${target.facet} is in status 'withdrawn' — a fresh candidate must land before meta-disagreement can be considered`,
+      };
+    }
+  }
+
   // Valid — emit one meta-disagreement-marked event.
   //
-  // TODO(pf_meta_disagreement_handler_facet_keyed): per ADR 0030 §2 the
-  // meta-disagreement-marked payload is now a `target`-discriminated
-  // union (facet-keyed vs. proposal-keyed). This handler currently emits
-  // the proposal-keyed arm for ALL meta-disagreement marks (including
-  // marks against facet-valued proposal sub-kinds — classify-node /
-  // set-node-substance / set-edge-substance / edit-wording). Per ADR
-  // 0030 §2 those marks should be emitted as `target: 'facet'` with the
-  // looked-up `(entity_kind, entity_id, facet)` derived from the
-  // proposal. The downstream `pf_meta_disagreement_handler_facet_keyed`
-  // task rewires this handler to consult the projection's pending
-  // proposal, derive the facet target via the shared helper, and emit
-  // the appropriate arm. Today's emission keeps every existing consumer
-  // (the projection's `handleMetaDisagreementMarked` reading
-  // `payload.proposal_id`) on the proposal-keyed shape — a controlled,
-  // schema-valid emit that preserves current behaviour until that
-  // downstream task lands.
+  // Per ADR 0030 §2 + §9 the meta-disagreement-marked payload is a
+  // `target`-discriminated union. Dispatch on proposal sub-kind:
+  //
+  //   - facet-valued sub-kinds (classify-node / set-node-substance /
+  //     set-edge-substance / edit-wording) emit `target: 'facet'` keyed
+  //     by `(entity_kind, entity_id, facet)` per ADR 0030 §2 — the mark
+  //     hangs off the facet itself rather than off the proposal id, so
+  //     subsequent re-proposal lifecycles compose cleanly against the
+  //     per-facet state.
+  //   - structural sub-kinds (decompose / interpretive-split /
+  //     axiom-mark / meta-move / break-edge / amend-node / annotate)
+  //     emit `target: 'proposal'` keyed by `proposal_id` per ADR 0030
+  //     §9 — these proposals have no facet target the mark could attach
+  //     to. (Unreachable here today: the boundary check above already
+  //     refuses structural sub-kinds with `illegal-state-transition`;
+  //     the per-sub-kind sibling tasks own structural meta-disagreement
+  //     semantics.)
+  //
+  // The discriminator derives from `facetTargetForProposal` (mirrors
+  // the same helper in the commit + vote handlers): non-null ↔ facet
+  // arm; null ↔ structural arm. The projection's
+  // `handleMetaDisagreementMarked` walks both arms (per
+  // `pf_projection_replay_updates`); the wire frame here picks the
+  // appropriate shape per sub-kind. `target` is the same `FacetTarget`
+  // already computed for the facet-arm cross-check above.
+  const payload =
+    target !== null
+      ? ({
+          target: 'facet' as const,
+          entity_kind: target.entityKind,
+          entity_id: target.entityId,
+          facet: target.facet,
+          marked_by: action.requester,
+          marked_at: action.markedAt,
+        } as const)
+      : ({
+          target: 'proposal' as const,
+          proposal_id: action.proposalEventId,
+          marked_by: action.requester,
+          marked_at: action.markedAt,
+        } as const);
   const event: EventToAppendEnvelope<'meta-disagreement-marked'> = {
     id: action.eventId,
     sessionId: action.sessionId,
     sequence: action.sequence,
     kind: 'meta-disagreement-marked',
     actor: action.actor,
-    payload: {
-      target: 'proposal',
-      proposal_id: action.proposalEventId,
-      marked_by: action.requester,
-      marked_at: action.markedAt,
-    },
+    payload,
     createdAt: action.createdAt,
   };
   return { ok: true, events: [event] };

@@ -109,6 +109,7 @@ task per_facet_refactor "Per-facet refactor (ADR 0030)" {
     task pf_meta_disagreement_handler_facet_keyed "Meta-disagreement-marked handler: facet-keyed dispatch" {
       effort 0.5d
       allocate team
+      complete 100
       note "Refinement: tasks/refinements/per-facet-refactor/pf_meta_disagreement_handler_facet_keyed.md"
     }
     task pf_structural_handlers_unchanged "Pin + test surfaces for structural proposal-keyed handlers" {

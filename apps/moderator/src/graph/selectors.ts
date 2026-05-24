@@ -461,10 +461,13 @@ export function projectPendingAxiomMarks(events: readonly Event[]): PendingAxiom
       continue;
     }
     if (event.kind === 'meta-disagreement-marked') {
-      // TODO(pf_meta_disagreement_handler_facet_keyed): meta-disagreement-marked
-      // payloads are now a `target`-discriminated union. The methodology
-      // engine emits proposal-keyed marks for every sub-kind today; read
-      // only that arm until the downstream task lands facet-keyed emission.
+      // Per ADR 0030 §2 + §9: meta-disagreement-marked payloads are a
+      // `target`-discriminated union. The `pending` map tracks axiom-mark
+      // proposals (a structural sub-kind per ADR 0030 §9); their marks
+      // ride the proposal-keyed arm. The facet-keyed arm targets
+      // facet-valued sub-kinds (classify-node / set-node-substance /
+      // set-edge-substance / edit-wording) and does not terminate
+      // axiom-mark proposals.
       if (event.payload.target !== 'proposal') continue;
       pending.delete(event.payload.proposal_id);
       continue;

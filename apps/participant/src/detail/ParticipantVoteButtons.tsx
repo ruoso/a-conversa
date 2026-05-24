@@ -261,12 +261,20 @@ export function derivePendingFacetProposals(
         if (proposalId !== undefined) closedProposalIds.add(proposalId);
       }
     } else if (event.kind === 'meta-disagreement-marked') {
-      // TODO(pf_meta_disagreement_handler_facet_keyed): meta-disagreement-marked
-      // payloads are now a `target`-discriminated union. The methodology
-      // engine emits proposal-keyed marks for every sub-kind today; read
-      // only that arm until the downstream task lands facet-keyed emission.
+      // Per ADR 0030 §2 + §9: meta-disagreement-marked payloads are a
+      // `target`-discriminated union. The proposal-keyed arm carries
+      // `proposal_id` directly; the facet-keyed arm names the
+      // `(entity_kind, entity_id, facet)` triple and the proposal it
+      // closes is the most-recent facet-valued proposal for the same
+      // triple — looked up via the `proposalIdByFacet` map this selector
+      // already maintains (mirrors the commit arm's pattern). Facet
+      // marks against unrelated `(entityKind, entityId)` are ignored;
+      // only marks scoped to this panel's entity contribute.
       if (event.payload.target === 'proposal') {
         closedProposalIds.add(event.payload.proposal_id);
+      } else if (event.payload.entity_kind === entityKind && event.payload.entity_id === entityId) {
+        const proposalId = proposalIdByFacet.get(event.payload.facet);
+        if (proposalId !== undefined) closedProposalIds.add(proposalId);
       }
     }
   }

@@ -27,6 +27,7 @@ import {
   type Event,
   type Projection,
 } from '../../../apps/server/src/projection/index.js';
+import { deriveFacetStatus } from '../../../apps/server/src/projection/facet-status.js';
 import {
   nextSequence,
   validateAction,
@@ -317,16 +318,59 @@ Then(
     assert.equal(ev.sessionId, ML_SESSION_ID);
     assert.equal(ev.id, ML_NEW_EVENT_ID);
     if (ev.kind === 'meta-disagreement-marked') {
-      // TODO(pf_meta_disagreement_handler_facet_keyed): the methodology
-      // engine emits the proposal-keyed arm for all meta-disagreement
-      // marks today; the downstream task rewires emission for
-      // facet-valued proposal sub-kinds.
-      assert.equal(ev.payload.target, 'proposal');
-      if (ev.payload.target === 'proposal') {
-        assert.equal(ev.payload.proposal_id, ML_PROPOSAL_ID);
+      // Per ADR 0030 §2 + §9: the meta-disagreement-marked payload is
+      // a `target`-discriminated union. The seed proposal here is a
+      // `classify-node` (facet-valued), so the methodology engine
+      // emits `target: 'facet'` keyed by `(entity_kind, entity_id,
+      // facet)` — NO `proposal_id` on this arm.
+      assert.equal(ev.payload.target, 'facet');
+      if (ev.payload.target === 'facet') {
+        assert.equal(ev.payload.entity_kind, 'node');
+        assert.equal(ev.payload.entity_id, ML_NODE_ID);
+        assert.equal(ev.payload.facet, 'classification');
         assert.equal(ev.payload.marked_by, ML_HOST_ID);
         assert.equal(ev.payload.marked_at, tsAt(20));
       }
     }
+  },
+);
+
+// ADR 0030 §2 + `pf_meta_disagreement_handler_facet_keyed`: the engine's
+// facet-keyed meta-disagreement-marked event lands on the projection;
+// the projection's `handleMetaDisagreementMarked` facet arm flips the
+// targeted facet's `metaDisagreement` flag (and pins the agreement-layer
+// status mirror) so the derivation reads `'meta-disagreement'`. This
+// step inserts the emitted event back into pglite and re-projects so the
+// derivation reads from the round-tripped log (not from an in-memory
+// projection that bypassed the schema seam).
+When(
+  'the resulting meta-disagreement-marked event is appended to the session log and the projection is replayed',
+  async function (this: AConversaWorld) {
+    const result = this.scratch['methodologyResult'] as ValidationResult;
+    assert.ok(result.ok, `expected Valid before appending, got ${JSON.stringify(result)}`);
+    if (!result.ok) return;
+    assert.equal(result.events.length, 1, 'expected exactly one event to append');
+    const ev = result.events[0]!;
+    assert.equal(ev.kind, 'meta-disagreement-marked');
+    await insertEventRow(this, ML_SESSION_ID, {
+      id: ev.id,
+      sequence: ev.sequence,
+      kind: ev.kind,
+      actor: ev.actor,
+      payload: ev.payload,
+      createdAt: ev.createdAt,
+    });
+    // Re-project the full log so the derivation reads from the round-
+    // tripped JSONB column (the schema-seam pin).
+    this.scratch['markProjection'] = await projectFromDb(this);
+  },
+);
+
+Then(
+  /^the marked classification facet's derived status is "([^"]+)"$/,
+  function (this: AConversaWorld, expectedStatus: string) {
+    const projection = this.scratch['markProjection'] as Projection;
+    const status = deriveFacetStatus(projection, 'node', ML_NODE_ID, 'classification');
+    assert.equal(status, expectedStatus);
   },
 );

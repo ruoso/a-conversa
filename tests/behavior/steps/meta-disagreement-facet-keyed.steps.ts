@@ -13,15 +13,13 @@
 //   (c) `projectFromLog` advances `lastAppliedSequence` past the
 //       proposal-keyed arm without throwing.
 //
-// **Projection-side handling of the facet-keyed arm is out of scope**
-// for this task. The methodology engine still emits the proposal-keyed
-// arm for ALL meta-disagreement marks (per the
-// TODO(pf_meta_disagreement_handler_facet_keyed) in
-// `apps/server/src/methodology/handlers/markMetaDisagreement.ts`); the
-// projection's `handleMetaDisagreementMarked` rejects the facet-keyed
-// arm with a runtime error so any inadvertent emit during the
-// transition surfaces loudly. The downstream
-// `pf_meta_disagreement_handler_facet_keyed` task rewires both halves.
+// **Projection-side handling of the facet-keyed arm is owned by the
+// `pf_meta_disagreement_handler_facet_keyed` sibling.** The end-to-end
+// "moderator marks a disputed facet → projection flips facet status to
+// meta-disagreement" round-trip lives in the methodology engine's
+// behavior feature (`methodology/mark-meta-disagreement.feature`) which
+// composes the engine + projection walker on top of the schema seam
+// this file pins.
 //
 // Refinement: tasks/refinements/per-facet-refactor/pf_facet_keyed_meta_disagreement_payload.md
 

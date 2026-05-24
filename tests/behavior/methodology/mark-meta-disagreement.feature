@@ -43,3 +43,20 @@ Feature: methodology engine — mark-meta-disagreement handler against a DB-proj
     When the moderator constructs a mark-meta-disagreement action against the committed proposal
     And the methodology engine validates the mark-meta-disagreement action against the projected session
     Then the validation result is Rejected with reason "proposal-already-committed"
+
+  Scenario: the engine's facet-keyed meta-disagreement event lands on the projection and flips the facet status to meta-disagreement
+    # Per ADR 0030 §2 + `pf_meta_disagreement_handler_facet_keyed`: for
+    # the four facet-valued sub-kinds (classify-node here as canonical)
+    # the engine emits a `target: 'facet'` meta-disagreement-marked
+    # event. The wire layer appends it to the session log; the
+    # projection's `handleMetaDisagreementMarked` facet arm flips the
+    # facet's `metaDisagreement` flag (and pins the agreement-layer
+    # status mirror). This scenario walks the full engine → DB →
+    # projection → derivation round-trip and asserts the status flip on
+    # the targeted facet.
+    Given a seeded session with three participants, a pending proposal, and one dispute vote for meta-disagreement-logic tests
+    When the moderator constructs a mark-meta-disagreement action against the pending proposal
+    And the methodology engine validates the mark-meta-disagreement action against the projected session
+    And the resulting meta-disagreement-marked event is appended to the session log and the projection is replayed
+    Then the validation result is Valid
+    And the marked classification facet's derived status is "meta-disagreement"

@@ -948,21 +948,26 @@ describe('ws_meta_disagreement_message — handler integration', () => {
       expect(appended).toBeDefined();
       expect(appended?.kind).toBe('meta-disagreement-marked');
       expect(appended?.actor).toBe(FIXTURE_USER_ID);
-      // The event payload references the proposal + records the
-      // moderator. TODO(pf_meta_disagreement_handler_facet_keyed): the
-      // methodology engine emits the proposal-keyed arm for ALL marks
-      // today (per ADR 0030 §2 + §9); facet-arm emission lands in the
-      // downstream handler-rewrite task.
+      // The event payload references the targeted facet + records the
+      // moderator. Per ADR 0030 §2 + §9: the meta-disagreement-marked
+      // payload is a `target`-discriminated union. The seed proposal
+      // here is a `classify-node` (facet-valued), so the methodology
+      // engine emits `target: 'facet'` keyed by `(entity_kind,
+      // entity_id, facet)` — NO `proposal_id` on this arm.
       const appendedPayload = appended?.payload as
         | {
             target?: unknown;
-            proposal_id?: unknown;
+            entity_kind?: unknown;
+            entity_id?: unknown;
+            facet?: unknown;
             marked_by?: unknown;
             marked_at?: unknown;
           }
         | undefined;
-      expect(appendedPayload?.target).toBe('proposal');
-      expect(appendedPayload?.proposal_id).toBe(PROPOSAL_EVENT_ID);
+      expect(appendedPayload?.target).toBe('facet');
+      expect(appendedPayload?.entity_kind).toBe('node');
+      expect(appendedPayload?.entity_id).toBe(NODE_ID);
+      expect(appendedPayload?.facet).toBe('classification');
       expect(appendedPayload?.marked_by).toBe(FIXTURE_USER_ID);
       expect(typeof appendedPayload?.marked_at).toBe('string');
     } finally {

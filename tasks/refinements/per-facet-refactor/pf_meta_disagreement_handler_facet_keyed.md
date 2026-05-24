@@ -50,3 +50,14 @@ Meta-disagreement is the methodology's escape hatch when participants can't reso
 ## Open questions
 
 (none — all decided per ADR 0030)
+
+## Status
+
+**Done** — 2026-05-23.
+
+- `apps/server/src/methodology/handlers/markMetaDisagreement.ts` now dispatches by `proposal.subKind`: facet-valued sub-kinds (`classify-node`, `set-node-substance`, `set-edge-substance`, `edit-wording`) emit `target: 'facet'` marks keyed by `(entity_kind, entity_id, facet)`; structural sub-kinds (`decompose`, `interpretive-split`, `axiom-mark`, `annotate`, `withdraw-proposal`) keep the proposal-keyed arm.
+- Added a facet-arm `deriveFacetStatus` cross-check that rejects when the facet is already in `meta-disagreement` / `committed` / `withdrawn`. Mirrors the commit handler's pattern because the projection's facet arm does not remove the pending proposal record on mark.
+- Read-side consumers updated to consume both arms: `apps/server/src/ws/broadcast/proposal-status.ts` (comment refresh; resolver itself was already wired via `pf_vote_handler_facet_keyed`); `apps/{participant,moderator}/src/graph/facetStatus.ts` (`metaDisagreement` flips from either arm); `apps/moderator/src/graph/pendingProposals.ts` (facet-arm marks terminate via `currentProposalByFacet`); `apps/moderator/src/graph/selectors.ts` (`projectPendingAxiomMarks` pinned structural via comment); `apps/participant/src/detail/ParticipantVoteButtons.tsx` (facet-arm marks close panel-scoped proposal via `proposalIdByFacet`).
+- Vitest coverage: `markMetaDisagreement.test.ts` asserts the facet-arm emission; `ws/handlers/meta-disagreement.test.ts` asserts facet-arm wire payload on the headline happy path.
+- Cucumber coverage: `tests/behavior/methodology/mark-meta-disagreement.feature` gains one round-trip scenario (engine → DB → projection assert `deriveFacetStatus` flips to `meta-disagreement`); `tests/behavior/methodology/meta-disagreement-facet-keyed.feature` covers stale comment refresh.
+- Gates green: Vitest 4314 / 0 skipped (unchanged). Cucumber 257 scenarios / 1767 steps (+1 / +6). Playwright 107 (unchanged, 1.4m). Paid down 10 `TODO(pf_meta_disagreement_handler_facet_keyed)` markers; zero new TODOs.

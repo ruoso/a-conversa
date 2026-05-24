@@ -302,13 +302,16 @@ describe('mark-meta-disagreement handler — rule 4: methodology-exhaustion gate
       expect(ev.actor).toBe(MODERATOR_ID);
       expect(ev.createdAt).toBe(T9);
       if (ev.kind === 'meta-disagreement-marked') {
-        // TODO(pf_meta_disagreement_handler_facet_keyed): the
-        // methodology engine emits the proposal-keyed arm for ALL
-        // meta-disagreement marks today; the downstream task rewires
-        // emission for facet-valued proposal sub-kinds.
-        expect(ev.payload.target).toBe('proposal');
-        if (ev.payload.target === 'proposal') {
-          expect(ev.payload.proposal_id).toBe(PROPOSAL_ID_1);
+        // Per ADR 0030 §2 + §9: the meta-disagreement-marked payload
+        // is a `target`-discriminated union. The proposal under test
+        // (`classify-node`) is a facet-valued sub-kind, so the engine
+        // emits `target: 'facet'` keyed by `(entity_kind, entity_id,
+        // facet)` — NO `proposal_id` on this arm.
+        expect(ev.payload.target).toBe('facet');
+        if (ev.payload.target === 'facet') {
+          expect(ev.payload.entity_kind).toBe('node');
+          expect(ev.payload.entity_id).toBe(NODE_ID_1);
+          expect(ev.payload.facet).toBe('classification');
           expect(ev.payload.marked_by).toBe(MODERATOR_ID);
           expect(ev.payload.marked_at).toBe(T9);
         }

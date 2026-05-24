@@ -24,18 +24,14 @@ Feature: meta-disagreement-marked payload — facet-keyed and proposal-keyed arm
   # envelope, and `projectFromLog` applies the proposal-keyed arm
   # without throwing.
   #
-  # **Projection-side handling of the facet-keyed arm is out of scope.**
-  # The methodology engine still emits the proposal-keyed arm for ALL
-  # meta-disagreement marks (per the
-  # TODO(pf_meta_disagreement_handler_facet_keyed) in
-  # `apps/server/src/methodology/handlers/markMetaDisagreement.ts`); the
-  # projection's `handleMetaDisagreementMarked` rejects the facet-keyed
-  # arm with a clear runtime error so any inadvertent emission during
-  # the transition surfaces loudly. The downstream
-  # `pf_meta_disagreement_handler_facet_keyed` task rewires both halves.
-  # Today's pin: the facet-keyed arm round-trips through the SCHEMA
-  # SEAM (insert + read + validateEvent) without the projection ever
-  # consuming it.
+  # **Projection-side handling of the facet-keyed arm is owned by the
+  # `pf_meta_disagreement_handler_facet_keyed` sibling.** This feature
+  # pins the wire-schema seam for both arms; the end-to-end "moderator
+  # marks a disputed facet → projection flips facet status to
+  # meta-disagreement" round-trip lives in
+  # `methodology/mark-meta-disagreement.feature` (which composes the
+  # methodology engine + the projection's `handleMetaDisagreementMarked`
+  # walker on top of the schema seam this feature pins).
   #
   # Refinement: tasks/refinements/per-facet-refactor/pf_facet_keyed_meta_disagreement_payload.md
   # ADRs:        docs/adr/0030-per-facet-vote-keying-and-sequential-capture.md,
@@ -56,14 +52,15 @@ Feature: meta-disagreement-marked payload — facet-keyed and proposal-keyed arm
     Then the facet-keyed-meta-disagreement projection's lastAppliedSequence equals the proposal-keyed-meta-disagreement event's sequence
     And the proposal-keyed-meta-disagreement event round-trips through validateEvent with kind "meta-disagreement-marked" and target "proposal"
 
-  Scenario: a facet-keyed meta-disagreement-marked envelope inserts and validates cleanly (projection handling is downstream)
+  Scenario: a facet-keyed meta-disagreement-marked envelope inserts and validates cleanly (schema seam)
     # Same seed (3 participants + node). INSERT a `meta-disagreement-marked`
     # envelope with `target: 'facet'` against the node's classification
     # facet. The DB accepts the row (the `kind` CHECK is unchanged; the
     # payload-shape change is wire-level only). `validateEvent` recovers
-    # the typed envelope from the JSONB column. The projection-side
-    # handler does NOT yet consume the facet-keyed arm — we assert the
-    # round-trip through the schema seam only.
+    # the typed envelope from the JSONB column. The end-to-end
+    # "projection flips facet status to meta-disagreement" round-trip is
+    # pinned in `methodology/mark-meta-disagreement.feature`; THIS
+    # scenario pins the schema seam in isolation.
     Given a seeded session with three participants for facet-keyed meta-disagreement tests
     And a node-created event for the facet-keyed-meta-disagreement-test node
     When a facet-keyed meta-disagreement-marked envelope is inserted for the node's classification facet
