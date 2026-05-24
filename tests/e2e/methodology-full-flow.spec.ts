@@ -235,68 +235,21 @@ async function readNodeIdByWording(page: Page, wording: string): Promise<string>
   return testid!.replace(/^statement-node-wording-/, '');
 }
 
-// **Why no hidden-DOM assertions; how participant clicks work.** The
-// participant surface renders nodes on a Cytoscape `<canvas>` element
-// — no per-node DOM. The sr-only `participant-graph-status-mirror`
-// is invisible to a sighted user and is therefore off-limits for
-// "what a human sees" verification. Every assertion against the
-// participant surface is against visible DOM (the detail panel, vote
-// buttons, etc.).
+// **Why no hidden-DOM assertions; how the participant detail panel
+// surfaces an entity.** The participant surface renders nodes on a
+// Cytoscape `<canvas>` element — no per-node DOM. The sr-only
+// `participant-graph-status-mirror` is invisible to a sighted user
+// and is therefore off-limits for "what a human sees" verification.
+// Every assertion against the participant surface is against visible
+// DOM (the detail panel, vote buttons, etc.).
 //
-// To click a specific node on the canvas, the spec uses the
-// `window.__aConversaCyInstance` test seam (gated on
-// `?aconversaTestMode=1` per GraphView.tsx:877) to dispatch a
-// `cy.getElementById(id).emit('tap')` event. The seam is a coordinate
-// bridge — Cytoscape canvases have no other addressable per-node
-// surface — not a state mock; the event flows through the real
-// selection handler, the real detail-panel re-render, and the real
-// vote-button click chain. Without the seam, the only way to click a
-// canvas-rendered node would be a pixel-position computation that
-// also requires reading the cy instance. The seam matches the
-// established convention in `participant-graph-render.spec.ts`.
-
-/**
- * Dispatch a synthetic Cytoscape `tap` on the per-id element via the
- * `window.__aConversaCyInstance` test seam. The seam must be exposed
- * (page navigated with `?aconversaTestMode=1`). The `tap` propagates
- * through the registered `handleTap` listener exactly as a real mouse
- * click would — the spec's downstream assertions (detail panel
- * content, vote-button visibility, etc.) are against visible DOM.
- *
- * Works for both nodes and edges — `handleTap` in `GraphView.tsx:865`
- * dispatches on `target.isEdge()` symmetrically to the node arm, and
- * `cy.getElementById(id)` resolves either by the same id-keyed lookup.
- */
-async function tapParticipantElement(page: Page, elementId: string): Promise<void> {
-  await page.evaluate((id: string) => {
-    const cy = (
-      window as unknown as {
-        __aConversaCyInstance?: {
-          getElementById: (id: string) => unknown;
-        };
-      }
-    ).__aConversaCyInstance;
-    if (!cy) {
-      throw new Error(
-        'tapParticipantElement: __aConversaCyInstance is not exposed — navigate the page with ?aconversaTestMode=1 first',
-      );
-    }
-    const element = cy.getElementById(id) as {
-      emit: (event: string, extra?: unknown[]) => unknown;
-    };
-    element.emit('tap');
-  }, elementId);
-}
-
-/**
- * Back-compat alias — the spec started with `tapParticipantNode` and
- * grew an edge-tap requirement in Phase 5.5. The id-keyed `cy.get
- * ElementById` lookup is the same for both element kinds; the function
- * is renamed to `tapParticipantElement` so callers reading the spec
- * understand the seam is symmetric, while existing call sites keep
- * working under the original name.
- */
-const tapParticipantNode = tapParticipantElement;
+// Per `apps/participant/src/graph/autoSelect.ts`, the participant's
+// `useAutoSelectFromEvents` hook surfaces the latest proposal's
+// target entity on every participant's detail panel without a tap.
+// The visible identity wording / facet rows ARE the cross-context
+// broadcast proof — if the WS broadcast did not land, the auto-select
+// never fires and the assertion times out. This replaces the prior
+// synthetic-tap seam, which is no longer needed in this spec.
 
 test.describe
   .serial('Full debate methodology — three real browser sessions (alice mod + ben debater-A + maria debater-B)', () => {
@@ -483,8 +436,8 @@ test.describe
   // rendering.
   test('Phase 2.1.5: ben sees N1.classification + N1.substance as awaiting-proposal (no vote buttons)', async () => {
     expect(_n1Id, 'Phase 2.1 must have minted N1').not.toBeNull();
-    const n1 = _n1Id!;
-    await tapParticipantNode(benPage, n1);
+    // No manual tap: the `capture-node` proposal for N1 auto-selects
+    // it on every participant's panel (see `autoSelectionFromEvent`).
     await expect(benPage.getByTestId('participant-detail-panel-identity-wording')).toHaveText(
       N1_WORDING,
       { timeout: 15_000 },
@@ -545,9 +498,9 @@ test.describe
 
   test('Phase 2.2: ben + maria vote agree on N1.wording', async () => {
     expect(_n1Id, 'Phase 2.1 must have minted N1').not.toBeNull();
-    const n1 = _n1Id!;
     for (const page of [benPage, mariaPage]) {
-      await tapParticipantNode(page, n1);
+      // Auto-select: the `capture-node` proposal lands N1 on every
+      // participant's detail panel without a tap.
       await expect(page.getByTestId('participant-detail-panel-identity-wording')).toHaveText(
         N1_WORDING,
         { timeout: 15_000 },
@@ -612,17 +565,13 @@ test.describe
   // participant detail panel surfaces a `classification` vote row.
   // Ben + maria vote agree; alice commits in Phase 4.1 below.
 
-  test('Phase 3.1: ben taps N1 on his canvas; the detail panel shows the wording, and he votes agree on the classification facet', async () => {
+  test("Phase 3.1: the detail panel auto-surfaces N1's wording for ben, and he votes agree on the classification facet", async () => {
     expect(_n1Id, 'Phase 2.1 must have minted N1').not.toBeNull();
-    const n1 = _n1Id!;
 
-    // Synthetic tap → selection → detail-panel re-render. The detail
-    // panel reads its identity from the projected node; if the WS
-    // broadcast did not land, `cy.getElementById(n1)` returns an empty
-    // collection and `.emit('tap')` is a no-op (the panel stays in its
-    // empty-state branch). The visible identity wording IS the
+    // No manual tap — alice's `classify-node` proposal (Phase 2.4)
+    // auto-selects N1 on every participant's detail panel via
+    // `useAutoSelectFromEvents`. The visible identity wording IS the
     // cross-context broadcast proof.
-    await tapParticipantNode(benPage, n1);
     await expect(benPage.getByTestId('participant-detail-panel-identity-wording')).toHaveText(
       N1_WORDING,
       { timeout: 15_000 },
@@ -640,9 +589,7 @@ test.describe
     await expect(row).toHaveAttribute('data-vote-state', 'enabled', { timeout: 15_000 });
   });
 
-  test("Phase 3.2: maria taps N1 and votes agree on N1's classification facet", async () => {
-    const n1 = _n1Id!;
-    await tapParticipantNode(mariaPage, n1);
+  test("Phase 3.2: maria's panel auto-surfaces N1 and she votes agree on its classification facet", async () => {
     await expect(mariaPage.getByTestId('participant-detail-panel-identity-wording')).toHaveText(
       N1_WORDING,
       { timeout: 15_000 },
@@ -730,10 +677,9 @@ test.describe
     // Per ADR 0030 §1 + `pf_mod_node_card_substance_affordance`: once
     // alice has fired `set-node-substance` from the node-card
     // affordance, the substance facet has a candidate and the
-    // participant detail panel surfaces a `substance` vote row.
-    const n1 = _n1Id!;
+    // participant detail panel surfaces a `substance` vote row. The
+    // proposal also auto-selects N1 on every participant's panel.
     for (const page of [benPage, mariaPage]) {
-      await tapParticipantNode(page, n1);
       await expect(page.getByTestId('participant-detail-panel-identity-wording')).toHaveText(
         N1_WORDING,
         { timeout: 15_000 },
@@ -794,8 +740,9 @@ test.describe
   // flips to `'withdrawn'`.
   test("Phase 4.5: ben withdraws his agreement on N1.substance — the row flips to 'withdrawn'", async () => {
     expect(_n1Id, 'Phase 2.1 must have minted N1').not.toBeNull();
-    const n1 = _n1Id!;
-    await tapParticipantNode(benPage, n1);
+    // Auto-select kept N1 on ben's panel through Phase 4.2's
+    // `set-node-substance` proposal; the subsequent votes/commit are
+    // not proposals and don't move the selection.
     await expect(benPage.getByTestId('participant-detail-panel-identity-wording')).toHaveText(
       N1_WORDING,
       { timeout: 15_000 },
@@ -867,7 +814,8 @@ test.describe
     // wording; alice commits the capture-node row.
     const n2 = _n2Id!;
     for (const page of [benPage, mariaPage]) {
-      await tapParticipantNode(page, n2);
+      // Alice's `capture-node` for N2 auto-selected N2 on every
+      // participant's panel; no manual tap needed.
       await expect(page.getByTestId('participant-detail-panel-identity-wording')).toHaveText(
         N2_WORDING,
         { timeout: 15_000 },
@@ -913,7 +861,8 @@ test.describe
     await expect(factButton).toHaveCount(0, { timeout: 15_000 });
 
     for (const page of [benPage, mariaPage]) {
-      await tapParticipantNode(page, n2);
+      // The `classify-node` proposal auto-selects N2 on every
+      // participant's panel; no manual tap needed.
       await expect(page.getByTestId('participant-detail-panel-identity-wording')).toHaveText(
         N2_WORDING,
         { timeout: 15_000 },
@@ -1021,21 +970,13 @@ test.describe
   // phase pins the participant-side gesture only; the round-trip
   // through the vote dispatcher is the regression class this phase
   // claims.
-  test('Phase 5.5: ben + maria tap the edge and vote agree on its `shape` facet', async () => {
+  test('Phase 5.5: ben + maria vote agree on the edge `shape` facet auto-surfaced after the connecting capture', async () => {
     expect(_edgeId, 'Phase 5.4 must have recovered the edge id').not.toBeNull();
-    const edgeId = _edgeId!;
     for (const page of [benPage, mariaPage]) {
-      // Use the same `__aConversaCyInstance` seam to dispatch a `tap`
-      // on the edge element. `handleTap` in `GraphView.tsx:865` walks
-      // the `isEdge()` branch symmetrically to the node arm; the
-      // selection store records `{ kind: 'edge', id }`, the detail
-      // panel re-renders, and the `shape` facet row mounts.
-      await tapParticipantElement(page, edgeId);
-      // The detail panel surfaces the edge identity; its
-      // `identity-id` carries the edge id. We tolerate the panel
-      // either showing the edge identity OR the empty-state branch
-      // (depending on the projection race — a stale broadcast may
-      // not yet have landed the edge); the vote-click is the proof.
+      // Auto-select: alice's `capture-node` proposal carried an inline
+      // `edge` block, so `autoSelectionFromEvent` picked the edge as
+      // the gesture's substance and surfaced its facet rows on every
+      // participant's detail panel without a tap.
       const shapeRow = page.locator(
         '[data-testid="participant-detail-panel-facet-row"][data-facet-name="shape"]',
       );
@@ -1232,9 +1173,10 @@ test.describe
     // label, the substance facet has a candidate and the
     // participant detail panel surfaces a `substance` vote row.
     expect(_edgeId, 'Phase 5.4 must have recovered the edge id').not.toBeNull();
-    const edgeId = _edgeId!;
     for (const page of [benPage, mariaPage]) {
-      await tapParticipantElement(page, edgeId);
+      // Auto-select: alice's `set-edge-substance` proposal targets the
+      // edge, which `autoSelectionFromEvent` surfaces on every
+      // participant's detail panel without a tap.
       const row = page.locator(
         '[data-testid="participant-detail-panel-facet-row"][data-facet-name="substance"]',
       );
@@ -1328,12 +1270,10 @@ test.describe
   });
 
   test('Phase 6.2: ben + maria vote agree on the decomposition proposal facet; alice commits', async () => {
-    const n1 = _n1Id!;
-    // Ben + maria tap N1 → detail panel renders → the structural
-    // decomposition proposal's synthetic `proposal` facet row is now
-    // visible (per 79c4b8e). Click agree on each surface.
+    // Auto-select: alice's `decompose` proposal targets the parent
+    // node (N1), so every participant's detail panel auto-surfaces
+    // N1's structural proposal rows. Click agree on each surface.
     for (const page of [benPage, mariaPage]) {
-      await tapParticipantNode(page, n1);
       // The proposal-facet vote row for the decompose proposal.
       const row = page.locator(
         '[data-testid="participant-detail-panel-facet-row"][data-facet-name="proposal"]',
@@ -1376,12 +1316,12 @@ test.describe
   // Phase 7 — axiom-mark (per-participant bedrock)
   // ──────────────────────────────────────────────────────────────
 
-  test('Phase 7.1: ben taps N1 on his canvas and clicks "Mark as my axiom" to propose his own bedrock', async () => {
+  test('Phase 7.1: ben clicks "Mark as my axiom" on the auto-selected N1 panel to propose his own bedrock', async () => {
     const n1 = _n1Id!;
-    // Synthetic tap on N1 → detail panel re-renders with N1's
-    // identity. The axiom-mark button only mounts for node selections
-    // (not edges).
-    await tapParticipantNode(benPage, n1);
+    // Auto-select kept N1 surfaced on ben's panel since Phase 6.1's
+    // `decompose` proposal (proposal-arm commits and votes in the
+    // intervening phases don't move the selection). The axiom-mark
+    // button only mounts for node selections (not edges).
     await expect(benPage.getByTestId('participant-detail-panel-identity-wording')).toHaveText(
       N1_WORDING,
       { timeout: 15_000 },
@@ -1403,9 +1343,8 @@ test.describe
   test("Phase 7.2: maria votes agree on ben's axiom-mark; alice commits the axiom-mark proposal", async () => {
     // Per methodology.md: the declared participant (ben) doesn't vote
     // on their own axiom-mark — only other participants do. So only
-    // maria votes here.
-    const n1 = _n1Id!;
-    await tapParticipantNode(mariaPage, n1);
+    // maria votes here. Ben's `axiom-mark` proposal in Phase 7.1
+    // auto-selected N1 on maria's panel.
     const rows = mariaPage.locator(
       '[data-testid="participant-detail-panel-facet-row"][data-facet-name="proposal"]',
     );

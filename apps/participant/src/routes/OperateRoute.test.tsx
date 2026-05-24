@@ -216,6 +216,60 @@ describe('OperateRoute — two-sibling layout (graph + entity detail panel)', ()
   });
 });
 
+describe('OperateRoute — auto-select on incoming proposal events', () => {
+  it('(i) auto-surfaces the proposal target on the detail panel without a manual selection', async () => {
+    renderRoute({ auth: authenticatedCallerAuth });
+    expect(screen.getByTestId('participant-detail-panel').getAttribute('data-state')).toBe('empty');
+
+    const { act } = await import('@testing-library/react');
+    const { useWsStore: storeImport } = await import('../ws/wsStore');
+    const NODE_ID = '00000000-0000-4000-8000-00000000000b';
+    const ACTOR_ID = '00000000-0000-4000-8000-000000000003';
+    // node-created + entity-included mirror the propose-handler's
+    // structural fan-out so the projector lands the node before the
+    // proposal event drives the auto-select.
+    act(() => {
+      storeImport.getState().applyEvent({
+        id: '00000000-0000-4000-8000-000000000201',
+        sessionId: SESSION_ID,
+        sequence: 1,
+        kind: 'node-created',
+        actor: ACTOR_ID,
+        payload: {
+          node_id: NODE_ID,
+          wording: 'Auto-selected wording',
+          created_by: ACTOR_ID,
+          created_at: '2026-05-24T00:00:00.000Z',
+        },
+        createdAt: '2026-05-24T00:00:00.000Z',
+      });
+      storeImport.getState().applyEvent({
+        id: '00000000-0000-4000-8000-000000000202',
+        sessionId: SESSION_ID,
+        sequence: 2,
+        kind: 'proposal',
+        actor: ACTOR_ID,
+        payload: {
+          proposal: {
+            kind: 'capture-node',
+            node_id: NODE_ID,
+            wording: 'Auto-selected wording',
+          },
+        },
+        createdAt: '2026-05-24T00:00:00.000Z',
+      });
+    });
+    // No tap, no manual select: the proposal envelope alone surfaced
+    // the new node on the panel.
+    expect(screen.getByTestId('participant-detail-panel').getAttribute('data-state')).toBe(
+      'detail',
+    );
+    expect(screen.getByTestId('participant-detail-panel-identity-wording').textContent).toBe(
+      'Auto-selected wording',
+    );
+  });
+});
+
 describe('OperateRoute — entity detail panel selection-change re-render', () => {
   it('(h) the panel transitions from empty-state to detail-body when a selection lands in the store', async () => {
     renderRoute({ auth: authenticatedCallerAuth });

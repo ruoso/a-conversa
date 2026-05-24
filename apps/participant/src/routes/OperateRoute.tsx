@@ -46,7 +46,7 @@
 //     on mount + `void client.untrackSession(id)` on cleanup.
 //     Idempotent with the lobby's prior call (per ws-client.test.ts:547).
 
-import { useEffect, useMemo, type ReactElement } from 'react';
+import { useEffect, useMemo, useRef, type ReactElement } from 'react';
 import { useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import type { DiagnosticPayload, Event } from '@a-conversa/shared-types';
@@ -60,6 +60,7 @@ import { GraphView } from '../graph/GraphView';
 import { EntityDetailPanel } from '../detail';
 import { ParticipantAxiomMarkButton } from '../detail/ParticipantAxiomMarkButton';
 import { useSelectionStore } from '../stores/selectionStore';
+import { autoSelectionFromEvent } from '../graph/autoSelect';
 import {
   groupAnnotationsByEdge,
   groupAnnotationsByNode,
@@ -92,6 +93,40 @@ const EMPTY_EVENTS: readonly Event[] = Object.freeze([]);
  * hoist.
  */
 const EMPTY_DIAGNOSTICS_MAP: ReadonlyMap<string, DiagnosticPayload> = Object.freeze(new Map());
+
+/**
+ * Auto-select the entity that the latest proposal envelope is talking
+ * about. Tracks the highest event `sequence` already processed in a
+ * ref, walks any strictly-newer events on each `events` change, and
+ * applies the most-recent proposal target (per `autoSelectionFromEvent`)
+ * by writing into `useSelectionStore`.
+ *
+ * On the initial mount, the ref starts at `-Infinity` so the entire
+ * event history is considered — the participant lands on the
+ * conversation's most recent proposal target rather than on a blank
+ * panel. Subsequent re-renders only walk the events newly appended to
+ * the log; the ref bumps to the highest sequence seen so far.
+ */
+function useAutoSelectFromEvents(events: readonly Event[]): void {
+  const select = useSelectionStore((s) => s.select);
+  const lastSeenSequenceRef = useRef<number>(Number.NEGATIVE_INFINITY);
+
+  useEffect(() => {
+    const lastSeen = lastSeenSequenceRef.current;
+    let nextTarget: ReturnType<typeof autoSelectionFromEvent> = null;
+    let maxSequence = lastSeen;
+    for (const event of events) {
+      if (event.sequence <= lastSeen) continue;
+      const target = autoSelectionFromEvent(event);
+      if (target !== null) nextTarget = target;
+      if (event.sequence > maxSequence) maxSequence = event.sequence;
+    }
+    lastSeenSequenceRef.current = maxSequence;
+    if (nextTarget !== null) {
+      select(nextTarget);
+    }
+  }, [events, select]);
+}
 
 export function OperateRoute(): ReactElement {
   const { id = '' } = useParams<{ id: string }>();
@@ -169,6 +204,17 @@ function OperateRouteAuthenticatedBody({
   const activeDiagnostics = useWsStore(
     (state) => state.sessionState[id]?.activeDiagnostics ?? EMPTY_DIAGNOSTICS_MAP,
   );
+
+  // Auto-select the entity that the latest moderator (or participant)
+  // proposal is "talking about", so the detail panel surfaces it
+  // without the participant having to tap. Walks events strictly newer
+  // than the last sequence we processed, applies the most-recent
+  // proposal target (if any). See `autoSelectionFromEvent` for the
+  // per-sub-kind target rules and the scope rationale (proposals
+  // only — raw `node-created` / `edge-created` are deliberately
+  // skipped so the seam test's "baseline → tap → flip" flow stays
+  // intact).
+  useAutoSelectFromEvents(events);
 
   // -----------------------------------------------------------------
   // Projection chain — hoisted from `<GraphView>` per Decision §2 of
