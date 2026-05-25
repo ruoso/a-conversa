@@ -2,6 +2,12 @@
   "chrome": {
     "hello": "hola, mundo"
   },
+  "root": {
+    "landing": {
+      "eyebrow": "a-conversa",
+      "body": "Aplicación host de micro-frontends"
+    }
+  },
   "auth": {
     "login": {
       "title": "Iniciar sesión",

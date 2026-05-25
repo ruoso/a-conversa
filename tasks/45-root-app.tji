@@ -43,6 +43,7 @@ task root_app "Root app (apps/root/)" {
   task root_landing "/ route (authenticated + unauthenticated states)" {
     effort 0.5d
     allocate team
+    complete 100
     depends !root_moderator_cutover
     note -8<-
       Refinement: tasks/refinements/root-app/root_landing.md
