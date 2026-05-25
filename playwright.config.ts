@@ -367,7 +367,7 @@ export default defineConfig({
       // locale en-US, ignoreHTTPSErrors for the OIDC self-signed cert,
       // bootstrap auth jar). Widening the testMatch keeps both specs
       // co-located instead of cloning the project block.
-      testMatch: /(cross-surface-lobby-start|methodology-full-flow)\.spec\.ts$/,
+      testMatch: /(cross-surface-lobby-start|methodology-full-flow|moderator-draw-edge)\.spec\.ts$/,
       dependencies: ['setup-auth'],
       use: {
         ...devices['Desktop Chrome'],
