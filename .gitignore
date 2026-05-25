@@ -71,3 +71,10 @@ infra/authelia/notifications.txt
 # worktrees here for parallel investigation; they must never end up in
 # the index of the main branch.
 .claude/
+
+# Python virtualenvs (used by the orchestrator/ driver — see
+# orchestrator/README.md). The venv is local-only and currently has no
+# pinned dependencies (the driver is stdlib-only).
+.venv/
+__pycache__/
+*.pyc
