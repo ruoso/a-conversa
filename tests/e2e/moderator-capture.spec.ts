@@ -252,10 +252,14 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     await expect(wordingCell).toBeVisible({ timeout: 10_000 });
 
     // The per-node card palette is NOT mounted while wording is still
-    // `proposed` — gate is `wording ∈ {agreed, committed}` AND
-    // `classification === 'awaiting-proposal'`. Read the node id from
-    // the wording cell's testid suffix and assert the palette container
-    // is absent.
+    // `proposed` — gate is `wording === 'committed'` AND
+    // `classification === 'awaiting-proposal'`. (The UI is stricter
+    // than the server's `agreed | committed` predecessor predicate so
+    // the moderator's gesture sequence is unambiguous; when wording is
+    // `'agreed'` the card surfaces the wording commit affordance
+    // instead, and only after that commit does the palette mount.)
+    // Read the node id from the wording cell's testid suffix and
+    // assert the palette container is absent.
     const wordingTestId = await wordingCell.getAttribute('data-testid');
     expect(wordingTestId).toMatch(/^statement-node-wording-[0-9a-f-]+$/);
     const nodeId = wordingTestId!.replace(/^statement-node-wording-/, '');

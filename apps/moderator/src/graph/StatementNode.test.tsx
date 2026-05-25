@@ -42,7 +42,7 @@ import {
   type RenderResult,
 } from '@testing-library/react';
 import i18next from 'i18next';
-import { act, type ReactElement } from 'react';
+import { act, type ReactElement, type ReactNode } from 'react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { ReactFlowProvider, type NodeProps } from 'reactflow';
 import type { StatementKind } from '@a-conversa/shared-types';
@@ -65,12 +65,48 @@ import { useSelectionStore } from '../stores';
 // non-empty for the hook's gate.
 const SESSION_ID_FOR_TESTS = '00000000-0000-4000-8000-0000000000ff';
 
-// Local `render(...)` shadow that wraps every render in a
-// `<ReactFlowProvider>`. The provider is what supplies the Zustand store
-// `<Handle>`'s `useStore` / `useStoreApi` read from. Tests keep their
-// existing `render(<StatementNode {...} />)` call shape — only the
-// wrapper is new (and transparent to assertions: `<ReactFlowProvider>`
-// itself renders nothing in the DOM, just a context).
+// A no-op WsClient stub for the default render path. Tests that
+// exercise the inline commit affordances / propose palette wrap their
+// own `renderWithProviders` with a fake client that records calls; the
+// stub here just satisfies the `useWsClient()` context for the bulk of
+// the cases that never click anything.
+const STUB_WS_CLIENT: WsClient = {
+  status: () => 'open',
+  connect: () => undefined,
+  close: () => undefined,
+  send: () =>
+    new Promise(() => {
+      /* never resolves; render-only tests don't click */
+    }),
+  trackSession: () => Promise.resolve(),
+  untrackSession: () => Promise.resolve(),
+  onEnvelope: () => () => undefined,
+  url: '/api/ws',
+};
+
+function StatementNodeTestProviders({ children }: { children: ReactNode }): ReactElement {
+  return (
+    <MemoryRouter initialEntries={[`/sessions/${SESSION_ID_FOR_TESTS}/operate`]}>
+      <WsClientProvider auth={{ status: 'authenticated' }} client={STUB_WS_CLIENT}>
+        <Routes>
+          <Route
+            path="/sessions/:id/operate"
+            element={<ReactFlowProvider>{children}</ReactFlowProvider>}
+          />
+        </Routes>
+      </WsClientProvider>
+    </MemoryRouter>
+  );
+}
+
+// Local `render(...)` shadow that wraps every render in the full
+// provider stack: `<MemoryRouter>` + `<WsClientProvider>` +
+// `<ReactFlowProvider>`. The first two are needed by the inline
+// commit / propose affordances (`useWsClient` + `useParams`) — even
+// tests that don't directly exercise the affordances may trigger their
+// mount via `facetStatuses` (e.g. `wording: 'agreed'` mounts
+// `<NodeWordingCommitAffordance>`). The `ReactFlowProvider` supplies
+// the Zustand store the `<Handle>` anchors read from.
 async function render(ui: ReactElement, options?: RenderOptions): Promise<RenderResult> {
   // `useTranslation()` schedules a microtask-deferred setState when its
   // internal i18next subscription registers on mount. The deferred
@@ -80,12 +116,8 @@ async function render(ui: ReactElement, options?: RenderOptions): Promise<Render
   // microtasks before the act block resolves, absorbing the deferred
   // update inside the wrapper.
   let result!: RenderResult;
-  // `act` takes the async (microtask-flushing) path when the callback
-  // returns a thenable — `return Promise.resolve()` is enough; no
-  // `async` keyword (which would trip `require-await` since the body
-  // does not await anything).
   await act(() => {
-    result = rtlRender(ui, { wrapper: ReactFlowProvider, ...options });
+    result = rtlRender(ui, { wrapper: StatementNodeTestProviders, ...options });
     return Promise.resolve();
   });
   return result;
@@ -2181,11 +2213,13 @@ describe('StatementNode — ReactFlow Handle anchors (mod_node_handle_rendering)
 //    (pf_mod_node_card_classification_affordance) -----------------------
 //
 // `<StatementNode>` mounts the inline `<NodeCardClassificationPalette>`
-// ONLY when `wording ∈ {agreed, committed}` AND `classification ===
-// 'awaiting-proposal'`. The gate predicate pins the methodology's
-// sequential-capture order (wording must settle before classification
-// can be named) on the UI side; the server's
-// `pf_sequence_gate_server_enforced` is the integrity boundary.
+// ONLY when `wording === 'committed'` AND `classification ===
+// 'awaiting-proposal'`. The UI is stricter than the server's
+// `pf_sequence_gate_server_enforced` predicate (which accepts either
+// `'agreed'` or `'committed'` for the predecessor): we require the
+// explicit commit step so the moderator's gesture sequence is
+// unambiguous. When wording is only `'agreed'` the card surfaces
+// `<NodeWordingCommitAffordance>` instead.
 //
 // The palette's internal click-fires-propose contract is covered in
 // `NodeCardClassificationPalette.test.tsx`. The cases here pin ONLY
@@ -2251,7 +2285,7 @@ describe('StatementNode — inline classification palette mount gate (pf_mod_nod
     expect(screen.getByTestId('node-card-classification-palette-n-gate-eligible')).toBeTruthy();
   });
 
-  it('mounts the palette when wording is agreed AND classification is awaiting-proposal', async () => {
+  it('does NOT mount the palette when wording is only agreed (commit affordance shown instead)', async () => {
     await renderWithProviders(
       <StatementNode
         {...makeNodeProps({
@@ -2264,7 +2298,8 @@ describe('StatementNode — inline classification palette mount gate (pf_mod_nod
         })}
       />,
     );
-    expect(screen.getByTestId('node-card-classification-palette-n-gate-agreed')).toBeTruthy();
+    expect(screen.queryByTestId('node-card-classification-palette-n-gate-agreed')).toBeNull();
+    expect(screen.getByTestId('node-wording-commit-affordance-n-gate-agreed')).toBeTruthy();
   });
 
   it('does NOT mount the palette when wording is proposed (still in flight)', async () => {
@@ -2360,11 +2395,13 @@ describe('StatementNode — inline classification palette mount gate (pf_mod_nod
 //    (pf_mod_node_card_substance_affordance) -----------------------------
 //
 // `<StatementNode>` mounts the inline `<NodeCardSubstanceAffordance>`
-// ONLY when `classification ∈ {agreed, committed}` AND `substance ===
-// 'awaiting-proposal'`. The gate predicate pins the methodology's
-// sequential-capture order (classification must settle before
-// substance can be named) on the UI side; the server's
-// `pf_sequence_gate_server_enforced` is the integrity boundary.
+// ONLY when `classification === 'committed'` AND `substance ===
+// 'awaiting-proposal'`. The UI is stricter than the server's
+// `pf_sequence_gate_server_enforced` predicate (which accepts either
+// `'agreed'` or `'committed'` for the predecessor): we require the
+// explicit commit step so the moderator's gesture sequence is
+// unambiguous. When classification is only `'agreed'` the card
+// surfaces `<NodeClassificationCommitAffordance>` instead.
 //
 // The affordance's internal click-fires-propose contract is covered in
 // `NodeCardSubstanceAffordance.test.tsx`. The cases here pin ONLY the
@@ -2436,7 +2473,7 @@ describe('StatementNode — inline substance affordance mount gate (pf_mod_node_
     ).toBeTruthy();
   });
 
-  it('mounts the affordance when classification is agreed AND substance is awaiting-proposal', async () => {
+  it('does NOT mount the affordance when classification is only agreed (commit affordance shown instead)', async () => {
     await renderWithProviders(
       <StatementNode
         {...makeNodeProps({
@@ -2453,7 +2490,10 @@ describe('StatementNode — inline substance affordance mount gate (pf_mod_node_
         })}
       />,
     );
-    expect(screen.getByTestId('node-card-substance-affordance-n-subst-gate-agreed')).toBeTruthy();
+    expect(screen.queryByTestId('node-card-substance-affordance-n-subst-gate-agreed')).toBeNull();
+    expect(
+      screen.getByTestId('node-classification-commit-affordance-n-subst-gate-agreed'),
+    ).toBeTruthy();
   });
 
   it('does NOT mount the affordance when classification is proposed (still in flight)', async () => {
@@ -2580,5 +2620,241 @@ describe('StatementNode — inline substance affordance mount gate (pf_mod_node_
       />,
     );
     expect(screen.queryByTestId('node-card-substance-affordance-n-subst-gate-empty')).toBeNull();
+  });
+});
+
+// ── 15. Inline wording commit affordance mount gate -------------------
+//
+// `<StatementNode>` mounts the inline `<NodeWordingCommitAffordance>`
+// ONLY when `wording === 'agreed'`. Once committed, the affordance
+// unmounts and `<NodeCardClassificationPalette>` takes over.
+
+describe('StatementNode — inline wording commit affordance mount gate', () => {
+  const renderWithProviders = async (ui: ReactElement): Promise<RenderResult> => {
+    const stubClient: WsClient = {
+      status: () => 'open',
+      connect: () => undefined,
+      close: () => undefined,
+      send: () =>
+        new Promise(() => {
+          /* never resolves; visibility tests don't click */
+        }),
+      trackSession: () => Promise.resolve(),
+      untrackSession: () => Promise.resolve(),
+      onEnvelope: () => () => undefined,
+      url: '/api/ws',
+    };
+    let result!: RenderResult;
+    await act(() => {
+      result = rtlRender(ui, {
+        wrapper: ({ children }) => (
+          <MemoryRouter initialEntries={[`/sessions/${SESSION_ID_FOR_TESTS}/operate`]}>
+            <WsClientProvider auth={{ status: 'authenticated' }} client={stubClient}>
+              <Routes>
+                <Route
+                  path="/sessions/:id/operate"
+                  element={<ReactFlowProvider>{children}</ReactFlowProvider>}
+                />
+              </Routes>
+            </WsClientProvider>
+          </MemoryRouter>
+        ),
+      });
+      return Promise.resolve();
+    });
+    return result;
+  };
+
+  it('mounts the affordance when wording is agreed', async () => {
+    await renderWithProviders(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-word-commit-agreed',
+          data: {
+            wording: 'wording agreed',
+            kind: null,
+            facetStatuses: { wording: 'agreed' },
+          },
+        })}
+      />,
+    );
+    expect(screen.getByTestId('node-wording-commit-affordance-n-word-commit-agreed')).toBeTruthy();
+  });
+
+  it('does NOT mount the affordance when wording is committed', async () => {
+    await renderWithProviders(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-word-commit-committed',
+          data: {
+            wording: 'wording committed',
+            kind: null,
+            facetStatuses: { wording: 'committed', classification: 'awaiting-proposal' },
+          },
+        })}
+      />,
+    );
+    expect(
+      screen.queryByTestId('node-wording-commit-affordance-n-word-commit-committed'),
+    ).toBeNull();
+  });
+
+  it('does NOT mount the affordance when wording is proposed', async () => {
+    await renderWithProviders(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-word-commit-proposed',
+          data: {
+            wording: 'wording proposed',
+            kind: null,
+            facetStatuses: { wording: 'proposed' },
+          },
+        })}
+      />,
+    );
+    expect(
+      screen.queryByTestId('node-wording-commit-affordance-n-word-commit-proposed'),
+    ).toBeNull();
+  });
+
+  it('does NOT mount the affordance when wording is disputed', async () => {
+    await renderWithProviders(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-word-commit-disputed',
+          data: {
+            wording: 'wording disputed',
+            kind: null,
+            facetStatuses: { wording: 'disputed' },
+          },
+        })}
+      />,
+    );
+    expect(
+      screen.queryByTestId('node-wording-commit-affordance-n-word-commit-disputed'),
+    ).toBeNull();
+  });
+});
+
+// ── 16. Inline classification commit affordance mount gate ------------
+//
+// `<StatementNode>` mounts the inline `<NodeClassificationCommitAffordance>`
+// ONLY when `classification === 'agreed'`. Once committed, the
+// affordance unmounts and `<NodeCardSubstanceAffordance>` takes over.
+
+describe('StatementNode — inline classification commit affordance mount gate', () => {
+  const renderWithProviders = async (ui: ReactElement): Promise<RenderResult> => {
+    const stubClient: WsClient = {
+      status: () => 'open',
+      connect: () => undefined,
+      close: () => undefined,
+      send: () =>
+        new Promise(() => {
+          /* never resolves; visibility tests don't click */
+        }),
+      trackSession: () => Promise.resolve(),
+      untrackSession: () => Promise.resolve(),
+      onEnvelope: () => () => undefined,
+      url: '/api/ws',
+    };
+    let result!: RenderResult;
+    await act(() => {
+      result = rtlRender(ui, {
+        wrapper: ({ children }) => (
+          <MemoryRouter initialEntries={[`/sessions/${SESSION_ID_FOR_TESTS}/operate`]}>
+            <WsClientProvider auth={{ status: 'authenticated' }} client={stubClient}>
+              <Routes>
+                <Route
+                  path="/sessions/:id/operate"
+                  element={<ReactFlowProvider>{children}</ReactFlowProvider>}
+                />
+              </Routes>
+            </WsClientProvider>
+          </MemoryRouter>
+        ),
+      });
+      return Promise.resolve();
+    });
+    return result;
+  };
+
+  it('mounts the affordance when classification is agreed', async () => {
+    await renderWithProviders(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-class-commit-agreed',
+          data: {
+            wording: 'classification agreed',
+            kind: 'fact',
+            facetStatuses: {
+              wording: 'committed',
+              classification: 'agreed',
+              substance: 'awaiting-proposal',
+            },
+          },
+        })}
+      />,
+    );
+    expect(
+      screen.getByTestId('node-classification-commit-affordance-n-class-commit-agreed'),
+    ).toBeTruthy();
+  });
+
+  it('does NOT mount the affordance when classification is committed', async () => {
+    await renderWithProviders(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-class-commit-committed',
+          data: {
+            wording: 'classification committed',
+            kind: 'fact',
+            facetStatuses: {
+              wording: 'committed',
+              classification: 'committed',
+              substance: 'awaiting-proposal',
+            },
+          },
+        })}
+      />,
+    );
+    expect(
+      screen.queryByTestId('node-classification-commit-affordance-n-class-commit-committed'),
+    ).toBeNull();
+  });
+
+  it('does NOT mount the affordance when classification is proposed', async () => {
+    await renderWithProviders(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-class-commit-proposed',
+          data: {
+            wording: 'classification proposed',
+            kind: 'fact',
+            facetStatuses: { wording: 'committed', classification: 'proposed' },
+          },
+        })}
+      />,
+    );
+    expect(
+      screen.queryByTestId('node-classification-commit-affordance-n-class-commit-proposed'),
+    ).toBeNull();
+  });
+
+  it('does NOT mount the affordance when classification is awaiting-proposal', async () => {
+    await renderWithProviders(
+      <StatementNode
+        {...makeNodeProps({
+          id: 'n-class-commit-awaiting',
+          data: {
+            wording: 'classification awaiting',
+            kind: null,
+            facetStatuses: { wording: 'committed', classification: 'awaiting-proposal' },
+          },
+        })}
+      />,
+    );
+    expect(
+      screen.queryByTestId('node-classification-commit-affordance-n-class-commit-awaiting'),
+    ).toBeNull();
   });
 });

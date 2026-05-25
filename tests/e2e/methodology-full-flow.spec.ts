@@ -514,14 +514,28 @@ test.describe
     }
   });
 
-  test('Phase 2.3: alice commits N1.wording — the capture-node row clears', async () => {
-    const n1Prefix = _n1Id!.slice(0, 8);
-    // The capture-node row surfaces with the summary `node <prefix>`
-    // (see `summaryText` for `capture-node`). The classify-node row
-    // for N1 doesn't exist yet (Phase 2.4 fires it after this commit
-    // lands), so the `node <prefix>` filter unambiguously picks the
-    // capture-node row.
-    const row = alicePage
+  test('Phase 2.3: alice commits N1.wording via the on-card wording commit affordance', async () => {
+    // Once N1.wording is `'agreed'` (ben + maria voted agree in Phase
+    // 2.2), the node card surfaces `<NodeWordingCommitAffordance>`.
+    // The classification palette is NOT yet visible — its gate
+    // requires `wording === 'committed'`, an explicit commit between
+    // facets (intentionally stricter than the server's
+    // `agreed | committed` predecessor predicate so the moderator's
+    // gesture sequence is unambiguous).
+    const n1 = _n1Id!;
+    await alicePage.getByTestId('graph-tidy-up-button').click();
+    const commitButton = alicePage.getByTestId(`node-wording-commit-affordance-button-${n1}`);
+    await expect(commitButton).toBeVisible({ timeout: 15_000 });
+    await expect(alicePage.getByTestId(`node-card-classification-palette-${n1}`)).toHaveCount(0);
+
+    await commitButton.click();
+    // The affordance unmounts when wording flips to `'committed'`;
+    // waiting on the unmount is the round-trip proof. The capture-node
+    // pending-pane row also clears as a side-effect of the same commit
+    // event.
+    await expect(commitButton).toHaveCount(0, { timeout: 15_000 });
+    const n1Prefix = n1.slice(0, 8);
+    const pendingRow = alicePage
       .locator('[data-testid="pending-proposal-row"]')
       .filter({
         has: alicePage.locator('[data-testid="pending-proposal-row-summary"]', {
@@ -529,11 +543,7 @@ test.describe
         }),
       })
       .first();
-    await expect(row).toBeVisible({ timeout: 15_000 });
-    const commitButton = row.locator('[data-testid="commit-button"]');
-    await expect(commitButton).toBeEnabled({ timeout: 15_000 });
-    await commitButton.click();
-    await expect(row).toHaveCount(0, { timeout: 15_000 });
+    await expect(pendingRow).toHaveCount(0, { timeout: 15_000 });
   });
 
   test('Phase 2.4: alice clicks fact on N1 node card — fires classify-node', async () => {
@@ -611,21 +621,29 @@ test.describe
   // facet of the pending proposal. Alice clicks commit → the server
   // appends a `commit` event → the node lands as `agreed`.
 
-  test('Phase 4.1: alice commits N1 — the pending row clears once she clicks', async () => {
-    // The server-side `checkUnanimousAgreeFacet` excludes the moderator
-    // from the per-participant agreement walk, matching the
-    // methodology's "commit IS the moderator's act of agreement"
-    // intent (docs/methodology.md § "The commit step"). The client's
-    // `deriveCurrentParticipants` mirrors the same exclusion.
-    //
-    // Per `pf_mod_node_card_classification_affordance` the pending
-    // row that surfaces here is the `classify-node` proposal raised
-    // in Phase 2.4 (the capture-node row already cleared in Phase 2.3
-    // when its wording facet committed). The classify-node summary is
-    // `node <id-prefix>` (see `summaryText` for `classify-node`); the
-    // filter pins to that node id prefix.
-    const n1Prefix = _n1Id!.slice(0, 8);
-    const row = alicePage
+  test('Phase 4.1: alice commits N1.classification via the on-card classification commit affordance', async () => {
+    // Once N1.classification is `'agreed'` (ben + maria voted agree in
+    // Phase 3), the node card surfaces
+    // `<NodeClassificationCommitAffordance>`. The substance affordance
+    // is NOT yet visible — its gate requires
+    // `classification === 'committed'`, an explicit commit between
+    // facets (intentionally stricter than the server's
+    // `agreed | committed` predecessor predicate).
+    const n1 = _n1Id!;
+    await alicePage.getByTestId('graph-tidy-up-button').click();
+    const commitButton = alicePage.getByTestId(
+      `node-classification-commit-affordance-button-${n1}`,
+    );
+    await expect(commitButton).toBeVisible({ timeout: 15_000 });
+    await expect(alicePage.getByTestId(`node-card-substance-affordance-${n1}`)).toHaveCount(0);
+
+    await commitButton.click();
+    // The affordance unmounts when classification flips to
+    // `'committed'`; waiting on the unmount is the round-trip proof.
+    // The classify-node pending-pane row also clears as a side-effect.
+    await expect(commitButton).toHaveCount(0, { timeout: 15_000 });
+    const n1Prefix = n1.slice(0, 8);
+    const pendingRow = alicePage
       .locator('[data-testid="pending-proposal-row"]')
       .filter({
         has: alicePage.locator('[data-testid="pending-proposal-row-summary"]', {
@@ -633,13 +651,7 @@ test.describe
         }),
       })
       .first();
-    await expect(row).toBeVisible({ timeout: 15_000 });
-
-    const commitButton = row.locator('[data-testid="commit-button"]');
-    await expect(commitButton).toBeEnabled({ timeout: 15_000 });
-    await commitButton.click();
-
-    await expect(row).toHaveCount(0, { timeout: 15_000 });
+    await expect(pendingRow).toHaveCount(0, { timeout: 15_000 });
   });
 
   // ──────────────────────────────────────────────────────────────
