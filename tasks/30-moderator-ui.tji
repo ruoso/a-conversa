@@ -375,6 +375,13 @@ task moderator_ui "Moderator UI" {
       depends !mod_capture_text_input, !mod_classification_palette, !mod_edge_role_selector
       note "Refinement: tasks/refinements/moderator-ui/mod_propose_action.md"
     }
+    task mod_edge_direction_toggle "Edge direction toggle — 'targets' vs 'is targeted by'" {
+      effort 0.5d
+      allocate team
+      complete 100
+      depends !mod_target_auto_suggest, !mod_edge_role_selector, !mod_propose_action
+      note "Refinement: tasks/refinements/moderator-ui/mod_edge_direction_toggle.md"
+    }
   }
 
   task mod_pending_proposals_pane "Pending proposals pane" {

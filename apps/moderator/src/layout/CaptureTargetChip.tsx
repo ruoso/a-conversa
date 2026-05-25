@@ -65,7 +65,7 @@ import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router-dom';
 import type { Event } from '@a-conversa/shared-types';
 
-import { useCaptureStore } from '../stores/captureStore';
+import { useCaptureStore, type EdgeDirection } from '../stores/captureStore';
 import { useSelectionStore } from '../stores/selectionStore';
 import { selectMostRecentlyActiveNodeId } from '../stores/recentlyActiveNode';
 import { useWsStore } from '../ws/wsStore';
@@ -102,6 +102,9 @@ const OVERRIDE_MARKER_CLASSES = 'inline-block h-1.5 w-1.5 rounded-full bg-amber-
 const CHIP_CLEAR_BUTTON_CLASSES =
   'ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded text-slate-500 hover:bg-slate-100 hover:text-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500';
 
+const DIRECTION_SELECT_CLASSES =
+  'rounded border border-slate-300 bg-white px-1 py-0.5 text-xs font-medium text-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500';
+
 /**
  * Truncate `text` to at most `max` characters, appending `…` when
  * truncation kicks in. Inline because the chip is the only consumer
@@ -119,6 +122,8 @@ export function CaptureTargetChip(): ReactElement {
   const stagedTargetId = useCaptureStore((s) => s.targetEntityId);
   const setTargetEntityId = useCaptureStore((s) => s.setTargetEntityId);
   const setEdgeRole = useCaptureStore((s) => s.setEdgeRole);
+  const edgeDirection = useCaptureStore((s) => s.edgeDirection);
+  const setEdgeDirection = useCaptureStore((s) => s.setEdgeDirection);
   const recentlyActiveNodeId = useSelectionStore(selectMostRecentlyActiveNodeId);
   const events = useWsStore((s) => s.sessionState[sessionId]?.events ?? EMPTY_EVENTS);
 
@@ -143,10 +148,13 @@ export function CaptureTargetChip(): ReactElement {
     // edge role is only meaningful while a target is staged, so the
     // single clear sink nulls both slices in one step. Both the ×
     // button and the Esc keyboard gesture reach this handler, so the
-    // contract is symmetric across both affordances.
+    // contract is symmetric across both affordances. `edgeDirection`
+    // is reset to the default for the same reason — direction without
+    // a target is meaningless.
     setEdgeRole(null);
+    setEdgeDirection('targets');
     userHasClearedRef.current = true;
-  }, [setTargetEntityId, setEdgeRole]);
+  }, [setTargetEntityId, setEdgeRole, setEdgeDirection]);
 
   // Hold the latest clear handler in a ref so the document-level
   // listener (attached once on mount) can read fresh values without
@@ -242,6 +250,18 @@ export function CaptureTargetChip(): ReactElement {
       aria-label={t('moderator.captureTargetChip.ariaLabel')}
       className={`${CHIP_BASE_CLASSES} ${CHIP_FILLED_CLASSES}`}
     >
+      <select
+        data-testid="capture-target-chip-direction"
+        aria-label={t('moderator.captureTargetChip.directionAriaLabel')}
+        value={edgeDirection}
+        onChange={(event) => {
+          setEdgeDirection(event.target.value as EdgeDirection);
+        }}
+        className={DIRECTION_SELECT_CLASSES}
+      >
+        <option value="targets">{t('moderator.captureTargetChip.directionTargets')}</option>
+        <option value="targeted-by">{t('moderator.captureTargetChip.directionTargetedBy')}</option>
+      </select>
       <span data-testid="capture-target-chip-label">
         {t('moderator.captureTargetChip.suggested', { label: targetLabel })}
       </span>

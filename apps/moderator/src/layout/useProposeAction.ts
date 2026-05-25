@@ -73,7 +73,7 @@ import { useParams } from 'react-router-dom';
 import { create } from 'zustand';
 import type { EdgeRole, ProposalPayload } from '@a-conversa/shared-types';
 
-import { useCaptureStore } from '../stores/captureStore';
+import { useCaptureStore, type EdgeDirection } from '../stores/captureStore';
 import { useWsClient } from '@a-conversa/shell';
 import { useWsStore } from '../ws/wsStore';
 import { WsRequestError, WsRequestTimeoutError } from '@a-conversa/shell';
@@ -184,19 +184,29 @@ function randomUuid(): string {
  * For the connecting-capture case (ADR 0030 §4), the optional `edge`
  * block carries the edge id + role + endpoints inline; the server
  * emits `edge-created` + `entity-included(edge)` alongside the node
- * fan-out in a SINGLE round-trip (no second envelope). The connecting
- * gesture is always FROM the just-captured node — `source_node_id`
- * equals the freshly-minted `node_id` and `target_node_id` is the
- * pre-existing node the moderator clicked. The substance facet of the
- * connecting edge enters life as `awaiting-proposal` (named by a later
- * `set-edge-substance` against the captured edge).
+ * fan-out in a SINGLE round-trip (no second envelope). The endpoint
+ * assignment is controlled by `direction`:
+ *
+ *   - `'targets'` (default): the just-captured node is the edge SOURCE
+ *     and the pre-existing node is the edge TARGET — "new statement
+ *     targets the existing one." This is the original capture shape.
+ *   - `'targeted-by'`: the endpoints are inverted — the pre-existing
+ *     node is the SOURCE and the just-captured node is the TARGET —
+ *     "new statement is targeted by the existing one." The capture-
+ *     node validator's rule 3 already accepts either endpoint as the
+ *     just-captured `node_id`, so no engine change is needed.
+ *
+ * The substance facet of the connecting edge enters life as
+ * `awaiting-proposal` (named by a later `set-edge-substance` against
+ * the captured edge).
  */
 function buildCaptureNodeProposal(args: {
   nodeId: string;
   wording: string;
-  edge?: { edgeId: string; targetNodeId: string; role: EdgeRole };
+  edge?: { edgeId: string; otherNodeId: string; role: EdgeRole; direction: EdgeDirection };
 }): ProposalPayload {
   if (args.edge !== undefined) {
+    const newNodeIsSource = args.edge.direction === 'targets';
     return {
       kind: 'capture-node',
       node_id: args.nodeId,
@@ -204,8 +214,8 @@ function buildCaptureNodeProposal(args: {
       edge: {
         edge_id: args.edge.edgeId,
         role: args.edge.role,
-        source_node_id: args.nodeId,
-        target_node_id: args.edge.targetNodeId,
+        source_node_id: newNodeIsSource ? args.nodeId : args.edge.otherNodeId,
+        target_node_id: newNodeIsSource ? args.edge.otherNodeId : args.nodeId,
       },
     };
   }
@@ -340,6 +350,7 @@ export function useProposeAction(): UseProposeActionResult {
     const textNow = currentState.text;
     const targetEntityIdNow = currentState.targetEntityId;
     const edgeRoleNow = currentState.edgeRole;
+    const edgeDirectionNow = currentState.edgeDirection;
 
     if (currentState.proposing) {
       // Concurrent re-entry — Decision §5 + AC 12.8. Drop silently.
@@ -360,6 +371,7 @@ export function useProposeAction(): UseProposeActionResult {
       text: textNow,
       targetEntityId: targetEntityIdNow,
       edgeRole: edgeRoleNow,
+      edgeDirection: edgeDirectionNow,
     };
 
     // Mint the client-side ids. Held in `propose`'s lexical scope so
@@ -395,8 +407,9 @@ export function useProposeAction(): UseProposeActionResult {
               wording: textNow,
               edge: {
                 edgeId,
-                targetNodeId: targetEntityIdNow,
+                otherNodeId: targetEntityIdNow,
                 role: edgeRoleNow,
+                direction: edgeDirectionNow,
               },
             })
           : buildCaptureNodeProposal({ nodeId, wording: textNow });
@@ -417,6 +430,7 @@ export function useProposeAction(): UseProposeActionResult {
         text: snapshot.text,
         targetEntityId: snapshot.targetEntityId,
         edgeRole: snapshot.edgeRole,
+        edgeDirection: snapshot.edgeDirection,
         proposing: false,
       });
       const timeoutText = t('moderator.proposeAction.timeoutError');

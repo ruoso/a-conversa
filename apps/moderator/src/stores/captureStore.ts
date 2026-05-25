@@ -140,6 +140,18 @@ export type CaptureMode =
   | 'meta-move'
   | 'axiom-mark';
 
+/**
+ * Direction the connecting edge runs relative to the just-captured
+ * node. `'targets'` (default) — the new node is the edge SOURCE and
+ * the staged existing node is the edge TARGET ("new statement targets
+ * the existing one"). `'targeted-by'` — the roles are inverted: the
+ * existing node is the SOURCE and the new node is the TARGET ("new
+ * statement is targeted by the existing one"). Only meaningful while
+ * `targetEntityId !== null`; the chip's clear handler resets it back
+ * to the default.
+ */
+export type EdgeDirection = 'targets' | 'targeted-by';
+
 export interface CaptureState {
   /** The free-text statement under construction. */
   text: string;
@@ -156,6 +168,15 @@ export interface CaptureState {
    * `tasks/refinements/moderator-ui/mod_edge_role_selector.md`.
    */
   edgeRole: EdgeRole | null;
+  /**
+   * Direction the connecting edge runs relative to the just-captured
+   * node. Defaults to `'targets'` (new node is the edge source, staged
+   * existing node is the edge target). The moderator can flip to
+   * `'targeted-by'` to invert the edge — useful when the new statement
+   * is the subject of the relationship (e.g. "is supported by", "is
+   * rebutted by" the existing node).
+   */
+  edgeDirection: EdgeDirection;
   /** Current capture-pane mode. */
   mode: CaptureMode;
   /**
@@ -205,6 +226,7 @@ export interface CaptureState {
   setClassification: (classification: StatementKind | null) => void;
   setTargetEntityId: (id: string | null) => void;
   setEdgeRole: (role: EdgeRole | null) => void;
+  setEdgeDirection: (direction: EdgeDirection) => void;
   setMode: (mode: CaptureMode) => void;
   setProposing: (value: boolean) => void;
   /**
@@ -437,6 +459,7 @@ const initialCaptureState: Pick<
   | 'classification'
   | 'targetEntityId'
   | 'edgeRole'
+  | 'edgeDirection'
   | 'mode'
   | 'proposing'
   | 'decomposeTargetNodeId'
@@ -450,6 +473,7 @@ const initialCaptureState: Pick<
   classification: null,
   targetEntityId: null,
   edgeRole: null,
+  edgeDirection: 'targets',
   mode: 'idle',
   proposing: false,
   decomposeTargetNodeId: null,
@@ -467,6 +491,7 @@ export const useCaptureStore = create<CaptureState>()(
     setClassification: (classification) => set({ classification }),
     setTargetEntityId: (targetEntityId) => set({ targetEntityId }),
     setEdgeRole: (edgeRole) => set({ edgeRole }),
+    setEdgeDirection: (edgeDirection) => set({ edgeDirection }),
     setMode: (mode) => set({ mode }),
     setProposing: (proposing) => set({ proposing }),
     setDecomposeTargetNodeId: (decomposeTargetNodeId) => set({ decomposeTargetNodeId }),
@@ -481,6 +506,7 @@ export const useCaptureStore = create<CaptureState>()(
         classification: null,
         targetEntityId: null,
         edgeRole: null,
+        edgeDirection: 'targets',
         // Two-empty-row seed (mod_multi_component_capture Decision §1):
         // the grid mounts with the minimum number of rows the moderator
         // will fill in. The store carries the invariant so the route
@@ -549,6 +575,7 @@ export const useCaptureStore = create<CaptureState>()(
         classification: null,
         targetEntityId: null,
         edgeRole: null,
+        edgeDirection: 'targets',
         // Two-empty-row seed (mirrors enterDecomposeMode).
         interpretiveSplitReadings: createEmptyProposalRows(),
       }),
@@ -613,6 +640,7 @@ export const useCaptureStore = create<CaptureState>()(
         classification: null,
         targetEntityId: null,
         edgeRole: null,
+        edgeDirection: 'targets',
       }),
     exitOperationalizationMode: () =>
       set({
@@ -633,6 +661,7 @@ export const useCaptureStore = create<CaptureState>()(
         classification: null,
         targetEntityId: null,
         edgeRole: null,
+        edgeDirection: 'targets',
       }),
     exitWarrantElicitationMode: () =>
       set({

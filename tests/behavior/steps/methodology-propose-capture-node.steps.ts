@@ -239,6 +239,40 @@ When(
   },
 );
 
+When(
+  'the moderator constructs a capture-with-edge propose-capture-node action with the fresh node as edge target',
+  function (this: AConversaWorld) {
+    const projection = this.scratch['proposeProjection'] as Projection;
+    // Inverted-direction capture: the moderator flipped the chip's
+    // direction select to "is targeted by", so the fresh node sits at
+    // the TARGET end of the edge and the pre-existing visible node is
+    // the SOURCE. The capture-node validator's rule 3 accepts either
+    // endpoint as the just-captured `node_id`, so the engine emits the
+    // standard 5-event fan-out with the inverted source/target.
+    const action: ProposeAction = {
+      kind: 'propose',
+      requester: CN_MODERATOR_ID,
+      sessionId: CN_SESSION_ID,
+      eventId: CN_NEW_EVENT_ID,
+      sequence: nextSequence(projection),
+      actor: CN_MODERATOR_ID,
+      createdAt: tsAt(20),
+      proposal: {
+        kind: 'capture-node',
+        node_id: CN_FRESH_NODE_ID,
+        wording: 'Modern zoos prioritise conservation over entertainment.',
+        edge: {
+          edge_id: CN_FRESH_EDGE_ID,
+          role: 'supports',
+          source_node_id: CN_TARGET_NODE_ID,
+          target_node_id: CN_FRESH_NODE_ID,
+        },
+      },
+    };
+    this.scratch['proposeAction'] = action;
+  },
+);
+
 // The "validates the propose action against the projected session"
 // When step is shared with the propose-decompose feature and lives in
 // `methodology-propose-decompose.steps.ts`. Reused as-is.
@@ -394,6 +428,44 @@ Then(
           'set-edge-substance',
           'capture-node must not co-bundle a set-edge-substance proposal',
         );
+      }
+    }
+  },
+);
+
+Then(
+  'the result carries exactly 5 events with edge endpoints inverted — the existing node is the edge source and the fresh node is the edge target',
+  function (this: AConversaWorld) {
+    const result = this.scratch['methodologyResult'] as ValidationResult;
+    assert.ok(result.ok, `expected Valid, got ${JSON.stringify(result)}`);
+    if (!result.ok) return;
+    assert.equal(
+      result.events.length,
+      5,
+      `expected exactly 5 events, got ${String(result.events.length)}`,
+    );
+
+    const [, , edgeCreated, , proposalEvent] = result.events as [Event, Event, Event, Event, Event];
+
+    assert.equal(edgeCreated.kind, 'edge-created');
+    if (edgeCreated.kind === 'edge-created') {
+      assert.equal(edgeCreated.payload.edge_id, CN_FRESH_EDGE_ID);
+      assert.equal(edgeCreated.payload.role, 'supports');
+      // Inverted endpoints — the existing visible node is the source,
+      // the fresh node is the target.
+      assert.equal(edgeCreated.payload.source_node_id, CN_TARGET_NODE_ID);
+      assert.equal(edgeCreated.payload.target_node_id, CN_FRESH_NODE_ID);
+    }
+    assert.equal(proposalEvent.kind, 'proposal');
+    if (proposalEvent.kind === 'proposal') {
+      const inner = proposalEvent.payload.proposal;
+      assert.equal(inner.kind, 'capture-node');
+      if (inner.kind === 'capture-node') {
+        assert.ok(inner.edge !== undefined, 'inverted-capture proposal must carry an edge block');
+        if (inner.edge !== undefined) {
+          assert.equal(inner.edge.source_node_id, CN_TARGET_NODE_ID);
+          assert.equal(inner.edge.target_node_id, CN_FRESH_NODE_ID);
+        }
       }
     }
   },

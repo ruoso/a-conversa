@@ -41,3 +41,17 @@ Feature: methodology engine — propose capture-node handler against a DB-projec
     And the methodology engine validates the propose action against the projected session
     Then the validation result is Valid
     And the result carries exactly 5 events — node-created, entity-included for the node, edge-created, entity-included for the edge, and the capture-node proposal envelope — with no co-bundled classify-node or set-edge-substance
+
+  Scenario: moderator captures a node with an inverted "is-targeted-by" edge — endpoints swap; fresh node becomes the edge TARGET
+    # Same compound gesture as the prior scenario but with the
+    # moderator's direction toggle flipped to "is targeted by". The
+    # fresh node is now the edge TARGET and the existing visible node
+    # is the edge SOURCE — the role stays `supports` but the assertion
+    # reads "the existing statement supports the new one." The handler
+    # emits the same 5 events; the only structural difference is the
+    # edge-created payload's source/target pair.
+    Given a seeded session with three participants and a visible target node
+    When the moderator constructs a capture-with-edge propose-capture-node action with the fresh node as edge target
+    And the methodology engine validates the propose action against the projected session
+    Then the validation result is Valid
+    And the result carries exactly 5 events with edge endpoints inverted — the existing node is the edge source and the fresh node is the edge target

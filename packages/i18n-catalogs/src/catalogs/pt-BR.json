@@ -228,7 +228,10 @@
       "overrideMarkerAria": "Substituição (alvo definido manualmente)",
       "ariaLabel": "Alvo da aresta — sugerido automaticamente a partir do nó selecionado mais recentemente",
       "clearAria": "Limpar alvo",
-      "clearTitle": "Limpar alvo selecionado (Esc)"
+      "clearTitle": "Limpar alvo selecionado (Esc)",
+      "directionAriaLabel": "Direção da aresta — a nova declaração tem o existente como alvo, ou é tida como alvo por ela?",
+      "directionTargets": "tem como alvo",
+      "directionTargetedBy": "é alvo de"
     },
     "edgeRolePalette": {
       "ariaLabel": "Papel da aresta — escolha como a nova declaração se conecta ao alvo",

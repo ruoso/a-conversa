@@ -228,7 +228,10 @@
       "overrideMarkerAria": "Anulación (objetivo definido manualmente)",
       "ariaLabel": "Objetivo del borde — sugerido automáticamente desde el nodo seleccionado más recientemente",
       "clearAria": "Borrar objetivo",
-      "clearTitle": "Borrar objetivo seleccionado (Esc)"
+      "clearTitle": "Borrar objetivo seleccionado (Esc)",
+      "directionAriaLabel": "Dirección del borde — ¿el nuevo enunciado apunta al existente o es apuntado por él?",
+      "directionTargets": "apunta a",
+      "directionTargetedBy": "es apuntado por"
     },
     "edgeRolePalette": {
       "ariaLabel": "Rol del enlace — elige cómo el nuevo enunciado se conecta al objetivo",
