@@ -47,7 +47,13 @@
 //     alice commits the `set-edge-substance` proposal via the
 //     pending-proposals pane. Same tolerant-acceptance pattern.
 
-import { expect, test, type BrowserContext, type Page } from './fixtures/no-scrollbars';
+import {
+  expect,
+  test,
+  type BrowserContext,
+  type Locator,
+  type Page,
+} from './fixtures/no-scrollbars';
 
 import { authedContext } from './fixtures/authed-context';
 
@@ -95,24 +101,62 @@ async function proposeStatement(page: Page, wording: string): Promise<void> {
 }
 
 /**
- * Drive a low-level pointer drag from `(fromX, fromY)` to `(toX, toY)`
- * using Playwright's `mouse` API. ReactFlow's connection pipeline
- * listens for native pointer events on the document; we feed mousedown
- * → multi-step mousemove → mouseup with intermediate moves so the
- * pointer-tracker has time to update.
+ * Drive a low-level pointer drag from one handle locator to another.
+ *
+ * Sampling rules:
+ *   - Source position is read via `hover()` BEFORE `mouse.down()` — at
+ *     that point the handle is in its idle state and Playwright's
+ *     actionability checks (visible + stable) hold.
+ *   - The target's drop coordinate is read via `boundingBox()`
+ *     IMMEDIATELY before `mouse.up()`, NOT via `hover()`. Once
+ *     `mouse.down()` has fired on the source, ReactFlow stamps the
+ *     candidate target handle with the `react-flow__handle-connecting`
+ *     class and re-runs the per-frame connection-line projection;
+ *     `Locator.hover()` then waits indefinitely for the handle to be
+ *     "stable" (no bbox change across two animation frames), which
+ *     never happens while the drag is in progress and times the test
+ *     out (iter-001 evidence: 61 retries × 500 ms ≈ test timeout, then
+ *     `Target page closed`). `boundingBox()` reads the rect without
+ *     gating on actionability — that rect IS the handle's settled
+ *     position, even if a sibling render is in flight.
+ *   - Intermediate `mouse.move` events keep ReactFlow's
+ *     connection-line tracker fed so the gesture is recognised as a
+ *     drag rather than a click.
  */
-async function dragPointer(
+async function dragFromHandleToHandle(
   page: Page,
-  from: { x: number; y: number },
-  to: { x: number; y: number },
+  sourceHandle: Locator,
+  targetHandle: Locator,
 ): Promise<void> {
-  await page.mouse.move(from.x, from.y);
+  await sourceHandle.hover();
+  const sourceBox = await sourceHandle.boundingBox();
+  if (sourceBox === null) {
+    throw new Error('dragFromHandleToHandle: source handle bounding box was null');
+  }
   await page.mouse.down();
-  const steps = 6;
-  for (let i = 1; i <= steps; i += 1) {
-    const x = from.x + ((to.x - from.x) * i) / steps;
-    const y = from.y + ((to.y - from.y) * i) / steps;
-    await page.mouse.move(x, y, { steps: 2 });
+
+  const targetBoxStart = await targetHandle.boundingBox();
+  if (targetBoxStart !== null) {
+    const fromX = sourceBox.x + sourceBox.width / 2;
+    const fromY = sourceBox.y + sourceBox.height / 2;
+    const toX = targetBoxStart.x + targetBoxStart.width / 2;
+    const toY = targetBoxStart.y + targetBoxStart.height / 2;
+    const steps = 6;
+    for (let i = 1; i <= steps; i += 1) {
+      await page.mouse.move(
+        fromX + ((toX - fromX) * i) / steps,
+        fromY + ((toY - fromY) * i) / steps,
+        { steps: 2 },
+      );
+    }
+  }
+
+  const targetBoxFinal = await targetHandle.boundingBox();
+  if (targetBoxFinal !== null) {
+    await page.mouse.move(
+      targetBoxFinal.x + targetBoxFinal.width / 2,
+      targetBoxFinal.y + targetBoxFinal.height / 2,
+    );
   }
   await page.mouse.up();
 }
@@ -298,20 +342,17 @@ test.describe
     await expect(sourceHandle).toBeVisible({ timeout: 15_000 });
     await expect(targetHandle).toBeVisible({ timeout: 15_000 });
 
-    const sourceBox = await waitForBoundingBoxStable(sourceHandle);
-    const targetBox = await waitForBoundingBoxStable(targetHandle);
+    // Settle the initial dagre + measurement-debounce pass before the
+    // drag fires. `dragFromHandleToHandle` re-samples the target
+    // position via `hover()` right before mouseup, so a tail-end
+    // fitView nudge cannot move the handle out from under the drop
+    // — but waiting for the first stable read here keeps the spec
+    // fast on the happy path (no point starting the drag while the
+    // graph is still mid-layout).
+    await waitForBoundingBoxStable(sourceHandle);
+    await waitForBoundingBoxStable(targetHandle);
 
-    await dragPointer(
-      alicePage,
-      {
-        x: sourceBox.x + sourceBox.width / 2,
-        y: sourceBox.y + sourceBox.height / 2,
-      },
-      {
-        x: targetBox.x + targetBox.width / 2,
-        y: targetBox.y + targetBox.height / 2,
-      },
-    );
+    await dragFromHandleToHandle(alicePage, sourceHandle, targetHandle);
 
     const picker = alicePage.getByTestId('draw-edge-role-picker');
     await expect(picker).toBeVisible({ timeout: 5_000 });
