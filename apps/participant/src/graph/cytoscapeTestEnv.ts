@@ -99,7 +99,19 @@ export function installCytoscapeTestEnv(): CytoscapeTestEnvRestoreHandle {
       canvas: this,
       // Calls the renderer makes during construction + per-frame.
       // Every method is a noop; every getter returns a benign value.
-      measureText: (_text: string) => ({ width: 0 }),
+      //
+      // `measureText` returns a content-sensitive estimate (~7 px per
+      // character at 12 px sans-serif). The per-node sizing path in
+      // `nodeDimensions.ts` reads this output to decide where to wrap
+      // wording into lines; returning a constant 0 would force every
+      // wording onto one line of zero width, defeating the test
+      // coverage. The empirical 7 px constant matches the production
+      // measurer closely enough that the per-node sizing tests assert
+      // the SAME box-clamp branches (min for short wording, max for
+      // long wording) under happy-dom that they would assert under
+      // chromium. Refinement:
+      // tasks/refinements/participant-ui/part_layout_measured_dimensions.md.
+      measureText: (text: string) => ({ width: text.length * 7 }),
       getImageData: (_x: number, _y: number, w: number, h: number) => ({
         data: new Uint8ClampedArray(Math.max(0, w) * Math.max(0, h) * 4),
         width: Math.max(0, w),

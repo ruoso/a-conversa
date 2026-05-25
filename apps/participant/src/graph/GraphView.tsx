@@ -258,18 +258,26 @@ export const STYLESHEET: StylesheetJson = [
       'border-color': '#cbd5e1',
       label: 'data(wording)',
       'text-wrap': 'wrap',
-      'text-max-width': '180px',
+      // Per-node `text-max-width`: stamped onto `data.textMaxWidth` by
+      // the projector via `computeNodeDimensions` so the wrap budget
+      // tracks the per-node box width. Cytoscape coerces the numeric
+      // data value to a `<n>px` string for its text-wrap engine.
+      // Refinement: tasks/refinements/participant-ui/part_layout_measured_dimensions.md.
+      'text-max-width': 'data(textMaxWidth)',
       color: '#0f172a',
       'text-valign': 'center',
       'text-halign': 'center',
-      // Fixed numeric dimensions: Cytoscape ≥ 3.30 deprecated
-      // `width: 'label'` / `height: 'label'` (the auto-sizing path the
-      // moderator's ReactFlow tree gets implicitly). Per Decision §7 of
-      // `part_per_facet_state_styling`, the baseline carries
-      // `width: 200, height: 80` so the wrapped wording fits the 3-line
-      // budget the methodology's "two short sentences" cap implies.
-      width: 200,
-      height: 80,
+      // Per-node box dimensions sourced from the projection layer's
+      // `computeNodeDimensions(wording)` call. Closes the deferral from
+      // `part_per_facet_state_styling` Decision §7 (which kept the
+      // constant 200x80 baseline until per-node sizing landed) by
+      // routing every node through Cytoscape's `data(...)` mapper. Both
+      // the box dimensions and the text-max-width budget come from the
+      // same projector output so the wrap engine and the layout engine
+      // agree on the per-node footprint.
+      // Refinement: tasks/refinements/participant-ui/part_layout_measured_dimensions.md.
+      width: 'data(width)',
+      height: 'data(height)',
       padding: '12px',
       'font-size': '12px',
     },
@@ -937,6 +945,24 @@ export function GraphView({
   // (a future `part_pan_zoom_tap` / `part_entity_detail_panel`).
   const [cyInstance, setCyInstance] = useState<Core | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  // Position cache for the incremental layout pass. Nodes whose id is
+  // in the cache reuse their previous `{x, y}` verbatim; only new ids
+  // trigger a fresh `cose` pass. `useRef` (not `useState`): writes to
+  // the cache happen AFTER the layout completes and MUST NOT trigger a
+  // re-render — the projection memos already drive the re-render
+  // cadence. The cache is per-component-instance, so route navigation
+  // that unmounts / remounts `<GraphView>` starts fresh.
+  //
+  // The bug this fixes: every selection change (tap on a node) re-runs
+  // the `elements` memo because the `selected` flag changes per-element.
+  // Without the cache, the post-`cy.json` `cose` layout reshuffles every
+  // node on every selection — disorienting. With the cache, the layout
+  // runs only when the set of node ids materially changes (a new
+  // `node-created` event lands). Mirrors the moderator's
+  // `positionCacheRef` + `knownNodeIdsRef` pair (refinement
+  // `mod_layout_measured_dimensions` + `mod_layout_engine_choice`).
+  const positionCacheRef = useRef<Map<string, { x: number; y: number }>>(new Map());
+  const knownNodeIdsRef = useRef<Set<string>>(new Set());
 
   // One-shot mount of the Cytoscape instance. The `useEffect`'s empty
   // dependency array keeps the instance stable across the component's
@@ -1068,15 +1094,28 @@ export function GraphView({
     // (DOM mirror) and the cy selection set is the Cytoscape-rendering
     // source-of-truth (canvas paint); the tap handler keeps them
     // synchronised.
-    const localizedNodes: ElementDefinition[] = projected.nodes.map((node) => ({
-      group: 'nodes',
-      data: {
-        ...node.data,
-        kindLabel: node.data.kind === null ? '—' : t(`methodology.kind.${node.data.kind}`),
-        diagnosticSeverity: node.data.diagnosticHighlight?.severity ?? 'none',
-        selected: selected?.kind === 'node' && selected.id === node.data.id,
-      },
-    }));
+    const localizedNodes: ElementDefinition[] = projected.nodes.map((node) => {
+      const cachedPosition = positionCacheRef.current.get(node.data.id);
+      const descriptor: ElementDefinition = {
+        group: 'nodes',
+        data: {
+          ...node.data,
+          kindLabel: node.data.kind === null ? '—' : t(`methodology.kind.${node.data.kind}`),
+          diagnosticSeverity: node.data.diagnosticHighlight?.severity ?? 'none',
+          selected: selected?.kind === 'node' && selected.id === node.data.id,
+        },
+      };
+      if (cachedPosition !== undefined) {
+        // Attach the cached `{x, y}` so `cy.json({ elements })` restores
+        // the prior position on re-sync. Without this, every memo tick
+        // (selection change, vote arrival, annotation flip, …) would
+        // dump the node back to `{0, 0}` and the `cose` pass below would
+        // re-randomise the layout. With the cache, only truly-new ids
+        // need cose; existing ids stay put.
+        descriptor.position = { x: cachedPosition.x, y: cachedPosition.y };
+      }
+      return descriptor;
+    });
     const localizedEdges: ElementDefinition[] = renderedEdges.map((edge) => ({
       group: 'edges',
       data: {
@@ -1092,6 +1131,19 @@ export function GraphView({
   useEffect(() => {
     const cy = cyInstanceRef.current;
     if (cy === null) return;
+    // Detect truly-new node ids (in the current element set but not yet
+    // recorded as known by this component instance). These are the
+    // only ids that need a fresh `cose` placement; everything else
+    // either kept its cached position via the per-element `position`
+    // stamp above, or is an edge (Cytoscape places edges as line
+    // segments between nodes, no layout needed).
+    const trulyNewNodeIds: string[] = [];
+    for (const element of elements) {
+      if (element.group !== 'nodes') continue;
+      const id = element.data?.id;
+      if (typeof id !== 'string') continue;
+      if (!knownNodeIdsRef.current.has(id)) trulyNewNodeIds.push(id);
+    }
     cy.json({ elements });
     // Skip the layout pass when the canvas has no measurable
     // viewport (e.g. a happy-dom test environment where
@@ -1099,22 +1151,29 @@ export function GraphView({
     // bounding box; calling `.run()` against a zero-sized
     // viewport throws inside the layout's `createLayoutInfo`.
     // The browser path always has a real viewport (the surface-
-    // wide layout's `participant-main` region carries `1fr`);
-    // a future leaf (`part_pan_zoom_tap`) can hook a
-    // `ResizeObserver` to re-trigger the layout if the canvas
-    // grows. Empty graphs also skip — the layout is a no-op.
+    // wide layout's `participant-main` region carries `1fr`).
+    // Empty graphs also skip — the layout is a no-op.
     const width = cy.width();
     const height = cy.height();
-    if (
-      cy.elements().length === 0 ||
-      !Number.isFinite(width) ||
-      !Number.isFinite(height) ||
-      width <= 0 ||
-      height <= 0
-    ) {
-      return;
+    const viewportReady =
+      Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0;
+    if (cy.elements().length > 0 && viewportReady && trulyNewNodeIds.length > 0) {
+      // `randomize: false` so `cose` starts from each node's current
+      // position — the cached ids carry their previous `{x, y}` via
+      // the per-element `position` stamp; only the new ids start at the
+      // default `{0, 0}`. The simulation then settles the new ids next
+      // to the existing graph without re-randomising everyone.
+      cy.layout({ name: 'cose', animate: false, randomize: false }).run();
     }
-    cy.layout({ name: 'cose', animate: false }).run();
+    // Mirror every emitted position into the cache so the NEXT element-
+    // sync tick reuses these positions for every known node. Add every
+    // currently-rendered id to the known set — including the freshly
+    // laid-out ones — so the next tick treats them as cached.
+    cy.nodes().forEach((node) => {
+      const position = node.position();
+      positionCacheRef.current.set(node.id(), { x: position.x, y: position.y });
+      knownNodeIdsRef.current.add(node.id());
+    });
   }, [elements]);
 
   return (

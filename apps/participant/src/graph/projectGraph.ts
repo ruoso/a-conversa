@@ -105,6 +105,7 @@ import {
   type FacetStatus,
   type FacetStatusIndex,
 } from './facetStatus';
+import { computeNodeDimensions } from './nodeDimensions';
 import { type OwnVote, type OwnVoteIndex } from './ownVotes';
 import { EMPTY_OTHER_VOTES_LIST, type OtherVote, type OthersVoteIndex } from './otherVotes';
 
@@ -222,6 +223,17 @@ export interface ParticipantNodeData {
    * baseline.
    */
   readonly otherVotes: readonly OtherVote[];
+  /**
+   * Per-node Cytoscape box width (px), computed from the wording string
+   * by `computeNodeDimensions`. The baseline stylesheet's
+   * `width: 'data(width)'` mapper reads this. Refinement:
+   * tasks/refinements/participant-ui/part_layout_measured_dimensions.md.
+   */
+  readonly width: number;
+  /** Per-node Cytoscape box height (px). Symmetric with `width`. */
+  readonly height: number;
+  /** Per-node `text-max-width` budget (px), `width - 2 * padding`. */
+  readonly textMaxWidth: number;
 }
 
 /**
@@ -419,6 +431,7 @@ export function projectGraph(
   for (const event of events) {
     if (event.kind === 'node-created') {
       const slot = resolveFacetSlot(facetStatusIndex.nodes, event.payload.node_id);
+      const dimensions = computeNodeDimensions(event.payload.wording);
       const element: ParticipantNodeElement = {
         group: 'nodes',
         data: {
@@ -433,6 +446,9 @@ export function projectGraph(
           diagnosticHighlight: diagnosticHighlightIndex.nodes.get(event.payload.node_id) ?? null,
           ownVote: ownVoteIndex.nodes.get(event.payload.node_id) ?? 'none',
           otherVotes: othersVoteIndex.nodes.get(event.payload.node_id) ?? EMPTY_OTHER_VOTES_LIST,
+          width: dimensions.width,
+          height: dimensions.height,
+          textMaxWidth: dimensions.textMaxWidth,
         },
       };
       nodeIndexById.set(event.payload.node_id, nodes.length);

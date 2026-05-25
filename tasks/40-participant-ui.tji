@@ -196,6 +196,13 @@ task participant_ui "Participant (debater) UI" {
         Swap the textual comma-separated screen-name list for axiom-mark attribution to a moderator-style per-participant chromatic badge in the participant entity detail panel. Polish layer over the v0 textual rendering ("Bedrock for: alice, ben"). The moderator surface already carries the per-participant chromatic axiom-mark vocabulary; the participant panel can adopt the same primitives once they extract cleanly (this leaf may compose with `shell_package.extract_facet_pill`'s extraction if the axiom-mark badge follows the same shell-extraction path). Source: tasks/refinements/participant-ui/part_entity_detail_panel.md + this commit.
       ->8-
     }
+    task part_layout_measured_dimensions "Per-node Cytoscape sizing from wording (replaces constant 200x80 baseline)" {
+      effort 0.5d
+      allocate team
+      complete 100
+      depends !part_per_facet_state_styling
+      note "Refinement: tasks/refinements/participant-ui/part_layout_measured_dimensions.md"
+    }
   }
 
   task part_pending_proposals "Pending proposals pane" {

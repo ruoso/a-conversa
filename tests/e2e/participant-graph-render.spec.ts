@@ -2897,4 +2897,207 @@ test.describe('Participant operate route — read-mostly graph render', () => {
       await context.close();
     }
   });
+
+  test('julia (block-11, block-5 role-swap) navigates to operate with the test-mode flag, short-wording nodes render narrower than long-wording nodes via per-node data(width)/data(height) mappers', async ({
+    browser,
+  }) => {
+    // Refinement: tasks/refinements/participant-ui/part_layout_measured_dimensions.md
+    //   ELEVENTH test() block. Block-5 role-swap (`julia + ivan` —
+    //   inverse of block 5's `ivan + julia`) to keep parallel execution
+    //   under `fullyParallel: true` race-free; the 12-user pool is
+    //   recycled via the role-swap pattern established by blocks 7-10.
+    //
+    //   Pins the per-node sizing contract end-to-end: the stylesheet's
+    //   `width: 'data(width)'` / `height: 'data(height)'` /
+    //   `'text-max-width': 'data(textMaxWidth)'` mappers consume what
+    //   the projector stamped via `computeNodeDimensions(wording)`.
+    //   The cytoscape boundingBox API exposes the rendered footprint;
+    //   the assertion is "the box that holds a short wording is
+    //   narrower than the box that holds a long wording" — what
+    //   chromium computes, not what happy-dom's text-stub computes
+    //   (the Vitest layer pins the algorithm under the stub).
+    //
+    //   The `window.__aConversaCyInstance` test seam is reused from
+    //   `part_pan_zoom_tap` Decision §9 — gated on the
+    //   `?aconversaTestMode=1` URL query parameter.
+    const context = await freshContext(browser);
+    const page = await context.newPage();
+    try {
+      const TOPIC = 'Per-node sizing reaches the participant tablet';
+      const NODE_SHORT_WORDING = 'Yes';
+      const NODE_LONG_WORDING =
+        'the participant should see this wording wrap across several lines as the rendered card grows to fit its content without clipping or overflowing the rounded rectangle box that cytoscape draws on the canvas';
+
+      // 1. Julia creates the session (block-5 inverse — block 5 had
+      //    ivan as creator + julia as debater-A; block 11 swaps the
+      //    roles).
+      const julia = await loginAs(page, { username: 'julia' });
+      expect(julia.screenName.toLowerCase()).toBe('julia');
+      const sessionId = await createSession(page, { topic: TOPIC, privacy: 'public' });
+
+      // 2. Log out + drop cookies so the next dance is fresh.
+      await logoutAndClearAllCookies(page);
+
+      // 3. Ivan authenticates and claims debater-A through the invite
+      //    acceptance flow. Ivan becomes the navigating current
+      //    participant whose tablet the spec asserts against.
+      const ivan = await loginAs(page, { username: 'ivan' });
+      expect(ivan.screenName.toLowerCase()).toBe('ivan');
+      await page.goto(`/p/sessions/${sessionId}/invite?role=debater-A`);
+      await expect(page.getByTestId('route-invite-acceptance')).toBeVisible({ timeout: 15_000 });
+      const joinButton = page.getByTestId('invite-acceptance-join-button');
+      await expect(joinButton).toBeEnabled();
+      await joinButton.click();
+      await page.waitForURL((url) => url.pathname === `/p/sessions/${sessionId}/lobby`, {
+        timeout: 15_000,
+      });
+      await expect(page.getByTestId('route-lobby')).toBeVisible({ timeout: 15_000 });
+
+      // 4. Navigate to the operate route WITH the test-mode flag set so
+      //    `<GraphView>` exposes the live cy instance on `window` for
+      //    the boundingBox reads below.
+      await page.goto(`/p/sessions/${sessionId}?aconversaTestMode=1`);
+      await expect(page.getByTestId('route-operate')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('participant-graph-root')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('participant-graph-status-mirror')).toBeAttached({
+        timeout: 15_000,
+      });
+
+      // 5. Seed two `node-created` events with very-different wording
+      //    lengths.
+      const NODE_SHORT_ID = '11111111-1111-4111-8111-1111111111bb';
+      const NODE_LONG_ID = '22222222-2222-4222-8222-2222222222bb';
+      const ACTOR_ID = '55555555-5555-4555-8555-5555555555bb';
+      await page.evaluate(
+        (seed: {
+          sessionId: string;
+          nodeShortId: string;
+          nodeLongId: string;
+          actorId: string;
+          wordingShort: string;
+          wordingLong: string;
+        }) => {
+          const store = (
+            window as unknown as {
+              __aConversaWsStore?: {
+                getState: () => { applyEvent: (event: unknown) => void };
+              };
+            }
+          ).__aConversaWsStore;
+          if (!store) {
+            throw new Error('__aConversaWsStore is not exposed on window');
+          }
+          const apply = store.getState().applyEvent.bind(store.getState());
+          apply({
+            id: '66666666-6666-4666-8666-66666666b001',
+            sessionId: seed.sessionId,
+            sequence: 1_000_001,
+            kind: 'node-created',
+            actor: seed.actorId,
+            payload: {
+              node_id: seed.nodeShortId,
+              wording: seed.wordingShort,
+              created_by: seed.actorId,
+              created_at: '2026-05-25T00:00:00.000Z',
+            },
+            createdAt: '2026-05-25T00:00:00.000Z',
+          });
+          apply({
+            id: '66666666-6666-4666-8666-66666666b002',
+            sessionId: seed.sessionId,
+            sequence: 1_000_002,
+            kind: 'node-created',
+            actor: seed.actorId,
+            payload: {
+              node_id: seed.nodeLongId,
+              wording: seed.wordingLong,
+              created_by: seed.actorId,
+              created_at: '2026-05-25T00:00:00.000Z',
+            },
+            createdAt: '2026-05-25T00:00:00.000Z',
+          });
+        },
+        {
+          sessionId,
+          nodeShortId: NODE_SHORT_ID,
+          nodeLongId: NODE_LONG_ID,
+          actorId: ACTOR_ID,
+          wordingShort: NODE_SHORT_WORDING,
+          wordingLong: NODE_LONG_WORDING,
+        },
+      );
+
+      // 6. Wait for both mirror rows to land so the cy elements are
+      //    confirmed mounted before reading their boundingBoxes.
+      await expect(
+        page.locator(`[data-testid="participant-node-status"][data-node-id="${NODE_SHORT_ID}"]`),
+      ).toBeAttached({ timeout: 15_000 });
+      await expect(
+        page.locator(`[data-testid="participant-node-status"][data-node-id="${NODE_LONG_ID}"]`),
+      ).toBeAttached({ timeout: 15_000 });
+
+      // 7. Read each node's rendered Cytoscape boundingBox.
+      const dimensions = await page.evaluate(
+        (ids: { shortId: string; longId: string }) => {
+          const cy = (
+            window as unknown as {
+              __aConversaCyInstance?: {
+                getElementById: (id: string) => {
+                  data: (key: string) => unknown;
+                  boundingBox: () => { w: number; h: number };
+                };
+              };
+            }
+          ).__aConversaCyInstance;
+          if (!cy) {
+            throw new Error('__aConversaCyInstance is not exposed on window');
+          }
+          const shortNode = cy.getElementById(ids.shortId);
+          const longNode = cy.getElementById(ids.longId);
+          return {
+            short: {
+              data: {
+                width: shortNode.data('width') as number,
+                height: shortNode.data('height') as number,
+                textMaxWidth: shortNode.data('textMaxWidth') as number,
+              },
+              bb: shortNode.boundingBox(),
+            },
+            long: {
+              data: {
+                width: longNode.data('width') as number,
+                height: longNode.data('height') as number,
+                textMaxWidth: longNode.data('textMaxWidth') as number,
+              },
+              bb: longNode.boundingBox(),
+            },
+          };
+        },
+        { shortId: NODE_SHORT_ID, longId: NODE_LONG_ID },
+      );
+
+      // 8. Assert the contract:
+      //    - Both nodes carry positive numeric width / height / textMaxWidth on data.
+      //    - The short-wording node's width is strictly less than the
+      //      long-wording node's width (the per-node mapper actually
+      //      drove different sizes, not the same constant).
+      //    - The long-wording node's width does NOT exceed the
+      //      MAX_NODE_WIDTH constant (240 px from nodeDimensions.ts).
+      //    - The textMaxWidth invariant `textMaxWidth === width - 24`
+      //      holds for both nodes.
+      //    - The rendered boundingBox width tracks the data.width
+      //      ordering (short bb < long bb).
+      expect(dimensions.short.data.width).toBeGreaterThan(0);
+      expect(dimensions.short.data.height).toBeGreaterThan(0);
+      expect(dimensions.long.data.width).toBeGreaterThan(0);
+      expect(dimensions.long.data.height).toBeGreaterThan(0);
+      expect(dimensions.short.data.width).toBeLessThan(dimensions.long.data.width);
+      expect(dimensions.long.data.width).toBeLessThanOrEqual(240);
+      expect(dimensions.short.data.textMaxWidth).toBe(dimensions.short.data.width - 24);
+      expect(dimensions.long.data.textMaxWidth).toBe(dimensions.long.data.width - 24);
+      expect(dimensions.short.bb.w).toBeLessThan(dimensions.long.bb.w);
+    } finally {
+      await context.close();
+    }
+  });
 });

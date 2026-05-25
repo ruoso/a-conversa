@@ -2080,3 +2080,85 @@ describe('GraphView — part_pan_zoom_tap (pan + zoom + tap-to-select)', () => {
     expect(overlay?.getAttribute('class') ?? '').toContain('pointer-events-none');
   });
 });
+
+// Per-node sizing — `part_layout_measured_dimensions`. The baseline
+// stylesheet now uses `data(...)` mappers for width/height/text-max-width;
+// the projector stamps the values; the Cytoscape data record must carry
+// them so the stylesheet resolves per-node footprints.
+describe('GraphView — per-node sizing (part_layout_measured_dimensions)', () => {
+  it('(layout-α) baseline node selector uses data(width) / data(height) / data(textMaxWidth) mappers', () => {
+    const sheet = STYLESHEET as unknown as ReadonlyArray<{
+      selector: string;
+      style: Record<string, unknown>;
+    }>;
+    const baseline = sheet.find((rule) => rule.selector === 'node');
+    expect(baseline).toBeDefined();
+    expect(baseline?.style.width).toBe('data(width)');
+    expect(baseline?.style.height).toBe('data(height)');
+    expect(baseline?.style['text-max-width']).toBe('data(textMaxWidth)');
+  });
+
+  it('(layout-β) Cytoscape data carries per-node width / height / textMaxWidth, and short wording renders narrower than long wording', () => {
+    const result = renderView();
+    const longWording =
+      'the participant should see this wording wrap across several lines as the rendered card grows to fit its content without clipping or overflowing the rounded rectangle box that cytoscape draws on the canvas';
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'Yes' }));
+    seedEvent(nodeCreatedEvent({ sequence: 2, nodeId: NODE_B, wording: longWording }));
+    const cy = result.getCy();
+    const shortNode = cy.getElementById(NODE_A);
+    const longNode = cy.getElementById(NODE_B);
+    const shortWidth = shortNode.data('width') as number;
+    const shortHeight = shortNode.data('height') as number;
+    const shortMaxText = shortNode.data('textMaxWidth') as number;
+    const longWidth = longNode.data('width') as number;
+    const longHeight = longNode.data('height') as number;
+    const longMaxText = longNode.data('textMaxWidth') as number;
+    expect(shortWidth).toBeGreaterThan(0);
+    expect(shortHeight).toBeGreaterThan(0);
+    expect(longWidth).toBeGreaterThan(0);
+    expect(longHeight).toBeGreaterThan(0);
+    expect(shortWidth).toBeLessThan(longWidth);
+    expect(shortHeight).toBeLessThanOrEqual(longHeight);
+    expect(shortMaxText).toBe(shortWidth - 24);
+    expect(longMaxText).toBe(longWidth - 24);
+  });
+
+  it('(layout-γ) selection-only changes preserve every existing node position (no cose reshuffle on tap)', () => {
+    // Bug guard: before the position-cache landed, every tap drove a
+    // new `elements` memo identity (the `selected` flag flipped on
+    // some node's data), the sync effect bulk-replaced elements, and
+    // `cose` reshuffled the canvas. The cache stamps each node's
+    // previously-emitted `{x, y}` onto the per-element descriptor so
+    // `cy.json({ elements })` restores those positions, and `cose` is
+    // skipped when no truly-new node ids appear.
+    //
+    // Assertion shape: capture the post-mount positions (whatever the
+    // initial `cose` pass settled on, or `{0, 0}` if the happy-dom
+    // viewport is zero-sized and cose was skipped), then trigger a
+    // selection change. The pre- and post-selection positions must be
+    // identical for every node.
+    const result = renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(nodeCreatedEvent({ sequence: 2, nodeId: NODE_B, wording: 'B' }));
+    const cy = result.getCy();
+    const positionBefore = {
+      a: { ...cy.getElementById(NODE_A).position() },
+      b: { ...cy.getElementById(NODE_B).position() },
+    };
+    // Trigger a selection change — same node set, different `selected`
+    // flag in the data records. This forces the `elements` memo to
+    // re-emit fresh descriptors and the sync effect to fire.
+    act(() => {
+      useSelectionStore.getState().select({ kind: 'node', id: NODE_A });
+    });
+    expect(cy.getElementById(NODE_A).position()).toEqual(positionBefore.a);
+    expect(cy.getElementById(NODE_B).position()).toEqual(positionBefore.b);
+    // A second selection change (e.g. tapping the canvas to clear) must
+    // also leave positions intact.
+    act(() => {
+      useSelectionStore.getState().clear();
+    });
+    expect(cy.getElementById(NODE_A).position()).toEqual(positionBefore.a);
+    expect(cy.getElementById(NODE_B).position()).toEqual(positionBefore.b);
+  });
+});

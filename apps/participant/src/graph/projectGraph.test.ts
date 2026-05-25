@@ -57,7 +57,7 @@
 // shape so a reader cross-referencing the two surfaces sees the same
 // envelope construction idiom.
 
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { EdgeRole, Event, StatementKind } from '@a-conversa/shared-types';
 
 import { projectGraph } from './projectGraph';
@@ -1550,5 +1550,97 @@ describe('projectGraph — other-vote stamping (part_other_vote_indicators)', ()
     expect(nodes).toHaveLength(1);
     expect(nodes[0]?.data.ownVote).toBe('agree');
     expect(nodes[0]?.data.otherVotes).toEqual([{ participantId: VOTER_X, choice: 'dispute' }]);
+  });
+});
+
+// Per-node sizing stamping (part_layout_measured_dimensions). The
+// projector calls `computeNodeDimensions(wording)` per `node-created`
+// event and spreads `width` / `height` / `textMaxWidth` onto the
+// emitted descriptor. Edges carry no per-edge sizing (Cytoscape edges
+// are line segments). The cases below pin the cross-projection
+// invariants — they do not re-assert the dimension function's clamp
+// behaviour (that's `nodeDimensions.test.ts`'s job).
+import {
+  MAX_NODE_HEIGHT as DIMS_MAX_NODE_HEIGHT,
+  MAX_NODE_WIDTH as DIMS_MAX_NODE_WIDTH,
+  MIN_NODE_HEIGHT as DIMS_MIN_NODE_HEIGHT,
+  MIN_NODE_WIDTH as DIMS_MIN_NODE_WIDTH,
+} from './nodeDimensions';
+import { installCytoscapeTestEnv } from './cytoscapeTestEnv';
+
+describe('projectGraph — per-node sizing stamping (part_layout_measured_dimensions)', () => {
+  // The Cytoscape test env shim widens `measureText` to be content-
+  // sensitive (~7 px per character); the projector reads it indirectly
+  // through `computeNodeDimensions`. Install it for this suite so the
+  // dimensions reflect the wording's actual length.
+  let envHandle: ReturnType<typeof installCytoscapeTestEnv> | null = null;
+  beforeAll(() => {
+    envHandle = installCytoscapeTestEnv();
+  });
+  afterAll(() => {
+    envHandle?.restore();
+    envHandle = null;
+  });
+
+  it('(layout-a) short wording emits min-width-band data.width and min-height data.height', () => {
+    const events: Event[] = [makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'Yes' })];
+    const { nodes } = projectGraph(
+      events,
+      emptyIndex(),
+      emptyAxiomIndex(),
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      EMPTY_OWN_VOTES,
+      EMPTY_OTHERS_VOTES,
+    );
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0]?.data.width).toBeLessThan(DIMS_MAX_NODE_WIDTH);
+    expect(nodes[0]?.data.width).toBeGreaterThanOrEqual(DIMS_MIN_NODE_WIDTH);
+    expect(nodes[0]?.data.height).toBe(DIMS_MIN_NODE_HEIGHT);
+  });
+
+  it('(layout-b) long wording emits max-width data.width and grown data.height', () => {
+    const long =
+      'the participant should see this wording wrap across several lines as the rendered card grows to fit its content without clipping or overflowing the rounded rectangle box that cytoscape draws on the canvas';
+    const events: Event[] = [makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: long })];
+    const { nodes } = projectGraph(
+      events,
+      emptyIndex(),
+      emptyAxiomIndex(),
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      EMPTY_OWN_VOTES,
+      EMPTY_OTHERS_VOTES,
+    );
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0]?.data.width).toBe(DIMS_MAX_NODE_WIDTH);
+    expect(nodes[0]?.data.height).toBeGreaterThan(DIMS_MIN_NODE_HEIGHT);
+    expect(nodes[0]?.data.height).toBeLessThanOrEqual(DIMS_MAX_NODE_HEIGHT);
+  });
+
+  it('(layout-c) textMaxWidth always equals width - 24 (2 * default padding)', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'Yes' }),
+      makeNodeCreated({
+        sequence: 2,
+        nodeId: NODE_B,
+        wording: 'A statement of moderate width',
+      }),
+    ];
+    const { nodes } = projectGraph(
+      events,
+      emptyIndex(),
+      emptyAxiomIndex(),
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      EMPTY_OWN_VOTES,
+      EMPTY_OTHERS_VOTES,
+    );
+    for (const node of nodes) {
+      expect(node.data.textMaxWidth).toBe(node.data.width - 24);
+    }
   });
 });
