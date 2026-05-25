@@ -55,6 +55,7 @@ task root_app "Root app (apps/root/)" {
   task root_tests "Root app unit + Playwright smoke" {
     effort 1d
     allocate team
+    complete 100
     depends !root_moderator_cutover
     note -8<-
       Refinement: tasks/refinements/root-app/root_tests.md

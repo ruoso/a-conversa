@@ -30,7 +30,7 @@
 //   - `/api/auth/me` growing an extra field (no-profile-data-policy
 //     regression) — caught by the exact-shape assertion.
 //
-// **Scenario ordering — `test.describe.serial`.** The five scenarios
+// **Scenario ordering — `test.describe.serial`.** The six scenarios
 // share the compose stack's `users` table state within a CI run:
 //
 //   1. new-user — CREATES the `users` row for `alice` (the OIDC
@@ -54,6 +54,18 @@
 //      the serial block so its OIDC dance is rate-limited together
 //      with the dances above; uses `ben` (the first non-alice seeded
 //      dev user) so the new-user branch fires fresh.
+//   6. root-landing-new-user — drives the ADR 0026 root-app smoke:
+//      an unauthenticated visitor on `/` clicks the `LoginButton`
+//      (NOT the start-session link, which carries a deep return-to),
+//      runs the OIDC dance for a fresh user (`maria` — the first
+//      seeded dev user after `alice` and `ben`, so her users-table
+//      row does not exist yet and the new-user branch fires), submits
+//      the screen-name form via `loginAs`, and lands back on the bare
+//      `/` with no remembered return-to. Asserts the authenticated
+//      landing card renders with `maria` interpolated into the welcome
+//      title. Pins the `/login` → `/screen-name` → `/` happy path
+//      that ADR 0026 named but no prior scenario covered end-to-end
+//      (scenario #5 ends on `/m/sessions/new`, not `/`).
 //
 // Ordering matters because Authelia's users-file mode has no
 // programmatic user-creation API; the `users` row IS the test
@@ -298,6 +310,81 @@ test.describe.serial('OAuth flow integration — full handshake against Authelia
         page.locator('[data-testid="invite-slot-occupant"][data-role="moderator"]'),
         'moderator slot must show the authenticated user (ben)',
       ).toHaveText('ben', { timeout: 15_000 });
+    } finally {
+      await context.close();
+    }
+  });
+
+  // Refinement: tasks/refinements/root-app/root_tests.md
+  // ADR:        docs/adr/0026-micro-frontend-root-app.md (the
+  //             root-app smoke contract this scenario discharges).
+  test('root-landing-new-user: unauthenticated visitor on / clicks LoginButton, completes OIDC as a new user, lands back on / with the authenticated landing card', async ({
+    browser,
+  }) => {
+    // Fresh browser context — no cookies or sessionStorage from the
+    // alice / ben scenarios above. `maria` is the next seeded dev user
+    // in `infra/authelia/users.yml` after `alice` (scenarios 1–3) and
+    // `ben` (scenario 5); her users-table row does not exist yet, so
+    // the OIDC callback's new-user branch fires fresh.
+    const context = await browser.newContext({ ignoreHTTPSErrors: true });
+    const page = await context.newPage();
+    try {
+      // 1. Unauthenticated visitor lands on the root SPA. The bare
+      //    `/` (no remembered return-to) renders the unauthenticated
+      //    landing — both the start-session deep-link affordance and
+      //    the `LoginButton`. We click the `LoginButton` (not the
+      //    deep link) so the post-auth target resolves to `/` rather
+      //    than `/m/sessions/new`; the deep-link path is already
+      //    pinned by scenario #5 above.
+      await page.goto('/');
+      const loginButton = page.getByTestId('auth-login-button');
+      await expect(
+        loginButton,
+        'unauthenticated / must render the secondary LoginButton',
+      ).toBeVisible({ timeout: 10_000 });
+      await expect(
+        page.getByTestId('root-start-session'),
+        'unauthenticated / must also render the primary start-session link',
+      ).toBeVisible();
+
+      // 2. Click the LoginButton. It triggers a full-page navigate to
+      //    `/api/auth/login`, which 302s onto Authelia. Wait for the
+      //    Authelia origin so `loginAs` finds the handshake mid-flow
+      //    and drives the form fill from there.
+      await loginButton.click();
+      await page.waitForURL(/authelia\.aconversa\.local/, { timeout: 15_000 });
+
+      // 3. Drive the OIDC dance for a fresh user. `loginAs` runs the
+      //    full Authelia → callback → screen-name chain. The new-user
+      //    branch fires (maria has no users-table row yet), the
+      //    `/screen-name?from=callback` form is filled, and the SPA's
+      //    onSuccess + auth.refresh transition the route into the
+      //    authenticated arm that consumes the (empty) remembered
+      //    return-to and `Navigate`s to `/`.
+      await loginAs(page, { username: 'maria' });
+
+      // 4. URL settles on `/` — the post-auth target from an empty
+      //    remembered slot. Assert the authenticated landing renders:
+      //    the eyebrow, the welcome title with `maria` interpolated,
+      //    and the moderator-handoff link.
+      await page.waitForURL((url) => url.pathname === '/', { timeout: 15_000 });
+      await expect(
+        page.getByTestId('root-authenticated-eyebrow'),
+        'authenticated landing eyebrow must be visible on /',
+      ).toBeVisible({ timeout: 15_000 });
+      const openModerator = page.getByTestId('root-open-moderator');
+      await expect(
+        openModerator,
+        'authenticated landing must render the moderator-handoff link',
+      ).toBeVisible();
+      expect(
+        await openModerator.getAttribute('href'),
+        'moderator-handoff link must point at /m/sessions/new',
+      ).toBe('/m/sessions/new');
+      await expect(
+        page.getByTestId('route-title'),
+        'authenticated landing welcome title must interpolate the screen name',
+      ).toContainText('maria');
     } finally {
       await context.close();
     }
