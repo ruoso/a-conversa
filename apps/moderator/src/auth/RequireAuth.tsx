@@ -36,21 +36,24 @@
 //                                  `'authenticated'` to `/login`.
 //
 // `/login` is NOT wrapped — wrapping it would create a redirect cycle on
-// `'unauthenticated'`. `Login.tsx` runs its own in-component four-state
-// switch and is the universal redirect sink.
+// `'unauthenticated'`. After ADR 0026 / root_moderator_cutover, `/login`
+// lives in the root host (`apps/root/src/App.tsx`) and is the universal
+// redirect sink; the moderator surface only ever owns
+// `/sessions/*` routes.
 //
 // ────────────────────────────────────────────────────────────────────────
 // Loading-frame DOM
 // ────────────────────────────────────────────────────────────────────────
-// The `'loading'` branch renders the exact DOM shape `Login.tsx`:31–38
-// uses (`<main data-testid="route-login">` + `<h1 data-testid="route-title">`
-// + `<p data-testid="auth-checking">`). The e2e smoke spec at
-// `tests/e2e/i18n-moderator-smoke.spec.ts:174` waits for `route-title`
-// to be visible before the strict-text assertion at line 196; mirroring
-// Login means the title is present immediately at bootstrap and the
-// wrapper does not introduce a blank-frame gap between bootstrap and
-// redirect. Reusing the existing `auth.login.title` / `auth.login.checking`
-// i18n keys means no new catalog entries land in this task.
+// The `'loading'` branch renders the same testid shape the host's
+// `LoadingFrame` uses (`<main data-testid="route-login">` + `<h1
+// data-testid="route-title">` + `<p data-testid="auth-checking">`).
+// The e2e smoke spec at `tests/e2e/i18n-moderator-smoke.spec.ts` waits
+// for `route-title` to be visible before its strict-text assertion;
+// mirroring the host's frame means the title is present immediately at
+// bootstrap and the wrapper does not introduce a blank-frame gap
+// between bootstrap and redirect. Reusing the existing
+// `auth.login.title` / `auth.login.checking` i18n keys means no new
+// catalog entries land in this task.
 //
 // ────────────────────────────────────────────────────────────────────────
 // Exhaustive `switch`
@@ -80,8 +83,9 @@ export function RequireAuth(props: RequireAuthProps): ReactElement {
 
   switch (status) {
     case 'loading':
-      // Mirror `Login.tsx`:31–38 exactly so the bootstrap frame carries
-      // the same testids + localized title the e2e smoke spec asserts.
+      // Mirror the host's `LoadingFrame` exactly so the bootstrap
+      // frame carries the same testids + localized title the e2e
+      // smoke spec asserts.
       return (
         <main data-testid="route-login">
           <h1 data-testid="route-title">{t('auth.login.title')}</h1>

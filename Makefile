@@ -24,7 +24,7 @@ help:
 	@echo "                      — same target invoked by the pre-commit hook and by CI"
 	@echo "  make test           run smoke tests (vitest, cucumber, playwright)"
 	@echo "  make test:e2e       run the Playwright e2e suite against an already-running server (assumes 'make up')"
-	@echo "  make test:e2e:compose  bring up compose (prod-mode, matches CI), run e2e, tear down"
+	@echo "  make test:e2e:compose  drop volumes, bring up compose (dev mode), run e2e, tear down"
 	@echo "  make up             bring up the whole dev stack with the dev compose override"
 	@echo "                      (NODE_ENV=development; .env.example placeholders accepted)"
 	@echo "  make up-prod-mode   like 'make up' but WITHOUT the dev override — boot gates match CI/production"
@@ -72,12 +72,16 @@ test\:e2e:
 # The teardown runs whether the suite passes or fails so a Playwright
 # crash never leaks compose state.
 #
-# Uses `up-prod-mode` (not `up`) so the boot-gate set matches CI's
-# `e2e-playwright` job. A divergence here would mean local "realistic"
-# e2e passes while CI fails (or vice versa); keeping both on the
-# same compose-file set prevents that drift.
+# A leading `down-v` guarantees the stack starts from a clean slate —
+# the per-CI-run users/postgres state the Playwright suite assumes
+# would otherwise be polluted by any prior `make up` left behind.
+# Uses `up` (the dev override) because the Playwright suite drives
+# browser flows against the dev compose; the prod-mode boot gates
+# (strict secrets, CORS lockdown) are exercised by CI's dedicated
+# `e2e-playwright` job, not by this local convenience target.
 test\:e2e\:compose:
-	@$(MAKE) up-prod-mode
+	@$(MAKE) down-v
+	@$(MAKE) up
 	@echo "[waiting for /healthz to flip to 200]"
 	@for i in $$(seq 1 60); do \
 		if curl --fail --silent http://localhost:3000/healthz > /dev/null 2>&1; then \

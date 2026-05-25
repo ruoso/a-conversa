@@ -147,7 +147,9 @@ test.describe('moderator login route renders localized strings', () => {
     ).toMatch(/response_type=code/);
   });
 
-  test('GET /screen-name renders the SPA shell (client-side route)', async ({ page }, testInfo) => {
+  test('GET /screen-name?from=callback renders the SPA shell (client-side route)', async ({
+    page,
+  }, testInfo) => {
     const locale = localeForProject(testInfo.project.name);
     const expected = expectationsFor(locale);
 
@@ -156,46 +158,44 @@ test.describe('moderator login route renders localized strings', () => {
     // the SPA's `index.html` at 200, the SPA's React Router takes
     // over and renders the matching route.
     //
-    // Without a pending-cookie or session cookie the screen-name
-    // route falls back to the auth gate, which in turn redirects
-    // unauthenticated users back to `/login`. Whichever path runs,
-    // the bundle must still render a localized title — that's the
-    // smoke this case pins.
-    const response = await page.goto('/screen-name');
+    // We pass `?from=callback` so `ScreenNameRoute` renders the
+    // screen-name form even without a pending / session cookie.
+    // Without the query, the route would `<Navigate to="/login">`
+    // and the host's `LoginRoute` would immediately
+    // `window.location.replace('/api/auth/login')` — leaving the SPA
+    // before the localized-title assertion below could grab it. The
+    // query mirrors what the OIDC callback handler sets on the
+    // new-user branch (see
+    // `tasks/refinements/backend/auth_callback_new_user_browser_redirect.md`),
+    // so the SPA renders the screen-name form exactly the way a
+    // real new-user OIDC dance lands them on it.
+    const response = await page.goto('/screen-name?from=callback');
     expect(response, 'GET /screen-name must return a response').not.toBeNull();
     expect(
       response!.status(),
       `GET /screen-name status for locale ${locale} (200 from SPA fallback)`,
     ).toBe(200);
 
-    // Wait for the SPA to settle. The `route-title` test id is
-    // rendered by both the `Login` and `ScreenName` routes; the
-    // string content depends on which path the auth state ends up
-    // in. The smoke just confirms the SPA mounted and rendered
-    // SOME localized title (proving react-i18next is wired into
-    // the bundle through the single-origin path).
+    // Wait for the SPA to settle on the screen-name form. The
+    // `route-title` testid is the form's H1 (the `<main
+    // data-testid="route-screen-name">` wrapper renders it).
     await expect(
       page.getByTestId('route-title'),
       `route-title must render under /screen-name for locale ${locale}`,
     ).toBeVisible();
-    // Loose assertion: the rendered title is one of the catalog
-    // strings (login title OR screen-name title). The catalog is
-    // the source of truth, so we read the localized strings via
-    // `expectationsFor` and assert the rendered text matches one
-    // of them. Avoids hard-coding which route the auth gate lands
-    // on while still pinning that the i18n catalog answered.
     const titleText = await page.getByTestId('route-title').textContent();
     expect(titleText, `route-title must be a non-empty localized string`).not.toBeNull();
     expect(
       titleText!.trim().length,
       `route-title must be non-empty for locale ${locale}`,
     ).toBeGreaterThan(0);
-    // The login-title is the most common landing for the unauthed
-    // case; assert it specifically so a regression where the SPA
-    // renders some other route's title here still fails.
+    // The screen-name route's H1 reads `auth.screenName.title`. If the
+    // i18n bundle ever stops loading through the single-origin path
+    // (or the catalog key changes without this fixture updating), the
+    // text comparison fails here.
     expect(
       titleText,
-      `route-title under /screen-name should fall through to the login title for locale ${locale}`,
-    ).toBe(expected.loginTitle);
+      `route-title under /screen-name?from=callback must be the localized screen-name title for locale ${locale}`,
+    ).toBe(expected.screenNameTitle);
   });
 });

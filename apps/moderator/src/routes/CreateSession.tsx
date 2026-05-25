@@ -20,10 +20,10 @@
 // `mod_invite_participants` so the moderator sees the invite surface
 // before entering the operate canvas.
 //
-// Shape and a11y wiring mirror `ScreenName.tsx` deliberately: same
-// `useRef` + one-shot `useEffect` for focus-on-mount, same
-// `aria-invalid` + `aria-describedby` linkage, same `role="alert"` +
-// `aria-live="polite"` error region, same submit-disabled rule
+// Shape and a11y wiring mirror `@a-conversa/shell`'s `<ScreenNameForm>`
+// deliberately: same `useRef` + one-shot `useEffect` for focus-on-mount,
+// same `aria-invalid` + `aria-describedby` linkage, same `role="alert"`
+// + `aria-live="polite"` error region, same submit-disabled rule
 // (`submitting || trimmed.length === 0`). No new dependencies introduced.
 
 import { useEffect, useRef, useState, type ReactElement } from 'react';

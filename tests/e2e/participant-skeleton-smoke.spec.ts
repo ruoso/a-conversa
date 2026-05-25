@@ -236,7 +236,7 @@ test.describe('Participant surface skeleton — unauthenticated visit deflects t
   // persisted jar and the deflection branch would never fire.
   test.use({ storageState: { cookies: [], origins: [] } });
 
-  test('unauthenticated visit to /p/... lands on /login with the deep link remembered', async ({
+  test('unauthenticated visit to /p/... bounces through /login to the SSO endpoint with the deep link remembered', async ({
     page,
   }) => {
     const inviteUrl = `/p/sessions/${SESSION_ID}/invite?role=debater-A`;
@@ -245,18 +245,21 @@ test.describe('Participant surface skeleton — unauthenticated visit deflects t
     // The host's `SurfaceHost` branch reads `auth.status ===
     // 'unauthenticated'`, calls `rememberReturnTo(location.pathname +
     // location.search + location.hash)`, then renders `<Navigate
-    // to="/login" replace />`. The browser settles on `/login`.
-    await page.waitForURL((url) => url.pathname === '/login', { timeout: 15_000 });
-
-    await expect(
-      page.getByTestId('auth-login-button'),
-      'the root host must surface the SSO affordance on /login',
-    ).toBeVisible({ timeout: 15_000 });
+    // to="/login" replace />`. `LoginRoute`'s unauthenticated useEffect
+    // immediately `window.location.replace('/api/auth/login')`, which
+    // the server 302s onto Authelia. Wait for the bounce to settle on
+    // the Authelia origin to prove the full deflection chain ran.
+    await page.waitForURL((url) => url.hostname.includes('authelia.aconversa.local'), {
+      timeout: 15_000,
+    });
 
     // `rememberReturnTo` writes to `sessionStorage` under the
     // `a-conversa:return-to` key (see
-    // `apps/root/src/surfaces/SurfaceHost.tsx`). Read it back from the
-    // page's session storage to pin the deep-link round-trip contract.
+    // `apps/root/src/surfaces/SurfaceHost.tsx`). The key lives on the
+    // SPA origin, not on Authelia's — navigate back to `/` on the SPA
+    // (the unauthenticated LandingRoute renders inline, no further
+    // redirect) so we can read sessionStorage on the right origin.
+    await page.goto('/');
     const rememberedReturnTo = await page.evaluate(() =>
       window.sessionStorage.getItem('a-conversa:return-to'),
     );

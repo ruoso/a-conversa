@@ -17,11 +17,13 @@ afterEach(() => {
 });
 
 describe('root app routes', () => {
-  it('renders the unauthenticated login route', async () => {
+  it('redirects the unauthenticated login route straight to /api/auth/login', async () => {
+    const replaceSpy = vi.spyOn(window.location, 'replace').mockImplementation(() => undefined);
+
     renderWithProviders(<App />, { initialEntries: ['/login'] });
 
     await waitFor(() => {
-      expect(screen.getByTestId('auth-login-button')).toBeTruthy();
+      expect(replaceSpy).toHaveBeenCalledWith('/api/auth/login');
     });
   });
 
@@ -70,7 +72,7 @@ describe('root app routes', () => {
     });
   });
 
-  it('redirects protected moderator paths to /login and remembers the target', async () => {
+  it('redirects protected moderator paths through /login to the SSO endpoint and remembers the target', async () => {
     // After `aud_no_auth_for_public` re-sequenced `SurfaceHost` to read
     // `meta.requiredAuthLevel` AFTER the dynamic import, the deflection
     // path runs only once the manifest + module resolve. Mock both so
@@ -90,11 +92,12 @@ describe('root app routes', () => {
       meta: { requiredAuthLevel: 'authenticated' },
     });
     vi.spyOn(manifestModule, 'injectStyles').mockReturnValue([]);
+    const replaceSpy = vi.spyOn(window.location, 'replace').mockImplementation(() => undefined);
 
     renderWithProviders(<App />, { initialEntries: ['/m/sessions/new'] });
 
     await waitFor(() => {
-      expect(screen.getAllByTestId('auth-login-button').length).toBeGreaterThan(0);
+      expect(replaceSpy).toHaveBeenCalledWith('/api/auth/login');
     });
     expect(window.sessionStorage.getItem('a-conversa:return-to')).toBe('/m/sessions/new');
   });

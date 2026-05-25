@@ -4,6 +4,8 @@ import { useTranslation } from 'react-i18next';
 
 import { LoginButton, ScreenNameForm, useAuth } from '@a-conversa/shell';
 
+const SSO_LOGIN_URL = '/api/auth/login';
+
 import { SurfaceHost, rememberReturnTo, takeRememberedReturnTo } from './surfaces/SurfaceHost';
 
 function resolvePostAuthTarget(): string {
@@ -112,8 +114,21 @@ function LandingRoute(): ReactElement {
 }
 
 function LoginRoute(): ReactElement {
-  const { t } = useTranslation();
   const auth = useAuth();
+  const shouldRedirectToSso = auth.status === 'unauthenticated';
+
+  // Unauthenticated visitors have nothing to do on this route except
+  // hand control to the OIDC provider, so skip the intermediate "Sign
+  // in" button and full-page navigate straight to the server's
+  // `/api/auth/login` endpoint (which 302s onto Authelia). A useEffect
+  // is the right hook: the redirect is a side effect and React forbids
+  // mutating `window.location` during render. The OIDC dance is cross-
+  // origin so `window.location.replace` (not React Router) is required.
+  useEffect(() => {
+    if (shouldRedirectToSso && typeof window !== 'undefined') {
+      window.location.replace(SSO_LOGIN_URL);
+    }
+  }, [shouldRedirectToSso]);
 
   if (auth.status === 'loading') {
     return <LoadingFrame />;
@@ -127,16 +142,7 @@ function LoginRoute(): ReactElement {
     return <Navigate to={resolvePostAuthTarget()} replace />;
   }
 
-  return (
-    <main data-testid="route-login" className="mx-auto max-w-2xl p-6">
-      <h1 data-testid="route-title" className="text-2xl font-semibold">
-        {t('auth.login.title')}
-      </h1>
-      <div className="mt-4">
-        <LoginButton className="inline-flex rounded-full bg-slate-900 px-5 py-3 text-sm font-medium text-white" />
-      </div>
-    </main>
-  );
+  return <LoadingFrame />;
 }
 
 function ScreenNameRoute(): ReactElement {

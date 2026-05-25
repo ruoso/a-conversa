@@ -27,6 +27,8 @@ export interface LocaleExpectations {
   readonly loginTitle: string;
   /** `auth.login.button` — the "Sign in with SSO" affordance label. */
   readonly loginButton: string;
+  /** `auth.screenName.title` — the screen-name route's H1. */
+  readonly screenNameTitle: string;
 }
 
 /**
@@ -61,6 +63,7 @@ export const LOCALE_EXPECTATIONS: readonly LocaleExpectations[] = SUPPORTED_LOCA
     locale,
     loginTitle: lookup(CATALOGS[locale], 'auth.login.title'),
     loginButton: lookup(CATALOGS[locale], 'auth.login.button'),
+    screenNameTitle: lookup(CATALOGS[locale], 'auth.screenName.title'),
   }),
 );
 

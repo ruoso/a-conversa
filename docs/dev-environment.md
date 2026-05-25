@@ -71,9 +71,9 @@ The [`Makefile`](../Makefile) wraps `pnpm` and `docker compose` with friendlier 
 | `make check`   | Runs the full static-analysis bundle: `lint`, `format:check`, `typecheck`, `typecheck:tools`, `typecheck:tests`. Same target the pre-commit hook and CI invoke. | Anytime you want the exact contract CI will enforce.    |
 | `make test`    | Runs Vitest, Cucumber, and Playwright smokes in sequence.                                   | Before committing or pushing.                            |
 | `make test:e2e` | Runs the full Playwright e2e suite against an already-running server (assumes `make up`). Default base URL `http://localhost:3000`; override with `PLAYWRIGHT_BASE_URL`. | Iterating on e2e specs once the stack is up.            |
-| `make test:e2e:compose` | Brings up compose in prod-mode, waits for `/healthz`, runs e2e, tears down with `down -v` regardless of outcome. | Realistic local e2e (mirrors the CI `e2e-playwright` job). |
+| `make test:e2e:compose` | Drops volumes, brings up the dev compose stack, waits for `/healthz`, runs e2e, tears down with `down -v` regardless of outcome. | One-shot local e2e against a clean stack. |
 | `make up`      | Brings up `postgres + authelia + app` with the dev compose override (`NODE_ENV=development`); sleeps 30s for services to settle; prints the URL banner + the `/etc/hosts` notice if `authelia.aconversa.local` is missing. | Day-to-day dev work — the dev override relaxes the production-mode boot gates so `.env.example`'s placeholder secret boots without rotation. |
-| `make up-prod-mode` | Same as `make up` but **without** the dev override. Production-mode boot gates (`SESSION_TOKEN_SECRET` strength, CORS lockdown, WS Origin allowlist) all armed. | Reproducing a CI failure locally, or smoking the production-config path. Used by CI's `e2e-playwright` job and by `make test:e2e:compose`. |
+| `make up-prod-mode` | Same as `make up` but **without** the dev override. Production-mode boot gates (`SESSION_TOKEN_SECRET` strength, CORS lockdown, WS Origin allowlist) all armed. | Reproducing a CI failure locally, or smoking the production-config path. Used by CI's `e2e-playwright` job. |
 | `make up-app`  | Alias for `make up` (back-compat; the old `up`/`up-app` split is gone).                      | Existing muscle memory.                                  |
 | `make migrate` | Applies pending DB migrations against the running `postgres` (forward-only; [ADR 0020](adr/0020-migrations-node-pg-migrate-forward-only.md)). Usually unnecessary — `make up` applies migrations on app startup via the startup-migration gate. | After `make up` only when you need to re-run migrations against the host shell's connection. |
 | `make down`    | `docker compose down`. Volumes preserved.                                                   | Stopping the stack at end of session.                    |
@@ -144,7 +144,7 @@ pnpm run test:e2e       # run every project (smoke-node, chromium-<locale>, chro
 make down               # stop the stack (volumes preserved between iterations)
 ```
 
-Or, in one shot: `make test:e2e:compose` brings the stack up (in prod-mode), waits for `/healthz`, runs the suite, and tears down with `down -v` regardless of outcome — same recipe the CI `e2e-playwright` job runs.
+Or, in one shot: `make test:e2e:compose` drops any leftover volumes, brings the dev stack up, waits for `/healthz`, runs the suite, and tears down with `down -v` regardless of outcome.
 
 **Note on test-DB cleanup.** The `auth-flow` spec's new-user scenario creates a `users` row on its first run; the returning-user scenario then re-uses it. The four scenarios share state within a single suite run (the spec uses `test.describe.serial(...)` to pin the order). To reset between iterations you have two options:
 

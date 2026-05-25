@@ -10,10 +10,13 @@
 // **What this helper does.** `loginAs(page, opts)` drives one full
 // authorization-code round-trip:
 //
-//   1. Navigate to `/login` (the moderator SPA's unauthenticated route).
-//   2. Click `[data-testid="auth-login-button"]` — a full-page anchor to
-//      `/api/auth/login`, which the Fastify server 302-redirects to
+//   1. Navigate straight to `/api/auth/login`, which the Fastify server
+//      302-redirects to
 //      `https://authelia.aconversa.local:9091/api/oidc/authorization?...`.
+//      (The SPA's `/login` route auto-redirects to `/api/auth/login` for
+//      unauthenticated visitors, so there is no intermediate button to
+//      click; the helper skips the SPA hop and hits the server endpoint
+//      directly.)
 //   3. On Authelia's login form, fill `[name="username"]` and
 //      `[name="password"]` and click the sign-in button. Authelia
 //      validates against `/config/users.yml`, mints an authorization
@@ -240,20 +243,18 @@ export async function loginAs(
     }
   }
 
-  // 1. Land on the SPA's login route. Even if the SPA hasn't fully
-  //    mounted (no `auth-login-button` rendered yet) we can fall back
-  //    to a direct navigation to `/api/auth/login` — but the canonical
-  //    path is the click, because that's what a real user does.
-  await page.goto('/login');
-
-  // 2. Click the SSO affordance. The button is an `<a href="/api/auth/login">`,
-  //    so the click triggers a full-page navigation (the OIDC dance is
-  //    cross-origin; `fetch` would not follow the redirect).
-  const loginButton = page.getByTestId('auth-login-button');
-  await expect(loginButton, 'loginAs: SPA must render the auth-login-button').toBeVisible({
-    timeout: 10_000,
-  });
-  await loginButton.click();
+  // 1. Kick the OIDC dance off. The SPA's `/login` route auto-
+  //    redirects unauthenticated visitors to `/api/auth/login`, so
+  //    skip the SPA hop entirely and hit the server endpoint directly
+  //    — the resulting 302 to Authelia is the same in both paths.
+  //    Skip the navigation if the browser is already mid-flow on the
+  //    Authelia origin (a caller may have driven the SurfaceHost
+  //    deflection through to Authelia already, in which case re-
+  //    navigating here would just start a fresh OIDC flow on top of
+  //    the in-flight one).
+  if (!page.url().includes('authelia.aconversa.local')) {
+    await page.goto('/api/auth/login');
+  }
 
   // 3. Authelia's login form. The page is a React SPA, so we wait
   //    for the username input to be visible (mounted + interactable)

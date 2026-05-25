@@ -245,21 +245,21 @@ test.describe.serial('OAuth flow integration — full handshake against Authelia
       //    client-side to /m/sessions/new. `SurfaceHost` matches
       //    `/m/*`, sees `auth.status === 'unauthenticated'`,
       //    `rememberReturnTo('/m/sessions/new')` writes the path into
-      //    sessionStorage, and the `<Navigate to="/login">` settles
-      //    the URL on /login with the SPA's LoginRoute mounted.
+      //    sessionStorage, and the `<Navigate to="/login">` mounts
+      //    `LoginRoute`, whose unauthenticated useEffect immediately
+      //    `window.location.replace('/api/auth/login')` — the browser
+      //    follows the server's 302 onto Authelia. Wait for the
+      //    Authelia origin so the subsequent `loginAs` finds the
+      //    handshake mid-flow and drives the form fill from there.
       await startSessionLink.click();
-      await page.waitForURL(/\/login$/, { timeout: 10_000 });
-      await expect(
-        page.getByTestId('auth-login-button'),
-        '/login must render the SSO login button after the start-session bounce',
-      ).toBeVisible({ timeout: 10_000 });
+      await page.waitForURL(/authelia\.aconversa\.local/, { timeout: 15_000 });
 
       // 3. Drive the OIDC dance. `loginAs` runs the full
       //    `/api/auth/login` → Authelia → callback → screen-name (new
-      //    user) chain. Its final `page.goto('/login')` re-mounts the
-      //    SPA's `LoginRoute`, which reads the sessionStorage
-      //    return-to set in step 2 and renders `<Navigate to=
-      //    "/m/sessions/new" replace />` — closing the loop.
+      //    user) chain. It detects the browser is already on Authelia
+      //    and skips the initial navigation, drives the form fill,
+      //    and the eventual return-to consumption lands us on the
+      //    remembered `/m/sessions/new`.
       await loginAs(page, { username: 'ben' });
 
       // 4. URL settles on /m/sessions/new — the remembered return-to.
