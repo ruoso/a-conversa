@@ -156,22 +156,39 @@ function applyVote(
   );
 }
 
-// Build a `commit` action at the next-expected sequence.
+// Build a `commit` action at the next-expected sequence. Defaults to
+// the facet arm against the seeded `classify-node` proposal's
+// classification facet (NODE_ID_1) — the canonical facet-valued case.
+// Pass an explicit `proposalEventId` to route through the proposal arm
+// (used for structural sub-kinds and rule-2 / rule-3 tests).
 function makeCommitAction(
   projection: ReturnType<typeof createEmptyProjection>,
   requester: string = MODERATOR_ID,
-  proposalEventId: string = PROPOSAL_ID_1,
+  proposalEventId?: string,
 ): CommitAction {
-  return {
-    kind: 'commit',
+  const baseCommon = {
+    kind: 'commit' as const,
     requester,
     sessionId: SESSION_ID,
     eventId: NEW_EVENT_ID,
     sequence: nextSequence(projection),
     actor: requester,
     createdAt: T9,
-    proposalEventId,
     committedAt: T9,
+  };
+  if (proposalEventId === undefined) {
+    return {
+      ...baseCommon,
+      target: 'facet' as const,
+      entityKind: 'node' as const,
+      entityId: NODE_ID_1,
+      facet: 'classification' as const,
+    };
+  }
+  return {
+    ...baseCommon,
+    target: 'proposal' as const,
+    proposalEventId,
   };
 }
 
@@ -507,6 +524,12 @@ describe('commit handler — facet-arm vs proposal-arm emission per ADR 0030', (
     expect(deriveFacetStatus(p, 'node', NODE_ID_1, 'classification')).toBe('committed');
     expect(p.getPendingProposal(PROPOSAL_ID_1)).toBeUndefined();
     // Second commit attempt at the next sequence with a fresh event id.
+    // Under the discriminated-union refactor the facet-arm commit reads
+    // the facet's derived status directly; the facet is now
+    // `'committed'`, so the engine rejects with
+    // `'proposal-already-committed'` (the proposal lookup that used to
+    // surface `'proposal-not-found'` post-sweep is no longer on the
+    // path — the facet status IS the authoritative gate).
     const secondAction: CommitAction = {
       ...makeCommitAction(p),
       eventId: '11111111-1111-4111-8111-aaaaaaaaaaaa',
@@ -514,7 +537,7 @@ describe('commit handler — facet-arm vs proposal-arm emission per ADR 0030', (
     const r = validateAction(p, secondAction);
     expect(r.ok).toBe(false);
     if (!r.ok) {
-      expect(r.reason).toBe('proposal-not-found');
+      expect(r.reason).toBe('proposal-already-committed');
     }
   });
 });

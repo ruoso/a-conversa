@@ -62,51 +62,19 @@
 // kind (`withdraw-agreement`), handled by
 // `apps/server/src/ws/handlers/withdraw-agreement.ts`.
 
-import type { ProposalPayload } from '@a-conversa/shared-types';
-
 import type { Projection } from '../../projection/index.js';
 import { deriveFacetStatus } from '../../projection/facet-status.js';
 import type { FacetName, FacetState } from '../../projection/types.js';
 import { findProposal, requireParticipant } from '../primitives.js';
 import type { EventToAppendEnvelope, ValidationResult, Validator, VoteAction } from '../types.js';
 
-// Facet-target resolution helper — mirrors the private helper in
-// `primitives.ts` (kept local rather than re-exported to avoid a wider
-// surface change; a future shared-helper refactor would extract both).
-// Returns the `(entity_kind, entity_id, facet)` triple for the four
-// facet-valued proposal sub-kinds; `null` for the seven structural
-// sub-kinds.
+// Facet-target resolution helper — looks up the `FacetState` for a
+// `(entityKind, entityId, facet)` triple. Returns `null` if the entity
+// or facet slot does not exist on the projection.
 interface FacetTarget {
   entityKind: 'node' | 'edge';
   entityId: string;
   facet: FacetName;
-}
-
-function facetTargetForProposal(proposal: ProposalPayload): FacetTarget | null {
-  switch (proposal.kind) {
-    case 'capture-node':
-      // Per ADR 0030 §1 + §4 + `pf_mod_node_card_classification_affordance`:
-      // a `capture-node` proposal mints the node entity AND names the
-      // wording-facet candidate inline (the wording rides inline on
-      // `node-created`). Votes / commits against the capture-node
-      // proposal route to the wording facet so the sequential capture
-      // flow (wording → classification → substance) can advance: the
-      // participants vote agree on wording, the moderator commits, the
-      // wording facet lands `'agreed'` / `'committed'`, and the
-      // downstream `classify-node` proposal becomes eligible per the
-      // sequence gate (`pf_sequence_gate_server_enforced`).
-      return { entityKind: 'node', entityId: proposal.node_id, facet: 'wording' };
-    case 'classify-node':
-      return { entityKind: 'node', entityId: proposal.node_id, facet: 'classification' };
-    case 'set-node-substance':
-      return { entityKind: 'node', entityId: proposal.node_id, facet: 'substance' };
-    case 'set-edge-substance':
-      return { entityKind: 'edge', entityId: proposal.edge_id, facet: 'substance' };
-    case 'edit-wording':
-      return { entityKind: 'node', entityId: proposal.node_id, facet: 'wording' };
-    default:
-      return null;
-  }
 }
 
 function facetStateForTarget(
@@ -142,22 +110,13 @@ export const voteHandler: Validator<VoteAction> = (
   const participant = requireParticipant(projection, action.requester);
   if (!participant.ok) return participant.rejection;
 
-  // Rule 2 — proposal exists.
-  const found = findProposal(projection, action.proposalEventId);
-  if (found === null) {
-    return {
-      ok: false,
-      reason: 'proposal-not-found',
-      detail: `vote: proposal ${action.proposalEventId} is not known to this session`,
-    };
-  }
-
-  // The handler dispatches by proposal sub-kind: facet-valued proposals
-  // emit `target: 'facet'` (per ADR 0030 §2 — votes attach to the
-  // `(entity, facet)` pair, not to the proposal); structural proposals
-  // continue to emit `target: 'proposal'` (per ADR 0030 §9 — structural
-  // proposals have no facet target so votes attach to the proposal
-  // envelope id).
+  // The handler dispatches by `action.target` mirroring the wire
+  // envelope (per ADR 0030 §2 + §9). The facet arm names the
+  // `(entity_kind, entity_id, facet)` triple directly — no proposal
+  // lookup is needed because the methodology treats agreement as a
+  // property of the facet itself. The proposal arm names a structural
+  // proposal id (decompose / interpretive-split / etc.) where no facet
+  // target exists.
   //
   // **Mixed-model intent (pinned by `pf_structural_handlers_unchanged`).**
   // Structural sub-kinds (`decompose`, `interpretive-split`, `axiom-mark`,
@@ -168,28 +127,35 @@ export const voteHandler: Validator<VoteAction> = (
   // will fail loudly if a future refactor flips a structural sub-kind
   // into the facet arm. See the refinement at
   // `tasks/refinements/per-facet-refactor/pf_structural_handlers_unchanged.md`.
-  const target = facetTargetForProposal(found.record.payload);
-
-  if (target !== null) {
-    // ----- FACET-KEYED ARM (facet-valued sub-kinds) -----------------
+  if (action.target === 'facet') {
+    // ----- FACET-KEYED ARM ------------------------------------------
     //
-    // The vote attaches to the resolved `(entity_kind, entity_id,
-    // facet)` triple. Validation reads the facet's derived status
-    // directly — proposal-lifecycle gates (committed / pending /
-    // meta-disagreement on the proposal record) are subsumed by the
-    // facet-status rules (the projection's `handleCommit` /
+    // The vote attaches to `(entityKind, entityId, facet)` directly.
+    // Validation reads the facet's derived status — proposal-lifecycle
+    // gates (committed / pending / meta-disagreement) are subsumed by
+    // the facet-status rules (the projection's `handleCommit` /
     // `handleMetaDisagreementMarked` walk both arms; the facet's
     // status reflects whichever event last touched it).
+    //
+    // **Why no proposal lookup.** Some facets enter life with an
+    // inline candidate that is NOT driven by a proposal targeting that
+    // facet — an edge's `shape` facet is seeded inline on
+    // `edge-created` per ADR 0030 §5; the `wording` facet's candidate
+    // rides inline on `node-created` for `capture-node`. The
+    // pre-refactor handler required a `proposalEventId` and rejected
+    // votes on inline-seeded facets with `proposal-not-found`. Reading
+    // the facet directly removes that asymmetry.
+    const target = {
+      entityKind: action.entityKind,
+      entityId: action.entityId,
+      facet: action.facet,
+    };
     const facet = facetStateForTarget(projection, target);
     if (facet === null) {
-      // The proposal references an entity/facet not present in the
-      // projection — a projection-invariant violation given the
-      // proposal landed against it. Treat as not-found rather than
-      // throw so the wire surface reports a typed rejection.
       return {
         ok: false,
         reason: 'target-entity-not-found',
-        detail: `vote: ${target.entityKind} ${target.entityId} (facet ${target.facet}) referenced by proposal ${action.proposalEventId} is not present in the projection`,
+        detail: `vote: ${target.entityKind} ${target.entityId} (facet ${target.facet}) is not present in the projection`,
       };
     }
 
@@ -216,7 +182,7 @@ export const voteHandler: Validator<VoteAction> = (
       return {
         ok: false,
         reason: 'proposal-already-committed',
-        detail: `vote: facet ${target.entityKind}:${target.entityId}/${target.facet} is committed (proposal ${action.proposalEventId} produced the committed candidate); only 'withdraw-agreement' is legal on a committed facet`,
+        detail: `vote: facet ${target.entityKind}:${target.entityId}/${target.facet} is committed; only 'withdraw-agreement' is legal on a committed facet`,
       };
     }
     if (status === 'meta-disagreement') {
@@ -235,11 +201,11 @@ export const voteHandler: Validator<VoteAction> = (
     }
     // status ∈ {'proposed', 'disputed'} — votable.
 
-    // Rule 4 — per-participant prior-vote check against the FACET
-    // (not against the proposal). The facet's `perParticipant` map is
-    // the canonical record for facet-keyed votes; multiple proposals
-    // touching the same facet over time share the same map (cleared
-    // when a fresh candidate lands per ADR 0030 §7).
+    // Per-participant prior-vote check against the FACET. The facet's
+    // `perParticipant` map is the canonical record for facet-keyed
+    // votes; multiple proposals touching the same facet over time
+    // share the same map (cleared when a fresh candidate lands per
+    // ADR 0030 §7).
     const prior = facet.perParticipant.get(action.requester);
     const priorVote = prior?.vote ?? null;
     if (action.vote === 'agree' && priorVote === 'agree') {
@@ -256,11 +222,6 @@ export const voteHandler: Validator<VoteAction> = (
         detail: `vote: requester ${action.requester} has already voted 'dispute' on facet ${target.entityKind}:${target.entityId}/${target.facet}`,
       };
     }
-    // Per ADR 0030 §3 + `pf_facet_keyed_vote_payload` + `pf_unit_test_audit`:
-    // `VoteAction.vote` is `'agree' | 'dispute'`; the legacy `'withdraw'`
-    // branch (which used to reject facet-keyed withdraw votes with
-    // `illegal-state-transition`) is unreachable now that the schema
-    // hard-rejects the value upstream.
     const choice = action.vote;
     const event: EventToAppendEnvelope<'vote'> = {
       id: action.eventId,
@@ -286,6 +247,16 @@ export const voteHandler: Validator<VoteAction> = (
   //
   // The original proposal-state matrix + per-proposal vote check —
   // structural proposals retain proposal-keyed votes per ADR 0030 §9.
+
+  // Rule 2 — proposal exists.
+  const found = findProposal(projection, action.proposalEventId);
+  if (found === null) {
+    return {
+      ok: false,
+      reason: 'proposal-not-found',
+      detail: `vote: proposal ${action.proposalEventId} is not known to this session`,
+    };
+  }
 
   // Rule 3 — proposal-state vs. vote-arm matrix.
   if (found.state === 'meta-disagreement') {

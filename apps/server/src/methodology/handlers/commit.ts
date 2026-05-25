@@ -118,28 +118,6 @@ interface FacetTarget {
   facet: FacetName;
 }
 
-function facetTargetForProposal(proposal: ProposalPayload): FacetTarget | null {
-  switch (proposal.kind) {
-    case 'capture-node':
-      // Per ADR 0030 §1 + §4 + `pf_mod_node_card_classification_affordance`:
-      // `capture-node` names the wording-facet candidate inline; the
-      // commit handler routes the proposal-keyed commit onto the
-      // wording facet so the moderator's commit gesture against the
-      // capture-node row settles wording.
-      return { entityKind: 'node', entityId: proposal.node_id, facet: 'wording' };
-    case 'classify-node':
-      return { entityKind: 'node', entityId: proposal.node_id, facet: 'classification' };
-    case 'set-node-substance':
-      return { entityKind: 'node', entityId: proposal.node_id, facet: 'substance' };
-    case 'set-edge-substance':
-      return { entityKind: 'edge', entityId: proposal.edge_id, facet: 'substance' };
-    case 'edit-wording':
-      return { entityKind: 'node', entityId: proposal.node_id, facet: 'wording' };
-    default:
-      return null;
-  }
-}
-
 function facetStateForTarget(
   projection: Projection,
   target: FacetTarget,
@@ -188,7 +166,6 @@ function facetStateForTarget(
 
 function checkUnanimousAgreeFacet(
   projection: Projection,
-  proposalPayload: ProposalPayload,
   target: FacetTarget,
 ): RejectedValidationResult | null {
   const facet = facetStateForTarget(projection, target);
@@ -283,7 +260,6 @@ function checkUnanimousAgreeFacet(
   if (nonAgree.length > 0) {
     parts.push('non-agree votes: ' + nonAgree.map((x) => `${x.participant}=${x.vote}`).join(', '));
   }
-  void proposalPayload;
   return {
     ok: false,
     reason: 'unanimous-agree-required',
@@ -424,6 +400,67 @@ export const commitHandler: Validator<CommitAction> = (
   const moderator = requireModerator(projection, action.requester);
   if (!moderator.ok) return moderator.rejection;
 
+  // The handler dispatches by `action.target` mirroring the wire
+  // envelope (per ADR 0030 §2 + §9). The facet arm names the
+  // `(entityKind, entityId, facet)` triple directly; the proposal arm
+  // names a structural proposal id (decompose / interpretive-split /
+  // axiom-mark / annotate / meta-move / break-edge / amend-node) where
+  // no facet target exists.
+  //
+  // **Mixed-model intent (pinned by `pf_structural_handlers_unchanged`).**
+  // Structural sub-kinds intentionally take the proposal-keyed arm
+  // below; the two patterns coexist by design per ADR 0030 §9.
+  if (action.target === 'facet') {
+    // ----- FACET-KEYED ARM ------------------------------------------
+    //
+    // The commit attaches to `(entityKind, entityId, facet)` directly.
+    // No proposal lookup is needed — agreement is a property of the
+    // facet itself (`facet.perParticipant`). The projection's
+    // `handleCommit` facet arm sweeps any pending proposals targeting
+    // the facet via `clearPendingProposalsForFacet`.
+    //
+    // **Why no proposal lookup.** Some facets reach `'agreed'` without
+    // a proposal targeting them — an edge's `shape` facet is seeded
+    // inline on `edge-created` per ADR 0030 §5 with no driving
+    // proposal. The pre-refactor handler required a `proposalEventId`
+    // and rejected commits on inline-seeded facets with
+    // `proposal-not-found`. Reading the facet directly removes that
+    // asymmetry.
+    const target: FacetTarget = {
+      entityKind: action.entityKind,
+      entityId: action.entityId,
+      facet: action.facet,
+    };
+    const unanimityRejection = checkUnanimousAgreeFacet(projection, target);
+    if (unanimityRejection !== null) return unanimityRejection;
+
+    const commitEvent: EventToAppendEnvelope<'commit'> = {
+      id: action.eventId,
+      sessionId: action.sessionId,
+      sequence: action.sequence,
+      kind: 'commit',
+      actor: action.actor,
+      payload: {
+        target: 'facet' as const,
+        // Wire payload narrows `entity_kind` to `'node' | 'edge'` — the
+        // `FacetTarget` interface admits `'annotation'` for the
+        // facetStateForTarget helper's flexibility, but the action's
+        // `entityKind` is already `'node' | 'edge'` per the
+        // `VoteActionFacet` / `CommitActionFacet` types. Reuse
+        // `action.entityKind` directly to preserve the narrow type.
+        entity_kind: action.entityKind,
+        entity_id: action.entityId,
+        facet: action.facet,
+        committed_by: action.requester,
+        committed_at: action.committedAt,
+      },
+      createdAt: action.createdAt,
+    };
+    return { ok: true, events: [commitEvent] };
+  }
+
+  // ----- PROPOSAL-KEYED ARM (structural sub-kinds) ------------------
+
   // Rule 2 — proposal exists. Rule 3 — proposal is pending.
   const found = findProposal(projection, action.proposalEventId);
   if (found === null) {
@@ -448,84 +485,30 @@ export const commitHandler: Validator<CommitAction> = (
     };
   }
 
-  // Rule 4 — unanimous agree across current participants. Dispatch on
-  // facet-targeting vs structural sub-kind (the agreement source
-  // differs; see header comment).
   const proposalPayload = found.record.payload;
-  const target = facetTargetForProposal(proposalPayload);
-  let unanimityRejection: RejectedValidationResult | null;
-  if (target !== null) {
-    unanimityRejection = checkUnanimousAgreeFacet(projection, proposalPayload, target);
-  } else {
-    unanimityRejection = checkUnanimousAgreeStructural(
-      projection,
-      proposalPayload,
-      found.record.perParticipantVotes,
-    );
-  }
+  const unanimityRejection = checkUnanimousAgreeStructural(
+    projection,
+    proposalPayload,
+    found.record.perParticipantVotes,
+  );
   if (unanimityRejection !== null) return unanimityRejection;
 
   // Valid — emit the structural fan-out (if any) followed by the
   // `commit` envelope. The structural events take the leading
   // sequence slots; the commit envelope takes the last.
-  //
-  // Per ADR 0030 §2 + §9 the commit payload is a `target`-discriminated
-  // union. Dispatch on proposal sub-kind:
-  //
-  //   - facet-valued sub-kinds (classify-node, set-node-substance,
-  //     set-edge-substance, edit-wording) emit `target: 'facet'` keyed
-  //     by `(entity_kind, entity_id, facet)` per ADR 0030 §2 — the
-  //     commit hangs off the facet itself rather than off the proposal
-  //     id, so withdrawal / re-proposal lifecycles compose cleanly
-  //     against the per-facet state.
-  //   - structural sub-kinds (decompose, interpretive-split, axiom-mark,
-  //     meta-move, break-edge, amend-node, annotate) emit
-  //     `target: 'proposal'` keyed by `proposal_id` per ADR 0030 §9 —
-  //     these proposals have no facet target the commit could attach to.
-  //
-  // The discriminator is derived from the same `facetTargetForProposal`
-  // helper rule 4 used (above): `null` ↔ structural arm, non-null ↔
-  // facet arm. The projection's `handleCommit` walks both arms (per
-  // `pf_projection_replay_updates`); the wire frame here picks the
-  // appropriate shape per sub-kind.
-  //
-  // **Mixed-model intent (pinned by `pf_structural_handlers_unchanged`).**
-  // Structural sub-kinds (`decompose`, `interpretive-split`, `axiom-mark`,
-  // `annotate`, `meta-move`, `break-edge`) intentionally take the
-  // proposal-keyed arm below; the two patterns coexist by design per
-  // ADR 0030 §9. Do NOT facet-key a structural commit — the pin tests
-  // at `apps/server/src/methodology/handlers/structural-target.test.ts`
-  // will fail loudly if a future refactor flips a structural sub-kind
-  // into the facet arm. See the refinement at
-  // `tasks/refinements/per-facet-refactor/pf_structural_handlers_unchanged.md`.
   const structuralEvents = buildStructuralEventsForCommit(proposalPayload, action);
-  const commitPayload =
-    target !== null
-      ? {
-          target: 'facet' as const,
-          // Annotation entities can also carry facets per the projection,
-          // but the four facet-valued proposal sub-kinds only address
-          // node + edge — narrow to that union for the wire payload
-          // (matches `facetCommitPayloadSchema`'s `entity_kind` enum).
-          entity_kind: target.entityKind as 'node' | 'edge',
-          entity_id: target.entityId,
-          facet: target.facet,
-          committed_by: action.requester,
-          committed_at: action.committedAt,
-        }
-      : {
-          target: 'proposal' as const,
-          proposal_id: action.proposalEventId,
-          committed_by: action.requester,
-          committed_at: action.committedAt,
-        };
   const commitEvent: EventToAppendEnvelope<'commit'> = {
     id: action.eventId,
     sessionId: action.sessionId,
     sequence: action.sequence + structuralEvents.length,
     kind: 'commit',
     actor: action.actor,
-    payload: commitPayload,
+    payload: {
+      target: 'proposal' as const,
+      proposal_id: action.proposalEventId,
+      committed_by: action.requester,
+      committed_at: action.committedAt,
+    },
     createdAt: action.createdAt,
   };
   return { ok: true, events: [...structuralEvents, commitEvent] };

@@ -210,15 +210,20 @@ When(
   'the moderator constructs a commit action against the pending proposal',
   function (this: AConversaWorld) {
     const projection = this.scratch['commitProjection'] as Projection;
+    // Seeded proposal is `classify-node` — facet-keyed commit per
+    // ADR 0030 §2.
     const action: CommitAction = {
       kind: 'commit',
+      target: 'facet',
       requester: CL_HOST_ID,
       sessionId: CL_SESSION_ID,
       eventId: CL_NEW_EVENT_ID,
       sequence: nextSequence(projection),
       actor: CL_HOST_ID,
       createdAt: tsAt(10),
-      proposalEventId: CL_PROPOSAL_ID,
+      entityKind: 'node',
+      entityId: CL_NODE_ID,
+      facet: 'classification',
       committedAt: tsAt(10),
     };
     this.scratch['commitAction'] = action;
@@ -229,15 +234,20 @@ When(
   'a debater constructs a commit action against the pending proposal',
   function (this: AConversaWorld) {
     const projection = this.scratch['commitProjection'] as Projection;
+    // Seeded proposal is `classify-node` — facet-keyed commit per
+    // ADR 0030 §2.
     const action: CommitAction = {
       kind: 'commit',
+      target: 'facet',
       requester: CL_DEBATER_A_ID,
       sessionId: CL_SESSION_ID,
       eventId: CL_NEW_EVENT_ID,
       sequence: nextSequence(projection),
       actor: CL_DEBATER_A_ID,
       createdAt: tsAt(10),
-      proposalEventId: CL_PROPOSAL_ID,
+      entityKind: 'node',
+      entityId: CL_NODE_ID,
+      facet: 'classification',
       committedAt: tsAt(10),
     };
     this.scratch['commitAction'] = action;

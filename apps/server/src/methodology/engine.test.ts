@@ -145,19 +145,27 @@ function makeVoteAction(
   vote: 'agree' | 'dispute' = 'agree',
   overrides: Partial<VoteAction> = {},
 ): VoteAction {
+  // The seeded session's open proposal is `classify-node` against
+  // NODE_ID_1; the default action shape is the facet arm naming
+  // `(node, NODE_ID_1, classification)` per ADR 0030 §2. Tests can
+  // pass `overrides` (e.g. `{ target: 'proposal', proposalEventId }`)
+  // to probe the proposal arm.
   return {
     kind: 'vote',
+    target: 'facet',
     requester,
     sessionId: SESSION_ID,
     eventId: NEW_EVENT_ID,
     sequence: nextSequence(projection),
     actor: requester,
     createdAt: T9,
-    proposalEventId: PROPOSAL_ID_1,
+    entityKind: 'node',
+    entityId: NODE_ID_1,
+    facet: 'classification',
     vote,
     votedAt: T9,
     ...overrides,
-  };
+  } as VoteAction;
 }
 
 // ---------------------------------------------------------------
@@ -495,6 +503,7 @@ describe('validateAction — placeholder per-action handlers', () => {
     const p = seedSession();
     const action: CommitAction = {
       kind: 'commit',
+      target: 'proposal',
       requester: MODERATOR_ID,
       sessionId: SESSION_ID,
       eventId: NEW_EVENT_ID,
@@ -549,6 +558,7 @@ describe('end-to-end smoke', () => {
     const p = seedSession();
     const action: MethodologyAction = {
       kind: 'vote',
+      target: 'proposal',
       requester: DEBATER_A_ID,
       sessionId: SESSION_ID,
       eventId: NEW_EVENT_ID,

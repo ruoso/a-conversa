@@ -203,19 +203,38 @@ function makeVoteAction(
   projection: ReturnType<typeof createEmptyProjection>,
   requester: string,
   vote: 'agree' | 'dispute',
-  proposalEventId: string = PROPOSAL_ID_1,
+  proposalEventId?: string,
 ): VoteAction {
-  return {
-    kind: 'vote',
+  // The seeded session's open proposal is `classify-node` against
+  // NODE_ID_1; the default action shape uses the facet arm naming the
+  // `(entity_kind, entity_id, facet)` triple directly (per ADR 0030 §2
+  // + the refactor that drops the proposalEventId roundtrip from the
+  // facet arm). Tests that probe the proposal arm (unknown-id /
+  // structural sub-kinds) pass an explicit `proposalEventId`.
+  const baseCommon = {
+    kind: 'vote' as const,
     requester,
     sessionId: SESSION_ID,
     eventId: NEW_EVENT_ID,
     sequence: nextSequence(projection),
     actor: requester,
     createdAt: T9,
-    proposalEventId,
     vote,
     votedAt: T9,
+  };
+  if (proposalEventId === undefined) {
+    return {
+      ...baseCommon,
+      target: 'facet' as const,
+      entityKind: 'node' as const,
+      entityId: NODE_ID_1,
+      facet: 'classification' as const,
+    };
+  }
+  return {
+    ...baseCommon,
+    target: 'proposal' as const,
+    proposalEventId,
   };
 }
 

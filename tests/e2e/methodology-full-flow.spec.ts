@@ -1013,11 +1013,14 @@ test.describe
       // assert it (no `if-visible` no-op).
       await expect(agreeBtn).toBeVisible({ timeout: 15_000 });
       await agreeBtn.click();
-      // The in-flight latch flips back to `enabled` on the
-      // server's vote ack. Tolerate either `enabled` or
-      // `in-flight` if the ack races (the click itself is the
-      // wire send; the assertion below is the round-trip pin).
-      await expect(shapeRow).toHaveAttribute('data-vote-state', /^(enabled|in-flight)$/, {
+      // Hard-assert the vote actually landed in the server projection:
+      // the row's own-vote indicator only mounts when the projection
+      // reflects this participant's vote on the current candidate. A
+      // rejected vote (`proposal-not-found`, etc.) leaves the
+      // indicator unmounted — `data-vote-state` is too tolerant
+      // (it flips back to `enabled` on both success AND failure).
+      const ownVoteIndicator = shapeRow.getByTestId('participant-detail-panel-facet-row-own-vote');
+      await expect(ownVoteIndicator).toHaveAttribute('data-vote-choice', 'agree', {
         timeout: 15_000,
       });
     }
@@ -1054,51 +1057,20 @@ test.describe
     // Phase 5.8's tidy-up before clicking the substance affordance.
     await alicePage.getByTestId('graph-tidy-up-button').click();
     const commitButton = alicePage.getByTestId(`edge-shape-commit-affordance-button-${edgeId}`);
-    // **Tolerant acceptance pattern** (mirrors Phase 5.5 + 5.8).
-    // Phase 5.5 is itself tolerant of the participant shape-row
-    // failing to mount (the cross-context broadcast race may leave
-    // either ben's or maria's detail panel without the shape row,
-    // in which case neither vote fires). When neither vote landed,
-    // alice's shape-status derivation never reaches `'agreed'` and
-    // the inline commit affordance never mounts on her edge label.
-    // We accept two outcomes: (a) the affordance mounts within the
-    // timeout, alice clicks it, and the button unmounts / error
-    // region surfaces (full round-trip); (b) the affordance never
-    // mounts (Phase 5.5 race short-circuited the upstream votes).
-    // Either preserves Phase 5.8's downstream gate (the server-side
-    // sequence check accepts `agreed` OR `committed` as "shape
-    // settled" — so substance propose still walks regardless).
-    const visible = await commitButton.isVisible({ timeout: 15_000 }).catch(() => false);
-    if (!visible) {
-      // Phase 5.5 race — neither vote landed; shape never reached
-      // `'agreed'`. No-op pin (matches the pre-`pf_mod_edge_shape_
-      // commit_affordance` posture for this race branch).
-      return;
-    }
+    // Hard-assert the affordance mounts. With Phase 5.5's facet-arm
+    // agree votes now landing in the server projection (per the
+    // discriminated-union refactor that unblocks the edge.shape voting
+    // path), the moderator-side shape derivation reaches `'agreed'`
+    // and the inline commit affordance mounts deterministically.
+    await expect(commitButton).toBeVisible({ timeout: 15_000 });
     await expect(commitButton).toBeEnabled({ timeout: 15_000 });
     await commitButton.click();
-    // Settle — either the button unmounts (success — the shape
-    // facet moves past `'agreed'` to `'committed'`) OR the inline
-    // wire-error region surfaces (server refused — most often if
-    // the projection raced and the shape facet drifted off
-    // `'agreed'` between the gate check and the dispatch). Either
-    // proves the envelope completed its round-trip through the
-    // facet-arm commit handler. Mirrors Phase 5.8's tolerant
-    // pattern (both phases dispatch facet-arm writes on the same
-    // edge).
-    await alicePage.waitForFunction(
-      ({ edgeId: id }) => {
-        const btn = document.querySelector(
-          `[data-testid="edge-shape-commit-affordance-button-${id}"]`,
-        );
-        const err = document.querySelector(
-          `[data-testid="edge-shape-commit-affordance-error-${id}"]`,
-        );
-        return btn === null || err !== null;
-      },
-      { edgeId },
-      { timeout: 15_000 },
-    );
+    // Hard-assert the commit lands: the affordance unmounts (the
+    // facet's status moves past `'agreed'` to `'committed'`) AND no
+    // wire-error region surfaces.
+    await expect(commitButton).toHaveCount(0, { timeout: 15_000 });
+    const errorRegion = alicePage.getByTestId(`edge-shape-commit-affordance-error-${edgeId}`);
+    await expect(errorRegion).toHaveCount(0);
   });
 
   // ──────────────────────────────────────────────────────────────

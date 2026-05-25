@@ -7,6 +7,8 @@ export type {
   ActionHandlerFor,
   ActionKind,
   CommitAction,
+  CommitActionFacet,
+  CommitActionProposal,
   EventToAppend,
   EventToAppendEnvelope,
   MarkMetaDisagreementAction,
@@ -22,6 +24,8 @@ export type {
   ValidationResult,
   Validator,
   VoteAction,
+  VoteActionFacet,
+  VoteActionProposal,
 } from './types.js';
 
 export {

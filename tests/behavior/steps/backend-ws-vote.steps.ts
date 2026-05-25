@@ -58,6 +58,11 @@ interface VoteScratch {
   // Per-feature carriers.
   wsVoteMessageId?: string;
   wsVoteFrames?: string[];
+  // Vote-ready session context — the Given step seeds a `classify-node`
+  // proposal on a specific node, so the WS vote step can construct a
+  // facet-arm wire envelope (target: 'facet', entity_kind: 'node',
+  // entity_id: <nodeId>, facet: 'classification') per ADR 0030 §2.
+  wsVoteReadyNodeId?: string;
 }
 
 function scratch(world: AConversaWorld): VoteScratch {
@@ -271,6 +276,9 @@ Given(
         t4,
       ],
     );
+    // Stash the node id so the WS vote step can construct a facet-arm
+    // wire envelope addressing the classification facet directly.
+    scratch(this).wsVoteReadyNodeId = nodeId;
   },
 );
 
@@ -296,9 +304,17 @@ When(
     ensureVoteFramesQueue(this);
 
     // Wire payload is a `target`-discriminated union per ADR 0030 §2 +
-    // §9 (+ `pf_part_vote_action_facet_keyed`). The step keyword
-    // ("on proposal {string}") names a proposal-keyed vote; the
-    // facet-arm scenarios live alongside the methodology suite.
+    // §9. The seeded proposal is `classify-node` (facet-valued), so
+    // votes use the facet arm naming the
+    // `(entity_kind, entity_id, facet)` triple directly. The step's
+    // legacy `proposalId` argument identifies the proposal for the
+    // human reader; the wire envelope addresses the facet.
+    const nodeId = s.wsVoteReadyNodeId;
+    assert.ok(
+      nodeId,
+      'WS vote step requires `wsVoteReadyNodeId` — run the vote-ready Given step first',
+    );
+    void proposalId;
     ws.send(
       JSON.stringify({
         type: 'vote',
@@ -306,8 +322,10 @@ When(
         payload: {
           sessionId,
           expectedSequence,
-          target: 'proposal',
-          proposalId,
+          target: 'facet',
+          entity_kind: 'node',
+          entity_id: nodeId,
+          facet: 'classification',
           choice,
         },
       }),
@@ -454,4 +472,5 @@ After(function (this: AConversaWorld) {
   const s = scratch(this);
   delete s.wsVoteMessageId;
   delete s.wsVoteFrames;
+  delete s.wsVoteReadyNodeId;
 });

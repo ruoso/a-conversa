@@ -57,6 +57,12 @@ interface WsClient {
 }
 
 interface CommitScratch {
+  // Per-feature carriers shared between Given and When steps:
+  // commit-ready Given steps seed a `classify-node` proposal on a
+  // specific node, so the WS commit step constructs a facet-arm wire
+  // envelope addressing `(node, <nodeId>, 'classification')` per
+  // ADR 0030 §2.
+  wsCommitReadyNodeId?: string;
   // Carriers shared with the upstream step files.
   wsLifecycleClient?: WsClient;
   // Per-feature carriers.
@@ -345,6 +351,11 @@ Given(
         t(8),
       ],
     );
+    // Stash the node id so the legacy `on proposal {id}` commit step
+    // can construct a facet-arm wire envelope addressing the
+    // classification facet directly (the seeded proposal is
+    // `classify-node`).
+    scratch(this).wsCommitReadyNodeId = nodeId;
   },
 );
 
@@ -468,6 +479,7 @@ Given(
         t(4),
       ],
     );
+    scratch(this).wsCommitReadyNodeId = nodeId;
   },
 );
 
@@ -605,6 +617,7 @@ Given(
         t(5),
       ],
     );
+    scratch(this).wsCommitReadyNodeId = nodeId;
   },
 );
 
@@ -623,20 +636,29 @@ When(
     // Ensure the streaming frame queue is attached BEFORE the send.
     ensureCommitFramesQueue(this);
 
+    // Wire payload is a `target`-discriminated union per ADR 0030 §2 +
+    // §9. The commit-ready Given steps seed `classify-node` proposals
+    // (facet-valued), so commits use the facet arm addressing
+    // `(node, <nodeId>, 'classification')` directly. The step's
+    // legacy `proposalId` argument identifies the proposal for the
+    // human reader; the wire envelope addresses the facet.
+    const nodeId = s.wsCommitReadyNodeId;
+    assert.ok(
+      nodeId,
+      'WS commit step requires `wsCommitReadyNodeId` — run a commit-ready Given step first',
+    );
+    void proposalId;
     ws.send(
       JSON.stringify({
         type: 'commit',
         id: messageId,
-        // Per ADR 0030 §2 + §9 (+ `pf_mod_pending_proposals_pane_facet_keyed`)
-        // the commit wire payload is a `target`-discriminated union; the
-        // structural-arm carries `proposalId` directly. Existing feature
-        // scenarios pin the proposal-arm behaviour; facet-arm coverage
-        // lives in `tests/behavior/methodology/commit-facet-keyed.feature`.
         payload: {
           sessionId,
           expectedSequence,
-          target: 'proposal',
-          proposalId,
+          target: 'facet',
+          entity_kind: 'node',
+          entity_id: nodeId,
+          facet: 'classification',
         },
       }),
     );
@@ -766,4 +788,5 @@ After(function (this: AConversaWorld) {
   const s = scratch(this);
   delete s.wsCommitMessageId;
   delete s.wsCommitFrames;
+  delete s.wsCommitReadyNodeId;
 });

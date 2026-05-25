@@ -159,15 +159,20 @@ When(
   'the participant constructs a vote-agree action against the pending proposal',
   function (this: AConversaWorld) {
     const projection = this.scratch['methodologyProjection'] as Projection;
+    // Seeded proposal is `classify-node` — facet-keyed vote per
+    // ADR 0030 §2.
     const action: VoteAction = {
       kind: 'vote',
+      target: 'facet',
       requester: ME_DEBATER_A_ID,
       sessionId: ME_SESSION_ID,
       eventId: ME_NEW_EVENT_ID,
       sequence: nextSequence(projection),
       actor: ME_DEBATER_A_ID,
       createdAt: tsAt(6),
-      proposalEventId: ME_PROPOSAL_ID,
+      entityKind: 'node',
+      entityId: ME_NODE_ID,
+      facet: 'classification',
       vote: 'agree',
       votedAt: tsAt(6),
     };

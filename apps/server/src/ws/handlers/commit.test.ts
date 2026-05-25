@@ -652,17 +652,26 @@ function commitFrame(
   messageId: string,
   sessionId: string,
   expectedSequence: number,
-  proposalId: string,
+  _proposalId: string,
 ): string {
+  // Per ADR 0030 §2 + §9 the commit wire payload is a
+  // `target`-discriminated union. The integration sessions
+  // (`COMMITTABLE_SESSION_ID`, `HALF_AGREE_SESSION_ID`, etc.) seed
+  // facet-valued `classify-node` proposals, so the commit naturally
+  // attaches to the classification facet. The `_proposalId` parameter
+  // is preserved for callers but unused on the facet arm.
+  void _proposalId;
   return JSON.stringify({
     type: 'commit',
     id: messageId,
-    // Per ADR 0030 §2 + §9 (+ `pf_mod_pending_proposals_pane_facet_keyed`)
-    // the commit wire payload is a `target`-discriminated union. These
-    // legacy integration cases pin the proposal-arm behaviour (the four
-    // facet-arm-specific gates are covered separately by the dedicated
-    // facet-arm `describe` block below).
-    payload: { sessionId, expectedSequence, target: 'proposal', proposalId },
+    payload: {
+      sessionId,
+      expectedSequence,
+      target: 'facet',
+      entity_kind: 'node',
+      entity_id: NODE_ID,
+      facet: 'classification',
+    },
   });
 }
 
@@ -833,18 +842,17 @@ describe('ws_commit_message — handler integration', () => {
     }
   });
 
-  it('echoes the methodology engine `proposal-not-found` rejection on a duplicate commit (projection swept the proposal)', async () => {
+  it('echoes the methodology engine `proposal-already-committed` rejection on a duplicate facet-arm commit', async () => {
     // The committable proposal is facet-valued (a classify-node), so
-    // the engine emits a facet-keyed commit per ADR 0030 §2. The
-    // projection's facet-resolution sweep clears the pending proposal
-    // record on the first commit; a second commit attempt on the same
-    // proposal id can't find it in any of `pendingProposals` /
-    // `committedProposals` / `unresolvedMetaDisagreements` and the
-    // engine rejects with `'proposal-not-found'`. Pre-sweep this case
-    // returned `'proposal-already-committed'` via the facet-status
-    // cross-check in `checkUnanimousAgreeFacet`; that cross-check now
-    // serves only as defense-in-depth for race conditions and the
-    // primary lifecycle gate is the projection sweep itself.
+    // the wire commit envelope addresses the classification facet
+    // directly per ADR 0030 §2. After the first commit lands, the
+    // facet's derived status is `'committed'`; a second commit attempt
+    // against the same facet rejects with `'proposal-already-committed'`
+    // via the facet-status check in `checkUnanimousAgreeFacet`. (The
+    // earlier WS-layer proposal-resolution shim used to surface
+    // `'proposal-not-found'` here when the projection swept the pending
+    // proposal record; the discriminated-union refactor drops that
+    // proposal roundtrip — the facet status IS the authoritative gate.)
     const cookie = await fixtureCookieHeader();
     const { ws, next } = await openWsClient(app, cookie);
     try {
@@ -872,7 +880,7 @@ describe('ws_commit_message — handler integration', () => {
       const err = await readUntilType(next, 'error');
       const payload = err.parsed.payload as { code?: unknown };
       expect(err.parsed.inResponseTo).toBe(COMMIT_MSG_ID);
-      expect(payload.code).toBe('proposal-not-found');
+      expect(payload.code).toBe('proposal-already-committed');
     } finally {
       ws.terminate();
     }

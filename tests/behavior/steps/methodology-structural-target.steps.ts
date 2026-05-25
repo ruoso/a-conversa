@@ -262,6 +262,7 @@ When(
     const projection = this.scratch['stProjection'] as Projection;
     const action: CommitAction = {
       kind: 'commit',
+      target: 'proposal',
       requester: ST_HOST_ID,
       sessionId: ST_SESSION_ID,
       eventId: ST_COMMIT_EVENT_ID,

@@ -460,19 +460,28 @@ function voteFrame(
   messageId: string,
   sessionId: string,
   expectedSequence: number,
-  proposalId: string,
+  _proposalId: string,
   choice: 'agree' | 'dispute' | 'withdraw',
 ): string {
-  // Wire payload is a `target`-discriminated union per ADR 0030 §2 + §9
-  // (+ `pf_part_vote_action_facet_keyed`). The existing handler-test
-  // scenarios pin the proposal-arm shape; the facet-arm scenarios live
-  // in `methodology/handlers/vote.test.ts` (engine-level) and in the
-  // participant hook tests at
-  // `apps/participant/src/detail/useVoteAction.test.tsx`.
+  // Wire payload is a `target`-discriminated union per ADR 0030 §2 + §9.
+  // The seeded session's proposal is a `classify-node` (facet-valued),
+  // so votes from this helper use the facet arm — naming the
+  // `(entity_kind, entity_id, facet)` triple the vote attaches to. The
+  // `_proposalId` parameter is preserved for callers but unused on the
+  // facet arm (the facet-arm wire payload has no `proposalId`).
+  void _proposalId;
   return JSON.stringify({
     type: 'vote',
     id: messageId,
-    payload: { sessionId, expectedSequence, target: 'proposal', proposalId, choice },
+    payload: {
+      sessionId,
+      expectedSequence,
+      target: 'facet',
+      entity_kind: 'node',
+      entity_id: NODE_ID,
+      facet: 'classification',
+      choice,
+    },
   });
 }
 

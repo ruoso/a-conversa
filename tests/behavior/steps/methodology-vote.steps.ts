@@ -267,15 +267,21 @@ When(
   'a debater constructs an agree action against the committed proposal',
   function (this: AConversaWorld) {
     const projection = this.scratch['voteProjection'] as Projection;
+    // The seeded session's open proposal is `classify-node` against
+    // VL_NODE_ID; facet-keyed votes name the (entity_kind, entity_id,
+    // facet) triple directly per ADR 0030 §2.
     const action: VoteAction = {
       kind: 'vote',
+      target: 'facet',
       requester: VL_DEBATER_A_ID,
       sessionId: VL_SESSION_ID,
       eventId: VL_NEW_EVENT_ID,
       sequence: nextSequence(projection),
       actor: VL_DEBATER_A_ID,
       createdAt: tsAt(20),
-      proposalEventId: VL_PROPOSAL_ID,
+      entityKind: 'node',
+      entityId: VL_NODE_ID,
+      facet: 'classification',
       vote: 'agree',
       votedAt: tsAt(20),
     };
@@ -287,15 +293,21 @@ When(
   'a debater constructs an agree action against the pending proposal',
   function (this: AConversaWorld) {
     const projection = this.scratch['voteProjection'] as Projection;
+    // The seeded session's open proposal is `classify-node` against
+    // VL_NODE_ID; facet-keyed votes name the (entity_kind, entity_id,
+    // facet) triple directly per ADR 0030 §2.
     const action: VoteAction = {
       kind: 'vote',
+      target: 'facet',
       requester: VL_DEBATER_A_ID,
       sessionId: VL_SESSION_ID,
       eventId: VL_NEW_EVENT_ID,
       sequence: nextSequence(projection),
       actor: VL_DEBATER_A_ID,
       createdAt: tsAt(20),
-      proposalEventId: VL_PROPOSAL_ID,
+      entityKind: 'node',
+      entityId: VL_NODE_ID,
+      facet: 'classification',
       vote: 'agree',
       votedAt: tsAt(20),
     };
@@ -309,13 +321,16 @@ When(
     const projection = this.scratch['voteProjection'] as Projection;
     const action: VoteAction = {
       kind: 'vote',
+      target: 'facet',
       requester: VL_OUTSIDER_ID,
       sessionId: VL_SESSION_ID,
       eventId: VL_NEW_EVENT_ID,
       sequence: nextSequence(projection),
       actor: VL_OUTSIDER_ID,
       createdAt: tsAt(20),
-      proposalEventId: VL_PROPOSAL_ID,
+      entityKind: 'node',
+      entityId: VL_NODE_ID,
+      facet: 'classification',
       vote: 'agree',
       votedAt: tsAt(20),
     };

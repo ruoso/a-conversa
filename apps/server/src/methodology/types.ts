@@ -17,6 +17,7 @@
 
 import type { EventKind, PayloadFor, ProposalPayload } from '@a-conversa/shared-types';
 import type { ParticipantRecord, PerParticipantVote } from '../projection/index.js';
+import type { FacetName } from '../projection/types.js';
 
 // ---------------------------------------------------------------
 // Action vocabulary.
@@ -68,20 +69,73 @@ export interface ProposeAction extends ActionEnvelopeBase {
   proposal: ProposalPayload;
 }
 
-export interface VoteAction extends ActionEnvelopeBase {
+// Vote actions are a discriminated union over `target` mirroring the
+// wire envelope (per ADR 0030 §2 + §9). The facet arm names the
+// `(entityKind, entityId, facet)` triple directly — no proposal
+// roundtrip is needed because the methodology treats agreement as a
+// property of the facet itself (`facet.perParticipant` is the
+// canonical record). The proposal arm names a structural proposal id
+// (decompose / interpretive-split / axiom-mark / annotate / meta-move
+// / break-edge / amend-node) where there is no facet target the vote
+// could attach to.
+//
+// **Why the facet arm has no proposal id.** Some facets enter life
+// with an inline candidate that is NOT driven by a proposal targeting
+// that facet — e.g. an edge's `shape` facet is seeded inline on
+// `edge-created` per ADR 0030 §5, and the `wording` facet's candidate
+// rides inline on `node-created` for `capture-node`. Threading a
+// proposal id through the facet arm forced the WS layer to manufacture
+// one by walking the event log for "a proposal that drives this
+// facet"; for inline-seeded facets the walk returned `null` and the
+// vote was rejected with `proposal-not-found` (the bug fixed in this
+// refactor). Dropping the proposal id from the facet arm removes the
+// manufactured-lookup step entirely.
+export interface VoteActionFacet extends ActionEnvelopeBase {
   kind: 'vote';
+  target: 'facet';
+  entityKind: 'node' | 'edge';
+  entityId: string;
+  facet: FacetName;
+  vote: PerParticipantVote;
+  /** ISO-8601 — payload-level vote timestamp; defaults to `createdAt` if the API layer doesn't set it explicitly. */
+  votedAt: string;
+}
+
+export interface VoteActionProposal extends ActionEnvelopeBase {
+  kind: 'vote';
+  target: 'proposal';
   proposalEventId: string;
   vote: PerParticipantVote;
   /** ISO-8601 — payload-level vote timestamp; defaults to `createdAt` if the API layer doesn't set it explicitly. */
   votedAt: string;
 }
 
-export interface CommitAction extends ActionEnvelopeBase {
+export type VoteAction = VoteActionFacet | VoteActionProposal;
+
+// Commit actions mirror VoteAction's discriminated-union shape for the
+// same reason: facet-arm commits address the facet directly via the
+// projection's facet-keyed commit handler (`handleCommit`'s facet arm,
+// which sweeps any pending proposals targeting the facet); proposal-arm
+// commits address structural sub-kinds by proposal id.
+export interface CommitActionFacet extends ActionEnvelopeBase {
   kind: 'commit';
+  target: 'facet';
+  entityKind: 'node' | 'edge';
+  entityId: string;
+  facet: FacetName;
+  /** ISO-8601 — payload-level commit timestamp; defaults to `createdAt` if the API layer doesn't set it explicitly. */
+  committedAt: string;
+}
+
+export interface CommitActionProposal extends ActionEnvelopeBase {
+  kind: 'commit';
+  target: 'proposal';
   proposalEventId: string;
   /** ISO-8601 — payload-level commit timestamp; defaults to `createdAt` if the API layer doesn't set it explicitly. */
   committedAt: string;
 }
+
+export type CommitAction = CommitActionFacet | CommitActionProposal;
 
 export interface MarkMetaDisagreementAction extends ActionEnvelopeBase {
   kind: 'mark-meta-disagreement';

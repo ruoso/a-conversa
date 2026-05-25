@@ -424,7 +424,16 @@ test.describe
       // (no `if-visible` no-op).
       await expect(agreeBtn).toBeVisible({ timeout: 15_000 });
       await agreeBtn.click();
-      await expect(shapeRow).toHaveAttribute('data-vote-state', /^(enabled|in-flight)$/, {
+      // Hard-assert the vote actually landed in the server projection:
+      // the row's own-vote indicator only mounts when the projection
+      // reflects this participant's vote on the current candidate
+      // (`ParticipantVoteButtons.tsx` swaps buttons → indicator when
+      // `ownVote !== undefined`, driven by the `vote` event the server
+      // emits on round-trip). A rejected vote (`proposal-not-found`,
+      // etc.) leaves `ownVote === undefined` so the indicator never
+      // mounts — that's how we pin the edge.shape voting bug.
+      const ownVoteIndicator = shapeRow.getByTestId('participant-detail-panel-facet-row-own-vote');
+      await expect(ownVoteIndicator).toHaveAttribute('data-vote-choice', 'agree', {
         timeout: 15_000,
       });
     }
@@ -437,27 +446,21 @@ test.describe
     // identical posture in methodology-full-flow Phase 5.7.
     await alicePage.getByTestId('graph-tidy-up-button').click();
     const commitButton = alicePage.getByTestId(`edge-shape-commit-affordance-button-${edgeId}`);
-    // Tolerant: the affordance only mounts when the shape facet
-    // rolls up to `'agreed'`. If Phase 5.1's votes raced, the
-    // affordance never mounts; no-op pin (Phase 6 stays valid
-    // because the substance proposal's commit gate accepts either
-    // `agreed` or `committed` shape).
-    const visible = await commitButton.isVisible({ timeout: 15_000 }).catch(() => false);
-    if (!visible) return;
+    // Hard-assert the affordance mounts. The discriminated-union
+    // refactor unblocks the edge.shape voting path; with both debaters'
+    // facet-arm agree votes landing in the projection, the shape
+    // status reaches `'agreed'` on the moderator-side mirror (which
+    // excludes the moderator from the unanimity walk per
+    // `proposalFacets.ts`'s Decision §1.a) and the affordance mounts.
+    await expect(commitButton).toBeVisible({ timeout: 15_000 });
     await commitButton.click();
-    await alicePage.waitForFunction(
-      ({ id }) => {
-        const btn = document.querySelector(
-          `[data-testid="edge-shape-commit-affordance-button-${id}"]`,
-        );
-        const err = document.querySelector(
-          `[data-testid="edge-shape-commit-affordance-error-${id}"]`,
-        );
-        return btn === null || err !== null;
-      },
-      { id: edgeId },
-      { timeout: 15_000 },
-    );
+    // Hard-assert the commit lands cleanly — the affordance unmounts
+    // (button gone) AND no inline wire-error region renders. A failure
+    // mode in either direction (button stays AND no error, or error
+    // surfaces) reflects a regression in the facet-arm commit path.
+    await expect(commitButton).toHaveCount(0, { timeout: 15_000 });
+    const errorRegion = alicePage.getByTestId(`edge-shape-commit-affordance-error-${edgeId}`);
+    await expect(errorRegion).toHaveCount(0);
   });
 
   // ── Phase 6 — both debaters vote agree on the edge.substance

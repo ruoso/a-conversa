@@ -370,6 +370,7 @@ function makeVoteAction(
 ): VoteAction {
   return {
     kind: 'vote',
+    target: 'proposal',
     requester,
     sessionId: SESSION_ID,
     eventId,
@@ -389,6 +390,7 @@ function makeCommitAction(
 ): CommitAction {
   return {
     kind: 'commit',
+    target: 'proposal',
     requester: MODERATOR_ID,
     sessionId: SESSION_ID,
     eventId: COMMIT_EVENT_ID,
