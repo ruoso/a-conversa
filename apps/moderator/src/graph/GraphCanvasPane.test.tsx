@@ -2488,6 +2488,67 @@ describe('GraphCanvasPane — measurement-driven re-layout (mod_layout_measured_
     ).toBeGreaterThanOrEqual(10);
   });
 
+  it('clears the entire position cache on measurement debounce (applyLayout receives an empty cache → full relayout)', async () => {
+    // Regression test for the new-node "snap to fixed position" bug.
+    //
+    // Repro shape: a brand-new node ends up at the correct dagre
+    // position on first paint, then the ResizeObserver-driven
+    // measurement cascade fires the 75 ms debounce; the previous
+    // per-id eviction strategy fed the just-measured node through
+    // dagre alongside its cached neighbours but used dagre's
+    // coordinate space for the uncached node only — the cached
+    // neighbours' coordinate space was disconnected from dagre's, so
+    // the new node visually snapped to dagre's absolute coord (often
+    // near origin if it had no edges yet).
+    //
+    // The fix clears the entire `positionCacheRef` on debounce so
+    // `applyLayout` behaves as `relayoutAll` (per its contract: empty
+    // cache produces the same result as `relayoutAll` for the same
+    // inputs). This case pins the cache-size-at-call-time the
+    // `applyLayoutSpy` factory captures: after a measurement-driven
+    // invocation, the cache must be empty (size 0).
+    applyLayoutSpy.mockClear();
+    relayoutAllSpy.mockClear();
+    sizesAtCall.length = 0;
+
+    const rectsById = new Map<string, { width: number; height: number }>([
+      [NODE_A, { width: 200, height: 160 }],
+      [NODE_B, { width: 100, height: 40 }],
+    ]);
+    installPerNodeRects(rectsById, { width: 100, height: 40 });
+
+    const store = useWsStore.getState();
+    store.applyEvent(makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'a' }));
+    store.applyEvent(makeNodeCreated({ sequence: 2, nodeId: NODE_B, wording: 'b' }));
+    store.applyEvent(
+      makeEdgeCreated({ sequence: 3, edgeId: 'edge-AB', source: NODE_A, target: NODE_B }),
+    );
+
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+
+    render(<GraphCanvasPane sessionId={SESSION_ID} />);
+
+    // Initial mount took the relayoutAll branch (every id was truly
+    // new); applyLayout was NOT yet invoked.
+    expect(applyLayoutSpy.mock.calls.length).toBe(0);
+
+    // Advance past the debounce; the measurement effect drains, clears
+    // the cache, and bumps the revision — `useMemo` re-runs and
+    // applyLayout is invoked once.
+    await act(async () => {
+      vi.advanceTimersByTime(80);
+      await Promise.resolve();
+    });
+
+    expect(applyLayoutSpy.mock.calls.length).toBeGreaterThan(0);
+    // The cache size captured at applyLayout-call-time must be 0 —
+    // the debounce cleared `positionCacheRef.current` before bumping
+    // the revision, so the `useMemo` re-run sees an empty cache and
+    // `applyLayout` produces the same result `relayoutAll` would for
+    // the same inputs.
+    expect(sizesAtCall[0]).toBe(0);
+  });
+
   it('does NOT re-run applyLayout once measurements stabilize (no further eviction → steady-state silence)', async () => {
     // Per-node rects that DON'T match the 288 x 90 constants — every
     // node's first measurement crosses the threshold once and then

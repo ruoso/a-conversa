@@ -1113,25 +1113,44 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
     // ResizeObserver callbacks as the catalog text and CSS settle.
     // Coalesce them into one re-layout pass at the end of the cascade.
     const timer = setTimeout(() => {
-      // Drain the staged measurements: commit each into the
-      // measurement cache and evict the matching position-cache entry
-      // so the next `applyLayout` pass treats those ids as uncached
-      // (forcing a fresh dagre placement for them, alongside the
-      // cached neighbours, which pass through with their existing
-      // positions — `applyLayout`'s mixed cache / no-cache codepath
-      // is the seam). Existing-nodes-never-move is preserved for
-      // every id NOT in the staged set.
+      // Drain the staged measurements: commit each into the measurement
+      // cache, then CLEAR the entire position cache so the next
+      // `applyLayout` pass treats every id as uncached and recomputes
+      // a fresh dagre layout for the whole graph (per
+      // `applyLayout`'s contract: an empty cache produces the same
+      // result as `relayoutAll`).
+      //
+      // Why the full clear rather than per-id eviction: the prior
+      // partial-eviction strategy fed the uncached node through dagre
+      // alongside the cached neighbours and used dagre's coordinate
+      // for the uncached node only. But dagre returns the whole graph
+      // in its own coordinate space, not anchored to the cached
+      // coordinate space — so the uncached node would snap to dagre's
+      // absolute coord (often near the origin if the new node had no
+      // edges yet), visually disconnected from the cached neighbours.
+      // Concretely a freshly captured node rendered at the correct
+      // dagre-layout position on first paint, then after the
+      // ResizeObserver-driven measurement cascade jumped to a fixed
+      // position. Clearing the whole cache so every node receives a
+      // fresh, coherent placement is the simplest fix.
+      //
+      // Trade-off: every node moves on every measurement-driven
+      // invalidation. The `mod_layout_measured_dimensions` refinement
+      // originally chose per-id eviction to avoid that churn, but the
+      // partial-cache approach was unsound. The user-triggered tidy-up
+      // path (`handleTidyUp` above) already clears the whole cache for
+      // the same reason; this brings the measurement path in line.
       const drained = pendingMeasurementsRef.current;
       if (drained.size === 0) return;
       for (const [id, rect] of drained.entries()) {
         measurementCacheRef.current.set(id, rect);
-        positionCacheRef.current.delete(id);
       }
+      positionCacheRef.current.clear();
       pendingMeasurementsRef.current = new Map();
       // Bump the layout revision to invalidate the `nodes` `useMemo`.
-      // The next memoization tick re-runs `applyLayout` with the
-      // freshly-evicted position cache + the freshly-populated
-      // measurement cache, producing positions that respect the
+      // The next memoization tick re-runs `applyLayout` with an empty
+      // position cache + the freshly-populated measurement cache,
+      // producing a fresh dagre arrangement that respects every node's
       // rendered footprint.
       setLayoutRevision((rev) => rev + 1);
     }, MEASUREMENT_DEBOUNCE_MS);
