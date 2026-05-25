@@ -33,6 +33,8 @@
 // `tests/e2e/fixtures/auth.ts`). Any future expansion to that roster
 // reaches here automatically — no per-user setup boilerplate.
 
+import { existsSync, statSync } from 'node:fs';
+
 import { test as setup } from '@playwright/test';
 
 import { DEV_USER_POOL, loginAs } from './fixtures/auth';
@@ -49,8 +51,28 @@ import { authStorageStatePath } from './fixtures/auth-storage-path';
 // stanza for the absorption rationale.
 setup.describe.configure({ mode: 'serial' });
 
+// Reuse a stored auth jar if it is still fresh. The
+// `aconversa-session` JWT carries a 7-day lifetime
+// (`auth.flow.SessionTokenPayload` in `apps/server/src/auth`), so a
+// 6-hour reuse window is well inside the expiry while being long
+// enough to cover any reasonable repeat-run cadence
+// (`scripts/e2e-loop.sh` chains dozens of suite invocations against
+// the same compose stack; each invocation re-runs `setup-auth`,
+// which without this short-circuit re-fires the full 12-user OIDC
+// dance and eventually trips Authelia's per-IP regulation bucket —
+// observed at loop iter-013 after ~150 dances, where henry's dance
+// hung waiting for the Authelia login form to render).
+const STORAGE_REUSE_WINDOW_MS = 6 * 60 * 60 * 1_000;
+
 for (const username of DEV_USER_POOL) {
   setup(`authenticate ${username} and persist storage state`, async ({ page }) => {
+    const path = authStorageStatePath(username);
+    if (existsSync(path) && Date.now() - statSync(path).mtimeMs < STORAGE_REUSE_WINDOW_MS) {
+      // A fresh jar from a previous invocation is on disk; the
+      // consuming projects load it directly via `storageState`, so
+      // re-running the OIDC dance here is pure cost. Skip.
+      return;
+    }
     // The project's `storageState` already seeds the `aconversa_locale`
     // cookie (en-US in every consuming project), so the OIDC dance
     // inherits a locale-aware page from the first request. `loginAs`
@@ -60,6 +82,6 @@ for (const username of DEV_USER_POOL) {
     // pre-seeded locale cookie. Subsequent worker startups load the
     // file as their initial state.
     await loginAs(page, { username });
-    await page.context().storageState({ path: authStorageStatePath(username) });
+    await page.context().storageState({ path });
   });
 }
