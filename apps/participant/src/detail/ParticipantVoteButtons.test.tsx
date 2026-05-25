@@ -565,6 +565,92 @@ describe('<ParticipantVoteButtons> — per-status row content', () => {
     expect(within(classifyRow).getByTestId('participant-vote-button-withdraw')).toBeDefined();
   });
 
+  // Per `pf_part_facet_name_widen_shape`: the shape row's status now
+  // flows through the projection index like the other three facets —
+  // the prior synthetic `'committed'`-when-inline-carriage short-
+  // circuit is gone. A freshly-drawn edge surfaces the shape row in
+  // `proposed` with agree+dispute buttons.
+  it("a freshly-drawn edge's shape row reads `proposed` off the projection and renders agree+dispute (no synthetic committed)", () => {
+    const fake = makeFakeClient();
+    const events: Event[] = [
+      joinedEvent(1, PARTICIPANT_BEN),
+      joinedEvent(2, PARTICIPANT_MARIA),
+      edgeCreatedEvent(3),
+    ];
+    const facetStatusIndex = computeFacetStatuses(events);
+    render(
+      <Wrapper client={fake.client}>
+        <ParticipantVoteButtons
+          events={events}
+          entityKind="edge"
+          entityId={EDGE_E_ID}
+          facetStatusIndex={facetStatusIndex}
+          currentParticipantId={PARTICIPANT_BEN}
+        />
+      </Wrapper>,
+    );
+    const shapeRow = screen
+      .getAllByTestId('participant-detail-panel-facet-row')
+      .find((r) => r.getAttribute('data-facet-name') === 'shape');
+    if (!shapeRow) throw new Error('shape row missing');
+    expect(shapeRow.getAttribute('data-facet-status')).toBe('proposed');
+    // Agree + dispute surface — the regression class the widening
+    // closes (the predecessor's synthetic `'committed'` hid these).
+    expect(within(shapeRow).getByTestId('participant-vote-button-agree')).toBeDefined();
+    expect(within(shapeRow).getByTestId('participant-vote-button-dispute')).toBeDefined();
+  });
+
+  it("after the current participant agrees on the edge's shape facet, the shape row hides agree/dispute and surfaces a 'you voted' indicator", () => {
+    const fake = makeFakeClient();
+    const events: Event[] = [
+      joinedEvent(1, PARTICIPANT_BEN),
+      joinedEvent(2, PARTICIPANT_MARIA),
+      edgeCreatedEvent(3),
+      // Facet-keyed vote against (edge, shape) by Ben.
+      {
+        id: '00000000-0000-4000-8000-000000000801',
+        sessionId: SESSION_ID,
+        sequence: 4,
+        kind: 'vote',
+        actor: PARTICIPANT_BEN,
+        createdAt: '2026-05-17T00:00:00.000Z',
+        payload: {
+          target: 'facet' as const,
+          entity_kind: 'edge' as const,
+          entity_id: EDGE_E_ID,
+          facet: 'shape' as const,
+          participant: PARTICIPANT_BEN,
+          choice: 'agree' as const,
+          voted_at: '2026-05-17T00:00:00.000Z',
+        },
+      } as unknown as Event,
+    ];
+    const facetStatusIndex = computeFacetStatuses(events);
+    render(
+      <Wrapper client={fake.client}>
+        <ParticipantVoteButtons
+          events={events}
+          entityKind="edge"
+          entityId={EDGE_E_ID}
+          facetStatusIndex={facetStatusIndex}
+          currentParticipantId={PARTICIPANT_BEN}
+        />
+      </Wrapper>,
+    );
+    const shapeRow = screen
+      .getAllByTestId('participant-detail-panel-facet-row')
+      .find((r) => r.getAttribute('data-facet-name') === 'shape');
+    if (!shapeRow) throw new Error('shape row missing');
+    // Status stays `proposed` (Maria hasn't voted yet), but buttons
+    // are gone for Ben — he already voted. The own-vote indicator
+    // surfaces with the agree arm.
+    expect(shapeRow.getAttribute('data-facet-status')).toBe('proposed');
+    expect(within(shapeRow).queryByTestId('participant-vote-button-agree')).toBeNull();
+    expect(within(shapeRow).queryByTestId('participant-vote-button-dispute')).toBeNull();
+    const indicator = within(shapeRow).getByTestId('participant-detail-panel-facet-row-own-vote');
+    expect(indicator.getAttribute('data-vote-choice')).toBe('agree');
+  });
+
   it('a disputed classification still shows agree+dispute (the dispute can flip back)', () => {
     const fake = makeFakeClient();
     const events: Event[] = [

@@ -1005,17 +1005,21 @@ test.describe
       const agreeBtn = shapeRow.getByTestId('participant-vote-button-agree');
       // The agree button is only present when the row is in a vote-
       // accepting status (`proposed` / `disputed` / `withdrawn`).
-      // For a fresh inline shape, that's `proposed`. Click it.
-      if (await agreeBtn.isVisible().catch(() => false)) {
-        await agreeBtn.click();
-        // The in-flight latch flips back to `enabled` on the
-        // server's vote ack. Tolerate either `enabled` or
-        // `in-flight` if the ack races (the click itself is the
-        // wire send; the assertion below is the round-trip pin).
-        await expect(shapeRow).toHaveAttribute('data-vote-state', /^(enabled|in-flight)$/, {
-          timeout: 15_000,
-        });
-      }
+      // For a fresh inline shape, that's `proposed`. Per
+      // `pf_part_facet_name_widen_shape` the participant projection
+      // mirror now tracks the shape facet — the predecessor's
+      // synthetic `'committed'` (which hid the agree button) is gone,
+      // so the button MUST be visible whenever the row is. Hard
+      // assert it (no `if-visible` no-op).
+      await expect(agreeBtn).toBeVisible({ timeout: 15_000 });
+      await agreeBtn.click();
+      // The in-flight latch flips back to `enabled` on the
+      // server's vote ack. Tolerate either `enabled` or
+      // `in-flight` if the ack races (the click itself is the
+      // wire send; the assertion below is the round-trip pin).
+      await expect(shapeRow).toHaveAttribute('data-vote-state', /^(enabled|in-flight)$/, {
+        timeout: 15_000,
+      });
     }
   });
 

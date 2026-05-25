@@ -151,14 +151,10 @@ function deriveOwnFacetVotes(
       let facet: FacetName | undefined;
       if (event.payload.target === 'facet') {
         if (event.payload.entity_id !== entityId) continue;
-        // Per `pf_shape_facet_wire_vote` the wire-level `FacetName`
-        // includes `'shape'`; the participant detail panel does not
-        // surface a shape-facet row today (the local `FacetName`
-        // mirror stays 3-valued — see `apps/participant/src/graph/facetStatus.ts`),
-        // so shape-facet votes are skipped here. A future
-        // `pf_part_detail_panel_shape_facet_row` task closes the
-        // guard.
-        if (event.payload.facet === 'shape') continue;
+        // Per `pf_part_facet_name_widen_shape` the local `FacetName`
+        // mirror is now 4-valued (matching the wire-level enum), so
+        // shape-facet votes flow through this arm into the per-facet
+        // own-vote map alongside the other three facets.
         facet = event.payload.facet;
       } else {
         facet = proposalTarget.get(event.payload.proposal_id);
@@ -189,12 +185,23 @@ function rollupBadgeClassName(status: FacetStatus): string {
 
 /**
  * Three facet names a node can carry (`classification`, `substance`,
- * `wording`); only `substance` is meaningful for edges today. The order
+ * `wording`); the `<FacetPillRowSection>` surfaces the `substance` pill
+ * only for edges today (the `shape` facet's status surfaces on the
+ * always-on `<ParticipantVoteButtons>` shape row instead — the panel's
+ * top pill row is not in scope of `pf_part_facet_name_widen_shape`;
+ * adding a shape pill is a downstream UI polish task). The order
  * matches the moderator's in-card pill row layout for cross-surface
  * familiarity.
+ *
+ * Narrowed to `Exclude<FacetName, 'shape'>` to match `<FacetPill>`'s
+ * 3-valued shell type (`packages/shell/src/facet-pill/types.ts`); the
+ * pill row never carries shape, so the exclude is sound. Mirrors the
+ * moderator-side `FACET_RENDER_ORDER` narrowing in
+ * `apps/moderator/src/graph/StatementNode.tsx`.
  */
-const NODE_FACET_NAMES: readonly FacetName[] = ['classification', 'substance', 'wording'];
-const EDGE_FACET_NAMES: readonly FacetName[] = ['substance'];
+type PillFacetName = Exclude<FacetName, 'shape'>;
+const NODE_FACET_NAMES: readonly PillFacetName[] = ['classification', 'substance', 'wording'];
+const EDGE_FACET_NAMES: readonly PillFacetName[] = ['substance'];
 
 export interface EntityDetailPanelProps {
   readonly projectedNodes: readonly ParticipantNodeData[];

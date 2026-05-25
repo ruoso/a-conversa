@@ -597,4 +597,31 @@ describe('projectOwnFacetVotes — per-(entity, facet) own-vote indicator with s
     const out = projectOwnFacetVotes(events, ME);
     expect(out).toBe(EMPTY_OWN_FACET_VOTES);
   });
+
+  // Per `pf_part_facet_name_widen_shape`: the local `FacetName` mirror
+  // is now 4-valued; a shape-facet own vote lands in the index alongside
+  // the other three facets (no skip guard).
+  it('records a facet-keyed agree vote on (edge, shape) under the (edge, shape) facet key', () => {
+    const events: Event[] = [
+      {
+        id: '00000000-0000-4000-8000-000000000701',
+        sessionId: SESSION_ID,
+        sequence: 1,
+        kind: 'vote',
+        actor: ME,
+        payload: {
+          target: 'facet' as const,
+          entity_kind: 'edge' as const,
+          entity_id: EDGE_A,
+          facet: 'shape' as const,
+          participant: ME,
+          choice: 'agree' as const,
+          voted_at: '2026-05-17T00:00:00.000Z',
+        },
+        createdAt: '2026-05-17T00:00:00.000Z',
+      },
+    ];
+    const out = projectOwnFacetVotes(events, ME);
+    expect(out.facets.get(ownFacetKey('edge', EDGE_A, 'shape'))).toBe('agree');
+  });
 });

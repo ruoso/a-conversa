@@ -227,12 +227,10 @@ export function projectOwnVotes(
       let entityId: string;
       let facet: FacetName;
       if (event.payload.target === 'facet') {
-        // Per `pf_shape_facet_wire_vote` the wire-level `FacetName`
-        // includes `'shape'`; the participant own-votes index is
-        // keyed by the local 3-valued `FacetName`, so shape-facet
-        // votes are skipped here (no per-edge shape pill exists at
-        // the participant card layer today).
-        if (event.payload.facet === 'shape') continue;
+        // Per `pf_part_facet_name_widen_shape` the local `FacetName`
+        // mirror is now 4-valued (matching the wire-level enum), so
+        // shape-facet votes flow through this arm into the per-entity
+        // own-vote rollup like the other three facets.
         entityKind = event.payload.entity_kind;
         entityId = event.payload.entity_id;
         facet = event.payload.facet;
@@ -413,12 +411,11 @@ export function projectOwnFacetVotes(
       if (event.payload.participant !== currentParticipantId) continue;
       const arm: 'agree' | 'dispute' = event.payload.choice === 'agree' ? 'agree' : 'dispute';
       if (event.payload.target === 'facet') {
-        // Per `pf_shape_facet_wire_vote`: the wire-level `FacetName`
-        // includes `'shape'`; the participant's local `FacetName` is
-        // 3-valued (wording/classification/substance) — drop shape
-        // votes here since the per-row vote affordance does not yet
-        // surface them.
-        if (event.payload.facet === 'shape') continue;
+        // Per `pf_part_facet_name_widen_shape`: the local `FacetName`
+        // mirror is now 4-valued (matching the wire-level enum); the
+        // per-row vote affordance reads shape-facet votes off this
+        // index alongside the other three facets, so no skip guard
+        // is needed.
         facets.set(
           ownFacetKey(event.payload.entity_kind, event.payload.entity_id, event.payload.facet),
           arm,

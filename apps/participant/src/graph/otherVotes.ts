@@ -364,12 +364,10 @@ export function projectOtherVotes(
       let entityId: string;
       let facet: FacetName;
       if (event.payload.target === 'facet') {
-        // Per `pf_shape_facet_wire_vote` the wire-level `FacetName`
-        // includes `'shape'`; the participant other-votes index is
-        // keyed by the local 3-valued `FacetName`, so shape-facet
-        // votes are skipped here (no per-edge shape pill exists at
-        // the participant card layer today).
-        if (event.payload.facet === 'shape') continue;
+        // Per `pf_part_facet_name_widen_shape` the local `FacetName`
+        // mirror is now 4-valued (matching the wire-level enum), so
+        // shape-facet votes flow through this arm into the per-entity
+        // per-other-voter rollup like the other three facets.
         entityKind = event.payload.entity_kind;
         entityId = event.payload.entity_id;
         facet = event.payload.facet;

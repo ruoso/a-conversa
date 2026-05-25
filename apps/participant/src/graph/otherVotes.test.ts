@@ -409,4 +409,32 @@ describe('projectOtherVotes — per-entity per-OTHER-voter projection narrowed t
     ];
     expect(projectOtherVotes(noOtherVotes, ME)).toBe(EMPTY_OTHERS_VOTES);
   });
+
+  // Per `pf_part_facet_name_widen_shape`: the local `FacetName` mirror
+  // is now 4-valued; a shape-facet vote by another participant lands in
+  // the per-entity per-voter list alongside the other three facets (no
+  // skip guard).
+  it('records a facet-keyed agree vote on (edge, shape) by another participant under the edge entry', () => {
+    const events: Event[] = [
+      {
+        id: '00000000-0000-4000-8000-000000000702',
+        sessionId: SESSION_ID,
+        sequence: 1,
+        kind: 'vote',
+        actor: VOTER_X,
+        payload: {
+          target: 'facet' as const,
+          entity_kind: 'edge' as const,
+          entity_id: EDGE_A,
+          facet: 'shape' as const,
+          participant: VOTER_X,
+          choice: 'agree' as const,
+          voted_at: '2026-05-17T00:00:00.000Z',
+        },
+        createdAt: '2026-05-17T00:00:00.000Z',
+      },
+    ];
+    const out = projectOtherVotes(events, ME);
+    expect(out.edges.get(EDGE_A)).toEqual([{ participantId: VOTER_X, choice: 'agree' }]);
+  });
 });

@@ -203,6 +203,13 @@ task per_facet_refactor "Per-facet refactor (ADR 0030)" {
       depends !pf_part_detail_panel_three_facet_rows
       note "Refinement: tasks/refinements/per-facet-refactor/pf_part_vote_action_facet_keyed.md"
     }
+    task pf_part_facet_name_widen_shape "Participant FacetName: widen local mirror to include 'shape'" {
+      effort 0.5d
+      allocate team
+      complete 100
+      depends !pf_part_detail_panel_three_facet_rows, !pf_part_vote_action_facet_keyed, !!server_handlers.pf_shape_facet_wire_vote
+      note "Source of debt: pf_shape_facet_wire_vote (refinement L69) deferred the participant and moderator FacetName mirrors. The moderator side landed pf_mod_facet_name_widen_shape; the participant side did not — apps/participant/src/graph/facetStatus.ts line 98 keeps the local FacetName at three values (classification, substance, wording), the edge-created arm never seeds the shape facet candidate, and the vote / commit / withdraw / meta-disagreement arms skip events whose facet is shape. Downstream, ParticipantVoteButtons.readFacetStatus (apps/participant/src/detail/ParticipantVoteButtons.tsx lines 667 to 672) short-circuits the edge shape row to the synthetic committed status whenever an inline candidate exists, hiding the agree and dispute buttons — so on a freshly drawn edge the participant sees only a withdraw button on the shape row, never the agree button the methodology requires. The wire is correct (pf_shape_facet_wire_vote pinned shape-facet votes); only the participant projection mirror is stale. Phase 5.5 in tests/e2e/methodology-full-flow.spec.ts lines 985 to 1019 and Phase 5.1 in tests/e2e/moderator-draw-edge.spec.ts lines 360 to 386 wrap the agree click in an if-visible guard and silently no-op today — they remain green but pin nothing. Scope: widen the participant FacetName plus computeFacetStatuses (symmetric to apps/moderator/src/graph/facetStatus.ts lines 344 to 364 — edge-created seeds shape; drop the four shape-skip guards), update ownVotes and otherVotes mirrors if they skip shape, drop the shape short-circuit in readFacetStatus so the row reads the projection like the other facets, then tighten Phase 5.5 and moderator-draw-edge Phase 5.1 from tolerant to strict. Effort 0.5d mirrors the moderator counterpart."
+    }
   }
 
   task tests "Tests / e2e" {

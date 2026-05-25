@@ -323,7 +323,7 @@ function withdrawAgreementEvent(
   seq: number,
   entityKind: 'node' | 'edge',
   entityId: string,
-  facet: 'classification' | 'substance' | 'wording',
+  facet: 'classification' | 'substance' | 'wording' | 'shape',
   participant: string,
 ): Event {
   return {
@@ -543,6 +543,9 @@ describe('cardRollupStatus — priority ordering', () => {
     }
   });
 
+  // (Shape-facet derivation tests live below; the rollup-priority pair
+  // coverage stays one block per status — adding shape rows wouldn't
+  // change the priority ordering.)
   it('(p) priority-pair coverage — every higher-priority status wins over every lower-priority one', () => {
     // For every (higher, lower) pair where ROLLUP_PRIORITY.indexOf(higher)
     // < ROLLUP_PRIORITY.indexOf(lower), the rollup returns `higher`. This
@@ -561,5 +564,157 @@ describe('cardRollupStatus — priority ordering', () => {
       const reverseRecord = { classification: lower, substance: higher };
       expect(cardRollupStatus(reverseRecord)).toBe(higher);
     }
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// `pf_part_facet_name_widen_shape` — shape facet on edges
+// ──────────────────────────────────────────────────────────────────────
+//
+// Mirrors the moderator-side `pf_mod_facet_name_widen_shape` coverage
+// verbatim in shape (not literal text). Per ADR 0030 §5 +
+// `pf_shape_facet_wire_vote` + the widening: the `shape` facet on an
+// edge lands inline with the `edge-created` event (the carriage of the
+// role). There is no `propose-edge-shape` sub-kind in v1, so the
+// facet's candidate seeds from the create event directly and votes /
+// commits / meta-disagreement marks / withdraw-agreement payloads ride
+// the facet-arm wire shape. These tests pin the new arm.
+
+function edgeCreatedEvent(
+  seq: number,
+  edgeId: string,
+  source: string = '00000000-0000-4000-8000-000000000001',
+  target: string = '00000000-0000-4000-8000-000000000002',
+): Event {
+  return {
+    id: envId('e', seq),
+    sessionId: SESSION,
+    sequence: seq,
+    kind: 'edge-created',
+    actor: ACTOR,
+    payload: {
+      edge_id: edgeId,
+      source_node_id: source,
+      target_node_id: target,
+      role: 'supports',
+      created_by: ACTOR,
+      created_at: '2026-05-17T00:00:00.000Z',
+    },
+    createdAt: '2026-05-17T00:00:00.000Z',
+  };
+}
+
+function facetVoteEvent(
+  seq: number,
+  entityKind: 'node' | 'edge',
+  entityId: string,
+  facet: 'classification' | 'substance' | 'wording' | 'shape',
+  participant: string,
+  choice: 'agree' | 'dispute',
+): Event {
+  return {
+    id: envId('V', seq),
+    sessionId: SESSION,
+    sequence: seq,
+    kind: 'vote',
+    actor: participant,
+    payload: {
+      target: 'facet',
+      entity_kind: entityKind,
+      entity_id: entityId,
+      facet,
+      participant,
+      choice,
+      voted_at: '2026-05-17T00:00:10.000Z',
+    },
+    createdAt: '2026-05-17T00:00:10.000Z',
+  };
+}
+
+function facetCommitEvent(
+  seq: number,
+  entityKind: 'node' | 'edge',
+  entityId: string,
+  facet: 'classification' | 'substance' | 'wording' | 'shape',
+): Event {
+  return {
+    id: envId('C', seq),
+    sessionId: SESSION,
+    sequence: seq,
+    kind: 'commit',
+    actor: ACTOR,
+    payload: {
+      target: 'facet',
+      entity_kind: entityKind,
+      entity_id: entityId,
+      facet,
+      committed_by: ACTOR,
+      committed_at: '2026-05-17T00:00:20.000Z',
+    },
+    createdAt: '2026-05-17T00:00:20.000Z',
+  };
+}
+
+describe('computeFacetStatuses — shape facet (edge)', () => {
+  it('edge-created seeds the shape facet with a candidate; empty-session degenerates to proposed', () => {
+    // No participants joined — Rule 7's unanimous-agree check fails
+    // (currentParticipantCount === 0); Rule 8 'proposed' wins.
+    const events: Event[] = [edgeCreatedEvent(1, EDGE_E)];
+    const index = computeFacetStatuses(events);
+    expect(index.edges.get(EDGE_E)).toEqual({
+      shape: 'proposed',
+      substance: 'awaiting-proposal',
+    });
+  });
+
+  it('all current participants vote agree on (edge, shape) → agreed', () => {
+    const events: Event[] = [
+      joinedEvent(1, PARTICIPANT_A, 'debater-A'),
+      joinedEvent(2, PARTICIPANT_B, 'debater-B'),
+      edgeCreatedEvent(3, EDGE_E),
+      facetVoteEvent(4, 'edge', EDGE_E, 'shape', PARTICIPANT_A, 'agree'),
+      facetVoteEvent(5, 'edge', EDGE_E, 'shape', PARTICIPANT_B, 'agree'),
+    ];
+    const index = computeFacetStatuses(events);
+    expect(index.edges.get(EDGE_E)?.shape).toBe('agreed');
+  });
+
+  it('a dispute vote on (edge, shape) → disputed', () => {
+    const events: Event[] = [
+      joinedEvent(1, PARTICIPANT_A, 'debater-A'),
+      joinedEvent(2, PARTICIPANT_B, 'debater-B'),
+      edgeCreatedEvent(3, EDGE_E),
+      facetVoteEvent(4, 'edge', EDGE_E, 'shape', PARTICIPANT_A, 'agree'),
+      facetVoteEvent(5, 'edge', EDGE_E, 'shape', PARTICIPANT_B, 'dispute'),
+    ];
+    const index = computeFacetStatuses(events);
+    expect(index.edges.get(EDGE_E)?.shape).toBe('disputed');
+  });
+
+  it('facet-arm commit on (edge, shape) → committed', () => {
+    const events: Event[] = [
+      joinedEvent(1, PARTICIPANT_A, 'debater-A'),
+      joinedEvent(2, PARTICIPANT_B, 'debater-B'),
+      edgeCreatedEvent(3, EDGE_E),
+      facetVoteEvent(4, 'edge', EDGE_E, 'shape', PARTICIPANT_A, 'agree'),
+      facetVoteEvent(5, 'edge', EDGE_E, 'shape', PARTICIPANT_B, 'agree'),
+      facetCommitEvent(6, 'edge', EDGE_E, 'shape'),
+    ];
+    const index = computeFacetStatuses(events);
+    expect(index.edges.get(EDGE_E)?.shape).toBe('committed');
+  });
+
+  it('withdraw-agreement on committed (edge, shape) → withdrawn', () => {
+    const events: Event[] = [
+      joinedEvent(1, PARTICIPANT_A, 'debater-A'),
+      joinedEvent(2, PARTICIPANT_B, 'debater-B'),
+      edgeCreatedEvent(3, EDGE_E),
+      facetVoteEvent(4, 'edge', EDGE_E, 'shape', PARTICIPANT_A, 'agree'),
+      facetVoteEvent(5, 'edge', EDGE_E, 'shape', PARTICIPANT_B, 'agree'),
+      facetCommitEvent(6, 'edge', EDGE_E, 'shape'),
+      withdrawAgreementEvent(7, 'edge', EDGE_E, 'shape', PARTICIPANT_A),
+    ];
+    const index = computeFacetStatuses(events);
+    expect(index.edges.get(EDGE_E)?.shape).toBe('withdrawn');
   });
 });

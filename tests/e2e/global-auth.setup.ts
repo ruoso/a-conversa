@@ -33,9 +33,9 @@
 // `tests/e2e/fixtures/auth.ts`). Any future expansion to that roster
 // reaches here automatically — no per-user setup boilerplate.
 
-import { existsSync, statSync } from 'node:fs';
+import { existsSync, statSync, unlinkSync } from 'node:fs';
 
-import { test as setup } from '@playwright/test';
+import { request as playwrightRequest, test as setup } from '@playwright/test';
 
 import { DEV_USER_POOL, loginAs } from './fixtures/auth';
 import { authStorageStatePath } from './fixtures/auth-storage-path';
@@ -64,14 +64,77 @@ setup.describe.configure({ mode: 'serial' });
 // hung waiting for the Authelia login form to render).
 const STORAGE_REUSE_WINDOW_MS = 6 * 60 * 60 * 1_000;
 
+/**
+ * Validate that an on-disk jar's cookies still resolve to a real
+ * authenticated user under the CURRENT app stack. The age short-circuit
+ * above only checks the file's mtime; it cannot tell whether the DB +
+ * Authelia sqlite were wiped between runs (which is what `make down-v`
+ * does — and which leaves the jar's `aconversa-session` JWT pointing
+ * at a now-deleted user row). A jar that survives `make down-v` looks
+ * "fresh" to mtime but is functionally dead: the session cookie's
+ * `sub` claim references a `users.user_id` that no longer exists, so
+ * the SPA's first `/api/auth/me` probe returns 401 and the test stalls
+ * on the auth-pending redirect.
+ *
+ * The probe loads the jar's cookies into a fresh request context,
+ * hits `GET /api/auth/me`, and accepts the jar ONLY if the response
+ * is 200 AND the body's `screenName` matches the username (per
+ * `loginAs` step 5, the default screen name is the username unless
+ * overridden — `global-auth.setup.ts` calls `loginAs(page, { username })`
+ * without `screenName`, so the saved jar's user has `screenName ===
+ * username` by construction).
+ *
+ * On any failure (non-200, screenName mismatch, network error), the
+ * jar file is deleted and the caller falls through to the full OIDC
+ * dance. Deleting (rather than just returning false) means a future
+ * mtime-fresh-but-DB-stale jar cannot keep tripping this branch on
+ * every retry within the same suite — once invalidated, the next
+ * attempt starts from a clean slate.
+ */
+async function jarBacksLiveUser(path: string, username: string): Promise<boolean> {
+  let probeContext: Awaited<ReturnType<typeof playwrightRequest.newContext>> | undefined;
+  try {
+    probeContext = await playwrightRequest.newContext({
+      baseURL: process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:3000',
+      storageState: path,
+      ignoreHTTPSErrors: true,
+    });
+    const response = await probeContext.get('/api/auth/me');
+    if (response.status() !== 200) {
+      return false;
+    }
+    const body = (await response.json()) as { userId?: string; screenName?: string };
+    return body.screenName === username;
+  } catch {
+    return false;
+  } finally {
+    if (probeContext) {
+      await probeContext.dispose();
+    }
+  }
+}
+
 for (const username of DEV_USER_POOL) {
   setup(`authenticate ${username} and persist storage state`, async ({ page }) => {
     const path = authStorageStatePath(username);
     if (existsSync(path) && Date.now() - statSync(path).mtimeMs < STORAGE_REUSE_WINDOW_MS) {
-      // A fresh jar from a previous invocation is on disk; the
-      // consuming projects load it directly via `storageState`, so
-      // re-running the OIDC dance here is pure cost. Skip.
-      return;
+      // Mtime-fresh — but `make down-v` (or any DB/Authelia-sqlite
+      // wipe) survives the jar on disk while invalidating its cookies'
+      // server-side backing. Probe `/api/auth/me` before short-circuiting;
+      // skip the dance only when the cookie still resolves to a real
+      // user whose screenName matches the username.
+      if (await jarBacksLiveUser(path, username)) {
+        return;
+      }
+      // Stale jar — delete it so the next attempt within this suite
+      // starts from a known-clean baseline, then fall through to the
+      // full OIDC dance.
+      try {
+        unlinkSync(path);
+      } catch {
+        // Best effort — the dance below will overwrite the file via
+        // `context.storageState({ path })` regardless.
+      }
     }
     // The project's `storageState` already seeds the `aconversa_locale`
     // cookie (en-US in every consuming project), so the OIDC dance

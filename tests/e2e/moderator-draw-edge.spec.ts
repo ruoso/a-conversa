@@ -417,12 +417,16 @@ test.describe
         continue;
       }
       const agreeBtn = shapeRow.getByTestId('participant-vote-button-agree');
-      if (await agreeBtn.isVisible().catch(() => false)) {
-        await agreeBtn.click();
-        await expect(shapeRow).toHaveAttribute('data-vote-state', /^(enabled|in-flight)$/, {
-          timeout: 15_000,
-        });
-      }
+      // Per `pf_part_facet_name_widen_shape` the participant projection
+      // mirror tracks the shape facet — the predecessor's synthetic
+      // `'committed'` (which hid the agree button) is gone, so the
+      // button MUST be visible whenever the row is. Hard assert
+      // (no `if-visible` no-op).
+      await expect(agreeBtn).toBeVisible({ timeout: 15_000 });
+      await agreeBtn.click();
+      await expect(shapeRow).toHaveAttribute('data-vote-state', /^(enabled|in-flight)$/, {
+        timeout: 15_000,
+      });
     }
   });
 

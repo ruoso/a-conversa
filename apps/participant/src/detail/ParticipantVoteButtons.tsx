@@ -627,15 +627,13 @@ export function ParticipantVoteButtons(props: ParticipantVoteButtonsProps): Reac
  *   in `ownFacetVotes.facets` — that map already enforces the per-ADR-0030-§7
  *   supersession-clears semantics (a new proposal lands on the facet ⇒
  *   the prior vote drops out so the row's buttons re-appear for the new
- *   candidate).
+ *   candidate). Per `pf_part_facet_name_widen_shape` the local
+ *   `FacetName` mirror is now 4-valued, so the shape row reads its
+ *   own-vote off the same index alongside the other three facets.
  * - The synthetic `'proposal'` row routes through `ownFacetVotes.proposals`
  *   keyed by the structural proposal envelope id; the caller passes that
  *   lookup separately because the row's `facet` here is the synthetic
  *   `'proposal'` and `entityId` is the host entity, not the proposal id.
- * - Edge `'shape'` rows have no per-row vote affordance today (the
- *   facet's status is synthesized from the inline carriage), so the
- *   own-vote lookup is `undefined` and the row's pre-existing branch
- *   stays unchanged.
  */
 function lookupOwnVoteForRow(
   index: OwnFacetVoteIndex,
@@ -644,7 +642,7 @@ function lookupOwnVoteForRow(
   facet: LifecycleFacetName,
   proposalId: string | undefined,
 ): 'agree' | 'dispute' | undefined {
-  if (facet === 'proposal' || facet === 'shape') return undefined;
+  if (facet === 'proposal') return undefined;
   void proposalId;
   if (entityKind !== 'node' && entityKind !== 'edge') return undefined;
   return index.facets.get(ownFacetKey(entityKind, entityId, facet));
@@ -652,11 +650,15 @@ function lookupOwnVoteForRow(
 
 /**
  * Read the row's display status from the projection's per-facet
- * record, with a fallback for facets the projection mirror doesn't
- * track (edge `'shape'` today). The fallback is intentionally
- * minimal — the canonical status carriage for edge shape lands in a
- * future per-facet refactor task; until then the row renders the
- * inline-carriage as a committed-looking row (no buttons).
+ * record. Per `pf_part_facet_name_widen_shape` the projection mirror
+ * now tracks the shape facet alongside the other three — the
+ * inline-carriage `'committed'` short-circuit the predecessor used
+ * for shape is gone; the shape row reads its status off the canonical
+ * index like wording / classification / substance. (The
+ * `CandidateValues.shape` slot still carries the inline role for the
+ * row's value-text rendering — status and carriage are separate
+ * concerns: status drives button visibility; carriage drives label
+ * text.)
  */
 function readFacetStatus(
   facetStatuses: Readonly<Partial<Record<FacetName, FacetStatus>>>,
@@ -664,13 +666,6 @@ function readFacetStatus(
   candidates: CandidateValues,
   entityKind: EntityKind,
 ): FacetStatus {
-  if (facet === 'shape') {
-    // Edge shape — the inline carriage IS the candidate. The
-    // projection mirror does not track shape; render as `committed`
-    // when the edge has been created (the role is set inline), else
-    // `awaiting-proposal`.
-    return candidates.shape !== undefined ? 'committed' : 'awaiting-proposal';
-  }
   if (facet === 'proposal') {
     // Structural-proposal row — caller picks `'proposed'` directly;
     // this branch is defensive (the row catalog above never calls
@@ -680,14 +675,17 @@ function readFacetStatus(
   // Real facets — read from the projection. Falls back to
   // `'awaiting-proposal'` when the projection has no entry for the
   // facet (e.g. a freshly-mounted node whose `node-created` hasn't
-  // landed yet on this client).
+  // landed yet on this client, or a freshly-mounted edge whose
+  // `edge-created` hasn't landed yet).
   const recorded = facetStatuses[facet];
   if (recorded !== undefined) return recorded;
   // Edge substance defaults to awaiting-proposal until a proposal
   // lands; node facets default the same way. (The edge-created
-  // payload is consumed by the projection so substance + (eventually)
-  // shape get tracked there; node facets enter life via node-created
-  // → wording inline + classification / substance awaiting.)
+  // payload is consumed by the projection so shape + substance get
+  // tracked there per ADR 0030 §5; node facets enter life via
+  // node-created → wording inline + classification / substance
+  // awaiting.)
+  void candidates;
   void entityKind;
   return 'awaiting-proposal';
 }
