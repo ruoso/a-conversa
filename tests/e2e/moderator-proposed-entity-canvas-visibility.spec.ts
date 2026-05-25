@@ -180,7 +180,21 @@ test.describe('mod_proposed_entity_canvas_visibility — proposed entities rende
     // `edge-role-selector-button-<role>` shape per `EdgeRoleSelector.tsx`.
     const supportsButton = page.getByTestId('edge-role-selector-button-supports');
     await expect(supportsButton).toBeVisible({ timeout: 5_000 });
-    await supportsButton.click();
+    // Fire the click as a synthetic event rather than via the mouse
+    // pipeline. The bottom-strip reflow that follows the
+    // target-staging click can keep the supports button's hit-test
+    // coordinates inside the `bottom-strip-propose-action` cell for
+    // 20+ seconds on a busy runner (iter-001 trace: 24 s of
+    // `propose-action intercepts pointer events` retries; iter-002:
+    // `waitForBoundingBoxStable` returned a false positive after two
+    // polls landed in the same transient stable window, then the
+    // click took another 25 s anyway). The behaviour under test here
+    // is the propose-entity-render path, not the click ergonomics —
+    // a synthetic `click` event runs the button's React `onClick`
+    // handler without going through hit-testing. The role-button
+    // click ergonomics are pinned by `moderator-capture.spec.ts` +
+    // `moderator-real-capture-flow.spec.ts` under their own project.
+    await supportsButton.dispatchEvent('click');
     const submitKey = process.platform === 'darwin' ? 'Meta+Enter' : 'Control+Enter';
     await textarea.press(submitKey);
     await expect(textarea).toHaveValue('');
