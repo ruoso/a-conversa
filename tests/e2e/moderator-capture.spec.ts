@@ -34,10 +34,72 @@
 // in-progress draft via the textarea's `value` attribute (the same
 // wire as a screen reader on the controlled input).
 
-import { expect, type Page, test } from './fixtures/no-scrollbars';
+import { expect, type Locator, type Page, test } from './fixtures/no-scrollbars';
 
 import { loginAs } from './fixtures/auth';
 import { isWsStoreReachable, seedParticipants, seedWsStore } from './fixtures/wsStoreSeed';
+
+/**
+ * Click a ReactFlow node, polling the click until the auto-stage chip
+ * flips to the expected target label.
+ *
+ * Why polling. ReactFlow's `onNodeClick` / `onNodeContextMenu` fire
+ * only after a node has been measured into `nodeInternals` via
+ * ResizeObserver — newly-seeded nodes can race that measurement on a
+ * busy runner. The iter-003 trace caught the click-flavour failure
+ * mode: the click landed at the correct coordinates, no intercept was
+ * logged, but the canvas's `handleNodeClick` never fired and
+ * `useSelectionStore` stayed empty, so the chip's auto-stage effect
+ * never observed a selection change. Re-clicking is idempotent (the
+ * wired handler is `useSelectionStore.getState().select({ kind:
+ * 'node', id })`), so polling clicks until the chip flips closes the
+ * race without lengthening the happy path (the first click usually
+ * takes).
+ */
+async function clickNodeUntilTargetStaged(
+  page: Page,
+  nodeLocator: Locator,
+  expectedTargetText: string,
+): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        await nodeLocator.click();
+        return (await page.getByTestId('capture-target-chip-label').textContent()) ?? '';
+      },
+      { intervals: [50, 100, 200, 500, 1000], timeout: 5_000 },
+    )
+    .toContain(expectedTargetText);
+}
+
+/**
+ * Right-click a ReactFlow node, polling the gesture until the
+ * `<GraphContextMenu>` actually mounts at least one menu item.
+ *
+ * Same race as [[clickNodeUntilTargetStaged]] but for the context-menu
+ * path. ReactFlow's `onNodeContextMenu` is gated on the same
+ * `nodeInternals.get(id)` lookup; newly-seeded nodes can race the
+ * ResizeObserver measurement, the right-click then no-ops and the
+ * menu never opens (iter-002 evidence — 30-second test timeout
+ * waiting for `graph-context-menu-item-propose-decompose`). The
+ * gesture is functionally idempotent: each `contextmenu` event the
+ * canvas processes opens (or re-opens) the menu at the latest
+ * pointer position, so polling until the menu surfaces is safe.
+ */
+async function rightClickNodeUntilContextMenuOpens(
+  page: Page,
+  nodeLocator: Locator,
+): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        await nodeLocator.click({ button: 'right' });
+        return await page.locator('[data-testid^="graph-context-menu-item-"]').count();
+      },
+      { intervals: [50, 100, 200, 500, 1000], timeout: 5_000 },
+    )
+    .toBeGreaterThan(0);
+}
 
 const TEST_USERNAME = 'alice';
 
@@ -342,19 +404,13 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     // 5. Click node 1 → chip flips to the first wording prefix.
     const node1 = page.getByTestId(`statement-node-${NODE_ID_1}`);
     await expect(node1, 'seeded node 1 must render').toBeVisible({ timeout: 10_000 });
-    await node1.click();
-    await expect(page.getByTestId('capture-target-chip-label')).toContainText(
-      'Target: First seeded statement',
-    );
+    await clickNodeUntilTargetStaged(page, node1, 'Target: First seeded statement');
     await expect(page.getByTestId('capture-target-chip-override-marker')).toHaveCount(0);
 
     // 6. Click node 2 → chip updates to the second wording prefix.
     const node2 = page.getByTestId(`statement-node-${NODE_ID_2}`);
     await expect(node2).toBeVisible({ timeout: 10_000 });
-    await node2.click();
-    await expect(page.getByTestId('capture-target-chip-label')).toContainText(
-      'Target: Second seeded statement',
-    );
+    await clickNodeUntilTargetStaged(page, node2, 'Target: Second seeded statement');
     await expect(page.getByTestId('capture-target-chip-override-marker')).toHaveCount(0);
   });
 
@@ -439,10 +495,7 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     // 5. Click node 1 → chip auto-suggests; × button is visible.
     const node1 = page.getByTestId(`statement-node-${NODE_ID_1}`);
     await expect(node1, 'seeded node 1 must render').toBeVisible({ timeout: 10_000 });
-    await node1.click();
-    await expect(page.getByTestId('capture-target-chip-label')).toContainText(
-      'Target: Clear-gesture node one',
-    );
+    await clickNodeUntilTargetStaged(page, node1, 'Target: Clear-gesture node one');
     const clearButton = page.getByTestId('capture-target-chip-clear');
     await expect(clearButton).toBeVisible();
     await expect(clearButton).toHaveAttribute('aria-label', 'Clear target');
@@ -455,10 +508,7 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     // 7. Re-engagement: click node 2 → chip auto-suggests node 2.
     const node2 = page.getByTestId(`statement-node-${NODE_ID_2}`);
     await expect(node2).toBeVisible({ timeout: 10_000 });
-    await node2.click();
-    await expect(page.getByTestId('capture-target-chip-label')).toContainText(
-      'Target: Clear-gesture node two',
-    );
+    await clickNodeUntilTargetStaged(page, node2, 'Target: Clear-gesture node two');
     await expect(page.getByTestId('capture-target-chip-override-marker')).toHaveCount(0);
 
     // 8. Esc keyboard gesture — focus on a non-editable element (the
@@ -474,10 +524,7 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     //    Esc → chip stays at "Target: ..." (the editable-target guard
     //    in captureKeymap.ts consumes the Esc before the chip handler
     //    fires).
-    await node1.click();
-    await expect(page.getByTestId('capture-target-chip-label')).toContainText(
-      'Target: Clear-gesture node one',
-    );
+    await clickNodeUntilTargetStaged(page, node1, 'Target: Clear-gesture node one');
     const textarea = page.getByTestId('capture-text-input-textarea');
     await textarea.focus();
     await page.keyboard.press('Escape');
@@ -575,10 +622,7 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     //    seven buttons, all aria-pressed=false.
     const node1 = page.getByTestId(`statement-node-${NODE_ID_1}`);
     await expect(node1, 'seeded node 1 must render').toBeVisible({ timeout: 10_000 });
-    await node1.click();
-    await expect(page.getByTestId('capture-target-chip-label')).toContainText(
-      'Target: Edge-role node one',
-    );
+    await clickNodeUntilTargetStaged(page, node1, 'Target: Edge-role node one');
     await expect(page.getByTestId('edge-role-selector')).toBeVisible();
     const ROLES = [
       'supports',
@@ -642,10 +686,7 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     //    node 1's wording because the userHasClearedRef logic only
     //    blocks immediate re-suggestion right after a clear). The
     //    role slice carries over from step 7.
-    await node1.click();
-    await expect(page.getByTestId('capture-target-chip-label')).toContainText(
-      'Target: Edge-role node one',
-    );
+    await clickNodeUntilTargetStaged(page, node1, 'Target: Edge-role node one');
     await expect(page.getByTestId('edge-role-selector-button-rebuts')).toHaveAttribute(
       'aria-pressed',
       'true',
@@ -1409,7 +1450,7 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     await expect(nodeCard).toBeVisible({ timeout: 10_000 });
 
     // Right-click the node card to open the context menu.
-    await nodeCard.click({ button: 'right' });
+    await rightClickNodeUntilContextMenuOpens(page, nodeCard);
     const contextMenu = page.getByTestId('graph-context-menu');
     await expect(contextMenu).toBeVisible();
     // The axiom-mark item is present on the node menu.
@@ -1711,7 +1752,7 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     await expect(page.getByTestId('decompose-mode-exit')).toHaveCount(0);
 
     // Right-click the node card to open the context menu.
-    await nodeCard.click({ button: 'right' });
+    await rightClickNodeUntilContextMenuOpens(page, nodeCard);
     const contextMenu = page.getByTestId('graph-context-menu');
     await expect(contextMenu).toBeVisible();
     const decomposeItem = page.getByTestId('graph-context-menu-item-propose-decompose');
@@ -1793,7 +1834,7 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     await expect(nodeCard).toBeVisible({ timeout: 10_000 });
 
     // Enter decompose mode via the context menu.
-    await nodeCard.click({ button: 'right' });
+    await rightClickNodeUntilContextMenuOpens(page, nodeCard);
     await page.getByTestId('graph-context-menu-item-propose-decompose').click();
     await expect(page.getByTestId('mode-banner')).toHaveAttribute('data-mode', 'decompose');
 
@@ -1922,7 +1963,7 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     await expect(nodeCard).toBeVisible({ timeout: 10_000 });
 
     // Enter decompose mode via the context menu.
-    await nodeCard.click({ button: 'right' });
+    await rightClickNodeUntilContextMenuOpens(page, nodeCard);
     await page.getByTestId('graph-context-menu-item-propose-decompose').click();
     await expect(page.getByTestId('decompose-components-grid')).toBeVisible();
 
@@ -2025,7 +2066,7 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     await expect(nodeCard).toBeVisible({ timeout: 10_000 });
 
     // Enter interpretive-split mode via the context menu.
-    await nodeCard.click({ button: 'right' });
+    await rightClickNodeUntilContextMenuOpens(page, nodeCard);
     await page.getByTestId('graph-context-menu-item-propose-interpretive-split').click();
     await expect(page.getByTestId('interpretive-split-readings-grid')).toBeVisible();
 
