@@ -172,7 +172,9 @@
 //      ref'd container; the cleanup destroys it on unmount.
 //   5. A second `useEffect` synchronises the elements on every memo
 //      tick — `cy.json({ elements })` is Cytoscape's bulk-replace path
-//      followed by a `cose` layout pass.
+//      followed by a `breadthfirst` layout pass when a truly-new
+//      `node-created` id appears in the element set
+//      (see `BREADTHFIRST_LAYOUT_OPTIONS` for why not `cose`).
 //
 // The component returns a React fragment containing the Cytoscape mount
 // `<div>` AND a sibling `aria-hidden` `<ul>` test mirror — one `<li>`
@@ -219,6 +221,70 @@ import { type ParticipantEdgeElement, type ParticipantNodeElement } from './proj
  */
 export const MIN_ZOOM = 0.1;
 export const MAX_ZOOM = 2.5;
+
+/**
+ * Layout options for the new-node placement pass.
+ *
+ * Why `breadthfirst` and not the bundled `cose`: cytoscape.js's `cose`
+ * extension has a known upstream defect — `cose.mjs` lines 329-330
+ * assign each node's box width to its internal `height` field and
+ * vice-versa, so cose's overlap detection, clipping-point geometry,
+ * and repulsion forces all treat a `W × H` node as if it were
+ * `H × W`. For the participant's `data(width) × data(height)` nodes
+ * (per `part_layout_measured_dimensions` — wide-and-short in practice,
+ * e.g. 240 × 56 for a single-line wording), the swap causes connected
+ * nodes to settle at center-to-center distances sized for the wrong
+ * axis, so the rendered bodies and edge midpoint labels overlap.
+ *
+ * `breadthfirst` is bundled (no new dependency) and natively respects
+ * each node's `outerWidth()` / `outerHeight()` via `avoidOverlap` +
+ * `spacingFactor`. It produces a layered top-to-bottom layout — the
+ * direct analog of the moderator's `@dagrejs/dagre` choice (ADR 0025)
+ * — so the two surfaces agree on the visual model: edges flow with
+ * direction, layers separate parents from children.
+ *
+ * Layout-stability trade-off: unlike cose, `breadthfirst` recomputes
+ * every node's position when it runs (it can't "settle around"
+ * cached positions like force-directed layouts can). The existing
+ * position cache in `GraphView.tsx` still pays its dust on the
+ * common case (selection / vote / annotation / diagnostic flips
+ * don't introduce new node ids → no layout pass → cached positions
+ * preserved verbatim). On the rarer case of a new `node-created`
+ * event, breadthfirst re-flows the whole graph deterministically.
+ * The moderator's dagre `relayoutAll` has the same shape; the two
+ * surfaces are again in step.
+ */
+export const BREADTHFIRST_LAYOUT_OPTIONS = {
+  name: 'breadthfirst' as const,
+  // Edges carry direction (statement roles supports / contradicts /
+  // …); the canvas already paints `target-arrow-shape: 'triangle'`,
+  // so the layout should honour that direction when picking layers.
+  directed: true,
+  // Layered top-to-bottom (vs concentric circles).
+  circle: false,
+  // Don't snap to a uniform grid — let `avoidOverlap` use the real
+  // per-node footprint instead.
+  grid: false,
+  // `true` (default) — the layout reads `outerWidth()` /
+  // `outerHeight()` for each node and refuses to place two nodes
+  // close enough to overlap. This is the property `cose` lacks.
+  avoidOverlap: true,
+  // Slightly tighter than the library default `1.75`. Tablet
+  // viewport real-estate is limited; 1.25 gives a visible gap between
+  // layers + siblings without wasting space.
+  spacingFactor: 1.25,
+  // Labels are inside the node body (text-valign: center) so the
+  // outer box already covers the visible footprint; including labels
+  // again would double-count.
+  nodeDimensionsIncludeLabels: false,
+  // Default 30; explicit so future readers don't wonder.
+  padding: 30,
+  animate: false as const,
+  // Don't auto-fit the viewport on layout — that would discard the
+  // user's pan/zoom (`part_pan_zoom_tap` Decision §1) every time a
+  // new node lands.
+  fit: false,
+};
 
 /**
  * Cytoscape stylesheet — declared at module scope so the reference
@@ -947,16 +1013,16 @@ export function GraphView({
   const containerRef = useRef<HTMLDivElement | null>(null);
   // Position cache for the incremental layout pass. Nodes whose id is
   // in the cache reuse their previous `{x, y}` verbatim; only new ids
-  // trigger a fresh `cose` pass. `useRef` (not `useState`): writes to
-  // the cache happen AFTER the layout completes and MUST NOT trigger a
-  // re-render — the projection memos already drive the re-render
-  // cadence. The cache is per-component-instance, so route navigation
-  // that unmounts / remounts `<GraphView>` starts fresh.
+  // trigger a fresh `breadthfirst` pass. `useRef` (not `useState`):
+  // writes to the cache happen AFTER the layout completes and MUST NOT
+  // trigger a re-render — the projection memos already drive the
+  // re-render cadence. The cache is per-component-instance, so route
+  // navigation that unmounts / remounts `<GraphView>` starts fresh.
   //
   // The bug this fixes: every selection change (tap on a node) re-runs
   // the `elements` memo because the `selected` flag changes per-element.
-  // Without the cache, the post-`cy.json` `cose` layout reshuffles every
-  // node on every selection — disorienting. With the cache, the layout
+  // Without the cache, the post-`cy.json` layout pass reshuffles every
+  // node on every selection — disorienting. With the cache, layout
   // runs only when the set of node ids materially changes (a new
   // `node-created` event lands). Mirrors the moderator's
   // `positionCacheRef` + `knownNodeIdsRef` pair (refinement
@@ -998,9 +1064,9 @@ export function GraphView({
       boxSelectionEnabled: false,
       selectionType: 'single',
       // Grab — read-mostly surface; the moderator owns positions via
-      // `cose` re-layouts. Manual node drags would visually
-      // desynchronise from every other surface and fight the layout
-      // engine (Decision §3c).
+      // re-layouts. Manual node drags would visually desynchronise
+      // from every other surface and fight the layout engine
+      // (Decision §3c).
       autoungrabify: true,
     });
     cy.on('tap', handleTap);
@@ -1055,9 +1121,10 @@ export function GraphView({
   }>(() => ({ nodes: projectedNodes, edges: projectedEdges }), [projectedNodes, projectedEdges]);
 
   // Element sync — runs on every events / translation change. Cytoscape's
-  // `cy.json({ elements })` bulk-replaces the element set; a layout pass
-  // follows to position the nodes. `cose` is the bundled force-directed
-  // layout (Decision §3 — no dagre dependency on the participant side).
+  // `cy.json({ elements })` bulk-replaces the element set; a
+  // `breadthfirst` layout pass follows to position truly-new nodes
+  // (see `BREADTHFIRST_LAYOUT_OPTIONS` for the rationale + the
+  // upstream `cose` defect that motivates the choice).
   // The localized mapper carries through `rollupStatus` + `facetStatuses`
   // from each projected element onto the Cytoscape data record so the
   // per-status stylesheet selectors fire.
@@ -1109,9 +1176,9 @@ export function GraphView({
         // Attach the cached `{x, y}` so `cy.json({ elements })` restores
         // the prior position on re-sync. Without this, every memo tick
         // (selection change, vote arrival, annotation flip, …) would
-        // dump the node back to `{0, 0}` and the `cose` pass below would
-        // re-randomise the layout. With the cache, only truly-new ids
-        // need cose; existing ids stay put.
+        // dump the node back to `{0, 0}`. With the cache, only truly-
+        // new ids drive a layout pass; existing ids stay put when the
+        // pass doesn't run.
         descriptor.position = { x: cachedPosition.x, y: cachedPosition.y };
       }
       return descriptor;
@@ -1132,11 +1199,13 @@ export function GraphView({
     const cy = cyInstanceRef.current;
     if (cy === null) return;
     // Detect truly-new node ids (in the current element set but not yet
-    // recorded as known by this component instance). These are the
-    // only ids that need a fresh `cose` placement; everything else
-    // either kept its cached position via the per-element `position`
-    // stamp above, or is an edge (Cytoscape places edges as line
-    // segments between nodes, no layout needed).
+    // recorded as known by this component instance). When at least one
+    // is present, run a `breadthfirst` layout pass over the whole set
+    // — it'll re-flow every node, but cached ids would have been re-
+    // flowed anyway since `breadthfirst` doesn't preserve incoming
+    // positions; the cache continues to pay its dust on the common
+    // case of no new ids (selection / vote / annotation / diagnostic
+    // flips), where the layout pass is skipped entirely.
     const trulyNewNodeIds: string[] = [];
     for (const element of elements) {
       if (element.group !== 'nodes') continue;
@@ -1147,9 +1216,9 @@ export function GraphView({
     cy.json({ elements });
     // Skip the layout pass when the canvas has no measurable
     // viewport (e.g. a happy-dom test environment where
-    // `cy.width()` reports 0). `cose` requires a non-zero
-    // bounding box; calling `.run()` against a zero-sized
-    // viewport throws inside the layout's `createLayoutInfo`.
+    // `cy.width()` reports 0). Cytoscape layouts need a non-zero
+    // bounding box to assign coordinates; running against a zero-
+    // sized viewport is unreliable.
     // The browser path always has a real viewport (the surface-
     // wide layout's `participant-main` region carries `1fr`).
     // Empty graphs also skip — the layout is a no-op.
@@ -1158,12 +1227,14 @@ export function GraphView({
     const viewportReady =
       Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0;
     if (cy.elements().length > 0 && viewportReady && trulyNewNodeIds.length > 0) {
-      // `randomize: false` so `cose` starts from each node's current
-      // position — the cached ids carry their previous `{x, y}` via
-      // the per-element `position` stamp; only the new ids start at the
-      // default `{0, 0}`. The simulation then settles the new ids next
-      // to the existing graph without re-randomising everyone.
-      cy.layout({ name: 'cose', animate: false, randomize: false }).run();
+      // `breadthfirst` (bundled) lays out new nodes in layered BFS
+      // order, respecting each node's `outerWidth()` / `outerHeight()`
+      // via `avoidOverlap` — the property `cose` lacks because of its
+      // upstream w/h swap. See `BREADTHFIRST_LAYOUT_OPTIONS` for the
+      // full rationale + the layout-stability trade-off (full relayout
+      // on each new-node arrival, mirroring the moderator's
+      // `relayoutAll`).
+      cy.layout(BREADTHFIRST_LAYOUT_OPTIONS).run();
     }
     // Mirror every emitted position into the cache so the NEXT element-
     // sync tick reuses these positions for every known node. Add every

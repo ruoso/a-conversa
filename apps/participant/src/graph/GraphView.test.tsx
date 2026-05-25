@@ -2123,20 +2123,20 @@ describe('GraphView — per-node sizing (part_layout_measured_dimensions)', () =
     expect(longMaxText).toBe(longWidth - 24);
   });
 
-  it('(layout-γ) selection-only changes preserve every existing node position (no cose reshuffle on tap)', () => {
+  it('(layout-γ) selection-only changes preserve every existing node position (no layout reshuffle on tap)', () => {
     // Bug guard: before the position-cache landed, every tap drove a
     // new `elements` memo identity (the `selected` flag flipped on
     // some node's data), the sync effect bulk-replaced elements, and
-    // `cose` reshuffled the canvas. The cache stamps each node's
-    // previously-emitted `{x, y}` onto the per-element descriptor so
-    // `cy.json({ elements })` restores those positions, and `cose` is
-    // skipped when no truly-new node ids appear.
+    // the layout pass reshuffled the canvas. The cache stamps each
+    // node's previously-emitted `{x, y}` onto the per-element
+    // descriptor so `cy.json({ elements })` restores those positions,
+    // and the layout pass is skipped when no truly-new node ids appear.
     //
     // Assertion shape: capture the post-mount positions (whatever the
-    // initial `cose` pass settled on, or `{0, 0}` if the happy-dom
-    // viewport is zero-sized and cose was skipped), then trigger a
-    // selection change. The pre- and post-selection positions must be
-    // identical for every node.
+    // initial layout pass settled on, or `{0, 0}` if the happy-dom
+    // viewport is zero-sized and the pass was skipped), then trigger
+    // a selection change. The pre- and post-selection positions must
+    // be identical for every node.
     const result = renderView();
     seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
     seedEvent(nodeCreatedEvent({ sequence: 2, nodeId: NODE_B, wording: 'B' }));
