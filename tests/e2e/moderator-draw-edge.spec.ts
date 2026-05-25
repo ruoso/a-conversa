@@ -117,6 +117,54 @@ async function dragPointer(
   await page.mouse.up();
 }
 
+/**
+ * Poll a locator's bounding box until two consecutive reads match
+ * within 0.5 px on x/y/width/height. Returns the settled rect.
+ *
+ * Why we need this before the Phase 3.1 drag. After Phase 2.1 mints
+ * N1 + N2, dagre lays them out from the placeholder origin; ReactFlow
+ * then measures each node via ResizeObserver. `mod_layout_measured_
+ * dimensions` debounces those measurements for 75 ms and bumps
+ * `layoutRevision`, which re-runs the dagre pass against the measured
+ * footprint — nodes (and their handles) shift one final time after
+ * the initial paint. On a fast local runner that shift settles well
+ * before the drag fires; on a slow CI runner the 75 ms debounce can
+ * fire DURING the drag and move the target handle out from under the
+ * pointer, so ReactFlow's `onConnect` never sees a valid (source,
+ * target) pair and `<DrawEdgeRolePicker>` never mounts. Polling for
+ * a stable bounding box closes the window: when two consecutive reads
+ * agree, no further measurement-driven re-layout is pending.
+ */
+async function waitForBoundingBoxStable(
+  locator: ReturnType<Page['locator']>,
+  options: { timeoutMs?: number; intervalMs?: number; toleranceMs?: number } = {},
+): Promise<{ x: number; y: number; width: number; height: number }> {
+  const timeoutMs = options.timeoutMs ?? 5_000;
+  const intervalMs = options.intervalMs ?? 50;
+  const tolerance = options.toleranceMs ?? 0.5;
+  const deadline = Date.now() + timeoutMs;
+  let prev: { x: number; y: number; width: number; height: number } | null = null;
+  while (Date.now() < deadline) {
+    const box = await locator.boundingBox();
+    if (box !== null) {
+      if (
+        prev !== null &&
+        Math.abs(prev.x - box.x) < tolerance &&
+        Math.abs(prev.y - box.y) < tolerance &&
+        Math.abs(prev.width - box.width) < tolerance &&
+        Math.abs(prev.height - box.height) < tolerance
+      ) {
+        return box;
+      }
+      prev = box;
+    } else {
+      prev = null;
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+  throw new Error('waitForBoundingBoxStable: bounding box never stabilized within timeout');
+}
+
 test.describe
   .serial('mod_draw_edge_flow — drag-from-handle creates a proposed edge across 3 browser contexts and the moderator commits it', () => {
   test.beforeAll(async ({ browser }) => {
@@ -222,6 +270,25 @@ test.describe
     expect(n1Id).not.toBeNull();
     expect(n2Id).not.toBeNull();
 
+    // Nudge layout to a stable state before the drag — same idiom
+    // `methodology-full-flow.spec.ts:914` uses before clicking N1.
+    // After Phase 2.1 mints both nodes, dagre's measurement-driven
+    // re-layout (`mod_layout_measured_dimensions`, 75 ms debounce) is
+    // still pending: ReactFlow has just finished measuring the
+    // freshly-rendered nodes, so a second dagre pass against the
+    // measured footprint is queued. Tidy-up forces that pass to run
+    // now (it clears the position cache + bumps `layoutRevision` per
+    // `GraphCanvasPane.tsx:1095-1101`); the `waitForBoundingBoxStable`
+    // calls below then confirm the handles have settled before we
+    // sample their coordinates for the drag. Without this, on a slow
+    // CI runner the debounce can fire DURING the drag — moving the
+    // target handle out from under the pointer, so ReactFlow's
+    // `onConnect` never fires and `<DrawEdgeRolePicker>` never mounts.
+    // Observed flake: CI run 26404383321 → Phase 3.1 timed out at the
+    // picker-visibility wait on the first attempt (the retry passed
+    // in ~500 ms because the layout was already settled by then).
+    await alicePage.getByTestId('graph-tidy-up-button').click();
+
     const sourceHandle = alicePage
       .locator(`[data-testid="statement-node-${n1Id}"] .react-flow__handle.source`)
       .first();
@@ -231,20 +298,18 @@ test.describe
     await expect(sourceHandle).toBeVisible({ timeout: 15_000 });
     await expect(targetHandle).toBeVisible({ timeout: 15_000 });
 
-    const sourceBox = await sourceHandle.boundingBox();
-    const targetBox = await targetHandle.boundingBox();
-    expect(sourceBox).not.toBeNull();
-    expect(targetBox).not.toBeNull();
+    const sourceBox = await waitForBoundingBoxStable(sourceHandle);
+    const targetBox = await waitForBoundingBoxStable(targetHandle);
 
     await dragPointer(
       alicePage,
       {
-        x: sourceBox!.x + sourceBox!.width / 2,
-        y: sourceBox!.y + sourceBox!.height / 2,
+        x: sourceBox.x + sourceBox.width / 2,
+        y: sourceBox.y + sourceBox.height / 2,
       },
       {
-        x: targetBox!.x + targetBox!.width / 2,
-        y: targetBox!.y + targetBox!.height / 2,
+        x: targetBox.x + targetBox.width / 2,
+        y: targetBox.y + targetBox.height / 2,
       },
     );
 
