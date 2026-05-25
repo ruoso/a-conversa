@@ -238,6 +238,11 @@
       "unsetAria": "Limpiar rol del enlace",
       "hiddenHelp": "Elige primero un objetivo para seleccionar un rol de enlace."
     },
+    "drawEdgePicker": {
+      "header": "Rol del enlace",
+      "errorPrefix": "No se pudo crear el enlace: {message}",
+      "timeoutError": "La solicitud expiró. Verifica tu conexión y vuelve a intentarlo."
+    },
     "proposeAction": {
       "label": "Proponer",
       "inFlightLabel": "Proponiendo…",

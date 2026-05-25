@@ -80,9 +80,11 @@ import ReactFlow, {
   useReactFlow,
   useStore,
   useStoreApi,
+  type Connection,
   type Edge,
   type Node,
   type NodeTypes,
+  type OnConnectEnd,
   type ReactFlowState,
   type XYPosition,
 } from 'reactflow';
@@ -99,6 +101,7 @@ import type { AnnotateTargetKind } from '../layout/useAnnotateAction.js';
 import { EditWordingSubmenu } from '../layout/EditWordingSubmenu.js';
 import { STATEMENT_NODE_TYPE, StatementNode, type StatementNodeData } from './StatementNode.js';
 import { edgeTypes } from './edgeTypes.js';
+import { DrawEdgeRolePicker } from './DrawEdgeRolePicker.js';
 import { GraphContextMenu, type MenuItem } from './GraphContextMenu.js';
 import { applyLayout, relayoutAll } from './layoutEngine.js';
 import {
@@ -801,6 +804,57 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
     readonly currentWording: string;
   } | null>(null);
   const closeEditWordingSubmenu = useCallback(() => setEditWordingSubmenu(null), []);
+  // Draw-edge role picker state — `null` when no handle-to-handle drag
+  // has just completed against two distinct statement nodes. Set by the
+  // ReactFlow `onConnect` / `onConnectEnd` handler pair below; cleared
+  // by the picker's `onClose`. The picker fires a `set-edge-substance`
+  // connecting-case proposal once the moderator picks a role.
+  // Refinement: `mod_draw_edge_flow`.
+  const [drawEdgePicker, setDrawEdgePicker] = useState<{
+    readonly source: string;
+    readonly target: string;
+    readonly x: number;
+    readonly y: number;
+  } | null>(null);
+  const closeDrawEdgePicker = useCallback(() => setDrawEdgePicker(null), []);
+  // The `onConnect` handler runs synchronously inside ReactFlow's drop
+  // pipeline; the matching `onConnectEnd` fires immediately after with
+  // the native MouseEvent carrying the drop coordinates. We stash the
+  // valid (source, target) pair from `onConnect` in a ref and read
+  // it back inside `onConnectEnd` to combine with the cursor x/y.
+  const pendingConnectionRef = useRef<{ source: string; target: string } | null>(null);
+  const handleConnect = useCallback((params: Connection): void => {
+    if (params.source === null || params.target === null || params.source === params.target) {
+      pendingConnectionRef.current = null;
+      return;
+    }
+    pendingConnectionRef.current = { source: params.source, target: params.target };
+  }, []);
+  const handleConnectEnd = useCallback<OnConnectEnd>((event) => {
+    const pending = pendingConnectionRef.current;
+    pendingConnectionRef.current = null;
+    if (pending === null) return;
+    let clientX = 0;
+    let clientY = 0;
+    if ('clientX' in event && 'clientY' in event) {
+      clientX = event.clientX;
+      clientY = event.clientY;
+    } else if (
+      'changedTouches' in event &&
+      event.changedTouches !== undefined &&
+      event.changedTouches.length > 0
+    ) {
+      const touch = event.changedTouches[0]!;
+      clientX = touch.clientX;
+      clientY = touch.clientY;
+    }
+    setDrawEdgePicker({
+      source: pending.source,
+      target: pending.target,
+      x: clientX,
+      y: clientY,
+    });
+  }, []);
   // Stable mode-entry callback for the node context menu's
   // `propose-decompose` item. Dispatches to the global capture store
   // (no canvas-local state — decompose-mode lives on `useCaptureStore`).
@@ -1278,6 +1332,8 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
         onNodeContextMenu={handleNodeContextMenu}
         onEdgeContextMenu={handleEdgeContextMenu}
         onPaneContextMenu={handlePaneContextMenu}
+        onConnect={handleConnect}
+        onConnectEnd={handleConnectEnd}
         // Refinement: `mod_pan_zoom`. Pin the pan/zoom contract
         // explicitly so the behaviour does not drift across ReactFlow
         // upgrades. The four behaviour props match ReactFlow's
@@ -1344,6 +1400,15 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
           y={editWordingSubmenu.y}
           currentWording={editWordingSubmenu.currentWording}
           onClose={closeEditWordingSubmenu}
+        />
+      ) : null}
+      {drawEdgePicker !== null ? (
+        <DrawEdgeRolePicker
+          source={drawEdgePicker.source}
+          target={drawEdgePicker.target}
+          x={drawEdgePicker.x}
+          y={drawEdgePicker.y}
+          onClose={closeDrawEdgePicker}
         />
       ) : null}
     </div>

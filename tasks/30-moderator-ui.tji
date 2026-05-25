@@ -476,11 +476,15 @@ task moderator_ui "Moderator UI" {
     task mod_drag_to_create_edge "Drag from source to target gesture" {
       effort 2d
       allocate team
+      complete 100
+      note "Refinement: tasks/refinements/moderator-ui/mod_drag_to_create_edge.md"
     }
     task mod_role_palette_on_drop "Edge role palette on drop" {
       effort 1d
       allocate team
+      complete 100
       depends !mod_drag_to_create_edge
+      note "Refinement: tasks/refinements/moderator-ui/mod_role_palette_on_drop.md"
     }
   }
 

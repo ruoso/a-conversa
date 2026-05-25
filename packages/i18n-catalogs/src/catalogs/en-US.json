@@ -238,6 +238,11 @@
       "unsetAria": "Clear edge role",
       "hiddenHelp": "Pick a target first to choose an edge role."
     },
+    "drawEdgePicker": {
+      "header": "Edge role",
+      "errorPrefix": "Could not draw edge: {message}",
+      "timeoutError": "The request timed out. Check your connection and try again."
+    },
     "proposeAction": {
       "label": "Propose",
       "inFlightLabel": "Proposing…",

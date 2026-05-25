@@ -238,6 +238,11 @@
       "unsetAria": "Limpar papel da aresta",
       "hiddenHelp": "Escolha primeiro um alvo para selecionar um papel de aresta."
     },
+    "drawEdgePicker": {
+      "header": "Papel da aresta",
+      "errorPrefix": "Não foi possível criar a aresta: {message}",
+      "timeoutError": "A solicitação expirou. Verifique sua conexão e tente novamente."
+    },
     "proposeAction": {
       "label": "Propor",
       "inFlightLabel": "Propondo…",
