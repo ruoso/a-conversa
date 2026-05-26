@@ -263,6 +263,7 @@ task participant_ui "Participant (debater) UI" {
     task part_agree_all_gesture "Agree-all gesture per proposal bundle" {
       effort 0.5d
       allocate team
+      complete 100
       depends !part_vote_button_per_facet
     }
     task part_proposal_notification "Visual flash + tab-badge increment on new proposal" {
