@@ -16,12 +16,16 @@ Read the refinement in full first.
 
 ## Verification is the driver's job, not yours
 
-The orchestrator driver runs the canonical verification chain
+The orchestrator driver runs `pnpm run format` (prettier --write) as a
+deterministic auto-fixup, then runs the canonical verification chain
 (`pnpm run check`, `pnpm run test:smoke`, `pnpm run test:behavior:smoke`,
-`make test:e2e:compose`) deterministically the moment you return. If any
-step fails, the driver dispatches a `fixer` sub-agent against the failing
-log; you do not see that loop. If everything passes, the driver dispatches
-the `closer` sub-agent which commits the result.
+`make test:e2e:compose`) the moment you return. If any chain step fails,
+the driver dispatches a `fixer` sub-agent against the failing log; you do
+not see that loop. If everything passes, the driver dispatches the
+`closer` sub-agent which commits the result.
+
+You do NOT need to run prettier yourself — the driver normalizes
+formatting before checking it.
 
 So you do NOT need to run the test suites yourself before returning.
 Cycling through them costs wall-clock you can spend implementing, and the

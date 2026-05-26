@@ -5,11 +5,15 @@ deterministic verification chain that runs after the implementer reported a
 failing step for **`$task_id`**.
 
 The implementer has already landed code changes against the refinement at
-**`$refinement_path`**. The driver ran the four-step verification chain
-(`pnpm run check`, `pnpm run test:smoke`, `pnpm run test:behavior:smoke`,
-`make test:e2e:compose`) and stopped at the first failure. Your job is to
+**`$refinement_path`**. The driver ran `pnpm run format` (prettier
+--write) and then the four-step verification chain (`pnpm run check`,
+`pnpm run test:smoke`, `pnpm run test:behavior:smoke`,
+`make test:e2e:compose`), stopping at the first failure. Your job is to
 diagnose that failure and make a fix so the next driver-run of the chain
 passes.
+
+You do NOT need to run prettier yourself — the driver re-runs
+`pnpm run format` before re-verifying after your return.
 
 You are a fresh top-level Claude session. You have full tool access. You do
 NOT see prior conversation context — everything you need is in this prompt

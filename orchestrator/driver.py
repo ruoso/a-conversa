@@ -61,6 +61,14 @@ SYSTEM_PROMPT_PATH = PROMPTS_DIR / "orchestrator_system.md"
 # its next turn.
 MAX_FIXER_ATTEMPTS = 5
 
+# Auto-format step run deterministically before the verification chain on
+# every iteration. `prettier --write` is a pure formatting fixup — if the
+# implementer or fixer left files unformatted, this normalizes them before
+# `pnpm run check` (which calls `prettier --check`) gets a chance to fail.
+# Its return code is informational only; a non-zero exit (e.g. an
+# unparseable file) is surfaced by the verification chain anyway.
+AUTO_FORMAT_STEP: tuple[str, list[str]] = ("format", ["pnpm", "run", "format"])
+
 # Verification chain run deterministically by the driver after every
 # implementer dispatch. Each entry is (display_name, argv). The driver
 # tees output to a per-iteration log file and short-circuits to the
@@ -885,6 +893,14 @@ def run_post_implementer_chain(
     fix_history: list[str] = []
 
     while True:
+        # --- deterministic auto-format ---------------------------------------
+        # Run `pnpm run format` (prettier --write) before the verification
+        # chain so formatting-only deltas never trip `prettier --check` and
+        # waste a fixer attempt. The rc is logged but not gated on.
+        fmt_name, fmt_argv = AUTO_FORMAT_STEP
+        fmt_log = LOG_DIR / f"iter-{iteration:04d}-verify-{fmt_name}.log"
+        run_verification_step(fmt_name, fmt_argv, fmt_log)
+
         # --- verification chain ----------------------------------------------
         print_wrapped(banner(f"iter {iteration} · verification"))
         results: list[tuple[str, int, Path]] = []
