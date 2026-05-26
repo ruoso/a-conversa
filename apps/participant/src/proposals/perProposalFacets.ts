@@ -17,8 +17,14 @@
 // Output is a `readonly` array of `{ facet, status, labelKey }` triples.
 
 import type { ProposalPayload } from '@a-conversa/shared-types';
+import { EMPTY_VOTES, type Vote } from '@a-conversa/shell';
 
 import type { FacetName, FacetStatus, FacetStatusIndex } from '../graph/facetStatus';
+import { EMPTY_OTHER_VOTES_BY_FACET_INDEX, type OtherVotesByFacetIndex } from './otherVotesByFacet';
+import {
+  EMPTY_OTHER_VOTES_BY_PROPOSAL_INDEX,
+  type OtherVotesByProposalIndex,
+} from './otherVotesByProposal';
 
 /**
  * The set of facet names the breakdown can surface. Extends `FacetName`
@@ -33,14 +39,17 @@ export type LifecycleFacetName = FacetName | 'proposal';
  * `data-facet-name`, `data-facet-status`, and rendered label all flow
  * from this triple.
  *
- * Mirrors the moderator's `ProposalFacetEntry` minus the `votes` field
- * (the participant's vote-indicator extension lands in
- * `part_vote_indicators_in_pane`).
+ * Mirrors the moderator's `ProposalFacetEntry`. Per
+ * `part_vote_indicators_in_pane`, each entry now carries the
+ * per-OTHER-voter `Vote[]` the chip's in-line indicator row renders;
+ * structural sub-kinds resolve via `votesByProposalIndex`, facet-targeting
+ * via `votesByFacetIndex`. Empty when no OTHER votes have landed yet.
  */
 export interface ProposalFacetEntry {
   readonly facet: LifecycleFacetName;
   readonly status: FacetStatus;
   readonly labelKey: string;
+  readonly votes: readonly Vote[];
 }
 
 type FacetTarget = {
@@ -148,24 +157,34 @@ export function derivePerProposalFacets(
   proposal: ProposalPayload,
   facetStatusIndex: FacetStatusIndex,
   serverPerFacetStatus: Record<string, string> | undefined,
+  votesByFacetIndex: OtherVotesByFacetIndex = EMPTY_OTHER_VOTES_BY_FACET_INDEX,
+  proposalEventId: string | undefined = undefined,
+  votesByProposalIndex: OtherVotesByProposalIndex = EMPTY_OTHER_VOTES_BY_PROPOSAL_INDEX,
 ): readonly ProposalFacetEntry[] {
   const target = facetTargetOf(proposal);
   if (target) {
     const status = resolveStatus(target.facet, target, facetStatusIndex, serverPerFacetStatus);
+    const votes = votesByFacetIndex.get(target.entityId)?.get(target.facet) ?? EMPTY_VOTES;
     return [
       {
         facet: target.facet,
         status,
         labelKey: labelKeyFor(target.facet),
+        votes,
       },
     ];
   }
   const status = resolveStatus('proposal', null, facetStatusIndex, serverPerFacetStatus);
+  const votes =
+    proposalEventId !== undefined
+      ? (votesByProposalIndex.get(proposalEventId) ?? EMPTY_VOTES)
+      : EMPTY_VOTES;
   return [
     {
       facet: 'proposal',
       status,
       labelKey: labelKeyFor('proposal'),
+      votes,
     },
   ];
 }

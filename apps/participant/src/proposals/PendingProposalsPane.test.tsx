@@ -19,11 +19,14 @@ import { useUiStore } from '../stores/uiStore';
 const SESSION_A = '00000000-0000-4000-8000-0000000000aa';
 const PROPOSAL_A = '00000000-0000-4000-8000-0000000000a1';
 const PROPOSAL_B = '00000000-0000-4000-8000-0000000000a2';
+const PROPOSAL_D = '00000000-0000-4000-8000-0000000000a4';
 const NODE_X = '00000000-0000-4000-8000-00000000000a';
 const NODE_Y = '00000000-0000-4000-8000-00000000000b';
 const ACTOR_HUMAN = '11112222-3333-4444-5555-666677778888';
 const ACTOR_SECOND = '99998888-7777-6666-5555-444433332211';
 const COMMITTER = '00000000-0000-4000-8000-0000000000bb';
+const ME = '00000000-0000-4000-8000-0000000000c0';
+const OTHER = '00000000-0000-4000-8000-00000000001a';
 const FIXED_NOW_MS = Date.parse('2026-05-25T00:01:00.000Z');
 
 function proposalEvent(
@@ -88,12 +91,95 @@ afterEach(() => {
   useUiStore.getState().setExpandedProposalId(null);
 });
 
-function renderPane(): ReturnType<typeof render> {
+function renderPane(currentParticipantId: string = ME): ReturnType<typeof render> {
   return render(
     <I18nProvider i18n={i18n}>
-      <PendingProposalsPane sessionId={SESSION_A} nowMsOverride={FIXED_NOW_MS} />
+      <PendingProposalsPane
+        sessionId={SESSION_A}
+        currentParticipantId={currentParticipantId}
+        nowMsOverride={FIXED_NOW_MS}
+      />
     </I18nProvider>,
   );
+}
+
+function decomposeProposalEvent(seq: number, envelopeId: string, parentNodeId: string): Event {
+  return {
+    id: envelopeId,
+    sessionId: SESSION_A,
+    sequence: seq,
+    kind: 'proposal',
+    actor: ACTOR_HUMAN,
+    payload: {
+      proposal: {
+        kind: 'decompose',
+        parent_node_id: parentNodeId,
+        components: [
+          {
+            wording: 'first',
+            classification: 'fact',
+            node_id: '00000000-0000-4000-8000-00000000f001',
+          },
+          {
+            wording: 'second',
+            classification: 'fact',
+            node_id: '00000000-0000-4000-8000-00000000f002',
+          },
+        ],
+      },
+    },
+    createdAt: '2026-05-25T00:00:00.000Z',
+  };
+}
+
+function voteFacetArm(
+  seq: number,
+  entityKind: 'node' | 'edge',
+  entityId: string,
+  facet: 'wording' | 'classification' | 'substance' | 'shape',
+  participantId: string,
+  choice: 'agree' | 'dispute',
+): Event {
+  return {
+    id: `00000000-0000-4000-8000-${(0xc00 + seq).toString(16).padStart(12, '0')}`,
+    sessionId: SESSION_A,
+    sequence: seq,
+    kind: 'vote',
+    actor: participantId,
+    payload: {
+      target: 'facet',
+      entity_kind: entityKind,
+      entity_id: entityId,
+      facet,
+      participant: participantId,
+      choice,
+      voted_at: '2026-05-25T00:00:00.000Z',
+    },
+    createdAt: '2026-05-25T00:00:00.000Z',
+  };
+}
+
+function voteProposalArm(
+  seq: number,
+  proposalId: string,
+  participantId: string,
+  choice: 'agree' | 'dispute',
+): Event {
+  return {
+    id: `00000000-0000-4000-8000-${(0xd00 + seq).toString(16).padStart(12, '0')}`,
+    sessionId: SESSION_A,
+    sequence: seq,
+    kind: 'vote',
+    actor: participantId,
+    payload: {
+      target: 'proposal',
+      proposal_id: proposalId,
+      participant: participantId,
+      choice,
+      voted_at: '2026-05-25T00:00:00.000Z',
+    },
+    createdAt: '2026-05-25T00:00:00.000Z',
+  };
 }
 
 describe('<PendingProposalsPane>', () => {
@@ -316,6 +402,46 @@ describe('<PendingProposalsPane>', () => {
         .getByTestId('participant-pending-proposal-row-facet')
         .getAttribute('data-facet-status'),
     ).toBe('agreed');
+  });
+
+  it('(r) self-filter at the pane integration layer: seed votes from ME + OTHER on the wording facet → expanded chip surfaces exactly one indicator for OTHER', () => {
+    useWsStore.getState().applyEvent(proposalEvent(1, PROPOSAL_A, 'classify-node', NODE_X));
+    useWsStore
+      .getState()
+      .applyEvent(voteFacetArm(2, 'node', NODE_X, 'classification', ME, 'agree'));
+    useWsStore
+      .getState()
+      .applyEvent(voteFacetArm(3, 'node', NODE_X, 'classification', OTHER, 'dispute'));
+    renderPane();
+    const header = screen.getByTestId('participant-pending-proposal-row-header');
+    act(() => {
+      fireEvent.click(header);
+    });
+    const row = screen.getByTestId('participant-pending-proposal-row-facet-vote-indicator-row');
+    const dots = row.querySelectorAll('[data-vote-indicator]');
+    expect(dots).toHaveLength(1);
+    expect(dots[0]?.getAttribute('data-participant-id')).toBe(OTHER);
+    expect(dots[0]?.getAttribute('data-choice')).toBe('dispute');
+  });
+
+  it('(s) structural sub-kind: seed a decompose proposal + one OTHER proposal-arm vote → expanded synthetic "proposal" chip surfaces one indicator', () => {
+    useWsStore.getState().applyEvent(decomposeProposalEvent(1, PROPOSAL_D, NODE_X));
+    useWsStore.getState().applyEvent(voteProposalArm(2, PROPOSAL_D, OTHER, 'agree'));
+    renderPane();
+    const header = screen.getByTestId('participant-pending-proposal-row-header');
+    act(() => {
+      fireEvent.click(header);
+    });
+    const chip = screen.getByTestId('participant-pending-proposal-row-facet');
+    expect(chip.getAttribute('data-facet-name')).toBe('proposal');
+    const row = chip.querySelector(
+      '[data-testid="participant-pending-proposal-row-facet-vote-indicator-row"]',
+    );
+    expect(row).toBeTruthy();
+    const dots = row!.querySelectorAll('[data-vote-indicator]');
+    expect(dots).toHaveLength(1);
+    expect(dots[0]?.getAttribute('data-participant-id')).toBe(OTHER);
+    expect(dots[0]?.getAttribute('data-choice')).toBe('agree');
   });
 
   it('(q) header cells unaffected by the body content swap; body-summary <p> is gone; body region contract preserved', () => {

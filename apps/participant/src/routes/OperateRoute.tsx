@@ -363,7 +363,7 @@ function OperateRouteAuthenticatedBody({
             />
           </div>
         ) : (
-          <PendingProposalsPane sessionId={id} />
+          <PendingProposalsPane sessionId={id} currentParticipantId={currentParticipantId} />
         )}
       </div>
     </div>

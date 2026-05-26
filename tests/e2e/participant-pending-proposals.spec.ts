@@ -279,6 +279,65 @@ test.describe('Participant operate route — pending-proposals tab seam', () => 
       await expect(wordingChip).toHaveCount(1);
       await expect(wordingChip).toHaveAttribute('data-facet-status', 'proposed');
 
+      // 8. `part_vote_indicators_in_pane` extension — with the row still
+      //    expanded from step 6, seed one `vote` envelope from a SECOND
+      //    participant (distinct from the logged-in test participant)
+      //    targeting the seeded `capture-node` proposal's wording facet,
+      //    choice `'agree'`. Poll for the indicator row to appear inside
+      //    the chip and assert one `[data-vote-indicator]` dot carrying
+      //    the seeded voter's id + choice. The test participant's own
+      //    vote does NOT appear (self-filter lives at the projection
+      //    layer).
+      await expect(row).toHaveAttribute('data-expanded', 'true');
+      const SECOND_VOTER_ID = '77777777-7777-4777-8777-777777777777';
+      await page.evaluate(
+        (seed: { sessionId: string; proposalNodeId: string; voterId: string }) => {
+          const store = (
+            window as unknown as {
+              __aConversaWsStore?: {
+                getState: () => {
+                  applyEvent: (event: unknown) => void;
+                };
+              };
+            }
+          ).__aConversaWsStore;
+          if (!store) {
+            throw new Error('__aConversaWsStore is not exposed on window');
+          }
+          const state = store.getState();
+          state.applyEvent({
+            id: '88888888-8888-4888-8888-888888888881',
+            sessionId: seed.sessionId,
+            sequence: 1_000_010,
+            kind: 'vote',
+            actor: seed.voterId,
+            payload: {
+              target: 'facet',
+              entity_kind: 'node',
+              entity_id: seed.proposalNodeId,
+              facet: 'wording',
+              participant: seed.voterId,
+              choice: 'agree',
+              voted_at: '2026-05-17T00:00:05.000Z',
+            },
+            createdAt: '2026-05-17T00:00:05.000Z',
+          });
+        },
+        {
+          sessionId,
+          proposalNodeId: PROPOSAL_NODE_ID,
+          voterId: SECOND_VOTER_ID,
+        },
+      );
+      const indicatorRow = wordingChip.locator(
+        '[data-testid="participant-pending-proposal-row-facet-vote-indicator-row"]',
+      );
+      await expect(indicatorRow).toBeVisible();
+      const dot = indicatorRow.locator(
+        `[data-vote-indicator][data-participant-id="${SECOND_VOTER_ID}"][data-choice="agree"]`,
+      );
+      await expect(dot).toHaveCount(1);
+
       await header.click();
       await expect(row).toHaveAttribute('data-expanded', 'false');
       await expect(header).toHaveAttribute('aria-expanded', 'false');

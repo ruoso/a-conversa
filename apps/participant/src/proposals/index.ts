@@ -19,3 +19,13 @@ export {
   type LifecycleFacetName,
   type ProposalFacetEntry,
 } from './perProposalFacets';
+export {
+  projectOtherVotesByFacet,
+  EMPTY_OTHER_VOTES_BY_FACET_INDEX,
+  type OtherVotesByFacetIndex,
+} from './otherVotesByFacet';
+export {
+  projectOtherVotesByProposal,
+  EMPTY_OTHER_VOTES_BY_PROPOSAL_INDEX,
+  type OtherVotesByProposalIndex,
+} from './otherVotesByProposal';

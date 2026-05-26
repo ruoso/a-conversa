@@ -30,9 +30,12 @@ import {
   PILL_STATUS_CLASSNAME,
   createI18nInstance,
   type I18nInstance,
+  type Vote,
 } from '@a-conversa/shell';
 
 import { PerProposalFacetBreakdown } from './PerProposalFacetBreakdown';
+import type { OtherVotesByFacetIndex } from './otherVotesByFacet';
+import type { OtherVotesByProposalIndex } from './otherVotesByProposal';
 import type { FacetName, FacetStatus, FacetStatusIndex } from '../graph/facetStatus';
 
 const NODE_X = '00000000-0000-4000-8000-00000000000a';
@@ -78,7 +81,15 @@ function renderBreakdown(
   facetStatusIndex: FacetStatusIndex = EMPTY_INDEX,
   serverPerFacetStatus: Record<string, string> | undefined = undefined,
   proposalEventId: string = PROPOSAL_P,
+  votesByFacetIndex?: OtherVotesByFacetIndex,
+  votesByProposalIndex?: OtherVotesByProposalIndex,
 ): ReturnType<typeof render> {
+  const voteProps: {
+    votesByFacetIndex?: OtherVotesByFacetIndex;
+    votesByProposalIndex?: OtherVotesByProposalIndex;
+  } = {};
+  if (votesByFacetIndex !== undefined) voteProps.votesByFacetIndex = votesByFacetIndex;
+  if (votesByProposalIndex !== undefined) voteProps.votesByProposalIndex = votesByProposalIndex;
   return render(
     <I18nProvider i18n={i18n}>
       <PerProposalFacetBreakdown
@@ -86,9 +97,29 @@ function renderBreakdown(
         facetStatusIndex={facetStatusIndex}
         serverPerFacetStatus={serverPerFacetStatus}
         proposalEventId={proposalEventId}
+        {...voteProps}
       />
     </I18nProvider>,
   );
+}
+
+const VOTER_A = '00000000-0000-4000-8000-00000000001a';
+const VOTER_B = '00000000-0000-4000-8000-00000000001b';
+
+function votesByFacetWith(
+  entityId: string,
+  facet: FacetName,
+  votes: readonly Vote[],
+): OtherVotesByFacetIndex {
+  const inner = new Map<FacetName, readonly Vote[]>([[facet, votes]]);
+  return new Map<string, ReadonlyMap<FacetName, readonly Vote[]>>([[entityId, inner]]);
+}
+
+function votesByProposalWith(
+  proposalId: string,
+  votes: readonly Vote[],
+): OtherVotesByProposalIndex {
+  return new Map<string, readonly Vote[]>([[proposalId, votes]]);
 }
 
 describe('<PerProposalFacetBreakdown>', () => {
@@ -182,5 +213,77 @@ describe('<PerProposalFacetBreakdown>', () => {
     renderBreakdown(proposal, EMPTY_INDEX, undefined, PROPOSAL_P);
     const container = screen.getByTestId('participant-pending-proposal-row-facets');
     expect(container.getAttribute('data-proposal-id')).toBe(PROPOSAL_P);
+  });
+
+  it('(f) two votes on a facet-targeting proposal → chip renders the in-chip indicator row with two [data-vote-indicator] dots carrying per-voter attributes', () => {
+    const proposal: ProposalPayload = {
+      kind: 'capture-node',
+      node_id: NODE_X,
+      wording: 'fresh wording',
+    };
+    const votes: readonly Vote[] = [
+      { participantId: VOTER_A, choice: 'agree' },
+      { participantId: VOTER_B, choice: 'dispute' },
+    ];
+    const byFacet = votesByFacetWith(NODE_X, 'wording', votes);
+    renderBreakdown(proposal, EMPTY_INDEX, undefined, PROPOSAL_P, byFacet);
+    const chip = screen.getByTestId('participant-pending-proposal-row-facet');
+    const row = chip.querySelector(
+      '[data-testid="participant-pending-proposal-row-facet-vote-indicator-row"]',
+    );
+    expect(row).toBeTruthy();
+    const dots = row!.querySelectorAll('[data-vote-indicator]');
+    expect(dots).toHaveLength(2);
+    expect(dots[0]?.getAttribute('data-participant-id')).toBe(VOTER_A);
+    expect(dots[0]?.getAttribute('data-choice')).toBe('agree');
+    expect(dots[1]?.getAttribute('data-participant-id')).toBe(VOTER_B);
+    expect(dots[1]?.getAttribute('data-choice')).toBe('dispute');
+  });
+
+  it('(g) entry.votes.length === 0 → indicator row is OMITTED; only the label text in the chip', () => {
+    const proposal: ProposalPayload = {
+      kind: 'capture-node',
+      node_id: NODE_X,
+      wording: 'fresh wording',
+    };
+    renderBreakdown(proposal);
+    expect(
+      screen.queryByTestId('participant-pending-proposal-row-facet-vote-indicator-row'),
+    ).toBeNull();
+    const chip = screen.getByTestId('participant-pending-proposal-row-facet');
+    expect(chip.textContent).toBe('Wording');
+  });
+
+  it('(h) structural sub-kind with one proposal-arm vote → indicator row mounts inside the synthetic "proposal" chip', () => {
+    const proposal: ProposalPayload = {
+      kind: 'decompose',
+      parent_node_id: NODE_X,
+      components: [
+        {
+          wording: 'first',
+          classification: 'fact',
+          node_id: '00000000-0000-4000-8000-00000000f001',
+        },
+        {
+          wording: 'second',
+          classification: 'fact',
+          node_id: '00000000-0000-4000-8000-00000000f002',
+        },
+      ],
+    };
+    const byProposal = votesByProposalWith(PROPOSAL_P, [
+      { participantId: VOTER_A, choice: 'agree' },
+    ]);
+    renderBreakdown(proposal, EMPTY_INDEX, undefined, PROPOSAL_P, undefined, byProposal);
+    const chip = screen.getByTestId('participant-pending-proposal-row-facet');
+    expect(chip.getAttribute('data-facet-name')).toBe('proposal');
+    const row = chip.querySelector(
+      '[data-testid="participant-pending-proposal-row-facet-vote-indicator-row"]',
+    );
+    expect(row).toBeTruthy();
+    const dots = row!.querySelectorAll('[data-vote-indicator]');
+    expect(dots).toHaveLength(1);
+    expect(dots[0]?.getAttribute('data-participant-id')).toBe(VOTER_A);
+    expect(dots[0]?.getAttribute('data-choice')).toBe('agree');
   });
 });

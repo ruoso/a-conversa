@@ -236,6 +236,7 @@ task participant_ui "Participant (debater) UI" {
     task part_vote_indicators_in_pane "Per-participant vote indicators in the pane (mirrors moderator UI)" {
       effort 0.5d
       allocate team
+      complete 100
       depends !part_per_facet_breakdown_in_pane
     }
   }

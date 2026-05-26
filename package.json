@@ -19,7 +19,7 @@
     "test:behavior:smoke": "pnpm run build && NODE_OPTIONS='--import tsx --conditions=source' cucumber-js",
     "test:e2e:smoke": "pnpm run build && playwright test --config=playwright.config.ts",
     "test:e2e": "pnpm run build && playwright test --config=playwright.config.ts",
-    "build": "pnpm -r build",
+    "build": "pnpm -r --workspace-concurrency=1 build",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",

@@ -20,8 +20,11 @@
 
 import { describe, expect, it } from 'vitest';
 import type { ProposalPayload } from '@a-conversa/shared-types';
+import { EMPTY_VOTES, type Vote } from '@a-conversa/shell';
 
 import { derivePerProposalFacets } from './perProposalFacets';
+import type { OtherVotesByFacetIndex } from './otherVotesByFacet';
+import type { OtherVotesByProposalIndex } from './otherVotesByProposal';
 import type { FacetName, FacetStatus, FacetStatusIndex } from '../graph/facetStatus';
 
 const NODE_X = '00000000-0000-4000-8000-00000000000a';
@@ -255,5 +258,105 @@ describe('derivePerProposalFacets — purity', () => {
     expect(a).toEqual(b);
     expect(server).toEqual(serverBefore);
     expect(index.nodes.get(NODE_X)).toEqual({ classification: 'disputed' });
+  });
+});
+
+// -- Vote indicator extension (`part_vote_indicators_in_pane`) ------
+//
+// The selector grows three optional parameters; `ProposalFacetEntry`
+// carries a `votes` field consumed by the in-chip indicator row.
+
+const VOTER_A = '00000000-0000-4000-8000-00000000001a';
+const VOTER_B = '00000000-0000-4000-8000-00000000001b';
+const PROPOSAL_DECOMPOSE = '00000000-0000-4000-8000-0000000000d1';
+
+function votesByFacetWith(
+  entityId: string,
+  facet: FacetName,
+  votes: readonly Vote[],
+): OtherVotesByFacetIndex {
+  const inner = new Map<FacetName, readonly Vote[]>([[facet, votes]]);
+  return new Map<string, ReadonlyMap<FacetName, readonly Vote[]>>([[entityId, inner]]);
+}
+
+function votesByProposalWith(
+  proposalId: string,
+  votes: readonly Vote[],
+): OtherVotesByProposalIndex {
+  return new Map<string, readonly Vote[]>([[proposalId, votes]]);
+}
+
+describe('derivePerProposalFacets — votes field (part_vote_indicators_in_pane)', () => {
+  it('(g) facet-targeting sub-kind with two votes in votesByFacetIndex → entries[0].votes has both voters in arrival order', () => {
+    const proposal: ProposalPayload = {
+      kind: 'capture-node',
+      node_id: NODE_X,
+      wording: 'fresh wording',
+    };
+    const votes: readonly Vote[] = [
+      { participantId: VOTER_A, choice: 'agree' },
+      { participantId: VOTER_B, choice: 'dispute' },
+    ];
+    const index = votesByFacetWith(NODE_X, 'wording', votes);
+    const out = derivePerProposalFacets(proposal, EMPTY_INDEX, undefined, index);
+    expect(out).toHaveLength(1);
+    expect(out[0]?.facet).toBe('wording');
+    expect(out[0]?.votes).toEqual(votes);
+  });
+
+  it('(h) structural sub-kind with two votes in votesByProposalIndex → entries[0].votes has length 2; entries[0].facet === "proposal"', () => {
+    const proposal: ProposalPayload = {
+      kind: 'decompose',
+      parent_node_id: NODE_X,
+      components: [
+        {
+          wording: 'first',
+          classification: 'fact',
+          node_id: '00000000-0000-4000-8000-00000000f001',
+        },
+        {
+          wording: 'second',
+          classification: 'fact',
+          node_id: '00000000-0000-4000-8000-00000000f002',
+        },
+      ],
+    };
+    const votes: readonly Vote[] = [
+      { participantId: VOTER_A, choice: 'agree' },
+      { participantId: VOTER_B, choice: 'agree' },
+    ];
+    const byProposal = votesByProposalWith(PROPOSAL_DECOMPOSE, votes);
+    const out = derivePerProposalFacets(
+      proposal,
+      EMPTY_INDEX,
+      undefined,
+      undefined,
+      PROPOSAL_DECOMPOSE,
+      byProposal,
+    );
+    expect(out).toHaveLength(1);
+    expect(out[0]?.facet).toBe('proposal');
+    expect(out[0]?.votes).toEqual(votes);
+  });
+
+  it('(i) proposalEventId === undefined AND structural sub-kind → entries[0].votes === EMPTY_VOTES', () => {
+    const proposal: ProposalPayload = {
+      kind: 'axiom-mark',
+      node_id: NODE_X,
+      participant: PARTICIPANT_A,
+    };
+    const byProposal = votesByProposalWith(PROPOSAL_DECOMPOSE, [
+      { participantId: VOTER_A, choice: 'agree' },
+    ]);
+    const out = derivePerProposalFacets(
+      proposal,
+      EMPTY_INDEX,
+      undefined,
+      undefined,
+      undefined,
+      byProposal,
+    );
+    expect(out[0]?.facet).toBe('proposal');
+    expect(out[0]?.votes).toBe(EMPTY_VOTES);
   });
 });

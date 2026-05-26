@@ -35,12 +35,26 @@ import {
 } from './derivePendingProposals';
 import { summaryText } from './proposalSummary';
 import { PerProposalFacetBreakdown } from './PerProposalFacetBreakdown';
+import { projectOtherVotesByFacet, type OtherVotesByFacetIndex } from './otherVotesByFacet';
+import {
+  projectOtherVotesByProposal,
+  type OtherVotesByProposalIndex,
+} from './otherVotesByProposal';
 
 const EMPTY_EVENTS: readonly Event[] = Object.freeze([]);
 const EMPTY_PENDING_PROPOSALS: Readonly<Record<string, ProposalStatusPayload>> = Object.freeze({});
 
 export interface PendingProposalsPaneProps {
   sessionId: string;
+  /**
+   * The currently authenticated participant. Threaded into the
+   * other-votes projections so the participant's own votes are filtered
+   * out at the projection layer (the chip's dot row surfaces OTHER
+   * voters only; the own vote is implicit in the per-facet status the
+   * chip's color already encodes — Decision §3 of
+   * `part_vote_indicators_in_pane`).
+   */
+  currentParticipantId: string;
   /**
    * Deterministic-time injection seam for the relative-time formatter.
    * Tests pass a fixed value; production callers omit it and the row
@@ -51,6 +65,7 @@ export interface PendingProposalsPaneProps {
 
 export function PendingProposalsPane({
   sessionId,
+  currentParticipantId,
   nowMsOverride,
 }: PendingProposalsPaneProps): ReactElement {
   const { t } = useTranslation();
@@ -60,6 +75,14 @@ export function PendingProposalsPane({
   );
   const rows = useMemo(() => derivePendingProposals(events), [events]);
   const facetStatusIndex = useMemo(() => computeFacetStatuses(events), [events]);
+  const votesByFacetIndex = useMemo(
+    () => projectOtherVotesByFacet(events, currentParticipantId),
+    [events, currentParticipantId],
+  );
+  const votesByProposalIndex = useMemo(
+    () => projectOtherVotesByProposal(events, currentParticipantId),
+    [events, currentParticipantId],
+  );
   const nowMs = nowMsOverride ?? Date.now();
   const systemAuthorLabel = t('participant.pendingProposalsPane.systemAuthor');
   const paneAriaLabel = t('participant.pendingProposalsPane.paneAriaLabel');
@@ -92,6 +115,8 @@ export function PendingProposalsPane({
               systemAuthorLabel={systemAuthorLabel}
               facetStatusIndex={facetStatusIndex}
               serverPerFacetStatus={pendingProposals[row.proposalEventId]?.perFacetStatus}
+              votesByFacetIndex={votesByFacetIndex}
+              votesByProposalIndex={votesByProposalIndex}
             />
           ))}
         </ul>
@@ -106,12 +131,16 @@ function PendingProposalRow({
   systemAuthorLabel,
   facetStatusIndex,
   serverPerFacetStatus,
+  votesByFacetIndex,
+  votesByProposalIndex,
 }: {
   readonly row: PendingProposalRowData;
   readonly nowMs: number;
   readonly systemAuthorLabel: string;
   readonly facetStatusIndex: FacetStatusIndex;
   readonly serverPerFacetStatus: Record<string, string> | undefined;
+  readonly votesByFacetIndex: OtherVotesByFacetIndex;
+  readonly votesByProposalIndex: OtherVotesByProposalIndex;
 }): ReactElement {
   const { t } = useTranslation();
   const expandedProposalId = useUiStore((s) => s.expandedProposalId);
@@ -180,6 +209,8 @@ function PendingProposalRow({
             facetStatusIndex={facetStatusIndex}
             serverPerFacetStatus={serverPerFacetStatus}
             proposalEventId={row.proposalEventId}
+            votesByFacetIndex={votesByFacetIndex}
+            votesByProposalIndex={votesByProposalIndex}
           />
         </div>
       ) : null}

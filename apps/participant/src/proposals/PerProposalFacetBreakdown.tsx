@@ -24,27 +24,56 @@
 import { memo, useMemo, type ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ProposalPayload } from '@a-conversa/shared-types';
-import { PILL_BASE_CLASSNAME, PILL_STATUS_CLASSNAME } from '@a-conversa/shell';
+import { PILL_BASE_CLASSNAME, PILL_STATUS_CLASSNAME, VoteIndicator } from '@a-conversa/shell';
 
 import type { FacetStatusIndex } from '../graph/facetStatus';
 import { derivePerProposalFacets } from './perProposalFacets';
+import { EMPTY_OTHER_VOTES_BY_FACET_INDEX, type OtherVotesByFacetIndex } from './otherVotesByFacet';
+import {
+  EMPTY_OTHER_VOTES_BY_PROPOSAL_INDEX,
+  type OtherVotesByProposalIndex,
+} from './otherVotesByProposal';
 
 export interface PerProposalFacetBreakdownProps {
   readonly proposal: ProposalPayload;
   readonly facetStatusIndex: FacetStatusIndex;
   readonly serverPerFacetStatus: Record<string, string> | undefined;
   readonly proposalEventId: string;
+  readonly votesByFacetIndex?: OtherVotesByFacetIndex;
+  readonly votesByProposalIndex?: OtherVotesByProposalIndex;
 }
 
 const BREAKDOWN_CONTAINER_CLASSES = 'flex flex-row flex-wrap items-center gap-1';
 
 function PerProposalFacetBreakdownImpl(props: PerProposalFacetBreakdownProps): ReactElement {
-  const { proposal, facetStatusIndex, serverPerFacetStatus, proposalEventId } = props;
+  const {
+    proposal,
+    facetStatusIndex,
+    serverPerFacetStatus,
+    proposalEventId,
+    votesByFacetIndex,
+    votesByProposalIndex,
+  } = props;
   const { t } = useTranslation();
 
   const entries = useMemo(
-    () => derivePerProposalFacets(proposal, facetStatusIndex, serverPerFacetStatus),
-    [proposal, facetStatusIndex, serverPerFacetStatus],
+    () =>
+      derivePerProposalFacets(
+        proposal,
+        facetStatusIndex,
+        serverPerFacetStatus,
+        votesByFacetIndex ?? EMPTY_OTHER_VOTES_BY_FACET_INDEX,
+        proposalEventId,
+        votesByProposalIndex ?? EMPTY_OTHER_VOTES_BY_PROPOSAL_INDEX,
+      ),
+    [
+      proposal,
+      facetStatusIndex,
+      serverPerFacetStatus,
+      votesByFacetIndex,
+      proposalEventId,
+      votesByProposalIndex,
+    ],
   );
 
   return (
@@ -57,6 +86,21 @@ function PerProposalFacetBreakdownImpl(props: PerProposalFacetBreakdownProps): R
         const className = `${PILL_BASE_CLASSNAME} ${PILL_STATUS_CLASSNAME[entry.status]}`;
         const facetLabel = t(entry.labelKey);
         const statusLabel = t(`methodology.facetState.${entry.status}`);
+        const voteIndicatorRow =
+          entry.votes.length > 0 ? (
+            <span
+              data-testid="participant-pending-proposal-row-facet-vote-indicator-row"
+              className="ml-1 inline-flex items-center gap-0.5"
+            >
+              {entry.votes.map((vote) => (
+                <VoteIndicator
+                  key={vote.participantId}
+                  participantId={vote.participantId}
+                  choice={vote.choice}
+                />
+              ))}
+            </span>
+          ) : null;
         return (
           <span
             key={entry.facet}
@@ -67,6 +111,7 @@ function PerProposalFacetBreakdownImpl(props: PerProposalFacetBreakdownProps): R
             aria-label={`${facetLabel} ${statusLabel}`}
           >
             {facetLabel}
+            {voteIndicatorRow}
           </span>
         );
       })}
