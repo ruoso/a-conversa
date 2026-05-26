@@ -413,11 +413,81 @@ test.describe('Participant operate route — pending-proposals tab seam', () => 
           { timeout: 5_000 },
         )
         .toBe(0);
-      await expect(
-        wordingChip.locator(
-          '[data-testid="participant-pending-proposal-row-facet-vote-button-dispute"]',
-        ),
-      ).toHaveCount(0);
+      // `part_change_vote_pre_commit` extension — the dispute (opposite-
+      // of-ownVote) button STAYS visible after the agree ack; it is the
+      // change-vote affordance. Pre-`part_change_vote_pre_commit` the
+      // refinement asserted dispute=0 here.
+      const disputeButton = wordingChip.locator(
+        '[data-testid="participant-pending-proposal-row-facet-vote-button-dispute"]',
+      );
+      await expect(disputeButton).toHaveCount(1);
+      await expect(disputeButton).toHaveAttribute('data-vote-mode', 'change');
+
+      // 10. `part_change_vote_pre_commit` extension — click the dispute
+      //     button to flip the vote, then inject the matching `vote`
+      //     envelope into the client store (mirroring step 9's seam,
+      //     since the client-seeded proposal has no server record).
+      //     After the projector picks up the flipped own-vote the agree
+      //     button comes back into the DOM and the dispute button hides
+      //     — symmetric to the step 9 post-condition with the sides
+      //     swapped. The single-tap-policy assertions wrap the change-
+      //     vote click for symmetric coverage per
+      //     `part_vote_single_tap.md` line 26.
+      await disputeButton.click();
+      await expect(page.locator('[role="dialog"]')).toHaveCount(0);
+      await expect(page.locator('[aria-modal="true"]')).toHaveCount(0);
+      await page.evaluate(
+        (seed: { sessionId: string; proposalNodeId: string; voterId: string }) => {
+          const store = (
+            window as unknown as {
+              __aConversaWsStore?: {
+                getState: () => {
+                  applyEvent: (event: unknown) => void;
+                };
+              };
+            }
+          ).__aConversaWsStore;
+          if (!store) {
+            throw new Error('__aConversaWsStore is not exposed on window');
+          }
+          store.getState().applyEvent({
+            id: '88888888-8888-4888-8888-888888888883',
+            sessionId: seed.sessionId,
+            sequence: 1_000_012,
+            kind: 'vote',
+            actor: seed.voterId,
+            payload: {
+              target: 'facet',
+              entity_kind: 'node',
+              entity_id: seed.proposalNodeId,
+              facet: 'wording',
+              participant: seed.voterId,
+              choice: 'dispute',
+              voted_at: '2026-05-17T00:00:07.000Z',
+            },
+            createdAt: '2026-05-17T00:00:07.000Z',
+          });
+        },
+        {
+          sessionId,
+          proposalNodeId: PROPOSAL_NODE_ID,
+          voterId: leo.userId,
+        },
+      );
+      await expect
+        .poll(
+          async () =>
+            await wordingChip
+              .locator('[data-testid="participant-pending-proposal-row-facet-vote-button-dispute"]')
+              .count(),
+          { timeout: 5_000 },
+        )
+        .toBe(0);
+      const agreeBack = wordingChip.locator(
+        '[data-testid="participant-pending-proposal-row-facet-vote-button-agree"]',
+      );
+      await expect(agreeBack).toHaveCount(1);
+      await expect(agreeBack).toHaveAttribute('data-vote-mode', 'change');
 
       await header.click();
       await expect(row).toHaveAttribute('data-expanded', 'false');

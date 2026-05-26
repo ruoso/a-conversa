@@ -645,8 +645,11 @@ describe('<ParticipantVoteButtons> — per-status row content', () => {
     // are gone for Ben — he already voted. The own-vote indicator
     // surfaces with the agree arm.
     expect(shapeRow.getAttribute('data-facet-status')).toBe('proposed');
+    // Per `part_change_vote_pre_commit`: the chosen-side (agree) is
+    // hidden; the opposite-side (dispute) stays visible as the
+    // change-vote affordance. The "You voted X" indicator coexists.
     expect(within(shapeRow).queryByTestId('participant-vote-button-agree')).toBeNull();
-    expect(within(shapeRow).queryByTestId('participant-vote-button-dispute')).toBeNull();
+    expect(within(shapeRow).getByTestId('participant-vote-button-dispute')).toBeDefined();
     const indicator = within(shapeRow).getByTestId('participant-detail-panel-facet-row-own-vote');
     expect(indicator.getAttribute('data-vote-choice')).toBe('agree');
   });
@@ -685,16 +688,15 @@ describe('<ParticipantVoteButtons> — per-status row content', () => {
 // Vote click → wire envelope
 // --------------------------------------------------------------------
 
-describe('<ParticipantVoteButtons> — own-vote hides the buttons (pre-commit)', () => {
-  // Bug guard: prior to `projectOwnFacetVotes` wiring, the
-  // agree/dispute buttons stayed on the row after the participant
-  // voted and only disappeared once the FACET STATUS transitioned
-  // (which requires unanimity or commit). A single participant's vote
-  // sat ambiguous to them. With the projector wired the row collapses
-  // to a "you voted X" indicator the moment the participant's vote
-  // event lands.
+describe('<ParticipantVoteButtons> — own-vote hides the chosen-side button (pre-commit)', () => {
+  // Pre-`part_change_vote_pre_commit`: the agree/dispute buttons fully
+  // hid once the participant voted. After that leaf the chosen-side
+  // button hides but the opposite-side (change-vote) button stays
+  // visible — the participant can flip their vote until the moderator
+  // commits. The "You voted X" indicator coexists with the change-vote
+  // button.
 
-  it('after the current participant votes agree, the classification row hides agree/dispute and surfaces a "you voted" indicator', () => {
+  it('after the current participant votes agree, the chosen-side (agree) button hides but the dispute change-vote button stays visible alongside a "you voted" indicator', () => {
     const fake = makeFakeClient();
     const events: Event[] = [
       joinedEvent(1, PARTICIPANT_BEN),
@@ -722,15 +724,17 @@ describe('<ParticipantVoteButtons> — own-vote hides the buttons (pre-commit)',
     // Status stays `proposed` (Maria hasn't voted yet), but the
     // buttons are gone for Ben — he already voted.
     expect(classifyRow.getAttribute('data-facet-status')).toBe('proposed');
+    // Chosen-side (agree) is hidden; the opposite-side change-vote
+    // button stays visible per `part_change_vote_pre_commit`.
     expect(within(classifyRow).queryByTestId('participant-vote-button-agree')).toBeNull();
-    expect(within(classifyRow).queryByTestId('participant-vote-button-dispute')).toBeNull();
+    expect(within(classifyRow).getByTestId('participant-vote-button-dispute')).toBeDefined();
     const indicator = within(classifyRow).getByTestId(
       'participant-detail-panel-facet-row-own-vote',
     );
     expect(indicator.getAttribute('data-vote-choice')).toBe('agree');
   });
 
-  it('after the current participant votes dispute, the row hides buttons and the indicator shows dispute', () => {
+  it('after the current participant votes dispute, the chosen-side (dispute) hides but the agree change-vote button stays; the indicator shows dispute', () => {
     const fake = makeFakeClient();
     const events: Event[] = [
       joinedEvent(1, PARTICIPANT_BEN),
@@ -755,8 +759,10 @@ describe('<ParticipantVoteButtons> — own-vote hides the buttons (pre-commit)',
       .getAllByTestId('participant-detail-panel-facet-row')
       .find((r) => r.getAttribute('data-facet-name') === 'classification');
     if (!classifyRow) throw new Error('classification row missing');
-    expect(within(classifyRow).queryByTestId('participant-vote-button-agree')).toBeNull();
+    // Chosen-side (dispute) hidden; opposite-side (agree) stays visible
+    // per `part_change_vote_pre_commit`.
     expect(within(classifyRow).queryByTestId('participant-vote-button-dispute')).toBeNull();
+    expect(within(classifyRow).getByTestId('participant-vote-button-agree')).toBeDefined();
     const indicator = within(classifyRow).getByTestId(
       'participant-detail-panel-facet-row-own-vote',
     );
@@ -1705,5 +1711,210 @@ describe('<ParticipantVoteButtons> — single-tap policy', () => {
       fireEvent.click(disputeBtn);
     });
     expect(fake2.calls.length).toBe(1);
+  });
+});
+
+// --------------------------------------------------------------------
+// Pre-commit change vote — per
+// `tasks/refinements/participant-ui/part_change_vote_pre_commit.md`.
+//
+// Nine cases mirror the pane surface's seven (a–g) and add two
+// detail-panel-specific cases:
+//   (h) the `OWN_VOTE_INDICATOR_TESTID` "You voted X" indicator
+//       COEXISTS with the visible change-vote button (no longer hidden
+//       when the change-vote button is rendered).
+//   (i) status="committed" + ownVote="agree" → the wired withdraw
+//       button renders and NO agree/dispute change-vote button is in
+//       the DOM (post-commit affordance is withdraw-only per ADR 0030
+//       §3).
+// --------------------------------------------------------------------
+
+describe('<ParticipantVoteButtons> — pre-commit change vote', () => {
+  // Build a `classification` facet at a chosen pre-commit status,
+  // optionally seeding the current participant's vote so `ownVote` is
+  // defined on the row.
+  function preCommitEvents(opts: {
+    currentParticipantVote?: 'agree' | 'dispute';
+    otherParticipantVote?: 'agree' | 'dispute';
+  }): Event[] {
+    const events: Event[] = [
+      joinedEvent(1, PARTICIPANT_BEN),
+      joinedEvent(2, PARTICIPANT_MARIA),
+      nodeCreatedEvent(3, 'A first claim'),
+      classifyNodeProposalEvent(4),
+    ];
+    if (opts.currentParticipantVote !== undefined) {
+      events.push(voteEvent(5, PROPOSAL_CLASSIFY_ID, PARTICIPANT_BEN, opts.currentParticipantVote));
+    }
+    if (opts.otherParticipantVote !== undefined) {
+      events.push(voteEvent(6, PROPOSAL_CLASSIFY_ID, PARTICIPANT_MARIA, opts.otherParticipantVote));
+    }
+    return events;
+  }
+
+  function renderRow(events: Event[]): { fake: FakeClient } {
+    const fake = makeFakeClient();
+    const facetStatusIndex = computeFacetStatuses(events);
+    render(
+      <Wrapper client={fake.client}>
+        <ParticipantVoteButtons
+          events={events}
+          entityKind="node"
+          entityId={NODE_A_ID}
+          facetStatusIndex={facetStatusIndex}
+          currentParticipantId={PARTICIPANT_BEN}
+        />
+      </Wrapper>,
+    );
+    return { fake };
+  }
+
+  function classifyRow(): HTMLElement {
+    const row = screen
+      .getAllByTestId('participant-detail-panel-facet-row')
+      .find((r) => r.getAttribute('data-facet-name') === 'classification');
+    if (!row) throw new Error('classification row missing');
+    return row;
+  }
+
+  it('(a) status="proposed" + no own-vote → both buttons render with mode="first"', () => {
+    renderRow(preCommitEvents({}));
+    const row = classifyRow();
+    const agree = within(row).getByTestId('participant-vote-button-agree');
+    const dispute = within(row).getByTestId('participant-vote-button-dispute');
+    expect(agree.getAttribute('data-vote-mode')).toBe('first');
+    expect(dispute.getAttribute('data-vote-mode')).toBe('first');
+  });
+
+  it('(b) status="proposed" + ownVote="agree" → only dispute renders; mode="change"; aria-label uses changeAriaLabel', () => {
+    renderRow(preCommitEvents({ currentParticipantVote: 'agree' }));
+    const row = classifyRow();
+    expect(within(row).queryByTestId('participant-vote-button-agree')).toBeNull();
+    const dispute = within(row).getByTestId('participant-vote-button-dispute');
+    expect(dispute.getAttribute('data-vote-mode')).toBe('change');
+    expect(dispute.getAttribute('aria-label')).toBe('Change your vote to Dispute');
+  });
+
+  it('(c) status="proposed" + ownVote="dispute" → only agree renders; mode="change"; aria-label uses changeAriaLabel', () => {
+    renderRow(preCommitEvents({ currentParticipantVote: 'dispute' }));
+    const row = classifyRow();
+    expect(within(row).queryByTestId('participant-vote-button-dispute')).toBeNull();
+    const agree = within(row).getByTestId('participant-vote-button-agree');
+    expect(agree.getAttribute('data-vote-mode')).toBe('change');
+    expect(agree.getAttribute('aria-label')).toBe('Change your vote to Agree');
+  });
+
+  it('(d) status="agreed" + ownVote="agree" → the dispute change-vote button renders (agreed is in the pre-commit window)', () => {
+    renderRow(preCommitEvents({ currentParticipantVote: 'agree', otherParticipantVote: 'agree' }));
+    const row = classifyRow();
+    // Unanimous agree → status is `'agreed'`. The pre-commit window
+    // still allows a flip per the methodology contract.
+    expect(row.getAttribute('data-facet-status')).toBe('agreed');
+    expect(within(row).queryByTestId('participant-vote-button-agree')).toBeNull();
+    const dispute = within(row).getByTestId('participant-vote-button-dispute');
+    expect(dispute.getAttribute('data-vote-mode')).toBe('change');
+    // The withdraw button MUST NOT render at `'agreed'` per
+    // `part_change_vote_pre_commit` Decision §2 — withdraw is the
+    // post-commit affordance, the change-vote flip is the pre-commit
+    // path to "un-do my agreement".
+    expect(within(row).queryByTestId('participant-vote-button-withdraw')).toBeNull();
+  });
+
+  it('(e) status="committed" + ownVote="agree" → withdraw button renders; no agree/dispute change-vote button', () => {
+    const events: Event[] = [
+      ...preCommitEvents({ currentParticipantVote: 'agree', otherParticipantVote: 'agree' }),
+      commitEvent(PROPOSAL_CLASSIFY_ID, 7),
+    ];
+    renderRow(events);
+    const row = classifyRow();
+    expect(row.getAttribute('data-facet-status')).toBe('committed');
+    expect(within(row).queryByTestId('participant-vote-button-agree')).toBeNull();
+    expect(within(row).queryByTestId('participant-vote-button-dispute')).toBeNull();
+    expect(within(row).getByTestId('participant-vote-button-withdraw')).toBeDefined();
+  });
+
+  it('(f) single-tap policy holds on the change-vote button: two rapid clicks dispatch once; no modal mounts', () => {
+    const { fake } = renderRow(preCommitEvents({ currentParticipantVote: 'agree' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.querySelector('[aria-modal="true"]')).toBeNull();
+    const row = classifyRow();
+    const dispute = within(row).getByTestId('participant-vote-button-dispute');
+    act(() => {
+      fireEvent.click(dispute);
+      fireEvent.click(dispute);
+    });
+    expect(fake.calls.length).toBe(1);
+    expect(fake.calls[0]?.type).toBe('vote');
+    expect((fake.calls[0]?.payload as { choice: string }).choice).toBe('dispute');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.querySelector('[aria-modal="true"]')).toBeNull();
+  });
+
+  it('(g) ack-driven re-render: ownVote flipping from "agree" to "dispute" swaps which button is hidden', () => {
+    // First render — ownVote is agree (only the participant's vote
+    // landed). The dispute change-vote button is visible.
+    const initialEvents = preCommitEvents({ currentParticipantVote: 'agree' });
+    const fake = makeFakeClient();
+    const initialIndex = computeFacetStatuses(initialEvents);
+    const { rerender } = render(
+      <Wrapper client={fake.client}>
+        <ParticipantVoteButtons
+          events={initialEvents}
+          entityKind="node"
+          entityId={NODE_A_ID}
+          facetStatusIndex={initialIndex}
+          currentParticipantId={PARTICIPANT_BEN}
+        />
+      </Wrapper>,
+    );
+    expect(within(classifyRow()).queryByTestId('participant-vote-button-agree')).toBeNull();
+    expect(within(classifyRow()).getByTestId('participant-vote-button-dispute')).toBeDefined();
+
+    // Simulate the post-ack projector update: the participant's vote
+    // flipped from agree to dispute (latest-vote-wins per ADR 0030).
+    // The agree button comes back; the dispute button hides.
+    const flippedEvents: Event[] = [
+      ...initialEvents,
+      voteEvent(6, PROPOSAL_CLASSIFY_ID, PARTICIPANT_BEN, 'dispute'),
+    ];
+    const flippedIndex = computeFacetStatuses(flippedEvents);
+    rerender(
+      <Wrapper client={fake.client}>
+        <ParticipantVoteButtons
+          events={flippedEvents}
+          entityKind="node"
+          entityId={NODE_A_ID}
+          facetStatusIndex={flippedIndex}
+          currentParticipantId={PARTICIPANT_BEN}
+        />
+      </Wrapper>,
+    );
+    expect(within(classifyRow()).queryByTestId('participant-vote-button-dispute')).toBeNull();
+    expect(within(classifyRow()).getByTestId('participant-vote-button-agree')).toBeDefined();
+  });
+
+  it('(h) the "you voted" indicator COEXISTS with the visible change-vote button on a pre-commit row', () => {
+    renderRow(preCommitEvents({ currentParticipantVote: 'agree' }));
+    const row = classifyRow();
+    // The chosen-side button is hidden; the opposite-side button is
+    // visible AND the indicator surfaces in the same row.
+    expect(within(row).queryByTestId('participant-vote-button-agree')).toBeNull();
+    expect(within(row).getByTestId('participant-vote-button-dispute')).toBeDefined();
+    const indicator = within(row).getByTestId('participant-detail-panel-facet-row-own-vote');
+    expect(indicator.getAttribute('data-vote-choice')).toBe('agree');
+  });
+
+  it('(i) status="committed" + ownVote="agree" pin: withdraw button only; no agree/dispute change-vote button', () => {
+    const events: Event[] = [
+      ...preCommitEvents({ currentParticipantVote: 'agree', otherParticipantVote: 'agree' }),
+      commitEvent(PROPOSAL_CLASSIFY_ID, 7),
+    ];
+    renderRow(events);
+    const row = classifyRow();
+    expect(row.getAttribute('data-facet-status')).toBe('committed');
+    expect(within(row).queryByTestId('participant-vote-button-agree')).toBeNull();
+    expect(within(row).queryByTestId('participant-vote-button-dispute')).toBeNull();
+    const withdraw = within(row).getByTestId('participant-vote-button-withdraw');
+    expect(withdraw.getAttribute('data-withdraw-state')).toBe('enabled');
   });
 });

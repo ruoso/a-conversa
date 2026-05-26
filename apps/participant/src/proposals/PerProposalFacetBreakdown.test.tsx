@@ -345,7 +345,7 @@ describe('<PerProposalFacetBreakdown>', () => {
     ).toBeTruthy();
   });
 
-  it('(j) chip at status="agreed" → vote buttons absent', () => {
+  it('(j) chip at status="agreed" with no own vote → both vote buttons render (pre-commit window: agreed is votable, a participant may flip to dispute and break unanimity)', () => {
     const proposal: ProposalPayload = {
       kind: 'classify-node',
       node_id: NODE_X,
@@ -355,10 +355,10 @@ describe('<PerProposalFacetBreakdown>', () => {
     renderBreakdown(proposal, EMPTY_INDEX, server);
     expect(
       screen.queryByTestId('participant-pending-proposal-row-facet-vote-button-agree'),
-    ).toBeNull();
+    ).toBeTruthy();
     expect(
       screen.queryByTestId('participant-pending-proposal-row-facet-vote-button-dispute'),
-    ).toBeNull();
+    ).toBeTruthy();
   });
 
   it('(k) chip at status="proposed" with the participant\'s own vote in ownFacetVotes → vote buttons absent', () => {

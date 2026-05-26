@@ -86,6 +86,8 @@ The most common operation. Each pending proposal targets a single facet (for fac
 
 The debater's vote is **provisional until the moderator commits.** A debater can change their vote (from agree to dispute, or vice versa) up until commit lands. When the moderator names a new candidate on the same facet (e.g., a fresh `classify-node` after the previous candidate was disputed), prior per-participant votes on that facet are cleared and everyone votes again on the new candidate (per ADR 0030).
 
+A participant may change their vote (agree ↔ dispute) at any time before the moderator commits the facet. The opposite-of-current-vote button remains visible alongside the "You voted X" indicator; tapping it dispatches a fresh `vote` envelope (the server applies latest-vote-wins per [ADR 0030](adr/0030-per-facet-vote-keying-and-sequential-capture.md)). The same single-tap-no-confirmation policy applies to the change-vote click; the chosen-side button is hidden (not just disabled) so a no-op envelope cannot be dispatched.
+
 The other debater's votes are **visible** on each pending facet. Each debater sees how the other has voted in real time, before the moderator commits. This matches the format's transparency ethos (proposals, diagnostics, and history are all visible) and lets each side see exactly where they agree and disagree as votes land. The risk of social pressure to align is real but is outweighed by the value of seeing the disagreement in real time.
 
 ### P3. Withdraw agreement

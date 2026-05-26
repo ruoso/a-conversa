@@ -512,7 +512,7 @@ describe('<PendingProposalsPane>', () => {
     expect(dots[0]?.getAttribute('data-choice')).toBe('agree');
   });
 
-  it("(t) ownFacetVotes threading: chip at proposed renders both vote buttons; after seeding the participant's own vote, the buttons disappear", () => {
+  it("(t) ownFacetVotes threading: chip at proposed renders both vote buttons; after seeding the participant's own agree vote, the agree button hides but the dispute button persists as a change-vote affordance", () => {
     useWsStore.getState().applyEvent(proposalEvent(1, PROPOSAL_A, 'classify-node', NODE_X));
     renderPane();
     act(() => {
@@ -532,9 +532,10 @@ describe('<PendingProposalsPane>', () => {
     expect(
       screen.queryByTestId('participant-pending-proposal-row-facet-vote-button-agree'),
     ).toBeNull();
-    expect(
-      screen.queryByTestId('participant-pending-proposal-row-facet-vote-button-dispute'),
-    ).toBeNull();
+    const disputeButton = screen.getByTestId(
+      'participant-pending-proposal-row-facet-vote-button-dispute',
+    );
+    expect(disputeButton.getAttribute('data-vote-mode')).toBe('change');
   });
 
   it('(u) clicking the agree button on the expanded chip dispatches the facet-arm vote envelope', () => {

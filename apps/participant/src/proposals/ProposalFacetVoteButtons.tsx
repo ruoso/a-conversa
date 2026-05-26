@@ -2,13 +2,19 @@
 // inside each per-facet chip in the participant pending-proposals pane.
 //
 // Refinement: tasks/refinements/participant-ui/part_vote_button_per_facet.md
+//   + tasks/refinements/participant-ui/part_change_vote_pre_commit.md
+//     (extends the gate to honor change-vote across the pre-commit
+//     window, including `'agreed'` — see `VOTABLE_STATUSES`).
 //
 // Renders agree + dispute buttons (no withdraw — withdraw is its own
 // gesture per ADR 0030 §3 and lives on the detail-panel + future
-// `part_withdraw.*` chain) when the chip's status admits a vote AND the
-// current participant has not yet voted on this facet/proposal. When
-// either gate fails the component returns null so the chip stays at its
-// declarative shape.
+// `part_withdraw.*` chain) whenever the chip's status admits a vote in
+// the pre-commit window. When the current participant has already
+// recorded a vote on this facet/proposal the chosen-side button is
+// hidden and only the opposite-side button renders — the change-vote
+// affordance. The server's latest-vote-wins rule (vote.ts lines
+// 209-224) applies the flip; the projector clears the chosen-side ack
+// per ADR 0030 §7 on supersession-clear.
 //
 // Pane-namespaced testids
 // (`participant-pending-proposal-row-facet-vote-button-{agree,dispute}`)
@@ -38,10 +44,16 @@ export interface ProposalFacetVoteButtonsProps {
   readonly ownFacetVotes: OwnFacetVoteIndex;
 }
 
+// `'agreed'` lands here per `part_change_vote_pre_commit`: a facet at
+// status `'agreed'` is unanimous-but-not-yet-committed; a participant
+// who changes their mind in that window MUST be able to flip to dispute
+// (un-unanimous-ing the facet) before the moderator commits. The server
+// accepts the flip from `'agreed'` (vote.ts only rejects `'committed'`).
 const VOTABLE_STATUSES: ReadonlySet<FacetStatus> = new Set<FacetStatus>([
   'proposed',
   'disputed',
   'withdrawn',
+  'agreed',
 ]);
 
 const VOTE_CHOICES: readonly VoteChoice[] = ['agree', 'dispute'];
@@ -92,24 +104,36 @@ export function ProposalFacetVoteButtons({
 
   const shouldRender =
     VOTABLE_STATUSES.has(status) &&
-    ownVote === undefined &&
     !(voteTarget.kind === 'proposal' && voteTarget.proposal_id === '');
 
   if (!shouldRender) return null;
+
+  // When the participant has already voted on this facet/proposal, hide
+  // the chosen-side button — the only remaining affordance is the
+  // opposite-side change-vote button. When no own-vote is set, both
+  // buttons render as the first-vote case.
+  const renderedChoices: readonly VoteChoice[] =
+    ownVote === undefined ? VOTE_CHOICES : VOTE_CHOICES.filter((choice) => choice !== ownVote);
+  const voteMode: 'first' | 'change' = ownVote === undefined ? 'first' : 'change';
 
   return (
     <span
       data-testid="participant-pending-proposal-row-facet-vote-buttons"
       className="ml-1 inline-flex items-center gap-1"
     >
-      {VOTE_CHOICES.map((choice) => (
+      {renderedChoices.map((choice) => (
         <button
           key={choice}
           type="button"
           data-testid={TESTID[choice]}
           data-vote-choice={choice}
+          data-vote-mode={voteMode}
           data-vote-state={inFlight ? 'in-flight' : 'enabled'}
-          aria-label={t('participant.voteButton.ariaLabel', { choice })}
+          aria-label={
+            voteMode === 'change'
+              ? t('participant.voteButton.changeAriaLabel', { choice })
+              : t('participant.voteButton.ariaLabel', { choice })
+          }
           disabled={inFlight}
           aria-disabled={inFlight}
           onClick={() => {

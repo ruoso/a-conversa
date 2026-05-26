@@ -686,6 +686,7 @@
       "withdrawLabel": "Withdraw",
       "inFlightLabel": "Sending…",
       "ariaLabel": "{choice, select, agree {Agree with this proposal} dispute {Dispute this proposal} withdraw {Withdraw your prior agreement} other {Vote}}",
+      "changeAriaLabel": "{choice, select, agree {Change your vote to Agree} dispute {Change your vote to Dispute} other {Change your vote}}",
       "wireError": "Vote failed: {message} ({code})",
       "timeoutError": "The vote request timed out. Check your connection and try again.",
       "errorRoleLabel": "Vote error",

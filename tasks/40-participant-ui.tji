@@ -257,6 +257,7 @@ task participant_ui "Participant (debater) UI" {
     task part_change_vote_pre_commit "Allow vote change up to commit" {
       effort 1d
       allocate team
+      complete 100
       depends !part_vote_single_tap
     }
     task part_agree_all_gesture "Agree-all gesture per proposal bundle" {

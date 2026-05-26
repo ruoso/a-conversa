@@ -897,44 +897,58 @@ function FacetRow(props: FacetRowProps): ReactElement {
       : 'enabled';
 
   // Pick the row's button vocabulary by status. `null` means "no
-  // buttons" (awaiting-proposal + meta-disagreement + pre-commit
-  // states the current participant has already voted on). The
-  // `'proposal'` synthetic facet uses the structural three-button
-  // shape (kept for back-compat with the pre-refactor wire path).
+  // buttons" (awaiting-proposal + meta-disagreement). The `'proposal'`
+  // synthetic facet uses the structural three-button shape (kept for
+  // back-compat with the pre-refactor wire path; per
+  // `part_change_vote_pre_commit` Decision §4 the structural arm
+  // keeps its prior ownVote-hides-all gate — the per-chip pre-commit
+  // change-vote affordance lands on the facet arms only).
   //
-  // Pre-commit hide-after-vote: when the current participant has
-  // recorded a vote on the row's current candidate (`ownVote` is
-  // defined), the agree/dispute branch collapses to `null`. The vote
-  // affordance has done its job — keeping the buttons rendered would
-  // invite a vote the participant has already cast and obscure the
-  // "I voted X" state. The post-commit `withdraw` branch is
-  // intentionally still rendered (the participant can withdraw their
-  // own agreement; the indicator and the affordance are distinct
-  // gestures there).
+  // Pre-commit change-vote: when the current participant has recorded
+  // a vote on the row's current candidate (`ownVote` is defined) AND
+  // the facet is still in the pre-commit window (`proposed` /
+  // `disputed` / `withdrawn` / `agreed`), the chosen-side button is
+  // hidden and only the opposite-side change-vote button renders. The
+  // "You voted X" indicator coexists with that button (per Decision
+  // §5). Post-commit (`committed`) the row collapses to the wired
+  // withdraw button only per ADR 0030 §3.
   const choices = useMemo<readonly RowVoteChoice[] | null>(() => {
     if (facet === 'proposal') {
+      // Structural-proposal arm — keeps the pre-`part_change_vote`
+      // gate (Decision §4 in `part_change_vote_pre_commit.md`). The
+      // structural vote-shape is three-armed (`agree | dispute |
+      // withdraw`) at the proposal level; extending the change-vote
+      // affordance there is a separate `part_change_vote_structural`
+      // task if user-testing surfaces the need.
       return ownVote !== undefined ? null : STRUCTURAL_VOTE_CHOICES;
     }
     switch (status) {
       case 'awaiting-proposal':
       case 'meta-disagreement':
         return null;
-      case 'agreed':
       case 'committed':
-        // The single-arm 'withdraw' button is now WIRED — clicking
-        // arms a two-stage confirmation, and a second click fires
+        // Post-commit affordance per ADR 0030 §3: the wired withdraw
+        // button is the only path out of agreement. Two-stage
+        // confirmation gesture; first click arms, second click fires
         // the `withdraw-agreement` envelope via
-        // `useWithdrawAgreementAction` (per ADR 0030 §3 +
-        // `pf_part_withdraw_agreement_action`). On success the row's
-        // status walks to `'withdrawn'` per the projection (Rule 4
-        // in `deriveFacetStatus`); the button disappears as the row
-        // re-renders into the `withdrawn` branch (which renders
-        // agree/dispute buttons instead).
+        // `useWithdrawAgreementAction`. On success the row's status
+        // walks to `'withdrawn'` (Rule 4 in `deriveFacetStatus`) and
+        // the row re-renders into the `withdrawn` branch (which
+        // renders agree/dispute buttons instead).
         return ['withdraw'] as const;
+      case 'agreed':
       case 'proposed':
       case 'disputed':
       case 'withdrawn':
-        return ownVote !== undefined ? null : FACET_VOTE_CHOICES;
+        // Pre-commit window per `part_change_vote_pre_commit`. When
+        // the participant has not yet voted, both agree+dispute
+        // render. When they have voted, the chosen-side button is
+        // hidden and only the opposite-side change-vote button
+        // renders — the latest-vote-wins server rule (vote.ts lines
+        // 209-224) accepts the flip; the chosen-side is hidden (not
+        // disabled) so a no-op envelope cannot be dispatched.
+        if (ownVote === undefined) return FACET_VOTE_CHOICES;
+        return FACET_VOTE_CHOICES.filter((c) => c !== ownVote);
       default:
         return null;
     }
@@ -997,16 +1011,18 @@ function FacetRow(props: FacetRowProps): ReactElement {
         <span className="text-xs uppercase tracking-wide text-slate-500">
           {t(`methodology.facet.${facet}`)}
         </span>
-        {choices === null && ownVote !== undefined ? (
-          // "You voted X" indicator — replaces the agree / dispute /
-          // structural buttons once the participant has cast a vote on
-          // the row's current candidate. The buttons hide so the
-          // affordance doesn't keep inviting a vote already cast; the
-          // indicator preserves visibility of WHICH way the participant
-          // voted while waiting for the rest of the room to vote and
-          // the moderator to commit. A new candidate landing on the
-          // facet (per ADR 0030 §7) clears the own-vote and the buttons
-          // re-appear automatically.
+        {ownVote !== undefined ? (
+          // "You voted X" indicator — preserves visibility of WHICH way
+          // the participant voted. Pre-`part_change_vote_pre_commit`
+          // this indicator only rendered when the agree/dispute buttons
+          // were fully hidden (`choices === null && ownVote !==
+          // undefined`); after that leaf the indicator COEXISTS with
+          // the change-vote button on pre-commit rows (the opposite-
+          // side button is the change-vote affordance; the indicator
+          // surfaces the at-a-glance "you voted X" cue alongside it).
+          // A new candidate landing on the facet (per ADR 0030 §7)
+          // clears the own-vote and both indicator and chosen-side
+          // button re-appear automatically.
           <span
             data-testid={OWN_VOTE_INDICATOR_TESTID}
             data-vote-choice={ownVote}
@@ -1130,9 +1146,16 @@ function FacetRow(props: FacetRowProps): ReactElement {
                   data-vote-choice={choice}
                   data-vote-state={voteState}
                   data-placeholder={isPlaceholderWithdraw ? 'true' : undefined}
+                  data-vote-mode={
+                    isPlaceholderWithdraw ? undefined : ownVote !== undefined ? 'change' : 'first'
+                  }
                   disabled={inFlight || isPlaceholderWithdraw}
                   aria-disabled={inFlight || isPlaceholderWithdraw}
-                  aria-label={t('participant.voteButton.ariaLabel', { choice })}
+                  aria-label={
+                    ownVote !== undefined && !isPlaceholderWithdraw
+                      ? t('participant.voteButton.changeAriaLabel', { choice })
+                      : t('participant.voteButton.ariaLabel', { choice })
+                  }
                   onClick={
                     isPlaceholderWithdraw || wiredChoice === null
                       ? undefined

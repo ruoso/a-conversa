@@ -686,6 +686,7 @@
       "withdrawLabel": "Retirar",
       "inFlightLabel": "Enviando…",
       "ariaLabel": "{choice, select, agree {Concordar com esta proposta} dispute {Contestar esta proposta} withdraw {Retirar sua concordância anterior} other {Votar}}",
+      "changeAriaLabel": "{choice, select, agree {Mudar seu voto para Concordar} dispute {Mudar seu voto para Contestar} other {Mudar seu voto}}",
       "wireError": "O voto falhou: {message} ({code})",
       "timeoutError": "A requisição de voto expirou. Verifique sua conexão e tente novamente.",
       "errorRoleLabel": "Erro de voto",

@@ -142,9 +142,13 @@ function renderButtons(
   );
 }
 
-const VOTABLE_STATUSES: readonly FacetStatus[] = ['proposed', 'disputed', 'withdrawn'];
+// `'agreed'` joined `VOTABLE_STATUSES` per
+// `part_change_vote_pre_commit` — the facet at status `'agreed'` is
+// unanimous-but-not-yet-committed; participants retain change-vote
+// agency through the pre-commit window. The committed / meta-disagreement
+// / awaiting-proposal statuses stay non-votable.
+const VOTABLE_STATUSES: readonly FacetStatus[] = ['proposed', 'disputed', 'withdrawn', 'agreed'];
 const NON_VOTABLE_STATUSES: readonly FacetStatus[] = [
-  'agreed',
   'committed',
   'meta-disagreement',
   'awaiting-proposal',
@@ -152,7 +156,7 @@ const NON_VOTABLE_STATUSES: readonly FacetStatus[] = [
 
 describe('<ProposalFacetVoteButtons>', () => {
   it.each(VOTABLE_STATUSES)(
-    '(a–c) renders both buttons when status="%s" and own-vote is absent',
+    '(a–c, agreed) renders both buttons when status="%s" and own-vote is absent',
     (status) => {
       renderButtons(FACET_TARGET, status);
       expect(
@@ -174,7 +178,7 @@ describe('<ProposalFacetVoteButtons>', () => {
     ).toBeNull();
   });
 
-  it('(h) facet-arm own-vote on the keyed facet hides the buttons', () => {
+  it('(h) facet-arm own-vote `agree` hides the chosen-side (agree) button; the dispute change-vote button stays visible', () => {
     const ownVotes: OwnFacetVoteIndex = {
       facets: new Map<string, 'agree' | 'dispute'>([
         [ownFacetKey('node', NODE_X, 'wording'), 'agree'],
@@ -185,17 +189,25 @@ describe('<ProposalFacetVoteButtons>', () => {
     expect(
       screen.queryByTestId('participant-pending-proposal-row-facet-vote-button-agree'),
     ).toBeNull();
+    // Per `part_change_vote_pre_commit`: the opposite-of-ownVote
+    // button is the change-vote affordance.
+    expect(
+      screen.getByTestId('participant-pending-proposal-row-facet-vote-button-dispute'),
+    ).toBeDefined();
   });
 
-  it('(i) proposal-arm own-vote on the keyed proposal hides the buttons', () => {
+  it('(i) proposal-arm own-vote `dispute` hides the chosen-side (dispute) button; the agree change-vote button stays visible', () => {
     const ownVotes: OwnFacetVoteIndex = {
       facets: new Map<string, 'agree' | 'dispute'>(),
       proposals: new Map<string, 'agree' | 'dispute'>([[PROPOSAL_P, 'dispute']]),
     };
     renderButtons(PROPOSAL_TARGET, 'proposed', ownVotes);
     expect(
-      screen.queryByTestId('participant-pending-proposal-row-facet-vote-button-agree'),
+      screen.queryByTestId('participant-pending-proposal-row-facet-vote-button-dispute'),
     ).toBeNull();
+    expect(
+      screen.getByTestId('participant-pending-proposal-row-facet-vote-button-agree'),
+    ).toBeDefined();
   });
 
   it('(j) clicking agree on the facet arm sends the facet-keyed vote payload and flips data-vote-state to in-flight', () => {
@@ -248,6 +260,129 @@ describe('<ProposalFacetVoteButtons>', () => {
     expect(
       screen.queryByTestId('participant-pending-proposal-row-facet-vote-button-dispute'),
     ).toBeNull();
+  });
+});
+
+// --------------------------------------------------------------------
+// Pre-commit change-vote — per
+// `tasks/refinements/participant-ui/part_change_vote_pre_commit.md`.
+// Seven cases pin the opposite-of-ownVote affordance through the
+// pre-commit window: first-vote regression, change-vote button
+// visibility under each side, agreed-pre-commit flip, post-commit
+// hide, single-tap policy on the change-vote button, ack-driven
+// re-render. Cases (b), (c), (d) close the inheritance loop from
+// `part_vote_button_per_facet.md` out-of-scope line 33; case (f)
+// closes the inheritance loop from `part_vote_single_tap.md` line 26.
+// --------------------------------------------------------------------
+
+describe('<ProposalFacetVoteButtons> — pre-commit change vote', () => {
+  const FACET_KEY = ownFacetKey('node', NODE_X, 'wording');
+
+  function ownVoteIndex(choice: 'agree' | 'dispute'): OwnFacetVoteIndex {
+    return {
+      facets: new Map<string, 'agree' | 'dispute'>([[FACET_KEY, choice]]),
+      proposals: new Map<string, 'agree' | 'dispute'>(),
+    };
+  }
+
+  it('(a) status="proposed" + no own-vote → both buttons render (first-vote regression)', () => {
+    renderButtons(FACET_TARGET, 'proposed');
+    const agree = screen.getByTestId('participant-pending-proposal-row-facet-vote-button-agree');
+    const dispute = screen.getByTestId(
+      'participant-pending-proposal-row-facet-vote-button-dispute',
+    );
+    expect(agree.getAttribute('data-vote-mode')).toBe('first');
+    expect(dispute.getAttribute('data-vote-mode')).toBe('first');
+  });
+
+  it('(b) status="proposed" + ownVote="agree" → only dispute renders; mode="change"; change-vote aria-label', () => {
+    renderButtons(FACET_TARGET, 'proposed', ownVoteIndex('agree'));
+    expect(
+      screen.queryByTestId('participant-pending-proposal-row-facet-vote-button-agree'),
+    ).toBeNull();
+    const dispute = screen.getByTestId(
+      'participant-pending-proposal-row-facet-vote-button-dispute',
+    );
+    expect(dispute.getAttribute('data-vote-mode')).toBe('change');
+    expect(dispute.getAttribute('aria-label')).toBe('Change your vote to Dispute');
+  });
+
+  it('(c) status="proposed" + ownVote="dispute" → only agree renders; mode="change"; change-vote aria-label', () => {
+    renderButtons(FACET_TARGET, 'proposed', ownVoteIndex('dispute'));
+    expect(
+      screen.queryByTestId('participant-pending-proposal-row-facet-vote-button-dispute'),
+    ).toBeNull();
+    const agree = screen.getByTestId('participant-pending-proposal-row-facet-vote-button-agree');
+    expect(agree.getAttribute('data-vote-mode')).toBe('change');
+    expect(agree.getAttribute('aria-label')).toBe('Change your vote to Agree');
+  });
+
+  it('(d) status="agreed" + ownVote="agree" → the dispute change-vote button renders (agreed is in the pre-commit window)', () => {
+    renderButtons(FACET_TARGET, 'agreed', ownVoteIndex('agree'));
+    expect(
+      screen.queryByTestId('participant-pending-proposal-row-facet-vote-button-agree'),
+    ).toBeNull();
+    expect(
+      screen.getByTestId('participant-pending-proposal-row-facet-vote-button-dispute'),
+    ).toBeDefined();
+  });
+
+  it('(e) status="committed" + ownVote="agree" → component returns null (post-commit has no pane affordance)', () => {
+    renderButtons(FACET_TARGET, 'committed', ownVoteIndex('agree'));
+    expect(
+      screen.queryByTestId('participant-pending-proposal-row-facet-vote-button-agree'),
+    ).toBeNull();
+    expect(
+      screen.queryByTestId('participant-pending-proposal-row-facet-vote-button-dispute'),
+    ).toBeNull();
+    expect(screen.queryByTestId('participant-pending-proposal-row-facet-vote-buttons')).toBeNull();
+  });
+
+  it('(f) single-tap policy holds on the change-vote button: two rapid clicks dispatch once; no modal mounts', () => {
+    const fake = makeFakeClient();
+    renderButtons(FACET_TARGET, 'proposed', ownVoteIndex('agree'), fake.client);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.querySelector('[aria-modal="true"]')).toBeNull();
+    const dispute = screen.getByTestId(
+      'participant-pending-proposal-row-facet-vote-button-dispute',
+    );
+    act(() => {
+      fireEvent.click(dispute);
+      fireEvent.click(dispute);
+    });
+    expect(fake.calls.length).toBe(1);
+    expect(fake.calls[0]?.type).toBe('vote');
+    expect((fake.calls[0]?.payload as { choice: string }).choice).toBe('dispute');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.querySelector('[aria-modal="true"]')).toBeNull();
+  });
+
+  it('(g) ack-driven re-render: ownVote flipping from "agree" to "dispute" swaps which button is hidden', () => {
+    const view = renderButtons(FACET_TARGET, 'proposed', ownVoteIndex('agree'));
+    expect(
+      screen.queryByTestId('participant-pending-proposal-row-facet-vote-button-agree'),
+    ).toBeNull();
+    expect(
+      screen.getByTestId('participant-pending-proposal-row-facet-vote-button-dispute'),
+    ).toBeDefined();
+    // Simulate the post-ack projector update: the ownVote flips from
+    // 'agree' to 'dispute'. The component re-renders with the agree
+    // button visible and the dispute button hidden.
+    view.rerender(
+      <Wrapper client={makeFakeClient().client}>
+        <ProposalFacetVoteButtons
+          voteTarget={FACET_TARGET}
+          status="proposed"
+          ownFacetVotes={ownVoteIndex('dispute')}
+        />
+      </Wrapper>,
+    );
+    expect(
+      screen.queryByTestId('participant-pending-proposal-row-facet-vote-button-dispute'),
+    ).toBeNull();
+    expect(
+      screen.getByTestId('participant-pending-proposal-row-facet-vote-button-agree'),
+    ).toBeDefined();
   });
 });
 
