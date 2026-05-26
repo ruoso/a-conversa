@@ -27,12 +27,14 @@ import type { ProposalPayload } from '@a-conversa/shared-types';
 import { PILL_BASE_CLASSNAME, PILL_STATUS_CLASSNAME, VoteIndicator } from '@a-conversa/shell';
 
 import type { FacetStatusIndex } from '../graph/facetStatus';
+import { EMPTY_OWN_FACET_VOTES, type OwnFacetVoteIndex } from '../graph/ownVotes';
 import { derivePerProposalFacets } from './perProposalFacets';
 import { EMPTY_OTHER_VOTES_BY_FACET_INDEX, type OtherVotesByFacetIndex } from './otherVotesByFacet';
 import {
   EMPTY_OTHER_VOTES_BY_PROPOSAL_INDEX,
   type OtherVotesByProposalIndex,
 } from './otherVotesByProposal';
+import { ProposalFacetVoteButtons } from './ProposalFacetVoteButtons';
 
 export interface PerProposalFacetBreakdownProps {
   readonly proposal: ProposalPayload;
@@ -41,6 +43,7 @@ export interface PerProposalFacetBreakdownProps {
   readonly proposalEventId: string;
   readonly votesByFacetIndex?: OtherVotesByFacetIndex;
   readonly votesByProposalIndex?: OtherVotesByProposalIndex;
+  readonly ownFacetVotes?: OwnFacetVoteIndex;
 }
 
 const BREAKDOWN_CONTAINER_CLASSES = 'flex flex-row flex-wrap items-center gap-1';
@@ -53,8 +56,10 @@ function PerProposalFacetBreakdownImpl(props: PerProposalFacetBreakdownProps): R
     proposalEventId,
     votesByFacetIndex,
     votesByProposalIndex,
+    ownFacetVotes,
   } = props;
   const { t } = useTranslation();
+  const ownFacetVotesResolved = ownFacetVotes ?? EMPTY_OWN_FACET_VOTES;
 
   const entries = useMemo(
     () =>
@@ -112,6 +117,11 @@ function PerProposalFacetBreakdownImpl(props: PerProposalFacetBreakdownProps): R
           >
             {facetLabel}
             {voteIndicatorRow}
+            <ProposalFacetVoteButtons
+              voteTarget={entry.voteTarget}
+              status={entry.status}
+              ownFacetVotes={ownFacetVotesResolved}
+            />
           </span>
         );
       })}

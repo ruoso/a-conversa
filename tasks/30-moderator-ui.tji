@@ -493,6 +493,12 @@ task moderator_ui "Moderator UI" {
       depends !mod_drag_to_create_edge
       note "Refinement: tasks/refinements/moderator-ui/mod_role_palette_on_drop.md"
     }
+    task phase_3_1_layout_race "Strengthen Phase 3.1 drag-edge mitigation against debounce race" {
+      effort 0.5d
+      allocate team
+      depends !mod_role_palette_on_drop
+      note "Tech-debt from participant_ui.part_pending_proposals.part_vote_button_per_facet (fixer attempt 3): pre-existing dagre-layout / measurement-debounce race in moderator-draw-edge.spec.ts Phase 3.1 — DrawEdgeRolePicker never mounts because the target handle moves during the 75 ms layout debounce. The test already has waitForBoundingBoxStable mitigation but the race leaks on slow runners. Strengthen the Phase 3.1 setup (explicit wait after tidy-up click for debounce to fire, re-sample handle bboxes before mouseup) so the flake no longer hard-fails the chain."
+    }
   }
 
   task mod_axiom_mark_flow "F5 — Capture an axiom-mark" {

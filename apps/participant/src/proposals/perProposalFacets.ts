@@ -34,6 +34,29 @@ import {
 export type LifecycleFacetName = FacetName | 'proposal';
 
 /**
+ * The vote-dispatch target a chip's vote button binds to. The
+ * discriminated union mirrors the wire `vote` payload's `target` arm
+ * per ADR 0030 §2 + §9: facet-targeting sub-kinds emit the facet arm
+ * keyed by `(entity_kind, entity_id, facet)`, structural sub-kinds
+ * emit the proposal arm keyed by the structural proposal envelope id.
+ *
+ * Refinement: `tasks/refinements/participant-ui/part_vote_button_per_facet.md`
+ * (Decision §1 — extend the existing selector, single field on every
+ * entry, no parallel selector).
+ */
+export type VoteTarget =
+  | {
+      readonly kind: 'facet';
+      readonly entity_kind: 'node' | 'edge';
+      readonly entity_id: string;
+      readonly facet: FacetName;
+    }
+  | {
+      readonly kind: 'proposal';
+      readonly proposal_id: string;
+    };
+
+/**
  * One entry in the breakdown's facet list. The component iterates the
  * selector's output array and renders one chip per entry; the chip's
  * `data-facet-name`, `data-facet-status`, and rendered label all flow
@@ -44,12 +67,17 @@ export type LifecycleFacetName = FacetName | 'proposal';
  * per-OTHER-voter `Vote[]` the chip's in-line indicator row renders;
  * structural sub-kinds resolve via `votesByProposalIndex`, facet-targeting
  * via `votesByFacetIndex`. Empty when no OTHER votes have landed yet.
+ *
+ * Per `part_vote_button_per_facet`, each entry also carries a
+ * `voteTarget` discriminating between the facet-arm and proposal-arm
+ * vote-dispatch shape for the chip's in-place vote buttons.
  */
 export interface ProposalFacetEntry {
   readonly facet: LifecycleFacetName;
   readonly status: FacetStatus;
   readonly labelKey: string;
   readonly votes: readonly Vote[];
+  readonly voteTarget: VoteTarget;
 }
 
 type FacetTarget = {
@@ -165,12 +193,19 @@ export function derivePerProposalFacets(
   if (target) {
     const status = resolveStatus(target.facet, target, facetStatusIndex, serverPerFacetStatus);
     const votes = votesByFacetIndex.get(target.entityId)?.get(target.facet) ?? EMPTY_VOTES;
+    const voteTarget: VoteTarget = {
+      kind: 'facet',
+      entity_kind: target.entityKind,
+      entity_id: target.entityId,
+      facet: target.facet,
+    };
     return [
       {
         facet: target.facet,
         status,
         labelKey: labelKeyFor(target.facet),
         votes,
+        voteTarget,
       },
     ];
   }
@@ -179,12 +214,17 @@ export function derivePerProposalFacets(
     proposalEventId !== undefined
       ? (votesByProposalIndex.get(proposalEventId) ?? EMPTY_VOTES)
       : EMPTY_VOTES;
+  const voteTarget: VoteTarget = {
+    kind: 'proposal',
+    proposal_id: proposalEventId ?? '',
+  };
   return [
     {
       facet: 'proposal',
       status,
       labelKey: labelKeyFor('proposal'),
       votes,
+      voteTarget,
     },
   ];
 }

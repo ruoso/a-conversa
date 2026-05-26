@@ -20,27 +20,73 @@
 //   (e) The breakdown container carries `data-proposal-id` matching the
 //       prop.
 
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
-import type { ProposalPayload } from '@a-conversa/shared-types';
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import type {
+  ProposalPayload,
+  WsEnvelopeUnion,
+  WsMessagePayloadMap,
+  WsMessageType,
+} from '@a-conversa/shared-types';
 
 import {
   I18nProvider,
   PILL_BASE_CLASSNAME,
   PILL_STATUS_CLASSNAME,
+  WsClientProvider,
   createI18nInstance,
   type I18nInstance,
+  type SendFn,
   type Vote,
+  type WsClient,
+  type WsClientStatus,
 } from '@a-conversa/shell';
 
 import { PerProposalFacetBreakdown } from './PerProposalFacetBreakdown';
 import type { OtherVotesByFacetIndex } from './otherVotesByFacet';
 import type { OtherVotesByProposalIndex } from './otherVotesByProposal';
+import { EMPTY_OWN_FACET_VOTES, ownFacetKey, type OwnFacetVoteIndex } from '../graph/ownVotes';
+import { resetVoteActionStore } from '../detail/useVoteAction';
+import { useWsStore } from '../ws/wsStore';
 import type { FacetName, FacetStatus, FacetStatusIndex } from '../graph/facetStatus';
 
 const NODE_X = '00000000-0000-4000-8000-00000000000a';
 const PROPOSAL_P = '00000000-0000-4000-8000-0000000000ff';
 const PARTICIPANT_A = '00000000-0000-4000-8000-0000000000c1';
+const SESSION_ID = '11111111-1111-4111-8111-111111111111';
+
+interface Call {
+  readonly type: WsMessageType;
+  readonly payload: WsMessagePayloadMap[WsMessageType];
+}
+
+interface FakeClient {
+  readonly client: WsClient;
+  readonly calls: Call[];
+}
+
+function makeFakeClient(): FakeClient {
+  const calls: Call[] = [];
+  const send: SendFn = <T extends WsMessageType>(
+    type: T,
+    payload: WsMessagePayloadMap[T],
+  ): Promise<WsEnvelopeUnion> => {
+    calls.push({ type, payload });
+    return new Promise<WsEnvelopeUnion>(() => undefined);
+  };
+  const client: WsClient = {
+    status: (): WsClientStatus => 'open',
+    connect: () => undefined,
+    close: () => undefined,
+    send,
+    trackSession: () => Promise.resolve(),
+    untrackSession: () => Promise.resolve(),
+    onEnvelope: () => () => undefined,
+    url: '/api/ws',
+  };
+  return { client, calls };
+}
 
 const EMPTY_INDEX: FacetStatusIndex = {
   nodes: new Map(),
@@ -72,6 +118,14 @@ beforeAll(async () => {
   i18n = await createI18nInstance('en-US');
 });
 
+beforeEach(() => {
+  useWsStore.getState().reset();
+  resetVoteActionStore();
+  act(() => {
+    useWsStore.getState().setConnectionStatus('open');
+  });
+});
+
 afterEach(() => {
   cleanup();
 });
@@ -83,23 +137,38 @@ function renderBreakdown(
   proposalEventId: string = PROPOSAL_P,
   votesByFacetIndex?: OtherVotesByFacetIndex,
   votesByProposalIndex?: OtherVotesByProposalIndex,
+  ownFacetVotes?: OwnFacetVoteIndex,
+  client: WsClient = makeFakeClient().client,
 ): ReturnType<typeof render> {
   const voteProps: {
     votesByFacetIndex?: OtherVotesByFacetIndex;
     votesByProposalIndex?: OtherVotesByProposalIndex;
+    ownFacetVotes?: OwnFacetVoteIndex;
   } = {};
   if (votesByFacetIndex !== undefined) voteProps.votesByFacetIndex = votesByFacetIndex;
   if (votesByProposalIndex !== undefined) voteProps.votesByProposalIndex = votesByProposalIndex;
+  if (ownFacetVotes !== undefined) voteProps.ownFacetVotes = ownFacetVotes;
   return render(
-    <I18nProvider i18n={i18n}>
-      <PerProposalFacetBreakdown
-        proposal={proposal}
-        facetStatusIndex={facetStatusIndex}
-        serverPerFacetStatus={serverPerFacetStatus}
-        proposalEventId={proposalEventId}
-        {...voteProps}
-      />
-    </I18nProvider>,
+    <MemoryRouter initialEntries={[`/sessions/${SESSION_ID}`]}>
+      <WsClientProvider auth={{ status: 'authenticated' }} client={client}>
+        <I18nProvider i18n={i18n}>
+          <Routes>
+            <Route
+              path="/sessions/:id"
+              element={
+                <PerProposalFacetBreakdown
+                  proposal={proposal}
+                  facetStatusIndex={facetStatusIndex}
+                  serverPerFacetStatus={serverPerFacetStatus}
+                  proposalEventId={proposalEventId}
+                  {...voteProps}
+                />
+              }
+            />
+          </Routes>
+        </I18nProvider>
+      </WsClientProvider>
+    </MemoryRouter>,
   );
 }
 
@@ -134,7 +203,9 @@ describe('<PerProposalFacetBreakdown>', () => {
     expect(chips).toHaveLength(1);
     expect(chips[0]?.getAttribute('data-facet-name')).toBe('wording');
     expect(chips[0]?.getAttribute('data-facet-status')).toBe('proposed');
-    expect(chips[0]?.textContent).toBe('Wording');
+    // First child is the facet-label text node; the vote-button block
+    // mounts after it as a sibling span. Pin the label text only.
+    expect(chips[0]?.firstChild?.nodeValue).toBe('Wording');
     expect(chips[0]?.getAttribute('class')).toBe(
       `${PILL_BASE_CLASSNAME} ${PILL_STATUS_CLASSNAME.proposed}`,
     );
@@ -188,7 +259,7 @@ describe('<PerProposalFacetBreakdown>', () => {
     const chips = screen.getAllByTestId('participant-pending-proposal-row-facet');
     expect(chips).toHaveLength(1);
     expect(chips[0]?.getAttribute('data-facet-name')).toBe('proposal');
-    expect(chips[0]?.textContent).toBe('Proposal');
+    expect(chips[0]?.firstChild?.nodeValue).toBe('Proposal');
   });
 
   it('(d) when serverPerFacetStatus carries the facet, the chip data-facet-status reflects the server value (not the client mirror)', () => {
@@ -240,7 +311,7 @@ describe('<PerProposalFacetBreakdown>', () => {
     expect(dots[1]?.getAttribute('data-choice')).toBe('dispute');
   });
 
-  it('(g) entry.votes.length === 0 → indicator row is OMITTED; only the label text in the chip', () => {
+  it('(g) entry.votes.length === 0 → indicator row is OMITTED; the chip leads with the label text', () => {
     const proposal: ProposalPayload = {
       kind: 'capture-node',
       node_id: NODE_X,
@@ -251,7 +322,104 @@ describe('<PerProposalFacetBreakdown>', () => {
       screen.queryByTestId('participant-pending-proposal-row-facet-vote-indicator-row'),
     ).toBeNull();
     const chip = screen.getByTestId('participant-pending-proposal-row-facet');
-    expect(chip.textContent).toBe('Wording');
+    expect(chip.firstChild?.nodeValue).toBe('Wording');
+  });
+
+  it('(i) chip at status="proposed" + empty ownFacetVotes → renders both vote buttons inside the chip span', () => {
+    const proposal: ProposalPayload = {
+      kind: 'capture-node',
+      node_id: NODE_X,
+      wording: 'fresh wording',
+    };
+    renderBreakdown(proposal);
+    const chip = screen.getByTestId('participant-pending-proposal-row-facet');
+    expect(
+      chip.querySelector(
+        '[data-testid="participant-pending-proposal-row-facet-vote-button-agree"]',
+      ),
+    ).toBeTruthy();
+    expect(
+      chip.querySelector(
+        '[data-testid="participant-pending-proposal-row-facet-vote-button-dispute"]',
+      ),
+    ).toBeTruthy();
+  });
+
+  it('(j) chip at status="agreed" → vote buttons absent', () => {
+    const proposal: ProposalPayload = {
+      kind: 'classify-node',
+      node_id: NODE_X,
+      classification: 'fact',
+    };
+    const server: Record<string, string> = { classification: 'agreed' };
+    renderBreakdown(proposal, EMPTY_INDEX, server);
+    expect(
+      screen.queryByTestId('participant-pending-proposal-row-facet-vote-button-agree'),
+    ).toBeNull();
+    expect(
+      screen.queryByTestId('participant-pending-proposal-row-facet-vote-button-dispute'),
+    ).toBeNull();
+  });
+
+  it('(k) chip at status="proposed" with the participant\'s own vote in ownFacetVotes → vote buttons absent', () => {
+    const proposal: ProposalPayload = {
+      kind: 'capture-node',
+      node_id: NODE_X,
+      wording: 'fresh wording',
+    };
+    const ownVotes: OwnFacetVoteIndex = {
+      facets: new Map<string, 'agree' | 'dispute'>([
+        [ownFacetKey('node', NODE_X, 'wording'), 'agree'],
+      ]),
+      proposals: new Map<string, 'agree' | 'dispute'>(),
+    };
+    renderBreakdown(proposal, EMPTY_INDEX, undefined, PROPOSAL_P, undefined, undefined, ownVotes);
+    expect(
+      screen.queryByTestId('participant-pending-proposal-row-facet-vote-button-agree'),
+    ).toBeNull();
+  });
+
+  it('(l) structural sub-kind (decompose) chip at status="proposed" → clicking agree fires the proposal-arm vote payload', () => {
+    const proposal: ProposalPayload = {
+      kind: 'decompose',
+      parent_node_id: NODE_X,
+      components: [
+        {
+          wording: 'first',
+          classification: 'fact',
+          node_id: '00000000-0000-4000-8000-00000000f071',
+        },
+        {
+          wording: 'second',
+          classification: 'fact',
+          node_id: '00000000-0000-4000-8000-00000000f072',
+        },
+      ],
+    };
+    const fake = makeFakeClient();
+    renderBreakdown(
+      proposal,
+      EMPTY_INDEX,
+      undefined,
+      PROPOSAL_P,
+      undefined,
+      undefined,
+      EMPTY_OWN_FACET_VOTES,
+      fake.client,
+    );
+    const agree = screen.getByTestId('participant-pending-proposal-row-facet-vote-button-agree');
+    act(() => {
+      fireEvent.click(agree);
+    });
+    expect(fake.calls.length).toBe(1);
+    expect(fake.calls[0]?.type).toBe('vote');
+    expect(fake.calls[0]?.payload).toEqual({
+      sessionId: SESSION_ID,
+      expectedSequence: 0,
+      target: 'proposal',
+      proposalId: PROPOSAL_P,
+      choice: 'agree',
+    });
   });
 
   it('(h) structural sub-kind with one proposal-arm vote → indicator row mounts inside the synthetic "proposal" chip', () => {

@@ -338,6 +338,76 @@ test.describe('Participant operate route — pending-proposals tab seam', () => 
       );
       await expect(dot).toHaveCount(1);
 
+      // 9. `part_vote_button_per_facet` extension — with the row still
+      //    expanded and the chip at `proposed`, the per-facet vote
+      //    buttons surface inside the chip. Click the agree button to
+      //    exercise the affordance; then inject the matching `vote`
+      //    envelope into the client store (mirroring the step 4 + 8
+      //    `applyEvent` seam — the proposal was seeded client-side and
+      //    has no server record, so the click's live WS round-trip
+      //    would be rejected for sequence-mismatch; the projector's
+      //    own-vote-hides behavior is the deterministic post-condition
+      //    this leaf asserts per Decision §6). After the projector
+      //    picks up the own vote, the affordance gate flips and both
+      //    buttons disappear from the chip.
+      const agreeButton = wordingChip.locator(
+        '[data-testid="participant-pending-proposal-row-facet-vote-button-agree"]',
+      );
+      await expect(agreeButton).toHaveCount(1);
+      await agreeButton.click();
+      await page.evaluate(
+        (seed: { sessionId: string; proposalNodeId: string; voterId: string }) => {
+          const store = (
+            window as unknown as {
+              __aConversaWsStore?: {
+                getState: () => {
+                  applyEvent: (event: unknown) => void;
+                };
+              };
+            }
+          ).__aConversaWsStore;
+          if (!store) {
+            throw new Error('__aConversaWsStore is not exposed on window');
+          }
+          store.getState().applyEvent({
+            id: '88888888-8888-4888-8888-888888888882',
+            sessionId: seed.sessionId,
+            sequence: 1_000_011,
+            kind: 'vote',
+            actor: seed.voterId,
+            payload: {
+              target: 'facet',
+              entity_kind: 'node',
+              entity_id: seed.proposalNodeId,
+              facet: 'wording',
+              participant: seed.voterId,
+              choice: 'agree',
+              voted_at: '2026-05-17T00:00:06.000Z',
+            },
+            createdAt: '2026-05-17T00:00:06.000Z',
+          });
+        },
+        {
+          sessionId,
+          proposalNodeId: PROPOSAL_NODE_ID,
+          voterId: leo.userId,
+        },
+      );
+      await expect
+        .poll(
+          async () =>
+            await wordingChip
+              .locator('[data-testid="participant-pending-proposal-row-facet-vote-button-agree"]')
+              .count(),
+          { timeout: 5_000 },
+        )
+        .toBe(0);
+      await expect(
+        wordingChip.locator(
+          '[data-testid="participant-pending-proposal-row-facet-vote-button-dispute"]',
+        ),
+      ).toHaveCount(0);
+
       await header.click();
       await expect(row).toHaveAttribute('data-expanded', 'false');
       await expect(header).toHaveAttribute('aria-expanded', 'false');

@@ -18,7 +18,12 @@ export {
   derivePerProposalFacets,
   type LifecycleFacetName,
   type ProposalFacetEntry,
+  type VoteTarget,
 } from './perProposalFacets';
+export {
+  ProposalFacetVoteButtons,
+  type ProposalFacetVoteButtonsProps,
+} from './ProposalFacetVoteButtons';
 export {
   projectOtherVotesByFacet,
   EMPTY_OTHER_VOTES_BY_FACET_INDEX,

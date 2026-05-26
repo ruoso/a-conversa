@@ -360,3 +360,81 @@ describe('derivePerProposalFacets — votes field (part_vote_indicators_in_pane)
     expect(out[0]?.votes).toBe(EMPTY_VOTES);
   });
 });
+
+// -- voteTarget extension (`part_vote_button_per_facet`) ------------
+//
+// Each entry carries a discriminated `voteTarget` field consumed by the
+// chip's in-place vote-button affordance.
+
+describe('derivePerProposalFacets — voteTarget field (part_vote_button_per_facet)', () => {
+  it('(j) facet-targeting sub-kind (capture-node) → voteTarget is facet arm with the (entity_kind, entity_id, facet) triple', () => {
+    const proposal: ProposalPayload = {
+      kind: 'capture-node',
+      node_id: NODE_X,
+      wording: 'fresh wording',
+    };
+    const out = derivePerProposalFacets(proposal, EMPTY_INDEX, undefined);
+    expect(out[0]?.voteTarget).toEqual({
+      kind: 'facet',
+      entity_kind: 'node',
+      entity_id: NODE_X,
+      facet: 'wording',
+    });
+  });
+
+  it('(k) edge-facet sub-kind (set-edge-substance) → voteTarget is facet arm with entity_kind="edge"', () => {
+    const proposal: ProposalPayload = {
+      kind: 'set-edge-substance',
+      edge_id: EDGE_E,
+      value: 'agreed',
+    };
+    const out = derivePerProposalFacets(proposal, EMPTY_INDEX, undefined);
+    expect(out[0]?.voteTarget).toEqual({
+      kind: 'facet',
+      entity_kind: 'edge',
+      entity_id: EDGE_E,
+      facet: 'substance',
+    });
+  });
+
+  it('(l) structural sub-kind (decompose) with a defined proposalEventId → voteTarget is proposal arm with proposal_id', () => {
+    const proposal: ProposalPayload = {
+      kind: 'decompose',
+      parent_node_id: NODE_X,
+      components: [
+        {
+          wording: 'first',
+          classification: 'fact',
+          node_id: '00000000-0000-4000-8000-00000000f061',
+        },
+        {
+          wording: 'second',
+          classification: 'fact',
+          node_id: '00000000-0000-4000-8000-00000000f062',
+        },
+      ],
+    };
+    const out = derivePerProposalFacets(
+      proposal,
+      EMPTY_INDEX,
+      undefined,
+      undefined,
+      PROPOSAL_DECOMPOSE,
+      undefined,
+    );
+    expect(out[0]?.voteTarget).toEqual({
+      kind: 'proposal',
+      proposal_id: PROPOSAL_DECOMPOSE,
+    });
+  });
+
+  it("(l') structural sub-kind with proposalEventId === undefined → voteTarget.proposal_id is the empty-string fallback", () => {
+    const proposal: ProposalPayload = {
+      kind: 'axiom-mark',
+      node_id: NODE_X,
+      participant: PARTICIPANT_A,
+    };
+    const out = derivePerProposalFacets(proposal, EMPTY_INDEX, undefined);
+    expect(out[0]?.voteTarget).toEqual({ kind: 'proposal', proposal_id: '' });
+  });
+});

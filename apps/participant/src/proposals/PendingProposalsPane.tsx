@@ -29,6 +29,7 @@ import { formatRelativeTime } from '@a-conversa/i18n-catalogs';
 import { useWsStore } from '../ws/wsStore';
 import { useUiStore } from '../stores/uiStore';
 import { computeFacetStatuses, type FacetStatusIndex } from '../graph/facetStatus';
+import { projectOwnFacetVotes, type OwnFacetVoteIndex } from '../graph/ownVotes';
 import {
   derivePendingProposals,
   type PendingProposalRow as PendingProposalRowData,
@@ -83,6 +84,10 @@ export function PendingProposalsPane({
     () => projectOtherVotesByProposal(events, currentParticipantId),
     [events, currentParticipantId],
   );
+  const ownFacetVotes = useMemo(
+    () => projectOwnFacetVotes(events, currentParticipantId),
+    [events, currentParticipantId],
+  );
   const nowMs = nowMsOverride ?? Date.now();
   const systemAuthorLabel = t('participant.pendingProposalsPane.systemAuthor');
   const paneAriaLabel = t('participant.pendingProposalsPane.paneAriaLabel');
@@ -117,6 +122,7 @@ export function PendingProposalsPane({
               serverPerFacetStatus={pendingProposals[row.proposalEventId]?.perFacetStatus}
               votesByFacetIndex={votesByFacetIndex}
               votesByProposalIndex={votesByProposalIndex}
+              ownFacetVotes={ownFacetVotes}
             />
           ))}
         </ul>
@@ -133,6 +139,7 @@ function PendingProposalRow({
   serverPerFacetStatus,
   votesByFacetIndex,
   votesByProposalIndex,
+  ownFacetVotes,
 }: {
   readonly row: PendingProposalRowData;
   readonly nowMs: number;
@@ -141,6 +148,7 @@ function PendingProposalRow({
   readonly serverPerFacetStatus: Record<string, string> | undefined;
   readonly votesByFacetIndex: OtherVotesByFacetIndex;
   readonly votesByProposalIndex: OtherVotesByProposalIndex;
+  readonly ownFacetVotes: OwnFacetVoteIndex;
 }): ReactElement {
   const { t } = useTranslation();
   const expandedProposalId = useUiStore((s) => s.expandedProposalId);
@@ -211,6 +219,7 @@ function PendingProposalRow({
             proposalEventId={row.proposalEventId}
             votesByFacetIndex={votesByFacetIndex}
             votesByProposalIndex={votesByProposalIndex}
+            ownFacetVotes={ownFacetVotes}
           />
         </div>
       ) : null}

@@ -6,15 +6,30 @@
 //    truth switch from `pendingProposals` to `events` baked into the
 //    fixtures; five new row-rendering cases are appended.)
 
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import type { Event } from '@a-conversa/shared-types';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import type {
+  Event,
+  WsEnvelopeUnion,
+  WsMessagePayloadMap,
+  WsMessageType,
+} from '@a-conversa/shared-types';
 
-import { I18nProvider, createI18nInstance, type I18nInstance } from '@a-conversa/shell';
+import {
+  I18nProvider,
+  WsClientProvider,
+  createI18nInstance,
+  type I18nInstance,
+  type SendFn,
+  type WsClient,
+  type WsClientStatus,
+} from '@a-conversa/shell';
 
 import { PendingProposalsPane } from './PendingProposalsPane';
 import { useWsStore } from '../ws/wsStore';
 import { useUiStore } from '../stores/uiStore';
+import { resetVoteActionStore } from '../detail/useVoteAction';
 
 const SESSION_A = '00000000-0000-4000-8000-0000000000aa';
 const PROPOSAL_A = '00000000-0000-4000-8000-0000000000a1';
@@ -81,8 +96,47 @@ function commitProposalEvent(seq: number, proposalId: string): Event {
 
 let i18n: I18nInstance;
 
+interface Call {
+  readonly type: WsMessageType;
+  readonly payload: WsMessagePayloadMap[WsMessageType];
+}
+
+interface FakeClient {
+  readonly client: WsClient;
+  readonly calls: Call[];
+}
+
+function makeFakeClient(): FakeClient {
+  const calls: Call[] = [];
+  const send: SendFn = <T extends WsMessageType>(
+    type: T,
+    payload: WsMessagePayloadMap[T],
+  ): Promise<WsEnvelopeUnion> => {
+    calls.push({ type, payload });
+    return new Promise<WsEnvelopeUnion>(() => undefined);
+  };
+  const client: WsClient = {
+    status: (): WsClientStatus => 'open',
+    connect: () => undefined,
+    close: () => undefined,
+    send,
+    trackSession: () => Promise.resolve(),
+    untrackSession: () => Promise.resolve(),
+    onEnvelope: () => () => undefined,
+    url: '/api/ws',
+  };
+  return { client, calls };
+}
+
 beforeAll(async () => {
   i18n = await createI18nInstance('en-US');
+});
+
+beforeEach(() => {
+  resetVoteActionStore();
+  act(() => {
+    useWsStore.getState().setConnectionStatus('open');
+  });
 });
 
 afterEach(() => {
@@ -91,15 +145,29 @@ afterEach(() => {
   useUiStore.getState().setExpandedProposalId(null);
 });
 
-function renderPane(currentParticipantId: string = ME): ReturnType<typeof render> {
+function renderPane(
+  currentParticipantId: string = ME,
+  client: WsClient = makeFakeClient().client,
+): ReturnType<typeof render> {
   return render(
-    <I18nProvider i18n={i18n}>
-      <PendingProposalsPane
-        sessionId={SESSION_A}
-        currentParticipantId={currentParticipantId}
-        nowMsOverride={FIXED_NOW_MS}
-      />
-    </I18nProvider>,
+    <MemoryRouter initialEntries={[`/sessions/${SESSION_A}`]}>
+      <WsClientProvider auth={{ status: 'authenticated' }} client={client}>
+        <I18nProvider i18n={i18n}>
+          <Routes>
+            <Route
+              path="/sessions/:id"
+              element={
+                <PendingProposalsPane
+                  sessionId={SESSION_A}
+                  currentParticipantId={currentParticipantId}
+                  nowMsOverride={FIXED_NOW_MS}
+                />
+              }
+            />
+          </Routes>
+        </I18nProvider>
+      </WsClientProvider>
+    </MemoryRouter>,
   );
 }
 
@@ -442,6 +510,55 @@ describe('<PendingProposalsPane>', () => {
     expect(dots).toHaveLength(1);
     expect(dots[0]?.getAttribute('data-participant-id')).toBe(OTHER);
     expect(dots[0]?.getAttribute('data-choice')).toBe('agree');
+  });
+
+  it("(t) ownFacetVotes threading: chip at proposed renders both vote buttons; after seeding the participant's own vote, the buttons disappear", () => {
+    useWsStore.getState().applyEvent(proposalEvent(1, PROPOSAL_A, 'classify-node', NODE_X));
+    renderPane();
+    act(() => {
+      fireEvent.click(screen.getByTestId('participant-pending-proposal-row-header'));
+    });
+    expect(
+      screen.getByTestId('participant-pending-proposal-row-facet-vote-button-agree'),
+    ).toBeTruthy();
+    expect(
+      screen.getByTestId('participant-pending-proposal-row-facet-vote-button-dispute'),
+    ).toBeTruthy();
+    act(() => {
+      useWsStore
+        .getState()
+        .applyEvent(voteFacetArm(2, 'node', NODE_X, 'classification', ME, 'agree'));
+    });
+    expect(
+      screen.queryByTestId('participant-pending-proposal-row-facet-vote-button-agree'),
+    ).toBeNull();
+    expect(
+      screen.queryByTestId('participant-pending-proposal-row-facet-vote-button-dispute'),
+    ).toBeNull();
+  });
+
+  it('(u) clicking the agree button on the expanded chip dispatches the facet-arm vote envelope', () => {
+    useWsStore.getState().applyEvent(proposalEvent(1, PROPOSAL_A, 'classify-node', NODE_X));
+    const fake = makeFakeClient();
+    renderPane(ME, fake.client);
+    act(() => {
+      fireEvent.click(screen.getByTestId('participant-pending-proposal-row-header'));
+    });
+    const agree = screen.getByTestId('participant-pending-proposal-row-facet-vote-button-agree');
+    act(() => {
+      fireEvent.click(agree);
+    });
+    expect(fake.calls.length).toBe(1);
+    expect(fake.calls[0]?.type).toBe('vote');
+    expect(fake.calls[0]?.payload).toEqual({
+      sessionId: SESSION_A,
+      expectedSequence: 1,
+      target: 'facet',
+      entity_kind: 'node',
+      entity_id: NODE_X,
+      facet: 'classification',
+      choice: 'agree',
+    });
   });
 
   it('(q) header cells unaffected by the body content swap; body-summary <p> is gone; body region contract preserved', () => {
