@@ -36,8 +36,15 @@ import shutil
 import string
 import subprocess
 import sys
+import time
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Optional
+
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:  # pragma: no cover — py<3.9
+    ZoneInfo = None  # type: ignore[assignment]
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ORCH_DIR = Path(__file__).resolve().parent
@@ -48,6 +55,13 @@ SYSTEM_PROMPT_PATH = PROMPTS_DIR / "orchestrator_system.md"
 # Flags appended to every `claude -p` invocation. stream-json + verbose gives
 # live event visibility; both are required together for headless mode.
 CLAUDE_ARGS = ["--output-format", "stream-json", "--verbose"]
+
+# Model split: the orchestrator only does meta-routing (parse prior return,
+# emit a JSON envelope, write a context_summary) so Sonnet handles it well at
+# a fraction of the cost. Sub-agents do the actual code work and get Opus.
+# Override at the command line via env vars when you want to experiment.
+ORCH_MODEL = os.environ.get("ORCH_MODEL", "claude-sonnet-4-6")
+SUB_MODEL = os.environ.get("SUB_MODEL", "claude-opus-4-7")
 
 # Max chars of a single assistant text block printed inline. Longer text is
 # truncated with a "(+N more)" tail. The full text is always in the log file.
@@ -492,15 +506,106 @@ def render_template(template: str, vars: dict) -> str:
     return string.Template(template).safe_substitute(merged)
 
 
-def run_claude(prompt: str, log_path: Path) -> str:
+# `claude -p` reports a hit 5-hour or weekly session limit via:
+#   • assistant text block "You've hit your session limit · resets 11:50pm (America/New_York)"
+#   • a `result` event with `is_error: true` + `api_error_status: 429`
+# We key off the 429 result event and parse the reset clock-time + IANA tz out
+# of its `result` field so the driver can sleep until the window reopens.
+SESSION_LIMIT_RE = re.compile(
+    r"session limit.*?resets\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*\(([^)]+)\)",
+    re.IGNORECASE,
+)
+
+
+class SessionLimitError(RuntimeError):
+    """Raised when `claude -p` exits because the account's session limit was
+    hit. Carries the parsed reset datetime so callers can sleep until then."""
+
+    def __init__(self, reset_at: datetime, message: str):
+        super().__init__(f"session limit hit; resets at {reset_at.isoformat()}")
+        self.reset_at = reset_at
+        self.message = message
+
+
+def parse_session_limit_reset(text: str) -> Optional[datetime]:
+    """Parse a 'resets 11:50pm (America/New_York)' phrase into the next future
+    datetime matching that wall-clock time in that timezone. Returns None if
+    no pattern matches or the timezone is unrecognized."""
+    m = SESSION_LIMIT_RE.search(text)
+    if not m or ZoneInfo is None:
+        return None
+    hour = int(m.group(1))
+    minute = int(m.group(2) or 0)
+    if m.group(3).lower() == "pm" and hour != 12:
+        hour += 12
+    elif m.group(3).lower() == "am" and hour == 12:
+        hour = 0
+    try:
+        tz = ZoneInfo(m.group(4).strip())
+    except Exception:
+        return None
+    now = datetime.now(tz)
+    reset = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if reset <= now:
+        reset += timedelta(days=1)
+    return reset
+
+
+def wait_until_reset(reset_at: datetime, buffer_seconds: int = 30) -> None:
+    """Sleep until `reset_at` (plus a small buffer), printing one line on
+    entry and one on resume. Interruptible via Ctrl-C."""
+    now = datetime.now(reset_at.tzinfo)
+    remaining = (reset_at - now).total_seconds() + buffer_seconds
+    if remaining <= 0:
+        return
+    mins, secs = divmod(int(remaining), 60)
+    hrs, mins = divmod(mins, 60)
+    dur = (f"{hrs}h" if hrs else "") + f"{mins}m{secs}s"
+    local_reset = reset_at.astimezone()
+    print_wrapped(
+        f"{YELLOW}⏸  session limit — sleeping {dur} until "
+        f"{local_reset.strftime('%H:%M:%S %Z')} (+{buffer_seconds}s buffer){RESET}"
+    )
+    try:
+        time.sleep(remaining)
+    except KeyboardInterrupt:
+        print_wrapped(f"{RED}⏵  wait interrupted{RESET}")
+        raise
+    print_wrapped(f"{GREEN}⏵  resuming{RESET}")
+
+
+def run_claude_with_session_retry(prompt: str, log_path: Path, model: str) -> str:
+    """Wrap run_claude with auto-retry on SessionLimitError. Failed-attempt
+    logs are preserved with `.attempt-N` suffix so the post-mortem chain
+    survives the retry."""
+    attempt = 0
+    while True:
+        try:
+            return run_claude(prompt, log_path, model)
+        except SessionLimitError as e:
+            attempt += 1
+            failed = log_path.with_suffix(log_path.suffix + f".attempt-{attempt}")
+            try:
+                log_path.rename(failed)
+            except OSError:
+                pass
+            wait_until_reset(e.reset_at)
+
+
+def run_claude(prompt: str, log_path: Path, model: str) -> str:
     """Run `claude -p <prompt>` with streaming, tee events to log, return the final assistant text.
 
     Returns the `result` event's `result` field (the final assistant message). Raises
     RuntimeError if the process exits non-zero or no result event is seen.
     """
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    cmd = ["claude", "-p", prompt, *CLAUDE_ARGS]
+    cmd = ["claude", "-p", prompt, "--model", model, *CLAUDE_ARGS]
     final_text: Optional[str] = None
+    # Set when a `result` event reports HTTP 429 (account session limit).
+    # We let the process exit normally, then convert the rc!=0 into a
+    # SessionLimitError so the outer wrapper can sleep + retry.
+    session_reset: Optional[datetime] = None
+    session_message: str = ""
     # Task tool_use_id -> chain of labels (e.g. ["A"], ["A", "B"] for nested).
     # When a Task tool_use is seen, we mint a new label (A, B, C, ...) and
     # register the entry. While the sub-agent runs, the parent emits
@@ -593,6 +698,14 @@ def run_claude(prompt: str, log_path: Path) -> str:
                 # carry parent_tool_use_id and shouldn't clobber final_text.
                 if event.get("type") == "result" and not parent_ref:
                     final_text = event.get("result", "")
+                    if (
+                        event.get("is_error")
+                        and event.get("api_error_status") == 429
+                    ):
+                        reset = parse_session_limit_reset(final_text or "")
+                        if reset is not None:
+                            session_reset = reset
+                            session_message = (final_text or "").strip()
             rc = proc.wait()
             logf.write(f"\n---RC---\n{rc}\n")
     except KeyboardInterrupt:
@@ -603,6 +716,8 @@ def run_claude(prompt: str, log_path: Path) -> str:
             proc.kill()
         raise
     if rc != 0:
+        if session_reset is not None:
+            raise SessionLimitError(session_reset, session_message)
         raise RuntimeError(f"claude -p failed (rc={rc}); see {log_path}")
     if final_text is None:
         raise RuntimeError(f"claude -p produced no `result` event; see {log_path}")
@@ -669,8 +784,8 @@ def main() -> int:
         )
         orch_log = LOG_DIR / f"iter-{iteration:04d}-orchestrator.log"
         print_wrapped(banner(f"iter {iteration} · orchestrator"))
-        print_wrapped(f"  {DIM}log: {orch_log}{RESET}")
-        orch_stdout = run_claude(orch_prompt, orch_log)
+        print_wrapped(f"  {DIM}log: {orch_log} · model: {ORCH_MODEL}{RESET}")
+        orch_stdout = run_claude_with_session_retry(orch_prompt, orch_log, ORCH_MODEL)
         try:
             envelope = parse_envelope(orch_stdout)
         except ValueError as e:
@@ -696,10 +811,10 @@ def main() -> int:
         if task_id:
             sub_title += f" · {task_id}"
         print_wrapped(banner(sub_title))
-        print_wrapped(f"  {DIM}log: {sub_log}{RESET}")
+        print_wrapped(f"  {DIM}log: {sub_log} · model: {SUB_MODEL}{RESET}")
         for line in fmt_vars_passed(template_vars):
             print_wrapped(line)
-        sub_stdout = run_claude(sub_prompt, sub_log)
+        sub_stdout = run_claude_with_session_retry(sub_prompt, sub_log, SUB_MODEL)
         for line in fmt_returned(sub_stdout):
             print_wrapped(line)
 
