@@ -129,6 +129,24 @@ describe('useUiStore', () => {
   });
 });
 
+describe('useUiStore — expandedProposalId', () => {
+  it('(a) defaults to null at module load', () => {
+    expect(useUiStore.getState().expandedProposalId).toBeNull();
+  });
+
+  it('(b) setExpandedProposalId writes the id and the slot reads it back', () => {
+    useUiStore.getState().setExpandedProposalId(PROPOSAL_A);
+    expect(useUiStore.getState().expandedProposalId).toBe(PROPOSAL_A);
+  });
+
+  it('(c) setExpandedProposalId(null) clears the slot', () => {
+    useUiStore.getState().setExpandedProposalId(PROPOSAL_A);
+    expect(useUiStore.getState().expandedProposalId).toBe(PROPOSAL_A);
+    useUiStore.getState().setExpandedProposalId(null);
+    expect(useUiStore.getState().expandedProposalId).toBeNull();
+  });
+});
+
 describe('React components re-render on store updates', () => {
   function VoteProbe(): ReactElement {
     const votes = useVoteStore((state) => state.votes);

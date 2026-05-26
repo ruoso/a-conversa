@@ -27,8 +27,17 @@ export interface UiState {
   currentTab: ParticipantTab;
   /** Graph-canvas zoom level, clamped to `[MIN_ZOOM, MAX_ZOOM]`. */
   zoom: number;
+  /**
+   * Single-open accordion slot for the pending-proposals tab row
+   * disclosure: the `event.id` of the currently-expanded proposal row,
+   * or `null` when every row is collapsed. The slot shape itself
+   * enforces the "at most one open" contract.
+   */
+  expandedProposalId: string | null;
   setCurrentTab: (tab: ParticipantTab) => void;
   setZoom: (zoom: number) => void;
+  /** Overwrite the open-row slot atomically. Passing `null` collapses. */
+  setExpandedProposalId: (id: string | null) => void;
 }
 
 function clampZoom(zoom: number): number {
@@ -40,7 +49,9 @@ export const useUiStore = create<UiState>()(
   withDevtools('participant/ui', (set) => ({
     currentTab: 'graph',
     zoom: 1,
+    expandedProposalId: null,
     setCurrentTab: (currentTab) => set({ currentTab }),
     setZoom: (zoom) => set({ zoom: clampZoom(zoom) }),
+    setExpandedProposalId: (expandedProposalId) => set({ expandedProposalId }),
   })),
 );

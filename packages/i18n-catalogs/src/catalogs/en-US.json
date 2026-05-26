@@ -716,7 +716,8 @@
     "pendingProposalsPane": {
       "emptyState": "No pending proposals",
       "systemAuthor": "System",
-      "paneAriaLabel": "Pending proposals"
+      "paneAriaLabel": "Pending proposals",
+      "rowBodyAriaLabel": "Proposal details"
     }
   },
   "audience": {

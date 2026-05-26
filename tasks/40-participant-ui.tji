@@ -222,7 +222,9 @@ task participant_ui "Participant (debater) UI" {
     task part_proposal_expand "Tap to expand a proposal showing its facets" {
       effort 1d
       allocate team
+      complete 100
       depends !part_proposal_list_view
+      note "Refinement: tasks/refinements/participant-ui/part_proposal_expand.md"
     }
     task part_per_facet_breakdown_in_pane "Per-facet breakdown of each proposal (mirrors moderator UI)" {
       effort 1d

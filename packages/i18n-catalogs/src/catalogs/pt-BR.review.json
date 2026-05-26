@@ -311,6 +311,7 @@
     "participant.pendingProposalsPane.emptyState",
     "participant.pendingProposalsPane.systemAuthor",
     "participant.pendingProposalsPane.paneAriaLabel",
+    "participant.pendingProposalsPane.rowBodyAriaLabel",
     "audience.placeholder.title",
     "audience.placeholder.body"
   ],

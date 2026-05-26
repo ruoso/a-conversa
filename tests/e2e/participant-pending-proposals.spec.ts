@@ -243,6 +243,34 @@ test.describe('Participant operate route — pending-proposals tab seam', () => 
       await expect(
         rows.first().locator('[data-testid="participant-pending-proposal-row-author"]'),
       ).toHaveText(PROPOSER_ACTOR_ID.slice(0, 8));
+
+      // 6. `part_proposal_expand` extension — tap the row's header
+      //    button, assert the disclosure machinery expands the body;
+      //    tap again, assert collapse. Single-open accordion semantics
+      //    are pinned in Vitest; here we pin the end-to-end gesture +
+      //    `data-expanded` / `aria-expanded` attributes + body
+      //    visibility under the real compose stack.
+      const row = rows.first();
+      const header = row.locator('[data-testid="participant-pending-proposal-row-header"]');
+      await expect(row).toHaveAttribute('data-expanded', 'false');
+      await expect(header).toHaveAttribute('aria-expanded', 'false');
+      await expect(
+        row.locator('[data-testid="participant-pending-proposal-row-body"]'),
+      ).toHaveCount(0);
+      await header.click();
+      await expect(row).toHaveAttribute('data-expanded', 'true');
+      await expect(header).toHaveAttribute('aria-expanded', 'true');
+      const body = row.locator('[data-testid="participant-pending-proposal-row-body"]');
+      await expect(body).toBeVisible();
+      await expect(
+        body.locator('[data-testid="participant-pending-proposal-row-body-summary"]'),
+      ).toHaveText(`node ${PROPOSAL_NODE_ID.slice(0, 8)}`);
+      await header.click();
+      await expect(row).toHaveAttribute('data-expanded', 'false');
+      await expect(header).toHaveAttribute('aria-expanded', 'false');
+      await expect(
+        row.locator('[data-testid="participant-pending-proposal-row-body"]'),
+      ).toHaveCount(0);
     } finally {
       await context.close();
     }

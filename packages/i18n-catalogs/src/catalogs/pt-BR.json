@@ -716,7 +716,8 @@
     "pendingProposalsPane": {
       "emptyState": "Nenhuma proposta pendente",
       "systemAuthor": "Sistema",
-      "paneAriaLabel": "Propostas pendentes"
+      "paneAriaLabel": "Propostas pendentes",
+      "rowBodyAriaLabel": "Detalhes da proposta"
     }
   },
   "audience": {

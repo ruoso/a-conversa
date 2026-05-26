@@ -27,6 +27,7 @@ import type { ProposalPayload } from '@a-conversa/shared-types';
 import { formatRelativeTime } from '@a-conversa/i18n-catalogs';
 
 import { useWsStore } from '../ws/wsStore';
+import { useUiStore } from '../stores/uiStore';
 import {
   derivePendingProposals,
   type PendingProposalRow as PendingProposalRowData,
@@ -98,41 +99,75 @@ function PendingProposalRow({
   readonly systemAuthorLabel: string;
 }): ReactElement {
   const { t } = useTranslation();
+  const expandedProposalId = useUiStore((s) => s.expandedProposalId);
+  const setExpandedProposalId = useUiStore((s) => s.setExpandedProposalId);
   const chip = kindChipText(row.proposal, t);
   const summary = summaryText(row.proposal);
   const author = row.actor === null ? systemAuthorLabel : row.actor.slice(0, 8);
   const ago = relativeTimeFor(row.createdAt, nowMs);
+  const isExpanded = expandedProposalId === row.proposalEventId;
+  const bodyId = `participant-pending-proposal-row-body-${row.proposalEventId}`;
+  const bodyAriaLabel = t('participant.pendingProposalsPane.rowBodyAriaLabel');
+  const toggle = (): void => {
+    setExpandedProposalId(isExpanded ? null : row.proposalEventId);
+  };
   return (
     <li
       data-testid="participant-pending-proposal-row"
       data-proposal-id={row.proposalEventId}
-      className="flex flex-row items-center gap-2 rounded-md border border-slate-100 bg-white px-3 py-2"
+      data-expanded={isExpanded}
+      className="flex flex-col rounded-md border border-slate-100 bg-white"
       title={summary}
     >
-      <span
-        data-testid="participant-pending-proposal-row-kind"
-        className="inline-flex h-5 items-center rounded-sm bg-slate-100 px-2 text-xs font-medium text-slate-700"
+      <button
+        type="button"
+        data-testid="participant-pending-proposal-row-header"
+        aria-expanded={isExpanded}
+        aria-controls={bodyId}
+        onClick={toggle}
+        className="flex w-full flex-row items-center gap-2 px-3 py-2 text-left"
       >
-        {chip}
-      </span>
-      <span
-        data-testid="participant-pending-proposal-row-summary"
-        className="flex-1 truncate text-sm text-slate-800"
-      >
-        {summary}
-      </span>
-      <span
-        data-testid="participant-pending-proposal-row-author"
-        className="text-xs font-mono text-slate-500"
-      >
-        {author}
-      </span>
-      <span
-        data-testid="participant-pending-proposal-row-timestamp"
-        className="text-xs text-slate-500"
-      >
-        {ago}
-      </span>
+        <span
+          data-testid="participant-pending-proposal-row-kind"
+          className="inline-flex h-5 items-center rounded-sm bg-slate-100 px-2 text-xs font-medium text-slate-700"
+        >
+          {chip}
+        </span>
+        <span
+          data-testid="participant-pending-proposal-row-summary"
+          className="flex-1 truncate text-sm text-slate-800"
+        >
+          {summary}
+        </span>
+        <span
+          data-testid="participant-pending-proposal-row-author"
+          className="text-xs font-mono text-slate-500"
+        >
+          {author}
+        </span>
+        <span
+          data-testid="participant-pending-proposal-row-timestamp"
+          className="text-xs text-slate-500"
+        >
+          {ago}
+        </span>
+      </button>
+      {isExpanded ? (
+        <div
+          id={bodyId}
+          data-testid="participant-pending-proposal-row-body"
+          role="region"
+          aria-label={bodyAriaLabel}
+          className="border-t border-slate-100 px-3 py-2 text-sm text-slate-700"
+        >
+          <p
+            data-testid="participant-pending-proposal-row-body-summary"
+            className="whitespace-pre-wrap break-words"
+          >
+            {summary}
+          </p>
+        </div>
+      ) : null}
     </li>
   );
 }

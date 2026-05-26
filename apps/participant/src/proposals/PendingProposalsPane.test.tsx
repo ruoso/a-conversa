@@ -7,13 +7,14 @@
 //    fixtures; five new row-rendering cases are appended.)
 
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { Event } from '@a-conversa/shared-types';
 
 import { I18nProvider, createI18nInstance, type I18nInstance } from '@a-conversa/shell';
 
 import { PendingProposalsPane } from './PendingProposalsPane';
 import { useWsStore } from '../ws/wsStore';
+import { useUiStore } from '../stores/uiStore';
 
 const SESSION_A = '00000000-0000-4000-8000-0000000000aa';
 const PROPOSAL_A = '00000000-0000-4000-8000-0000000000a1';
@@ -84,6 +85,7 @@ beforeAll(async () => {
 afterEach(() => {
   cleanup();
   useWsStore.getState().reset();
+  useUiStore.getState().setExpandedProposalId(null);
 });
 
 function renderPane(): ReturnType<typeof render> {
@@ -167,5 +169,89 @@ describe('<PendingProposalsPane>', () => {
     renderPane();
     expect(screen.queryByTestId('participant-pending-proposal-row')).toBeNull();
     expect(screen.getByTestId('participant-pending-proposals-pane-empty')).toBeTruthy();
+  });
+
+  it('(j) default state — header button rendered collapsed; body absent', () => {
+    useWsStore.getState().applyEvent(proposalEvent(1, PROPOSAL_A, 'classify-node', NODE_X));
+    renderPane();
+    const row = screen.getByTestId('participant-pending-proposal-row');
+    expect(row.getAttribute('data-expanded')).toBe('false');
+    const header = screen.getByTestId('participant-pending-proposal-row-header');
+    expect(header.tagName).toBe('BUTTON');
+    expect(header.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByTestId('participant-pending-proposal-row-body')).toBeNull();
+  });
+
+  it('(k) tap the header → row expands, body visible, body summary matches header summary', () => {
+    useWsStore.getState().applyEvent(proposalEvent(1, PROPOSAL_A, 'classify-node', NODE_X));
+    renderPane();
+    const header = screen.getByTestId('participant-pending-proposal-row-header');
+    act(() => {
+      fireEvent.click(header);
+    });
+    const row = screen.getByTestId('participant-pending-proposal-row');
+    expect(row.getAttribute('data-expanded')).toBe('true');
+    expect(header.getAttribute('aria-expanded')).toBe('true');
+    const body = screen.getByTestId('participant-pending-proposal-row-body');
+    expect(body).toBeTruthy();
+    const headerSummary = screen.getByTestId('participant-pending-proposal-row-summary');
+    const bodySummary = screen.getByTestId('participant-pending-proposal-row-body-summary');
+    expect(bodySummary.textContent).toBe(headerSummary.textContent);
+  });
+
+  it('(l) tap the same header again → row collapses, body absent', () => {
+    useWsStore.getState().applyEvent(proposalEvent(1, PROPOSAL_A, 'classify-node', NODE_X));
+    renderPane();
+    const header = screen.getByTestId('participant-pending-proposal-row-header');
+    act(() => {
+      fireEvent.click(header);
+    });
+    expect(header.getAttribute('aria-expanded')).toBe('true');
+    act(() => {
+      fireEvent.click(header);
+    });
+    const row = screen.getByTestId('participant-pending-proposal-row');
+    expect(row.getAttribute('data-expanded')).toBe('false');
+    expect(header.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByTestId('participant-pending-proposal-row-body')).toBeNull();
+  });
+
+  it('(m) two rows; tap A then B → single-open accordion swaps the open slot to B', () => {
+    useWsStore.getState().applyEvent(proposalEvent(1, PROPOSAL_A, 'classify-node', NODE_X));
+    useWsStore.getState().applyEvent(proposalEvent(2, PROPOSAL_B, 'classify-node', NODE_Y));
+    renderPane();
+    const rows = screen.getAllByTestId('participant-pending-proposal-row');
+    // newest-first DOM order: rows[0] = PROPOSAL_B (seq 2), rows[1] = PROPOSAL_A (seq 1)
+    const rowB = rows.find((r) => r.getAttribute('data-proposal-id') === PROPOSAL_B);
+    const rowA = rows.find((r) => r.getAttribute('data-proposal-id') === PROPOSAL_A);
+    expect(rowA).toBeTruthy();
+    expect(rowB).toBeTruthy();
+    const headerA = rowA!.querySelector(
+      '[data-testid="participant-pending-proposal-row-header"]',
+    ) as HTMLElement;
+    const headerB = rowB!.querySelector(
+      '[data-testid="participant-pending-proposal-row-header"]',
+    ) as HTMLElement;
+    act(() => {
+      fireEvent.click(headerA);
+    });
+    expect(rowA!.getAttribute('data-expanded')).toBe('true');
+    expect(rowB!.getAttribute('data-expanded')).toBe('false');
+    act(() => {
+      fireEvent.click(headerB);
+    });
+    expect(rowA!.getAttribute('data-expanded')).toBe('false');
+    expect(rowB!.getAttribute('data-expanded')).toBe('true');
+  });
+
+  it('(n) header button aria-controls matches the body region id', () => {
+    useWsStore.getState().applyEvent(proposalEvent(1, PROPOSAL_A, 'classify-node', NODE_X));
+    renderPane();
+    const header = screen.getByTestId('participant-pending-proposal-row-header');
+    act(() => {
+      fireEvent.click(header);
+    });
+    const body = screen.getByTestId('participant-pending-proposal-row-body');
+    expect(header.getAttribute('aria-controls')).toBe(body.getAttribute('id'));
   });
 });

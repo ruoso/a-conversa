@@ -360,6 +360,13 @@ task frontend_i18n "Frontend internationalization" {
     note "Native-speaker review of pt-BR + es-419 draft entries for the 2 keys added in part_proposal_list_view (this commit): participant.pendingProposalsPane.systemAuthor, participant.pendingProposalsPane.paneAriaLabel. Source refinement: tasks/refinements/participant-ui/part_proposal_list_view.md. Per Decision §8 of that refinement."
   }
 
+  task i18n_participant_proposal_expand_native_review "Native-speaker review of pt-BR + es-419 participant pending-proposals-pane row-body string (1 new key under participant.pendingProposalsPane.*)" {
+    effort 0.25d
+    allocate team
+    depends !i18n_participant_proposal_list_native_review, participant_ui.part_pending_proposals.part_proposal_expand
+    note "Native-speaker review of pt-BR + es-419 draft entries for the 1 key added in part_proposal_expand (this commit): participant.pendingProposalsPane.rowBodyAriaLabel. Source refinement: tasks/refinements/participant-ui/part_proposal_expand.md. Per Decision §9 of that refinement."
+  }
+
   task i18n_audience_placeholder_native_review "Native-speaker review of pt-BR + es-419 audience-placeholder strings (2 new keys under audience.placeholder.*)" {
     effort 0.25d
     allocate team
