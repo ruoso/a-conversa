@@ -215,7 +215,9 @@ task participant_ui "Participant (debater) UI" {
     task part_proposal_list_view "List view, most-recent at top" {
       effort 1d
       allocate team
+      complete 100
       depends !part_proposals_tab
+      note "Refinement: tasks/refinements/participant-ui/part_proposal_list_view.md"
     }
     task part_proposal_expand "Tap to expand a proposal showing its facets" {
       effort 1d

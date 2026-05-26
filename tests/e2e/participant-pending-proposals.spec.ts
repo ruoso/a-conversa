@@ -137,8 +137,17 @@ test.describe('Participant operate route — pending-proposals tab seam', () => 
       //    the shell WS-client dispatch path drives in production.
       const PROPOSAL_ID = '11111111-1111-4111-8111-111111111111';
       const FACET_ID = '22222222-2222-4222-8222-222222222222';
+      const PROPOSAL_NODE_ID = '66666666-6666-4666-8666-666666666666';
+      const PROPOSER_ACTOR_ID = '44444444-4444-4444-8444-444444444444';
       await page.evaluate(
-        (seed: { sessionId: string; proposalId: string; facetId: string; wording: string }) => {
+        (seed: {
+          sessionId: string;
+          proposalId: string;
+          facetId: string;
+          wording: string;
+          proposalNodeId: string;
+          actorId: string;
+        }) => {
           const store = (
             window as unknown as {
               __aConversaWsStore?: {
@@ -161,23 +170,51 @@ test.describe('Participant operate route — pending-proposals tab seam', () => 
             sessionId: seed.sessionId,
             sequence: 1_000_001,
             kind: 'node-created',
-            actor: '44444444-4444-4444-8444-444444444444',
+            actor: seed.actorId,
             payload: {
               node_id: '55555555-5555-4555-8555-555555555555',
               wording: seed.wording,
-              created_by: '44444444-4444-4444-8444-444444444444',
+              created_by: seed.actorId,
               created_at: '2026-05-17T00:00:00.000Z',
             },
             createdAt: '2026-05-17T00:00:00.000Z',
           });
+          // Seed a `proposal` event so the pane's event-log-driven row
+          // source surfaces a single row (per `part_proposal_list_view`
+          // Decision §2). The envelope id matches `proposalId` so the
+          // row's `data-proposal-id` aligns with the broadcast frame's
+          // entry — the badge count + the rendered row converge on the
+          // same proposal in the steady state.
+          state.applyEvent({
+            id: seed.proposalId,
+            sessionId: seed.sessionId,
+            sequence: 1_000_002,
+            kind: 'proposal',
+            actor: seed.actorId,
+            payload: {
+              proposal: {
+                kind: 'capture-node',
+                node_id: seed.proposalNodeId,
+                wording: 'A freshly captured wording for the row test',
+              },
+            },
+            createdAt: '2026-05-17T00:00:01.000Z',
+          });
           state.applyProposalStatus({
             sessionId: seed.sessionId,
             proposalId: seed.proposalId,
-            sequence: 1_000_002,
+            sequence: 1_000_003,
             perFacetStatus: { [seed.facetId]: 'pending' },
           });
         },
-        { sessionId, proposalId: PROPOSAL_ID, facetId: FACET_ID, wording: NODE_WORDING },
+        {
+          sessionId,
+          proposalId: PROPOSAL_ID,
+          facetId: FACET_ID,
+          wording: NODE_WORDING,
+          proposalNodeId: PROPOSAL_NODE_ID,
+          actorId: PROPOSER_ACTOR_ID,
+        },
       );
 
       // 5. The badge reflects the new total; click Proposals; the
@@ -186,16 +223,26 @@ test.describe('Participant operate route — pending-proposals tab seam', () => 
       await expect(badge).toHaveAttribute('data-count', '1');
       await proposalsTab.click();
       await expect(page.getByTestId('participant-pending-proposals-pane')).toBeVisible();
-      // The non-empty branch renders an EMPTY `<ul>` shell whose children
-      // sibling leaves (`part_proposal_list_view` et al.) fill. With no
-      // rendered rows the list has a zero bounding box — `toBeAttached`
-      // is the right pin for the structural container; visibility lands
-      // once the list-view leaf adds content. The empty-state branch is
-      // gone, which is the user-visible flip this case pins.
+      // The non-empty branch surfaces the stable list container; the
+      // empty-state is gone. (`part_proposals_tab` predecessor's pin.)
       await expect(page.getByTestId('participant-pending-proposals-pane-list')).toBeAttached();
       await expect(
         page.locator('[data-testid="participant-pending-proposals-pane-empty"]'),
       ).toHaveCount(0);
+      // `part_proposal_list_view` extension — the seeded `proposal`
+      // event surfaces as one rendered row whose `data-proposal-id`
+      // matches the seeded envelope id; the row's cells render the
+      // capture-node summary (`node <8-char>`) and the proposer's
+      // 8-char author prefix.
+      const rows = page.locator('[data-testid="participant-pending-proposal-row"]');
+      await expect(rows).toHaveCount(1);
+      await expect(rows.first()).toHaveAttribute('data-proposal-id', PROPOSAL_ID);
+      await expect(
+        rows.first().locator('[data-testid="participant-pending-proposal-row-summary"]'),
+      ).toHaveText(`node ${PROPOSAL_NODE_ID.slice(0, 8)}`);
+      await expect(
+        rows.first().locator('[data-testid="participant-pending-proposal-row-author"]'),
+      ).toHaveText(PROPOSER_ACTOR_ID.slice(0, 8));
     } finally {
       await context.close();
     }

@@ -309,6 +309,8 @@
     "participant.proposalsTab.graphLabel",
     "participant.proposalsTab.proposalsLabel",
     "participant.pendingProposalsPane.emptyState",
+    "participant.pendingProposalsPane.systemAuthor",
+    "participant.pendingProposalsPane.paneAriaLabel",
     "audience.placeholder.title",
     "audience.placeholder.body"
   ],
