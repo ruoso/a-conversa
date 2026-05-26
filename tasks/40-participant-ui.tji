@@ -210,6 +210,7 @@ task participant_ui "Participant (debater) UI" {
     task part_proposals_tab "Pending proposals tab with count badge" {
       effort 1d
       allocate team
+      complete 100
     }
     task part_proposal_list_view "List view, most-recent at top" {
       effort 1d

@@ -708,6 +708,13 @@
       "wireError": "A retirada falhou: {message} ({code})",
       "timeoutError": "A requisição de retirada expirou. Verifique sua conexão e tente novamente.",
       "errorRoleLabel": "Erro de retirada"
+    },
+    "proposalsTab": {
+      "graphLabel": "Grafo",
+      "proposalsLabel": "Propostas"
+    },
+    "pendingProposalsPane": {
+      "emptyState": "Nenhuma proposta pendente"
     }
   },
   "audience": {

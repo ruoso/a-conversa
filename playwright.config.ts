@@ -312,7 +312,8 @@ export default defineConfig({
       // Same browser profile (single locale en-US, ignoreHTTPSErrors
       // for the OIDC redirect, bootstrap auth jar from setup-auth);
       // no new project. Decisions §7 of both refinements.
-      testMatch: /participant-(skeleton-smoke|invite-acceptance|lobby|graph-render)\.spec\.ts$/,
+      testMatch:
+        /participant-(skeleton-smoke|invite-acceptance|lobby|graph-render|pending-proposals)\.spec\.ts$/,
       dependencies: ['setup-auth'],
       use: {
         ...devices['Desktop Chrome'],

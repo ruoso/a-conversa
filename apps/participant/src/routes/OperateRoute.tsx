@@ -59,7 +59,9 @@ import { ParticipantStatusIndicator } from '../layout/ParticipantStatusIndicator
 import { GraphView } from '../graph/GraphView';
 import { EntityDetailPanel } from '../detail';
 import { ParticipantAxiomMarkButton } from '../detail/ParticipantAxiomMarkButton';
+import { PendingProposalsPane, PendingProposalsTabBar } from '../proposals';
 import { useSelectionStore } from '../stores/selectionStore';
+import { useUiStore } from '../stores/uiStore';
 import { autoSelectionFromEvent } from '../graph/autoSelect';
 import {
   groupAnnotationsByEdge,
@@ -319,36 +321,51 @@ function OperateRouteAuthenticatedBody({
       <div className="flex flex-col gap-3">{axiomMarkButton}</div>
     ) : undefined;
 
+  // Tab-seam introduced by `part_proposals_tab` (Decision §1: top-of-
+  // main two-button switcher; §4: projection chain stays HOISTED here
+  // regardless of foregrounded tab so the per-WS-frame projector cost
+  // is paid once, not double on tab switch).
+  const currentTab = useUiStore((s) => s.currentTab);
+
   return (
-    <div data-testid="route-operate" className="flex h-full w-full">
-      <div data-testid="route-operate-graph-region" className="flex-1 min-w-0">
-        <GraphView
-          sessionId={id}
-          currentParticipantId={currentParticipantId}
-          projectedNodes={projected.nodes}
-          projectedEdges={projected.edges}
-          facetStatusIndex={facetStatusIndex}
-          axiomMarkIndex={axiomMarkIndex}
-          nodeAnnotationIndex={nodeAnnotationIndex}
-          edgeAnnotationIndex={edgeAnnotationIndex}
-          diagnosticHighlightIndex={diagnosticHighlightIndex}
-          ownVoteIndex={ownVoteIndex}
-          othersVoteIndex={othersVoteIndex}
-        />
+    <div data-testid="route-operate" className="flex h-full w-full flex-col">
+      <PendingProposalsTabBar sessionId={id} />
+      <div data-testid="route-operate-active-tab" className="flex flex-1 overflow-hidden">
+        {currentTab === 'graph' ? (
+          <div data-testid="route-operate-graph-region" className="flex h-full w-full flex-1">
+            <div className="flex-1 min-w-0">
+              <GraphView
+                sessionId={id}
+                currentParticipantId={currentParticipantId}
+                projectedNodes={projected.nodes}
+                projectedEdges={projected.edges}
+                facetStatusIndex={facetStatusIndex}
+                axiomMarkIndex={axiomMarkIndex}
+                nodeAnnotationIndex={nodeAnnotationIndex}
+                edgeAnnotationIndex={edgeAnnotationIndex}
+                diagnosticHighlightIndex={diagnosticHighlightIndex}
+                ownVoteIndex={ownVoteIndex}
+                othersVoteIndex={othersVoteIndex}
+              />
+            </div>
+            <EntityDetailPanel
+              projectedNodes={panelNodes}
+              projectedEdges={panelEdges}
+              events={events}
+              currentParticipantId={currentParticipantId}
+              nodeAxiomMarkIndex={axiomMarkIndex}
+              nodeAnnotationIndex={nodeAnnotationIndex}
+              edgeAnnotationIndex={edgeAnnotationIndex}
+              ownVoteIndex={ownVoteIndex}
+              othersVoteIndex={othersVoteIndex}
+              facetStatusIndex={facetStatusIndex}
+              actionSlot={actionSlot}
+            />
+          </div>
+        ) : (
+          <PendingProposalsPane sessionId={id} />
+        )}
       </div>
-      <EntityDetailPanel
-        projectedNodes={panelNodes}
-        projectedEdges={panelEdges}
-        events={events}
-        currentParticipantId={currentParticipantId}
-        nodeAxiomMarkIndex={axiomMarkIndex}
-        nodeAnnotationIndex={nodeAnnotationIndex}
-        edgeAnnotationIndex={edgeAnnotationIndex}
-        ownVoteIndex={ownVoteIndex}
-        othersVoteIndex={othersVoteIndex}
-        facetStatusIndex={facetStatusIndex}
-        actionSlot={actionSlot}
-      />
     </div>
   );
 }

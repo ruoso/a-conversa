@@ -306,6 +306,9 @@
     "participant.withdrawAgreementButton.wireError",
     "participant.withdrawAgreementButton.timeoutError",
     "participant.withdrawAgreementButton.errorRoleLabel",
+    "participant.proposalsTab.graphLabel",
+    "participant.proposalsTab.proposalsLabel",
+    "participant.pendingProposalsPane.emptyState",
     "audience.placeholder.title",
     "audience.placeholder.body"
   ],

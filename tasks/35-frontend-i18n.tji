@@ -346,6 +346,13 @@ task frontend_i18n "Frontend internationalization" {
     note "Native-speaker review of pt-BR + es-419 draft entries for the 12 participant.lobby.* keys added in part_lobby_view (this commit): title, topicLabel, participantsHeading, bothDebatersPresent, waitingForDebater, emptyState, roleBadges.{moderator, debaterA, debaterB}, errors.{sessionFetchFailed, participantsFetchFailed, retry}. The prior part_invite_acceptance leaf folded the now-removed placeholder body into the same participant.lobby.* namespace; this leaf covers the real lobby's drafts, which superseded the placeholder rows in the *.review.json trackers. Source refinement: tasks/refinements/participant-ui/part_lobby_view.md."
   }
 
+  task i18n_participant_proposals_tab_native_review "Native-speaker review of pt-BR + es-419 participant-proposals-tab strings (3 new keys under participant.proposalsTab.* + participant.pendingProposalsPane.*)" {
+    effort 0.25d
+    allocate team
+    depends !i18n_participant_lobby_native_review, participant_ui.part_pending_proposals.part_proposals_tab
+    note "Native-speaker review of pt-BR + es-419 draft entries for the 3 keys added in part_proposals_tab (this commit): participant.proposalsTab.graphLabel, participant.proposalsTab.proposalsLabel, participant.pendingProposalsPane.emptyState. Source refinement: tasks/refinements/participant-ui/part_proposals_tab.md. Per Decision §9 of that refinement."
+  }
+
   task i18n_audience_placeholder_native_review "Native-speaker review of pt-BR + es-419 audience-placeholder strings (2 new keys under audience.placeholder.*)" {
     effort 0.25d
     allocate team

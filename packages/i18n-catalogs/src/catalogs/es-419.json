@@ -708,6 +708,13 @@
       "wireError": "El retiro falló: {message} ({code})",
       "timeoutError": "La solicitud de retiro expiró. Revisa tu conexión e inténtalo de nuevo.",
       "errorRoleLabel": "Error de retiro"
+    },
+    "proposalsTab": {
+      "graphLabel": "Grafo",
+      "proposalsLabel": "Propuestas"
+    },
+    "pendingProposalsPane": {
+      "emptyState": "No hay propuestas pendientes"
     }
   },
   "audience": {

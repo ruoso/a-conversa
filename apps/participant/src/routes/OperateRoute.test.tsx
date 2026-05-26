@@ -89,6 +89,10 @@ afterEach(async () => {
   // empty-state baseline.
   const { useSelectionStore } = await import('../stores/selectionStore');
   useSelectionStore.getState().clear();
+  // Reset the UI store's tab to its default so the tab-switch cases
+  // start from a known baseline (`part_proposals_tab` Decision §6).
+  const { useUiStore } = await import('../stores/uiStore');
+  useUiStore.setState({ currentTab: 'graph' });
 });
 
 function renderRoute(opts: { auth?: AuthContextValue } = {}): FakeClient {
@@ -267,6 +271,40 @@ describe('OperateRoute — auto-select on incoming proposal events', () => {
     expect(screen.getByTestId('participant-detail-panel-identity-wording').textContent).toBe(
       'Auto-selected wording',
     );
+  });
+});
+
+// -------------------------------------------------------------------
+// Tab seam — added by
+// `participant_ui.part_pending_proposals.part_proposals_tab`.
+// Refinement: tasks/refinements/participant-ui/part_proposals_tab.md
+//
+// Decision §1 mounts `<PendingProposalsTabBar>` at the top of the
+// authenticated body; Decision §4 hoists the projection chain at the
+// route so tab switches do NOT re-run the projector. This case pins
+// the body-region swap: starting on `'graph'`, the graph region is in
+// the DOM and the pane is absent; after dispatching
+// `setCurrentTab('proposals')`, the pane replaces the graph region;
+// switching back surfaces the graph region again.
+// -------------------------------------------------------------------
+
+describe('OperateRoute — tab switch flips visible body region', () => {
+  it('(j) starting on graph shows the graph region; switching to proposals shows the pane; switching back restores the graph region', async () => {
+    renderRoute({ auth: authenticatedCallerAuth });
+    expect(screen.getByTestId('route-operate-graph-region')).toBeTruthy();
+    expect(screen.queryByTestId('participant-pending-proposals-pane')).toBeNull();
+    const { act } = await import('@testing-library/react');
+    const { useUiStore } = await import('../stores/uiStore');
+    act(() => {
+      useUiStore.getState().setCurrentTab('proposals');
+    });
+    expect(screen.queryByTestId('route-operate-graph-region')).toBeNull();
+    expect(screen.getByTestId('participant-pending-proposals-pane')).toBeTruthy();
+    act(() => {
+      useUiStore.getState().setCurrentTab('graph');
+    });
+    expect(screen.getByTestId('route-operate-graph-region')).toBeTruthy();
+    expect(screen.queryByTestId('participant-pending-proposals-pane')).toBeNull();
   });
 });
 

@@ -708,6 +708,13 @@
       "wireError": "Withdraw failed: {message} ({code})",
       "timeoutError": "The withdraw request timed out. Check your connection and try again.",
       "errorRoleLabel": "Withdraw error"
+    },
+    "proposalsTab": {
+      "graphLabel": "Graph",
+      "proposalsLabel": "Proposals"
+    },
+    "pendingProposalsPane": {
+      "emptyState": "No pending proposals"
     }
   },
   "audience": {
