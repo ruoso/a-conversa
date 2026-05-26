@@ -50,18 +50,50 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 ORCH_DIR = Path(__file__).resolve().parent
 PROMPTS_DIR = ORCH_DIR / "prompts"
 LOG_DIR = ORCH_DIR / "logs"
+STATE_DIR = ORCH_DIR / "state"
+CONTEXT_FILE = STATE_DIR / "context_summary.md"
 SYSTEM_PROMPT_PATH = PROMPTS_DIR / "orchestrator_system.md"
+
+# Maximum number of fixer dispatches before the driver gives up on a
+# failing verification chain. On exhaustion the driver appends a failure
+# block to CONTEXT_FILE and exits non-zero — re-running the driver picks
+# the persisted context back up so the orchestrator sees the failure on
+# its next turn.
+MAX_FIXER_ATTEMPTS = 5
+
+# Verification chain run deterministically by the driver after every
+# implementer dispatch. Each entry is (display_name, argv). The driver
+# tees output to a per-iteration log file and short-circuits to the
+# fixer the moment any step fails.
+VERIFICATION_STEPS: list[tuple[str, list[str]]] = [
+    ("check", ["pnpm", "run", "check"]),
+    ("vitest", ["pnpm", "run", "test:smoke"]),
+    ("cucumber", ["pnpm", "run", "test:behavior:smoke"]),
+    ("playwright", ["make", "test:e2e:compose"]),
+]
 
 # Flags appended to every `claude -p` invocation. stream-json + verbose gives
 # live event visibility; both are required together for headless mode.
 CLAUDE_ARGS = ["--output-format", "stream-json", "--verbose"]
 
-# Model split: the orchestrator only does meta-routing (parse prior return,
-# emit a JSON envelope, write a context_summary) so Sonnet handles it well at
-# a fraction of the cost. Sub-agents do the actual code work and get Opus.
+# Model split:
+#  - Orchestrator and closer do structured meta-work (parse prior return,
+#    emit envelope, append Status block, register WBS rows, write commit
+#    message) — Sonnet handles both well at a fraction of the cost.
+#  - Implementer / refinement_writer / fixer do actual code work and get Opus.
 # Override at the command line via env vars when you want to experiment.
 ORCH_MODEL = os.environ.get("ORCH_MODEL", "claude-sonnet-4-6")
 SUB_MODEL = os.environ.get("SUB_MODEL", "claude-opus-4-7")
+CLOSER_MODEL = os.environ.get("CLOSER_MODEL", "claude-sonnet-4-6")
+
+# Per-template model selection. Anything not listed falls back to SUB_MODEL.
+TEMPLATE_MODELS: dict[str, str] = {
+    "closer": CLOSER_MODEL,
+}
+
+
+def model_for_template(name: str) -> str:
+    return TEMPLATE_MODELS.get(name, SUB_MODEL)
 
 # Max chars of a single assistant text block printed inline. Longer text is
 # truncated with a "(+N more)" tail. The full text is always in the log file.
@@ -767,13 +799,223 @@ def build_orchestrator_prompt(
     return "\n".join(parts)
 
 
+# ---------------------------------------------------------------------------
+# Persistent state — context_summary survives across driver invocations
+# ---------------------------------------------------------------------------
+
+
+def load_context_summary() -> str:
+    """Read the persisted context_summary if any. The file is a free-form
+    markdown blob the orchestrator owns turn-to-turn; the driver only reads
+    it at startup and rewrites it after each orchestrator turn (plus appends
+    a failure block when the verification chain exhausts its fixer budget)."""
+    if not CONTEXT_FILE.exists():
+        return ""
+    return CONTEXT_FILE.read_text().rstrip()
+
+
+def save_context_summary(text: str) -> None:
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    CONTEXT_FILE.write_text(text.rstrip() + "\n")
+
+
+def append_context_failure(block: str) -> None:
+    """Append a failure section to CONTEXT_FILE so the next driver run
+    surfaces it to the orchestrator. Used when MAX_FIXER_ATTEMPTS is hit."""
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    existing = CONTEXT_FILE.read_text() if CONTEXT_FILE.exists() else ""
+    sep = "\n\n" if existing and not existing.endswith("\n\n") else ""
+    CONTEXT_FILE.write_text(existing + sep + block.rstrip() + "\n")
+
+
+# ---------------------------------------------------------------------------
+# Deterministic verification + fixer + auto-closer chain
+# ---------------------------------------------------------------------------
+
+
+def run_verification_step(name: str, argv: list[str], log_path: Path) -> int:
+    """Run one verification command, teeing stdout+stderr to log_path.
+    Returns the process return code. Does not raise on non-zero rc."""
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    print_wrapped(
+        f"  {CYAN}▸{RESET} verify[{BOLD}{name}{RESET}] "
+        f"{DIM}${RESET} {' '.join(argv)} {DIM}→ {log_path}{RESET}"
+    )
+    with log_path.open("w") as logf:
+        logf.write(f"---CMD---\n{' '.join(argv)}\n\n---OUTPUT---\n")
+        logf.flush()
+        proc = subprocess.run(
+            argv,
+            cwd=str(REPO_ROOT),
+            stdout=logf,
+            stderr=subprocess.STDOUT,
+        )
+        logf.write(f"\n---RC---\n{proc.returncode}\n")
+    symbol = f"{GREEN}✓{RESET}" if proc.returncode == 0 else f"{RED}✗{RESET}"
+    print_wrapped(f"    {symbol} {name} rc={proc.returncode}")
+    return proc.returncode
+
+
+def format_test_results(results: list[tuple[str, int, Path]]) -> str:
+    lines = []
+    for name, rc, log in results:
+        status = "PASS" if rc == 0 else f"FAIL (rc={rc})"
+        lines.append(f"- {name}: {status} (log: {log.relative_to(REPO_ROOT)})")
+    return "\n".join(lines)
+
+
+def run_post_implementer_chain(
+    iteration: int,
+    template_vars: dict,
+    implementer_summary: str,
+) -> str:
+    """After the implementer returns, run the deterministic verification
+    chain, dispatch the fixer on any failure (up to MAX_FIXER_ATTEMPTS), and
+    finally dispatch the closer with a `$test_results` block confirming all
+    suites green. Returns the closer's final assistant message so the
+    orchestrator's next turn sees it as `last_subagent_output`.
+
+    On fixer exhaustion: append a failure block to CONTEXT_FILE and
+    sys.exit(1). The next driver run will re-load the appended context and
+    the orchestrator will see the failure on its next turn."""
+    task_id = template_vars.get("task_id", "")
+    refinement_path = template_vars.get("refinement_path", "")
+    combined_summary = implementer_summary
+    fixer_attempts = 0
+    fix_history: list[str] = []
+
+    while True:
+        # --- verification chain ----------------------------------------------
+        print_wrapped(banner(f"iter {iteration} · verification"))
+        results: list[tuple[str, int, Path]] = []
+        failing: Optional[tuple[str, list[str], Path]] = None
+        for name, argv in VERIFICATION_STEPS:
+            log_path = LOG_DIR / f"iter-{iteration:04d}-verify-{name}.log"
+            rc = run_verification_step(name, argv, log_path)
+            results.append((name, rc, log_path))
+            if rc != 0:
+                failing = (name, argv, log_path)
+                break
+
+        if failing is None:
+            # All four steps passed — proceed to closer.
+            test_results_block = format_test_results(results)
+            print_wrapped(
+                f"  {GREEN}● verification green — dispatching closer{RESET}"
+            )
+            closer_vars = {
+                "task_id": task_id,
+                "refinement_path": refinement_path,
+                "implementer_summary": combined_summary,
+                "test_results": test_results_block,
+            }
+            closer_template = load_template("closer")
+            closer_prompt = render_template(closer_template, closer_vars)
+            closer_log = LOG_DIR / f"iter-{iteration:04d}-closer.log"
+            closer_title = f"iter {iteration} · closer"
+            if task_id:
+                closer_title += f" · {task_id}"
+            print_wrapped(banner(closer_title))
+            print_wrapped(
+                f"  {DIM}log: {closer_log} · model: {CLOSER_MODEL}{RESET}"
+            )
+            for line in fmt_vars_passed(closer_vars):
+                print_wrapped(line)
+            closer_out = run_claude_with_session_retry(
+                closer_prompt, closer_log, CLOSER_MODEL
+            )
+            for line in fmt_returned(closer_out):
+                print_wrapped(line)
+            return closer_out
+
+        # --- failure path: dispatch fixer ------------------------------------
+        fixer_attempts += 1
+        name, argv, log_path = failing
+        print_wrapped(
+            f"  {RED}● verification failed at [{name}] — "
+            f"dispatching fixer (attempt {fixer_attempts}/{MAX_FIXER_ATTEMPTS}){RESET}"
+        )
+
+        if fixer_attempts > MAX_FIXER_ATTEMPTS:
+            failure_block = (
+                f"## Verification chain exhausted at iter {iteration}\n\n"
+                f"- task_id: {task_id}\n"
+                f"- refinement: {refinement_path}\n"
+                f"- failing step: {name} ({' '.join(argv)})\n"
+                f"- failing log: {log_path.relative_to(REPO_ROOT)}\n"
+                f"- fixer attempts: {MAX_FIXER_ATTEMPTS} (cap)\n\n"
+                f"### Implementer summary\n\n{implementer_summary}\n\n"
+                f"### Fix history (most recent last)\n\n"
+                + "\n\n".join(
+                    f"#### attempt {i + 1}\n{fh}" for i, fh in enumerate(fix_history)
+                )
+                + "\n"
+            )
+            append_context_failure(failure_block)
+            print_wrapped(
+                f"{RED}!! fixer budget exhausted — failure appended to "
+                f"{CONTEXT_FILE} and exiting{RESET}"
+            )
+            sys.exit(1)
+
+        fixer_vars = {
+            "task_id": task_id,
+            "refinement_path": refinement_path,
+            "implementer_summary": implementer_summary,
+            "failing_step": name,
+            "failing_command": " ".join(argv),
+            "failing_log": str(log_path.relative_to(REPO_ROOT)),
+            "prior_attempts": (
+                "\n\n".join(
+                    f"### attempt {i + 1}\n{fh}" for i, fh in enumerate(fix_history)
+                )
+                if fix_history
+                else "(none — this is the first fix attempt)"
+            ),
+        }
+        fixer_template = load_template("fixer")
+        fixer_prompt = render_template(fixer_template, fixer_vars)
+        fixer_log = (
+            LOG_DIR / f"iter-{iteration:04d}-fixer-{fixer_attempts}.log"
+        )
+        fixer_title = f"iter {iteration} · fixer #{fixer_attempts}"
+        if task_id:
+            fixer_title += f" · {task_id}"
+        print_wrapped(banner(fixer_title))
+        fixer_model = model_for_template("fixer")
+        print_wrapped(f"  {DIM}log: {fixer_log} · model: {fixer_model}{RESET}")
+        for line in fmt_vars_passed(fixer_vars):
+            print_wrapped(line)
+        fixer_out = run_claude_with_session_retry(
+            fixer_prompt, fixer_log, fixer_model
+        )
+        for line in fmt_returned(fixer_out):
+            print_wrapped(line)
+        fix_history.append(fixer_out.strip())
+        # Append fix summary into the closer's seed so the eventual Status
+        # block reflects everything that landed for this task.
+        combined_summary = (
+            implementer_summary
+            + "\n\n## Follow-up fix(es) by fixer sub-agent\n\n"
+            + "\n\n".join(
+                f"### attempt {i + 1}\n{fh}" for i, fh in enumerate(fix_history)
+            )
+        )
+        # Loop back: re-run the verification chain from the top.
+
+
 def main() -> int:
     if not SYSTEM_PROMPT_PATH.exists():
         print(f"missing system prompt: {SYSTEM_PROMPT_PATH}", file=sys.stderr)
         return 2
     system_prompt = SYSTEM_PROMPT_PATH.read_text()
 
-    context_summary = ""
+    context_summary = load_context_summary()
+    if context_summary:
+        print_wrapped(
+            f"{DIM}● loaded context_summary from {CONTEXT_FILE} "
+            f"({len(context_summary)} chars){RESET}"
+        )
     last_output: Optional[str] = None
     iteration = 0
 
@@ -810,16 +1052,27 @@ def main() -> int:
         sub_title = f"iter {iteration} · {template_name}"
         if task_id:
             sub_title += f" · {task_id}"
+        sub_model = model_for_template(template_name)
         print_wrapped(banner(sub_title))
-        print_wrapped(f"  {DIM}log: {sub_log} · model: {SUB_MODEL}{RESET}")
+        print_wrapped(f"  {DIM}log: {sub_log} · model: {sub_model}{RESET}")
         for line in fmt_vars_passed(template_vars):
             print_wrapped(line)
-        sub_stdout = run_claude_with_session_retry(sub_prompt, sub_log, SUB_MODEL)
+        sub_stdout = run_claude_with_session_retry(sub_prompt, sub_log, sub_model)
         for line in fmt_returned(sub_stdout):
             print_wrapped(line)
 
+        # 3b. Post-implementer deterministic chain: verification → (fixer
+        # loop) → closer. The orchestrator no longer dispatches closer
+        # directly; the driver owns this whole tail so test-suite execution
+        # is a deterministic Python step rather than an LLM-judged one.
+        if template_name == "implementer":
+            sub_stdout = run_post_implementer_chain(
+                iteration, template_vars, sub_stdout
+            )
+
         # 4. Carry forward
         context_summary = envelope.get("context_summary", "")
+        save_context_summary(context_summary)
         last_output = sub_stdout
         iteration += 1
 

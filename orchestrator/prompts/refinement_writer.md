@@ -26,6 +26,22 @@ appropriate only for: the task's own `.tji` block (precise data needed),
 `tasks/refinements/README.md` (small, structural), and ADRs you explicitly
 cite (need full text).
 
+## Log / shell-output handling (universal rule)
+
+Any time you run a `Bash` command whose output runs more than a handful of
+lines (test runs, `git log -p`, `make` targets, anything noisy), redirect
+it to a file (`<cmd> > /tmp/<run>.log 2>&1`) and dispatch a
+`Task(subagent_type="Explore", ...)` against that path to extract the
+pass/fail surface or whatever signal you need.
+
+- Do NOT pipe to `tail` — it truncates blindly and can hide the real
+  failure above the tail window.
+- Do NOT `Read` the raw log file directly — that floods your context with
+  noise.
+
+The Explore agent's tight report is what you act on. The headless-mode name
+for the agent-spawning tool is `Task`, not `Agent`.
+
 ## Additional context from orchestrator
 
 $additional_context

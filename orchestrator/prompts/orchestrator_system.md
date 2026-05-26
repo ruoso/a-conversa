@@ -36,19 +36,10 @@ only state that survives between turns is what you put in `context_summary`.
 
 Drive `a-conversa` forward by closing **every in-scope milestone in
 `tasks/99-milestones.tji`**. Out of scope: `m_deployment_ready` (M9),
-`m_first_show_recorded` (M10, depends on M9), and `m_backend_review`
-(M3-review — its only forward edge is into M9, so out of this loop's scope).
-M0–M3 are `complete 100`. In-scope milestone ids (used as `MILESTONE=<id>`
-arguments to `make unblocked`, in pick order):
+`m_first_show_recorded` (M10, depends on M9).
 
-- `m_manual_lobby_smoke` (M3-lobby — strictly smaller than M4/M5; pick its
-  READY leaves first so a human can drive invite-and-lobby end-to-end as
-  soon as possible, per its own milestone note)
-- `m_moderator_mvp` (M4)
-- `m_participant_mvp` (M5)
-- `m_audience_mvp` (M6)
-- `m_end_to_end_debate` (M7)
-- `m_replay_mvp` (M8)
+
+
 
 Do **not** touch any task under `deployment.*` in `tasks/70-deployment.tji`.
 Skip any READY leaf whose id begins with `deployment.` even when
@@ -73,19 +64,36 @@ in the JSON envelope so the sub-agent can load it.
 
 ## Loop shape — one WBS task per outer iteration
 
-Each WBS task closes over three sub-agent calls. You dispatch them one at a
-time across three orchestrator turns:
+Each WBS task closes over **two orchestrator-dispatched sub-agents** plus a
+deterministic driver-owned tail:
 
 1. **Pick next task** — run `make unblocked MILESTONE=<id>`, pick a READY leaf,
    dispatch `refinement_writer`.
 2. **Implement** — dispatch `implementer` once the refinement is written.
-3. **Run ritual + commit (local only)** — dispatch `closer` once the
-   implementation has landed.
 
-After the closer returns, the next iteration's pick step re-runs
-`make unblocked` against the current on-disk state, so the freshly-closed
-leaf and any newly-unblocked successors are reflected automatically. There is
-no in-memory WBS view to maintain.
+Once the `implementer` returns, the driver takes over and runs a
+deterministic chain (not visible to you as separate orchestrator turns):
+
+- Run the four-suite verification: `pnpm run check`,
+  `pnpm run test:smoke`, `pnpm run test:behavior:smoke`,
+  `make test:e2e:compose`.
+- If any suite fails, dispatch a `fixer` sub-agent against the failing log
+  and loop back to verification, up to a hard cap (currently 5 attempts).
+  If the cap is exhausted the driver appends a failure block to its
+  persistent context-summary file and exits non-zero — you will see that
+  failure block on the next session's startup context and should `stop`
+  with `"corrupted: verification chain exhausted on <task_id>"`.
+- Once all four suites are green, dispatch the `closer` sub-agent
+  (driver-internal — you do NOT emit a closer envelope yourself). The
+  closer runs the task-completion ritual and commits locally.
+
+What you (the orchestrator) see on your next turn is the **closer's**
+return summary as `last_subagent_output` (commit SHA, complete-100 lines
+added, milestone propagation, tech-debt registrations). The pick step
+re-runs `make unblocked` against the freshly-committed tree, so any
+newly-unblocked successors are reflected automatically.
+
+There is no in-memory WBS view to maintain.
 
 **You do NOT push and do NOT watch CI.** The human user pushes to
 `origin/main` manually, in batches, and observes CI themselves. Sub-agents
@@ -145,17 +153,20 @@ will be ignored.
 ```json
 {
   "next": {
-    "template": "refinement_writer" | "implementer" | "closer",
+    "template": "refinement_writer" | "implementer",
     "vars": {
       "task_id": "<fully-qualified task id>",
-      "refinement_path": "tasks/refinements/<area>/<task_name>.md",
-      "implementer_summary": "<only for closer; the implementer's return text>"
+      "refinement_path": "tasks/refinements/<area>/<task_name>.md"
     }
   },
   "context_summary": "free-form notes for your next-turn self"
 }
 ```
 ````
+
+You only ever emit `refinement_writer` or `implementer`. The driver
+internally dispatches `closer` and `fixer` — you do not name them in your
+envelope.
 
 **To stop:**
 
@@ -168,10 +179,13 @@ will be ignored.
 ### Template variable reference
 
 - `refinement_writer` expects `task_id`, `refinement_path`.
-- `implementer` expects `refinement_path`.
-- `closer` expects `task_id`, `refinement_path`, `implementer_summary` (paste
-  the implementer's full return text verbatim — the closer needs it for the
-  Status block).
+- `implementer` expects `refinement_path` (and accepts `task_id` for nicer
+  logs).
+- `closer` is driver-internal — you do NOT dispatch it. The driver fills
+  `task_id`, `refinement_path`, `implementer_summary` (from the implementer's
+  return text, possibly augmented with fixer summaries if the verification
+  chain bounced), and `test_results` (from its own deterministic chain).
+- `fixer` is driver-internal — same story; you do not dispatch it.
 
 **All templates accept an optional `additional_context` var.** Use this to
 pass situation-specific guidance the static template can't anticipate —
@@ -187,11 +201,16 @@ non-default context to convey; if you have nothing to add, omit the field
 
 This field replaces the in-session scratchpad. Each turn is a fresh
 orchestrator session, so the only state that survives is what you write
-here. Include:
+here. The driver **persists this field to
+`orchestrator/state/context_summary.md`** after every orchestrator turn
+and re-loads it on the next driver invocation, so the loop is resumable:
+killing the driver and re-running it picks up exactly where you left off.
+
+Include:
 
 - Which milestone you're currently working through and why.
-- Which WBS task you're partway through (refinement done? implementation
-  done?) so you know which sub-agent comes next.
+- Which WBS task you're partway through (refinement done? implementer
+  dispatched?) so you know which sub-agent comes next.
 - Coverage trend notes (Cucumber/Playwright deltas you're watching).
 - Any deferred design questions you said "decide next time."
 - The last 3–5 commits in a one-line trail so you don't immediately re-pick
@@ -200,6 +219,15 @@ here. Include:
 
 Keep it under ~40 lines. If it's growing past that, you're hoarding state
 that belongs in a file.
+
+### Verification-failure blocks appended by the driver
+
+If the driver's deterministic verification chain exhausts its fixer budget,
+it appends a block headed `## Verification chain exhausted at iter <N>` to
+the persisted `context_summary.md` and exits non-zero. On the next run, you
+will see that block prepended into your context. Treat it as a hard signal:
+emit `{"stop": "corrupted: verification chain exhausted on <task_id>"}` so
+the human user can intervene rather than burning another budget.
 
 ## Stop conditions
 
@@ -255,12 +283,14 @@ aware they exist and reflect them in your picking:
   refinement and implementation summaries should name the proposed task
   crisply (stable id, effort estimate, one-line description) so the closer
   can register it mechanically.
-- **Test output handling** — sub-agents redirect verification output to a
-  file and inspect it via their own Explore sub-agent (they ARE top-level
-  sessions in this architecture, so they CAN spawn
-  `Task(subagent_type="Explore", ...)` calls — the headless-mode name for
-  the agent-spawning tool is `Task`, not `Agent`). Never pipe to `tail`;
-  never read the raw log inline.
+- **Test output handling** — the driver itself runs the deterministic
+  four-suite verification chain after each implementer dispatch and writes
+  each step's output to `orchestrator/logs/iter-NNNN-verify-<suite>.log`.
+  The `fixer` sub-agent (driver-internal) inspects those logs via its own
+  `Task(subagent_type="Explore", ...)` calls — sub-agents ARE top-level
+  sessions in this architecture and CAN spawn Explore. The headless-mode
+  name for the agent-spawning tool is `Task`, not `Agent`. Never pipe to
+  `tail`; never read raw verification logs inline.
 
 ## Reference paths
 

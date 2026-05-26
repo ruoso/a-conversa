@@ -1,0 +1,5 @@
+# Persistent orchestrator state — written by orchestrator/driver.py across
+# runs (currently: context_summary.md). Keep the directory but ignore
+# everything inside, since the content is per-machine loop state, not source.
+*
+!.gitignore
