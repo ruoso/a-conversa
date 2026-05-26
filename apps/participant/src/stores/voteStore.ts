@@ -6,10 +6,13 @@
 // The slice is "local UI state" in the strict sense — it holds the
 // button-pressed signal so multiple components can read a consistent
 // local view (the per-facet button strip, an "Agree all" gesture, an
-// eventual voting summary). The actual round-trip lives in
-// `part_voting.part_vote_single_tap` (future leaf) which reads from
-// this slice, sends via the shell's `useWsClient()`, and calls
-// `removeVote(proposalId, facetId)` on the server's ack envelope.
+// eventual voting summary). The active vote-dispatch path is
+// `apps/participant/src/detail/useVoteAction.ts`; this slice was
+// originally planned for the dispatch path but the active
+// implementation took a different shape and the slice is currently
+// unused outside its own tests. It remains as a potential home for a
+// future queued-local-vote indicator (`part_queued_local_vote_indicator`
+// under `part_voting.*`, not yet registered).
 //
 // Per `docs/participant-ui.md` P2: single-tap votes with no
 // confirmation modal; vote changes are allowed up to commit (so the

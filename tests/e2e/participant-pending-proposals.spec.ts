@@ -355,6 +355,17 @@ test.describe('Participant operate route — pending-proposals tab seam', () => 
       );
       await expect(agreeButton).toHaveCount(1);
       await agreeButton.click();
+      // `part_vote_single_tap` policy pin — no confirmation modal /
+      // dialog mounts at the click → ack cross-process boundary. The
+      // assertions run AFTER the click resolves (Playwright's await
+      // microtask scheduling) but BEFORE the `expect.poll(...)` for
+      // own-vote-hides — at that window any confirmation modal
+      // wired into the click handler would be mounted because
+      // confirmation modals mount synchronously on click in React's
+      // render cycle. Per `docs/participant-ui.md` lines 84 + 139 +
+      // ADR 0030 §3.
+      await expect(page.locator('[role="dialog"]')).toHaveCount(0);
+      await expect(page.locator('[aria-modal="true"]')).toHaveCount(0);
       await page.evaluate(
         (seed: { sessionId: string; proposalNodeId: string; voterId: string }) => {
           const store = (

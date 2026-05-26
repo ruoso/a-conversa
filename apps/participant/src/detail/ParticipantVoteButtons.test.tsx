@@ -1437,3 +1437,273 @@ describe('<ParticipantVoteButtons> — wired withdraw button on committed facet 
     expect(fake.calls.length).toBe(0);
   });
 });
+
+// --------------------------------------------------------------------
+// Single-tap policy pin — formalizes the methodology's single-tap-no-
+// confirmation posture for the agree/dispute affordance and pins the
+// withdraw button as the named exception. Per
+// `tasks/refinements/participant-ui/part_vote_single_tap.md` Decision §1
+// + ADR 0030 §3 + `docs/participant-ui.md` lines 84 + 139.
+//
+// Four cases pin distinct observable properties; the fifth (withdraw
+// exception) is bundled into case (b) so the asymmetry the policy
+// depends on is asserted alongside the policy itself.
+// --------------------------------------------------------------------
+
+describe('<ParticipantVoteButtons> — single-tap policy', () => {
+  // (a) Single click on agree dispatches exactly one envelope; the
+  // row's `data-vote-state` flips to `"in-flight"` with no intermediate
+  // render pass between `"enabled"` and `"in-flight"`.
+  it('(a) single click on agree fires exactly one vote envelope; vote-state goes enabled → in-flight with no intermediate state', () => {
+    const fake = makeFakeClient();
+    const events: Event[] = [
+      joinedEvent(1, PARTICIPANT_BEN),
+      nodeCreatedEvent(2, 'A first claim'),
+      classifyNodeProposalEvent(3),
+    ];
+    const facetStatusIndex = computeFacetStatuses(events);
+    render(
+      <Wrapper client={fake.client}>
+        <ParticipantVoteButtons
+          events={events}
+          entityKind="node"
+          entityId={NODE_A_ID}
+          facetStatusIndex={facetStatusIndex}
+        />
+      </Wrapper>,
+    );
+    const rowBefore = screen
+      .getAllByTestId('participant-detail-panel-facet-row')
+      .find((r) => r.getAttribute('data-facet-name') === 'classification');
+    if (!rowBefore) throw new Error('classification row missing pre-click');
+    expect(rowBefore.getAttribute('data-vote-state')).toBe('enabled');
+    const agree = within(rowBefore).getByTestId('participant-vote-button-agree');
+    act(() => {
+      fireEvent.click(agree);
+    });
+    expect(fake.calls.length).toBe(1);
+    expect(fake.calls[0]?.type).toBe('vote');
+    const rowAfter = screen
+      .getAllByTestId('participant-detail-panel-facet-row')
+      .find((r) => r.getAttribute('data-facet-name') === 'classification');
+    if (!rowAfter) throw new Error('classification row missing post-click');
+    // No intermediate `"armed"` or similar state; the only state
+    // attribute lift is `enabled` → `in-flight`.
+    expect(rowAfter.getAttribute('data-vote-state')).toBe('in-flight');
+    expect(rowAfter.getAttribute('data-vote-state')).not.toBe('armed');
+  });
+
+  // (b) Agree/dispute labels surface only `{agreeLabel|disputeLabel,
+  // inFlightLabel}` across the lifecycle — never a "Confirm" / "Are you
+  // sure" permutation. The withdraw button (the named exception per
+  // ADR 0030 §3) DOES surface a confirm label as its armed state; this
+  // case asserts the asymmetry.
+  it('(b) agree/dispute have a two-state label set (no confirm permutation); withdraw is the named three-state exception', () => {
+    const fake = makeFakeClient();
+    const events: Event[] = [
+      joinedEvent(1, PARTICIPANT_BEN),
+      nodeCreatedEvent(2, 'A first claim'),
+      classifyNodeProposalEvent(3),
+    ];
+    const facetStatusIndex = computeFacetStatuses(events);
+    render(
+      <Wrapper client={fake.client}>
+        <ParticipantVoteButtons
+          events={events}
+          entityKind="node"
+          entityId={NODE_A_ID}
+          facetStatusIndex={facetStatusIndex}
+        />
+      </Wrapper>,
+    );
+    const classifyRow = screen
+      .getAllByTestId('participant-detail-panel-facet-row')
+      .find((r) => r.getAttribute('data-facet-name') === 'classification');
+    if (!classifyRow) throw new Error('classification row missing');
+    const agreeBtn = within(classifyRow).getByTestId('participant-vote-button-agree');
+    const disputeBtn = within(classifyRow).getByTestId('participant-vote-button-dispute');
+    expect(agreeBtn.textContent).toBe('Agree');
+    expect(disputeBtn.textContent).toBe('Dispute');
+    // Neither button surfaces a confirm-permutation label before the
+    // click.
+    expect(agreeBtn.textContent).not.toMatch(/confirm/i);
+    expect(disputeBtn.textContent).not.toMatch(/are you sure/i);
+    // Click agree — the label flips to the inFlight label. The button
+    // never passes through an "armed" / "confirm" label.
+    act(() => {
+      fireEvent.click(agreeBtn);
+    });
+    const classifyRowAfter = screen
+      .getAllByTestId('participant-detail-panel-facet-row')
+      .find((r) => r.getAttribute('data-facet-name') === 'classification');
+    if (!classifyRowAfter) throw new Error('classification row missing post-click');
+    const agreeAfter = within(classifyRowAfter).getByTestId('participant-vote-button-agree');
+    expect(agreeAfter.textContent).toBe('Sending…');
+    expect(agreeAfter.textContent).not.toMatch(/confirm/i);
+
+    // Withdraw button on a committed row — DOES surface the
+    // `confirmLabel` ("Confirm withdraw") as its armed state. The
+    // asymmetry is methodology-load-bearing per ADR 0030 §3 +
+    // `docs/participant-ui.md` line 99.
+    cleanup();
+    const fake2 = makeFakeClient();
+    const committedEvents: Event[] = [
+      joinedEvent(1, PARTICIPANT_BEN),
+      joinedEvent(2, PARTICIPANT_MARIA),
+      nodeCreatedEvent(3, 'A first claim'),
+      classifyNodeProposalEvent(4),
+      voteEvent(5, PROPOSAL_CLASSIFY_ID, PARTICIPANT_BEN, 'agree'),
+      voteEvent(6, PROPOSAL_CLASSIFY_ID, PARTICIPANT_MARIA, 'agree'),
+      commitEvent(PROPOSAL_CLASSIFY_ID, 7),
+    ];
+    const committedIndex = computeFacetStatuses(committedEvents);
+    render(
+      <Wrapper client={fake2.client}>
+        <ParticipantVoteButtons
+          events={committedEvents}
+          entityKind="node"
+          entityId={NODE_A_ID}
+          facetStatusIndex={committedIndex}
+          currentParticipantId={PARTICIPANT_BEN}
+        />
+      </Wrapper>,
+    );
+    const committedRow = screen
+      .getAllByTestId('participant-detail-panel-facet-row')
+      .find((r) => r.getAttribute('data-facet-name') === 'classification');
+    if (!committedRow) throw new Error('classification row missing post-commit');
+    const withdrawBtn = within(committedRow).getByTestId('participant-vote-button-withdraw');
+    // Idle state — label is `"Withdraw agreement"`.
+    expect(withdrawBtn.textContent).toBe('Withdraw agreement');
+    // First click ARMS — label flips to `"Confirm withdraw"`. This is
+    // the named exception; the agree/dispute buttons have no
+    // equivalent.
+    act(() => {
+      fireEvent.click(withdrawBtn);
+    });
+    const armedRow = screen
+      .getAllByTestId('participant-detail-panel-facet-row')
+      .find((r) => r.getAttribute('data-facet-name') === 'classification');
+    if (!armedRow) throw new Error('classification row missing post-arm');
+    const armedBtn = within(armedRow).getByTestId('participant-vote-button-withdraw');
+    expect(armedBtn.textContent).toBe('Confirm withdraw');
+    expect(armedBtn.getAttribute('data-withdraw-state')).toBe('armed');
+    // Second click fires; label flips to the in-flight label.
+    act(() => {
+      fireEvent.click(armedBtn);
+    });
+    const inFlightRow = screen
+      .getAllByTestId('participant-detail-panel-facet-row')
+      .find((r) => r.getAttribute('data-facet-name') === 'classification');
+    if (!inFlightRow) throw new Error('classification row missing post-fire');
+    const inFlightBtn = within(inFlightRow).getByTestId('participant-vote-button-withdraw');
+    expect(inFlightBtn.textContent).toBe('Withdrawing…');
+  });
+
+  // (c) No DOM node with `role="dialog"` or `aria-modal="true"` mounts
+  // at any observable render pass during the click → in-flight
+  // sequence. (Post-ack is not reachable with the never-resolving
+  // fake; pre-click and post-click pin the surface where a
+  // confirmation modal would mount — confirmation modals mount
+  // synchronously on click in React's render cycle, so the two-
+  // sample-point check is sufficient.)
+  it('(c) no role="dialog" or aria-modal="true" mounts at any point during the click → in-flight sequence', () => {
+    const fake = makeFakeClient();
+    const events: Event[] = [
+      joinedEvent(1, PARTICIPANT_BEN),
+      nodeCreatedEvent(2, 'A first claim'),
+      classifyNodeProposalEvent(3),
+    ];
+    const facetStatusIndex = computeFacetStatuses(events);
+    render(
+      <Wrapper client={fake.client}>
+        <ParticipantVoteButtons
+          events={events}
+          entityKind="node"
+          entityId={NODE_A_ID}
+          facetStatusIndex={facetStatusIndex}
+        />
+      </Wrapper>,
+    );
+    // Pre-click sample.
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.querySelector('[aria-modal="true"]')).toBeNull();
+    const classifyRow = screen
+      .getAllByTestId('participant-detail-panel-facet-row')
+      .find((r) => r.getAttribute('data-facet-name') === 'classification');
+    if (!classifyRow) throw new Error('classification row missing');
+    const agreeBtn = within(classifyRow).getByTestId('participant-vote-button-agree');
+    act(() => {
+      fireEvent.click(agreeBtn);
+    });
+    // Post-click-pre-ack sample — the in-flight state is observable
+    // here; the click already happened so any confirmation modal
+    // wired into the click handler would be mounted.
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.querySelector('[aria-modal="true"]')).toBeNull();
+    // Sanity: the click DID dispatch (otherwise the test passes
+    // vacuously).
+    expect(fake.calls.length).toBe(1);
+  });
+
+  // (d) Two rapid clicks on agree dispatch exactly ONCE. The
+  // `disabled={inFlight}` guard on the button is the surface-level
+  // gate; the in-flight guard inside `useVoteAction.castVote()`
+  // (lines 261-263) is the runtime gate that catches a click that
+  // bypasses the disabled attribute. No debounce, no throttle — just
+  // the pessimistic-wait posture.
+  it('(d) two rapid clicks on the same button dispatch exactly once', () => {
+    const fake = makeFakeClient();
+    const events: Event[] = [
+      joinedEvent(1, PARTICIPANT_BEN),
+      nodeCreatedEvent(2, 'A first claim'),
+      classifyNodeProposalEvent(3),
+    ];
+    const facetStatusIndex = computeFacetStatuses(events);
+    render(
+      <Wrapper client={fake.client}>
+        <ParticipantVoteButtons
+          events={events}
+          entityKind="node"
+          entityId={NODE_A_ID}
+          facetStatusIndex={facetStatusIndex}
+        />
+      </Wrapper>,
+    );
+    const classifyRow = screen
+      .getAllByTestId('participant-detail-panel-facet-row')
+      .find((r) => r.getAttribute('data-facet-name') === 'classification');
+    if (!classifyRow) throw new Error('classification row missing');
+    const agreeBtn = within(classifyRow).getByTestId('participant-vote-button-agree');
+    act(() => {
+      fireEvent.click(agreeBtn);
+      fireEvent.click(agreeBtn);
+    });
+    expect(fake.calls.length).toBe(1);
+    // Symmetric guard on dispute — re-render against a fresh client
+    // and assert the rapid-click property holds for the dispute arm.
+    cleanup();
+    resetVoteActionStore();
+    const fake2 = makeFakeClient();
+    render(
+      <Wrapper client={fake2.client}>
+        <ParticipantVoteButtons
+          events={events}
+          entityKind="node"
+          entityId={NODE_A_ID}
+          facetStatusIndex={facetStatusIndex}
+        />
+      </Wrapper>,
+    );
+    const disputeRow = screen
+      .getAllByTestId('participant-detail-panel-facet-row')
+      .find((r) => r.getAttribute('data-facet-name') === 'classification');
+    if (!disputeRow) throw new Error('classification row missing on dispute re-render');
+    const disputeBtn = within(disputeRow).getByTestId('participant-vote-button-dispute');
+    act(() => {
+      fireEvent.click(disputeBtn);
+      fireEvent.click(disputeBtn);
+    });
+    expect(fake2.calls.length).toBe(1);
+  });
+});

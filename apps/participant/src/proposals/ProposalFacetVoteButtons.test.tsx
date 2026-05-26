@@ -250,3 +250,109 @@ describe('<ProposalFacetVoteButtons>', () => {
     ).toBeNull();
   });
 });
+
+// --------------------------------------------------------------------
+// Single-tap policy pin — mirrors the detail-panel surface's policy
+// pin (`<ParticipantVoteButtons> — single-tap policy` in
+// `apps/participant/src/detail/ParticipantVoteButtons.test.tsx`). Per
+// `tasks/refinements/participant-ui/part_vote_single_tap.md` Decision §1
+// + ADR 0030 §3 + `docs/participant-ui.md` lines 84 + 139.
+//
+// Four cases pin the same observable properties on the pane chip
+// surface. The pane has no withdraw button (per ADR 0030 §3 — the
+// pane only surfaces the two-arm agree/dispute vocabulary; withdraw
+// is a detail-panel-only affordance); case (f) asserts the absence
+// instead of the three-state asymmetry the detail-panel pin checks.
+// --------------------------------------------------------------------
+
+describe('<ProposalFacetVoteButtons> — single-tap policy', () => {
+  // (e) Single click on agree dispatches exactly one envelope; the
+  // button's `data-vote-state` flips to `"in-flight"` with no
+  // intermediate render pass.
+  it('(e) single click on agree fires exactly one vote envelope; vote-state goes enabled → in-flight', () => {
+    const fake = makeFakeClient();
+    renderButtons(FACET_TARGET, 'proposed', EMPTY_OWN_FACET_VOTES, fake.client);
+    const agree = screen.getByTestId('participant-pending-proposal-row-facet-vote-button-agree');
+    expect(agree.getAttribute('data-vote-state')).toBe('enabled');
+    act(() => {
+      fireEvent.click(agree);
+    });
+    expect(fake.calls.length).toBe(1);
+    expect(fake.calls[0]?.type).toBe('vote');
+    const after = screen.getByTestId('participant-pending-proposal-row-facet-vote-button-agree');
+    expect(after.getAttribute('data-vote-state')).toBe('in-flight');
+    // No intermediate `"armed"` state on the pane surface.
+    expect(after.getAttribute('data-vote-state')).not.toBe('armed');
+  });
+
+  // (f) The pane never surfaces a "Confirm" / "Are you sure"
+  // permutation label on the agree/dispute buttons, AND never
+  // surfaces the detail-panel's `confirmLabel` ("Confirm withdraw")
+  // — the pane has no withdraw button at all (ADR 0030 §3 + the
+  // refinement's Decision §2). Label set across the lifecycle is
+  // `{agreeLabel|disputeLabel, inFlightLabel}` only.
+  it('(f) agree/dispute have a two-state label set; pane never surfaces a confirm permutation or a withdraw button', () => {
+    const fake = makeFakeClient();
+    renderButtons(FACET_TARGET, 'proposed', EMPTY_OWN_FACET_VOTES, fake.client);
+    const agree = screen.getByTestId('participant-pending-proposal-row-facet-vote-button-agree');
+    const dispute = screen.getByTestId(
+      'participant-pending-proposal-row-facet-vote-button-dispute',
+    );
+    expect(agree.textContent).toBe('Agree');
+    expect(dispute.textContent).toBe('Dispute');
+    expect(agree.textContent).not.toMatch(/confirm/i);
+    expect(dispute.textContent).not.toMatch(/are you sure/i);
+    // Click agree — label flips to inFlightLabel. Never an armed /
+    // confirm permutation.
+    act(() => {
+      fireEvent.click(agree);
+    });
+    const agreeAfter = screen.getByTestId(
+      'participant-pending-proposal-row-facet-vote-button-agree',
+    );
+    expect(agreeAfter.textContent).toBe('Sending…');
+    expect(agreeAfter.textContent).not.toMatch(/confirm/i);
+    // The pane surface intentionally has no withdraw affordance —
+    // assert the testid is absent across the lifecycle so a future
+    // "unify the vote buttons" refactor cannot flatten withdraw into
+    // the pane.
+    expect(
+      screen.queryByTestId('participant-pending-proposal-row-facet-vote-button-withdraw'),
+    ).toBeNull();
+    expect(screen.queryByTestId('participant-vote-button-withdraw')).toBeNull();
+  });
+
+  // (g) No DOM node with `role="dialog"` or `aria-modal="true"`
+  // mounts at any observable render pass during the click → in-flight
+  // sequence on the pane surface.
+  it('(g) no role="dialog" or aria-modal="true" mounts at any point during the click → in-flight sequence', () => {
+    const fake = makeFakeClient();
+    renderButtons(FACET_TARGET, 'proposed', EMPTY_OWN_FACET_VOTES, fake.client);
+    // Pre-click sample.
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.querySelector('[aria-modal="true"]')).toBeNull();
+    const agree = screen.getByTestId('participant-pending-proposal-row-facet-vote-button-agree');
+    act(() => {
+      fireEvent.click(agree);
+    });
+    // Post-click-pre-ack sample.
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.querySelector('[aria-modal="true"]')).toBeNull();
+    // Sanity — the click actually dispatched.
+    expect(fake.calls.length).toBe(1);
+  });
+
+  // (h) Two rapid clicks on agree dispatch exactly ONCE — the
+  // `disabled={inFlight}` guard + the `useVoteAction.castVote`
+  // in-flight runtime check are the single-fire mechanism.
+  it('(h) two rapid clicks dispatch exactly once on the pane surface', () => {
+    const fake = makeFakeClient();
+    renderButtons(FACET_TARGET, 'proposed', EMPTY_OWN_FACET_VOTES, fake.client);
+    const agree = screen.getByTestId('participant-pending-proposal-row-facet-vote-button-agree');
+    act(() => {
+      fireEvent.click(agree);
+      fireEvent.click(agree);
+    });
+    expect(fake.calls.length).toBe(1);
+  });
+});

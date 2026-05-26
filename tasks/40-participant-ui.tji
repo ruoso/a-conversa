@@ -251,6 +251,7 @@ task participant_ui "Participant (debater) UI" {
     task part_vote_single_tap "Single-tap voting (no confirmation modal)" {
       effort 0.5d
       allocate team
+      complete 100
       depends !part_vote_button_per_facet
     }
     task part_change_vote_pre_commit "Allow vote change up to commit" {
