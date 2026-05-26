@@ -23,16 +23,21 @@
 
 import { useMemo, type ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { ProposalPayload } from '@a-conversa/shared-types';
+import type { Event, ProposalPayload, ProposalStatusPayload } from '@a-conversa/shared-types';
 import { formatRelativeTime } from '@a-conversa/i18n-catalogs';
 
 import { useWsStore } from '../ws/wsStore';
 import { useUiStore } from '../stores/uiStore';
+import { computeFacetStatuses, type FacetStatusIndex } from '../graph/facetStatus';
 import {
   derivePendingProposals,
   type PendingProposalRow as PendingProposalRowData,
 } from './derivePendingProposals';
 import { summaryText } from './proposalSummary';
+import { PerProposalFacetBreakdown } from './PerProposalFacetBreakdown';
+
+const EMPTY_EVENTS: readonly Event[] = Object.freeze([]);
+const EMPTY_PENDING_PROPOSALS: Readonly<Record<string, ProposalStatusPayload>> = Object.freeze({});
 
 export interface PendingProposalsPaneProps {
   sessionId: string;
@@ -49,8 +54,12 @@ export function PendingProposalsPane({
   nowMsOverride,
 }: PendingProposalsPaneProps): ReactElement {
   const { t } = useTranslation();
-  const events = useWsStore((s) => s.sessionState[sessionId]?.events);
-  const rows = useMemo(() => derivePendingProposals(events ?? []), [events]);
+  const events = useWsStore((s) => s.sessionState[sessionId]?.events ?? EMPTY_EVENTS);
+  const pendingProposals = useWsStore(
+    (s) => s.sessionState[sessionId]?.pendingProposals ?? EMPTY_PENDING_PROPOSALS,
+  );
+  const rows = useMemo(() => derivePendingProposals(events), [events]);
+  const facetStatusIndex = useMemo(() => computeFacetStatuses(events), [events]);
   const nowMs = nowMsOverride ?? Date.now();
   const systemAuthorLabel = t('participant.pendingProposalsPane.systemAuthor');
   const paneAriaLabel = t('participant.pendingProposalsPane.paneAriaLabel');
@@ -81,6 +90,8 @@ export function PendingProposalsPane({
               row={row}
               nowMs={nowMs}
               systemAuthorLabel={systemAuthorLabel}
+              facetStatusIndex={facetStatusIndex}
+              serverPerFacetStatus={pendingProposals[row.proposalEventId]?.perFacetStatus}
             />
           ))}
         </ul>
@@ -93,10 +104,14 @@ function PendingProposalRow({
   row,
   nowMs,
   systemAuthorLabel,
+  facetStatusIndex,
+  serverPerFacetStatus,
 }: {
   readonly row: PendingProposalRowData;
   readonly nowMs: number;
   readonly systemAuthorLabel: string;
+  readonly facetStatusIndex: FacetStatusIndex;
+  readonly serverPerFacetStatus: Record<string, string> | undefined;
 }): ReactElement {
   const { t } = useTranslation();
   const expandedProposalId = useUiStore((s) => s.expandedProposalId);
@@ -160,12 +175,12 @@ function PendingProposalRow({
           aria-label={bodyAriaLabel}
           className="border-t border-slate-100 px-3 py-2 text-sm text-slate-700"
         >
-          <p
-            data-testid="participant-pending-proposal-row-body-summary"
-            className="whitespace-pre-wrap break-words"
-          >
-            {summary}
-          </p>
+          <PerProposalFacetBreakdown
+            proposal={row.proposal}
+            facetStatusIndex={facetStatusIndex}
+            serverPerFacetStatus={serverPerFacetStatus}
+            proposalEventId={row.proposalEventId}
+          />
         </div>
       ) : null}
     </li>

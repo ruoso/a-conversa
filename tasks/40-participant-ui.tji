@@ -229,7 +229,9 @@ task participant_ui "Participant (debater) UI" {
     task part_per_facet_breakdown_in_pane "Per-facet breakdown of each proposal (mirrors moderator UI)" {
       effort 1d
       allocate team
+      complete 100
       depends !part_proposal_expand
+      note "Refinement: tasks/refinements/participant-ui/part_per_facet_breakdown_in_pane.md"
     }
     task part_vote_indicators_in_pane "Per-participant vote indicators in the pane (mirrors moderator UI)" {
       effort 0.5d

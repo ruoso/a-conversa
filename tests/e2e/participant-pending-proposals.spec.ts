@@ -262,9 +262,23 @@ test.describe('Participant operate route — pending-proposals tab seam', () => 
       await expect(header).toHaveAttribute('aria-expanded', 'true');
       const body = row.locator('[data-testid="participant-pending-proposal-row-body"]');
       await expect(body).toBeVisible();
-      await expect(
-        body.locator('[data-testid="participant-pending-proposal-row-body-summary"]'),
-      ).toHaveText(`node ${PROPOSAL_NODE_ID.slice(0, 8)}`);
+
+      // 7. `part_per_facet_breakdown_in_pane` extension — with the row
+      //    expanded from step 6, the body region hosts the per-facet
+      //    chip strip (REPLACING the predecessor's `<p data-testid=
+      //    "-body-summary">` per Decision §2). The seeded `capture-node`
+      //    proposal targets the `wording` facet (per the per-sub-kind
+      //    map); no votes have arrived, so the chip status defaults to
+      //    `'proposed'`.
+      const facets = body.locator('[data-testid="participant-pending-proposal-row-facets"]');
+      await expect(facets).toBeVisible();
+      await expect(facets).toHaveAttribute('data-proposal-id', PROPOSAL_ID);
+      const wordingChip = facets.locator(
+        '[data-testid="participant-pending-proposal-row-facet"][data-facet-name="wording"]',
+      );
+      await expect(wordingChip).toHaveCount(1);
+      await expect(wordingChip).toHaveAttribute('data-facet-status', 'proposed');
+
       await header.click();
       await expect(row).toHaveAttribute('data-expanded', 'false');
       await expect(header).toHaveAttribute('aria-expanded', 'false');

@@ -10,3 +10,12 @@ export { PendingProposalsPane, type PendingProposalsPaneProps } from './PendingP
 export { usePendingProposalsCount } from './usePendingProposalsCount';
 export { derivePendingProposals, type PendingProposalRow } from './derivePendingProposals';
 export { summaryText } from './proposalSummary';
+export {
+  PerProposalFacetBreakdown,
+  type PerProposalFacetBreakdownProps,
+} from './PerProposalFacetBreakdown';
+export {
+  derivePerProposalFacets,
+  type LifecycleFacetName,
+  type ProposalFacetEntry,
+} from './perProposalFacets';

@@ -182,7 +182,7 @@ describe('<PendingProposalsPane>', () => {
     expect(screen.queryByTestId('participant-pending-proposal-row-body')).toBeNull();
   });
 
-  it('(k) tap the header → row expands, body visible, body summary matches header summary', () => {
+  it('(k) tap the header → row expands, body visible, body hosts the per-facet chip strip', () => {
     useWsStore.getState().applyEvent(proposalEvent(1, PROPOSAL_A, 'classify-node', NODE_X));
     renderPane();
     const header = screen.getByTestId('participant-pending-proposal-row-header');
@@ -194,9 +194,9 @@ describe('<PendingProposalsPane>', () => {
     expect(header.getAttribute('aria-expanded')).toBe('true');
     const body = screen.getByTestId('participant-pending-proposal-row-body');
     expect(body).toBeTruthy();
-    const headerSummary = screen.getByTestId('participant-pending-proposal-row-summary');
-    const bodySummary = screen.getByTestId('participant-pending-proposal-row-body-summary');
-    expect(bodySummary.textContent).toBe(headerSummary.textContent);
+    // The body's inner content is now the chip strip (the predecessor's
+    // `-body-summary` <p> is REPLACED per Decision §2).
+    expect(screen.getByTestId('participant-pending-proposal-row-facets')).toBeTruthy();
   });
 
   it('(l) tap the same header again → row collapses, body absent', () => {
@@ -253,5 +253,90 @@ describe('<PendingProposalsPane>', () => {
     });
     const body = screen.getByTestId('participant-pending-proposal-row-body');
     expect(header.getAttribute('aria-controls')).toBe(body.getAttribute('id'));
+  });
+
+  it('(o) two proposals of distinct sub-kinds → expanding each shows one chip with the expected facet name', () => {
+    // PROPOSAL_A is classify-node → facet="classification";
+    // PROPOSAL_B is set-node-substance → facet="substance".
+    useWsStore.getState().applyEvent(proposalEvent(1, PROPOSAL_A, 'classify-node', NODE_X));
+    useWsStore.getState().applyEvent(proposalEvent(2, PROPOSAL_B, 'set-node-substance', NODE_Y));
+    renderPane();
+    const rows = screen.getAllByTestId('participant-pending-proposal-row');
+    const rowA = rows.find((r) => r.getAttribute('data-proposal-id') === PROPOSAL_A)!;
+    const rowB = rows.find((r) => r.getAttribute('data-proposal-id') === PROPOSAL_B)!;
+    const headerA = rowA.querySelector(
+      '[data-testid="participant-pending-proposal-row-header"]',
+    ) as HTMLElement;
+    const headerB = rowB.querySelector(
+      '[data-testid="participant-pending-proposal-row-header"]',
+    ) as HTMLElement;
+    act(() => {
+      fireEvent.click(headerA);
+    });
+    let chipsA = rowA.querySelectorAll('[data-testid="participant-pending-proposal-row-facet"]');
+    expect(chipsA).toHaveLength(1);
+    expect(chipsA[0]?.getAttribute('data-facet-name')).toBe('classification');
+    expect(chipsA[0]?.getAttribute('data-facet-status')).toBe('proposed');
+    // Single-open accordion: click B, A collapses, B opens.
+    act(() => {
+      fireEvent.click(headerB);
+    });
+    const chipsB = rowB.querySelectorAll('[data-testid="participant-pending-proposal-row-facet"]');
+    expect(chipsB).toHaveLength(1);
+    expect(chipsB[0]?.getAttribute('data-facet-name')).toBe('substance');
+    // A is collapsed — no chips inside it.
+    chipsA = rowA.querySelectorAll('[data-testid="participant-pending-proposal-row-facet"]');
+    expect(chipsA).toHaveLength(0);
+  });
+
+  it('(p) server precedence: applyProposalStatus push updates the expanded row chip data-facet-status', () => {
+    useWsStore.getState().applyEvent(proposalEvent(1, PROPOSAL_A, 'classify-node', NODE_X));
+    renderPane();
+    const header = screen.getByTestId('participant-pending-proposal-row-header');
+    act(() => {
+      fireEvent.click(header);
+    });
+    // Pre-push: default status is 'proposed' (no votes, no server frame).
+    expect(
+      screen
+        .getByTestId('participant-pending-proposal-row-facet')
+        .getAttribute('data-facet-status'),
+    ).toBe('proposed');
+    // Push a server frame setting the classification facet to 'agreed'.
+    act(() => {
+      useWsStore.getState().applyProposalStatus({
+        sessionId: SESSION_A,
+        proposalId: PROPOSAL_A,
+        sequence: 99,
+        perFacetStatus: { classification: 'agreed' },
+      });
+    });
+    expect(
+      screen
+        .getByTestId('participant-pending-proposal-row-facet')
+        .getAttribute('data-facet-status'),
+    ).toBe('agreed');
+  });
+
+  it('(q) header cells unaffected by the body content swap; body-summary <p> is gone; body region contract preserved', () => {
+    useWsStore.getState().applyEvent(proposalEvent(1, PROPOSAL_A, 'classify-node', NODE_X));
+    renderPane();
+    // Header cells remain (testids intact).
+    expect(screen.getByTestId('participant-pending-proposal-row-kind')).toBeTruthy();
+    expect(screen.getByTestId('participant-pending-proposal-row-summary')).toBeTruthy();
+    expect(screen.getByTestId('participant-pending-proposal-row-author')).toBeTruthy();
+    expect(screen.getByTestId('participant-pending-proposal-row-timestamp')).toBeTruthy();
+    // Expand the row.
+    act(() => {
+      fireEvent.click(screen.getByTestId('participant-pending-proposal-row-header'));
+    });
+    // Body region with the predecessor's ARIA contract.
+    const body = screen.getByTestId('participant-pending-proposal-row-body');
+    expect(body.getAttribute('role')).toBe('region');
+    expect(body.getAttribute('aria-label')).toBeTruthy();
+    // The predecessor's `-body-summary` testid is GONE.
+    expect(screen.queryByTestId('participant-pending-proposal-row-body-summary')).toBeNull();
+    // The chip strip replaces it.
+    expect(screen.getByTestId('participant-pending-proposal-row-facets')).toBeTruthy();
   });
 });
