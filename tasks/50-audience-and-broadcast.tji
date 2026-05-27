@@ -100,7 +100,18 @@ task audience "Audience and broadcast" {
     task aud_clean_typography "Clean typography for video legibility" {
       effort 1d
       allocate team
+      complete 100
       depends !aud_cytoscape_init
+      note -8<-
+        Refinement: tasks/refinements/audience/aud_clean_typography.md
+
+        Inter (Google Fonts, display=swap) wired into the audience surface CSS via Tailwind v4
+        --font-broadcast, and into Cytoscape's STYLESHEET for node (14px / 600) and edge (11px / 500)
+        labels via BROADCAST_FONT_STACK. Four named exports (BROADCAST_NODE_FONT_SIZE_PX,
+        BROADCAST_EDGE_FONT_SIZE_PX, BROADCAST_NODE_FONT_WEIGHT, BROADCAST_EDGE_FONT_WEIGHT) land
+        alongside STYLESHEET for sibling-task reuse. 6 new Vitest cases (22 total) pin the
+        typography surface. Playwright deferred to aud_visual_regression (Decision §6).
+      ->8-
     }
     task aud_proposed_styling "Proposed-state styling (dashed, faded)" {
       effort 1d
@@ -207,6 +218,20 @@ task audience "Audience and broadcast" {
       allocate team
       depends !aud_obs_sizing_defaults, !aud_obs_transparency
     }
+    task aud_typography_bundle_measurement "Measure bundle-size impact of Inter (Google Fonts vs self-hosted woff2)" {
+      effort 0.25d
+      allocate team
+      depends audience.aud_graph_rendering.aud_clean_typography
+      note -8<-
+        Re-deferred from i18n_audience_typography Status block (b) via aud_clean_typography
+        (2026-05-27). The Inter runtime font loads via Google Fonts at runtime (display=swap);
+        this task measures the woff2 delta if self-hosting is adopted and confirms the
+        build-artifact size impact is acceptable. If production evidence (Sentry errors from
+        fonts.googleapis.com, OBS-host complaints) surfaces, a follow-up aud_self_host_inter
+        task self-hosts the woff2 assets under apps/audience/public/fonts/.
+        Source: tasks/refinements/audience/aud_clean_typography.md, Decision §2.
+      ->8-
+    }
   }
 
   task aud_segment_markers "Segment snapshot rendering" {
@@ -275,6 +300,12 @@ task audience "Audience and broadcast" {
         (commit on 2026-05-27). This task asserts the resulting pixel output matches a
         checked-in fixture for a representative graph — the natural verification layer for
         video-clarity properties the Vitest layer cannot pin. Source: aud_layout_engine Decision §5.
+
+        Typography pixel-stability also deferred here per aud_clean_typography Decision §6
+        (component not yet reachable). This task must also assert that font-family/size/weight
+        render identically across Chrome/Firefox/WebKit at 720p/1080p/1440p; reference-image
+        fixtures cover the codepoint ranges confirmed by packages/i18n-catalogs/src/typography.test.ts.
+        Source: tasks/refinements/audience/aud_clean_typography.md.
       ->8-
     }
     task aud_obs_render_smoke "Smoke test rendering at OBS-source dimensions" {

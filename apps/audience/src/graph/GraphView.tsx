@@ -27,6 +27,20 @@
 //   Playwright deferral lands on `aud_visual_regression`, not on
 //   `aud_session_url`.)
 //
+// Refinement: tasks/refinements/audience/aud_clean_typography.md
+//   (Decision §1 — consume `BROADCAST_FONT_STACK` from
+//   `@a-conversa/i18n-catalogs` rather than duplicating the stack
+//   string. Decision §3 — node `font-size: 14` / weight 600 and edge
+//   `font-size: 11` / weight 500 fit inside the 200×80 node box +
+//   180px text-max-width established by `aud_layout_engine`.
+//   Decision §4 — typography constants land as named exports from
+//   this module; extraction to a `stylesheet.ts` module is the
+//   3-sibling trigger. Decision §5 — `font-family` set on both
+//   `node` and `edge` selectors because Cytoscape's text-style
+//   resolver keys on the per-element selector, not on `core`.
+//   Decision §6 — Playwright pixel-stability deferral re-routes to
+//   `aud_visual_regression`.)
+//
 // ADRs:
 //   - 0004 (Cytoscape.js for the audience broadcast surface);
 //   - 0022 (no throwaway verifications — Vitest pins the React-mount
@@ -54,9 +68,29 @@ import { useEffect, useMemo, useRef, type ReactElement } from 'react';
 import cytoscape, { type Core, type ElementDefinition, type StylesheetJson } from 'cytoscape';
 import { useTranslation } from 'react-i18next';
 
+import { BROADCAST_FONT_STACK } from '@a-conversa/i18n-catalogs';
+
 import { useAudienceSession } from '../state/index.js';
 import { buildAudienceLayoutOptions, PADDING } from './layoutOptions.js';
 import { projectGraph } from './projectGraph.js';
+
+/**
+ * Broadcast-typography size and weight pins consumed by `STYLESHEET`
+ * below. Named exports so future sibling tasks (`aud_per_facet_visualization`,
+ * `aud_axiom_mark_decoration`, `aud_annotation_rendering`) can key off
+ * the numeric values — e.g. `BROADCAST_NODE_FONT_SIZE_PX - 2` for an
+ * annotation overlay — rather than rediscover them by reading the
+ * stylesheet. Per `aud_clean_typography.md` Decision §3: 14 / 11 pixel
+ * sizes are large enough to read after streaming compression at the
+ * 1080p OBS baseline yet still fit inside the 200×80 node bounding box
+ * with 180px text-max-width set by `aud_layout_engine`. SemiBold 600 on
+ * nodes pulls them forward as the primary information layer; Medium
+ * 500 on edges keeps roles visible without competing with node labels.
+ */
+export const BROADCAST_NODE_FONT_SIZE_PX = 14 as const;
+export const BROADCAST_EDGE_FONT_SIZE_PX = 11 as const;
+export const BROADCAST_NODE_FONT_WEIGHT = 600 as const;
+export const BROADCAST_EDGE_FONT_WEIGHT = 500 as const;
 
 /**
  * Cytoscape stylesheet for the audience broadcast surface.
@@ -76,6 +110,15 @@ import { projectGraph } from './projectGraph.js';
  * (`aud_proposed_styling`, `aud_axiom_mark_decoration`,
  * `aud_annotation_rendering`, …) that extend this stylesheet in their
  * own commits.
+ *
+ * Typography (`font-family`, `font-size`, `font-weight`) is set on both
+ * the `node` and `edge` selectors. Cytoscape's text-style resolver
+ * keys on per-element selectors — setting `'font-family'` on `core`
+ * does not propagate to element text rendering, so the duplication is
+ * intentional (`aud_clean_typography.md` Decision §5). The font stack
+ * is the policy data shipped by `i18n_audience_typography`; see
+ * `packages/i18n-catalogs/src/typography.ts` for the codepoint-coverage
+ * guarantees and the rationale for the fallback order.
  */
 export const STYLESHEET: StylesheetJson = [
   {
@@ -93,7 +136,9 @@ export const STYLESHEET: StylesheetJson = [
       'text-halign': 'center',
       width: 200,
       height: 80,
-      'font-size': 12,
+      'font-family': BROADCAST_FONT_STACK,
+      'font-size': BROADCAST_NODE_FONT_SIZE_PX,
+      'font-weight': BROADCAST_NODE_FONT_WEIGHT,
     },
   },
   {
@@ -104,7 +149,9 @@ export const STYLESHEET: StylesheetJson = [
       'target-arrow-color': '#94a3b8',
       'target-arrow-shape': 'triangle',
       label: 'data(roleLabel)',
-      'font-size': 10,
+      'font-family': BROADCAST_FONT_STACK,
+      'font-size': BROADCAST_EDGE_FONT_SIZE_PX,
+      'font-weight': BROADCAST_EDGE_FONT_WEIGHT,
       'text-background-color': '#ffffff',
       'text-background-opacity': 1,
       'text-background-padding': '2px',

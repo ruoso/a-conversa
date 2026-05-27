@@ -1,6 +1,11 @@
 /* Global stylesheet for the audience surface.
  *
  * Refinement: tasks/refinements/audience/aud_app_skeleton.md
+ * Refinement: tasks/refinements/audience/aud_clean_typography.md
+ *   (Decision §1 — consume `BROADCAST_FONT_STACK` from
+ *   `@a-conversa/i18n-catalogs`'s policy module; Decision §2 —
+ *   Google Fonts `@import` for the 1d budget, `display=swap` so the
+ *   fallback chain renders immediately while Inter loads.)
  * ADRs:       0005 (Tailwind with shared tokens), 0026 (micro-frontend pivot).
  *
  * Imports Tailwind v4 utilities (the `@tailwindcss/vite` plugin in
@@ -11,15 +16,29 @@
  */
 
 @import 'tailwindcss';
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 /* Per tasks/refinements/shell-package/extract_facet_pill.md — Tailwind
  * scans the shared shell source so PILL_*_CLASSNAME literals (and any
  * other shell-side Tailwind class strings) get JIT'd. */
 @source '../../../packages/shell/src/**/*.{ts,tsx}';
 
+/* Per tasks/refinements/audience/aud_clean_typography.md — register
+ * `--font-broadcast` as the broadcast typography token. The value is
+ * the verbatim `BROADCAST_FONT_STACK` string from
+ * `packages/i18n-catalogs/src/typography.ts`; when `packages/ui-tokens`
+ * materializes, the token migrates under
+ * `tokens.typography.broadcast.fontFamily` per that module's comment. */
+@theme {
+  --font-broadcast:
+    Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    'Noto Sans', sans-serif;
+}
+
 html,
 body,
 #root {
   height: 100%;
   margin: 0;
+  font-family: var(--font-broadcast);
 }

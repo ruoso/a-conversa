@@ -13,6 +13,14 @@
 //   reset is covered so a StrictMode double-mount, Vite hot reload,
 //   or Playwright page reload gets a fresh first-fit.)
 //
+// Refinement: tasks/refinements/audience/aud_clean_typography.md
+//   (Acceptance criteria — 6 additional cases (q–v) pin the
+//   broadcast typography surface: `font-family` equals
+//   `BROADCAST_FONT_STACK` on both the node and edge selectors;
+//   `font-size` and `font-weight` match the named-export constants
+//   exposed alongside `STYLESHEET`. Structural assertions only — no
+//   Cytoscape mount required.)
+//
 // ADRs:
 //   - 0022 (no throwaway verifications — this Vitest layer is the
 //     regression pin until `aud_url_routing.aud_session_url` lands the
@@ -36,10 +44,27 @@ import type { EdgeRole, Event, StatementKind } from '@a-conversa/shared-types';
 
 import { I18nProvider, createI18nInstance, type I18nInstance } from '@a-conversa/shell';
 
-import { AudienceGraphView } from './GraphView';
+import { BROADCAST_FONT_STACK } from '@a-conversa/i18n-catalogs';
+
+import {
+  AudienceGraphView,
+  BROADCAST_EDGE_FONT_SIZE_PX,
+  BROADCAST_EDGE_FONT_WEIGHT,
+  BROADCAST_NODE_FONT_SIZE_PX,
+  BROADCAST_NODE_FONT_WEIGHT,
+  STYLESHEET,
+} from './GraphView';
 import { installCytoscapeTestEnv, type CytoscapeTestEnvRestoreHandle } from './cytoscapeTestEnv';
 import { PADDING, SPACING_FACTOR } from './layoutOptions';
 import { audienceWsStore } from '../ws/wsStore';
+
+function findStylesheetEntry(selector: 'node' | 'edge'): Record<string, unknown> {
+  const entry = (
+    STYLESHEET as unknown as ReadonlyArray<{ selector: string; style: Record<string, unknown> }>
+  ).find((e) => e.selector === selector);
+  if (entry === undefined) throw new Error(`stylesheet entry for selector "${selector}" not found`);
+  return entry.style;
+}
 
 const SESSION_ID = '00000000-0000-4000-8000-0000000000aa';
 const OTHER_SESSION_ID = '00000000-0000-4000-8000-0000000000bb';
@@ -458,5 +483,37 @@ describe('<AudienceGraphView>', () => {
     expect(captured.fit).toBe(false);
     // The seeded graph has one node, no edges → root candidates = [NODE_A].
     expect(captured.roots).toEqual([NODE_A]);
+  });
+
+  // ---------------------------------------------------------------
+  // aud_clean_typography — broadcast typography pins on STYLESHEET.
+  // ---------------------------------------------------------------
+
+  it('(q) sets `font-family` on the node selector to BROADCAST_FONT_STACK', () => {
+    expect(findStylesheetEntry('node')['font-family']).toBe(BROADCAST_FONT_STACK);
+  });
+
+  it('(r) sets `font-family` on the edge selector to BROADCAST_FONT_STACK', () => {
+    expect(findStylesheetEntry('edge')['font-family']).toBe(BROADCAST_FONT_STACK);
+  });
+
+  it('(s) sets `font-size` on the node selector to BROADCAST_NODE_FONT_SIZE_PX (14)', () => {
+    expect(BROADCAST_NODE_FONT_SIZE_PX).toBe(14);
+    expect(findStylesheetEntry('node')['font-size']).toBe(BROADCAST_NODE_FONT_SIZE_PX);
+  });
+
+  it('(t) sets `font-size` on the edge selector to BROADCAST_EDGE_FONT_SIZE_PX (11)', () => {
+    expect(BROADCAST_EDGE_FONT_SIZE_PX).toBe(11);
+    expect(findStylesheetEntry('edge')['font-size']).toBe(BROADCAST_EDGE_FONT_SIZE_PX);
+  });
+
+  it('(u) sets `font-weight` on the node selector to BROADCAST_NODE_FONT_WEIGHT (600)', () => {
+    expect(BROADCAST_NODE_FONT_WEIGHT).toBe(600);
+    expect(findStylesheetEntry('node')['font-weight']).toBe(BROADCAST_NODE_FONT_WEIGHT);
+  });
+
+  it('(v) sets `font-weight` on the edge selector to BROADCAST_EDGE_FONT_WEIGHT (500)', () => {
+    expect(BROADCAST_EDGE_FONT_WEIGHT).toBe(500);
+    expect(findStylesheetEntry('edge')['font-weight']).toBe(BROADCAST_EDGE_FONT_WEIGHT);
   });
 });
