@@ -279,6 +279,7 @@ task participant_ui "Participant (debater) UI" {
     task part_find_agreed_facet "Find a previously-agreed facet (graph or my-agreements view)" {
       effort 1d
       allocate team
+      complete 100
     }
     task part_withdraw_dialog "Withdrawal confirmation dialog (deliberate extra tap)" {
       effort 0.5d
