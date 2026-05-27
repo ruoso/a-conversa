@@ -172,6 +172,105 @@ function deriveOwnFacetVotes(
 }
 
 /**
+ * Per-voter per-facet vote breakdown for the OTHER voters on a single
+ * entity. Mirrors `deriveOwnFacetVotes`'s proposal-target +
+ * latest-vote-per-(proposal, participant) walk shape verbatim — but
+ * with the inverse participant filter: votes by `currentParticipantId`
+ * are silently dropped, votes by every OTHER participant accumulate
+ * per-(voterId, facet) with last-write-wins semantics. The outer map's
+ * iteration order is first-encounter (insertion) per voter.
+ *
+ * Returns a `Map<voterId, Partial<Record<FacetName, 'agree' | 'dispute'>>>`;
+ * voters with no recordable facet votes against this entity are absent
+ * from the map. Per Decision §3 of
+ * `part_entity_detail_panel_per_facet_other_voter_breakdown` a voter
+ * surfaced in the per-entity rollup list but absent from this map (a
+ * transient projection / panel-memo divergence) renders an empty
+ * per-facet sub-list rather than being suppressed.
+ *
+ * Inline in the panel (rather than promoted to `apps/participant/src/graph/`)
+ * because the per-facet detail is a panel-only consumer at v0; same
+ * "promote on the third caller" YAGNI extraction stance as
+ * `deriveOwnFacetVotes`. The walk is bounded — events count × per-event
+ * O(1) work — and only runs when the panel is mounted AND the selection
+ * or `events` change.
+ */
+function deriveOtherFacetVotesByVoter(
+  events: readonly Event[],
+  currentParticipantId: string,
+  entityId: string,
+): ReadonlyMap<string, Partial<Record<FacetName, 'agree' | 'dispute'>>> {
+  const proposalTarget = new Map<string, FacetName>();
+  const perVoter = new Map<string, Map<FacetName, 'agree' | 'dispute'>>();
+  for (const event of events) {
+    if (event.kind === 'proposal') {
+      const proposal = event.payload.proposal;
+      const target = ((): { entityId: string; facet: FacetName } | null => {
+        switch (proposal.kind) {
+          case 'classify-node':
+            return { entityId: proposal.node_id, facet: 'classification' };
+          case 'set-node-substance':
+            return { entityId: proposal.node_id, facet: 'substance' };
+          case 'set-edge-substance':
+            return { entityId: proposal.edge_id, facet: 'substance' };
+          case 'edit-wording':
+          case 'amend-node':
+            return { entityId: proposal.node_id, facet: 'wording' };
+          default:
+            return null;
+        }
+      })();
+      if (target === null) continue;
+      if (target.entityId !== entityId) continue;
+      proposalTarget.set(event.id, target.facet);
+      continue;
+    }
+    if (event.kind === 'vote') {
+      const voterId = event.payload.participant;
+      if (voterId === currentParticipantId) continue;
+      let facet: FacetName | undefined;
+      if (event.payload.target === 'facet') {
+        if (event.payload.entity_id !== entityId) continue;
+        facet = event.payload.facet;
+      } else {
+        facet = proposalTarget.get(event.payload.proposal_id);
+      }
+      if (facet === undefined) continue;
+      let perFacet = perVoter.get(voterId);
+      if (perFacet === undefined) {
+        perFacet = new Map<FacetName, 'agree' | 'dispute'>();
+        perVoter.set(voterId, perFacet);
+      }
+      perFacet.set(facet, event.payload.choice);
+    }
+  }
+  const out = new Map<string, Partial<Record<FacetName, 'agree' | 'dispute'>>>();
+  for (const [voterId, perFacet] of perVoter) {
+    const record: Partial<Record<FacetName, 'agree' | 'dispute'>> = {};
+    for (const [facet, arm] of perFacet) {
+      record[facet] = arm;
+    }
+    out.set(voterId, record);
+  }
+  return out;
+}
+
+/**
+ * Iteration order for the per-voter per-facet sub-rows in
+ * `<OtherVotersSection>`. Walks all four `FacetName` values so a
+ * voter's shape-facet entry (if present on an edge per ADR 0030) renders
+ * alongside the other three; voters with no entry for a given facet
+ * skip that row. Stable across voters within the same render per
+ * Decision §5 of `part_entity_detail_panel_per_facet_other_voter_breakdown`.
+ */
+const PER_VOTER_FACET_ORDER: readonly FacetName[] = [
+  'classification',
+  'substance',
+  'wording',
+  'shape',
+];
+
+/**
  * Tailwind class for the rollup-status badge. Reuses the moderator's
  * `PILL_*_CLASSNAME` palette per Decision §2 / §6 so the cross-surface
  * status vocabulary stays in lockstep. The status sentinel `'none'`
@@ -288,6 +387,21 @@ function EntityDetailPanelImpl(props: EntityDetailPanelProps): ReactElement {
   // memoization rationale as the route-hoisted projection memos.
   const roster = useMemo(() => participantRosterFrom(events), [events]);
 
+  // Per-voter per-facet other-vote map for the currently selected
+  // entity. Once per `(events, currentParticipantId, entity)` change;
+  // bypassed (empty map) when no entity is resolved so the helper
+  // doesn't walk events for nothing. Threaded into
+  // `<OtherVotersSection>` so each per-voter row carries a sub-list of
+  // per-facet rows underneath the rollup arm — see
+  // `part_entity_detail_panel_per_facet_other_voter_breakdown` Decision §1.
+  const perVoterFacets = useMemo(
+    () =>
+      entity === null
+        ? (new Map() as ReadonlyMap<string, Partial<Record<FacetName, 'agree' | 'dispute'>>>)
+        : deriveOtherFacetVotesByVoter(events, currentParticipantId, entity.id),
+    [events, currentParticipantId, entity],
+  );
+
   // Auto-clear the selection on the stale-entity branch (Decision §10).
   // The cycle is intentional: tick 1 renders the explanatory body so the
   // debater notices the staleness; tick 2 (after the `useEffect` calls
@@ -401,8 +515,10 @@ function EntityDetailPanelImpl(props: EntityDetailPanelProps): ReactElement {
             : (othersVoteIndex.edges.get(entity.id) ?? [])
         }
         roster={roster}
+        perVoterFacets={perVoterFacets}
         sectionHeading={t('participant.detailPanel.sectionTitle.otherVotes')}
         voteArmLabel={(arm) => t(`methodology.voteChoice.${arm}`)}
+        facetLabel={(facet) => t(`methodology.facet.${facet}`)}
       />
       {/* Always-on per-facet row block per ADR 0030 §10 +
        * `pf_part_detail_panel_three_facet_rows`: nodes render three
@@ -704,13 +820,27 @@ function OwnVoteSection(props: {
 /**
  * Other voters' table — section 8. One row per `OtherVote` in the
  * per-entity bucket with the voter's resolved screen name + their per-
- * entity vote arm. Suppressed when no other participant has voted.
+ * entity rollup arm at the top, plus a per-facet sub-list beneath the
+ * rollup row carrying one `<li data-testid="participant-detail-panel-
+ * other-vote-facet-row">` per facet the voter has touched on this
+ * entity (per
+ * `part_entity_detail_panel_per_facet_other_voter_breakdown` Decision §2).
+ *
+ * The outer row's testid + `data-voter-id` + `data-vote-arm` are
+ * preserved from the predecessor v0 surface so existing assertions
+ * (case `(m)` in `EntityDetailPanel.test.tsx`) continue to target the
+ * row unchanged. The per-facet sub-list is always rendered (Decision §3
+ * — gap-close shape: a voter present in `props.votes` but absent from
+ * `props.perVoterFacets` renders an empty `<ul>`, NOT a suppressed
+ * sub-list). Suppressed entirely when no other participant has voted.
  */
 function OtherVotersSection(props: {
   votes: ReadonlyArray<{ readonly participantId: string; readonly choice: 'agree' | 'dispute' }>;
   roster: ReadonlyMap<string, string>;
+  perVoterFacets: ReadonlyMap<string, Partial<Record<FacetName, 'agree' | 'dispute'>>>;
   sectionHeading: string;
   voteArmLabel: (arm: 'agree' | 'dispute') => string;
+  facetLabel: (facet: FacetName) => string;
 }): ReactElement | null {
   if (props.votes.length === 0) return null;
   return (
@@ -718,21 +848,47 @@ function OtherVotersSection(props: {
       <h3 className="text-xs uppercase tracking-wide text-slate-500 mb-1">
         {props.sectionHeading}
       </h3>
-      <ul className="space-y-1">
-        {props.votes.map((vote) => (
-          <li
-            key={vote.participantId}
-            data-testid="participant-detail-panel-other-vote-row"
-            data-voter-id={vote.participantId}
-            data-vote-arm={vote.choice}
-            className="flex items-center justify-between text-sm"
-          >
-            <span className="text-slate-600">
-              {screenNameFor(props.roster, vote.participantId)}
-            </span>
-            <span className="text-slate-900">{props.voteArmLabel(vote.choice)}</span>
-          </li>
-        ))}
+      <ul className="space-y-2">
+        {props.votes.map((vote) => {
+          const perFacet = props.perVoterFacets.get(vote.participantId);
+          return (
+            <li
+              key={vote.participantId}
+              data-testid="participant-detail-panel-other-vote-row"
+              data-voter-id={vote.participantId}
+              data-vote-arm={vote.choice}
+              className="flex flex-col gap-1 text-sm"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-slate-600">
+                  {screenNameFor(props.roster, vote.participantId)}
+                </span>
+                <span className="text-slate-900">{props.voteArmLabel(vote.choice)}</span>
+              </div>
+              <ul
+                data-testid="participant-detail-panel-other-vote-facet-list"
+                className="ml-3 space-y-0.5 text-xs"
+              >
+                {PER_VOTER_FACET_ORDER.map((facet) => {
+                  const arm = perFacet?.[facet];
+                  if (arm === undefined) return null;
+                  return (
+                    <li
+                      key={facet}
+                      data-testid="participant-detail-panel-other-vote-facet-row"
+                      data-facet={facet}
+                      data-vote-arm={arm}
+                      className="flex items-center justify-between"
+                    >
+                      <span className="text-slate-500">{props.facetLabel(facet)}</span>
+                      <span className="text-slate-700">{props.voteArmLabel(arm)}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </li>
+          );
+        })}
       </ul>
     </section>
   );

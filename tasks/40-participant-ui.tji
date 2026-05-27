@@ -183,6 +183,7 @@ task participant_ui "Participant (debater) UI" {
     task part_entity_detail_panel_per_facet_other_voter_breakdown "Per-facet per-other-voter breakdown for other voters in the participant entity detail panel" {
       effort 0.5d
       allocate team
+      complete 100
       depends !part_entity_detail_panel
       note -8<-
         Per-facet per-voter breakdown for other voters in the participant entity detail panel. Today the panel shows other-voters per-entity (rolled up across facets via `projectOtherVotes`'s per-`(entity, facet)` → per-entity dispute-wins rollup). Needs `OthersVoteIndex` widened with a per-facet per-voter dictionary OR a per-facet re-walk inside the panel for the selected entity. Either path is a sub-day move; deferred from the v0 budget per Decision §11. Source: tasks/refinements/participant-ui/part_entity_detail_panel.md + this commit.

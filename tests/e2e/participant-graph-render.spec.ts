@@ -2634,6 +2634,12 @@ test.describe('Participant operate route — read-mostly graph render', () => {
       const ACTOR_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
       const GRACE_USER_ID = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
       const AXIOM_PROPOSAL_ID = '11111111-1111-4111-8111-111111111111';
+      // Per-facet other-voter breakdown (Section 8 sub-rows) needs a
+      // second voter whose vote events land in the events log without
+      // a Playwright session driving them — per
+      // `part_entity_detail_panel_per_facet_other_voter_breakdown`
+      // Decision §6 (synthesised user pattern; no DEV_USER_POOL expansion).
+      const IVAN_USER_ID = '22222222-2222-4222-8222-222222222222';
       await page.evaluate(
         (seed: {
           sessionId: string;
@@ -2644,6 +2650,7 @@ test.describe('Participant operate route — read-mostly graph render', () => {
           actorId: string;
           graceUserId: string;
           axiomProposalId: string;
+          ivanUserId: string;
           wordingA: string;
           wordingB: string;
         }) => {
@@ -2770,6 +2777,46 @@ test.describe('Participant operate route — read-mostly graph render', () => {
             },
             createdAt: '2026-05-17T00:00:00.000Z',
           });
+          // A synthesised non-pool voter (ivan) joins + votes `agree` on
+          // the classify-node proposal so the panel's Section 8 carries
+          // a per-voter row whose per-facet sub-list surfaces the
+          // classification arm. Per
+          // `part_entity_detail_panel_per_facet_other_voter_breakdown`
+          // Decision §6 (no Playwright session needed — `applyEvent` is
+          // sufficient to seed the events log). The single agree vote
+          // keeps the classification facet in `'proposed'` (per
+          // `facetStatus.ts` rule 8: agreeCount < currentParticipants.size
+          // because grace hasn't voted) so the existing rollup-badge
+          // assertion is unaffected.
+          apply({
+            id: '99999999-9999-4999-8999-999999999a08',
+            sessionId: seed.sessionId,
+            sequence: 4_000_008,
+            kind: 'participant-joined',
+            actor: seed.ivanUserId,
+            payload: {
+              user_id: seed.ivanUserId,
+              role: 'debater-B',
+              screen_name: 'ivan',
+              joined_at: '2026-05-17T00:00:00.000Z',
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+          apply({
+            id: '99999999-9999-4999-8999-999999999a09',
+            sessionId: seed.sessionId,
+            sequence: 4_000_009,
+            kind: 'vote',
+            actor: seed.ivanUserId,
+            payload: {
+              target: 'proposal',
+              proposal_id: seed.proposalAId,
+              participant: seed.ivanUserId,
+              choice: 'agree',
+              voted_at: '2026-05-17T00:00:00.000Z',
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
           // Fire a cycle diagnostic touching NODE_A so the panel's
           // diagnostic row renders the localized title + description.
           // Wire envelope shape per `apps/server/src/diagnostics/event-emission.ts`:
@@ -2799,6 +2846,7 @@ test.describe('Participant operate route — read-mostly graph render', () => {
           actorId: ACTOR_ID,
           graceUserId: GRACE_USER_ID,
           axiomProposalId: AXIOM_PROPOSAL_ID,
+          ivanUserId: IVAN_USER_ID,
           wordingA: NODE_A_WORDING,
           wordingB: NODE_B_WORDING,
         },
@@ -2903,6 +2951,26 @@ test.describe('Participant operate route — read-mostly graph render', () => {
       await expect(axiomBadge).toBeVisible();
       await expect(axiomBadge).toHaveAttribute('data-participant-id', GRACE_USER_ID);
       await expect(axiomBadge).toHaveAttribute('title', /grace/);
+
+      // Per-voter Section 8 row — ivan voted `agree` on the classify-
+      // node proposal (per
+      // `part_entity_detail_panel_per_facet_other_voter_breakdown`).
+      // The outer row carries the rollup arm; the per-facet sub-list
+      // beneath surfaces the classification arm.
+      const ivanRow = page.locator(
+        `[data-testid="participant-detail-panel-other-vote-row"][data-voter-id="${IVAN_USER_ID}"]`,
+      );
+      await expect(ivanRow).toBeVisible();
+      await expect(ivanRow).toHaveAttribute('data-vote-arm', 'agree');
+      const ivanFacetList = ivanRow.locator(
+        '[data-testid="participant-detail-panel-other-vote-facet-list"]',
+      );
+      await expect(ivanFacetList).toBeVisible();
+      const ivanClassificationRow = ivanFacetList.locator(
+        '[data-testid="participant-detail-panel-other-vote-facet-row"][data-facet="classification"]',
+      );
+      await expect(ivanClassificationRow).toBeVisible();
+      await expect(ivanClassificationRow).toHaveAttribute('data-vote-arm', 'agree');
 
       // 8. Synthetic tap on NODE_B — the panel content swaps; the
       //    rollup section omits entirely (no proposal targets NODE_B)

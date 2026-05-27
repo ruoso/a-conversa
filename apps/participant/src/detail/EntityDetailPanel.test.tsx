@@ -70,6 +70,7 @@ const ALICE_ID = '00000000-0000-4000-8000-000000000001';
 const BEN_ID = '00000000-0000-4000-8000-000000000002';
 const PROPOSAL_A_ID = '00000000-0000-4000-8000-000000000a01';
 const PROPOSAL_B_ID = '00000000-0000-4000-8000-000000000a02';
+const PROPOSAL_C_ID = '00000000-0000-4000-8000-000000000a03';
 const SESSION_ID = '00000000-0000-4000-8000-0000000000aa';
 
 let i18nInstance: I18nInstance;
@@ -209,6 +210,28 @@ function voteEvent(opts: {
       participant: opts.voterId,
       choice: opts.arm,
       voted_at: '2026-05-17T00:00:00.000Z',
+    },
+    createdAt: '2026-05-17T00:00:00.000Z',
+  };
+}
+
+function substanceProposalEvent(opts: {
+  sequence: number;
+  envelopeId: string;
+  nodeId: string;
+}): Event {
+  return {
+    id: opts.envelopeId,
+    sessionId: SESSION_ID,
+    sequence: opts.sequence,
+    kind: 'proposal',
+    actor: ALICE_ID,
+    payload: {
+      proposal: {
+        kind: 'set-node-substance',
+        node_id: opts.nodeId,
+        value: 'agreed',
+      },
     },
     createdAt: '2026-05-17T00:00:00.000Z',
   };
@@ -693,6 +716,123 @@ describe('EntityDetailPanel — other voters table', () => {
     expect(rows[0]?.textContent).toContain('alice');
     expect(rows[1]?.getAttribute('data-voter-id')).toBe(BEN_ID);
     expect(rows[1]?.textContent).toContain('ben');
+  });
+
+  it('(m.1) renders a per-facet sub-list under each other-voter row carrying one row per facet the voter has touched on this entity', () => {
+    const node = makeNode({
+      id: NODE_A_ID,
+      otherVotes: [
+        { participantId: ALICE_ID, choice: 'agree' },
+        { participantId: BEN_ID, choice: 'dispute' },
+      ],
+    });
+    const othersVoteIndex = {
+      nodes: new Map([
+        [
+          NODE_A_ID,
+          [
+            { participantId: ALICE_ID, choice: 'agree' as const },
+            { participantId: BEN_ID, choice: 'dispute' as const },
+          ],
+        ],
+      ]),
+      edges: new Map(),
+    };
+    // Three facet-targeting proposals on NODE_A — one each for
+    // classification, wording, substance. Then per-voter votes against
+    // each so the walk records:
+    //   alice → { classification: 'agree', wording: 'agree' }
+    //   ben   → { classification: 'dispute', substance: 'dispute' }
+    const events: Event[] = [
+      joinedEvent({ sequence: 1, userId: ALICE_ID, screenName: 'alice' }),
+      joinedEvent({ sequence: 2, userId: BEN_ID, screenName: 'ben' }),
+      classifyProposalEvent({ sequence: 3, envelopeId: PROPOSAL_A_ID, nodeId: NODE_A_ID }),
+      editWordingProposalEvent({ sequence: 4, envelopeId: PROPOSAL_B_ID, nodeId: NODE_A_ID }),
+      substanceProposalEvent({ sequence: 5, envelopeId: PROPOSAL_C_ID, nodeId: NODE_A_ID }),
+      voteEvent({ sequence: 6, proposalId: PROPOSAL_A_ID, voterId: ALICE_ID, arm: 'agree' }),
+      voteEvent({ sequence: 7, proposalId: PROPOSAL_B_ID, voterId: ALICE_ID, arm: 'agree' }),
+      voteEvent({ sequence: 8, proposalId: PROPOSAL_A_ID, voterId: BEN_ID, arm: 'dispute' }),
+      voteEvent({ sequence: 9, proposalId: PROPOSAL_C_ID, voterId: BEN_ID, arm: 'dispute' }),
+    ];
+    act(() => {
+      useSelectionStore.getState().select({ kind: 'node', id: NODE_A_ID });
+    });
+    renderPanel({
+      projectedNodes: [node],
+      othersVoteIndex,
+      events,
+    });
+    const rows = screen.getAllByTestId('participant-detail-panel-other-vote-row');
+    expect(rows.length).toBe(2);
+    const aliceRow = rows.find((row) => row.getAttribute('data-voter-id') === ALICE_ID);
+    const benRow = rows.find((row) => row.getAttribute('data-voter-id') === BEN_ID);
+    expect(aliceRow).toBeTruthy();
+    expect(benRow).toBeTruthy();
+    // Each row carries a per-facet sub-list.
+    const aliceFacetList = aliceRow?.querySelector(
+      '[data-testid="participant-detail-panel-other-vote-facet-list"]',
+    );
+    const benFacetList = benRow?.querySelector(
+      '[data-testid="participant-detail-panel-other-vote-facet-list"]',
+    );
+    expect(aliceFacetList).toBeTruthy();
+    expect(benFacetList).toBeTruthy();
+    // Alice's per-facet sub-rows: classification=agree, wording=agree.
+    const aliceFacetRows = aliceFacetList?.querySelectorAll(
+      '[data-testid="participant-detail-panel-other-vote-facet-row"]',
+    );
+    expect(aliceFacetRows?.length).toBe(2);
+    const aliceByFacet = new Map(
+      Array.from(aliceFacetRows ?? []).map((row) => [row.getAttribute('data-facet'), row]),
+    );
+    expect(aliceByFacet.get('classification')?.getAttribute('data-vote-arm')).toBe('agree');
+    expect(aliceByFacet.get('wording')?.getAttribute('data-vote-arm')).toBe('agree');
+    // Ben's per-facet sub-rows: classification=dispute, substance=dispute.
+    const benFacetRows = benFacetList?.querySelectorAll(
+      '[data-testid="participant-detail-panel-other-vote-facet-row"]',
+    );
+    expect(benFacetRows?.length).toBe(2);
+    const benByFacet = new Map(
+      Array.from(benFacetRows ?? []).map((row) => [row.getAttribute('data-facet'), row]),
+    );
+    expect(benByFacet.get('classification')?.getAttribute('data-vote-arm')).toBe('dispute');
+    expect(benByFacet.get('substance')?.getAttribute('data-vote-arm')).toBe('dispute');
+  });
+
+  it('(m.2) renders an empty per-facet sub-list when the voter is present in the per-entity rollup but absent from the per-facet walk (gap-close shape)', () => {
+    // Seed the per-entity rollup so the outer row renders for alice,
+    // but pass NO events so the inline walk produces an empty per-voter
+    // map. Per Decision §3 of
+    // `part_entity_detail_panel_per_facet_other_voter_breakdown` the
+    // sub-list still renders (empty `<ul>`), NOT suppressed.
+    const node = makeNode({
+      id: NODE_A_ID,
+      otherVotes: [{ participantId: ALICE_ID, choice: 'agree' }],
+    });
+    const othersVoteIndex = {
+      nodes: new Map([[NODE_A_ID, [{ participantId: ALICE_ID, choice: 'agree' as const }]]]),
+      edges: new Map(),
+    };
+    act(() => {
+      useSelectionStore.getState().select({ kind: 'node', id: NODE_A_ID });
+    });
+    renderPanel({
+      projectedNodes: [node],
+      othersVoteIndex,
+      events: [joinedEvent({ sequence: 1, userId: ALICE_ID, screenName: 'alice' })],
+    });
+    const rows = screen.getAllByTestId('participant-detail-panel-other-vote-row');
+    expect(rows.length).toBe(1);
+    expect(rows[0]?.getAttribute('data-voter-id')).toBe(ALICE_ID);
+    expect(rows[0]?.getAttribute('data-vote-arm')).toBe('agree');
+    const facetList = rows[0]?.querySelector(
+      '[data-testid="participant-detail-panel-other-vote-facet-list"]',
+    );
+    expect(facetList).toBeTruthy();
+    const facetRows = facetList?.querySelectorAll(
+      '[data-testid="participant-detail-panel-other-vote-facet-row"]',
+    );
+    expect(facetRows?.length).toBe(0);
   });
 
   it('(n) omits the other-voters section entirely when no other voters have voted', () => {
