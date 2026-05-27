@@ -1361,6 +1361,17 @@ test.describe
       await expect(commitButton).toBeEnabled({ timeout: 15_000 });
       await commitButton.click();
       await expect(axiomRow).toHaveCount(0, { timeout: 15_000 });
+      // `part_axiom_mark_proposal` augmentation: the participant-side
+      // DOM mirror surfaces `data-is-axiom="true"` on ben's N1 once
+      // the axiom-mark proposal commits. This is the "graph reflects
+      // mark" leg of the focused spec at
+      // `tests/e2e/participant-axiom-mark.spec.ts`, pinned here at
+      // marginal cost rather than duplicating the multi-participant
+      // agree+commit chain in the new spec (Decision §2 of
+      // `tasks/refinements/participant-ui/part_axiom_mark_proposal.md`).
+      await expect(
+        benPage.locator(`[data-testid="participant-node-status"][data-node-id="${_n1Id!}"]`),
+      ).toHaveAttribute('data-is-axiom', 'true', { timeout: 15_000 });
     }
   });
 
