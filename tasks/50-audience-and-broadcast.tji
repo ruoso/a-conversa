@@ -170,6 +170,7 @@ task audience "Audience and broadcast" {
     task aud_stylesheet_module_extraction "Extract STYLESHEET constant into stylesheet.ts module" {
       effort 0.25d
       allocate team
+      complete 100
       depends !aud_disputed_styling
       note -8<-
         Extract the module-scope STYLESHEET constant (and the BROADCAST_* typography exports that

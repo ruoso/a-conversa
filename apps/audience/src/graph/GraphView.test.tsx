@@ -70,6 +70,15 @@
 //   `aud_proposed_styling`; the minimal sequence fires Rule 5 (any
 //   current participant's `dispute` vote).)
 //
+// Refinement: tasks/refinements/audience/aud_stylesheet_module_extraction.md
+//   (Import-source rewrite only — `STYLESHEET` and the four
+//   `BROADCAST_*` typography constants now resolve from
+//   `./stylesheet` (the new sibling module) rather than from
+//   `./GraphView`. The `AudienceGraphView` import continues to come
+//   from `./GraphView`. No test cases added or removed; the existing
+//   34 cases (a–hh) re-run unchanged and pass against the same
+//   assertions and fixtures.)
+//
 // ADRs:
 //   - 0022 (no throwaway verifications — this Vitest layer is the
 //     regression pin until `aud_url_routing.aud_session_url` lands the
@@ -95,14 +104,14 @@ import { I18nProvider, createI18nInstance, type I18nInstance } from '@a-conversa
 
 import { BROADCAST_FONT_STACK } from '@a-conversa/i18n-catalogs';
 
+import { AudienceGraphView } from './GraphView';
 import {
-  AudienceGraphView,
   BROADCAST_EDGE_FONT_SIZE_PX,
   BROADCAST_EDGE_FONT_WEIGHT,
   BROADCAST_NODE_FONT_SIZE_PX,
   BROADCAST_NODE_FONT_WEIGHT,
   STYLESHEET,
-} from './GraphView';
+} from './stylesheet';
 import { installCytoscapeTestEnv, type CytoscapeTestEnvRestoreHandle } from './cytoscapeTestEnv';
 import { PADDING, SPACING_FACTOR } from './layoutOptions';
 import { audienceWsStore } from '../ws/wsStore';
