@@ -290,6 +290,7 @@ task participant_ui "Participant (debater) UI" {
     task part_withdraw_action "Send withdraw vote; reflect facet → disputed" {
       effort 0.5d
       allocate team
+      complete 100
       depends !part_withdraw_dialog
     }
     task part_my_agreements_view "Optional: 'my agreements' history view" {
