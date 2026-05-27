@@ -284,6 +284,7 @@ task participant_ui "Participant (debater) UI" {
     task part_withdraw_dialog "Withdrawal confirmation dialog (deliberate extra tap)" {
       effort 0.5d
       allocate team
+      complete 100
       depends !part_find_agreed_facet
     }
     task part_withdraw_action "Send withdraw vote; reflect facet → disputed" {
