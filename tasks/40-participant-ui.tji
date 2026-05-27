@@ -308,11 +308,23 @@ task participant_ui "Participant (debater) UI" {
     task part_mark_axiom_action "Mark-as-my-axiom action in node detail panel" {
       effort 1d
       allocate team
+      complete 100
+      note "Refinement: tasks/refinements/participant-ui/part_mark_axiom_action.md"
     }
-    task part_axiom_mark_proposal "Send axiom-mark proposal" {
+    task part_axiom_mark_proposal "Send axiom-mark proposal (repurposed: Playwright e2e cover)" {
       effort 0.5d
       allocate team
       depends !part_mark_axiom_action
+      note -8<-
+        Repurposed per part_mark_axiom_action Decision §10 option (b): add a Playwright e2e spec block in
+        tests/e2e/participant-methodology-flow.spec.ts Phase 7.1 driving the locked selector
+        [data-testid="participant-axiom-mark-button"][data-node-id="<id>"] — tap a node, click the mark
+        button, assert the proposal event with kind: 'axiom-mark' lands on
+        useWsStore.sessionState[sid].events. Wire dispatch was shipped in part_mark_axiom_action (commit 60feb8a);
+        this leaf provides the Playwright cover only.
+
+        Source: tasks/refinements/participant-ui/part_mark_axiom_action.md Decision §10 + Status block.
+      ->8-
     }
   }
 

@@ -374,6 +374,22 @@ task frontend_i18n "Frontend internationalization" {
     note "Native-speaker review of pt-BR + es-419 draft entries for the 3 keys added in part_my_agreements_view: participant.proposalsTab.myAgreementsLabel, participant.myAgreementsPane.paneAriaLabel, participant.myAgreementsPane.emptyState. Source refinement: tasks/refinements/participant-ui/part_my_agreements_view.md. Per Decision §8 of that refinement."
   }
 
+  task i18n_axiom_mark_button_native_review "Native-speaker review of pt-BR + es-419 axiom-mark-button strings (7 new keys under participant.axiomMarkButton.* + participant.detailPanel.sectionTitle.markAxiom)" {
+    effort 0.5d
+    allocate team
+    depends !i18n_participant_my_agreements_native_review, participant_ui.part_axiom_mark_from_tablet.part_mark_axiom_action
+    note -8<-
+      Source of debt: part_mark_axiom_action (commit 60feb8a) — pt-BR and es-419 drafts for the seven new
+      keys (participant.axiomMarkButton.label, .inFlightLabel, .ariaLabel, .wireError, .timeoutError,
+      .errorRoleLabel, and participant.detailPanel.sectionTitle.markAxiom) landed flagged PENDING in the
+      *.review.json trackers; replace with native-speaker-reviewed text and sign off the review trackers.
+      UI prose translation (lower bar than methodology terms but still needs native-speaker review).
+
+      Surfaced via tech-debt registration policy per tasks/refinements/participant-ui/part_mark_axiom_action.md
+      Constraints section.
+    ->8-
+  }
+
   task i18n_audience_placeholder_native_review "Native-speaker review of pt-BR + es-419 audience-placeholder strings (2 new keys under audience.placeholder.*)" {
     effort 0.25d
     allocate team
