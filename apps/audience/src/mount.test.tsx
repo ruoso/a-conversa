@@ -97,7 +97,15 @@ describe('audience surface mount()', () => {
 
     const container = document.createElement('div');
     document.body.appendChild(container);
-    window.history.replaceState({}, '', '/a/sessions/00000000-0000-4000-8000-000000000099');
+    // `aud_session_url` Decision §6 — `/a/sessions/<uuid>` is now claimed
+    // by `<AudienceLiveRoute>` (the live graph), so placeholder-targeting
+    // cases navigate to the wildcard-fallback shape instead. Mirrors the
+    // skeleton Playwright spec's switch to `/a/placeholder-fallback/<uuid>`.
+    window.history.replaceState(
+      {},
+      '',
+      '/a/placeholder-fallback/00000000-0000-4000-8000-000000000099',
+    );
 
     let unmount!: () => void;
     act(() => {
@@ -155,7 +163,11 @@ describe('audience surface mount()', () => {
 
     const container = document.createElement('div');
     document.body.appendChild(container);
-    window.history.replaceState({}, '', '/a/sessions/00000000-0000-4000-8000-000000000099');
+    window.history.replaceState(
+      {},
+      '',
+      '/a/placeholder-fallback/00000000-0000-4000-8000-000000000099',
+    );
 
     let unmount!: () => void;
     act(() => {
@@ -200,7 +212,11 @@ describe('audience surface mount()', () => {
 
     const container = document.createElement('div');
     document.body.appendChild(container);
-    window.history.replaceState({}, '', '/a/sessions/00000000-0000-4000-8000-000000000099');
+    window.history.replaceState(
+      {},
+      '',
+      '/a/placeholder-fallback/00000000-0000-4000-8000-000000000099',
+    );
 
     let unmount!: () => void;
     act(() => {
@@ -243,7 +259,11 @@ describe('audience surface mount()', () => {
 
     const container = document.createElement('div');
     document.body.appendChild(container);
-    window.history.replaceState({}, '', '/a/sessions/00000000-0000-4000-8000-000000000099');
+    window.history.replaceState(
+      {},
+      '',
+      '/a/placeholder-fallback/00000000-0000-4000-8000-000000000099',
+    );
 
     let unmount!: () => void;
     act(() => {
@@ -280,6 +300,55 @@ describe('audience surface mount()', () => {
       unmount();
     });
     expect(container.innerHTML).toBe('');
+  });
+
+  it('exposes audienceWsStore on window.__aConversaWsStore for the Playwright spec seam', async () => {
+    // `aud_session_url` Decision §3 — the audience surface mirrors the
+    // participant + moderator `window.__aConversaWsStore` exposure so the
+    // graph-route Playwright spec can drive synthetic events into the
+    // projection. The assignment is UNCONDITIONAL: gating it on
+    // `import.meta.env.DEV` would be tree-shaken by the compose stack's
+    // production-mode Vite build, silently stripping the seed entry
+    // point in CI (same trap the participant documents at
+    // `apps/participant/src/main.tsx:42-47`). The case pins both
+    // presence AND identity — the window key must hand back the same
+    // audienceWsStore singleton the surface uses.
+
+    const i18n = await createI18nInstance('en-US');
+    const auth: AuthContextValue = {
+      status: 'unauthenticated',
+      user: undefined,
+      refresh: () => undefined,
+      logout: () => undefined,
+    };
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    window.history.replaceState({}, '', '/a');
+
+    delete (window as unknown as { __aConversaWsStore?: unknown }).__aConversaWsStore;
+    expect(
+      (window as unknown as { __aConversaWsStore?: unknown }).__aConversaWsStore,
+    ).toBeUndefined();
+
+    let unmount!: () => void;
+    act(() => {
+      unmount = mount({
+        container,
+        auth,
+        i18n: i18n as unknown as I18n,
+        routerBasePath: '/a',
+      });
+    });
+
+    const exposed = (window as unknown as { __aConversaWsStore?: typeof audienceWsStore })
+      .__aConversaWsStore;
+    expect(exposed).toBe(audienceWsStore);
+
+    act(() => {
+      unmount();
+    });
+    delete (window as unknown as { __aConversaWsStore?: unknown }).__aConversaWsStore;
   });
 
   it('renders into a full-bleed body chain with no scrollbar-reserved overflow for the OBS browser-source context', async () => {
@@ -319,7 +388,11 @@ describe('audience surface mount()', () => {
     const container = document.createElement('div');
     container.id = 'root';
     document.body.appendChild(container);
-    window.history.replaceState({}, '', '/a/sessions/00000000-0000-4000-8000-000000000099');
+    window.history.replaceState(
+      {},
+      '',
+      '/a/placeholder-fallback/00000000-0000-4000-8000-000000000099',
+    );
 
     let unmount!: () => void;
     act(() => {

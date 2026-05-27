@@ -54,6 +54,24 @@ import { App } from './App';
 import { audienceWsStore } from './ws/wsStore';
 
 export const mount: MountFn = (props) => {
+  // `aud_session_url` Decision §3 — expose the audience's WS store on
+  // `window.__aConversaWsStore` so the Playwright spec at
+  // `tests/e2e/audience-live-session.spec.ts` can drive synthetic
+  // events into the projection without a server round-trip. Mirrors
+  // the participant + moderator pattern verbatim (same window key —
+  // only one surface mounts per browser context for a single URL).
+  // The assignment is UNCONDITIONAL — gating on `import.meta.env.DEV`
+  // would be tree-shaken out by the compose stack's production-mode
+  // Vite build, silently stripping the seed entry point in CI (see
+  // the same trap documented at `apps/participant/src/main.tsx:42-47`).
+  // The store reference is already reachable through the module graph;
+  // window-exposure is plumbing convenience, not new capability.
+  // The assignment lives inside `mount(props)` (not at module scope)
+  // because the audience's library-mode bundle does NOT bring up the
+  // React tree on module evaluation — mount is host-driven.
+  (window as unknown as { __aConversaWsStore?: typeof audienceWsStore }).__aConversaWsStore =
+    audienceWsStore;
+
   const root = ReactDOM.createRoot(props.container);
   root.render(
     <React.StrictMode>

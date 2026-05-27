@@ -40,17 +40,26 @@ import { expect, test } from './fixtures/no-scrollbars';
 // point at.
 const SESSION_ID = '00000000-0000-4000-8000-000000000099';
 
-test.describe('Audience surface skeleton — /a/sessions/:id reaches the surface bundle', () => {
-  test('authenticated user hits /a/sessions/<uuid> and sees the audience placeholder render', async ({
+// `aud_session_url` Decision §6 — the canonical session URL shape
+// `/a/sessions/<uuid>` is now claimed by `<AudienceLiveRoute>` and
+// renders the live graph (NOT the placeholder). The skeleton spec's
+// intent ("the surface bundle is reachable under `/a/*`") is preserved
+// by navigating to a path that still falls through to the wildcard.
+// `/a/placeholder-fallback/<uuid>` is descriptive of the assertion
+// (the placeholder route is the fallback for non-session URL shapes).
+const PLACEHOLDER_FALLBACK_PATH = `/a/placeholder-fallback/${SESSION_ID}`;
+
+test.describe('Audience surface skeleton — /a/* reaches the surface bundle', () => {
+  test('authenticated user hits /a/placeholder-fallback/<uuid> and sees the audience placeholder render', async ({
     page,
   }) => {
-    // Navigate directly to the canonical audience session URL shape.
-    // The root host's `/a/*` route, the `SurfaceHost` dispatcher's
-    // dynamic-import of the audience bundle, the surface's
-    // `mount(props)` boundary, and the `BrowserRouter`-scoped wildcard
-    // route table must all line up for the placeholder testid to
-    // appear.
-    await page.goto(`/a/sessions/${SESSION_ID}`);
+    // Navigate to a path that still matches the wildcard route after
+    // `aud_session_url` claimed `/a/sessions/<uuid>`. The root host's
+    // `/a/*` route, the `SurfaceHost` dispatcher's dynamic-import of
+    // the audience bundle, the surface's `mount(props)` boundary, and
+    // the `BrowserRouter`-scoped wildcard route must all line up for
+    // the placeholder testid to appear.
+    await page.goto(PLACEHOLDER_FALLBACK_PATH);
 
     await expect(
       page.getByTestId('route-audience-placeholder'),
@@ -86,10 +95,10 @@ test.describe('Audience surface skeleton — /a/sessions/:id reaches the surface
 test.describe('Audience surface skeleton — anonymous visitor reaches the placeholder', () => {
   test.use({ storageState: { cookies: [], origins: [] } });
 
-  test('anonymous browser hits /a/sessions/<uuid> and sees the placeholder without bouncing to /login', async ({
+  test('anonymous browser hits /a/placeholder-fallback/<uuid> and sees the placeholder without bouncing to /login', async ({
     page,
   }) => {
-    await page.goto(`/a/sessions/${SESSION_ID}`);
+    await page.goto(PLACEHOLDER_FALLBACK_PATH);
 
     await expect(
       page.getByTestId('route-audience-placeholder'),
@@ -101,7 +110,7 @@ test.describe('Audience surface skeleton — anonymous visitor reaches the place
     // been skipped (Decision §6), but the URL pin is the directly-
     // observable proof; the `rememberReturnTo` pin is in the Vitest
     // case.
-    expect(new URL(page.url()).pathname).toBe(`/a/sessions/${SESSION_ID}`);
+    expect(new URL(page.url()).pathname).toBe(PLACEHOLDER_FALLBACK_PATH);
 
     // `aud_auth_for_private`: an anonymous visitor of a (possibly-
     // private) audience URL is offered a sign-in affordance — the

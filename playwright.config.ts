@@ -336,7 +336,13 @@ export default defineConfig({
     // `participant-graph-render` over successive refinements).
     {
       name: 'chromium-audience-skeleton',
-      testMatch: /audience-skeleton-smoke\.spec\.ts$/,
+      // `aud_session_url` widens the testMatch to also accept
+      // `audience-live-session.spec.ts` (the graph-route's six-scenario
+      // behavioural pin — pays down the inherited deferred-e2e debt
+      // declared against `aud_session_url` by four upstream audience
+      // refinements). Mirrors the `chromium-participant-skeleton` regex
+      // widening pattern (`participant-(skeleton-smoke|invite-acceptance|lobby|graph-render|pending-proposals)`).
+      testMatch: /audience-(skeleton-smoke|live-session)\.spec\.ts$/,
       dependencies: ['setup-auth'],
       use: {
         ...devices['Desktop Chrome'],

@@ -69,6 +69,8 @@ import { useTranslation } from 'react-i18next';
 import { negotiateUrlLocale } from '@a-conversa/i18n-catalogs';
 import { LoginButton, useAuth } from '@a-conversa/shell';
 
+import { AudienceLiveRoute } from './routes/AudienceLiveRoute.js';
+
 function AnonymousChrome(): ReactElement {
   // The per-session "this session is private; sign in to view" wording
   // lives in `aud_url_routing.aud_session_url` (downstream); this static
@@ -147,6 +149,19 @@ export function App(): ReactElement {
 
   return (
     <Routes>
+      {/*
+       * `aud_session_url` — the first reachable session URL. Both
+       * shapes mount `<AudienceLiveRoute>` (which calls
+       * `useWsClient().trackSession(sessionId)` and renders
+       * `<AudienceGraphView>`). The locale-prefixed sibling shares the
+       * same component because the `<App>` `useEffect` above already
+       * negotiates the locale from `window.location.pathname` — the
+       * route component is locale-agnostic. Inserted above the wildcard
+       * so non-session URLs (`/a`, `/a/foo`, future `/a/replay/...`)
+       * continue to fall through to the placeholder.
+       */}
+      <Route path="/sessions/:sessionId" element={<AudienceLiveRoute />} />
+      <Route path="/:locale/sessions/:sessionId" element={<AudienceLiveRoute />} />
       <Route path="*" element={<PlaceholderRoute />} />
     </Routes>
   );

@@ -355,6 +355,7 @@ task audience "Audience and broadcast" {
     task aud_session_url "Stable URL per session" {
       effort 1d
       allocate team
+      complete 100
       note -8<-
         Refinement: tasks/refinements/audience/aud_session_url.md (to be authored)
 
@@ -376,6 +377,30 @@ task audience "Audience and broadcast" {
       effort 1d
       allocate team
       depends !aud_session_url
+    }
+    task aud_private_session_sign_in_cta "Per-session sign-in CTA for private-session rejection" {
+      effort 0.5d
+      allocate team
+      depends !aud_session_url
+      note -8<-
+        Anonymous visitor hits a private session; server rejects the WS subscribe with
+        'forbidden'; the graph route currently renders an empty canvas with no user-facing
+        message. This task registers a subscribe-rejection-aware sign-in CTA contextualised
+        to the session.
+        Source: tasks/refinements/audience/aud_session_url.md Open question §1 + Status block.
+      ->8-
+    }
+    task aud_session_url_refine_amend "Amend aud_session_url refinement: unconditional WsStore assignment" {
+      effort 0.1d
+      allocate team
+      depends !aud_session_url
+      note -8<-
+        Decision §3 + §5 of tasks/refinements/audience/aud_session_url.md prescribe a
+        DEV-gated window.__aConversaWsStore assignment; the shipped code dropped the gate
+        (unconditional, matching the participant precedent). Amend the refinement to document
+        the actual behaviour.
+        Source: aud_session_url fixer attempt 5; commit that closed aud_session_url.
+      ->8-
     }
   }
 
