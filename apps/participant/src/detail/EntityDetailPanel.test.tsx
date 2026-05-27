@@ -17,6 +17,7 @@ import type { Event } from '@a-conversa/shared-types';
 import {
   I18nProvider,
   WsClientProvider,
+  axiomMarkColorFor,
   createI18nInstance,
   type I18nInstance,
   type SendFn,
@@ -412,7 +413,7 @@ describe('EntityDetailPanel — per-facet pill row', () => {
 });
 
 describe('EntityDetailPanel — axiom-mark attribution', () => {
-  it('(g) renders comma-separated screen names when the axiom-mark bucket is non-empty', () => {
+  it('(g) renders one chromatic AxiomMarkBadge per de-duplicated participant attribution', () => {
     const node = makeNode({ id: NODE_A_ID, isAxiom: true });
     const marks: readonly AxiomMark[] = [
       {
@@ -438,7 +439,83 @@ describe('EntityDetailPanel — axiom-mark attribution', () => {
       ],
     });
     const attribution = screen.getByTestId('participant-detail-panel-axiom-mark-attribution');
-    expect(attribution.textContent).toBe('alice, ben');
+    const badges = attribution.querySelectorAll<HTMLElement>(
+      '[data-testid^="participant-detail-panel-axiom-mark-badge-"]',
+    );
+    expect(badges.length).toBe(2);
+
+    const aliceBadge = attribution.querySelector<HTMLElement>(
+      `[data-testid="participant-detail-panel-axiom-mark-badge-${ALICE_ID}"]`,
+    );
+    expect(aliceBadge).not.toBeNull();
+    expect(aliceBadge!.getAttribute('data-participant-id')).toBe(ALICE_ID);
+    expect(aliceBadge!.getAttribute('title')).toBe('alice');
+    expect(aliceBadge!.className).toContain(axiomMarkColorFor(ALICE_ID).bg);
+
+    const benBadge = attribution.querySelector<HTMLElement>(
+      `[data-testid="participant-detail-panel-axiom-mark-badge-${BEN_ID}"]`,
+    );
+    expect(benBadge).not.toBeNull();
+    expect(benBadge!.getAttribute('data-participant-id')).toBe(BEN_ID);
+    expect(benBadge!.getAttribute('title')).toBe('ben');
+    expect(benBadge!.className).toContain(axiomMarkColorFor(BEN_ID).bg);
+  });
+
+  it('(g.2) renders the same chromatic class triple for the same participantId across two different node selections (cross-node determinism)', () => {
+    const nodeA = makeNode({ id: NODE_A_ID, isAxiom: true });
+    const nodeB = makeNode({ id: NODE_B_ID, isAxiom: true });
+    const marks = new Map<string, readonly AxiomMark[]>([
+      [
+        NODE_A_ID,
+        [
+          {
+            nodeId: NODE_A_ID,
+            participantId: ALICE_ID,
+            committedAt: '2026-05-17T00:00:00.000Z',
+          },
+        ],
+      ],
+      [
+        NODE_B_ID,
+        [
+          {
+            nodeId: NODE_B_ID,
+            participantId: ALICE_ID,
+            committedAt: '2026-05-17T00:02:00.000Z',
+          },
+        ],
+      ],
+    ]);
+    const events = [joinedEvent({ sequence: 1, userId: ALICE_ID, screenName: 'alice' })];
+
+    // First selection — NODE_A.
+    act(() => {
+      useSelectionStore.getState().select({ kind: 'node', id: NODE_A_ID });
+    });
+    renderPanel({
+      projectedNodes: [nodeA, nodeB],
+      nodeAxiomMarkIndex: marks,
+      events,
+    });
+    const firstBadge = screen.getByTestId(`participant-detail-panel-axiom-mark-badge-${ALICE_ID}`);
+    const firstClassName = firstBadge.className;
+    const aliceColor = axiomMarkColorFor(ALICE_ID);
+    expect(firstClassName).toContain(aliceColor.bg);
+    expect(firstClassName).toContain(aliceColor.text);
+    expect(firstClassName).toContain(aliceColor.ring);
+    cleanup();
+
+    // Second selection — NODE_B. Same participantId → same chromatic class triple.
+    act(() => {
+      useSelectionStore.getState().select({ kind: 'node', id: NODE_B_ID });
+    });
+    renderPanel({
+      projectedNodes: [nodeA, nodeB],
+      nodeAxiomMarkIndex: marks,
+      events,
+    });
+    const secondBadge = screen.getByTestId(`participant-detail-panel-axiom-mark-badge-${ALICE_ID}`);
+    expect(secondBadge.className).toBe(firstClassName);
   });
 
   it('(g-bis) omits the axiom-mark section entirely when the bucket is empty', () => {

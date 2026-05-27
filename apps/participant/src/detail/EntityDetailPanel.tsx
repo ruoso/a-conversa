@@ -62,6 +62,7 @@ import type { OthersVoteIndex } from '../graph/otherVotes';
 import type { ParticipantEdgeData, ParticipantNodeData } from '../graph/projectGraph';
 import { useSelectionStore, type Selection } from '../stores/selectionStore';
 
+import { AxiomMarkBadge } from './AxiomMarkBadge';
 import { lookupEntity } from './lookupEntity';
 import {
   EMPTY_PARTICIPANT_ROSTER,
@@ -509,10 +510,9 @@ function FacetPillRowSection(props: {
 }
 
 /**
- * Axiom-mark attribution — section 4. Textual comma-separated screen
- * names per Decision §6 (the chromatic badge is the future polish
- * deferral). Suppressed when no participant has marked this node as
- * bedrock.
+ * Axiom-mark attribution — section 4. Chromatic per-participant badge
+ * row (Decision §1.b of `part_entity_detail_panel_chromatic_axiom_mark_badge`).
+ * Suppressed when no participant has marked this node as bedrock.
  */
 function AxiomMarkAttributionSection(props: {
   marks: readonly AxiomMark[];
@@ -522,26 +522,35 @@ function AxiomMarkAttributionSection(props: {
   if (props.marks.length === 0) return null;
   // Dedup by participant id (a participant may have arrived at the
   // axiom mark through multiple proposal envelopes — only the most
-  // recent is the active mark; the panel surfaces ONE name per
+  // recent is the active mark; the panel surfaces ONE badge per
   // participant). Preserve first-encounter order.
   const seen = new Set<string>();
-  const names: string[] = [];
+  const attributions: { participantId: string; screenName: string }[] = [];
   for (const mark of props.marks) {
     if (seen.has(mark.participantId)) continue;
     seen.add(mark.participantId);
-    names.push(screenNameFor(props.roster, mark.participantId));
+    attributions.push({
+      participantId: mark.participantId,
+      screenName: screenNameFor(props.roster, mark.participantId),
+    });
   }
   return (
     <section data-testid="participant-detail-panel-axiom-marks">
       <h3 className="text-xs uppercase tracking-wide text-slate-500 mb-1">
         {props.sectionHeading}
       </h3>
-      <p
+      <div
         data-testid="participant-detail-panel-axiom-mark-attribution"
-        className="text-sm text-slate-700"
+        className="flex flex-wrap items-center gap-1"
       >
-        {names.join(', ')}
-      </p>
+        {attributions.map((attribution) => (
+          <AxiomMarkBadge
+            key={attribution.participantId}
+            participantId={attribution.participantId}
+            screenName={attribution.screenName}
+          />
+        ))}
+      </div>
     </section>
   );
 }

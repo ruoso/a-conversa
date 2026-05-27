@@ -2633,6 +2633,7 @@ test.describe('Participant operate route — read-mostly graph render', () => {
       const ANNO_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
       const ACTOR_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
       const GRACE_USER_ID = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+      const AXIOM_PROPOSAL_ID = '11111111-1111-4111-8111-111111111111';
       await page.evaluate(
         (seed: {
           sessionId: string;
@@ -2642,6 +2643,7 @@ test.describe('Participant operate route — read-mostly graph render', () => {
           annoId: string;
           actorId: string;
           graceUserId: string;
+          axiomProposalId: string;
           wordingA: string;
           wordingB: string;
         }) => {
@@ -2733,6 +2735,41 @@ test.describe('Participant operate route — read-mostly graph render', () => {
             },
             createdAt: '2026-05-17T00:00:00.000Z',
           });
+          // An axiom-mark proposal from grace targeting NODE_A, then a
+          // commit envelope referencing that proposal — together they
+          // produce one committed AxiomMark in the projection, which
+          // the panel surfaces as a chromatic per-participant badge in
+          // Section 4 (per
+          // `part_entity_detail_panel_chromatic_axiom_mark_badge`).
+          apply({
+            id: seed.axiomProposalId,
+            sessionId: seed.sessionId,
+            sequence: 4_000_006,
+            kind: 'proposal',
+            actor: seed.graceUserId,
+            payload: {
+              proposal: {
+                kind: 'axiom-mark',
+                node_id: seed.nodeAId,
+                participant: seed.graceUserId,
+              },
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
+          apply({
+            id: '99999999-9999-4999-8999-999999999a07',
+            sessionId: seed.sessionId,
+            sequence: 4_000_007,
+            kind: 'commit',
+            actor: seed.actorId,
+            payload: {
+              target: 'proposal',
+              proposal_id: seed.axiomProposalId,
+              committed_by: seed.actorId,
+              committed_at: '2026-05-17T00:00:00.000Z',
+            },
+            createdAt: '2026-05-17T00:00:00.000Z',
+          });
           // Fire a cycle diagnostic touching NODE_A so the panel's
           // diagnostic row renders the localized title + description.
           // Wire envelope shape per `apps/server/src/diagnostics/event-emission.ts`:
@@ -2761,6 +2798,7 @@ test.describe('Participant operate route — read-mostly graph render', () => {
           annoId: ANNO_ID,
           actorId: ACTOR_ID,
           graceUserId: GRACE_USER_ID,
+          axiomProposalId: AXIOM_PROPOSAL_ID,
           wordingA: NODE_A_WORDING,
           wordingB: NODE_B_WORDING,
         },
@@ -2854,6 +2892,17 @@ test.describe('Participant operate route — read-mostly graph render', () => {
       const diagnosticRow = page.getByTestId('participant-detail-panel-diagnostic-row').first();
       await expect(diagnosticRow).toBeVisible();
       await expect(diagnosticRow).toHaveAttribute('data-diagnostic-kind', 'cycle');
+
+      // Axiom-mark attribution row — grace's seeded axiom-mark
+      // (`axiom-mark` proposal + matching `commit`) surfaces as a
+      // chromatic per-participant badge (per
+      // `part_entity_detail_panel_chromatic_axiom_mark_badge`).
+      const axiomBadge = page.locator(
+        `[data-testid="participant-detail-panel-axiom-mark-badge-${GRACE_USER_ID}"]`,
+      );
+      await expect(axiomBadge).toBeVisible();
+      await expect(axiomBadge).toHaveAttribute('data-participant-id', GRACE_USER_ID);
+      await expect(axiomBadge).toHaveAttribute('title', /grace/);
 
       // 8. Synthetic tap on NODE_B — the panel content swaps; the
       //    rollup section omits entirely (no proposal targets NODE_B)

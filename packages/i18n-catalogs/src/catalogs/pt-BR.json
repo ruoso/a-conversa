@@ -672,6 +672,10 @@
         "vote": "Registre seu voto",
         "markAxiom": "Meus axiomas"
       },
+      "axiomMarkBadge": {
+        "tooltip": "{screenName}",
+        "srLabel": "Pedra fundamental de {screenName}"
+      },
       "facetRow": {
         "awaitingProposal": "Aguardando proposta",
         "youVoted": {

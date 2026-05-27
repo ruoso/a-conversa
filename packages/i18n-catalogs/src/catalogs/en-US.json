@@ -672,6 +672,10 @@
         "vote": "Cast your vote",
         "markAxiom": "My axioms"
       },
+      "axiomMarkBadge": {
+        "tooltip": "{screenName}",
+        "srLabel": "Bedrock by {screenName}"
+      },
       "facetRow": {
         "awaitingProposal": "Awaiting a proposal",
         "youVoted": {

@@ -672,6 +672,10 @@
         "vote": "Emite tu voto",
         "markAxiom": "Mis axiomas"
       },
+      "axiomMarkBadge": {
+        "tooltip": "{screenName}",
+        "srLabel": "Fundamento de {screenName}"
+      },
       "facetRow": {
         "awaitingProposal": "Esperando una propuesta",
         "youVoted": {
