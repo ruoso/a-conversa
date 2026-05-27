@@ -176,9 +176,20 @@ export function useNewProposalArrival(sessionId: string): NewProposalArrivalStat
     }
     if (!Number.isFinite(soonest)) return;
     const delay = Math.max(0, soonest - now);
+    // The expected fire deadline is captured in the closure so the
+    // callback can clamp `t` against it. Under CPU pressure
+    // (compose-stack e2e load, in particular) `performance.now()` can
+    // read SLIGHTLY behind the system clock that `setTimeout` schedules
+    // against — when that happens, `t < soonest` and the
+    // expiry-comparison falsely keeps the badge / flash entries alive.
+    // Returning `prev` unchanged then prevents the `[internal]` effect
+    // from re-firing, and the badge gets stuck flashing forever. Using
+    // `max(performance.now(), expectedFireTime)` guarantees forward
+    // progress every time the timer actually fires.
+    const expectedFireTime = soonest;
     const id = setTimeout(() => {
       setInternal((prev) => {
-        const t = performance.now();
+        const t = Math.max(performance.now(), expectedFireTime);
         let droppedAny = false;
         const nextFlashes = new Map<string, ProposalFlashEntry>();
         for (const [key, entry] of prev.activeFlashes) {
