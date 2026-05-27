@@ -28,10 +28,10 @@
 //   slate-700 (`#334155`) and an `edge[rollupStatus = 'agreed']`
 //   entry whose `line-color` and `target-arrow-color` are both
 //   slate-700. The two mount-time cases the refinement also scopes
-//   defer to `aud_proposed_styling` — the projection-time
-//   `data.rollupStatus` emission is owned there and not yet in the
-//   tree; the structural pins here are sufficient regression
-//   coverage until that predecessor ships.)
+//   land in `aud_agreed_styling_mount_assertions` (cases cc–dd
+//   below) — the projection-time `data.rollupStatus` emission they
+//   require is owned by `aud_proposed_styling` and ships there; this
+//   leaf only pins the structural selectors.)
 //
 // Refinement: tasks/refinements/audience/aud_proposed_styling.md
 //   (Acceptance criteria — 4 additional cases (y–bb) pin the
@@ -43,6 +43,19 @@
 //   `'dashed'` and `opacity` is 0.6. The two mount-time cases land
 //   inline because this leaf owns the projection-time
 //   `data.rollupStatus` emission they require.)
+//
+// Refinement: tasks/refinements/audience/aud_agreed_styling_mount_assertions.md
+//   (Acceptance criteria — 2 additional cases (cc–dd) pin the
+//   agreed-state mount-time computed-style resolution: after seeding
+//   the minimal event sequence that fires Rule 7 of `facetStatus.ts`
+//   (a `participant-joined`, the relevant creation event(s), a
+//   proposal-keyed `agree` vote for the node case or a facet-keyed
+//   `agree` vote on the inline-seeded `shape` facet for the edge
+//   case), the live Cytoscape instance reports
+//   `data.rollupStatus === 'agreed'` AND the computed
+//   `border-color` (node) / `line-color` (edge) resolves to
+//   slate-700 — closes the symmetry gap with the proposed-state pair
+//   (aa, bb) shipped by `aud_proposed_styling`.)
 //
 // ADRs:
 //   - 0022 (no throwaway verifications — this Vitest layer is the
@@ -63,7 +76,7 @@ import * as React from 'react';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, render, screen } from '@testing-library/react';
 import type { BreadthFirstLayoutOptions, Core, LayoutOptions } from 'cytoscape';
-import type { EdgeRole, Event, StatementKind } from '@a-conversa/shared-types';
+import type { EdgeRole, Event, FacetName, StatementKind } from '@a-conversa/shared-types';
 
 import { I18nProvider, createI18nInstance, type I18nInstance } from '@a-conversa/shell';
 
@@ -98,6 +111,7 @@ const EDGE_DANGLING = '00000000-0000-4000-8000-00000000000f';
 const NODE_MISSING = '00000000-0000-4000-8000-0000000000ff';
 const PROPOSAL_A = '00000000-0000-4000-8000-0000000000a1';
 const ACTOR = '00000000-0000-4000-8000-0000000000ac';
+const PARTICIPANT_A = '00000000-0000-4000-8000-0000000000a2';
 
 function nodeCreatedEvent(opts: {
   sequence: number;
@@ -184,6 +198,82 @@ function commitEvent(opts: { sequence: number; proposalEnvelopeId: string }): Ev
       committed_at: '2026-05-27T00:00:00.000Z',
     },
     createdAt: '2026-05-27T00:00:00.000Z',
+  };
+}
+
+function participantJoinedEvent(opts: {
+  sequence: number;
+  userId: string;
+  role: 'debater-A' | 'debater-B' | 'moderator';
+  screenName?: string;
+}): Event {
+  return {
+    id: `00000000-0000-4000-8000-${(0x500 + opts.sequence).toString(16).padStart(12, '0')}`,
+    sessionId: SESSION_ID,
+    sequence: opts.sequence,
+    kind: 'participant-joined',
+    actor: opts.userId,
+    payload: {
+      user_id: opts.userId,
+      role: opts.role,
+      screen_name: opts.screenName ?? 'Participant',
+      joined_at: '2026-05-27T00:00:00.000Z',
+    },
+    createdAt: '2026-05-27T00:00:00.000Z',
+  };
+}
+
+function voteEvent(
+  opts:
+    | {
+        sequence: number;
+        proposalId: string;
+        participant: string;
+        vote: 'agree' | 'dispute';
+      }
+    | {
+        sequence: number;
+        entityKind: 'node' | 'edge';
+        entityId: string;
+        facet: FacetName;
+        participant: string;
+        vote: 'agree' | 'dispute';
+      },
+): Event {
+  const id = `00000000-0000-4000-8000-${(0x600 + opts.sequence).toString(16).padStart(12, '0')}`;
+  if ('proposalId' in opts) {
+    return {
+      id,
+      sessionId: SESSION_ID,
+      sequence: opts.sequence,
+      kind: 'vote',
+      actor: opts.participant,
+      payload: {
+        target: 'proposal',
+        proposal_id: opts.proposalId,
+        participant: opts.participant,
+        choice: opts.vote,
+        voted_at: '2026-05-27T00:00:10.000Z',
+      },
+      createdAt: '2026-05-27T00:00:10.000Z',
+    };
+  }
+  return {
+    id,
+    sessionId: SESSION_ID,
+    sequence: opts.sequence,
+    kind: 'vote',
+    actor: opts.participant,
+    payload: {
+      target: 'facet',
+      entity_kind: opts.entityKind,
+      entity_id: opts.entityId,
+      facet: opts.facet,
+      participant: opts.participant,
+      choice: opts.vote,
+      voted_at: '2026-05-27T00:00:10.000Z',
+    },
+    createdAt: '2026-05-27T00:00:10.000Z',
   };
 }
 
@@ -602,5 +692,74 @@ describe('<AudienceGraphView>', () => {
     expect(cy.getElementById(EDGE_A).data('rollupStatus')).toBe('proposed');
     expect(cy.getElementById(EDGE_A).style('line-style')).toBe('dashed');
     expect(Number(cy.getElementById(EDGE_A).style('opacity'))).toBe(0.6);
+  });
+
+  // ---------------------------------------------------------------
+  // aud_agreed_styling_mount_assertions — agreed-state mount-time
+  // computed-style pins. Fires Rule 7 of facetStatus.ts (every current
+  // participant voted agree on the current candidate); asserts that
+  // the live Cytoscape instance actually resolves the slate-700
+  // override through the `[rollupStatus = 'agreed']` selectors.
+  // ---------------------------------------------------------------
+
+  it('(cc) a node whose rollupStatus resolves to "agreed" carries the agreed-state computed style', () => {
+    // Smallest event sequence that pushes the rollup to 'agreed' on a
+    // node: one participant joined, the node is created (which inline-
+    // seeds the `wording` facet candidate per ADR 0030 §4), and the
+    // joined participant casts a facet-keyed `agree` vote on (node,
+    // wording). With one current participant and one agree vote,
+    // Rule 7 surfaces `wording = 'agreed'`; no other facet appears in
+    // the record (no classification / substance proposal landed), so
+    // `cardRollupStatus` returns 'agreed' and `data.rollupStatus` is
+    // 'agreed' on the projected element. (Adding a classify-node
+    // proposal+vote alone would leave wording at 'proposed', which by
+    // ROLLUP_PRIORITY would override classification's 'agreed' and
+    // surface 'proposed' — wording is the seeded-inline facet that
+    // must reach 'agreed' for the rollup to flip.)
+    const result = renderView();
+    seedEvent(participantJoinedEvent({ sequence: 1, userId: PARTICIPANT_A, role: 'debater-A' }));
+    seedEvent(nodeCreatedEvent({ sequence: 2, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(
+      voteEvent({
+        sequence: 3,
+        entityKind: 'node',
+        entityId: NODE_A,
+        facet: 'wording',
+        participant: PARTICIPANT_A,
+        vote: 'agree',
+      }),
+    );
+    const cy = result.getCy();
+    expect(cy.getElementById(NODE_A).data('rollupStatus')).toBe('agreed');
+    expect(cy.getElementById(NODE_A).style('border-color')).toBe('rgb(51,65,85)');
+  });
+
+  it('(dd) an edge whose rollupStatus resolves to "agreed" carries the agreed-state computed style', () => {
+    // Smallest event sequence that fires Rule 7 for the edge's
+    // `shape` facet: one participant joined, the two endpoint nodes
+    // are created, the edge is created (which inline-seeds the
+    // `shape` facet candidate per ADR 0030 §5), and the participant
+    // casts a facet-keyed `agree` vote on the (edge, shape) candidate.
+    // With one current participant and one agree vote, Rule 7
+    // surfaces `shape = 'agreed'`; the rollup priority then sets
+    // `data.rollupStatus === 'agreed'`.
+    const result = renderView();
+    seedEvent(participantJoinedEvent({ sequence: 1, userId: PARTICIPANT_A, role: 'debater-A' }));
+    seedEvent(nodeCreatedEvent({ sequence: 2, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(nodeCreatedEvent({ sequence: 3, nodeId: NODE_B, wording: 'B' }));
+    seedEvent(edgeCreatedEvent({ sequence: 4, edgeId: EDGE_A, source: NODE_A, target: NODE_B }));
+    seedEvent(
+      voteEvent({
+        sequence: 5,
+        entityKind: 'edge',
+        entityId: EDGE_A,
+        facet: 'shape',
+        participant: PARTICIPANT_A,
+        vote: 'agree',
+      }),
+    );
+    const cy = result.getCy();
+    expect(cy.getElementById(EDGE_A).data('rollupStatus')).toBe('agreed');
+    expect(cy.getElementById(EDGE_A).style('line-color')).toBe('rgb(51,65,85)');
   });
 });

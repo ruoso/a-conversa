@@ -177,6 +177,7 @@ task audience "Audience and broadcast" {
     task aud_agreed_styling_mount_assertions "Mount-time Vitest cases for agreed-state computed style" {
       effort 0.25d
       allocate team
+      complete 100
       depends !aud_agreed_styling, !aud_proposed_styling
       note -8<-
         Two deferred Vitest mount-time cases from aud_agreed_styling Constraints spec (cases 3 + 4):
