@@ -1,16 +1,23 @@
 // Vitest cases for `<AudienceGraphView>`.
 //
 // Refinement: tasks/refinements/audience/aud_cytoscape_init.md
-//   (Acceptance criteria — 12 cases enumerated below pin the React
-//   mount + Cytoscape element-sync behaviour the component owns.
+//   (Acceptance criteria — 12 baseline cases enumerated below pin the
+//   React mount + Cytoscape element-sync behaviour the component owns.
 //   The pure projection algorithm is pinned at
 //   `projectGraph.test.ts`; this layer asserts what the component
 //   does with those outputs.)
 //
+// Refinement: tasks/refinements/audience/aud_layout_engine.md
+//   (Acceptance criteria — 4 additional cases (m–p) pin the first-
+//   mount auto-fit gate and the layout-options threading. Re-mount
+//   reset is covered so a StrictMode double-mount, Vite hot reload,
+//   or Playwright page reload gets a fresh first-fit.)
+//
 // ADRs:
 //   - 0022 (no throwaway verifications — this Vitest layer is the
 //     regression pin until `aud_url_routing.aud_session_url` lands the
-//     deferred Playwright spec);
+//     deferred Playwright spec; the layout-engine's pixel-stability
+//     pin defers to `aud_visual_regression`);
 //   - 0024 (react-i18next + ICU — the suite wraps each render in an
 //     `<I18nProvider>` carrying an en-US instance so the localized
 //     `data.roleLabel` reads land deterministically).
@@ -22,15 +29,16 @@
 // element set IS the testability seam).
 
 import * as React from 'react';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, render, screen } from '@testing-library/react';
-import type { Core } from 'cytoscape';
+import type { BreadthFirstLayoutOptions, Core, LayoutOptions } from 'cytoscape';
 import type { EdgeRole, Event, StatementKind } from '@a-conversa/shared-types';
 
 import { I18nProvider, createI18nInstance, type I18nInstance } from '@a-conversa/shell';
 
 import { AudienceGraphView } from './GraphView';
 import { installCytoscapeTestEnv, type CytoscapeTestEnvRestoreHandle } from './cytoscapeTestEnv';
+import { PADDING, SPACING_FACTOR } from './layoutOptions';
 import { audienceWsStore } from '../ws/wsStore';
 
 const SESSION_ID = '00000000-0000-4000-8000-0000000000aa';
@@ -326,5 +334,129 @@ describe('<AudienceGraphView>', () => {
     const cy = result.getCy();
     expect(cy.userPanningEnabled()).toBe(true);
     expect(cy.userZoomingEnabled()).toBe(true);
+  });
+
+  // ---------------------------------------------------------------
+  // aud_layout_engine — first-mount auto-fit + layout-options threading.
+  // ---------------------------------------------------------------
+
+  /**
+   * Replaces `cy.fit`, `cy.layout`, `cy.width`, `cy.height` on the
+   * captured instance so the assertions can pin the call shape without
+   * fighting happy-dom's zero-sized viewport. `cy.width()` /
+   * `cy.height()` would otherwise report 0 (the container's
+   * `clientWidth` is 0 under happy-dom), gating both the layout and
+   * the fit calls behind the in-component viewport-ready check.
+   */
+  interface LayoutEngineSpies {
+    fit: ReturnType<typeof vi.fn>;
+    layout: ReturnType<typeof vi.fn>;
+    layoutRun: ReturnType<typeof vi.fn>;
+  }
+  function installLayoutEngineSpies(cy: Core): LayoutEngineSpies {
+    const spies: LayoutEngineSpies = {
+      fit: vi.fn(),
+      layout: vi.fn(),
+      layoutRun: vi.fn(),
+    };
+    (cy as unknown as { width: () => number }).width = () => 1920;
+    (cy as unknown as { height: () => number }).height = () => 1080;
+    (cy as unknown as { fit: (...args: unknown[]) => void }).fit = spies.fit;
+    (cy as unknown as { layout: (opts: LayoutOptions) => { run: () => void } }).layout = (opts) => {
+      spies.layout(opts);
+      return { run: spies.layoutRun };
+    };
+    return spies;
+  }
+
+  it('(m) calls `cy.fit` exactly once on the first non-empty render', () => {
+    const result = renderView();
+    const cy = result.getCy();
+    const spies = installLayoutEngineSpies(cy);
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    expect(spies.fit).toHaveBeenCalledTimes(1);
+    // Per the in-component call site, the first argument is `undefined`
+    // (no element collection — fit to the whole graph) and the second
+    // is the broadcast-tuned padding.
+    expect(spies.fit).toHaveBeenCalledWith(undefined, PADDING);
+  });
+
+  it('(n) does NOT call `cy.fit` again on subsequent renders with the same node set', () => {
+    const result = renderView();
+    const cy = result.getCy();
+    const spies = installLayoutEngineSpies(cy);
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    expect(spies.fit).toHaveBeenCalledTimes(1);
+    // A subsequent event that re-runs the element-sync effect without
+    // adding a new node id: a `classify-node` proposal flips the
+    // existing node's kind label but does not introduce a new node.
+    seedEvent(
+      classifyProposalEvent({
+        sequence: 2,
+        envelopeId: PROPOSAL_A,
+        nodeId: NODE_A,
+        classification: 'fact',
+      }),
+    );
+    seedEvent(commitEvent({ sequence: 3, proposalEnvelopeId: PROPOSAL_A }));
+    expect(spies.fit).toHaveBeenCalledTimes(1);
+  });
+
+  it('(o) resets the fit-once gate on remount so a fresh mount fits again', () => {
+    let captured: Core | null = null;
+    const cyRef = (cy: Core | null): void => {
+      if (cy !== null) captured = cy;
+    };
+    const view = render(
+      <I18nProvider i18n={i18nInstance}>
+        <AudienceGraphView cyRef={cyRef} />
+      </I18nProvider>,
+    );
+    if (captured === null) throw new Error('cy instance not captured (first mount)');
+    const firstSpies = installLayoutEngineSpies(captured);
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    expect(firstSpies.fit).toHaveBeenCalledTimes(1);
+    // Unmount destroys the cy instance and the mount-effect cleanup
+    // resets `hasFitOnceRef.current = false`. Re-rendering produces a
+    // fresh cy instance and a fresh fit-once gate.
+    act(() => {
+      view.unmount();
+    });
+    captured = null;
+    audienceWsStore.getState().reset();
+    render(
+      <I18nProvider i18n={i18nInstance}>
+        <AudienceGraphView cyRef={cyRef} />
+      </I18nProvider>,
+    );
+    if (captured === null) throw new Error('cy instance not captured (remount)');
+    const secondSpies = installLayoutEngineSpies(captured);
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    expect(secondSpies.fit).toHaveBeenCalledTimes(1);
+  });
+
+  it('(p) calls `cy.layout` with the options returned by `buildAudienceLayoutOptions(elements)`', () => {
+    const result = renderView();
+    const cy = result.getCy();
+    const spies = installLayoutEngineSpies(cy);
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    expect(spies.layout).toHaveBeenCalledTimes(1);
+    expect(spies.layoutRun).toHaveBeenCalledTimes(1);
+    const captured = spies.layout.mock.calls[0]?.[0] as BreadthFirstLayoutOptions | undefined;
+    if (captured === undefined || captured.name !== 'breadthfirst') {
+      throw new Error('expected breadthfirst layout options');
+    }
+    expect(captured.name).toBe('breadthfirst');
+    expect(captured.directed).toBe(true);
+    expect(captured.circle).toBe(false);
+    expect(captured.grid).toBe(false);
+    expect(captured.avoidOverlap).toBe(true);
+    expect(captured.spacingFactor).toBe(SPACING_FACTOR);
+    expect(captured.nodeDimensionsIncludeLabels).toBe(false);
+    expect(captured.padding).toBe(PADDING);
+    expect(captured.animate).toBe(false);
+    expect(captured.fit).toBe(false);
+    // The seeded graph has one node, no edges → root candidates = [NODE_A].
+    expect(captured.roots).toEqual([NODE_A]);
   });
 });

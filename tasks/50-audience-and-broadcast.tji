@@ -140,7 +140,17 @@ task audience "Audience and broadcast" {
     task aud_layout_engine "Configure layout algorithm tuned for clarity on video" {
       effort 2d
       allocate team
+      complete 100
       depends !aud_cytoscape_init
+      note -8<-
+        Refinement: tasks/refinements/audience/aud_layout_engine.md
+
+        Deterministic breadthfirst roots via selectDeterministicRoots (sort-stable lowest id among
+        root candidates); broadcast-tuned SPACING_FACTOR 1.45 + PADDING 60; one-shot cy.fit on
+        first non-empty render gated by hasFitOnceRef. 8 layoutOptions Vitest cases + 4 new
+        GraphView cases (16 total). Pixel-stability pin deferred to aud_visual_regression per
+        Decision §5 (component not yet reachable through any route).
+      ->8-
     }
   }
 
@@ -260,6 +270,12 @@ task audience "Audience and broadcast" {
       effort 2d
       allocate team
       depends !aud_playwright_e2e
+      note -8<-
+        Layout determinism + first-mount fit + broadcast spacing land in aud_layout_engine
+        (commit on 2026-05-27). This task asserts the resulting pixel output matches a
+        checked-in fixture for a representative graph — the natural verification layer for
+        video-clarity properties the Vitest layer cannot pin. Source: aud_layout_engine Decision §5.
+      ->8-
     }
     task aud_obs_render_smoke "Smoke test rendering at OBS-source dimensions" {
       effort 1d

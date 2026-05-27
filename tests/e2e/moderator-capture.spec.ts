@@ -74,7 +74,7 @@ async function clickNodeUntilTargetStaged(
 
 /**
  * Right-click a ReactFlow node, polling the gesture until the
- * `<GraphContextMenu>` actually mounts at least one menu item.
+ * `<GraphContextMenu>` mounts with `data-target-kind="node"`.
  *
  * Same race as [[clickNodeUntilTargetStaged]] but for the context-menu
  * path. ReactFlow's `onNodeContextMenu` is gated on the same
@@ -85,6 +85,14 @@ async function clickNodeUntilTargetStaged(
  * gesture is functionally idempotent: each `contextmenu` event the
  * canvas processes opens (or re-opens) the menu at the latest
  * pointer position, so polling until the menu surfaces is safe.
+ *
+ * We assert on `data-target-kind="node"` rather than "any menu item
+ * appeared" because the right-click can land on the underlying
+ * ReactFlow pane element on early ticks (before the node's measured
+ * rect is registered), opening the pane context menu instead — that
+ * menu has only `create-statement` and the downstream node-menu
+ * assertions (axiom-mark / propose-decompose / …) would fail. Polling
+ * the target-kind retries the right-click until it hits the node.
  */
 async function rightClickNodeUntilContextMenuOpens(
   page: Page,
@@ -94,11 +102,13 @@ async function rightClickNodeUntilContextMenuOpens(
     .poll(
       async () => {
         await nodeLocator.click({ button: 'right' });
-        return await page.locator('[data-testid^="graph-context-menu-item-"]').count();
+        const menu = page.getByTestId('graph-context-menu');
+        if ((await menu.count()) === 0) return null;
+        return await menu.getAttribute('data-target-kind');
       },
       { intervals: [50, 100, 200, 500, 1000], timeout: 5_000 },
     )
-    .toBeGreaterThan(0);
+    .toBe('node');
 }
 
 const TEST_USERNAME = 'alice';

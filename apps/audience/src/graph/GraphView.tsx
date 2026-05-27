@@ -15,6 +15,18 @@
 //   deferred-e2e debt. Decision §10 — propose-time rendering per
 //   ADR 0027.)
 //
+// Refinement: tasks/refinements/audience/aud_layout_engine.md
+//   (Decision §1 — bundled `breadthfirst` retained; layout options
+//   computed per-render by `buildAudienceLayoutOptions(elements)`.
+//   Decision §2 — deterministic `roots` make layout output a pure
+//   function of the projected element set. Decision §3 — one-shot
+//   `cy.fit(PADDING)` on the first non-empty render via
+//   `hasFitOnceRef`, reset on mount-effect cleanup so re-mounts get
+//   a fresh fit. Decision §4 — broadcast-tuned `SPACING_FACTOR` /
+//   `PADDING` as named exports in `./layoutOptions.ts`. Decision §5 —
+//   Playwright deferral lands on `aud_visual_regression`, not on
+//   `aud_session_url`.)
+//
 // ADRs:
 //   - 0004 (Cytoscape.js for the audience broadcast surface);
 //   - 0022 (no throwaway verifications — Vitest pins the React-mount
@@ -43,6 +55,7 @@ import cytoscape, { type Core, type ElementDefinition, type StylesheetJson } fro
 import { useTranslation } from 'react-i18next';
 
 import { useAudienceSession } from '../state/index.js';
+import { buildAudienceLayoutOptions, PADDING } from './layoutOptions.js';
 import { projectGraph } from './projectGraph.js';
 
 /**
@@ -100,36 +113,6 @@ export const STYLESHEET: StylesheetJson = [
   },
 ];
 
-/**
- * Layout options for the new-node placement pass.
- *
- * `breadthfirst` (bundled) lays out new nodes in layered BFS order,
- * respecting each node's `outerWidth()` / `outerHeight()` via
- * `avoidOverlap`. The participant's `part_graph_render` Decision §3
- * documented the upstream `cose` width/height swap that the audience
- * inherits as a "do not use cose" precedent; `breadthfirst` is the
- * validated baseline.
- *
- * `animate: false` matches the participant's choice for the same
- * reason: an animated layout pass on every event arrival makes
- * pixel-comparison testing impossible and competes with the dedicated
- * `aud_animations.*` task group. `fit: false` keeps the viewport
- * stable so re-layout-on-new-node doesn't snap the canvas every time
- * a new entity arrives.
- */
-export const BREADTHFIRST_LAYOUT_OPTIONS = {
-  name: 'breadthfirst' as const,
-  directed: true,
-  circle: false,
-  grid: false,
-  avoidOverlap: true,
-  spacingFactor: 1.25,
-  nodeDimensionsIncludeLabels: false,
-  padding: 30,
-  animate: false,
-  fit: false,
-};
-
 export interface AudienceGraphViewProps {
   /**
    * Optional callback fired with the Cytoscape `Core` instance on
@@ -159,6 +142,16 @@ export function AudienceGraphView({ cyRef }: AudienceGraphViewProps): ReactEleme
   // siblings (axiom-mark decoration, annotation rendering) will, and
   // the cache pays its dust once those land.
   const positionCacheRef = useRef<Map<string, { x: number; y: number }>>(new Map());
+  // One-shot first-mount auto-fit gate. The broadcast surface uses
+  // `fit: false` for every layout pass so event-arrival never recenters
+  // the viewport (camera jumps are disorienting on video). The very
+  // first non-empty render has no prior camera to preserve, though —
+  // without a one-shot `cy.fit(PADDING)` the graph paints at
+  // Cytoscape's origin with the default `zoom: 1, pan: { 0, 0 }`,
+  // often partially off-screen for any non-trivial canvas size.
+  // Reset on cleanup so a re-mount (StrictMode double-mount, Vite hot
+  // reload, Playwright reload) gets a fresh first-fit.
+  const hasFitOnceRef = useRef<boolean>(false);
 
   // One-shot mount of the Cytoscape instance. The `cyRef` callback
   // is intentionally NOT a dependency — the mount lifecycle owns the
@@ -194,6 +187,7 @@ export function AudienceGraphView({ cyRef }: AudienceGraphViewProps): ReactEleme
       cyRef?.(null);
       knownNodeIdsRef.current = new Set();
       positionCacheRef.current = new Map();
+      hasFitOnceRef.current = false;
     };
   }, []);
 
@@ -264,13 +258,22 @@ export function AudienceGraphView({ cyRef }: AudienceGraphViewProps): ReactEleme
     const viewportReady =
       Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0;
     if (cy.elements().length > 0 && viewportReady && trulyNewNodeIds.length > 0) {
-      cy.layout(BREADTHFIRST_LAYOUT_OPTIONS).run();
+      cy.layout(buildAudienceLayoutOptions(elements)).run();
     }
     cy.nodes().forEach((node) => {
       const position = node.position();
       positionCacheRef.current.set(node.id(), { x: position.x, y: position.y });
       knownNodeIdsRef.current.add(node.id());
     });
+    // One-shot auto-fit on the first non-empty render. `fit: false` on
+    // the layout options keeps subsequent event arrivals from snapping
+    // the camera; this branch re-centers the camera exactly once so the
+    // graph is visible in the viewport from the first render. The
+    // mount-effect cleanup resets the ref so a re-mount fits again.
+    if (cy.elements().length > 0 && viewportReady && !hasFitOnceRef.current) {
+      cy.fit(undefined, PADDING);
+      hasFitOnceRef.current = true;
+    }
   }, [elements]);
 
   return <div ref={containerRef} data-testid="audience-graph-root" className="h-full w-full" />;
