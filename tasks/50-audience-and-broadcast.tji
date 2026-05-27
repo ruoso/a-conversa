@@ -152,7 +152,45 @@ task audience "Audience and broadcast" {
     task aud_disputed_styling "Disputed-state styling" {
       effort 1d
       allocate team
-      depends !aud_cytoscape_init
+      complete 100
+      depends !aud_cytoscape_init, !aud_proposed_styling
+      note -8<-
+        Refinement: tasks/refinements/audience/aud_disputed_styling.md
+
+        Two new STYLESHEET selector entries: node[rollupStatus = 'disputed'] → border-color #e11d48
+        (rose-600) + border-width 3 (first per-state border-width override); edge[rollupStatus =
+        'disputed'] → line-color + target-arrow-color #e11d48. Header trail + STYLESHEET JSDoc
+        extended. Four new Vitest cases (ee–hh: 2 structural + 2 mount-time) land inline; mount-time
+        cases use parseFloat(String(cy.style(...))) per fixer pass. Playwright deferred to
+        aud_visual_regression per Decision §5. depends !aud_proposed_styling added per Decision §1.
+        Tech-debt: aud_stylesheet_module_extraction + aud_stylesheet_state_color_extraction
+        registered below per Decision §6 (three-sibling trigger fires).
+      ->8-
+    }
+    task aud_stylesheet_module_extraction "Extract STYLESHEET constant into stylesheet.ts module" {
+      effort 0.25d
+      allocate team
+      depends !aud_disputed_styling
+      note -8<-
+        Extract the module-scope STYLESHEET constant (and the BROADCAST_* typography exports that
+        live alongside it in GraphView.tsx) into a sibling apps/audience/src/graph/stylesheet.ts
+        module, keeping GraphView.tsx as a consumer. Three-sibling trigger fires with
+        aud_disputed_styling (proposed + agreed + disputed selectors all land on the same file).
+        Named by aud_clean_typography Decision §4. Source-of-debt: tasks/refinements/audience/
+        aud_disputed_styling.md (Status block, 2026-05-27).
+      ->8-
+    }
+    task aud_stylesheet_state_color_extraction "Hoist per-state hex literals into STATE_COLORS constant" {
+      effort 0.25d
+      allocate team
+      depends !aud_disputed_styling
+      note -8<-
+        Hoist the per-state hex literals (#334155 for agreed, #e11d48 for disputed) into a
+        STATE_COLORS named-export constant at module scope in GraphView.tsx (or in stylesheet.ts
+        once aud_stylesheet_module_extraction lands). Three-sibling trigger fires with
+        aud_disputed_styling. Named by aud_agreed_styling Decision §3. Source-of-debt:
+        tasks/refinements/audience/aud_disputed_styling.md (Status block, 2026-05-27).
+      ->8-
     }
     task aud_meta_disagreement_split "Meta-disagreement split rendering" {
       effort 1d
@@ -378,6 +416,14 @@ task audience "Audience and broadcast" {
         'dashed' and opacity 0.6 across Chrome/Firefox/WebKit at 720p/1080p/1440p, against the same
         reference fixtures the layout + typography + agreed-state deferrals already pin.
         Source: tasks/refinements/audience/aud_proposed_styling.md.
+
+        Disputed-state styling pixel-stability also deferred here per aud_disputed_styling Decision §5.
+        Assert that a node whose rollupStatus is 'disputed' renders with border-color #e11d48 + border-width
+        3px and an edge renders with line-color + target-arrow-color #e11d48 across Chrome/Firefox/WebKit
+        at 720p/1080p/1440p, against the same reference fixtures the layout + typography + agreed-state +
+        proposed-state deferrals already pin. Stylesheet correctness and mount-time computed-style are
+        fully pinned at the Vitest layer (cases ee–hh in GraphView.test.tsx); this task covers the
+        visible pixel rendering only. Source: tasks/refinements/audience/aud_disputed_styling.md.
       ->8-
     }
     task aud_obs_render_smoke "Smoke test rendering at OBS-source dimensions" {

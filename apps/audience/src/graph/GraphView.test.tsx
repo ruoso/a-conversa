@@ -57,6 +57,19 @@
 //   slate-700 — closes the symmetry gap with the proposed-state pair
 //   (aa, bb) shipped by `aud_proposed_styling`.)
 //
+// Refinement: tasks/refinements/audience/aud_disputed_styling.md
+//   (Acceptance criteria — 4 additional cases (ee–hh) pin the
+//   disputed-state per-rollup selector entries (structural × 2) AND
+//   the mount-time computed-style resolution (× 2): `STYLESHEET`
+//   carries a `node[rollupStatus = 'disputed']` entry whose
+//   `border-color` is rose-600 (`#e11d48`) and `border-width` is 3,
+//   and an `edge[rollupStatus = 'disputed']` entry whose `line-color`
+//   and `target-arrow-color` are both rose-600. The two mount-time
+//   cases land inline (not deferred) because the projection-time
+//   `data.rollupStatus` emission they require already shipped via
+//   `aud_proposed_styling`; the minimal sequence fires Rule 5 (any
+//   current participant's `dispute` vote).)
+//
 // ADRs:
 //   - 0022 (no throwaway verifications — this Vitest layer is the
 //     regression pin until `aud_url_routing.aud_session_url` lands the
@@ -761,5 +774,82 @@ describe('<AudienceGraphView>', () => {
     const cy = result.getCy();
     expect(cy.getElementById(EDGE_A).data('rollupStatus')).toBe('agreed');
     expect(cy.getElementById(EDGE_A).style('line-color')).toBe('rgb(51,65,85)');
+  });
+
+  // ---------------------------------------------------------------
+  // aud_disputed_styling — per-rollup disputed-state selector entries
+  // on STYLESHEET. Structural pair + mount-time computed-style pair.
+  // Mount-time cases land inline (the projection-time emission they
+  // require already shipped via `aud_proposed_styling`). Rule 5 of
+  // facetStatus.ts fires on any current participant's `dispute` vote.
+  // ---------------------------------------------------------------
+
+  it("(ee) STYLESHEET carries a node[rollupStatus = 'disputed'] entry with rose-600 border-color and border-width 3", () => {
+    const style = findStylesheetEntry("node[rollupStatus = 'disputed']");
+    expect(style['border-color']).toBe('#e11d48');
+    expect(style['border-width']).toBe(3);
+  });
+
+  it("(ff) STYLESHEET carries an edge[rollupStatus = 'disputed'] entry with rose-600 line and target-arrow color", () => {
+    const style = findStylesheetEntry("edge[rollupStatus = 'disputed']");
+    expect(style['line-color']).toBe('#e11d48');
+    expect(style['target-arrow-color']).toBe('#e11d48');
+  });
+
+  it('(gg) a node whose rollupStatus resolves to "disputed" carries the disputed-state computed style', () => {
+    // Smallest event sequence that fires Rule 5 on a node: one
+    // participant joined, the node is created (which inline-seeds the
+    // `wording` facet candidate per ADR 0030 §4), and the joined
+    // participant casts a facet-keyed `dispute` vote on (node,
+    // wording). Rule 5 surfaces `wording = 'disputed'`; `wording` is
+    // the only facet in the record, so `cardRollupStatus` returns
+    // 'disputed' and `data.rollupStatus` is 'disputed' on the
+    // projected element.
+    const result = renderView();
+    seedEvent(participantJoinedEvent({ sequence: 1, userId: PARTICIPANT_A, role: 'debater-A' }));
+    seedEvent(nodeCreatedEvent({ sequence: 2, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(
+      voteEvent({
+        sequence: 3,
+        entityKind: 'node',
+        entityId: NODE_A,
+        facet: 'wording',
+        participant: PARTICIPANT_A,
+        vote: 'dispute',
+      }),
+    );
+    const cy = result.getCy();
+    expect(cy.getElementById(NODE_A).data('rollupStatus')).toBe('disputed');
+    expect(cy.getElementById(NODE_A).style('border-color')).toBe('rgb(225,29,72)');
+    expect(parseFloat(String(cy.getElementById(NODE_A).style('border-width')))).toBe(3);
+  });
+
+  it('(hh) an edge whose rollupStatus resolves to "disputed" carries the disputed-state computed style', () => {
+    // Smallest event sequence that fires Rule 5 on an edge: one
+    // participant joined, the two endpoint nodes are created, the
+    // edge is created (which inline-seeds the `shape` facet candidate
+    // per ADR 0030 §5), and the participant casts a facet-keyed
+    // `dispute` vote on the (edge, shape) candidate. Rule 5 surfaces
+    // `shape = 'disputed'`; the rollup priority then sets
+    // `data.rollupStatus === 'disputed'`.
+    const result = renderView();
+    seedEvent(participantJoinedEvent({ sequence: 1, userId: PARTICIPANT_A, role: 'debater-A' }));
+    seedEvent(nodeCreatedEvent({ sequence: 2, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(nodeCreatedEvent({ sequence: 3, nodeId: NODE_B, wording: 'B' }));
+    seedEvent(edgeCreatedEvent({ sequence: 4, edgeId: EDGE_A, source: NODE_A, target: NODE_B }));
+    seedEvent(
+      voteEvent({
+        sequence: 5,
+        entityKind: 'edge',
+        entityId: EDGE_A,
+        facet: 'shape',
+        participant: PARTICIPANT_A,
+        vote: 'dispute',
+      }),
+    );
+    const cy = result.getCy();
+    expect(cy.getElementById(EDGE_A).data('rollupStatus')).toBe('disputed');
+    expect(cy.getElementById(EDGE_A).style('line-color')).toBe('rgb(225,29,72)');
+    expect(cy.getElementById(EDGE_A).style('target-arrow-color')).toBe('rgb(225,29,72)');
   });
 });

@@ -71,6 +71,25 @@
 //   Playwright pixel-stability deferral lands on
 //   `aud_visual_regression`.)
 //
+// Refinement: tasks/refinements/audience/aud_disputed_styling.md
+//   (Decision §1 — sequential ordering after `aud_proposed_styling`;
+//   the closer adds the `.tji` `depends !aud_proposed_styling` edge.
+//   Decision §2 — rose-600 (`#e11d48`) border / line / target-arrow
+//   color, plus `border-width: 3` on nodes (first per-state branch to
+//   override `border-width`); edges stay 1px (color carries enough
+//   signal with the directional arrow). Cross-surface match with the
+//   moderator's `mod_disputed_state_styling`; the width-bump is the
+//   Cytoscape analogue of the moderator's `ring-rose-500` halo.
+//   Decision §3 — mount-time computed-style cases land inline here
+//   (the projection-time emission they require already shipped via
+//   `aud_proposed_styling`). Decision §4 — attribute-equality selector
+//   against `data.rollupStatus`; no `addClass` / `classes:` API.
+//   Decision §5 — Playwright pixel-stability deferral lands on
+//   `aud_visual_regression`. Decision §6 — both stylesheet extractions
+//   (`aud_stylesheet_module_extraction` + `aud_stylesheet_state_color_extraction`)
+//   deferred to named-future tasks; this leaf is the third-sibling
+//   trigger but not the extraction commit.)
+//
 // ADRs:
 //   - 0004 (Cytoscape.js for the audience broadcast surface);
 //   - 0022 (no throwaway verifications — Vitest pins the React-mount
@@ -145,8 +164,9 @@ export const BROADCAST_EDGE_FONT_WEIGHT = 500 as const;
  * `node[rollupStatus = '<state>']` and one
  * `edge[rollupStatus = '<state>']` selector entry to the array; each
  * entry overrides only the properties that differentiate the state
- * from the baseline (border / line color, opacity, dash-style on the
- * states that need them). Typography, geometry, label, shape,
+ * from the baseline (border / line color, opacity, dash-style, and
+ * — first introduced by the disputed-state pair — `border-width` on
+ * the states that need them). Typography, geometry, label, shape,
  * background, and text-background fields all inherit from the
  * baseline `node` / `edge` selectors via Cytoscape's per-selector
  * composition (an element matching two selectors merges their style
@@ -231,6 +251,20 @@ export const STYLESHEET: StylesheetJson = [
     style: {
       'line-style': 'dashed',
       opacity: 0.6,
+    },
+  },
+  {
+    selector: "node[rollupStatus = 'disputed']",
+    style: {
+      'border-color': '#e11d48',
+      'border-width': 3,
+    },
+  },
+  {
+    selector: "edge[rollupStatus = 'disputed']",
+    style: {
+      'line-color': '#e11d48',
+      'target-arrow-color': '#e11d48',
     },
   },
 ];
