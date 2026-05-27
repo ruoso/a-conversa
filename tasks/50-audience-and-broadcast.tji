@@ -316,6 +316,7 @@ task audience "Audience and broadcast" {
     task aud_self_host_inter "Self-host Inter woff2 under apps/audience/public/fonts/" {
       effort 0.5d
       allocate team
+      complete 100
       depends audience.aud_graph_rendering.aud_clean_typography
       note -8<-
         Refinement: tasks/refinements/audience/aud_self_host_inter.md
