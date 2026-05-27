@@ -712,13 +712,18 @@
     },
     "proposalsTab": {
       "graphLabel": "Grafo",
-      "proposalsLabel": "Propuestas"
+      "proposalsLabel": "Propuestas",
+      "myAgreementsLabel": "Mis acuerdos"
     },
     "pendingProposalsPane": {
       "emptyState": "No hay propuestas pendientes",
       "systemAuthor": "Sistema",
       "paneAriaLabel": "Propuestas pendientes",
       "rowBodyAriaLabel": "Detalles de la propuesta"
+    },
+    "myAgreementsPane": {
+      "emptyState": "Aún no has acordado ninguna faceta.",
+      "paneAriaLabel": "Mis acuerdos"
     }
   },
   "audience": {

@@ -59,7 +59,12 @@ import { ParticipantStatusIndicator } from '../layout/ParticipantStatusIndicator
 import { GraphView } from '../graph/GraphView';
 import { EntityDetailPanel } from '../detail';
 import { ParticipantAxiomMarkButton } from '../detail/ParticipantAxiomMarkButton';
-import { PendingProposalsPane, PendingProposalsTabBar, useNewProposalArrival } from '../proposals';
+import {
+  MyAgreementsPane,
+  PendingProposalsPane,
+  PendingProposalsTabBar,
+  useNewProposalArrival,
+} from '../proposals';
 import { useSelectionStore } from '../stores/selectionStore';
 import { useUiStore } from '../stores/uiStore';
 import { autoSelectionFromEvent } from '../graph/autoSelect';
@@ -380,6 +385,12 @@ function OperateRouteAuthenticatedBody({
               actionSlot={actionSlot}
             />
           </div>
+        ) : currentTab === 'my-agreements' ? (
+          <MyAgreementsPane
+            sessionId={id}
+            currentParticipantId={currentParticipantId}
+            facetStatusIndex={facetStatusIndex}
+          />
         ) : (
           <PendingProposalsPane sessionId={id} currentParticipantId={currentParticipantId} />
         )}

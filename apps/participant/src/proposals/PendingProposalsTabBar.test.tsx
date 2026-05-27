@@ -49,11 +49,14 @@ function renderBar(): ReturnType<typeof render> {
 }
 
 describe('<PendingProposalsTabBar>', () => {
-  it('(a) renders two role="tab" buttons with the en-US labels', () => {
+  it('(a) renders three role="tab" buttons with the en-US labels', () => {
     renderBar();
     const buttons = screen.getAllByRole('tab');
-    expect(buttons).toHaveLength(2);
+    expect(buttons).toHaveLength(3);
     expect(screen.getByTestId('participant-proposals-tabbar-graph').textContent).toBe('Graph');
+    expect(screen.getByTestId('participant-proposals-tabbar-my-agreements').textContent).toBe(
+      'My agreements',
+    );
     // The proposals tab carries the label + the badge text in the same
     // button; assert the label substring rather than equality.
     const proposalsButton = screen.getByTestId('participant-proposals-tabbar-proposals');
@@ -129,6 +132,31 @@ describe('<PendingProposalsTabBar>', () => {
     expect(badge.className).toContain('motion-safe:animate-pulse');
     expect(badge.className).toContain('ring-2');
     expect(badge.className).toContain('ring-amber-500/80');
+  });
+
+  // -----------------------------------------------------------------
+  // Third tab — added by `participant_ui.part_withdraw.part_my_agreements_view`.
+  // Refinement: tasks/refinements/participant-ui/part_my_agreements_view.md
+  // -----------------------------------------------------------------
+
+  it('(j) the my-agreements tab is visible with the en-US label and inactive by default', () => {
+    renderBar();
+    const tab = screen.getByTestId('participant-proposals-tabbar-my-agreements');
+    expect(tab.textContent).toBe('My agreements');
+    expect(tab.getAttribute('data-active')).toBe('false');
+    expect(tab.getAttribute('aria-selected')).toBe('false');
+  });
+
+  it('(k) clicking the my-agreements tab dispatches setCurrentTab("my-agreements")', () => {
+    renderBar();
+    expect(useUiStore.getState().currentTab).toBe('graph');
+    act(() => {
+      fireEvent.click(screen.getByTestId('participant-proposals-tabbar-my-agreements'));
+    });
+    expect(useUiStore.getState().currentTab).toBe('my-agreements');
+    const tab = screen.getByTestId('participant-proposals-tabbar-my-agreements');
+    expect(tab.getAttribute('data-active')).toBe('true');
+    expect(tab.getAttribute('aria-selected')).toBe('true');
   });
 
   it('(i) badge data-flashing flips back to "false" when isFlashing prop drops back to false', () => {

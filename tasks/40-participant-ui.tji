@@ -276,6 +276,7 @@ task participant_ui "Participant (debater) UI" {
 
   task part_withdraw "Withdraw agreement (P3)" {
     depends !part_voting, data_and_methodology.methodology_engine.withdrawal_logic
+    complete 100
     task part_find_agreed_facet "Find a previously-agreed facet (graph or my-agreements view)" {
       effort 1d
       allocate team
@@ -296,6 +297,7 @@ task participant_ui "Participant (debater) UI" {
     task part_my_agreements_view "Optional: 'my agreements' history view" {
       effort 1d
       allocate team
+      complete 100
     }
   }
 
@@ -470,5 +472,16 @@ task participant_ui "Participant (debater) UI" {
         allocate team
       }
     }
+  }
+
+  task part_participant_tab_bar_rename "Naming hygiene: rename PendingProposalsTabBar → ParticipantTopTabBar" {
+    effort 0.5d
+    allocate team
+    note -8<-
+      Source of debt: tasks/refinements/participant-ui/part_my_agreements_view.md Decision §6 + §8.
+      PendingProposalsTabBar.tsx now hosts three tabs (graph + proposals + my-agreements), making its
+      name a misnomer. Rename the file + component + all import sites + test file + barrel exports.
+      Purely mechanical; no semantic change. Can land at any time post-part_my_agreements_view.
+    ->8-
   }
 }

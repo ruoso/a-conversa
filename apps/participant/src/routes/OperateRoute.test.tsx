@@ -306,6 +306,24 @@ describe('OperateRoute — tab switch flips visible body region', () => {
     expect(screen.getByTestId('route-operate-graph-region')).toBeTruthy();
     expect(screen.queryByTestId('participant-pending-proposals-pane')).toBeNull();
   });
+
+  // ---------------------------------------------------------------
+  // Third tab — added by `participant_ui.part_withdraw.part_my_agreements_view`.
+  // Refinement: tasks/refinements/participant-ui/part_my_agreements_view.md
+  // ---------------------------------------------------------------
+
+  it('(l) switching to "my-agreements" mounts <MyAgreementsPane> in place of the graph region', async () => {
+    renderRoute({ auth: authenticatedCallerAuth });
+    expect(screen.getByTestId('route-operate-graph-region')).toBeTruthy();
+    const { act } = await import('@testing-library/react');
+    const { useUiStore } = await import('../stores/uiStore');
+    act(() => {
+      useUiStore.getState().setCurrentTab('my-agreements');
+    });
+    expect(screen.queryByTestId('route-operate-graph-region')).toBeNull();
+    expect(screen.queryByTestId('participant-pending-proposals-pane')).toBeNull();
+    expect(screen.getByTestId('participant-my-agreements-pane')).toBeTruthy();
+  });
 });
 
 describe('OperateRoute — entity detail panel selection-change re-render', () => {

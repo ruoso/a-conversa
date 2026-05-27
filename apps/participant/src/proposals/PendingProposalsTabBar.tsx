@@ -50,6 +50,13 @@ export function PendingProposalsTabBar({
       <TabButton tab="graph" active={currentTab === 'graph'} onSelect={setCurrentTab}>
         {t('participant.proposalsTab.graphLabel')}
       </TabButton>
+      <TabButton
+        tab="my-agreements"
+        active={currentTab === 'my-agreements'}
+        onSelect={setCurrentTab}
+      >
+        {t('participant.proposalsTab.myAgreementsLabel')}
+      </TabButton>
       <TabButton tab="proposals" active={currentTab === 'proposals'} onSelect={setCurrentTab}>
         {t('participant.proposalsTab.proposalsLabel')}
         <span

@@ -308,10 +308,13 @@
     "participant.withdrawAgreementButton.errorRoleLabel",
     "participant.proposalsTab.graphLabel",
     "participant.proposalsTab.proposalsLabel",
+    "participant.proposalsTab.myAgreementsLabel",
     "participant.pendingProposalsPane.emptyState",
     "participant.pendingProposalsPane.systemAuthor",
     "participant.pendingProposalsPane.paneAriaLabel",
     "participant.pendingProposalsPane.rowBodyAriaLabel",
+    "participant.myAgreementsPane.emptyState",
+    "participant.myAgreementsPane.paneAriaLabel",
     "audience.placeholder.title",
     "audience.placeholder.body"
   ],

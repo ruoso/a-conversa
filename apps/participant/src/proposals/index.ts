@@ -7,6 +7,12 @@
 
 export { PendingProposalsTabBar, type PendingProposalsTabBarProps } from './PendingProposalsTabBar';
 export { PendingProposalsPane, type PendingProposalsPaneProps } from './PendingProposalsPane';
+export { MyAgreementsPane, type MyAgreementsPaneProps } from './MyAgreementsPane';
+export {
+  derivePersonalAgreements,
+  EMPTY_PERSONAL_AGREEMENTS,
+  type PersonalAgreementRow,
+} from './derivePersonalAgreements';
 export { usePendingProposalsCount } from './usePendingProposalsCount';
 export { derivePendingProposals, type PendingProposalRow } from './derivePendingProposals';
 export { summaryText } from './proposalSummary';

@@ -3,20 +3,22 @@
 // Refinement: tasks/refinements/participant-ui/part_state_management.md
 //
 // Holds the participant's view preferences inside a single session:
-// which top-of-main tab (`'graph'` vs. `'proposals'`) is foregrounded,
-// and the graph-canvas zoom level. Persistence is in-memory only.
+// which top-of-main tab (`'graph'` / `'proposals'` / `'my-agreements'`)
+// is foregrounded, and the graph-canvas zoom level. Persistence is
+// in-memory only.
 
 import { create } from 'zustand';
 
 import { withDevtools } from './devtools.js';
 
 /**
- * The two tabs the top-of-main switcher offers per
+ * The three tabs the top-of-main switcher offers per
  * `docs/participant-ui.md`'s "two primary regions, switchable by tab or
- * split-view". The set is closed at v1; future tabs (e.g. a
- * my-agreements view) add as literal members here.
+ * split-view" + the `'my-agreements'` retrospective-audit affordance
+ * scoped by `part_my_agreements_view`. The set is closed at v1; future
+ * tabs add as literal members here.
  */
-export type ParticipantTab = 'graph' | 'proposals';
+export type ParticipantTab = 'graph' | 'proposals' | 'my-agreements';
 
 /** Bounds chosen to match the moderator's `[MIN_ZOOM, MAX_ZOOM]`. */
 export const MIN_ZOOM = 0.25;
