@@ -110,6 +110,12 @@ describe('audience surface mount()', () => {
       expect(screen.getByTestId('route-audience-placeholder')).toBeTruthy();
     });
 
+    // `aud_auth_for_private`: an authenticated visitor sees NO sign-in
+    // chrome. The audience's broadcast-clean aesthetic keeps the
+    // placeholder DOM identical to the pre-leaf shape for the
+    // authenticated branch (Decision §1).
+    expect(screen.queryByTestId('audience-sign-in')).toBeNull();
+
     // `aud_ws_client`: the `<WsClientProvider>` resolved without
     // throwing (the placeholder testid above proves the React tree
     // rendered under the provider). Pin the store-writes-through
@@ -121,6 +127,93 @@ describe('audience surface mount()', () => {
       audienceWsStore.getState().setConnectionStatus('open');
     });
     expect(audienceWsStore.getState().connectionStatus).toBe('open');
+
+    act(() => {
+      unmount();
+    });
+    expect(container.innerHTML).toBe('');
+  });
+
+  it('mounts the audience for an unauthenticated visitor and renders the sign-in chrome', async () => {
+    // `aud_auth_for_private`: per ADR 0026 + `aud_no_auth_for_public`,
+    // the host hands an `'unauthenticated'` `AuthContextValue` (with
+    // `user === undefined`) into `MountProps.auth` for anonymous
+    // visitors of a `requiredAuthLevel: 'public'` surface. The audience
+    // surface's `<PlaceholderRoute>` must consume `useAuth()` and
+    // render the shell's `<LoginButton>` under the `audience-sign-in`
+    // testid, alongside the existing `route-audience-placeholder`.
+    const i18n = await createI18nInstance('en-US');
+    const auth: AuthContextValue = {
+      status: 'unauthenticated',
+      user: undefined,
+      refresh: () => undefined,
+      logout: () => undefined,
+    };
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    window.history.replaceState({}, '', '/a/sessions/00000000-0000-4000-8000-000000000099');
+
+    let unmount!: () => void;
+    act(() => {
+      unmount = mount({
+        container,
+        auth,
+        i18n: i18n as unknown as I18n,
+        routerBasePath: '/a',
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('route-audience-placeholder')).toBeTruthy();
+    });
+
+    const signIn = screen.getByTestId('audience-sign-in');
+    expect(signIn).toBeTruthy();
+    const link = signIn.querySelector('a');
+    expect(link).not.toBeNull();
+    expect(link?.getAttribute('href')).toBe('/api/auth/login');
+
+    act(() => {
+      unmount();
+    });
+    expect(container.innerHTML).toBe('');
+  });
+
+  it('renders the sign-in chrome when auth.user is undefined under status="authenticated" (mid-mount flip)', async () => {
+    // `aud_auth_for_private` Decision §5: in the narrow window between
+    // the host's `refresh()` flipping the value and React re-rendering
+    // the surface, `user` can be `undefined` while `status` is still
+    // `'authenticated'`. The audience degrades to the `<AnonymousChrome>`
+    // (Decision §5, mirroring `part_auth_flow`'s defensive narrow but
+    // without a dedicated `audience-not-authenticated` panel).
+    const i18n = await createI18nInstance('en-US');
+    const auth: AuthContextValue = {
+      status: 'authenticated',
+      user: undefined,
+      refresh: () => undefined,
+      logout: () => undefined,
+    };
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    window.history.replaceState({}, '', '/a/sessions/00000000-0000-4000-8000-000000000099');
+
+    let unmount!: () => void;
+    act(() => {
+      unmount = mount({
+        container,
+        auth,
+        i18n: i18n as unknown as I18n,
+        routerBasePath: '/a',
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('route-audience-placeholder')).toBeTruthy();
+    });
+
+    expect(screen.getByTestId('audience-sign-in')).toBeTruthy();
 
     act(() => {
       unmount();

@@ -1,9 +1,14 @@
 // Audience surface route tree.
 //
 // Refinement: tasks/refinements/audience/aud_app_skeleton.md
-// ADRs:        0026 (host owns auth chrome; surface only reads the
-//                    host-supplied `useAuth()` once private-session
-//                    audience views land in `aud_auth_for_private`),
+// ADRs:        0026 (host owns auth chrome; the surface reads the
+//                    host-supplied `useAuth()` inside its
+//                    `<PlaceholderRoute>` and renders a `<LoginButton>`
+//                    chrome for anonymous visitors so a viewer of a
+//                    private session can sign in and retry — landed by
+//                    `aud_auth_for_private`. Per-session
+//                    subscribe-rejection-aware messaging is downstream
+//                    in `aud_url_routing.aud_session_url`.),
 //              0024 (URL-prefix locale rule for the audience surface —
 //                    `negotiateUrlLocale(pathname)` parses
 //                    `/{locale}/sessions/{id}` from the basename-
@@ -36,13 +41,51 @@ import { Route, Routes } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 
 import { negotiateUrlLocale } from '@a-conversa/i18n-catalogs';
+import { LoginButton, useAuth } from '@a-conversa/shell';
+
+function AnonymousChrome(): ReactElement {
+  // The per-session "this session is private; sign in to view" wording
+  // lives in `aud_url_routing.aud_session_url` (downstream); this static
+  // chrome is the transport for that future contextual flow.
+  return (
+    <div data-testid="audience-sign-in" className="mt-6 text-sm text-slate-500">
+      <LoginButton className="underline underline-offset-2" />
+    </div>
+  );
+}
 
 function PlaceholderRoute(): ReactElement {
   const { t } = useTranslation();
+  const { status, user } = useAuth();
+
+  let chrome: ReactElement | null;
+  switch (status) {
+    case 'authenticated':
+      // Defensive narrow: between a host-level `auth.refresh()` flipping
+      // the value out of `'authenticated'` and React re-rendering the
+      // surface, `user` can be `undefined` while `status` is still
+      // `'authenticated'`. Mirrors the participant's `part_auth_flow`
+      // Decision §A guard; the audience degrades to the LoginButton.
+      chrome = user === undefined ? <AnonymousChrome /> : null;
+      break;
+    case 'unauthenticated':
+    case 'needs-screen-name':
+      chrome = <AnonymousChrome />;
+      break;
+    case 'loading':
+      chrome = null;
+      break;
+    default: {
+      const _exhaustive: never = status;
+      return _exhaustive;
+    }
+  }
+
   return (
     <main data-testid="route-audience-placeholder" className="mx-auto max-w-2xl p-6">
       <h1 className="text-2xl font-semibold">{t('audience.placeholder.title')}</h1>
       <p className="mt-2 text-sm text-slate-600">{t('audience.placeholder.body')}</p>
+      {chrome}
     </main>
   );
 }

@@ -76,6 +76,7 @@ task audience "Audience and broadcast" {
     task aud_auth_for_private "Wire audience surface to shell's AuthContext for private sessions" {
       effort 0.5d
       allocate team
+      complete 100
       depends !aud_no_auth_for_public, shell_package.shell_substrate_extraction
       note "Reshaped under ADR 0026: the OAuth callback handling, login/logout, and screen-name capture all live in apps/root/ + @aconversa/shell. The audience surface only consumes useAuth() from shell to auth-gate private-session viewer pages; the auth UX itself is the root's responsibility."
     }

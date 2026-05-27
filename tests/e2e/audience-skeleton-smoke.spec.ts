@@ -63,6 +63,11 @@ test.describe('Audience surface skeleton — /a/sessions/:id reaches the surface
     // string is `audience.placeholder.title` (en-US: "Audience
     // surface").
     await expect(page.locator('h1').first()).toHaveText('Audience surface');
+
+    // `aud_auth_for_private` Decision §1: authenticated visitors see
+    // NO sign-in chrome — broadcast-clean aesthetic. The `audience-sign-in`
+    // testid is reserved for the anonymous-branch affordance.
+    await expect(page.getByTestId('audience-sign-in')).toHaveCount(0);
   });
 });
 
@@ -97,5 +102,17 @@ test.describe('Audience surface skeleton — anonymous visitor reaches the place
     // observable proof; the `rememberReturnTo` pin is in the Vitest
     // case.
     expect(new URL(page.url()).pathname).toBe(`/a/sessions/${SESSION_ID}`);
+
+    // `aud_auth_for_private`: an anonymous visitor of a (possibly-
+    // private) audience URL is offered a sign-in affordance — the
+    // shell's `<LoginButton>` rendered under the `audience-sign-in`
+    // testid. The inner `<a>` points at `/api/auth/login` per ADR 0002
+    // (full-page redirect, NOT `fetch`); clicking it eventually drops
+    // the visitor back at the audience URL with an authenticated
+    // session, at which point the surface re-mounts and the future
+    // per-session subscribe runs under the authenticated predicate.
+    const signIn = page.getByTestId('audience-sign-in');
+    await expect(signIn).toBeVisible();
+    await expect(signIn.locator('a')).toHaveAttribute('href', '/api/auth/login');
   });
 });

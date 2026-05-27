@@ -24,7 +24,11 @@
 // `requiredAuthLevel: 'public'` is the audience's policy: the host
 // (`apps/root/src/surfaces/SurfaceHost.tsx`) reads this hint and skips
 // the redirect-to-`/login` gate for anonymous visitors after
-// `aud_no_auth_for_public` landed. `allowAnonymous` on the
+// `aud_no_auth_for_public` landed. The audience now consumes
+// `useAuth()` inside its `<App>` and renders a `<LoginButton>` chrome
+// for anonymous visitors so private-session viewers can sign in;
+// per-session subscribe-rejection-aware messaging lives downstream in
+// `aud_url_routing.aud_session_url`. `allowAnonymous` on the
 // `<WsClientProvider>` is the audience's per-surface opt-in to the
 // anonymous-WS-upgrade path per ADR 0029 + `aud_anonymous_ws_subscribe`:
 // the provider's effect also opens the socket when
