@@ -121,7 +121,18 @@ task audience "Audience and broadcast" {
     task aud_agreed_styling "Agreed-state styling (solid, full color)" {
       effort 0.5d
       allocate team
-      depends !aud_cytoscape_init
+      complete 100
+      depends !aud_cytoscape_init, !aud_proposed_styling
+      note -8<-
+        Refinement: tasks/refinements/audience/aud_agreed_styling.md
+
+        Two new STYLESHEET selector entries: node[rollupStatus = 'agreed'] → border-color #334155
+        (slate-700) and edge[rollupStatus = 'agreed'] → line-color + target-arrow-color #334155.
+        Header trail + STYLESHEET JSDoc extended. Two structural Vitest cases (w, x) added;
+        mount-time cases deferred to aud_agreed_styling_mount_assertions (needs aud_proposed_styling
+        projection-time emission). Playwright deferred to aud_visual_regression per Decision §5.
+        depends !aud_proposed_styling added per Decision §1 / Acceptance criteria.
+      ->8-
     }
     task aud_disputed_styling "Disputed-state styling" {
       effort 1d
@@ -147,6 +158,19 @@ task audience "Audience and broadcast" {
       effort 2d
       allocate team
       depends !aud_proposed_styling, !aud_agreed_styling, !aud_disputed_styling
+    }
+    task aud_agreed_styling_mount_assertions "Mount-time Vitest cases for agreed-state computed style" {
+      effort 0.25d
+      allocate team
+      depends !aud_agreed_styling, !aud_proposed_styling
+      note -8<-
+        Two deferred Vitest mount-time cases from aud_agreed_styling Constraints spec (cases 3 + 4):
+        assert that a node / edge whose data.rollupStatus is 'agreed' carries computed
+        border-color / line-color rgb(51, 65, 85) after one render tick, via
+        cy.getElementById(id).style('border-color') / .style('line-color').
+        Blocked on aud_proposed_styling landing the projection-time data.rollupStatus emission.
+        Source: tasks/refinements/audience/aud_agreed_styling.md (Status block, 2026-05-27).
+      ->8-
     }
     task aud_layout_engine "Configure layout algorithm tuned for clarity on video" {
       effort 2d
@@ -306,6 +330,12 @@ task audience "Audience and broadcast" {
         render identically across Chrome/Firefox/WebKit at 720p/1080p/1440p; reference-image
         fixtures cover the codepoint ranges confirmed by packages/i18n-catalogs/src/typography.test.ts.
         Source: tasks/refinements/audience/aud_clean_typography.md.
+
+        Agreed-state styling pixel-stability also deferred here per aud_agreed_styling Decision §5.
+        Assert that a node + edge whose rollupStatus is 'agreed' renders at border-color / line-color
+        #334155 (slate-700) across Chrome/Firefox/WebKit at 720p/1080p/1440p, against the same
+        reference fixtures the layout + typography deferrals already pin.
+        Source: tasks/refinements/audience/aud_agreed_styling.md.
       ->8-
     }
     task aud_obs_render_smoke "Smoke test rendering at OBS-source dimensions" {

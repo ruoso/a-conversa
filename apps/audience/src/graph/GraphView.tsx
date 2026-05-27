@@ -41,6 +41,19 @@
 //   Decision §6 — Playwright pixel-stability deferral re-routes to
 //   `aud_visual_regression`.)
 //
+// Refinement: tasks/refinements/audience/aud_agreed_styling.md
+//   (Decision §1 — sequential ordering after `aud_proposed_styling`;
+//   the closer adds the `.tji` `depends !aud_proposed_styling` edge.
+//   Decision §2 — slate-700 (`#334155`) border / line / target-arrow
+//   color, color-only differentiation matching the moderator's
+//   `mod_agreed_state_styling`. Decision §3 — inline literal at the
+//   second per-state sibling; named-export extraction
+//   (`aud_stylesheet_state_color_extraction`) triggers at three.
+//   Decision §4 — attribute-equality selector against
+//   `data.rollupStatus`; no `addClass` / `classes:` API. Decision §5 —
+//   Playwright pixel-stability deferral lands on
+//   `aud_visual_regression`.)
+//
 // ADRs:
 //   - 0004 (Cytoscape.js for the audience broadcast surface);
 //   - 0022 (no throwaway verifications — Vitest pins the React-mount
@@ -111,6 +124,20 @@ export const BROADCAST_EDGE_FONT_WEIGHT = 500 as const;
  * `aud_annotation_rendering`, …) that extend this stylesheet in their
  * own commits.
  *
+ * Per-state extension pattern: each per-state sibling appends one
+ * `node[rollupStatus = '<state>']` and one
+ * `edge[rollupStatus = '<state>']` selector entry to the array; each
+ * entry overrides only the properties that differentiate the state
+ * from the baseline (border / line color, opacity, dash-style on the
+ * states that need them). Typography, geometry, label, shape,
+ * background, and text-background fields all inherit from the
+ * baseline `node` / `edge` selectors via Cytoscape's per-selector
+ * composition (an element matching two selectors merges their style
+ * objects; later selectors win on the conflicting keys). The
+ * `data.rollupStatus` attribute the selectors key on is emitted by
+ * `projectGraph` once `aud_proposed_styling` ships the audience-side
+ * `facetStatus.ts` port and the projection-time emission.
+ *
  * Typography (`font-family`, `font-size`, `font-weight`) is set on both
  * the `node` and `edge` selectors. Cytoscape's text-style resolver
  * keys on per-element selectors — setting `'font-family'` on `core`
@@ -156,6 +183,19 @@ export const STYLESHEET: StylesheetJson = [
       'text-background-opacity': 1,
       'text-background-padding': '2px',
       color: '#475569',
+    },
+  },
+  {
+    selector: "node[rollupStatus = 'agreed']",
+    style: {
+      'border-color': '#334155',
+    },
+  },
+  {
+    selector: "edge[rollupStatus = 'agreed']",
+    style: {
+      'line-color': '#334155',
+      'target-arrow-color': '#334155',
     },
   },
 ];

@@ -21,6 +21,18 @@
 //   exposed alongside `STYLESHEET`. Structural assertions only — no
 //   Cytoscape mount required.)
 //
+// Refinement: tasks/refinements/audience/aud_agreed_styling.md
+//   (Acceptance criteria — 2 additional cases (w–x) pin the
+//   agreed-state per-rollup selector entries: `STYLESHEET` carries a
+//   `node[rollupStatus = 'agreed']` entry whose `border-color` is
+//   slate-700 (`#334155`) and an `edge[rollupStatus = 'agreed']`
+//   entry whose `line-color` and `target-arrow-color` are both
+//   slate-700. The two mount-time cases the refinement also scopes
+//   defer to `aud_proposed_styling` — the projection-time
+//   `data.rollupStatus` emission is owned there and not yet in the
+//   tree; the structural pins here are sufficient regression
+//   coverage until that predecessor ships.)
+//
 // ADRs:
 //   - 0022 (no throwaway verifications — this Vitest layer is the
 //     regression pin until `aud_url_routing.aud_session_url` lands the
@@ -58,7 +70,7 @@ import { installCytoscapeTestEnv, type CytoscapeTestEnvRestoreHandle } from './c
 import { PADDING, SPACING_FACTOR } from './layoutOptions';
 import { audienceWsStore } from '../ws/wsStore';
 
-function findStylesheetEntry(selector: 'node' | 'edge'): Record<string, unknown> {
+function findStylesheetEntry(selector: string): Record<string, unknown> {
   const entry = (
     STYLESHEET as unknown as ReadonlyArray<{ selector: string; style: Record<string, unknown> }>
   ).find((e) => e.selector === selector);
@@ -515,5 +527,24 @@ describe('<AudienceGraphView>', () => {
   it('(v) sets `font-weight` on the edge selector to BROADCAST_EDGE_FONT_WEIGHT (500)', () => {
     expect(BROADCAST_EDGE_FONT_WEIGHT).toBe(500);
     expect(findStylesheetEntry('edge')['font-weight']).toBe(BROADCAST_EDGE_FONT_WEIGHT);
+  });
+
+  // ---------------------------------------------------------------
+  // aud_agreed_styling — per-rollup agreed-state selector entries on
+  // STYLESHEET. Structural-only assertions. The mount-time
+  // `cy.getElementById(id).style('border-color')` assertions the
+  // refinement also scopes defer to `aud_proposed_styling` — the
+  // projection-time `data.rollupStatus` emission is owned there.
+  // ---------------------------------------------------------------
+
+  it("(w) STYLESHEET carries a node[rollupStatus = 'agreed'] entry with slate-700 border-color", () => {
+    const style = findStylesheetEntry("node[rollupStatus = 'agreed']");
+    expect(style['border-color']).toBe('#334155');
+  });
+
+  it("(x) STYLESHEET carries an edge[rollupStatus = 'agreed'] entry with slate-700 line and target-arrow color", () => {
+    const style = findStylesheetEntry("edge[rollupStatus = 'agreed']");
+    expect(style['line-color']).toBe('#334155');
+    expect(style['target-arrow-color']).toBe('#334155');
   });
 });
