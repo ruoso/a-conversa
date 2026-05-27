@@ -21,6 +21,19 @@
 //                    seam exercised by both the Vitest mount probe and
 //                    the Playwright placeholder spec).
 //
+// **OBS no-input invariant** (`aud_obs_no_input_required`). The audience
+// surface mounts and renders without any required user gesture. The
+// optional `<LoginButton>` chrome rendered under `audience-sign-in` is
+// an affordance, not a requirement — the OBS-typical anonymous-on-
+// public visit ignores it. Patterns that would gate rendering on a
+// gesture (`<dialog>`, `[aria-modal]`, `<audio>` / `<video>` autoplay,
+// `[data-requires-input="true"]`) are forbidden — pinned by a Vitest
+// mount audit in `mount.test.tsx` and a Playwright audit in
+// `tests/e2e/audience-skeleton-smoke.spec.ts`. When
+// `aud_url_routing.aud_session_url` makes the graph route reachable,
+// that leaf extends the audit; the `aud_tests.aud_obs_render_smoke`
+// leaf extends it across OBS-typical dimensions (1920×1080, etc.).
+//
 // The single wildcard route absorbs every URL inside `/a/*` (e.g.
 // `/a/sessions/:id`, `/a/en-US/sessions/:id`, `/a/foo/bar`). The real
 // audience routes — `<AudienceViewRoute>` for live, the replay deep-

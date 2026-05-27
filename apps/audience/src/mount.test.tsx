@@ -220,4 +220,62 @@ describe('audience surface mount()', () => {
     });
     expect(container.innerHTML).toBe('');
   });
+
+  it('renders without any user-input-gating affordances for the OBS-typical anonymous-on-public path', async () => {
+    // `aud_obs_no_input_required` — pins the OBS-browser-source contract:
+    // a headless Chromium with no input device must be able to mount this
+    // surface, render the placeholder (and, post-`aud_session_url`, the
+    // live graph), and continue updating without any user gesture.
+    // The audit targets gating patterns — `<dialog>`, `[aria-modal]`,
+    // `<audio>` / `<video>` (autoplay-policy-gated), `[data-requires-input]`
+    // — not optional affordances like the `<LoginButton>` chrome (which
+    // is a plain `<a href>` link the OBS visit ignores).
+    const i18n = await createI18nInstance('en-US');
+    const auth: AuthContextValue = {
+      status: 'unauthenticated',
+      user: undefined,
+      refresh: () => undefined,
+      logout: () => undefined,
+    };
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    window.history.replaceState({}, '', '/a/sessions/00000000-0000-4000-8000-000000000099');
+
+    let unmount!: () => void;
+    act(() => {
+      unmount = mount({
+        container,
+        auth,
+        i18n: i18n as unknown as I18n,
+        routerBasePath: '/a',
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('route-audience-placeholder')).toBeTruthy();
+    });
+
+    // The audit. Each selector targets a pattern that would silently
+    // break an OBS browser-source embed.
+    expect(container.querySelectorAll('dialog')).toHaveLength(0);
+    expect(container.querySelectorAll('[aria-modal="true"]')).toHaveLength(0);
+    expect(container.querySelectorAll('audio')).toHaveLength(0);
+    expect(container.querySelectorAll('video')).toHaveLength(0);
+    expect(container.querySelectorAll('[data-requires-input="true"]')).toHaveLength(0);
+
+    // The optional chrome IS present and IS intentional — pin the
+    // distinction so a future regression that removes the chrome
+    // doesn't accidentally "satisfy" the audit by removing both
+    // optional and required affordances. The chrome is the recovery
+    // path for private-session viewers; OBS-typical public-session
+    // visits ignore it.
+    const signIn = screen.getByTestId('audience-sign-in');
+    expect(signIn.querySelector('a')?.getAttribute('href')).toBe('/api/auth/login');
+
+    act(() => {
+      unmount();
+    });
+    expect(container.innerHTML).toBe('');
+  });
 });

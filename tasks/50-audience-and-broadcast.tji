@@ -292,6 +292,7 @@ task audience "Audience and broadcast" {
     task aud_obs_no_input_required "Ensure no user input is required for OBS rendering" {
       effort 0.25d
       allocate team
+      complete 100
     }
     task aud_obs_setup_docs "OBS setup guide for show producers" {
       effort 1d

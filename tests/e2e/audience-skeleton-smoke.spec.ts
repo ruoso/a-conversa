@@ -114,5 +114,17 @@ test.describe('Audience surface skeleton — anonymous visitor reaches the place
     const signIn = page.getByTestId('audience-sign-in');
     await expect(signIn).toBeVisible();
     await expect(signIn.locator('a')).toHaveAttribute('href', '/api/auth/login');
+
+    // `aud_obs_no_input_required` — the OBS browser-source contract: a
+    // headless Chromium with no input device mounts the surface, the
+    // placeholder renders, and no gating affordance is present. This
+    // scenario fires zero user-interaction events (no `.click()`, no
+    // `.keyboard.*`, no `.mouse.*`) — the assertions below confirm the
+    // surface reaches its rendered state without one.
+    await expect(page.locator('dialog')).toHaveCount(0);
+    await expect(page.locator('[aria-modal="true"]')).toHaveCount(0);
+    await expect(page.locator('audio')).toHaveCount(0);
+    await expect(page.locator('video')).toHaveCount(0);
+    await expect(page.locator('[data-requires-input="true"]')).toHaveCount(0);
   });
 });
