@@ -1,8 +1,17 @@
 // Vitest cases for the audience's pure `projectGraph` projection.
 //
 // Refinement: tasks/refinements/audience/aud_cytoscape_init.md
-//   (Acceptance criteria — 10 cases enumerated below pin the
-//   single-pass projection algorithm without mounting Cytoscape.)
+//   (Acceptance criteria — 10 cases (a–j) pin the single-pass projection
+//   algorithm without mounting Cytoscape.)
+//
+// Refinement: tasks/refinements/audience/aud_proposed_styling.md
+//   (Acceptance criteria — 6 additional cases (k–p) pin the per-facet
+//   status stamping: every emitted node + edge carries
+//   `data.facetStatuses` (sourced from `computeFacetStatuses(events)`)
+//   and `data.rollupStatus` (the priority rollup, or the literal
+//   sentinel `'none'` when the per-facet record is empty per
+//   Decision §4). The commit-arm kind flips preserve both fields via
+//   the `{...existing.data}` spread.)
 //
 // ADRs: 0022 (no throwaway verifications — the projection's
 //   behaviour is fully pinned at this pure layer; the `<AudienceGraphView>`
@@ -264,6 +273,207 @@ describe('projectGraph (audience baseline)', () => {
       expect(edges).toHaveLength(1);
       expect(edges[0]?.data.role).toBe(role);
     }
+  });
+
+  it('(k) emits facetStatuses + rollupStatus on every projected node', () => {
+    // A lone `node-created` seeds the wording facet inline (per ADR
+    // 0030 §4): wording = 'proposed' (no votes, no participants),
+    // classification and substance = 'awaiting-proposal' (no candidate
+    // yet). Rollup priority surfaces 'proposed'.
+    const events: Event[] = [makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' })];
+    const { nodes } = projectGraph(events);
+    expect(nodes[0]?.data.facetStatuses).toEqual({
+      wording: 'proposed',
+      classification: 'awaiting-proposal',
+      substance: 'awaiting-proposal',
+    });
+    expect(nodes[0]?.data.rollupStatus).toBe('proposed');
+  });
+
+  it('(l) stamps a classify-node proposal target as facetStatuses.classification: "proposed"', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeClassifyProposal({
+        sequence: 2,
+        envelopeId: PROPOSAL_A,
+        nodeId: NODE_A,
+        classification: 'fact',
+      }),
+    ];
+    const { nodes } = projectGraph(events);
+    expect(nodes[0]?.data.facetStatuses.classification).toBe('proposed');
+    expect(nodes[0]?.data.rollupStatus).toBe('proposed');
+  });
+
+  it('(m) stamps a set-edge-substance proposal as edge facetStatuses.substance: "proposed"', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeNodeCreated({ sequence: 2, nodeId: NODE_B, wording: 'B' }),
+      makeEdgeCreated({ sequence: 3, edgeId: EDGE_A, source: NODE_A, target: NODE_B }),
+      {
+        id: '00000000-0000-4000-8000-0000000000ee',
+        sessionId: SESSION_ID,
+        sequence: 4,
+        kind: 'proposal',
+        actor: ACTOR,
+        payload: {
+          proposal: { kind: 'set-edge-substance', edge_id: EDGE_A, value: 'agreed' },
+        },
+        createdAt: '2026-05-27T00:00:00.000Z',
+      },
+    ];
+    const { edges } = projectGraph(events);
+    expect(edges[0]?.data.facetStatuses.substance).toBe('proposed');
+    expect(edges[0]?.data.rollupStatus).toBe('proposed');
+  });
+
+  it('(n) preserves facetStatuses + rollupStatus across the proposal-keyed classify commit branch', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeClassifyProposal({
+        sequence: 2,
+        envelopeId: PROPOSAL_A,
+        nodeId: NODE_A,
+        classification: 'fact',
+      }),
+      makeCommit({ sequence: 3, proposalEnvelopeId: PROPOSAL_A }),
+    ];
+    const { nodes } = projectGraph(events);
+    // kind flipped to the committed classification...
+    expect(nodes[0]?.data.kind).toBe('fact');
+    // ...and the facet stamping survived the `{...existing.data}`
+    // spread inside the commit arm.
+    expect(nodes[0]?.data.facetStatuses.classification).toBe('committed');
+    // wording stays 'proposed' (no wording-targeting events, 0
+    // participants); rollupStatus priority ordering surfaces it.
+    expect(nodes[0]?.data.rollupStatus).toBe('proposed');
+  });
+
+  it('(o) preserves facetStatuses + rollupStatus across the facet-keyed classification commit branch', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeClassifyProposal({
+        sequence: 2,
+        envelopeId: PROPOSAL_A,
+        nodeId: NODE_A,
+        classification: 'value',
+      }),
+      // Facet-keyed commit (ADR 0030 §2). The projection resolves the
+      // committed classification via `currentClassificationByNode`.
+      {
+        id: '00000000-0000-4000-8000-0000000000c5',
+        sessionId: SESSION_ID,
+        sequence: 3,
+        kind: 'commit',
+        actor: ACTOR,
+        payload: {
+          target: 'facet',
+          entity_kind: 'node',
+          entity_id: NODE_A,
+          facet: 'classification',
+          committed_by: ACTOR,
+          committed_at: '2026-05-27T00:00:00.000Z',
+        },
+        createdAt: '2026-05-27T00:00:00.000Z',
+      },
+    ];
+    const { nodes } = projectGraph(events);
+    expect(nodes[0]?.data.kind).toBe('value');
+    expect(nodes[0]?.data.facetStatuses.classification).toBe('committed');
+    expect(nodes[0]?.data.rollupStatus).toBe('proposed');
+  });
+
+  it('(p) ROLLUP_PRIORITY: proposed beats agreed across facets on the same node', () => {
+    // Two participants join + agree on classify-node → classification:
+    // 'agreed'. A set-node-substance proposal then lands with no votes
+    // → substance: 'proposed'. Wording stays 'proposed' (no wording
+    // votes against 2 current participants). Rollup priority surfaces
+    // 'proposed' because at least one facet is proposed.
+    const PROPOSAL_SUB = '00000000-0000-4000-8000-0000000000b2';
+    const PARTICIPANT_X = '00000000-0000-4000-8000-0000000000b9';
+    const PARTICIPANT_Y = '00000000-0000-4000-8000-0000000000ba';
+    const events: Event[] = [
+      {
+        id: '00000000-0000-4000-8000-000000000401',
+        sessionId: SESSION_ID,
+        sequence: 1,
+        kind: 'participant-joined',
+        actor: ACTOR,
+        payload: {
+          user_id: PARTICIPANT_X,
+          role: 'debater-A',
+          screen_name: 'X',
+          joined_at: '2026-05-27T00:00:00.000Z',
+        },
+        createdAt: '2026-05-27T00:00:00.000Z',
+      },
+      {
+        id: '00000000-0000-4000-8000-000000000402',
+        sessionId: SESSION_ID,
+        sequence: 2,
+        kind: 'participant-joined',
+        actor: ACTOR,
+        payload: {
+          user_id: PARTICIPANT_Y,
+          role: 'debater-B',
+          screen_name: 'Y',
+          joined_at: '2026-05-27T00:00:00.000Z',
+        },
+        createdAt: '2026-05-27T00:00:00.000Z',
+      },
+      makeNodeCreated({ sequence: 3, nodeId: NODE_A, wording: 'A' }),
+      makeClassifyProposal({
+        sequence: 4,
+        envelopeId: PROPOSAL_A,
+        nodeId: NODE_A,
+        classification: 'predictive',
+      }),
+      {
+        id: '00000000-0000-4000-8000-000000000601',
+        sessionId: SESSION_ID,
+        sequence: 5,
+        kind: 'vote',
+        actor: PARTICIPANT_X,
+        payload: {
+          target: 'proposal',
+          proposal_id: PROPOSAL_A,
+          participant: PARTICIPANT_X,
+          choice: 'agree',
+          voted_at: '2026-05-27T00:00:00.000Z',
+        },
+        createdAt: '2026-05-27T00:00:00.000Z',
+      },
+      {
+        id: '00000000-0000-4000-8000-000000000602',
+        sessionId: SESSION_ID,
+        sequence: 6,
+        kind: 'vote',
+        actor: PARTICIPANT_Y,
+        payload: {
+          target: 'proposal',
+          proposal_id: PROPOSAL_A,
+          participant: PARTICIPANT_Y,
+          choice: 'agree',
+          voted_at: '2026-05-27T00:00:00.000Z',
+        },
+        createdAt: '2026-05-27T00:00:00.000Z',
+      },
+      {
+        id: PROPOSAL_SUB,
+        sessionId: SESSION_ID,
+        sequence: 7,
+        kind: 'proposal',
+        actor: ACTOR,
+        payload: {
+          proposal: { kind: 'set-node-substance', node_id: NODE_A, value: 'agreed' },
+        },
+        createdAt: '2026-05-27T00:00:00.000Z',
+      },
+    ];
+    const { nodes } = projectGraph(events);
+    expect(nodes[0]?.data.facetStatuses.classification).toBe('agreed');
+    expect(nodes[0]?.data.facetStatuses.substance).toBe('proposed');
+    expect(nodes[0]?.data.rollupStatus).toBe('proposed');
   });
 
   it('(j) is invariant under non-causal events interleaved between node-created and its classify commit', () => {

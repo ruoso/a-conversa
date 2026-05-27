@@ -116,7 +116,22 @@ task audience "Audience and broadcast" {
     task aud_proposed_styling "Proposed-state styling (dashed, faded)" {
       effort 1d
       allocate team
+      complete 100
       depends !aud_cytoscape_init
+      note -8<-
+        Refinement: tasks/refinements/audience/aud_proposed_styling.md
+
+        Fourth verbatim facetStatus.ts port (server + moderator + participant + audience).
+        AudienceNodeData/EdgeData extended with facetStatuses + rollupStatus; projectGraph
+        calls computeFacetStatuses once up-front and stamps both fields onto every emitted
+        descriptor ('none' sentinel for entities with no facet events). Two new STYLESHEET
+        selector entries: node[rollupStatus = 'proposed'] → border-style 'dashed' + opacity 0.6
+        and edge[rollupStatus = 'proposed'] → line-style 'dashed' + opacity 0.6. 4 new
+        GraphView.test.tsx cases (y–bb: 2 structural + 2 mount-time); 6 new projectGraph cases
+        (k–p). Playwright deferred to aud_visual_regression per Decision §6.
+        Tech-debt: extract_facet_status_rules (tasks/27-shell-package.tji:79) consolidates the
+        four copies once audience.aud_graph_rendering completes.
+      ->8-
     }
     task aud_agreed_styling "Agreed-state styling (solid, full color)" {
       effort 0.5d
@@ -336,6 +351,12 @@ task audience "Audience and broadcast" {
         #334155 (slate-700) across Chrome/Firefox/WebKit at 720p/1080p/1440p, against the same
         reference fixtures the layout + typography deferrals already pin.
         Source: tasks/refinements/audience/aud_agreed_styling.md.
+
+        Proposed-state styling pixel-stability also deferred here per aud_proposed_styling Decision §6.
+        Assert that a node + edge whose rollupStatus is 'proposed' renders with border-style / line-style
+        'dashed' and opacity 0.6 across Chrome/Firefox/WebKit at 720p/1080p/1440p, against the same
+        reference fixtures the layout + typography + agreed-state deferrals already pin.
+        Source: tasks/refinements/audience/aud_proposed_styling.md.
       ->8-
     }
     task aud_obs_render_smoke "Smoke test rendering at OBS-source dimensions" {

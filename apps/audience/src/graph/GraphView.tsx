@@ -54,6 +54,23 @@
 //   Playwright pixel-stability deferral lands on
 //   `aud_visual_regression`.)
 //
+// Refinement: tasks/refinements/audience/aud_proposed_styling.md
+//   (Decision §1 — `projectGraph` stamps BOTH `data.facetStatuses`
+//   (the per-facet record) and `data.rollupStatus` (the priority
+//   rollup) on every emitted element. Decision §2 — dashed border /
+//   line + 60% opacity for the proposed state; color inherits from
+//   baseline (CAD convention for "tentative"; cross-surface match
+//   with the moderator's `mod_proposed_state_styling`). Decision §3 —
+//   port `facetStatus.ts` verbatim from the participant (the newer
+//   client mirror with the post-`pf_*` cleanups). Decision §4 — the
+//   literal sentinel `'none'` rather than `undefined` when the per-
+//   facet record is empty, so Cytoscape's attribute selectors have a
+//   stable string to match on. Decision §5 — fourth verbatim copy of
+//   `facetStatus.ts` lands here; consolidation deferred to the
+//   named-future-task `shell_facet_status_extraction`. Decision §6 —
+//   Playwright pixel-stability deferral lands on
+//   `aud_visual_regression`.)
+//
 // ADRs:
 //   - 0004 (Cytoscape.js for the audience broadcast surface);
 //   - 0022 (no throwaway verifications — Vitest pins the React-mount
@@ -135,8 +152,12 @@ export const BROADCAST_EDGE_FONT_WEIGHT = 500 as const;
  * composition (an element matching two selectors merges their style
  * objects; later selectors win on the conflicting keys). The
  * `data.rollupStatus` attribute the selectors key on is emitted by
- * `projectGraph` once `aud_proposed_styling` ships the audience-side
- * `facetStatus.ts` port and the projection-time emission.
+ * `projectGraph` for every projected element, sourced from
+ * `cardRollupStatus(facetStatuses)` in `./facetStatus.ts` (the
+ * verbatim-from-participant derivation). Entities whose per-facet
+ * record is empty stamp the literal sentinel `'none'` so attribute-
+ * equality selectors have a stable value to match on (per
+ * `aud_proposed_styling.md` Decision §4).
  *
  * Typography (`font-family`, `font-size`, `font-weight`) is set on both
  * the `node` and `edge` selectors. Cytoscape's text-style resolver
@@ -196,6 +217,20 @@ export const STYLESHEET: StylesheetJson = [
     style: {
       'line-color': '#334155',
       'target-arrow-color': '#334155',
+    },
+  },
+  {
+    selector: "node[rollupStatus = 'proposed']",
+    style: {
+      'border-style': 'dashed',
+      opacity: 0.6,
+    },
+  },
+  {
+    selector: "edge[rollupStatus = 'proposed']",
+    style: {
+      'line-style': 'dashed',
+      opacity: 0.6,
     },
   },
 ];

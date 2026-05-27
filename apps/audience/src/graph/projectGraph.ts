@@ -18,6 +18,20 @@
 //   not at commit-time; the kind label flips when a `classify-node`
 //   commit lands.)
 //
+// Refinement: tasks/refinements/audience/aud_proposed_styling.md
+//   (Decision §1 — emit BOTH `data.facetStatuses` and
+//   `data.rollupStatus` on every projected element. The rollup is the
+//   field Cytoscape's attribute selectors key on for the current per-
+//   state styling work; the per-facet record is the field the future
+//   `aud_per_facet_visualization` task reads to subdivide cards.
+//   Decision §4 — stamp the literal sentinel `'none'` rather than
+//   `undefined` when the per-facet record is empty so Cytoscape's
+//   `[rollupStatus = '<state>']` selectors have a stable string to
+//   match on. The `computeFacetStatuses(events)` walk runs once
+//   up-front and the index is read inside each `node-created` /
+//   `edge-created` branch; the commit-arm `kind` flip preserves both
+//   fields via the spread of `existing.data`.)
+//
 // ADRs:
 //   - 0004 (Cytoscape.js for the read-mostly audience broadcast
 //           surface);
@@ -37,12 +51,28 @@
 import type { ElementDefinition } from 'cytoscape';
 import type { EdgeRole, Event, StatementKind } from '@a-conversa/shared-types';
 
+import {
+  cardRollupStatus,
+  computeFacetStatuses,
+  EMPTY_FACET_STATUSES,
+  type FacetName,
+  type FacetStatus,
+} from './facetStatus.js';
+
 /**
  * The per-node payload `projectGraph` emits on each `node-created`
  * descriptor's `data` slot.
  *
  * `kind` starts at `null` and flips to a `StatementKind` when a
  * `commit` of a `classify-node` proposal referencing the node lands.
+ *
+ * `facetStatuses` carries the per-facet `FacetStatus` record from the
+ * `FacetStatusIndex` (or `EMPTY_FACET_STATUSES` when the index has no
+ * entry for this node). `rollupStatus` is the highest-priority status
+ * per `cardRollupStatus`, or the literal sentinel `'none'` when the
+ * record is empty (Decision §4: Cytoscape's
+ * `[rollupStatus = '<state>']` selectors require a stable string;
+ * `undefined` would not match).
  */
 export interface AudienceNodeData {
   /** Node id (mirrors Cytoscape's `data.id` convention). */
@@ -51,6 +81,10 @@ export interface AudienceNodeData {
   readonly wording: string;
   /** Committed classification, or `null` while the node is unclassified. */
   readonly kind: StatementKind | null;
+  /** Per-facet status record, sourced from the `FacetStatusIndex`. */
+  readonly facetStatuses: Readonly<Partial<Record<FacetName, FacetStatus>>>;
+  /** Highest-priority facet status, or `'none'` (sentinel) when empty. */
+  readonly rollupStatus: FacetStatus | 'none';
 }
 
 /**
@@ -66,6 +100,10 @@ export interface AudienceEdgeData {
   readonly target: string;
   /** Methodology edge role (`supports`, `rebuts`, etc.). */
   readonly role: EdgeRole;
+  /** Per-facet status record, sourced from the `FacetStatusIndex`. */
+  readonly facetStatuses: Readonly<Partial<Record<FacetName, FacetStatus>>>;
+  /** Highest-priority facet status, or `'none'` (sentinel) when empty. */
+  readonly rollupStatus: FacetStatus | 'none';
 }
 
 export interface AudienceNodeElement extends ElementDefinition {
@@ -111,6 +149,7 @@ export function projectGraph(events: readonly Event[]): {
   nodes: AudienceNodeElement[];
   edges: AudienceEdgeElement[];
 } {
+  const facetStatusIndex = computeFacetStatuses(events);
   const nodes: AudienceNodeElement[] = [];
   const nodeIndexById = new Map<string, number>();
   const edges: AudienceEdgeElement[] = [];
@@ -131,12 +170,17 @@ export function projectGraph(events: readonly Event[]): {
 
   for (const event of events) {
     if (event.kind === 'node-created') {
+      const facetStatuses =
+        facetStatusIndex.nodes.get(event.payload.node_id) ?? EMPTY_FACET_STATUSES;
+      const rollupStatus = cardRollupStatus(facetStatuses) ?? 'none';
       const element: AudienceNodeElement = {
         group: 'nodes',
         data: {
           id: event.payload.node_id,
           wording: event.payload.wording,
           kind: null,
+          facetStatuses,
+          rollupStatus,
         },
       };
       nodeIndexById.set(event.payload.node_id, nodes.length);
@@ -145,6 +189,9 @@ export function projectGraph(events: readonly Event[]): {
     }
 
     if (event.kind === 'edge-created') {
+      const facetStatuses =
+        facetStatusIndex.edges.get(event.payload.edge_id) ?? EMPTY_FACET_STATUSES;
+      const rollupStatus = cardRollupStatus(facetStatuses) ?? 'none';
       const element: AudienceEdgeElement = {
         group: 'edges',
         data: {
@@ -152,6 +199,8 @@ export function projectGraph(events: readonly Event[]): {
           source: event.payload.source_node_id,
           target: event.payload.target_node_id,
           role: event.payload.role,
+          facetStatuses,
+          rollupStatus,
         },
       };
       edges.push(element);

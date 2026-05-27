@@ -33,6 +33,17 @@
 //   tree; the structural pins here are sufficient regression
 //   coverage until that predecessor ships.)
 //
+// Refinement: tasks/refinements/audience/aud_proposed_styling.md
+//   (Acceptance criteria — 4 additional cases (y–bb) pin the
+//   proposed-state per-rollup selector entries (structural × 2) AND
+//   the mount-time computed-style resolution (× 2): `STYLESHEET`
+//   carries a `node[rollupStatus = 'proposed']` entry whose
+//   `border-style` is `'dashed'` and `opacity` is 0.6, and an
+//   `edge[rollupStatus = 'proposed']` entry whose `line-style` is
+//   `'dashed'` and `opacity` is 0.6. The two mount-time cases land
+//   inline because this leaf owns the projection-time
+//   `data.rollupStatus` emission they require.)
+//
 // ADRs:
 //   - 0022 (no throwaway verifications — this Vitest layer is the
 //     regression pin until `aud_url_routing.aud_session_url` lands the
@@ -546,5 +557,50 @@ describe('<AudienceGraphView>', () => {
     const style = findStylesheetEntry("edge[rollupStatus = 'agreed']");
     expect(style['line-color']).toBe('#334155');
     expect(style['target-arrow-color']).toBe('#334155');
+  });
+
+  // ---------------------------------------------------------------
+  // aud_proposed_styling — proposed-state per-rollup selector entries
+  // on STYLESHEET. Structural pair + mount-time computed-style pair.
+  // ---------------------------------------------------------------
+
+  it("(y) STYLESHEET carries a node[rollupStatus = 'proposed'] entry with dashed border and 0.6 opacity", () => {
+    const style = findStylesheetEntry("node[rollupStatus = 'proposed']");
+    expect(style['border-style']).toBe('dashed');
+    expect(style.opacity).toBe(0.6);
+  });
+
+  it("(z) STYLESHEET carries an edge[rollupStatus = 'proposed'] entry with dashed line and 0.6 opacity", () => {
+    const style = findStylesheetEntry("edge[rollupStatus = 'proposed']");
+    expect(style['line-style']).toBe('dashed');
+    expect(style.opacity).toBe(0.6);
+  });
+
+  it('(aa) a node whose rollupStatus resolves to "proposed" carries the proposed-state computed style', () => {
+    // A lone `node-created` produces facetStatuses with `wording:
+    // 'proposed'` (per ADR 0030 §4: wording seeded inline; no votes,
+    // 0 current participants → Rule 8). The rollup priority surfaces
+    // 'proposed', and Cytoscape's `node[rollupStatus = 'proposed']`
+    // selector matches.
+    const result = renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    const cy = result.getCy();
+    expect(cy.getElementById(NODE_A).data('rollupStatus')).toBe('proposed');
+    expect(cy.getElementById(NODE_A).style('border-style')).toBe('dashed');
+    expect(Number(cy.getElementById(NODE_A).style('opacity'))).toBe(0.6);
+  });
+
+  it('(bb) an edge whose rollupStatus resolves to "proposed" carries the proposed-state computed style', () => {
+    // An `edge-created` seeds the shape facet inline (per ADR 0030 §5):
+    // shape = 'proposed' (no votes, 0 current participants → Rule 8).
+    // The rollup priority surfaces 'proposed'.
+    const result = renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(nodeCreatedEvent({ sequence: 2, nodeId: NODE_B, wording: 'B' }));
+    seedEvent(edgeCreatedEvent({ sequence: 3, edgeId: EDGE_A, source: NODE_A, target: NODE_B }));
+    const cy = result.getCy();
+    expect(cy.getElementById(EDGE_A).data('rollupStatus')).toBe('proposed');
+    expect(cy.getElementById(EDGE_A).style('line-style')).toBe('dashed');
+    expect(Number(cy.getElementById(EDGE_A).style('opacity'))).toBe(0.6);
   });
 });
