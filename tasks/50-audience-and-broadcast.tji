@@ -261,6 +261,7 @@ task audience "Audience and broadcast" {
     task aud_typography_bundle_measurement "Measure bundle-size impact of Inter (Google Fonts vs self-hosted woff2)" {
       effort 0.25d
       allocate team
+      complete 100
       depends audience.aud_graph_rendering.aud_clean_typography
       note -8<-
         Re-deferred from i18n_audience_typography Status block (b) via aud_clean_typography
@@ -270,6 +271,25 @@ task audience "Audience and broadcast" {
         fonts.googleapis.com, OBS-host complaints) surfaces, a follow-up aud_self_host_inter
         task self-hosts the woff2 assets under apps/audience/public/fonts/.
         Source: tasks/refinements/audience/aud_clean_typography.md, Decision §2.
+      ->8-
+    }
+    task aud_self_host_inter "Self-host Inter woff2 under apps/audience/public/fonts/" {
+      effort 0.5d
+      allocate team
+      depends audience.aud_graph_rendering.aud_clean_typography
+      note -8<-
+        Refinement: tasks/refinements/audience/aud_self_host_inter.md
+
+        Scheduled by aud_typography_bundle_measurement closer (2026-05-27): the measurement
+        confirmed the Google Fonts @import at apps/audience/src/index.css:19 is silently
+        dropped by the Tailwind v4 + Vite library-mode build (grep found 0 occurrences of
+        fonts.googleapis.com in the built artifacts). The audience surface therefore ships
+        without Inter and renders the system-font fallback chain, violating aud_clean_typography
+        Decision §2. Self-hosting via @font-face rules survives the build pipeline because
+        @font-face is not an @import and is not subject to CSS-spec position rules.
+        Projected cost: 133,324 B of woff2 committed assets (two variable-font files,
+        latin + latin-ext, covering wght 400/500/600/700).
+        Source: tasks/refinements/audience/aud_typography_bundle_measurement.md, Decision §3(B).
       ->8-
     }
   }
