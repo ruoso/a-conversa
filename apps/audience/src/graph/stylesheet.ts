@@ -12,6 +12,23 @@
 //   predecessor refinements. Decision §5 — JSDoc blocks travel with the
 //   constants, not with the consumer.)
 //
+// Refinement: tasks/refinements/audience/aud_stylesheet_state_color_extraction.md
+//   (Decision §1 — `STATE_COLORS` lives here in `stylesheet.ts`, sited
+//   above `STYLESHEET` so the array can reference it; no sibling file,
+//   no re-export from `GraphView.tsx`. Decision §2 — two entries today
+//   (`agreed`, `disputed`); no `proposed` slot (proposed differentiates
+//   on `border-style`/`opacity`, not color); no speculative slots for
+//   future states (grow-as-needed, one entry per future per-state
+//   refinement). Decision §3 — name is `STATE_COLORS` (matches the
+//   predecessor refinements' named-future-task registration; preserves
+//   grep-discoverability). Decision §4 — `GraphView.test.tsx` keeps
+//   asserting against the literal hex values, not `STATE_COLORS.*`
+//   (tests pin observable behaviour, not implementation detail; avoids
+//   tautology). Decision §5 — `STATE_COLORS` is a named export from
+//   `stylesheet.ts`; no re-export from `GraphView.tsx`. Decision §6 —
+//   no new ADR; mechanical refactor, the pattern is documented by the
+//   predecessor refinements.)
+//
 // History: this module collects the per-state selector decisions
 // landed across `aud_proposed_styling`, `aud_agreed_styling`,
 // `aud_disputed_styling`, and the typography pins from
@@ -55,6 +72,37 @@ export const BROADCAST_NODE_FONT_WEIGHT = 600 as const;
 export const BROADCAST_EDGE_FONT_WEIGHT = 500 as const;
 
 /**
+ * Per-state color pins for the audience's Cytoscape `STYLESHEET`.
+ *
+ * One entry per agreement-layer state that differentiates on color
+ * (proposed differentiates on `border-style: 'dashed'` + `opacity: 0.6`
+ * — no color override — and therefore has no `STATE_COLORS.proposed`
+ * slot; see `aud_stylesheet_state_color_extraction.md` Decision §2).
+ *
+ * Cross-surface palette match: the moderator surface uses the same
+ * hex values on its ReactFlow custom-node Tailwind classes — slate-700
+ * (`#334155`) for agreed, rose-600 (`#e11d48`) for disputed (see
+ * `tasks/refinements/moderator-ui/mod_agreed_state_styling.md` Decision §2
+ * and `tasks/refinements/moderator-ui/mod_disputed_state_styling.md`
+ * Decision §2). The cross-surface match means broadcast composites
+ * (audience canvas + future picture-in-picture moderator view) read as
+ * one show.
+ *
+ * `as const` so the type is the literal-string union (not `string`),
+ * which keeps the typing useful at consumer sites — Cytoscape's
+ * stylesheet color fields accept any string but the narrowed type
+ * surfaces typos at the call site.
+ *
+ * Migration target: when `packages/ui-tokens` materializes (deferred
+ * per ADR 0005), each entry moves to `tokens.color.facet.<state>.*`
+ * and this object becomes a thin re-export.
+ */
+export const STATE_COLORS = {
+  agreed: '#334155',
+  disputed: '#e11d48',
+} as const;
+
+/**
  * Cytoscape stylesheet for the audience broadcast surface.
  *
  * Module-scope so the reference is stable across renders — Cytoscape
@@ -79,17 +127,20 @@ export const BROADCAST_EDGE_FONT_WEIGHT = 500 as const;
  * entry overrides only the properties that differentiate the state
  * from the baseline (border / line color, opacity, dash-style, and
  * — first introduced by the disputed-state pair — `border-width` on
- * the states that need them). Typography, geometry, label, shape,
- * background, and text-background fields all inherit from the
- * baseline `node` / `edge` selectors via Cytoscape's per-selector
- * composition (an element matching two selectors merges their style
- * objects; later selectors win on the conflicting keys). The
- * `data.rollupStatus` attribute the selectors key on is emitted by
- * `projectGraph` for every projected element, sourced from
- * `cardRollupStatus(facetStatuses)` in `./facetStatus.ts` (the
- * verbatim-from-participant derivation). Entities whose per-facet
- * record is empty stamp the literal sentinel `'none'` so attribute-
- * equality selectors have a stable value to match on (per
+ * the states that need them). Per-state color overrides resolve
+ * through the `STATE_COLORS` constant declared above (one entry per
+ * state that differentiates on color; see its JSDoc for the
+ * cross-surface palette match and the proposed-state omission).
+ * Typography, geometry, label, shape, background, and text-background
+ * fields all inherit from the baseline `node` / `edge` selectors via
+ * Cytoscape's per-selector composition (an element matching two
+ * selectors merges their style objects; later selectors win on the
+ * conflicting keys). The `data.rollupStatus` attribute the selectors
+ * key on is emitted by `projectGraph` for every projected element,
+ * sourced from `cardRollupStatus(facetStatuses)` in `./facetStatus.ts`
+ * (the verbatim-from-participant derivation). Entities whose
+ * per-facet record is empty stamp the literal sentinel `'none'` so
+ * attribute-equality selectors have a stable value to match on (per
  * `aud_proposed_styling.md` Decision §4).
  *
  * Typography (`font-family`, `font-size`, `font-weight`) is set on both
@@ -142,14 +193,14 @@ export const STYLESHEET: StylesheetJson = [
   {
     selector: "node[rollupStatus = 'agreed']",
     style: {
-      'border-color': '#334155',
+      'border-color': STATE_COLORS.agreed,
     },
   },
   {
     selector: "edge[rollupStatus = 'agreed']",
     style: {
-      'line-color': '#334155',
-      'target-arrow-color': '#334155',
+      'line-color': STATE_COLORS.agreed,
+      'target-arrow-color': STATE_COLORS.agreed,
     },
   },
   {
@@ -169,15 +220,15 @@ export const STYLESHEET: StylesheetJson = [
   {
     selector: "node[rollupStatus = 'disputed']",
     style: {
-      'border-color': '#e11d48',
+      'border-color': STATE_COLORS.disputed,
       'border-width': 3,
     },
   },
   {
     selector: "edge[rollupStatus = 'disputed']",
     style: {
-      'line-color': '#e11d48',
-      'target-arrow-color': '#e11d48',
+      'line-color': STATE_COLORS.disputed,
+      'target-arrow-color': STATE_COLORS.disputed,
     },
   },
 ];

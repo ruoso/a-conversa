@@ -184,6 +184,7 @@ task audience "Audience and broadcast" {
     task aud_stylesheet_state_color_extraction "Hoist per-state hex literals into STATE_COLORS constant" {
       effort 0.25d
       allocate team
+      complete 100
       depends !aud_disputed_styling
       note -8<-
         Hoist the per-state hex literals (#334155 for agreed, #e11d48 for disputed) into a
