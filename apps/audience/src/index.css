@@ -39,6 +39,17 @@ html,
 body,
 #root {
   height: 100%;
+  width: 100%;
   margin: 0;
   font-family: var(--font-broadcast);
+}
+
+/* `aud_obs_sizing_defaults` — OBS browser sources hide the scrollbar UI
+ * but Chromium may still reserve layout space for it, producing a
+ * visible whitespace strip on the broadcast. `overflow: hidden` clips
+ * overflow instead of reserving room for a scrollbar. The graph view's
+ * one-shot `cy.fit(PADDING)` keeps the rendered graph inside the
+ * viewport; this rule defends against any accidental future overflow. */
+body {
+  overflow: hidden;
 }

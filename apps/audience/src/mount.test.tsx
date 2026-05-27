@@ -28,6 +28,9 @@
 // `aud_url_routing.*` once locale-driven routing is observable
 // end-to-end.
 
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { cleanup, screen, waitFor } from '@testing-library/react';
@@ -277,5 +280,73 @@ describe('audience surface mount()', () => {
       unmount();
     });
     expect(container.innerHTML).toBe('');
+  });
+
+  it('renders into a full-bleed body chain with no scrollbar-reserved overflow for the OBS browser-source context', async () => {
+    // `aud_obs_sizing_defaults` — the OBS browser source renders the
+    // audience surface at a fixed dimension (typically 1920×1080,
+    // canonical triple in `BROADCAST_DIMENSIONS`). The surface's root
+    // chain must be full-bleed (html / body / #root at 100% × 100%) and
+    // the body must not reserve scrollbar space (`overflow: hidden`).
+    // Both are pinned here against the anonymous-on-public mount path
+    // (the OBS-canonical input shape per `aud_obs_no_input_required`).
+    //
+    // happy-dom's `disableCSSFileLoading: true` (vitest.config.ts) blocks
+    // auto-fetching `<link rel="stylesheet">`, and Vite's CSS imports
+    // resolve to no-op inserts under happy-dom; the surface's
+    // `import './index.css'` therefore does not actually apply styles
+    // in this environment. Read the live `index.css` content off disk
+    // and inject it as a `<style>` element so happy-dom's style engine
+    // sees the same rules a browser would — keeping the assertion
+    // bound to the *file* (acceptance criterion 5: removing
+    // `body { overflow: hidden; }` from index.css must fail the test).
+    // Vitest is invoked from the workspace root (per vitest.config.ts
+    // include-pattern shapes), so `process.cwd()` is the stable anchor.
+    const indexCss = readFileSync(resolve(process.cwd(), 'apps/audience/src/index.css'), 'utf8');
+    const styleEl = document.createElement('style');
+    styleEl.setAttribute('data-test-injected', 'audience-index-css');
+    styleEl.textContent = indexCss;
+    document.head.appendChild(styleEl);
+
+    const i18n = await createI18nInstance('en-US');
+    const auth: AuthContextValue = {
+      status: 'unauthenticated',
+      user: undefined,
+      refresh: () => undefined,
+      logout: () => undefined,
+    };
+
+    const container = document.createElement('div');
+    container.id = 'root';
+    document.body.appendChild(container);
+    window.history.replaceState({}, '', '/a/sessions/00000000-0000-4000-8000-000000000099');
+
+    let unmount!: () => void;
+    act(() => {
+      unmount = mount({
+        container,
+        auth,
+        i18n: i18n as unknown as I18n,
+        routerBasePath: '/a',
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('route-audience-placeholder')).toBeTruthy();
+    });
+
+    // The full-bleed chain. `overflow: hidden` defends against the
+    // scrollbar-reserved whitespace strip on OBS-embed; the body margin
+    // reset is established by the shared `html, body, #root` rule.
+    expect(getComputedStyle(document.body).overflow).toBe('hidden');
+    expect(document.body.style.margin || getComputedStyle(document.body).margin).toMatch(
+      /^0(px)?$/,
+    );
+
+    act(() => {
+      unmount();
+    });
+    expect(container.innerHTML).toBe('');
+    styleEl.remove();
   });
 });

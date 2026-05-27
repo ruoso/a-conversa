@@ -283,6 +283,7 @@ task audience "Audience and broadcast" {
     task aud_obs_sizing_defaults "Default sizing for typical OBS browser-source dimensions" {
       effort 0.5d
       allocate team
+      complete 100
     }
     task aud_obs_transparency "Background transparency for compositing" {
       effort 0.5d

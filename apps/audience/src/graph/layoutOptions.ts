@@ -8,8 +8,12 @@
 //   lowest id so the layout output is a pure function of the projected
 //   element set, independent of event-arrival order. Decision §4 —
 //   `SPACING_FACTOR` and `PADDING` are named exports as conservative
-//   starting points; the future `aud_obs_sizing_defaults` task wires
-//   per-source overrides via a `MountProps.broadcastDimensions` prop.
+//   starting points tuned for `DEFAULT_BROADCAST_DIMENSIONS` (1080p);
+//   the `aud_obs_sizing_defaults` leaf pins the canonical OBS-source
+//   dimensions as the audience-internal `BROADCAST_DIMENSIONS` table
+//   (locus correction from the layout-engine refinement's original
+//   `MountProps.broadcastDimensions` wording — see that leaf's
+//   Decision §1 for the cross-surface contract rationale).
 //   Decision §6 — `selectDeterministicRoots` is a separate named
 //   export so the Vitest layer can pin root-selection logic in
 //   isolation.)
@@ -27,9 +31,8 @@ import type { BreadthFirstLayoutOptions, ElementDefinition } from 'cytoscape';
  *
  * Looser than the participant's `1.25` (tuned for a tablet viewport)
  * because the broadcast video frame has 2-4x the horizontal pixels per
- * node. The actual value that produces broadcast-quality output depends
- * on the OBS source dimensions — `aud_obs_sizing_defaults` wires per-
- * source overrides on top of this conservative starting point.
+ * node. Tuned for `DEFAULT_BROADCAST_DIMENSIONS` (1920×1080); empirical
+ * re-tuning at 720p / 1440p is `aud_visual_regression`'s scope.
  */
 export const SPACING_FACTOR = 1.45;
 
@@ -38,9 +41,41 @@ export const SPACING_FACTOR = 1.45;
  * one-shot `cy.fit(PADDING)` call uses on the first non-empty render.
  *
  * Larger than the participant's `30` so OBS scene composers can crop
- * the source with margin. Overrideable by `aud_obs_sizing_defaults`.
+ * the source with margin. Tuned for `DEFAULT_BROADCAST_DIMENSIONS`
+ * (1920×1080); empirical re-tuning at 720p / 1440p is
+ * `aud_visual_regression`'s scope.
  */
 export const PADDING = 60;
+
+/**
+ * Canonical OBS browser-source dimensions referenced by the audience-
+ * surface tests and the producer-facing setup docs.
+ *
+ * Source of truth for the {720p, 1080p, 1440p} triple established
+ * prose-side in tasks/refinements/frontend-i18n/i18n_audience_typography.md
+ * (line 24). Downstream consumers — `aud_obs_render_smoke` (pixel
+ * smoke matrix), `aud_obs_setup_docs` (producer recommendation
+ * matrix), `aud_visual_regression` (cross-resolution typography pins)
+ * — import these constants rather than copy the numbers.
+ */
+export interface BroadcastDimensions {
+  readonly width: number;
+  readonly height: number;
+}
+
+export const BROADCAST_DIMENSIONS = {
+  HD_720: { width: 1280, height: 720 },
+  HD_1080: { width: 1920, height: 1080 },
+  HD_1440: { width: 2560, height: 1440 },
+} as const satisfies Readonly<Record<string, BroadcastDimensions>>;
+
+/**
+ * The canonical default OBS browser-source resolution — OBS Studio's
+ * out-of-the-box size and the most common producer configuration.
+ * `SPACING_FACTOR` and `PADDING` above are tuned for this resolution
+ * per `aud_layout_engine.md` Decision §4.
+ */
+export const DEFAULT_BROADCAST_DIMENSIONS: BroadcastDimensions = BROADCAST_DIMENSIONS.HD_1080;
 
 /**
  * Selects deterministic `roots` for the `breadthfirst` layout.

@@ -34,6 +34,19 @@
 // that leaf extends the audit; the `aud_tests.aud_obs_render_smoke`
 // leaf extends it across OBS-typical dimensions (1920×1080, etc.).
 //
+// **OBS sizing invariant** (`aud_obs_sizing_defaults`). The audience
+// surface's root chain is full-bleed: `html`, `body`, `#root` are
+// 100% × 100% with `body { overflow: hidden }` so an OBS browser
+// source at any configured resolution renders edge-to-edge without a
+// scrollbar-reserved whitespace strip (see `apps/audience/src/index.css`).
+// The canonical OBS-source dimensions are the `BROADCAST_DIMENSIONS`
+// named export in `graph/layoutOptions.ts` ({720p, 1080p, 1440p} per
+// `i18n_audience_typography.md` line 24); `DEFAULT_BROADCAST_DIMENSIONS`
+// aliases 1080p (OBS Studio's out-of-the-box browser-source size).
+// Pixel-level rendering at each dimension is deferred to
+// `aud_tests.aud_obs_render_smoke` (graph route not yet reachable, so
+// the placeholder route is dimension-insensitive at this tier).
+//
 // The single wildcard route absorbs every URL inside `/a/*` (e.g.
 // `/a/sessions/:id`, `/a/en-US/sessions/:id`, `/a/foo/bar`). The real
 // audience routes — `<AudienceViewRoute>` for live, the replay deep-

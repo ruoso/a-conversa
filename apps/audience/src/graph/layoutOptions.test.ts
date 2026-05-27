@@ -18,6 +18,8 @@ import { describe, expect, it } from 'vitest';
 import type { ElementDefinition } from 'cytoscape';
 
 import {
+  BROADCAST_DIMENSIONS,
+  DEFAULT_BROADCAST_DIMENSIONS,
   PADDING,
   SPACING_FACTOR,
   buildAudienceLayoutOptions,
@@ -129,10 +131,22 @@ describe('buildAudienceLayoutOptions', () => {
 describe('layout-options named exports', () => {
   it('(8) pins `SPACING_FACTOR` to 1.45 and `PADDING` to 60', () => {
     // Regression pin: changing the constants is an intentional source-
-    // diff, not a silent drift. The future `aud_obs_sizing_defaults`
-    // task overrides them per-source via `MountProps.broadcastDimensions`;
+    // diff, not a silent drift. The values are tuned for
+    // `DEFAULT_BROADCAST_DIMENSIONS` (1080p) per `aud_obs_sizing_defaults`;
     // this assertion catches accidental changes in the meantime.
     expect(SPACING_FACTOR).toBe(1.45);
     expect(PADDING).toBe(60);
+  });
+
+  it('(9) pins `BROADCAST_DIMENSIONS` to {720p, 1080p, 1440p} and `DEFAULT_BROADCAST_DIMENSIONS` to 1080p', () => {
+    // Regression pin: the triple is the canonical OBS-source matrix
+    // (i18n_audience_typography.md line 24). Drift surfaces here and in
+    // any downstream consumer that imports the symbol.
+    expect(BROADCAST_DIMENSIONS.HD_720).toEqual({ width: 1280, height: 720 });
+    expect(BROADCAST_DIMENSIONS.HD_1080).toEqual({ width: 1920, height: 1080 });
+    expect(BROADCAST_DIMENSIONS.HD_1440).toEqual({ width: 2560, height: 1440 });
+    // Referential equality — DEFAULT_BROADCAST_DIMENSIONS aliases HD_1080,
+    // doesn't copy it, so a future swap of the default surfaces here.
+    expect(DEFAULT_BROADCAST_DIMENSIONS).toBe(BROADCAST_DIMENSIONS.HD_1080);
   });
 });
