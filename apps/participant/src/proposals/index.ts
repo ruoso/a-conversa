@@ -34,3 +34,11 @@ export {
   EMPTY_OTHER_VOTES_BY_PROPOSAL_INDEX,
   type OtherVotesByProposalIndex,
 } from './otherVotesByProposal';
+export { proposalTargetEntity, type ProposalTargetEntity } from './proposalTargetEntity';
+export {
+  useNewProposalArrival,
+  FLASH_WINDOW_MS,
+  EMPTY_FLASH_MAP,
+  type NewProposalArrivalState,
+  type ProposalFlashEntry,
+} from './useNewProposalArrival';

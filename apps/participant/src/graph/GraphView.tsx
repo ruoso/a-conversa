@@ -656,6 +656,42 @@ export const STYLESHEET: StylesheetJson = [
       'text-outline-opacity': 1,
     },
   },
+  // New-proposal-arrival flash overlay — per Decision §6 of
+  // `tasks/refinements/participant-ui/part_proposal_notification.md`.
+  // Cytoscape's `[?<flag>]` selector matches when `data.<flag>` is
+  // truthy. The flash uses `overlay-*` on nodes (same primitive the
+  // annotation overlay uses, which lets the flash compose on top of
+  // every prior border / fill / outline layer without clobbering them)
+  // and `underlay-*` on edges (same primitive the annotation underlay
+  // uses for the same composition reason). Amber-500 — same hue as the
+  // moderator's coherency-hint pulse + the annotation overlay — so the
+  // attention-attracting palette stays consistent across surfaces. The
+  // brief opacity is intentional: peripheral-vision cue, not a
+  // dominant decoration.
+  //
+  // The CSS-level pulse animation lives on the DOM mirror's
+  // `data-flashing="true"` attribute (Tailwind `motion-safe:
+  // animate-pulse` class applied conditionally); the Cytoscape canvas
+  // shows the static amber overlay/underlay for the same window. The
+  // mirror's animation honours `prefers-reduced-motion` via the
+  // `motion-safe:` Tailwind variant.
+  {
+    selector: 'node[?isFlashing]',
+    style: {
+      'overlay-color': '#f59e0b', // amber-500 — matches annotation overlay hue
+      'overlay-opacity': 0.35,
+      'overlay-padding': 6,
+    },
+  },
+  {
+    selector: 'edge[?isFlashing]',
+    style: {
+      width: 5,
+      'underlay-color': '#f59e0b', // amber-500
+      'underlay-opacity': 0.5,
+      'underlay-padding': 5,
+    },
+  },
   // Selected-state overlay — per Decision §4 of
   // `tasks/refinements/participant-ui/part_pan_zoom_tap.md`. Cytoscape's
   // built-in `:selected` pseudo-class fires when an element is in the
@@ -885,6 +921,21 @@ function selectedFlag(
   kind: 'node' | 'edge',
 ): 'true' | 'false' {
   return selected?.kind === kind && selected.id === id ? 'true' : 'false';
+}
+
+/**
+ * Render a `data-flashing` attribute value for a node / edge mirror row.
+ *
+ * Refinement: tasks/refinements/participant-ui/part_proposal_notification.md
+ *              (Decisions §3 + §6 — `motion-safe:animate-pulse` class
+ *              composition pinned by the explicit `"true"` / `"false"`
+ *              attribute posture so Vitest + Playwright probes can
+ *              match `[data-flashing="true"]` without absence-of-
+ *              attribute ambiguity, symmetric with `selectedFlag` and
+ *              the rest of the mirror's data-attr family.)
+ */
+function flashingAttr(value: boolean): 'true' | 'false' {
+  return value ? 'true' : 'false';
 }
 
 /**
@@ -1290,6 +1341,8 @@ export function GraphView({
             data-diagnostic-kinds={diagnosticKindsAttr(node.data.diagnosticHighlight)}
             data-own-vote={ownVoteAttr(node.data.ownVote)}
             data-selected={selectedFlag(node.data.id, selected, 'node')}
+            data-flashing={flashingAttr(node.data.isFlashing)}
+            className={node.data.isFlashing ? 'motion-safe:animate-pulse' : undefined}
           >
             {/*
              * Nested `<ul data-other-votes>` per Decision §6 of
@@ -1326,6 +1379,8 @@ export function GraphView({
             data-diagnostic-kinds={diagnosticKindsAttr(edge.data.diagnosticHighlight)}
             data-own-vote={ownVoteAttr(edge.data.ownVote)}
             data-selected={selectedFlag(edge.data.id, selected, 'edge')}
+            data-flashing={flashingAttr(edge.data.isFlashing)}
+            className={edge.data.isFlashing ? 'motion-safe:animate-pulse' : undefined}
           >
             {/*
              * Nested `<ul data-other-votes>` per Decision §6 —

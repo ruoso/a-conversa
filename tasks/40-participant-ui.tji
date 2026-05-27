@@ -243,6 +243,7 @@ task participant_ui "Participant (debater) UI" {
 
   task part_voting "Per-facet voting (P2)" {
     depends !part_pending_proposals, backend.websocket_protocol.ws_vote_message
+    complete 100
     task part_vote_button_per_facet "Agree/Dispute buttons per facet" {
       effort 1d
       allocate team
@@ -269,6 +270,7 @@ task participant_ui "Participant (debater) UI" {
     task part_proposal_notification "Visual flash + tab-badge increment on new proposal" {
       effort 1d
       allocate team
+      complete 100
     }
   }
 

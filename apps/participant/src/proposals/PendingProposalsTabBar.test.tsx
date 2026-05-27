@@ -104,4 +104,48 @@ describe('<PendingProposalsTabBar>', () => {
     expect(badge.textContent).toBe('1');
     expect(badge.getAttribute('data-count')).toBe('1');
   });
+
+  // -----------------------------------------------------------------
+  // New-proposal-arrival flash — added by
+  // `participant_ui.part_voting.part_proposal_notification`.
+  // Refinement: tasks/refinements/participant-ui/part_proposal_notification.md
+  // -----------------------------------------------------------------
+
+  it('(g) badge data-flashing defaults to "false" when no isFlashing prop is passed', () => {
+    renderBar();
+    const badge = screen.getByTestId('participant-proposals-tabbar-badge');
+    expect(badge.getAttribute('data-flashing')).toBe('false');
+    expect(badge.className.includes('animate-pulse')).toBe(false);
+  });
+
+  it('(h) badge data-flashing="true" + motion-safe:animate-pulse class when isFlashing prop is true', () => {
+    render(
+      <I18nProvider i18n={i18n}>
+        <PendingProposalsTabBar sessionId={SESSION_A} isFlashing />
+      </I18nProvider>,
+    );
+    const badge = screen.getByTestId('participant-proposals-tabbar-badge');
+    expect(badge.getAttribute('data-flashing')).toBe('true');
+    expect(badge.className).toContain('motion-safe:animate-pulse');
+    expect(badge.className).toContain('ring-2');
+    expect(badge.className).toContain('ring-amber-500/80');
+  });
+
+  it('(i) badge data-flashing flips back to "false" when isFlashing prop drops back to false', () => {
+    const { rerender } = render(
+      <I18nProvider i18n={i18n}>
+        <PendingProposalsTabBar sessionId={SESSION_A} isFlashing />
+      </I18nProvider>,
+    );
+    let badge = screen.getByTestId('participant-proposals-tabbar-badge');
+    expect(badge.getAttribute('data-flashing')).toBe('true');
+    rerender(
+      <I18nProvider i18n={i18n}>
+        <PendingProposalsTabBar sessionId={SESSION_A} isFlashing={false} />
+      </I18nProvider>,
+    );
+    badge = screen.getByTestId('participant-proposals-tabbar-badge');
+    expect(badge.getAttribute('data-flashing')).toBe('false');
+    expect(badge.className.includes('animate-pulse')).toBe(false);
+  });
 });

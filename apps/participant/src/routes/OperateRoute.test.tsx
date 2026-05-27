@@ -344,3 +344,85 @@ describe('OperateRoute — entity detail panel selection-change re-render', () =
     );
   });
 });
+
+// -------------------------------------------------------------------
+// New-proposal-arrival flash — added by
+// `participant_ui.part_voting.part_proposal_notification`.
+// Refinement: tasks/refinements/participant-ui/part_proposal_notification.md
+//
+// Pins that a `proposal` event arrival flips BOTH the badge's
+// `data-flashing` and the target node mirror's `data-flashing` to
+// `"true"` within the flash window, then both clear after the window
+// expires. Uses `vi.useFakeTimers()` so the `FLASH_WINDOW_MS`-keyed
+// `setTimeout` driving the auto-clear is deterministic.
+// -------------------------------------------------------------------
+
+describe('OperateRoute — new-proposal-arrival flash', () => {
+  it('(k) a proposal event flips data-flashing="true" on both the badge and the target node mirror; flips back after the window expires', async () => {
+    vi.useFakeTimers();
+    try {
+      renderRoute({ auth: authenticatedCallerAuth });
+      const { act } = await import('@testing-library/react');
+      const { useWsStore: storeImport } = await import('../ws/wsStore');
+      const { FLASH_WINDOW_MS } = await import('../proposals');
+      const NODE_ID = '00000000-0000-4000-8000-00000000000a';
+      const ACTOR_ID = '00000000-0000-4000-8000-000000000003';
+      // Baseline — no proposal yet, badge sits at data-flashing="false".
+      const badge = screen.getByTestId('participant-proposals-tabbar-badge');
+      expect(badge.getAttribute('data-flashing')).toBe('false');
+      // Seed the underlying node, then publish the capture-node proposal
+      // that targets it. The route's arrival-detection hook fires on the
+      // proposal event, the projector stamps `isFlashing: true` on the
+      // node, the mirror row picks it up.
+      act(() => {
+        storeImport.getState().applyEvent({
+          id: '00000000-0000-4000-8000-000000000301',
+          sessionId: SESSION_ID,
+          sequence: 1,
+          kind: 'node-created',
+          actor: ACTOR_ID,
+          payload: {
+            node_id: NODE_ID,
+            wording: 'Arriving',
+            created_by: ACTOR_ID,
+            created_at: '2026-05-26T00:00:00.000Z',
+          },
+          createdAt: '2026-05-26T00:00:00.000Z',
+        });
+        storeImport.getState().applyEvent({
+          id: '00000000-0000-4000-8000-000000000302',
+          sessionId: SESSION_ID,
+          sequence: 2,
+          kind: 'proposal',
+          actor: ACTOR_ID,
+          payload: {
+            proposal: {
+              kind: 'capture-node',
+              node_id: NODE_ID,
+              wording: 'Arriving',
+            },
+          },
+          createdAt: '2026-05-26T00:00:00.000Z',
+        });
+      });
+      const badgeFlashing = screen.getByTestId('participant-proposals-tabbar-badge');
+      expect(badgeFlashing.getAttribute('data-flashing')).toBe('true');
+      const nodeMirror = document.querySelector(
+        `[data-testid="participant-node-status"][data-node-id="${NODE_ID}"]`,
+      );
+      expect(nodeMirror?.getAttribute('data-flashing')).toBe('true');
+      // Advance past the flash window — both flips clear together.
+      act(() => {
+        vi.advanceTimersByTime(FLASH_WINDOW_MS + 50);
+      });
+      const badgeCleared = screen.getByTestId('participant-proposals-tabbar-badge');
+      expect(badgeCleared.getAttribute('data-flashing')).toBe('false');
+      const nodeCleared = document.querySelector(
+        `[data-testid="participant-node-status"][data-node-id="${NODE_ID}"]`,
+      );
+      expect(nodeCleared?.getAttribute('data-flashing')).toBe('false');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

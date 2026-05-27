@@ -1644,3 +1644,99 @@ describe('projectGraph — per-node sizing stamping (part_layout_measured_dimens
     }
   });
 });
+
+describe('projectGraph — isFlashing stamping (part_proposal_notification)', () => {
+  it('(flash-a) defaults every emitted node + edge to isFlashing: false when no flashIndex is supplied', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeNodeCreated({ sequence: 2, nodeId: NODE_B, wording: 'B' }),
+      makeEdgeCreated({ sequence: 3, edgeId: EDGE_A, source: NODE_A, target: NODE_B }),
+    ];
+    const { nodes, edges } = projectGraph(
+      events,
+      emptyIndex(),
+      emptyAxiomIndex(),
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      EMPTY_OWN_VOTES,
+      EMPTY_OTHERS_VOTES,
+    );
+    expect(nodes).toHaveLength(2);
+    expect(edges).toHaveLength(1);
+    for (const node of nodes) expect(node.data.isFlashing).toBe(false);
+    for (const edge of edges) expect(edge.data.isFlashing).toBe(false);
+  });
+
+  it('(flash-b) stamps isFlashing: true on the node whose id is in flashIndex', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeNodeCreated({ sequence: 2, nodeId: NODE_B, wording: 'B' }),
+    ];
+    const flashIndex = new Map<string, true>([[NODE_A, true]]);
+    const { nodes } = projectGraph(
+      events,
+      emptyIndex(),
+      emptyAxiomIndex(),
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      EMPTY_OWN_VOTES,
+      EMPTY_OTHERS_VOTES,
+      flashIndex,
+    );
+    const a = nodes.find((n) => n.data.id === NODE_A);
+    const b = nodes.find((n) => n.data.id === NODE_B);
+    expect(a?.data.isFlashing).toBe(true);
+    expect(b?.data.isFlashing).toBe(false);
+  });
+
+  it('(flash-c) stamps isFlashing: true on the edge whose id is in flashIndex', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeNodeCreated({ sequence: 2, nodeId: NODE_B, wording: 'B' }),
+      makeEdgeCreated({ sequence: 3, edgeId: EDGE_A, source: NODE_A, target: NODE_B }),
+    ];
+    const flashIndex = new Map<string, true>([[EDGE_A, true]]);
+    const { nodes, edges } = projectGraph(
+      events,
+      emptyIndex(),
+      emptyAxiomIndex(),
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      EMPTY_OWN_VOTES,
+      EMPTY_OTHERS_VOTES,
+      flashIndex,
+    );
+    for (const node of nodes) expect(node.data.isFlashing).toBe(false);
+    expect(edges[0]?.data.isFlashing).toBe(true);
+  });
+
+  it('(flash-d) survives a classify-node commit (kind flips but isFlashing carries through)', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeClassifyProposal({
+        sequence: 2,
+        envelopeId: PROPOSAL_A,
+        nodeId: NODE_A,
+        classification: 'fact',
+      }),
+      makeCommit({ sequence: 3, proposalEnvelopeId: PROPOSAL_A }),
+    ];
+    const flashIndex = new Map<string, true>([[NODE_A, true]]);
+    const { nodes } = projectGraph(
+      events,
+      emptyIndex(),
+      emptyAxiomIndex(),
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      EMPTY_OWN_VOTES,
+      EMPTY_OTHERS_VOTES,
+      flashIndex,
+    );
+    expect(nodes[0]?.data.kind).toBe('fact');
+    expect(nodes[0]?.data.isFlashing).toBe(true);
+  });
+});

@@ -191,6 +191,7 @@ function ProjectingGraphView(props: {
   sessionId: string;
   currentParticipantId: string;
   cyRef: (cy: Core | null) => void;
+  flashIndex?: ReadonlyMap<string, true>;
 }): React.ReactElement {
   const events = useWsStore(
     (state) => state.sessionState[props.sessionId]?.events ?? EMPTY_TEST_EVENTS,
@@ -224,6 +225,7 @@ function ProjectingGraphView(props: {
     () => projectOtherVotes(events, props.currentParticipantId),
     [events, props.currentParticipantId],
   );
+  const flashIndex = props.flashIndex;
   const projected = React.useMemo(
     () =>
       projectGraph(
@@ -235,6 +237,7 @@ function ProjectingGraphView(props: {
         diagnosticHighlightIndex,
         ownVoteIndex,
         othersVoteIndex,
+        flashIndex,
       ),
     [
       events,
@@ -245,6 +248,7 @@ function ProjectingGraphView(props: {
       diagnosticHighlightIndex,
       ownVoteIndex,
       othersVoteIndex,
+      flashIndex,
     ],
   );
   return (
@@ -269,7 +273,11 @@ const EMPTY_TEST_EVENTS: readonly Event[] = Object.freeze([]);
 const EMPTY_TEST_DIAGNOSTICS: ReadonlyMap<string, DiagnosticPayload> = Object.freeze(new Map());
 
 function renderView(
-  opts: { sessionId?: string; currentParticipantId?: string } = {},
+  opts: {
+    sessionId?: string;
+    currentParticipantId?: string;
+    flashIndex?: ReadonlyMap<string, true>;
+  } = {},
 ): RenderResult {
   const id = opts.sessionId ?? SESSION_ID;
   const participantId = opts.currentParticipantId ?? ME;
@@ -279,7 +287,12 @@ function renderView(
   };
   render(
     <I18nProvider i18n={i18nInstance}>
-      <ProjectingGraphView sessionId={id} currentParticipantId={participantId} cyRef={cyRef} />
+      <ProjectingGraphView
+        sessionId={id}
+        currentParticipantId={participantId}
+        cyRef={cyRef}
+        {...(opts.flashIndex !== undefined ? { flashIndex: opts.flashIndex } : {})}
+      />
     </I18nProvider>,
   );
   return {
@@ -2160,5 +2173,85 @@ describe('GraphView — per-node sizing (part_layout_measured_dimensions)', () =
     });
     expect(cy.getElementById(NODE_A).position()).toEqual(positionBefore.a);
     expect(cy.getElementById(NODE_B).position()).toEqual(positionBefore.b);
+  });
+});
+
+// -------------------------------------------------------------------
+// New-proposal-arrival flash — added by
+// `participant_ui.part_voting.part_proposal_notification`.
+// Refinement: tasks/refinements/participant-ui/part_proposal_notification.md
+//
+// Three new cases pinning the per-target `data-flashing` mirror
+// attribute, the matching `motion-safe:animate-pulse` className on the
+// mirror row, and the Cytoscape stylesheet's `[?isFlashing]` selectors
+// for both node and edge.
+// -------------------------------------------------------------------
+
+describe('GraphView — new-proposal-arrival flash overlay', () => {
+  it('(flash-a) node mirror carries data-flashing="false" by default with no flashIndex entry', () => {
+    renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    const item = document.querySelector(
+      `[data-testid="participant-node-status"][data-node-id="${NODE_A}"]`,
+    );
+    expect(item).not.toBeNull();
+    expect(item?.getAttribute('data-flashing')).toBe('false');
+    expect(item?.className.includes('animate-pulse')).toBe(false);
+  });
+
+  it('(flash-b) node mirror carries data-flashing="true" + motion-safe:animate-pulse when flashIndex holds the id', () => {
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(nodeCreatedEvent({ sequence: 2, nodeId: NODE_B, wording: 'B' }));
+    const flashIndex = new Map<string, true>([[NODE_A, true]]);
+    renderView({ flashIndex });
+    const flashed = document.querySelector(
+      `[data-testid="participant-node-status"][data-node-id="${NODE_A}"]`,
+    );
+    const quiet = document.querySelector(
+      `[data-testid="participant-node-status"][data-node-id="${NODE_B}"]`,
+    );
+    expect(flashed?.getAttribute('data-flashing')).toBe('true');
+    expect(flashed?.className).toContain('motion-safe:animate-pulse');
+    expect(quiet?.getAttribute('data-flashing')).toBe('false');
+  });
+
+  it('(flash-c) edge mirror carries data-flashing="true" + motion-safe:animate-pulse when flashIndex holds the edge id', () => {
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(nodeCreatedEvent({ sequence: 2, nodeId: NODE_B, wording: 'B' }));
+    seedEvent(
+      edgeCreatedEvent({
+        sequence: 3,
+        edgeId: EDGE_A,
+        source: NODE_A,
+        target: NODE_B,
+      }),
+    );
+    const flashIndex = new Map<string, true>([[EDGE_A, true]]);
+    renderView({ flashIndex });
+    const item = document.querySelector(
+      `[data-testid="participant-edge-status"][data-edge-id="${EDGE_A}"]`,
+    );
+    expect(item?.getAttribute('data-flashing')).toBe('true');
+    expect(item?.className).toContain('motion-safe:animate-pulse');
+  });
+
+  it('(flash-d) Cytoscape data.isFlashing reads true and the [?isFlashing] stylesheet selectors are present', () => {
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    const flashIndex = new Map<string, true>([[NODE_A, true]]);
+    const result = renderView({ flashIndex });
+    const cy = result.getCy();
+    expect(cy.getElementById(NODE_A).data('isFlashing')).toBe(true);
+    const sheet = STYLESHEET as unknown as ReadonlyArray<{
+      selector: string;
+      style: Record<string, unknown>;
+    }>;
+    const nodeFlash = sheet.find((entry) => entry.selector === 'node[?isFlashing]');
+    const edgeFlash = sheet.find((entry) => entry.selector === 'edge[?isFlashing]');
+    expect(nodeFlash).toBeDefined();
+    expect(edgeFlash).toBeDefined();
+    // Amber overlay/underlay on both branches matches the moderator's
+    // coherency-hint pattern + the annotation overlay hue.
+    expect(nodeFlash?.style['overlay-color']).toBe('#f59e0b');
+    expect(edgeFlash?.style['underlay-color']).toBe('#f59e0b');
   });
 });

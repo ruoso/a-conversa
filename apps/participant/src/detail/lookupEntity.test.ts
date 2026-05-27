@@ -29,6 +29,7 @@ function nodeData(id: string, wording: string): ParticipantNodeData {
     diagnosticHighlight: null,
     ownVote: 'none',
     otherVotes: EMPTY_OTHER_VOTES_LIST,
+    isFlashing: false,
     width: 80,
     height: 40,
     textMaxWidth: 56,
@@ -48,6 +49,7 @@ function edgeData(id: string, source: string, target: string): ParticipantEdgeDa
     diagnosticHighlight: null,
     ownVote: 'none',
     otherVotes: EMPTY_OTHER_VOTES_LIST,
+    isFlashing: false,
   };
 }
 

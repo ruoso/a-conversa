@@ -53,6 +53,15 @@
 //    covers both "no vote by the current participant" and "the
 //    proposal envelope hasn't yet arrived" defensively, so Cytoscape's
 //    `[ownVote = "..."]` selectors have a stable value to match.)
+// Refinement: tasks/refinements/participant-ui/part_proposal_notification.md
+//   (Constraints — `projectGraph` signature widens AGAIN to take an
+//    OPTIONAL ninth `flashIndex: ReadonlyMap<string, true>` argument.
+//    Every emitted node AND edge `data` carries `isFlashing: boolean`
+//    stamped from `flashIndex.get(id) === true`. The argument is
+//    optional so the 49 existing call sites in the test suite remain
+//    diff-stable; the route hoist threads the live index in.
+//    Symmetric across node + edge target kinds per Decision §1 — every
+//    proposal sub-kind has a graph entity target.)
 // Refinement: tasks/refinements/participant-ui/part_other_vote_indicators.md
 //   (Constraints — `projectGraph` signature widens AGAIN to take an
 //    eighth `othersVoteIndex: OthersVoteIndex` argument. Every emitted
@@ -224,6 +233,19 @@ export interface ParticipantNodeData {
    */
   readonly otherVotes: readonly OtherVote[];
   /**
+   * `true` iff this node is currently in the new-proposal-arrival
+   * flash window. Sourced from the `flashIndex` argument; the consumer
+   * (`<GraphView>`) reads this on each Cytoscape element's data
+   * payload to drive the `node[?isFlashing]` stylesheet selector AND
+   * the mirror's `data-flashing="true|false"` attribute. The window
+   * length and arrival-detection semantics live in
+   * `useNewProposalArrival`; this field is the projection-layer carrier
+   * for the transient signal.
+   *
+   * Refinement: tasks/refinements/participant-ui/part_proposal_notification.md.
+   */
+  readonly isFlashing: boolean;
+  /**
    * Per-node Cytoscape box width (px), computed from the wording string
    * by `computeNodeDimensions`. The baseline stylesheet's
    * `width: 'data(width)'` mapper reads this. Refinement:
@@ -328,6 +350,16 @@ export interface ParticipantEdgeData {
    * for an edge with no recordable other-votes.
    */
   readonly otherVotes: readonly OtherVote[];
+  /**
+   * `true` iff this edge is currently in the new-proposal-arrival
+   * flash window. Sourced from the `flashIndex` argument. Symmetric
+   * with `ParticipantNodeData.isFlashing` — both kinds carry the
+   * transient signal because every proposal sub-kind targets either
+   * a node or an edge.
+   *
+   * Refinement: tasks/refinements/participant-ui/part_proposal_notification.md.
+   */
+  readonly isFlashing: boolean;
 }
 
 /**
@@ -398,6 +430,15 @@ function resolveFacetSlot(
  * independent so a caller (`GraphView`) can localize each separately
  * and concatenate.
  */
+/**
+ * Stable empty-flash-index reference. Returned literally (not a fresh
+ * `new Map()`) so downstream `useMemo` dep arrays bail out cleanly
+ * when the consumer has nothing to flash.
+ *
+ * Refinement: tasks/refinements/participant-ui/part_proposal_notification.md.
+ */
+export const EMPTY_FLASH_INDEX: ReadonlyMap<string, true> = Object.freeze(new Map<string, true>());
+
 export function projectGraph(
   events: readonly Event[],
   facetStatusIndex: FacetStatusIndex,
@@ -407,6 +448,7 @@ export function projectGraph(
   diagnosticHighlightIndex: DiagnosticHighlightIndex,
   ownVoteIndex: OwnVoteIndex,
   othersVoteIndex: OthersVoteIndex,
+  flashIndex: ReadonlyMap<string, true> = EMPTY_FLASH_INDEX,
 ): {
   nodes: ParticipantNodeElement[];
   edges: ParticipantEdgeElement[];
@@ -446,6 +488,7 @@ export function projectGraph(
           diagnosticHighlight: diagnosticHighlightIndex.nodes.get(event.payload.node_id) ?? null,
           ownVote: ownVoteIndex.nodes.get(event.payload.node_id) ?? 'none',
           otherVotes: othersVoteIndex.nodes.get(event.payload.node_id) ?? EMPTY_OTHER_VOTES_LIST,
+          isFlashing: flashIndex.get(event.payload.node_id) === true,
           width: dimensions.width,
           height: dimensions.height,
           textMaxWidth: dimensions.textMaxWidth,
@@ -472,6 +515,7 @@ export function projectGraph(
           diagnosticHighlight: diagnosticHighlightIndex.edges.get(event.payload.edge_id) ?? null,
           ownVote: ownVoteIndex.edges.get(event.payload.edge_id) ?? 'none',
           otherVotes: othersVoteIndex.edges.get(event.payload.edge_id) ?? EMPTY_OTHER_VOTES_LIST,
+          isFlashing: flashIndex.get(event.payload.edge_id) === true,
         },
       };
       edges.push(element);

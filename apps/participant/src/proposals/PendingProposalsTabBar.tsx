@@ -19,9 +19,24 @@ import { usePendingProposalsCount } from './usePendingProposalsCount';
 
 export interface PendingProposalsTabBarProps {
   sessionId: string;
+  /**
+   * Transient new-proposal-arrival flag threaded down from
+   * `<OperateRoute>`'s `useNewProposalArrival(sessionId)` call (per
+   * Decision §1 of `part_proposal_notification`: a single hook lives
+   * at the route, the badge + the graph both read from its output).
+   * `data-flashing` is emitted as the explicit `"true"` / `"false"`
+   * sentinel pair (Constraints — Playwright + Vitest probes match
+   * `[data-flashing="true"]` without absence-of-attribute ambiguity).
+   * Optional so existing test-mounts that do not exercise the arrival
+   * flash stay diff-stable.
+   */
+  isFlashing?: boolean;
 }
 
-export function PendingProposalsTabBar({ sessionId }: PendingProposalsTabBarProps): ReactElement {
+export function PendingProposalsTabBar({
+  sessionId,
+  isFlashing = false,
+}: PendingProposalsTabBarProps): ReactElement {
   const { t } = useTranslation();
   const currentTab = useUiStore((s) => s.currentTab);
   const setCurrentTab = useUiStore((s) => s.setCurrentTab);
@@ -40,7 +55,10 @@ export function PendingProposalsTabBar({ sessionId }: PendingProposalsTabBarProp
         <span
           data-testid="participant-proposals-tabbar-badge"
           data-count={count}
-          className="ml-2 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-slate-200 px-1.5 text-xs font-medium text-slate-700"
+          data-flashing={isFlashing ? 'true' : 'false'}
+          className={`ml-2 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-slate-200 px-1.5 text-xs font-medium text-slate-700${
+            isFlashing ? ' motion-safe:animate-pulse ring-2 ring-amber-500/80' : ''
+          }`}
         >
           {count}
         </span>

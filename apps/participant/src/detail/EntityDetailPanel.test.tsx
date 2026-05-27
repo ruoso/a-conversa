@@ -104,6 +104,7 @@ function makeNode(opts: Partial<ParticipantNodeData> & { id: string }): Particip
     diagnosticHighlight: opts.diagnosticHighlight ?? null,
     ownVote: opts.ownVote ?? 'none',
     otherVotes: opts.otherVotes ?? EMPTY_OTHER_VOTES_LIST,
+    isFlashing: opts.isFlashing ?? false,
     width: opts.width ?? 80,
     height: opts.height ?? 40,
     textMaxWidth: opts.textMaxWidth ?? 56,
@@ -123,6 +124,7 @@ function makeEdge(opts: Partial<ParticipantEdgeData> & { id: string }): Particip
     diagnosticHighlight: opts.diagnosticHighlight ?? null,
     ownVote: opts.ownVote ?? 'none',
     otherVotes: opts.otherVotes ?? EMPTY_OTHER_VOTES_LIST,
+    isFlashing: opts.isFlashing ?? false,
   };
 }
 

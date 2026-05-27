@@ -59,7 +59,7 @@ import { ParticipantStatusIndicator } from '../layout/ParticipantStatusIndicator
 import { GraphView } from '../graph/GraphView';
 import { EntityDetailPanel } from '../detail';
 import { ParticipantAxiomMarkButton } from '../detail/ParticipantAxiomMarkButton';
-import { PendingProposalsPane, PendingProposalsTabBar } from '../proposals';
+import { PendingProposalsPane, PendingProposalsTabBar, useNewProposalArrival } from '../proposals';
 import { useSelectionStore } from '../stores/selectionStore';
 import { useUiStore } from '../stores/uiStore';
 import { autoSelectionFromEvent } from '../graph/autoSelect';
@@ -73,7 +73,7 @@ import { projectDiagnosticHighlights } from '../graph/diagnosticHighlights';
 import { computeFacetStatuses } from '../graph/facetStatus';
 import { projectOwnVotes } from '../graph/ownVotes';
 import { projectOtherVotes } from '../graph/otherVotes';
-import { projectGraph } from '../graph/projectGraph';
+import { projectGraph, EMPTY_FLASH_INDEX } from '../graph/projectGraph';
 import { useWsStore } from '../ws/wsStore';
 
 /**
@@ -254,6 +254,22 @@ function OperateRouteAuthenticatedBody({
     [events, currentParticipantId],
   );
 
+  // New-proposal-arrival flash (per `part_proposal_notification`).
+  // Decision §1: single hook called once at the route — both the badge
+  // and the graph read from its output. The flash window auto-clears
+  // each entry after `FLASH_WINDOW_MS`; `activeFlashes` is keyed by
+  // element id (the Cytoscape element id space) so `projectGraph`'s
+  // `flashIndex` arg consumes it directly via `has(id)` semantics.
+  const arrival = useNewProposalArrival(id);
+  const flashIndex = useMemo<ReadonlyMap<string, true>>(() => {
+    if (arrival.activeFlashes.size === 0) return EMPTY_FLASH_INDEX;
+    const next = new Map<string, true>();
+    for (const entry of arrival.activeFlashes.values()) {
+      next.set(entry.elementId, true);
+    }
+    return next;
+  }, [arrival.activeFlashes]);
+
   // Final element projection — both children consume `nodes` + `edges`
   // verbatim from this output. `<GraphView>` re-wraps them as Cytoscape
   // `ElementDefinition`s; `<EntityDetailPanel>` reads the per-element
@@ -269,6 +285,7 @@ function OperateRouteAuthenticatedBody({
         diagnosticHighlightIndex,
         ownVoteIndex,
         othersVoteIndex,
+        flashIndex,
       ),
     [
       events,
@@ -279,6 +296,7 @@ function OperateRouteAuthenticatedBody({
       diagnosticHighlightIndex,
       ownVoteIndex,
       othersVoteIndex,
+      flashIndex,
     ],
   );
 
@@ -329,7 +347,7 @@ function OperateRouteAuthenticatedBody({
 
   return (
     <div data-testid="route-operate" className="flex h-full w-full flex-col">
-      <PendingProposalsTabBar sessionId={id} />
+      <PendingProposalsTabBar sessionId={id} isFlashing={arrival.isBadgeFlashing} />
       <div data-testid="route-operate-active-tab" className="flex flex-1 overflow-hidden">
         {currentTab === 'graph' ? (
           <div data-testid="route-operate-graph-region" className="flex h-full w-full flex-1">

@@ -495,6 +495,87 @@ test.describe('Participant operate route — pending-proposals tab seam', () => 
       await expect(
         row.locator('[data-testid="participant-pending-proposal-row-body"]'),
       ).toHaveCount(0);
+
+      // 11. `part_proposal_notification` extension — switch back to the
+      //     graph tab so the GraphView (with its DOM mirror rows) is
+      //     mounted; seed a FRESH `node-created` + `proposal` event into
+      //     the WS store; assert that BOTH the badge and the target node
+      //     mirror surface `data-flashing="true"` within the flash
+      //     window, then poll for the eventual auto-clear after the
+      //     window elapses (`FLASH_WINDOW_MS = 1200`). The badge pulse
+      //     class is verified at the unit layer; this step pins the
+      //     end-to-end "broadcast lands → arrival-detection hook fires →
+      //     projector stamps isFlashing → mirror surfaces the attr"
+      //     flow under the real compose stack.
+      await graphTab.click();
+      await expect(graphTab).toHaveAttribute('data-active', 'true');
+      await expect(page.getByTestId('participant-graph-root')).toBeVisible({ timeout: 15_000 });
+      const FLASH_NODE_ID = '77777777-7777-4777-8777-777777777777';
+      const FLASH_PROPOSAL_ID = '99999999-9999-4999-8999-999999999999';
+      await page.evaluate(
+        (seed: { sessionId: string; nodeId: string; proposalId: string; actorId: string }) => {
+          const store = (
+            window as unknown as {
+              __aConversaWsStore?: {
+                getState: () => {
+                  applyEvent: (event: unknown) => void;
+                };
+              };
+            }
+          ).__aConversaWsStore;
+          if (!store) {
+            throw new Error('__aConversaWsStore is not exposed on window');
+          }
+          store.getState().applyEvent({
+            id: '88888888-8888-4888-8888-888888888891',
+            sessionId: seed.sessionId,
+            sequence: 1_000_021,
+            kind: 'node-created',
+            actor: seed.actorId,
+            payload: {
+              node_id: seed.nodeId,
+              wording: 'Freshly arriving proposal target',
+              created_by: seed.actorId,
+              created_at: '2026-05-17T00:00:10.000Z',
+            },
+            createdAt: '2026-05-17T00:00:10.000Z',
+          });
+          store.getState().applyEvent({
+            id: seed.proposalId,
+            sessionId: seed.sessionId,
+            sequence: 1_000_022,
+            kind: 'proposal',
+            actor: seed.actorId,
+            payload: {
+              proposal: {
+                kind: 'capture-node',
+                node_id: seed.nodeId,
+                wording: 'Freshly arriving proposal target',
+              },
+            },
+            createdAt: '2026-05-17T00:00:10.000Z',
+          });
+        },
+        {
+          sessionId,
+          nodeId: FLASH_NODE_ID,
+          proposalId: FLASH_PROPOSAL_ID,
+          actorId: PROPOSER_ACTOR_ID,
+        },
+      );
+      // Within the flash window the badge + the node mirror both carry
+      // `data-flashing="true"`. The arrival-detection hook + projector +
+      // render is well under Playwright's default timeout.
+      await expect(badge).toHaveAttribute('data-flashing', 'true');
+      const flashedMirror = page.locator(
+        `[data-testid="participant-node-status"][data-node-id="${FLASH_NODE_ID}"]`,
+      );
+      await expect(flashedMirror).toHaveAttribute('data-flashing', 'true');
+      // Auto-clear after the flash window — poll with extra slack
+      // since the timer is a wall-clock `setTimeout(1200ms)` under real
+      // timers and the runtime has its own scheduling jitter.
+      await expect(badge).toHaveAttribute('data-flashing', 'false', { timeout: 5_000 });
+      await expect(flashedMirror).toHaveAttribute('data-flashing', 'false', { timeout: 5_000 });
     } finally {
       await context.close();
     }
