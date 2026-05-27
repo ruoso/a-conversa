@@ -87,6 +87,15 @@ task audience "Audience and broadcast" {
     task aud_cytoscape_init "Initialize Cytoscape.js viewport" {
       effort 1d
       allocate team
+      complete 100
+      note -8<-
+        Refinement: tasks/refinements/audience/aud_cytoscape_init.md
+
+        Ships <AudienceGraphView> (Cytoscape.js mount, breadthfirst layout, dangling-edge filter,
+        position cache, cyRef callback seam), pure projectGraph() projection, and duplicated
+        cytoscapeTestEnv helper. 26 Vitest cases (10 projection + 12 GraphView + 4 cytoscapeTestEnv).
+        App.tsx and route table unchanged; Playwright deferred to aud_session_url (Decision §9).
+      ->8-
     }
     task aud_clean_typography "Clean typography for video legibility" {
       effort 1d
@@ -208,6 +217,22 @@ task audience "Audience and broadcast" {
     task aud_session_url "Stable URL per session" {
       effort 1d
       allocate team
+      note -8<-
+        Refinement: tasks/refinements/audience/aud_session_url.md (to be authored)
+
+        Inherits cumulative four-leaf deferred-e2e debt per aud_cytoscape_init Decision §9:
+          1. From aud_ws_client Decision §10: authenticated visitor's event-applied broadcast
+             arrives and renders a visible affordance.
+          2. From aud_state_management Decision §7: live projection from real broadcast events
+             produces nodes/edges visible to a Playwright assertion.
+          3. From aud_anonymous_ws_subscribe: anonymous visitor sees a node-created arrive via
+             the anonymous-WS-upgrade path.
+          4. From aud_cytoscape_init: Cytoscape canvas mounts on /sessions/:id,
+             audience-graph-root testid is visible, seeded node-created lands as a visible
+             Cytoscape element (assert via WS-store events slice + canvas presence, NOT DOM text).
+        All four scenarios must be scoped in this task's refinement and covered by one
+        cumulative Playwright spec. Source: tasks/refinements/audience/aud_cytoscape_init.md §9.
+      ->8-
     }
     task aud_url_position_param "URL parameter for log position (for replay deep-linking)" {
       effort 1d
