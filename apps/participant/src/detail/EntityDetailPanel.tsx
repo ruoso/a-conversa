@@ -53,7 +53,12 @@ import { memo, useEffect, useMemo, type ReactElement, type ReactNode } from 'rea
 import { useTranslation } from 'react-i18next';
 import type { Event } from '@a-conversa/shared-types';
 
-import { FacetPill, PILL_BASE_CLASSNAME, PILL_STATUS_CLASSNAME } from '@a-conversa/shell';
+import {
+  AxiomMarkBadge,
+  FacetPill,
+  PILL_BASE_CLASSNAME,
+  PILL_STATUS_CLASSNAME,
+} from '@a-conversa/shell';
 import type { Annotation } from '../graph/annotations';
 import type { AxiomMark } from '../graph/axiomMarks';
 import type { FacetName, FacetStatus, FacetStatusIndex } from '../graph/facetStatus';
@@ -62,7 +67,6 @@ import type { OthersVoteIndex } from '../graph/otherVotes';
 import type { ParticipantEdgeData, ParticipantNodeData } from '../graph/projectGraph';
 import { useSelectionStore, type Selection } from '../stores/selectionStore';
 
-import { AxiomMarkBadge } from './AxiomMarkBadge';
 import { lookupEntity } from './lookupEntity';
 import {
   EMPTY_PARTICIPANT_ROSTER,
@@ -639,14 +643,17 @@ function AxiomMarkAttributionSection(props: {
   // Dedup by participant id (a participant may have arrived at the
   // axiom mark through multiple proposal envelopes — only the most
   // recent is the active mark; the panel surfaces ONE badge per
-  // participant). Preserve first-encounter order.
+  // participant). Preserve first-encounter order; retain the first-seen
+  // `AxiomMark` reference per participant so the canonical shell
+  // `<AxiomMarkBadge>` receives a real mark (its `nodeId` +
+  // `participantId` feed the canonical testid + chromatic class).
   const seen = new Set<string>();
-  const attributions: { participantId: string; screenName: string }[] = [];
+  const attributions: { mark: AxiomMark; screenName: string }[] = [];
   for (const mark of props.marks) {
     if (seen.has(mark.participantId)) continue;
     seen.add(mark.participantId);
     attributions.push({
-      participantId: mark.participantId,
+      mark,
       screenName: screenNameFor(props.roster, mark.participantId),
     });
   }
@@ -661,8 +668,8 @@ function AxiomMarkAttributionSection(props: {
       >
         {attributions.map((attribution) => (
           <AxiomMarkBadge
-            key={attribution.participantId}
-            participantId={attribution.participantId}
+            key={attribution.mark.participantId}
+            mark={attribution.mark}
             screenName={attribution.screenName}
           />
         ))}

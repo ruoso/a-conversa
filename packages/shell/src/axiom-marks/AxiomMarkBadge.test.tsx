@@ -150,3 +150,55 @@ describe('AxiomMarkBadge — per-participant deterministic color', () => {
     expect(b.className).toContain(bColor.bg);
   });
 });
+
+// `screenName`-branch cases per
+// `tasks/refinements/shell-package/shell_axiom_mark_panel_badge_consolidation.md`.
+// When the optional `screenName` prop is provided the badge resolves
+// `title` + `aria-label` via the `methodology.axiomMarkBadge.*` cluster
+// (screen-name surface) instead of the default
+// `methodology.axiomMark.*` cluster (UUID surface). The testid +
+// `data-participant-id` + chromatic class triple are branch-independent.
+describe('AxiomMarkBadge — screenName branch', () => {
+  it('sets the title attribute to the resolved methodology.axiomMarkBadge.tooltip (screen-name literal in en-US)', async () => {
+    await render(<AxiomMarkBadge mark={makeMark()} screenName="alice" />);
+    const badge = screen.getByTestId(`axiom-mark-badge-${NODE_ID}-${PARTICIPANT_A}`);
+    expect(badge.getAttribute('title')).toBe('alice');
+  });
+
+  it('resolves the aria-label through methodology.axiomMarkBadge.srLabel (containing the screen name)', async () => {
+    await render(<AxiomMarkBadge mark={makeMark()} screenName="alice" />);
+    const badge = screen.getByTestId(`axiom-mark-badge-${NODE_ID}-${PARTICIPANT_A}`);
+    expect(badge.getAttribute('aria-label')).toBe('Bedrock by alice');
+  });
+
+  it('keeps the canonical testid + data-participant-id + chromatic class triple invariant across the branch toggle', async () => {
+    const expectedColor = axiomMarkColorFor(PARTICIPANT_A);
+    const { unmount } = await render(<AxiomMarkBadge mark={makeMark()} />);
+    const withoutScreenName = screen.getByTestId(`axiom-mark-badge-${NODE_ID}-${PARTICIPANT_A}`);
+    const baselineClassName = withoutScreenName.className;
+    expect(withoutScreenName.getAttribute('data-participant-id')).toBe(PARTICIPANT_A);
+    unmount();
+    await render(<AxiomMarkBadge mark={makeMark()} screenName="alice" />);
+    const withScreenName = screen.getByTestId(`axiom-mark-badge-${NODE_ID}-${PARTICIPANT_A}`);
+    expect(withScreenName.getAttribute('data-participant-id')).toBe(PARTICIPANT_A);
+    expect(withScreenName.className).toBe(baselineClassName);
+    expect(withScreenName.className).toContain(expectedColor.bg);
+    expect(withScreenName.className).toContain(expectedColor.text);
+    expect(withScreenName.className).toContain(expectedColor.ring);
+  });
+
+  const SR_LABEL_BY_LOCALE = {
+    'en-US': 'Bedrock by alice',
+    'pt-BR': 'Pedra fundamental de alice',
+    'es-419': 'Fundamento de alice',
+  } as const;
+
+  for (const locale of ['en-US', 'pt-BR', 'es-419'] as const) {
+    it(`resolves the screen-name aria-label for ${locale}`, async () => {
+      await i18next.changeLanguage(locale);
+      await render(<AxiomMarkBadge mark={makeMark()} screenName="alice" />);
+      const badge = screen.getByTestId(`axiom-mark-badge-${NODE_ID}-${PARTICIPANT_A}`);
+      expect(badge.getAttribute('aria-label')).toBe(SR_LABEL_BY_LOCALE[locale]);
+    });
+  }
+});

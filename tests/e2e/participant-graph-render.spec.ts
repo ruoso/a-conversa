@@ -2946,7 +2946,7 @@ test.describe('Participant operate route — read-mostly graph render', () => {
       // chromatic per-participant badge (per
       // `part_entity_detail_panel_chromatic_axiom_mark_badge`).
       const axiomBadge = page.locator(
-        `[data-testid="participant-detail-panel-axiom-mark-badge-${GRACE_USER_ID}"]`,
+        `[data-testid="axiom-mark-badge-${NODE_A_ID}-${GRACE_USER_ID}"]`,
       );
       await expect(axiomBadge).toBeVisible();
       await expect(axiomBadge).toHaveAttribute('data-participant-id', GRACE_USER_ID);

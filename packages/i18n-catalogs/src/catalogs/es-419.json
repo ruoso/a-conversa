@@ -102,6 +102,10 @@
       "pendingTooltip": "Marca de axioma pendiente por {participantId}",
       "pendingSrLabel": "Marca de axioma pendiente del participante {participantId} — aún no confirmada"
     },
+    "axiomMarkBadge": {
+      "tooltip": "{screenName}",
+      "srLabel": "Fundamento de {screenName}"
+    },
     "voteIndicator": {
       "label": "Participante {participantId} votó {choice}"
     },
@@ -671,10 +675,6 @@
         "otherVotes": "Otros participantes",
         "vote": "Emite tu voto",
         "markAxiom": "Mis axiomas"
-      },
-      "axiomMarkBadge": {
-        "tooltip": "{screenName}",
-        "srLabel": "Fundamento de {screenName}"
       },
       "facetRow": {
         "awaitingProposal": "Esperando una propuesta",

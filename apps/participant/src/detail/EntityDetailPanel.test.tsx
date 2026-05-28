@@ -463,12 +463,12 @@ describe('EntityDetailPanel — axiom-mark attribution', () => {
     });
     const attribution = screen.getByTestId('participant-detail-panel-axiom-mark-attribution');
     const badges = attribution.querySelectorAll<HTMLElement>(
-      '[data-testid^="participant-detail-panel-axiom-mark-badge-"]',
+      `[data-testid^="axiom-mark-badge-${NODE_A_ID}-"]`,
     );
     expect(badges.length).toBe(2);
 
     const aliceBadge = attribution.querySelector<HTMLElement>(
-      `[data-testid="participant-detail-panel-axiom-mark-badge-${ALICE_ID}"]`,
+      `[data-testid="axiom-mark-badge-${NODE_A_ID}-${ALICE_ID}"]`,
     );
     expect(aliceBadge).not.toBeNull();
     expect(aliceBadge!.getAttribute('data-participant-id')).toBe(ALICE_ID);
@@ -476,7 +476,7 @@ describe('EntityDetailPanel — axiom-mark attribution', () => {
     expect(aliceBadge!.className).toContain(axiomMarkColorFor(ALICE_ID).bg);
 
     const benBadge = attribution.querySelector<HTMLElement>(
-      `[data-testid="participant-detail-panel-axiom-mark-badge-${BEN_ID}"]`,
+      `[data-testid="axiom-mark-badge-${NODE_A_ID}-${BEN_ID}"]`,
     );
     expect(benBadge).not.toBeNull();
     expect(benBadge!.getAttribute('data-participant-id')).toBe(BEN_ID);
@@ -520,7 +520,7 @@ describe('EntityDetailPanel — axiom-mark attribution', () => {
       nodeAxiomMarkIndex: marks,
       events,
     });
-    const firstBadge = screen.getByTestId(`participant-detail-panel-axiom-mark-badge-${ALICE_ID}`);
+    const firstBadge = screen.getByTestId(`axiom-mark-badge-${NODE_A_ID}-${ALICE_ID}`);
     const firstClassName = firstBadge.className;
     const aliceColor = axiomMarkColorFor(ALICE_ID);
     expect(firstClassName).toContain(aliceColor.bg);
@@ -537,7 +537,7 @@ describe('EntityDetailPanel — axiom-mark attribution', () => {
       nodeAxiomMarkIndex: marks,
       events,
     });
-    const secondBadge = screen.getByTestId(`participant-detail-panel-axiom-mark-badge-${ALICE_ID}`);
+    const secondBadge = screen.getByTestId(`axiom-mark-badge-${NODE_B_ID}-${ALICE_ID}`);
     expect(secondBadge.className).toBe(firstClassName);
   });
 

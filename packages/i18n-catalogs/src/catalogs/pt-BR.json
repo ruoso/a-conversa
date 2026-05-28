@@ -102,6 +102,10 @@
       "pendingTooltip": "Marca de axioma pendente por {participantId}",
       "pendingSrLabel": "Marca de axioma pendente do participante {participantId} — ainda não confirmada"
     },
+    "axiomMarkBadge": {
+      "tooltip": "{screenName}",
+      "srLabel": "Pedra fundamental de {screenName}"
+    },
     "voteIndicator": {
       "label": "Participante {participantId} votou {choice}"
     },
@@ -671,10 +675,6 @@
         "otherVotes": "Outros participantes",
         "vote": "Registre seu voto",
         "markAxiom": "Meus axiomas"
-      },
-      "axiomMarkBadge": {
-        "tooltip": "{screenName}",
-        "srLabel": "Pedra fundamental de {screenName}"
       },
       "facetRow": {
         "awaitingProposal": "Aguardando proposta",

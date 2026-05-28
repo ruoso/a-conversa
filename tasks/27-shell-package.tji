@@ -129,6 +129,7 @@ task shell_package "Shell package (@aconversa/shell)" {
   task shell_axiom_mark_panel_badge_consolidation "Consolidate apps/participant/src/detail/AxiomMarkBadge.tsx into the canonical @a-conversa/shell <AxiomMarkBadge> once prop/i18n shape is aligned" {
     effort 0.5d
     allocate team
+    complete 100
     depends !shell_axiom_marks_extraction
     note -8<-
       Source of debt: tasks/refinements/shell-package/shell_axiom_marks_extraction.md Status block.

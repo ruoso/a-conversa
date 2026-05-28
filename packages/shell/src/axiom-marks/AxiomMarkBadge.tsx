@@ -13,16 +13,15 @@
 //   prefix is the moderator's `axiom-mark-badge-{nodeId}-{participantId}`
 //   shape per the refinement's acceptance criteria.
 //
-//   The participant's panel-side `<AxiomMarkBadge>` at
-//   `apps/participant/src/detail/AxiomMarkBadge.tsx` is NOT subsumed by
-//   this canonical badge — that component takes
-//   `{participantId, screenName}` and uses the
-//   `participant.detailPanel.axiomMarkBadge.srLabel` i18n key (resolving
-//   screen names locally via the participant roster), which is a
-//   semantically distinct surface from the methodology-keyed
-//   `methodology.axiomMark.{tooltip,srLabel}` shape this badge ships.
-//   Unifying that copy would be a behavior change, not a refactor —
-//   tracked as the follow-up `shell_axiom_mark_panel_badge_consolidation`.)
+// Refinement: tasks/refinements/shell-package/shell_axiom_mark_panel_badge_consolidation.md
+//   (Subsumed the participant's panel-side badge by adding an optional
+//   `screenName?: string` prop. When provided, the badge resolves
+//   `title` + `aria-label` via the `methodology.axiomMarkBadge.{tooltip,
+//   srLabel}` cluster (with `{screenName}` substitution) — for callers
+//   that have a participants projection locally (the participant detail
+//   panel today). When omitted, the badge keeps the historical UUID-keyed
+//   methodology surface — for graph callers without a roster (moderator
+//   `<StatementNode>` + audience `<AxiomMarkOverlay>`).)
 //
 // ADRs:
 //   - 0004 (the badge mounts inside whichever graph subtree the surface
@@ -46,10 +45,13 @@
 //     `facet-pill/participant-color.ts` module (deterministic six-bucket
 //     hash; same participant → same color across surfaces).
 //
-// Per-participant attribution: today the tooltip / `aria-label` carries
-// the raw participant UUID via ICU substitution. The screen-name swap
-// is deferred to when the participants projection lands; the testids
-// and the `data-participant-id` seam don't change.
+// Per-participant attribution: when no `screenName` is passed the tooltip /
+// `aria-label` carry the raw participant UUID via the
+// `methodology.axiomMark.{tooltip,srLabel}` cluster (graph callers without
+// a roster); when `screenName` is passed they carry the screen name via
+// the `methodology.axiomMarkBadge.{tooltip,srLabel}` cluster (panel
+// callers with a roster). Testids + `data-participant-id` are
+// branch-independent.
 
 import { memo, type ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -63,15 +65,22 @@ import type { AxiomMark } from './axiom-marks.js';
 
 export interface AxiomMarkBadgeProps {
   readonly mark: AxiomMark;
+  readonly screenName?: string;
 }
 
 function AxiomMarkBadgeImpl(props: AxiomMarkBadgeProps): ReactElement {
-  const { mark } = props;
+  const { mark, screenName } = props;
   const { t } = useTranslation();
   const color = axiomMarkColorFor(mark.participantId);
 
-  const tooltip = t('methodology.axiomMark.tooltip', { participantId: mark.participantId });
-  const srLabel = t('methodology.axiomMark.srLabel', { participantId: mark.participantId });
+  const tooltip =
+    screenName !== undefined
+      ? t('methodology.axiomMarkBadge.tooltip', { screenName })
+      : t('methodology.axiomMark.tooltip', { participantId: mark.participantId });
+  const srLabel =
+    screenName !== undefined
+      ? t('methodology.axiomMarkBadge.srLabel', { screenName })
+      : t('methodology.axiomMark.srLabel', { participantId: mark.participantId });
 
   return (
     <span

@@ -5,7 +5,6 @@
 //              `apps/participant/src/detail/`; the barrel mirrors the
 //              existing `apps/participant/src/stores/index.ts` pattern.)
 
-export { AxiomMarkBadge, type AxiomMarkBadgeProps } from './AxiomMarkBadge';
 export { EntityDetailPanel, type EntityDetailPanelProps } from './EntityDetailPanel';
 export {
   EMPTY_PARTICIPANT_ROSTER,
