@@ -557,6 +557,33 @@ SESSION_LIMIT_RE = re.compile(
 )
 
 
+# Substrings in the final result text that mark a transient API failure
+# worth retrying (socket dropped mid-stream, gateway hiccup, etc.). The
+# wrapper's exponential backoff handles the actual retry — this just
+# distinguishes "retry" from "hard fail". 5xx-ish phrases included since
+# the CLI sometimes surfaces upstream errors with no api_error_status.
+TRANSIENT_API_ERROR_PATTERNS: tuple[str, ...] = (
+    "socket connection was closed",
+    "socket hang up",
+    "ECONNRESET",
+    "ETIMEDOUT",
+    "fetch failed",
+    "Connection error",
+    "Internal Server Error",
+    "Bad Gateway",
+    "Service Unavailable",
+    "Gateway Timeout",
+    "overloaded_error",
+)
+
+
+def _looks_transient(text: str) -> bool:
+    """True if `text` (the final assistant `result` field on a failing run)
+    matches a known transient-failure signature. Case-insensitive."""
+    low = text.lower()
+    return any(pat.lower() in low for pat in TRANSIENT_API_ERROR_PATTERNS)
+
+
 class SessionLimitError(RuntimeError):
     """Raised when `claude -p` exits because the account's session limit was
     hit. Carries the parsed reset datetime so callers can sleep until then."""
@@ -614,22 +641,76 @@ def wait_until_reset(reset_at: datetime, buffer_seconds: int = 30) -> None:
     print_wrapped(f"{GREEN}⏵  resuming{RESET}")
 
 
+# Backoff schedule (seconds) for transient API errors — socket drops, 5xx
+# replies, etc. that aren't session-limit 429s. After the last entry is
+# consumed we give up and propagate the underlying RuntimeError so the run
+# fails loudly rather than burning hours in a retry loop.
+TRANSIENT_BACKOFF_SECONDS: list[int] = [30, 60, 120, 300, 600]
+
+
+class TransientApiError(RuntimeError):
+    """A non-fatal API error that should be retried with backoff (socket
+    disconnect mid-stream, transient 5xx, etc.). Distinct from
+    SessionLimitError because the retry strategy is exponential backoff
+    rather than waiting for a wall-clock reset."""
+
+    def __init__(self, message: str):
+        super().__init__(message)
+        self.message = message
+
+
+def _archive_failed_log(log_path: Path, attempt: int) -> None:
+    failed = log_path.with_suffix(log_path.suffix + f".attempt-{attempt}")
+    try:
+        log_path.rename(failed)
+    except OSError:
+        pass
+
+
 def run_claude_with_session_retry(prompt: str, log_path: Path, model: str) -> str:
-    """Wrap run_claude with auto-retry on SessionLimitError. Failed-attempt
-    logs are preserved with `.attempt-N` suffix so the post-mortem chain
-    survives the retry."""
+    """Wrap run_claude with auto-retry on SessionLimitError and
+    TransientApiError. Failed-attempt logs are preserved with `.attempt-N`
+    suffix so the post-mortem chain survives the retry. Session limits
+    sleep until the wall-clock reset; transient API errors use exponential
+    backoff (`TRANSIENT_BACKOFF_SECONDS`) and eventually give up."""
     attempt = 0
+    transient_attempts = 0
     while True:
         try:
             return run_claude(prompt, log_path, model)
         except SessionLimitError as e:
             attempt += 1
-            failed = log_path.with_suffix(log_path.suffix + f".attempt-{attempt}")
-            try:
-                log_path.rename(failed)
-            except OSError:
-                pass
+            _archive_failed_log(log_path, attempt)
             wait_until_reset(e.reset_at)
+        except TransientApiError as e:
+            if transient_attempts >= len(TRANSIENT_BACKOFF_SECONDS):
+                print_wrapped(
+                    f"{RED}!! transient API error retries exhausted "
+                    f"({transient_attempts} attempts) — giving up{RESET}"
+                )
+                raise RuntimeError(
+                    f"transient API error after "
+                    f"{transient_attempts} retries: {e.message}; "
+                    f"see {log_path}"
+                ) from e
+            delay = TRANSIENT_BACKOFF_SECONDS[transient_attempts]
+            attempt += 1
+            transient_attempts += 1
+            _archive_failed_log(log_path, attempt)
+            print_wrapped(
+                f"{YELLOW}⚠  transient API error "
+                f"(attempt {transient_attempts}/"
+                f"{len(TRANSIENT_BACKOFF_SECONDS)}): {e.message}{RESET}"
+            )
+            print_wrapped(
+                f"{YELLOW}⏸  backing off {delay}s before retry{RESET}"
+            )
+            try:
+                time.sleep(delay)
+            except KeyboardInterrupt:
+                print_wrapped(f"{RED}⏵  backoff interrupted{RESET}")
+                raise
+            print_wrapped(f"{GREEN}⏵  retrying{RESET}")
 
 
 def run_claude(prompt: str, log_path: Path, model: str) -> str:
@@ -646,6 +727,11 @@ def run_claude(prompt: str, log_path: Path, model: str) -> str:
     # SessionLimitError so the outer wrapper can sleep + retry.
     session_reset: Optional[datetime] = None
     session_message: str = ""
+    # Set when a `result` event reports `is_error: true` with a non-429
+    # status (or null) and a message that looks like a transient API
+    # failure — socket-closed mid-stream, transient 5xx, etc. Converted
+    # to TransientApiError after rc!=0 so the wrapper can back off + retry.
+    transient_message: Optional[str] = None
     # Task tool_use_id -> chain of labels (e.g. ["A"], ["A", "B"] for nested).
     # When a Task tool_use is seen, we mint a new label (A, B, C, ...) and
     # register the entry. While the sub-agent runs, the parent emits
@@ -738,14 +824,17 @@ def run_claude(prompt: str, log_path: Path, model: str) -> str:
                 # carry parent_tool_use_id and shouldn't clobber final_text.
                 if event.get("type") == "result" and not parent_ref:
                     final_text = event.get("result", "")
-                    if (
-                        event.get("is_error")
-                        and event.get("api_error_status") == 429
-                    ):
-                        reset = parse_session_limit_reset(final_text or "")
-                        if reset is not None:
-                            session_reset = reset
-                            session_message = (final_text or "").strip()
+                    if event.get("is_error"):
+                        status = event.get("api_error_status")
+                        if status == 429:
+                            reset = parse_session_limit_reset(
+                                final_text or ""
+                            )
+                            if reset is not None:
+                                session_reset = reset
+                                session_message = (final_text or "").strip()
+                        elif _looks_transient(final_text or ""):
+                            transient_message = (final_text or "").strip()
             rc = proc.wait()
             logf.write(f"\n---RC---\n{rc}\n")
     except KeyboardInterrupt:
@@ -758,6 +847,8 @@ def run_claude(prompt: str, log_path: Path, model: str) -> str:
     if rc != 0:
         if session_reset is not None:
             raise SessionLimitError(session_reset, session_message)
+        if transient_message is not None:
+            raise TransientApiError(transient_message)
         raise RuntimeError(f"claude -p failed (rc={rc}); see {log_path}")
     if final_text is None:
         raise RuntimeError(f"claude -p produced no `result` event; see {log_path}")
@@ -825,6 +916,106 @@ def load_context_summary() -> str:
 def save_context_summary(text: str) -> None:
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     CONTEXT_FILE.write_text(text.rstrip() + "\n")
+
+
+def dispatch_manifest_path(iteration: int) -> Path:
+    return STATE_DIR / f"dispatch-iter-{iteration:04d}.json"
+
+
+def save_dispatch_manifest(
+    iteration: int, template_name: str, template_vars: dict
+) -> None:
+    """Persist the orchestrator's dispatch decision so `--resume` can rerun a
+    sub-agent without re-asking the orchestrator. Written before the
+    sub-agent is spawned each iteration."""
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    dispatch_manifest_path(iteration).write_text(
+        json.dumps(
+            {"template": template_name, "vars": template_vars},
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n"
+    )
+
+
+def load_dispatch_manifest(iteration: int) -> Optional[dict]:
+    """Load the persisted dispatch manifest for `iteration`. Falls back to
+    parsing the orchestrator log's final envelope for iterations that
+    predate the manifest writer (so `--resume` works against old logs)."""
+    path = dispatch_manifest_path(iteration)
+    if path.exists():
+        return json.loads(path.read_text())
+    orch_log = LOG_DIR / f"iter-{iteration:04d}-orchestrator.log"
+    if not orch_log.exists():
+        return None
+    try:
+        result = extract_final_result_from_log(orch_log)
+        envelope = parse_envelope(result)
+    except (ValueError, json.JSONDecodeError):
+        return None
+    next_spec = envelope.get("next")
+    if not isinstance(next_spec, dict):
+        return None
+    return {
+        "template": next_spec.get("template", ""),
+        "vars": next_spec.get("vars", {}) or {},
+    }
+
+
+def extract_final_result_from_log(log_path: Path) -> str:
+    """Walk a `run_claude` stream-json log and return the top-level
+    `result` event's `result` field (the sub-agent's final assistant
+    message). Skips sub-agent result events (those carry
+    `parent_tool_use_id`). Raises ValueError if no qualifying result
+    event is present."""
+    text = log_path.read_text()
+    final: Optional[str] = None
+    for line in text.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if (
+            event.get("type") == "result"
+            and not event.get("parent_tool_use_id")
+        ):
+            final = event.get("result", "")
+    if final is None:
+        raise ValueError(f"no top-level result event in {log_path}")
+    return final
+
+
+# Filename pattern for sub-agent + closer + fixer logs that `--resume` can
+# replay. Captures (iteration, phase) where phase is e.g. "implementer",
+# "closer", "refinement_writer", "fixer-2", "orchestrator".
+RESUME_LOG_RE = re.compile(r"^iter-(\d+)-(.+)\.log$")
+
+
+def parse_resume_target(log_path: Path) -> tuple[int, str]:
+    m = RESUME_LOG_RE.match(log_path.name)
+    if not m:
+        raise ValueError(
+            f"cannot parse iteration/phase from log filename: {log_path.name} "
+            f"(expected iter-NNNN-<phase>.log)"
+        )
+    return int(m.group(1)), m.group(2)
+
+
+def read_prompt_from_log(log_path: Path) -> str:
+    """Extract the original prompt body written between `---PROMPT---` and
+    `---STREAM---` markers by `run_claude`. Raises ValueError if the markers
+    aren't found (e.g. the log is from a different format)."""
+    text = log_path.read_text()
+    m = re.search(
+        r"^---PROMPT---\n(.*?)\n\n---STREAM---\n", text, re.DOTALL | re.MULTILINE
+    )
+    if not m:
+        raise ValueError(f"no ---PROMPT--- section in {log_path}")
+    return m.group(1)
 
 
 def append_context_failure(block: str) -> None:
@@ -1020,7 +1211,110 @@ def run_post_implementer_chain(
         # Loop back: re-run the verification chain from the top.
 
 
+def parse_args(argv: list[str]) -> "argparse.Namespace":
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description=(
+            "Orchestrator driver. With no flags, runs the normal "
+            "orchestrator → sub-agent loop starting from iteration 0. "
+            "Use --resume to replay a specific sub-agent step from its "
+            "log (e.g. when a transient failure killed the prior run)."
+        )
+    )
+    parser.add_argument(
+        "--resume",
+        type=Path,
+        default=None,
+        help=(
+            "Path to an iter-NNNN-<phase>.log file. The driver replays "
+            "that step using the prompt persisted in the log, then "
+            "continues the normal loop from the next iteration. The "
+            "previous log is preserved as .attempt-N."
+        ),
+    )
+    parser.add_argument(
+        "--note",
+        type=str,
+        default="",
+        help=(
+            "Optional operator note prepended to the resumed sub-agent's "
+            "prompt. Useful for telling the sub-agent it is continuing "
+            "work that was interrupted."
+        ),
+    )
+    return parser.parse_args(argv)
+
+
+def replay_step(
+    log_path: Path,
+    note: str,
+) -> tuple[int, str, str, dict]:
+    """Re-run the sub-agent recorded in `log_path` using its persisted
+    prompt (optionally with a leading operator note). Archives the
+    existing log as `.attempt-N` and writes a fresh log at the same
+    name. Returns (iteration, phase, sub_stdout, template_vars). The
+    `template_vars` dict is loaded from the persisted dispatch manifest
+    so callers can drive the post-implementer chain; it is empty if no
+    manifest exists for this iteration (e.g. resuming an orchestrator
+    step)."""
+    iteration, phase = parse_resume_target(log_path)
+    original_prompt = read_prompt_from_log(log_path)
+    replay_prompt = original_prompt
+    if note:
+        replay_prompt = (
+            f"## Note from operator (resume)\n\n{note}\n\n"
+            f"---\n\n{original_prompt}"
+        )
+
+    # Archive the prior log so the failed run is preserved for post-mortem
+    # alongside the new attempt. Use the same numbering convention the
+    # session-retry wrapper uses.
+    if log_path.exists():
+        for n in range(1, 1000):
+            candidate = log_path.with_suffix(log_path.suffix + f".attempt-{n}")
+            if not candidate.exists():
+                log_path.rename(candidate)
+                break
+
+    # Resolve model from the manifest's template when available; fall back
+    # to the phase name (covers orchestrator/closer/implementer/etc.) and
+    # finally to SUB_MODEL.
+    manifest = load_dispatch_manifest(iteration)
+    template_vars: dict = {}
+    if manifest is not None:
+        template_vars = manifest.get("vars", {}) or {}
+        template_for_model = manifest.get("template", phase)
+    else:
+        template_for_model = phase
+    if phase == "orchestrator":
+        model = ORCH_MODEL
+    elif phase == "closer":
+        model = CLOSER_MODEL
+    else:
+        model = model_for_template(template_for_model)
+
+    title = f"resume iter {iteration} · {phase}"
+    task_id = template_vars.get("task_id", "")
+    if task_id:
+        title += f" · {task_id}"
+    print_wrapped(banner(title))
+    print_wrapped(f"  {DIM}log: {log_path} · model: {model}{RESET}")
+    if note:
+        print_wrapped(f"  {DIM}↳ operator note: {note}{RESET}")
+    if template_vars:
+        for line in fmt_vars_passed(template_vars):
+            print_wrapped(line)
+
+    sub_stdout = run_claude_with_session_retry(replay_prompt, log_path, model)
+    for line in fmt_returned(sub_stdout):
+        print_wrapped(line)
+    return iteration, phase, sub_stdout, template_vars
+
+
 def main() -> int:
+    args = parse_args(sys.argv[1:])
+
     if not SYSTEM_PROMPT_PATH.exists():
         print(f"missing system prompt: {SYSTEM_PROMPT_PATH}", file=sys.stderr)
         return 2
@@ -1034,6 +1328,22 @@ def main() -> int:
         )
     last_output: Optional[str] = None
     iteration = 0
+
+    if args.resume is not None:
+        resume_iter, phase, sub_stdout, template_vars = replay_step(
+            args.resume, args.note
+        )
+        # If the resumed step is the implementer, the post-implementer
+        # chain (verify → fixer → closer) still needs to run for that
+        # iteration so the work lands on disk as a commit. Other phases
+        # (orchestrator, refinement_writer, closer, fixer-N) don't have
+        # an automatic tail attached at this layer.
+        if phase == "implementer":
+            sub_stdout = run_post_implementer_chain(
+                resume_iter, template_vars, sub_stdout
+            )
+        last_output = sub_stdout
+        iteration = resume_iter + 1
 
     while True:
         # 1. Orchestrator turn
@@ -1062,6 +1372,7 @@ def main() -> int:
         template_name = next_spec["template"]
         template_vars = next_spec.get("vars", {})
         task_id = template_vars.get("task_id", "")
+        save_dispatch_manifest(iteration, template_name, template_vars)
         template = load_template(template_name)
         sub_prompt = render_template(template, template_vars)
         sub_log = LOG_DIR / f"iter-{iteration:04d}-{template_name}.log"
