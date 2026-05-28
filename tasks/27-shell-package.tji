@@ -131,6 +131,7 @@ task shell_package "Shell package (@aconversa/shell)" {
   task extract_votes_by_facet_projector "Lift projectVotesByFacet into @a-conversa/shell once participant's otherVotesByFacet shape converges with moderator's projector and an audience caller materializes" {
     effort 0.5d
     allocate team
+    complete 100
     depends !extract_cytoscape_projectors
     note -8<-
       Lift `projectVotesByFacet` from `apps/moderator/src/graph/selectors.ts` into
@@ -146,6 +147,25 @@ task shell_package "Shell package (@aconversa/shell)" {
       rationale.
 
       Source of debt: tasks/refinements/shell-package/extract_cytoscape_projectors.md Decision §3.
+    ->8-
+  }
+
+  task extract_votes_by_facet_projector_v2 "Lift aligned projectVotesByFacet into @a-conversa/shell once data_and_methodology.align_vote_facet_target_vocabulary lands AND a third caller (audience per-voter rendering) materializes" {
+    effort 0.5d
+    allocate team
+    depends !extract_votes_by_facet_projector, data_and_methodology.align_vote_facet_target_vocabulary
+    note -8<-
+      Lift the now-aligned `projectVotesByFacet` into `packages/shell/src/votes-by-facet/`; rewire
+      all three callers' imports (moderator, participant, audience). The participant's
+      `projectOtherVotesByFacet` collapses to a thin wrapper adding the self-filter on top of the
+      shell-lifted projector (or both projectors land in the shell — alignment-task decides the shape).
+
+      Trigger: fires when BOTH (a) `data_and_methodology.align_vote_facet_target_vocabulary` is
+      `complete 100` AND (b) a third caller (audience surface, or replay-test, or root-app composite)
+      lands per-facet-vote rendering against the now-aligned projector. The future audience-leaf
+      dependency edge is added when it materializes.
+
+      Source of debt: tasks/refinements/shell-package/extract_votes_by_facet_projector.md Decisions §1–§3.
     ->8-
   }
 

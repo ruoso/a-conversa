@@ -384,6 +384,23 @@ task data_and_methodology "Data and methodology" {
     }
   }
 
+  task align_vote_facet_target_vocabulary "Decide whether projectVotesByFacet (moderator) + projectOtherVotesByFacet (participant) should agree on a single proposal-kind → facet-target vocabulary; land the agreed vocabulary in both surfaces' helpers + a Cucumber pin" {
+    effort 0.5d
+    allocate team
+    note -8<-
+      Source of debt: tasks/refinements/shell-package/extract_votes_by_facet_projector.md Decision §1.
+
+      Today the moderator's voteTargetOf (apps/moderator/src/graph/selectors.ts:517-535) handles
+      amend-node but not capture-node; the participant's facetTargetOf
+      (apps/participant/src/proposals/otherVotesByFacet.ts:31-46) handles capture-node but not
+      amend-node. Decide whether both surfaces should count both kinds, only the surface-native
+      kinds, or some other rule, and land the agreed vocabulary in both helpers + a Cucumber
+      scenario pinning the vote-count behavior at the cross-surface seam.
+
+      Ripe immediately — the misalignment exists today; closing it is independent of audience work.
+    ->8-
+  }
+
   task replay_primitive "Render-at-log-position primitive" {
     depends !projection
     task project_at_position "Project the graph state at any event-log position" {
