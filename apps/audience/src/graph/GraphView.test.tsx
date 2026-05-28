@@ -87,6 +87,20 @@
 //   subscription set, and per-element placement are pinned in
 //   `AxiomMarkOverlay.test.tsx`.)
 //
+// Refinement: tasks/refinements/audience/aud_meta_disagreement_split.md
+//   (Acceptance criteria — 4 additional cases (oo–rr) pin the
+//   meta-disagreement-state per-rollup selector entries (structural × 2)
+//   AND the mount-time computed-style resolution (× 2): `STYLESHEET`
+//   carries a `node[rollupStatus = 'meta-disagreement']` entry whose
+//   `border-style` is `'double'` and `border-color` is violet-600
+//   (`#7c3aed`), and an `edge[rollupStatus = 'meta-disagreement']`
+//   entry whose `line-color` and `target-arrow-color` are both
+//   violet-600. The two mount-time cases land inline (not deferred)
+//   because the projection-time `data.rollupStatus` emission they
+//   require already shipped via `aud_proposed_styling`; the minimal
+//   sequence emits a `meta-disagreement-marked` event with
+//   `target: 'facet'` so Rule 1 of `facetStatus.ts` short-circuits.)
+//
 // Refinement: tasks/refinements/audience/aud_stylesheet_module_extraction.md
 //   (Import-source rewrite only — `STYLESHEET` and the four
 //   `BROADCAST_*` typography constants now resolve from
@@ -313,6 +327,30 @@ function voteEvent(
       voted_at: '2026-05-27T00:00:10.000Z',
     },
     createdAt: '2026-05-27T00:00:10.000Z',
+  };
+}
+
+function metaDisagreementFacetEvent(opts: {
+  sequence: number;
+  entityKind: 'node' | 'edge';
+  entityId: string;
+  facet: FacetName;
+}): Event {
+  return {
+    id: `00000000-0000-4000-8000-${(0x700 + opts.sequence).toString(16).padStart(12, '0')}`,
+    sessionId: SESSION_ID,
+    sequence: opts.sequence,
+    kind: 'meta-disagreement-marked',
+    actor: ACTOR,
+    payload: {
+      target: 'facet',
+      entity_kind: opts.entityKind,
+      entity_id: opts.entityId,
+      facet: opts.facet,
+      marked_by: ACTOR,
+      marked_at: '2026-05-28T00:00:00.000Z',
+    },
+    createdAt: '2026-05-28T00:00:00.000Z',
   };
 }
 
@@ -877,6 +915,78 @@ describe('<AudienceGraphView>', () => {
     expect(cy.getElementById(EDGE_A).data('rollupStatus')).toBe('disputed');
     expect(cy.getElementById(EDGE_A).style('line-color')).toBe('rgb(225,29,72)');
     expect(cy.getElementById(EDGE_A).style('target-arrow-color')).toBe('rgb(225,29,72)');
+  });
+
+  // ---------------------------------------------------------------
+  // aud_meta_disagreement_split — per-rollup meta-disagreement-state
+  // selector entries on STYLESHEET. Structural pair + mount-time
+  // computed-style pair. Mount-time cases land inline (the projection-
+  // time emission they require already shipped via
+  // `aud_proposed_styling`). Rule 1 of facetStatus.ts short-circuits on
+  // any `meta-disagreement-marked` event with `target: 'facet'`.
+  // ---------------------------------------------------------------
+
+  it("(oo) STYLESHEET carries a node[rollupStatus = 'meta-disagreement'] entry with double border-style and violet-600 border-color", () => {
+    const style = findStylesheetEntry("node[rollupStatus = 'meta-disagreement']");
+    expect(style['border-style']).toBe('double');
+    expect(style['border-color']).toBe('#7c3aed');
+  });
+
+  it("(pp) STYLESHEET carries an edge[rollupStatus = 'meta-disagreement'] entry with violet-600 line and target-arrow color", () => {
+    const style = findStylesheetEntry("edge[rollupStatus = 'meta-disagreement']");
+    expect(style['line-color']).toBe('#7c3aed');
+    expect(style['target-arrow-color']).toBe('#7c3aed');
+  });
+
+  it('(qq) a node whose rollupStatus resolves to "meta-disagreement" carries the meta-disagreement-state computed style', () => {
+    // Smallest event sequence that fires Rule 1 on a node: the node is
+    // created (which inline-seeds the `wording` facet candidate per
+    // ADR 0030 §4), then a `meta-disagreement-marked` event with
+    // `target: 'facet'` is recorded against (node, wording). Rule 1
+    // short-circuits `wording = 'meta-disagreement'`; `wording` is the
+    // only facet in the record, so `cardRollupStatus` returns
+    // 'meta-disagreement' and `data.rollupStatus` is
+    // 'meta-disagreement' on the projected element.
+    const result = renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(
+      metaDisagreementFacetEvent({
+        sequence: 2,
+        entityKind: 'node',
+        entityId: NODE_A,
+        facet: 'wording',
+      }),
+    );
+    const cy = result.getCy();
+    expect(cy.getElementById(NODE_A).data('rollupStatus')).toBe('meta-disagreement');
+    expect(cy.getElementById(NODE_A).style('border-color')).toBe('rgb(124,58,237)');
+    expect(cy.getElementById(NODE_A).style('border-style')).toBe('double');
+  });
+
+  it('(rr) an edge whose rollupStatus resolves to "meta-disagreement" carries the meta-disagreement-state computed style', () => {
+    // Smallest event sequence that fires Rule 1 on an edge: the two
+    // endpoint nodes are created, the edge is created (which inline-
+    // seeds the `shape` facet candidate per ADR 0030 §5), then a
+    // `meta-disagreement-marked` event with `target: 'facet'` is
+    // recorded against (edge, shape). Rule 1 short-circuits
+    // `shape = 'meta-disagreement'`; the rollup priority then sets
+    // `data.rollupStatus === 'meta-disagreement'`.
+    const result = renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(nodeCreatedEvent({ sequence: 2, nodeId: NODE_B, wording: 'B' }));
+    seedEvent(edgeCreatedEvent({ sequence: 3, edgeId: EDGE_A, source: NODE_A, target: NODE_B }));
+    seedEvent(
+      metaDisagreementFacetEvent({
+        sequence: 4,
+        entityKind: 'edge',
+        entityId: EDGE_A,
+        facet: 'shape',
+      }),
+    );
+    const cy = result.getCy();
+    expect(cy.getElementById(EDGE_A).data('rollupStatus')).toBe('meta-disagreement');
+    expect(cy.getElementById(EDGE_A).style('line-color')).toBe('rgb(124,58,237)');
+    expect(cy.getElementById(EDGE_A).style('target-arrow-color')).toBe('rgb(124,58,237)');
   });
 
   // ---------------------------------------------------------------

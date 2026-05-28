@@ -31,9 +31,10 @@
 //
 // History: this module collects the per-state selector decisions
 // landed across `aud_proposed_styling`, `aud_agreed_styling`,
-// `aud_disputed_styling`, and the typography pins from
-// `aud_clean_typography`. See those refinements for the per-decision
-// rationale; this file is the data, `GraphView.tsx` is the consumer.
+// `aud_disputed_styling`, `aud_meta_disagreement_split`, and the
+// typography pins from `aud_clean_typography`. See those refinements
+// for the per-decision rationale; this file is the data,
+// `GraphView.tsx` is the consumer.
 //
 // ADRs:
 //   - 0004 (Cytoscape.js for the audience broadcast surface);
@@ -78,12 +79,19 @@ export const BROADCAST_EDGE_FONT_WEIGHT = 500 as const;
  * (proposed differentiates on `border-style: 'dashed'` + `opacity: 0.6`
  * — no color override — and therefore has no `STATE_COLORS.proposed`
  * slot; see `aud_stylesheet_state_color_extraction.md` Decision §2).
+ * Meta-disagreement is the fourth agreement-layer state and the third
+ * entry in this constant; the cross-surface palette match here is the
+ * moderator's `border-violet-600` and the participant's `'#7c3aed'`
+ * Cytoscape selector (per `aud_meta_disagreement_split.md` Decision §2).
  *
  * Cross-surface palette match: the moderator surface uses the same
  * hex values on its ReactFlow custom-node Tailwind classes — slate-700
- * (`#334155`) for agreed, rose-600 (`#e11d48`) for disputed (see
- * `tasks/refinements/moderator-ui/mod_agreed_state_styling.md` Decision §2
- * and `tasks/refinements/moderator-ui/mod_disputed_state_styling.md`
+ * (`#334155`) for agreed, rose-600 (`#e11d48`) for disputed, violet-600
+ * (`#7c3aed`) for meta-disagreement (see
+ * `tasks/refinements/moderator-ui/mod_agreed_state_styling.md` Decision §2,
+ * `tasks/refinements/moderator-ui/mod_disputed_state_styling.md`
+ * Decision §2, and
+ * `tasks/refinements/moderator-ui/mod_meta_disagreement_split_render.md`
  * Decision §2). The cross-surface match means broadcast composites
  * (audience canvas + future picture-in-picture moderator view) read as
  * one show.
@@ -100,6 +108,7 @@ export const BROADCAST_EDGE_FONT_WEIGHT = 500 as const;
 export const STATE_COLORS = {
   agreed: '#334155',
   disputed: '#e11d48',
+  metaDisagreement: '#7c3aed',
 } as const;
 
 /**
@@ -127,10 +136,15 @@ export const STATE_COLORS = {
  * entry overrides only the properties that differentiate the state
  * from the baseline (border / line color, opacity, dash-style, and
  * — first introduced by the disputed-state pair — `border-width` on
- * the states that need them). Per-state color overrides resolve
- * through the `STATE_COLORS` constant declared above (one entry per
- * state that differentiates on color; see its JSDoc for the
- * cross-surface palette match and the proposed-state omission).
+ * the states that need them). The meta-disagreement node selector is
+ * the first per-state branch to override `border-style: 'double'`
+ * (proposed overrides to `'dashed'`; the disputed pair adds
+ * `border-width`; meta-disagreement claims the third style axis — per
+ * `aud_meta_disagreement_split.md` Decision §2). Per-state color
+ * overrides resolve through the `STATE_COLORS` constant declared
+ * above (one entry per state that differentiates on color; see its
+ * JSDoc for the cross-surface palette match and the proposed-state
+ * omission).
  * Typography, geometry, label, shape, background, and text-background
  * fields all inherit from the baseline `node` / `edge` selectors via
  * Cytoscape's per-selector composition (an element matching two
@@ -229,6 +243,20 @@ export const STYLESHEET: StylesheetJson = [
     style: {
       'line-color': STATE_COLORS.disputed,
       'target-arrow-color': STATE_COLORS.disputed,
+    },
+  },
+  {
+    selector: "node[rollupStatus = 'meta-disagreement']",
+    style: {
+      'border-style': 'double',
+      'border-color': STATE_COLORS.metaDisagreement,
+    },
+  },
+  {
+    selector: "edge[rollupStatus = 'meta-disagreement']",
+    style: {
+      'line-color': STATE_COLORS.metaDisagreement,
+      'target-arrow-color': STATE_COLORS.metaDisagreement,
     },
   },
 ];

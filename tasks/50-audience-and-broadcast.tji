@@ -197,7 +197,21 @@ task audience "Audience and broadcast" {
     task aud_meta_disagreement_split "Meta-disagreement split rendering" {
       effort 1d
       allocate team
-      depends !aud_cytoscape_init
+      complete 100
+      depends !aud_cytoscape_init, !aud_proposed_styling, !aud_disputed_styling
+      note -8<-
+        Refinement: tasks/refinements/audience/aud_meta_disagreement_split.md
+
+        Two new STYLESHEET selector entries: node[rollupStatus = 'meta-disagreement'] →
+        border-style 'double' + border-color #7c3aed (violet-600, first per-state branch to
+        override border-style: 'double'); edge[rollupStatus = 'meta-disagreement'] →
+        line-color + target-arrow-color #7c3aed (solid violet, no line-style override —
+        violet uniquely identifies meta-disagreement on the audience canvas). STATE_COLORS
+        gains metaDisagreement: '#7c3aed'. Four new Vitest cases (oo–rr: 2 structural + 2
+        mount-time) land inline; total GraphView.test.tsx case count rises to 38.
+        Playwright deferred to aud_visual_regression per Decision §6.
+        depends !aud_proposed_styling, !aud_disputed_styling added per Decision §1.
+      ->8-
     }
     task aud_axiom_mark_decoration "Per-participant axiom-mark decoration" {
       effort 1d
@@ -496,6 +510,16 @@ task audience "Audience and broadcast" {
         Overlay mount lifecycle, subscription set, per-element placement, and canonical reading order are
         fully pinned at the Vitest layer (PerFacetPillOverlay.test.tsx cases a–j); this task covers the
         visible pixel rendering only. Source: tasks/refinements/audience/aud_per_facet_visualization.md.
+
+        Meta-disagreement-state styling pixel-stability also deferred here per aud_meta_disagreement_split
+        Decision §6. Assert that a node whose rollupStatus is 'meta-disagreement' renders with
+        border-style: 'double' + border-color #7c3aed (violet-600, inherited border-width: 1) and an edge
+        with the same rollup renders with line-color #7c3aed + target-arrow-color #7c3aed (solid, baseline
+        width) across Chrome/Firefox/WebKit at 720p/1080p/1440p, against the same reference fixtures the
+        layout + typography + agreed-state + proposed-state + disputed-state deferrals already pin.
+        Stylesheet correctness, projection-time rollupStatus resolution, and mount-time computed-style are
+        fully pinned at the Vitest layer (GraphView.test.tsx cases oo–rr); this task covers the visible
+        pixel rendering only. Source: tasks/refinements/audience/aud_meta_disagreement_split.md.
       ->8-
     }
     task aud_obs_render_smoke "Smoke test rendering at OBS-source dimensions" {

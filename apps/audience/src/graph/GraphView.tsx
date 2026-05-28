@@ -121,6 +121,29 @@
 //   existing `cyState` slot; no new `useState`. Decision §6 —
 //   Playwright pixel-stability deferral lands on `aud_visual_regression`.)
 //
+// Refinement: tasks/refinements/audience/aud_meta_disagreement_split.md
+//   (Decision §1 — sequential ordering after `aud_proposed_styling`
+//   and `aud_disputed_styling`; the closer adds the `.tji`
+//   `depends !aud_proposed_styling, !aud_disputed_styling` edges.
+//   Decision §2 — violet-600 (`#7c3aed`) border / line / target-arrow
+//   color, plus `border-style: 'double'` on nodes (first per-state
+//   branch to override `border-style: 'double'`); edges stay solid
+//   violet (Cytoscape's `line-style` enum lacks a `2 2` analog and
+//   violet color alone uniquely identifies meta-disagreement on the
+//   canvas). Cross-surface match with the moderator's
+//   `mod_meta_disagreement_split_render` and the participant's
+//   Cytoscape selector; no `outline-*` halo, no `background-color`
+//   fill tint, no `border-width` bump — those axes belong to disputed
+//   / future overlays / future committed-withdrawn states. Decision §3
+//   — `metaDisagreement: '#7c3aed'` added to `STATE_COLORS`; grow-as-
+//   needed posture inherited from `aud_stylesheet_state_color_extraction`.
+//   Decision §4 — mount-time computed-style cases land inline here
+//   (the projection-time emission they require already shipped via
+//   `aud_proposed_styling`). Decision §5 — attribute-equality selector
+//   against `data.rollupStatus`; no `addClass` / `classes:` API.
+//   Decision §6 — Playwright pixel-stability deferral lands on
+//   `aud_visual_regression`.)
+//
 // Refinement: tasks/refinements/audience/aud_stylesheet_module_extraction.md
 //   (Decision §1 — `STYLESHEET` remains a module-scope `const` in its
 //   new home `./stylesheet.ts`; reference-stable across renders per
