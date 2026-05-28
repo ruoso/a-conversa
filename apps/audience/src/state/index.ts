@@ -17,8 +17,10 @@
 export { sessionRosterFrom, EMPTY_AUDIENCE_ROSTER } from './sessionRoster.js';
 export { sessionModeFrom } from './sessionMode.js';
 export { sessionIdFromPathname, stripAudienceBasename } from './sessionId.js';
+export { parsePositionParam } from './positionParam.js';
 export { useAudienceSessionRoster } from './useAudienceSessionRoster.js';
 export { useAudienceSessionMode } from './useAudienceSessionMode.js';
 export { useAudienceSessionId } from './useAudienceSessionId.js';
+export { useAudienceLogPosition } from './useAudienceLogPosition.js';
 export { useAudienceSession, type AudienceSessionView } from './useAudienceSession.js';
 export type { SessionMode } from '@a-conversa/shared-types';

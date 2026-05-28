@@ -377,6 +377,7 @@ task audience "Audience and broadcast" {
     task aud_url_position_param "URL parameter for log position (for replay deep-linking)" {
       effort 1d
       allocate team
+      complete 100
       depends !aud_session_url
     }
     task aud_private_session_sign_in_cta "Per-session sign-in CTA for private-session rejection" {

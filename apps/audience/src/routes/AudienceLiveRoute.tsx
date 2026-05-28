@@ -32,12 +32,20 @@ import { useParams } from 'react-router-dom';
 import { WsRequestError, useWsClient } from '@a-conversa/shell';
 
 import { AudienceGraphView } from '../graph/GraphView.js';
+import { useAudienceLogPosition } from '../state/useAudienceLogPosition.js';
 import { PrivateSessionCta } from './PrivateSessionCta.js';
 
 export function AudienceLiveRoute(): ReactElement {
   const { sessionId } = useParams<{ sessionId: string }>();
   const wsClient = useWsClient();
   const [subscribeRejection, setSubscribeRejection] = useState<'not-found' | null>(null);
+  // Route-local readonly per `aud_url_position_param.md` Decision §R6 —
+  // the value is parsed here so the downstream
+  // `replay_test.replay_ui.replay_url_position_loading` consumer can
+  // read it without re-parsing. This leaf does not branch on the value;
+  // live-mode subscription remains unconditional. The underscore prefix
+  // signals "intentionally unused" until that downstream consumer lands.
+  const _logPosition = useAudienceLogPosition();
 
   useEffect(() => {
     if (sessionId === undefined || sessionId === '') return;

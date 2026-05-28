@@ -216,6 +216,22 @@ describe('AudienceLiveRoute', () => {
     expect(fake.trackSessionSpy).toHaveBeenCalledWith(SESSION_ID_A);
   });
 
+  // Acceptance criteria §3 of `aud_url_position_param.md` — the URL
+  // grammar widens with `?position=<sequence>`; the live route must
+  // still mount and still call `trackSession(<uuid>)` exactly once.
+  // The position value is parsed into a route-local readonly (Decision
+  // §R6) and consumed by no behaviour in this leaf.
+  it('(j) mounts and calls trackSession exactly once when the URL carries `?position=42`', async () => {
+    const fake = renderRoute({ initialPath: `/sessions/${SESSION_ID_A}?position=42` });
+    await waitFor(() => {
+      expect(screen.getByTestId('audience-graph-root')).toBeTruthy();
+    });
+    await waitFor(() => {
+      expect(fake.trackSessionSpy).toHaveBeenCalledTimes(1);
+    });
+    expect(fake.trackSessionSpy).toHaveBeenCalledWith(SESSION_ID_A);
+  });
+
   // Cases (f)–(i) pin the per-session sign-in CTA per
   // `aud_private_session_sign_in_cta.md` Acceptance criteria.
 

@@ -517,6 +517,72 @@ test.describe('Audience live session route — /a/sessions/:sessionId', () => {
     }
   });
 
+  test('(8) URL grammar widens with `?position=<sequence>`: route mounts, seeded node lands, no console errors', async ({
+    browser,
+  }) => {
+    // Refinement: tasks/refinements/audience/aud_url_position_param.md
+    //   (Acceptance criteria §5 — navigating to `/a/sessions/<uuid>?position=42`
+    //   mounts the live route cleanly: canvas appears, seeded event
+    //   reaches the WS store, no console error fires during navigation.
+    //   The position value sits dormant in this leaf — downstream
+    //   `replay_test.replay_ui.replay_url_position_loading` is what
+    //   interprets it.)
+    const context = await freshAuthedContext(browser);
+    const page = await context.newPage();
+    const consoleErrors: string[] = [];
+    const pageErrors: string[] = [];
+    page.on('console', (msg) => {
+      if (msg.type() === 'error') consoleErrors.push(msg.text());
+    });
+    page.on('pageerror', (err) => {
+      pageErrors.push(err.message);
+    });
+    try {
+      const alice = await loginAs(page, { username: 'alice' });
+      expect(alice.screenName.toLowerCase()).toBe('alice');
+      const sessionId = await createSession(page, {
+        topic: 'URL `?position=<sequence>` grammar mounts the live route cleanly',
+        privacy: 'public',
+      });
+
+      await page.goto(`/a/sessions/${sessionId}?position=42`);
+
+      // The position query string did not divert the route: the
+      // `audience-graph-root` testid renders within the same budget the
+      // other scenarios use.
+      await expect(page.getByTestId('audience-graph-root')).toBeVisible({ timeout: 15_000 });
+
+      // The URL is preserved (no redirect that would drop the query).
+      const visited = new URL(page.url());
+      expect(visited.pathname).toBe(`/a/sessions/${sessionId}`);
+      expect(visited.searchParams.get('position')).toBe('42');
+
+      await seedNodeCreated(page, {
+        sessionId,
+        sequence: 1_000_030,
+        eventId: '88888888-8888-4888-8888-888888888883',
+        nodeId: '11111111-2222-4111-8111-111111111188',
+        wording: 'Position-param URL grammar widening pin',
+        actorId: alice.userId,
+      });
+
+      await expect
+        .poll(() => readEventsLength(page, sessionId), { timeout: 15_000 })
+        .toBeGreaterThanOrEqual(1);
+
+      const canvasCount = await page.getByTestId('audience-graph-root').locator('canvas').count();
+      expect(canvasCount).toBeGreaterThan(0);
+
+      expect(
+        consoleErrors,
+        `console errors during navigation: ${consoleErrors.join(' | ')}`,
+      ).toEqual([]);
+      expect(pageErrors, `page errors during navigation: ${pageErrors.join(' | ')}`).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+
   test.describe('(6) OBS dimension audit at the graph-route tier', () => {
     // Match `DEFAULT_BROADCAST_DIMENSIONS` (1920×1080) from
     // `apps/audience/src/graph/layoutOptions.ts`. Scope the viewport
