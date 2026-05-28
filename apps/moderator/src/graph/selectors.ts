@@ -23,13 +23,22 @@
 // it can do the per-target annotation enrichment in a single pass.
 
 import { MarkerType, type Edge, type EdgeMarker } from 'reactflow';
-import type { AnnotationKind, EdgeRole, Event, ProposalPayload } from '@a-conversa/shared-types';
+import type { EdgeRole, Event, ProposalPayload } from '@a-conversa/shared-types';
 // `Vote` is imported from the shell after the `extract_facet_pill` lift
 // (refinement Decision §3 — the in-pill render-dependency chain ships
-// with `<FacetPill>` in `@a-conversa/shell`). The remaining selector
-// exports (annotations / axiom-marks / votes-by-facet projection helpers)
-// stay here as moderator-graph-specific.
-import type { Vote } from '@a-conversa/shell';
+// with `<FacetPill>` in `@a-conversa/shell`). The annotation projection
+// trio (`Annotation` / `EMPTY_ANNOTATIONS` / `projectAnnotations` /
+// `groupAnnotationsBy{Node,Edge}`) also lives in the shell after the
+// `shell_package.extract_cytoscape_projectors` lift; the remaining
+// selector exports (axiom-marks pending projector / votes-by-facet /
+// votes-by-proposal) stay here as moderator-graph-specific.
+import {
+  EMPTY_ANNOTATIONS,
+  groupAnnotationsByEdge,
+  projectAnnotations,
+  type Annotation,
+  type Vote,
+} from '@a-conversa/shell';
 
 import {
   computeFacetStatuses,
@@ -43,27 +52,6 @@ import {
   type DiagnosticHighlightIndex,
 } from './diagnosticHighlights.js';
 import type { WsState } from '../ws/wsStore.js';
-
-/**
- * Camel-cased annotation projected off the wire `annotation-created`
- * payload. Consumers (the node / edge projections, the badge component)
- * see this shape, not the snake-cased payload — the selector is the
- * conversion boundary so callers don't re-handle the wire keys.
- *
- * The `target_node_id` / `target_edge_id` XOR enforced by Zod at the
- * validation seam is preserved as a `string | null` pair on the camelCased
- * shape; consumers route the annotation to a node or an edge target by
- * checking which field is non-null.
- */
-export interface Annotation {
-  readonly id: string;
-  readonly kind: AnnotationKind;
-  readonly content: string;
-  readonly targetNodeId: string | null;
-  readonly targetEdgeId: string | null;
-  readonly createdBy: string;
-  readonly createdAt: string;
-}
 
 /** Payload carried on each rendered edge — the role drives the label and (later) the per-state styling. */
 export interface StatementEdgeData {
@@ -152,17 +140,16 @@ export interface StatementEdgeData {
 }
 
 /**
- * Module-scope shared empty annotation array. Hands a stable reference
- * to consumers when a target has no annotations, so React / ReactFlow
- * memoization (`Array.length === 0` is identity-stable here) doesn't
- * see a fresh array on every projection pass.
- */
-export const EMPTY_ANNOTATIONS: readonly Annotation[] = Object.freeze([]);
-
-/**
  * Project the per-session WS event log into the camelCased annotation
  * list. Walks `state.sessionState[sessionId]?.events` once and picks
  * every `annotation-created` envelope.
+ *
+ * Thin moderator-internal wrapper around the shell-lifted
+ * `projectAnnotations` that adds the null-safe session lookup off
+ * `WsState`. The projector itself lives in `@a-conversa/shell` after
+ * the `shell_package.extract_cytoscape_projectors` lift; this wrapper
+ * stays here because its `WsState` coupling is moderator-internal (per
+ * refinement Decision §4).
  *
  * Empty for an unknown `sessionId` or an empty event log.
  */
@@ -201,76 +188,6 @@ export function selectNodeWordingById(events: readonly Event[], nodeId: string):
     wording = event.payload.wording;
   }
   return wording;
-}
-
-/**
- * Pure projection from an `Event[]` slice to the `Annotation[]` shape.
- *
- * Exported separately so `projectNodes` in `GraphCanvasPane.tsx` can
- * re-use it without going through the store — the node projection is a
- * pure function of `events` (no `WsState` dependency), so the enrichment
- * pass walks the same events array directly.
- */
-export function projectAnnotations(events: readonly Event[]): Annotation[] {
-  const out: Annotation[] = [];
-  for (const event of events) {
-    if (event.kind !== 'annotation-created') continue;
-    out.push({
-      id: event.payload.annotation_id,
-      kind: event.payload.kind,
-      content: event.payload.content,
-      targetNodeId: event.payload.target_node_id,
-      targetEdgeId: event.payload.target_edge_id,
-      createdBy: event.payload.created_by,
-      createdAt: event.payload.created_at,
-    });
-  }
-  return out;
-}
-
-/**
- * Bucket annotations by their node target.
- *
- * Returns a `Map` rather than a plain `Object` so `get(id)` lookups are
- * O(1) without the JSON-key string-coercion gotcha that surfaces when
- * ids contain dashes (UUIDs do). Annotations targeting an edge (i.e.
- * with `targetNodeId === null`) are skipped.
- */
-export function groupAnnotationsByNode(
-  annotations: readonly Annotation[],
-): Map<string, Annotation[]> {
-  const out = new Map<string, Annotation[]>();
-  for (const annotation of annotations) {
-    if (annotation.targetNodeId === null) continue;
-    const existing = out.get(annotation.targetNodeId);
-    if (existing) {
-      existing.push(annotation);
-    } else {
-      out.set(annotation.targetNodeId, [annotation]);
-    }
-  }
-  return out;
-}
-
-/**
- * Bucket annotations by their edge target. Annotations targeting a
- * node (`targetEdgeId === null`) are skipped. Same `Map` rationale as
- * `groupAnnotationsByNode`.
- */
-export function groupAnnotationsByEdge(
-  annotations: readonly Annotation[],
-): Map<string, Annotation[]> {
-  const out = new Map<string, Annotation[]>();
-  for (const annotation of annotations) {
-    if (annotation.targetEdgeId === null) continue;
-    const existing = out.get(annotation.targetEdgeId);
-    if (existing) {
-      existing.push(annotation);
-    } else {
-      out.set(annotation.targetEdgeId, [annotation]);
-    }
-  }
-  return out;
 }
 
 /**

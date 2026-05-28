@@ -30,8 +30,7 @@ import { act, type ReactElement } from 'react';
 import type { AnnotationKind } from '@a-conversa/shared-types';
 
 import { AnnotationBadge } from './AnnotationBadge';
-import type { Annotation } from './selectors';
-import { createI18nInstance } from '@a-conversa/shell';
+import { createI18nInstance, type Annotation } from '@a-conversa/shell';
 
 // `useTranslation()` schedules a microtask-deferred setState when its
 // internal i18next subscription registers on mount. The deferred update

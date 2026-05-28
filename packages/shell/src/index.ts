@@ -107,4 +107,13 @@ export {
   type AxiomMarkBadgeProps,
 } from './axiom-marks/index.js';
 
+// ─── annotations ─────────────────────────────────────────────────────────
+export {
+  EMPTY_ANNOTATIONS,
+  groupAnnotationsByEdge,
+  groupAnnotationsByNode,
+  projectAnnotations,
+  type Annotation,
+} from './annotations/index.js';
+
 export const SHELL_PACKAGE_VERSION = '0.1.0' as const;

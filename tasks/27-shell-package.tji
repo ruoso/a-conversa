@@ -101,9 +101,50 @@ task shell_package "Shell package (@aconversa/shell)" {
   task extract_cytoscape_projectors "Lift projectAnnotations + projectAxiomMarks + projectPendingAxiomMarks + projectVotesByFacet + groupAnnotationsBy* into @a-conversa/shell once audience graph rendering becomes the third or fourth caller" {
     effort 1d
     allocate team
+    complete 100
     depends !extract_facet_pill, audience.aud_graph_rendering
     note -8<-
       Lift `projectAnnotations` + `projectAxiomMarks` + `projectPendingAxiomMarks` + `projectVotesByFacet` + `groupAnnotationsBy*` (and siblings) into `@a-conversa/shell` when audience graph rendering becomes the third or fourth caller. Today these projectors are mirrored across moderator + participant graph views. Source: tasks/refinements/shell-package/extract_facet_pill.md (Decision §8) + this commit.
+    ->8-
+  }
+
+  task extract_pending_axiom_mark_projector "Lift projectPendingAxiomMarks + groupPendingAxiomMarksByNode + PendingAxiomMark + EMPTY_PENDING_AXIOM_MARKS into @a-conversa/shell once a second + third caller materialize" {
+    effort 0.5d
+    allocate team
+    depends !extract_cytoscape_projectors
+    note -8<-
+      Lift `projectPendingAxiomMarks` + `groupPendingAxiomMarksByNode` + `PendingAxiomMark` +
+      `EMPTY_PENDING_AXIOM_MARKS` from `apps/moderator/src/graph/selectors.ts` into
+      `packages/shell/src/pending-axiom-marks/` once a second + third caller materialize
+      (likely participant + audience pending-axiom-mark rendering).
+
+      Currently moderator-only (single caller). Third-caller policy fires when the participant
+      lands pending-axiom-mark rendering AND the audience follows. At that point the three-caller
+      convergence check applies and the lift proceeds using the same recipe as
+      extract_cytoscape_projectors.
+
+      Source of debt: tasks/refinements/shell-package/extract_cytoscape_projectors.md Decision §3.
+    ->8-
+  }
+
+  task extract_votes_by_facet_projector "Lift projectVotesByFacet into @a-conversa/shell once participant's otherVotesByFacet shape converges with moderator's projector and an audience caller materializes" {
+    effort 0.5d
+    allocate team
+    depends !extract_cytoscape_projectors
+    note -8<-
+      Lift `projectVotesByFacet` from `apps/moderator/src/graph/selectors.ts` into
+      `packages/shell/src/votes-by-facet/` once:
+      (1) the participant's `apps/participant/src/proposals/otherVotesByFacet.ts` converges
+          shape with the moderator's projector (per part_graph_render.md Decision §4 — currently
+          two callers with diverging shapes), AND
+      (2) an audience caller materializes.
+
+      Currently moderator-only at the canonical projector shape (single convergent caller).
+      Third-caller policy fires when both preconditions are met. See
+      tasks/refinements/participant-ui/part_graph_render.md Decision §4 for the shape-divergence
+      rationale.
+
+      Source of debt: tasks/refinements/shell-package/extract_cytoscape_projectors.md Decision §3.
     ->8-
   }
 

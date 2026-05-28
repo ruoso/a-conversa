@@ -66,8 +66,9 @@
 import { useEffect, useRef, useState, type ReactElement, type RefObject } from 'react';
 import type { Core, EdgeSingular, NodeSingular } from 'cytoscape';
 
+import type { Annotation } from '@a-conversa/shell';
+
 import { AudienceAnnotationBadge } from './AnnotationBadge.js';
-import type { Annotation } from './annotations.js';
 
 export interface AudienceAnnotationOverlayProps {
   /**

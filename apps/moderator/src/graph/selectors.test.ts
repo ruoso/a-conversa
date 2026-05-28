@@ -24,16 +24,17 @@
 //   7. An annotation targeting an edge lands in that edge's
 //      `data.annotations` array.
 //
-// Cases for `selectAnnotations` / `groupAnnotationsByNode` /
-// `groupAnnotationsByEdge`:
-//   8. Unknown sessionId / empty log return [].
-//   9. Single annotation on a node target / on an edge target lands
-//      with camelCased fields and the right XOR.
-//  10. Arrival order is preserved across multiple annotation events.
-//  11. Mixed event log: only `annotation-created` events appear.
-//  12. Every `AnnotationKind` value round-trips intact.
-//  13. `groupAnnotationsByNode` / `groupAnnotationsByEdge` bucket
-//      correctly and exclude the other-entity annotations.
+// Cases for `selectAnnotations` (moderator-internal `WsState` wrapper
+// around the shell-lifted `projectAnnotations`):
+//   8. Unknown sessionId returns [] (null-safe lookup).
+//   9. Known session with no events returns [].
+//  10. Known session delegates to `projectAnnotations` and returns the
+//      camelCased shape.
+//
+// The projection trio (`projectAnnotations` / `groupAnnotationsByNode` /
+// `groupAnnotationsByEdge`) is canonically tested at
+// `packages/shell/src/annotations/annotations.test.ts` after the
+// `shell_package.extract_cytoscape_projectors` lift.
 
 import { describe, expect, it } from 'vitest';
 import { MarkerType } from 'reactflow';
@@ -43,8 +44,6 @@ import { AXIOM_MARK_PALETTE_SIZE, axiomMarkColorFor } from '@a-conversa/shell';
 
 import type { WsState } from '../ws/wsStore.js';
 import {
-  groupAnnotationsByEdge,
-  groupAnnotationsByNode,
   groupPendingAxiomMarksByNode,
   projectPendingAxiomMarks,
   projectVotesByFacet,
@@ -689,14 +688,17 @@ describe('selectEdgesForSession', () => {
   });
 });
 
-// -- selectAnnotations / grouping helpers ---------------------------
-
-const ALL_ANNOTATION_KINDS: readonly AnnotationKind[] = [
-  'note',
-  'reframe',
-  'scope-change',
-  'stance',
-];
+// -- selectAnnotations wrapper --------------------------------------
+//
+// The annotation projection trio (`projectAnnotations` /
+// `groupAnnotationsByNode` / `groupAnnotationsByEdge`) lives in
+// `@a-conversa/shell` after the `shell_package.extract_cytoscape_projectors`
+// lift; the canonical Vitest suite for the projection logic is at
+// `packages/shell/src/annotations/annotations.test.ts`. The cases that
+// remain here pin the moderator-internal `selectAnnotations` wrapper's
+// null-safe lookup off `WsState` (per refinement Decision §4 — wrapper
+// stays as a thin call-through; the projection coverage is consolidated
+// in the shell suite).
 
 function makeAnnotationCreated(opts: {
   sequence: number;
@@ -726,7 +728,7 @@ function makeAnnotationCreated(opts: {
 }
 
 describe('selectAnnotations', () => {
-  it('returns [] for an unknown session id', () => {
+  it('returns [] for an unknown session id (wrapper null-safe lookup)', () => {
     const state = makeState([]);
     expect(selectAnnotations(state, 'unknown-session')).toEqual([]);
   });
@@ -736,7 +738,7 @@ describe('selectAnnotations', () => {
     expect(selectAnnotations(state, SESSION)).toEqual([]);
   });
 
-  it('projects a node-targeted annotation into the camelCased shape', () => {
+  it('delegates to projectAnnotations for a known session and returns the camelCased shape', () => {
     const state = makeState([
       makeAnnotationCreated({
         sequence: 1,
@@ -758,154 +760,6 @@ describe('selectAnnotations', () => {
       createdBy: ACTOR,
       createdAt: '2026-05-11T00:00:00.000Z',
     });
-  });
-
-  it('projects an edge-targeted annotation with targetNodeId null', () => {
-    const state = makeState([
-      makeAnnotationCreated({
-        sequence: 1,
-        annotationId: 'anno-edge-1',
-        kind: 'reframe',
-        targetNodeId: null,
-        targetEdgeId: 'edge-y',
-      }),
-    ]);
-    const annotations = selectAnnotations(state, SESSION);
-    expect(annotations).toHaveLength(1);
-    expect(annotations[0]?.targetNodeId).toBeNull();
-    expect(annotations[0]?.targetEdgeId).toBe('edge-y');
-  });
-
-  it('preserves arrival order across multiple annotations', () => {
-    const state = makeState([
-      makeAnnotationCreated({
-        sequence: 1,
-        annotationId: 'anno-a',
-        kind: 'note',
-        targetNodeId: 'n1',
-        targetEdgeId: null,
-      }),
-      makeAnnotationCreated({
-        sequence: 2,
-        annotationId: 'anno-b',
-        kind: 'reframe',
-        targetNodeId: 'n1',
-        targetEdgeId: null,
-      }),
-      makeAnnotationCreated({
-        sequence: 3,
-        annotationId: 'anno-c',
-        kind: 'stance',
-        targetNodeId: 'n1',
-        targetEdgeId: null,
-      }),
-    ]);
-    const annotations = selectAnnotations(state, SESSION);
-    expect(annotations.map((a) => a.id)).toEqual(['anno-a', 'anno-b', 'anno-c']);
-  });
-
-  it('only picks annotation-created events out of a mixed log', () => {
-    const state = makeState([
-      makeNodeCreated(1, 'n1'),
-      makeAnnotationCreated({
-        sequence: 2,
-        annotationId: 'anno-1',
-        kind: 'note',
-        targetNodeId: 'n1',
-        targetEdgeId: null,
-      }),
-      makeEdgeCreated({ sequence: 3, edgeId: 'e1', role: 'supports', source: 'n1', target: 'n2' }),
-    ]);
-    const annotations = selectAnnotations(state, SESSION);
-    expect(annotations).toHaveLength(1);
-    expect(annotations[0]?.id).toBe('anno-1');
-  });
-
-  for (const kind of ALL_ANNOTATION_KINDS) {
-    it(`preserves the ${kind} annotation kind round-trip`, () => {
-      const state = makeState([
-        makeAnnotationCreated({
-          sequence: 1,
-          annotationId: `anno-${kind}`,
-          kind,
-          targetNodeId: 'n1',
-          targetEdgeId: null,
-        }),
-      ]);
-      const annotations = selectAnnotations(state, SESSION);
-      expect(annotations).toHaveLength(1);
-      expect(annotations[0]?.kind).toBe(kind);
-    });
-  }
-});
-
-describe('groupAnnotationsByNode / groupAnnotationsByEdge', () => {
-  it('buckets node-targeted annotations under their target node id', () => {
-    const state = makeState([
-      makeAnnotationCreated({
-        sequence: 1,
-        annotationId: 'anno-a',
-        kind: 'note',
-        targetNodeId: 'n1',
-        targetEdgeId: null,
-      }),
-      makeAnnotationCreated({
-        sequence: 2,
-        annotationId: 'anno-b',
-        kind: 'reframe',
-        targetNodeId: 'n1',
-        targetEdgeId: null,
-      }),
-      makeAnnotationCreated({
-        sequence: 3,
-        annotationId: 'anno-c',
-        kind: 'stance',
-        targetNodeId: 'n2',
-        targetEdgeId: null,
-      }),
-      makeAnnotationCreated({
-        sequence: 4,
-        annotationId: 'anno-d',
-        kind: 'note',
-        targetNodeId: null,
-        targetEdgeId: 'e1',
-      }),
-    ]);
-    const grouped = groupAnnotationsByNode(selectAnnotations(state, SESSION));
-    expect(grouped.get('n1')?.map((a) => a.id)).toEqual(['anno-a', 'anno-b']);
-    expect(grouped.get('n2')?.map((a) => a.id)).toEqual(['anno-c']);
-    // The edge-targeted annotation is excluded.
-    expect(grouped.has('e1')).toBe(false);
-  });
-
-  it('buckets edge-targeted annotations under their target edge id and excludes node-targeted ones', () => {
-    const state = makeState([
-      makeAnnotationCreated({
-        sequence: 1,
-        annotationId: 'anno-a',
-        kind: 'note',
-        targetNodeId: 'n1',
-        targetEdgeId: null,
-      }),
-      makeAnnotationCreated({
-        sequence: 2,
-        annotationId: 'anno-b',
-        kind: 'reframe',
-        targetNodeId: null,
-        targetEdgeId: 'e1',
-      }),
-      makeAnnotationCreated({
-        sequence: 3,
-        annotationId: 'anno-c',
-        kind: 'stance',
-        targetNodeId: null,
-        targetEdgeId: 'e1',
-      }),
-    ]);
-    const grouped = groupAnnotationsByEdge(selectAnnotations(state, SESSION));
-    expect(grouped.get('e1')?.map((a) => a.id)).toEqual(['anno-b', 'anno-c']);
-    // Node-targeted annotation excluded.
-    expect(grouped.has('n1')).toBe(false);
   });
 });
 

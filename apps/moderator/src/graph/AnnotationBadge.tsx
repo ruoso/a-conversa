@@ -24,7 +24,7 @@
 import { memo, type ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import type { Annotation } from './selectors.js';
+import type { Annotation } from '@a-conversa/shell';
 
 export interface AnnotationBadgeProps {
   readonly annotation: Annotation;

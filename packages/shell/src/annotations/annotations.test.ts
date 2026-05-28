@@ -1,31 +1,49 @@
-// Vitest cases for the audience's `projectAnnotations` /
+// Vitest cases for the canonical `projectAnnotations` /
 // `groupAnnotationsByNode` / `groupAnnotationsByEdge` derivation.
 //
-// Refinement: tasks/refinements/audience/aud_annotation_rendering.md
-//              (Constraints — 7 cases mirroring the participant's
-//              coverage minus the unused boolean/count helpers and the
-//              by-edge bucketer; case (g) adds an explicit pin that an
-//              edge-targeted annotation does NOT appear in the node
-//              bucketer's output.)
-//
-// Refinement: tasks/refinements/audience/aud_annotation_rendering_edges.md
-//              (Constraints — 2 additional cases (h–i) pin the by-edge
-//              bucketer: a single edge-targeted annotation produces a
-//              single-entry bucket keyed on `targetEdgeId`; a mixed
-//              multi-edge log buckets each annotation under its own
-//              `targetEdgeId` in arrival order.)
+// Refinement: tasks/refinements/shell-package/extract_cytoscape_projectors.md
+//   (Consolidates the moderator's `apps/moderator/src/graph/selectors.test.ts`
+//   annotation block + the participant's `apps/participant/src/graph/
+//   annotations.test.ts` projection blocks + the audience's
+//   `apps/audience/src/graph/annotations.test.ts` into one suite at the
+//   canonical shell home. The participant's local boolean+count helper
+//   cases stay participant-side; this suite covers the lifted projection
+//   trio only.)
 // ADRs:        0022 (no throwaway verifications — every behavioural
 //              assertion is a committed test case).
+//
+// The 10 cases mirror the predecessor suites' union:
+//   (a) empty event log → [].
+//   (b) one node-targeted `annotation-created` → one `Annotation` with
+//       the right camelCased fields + `targetEdgeId: null`.
+//   (c) one edge-targeted `annotation-created` → one `Annotation` with
+//       `targetEdgeId` populated + `targetNodeId: null`.
+//   (d) arrival order preserved across multiple `annotation-created`
+//       events.
+//   (e) mixed log — non-annotation events are ignored.
+//   (f) every `AnnotationKind` value round-trips intact.
+//   (g) `groupAnnotationsByNode` buckets node-targeted annotations +
+//       skips edge-targeted ones (the edge-targeted entry does NOT leak
+//       into any node bucket).
+//   (h) `groupAnnotationsByEdge` buckets edge-targeted annotations +
+//       skips node-targeted ones (the node-targeted entry does NOT leak
+//       into any edge bucket).
+//   (i) both bucketers handle a multi-bucket mixed log (per-edge / per-
+//       node accumulation in arrival order, no cross-bucket leakage).
+//   (j) both bucketers return an empty `Map` for an empty annotations
+//       input + `EMPTY_ANNOTATIONS` is the same frozen reference across
+//       calls (memoization identity invariant).
 
 import { describe, expect, it } from 'vitest';
 import type { AnnotationKind, Event } from '@a-conversa/shared-types';
 
 import {
+  EMPTY_ANNOTATIONS,
   groupAnnotationsByEdge,
   groupAnnotationsByNode,
   projectAnnotations,
   type Annotation,
-} from './annotations';
+} from './annotations.js';
 
 const SESSION_ID = '00000000-0000-4000-8000-000000000001';
 const NODE_X = '00000000-0000-4000-8000-0000000000c1';
@@ -171,7 +189,7 @@ function makeVote(opts: { sequence: number; proposalEnvelopeId: string }): Event
   };
 }
 
-describe('projectAnnotations (audience)', () => {
+describe('projectAnnotations', () => {
   it('(a) returns [] for an empty event log', () => {
     expect(projectAnnotations([])).toEqual([]);
   });
@@ -200,7 +218,23 @@ describe('projectAnnotations (audience)', () => {
     });
   });
 
-  it('(c) preserves arrival order across multiple annotation-created events', () => {
+  it('(c) projects an edge-targeted annotation with targetNodeId: null', () => {
+    const events: Event[] = [
+      makeAnnotationCreated({
+        sequence: 1,
+        annotationId: ANNO_1,
+        kind: 'reframe',
+        targetNodeId: null,
+        targetEdgeId: EDGE_M,
+      }),
+    ];
+    const annotations = projectAnnotations(events);
+    expect(annotations).toHaveLength(1);
+    expect(annotations[0]?.targetNodeId).toBeNull();
+    expect(annotations[0]?.targetEdgeId).toBe(EDGE_M);
+  });
+
+  it('(d) preserves arrival order across multiple annotation-created events', () => {
     const events: Event[] = [
       makeAnnotationCreated({
         sequence: 1,
@@ -228,7 +262,7 @@ describe('projectAnnotations (audience)', () => {
     expect(annotations.map((a) => a.id)).toEqual([ANNO_1, ANNO_2, ANNO_3]);
   });
 
-  it('(d) ignores non-annotation events in a mixed log (node-created, edge-created, proposal, commit, vote)', () => {
+  it('(e) ignores non-annotation events in a mixed log (node-created, edge-created, proposal, commit, vote)', () => {
     const events: Event[] = [
       makeNodeCreated({ sequence: 1, nodeId: NODE_X }),
       makeClassifyProposal({
@@ -257,7 +291,7 @@ describe('projectAnnotations (audience)', () => {
     expect(annotations[0]?.id).toBe(ANNO_1);
   });
 
-  it('(e) round-trips every AnnotationKind value through the projection', () => {
+  it('(f) round-trips every AnnotationKind value through the projection', () => {
     const events: Event[] = ALL_ANNOTATION_KINDS.map((kind, index) =>
       makeAnnotationCreated({
         sequence: index + 1,
@@ -273,8 +307,8 @@ describe('projectAnnotations (audience)', () => {
   });
 });
 
-describe('groupAnnotationsByNode (audience)', () => {
-  it('(f) buckets node-targeted annotations under their target node id, accumulating in arrival order across multiple entries on the same node', () => {
+describe('groupAnnotationsByNode', () => {
+  it('(g) buckets node-targeted annotations under their target node id and skips edge-targeted ones (no cross-bucket leakage)', () => {
     const events: Event[] = [
       makeAnnotationCreated({
         sequence: 1,
@@ -297,15 +331,31 @@ describe('groupAnnotationsByNode (audience)', () => {
         targetNodeId: NODE_Y,
         targetEdgeId: null,
       }),
+      makeAnnotationCreated({
+        sequence: 4,
+        annotationId: ANNO_4,
+        kind: 'note',
+        targetNodeId: null,
+        targetEdgeId: EDGE_M,
+      }),
     ];
     const grouped: ReadonlyMap<string, readonly Annotation[]> = groupAnnotationsByNode(
       projectAnnotations(events),
     );
     expect(grouped.get(NODE_X)?.map((a) => a.id)).toEqual([ANNO_1, ANNO_2]);
     expect(grouped.get(NODE_Y)?.map((a) => a.id)).toEqual([ANNO_3]);
+    // The edge-targeted annotation must NOT leak into the node index.
+    expect(grouped.has(EDGE_M)).toBe(false);
+    expect(
+      Array.from(grouped.values())
+        .flat()
+        .map((a) => a.id),
+    ).toEqual([ANNO_1, ANNO_2, ANNO_3]);
   });
+});
 
-  it('(g) skips an edge-targeted annotation (does NOT leak into any node bucket)', () => {
+describe('groupAnnotationsByEdge', () => {
+  it('(h) buckets edge-targeted annotations under their target edge id and skips node-targeted ones (no cross-bucket leakage)', () => {
     const events: Event[] = [
       makeAnnotationCreated({
         sequence: 1,
@@ -316,33 +366,16 @@ describe('groupAnnotationsByNode (audience)', () => {
       }),
       makeAnnotationCreated({
         sequence: 2,
-        annotationId: ANNO_4,
+        annotationId: ANNO_2,
         kind: 'reframe',
+        content: 'qualifies only the accredited subset',
         targetNodeId: null,
         targetEdgeId: EDGE_M,
       }),
-    ];
-    const grouped = groupAnnotationsByNode(projectAnnotations(events));
-    expect(grouped.get(NODE_X)?.map((a) => a.id)).toEqual([ANNO_1]);
-    // The edge-targeted annotation must NOT leak into the node index
-    // (either under the edge id or any other bucket).
-    expect(grouped.has(EDGE_M)).toBe(false);
-    expect(
-      Array.from(grouped.values())
-        .flat()
-        .map((a) => a.id),
-    ).toEqual([ANNO_1]);
-  });
-});
-
-describe('groupAnnotationsByEdge (audience)', () => {
-  it('(h) buckets a single edge-targeted annotation under its target edge id with camelCased fields', () => {
-    const events: Event[] = [
       makeAnnotationCreated({
-        sequence: 1,
-        annotationId: ANNO_1,
-        kind: 'reframe',
-        content: 'qualifies only the accredited subset',
+        sequence: 3,
+        annotationId: ANNO_3,
+        kind: 'stance',
         targetNodeId: null,
         targetEdgeId: EDGE_M,
       }),
@@ -350,17 +383,14 @@ describe('groupAnnotationsByEdge (audience)', () => {
     const grouped: ReadonlyMap<string, readonly Annotation[]> = groupAnnotationsByEdge(
       projectAnnotations(events),
     );
-    expect(grouped.size).toBe(1);
-    expect(grouped.get(EDGE_M)).toHaveLength(1);
-    expect(grouped.get(EDGE_M)?.[0]).toEqual({
-      id: ANNO_1,
-      kind: 'reframe',
-      content: 'qualifies only the accredited subset',
-      targetNodeId: null,
-      targetEdgeId: EDGE_M,
-      createdBy: ACTOR,
-      createdAt: '2026-05-28T00:00:00.000Z',
-    });
+    expect(grouped.get(EDGE_M)?.map((a) => a.id)).toEqual([ANNO_2, ANNO_3]);
+    // The node-targeted annotation must NOT leak into the edge index.
+    expect(grouped.has(NODE_X)).toBe(false);
+    expect(
+      Array.from(grouped.values())
+        .flat()
+        .map((a) => a.id),
+    ).toEqual([ANNO_2, ANNO_3]);
   });
 
   it('(i) buckets a multi-edge mixed log into per-edge entries in arrival order; node-targeted entries do not leak', () => {
@@ -397,12 +427,17 @@ describe('groupAnnotationsByEdge (audience)', () => {
     const grouped = groupAnnotationsByEdge(projectAnnotations(events));
     expect(grouped.get(EDGE_M)?.map((a) => a.id)).toEqual([ANNO_1, ANNO_3]);
     expect(grouped.get(EDGE_N)?.map((a) => a.id)).toEqual([ANNO_2]);
-    // The node-targeted annotation must NOT leak into any edge bucket.
     expect(grouped.has(NODE_X)).toBe(false);
-    expect(
-      Array.from(grouped.values())
-        .flat()
-        .map((a) => a.id),
-    ).toEqual([ANNO_1, ANNO_3, ANNO_2]);
+  });
+});
+
+describe('EMPTY_ANNOTATIONS + bucketer empty-input handling', () => {
+  it('(j) bucketers return an empty Map for an empty annotations input and EMPTY_ANNOTATIONS is a frozen identity-stable reference', () => {
+    expect(groupAnnotationsByNode(EMPTY_ANNOTATIONS).size).toBe(0);
+    expect(groupAnnotationsByEdge(EMPTY_ANNOTATIONS).size).toBe(0);
+    expect(groupAnnotationsByNode([]).size).toBe(0);
+    expect(groupAnnotationsByEdge([]).size).toBe(0);
+    expect(Object.isFrozen(EMPTY_ANNOTATIONS)).toBe(true);
+    expect(EMPTY_ANNOTATIONS).toBe(EMPTY_ANNOTATIONS);
   });
 });

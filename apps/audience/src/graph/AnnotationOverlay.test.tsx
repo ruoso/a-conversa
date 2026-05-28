@@ -34,10 +34,15 @@ import cytoscape, { type Core } from 'cytoscape';
 import i18next from 'i18next';
 import type { AnnotationKind } from '@a-conversa/shared-types';
 
-import { createI18nInstance, I18nProvider, type I18nInstance } from '@a-conversa/shell';
+import {
+  createI18nInstance,
+  EMPTY_ANNOTATIONS,
+  I18nProvider,
+  type Annotation,
+  type I18nInstance,
+} from '@a-conversa/shell';
 
 import { AudienceAnnotationOverlay } from './AnnotationOverlay';
-import { EMPTY_ANNOTATIONS, type Annotation } from './annotations';
 import { installCytoscapeTestEnv, type CytoscapeTestEnvRestoreHandle } from './cytoscapeTestEnv';
 
 const NODE_A = '00000000-0000-4000-8000-00000000cc01';

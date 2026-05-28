@@ -55,10 +55,11 @@ import {
 } from './StatementNode';
 import type { DiagnosticHighlight } from './diagnosticHighlights';
 import type { FacetName, FacetStatus } from './facetStatus';
-import type { Annotation, PendingAxiomMark } from './selectors';
+import type { PendingAxiomMark } from './selectors';
 import {
   WsClientProvider,
   createI18nInstance,
+  type Annotation,
   type AxiomMark,
   type Vote,
   type WsClient,

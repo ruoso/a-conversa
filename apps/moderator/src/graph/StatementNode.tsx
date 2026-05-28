@@ -65,7 +65,8 @@ import { PendingAxiomMarkBadge } from './PendingAxiomMarkBadge.js';
 import type { DiagnosticHighlight } from './diagnosticHighlights.js';
 import { disputationOutcome } from './disputationOutcome.js';
 import type { FacetName, FacetStatus } from './facetStatus.js';
-import { type Annotation, type PendingAxiomMark } from './selectors.js';
+import type { Annotation } from '@a-conversa/shell';
+import { type PendingAxiomMark } from './selectors.js';
 
 /**
  * Canonical reading order for the per-facet pill row. Matches the

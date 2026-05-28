@@ -99,18 +99,16 @@ import {
   type FacetStatus,
 } from './facetStatus.js';
 import {
-  EMPTY_AXIOM_MARKS,
-  groupAxiomMarksByNode,
-  projectAxiomMarks,
-  type AxiomMark,
-} from '@a-conversa/shell';
-import {
   EMPTY_ANNOTATIONS,
+  EMPTY_AXIOM_MARKS,
   groupAnnotationsByEdge,
   groupAnnotationsByNode,
+  groupAxiomMarksByNode,
   projectAnnotations,
+  projectAxiomMarks,
   type Annotation,
-} from './annotations.js';
+  type AxiomMark,
+} from '@a-conversa/shell';
 
 /**
  * The per-node payload `projectGraph` emits on each `node-created`
