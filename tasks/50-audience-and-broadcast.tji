@@ -212,7 +212,21 @@ task audience "Audience and broadcast" {
     task aud_per_facet_visualization "Per-facet state visualization within a single node" {
       effort 2d
       allocate team
+      complete 100
       depends !aud_proposed_styling, !aud_agreed_styling, !aud_disputed_styling
+      note -8<-
+        Refinement: tasks/refinements/audience/aud_per_facet_visualization.md
+
+        DOM-overlay sibling of the Cytoscape canvas (pointer-events-none absolute inset-0);
+        rAF-batched subscription to render/pan/zoom/resize/position/add-remove-data events;
+        one [data-facet-pill-row] per node with non-empty facetStatuses, iterated in canonical
+        wording → classification → substance order via FACET_RENDER_ORDER; anchor above the node
+        bounding box (renderedBoundingBox().y1 - PILL_ROW_OFFSET_Y); <AudiencePerFacetPillOverlay>
+        receives cy via a new useState<Core | null>(null) slot in <AudienceGraphView> paired with
+        existing cyInstanceRef. 10 new PerFacetPillOverlay.test.tsx cases (a–j) + 3 new
+        GraphView.test.tsx cases (ii–kk). Pixel-stability pin deferred to aud_visual_regression
+        per Decision §6 (component not yet reachable through any route).
+      ->8-
     }
     task aud_agreed_styling_mount_assertions "Mount-time Vitest cases for agreed-state computed style" {
       effort 0.25d
@@ -459,6 +473,15 @@ task audience "Audience and broadcast" {
         proposed-state deferrals already pin. Stylesheet correctness and mount-time computed-style are
         fully pinned at the Vitest layer (cases ee–hh in GraphView.test.tsx); this task covers the
         visible pixel rendering only. Source: tasks/refinements/audience/aud_disputed_styling.md.
+
+        Per-facet pill overlay pixel-stability also deferred here per aud_per_facet_visualization
+        Decision §6. Assert that a node with three facet pills (wording=agreed, classification=disputed,
+        substance=proposed) renders with the per-status palette + canonical wording → classification →
+        substance reading order + above-the-node anchor across Chrome/Firefox/WebKit at 720p/1080p/1440p,
+        against the same reference fixtures the layout + typography + state-styling deferrals already pin.
+        Overlay mount lifecycle, subscription set, per-element placement, and canonical reading order are
+        fully pinned at the Vitest layer (PerFacetPillOverlay.test.tsx cases a–j); this task covers the
+        visible pixel rendering only. Source: tasks/refinements/audience/aud_per_facet_visualization.md.
       ->8-
     }
     task aud_obs_render_smoke "Smoke test rendering at OBS-source dimensions" {

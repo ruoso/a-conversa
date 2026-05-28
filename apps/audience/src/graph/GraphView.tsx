@@ -90,6 +90,21 @@
 //   deferred to named-future tasks; this leaf is the third-sibling
 //   trigger but not the extraction commit.)
 //
+// Refinement: tasks/refinements/audience/aud_per_facet_visualization.md
+//   (Decision §1 — DOM-overlay sibling of the Cytoscape canvas; the
+//   `<AudiencePerFacetPillOverlay>` mounts as a positioned sibling of
+//   the canvas mount inside a new `audience-graph-root-wrapper`
+//   positioning ancestor. Decision §2 — pill row anchored above the
+//   node bounding box. Decision §3 — canonical reading order
+//   `wording → classification → substance`. Decision §4 — rAF-batched
+//   commit subscribed to `render pan zoom resize` + `position node` +
+//   `add remove data`. Decision §5 — `cyInstanceRef` is paired with a
+//   new `useState<Core | null>` slot (`cyState`) so the overlay
+//   sibling receives a non-null `cy` prop on the second render; the
+//   external `cyRef` callback API is unchanged. Decision §6 —
+//   Playwright pixel-stability deferral lands on `aud_visual_regression`,
+//   the same destination as the four predecessor styling siblings.)
+//
 // Refinement: tasks/refinements/audience/aud_stylesheet_module_extraction.md
 //   (Decision §1 — `STYLESHEET` remains a module-scope `const` in its
 //   new home `./stylesheet.ts`; reference-stable across renders per
@@ -126,7 +141,7 @@
 // handler). Sibling tasks under `aud_graph_rendering.*` add those
 // back in their own commits as needed.
 
-import { useEffect, useMemo, useRef, type ReactElement } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import cytoscape, { type Core, type ElementDefinition } from 'cytoscape';
 import { useTranslation } from 'react-i18next';
 
@@ -134,6 +149,7 @@ import { useAudienceSession } from '../state/index.js';
 import { buildAudienceLayoutOptions, PADDING } from './layoutOptions.js';
 import { projectGraph } from './projectGraph.js';
 import { STYLESHEET } from './stylesheet.js';
+import { AudiencePerFacetPillOverlay } from './PerFacetPillOverlay.js';
 
 export interface AudienceGraphViewProps {
   /**
@@ -150,6 +166,16 @@ export function AudienceGraphView({ cyRef }: AudienceGraphViewProps): ReactEleme
   const { t } = useTranslation();
   const { events } = useAudienceSession();
   const cyInstanceRef = useRef<Core | null>(null);
+  // Per `aud_per_facet_visualization` Decision §5 — `cyInstanceRef` (a
+  // plain `useRef`) is React-invisible: mutating the ref doesn't
+  // trigger re-renders, so a sibling consumer like
+  // `<AudiencePerFacetPillOverlay>` cannot know when the cy instance
+  // becomes available. The `useState` slot solves the visibility
+  // problem: the mount effect calls `setCyState(cy)` alongside the
+  // imperative ref-mutation, and the overlay re-renders when the
+  // instance lands. The existing `cyRef` callback continues to fire
+  // for external consumers.
+  const [cyState, setCyState] = useState<Core | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   // Track node ids the component has already seen so the element-sync
   // effect can decide whether to run a `breadthfirst` layout pass.
@@ -202,10 +228,12 @@ export function AudienceGraphView({ cyRef }: AudienceGraphViewProps): ReactEleme
       autoungrabify: true,
     });
     cyInstanceRef.current = cy;
+    setCyState(cy);
     cyRef?.(cy);
     return () => {
       cy.destroy();
       cyInstanceRef.current = null;
+      setCyState(null);
       cyRef?.(null);
       knownNodeIdsRef.current = new Set();
       positionCacheRef.current = new Map();
@@ -298,5 +326,10 @@ export function AudienceGraphView({ cyRef }: AudienceGraphViewProps): ReactEleme
     }
   }, [elements]);
 
-  return <div ref={containerRef} data-testid="audience-graph-root" className="h-full w-full" />;
+  return (
+    <div data-testid="audience-graph-root-wrapper" className="relative h-full w-full">
+      <div ref={containerRef} data-testid="audience-graph-root" className="h-full w-full" />
+      <AudiencePerFacetPillOverlay cy={cyState} containerRef={containerRef} />
+    </div>
+  );
 }

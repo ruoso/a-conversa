@@ -70,6 +70,15 @@
 //   `aud_proposed_styling`; the minimal sequence fires Rule 5 (any
 //   current participant's `dispute` vote).)
 //
+// Refinement: tasks/refinements/audience/aud_per_facet_visualization.md
+//   (Acceptance criteria — 3 additional cases (ii–kk) pin the wrapper
+//   structure + the overlay-as-sibling mount + the projection-to-pill-
+//   row integration path. The 28 baseline cases continue to pass: the
+//   `audience-graph-root` testid is unchanged (it now sits inside the
+//   wrapper but the query still resolves), and the `cyRef` callback
+//   API is unchanged. Decision §5 — `cyInstanceRef` is paired with a
+//   new `useState<Core | null>` slot.)
+//
 // Refinement: tasks/refinements/audience/aud_stylesheet_module_extraction.md
 //   (Import-source rewrite only — `STYLESHEET` and the four
 //   `BROADCAST_*` typography constants now resolve from
@@ -860,5 +869,50 @@ describe('<AudienceGraphView>', () => {
     expect(cy.getElementById(EDGE_A).data('rollupStatus')).toBe('disputed');
     expect(cy.getElementById(EDGE_A).style('line-color')).toBe('rgb(225,29,72)');
     expect(cy.getElementById(EDGE_A).style('target-arrow-color')).toBe('rgb(225,29,72)');
+  });
+
+  // ---------------------------------------------------------------
+  // aud_per_facet_visualization — structural assertions on the new
+  // wrapper + overlay-as-sibling mount. The overlay's own mount
+  // lifecycle, subscription set, and per-element placement are pinned
+  // in `PerFacetPillOverlay.test.tsx`.
+  // ---------------------------------------------------------------
+
+  it('(ii) renders the audience-graph-root-wrapper as parent of audience-graph-root and the per-facet pill overlay', () => {
+    renderView();
+    const wrapper = screen.getByTestId('audience-graph-root-wrapper');
+    const inner = screen.getByTestId('audience-graph-root');
+    const overlay = screen.getByTestId('audience-per-facet-pill-overlay');
+    expect(wrapper.contains(inner)).toBe(true);
+    expect(wrapper.contains(overlay)).toBe(true);
+  });
+
+  it('(jj) the wrapper carries the relative + h-full + w-full classNames (positioning ancestor)', () => {
+    renderView();
+    const wrapper = screen.getByTestId('audience-graph-root-wrapper');
+    const className = wrapper.getAttribute('class') ?? '';
+    expect(className).toContain('relative');
+    expect(className).toContain('h-full');
+    expect(className).toContain('w-full');
+  });
+
+  it('(kk) a node with non-empty facetStatuses mounts at least one [data-facet-pill-row] child in the overlay', async () => {
+    // A lone `node-created` produces facetStatuses with
+    // `wording: 'proposed'` (Rule 8 of facetStatus.ts with 0 current
+    // participants). The overlay schedules a rAF commit on mount; the
+    // happy-dom polyfill in `cytoscapeTestEnv` drains via microtask,
+    // so a single Promise-await flushes the pending frame.
+    renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    // Drain the rAF microtask + the React commit that follows.
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const overlay = screen.getByTestId('audience-per-facet-pill-overlay');
+    const rows = overlay.querySelectorAll('[data-facet-pill-row]');
+    expect(rows.length).toBeGreaterThanOrEqual(1);
+    const ids = Array.from(rows).map((r) => r.getAttribute('data-element-id'));
+    expect(ids).toContain(NODE_A);
   });
 });
