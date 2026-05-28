@@ -77,7 +77,7 @@ import {
   groupAxiomMarksByNode,
   projectAxiomMarks,
   type AxiomMark,
-} from './axiomMarks.js';
+} from '@a-conversa/shell';
 
 /**
  * The per-node payload `projectGraph` emits on each `node-created`

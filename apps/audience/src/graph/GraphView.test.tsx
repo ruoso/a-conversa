@@ -970,7 +970,7 @@ describe('<AudienceGraphView>', () => {
     expect(rows.length).toBeGreaterThanOrEqual(1);
     const row = Array.from(rows).find((r) => r.getAttribute('data-element-id') === NODE_A);
     expect(row).toBeTruthy();
-    const badges = row?.querySelectorAll('[data-testid^="audience-axiom-mark-badge-"]');
+    const badges = row?.querySelectorAll('[data-testid^="axiom-mark-badge-"]');
     expect(badges?.length).toBe(1);
     expect(badges?.[0]?.getAttribute('data-participant-id')).toBe(AX_PARTICIPANT_A);
   });
@@ -1005,7 +1005,7 @@ describe('<AudienceGraphView>', () => {
       (r) => r.getAttribute('data-element-id') === NODE_A,
     );
     expect(row).toBeTruthy();
-    const badges = row?.querySelectorAll('[data-testid^="audience-axiom-mark-badge-"]');
+    const badges = row?.querySelectorAll('[data-testid^="axiom-mark-badge-"]');
     expect(badges?.length).toBe(2);
     const participantIds = Array.from(badges ?? []).map((b) =>
       b.getAttribute('data-participant-id'),

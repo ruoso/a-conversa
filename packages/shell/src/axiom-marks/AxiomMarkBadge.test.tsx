@@ -1,23 +1,13 @@
-// Tests for `<AxiomMarkBadge>` — the small per-participant pill rendering
-// one committed axiom-mark on a statement node.
+// Vitest cases for the canonical `<AxiomMarkBadge>` shell primitive.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_axiom_mark_decoration.md
-//
-// Per ADR 0022 these are committed Vitest cases, not throwaway probes.
-// They lock in:
-//
-//   1. The localized tooltip (`title`) resolves through `useTranslation`
-//      against `methodology.axiomMark.tooltip` for each of the three v1
-//      locales (3 locales × 1 base case = 3 cases plus the screen-reader
-//      label variant per locale, 9 cases total at this layer).
-//   2. `data-participant-id` mirrors the prop — the stable seam through
-//      which downstream per-participant assertions / styling layer
-//      without having to parse the testid.
-//   3. `data-testid` follows the `axiom-mark-badge-{nodeId}-{participantId}`
-//      shape — the moderator's tests can target a specific (node, participant)
-//      pair without walking the DOM.
-//   4. Per-participant color determinism — rendering the same
-//      participantId twice produces the same Tailwind background class.
+// Refinement: tasks/refinements/shell-package/shell_axiom_marks_extraction.md
+//   (Consolidates the moderator's `apps/moderator/src/graph/
+//   AxiomMarkBadge.test.tsx` (9 localized tooltip + 2 data-attribute +
+//   2 deterministic-color cases) + the audience's `apps/audience/src/
+//   graph/AxiomMarkBadge.test.tsx` (en-US smoke). The full cross-locale
+//   matrix subsumes the audience smoke; the data-attribute + chromatic
+//   determinism cases land once at the canonical home.)
+// ADRs:        0022 (no throwaway verifications); 0024 (react-i18next).
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
@@ -30,24 +20,20 @@ import {
 import i18next from 'i18next';
 import { act, type ReactElement } from 'react';
 
-import { AxiomMarkBadge } from './AxiomMarkBadge';
-import type { AxiomMark } from './selectors';
-import { axiomMarkColorFor, createI18nInstance } from '@a-conversa/shell';
+import { axiomMarkColorFor } from '../facet-pill/participant-color.js';
+import { createI18nInstance } from '../i18n/index.js';
+
+import { AxiomMarkBadge } from './AxiomMarkBadge.js';
+import type { AxiomMark } from './axiom-marks.js';
 
 // Local `render(...)` shadow that wraps the synchronous testing-library
 // render in `await act(async () => { ... })`. `useTranslation()`
 // schedules a microtask-deferred setState when its internal i18next
-// subscription registers on mount; the deferred update fires AFTER the
-// synchronous render's act() wrapper closes, so with
-// `IS_REACT_ACT_ENVIRONMENT = true` React emits "An update to
-// <Component> was not wrapped in act(...)". Flushing pending microtasks
-// inside the async act block absorbs the deferred update.
+// subscription registers on mount; flushing pending microtasks inside
+// the async act block absorbs the deferred update so React doesn't
+// emit "An update to <Component> was not wrapped in act(...)".
 async function render(ui: ReactElement, options?: RenderOptions): Promise<RenderResult> {
   let result!: RenderResult;
-  // `act` takes the async (microtask-flushing) path when the callback
-  // returns a thenable — `return Promise.resolve()` is enough; no
-  // `async` keyword (which would trip `require-await` since the body
-  // does not await anything).
   await act(() => {
     result = rtlRender(ui, options);
     return Promise.resolve();
@@ -58,9 +44,8 @@ async function render(ui: ReactElement, options?: RenderOptions): Promise<Render
 const NODE_ID = '00000000-0000-4000-8000-000000000a01';
 // PARTICIPANT_A and PARTICIPANT_B hash to two distinct palette buckets
 // (sum-of-hex-digits mod 6 = 1 / 2) so the cross-participant distinct-
-// color test below pins the per-participant differentiation. See the
-// same constants in `selectors.test.ts` for the all-same-digit
-// collision case these UUIDs were chosen to avoid.
+// color test pins the per-participant differentiation without
+// depending on the 1-in-6 collision case.
 const PARTICIPANT_A = '00000000-0000-4000-8000-000000000001';
 const PARTICIPANT_B = '00000000-0000-4000-8000-000000000002';
 
@@ -68,7 +53,7 @@ function makeMark(overrides: Partial<AxiomMark> = {}): AxiomMark {
   return {
     nodeId: overrides.nodeId ?? NODE_ID,
     participantId: overrides.participantId ?? PARTICIPANT_A,
-    committedAt: overrides.committedAt ?? '2026-05-11T00:00:00.000Z',
+    committedAt: overrides.committedAt ?? '2026-05-28T00:00:00.000Z',
   };
 }
 
@@ -82,9 +67,6 @@ afterEach(() => {
 });
 
 describe('AxiomMarkBadge — localized tooltip per locale', () => {
-  // The locale × expected tuple. Each `tooltip` is the canonical resolved
-  // ICU MessageFormat for the participant UUID substitution. The
-  // `srLabel` (aria-label) is the longer screen-reader form.
   const EXPECTED = {
     'en-US': {
       tooltip: `Axiom marked by ${PARTICIPANT_A}`,
@@ -101,14 +83,6 @@ describe('AxiomMarkBadge — localized tooltip per locale', () => {
   } as const;
 
   for (const locale of ['en-US', 'pt-BR', 'es-419'] as const) {
-    // The trailing `await i18next.changeLanguage('en-US')` resets that
-    // used to live at the end of each case here were redundant with the
-    // `beforeEach` reset above — and worse, they fired a microtask-
-    // deferred setState on the still-mounted `<AxiomMarkBadge>` AFTER
-    // the synchronous body returned, surfacing as "An update to
-    // AxiomMarkBadgeImpl was not wrapped in act(...)" warnings now that
-    // `IS_REACT_ACT_ENVIRONMENT = true`. Dropped in favor of the
-    // `beforeEach` reset (Recipe B).
     it(`renders the localized tooltip for ${locale}`, async () => {
       await i18next.changeLanguage(locale);
       await render(<AxiomMarkBadge mark={makeMark()} />);
@@ -149,7 +123,6 @@ describe('AxiomMarkBadge — data attributes', () => {
 describe('AxiomMarkBadge — per-participant deterministic color', () => {
   it('applies the same Tailwind background class for the same participantId across two renders', async () => {
     const expectedColor = axiomMarkColorFor(PARTICIPANT_A);
-    // First render — capture the className.
     const { unmount } = await render(<AxiomMarkBadge mark={makeMark()} />);
     const first = screen.getByTestId(`axiom-mark-badge-${NODE_ID}-${PARTICIPANT_A}`);
     const firstClassName = first.className;
@@ -157,7 +130,6 @@ describe('AxiomMarkBadge — per-participant deterministic color', () => {
     expect(firstClassName).toContain(expectedColor.text);
     expect(firstClassName).toContain(expectedColor.ring);
     unmount();
-    // Second render — same participantId → same className.
     await render(<AxiomMarkBadge mark={makeMark()} />);
     const second = screen.getByTestId(`axiom-mark-badge-${NODE_ID}-${PARTICIPANT_A}`);
     expect(second.className).toBe(firstClassName);
@@ -165,9 +137,8 @@ describe('AxiomMarkBadge — per-participant deterministic color', () => {
 
   it('applies a different background class for a different participantId (when palette buckets differ)', async () => {
     // PARTICIPANT_A and PARTICIPANT_B hash to different palette buckets
-    // (sum-of-hex-digits: A→13%6=1 amber, B→14%6=2 emerald). Pin the
-    // distinctness so a future palette / hash refactor doesn't silently
-    // collapse them.
+    // (sum-of-hex-digits: A→13%6=1, B→14%6=2). Pin the distinctness so
+    // a future palette / hash refactor doesn't silently collapse them.
     await render(<AxiomMarkBadge mark={makeMark({ participantId: PARTICIPANT_A })} />);
     await render(<AxiomMarkBadge mark={makeMark({ participantId: PARTICIPANT_B })} />);
     const a = screen.getByTestId(`axiom-mark-badge-${NODE_ID}-${PARTICIPANT_A}`);

@@ -45,9 +45,7 @@ import type { WsState } from '../ws/wsStore.js';
 import {
   groupAnnotationsByEdge,
   groupAnnotationsByNode,
-  groupAxiomMarksByNode,
   groupPendingAxiomMarksByNode,
-  projectAxiomMarks,
   projectPendingAxiomMarks,
   projectVotesByFacet,
   selectAnnotations,
@@ -992,159 +990,11 @@ function makeCommit(opts: {
   };
 }
 
-describe('projectAxiomMarks', () => {
-  it('returns [] for an empty event log', () => {
-    expect(projectAxiomMarks([])).toEqual([]);
-  });
-
-  it('returns [] when an axiom-mark proposal has no matching commit', () => {
-    const events: Event[] = [
-      makeAxiomMarkProposal({
-        sequence: 1,
-        envelopeId: PROPOSAL_AX_UNCOMMITTED,
-        nodeId: NODE_X,
-        participantId: PARTICIPANT_A,
-      }),
-    ];
-    expect(projectAxiomMarks(events)).toEqual([]);
-  });
-
-  it('emits one AxiomMark for a proposal + commit pair', () => {
-    const events: Event[] = [
-      makeAxiomMarkProposal({
-        sequence: 1,
-        envelopeId: PROPOSAL_AX_A_X,
-        nodeId: NODE_X,
-        participantId: PARTICIPANT_A,
-      }),
-      makeCommit({
-        sequence: 2,
-        proposalEnvelopeId: PROPOSAL_AX_A_X,
-        committedAt: '2026-05-11T10:00:00.000Z',
-      }),
-    ];
-    const marks = projectAxiomMarks(events);
-    expect(marks).toHaveLength(1);
-    expect(marks[0]).toEqual({
-      nodeId: NODE_X,
-      participantId: PARTICIPANT_A,
-      committedAt: '2026-05-11T10:00:00.000Z',
-    });
-  });
-
-  it('emits two AxiomMarks when two participants mark the same node (per-participant uniqueness invariant)', () => {
-    const events: Event[] = [
-      makeAxiomMarkProposal({
-        sequence: 1,
-        envelopeId: PROPOSAL_AX_A_X,
-        nodeId: NODE_X,
-        participantId: PARTICIPANT_A,
-      }),
-      makeCommit({ sequence: 2, proposalEnvelopeId: PROPOSAL_AX_A_X }),
-      makeAxiomMarkProposal({
-        sequence: 3,
-        envelopeId: PROPOSAL_AX_B_X,
-        nodeId: NODE_X,
-        participantId: PARTICIPANT_B,
-      }),
-      makeCommit({ sequence: 4, proposalEnvelopeId: PROPOSAL_AX_B_X }),
-    ];
-    const marks = projectAxiomMarks(events);
-    expect(marks).toHaveLength(2);
-    expect(marks.map((m) => m.participantId)).toEqual([PARTICIPANT_A, PARTICIPANT_B]);
-    expect(marks.every((m) => m.nodeId === NODE_X)).toBe(true);
-  });
-
-  it('preserves emission order in commit-arrival order', () => {
-    // Both proposals land before either commit; the emission order
-    // tracks the commits, not the proposals — so we land A's proposal,
-    // B's proposal, B's commit, A's commit, and assert the resulting
-    // marks come out [B, A].
-    const events: Event[] = [
-      makeAxiomMarkProposal({
-        sequence: 1,
-        envelopeId: PROPOSAL_AX_A_X,
-        nodeId: NODE_X,
-        participantId: PARTICIPANT_A,
-      }),
-      makeAxiomMarkProposal({
-        sequence: 2,
-        envelopeId: PROPOSAL_AX_B_X,
-        nodeId: NODE_X,
-        participantId: PARTICIPANT_B,
-      }),
-      makeCommit({ sequence: 3, proposalEnvelopeId: PROPOSAL_AX_B_X }),
-      makeCommit({ sequence: 4, proposalEnvelopeId: PROPOSAL_AX_A_X }),
-    ];
-    const marks = projectAxiomMarks(events);
-    expect(marks.map((m) => m.participantId)).toEqual([PARTICIPANT_B, PARTICIPANT_A]);
-  });
-
-  it('ignores non-axiom-mark proposals in a mixed log', () => {
-    // A `classify-node` proposal + commit is irrelevant to the axiom-
-    // mark projection. Mixed in with one axiom-mark pair, only the
-    // axiom-mark surfaces.
-    const events: Event[] = [
-      makeNodeCreated(1, NODE_X),
-      {
-        id: '00000000-0000-4000-8000-0000000000d1',
-        sessionId: SESSION,
-        sequence: 2,
-        kind: 'proposal',
-        actor: ACTOR,
-        payload: {
-          proposal: { kind: 'classify-node', node_id: NODE_X, classification: 'fact' },
-        },
-        createdAt: '2026-05-11T00:00:00.000Z',
-      },
-      makeCommit({ sequence: 3, proposalEnvelopeId: '00000000-0000-4000-8000-0000000000d1' }),
-      makeAxiomMarkProposal({
-        sequence: 4,
-        envelopeId: PROPOSAL_AX_A_X,
-        nodeId: NODE_X,
-        participantId: PARTICIPANT_A,
-      }),
-      makeCommit({ sequence: 5, proposalEnvelopeId: PROPOSAL_AX_A_X }),
-    ];
-    const marks = projectAxiomMarks(events);
-    expect(marks).toHaveLength(1);
-    expect(marks[0]?.participantId).toBe(PARTICIPANT_A);
-  });
-});
-
-describe('groupAxiomMarksByNode', () => {
-  it('buckets axiom-marks under their target node id', () => {
-    const events: Event[] = [
-      makeAxiomMarkProposal({
-        sequence: 1,
-        envelopeId: PROPOSAL_AX_A_X,
-        nodeId: NODE_X,
-        participantId: PARTICIPANT_A,
-      }),
-      makeCommit({ sequence: 2, proposalEnvelopeId: PROPOSAL_AX_A_X }),
-      makeAxiomMarkProposal({
-        sequence: 3,
-        envelopeId: PROPOSAL_AX_B_X,
-        nodeId: NODE_X,
-        participantId: PARTICIPANT_B,
-      }),
-      makeCommit({ sequence: 4, proposalEnvelopeId: PROPOSAL_AX_B_X }),
-      makeAxiomMarkProposal({
-        sequence: 5,
-        envelopeId: PROPOSAL_AX_A_Y,
-        nodeId: NODE_Y,
-        participantId: PARTICIPANT_A,
-      }),
-      makeCommit({ sequence: 6, proposalEnvelopeId: PROPOSAL_AX_A_Y }),
-    ];
-    const grouped = groupAxiomMarksByNode(projectAxiomMarks(events));
-    expect(grouped.get(NODE_X)?.map((m) => m.participantId)).toEqual([
-      PARTICIPANT_A,
-      PARTICIPANT_B,
-    ]);
-    expect(grouped.get(NODE_Y)?.map((m) => m.participantId)).toEqual([PARTICIPANT_A]);
-  });
-});
+// The `projectAxiomMarks` / `groupAxiomMarksByNode` cases moved to
+// `packages/shell/src/axiom-marks/axiom-marks.test.ts` as part of
+// `shell_axiom_marks_extraction` — the canonical implementations now
+// live in `@a-conversa/shell` and the consolidated Vitest suite is
+// the single regression pin.
 
 // -- projectPendingAxiomMarks / groupPendingAxiomMarksByNode ----------
 //

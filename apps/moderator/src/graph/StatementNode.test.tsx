@@ -55,8 +55,14 @@ import {
 } from './StatementNode';
 import type { DiagnosticHighlight } from './diagnosticHighlights';
 import type { FacetName, FacetStatus } from './facetStatus';
-import type { Annotation, AxiomMark, PendingAxiomMark } from './selectors';
-import { WsClientProvider, createI18nInstance, type Vote, type WsClient } from '@a-conversa/shell';
+import type { Annotation, PendingAxiomMark } from './selectors';
+import {
+  WsClientProvider,
+  createI18nInstance,
+  type AxiomMark,
+  type Vote,
+  type WsClient,
+} from '@a-conversa/shell';
 import { useSelectionStore } from '../stores';
 
 // Session id used to satisfy `useParams<{ id: string }>()` for the

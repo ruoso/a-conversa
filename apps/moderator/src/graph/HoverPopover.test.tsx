@@ -30,9 +30,9 @@ import { act, type ReactElement } from 'react';
 import { HoverPopover } from './HoverPopover';
 import type { StatementNodeData } from './StatementNode';
 import type { StatementEdgeData } from './selectors';
-import type { AxiomMark, Annotation, PendingAxiomMark } from './selectors';
+import type { Annotation, PendingAxiomMark } from './selectors';
 import type { FacetName, FacetStatus } from './facetStatus';
-import { createI18nInstance } from '@a-conversa/shell';
+import { createI18nInstance, type AxiomMark } from '@a-conversa/shell';
 
 function nodeData(overrides: Partial<StatementNodeData> & { wording: string }): StatementNodeData {
   const emptyAnnotations: readonly Annotation[] = [];

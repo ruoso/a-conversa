@@ -1,15 +1,14 @@
-// Vitest cases for the audience's `projectAxiomMarks` /
+// Vitest cases for the canonical `projectAxiomMarks` /
 // `groupAxiomMarksByNode` derivation.
 //
-// Refinement: tasks/refinements/audience/aud_axiom_mark_decoration.md
-//              (Constraints — 7 Vitest cases mirroring the participant's
-//              `projectAxiomMarks` coverage; the audience port omits
-//              `nodeHasAxiomMark` so the participant's (g) split into
-//              boolean + bucketing collapses into one bucketing case.)
-// ADRs:        0022 (no throwaway verifications — every behavioural
-//              assertion is a committed test case).
+// Refinement: tasks/refinements/shell-package/shell_axiom_marks_extraction.md
+//   (Consolidates the moderator's `apps/moderator/src/graph/selectors.test.ts`
+//   axiom-mark block + the participant's `apps/participant/src/graph/
+//   axiomMarks.test.ts` + the audience's `apps/audience/src/graph/
+//   axiomMarks.test.ts` into one suite at the canonical shell home.)
+// ADRs:        0022 (no throwaway verifications).
 //
-// The 7 cases per the refinement's "Constraints" section:
+// The 7 cases mirror the predecessor suites' union:
 //   (a) empty event log → [].
 //   (b) `axiom-mark` proposal without commit → [].
 //   (c) one (proposal + commit) pair → one `AxiomMark` with the right
@@ -19,12 +18,13 @@
 //   (e) emission order matches commit arrival order.
 //   (f) mixed log — non-axiom-mark proposals (`classify-node`) and
 //       unrelated event kinds are ignored.
-//   (g) `groupAxiomMarksByNode` buckets correctly.
+//   (g) `groupAxiomMarksByNode` buckets axiom-marks under their target
+//       node id (multi-bucket case).
 
 import { describe, expect, it } from 'vitest';
 import type { Event } from '@a-conversa/shared-types';
 
-import { groupAxiomMarksByNode, projectAxiomMarks, type AxiomMark } from './axiomMarks';
+import { groupAxiomMarksByNode, projectAxiomMarks, type AxiomMark } from './axiom-marks.js';
 
 const SESSION_ID = '00000000-0000-4000-8000-000000000001';
 const NODE_X = '00000000-0000-4000-8000-0000000000c1';
@@ -185,6 +185,8 @@ describe('projectAxiomMarks', () => {
   });
 
   it('(e) preserves emission order in commit-arrival order', () => {
+    // Both proposals land before either commit; the emission order
+    // tracks the commits, not the proposals.
     const events: Event[] = [
       makeAxiomMarkProposal({
         sequence: 1,

@@ -113,18 +113,16 @@ import { computeFacetStatuses, EMPTY_FACET_STATUSES } from './facetStatus.js';
 import { disputationOutcome } from './disputationOutcome.js';
 import {
   EMPTY_ANNOTATIONS,
-  EMPTY_AXIOM_MARKS,
   EMPTY_PENDING_AXIOM_MARKS,
   EMPTY_VOTES_BY_FACET,
   groupAnnotationsByNode,
-  groupAxiomMarksByNode,
   groupPendingAxiomMarksByNode,
   projectAnnotations,
-  projectAxiomMarks,
   projectPendingAxiomMarks,
   projectVotesByFacet,
   selectEdgesForSession,
 } from './selectors.js';
+import { EMPTY_AXIOM_MARKS, groupAxiomMarksByNode, projectAxiomMarks } from '@a-conversa/shell';
 import type { DiagnosticPayload } from '@a-conversa/shared-types';
 
 /**

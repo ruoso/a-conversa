@@ -97,4 +97,14 @@ export {
   type Vote,
 } from './facet-pill/index.js';
 
+// ─── axiom-marks ─────────────────────────────────────────────────────────
+export {
+  AxiomMarkBadge,
+  EMPTY_AXIOM_MARKS,
+  groupAxiomMarksByNode,
+  projectAxiomMarks,
+  type AxiomMark,
+  type AxiomMarkBadgeProps,
+} from './axiom-marks/index.js';
+
 export const SHELL_PACKAGE_VERSION = '0.1.0' as const;

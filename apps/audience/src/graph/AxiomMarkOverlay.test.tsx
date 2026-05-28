@@ -26,11 +26,11 @@ import {
   I18nProvider,
   axiomMarkColorFor,
   createI18nInstance,
+  type AxiomMark,
   type I18nInstance,
 } from '@a-conversa/shell';
 
 import { AudienceAxiomMarkOverlay } from './AxiomMarkOverlay';
-import type { AxiomMark } from './axiomMarks';
 import { installCytoscapeTestEnv, type CytoscapeTestEnvRestoreHandle } from './cytoscapeTestEnv';
 
 const NODE_A = '00000000-0000-4000-8000-00000000cc01';
@@ -215,7 +215,7 @@ describe('AudienceAxiomMarkOverlay', () => {
       await flushRaf();
       const row = document.querySelector(`[data-axiom-mark-row][data-element-id="${NODE_A}"]`);
       expect(row).not.toBeNull();
-      const badges = row?.querySelectorAll('[data-testid^="audience-axiom-mark-badge-"]');
+      const badges = row?.querySelectorAll('[data-testid^="axiom-mark-badge-"]');
       expect(badges?.length).toBe(1);
       expect(badges?.[0]?.getAttribute('data-participant-id')).toBe(PARTICIPANT_A);
     } finally {
@@ -235,7 +235,7 @@ describe('AudienceAxiomMarkOverlay', () => {
       await flushRaf();
       const row = document.querySelector(`[data-axiom-mark-row][data-element-id="${NODE_A}"]`);
       expect(row).not.toBeNull();
-      const badges = row?.querySelectorAll('[data-testid^="audience-axiom-mark-badge-"]');
+      const badges = row?.querySelectorAll('[data-testid^="axiom-mark-badge-"]');
       expect(badges?.length).toBe(2);
       expect(badges?.[0]?.getAttribute('data-participant-id')).toBe(PARTICIPANT_A);
       expect(badges?.[1]?.getAttribute('data-participant-id')).toBe(PARTICIPANT_B);
@@ -345,7 +345,7 @@ describe('AudienceAxiomMarkOverlay', () => {
       });
       await flushRaf();
       const badge = document.querySelector(
-        `[data-axiom-mark-row][data-element-id="${NODE_A}"] [data-testid="audience-axiom-mark-badge-${NODE_A}-${PARTICIPANT_A}"]`,
+        `[data-axiom-mark-row][data-element-id="${NODE_A}"] [data-testid="axiom-mark-badge-${NODE_A}-${PARTICIPANT_A}"]`,
       );
       expect(badge).not.toBeNull();
       const ariaLabel = badge?.getAttribute('aria-label') ?? '';

@@ -41,8 +41,7 @@
 import { useEffect, useRef, useState, type ReactElement, type RefObject } from 'react';
 import type { Core, NodeSingular } from 'cytoscape';
 
-import { AudienceAxiomMarkBadge } from './AxiomMarkBadge.js';
-import type { AxiomMark } from './axiomMarks.js';
+import { AxiomMarkBadge, type AxiomMark } from '@a-conversa/shell';
 
 export interface AudienceAxiomMarkOverlayProps {
   /**
@@ -147,7 +146,7 @@ export function AudienceAxiomMarkOverlay({
           }}
         >
           {p.marks.map((mark) => (
-            <AudienceAxiomMarkBadge key={mark.participantId} mark={mark} />
+            <AxiomMarkBadge key={mark.participantId} mark={mark} />
           ))}
         </div>
       ))}

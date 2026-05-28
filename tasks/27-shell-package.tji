@@ -110,6 +110,7 @@ task shell_package "Shell package (@aconversa/shell)" {
   task shell_axiom_marks_extraction "Lift AxiomMark + EMPTY_AXIOM_MARKS + projectAxiomMarks + groupAxiomMarksByNode + <AxiomMarkBadge> into @a-conversa/shell (third-caller trigger fired by audience)" {
     effort 0.5d
     allocate team
+    complete 100
     depends moderator_ui.mod_graph_rendering.mod_axiom_mark_decoration, participant_ui.part_graph_view.part_axiom_mark_decoration, audience.aud_graph_rendering.aud_axiom_mark_decoration
     note -8<-
       Lift `AxiomMark` + `EMPTY_AXIOM_MARKS` + `projectAxiomMarks` + `groupAxiomMarksByNode`
@@ -122,6 +123,28 @@ task shell_package "Shell package (@aconversa/shell)" {
 
       Third-caller trigger: audience.aud_graph_rendering.aud_axiom_mark_decoration (2026-05-28).
       Source-of-debt: tasks/refinements/audience/aud_axiom_mark_decoration.md Decision §3.
+    ->8-
+  }
+
+  task shell_axiom_mark_panel_badge_consolidation "Consolidate apps/participant/src/detail/AxiomMarkBadge.tsx into the canonical @a-conversa/shell <AxiomMarkBadge> once prop/i18n shape is aligned" {
+    effort 0.5d
+    allocate team
+    depends !shell_axiom_marks_extraction
+    note -8<-
+      Source of debt: tasks/refinements/shell-package/shell_axiom_marks_extraction.md Status block.
+
+      The participant detail-panel badge was NOT consolidated during shell_axiom_marks_extraction because it
+      takes {participantId, screenName} instead of {mark: AxiomMark}, uses i18n key
+      participant.detailPanel.axiomMarkBadge.srLabel (resolves screen names locally) instead of
+      methodology.axiomMark.srLabel, and uses testid prefix participant-detail-panel-axiom-mark-badge-
+      instead of axiom-mark-badge-. Unifying it requires either dropping screen-name resolution or
+      extending the canonical badge's prop shape — a behavior change, not a pure refactor.
+
+      Scope: write a refinement that decides whether to (A) extend the canonical AxiomMarkBadge prop shape
+      to accept an optional screenName override, (B) drop the local screen-name resolution and accept the
+      UUID-keyed ICU output, or (C) keep the panel badge as a separate shell symbol. Then land the chosen
+      shape, delete apps/participant/src/detail/AxiomMarkBadge.tsx, and rewire the single call site at
+      apps/participant/src/detail/EntityDetailPanel.tsx.
     ->8-
   }
 
