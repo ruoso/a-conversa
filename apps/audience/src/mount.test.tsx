@@ -422,4 +422,73 @@ describe('audience surface mount()', () => {
     expect(container.innerHTML).toBe('');
     styleEl.remove();
   });
+
+  it('renders into a transparent body for OBS browser-source alpha-channel compositing', async () => {
+    // `aud_obs_transparency` — the OBS browser source composites the
+    // rendered page over the producer's scene via the page's alpha
+    // channel. The audience surface's `<body>` is transparent so
+    // Cytoscape's naturally-transparent canvas passes through to OBS;
+    // node fills stay `#ffffff` (legibility on arbitrary producer scenes)
+    // but the page background is `rgba(0, 0, 0, 0)`.
+    //
+    // happy-dom's `disableCSSFileLoading: true` (vitest.config.ts) blocks
+    // auto-fetching `<link rel="stylesheet">`, so the surface's
+    // `import './index.css'` does not actually apply styles in this
+    // environment. Read the live `index.css` content off disk and inject
+    // it as a `<style>` element so happy-dom's style engine sees the
+    // same rules a browser would — keeping the assertion bound to the
+    // *file* (removing `body { background-color: transparent }` from
+    // index.css must fail this test).
+    const indexCss = readFileSync(resolve(process.cwd(), 'apps/audience/src/index.css'), 'utf8');
+    const styleEl = document.createElement('style');
+    styleEl.setAttribute('data-test-injected', 'audience-index-css');
+    styleEl.textContent = indexCss;
+    document.head.appendChild(styleEl);
+
+    const i18n = await createI18nInstance('en-US');
+    const auth: AuthContextValue = {
+      status: 'unauthenticated',
+      user: undefined,
+      refresh: () => undefined,
+      logout: () => undefined,
+    };
+
+    const container = document.createElement('div');
+    container.id = 'root';
+    document.body.appendChild(container);
+    window.history.replaceState(
+      {},
+      '',
+      '/a/placeholder-fallback/00000000-0000-4000-8000-000000000099',
+    );
+
+    let unmount!: () => void;
+    act(() => {
+      unmount = mount({
+        container,
+        auth,
+        i18n: i18n as unknown as I18n,
+        routerBasePath: '/a',
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('route-audience-placeholder')).toBeTruthy();
+    });
+
+    // Both `transparent` (the literal keyword happy-dom preserves) and
+    // `rgba(0, 0, 0, 0)` (the canonical Chromium serialisation) are valid
+    // "no paint" values; the assertion accepts either. Any opaque body
+    // paint regresses — `rgb(255, 255, 255)` (white), `rgb(248, 250, 252)`
+    // (`bg-slate-50`), any non-zero alpha — all surface here.
+    expect(getComputedStyle(document.body).backgroundColor).toMatch(
+      /^(transparent|rgba\(0, ?0, ?0, ?0\))$/,
+    );
+
+    act(() => {
+      unmount();
+    });
+    expect(container.innerHTML).toBe('');
+    styleEl.remove();
+  });
 });

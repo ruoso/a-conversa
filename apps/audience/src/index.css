@@ -53,3 +53,16 @@ body,
 body {
   overflow: hidden;
 }
+
+/* `aud_obs_transparency` — OBS browser sources composite the rendered
+ * page over the producer's scene via the page's alpha channel. Chromium's
+ * user-agent default for `<body>` background-color is opaque white, which
+ * would occlude the producer's scene completely. Setting the body to
+ * transparent lets Cytoscape's naturally transparent canvas pass through
+ * to OBS, so node/edge paint composites cleanly over the producer's
+ * background. Node fills remain `#ffffff` (see stylesheet.ts) for label-
+ * legibility on arbitrary producer scenes — that's a per-element choice,
+ * not a page-level paint. */
+body {
+  background-color: transparent;
+}

@@ -288,6 +288,7 @@ task audience "Audience and broadcast" {
     task aud_obs_transparency "Background transparency for compositing" {
       effort 0.5d
       allocate team
+      complete 100
       depends !aud_obs_sizing_defaults
     }
     task aud_obs_no_input_required "Ensure no user input is required for OBS rendering" {

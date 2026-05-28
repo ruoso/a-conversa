@@ -47,6 +47,21 @@
 // `aud_tests.aud_obs_render_smoke` (graph route not yet reachable, so
 // the placeholder route is dimension-insensitive at this tier).
 //
+// **OBS transparency invariant** (`aud_obs_transparency`). The audience
+// surface's `<body>` is transparent (`background-color: transparent`,
+// serialised by Chromium as `rgba(0, 0, 0, 0)`) so an OBS browser
+// source composites the rendered graph over the producer's scene via
+// the page's alpha channel — zero per-producer setup, perfect-edge
+// compositing on anti-aliased Cytoscape glyphs. Cytoscape's canvas is
+// transparent by construction (no background fill in the stylesheet);
+// the body transparency lets that natural transparency reach OBS.
+// Node fills remain `#ffffff` (see `graph/stylesheet.ts`) — that's a
+// legibility decision for slate-900 label text on arbitrary producer
+// scenes, NOT a page-level paint. Pinned by a Vitest mount audit in
+// `mount.test.tsx` and a Playwright assertion appended to scenario 6
+// of `tests/e2e/audience-live-session.spec.ts`; the dimension-matrix
+// pin across 720p / 1440p lives in `aud_tests.aud_obs_render_smoke`.
+//
 // The single wildcard route absorbs every URL inside `/a/*` (e.g.
 // `/a/sessions/:id`, `/a/en-US/sessions/:id`, `/a/foo/bar`). The real
 // audience routes — `<AudienceViewRoute>` for live, the replay deep-

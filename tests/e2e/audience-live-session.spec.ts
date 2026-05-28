@@ -492,6 +492,18 @@ test.describe('Audience live session route — /a/sessions/:sessionId', () => {
         expect(box!.y).toBeLessThanOrEqual(1);
         expect(Math.abs(box!.width - 1920)).toBeLessThanOrEqual(1);
         expect(Math.abs(box!.height - 1080)).toBeLessThanOrEqual(1);
+
+        // `aud_obs_transparency` — the body composites with the
+        // producer's scene via the alpha channel. The Vitest mount audit
+        // pins this at the placeholder tier; this assertion extends the
+        // pin to the reachable graph route under real Chromium at the
+        // canonical 1080p OBS browser-source dimension. The dimension
+        // matrix (720p, 1440p) is `aud_tests.aud_obs_render_smoke`'s
+        // concern.
+        const bodyBackgroundColor = await page.evaluate(
+          () => getComputedStyle(document.body).backgroundColor,
+        );
+        expect(bodyBackgroundColor).toBe('rgba(0, 0, 0, 0)');
       } finally {
         await context.close();
       }
