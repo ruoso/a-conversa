@@ -79,6 +79,14 @@
 //   API is unchanged. Decision §5 — `cyInstanceRef` is paired with a
 //   new `useState<Core | null>` slot.)
 //
+// Refinement: tasks/refinements/audience/aud_axiom_mark_decoration.md
+//   (Acceptance criteria — 3 additional cases (ll–nn) pin the second
+//   DOM-overlay sibling mount + the projection-to-badge-row integration
+//   path: structural sibling, single-participant integration, multi-
+//   participant integration. The overlay's own mount lifecycle,
+//   subscription set, and per-element placement are pinned in
+//   `AxiomMarkOverlay.test.tsx`.)
+//
 // Refinement: tasks/refinements/audience/aud_stylesheet_module_extraction.md
 //   (Import-source rewrite only — `STYLESHEET` and the four
 //   `BROADCAST_*` typography constants now resolve from
@@ -894,6 +902,115 @@ describe('<AudienceGraphView>', () => {
     expect(className).toContain('relative');
     expect(className).toContain('h-full');
     expect(className).toContain('w-full');
+  });
+
+  // ---------------------------------------------------------------
+  // aud_axiom_mark_decoration — wrapper hosts both overlays as
+  // siblings; integration cases assert the projection-to-badge-row
+  // path lights up when a committed axiom-mark lands on a node.
+  // ---------------------------------------------------------------
+
+  function axiomMarkProposalEvent(opts: {
+    sequence: number;
+    envelopeId: string;
+    nodeId: string;
+    participantId: string;
+  }): Event {
+    return {
+      id: opts.envelopeId,
+      sessionId: SESSION_ID,
+      sequence: opts.sequence,
+      kind: 'proposal',
+      actor: opts.participantId,
+      payload: {
+        proposal: {
+          kind: 'axiom-mark',
+          node_id: opts.nodeId,
+          participant: opts.participantId,
+        },
+      },
+      createdAt: '2026-05-27T00:00:00.000Z',
+    };
+  }
+
+  const AX_PARTICIPANT_A = '00000000-0000-4000-8000-0000000000a1';
+  const AX_PARTICIPANT_B = '00000000-0000-4000-8000-0000000000a2';
+  const AX_PROPOSAL_A = '00000000-0000-4000-8000-0000000000d1';
+  const AX_PROPOSAL_B = '00000000-0000-4000-8000-0000000000d2';
+
+  it('(ll) the wrapper hosts both the per-facet pill overlay and the axiom-mark overlay as siblings of audience-graph-root', () => {
+    renderView();
+    const wrapper = screen.getByTestId('audience-graph-root-wrapper');
+    const inner = screen.getByTestId('audience-graph-root');
+    const facetOverlay = screen.getByTestId('audience-per-facet-pill-overlay');
+    const axiomOverlay = screen.getByTestId('audience-axiom-mark-overlay');
+    expect(wrapper.contains(inner)).toBe(true);
+    expect(wrapper.contains(facetOverlay)).toBe(true);
+    expect(wrapper.contains(axiomOverlay)).toBe(true);
+  });
+
+  it('(mm) a node with a committed axiom-mark mounts a [data-axiom-mark-row] child carrying the matching participant id', async () => {
+    renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(
+      axiomMarkProposalEvent({
+        sequence: 2,
+        envelopeId: AX_PROPOSAL_A,
+        nodeId: NODE_A,
+        participantId: AX_PARTICIPANT_A,
+      }),
+    );
+    seedEvent(commitEvent({ sequence: 3, proposalEnvelopeId: AX_PROPOSAL_A }));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const overlay = screen.getByTestId('audience-axiom-mark-overlay');
+    const rows = overlay.querySelectorAll('[data-axiom-mark-row]');
+    expect(rows.length).toBeGreaterThanOrEqual(1);
+    const row = Array.from(rows).find((r) => r.getAttribute('data-element-id') === NODE_A);
+    expect(row).toBeTruthy();
+    const badges = row?.querySelectorAll('[data-testid^="audience-axiom-mark-badge-"]');
+    expect(badges?.length).toBe(1);
+    expect(badges?.[0]?.getAttribute('data-participant-id')).toBe(AX_PARTICIPANT_A);
+  });
+
+  it('(nn) two participants marking the same node produce two distinct badges in commit-arrival order', async () => {
+    renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(
+      axiomMarkProposalEvent({
+        sequence: 2,
+        envelopeId: AX_PROPOSAL_A,
+        nodeId: NODE_A,
+        participantId: AX_PARTICIPANT_A,
+      }),
+    );
+    seedEvent(
+      axiomMarkProposalEvent({
+        sequence: 3,
+        envelopeId: AX_PROPOSAL_B,
+        nodeId: NODE_A,
+        participantId: AX_PARTICIPANT_B,
+      }),
+    );
+    seedEvent(commitEvent({ sequence: 4, proposalEnvelopeId: AX_PROPOSAL_A }));
+    seedEvent(commitEvent({ sequence: 5, proposalEnvelopeId: AX_PROPOSAL_B }));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const overlay = screen.getByTestId('audience-axiom-mark-overlay');
+    const row = Array.from(overlay.querySelectorAll('[data-axiom-mark-row]')).find(
+      (r) => r.getAttribute('data-element-id') === NODE_A,
+    );
+    expect(row).toBeTruthy();
+    const badges = row?.querySelectorAll('[data-testid^="audience-axiom-mark-badge-"]');
+    expect(badges?.length).toBe(2);
+    const participantIds = Array.from(badges ?? []).map((b) =>
+      b.getAttribute('data-participant-id'),
+    );
+    expect(participantIds).toEqual([AX_PARTICIPANT_A, AX_PARTICIPANT_B]);
   });
 
   it('(kk) a node with non-empty facetStatuses mounts at least one [data-facet-pill-row] child in the overlay', async () => {

@@ -202,7 +202,21 @@ task audience "Audience and broadcast" {
     task aud_axiom_mark_decoration "Per-participant axiom-mark decoration" {
       effort 1d
       allocate team
+      complete 100
       depends !aud_cytoscape_init
+      note -8<-
+        Refinement: tasks/refinements/audience/aud_axiom_mark_decoration.md
+
+        Per-participant chromatic axiom-mark badges rendered as a DOM-overlay sibling of the
+        Cytoscape canvas. axiomMarks.ts port (projectAxiomMarks + groupAxiomMarksByNode +
+        AxiomMark + EMPTY_AXIOM_MARKS); <AudienceAxiomMarkBadge> (colored via axiomMarkColorFor
+        from @a-conversa/shell, centered "A" glyph, role="img", data-testid/data-participant-id
+        seams); <AudienceAxiomMarkOverlay> (rAF-batched, anchored 6 px below node bounding box,
+        cy.nodes() only). AudienceNodeData extended with axiomMarks field; projectGraph stamps
+        per-node from axiomMarkIndex. 30 new Vitest cases. Playwright deferred to
+        aud_visual_regression (audience surface not yet reachable). Tech-debt:
+        shell_axiom_marks_extraction registered in tasks/27-shell-package.tji.
+      ->8-
     }
     task aud_annotation_rendering "Annotation rendering" {
       effort 1d

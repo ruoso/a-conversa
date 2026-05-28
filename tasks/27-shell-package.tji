@@ -107,6 +107,24 @@ task shell_package "Shell package (@aconversa/shell)" {
     ->8-
   }
 
+  task shell_axiom_marks_extraction "Lift AxiomMark + EMPTY_AXIOM_MARKS + projectAxiomMarks + groupAxiomMarksByNode + <AxiomMarkBadge> into @a-conversa/shell (third-caller trigger fired by audience)" {
+    effort 0.5d
+    allocate team
+    depends moderator_ui.mod_graph_rendering.mod_axiom_mark_decoration, participant_ui.part_graph_view.part_axiom_mark_decoration, audience.aud_graph_rendering.aud_axiom_mark_decoration
+    note -8<-
+      Lift `AxiomMark` + `EMPTY_AXIOM_MARKS` + `projectAxiomMarks` + `groupAxiomMarksByNode`
+      from `apps/{moderator,participant,audience}/src/graph/` into
+      `packages/shell/src/axiom-marks/`; consolidate the three client copies as
+      `@a-conversa/shell` imports; keep `nodeHasAxiomMark` participant-local (one call site,
+      collapse-to-boolean shape the audience doesn't need). Also lift the moderator+audience
+      `<AxiomMarkBadge>` component as a sibling cross-surface lift (shape is identical across
+      both callers; third-caller trigger fires here).
+
+      Third-caller trigger: audience.aud_graph_rendering.aud_axiom_mark_decoration (2026-05-28).
+      Source-of-debt: tasks/refinements/audience/aud_axiom_mark_decoration.md Decision §3.
+    ->8-
+  }
+
   task shared_shell_extract_merge_slots_and_derive_slot_occupants "Extract mergeSlots + deriveSlotOccupants helpers into @a-conversa/shell once the audience view becomes the third caller" {
     effort 0.5d
     allocate team

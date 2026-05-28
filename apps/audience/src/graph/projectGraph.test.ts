@@ -13,6 +13,12 @@
 //   Decision §4). The commit-arm kind flips preserve both fields via
 //   the `{...existing.data}` spread.)
 //
+// Refinement: tasks/refinements/audience/aud_axiom_mark_decoration.md
+//   (Acceptance criteria — 5 additional cases (q–u) pin the per-node
+//   axiom-mark stamping: default empty, targeted non-empty, multi-
+//   participant accumulation, commit-survives-kind-flip, and edges-
+//   carry-no-axiomMarks shape.)
+//
 // ADRs: 0022 (no throwaway verifications — the projection's
 //   behaviour is fully pinned at this pure layer; the `<AudienceGraphView>`
 //   mount tests then assert the Cytoscape side without re-asserting
@@ -474,6 +480,125 @@ describe('projectGraph (audience baseline)', () => {
     expect(nodes[0]?.data.facetStatuses.classification).toBe('agreed');
     expect(nodes[0]?.data.facetStatuses.substance).toBe('proposed');
     expect(nodes[0]?.data.rollupStatus).toBe('proposed');
+  });
+
+  // ---------------------------------------------------------------
+  // aud_axiom_mark_decoration — per-node axiom-mark stamping. Pinned
+  // cases pulled directly from the refinement Constraints section.
+  // ---------------------------------------------------------------
+
+  function makeAxiomMarkProposal(opts: {
+    sequence: number;
+    envelopeId: string;
+    nodeId: string;
+    participantId: string;
+  }): Event {
+    return {
+      id: opts.envelopeId,
+      sessionId: SESSION_ID,
+      sequence: opts.sequence,
+      kind: 'proposal',
+      actor: opts.participantId,
+      payload: {
+        proposal: {
+          kind: 'axiom-mark',
+          node_id: opts.nodeId,
+          participant: opts.participantId,
+        },
+      },
+      createdAt: '2026-05-28T00:00:00.000Z',
+    };
+  }
+
+  const PARTICIPANT_AX_A = '00000000-0000-4000-8000-0000000000aa1';
+  const PARTICIPANT_AX_B = '00000000-0000-4000-8000-0000000000bb2';
+  const PROPOSAL_AX_A = '00000000-0000-4000-8000-0000000000ax1';
+  const PROPOSAL_AX_B = '00000000-0000-4000-8000-0000000000ax2';
+
+  it('(q) stamps axiomMarks: [] on every projected node by default when no axiom-mark events landed', () => {
+    const events: Event[] = [makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' })];
+    const { nodes } = projectGraph(events);
+    expect(nodes[0]?.data.axiomMarks).toEqual([]);
+  });
+
+  it('(r) stamps a one-entry axiomMarks array on a node targeted by a committed axiom-mark', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeAxiomMarkProposal({
+        sequence: 2,
+        envelopeId: PROPOSAL_AX_A,
+        nodeId: NODE_A,
+        participantId: PARTICIPANT_AX_A,
+      }),
+      makeCommit({ sequence: 3, proposalEnvelopeId: PROPOSAL_AX_A }),
+    ];
+    const { nodes } = projectGraph(events);
+    expect(nodes[0]?.data.axiomMarks).toHaveLength(1);
+    expect(nodes[0]?.data.axiomMarks[0]).toEqual({
+      nodeId: NODE_A,
+      participantId: PARTICIPANT_AX_A,
+      committedAt: '2026-05-27T00:00:00.000Z',
+    });
+  });
+
+  it('(s) stamps a two-entry axiomMarks array on a node two participants have marked, in commit-arrival order', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeAxiomMarkProposal({
+        sequence: 2,
+        envelopeId: PROPOSAL_AX_A,
+        nodeId: NODE_A,
+        participantId: PARTICIPANT_AX_A,
+      }),
+      makeAxiomMarkProposal({
+        sequence: 3,
+        envelopeId: PROPOSAL_AX_B,
+        nodeId: NODE_A,
+        participantId: PARTICIPANT_AX_B,
+      }),
+      makeCommit({ sequence: 4, proposalEnvelopeId: PROPOSAL_AX_B }),
+      makeCommit({ sequence: 5, proposalEnvelopeId: PROPOSAL_AX_A }),
+    ];
+    const { nodes } = projectGraph(events);
+    expect(nodes[0]?.data.axiomMarks.map((m) => m.participantId)).toEqual([
+      PARTICIPANT_AX_B,
+      PARTICIPANT_AX_A,
+    ]);
+  });
+
+  it('(t) preserves axiomMarks across a later classify-node commit (commit-arm spread)', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeAxiomMarkProposal({
+        sequence: 2,
+        envelopeId: PROPOSAL_AX_A,
+        nodeId: NODE_A,
+        participantId: PARTICIPANT_AX_A,
+      }),
+      makeCommit({ sequence: 3, proposalEnvelopeId: PROPOSAL_AX_A }),
+      makeClassifyProposal({
+        sequence: 4,
+        envelopeId: PROPOSAL_A,
+        nodeId: NODE_A,
+        classification: 'value',
+      }),
+      makeCommit({ sequence: 5, proposalEnvelopeId: PROPOSAL_A }),
+    ];
+    const { nodes } = projectGraph(events);
+    expect(nodes[0]?.data.kind).toBe('value');
+    expect(nodes[0]?.data.axiomMarks).toHaveLength(1);
+    expect(nodes[0]?.data.axiomMarks[0]?.participantId).toBe(PARTICIPANT_AX_A);
+  });
+
+  it('(u) edges carry no axiomMarks field — AudienceEdgeData is unchanged', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeNodeCreated({ sequence: 2, nodeId: NODE_B, wording: 'B' }),
+      makeEdgeCreated({ sequence: 3, edgeId: EDGE_A, source: NODE_A, target: NODE_B }),
+    ];
+    const { edges } = projectGraph(events);
+    expect(edges).toHaveLength(1);
+    expect((edges[0]?.data as unknown as Record<string, unknown>).axiomMarks).toBeUndefined();
   });
 
   it('(j) is invariant under non-causal events interleaved between node-created and its classify commit', () => {

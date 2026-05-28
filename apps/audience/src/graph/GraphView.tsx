@@ -105,6 +105,22 @@
 //   Playwright pixel-stability deferral lands on `aud_visual_regression`,
 //   the same destination as the four predecessor styling siblings.)
 //
+// Refinement: tasks/refinements/audience/aud_axiom_mark_decoration.md
+//   (Decision §1 — per-participant chromatic axiom-mark badges land as
+//   a second DOM-overlay sibling of the Cytoscape canvas (below the
+//   node card), distinct from the per-facet pill overlay above the
+//   node. Decision §2 — projection stamps
+//   `data.axiomMarks: readonly AxiomMark[]` on every node; the
+//   overlay reads the field and iterates in commit-arrival order.
+//   Decision §3 — inline port of `<AxiomMarkBadge>` + `axiomMarks.ts`
+//   into the audience workspace; the third-caller shell extract is
+//   deferred to the named-future-task
+//   `shell_axiom_marks_extraction`. Decision §4 — badge row anchored
+//   BELOW the node bounding box for spatial layer separation from the
+//   above-the-node per-facet pill row. Decision §5 — reuse the
+//   existing `cyState` slot; no new `useState`. Decision §6 —
+//   Playwright pixel-stability deferral lands on `aud_visual_regression`.)
+//
 // Refinement: tasks/refinements/audience/aud_stylesheet_module_extraction.md
 //   (Decision §1 — `STYLESHEET` remains a module-scope `const` in its
 //   new home `./stylesheet.ts`; reference-stable across renders per
@@ -150,6 +166,7 @@ import { buildAudienceLayoutOptions, PADDING } from './layoutOptions.js';
 import { projectGraph } from './projectGraph.js';
 import { STYLESHEET } from './stylesheet.js';
 import { AudiencePerFacetPillOverlay } from './PerFacetPillOverlay.js';
+import { AudienceAxiomMarkOverlay } from './AxiomMarkOverlay.js';
 
 export interface AudienceGraphViewProps {
   /**
@@ -330,6 +347,7 @@ export function AudienceGraphView({ cyRef }: AudienceGraphViewProps): ReactEleme
     <div data-testid="audience-graph-root-wrapper" className="relative h-full w-full">
       <div ref={containerRef} data-testid="audience-graph-root" className="h-full w-full" />
       <AudiencePerFacetPillOverlay cy={cyState} containerRef={containerRef} />
+      <AudienceAxiomMarkOverlay cy={cyState} containerRef={containerRef} />
     </div>
   );
 }

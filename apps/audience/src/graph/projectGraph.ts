@@ -32,6 +32,20 @@
 //   `edge-created` branch; the commit-arm `kind` flip preserves both
 //   fields via the spread of `existing.data`.)
 //
+// Refinement: tasks/refinements/audience/aud_axiom_mark_decoration.md
+//   (Decision §1 — per-participant chromatic axiom-mark badges on the
+//   broadcast canvas; the audience walks back `aud_cytoscape_init`'s
+//   "no axiom-mark booleans" exclusion now that the methodology-load-
+//   bearing surfacing is being lit up. Decision §2 — stamp
+//   `data.axiomMarks: readonly AxiomMark[]` (defaulting to the module-
+//   scope `EMPTY_AXIOM_MARKS` frozen array for stable React-memoization
+//   identity) on every projected node; edges carry no `axiomMarks`
+//   field (axiom-marks are node-only per wire schema + methodology).
+//   Decision §3 — in-function `axiomMarkIndex` index alongside
+//   `facetStatusIndex` (mirrors the per-facet stamping pattern). The
+//   commit-arm spread (`...existing.data`) preserves the field
+//   unchanged.)
+//
 // ADRs:
 //   - 0004 (Cytoscape.js for the read-mostly audience broadcast
 //           surface);
@@ -58,6 +72,12 @@ import {
   type FacetName,
   type FacetStatus,
 } from './facetStatus.js';
+import {
+  EMPTY_AXIOM_MARKS,
+  groupAxiomMarksByNode,
+  projectAxiomMarks,
+  type AxiomMark,
+} from './axiomMarks.js';
 
 /**
  * The per-node payload `projectGraph` emits on each `node-created`
@@ -85,6 +105,13 @@ export interface AudienceNodeData {
   readonly facetStatuses: Readonly<Partial<Record<FacetName, FacetStatus>>>;
   /** Highest-priority facet status, or `'none'` (sentinel) when empty. */
   readonly rollupStatus: FacetStatus | 'none';
+  /**
+   * Per-participant axiom-marks committed against this node, in
+   * commit-arrival order. Defaults to the module-scope frozen
+   * `EMPTY_AXIOM_MARKS` array when no marks have committed (stable
+   * React-memoization identity).
+   */
+  readonly axiomMarks: readonly AxiomMark[];
 }
 
 /**
@@ -150,6 +177,7 @@ export function projectGraph(events: readonly Event[]): {
   edges: AudienceEdgeElement[];
 } {
   const facetStatusIndex = computeFacetStatuses(events);
+  const axiomMarkIndex = groupAxiomMarksByNode(projectAxiomMarks(events));
   const nodes: AudienceNodeElement[] = [];
   const nodeIndexById = new Map<string, number>();
   const edges: AudienceEdgeElement[] = [];
@@ -173,6 +201,7 @@ export function projectGraph(events: readonly Event[]): {
       const facetStatuses =
         facetStatusIndex.nodes.get(event.payload.node_id) ?? EMPTY_FACET_STATUSES;
       const rollupStatus = cardRollupStatus(facetStatuses) ?? 'none';
+      const axiomMarks = axiomMarkIndex.get(event.payload.node_id) ?? EMPTY_AXIOM_MARKS;
       const element: AudienceNodeElement = {
         group: 'nodes',
         data: {
@@ -181,6 +210,7 @@ export function projectGraph(events: readonly Event[]): {
           kind: null,
           facetStatuses,
           rollupStatus,
+          axiomMarks,
         },
       };
       nodeIndexById.set(event.payload.node_id, nodes.length);
