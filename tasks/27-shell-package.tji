@@ -112,6 +112,7 @@ task shell_package "Shell package (@aconversa/shell)" {
   task extract_pending_axiom_mark_projector "Lift projectPendingAxiomMarks + groupPendingAxiomMarksByNode + PendingAxiomMark + EMPTY_PENDING_AXIOM_MARKS into @a-conversa/shell once a second + third caller materialize" {
     effort 0.5d
     allocate team
+    complete 100
     depends !extract_cytoscape_projectors
     note -8<-
       Lift `projectPendingAxiomMarks` + `groupPendingAxiomMarksByNode` + `PendingAxiomMark` +
@@ -125,6 +126,34 @@ task shell_package "Shell package (@aconversa/shell)" {
       extract_cytoscape_projectors.
 
       Source of debt: tasks/refinements/shell-package/extract_cytoscape_projectors.md Decision §3.
+    ->8-
+  }
+
+  task extract_pending_axiom_mark_projector_v2 "Lift projectPendingAxiomMarks + groupPendingAxiomMarksByNode + PendingAxiomMark + EMPTY_PENDING_AXIOM_MARKS into @a-conversa/shell once BOTH a participant pending-axiom-mark rendering leaf AND an audience pending-axiom-mark rendering leaf are complete 100" {
+    effort 0.5d
+    allocate team
+    depends !extract_pending_axiom_mark_projector
+    note -8<-
+      Lift `projectPendingAxiomMarks` + `groupPendingAxiomMarksByNode` + `PendingAxiomMark` +
+      `EMPTY_PENDING_AXIOM_MARKS` from `apps/moderator/src/graph/selectors.ts` into
+      `packages/shell/src/pending-axiom-marks/` once BOTH:
+      (a) a participant pending-axiom-mark rendering leaf (likely under a `part_pending_proposals.*`
+          group, per `part_axiom_mark_decoration.md:27`) is `complete 100`, AND
+      (b) an audience pending-axiom-mark rendering leaf (likely `aud_axiom_mark_pending_render`,
+          per `aud_axiom_mark_decoration.md:38`) is `complete 100`.
+
+      The participant and audience surfaces have explicitly declined to render pending-axiom-marks
+      today; both surfaces' axiom-mark decoration refinements settle on committed-only "ratified
+      bedrock" framing. This lift fires only after both surfaces revise that decision and ship
+      concrete rendering. The future UI leaf dependency edges are added when those leaves
+      materialize.
+
+      Follow the same recipe as `extract_cytoscape_projectors` and `shell_axiom_marks_extraction`:
+      create `packages/shell/src/pending-axiom-marks/`, consolidate the Vitest suite, rewire all
+      three callers' imports.
+
+      Source of debt: tasks/refinements/shell-package/extract_pending_axiom_mark_projector.md
+      Decisions §1–§3. Registered by closer in commit landing that audit.
     ->8-
   }
 
