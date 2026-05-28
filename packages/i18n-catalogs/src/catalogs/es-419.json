@@ -734,6 +734,10 @@
     "placeholder": {
       "title": "Panel de la audiencia",
       "body": "Cargando…"
+    },
+    "privateSession": {
+      "title": "Sesión no disponible",
+      "body": "Esta sesión no está disponible para visitantes anónimos. Si tienes una cuenta que pueda verla, inicia sesión para reintentar."
     }
   },
   "diagnostics": {

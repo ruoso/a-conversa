@@ -734,6 +734,10 @@
     "placeholder": {
       "title": "Audience surface",
       "body": "Loading…"
+    },
+    "privateSession": {
+      "title": "Session unavailable",
+      "body": "This session is not available to anonymous visitors. If you have an account that can view it, sign in to retry."
     }
   },
   "diagnostics": {

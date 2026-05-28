@@ -382,6 +382,7 @@ task audience "Audience and broadcast" {
     task aud_private_session_sign_in_cta "Per-session sign-in CTA for private-session rejection" {
       effort 0.5d
       allocate team
+      complete 100
       depends !aud_session_url
       note -8<-
         Anonymous visitor hits a private session; server rejects the WS subscribe with

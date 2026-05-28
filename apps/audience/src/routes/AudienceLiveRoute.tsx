@@ -26,20 +26,54 @@
 // audience is a broadcast surface (the moderator + participant own the
 // lobby chrome).
 
-import { useEffect, type ReactElement } from 'react';
+import { useEffect, useState, type ReactElement } from 'react';
 import { useParams } from 'react-router-dom';
 
-import { useWsClient } from '@a-conversa/shell';
+import { WsRequestError, useWsClient } from '@a-conversa/shell';
 
 import { AudienceGraphView } from '../graph/GraphView.js';
+import { PrivateSessionCta } from './PrivateSessionCta.js';
 
 export function AudienceLiveRoute(): ReactElement {
   const { sessionId } = useParams<{ sessionId: string }>();
   const wsClient = useWsClient();
+  const [subscribeRejection, setSubscribeRejection] = useState<'not-found' | null>(null);
 
   useEffect(() => {
     if (sessionId === undefined || sessionId === '') return;
-    void wsClient.trackSession(sessionId);
+    let cancelled = false;
+    setSubscribeRejection(null);
+    // `trackSession()` only awaits the subscribe send when the socket is
+    // already open at call time. At route mount the WS handshake is
+    // usually still in flight; the actual subscribe fires later from the
+    // client's hello-driven `resumeSubscriptions()`, whose rejection is
+    // swallowed (`console.warn`). Subscribing to the envelope fanout
+    // catches both timings — the synchronous `.catch` below covers the
+    // already-open path; the `onEnvelope` listener covers the deferred
+    // path. Both set the same state and `PrivateSessionCta` still gates
+    // on auth status, so the authenticated + not-found case still
+    // renders null per Decision §6.
+    const unsubscribeEnvelope = wsClient.onEnvelope((envelope) => {
+      if (cancelled) return;
+      // Narrowly scoped per `aud_private_session_sign_in_cta.md`
+      // Decision §4 — only the existence-non-leak `not-found` code
+      // surfaces the sign-in CTA. Transport-level failures (timeout,
+      // socket drop) and other wire codes are intentionally swallowed:
+      // signing in does not help recover them.
+      if (envelope.type === 'error' && envelope.payload.code === 'not-found') {
+        setSubscribeRejection('not-found');
+      }
+    });
+    wsClient.trackSession(sessionId).catch((err: unknown) => {
+      if (cancelled) return;
+      if (err instanceof WsRequestError && err.code === 'not-found') {
+        setSubscribeRejection('not-found');
+      }
+    });
+    return () => {
+      cancelled = true;
+      unsubscribeEnvelope();
+    };
   }, [sessionId, wsClient]);
 
   // The host wraps every surface in `<div className="min-h-screen">`
@@ -49,10 +83,12 @@ export function AudienceLiveRoute(): ReactElement {
   // collapses to 0×0 and the OBS-tier viewport-fill assertion fails.
   // `h-screen w-screen` is safe against scrollbar-reserved space
   // because `apps/audience/src/index.css` pins `body { overflow: hidden }`
-  // (`aud_obs_sizing_defaults`).
+  // (`aud_obs_sizing_defaults`). `relative` anchors the
+  // `<PrivateSessionCta>` overlay's `absolute inset-0` positioning.
   return (
-    <div className="h-screen w-screen">
+    <div className="relative h-screen w-screen">
       <AudienceGraphView />
+      {subscribeRejection === 'not-found' && <PrivateSessionCta />}
     </div>
   );
 }

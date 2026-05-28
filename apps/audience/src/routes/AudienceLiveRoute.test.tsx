@@ -21,6 +21,8 @@ import {
   AuthValueProvider,
   I18nProvider,
   WsClientProvider,
+  WsRequestError,
+  WsRequestTimeoutError,
   createI18nInstance,
   type AuthContextValue,
   type I18nInstance,
@@ -45,23 +47,41 @@ const authenticatedAuth: AuthContextValue = {
   logout: () => undefined,
 };
 
+const anonymousAuth: AuthContextValue = {
+  status: 'unauthenticated',
+  user: undefined,
+  refresh: () => undefined,
+  logout: () => undefined,
+};
+
 interface FakeClient {
   client: WsClient;
   trackSessionSpy: ReturnType<typeof vi.fn>;
   untrackSessionSpy: ReturnType<typeof vi.fn>;
+  onEnvelopeSpy: ReturnType<typeof vi.fn>;
 }
 
-function createFakeClient(): FakeClient {
-  const trackSessionSpy = vi.fn((): Promise<void> => Promise.resolve());
+function createFakeClient(opts?: {
+  trackSessionImpl?: (sessionId: string) => Promise<void>;
+}): FakeClient {
+  const impl = opts?.trackSessionImpl ?? ((): Promise<void> => Promise.resolve());
+  const trackSessionSpy = vi.fn(impl);
   const untrackSessionSpy = vi.fn((): Promise<void> => Promise.resolve());
+  // `<AudienceLiveRoute>` subscribes to the envelope fanout to catch the
+  // deferred subscribe rejection that the WS client's hello-driven
+  // `resumeSubscriptions()` swallows in production timing. The fake
+  // never emits envelopes; returning a no-op unsubscribe satisfies the
+  // call site without standing up an envelope-fanout simulation.
+  const onEnvelopeSpy = vi.fn((): (() => void) => () => undefined);
   const client = {
     connect: () => undefined,
     close: () => undefined,
     send: (() => Promise.resolve({}) as unknown) as WsClient['send'],
     trackSession: trackSessionSpy,
     untrackSession: untrackSessionSpy,
+    onEnvelope: onEnvelopeSpy,
   } as unknown as WsClient;
-  return { client, trackSessionSpy, untrackSessionSpy };
+  return { client, trackSessionSpy, untrackSessionSpy, onEnvelopeSpy };
 }
 
 let i18nInstance: I18nInstance;
@@ -82,12 +102,17 @@ afterEach(() => {
   audienceWsStore.getState().reset();
 });
 
-function renderRoute(opts: { initialPath: string }): FakeClient {
-  const fake = createFakeClient();
+function renderRoute(opts: {
+  initialPath: string;
+  auth?: AuthContextValue;
+  fake?: FakeClient;
+}): FakeClient {
+  const fake = opts.fake ?? createFakeClient();
+  const auth = opts.auth ?? authenticatedAuth;
   render(
     <I18nProvider i18n={i18nInstance}>
-      <AuthValueProvider value={authenticatedAuth}>
-        <WsClientProvider auth={{ status: authenticatedAuth.status }} client={fake.client}>
+      <AuthValueProvider value={auth}>
+        <WsClientProvider auth={{ status: auth.status }} client={fake.client}>
           <MemoryRouter initialEntries={[opts.initialPath]}>
             <Routes>
               <Route path="/sessions/:sessionId" element={<AudienceLiveRoute />} />
@@ -189,5 +214,110 @@ describe('AudienceLiveRoute', () => {
       expect(screen.getByTestId('audience-graph-root')).toBeTruthy();
     });
     expect(fake.trackSessionSpy).toHaveBeenCalledWith(SESSION_ID_A);
+  });
+
+  // Cases (f)–(i) pin the per-session sign-in CTA per
+  // `aud_private_session_sign_in_cta.md` Acceptance criteria.
+
+  it('(f) renders the private-session CTA when trackSession rejects with not-found and the visitor is anonymous', async () => {
+    const fake = createFakeClient({
+      trackSessionImpl: () =>
+        Promise.reject(new WsRequestError({ code: 'not-found', message: 'session not found' })),
+    });
+    renderRoute({
+      initialPath: `/sessions/${SESSION_ID_A}`,
+      auth: anonymousAuth,
+      fake,
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('audience-graph-root')).toBeTruthy();
+    });
+    const cta = await screen.findByTestId('audience-private-session-cta');
+    expect(cta).toBeTruthy();
+    const loginLink = cta.querySelector('a');
+    expect(loginLink).not.toBeNull();
+    expect(loginLink?.getAttribute('href')).toBe('/api/auth/login');
+  });
+
+  it('(g) does NOT render the CTA when trackSession rejects with not-found but the visitor is authenticated', async () => {
+    const fake = createFakeClient({
+      trackSessionImpl: () =>
+        Promise.reject(new WsRequestError({ code: 'not-found', message: 'session not found' })),
+    });
+    renderRoute({
+      initialPath: `/sessions/${SESSION_ID_A}`,
+      auth: authenticatedAuth,
+      fake,
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('audience-graph-root')).toBeTruthy();
+    });
+    await waitFor(() => {
+      expect(fake.trackSessionSpy).toHaveBeenCalledWith(SESSION_ID_A);
+    });
+    // Drain the rejected-promise microtask + any state-update batch so
+    // a buggy implementation that surfaced the CTA for authenticated
+    // visitors would have had time to render it.
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.queryByTestId('audience-private-session-cta')).toBeNull();
+  });
+
+  it('(h) does NOT render the CTA when trackSession resolves successfully (public-session happy path, anonymous visitor)', async () => {
+    const fake = createFakeClient({ trackSessionImpl: () => Promise.resolve() });
+    renderRoute({
+      initialPath: `/sessions/${SESSION_ID_A}`,
+      auth: anonymousAuth,
+      fake,
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('audience-graph-root')).toBeTruthy();
+    });
+    await waitFor(() => {
+      expect(fake.trackSessionSpy).toHaveBeenCalledWith(SESSION_ID_A);
+    });
+    expect(screen.queryByTestId('audience-private-session-cta')).toBeNull();
+  });
+
+  it('(i) does NOT render the CTA when trackSession rejects with a non-not-found code (Decision §4)', async () => {
+    // Mix of rejection shapes the gate must NOT match: a different
+    // WsRequestError code, a transport-level timeout, a plain Error
+    // from a socket drop. Each shape is checked sequentially against
+    // a fresh render so a buggy gate that matched any of them would
+    // fail at least one of the three sub-assertions.
+    const rejections: Array<{ name: string; err: Error }> = [
+      {
+        name: 'WsRequestError code=invalid',
+        err: new WsRequestError({ code: 'invalid', message: 'protocol violation' }),
+      },
+      {
+        name: 'WsRequestTimeoutError',
+        err: new WsRequestTimeoutError('subscribe', 'ws-req-1'),
+      },
+      {
+        name: 'generic transport-closed Error',
+        err: new Error('ws connection closed'),
+      },
+    ];
+    for (const { err } of rejections) {
+      const fake = createFakeClient({ trackSessionImpl: () => Promise.reject(err) });
+      renderRoute({
+        initialPath: `/sessions/${SESSION_ID_A}`,
+        auth: anonymousAuth,
+        fake,
+      });
+      await waitFor(() => {
+        expect(fake.trackSessionSpy).toHaveBeenCalledWith(SESSION_ID_A);
+      });
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(screen.queryByTestId('audience-private-session-cta')).toBeNull();
+      cleanup();
+      audienceWsStore.getState().reset();
+    }
   });
 });

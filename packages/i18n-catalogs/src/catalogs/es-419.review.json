@@ -316,7 +316,9 @@
     "participant.myAgreementsPane.emptyState",
     "participant.myAgreementsPane.paneAriaLabel",
     "audience.placeholder.title",
-    "audience.placeholder.body"
+    "audience.placeholder.body",
+    "audience.privateSession.title",
+    "audience.privateSession.body"
   ],
   "signed_off": []
 }

@@ -458,6 +458,65 @@ test.describe('Audience live session route — /a/sessions/:sessionId', () => {
     }
   });
 
+  test('(7) anonymous visitor on a private session URL sees the per-session sign-in CTA', async ({
+    browser,
+  }) => {
+    // Refinement: tasks/refinements/audience/aud_private_session_sign_in_cta.md
+    //   (Acceptance criteria scenario 7 — anonymous visitor lands on
+    //    a private session; the route mounts; the graph viewport is
+    //    visible (empty); `audience-private-session-cta` renders with
+    //    a `<LoginButton>` pointing at `/api/auth/login`.)
+    // ADRs: 0029 (existence-non-leak; the wire returns `not-found`
+    //              for anonymous-on-private), 0008 (Playwright).
+    //
+    // Creator (alice) creates the session directly as `privacy: 'private'`
+    // via `POST /api/sessions` so no separate `PATCH /api/sessions/:id/privacy`
+    // step is needed — the `createSession` helper accepts the privacy
+    // discriminator and the audience surface only observes the wire
+    // `not-found` reply.
+    const creatorContext = await freshAuthedContext(browser);
+    const creatorPage = await creatorContext.newPage();
+    let sessionId: string;
+    try {
+      const alice = await loginAs(creatorPage, { username: 'alice' });
+      expect(alice.screenName.toLowerCase()).toBe('alice');
+      sessionId = await createSession(creatorPage, {
+        topic: 'Private session anonymous visitor sees the sign-in CTA',
+        privacy: 'private',
+      });
+    } finally {
+      await creatorContext.close();
+    }
+
+    const anonContext = await browser.newContext({
+      ignoreHTTPSErrors: true,
+      storageState: { cookies: [], origins: [] },
+    });
+    const anonPage = await anonContext.newPage();
+    try {
+      await anonPage.goto(`/a/sessions/${sessionId}`);
+
+      // The route mounts — the graph viewport is the route body, the
+      // CTA overlays it (Decision §1).
+      await expect(anonPage.getByTestId('audience-graph-root')).toBeVisible({ timeout: 15_000 });
+
+      // The URL did NOT bounce — the audience surface offers the
+      // affordance in-place.
+      expect(new URL(anonPage.url()).pathname).toBe(`/a/sessions/${sessionId}`);
+
+      // The CTA itself.
+      const cta = anonPage.getByTestId('audience-private-session-cta');
+      await expect(cta).toBeVisible({ timeout: 15_000 });
+
+      // The `<LoginButton>` inside the CTA points at the OIDC start
+      // endpoint (ADR 0002).
+      const loginLink = cta.locator('a').first();
+      await expect(loginLink).toHaveAttribute('href', '/api/auth/login');
+    } finally {
+      await anonContext.close();
+    }
+  });
+
   test.describe('(6) OBS dimension audit at the graph-route tier', () => {
     // Match `DEFAULT_BROADCAST_DIMENSIONS` (1920×1080) from
     // `apps/audience/src/graph/layoutOptions.ts`. Scope the viewport
