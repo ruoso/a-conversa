@@ -89,6 +89,7 @@ task shell_package "Shell package (@aconversa/shell)" {
   task extract_axiom_mark_badge "Lift <AxiomMarkBadge> from moderator + participant into @a-conversa/shell once the audience surface becomes the third caller" {
     effort 0.5d
     allocate team
+    complete 100
     depends participant_ui.part_graph_view.part_entity_detail_panel_chromatic_axiom_mark_badge, audience.aud_graph_rendering
     note -8<-
       Lift the moderator's `apps/moderator/src/graph/AxiomMarkBadge.tsx` and the participant's `apps/participant/src/detail/AxiomMarkBadge.tsx` into `packages/shell/src/facet-pill/` (or a sibling directory) as a single `<AxiomMarkBadge>` export once the audience surface materializes as the third caller. Today the moderator is the first caller (canvas-side per-node badge row) and the participant is the second caller (entity detail panel axiom-mark attribution row — landed in this leaf). Deferred-until-third-caller policy: extracting at two callers risks ossifying the wrong prop shape (participant takes `screenName: string` because it has the roster; moderator takes `mark: AxiomMark` because it doesn't yet). When the audience surface adds a third call site the convergence point is clear.
