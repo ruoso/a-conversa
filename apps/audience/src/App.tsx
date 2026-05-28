@@ -62,6 +62,8 @@
 // of `tests/e2e/audience-live-session.spec.ts`; the dimension-matrix
 // pin across 720p / 1440p lives in `aud_tests.aud_obs_render_smoke`.
 //
+// Producer-facing setup walkthrough: docs/obs-setup.md.
+//
 // The single wildcard route absorbs every URL inside `/a/*` (e.g.
 // `/a/sessions/:id`, `/a/en-US/sessions/:id`, `/a/foo/bar`). The real
 // audience routes — `<AudienceViewRoute>` for live, the replay deep-

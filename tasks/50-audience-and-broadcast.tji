@@ -299,6 +299,7 @@ task audience "Audience and broadcast" {
     task aud_obs_setup_docs "OBS setup guide for show producers" {
       effort 1d
       allocate team
+      complete 100
       depends !aud_obs_sizing_defaults, !aud_obs_transparency
     }
     task aud_typography_bundle_measurement "Measure bundle-size impact of Inter (Google Fonts vs self-hosted woff2)" {
