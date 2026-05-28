@@ -393,6 +393,7 @@ task audience "Audience and broadcast" {
     task aud_session_url_refine_amend "Amend aud_session_url refinement: unconditional WsStore assignment" {
       effort 0.1d
       allocate team
+      complete 100
       depends !aud_session_url
       note -8<-
         Decision §3 + §5 of tasks/refinements/audience/aud_session_url.md prescribe a
