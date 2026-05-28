@@ -113,7 +113,7 @@ import {
   type FacetName,
   type FacetStatus,
   type FacetStatusIndex,
-} from './facetStatus';
+} from '@a-conversa/shell';
 import { computeNodeDimensions } from './nodeDimensions';
 import { type OwnVote, type OwnVoteIndex } from './ownVotes';
 import { EMPTY_OTHER_VOTES_LIST, type OtherVote, type OthersVoteIndex } from './otherVotes';

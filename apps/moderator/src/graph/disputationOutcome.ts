@@ -34,7 +34,7 @@
 // transparent — consumers can memoize trivially. Mirrors the
 // `facetStatus.ts` / `diagnosticHighlights.ts` pure-module pattern.
 
-import type { FacetStatus } from './facetStatus.js';
+import type { FacetStatus } from '@a-conversa/shell';
 
 /**
  * The methodology's narrative vocabulary for the disputation-test

@@ -1,14 +1,41 @@
-// Tests for the audience-side per-entity per-facet `FacetStatus`
-// derivation.
+// Consolidated Vitest coverage for the shell's facet-status derivation.
 //
-// Refinement: tasks/refinements/audience/aud_proposed_styling.md
+// Refinement: tasks/refinements/shell-package/extract_facet_status_rules.md
 //
-// Per ADR 0022 these are committed Vitest cases. The audience's
-// `facetStatus.ts` is a verbatim port of the participant's
-// `apps/participant/src/graph/facetStatus.ts`; these cases mirror the
-// participant's `facetStatus.test.ts` pin shape so a reader cross-
-// referencing the four copies (server canonical + moderator + participant
-// + audience) sees the same coverage on the client mirrors.
+// Per ADR 0022 these are committed Vitest cases. They consolidate the
+// three predecessor per-app `facetStatus.test.ts` suites (moderator,
+// participant, audience) plus the moderator's `StatementNode.test.tsx`
+// `cardRollupStatus — rollup priority order` describe block, which all
+// pinned the same rule walk + the same rollup priority verbatim. The
+// union covers every distinct case across the predecessors:
+//
+//   (a) empty event log → empty maps
+//   (b) classify-node proposal, no votes → 'proposed'
+//   (c) classify-node + one agree of two participants → still 'proposed'
+//   (d) classify-node + all participants agree → 'agreed'
+//   (e) classify-node + a dispute vote → 'disputed'
+//   (f) classify-node + all agree + commit → 'committed'
+//   (g) committed classify-node + a withdraw-agreement → 'withdrawn'
+//   (h) classify-node + mark-meta-disagreement → 'meta-disagreement'
+//   (i) a left participant's vote is excluded from the agreement count
+//   (j) empty-session facet (no current participants) stays proposed
+//   (k) set-node-substance proposal → substance facet
+//   (l) set-edge-substance proposal → edge substance facet
+//   (m) edit-wording.reword proposal → wording facet
+//   (n) decompose proposal → per-component classification facets
+//   (o) interpretive-split proposal → per-reading classification facets
+//   (p) out-of-scope sub-kinds (axiom-mark, meta-move, break-edge,
+//       annotate) produce no facet entry
+//   (q) entities without proposals — no entry in the index
+//   (r) two nodes, proposal against one leaves the other absent
+//   (s) one node carries independent statuses on classification + substance
+//   (t) three participants, one absent → facet stays proposed
+//   (u) edge-created seeds the shape facet (empty-session degenerates to
+//       proposed, substance is awaiting-proposal)
+//   (v–z) shape-facet derivation (agree / dispute / commit / withdraw)
+//   cardRollupStatus: empty-record → undefined; single-status pass-through
+//       for all seven values; priority-pair exhaustive sweep; the
+//       moderator's specific multi-status cases verbatim.
 
 import { describe, expect, it } from 'vitest';
 import type { Event, StatementKind } from '@a-conversa/shared-types';
@@ -19,12 +46,13 @@ import {
   EMPTY_FACET_STATUSES,
   ROLLUP_PRIORITY,
   type FacetStatus,
-} from './facetStatus';
+} from './facet-status.js';
 
 const SESSION = '00000000-0000-4000-8000-0000000000a1';
 const ACTOR = '00000000-0000-4000-8000-0000000000aa';
 const PARTICIPANT_A = '00000000-0000-4000-8000-0000000000a1';
 const PARTICIPANT_B = '00000000-0000-4000-8000-0000000000a2';
+const PARTICIPANT_C = '00000000-0000-4000-8000-0000000000a3';
 const NODE_X = '00000000-0000-4000-8000-00000000000a';
 const NODE_Y = '00000000-0000-4000-8000-00000000000b';
 const NODE_Z = '00000000-0000-4000-8000-00000000000c';
@@ -47,9 +75,9 @@ function joinedEvent(seq: number, userId: string, role: 'debater-A' | 'debater-B
       user_id: userId,
       role,
       screen_name: 'Test',
-      joined_at: '2026-05-27T00:00:00.000Z',
+      joined_at: '2026-05-28T00:00:00.000Z',
     },
-    createdAt: '2026-05-27T00:00:00.000Z',
+    createdAt: '2026-05-28T00:00:00.000Z',
   };
 }
 
@@ -62,9 +90,9 @@ function leftEvent(seq: number, userId: string): Event {
     actor: ACTOR,
     payload: {
       user_id: userId,
-      left_at: '2026-05-27T00:01:00.000Z',
+      left_at: '2026-05-28T00:01:00.000Z',
     },
-    createdAt: '2026-05-27T00:01:00.000Z',
+    createdAt: '2026-05-28T00:01:00.000Z',
   };
 }
 
@@ -87,7 +115,7 @@ function classifyProposal(
         classification,
       },
     },
-    createdAt: '2026-05-27T00:00:00.000Z',
+    createdAt: '2026-05-28T00:00:00.000Z',
   };
 }
 
@@ -101,7 +129,7 @@ function setNodeSubstanceProposal(seq: number, envelopeId: string, nodeId: strin
     payload: {
       proposal: { kind: 'set-node-substance', node_id: nodeId, value: 'agreed' },
     },
-    createdAt: '2026-05-27T00:00:00.000Z',
+    createdAt: '2026-05-28T00:00:00.000Z',
   };
 }
 
@@ -115,7 +143,7 @@ function setEdgeSubstanceProposal(seq: number, envelopeId: string, edgeId: strin
     payload: {
       proposal: { kind: 'set-edge-substance', edge_id: edgeId, value: 'agreed' },
     },
-    createdAt: '2026-05-27T00:00:00.000Z',
+    createdAt: '2026-05-28T00:00:00.000Z',
   };
 }
 
@@ -134,7 +162,7 @@ function rewordProposal(seq: number, envelopeId: string, nodeId: string): Event 
         new_wording: 'updated wording',
       },
     },
-    createdAt: '2026-05-27T00:00:00.000Z',
+    createdAt: '2026-05-28T00:00:00.000Z',
   };
 }
 
@@ -161,7 +189,7 @@ function decomposeProposal(
         })),
       },
     },
-    createdAt: '2026-05-27T00:00:00.000Z',
+    createdAt: '2026-05-28T00:00:00.000Z',
   };
 }
 
@@ -188,7 +216,7 @@ function interpretiveSplitProposal(
         })),
       },
     },
-    createdAt: '2026-05-27T00:00:00.000Z',
+    createdAt: '2026-05-28T00:00:00.000Z',
   };
 }
 
@@ -202,7 +230,7 @@ function axiomMarkProposal(seq: number, envelopeId: string, nodeId: string): Eve
     payload: {
       proposal: { kind: 'axiom-mark', node_id: nodeId, participant: PARTICIPANT_A },
     },
-    createdAt: '2026-05-27T00:00:00.000Z',
+    createdAt: '2026-05-28T00:00:00.000Z',
   };
 }
 
@@ -222,7 +250,7 @@ function metaMoveProposal(seq: number, envelopeId: string, nodeId: string): Even
         target_id: nodeId,
       },
     },
-    createdAt: '2026-05-27T00:00:00.000Z',
+    createdAt: '2026-05-28T00:00:00.000Z',
   };
 }
 
@@ -236,7 +264,7 @@ function breakEdgeProposal(seq: number, envelopeId: string, edgeId: string): Eve
     payload: {
       proposal: { kind: 'break-edge', edge_id: edgeId },
     },
-    createdAt: '2026-05-27T00:00:00.000Z',
+    createdAt: '2026-05-28T00:00:00.000Z',
   };
 }
 
@@ -256,7 +284,7 @@ function annotateProposal(seq: number, envelopeId: string, nodeId: string): Even
         content: 'note',
       },
     },
-    createdAt: '2026-05-27T00:00:00.000Z',
+    createdAt: '2026-05-28T00:00:00.000Z',
   };
 }
 
@@ -277,9 +305,9 @@ function voteEvent(
       proposal_id: proposalId,
       participant,
       choice: vote,
-      voted_at: '2026-05-27T00:00:10.000Z',
+      voted_at: '2026-05-28T00:00:10.000Z',
     },
-    createdAt: '2026-05-27T00:00:10.000Z',
+    createdAt: '2026-05-28T00:00:10.000Z',
   };
 }
 
@@ -294,9 +322,9 @@ function commitEvent(seq: number, proposalId: string): Event {
       target: 'proposal',
       proposal_id: proposalId,
       committed_by: ACTOR,
-      committed_at: '2026-05-27T00:00:20.000Z',
+      committed_at: '2026-05-28T00:00:20.000Z',
     },
-    createdAt: '2026-05-27T00:00:20.000Z',
+    createdAt: '2026-05-28T00:00:20.000Z',
   };
 }
 
@@ -318,9 +346,9 @@ function withdrawAgreementEvent(
       entity_id: entityId,
       facet,
       participant,
-      withdrawn_at: '2026-05-27T00:00:25.000Z',
+      withdrawn_at: '2026-05-28T00:00:25.000Z',
     },
-    createdAt: '2026-05-27T00:00:25.000Z',
+    createdAt: '2026-05-28T00:00:25.000Z',
   };
 }
 
@@ -335,9 +363,84 @@ function metaDisagreementEvent(seq: number, proposalId: string): Event {
       target: 'proposal',
       proposal_id: proposalId,
       marked_by: ACTOR,
-      marked_at: '2026-05-27T00:00:30.000Z',
+      marked_at: '2026-05-28T00:00:30.000Z',
     },
-    createdAt: '2026-05-27T00:00:30.000Z',
+    createdAt: '2026-05-28T00:00:30.000Z',
+  };
+}
+
+function edgeCreatedEvent(
+  seq: number,
+  edgeId: string,
+  source: string = '00000000-0000-4000-8000-000000000001',
+  target: string = '00000000-0000-4000-8000-000000000002',
+): Event {
+  return {
+    id: envId('e', seq),
+    sessionId: SESSION,
+    sequence: seq,
+    kind: 'edge-created',
+    actor: ACTOR,
+    payload: {
+      edge_id: edgeId,
+      source_node_id: source,
+      target_node_id: target,
+      role: 'supports',
+      created_by: ACTOR,
+      created_at: '2026-05-28T00:00:00.000Z',
+    },
+    createdAt: '2026-05-28T00:00:00.000Z',
+  };
+}
+
+function facetVoteEvent(
+  seq: number,
+  entityKind: 'node' | 'edge',
+  entityId: string,
+  facet: 'classification' | 'substance' | 'wording' | 'shape',
+  participant: string,
+  choice: 'agree' | 'dispute',
+): Event {
+  return {
+    id: envId('V', seq),
+    sessionId: SESSION,
+    sequence: seq,
+    kind: 'vote',
+    actor: participant,
+    payload: {
+      target: 'facet',
+      entity_kind: entityKind,
+      entity_id: entityId,
+      facet,
+      participant,
+      choice,
+      voted_at: '2026-05-28T00:00:10.000Z',
+    },
+    createdAt: '2026-05-28T00:00:10.000Z',
+  };
+}
+
+function facetCommitEvent(
+  seq: number,
+  entityKind: 'node' | 'edge',
+  entityId: string,
+  facet: 'classification' | 'substance' | 'wording' | 'shape',
+): Event {
+  return {
+    id: envId('C', seq),
+    sessionId: SESSION,
+    sequence: seq,
+    kind: 'commit',
+    actor: ACTOR,
+    payload: {
+      target: 'facet',
+      entity_kind: entityKind,
+      entity_id: entityId,
+      facet,
+      committed_by: ACTOR,
+      committed_at: '2026-05-28T00:00:20.000Z',
+    },
+    createdAt: '2026-05-28T00:00:20.000Z',
   };
 }
 
@@ -411,6 +514,8 @@ describe('computeFacetStatuses — committed-layer states', () => {
   });
 
   it('(g) a withdraw-agreement against a committed facet → withdrawn', () => {
+    // Per ADR 0030 §3: withdrawal is now its own first-class event
+    // kind, keyed by `(entity, facet, participant)`.
     const events: Event[] = [
       joinedEvent(1, PARTICIPANT_A, 'debater-A'),
       joinedEvent(2, PARTICIPANT_B, 'debater-B'),
@@ -440,6 +545,9 @@ describe('computeFacetStatuses — committed-layer states', () => {
 
 describe('computeFacetStatuses — participant filtering', () => {
   it("(i) a left participant's vote is excluded from the agreement count", () => {
+    // A and B agree; A leaves; B is now the only current participant and
+    // has voted agree, so the facet is agreed (with A's vote no longer
+    // contributing to the count but also not contradicting).
     const events: Event[] = [
       joinedEvent(1, PARTICIPANT_A, 'debater-A'),
       joinedEvent(2, PARTICIPANT_B, 'debater-B'),
@@ -451,37 +559,50 @@ describe('computeFacetStatuses — participant filtering', () => {
     const index = computeFacetStatuses(events);
     expect(index.nodes.get(NODE_X)?.classification).toBe('agreed');
   });
+
+  it('(j) an empty-session facet (no current participants) stays proposed', () => {
+    // A proposal can land before any participant joins (e.g. the
+    // moderator's own actions on an empty lobby). Without current
+    // participants the unanimous-agree rule cannot fire, so the facet
+    // is proposed.
+    const events: Event[] = [classifyProposal(1, PROPOSAL_P, NODE_X)];
+    const index = computeFacetStatuses(events);
+    expect(index.nodes.get(NODE_X)?.classification).toBe('proposed');
+  });
 });
 
 describe('computeFacetStatuses — facet routing per proposal sub-kind', () => {
-  it('(j) set-node-substance proposal targets the substance facet', () => {
+  it('(k) set-node-substance proposal targets the substance facet', () => {
     const events: Event[] = [setNodeSubstanceProposal(1, PROPOSAL_P, NODE_X)];
     const index = computeFacetStatuses(events);
     expect(index.nodes.get(NODE_X)).toEqual({ substance: 'proposed' });
   });
 
-  it('(k) set-edge-substance proposal targets an edge substance facet', () => {
+  it('(l) set-edge-substance proposal targets an edge substance facet', () => {
     const events: Event[] = [setEdgeSubstanceProposal(1, PROPOSAL_P, EDGE_E)];
     const index = computeFacetStatuses(events);
     expect(index.edges.get(EDGE_E)).toEqual({ substance: 'proposed' });
     expect(index.nodes.size).toBe(0);
   });
 
-  it('(l) edit-wording.reword targets the wording facet', () => {
+  it('(m) edit-wording.reword targets the wording facet', () => {
     const events: Event[] = [rewordProposal(1, PROPOSAL_P, NODE_X)];
     const index = computeFacetStatuses(events);
     expect(index.nodes.get(NODE_X)).toEqual({ wording: 'proposed' });
   });
 
-  it('(m) decompose proposal lands per-component classification facets as proposed', () => {
+  it('(n) decompose proposal lands per-component classification facets as proposed', () => {
     const events: Event[] = [decomposeProposal(1, PROPOSAL_P, NODE_X, [NODE_Y, NODE_Z])];
     const index = computeFacetStatuses(events);
     expect(index.nodes.get(NODE_Y)?.classification).toBe('proposed');
     expect(index.nodes.get(NODE_Z)?.classification).toBe('proposed');
+    // The parent node is NOT the target of the decompose proposal —
+    // decompose's `targetOf` returns null for the parent — so no entry
+    // for the parent itself.
     expect(index.nodes.has(NODE_X)).toBe(false);
   });
 
-  it('(n) interpretive-split proposal lands per-reading classification facets as proposed', () => {
+  it('(o) interpretive-split proposal lands per-reading classification facets as proposed', () => {
     const events: Event[] = [interpretiveSplitProposal(1, PROPOSAL_P, NODE_X, [NODE_Y, NODE_Z])];
     const index = computeFacetStatuses(events);
     expect(index.nodes.get(NODE_Y)?.classification).toBe('proposed');
@@ -491,7 +612,7 @@ describe('computeFacetStatuses — facet routing per proposal sub-kind', () => {
 });
 
 describe('computeFacetStatuses — out-of-scope proposal sub-kinds', () => {
-  it('(o) axiom-mark / meta-move / break-edge / annotate proposals do NOT produce a facet entry', () => {
+  it('(p) axiom-mark / meta-move / break-edge / annotate proposals do NOT produce a facet entry', () => {
     const events: Event[] = [
       axiomMarkProposal(1, PROPOSAL_P, NODE_X),
       metaMoveProposal(2, PROPOSAL_Q, NODE_Y),
@@ -504,119 +625,60 @@ describe('computeFacetStatuses — out-of-scope proposal sub-kinds', () => {
   });
 });
 
-describe('cardRollupStatus — priority ordering', () => {
-  it('returns undefined for the empty record', () => {
-    expect(cardRollupStatus(EMPTY_FACET_STATUSES)).toBeUndefined();
-    expect(cardRollupStatus({})).toBeUndefined();
+describe('computeFacetStatuses — entities without proposals', () => {
+  it('(q) a node with no proposals against any of its facets has no entry in the index', () => {
+    const events: Event[] = [joinedEvent(1, PARTICIPANT_A, 'debater-A')];
+    const index = computeFacetStatuses(events);
+    expect(index.nodes.size).toBe(0);
+    expect(index.edges.size).toBe(0);
   });
 
-  it('returns the single status when only one facet is present', () => {
-    for (const status of ROLLUP_PRIORITY) {
-      expect(cardRollupStatus({ classification: status })).toBe(status);
-    }
-  });
-
-  it('(p) priority-pair coverage — every higher-priority status wins over every lower-priority one', () => {
-    const pairs: Array<[FacetStatus, FacetStatus]> = [];
-    for (let i = 0; i < ROLLUP_PRIORITY.length; i += 1) {
-      for (let j = i + 1; j < ROLLUP_PRIORITY.length; j += 1) {
-        pairs.push([ROLLUP_PRIORITY[i]!, ROLLUP_PRIORITY[j]!]);
-      }
-    }
-    for (const [higher, lower] of pairs) {
-      const record = { classification: higher, substance: lower };
-      expect(cardRollupStatus(record)).toBe(higher);
-      const reverseRecord = { classification: lower, substance: higher };
-      expect(cardRollupStatus(reverseRecord)).toBe(higher);
-    }
+  it('(r) two nodes — proposal against one leaves the other absent from the index', () => {
+    const events: Event[] = [classifyProposal(1, PROPOSAL_P, NODE_X)];
+    const index = computeFacetStatuses(events);
+    expect(index.nodes.get(NODE_X)?.classification).toBe('proposed');
+    expect(index.nodes.has(NODE_Y)).toBe(false);
   });
 });
 
-// ──────────────────────────────────────────────────────────────────────
-// Shape facet (edge) — mirrors the participant's shape-facet block
-// verbatim in shape. Per ADR 0030 §5: the `shape` facet on an edge
-// lands inline with the `edge-created` event (the carriage of the
-// role). There is no `propose-edge-shape` sub-kind in v1, so the
-// facet's candidate seeds from the create event directly.
-// ──────────────────────────────────────────────────────────────────────
+describe('computeFacetStatuses — multiple facets on the same entity', () => {
+  it('(s) one node carries independent statuses on classification and substance', () => {
+    const events: Event[] = [
+      joinedEvent(1, PARTICIPANT_A, 'debater-A'),
+      joinedEvent(2, PARTICIPANT_B, 'debater-B'),
+      // classification: one agree + one dispute → disputed
+      classifyProposal(3, PROPOSAL_P, NODE_X),
+      voteEvent(4, PROPOSAL_P, PARTICIPANT_A, 'agree'),
+      voteEvent(5, PROPOSAL_P, PARTICIPANT_B, 'dispute'),
+      // substance: no votes yet → proposed
+      setNodeSubstanceProposal(6, PROPOSAL_Q, NODE_X),
+    ];
+    const index = computeFacetStatuses(events);
+    expect(index.nodes.get(NODE_X)).toEqual({
+      classification: 'disputed',
+      substance: 'proposed',
+    });
+  });
 
-function edgeCreatedEvent(
-  seq: number,
-  edgeId: string,
-  source: string = '00000000-0000-4000-8000-000000000001',
-  target: string = '00000000-0000-4000-8000-000000000002',
-): Event {
-  return {
-    id: envId('e', seq),
-    sessionId: SESSION,
-    sequence: seq,
-    kind: 'edge-created',
-    actor: ACTOR,
-    payload: {
-      edge_id: edgeId,
-      source_node_id: source,
-      target_node_id: target,
-      role: 'supports',
-      created_by: ACTOR,
-      created_at: '2026-05-27T00:00:00.000Z',
-    },
-    createdAt: '2026-05-27T00:00:00.000Z',
-  };
-}
-
-function facetVoteEvent(
-  seq: number,
-  entityKind: 'node' | 'edge',
-  entityId: string,
-  facet: 'classification' | 'substance' | 'wording' | 'shape',
-  participant: string,
-  choice: 'agree' | 'dispute',
-): Event {
-  return {
-    id: envId('V', seq),
-    sessionId: SESSION,
-    sequence: seq,
-    kind: 'vote',
-    actor: participant,
-    payload: {
-      target: 'facet',
-      entity_kind: entityKind,
-      entity_id: entityId,
-      facet,
-      participant,
-      choice,
-      voted_at: '2026-05-27T00:00:10.000Z',
-    },
-    createdAt: '2026-05-27T00:00:10.000Z',
-  };
-}
-
-function facetCommitEvent(
-  seq: number,
-  entityKind: 'node' | 'edge',
-  entityId: string,
-  facet: 'classification' | 'substance' | 'wording' | 'shape',
-): Event {
-  return {
-    id: envId('C', seq),
-    sessionId: SESSION,
-    sequence: seq,
-    kind: 'commit',
-    actor: ACTOR,
-    payload: {
-      target: 'facet',
-      entity_kind: entityKind,
-      entity_id: entityId,
-      facet,
-      committed_by: ACTOR,
-      committed_at: '2026-05-27T00:00:20.000Z',
-    },
-    createdAt: '2026-05-27T00:00:20.000Z',
-  };
-}
+  it('(t) three participants — one absent → the facet stays proposed until all three have voted', () => {
+    const events: Event[] = [
+      joinedEvent(1, PARTICIPANT_A, 'debater-A'),
+      joinedEvent(2, PARTICIPANT_B, 'debater-B'),
+      joinedEvent(3, PARTICIPANT_C, 'debater-A'),
+      classifyProposal(4, PROPOSAL_P, NODE_X),
+      voteEvent(5, PROPOSAL_P, PARTICIPANT_A, 'agree'),
+      voteEvent(6, PROPOSAL_P, PARTICIPANT_B, 'agree'),
+      // PARTICIPANT_C hasn't voted yet
+    ];
+    const index = computeFacetStatuses(events);
+    expect(index.nodes.get(NODE_X)?.classification).toBe('proposed');
+  });
+});
 
 describe('computeFacetStatuses — shape facet (edge)', () => {
-  it('edge-created seeds the shape facet with a candidate; empty-session degenerates to proposed', () => {
+  it('(u) edge-created seeds the shape facet with a candidate; empty-session degenerates to proposed', () => {
+    // No participants joined — Rule 7's unanimous-agree check fails
+    // (currentParticipantCount === 0); Rule 8 'proposed' wins.
     const events: Event[] = [edgeCreatedEvent(1, EDGE_E)];
     const index = computeFacetStatuses(events);
     expect(index.edges.get(EDGE_E)).toEqual({
@@ -625,7 +687,7 @@ describe('computeFacetStatuses — shape facet (edge)', () => {
     });
   });
 
-  it('all current participants vote agree on (edge, shape) → agreed', () => {
+  it('(v) all current participants vote agree on (edge, shape) → agreed', () => {
     const events: Event[] = [
       joinedEvent(1, PARTICIPANT_A, 'debater-A'),
       joinedEvent(2, PARTICIPANT_B, 'debater-B'),
@@ -637,7 +699,7 @@ describe('computeFacetStatuses — shape facet (edge)', () => {
     expect(index.edges.get(EDGE_E)?.shape).toBe('agreed');
   });
 
-  it('a dispute vote on (edge, shape) → disputed', () => {
+  it('(w) a dispute vote on (edge, shape) → disputed', () => {
     const events: Event[] = [
       joinedEvent(1, PARTICIPANT_A, 'debater-A'),
       joinedEvent(2, PARTICIPANT_B, 'debater-B'),
@@ -649,7 +711,7 @@ describe('computeFacetStatuses — shape facet (edge)', () => {
     expect(index.edges.get(EDGE_E)?.shape).toBe('disputed');
   });
 
-  it('facet-arm commit on (edge, shape) → committed', () => {
+  it('(x) facet-arm commit on (edge, shape) → committed', () => {
     const events: Event[] = [
       joinedEvent(1, PARTICIPANT_A, 'debater-A'),
       joinedEvent(2, PARTICIPANT_B, 'debater-B'),
@@ -662,7 +724,7 @@ describe('computeFacetStatuses — shape facet (edge)', () => {
     expect(index.edges.get(EDGE_E)?.shape).toBe('committed');
   });
 
-  it('withdraw-agreement on committed (edge, shape) → withdrawn', () => {
+  it('(y) withdraw-agreement on committed (edge, shape) → withdrawn', () => {
     const events: Event[] = [
       joinedEvent(1, PARTICIPANT_A, 'debater-A'),
       joinedEvent(2, PARTICIPANT_B, 'debater-B'),
@@ -677,27 +739,91 @@ describe('computeFacetStatuses — shape facet (edge)', () => {
   });
 });
 
-// ──────────────────────────────────────────────────────────────────────
-// Multi-facet independence on one entity — pinned for the audience port.
-// ──────────────────────────────────────────────────────────────────────
+describe('EMPTY_FACET_STATUSES', () => {
+  it('is a frozen empty record and is referentially stable', () => {
+    expect(EMPTY_FACET_STATUSES).toEqual({});
+    expect(Object.isFrozen(EMPTY_FACET_STATUSES)).toBe(true);
+  });
+});
 
-describe('computeFacetStatuses — multi-facet independence', () => {
-  it('a node carries independent statuses on classification + substance', () => {
-    // classification reaches agreed; substance stays proposed.
-    const PROPOSAL_CLASS = '00000000-0000-4000-8000-0000000000c1';
-    const PROPOSAL_SUB = '00000000-0000-4000-8000-0000000000c2';
-    const events: Event[] = [
-      joinedEvent(1, PARTICIPANT_A, 'debater-A'),
-      joinedEvent(2, PARTICIPANT_B, 'debater-B'),
-      classifyProposal(3, PROPOSAL_CLASS, NODE_X),
-      voteEvent(4, PROPOSAL_CLASS, PARTICIPANT_A, 'agree'),
-      voteEvent(5, PROPOSAL_CLASS, PARTICIPANT_B, 'agree'),
-      setNodeSubstanceProposal(6, PROPOSAL_SUB, NODE_X),
-    ];
-    const index = computeFacetStatuses(events);
-    expect(index.nodes.get(NODE_X)).toEqual({
-      classification: 'agreed',
-      substance: 'proposed',
-    });
+describe('cardRollupStatus — empty + single-status', () => {
+  it('returns undefined for the empty record', () => {
+    expect(cardRollupStatus(EMPTY_FACET_STATUSES)).toBeUndefined();
+    expect(cardRollupStatus({})).toBeUndefined();
+  });
+
+  it('returns the single status when only one facet is present (every status)', () => {
+    for (const status of ROLLUP_PRIORITY) {
+      expect(cardRollupStatus({ classification: status })).toBe(status);
+    }
+  });
+});
+
+describe('cardRollupStatus — multi-status priority (verbatim from moderator)', () => {
+  // Pinned verbatim from `StatementNode.test.tsx`'s
+  // `cardRollupStatus — rollup priority order (mod_agreed_state_styling)`
+  // describe block — preserves the moderator-side coverage shape.
+
+  it('proposed beats every other status', () => {
+    expect(
+      cardRollupStatus({
+        classification: 'proposed',
+        substance: 'agreed',
+        wording: 'committed',
+      }),
+    ).toBe('proposed');
+    expect(cardRollupStatus({ classification: 'meta-disagreement', substance: 'proposed' })).toBe(
+      'proposed',
+    );
+  });
+
+  it('meta-disagreement beats disputed / agreed / committed / withdrawn', () => {
+    expect(
+      cardRollupStatus({
+        classification: 'meta-disagreement',
+        substance: 'disputed',
+        wording: 'agreed',
+      }),
+    ).toBe('meta-disagreement');
+  });
+
+  it('disputed beats agreed / committed / withdrawn', () => {
+    expect(cardRollupStatus({ classification: 'disputed', substance: 'agreed' })).toBe('disputed');
+    expect(cardRollupStatus({ classification: 'committed', substance: 'disputed' })).toBe(
+      'disputed',
+    );
+  });
+
+  it('agreed beats committed and withdrawn', () => {
+    expect(cardRollupStatus({ classification: 'agreed', substance: 'committed' })).toBe('agreed');
+    expect(cardRollupStatus({ classification: 'withdrawn', substance: 'agreed' })).toBe('agreed');
+  });
+
+  it('committed beats withdrawn', () => {
+    expect(cardRollupStatus({ classification: 'committed', substance: 'withdrawn' })).toBe(
+      'committed',
+    );
+  });
+});
+
+describe('cardRollupStatus — exhaustive priority-pair sweep', () => {
+  it('every higher-priority status wins over every lower-priority one (both facet orderings)', () => {
+    // For every (higher, lower) pair where ROLLUP_PRIORITY.indexOf(higher)
+    // < ROLLUP_PRIORITY.indexOf(lower), the rollup returns `higher`. This
+    // covers all 21 ordered pairs across the 7 statuses.
+    const pairs: Array<[FacetStatus, FacetStatus]> = [];
+    for (let i = 0; i < ROLLUP_PRIORITY.length; i += 1) {
+      for (let j = i + 1; j < ROLLUP_PRIORITY.length; j += 1) {
+        pairs.push([ROLLUP_PRIORITY[i]!, ROLLUP_PRIORITY[j]!]);
+      }
+    }
+    for (const [higher, lower] of pairs) {
+      const record = { classification: higher, substance: lower };
+      expect(cardRollupStatus(record)).toBe(higher);
+      // Reverse-order facet keys must not change the outcome (the helper
+      // is keyed on the set of values, not the iteration order).
+      const reverseRecord = { classification: lower, substance: higher };
+      expect(cardRollupStatus(reverseRecord)).toBe(higher);
+    }
   });
 });

@@ -32,8 +32,13 @@ import {
   type ProposalFacetEntry,
   type VotesByFacetIndex,
 } from './proposalFacets';
-import type { FacetName, FacetStatus, FacetStatusIndex } from './facetStatus';
-import { EMPTY_VOTES, type Vote } from '@a-conversa/shell';
+import {
+  EMPTY_VOTES,
+  type FacetName,
+  type FacetStatus,
+  type FacetStatusIndex,
+  type Vote,
+} from '@a-conversa/shell';
 import type { Event } from '@a-conversa/shared-types';
 
 const NODE_X = '00000000-0000-4000-8000-00000000000a';

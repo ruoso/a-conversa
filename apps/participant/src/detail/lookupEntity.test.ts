@@ -8,7 +8,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { lookupEntity } from './lookupEntity';
-import { EMPTY_FACET_STATUSES } from '../graph/facetStatus';
+import { EMPTY_FACET_STATUSES } from '@a-conversa/shell';
 import { EMPTY_OTHER_VOTES_LIST } from '../graph/otherVotes';
 import type { ParticipantEdgeData, ParticipantNodeData } from '../graph/projectGraph';
 

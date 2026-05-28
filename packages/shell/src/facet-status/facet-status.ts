@@ -1,39 +1,32 @@
-// Per-entity per-facet `FacetStatus` derivation for the audience's
-// read-only broadcast Cytoscape graph.
+// Per-entity per-facet `FacetStatus` derivation for every client-side
+// surface.
 //
-// Refinement: tasks/refinements/audience/aud_proposed_styling.md
-//   (Decision §3 — port verbatim from the participant's mirror, which
-//   is the newer of the two client copies and carries the post-`pf_*`
-//   refactor cleanups: the seven `FacetStatus` values including
-//   `'awaiting-proposal'` per ADR 0030 §10, the four `FacetName` values
-//   including `'shape'` per `pf_part_facet_name_widen_shape`, and the
-//   `EMPTY_FACET_STATUSES` frozen reference. Decision §5 — fourth
-//   verbatim copy lands here; consolidation to `@a-conversa/shell`
-//   deferred to the named-future-task `shell_facet_status_extraction`.)
+// Refinement: tasks/refinements/shell-package/extract_facet_status_rules.md
+//   (the four-caller consolidation that retires the three client mirrors
+//    `apps/{moderator,participant,audience}/src/graph/facetStatus.ts`)
+// Predecessor ports:
+//   tasks/refinements/moderator-ui/mod_proposed_state_styling.md
+//   tasks/refinements/per-facet-refactor/pf_projection_facet_status_refactor.md
+//   tasks/refinements/audience/aud_proposed_styling.md
+// ADR 0030 §10 — per-facet vote keying / canonical seven-value
+//   `FacetStatus` union + the eight-rule derivation walk.
 //
 // Client-side mirror of `apps/server/src/projection/facet-status.ts`'s
-// `deriveFacetStatus`. The audience port is the fourth copy across
-// workspaces. All four implementations MUST stay in lockstep if the
-// server's rule set widens (e.g. a new facet kind, a new vote kind):
-//
-//   - `apps/server/src/projection/facet-status.ts` — canonical server
-//     source (the rules' authoritative implementation; `deriveFacetStatus`).
-//   - `apps/moderator/src/graph/facetStatus.ts` — moderator client mirror
-//     (ReactFlow consumer; `GraphCanvasPane.tsx` + `PendingProposalsPane.tsx`).
-//   - `apps/participant/src/graph/facetStatus.ts` — participant client mirror
-//     (Cytoscape consumer; `GraphView.tsx`'s element-data stamping + the test mirror).
-//   - this file — audience client mirror (Cytoscape consumer;
-//     `GraphView.tsx`'s broadcast surface element-data stamping + the test mirror).
-//
-// The future `shell_facet_status_extraction` task consolidates the
-// four copies into a single `@a-conversa/shell` barrel export and
-// rewrites the four call sites' imports. Until that lands, every
-// rule-set widening must edit all four files in lockstep.
+// `deriveFacetStatus`. The server does not expose a client-callable
+// helper, and the WS `proposal-status` broadcast only covers facets
+// attached to *pending* proposals — committed / withdrawn / meta-
+// disagreement facets need the same state-machine evaluation locally.
+// Since `apps/server` is not a workspace dependency of any UI surface
+// and `@a-conversa/shared-types` does not re-export `FacetStatus`, this
+// file mirrors the small rule set verbatim. If a future refactor extracts
+// a shared methodology types package, the duplication becomes the call
+// site.
 //
 // Walks the per-session event log once and builds a per-entity per-facet
 // `FacetState` then runs the eight derivation rules to produce the final
 // `FacetStatus` per entity-facet pair. Rules ported from
-// `deriveFacetStatus`:
+// `deriveFacetStatus` per ADR 0030 §10 +
+// `pf_projection_facet_status_refactor`:
 //
 //   1. Meta-disagreement on a facet short-circuits to 'meta-disagreement'.
 //   2. No candidate value yet → 'awaiting-proposal'.
@@ -47,19 +40,27 @@
 //   7. All current participants voted `agree` → 'agreed'.
 //   8. Anything else → 'proposed'.
 //
+// **`node-created` / `edge-created` populate inline candidates.** Per
+// ADR 0030 §4 + §5: a node's `wording` facet enters life with the
+// captured text as its candidate (no proposal needed); an edge's
+// `shape` facet enters life with the inline carriage. The
+// `classification` / `substance` facets enter life with `candidateValue
+// === null` and surface as `'awaiting-proposal'` until a proposal lands.
+//
+// **A new facet-valued proposal clears prior votes on that facet.** Per
+// ADR 0030 §7: the prior `perParticipant` map's contents were votes
+// against the OLD candidate; the new candidate is a fresh proposal that
+// needs fresh agreement.
+//
+// **`withdraw-agreement` events** are tracked per `(entity, facet,
+// participant)` per ADR 0030 §3; a withdrawal against a committed
+// facet sends it to `'withdrawn'`.
+//
 // Returns `FacetStatusIndex`: two `Map`s — one per entity kind (nodes / edges)
 // — keyed by entity id, each value a `Partial<Record<FacetName, FacetStatus>>`.
 // An entity with no facet-targeting events appears as an empty record (or
 // no entry at all — consumers should treat both the same via
 // `index.nodes.get(id) ?? EMPTY_FACET_STATUSES`).
-//
-// `cardRollupStatus(facetStatuses)` returns the highest-priority status
-// per the `ROLLUP_PRIORITY` array (proposed > meta-disagreement >
-// disputed > agreed > committed > withdrawn > awaiting-proposal). The
-// audience-side `projectGraph` consumer stamps the literal sentinel
-// `'none'` when the helper returns `undefined` so Cytoscape's
-// `[rollupStatus = '<state>']` selectors have a stable string to match
-// on (Decision §4).
 
 import type { Event, ProposalPayload } from '@a-conversa/shared-types';
 
@@ -68,6 +69,14 @@ import type { Event, ProposalPayload } from '@a-conversa/shared-types';
  * `FacetStatus` verbatim. Seven values: the agreement layer (`proposed`,
  * `agreed`, `disputed`, `meta-disagreement`), the committed layer
  * (`committed`, `withdrawn`), and the empty-state `awaiting-proposal`.
+ *
+ * `'awaiting-proposal'` is added by `pf_awaiting_proposal_facet_status` per
+ * [ADR 0030 §10](../../../../docs/adr/0030-per-facet-vote-keying-and-sequential-capture.md):
+ * the entity exists but no candidate value has been set for that facet yet
+ * (most commonly a freshly-captured node's `classification` and `substance`
+ * facets, before a `classify-node` / `set-node-substance` proposal has been
+ * made). Distinct from `'proposed'`, which means "a candidate has been set
+ * and is gathering votes."
  */
 export type FacetStatus =
   | 'proposed'
@@ -79,22 +88,41 @@ export type FacetStatus =
   | 'awaiting-proposal';
 
 /**
- * The four facets the audience's projection tracks per entity.
- * Mirrors `apps/server/src/projection/types.ts`'s `FacetName` AND the
- * wire-level `facetNameSchema` in `@a-conversa/shared-types` (both
- * 4-valued post `pf_shape_facet_wire_vote`). Nodes in v1 carry
- * `wording` / `classification` / `substance`; edges carry `shape`
- * (inline carriage of the role from `edge-created` per ADR 0030 §5)
- * and `substance`.
+ * The four facets the client-side projection tracks per entity. Mirrors
+ * `apps/server/src/projection/types.ts`'s `FacetName` AND the wire-level
+ * `facetNameSchema` in `@a-conversa/shared-types` (both 4-valued post
+ * `pf_shape_facet_wire_vote`). Nodes in v1 carry `wording` /
+ * `classification` / `substance`; edges carry `shape` (inline carriage of
+ * the role from `edge-created` per ADR 0030 §5) and `substance`.
+ *
+ * The shell-side type intentionally stays a separate `export type` rather
+ * than re-exporting from `@a-conversa/shared-types` so the shell's
+ * facet-status layer keeps its self-contained type-mirror posture (the
+ * file also owns the `FacetStatus` enum and the derivation rules — re-
+ * exporting `FacetName` from a different module would split the
+ * vocabulary across two import sources for one logical concept).
+ * Lockstep with the wire enum is enforced by:
+ *
+ *   - The `Event` import (vote / commit / withdraw-agreement /
+ *     meta-disagreement-marked event payloads' `facet` field uses the
+ *     wire enum) — the derivation arms below assign event-payload
+ *     facets directly into this type's slots, so a drift between the
+ *     two values would surface as a TypeScript error.
+ *   - The facet round-trip i18n test in
+ *     `packages/i18n-catalogs/src/methodology.test.ts` pins the four-
+ *     valued vocabulary at the catalog layer (today the test pins
+ *     `wording / classification / substance / proposal` — the shape
+ *     facet does NOT have a `methodology.facet.shape` catalog key
+ *     because the per-facet pill row deliberately omits it).
  */
 export type FacetName = 'classification' | 'substance' | 'wording' | 'shape';
 
-// Per ADR 0030 §3 + `pf_facet_keyed_vote_payload` + `pf_withdraw_agreement_handler`
-// + `pf_unit_test_audit`: `vote.choice` collapsed to `'agree' | 'dispute'`;
-// withdrawal is its own first-class event kind. The legacy `'withdraw'`
-// arm has been retired from this union; withdrawals are tracked separately
-// on the per-facet `withdrawals` set populated by `withdraw-agreement`
-// events.
+// Per ADR 0030 §3 + `pf_facet_keyed_vote_payload` +
+// `pf_withdraw_agreement_handler`: `vote.choice` collapsed to
+// `'agree' | 'dispute'`; withdrawal is its own first-class event kind.
+// The legacy `'withdraw'` arm has been retired from this union — withdrawals
+// are tracked separately on the per-facet `withdrawals` set populated by
+// `withdraw-agreement` events.
 type PerParticipantVote = 'agree' | 'dispute';
 
 /**
@@ -111,6 +139,15 @@ export interface FacetStatusIndex {
  * Internal accumulator for per-facet state — same shape as the server's
  * `FacetState`, minus the typed `value` field (the client doesn't need
  * the proposed value to compute the status).
+ *
+ * `perParticipant` is keyed by participant user id; each value is the
+ * participant's latest vote on the facet. Multiple votes by the same
+ * participant overwrite (the server enforces a one-vote-per-(proposal,
+ * participant) invariant; this client mirror trusts that).
+ *
+ * `committed` flips when a `commit` event lands referencing one of the
+ * proposals targeting this facet; `metaDisagreement` flips when a
+ * `mark-meta-disagreement` event lands likewise.
  */
 interface InternalFacetState {
   perParticipant: Map<string, PerParticipantVote>;
@@ -120,10 +157,10 @@ interface InternalFacetState {
   metaDisagreement: boolean;
   /**
    * Whether the facet has any candidate value to vote on. Set to `true`
-   * when a `node-created.wording` populates the wording facet inline,
-   * an `edge-created` populates the shape facet inline, or a facet-
-   * valued proposal targeting this facet lands. Drives the
-   * `'awaiting-proposal'` rule per ADR 0030 §10.
+   * when (a) a `node-created.wording` populates the wording facet
+   * inline, (b) an `edge-created` populates the shape facet inline, or
+   * (c) a facet-valued proposal targeting this facet lands. Drives
+   * Rule 2 (`candidate === false` → `'awaiting-proposal'`).
    */
   hasCandidate: boolean;
   /**
@@ -160,6 +197,10 @@ function targetOf(
 ): { entityKind: EntityKind; entityId: string; facet: FacetName } | null {
   switch (proposal.kind) {
     case 'capture-node':
+      // Per ADR 0030 §1 + §4: `capture-node` names the wording-facet
+      // candidate inline; threading the wording target lets a facet-
+      // keyed vote / commit walk against this proposal resolve
+      // consistently across every client mirror.
       return { entityKind: 'node', entityId: proposal.node_id, facet: 'wording' };
     case 'classify-node':
       return { entityKind: 'node', entityId: proposal.node_id, facet: 'classification' };
@@ -173,6 +214,7 @@ function targetOf(
       // pre-commit the proposal is against the existing node's wording.)
       return { entityKind: 'node', entityId: proposal.node_id, facet: 'wording' };
     case 'amend-node':
+      // The methodology-engine repair op — same target as reword.
       return { entityKind: 'node', entityId: proposal.node_id, facet: 'wording' };
     case 'decompose':
     case 'interpretive-split':
@@ -225,6 +267,12 @@ function getOrCreateFacetState(
  * structural / per-participant ones) contribute nothing.
  */
 export function computeFacetStatuses(events: readonly Event[]): FacetStatusIndex {
+  // Step 1: walk events once to build:
+  //   - The current-participants set (joined - left).
+  //   - A proposal-id → target triple map (vote / commit /
+  //     mark-meta-disagreement events reference proposals by id; we map
+  //     them back to facets via this).
+  //   - Per-entity per-facet `InternalFacetState`s.
   const currentParticipants = new Set<string>();
   const proposalTarget = new Map<
     string,
@@ -235,6 +283,14 @@ export function computeFacetStatuses(events: readonly Event[]): FacetStatusIndex
 
   for (const event of events) {
     if (event.kind === 'participant-joined') {
+      // Per `deriveCurrentParticipants` in `proposalFacets.ts` + the
+      // methodology semantics in `docs/methodology.md` § "Voting":
+      // only non-moderator participants count toward facet unanimity.
+      // The moderator drives the conversation but does not vote — a
+      // moderator-counted Rule 7 would never fire `'agreed'` until
+      // the moderator personally voted, which the methodology
+      // doesn't model.
+      if (event.payload.role === 'moderator') continue;
       currentParticipants.add(event.payload.user_id);
       continue;
     }
@@ -243,10 +299,11 @@ export function computeFacetStatuses(events: readonly Event[]): FacetStatusIndex
       continue;
     }
     if (event.kind === 'node-created') {
-      // Per ADR 0030 §4: wording is inline on `node-created`. The
+      // Per ADR 0030 §4: wording is inline on `node-created` — the
       // wording facet enters life with the captured text as its
-      // candidate. Classification + substance facets remain
-      // `awaiting-proposal` until their respective proposals land.
+      // candidate (no proposal supplied it). Classification +
+      // substance facets remain `awaiting-proposal` until their
+      // respective proposals land.
       const wordingState = getOrCreateFacetState(
         nodeStates,
         edgeStates,
@@ -255,6 +312,11 @@ export function computeFacetStatuses(events: readonly Event[]): FacetStatusIndex
         'wording',
       );
       wordingState.hasCandidate = true;
+      // Pre-allocate classification + substance facet entries so the
+      // `'awaiting-proposal'` rule fires for them. (Without this the
+      // entity would have no entry and the lookup returns `undefined` —
+      // the consumer treats undefined the same as `'awaiting-proposal'`
+      // semantically, but the explicit emission is clearer.)
       getOrCreateFacetState(
         nodeStates,
         edgeStates,
@@ -268,8 +330,8 @@ export function computeFacetStatuses(events: readonly Event[]): FacetStatusIndex
     if (event.kind === 'edge-created') {
       // Per ADR 0030 §5: edge shape is inline on `edge-created` — the
       // shape facet enters life with the inline role as its candidate
-      // (no proposal supplied it). The substance facet enters life
-      // `awaiting-proposal` until a `set-edge-substance` proposal lands.
+      // (no proposal supplied it). Mirrors the `node-created.wording`
+      // seeding above.
       const shapeState = getOrCreateFacetState(
         nodeStates,
         edgeStates,
@@ -278,14 +340,17 @@ export function computeFacetStatuses(events: readonly Event[]): FacetStatusIndex
         'shape',
       );
       shapeState.hasCandidate = true;
+      // The substance facet enters life `awaiting-proposal` until a
+      // `set-edge-substance` proposal lands.
       getOrCreateFacetState(nodeStates, edgeStates, 'edge', event.payload.edge_id, 'substance');
       continue;
     }
     if (event.kind === 'withdraw-agreement') {
       // Per ADR 0030 §3: withdraw-agreement is keyed by `(entity, facet,
       // participant)`. The handler records the withdrawal on the
-      // matching facet; the derivation surfaces `'withdrawn'` when the
-      // withdrawal lands on a committed candidate.
+      // matching facet's `withdrawals` set; the derivation surfaces
+      // `'withdrawn'` when the withdrawal lands on a committed
+      // candidate.
       const state = getOrCreateFacetState(
         nodeStates,
         edgeStates,
@@ -307,17 +372,48 @@ export function computeFacetStatuses(events: readonly Event[]): FacetStatusIndex
           target.entityId,
           target.facet,
         );
-        // Per ADR 0030 §7: a new facet-valued proposal sets a fresh
-        // candidate AND clears prior per-participant votes (the old
-        // votes were votes against the old candidate). Withdrawals
-        // are NOT cleared.
+        // Per ADR 0030 §7 + the refactor: a new facet-valued proposal
+        // sets a fresh candidate AND clears prior per-participant votes
+        // on the facet (the old votes were votes against the old
+        // candidate). Withdrawals are NOT cleared — those are
+        // historical participant gestures against the prior commit.
         state.hasCandidate = true;
         state.candidateProposalEventId = event.id;
         state.perParticipant.clear();
       }
-      // A pending decompose / interpretive-split proposal introduces N
-      // component nodes via the propose-time fan-out; each component's
-      // classification facet is `proposed` while the proposal is pending.
+      // Per `mod_decompose_propose_time_canvas_visibility`: a pending
+      // decompose / interpretive-split proposal introduces N component
+      // nodes (via the propose-time fan-out at
+      // `apps/server/src/methodology/handlers/propose.ts`); each
+      // component's classification facet is `proposed` while the
+      // decompose / interpretive-split proposal is pending. (The
+      // parent's classification facet is unaffected — the parent is
+      // not the target of these proposals.) Without this branch the
+      // component nodes would render with NO `data-facet-status`
+      // attribute, violating the methodology contract that proposed
+      // entities surface with `data-facet-status="proposed"` per
+      // ADR 0027 + `mod_proposed_entity_canvas_visibility` Acceptance
+      // criteria.
+      //
+      // This is purely a status-derivation rule (no per-component
+      // proposal envelope is emitted at the wire layer — the single
+      // `decompose` envelope carries the components inline). On
+      // commit / withdraw of the decompose proposal, the component
+      // nodes either persist (commit — the components are now real)
+      // or get retracted (withdraw — `entity-removed(node)` per
+      // component lands per `entitiesToRetractForWithdraw` in
+      // `apps/server/src/ws/handlers/withdraw.ts`); either way the
+      // facet status update is consistent.
+      //
+      // **Server-side symmetric arm.** The server-side
+      // `facetTargetsForProposal` in
+      // `apps/server/src/ws/broadcast/proposal-status.ts` is the
+      // source of truth for non-moderator surfaces consuming the
+      // `proposal-status` broadcast directly — it walks the same
+      // `components` / `readings` arrays and emits one `proposal-
+      // status` envelope per component. See refinement
+      // `tasks/refinements/backend/facet_status_server_decompose_component_facets.md`
+      // D5 for the rationale on keeping both arms in lockstep.
       const proposal = event.payload.proposal;
       if (proposal.kind === 'decompose') {
         for (const component of proposal.components) {
@@ -328,6 +424,8 @@ export function computeFacetStatuses(events: readonly Event[]): FacetStatusIndex
             component.node_id,
             'classification',
           );
+          // Each component's classification facet enters life with the
+          // inline `classification` value as its candidate.
           state.hasCandidate = true;
           state.candidateProposalEventId = event.id;
         }
@@ -347,6 +445,11 @@ export function computeFacetStatuses(events: readonly Event[]): FacetStatusIndex
       continue;
     }
     if (event.kind === 'vote') {
+      // Per ADR 0030 §2: vote payloads are a `target`-discriminated
+      // union. The facet-keyed arm carries the `(entity_kind,
+      // entity_id, facet)` triple directly; the proposal-keyed arm
+      // resolves to the facet via the proposal-id → target map. Both
+      // arms write to the same per-facet `perParticipant` map.
       if (event.payload.target === 'facet') {
         const state = getOrCreateFacetState(
           nodeStates,
@@ -358,6 +461,8 @@ export function computeFacetStatuses(events: readonly Event[]): FacetStatusIndex
         state.perParticipant.set(event.payload.participant, event.payload.choice);
         continue;
       }
+      // target === 'proposal' — structural arm or legacy facet-valued
+      // arm for any proposal-keyed votes still on the log.
       const target = proposalTarget.get(event.payload.proposal_id);
       if (!target) continue;
       const state = getOrCreateFacetState(
@@ -367,10 +472,19 @@ export function computeFacetStatuses(events: readonly Event[]): FacetStatusIndex
         target.entityId,
         target.facet,
       );
+      // Latest vote wins (server enforces one-vote-per-participant-per-
+      // proposal; this is a no-op for well-formed logs and a defensive
+      // last-write-wins for malformed ones).
       state.perParticipant.set(event.payload.participant, event.payload.choice);
       continue;
     }
     if (event.kind === 'commit') {
+      // Per ADR 0030 §2 + §9: commit payloads are a `target`-
+      // discriminated union. The facet-keyed arm carries the
+      // `(entity_kind, entity_id, facet)` triple directly; the
+      // proposal-keyed arm resolves to the facet via the proposal-id
+      // → target map. Both arms flip the per-facet `committed` flag
+      // the derivation reads.
       if (event.payload.target === 'facet') {
         const state = getOrCreateFacetState(
           nodeStates,
@@ -382,6 +496,8 @@ export function computeFacetStatuses(events: readonly Event[]): FacetStatusIndex
         state.committed = true;
         continue;
       }
+      // target === 'proposal' — structural arm or legacy facet-valued
+      // arm for any proposal-keyed commits still on the log.
       const target = proposalTarget.get(event.payload.proposal_id);
       if (!target) continue;
       const state = getOrCreateFacetState(
@@ -395,6 +511,12 @@ export function computeFacetStatuses(events: readonly Event[]): FacetStatusIndex
       continue;
     }
     if (event.kind === 'meta-disagreement-marked') {
+      // Per ADR 0030 §2 + §9: meta-disagreement-marked payloads are a
+      // `target`-discriminated union. The facet-keyed arm carries the
+      // `(entity_kind, entity_id, facet)` triple directly; the
+      // proposal-keyed arm resolves to the facet via the proposal-id
+      // → target map. Both arms flip the per-facet `metaDisagreement`
+      // flag the derivation reads.
       if (event.payload.target === 'facet') {
         const state = getOrCreateFacetState(
           nodeStates,
@@ -406,6 +528,8 @@ export function computeFacetStatuses(events: readonly Event[]): FacetStatusIndex
         state.metaDisagreement = true;
         continue;
       }
+      // target === 'proposal' — structural arm or legacy facet-valued
+      // arm for any proposal-keyed marks still on the log.
       const target = proposalTarget.get(event.payload.proposal_id);
       if (!target) continue;
       const state = getOrCreateFacetState(
@@ -418,8 +542,10 @@ export function computeFacetStatuses(events: readonly Event[]): FacetStatusIndex
       state.metaDisagreement = true;
       continue;
     }
-    // Other event kinds (annotation-created, session-created, session-ended,
-    // entity-included, snapshot-created) do not affect facet status directly.
+    // Other event kinds (annotation-created, session-created,
+    // session-ended, entity-included, snapshot-created, ...) do not
+    // affect facet status directly. The facet status is purely a
+    // function of proposals + votes + commits + meta-disagreement marks.
   }
 
   // Step 2: run the derivation rules on each accumulated state.
@@ -454,7 +580,8 @@ function derive(state: InternalFacetState, currentParticipants: Set<string>): Fa
     return 'meta-disagreement';
   }
 
-  // Rule 2: no candidate value yet → `'awaiting-proposal'`.
+  // Rule 2: no candidate value yet → `'awaiting-proposal'`. Per ADR
+  // 0030 §10: this is the empty-state row.
   if (!state.hasCandidate) {
     return 'awaiting-proposal';
   }
@@ -477,6 +604,11 @@ function derive(state: InternalFacetState, currentParticipants: Set<string>): Fa
   const hasDispute = currentVotes.some((v) => v === 'dispute');
 
   // Rule 4: withdraw-agreement against a committed facet → 'withdrawn'.
+  // Per ADR 0030 §3: withdrawal is its own first-class event kind
+  // (`withdraw-agreement`); the legacy `vote.choice = 'withdraw'`
+  // back-compat branch was closed by `pf_unit_test_audit` since the
+  // wire schema's hard rejection + ADR 0030's clean-break migration
+  // mean no legacy `'withdraw'` choice can reach this projection.
   if (state.committed && hasCurrentWithdrawal) {
     return 'withdrawn';
   }
@@ -492,7 +624,8 @@ function derive(state: InternalFacetState, currentParticipants: Set<string>): Fa
   }
 
   // Rule 7: every current participant voted agree → agreed. Requires at
-  // least one current participant.
+  // least one current participant (an empty-session facet stays
+  // 'proposed').
   const currentParticipantCount = currentParticipants.size;
   const agreeCount = currentVotes.filter((v) => v === 'agree').length;
   if (currentParticipantCount > 0 && agreeCount === currentParticipantCount) {
@@ -505,23 +638,34 @@ function derive(state: InternalFacetState, currentParticipants: Set<string>): Fa
 
 /**
  * Module-scope shared empty per-facet record. Hands a stable reference to
- * consumers when an entity has no facet entries, so React memoization
- * doesn't see a fresh object on every projection pass.
+ * consumers when an entity has no facet entries, so React / ReactFlow
+ * memoization doesn't see a fresh object on every projection pass.
  */
 export const EMPTY_FACET_STATUSES: Readonly<Partial<Record<FacetName, FacetStatus>>> =
   Object.freeze({});
 
 /**
  * Card-level rollup priority. Highest priority first; the first status
- * present in the per-facet record wins.
+ * present in the per-facet record wins. Sourced from the moderator's
+ * `apps/moderator/src/graph/StatementNode.tsx` (the canonical chronological
+ * source — the participant + audience copies were verbatim ports of it).
  *
  *   1. `proposed`           — gathering votes; the most active surface.
  *   2. `meta-disagreement`  — methodology-engine escalation always wins.
  *   3. `disputed`           — agreement broke down on a vote.
  *   4. `agreed`             — all current participants agreed, no commit.
- *   5. `committed`          — agreed and committed; closed.
+ *   5. `committed`          — agreed and committed; closed (visual signal
+ *                              is the closed-tone slate-400 border).
  *   6. `withdrawn`          — committed then withdrawn; closed.
- *   7. `awaiting-proposal`  — empty-state per ADR 0030 §10.
+ *   7. `awaiting-proposal`  — empty-state row; only surfaces when ALL
+ *                              facets are awaiting-proposal.
+ *
+ * Rationale: "things you can act on" sort first; `committed` / `withdrawn`
+ * are closed and sort last. Within the agreement layer, `proposed` outranks
+ * `disputed` outranks `agreed` because `proposed` means "still gathering
+ * votes" — the most active surface to drive forward. `meta-disagreement`
+ * sits second because the methodology-engine escalation always takes
+ * precedence over a normal disputed facet.
  */
 export const ROLLUP_PRIORITY: readonly FacetStatus[] = [
   'proposed',
@@ -536,11 +680,10 @@ export const ROLLUP_PRIORITY: readonly FacetStatus[] = [
 /**
  * Return the highest-priority `FacetStatus` present in the per-facet
  * record per `ROLLUP_PRIORITY`. Returns `undefined` when the record is
- * empty (no facet entries) — the audience-side `projectGraph` consumer
- * then stamps the literal sentinel string `'none'` onto the element
- * data so Cytoscape's selector engine has a stable value to match on
- * (`[rollupStatus = '<state>']` would not match against `undefined`).
- * Decision §4 of the refinement covers the sentinel-string choice.
+ * empty (no facet entries) — Cytoscape-driven consumers then stamp the
+ * literal sentinel string `'none'` onto element data so the selector
+ * engine has a stable value to match on (`[rollupStatus = 'none']`
+ * matches the baseline branch).
  */
 export function cardRollupStatus(
   facetStatuses: Readonly<Partial<Record<FacetName, FacetStatus>>>,

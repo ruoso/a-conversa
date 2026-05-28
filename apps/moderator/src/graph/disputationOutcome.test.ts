@@ -19,10 +19,11 @@
 import { describe, expect, it } from 'vitest';
 
 import { disputationOutcome, type DisputationOutcome } from './disputationOutcome';
-import type { FacetStatus } from './facetStatus';
+import type { FacetStatus } from '@a-conversa/shell';
 
 // Canonical `FacetStatus` tuple — single source of truth for the
-// exhaustive-narrow guard below. Sourced from `facetStatus.ts` L43-L49.
+// exhaustive-narrow guard below. Sourced from `@a-conversa/shell`'s
+// `facet-status` module.
 // Listed as a `readonly tuple` so the TypeScript-level enum addition
 // also surfaces as a compile error if `FacetStatus` grows without this
 // constant updating (the `satisfies readonly FacetStatus[]` clause is

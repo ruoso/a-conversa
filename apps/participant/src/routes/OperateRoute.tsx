@@ -75,7 +75,7 @@ import {
 } from '../graph/annotations';
 import { groupAxiomMarksByNode, projectAxiomMarks } from '../graph/axiomMarks';
 import { projectDiagnosticHighlights } from '../graph/diagnosticHighlights';
-import { computeFacetStatuses } from '../graph/facetStatus';
+import { computeFacetStatuses } from '@a-conversa/shell';
 import { projectOwnVotes } from '../graph/ownVotes';
 import { projectOtherVotes } from '../graph/otherVotes';
 import { projectGraph, EMPTY_FLASH_INDEX } from '../graph/projectGraph';

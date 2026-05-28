@@ -16,9 +16,7 @@
 // memoization stays reference-stable across no-vote sessions.
 
 import type { Event, ProposalPayload } from '@a-conversa/shared-types';
-import { type Vote } from '@a-conversa/shell';
-
-import type { FacetName } from '../graph/facetStatus';
+import { type FacetName, type Vote } from '@a-conversa/shell';
 
 export type OtherVotesByFacetIndex = ReadonlyMap<string, ReadonlyMap<FacetName, readonly Vote[]>>;
 

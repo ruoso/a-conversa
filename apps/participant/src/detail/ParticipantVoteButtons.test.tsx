@@ -50,8 +50,7 @@ import type {
   WsMessagePayloadMap,
   WsMessageType,
 } from '@a-conversa/shared-types';
-import { createI18nInstance } from '@a-conversa/shell';
-import { computeFacetStatuses, type FacetStatusIndex } from '../graph/facetStatus';
+import { computeFacetStatuses, createI18nInstance, type FacetStatusIndex } from '@a-conversa/shell';
 
 const SESSION_ID = '11111111-1111-4111-8111-111111111111';
 const NODE_A_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';

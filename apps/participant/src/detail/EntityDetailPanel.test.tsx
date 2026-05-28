@@ -30,7 +30,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { EntityDetailPanel } from './EntityDetailPanel';
 import type { AxiomMark } from '../graph/axiomMarks';
 import type { Annotation } from '../graph/annotations';
-import { EMPTY_FACET_STATUSES } from '../graph/facetStatus';
+import { EMPTY_FACET_STATUSES } from '@a-conversa/shell';
 import { EMPTY_OWN_VOTES } from '../graph/ownVotes';
 import { EMPTY_OTHERS_VOTES, EMPTY_OTHER_VOTES_LIST } from '../graph/otherVotes';
 import type { ParticipantEdgeData, ParticipantNodeData } from '../graph/projectGraph';

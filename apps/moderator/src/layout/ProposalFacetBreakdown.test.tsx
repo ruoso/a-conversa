@@ -31,9 +31,11 @@ import {
   PILL_STATUS_CLASSNAME,
   VoteIndicator,
   createI18nInstance,
+  type FacetName,
+  type FacetStatus,
+  type FacetStatusIndex,
   type Vote,
 } from '@a-conversa/shell';
-import type { FacetName, FacetStatus, FacetStatusIndex } from '../graph/facetStatus';
 import type { PendingProposalRow } from '../graph/pendingProposals';
 import type { VotesByFacetIndex } from '../graph/proposalFacets';
 

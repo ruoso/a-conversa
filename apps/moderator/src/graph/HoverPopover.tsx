@@ -62,12 +62,11 @@
 import type { ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { axiomMarkColorFor } from '@a-conversa/shell';
+import { axiomMarkColorFor, type FacetName } from '@a-conversa/shell';
 
 import type { StatementEdgeData } from './selectors.js';
 import type { StatementNodeData } from './StatementNode.js';
 import { disputationOutcome } from './disputationOutcome.js';
-import type { FacetName } from './facetStatus.js';
 
 /**
  * Canonical reading order for the per-facet section. Same order as the

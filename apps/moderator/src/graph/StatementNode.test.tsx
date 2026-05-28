@@ -47,20 +47,16 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { ReactFlowProvider, type NodeProps } from 'reactflow';
 import type { StatementKind } from '@a-conversa/shared-types';
 
-import {
-  STATEMENT_NODE_TYPE,
-  StatementNode,
-  cardRollupStatus,
-  type StatementNodeData,
-} from './StatementNode';
+import { STATEMENT_NODE_TYPE, StatementNode, type StatementNodeData } from './StatementNode';
 import type { DiagnosticHighlight } from './diagnosticHighlights';
-import type { FacetName, FacetStatus } from './facetStatus';
 import type { PendingAxiomMark } from './selectors';
 import {
   WsClientProvider,
   createI18nInstance,
   type Annotation,
   type AxiomMark,
+  type FacetName,
+  type FacetStatus,
   type Vote,
   type WsClient,
 } from '@a-conversa/shell';
@@ -849,62 +845,6 @@ describe('StatementNode — meta-disagreement-state styling (mod_meta_disagreeme
       expect(card.className).toContain('ring-violet-400');
     });
   }
-});
-
-describe('cardRollupStatus — rollup priority order (mod_agreed_state_styling)', () => {
-  // Direct unit tests on the rollup function — pin the priority order
-  // without relying on a React render. The order is
-  // `proposed > meta-disagreement > disputed > agreed > committed > withdrawn`.
-  it('returns undefined for an empty facet record', () => {
-    expect(cardRollupStatus({})).toBeUndefined();
-  });
-
-  it('returns the single status when only one facet is present', () => {
-    expect(cardRollupStatus({ classification: 'agreed' })).toBe('agreed');
-    expect(cardRollupStatus({ classification: 'proposed' })).toBe('proposed');
-    expect(cardRollupStatus({ classification: 'committed' })).toBe('committed');
-  });
-
-  it('proposed beats every other status', () => {
-    expect(
-      cardRollupStatus({
-        classification: 'proposed',
-        substance: 'agreed',
-        wording: 'committed',
-      }),
-    ).toBe('proposed');
-    expect(cardRollupStatus({ classification: 'meta-disagreement', substance: 'proposed' })).toBe(
-      'proposed',
-    );
-  });
-
-  it('meta-disagreement beats disputed / agreed / committed / withdrawn', () => {
-    expect(
-      cardRollupStatus({
-        classification: 'meta-disagreement',
-        substance: 'disputed',
-        wording: 'agreed',
-      }),
-    ).toBe('meta-disagreement');
-  });
-
-  it('disputed beats agreed / committed / withdrawn', () => {
-    expect(cardRollupStatus({ classification: 'disputed', substance: 'agreed' })).toBe('disputed');
-    expect(cardRollupStatus({ classification: 'committed', substance: 'disputed' })).toBe(
-      'disputed',
-    );
-  });
-
-  it('agreed beats committed and withdrawn', () => {
-    expect(cardRollupStatus({ classification: 'agreed', substance: 'committed' })).toBe('agreed');
-    expect(cardRollupStatus({ classification: 'withdrawn', substance: 'agreed' })).toBe('agreed');
-  });
-
-  it('committed beats withdrawn', () => {
-    expect(cardRollupStatus({ classification: 'committed', substance: 'withdrawn' })).toBe(
-      'committed',
-    );
-  });
 });
 
 describe('StatementNode — axiom-mark decoration row (mod_axiom_mark_decoration)', () => {

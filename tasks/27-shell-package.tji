@@ -79,6 +79,7 @@ task shell_package "Shell package (@aconversa/shell)" {
   task extract_facet_status_rules "Collapse computeFacetStatuses + the seven facet-state derivation rules into @a-conversa/shell once audience becomes the fourth caller" {
     effort 1d
     allocate team
+    complete 100
     depends !extract_facet_pill, audience.aud_graph_rendering
     note -8<-
       Collapse `computeFacetStatuses` + the seven facet-state derivation rules into `@a-conversa/shell` once the audience surface adds the 4th caller (server + moderator + participant + audience). The rule-set walker is ~410 lines mirrored across three sites today. Deferred until audience triggers the fourth implementation. Source: tasks/refinements/shell-package/extract_facet_pill.md (Decision §2) + this commit.

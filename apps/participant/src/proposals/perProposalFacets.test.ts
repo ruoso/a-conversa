@@ -20,12 +20,17 @@
 
 import { describe, expect, it } from 'vitest';
 import type { ProposalPayload } from '@a-conversa/shared-types';
-import { EMPTY_VOTES, type Vote } from '@a-conversa/shell';
+import {
+  EMPTY_VOTES,
+  type FacetName,
+  type FacetStatus,
+  type FacetStatusIndex,
+  type Vote,
+} from '@a-conversa/shell';
 
 import { derivePerProposalFacets } from './perProposalFacets';
 import type { OtherVotesByFacetIndex } from './otherVotesByFacet';
 import type { OtherVotesByProposalIndex } from './otherVotesByProposal';
-import type { FacetName, FacetStatus, FacetStatusIndex } from '../graph/facetStatus';
 
 const NODE_X = '00000000-0000-4000-8000-00000000000a';
 const NODE_Y = '00000000-0000-4000-8000-00000000000b';

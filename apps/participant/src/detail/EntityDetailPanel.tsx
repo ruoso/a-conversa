@@ -58,10 +58,12 @@ import {
   FacetPill,
   PILL_BASE_CLASSNAME,
   PILL_STATUS_CLASSNAME,
+  type FacetName,
+  type FacetStatus,
+  type FacetStatusIndex,
 } from '@a-conversa/shell';
 import type { Annotation } from '../graph/annotations';
 import type { AxiomMark } from '../graph/axiomMarks';
-import type { FacetName, FacetStatus, FacetStatusIndex } from '../graph/facetStatus';
 import type { OwnVoteIndex } from '../graph/ownVotes';
 import type { OthersVoteIndex } from '../graph/otherVotes';
 import type { ParticipantEdgeData, ParticipantNodeData } from '../graph/projectGraph';

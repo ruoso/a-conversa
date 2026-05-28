@@ -68,7 +68,7 @@
 
 import type { Event, ProposalPayload } from '@a-conversa/shared-types';
 
-import type { FacetName } from './facetStatus';
+import type { FacetName } from '@a-conversa/shell';
 
 /**
  * One OTHER participant's at-a-glance vote disposition on an entity. The

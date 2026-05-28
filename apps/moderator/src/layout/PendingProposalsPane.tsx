@@ -60,7 +60,7 @@ import {
   derivePendingProposals,
   type PendingProposalRow as PendingProposalRowData,
 } from '../graph/pendingProposals';
-import { computeFacetStatuses, type FacetStatusIndex } from '../graph/facetStatus';
+import { computeFacetStatuses, type FacetStatusIndex } from '@a-conversa/shell';
 import { projectVotesByFacet, projectVotesByProposal } from '../graph/selectors';
 import {
   deriveAllAgree,

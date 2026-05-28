@@ -28,7 +28,7 @@ import { formatRelativeTime } from '@a-conversa/i18n-catalogs';
 
 import { useWsStore } from '../ws/wsStore';
 import { useUiStore } from '../stores/uiStore';
-import { computeFacetStatuses, type FacetStatusIndex } from '../graph/facetStatus';
+import { computeFacetStatuses, type FacetStatusIndex } from '@a-conversa/shell';
 import { projectOwnFacetVotes, type OwnFacetVoteIndex } from '../graph/ownVotes';
 import {
   derivePendingProposals,

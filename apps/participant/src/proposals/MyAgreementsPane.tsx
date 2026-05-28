@@ -25,7 +25,7 @@ import { formatRelativeTime } from '@a-conversa/i18n-catalogs';
 import { useWsStore } from '../ws/wsStore';
 import { useSelectionStore } from '../stores/selectionStore';
 import { useUiStore } from '../stores/uiStore';
-import type { FacetStatusIndex } from '../graph/facetStatus';
+import type { FacetStatusIndex } from '@a-conversa/shell';
 import {
   derivePersonalAgreements,
   EMPTY_PERSONAL_AGREEMENTS,

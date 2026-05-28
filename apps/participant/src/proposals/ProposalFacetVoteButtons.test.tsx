@@ -42,7 +42,7 @@ import type { VoteTarget } from './perProposalFacets';
 import { EMPTY_OWN_FACET_VOTES, ownFacetKey, type OwnFacetVoteIndex } from '../graph/ownVotes';
 import { resetVoteActionStore } from '../detail/useVoteAction';
 import { useWsStore } from '../ws/wsStore';
-import type { FacetStatus } from '../graph/facetStatus';
+import type { FacetStatus } from '@a-conversa/shell';
 
 const SESSION_ID = '11111111-1111-4111-8111-111111111111';
 const NODE_X = '00000000-0000-4000-8000-00000000000a';

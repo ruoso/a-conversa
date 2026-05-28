@@ -37,7 +37,7 @@ import { installCytoscapeTestEnv, type CytoscapeTestEnvRestoreHandle } from './c
 import { projectDiagnosticHighlights, type DiagnosticHighlight } from './diagnosticHighlights';
 import { groupAnnotationsByEdge, groupAnnotationsByNode, projectAnnotations } from './annotations';
 import { groupAxiomMarksByNode, projectAxiomMarks } from './axiomMarks';
-import { computeFacetStatuses } from './facetStatus';
+import { computeFacetStatuses } from '@a-conversa/shell';
 import { projectOwnVotes } from './ownVotes';
 import { projectOtherVotes } from './otherVotes';
 import { projectGraph } from './projectGraph';

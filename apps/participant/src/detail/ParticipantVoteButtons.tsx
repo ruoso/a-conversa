@@ -76,7 +76,7 @@ import type {
   StatementKind,
 } from '@a-conversa/shared-types';
 
-import type { FacetName, FacetStatus, FacetStatusIndex } from '../graph/facetStatus';
+import type { FacetName, FacetStatus, FacetStatusIndex } from '@a-conversa/shell';
 import {
   EMPTY_OWN_FACET_VOTES,
   ownFacetKey,

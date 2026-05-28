@@ -97,7 +97,7 @@ import {
   EMPTY_FACET_STATUSES,
   type FacetName,
   type FacetStatus,
-} from './facetStatus.js';
+} from '@a-conversa/shell';
 import {
   EMPTY_ANNOTATIONS,
   EMPTY_AXIOM_MARKS,

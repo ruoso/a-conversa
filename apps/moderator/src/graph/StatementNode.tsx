@@ -49,7 +49,10 @@ import {
   AxiomMarkBadge,
   FacetPill,
   EMPTY_VOTES,
+  cardRollupStatus,
   type AxiomMark,
+  type FacetName,
+  type FacetStatus,
   type Vote,
 } from '@a-conversa/shell';
 
@@ -64,7 +67,6 @@ import { NodeClassificationCommitAffordance } from './NodeClassificationCommitAf
 import { PendingAxiomMarkBadge } from './PendingAxiomMarkBadge.js';
 import type { DiagnosticHighlight } from './diagnosticHighlights.js';
 import { disputationOutcome } from './disputationOutcome.js';
-import type { FacetName, FacetStatus } from './facetStatus.js';
 import type { Annotation } from '@a-conversa/shell';
 import { type PendingAxiomMark } from './selectors.js';
 
@@ -189,66 +191,6 @@ export interface StatementNodeData {
  * (no custom rendering, no localized label).
  */
 export const STATEMENT_NODE_TYPE = 'statement';
-
-/**
- * Card-level rollup of the per-facet statuses. Returns the highest-priority
- * status present in the per-facet record, or `undefined` when the record is
- * empty (i.e. no facet-targeting event has touched this entity yet — the
- * card renders with its solid-border / fully-opaque baseline).
- *
- * **Priority order** (refinement `mod_agreed_state_styling` Decisions):
- *   1. `proposed`            — in-flight, the moderator can act on it now.
- *   2. `meta-disagreement`   — escalation; the moderator's attention is needed.
- *   3. `disputed`            — needs resolution before commit.
- *   4. `agreed`              — pre-commit unanimous agreement.
- *   5. `committed`           — closed, kept in the rollup so downstream tasks
- *                              (`mod_disputed_state_styling`,
- *                              `mod_per_facet_state_visualization`) can stamp
- *                              the seam attribute and add their own styling
- *                              branches without re-deciding the order.
- *   6. `withdrawn`           — same rationale as committed; closed.
- *
- * Rationale: "things you can act on" sort first; `committed` / `withdrawn`
- * are closed and sort last. Within the agreement layer, `proposed` outranks
- * `disputed` outranks `agreed` because `proposed` means "still gathering
- * votes" — the most active surface for the moderator to drive forward.
- * `meta-disagreement` sits second because the methodology-engine
- * escalation always takes precedence over a normal disputed facet.
- *
- * The sibling state-styling tasks (`mod_disputed_state_styling`,
- * `mod_meta_disagreement_split_render`, etc.) extend the rendering branch
- * for their status; `mod_per_facet_state_visualization` ultimately replaces
- * this rollup with per-facet rendering. Exported so the test suite can pin
- * the rollup logic without re-rendering.
- */
-const ROLLUP_PRIORITY: readonly FacetStatus[] = [
-  'proposed',
-  'meta-disagreement',
-  'disputed',
-  'agreed',
-  'committed',
-  'withdrawn',
-  // `'awaiting-proposal'` (per ADR 0030 §10) sorts LAST in the rollup
-  // — it's the empty-state row for a facet with no candidate value
-  // yet. A card with at least one *actively proposed* facet should
-  // surface as `'proposed'` (the actionable state); only when ALL
-  // facets are awaiting-proposal does the card surface the empty-
-  // state rollup. Downstream moderator-UI tasks
-  // (`pf_mod_node_card_classification_affordance`,
-  // `pf_mod_node_card_substance_affordance`) may revisit the visual
-  // when they land the per-facet propose affordance.
-  'awaiting-proposal',
-];
-
-export function cardRollupStatus(
-  facetStatuses: Readonly<Partial<Record<FacetName, FacetStatus>>>,
-): FacetStatus | undefined {
-  const present = new Set(Object.values(facetStatuses));
-  for (const status of ROLLUP_PRIORITY) {
-    if (present.has(status)) return status;
-  }
-  return undefined;
-}
 
 export function StatementNode(props: NodeProps<StatementNodeData>): ReactElement {
   const { id, data } = props;

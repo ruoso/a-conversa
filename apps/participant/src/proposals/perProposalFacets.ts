@@ -17,9 +17,14 @@
 // Output is a `readonly` array of `{ facet, status, labelKey }` triples.
 
 import type { ProposalPayload } from '@a-conversa/shared-types';
-import { EMPTY_VOTES, type Vote } from '@a-conversa/shell';
+import {
+  EMPTY_VOTES,
+  type FacetName,
+  type FacetStatus,
+  type FacetStatusIndex,
+  type Vote,
+} from '@a-conversa/shell';
 
-import type { FacetName, FacetStatus, FacetStatusIndex } from '../graph/facetStatus';
 import { EMPTY_OTHER_VOTES_BY_FACET_INDEX, type OtherVotesByFacetIndex } from './otherVotesByFacet';
 import {
   EMPTY_OTHER_VOTES_BY_PROPOSAL_INDEX,

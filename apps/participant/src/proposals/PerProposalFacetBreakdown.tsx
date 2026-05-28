@@ -24,9 +24,13 @@
 import { memo, useMemo, type ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ProposalPayload } from '@a-conversa/shared-types';
-import { PILL_BASE_CLASSNAME, PILL_STATUS_CLASSNAME, VoteIndicator } from '@a-conversa/shell';
+import {
+  PILL_BASE_CLASSNAME,
+  PILL_STATUS_CLASSNAME,
+  VoteIndicator,
+  type FacetStatusIndex,
+} from '@a-conversa/shell';
 
-import type { FacetStatusIndex } from '../graph/facetStatus';
 import { EMPTY_OWN_FACET_VOTES, type OwnFacetVoteIndex } from '../graph/ownVotes';
 import { derivePerProposalFacets } from './perProposalFacets';
 import { EMPTY_OTHER_VOTES_BY_FACET_INDEX, type OtherVotesByFacetIndex } from './otherVotesByFacet';

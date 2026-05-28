@@ -70,7 +70,7 @@ import {
   type DiagnosticHighlightKind,
   type DiagnosticHighlightSeverity,
 } from './diagnosticHighlights';
-import type { FacetName, FacetStatus, FacetStatusIndex } from './facetStatus';
+import type { FacetName, FacetStatus, FacetStatusIndex } from '@a-conversa/shell';
 import { EMPTY_OWN_VOTES, type OwnVote, type OwnVoteIndex } from './ownVotes';
 import {
   EMPTY_OTHER_VOTES_LIST,

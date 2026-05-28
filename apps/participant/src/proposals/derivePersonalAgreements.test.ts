@@ -26,7 +26,7 @@ import { describe, expect, it } from 'vitest';
 import type { Event, ProposalPayload } from '@a-conversa/shared-types';
 
 import { derivePersonalAgreements } from './derivePersonalAgreements';
-import { computeFacetStatuses, type FacetStatusIndex } from '../graph/facetStatus';
+import { computeFacetStatuses, type FacetStatusIndex } from '@a-conversa/shell';
 
 const SESSION = '00000000-0000-4000-8000-0000000000a1';
 const MODERATOR = '00000000-0000-4000-8000-0000000000aa';

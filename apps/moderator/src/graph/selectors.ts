@@ -34,18 +34,16 @@ import type { EdgeRole, Event, ProposalPayload } from '@a-conversa/shared-types'
 // votes-by-proposal) stay here as moderator-graph-specific.
 import {
   EMPTY_ANNOTATIONS,
+  EMPTY_FACET_STATUSES,
+  computeFacetStatuses,
   groupAnnotationsByEdge,
   projectAnnotations,
   type Annotation,
+  type FacetName,
+  type FacetStatus,
   type Vote,
 } from '@a-conversa/shell';
 
-import {
-  computeFacetStatuses,
-  EMPTY_FACET_STATUSES,
-  type FacetName,
-  type FacetStatus,
-} from './facetStatus.js';
 import {
   EMPTY_DIAGNOSTIC_HIGHLIGHTS,
   type DiagnosticHighlight,

@@ -15,7 +15,7 @@ import { MyAgreementsPane } from './MyAgreementsPane';
 import { useWsStore } from '../ws/wsStore';
 import { useUiStore } from '../stores/uiStore';
 import { useSelectionStore } from '../stores/selectionStore';
-import { computeFacetStatuses } from '../graph/facetStatus';
+import { computeFacetStatuses } from '@a-conversa/shell';
 
 const SESSION = '00000000-0000-4000-8000-0000000000aa';
 const ME = '00000000-0000-4000-8000-0000000000c0';

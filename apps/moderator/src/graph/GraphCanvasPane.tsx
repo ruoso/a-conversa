@@ -109,7 +109,7 @@ import {
   projectDiagnosticHighlights,
   type DiagnosticHighlightIndex,
 } from './diagnosticHighlights.js';
-import { computeFacetStatuses, EMPTY_FACET_STATUSES } from './facetStatus.js';
+import { computeFacetStatuses, EMPTY_FACET_STATUSES } from '@a-conversa/shell';
 import { disputationOutcome } from './disputationOutcome.js';
 import {
   EMPTY_PENDING_AXIOM_MARKS,

@@ -49,7 +49,7 @@ import type { OtherVotesByProposalIndex } from './otherVotesByProposal';
 import { EMPTY_OWN_FACET_VOTES, ownFacetKey, type OwnFacetVoteIndex } from '../graph/ownVotes';
 import { resetVoteActionStore } from '../detail/useVoteAction';
 import { useWsStore } from '../ws/wsStore';
-import type { FacetName, FacetStatus, FacetStatusIndex } from '../graph/facetStatus';
+import type { FacetName, FacetStatus, FacetStatusIndex } from '@a-conversa/shell';
 
 const NODE_X = '00000000-0000-4000-8000-00000000000a';
 const PROPOSAL_P = '00000000-0000-4000-8000-0000000000ff';

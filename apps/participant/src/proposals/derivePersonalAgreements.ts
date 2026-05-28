@@ -66,7 +66,7 @@
 
 import type { Event, ProposalPayload } from '@a-conversa/shared-types';
 
-import type { FacetName, FacetStatus, FacetStatusIndex } from '../graph/facetStatus';
+import type { FacetName, FacetStatus, FacetStatusIndex } from '@a-conversa/shell';
 
 /**
  * One row in the "My agreements" pane. Carries enough context for the

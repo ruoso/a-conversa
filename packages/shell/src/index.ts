@@ -92,10 +92,19 @@ export {
   type FacetPillProps,
   type VoteIndicatorProps,
   type AxiomMarkColor,
-  type FacetName,
-  type FacetStatus,
   type Vote,
 } from './facet-pill/index.js';
+
+// ─── facet-status ────────────────────────────────────────────────────────
+export {
+  cardRollupStatus,
+  computeFacetStatuses,
+  EMPTY_FACET_STATUSES,
+  ROLLUP_PRIORITY,
+  type FacetName,
+  type FacetStatus,
+  type FacetStatusIndex,
+} from './facet-status/index.js';
 
 // ─── axiom-marks ─────────────────────────────────────────────────────────
 export {

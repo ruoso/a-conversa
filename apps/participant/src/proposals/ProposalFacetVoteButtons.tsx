@@ -32,7 +32,7 @@
 import { useMemo, type ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import type { FacetStatus } from '../graph/facetStatus';
+import type { FacetStatus } from '@a-conversa/shell';
 import { ownFacetKey, type OwnFacetVoteIndex } from '../graph/ownVotes';
 import { useVoteAction, type UseVoteActionArgs, type VoteChoice } from '../detail/useVoteAction';
 

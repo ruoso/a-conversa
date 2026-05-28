@@ -31,7 +31,7 @@ import {
   type VotesByFacetIndex,
   type VotesByProposalIndex,
 } from './proposalFacets.js';
-import type { FacetStatusIndex } from './facetStatus.js';
+import type { FacetStatusIndex } from '@a-conversa/shell';
 import type { PendingProposalRow } from './pendingProposals.js';
 import { summaryText } from './proposalSummary.js';
 
