@@ -62,6 +62,16 @@
 //   for stable React-memoization identity. The commit-arm spread
 //   (`...existing.data`) preserves the field unchanged.)
 //
+// Refinement: tasks/refinements/audience/aud_annotation_rendering_edges.md
+//   (Decision §2 — extends the inline port with
+//   `groupAnnotationsByEdge`, consumed alongside
+//   `groupAnnotationsByNode` off a single `projectAnnotations(events)`
+//   walk. Decision §4 — every projected edge now carries
+//   `data.annotations: readonly Annotation[]` on `AudienceEdgeData`
+//   symmetric to the node field, defaulting to `EMPTY_ANNOTATIONS`.
+//   Decision §1 — completes the meta-commentary layer's symmetry
+//   between node and edge entities on the broadcast canvas.)
+//
 // ADRs:
 //   - 0004 (Cytoscape.js for the read-mostly audience broadcast
 //           surface);
@@ -96,6 +106,7 @@ import {
 } from '@a-conversa/shell';
 import {
   EMPTY_ANNOTATIONS,
+  groupAnnotationsByEdge,
   groupAnnotationsByNode,
   projectAnnotations,
   type Annotation,
@@ -162,6 +173,13 @@ export interface AudienceEdgeData {
   readonly facetStatuses: Readonly<Partial<Record<FacetName, FacetStatus>>>;
   /** Highest-priority facet status, or `'none'` (sentinel) when empty. */
   readonly rollupStatus: FacetStatus | 'none';
+  /**
+   * Committed annotations targeting this edge, in commit-arrival
+   * order. Defaults to the module-scope frozen `EMPTY_ANNOTATIONS`
+   * array when no annotations target the edge (stable React-
+   * memoization identity). Symmetric to `AudienceNodeData.annotations`.
+   */
+  readonly annotations: readonly Annotation[];
 }
 
 export interface AudienceNodeElement extends ElementDefinition {
@@ -209,7 +227,9 @@ export function projectGraph(events: readonly Event[]): {
 } {
   const facetStatusIndex = computeFacetStatuses(events);
   const axiomMarkIndex = groupAxiomMarksByNode(projectAxiomMarks(events));
-  const annotationIndex = groupAnnotationsByNode(projectAnnotations(events));
+  const projectedAnnotations = projectAnnotations(events);
+  const nodeAnnotationIndex = groupAnnotationsByNode(projectedAnnotations);
+  const edgeAnnotationIndex = groupAnnotationsByEdge(projectedAnnotations);
   const nodes: AudienceNodeElement[] = [];
   const nodeIndexById = new Map<string, number>();
   const edges: AudienceEdgeElement[] = [];
@@ -234,7 +254,7 @@ export function projectGraph(events: readonly Event[]): {
         facetStatusIndex.nodes.get(event.payload.node_id) ?? EMPTY_FACET_STATUSES;
       const rollupStatus = cardRollupStatus(facetStatuses) ?? 'none';
       const axiomMarks = axiomMarkIndex.get(event.payload.node_id) ?? EMPTY_AXIOM_MARKS;
-      const annotations = annotationIndex.get(event.payload.node_id) ?? EMPTY_ANNOTATIONS;
+      const annotations = nodeAnnotationIndex.get(event.payload.node_id) ?? EMPTY_ANNOTATIONS;
       const element: AudienceNodeElement = {
         group: 'nodes',
         data: {
@@ -256,6 +276,7 @@ export function projectGraph(events: readonly Event[]): {
       const facetStatuses =
         facetStatusIndex.edges.get(event.payload.edge_id) ?? EMPTY_FACET_STATUSES;
       const rollupStatus = cardRollupStatus(facetStatuses) ?? 'none';
+      const annotations = edgeAnnotationIndex.get(event.payload.edge_id) ?? EMPTY_ANNOTATIONS;
       const element: AudienceEdgeElement = {
         group: 'edges',
         data: {
@@ -265,6 +286,7 @@ export function projectGraph(events: readonly Event[]): {
           role: event.payload.role,
           facetStatuses,
           rollupStatus,
+          annotations,
         },
       };
       edges.push(element);

@@ -1,8 +1,8 @@
 // `<AudienceAnnotationOverlay>` — React DOM overlay painting one
 // absolutely-positioned row of `<AudienceAnnotationBadge>` chips per
-// Cytoscape node that carries at least one committed annotation. Third
-// sibling of the Cytoscape canvas mount (after the per-facet pill
-// overlay and the axiom-mark overlay) inside the
+// Cytoscape node OR edge that carries at least one committed
+// annotation. Third sibling of the Cytoscape canvas mount (after the
+// per-facet pill overlay and the axiom-mark overlay) inside the
 // `audience-graph-root-wrapper` positioning ancestor.
 //
 // Refinement: tasks/refinements/audience/aud_annotation_rendering.md
@@ -24,6 +24,25 @@
 //              remove data`), same singleton-rAF batched commit, same
 //              `cyState` slot reuse; three overlays share the same
 //              `Core` instance and each owns its own listeners.)
+//
+// Refinement: tasks/refinements/audience/aud_annotation_rendering_edges.md
+//              (Decision §1 — the existing overlay's commit closure
+//              additionally iterates `cy.edges()` after `cy.nodes()`,
+//              emitting one placement per edge whose `data.annotations`
+//              is non-empty; the placement record stays flat (no
+//              `kind` discriminator) since the render path is uniform
+//              across element kinds. Decision §3 — edge placement
+//              anchored at `renderedBoundingBox()` center plus a fixed
+//              `EDGE_ANNOTATION_OFFSET_Y = 18` so the badge row clears
+//              the Cytoscape-rendered role label at the edge midpoint.
+//              Decision §4 — the overlay reads `data.annotations` off
+//              the edge identically to the node branch; the
+//              projection's `AudienceEdgeData.annotations` field is
+//              the data source. Decision §5 — the existing
+//              subscription set already catches every change that
+//              moves an edge midpoint (pan, zoom, resize, render,
+//              endpoint-node position change via `position node`,
+//              add/remove/data); no new listener.)
 // ADRs:        0004 (Cytoscape.js — `renderedBoundingBox` + `cy.on(...)`
 //              vocabulary is canonical Cytoscape API, no new dep);
 //              0022 (no throwaway verifications — pinned by
@@ -45,7 +64,7 @@
 // attribute is the only hover affordance.
 
 import { useEffect, useRef, useState, type ReactElement, type RefObject } from 'react';
-import type { Core, NodeSingular } from 'cytoscape';
+import type { Core, EdgeSingular, NodeSingular } from 'cytoscape';
 
 import { AudienceAnnotationBadge } from './AnnotationBadge.js';
 import type { Annotation } from './annotations.js';
@@ -91,6 +110,20 @@ interface AnnotationRowPlacement {
  */
 export const ANNOTATION_ROW_OFFSET_Y = 30;
 
+/**
+ * Vertical offset (px) below the edge `renderedBoundingBox()` center
+ * (i.e. the rendered midpoint). Places the annotation row below the
+ * Cytoscape-rendered role label at the edge midpoint
+ * (`aud_annotation_rendering_edges` Decision §3): the role label is
+ * rendered with `font-size: 12px` (`BROADCAST_EDGE_FONT_SIZE_PX` minus
+ * one, per the audience stylesheet) and occupies roughly 14 px
+ * vertical; a 4 px breathing gap below the label's bottom edge yields
+ * an 18 px offset from the midpoint. Symmetric in spirit to
+ * `ANNOTATION_ROW_OFFSET_Y` (both are fixed offsets pinned to the
+ * adjacent visual the row must clear).
+ */
+export const EDGE_ANNOTATION_OFFSET_Y = 18;
+
 export function AudienceAnnotationOverlay({
   cy,
   containerRef,
@@ -113,6 +146,17 @@ export function AudienceAnnotationOverlay({
           id: node.id(),
           x: (bb.x1 + bb.x2) / 2,
           y: bb.y2 + ANNOTATION_ROW_OFFSET_Y,
+          annotations,
+        });
+      });
+      cy.edges().forEach((edge: EdgeSingular) => {
+        const annotations = edge.data('annotations') as readonly Annotation[] | undefined;
+        if (annotations === undefined || annotations.length === 0) return;
+        const bb = edge.renderedBoundingBox();
+        next.push({
+          id: edge.id(),
+          x: (bb.x1 + bb.x2) / 2,
+          y: (bb.y1 + bb.y2) / 2 + EDGE_ANNOTATION_OFFSET_Y,
           annotations,
         });
       });

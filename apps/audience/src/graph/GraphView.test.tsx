@@ -95,6 +95,13 @@
 //   mount lifecycle, subscription set, and per-element placement are
 //   pinned in `AnnotationOverlay.test.tsx`.)
 //
+// Refinement: tasks/refinements/audience/aud_annotation_rendering_edges.md
+//   (Acceptance criteria — 2 additional cases (vv–ww) pin the edge-
+//   branch projection-to-annotation-row integration path: an edge
+//   carrying a committed annotation mounts a `[data-annotation-row]`
+//   keyed on the edge id, and a symmetric mixed (node + edge) session
+//   mounts two distinct rows.)
+//
 // Refinement: tasks/refinements/audience/aud_meta_disagreement_split.md
 //   (Acceptance criteria — 4 additional cases (oo–rr) pin the
 //   meta-disagreement-state per-rollup selector entries (structural × 2)
@@ -1276,5 +1283,88 @@ describe('<AudienceGraphView>', () => {
     ]);
     const kinds = Array.from(badges ?? []).map((b) => b.getAttribute('data-annotation-kind'));
     expect(kinds).toEqual(['note', 'reframe']);
+  });
+
+  // ---------------------------------------------------------------
+  // aud_annotation_rendering_edges — edge-branch projection-to-
+  // annotation-row integration. Asserts the overlay lights up when a
+  // committed annotation lands on an edge, and that the symmetric
+  // mixed (node + edge) case mounts one row per element.
+  // ---------------------------------------------------------------
+
+  const ANN_EDGE_ANNO_1 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa201';
+  const ANN_EDGE_ANNO_2 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa202';
+
+  it('(vv) an edge with a committed annotation mounts a [data-annotation-row] keyed on the edge id', async () => {
+    renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(nodeCreatedEvent({ sequence: 2, nodeId: NODE_B, wording: 'B' }));
+    seedEvent(edgeCreatedEvent({ sequence: 3, edgeId: EDGE_A, source: NODE_A, target: NODE_B }));
+    seedEvent(
+      annotationCreatedEvent({
+        sequence: 4,
+        annotationId: ANN_EDGE_ANNO_1,
+        kind: 'reframe',
+        targetNodeId: null,
+        targetEdgeId: EDGE_A,
+      }),
+    );
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const overlay = screen.getByTestId('audience-annotation-overlay');
+    const row = Array.from(overlay.querySelectorAll('[data-annotation-row]')).find(
+      (r) => r.getAttribute('data-element-id') === EDGE_A,
+    );
+    expect(row).toBeTruthy();
+    const badges = row?.querySelectorAll('[data-testid^="audience-annotation-badge-"]');
+    expect(badges?.length).toBeGreaterThanOrEqual(1);
+    expect(badges?.[0]?.getAttribute('data-annotation-kind')).toBe('reframe');
+    expect(badges?.[0]?.getAttribute('data-testid')).toBe(
+      `audience-annotation-badge-${ANN_EDGE_ANNO_1}`,
+    );
+  });
+
+  it('(ww) a session with one node-targeted + one edge-targeted annotation mounts two distinct rows', async () => {
+    renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(nodeCreatedEvent({ sequence: 2, nodeId: NODE_B, wording: 'B' }));
+    seedEvent(edgeCreatedEvent({ sequence: 3, edgeId: EDGE_A, source: NODE_A, target: NODE_B }));
+    seedEvent(
+      annotationCreatedEvent({
+        sequence: 4,
+        annotationId: ANN_EDGE_ANNO_1,
+        kind: 'note',
+        targetNodeId: NODE_A,
+        targetEdgeId: null,
+      }),
+    );
+    seedEvent(
+      annotationCreatedEvent({
+        sequence: 5,
+        annotationId: ANN_EDGE_ANNO_2,
+        kind: 'reframe',
+        targetNodeId: null,
+        targetEdgeId: EDGE_A,
+      }),
+    );
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const overlay = screen.getByTestId('audience-annotation-overlay');
+    const rows = Array.from(overlay.querySelectorAll('[data-annotation-row]'));
+    const elementIds = rows.map((r) => r.getAttribute('data-element-id'));
+    expect(elementIds).toContain(NODE_A);
+    expect(elementIds).toContain(EDGE_A);
+    const nodeRow = rows.find((r) => r.getAttribute('data-element-id') === NODE_A);
+    const edgeRow = rows.find((r) => r.getAttribute('data-element-id') === EDGE_A);
+    expect(
+      nodeRow?.querySelector(`[data-testid="audience-annotation-badge-${ANN_EDGE_ANNO_1}"]`),
+    ).not.toBeNull();
+    expect(
+      edgeRow?.querySelector(`[data-testid="audience-annotation-badge-${ANN_EDGE_ANNO_2}"]`),
+    ).not.toBeNull();
   });
 });

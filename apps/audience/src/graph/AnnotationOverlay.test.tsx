@@ -6,6 +6,17 @@
 //              being `data.annotations` and the per-element child being
 //              a flex-row of `<AudienceAnnotationBadge>` chips in array
 //              order (commit-arrival).)
+//
+// Refinement: tasks/refinements/audience/aud_annotation_rendering_edges.md
+//              (Constraints — case (g) is replaced (parent's
+//              "edge-iteration-impossible" assertion is now inverted)
+//              and 6 new cases (k–p) pin the edge-iteration commit pass:
+//              edge with one annotation renders one row, edge with
+//              EMPTY_ANNOTATIONS renders no row, two annotations on the
+//              same edge stack in arrival order, two annotated edges
+//              produce two distinct rows, symmetric mixed (node + edge)
+//              renders one row per element with matching `data-element-id`,
+//              and the i18n smoke on the edge branch.)
 // ADRs:        0022 (no throwaway verifications). 0004 (Cytoscape
 //              vocabulary — `cy.on('render pan zoom resize', cb)` +
 //              `cy.on('position', 'node', cb)` + `cy.on('add remove
@@ -31,10 +42,14 @@ import { installCytoscapeTestEnv, type CytoscapeTestEnvRestoreHandle } from './c
 
 const NODE_A = '00000000-0000-4000-8000-00000000cc01';
 const NODE_B = '00000000-0000-4000-8000-00000000cc02';
+const NODE_C = '00000000-0000-4000-8000-00000000cc04';
+const NODE_D = '00000000-0000-4000-8000-00000000cc05';
 const EDGE_AB = '00000000-0000-4000-8000-00000000cc03';
+const EDGE_CD = '00000000-0000-4000-8000-00000000cc06';
 const ANNO_1 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa001';
 const ANNO_2 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa002';
 const ANNO_3 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa003';
+const ANNO_4 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa004';
 const ACTOR = '00000000-0000-4000-8000-0000000000aa';
 
 let cytoscapeEnvHandle: CytoscapeTestEnvRestoreHandle | null = null;
@@ -161,11 +176,17 @@ function addEdgeWithAnnotations(
   sourceId: string,
   targetId: string,
   annotations: readonly Annotation[],
+  renderedBox?: { x1: number; x2: number; y1: number; y2: number },
 ): void {
   cy.add({
     group: 'edges',
     data: { id, source: sourceId, target: targetId, annotations },
   });
+  if (renderedBox !== undefined) {
+    const edge = cy.getElementById(id);
+    (edge as unknown as { renderedBoundingBox: () => typeof renderedBox }).renderedBoundingBox =
+      () => renderedBox;
+  }
 }
 
 describe('AudienceAnnotationOverlay', () => {
@@ -293,7 +314,7 @@ describe('AudienceAnnotationOverlay', () => {
     }
   });
 
-  it('(g) does NOT render a badge row for an edge whose annotations list is non-empty (nodes-only iteration)', async () => {
+  it('(k) renders exactly one badge row for an edge carrying one Annotation, keyed on the edge id', async () => {
     const { cy, unmount } = await renderOverlayWithCy();
     try {
       addNodeWithAnnotations(cy, NODE_A, EMPTY_ANNOTATIONS, {
@@ -308,12 +329,225 @@ describe('AudienceAnnotationOverlay', () => {
         y1: 50,
         y2: 130,
       });
-      addEdgeWithAnnotations(cy, EDGE_AB, NODE_A, NODE_B, [
-        makeAnnotation({ id: ANNO_3, targetEdgeId: EDGE_AB }),
-      ]);
+      addEdgeWithAnnotations(
+        cy,
+        EDGE_AB,
+        NODE_A,
+        NODE_B,
+        [makeAnnotation({ id: ANNO_3, kind: 'note', targetEdgeId: EDGE_AB })],
+        { x1: 200, x2: 300, y1: 80, y2: 100 },
+      );
+      await flushRaf();
+      const row = document.querySelector(`[data-annotation-row][data-element-id="${EDGE_AB}"]`);
+      expect(row).not.toBeNull();
+      const badges = row?.querySelectorAll('[data-testid^="audience-annotation-badge-"]');
+      expect(badges?.length).toBe(1);
+      expect(badges?.[0]?.getAttribute('data-annotation-kind')).toBe('note');
+      expect(badges?.[0]?.getAttribute('data-testid')).toBe(`audience-annotation-badge-${ANNO_3}`);
+    } finally {
+      unmount();
+    }
+  });
+
+  it('(l) omits the badge row for an edge whose annotations list is EMPTY_ANNOTATIONS', async () => {
+    const { cy, unmount } = await renderOverlayWithCy();
+    try {
+      addNodeWithAnnotations(cy, NODE_A, EMPTY_ANNOTATIONS, {
+        x1: 100,
+        x2: 200,
+        y1: 50,
+        y2: 130,
+      });
+      addNodeWithAnnotations(cy, NODE_B, EMPTY_ANNOTATIONS, {
+        x1: 300,
+        x2: 400,
+        y1: 50,
+        y2: 130,
+      });
+      addEdgeWithAnnotations(cy, EDGE_AB, NODE_A, NODE_B, EMPTY_ANNOTATIONS, {
+        x1: 200,
+        x2: 300,
+        y1: 80,
+        y2: 100,
+      });
       await flushRaf();
       const rows = document.querySelectorAll(`[data-annotation-row][data-element-id="${EDGE_AB}"]`);
       expect(rows.length).toBe(0);
+    } finally {
+      unmount();
+    }
+  });
+
+  it('(m) renders two badges in commit-arrival order for an edge with two annotations of different kinds', async () => {
+    const { cy, unmount } = await renderOverlayWithCy();
+    try {
+      addNodeWithAnnotations(cy, NODE_A, EMPTY_ANNOTATIONS, {
+        x1: 100,
+        x2: 200,
+        y1: 50,
+        y2: 130,
+      });
+      addNodeWithAnnotations(cy, NODE_B, EMPTY_ANNOTATIONS, {
+        x1: 300,
+        x2: 400,
+        y1: 50,
+        y2: 130,
+      });
+      addEdgeWithAnnotations(
+        cy,
+        EDGE_AB,
+        NODE_A,
+        NODE_B,
+        [
+          makeAnnotation({ id: ANNO_1, kind: 'note', targetEdgeId: EDGE_AB }),
+          makeAnnotation({ id: ANNO_2, kind: 'reframe', targetEdgeId: EDGE_AB }),
+        ],
+        { x1: 200, x2: 300, y1: 80, y2: 100 },
+      );
+      await flushRaf();
+      const row = document.querySelector(`[data-annotation-row][data-element-id="${EDGE_AB}"]`);
+      expect(row).not.toBeNull();
+      const badges = row?.querySelectorAll('[data-testid^="audience-annotation-badge-"]');
+      expect(badges?.length).toBe(2);
+      expect(badges?.[0]?.getAttribute('data-annotation-kind')).toBe('note');
+      expect(badges?.[1]?.getAttribute('data-annotation-kind')).toBe('reframe');
+      expect(badges?.[0]?.getAttribute('data-testid')).toBe(`audience-annotation-badge-${ANNO_1}`);
+      expect(badges?.[1]?.getAttribute('data-testid')).toBe(`audience-annotation-badge-${ANNO_2}`);
+    } finally {
+      unmount();
+    }
+  });
+
+  it('(n) renders two distinct rows with distinct positions for two annotated edges', async () => {
+    const { cy, unmount } = await renderOverlayWithCy();
+    try {
+      addNodeWithAnnotations(cy, NODE_A, EMPTY_ANNOTATIONS, {
+        x1: 100,
+        x2: 200,
+        y1: 50,
+        y2: 130,
+      });
+      addNodeWithAnnotations(cy, NODE_B, EMPTY_ANNOTATIONS, {
+        x1: 300,
+        x2: 400,
+        y1: 50,
+        y2: 130,
+      });
+      addNodeWithAnnotations(cy, NODE_C, EMPTY_ANNOTATIONS, {
+        x1: 100,
+        x2: 200,
+        y1: 300,
+        y2: 380,
+      });
+      addNodeWithAnnotations(cy, NODE_D, EMPTY_ANNOTATIONS, {
+        x1: 300,
+        x2: 400,
+        y1: 300,
+        y2: 380,
+      });
+      addEdgeWithAnnotations(
+        cy,
+        EDGE_AB,
+        NODE_A,
+        NODE_B,
+        [makeAnnotation({ id: ANNO_1, targetEdgeId: EDGE_AB })],
+        { x1: 200, x2: 300, y1: 80, y2: 100 },
+      );
+      addEdgeWithAnnotations(
+        cy,
+        EDGE_CD,
+        NODE_C,
+        NODE_D,
+        [makeAnnotation({ id: ANNO_2, targetEdgeId: EDGE_CD })],
+        { x1: 200, x2: 300, y1: 330, y2: 350 },
+      );
+      await flushRaf();
+      const rows = Array.from(document.querySelectorAll('[data-annotation-row]'));
+      expect(rows.length).toBe(2);
+      const ids = rows.map((r) => r.getAttribute('data-element-id')).sort();
+      expect(ids).toEqual([EDGE_AB, EDGE_CD].sort());
+      const rowAB = rows.find((r) => r.getAttribute('data-element-id') === EDGE_AB) as
+        | HTMLElement
+        | undefined;
+      const rowCD = rows.find((r) => r.getAttribute('data-element-id') === EDGE_CD) as
+        | HTMLElement
+        | undefined;
+      expect(rowAB?.style.top).not.toBe(rowCD?.style.top);
+    } finally {
+      unmount();
+    }
+  });
+
+  it('(o) symmetric mixed case: one annotated node + one annotated edge yields one row per element with matching data-element-id', async () => {
+    const { cy, unmount } = await renderOverlayWithCy();
+    try {
+      addNodeWithAnnotations(cy, NODE_A, [makeAnnotation({ id: ANNO_1, targetNodeId: NODE_A })], {
+        x1: 100,
+        x2: 200,
+        y1: 50,
+        y2: 130,
+      });
+      addNodeWithAnnotations(cy, NODE_B, EMPTY_ANNOTATIONS, {
+        x1: 300,
+        x2: 400,
+        y1: 50,
+        y2: 130,
+      });
+      addEdgeWithAnnotations(
+        cy,
+        EDGE_AB,
+        NODE_A,
+        NODE_B,
+        [makeAnnotation({ id: ANNO_2, targetEdgeId: EDGE_AB })],
+        { x1: 200, x2: 300, y1: 80, y2: 100 },
+      );
+      await flushRaf();
+      const rows = Array.from(document.querySelectorAll('[data-annotation-row]'));
+      expect(rows.length).toBe(2);
+      const rowIds = rows.map((r) => r.getAttribute('data-element-id')).sort();
+      expect(rowIds).toEqual([NODE_A, EDGE_AB].sort());
+      const nodeRow = rows.find((r) => r.getAttribute('data-element-id') === NODE_A);
+      const edgeRow = rows.find((r) => r.getAttribute('data-element-id') === EDGE_AB);
+      expect(
+        nodeRow?.querySelector(`[data-testid="audience-annotation-badge-${ANNO_1}"]`),
+      ).not.toBeNull();
+      expect(
+        edgeRow?.querySelector(`[data-testid="audience-annotation-badge-${ANNO_2}"]`),
+      ).not.toBeNull();
+    } finally {
+      unmount();
+    }
+  });
+
+  it('(p) the edge-row badge text resolves the localized en-US kind label via methodology.annotationKind.<kind>', async () => {
+    const { cy, unmount } = await renderOverlayWithCy();
+    try {
+      addNodeWithAnnotations(cy, NODE_A, EMPTY_ANNOTATIONS, {
+        x1: 100,
+        x2: 200,
+        y1: 50,
+        y2: 130,
+      });
+      addNodeWithAnnotations(cy, NODE_B, EMPTY_ANNOTATIONS, {
+        x1: 300,
+        x2: 400,
+        y1: 50,
+        y2: 130,
+      });
+      addEdgeWithAnnotations(
+        cy,
+        EDGE_AB,
+        NODE_A,
+        NODE_B,
+        [makeAnnotation({ id: ANNO_4, kind: 'scope-change', targetEdgeId: EDGE_AB })],
+        { x1: 200, x2: 300, y1: 80, y2: 100 },
+      );
+      await flushRaf();
+      const badge = document.querySelector(
+        `[data-annotation-row][data-element-id="${EDGE_AB}"] [data-testid="audience-annotation-badge-${ANNO_4}"]`,
+      );
+      expect(badge).not.toBeNull();
+      expect(badge?.textContent).toBe('Scope change');
     } finally {
       unmount();
     }

@@ -259,6 +259,7 @@ task audience "Audience and broadcast" {
     task aud_annotation_rendering_edges "Annotation rendering — edge-targeted annotations" {
       effort 1d
       allocate team
+      complete 100
       depends !aud_annotation_rendering
       note -8<-
         Extend <AudienceAnnotationOverlay> to also render annotations whose target_edge_id is set.

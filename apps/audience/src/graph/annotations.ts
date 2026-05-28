@@ -12,14 +12,27 @@
 //              `shell_package.extract_cytoscape_projectors` (already
 //              registered, no new WBS entry).)
 //
+// Refinement: tasks/refinements/audience/aud_annotation_rendering_edges.md
+//              (Decision §2 — adds `groupAnnotationsByEdge` to this
+//              audience-local module as a verbatim port of the
+//              participant's symmetric helper. The
+//              `extract_cytoscape_projectors` shell-extract has NOT
+//              landed at this leaf's commit time, so the bucketer lives
+//              here alongside `groupAnnotationsByNode`; once the
+//              extract lands, callers (this audience module's `projectGraph`
+//              and `AnnotationOverlay`) re-point their imports to
+//              `@a-conversa/shell` and this module is deleted.)
+//
 // **Parallel client mirror**: this module is a verbatim port of the
 // participant's `apps/participant/src/graph/annotations.ts` (which is
 // itself a port of the moderator's `apps/moderator/src/graph/selectors.ts`
 // annotation block). All three client ports must stay in lock-step
 // against a future wire-event shape change; the natural unification
 // point is `shell_package.extract_cytoscape_projectors`
-// ([`tasks/27-shell-package.tji:101-108`]) — this leaf's third-caller
-// landing fires the trigger condition that task's description names.
+// ([`tasks/27-shell-package.tji:101-108`]) — both
+// `aud_annotation_rendering` (the node-side leaf) and this
+// `aud_annotation_rendering_edges` leaf are third-caller landings
+// firing the trigger condition that task's description names.
 //
 // **Methodology semantics**: `docs/methodology.md` §"Annotations" — the
 // meta-commentary layer of the methodology (notes, reframes, scope-
@@ -27,11 +40,9 @@
 // polymorphic-FK XOR (`(target_node_id === null) !== (target_edge_id
 // === null)`, enforced by Zod at validation time).
 //
-// **NOT ported** from the participant's mirror: `groupAnnotationsByEdge`
-// / `nodeHasAnnotation` / `edgeHasAnnotation` / `annotationCountFor`.
-// Edge-targeted annotations are out of scope per Decision §2 (deferred
-// to `aud_annotation_rendering_edges`); the audience reads the full
-// per-node list rather than a boolean/count collapse so the
+// **NOT ported** from the participant's mirror: `nodeHasAnnotation` /
+// `edgeHasAnnotation` / `annotationCountFor`. The audience reads the
+// full per-target list rather than a boolean/count collapse so the
 // presence-only helpers are unused. The `extract_cytoscape_projectors`
 // lift will pick up the full helper set from the moderator + participant
 // copies.
@@ -94,9 +105,7 @@ export function projectAnnotations(events: readonly Event[]): Annotation[] {
  * Bucket annotations by their node target. Annotations targeting an
  * edge (i.e. with `targetNodeId === null`) are skipped — the wire
  * schema's XOR guarantees each annotation goes to exactly one bucket
- * between this helper and `groupAnnotationsByEdge` (the latter not
- * ported on the audience surface; edge-targeted annotations are out of
- * scope per Decision §2).
+ * between this helper and `groupAnnotationsByEdge`.
  */
 export function groupAnnotationsByNode(
   annotations: readonly Annotation[],
@@ -109,6 +118,29 @@ export function groupAnnotationsByNode(
       existing.push(annotation);
     } else {
       out.set(annotation.targetNodeId, [annotation]);
+    }
+  }
+  return out;
+}
+
+/**
+ * Bucket annotations by their edge target. Annotations targeting a
+ * node (`targetEdgeId === null`) are skipped. Same `Map` rationale as
+ * `groupAnnotationsByNode`; the wire schema's XOR refinement
+ * guarantees this helper and `groupAnnotationsByNode` are mutually
+ * exclusive over a well-formed annotation log.
+ */
+export function groupAnnotationsByEdge(
+  annotations: readonly Annotation[],
+): Map<string, Annotation[]> {
+  const out = new Map<string, Annotation[]>();
+  for (const annotation of annotations) {
+    if (annotation.targetEdgeId === null) continue;
+    const existing = out.get(annotation.targetEdgeId);
+    if (existing) {
+      existing.push(annotation);
+    } else {
+      out.set(annotation.targetEdgeId, [annotation]);
     }
   }
   return out;
