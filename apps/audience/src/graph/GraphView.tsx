@@ -144,6 +144,22 @@
 //   Decision §6 — Playwright pixel-stability deferral lands on
 //   `aud_visual_regression`.)
 //
+// Refinement: tasks/refinements/audience/aud_annotation_rendering.md
+//   (Decision §1 — per-annotation amber-pill badges land as a third
+//   DOM-overlay sibling of the Cytoscape canvas (below the axiom-mark
+//   row), surfacing the methodology's meta-commentary layer on the
+//   broadcast surface. Decision §2 — scope to node-targeted
+//   annotations; edge-targeted deferred to the named-future-task
+//   `aud_annotation_rendering_edges`. Decision §3 — inline port of
+//   `<AnnotationBadge>` + `annotations.ts` into the audience workspace;
+//   third-caller trigger fires for the already-registered
+//   `shell_package.extract_cytoscape_projectors`. Decision §4 — badge
+//   row anchored at `y2 + 30` so it sits below the axiom-mark row
+//   (which itself sits at `y2 + 6` and is ~20 px tall). Decision §5 —
+//   reuse the existing `cyState` slot; three overlays receive the same
+//   `cy` prop. Decision §6 — Playwright pixel-stability deferral lands
+//   on `aud_visual_regression`.)
+//
 // Refinement: tasks/refinements/audience/aud_stylesheet_module_extraction.md
 //   (Decision §1 — `STYLESHEET` remains a module-scope `const` in its
 //   new home `./stylesheet.ts`; reference-stable across renders per
@@ -190,6 +206,7 @@ import { projectGraph } from './projectGraph.js';
 import { STYLESHEET } from './stylesheet.js';
 import { AudiencePerFacetPillOverlay } from './PerFacetPillOverlay.js';
 import { AudienceAxiomMarkOverlay } from './AxiomMarkOverlay.js';
+import { AudienceAnnotationOverlay } from './AnnotationOverlay.js';
 
 export interface AudienceGraphViewProps {
   /**
@@ -371,6 +388,7 @@ export function AudienceGraphView({ cyRef }: AudienceGraphViewProps): ReactEleme
       <div ref={containerRef} data-testid="audience-graph-root" className="h-full w-full" />
       <AudiencePerFacetPillOverlay cy={cyState} containerRef={containerRef} />
       <AudienceAxiomMarkOverlay cy={cyState} containerRef={containerRef} />
+      <AudienceAnnotationOverlay cy={cyState} containerRef={containerRef} />
     </div>
   );
 }

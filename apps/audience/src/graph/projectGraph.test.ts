@@ -19,13 +19,19 @@
 //   participant accumulation, commit-survives-kind-flip, and edges-
 //   carry-no-axiomMarks shape.)
 //
+// Refinement: tasks/refinements/audience/aud_annotation_rendering.md
+//   (Acceptance criteria — 5 additional cases (v–z) pin the per-node
+//   annotation stamping: default empty, targeted single-entry,
+//   multi-annotation accumulation in arrival order, survives a later
+//   classify-commit kind-flip, and edges-carry-no-annotations shape.)
+//
 // ADRs: 0022 (no throwaway verifications — the projection's
 //   behaviour is fully pinned at this pure layer; the `<AudienceGraphView>`
 //   mount tests then assert the Cytoscape side without re-asserting
 //   algorithmic behaviour).
 
 import { describe, expect, it } from 'vitest';
-import type { EdgeRole, Event, StatementKind } from '@a-conversa/shared-types';
+import type { AnnotationKind, EdgeRole, Event, StatementKind } from '@a-conversa/shared-types';
 
 import { projectGraph } from './projectGraph';
 
@@ -599,6 +605,145 @@ describe('projectGraph (audience baseline)', () => {
     const { edges } = projectGraph(events);
     expect(edges).toHaveLength(1);
     expect((edges[0]?.data as unknown as Record<string, unknown>).axiomMarks).toBeUndefined();
+  });
+
+  // ---------------------------------------------------------------
+  // aud_annotation_rendering — per-node annotation stamping. Pinned
+  // cases pulled directly from the refinement Constraints section.
+  // ---------------------------------------------------------------
+
+  function makeAnnotationCreated(opts: {
+    sequence: number;
+    annotationId: string;
+    kind: AnnotationKind;
+    content?: string;
+    targetNodeId: string | null;
+    targetEdgeId: string | null;
+  }): Event {
+    return {
+      id: `00000000-0000-4000-8000-${(0x500 + opts.sequence).toString(16).padStart(12, '0')}`,
+      sessionId: SESSION_ID,
+      sequence: opts.sequence,
+      kind: 'annotation-created',
+      actor: ACTOR,
+      payload: {
+        annotation_id: opts.annotationId,
+        kind: opts.kind,
+        content: opts.content ?? 'annotation body',
+        target_node_id: opts.targetNodeId,
+        target_edge_id: opts.targetEdgeId,
+        created_by: ACTOR,
+        created_at: '2026-05-28T00:00:00.000Z',
+      },
+      createdAt: '2026-05-28T00:00:00.000Z',
+    };
+  }
+
+  const ANNO_1 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa001';
+  const ANNO_2 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa002';
+  const ANNO_3 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa003';
+  const ANNO_EDGE = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa004';
+
+  it('(v) stamps annotations: [] on every projected node by default when no annotation events landed', () => {
+    const events: Event[] = [makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' })];
+    const { nodes } = projectGraph(events);
+    expect(nodes[0]?.data.annotations).toEqual([]);
+  });
+
+  it('(w) stamps a one-entry annotations array on a node targeted by a committed annotation-created', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeAnnotationCreated({
+        sequence: 2,
+        annotationId: ANNO_1,
+        kind: 'note',
+        content: 'see also F-003',
+        targetNodeId: NODE_A,
+        targetEdgeId: null,
+      }),
+    ];
+    const { nodes } = projectGraph(events);
+    expect(nodes[0]?.data.annotations).toHaveLength(1);
+    expect(nodes[0]?.data.annotations[0]).toEqual({
+      id: ANNO_1,
+      kind: 'note',
+      content: 'see also F-003',
+      targetNodeId: NODE_A,
+      targetEdgeId: null,
+      createdBy: ACTOR,
+      createdAt: '2026-05-28T00:00:00.000Z',
+    });
+  });
+
+  it('(x) stamps a multi-entry annotations array on a node with multiple committed annotations, in arrival order', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeAnnotationCreated({
+        sequence: 2,
+        annotationId: ANNO_1,
+        kind: 'note',
+        targetNodeId: NODE_A,
+        targetEdgeId: null,
+      }),
+      makeAnnotationCreated({
+        sequence: 3,
+        annotationId: ANNO_2,
+        kind: 'reframe',
+        targetNodeId: NODE_A,
+        targetEdgeId: null,
+      }),
+      makeAnnotationCreated({
+        sequence: 4,
+        annotationId: ANNO_3,
+        kind: 'stance',
+        targetNodeId: NODE_A,
+        targetEdgeId: null,
+      }),
+    ];
+    const { nodes } = projectGraph(events);
+    expect(nodes[0]?.data.annotations.map((a) => a.id)).toEqual([ANNO_1, ANNO_2, ANNO_3]);
+  });
+
+  it('(y) preserves annotations across a later classify-node commit (commit-arm spread)', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeAnnotationCreated({
+        sequence: 2,
+        annotationId: ANNO_1,
+        kind: 'note',
+        targetNodeId: NODE_A,
+        targetEdgeId: null,
+      }),
+      makeClassifyProposal({
+        sequence: 3,
+        envelopeId: PROPOSAL_A,
+        nodeId: NODE_A,
+        classification: 'value',
+      }),
+      makeCommit({ sequence: 4, proposalEnvelopeId: PROPOSAL_A }),
+    ];
+    const { nodes } = projectGraph(events);
+    expect(nodes[0]?.data.kind).toBe('value');
+    expect(nodes[0]?.data.annotations).toHaveLength(1);
+    expect(nodes[0]?.data.annotations[0]?.id).toBe(ANNO_1);
+  });
+
+  it('(z) edges carry no annotations field — AudienceEdgeData is unchanged even when an edge-targeted annotation-created event landed', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeNodeCreated({ sequence: 2, nodeId: NODE_B, wording: 'B' }),
+      makeEdgeCreated({ sequence: 3, edgeId: EDGE_A, source: NODE_A, target: NODE_B }),
+      makeAnnotationCreated({
+        sequence: 4,
+        annotationId: ANNO_EDGE,
+        kind: 'note',
+        targetNodeId: null,
+        targetEdgeId: EDGE_A,
+      }),
+    ];
+    const { edges } = projectGraph(events);
+    expect(edges).toHaveLength(1);
+    expect((edges[0]?.data as unknown as Record<string, unknown>).annotations).toBeUndefined();
   });
 
   it('(j) is invariant under non-causal events interleaved between node-created and its classify commit', () => {

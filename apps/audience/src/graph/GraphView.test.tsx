@@ -87,6 +87,14 @@
 //   subscription set, and per-element placement are pinned in
 //   `AxiomMarkOverlay.test.tsx`.)
 //
+// Refinement: tasks/refinements/audience/aud_annotation_rendering.md
+//   (Acceptance criteria — 3 additional cases (ss–uu) pin the third
+//   DOM-overlay sibling mount + the projection-to-annotation-row
+//   integration path: structural sibling, single-annotation
+//   integration, multi-annotation integration. The overlay's own
+//   mount lifecycle, subscription set, and per-element placement are
+//   pinned in `AnnotationOverlay.test.tsx`.)
+//
 // Refinement: tasks/refinements/audience/aud_meta_disagreement_split.md
 //   (Acceptance criteria — 4 additional cases (oo–rr) pin the
 //   meta-disagreement-state per-rollup selector entries (structural × 2)
@@ -129,7 +137,13 @@ import * as React from 'react';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, render, screen } from '@testing-library/react';
 import type { BreadthFirstLayoutOptions, Core, LayoutOptions } from 'cytoscape';
-import type { EdgeRole, Event, FacetName, StatementKind } from '@a-conversa/shared-types';
+import type {
+  AnnotationKind,
+  EdgeRole,
+  Event,
+  FacetName,
+  StatementKind,
+} from '@a-conversa/shared-types';
 
 import { I18nProvider, createI18nInstance, type I18nInstance } from '@a-conversa/shell';
 
@@ -1141,5 +1155,126 @@ describe('<AudienceGraphView>', () => {
     expect(rows.length).toBeGreaterThanOrEqual(1);
     const ids = Array.from(rows).map((r) => r.getAttribute('data-element-id'));
     expect(ids).toContain(NODE_A);
+  });
+
+  // ---------------------------------------------------------------
+  // aud_annotation_rendering — wrapper hosts the annotation overlay as
+  // a third sibling; integration cases assert the projection-to-
+  // annotation-row path lights up when a committed annotation lands on
+  // a node.
+  // ---------------------------------------------------------------
+
+  function annotationCreatedEvent(opts: {
+    sequence: number;
+    annotationId: string;
+    kind: AnnotationKind;
+    content?: string;
+    targetNodeId: string | null;
+    targetEdgeId: string | null;
+  }): Event {
+    return {
+      id: `00000000-0000-4000-8000-${(0x800 + opts.sequence).toString(16).padStart(12, '0')}`,
+      sessionId: SESSION_ID,
+      sequence: opts.sequence,
+      kind: 'annotation-created',
+      actor: ACTOR,
+      payload: {
+        annotation_id: opts.annotationId,
+        kind: opts.kind,
+        content: opts.content ?? 'annotation body',
+        target_node_id: opts.targetNodeId,
+        target_edge_id: opts.targetEdgeId,
+        created_by: ACTOR,
+        created_at: '2026-05-28T00:00:00.000Z',
+      },
+      createdAt: '2026-05-28T00:00:00.000Z',
+    };
+  }
+
+  const ANN_ANNO_1 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa101';
+  const ANN_ANNO_2 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa102';
+
+  it('(ss) the wrapper hosts all three overlays (per-facet, axiom-mark, annotation) as siblings of audience-graph-root', () => {
+    renderView();
+    const wrapper = screen.getByTestId('audience-graph-root-wrapper');
+    const inner = screen.getByTestId('audience-graph-root');
+    const facetOverlay = screen.getByTestId('audience-per-facet-pill-overlay');
+    const axiomOverlay = screen.getByTestId('audience-axiom-mark-overlay');
+    const annotationOverlay = screen.getByTestId('audience-annotation-overlay');
+    expect(wrapper.contains(inner)).toBe(true);
+    expect(wrapper.contains(facetOverlay)).toBe(true);
+    expect(wrapper.contains(axiomOverlay)).toBe(true);
+    expect(wrapper.contains(annotationOverlay)).toBe(true);
+  });
+
+  it('(tt) a node with a committed annotation mounts a [data-annotation-row] child carrying the matching annotation-kind badge', async () => {
+    renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(
+      annotationCreatedEvent({
+        sequence: 2,
+        annotationId: ANN_ANNO_1,
+        kind: 'note',
+        content: 'see also F-003',
+        targetNodeId: NODE_A,
+        targetEdgeId: null,
+      }),
+    );
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const overlay = screen.getByTestId('audience-annotation-overlay');
+    const rows = overlay.querySelectorAll('[data-annotation-row]');
+    expect(rows.length).toBeGreaterThanOrEqual(1);
+    const row = Array.from(rows).find((r) => r.getAttribute('data-element-id') === NODE_A);
+    expect(row).toBeTruthy();
+    const badges = row?.querySelectorAll('[data-testid^="audience-annotation-badge-"]');
+    expect(badges?.length).toBe(1);
+    expect(badges?.[0]?.getAttribute('data-annotation-kind')).toBe('note');
+    expect(badges?.[0]?.getAttribute('data-testid')).toBe(
+      `audience-annotation-badge-${ANN_ANNO_1}`,
+    );
+  });
+
+  it('(uu) two annotations on the same node produce two distinct badges in commit-arrival order', async () => {
+    renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(
+      annotationCreatedEvent({
+        sequence: 2,
+        annotationId: ANN_ANNO_1,
+        kind: 'note',
+        targetNodeId: NODE_A,
+        targetEdgeId: null,
+      }),
+    );
+    seedEvent(
+      annotationCreatedEvent({
+        sequence: 3,
+        annotationId: ANN_ANNO_2,
+        kind: 'reframe',
+        targetNodeId: NODE_A,
+        targetEdgeId: null,
+      }),
+    );
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const overlay = screen.getByTestId('audience-annotation-overlay');
+    const row = Array.from(overlay.querySelectorAll('[data-annotation-row]')).find(
+      (r) => r.getAttribute('data-element-id') === NODE_A,
+    );
+    expect(row).toBeTruthy();
+    const badges = row?.querySelectorAll('[data-testid^="audience-annotation-badge-"]');
+    expect(badges?.length).toBe(2);
+    const ids = Array.from(badges ?? []).map((b) => b.getAttribute('data-testid'));
+    expect(ids).toEqual([
+      `audience-annotation-badge-${ANN_ANNO_1}`,
+      `audience-annotation-badge-${ANN_ANNO_2}`,
+    ]);
+    const kinds = Array.from(badges ?? []).map((b) => b.getAttribute('data-annotation-kind'));
+    expect(kinds).toEqual(['note', 'reframe']);
   });
 });
