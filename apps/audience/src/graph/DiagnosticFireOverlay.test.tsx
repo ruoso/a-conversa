@@ -240,22 +240,17 @@ describe('AudienceDiagnosticFireOverlay', () => {
   });
 
   it('(c) post-mount fire of a new cycle animates each affected node with the blocking class', async () => {
+    // Refinement: aud_diagnostic_fire_animation_seeding_alignment.md —
+    // the overlay seeds its seen-Set on the FIRST render from the
+    // store-derived tuples (empty at mount in this scenario), so a
+    // post-mount fire from previously-empty state animates without
+    // requiring an unrelated pre-seed workaround. Mirrors the edge
+    // sibling's test (c) shape.
     const { cy, unmount } = await renderOverlayWithCy();
     try {
       addNodeWithBox(cy, NODE_A, { x1: 100, x2: 200, y1: 50, y2: 130 });
       addNodeWithBox(cy, NODE_B, { x1: 300, x2: 400, y1: 200, y2: 280 });
       addNodeWithBox(cy, NODE_C, { x1: 500, x2: 600, y1: 350, y2: 430 });
-      // Pre-seed a single advisory diagnostic on a different node so
-      // the first non-empty commit seeds the gate; only then can the
-      // post-mount cycle on [A,B,C] animate as "new".
-      fire(danglingClaim(NODE_D));
-      addNodeWithBox(cy, NODE_D, { x1: 700, x2: 750, y1: 50, y2: 130 });
-      await flushRaf();
-      // Seed is in place; D's halo is rendered but unanimated.
-      const seedWrapper = document.querySelector(
-        `[data-diagnostic-fire-anim][data-node-id="${NODE_D}"]`,
-      );
-      expect(seedWrapper?.classList.contains('aud-diagnostic-fire-advisory')).toBe(false);
 
       fire(cycle([NODE_A, NODE_B, NODE_C]));
       await flushRaf();
@@ -278,9 +273,6 @@ describe('AudienceDiagnosticFireOverlay', () => {
     try {
       addNodeWithBox(cy, NODE_A, { x1: 100, x2: 200, y1: 50, y2: 130 });
       addNodeWithBox(cy, NODE_B, { x1: 300, x2: 400, y1: 200, y2: 280 });
-      // Seed the gate with an unrelated blocking diagnostic on B.
-      fire(cycle([NODE_B], 10));
-      await flushRaf();
       fire(danglingClaim(NODE_A));
       await flushRaf();
       const wrapper = document.querySelector(

@@ -46,6 +46,13 @@
 //   `window.__aConversaWsStore` dev seam lets the scenario apply a
 //   structural diagnostic mid-broadcast and assert the edge-locus
 //   halo with its blocking severity class. Scenario (9) below.)
+// Refinement: tasks/refinements/audience/aud_diagnostic_fire_animation_seeding_alignment.md
+//   (Decision §4 — pays down the grand-predecessor
+//   `aud_diagnostic_fire_animation`'s deferred-e2e debt (chain target
+//   `aud_session_url` is `complete 100`). Scenario (10) below asserts
+//   the fresh-session post-empty-mount cycle-fire animates the three
+//   node-locus halos at the system seam. Pool member: `henry` (next
+//   unallocated after grace).)
 
 import {
   expect,
@@ -729,6 +736,102 @@ test.describe('Audience live session route — /a/sessions/:sessionId', () => {
       await expect(edgeHaloLocator).toHaveCount(2);
       await expect(edgeHaloLocator.first()).toHaveClass(/aud-diagnostic-fire-blocking/);
       await expect(edgeHaloLocator.nth(1)).toHaveClass(/aud-diagnostic-fire-blocking/);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('(10) Diagnostic-fire node halo on cycle: seeded nodes halo amber-blocking when the cycle fires', async ({
+    browser,
+  }) => {
+    // Refinement: tasks/refinements/audience/aud_diagnostic_fire_animation_seeding_alignment.md
+    //   (Acceptance — INLINE Playwright spec. Pays down the grand-
+    //   predecessor `aud_diagnostic_fire_animation`'s deferred-e2e debt
+    //   that was originally chained against `aud_session_url`. Pre-fire
+    //   snapshot: zero node-locus diagnostic halos. After
+    //   `applyDiagnostic(...)` with a `cycle` payload naming three
+    //   nodes, exactly 3 node-locus halos render carrying
+    //   `aud-diagnostic-fire-blocking`. The fresh-session post-empty-
+    //   mount fire animation is the load-bearing observable that the
+    //   surgical local-ref seeding fix enables; without the fix, the
+    //   three halos render but lack the animation class. Pool member:
+    //   `henry` (next unallocated after grace).)
+    const context = await freshAuthedContext(browser);
+    const page = await context.newPage();
+    try {
+      const henry = await loginAs(page, { username: 'henry' });
+      expect(henry.screenName.toLowerCase()).toBe('henry');
+      const sessionId = await createSession(page, {
+        topic: 'Diagnostic-fire node halo on a cycle over the audience route',
+        privacy: 'public',
+      });
+
+      await page.goto(`/a/sessions/${sessionId}`);
+      await expect(page.getByTestId('audience-graph-root')).toBeVisible({ timeout: 15_000 });
+
+      const NODE_A_ID = '33333333-aaaa-4333-8333-333333333aaa';
+      const NODE_B_ID = '33333333-bbbb-4333-8333-333333333bbb';
+      const NODE_C_ID = '33333333-cccc-4333-8333-333333333ccc';
+
+      // Seed three nodes so cy has elements to halo against.
+      await seedNodeCreated(page, {
+        sessionId,
+        sequence: 1_000_300,
+        eventId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        nodeId: NODE_A_ID,
+        wording: 'Cycle halo node — A',
+        actorId: henry.userId,
+      });
+      await seedNodeCreated(page, {
+        sessionId,
+        sequence: 1_000_301,
+        eventId: 'aaaaaaaa-bbbb-4aaa-8aaa-aaaaaaaaaaab',
+        nodeId: NODE_B_ID,
+        wording: 'Cycle halo node — B',
+        actorId: henry.userId,
+      });
+      await seedNodeCreated(page, {
+        sessionId,
+        sequence: 1_000_302,
+        eventId: 'aaaaaaaa-cccc-4aaa-8aaa-aaaaaaaaaaac',
+        nodeId: NODE_C_ID,
+        wording: 'Cycle halo node — C',
+        actorId: henry.userId,
+      });
+
+      await expect
+        .poll(() => readEventsLength(page, sessionId), { timeout: 15_000 })
+        .toBeGreaterThanOrEqual(3);
+
+      // Pre-fire snapshot: no node-locus diagnostic-fire halos render.
+      // The selector excludes the edge sibling's locus attribute; node-
+      // overlay halos carry `data-node-id` and lack
+      // `data-diagnostic-fire-locus`.
+      const nodeHaloLocator = page.locator(
+        '[data-diagnostic-fire-anim]:not([data-diagnostic-fire-locus="edge"])',
+      );
+      await expect(nodeHaloLocator).toHaveCount(0);
+
+      // Apply a cycle diagnostic naming all three seeded nodes.
+      await applyDiagnostic(page, {
+        sessionId,
+        kind: 'cycle',
+        severity: 'blocking',
+        status: 'fired',
+        sequence: 1_000_400,
+        diagnostic: {
+          kind: 'cycle',
+          nodes: [NODE_A_ID, NODE_B_ID, NODE_C_ID],
+        },
+      });
+
+      // All three node halos appear within the rAF settle window, each
+      // carrying the blocking severity class — the load-bearing pin
+      // for the local-ref seeding fix at the system seam.
+      await expect(nodeHaloLocator).toHaveCount(3);
+      await expect(nodeHaloLocator.nth(0)).toHaveClass(/aud-diagnostic-fire-blocking/);
+      await expect(nodeHaloLocator.nth(1)).toHaveClass(/aud-diagnostic-fire-blocking/);
+      await expect(nodeHaloLocator.nth(2)).toHaveClass(/aud-diagnostic-fire-blocking/);
     } finally {
       await context.close();
     }

@@ -67,6 +67,23 @@
 //              `useCytoscapeOverlayPlacements<P>` and `useSeenKeysGate<K>`
 //              are consumed verbatim; this leaf is the third NEW caller
 //              of both since the extraction landed.)
+// Refinement: tasks/refinements/audience/aud_diagnostic_fire_animation_seeding_alignment.md
+//              (Decision §1 — the original `useSeenKeysGate(compositeKeys)`
+//              call here was replaced with a local `useRef<Set<string>>`
+//              seeded synchronously from the store-derived `tuples` on
+//              first render. The shared hook's lazy-init contract is
+//              correct for cy-driven overlay siblings whose
+//              `currentKeys` derive from `cy.nodes()` / `cy.edges()`
+//              mid-render, but it conflated "store hydration after
+//              mount" with "first fire after mount" here — silently
+//              swallowing the fresh-session-fire animation. The fix
+//              transplants verbatim the pattern shipped by the edge
+//              sibling `<AudienceDiagnosticEdgeFireOverlay>`. Decision §2
+//              — no new ADR; this is a consequence of the data-flow
+//              seam, not a fresh architectural commitment. Decision §3
+//              — Vitest tests (c)/(d) lost their pre-seed workarounds.
+//              Decision §4 — Playwright scenario `(10)` inline in
+//              `tests/e2e/audience-live-session.spec.ts`.)
 //
 // ADRs:        0004 (Cytoscape.js — `renderedBoundingBox` is canonical
 //              API; no new dep);
@@ -85,7 +102,7 @@
 // the underlying diagnostic via the future toast / banner surface
 // (not yet shipped on the audience).
 
-import { useMemo, type ReactElement, type RefObject } from 'react';
+import { useMemo, useRef, type ReactElement, type RefObject } from 'react';
 import type { Core, NodeSingular } from 'cytoscape';
 
 import {
@@ -93,7 +110,7 @@ import {
   type DiagnosticFireTuple,
   type DiagnosticHighlightSeverity,
 } from './diagnosticHighlights.js';
-import { useCytoscapeOverlayPlacements, useSeenKeysGate } from './cytoscapeOverlayHooks.js';
+import { useCytoscapeOverlayPlacements } from './cytoscapeOverlayHooks.js';
 import { useAudienceActiveDiagnostics } from '../ws/useAudienceActiveDiagnostics.js';
 
 export interface AudienceDiagnosticFireOverlayProps {
@@ -120,7 +137,7 @@ export interface AudienceDiagnosticFireOverlayProps {
 
 /**
  * Per-(diagnostic, node) placement record. The `compositeKey` drives
- * both React's keyed reconciliation and `useSeenKeysGate`'s gate.
+ * both React's keyed reconciliation and the local seen-Set gate.
  */
 interface DiagnosticFirePlacement {
   readonly compositeKey: string;
@@ -143,13 +160,37 @@ export function AudienceDiagnosticFireOverlay({
   // selector's: a no-change render returns the same array reference,
   // which keeps `triggers: [tuples]` stable across no-ops.
   const tuples = useMemo(() => flattenActiveDiagnosticsForFire(active), [active]);
+  // Seed the seen-Set synchronously on the FIRST render from the store-
+  // derived tuples, not lazily on the first non-empty placement commit.
+  // Rationale: tuples are read synchronously from the WS store at mount
+  // time, so mid-session joiners with already-active diagnostics seed
+  // their composite keys here (no retro animation), AND fresh sessions
+  // (tuples empty at mount) seed with an empty set so the next arrival
+  // is "new" and animates. The shared `useSeenKeysGate` cannot make
+  // this distinction — it seeds on the first non-empty placement commit,
+  // which conflates "store hydration after mount" with "first fire after
+  // mount" and therefore swallows the fresh-session-fire animation.
+  // Mirrors the edge sibling at `DiagnosticEdgeFireOverlay.tsx`; the
+  // four cy-driven overlays (PerFacetPill, AxiomMark, NodeAppear,
+  // Withdrawal) keep `useSeenKeysGate` since their `currentKeys` derive
+  // synchronously from `cy.nodes()` — for them "first non-empty commit"
+  // IS "first arrival".
+  const seenKeysRef = useRef<Set<string> | null>(null);
+  if (seenKeysRef.current === null) {
+    seenKeysRef.current = new Set(tuples.map((t) => `${t.identityKey}\0${t.nodeId}`));
+  }
+  const isNewPair = (key: string): boolean => {
+    const seen = seenKeysRef.current;
+    if (seen === null) return false;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  };
   const placements = useCytoscapeOverlayPlacements<DiagnosticFirePlacement>(
     cy,
     (cyInstance) => commitDiagnosticFirePlacements(cyInstance, tuples),
     [tuples],
   );
-  const compositeKeys = placements.map((p) => p.compositeKey);
-  const isNewPair = useSeenKeysGate(compositeKeys);
 
   return (
     <div

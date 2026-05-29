@@ -364,6 +364,7 @@ task audience "Audience and broadcast" {
     task aud_diagnostic_fire_animation_seeding_alignment "Align seen-Set seeding pattern in node-fire overlay with edge-fire fix" {
       effort 0.5d
       allocate team
+      complete 100
       depends !aud_diagnostic_edge_fire_animation
       note -8<-
         The node sibling <AudienceDiagnosticFireOverlay> carries the same latent gate bug
