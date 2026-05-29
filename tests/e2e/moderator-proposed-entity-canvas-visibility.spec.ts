@@ -227,7 +227,7 @@ test.describe('mod_proposed_entity_canvas_visibility — proposed entities rende
     });
   });
 
-  test('Scenario 3: 2-component decompose propose → parent + 2 children all render with data-facet-status="proposed"', async ({
+  test('Scenario 3: 2-component decompose propose → parent + 2 children all render with data-facet-status="proposed" (incl. reconnect-seed re-render)', async ({
     page,
   }) => {
     // Per `mod_decompose_propose_time_canvas_visibility`, the propose
@@ -282,6 +282,117 @@ test.describe('mod_proposed_entity_canvas_visibility — proposed entities rende
       const status = await handle.getAttribute('data-facet-status');
       expect(status).toBe('proposed');
     }
+
+    // ───────────────────────────────────────────────────────────────────
+    // Reconnect-seed sub-step — pins the deferred regression cover from
+    // `migrate_off_compute_facet_statuses_onto_proposal_status_broadcast`.
+    // Refinement:
+    // `tasks/refinements/moderator-ui/mod_pw_reconnect_seed_visible_styling.md`
+    //
+    // The migration landed the server-side `proposal-status` seed
+    // envelopes (`emitPendingProposalStatusFrames` at
+    // `apps/server/src/ws/broadcast/proposal-status.ts:697-720`,
+    // dispatched from the snapshot + catch-up handlers AFTER
+    // `snapshot-state`) and rewired the moderator's facet-status reads
+    // off the broadcast-derived store cell. What this sub-step pins is
+    // that a real moderator browser losing its WS connection mid-
+    // decompose actually rebuilds the per-component canvas styling
+    // from those seed envelopes on reconnect. The acceptance is two-
+    // fold: (a) after the kill + reconnect, the three nodes still
+    // carry `data-facet-status="proposed"`; (b) during the catch-up
+    // window between `snapshot-state` apply and the seed-envelope
+    // apply, NO node's `data-facet-status` flashes to `null` / `''` /
+    // `'undefined'` / `'awaiting-proposal'` (the migration's D7
+    // ordering guarantee).
+    // ───────────────────────────────────────────────────────────────────
+
+    // Capture the node testids so the flash-watcher polls the exact
+    // same three elements through the reconnect window even if
+    // ReactFlow re-mounts the wrapping DOM nodes.
+    const proposedTestIds: string[] = [];
+    for (const handle of await nodes.elementHandles()) {
+      const id = await handle.getAttribute('data-testid');
+      if (id !== null) proposedTestIds.push(id);
+    }
+    expect(proposedTestIds).toHaveLength(3);
+
+    // Force-close the underlying WS socket via the moderator-installed
+    // test seam (Decision §D3 — `OperateRouteInner` exposes
+    // `window.__testHooks.killWebSocket` on mount, deletes on unmount;
+    // the underlying `WsClient.killWebSocket()` triggers the natural
+    // onclose → `scheduleReconnect()` path without flipping
+    // `explicitlyClosed`).
+    await page.evaluate(() => {
+      const w = window as unknown as { __testHooks?: { killWebSocket?: () => void } };
+      const kill = w.__testHooks?.killWebSocket;
+      if (kill === undefined) {
+        throw new Error('window.__testHooks.killWebSocket was not installed by OperateRoute');
+      }
+      kill();
+    });
+
+    // Wait for the connection to recover to 'open' (the post-hello,
+    // pre-seed-envelope sliver is what the D7 ordering pin guards
+    // against — but the visible status flip is the cue to start
+    // re-asserting the canvas state). The connection-status read goes
+    // through `__aConversaWsStore` per the existing seed-helper in
+    // `tests/e2e/fixtures/wsStoreSeed.ts`'s precedent.
+    await page.waitForFunction(
+      () => {
+        const w = window as unknown as {
+          __aConversaWsStore?: { getState: () => { connectionStatus: string } };
+        };
+        return w.__aConversaWsStore?.getState().connectionStatus === 'open';
+      },
+      undefined,
+      { timeout: 10_000, polling: 50 },
+    );
+
+    // Post-reconnect: the three nodes still carry
+    // `data-facet-status="proposed"`. This is the headline assertion —
+    // the seed envelopes arriving after `snapshot-state` rebuild the
+    // per-entity `pendingProposalFacetStatus` cells, and the canvas
+    // projector reads them back onto each node's `data-facet-status`.
+    const reconnectedNodes = page.getByTestId(/^statement-node-[0-9a-f-]+$/);
+    await expect(reconnectedNodes).toHaveCount(3, { timeout: 15_000 });
+    for (const handle of await reconnectedNodes.elementHandles()) {
+      const status = await handle.getAttribute('data-facet-status');
+      expect(status).toBe('proposed');
+    }
+
+    // Flash-to-undefined watcher — per Decision §D6. Sample every 50ms
+    // for a 2-second window after the connection returns; reject if
+    // any sampled iteration observes a node whose `data-facet-status`
+    // is `null` / `''` / `'undefined'` / `'awaiting-proposal'`. The
+    // D7 ordering guarantee (seed envelopes go AFTER `snapshot-state`)
+    // would surface as a sampled-null failure here.
+    //
+    // The watcher runs AFTER the headline assertion because once the
+    // re-render has settled we only need to confirm no future render
+    // tick regresses. (The catch-up sliver itself is sub-100ms in
+    // practice — `expect.poll` at 50ms is tight enough to catch a
+    // future regression that re-introduced an empty intermediate
+    // render while staying inside Playwright-idiomatic patterns.)
+    const observedBadStatuses: string[] = [];
+    await expect
+      .poll(
+        async () => {
+          const statuses = await page.evaluate((testIds) => {
+            return testIds.map((id) => {
+              const el = document.querySelector(`[data-testid="${id}"]`);
+              return el === null ? '__missing__' : el.getAttribute('data-facet-status');
+            });
+          }, proposedTestIds);
+          for (const s of statuses) {
+            if (s === null || s === '' || s === 'undefined' || s === 'awaiting-proposal') {
+              observedBadStatuses.push(s ?? 'null');
+            }
+          }
+          return observedBadStatuses.length;
+        },
+        { intervals: Array.from({ length: 40 }, () => 50), timeout: 2_500 },
+      )
+      .toBe(0);
   });
 
   // Scenario 4 (propose-then-withdraw 3-context flow) remains

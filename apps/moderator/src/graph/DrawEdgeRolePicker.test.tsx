@@ -48,6 +48,7 @@ function makeStubClient(opts?: { rejectWith?: Error }): {
     status: () => 'open',
     connect: () => undefined,
     close: () => undefined,
+    killWebSocket: () => undefined,
     send: ((kind: string, payload: unknown) => {
       sent.push({ kind, payload });
       if (opts?.rejectWith !== undefined) {

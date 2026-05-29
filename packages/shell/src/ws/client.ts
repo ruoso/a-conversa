@@ -21,11 +21,16 @@
 // pending map, dispatch inbound envelopes into the store, reconnect on
 // close with exponential backoff, resume tracked subscriptions on hello.
 //
-// The two test seams the moderator's client carries — `makeSocket`
-// factory injection and per-test `scheduleTimeout`/`cancelTimeout`
-// overrides — survive verbatim. The shell's test suite uses them; the
-// moderator's existing test infrastructure (which migrated here)
-// continues to use them too.
+// The three test seams the moderator's client carries — `makeSocket`
+// factory injection, per-test `scheduleTimeout`/`cancelTimeout`
+// overrides, and the public `killWebSocket()` method — survive
+// verbatim. The Vitest suite uses `makeSocket` + scheduling overrides;
+// the Playwright suite reaches `killWebSocket()` through the moderator's
+// `window.__testHooks` install, since the production-runtime client is
+// constructed inside `<WsClientProvider>` where `makeSocket` is not
+// reachable from `page.evaluate`. The kill-hook is production-reachable
+// (no `import.meta.env.DEV` gate) for the same reason the
+// `__aConversaWsStore` exposure is unconditional.
 
 import {
   parseWsEnvelopeJson,
@@ -129,6 +134,19 @@ export interface WsClient {
   connect: () => void;
   /** Close the connection. Suppresses auto-reconnect. */
   close: (code?: number, reason?: string) => void;
+  /**
+   * Test seam: force-close the underlying socket WITHOUT flipping
+   * `explicitlyClosed`, so the existing `s.onclose` handler runs its
+   * natural path (`socket = undefined`, `rejectAllPending`,
+   * `scheduleReconnect`). Idempotent against `socket === undefined`.
+   *
+   * Reached from `window.__testHooks.killWebSocket` on surfaces that
+   * install the hook (moderator surface only as of this writing). The
+   * production-runtime client cannot be constructed with a fake
+   * `WsLike` from `page.evaluate`, so the Playwright spec needs a
+   * method on the live client to simulate a TCP-level disconnect.
+   */
+  killWebSocket: () => void;
   /** Issue a typed C→S request. */
   send: SendFn;
   /**
@@ -507,6 +525,16 @@ export function createWsClient(options: CreateWsClientOptions = {}): WsClient {
     openSocket();
   }
 
+  function killWebSocket(): void {
+    // Inverse-intent twin of `close()` — close the socket but allow the
+    // natural reconnect path to run. We do NOT flip `explicitlyClosed`;
+    // the existing `s.onclose` handler at `attachSocket` rejects pending
+    // requests, clears the socket reference, and calls
+    // `scheduleReconnect()`. `socket?.close()` is a silent no-op when
+    // the client is mid-reconnect (socket === undefined).
+    socket?.close();
+  }
+
   function close(code?: number, reason?: string): void {
     explicitlyClosed = true;
     clearScheduledReconnect();
@@ -533,6 +561,7 @@ export function createWsClient(options: CreateWsClientOptions = {}): WsClient {
     status: (): WsClientStatus => status,
     connect,
     close,
+    killWebSocket,
     send,
     trackSession,
     untrackSession,

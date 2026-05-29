@@ -77,6 +77,7 @@ const STUB_WS_CLIENT: WsClient = {
   status: () => 'open',
   connect: () => undefined,
   close: () => undefined,
+  killWebSocket: () => undefined,
   send: () =>
     new Promise(() => {
       /* never resolves; render-only tests don't click */
@@ -2186,6 +2187,7 @@ describe('StatementNode — inline classification palette mount gate (pf_mod_nod
       status: () => 'open',
       connect: () => undefined,
       close: () => undefined,
+      killWebSocket: () => undefined,
       send: () =>
         new Promise(() => {
           /* never resolves; visibility tests don't click */
@@ -2368,6 +2370,7 @@ describe('StatementNode — inline substance affordance mount gate (pf_mod_node_
       status: () => 'open',
       connect: () => undefined,
       close: () => undefined,
+      killWebSocket: () => undefined,
       send: () =>
         new Promise(() => {
           /* never resolves; visibility tests don't click */
@@ -2582,6 +2585,7 @@ describe('StatementNode — inline wording commit affordance mount gate', () => 
       status: () => 'open',
       connect: () => undefined,
       close: () => undefined,
+      killWebSocket: () => undefined,
       send: () =>
         new Promise(() => {
           /* never resolves; visibility tests don't click */
@@ -2695,6 +2699,7 @@ describe('StatementNode — inline classification commit affordance mount gate',
       status: () => 'open',
       connect: () => undefined,
       close: () => undefined,
+      killWebSocket: () => undefined,
       send: () =>
         new Promise(() => {
           /* never resolves; visibility tests don't click */

@@ -97,6 +97,7 @@ function makeFakeClient(): FakeClient {
     status: (): WsClientStatus => 'open',
     connect: (): void => undefined,
     close: (): void => undefined,
+    killWebSocket: (): void => undefined,
     send,
     trackSession: () => Promise.resolve(),
     untrackSession: () => Promise.resolve(),

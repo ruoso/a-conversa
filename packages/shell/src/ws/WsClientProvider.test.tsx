@@ -39,6 +39,10 @@ function makeFakeClient(): { client: WsClient; log: FakeClientLog } {
       log.closes += 1;
       status = 'closed';
     },
+    killWebSocket: (): void => {
+      // Provider tests don't exercise the kill-hook seam; the fake
+      // satisfies the interface so the type check passes.
+    },
     send,
     trackSession: () => Promise.resolve(),
     untrackSession: () => Promise.resolve(),

@@ -81,6 +81,7 @@ function makeStubClient(): WsClient {
     status: (): WsClientStatus => 'open',
     connect: (): void => undefined,
     close: (): void => undefined,
+    killWebSocket: (): void => undefined,
     send: () => new Promise(() => undefined),
     trackSession: () => Promise.resolve(),
     untrackSession: () => Promise.resolve(),

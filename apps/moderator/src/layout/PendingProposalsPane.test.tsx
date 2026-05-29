@@ -122,6 +122,7 @@ function makeStubWsClient(): WsClient {
     status: (): WsClientStatus => 'open',
     connect: (): void => undefined,
     close: (): void => undefined,
+    killWebSocket: (): void => undefined,
     send,
     trackSession: () => Promise.resolve(),
     untrackSession: () => Promise.resolve(),
@@ -1263,6 +1264,7 @@ describe('PendingProposalsPane — commit button per row', () => {
       status: () => 'open',
       connect: () => undefined,
       close: () => undefined,
+      killWebSocket: () => undefined,
       send: <T extends WsMessageType>(
         type: T,
         payload: WsMessagePayloadMap[T],
@@ -1348,6 +1350,7 @@ describe('PendingProposalsPane — commit button per row', () => {
       status: () => 'open',
       connect: () => undefined,
       close: () => undefined,
+      killWebSocket: () => undefined,
       send: <T extends WsMessageType>(
         type: T,
         payload: WsMessagePayloadMap[T],

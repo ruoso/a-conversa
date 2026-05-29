@@ -494,6 +494,83 @@ describe('reconnection + catch-up', () => {
     expect(lastDue.delay).toBe(100);
   });
 
+  it('killWebSocket() invokes socket.close() on the underlying WsLike, then is idempotent against socket === undefined', () => {
+    const harness = makeHarness([]);
+    const client = newClient(harness, { initialBackoffMs: 100 });
+    client.connect();
+    harness.sockets[0]!.open();
+    harness.sockets[0]!.receive(HELLO);
+
+    const closeSpy = vi.spyOn(harness.sockets[0]!, 'close');
+    client.killWebSocket();
+    expect(closeSpy).toHaveBeenCalledTimes(1);
+    // After onclose has fired, `socket` is undefined inside the client.
+    // A second call is a silent no-op (no throw).
+    expect(() => {
+      client.killWebSocket();
+    }).not.toThrow();
+    // `close()` is not called a second time because `socket?.close()`
+    // short-circuits on the optional chain.
+    expect(closeSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('killWebSocket() runs the natural reconnect path — status transitions to "reconnecting" and a reconnect timer is scheduled', () => {
+    const harness = makeHarness([]);
+    const client = newClient(harness, { initialBackoffMs: 100, maxBackoffMs: 5000 });
+    client.connect();
+    harness.sockets[0]!.open();
+    harness.sockets[0]!.receive(HELLO);
+
+    client.killWebSocket();
+    expect(client.status()).toBe('reconnecting');
+    const due = harness.scheduled.filter((s) => !s.cancelled);
+    expect(due[due.length - 1]!.delay).toBe(100);
+
+    // The scheduled callback runs openSocket() — a new socket is created.
+    expect(harness.sockets).toHaveLength(1);
+    harness.runDueAt(150);
+    expect(harness.sockets).toHaveLength(2);
+  });
+
+  it('killWebSocket() does NOT flip explicitlyClosed — client ends up "reconnecting", NOT "closed" (contrast with close())', () => {
+    // killWebSocket() path: status === 'reconnecting' after onclose fires.
+    const killHarness = makeHarness([]);
+    const killClient = newClient(killHarness, { initialBackoffMs: 100 });
+    killClient.connect();
+    killHarness.sockets[0]!.open();
+    killHarness.sockets[0]!.receive(HELLO);
+    killClient.killWebSocket();
+    expect(killClient.status()).toBe('reconnecting');
+
+    // close() path: status === 'closed' after onclose fires. Contrast
+    // assertion lifted from the existing "explicit close() suppresses
+    // reconnect" case but pinned here so the two behaviors stay
+    // visibly divergent in the same file.
+    const closeHarness = makeHarness([]);
+    const closeClient = newClient(closeHarness, { initialBackoffMs: 100 });
+    closeClient.connect();
+    closeHarness.sockets[0]!.open();
+    closeHarness.sockets[0]!.receive(HELLO);
+    closeClient.close();
+    expect(closeClient.status()).toBe('closed');
+  });
+
+  it('killWebSocket() rejects pending requests with the natural close-path error message', async () => {
+    const ids = ['00000000-0000-4000-8000-000000001500'];
+    const harness = makeHarness(ids);
+    const client = newClient(harness);
+    client.connect();
+    harness.sockets[0]!.open();
+    harness.sockets[0]!.receive(HELLO);
+
+    const pending = client.send('subscribe', { sessionId: SESSION_A });
+    // Pending request is in-flight; kill the socket and assert the
+    // promise rejects with the same `'ws connection closed'` shape
+    // that a remote-close would produce (rejectAllPending contract).
+    client.killWebSocket();
+    await expect(pending).rejects.toThrow(/ws connection closed/);
+  });
+
   it('successive failed attempts (no hello) escalate the backoff', () => {
     const harness = makeHarness([]);
     const client = newClient(harness, { initialBackoffMs: 100, maxBackoffMs: 1000 });

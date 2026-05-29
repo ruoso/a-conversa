@@ -331,6 +331,7 @@ task moderator_ui "Moderator UI" {
     task mod_pw_reconnect_seed_visible_styling "Add window.__testHooks.killWebSocket() hook to shell WsClient + Playwright reconnect-mid-decompose sub-step for broadcast-seed regression cover" {
       effort 1d
       allocate team
+      complete 100
       depends !migrate_off_compute_facet_statuses_onto_proposal_status_broadcast
       note -8<-
         Source of debt: tasks/refinements/moderator-ui/migrate_off_compute_facet_statuses_onto_proposal_status_broadcast.md Status block — the reconnect-mid-decompose Playwright sub-step (Acceptance Criteria §Playwright) was deferred because window.__testHooks.killWebSocket() does not exist in the shell WsClient harness. Wiring the hook is non-trivial scope beyond the migration task. The seed contract is pinned at the handler-integration layer (catch-up.test.ts case-2 + snapshot.test.ts); this task adds the harness hook and lifts the e2e reconnect assertion.

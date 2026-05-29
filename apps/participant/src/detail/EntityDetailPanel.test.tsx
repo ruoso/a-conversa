@@ -54,6 +54,7 @@ function makeInertWsClient(): WsClient {
     status: (): WsClientStatus => 'open',
     connect: () => undefined,
     close: () => undefined,
+    killWebSocket: () => undefined,
     send,
     trackSession: () => Promise.resolve(),
     untrackSession: () => Promise.resolve(),

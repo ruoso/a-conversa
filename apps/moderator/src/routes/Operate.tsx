@@ -166,6 +166,43 @@ function OperateRouteInner(props: { sessionId: string }): ReactElement {
     };
   }, [client, sessionId]);
 
+  // Install the `window.__testHooks.killWebSocket` test seam — reached
+  // by `tests/e2e/moderator-proposed-entity-canvas-visibility.spec.ts`
+  // (Scenario 3 reconnect sub-step) and by future moderator reconnect
+  // e2e scenarios (vote-mid-flight, commit-mid-flight, withdraw-then-
+  // reconnect). Refinement:
+  // `tasks/refinements/moderator-ui/mod_pw_reconnect_seed_visible_styling.md`
+  // (Decisions §D3 — install lives in `OperateRouteInner` because
+  // `useWsClient()` only resolves here, INSIDE `<WsClientProvider>`).
+  //
+  // **Not gated on `import.meta.env.DEV`.** Same rationale as the
+  // `__aConversaWsStore` exposure at `apps/moderator/src/main.tsx` — the
+  // compose stack's production-mode build (used by `make up-prod-mode`
+  // and the runtime image's Vite `production` build mode) would tree-
+  // shake away a DEV-gated branch, leaving the e2e spec without its
+  // entry point.
+  //
+  // **Not security-sensitive.** The natural reconnect path is what the
+  // client already runs on every TCP-level disconnect; the hook just
+  // lets a test trigger it deterministically. Per D7, the install lives
+  // ONLY on this surface (audience + participant surfaces do not get
+  // the hook installed until they have their own reconnect e2e).
+  useEffect(() => {
+    const w = window as unknown as {
+      __testHooks?: { killWebSocket?: () => void };
+    };
+    const hooks = w.__testHooks ?? {};
+    hooks.killWebSocket = (): void => {
+      client.killWebSocket();
+    };
+    w.__testHooks = hooks;
+    return () => {
+      if (w.__testHooks !== undefined) {
+        delete w.__testHooks.killWebSocket;
+      }
+    };
+  }, [client]);
+
   return (
     <main data-testid="route-operate">
       {/*

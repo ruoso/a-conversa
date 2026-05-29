@@ -360,6 +360,7 @@ function renderGraphWithWsClient(): ReturnType<typeof render> {
     status: () => 'open',
     connect: () => undefined,
     close: () => undefined,
+    killWebSocket: () => undefined,
     send: () =>
       new Promise(() => {
         /* never resolves; these tests don't click the affordance */
@@ -592,6 +593,7 @@ describe('GraphCanvasPane — events from the WS store render as custom nodes', 
       status: () => 'open',
       connect: () => undefined,
       close: () => undefined,
+      killWebSocket: () => undefined,
       send: () =>
         new Promise(() => {
           /* never resolves; this test doesn't click the affordance */
