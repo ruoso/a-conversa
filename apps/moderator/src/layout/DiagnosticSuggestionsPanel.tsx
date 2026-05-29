@@ -28,8 +28,9 @@ import { useMemo, type ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { DiagnosticPayload, WsDiagnosticSeverity } from '@a-conversa/shared-types';
 
+import { diagnosticIdentityKey } from '@a-conversa/shell';
+
 import { useWsStore } from '../ws/wsStore.js';
-import { diagnosticIdentityKey } from '../graph/diagnosticHighlights.js';
 import { suggestionsForDiagnostic } from '../graph/diagnosticSuggestions.js';
 
 export interface DiagnosticSuggestionsPanelProps {

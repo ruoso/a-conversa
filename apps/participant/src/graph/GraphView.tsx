@@ -197,8 +197,12 @@ import { useTranslation } from 'react-i18next';
 import { useSelectionStore, type Selection } from '../stores/selectionStore';
 import { type Annotation } from './annotations';
 import { type AxiomMark } from './axiomMarks';
-import { type DiagnosticHighlight, type DiagnosticHighlightIndex } from './diagnosticHighlights';
-import { type FacetStatus, type FacetStatusIndex } from '@a-conversa/shell';
+import {
+  type DiagnosticHighlight,
+  type DiagnosticHighlightIndex,
+  type FacetStatus,
+  type FacetStatusIndex,
+} from '@a-conversa/shell';
 import { OtherVotesOverlay } from './OtherVotesOverlay';
 import { type OwnVote, type OwnVoteIndex } from './ownVotes';
 import { type OthersVoteIndex } from './otherVotes';

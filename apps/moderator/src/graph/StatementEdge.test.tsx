@@ -25,10 +25,9 @@ import i18next from 'i18next';
 import ReactFlow, { MarkerType, Position, type Edge, type Node } from 'reactflow';
 import 'reactflow/dist/style.css';
 
-import { createI18nInstance, type Annotation } from '@a-conversa/shell';
+import { createI18nInstance, type Annotation, type DiagnosticHighlight } from '@a-conversa/shell';
 import { edgeTypes } from './edgeTypes';
 import type { StatementEdgeData } from './selectors';
-import type { DiagnosticHighlight } from './diagnosticHighlights';
 import { useSelectionStore } from '../stores';
 
 const ALL_ROLES = [

@@ -62,6 +62,7 @@ task milestones "Milestones" {
 
   task m_participant_mvp "M5: Participant MVP" {
     milestone
+    complete 100
     depends !m_backend_mvp, participant_ui.part_graph_view, participant_ui.part_voting, participant_ui.part_withdraw, participant_ui.part_axiom_mark_from_tablet, participant_ui.part_session_join, shell_package, root_app
     note "A debater can join a session, see the graph, vote per facet, withdraw agreement, and propose axiom-marks from their tablet. Under ADR 0026 the participant surface mounts inside the new apps/root/ app via @aconversa/shell; M5 now also depends on shell_package + root_app."
   }

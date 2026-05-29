@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { serializeWsEnvelope, type WsEnvelopeUnion } from '@a-conversa/shared-types';
 import type { UseBoundStore, StoreApi } from 'zustand';
 
+import { diagnosticIdentityKey } from '../diagnostics/diagnostic-highlights.js';
 import { createWsClient, WsRequestError, WsRequestTimeoutError, type WsLike } from './client.js';
 import { createDefaultWsStore } from './defaultStore.js';
 import type { BaseWsStoreState } from './store-contract.js';
@@ -330,7 +331,7 @@ describe('inbound dispatch — store writes', () => {
         severity: 'blocking',
         status: 'fired',
         sequence: 5,
-        diagnostic: { affectedNodes: ['n1', 'n2'] },
+        diagnostic: { kind: 'cycle', nodes: ['n1', 'n2'] },
       },
     });
 
@@ -511,6 +512,95 @@ describe('reconnection + catch-up', () => {
     harness.sockets[2]!.remoteClose();
     lastDelay = harness.scheduled.filter((s) => !s.cancelled).at(-1)!.delay;
     expect(lastDelay).toBe(400);
+  });
+});
+
+describe('applyDiagnostic — activeDiagnostics active-set semantics', () => {
+  // The shell-canonical reducer dispatches on `payload.status`:
+  // `'fired'` sets/replaces under `diagnosticIdentityKey(payload)`;
+  // `'cleared'` removes the entry. `lastDiagnostic` updates
+  // unconditionally. The cases below pin the consolidated semantics at
+  // the shell layer (per
+  // shell_diagnostic_highlights_extract.md — formerly carried by three
+  // per-app wsStore.test.ts files).
+
+  function firedCycle(sequence: number, nodes: readonly string[]) {
+    return {
+      sessionId: SESSION_A,
+      kind: 'cycle' as const,
+      severity: 'blocking' as const,
+      status: 'fired' as const,
+      sequence,
+      diagnostic: { kind: 'cycle' as const, nodes },
+    };
+  }
+  function clearedCycle(sequence: number, nodes: readonly string[]) {
+    return {
+      sessionId: SESSION_A,
+      kind: 'cycle' as const,
+      severity: 'blocking' as const,
+      status: 'cleared' as const,
+      sequence,
+      diagnostic: { kind: 'cycle' as const, nodes },
+    };
+  }
+  function firedDangling(sequence: number, nodeId: string) {
+    return {
+      sessionId: SESSION_A,
+      kind: 'dangling-claim' as const,
+      severity: 'advisory' as const,
+      status: 'fired' as const,
+      sequence,
+      diagnostic: { kind: 'dangling-claim' as const, nodeId },
+    };
+  }
+
+  it('a fired diagnostic populates activeDiagnostics keyed by the wire identity', () => {
+    const store = createDefaultWsStore();
+    const payload = firedCycle(1, ['n-a', 'n-b']);
+    store.getState().applyDiagnostic(payload);
+    const session = store.getState().sessionState[SESSION_A]!;
+    const key = diagnosticIdentityKey(payload);
+    expect(session.activeDiagnostics.size).toBe(1);
+    expect(session.activeDiagnostics.get(key)).toBe(payload);
+    expect(session.lastDiagnostic).toBe(payload);
+  });
+
+  it('a cleared envelope for the same identity removes the entry', () => {
+    const store = createDefaultWsStore();
+    const fired = firedCycle(1, ['n-a', 'n-b']);
+    const cleared = clearedCycle(2, ['n-a', 'n-b']);
+    store.getState().applyDiagnostic(fired);
+    store.getState().applyDiagnostic(cleared);
+    const session = store.getState().sessionState[SESSION_A]!;
+    expect(session.activeDiagnostics.size).toBe(0);
+    // lastDiagnostic continues to reflect the most recent envelope
+    // (including the cleared one).
+    expect(session.lastDiagnostic).toBe(cleared);
+  });
+
+  it('a re-fired diagnostic of the same identity replaces the entry under that key', () => {
+    const store = createDefaultWsStore();
+    const first = firedCycle(1, ['n-a', 'n-b']);
+    const second = firedCycle(3, ['n-a', 'n-b']);
+    store.getState().applyDiagnostic(first);
+    store.getState().applyDiagnostic(second);
+    const session = store.getState().sessionState[SESSION_A]!;
+    const key = diagnosticIdentityKey(first);
+    expect(session.activeDiagnostics.size).toBe(1);
+    expect(session.activeDiagnostics.get(key)).toBe(second);
+  });
+
+  it('two distinct fired diagnostics co-exist in activeDiagnostics', () => {
+    const store = createDefaultWsStore();
+    const cycle = firedCycle(1, ['n-a', 'n-b']);
+    const dangling = firedDangling(2, 'n-c');
+    store.getState().applyDiagnostic(cycle);
+    store.getState().applyDiagnostic(dangling);
+    const session = store.getState().sessionState[SESSION_A]!;
+    expect(session.activeDiagnostics.size).toBe(2);
+    expect(session.activeDiagnostics.get(diagnosticIdentityKey(cycle))).toBe(cycle);
+    expect(session.activeDiagnostics.get(diagnosticIdentityKey(dangling))).toBe(dangling);
   });
 });
 

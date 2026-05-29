@@ -30,14 +30,19 @@ import type {
   StatementKind,
 } from '@a-conversa/shared-types';
 
-import { I18nProvider, createI18nInstance, type I18nInstance } from '@a-conversa/shell';
+import {
+  I18nProvider,
+  computeFacetStatuses,
+  createI18nInstance,
+  projectDiagnosticHighlights,
+  type DiagnosticHighlight,
+  type I18nInstance,
+} from '@a-conversa/shell';
 
 import { GraphView, MAX_ZOOM, MIN_ZOOM, STYLESHEET, handleTap } from './GraphView';
 import { installCytoscapeTestEnv, type CytoscapeTestEnvRestoreHandle } from './cytoscapeTestEnv';
-import { projectDiagnosticHighlights, type DiagnosticHighlight } from './diagnosticHighlights';
 import { groupAnnotationsByEdge, groupAnnotationsByNode, projectAnnotations } from './annotations';
 import { groupAxiomMarksByNode, projectAxiomMarks } from './axiomMarks';
-import { computeFacetStatuses } from '@a-conversa/shell';
 import { projectOwnVotes } from './ownVotes';
 import { projectOtherVotes } from './otherVotes';
 import { projectGraph } from './projectGraph';

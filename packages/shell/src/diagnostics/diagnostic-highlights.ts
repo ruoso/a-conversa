@@ -1,34 +1,46 @@
-// Per-entity diagnostic-highlight projection for the participant's
-// read-mostly `<GraphView>`.
+// Canonical per-entity diagnostic-highlight vocabulary consumed by every
+// UI surface (`apps/moderator/`, `apps/participant/`, `apps/audience/`).
 //
-// Refinement: tasks/refinements/participant-ui/part_diagnostic_highlights.md
-//   (Decision §1 — `DiagnosticHighlight | null` carrying both severity +
-//   kinds list at the at-a-glance card layer; symmetric across node AND
-//   edge targets. Decision §2 — verbatim port of the moderator's module;
-//   no shell extraction yet — two callers is YAGNI, lift when the
-//   audience surface materialises as the third caller.)
+// Refinement: tasks/refinements/shell-package/shell_diagnostic_highlights_extract.md
+//   (the third-caller consolidation — the moderator + participant +
+//   audience previously carried near-identical copies of this module.
+//   This file lifts the union of all three: the canonical
+//   `\0`-joined identity-key formula, the per-kind `affectedEntities()`
+//   projection, the `projectDiagnosticHighlights()` rollup + thin
+//   presence/severity helpers, and the audience-only
+//   `flattenActiveDiagnosticsForFire` / `flattenActiveDiagnosticsForEdgeFire`
+//   overlay-feeders.)
+// Predecessors:
+//   tasks/refinements/moderator-ui/mod_diagnostic_highlighting.md
+//     (Decision §1, §2 — the canonical identity-key formula + the per-kind
+//     `affectedEntities()` + the `projectDiagnosticHighlights()` rollup.)
+//   tasks/refinements/participant-ui/part_diagnostic_highlights.md
+//     (Decision §1, §2, §8 — the `DiagnosticHighlight` /
+//     `DiagnosticHighlightIndex` shapes, the `EMPTY_DIAGNOSTIC_HIGHLIGHTS`
+//     frozen sentinel, the thin presence/severity helpers.)
+//   tasks/refinements/audience/aud_diagnostic_fire_animation.md
+//     (Decision §3, §7 — the sibling `flattenActiveDiagnosticsForFire`
+//     overlay-feeder + the `DiagnosticFireTuple` shape.)
+//   tasks/refinements/audience/aud_diagnostic_edge_fire_animation.md
+//     (Decision §2 — the sibling `flattenActiveDiagnosticsForEdgeFire`
+//     overlay-feeder + the `DiagnosticEdgeFireTuple` shape.)
 //
-// **Parallel client mirror**: this module is a verbatim port of the
-// moderator's `apps/moderator/src/graph/diagnosticHighlights.ts`. Both
-// client ports must stay in lock-step if a future per-kind diagnostic
-// wire-shape change lands; the natural unification point is
-// `@a-conversa/shell` (lifted when the audience surface becomes the
-// third caller, per the same trigger-on-the-third-caller policy
-// `axiomMarks.ts` + `annotations.ts` already adopted).
-//
-// **Drift risk** (inherited from the moderator's port). Any change to a
-// per-kind payload shape on the server MUST be mirrored here, AND the
-// identity-key formula MUST stay in lockstep with the server's
-// `identityKeyFor` (`apps/server/src/diagnostics/event-emission.ts`).
-// A drift between this file's `diagnosticIdentityKey` and the server's
-// would break the `fired` / `cleared` matching — a `cleared` whose key
-// doesn't match the previously-fired `fired` would leak an "active"
-// entry in the store forever. The companion vitest case in
-// `diagnosticHighlights.test.ts` hand-builds wire payloads from known
-// server-side identities and asserts the round-trip; if a server-side
-// identity-key change lands without this file updating, that test fails.
-// The moderator's identical mirror file pins the same invariant in its
-// own test suite — a future drift fails both surfaces at once.
+// **Parallel client mirror** (historical, retained to document the
+// lockstep-with-server invariant for future maintainers). The per-kind
+// `Wire*Diagnostic` interfaces and the `diagnosticIdentityKey` formula
+// MUST stay byte-identical to the server's source-of-truth at
+// `apps/server/src/diagnostics/event-emission.ts` (and
+// `apps/server/src/diagnostics/coherency-hint-detection.ts` for the
+// coherency-hint sub-kinds). A drift between this module's
+// `diagnosticIdentityKey` and the server's `identityKeyFor` breaks the
+// `fired` / `cleared` matching at the WS-store layer (a `cleared` whose
+// key doesn't match the previously-fired key leaks an "active" entry in
+// the store forever). The consolidated companion vitest suite at
+// `diagnostic-highlights.test.ts` hand-builds wire payloads from known
+// server-side identities and round-trips the formula; a server-side
+// drift fails the one shell suite (instead of three pre-lift
+// per-app suites). The third-caller lift dissolves the cross-surface
+// drift risk; the server-vs-shell mirror is the residual seam.
 
 import type {
   DiagnosticPayload,
@@ -37,14 +49,14 @@ import type {
 } from '@a-conversa/shared-types';
 
 // ---------------------------------------------------------------
-// Re-exported wire types as participant-side aliases.
+// Wire-type aliases.
 // ---------------------------------------------------------------
 
 /**
  * Severity of a diagnostic, as classified by the server-side
  * `classifyDiagnostic` and stamped on the wire envelope. Alias of
- * `WsDiagnosticSeverity` so participant-side names stay stable while
- * the source of truth remains the wire enum.
+ * `WsDiagnosticSeverity` so client-side names stay stable while the
+ * source of truth remains the wire enum.
  */
 export type DiagnosticHighlightSeverity = WsDiagnosticSeverity;
 
@@ -60,10 +72,10 @@ export type DiagnosticHighlightKind = WsDiagnosticKind;
 //
 // These mirror `apps/server/src/diagnostics/event-emission.ts` and
 // `apps/server/src/diagnostics/coherency-hint-detection.ts` verbatim.
-// Inlined here (rather than imported) to keep the participant workspace
-// independent of the server workspace. Any change to a server-side
-// payload shape MUST be mirrored here; the round-trip test pins the
-// invariant.
+// Inlined here (rather than imported via shared-types) because the wire
+// envelope types `diagnostic` as `unknown`; this union is the
+// client-side narrowing the projection walks. Any change to a
+// server-side payload shape MUST be mirrored here.
 
 /** Mirrors server `CycleDiagnosticEntry`. */
 export interface WireCycleDiagnostic {
@@ -128,8 +140,8 @@ export interface WireCoherencyHintDiagnostic {
 /**
  * The shape of the inlined `payload.diagnostic` field across the five
  * surfaced diagnostic kinds. The wire envelope types `diagnostic` as
- * `unknown` (the same trade-off `snapshot-state.projection` makes); this
- * union is the participant-side narrowing the projection walks.
+ * `unknown`; this union is the client-side narrowing the projection
+ * walks.
  */
 export type WireDiagnostic =
   | WireCycleDiagnostic
@@ -155,8 +167,8 @@ export interface DiagnosticHighlight {
 
 /**
  * The per-entity-kind index produced by `projectDiagnosticHighlights`.
- * Consumers (`projectGraph`) look up by entity id; absent ids mean "no
- * active diagnostic touches this entity".
+ * Consumers look up by entity id; absent ids mean "no active diagnostic
+ * touches this entity".
  */
 export interface DiagnosticHighlightIndex {
   readonly nodes: ReadonlyMap<string, DiagnosticHighlight>;
@@ -294,9 +306,6 @@ export function projectDiagnosticHighlights(
     return EMPTY_DIAGNOSTIC_HIGHLIGHTS;
   }
 
-  // Accumulator: per-entity per-kind, plus a per-entity rolling
-  // severity. We build the kinds list as we walk so encounter order is
-  // preserved; the per-kind dedupe uses a Set we never expose.
   interface Accumulator {
     severity: DiagnosticHighlightSeverity;
     kinds: DiagnosticHighlightKind[];
@@ -316,7 +325,6 @@ export function projectDiagnosticHighlights(
       acc = { severity, kinds: [], seen: new Set() };
       bucket.set(entityId, acc);
     } else if (severity === 'blocking' && acc.severity === 'advisory') {
-      // Blocking wins; demoting advisory→blocking is one-way.
       acc.severity = 'blocking';
     }
     if (!acc.seen.has(kind)) {
@@ -335,9 +343,6 @@ export function projectDiagnosticHighlights(
     }
   }
 
-  // Freeze each accumulator into a public `DiagnosticHighlight` (drop
-  // the internal `seen` Set so the public shape matches the
-  // interface). The `kinds` array is a fresh `readonly` projection.
   const nodeOut = new Map<string, DiagnosticHighlight>();
   for (const [id, acc] of nodes) {
     nodeOut.set(id, { severity: acc.severity, kinds: acc.kinds });
@@ -353,15 +358,6 @@ export function projectDiagnosticHighlights(
 // ---------------------------------------------------------------
 // Thin presence / severity helpers.
 // ---------------------------------------------------------------
-//
-// Per Decision §8 — these are exported for future consumers
-// (`part_entity_detail_panel` for the per-kind localized row trigger;
-// a future participant-side methodology-suggestions surface for
-// per-suggestion prominence; the axiom-mark-to-resolve-a-cycle gesture
-// for the prompt gating). The at-a-glance projection inlines the
-// `.get(id) ?? null` directly so the helpers aren't load-bearing for
-// THIS leaf — but exposing them now keeps future consumers from
-// refactoring the seam.
 
 /**
  * `true` iff `nodeId` carries any active diagnostic in the index.
@@ -392,4 +388,75 @@ export function diagnosticSeverityFor(
   const bucket = target === 'node' ? index.nodes : index.edges;
   const highlight = bucket.get(id);
   return highlight?.severity ?? 'none';
+}
+
+// ---------------------------------------------------------------
+// Audience-side fire-tuple flatteners.
+// ---------------------------------------------------------------
+
+/**
+ * One per (active diagnostic, affected node). The audience's node-fire
+ * overlay maps these into per-node halo `<span>`s.
+ */
+export interface DiagnosticFireTuple {
+  readonly identityKey: string;
+  readonly nodeId: string;
+  readonly severity: DiagnosticHighlightSeverity;
+}
+
+/**
+ * Walk the per-session `activeDiagnostics` map and emit one tuple per
+ * (identity, affected-node) pair. Severity is carried verbatim from the
+ * payload. The output order is the map's iteration order followed by
+ * per-payload affected-node order; deterministic for a given input map
+ * but stability is NOT a contract (consumers gate on the composite key
+ * `${identityKey}\0${nodeId}`, not on array position).
+ */
+export function flattenActiveDiagnosticsForFire(
+  activeDiagnostics: ReadonlyMap<string, DiagnosticPayload>,
+): readonly DiagnosticFireTuple[] {
+  const tuples: DiagnosticFireTuple[] = [];
+  for (const [identityKey, payload] of activeDiagnostics) {
+    const { nodes } = affectedEntities(payload);
+    for (const nodeId of nodes) {
+      tuples.push({ identityKey, nodeId, severity: payload.severity });
+    }
+  }
+  return tuples;
+}
+
+/**
+ * One per (active diagnostic, affected edge). The audience's edge-fire
+ * overlay maps these into per-edge halo `<span>`s placed at the
+ * rendered edge midpoint. Only two diagnostic kinds emit a non-empty
+ * `edges` projection — `contradiction` (the two contradicting edges)
+ * and the `self-contradicts` sub-kind of `coherency-hint` (the
+ * warrant-bridge edge). All other kinds project an empty `edges` array
+ * and contribute zero tuples.
+ */
+export interface DiagnosticEdgeFireTuple {
+  readonly identityKey: string;
+  readonly edgeId: string;
+  readonly severity: DiagnosticHighlightSeverity;
+}
+
+/**
+ * Walk the per-session `activeDiagnostics` map and emit one tuple per
+ * (identity, affected-edge) pair. Severity is carried verbatim from the
+ * payload. Output order mirrors `flattenActiveDiagnosticsForFire`'s
+ * stability posture — deterministic for a given input map but
+ * consumers gate on the composite key `${identityKey}\0${edgeId}`, not
+ * on array position.
+ */
+export function flattenActiveDiagnosticsForEdgeFire(
+  activeDiagnostics: ReadonlyMap<string, DiagnosticPayload>,
+): readonly DiagnosticEdgeFireTuple[] {
+  const tuples: DiagnosticEdgeFireTuple[] = [];
+  for (const [identityKey, payload] of activeDiagnostics) {
+    const { edges } = affectedEntities(payload);
+    for (const edgeId of edges) {
+      tuples.push({ identityKey, edgeId, severity: payload.severity });
+    }
+  }
+  return tuples;
 }

@@ -48,7 +48,7 @@ import { ReactFlowProvider, type NodeProps } from 'reactflow';
 import type { StatementKind } from '@a-conversa/shared-types';
 
 import { STATEMENT_NODE_TYPE, StatementNode, type StatementNodeData } from './StatementNode';
-import type { DiagnosticHighlight } from './diagnosticHighlights';
+import type { DiagnosticHighlight } from '@a-conversa/shell';
 import type { PendingAxiomMark } from './selectors';
 import {
   WsClientProvider,

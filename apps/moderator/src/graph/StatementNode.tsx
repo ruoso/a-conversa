@@ -65,9 +65,8 @@ import { NodeCardSubstanceAffordance } from './NodeCardSubstanceAffordance.js';
 import { NodeWordingCommitAffordance } from './NodeWordingCommitAffordance.js';
 import { NodeClassificationCommitAffordance } from './NodeClassificationCommitAffordance.js';
 import { PendingAxiomMarkBadge } from './PendingAxiomMarkBadge.js';
-import type { DiagnosticHighlight } from './diagnosticHighlights.js';
 import { disputationOutcome } from './disputationOutcome.js';
-import type { Annotation } from '@a-conversa/shell';
+import type { Annotation, DiagnosticHighlight } from '@a-conversa/shell';
 import { type PendingAxiomMark } from './selectors.js';
 
 /**

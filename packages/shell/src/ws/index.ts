@@ -21,7 +21,7 @@ export {
   type WsClientAuthState,
   type WsClientProviderProps,
 } from './WsClientProvider.js';
-export { createDefaultWsStore } from './defaultStore.js';
+export { createDefaultWsStore, createDefaultWsStoreInitializer } from './defaultStore.js';
 export type {
   BaseWsSessionState,
   BaseWsStoreState,

@@ -38,7 +38,7 @@
 
 import type { DiagnosticPayload } from '@a-conversa/shared-types';
 
-import type { WireCoherencyHint, WireDiagnostic } from './diagnosticHighlights.js';
+import type { WireCoherencyHint, WireDiagnostic } from '@a-conversa/shell';
 
 /**
  * Discriminated union of the methodology-pinned next-action move

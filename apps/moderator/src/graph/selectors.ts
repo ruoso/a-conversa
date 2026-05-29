@@ -36,21 +36,19 @@ import type { EdgeRole, Event } from '@a-conversa/shared-types';
 // per-proposal-id vote projector) stay here as moderator-graph-specific.
 import {
   EMPTY_ANNOTATIONS,
+  EMPTY_DIAGNOSTIC_HIGHLIGHTS,
   EMPTY_FACET_STATUSES,
   computeFacetStatuses,
   groupAnnotationsByEdge,
   projectAnnotations,
   type Annotation,
+  type DiagnosticHighlight,
+  type DiagnosticHighlightIndex,
   type FacetName,
   type FacetStatus,
   type Vote,
 } from '@a-conversa/shell';
 
-import {
-  EMPTY_DIAGNOSTIC_HIGHLIGHTS,
-  type DiagnosticHighlight,
-  type DiagnosticHighlightIndex,
-} from './diagnosticHighlights.js';
 import type { WsState } from '../ws/wsStore.js';
 
 /** Payload carried on each rendered edge — the role drives the label and (later) the per-state styling. */

@@ -25,10 +25,10 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import i18next from 'i18next';
 import type { DiagnosticPayload } from '@a-conversa/shared-types';
 
+import { createI18nInstance, diagnosticIdentityKey } from '@a-conversa/shell';
+
 import { DiagnosticSuggestionsPanel } from './DiagnosticSuggestionsPanel';
 import { useWsStore } from '../ws/wsStore';
-import { createI18nInstance } from '@a-conversa/shell';
-import { diagnosticIdentityKey } from '../graph/diagnosticHighlights';
 
 const SESSION = '00000000-0000-4000-8000-000000000099';
 const NODE_A = 'node-a';

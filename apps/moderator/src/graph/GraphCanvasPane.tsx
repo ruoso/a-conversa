@@ -105,11 +105,12 @@ import { DrawEdgeRolePicker } from './DrawEdgeRolePicker.js';
 import { GraphContextMenu, type MenuItem } from './GraphContextMenu.js';
 import { applyLayout, relayoutAll } from './layoutEngine.js';
 import {
+  computeFacetStatuses,
   EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+  EMPTY_FACET_STATUSES,
   projectDiagnosticHighlights,
   type DiagnosticHighlightIndex,
-} from './diagnosticHighlights.js';
-import { computeFacetStatuses, EMPTY_FACET_STATUSES } from '@a-conversa/shell';
+} from '@a-conversa/shell';
 import { disputationOutcome } from './disputationOutcome.js';
 import {
   EMPTY_PENDING_AXIOM_MARKS,

@@ -76,7 +76,7 @@ import {
   flattenActiveDiagnosticsForEdgeFire,
   type DiagnosticEdgeFireTuple,
   type DiagnosticHighlightSeverity,
-} from './diagnosticHighlights.js';
+} from '@a-conversa/shell';
 import { useCytoscapeOverlayPlacements } from './cytoscapeOverlayHooks.js';
 import { useAudienceActiveDiagnostics } from '../ws/useAudienceActiveDiagnostics.js';
 

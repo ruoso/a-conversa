@@ -106,10 +106,11 @@ import {
   type Annotation,
 } from './annotations';
 import { type AxiomMark, nodeHasAxiomMark } from './axiomMarks';
-import { type DiagnosticHighlight, type DiagnosticHighlightIndex } from './diagnosticHighlights';
 import {
   cardRollupStatus,
   EMPTY_FACET_STATUSES,
+  type DiagnosticHighlight,
+  type DiagnosticHighlightIndex,
   type FacetName,
   type FacetStatus,
   type FacetStatusIndex,

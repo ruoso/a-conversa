@@ -133,7 +133,7 @@ import {
 import { CaptureTextInput } from '../layout/CaptureTextInput';
 import { STATEMENT_NODE_TYPE } from './StatementNode';
 import { applyLayout } from './layoutEngine';
-import { projectDiagnosticHighlights } from './diagnosticHighlights';
+import { projectDiagnosticHighlights } from '@a-conversa/shell';
 import { selectEdgesForSession } from './selectors';
 import { useWsStore } from '../ws/wsStore';
 import { useCaptureStore, useSelectionStore } from '../stores';

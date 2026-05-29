@@ -1,24 +1,19 @@
-// Tests for `diagnosticHighlights.ts` — per-entity diagnostic-highlight
-// projection + identity-key parity with the server's `identityKeyFor`.
+// Consolidated Vitest suite for the shell's `diagnostic-highlights.ts`
+// module — identity-key parity with the server, per-kind
+// `affectedEntities` extraction, `projectDiagnosticHighlights` rollup
+// semantics, thin presence/severity helpers, and the audience-side
+// `flattenActiveDiagnosticsForFire` / `flattenActiveDiagnosticsForEdgeFire`
+// overlay-feeders.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_diagnostic_highlighting.md
+// Refinement: tasks/refinements/shell-package/shell_diagnostic_highlights_extract.md
+//   (union of the three predecessor suites at the canonical home).
+// ADR:        docs/adr/0022-no-throwaway-verifications.md
 //
-// Per ADR 0022 these are committed Vitest cases, not throwaway probes.
-// They lock in:
-//
-//   1. `diagnosticIdentityKey` produces the same string as the server's
-//      `identityKeyFor` for every diagnostic kind (round-trip), AND is
-//      stable under adjacency-walk start-point variation for `cycle`,
-//      under `edges` content for `contradiction`, under `warrantNodeIds`
-//      order for `multi-warrant`. The moderator-side helper MUST stay in
-//      lockstep with the server's formula — a drift breaks `fired` /
-//      `cleared` matching in the store.
-//   2. `affectedEntities` extracts the documented entity ids per kind +
-//      per coherency-hint sub-kind.
-//   3. `projectDiagnosticHighlights` rolls up per-entity severity
-//      (blocking wins over advisory), deduplicates kinds, preserves
-//      encounter order, and returns the stable empty reference for
-//      empty input.
+// The cases reproduce the server's identityKeyFor formula by
+// string-construction so the test does not depend on importing from
+// `apps/server/*` (the workspace-boundary discipline). A server-side
+// identity-key drift fails this one shell suite (instead of three
+// pre-lift per-app suites).
 
 import { describe, expect, it } from 'vitest';
 import type { DiagnosticPayload } from '@a-conversa/shared-types';
@@ -26,21 +21,26 @@ import type { DiagnosticPayload } from '@a-conversa/shared-types';
 import {
   affectedEntities,
   diagnosticIdentityKey,
+  diagnosticSeverityFor,
+  edgeHasDiagnostic,
   EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+  flattenActiveDiagnosticsForEdgeFire,
+  flattenActiveDiagnosticsForFire,
+  nodeHasDiagnostic,
   projectDiagnosticHighlights,
-} from './diagnosticHighlights';
+} from './diagnostic-highlights.js';
 
 const SESSION = '00000000-0000-4000-8000-000000000001';
 const NODE_A = 'node-a';
 const NODE_B = 'node-b';
 const NODE_C = 'node-c';
+const NODE_D = 'node-d';
 const EDGE_1 = 'edge-1';
 const EDGE_2 = 'edge-2';
+const EDGE_3 = 'edge-3';
 
-// Tiny helpers — the `diagnostic` field is `unknown` on the wire so the
-// per-kind shape is provided inline. The outer envelope is shared.
 function cyclePayload(
-  nodes: string[],
+  nodes: readonly string[],
   severity: 'blocking' | 'advisory' = 'blocking',
 ): DiagnosticPayload {
   return {
@@ -56,7 +56,7 @@ function cyclePayload(
 function contradictionPayload(
   nodeA: string,
   nodeB: string,
-  edges: string[],
+  edges: readonly string[],
   severity: 'blocking' | 'advisory' = 'blocking',
 ): DiagnosticPayload {
   return {
@@ -64,7 +64,7 @@ function contradictionPayload(
     kind: 'contradiction',
     severity,
     status: 'fired',
-    sequence: 1,
+    sequence: 2,
     diagnostic: { kind: 'contradiction', nodeA, nodeB, edges },
   };
 }
@@ -72,7 +72,7 @@ function contradictionPayload(
 function multiWarrantPayload(
   dataNodeId: string,
   claimNodeId: string,
-  warrantNodeIds: string[],
+  warrantNodeIds: readonly string[],
   severity: 'blocking' | 'advisory' = 'advisory',
 ): DiagnosticPayload {
   return {
@@ -80,7 +80,7 @@ function multiWarrantPayload(
     kind: 'multi-warrant',
     severity,
     status: 'fired',
-    sequence: 1,
+    sequence: 3,
     diagnostic: { kind: 'multi-warrant', dataNodeId, claimNodeId, warrantNodeIds },
   };
 }
@@ -94,7 +94,7 @@ function danglingClaimPayload(
     kind: 'dangling-claim',
     severity,
     status: 'fired',
-    sequence: 1,
+    sequence: 4,
     diagnostic: { kind: 'dangling-claim', nodeId },
   };
 }
@@ -105,7 +105,7 @@ function coherencyHintToPayload(warrantNodeId: string, dataNodeId: string): Diag
     kind: 'coherency-hint',
     severity: 'advisory',
     status: 'fired',
-    sequence: 1,
+    sequence: 5,
     diagnostic: {
       kind: 'coherency-hint',
       hint: {
@@ -123,7 +123,7 @@ function coherencyHintFromPayload(warrantNodeId: string, claimNodeId: string): D
     kind: 'coherency-hint',
     severity: 'advisory',
     status: 'fired',
-    sequence: 1,
+    sequence: 6,
     diagnostic: {
       kind: 'coherency-hint',
       hint: {
@@ -141,7 +141,7 @@ function coherencyHintSelfContradictsPayload(edgeId: string, nodeId: string): Di
     kind: 'coherency-hint',
     severity: 'advisory',
     status: 'fired',
-    sequence: 1,
+    sequence: 7,
     diagnostic: {
       kind: 'coherency-hint',
       hint: { kind: 'self-contradicts', edgeId, nodeId },
@@ -150,27 +150,14 @@ function coherencyHintSelfContradictsPayload(edgeId: string, nodeId: string): Di
 }
 
 describe('diagnosticIdentityKey — round-trip parity with the server', () => {
-  // The server's identityKeyFor (apps/server/src/diagnostics/event-emission.ts)
-  // is the canonical formula. Each case below pins the same formula
-  // applied to a wire payload; if either side drifts the cases here
-  // fail. The cases reproduce the formula by string-construction so
-  // the test does not depend on importing from `apps/server/*` (the
-  // workspace-boundary discipline the refinement requires).
-
-  it('cycle — same node set in two adjacency walks produces the same key', () => {
-    // Cycle nodes are sorted lexicographically before joining, so two
-    // adjacency walks that start at different nodes (and surface in
-    // different orders) canonicalize to the same key.
+  it('cycle — same node set in two adjacency walks produces the same key (sort-invariant)', () => {
     const a = cyclePayload(['n-c', 'n-a', 'n-b']);
     const b = cyclePayload(['n-b', 'n-c', 'n-a']);
     expect(diagnosticIdentityKey(a)).toBe(diagnosticIdentityKey(b));
-    // And matches the explicit formula.
     expect(diagnosticIdentityKey(a)).toBe('cycle\0n-a\0n-b\0n-c');
   });
 
-  it('contradiction — same (nodeA, nodeB) pair produces the same key regardless of `edges` content', () => {
-    // The server canonicalizes the pair lexicographically before
-    // emission; identity is the pair only, NOT the edges array.
+  it('contradiction — same (nodeA, nodeB) pair produces the same key regardless of `edges` content (directional preservation)', () => {
     const a = contradictionPayload(NODE_A, NODE_B, [EDGE_1]);
     const b = contradictionPayload(NODE_A, NODE_B, [EDGE_1, EDGE_2]);
     expect(diagnosticIdentityKey(a)).toBe(diagnosticIdentityKey(b));
@@ -179,14 +166,12 @@ describe('diagnosticIdentityKey — round-trip parity with the server', () => {
 
   it('multi-warrant — adding a warrant changes the key', () => {
     const a = multiWarrantPayload(NODE_A, NODE_B, [NODE_C]);
-    const b = multiWarrantPayload(NODE_A, NODE_B, [NODE_C, 'node-d']);
+    const b = multiWarrantPayload(NODE_A, NODE_B, [NODE_C, NODE_D]);
     expect(diagnosticIdentityKey(a)).not.toBe(diagnosticIdentityKey(b));
     expect(diagnosticIdentityKey(a)).toBe(`multi-warrant\0${NODE_A}\0${NODE_B}\0${NODE_C}`);
   });
 
   it('multi-warrant — warrant id order is canonicalized via sort', () => {
-    // Same set of warrants in different orders produces the same key
-    // (the formula sorts the warrants before joining).
     const a = multiWarrantPayload(NODE_A, NODE_B, ['w-3', 'w-1', 'w-2']);
     const b = multiWarrantPayload(NODE_A, NODE_B, ['w-1', 'w-2', 'w-3']);
     expect(diagnosticIdentityKey(a)).toBe(diagnosticIdentityKey(b));
@@ -200,22 +185,29 @@ describe('diagnosticIdentityKey — round-trip parity with the server', () => {
     expect(diagnosticIdentityKey(a)).not.toBe(diagnosticIdentityKey(b));
   });
 
-  it('coherency-hint — each sub-kind produces a distinct key, same sub-kind + same ids produces the same key', () => {
+  it('coherency-hint / incomplete-warrant-missing-bridges-to — pins the explicit sub-kind formula', () => {
     const to1 = coherencyHintToPayload('w-1', 'd-1');
     const to2 = coherencyHintToPayload('w-1', 'd-1');
-    const from1 = coherencyHintFromPayload('w-1', 'c-1');
-    const self1 = coherencyHintSelfContradictsPayload('e-1', 'n-1');
     expect(diagnosticIdentityKey(to1)).toBe(diagnosticIdentityKey(to2));
-    expect(diagnosticIdentityKey(to1)).not.toBe(diagnosticIdentityKey(from1));
-    expect(diagnosticIdentityKey(to1)).not.toBe(diagnosticIdentityKey(self1));
-    expect(diagnosticIdentityKey(from1)).not.toBe(diagnosticIdentityKey(self1));
     expect(diagnosticIdentityKey(to1)).toBe(
       'coherency-hint\0incomplete-warrant-missing-bridges-to\0w-1\0d-1',
     );
+  });
+
+  it('coherency-hint / incomplete-warrant-missing-bridges-from — pins the explicit sub-kind formula', () => {
+    const from1 = coherencyHintFromPayload('w-1', 'c-1');
     expect(diagnosticIdentityKey(from1)).toBe(
       'coherency-hint\0incomplete-warrant-missing-bridges-from\0w-1\0c-1',
     );
+  });
+
+  it('coherency-hint / self-contradicts — pins the explicit sub-kind formula and distinguishes from siblings', () => {
+    const to1 = coherencyHintToPayload('w-1', 'd-1');
+    const from1 = coherencyHintFromPayload('w-1', 'c-1');
+    const self1 = coherencyHintSelfContradictsPayload('e-1', 'n-1');
     expect(diagnosticIdentityKey(self1)).toBe('coherency-hint\0self-contradicts\0e-1');
+    expect(diagnosticIdentityKey(to1)).not.toBe(diagnosticIdentityKey(self1));
+    expect(diagnosticIdentityKey(from1)).not.toBe(diagnosticIdentityKey(self1));
   });
 });
 
@@ -233,8 +225,8 @@ describe('affectedEntities — per-kind extraction', () => {
   });
 
   it('multi-warrant → dataNodeId + claimNodeId + every warrantNodeId', () => {
-    const ids = affectedEntities(multiWarrantPayload(NODE_A, NODE_B, [NODE_C, 'node-d']));
-    expect(ids.nodes).toEqual([NODE_A, NODE_B, NODE_C, 'node-d']);
+    const ids = affectedEntities(multiWarrantPayload(NODE_A, NODE_B, [NODE_C, NODE_D]));
+    expect(ids.nodes).toEqual([NODE_A, NODE_B, NODE_C, NODE_D]);
     expect(ids.edges).toEqual([]);
   });
 
@@ -321,8 +313,6 @@ describe('projectDiagnosticHighlights — per-kind index population', () => {
 
 describe('projectDiagnosticHighlights — rollup semantics', () => {
   it('blocking wins over advisory when an entity appears in both', () => {
-    // Same node id is hit by a blocking cycle AND an advisory
-    // coherency-hint; the rollup must resolve to blocking.
     const cycle = cyclePayload([NODE_A, NODE_B], 'blocking');
     const hint = coherencyHintSelfContradictsPayload(EDGE_1, NODE_A);
     const map = new Map<string, DiagnosticPayload>([
@@ -332,14 +322,10 @@ describe('projectDiagnosticHighlights — rollup semantics', () => {
     const index = projectDiagnosticHighlights(map);
     const a = index.nodes.get(NODE_A);
     expect(a?.severity).toBe('blocking');
-    // Both kinds are recorded, in encounter order (cycle first).
     expect(a?.kinds).toEqual(['cycle', 'coherency-hint']);
   });
 
   it('advisory-then-blocking still resolves to blocking (one-way demotion)', () => {
-    // Insertion-order-flipped: advisory hint first, blocking cycle
-    // second. Result still resolves to blocking — the rollup is
-    // demote-only-upward.
     const hint = coherencyHintSelfContradictsPayload(EDGE_1, NODE_A);
     const cycle = cyclePayload([NODE_A, NODE_B], 'blocking');
     const map = new Map<string, DiagnosticPayload>([
@@ -352,9 +338,6 @@ describe('projectDiagnosticHighlights — rollup semantics', () => {
   });
 
   it('kinds dedupe: an entity appearing in two cycles resolves to kinds: [cycle]', () => {
-    // Two different cycles both include NODE_A. The rollup must
-    // dedupe the kind — the per-entity `kinds` is "every distinct
-    // kind that touches this entity", not "every diagnostic".
     const c1 = cyclePayload([NODE_A, NODE_B], 'blocking');
     const c2 = cyclePayload([NODE_A, NODE_C], 'blocking');
     const map = new Map<string, DiagnosticPayload>([
@@ -366,10 +349,6 @@ describe('projectDiagnosticHighlights — rollup semantics', () => {
   });
 
   it('kinds preserve encounter order: cycle then multi-warrant on the same node', () => {
-    // The diagnostic envelopes land in a defined order (the map
-    // iteration order is insertion order); the per-entity `kinds`
-    // array reflects that order so a downstream tooltip reads the
-    // kinds in the order the moderator received them.
     const c = cyclePayload([NODE_A, NODE_B], 'blocking');
     const mw = multiWarrantPayload(NODE_A, 'node-d', ['node-w'], 'advisory');
     const map = new Map<string, DiagnosticPayload>([
@@ -380,11 +359,157 @@ describe('projectDiagnosticHighlights — rollup semantics', () => {
     expect(index.nodes.get(NODE_A)?.kinds).toEqual(['cycle', 'multi-warrant']);
   });
 
+  it('edges and nodes are bucketed separately (contradiction puts ids in both buckets)', () => {
+    const payload = contradictionPayload(NODE_A, NODE_B, [EDGE_1], 'blocking');
+    const map = new Map([[diagnosticIdentityKey(payload), payload]]);
+    const index = projectDiagnosticHighlights(map);
+    // Same id namespace would collide; the projector keeps them apart.
+    expect(index.nodes.size).toBe(2);
+    expect(index.edges.size).toBe(1);
+    expect(index.edges.get(EDGE_1)?.kinds).toEqual(['contradiction']);
+    expect(index.nodes.get(EDGE_1)).toBeUndefined();
+  });
+
   it('empty input returns the stable EMPTY_DIAGNOSTIC_HIGHLIGHTS reference', () => {
     const result = projectDiagnosticHighlights(new Map());
-    // Reference equality — the empty-input fast path returns the
-    // module-level constant so React / ReactFlow memoization stays
-    // stable for the no-diagnostic baseline.
     expect(result).toBe(EMPTY_DIAGNOSTIC_HIGHLIGHTS);
+  });
+});
+
+describe('nodeHasDiagnostic / edgeHasDiagnostic / diagnosticSeverityFor — thin helpers', () => {
+  it('return presence + severity for entities in the index, "none"/false otherwise', () => {
+    const hint = coherencyHintSelfContradictsPayload(EDGE_1, NODE_A);
+    const blocking = cyclePayload([NODE_A], 'blocking');
+    const map = new Map<string, DiagnosticPayload>([
+      [diagnosticIdentityKey(hint), hint],
+      [diagnosticIdentityKey(blocking), blocking],
+    ]);
+    const index = projectDiagnosticHighlights(map);
+
+    expect(nodeHasDiagnostic(index, NODE_A)).toBe(true);
+    expect(nodeHasDiagnostic(index, NODE_B)).toBe(false);
+    expect(edgeHasDiagnostic(index, EDGE_1)).toBe(true);
+    expect(edgeHasDiagnostic(index, EDGE_2)).toBe(false);
+
+    expect(diagnosticSeverityFor(index, 'node', NODE_A)).toBe('blocking');
+    expect(diagnosticSeverityFor(index, 'node', NODE_B)).toBe('none');
+    expect(diagnosticSeverityFor(index, 'edge', EDGE_1)).toBe('advisory');
+    expect(diagnosticSeverityFor(index, 'edge', EDGE_2)).toBe('none');
+  });
+
+  it('diagnosticSeverityFor reports the rolled-up (blocking-wins) severity for blended entities', () => {
+    const blockingHit = cyclePayload([NODE_A], 'blocking');
+    const advisoryHit = multiWarrantPayload(NODE_A, NODE_B, [NODE_C], 'advisory');
+    const map = new Map<string, DiagnosticPayload>([
+      [diagnosticIdentityKey(blockingHit), blockingHit],
+      [diagnosticIdentityKey(advisoryHit), advisoryHit],
+    ]);
+    const index = projectDiagnosticHighlights(map);
+    expect(diagnosticSeverityFor(index, 'node', NODE_A)).toBe('blocking');
+    expect(diagnosticSeverityFor(index, 'node', NODE_B)).toBe('advisory');
+    expect(diagnosticSeverityFor(index, 'node', NODE_C)).toBe('advisory');
+  });
+});
+
+describe('flattenActiveDiagnosticsForFire', () => {
+  it('empty input → empty tuples array', () => {
+    expect(flattenActiveDiagnosticsForFire(new Map())).toEqual([]);
+  });
+
+  it('a single cycle of three nodes → three tuples sharing the same identityKey', () => {
+    const payload = cyclePayload([NODE_A, NODE_B, NODE_C]);
+    const key = diagnosticIdentityKey(payload);
+    const map = new Map<string, DiagnosticPayload>([[key, payload]]);
+    const tuples = flattenActiveDiagnosticsForFire(map);
+    expect(tuples).toHaveLength(3);
+    for (const t of tuples) {
+      expect(t.identityKey).toBe(key);
+      expect(t.severity).toBe('blocking');
+    }
+    expect(tuples.map((t) => t.nodeId).sort()).toEqual([NODE_A, NODE_B, NODE_C].sort());
+  });
+
+  it('mixed-severity map: severity is carried verbatim from each payload', () => {
+    const cycle = cyclePayload([NODE_A, NODE_B]);
+    const dangling = danglingClaimPayload(NODE_C);
+    const map = new Map<string, DiagnosticPayload>([
+      [diagnosticIdentityKey(cycle), cycle],
+      [diagnosticIdentityKey(dangling), dangling],
+    ]);
+    const tuples = flattenActiveDiagnosticsForFire(map);
+    expect(tuples).toHaveLength(3);
+    const blockingNodes = tuples.filter((t) => t.severity === 'blocking').map((t) => t.nodeId);
+    const advisoryNodes = tuples.filter((t) => t.severity === 'advisory').map((t) => t.nodeId);
+    expect(blockingNodes.sort()).toEqual([NODE_A, NODE_B].sort());
+    expect(advisoryNodes).toEqual([NODE_C]);
+  });
+
+  it('two diagnostics referencing the same node yield two distinct tuples with different identityKeys', () => {
+    const cycle = cyclePayload([NODE_A, NODE_B, NODE_C]);
+    const dangling = danglingClaimPayload(NODE_A);
+    const map = new Map<string, DiagnosticPayload>([
+      [diagnosticIdentityKey(cycle), cycle],
+      [diagnosticIdentityKey(dangling), dangling],
+    ]);
+    const tuples = flattenActiveDiagnosticsForFire(map);
+    const aTuples = tuples.filter((t) => t.nodeId === NODE_A);
+    expect(aTuples).toHaveLength(2);
+    const identityKeys = new Set(aTuples.map((t) => t.identityKey));
+    expect(identityKeys.size).toBe(2);
+  });
+});
+
+describe('flattenActiveDiagnosticsForEdgeFire', () => {
+  it('empty input → empty tuples array', () => {
+    expect(flattenActiveDiagnosticsForEdgeFire(new Map())).toEqual([]);
+  });
+
+  it('cycle / multi-warrant / dangling-claim payloads → empty (no edges projected)', () => {
+    const cycle = cyclePayload([NODE_A, NODE_B, NODE_C]);
+    const multi = multiWarrantPayload(NODE_A, NODE_B, [NODE_C, NODE_D]);
+    const dangling = danglingClaimPayload(NODE_A);
+    const map = new Map<string, DiagnosticPayload>([
+      [diagnosticIdentityKey(cycle), cycle],
+      [diagnosticIdentityKey(multi), multi],
+      [diagnosticIdentityKey(dangling), dangling],
+    ]);
+    expect(flattenActiveDiagnosticsForEdgeFire(map)).toEqual([]);
+  });
+
+  it('contradiction with 2 edges → 2 tuples sharing identityKey and blocking severity', () => {
+    const payload = contradictionPayload(NODE_A, NODE_B, [EDGE_1, EDGE_2]);
+    const key = diagnosticIdentityKey(payload);
+    const map = new Map<string, DiagnosticPayload>([[key, payload]]);
+    const tuples = flattenActiveDiagnosticsForEdgeFire(map);
+    expect(tuples).toHaveLength(2);
+    for (const t of tuples) {
+      expect(t.identityKey).toBe(key);
+      expect(t.severity).toBe('blocking');
+    }
+    expect(tuples.map((t) => t.edgeId).sort()).toEqual([EDGE_1, EDGE_2].sort());
+  });
+
+  it('self-contradicts coherency-hint → 1 advisory tuple carrying the warrant-bridge edge id', () => {
+    const payload = coherencyHintSelfContradictsPayload(EDGE_3, NODE_A);
+    const key = diagnosticIdentityKey(payload);
+    const map = new Map<string, DiagnosticPayload>([[key, payload]]);
+    const tuples = flattenActiveDiagnosticsForEdgeFire(map);
+    expect(tuples).toHaveLength(1);
+    expect(tuples[0]).toEqual({ identityKey: key, edgeId: EDGE_3, severity: 'advisory' });
+  });
+
+  it('mixed map (one contradiction + one self-contradicts) → 3 tuples with mixed severity', () => {
+    const contra = contradictionPayload(NODE_A, NODE_B, [EDGE_1, EDGE_2]);
+    const hint = coherencyHintSelfContradictsPayload(EDGE_3, NODE_A);
+    const map = new Map<string, DiagnosticPayload>([
+      [diagnosticIdentityKey(contra), contra],
+      [diagnosticIdentityKey(hint), hint],
+    ]);
+    const tuples = flattenActiveDiagnosticsForEdgeFire(map);
+    expect(tuples).toHaveLength(3);
+    const blocking = tuples.filter((t) => t.severity === 'blocking').map((t) => t.edgeId);
+    const advisory = tuples.filter((t) => t.severity === 'advisory').map((t) => t.edgeId);
+    expect(blocking.sort()).toEqual([EDGE_1, EDGE_2].sort());
+    expect(advisory).toEqual([EDGE_3]);
   });
 });

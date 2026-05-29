@@ -1,21 +1,19 @@
 // Shell-side base WS store contract.
 //
 // Refinement: tasks/refinements/shell-package/shell_substrate_extraction.md
-//   (Decisions §"WsStore extraction shape", Open question "Should the
-//   moderator's wsStore.ts extend a shell-supplied base store type?" —
-//   path (b), the recommended one)
+//   (Decisions §"WsStore extraction shape" — the original base shape.
+//   Path (b): per-app extension via `WsSessionState extends
+//   BaseWsSessionState`, deferred canonicalization until a third caller
+//   materialized.)
+// Refinement: tasks/refinements/shell-package/shell_diagnostic_highlights_extract.md
+//   (Decision §4 — the third caller materialized; `activeDiagnostics`
+//   becomes canonical on `BaseWsSessionState` and the three per-app
+//   widenings collapse.)
 //
 // The WS client (`./client.ts`) dispatches inbound envelopes into a
-// store via the `WsStoreLike` handle. Moderator-specific projections
-// (the `activeDiagnostics` map keyed by `diagnosticIdentityKey`) live
-// outside the shell — see `apps/moderator/src/ws/wsStore.ts`. The
-// moderator's slice extends `BaseWsStoreState` and layers its own
-// fields on top; the shell client only ever touches the base methods.
-//
-// `BaseWsStoreState` is the single source of truth for the surface the
-// client consumes. Adding a new method here means the client expects
-// every store to implement it; adding a method to the moderator's
-// extension does not require touching the shell.
+// store via the `WsStoreLike` handle. `BaseWsStoreState` is the single
+// source of truth for the surface the client consumes. Adding a new
+// method here means the client expects every store to implement it.
 
 import type {
   DiagnosticPayload,
@@ -32,14 +30,20 @@ export type WsConnectionStatus = 'idle' | 'connecting' | 'open' | 'reconnecting'
 
 /**
  * The per-session server-state the client maintains. `events` is the full
- * dedup'd event log received over the wire (live + replay merged). UI
- * surfaces project off it (the moderator's change-history pane reads
- * `events` verbatim; the moderator's pending-proposals pane reads
- * `pendingProposals`).
+ * dedup'd event log received over the wire (live + replay merged).
  *
- * The base shape does NOT include moderator-specific projections like
- * `activeDiagnostics`. Surfaces that need richer projections extend
- * this interface (see `apps/moderator/src/ws/wsStore.ts`).
+ * `activeDiagnostics` is the canonical per-session active-set of
+ * fired-but-not-cleared diagnostics, keyed by
+ * `diagnosticIdentityKey(payload)` (see
+ * `packages/shell/src/diagnostics/diagnostic-highlights.ts`). The
+ * `applyDiagnostic` reducer dispatches on `payload.status`: `'fired'`
+ * sets/replaces the entry; `'cleared'` deletes it. The slot
+ * canonicalized here in `shell_diagnostic_highlights_extract` (Decision
+ * §4) after the moderator + participant + audience converged on the
+ * same widening shape.
+ *
+ * `lastDiagnostic` remains the "last envelope seen" slot (including
+ * cleared envelopes) for backward compat with existing readers.
  */
 export interface BaseWsSessionState {
   /** High-water mark of `event.sequence` seen for this session. */
@@ -48,15 +52,20 @@ export interface BaseWsSessionState {
   events: Event[];
   /** Per-proposal status frames keyed by `proposalId`. */
   pendingProposals: Record<string, ProposalStatusPayload>;
+  /**
+   * Active-set of fired-but-not-cleared diagnostics keyed by the
+   * canonical `diagnosticIdentityKey(payload)`.
+   */
+  activeDiagnostics: ReadonlyMap<string, DiagnosticPayload>;
   /** Latest diagnostic snapshot envelope, if any. */
   lastDiagnostic?: DiagnosticPayload;
 }
 
 /**
  * Base WS store contract — the methods the shell's `client.ts` invokes.
- * The shell client is parameterized over this interface so the moderator
- * can supply its richer store (with `activeDiagnostics` etc.) and future
- * surfaces can supply their own.
+ * The shell client is parameterized over this interface so callers can
+ * supply their own store (with extra projections or middleware) and
+ * future surfaces can supply their own.
  *
  * `applyEvent` returns `boolean` so the client can tell whether the
  * dedupe path was hit (replay-vs-live overlap). The other writers
@@ -69,7 +78,7 @@ export interface BaseWsStoreState {
   connectionId: string | undefined;
   /** Session ids the consumer asked to follow (used as resume list). */
   subscriptions: ReadonlySet<string>;
-  /** Per-session server-state — base shape (subclasses may widen). */
+  /** Per-session server-state. */
   sessionState: Record<string, BaseWsSessionState>;
   /** Latest UNSOLICITED error envelope (no `inResponseTo`). */
   lastError: ErrorPayload | undefined;

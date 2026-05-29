@@ -3,18 +3,17 @@
 //
 // Refinement: tasks/refinements/shell-package/shell_substrate_extraction.md
 //   (Decisions §"Shell's default minimal WS store ships alongside the client")
-//
-// The future participant / audience / replay-test / root surfaces and
-// the shell's own test suite want a baseline store without re-deriving
-// the moderator's store-shape conventions from scratch. This factory
-// returns a fresh Zustand store satisfying the `BaseWsStoreState`
-// contract — no projection-specific extensions (no `activeDiagnostics`
-// map, no `diagnosticIdentityKey` import). Consumers that want richer
-// projections build their own store (see `apps/moderator/src/ws/wsStore.ts`)
-// and pass it to `<WsClientProvider store={...}>`.
+// Refinement: tasks/refinements/shell-package/shell_diagnostic_highlights_extract.md
+//   (Decision §3 — ship `createDefaultWsStoreInitializer()` alongside
+//   `createDefaultWsStore()` so the moderator + participant can wrap
+//   the bare state-creator with their per-app devtools middleware while
+//   the audience continues to use the wrapped one-line factory.
+//   Decision §4 — `activeDiagnostics` becomes canonical on
+//   `BaseWsSessionState`; the reducer dispatches on `payload.status`.)
 
-import { create, type UseBoundStore, type StoreApi } from 'zustand';
+import { create, type UseBoundStore, type StoreApi, type StateCreator } from 'zustand';
 
+import { diagnosticIdentityKey } from '../diagnostics/diagnostic-highlights.js';
 import type { BaseWsSessionState, BaseWsStoreState } from './store-contract.js';
 
 function makeInitialSessionState(): BaseWsSessionState {
@@ -22,6 +21,7 @@ function makeInitialSessionState(): BaseWsSessionState {
     lastAppliedSequence: 0,
     events: [],
     pendingProposals: {},
+    activeDiagnostics: new Map(),
   };
 }
 
@@ -32,12 +32,14 @@ function ensureSession(state: BaseWsStoreState, sessionId: string): BaseWsSessio
 }
 
 /**
- * Build a fresh Zustand store conforming to `BaseWsStoreState`. The
- * returned hook is a stateful singleton — repeated `createDefaultWsStore`
- * calls return distinct stores (useful for tests that want isolation).
+ * The bare Zustand `StateCreator<BaseWsStoreState>` for the shell's
+ * default WS store. Callers that want to layer their own middleware
+ * (e.g. `withDevtools`) wrap this initializer before passing it to
+ * `create<BaseWsStoreState>()(...)`. Callers that just want a wrapped
+ * store use `createDefaultWsStore()` below.
  */
-export function createDefaultWsStore(): UseBoundStore<StoreApi<BaseWsStoreState>> {
-  return create<BaseWsStoreState>()((set) => ({
+export function createDefaultWsStoreInitializer(): StateCreator<BaseWsStoreState> {
+  return (set) => ({
     connectionStatus: 'idle',
     connectionId: undefined,
     subscriptions: new Set<string>(),
@@ -119,9 +121,22 @@ export function createDefaultWsStore(): UseBoundStore<StoreApi<BaseWsStoreState>
     applyDiagnostic: (payload) =>
       set((state) => {
         const session = ensureSession(state, payload.sessionId);
+        // `fired` adds/replaces under the canonical identity key;
+        // `cleared` removes (no-op if absent — the server may emit a
+        // `cleared` for a diagnostic this client never saw `fired`
+        // for). `lastDiagnostic` updates unconditionally — its contract
+        // is "last envelope seen", not "last fired".
+        const key = diagnosticIdentityKey(payload);
+        const nextActive = new Map(session.activeDiagnostics);
+        if (payload.status === 'fired') {
+          nextActive.set(key, payload);
+        } else {
+          nextActive.delete(key);
+        }
         const nextSession: BaseWsSessionState = {
           ...session,
           lastDiagnostic: payload,
+          activeDiagnostics: nextActive,
         };
         return {
           sessionState: { ...state.sessionState, [payload.sessionId]: nextSession },
@@ -138,5 +153,16 @@ export function createDefaultWsStore(): UseBoundStore<StoreApi<BaseWsStoreState>
         sessionState: {},
         lastError: undefined,
       }),
-  }));
+  });
+}
+
+/**
+ * Build a fresh Zustand store conforming to `BaseWsStoreState`. The
+ * returned hook is a stateful singleton — repeated `createDefaultWsStore`
+ * calls return distinct stores (useful for tests that want isolation).
+ *
+ * Equivalent to `create<BaseWsStoreState>()(createDefaultWsStoreInitializer())`.
+ */
+export function createDefaultWsStore(): UseBoundStore<StoreApi<BaseWsStoreState>> {
+  return create<BaseWsStoreState>()(createDefaultWsStoreInitializer());
 }

@@ -50,6 +50,7 @@ export {
 // ─── ws ──────────────────────────────────────────────────────────────────
 export {
   createDefaultWsStore,
+  createDefaultWsStoreInitializer,
   createWsClient,
   useWsClient,
   WsClientProvider,
@@ -143,5 +144,34 @@ export {
   projectAnnotations,
   type Annotation,
 } from './annotations/index.js';
+
+// ─── diagnostics ─────────────────────────────────────────────────────────
+export {
+  affectedEntities,
+  diagnosticIdentityKey,
+  diagnosticSeverityFor,
+  edgeHasDiagnostic,
+  EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+  flattenActiveDiagnosticsForEdgeFire,
+  flattenActiveDiagnosticsForFire,
+  nodeHasDiagnostic,
+  projectDiagnosticHighlights,
+  type DiagnosticEdgeFireTuple,
+  type DiagnosticFireTuple,
+  type DiagnosticHighlight,
+  type DiagnosticHighlightIndex,
+  type DiagnosticHighlightKind,
+  type DiagnosticHighlightSeverity,
+  type WireCoherencyHint,
+  type WireCoherencyHintDiagnostic,
+  type WireContradictionDiagnostic,
+  type WireCycleDiagnostic,
+  type WireDanglingClaimDiagnostic,
+  type WireDiagnostic,
+  type WireIncompleteWarrantMissingBridgesFromHint,
+  type WireIncompleteWarrantMissingBridgesToHint,
+  type WireMultiWarrantDiagnostic,
+  type WireSelfContradictsHint,
+} from './diagnostics/index.js';
 
 export const SHELL_PACKAGE_VERSION = '0.1.0' as const;

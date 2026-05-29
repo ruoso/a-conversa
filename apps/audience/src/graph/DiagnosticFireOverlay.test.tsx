@@ -15,11 +15,15 @@ import { createRef, useEffect, useState, type ReactElement } from 'react';
 import cytoscape, { type Core } from 'cytoscape';
 import i18next from 'i18next';
 
-import { I18nProvider, createI18nInstance, type I18nInstance } from '@a-conversa/shell';
+import {
+  I18nProvider,
+  createI18nInstance,
+  diagnosticIdentityKey,
+  type I18nInstance,
+} from '@a-conversa/shell';
 import type { DiagnosticPayload } from '@a-conversa/shared-types';
 
 import { AudienceDiagnosticFireOverlay } from './DiagnosticFireOverlay';
-import { diagnosticIdentityKey } from './diagnosticHighlights';
 import { installCytoscapeTestEnv, type CytoscapeTestEnvRestoreHandle } from './cytoscapeTestEnv';
 import { audienceWsStore } from '../ws/wsStore';
 

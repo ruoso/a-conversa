@@ -176,6 +176,7 @@ task shell_package "Shell package (@aconversa/shell)" {
   task shell_diagnostic_highlights_extract "Lift diagnosticHighlights.ts + activeDiagnostics WS-store slot into @a-conversa/shell (third-caller trigger: audience)" {
     effort 1d
     allocate team
+    complete 100
     depends audience.aud_animations.aud_diagnostic_fire_animation
     note -8<-
       Lift `diagnosticHighlights.ts` (diagnosticIdentityKey, affectedEntities, wire-type interfaces)
