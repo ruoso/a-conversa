@@ -113,3 +113,77 @@ describe('apps/audience/src/index.css', () => {
     );
   });
 });
+
+// Per tasks/refinements/audience/aud_animation_pacing.md Decision §6 —
+// the cadence variables (--aud-anim-easing / --aud-anim-commit-ms /
+// --aud-anim-halo-ms) are the audience animation family's single
+// pacing dial. Two smoke-pin layers guard the contract end-to-end:
+//   1. Property-definition pins — each variable is declared in :root
+//      with its tuned value.
+//   2. Utility-consumption pins — each .aud-* utility's `animation:`
+//      shorthand references the correct variable (a future refactor
+//      that hardcodes a duration breaks this).
+// jsdom does not run CSS animations; the runtime behaviour is
+// unchanged by the lift (the var(...) values resolve to the same
+// durations they shipped before). String-grep against the disk-read
+// CSS file is the right seam.
+describe('aud_animation_pacing — cadence variables', () => {
+  it(':root defines --aud-anim-easing as cubic-bezier(0.16, 1, 0.3, 1)', async () => {
+    const contents = await readFile(INDEX_CSS_PATH, 'utf-8');
+    expect(contents).toMatch(
+      /--aud-anim-easing\s*:\s*cubic-bezier\(\s*0\.16\s*,\s*1\s*,\s*0\.3\s*,\s*1\s*\)/,
+    );
+  });
+
+  it(':root defines --aud-anim-commit-ms as 350ms', async () => {
+    const contents = await readFile(INDEX_CSS_PATH, 'utf-8');
+    expect(contents).toMatch(/--aud-anim-commit-ms\s*:\s*350ms/);
+  });
+
+  it(':root defines --aud-anim-halo-ms as 450ms', async () => {
+    const contents = await readFile(INDEX_CSS_PATH, 'utf-8');
+    expect(contents).toMatch(/--aud-anim-halo-ms\s*:\s*450ms/);
+  });
+
+  it('.aud-axiom-mark-land consumes var(--aud-anim-commit-ms) and var(--aud-anim-easing)', async () => {
+    const contents = await readFile(INDEX_CSS_PATH, 'utf-8');
+    expect(contents).toMatch(
+      /\.aud-axiom-mark-land\s*\{\s*animation\s*:\s*aud-axiom-mark-land\s+var\(--aud-anim-commit-ms\)\s+var\(--aud-anim-easing\)/,
+    );
+  });
+
+  it('.aud-pill-agreed consumes var(--aud-anim-commit-ms) and var(--aud-anim-easing)', async () => {
+    const contents = await readFile(INDEX_CSS_PATH, 'utf-8');
+    expect(contents).toMatch(
+      /animation\s*:\s*aud-pill-agreed\s+var\(--aud-anim-commit-ms\)\s+var\(--aud-anim-easing\)/,
+    );
+  });
+
+  it('.aud-node-appear consumes var(--aud-anim-halo-ms) and var(--aud-anim-easing)', async () => {
+    const contents = await readFile(INDEX_CSS_PATH, 'utf-8');
+    expect(contents).toMatch(
+      /\.aud-node-appear\s*\{\s*animation\s*:\s*aud-node-appear\s+var\(--aud-anim-halo-ms\)\s+var\(--aud-anim-easing\)/,
+    );
+  });
+
+  it('.aud-withdrawal consumes var(--aud-anim-halo-ms) and var(--aud-anim-easing)', async () => {
+    const contents = await readFile(INDEX_CSS_PATH, 'utf-8');
+    expect(contents).toMatch(
+      /\.aud-withdrawal\s*\{\s*animation\s*:\s*aud-withdrawal\s+var\(--aud-anim-halo-ms\)\s+var\(--aud-anim-easing\)/,
+    );
+  });
+
+  it('.aud-diagnostic-fire-blocking consumes var(--aud-anim-halo-ms) and var(--aud-anim-easing)', async () => {
+    const contents = await readFile(INDEX_CSS_PATH, 'utf-8');
+    expect(contents).toMatch(
+      /\.aud-diagnostic-fire-blocking\s*\{\s*animation\s*:\s*aud-diagnostic-fire-blocking\s+var\(--aud-anim-halo-ms\)\s+var\(--aud-anim-easing\)/,
+    );
+  });
+
+  it('.aud-diagnostic-fire-advisory consumes var(--aud-anim-halo-ms) and var(--aud-anim-easing)', async () => {
+    const contents = await readFile(INDEX_CSS_PATH, 'utf-8');
+    expect(contents).toMatch(
+      /\.aud-diagnostic-fire-advisory\s*\{\s*animation\s*:\s*aud-diagnostic-fire-advisory\s+var\(--aud-anim-halo-ms\)\s+var\(--aud-anim-easing\)/,
+    );
+  });
+});

@@ -384,6 +384,7 @@ task audience "Audience and broadcast" {
     task aud_animation_pacing "Pacing tuning so animations are readable on video" {
       effort 1d
       allocate team
+      complete 100
       depends !aud_node_appear_animation, !aud_proposed_to_agreed_animation, !aud_axiom_mark_animation, !aud_withdrawal_animation, !aud_diagnostic_fire_animation
     }
     task aud_dom_overlay_extraction "Extract shared KeyedCytoscapeNodeOverlay primitive from the four DOM-overlay siblings" {

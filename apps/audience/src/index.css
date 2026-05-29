@@ -67,6 +67,61 @@ body {
   background-color: transparent;
 }
 
+/* `aud_animation_pacing` — audience animation cadence model.
+ *
+ * The audience surface's animation family is methodologically tiered:
+ *
+ *   commit-moment tier (--aud-anim-commit-ms = 350 ms)
+ *     • aud-axiom-mark-land — per-participant axiom-mark badge arrival
+ *     • aud-pill-agreed     — per-facet pill transition to 'agreed'
+ *     Semantics: a participant-side declaration just landed. Fast,
+ *     decisive, "lands and sticks". Short enough to keep the
+ *     broadcast feeling responsive; long enough (~10 frames at 30 fps
+ *     OBS, well above the ~100 ms perceptual JND for motion) for the
+ *     eye to lock on.
+ *
+ *   halo tier (--aud-anim-halo-ms = 450 ms)
+ *     • aud-node-appear            — Cytoscape node arrival halo
+ *     • aud-withdrawal             — rollupStatus → 'disputed' halo
+ *     • aud-diagnostic-fire-blocking, ...-advisory — structural diagnostic halos
+ *     Semantics: the graph state registered a change at this entity.
+ *     Halo geometry (96 px square radial gradient) on a dense canvas
+ *     benefits from the slightly slower entrance — gives peripheral
+ *     vision time to catch the cue (~14 frames at 30 fps OBS).
+ *
+ *   shared easing (--aud-anim-easing = cubic-bezier(0.16, 1, 0.3, 1))
+ *     Material Design "emphasized decelerate": fast initial motion
+ *     settling gently into the resting state. Reads as "arrives and
+ *     settles" for both tiers.
+ *
+ * The 100 ms inter-tier delta is the perceptual differentiator (~3
+ * frames at 30 fps). Short enough that simultaneous arrivals don't
+ * feel temporally fractured; long enough that a halo and a
+ * commit-moment side-by-side read as distinct event kinds rather
+ * than as one synchronized burst.
+ *
+ * Refinement: tasks/refinements/audience/aud_animation_pacing.md
+ *   Decision §1 — CSS custom properties (NOT a JS constants module,
+ *   NOT Tailwind v4 @theme tokens) are the cadence dial. The
+ *   keyframe rules below consume them via animation-duration:
+ *   var(--aud-anim-...).
+ *   Decision §2 — the 350 ms / 450 ms split is the methodologically
+ *   tuned output of the predecessor refinements; this leaf's audit
+ *   confirms it against the 30 fps OBS frame budget with margin.
+ *   Decision §3 — fill-modes (both / forwards) stay inline on each
+ *   utility — they are per-animation expression of intent, not
+ *   pacing.
+ *   Decision §5 — no stagger between simultaneous halos today
+ *   (deferred to a speculative future task).
+ *   Decision §7 — future animation siblings (aud_decomposition_*
+ *   etc) MUST consume the variables rather than ship inline
+ *   durations. */
+:root {
+  --aud-anim-easing: cubic-bezier(0.16, 1, 0.3, 1);
+  --aud-anim-commit-ms: 350ms;
+  --aud-anim-halo-ms: 450ms;
+}
+
 /* `aud_axiom_mark_animation` — one-shot landing animation for
  * per-participant axiom-mark badges as they arrive mid-broadcast.
  * Refinement: tasks/refinements/audience/aud_axiom_mark_animation.md
@@ -95,7 +150,7 @@ body {
 }
 
 .aud-axiom-mark-land {
-  animation: aud-axiom-mark-land 350ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: aud-axiom-mark-land var(--aud-anim-commit-ms) var(--aud-anim-easing) both;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -156,7 +211,7 @@ body {
 }
 
 .aud-node-appear {
-  animation: aud-node-appear 450ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: aud-node-appear var(--aud-anim-halo-ms) var(--aud-anim-easing) forwards;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -205,7 +260,7 @@ body {
 
 .aud-pill-agreed {
   display: inline-block;
-  animation: aud-pill-agreed 350ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: aud-pill-agreed var(--aud-anim-commit-ms) var(--aud-anim-easing) forwards;
   border-radius: 9999px;
 }
 
@@ -282,7 +337,7 @@ body {
 }
 
 .aud-withdrawal {
-  animation: aud-withdrawal 450ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: aud-withdrawal var(--aud-anim-halo-ms) var(--aud-anim-easing) forwards;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -376,10 +431,10 @@ body {
 }
 
 .aud-diagnostic-fire-blocking {
-  animation: aud-diagnostic-fire-blocking 450ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: aud-diagnostic-fire-blocking var(--aud-anim-halo-ms) var(--aud-anim-easing) forwards;
 }
 .aud-diagnostic-fire-advisory {
-  animation: aud-diagnostic-fire-advisory 450ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: aud-diagnostic-fire-advisory var(--aud-anim-halo-ms) var(--aud-anim-easing) forwards;
 }
 
 @media (prefers-reduced-motion: reduce) {
