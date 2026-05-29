@@ -74,6 +74,7 @@ import type { DbPool } from '../../db.js';
 import { ApiError } from '../../errors.js';
 import { projectFromLog } from '../../projection/replay.js';
 import { canSeeSession } from '../../sessions/visibility.js';
+import { emitPendingProposalStatusFrames } from '../broadcast/proposal-status.js';
 import type { WsConnectionContext } from '../connection.js';
 import type { WsDispatcher } from '../dispatcher.js';
 import { serializeWsEnvelope } from '../envelope.js';
@@ -560,6 +561,13 @@ export function buildCatchUpHandler(
         },
       };
       connection.socket.send(serializeWsEnvelope(snapshot));
+      // Per `migrate_off_compute_facet_statuses_onto_proposal_status_broadcast`
+      // D7 — seed one `proposal-status` envelope per (pending proposal ×
+      // facet target) on the requesting connection AFTER the snapshot
+      // send, so the receiver's per-`(entityKind, entityId, facet)` map
+      // populates against the snapshot-aligned projection state. Mirrors
+      // the snapshot handler's call site exactly.
+      emitPendingProposalStatusFrames(connection, projection, sessionId, opts.log);
       sendCaughtUpAck(connection, envelope.id, sessionId, projection.lastAppliedSequence, 0, true);
       return;
     }

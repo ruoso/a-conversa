@@ -81,6 +81,7 @@ import type {
   PerParticipantFacetState,
 } from '../../projection/types.js';
 import { canSeeSession } from '../../sessions/visibility.js';
+import { emitPendingProposalStatusFrames } from '../broadcast/proposal-status.js';
 import type { WsConnectionContext } from '../connection.js';
 import type { WsDispatcher } from '../dispatcher.js';
 import { serializeWsEnvelope } from '../envelope.js';
@@ -193,6 +194,15 @@ export function buildSnapshotHandler(
       },
     };
     connection.socket.send(serializeWsEnvelope(response));
+
+    // Seed-emit per `migrate_off_compute_facet_statuses_onto_proposal_status_broadcast`
+    // D7 — one `proposal-status` envelope per `(pending proposal × facet
+    // target)`, sent on this connection only AFTER `snapshot-state` so
+    // the receiver's per-entity facet-status map populates against the
+    // snapshot-aligned projection state. Other clients in the session
+    // already have populated maps from the live broadcasts that fired
+    // when each pending proposal was originally appended.
+    emitPendingProposalStatusFrames(connection, projection, sessionId, opts.log);
   };
 }
 

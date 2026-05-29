@@ -522,6 +522,56 @@ describe('ws_snapshot_message — handler integration', () => {
       expect(Array.isArray(pending)).toBe(true);
       expect(pending.length).toBe(1);
       expect(pending[0]?.proposalEventId).toBe(PROPOSAL_EVENT_ID);
+
+      // Per `migrate_off_compute_facet_statuses_onto_proposal_status_broadcast`
+      // D7 — the snapshot path follows `snapshot-state` with one
+      // `proposal-status` seed envelope per `(pending proposal × facet
+      // target)`. For this fixture (one pending classify-node on
+      // NODE_ID with one facet target), exactly one seed envelope
+      // arrives on the same connection.
+      const seed = JSON.parse(await next()) as {
+        type?: unknown;
+        payload?: {
+          sessionId?: unknown;
+          proposalId?: unknown;
+          sequence?: unknown;
+          perFacetStatus?: Record<string, unknown>;
+          entityKind?: unknown;
+          entityId?: unknown;
+        };
+      };
+      expect(seed.type).toBe('proposal-status');
+      expect(seed.payload?.sessionId).toBe(SEEDED_SESSION_ID);
+      expect(seed.payload?.proposalId).toBe(PROPOSAL_EVENT_ID);
+      expect(seed.payload?.entityKind).toBe('node');
+      expect(seed.payload?.entityId).toBe(NODE_ID);
+      expect(seed.payload?.perFacetStatus).toMatchObject({ classification: 'proposed' });
+    } finally {
+      ws.terminate();
+    }
+  });
+
+  it('subscribed + visible + empty session → no `proposal-status` seed envelopes follow the snapshot', async () => {
+    const cookie = await fixtureCookieHeader();
+    const { ws, next } = await openWsClient(app, cookie);
+    try {
+      await next(); // hello
+
+      ws.send(subscribeFrame(SUB_MSG_ID, EMPTY_SESSION_ID));
+      const subAck = JSON.parse(await next()) as { type?: unknown };
+      expect(subAck.type).toBe('subscribed');
+
+      ws.send(snapshotFrame(SNAP_MSG_ID, EMPTY_SESSION_ID));
+      const response = JSON.parse(await next()) as { type?: unknown };
+      expect(response.type).toBe('snapshot-state');
+
+      // No pending proposals → no seed envelopes. Race a short
+      // timeout against any further frame; pass if the timeout wins.
+      const followUp: string = await Promise.race([
+        next(),
+        new Promise<string>((resolve) => setTimeout(() => resolve('__timeout__'), 50)),
+      ]);
+      expect(followUp).toBe('__timeout__');
     } finally {
       ws.terminate();
     }
@@ -549,13 +599,21 @@ describe('ws_snapshot_message — handler integration', () => {
       const response = JSON.parse(await next()) as { type?: unknown };
       expect(response.type).toBe('snapshot-state');
 
-      // A spurious frame would race here. Race a short timeout
-      // against any further frame; pass if the timeout wins.
-      const fourthFrame: string = await Promise.race([
+      // Per `migrate_off_compute_facet_statuses_onto_proposal_status_broadcast`
+      // D7 — `snapshot-state` is followed by one `proposal-status` seed
+      // envelope per `(pending proposal × facet target)` on the same
+      // connection. Drain the one seed envelope for SEEDED_SESSION_ID's
+      // pending classify-node, THEN race a short timeout against any
+      // further frame so the "no spurious broadcast" invariant still
+      // holds.
+      const seed = JSON.parse(await next()) as { type?: unknown };
+      expect(seed.type).toBe('proposal-status');
+
+      const fifthFrame: string = await Promise.race([
         next(),
         new Promise<string>((resolve) => setTimeout(() => resolve('__timeout__'), 50)),
       ]);
-      expect(fourthFrame).toBe('__timeout__');
+      expect(fifthFrame).toBe('__timeout__');
     } finally {
       ws.terminate();
     }

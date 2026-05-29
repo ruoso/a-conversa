@@ -109,6 +109,7 @@ export {
 
 // ─── facet-status ────────────────────────────────────────────────────────
 export {
+  buildFacetStatusIndexFromBroadcast,
   cardRollupStatus,
   computeFacetStatuses,
   EMPTY_FACET_STATUSES,

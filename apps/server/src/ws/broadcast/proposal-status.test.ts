@@ -378,6 +378,11 @@ describe('buildProposalStatusBroadcastListener — derive + fan-out', () => {
     expect(env.payload.proposalId).toBe(PROPOSAL_1);
     expect(env.payload.sequence).toBe(6);
     expect(env.payload.perFacetStatus).toEqual({ substance: 'proposed' });
+    // Per `migrate_off_compute_facet_statuses_onto_proposal_status_broadcast`
+    // D1 — every envelope carries the explicit `entityKind` + `entityId`
+    // of its target.
+    expect(env.payload.entityKind).toBe('node');
+    expect(env.payload.entityId).toBe(NODE_1);
   });
 
   it('triggers a broadcast for a `vote` event reflecting the current state (one agree → proposed)', async () => {
@@ -412,6 +417,8 @@ describe('buildProposalStatusBroadcastListener — derive + fan-out', () => {
     // `proposed` per `deriveFacetStatus`'s rule 7.
     expect(env.payload.perFacetStatus).toEqual({ substance: 'proposed' });
     expect(env.payload.sequence).toBe(7);
+    expect(env.payload.entityKind).toBe('node');
+    expect(env.payload.entityId).toBe(NODE_1);
   });
 
   it('triggers a broadcast for a `commit` event with status `committed`', async () => {
@@ -446,6 +453,8 @@ describe('buildProposalStatusBroadcastListener — derive + fan-out', () => {
     if (env.type !== 'proposal-status') throw new Error('narrowing');
     expect(env.payload.perFacetStatus).toEqual({ substance: 'committed' });
     expect(env.payload.sequence).toBe(9);
+    expect(env.payload.entityKind).toBe('node');
+    expect(env.payload.entityId).toBe(NODE_1);
   });
 
   it('triggers a broadcast for a `meta-disagreement-marked` event with status `meta-disagreement`', async () => {
@@ -484,6 +493,8 @@ describe('buildProposalStatusBroadcastListener — derive + fan-out', () => {
     if (env.type !== 'proposal-status') throw new Error('narrowing');
     expect(env.payload.perFacetStatus).toEqual({ substance: 'meta-disagreement' });
     expect(env.payload.sequence).toBe(8);
+    expect(env.payload.entityKind).toBe('node');
+    expect(env.payload.entityId).toBe(NODE_1);
   });
 });
 
@@ -874,7 +885,17 @@ describe('buildProposalStatusBroadcastListener — per-component fan-out for dec
       expect(env.payload.proposalId).toBe(DECOMPOSE_PROPOSAL);
       expect(env.payload.sequence).toBe(16);
       expect(env.payload.perFacetStatus).toEqual({ classification: 'proposed' });
+      expect(env.payload.entityKind).toBe('node');
     }
+
+    // Per `migrate_off_compute_facet_statuses_onto_proposal_status_broadcast`
+    // D1 — the per-envelope `entityId` disambiguates the components.
+    // The two envelopes carry distinct entity ids (the component node
+    // ids), in iteration-order matching the proposal's `components`.
+    const entityIds = captured
+      .map((env) => (env.type === 'proposal-status' ? env.payload.entityId : undefined))
+      .filter((id): id is string => typeof id === 'string');
+    expect(new Set(entityIds)).toEqual(new Set([COMPONENT_1, COMPONENT_2]));
 
     // The two envelopes carry distinct server-minted UUIDs — one per
     // envelope per the existing fan-out contract.
@@ -919,7 +940,13 @@ describe('buildProposalStatusBroadcastListener — per-component fan-out for dec
       expect(env.payload.proposalId).toBe(INTERPRETIVE_PROPOSAL);
       expect(env.payload.sequence).toBe(18);
       expect(env.payload.perFacetStatus).toEqual({ classification: 'proposed' });
+      expect(env.payload.entityKind).toBe('node');
     }
+
+    const entityIds = captured
+      .map((env) => (env.type === 'proposal-status' ? env.payload.entityId : undefined))
+      .filter((id): id is string => typeof id === 'string');
+    expect(new Set(entityIds)).toEqual(new Set([READING_1, READING_2, READING_3]));
 
     const ids = captured.map((env) => env.id);
     expect(new Set(ids).size).toBe(3);

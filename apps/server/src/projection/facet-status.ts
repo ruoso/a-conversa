@@ -151,7 +151,28 @@ export function deriveFacetStatusFromState(
   // Rule 3: filter perParticipant + withdrawals by current
   // participants. Left participants' marks are historical — methodology
   // says "current participants" must agree.
-  const currentIds = new Set(projection.currentParticipants().map((p) => p.userId));
+  //
+  // The moderator is structurally excluded from the unanimity walk per
+  // `docs/methodology.md` § "The commit step": commit IS the moderator's
+  // act of agreement, so a moderator-counted Rule 7 would never fire
+  // `'agreed'` until the moderator personally voted, blocking the
+  // moderator's own commit affordance from ever surfacing. This mirrors
+  // the same filter on the client mirror at
+  // `packages/shell/src/facet-status/facet-status.ts:288-294` and the
+  // commit handler's per-participant walk at
+  // `apps/server/src/methodology/handlers/commit.ts:224` — three places
+  // that stay in sync by construction. (Without this filter, the
+  // broadcast emits `'proposed'` while the client mirror reports
+  // `'agreed'`, which the moderator UI's broadcast-wins merge masks as
+  // `'proposed'` — the bug surfaced by
+  // `migrate_off_compute_facet_statuses_onto_proposal_status_broadcast`
+  // Phase 2.3 of `methodology-full-flow.spec.ts`.)
+  const currentIds = new Set(
+    projection
+      .currentParticipants()
+      .filter((p) => p.role !== 'moderator')
+      .map((p) => p.userId),
+  );
   const currentVotes: string[] = [];
   for (const [participantId, record] of facetState.perParticipant) {
     if (currentIds.has(participantId)) {

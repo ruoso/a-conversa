@@ -317,6 +317,7 @@ task moderator_ui "Moderator UI" {
     task migrate_off_compute_facet_statuses_onto_proposal_status_broadcast "Migrate moderator GraphCanvasPane + PendingProposalsPane off client-side computeFacetStatuses mirror onto server-broadcast-derived facet-status map; remove decompose / interpretive-split arm in apps/moderator/src/graph/facetStatus.ts" {
       effort 0.5d
       allocate team
+      complete 100
       depends !mod_decompose_propose_time_canvas_visibility, backend.websocket_protocol.facet_status_server_decompose_component_facets
       note -8<-
         Source of debt: tasks/refinements/backend/facet_status_server_decompose_component_facets.md D5 (commit landing facet_status_server_decompose_component_facets) — the moderator surface today consumes `computeFacetStatuses(events)` directly (apps/moderator/src/graph/GraphCanvasPane.tsx + apps/moderator/src/layout/PendingProposalsPane.tsx), running the full client-side derivation over the raw WS event stream. The server-side `proposal-status` broadcast now (post-facet_status_server_decompose_component_facets) emits per-component classification envelopes for pending decompose / interpretive-split, mirroring the client-side arm at apps/moderator/src/graph/facetStatus.ts L239-262. The moderator-side mirror is retained in the closing commit per D5 because removing the per-component arm without first migrating the moderator off `computeFacetStatuses` would break the moderator's canvas styling for pending decompose / interpretive-split.
@@ -324,6 +325,15 @@ task moderator_ui "Moderator UI" {
         Scope: (1) subscribe the moderator's WS store to `proposal-status` envelopes; (2) build a per-(entity, facet) status map keyed off the broadcast (with reconnect / catch-up handled via projection-rebuild seed on initial connect, since `proposal-status` envelopes do not replay automatically); (3) re-wire `GraphCanvasPane`, `PendingProposalsPane`, and `ProposalFacetBreakdown` to read from the broadcast-derived map rather than `computeFacetStatuses(events)`; (4) once the migration is verified end-to-end (including the moderator-proposed-entity-canvas-visibility Playwright spec), remove the decompose / interpretive-split arm at apps/moderator/src/graph/facetStatus.ts L239-262 (the rest of the mirror may stay if it has other consumers, or be removed wholesale if not). Optional prerequisite: `data_and_methodology.methodology_engine.replay_decompose_commit_marks_component_classification_committed` if the migration needs the `'committed'` post-commit status from the broadcast to match what the local mirror produces today.
 
         Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit landing facet_status_server_decompose_component_facets).
+      ->8-
+    }
+    task mod_pw_reconnect_seed_visible_styling "Add window.__testHooks.killWebSocket() hook to shell WsClient + Playwright reconnect-mid-decompose sub-step for broadcast-seed regression cover" {
+      effort 1d
+      allocate team
+      depends !migrate_off_compute_facet_statuses_onto_proposal_status_broadcast
+      note -8<-
+        Source of debt: tasks/refinements/moderator-ui/migrate_off_compute_facet_statuses_onto_proposal_status_broadcast.md Status block — the reconnect-mid-decompose Playwright sub-step (Acceptance Criteria §Playwright) was deferred because window.__testHooks.killWebSocket() does not exist in the shell WsClient harness. Wiring the hook is non-trivial scope beyond the migration task. The seed contract is pinned at the handler-integration layer (catch-up.test.ts case-2 + snapshot.test.ts); this task adds the harness hook and lifts the e2e reconnect assertion.
+        Surfaced via tech-debt registration policy in tasks/refinements/README.md (commit landing migrate_off_compute_facet_statuses_onto_proposal_status_broadcast).
       ->8-
     }
     task mod_set_edge_substance_endpoint_carriage "Extend setEdgeSubstanceProposalSchema with source_node_id / target_node_id / role for connecting-edge propose-time emission" {

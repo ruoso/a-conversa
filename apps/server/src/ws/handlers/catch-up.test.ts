@@ -480,6 +480,7 @@ async function readUntilType(
 
 interface FrameCollection {
   eventApplied: Array<Record<string, unknown>>;
+  proposalStatus: Array<Record<string, unknown>>;
   caughtUp?: Record<string, unknown>;
   snapshotState?: Record<string, unknown>;
 }
@@ -487,14 +488,16 @@ interface FrameCollection {
 /**
  * Drain frames from `next` until a `caught-up` ack arrives. Returns
  * the captured `event-applied` envelopes (in order) + the
- * `snapshot-state` envelope (if present) + the final `caught-up`
- * ack.
+ * `snapshot-state` envelope (if present) + any seed
+ * `proposal-status` envelopes (per `migrate_off_compute_facet_statuses_onto_proposal_status_broadcast`
+ * D7 — case-2 emits one per pending facet target after the
+ * `snapshot-state` send) + the final `caught-up` ack.
  */
 async function drainUntilCaughtUp(
   next: () => Promise<string>,
   maxFrames = 50,
 ): Promise<FrameCollection> {
-  const result: FrameCollection = { eventApplied: [] };
+  const result: FrameCollection = { eventApplied: [], proposalStatus: [] };
   for (let i = 0; i < maxFrames; i++) {
     const raw = await next();
     const parsed = JSON.parse(raw) as Record<string, unknown>;
@@ -502,6 +505,8 @@ async function drainUntilCaughtUp(
       result.eventApplied.push(parsed);
     } else if (parsed.type === 'snapshot-state') {
       result.snapshotState = parsed;
+    } else if (parsed.type === 'proposal-status') {
+      result.proposalStatus.push(parsed);
     } else if (parsed.type === 'caught-up') {
       result.caughtUp = parsed;
       return result;
@@ -833,6 +838,25 @@ describe('ws_reconnection_handling — handler integration', () => {
       expect(snapPayload.sessionId).toBe(SEEDED_SESSION_ID);
       expect(snapPayload.sequence).toBe(5);
       expect(snapPayload.projection?.lastAppliedSequence).toBe(5);
+
+      // Per `migrate_off_compute_facet_statuses_onto_proposal_status_broadcast`
+      // D7 — case-2 follows `snapshot-state` with one `proposal-status`
+      // seed envelope per `(pending proposal × facet target)` on the
+      // requesting connection. The seeded fixture has one pending
+      // classify-node, so exactly one seed envelope arrives, carrying
+      // the new explicit `entityKind` + `entityId` fields per D1.
+      expect(drained.proposalStatus.length).toBe(1);
+      const seedPayload = drained.proposalStatus[0]!.payload as {
+        sessionId?: unknown;
+        proposalId?: unknown;
+        entityKind?: unknown;
+        entityId?: unknown;
+        perFacetStatus?: Record<string, unknown>;
+      };
+      expect(seedPayload.sessionId).toBe(SEEDED_SESSION_ID);
+      expect(seedPayload.proposalId).toBe(PROPOSAL_EVENT_ID);
+      expect(seedPayload.entityKind).toBe('node');
+      expect(seedPayload.perFacetStatus).toMatchObject({ classification: 'proposed' });
 
       // Then caught-up with fromSnapshot:true, eventCount:0.
       expect(drained.caughtUp).toBeDefined();

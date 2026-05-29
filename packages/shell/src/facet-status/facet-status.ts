@@ -381,67 +381,15 @@ export function computeFacetStatuses(events: readonly Event[]): FacetStatusIndex
         state.candidateProposalEventId = event.id;
         state.perParticipant.clear();
       }
-      // Per `mod_decompose_propose_time_canvas_visibility`: a pending
-      // decompose / interpretive-split proposal introduces N component
-      // nodes (via the propose-time fan-out at
-      // `apps/server/src/methodology/handlers/propose.ts`); each
-      // component's classification facet is `proposed` while the
-      // decompose / interpretive-split proposal is pending. (The
-      // parent's classification facet is unaffected — the parent is
-      // not the target of these proposals.) Without this branch the
-      // component nodes would render with NO `data-facet-status`
-      // attribute, violating the methodology contract that proposed
-      // entities surface with `data-facet-status="proposed"` per
-      // ADR 0027 + `mod_proposed_entity_canvas_visibility` Acceptance
-      // criteria.
-      //
-      // This is purely a status-derivation rule (no per-component
-      // proposal envelope is emitted at the wire layer — the single
-      // `decompose` envelope carries the components inline). On
-      // commit / withdraw of the decompose proposal, the component
-      // nodes either persist (commit — the components are now real)
-      // or get retracted (withdraw — `entity-removed(node)` per
-      // component lands per `entitiesToRetractForWithdraw` in
-      // `apps/server/src/ws/handlers/withdraw.ts`); either way the
-      // facet status update is consistent.
-      //
-      // **Server-side symmetric arm.** The server-side
-      // `facetTargetsForProposal` in
-      // `apps/server/src/ws/broadcast/proposal-status.ts` is the
-      // source of truth for non-moderator surfaces consuming the
-      // `proposal-status` broadcast directly — it walks the same
-      // `components` / `readings` arrays and emits one `proposal-
-      // status` envelope per component. See refinement
-      // `tasks/refinements/backend/facet_status_server_decompose_component_facets.md`
-      // D5 for the rationale on keeping both arms in lockstep.
-      const proposal = event.payload.proposal;
-      if (proposal.kind === 'decompose') {
-        for (const component of proposal.components) {
-          const state = getOrCreateFacetState(
-            nodeStates,
-            edgeStates,
-            'node',
-            component.node_id,
-            'classification',
-          );
-          // Each component's classification facet enters life with the
-          // inline `classification` value as its candidate.
-          state.hasCandidate = true;
-          state.candidateProposalEventId = event.id;
-        }
-      } else if (proposal.kind === 'interpretive-split') {
-        for (const reading of proposal.readings) {
-          const state = getOrCreateFacetState(
-            nodeStates,
-            edgeStates,
-            'node',
-            reading.node_id,
-            'classification',
-          );
-          state.hasCandidate = true;
-          state.candidateProposalEventId = event.id;
-        }
-      }
+      // Per-component decompose / interpretive-split classification
+      // facet seeding was removed by
+      // `migrate_off_compute_facet_statuses_onto_proposal_status_broadcast`.
+      // The server-side `facetTargetsForProposal` in
+      // `apps/server/src/ws/broadcast/proposal-status.ts` is now the
+      // single source of truth: it emits one `proposal-status` envelope
+      // per component, and the shell store's `pendingProposalFacetStatus`
+      // map carries the per-`(entityKind, entityId, facet)` cell each
+      // consumer reads.
       continue;
     }
     if (event.kind === 'vote') {
@@ -693,4 +641,45 @@ export function cardRollupStatus(
     if (present.has(status)) return status;
   }
   return undefined;
+}
+
+/**
+ * Build a `FacetStatusIndex` adapter shape over the shell store's
+ * per-`(entityKind, entityId, facet)` `pendingProposalFacetStatus`
+ * cell-map. Used by moderator consumers (`GraphCanvasPane`,
+ * `PendingProposalsPane`) that want the broadcast-derived facet status
+ * exposed through the same `.nodes.get(id)?.[facet]` shape they already
+ * consume from `computeFacetStatuses(events)`.
+ *
+ * Per `migrate_off_compute_facet_statuses_onto_proposal_status_broadcast`
+ * D5 — a thin adapter so the existing `StatementNodeData` / chip-lookup
+ * code paths stay untouched while the source-of-truth swap happens at
+ * the selector boundary. Annotation-targeted cells are ignored today
+ * (the moderator canvas doesn't render annotation facets per the
+ * `EntityKind` partition in the canvas pane); a future task can lift
+ * an `annotations` bucket onto `FacetStatusIndex` symmetrically.
+ */
+export function buildFacetStatusIndexFromBroadcast(
+  cellMap: ReadonlyMap<string, FacetStatus>,
+): FacetStatusIndex {
+  const nodes = new Map<string, Partial<Record<FacetName, FacetStatus>>>();
+  const edges = new Map<string, Partial<Record<FacetName, FacetStatus>>>();
+  for (const [key, status] of cellMap) {
+    const firstColon = key.indexOf(':');
+    if (firstColon < 0) continue;
+    const lastColon = key.lastIndexOf(':');
+    if (lastColon === firstColon) continue;
+    const entityKind = key.slice(0, firstColon);
+    const entityId = key.slice(firstColon + 1, lastColon);
+    const facet = key.slice(lastColon + 1) as FacetName;
+    const bucket = entityKind === 'node' ? nodes : entityKind === 'edge' ? edges : null;
+    if (bucket === null) continue;
+    const existing = bucket.get(entityId);
+    if (existing) {
+      existing[facet] = status;
+    } else {
+      bucket.set(entityId, { [facet]: status });
+    }
+  }
+  return { nodes, edges };
 }

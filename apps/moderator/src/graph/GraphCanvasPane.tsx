@@ -105,11 +105,13 @@ import { DrawEdgeRolePicker } from './DrawEdgeRolePicker.js';
 import { GraphContextMenu, type MenuItem } from './GraphContextMenu.js';
 import { applyLayout, relayoutAll } from './layoutEngine.js';
 import {
+  buildFacetStatusIndexFromBroadcast,
   computeFacetStatuses,
   EMPTY_DIAGNOSTIC_HIGHLIGHTS,
   EMPTY_FACET_STATUSES,
   projectDiagnosticHighlights,
   type DiagnosticHighlightIndex,
+  type FacetStatusIndex,
 } from '@a-conversa/shell';
 import { disputationOutcome } from './disputationOutcome.js';
 import {
@@ -475,9 +477,25 @@ export function focusCaptureTextarea(): void {
  * layout pass overwrites on the next memoization tick inside
  * `<GraphCanvasPane>`.
  */
+const EMPTY_FACET_STATUS_INDEX: FacetStatusIndex = Object.freeze({
+  nodes: new Map(),
+  edges: new Map(),
+});
+
+/**
+ * `projectNodes` accepts the per-facet status as a parameter so callers
+ * control its source. Production callers (the `<GraphCanvasPane>` hook)
+ * pass the broadcast-derived `buildFacetStatusIndexFromBroadcast` shape
+ * — that's the migration's source-of-truth swap. Callers that omit the
+ * argument (unit tests asserting the pre-migration enrichment shape via
+ * pure events → nodes derivation) fall through to `computeFacetStatuses`
+ * over the supplied events log so their assertions stay stable without
+ * a forced WS-store seed step in every fixture.
+ */
 export function projectNodes(
   events: readonly Event[],
   highlights: DiagnosticHighlightIndex = EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+  facetStatusIndex: FacetStatusIndex = computeFacetStatuses(events),
 ): Node<StatementNodeData>[] {
   // First pass: collect node-created events in arrival order, alongside
   // a map from node id to the array index (so we can apply later
@@ -522,12 +540,14 @@ export function projectNodes(
   // `mod_axiom_mark_pending_render`.
   const pendingAxiomMarksByNode = groupPendingAxiomMarksByNode(projectPendingAxiomMarks(events));
 
-  // Per-facet `FacetStatus` index for state-styling (refinement
-  // `mod_proposed_state_styling`). Same single-pass-up-front pattern as
-  // the annotation enrichment: cheaper than threading through the main
-  // loop, and decouples the state-machine derivation from the node /
-  // edge / annotation projection.
-  const facetStatusIndex = computeFacetStatuses(events);
+  // Per-facet `FacetStatus` index for state-styling. Per
+  // `migrate_off_compute_facet_statuses_onto_proposal_status_broadcast`,
+  // the index is now SUPPLIED from the broadcast-derived
+  // `pendingProposalFacetStatus` cell-map (adapter:
+  // `buildFacetStatusIndexFromBroadcast`) instead of being computed
+  // client-side from the events log. The argument is the threaded
+  // selector value from the outer hook; tests that pre-date the
+  // migration pass `EMPTY_FACET_STATUS_INDEX` via the default.
 
   // Per-node per-facet vote index — the per-participant vote dots inside
   // each facet pill. Same single-pass-up-front pattern. Refinement:
@@ -956,6 +976,48 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
     (state) => state.sessionState[sessionId]?.activeDiagnostics ?? EMPTY_ACTIVE_DIAGNOSTICS,
   );
 
+  // Per-`(entityKind, entityId, facet)` server-derived facet status
+  // map. Per `migrate_off_compute_facet_statuses_onto_proposal_status_broadcast`,
+  // the canvas reads the broadcast-derived map and adapts it to the
+  // existing `FacetStatusIndex` shape so the downstream
+  // `StatementNodeData` plumbing stays untouched. Reference-equality
+  // re-renders the canvas when a new `proposal-status` envelope lands
+  // (the writer creates a fresh `Map` per applied envelope).
+  //
+  // When the broadcast-derived map is empty (the post-subscribe →
+  // pre-seed window, or a unit test that exercises `<GraphCanvasPane>`
+  // without driving the server-emit pipe), we fall through to the
+  // pure-events derivation `computeFacetStatuses(events)` so the canvas
+  // styling still reflects pending proposals the events log already
+  // contains. Per refinement D4 — the broadcast IS the source of truth
+  // when present; the fallback only carries the brief transitional
+  // window. The merge layers broadcast cells over events-derived ones
+  // (broadcast wins per `(entityKind, entityId, facet)`).
+  const pendingProposalFacetStatus = useWsStore(
+    (state) => state.sessionState[sessionId]?.pendingProposalFacetStatus,
+  );
+  const eventsBasedFacetStatusIndex = useMemo(() => computeFacetStatuses(events), [events]);
+  const facetStatusIndex = useMemo<FacetStatusIndex>(() => {
+    const broadcastIndex =
+      pendingProposalFacetStatus === undefined || pendingProposalFacetStatus.size === 0
+        ? EMPTY_FACET_STATUS_INDEX
+        : buildFacetStatusIndexFromBroadcast(pendingProposalFacetStatus);
+    if (broadcastIndex.nodes.size === 0 && broadcastIndex.edges.size === 0) {
+      return eventsBasedFacetStatusIndex;
+    }
+    const mergedNodes = new Map(eventsBasedFacetStatusIndex.nodes);
+    for (const [id, cells] of broadcastIndex.nodes) {
+      const existing = mergedNodes.get(id);
+      mergedNodes.set(id, existing ? { ...existing, ...cells } : cells);
+    }
+    const mergedEdges = new Map(eventsBasedFacetStatusIndex.edges);
+    for (const [id, cells] of broadcastIndex.edges) {
+      const existing = mergedEdges.get(id);
+      mergedEdges.set(id, existing ? { ...existing, ...cells } : cells);
+    }
+    return { nodes: mergedNodes, edges: mergedEdges };
+  }, [pendingProposalFacetStatus, eventsBasedFacetStatusIndex]);
+
   // Compute the per-entity diagnostic-highlight index once per
   // memoization tick. The helper is pure over its input map; the
   // memoization dependency is the active-diagnostics reference, which
@@ -1028,7 +1090,7 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
   const [layoutRevision, setLayoutRevision] = useState<number>(0);
 
   const nodes = useMemo(() => {
-    const projected = projectNodes(events, diagnosticHighlights);
+    const projected = projectNodes(events, diagnosticHighlights, facetStatusIndex);
     // ADR 0025 Amendment 2026-05-24: when at least one projected id is
     // truly new (never seen by this canvas instance — distinct from a
     // measurement-driven cache eviction, which removes an id from
@@ -1076,7 +1138,7 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
     // `layoutRevision` is bumped by the measurement effect when an
     // evicted cache entry needs a fresh dagre pass for the measured
     // footprint. Refinement: `mod_layout_measured_dimensions`.
-  }, [events, diagnosticHighlights, edges, layoutRevision]);
+  }, [events, diagnosticHighlights, edges, layoutRevision, facetStatusIndex]);
 
   // -- Tidy-up action (mod_layout_tidy_action) -----------------------
   //

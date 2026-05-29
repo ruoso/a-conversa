@@ -1540,11 +1540,27 @@ export type DiagnosticPayload = {
  *   targets appear. See `apps/server/src/projection/types.ts` for the
  *   closed enums.
  */
+// **`entityKind` + `entityId` (optional).** Per the moderator-ui
+// migration `migrate_off_compute_facet_statuses_onto_proposal_status_broadcast`
+// (D1), the envelope carries the target entity identity explicitly so
+// receivers can build a per-`(entityKind, entityId, facetName)` cell
+// without joining against the proposal payload. For multi-component
+// sub-kinds (`decompose`, `interpretive-split`) the predecessor emits N
+// envelopes that share `proposalId` + `sequence` and differ only in the
+// entity fields. The fields are OPTIONAL on the schema (additive,
+// backward compatible with payload fixtures authored before the
+// migration); the server-side construction site always populates them
+// for the broadcast surface, and the shell-store reducer skips the
+// per-entity cell write when they're absent (defensive — preserves the
+// `pendingProposals[proposalId]` slot's lookup path for callers still
+// reading that way).
 export const proposalStatusPayloadSchema = z.object({
   sessionId: z.string().uuid(),
   proposalId: z.string().uuid(),
   sequence: z.number().int().nonnegative(),
   perFacetStatus: z.record(z.string(), z.string()),
+  entityKind: z.enum(['node', 'edge', 'annotation']).optional(),
+  entityId: z.string().uuid().optional(),
 });
 
 export type ProposalStatusPayload = {
@@ -1552,6 +1568,8 @@ export type ProposalStatusPayload = {
   proposalId: string;
   sequence: number;
   perFacetStatus: Record<string, string>;
+  entityKind?: 'node' | 'edge' | 'annotation';
+  entityId?: string;
 };
 
 // -- Registry -------------------------------------------------------

@@ -56,10 +56,14 @@ export interface ProposalFacetBreakdownProps {
   /** The pending-proposal row this breakdown belongs to. */
   readonly row: PendingProposalRow;
   /**
-   * Client-side `computeFacetStatuses(events)` output — the per-entity
-   * per-facet status index. Used as the fallback when the server
-   * `proposal-status` broadcast has not yet landed for this proposal
-   * (or the proposal is structural and has no facet-targeting entry).
+   * Broadcast-derived per-entity per-facet status index, built by
+   * `buildFacetStatusIndexFromBroadcast` over the shell store's
+   * `pendingProposalFacetStatus` cell-map. Per
+   * `migrate_off_compute_facet_statuses_onto_proposal_status_broadcast`,
+   * this replaces the prior client-side `computeFacetStatuses(events)`
+   * mirror as the per-entity fallback when the
+   * `pendingProposals[proposalId].perFacetStatus` slot has not yet
+   * caught up.
    */
   readonly facetStatusIndex: FacetStatusIndex;
   /**

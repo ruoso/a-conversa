@@ -196,17 +196,25 @@ function resolveStatus(
   facetStatusIndex: FacetStatusIndex,
   serverPerFacetStatus: Record<string, string> | undefined,
 ): FacetStatus {
-  // (a) Server frame first — source of truth per
-  // ws_proposal_status_broadcast.md. The wire shape is
-  // `Record<string, string>`; we trust it is one of the six FacetStatus
-  // values (enforced server-side at the broadcast construction site).
+  // (a) Server frame from `pendingProposals[proposalId].perFacetStatus`
+  // (last-write-wins per proposalId — sufficient for the breakdown's
+  // facet-targeting sub-kinds where there's exactly one envelope per
+  // proposal).
   if (serverPerFacetStatus) {
     const fromServer = serverPerFacetStatus[facet];
     if (fromServer && isFacetStatus(fromServer)) {
       return fromServer;
     }
   }
-  // (b) Client mirror for facet-targeting sub-kinds only.
+  // (b) Broadcast-derived per-entity index — `facetStatusIndex` is now
+  // the `buildFacetStatusIndexFromBroadcast` adapter shape (per
+  // `migrate_off_compute_facet_statuses_onto_proposal_status_broadcast`
+  // D5), NOT the client-side `computeFacetStatuses(events)` mirror. The
+  // arm survives D4 only as a defensive fallback when (a)'s
+  // proposalId-keyed slot has not yet been populated for this proposal
+  // but the per-entity cell already has (e.g. a multi-component
+  // proposal whose proposalId-keyed slot only holds the LAST
+  // component's frame).
   if (target) {
     const perEntity =
       target.entityKind === 'node'
@@ -217,8 +225,9 @@ function resolveStatus(
       return fromClient;
     }
   }
-  // (c) Default — proposal exists in the pending list, so the
-  // derivation's Rule 7 result for an unvoted facet applies.
+  // (c) Default — proposal exists in the pending list; the
+  // post-`event-applied` / pre-`proposal-status` window briefly surfaces
+  // this fallback before the seed / live broadcast lands.
   return 'proposed';
 }
 

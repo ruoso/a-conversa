@@ -61,6 +61,7 @@ import {
   type PendingProposalRow as PendingProposalRowData,
 } from '../graph/pendingProposals';
 import {
+  buildFacetStatusIndexFromBroadcast,
   computeFacetStatuses,
   projectVotesByFacet,
   type FacetStatusIndex,
@@ -614,18 +615,52 @@ export function PendingProposalsPane(props: PendingProposalsPaneProps): ReactEle
   // moderator-pane convention.
   const pendingProposals = useWsStore((state) => state.sessionState[sessionId]?.pendingProposals);
 
+  // Per `migrate_off_compute_facet_statuses_onto_proposal_status_broadcast`,
+  // the per-entity facet status comes from the shell store's broadcast-
+  // derived `pendingProposalFacetStatus` cell-map (the
+  // `applyProposalStatus` reducer's per-`(entityKind, entityId, facet)`
+  // write). The adapter `buildFacetStatusIndexFromBroadcast` reshapes
+  // it to the existing `FacetStatusIndex.nodes.get(id)?.[facet]` lookup
+  // shape so the downstream `derivePerProposalFacets` + filter code
+  // paths stay untouched.
+  const pendingProposalFacetStatus = useWsStore(
+    (state) => state.sessionState[sessionId]?.pendingProposalFacetStatus,
+  );
+
   // `useMemo` keyed on the events reference so the derived row list
   // stays referentially stable across renders when the log hasn't
   // grown (Constraints). `events ?? []` keeps the hook stable when
   // the session has not yet been touched.
   const rows = useMemo(() => derivePendingProposals(events ?? []), [events]);
 
-  // Per `mod_per_facet_breakdown` Decision §8, the facet-status index
-  // is computed ONCE per pane render, keyed on the events reference.
-  // Each row's breakdown derivation memoizes on top of this shared
-  // index, so the total cost is O(events) for the walk plus
-  // O(rows × facets-per-row) for the per-row derivations.
-  const facetStatusIndex = useMemo(() => computeFacetStatuses(events ?? []), [events]);
+  // Reference-equality re-renders the pane when a new
+  // `proposal-status` envelope lands (the reducer creates a fresh
+  // `Map` per applied envelope). Each row's breakdown derivation
+  // memoizes on top of this shared index. The pane falls through to
+  // the pure-events derivation when the broadcast-derived map is empty
+  // (the post-subscribe → pre-seed window, or unit-test paths that
+  // bypass the server-emit pipe) so facet styling still reflects
+  // pending proposals already in the events log. Broadcast wins per
+  // `(entityKind, entityId, facet)` cell when both are present.
+  const eventsBasedFacetStatusIndex = useMemo(() => computeFacetStatuses(events ?? []), [events]);
+  const facetStatusIndex = useMemo<FacetStatusIndex>(() => {
+    const broadcastIndex =
+      pendingProposalFacetStatus === undefined || pendingProposalFacetStatus.size === 0
+        ? null
+        : buildFacetStatusIndexFromBroadcast(pendingProposalFacetStatus);
+    if (broadcastIndex === null) return eventsBasedFacetStatusIndex;
+    const mergedNodes = new Map(eventsBasedFacetStatusIndex.nodes);
+    for (const [id, cells] of broadcastIndex.nodes) {
+      const existing = mergedNodes.get(id);
+      mergedNodes.set(id, existing ? { ...existing, ...cells } : cells);
+    }
+    const mergedEdges = new Map(eventsBasedFacetStatusIndex.edges);
+    for (const [id, cells] of broadcastIndex.edges) {
+      const existing = mergedEdges.get(id);
+      mergedEdges.set(id, existing ? { ...existing, ...cells } : cells);
+    }
+    return { nodes: mergedNodes, edges: mergedEdges };
+  }, [pendingProposalFacetStatus, eventsBasedFacetStatusIndex]);
 
   // Per `mod_vote_indicators_in_sidebar` Decision §3 + §10, the
   // per-(entityId, facet) vote bucket is computed ONCE per pane

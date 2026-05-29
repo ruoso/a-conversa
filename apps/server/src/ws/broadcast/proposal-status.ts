@@ -110,6 +110,8 @@ import type { FacetName, FacetStatus } from '../../projection/types.js';
 
 import { wsBroadcastPlugin, type EventAppliedBusEvent, type WsBroadcastListener } from './bus.js';
 import { wsConnectionSendersPlugin, type WsConnectionSenderRegistry } from './connections.js';
+import type { WsConnectionContext } from '../connection.js';
+import { serializeWsEnvelope } from '../envelope.js';
 import type { WsSubscriptionRegistry } from '../subscriptions.js';
 
 /**
@@ -262,7 +264,7 @@ interface FacetTarget {
  * keeping both narrow + structural avoids exporting an unstable
  * private helper out of `replay.ts`.
  */
-function facetTargetsForProposal(payload: ProposalPayload): readonly FacetTarget[] {
+export function facetTargetsForProposal(payload: ProposalPayload): readonly FacetTarget[] {
   switch (payload.kind) {
     case 'capture-node':
       // Per ADR 0030 §1 + §4 + `pf_mod_node_card_classification_affordance`:
@@ -624,6 +626,12 @@ async function deriveAndFanOut(
         proposalId,
         sequence: event.sequence,
         perFacetStatus: { [target.facet]: status },
+        // Per `migrate_off_compute_facet_statuses_onto_proposal_status_broadcast`
+        // D1 — explicit per-envelope entity identity. Lets multi-component
+        // fan-outs (decompose / interpretive-split) be disambiguated on
+        // the receiving side without joining against the proposal payload.
+        entityKind: target.entityKind,
+        entityId: target.entityId,
       },
     };
 
@@ -652,6 +660,93 @@ async function deriveAndFanOut(
             eventSequence: event.sequence,
           },
           'ws-proposal-status-send-failed — skipping connection (one bad socket does not break fan-out)',
+        );
+      }
+    }
+  }
+}
+
+/**
+ * Reconnect-seed: emit one `proposal-status` envelope per
+ * `(pending proposal × facet target)` directly onto the requesting
+ * connection. Used by the `snapshot` handler (after `snapshot-state`)
+ * and the `catch-up` case-2 (snapshot-fallback) handler so a freshly-
+ * connected client populates its per-`(entityKind, entityId, facet)`
+ * shell-store cell without waiting for a live broadcast.
+ *
+ * Per the refinement
+ * `migrate_off_compute_facet_statuses_onto_proposal_status_broadcast`
+ * (D7):
+ *
+ *   - Seed envelopes are sent on the REQUESTING connection only, NOT
+ *     broadcast. Other clients in the session already have populated
+ *     maps from the live broadcasts.
+ *   - Seed envelopes follow `snapshot-state` in send order. The caller
+ *     must `send(snapshot-state)` before calling this helper so the
+ *     receiver advances `lastAppliedSequence` first and applies the
+ *     per-entity cells against the snapshot-aligned projection state.
+ *   - Per-target try/catch isolates a failed `deriveFacetStatus` call
+ *     or a `socket.send` failure: one bad target does not abort the
+ *     remaining seeds.
+ *   - The seed envelope's `sequence` field equals
+ *     `projection.lastAppliedSequence` at snapshot-build-time — the
+ *     receiver MUST NOT discard them as already-applied since
+ *     `proposal-status` envelopes carry the triggering event's sequence
+ *     (not a strictly-monotonic broadcast counter).
+ *
+ * Reuses `facetTargetsForProposal` + `deriveFacetStatus` — the same
+ * pure derivation the live listener uses, so the seed payloads are
+ * indistinguishable from a hypothetical replay of the live broadcasts.
+ */
+export function emitPendingProposalStatusFrames(
+  connection: WsConnectionContext,
+  projection: Projection,
+  sessionId: string,
+  log: FastifyBaseLogger,
+): void {
+  const seedSequence = projection.lastAppliedSequence;
+  for (const pending of projection.pendingProposals()) {
+    const targets = facetTargetsForProposal(pending.payload);
+    for (const target of targets) {
+      let status: FacetStatus;
+      try {
+        status = deriveFacetStatus(projection, target.entityKind, target.entityId, target.facet);
+      } catch (err) {
+        log.warn(
+          {
+            err,
+            sessionId,
+            proposalId: pending.proposalEventId,
+            target,
+          },
+          'ws-proposal-status-seed: deriveFacetStatus threw — skipping seed envelope for target',
+        );
+        continue;
+      }
+      const envelope: WsEnvelope<'proposal-status'> = {
+        type: 'proposal-status',
+        id: randomUUID(),
+        payload: {
+          sessionId,
+          proposalId: pending.proposalEventId,
+          sequence: seedSequence,
+          perFacetStatus: { [target.facet]: status },
+          entityKind: target.entityKind,
+          entityId: target.entityId,
+        },
+      };
+      try {
+        connection.socket.send(serializeWsEnvelope(envelope));
+      } catch (err) {
+        log.warn(
+          {
+            err,
+            sessionId,
+            proposalId: pending.proposalEventId,
+            connectionId: connection.connectionId,
+            target,
+          },
+          'ws-proposal-status-seed-send-failed — skipping target (one failed seed does not abort the rest)',
         );
       }
     }

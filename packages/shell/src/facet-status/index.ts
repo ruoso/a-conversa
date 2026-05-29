@@ -3,6 +3,7 @@
 // Refinement: tasks/refinements/shell-package/extract_facet_status_rules.md
 
 export {
+  buildFacetStatusIndexFromBroadcast,
   cardRollupStatus,
   computeFacetStatuses,
   EMPTY_FACET_STATUSES,

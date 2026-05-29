@@ -594,11 +594,16 @@ describe('deriveFacetStatus — edge substance facet', () => {
 //   2. candidateValue === null → 'awaiting-proposal' (not exercised
 //      here — the fixture starts with a classify-node proposal in
 //      place, so the facet has a candidate).
-//   3. Filter perParticipant + withdrawals by current participants.
+//   3. Filter perParticipant + withdrawals by current participants —
+//      the moderator is structurally excluded per `docs/methodology.md`
+//      § "The commit step" (commit IS the moderator's act of
+//      agreement; counting the moderator would block the moderator's
+//      own commit affordance from ever surfacing — mirrors the filter
+//      in `deriveFacetStatusFromState` and `checkUnanimousAgreeFacet`).
 //   4. Committed AND any current-participant withdrawal → 'withdrawn'.
 //   5. Any dispute → 'disputed'.
 //   6. Committed (current candidate matches) → 'committed'.
-//   7. All current participants agree → 'agreed'.
+//   7. All current non-moderator participants agree → 'agreed'.
 //   8. Otherwise → 'proposed'.
 //
 // Withdrawal is no longer a vote choice — it is a separate
@@ -675,10 +680,17 @@ describe('deriveFacetStatus — property-style vs. reference implementation', ()
       const projection = seedSession();
       const rand = makePrng(seed);
 
-      // Reference state.
+      // Reference state. `refCurrent` excludes the moderator from the
+      // start — see the describe-block comment above: the moderator is
+      // structurally outside the unanimity walk per `docs/methodology.md`
+      // § "The commit step". The projection's `currentParticipants()`
+      // still includes the moderator (they ARE a current participant in
+      // every other sense — joined, not left), but the derivation
+      // filters them out before counting votes, so the reference set
+      // omits them to mirror the derivation.
       const refVotes = new Map<string, Stance>();
       const refWithdrawals = new Set<string>();
-      const refCurrent = new Set(participants);
+      const refCurrent = new Set(participants.filter((p) => p !== MODERATOR_ID));
       let refCommitted = false;
       let refMeta = false;
 

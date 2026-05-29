@@ -591,23 +591,28 @@ describe('computeFacetStatuses — facet routing per proposal sub-kind', () => {
     expect(index.nodes.get(NODE_X)).toEqual({ wording: 'proposed' });
   });
 
-  it('(n) decompose proposal lands per-component classification facets as proposed', () => {
+  // Per `migrate_off_compute_facet_statuses_onto_proposal_status_broadcast`,
+  // the per-component decompose / interpretive-split arm was REMOVED
+  // from `computeFacetStatuses`: the server-side broadcast at
+  // `apps/server/src/ws/broadcast/proposal-status.ts` (covered in
+  // `proposal-status.test.ts`) is now the source of truth. The
+  // client-side derivation no longer emits per-component classification
+  // entries for these multi-component sub-kinds. The parent's
+  // classification facet remains unaffected as before.
+  it('(n) decompose proposal does NOT emit per-component classification facets (server-side now)', () => {
     const events: Event[] = [decomposeProposal(1, PROPOSAL_P, NODE_X, [NODE_Y, NODE_Z])];
     const index = computeFacetStatuses(events);
-    expect(index.nodes.get(NODE_Y)?.classification).toBe('proposed');
-    expect(index.nodes.get(NODE_Z)?.classification).toBe('proposed');
-    // The parent node is NOT the target of the decompose proposal —
-    // decompose's `targetOf` returns null for the parent — so no entry
-    // for the parent itself.
     expect(index.nodes.has(NODE_X)).toBe(false);
+    expect(index.nodes.has(NODE_Y)).toBe(false);
+    expect(index.nodes.has(NODE_Z)).toBe(false);
   });
 
-  it('(o) interpretive-split proposal lands per-reading classification facets as proposed', () => {
+  it('(o) interpretive-split proposal does NOT emit per-reading classification facets (server-side now)', () => {
     const events: Event[] = [interpretiveSplitProposal(1, PROPOSAL_P, NODE_X, [NODE_Y, NODE_Z])];
     const index = computeFacetStatuses(events);
-    expect(index.nodes.get(NODE_Y)?.classification).toBe('proposed');
-    expect(index.nodes.get(NODE_Z)?.classification).toBe('proposed');
     expect(index.nodes.has(NODE_X)).toBe(false);
+    expect(index.nodes.has(NODE_Y)).toBe(false);
+    expect(index.nodes.has(NODE_Z)).toBe(false);
   });
 });
 

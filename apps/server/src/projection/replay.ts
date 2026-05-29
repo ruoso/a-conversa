@@ -441,6 +441,22 @@ function handleProposal(
         node.classificationFacet.candidateProposalEventId = proposalEventId;
       }
     }
+  } else if (proposal.kind === 'capture-node') {
+    // Per ADR 0030 §1 + §4: `capture-node` names the wording-facet
+    // candidate inline; the preceding `node-created` event already
+    // populated `wordingFacet.candidateValue`. Stamp the proposal event
+    // id onto `candidateProposalEventId` so the broadcast listener's
+    // `resolveFacetKeyedProposalId` can address the proposal when
+    // facet-keyed votes / commits land against the (node, wording)
+    // target — without this, `proposal-status` broadcasts for
+    // capture-node wording votes are silently skipped and the
+    // moderator's broadcast-derived `pendingProposalFacetStatus` cell
+    // stays pinned at the initial 'proposed' frame even after every
+    // current participant has voted agree.
+    const node = projection.getNode(proposal.node_id);
+    if (node) {
+      node.wordingFacet.candidateProposalEventId = proposalEventId;
+    }
   }
 }
 

@@ -22,6 +22,8 @@ import type {
   ProposalStatusPayload,
 } from '@a-conversa/shared-types';
 
+import type { FacetStatus } from '../facet-status/facet-status.js';
+
 /**
  * Connection-level status for the WS surface. UI affordances (a reconnect
  * banner, a "live" badge) switch on this.
@@ -50,8 +52,47 @@ export interface BaseWsSessionState {
   lastAppliedSequence: number;
   /** Dedup'd event log, in arrival order. */
   events: Event[];
-  /** Per-proposal status frames keyed by `proposalId`. */
+  /**
+   * Per-proposal status frames keyed by `proposalId`. Retained for
+   * backward compatibility with the participant pane's per-proposal
+   * lookup (`apps/participant/src/proposals/PendingProposalsPane.tsx`)
+   * and the per-row server-frame surface in the moderator's
+   * `<PendingProposalRow>` filter path. New moderator consumers read
+   * from `pendingProposalFacetStatus` (per-`(entityKind, entityId,
+   * facet)` cell-keyed) so multi-component proposals
+   * (decompose / interpretive-split) populate one cell per component
+   * instead of last-write-winning a single proposalId slot.
+   *
+   * Migration tech debt: `participant_ui.part_migrate_to_pending_proposal_facet_status`
+   * — once the participant surfaces consume the per-entity map, this
+   * slot becomes deletable.
+   */
   pendingProposals: Record<string, ProposalStatusPayload>;
+  /**
+   * Per-`(entityKind, entityId, facetName)` server-derived facet status
+   * cell-keyed by `${entityKind}:${entityId}:${facetName}`. Populated
+   * by `applyProposalStatus` from each `proposal-status` envelope that
+   * carries explicit `entityKind` + `entityId` fields (per
+   * `migrate_off_compute_facet_statuses_onto_proposal_status_broadcast`
+   * D1). For multi-component sub-kinds (`decompose`,
+   * `interpretive-split`) the server emits N envelopes — one per
+   * component — and each populates its own cell so receivers don't
+   * have to disambiguate the components via the proposal payload.
+   *
+   * On `entity-removed` events `applyEvent` calls
+   * `clearProposalFacetStatusForEntity(entityKind, entityId)` to drop
+   * every matching `${entityKind}:${entityId}:*` cell — the predecessor
+   * `ws_proposal_status_broadcast`'s D3 "no terminal envelope on
+   * withdraw" contract pins the receive-side cleanup to the
+   * `entity-removed` event-applied frame.
+   *
+   * **Optional on the type** so synthetic `BaseWsSessionState` literals
+   * (test fixtures, narrow harness shapes that pre-date this slot) keep
+   * compiling. The default-store factory always initializes it to an
+   * empty `Map`; readers narrow it as `value ?? EMPTY_MAP` defensively
+   * for the test-fixture path.
+   */
+  pendingProposalFacetStatus?: ReadonlyMap<string, FacetStatus>;
   /**
    * Active-set of fired-but-not-cleared diagnostics keyed by the
    * canonical `diagnosticIdentityKey(payload)`.
@@ -101,6 +142,18 @@ export interface BaseWsStoreState {
   applySnapshot: (sessionId: string, sequence: number) => void;
   /** Record a `proposal-status` envelope. */
   applyProposalStatus: (payload: ProposalStatusPayload) => void;
+  /**
+   * Drop every per-`(entityKind, entityId, facet)` cell in
+   * `pendingProposalFacetStatus` matching the named entity. Called by
+   * `applyEvent` on `entity-removed` so a retracted entity's
+   * server-derived facet statuses don't linger on the receiving client.
+   * No-op when the session is absent or no matching cells exist.
+   */
+  clearProposalFacetStatusForEntity: (
+    sessionId: string,
+    entityKind: 'node' | 'edge' | 'annotation',
+    entityId: string,
+  ) => void;
   /** Record a `diagnostic` envelope. */
   applyDiagnostic: (payload: DiagnosticPayload) => void;
   /** Record an unsolicited `error` envelope. */
