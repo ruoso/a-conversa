@@ -209,4 +209,109 @@ describe('projectOtherVotesByFacet', () => {
       { participantId: OTHER_A, choice: 'agree' },
     ]);
   });
+
+  // Refinement: tasks/refinements/data-and-methodology/align_vote_facet_target_vocabulary.md
+  // Decision §2 — `amend-node` is structural (proposal-keyed). The
+  // dispatcher returns `null` for it, so a proposal-arm vote against an
+  // amend-node proposal produces NO entry in the per-(entity, facet)
+  // bucket. Symmetric to the moderator's case.
+  it('(j) amend-node proposal-arm vote from a non-self participant → no facet entry (structural)', () => {
+    const PROPOSAL_AMEND = '00000000-0000-4000-8000-0000000000a4';
+    const events: Event[] = [
+      {
+        id: PROPOSAL_AMEND,
+        sessionId: SESSION,
+        sequence: 1,
+        kind: 'proposal',
+        actor: OTHER_A,
+        payload: {
+          proposal: {
+            kind: 'amend-node',
+            node_id: NODE_X,
+            new_content: 'amended wording',
+          },
+        },
+        createdAt: '2026-05-28T00:00:00.000Z',
+      },
+      voteProposalArm(2, PROPOSAL_AMEND, OTHER_A, 'agree'),
+    ];
+    const result = projectOtherVotesByFacet(events, SELF);
+    expect(result.size).toBe(0);
+  });
+
+  // Refinement: tasks/refinements/data-and-methodology/align_vote_facet_target_vocabulary.md
+  // Decision §3 — `capture-node` is voteless at the proposal arm per
+  // the schema commentary at `packages/shared-types/src/events/proposals.ts:111-116`.
+  // Production never emits a `target: 'proposal'` vote against a
+  // capture-node proposal_id (the server rejects such votes as
+  // 'structural'); this synthetic event pins the dispatcher's
+  // null-return + the projector's silent-drop behavior.
+  it("(k) capture-node proposal-arm vote (synthetic; shouldn't happen in prod) → no facet entry", () => {
+    const PROPOSAL_CAPTURE = '00000000-0000-4000-8000-0000000000a5';
+    const events: Event[] = [
+      {
+        id: PROPOSAL_CAPTURE,
+        sessionId: SESSION,
+        sequence: 1,
+        kind: 'proposal',
+        actor: OTHER_A,
+        payload: {
+          proposal: {
+            kind: 'capture-node',
+            node_id: NODE_X,
+            wording: 'captured node wording',
+          },
+        },
+        createdAt: '2026-05-28T00:00:00.000Z',
+      },
+      voteProposalArm(2, PROPOSAL_CAPTURE, OTHER_A, 'agree'),
+    ];
+    const result = projectOtherVotesByFacet(events, SELF);
+    expect(result.size).toBe(0);
+  });
+
+  // Refinement: tasks/refinements/data-and-methodology/align_vote_facet_target_vocabulary.md
+  // Decision §3 — post-capture wording votes arrive on the `target:
+  // 'facet'` arm and reach the `(node, wording)` bucket via the
+  // facet-arm branch WITHOUT consulting the dispatcher. Pins the
+  // canonical post-capture vote flow.
+  it('(l) capture-node + facet-arm wording vote from a non-self participant → (node, wording) bucket', () => {
+    const PROPOSAL_CAPTURE = '00000000-0000-4000-8000-0000000000a6';
+    const events: Event[] = [
+      {
+        id: '00000000-0000-4000-8000-0000000000d1',
+        sessionId: SESSION,
+        sequence: 1,
+        kind: 'node-created',
+        actor: OTHER_A,
+        payload: {
+          node_id: NODE_X,
+          wording: 'captured node wording',
+          created_by: OTHER_A,
+          created_at: '2026-05-28T00:00:00.000Z',
+        },
+        createdAt: '2026-05-28T00:00:00.000Z',
+      },
+      {
+        id: PROPOSAL_CAPTURE,
+        sessionId: SESSION,
+        sequence: 2,
+        kind: 'proposal',
+        actor: OTHER_A,
+        payload: {
+          proposal: {
+            kind: 'capture-node',
+            node_id: NODE_X,
+            wording: 'captured node wording',
+          },
+        },
+        createdAt: '2026-05-28T00:00:00.000Z',
+      },
+      voteFacetArm(3, 'node', NODE_X, 'wording', OTHER_A, 'agree'),
+    ];
+    const result = projectOtherVotesByFacet(events, SELF);
+    expect(result.get(NODE_X)!.get('wording')).toEqual([
+      { participantId: OTHER_A, choice: 'agree' },
+    ]);
+  });
 });

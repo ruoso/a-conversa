@@ -387,6 +387,7 @@ task data_and_methodology "Data and methodology" {
   task align_vote_facet_target_vocabulary "Decide whether projectVotesByFacet (moderator) + projectOtherVotesByFacet (participant) should agree on a single proposal-kind → facet-target vocabulary; land the agreed vocabulary in both surfaces' helpers + a Cucumber pin" {
     effort 0.5d
     allocate team
+    complete 100
     note -8<-
       Source of debt: tasks/refinements/shell-package/extract_votes_by_facet_projector.md Decision §1.
 
@@ -399,6 +400,13 @@ task data_and_methodology "Data and methodology" {
 
       Ripe immediately — the misalignment exists today; closing it is independent of audience work.
     ->8-
+  }
+
+  task adr_0030_amendment_amend_node_structural "Append ## Amendments entry to ADR 0030 correcting the stale amend-node facet-valued listing on line 82" {
+    effort 0.1d
+    depends !align_vote_facet_target_vocabulary
+    allocate team
+    note "Source of debt: tasks/refinements/data-and-methodology/align_vote_facet_target_vocabulary.md Decision §5 (option B — separate task). ADR 0030 line 82 still lists amend-node as facet-valued; the canonical implementation (server broadcast, replay projector, vote-facet-keyed.feature) classifies it as structural. Registered in commit for data_and_methodology.align_vote_facet_target_vocabulary."
   }
 
   task replay_primitive "Render-at-log-position primitive" {

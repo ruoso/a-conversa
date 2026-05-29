@@ -499,11 +499,11 @@ export const EMPTY_VOTES_BY_FACET: Readonly<Partial<Record<FacetName, readonly V
 
 /**
  * Decode the (entityKind, entityId, facet) target of a proposal payload
- * for vote projection. The five facet-targeting sub-kinds resolve to a
- * target — four node-keyed (`classify-node`, `set-node-substance`,
- * `edit-wording`, `amend-node`) and one edge-keyed
- * (`set-edge-substance`). Structural sub-kinds return `null` so the
- * caller drops the proposal from the projection.
+ * for vote projection. The four facet-targeting sub-kinds resolve to a
+ * target — three node-keyed (`classify-node`, `set-node-substance`,
+ * `edit-wording`) and one edge-keyed (`set-edge-substance`). Structural
+ * / voteless sub-kinds return `null` so the caller drops the proposal
+ * from the projection.
  *
  * Refinement: `mod_vote_indicators_in_sidebar` Decision §4 — the
  * `set-edge-substance` arm is the additive extension that lets the
@@ -513,6 +513,18 @@ export const EMPTY_VOTES_BY_FACET: Readonly<Partial<Record<FacetName, readonly V
  * field is preserved on the return value for type-narrowing parity with
  * `proposalFacets.facetTargetOf`, even though the projection's
  * downstream accumulator only consumes `entityId`.
+ *
+ * Refinement: `data_and_methodology.align_vote_facet_target_vocabulary`
+ * Decisions §1–§3 — the canonical facet-valued partition is four kinds.
+ * `amend-node` is structural per the per-facet-refactor stream
+ * (`pf_commit_handler_facet_keyed.md:58`, `apps/server/src/ws/broadcast/proposal-status.ts:43-56`,
+ * `tests/behavior/methodology/vote-facet-keyed.feature:5-11`,
+ * `apps/server/src/projection/replay.ts:682`) and its votes arrive on
+ * the `target: 'proposal'` arm to be bucketed by `projectVotesByProposal`
+ * — not here. `capture-node` is voteless-by-design per the schema
+ * commentary at `packages/shared-types/src/events/proposals.ts:111-116`;
+ * post-capture wording votes arrive on the `target: 'facet'` arm and
+ * bypass this dispatcher entirely.
  */
 function voteTargetOf(
   proposal: ProposalPayload,
@@ -525,11 +537,14 @@ function voteTargetOf(
     case 'set-edge-substance':
       return { entityKind: 'edge', entityId: proposal.edge_id, facet: 'substance' };
     case 'edit-wording':
-    case 'amend-node':
       return { entityKind: 'node', entityId: proposal.node_id, facet: 'wording' };
     default:
       // decompose, interpretive-split, axiom-mark, meta-move,
-      // break-edge, annotate — no per-(entity, facet) target.
+      // break-edge, annotate, amend-node, capture-node — no
+      // per-(entity, facet) target. amend-node is structural
+      // (proposal-keyed; routes through projectVotesByProposal);
+      // capture-node is voteless at the proposal arm (wording votes
+      // following a capture arrive via the facet arm).
       return null;
   }
 }

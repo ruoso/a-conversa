@@ -4,7 +4,7 @@
 // Refinement: tasks/refinements/participant-ui/part_vote_indicators_in_pane.md
 //
 // Ported from the moderator's `projectVotesByFacet` at
-// `apps/moderator/src/graph/selectors.ts:739` with one divergence: votes
+// `apps/moderator/src/graph/selectors.ts:571` with one divergence: votes
 // by `currentParticipantId` are silently dropped at insertion time
 // (Decision §2 — "port + filter self at insertion", mirroring the canvas-
 // side `projectOtherVotes(events, currentParticipantId)` idiom established
@@ -28,10 +28,18 @@ type FacetTarget = {
   readonly facet: FacetName;
 };
 
+// Refinement: `data_and_methodology.align_vote_facet_target_vocabulary`
+// Decisions §1–§3 — the canonical facet-valued partition is four kinds,
+// case-for-case identical to the moderator's `voteTargetOf` at
+// `apps/moderator/src/graph/selectors.ts:529`. `amend-node` is structural
+// (proposal-keyed; bucketed by `projectVotesByProposal` on the moderator
+// side / `projectOtherVotesByProposal` on the participant side, not
+// here). `capture-node` is voteless at the proposal arm per
+// `packages/shared-types/src/events/proposals.ts:111-116`; post-capture
+// wording votes arrive on the `target: 'facet'` arm and bypass this
+// dispatcher entirely via the facet-arm branch below.
 function facetTargetOf(proposal: ProposalPayload): FacetTarget | null {
   switch (proposal.kind) {
-    case 'capture-node':
-      return { entityKind: 'node', entityId: proposal.node_id, facet: 'wording' };
     case 'classify-node':
       return { entityKind: 'node', entityId: proposal.node_id, facet: 'classification' };
     case 'set-node-substance':
@@ -41,6 +49,11 @@ function facetTargetOf(proposal: ProposalPayload): FacetTarget | null {
     case 'edit-wording':
       return { entityKind: 'node', entityId: proposal.node_id, facet: 'wording' };
     default:
+      // decompose, interpretive-split, axiom-mark, meta-move,
+      // break-edge, annotate, amend-node, capture-node — no
+      // per-(entity, facet) target. amend-node is structural
+      // (proposal-keyed); capture-node is voteless at the proposal arm
+      // (wording votes following a capture arrive via the facet arm).
       return null;
   }
 }

@@ -1517,6 +1517,104 @@ describe('projectVotesByFacet', () => {
   // the wire `vote.choice` enum collapsed to `'agree' | 'dispute'`;
   // withdrawal is its own first-class event kind (`withdraw-agreement`)
   // and no `'withdraw'` choice can land in the projection.
+
+  // Refinement: tasks/refinements/data-and-methodology/align_vote_facet_target_vocabulary.md
+  // Decision §2 — `amend-node` is structural (proposal-keyed). Its
+  // votes arrive on the `target: 'proposal'` arm and resolve to the
+  // dispatcher's `null` return, so the projection produces NO entry in
+  // the per-(entity, facet) bucket. The correct home for those votes is
+  // `projectVotesByProposal`, not here.
+  it('does NOT bucket an amend-node proposal-arm vote (amend-node is structural)', () => {
+    const events: Event[] = [
+      {
+        id: PROPOSAL_WORDING_1,
+        sessionId: SESSION,
+        sequence: 1,
+        kind: 'proposal',
+        actor: ACTOR,
+        payload: {
+          proposal: {
+            kind: 'amend-node',
+            node_id: NODE_VOTE_1,
+            new_content: 'amended wording',
+          },
+        },
+        createdAt: '2026-05-28T00:00:00.000Z',
+      },
+      makeVote({
+        sequence: 2,
+        proposalEnvelopeId: PROPOSAL_WORDING_1,
+        participantId: VOTE_PARTICIPANT_A,
+        vote: 'agree',
+      }),
+    ];
+    const result = projectVotesByFacet(events);
+    expect(result.size).toBe(0);
+  });
+
+  // Refinement: tasks/refinements/data-and-methodology/align_vote_facet_target_vocabulary.md
+  // Decision §3 — `capture-node` is voteless at the proposal arm per
+  // the schema commentary at `packages/shared-types/src/events/proposals.ts:111-116`.
+  // The post-capture wording vote arrives on the `target: 'facet'` arm
+  // and reaches the `(node, wording)` bucket via the facet-arm branch
+  // WITHOUT consulting the dispatcher. This pin keeps the participant's
+  // post-capture flow in parity with the moderator's.
+  it('buckets a capture-node wording vote that arrives via the facet arm', () => {
+    const CAPTURED_NODE = '44444444-4444-4444-8444-444444444444';
+    const CAPTURE_PROPOSAL = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa5';
+    const events: Event[] = [
+      {
+        id: '00000000-0000-4000-8000-000000000c01',
+        sessionId: SESSION,
+        sequence: 1,
+        kind: 'node-created',
+        actor: ACTOR,
+        payload: {
+          node_id: CAPTURED_NODE,
+          wording: 'captured node wording',
+          created_by: ACTOR,
+          created_at: '2026-05-28T00:00:00.000Z',
+        },
+        createdAt: '2026-05-28T00:00:00.000Z',
+      },
+      {
+        id: CAPTURE_PROPOSAL,
+        sessionId: SESSION,
+        sequence: 2,
+        kind: 'proposal',
+        actor: ACTOR,
+        payload: {
+          proposal: {
+            kind: 'capture-node',
+            node_id: CAPTURED_NODE,
+            wording: 'captured node wording',
+          },
+        },
+        createdAt: '2026-05-28T00:00:00.000Z',
+      },
+      {
+        id: '00000000-0000-4000-8000-000000000c02',
+        sessionId: SESSION,
+        sequence: 3,
+        kind: 'vote',
+        actor: VOTE_PARTICIPANT_A,
+        payload: {
+          target: 'facet' as const,
+          entity_kind: 'node' as const,
+          entity_id: CAPTURED_NODE,
+          facet: 'wording',
+          participant: VOTE_PARTICIPANT_A,
+          choice: 'agree' as const,
+          voted_at: '2026-05-28T00:00:00.000Z',
+        },
+        createdAt: '2026-05-28T00:00:00.000Z',
+      },
+    ];
+    const result = projectVotesByFacet(events);
+    expect(result.get(CAPTURED_NODE)!.get('wording')).toEqual([
+      { participantId: VOTE_PARTICIPANT_A, choice: 'agree' },
+    ]);
+  });
 });
 
 // -- selectNodeWordingById -------------------------------------------
