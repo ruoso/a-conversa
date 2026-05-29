@@ -282,6 +282,7 @@ task shell_package "Shell package (@aconversa/shell)" {
   task extract_pending_axiom_mark_projector_v7 "Lift projectPendingAxiomMarks + groupPendingAxiomMarksByNode + PendingAxiomMark + EMPTY_PENDING_AXIOM_MARKS into @a-conversa/shell once BOTH a participant pending-axiom-mark rendering leaf AND an audience pending-axiom-mark rendering leaf are complete 100 (three-caller convergence; v7 audit-iteration — batched cadence)" {
     effort 0.5d
     allocate team
+    complete 100
     depends !extract_pending_axiom_mark_projector_v6
     note -8<-
       Lift `projectPendingAxiomMarks` + `groupPendingAxiomMarksByNode` + `PendingAxiomMark` +
@@ -317,6 +318,57 @@ task shell_package "Shell package (@aconversa/shell)" {
 
       Source of debt: tasks/refinements/shell-package/extract_pending_axiom_mark_projector_v6.md
       Decisions §1–§4. Registered by closer in commit landing the v6 audit (2026-05-29).
+    ->8-
+  }
+
+  task extract_pending_axiom_mark_projector_v8 "Lift projectPendingAxiomMarks + groupPendingAxiomMarksByNode + PendingAxiomMark + EMPTY_PENDING_AXIOM_MARKS into @a-conversa/shell once BOTH a participant pending-axiom-mark rendering leaf AND an audience pending-axiom-mark rendering leaf are complete 100 (three-caller convergence; v8 audit-iteration — same batched cadence + cadence-enforcement-revisit clause)" {
+    effort 0.5d
+    allocate team
+    depends !extract_pending_axiom_mark_projector_v7
+    note -8<-
+      Lift `projectPendingAxiomMarks` + `groupPendingAxiomMarksByNode` + `PendingAxiomMark` +
+      `EMPTY_PENDING_AXIOM_MARKS` from `apps/moderator/src/graph/selectors.ts` into
+      `packages/shell/src/pending-axiom-marks/` once BOTH:
+      (a) a participant pending-axiom-mark rendering leaf (likely under a `part_pending_proposals.*`
+          group, per `part_axiom_mark_decoration.md:27`) is `complete 100`, AND
+      (b) an audience pending-axiom-mark rendering leaf (likely `aud_axiom_mark_pending_render`,
+          per `aud_axiom_mark_decoration.md:38`) is `complete 100`.
+
+      The participant and audience surfaces have explicitly declined to render pending-axiom-marks
+      as of seven consecutive audits (v1–v7, all settled 2026-05-28 → 2026-05-29); both surfaces'
+      principled-absence decisions are unchanged. This lift fires only after both surfaces revise
+      that decision and ship concrete rendering (three-caller convergence check). The future UI
+      leaf dependency edges are added when those leaves materialize.
+
+      PICKUP CADENCE (same as _v7, per v7 Decision §3 + §4): batched-audit.
+      The orchestrator's pick-task pass surfaces this task only when one of the following fires:
+      (i)  4 or more orchestrator-pick passes have elapsed since _v7 close (2026-05-29), OR
+      (ii) a commit lands touching any of:
+             apps/participant/src/, apps/audience/src/,
+             tasks/40-participant-ui.tji, tasks/50-audience-and-broadcast.tji,
+             tasks/refinements/participant-ui/part_axiom_mark_decoration.md,
+             tasks/refinements/audience/aud_axiom_mark_decoration.md
+           AND that commit adds/removes/modifies a line matching (case-insensitive):
+             pendingAxiomMark|PendingAxiomMark|pending-axiom-mark|
+             pending_axiom_mark|axiom_mark_pending|axiom_pending.
+      The (ii) signal is the change-detector; (i) is the sweep ceiling.
+
+      CADENCE-ENFORCEMENT-REVISIT CLAUSE (new at _v8): if _v8's pickup also violates the cadence
+      (pick-pass-1 or pick-pass-2 pickup with signal (ii) also unfired — a second consecutive
+      violation), _v8's refinement re-evaluates whether to escalate the cadence enforcement
+      mechanism. Two escalation paths are pre-named in _v7 Decision §3:
+        (1) a tj3-enforceable cadence-gate task;
+        (2) a non-leaf "watcher" pattern requiring a brief amendment to the orchestrator's
+            pick-task workflow.
+      _v8's refinement chooses among (1), (2), or "hold prose-only" based on the two-iteration
+      evidence window (_v7 observation + _v8 pickup outcome).
+
+      Follow the same recipe as `extract_cytoscape_projectors`, `shell_axiom_marks_extraction`,
+      and `extract_votes_by_facet_projector_v2`: create `packages/shell/src/pending-axiom-marks/`,
+      consolidate the Vitest suite, rewire all three or more callers' imports.
+
+      Source of debt: tasks/refinements/shell-package/extract_pending_axiom_mark_projector_v7.md
+      Decisions §1–§4. Registered by closer in commit landing the v7 audit (2026-05-29).
     ->8-
   }
 
