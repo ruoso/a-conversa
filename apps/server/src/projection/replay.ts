@@ -1201,14 +1201,7 @@ function applyCommittedProposal(
       return;
     }
     case 'decompose': {
-      // TODO(decomposition_logic): the methodology engine creates
-      // the component nodes (each with its own `node-created` and
-      // initial classification) when the decompose proposal
-      // commits, including the edge-rebinding and the components'
-      // initial agreement state. For M1 the structural effect is
-      // "parent becomes invisible" — components are added by
-      // their own `node-created` events the methodology engine
-      // emits.
+      // Commit-arm intentionally does NOT mint component nodes — they entered at propose-time per ADR 0027 §1 + §2.
       const parent = projection.getNode(proposal.parent_node_id);
       if (!parent) {
         throw new ReplayError(`commit/decompose: parent ${proposal.parent_node_id} not present`);
@@ -1223,10 +1216,7 @@ function applyCommittedProposal(
       return;
     }
     case 'interpretive-split': {
-      // TODO(interpretive_split_logic): downstream methodology
-      // engine semantics. For M1 the structural effect is the
-      // same as decompose — parent becomes invisible; readings
-      // are added via their own `node-created` events.
+      // Commit-arm intentionally does NOT mint reading nodes — they entered at propose-time per ADR 0027 §1 + §2.
       const parent = projection.getNode(proposal.parent_node_id);
       if (!parent) {
         throw new ReplayError(

@@ -308,6 +308,7 @@ task moderator_ui "Moderator UI" {
     task mod_decompose_commit_handler_todo_cleanup "Remove obsolete decompose / interpretive-split commit-arm TODO at apps/server/src/projection/replay.ts L692-699 (docs-only)" {
       effort 0.25d
       allocate team
+      complete 100
       depends !mod_decompose_propose_time_canvas_visibility
       note -8<-
         Source of debt: tasks/refinements/moderator-ui/mod_decompose_propose_time_canvas_visibility.md D7 — the TODO(decomposition_logic) comment at apps/server/src/projection/replay.ts L692-699 (and its sibling TODO(interpretive_split_logic) immediately below) claims "the methodology engine creates the component nodes when the decompose proposal commits". Per the per-component propose-time fan-out that landed in mod_decompose_propose_time_canvas_visibility (commit landing mod_decompose_propose_time_canvas_visibility), components already exist on the projection by the time the commit handler runs; the commit-arm's responsibility narrows to "flip parent off" (which is what the existing arm already does). The TODO is informational, not load-bearing — strip both comments and replace with a one-line note that the commit-arm intentionally does NOT mint components (they entered at propose-time per ADR 0027). No behavioral change.
