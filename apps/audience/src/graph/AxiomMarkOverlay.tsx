@@ -22,6 +22,25 @@
 //              remove data`), same singleton-rAF batched commit, same
 //              `cyState` slot reuse; two overlays share the same
 //              `Core` instance and each owns its own listeners.)
+// Refinement: tasks/refinements/audience/aud_axiom_mark_animation.md
+//              (Decision §1 — CSS `@keyframes` on a React-keyed
+//              `<span data-axiom-mark-anim>` wrapper, NOT a JS-driven
+//              tween nor a motion-framework dependency; the wrapper's
+//              keyed reconciliation is the per-element lifecycle.
+//              Decision §3 — animation lives on the audience-side
+//              wrapper only; the shell `<AxiomMarkBadge>` is unchanged
+//              so its cross-surface contract stays pure. Decision §4 —
+//              `seenMarkKeysRef = useRef<Set<string> | null>(null)` is
+//              lazily seeded from the first render's placement set so
+//              badges present at initial mount do NOT animate; only
+//              post-mount arrivals get the `aud-axiom-mark-land`
+//              class. Decision §5 — 350 ms ease-out (cubic-bezier(0.16,
+//              1, 0.3, 1)) duration is the initial constant; the
+//              `aud_animation_pacing` sibling task revisits it across
+//              the animation set. Decision §6 — reduced-motion
+//              suppression is in CSS, not TS — the class is always
+//              emitted, the `@media (prefers-reduced-motion: reduce)`
+//              clause in `apps/audience/src/index.css` no-ops it.)
 // ADRs:        0004 (Cytoscape.js — `renderedBoundingBox` + `cy.on(...)`
 //              vocabulary is canonical Cytoscape API, no new dep);
 //              0022 (no throwaway verifications — pinned by
@@ -86,6 +105,26 @@ export function AudienceAxiomMarkOverlay({
   void containerRef;
   const [placements, setPlacements] = useState<readonly BadgeRowPlacement[]>([]);
   const frameRef = useRef<number | null>(null);
+  // Per refinement Decision §4: lazy-initialize a Set of seen
+  // `${nodeId}:${participantId}` keys so that badges present when the
+  // overlay first commits a non-empty placement snapshot do NOT
+  // animate; only marks that arrive in a subsequent commit do.
+  // `placements` starts as `[]` and is populated by the rAF-batched
+  // commit inside the useEffect, so we wait for the first non-empty
+  // snapshot before seeding — seeding on the literal first render
+  // (when placements is still `[]`) would leave the set empty and
+  // every later arrival, including the very first commit's contents,
+  // would be (incorrectly) treated as "new".
+  const seenMarkKeysRef = useRef<Set<string> | null>(null);
+
+  if (seenMarkKeysRef.current === null && placements.length > 0) {
+    const seeded = new Set<string>();
+    placements.forEach((p) => {
+      p.marks.forEach((m) => seeded.add(`${p.id}:${m.participantId}`));
+    });
+    seenMarkKeysRef.current = seeded;
+  }
+  const seenMarkKeys = seenMarkKeysRef.current;
 
   useEffect(() => {
     if (cy === null) return undefined;
@@ -145,9 +184,20 @@ export function AudienceAxiomMarkOverlay({
             gap: '4px',
           }}
         >
-          {p.marks.map((mark) => (
-            <AxiomMarkBadge key={mark.participantId} mark={mark} />
-          ))}
+          {p.marks.map((mark) => {
+            const markKey = `${p.id}:${mark.participantId}`;
+            const isNew = seenMarkKeys !== null && !seenMarkKeys.has(markKey);
+            if (isNew) seenMarkKeys.add(markKey);
+            return (
+              <span
+                key={mark.participantId}
+                data-axiom-mark-anim=""
+                className={isNew ? 'aud-axiom-mark-land' : ''}
+              >
+                <AxiomMarkBadge mark={mark} />
+              </span>
+            );
+          })}
         </div>
       ))}
     </div>

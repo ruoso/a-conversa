@@ -346,11 +346,12 @@ task audience "Audience and broadcast" {
     task aud_axiom_mark_animation "Animate axiom-mark landing on a node" {
       effort 0.5d
       allocate team
+      complete 100
     }
     task aud_animation_pacing "Pacing tuning so animations are readable on video" {
       effort 1d
       allocate team
-      depends !aud_node_appear_animation, !aud_proposed_to_agreed_animation
+      depends !aud_node_appear_animation, !aud_proposed_to_agreed_animation, !aud_axiom_mark_animation
     }
   }
 

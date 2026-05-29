@@ -355,4 +355,128 @@ describe('AudienceAxiomMarkOverlay', () => {
       unmount();
     }
   });
+
+  // Cases (k)–(o) cover the landing-animation wrapper per
+  // tasks/refinements/audience/aud_axiom_mark_animation.md Acceptance
+  // criteria. The wrapper sits between the row and the shell
+  // `<AxiomMarkBadge>`; its class toggles per-mark based on the
+  // `seenMarkKeysRef` initial-mount guard (Decision §4).
+
+  it('(k) initial-mount badges do NOT carry the aud-axiom-mark-land class', async () => {
+    const { cy, unmount } = await renderOverlayWithCy();
+    try {
+      addNodeWithAxiomMarks(cy, NODE_A, [makeMark(NODE_A, PARTICIPANT_A)], {
+        x1: 100,
+        x2: 200,
+        y1: 50,
+        y2: 130,
+      });
+      await flushRaf();
+      const badge = document.querySelector(
+        `[data-testid="axiom-mark-badge-${NODE_A}-${PARTICIPANT_A}"]`,
+      );
+      const wrapper = badge?.closest('[data-axiom-mark-anim]');
+      expect(wrapper).not.toBeNull();
+      expect(wrapper?.classList.contains('aud-axiom-mark-land')).toBe(false);
+    } finally {
+      unmount();
+    }
+  });
+
+  it('(l) a post-mount arriving mark gets the aud-axiom-mark-land class on its wrapper', async () => {
+    const { cy, unmount } = await renderOverlayWithCy();
+    try {
+      addNodeWithAxiomMarks(cy, NODE_A, [makeMark(NODE_A, PARTICIPANT_A)], {
+        x1: 100,
+        x2: 200,
+        y1: 50,
+        y2: 130,
+      });
+      await flushRaf();
+      // A second mark from a different participant arrives mid-session
+      // — the cy.data('axiomMarks', ...) update fires the overlay's
+      // `add remove data` listener which schedules the next commit.
+      const node = cy.getElementById(NODE_A);
+      node.data('axiomMarks', [makeMark(NODE_A, PARTICIPANT_A), makeMark(NODE_A, PARTICIPANT_B)]);
+      await flushRaf();
+      const newBadge = document.querySelector(
+        `[data-testid="axiom-mark-badge-${NODE_A}-${PARTICIPANT_B}"]`,
+      );
+      const newWrapper = newBadge?.closest('[data-axiom-mark-anim]');
+      expect(newWrapper).not.toBeNull();
+      expect(newWrapper?.classList.contains('aud-axiom-mark-land')).toBe(true);
+    } finally {
+      unmount();
+    }
+  });
+
+  it('(m) prior-rendered sibling badges remain unanimated when a new sibling arrives', async () => {
+    const { cy, unmount } = await renderOverlayWithCy();
+    try {
+      addNodeWithAxiomMarks(cy, NODE_A, [makeMark(NODE_A, PARTICIPANT_A)], {
+        x1: 100,
+        x2: 200,
+        y1: 50,
+        y2: 130,
+      });
+      await flushRaf();
+      const node = cy.getElementById(NODE_A);
+      node.data('axiomMarks', [makeMark(NODE_A, PARTICIPANT_A), makeMark(NODE_A, PARTICIPANT_B)]);
+      await flushRaf();
+      const existingBadge = document.querySelector(
+        `[data-testid="axiom-mark-badge-${NODE_A}-${PARTICIPANT_A}"]`,
+      );
+      const existingWrapper = existingBadge?.closest('[data-axiom-mark-anim]');
+      expect(existingWrapper).not.toBeNull();
+      expect(existingWrapper?.classList.contains('aud-axiom-mark-land')).toBe(false);
+    } finally {
+      unmount();
+    }
+  });
+
+  it('(n) rerender with identical marks (pan/zoom) does not re-add the animation class', async () => {
+    const { cy, unmount } = await renderOverlayWithCy();
+    try {
+      addNodeWithAxiomMarks(cy, NODE_A, [makeMark(NODE_A, PARTICIPANT_A)], {
+        x1: 100,
+        x2: 200,
+        y1: 50,
+        y2: 130,
+      });
+      await flushRaf();
+      // Simulate pan/zoom — the rAF-batched commit re-snapshots the
+      // same placement set; no marks are new, so no wrapper gains the
+      // animation class.
+      cy.emit('pan');
+      cy.emit('zoom');
+      await flushRaf();
+      const wrappers = document.querySelectorAll('[data-axiom-mark-anim]');
+      expect(wrappers.length).toBeGreaterThan(0);
+      wrappers.forEach((w) => {
+        expect(w.classList.contains('aud-axiom-mark-land')).toBe(false);
+      });
+    } finally {
+      unmount();
+    }
+  });
+
+  it('(o) every rendered badge sits inside a [data-axiom-mark-anim] wrapper', async () => {
+    const { cy, unmount } = await renderOverlayWithCy();
+    try {
+      addNodeWithAxiomMarks(
+        cy,
+        NODE_A,
+        [makeMark(NODE_A, PARTICIPANT_A), makeMark(NODE_A, PARTICIPANT_B)],
+        { x1: 100, x2: 200, y1: 50, y2: 130 },
+      );
+      await flushRaf();
+      const badges = document.querySelectorAll('[data-testid^="axiom-mark-badge-"]');
+      expect(badges.length).toBe(2);
+      badges.forEach((badge) => {
+        expect(badge.closest('[data-axiom-mark-anim]')).not.toBeNull();
+      });
+    } finally {
+      unmount();
+    }
+  });
 });

@@ -66,3 +66,40 @@ body {
 body {
   background-color: transparent;
 }
+
+/* `aud_axiom_mark_animation` — one-shot landing animation for
+ * per-participant axiom-mark badges as they arrive mid-broadcast.
+ * Refinement: tasks/refinements/audience/aud_axiom_mark_animation.md
+ *   Decision §1 — CSS `@keyframes` on a React-keyed wrapper, NOT a
+ *   JS-driven tween nor a motion-framework dependency; CSS keyframes
+ *   are inherently one-shot per element lifetime, and React's keyed
+ *   reconciliation handles "which wrapper is new".
+ *   Decision §5 — 350 ms with `cubic-bezier(0.16, 1, 0.3, 1)`
+ *   ("emphasized decelerate") for a "lands and sticks" entrance.
+ *   `both` fill-mode keeps the badge in the `to` state after the
+ *   animation completes. The `aud_animation_pacing` sibling task
+ *   revisits the duration alongside the other animation siblings'.
+ *   Decision §6 — `prefers-reduced-motion: reduce` suppression is in
+ *   CSS, not TS — the class is always emitted, this media-query
+ *   override no-ops the animation so screen-reader / reduced-motion
+ *   users get the static badge with no entrance motion. */
+@keyframes aud-axiom-mark-land {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.6);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.aud-axiom-mark-land {
+  animation: aud-axiom-mark-land 350ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aud-axiom-mark-land {
+    animation: none;
+  }
+}

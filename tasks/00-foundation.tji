@@ -237,5 +237,10 @@ task foundation "Foundation" {
 
       note "Refinement: tasks/refinements/foundation/ci_dependency_audit.md"
     }
+    task cucumber_v8_wasm_jit_crash "Node v24 + pglite WASM jit-crash in cucumber teardown" {
+      effort 0.5d
+      allocate team
+      note "Debt surfaced by fixer sub-agent during aud_axiom_mark_animation (commit audience.aud_axiom_mark_animation). Node v24 fatal V8 JIT crash in ThreadIsolation::UnregisterWasmAllocation during pglite WASM teardown; needs NODE_OPTIONS=--jitless workaround or Node version pin in test:behavior:smoke. See tasks/refinements/audience/aud_axiom_mark_animation.md Status block."
+    }
   }
 }
