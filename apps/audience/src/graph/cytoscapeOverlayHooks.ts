@@ -76,19 +76,39 @@ import type { Core } from 'cytoscape';
  * Cytoscape snapshot: it reads `cy.nodes()` (and/or `cy.edges()`),
  * computes positions / derived values, and returns the placement array.
  * The hook re-subscribes whenever `cy` changes identity (the
- * `useEffect` dep array is `[cy]`). The `commit` callback is captured
- * through a `commitRef` "latest-ref" so callers can pass inline arrows
- * closing over render-scope state WITHOUT retriggering subscription
- * churn — every render writes the latest commit into the ref, and the
- * rAF closure reads it at fire time.
+ * subscription `useEffect` dep array is `[cy]`). The `commit` callback
+ * is captured through a `commitRef` "latest-ref" so callers can pass
+ * inline arrows closing over render-scope state WITHOUT retriggering
+ * subscription churn — every render writes the latest commit into the
+ * ref, and the rAF closure reads it at fire time.
  *
  * Starts as `[]`; the first commit fires synchronously inside the
  * effect (via `scheduleUpdate()`), so the initial snapshot lands as
  * soon as the rAF fires.
+ *
+ * Optional `triggers` — an array of caller-controlled values whose
+ * change should force a re-commit even when no Cytoscape event has
+ * fired. Use when the commit closure reads state OUTSIDE Cytoscape
+ * (e.g., a Zustand WS-store map whose change does not trigger any cy
+ * event). Each change to a trigger value schedules a fresh rAF re-
+ * commit; the subscription set is NOT torn down (a separate effect on
+ * the spread `triggers` only nudges `scheduleUpdate`). Stability is
+ * the caller's responsibility — pass a stable array reference (e.g.,
+ * via `useMemo`) or stable primitive values to avoid unnecessary re-
+ * commits.
+ *
+ * Refinement: tasks/refinements/audience/aud_diagnostic_fire_animation.md
+ *   (Decision §3a — additive `triggers` parameter; the four pre-
+ *   existing callers pass nothing and behave unchanged. The fifth
+ *   caller, `<AudienceDiagnosticFireOverlay>`, passes the WS-store-
+ *   derived `tuples` so a change to the active-diagnostic set re-runs
+ *   the commit closure without an imperative `cy.emit(...)` side-
+ *   channel.)
  */
 export function useCytoscapeOverlayPlacements<P>(
   cy: Core | null,
   commit: (cy: Core) => readonly P[],
+  triggers: readonly unknown[] = [],
 ): readonly P[] {
   const [placements, setPlacements] = useState<readonly P[]>([]);
   const frameRef = useRef<number | null>(null);
@@ -124,6 +144,23 @@ export function useCytoscapeOverlayPlacements<P>(
       cy.off('add remove data', scheduleUpdate);
     };
   }, [cy]);
+
+  // Separate effect: schedule a re-commit whenever a `triggers` entry
+  // changes. Keeping this distinct from the subscription effect avoids
+  // tearing down + re-establishing Cytoscape subscriptions on every
+  // trigger change. The dep array is `[cy, ...triggers]`; `triggers`
+  // length is contractually stable per render (callers pass a fixed-
+  // shape array). The repo does not run `react-hooks/exhaustive-deps`
+  // so no suppression directive is required.
+  useEffect(() => {
+    if (cy === null) return;
+    if (frameRef.current !== null) return;
+    const captured = cy;
+    frameRef.current = requestAnimationFrame(() => {
+      frameRef.current = null;
+      setPlacements(commitRef.current(captured));
+    });
+  }, [cy, ...triggers]);
 
   return placements;
 }

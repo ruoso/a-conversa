@@ -173,6 +173,23 @@ task shell_package "Shell package (@aconversa/shell)" {
     ->8-
   }
 
+  task shell_diagnostic_highlights_extract "Lift diagnosticHighlights.ts + activeDiagnostics WS-store slot into @a-conversa/shell (third-caller trigger: audience)" {
+    effort 1d
+    allocate team
+    depends audience.aud_animations.aud_diagnostic_fire_animation
+    note -8<-
+      Lift `diagnosticHighlights.ts` (diagnosticIdentityKey, affectedEntities, wire-type interfaces)
+      and the `activeDiagnostics: ReadonlyMap<string, DiagnosticPayload>` WS-store extension from
+      the three per-app copies (moderator, participant, audience) into `packages/shell/src/`.
+      Collapse per-app duplications; rewire all three apps' import paths and test fixtures.
+      The lift also collapses the audience's local wsStore extension back to a one-line re-export
+      of the default factory once the shell carries the activeDiagnostics slot.
+      Third-caller trigger: audience.aud_animations.aud_diagnostic_fire_animation (2026-05-29).
+      Source-of-debt: tasks/refinements/audience/aud_diagnostic_fire_animation.md Decision §3
+      (commit landing aud_diagnostic_fire_animation, 2026-05-29).
+    ->8-
+  }
+
   task shell_axiom_mark_panel_badge_consolidation "Consolidate apps/participant/src/detail/AxiomMarkBadge.tsx into the canonical @a-conversa/shell <AxiomMarkBadge> once prop/i18n shape is aligned" {
     effort 0.5d
     allocate team

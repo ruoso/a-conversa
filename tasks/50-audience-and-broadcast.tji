@@ -345,6 +345,20 @@ task audience "Audience and broadcast" {
     task aud_diagnostic_fire_animation "Animate diagnostic firing (cycle / contradiction highlight)" {
       effort 1d
       allocate team
+      complete 100
+    }
+    task aud_diagnostic_edge_fire_animation "Animate diagnostic firing on affected edges (contradiction / coherency-hint edge halos)" {
+      effort 0.5d
+      allocate team
+      depends !aud_diagnostic_fire_animation
+      note -8<-
+        Edge-midpoint counterpart for contradiction edges + coherency-hint self-contradicts edges.
+        Mirrors aud_diagnostic_fire_animation with an edge-midpoint overlay iterating cy.edges()
+        with midpoint geometry. Nodes-only restriction lifted per Decision §7 of
+        tasks/refinements/audience/aud_diagnostic_fire_animation.md.
+        Source-of-debt: tasks/refinements/audience/aud_diagnostic_fire_animation.md Decision §7
+        (commit landing aud_diagnostic_fire_animation, 2026-05-29).
+      ->8-
     }
     task aud_axiom_mark_animation "Animate axiom-mark landing on a node" {
       effort 0.5d
@@ -354,7 +368,7 @@ task audience "Audience and broadcast" {
     task aud_animation_pacing "Pacing tuning so animations are readable on video" {
       effort 1d
       allocate team
-      depends !aud_node_appear_animation, !aud_proposed_to_agreed_animation, !aud_axiom_mark_animation, !aud_withdrawal_animation
+      depends !aud_node_appear_animation, !aud_proposed_to_agreed_animation, !aud_axiom_mark_animation, !aud_withdrawal_animation, !aud_diagnostic_fire_animation
     }
     task aud_dom_overlay_extraction "Extract shared KeyedCytoscapeNodeOverlay primitive from the four DOM-overlay siblings" {
       effort 1d

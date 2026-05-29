@@ -20,10 +20,15 @@ import { describe, expect, it } from 'vitest';
 import * as audienceWsBarrel from './index.js';
 
 describe('audience workspace ws barrel — narrowed read-only surface', () => {
-  it('re-exports the three documented keys and nothing else', () => {
+  it('re-exports the documented keys and nothing else', () => {
+    // `useAudienceActiveDiagnostics` was added per
+    // tasks/refinements/audience/aud_diagnostic_fire_animation.md
+    // Decision §3 — the read-only audience-side selector hook for the
+    // per-session `activeDiagnostics` map.
     const keys = Object.keys(audienceWsBarrel).sort();
     expect(keys).toEqual([
       'audienceWsStore',
+      'useAudienceActiveDiagnostics',
       'useAudienceConnectionStatus',
       'useAudienceSessionEvents',
     ]);

@@ -164,6 +164,68 @@ describe('useCytoscapeOverlayPlacements', () => {
       cy.destroy();
     }
   });
+
+  it('(7) a change in the `triggers` array forces a re-commit without a cy event', async () => {
+    // Refinement: aud_diagnostic_fire_animation.md Decision §3a — the
+    // optional `triggers` parameter lets a caller force a re-commit
+    // when its commit-closure source-of-truth lives outside Cytoscape
+    // (e.g., a Zustand WS-store map). No cy event is emitted in this
+    // test; the trigger change alone schedules the rAF re-commit.
+    const cy = makeCy();
+    const commitSpy = vi.fn((_cy: Core): readonly { id: string }[] => []);
+    try {
+      const { rerender, unmount } = renderHook(
+        ({ trig }: { trig: number }) => useCytoscapeOverlayPlacements(cy, commitSpy, [trig]),
+        { initialProps: { trig: 0 } },
+      );
+      await flushRaf();
+      commitSpy.mockClear();
+
+      rerender({ trig: 1 });
+      await flushRaf();
+
+      expect(commitSpy).toHaveBeenCalledTimes(1);
+      unmount();
+    } finally {
+      cy.destroy();
+    }
+  });
+
+  it('(8) the four existing callers (no triggers passed) still behave like the pre-extension hook', async () => {
+    // Sanity: omitting the parameter defaults to an empty triggers
+    // array and the post-extension hook behaves byte-identical to the
+    // pre-extension version (one initial commit on mount, then re-
+    // commits ONLY on cy events). This is the regression pin against
+    // an accidental change of the default triggers semantics.
+    const cy = makeCy();
+    const commitSpy = vi.fn((_cy: Core): readonly { id: string }[] => []);
+    try {
+      const { rerender, unmount } = renderHook(
+        ({ irrelevant }: { irrelevant: number }) => {
+          void irrelevant;
+          return useCytoscapeOverlayPlacements(cy, commitSpy);
+        },
+        { initialProps: { irrelevant: 0 } },
+      );
+      await flushRaf();
+      commitSpy.mockClear();
+
+      // A re-render WITHOUT a cy event must NOT trigger a commit when
+      // no triggers were passed.
+      rerender({ irrelevant: 1 });
+      await flushRaf();
+      expect(commitSpy).not.toHaveBeenCalled();
+
+      // A cy event still does trigger a commit.
+      cy.emit('pan');
+      await flushRaf();
+      expect(commitSpy).toHaveBeenCalledTimes(1);
+
+      unmount();
+    } finally {
+      cy.destroy();
+    }
+  });
 });
 
 describe('useSeenKeysGate', () => {

@@ -173,6 +173,28 @@
 //   Decision §5 — JSDoc blocks for `STYLESHEET` and the typography
 //   pins travel verbatim with the constants into `./stylesheet.ts`.)
 //
+// Refinement: tasks/refinements/audience/aud_diagnostic_fire_animation.md
+//   (Decision §1 — `<AudienceDiagnosticFireOverlay>` is a sixth DOM-
+//   overlay sibling of the Cytoscape canvas, painting amber halos
+//   (blocking amber-700 / advisory amber-400) per-(diagnostic, node)
+//   pair with a one-shot CSS `@keyframes` entrance; no `cy.animate()`,
+//   no motion-framework dep, no STYLESHEET edit. Decision §3 — the
+//   audience's WS store extends `BaseWsStoreState` locally with
+//   `activeDiagnostics: ReadonlyMap<string, DiagnosticPayload>` per
+//   session; this leaf is the third-caller port that triggers the
+//   future shell extraction (`shell_diagnostic_highlights_extract`).
+//   Decision §3a — `useCytoscapeOverlayPlacements` is given the
+//   additive `triggers` parameter so a change to the WS-store-derived
+//   tuples re-runs the commit closure. Decision §4 — `useSeenKeysGate`
+//   keyed on the composite `${identityKey}\0${nodeId}`. Decision §5 —
+//   450 ms ease-out, `forwards` fill. Decision §6 — reduced-motion
+//   handled in CSS; Playwright deferred to
+//   `aud_url_routing.aud_session_url` (ninth refinement on the chain).
+//   Decision §7 — node halos only; edge halos deferred. Decision §8 —
+//   animation IS the entire diagnostic surface; no persistent border.
+//   The new overlay mounts LAST so its halo `<span>`s sit above the
+//   five earlier overlays' chrome at the moment of arrival.)
+//
 // Refinement: tasks/refinements/audience/aud_withdrawal_animation.md
 //   (Decision §1 — `<AudienceWithdrawalHaloOverlay>` is a fifth DOM-
 //   overlay sibling of the Cytoscape canvas, painting a rose-tinted
@@ -247,6 +269,7 @@ import { AudienceAxiomMarkOverlay } from './AxiomMarkOverlay.js';
 import { AudienceAnnotationOverlay } from './AnnotationOverlay.js';
 import { AudienceNodeAppearOverlay } from './NodeAppearOverlay.js';
 import { AudienceWithdrawalHaloOverlay } from './WithdrawalHaloOverlay.js';
+import { AudienceDiagnosticFireOverlay } from './DiagnosticFireOverlay.js';
 
 export interface AudienceGraphViewProps {
   /**
@@ -261,7 +284,7 @@ export interface AudienceGraphViewProps {
 
 export function AudienceGraphView({ cyRef }: AudienceGraphViewProps): ReactElement {
   const { t } = useTranslation();
-  const { events } = useAudienceSession();
+  const { events, sessionId } = useAudienceSession();
   const cyInstanceRef = useRef<Core | null>(null);
   // Per `aud_per_facet_visualization` Decision §5 — `cyInstanceRef` (a
   // plain `useRef`) is React-invisible: mutating the ref doesn't
@@ -431,6 +454,11 @@ export function AudienceGraphView({ cyRef }: AudienceGraphViewProps): ReactEleme
       <AudienceAnnotationOverlay cy={cyState} containerRef={containerRef} />
       <AudienceNodeAppearOverlay cy={cyState} containerRef={containerRef} />
       <AudienceWithdrawalHaloOverlay cy={cyState} containerRef={containerRef} />
+      <AudienceDiagnosticFireOverlay
+        cy={cyState}
+        containerRef={containerRef}
+        sessionId={sessionId}
+      />
     </div>
   );
 }

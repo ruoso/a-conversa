@@ -16,3 +16,4 @@
 export { audienceWsStore } from './wsStore.js';
 export { useAudienceSessionEvents } from './useAudienceSessionEvents.js';
 export { useAudienceConnectionStatus } from './useAudienceConnectionStatus.js';
+export { useAudienceActiveDiagnostics } from './useAudienceActiveDiagnostics.js';

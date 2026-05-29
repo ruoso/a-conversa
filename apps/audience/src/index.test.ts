@@ -83,4 +83,33 @@ describe('apps/audience/src/index.css', () => {
     const contents = await readFile(INDEX_CSS_PATH, 'utf-8');
     expect(contents).toMatch(/\.aud-withdrawal\s*\{\s*animation\s*:\s*none/);
   });
+
+  // Per tasks/refinements/audience/aud_diagnostic_fire_animation.md
+  // Decision §6 — same CSS smoke-pin posture for the two amber halos
+  // (blocking + advisory) on a structural-diagnostic fire.
+  it('contains the @keyframes aud-diagnostic-fire-blocking definition', async () => {
+    const contents = await readFile(INDEX_CSS_PATH, 'utf-8');
+    expect(contents).toContain('@keyframes aud-diagnostic-fire-blocking');
+  });
+
+  it('contains the @keyframes aud-diagnostic-fire-advisory definition', async () => {
+    const contents = await readFile(INDEX_CSS_PATH, 'utf-8');
+    expect(contents).toContain('@keyframes aud-diagnostic-fire-advisory');
+  });
+
+  it('contains a prefers-reduced-motion: reduce override that no-ops .aud-diagnostic-fire-blocking', async () => {
+    const contents = await readFile(INDEX_CSS_PATH, 'utf-8');
+    // The two halo classes share a media-query block; the override is
+    // a comma-separated selector list ending with `{ animation: none }`.
+    expect(contents).toMatch(
+      /\.aud-diagnostic-fire-blocking[\s\S]*?\.aud-diagnostic-fire-advisory\s*\{\s*animation\s*:\s*none/,
+    );
+  });
+
+  it('contains a prefers-reduced-motion: reduce override that no-ops .aud-diagnostic-fire-advisory', async () => {
+    const contents = await readFile(INDEX_CSS_PATH, 'utf-8');
+    expect(contents).toMatch(
+      /\.aud-diagnostic-fire-blocking[\s\S]*?\.aud-diagnostic-fire-advisory\s*\{\s*animation\s*:\s*none/,
+    );
+  });
 });
