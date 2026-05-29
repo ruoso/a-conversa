@@ -29,6 +29,16 @@
 //   no new ADR; mechanical refactor, the pattern is documented by the
 //   predecessor refinements.)
 //
+// Refinement: tasks/refinements/audience/aud_decomposition_animation.md
+//   (Decision §3 — the `node[?decomposed]` selector entry appended after
+//   the per-rollupStatus entries is the post-animation at-rest paint:
+//   `opacity: 0.15` reads as "structurally retired" while preserving
+//   the parent's position in the layout (spatial-memory anchor). The
+//   `[?decomposed]` (data-truthy) selector activates exactly when
+//   `projectGraph` stamps `data.decomposed: true` at commit of a
+//   `decompose` / `interpretive-split` proposal, and composes with the
+//   per-rollupStatus selectors via Cytoscape's per-selector merging.)
+//
 // History: this module collects the per-state selector decisions
 // landed across `aud_proposed_styling`, `aud_agreed_styling`,
 // `aud_disputed_styling`, `aud_meta_disagreement_split`, and the
@@ -257,6 +267,21 @@ export const STYLESHEET: StylesheetJson = [
     style: {
       'line-color': STATE_COLORS.metaDisagreement,
       'target-arrow-color': STATE_COLORS.metaDisagreement,
+    },
+  },
+  // `aud_decomposition_animation` Decision §3 — post-animation at-rest
+  // paint for parent nodes whose `data.decomposed` was stamped at
+  // commit of a `decompose` / `interpretive-split` proposal by
+  // `projectGraph`. The 0.15 opacity reads as "structurally retired"
+  // while preserving the parent's position in the layout so the
+  // broadcast viewer's spatial memory of where the parent was is
+  // intact. Composes with the per-rollupStatus selectors via
+  // cytoscape's per-selector merging.
+  // Refinement: tasks/refinements/audience/aud_decomposition_animation.md
+  {
+    selector: 'node[?decomposed]',
+    style: {
+      opacity: 0.15,
     },
   },
 ];

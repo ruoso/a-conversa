@@ -336,6 +336,7 @@ task audience "Audience and broadcast" {
     task aud_decomposition_animation "Animate decomposition (parent fading, components emerging)" {
       effort 2d
       allocate team
+      complete 100
     }
     task aud_withdrawal_animation "Animate withdrawal (agreed → disputed)" {
       effort 1d

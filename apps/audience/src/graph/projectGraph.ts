@@ -72,6 +72,24 @@
 //   Decision §1 — completes the meta-commentary layer's symmetry
 //   between node and edge entities on the broadcast canvas.)
 //
+// Refinement: tasks/refinements/audience/aud_decomposition_animation.md
+//   (Decision §1 — the audience surface paints a one-shot slate-tinted
+//   halo on parents whose `data.decomposed` first flips to `true` mid-
+//   broadcast (a `commit` of a `decompose` or `interpretive-split`
+//   proposal landing structurally retires the parent). The halo lives
+//   in `<AudienceDecompositionFadeOverlay>`; the projector's job is to
+//   stamp the store-derived flag the overlay reads.
+//   Decision §2 — adopt the existing `pendingClassifications` shape:
+//   cache `decompose` / `interpretive-split` proposals by event id at
+//   the proposal arm, and on the matching `commit` (target=`'proposal'`)
+//   stamp `data.decomposed: true` on the proposal's `parent_node_id`.
+//   The `AudienceNodeData.decomposed` field is optional (only stamped
+//   when the projector observes the commit; absent on non-decomposed
+//   parents — semantically equivalent to `false` for Cytoscape's
+//   `[?decomposed]` selector). The flag is monotonic (the projector
+//   never unsets), so the post-animation steady state lives in the
+//   stylesheet as `node[?decomposed] { opacity: 0.15 }`.)
+//
 // ADRs:
 //   - 0004 (Cytoscape.js for the read-mostly audience broadcast
 //           surface);
@@ -152,6 +170,16 @@ export interface AudienceNodeData {
    * `aud_annotation_rendering_edges`.
    */
   readonly annotations: readonly Annotation[];
+  /**
+   * `true` once a `decompose` or `interpretive-split` proposal whose
+   * `parent_node_id` is this node has been committed (per
+   * `aud_decomposition_animation` Decision §2). Absent on every other
+   * node; semantically equivalent to `false` for Cytoscape's
+   * `[?decomposed]` attribute-truthy selector. Monotonic: once stamped
+   * the projector never unsets, mirroring the methodology contract
+   * (committed decompositions are structurally permanent).
+   */
+  readonly decomposed?: boolean;
 }
 
 /**
@@ -245,6 +273,13 @@ export function projectGraph(events: readonly Event[]): {
   // id. A new classify-node proposal supersedes the prior candidate
   // per ADR 0030 §7.
   const currentClassificationByNode = new Map<string, StatementKind>();
+  // Map from `proposal` envelope id → parent node id, for `decompose`
+  // and `interpretive-split` proposals. The matching `commit`
+  // (target=`'proposal'`) resolves the parent via this map and stamps
+  // `data.decomposed: true` on the parent node element. Symmetric with
+  // `pendingClassifications` above, scoped to the two multi-component
+  // sub-kinds. Refinement: aud_decomposition_animation Decision §2.
+  const pendingDecompositions = new Map<string, string>();
 
   for (const event of events) {
     if (event.kind === 'node-created') {
@@ -299,6 +334,10 @@ export function projectGraph(events: readonly Event[]): {
           classification: inner.classification,
         });
         currentClassificationByNode.set(inner.node_id, inner.classification);
+      } else if (inner.kind === 'decompose') {
+        pendingDecompositions.set(event.id, inner.parent_node_id);
+      } else if (inner.kind === 'interpretive-split') {
+        pendingDecompositions.set(event.id, inner.parent_node_id);
       }
       continue;
     }
@@ -321,15 +360,36 @@ export function projectGraph(events: readonly Event[]): {
       }
       // target === 'proposal' — the proposal-keyed arm.
       const proposal = pendingClassifications.get(event.payload.proposal_id);
-      if (proposal === undefined) continue;
-      const idx = nodeIndexById.get(proposal.nodeId);
-      if (idx === undefined) continue;
-      const existing = nodes[idx];
-      if (existing === undefined) continue;
-      nodes[idx] = {
-        group: 'nodes',
-        data: { ...existing.data, kind: proposal.classification },
-      };
+      if (proposal !== undefined) {
+        const idx = nodeIndexById.get(proposal.nodeId);
+        if (idx !== undefined) {
+          const existing = nodes[idx];
+          if (existing !== undefined) {
+            nodes[idx] = {
+              group: 'nodes',
+              data: { ...existing.data, kind: proposal.classification },
+            };
+          }
+        }
+        continue;
+      }
+      // `decompose` / `interpretive-split` fallback per
+      // `aud_decomposition_animation` Decision §2: stamp
+      // `data.decomposed: true` on the proposal's `parent_node_id`.
+      const decomposeParentId = pendingDecompositions.get(event.payload.proposal_id);
+      if (decomposeParentId !== undefined) {
+        const idx = nodeIndexById.get(decomposeParentId);
+        if (idx !== undefined) {
+          const existing = nodes[idx];
+          if (existing !== undefined) {
+            nodes[idx] = {
+              group: 'nodes',
+              data: { ...existing.data, decomposed: true },
+            };
+          }
+        }
+        continue;
+      }
       continue;
     }
   }

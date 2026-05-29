@@ -68,6 +68,7 @@ task milestones "Milestones" {
 
   task m_audience_mvp "M6: Audience MVP" {
     milestone
+    complete 100
     depends !m_backend_mvp, audience.aud_graph_rendering, audience.aud_animations, audience.aud_obs_integration, audience.aud_url_routing, shell_package, root_app
     note "The audience surface renders the live debate well enough to be embedded as an OBS browser source for a video broadcast. Under ADR 0026 the audience surface mounts inside the new apps/root/ app via @aconversa/shell; M6 now also depends on shell_package + root_app."
   }

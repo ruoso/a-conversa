@@ -112,6 +112,20 @@ describe('apps/audience/src/index.css', () => {
       /\.aud-diagnostic-fire-blocking[\s\S]*?\.aud-diagnostic-fire-advisory\s*\{\s*animation\s*:\s*none/,
     );
   });
+
+  // Per tasks/refinements/audience/aud_decomposition_animation.md
+  // Decision §7 — same CSS smoke-pin posture for the slate-tinted halo
+  // on a parent's `data.decomposed` first flipping to `true` at commit
+  // of a `decompose` / `interpretive-split` proposal.
+  it('contains the @keyframes aud-decomposition definition', async () => {
+    const contents = await readFile(INDEX_CSS_PATH, 'utf-8');
+    expect(contents).toContain('@keyframes aud-decomposition');
+  });
+
+  it('contains a prefers-reduced-motion: reduce override that no-ops .aud-decomposition', async () => {
+    const contents = await readFile(INDEX_CSS_PATH, 'utf-8');
+    expect(contents).toMatch(/\.aud-decomposition\s*\{\s*animation\s*:\s*none/);
+  });
 });
 
 // Per tasks/refinements/audience/aud_animation_pacing.md Decision §6 —

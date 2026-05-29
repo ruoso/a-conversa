@@ -862,6 +862,238 @@ describe('projectGraph (audience baseline)', () => {
     expect(edges[0]?.data.annotations.map((a) => a.id)).toEqual([ANNO_EDGE]);
   });
 
+  // ---------------------------------------------------------------
+  // aud_decomposition_animation — per-node `decomposed` stamping at
+  // commit of a `decompose` / `interpretive-split` proposal.
+  // ---------------------------------------------------------------
+
+  const COMPONENT_X = '00000000-0000-4000-8000-0000000000c1';
+  const COMPONENT_Y = '00000000-0000-4000-8000-0000000000c2';
+  const COMPONENT_Z = '00000000-0000-4000-8000-0000000000c3';
+  const PROPOSAL_DEC_1 = '00000000-0000-4000-8000-0000000000d1';
+  const PROPOSAL_DEC_2 = '00000000-0000-4000-8000-0000000000d2';
+  const PROPOSAL_SPLIT_1 = '00000000-0000-4000-8000-0000000000d3';
+
+  function makeDecomposeProposal(opts: {
+    sequence: number;
+    envelopeId: string;
+    parentNodeId: string;
+    components: ReadonlyArray<{ nodeId: string; wording: string; classification: StatementKind }>;
+  }): Event {
+    return {
+      id: opts.envelopeId,
+      sessionId: SESSION_ID,
+      sequence: opts.sequence,
+      kind: 'proposal',
+      actor: ACTOR,
+      payload: {
+        proposal: {
+          kind: 'decompose',
+          parent_node_id: opts.parentNodeId,
+          components: opts.components.map((c) => ({
+            node_id: c.nodeId,
+            wording: c.wording,
+            classification: c.classification,
+          })),
+        },
+      },
+      createdAt: '2026-05-29T00:00:00.000Z',
+    };
+  }
+
+  function makeInterpretiveSplitProposal(opts: {
+    sequence: number;
+    envelopeId: string;
+    parentNodeId: string;
+    readings: ReadonlyArray<{ nodeId: string; wording: string; classification: StatementKind }>;
+  }): Event {
+    return {
+      id: opts.envelopeId,
+      sessionId: SESSION_ID,
+      sequence: opts.sequence,
+      kind: 'proposal',
+      actor: ACTOR,
+      payload: {
+        proposal: {
+          kind: 'interpretive-split',
+          parent_node_id: opts.parentNodeId,
+          readings: opts.readings.map((c) => ({
+            node_id: c.nodeId,
+            wording: c.wording,
+            classification: c.classification,
+          })),
+        },
+      },
+      createdAt: '2026-05-29T00:00:00.000Z',
+    };
+  }
+
+  it('(dec1) a pending decompose proposal does NOT stamp `decomposed` on the parent', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeNodeCreated({ sequence: 2, nodeId: COMPONENT_X, wording: 'X' }),
+      makeNodeCreated({ sequence: 3, nodeId: COMPONENT_Y, wording: 'Y' }),
+      makeDecomposeProposal({
+        sequence: 4,
+        envelopeId: PROPOSAL_DEC_1,
+        parentNodeId: NODE_A,
+        components: [
+          { nodeId: COMPONENT_X, wording: 'X', classification: 'fact' },
+          { nodeId: COMPONENT_Y, wording: 'Y', classification: 'fact' },
+        ],
+      }),
+    ];
+    const { nodes } = projectGraph(events);
+    const parent = nodes.find((n) => n.data.id === NODE_A);
+    expect(parent?.data.decomposed).toBeUndefined();
+    const x = nodes.find((n) => n.data.id === COMPONENT_X);
+    const y = nodes.find((n) => n.data.id === COMPONENT_Y);
+    expect(x?.data.decomposed).toBeUndefined();
+    expect(y?.data.decomposed).toBeUndefined();
+  });
+
+  it('(dec2) a committed decompose stamps `decomposed: true` on the parent and preserves its other data', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'Parent wording' }),
+      makeNodeCreated({ sequence: 2, nodeId: COMPONENT_X, wording: 'X' }),
+      makeNodeCreated({ sequence: 3, nodeId: COMPONENT_Y, wording: 'Y' }),
+      makeDecomposeProposal({
+        sequence: 4,
+        envelopeId: PROPOSAL_DEC_1,
+        parentNodeId: NODE_A,
+        components: [
+          { nodeId: COMPONENT_X, wording: 'X', classification: 'fact' },
+          { nodeId: COMPONENT_Y, wording: 'Y', classification: 'fact' },
+        ],
+      }),
+      makeCommit({ sequence: 5, proposalEnvelopeId: PROPOSAL_DEC_1 }),
+    ];
+    const { nodes } = projectGraph(events);
+    const parent = nodes.find((n) => n.data.id === NODE_A);
+    expect(parent?.data.decomposed).toBe(true);
+    // Existing fields preserved across the stamping spread.
+    expect(parent?.data.wording).toBe('Parent wording');
+    expect(parent?.data.kind).toBeNull();
+    expect(parent?.data.facetStatuses).toBeDefined();
+    expect(parent?.data.rollupStatus).toBeDefined();
+    expect(parent?.data.axiomMarks).toEqual([]);
+    expect(parent?.data.annotations).toEqual([]);
+    // Components do NOT carry `decomposed`.
+    const x = nodes.find((n) => n.data.id === COMPONENT_X);
+    const y = nodes.find((n) => n.data.id === COMPONENT_Y);
+    expect(x?.data.decomposed).toBeUndefined();
+    expect(y?.data.decomposed).toBeUndefined();
+  });
+
+  it('(dec3) a committed interpretive-split stamps `decomposed: true` on the parent', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeNodeCreated({ sequence: 2, nodeId: COMPONENT_X, wording: 'X' }),
+      makeNodeCreated({ sequence: 3, nodeId: COMPONENT_Y, wording: 'Y' }),
+      makeNodeCreated({ sequence: 4, nodeId: COMPONENT_Z, wording: 'Z' }),
+      makeInterpretiveSplitProposal({
+        sequence: 5,
+        envelopeId: PROPOSAL_SPLIT_1,
+        parentNodeId: NODE_A,
+        readings: [
+          { nodeId: COMPONENT_X, wording: 'X', classification: 'fact' },
+          { nodeId: COMPONENT_Y, wording: 'Y', classification: 'fact' },
+          { nodeId: COMPONENT_Z, wording: 'Z', classification: 'fact' },
+        ],
+      }),
+      makeCommit({ sequence: 6, proposalEnvelopeId: PROPOSAL_SPLIT_1 }),
+    ];
+    const { nodes } = projectGraph(events);
+    const parent = nodes.find((n) => n.data.id === NODE_A);
+    expect(parent?.data.decomposed).toBe(true);
+  });
+
+  it('(dec4) a superseding decompose proposal: first pending, second pending+committed stamps cleanly', () => {
+    // Two decompose proposals fired in sequence (the first is never
+    // committed; the second is). The projector resolves the commit via
+    // the second envelope's id, so `decomposed: true` lands without
+    // `p1` shadowing.
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeNodeCreated({ sequence: 2, nodeId: COMPONENT_X, wording: 'X' }),
+      makeNodeCreated({ sequence: 3, nodeId: COMPONENT_Y, wording: 'Y' }),
+      makeDecomposeProposal({
+        sequence: 4,
+        envelopeId: PROPOSAL_DEC_1,
+        parentNodeId: NODE_A,
+        components: [
+          { nodeId: COMPONENT_X, wording: 'X', classification: 'fact' },
+          { nodeId: COMPONENT_Y, wording: 'Y', classification: 'fact' },
+        ],
+      }),
+      makeDecomposeProposal({
+        sequence: 5,
+        envelopeId: PROPOSAL_DEC_2,
+        parentNodeId: NODE_A,
+        components: [
+          { nodeId: COMPONENT_X, wording: 'X', classification: 'fact' },
+          { nodeId: COMPONENT_Y, wording: 'Y', classification: 'fact' },
+        ],
+      }),
+      makeCommit({ sequence: 6, proposalEnvelopeId: PROPOSAL_DEC_2 }),
+    ];
+    const { nodes } = projectGraph(events);
+    const parent = nodes.find((n) => n.data.id === NODE_A);
+    expect(parent?.data.decomposed).toBe(true);
+  });
+
+  it('(dec5) a commit against a classify-node proposal does NOT stamp `decomposed`', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeClassifyProposal({
+        sequence: 2,
+        envelopeId: PROPOSAL_A,
+        nodeId: NODE_A,
+        classification: 'fact',
+      }),
+      makeCommit({ sequence: 3, proposalEnvelopeId: PROPOSAL_A }),
+    ];
+    const { nodes } = projectGraph(events);
+    const parent = nodes.find((n) => n.data.id === NODE_A);
+    expect(parent?.data.decomposed).toBeUndefined();
+    // The existing classify-node arm still fires.
+    expect(parent?.data.kind).toBe('fact');
+  });
+
+  it('(dec6) a subsequent classify-node commit on a decomposed parent does NOT unset `decomposed`', () => {
+    // The `data.decomposed` flag is monotonic per Decision §2: once
+    // stamped, the projector never unsets it. A later classify-node
+    // commit on the same parent stamps `kind` via the existing arm but
+    // preserves `decomposed: true` through the `{...existing.data}`
+    // spread.
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeNodeCreated({ sequence: 2, nodeId: COMPONENT_X, wording: 'X' }),
+      makeNodeCreated({ sequence: 3, nodeId: COMPONENT_Y, wording: 'Y' }),
+      makeDecomposeProposal({
+        sequence: 4,
+        envelopeId: PROPOSAL_DEC_1,
+        parentNodeId: NODE_A,
+        components: [
+          { nodeId: COMPONENT_X, wording: 'X', classification: 'fact' },
+          { nodeId: COMPONENT_Y, wording: 'Y', classification: 'fact' },
+        ],
+      }),
+      makeCommit({ sequence: 5, proposalEnvelopeId: PROPOSAL_DEC_1 }),
+      makeClassifyProposal({
+        sequence: 6,
+        envelopeId: PROPOSAL_A,
+        nodeId: NODE_A,
+        classification: 'normative',
+      }),
+      makeCommit({ sequence: 7, proposalEnvelopeId: PROPOSAL_A }),
+    ];
+    const { nodes } = projectGraph(events);
+    const parent = nodes.find((n) => n.data.id === NODE_A);
+    expect(parent?.data.decomposed).toBe(true);
+    expect(parent?.data.kind).toBe('normative');
+  });
+
   it('(j) is invariant under non-causal events interleaved between node-created and its classify commit', () => {
     const direct: Event[] = [
       makeNodeCreated({ sequence: 1, nodeId: NODE_C, wording: 'C' }),

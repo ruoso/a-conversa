@@ -173,6 +173,30 @@
 //   Decision §5 — JSDoc blocks for `STYLESHEET` and the typography
 //   pins travel verbatim with the constants into `./stylesheet.ts`.)
 //
+// Refinement: tasks/refinements/audience/aud_decomposition_animation.md
+//   (Decision §1 — `<AudienceDecompositionFadeOverlay>` is an eighth
+//   DOM-overlay sibling of the Cytoscape canvas, painting a slate-
+//   tinted halo `<span>` per node whose `data.decomposed` is truthy
+//   (the projector stamps the flag at commit of a `decompose` /
+//   `interpretive-split` proposal targeting the node as parent). The
+//   post-animation steady state is the cytoscape stylesheet entry
+//   `node[?decomposed] { opacity: 0.15 }` painting the "structurally
+//   retired" parent at 15% opacity while preserving its layout
+//   position (spatial-memory anchor for the broadcast viewer).
+//   Decision §2 — `projectGraph` extends with `pendingDecompositions:
+//   Map<proposalEnvelopeId, parentNodeId>` symmetric with the existing
+//   `pendingClassifications`. The flag is monotonic — committed
+//   decompositions are structurally permanent.
+//   Decision §5 — synchronous local-ref seed-from-first-non-empty
+//   placements gate (inline, NOT `useSeenKeysGate`); mirror of the
+//   `aud_diagnostic_fire_animation_seeding_alignment` precedent.
+//   Decision §6 — `var(--aud-anim-halo-ms)` + `var(--aud-anim-easing)`
+//   + `forwards` fill; halo-tier parity. Decision §7 — Playwright
+//   deferred to `aud_url_routing.aud_session_url` (eleventh refinement
+//   on that inherited-debt chain). The new overlay mounts LAST so its
+//   halo `<span>`s sit above the seven earlier overlays' chrome at
+//   the moment of arrival.)
+//
 // Refinement: tasks/refinements/audience/aud_diagnostic_edge_fire_animation.md
 //   (Decision §1 — `<AudienceDiagnosticEdgeFireOverlay>` is a seventh
 //   DOM-overlay sibling of the Cytoscape canvas, the edge counterpart
@@ -290,6 +314,7 @@ import { AudienceNodeAppearOverlay } from './NodeAppearOverlay.js';
 import { AudienceWithdrawalHaloOverlay } from './WithdrawalHaloOverlay.js';
 import { AudienceDiagnosticFireOverlay } from './DiagnosticFireOverlay.js';
 import { AudienceDiagnosticEdgeFireOverlay } from './DiagnosticEdgeFireOverlay.js';
+import { AudienceDecompositionFadeOverlay } from './DecompositionFadeOverlay.js';
 
 export interface AudienceGraphViewProps {
   /**
@@ -484,6 +509,7 @@ export function AudienceGraphView({ cyRef }: AudienceGraphViewProps): ReactEleme
         containerRef={containerRef}
         sessionId={sessionId}
       />
+      <AudienceDecompositionFadeOverlay cy={cyState} containerRef={containerRef} />
     </div>
   );
 }

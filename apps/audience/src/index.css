@@ -443,3 +443,71 @@ body {
     animation: none;
   }
 }
+
+/* `aud_decomposition_animation` — one-shot slate-tinted halo on a
+ * parent node's `data.decomposed` first flipping to `true` mid-
+ * broadcast (the moment a decompose / interpretive-split commit lands
+ * structurally retiring the parent in favour of its components).
+ * Refinement: tasks/refinements/audience/aud_decomposition_animation.md
+ *   Decision §1 — CSS `@keyframes` on a React-keyed halo `<span>` in
+ *   a new `<AudienceDecompositionFadeOverlay>`, NOT a JS tween, NOT a
+ *   motion-framework dependency, NOT `cy.animate()`.
+ *   Decision §5 — synchronous local-ref seed-from-first-store-snapshot
+ *   gating (per aud_diagnostic_fire_animation_seeding_alignment); the
+ *   gate is keyed on `nodeId` over currently-`decomposed` entries; the
+ *   FIRST observed snapshot seeds the gate with the parents already
+ *   decomposed at audience-join (no retrospective animation);
+ *   subsequent decompose / interpretive-split commits fire the halo
+ *   exactly once per (node, session).
+ *   Decision §6 — `var(--aud-anim-halo-ms)` (450 ms) + `var(--aud-anim-
+ *   easing)` (cubic-bezier(0.16, 1, 0.3, 1)); halo tier parity with
+ *   node-appear, withdrawal, and diagnostic-fire because the halo
+ *   geometry is identical. `forwards` fill keeps the `to` state
+ *   (`opacity: 0`) after the animation completes.
+ *   Decision §7 — `prefers-reduced-motion: reduce` suppression is in
+ *   CSS (the class is always emitted by the render path).
+ *
+ * The halo geometry mirrors `[data-node-appear-anim]` (96px square,
+ * radial gradient); the palette is sampled from `STATE_COLORS.agreed`
+ * (slate-700 `#334155` / `rgba(51, 65, 85, ...)`) at
+ * `apps/audience/src/graph/stylesheet.ts`, so the halo reads as
+ * "settled into retirement" — slate is the audience's settled hue and
+ * the decomposition retires the parent into committed-component
+ * status. The post-animation steady state is `node[?decomposed]
+ * { opacity: 0.15 }` (stylesheet entry per Decision §3): the parent
+ * remains in layout but reads as visibly subordinate to its now-
+ * vibrant components. */
+[data-decomposition-anim] {
+  width: 96px;
+  height: 96px;
+  pointer-events: none;
+  background-image: radial-gradient(
+    circle,
+    rgba(51, 65, 85, 0.45) 0%,
+    rgba(51, 65, 85, 0.15) 50%,
+    rgba(51, 65, 85, 0) 75%
+  );
+  opacity: 0;
+  border-radius: 50%;
+}
+
+@keyframes aud-decomposition {
+  from {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(0.8);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1.6);
+  }
+}
+
+.aud-decomposition {
+  animation: aud-decomposition var(--aud-anim-halo-ms) var(--aud-anim-easing) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aud-decomposition {
+    animation: none;
+  }
+}
