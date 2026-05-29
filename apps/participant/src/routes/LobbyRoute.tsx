@@ -68,22 +68,21 @@ import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 
-import { useAuth, useWsClient } from '@a-conversa/shell';
-import type { Event, EventKind } from '@a-conversa/shared-types';
+import {
+  SLOT_ROLES,
+  deriveSlotOccupants,
+  mergeSlots,
+  useAuth,
+  useWsClient,
+  type ParticipantRow,
+  type SlotRole,
+} from '@a-conversa/shell';
+import type { EventKind } from '@a-conversa/shared-types';
 
 import { useWsStore } from '../ws/wsStore';
 import { ParticipantLayout } from '../layout/ParticipantLayout';
 import { ParticipantChrome } from '../layout/ParticipantChrome';
 import { ParticipantStatusIndicator } from '../layout/ParticipantStatusIndicator';
-
-/**
- * The roles displayed as slot rows, in render order. The moderator
- * row is always first; the two debater rows below it. Mirrors the
- * moderator's `SLOT_ROLES` constant at
- * `apps/moderator/src/routes/InviteParticipants.tsx:67`.
- */
-const SLOT_ROLES = ['moderator', 'debater-A', 'debater-B'] as const;
-type SlotRole = (typeof SLOT_ROLES)[number];
 
 /**
  * Event kinds whose arrival in the per-session events slice proves the
@@ -112,19 +111,6 @@ const CONTENT_EVENT_KINDS: readonly EventKind[] = [
   'commit',
 ];
 
-interface SlotOccupant {
-  readonly userId: string;
-  readonly screenName: string;
-}
-
-type SlotOccupants = { [K in SlotRole]?: SlotOccupant };
-
-interface ParticipantRow {
-  readonly userId: string;
-  readonly role: SlotRole;
-  readonly screenName: string;
-}
-
 interface SessionHeader {
   readonly id: string;
   readonly topic: string;
@@ -133,102 +119,6 @@ interface SessionHeader {
 }
 
 type FetchStatus = 'loading' | 'loaded' | 'error';
-
-/**
- * Walk the event log and collapse `participant-joined` /
- * `participant-left` events into a role-keyed occupant map.
- *
- * Mirrors the moderator's reducer at
- * `apps/moderator/src/routes/InviteParticipants.tsx:108-137`
- * line-for-line; per Decision §6 of the refinement this copy stays
- * inline next to its single caller rather than being extracted to
- * `@a-conversa/shell` (a future leaf can lift both copies into the
- * shell substrate when a third caller surfaces).
- *
- * Semantics: `participant-left` clears the slot ONLY when the
- * leaver's `user_id` matches the current occupant's `userId` — a
- * stale `participant-left` arriving after a rejoin must not erase
- * the fresh slot. The same semantic the moderator's reducer holds;
- * pinned by Vitest case (i) below.
- */
-function deriveSlotOccupants(events: readonly Event[]): SlotOccupants {
-  const occupants: SlotOccupants = {};
-  for (const event of events) {
-    if (event.kind === 'participant-joined') {
-      // The payload's `role` is the canonical `EventPayloadMap`
-      // `'moderator' | 'debater-A' | 'debater-B'` union, which IS
-      // `SlotRole`; no cast needed.
-      occupants[event.payload.role] = {
-        userId: event.payload.user_id,
-        screenName: event.payload.screen_name,
-      };
-      continue;
-    }
-    if (event.kind === 'participant-left') {
-      for (const role of SLOT_ROLES) {
-        if (occupants[role]?.userId === event.payload.user_id) {
-          delete occupants[role];
-        }
-      }
-    }
-  }
-  return occupants;
-}
-
-/**
- * Merge the HTTP-prefetch row set into the WS-derived slot map. The
- * HTTP prefetch is the cold-load source of truth (it tells us which
- * slots are filled even before the WS catch-up replay arrives); the
- * WS event stream is the live overlay (its events carry the
- * canonical `screen_name` from the joined-payload, and they reflect
- * every subsequent change). Both are merged into a single per-render
- * slot map — WS wins on collisions, since its events are more recent
- * than the HTTP snapshot.
- *
- * Ported line-for-line from the moderator's
- * `apps/moderator/src/routes/InviteParticipants.tsx:185-214`
- * (`mod_invite_participants_rest_prefetch` Decision §6 +
- * `part_lobby_view_ws_absence_merge_fix` Decision §1). The third
- * `events` arg carries the WS event log so the merge can derive a
- * "latest signal per user id" map and filter HTTP rows whose latest
- * WS event is `participant-left` — otherwise a WS-derived absence
- * (which `deriveSlotOccupants` reflects as a deleted key in
- * `wsOccupants`) would not override the HTTP-prefetched "still here"
- * row, leaving the departed debater alive forever in the merged
- * view. Both surfaces (moderator + participant) now carry the same
- * three-arg shape; the convergence is the precondition for the
- * future extraction into `@a-conversa/shell`.
- */
-function mergeSlots(
-  httpRows: readonly ParticipantRow[],
-  wsOccupants: SlotOccupants,
-  events: readonly Event[],
-): SlotOccupants {
-  // Derive the "latest signal per user id" map from the event log: a
-  // user whose most recent event is `participant-left` has departed;
-  // a user whose most recent event is `participant-joined` (after a
-  // possible prior leave) is present. The merge filters HTTP rows
-  // against the "left" subset so a WS-derived absence overrides the
-  // HTTP prefetch's stale "still here" row.
-  const latest = new Map<string, 'joined' | 'left'>();
-  for (const event of events) {
-    if (event.kind === 'participant-joined') {
-      latest.set(event.payload.user_id, 'joined');
-    } else if (event.kind === 'participant-left') {
-      latest.set(event.payload.user_id, 'left');
-    }
-  }
-  const merged: SlotOccupants = {};
-  for (const row of httpRows) {
-    if (latest.get(row.userId) === 'left') continue;
-    merged[row.role] = { userId: row.userId, screenName: row.screenName };
-  }
-  for (const role of SLOT_ROLES) {
-    const wsSlot = wsOccupants[role];
-    if (wsSlot !== undefined) merged[role] = wsSlot;
-  }
-  return merged;
-}
 
 export function LobbyRoute(): ReactElement {
   const { id = '' } = useParams<{ id: string }>();

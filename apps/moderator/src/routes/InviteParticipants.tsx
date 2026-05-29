@@ -54,18 +54,16 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 
 import { useAuth } from '@a-conversa/shell';
-import { WsClientProvider, useWsClient } from '@a-conversa/shell';
+import {
+  SLOT_ROLES,
+  WsClientProvider,
+  deriveSlotOccupants,
+  mergeSlots,
+  useWsClient,
+  type ParticipantRow,
+  type SlotRole,
+} from '@a-conversa/shell';
 import { useWsStore } from '../ws/wsStore';
-import type { Event } from '@a-conversa/shared-types';
-
-/**
- * The roles displayed as slot rows, in render order. The moderator row
- * is always first; the two debater rows below it. The exact order is
- * load-bearing for screen-reader navigation and for the e2e spec's
- * `data-role` filters.
- */
-const SLOT_ROLES = ['moderator', 'debater-A', 'debater-B'] as const;
-type SlotRole = (typeof SLOT_ROLES)[number];
 
 /**
  * The shape `GET /api/sessions/:id` returns (the camelCase
@@ -81,136 +79,6 @@ interface SessionResponse {
   readonly topic: string;
   readonly createdAt: string;
   readonly endedAt: string | null;
-}
-
-/**
- * Per-slot occupant — the `{ userId, screenName }` pair of the user
- * currently assigned to the role. `undefined` means the slot is empty
- * (only meaningful for the two debater roles; the moderator slot is
- * always filled at session creation).
- *
- * The pair shape (carrying `userId`) is load-bearing for the
- * HTTP-prefetch + WS-overlay merge: the participants-list endpoint
- * (`GET /api/sessions/:id/participants`) returns rows with `userId`
- * but does not denormalize `screenName`; the WS event payload IS the
- * canonical display-name source. Carrying both fields lets the merge
- * filter HTTP rows against WS-derived `participant-left` events
- * (Decision §6 of `mod_invite_participants_rest_prefetch.md`).
- *
- * Shape mirrors the participant lobby's at
- * `apps/participant/src/routes/LobbyRoute.tsx:77-82`.
- */
-interface SlotOccupant {
-  readonly userId: string;
-  readonly screenName: string;
-}
-type SlotOccupants = { [K in SlotRole]?: SlotOccupant };
-
-/**
- * The shape of a single row in the HTTP prefetch's projected output
- * — the `{ userId, role, screenName }` triple the merge consumes.
- * `screenName` is the empty string when the endpoint omits it (the
- * current endpoint contract; the WS overlay fills it from the
- * `participant-joined` payload).
- */
-interface ParticipantRow {
-  readonly userId: string;
-  readonly role: SlotRole;
-  readonly screenName: string;
-}
-
-/**
- * Walk the session's event log once and collapse `participant-joined`
- * / `participant-left` events into the per-role occupant map.
- *
- * Semantics mirror `proposalFacets.deriveCurrentParticipants`:
- * `participant-left` cancels a prior `participant-joined` for the same
- * user id; a subsequent rejoin re-adds them. Unlike that helper, this
- * one keeps the moderator's role (the invite view's whole point is to
- * surface the moderator row alongside the two debater rows).
- *
- * The map is keyed by role rather than user id because the invite
- * view's UI is role-shaped — one row per slot. If the same role is
- * filled twice (a backend regression), the latest event wins, which
- * matches the existing `proposalFacets` "rejoin re-adds" semantic.
- */
-function deriveSlotOccupants(events: readonly Event[]): SlotOccupants {
-  // Track the user id currently assigned to each role plus that user's
-  // screen name. The pair allows `participant-left` to clear the slot
-  // only when the leaver matches the current occupant (otherwise a
-  // stale `participant-left` could erase a fresh `participant-joined`
-  // for a different user in the same role).
-  const occupants: SlotOccupants = {};
-  for (const event of events) {
-    if (event.kind === 'participant-joined') {
-      const role = event.payload.role;
-      occupants[role] = {
-        userId: event.payload.user_id,
-        screenName: event.payload.screen_name,
-      };
-      continue;
-    }
-    if (event.kind === 'participant-left') {
-      for (const role of SLOT_ROLES) {
-        if (occupants[role]?.userId === event.payload.user_id) {
-          delete occupants[role];
-        }
-      }
-    }
-  }
-  return occupants;
-}
-
-/**
- * Merge the HTTP-prefetch row set with the WS-derived slot map. The
- * HTTP prefetch is the cold-load source of truth (it tells us which
- * slots are filled even before the WS catch-up replay arrives); the
- * WS event stream is the live overlay (its events carry the canonical
- * `screen_name` from the joined-payload, and they reflect every
- * subsequent change). Both are merged into a single per-render slot
- * map — WS wins on collisions, since its events are more recent than
- * the HTTP snapshot.
- *
- * Diverges from the participant lobby's `mergeSlots` at
- * `apps/participant/src/routes/LobbyRoute.tsx:150-163` by also
- * propagating WS-derived absences: the participant lobby's merge
- * iterates HTTP rows then overlays WS, so a WS-derived
- * `participant-left` (which deletes the key from `wsOccupants`)
- * doesn't override the HTTP row — the slot stays "alive" from the
- * HTTP prefetch's view. This implementation walks the event log a
- * second pass to derive a `wsAbsentUserIds` set, then filters HTTP
- * rows against it before applying. See Decision §6 of
- * `tasks/refinements/moderator-ui/mod_invite_participants_rest_prefetch.md`.
- */
-function mergeSlots(
-  httpRows: readonly ParticipantRow[],
-  wsOccupants: SlotOccupants,
-  events: readonly Event[],
-): SlotOccupants {
-  // Derive the "latest signal per user id" map from the event log: a
-  // user whose most recent event is `participant-left` has departed;
-  // a user whose most recent event is `participant-joined` (after a
-  // possible prior leave) is present. The merge filters HTTP rows
-  // against the "left" subset so a WS-derived absence overrides the
-  // HTTP prefetch's stale "still here" row.
-  const latest = new Map<string, 'joined' | 'left'>();
-  for (const event of events) {
-    if (event.kind === 'participant-joined') {
-      latest.set(event.payload.user_id, 'joined');
-    } else if (event.kind === 'participant-left') {
-      latest.set(event.payload.user_id, 'left');
-    }
-  }
-  const merged: SlotOccupants = {};
-  for (const row of httpRows) {
-    if (latest.get(row.userId) === 'left') continue;
-    merged[row.role] = { userId: row.userId, screenName: row.screenName };
-  }
-  for (const role of SLOT_ROLES) {
-    const wsSlot = wsOccupants[role];
-    if (wsSlot !== undefined) merged[role] = wsSlot;
-  }
-  return merged;
 }
 
 export function InviteParticipantsRoute(): ReactElement {

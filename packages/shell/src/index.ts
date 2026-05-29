@@ -25,6 +25,17 @@ export {
 // ─── screen-name ─────────────────────────────────────────────────────────
 export { ScreenNameForm, type ScreenNameFormProps } from './screen-name/index.js';
 
+// ─── slots ───────────────────────────────────────────────────────────────
+export {
+  SLOT_ROLES,
+  deriveSlotOccupants,
+  mergeSlots,
+  type ParticipantRow,
+  type SlotOccupant,
+  type SlotOccupants,
+  type SlotRole,
+} from './slots/index.js';
+
 // ─── login / logout ──────────────────────────────────────────────────────
 export { LoginButton, logout, type LoginButtonProps } from './login-logout/index.js';
 
