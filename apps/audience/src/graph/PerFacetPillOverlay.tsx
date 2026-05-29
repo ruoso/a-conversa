@@ -28,6 +28,24 @@
 //              `cytoscapeOverlayHooks.ts`. The component keeps its
 //              render shape and its `commitPerFacetPlacements` pure
 //              iteration function; the hook owns the lifecycle.)
+// Refinement: tasks/refinements/audience/aud_proposed_to_agreed_animation.md
+//              (Decision §1 — CSS `@keyframes` on a React-keyed wrapper
+//              around the inner `<FacetPill>`, gated by
+//              `useSeenKeysGate` over currently-`'agreed'`
+//              `${nodeId}:${facet}` keys. Decision §2 — wrap inside
+//              this overlay rather than introducing a parallel halo
+//              overlay sibling; pill-row layout coordinates stay
+//              internal to a single overlay. Decision §3 — audience-only
+//              wrapper; shell `<FacetPill>` is byte-unchanged.
+//              Decision §4 — the gate's `currentKeys` is filtered to
+//              ONLY currently-`'agreed'` (nodeId, facet) pairs; first
+//              non-empty commit seeds with whatever pairs are agreed at
+//              audience-join, subsequent `'agreed'` arrivals fire the
+//              animation exactly once. Decision §5 — 350 ms with
+//              `cubic-bezier(0.16, 1, 0.3, 1)` `forwards`; pacing
+//              constant is revisited by `aud_animation_pacing`.
+//              Decision §6 — Vitest pins the per-render class logic;
+//              Playwright deferred to `aud_url_routing.aud_session_url`.)
 // ADRs:        0004 (Cytoscape.js for the audience broadcast surface —
 //              `renderedBoundingBox` + `cy.on(...)` vocabulary is
 //              canonical Cytoscape API, no new dependency);
@@ -50,7 +68,7 @@ import type { Core, NodeSingular } from 'cytoscape';
 
 import { FacetPill, type FacetName, type FacetStatus } from '@a-conversa/shell';
 
-import { useCytoscapeOverlayPlacements } from './cytoscapeOverlayHooks.js';
+import { useCytoscapeOverlayPlacements, useSeenKeysGate } from './cytoscapeOverlayHooks.js';
 
 export interface AudiencePerFacetPillOverlayProps {
   /**
@@ -113,6 +131,23 @@ export function AudiencePerFacetPillOverlay({
   void containerRef;
   const placements = useCytoscapeOverlayPlacements<PillRowPlacement>(cy, commitPerFacetPlacements);
 
+  // Collect the currently-`'agreed'` (nodeId, facet) keys for the
+  // transition-gate. The seen-Set seeds on the first non-empty commit
+  // with whatever pairs are already agreed at audience-join, so freshly
+  // arriving `'agreed'` transitions produce keys not yet in the set and
+  // the predicate returns `true` exactly once. Non-`'agreed'` statuses
+  // contribute no key and never participate in the gate. See refinement
+  // Decision §4.
+  const agreedPillKeys: string[] = [];
+  for (const p of placements) {
+    for (const facet of FACET_RENDER_ORDER) {
+      if (p.facetStatuses[facet] === 'agreed') {
+        agreedPillKeys.push(`${p.id}:${facet}`);
+      }
+    }
+  }
+  const isNewAgreedPill = useSeenKeysGate(agreedPillKeys);
+
   return (
     <div
       data-testid="audience-per-facet-pill-overlay"
@@ -135,7 +170,18 @@ export function AudiencePerFacetPillOverlay({
           {FACET_RENDER_ORDER.map((facet) => {
             const status = p.facetStatuses[facet];
             if (status === undefined) return null;
-            return <FacetPill key={facet} facet={facet} status={status} />;
+            const isNew = status === 'agreed' && isNewAgreedPill(`${p.id}:${facet}`);
+            return (
+              <span
+                key={facet}
+                data-pill-agreed-anim=""
+                data-element-id={p.id}
+                data-facet-name={facet}
+                className={isNew ? 'aud-pill-agreed' : ''}
+              >
+                <FacetPill facet={facet} status={status} />
+              </span>
+            );
           })}
         </div>
       ))}

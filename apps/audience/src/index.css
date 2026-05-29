@@ -164,3 +164,53 @@ body {
     animation: none;
   }
 }
+
+/* `aud_proposed_to_agreed_animation` — one-shot pulse on per-facet
+ * pill transition to `'agreed'`.
+ * Refinement: tasks/refinements/audience/aud_proposed_to_agreed_animation.md
+ *   Decision §1 — CSS `@keyframes` on a React-keyed wrapper around the
+ *   inner `<FacetPill>`, NOT a JS-driven tween, NOT a motion-framework
+ *   dependency. The wrapper class is gated by `useSeenKeysGate` over
+ *   currently-`'agreed'` `${nodeId}:${facet}` keys; CSS keyframes fire
+ *   once when the class lands on a previously-class-less wrapper, then
+ *   never again (React's keyed reconciliation reuses the wrapper).
+ *   Decision §5 — 350 ms with `cubic-bezier(0.16, 1, 0.3, 1)`
+ *   ("emphasized decelerate"); parity with the axiom-mark sibling's
+ *   350 ms because both animations mark a methodology-significant
+ *   commit moment (axiom-mark = participant declaration; per-facet
+ *   agreement = participant aggregate). `aud_animation_pacing`
+ *   revisits the constant alongside the other animation siblings'.
+ *   `forwards` fill-mode keeps the pulse's `to` state (scale 1,
+ *   transparent outline) after the animation completes so the chip
+ *   returns cleanly to its `'agreed'` paint with no residual outline.
+ *   Decision §6 — `prefers-reduced-motion: reduce` suppression is in
+ *   CSS (not TS — the class is always emitted by the render path).
+ *
+ * The keyframe animates a scale settle plus an outward `box-shadow`
+ * ripple that fades to zero — visually reads as "agreement settled on
+ * this chip just now". The slate-700 ripple color matches the
+ * `'agreed'` border palette (`PILL_STATUS_CLASSNAME.agreed` in
+ * `packages/shell/src/facet-pill/FacetPill.tsx`) so the pulse reads
+ * as "of the agreed-state surface". */
+@keyframes aud-pill-agreed {
+  from {
+    transform: scale(0.92);
+    box-shadow: 0 0 0 0 rgba(15, 23, 42, 0.45);
+  }
+  to {
+    transform: scale(1);
+    box-shadow: 0 0 0 6px rgba(15, 23, 42, 0);
+  }
+}
+
+.aud-pill-agreed {
+  display: inline-block;
+  animation: aud-pill-agreed 350ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  border-radius: 9999px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aud-pill-agreed {
+    animation: none;
+  }
+}

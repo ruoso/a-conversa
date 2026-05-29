@@ -331,6 +331,7 @@ task audience "Audience and broadcast" {
     task aud_proposed_to_agreed_animation "Animate proposed → agreed transition" {
       effort 1d
       allocate team
+      complete 100
     }
     task aud_decomposition_animation "Animate decomposition (parent fading, components emerging)" {
       effort 2d

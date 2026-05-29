@@ -330,6 +330,213 @@ describe('AudiencePerFacetPillOverlay', () => {
     expect(overlayOffCalls.length).toBe(3);
   });
 
+  // Per tasks/refinements/audience/aud_proposed_to_agreed_animation.md
+  // Decision §6 — Vitest pins the per-render class logic across the
+  // eight `FacetStatus` branches. The wrapper is unconditional
+  // (`[data-pill-agreed-anim]` carrier per Decision §2); only the
+  // `aud-pill-agreed` class is conditional.
+
+  it('(k) initial-mount `agreed` pills do NOT carry the aud-pill-agreed class (lazy-seed via useSeenKeysGate)', async () => {
+    const { cy, unmount } = await renderOverlayWithCy();
+    try {
+      addNodeWithFacetStatuses(
+        cy,
+        NODE_A,
+        { wording: 'agreed', classification: 'agreed' },
+        { x1: 100, x2: 200, y1: 50, y2: 130 },
+      );
+      addNodeWithFacetStatuses(
+        cy,
+        NODE_B,
+        { wording: 'agreed' },
+        { x1: 300, x2: 400, y1: 200, y2: 280 },
+      );
+      await flushRaf();
+      const wrappers = document.querySelectorAll('[data-pill-agreed-anim]');
+      expect(wrappers.length).toBe(3);
+      for (const wrapper of Array.from(wrappers)) {
+        expect(wrapper.classList.contains('aud-pill-agreed')).toBe(false);
+      }
+    } finally {
+      unmount();
+    }
+  });
+
+  it('(l) a freshly-transitioned `proposed`→`agreed` pill DOES carry the aud-pill-agreed class', async () => {
+    const { cy, unmount } = await renderOverlayWithCy();
+    try {
+      // Mount with NODE_B already-agreed (so the gate's lazy-seed
+      // fires on the first non-empty agreed-keys commit, absorbing
+      // NODE_B's pre-existing agreement). Then transition NODE_A's
+      // wording from proposed→agreed; the new key is not in the seed
+      // set, so the predicate returns true and the wrapper class
+      // lands on the freshly-agreed pill.
+      addNodeWithFacetStatuses(
+        cy,
+        NODE_A,
+        { wording: 'proposed' },
+        { x1: 100, x2: 200, y1: 50, y2: 130 },
+      );
+      addNodeWithFacetStatuses(
+        cy,
+        NODE_B,
+        { wording: 'agreed' },
+        { x1: 300, x2: 400, y1: 200, y2: 280 },
+      );
+      await flushRaf();
+      act(() => {
+        cy.getElementById(NODE_A).data('facetStatuses', { wording: 'agreed' });
+      });
+      await flushRaf();
+      const wrapper = document.querySelector(
+        `[data-pill-agreed-anim][data-element-id="${NODE_A}"][data-facet-name="wording"]`,
+      );
+      expect(wrapper).not.toBeNull();
+      expect(wrapper?.classList.contains('aud-pill-agreed')).toBe(true);
+      // The pre-existing NODE_B agreed pill stays unanimated.
+      const preexistingWrapper = document.querySelector(
+        `[data-pill-agreed-anim][data-element-id="${NODE_B}"][data-facet-name="wording"]`,
+      );
+      expect(preexistingWrapper?.classList.contains('aud-pill-agreed')).toBe(false);
+    } finally {
+      unmount();
+    }
+  });
+
+  it('(m) prior-agreed sibling stays unanimated when a different facet transitions to agreed', async () => {
+    const { cy, unmount } = await renderOverlayWithCy();
+    try {
+      addNodeWithFacetStatuses(
+        cy,
+        NODE_A,
+        { classification: 'agreed', wording: 'proposed' },
+        { x1: 100, x2: 200, y1: 50, y2: 130 },
+      );
+      await flushRaf();
+      act(() => {
+        cy.getElementById(NODE_A).data('facetStatuses', {
+          classification: 'agreed',
+          wording: 'agreed',
+        });
+      });
+      await flushRaf();
+      const classificationWrapper = document.querySelector(
+        `[data-pill-agreed-anim][data-element-id="${NODE_A}"][data-facet-name="classification"]`,
+      );
+      const wordingWrapper = document.querySelector(
+        `[data-pill-agreed-anim][data-element-id="${NODE_A}"][data-facet-name="wording"]`,
+      );
+      expect(classificationWrapper?.classList.contains('aud-pill-agreed')).toBe(false);
+      expect(wordingWrapper?.classList.contains('aud-pill-agreed')).toBe(true);
+    } finally {
+      unmount();
+    }
+  });
+
+  it('(n) rerender with identical statuses (pan/zoom) does not re-add the class to any wrapper', async () => {
+    const { cy, unmount } = await renderOverlayWithCy();
+    try {
+      // Same pre-seed shape as test (l): NODE_B already-agreed at
+      // mount so the gate seeds before the NODE_A transition fires.
+      addNodeWithFacetStatuses(
+        cy,
+        NODE_A,
+        { wording: 'proposed' },
+        { x1: 100, x2: 200, y1: 50, y2: 130 },
+      );
+      addNodeWithFacetStatuses(
+        cy,
+        NODE_B,
+        { wording: 'agreed' },
+        { x1: 300, x2: 400, y1: 200, y2: 280 },
+      );
+      await flushRaf();
+      act(() => {
+        cy.getElementById(NODE_A).data('facetStatuses', { wording: 'agreed' });
+      });
+      await flushRaf();
+      const wrapperAfterTransition = document.querySelector(
+        `[data-pill-agreed-anim][data-element-id="${NODE_A}"][data-facet-name="wording"]`,
+      );
+      expect(wrapperAfterTransition?.classList.contains('aud-pill-agreed')).toBe(true);
+      // Simulate pan (re-snapshot identical placements) — the gate's
+      // seen-set has already absorbed NODE_A:wording, so the predicate
+      // now returns false and the class is dropped on the next render.
+      act(() => {
+        cy.emit('pan');
+      });
+      await flushRaf();
+      const wrapperAfterPan = document.querySelector(
+        `[data-pill-agreed-anim][data-element-id="${NODE_A}"][data-facet-name="wording"]`,
+      );
+      expect(wrapperAfterPan).not.toBeNull();
+      expect(wrapperAfterPan?.classList.contains('aud-pill-agreed')).toBe(false);
+      // And no other wrapper picks up the class either.
+      const allWrappers = document.querySelectorAll('[data-pill-agreed-anim]');
+      for (const wrapper of Array.from(allWrappers)) {
+        expect(wrapper.classList.contains('aud-pill-agreed')).toBe(false);
+      }
+    } finally {
+      unmount();
+    }
+  });
+
+  it('(o) non-`agreed` statuses never get the aud-pill-agreed class', async () => {
+    const nonAgreedStatuses: FacetStatus[] = [
+      'proposed',
+      'disputed',
+      'committed',
+      'withdrawn',
+      'meta-disagreement',
+      'awaiting-proposal',
+    ];
+    for (const status of nonAgreedStatuses) {
+      const { cy, unmount } = await renderOverlayWithCy();
+      try {
+        addNodeWithFacetStatuses(
+          cy,
+          NODE_A,
+          { wording: 'proposed' },
+          { x1: 100, x2: 200, y1: 50, y2: 130 },
+        );
+        await flushRaf();
+        act(() => {
+          cy.getElementById(NODE_A).data('facetStatuses', { wording: status });
+        });
+        await flushRaf();
+        const wrapper = document.querySelector(
+          `[data-pill-agreed-anim][data-element-id="${NODE_A}"][data-facet-name="wording"]`,
+        );
+        expect(wrapper, `status ${status}`).not.toBeNull();
+        expect(wrapper?.classList.contains('aud-pill-agreed'), `status ${status}`).toBe(false);
+      } finally {
+        unmount();
+      }
+    }
+  });
+
+  it('(p) every rendered pill sits inside a [data-pill-agreed-anim] wrapper regardless of status', async () => {
+    const { cy, unmount } = await renderOverlayWithCy();
+    try {
+      addNodeWithFacetStatuses(
+        cy,
+        NODE_A,
+        { wording: 'proposed', classification: 'agreed', substance: 'disputed' },
+        { x1: 100, x2: 200, y1: 50, y2: 130 },
+      );
+      await flushRaf();
+      const pills = document.querySelectorAll(
+        `[data-facet-pill-row][data-element-id="${NODE_A}"] [data-facet-pill]`,
+      );
+      expect(pills.length).toBe(3);
+      for (const pill of Array.from(pills)) {
+        expect(pill.closest('[data-pill-agreed-anim]')).not.toBeNull();
+      }
+    } finally {
+      unmount();
+    }
+  });
+
   it('(j) the wording pill renders the localized en-US label "Wording"', async () => {
     const { cy, unmount } = await renderOverlayWithCy();
     try {

@@ -57,4 +57,17 @@ describe('apps/audience/src/index.css', () => {
     const contents = await readFile(INDEX_CSS_PATH, 'utf-8');
     expect(contents).toMatch(/\.aud-node-appear\s*\{\s*animation\s*:\s*none/);
   });
+
+  // Per tasks/refinements/audience/aud_proposed_to_agreed_animation.md
+  // Decision §6 — same CSS smoke-pin posture for the per-facet pill
+  // proposed→agreed transition pulse.
+  it('contains the @keyframes aud-pill-agreed definition', async () => {
+    const contents = await readFile(INDEX_CSS_PATH, 'utf-8');
+    expect(contents).toContain('@keyframes aud-pill-agreed');
+  });
+
+  it('contains a prefers-reduced-motion: reduce override that no-ops .aud-pill-agreed', async () => {
+    const contents = await readFile(INDEX_CSS_PATH, 'utf-8');
+    expect(contents).toMatch(/\.aud-pill-agreed\s*\{\s*animation\s*:\s*none/);
+  });
 });
