@@ -41,18 +41,16 @@ import { memo, useMemo, type ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import {
+  EMPTY_VOTES_BY_FACET_INDEX,
   PILL_BASE_CLASSNAME,
   PILL_STATUS_CLASSNAME,
   VoteIndicator,
   type FacetStatusIndex,
+  type VotesByFacetIndex,
 } from '@a-conversa/shell';
 
 import type { PendingProposalRow } from '../graph/pendingProposals.js';
-import {
-  derivePerProposalFacets,
-  type VotesByFacetIndex,
-  type VotesByProposalIndex,
-} from '../graph/proposalFacets.js';
+import { derivePerProposalFacets, type VotesByProposalIndex } from '../graph/proposalFacets.js';
 
 export interface ProposalFacetBreakdownProps {
   /** The pending-proposal row this breakdown belongs to. */
@@ -101,7 +99,6 @@ export interface ProposalFacetBreakdownProps {
   readonly votesByProposalIndex?: VotesByProposalIndex;
 }
 
-const EMPTY_VOTES_BY_FACET_INDEX: VotesByFacetIndex = new Map();
 const EMPTY_VOTES_BY_PROPOSAL_INDEX: VotesByProposalIndex = new Map();
 
 const BREAKDOWN_CONTAINER_CLASSES = 'flex flex-wrap items-center gap-1';

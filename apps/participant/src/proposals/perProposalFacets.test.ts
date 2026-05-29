@@ -26,10 +26,10 @@ import {
   type FacetStatus,
   type FacetStatusIndex,
   type Vote,
+  type VotesByFacetIndex,
 } from '@a-conversa/shell';
 
 import { derivePerProposalFacets } from './perProposalFacets';
-import type { OtherVotesByFacetIndex } from './otherVotesByFacet';
 import type { OtherVotesByProposalIndex } from './otherVotesByProposal';
 
 const NODE_X = '00000000-0000-4000-8000-00000000000a';
@@ -279,7 +279,7 @@ function votesByFacetWith(
   entityId: string,
   facet: FacetName,
   votes: readonly Vote[],
-): OtherVotesByFacetIndex {
+): VotesByFacetIndex {
   const inner = new Map<FacetName, readonly Vote[]>([[facet, votes]]);
   return new Map<string, ReadonlyMap<FacetName, readonly Vote[]>>([[entityId, inner]]);
 }

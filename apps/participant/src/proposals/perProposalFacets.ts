@@ -19,13 +19,14 @@
 import type { ProposalPayload } from '@a-conversa/shared-types';
 import {
   EMPTY_VOTES,
+  EMPTY_VOTES_BY_FACET_INDEX,
   type FacetName,
   type FacetStatus,
   type FacetStatusIndex,
   type Vote,
+  type VotesByFacetIndex,
 } from '@a-conversa/shell';
 
-import { EMPTY_OTHER_VOTES_BY_FACET_INDEX, type OtherVotesByFacetIndex } from './otherVotesByFacet';
 import {
   EMPTY_OTHER_VOTES_BY_PROPOSAL_INDEX,
   type OtherVotesByProposalIndex,
@@ -190,7 +191,7 @@ export function derivePerProposalFacets(
   proposal: ProposalPayload,
   facetStatusIndex: FacetStatusIndex,
   serverPerFacetStatus: Record<string, string> | undefined,
-  votesByFacetIndex: OtherVotesByFacetIndex = EMPTY_OTHER_VOTES_BY_FACET_INDEX,
+  votesByFacetIndex: VotesByFacetIndex = EMPTY_VOTES_BY_FACET_INDEX,
   proposalEventId: string | undefined = undefined,
   votesByProposalIndex: OtherVotesByProposalIndex = EMPTY_OTHER_VOTES_BY_PROPOSAL_INDEX,
 ): readonly ProposalFacetEntry[] {

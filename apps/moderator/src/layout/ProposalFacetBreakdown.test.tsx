@@ -35,9 +35,9 @@ import {
   type FacetStatus,
   type FacetStatusIndex,
   type Vote,
+  type VotesByFacetIndex,
 } from '@a-conversa/shell';
 import type { PendingProposalRow } from '../graph/pendingProposals';
-import type { VotesByFacetIndex } from '../graph/proposalFacets';
 
 const NODE_X = '00000000-0000-4000-8000-00000000000a';
 const NODE_Y = '00000000-0000-4000-8000-00000000000b';

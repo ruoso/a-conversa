@@ -23,15 +23,17 @@
 // it can do the per-target annotation enrichment in a single pass.
 
 import { MarkerType, type Edge, type EdgeMarker } from 'reactflow';
-import type { EdgeRole, Event, ProposalPayload } from '@a-conversa/shared-types';
+import type { EdgeRole, Event } from '@a-conversa/shared-types';
 // `Vote` is imported from the shell after the `extract_facet_pill` lift
 // (refinement Decision §3 — the in-pill render-dependency chain ships
 // with `<FacetPill>` in `@a-conversa/shell`). The annotation projection
 // trio (`Annotation` / `EMPTY_ANNOTATIONS` / `projectAnnotations` /
 // `groupAnnotationsBy{Node,Edge}`) also lives in the shell after the
-// `shell_package.extract_cytoscape_projectors` lift; the remaining
-// selector exports (axiom-marks pending projector / votes-by-facet /
-// votes-by-proposal) stay here as moderator-graph-specific.
+// `shell_package.extract_cytoscape_projectors` lift; the per-(entity,
+// facet) vote projectors (`projectVotesByFacet` / `projectOtherVotesByFacet`)
+// live in the shell after `shell_package.extract_votes_by_facet_projector_v2`.
+// The remaining selector exports (pending axiom-marks projector,
+// per-proposal-id vote projector) stay here as moderator-graph-specific.
 import {
   EMPTY_ANNOTATIONS,
   EMPTY_FACET_STATUSES,
@@ -449,43 +451,15 @@ export function selectEdgesForSession(
   return out;
 }
 
-// -- Per-participant vote projection --------------------------------
+// -- Per-node per-facet votes shared-empty constant -----------------
 //
-// Refinement: tasks/refinements/moderator-ui/mod_vote_indicators_on_graph.md
-//
-// `projectVotesByFacet` walks the per-session event log and produces a
-// per-node per-facet list of `Vote` records — one entry per participant
-// who voted on the facet's pending proposal, recording the participant's
-// *latest* vote arm. The result is consumed by the in-pill vote-indicator
-// row to surface "who voted what" ambiently on the canvas.
-//
-// **Methodology semantics**: every facet-targeting proposal sub-kind has
-// at most one in-flight proposal per facet at a time (the server's
-// methodology engine enforces this; once a proposal is committed or
-// meta-disagreed, it's closed and a new one can be opened). This
-// projection mirrors the server-side rule of `apps/server/src/methodology/
-// handlers/vote.ts` rule 4: latest vote per `(proposal, participant)`
-// wins; agree↔dispute switches are legal and surface as the new arm.
-//
-// **Scope**: facet-targeting sub-kinds (`classify-node`,
-// `set-node-substance`, `edit-wording`, `amend-node`,
-// `set-edge-substance`). Edge-substance votes are bucketed under the
-// edge id alongside node-keyed buckets — node and edge UUIDs share the
-// same outer-map keyspace because they are disjoint by construction
-// (UUID-v4 collisions are not modeled). Refinement:
-// `mod_vote_indicators_in_sidebar` Decision §4 — the sidebar surface
-// renders one chip per pending proposal regardless of entity kind and
-// needs per-participant votes for edge-substance proposals too; the
-// existing graph consumer (which only ever looks up node ids in the
-// map) is unaffected because edge UUIDs simply don't appear in its
-// lookups. Structural sub-kinds (`decompose`, `interpretive-split`,
-// `axiom-mark`, `meta-move`, `break-edge`, `annotate`) contribute
-// nothing — they don't target a (entity, facet) pair.
-
-// `Vote` interface and `EMPTY_VOTES` constant lifted into
-// `@a-conversa/shell/facet-pill/vote-indicator.ts` per the
-// `extract_facet_pill` refinement Decision §3. The moderator imports
-// both directly from `@a-conversa/shell` (see the top-of-file import).
+// `projectVotesByFacet` + `projectOtherVotesByFacet` were lifted into
+// `@a-conversa/shell/votes-by-facet/` per
+// `tasks/refinements/shell-package/extract_votes_by_facet_projector_v2.md`.
+// Callers import them directly from `@a-conversa/shell`. The per-node
+// empty record below is the moderator-graph-local default for
+// `StatementNodeData.votesByFacet` (the per-node `Partial<Record<FacetName,
+// readonly Vote[]>>` shape, not the outer `VotesByFacetIndex` shape).
 
 /**
  * Module-scope shared empty vote-by-facet record. Hands a stable
@@ -496,171 +470,6 @@ export function selectEdgesForSession(
  */
 export const EMPTY_VOTES_BY_FACET: Readonly<Partial<Record<FacetName, readonly Vote[]>>> =
   Object.freeze({});
-
-/**
- * Decode the (entityKind, entityId, facet) target of a proposal payload
- * for vote projection. The four facet-targeting sub-kinds resolve to a
- * target — three node-keyed (`classify-node`, `set-node-substance`,
- * `edit-wording`) and one edge-keyed (`set-edge-substance`). Structural
- * / voteless sub-kinds return `null` so the caller drops the proposal
- * from the projection.
- *
- * Refinement: `mod_vote_indicators_in_sidebar` Decision §4 — the
- * `set-edge-substance` arm is the additive extension that lets the
- * sidebar surface render the per-participant dot row on edge-substance
- * proposal chips. Node ids and edge ids share the outer-map keyspace
- * because UUIDs don't collide across entity types; the `entityKind`
- * field is preserved on the return value for type-narrowing parity with
- * `proposalFacets.facetTargetOf`, even though the projection's
- * downstream accumulator only consumes `entityId`.
- *
- * Refinement: `data_and_methodology.align_vote_facet_target_vocabulary`
- * Decisions §1–§3 — the canonical facet-valued partition is four kinds.
- * `amend-node` is structural per the per-facet-refactor stream
- * (`pf_commit_handler_facet_keyed.md:58`, `apps/server/src/ws/broadcast/proposal-status.ts:43-56`,
- * `tests/behavior/methodology/vote-facet-keyed.feature:5-11`,
- * `apps/server/src/projection/replay.ts:682`) and its votes arrive on
- * the `target: 'proposal'` arm to be bucketed by `projectVotesByProposal`
- * — not here. `capture-node` is voteless-by-design per the schema
- * commentary at `packages/shared-types/src/events/proposals.ts:111-116`;
- * post-capture wording votes arrive on the `target: 'facet'` arm and
- * bypass this dispatcher entirely.
- */
-function voteTargetOf(
-  proposal: ProposalPayload,
-): { entityKind: 'node' | 'edge'; entityId: string; facet: FacetName } | null {
-  switch (proposal.kind) {
-    case 'classify-node':
-      return { entityKind: 'node', entityId: proposal.node_id, facet: 'classification' };
-    case 'set-node-substance':
-      return { entityKind: 'node', entityId: proposal.node_id, facet: 'substance' };
-    case 'set-edge-substance':
-      return { entityKind: 'edge', entityId: proposal.edge_id, facet: 'substance' };
-    case 'edit-wording':
-      return { entityKind: 'node', entityId: proposal.node_id, facet: 'wording' };
-    default:
-      // decompose, interpretive-split, axiom-mark, meta-move,
-      // break-edge, annotate, amend-node, capture-node — no
-      // per-(entity, facet) target. amend-node is structural
-      // (proposal-keyed; routes through projectVotesByProposal);
-      // capture-node is voteless at the proposal arm (wording votes
-      // following a capture arrive via the facet arm).
-      return null;
-  }
-}
-
-/**
- * Pure projection from a session's event log to the per-node per-facet
- * `Vote[]` index. Single-pass over `events`.
- *
- * For each `proposal` event whose inner proposal targets a (nodeId,
- * facet), records the proposal-id → target mapping. For each subsequent
- * `vote` event referencing a known target, records the participant's
- * latest vote (last-write-wins per `(proposal, participant)`).
- *
- * Insertion order in the per-facet list: order of each participant's
- * FIRST vote on that facet (subsequent votes by the same participant
- * overwrite the choice in-place, preserving the original position).
- * This keeps the rendered dot order stable across the agree↔dispute
- * switch — the dot for participant A doesn't jump to the end of the
- * row when A switches from agree to dispute.
- *
- * Unknown / non-facet-targeting proposals contribute nothing. Votes
- * referencing an unknown proposal are silently dropped.
- */
-export function projectVotesByFacet(events: readonly Event[]): Map<string, Map<FacetName, Vote[]>> {
-  // proposal envelope id → (entityKind, entityId, facet) target.
-  const proposalTarget = new Map<
-    string,
-    { entityKind: 'node' | 'edge'; entityId: string; facet: FacetName }
-  >();
-  // per-(entityId, facet) accumulator: keeps both an ordered list of
-  // votes and a participantId → index map for in-place overwrite of a
-  // participant's latest arm without disturbing arrival order. The
-  // outer-map key is `entityId` (node UUID OR edge UUID — disjoint
-  // keyspaces per Decision §4).
-  const out = new Map<string, Map<FacetName, Vote[]>>();
-  const positionIndex = new Map<string, Map<FacetName, Map<string, number>>>();
-
-  for (const event of events) {
-    if (event.kind === 'proposal') {
-      const target = voteTargetOf(event.payload.proposal);
-      if (target === null) continue;
-      proposalTarget.set(event.id, target);
-      continue;
-    }
-    if (event.kind === 'vote') {
-      // Per ADR 0030 §2: vote payloads are a `target`-discriminated
-      // union. Resolve to the `(entityId, facet)` pair from either
-      // arm — the facet-keyed arm carries it directly; the proposal-
-      // keyed arm looks it up via the proposal-id → target map.
-      let entityId: string;
-      let facet: FacetName;
-      if (event.payload.target === 'facet') {
-        // Per `pf_mod_facet_name_widen_shape`: the local `FacetName`
-        // mirror is now 4-valued (matching the wire-level enum), so
-        // shape-facet votes flow through the same per-(entityId, facet)
-        // bucket as the other three facets. The graph consumer (the
-        // node card's per-facet pill row) only ever looks up node ids,
-        // so edge-shape votes simply don't appear in those lookups;
-        // adding them to the index is non-disruptive and lets the
-        // sidebar / future card-layer surfaces opt in without a second
-        // projection pass.
-        entityId = event.payload.entity_id;
-        facet = event.payload.facet;
-      } else {
-        const target = proposalTarget.get(event.payload.proposal_id);
-        if (target === undefined) continue;
-        entityId = target.entityId;
-        facet = target.facet;
-      }
-
-      let perEntity = out.get(entityId);
-      if (perEntity === undefined) {
-        perEntity = new Map();
-        out.set(entityId, perEntity);
-      }
-      let perFacet = perEntity.get(facet);
-      if (perFacet === undefined) {
-        perFacet = [];
-        perEntity.set(facet, perFacet);
-      }
-
-      let perEntityPositions = positionIndex.get(entityId);
-      if (perEntityPositions === undefined) {
-        perEntityPositions = new Map();
-        positionIndex.set(entityId, perEntityPositions);
-      }
-      let perFacetPositions = perEntityPositions.get(facet);
-      if (perFacetPositions === undefined) {
-        perFacetPositions = new Map();
-        perEntityPositions.set(facet, perFacetPositions);
-      }
-
-      const participantId = event.payload.participant;
-      const choice = event.payload.choice;
-      const priorIndex = perFacetPositions.get(participantId);
-      if (priorIndex === undefined) {
-        perFacetPositions.set(participantId, perFacet.length);
-        perFacet.push({ participantId, choice });
-      } else {
-        perFacet[priorIndex] = { participantId, choice };
-      }
-      continue;
-    }
-    // Other event kinds (commit, meta-disagreement-marked, node-created,
-    // edge-created, annotation-created, etc.) do not contribute votes.
-    // A commit or meta-disagreement-marked event closes the proposal on
-    // the methodology side but the votes recorded BEFORE closure remain
-    // surfaced — they're the historical record of who agreed (the
-    // moderator still wants to see "Alice agreed, Bob agreed" on a
-    // committed proposal). Server-side write rules prevent further
-    // arm-switching votes after commit (rule 3 in vote.ts), so the
-    // last-write-wins semantics are stable.
-  }
-
-  return out;
-}
 
 // ---------------------------------------------------------------------
 // `projectVotesByProposal` — per-proposal-id vote bucket for the

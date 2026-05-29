@@ -39,12 +39,12 @@ import {
   type I18nInstance,
   type SendFn,
   type Vote,
+  type VotesByFacetIndex,
   type WsClient,
   type WsClientStatus,
 } from '@a-conversa/shell';
 
 import { PerProposalFacetBreakdown } from './PerProposalFacetBreakdown';
-import type { OtherVotesByFacetIndex } from './otherVotesByFacet';
 import type { OtherVotesByProposalIndex } from './otherVotesByProposal';
 import { EMPTY_OWN_FACET_VOTES, ownFacetKey, type OwnFacetVoteIndex } from '../graph/ownVotes';
 import { resetVoteActionStore } from '../detail/useVoteAction';
@@ -135,13 +135,13 @@ function renderBreakdown(
   facetStatusIndex: FacetStatusIndex = EMPTY_INDEX,
   serverPerFacetStatus: Record<string, string> | undefined = undefined,
   proposalEventId: string = PROPOSAL_P,
-  votesByFacetIndex?: OtherVotesByFacetIndex,
+  votesByFacetIndex?: VotesByFacetIndex,
   votesByProposalIndex?: OtherVotesByProposalIndex,
   ownFacetVotes?: OwnFacetVoteIndex,
   client: WsClient = makeFakeClient().client,
 ): ReturnType<typeof render> {
   const voteProps: {
-    votesByFacetIndex?: OtherVotesByFacetIndex;
+    votesByFacetIndex?: VotesByFacetIndex;
     votesByProposalIndex?: OtherVotesByProposalIndex;
     ownFacetVotes?: OwnFacetVoteIndex;
   } = {};
@@ -179,7 +179,7 @@ function votesByFacetWith(
   entityId: string,
   facet: FacetName,
   votes: readonly Vote[],
-): OtherVotesByFacetIndex {
+): VotesByFacetIndex {
   const inner = new Map<FacetName, readonly Vote[]>([[facet, votes]]);
   return new Map<string, ReadonlyMap<FacetName, readonly Vote[]>>([[entityId, inner]]);
 }

@@ -183,8 +183,11 @@ task shell_package "Shell package (@aconversa/shell)" {
   task extract_votes_by_facet_projector_v2 "Lift aligned projectVotesByFacet into @a-conversa/shell once data_and_methodology.align_vote_facet_target_vocabulary lands AND a third caller (audience per-voter rendering) materializes" {
     effort 0.5d
     allocate team
+    complete 100
     depends !extract_votes_by_facet_projector, data_and_methodology.align_vote_facet_target_vocabulary
     note -8<-
+      Refinement: tasks/refinements/shell-package/extract_votes_by_facet_projector_v2.md
+
       Lift the now-aligned `projectVotesByFacet` into `packages/shell/src/votes-by-facet/`; rewire
       all three callers' imports (moderator, participant, audience). The participant's
       `projectOtherVotesByFacet` collapses to a thin wrapper adding the self-filter on top of the

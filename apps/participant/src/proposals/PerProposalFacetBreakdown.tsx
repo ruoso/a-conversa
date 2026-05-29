@@ -25,15 +25,16 @@ import { memo, useMemo, type ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ProposalPayload } from '@a-conversa/shared-types';
 import {
+  EMPTY_VOTES_BY_FACET_INDEX,
   PILL_BASE_CLASSNAME,
   PILL_STATUS_CLASSNAME,
   VoteIndicator,
   type FacetStatusIndex,
+  type VotesByFacetIndex,
 } from '@a-conversa/shell';
 
 import { EMPTY_OWN_FACET_VOTES, type OwnFacetVoteIndex } from '../graph/ownVotes';
 import { derivePerProposalFacets } from './perProposalFacets';
-import { EMPTY_OTHER_VOTES_BY_FACET_INDEX, type OtherVotesByFacetIndex } from './otherVotesByFacet';
 import {
   EMPTY_OTHER_VOTES_BY_PROPOSAL_INDEX,
   type OtherVotesByProposalIndex,
@@ -45,7 +46,7 @@ export interface PerProposalFacetBreakdownProps {
   readonly facetStatusIndex: FacetStatusIndex;
   readonly serverPerFacetStatus: Record<string, string> | undefined;
   readonly proposalEventId: string;
-  readonly votesByFacetIndex?: OtherVotesByFacetIndex;
+  readonly votesByFacetIndex?: VotesByFacetIndex;
   readonly votesByProposalIndex?: OtherVotesByProposalIndex;
   readonly ownFacetVotes?: OwnFacetVoteIndex;
 }
@@ -71,7 +72,7 @@ function PerProposalFacetBreakdownImpl(props: PerProposalFacetBreakdownProps): R
         proposal,
         facetStatusIndex,
         serverPerFacetStatus,
-        votesByFacetIndex ?? EMPTY_OTHER_VOTES_BY_FACET_INDEX,
+        votesByFacetIndex ?? EMPTY_VOTES_BY_FACET_INDEX,
         proposalEventId,
         votesByProposalIndex ?? EMPTY_OTHER_VOTES_BY_PROPOSAL_INDEX,
       ),

@@ -116,7 +116,6 @@ import {
   EMPTY_VOTES_BY_FACET,
   groupPendingAxiomMarksByNode,
   projectPendingAxiomMarks,
-  projectVotesByFacet,
   selectEdgesForSession,
 } from './selectors.js';
 import {
@@ -126,6 +125,7 @@ import {
   groupAxiomMarksByNode,
   projectAnnotations,
   projectAxiomMarks,
+  projectVotesByFacet,
 } from '@a-conversa/shell';
 import type { DiagnosticPayload } from '@a-conversa/shared-types';
 

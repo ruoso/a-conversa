@@ -30,7 +30,6 @@ import {
   deriveCurrentParticipants,
   derivePerProposalFacets,
   type ProposalFacetEntry,
-  type VotesByFacetIndex,
 } from './proposalFacets';
 import {
   EMPTY_VOTES,
@@ -38,6 +37,7 @@ import {
   type FacetStatus,
   type FacetStatusIndex,
   type Vote,
+  type VotesByFacetIndex,
 } from '@a-conversa/shell';
 import type { Event } from '@a-conversa/shared-types';
 

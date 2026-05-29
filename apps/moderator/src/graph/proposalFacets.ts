@@ -39,10 +39,12 @@
 import type { Event, ProposalPayload } from '@a-conversa/shared-types';
 import {
   EMPTY_VOTES,
+  EMPTY_VOTES_BY_FACET_INDEX,
   type FacetName,
   type FacetStatus,
   type FacetStatusIndex,
   type Vote,
+  type VotesByFacetIndex,
 } from '@a-conversa/shell';
 
 /**
@@ -247,23 +249,12 @@ function labelKeyFor(facet: LifecycleFacetName): string {
   return `methodology.facet.${facet}`;
 }
 
-/**
- * Per-participant vote index keyed by `(entityId, facet)` —
- * `projectVotesByFacet(events)`'s return shape (re-stated here to
- * avoid forcing the selector's caller through the projection import
- * just to spell the parameter type). Refinement:
- * `mod_vote_indicators_in_sidebar` Decision §4.
- */
-export type VotesByFacetIndex = ReadonlyMap<string, ReadonlyMap<FacetName, readonly Vote[]>>;
-
-/**
- * Module-scope shared empty `VotesByFacetIndex` — hands a stable
- * reference to callers (notably tests that exercise the selector
- * without a populated index, and the selector's own default-parameter
- * fall-through that older call sites use before the pane rolls out
- * the threaded value).
- */
-const EMPTY_VOTES_BY_FACET_INDEX: VotesByFacetIndex = new Map();
+// `VotesByFacetIndex` + `EMPTY_VOTES_BY_FACET_INDEX` lifted into
+// `@a-conversa/shell` per the
+// `shell_package.extract_votes_by_facet_projector_v2` lift. In-workspace
+// consumers (proposalFilter.ts, ProposalFacetBreakdown.tsx,
+// PendingProposalsPane.tsx, plus their test siblings) import the type
+// directly from `@a-conversa/shell` rather than re-exporting it here.
 
 /**
  * Derive the per-facet entries for a single pending proposal.

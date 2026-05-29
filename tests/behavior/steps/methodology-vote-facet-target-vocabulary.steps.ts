@@ -16,9 +16,12 @@ import { Given, Then, When } from '@cucumber/cucumber';
 import { strict as assert } from 'node:assert';
 import type { AConversaWorld } from '../support/world.js';
 import type { Event } from '../../../packages/shared-types/src/events.js';
-import type { FacetName, Vote } from '../../../packages/shell/src/index.js';
-import { projectVotesByFacet } from '../../../apps/moderator/src/graph/selectors.js';
-import { projectOtherVotesByFacet } from '../../../apps/participant/src/proposals/otherVotesByFacet.js';
+import {
+  projectOtherVotesByFacet,
+  projectVotesByFacet,
+  type FacetName,
+  type Vote,
+} from '../../../packages/shell/src/index.js';
 
 // Distinct UUID prefix (`f7...`) from sibling step files so the shared
 // Cucumber World doesn't collide on scratch state when scenarios run in

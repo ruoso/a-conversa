@@ -28,7 +28,12 @@ import { formatRelativeTime } from '@a-conversa/i18n-catalogs';
 
 import { useWsStore } from '../ws/wsStore';
 import { useUiStore } from '../stores/uiStore';
-import { computeFacetStatuses, type FacetStatusIndex } from '@a-conversa/shell';
+import {
+  computeFacetStatuses,
+  projectOtherVotesByFacet,
+  type FacetStatusIndex,
+  type VotesByFacetIndex,
+} from '@a-conversa/shell';
 import { projectOwnFacetVotes, type OwnFacetVoteIndex } from '../graph/ownVotes';
 import {
   derivePendingProposals,
@@ -36,7 +41,6 @@ import {
 } from './derivePendingProposals';
 import { summaryText } from './proposalSummary';
 import { PerProposalFacetBreakdown } from './PerProposalFacetBreakdown';
-import { projectOtherVotesByFacet, type OtherVotesByFacetIndex } from './otherVotesByFacet';
 import {
   projectOtherVotesByProposal,
   type OtherVotesByProposalIndex,
@@ -146,7 +150,7 @@ function PendingProposalRow({
   readonly systemAuthorLabel: string;
   readonly facetStatusIndex: FacetStatusIndex;
   readonly serverPerFacetStatus: Record<string, string> | undefined;
-  readonly votesByFacetIndex: OtherVotesByFacetIndex;
+  readonly votesByFacetIndex: VotesByFacetIndex;
   readonly votesByProposalIndex: OtherVotesByProposalIndex;
   readonly ownFacetVotes: OwnFacetVoteIndex;
 }): ReactElement {

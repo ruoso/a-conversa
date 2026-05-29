@@ -106,6 +106,14 @@ export {
   type FacetStatusIndex,
 } from './facet-status/index.js';
 
+// ─── votes-by-facet ──────────────────────────────────────────────────────
+export {
+  EMPTY_VOTES_BY_FACET_INDEX,
+  projectOtherVotesByFacet,
+  projectVotesByFacet,
+  type VotesByFacetIndex,
+} from './votes-by-facet/index.js';
+
 // ─── axiom-marks ─────────────────────────────────────────────────────────
 export {
   AxiomMarkBadge,
