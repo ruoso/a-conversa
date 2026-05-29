@@ -44,4 +44,17 @@ describe('apps/audience/src/index.css', () => {
     // `animation` property name, the colon, and `none` is acceptable.
     expect(contents).toMatch(/\.aud-axiom-mark-land\s*\{\s*animation\s*:\s*none/);
   });
+
+  // Per tasks/refinements/audience/aud_node_appear_animation.md
+  // Decision §6 — the same CSS smoke-pin posture applies to the
+  // node-arrival halo keyframe.
+  it('contains the @keyframes aud-node-appear definition', async () => {
+    const contents = await readFile(INDEX_CSS_PATH, 'utf-8');
+    expect(contents).toContain('@keyframes aud-node-appear');
+  });
+
+  it('contains a prefers-reduced-motion: reduce override that no-ops .aud-node-appear', async () => {
+    const contents = await readFile(INDEX_CSS_PATH, 'utf-8');
+    expect(contents).toMatch(/\.aud-node-appear\s*\{\s*animation\s*:\s*none/);
+  });
 });

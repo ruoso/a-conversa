@@ -173,6 +173,24 @@
 //   Decision §5 — JSDoc blocks for `STYLESHEET` and the typography
 //   pins travel verbatim with the constants into `./stylesheet.ts`.)
 //
+// Refinement: tasks/refinements/audience/aud_node_appear_animation.md
+//   (Decision §1 — `<AudienceNodeAppearOverlay>` is a fourth DOM-overlay
+//   sibling of the Cytoscape canvas, painting a halo `<span>` per node
+//   with a one-shot CSS `@keyframes` entrance; no `cy.animate()`, no
+//   motion-framework dep. Decision §2 — verbatim reuse of the
+//   predecessor's overlay shape; the rule-of-three-or-four extraction
+//   is registered as the named-future-task `aud_dom_overlay_extraction`.
+//   Decision §3 — the overlay owns its own `seenNodeIdsRef`,
+//   intentionally separate from `knownNodeIdsRef` here (different
+//   lifecycle: this ref mutates AFTER the React commit inside the
+//   element-sync effect; the overlay's ref mutates DURING render).
+//   Decision §4 — lazy-init the seen-Set on the first non-empty
+//   placement commit. Decision §5 — 450 ms ease-out, `forwards` fill.
+//   Decision §6 — reduced-motion handled in CSS; Playwright deferred to
+//   `aud_url_routing.aud_session_url`. The new overlay mounts LAST so
+//   its halo `<span>`s sit above the three earlier overlays' chrome at
+//   the moment of arrival.)
+//
 // ADRs:
 //   - 0004 (Cytoscape.js for the audience broadcast surface);
 //   - 0022 (no throwaway verifications — Vitest pins the React-mount
@@ -207,6 +225,7 @@ import { STYLESHEET } from './stylesheet.js';
 import { AudiencePerFacetPillOverlay } from './PerFacetPillOverlay.js';
 import { AudienceAxiomMarkOverlay } from './AxiomMarkOverlay.js';
 import { AudienceAnnotationOverlay } from './AnnotationOverlay.js';
+import { AudienceNodeAppearOverlay } from './NodeAppearOverlay.js';
 
 export interface AudienceGraphViewProps {
   /**
@@ -389,6 +408,7 @@ export function AudienceGraphView({ cyRef }: AudienceGraphViewProps): ReactEleme
       <AudiencePerFacetPillOverlay cy={cyState} containerRef={containerRef} />
       <AudienceAxiomMarkOverlay cy={cyState} containerRef={containerRef} />
       <AudienceAnnotationOverlay cy={cyState} containerRef={containerRef} />
+      <AudienceNodeAppearOverlay cy={cyState} containerRef={containerRef} />
     </div>
   );
 }

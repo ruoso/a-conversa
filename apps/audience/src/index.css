@@ -103,3 +103,64 @@ body {
     animation: none;
   }
 }
+
+/* `aud_node_appear_animation` — one-shot halo animation on Cytoscape
+ * node arrival.
+ * Refinement: tasks/refinements/audience/aud_node_appear_animation.md
+ *   Decision §1 — CSS `@keyframes` on a React-keyed halo overlay
+ *   `<span>`, NOT a JS-driven tween, NOT a motion-framework
+ *   dependency, NOT a `cy.animate()` call (Cytoscape canvas-side
+ *   animation is rejected for the same reasons the predecessor
+ *   rejected it).
+ *   Decision §5 — 450 ms with `cubic-bezier(0.16, 1, 0.3, 1)`
+ *   ("emphasized decelerate"); longer than the axiom-mark badge's
+ *   350 ms because the halo's larger geometry and dense-canvas
+ *   placement benefit from a slightly slower entrance. `forwards`
+ *   fill-mode keeps the halo at the `to` state (`opacity: 0`) after
+ *   the animation completes so it is invisible at rest.
+ *   Decision §6 — `prefers-reduced-motion: reduce` suppression is in
+ *   CSS (not TS — the class is always emitted by the render path).
+ *
+ * The keyframe's `transform` carries `translate(-50%, -50%)`
+ * alongside the `scale(...)` because the React inline style sets
+ * `transform: translate(-50%, -50%)` for centering; while the
+ * animation runs, the CSS animation overrides the inline transform,
+ * so the keyframe must restate the centering translate. The
+ * slate-700-ish gradient color (`rgba(15, 23, 42, ...)`) matches the
+ * audience's existing border palette (see `aud_agreed_styling.md` /
+ * `aud_disputed_styling.md`) so the halo reads as "of the same
+ * surface" rather than a foreign accent. */
+[data-node-appear-anim] {
+  width: 96px;
+  height: 96px;
+  pointer-events: none;
+  background-image: radial-gradient(
+    circle,
+    rgba(15, 23, 42, 0.35) 0%,
+    rgba(15, 23, 42, 0.1) 50%,
+    rgba(15, 23, 42, 0) 75%
+  );
+  opacity: 0;
+  border-radius: 50%;
+}
+
+@keyframes aud-node-appear {
+  from {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(0.4);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1.6);
+  }
+}
+
+.aud-node-appear {
+  animation: aud-node-appear 450ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aud-node-appear {
+    animation: none;
+  }
+}
