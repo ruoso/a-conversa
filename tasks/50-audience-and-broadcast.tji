@@ -357,6 +357,7 @@ task audience "Audience and broadcast" {
     task aud_dom_overlay_extraction "Extract shared KeyedCytoscapeNodeOverlay primitive from the four DOM-overlay siblings" {
       effort 1d
       allocate team
+      complete 100
       depends !aud_node_appear_animation
       note "Source-of-debt: tasks/refinements/audience/aud_node_appear_animation.md Decision §2. Refactor PerFacetPillOverlay, AxiomMarkOverlay, AnnotationOverlay, and NodeAppearOverlay to consume a shared overlay primitive (rAF-batched commit, three-event subscription, seen-Set lazy-init). Deferred from aud_node_appear_animation to keep that leaf single-concern."
     }

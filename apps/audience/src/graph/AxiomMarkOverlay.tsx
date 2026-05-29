@@ -41,6 +41,16 @@
 //              suppression is in CSS, not TS — the class is always
 //              emitted, the `@media (prefers-reduced-motion: reduce)`
 //              clause in `apps/audience/src/index.css` no-ops it.)
+// Refinement: tasks/refinements/audience/aud_dom_overlay_extraction.md
+//              (Decisions §1–§6 — the rAF-batched commit + three-event
+//              subscription set + cleanup branch lift into
+//              `useCytoscapeOverlayPlacements<P>`; the lazy-init-on-
+//              non-empty seen-Set gate lifts into `useSeenKeysGate<K>`
+//              (Decision §4 preserves the
+//              `seenRef.current === null && currentKeys.length > 0`
+//              seeding timing). The component keeps its render shape
+//              and its `commitAxiomBadgePlacements` pure iteration
+//              function; the hooks own lifecycle and gating state.)
 // ADRs:        0004 (Cytoscape.js — `renderedBoundingBox` + `cy.on(...)`
 //              vocabulary is canonical Cytoscape API, no new dep);
 //              0022 (no throwaway verifications — pinned by
@@ -57,10 +67,12 @@
 // surface stays read-only: clicks pass through to the (already
 // `autoungrabify: true`) Cytoscape canvas.
 
-import { useEffect, useRef, useState, type ReactElement, type RefObject } from 'react';
+import { type ReactElement, type RefObject } from 'react';
 import type { Core, NodeSingular } from 'cytoscape';
 
 import { AxiomMarkBadge, type AxiomMark } from '@a-conversa/shell';
+
+import { useCytoscapeOverlayPlacements, useSeenKeysGate } from './cytoscapeOverlayHooks.js';
 
 export interface AudienceAxiomMarkOverlayProps {
   /**
@@ -103,70 +115,12 @@ export function AudienceAxiomMarkOverlay({
   containerRef,
 }: AudienceAxiomMarkOverlayProps): ReactElement {
   void containerRef;
-  const [placements, setPlacements] = useState<readonly BadgeRowPlacement[]>([]);
-  const frameRef = useRef<number | null>(null);
-  // Per refinement Decision §4: lazy-initialize a Set of seen
-  // `${nodeId}:${participantId}` keys so that badges present when the
-  // overlay first commits a non-empty placement snapshot do NOT
-  // animate; only marks that arrive in a subsequent commit do.
-  // `placements` starts as `[]` and is populated by the rAF-batched
-  // commit inside the useEffect, so we wait for the first non-empty
-  // snapshot before seeding — seeding on the literal first render
-  // (when placements is still `[]`) would leave the set empty and
-  // every later arrival, including the very first commit's contents,
-  // would be (incorrectly) treated as "new".
-  const seenMarkKeysRef = useRef<Set<string> | null>(null);
-
-  if (seenMarkKeysRef.current === null && placements.length > 0) {
-    const seeded = new Set<string>();
-    placements.forEach((p) => {
-      p.marks.forEach((m) => seeded.add(`${p.id}:${m.participantId}`));
-    });
-    seenMarkKeysRef.current = seeded;
-  }
-  const seenMarkKeys = seenMarkKeysRef.current;
-
-  useEffect(() => {
-    if (cy === null) return undefined;
-
-    const commit = (): void => {
-      frameRef.current = null;
-      const next: BadgeRowPlacement[] = [];
-      cy.nodes().forEach((node: NodeSingular) => {
-        const marks = node.data('axiomMarks') as readonly AxiomMark[] | undefined;
-        if (marks === undefined || marks.length === 0) return;
-        const bb = node.renderedBoundingBox();
-        next.push({
-          id: node.id(),
-          x: (bb.x1 + bb.x2) / 2,
-          y: bb.y2 + AXIOM_BADGE_ROW_OFFSET_Y,
-          marks,
-        });
-      });
-      setPlacements(next);
-    };
-
-    const scheduleUpdate = (): void => {
-      if (frameRef.current !== null) return;
-      frameRef.current = requestAnimationFrame(commit);
-    };
-
-    scheduleUpdate();
-
-    cy.on('render pan zoom resize', scheduleUpdate);
-    cy.on('position', 'node', scheduleUpdate);
-    cy.on('add remove data', scheduleUpdate);
-
-    return () => {
-      if (frameRef.current !== null) {
-        cancelAnimationFrame(frameRef.current);
-        frameRef.current = null;
-      }
-      cy.off('render pan zoom resize', scheduleUpdate);
-      cy.off('position', 'node', scheduleUpdate);
-      cy.off('add remove data', scheduleUpdate);
-    };
-  }, [cy]);
+  const placements = useCytoscapeOverlayPlacements<BadgeRowPlacement>(
+    cy,
+    commitAxiomBadgePlacements,
+  );
+  const markKeys = placements.flatMap((p) => p.marks.map((m) => `${p.id}:${m.participantId}`));
+  const isNewMark = useSeenKeysGate(markKeys);
 
   return (
     <div data-testid="audience-axiom-mark-overlay" className="pointer-events-none absolute inset-0">
@@ -186,8 +140,7 @@ export function AudienceAxiomMarkOverlay({
         >
           {p.marks.map((mark) => {
             const markKey = `${p.id}:${mark.participantId}`;
-            const isNew = seenMarkKeys !== null && !seenMarkKeys.has(markKey);
-            if (isNew) seenMarkKeys.add(markKey);
+            const isNew = isNewMark(markKey);
             return (
               <span
                 key={mark.participantId}
@@ -202,6 +155,22 @@ export function AudienceAxiomMarkOverlay({
       ))}
     </div>
   );
+}
+
+function commitAxiomBadgePlacements(cy: Core): readonly BadgeRowPlacement[] {
+  const next: BadgeRowPlacement[] = [];
+  cy.nodes().forEach((node: NodeSingular) => {
+    const marks = node.data('axiomMarks') as readonly AxiomMark[] | undefined;
+    if (marks === undefined || marks.length === 0) return;
+    const bb = node.renderedBoundingBox();
+    next.push({
+      id: node.id(),
+      x: (bb.x1 + bb.x2) / 2,
+      y: bb.y2 + AXIOM_BADGE_ROW_OFFSET_Y,
+      marks,
+    });
+  });
+  return next;
 }
 
 export default AudienceAxiomMarkOverlay;

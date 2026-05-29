@@ -21,6 +21,13 @@
 //              `cy.on('add remove data', cb)`. Decision §5 — `cy` is
 //              lifted into `useState` upstream and arrives as a
 //              non-null prop on the second render.)
+// Refinement: tasks/refinements/audience/aud_dom_overlay_extraction.md
+//              (Decisions §1–§6 — the rAF-batched commit + three-event
+//              subscription set + cleanup branch are lifted into
+//              `useCytoscapeOverlayPlacements<P>` in
+//              `cytoscapeOverlayHooks.ts`. The component keeps its
+//              render shape and its `commitPerFacetPlacements` pure
+//              iteration function; the hook owns the lifecycle.)
 // ADRs:        0004 (Cytoscape.js for the audience broadcast surface —
 //              `renderedBoundingBox` + `cy.on(...)` vocabulary is
 //              canonical Cytoscape API, no new dependency);
@@ -38,10 +45,12 @@
 // broadcast surface stays read-only: clicks pass through to the
 // (already `autoungrabify: true`) Cytoscape canvas.
 
-import { useEffect, useRef, useState, type ReactElement, type RefObject } from 'react';
+import { type ReactElement, type RefObject } from 'react';
 import type { Core, NodeSingular } from 'cytoscape';
 
 import { FacetPill, type FacetName, type FacetStatus } from '@a-conversa/shell';
+
+import { useCytoscapeOverlayPlacements } from './cytoscapeOverlayHooks.js';
 
 export interface AudiencePerFacetPillOverlayProps {
   /**
@@ -102,67 +111,7 @@ export function AudiencePerFacetPillOverlay({
   // it explicitly so TypeScript's `noUnusedParameters` does not flag the
   // prop.
   void containerRef;
-  const [placements, setPlacements] = useState<readonly PillRowPlacement[]>([]);
-  // Singleton rAF handle. `null` when no frame is pending; a positive
-  // number while a frame is scheduled. Drops re-entrant calls within
-  // the same frame (Decision §4 — one commit per frame regardless of
-  // how many events fire).
-  const frameRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    if (cy === null) return undefined;
-
-    const commit = (): void => {
-      frameRef.current = null;
-      const next: PillRowPlacement[] = [];
-      cy.nodes().forEach((node: NodeSingular) => {
-        const facetStatuses = node.data('facetStatuses') as
-          | Readonly<Partial<Record<FacetName, FacetStatus>>>
-          | undefined;
-        if (facetStatuses === undefined) return;
-        // Skip nodes whose per-facet record is empty (consistent with
-        // the moderator's empty-row omission and the participant's
-        // empty-votes omission).
-        let hasAny = false;
-        for (const facet of FACET_RENDER_ORDER) {
-          if (facetStatuses[facet] !== undefined) {
-            hasAny = true;
-            break;
-          }
-        }
-        if (!hasAny) return;
-        const bb = node.renderedBoundingBox();
-        next.push({
-          id: node.id(),
-          x: (bb.x1 + bb.x2) / 2,
-          y: bb.y1 - PILL_ROW_OFFSET_Y,
-          facetStatuses,
-        });
-      });
-      setPlacements(next);
-    };
-
-    const scheduleUpdate = (): void => {
-      if (frameRef.current !== null) return;
-      frameRef.current = requestAnimationFrame(commit);
-    };
-
-    scheduleUpdate();
-
-    cy.on('render pan zoom resize', scheduleUpdate);
-    cy.on('position', 'node', scheduleUpdate);
-    cy.on('add remove data', scheduleUpdate);
-
-    return () => {
-      if (frameRef.current !== null) {
-        cancelAnimationFrame(frameRef.current);
-        frameRef.current = null;
-      }
-      cy.off('render pan zoom resize', scheduleUpdate);
-      cy.off('position', 'node', scheduleUpdate);
-      cy.off('add remove data', scheduleUpdate);
-    };
-  }, [cy]);
+  const placements = useCytoscapeOverlayPlacements<PillRowPlacement>(cy, commitPerFacetPlacements);
 
   return (
     <div
@@ -192,6 +141,35 @@ export function AudiencePerFacetPillOverlay({
       ))}
     </div>
   );
+}
+
+function commitPerFacetPlacements(cy: Core): readonly PillRowPlacement[] {
+  const next: PillRowPlacement[] = [];
+  cy.nodes().forEach((node: NodeSingular) => {
+    const facetStatuses = node.data('facetStatuses') as
+      | Readonly<Partial<Record<FacetName, FacetStatus>>>
+      | undefined;
+    if (facetStatuses === undefined) return;
+    // Skip nodes whose per-facet record is empty (consistent with
+    // the moderator's empty-row omission and the participant's
+    // empty-votes omission).
+    let hasAny = false;
+    for (const facet of FACET_RENDER_ORDER) {
+      if (facetStatuses[facet] !== undefined) {
+        hasAny = true;
+        break;
+      }
+    }
+    if (!hasAny) return;
+    const bb = node.renderedBoundingBox();
+    next.push({
+      id: node.id(),
+      x: (bb.x1 + bb.x2) / 2,
+      y: bb.y1 - PILL_ROW_OFFSET_Y,
+      facetStatuses,
+    });
+  });
+  return next;
 }
 
 export default AudiencePerFacetPillOverlay;

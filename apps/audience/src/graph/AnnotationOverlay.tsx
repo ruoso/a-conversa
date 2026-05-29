@@ -43,6 +43,17 @@
 //              moves an edge midpoint (pan, zoom, resize, render,
 //              endpoint-node position change via `position node`,
 //              add/remove/data); no new listener.)
+// Refinement: tasks/refinements/audience/aud_dom_overlay_extraction.md
+//              (Decisions §1–§6 — the rAF-batched commit + three-event
+//              subscription set + cleanup branch lift into
+//              `useCytoscapeOverlayPlacements<P>`. The
+//              `commitAnnotationPlacements` pure function still
+//              iterates BOTH `cy.nodes()` and `cy.edges()` — the hook
+//              parameterizes "what to iterate" via the caller-supplied
+//              `commit` callback rather than baking a nodes-only
+//              iteration into the primitive (Decision §3 of the
+//              extraction refinement). The component keeps its render
+//              shape unchanged.)
 // ADRs:        0004 (Cytoscape.js — `renderedBoundingBox` + `cy.on(...)`
 //              vocabulary is canonical Cytoscape API, no new dep);
 //              0022 (no throwaway verifications — pinned by
@@ -63,12 +74,13 @@
 // `autoungrabify: true`) Cytoscape canvas. The badge's `title`
 // attribute is the only hover affordance.
 
-import { useEffect, useRef, useState, type ReactElement, type RefObject } from 'react';
+import { type ReactElement, type RefObject } from 'react';
 import type { Core, EdgeSingular, NodeSingular } from 'cytoscape';
 
 import type { Annotation } from '@a-conversa/shell';
 
 import { AudienceAnnotationBadge } from './AnnotationBadge.js';
+import { useCytoscapeOverlayPlacements } from './cytoscapeOverlayHooks.js';
 
 export interface AudienceAnnotationOverlayProps {
   /**
@@ -130,61 +142,10 @@ export function AudienceAnnotationOverlay({
   containerRef,
 }: AudienceAnnotationOverlayProps): ReactElement {
   void containerRef;
-  const [placements, setPlacements] = useState<readonly AnnotationRowPlacement[]>([]);
-  const frameRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    if (cy === null) return undefined;
-
-    const commit = (): void => {
-      frameRef.current = null;
-      const next: AnnotationRowPlacement[] = [];
-      cy.nodes().forEach((node: NodeSingular) => {
-        const annotations = node.data('annotations') as readonly Annotation[] | undefined;
-        if (annotations === undefined || annotations.length === 0) return;
-        const bb = node.renderedBoundingBox();
-        next.push({
-          id: node.id(),
-          x: (bb.x1 + bb.x2) / 2,
-          y: bb.y2 + ANNOTATION_ROW_OFFSET_Y,
-          annotations,
-        });
-      });
-      cy.edges().forEach((edge: EdgeSingular) => {
-        const annotations = edge.data('annotations') as readonly Annotation[] | undefined;
-        if (annotations === undefined || annotations.length === 0) return;
-        const bb = edge.renderedBoundingBox();
-        next.push({
-          id: edge.id(),
-          x: (bb.x1 + bb.x2) / 2,
-          y: (bb.y1 + bb.y2) / 2 + EDGE_ANNOTATION_OFFSET_Y,
-          annotations,
-        });
-      });
-      setPlacements(next);
-    };
-
-    const scheduleUpdate = (): void => {
-      if (frameRef.current !== null) return;
-      frameRef.current = requestAnimationFrame(commit);
-    };
-
-    scheduleUpdate();
-
-    cy.on('render pan zoom resize', scheduleUpdate);
-    cy.on('position', 'node', scheduleUpdate);
-    cy.on('add remove data', scheduleUpdate);
-
-    return () => {
-      if (frameRef.current !== null) {
-        cancelAnimationFrame(frameRef.current);
-        frameRef.current = null;
-      }
-      cy.off('render pan zoom resize', scheduleUpdate);
-      cy.off('position', 'node', scheduleUpdate);
-      cy.off('add remove data', scheduleUpdate);
-    };
-  }, [cy]);
+  const placements = useCytoscapeOverlayPlacements<AnnotationRowPlacement>(
+    cy,
+    commitAnnotationPlacements,
+  );
 
   return (
     <div data-testid="audience-annotation-overlay" className="pointer-events-none absolute inset-0">
@@ -211,6 +172,33 @@ export function AudienceAnnotationOverlay({
       ))}
     </div>
   );
+}
+
+function commitAnnotationPlacements(cy: Core): readonly AnnotationRowPlacement[] {
+  const next: AnnotationRowPlacement[] = [];
+  cy.nodes().forEach((node: NodeSingular) => {
+    const annotations = node.data('annotations') as readonly Annotation[] | undefined;
+    if (annotations === undefined || annotations.length === 0) return;
+    const bb = node.renderedBoundingBox();
+    next.push({
+      id: node.id(),
+      x: (bb.x1 + bb.x2) / 2,
+      y: bb.y2 + ANNOTATION_ROW_OFFSET_Y,
+      annotations,
+    });
+  });
+  cy.edges().forEach((edge: EdgeSingular) => {
+    const annotations = edge.data('annotations') as readonly Annotation[] | undefined;
+    if (annotations === undefined || annotations.length === 0) return;
+    const bb = edge.renderedBoundingBox();
+    next.push({
+      id: edge.id(),
+      x: (bb.x1 + bb.x2) / 2,
+      y: (bb.y1 + bb.y2) / 2 + EDGE_ANNOTATION_OFFSET_Y,
+      annotations,
+    });
+  });
+  return next;
 }
 
 export default AudienceAnnotationOverlay;

@@ -41,6 +41,15 @@
 //              (`@media (prefers-reduced-motion: reduce)` clause in
 //              `apps/audience/src/index.css`), not in TS — the class
 //              is always emitted by the render path.)
+// Refinement: tasks/refinements/audience/aud_dom_overlay_extraction.md
+//              (Decisions §1–§6 — the rAF-batched commit + three-event
+//              subscription set + cleanup branch lift into
+//              `useCytoscapeOverlayPlacements<P>`; the lazy-init-on-
+//              non-empty seen-Set gate lifts into `useSeenKeysGate<K>`,
+//              preserving the Decision §4 contract that initially-
+//              present nodes do NOT animate while post-mount arrivals
+//              do. The component keeps its render shape and its
+//              `commitNodeAppearPlacements` pure iteration function.)
 // ADRs:        0004 (Cytoscape.js — `renderedBoundingBox` +
 //              `cy.on(...)` vocabulary is canonical Cytoscape API, no
 //              new dep);
@@ -57,8 +66,10 @@
 // layer: the halo is a pure visual decoration, screen readers narrate
 // the underlying node via Cytoscape's own a11y plumbing.
 
-import { useEffect, useRef, useState, type ReactElement, type RefObject } from 'react';
+import { type ReactElement, type RefObject } from 'react';
 import type { Core, NodeSingular } from 'cytoscape';
+
+import { useCytoscapeOverlayPlacements, useSeenKeysGate } from './cytoscapeOverlayHooks.js';
 
 export interface AudienceNodeAppearOverlayProps {
   /**
@@ -92,64 +103,12 @@ export function AudienceNodeAppearOverlay({
   containerRef,
 }: AudienceNodeAppearOverlayProps): ReactElement {
   void containerRef;
-  const [placements, setPlacements] = useState<readonly NodeAppearPlacement[]>([]);
-  const frameRef = useRef<number | null>(null);
-  // Per refinement Decision §4: lazy-initialize a Set of seen `nodeId`
-  // keys so that nodes present when the overlay first commits a
-  // non-empty placement snapshot do NOT animate; only nodes that
-  // arrive in a subsequent commit do. `placements` starts as `[]` and
-  // is populated by the rAF-batched commit inside the useEffect, so
-  // we wait for the first non-empty snapshot before seeding — seeding
-  // on the literal first render (when placements is still `[]`) would
-  // leave the set empty and the first non-empty commit would
-  // (incorrectly) animate every initially-present node.
-  const seenNodeIdsRef = useRef<Set<string> | null>(null);
-
-  if (seenNodeIdsRef.current === null && placements.length > 0) {
-    const seeded = new Set<string>();
-    placements.forEach((p) => seeded.add(p.id));
-    seenNodeIdsRef.current = seeded;
-  }
-  const seenNodeIds = seenNodeIdsRef.current;
-
-  useEffect(() => {
-    if (cy === null) return undefined;
-
-    const commit = (): void => {
-      frameRef.current = null;
-      const next: NodeAppearPlacement[] = [];
-      cy.nodes().forEach((node: NodeSingular) => {
-        const bb = node.renderedBoundingBox();
-        next.push({
-          id: node.id(),
-          x: (bb.x1 + bb.x2) / 2,
-          y: (bb.y1 + bb.y2) / 2,
-        });
-      });
-      setPlacements(next);
-    };
-
-    const scheduleUpdate = (): void => {
-      if (frameRef.current !== null) return;
-      frameRef.current = requestAnimationFrame(commit);
-    };
-
-    scheduleUpdate();
-
-    cy.on('render pan zoom resize', scheduleUpdate);
-    cy.on('position', 'node', scheduleUpdate);
-    cy.on('add remove data', scheduleUpdate);
-
-    return () => {
-      if (frameRef.current !== null) {
-        cancelAnimationFrame(frameRef.current);
-        frameRef.current = null;
-      }
-      cy.off('render pan zoom resize', scheduleUpdate);
-      cy.off('position', 'node', scheduleUpdate);
-      cy.off('add remove data', scheduleUpdate);
-    };
-  }, [cy]);
+  const placements = useCytoscapeOverlayPlacements<NodeAppearPlacement>(
+    cy,
+    commitNodeAppearPlacements,
+  );
+  const nodeIds = placements.map((p) => p.id);
+  const isNewNode = useSeenKeysGate(nodeIds);
 
   return (
     <div
@@ -158,8 +117,7 @@ export function AudienceNodeAppearOverlay({
       aria-hidden="true"
     >
       {placements.map((p) => {
-        const isNew = seenNodeIds !== null && !seenNodeIds.has(p.id);
-        if (isNew) seenNodeIds.add(p.id);
+        const isNew = isNewNode(p.id);
         return (
           <span
             key={p.id}
@@ -177,6 +135,19 @@ export function AudienceNodeAppearOverlay({
       })}
     </div>
   );
+}
+
+function commitNodeAppearPlacements(cy: Core): readonly NodeAppearPlacement[] {
+  const next: NodeAppearPlacement[] = [];
+  cy.nodes().forEach((node: NodeSingular) => {
+    const bb = node.renderedBoundingBox();
+    next.push({
+      id: node.id(),
+      x: (bb.x1 + bb.x2) / 2,
+      y: (bb.y1 + bb.y2) / 2,
+    });
+  });
+  return next;
 }
 
 export default AudienceNodeAppearOverlay;
