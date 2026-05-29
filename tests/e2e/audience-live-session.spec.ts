@@ -36,7 +36,16 @@
 // each from `DEV_USER_POOL` so the file's tests run in parallel under
 // Playwright's `fullyParallel: true` posture without racing on the
 // shared per-session user-creation path: alice, ben, maria, dave,
-// erin, frank.
+// erin, frank. Later additions extend the pool: scenario (7) reuses
+// alice under a fresh `freshAuthedContext`, scenario (8) reuses alice
+// likewise, scenario (9) takes `grace`.
+//
+// Refinement: tasks/refinements/audience/aud_diagnostic_edge_fire_animation.md
+//   (Decision §6 — Playwright spec lands INLINE here, not deferred. The
+//   audience surface is reachable via `aud_session_url`'s route; the
+//   `window.__aConversaWsStore` dev seam lets the scenario apply a
+//   structural diagnostic mid-broadcast and assert the edge-locus
+//   halo with its blocking severity class. Scenario (9) below.)
 
 import {
   expect,
@@ -189,6 +198,50 @@ async function seedEdgeCreated(
       });
     },
     seed,
+  );
+}
+
+/**
+ * Apply a structural diagnostic to the audience surface's WS store
+ * via the dev-only `window.__aConversaWsStore` seam. Mirrors the
+ * `seedNodeCreated` / `seedEdgeCreated` shape but reaches the
+ * `applyDiagnostic` reducer rather than `applyEvent`. The inline
+ * `diagnostic` field shape mirrors the server-side payload union
+ * narrowed by `apps/audience/src/graph/diagnosticHighlights.ts`.
+ */
+async function applyDiagnostic(
+  page: Page,
+  payload: {
+    sessionId: string;
+    kind: string;
+    severity: 'blocking' | 'advisory';
+    status: 'fired' | 'cleared';
+    sequence: number;
+    diagnostic: unknown;
+  },
+): Promise<void> {
+  await page.evaluate(
+    (p: {
+      sessionId: string;
+      kind: string;
+      severity: 'blocking' | 'advisory';
+      status: 'fired' | 'cleared';
+      sequence: number;
+      diagnostic: unknown;
+    }) => {
+      const store = (
+        window as unknown as {
+          __aConversaWsStore?: {
+            getState: () => { applyDiagnostic: (payload: unknown) => void };
+          };
+        }
+      ).__aConversaWsStore;
+      if (!store) {
+        throw new Error('__aConversaWsStore is not exposed on window (audience dev seam)');
+      }
+      store.getState().applyDiagnostic(p);
+    },
+    payload,
   );
 }
 
@@ -578,6 +631,104 @@ test.describe('Audience live session route — /a/sessions/:sessionId', () => {
         `console errors during navigation: ${consoleErrors.join(' | ')}`,
       ).toEqual([]);
       expect(pageErrors, `page errors during navigation: ${pageErrors.join(' | ')}`).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('(9) Diagnostic-fire edge halo on contradiction: seeded edges halo amber-blocking when the contradiction fires', async ({
+    browser,
+  }) => {
+    // Refinement: tasks/refinements/audience/aud_diagnostic_edge_fire_animation.md
+    //   (Acceptance — INLINE Playwright spec. Pre-fire snapshot: zero
+    //   edge-locus halos. After `applyDiagnostic(...)` with a
+    //   `contradiction` payload naming two edges, exactly 2 edge-locus
+    //   halos render carrying `aud-diagnostic-fire-blocking`. The user
+    //   `grace` is unallocated in the existing pool; the scenario uses
+    //   a fresh authed context per the parallel-safety contract.)
+    const context = await freshAuthedContext(browser);
+    const page = await context.newPage();
+    try {
+      const grace = await loginAs(page, { username: 'grace' });
+      expect(grace.screenName.toLowerCase()).toBe('grace');
+      const sessionId = await createSession(page, {
+        topic: 'Diagnostic-fire edge halo on a contradiction over the audience route',
+        privacy: 'public',
+      });
+
+      await page.goto(`/a/sessions/${sessionId}`);
+      await expect(page.getByTestId('audience-graph-root')).toBeVisible({ timeout: 15_000 });
+
+      const NODE_A_ID = '11111111-aaaa-4111-8111-111111111aaa';
+      const NODE_B_ID = '11111111-bbbb-4111-8111-111111111bbb';
+      const EDGE_1_ID = '22222222-aaaa-4222-8222-222222222aaa';
+      const EDGE_2_ID = '22222222-bbbb-4222-8222-222222222bbb';
+
+      // Seed two nodes + two edges so cy has elements to halo against.
+      await seedNodeCreated(page, {
+        sessionId,
+        sequence: 1_000_100,
+        eventId: '99999999-aaaa-4999-8999-999999999aaa',
+        nodeId: NODE_A_ID,
+        wording: 'Contradiction halo edge — node A',
+        actorId: grace.userId,
+      });
+      await seedNodeCreated(page, {
+        sessionId,
+        sequence: 1_000_101,
+        eventId: '99999999-bbbb-4999-8999-999999999bbb',
+        nodeId: NODE_B_ID,
+        wording: 'Contradiction halo edge — node B',
+        actorId: grace.userId,
+      });
+      await seedEdgeCreated(page, {
+        sessionId,
+        sequence: 1_000_102,
+        eventId: '99999999-cccc-4999-8999-999999999ccc',
+        edgeId: EDGE_1_ID,
+        sourceNodeId: NODE_A_ID,
+        targetNodeId: NODE_B_ID,
+        actorId: grace.userId,
+      });
+      await seedEdgeCreated(page, {
+        sessionId,
+        sequence: 1_000_103,
+        eventId: '99999999-dddd-4999-8999-999999999ddd',
+        edgeId: EDGE_2_ID,
+        sourceNodeId: NODE_B_ID,
+        targetNodeId: NODE_A_ID,
+        actorId: grace.userId,
+      });
+
+      await expect
+        .poll(() => readEventsLength(page, sessionId), { timeout: 15_000 })
+        .toBeGreaterThanOrEqual(4);
+
+      // Pre-fire snapshot: no edge-locus halos render.
+      const edgeHaloLocator = page.locator(
+        '[data-diagnostic-fire-anim][data-diagnostic-fire-locus="edge"]',
+      );
+      await expect(edgeHaloLocator).toHaveCount(0);
+
+      // Apply a contradiction diagnostic naming both seeded edges.
+      await applyDiagnostic(page, {
+        sessionId,
+        kind: 'contradiction',
+        severity: 'blocking',
+        status: 'fired',
+        sequence: 1_000_200,
+        diagnostic: {
+          kind: 'contradiction',
+          nodeA: NODE_A_ID,
+          nodeB: NODE_B_ID,
+          edges: [EDGE_1_ID, EDGE_2_ID],
+        },
+      });
+
+      // Both edge halos appear within the rAF settle window.
+      await expect(edgeHaloLocator).toHaveCount(2);
+      await expect(edgeHaloLocator.first()).toHaveClass(/aud-diagnostic-fire-blocking/);
+      await expect(edgeHaloLocator.nth(1)).toHaveClass(/aud-diagnostic-fire-blocking/);
     } finally {
       await context.close();
     }

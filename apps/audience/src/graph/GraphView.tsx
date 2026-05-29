@@ -173,6 +173,25 @@
 //   Decision §5 — JSDoc blocks for `STYLESHEET` and the typography
 //   pins travel verbatim with the constants into `./stylesheet.ts`.)
 //
+// Refinement: tasks/refinements/audience/aud_diagnostic_edge_fire_animation.md
+//   (Decision §1 — `<AudienceDiagnosticEdgeFireOverlay>` is a seventh
+//   DOM-overlay sibling of the Cytoscape canvas, the edge counterpart
+//   of the sixth `<AudienceDiagnosticFireOverlay>`. It paints amber
+//   halos (blocking amber-700 for `contradiction`, advisory amber-400
+//   for the `self-contradicts` coherency-hint sub-kind) per-(diagnostic,
+//   edge) pair with a one-shot CSS `@keyframes` entrance reusing the
+//   node sibling's keyframes byte-identical (Decision §5 — no new CSS).
+//   Decision §3 — edge-midpoint geometry via `edge.renderedBoundingBox()`
+//   matching `AnnotationOverlay.tsx`'s posture. Decision §4 — composite
+//   key `${identityKey}\0${edgeId}` over `useSeenKeysGate` for lazy-init
+//   seed + once-per-(diagnostic, edge, session) animation semantics.
+//   Decision §6 — Playwright spec lands INLINE in
+//   `tests/e2e/audience-live-session.spec.ts`; the audience route is
+//   reachable and the chain that absorbed the node sibling's deferral
+//   has been paid down. The new overlay mounts LAST so its halo
+//   `<span>`s sit above the six earlier overlays' chrome at the moment
+//   of arrival.)
+//
 // Refinement: tasks/refinements/audience/aud_diagnostic_fire_animation.md
 //   (Decision §1 — `<AudienceDiagnosticFireOverlay>` is a sixth DOM-
 //   overlay sibling of the Cytoscape canvas, painting amber halos
@@ -270,6 +289,7 @@ import { AudienceAnnotationOverlay } from './AnnotationOverlay.js';
 import { AudienceNodeAppearOverlay } from './NodeAppearOverlay.js';
 import { AudienceWithdrawalHaloOverlay } from './WithdrawalHaloOverlay.js';
 import { AudienceDiagnosticFireOverlay } from './DiagnosticFireOverlay.js';
+import { AudienceDiagnosticEdgeFireOverlay } from './DiagnosticEdgeFireOverlay.js';
 
 export interface AudienceGraphViewProps {
   /**
@@ -455,6 +475,11 @@ export function AudienceGraphView({ cyRef }: AudienceGraphViewProps): ReactEleme
       <AudienceNodeAppearOverlay cy={cyState} containerRef={containerRef} />
       <AudienceWithdrawalHaloOverlay cy={cyState} containerRef={containerRef} />
       <AudienceDiagnosticFireOverlay
+        cy={cyState}
+        containerRef={containerRef}
+        sessionId={sessionId}
+      />
+      <AudienceDiagnosticEdgeFireOverlay
         cy={cyState}
         containerRef={containerRef}
         sessionId={sessionId}

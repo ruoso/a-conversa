@@ -350,6 +350,7 @@ task audience "Audience and broadcast" {
     task aud_diagnostic_edge_fire_animation "Animate diagnostic firing on affected edges (contradiction / coherency-hint edge halos)" {
       effort 0.5d
       allocate team
+      complete 100
       depends !aud_diagnostic_fire_animation
       note -8<-
         Edge-midpoint counterpart for contradiction edges + coherency-hint self-contradicts edges.
@@ -358,6 +359,20 @@ task audience "Audience and broadcast" {
         tasks/refinements/audience/aud_diagnostic_fire_animation.md.
         Source-of-debt: tasks/refinements/audience/aud_diagnostic_fire_animation.md Decision §7
         (commit landing aud_diagnostic_fire_animation, 2026-05-29).
+      ->8-
+    }
+    task aud_diagnostic_fire_animation_seeding_alignment "Align seen-Set seeding pattern in node-fire overlay with edge-fire fix" {
+      effort 0.5d
+      allocate team
+      depends !aud_diagnostic_edge_fire_animation
+      note -8<-
+        The node sibling <AudienceDiagnosticFireOverlay> carries the same latent gate bug
+        fixed in aud_diagnostic_edge_fire_animation: useSeenKeysGate seeds lazily on the
+        first non-empty commit, conflating mid-session-joiner hydration with first-fire after
+        empty mount. Fix: lift the tuples-based synchronous seeding into the shared hook or
+        apply the same local useRef<Set> fix to the node overlay.
+        Source-of-debt: tasks/refinements/audience/aud_diagnostic_edge_fire_animation.md
+        (fixer sub-agent attempt 1, commit landing aud_diagnostic_edge_fire_animation, 2026-05-29).
       ->8-
     }
     task aud_axiom_mark_animation "Animate axiom-mark landing on a node" {

@@ -18,6 +18,15 @@
 //   edge halos deferred to `aud_diagnostic_edge_fire_animation`. Decision
 //   §8 — no full `projectDiagnosticHighlights`; the audience never
 //   stamps per-entity steady-state highlights into `cy.data()`.)
+// Refinement: tasks/refinements/audience/aud_diagnostic_edge_fire_animation.md
+//   (Decision §2 — sibling helper `flattenActiveDiagnosticsForEdgeFire`
+//   alongside the node-tuple helper rather than broadening the existing
+//   one. The edge helper reads the `edges` field of `affectedEntities()`
+//   and emits one `DiagnosticEdgeFireTuple` per (identityKey, edgeId,
+//   severity); contradiction + the `self-contradicts` coherency-hint
+//   sub-kind are the only kinds that contribute. The future
+//   `shell_diagnostic_highlights_extract` lifts both sibling helpers
+//   together.)
 //
 // **Parallel client mirror**: this module is a port (subset) of the
 // participant's `apps/participant/src/graph/diagnosticHighlights.ts`,
@@ -270,6 +279,52 @@ export function flattenActiveDiagnosticsForFire(
     const { nodes } = affectedEntities(payload);
     for (const nodeId of nodes) {
       tuples.push({ identityKey, nodeId, severity: payload.severity });
+    }
+  }
+  return tuples;
+}
+
+// ---------------------------------------------------------------
+// Audience-specific: flatten activeDiagnostics → (identityKey, edgeId,
+// severity) tuples for the edge-fire-animation overlay.
+// ---------------------------------------------------------------
+
+/**
+ * One per (active diagnostic, affected edge). The edge-overlay sibling
+ * (`<AudienceDiagnosticEdgeFireOverlay>`) maps these into per-edge halo
+ * `<span>`s placed at the rendered edge midpoint. Only two diagnostic
+ * kinds emit a non-empty `edges` projection — `contradiction` (the two
+ * contradicting edges) and the `self-contradicts` sub-kind of
+ * `coherency-hint` (the warrant-bridge edge). All other kinds project
+ * an empty `edges` array and contribute zero tuples.
+ *
+ * Refinement: tasks/refinements/audience/aud_diagnostic_edge_fire_animation.md
+ *   (Decision §2 — sibling helper alongside `flattenActiveDiagnosticsForFire`
+ *   rather than a polymorphic broaden; each helper keeps its focused
+ *   tuple shape so consumers narrow at the type level.)
+ */
+export interface DiagnosticEdgeFireTuple {
+  readonly identityKey: string;
+  readonly edgeId: string;
+  readonly severity: DiagnosticHighlightSeverity;
+}
+
+/**
+ * Walk the per-session `activeDiagnostics` map and emit one tuple per
+ * (identity, affected-edge) pair. Severity is carried verbatim from the
+ * payload. Output order mirrors `flattenActiveDiagnosticsForFire`'s
+ * stability posture — deterministic for a given input map but
+ * consumers gate on the composite key `${identityKey}\0${edgeId}`, not
+ * on array position.
+ */
+export function flattenActiveDiagnosticsForEdgeFire(
+  activeDiagnostics: ReadonlyMap<string, DiagnosticPayload>,
+): readonly DiagnosticEdgeFireTuple[] {
+  const tuples: DiagnosticEdgeFireTuple[] = [];
+  for (const [identityKey, payload] of activeDiagnostics) {
+    const { edges } = affectedEntities(payload);
+    for (const edgeId of edges) {
+      tuples.push({ identityKey, edgeId, severity: payload.severity });
     }
   }
   return tuples;

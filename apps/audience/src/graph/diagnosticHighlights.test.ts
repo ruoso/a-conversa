@@ -19,6 +19,7 @@ import type { DiagnosticPayload } from '@a-conversa/shared-types';
 import {
   affectedEntities,
   diagnosticIdentityKey,
+  flattenActiveDiagnosticsForEdgeFire,
   flattenActiveDiagnosticsForFire,
 } from './diagnosticHighlights';
 
@@ -265,5 +266,63 @@ describe('flattenActiveDiagnosticsForFire', () => {
     expect(aTuples).toHaveLength(2);
     const identityKeys = new Set(aTuples.map((t) => t.identityKey));
     expect(identityKeys.size).toBe(2);
+  });
+});
+
+describe('flattenActiveDiagnosticsForEdgeFire', () => {
+  const E_2 = '00000000-0000-4000-8000-0000000000e2';
+  const E_3 = '00000000-0000-4000-8000-0000000000e3';
+
+  it('empty input → empty tuples array', () => {
+    expect(flattenActiveDiagnosticsForEdgeFire(new Map())).toEqual([]);
+  });
+
+  it('cycle / multi-warrant / dangling-claim payloads → empty (no edges projected)', () => {
+    const cycle = cyclePayload([N_A, N_B, N_C]);
+    const multi = multiWarrantPayload(N_A, N_B, [N_C, N_D]);
+    const dangling = danglingClaimPayload(N_A);
+    const map = new Map<string, DiagnosticPayload>([
+      [diagnosticIdentityKey(cycle), cycle],
+      [diagnosticIdentityKey(multi), multi],
+      [diagnosticIdentityKey(dangling), dangling],
+    ]);
+    expect(flattenActiveDiagnosticsForEdgeFire(map)).toEqual([]);
+  });
+
+  it('contradiction with 2 edges → 2 tuples sharing identityKey and blocking severity', () => {
+    const payload = contradictionPayload(N_A, N_B, [E_1, E_2]);
+    const key = diagnosticIdentityKey(payload);
+    const map = new Map<string, DiagnosticPayload>([[key, payload]]);
+    const tuples = flattenActiveDiagnosticsForEdgeFire(map);
+    expect(tuples).toHaveLength(2);
+    for (const t of tuples) {
+      expect(t.identityKey).toBe(key);
+      expect(t.severity).toBe('blocking');
+    }
+    expect(tuples.map((t) => t.edgeId).sort()).toEqual([E_1, E_2].sort());
+  });
+
+  it('self-contradicts coherency-hint → 1 advisory tuple carrying the warrant-bridge edge id', () => {
+    const payload = coherencyHintSelfContradictsPayload(E_3, N_A);
+    const key = diagnosticIdentityKey(payload);
+    const map = new Map<string, DiagnosticPayload>([[key, payload]]);
+    const tuples = flattenActiveDiagnosticsForEdgeFire(map);
+    expect(tuples).toHaveLength(1);
+    expect(tuples[0]).toEqual({ identityKey: key, edgeId: E_3, severity: 'advisory' });
+  });
+
+  it('mixed map (one contradiction + one self-contradicts) → 3 tuples with mixed severity', () => {
+    const contra = contradictionPayload(N_A, N_B, [E_1, E_2]);
+    const hint = coherencyHintSelfContradictsPayload(E_3, N_A);
+    const map = new Map<string, DiagnosticPayload>([
+      [diagnosticIdentityKey(contra), contra],
+      [diagnosticIdentityKey(hint), hint],
+    ]);
+    const tuples = flattenActiveDiagnosticsForEdgeFire(map);
+    expect(tuples).toHaveLength(3);
+    const blocking = tuples.filter((t) => t.severity === 'blocking').map((t) => t.edgeId);
+    const advisory = tuples.filter((t) => t.severity === 'advisory').map((t) => t.edgeId);
+    expect(blocking.sort()).toEqual([E_1, E_2].sort());
+    expect(advisory).toEqual([E_3]);
   });
 });
