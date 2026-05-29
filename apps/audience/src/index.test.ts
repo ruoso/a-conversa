@@ -70,4 +70,17 @@ describe('apps/audience/src/index.css', () => {
     const contents = await readFile(INDEX_CSS_PATH, 'utf-8');
     expect(contents).toMatch(/\.aud-pill-agreed\s*\{\s*animation\s*:\s*none/);
   });
+
+  // Per tasks/refinements/audience/aud_withdrawal_animation.md
+  // Decision §6 — same CSS smoke-pin posture for the rose-tinted
+  // halo on the rollupStatus first reaching 'disputed'.
+  it('contains the @keyframes aud-withdrawal definition', async () => {
+    const contents = await readFile(INDEX_CSS_PATH, 'utf-8');
+    expect(contents).toContain('@keyframes aud-withdrawal');
+  });
+
+  it('contains a prefers-reduced-motion: reduce override that no-ops .aud-withdrawal', async () => {
+    const contents = await readFile(INDEX_CSS_PATH, 'utf-8');
+    expect(contents).toMatch(/\.aud-withdrawal\s*\{\s*animation\s*:\s*none/);
+  });
 });

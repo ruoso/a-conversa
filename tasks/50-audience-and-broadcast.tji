@@ -340,6 +340,7 @@ task audience "Audience and broadcast" {
     task aud_withdrawal_animation "Animate withdrawal (agreed → disputed)" {
       effort 1d
       allocate team
+      complete 100
     }
     task aud_diagnostic_fire_animation "Animate diagnostic firing (cycle / contradiction highlight)" {
       effort 1d
@@ -353,7 +354,7 @@ task audience "Audience and broadcast" {
     task aud_animation_pacing "Pacing tuning so animations are readable on video" {
       effort 1d
       allocate team
-      depends !aud_node_appear_animation, !aud_proposed_to_agreed_animation, !aud_axiom_mark_animation
+      depends !aud_node_appear_animation, !aud_proposed_to_agreed_animation, !aud_axiom_mark_animation, !aud_withdrawal_animation
     }
     task aud_dom_overlay_extraction "Extract shared KeyedCytoscapeNodeOverlay primitive from the four DOM-overlay siblings" {
       effort 1d

@@ -173,6 +173,26 @@
 //   Decision §5 — JSDoc blocks for `STYLESHEET` and the typography
 //   pins travel verbatim with the constants into `./stylesheet.ts`.)
 //
+// Refinement: tasks/refinements/audience/aud_withdrawal_animation.md
+//   (Decision §1 — `<AudienceWithdrawalHaloOverlay>` is a fifth DOM-
+//   overlay sibling of the Cytoscape canvas, painting a rose-tinted
+//   halo `<span>` per currently-`'disputed'`-rollupStatus node with a
+//   one-shot CSS `@keyframes` entrance; no `cy.animate()`, no motion-
+//   framework dep, no STYLESHEET edit. Decision §2 — a NEW overlay
+//   file, NOT a fold into `<AudienceNodeAppearOverlay>`: one overlay
+//   paints one DOM-overlay class of decoration (node-appear vs
+//   withdrawal-to-disputed are distinct semantic classes). Decision §4
+//   — `useSeenKeysGate` keyed by `nodeId` over currently-`'disputed'`-
+//   rollup entries (target-status-keyed, mirroring
+//   `aud_proposed_to_agreed_animation`'s posture). Decision §5 — 450
+//   ms ease-out, `forwards` fill — parity with the node-appear halo
+//   because the halo geometry is identical. Decision §6 — reduced-
+//   motion handled in CSS; Playwright deferred to
+//   `aud_url_routing.aud_session_url` (eighth refinement on that
+//   inherited-debt chain). The new overlay mounts LAST so its halo
+//   `<span>`s sit above the four earlier overlays' chrome at the
+//   moment of arrival.)
+//
 // Refinement: tasks/refinements/audience/aud_node_appear_animation.md
 //   (Decision §1 — `<AudienceNodeAppearOverlay>` is a fourth DOM-overlay
 //   sibling of the Cytoscape canvas, painting a halo `<span>` per node
@@ -226,6 +246,7 @@ import { AudiencePerFacetPillOverlay } from './PerFacetPillOverlay.js';
 import { AudienceAxiomMarkOverlay } from './AxiomMarkOverlay.js';
 import { AudienceAnnotationOverlay } from './AnnotationOverlay.js';
 import { AudienceNodeAppearOverlay } from './NodeAppearOverlay.js';
+import { AudienceWithdrawalHaloOverlay } from './WithdrawalHaloOverlay.js';
 
 export interface AudienceGraphViewProps {
   /**
@@ -409,6 +430,7 @@ export function AudienceGraphView({ cyRef }: AudienceGraphViewProps): ReactEleme
       <AudienceAxiomMarkOverlay cy={cyState} containerRef={containerRef} />
       <AudienceAnnotationOverlay cy={cyState} containerRef={containerRef} />
       <AudienceNodeAppearOverlay cy={cyState} containerRef={containerRef} />
+      <AudienceWithdrawalHaloOverlay cy={cyState} containerRef={containerRef} />
     </div>
   );
 }
