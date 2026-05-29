@@ -324,6 +324,7 @@ task shell_package "Shell package (@aconversa/shell)" {
   task extract_pending_axiom_mark_projector_v8 "Lift projectPendingAxiomMarks + groupPendingAxiomMarksByNode + PendingAxiomMark + EMPTY_PENDING_AXIOM_MARKS into @a-conversa/shell once BOTH a participant pending-axiom-mark rendering leaf AND an audience pending-axiom-mark rendering leaf are complete 100 (three-caller convergence; v8 audit-iteration — same batched cadence + cadence-enforcement-revisit clause)" {
     effort 0.5d
     allocate team
+    complete 100
     depends !extract_pending_axiom_mark_projector_v7
     note -8<-
       Lift `projectPendingAxiomMarks` + `groupPendingAxiomMarksByNode` + `PendingAxiomMark` +
@@ -369,6 +370,80 @@ task shell_package "Shell package (@aconversa/shell)" {
 
       Source of debt: tasks/refinements/shell-package/extract_pending_axiom_mark_projector_v7.md
       Decisions §1–§4. Registered by closer in commit landing the v7 audit (2026-05-29).
+    ->8-
+  }
+
+  task extract_pending_axiom_mark_projector_v9_cadence_gate "Cadence-enforcement gate sentinel for the extract_pending_axiom_mark_projector audit-iteration chain; complete 0 until a closer or orchestrator review pass verifies one cadence signal has fired" {
+    effort 0.1d
+    allocate team
+    complete 0
+    note -8<-
+      Cadence-enforcement gate sentinel for the `extract_pending_axiom_mark_projector` audit-iteration
+      chain. Closer or orchestrator review pass flips this gate to `complete 100` ONLY after
+      deliberately verifying that one of the following signals has fired:
+
+      (i)  4 or more orchestrator-pick passes have elapsed since _v8 close (commit landing
+           extract_pending_axiom_mark_projector_v8 — 2026-05-29), OR
+      (ii) a commit has landed touching one of:
+             apps/participant/src/, apps/audience/src/,
+             tasks/40-participant-ui.tji, tasks/50-audience-and-broadcast.tji,
+             tasks/refinements/participant-ui/part_axiom_mark_decoration.md,
+             tasks/refinements/audience/aud_axiom_mark_decoration.md
+           AND adding/removing/modifying a line matching (case-insensitive):
+             pendingAxiomMark|PendingAxiomMark|pending-axiom-mark|
+             pending_axiom_mark|axiom_mark_pending|axiom_pending.
+
+      FLIP-PROTOCOL:
+        Signal (i) check: run `git log --oneline <_v8-close-hash>..HEAD | wc -l` and confirm
+          >= 4 orchestrator-pick-pass-equivalent commits landed.
+        Signal (ii) check: run `git log <_v8-close-hash>..HEAD --diff-filter=ACDMR --
+          apps/participant/src/ apps/audience/src/ tasks/40-participant-ui.tji
+          tasks/50-audience-and-broadcast.tji
+          tasks/refinements/participant-ui/part_axiom_mark_decoration.md
+          tasks/refinements/audience/aud_axiom_mark_decoration.md`
+          and confirm at least one commit's diff contains a case-insensitive match.
+        If EITHER signal fires: flip gate to `complete 100` with a one-line commit naming which signal.
+        If NEITHER fires: gate stays `complete 0`; orchestrator pick-task pass continues to skip _v9.
+        DO NOT flip on a calendar-date basis — calendar-date binding was rejected by _v5/_v6/_v7
+        Decision §3 alternative D.
+
+      Source of debt: tasks/refinements/shell-package/extract_pending_axiom_mark_projector_v8.md
+      Decision §3 (escalation path (1) chosen after two-iteration evidence window confirmed
+      prose-only-cadence-unhonored pattern across _v7 and _v8).
+    ->8-
+  }
+
+  task extract_pending_axiom_mark_projector_v9 "Lift projectPendingAxiomMarks + groupPendingAxiomMarksByNode + PendingAxiomMark + EMPTY_PENDING_AXIOM_MARKS into @a-conversa/shell once BOTH a participant pending-axiom-mark rendering leaf AND an audience pending-axiom-mark rendering leaf are complete 100 (three-caller convergence; v9 audit-iteration — gated by tj3-enforceable cadence-gate sentinel)" {
+    effort 0.5d
+    allocate team
+    depends !extract_pending_axiom_mark_projector_v8, !extract_pending_axiom_mark_projector_v9_cadence_gate
+    note -8<-
+      Lift `projectPendingAxiomMarks` + `groupPendingAxiomMarksByNode` + `PendingAxiomMark` +
+      `EMPTY_PENDING_AXIOM_MARKS` from `apps/moderator/src/graph/selectors.ts` into
+      `packages/shell/src/pending-axiom-marks/` once BOTH:
+      (a) a participant pending-axiom-mark rendering leaf (likely under a `part_pending_proposals.*`
+          group, per `part_axiom_mark_decoration.md:27`) is `complete 100`, AND
+      (b) an audience pending-axiom-mark rendering leaf (likely `aud_axiom_mark_pending_render`,
+          per `aud_axiom_mark_decoration.md:38`) is `complete 100`.
+
+      The participant and audience surfaces have explicitly declined to render pending-axiom-marks
+      as of eight consecutive audits (v1–v8, all settled 2026-05-28 → 2026-05-29); both surfaces'
+      principled-absence decisions are unchanged. This lift fires only after both surfaces revise
+      that decision and ship concrete rendering (three-caller convergence check). The future UI
+      leaf dependency edges are added when those leaves materialize.
+
+      PICKUP CADENCE: gated by `extract_pending_axiom_mark_projector_v9_cadence_gate` sentinel
+      (`complete 0` at registration). The orchestrator's pick-task pass cannot surface this task
+      until BOTH `_v8` is `complete 100` AND the gate sentinel is `complete 100`. The gate is
+      flipped by deliberate human verification of cadence signal (i) or (ii) firing — see the
+      gate sentinel's note block for the flip-protocol verbatim.
+
+      Follow the same recipe as `extract_cytoscape_projectors`, `shell_axiom_marks_extraction`,
+      and `extract_votes_by_facet_projector_v2`: create `packages/shell/src/pending-axiom-marks/`,
+      consolidate the Vitest suite, rewire all three or more callers' imports.
+
+      Source of debt: tasks/refinements/shell-package/extract_pending_axiom_mark_projector_v8.md
+      Decisions §1–§4. Registered by closer in commit landing the v8 audit (2026-05-29).
     ->8-
   }
 
