@@ -363,6 +363,15 @@ export function selectEdgesForSession(
   const out: Edge<StatementEdgeData>[] = [];
   for (const event of session.events) {
     if (event.kind !== 'edge-created') continue;
+    // Annotation-endpoint edges (per
+    // `edge_target_annotation_schema_extension`) are rejected at the
+    // projection-layer's `handleEdgeCreated` guard, so this branch is
+    // dead at runtime; the narrowing keeps TypeScript happy until
+    // `projection_edge_annotation_endpoint` widens the consumer
+    // surface to render them.
+    if (event.payload.source_node_id === undefined || event.payload.target_node_id === undefined) {
+      continue;
+    }
     const annotations = annotationsByEdge.get(event.payload.edge_id) ?? EMPTY_ANNOTATIONS;
     const facetStatuses = facetStatusIndex.edges.get(event.payload.edge_id) ?? EMPTY_FACET_STATUSES;
     // Per-edge diagnostic-highlight enrichment from the precomputed

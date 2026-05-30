@@ -204,6 +204,17 @@ function handleEdgeCreated(
   payload: EdgeCreatedPayload,
   changes: ProjectionChange[],
 ): void {
+  // Per `edge_target_annotation_schema_extension`, the wire payload was
+  // widened to allow annotation endpoints (`source_annotation_id` /
+  // `target_annotation_id`). The projection layer still only handles
+  // node↔node edges; the follow-up
+  // `projection_edge_annotation_endpoint` widens `ProjectedEdge` /
+  // `EdgeShape` and lifts this guard.
+  if (payload.source_node_id === undefined || payload.target_node_id === undefined) {
+    throw new ReplayError(
+      `edge-created: annotation-endpoint edge ${payload.edge_id} is not yet handled by the projection layer (see follow-up task projection_edge_annotation_endpoint)`,
+    );
+  }
   if (projection.getEdge(payload.edge_id) !== undefined) {
     throw new ReplayError(`edge-created: edge ${payload.edge_id} already present`);
   }

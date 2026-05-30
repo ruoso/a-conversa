@@ -501,6 +501,18 @@ export function projectGraph(
     }
 
     if (event.kind === 'edge-created') {
+      // Annotation-endpoint edges (per
+      // `edge_target_annotation_schema_extension`) are rejected at the
+      // projection-layer's `handleEdgeCreated` guard, so this branch is
+      // dead at runtime; the narrowing keeps TypeScript happy until
+      // `projection_edge_annotation_endpoint` widens the consumer
+      // surface to render them.
+      if (
+        event.payload.source_node_id === undefined ||
+        event.payload.target_node_id === undefined
+      ) {
+        continue;
+      }
       const slot = resolveFacetSlot(facetStatusIndex.edges, event.payload.edge_id);
       const element: ParticipantEdgeElement = {
         group: 'edges',

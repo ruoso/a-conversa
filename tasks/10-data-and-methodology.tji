@@ -77,6 +77,18 @@ task data_and_methodology "Data and methodology" {
       depends foundation.stack_decisions.lang_decision
       note "Refinement: tasks/refinements/data-and-methodology/migrations_tooling.md"
     }
+    task edges_table_polymorphic_endpoint_migration "Widen edges table for polymorphic source/target annotation endpoints" {
+      effort 0.5d
+      allocate team
+      depends data_and_methodology.event_types.edge_target_annotation_schema_extension
+      note -8<-
+        Source of debt: edge_target_annotation_schema_extension — DB migration mirroring the wire-schema
+        widening: source_node_id/target_node_id become nullable; source_annotation_id/target_annotation_id
+        added as nullable FKs to annotations; per-endpoint CHECK XOR constraints enforce exactly-one-set
+        at the DB layer (mirrors 0006_annotations.sql pattern). Not load-bearing until a production write
+        path mints annotation-endpoint edges.
+      ->8-
+    }
     task seed_data_for_tests "Seed-data fixtures for tests" {
       effort 1d
       allocate team
@@ -154,6 +166,7 @@ task data_and_methodology "Data and methodology" {
     task edge_target_annotation_schema_extension "Extend edge endpoint schema to allow annotation endpoints" {
       effort 0.5d
       allocate team
+      complete 100
       depends !entity_creation_events
       note -8<-
         Source of debt: walkthrough_replay_e2e — the edge schema currently only allows node↔node endpoints.
@@ -206,6 +219,19 @@ task data_and_methodology "Data and methodology" {
       complete 100
       depends !project_incrementally
       note "Refinement: tasks/refinements/data-and-methodology/projection_caching.md"
+    }
+    task projection_edge_annotation_endpoint "Extend ProjectedEdge and handleEdgeCreated for annotation endpoints" {
+      effort 1d
+      allocate team
+      depends data_and_methodology.event_types.edge_target_annotation_schema_extension
+      note -8<-
+        Source of debt: edge_target_annotation_schema_extension — widens ProjectedEdge and EdgeShape to
+        carry polymorphic endpoints (four-field shape mirroring wire payload), updates replay.ts
+        handleEdgeCreated and Projection.addEdge, lifts the ReplayError guard introduced in
+        edge_target_annotation_schema_extension. Audits diagnostics (active_firing_computation,
+        cycle_detection, dangling_claim_detection, coherency_hint_detection, multi_warrant_detection)
+        for correct annotation-endpoint semantics. Unblocks walkthrough_e15_annotation_endpoint_refit.
+      ->8-
     }
   }
 
@@ -380,6 +406,17 @@ task data_and_methodology "Data and methodology" {
         Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit landing facet_status_server_decompose_component_facets).
       ->8-
     }
+    task set_edge_substance_annotation_endpoint "Widen setEdgeSubstanceProposalSchema and validator to allow annotation endpoints" {
+      effort 0.5d
+      allocate team
+      depends data_and_methodology.event_types.edge_target_annotation_schema_extension
+      note -8<-
+        Source of debt: edge_target_annotation_schema_extension — widens setEdgeSubstanceProposalSchema's
+        optional endpoint fields and captureNodeEdgeShapeSchema's four endpoint fields to allow annotation
+        ids. Extends validateSetEdgeSubstanceProposal rule 2a/2b visibility checks from nodeIsVisible to
+        a polymorphic entityIsVisible(projection, 'node'|'annotation', id).
+      ->8-
+    }
     task set_edge_substance_endpoint_validation "Methodology validator for set-edge-substance connecting case — cross-field referential check on source/target/role" {
       effort 0.5d
       allocate team
@@ -509,6 +546,19 @@ task data_and_methodology "Data and methodology" {
         allocate team
         complete 100
         note "Encodes the example-walkthrough.md scenario as a test fixture."
+      }
+      task walkthrough_e15_annotation_endpoint_refit "Refit E15 in walkthrough fixture from node-target workaround to annotation-target" {
+        effort 0.25d
+        allocate team
+        depends data_and_methodology.projection.projection_edge_annotation_endpoint
+        note -8<-
+          Source of debt: edge_target_annotation_schema_extension — refits E15 in
+          packages/test-fixtures/src/fixtures/walkthrough/events.json from
+          source_node_id: <N19>, target_node_id: <N6> to source_node_id: <N19>, target_annotation_id: <A2>.
+          Sequenced after projection_edge_annotation_endpoint lands (otherwise the projection guard
+          rejects the refitted payload). Updates meta.json and any affected walkthrough-replay.feature
+          scenario assertions that read E15's target.
+        ->8-
       }
       task r23_loader_replay_through_append_for_walkthrough "Rewrite fixture loader to drive append API for walkthrough fixture" {
         effort 0.5d

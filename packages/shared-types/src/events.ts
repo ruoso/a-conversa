@@ -267,6 +267,18 @@ export type ParticipantLeftPayload = z.infer<typeof participantLeftPayloadSchema
 // module-init time, so a circular import where one side reads the
 // other's binding before it's been assigned crashes with `Cannot
 // access ... before initialization`. The leaf module breaks the cycle.
+//
+// **Edge endpoints are polymorphic** (per
+// `edge_target_annotation_schema_extension`): each edge endpoint may
+// be either a node or an annotation. `edgeCreatedPayloadSchema`
+// carries four `.optional()` endpoint id fields (`source_node_id`,
+// `source_annotation_id`, `target_node_id`, `target_annotation_id`)
+// with two per-endpoint `.refine()` XOR blocks enforcing exactly-one-
+// per-side. This mirrors `annotationCreatedPayloadSchema`'s
+// polymorphic-target shape — modulo `.optional()` vs `.nullable()`:
+// the edge schema is post-greenfield with payloads already on disk in
+// the node-only shape, so absent-field (optional) is the encoding
+// that lets today's payloads parse unchanged.
 
 export {
   annotationKindSchema,
@@ -297,14 +309,27 @@ export const nodeCreatedPayloadSchema = z.object({
 
 export type NodeCreatedPayload = z.infer<typeof nodeCreatedPayloadSchema>;
 
-export const edgeCreatedPayloadSchema = z.object({
-  edge_id: z.string().uuid(),
-  role: edgeRoleSchema,
-  source_node_id: z.string().uuid(),
-  target_node_id: z.string().uuid(),
-  created_by: z.string().uuid(),
-  created_at: z.string().datetime({ offset: true }),
-});
+export const edgeCreatedPayloadSchema = z
+  .object({
+    edge_id: z.string().uuid(),
+    role: edgeRoleSchema,
+    source_node_id: z.string().uuid().optional(),
+    source_annotation_id: z.string().uuid().optional(),
+    target_node_id: z.string().uuid().optional(),
+    target_annotation_id: z.string().uuid().optional(),
+    created_by: z.string().uuid(),
+    created_at: z.string().datetime({ offset: true }),
+  })
+  .refine(
+    (payload) =>
+      (payload.source_node_id === undefined) !== (payload.source_annotation_id === undefined),
+    { message: 'exactly one of source_node_id / source_annotation_id must be set' },
+  )
+  .refine(
+    (payload) =>
+      (payload.target_node_id === undefined) !== (payload.target_annotation_id === undefined),
+    { message: 'exactly one of target_node_id / target_annotation_id must be set' },
+  );
 
 export type EdgeCreatedPayload = z.infer<typeof edgeCreatedPayloadSchema>;
 

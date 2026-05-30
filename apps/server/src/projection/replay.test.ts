@@ -305,6 +305,32 @@ describe('applyEvent — entity creation events', () => {
     ).toThrow(ReplayError);
   });
 
+  it('edge-created with an annotation-endpoint payload throws ReplayError (projection layer is still node-only — see follow-up projection_edge_annotation_endpoint)', () => {
+    const projection = createEmptyProjection(SESSION_ID);
+    applyEvent(
+      projection,
+      makeEvent(1, 'node-created', DEBATER_A_ID, T0, {
+        node_id: NODE_ID_1,
+        wording: 'a',
+        created_by: DEBATER_A_ID,
+        created_at: T0,
+      }),
+    );
+    expect(() =>
+      applyEvent(
+        projection,
+        makeEvent(2, 'edge-created', DEBATER_A_ID, T1, {
+          edge_id: EDGE_ID_1,
+          role: 'contradicts',
+          source_node_id: NODE_ID_1,
+          target_annotation_id: ANNOTATION_ID_1,
+          created_by: DEBATER_A_ID,
+          created_at: T1,
+        }),
+      ),
+    ).toThrow(/projection_edge_annotation_endpoint/);
+  });
+
   it('edge-created adds an edge with the supplied role and endpoints', () => {
     const projection = createEmptyProjection(SESSION_ID);
     applyEvent(

@@ -42,6 +42,7 @@ const NODE_ID = '88888888-8888-4888-8888-888888888888';
 const NODE_ID_2 = '99999999-9999-4999-8999-999999999999';
 const EDGE_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const ANNOTATION_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+const ANNOTATION_ID_2 = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 const SNAPSHOT_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 
 describe('EventEnvelope round-trip', () => {
@@ -380,6 +381,117 @@ describe('edge-created payload schema', () => {
     const result = edgeCreatedPayloadSchema.safeParse({
       ...valid,
       target_node_id: 'not-a-uuid',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  // -- Polymorphic endpoint widening (per
+  // tasks/refinements/data-and-methodology/edge_target_annotation_schema_extension.md).
+
+  it('round-trips a node-source + annotation-target payload (E15 shape)', () => {
+    const payload = {
+      edge_id: EDGE_ID,
+      role: 'contradicts' as const,
+      source_node_id: NODE_ID,
+      target_annotation_id: ANNOTATION_ID,
+      created_by: USER_ID,
+      created_at: '2026-05-10T12:34:56Z',
+    };
+    const parsed = edgeCreatedPayloadSchema.parse(payload);
+    const wire = JSON.parse(JSON.stringify(parsed)) as unknown;
+    expect(edgeCreatedPayloadSchema.parse(wire)).toEqual(payload);
+  });
+
+  it('round-trips an annotation-source + node-target payload', () => {
+    const payload = {
+      edge_id: EDGE_ID,
+      role: 'rebuts' as const,
+      source_annotation_id: ANNOTATION_ID,
+      target_node_id: NODE_ID,
+      created_by: USER_ID,
+      created_at: '2026-05-10T12:34:56Z',
+    };
+    const parsed = edgeCreatedPayloadSchema.parse(payload);
+    const wire = JSON.parse(JSON.stringify(parsed)) as unknown;
+    expect(edgeCreatedPayloadSchema.parse(wire)).toEqual(payload);
+  });
+
+  it('round-trips an annotation-source + annotation-target payload', () => {
+    const payload = {
+      edge_id: EDGE_ID,
+      role: 'qualifies' as const,
+      source_annotation_id: ANNOTATION_ID,
+      target_annotation_id: ANNOTATION_ID_2,
+      created_by: USER_ID,
+      created_at: '2026-05-10T12:34:56Z',
+    };
+    const parsed = edgeCreatedPayloadSchema.parse(payload);
+    const wire = JSON.parse(JSON.stringify(parsed)) as unknown;
+    expect(edgeCreatedPayloadSchema.parse(wire)).toEqual(payload);
+  });
+
+  it('rejects a payload with both source_node_id AND source_annotation_id set', () => {
+    const result = edgeCreatedPayloadSchema.safeParse({
+      ...valid,
+      source_annotation_id: ANNOTATION_ID,
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0]?.message).toBe(
+        'exactly one of source_node_id / source_annotation_id must be set',
+      );
+    }
+  });
+
+  it('rejects a payload with NEITHER source_node_id NOR source_annotation_id set', () => {
+    const { source_node_id: _omit, ...rest } = valid;
+    const result = edgeCreatedPayloadSchema.safeParse(rest);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0]?.message).toBe(
+        'exactly one of source_node_id / source_annotation_id must be set',
+      );
+    }
+  });
+
+  it('rejects a payload with both target_node_id AND target_annotation_id set', () => {
+    const result = edgeCreatedPayloadSchema.safeParse({
+      ...valid,
+      target_annotation_id: ANNOTATION_ID,
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0]?.message).toBe(
+        'exactly one of target_node_id / target_annotation_id must be set',
+      );
+    }
+  });
+
+  it('rejects a payload with NEITHER target_node_id NOR target_annotation_id set', () => {
+    const { target_node_id: _omit, ...rest } = valid;
+    const result = edgeCreatedPayloadSchema.safeParse(rest);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0]?.message).toBe(
+        'exactly one of target_node_id / target_annotation_id must be set',
+      );
+    }
+  });
+
+  it('rejects a non-UUID source_annotation_id', () => {
+    const { source_node_id: _omit, ...rest } = valid;
+    const result = edgeCreatedPayloadSchema.safeParse({
+      ...rest,
+      source_annotation_id: 'not-a-uuid',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a non-UUID target_annotation_id', () => {
+    const { target_node_id: _omit, ...rest } = valid;
+    const result = edgeCreatedPayloadSchema.safeParse({
+      ...rest,
+      target_annotation_id: 'not-a-uuid',
     });
     expect(result.success).toBe(false);
   });
