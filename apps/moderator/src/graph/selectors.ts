@@ -22,8 +22,11 @@
 // node projection lives in `GraphCanvasPane.tsx` as `projectNodes` so
 // it can do the per-target annotation enrichment in a single pass.
 
-import { MarkerType, type Edge, type EdgeMarker } from 'reactflow';
+import { MarkerType, type Edge, type EdgeMarker, type Node } from 'reactflow';
 import type { EdgeRole, Event } from '@a-conversa/shared-types';
+
+import { ANNOTATION_HOST_EDGE_TYPE, type AnnotationHostEdgeData } from './AnnotationHostEdge.js';
+import { ANNOTATION_NODE_TYPE, type AnnotationNodeData } from './AnnotationNode.js';
 // `Vote` is imported from the shell after the `extract_facet_pill` lift
 // (refinement Decision §3 — the in-pill render-dependency chain ships
 // with `<FacetPill>` in `@a-conversa/shell`). The annotation projection
@@ -342,7 +345,13 @@ export function selectEdgesForSession(
 ): Edge<StatementEdgeData>[] {
   const session = state.sessionState[sessionId];
   if (!session) return [];
-  const annotationsByEdge = groupAnnotationsByEdge(projectAnnotations(session.events));
+  const annotations = projectAnnotations(session.events);
+  const promotedAnnotationIds = computeAnnotationsAsEndpoints(session.events);
+  const annotationsByEdge = groupAnnotationsByEdge(
+    promotedAnnotationIds.size === 0
+      ? annotations
+      : annotations.filter((annotation) => !promotedAnnotationIds.has(annotation.id)),
+  );
   // Per-edge per-facet `FacetStatus` index — computed once over the same
   // events array so the projection stays a single pass-effort over the
   // log. Refinement: `mod_proposed_state_styling`.
@@ -364,14 +373,19 @@ export function selectEdgesForSession(
   for (const event of session.events) {
     if (event.kind !== 'edge-created') continue;
     // Annotation-endpoint edges (per `edge_target_annotation_schema_extension`
-    // + `projection_edge_annotation_endpoint`) flow through the
-    // projection layer now, but the moderator's ReactFlow canvas
-    // doesn't yet render annotations as graph nodes — so an
-    // annotation-endpoint edge has no source/target ReactFlow node to
-    // connect to. Skip until `mod_render_annotation_endpoint_edges`
-    // resolves the canvas-rendering design (annotation-as-graph-node
-    // vs. annotation-as-edge-attachment).
-    if (event.payload.source_node_id === undefined || event.payload.target_node_id === undefined) {
+    // + `projection_edge_annotation_endpoint`) render via the new
+    // `annotation` ReactFlow node-type per
+    // `mod_render_annotation_endpoint_edges`. The endpoint resolution
+    // below accepts whichever of `source_node_id` / `source_annotation_id`
+    // is present (XOR-enforced by the wire schema); ReactFlow's graph
+    // space is a flat string-keyed namespace so a node id and a
+    // promoted annotation id read uniformly as `source` / `target`.
+    const sourceId = event.payload.source_node_id ?? event.payload.source_annotation_id;
+    const targetId = event.payload.target_node_id ?? event.payload.target_annotation_id;
+    if (sourceId === undefined || targetId === undefined) {
+      // Defensive: the wire schema's XOR refines guarantee one of each
+      // pair is present. Skip otherwise rather than emitting an edge
+      // with `undefined` endpoints.
       continue;
     }
     const annotations = annotationsByEdge.get(event.payload.edge_id) ?? EMPTY_ANNOTATIONS;
@@ -382,21 +396,14 @@ export function selectEdgesForSession(
     // reads as "no halo".
     const diagnosticHighlight = highlights.edges.get(event.payload.edge_id);
     // Edge endpoint wordings. Refinement: `mod_hover_details`. The
-    // `'—'` em-dash fallback is the documented behaviour for an edge
-    // whose source or target id hasn't been seen as a `node-created`
-    // payload yet — defensible against a wire-protocol violation. Both
+    // `'—'` em-dash fallback is the documented behaviour for an
+    // endpoint id whose node-created event hasn't been seen yet — or
+    // (post `mod_render_annotation_endpoint_edges`) an annotation
+    // endpoint that has no wording in the node-wording sense. Both
     // fields are non-optional on the emitted `StatementEdgeData` so
     // the popover renderer's null-check surface stays small.
-    const sourceWording = wordingByNodeId.get(event.payload.source_node_id) ?? '—';
-    const targetWording = wordingByNodeId.get(event.payload.target_node_id) ?? '—';
-    // Edge endpoint ids — populated verbatim from the `edge-created`
-    // payload's `source_node_id` / `target_node_id`. Read by
-    // `<HoverPopover>` to render the endpoint-references row (the
-    // popover surface that replaced the retired source→target wording
-    // line per `mod_edge_popover_full_target_wording`). No walk
-    // needed; the ids are always present on the event.
-    const sourceId = event.payload.source_node_id;
-    const targetId = event.payload.target_node_id;
+    const sourceWording = wordingByNodeId.get(sourceId) ?? '—';
+    const targetWording = wordingByNodeId.get(targetId) ?? '—';
     // Per `pf_mod_facet_name_widen_shape`: the moderator's local
     // `FacetName` mirror is now 4-valued (matching the wire-level enum),
     // so `<StatementEdge>` reads the shape-facet status directly off the
@@ -450,11 +457,179 @@ export function selectEdgesForSession(
           : { type: MarkerType.ArrowClosed };
     out.push({
       id: event.payload.edge_id,
-      source: event.payload.source_node_id,
-      target: event.payload.target_node_id,
+      source: sourceId,
+      target: targetId,
       type: 'statement',
       markerEnd,
       data,
+    });
+  }
+  return out;
+}
+
+/**
+ * Walk the session's event log once and collect every annotation id
+ * referenced as an edge endpoint (`source_annotation_id` or
+ * `target_annotation_id` on any `edge-created` payload). The returned
+ * set is the *promotion set* — annotations whose id is in the set are
+ * promoted from `<AnnotationBadge>` to `<AnnotationNode>` on the
+ * canvas; the rest stay as badges. Mutual exclusion per
+ * `mod_render_annotation_endpoint_edges` Decision §1 + §3.
+ *
+ * Pure function over the events array; safe to call without a React
+ * tree. Returns an empty set when no annotation-endpoint edges have
+ * landed (the steady-state pre-`edge_target_annotation_schema_extension`
+ * shape).
+ */
+export function computeAnnotationsAsEndpoints(events: readonly Event[]): Set<string> {
+  const promoted = new Set<string>();
+  for (const event of events) {
+    if (event.kind !== 'edge-created') continue;
+    if (event.payload.source_annotation_id !== undefined) {
+      promoted.add(event.payload.source_annotation_id);
+    }
+    if (event.payload.target_annotation_id !== undefined) {
+      promoted.add(event.payload.target_annotation_id);
+    }
+  }
+  return promoted;
+}
+
+/**
+ * Resolve each promoted annotation's host id — the entity the
+ * annotation is *about*. Two cases per `mod_render_annotation_endpoint_edges`
+ * Decision §4:
+ *
+ *   1. `targetNodeId` set → host is a node; the resolved host id is
+ *      the node id when that node has been seen as `node-created` in
+ *      the events log.
+ *   2. `targetEdgeId` set → host is an edge; for v1 we resolve to the
+ *      host edge's `source` endpoint (node id OR promoted annotation
+ *      id). The future `mod_annotation_node_edge_host_midpoint` task
+ *      may replace this with a synthetic midpoint node.
+ *
+ * Returns `null` when neither case resolves — the caller surfaces
+ * that as `data-host-missing` on the annotation node and omits the
+ * host pseudo-edge.
+ *
+ * Internal helper shared by `projectAnnotationNodes` and
+ * `projectAnnotationHostEdges` so the two stay consistent about
+ * which annotations have resolvable hosts.
+ */
+function resolveAnnotationHostId(
+  annotation: Annotation,
+  knownNodeIds: ReadonlySet<string>,
+  edgeSources: ReadonlyMap<string, string>,
+): string | null {
+  if (annotation.targetNodeId !== null && knownNodeIds.has(annotation.targetNodeId)) {
+    return annotation.targetNodeId;
+  }
+  if (annotation.targetEdgeId !== null) {
+    const hostSource = edgeSources.get(annotation.targetEdgeId);
+    if (hostSource !== undefined) return hostSource;
+  }
+  return null;
+}
+
+/**
+ * Build the `(knownNodeIds, edgeSources)` resolution context for the
+ * host lookup. Single pass over the events log; cheap to share across
+ * the node + pseudo-edge projectors.
+ */
+function buildAnnotationHostIndex(events: readonly Event[]): {
+  knownNodeIds: Set<string>;
+  edgeSources: Map<string, string>;
+} {
+  const knownNodeIds = new Set<string>();
+  const edgeSources = new Map<string, string>();
+  for (const event of events) {
+    if (event.kind === 'node-created') {
+      knownNodeIds.add(event.payload.node_id);
+      continue;
+    }
+    if (event.kind === 'edge-created') {
+      const sourceId = event.payload.source_node_id ?? event.payload.source_annotation_id;
+      if (sourceId !== undefined) {
+        edgeSources.set(event.payload.edge_id, sourceId);
+      }
+      continue;
+    }
+  }
+  return { knownNodeIds, edgeSources };
+}
+
+/**
+ * Project the promoted-annotation subset onto ReactFlow nodes. One
+ * `Node<AnnotationNodeData>` per promoted annotation, at the
+ * placeholder origin `(0, 0)` (dagre overwrites in the layout pass —
+ * same pattern as `projectNodes`).
+ *
+ * Per Decision §4, annotations whose host cannot be resolved still
+ * render as nodes but carry `data.hostMissing === true` so the
+ * moderator sees the orphaned entity rather than encountering a
+ * silent drop.
+ *
+ * Pure function — no React, no store, no DOM.
+ */
+export function projectAnnotationNodes(
+  annotations: readonly Annotation[],
+  promotedSet: ReadonlySet<string>,
+  events: readonly Event[],
+): Node<AnnotationNodeData>[] {
+  if (promotedSet.size === 0) return [];
+  const { knownNodeIds, edgeSources } = buildAnnotationHostIndex(events);
+  const out: Node<AnnotationNodeData>[] = [];
+  for (const annotation of annotations) {
+    if (!promotedSet.has(annotation.id)) continue;
+    const hostId = resolveAnnotationHostId(annotation, knownNodeIds, edgeSources);
+    const data: AnnotationNodeData =
+      hostId === null
+        ? { kind: annotation.kind, content: annotation.content, hostMissing: true }
+        : { kind: annotation.kind, content: annotation.content };
+    out.push({
+      id: annotation.id,
+      type: ANNOTATION_NODE_TYPE,
+      position: { x: 0, y: 0 },
+      data,
+    });
+  }
+  return out;
+}
+
+/**
+ * Project one synthetic host pseudo-edge per promoted annotation,
+ * tethering the annotation node to its resolved host (the node it
+ * targets, or the source endpoint of the edge it targets — Decision §4).
+ *
+ * The pseudo-edge is a UI artifact, not a methodology entity: dashed,
+ * no marker, `pointer-events: none` (Decision §7). It restores the
+ * spatial association the badge currently provides so dagre places the
+ * annotation node near its host.
+ *
+ * Promoted annotations whose host cannot be resolved produce no
+ * pseudo-edge (paired with `data-host-missing` on the annotation node
+ * itself — Decision §4 defensive case).
+ *
+ * Pure function — no React, no store, no DOM.
+ */
+export function projectAnnotationHostEdges(
+  annotations: readonly Annotation[],
+  promotedSet: ReadonlySet<string>,
+  events: readonly Event[],
+): Edge<AnnotationHostEdgeData>[] {
+  if (promotedSet.size === 0) return [];
+  const { knownNodeIds, edgeSources } = buildAnnotationHostIndex(events);
+  const out: Edge<AnnotationHostEdgeData>[] = [];
+  for (const annotation of annotations) {
+    if (!promotedSet.has(annotation.id)) continue;
+    const hostId = resolveAnnotationHostId(annotation, knownNodeIds, edgeSources);
+    if (hostId === null) continue;
+    out.push({
+      id: `annotation-host-${annotation.id}`,
+      source: hostId,
+      target: annotation.id,
+      type: ANNOTATION_HOST_EDGE_TYPE,
+      data: { annotationId: annotation.id },
     });
   }
   return out;

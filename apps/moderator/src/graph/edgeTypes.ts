@@ -16,8 +16,10 @@
 
 import type { EdgeTypes } from 'reactflow';
 
+import { ANNOTATION_HOST_EDGE_TYPE, AnnotationHostEdge } from './AnnotationHostEdge.js';
 import { StatementEdge } from './StatementEdge.js';
 
 export const edgeTypes: EdgeTypes = {
   statement: StatementEdge,
+  [ANNOTATION_HOST_EDGE_TYPE]: AnnotationHostEdge,
 };

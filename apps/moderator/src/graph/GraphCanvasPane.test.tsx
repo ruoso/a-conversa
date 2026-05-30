@@ -2853,3 +2853,153 @@ describe('mod_pan_zoom (pan + zoom configuration)', () => {
     expect(props?.defaultViewport).toBeUndefined();
   });
 });
+
+// -- Annotation-endpoint rendering (mod_render_annotation_endpoint_edges) --
+//
+// Promoted annotations surface as `<AnnotationNode>`s on the canvas with
+// a dashed `<AnnotationHostEdge>` connecting each promoted annotation
+// to its host. The pure-decoration baseline (`mod_annotation_rendering`)
+// stays green when no annotation-endpoint edge references the
+// annotation.
+
+const ANNOTATION_ENDPOINT_ANNO_A = '00000000-0000-4000-8000-0000000000d1';
+
+function makeAnnotationEndpointEdgeCreated(opts: {
+  sequence: number;
+  edgeId: string;
+  sourceNodeId?: string;
+  sourceAnnotationId?: string;
+  targetNodeId?: string;
+  targetAnnotationId?: string;
+}): Event {
+  return {
+    id: `00000000-0000-4000-8000-${(0x500 + opts.sequence).toString(16).padStart(12, '0')}`,
+    sessionId: SESSION_ID,
+    sequence: opts.sequence,
+    kind: 'edge-created',
+    actor: ACTOR,
+    payload: {
+      edge_id: opts.edgeId,
+      role: 'contradicts',
+      ...(opts.sourceNodeId !== undefined ? { source_node_id: opts.sourceNodeId } : {}),
+      ...(opts.sourceAnnotationId !== undefined
+        ? { source_annotation_id: opts.sourceAnnotationId }
+        : {}),
+      ...(opts.targetNodeId !== undefined ? { target_node_id: opts.targetNodeId } : {}),
+      ...(opts.targetAnnotationId !== undefined
+        ? { target_annotation_id: opts.targetAnnotationId }
+        : {}),
+      created_by: ACTOR,
+      created_at: '2026-05-11T00:00:00.000Z',
+    },
+    createdAt: '2026-05-11T00:00:00.000Z',
+  };
+}
+
+describe('GraphCanvasPane — promoted annotation flow (mod_render_annotation_endpoint_edges)', () => {
+  it('renders both a StatementNode and an AnnotationNode, with the badge suppressed (mutual exclusion)', () => {
+    const store = useWsStore.getState();
+    store.applyEvent(makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'host wording' }));
+    store.applyEvent(
+      makeAnnotationCreated({
+        sequence: 2,
+        annotationId: ANNOTATION_ENDPOINT_ANNO_A,
+        kind: 'reframe',
+        content: 'a promoted annotation body',
+        targetNodeId: NODE_A,
+        targetEdgeId: null,
+      }),
+    );
+    store.applyEvent(
+      makeAnnotationEndpointEdgeCreated({
+        sequence: 3,
+        edgeId: '00000000-0000-4000-8000-0000000000d2',
+        sourceNodeId: NODE_A,
+        targetAnnotationId: ANNOTATION_ENDPOINT_ANNO_A,
+      }),
+    );
+    renderGraphWithWsClient();
+    expect(screen.getByTestId(`statement-node-${NODE_A}`)).toBeTruthy();
+    expect(screen.getByTestId(`annotation-node-${ANNOTATION_ENDPOINT_ANNO_A}`)).toBeTruthy();
+    // The badge surface for the promoted annotation must NOT appear.
+    expect(screen.queryByTestId(`annotation-badge-${ANNOTATION_ENDPOINT_ANNO_A}`)).toBeNull();
+    // The host node's badge-list container is omitted (no
+    // non-promoted annotations target the host).
+    expect(screen.queryByTestId(`annotation-badge-list-node-${NODE_A}`)).toBeNull();
+  });
+
+  it('keeps the badge-only baseline green when no edge references the annotation', () => {
+    // Regression cover — the `mod_annotation_rendering` baseline must
+    // not regress. With no annotation-endpoint edge, the annotation
+    // stays a badge and no annotation node / host pseudo-edge appears.
+    const store = useWsStore.getState();
+    store.applyEvent(makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'a' }));
+    store.applyEvent(
+      makeAnnotationCreated({
+        sequence: 2,
+        annotationId: 'anno-baseline',
+        kind: 'note',
+        targetNodeId: NODE_A,
+        targetEdgeId: null,
+      }),
+    );
+    renderGraphWithWsClient();
+    expect(screen.getByTestId(`annotation-badge-list-node-${NODE_A}`)).toBeTruthy();
+    expect(screen.getByTestId('annotation-badge-anno-baseline')).toBeTruthy();
+    expect(screen.queryByTestId('annotation-node-anno-baseline')).toBeNull();
+  });
+});
+
+describe('projectNodes — annotation-node promotion (mod_render_annotation_endpoint_edges)', () => {
+  it('emits a Node<AnnotationNodeData> for an annotation referenced as an edge endpoint', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'host' }),
+      makeAnnotationCreated({
+        sequence: 2,
+        annotationId: ANNOTATION_ENDPOINT_ANNO_A,
+        kind: 'note',
+        targetNodeId: NODE_A,
+        targetEdgeId: null,
+      }),
+      makeAnnotationEndpointEdgeCreated({
+        sequence: 3,
+        edgeId: 'edge-x',
+        sourceNodeId: NODE_A,
+        targetAnnotationId: ANNOTATION_ENDPOINT_ANNO_A,
+      }),
+    ];
+    const nodes = projectNodes(events);
+    // One statement + one annotation node.
+    expect(nodes).toHaveLength(2);
+    const statementNode = nodes.find((n) => n.id === NODE_A);
+    const annotationNode = nodes.find((n) => n.id === ANNOTATION_ENDPOINT_ANNO_A);
+    expect(statementNode?.type).toBe(STATEMENT_NODE_TYPE);
+    expect(annotationNode?.type).toBe('annotation');
+    // The promoted annotation is filtered out of the host's
+    // `data.annotations` bucket (mutual exclusion).
+    expect((statementNode?.data as { annotations: readonly { id: string }[] }).annotations).toEqual(
+      [],
+    );
+  });
+
+  it('emits NO annotation node when the annotation is not referenced as an endpoint', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'host' }),
+      makeAnnotationCreated({
+        sequence: 2,
+        annotationId: 'anno-stays-badge',
+        kind: 'note',
+        targetNodeId: NODE_A,
+        targetEdgeId: null,
+      }),
+    ];
+    const nodes = projectNodes(events);
+    // Statement node only; no annotation node.
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0]?.id).toBe(NODE_A);
+    // The annotation remains in the host's badge bucket.
+    expect((nodes[0]?.data as { annotations: readonly { id: string }[] }).annotations).toHaveLength(
+      1,
+    );
+  });
+});

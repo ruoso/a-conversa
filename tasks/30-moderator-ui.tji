@@ -681,6 +681,7 @@ task moderator_ui "Moderator UI" {
     task mod_render_annotation_endpoint_edges "Render annotation-endpoint edges on moderator ReactFlow canvas" {
       effort 1.5d
       allocate team
+      complete 100
       depends !mod_render_annotations, data_and_methodology.projection.projection_edge_annotation_endpoint
       note -8<-
         Source of debt: projection_edge_annotation_endpoint — the moderator ReactFlow canvas currently
@@ -717,6 +718,30 @@ task moderator_ui "Moderator UI" {
         propagation (annotation A1 with target_node_id = A2's UUID overlays on A2's graph-node).
         Gated on mod_render_annotation_endpoint_edges landing first. Includes Vitest cover.
         Refinement: tasks/refinements/participant-ui/part_annotation_of_annotation_overlay_chain.md (Tech-debt §D6).
+      ->8-
+    }
+    task mod_annotation_node_edge_host_midpoint "Tether edge-hosted annotation pseudo-edge to host edge midpoint" {
+      effort 0.5d
+      allocate team
+      depends !mod_render_annotation_endpoint_edges
+      note -8<-
+        Source of debt: mod_render_annotation_endpoint_edges (2026-05-30) — the v1 host pseudo-edge for
+        an annotation targeting an edge tethers to the host edge's source node (approximation per
+        Decision §4). The correct rendering connects the annotation node to the host edge's visual
+        midpoint via a synthetic midpoint node. Belongs in moderator_ui.mod_annotation_ui.*.
+        Source refinement: tasks/refinements/moderator-ui/mod_render_annotation_endpoint_edges.md (Decisions §4, §11).
+      ->8-
+    }
+    task mod_hover_popover_endpoint_kind_disambiguation "Disambiguate annotation vs node endpoint ids in edge-hover popover" {
+      effort 0.5d
+      allocate team
+      depends !mod_render_annotation_endpoint_edges
+      note -8<-
+        Source of debt: mod_render_annotation_endpoint_edges (2026-05-30) — the v1 edge-hover popover
+        renders endpoint ids verbatim (Decision §10). A small "(annotation)" / "(node)" badge next to
+        each endpoint id in the popover's endpoint-references row would disambiguate the two kinds.
+        Belongs in moderator_ui.mod_annotation_ui.*.
+        Source refinement: tasks/refinements/moderator-ui/mod_render_annotation_endpoint_edges.md (Decisions §10, §11).
       ->8-
     }
   }

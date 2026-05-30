@@ -44,12 +44,18 @@ import { AXIOM_MARK_PALETTE_SIZE, axiomMarkColorFor } from '@a-conversa/shell';
 
 import type { WsState } from '../ws/wsStore.js';
 import {
+  computeAnnotationsAsEndpoints,
   groupPendingAxiomMarksByNode,
+  projectAnnotationHostEdges,
+  projectAnnotationNodes,
   projectPendingAxiomMarks,
   selectAnnotations,
   selectEdgesForSession,
   selectNodeWordingById,
 } from './selectors.js';
+import { ANNOTATION_HOST_EDGE_TYPE, type AnnotationHostEdgeData } from './AnnotationHostEdge.js';
+import { ANNOTATION_NODE_TYPE, type AnnotationNodeData } from './AnnotationNode.js';
+import type { Annotation } from '@a-conversa/shell';
 
 const SESSION = '00000000-0000-4000-8000-0000000000a1';
 const ACTOR = '00000000-0000-4000-8000-0000000000aa';
@@ -1239,5 +1245,380 @@ describe('selectNodeWordingById', () => {
       },
     ];
     expect(selectNodeWordingById(events, 'n-dup')).toBe('second wording');
+  });
+});
+
+// -- Annotation-endpoint rendering (mod_render_annotation_endpoint_edges) --
+//
+// Promotion-set: any annotation id referenced as an edge endpoint
+// becomes a `<AnnotationNode>` and is filtered out of the per-host
+// badge bucket (mutual exclusion per Decisions §1 + §3).
+//
+// Projectors: `projectAnnotationNodes` emits one node per promoted
+// annotation; `projectAnnotationHostEdges` emits one host pseudo-edge
+// per promoted annotation tethering it to its resolved host
+// (Decision §4).
+
+const NODE_A = '00000000-0000-4000-8000-000000000a01';
+const NODE_B = '00000000-0000-4000-8000-000000000a02';
+const ANNO_A = '00000000-0000-4000-8000-000000000b01';
+const ANNO_B = '00000000-0000-4000-8000-000000000b02';
+const EDGE_HOSTED_BY_NODE = '00000000-0000-4000-8000-000000000c01';
+const EDGE_NODE_TO_ANNO = '00000000-0000-4000-8000-000000000c02';
+
+function makeAnnotationEndpointEdgeCreated(opts: {
+  sequence: number;
+  edgeId: string;
+  role: EdgeRole;
+  sourceNodeId?: string;
+  sourceAnnotationId?: string;
+  targetNodeId?: string;
+  targetAnnotationId?: string;
+}): Event {
+  return {
+    id: `00000000-0000-4000-8000-${(0x600 + opts.sequence).toString(16).padStart(12, '0')}`,
+    sessionId: SESSION,
+    sequence: opts.sequence,
+    kind: 'edge-created',
+    actor: ACTOR,
+    payload: {
+      edge_id: opts.edgeId,
+      role: opts.role,
+      ...(opts.sourceNodeId !== undefined ? { source_node_id: opts.sourceNodeId } : {}),
+      ...(opts.sourceAnnotationId !== undefined
+        ? { source_annotation_id: opts.sourceAnnotationId }
+        : {}),
+      ...(opts.targetNodeId !== undefined ? { target_node_id: opts.targetNodeId } : {}),
+      ...(opts.targetAnnotationId !== undefined
+        ? { target_annotation_id: opts.targetAnnotationId }
+        : {}),
+      created_by: ACTOR,
+      created_at: '2026-05-11T00:00:00.000Z',
+    },
+    createdAt: '2026-05-11T00:00:00.000Z',
+  };
+}
+
+describe('computeAnnotationsAsEndpoints', () => {
+  it('returns an empty set for an empty event log', () => {
+    expect(computeAnnotationsAsEndpoints([])).toEqual(new Set());
+  });
+
+  it('returns an empty set when no edge-created references an annotation endpoint', () => {
+    const events: Event[] = [
+      makeNodeCreated(1, NODE_A),
+      makeEdgeCreated({
+        sequence: 2,
+        edgeId: 'e1',
+        role: 'supports',
+        source: NODE_A,
+        target: 'n-x',
+      }),
+    ];
+    expect(computeAnnotationsAsEndpoints(events)).toEqual(new Set());
+  });
+
+  it('collects one annotation id when an edge targets it', () => {
+    const events: Event[] = [
+      makeNodeCreated(1, NODE_A),
+      makeAnnotationCreated({
+        sequence: 2,
+        annotationId: ANNO_A,
+        kind: 'note',
+        targetNodeId: NODE_A,
+        targetEdgeId: null,
+      }),
+      makeAnnotationEndpointEdgeCreated({
+        sequence: 3,
+        edgeId: EDGE_NODE_TO_ANNO,
+        role: 'contradicts',
+        sourceNodeId: NODE_A,
+        targetAnnotationId: ANNO_A,
+      }),
+    ];
+    expect(computeAnnotationsAsEndpoints(events)).toEqual(new Set([ANNO_A]));
+  });
+
+  it('collapses duplicate references — same annotation referenced by multiple edges produces one entry', () => {
+    const events: Event[] = [
+      makeAnnotationEndpointEdgeCreated({
+        sequence: 1,
+        edgeId: 'e1',
+        role: 'contradicts',
+        sourceNodeId: NODE_A,
+        targetAnnotationId: ANNO_A,
+      }),
+      makeAnnotationEndpointEdgeCreated({
+        sequence: 2,
+        edgeId: 'e2',
+        role: 'supports',
+        sourceNodeId: NODE_B,
+        targetAnnotationId: ANNO_A,
+      }),
+    ];
+    expect(computeAnnotationsAsEndpoints(events)).toEqual(new Set([ANNO_A]));
+  });
+
+  it('collects annotation ids from both source and target slots, mixed across edges', () => {
+    const events: Event[] = [
+      // node → annotation (target_annotation_id)
+      makeAnnotationEndpointEdgeCreated({
+        sequence: 1,
+        edgeId: 'e1',
+        role: 'contradicts',
+        sourceNodeId: NODE_A,
+        targetAnnotationId: ANNO_A,
+      }),
+      // annotation → node (source_annotation_id)
+      makeAnnotationEndpointEdgeCreated({
+        sequence: 2,
+        edgeId: 'e2',
+        role: 'supports',
+        sourceAnnotationId: ANNO_B,
+        targetNodeId: NODE_B,
+      }),
+    ];
+    expect(computeAnnotationsAsEndpoints(events)).toEqual(new Set([ANNO_A, ANNO_B]));
+  });
+});
+
+function makeAnnotation(overrides: Partial<Annotation> & { id: string }): Annotation {
+  return {
+    id: overrides.id,
+    kind: overrides.kind ?? 'note',
+    content: overrides.content ?? 'an annotation body',
+    targetNodeId: overrides.targetNodeId ?? null,
+    targetEdgeId: overrides.targetEdgeId ?? null,
+    createdBy: overrides.createdBy ?? ACTOR,
+    createdAt: overrides.createdAt ?? '2026-05-11T00:00:00.000Z',
+  };
+}
+
+describe('projectAnnotationNodes', () => {
+  it('returns [] for an empty promotion set', () => {
+    expect(projectAnnotationNodes([], new Set(), [])).toEqual([]);
+  });
+
+  it('emits one Node<AnnotationNodeData> for a promoted annotation hosted by a known node', () => {
+    const annotations: Annotation[] = [
+      makeAnnotation({
+        id: ANNO_A,
+        kind: 'reframe',
+        content: 'a reframe note',
+        targetNodeId: NODE_A,
+      }),
+    ];
+    const events: Event[] = [makeNodeCreated(1, NODE_A)];
+    const nodes = projectAnnotationNodes(annotations, new Set([ANNO_A]), events);
+    expect(nodes).toHaveLength(1);
+    const expected: {
+      id: string;
+      type: string;
+      position: { x: number; y: number };
+      data: AnnotationNodeData;
+    } = {
+      id: ANNO_A,
+      type: ANNOTATION_NODE_TYPE,
+      position: { x: 0, y: 0 },
+      data: { kind: 'reframe', content: 'a reframe note' },
+    };
+    expect(nodes[0]).toEqual(expected);
+  });
+
+  it('stamps data.hostMissing when the annotation host cannot be resolved', () => {
+    const annotations: Annotation[] = [
+      makeAnnotation({
+        id: ANNO_A,
+        kind: 'note',
+        content: 'orphan annotation',
+        // host not in events
+        targetNodeId: 'unknown-node',
+      }),
+    ];
+    const nodes = projectAnnotationNodes(annotations, new Set([ANNO_A]), []);
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0]?.data).toEqual({
+      kind: 'note',
+      content: 'orphan annotation',
+      hostMissing: true,
+    });
+  });
+
+  it('skips annotations that are not in the promotion set', () => {
+    const annotations: Annotation[] = [
+      makeAnnotation({ id: ANNO_A, kind: 'note', targetNodeId: NODE_A }),
+      makeAnnotation({ id: ANNO_B, kind: 'reframe', targetNodeId: NODE_A }),
+    ];
+    const events: Event[] = [makeNodeCreated(1, NODE_A)];
+    const nodes = projectAnnotationNodes(annotations, new Set([ANNO_B]), events);
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0]?.id).toBe(ANNO_B);
+  });
+});
+
+describe('projectAnnotationHostEdges', () => {
+  it('returns [] for an empty promotion set', () => {
+    expect(projectAnnotationHostEdges([], new Set(), [])).toEqual([]);
+  });
+
+  it('emits one host pseudo-edge per promoted annotation hosted by a known node', () => {
+    const annotations: Annotation[] = [
+      makeAnnotation({ id: ANNO_A, kind: 'note', targetNodeId: NODE_A }),
+    ];
+    const events: Event[] = [makeNodeCreated(1, NODE_A)];
+    const edges = projectAnnotationHostEdges(annotations, new Set([ANNO_A]), events);
+    expect(edges).toHaveLength(1);
+    const expected: {
+      id: string;
+      source: string;
+      target: string;
+      type: string;
+      data: AnnotationHostEdgeData;
+    } = {
+      id: `annotation-host-${ANNO_A}`,
+      source: NODE_A,
+      target: ANNO_A,
+      type: ANNOTATION_HOST_EDGE_TYPE,
+      data: { annotationId: ANNO_A },
+    };
+    expect(edges[0]).toEqual(expected);
+  });
+
+  it('tethers an edge-hosted annotation to its host edge source-node id', () => {
+    const annotations: Annotation[] = [
+      makeAnnotation({ id: ANNO_A, kind: 'note', targetEdgeId: EDGE_HOSTED_BY_NODE }),
+    ];
+    const events: Event[] = [
+      makeNodeCreated(1, NODE_A),
+      makeNodeCreated(2, NODE_B),
+      makeEdgeCreated({
+        sequence: 3,
+        edgeId: EDGE_HOSTED_BY_NODE,
+        role: 'supports',
+        source: NODE_A,
+        target: NODE_B,
+      }),
+    ];
+    const edges = projectAnnotationHostEdges(annotations, new Set([ANNO_A]), events);
+    expect(edges).toHaveLength(1);
+    expect(edges[0]?.source).toBe(NODE_A);
+    expect(edges[0]?.target).toBe(ANNO_A);
+  });
+
+  it('omits the host pseudo-edge when the annotation host cannot be resolved', () => {
+    const annotations: Annotation[] = [
+      makeAnnotation({ id: ANNO_A, kind: 'note', targetNodeId: 'unknown-node' }),
+    ];
+    const edges = projectAnnotationHostEdges(annotations, new Set([ANNO_A]), []);
+    expect(edges).toEqual([]);
+  });
+});
+
+describe('selectEdgesForSession — annotation-endpoint edges (lifted guard)', () => {
+  it('projects a node→annotation endpoint edge with source=node id, target=annotation id', () => {
+    const events: Event[] = [
+      makeNodeCreated(1, NODE_A),
+      makeAnnotationCreated({
+        sequence: 2,
+        annotationId: ANNO_A,
+        kind: 'reframe',
+        targetNodeId: NODE_A,
+        targetEdgeId: null,
+      }),
+      makeAnnotationEndpointEdgeCreated({
+        sequence: 3,
+        edgeId: EDGE_NODE_TO_ANNO,
+        role: 'contradicts',
+        sourceNodeId: NODE_A,
+        targetAnnotationId: ANNO_A,
+      }),
+    ];
+    const edges = selectEdgesForSession(makeState(events), SESSION);
+    expect(edges).toHaveLength(1);
+    expect(edges[0]?.id).toBe(EDGE_NODE_TO_ANNO);
+    expect(edges[0]?.source).toBe(NODE_A);
+    expect(edges[0]?.target).toBe(ANNO_A);
+    expect(edges[0]?.data?.sourceId).toBe(NODE_A);
+    expect(edges[0]?.data?.targetId).toBe(ANNO_A);
+    expect(edges[0]?.data?.role).toBe('contradicts');
+  });
+
+  it('projects an annotation→node endpoint edge with source=annotation id, target=node id', () => {
+    const events: Event[] = [
+      makeNodeCreated(1, NODE_A),
+      makeAnnotationCreated({
+        sequence: 2,
+        annotationId: ANNO_A,
+        kind: 'stance',
+        targetNodeId: NODE_A,
+        targetEdgeId: null,
+      }),
+      makeAnnotationEndpointEdgeCreated({
+        sequence: 3,
+        edgeId: 'edge-anno-to-node',
+        role: 'supports',
+        sourceAnnotationId: ANNO_A,
+        targetNodeId: NODE_A,
+      }),
+    ];
+    const edges = selectEdgesForSession(makeState(events), SESSION);
+    expect(edges).toHaveLength(1);
+    expect(edges[0]?.source).toBe(ANNO_A);
+    expect(edges[0]?.target).toBe(NODE_A);
+  });
+
+  it('projects an annotation→annotation endpoint edge', () => {
+    const events: Event[] = [
+      makeAnnotationEndpointEdgeCreated({
+        sequence: 1,
+        edgeId: 'edge-anno-anno',
+        role: 'supports',
+        sourceAnnotationId: ANNO_A,
+        targetAnnotationId: ANNO_B,
+      }),
+    ];
+    const edges = selectEdgesForSession(makeState(events), SESSION);
+    expect(edges).toHaveLength(1);
+    expect(edges[0]?.source).toBe(ANNO_A);
+    expect(edges[0]?.target).toBe(ANNO_B);
+  });
+
+  it('filters promoted annotations out of an edge data.annotations bucket (mutual exclusion)', () => {
+    // The annotation A is both targeted-by-edge AND a node-target
+    // annotation on its host edge. Once A is promoted (referenced as
+    // an endpoint), it must NOT appear in any emitted edge's
+    // `data.annotations` decoration bucket.
+    const hostEdgeId = '00000000-0000-4000-8000-000000000d01';
+    const events: Event[] = [
+      makeNodeCreated(1, NODE_A),
+      makeNodeCreated(2, NODE_B),
+      makeEdgeCreated({
+        sequence: 3,
+        edgeId: hostEdgeId,
+        role: 'supports',
+        source: NODE_A,
+        target: NODE_B,
+      }),
+      makeAnnotationCreated({
+        sequence: 4,
+        annotationId: ANNO_A,
+        kind: 'note',
+        targetNodeId: null,
+        targetEdgeId: hostEdgeId,
+      }),
+      // Now reference ANNO_A as an endpoint — it gets promoted.
+      makeAnnotationEndpointEdgeCreated({
+        sequence: 5,
+        edgeId: 'edge-promoted',
+        role: 'contradicts',
+        sourceNodeId: NODE_A,
+        targetAnnotationId: ANNO_A,
+      }),
+    ];
+    const edges = selectEdgesForSession(makeState(events), SESSION);
+    // The host edge's decoration bucket must NOT include the promoted
+    // annotation.
+    const hostEdge = edges.find((e) => e.id === hostEdgeId);
+    expect(hostEdge?.data?.annotations).toEqual([]);
   });
 });

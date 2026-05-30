@@ -240,6 +240,26 @@ export default defineConfig({
         storageState: AUTH_STORAGE_STATE_PATH,
       },
     },
+    // Annotation-endpoint canvas rendering e2e
+    // (mod_render_annotation_endpoint_edges). Drives the moderator's
+    // operate route, seeds a node + annotation + annotation-endpoint
+    // edge into the Zustand WS store via `wsStoreSeed.ts`, and asserts
+    // both the host statement node AND the promoted annotation node
+    // surface alongside the host pseudo-edge. Same browser profile as
+    // `chromium-moderator-hover` — the seeded text is locale-independent
+    // (the spec asserts test-ids, not catalog content), so single-locale
+    // is enough.
+    {
+      name: 'chromium-moderator-annotation-endpoint',
+      testMatch: /annotation-endpoint-rendering\.spec\.ts$/,
+      dependencies: ['setup-auth'],
+      use: {
+        ...devices['Desktop Chrome'],
+        locale: 'en-US',
+        ignoreHTTPSErrors: true,
+        storageState: AUTH_STORAGE_STATE_PATH,
+      },
+    },
     // Graph layout e2e (mod_layout_engine_choice, ADR 0025). Drives the
     // moderator's operate route, seeds a 6-node / 5-edge claim+evidence
     // +rebut fixture into the Zustand WS store, and asserts: pairwise

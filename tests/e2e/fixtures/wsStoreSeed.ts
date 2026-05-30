@@ -58,6 +58,12 @@ export interface SeedNode {
  * the wire payload narrowed to the fields the projection consumes; the
  * `role` defaults to `'supports'` (the most-used methodology role) when
  * unspecified.
+ *
+ * Per `edge_target_annotation_schema_extension`, each endpoint may
+ * target either a node id OR an annotation id (XOR enforced on the
+ * wire). `sourceKind` / `targetKind` opt the endpoint into the
+ * annotation slot; the default is `'node'` for backward compatibility
+ * with the pre-widening seeds.
  */
 export interface SeedEdge {
   readonly edgeId: string;
@@ -71,12 +77,29 @@ export interface SeedEdge {
     | 'bridges-to'
     | 'defines'
     | 'contradicts';
+  readonly sourceKind?: 'node' | 'annotation';
+  readonly targetKind?: 'node' | 'annotation';
+}
+
+/**
+ * One synthetic `annotation-created` event the seeder injects. Per
+ * `mod_render_annotation_endpoint_edges`, annotations referenced by
+ * annotation-endpoint edges promote to standalone `<AnnotationNode>`s
+ * on the moderator canvas.
+ */
+export interface SeedAnnotation {
+  readonly annotationId: string;
+  readonly kind: 'note' | 'reframe' | 'scope-change' | 'stance';
+  readonly content: string;
+  readonly targetNodeId?: string | null;
+  readonly targetEdgeId?: string | null;
 }
 
 export interface SeedSessionOptions {
   readonly sessionId: string;
   readonly nodes?: readonly SeedNode[];
   readonly edges?: readonly SeedEdge[];
+  readonly annotations?: readonly SeedAnnotation[];
 }
 
 /**
@@ -98,9 +121,9 @@ export async function seedWsStore(
   page: Page,
   options: SeedSessionOptions,
 ): Promise<{ eventCount: number }> {
-  const { sessionId, nodes = [], edges = [] } = options;
+  const { sessionId, nodes = [], edges = [], annotations = [] } = options;
   return page.evaluate(
-    ({ sessionId, nodes, edges }) => {
+    ({ sessionId, nodes, edges, annotations }) => {
       const store = (
         window as unknown as {
           __aConversaWsStore?: {
@@ -142,18 +165,19 @@ export async function seedWsStore(
         });
         sequence += 1;
       }
-      for (const edge of edges) {
+      for (const annotation of annotations) {
         store.getState().applyEvent({
-          id: `00000000-0000-4000-8000-${(0x2000 + sequence).toString(16).padStart(12, '0')}`,
+          id: `00000000-0000-4000-8000-${(0x5000 + sequence).toString(16).padStart(12, '0')}`,
           sessionId,
           sequence,
-          kind: 'edge-created',
+          kind: 'annotation-created',
           actor,
           payload: {
-            edge_id: edge.edgeId,
-            role: edge.role ?? 'supports',
-            source_node_id: edge.source,
-            target_node_id: edge.target,
+            annotation_id: annotation.annotationId,
+            kind: annotation.kind,
+            content: annotation.content,
+            target_node_id: annotation.targetNodeId ?? null,
+            target_edge_id: annotation.targetEdgeId ?? null,
             created_by: actor,
             created_at: createdAt,
           },
@@ -161,10 +185,40 @@ export async function seedWsStore(
         });
         sequence += 1;
       }
+      for (const edge of edges) {
+        const sourceKind = edge.sourceKind ?? 'node';
+        const targetKind = edge.targetKind ?? 'node';
+        const payload: Record<string, unknown> = {
+          edge_id: edge.edgeId,
+          role: edge.role ?? 'supports',
+          created_by: actor,
+          created_at: createdAt,
+        };
+        if (sourceKind === 'annotation') {
+          payload.source_annotation_id = edge.source;
+        } else {
+          payload.source_node_id = edge.source;
+        }
+        if (targetKind === 'annotation') {
+          payload.target_annotation_id = edge.target;
+        } else {
+          payload.target_node_id = edge.target;
+        }
+        store.getState().applyEvent({
+          id: `00000000-0000-4000-8000-${(0x2000 + sequence).toString(16).padStart(12, '0')}`,
+          sessionId,
+          sequence,
+          kind: 'edge-created',
+          actor,
+          payload,
+          createdAt,
+        });
+        sequence += 1;
+      }
       const after = store.getState().sessionState[sessionId];
       return { eventCount: after?.events.length ?? 0 };
     },
-    { sessionId, nodes, edges },
+    { sessionId, nodes, edges, annotations },
   );
 }
 

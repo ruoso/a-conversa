@@ -100,6 +100,12 @@ import { AnnotateSubmenu } from '../layout/AnnotateSubmenu.js';
 import type { AnnotateTargetKind } from '../layout/useAnnotateAction.js';
 import { EditWordingSubmenu } from '../layout/EditWordingSubmenu.js';
 import { STATEMENT_NODE_TYPE, StatementNode, type StatementNodeData } from './StatementNode.js';
+import {
+  ANNOTATION_NODE_TYPE,
+  ANNOTATION_NODE_HEIGHT,
+  ANNOTATION_NODE_WIDTH,
+  AnnotationNode,
+} from './AnnotationNode.js';
 import { edgeTypes } from './edgeTypes.js';
 import { DrawEdgeRolePicker } from './DrawEdgeRolePicker.js';
 import { GraphContextMenu, type MenuItem } from './GraphContextMenu.js';
@@ -117,7 +123,10 @@ import { disputationOutcome } from './disputationOutcome.js';
 import {
   EMPTY_PENDING_AXIOM_MARKS,
   EMPTY_VOTES_BY_FACET,
+  computeAnnotationsAsEndpoints,
   groupPendingAxiomMarksByNode,
+  projectAnnotationHostEdges,
+  projectAnnotationNodes,
   projectPendingAxiomMarks,
   selectEdgesForSession,
 } from './selectors.js';
@@ -145,6 +154,7 @@ import type { DiagnosticPayload } from '@a-conversa/shared-types';
  */
 const NODE_TYPES: NodeTypes = {
   [STATEMENT_NODE_TYPE]: StatementNode,
+  [ANNOTATION_NODE_TYPE]: AnnotationNode,
 };
 
 /**
@@ -502,6 +512,12 @@ export function projectNodes(
   // classification commits without re-scanning).
   const nodes: Node<StatementNodeData>[] = [];
   const nodeIndexById = new Map<string, number>();
+  // Promotion-set for annotation-endpoint rendering — annotations
+  // referenced as edge endpoints render as `<AnnotationNode>` and are
+  // filtered out of the per-host `data.annotations` badge bucket
+  // (mutual exclusion per `mod_render_annotation_endpoint_edges`
+  // Decisions §1 + §3).
+  const promotedAnnotationIds = computeAnnotationsAsEndpoints(events);
   // Map from proposal envelope id to (node id, classification) for
   // classify-node proposals — used when a commit later references one.
   const pendingClassifications = new Map<
@@ -519,7 +535,18 @@ export function projectNodes(
   // node by id and aren't gated on the proposal/commit dance, so a
   // single up-front projection + groupBy is cheaper than threading
   // through the main loop.
-  const annotationsByNode = groupAnnotationsByNode(projectAnnotations(events));
+  //
+  // Per `mod_render_annotation_endpoint_edges` Decisions §1 + §3,
+  // annotations promoted to `<AnnotationNode>` (referenced as edge
+  // endpoints) are filtered out of the badge bucket here so the host
+  // node's `data.annotations` excludes them — mutual exclusion between
+  // badge and node.
+  const allAnnotations = projectAnnotations(events);
+  const annotationsByNode = groupAnnotationsByNode(
+    promotedAnnotationIds.size === 0
+      ? allAnnotations
+      : allAnnotations.filter((annotation) => !promotedAnnotationIds.has(annotation.id)),
+  );
 
   // Axiom-mark enrichment — same up-front-pass pattern. The axiom-mark
   // projection IS gated on the proposal + commit dance (only committed
@@ -678,7 +705,22 @@ export function projectNodes(
     }
   }
 
-  return nodes;
+  // Append promoted-annotation nodes after the statement nodes. The
+  // combined `Node[]` array is what `<ReactFlow>` consumes; node-type
+  // discrimination is per-node via `node.type` (`'statement'` vs
+  // `'annotation'`). ReactFlow routes each node to the right component
+  // via the `NODE_TYPES` map regardless of the static `T` on
+  // `Node<T>` — so we collapse the two shapes here under the same
+  // array typed as `Node<StatementNodeData>` (the existing consumer
+  // contract). The annotation projector resolves each promoted
+  // annotation's host inline and stamps `data.hostMissing` when the
+  // host can't be found in the events log (Decision §4 defensive
+  // case). Refinement: `mod_render_annotation_endpoint_edges`.
+  const annotationNodes = projectAnnotationNodes(allAnnotations, promotedAnnotationIds, events);
+  if (annotationNodes.length === 0) {
+    return nodes;
+  }
+  return [...nodes, ...(annotationNodes as unknown as Node<StatementNodeData>[])];
 }
 
 export interface GraphCanvasPaneProps {
@@ -1035,24 +1077,35 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
   // for the wire-event → ReactFlow-edge mapping. Reading the live store
   // via `useWsStore.getState()` inside the `useMemo` would skip the
   // events subscription and risk a stale closure across renders.
-  const edges = useMemo(
-    () =>
-      selectEdgesForSession(
-        {
-          sessionState: {
-            [sessionId]: {
-              lastAppliedSequence: 0,
-              events: events as Event[],
-              pendingProposalFacetStatus: new Map(),
-              activeDiagnostics: EMPTY_ACTIVE_DIAGNOSTICS,
-            },
-          },
-        } as unknown as WsState,
-        sessionId,
-        diagnosticHighlights,
-      ),
-    [sessionId, events, diagnosticHighlights],
-  );
+  //
+  // The combined edge array also includes the synthetic host pseudo-
+  // edges per `mod_render_annotation_endpoint_edges`: one
+  // `'annotation-host'` ReactFlow edge per promoted annotation tethering
+  // it to its host node (or the host edge's source). The pseudo-edge
+  // preserves the spatial association the badge currently provides
+  // when an annotation is promoted to a node (Decision §4).
+  const edges = useMemo(() => {
+    const wsStateShape = {
+      sessionState: {
+        [sessionId]: {
+          lastAppliedSequence: 0,
+          events: events as Event[],
+          pendingProposalFacetStatus: new Map(),
+          activeDiagnostics: EMPTY_ACTIVE_DIAGNOSTICS,
+        },
+      },
+    } as unknown as WsState;
+    const statementEdges = selectEdgesForSession(wsStateShape, sessionId, diagnosticHighlights);
+    const promoted = computeAnnotationsAsEndpoints(events);
+    if (promoted.size === 0) {
+      return statementEdges;
+    }
+    const hostEdges = projectAnnotationHostEdges(projectAnnotations(events), promoted, events);
+    if (hostEdges.length === 0) {
+      return statementEdges;
+    }
+    return [...statementEdges, ...hostEdges];
+  }, [sessionId, events, diagnosticHighlights]);
 
   // Position cache for the incremental layout pass (refinement
   // `mod_layout_engine_choice`, ADR 0025). Nodes whose id is in the
@@ -1108,10 +1161,25 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
       }
     }
 
+    // Per `mod_render_annotation_endpoint_edges` Decision §5,
+    // `AnnotationNode`s carry their own smaller per-card dimensions
+    // (192×56) than `StatementNode` (288×90). Seed the dagre dimensions
+    // map with the annotation-node constants for any ids not yet
+    // measured by the ResizeObserver pass — once the measurement
+    // arrives it overrides via the same map.
+    const dimensions = new Map(measurementCacheRef.current);
+    for (const node of projected) {
+      if (node.type === ANNOTATION_NODE_TYPE && !dimensions.has(node.id)) {
+        dimensions.set(node.id, {
+          width: ANNOTATION_NODE_WIDTH,
+          height: ANNOTATION_NODE_HEIGHT,
+        });
+      }
+    }
     let laidOut: Node<StatementNodeData>[];
     if (trulyNewIds.length > 0) {
       laidOut = relayoutAll(projected, edges, {
-        dimensions: measurementCacheRef.current,
+        dimensions,
       });
       // Reset the position cache — every node received a fresh
       // placement, the prior cache entries are stale.
@@ -1122,7 +1190,7 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
     } else {
       laidOut = applyLayout(projected, edges, {
         cache: positionCacheRef.current,
-        dimensions: measurementCacheRef.current,
+        dimensions,
       });
     }
     // Mirror every emitted position into the cache so the NEXT
@@ -1304,10 +1372,21 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
       // `'claim'` via `disputationOutcome(...)`. The gate runs at the
       // call site so the factory stays a pure shape function (the
       // factory accepts the precomputed `disabled` boolean).
+      // The context menu's substance-gate + edit-wording prefill only
+      // apply to statement nodes; annotation nodes (post
+      // `mod_render_annotation_endpoint_edges`) carry no `facetStatuses`
+      // / `wording` fields. Narrowing the find to statement nodes keeps
+      // the type access honest and degrades gracefully for an
+      // annotation-node right-click (the substance gate stays open via
+      // the `undefined`-flowing path the disputation helper already
+      // tolerates; the wording prefill falls back to '').
       const targetNode =
         contextMenu.target.id === null
           ? null
-          : (nodes.find((n) => n.id === contextMenu.target.id) ?? null);
+          : (nodes.find(
+              (n): n is Node<StatementNodeData> =>
+                n.id === contextMenu.target.id && n.type === STATEMENT_NODE_TYPE,
+            ) ?? null);
       const substanceStatus = targetNode?.data.facetStatuses.substance;
       const disabledRunOperationalizationTest = disputationOutcome(substanceStatus) !== 'claim';
       // Independent constant for the warrant-elicitation gate per
