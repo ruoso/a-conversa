@@ -54,6 +54,15 @@ const EDGE_BA = '77777777-7777-4777-8777-7777777777ba';
 const EDGE_AA = '77777777-7777-4777-8777-7777777777aa';
 const EDGE_CD = '77777777-7777-4777-8777-7777777777cd';
 
+// Annotation-endpoint test ids (per
+// contradiction_annotation_endpoint_semantics_audit D1, D6).
+const ANN_1 = '88888888-8888-4888-8888-888888888881';
+const ANN_2 = '88888888-8888-4888-8888-888888888882';
+const EDGE_NA = '77777777-7777-4777-8777-77777777a001';
+const EDGE_AN = '77777777-7777-4777-8777-77777777a002';
+const EDGE_AA_DISTINCT = '77777777-7777-4777-8777-77777777a003';
+const EDGE_AA_SHARED = '77777777-7777-4777-8777-77777777a004';
+
 const T0 = '2026-05-10T12:00:00Z';
 const T1 = '2026-05-10T12:00:01Z';
 const T2 = '2026-05-10T12:00:02Z';
@@ -249,6 +258,94 @@ function commitBreakEdge(projection: Projection, edgeId: string): void {
   commit(projection, proposalId);
 }
 
+// --- Annotation-endpoint helpers (per
+// contradiction_annotation_endpoint_semantics_audit D6) ---
+//
+// Mirror the thin direction-tagged shape the sibling
+// `coherency_self_referential_annotation_contradicts_rule` task added
+// to `coherency-hint-detection.test.ts`: separate helpers per
+// endpoint-direction combination read more directly at call sites than
+// a tagged-union mixed helper would.
+
+function createAnnotation(
+  projection: Projection,
+  annotationId: string,
+  anchor: { nodeId: string } | { edgeId: string },
+): void {
+  applyEvent(
+    projection,
+    makeEvent(nextSeq(), 'annotation-created', DEBATER_A_ID, T2, {
+      annotation_id: annotationId,
+      kind: 'note',
+      content: 'a',
+      target_node_id: 'nodeId' in anchor ? anchor.nodeId : null,
+      target_edge_id: 'edgeId' in anchor ? anchor.edgeId : null,
+      created_by: DEBATER_A_ID,
+      created_at: T2,
+    }),
+  );
+}
+
+function createNodeToAnnotationEdge(
+  projection: Projection,
+  edgeId: string,
+  sourceNodeId: string,
+  targetAnnotationId: string,
+  role: EdgeRole = 'contradicts',
+): void {
+  applyEvent(
+    projection,
+    makeEvent(nextSeq(), 'edge-created', DEBATER_A_ID, T2, {
+      edge_id: edgeId,
+      role,
+      source_node_id: sourceNodeId,
+      target_annotation_id: targetAnnotationId,
+      created_by: DEBATER_A_ID,
+      created_at: T2,
+    }),
+  );
+}
+
+function createAnnotationToNodeEdge(
+  projection: Projection,
+  edgeId: string,
+  sourceAnnotationId: string,
+  targetNodeId: string,
+  role: EdgeRole = 'contradicts',
+): void {
+  applyEvent(
+    projection,
+    makeEvent(nextSeq(), 'edge-created', DEBATER_A_ID, T2, {
+      edge_id: edgeId,
+      role,
+      source_annotation_id: sourceAnnotationId,
+      target_node_id: targetNodeId,
+      created_by: DEBATER_A_ID,
+      created_at: T2,
+    }),
+  );
+}
+
+function createAnnotationToAnnotationEdge(
+  projection: Projection,
+  edgeId: string,
+  sourceAnnotationId: string,
+  targetAnnotationId: string,
+  role: EdgeRole = 'contradicts',
+): void {
+  applyEvent(
+    projection,
+    makeEvent(nextSeq(), 'edge-created', DEBATER_A_ID, T2, {
+      edge_id: edgeId,
+      role,
+      source_annotation_id: sourceAnnotationId,
+      target_annotation_id: targetAnnotationId,
+      created_by: DEBATER_A_ID,
+      created_at: T2,
+    }),
+  );
+}
+
 // Build a pair A, B with an A->B contradicts edge, with both node
 // substances committed-agreed and the edge substance committed-agreed.
 function buildAgreedContradiction(projection: Projection): void {
@@ -424,5 +521,106 @@ describe('detectContradictions — contradictions detected', () => {
     expect(result[0]?.nodeA).toBe(NODE_A);
     expect(result[0]?.nodeB).toBe(NODE_B);
     expect(result[0]?.edges).toEqual([EDGE_BA]);
+  });
+});
+
+// --- Annotation-endpoint contradicts edges (per contradiction_annotation_endpoint_semantics_audit D1, D6) ---
+//
+// The detector skips annotation-endpoint contradicts edges in all three
+// shapes (node-source / annotation-target, annotation-source / node-
+// target, annotation-source / annotation-target) across both anchor
+// configurations (self-referential, cross-anchor) and both edge
+// directions. Methodology grounding: `docs/methodology.md` L236
+// positions `contradicts` as a substance-layer relation between peer
+// entities, not between an entity and its commentary. Annotations
+// carry no substance facet (`ProjectedAnnotation` has no
+// `substanceFacet`), so the rule-4 target-substance check would also
+// fail to fire even without the early skip — the skip is defence-in-
+// depth.
+//
+// Each case asserts `detectContradictions(projection).length === 0`
+// on a fixture whose annotation-endpoint contradicts edge is the only
+// edge-of-interest. Even with all substance facets committed-agreed
+// (so the detector's other rules would be satisfied on a node-node
+// edge), the early skip guarantees zero findings.
+
+describe('detectContradictions — annotation-endpoint contradicts edges (audit D1)', () => {
+  it('node N → contradicts → annotation A (A annotates N): no contradiction surfaced', () => {
+    resetSeq();
+    const projection = seedSession();
+    createNode(projection, NODE_A, 'N');
+    createAnnotation(projection, ANN_1, { nodeId: NODE_A });
+    createNodeToAnnotationEdge(projection, EDGE_NA, NODE_A, ANN_1, 'contradicts');
+    commitNodeAgreed(projection, NODE_A);
+    commitEdgeAgreed(projection, EDGE_NA);
+    expect(detectContradictions(projection)).toEqual([]);
+  });
+
+  it('annotation A → contradicts → node N (A annotates N): no contradiction surfaced', () => {
+    resetSeq();
+    const projection = seedSession();
+    createNode(projection, NODE_A, 'N');
+    createAnnotation(projection, ANN_1, { nodeId: NODE_A });
+    createAnnotationToNodeEdge(projection, EDGE_AN, ANN_1, NODE_A, 'contradicts');
+    commitNodeAgreed(projection, NODE_A);
+    commitEdgeAgreed(projection, EDGE_AN);
+    expect(detectContradictions(projection)).toEqual([]);
+  });
+
+  it('node N1 → contradicts → annotation A (A annotates N2, cross-anchor): no contradiction surfaced', () => {
+    resetSeq();
+    const projection = seedSession();
+    // The walkthrough E15 shape generalised: A annotates N2 but the
+    // contradicts edge runs from N1 to A. The future
+    // `coherency_non_self_referential_annotation_contradicts_rule`
+    // (per D3) would surface this advisorily; the blocking
+    // contradiction detector does not.
+    createNode(projection, NODE_A, 'N1');
+    createNode(projection, NODE_B, 'N2');
+    createAnnotation(projection, ANN_1, { nodeId: NODE_B });
+    createNodeToAnnotationEdge(projection, EDGE_NA, NODE_A, ANN_1, 'contradicts');
+    commitNodeAgreed(projection, NODE_A);
+    commitNodeAgreed(projection, NODE_B);
+    commitEdgeAgreed(projection, EDGE_NA);
+    expect(detectContradictions(projection)).toEqual([]);
+  });
+
+  it('annotation A → contradicts → node N1 (A annotates N2, cross-anchor): no contradiction surfaced', () => {
+    resetSeq();
+    const projection = seedSession();
+    createNode(projection, NODE_A, 'N1');
+    createNode(projection, NODE_B, 'N2');
+    createAnnotation(projection, ANN_1, { nodeId: NODE_B });
+    createAnnotationToNodeEdge(projection, EDGE_AN, ANN_1, NODE_A, 'contradicts');
+    commitNodeAgreed(projection, NODE_A);
+    commitNodeAgreed(projection, NODE_B);
+    commitEdgeAgreed(projection, EDGE_AN);
+    expect(detectContradictions(projection)).toEqual([]);
+  });
+
+  it('annotation A1 → contradicts → annotation A2 (both annotate distinct nodes): no contradiction surfaced', () => {
+    resetSeq();
+    const projection = seedSession();
+    createNode(projection, NODE_A, 'N1');
+    createNode(projection, NODE_B, 'N2');
+    createAnnotation(projection, ANN_1, { nodeId: NODE_A });
+    createAnnotation(projection, ANN_2, { nodeId: NODE_B });
+    createAnnotationToAnnotationEdge(projection, EDGE_AA_DISTINCT, ANN_1, ANN_2, 'contradicts');
+    commitNodeAgreed(projection, NODE_A);
+    commitNodeAgreed(projection, NODE_B);
+    commitEdgeAgreed(projection, EDGE_AA_DISTINCT);
+    expect(detectContradictions(projection)).toEqual([]);
+  });
+
+  it('annotation A1 → contradicts → annotation A2 (both annotate the same node N): no contradiction surfaced', () => {
+    resetSeq();
+    const projection = seedSession();
+    createNode(projection, NODE_A, 'N');
+    createAnnotation(projection, ANN_1, { nodeId: NODE_A });
+    createAnnotation(projection, ANN_2, { nodeId: NODE_A });
+    createAnnotationToAnnotationEdge(projection, EDGE_AA_SHARED, ANN_1, ANN_2, 'contradicts');
+    commitNodeAgreed(projection, NODE_A);
+    commitEdgeAgreed(projection, EDGE_AA_SHARED);
+    expect(detectContradictions(projection)).toEqual([]);
   });
 });

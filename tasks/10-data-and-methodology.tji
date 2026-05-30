@@ -339,6 +339,7 @@ task data_and_methodology "Data and methodology" {
     task contradiction_annotation_endpoint_semantics_audit "Audit contradiction_detection for annotation-endpoint edges" {
       effort 1d
       allocate team
+      complete 100
       depends !diagnostics_annotation_endpoint_semantics_audit
       note -8<-
         Source of debt: diagnostics_annotation_endpoint_semantics_audit D8.
@@ -346,6 +347,21 @@ task data_and_methodology "Data and methodology" {
         findings on annotation-endpoint contradicts edges (E15 case — N19 contradicts A2).
         Requires a methodology-doc edit specifying what "an agreed contradiction targeting an
         annotation" means structurally before the audit can conclude.
+      ->8-
+    }
+    task coherency_non_self_referential_annotation_contradicts_rule "Coherency hint: cross-anchor annotation-endpoint contradicts edge" {
+      effort 0.5d
+      allocate team
+      depends !contradiction_annotation_endpoint_semantics_audit, !coherency_self_referential_annotation_contradicts_rule
+      note -8<-
+        Source of debt: contradiction_annotation_endpoint_semantics_audit D3.
+        Candidate coherency-hint rule: one node endpoint + one annotation endpoint where
+        annotation.targetNodeId !== nodeEndpoint.id (the anchor-match filter of the existing
+        self-referential rule does NOT hold). Methodologically the same category error per
+        docs/methodology.md L236, but not surfaced by any rule today.
+        Conditional on docs/methodology.md enumerating the pattern as a named coherency hint
+        (task bundles the methodology paragraph per the sibling rules' precedent).
+        Includes Vitest cover; no Cucumber delta.
       ->8-
     }
     task pending_consequences_annotation_endpoint_revisit "Re-audit pending-consequences annotation-endpoint skip when stub graduates" {
