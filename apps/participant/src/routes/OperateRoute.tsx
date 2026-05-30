@@ -152,6 +152,44 @@ export function OperateRoute(): ReactElement {
     };
   }, [client, id]);
 
+  // Install the `window.__testHooks.killWebSocket` test seam — reached
+  // by `tests/e2e/participant-reconnect-seed-visible-styling.spec.ts`
+  // (cross-surface decompose-then-reconnect sub-step). Refinement:
+  // `tasks/refinements/participant-ui/part_pw_reconnect_seed_visible_styling.md`
+  // (Decisions §D1 — install lives at the top-level `OperateRoute` body
+  // because the participant's `<WsClientProvider>` is mounted one level
+  // above at `apps/participant/src/main.tsx`; `useWsClient()` already
+  // resolves here without a nested inner-route split).
+  //
+  // **Not gated on `import.meta.env.DEV`.** Same rationale as the
+  // `__aConversaWsStore` exposure at `apps/participant/src/main.tsx` and
+  // the moderator-side sibling install — the compose stack's production-
+  // mode build (used by `make up-prod-mode` and the runtime image's
+  // Vite `production` build mode) would tree-shake away a DEV-gated
+  // branch, leaving the e2e spec without its entry point.
+  //
+  // **Not security-sensitive.** The natural reconnect path is what the
+  // client already runs on every TCP-level disconnect; the hook just
+  // lets a test trigger it deterministically. Per D7, the install lives
+  // ONLY on the surfaces that scope a reconnect e2e (moderator + this
+  // route today; audience adds its own when an audience reconnect spec
+  // surfaces).
+  useEffect(() => {
+    const w = window as unknown as {
+      __testHooks?: { killWebSocket?: () => void };
+    };
+    const hooks = w.__testHooks ?? {};
+    hooks.killWebSocket = (): void => {
+      client.killWebSocket();
+    };
+    w.__testHooks = hooks;
+    return () => {
+      if (w.__testHooks !== undefined) {
+        delete w.__testHooks.killWebSocket;
+      }
+    };
+  }, [client]);
+
   return (
     <ParticipantLayout
       header={<ParticipantChrome />}

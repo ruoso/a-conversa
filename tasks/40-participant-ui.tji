@@ -254,6 +254,7 @@ task participant_ui "Participant (debater) UI" {
     task part_pw_reconnect_seed_visible_styling "Install window.__testHooks.killWebSocket on participant Operate route + add reconnect-mid-decompose Playwright sub-step for broadcast-seed regression cover" {
       effort 0.5d
       allocate team
+      complete 100
       depends !part_migrate_to_pending_proposal_facet_status, moderator_ui.mod_graph_rendering.mod_pw_reconnect_seed_visible_styling
       note -8<-
         Source of debt: tasks/refinements/participant-ui/part_migrate_to_pending_proposal_facet_status.md D6 — the reconnect-mid-decompose Playwright sub-step was deferred because window.__testHooks.killWebSocket() was not yet installed on the participant Operate route; only the moderator route installed it. Now that moderator_ui.mod_graph_rendering.mod_pw_reconnect_seed_visible_styling has landed the kill hook in the shell WsClient, the participant Operate route can install it and the reconnect sub-step in participant-pending-proposals.spec.ts can be added.

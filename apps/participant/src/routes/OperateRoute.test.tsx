@@ -54,19 +54,22 @@ interface FakeClient {
   client: WsClient;
   trackSessionSpy: ReturnType<typeof vi.fn>;
   untrackSessionSpy: ReturnType<typeof vi.fn>;
+  killWebSocketSpy: ReturnType<typeof vi.fn>;
 }
 
 function createFakeClient(): FakeClient {
   const trackSessionSpy = vi.fn((): Promise<void> => Promise.resolve());
   const untrackSessionSpy = vi.fn((): Promise<void> => Promise.resolve());
+  const killWebSocketSpy = vi.fn((): void => undefined);
   const client = {
     connect: () => undefined,
     close: () => undefined,
     send: (() => Promise.resolve({}) as unknown) as WsClient['send'],
     trackSession: trackSessionSpy,
     untrackSession: untrackSessionSpy,
+    killWebSocket: killWebSocketSpy,
   } as unknown as WsClient;
-  return { client, trackSessionSpy, untrackSessionSpy };
+  return { client, trackSessionSpy, untrackSessionSpy, killWebSocketSpy };
 }
 
 let i18nInstance: I18nInstance;
@@ -123,6 +126,50 @@ describe('OperateRoute — per-session WS lifecycle', () => {
     cleanup();
     expect(fake.untrackSessionSpy).toHaveBeenCalledTimes(1);
     expect(fake.untrackSessionSpy).toHaveBeenCalledWith(SESSION_ID);
+  });
+});
+
+// -------------------------------------------------------------------
+// `window.__testHooks.killWebSocket` install — added by
+// `participant_ui.part_pending_proposals.part_pw_reconnect_seed_visible_styling`.
+// Refinement: tasks/refinements/participant-ui/part_pw_reconnect_seed_visible_styling.md
+//
+// Decision §D1 lands the install as a sibling `useEffect` to the
+// `trackSession` effect on the top-level `OperateRoute` body (the
+// participant's `<WsClientProvider>` sits above the route at
+// `apps/participant/src/main.tsx:77`, so `useWsClient()` already
+// resolves at the route level — no `OperateRouteInner` split needed).
+// The pattern mirrors the moderator-side sibling install pinned by
+// `apps/moderator/src/routes/Operate.test.tsx:161-201`.
+// -------------------------------------------------------------------
+
+describe('OperateRoute — window.__testHooks.killWebSocket install', () => {
+  it('mount installs window.__testHooks.killWebSocket as a function reference; calling it invokes client.killWebSocket', () => {
+    const fake = renderRoute();
+    const hooks = (window as unknown as { __testHooks?: { killWebSocket?: () => void } })
+      .__testHooks;
+    expect(hooks).toBeDefined();
+    expect(typeof hooks?.killWebSocket).toBe('function');
+    expect(fake.killWebSocketSpy).not.toHaveBeenCalled();
+    hooks?.killWebSocket?.();
+    expect(fake.killWebSocketSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('unmount removes window.__testHooks.killWebSocket; a re-mount re-installs it pointing at the new client instance', () => {
+    const first = renderRoute();
+    const w = window as unknown as { __testHooks?: { killWebSocket?: () => void } };
+    expect(typeof w.__testHooks?.killWebSocket).toBe('function');
+    cleanup();
+    // The namespace object may survive (we only own `killWebSocket`),
+    // but the property itself must be gone.
+    expect(w.__testHooks?.killWebSocket).toBeUndefined();
+    // Re-mount fresh — the property comes back, pointing at the NEW
+    // client instance's spy (not the prior mount's).
+    const second = renderRoute();
+    expect(typeof w.__testHooks?.killWebSocket).toBe('function');
+    w.__testHooks?.killWebSocket?.();
+    expect(second.killWebSocketSpy).toHaveBeenCalledTimes(1);
+    expect(first.killWebSocketSpy).not.toHaveBeenCalled();
   });
 });
 
