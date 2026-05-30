@@ -41,6 +41,7 @@ tests/e2e/.auth/
 .idea/
 .DS_Store
 *.swp
+.antigravitycli/
 
 # TaskJuggler generated reports (written to the `report/` directory via the
 # project's `outputdir` setting in project.tjp). Scoped to that directory
