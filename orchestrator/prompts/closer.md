@@ -108,7 +108,7 @@ If `$task_id` is the last unmet dependency of a milestone in
 by walking the milestone's `depends` list and confirming every other entry
 is also `complete 100`.
 
-### 4. Register tech-debt tasks in the WBS
+### 4. Register tech-debt tasks in the WBS — and wire each to a milestone
 
 If the implementer's summary or the Status block names a follow-up task
 (typically deferred-e2e debt pointing at a provisional `<task_name>`, or
@@ -121,14 +121,49 @@ kebab/snake_case id, give it:
 - a `depends` list reflecting the real prerequisites,
 - a `note` line citing the source-of-debt refinement + this commit.
 
-Do NOT add `complete 100` (the task is deliberately open). The
-orchestrator's next pick-task pass will see the new leaf and route it
-through the normal loop.
+Do NOT add `complete 100` (the task is deliberately open).
+
+**Always wire the new task to a milestone.** A registered task that no
+milestone depends on is an *orphan*: invisible to `make unblocked` (which
+is milestone-scoped) and silently lost. After registering the task, add
+its fully-qualified id to the `depends` list of the milestone whose scope
+it belongs to in `tasks/99-milestones.tji`. Pick that milestone by reading
+`tasks/99-milestones.tji` and finding the one that already gates
+`$task_id` (the source-of-debt task) — directly, or transitively through a
+container named in its `depends`. Gate the new debt on that same milestone
+(or a later one if the debt is genuinely show-/deploy-stage). If you truly
+cannot find a milestone the debt belongs to, that is a signal the task may
+not be real — say so in your return summary rather than leaving it
+ungated.
+
+**Self-check before committing:** run `make unblocked` and confirm the new
+task id does NOT appear in the `ORPHANS` section. If it does, you have not
+wired it to a milestone — fix that first.
+
+**Never register an "audit" / "re-audit" / "revisit" / "reconsider"
+successor task.** If the implementer or refinement says a decision should
+be revisited later, DO NOT create a task whose deliverable is that
+re-examination. Such tasks have no implementable deliverable — their "work"
+is a human judgment call — so the orchestrator keeps picking them up,
+failing to resolve them, and registering yet another successor: the
+self-perpetuating loop that produced the `extract_pending_axiom_mark_projector`
+v1–v9 chain (removed 2026-05-30). Instead, append an entry to
+`tasks/parking-lot.md` (the human-review queue — see that file's header for
+the entry format) in this same commit, and move on. Items the implementer or
+refinement_writer flagged for human review in their return summaries go to
+the same place. The same applies to any follow-up whose deliverable a human
+must produce, not the agent — native-speaker translation review / sign-off,
+external approvals, design decisions. Only register *WBS tasks* for concrete
+*agent-implementable* work; everything that needs a human — a judgment call
+or a human-only activity — goes to the parking lot, not the WBS.
 
 Rationale: a Status-block note is invisible to the orchestrator's
-task-picker. The pattern showed up first on `mod_node_handle_rendering`
-(deferred from `mod_hover_details` / commit `b7ac2d5`) — recorded in
-prose, missed by the WBS, almost lost. This step closes that loophole.
+task-picker. The orphan-loophole pattern showed up first on
+`mod_node_handle_rendering` (deferred from `mod_hover_details` / commit
+`b7ac2d5`) — recorded in prose, missed by the WBS, almost lost; the
+2026-05-30 WBS audit later found dozens of real tasks gating no milestone.
+The milestone-wiring step closes the orphan loophole; the
+no-audit-successor rule closes the loop loophole.
 
 WBS validation is handled by the pre-commit hook: it runs
 `tj3 --silent project.tjp` whenever a `.tji`/`.tjp` is staged and fails
@@ -178,8 +213,10 @@ When staging files, prefer adding specific files by name rather than
 files (`.env`, credentials) or large binaries. The diff for one task
 should be: the source/test files the implementer touched, the
 `tasks/<NN>-<area>.tji` change for the `complete 100` line (and any
-registered tech-debt block), the milestone-file change if you propagated,
-and the appended Status block in the refinement.
+registered tech-debt block), the `tasks/99-milestones.tji` change (milestone
+`complete 100` propagation and/or wiring a registered tech-debt task into a
+milestone's `depends`), any `tasks/parking-lot.md` entry you appended, and
+the appended Status block in the refinement.
 
 ## Reference paths
 
@@ -195,7 +232,11 @@ When done, your final assistant message must be a short summary
 - Commit SHA.
 - `complete 100` lines added (which task ids).
 - Milestone propagation done-yes-or-no (and which milestone if yes).
-- Tech-debt tasks registered (id list) — `none` if none.
+- Tech-debt tasks registered (id list) and the milestone each was wired
+  into — `none` if none. (Confirm none landed in the `ORPHANS` section of
+  `make unblocked`.)
+- Parking-lot entries appended to `tasks/parking-lot.md` (titles) — `none`
+  if none.
 - One-line confirmation that `git push` was NOT run.
 
 The orchestrator reads this and uses it to decide the next pick.

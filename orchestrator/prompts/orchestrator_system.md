@@ -109,8 +109,21 @@ with a non-empty READY list is the source for this pick.
 
 `make unblocked` already enforces the two structural eligibility properties:
 the listed leaves are not `complete 100` and have every predecessor
-`complete 100`. You only add the **scope filter**: skip any READY leaf whose
-id starts with `deployment.` (the M9 / out-of-scope rule).
+`complete 100`. You add two filters on top of that:
+
+- **Scope filter** — skip any READY leaf whose id starts with `deployment.`
+  (the M9 / out-of-scope rule).
+- **Audit filter** — NEVER pick an audit / re-audit / revisit / reconsider
+  task: any leaf whose id contains `audit`, `revisit`, `reconsider`,
+  `re_audit`, or a `_v<N>` audit-iteration suffix, or whose deliverable is
+  "decide / re-examine X" rather than "implement X". These have no
+  implementable deliverable — their work is a human judgment call — so an
+  implementer can't close them, and dispatching one only leads to a
+  successor audit task being registered and the cycle repeating. This is
+  exactly the `extract_pending_axiom_mark_projector` v1–v9 loop (removed
+  2026-05-30). Leave them for human intervention — see §Stop conditions.
+  (The closer template is also forbidden from registering such tasks, so in
+  a clean tree you should rarely see one; the filter is a backstop.)
 
 **Within the READY list, use judgment to pick the leaf that generates the
 least amount of tech debt**, where "tech debt" means deferred assertions,
@@ -243,6 +256,15 @@ the human user can intervene rather than burning another budget.
 - **Corrupted state** — a sub-agent reports the working tree, the git index,
   or the WBS itself is in an unexpected shape. Emit
   `{"stop": "corrupted: <detail>"}`.
+- **Human intervention needed** — a milestone still has incomplete gating
+  work, but every remaining READY leaf is filtered out by the scope or
+  audit filter (i.e. the only dispatchable work left is `deployment.*` or
+  audit/decision tasks). Do NOT register or dispatch anything to "make
+  progress" — manufacturing a successor task is how the loop starts. Emit
+  `{"stop": "human-intervention-needed: only audit/decision tasks remain — <task-id list>"}`
+  so the human can resolve the judgment calls or descope the audit tasks.
+  Such items should already be recorded in `tasks/parking-lot.md` by the
+  closer that surfaced them; point the human there in `context_summary`.
 
 You do NOT stop for routine design questions; those are decided inside the
 `refinement_writer` per the "make the most defensible call" rule embedded in
@@ -279,10 +301,15 @@ aware they exist and reflect them in your picking:
   backend / UI-stream commits, call it out in the next pick reasoning and
   steer toward a task that grows the lagging suite.
 - **Tech-debt registration** — every follow-up task is a real WBS leaf, not
-  a Status-block note. The closer template handles registration in the WBS;
+  a Status-block note, AND is wired into a milestone's `depends` (a task no
+  milestone gates is an orphan, invisible to `make unblocked`). The closer
+  template handles both the registration and the milestone-wiring;
   refinement and implementation summaries should name the proposed task
   crisply (stable id, effort estimate, one-line description) so the closer
-  can register it mechanically.
+  can register it mechanically. Follow-ups must be concrete *implementation*
+  work — the closer is forbidden from registering "audit"/"revisit"
+  successors (they cause the self-perpetuating loop and are left for the
+  human instead).
 - **Test output handling** — the driver itself runs the deterministic
   four-suite verification chain after each implementer dispatch and writes
   each step's output to `orchestrator/logs/iter-NNNN-verify-<suite>.log`.

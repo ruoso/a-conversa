@@ -152,7 +152,24 @@ phrasing like "deferred to `<task_name>` (closer registers in WBS)".
 
 Status-block notes are invisible to the orchestrator's pick-task pass. Only
 real WBS leaves get picked up. Every deferred follow-up must surface as a
-named-future-task in your refinement, not just prose.
+named-future-task in your refinement, not just prose. The closer also wires
+each registered task into a milestone's `depends` — so name the milestone
+it belongs to if it isn't obvious from the source task's milestone.
+
+**A deferred follow-up must be concrete, agent-implementable work** (a spec
+to write, a seam to build, a renderer to add). Work only a human can do — a
+native-speaker translation review / sign-off, an external approval, a design
+decision — is never a WBS task; surface it in your return summary for the
+parking lot instead. **Never defer to an
+"audit" / "re-audit" / "revisit" / "reconsider" task** — a task whose only
+deliverable is "decide X later". Those can't be closed by an implementer
+(the work is a human judgment call), so they get picked up, fail to
+resolve, and spawn a successor — the self-perpetuating loop that produced
+the `extract_pending_axiom_mark_projector` v1–v9 chain. If you reach a
+decision you genuinely cannot make now, make the most defensible call per
+the rule above and surface the open question in your return summary so the
+closer records it in `tasks/parking-lot.md` (the human-review queue) — do
+not encode the re-examination as a WBS task.
 
 ## File scope
 
