@@ -560,6 +560,7 @@ task data_and_methodology "Data and methodology" {
       task walkthrough_e15_annotation_endpoint_refit "Refit E15 in walkthrough fixture from node-target workaround to annotation-target" {
         effort 0.25d
         allocate team
+        complete 100
         depends data_and_methodology.projection.projection_edge_annotation_endpoint
         note -8<-
           Source of debt: edge_target_annotation_schema_extension — refits E15 in

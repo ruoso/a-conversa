@@ -338,6 +338,46 @@ Then(
   },
 );
 
+Then(
+  'walkthrough edge {word} has source node {word}',
+  function (this: AConversaWorld, edgeLabel: string, nodeLabel: string) {
+    const edgeId = resolveEdge(edgeLabel);
+    const expectedNodeId = resolveNode(nodeLabel);
+    const edge = getWalkthroughProjection(this).getEdge(edgeId);
+    assert.ok(edge, `edge ${edgeLabel} should be in the projection`);
+    assert.equal(
+      edge.sourceNodeId,
+      expectedNodeId,
+      `edge ${edgeLabel}.sourceNodeId: expected ${expectedNodeId}, got ${edge.sourceNodeId}`,
+    );
+    assert.equal(
+      edge.sourceAnnotationId,
+      null,
+      `edge ${edgeLabel}.sourceAnnotationId: expected null, got ${edge.sourceAnnotationId}`,
+    );
+  },
+);
+
+Then(
+  'walkthrough edge {word} has target annotation {word}',
+  function (this: AConversaWorld, edgeLabel: string, annLabel: string) {
+    const edgeId = resolveEdge(edgeLabel);
+    const expectedAnnId = resolveAnnotation(annLabel);
+    const edge = getWalkthroughProjection(this).getEdge(edgeId);
+    assert.ok(edge, `edge ${edgeLabel} should be in the projection`);
+    assert.equal(
+      edge.targetAnnotationId,
+      expectedAnnId,
+      `edge ${edgeLabel}.targetAnnotationId: expected ${expectedAnnId}, got ${edge.targetAnnotationId}`,
+    );
+    assert.equal(
+      edge.targetNodeId,
+      null,
+      `edge ${edgeLabel}.targetNodeId: expected null, got ${edge.targetNodeId}`,
+    );
+  },
+);
+
 Then('walkthrough edge {word} is not active', function (this: AConversaWorld, label: string) {
   const edgeId = resolveEdge(label);
   const projection = getWalkthroughProjection(this);

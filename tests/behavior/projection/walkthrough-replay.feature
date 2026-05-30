@@ -113,11 +113,16 @@ Feature: projectFromLog — replay the example-walkthrough fixture end-to-end
 
   Scenario: disputed entities at segment-1 close stay non-committed
     # Scenario 4 per the refinement — the entities the walkthrough's coda
-    # marks as "live / disputed" carry non-committed facet statuses.
+    # marks as "live / disputed" carry non-committed facet statuses. E15
+    # is the canonical annotation-endpoint edge; the refit from the
+    # node-target workaround landed in
+    # walkthrough_e15_annotation_endpoint_refit (N19 contradicts A2).
     When I load the walkthrough fixture and project it
     Then walkthrough node N17 substance facet is not "committed"
     And walkthrough edge E15 substance facet is not "committed"
     And walkthrough annotation A2 substance facet is not "committed"
+    And walkthrough edge E15 has source node N19
+    And walkthrough edge E15 has target annotation A2
 
   Scenario: snapshot-created at "Segment 1 close" lands on the projection
     # Scenario 5 per the refinement.
