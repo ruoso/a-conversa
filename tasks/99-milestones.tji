@@ -76,7 +76,7 @@ task milestones "Milestones" {
 
   task m_end_to_end_debate "M7: End-to-end debate" {
     milestone
-    depends !m_moderator_mvp, !m_participant_mvp, !m_audience_mvp, data_and_methodology.data_methodology_tests.dm_e2e_tests.walkthrough_replay_e2e, data_and_methodology.data_methodology_tests.dm_e2e_tests.walkthrough_e15_annotation_endpoint_refit, data_and_methodology.data_methodology_tests.dm_e2e_tests.r23_loader_replay_through_append_for_walkthrough, moderator_ui.mod_tests.mod_e2e_playwright.mod_pw_full_session_run, moderator_ui.mod_defeater_flow, moderator_ui.mod_meta_move_flow, moderator_ui.mod_diagnostic_resolution_flow, moderator_ui.mod_snapshot_flow, moderator_ui.mod_change_history_pane, moderator_ui.mod_withdraw_proposal_gesture, moderator_ui.mod_annotation_ui, participant_ui.part_participant_tab_bar_rename, shell_package.extract_annotation_detail_view
+    depends !m_moderator_mvp, !m_participant_mvp, !m_audience_mvp, data_and_methodology.data_methodology_tests.dm_e2e_tests.walkthrough_replay_e2e, data_and_methodology.data_methodology_tests.dm_e2e_tests.walkthrough_e15_annotation_endpoint_refit, data_and_methodology.data_methodology_tests.dm_e2e_tests.r23_loader_replay_through_append_for_walkthrough, moderator_ui.mod_tests.mod_e2e_playwright.mod_pw_full_session_run, moderator_ui.mod_defeater_flow, moderator_ui.mod_meta_move_flow, moderator_ui.mod_diagnostic_resolution_flow, moderator_ui.mod_snapshot_flow, moderator_ui.mod_change_history_pane, moderator_ui.mod_withdraw_proposal_gesture, moderator_ui.mod_annotation_ui, participant_ui.part_participant_tab_bar_rename
     note "All three surfaces working together end-to-end. A complete debate can be conducted and recorded; the example walkthrough's scenario can be enacted live. The walkthrough exercises defeaters, meta-moves, diagnostic resolution, snapshots, the change-history pane, and annotations, so those moderator flows gate this milestone (M4 delivered the core proposal loop; M7 requires the full methodology moves the walkthrough uses). The moderator annotation UI is where annotations are authored — the participant/audience surfaces already render them under their graph containers, so it gates here for cross-surface parity. participant_ui.part_participant_tab_bar_rename (a participant-surface naming-hygiene cleanup) is wired here rather than the already-complete M5 so it stays tracked against an open milestone — orphan triage 2026-05-30."
   }
 
@@ -90,6 +90,12 @@ task milestones "Milestones" {
     milestone
     depends !m_audience_mvp, landing_page
     note "a-conversa.org has a real public front door instead of the developer placeholder at `/`. The page sells the methodology — why better debate needs this platform — and is channel-agnostic (for anyone interested in better debate, not tied to a particular show). Its centrepiece is a self-contained interactive walkthrough of the encoded 'Should zoos exist?' debate, built by reusing the audience surface's pure client-side projector + Cytoscape renderer (extracted into a shared package) over the existing walkthrough event log — deliberately NOT the replay primitive / backend.replay_endpoints work (M8), which is live-session server replay. Labelled M8-landing (sits in the M8 timeframe; depends on the audience renderer from M6, not on replay) and gates M9 — production should not go live with the placeholder front door."
+  }
+
+  task m_audits "M8-audits: Post-implementation audits cleared" {
+    milestone
+    depends post_implementation_audits
+    note "Gate-check / deferred-until-trigger leaves (see tasks/95-post-implementation-audits.tji) are all resolved — each has either fired its trigger and shipped, or been descoped. These leaves are parked out of the active M0–M8 work because the orchestrator can only re-defer them until their structural trigger (a second/third caller, an upstream decision) materialises; grouping them here keeps them tracked without re-surfacing them as ready work every cycle. Does NOT gate M9 — production readiness does not depend on these refactors landing."
   }
 
   task m_deployment_ready "M9: Deployment ready" {

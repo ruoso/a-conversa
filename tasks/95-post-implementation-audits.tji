@@ -1,0 +1,52 @@
+# 95 — Post-implementation audits
+#
+# Tasks that are NOT actionable implementation work today: they are gated on
+# a trigger condition that the WBS dependency graph cannot express (a
+# second/third caller materializing, an upstream product decision, etc.).
+# When the orchestrator picks one of these up against its original milestone
+# it can only re-derive "gate not fired" and re-defer — a wasted agent run
+# (see commit b88b8b6). Parking them in their own group behind the M8-audits
+# milestone keeps them tracked (not orphaned) while taking them out of the
+# active M0–M8 work the orchestrator surfaces.
+#
+# A leaf lands here when the closer hits a gate-not-fired re-defer
+# (orchestrator/prompts/closer.md). It graduates back into a real milestone
+# when its trigger fires — at which point a qualifying caller task supersedes
+# the gate and this leaf either ships or is descoped.
+
+task post_implementation_audits "Post-implementation audits" {
+
+  task extract_annotation_detail_view "Lift annotation detail body into @a-conversa/shell once a third surface (audience or moderator panel-style drill-down) becomes the caller" {
+    effort 0.5d
+    allocate team
+    depends participant_ui.part_graph_view.part_entity_detail_panel_annotation_view
+    note -8<-
+      Refinement: tasks/refinements/shell-package/extract_annotation_detail_view.md
+
+      Moved out of shell_package into post_implementation_audits on 2026-05-30: this leaf is
+      gated on a SECOND caller materializing (a moderator-side or audience-side panel-style
+      annotation drill-down), per ADR 0026 and refinement Decision §9 — a structural trigger the
+      WBS graph does not encode. Its only declared precursor
+      (part_entity_detail_panel_annotation_view) is the FIRST caller, so the unblocked tooling
+      kept surfacing this leaf as ready and the orchestrator kept re-picking it only to re-defer
+      at the gate check (commit b88b8b6 + #2 re-pick). It graduates back to a real milestone when
+      a qualifying drill-down task lands.
+
+      Source of debt: tasks/refinements/participant-ui/part_entity_detail_panel_annotation_view.md
+      Tech-debt registration §1 + implementer summary.
+
+      The participant is the first surface to render a per-annotation detail view (kind / content /
+      author / target-link / contradicts-list). The moderator surfaces annotations as canvas-side
+      <AnnotationBadge> pills (different surface); the audience surfaces them as broadcast-overlay
+      badges (also different). Neither has a panel-style drill-down today.
+
+      Deferred-until-third-caller policy (ADR 0026 + established pattern: extract_facet_pill,
+      extract_cytoscape_projectors): when the audience's drill-down or a moderator-side
+      mod_entity_detail_panel needs the same kind/content/author/target/contradicts composition,
+      lift the participant-local body into packages/shell/src/ with full Vitest coverage, replace
+      the participant-local copy, wire the new callers to @a-conversa/shell.
+
+      Source commit: participant_ui.part_entity_detail_panel_annotation_view landing commit.
+    ->8-
+  }
+}

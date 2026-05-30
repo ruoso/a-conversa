@@ -1,7 +1,9 @@
 # Lift the annotation entity-detail body into `@a-conversa/shell`
 
-**TaskJuggler entry**: [tasks/27-shell-package.tji](../../27-shell-package.tji) — task
-`shell_package.extract_annotation_detail_view` (block at L217-238).
+**TaskJuggler entry**: [tasks/95-post-implementation-audits.tji](../../95-post-implementation-audits.tji) — task
+`post_implementation_audits.extract_annotation_detail_view`. (Moved here from
+`tasks/27-shell-package.tji` / `shell_package.extract_annotation_detail_view` on 2026-05-30 —
+parked behind the M8-audits milestone until its second-caller gate fires; see Status block.)
 
 **Effort estimate**: 0.5d (per `.tji`)
 
@@ -963,3 +965,69 @@ e2e disposition: **not-added-but-existing-suites-must-stay-green**.
   `apps/participant/src/detail/EntityDetailPanel.tsx:481-526`.
 - No implementation performed; leaf stays open in the WBS per Decision §9
   until a qualifying second-surface drill-down task materialises.
+
+**Re-pick — gate re-checked; same result** — 2026-05-30 (#2).
+
+- The orchestrator picked the leaf up a second time under the framing that
+  commit 59d6b00 (`participant_ui.part_entity_detail_panel_annotation_view`)
+  had satisfied the external gate. That framing is incorrect: 59d6b00 is the
+  **first caller** (the participant body itself), which is what the
+  predecessor refinement registered THIS task to lift. Decision §9 requires a
+  **second caller** — a moderator-side OR audience-side per-annotation
+  drill-down panel — before the lift fires.
+- Re-evaluation against the current WBS (exhaustive scan of
+  `tasks/30-moderator-ui.tji`, `tasks/40-participant-ui.tji`,
+  `tasks/50-audience-and-broadcast.tji`, and `tasks/27-shell-package.tji`):
+  no `mod_entity_detail_panel`, `mod_annotation_detail_panel`,
+  `mod_annotation_drill_down`, `aud_entity_detail_panel`,
+  `aud_annotation_detail_panel`, or sibling task exists. Commit 15d96c4
+  (`moderator_ui.mod_annotation_ui.mod_annotation_kind_tagging`) added a
+  4-option **kind picker** to the existing annotate submenu — it does NOT
+  render kind/content/author/target/contradicts; it is a *proposal* UI, not
+  a *drill-down* UI. The audience surface remains broadcast-only with no
+  detail panel (see `aud_annotation_rendering` settled disposition).
+- **Trigger condition (Decision §9) stands unchanged.** It is structurally
+  correct: lift on the second caller, per ADR 0026 and the established
+  precedent set by `extract_facet_pill` /
+  `shell_axiom_marks_extraction` / `extract_cytoscape_projectors`. Revising
+  the trigger to fire on one caller would over-fit the shell API to the
+  participant's shape — the exact failure mode the policy guards against.
+
+**Prerequisite — concretely what would satisfy the trigger.**
+
+A second WBS task that mounts a panel-style surface rendering the same
+kind/content/author/target/contradicts composition. The only structurally
+plausible candidate is moderator-side: the audience surface is broadcast-
+only by design (`aud_annotation_rendering` Status) and is ruled out as a
+detail-panel host. The candidate task shape is:
+
+- **Task name (suggested):** `mod_entity_detail_panel_annotation_view`,
+  scoped under `tasks/30-moderator-ui.tji`. Effort estimate ~0.5d-1d,
+  mirroring `part_entity_detail_panel_annotation_view`. Deliverable: the
+  moderator surface gains a side panel that, when a moderator selects a
+  canvas-side `<AnnotationBadge>`, renders the same five-section body
+  (identity / content / author / target / contradicts). The moderator-local
+  copy of the body would be the second caller that fires THIS lift, OR — if
+  the orchestrator chooses to land them together — the moderator task lands
+  the body in shell directly, collapsing the second-caller-then-lift cycle
+  into a single shell-first commit (the moderator imports
+  `<AnnotationDetailView>` from shell on day one).
+- **Why this task does not exist today:** no product-level decision has
+  been made on whether the moderator console gains a per-annotation
+  drill-down panel as part of the M-series milestones in flight. The
+  moderator is the facilitator, not a debater, and the moderator's current
+  annotation surface is canvas badges + the hover popover; whether the
+  moderator NEEDS a side-panel drill-down is a design call. That decision
+  is **parking-lot work**, not WBS work, per the audit-task-anti-pattern
+  rule (`tasks/parking-lot.md` preamble).
+
+**Routing note for the orchestrator.** Until the parking-lot item is
+resolved AND a `mod_entity_detail_panel_annotation_view`-shaped task lands
+in `tasks/30-moderator-ui.tji`, this leaf should not be picked up. Picking
+it up triggers the same gate-check loop that produced b88b8b6 and this
+amendment. The refinement_writer cannot break that loop — the resolution
+is the product-design decision on the parking-lot, not refinement prose.
+
+- No implementation performed in the #2 re-pick; leaf stays open in the WBS
+  per Decision §9. Parking-lot entry surfaced in the return summary for the
+  closer to record.

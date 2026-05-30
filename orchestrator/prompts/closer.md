@@ -77,6 +77,41 @@ $test_results
 
 ---
 
+## Gate-not-fired re-defer (do this INSTEAD of the ritual when the gate hasn't fired)
+
+Some leaves are gated on a trigger condition that the WBS dependency graph
+cannot express — a second/third caller materializing, an upstream product
+decision. If the implementer's summary reports the gate **has not fired** (no
+implementation was performed; the leaf is deferred), do NOT run the
+completion ritual below — there is nothing to mark complete. Instead, get the
+leaf out of the active milestone so the orchestrator stops re-picking it and
+re-deriving the same re-defer every cycle:
+
+1. **Move the task into the post-implementation audits group.** Cut the task
+   block out of its current `tasks/<NN>-<area>.tji` file and paste it
+   (verbatim, minus any `complete 100`) into the `post_implementation_audits`
+   group in `tasks/95-post-implementation-audits.tji`. Its id changes to
+   `post_implementation_audits.<task_name>`.
+2. **Repoint or drop inbound edges.** Anything that `depends` on the old id
+   (grep the `.tji`/`.tjp` tree for it — milestones often gate it directly)
+   must be updated: drop the edge if it was only there to keep the leaf
+   tracked (the M8-audits milestone now does that), or repoint it to the new
+   id if it is a genuine prerequisite.
+3. **Add a parked-why note** to the moved block: the gate that hasn't fired
+   and the concrete trigger that graduates it back to a real milestone.
+4. **Update the refinement's TaskJuggler back-link** to the new file/id, and
+   append a `## Status` block noting the gate-check re-defer + the move (date,
+   gate result) — do not mark it Done.
+5. Run `tj3 project.tjp 2>&1 | grep -iE "error|fatal"` and confirm silent.
+   The leaf is now gated only by the `M8-audits` milestone
+   (`tasks/99-milestones.tji`), out of the active M0–M8 work.
+6. Commit (one task = one commit) with a `<task_id>: gate not fired — parked
+   under M8-audits` style summary, and report the move in your return summary.
+
+A leaf already living under `post_implementation_audits` that the orchestrator
+re-picked needs no move — confirm the gate is still unfired, re-defer in
+place, and say so in the return summary.
+
 ## Ritual (in order)
 
 ### 1. Append a `## Status` block to `$refinement_path`
