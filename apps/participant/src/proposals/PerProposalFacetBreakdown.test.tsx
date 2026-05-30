@@ -12,9 +12,11 @@
 //   (b) Per-status className for each `FacetStatus` value matches
 //       `PILL_STATUS_CLASSNAME` from `@a-conversa/shell` (drift-guard
 //       against the shell's exported map).
-//   (c) A structural sub-kind (`decompose`) renders one chip with
-//       `data-facet-name="proposal"` and the
-//       `methodology.facet.proposal` label ("Proposal").
+//   (c) A non-componented structural sub-kind (`axiom-mark`) renders
+//       one chip with `data-facet-name="proposal"` and the
+//       `methodology.facet.proposal` label ("Proposal"). (`decompose` /
+//       `interpretive-split` now fan out per-component chips per
+//       `part_pw_multi_component_decompose_per_component_breakdown.md`.)
 //   (d) When the merged `facetStatusIndex` carries the facet, the chip's
 //       `data-facet-status` reflects the indexed value (the pre-D2
 //       three-tier server-precedence path collapsed to two tiers).
@@ -238,22 +240,16 @@ describe('<PerProposalFacetBreakdown>', () => {
     }
   });
 
-  it('(c) structural sub-kind (decompose) renders one chip with data-facet-name="proposal" and "Proposal" label', () => {
+  it('(c) structural sub-kind (axiom-mark) renders one chip with data-facet-name="proposal" and "Proposal" label', () => {
+    // Predecessor seeded `decompose` here; that sub-kind now fans out
+    // per-component `'classification'` entries per
+    // `part_pw_multi_component_decompose_per_component_breakdown.md`.
+    // Use `axiom-mark` to keep the case targeting the synthetic-
+    // `'proposal'` chip whose presence + label this case pins.
     const proposal: ProposalPayload = {
-      kind: 'decompose',
-      parent_node_id: NODE_X,
-      components: [
-        {
-          wording: 'first',
-          classification: 'fact',
-          node_id: '00000000-0000-4000-8000-00000000f021',
-        },
-        {
-          wording: 'second',
-          classification: 'fact',
-          node_id: '00000000-0000-4000-8000-00000000f022',
-        },
-      ],
+      kind: 'axiom-mark',
+      node_id: NODE_X,
+      participant: PARTICIPANT_A,
     };
     renderBreakdown(proposal);
     const chips = screen.getAllByTestId('participant-pending-proposal-row-facet');
@@ -378,22 +374,17 @@ describe('<PerProposalFacetBreakdown>', () => {
     ).toBeNull();
   });
 
-  it('(l) structural sub-kind (decompose) chip at status="proposed" → clicking agree fires the proposal-arm vote payload', () => {
+  it('(l) structural sub-kind (axiom-mark) chip at status="proposed" → clicking agree fires the proposal-arm vote payload', () => {
+    // Predecessor seeded `decompose` here; that sub-kind now fans out
+    // per-component `'classification'` entries per
+    // `part_pw_multi_component_decompose_per_component_breakdown.md`,
+    // which would render multiple agree buttons and break the unique
+    // query. Use `axiom-mark` to keep the case targeting the synthetic-
+    // `'proposal'` chip whose proposal-arm vote dispatch this case pins.
     const proposal: ProposalPayload = {
-      kind: 'decompose',
-      parent_node_id: NODE_X,
-      components: [
-        {
-          wording: 'first',
-          classification: 'fact',
-          node_id: '00000000-0000-4000-8000-00000000f071',
-        },
-        {
-          wording: 'second',
-          classification: 'fact',
-          node_id: '00000000-0000-4000-8000-00000000f072',
-        },
-      ],
+      kind: 'axiom-mark',
+      node_id: NODE_X,
+      participant: PARTICIPANT_A,
     };
     const fake = makeFakeClient();
     renderBreakdown(
@@ -420,22 +411,17 @@ describe('<PerProposalFacetBreakdown>', () => {
     });
   });
 
-  it('(h) structural sub-kind with one proposal-arm vote → indicator row mounts inside the synthetic "proposal" chip', () => {
+  it('(h) structural sub-kind (axiom-mark) with one proposal-arm vote → indicator row mounts inside the synthetic "proposal" chip', () => {
+    // Predecessor seeded `decompose` here; that sub-kind now fans out
+    // per-component `'classification'` entries per
+    // `part_pw_multi_component_decompose_per_component_breakdown.md`.
+    // Use `axiom-mark` to keep the case targeting the synthetic-
+    // `'proposal'` chip whose in-chip vote-indicator mount this case
+    // pins.
     const proposal: ProposalPayload = {
-      kind: 'decompose',
-      parent_node_id: NODE_X,
-      components: [
-        {
-          wording: 'first',
-          classification: 'fact',
-          node_id: '00000000-0000-4000-8000-00000000f001',
-        },
-        {
-          wording: 'second',
-          classification: 'fact',
-          node_id: '00000000-0000-4000-8000-00000000f002',
-        },
-      ],
+      kind: 'axiom-mark',
+      node_id: NODE_X,
+      participant: PARTICIPANT_A,
     };
     const byProposal = votesByProposalWith(PROPOSAL_P, [
       { participantId: VOTER_A, choice: 'agree' },

@@ -502,6 +502,164 @@ test.describe('Participant operate route — pending-proposals tab seam', () => 
         row.locator('[data-testid="participant-pending-proposal-row-body"]'),
       ).toHaveCount(0);
 
+      // 10b. `part_pw_multi_component_decompose_per_component_breakdown`
+      //      extension — seed a 2-component `decompose` proposal via the
+      //      same `__aConversaWsStore` test seam, plus one
+      //      `proposal-status` envelope per component carrying
+      //      `entityKind: 'node'` + `entityId: <component.node_id>` +
+      //      `perFacetStatus: { classification: 'proposed' }`. Expand
+      //      the new row and assert the per-component fan-out: 2
+      //      `participant-pending-proposal-row-facet` chips, both
+      //      `data-facet-name="classification"` + `data-facet-status=
+      //      "proposed"`. Then flip C1 to `'committed'` via a third
+      //      envelope and re-assert the chips' statuses diverge in
+      //      payload order.
+      const DECOMPOSE_PROPOSAL_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+      const DECOMPOSE_PARENT_NODE_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+      const DECOMPOSE_C1_NODE_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+      const DECOMPOSE_C2_NODE_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+      await page.evaluate(
+        (seed: {
+          sessionId: string;
+          proposalId: string;
+          parentNodeId: string;
+          c1NodeId: string;
+          c2NodeId: string;
+          actorId: string;
+        }) => {
+          const store = (
+            window as unknown as {
+              __aConversaWsStore?: {
+                getState: () => {
+                  applyProposalStatus: (payload: unknown) => void;
+                  applyEvent: (event: unknown) => void;
+                };
+              };
+            }
+          ).__aConversaWsStore;
+          if (!store) {
+            throw new Error('__aConversaWsStore is not exposed on window');
+          }
+          const state = store.getState();
+          state.applyEvent({
+            id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeee01',
+            sessionId: seed.sessionId,
+            sequence: 1_000_015,
+            kind: 'node-created',
+            actor: seed.actorId,
+            payload: {
+              node_id: seed.parentNodeId,
+              wording: 'Decompose parent target',
+              created_by: seed.actorId,
+              created_at: '2026-05-17T00:00:08.000Z',
+            },
+            createdAt: '2026-05-17T00:00:08.000Z',
+          });
+          state.applyEvent({
+            id: seed.proposalId,
+            sessionId: seed.sessionId,
+            sequence: 1_000_016,
+            kind: 'proposal',
+            actor: seed.actorId,
+            payload: {
+              proposal: {
+                kind: 'decompose',
+                parent_node_id: seed.parentNodeId,
+                components: [
+                  {
+                    wording: 'First component',
+                    classification: 'fact',
+                    node_id: seed.c1NodeId,
+                  },
+                  {
+                    wording: 'Second component',
+                    classification: 'fact',
+                    node_id: seed.c2NodeId,
+                  },
+                ],
+              },
+            },
+            createdAt: '2026-05-17T00:00:09.000Z',
+          });
+          state.applyProposalStatus({
+            sessionId: seed.sessionId,
+            proposalId: seed.proposalId,
+            sequence: 1_000_017,
+            perFacetStatus: { classification: 'proposed' },
+            entityKind: 'node',
+            entityId: seed.c1NodeId,
+          });
+          state.applyProposalStatus({
+            sessionId: seed.sessionId,
+            proposalId: seed.proposalId,
+            sequence: 1_000_017,
+            perFacetStatus: { classification: 'proposed' },
+            entityKind: 'node',
+            entityId: seed.c2NodeId,
+          });
+        },
+        {
+          sessionId,
+          proposalId: DECOMPOSE_PROPOSAL_ID,
+          parentNodeId: DECOMPOSE_PARENT_NODE_ID,
+          c1NodeId: DECOMPOSE_C1_NODE_ID,
+          c2NodeId: DECOMPOSE_C2_NODE_ID,
+          actorId: PROPOSER_ACTOR_ID,
+        },
+      );
+      const decomposeRow = page.locator(
+        `[data-testid="participant-pending-proposal-row"][data-proposal-id="${DECOMPOSE_PROPOSAL_ID}"]`,
+      );
+      await expect(decomposeRow).toHaveCount(1);
+      const decomposeHeader = decomposeRow.locator(
+        '[data-testid="participant-pending-proposal-row-header"]',
+      );
+      await decomposeHeader.click();
+      await expect(decomposeRow).toHaveAttribute('data-expanded', 'true');
+      const decomposeChips = decomposeRow.locator(
+        '[data-testid="participant-pending-proposal-row-facet"]',
+      );
+      await expect(decomposeChips).toHaveCount(2);
+      await expect(decomposeChips.nth(0)).toHaveAttribute('data-facet-name', 'classification');
+      await expect(decomposeChips.nth(0)).toHaveAttribute('data-facet-status', 'proposed');
+      await expect(decomposeChips.nth(1)).toHaveAttribute('data-facet-name', 'classification');
+      await expect(decomposeChips.nth(1)).toHaveAttribute('data-facet-status', 'proposed');
+
+      // Flip C1 to 'committed' via a third proposal-status envelope.
+      // C2 stays 'proposed'. The chips' statuses diverge in payload
+      // order: nth(0) = C1 = committed; nth(1) = C2 = proposed.
+      await page.evaluate(
+        (seed: { sessionId: string; proposalId: string; c1NodeId: string }) => {
+          const store = (
+            window as unknown as {
+              __aConversaWsStore?: {
+                getState: () => {
+                  applyProposalStatus: (payload: unknown) => void;
+                };
+              };
+            }
+          ).__aConversaWsStore;
+          if (!store) {
+            throw new Error('__aConversaWsStore is not exposed on window');
+          }
+          store.getState().applyProposalStatus({
+            sessionId: seed.sessionId,
+            proposalId: seed.proposalId,
+            sequence: 1_000_018,
+            perFacetStatus: { classification: 'committed' },
+            entityKind: 'node',
+            entityId: seed.c1NodeId,
+          });
+        },
+        {
+          sessionId,
+          proposalId: DECOMPOSE_PROPOSAL_ID,
+          c1NodeId: DECOMPOSE_C1_NODE_ID,
+        },
+      );
+      await expect(decomposeChips.nth(0)).toHaveAttribute('data-facet-status', 'committed');
+      await expect(decomposeChips.nth(1)).toHaveAttribute('data-facet-status', 'proposed');
+
       // 11. `part_proposal_notification` extension — switch back to the
       //     graph tab so the GraphView (with its DOM mirror rows) is
       //     mounted; seed a FRESH `node-created` + `proposal` event into

@@ -129,6 +129,42 @@ function facetTargetOf(proposal: ProposalPayload): FacetTarget | null {
 }
 
 /**
+ * Decompose / interpretive-split payloads carry a per-component list
+ * (`components` / `readings`) and the server emits one `proposal-status`
+ * envelope per component keyed by `(entityKind: 'node', entityId:
+ * component.node_id, facet: 'classification')`. Return one
+ * `FacetTarget` per component so the breakdown can fan out per-component
+ * chips that read each component's classification cell from the merged
+ * index. Other structural sub-kinds (`axiom-mark`, `meta-move`,
+ * `break-edge`, `amend-node`, `annotate`) carry no per-component list
+ * and fall back to the synthetic `'proposal'` chip.
+ *
+ * Refinement:
+ * `tasks/refinements/participant-ui/part_pw_multi_component_decompose_per_component_breakdown.md`
+ * (Decision §1 — extend the selector with `componentTargetsOf` alongside
+ * `facetTargetOf`; Decision §2 — per-component facet name is
+ * `'classification'`, matching the wire-level cell-map key).
+ */
+function componentTargetsOf(proposal: ProposalPayload): readonly FacetTarget[] {
+  switch (proposal.kind) {
+    case 'decompose':
+      return proposal.components.map((component) => ({
+        entityKind: 'node' as const,
+        entityId: component.node_id,
+        facet: 'classification' as const,
+      }));
+    case 'interpretive-split':
+      return proposal.readings.map((reading) => ({
+        entityKind: 'node' as const,
+        entityId: reading.node_id,
+        facet: 'classification' as const,
+      }));
+    default:
+      return [];
+  }
+}
+
+/**
  * Resolve the per-facet status by precedence: merged-index → `'proposed'`
  * default. Per
  * `tasks/refinements/participant-ui/part_migrate_to_pending_proposal_facet_status.md`
@@ -200,6 +236,29 @@ export function derivePerProposalFacets(
         voteTarget,
       },
     ];
+  }
+  // Per-component arm — decompose / interpretive-split fan out one
+  // entry per component, each keyed by `(node, component.node_id,
+  // 'classification')` in the merged index. The vote target stays the
+  // proposal-arm shared by every chip (Decision §4); the chips surface
+  // per-component STATUS, not a per-component vote target.
+  const componentTargets = componentTargetsOf(proposal);
+  if (componentTargets.length > 0) {
+    const proposalVoteTarget: VoteTarget = {
+      kind: 'proposal',
+      proposal_id: proposalEventId ?? '',
+    };
+    const proposalVotes =
+      proposalEventId !== undefined
+        ? (votesByProposalIndex.get(proposalEventId) ?? EMPTY_VOTES)
+        : EMPTY_VOTES;
+    return componentTargets.map((componentTarget) => ({
+      facet: componentTarget.facet,
+      status: resolveStatus(componentTarget, facetStatusIndex),
+      labelKey: labelKeyFor(componentTarget.facet),
+      votes: proposalVotes,
+      voteTarget: proposalVoteTarget,
+    }));
   }
   const status = resolveStatus(null, facetStatusIndex);
   const votes =

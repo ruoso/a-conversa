@@ -82,7 +82,7 @@ function PerProposalFacetBreakdownImpl(props: PerProposalFacetBreakdownProps): R
       data-proposal-id={proposalEventId}
       className={BREAKDOWN_CONTAINER_CLASSES}
     >
-      {entries.map((entry) => {
+      {entries.map((entry, entryIndex) => {
         const className = `${PILL_BASE_CLASSNAME} ${PILL_STATUS_CLASSNAME[entry.status]}`;
         const facetLabel = t(entry.labelKey);
         const statusLabel = t(`methodology.facetState.${entry.status}`);
@@ -103,7 +103,7 @@ function PerProposalFacetBreakdownImpl(props: PerProposalFacetBreakdownProps): R
           ) : null;
         return (
           <span
-            key={entry.facet}
+            key={`${entry.facet}-${entryIndex}`}
             data-testid="participant-pending-proposal-row-facet"
             data-facet-name={entry.facet}
             data-facet-status={entry.status}

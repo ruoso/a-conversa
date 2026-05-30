@@ -264,6 +264,7 @@ task participant_ui "Participant (debater) UI" {
     task part_pw_multi_component_decompose_per_component_breakdown "Playwright: per-component facet status in participant pending-proposals pane for a decompose proposal" {
       effort 0.5d
       allocate team
+      complete 100
       depends !part_migrate_to_pending_proposal_facet_status
       note -8<-
         Source of debt: tasks/refinements/participant-ui/part_migrate_to_pending_proposal_facet_status.md Acceptance Criteria §Playwright — the participant pane's structural sub-kind chip today renders the synthetic 'proposal' chip (no per-component breakdown). When the pane surfaces per-component facet chips inside a decompose row, add the e2e assertion for per-component status: both components' data-facet-status="proposed" entries are visible in the pending-proposals row. The Vitest regression cover (case p3) already exists; this task adds the Playwright assertion.

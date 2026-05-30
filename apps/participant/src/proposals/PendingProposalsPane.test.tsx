@@ -201,6 +201,25 @@ function decomposeProposalEvent(seq: number, envelopeId: string, parentNodeId: s
   };
 }
 
+function axiomMarkProposalEvent(
+  seq: number,
+  envelopeId: string,
+  nodeId: string,
+  participantId: string = ACTOR_HUMAN,
+): Event {
+  return {
+    id: envelopeId,
+    sessionId: SESSION_A,
+    sequence: seq,
+    kind: 'proposal',
+    actor: ACTOR_HUMAN,
+    payload: {
+      proposal: { kind: 'axiom-mark', node_id: nodeId, participant: participantId },
+    },
+    createdAt: '2026-05-25T00:00:00.000Z',
+  };
+}
+
 function voteFacetArm(
   seq: number,
   entityKind: 'node' | 'edge',
@@ -541,6 +560,23 @@ describe('<PendingProposalsPane>', () => {
     const facetStatus = useWsStore.getState().sessionState[SESSION_A]?.pendingProposalFacetStatus;
     expect(facetStatus?.get(`node:${COMPONENT_1}:classification`)).toBe('proposed');
     expect(facetStatus?.get(`node:${COMPONENT_2}:classification`)).toBe('proposed');
+    // Per `part_pw_multi_component_decompose_per_component_breakdown.md`
+    // — the rendered chip strip surfaces ONE chip per component, both at
+    // `data-facet-name="classification"` + `data-facet-status="proposed"`.
+    // The store-cell assertions above stay (predecessor's regression
+    // cover); the DOM assertions below pin the per-component rendering
+    // arm this task introduces.
+    const header = screen.getByTestId('participant-pending-proposal-row-header');
+    act(() => {
+      fireEvent.click(header);
+    });
+    const row = screen.getByTestId('participant-pending-proposal-row');
+    const chips = row.querySelectorAll('[data-testid="participant-pending-proposal-row-facet"]');
+    expect(chips).toHaveLength(2);
+    expect(chips[0]?.getAttribute('data-facet-name')).toBe('classification');
+    expect(chips[0]?.getAttribute('data-facet-status')).toBe('proposed');
+    expect(chips[1]?.getAttribute('data-facet-name')).toBe('classification');
+    expect(chips[1]?.getAttribute('data-facet-status')).toBe('proposed');
   });
 
   it('(r) self-filter at the pane integration layer: seed votes from ME + OTHER on the wording facet → expanded chip surfaces exactly one indicator for OTHER', () => {
@@ -563,8 +599,12 @@ describe('<PendingProposalsPane>', () => {
     expect(dots[0]?.getAttribute('data-choice')).toBe('dispute');
   });
 
-  it('(s) structural sub-kind: seed a decompose proposal + one OTHER proposal-arm vote → expanded synthetic "proposal" chip surfaces one indicator', () => {
-    useWsStore.getState().applyEvent(decomposeProposalEvent(1, PROPOSAL_D, NODE_X));
+  it('(s) structural sub-kind: seed an axiom-mark proposal + one OTHER proposal-arm vote → expanded synthetic "proposal" chip surfaces one indicator', () => {
+    // Per `part_pw_multi_component_decompose_per_component_breakdown.md`
+    // — `decompose` now fans out per-component chips, so the synthetic-
+    // `'proposal'` chip contract this case pins lives in the other-five-
+    // structural-sub-kinds path. `axiom-mark` is one of those five.
+    useWsStore.getState().applyEvent(axiomMarkProposalEvent(1, PROPOSAL_D, NODE_X));
     useWsStore.getState().applyEvent(voteProposalArm(2, PROPOSAL_D, OTHER, 'agree'));
     renderPane();
     const header = screen.getByTestId('participant-pending-proposal-row-header');

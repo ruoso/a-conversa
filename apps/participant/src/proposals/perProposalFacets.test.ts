@@ -130,45 +130,13 @@ describe('derivePerProposalFacets — facet-targeting sub-kinds emit one entry w
 });
 
 describe('derivePerProposalFacets — structural sub-kinds emit one synthetic "proposal" entry', () => {
+  // `decompose` + `interpretive-split` are EXCLUDED from this group per
+  // `part_pw_multi_component_decompose_per_component_breakdown.md` — those
+  // two sub-kinds fan out per-component entries (one `'classification'`
+  // chip per component) instead of the synthetic `'proposal'` chip. The
+  // other five structural sub-kinds keep the synthetic-`'proposal'`
+  // contract because their payloads carry no per-component list.
   const structuralCases: { name: string; payload: ProposalPayload }[] = [
-    {
-      name: 'decompose',
-      payload: {
-        kind: 'decompose',
-        parent_node_id: NODE_X,
-        components: [
-          {
-            wording: 'first',
-            classification: 'fact',
-            node_id: '00000000-0000-4000-8000-00000000f041',
-          },
-          {
-            wording: 'second',
-            classification: 'fact',
-            node_id: '00000000-0000-4000-8000-00000000f042',
-          },
-        ],
-      },
-    },
-    {
-      name: 'interpretive-split',
-      payload: {
-        kind: 'interpretive-split',
-        parent_node_id: NODE_X,
-        readings: [
-          {
-            wording: 'reading 1',
-            classification: 'value',
-            node_id: '00000000-0000-4000-8000-00000000f043',
-          },
-          {
-            wording: 'reading 2',
-            classification: 'value',
-            node_id: '00000000-0000-4000-8000-00000000f044',
-          },
-        ],
-      },
-    },
     {
       name: 'axiom-mark',
       payload: { kind: 'axiom-mark', node_id: NODE_X, participant: PARTICIPANT_A },
@@ -296,21 +264,15 @@ describe('derivePerProposalFacets — votes field (part_vote_indicators_in_pane)
   });
 
   it('(h) structural sub-kind with two votes in votesByProposalIndex → entries[0].votes has length 2; entries[0].facet === "proposal"', () => {
+    // Per `part_pw_multi_component_decompose_per_component_breakdown.md`,
+    // `decompose` + `interpretive-split` now fan out per-component
+    // entries — they no longer hit the synthetic-`'proposal'` arm.
+    // Retarget the case to `axiom-mark`, one of the five non-componented
+    // structural sub-kinds that still emits the synthetic chip.
     const proposal: ProposalPayload = {
-      kind: 'decompose',
-      parent_node_id: NODE_X,
-      components: [
-        {
-          wording: 'first',
-          classification: 'fact',
-          node_id: '00000000-0000-4000-8000-00000000f001',
-        },
-        {
-          wording: 'second',
-          classification: 'fact',
-          node_id: '00000000-0000-4000-8000-00000000f002',
-        },
-      ],
+      kind: 'axiom-mark',
+      node_id: NODE_X,
+      participant: PARTICIPANT_A,
     };
     const votes: readonly Vote[] = [
       { participantId: VOTER_A, choice: 'agree' },
@@ -380,22 +342,16 @@ describe('derivePerProposalFacets — voteTarget field (part_vote_button_per_fac
     });
   });
 
-  it('(l) structural sub-kind (decompose) with a defined proposalEventId → voteTarget is proposal arm with proposal_id', () => {
+  it('(l) structural sub-kind (axiom-mark) with a defined proposalEventId → voteTarget is proposal arm with proposal_id', () => {
+    // Predecessor seeded `decompose` here; that sub-kind now fans out
+    // per-component entries per
+    // `part_pw_multi_component_decompose_per_component_breakdown.md`.
+    // Use `axiom-mark` to keep the case targeting the synthetic-
+    // `'proposal'` arm whose voteTarget contract this case pins.
     const proposal: ProposalPayload = {
-      kind: 'decompose',
-      parent_node_id: NODE_X,
-      components: [
-        {
-          wording: 'first',
-          classification: 'fact',
-          node_id: '00000000-0000-4000-8000-00000000f061',
-        },
-        {
-          wording: 'second',
-          classification: 'fact',
-          node_id: '00000000-0000-4000-8000-00000000f062',
-        },
-      ],
+      kind: 'axiom-mark',
+      node_id: NODE_X,
+      participant: PARTICIPANT_A,
     };
     const out = derivePerProposalFacets(
       proposal,
@@ -418,5 +374,93 @@ describe('derivePerProposalFacets — voteTarget field (part_vote_button_per_fac
     };
     const out = derivePerProposalFacets(proposal, EMPTY_INDEX);
     expect(out[0]?.voteTarget).toEqual({ kind: 'proposal', proposal_id: '' });
+  });
+});
+
+// -- Per-component fan-out (`part_pw_multi_component_decompose_per_component_breakdown`)
+//
+// `decompose` + `interpretive-split` payloads carry a per-component list;
+// the server emits one `proposal-status` envelope per component keyed by
+// `(node, component.node_id, 'classification')`. The selector now fans
+// out one `'classification'` entry per component, each resolving status
+// against the merged index by the component's `node_id`. The vote target
+// stays the shared proposal-arm (Decision §4).
+
+const COMPONENT_1 = '00000000-0000-4000-8000-00000000f001';
+const COMPONENT_2 = '00000000-0000-4000-8000-00000000f002';
+const COMPONENT_3 = '00000000-0000-4000-8000-00000000f003';
+
+describe('derivePerProposalFacets — per-component fan-out (decompose + interpretive-split)', () => {
+  it('(m) decompose with 2 components, both cells absent → 2 entries, each facet="classification", both status="proposed", voteTarget proposal-arm with the proposal envelope id', () => {
+    const proposal: ProposalPayload = {
+      kind: 'decompose',
+      parent_node_id: NODE_X,
+      components: [
+        { wording: 'first', classification: 'fact', node_id: COMPONENT_1 },
+        { wording: 'second', classification: 'fact', node_id: COMPONENT_2 },
+      ],
+    };
+    const out = derivePerProposalFacets(
+      proposal,
+      EMPTY_INDEX,
+      undefined,
+      PROPOSAL_DECOMPOSE,
+      undefined,
+    );
+    expect(out).toHaveLength(2);
+    expect(out[0]?.facet).toBe('classification');
+    expect(out[1]?.facet).toBe('classification');
+    expect(out[0]?.status).toBe('proposed');
+    expect(out[1]?.status).toBe('proposed');
+    expect(out[0]?.labelKey).toBe('methodology.facet.classification');
+    expect(out[1]?.labelKey).toBe('methodology.facet.classification');
+    expect(out[0]?.voteTarget).toEqual({ kind: 'proposal', proposal_id: PROPOSAL_DECOMPOSE });
+    expect(out[1]?.voteTarget).toEqual({ kind: 'proposal', proposal_id: PROPOSAL_DECOMPOSE });
+  });
+
+  it('(n) decompose with 2 components, one cell carries "committed" → 2 entries in payload order; statuses match the cell-map lookup (NOT sorted by status)', () => {
+    const proposal: ProposalPayload = {
+      kind: 'decompose',
+      parent_node_id: NODE_X,
+      components: [
+        { wording: 'first', classification: 'fact', node_id: COMPONENT_1 },
+        { wording: 'second', classification: 'fact', node_id: COMPONENT_2 },
+      ],
+    };
+    // Only COMPONENT_2 has a cell, and it's `'committed'`. COMPONENT_1
+    // falls back to the default `'proposed'`. Payload order is C1 then
+    // C2, so the entries surface as `['proposed', 'committed']` — NOT
+    // sorted by status.
+    const index: FacetStatusIndex = {
+      nodes: new Map([[COMPONENT_2, { classification: 'committed' }]]),
+      edges: new Map(),
+    };
+    const out = derivePerProposalFacets(proposal, index, undefined, PROPOSAL_DECOMPOSE, undefined);
+    expect(out).toHaveLength(2);
+    expect(out[0]?.status).toBe('proposed');
+    expect(out[1]?.status).toBe('committed');
+  });
+
+  it('(o) interpretive-split with 3 readings → 3 entries, each facet="classification"', () => {
+    const proposal: ProposalPayload = {
+      kind: 'interpretive-split',
+      parent_node_id: NODE_X,
+      readings: [
+        { wording: 'reading 1', classification: 'value', node_id: COMPONENT_1 },
+        { wording: 'reading 2', classification: 'value', node_id: COMPONENT_2 },
+        { wording: 'reading 3', classification: 'value', node_id: COMPONENT_3 },
+      ],
+    };
+    const out = derivePerProposalFacets(
+      proposal,
+      EMPTY_INDEX,
+      undefined,
+      PROPOSAL_DECOMPOSE,
+      undefined,
+    );
+    expect(out).toHaveLength(3);
+    expect(out[0]?.facet).toBe('classification');
+    expect(out[1]?.facet).toBe('classification');
+    expect(out[2]?.facet).toBe('classification');
   });
 });
