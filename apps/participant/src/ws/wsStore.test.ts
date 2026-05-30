@@ -56,21 +56,30 @@ describe('participant useWsStore', () => {
     expect(screen.getByTestId('probe-ws-status').textContent).toBe('open');
   });
 
-  it('applyProposalStatus populates sessionState[sid].pendingProposals[pid] for a fresh session', () => {
+  it('applyProposalStatus populates sessionState[sid].pendingProposalFacetStatus per-entity cell for a fresh session', () => {
+    // Per `part_migrate_to_pending_proposal_facet_status` D1 + D3 — the
+    // legacy `pendingProposals` proposalId-keyed slot is gone; the
+    // reducer writes only the `${entityKind}:${entityId}:${facetName}`
+    // cell-map entry.
+    const NODE_N1 = '00000000-0000-4000-8000-0000000000d1';
     const payload: ProposalStatusPayload = {
       sessionId: '00000000-0000-4000-8000-000000000001',
       proposalId: '00000000-0000-4000-8000-0000000000a1',
       sequence: 1,
       perFacetStatus: {
-        'facet-a': 'pending',
+        classification: 'proposed',
       },
+      entityKind: 'node',
+      entityId: NODE_N1,
     };
 
     useWsStore.getState().applyProposalStatus(payload);
 
     const session = useWsStore.getState().sessionState[payload.sessionId];
     expect(session).toBeDefined();
-    expect(session?.pendingProposals[payload.proposalId]).toEqual(payload);
+    expect(session?.pendingProposalFacetStatus.get(`node:${NODE_N1}:classification`)).toBe(
+      'proposed',
+    );
     // The lazily-created session record carries the rest of the base
     // shape's defaults so downstream readers can rely on it.
     expect(session?.lastAppliedSequence).toBe(0);

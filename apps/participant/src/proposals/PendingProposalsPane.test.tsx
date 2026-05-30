@@ -444,26 +444,31 @@ describe('<PendingProposalsPane>', () => {
     expect(chipsA).toHaveLength(0);
   });
 
-  it('(p) server precedence: applyProposalStatus push updates the expanded row chip data-facet-status', () => {
+  it('(p) broadcast precedence: applyProposalStatus push updates the expanded row chip data-facet-status', () => {
+    // Per `part_migrate_to_pending_proposal_facet_status` D2 — the
+    // pane's `facetStatusIndex` merges the broadcast-derived per-entity
+    // cell map over the events-derived mirror. A `proposal-status`
+    // envelope carrying explicit `entityKind` + `entityId` flips the
+    // chip's data-facet-status without touching the event log.
     useWsStore.getState().applyEvent(proposalEvent(1, PROPOSAL_A, 'classify-node', NODE_X));
     renderPane();
     const header = screen.getByTestId('participant-pending-proposal-row-header');
     act(() => {
       fireEvent.click(header);
     });
-    // Pre-push: default status is 'proposed' (no votes, no server frame).
     expect(
       screen
         .getByTestId('participant-pending-proposal-row-facet')
         .getAttribute('data-facet-status'),
     ).toBe('proposed');
-    // Push a server frame setting the classification facet to 'agreed'.
     act(() => {
       useWsStore.getState().applyProposalStatus({
         sessionId: SESSION_A,
         proposalId: PROPOSAL_A,
         sequence: 99,
         perFacetStatus: { classification: 'agreed' },
+        entityKind: 'node',
+        entityId: NODE_X,
       });
     });
     expect(
@@ -471,6 +476,71 @@ describe('<PendingProposalsPane>', () => {
         .getByTestId('participant-pending-proposal-row-facet')
         .getAttribute('data-facet-status'),
     ).toBe('agreed');
+  });
+
+  it('(p2) broadcast wins per cell when both events-derived and broadcast carry the same facet', () => {
+    // Seed a `proposal` event that contributes a `'proposed'` cell to
+    // the events-derived mirror, then push a `proposal-status` envelope
+    // carrying `'committed'` for the same `(entityKind, entityId, facet)`.
+    // The merged index returns `'committed'` (broadcast wins per D2).
+    useWsStore.getState().applyEvent(proposalEvent(1, PROPOSAL_A, 'classify-node', NODE_X));
+    act(() => {
+      useWsStore.getState().applyProposalStatus({
+        sessionId: SESSION_A,
+        proposalId: PROPOSAL_A,
+        sequence: 99,
+        perFacetStatus: { classification: 'committed' },
+        entityKind: 'node',
+        entityId: NODE_X,
+      });
+    });
+    renderPane();
+    const header = screen.getByTestId('participant-pending-proposal-row-header');
+    act(() => {
+      fireEvent.click(header);
+    });
+    expect(
+      screen
+        .getByTestId('participant-pending-proposal-row-facet')
+        .getAttribute('data-facet-status'),
+    ).toBe('committed');
+  });
+
+  it('(p3) multi-component decompose: per-component `proposal-status` envelopes populate distinct cells (no last-write-wins data loss)', () => {
+    // Two-component decompose; the server emits one `proposal-status`
+    // envelope per component carrying the same proposalId + sequence
+    // but differing entityId. Pre-migration the legacy
+    // `pendingProposals[proposalId]` slot last-write-wins lost the
+    // first component's status; post-migration both cells coexist in
+    // `pendingProposalFacetStatus`. The pane's chip is `'proposal'`
+    // (structural sub-kind), but the merged index carries both
+    // component cells — the regression cover is at the store layer.
+    const COMPONENT_1 = '00000000-0000-4000-8000-00000000f001';
+    const COMPONENT_2 = '00000000-0000-4000-8000-00000000f002';
+    useWsStore.getState().applyEvent(decomposeProposalEvent(1, PROPOSAL_A, NODE_X));
+    act(() => {
+      useWsStore.getState().applyProposalStatus({
+        sessionId: SESSION_A,
+        proposalId: PROPOSAL_A,
+        sequence: 99,
+        perFacetStatus: { classification: 'proposed' },
+        entityKind: 'node',
+        entityId: COMPONENT_1,
+      });
+      useWsStore.getState().applyProposalStatus({
+        sessionId: SESSION_A,
+        proposalId: PROPOSAL_A,
+        sequence: 99,
+        perFacetStatus: { classification: 'proposed' },
+        entityKind: 'node',
+        entityId: COMPONENT_2,
+      });
+    });
+    renderPane();
+    // Both cells survive — neither is overwritten by the other.
+    const facetStatus = useWsStore.getState().sessionState[SESSION_A]?.pendingProposalFacetStatus;
+    expect(facetStatus?.get(`node:${COMPONENT_1}:classification`)).toBe('proposed');
+    expect(facetStatus?.get(`node:${COMPONENT_2}:classification`)).toBe('proposed');
   });
 
   it('(r) self-filter at the pane integration layer: seed votes from ME + OTHER on the wording facet → expanded chip surfaces exactly one indicator for OTHER', () => {

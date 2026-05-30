@@ -581,6 +581,8 @@ describe('PendingProposalsPane — per-facet breakdown integration', () => {
         proposalId: PROPOSAL_P,
         sequence: 1,
         perFacetStatus: { classification: 'disputed' },
+        entityKind: 'node',
+        entityId: NODE_X,
       });
     });
     expect(screen.getByTestId('proposal-facet-row').getAttribute('data-facet-status')).toBe(
@@ -738,6 +740,8 @@ describe('PendingProposalsPane — per-participant vote indicators integration',
         proposalId: PROPOSAL_P,
         sequence: 2,
         perFacetStatus: { classification: 'disputed' },
+        entityKind: 'node',
+        entityId: NODE_X,
       });
     });
     renderPane();
@@ -950,6 +954,8 @@ describe('PendingProposalsPane — filter strip', () => {
         proposalId: PROPOSAL_P,
         sequence: 3,
         perFacetStatus: { classification: 'disputed' },
+        entityKind: 'node',
+        entityId: NODE_X,
       });
     });
     renderPane();
@@ -1431,6 +1437,8 @@ describe('PendingProposalsPane — commit button per row', () => {
         proposalId: PROPOSAL_P,
         sequence: 4,
         perFacetStatus: { classification: 'meta-disagreement' },
+        entityKind: 'node',
+        entityId: NODE_X,
       });
     });
     renderPane();

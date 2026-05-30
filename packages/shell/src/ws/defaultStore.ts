@@ -35,7 +35,6 @@ function makeInitialSessionState(): BaseWsSessionState {
   return {
     lastAppliedSequence: 0,
     events: [],
-    pendingProposals: {},
     pendingProposalFacetStatus: new Map(),
     activeDiagnostics: new Map(),
   };
@@ -111,8 +110,7 @@ export function createDefaultWsStoreInitializer(): StateCreator<BaseWsStoreState
         // server emits no terminal `proposal-status` envelope for the
         // withdraw transition; this is where the contract is honored on
         // the client.
-        const currentFacetStatus: ReadonlyMap<string, FacetStatus> =
-          session.pendingProposalFacetStatus ?? new Map();
+        const currentFacetStatus = session.pendingProposalFacetStatus;
         let nextFacetStatus: ReadonlyMap<string, FacetStatus> = currentFacetStatus;
         if (event.kind === 'entity-removed') {
           const payload = event.payload as { entity_kind?: string; entity_id?: string };
@@ -166,14 +164,8 @@ export function createDefaultWsStoreInitializer(): StateCreator<BaseWsStoreState
         const session = ensureSession(state, payload.sessionId);
         // Per `migrate_off_compute_facet_statuses_onto_proposal_status_broadcast`
         // D2 — populate the per-`(entityKind, entityId, facet)` cell-map
-        // for every envelope that carries explicit entity identity. The
-        // older proposalId-keyed `pendingProposals` slot is also
-        // populated (last-write-wins per proposalId) for backward
-        // compatibility with the participant pane's per-proposal lookup
-        // until that surface migrates to the per-entity map (tech debt:
-        // `participant_ui.part_migrate_to_pending_proposal_facet_status`).
-        const currentFacetStatus: ReadonlyMap<string, FacetStatus> =
-          session.pendingProposalFacetStatus ?? new Map();
+        // for every envelope that carries explicit entity identity.
+        const currentFacetStatus = session.pendingProposalFacetStatus;
         let nextFacetStatus: ReadonlyMap<string, FacetStatus> = currentFacetStatus;
         if (payload.entityKind !== undefined && payload.entityId !== undefined) {
           const entityKind = payload.entityKind;
@@ -192,10 +184,6 @@ export function createDefaultWsStoreInitializer(): StateCreator<BaseWsStoreState
         }
         const nextSession: BaseWsSessionState = {
           ...session,
-          pendingProposals: {
-            ...session.pendingProposals,
-            [payload.proposalId]: payload,
-          },
           pendingProposalFacetStatus: nextFacetStatus,
         };
         return {
@@ -208,7 +196,6 @@ export function createDefaultWsStoreInitializer(): StateCreator<BaseWsStoreState
         const existing = state.sessionState[sessionId];
         if (existing === undefined) return state;
         const currentFacetStatus = existing.pendingProposalFacetStatus;
-        if (currentFacetStatus === undefined) return state;
         const prefix = `${entityKind}:${entityId}:`;
         let mutated: Map<string, FacetStatus> | null = null;
         for (const key of currentFacetStatus.keys()) {

@@ -1,18 +1,22 @@
 // `usePendingProposalsCount` — selector hook returning the count of
 // pending proposals for a session.
 //
-// Refinement: tasks/refinements/participant-ui/part_proposals_tab.md
-//   (Decision §3 — the seam ships the *total* pending-proposal count;
-//    the per-participant "needs your vote" filter is deferred to
-//    `part_vote_indicators_in_pane`, which replaces this hook's body
-//    in place. The return type (`number`) and the call-site contract
-//    stay stable across that future swap.)
+// Refinement: tasks/refinements/participant-ui/part_migrate_to_pending_proposal_facet_status.md
+//   (D1 — derives from `derivePendingProposals(events)`, the same source
+//    the participant pane's row list uses. Badge count and pane row
+//    count converge by construction; the predecessor `part_proposals_tab`
+//    D3 broadcast-frame source is gone with the legacy `pendingProposals`
+//    slot.)
+
+import type { Event } from '@a-conversa/shared-types';
 
 import { useWsStore } from '../ws/wsStore';
+import { derivePendingProposals } from './derivePendingProposals';
+
+const EMPTY_EVENTS: readonly Event[] = Object.freeze([]);
 
 export function usePendingProposalsCount(sessionId: string): number {
-  return useWsStore((s) => {
-    const map = s.sessionState[sessionId]?.pendingProposals;
-    return map === undefined ? 0 : Object.keys(map).length;
-  });
+  return useWsStore(
+    (s) => derivePendingProposals(s.sessionState[sessionId]?.events ?? EMPTY_EVENTS).length,
+  );
 }

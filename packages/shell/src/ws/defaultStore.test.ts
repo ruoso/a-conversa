@@ -1,14 +1,12 @@
 // Vitest cover for the shell's default WS store reducers.
 //
-// Refinement: tasks/refinements/moderator-ui/migrate_off_compute_facet_statuses_onto_proposal_status_broadcast.md
+// Refinement: tasks/refinements/participant-ui/part_migrate_to_pending_proposal_facet_status.md
+//   (prior: tasks/refinements/moderator-ui/migrate_off_compute_facet_statuses_onto_proposal_status_broadcast.md)
 //
-// The new `pendingProposalFacetStatus` cell-map slot (per refinement D2)
-// + the `clearProposalFacetStatusForEntity` writer (per D3) + the
-// `applyEvent` entity-removed clear hook (per D3 again) are the surface
-// this file pins. The legacy `pendingProposals` proposalId-keyed slot
-// is preserved for backward compatibility with the participant pane;
-// its existing cover lives at `apps/participant/src/ws/wsStore.test.ts`
-// and is not duplicated here.
+// The `pendingProposalFacetStatus` cell-map slot is the sole receive-
+// side facet-status surface on `BaseWsSessionState`. The legacy
+// `pendingProposals` proposalId-keyed slot is gone — `applyProposalStatus`
+// writes only the per-`(entityKind, entityId, facetName)` cell.
 
 import { describe, expect, it } from 'vitest';
 
@@ -61,7 +59,7 @@ describe('defaultStore — applyProposalStatus per-entity cell write', () => {
       }),
     );
     const session = store.getState().sessionState[SESSION_ID];
-    expect(session?.pendingProposalFacetStatus!.get(`node:${NODE_N1}:classification`)).toBe(
+    expect(session?.pendingProposalFacetStatus.get(`node:${NODE_N1}:classification`)).toBe(
       'proposed',
     );
   });
@@ -79,11 +77,11 @@ describe('defaultStore — applyProposalStatus per-entity cell write', () => {
         makePayload({ entityId: NODE_N2, perFacetStatus: { classification: 'proposed' } }),
       );
     const session = store.getState().sessionState[SESSION_ID];
-    expect(session?.pendingProposalFacetStatus!.size).toBe(2);
-    expect(session?.pendingProposalFacetStatus!.get(`node:${NODE_N1}:classification`)).toBe(
+    expect(session?.pendingProposalFacetStatus.size).toBe(2);
+    expect(session?.pendingProposalFacetStatus.get(`node:${NODE_N1}:classification`)).toBe(
       'proposed',
     );
-    expect(session?.pendingProposalFacetStatus!.get(`node:${NODE_N2}:classification`)).toBe(
+    expect(session?.pendingProposalFacetStatus.get(`node:${NODE_N2}:classification`)).toBe(
       'proposed',
     );
   });
@@ -104,7 +102,7 @@ describe('defaultStore — applyProposalStatus per-entity cell write', () => {
       }),
     );
     const session = store.getState().sessionState[SESSION_ID];
-    expect(session?.pendingProposalFacetStatus!.get(`node:${NODE_N1}:classification`)).toBe(
+    expect(session?.pendingProposalFacetStatus.get(`node:${NODE_N1}:classification`)).toBe(
       'committed',
     );
   });
@@ -123,8 +121,26 @@ describe('defaultStore — applyProposalStatus per-entity cell write', () => {
     };
     store.getState().applyProposalStatus(payload);
     const session = store.getState().sessionState[SESSION_ID];
-    expect(session?.pendingProposalFacetStatus?.size ?? 0).toBe(0);
-    expect(session?.pendingProposals[PROPOSAL_ID]).toBeDefined();
+    expect(session).toBeDefined();
+    expect(session?.pendingProposalFacetStatus.size).toBe(0);
+  });
+
+  it('freshly materialized session ships pendingProposalFacetStatus as an empty Map', () => {
+    const store = createDefaultWsStore();
+    // Materialize the session via a single envelope that lacks the
+    // entity fields — applyProposalStatus still creates the session
+    // record (per `ensureSession`) with the canonical default shape.
+    const baseline = makePayload({ perFacetStatus: {} });
+    const payload: ProposalStatusPayload = {
+      sessionId: baseline.sessionId,
+      proposalId: baseline.proposalId,
+      sequence: baseline.sequence,
+      perFacetStatus: {},
+    };
+    store.getState().applyProposalStatus(payload);
+    const session = store.getState().sessionState[SESSION_ID];
+    expect(session?.pendingProposalFacetStatus).toBeInstanceOf(Map);
+    expect(session?.pendingProposalFacetStatus.size).toBe(0);
   });
 });
 
@@ -148,8 +164,8 @@ describe('defaultStore — clearProposalFacetStatusForEntity', () => {
       );
     store.getState().clearProposalFacetStatusForEntity(SESSION_ID, 'node', NODE_N1);
     const session = store.getState().sessionState[SESSION_ID];
-    expect(session?.pendingProposalFacetStatus!.size).toBe(1);
-    expect(session?.pendingProposalFacetStatus!.get(`node:${NODE_N2}:classification`)).toBe(
+    expect(session?.pendingProposalFacetStatus.size).toBe(1);
+    expect(session?.pendingProposalFacetStatus.get(`node:${NODE_N2}:classification`)).toBe(
       'proposed',
     );
   });
@@ -188,8 +204,8 @@ describe('defaultStore — applyEvent entity-removed clears matching cells', () 
       );
     store.getState().applyEvent(makeEntityRemoved(10, 'node', NODE_N1));
     const session = store.getState().sessionState[SESSION_ID];
-    expect(session?.pendingProposalFacetStatus!.size).toBe(1);
-    expect(session?.pendingProposalFacetStatus!.get(`node:${NODE_N2}:classification`)).toBe(
+    expect(session?.pendingProposalFacetStatus.size).toBe(1);
+    expect(session?.pendingProposalFacetStatus.get(`node:${NODE_N2}:classification`)).toBe(
       'proposed',
     );
   });

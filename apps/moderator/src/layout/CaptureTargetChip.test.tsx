@@ -70,7 +70,7 @@ function seedEvents(events: Event[]): void {
       [SESSION_ID]: {
         lastAppliedSequence: events.length,
         events,
-        pendingProposals: {},
+        pendingProposalFacetStatus: new Map(),
         activeDiagnostics: new Map(),
       },
     },

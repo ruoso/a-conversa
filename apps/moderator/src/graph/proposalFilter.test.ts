@@ -133,7 +133,6 @@ describe('matchesProposalFilter — empty default short-circuits to true', () =>
         NO_PARTICIPANTS,
         EMPTY_VOTES_INDEX,
         EMPTY_INDEX,
-        undefined,
       ),
     ).toBe(true);
   });
@@ -146,7 +145,6 @@ describe('matchesProposalFilter — empty default short-circuits to true', () =>
         NO_PARTICIPANTS,
         EMPTY_VOTES_INDEX,
         EMPTY_INDEX,
-        undefined,
       ),
     ).toBe(true);
   });
@@ -159,7 +157,6 @@ describe('matchesProposalFilter — empty default short-circuits to true', () =>
         NO_PARTICIPANTS,
         EMPTY_VOTES_INDEX,
         EMPTY_INDEX,
-        undefined,
       ),
     ).toBe(true);
   });
@@ -174,7 +171,6 @@ describe('matchesProposalFilter — free-text substring (case-insensitive)', () 
         NO_PARTICIPANTS,
         EMPTY_VOTES_INDEX,
         EMPTY_INDEX,
-        undefined,
       ),
     ).toBe(true);
   });
@@ -187,7 +183,6 @@ describe('matchesProposalFilter — free-text substring (case-insensitive)', () 
         NO_PARTICIPANTS,
         EMPTY_VOTES_INDEX,
         EMPTY_INDEX,
-        undefined,
       ),
     ).toBe(true);
   });
@@ -206,7 +201,6 @@ describe('matchesProposalFilter — free-text substring (case-insensitive)', () 
         NO_PARTICIPANTS,
         EMPTY_VOTES_INDEX,
         EMPTY_INDEX,
-        undefined,
       ),
     ).toBe(true);
   });
@@ -219,7 +213,6 @@ describe('matchesProposalFilter — free-text substring (case-insensitive)', () 
         NO_PARTICIPANTS,
         EMPTY_VOTES_INDEX,
         EMPTY_INDEX,
-        undefined,
       ),
     ).toBe(false);
   });
@@ -232,7 +225,6 @@ describe('matchesProposalFilter — free-text substring (case-insensitive)', () 
         NO_PARTICIPANTS,
         EMPTY_VOTES_INDEX,
         EMPTY_INDEX,
-        undefined,
       ),
     ).toBe(true);
   });
@@ -244,14 +236,7 @@ describe('matchesProposalFilter — free-text substring (case-insensitive)', () 
     // text branch.
     const f: ProposalFilter = { text: '   \t  ', state: 'all' };
     expect(
-      matchesProposalFilter(
-        row(editWording),
-        f,
-        NO_PARTICIPANTS,
-        EMPTY_VOTES_INDEX,
-        EMPTY_INDEX,
-        undefined,
-      ),
+      matchesProposalFilter(row(editWording), f, NO_PARTICIPANTS, EMPTY_VOTES_INDEX, EMPTY_INDEX),
     ).toBe(true);
   });
 });
@@ -265,7 +250,6 @@ describe('matchesProposalFilter — state filter', () => {
         NO_PARTICIPANTS,
         EMPTY_VOTES_INDEX,
         EMPTY_INDEX,
-        undefined,
       ),
     ).toBe(true);
   });
@@ -281,7 +265,7 @@ describe('matchesProposalFilter — state filter', () => {
     ];
     const votesIndex = votesIndexWith(NODE_X, 'classification', votes);
 
-    const entries = derivePerProposalFacets(classifyNode, EMPTY_INDEX, undefined, votesIndex);
+    const entries = derivePerProposalFacets(classifyNode, EMPTY_INDEX, votesIndex);
     expect(deriveAllAgree(entries, participants).ok).toBe(true);
 
     expect(
@@ -291,7 +275,6 @@ describe('matchesProposalFilter — state filter', () => {
         participants,
         votesIndex,
         EMPTY_INDEX,
-        undefined,
       ),
     ).toBe(true);
   });
@@ -301,7 +284,7 @@ describe('matchesProposalFilter — state filter', () => {
     const votes: readonly Vote[] = [{ participantId: PARTICIPANT_A, choice: 'agree' }];
     const votesIndex = votesIndexWith(NODE_X, 'classification', votes);
 
-    const entries = derivePerProposalFacets(classifyNode, EMPTY_INDEX, undefined, votesIndex);
+    const entries = derivePerProposalFacets(classifyNode, EMPTY_INDEX, votesIndex);
     expect(deriveAllAgree(entries, participants).ok).toBe(false);
 
     expect(
@@ -311,7 +294,6 @@ describe('matchesProposalFilter — state filter', () => {
         participants,
         votesIndex,
         EMPTY_INDEX,
-        undefined,
       ),
     ).toBe(false);
   });
@@ -324,7 +306,7 @@ describe('matchesProposalFilter — state filter', () => {
     ];
     const votesIndex = votesIndexWith(NODE_X, 'classification', votes);
 
-    const entries = derivePerProposalFacets(classifyNode, EMPTY_INDEX, undefined, votesIndex);
+    const entries = derivePerProposalFacets(classifyNode, EMPTY_INDEX, votesIndex);
     expect(deriveAllAgree(entries, participants).ok).toBe(false);
 
     expect(
@@ -334,7 +316,6 @@ describe('matchesProposalFilter — state filter', () => {
         participants,
         votesIndex,
         EMPTY_INDEX,
-        undefined,
       ),
     ).toBe(false);
   });
@@ -351,7 +332,6 @@ describe('matchesProposalFilter — state filter', () => {
         participants,
         EMPTY_VOTES_INDEX,
         EMPTY_INDEX,
-        undefined,
       ),
     ).toBe(false);
   });
@@ -365,20 +345,22 @@ describe('matchesProposalFilter — state filter', () => {
         NO_PARTICIPANTS,
         EMPTY_VOTES_INDEX,
         index,
-        undefined,
       ),
     ).toBe(true);
   });
 
-  it('state=disputed accepts when the server frame says disputed (server precedence)', () => {
+  it('state=disputed accepts when the merged facetStatusIndex carries disputed (broadcast-derived path)', () => {
+    // Per `part_migrate_to_pending_proposal_facet_status` D2 — the
+    // pane's `facetStatusIndex` merges broadcast over events; the
+    // filter consults that single source.
+    const index = indexWith('node', NODE_X, 'classification', 'disputed');
     expect(
       matchesProposalFilter(
         row(classifyNode),
         { text: '', state: 'disputed' },
         NO_PARTICIPANTS,
         EMPTY_VOTES_INDEX,
-        EMPTY_INDEX,
-        { classification: 'disputed' },
+        index,
       ),
     ).toBe(true);
   });
@@ -391,7 +373,6 @@ describe('matchesProposalFilter — state filter', () => {
         NO_PARTICIPANTS,
         EMPTY_VOTES_INDEX,
         EMPTY_INDEX,
-        undefined,
       ),
     ).toBe(false);
   });
@@ -405,7 +386,6 @@ describe('matchesProposalFilter — state filter', () => {
         NO_PARTICIPANTS,
         EMPTY_VOTES_INDEX,
         index,
-        undefined,
       ),
     ).toBe(false);
   });
@@ -425,7 +405,6 @@ describe('matchesProposalFilter — AND composition', () => {
         participants,
         votesIndex,
         EMPTY_INDEX,
-        undefined,
       ),
     ).toBe(true);
   });
@@ -439,7 +418,6 @@ describe('matchesProposalFilter — AND composition', () => {
         NO_PARTICIPANTS,
         EMPTY_VOTES_INDEX,
         EMPTY_INDEX,
-        undefined,
       ),
     ).toBe(false);
   });
@@ -456,7 +434,6 @@ describe('matchesProposalFilter — AND composition', () => {
         participants,
         votesIndex,
         EMPTY_INDEX,
-        undefined,
       ),
     ).toBe(false);
   });
@@ -472,7 +449,6 @@ describe('matchesProposalFilter — purity', () => {
       NO_PARTICIPANTS,
       EMPTY_VOTES_INDEX,
       index,
-      undefined,
     );
     const r2 = matchesProposalFilter(
       row(editWording),
@@ -480,7 +456,6 @@ describe('matchesProposalFilter — purity', () => {
       NO_PARTICIPANTS,
       EMPTY_VOTES_INDEX,
       index,
-      undefined,
     );
     expect(r1).toBe(r2);
     expect(r1).toBe(true);
@@ -616,7 +591,6 @@ describe('matchesProposalFilter — text branch matches summaryText for each of 
           NO_PARTICIPANTS,
           EMPTY_VOTES_INDEX,
           EMPTY_INDEX,
-          undefined,
         ),
       ).toBe(true);
     });

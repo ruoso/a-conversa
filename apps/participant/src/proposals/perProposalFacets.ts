@@ -128,36 +128,20 @@ function facetTargetOf(proposal: ProposalPayload): FacetTarget | null {
   }
 }
 
-const FACET_STATUS_VALUES: ReadonlySet<string> = new Set<FacetStatus>([
-  'proposed',
-  'agreed',
-  'disputed',
-  'committed',
-  'withdrawn',
-  'meta-disagreement',
-  'awaiting-proposal',
-]);
-
-function isFacetStatus(value: string): value is FacetStatus {
-  return FACET_STATUS_VALUES.has(value);
-}
-
 /**
- * Resolve the per-facet status by precedence: server frame → client
- * mirror → `'proposed'` default.
+ * Resolve the per-facet status by precedence: merged-index → `'proposed'`
+ * default. Per
+ * `tasks/refinements/participant-ui/part_migrate_to_pending_proposal_facet_status.md`
+ * D2 — the caller now passes a `FacetStatusIndex` that already merges
+ * the broadcast-derived per-entity cell map over the events-derived
+ * mirror (broadcast wins per cell), so the three-tier precedence the
+ * predecessor `part_per_facet_breakdown_in_pane` shipped collapses to
+ * two tiers.
  */
 function resolveStatus(
-  facet: LifecycleFacetName,
   target: FacetTarget | null,
   facetStatusIndex: FacetStatusIndex,
-  serverPerFacetStatus: Record<string, string> | undefined,
 ): FacetStatus {
-  if (serverPerFacetStatus) {
-    const fromServer = serverPerFacetStatus[facet];
-    if (fromServer && isFacetStatus(fromServer)) {
-      return fromServer;
-    }
-  }
   if (target) {
     const perEntity =
       target.entityKind === 'node'
@@ -179,10 +163,13 @@ function labelKeyFor(facet: LifecycleFacetName): string {
  * Derive the per-facet entries for a single pending proposal.
  *
  * @param proposal The proposal payload (the discriminated-union sub-kind).
- * @param facetStatusIndex Client-side `computeFacetStatuses(events)` output.
- * @param serverPerFacetStatus Per-proposal server-broadcast status map
- *   (from `useWsStore.sessionState[id].pendingProposals[proposalId].perFacetStatus`).
- *   `undefined` when no server frame has landed for this proposal id.
+ * @param facetStatusIndex Merged facet-status index — the pane builds
+ *   it from `merge(eventsBasedIndex,
+ *   buildFacetStatusIndexFromBroadcast(pendingProposalFacetStatus))`
+ *   with broadcast winning per `(entityKind, entityId, facet)` cell
+ *   (per
+ *   `tasks/refinements/participant-ui/part_migrate_to_pending_proposal_facet_status.md`
+ *   D2).
  * @returns The facet entries the breakdown component renders. Always at
  *   least one entry — facet-targeting sub-kinds emit one real facet
  *   entry, structural sub-kinds emit one synthetic `'proposal'` entry.
@@ -190,14 +177,13 @@ function labelKeyFor(facet: LifecycleFacetName): string {
 export function derivePerProposalFacets(
   proposal: ProposalPayload,
   facetStatusIndex: FacetStatusIndex,
-  serverPerFacetStatus: Record<string, string> | undefined,
   votesByFacetIndex: VotesByFacetIndex = EMPTY_VOTES_BY_FACET_INDEX,
   proposalEventId: string | undefined = undefined,
   votesByProposalIndex: OtherVotesByProposalIndex = EMPTY_OTHER_VOTES_BY_PROPOSAL_INDEX,
 ): readonly ProposalFacetEntry[] {
   const target = facetTargetOf(proposal);
   if (target) {
-    const status = resolveStatus(target.facet, target, facetStatusIndex, serverPerFacetStatus);
+    const status = resolveStatus(target, facetStatusIndex);
     const votes = votesByFacetIndex.get(target.entityId)?.get(target.facet) ?? EMPTY_VOTES;
     const voteTarget: VoteTarget = {
       kind: 'facet',
@@ -215,7 +201,7 @@ export function derivePerProposalFacets(
       },
     ];
   }
-  const status = resolveStatus('proposal', null, facetStatusIndex, serverPerFacetStatus);
+  const status = resolveStatus(null, facetStatusIndex);
   const votes =
     proposalEventId !== undefined
       ? (votesByProposalIndex.get(proposalEventId) ?? EMPTY_VOTES)

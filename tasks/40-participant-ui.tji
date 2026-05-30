@@ -244,10 +244,29 @@ task participant_ui "Participant (debater) UI" {
     task part_migrate_to_pending_proposal_facet_status "Migrate participant usePendingProposalsCount + PendingProposalsPane off legacy pendingProposals slot onto per-(entityKind,entityId,facet) broadcast-derived map; drop pendingProposals from BaseWsSessionState" {
       effort 1d
       allocate team
+      complete 100
       depends moderator_ui.mod_graph_rendering.migrate_off_compute_facet_statuses_onto_proposal_status_broadcast
       note -8<-
         Source of debt: tasks/refinements/moderator-ui/migrate_off_compute_facet_statuses_onto_proposal_status_broadcast.md Status block — the moderator migration preserved the legacy pendingProposals slot in BaseWsSessionState because participant's usePendingProposalsCount + PendingProposalsPane still consume it; removing the slot without migrating these consumers would break participant Vitest fixtures. This task completes the migration: re-wire participant consumers to the new pendingProposalFacetStatus map, then drop the legacy slot.
         Surfaced via tech-debt registration policy in tasks/refinements/README.md (commit landing migrate_off_compute_facet_statuses_onto_proposal_status_broadcast).
+      ->8-
+    }
+    task part_pw_reconnect_seed_visible_styling "Install window.__testHooks.killWebSocket on participant Operate route + add reconnect-mid-decompose Playwright sub-step for broadcast-seed regression cover" {
+      effort 0.5d
+      allocate team
+      depends !part_migrate_to_pending_proposal_facet_status, moderator_ui.mod_graph_rendering.mod_pw_reconnect_seed_visible_styling
+      note -8<-
+        Source of debt: tasks/refinements/participant-ui/part_migrate_to_pending_proposal_facet_status.md D6 — the reconnect-mid-decompose Playwright sub-step was deferred because window.__testHooks.killWebSocket() was not yet installed on the participant Operate route; only the moderator route installed it. Now that moderator_ui.mod_graph_rendering.mod_pw_reconnect_seed_visible_styling has landed the kill hook in the shell WsClient, the participant Operate route can install it and the reconnect sub-step in participant-pending-proposals.spec.ts can be added.
+        Surfaced via tech-debt registration policy in tasks/refinements/README.md (commit landing part_migrate_to_pending_proposal_facet_status).
+      ->8-
+    }
+    task part_pw_multi_component_decompose_per_component_breakdown "Playwright: per-component facet status in participant pending-proposals pane for a decompose proposal" {
+      effort 0.5d
+      allocate team
+      depends !part_migrate_to_pending_proposal_facet_status
+      note -8<-
+        Source of debt: tasks/refinements/participant-ui/part_migrate_to_pending_proposal_facet_status.md Acceptance Criteria §Playwright — the participant pane's structural sub-kind chip today renders the synthetic 'proposal' chip (no per-component breakdown). When the pane surfaces per-component facet chips inside a decompose row, add the e2e assertion for per-component status: both components' data-facet-status="proposed" entries are visible in the pending-proposals row. The Vitest regression cover (case p3) already exists; this task adds the Playwright assertion.
+        Surfaced via tech-debt registration policy in tasks/refinements/README.md (commit landing part_migrate_to_pending_proposal_facet_status).
       ->8-
     }
   }

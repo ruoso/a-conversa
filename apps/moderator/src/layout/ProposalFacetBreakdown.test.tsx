@@ -14,7 +14,7 @@
 //   (c) A structural sub-kind (`decompose`) renders one chip with
 //       `data-facet-name="proposal"` and the
 //       `methodology.facet.proposal` label ("Proposal" in en-US).
-//   (d) When `serverPerFacetStatus[facetName]` is present, the chip's
+//   (d) When the merged `facetStatusIndex` carries the facet, the chip's
 //       `data-facet-status` reflects the server value (precedence
 //       contract).
 //   (e) The breakdown container carries `data-proposal-id` matching the
@@ -107,13 +107,7 @@ describe('ProposalFacetBreakdown — facet-targeting sub-kind renders one chip',
       node_id: NODE_X,
       classification: 'fact',
     };
-    render(
-      <ProposalFacetBreakdown
-        row={row(proposal)}
-        facetStatusIndex={EMPTY_INDEX}
-        serverPerFacetStatus={undefined}
-      />,
-    );
+    render(<ProposalFacetBreakdown row={row(proposal)} facetStatusIndex={EMPTY_INDEX} />);
     const chips = screen.getAllByTestId('proposal-facet-row');
     expect(chips).toHaveLength(1);
     expect(chips[0]?.getAttribute('data-facet-name')).toBe('classification');
@@ -126,13 +120,7 @@ describe('ProposalFacetBreakdown — facet-targeting sub-kind renders one chip',
       edge_id: EDGE_E,
       value: 'agreed',
     };
-    render(
-      <ProposalFacetBreakdown
-        row={row(proposal)}
-        facetStatusIndex={EMPTY_INDEX}
-        serverPerFacetStatus={undefined}
-      />,
-    );
+    render(<ProposalFacetBreakdown row={row(proposal)} facetStatusIndex={EMPTY_INDEX} />);
     const chips = screen.getAllByTestId('proposal-facet-row');
     expect(chips).toHaveLength(1);
     expect(chips[0]?.getAttribute('data-facet-name')).toBe('substance');
@@ -146,13 +134,7 @@ describe('ProposalFacetBreakdown — facet-targeting sub-kind renders one chip',
       new_wording: 'rebuilt',
       new_node_id: NODE_Y,
     };
-    render(
-      <ProposalFacetBreakdown
-        row={row(proposal)}
-        facetStatusIndex={EMPTY_INDEX}
-        serverPerFacetStatus={undefined}
-      />,
-    );
+    render(<ProposalFacetBreakdown row={row(proposal)} facetStatusIndex={EMPTY_INDEX} />);
     const chips = screen.getAllByTestId('proposal-facet-row');
     expect(chips).toHaveLength(1);
     expect(chips[0]?.getAttribute('data-facet-name')).toBe('wording');
@@ -177,13 +159,7 @@ describe('ProposalFacetBreakdown — structural sub-kind renders synthetic "prop
         },
       ],
     };
-    render(
-      <ProposalFacetBreakdown
-        row={row(proposal)}
-        facetStatusIndex={EMPTY_INDEX}
-        serverPerFacetStatus={undefined}
-      />,
-    );
+    render(<ProposalFacetBreakdown row={row(proposal)} facetStatusIndex={EMPTY_INDEX} />);
     const chips = screen.getAllByTestId('proposal-facet-row');
     expect(chips).toHaveLength(1);
     expect(chips[0]?.getAttribute('data-facet-name')).toBe('proposal');
@@ -196,13 +172,7 @@ describe('ProposalFacetBreakdown — structural sub-kind renders synthetic "prop
       node_id: NODE_X,
       participant: PARTICIPANT_A,
     };
-    render(
-      <ProposalFacetBreakdown
-        row={row(proposal)}
-        facetStatusIndex={EMPTY_INDEX}
-        serverPerFacetStatus={undefined}
-      />,
-    );
+    render(<ProposalFacetBreakdown row={row(proposal)} facetStatusIndex={EMPTY_INDEX} />);
     const chips = screen.getAllByTestId('proposal-facet-row');
     expect(chips).toHaveLength(1);
     expect(chips[0]?.getAttribute('data-facet-name')).toBe('proposal');
@@ -239,15 +209,11 @@ describe('ProposalFacetBreakdown — per-status className mirrors PILL_STATUS_CL
         node_id: NODE_X,
         classification: 'fact',
       };
-      // Pin the chip status by providing a server frame.
-      const server: Record<string, string> = { classification: status };
-      render(
-        <ProposalFacetBreakdown
-          row={row(proposal)}
-          facetStatusIndex={EMPTY_INDEX}
-          serverPerFacetStatus={server}
-        />,
-      );
+      // Pin the chip status by carrying the value on the merged
+      // facetStatusIndex (per `part_migrate_to_pending_proposal_facet_status`
+      // D2 — the merged index is the sole status source).
+      const index = indexWith('node', NODE_X, 'classification', status);
+      render(<ProposalFacetBreakdown row={row(proposal)} facetStatusIndex={index} />);
       const chip = screen.getByTestId('proposal-facet-row');
       expect(chip.getAttribute('data-facet-status')).toBe(status);
       const expected = `${PILL_BASE_CLASSNAME} ${PILL_STATUS_CLASSNAME[status]}`;
@@ -256,41 +222,26 @@ describe('ProposalFacetBreakdown — per-status className mirrors PILL_STATUS_CL
   }
 });
 
-describe('ProposalFacetBreakdown — server perFacetStatus precedence', () => {
-  it('when server perFacetStatus carries the facet, the chip reflects the server value (not the client mirror)', () => {
+describe('ProposalFacetBreakdown — merged facetStatusIndex sources the chip', () => {
+  it('the chip reflects the value the merged facetStatusIndex carries for the (entityKind, entityId, facet) cell', () => {
     const proposal: ProposalPayload = {
       kind: 'classify-node',
       node_id: NODE_X,
       classification: 'fact',
     };
-    // Client mirror says "agreed"; server frame says "disputed" — the
-    // chip must reflect the server frame.
-    const clientIndex = indexWith('node', NODE_X, 'classification', 'agreed');
-    const server: Record<string, string> = { classification: 'disputed' };
-    render(
-      <ProposalFacetBreakdown
-        row={row(proposal)}
-        facetStatusIndex={clientIndex}
-        serverPerFacetStatus={server}
-      />,
-    );
+    const index = indexWith('node', NODE_X, 'classification', 'disputed');
+    render(<ProposalFacetBreakdown row={row(proposal)} facetStatusIndex={index} />);
     const chip = screen.getByTestId('proposal-facet-row');
     expect(chip.getAttribute('data-facet-status')).toBe('disputed');
   });
 
-  it('when no server frame and no client mirror, the chip defaults to "proposed"', () => {
+  it('when the merged index does not carry the facet, the chip defaults to "proposed"', () => {
     const proposal: ProposalPayload = {
       kind: 'classify-node',
       node_id: NODE_X,
       classification: 'fact',
     };
-    render(
-      <ProposalFacetBreakdown
-        row={row(proposal)}
-        facetStatusIndex={EMPTY_INDEX}
-        serverPerFacetStatus={undefined}
-      />,
-    );
+    render(<ProposalFacetBreakdown row={row(proposal)} facetStatusIndex={EMPTY_INDEX} />);
     const chip = screen.getByTestId('proposal-facet-row');
     expect(chip.getAttribute('data-facet-status')).toBe('proposed');
   });
@@ -304,11 +255,7 @@ describe('ProposalFacetBreakdown — container test-seam', () => {
       classification: 'fact',
     };
     render(
-      <ProposalFacetBreakdown
-        row={row(proposal, PROPOSAL_P)}
-        facetStatusIndex={EMPTY_INDEX}
-        serverPerFacetStatus={undefined}
-      />,
+      <ProposalFacetBreakdown row={row(proposal, PROPOSAL_P)} facetStatusIndex={EMPTY_INDEX} />,
     );
     const container = screen.getByTestId('proposal-facet-breakdown');
     expect(container.getAttribute('data-proposal-id')).toBe(PROPOSAL_P);
@@ -342,7 +289,6 @@ describe('ProposalFacetBreakdown — per-participant vote indicators', () => {
       <ProposalFacetBreakdown
         row={row(proposal)}
         facetStatusIndex={EMPTY_INDEX}
-        serverPerFacetStatus={undefined}
         votesByFacetIndex={new Map()}
       />,
     );
@@ -363,7 +309,6 @@ describe('ProposalFacetBreakdown — per-participant vote indicators', () => {
       <ProposalFacetBreakdown
         row={row(proposal)}
         facetStatusIndex={EMPTY_INDEX}
-        serverPerFacetStatus={undefined}
         votesByFacetIndex={votesIndexWith(NODE_X, 'classification', votes)}
       />,
     );
@@ -393,7 +338,6 @@ describe('ProposalFacetBreakdown — per-participant vote indicators', () => {
       <ProposalFacetBreakdown
         row={row(proposal)}
         facetStatusIndex={EMPTY_INDEX}
-        serverPerFacetStatus={undefined}
         votesByFacetIndex={votesIndexWith(NODE_X, 'classification', votes)}
       />,
     );
@@ -430,7 +374,6 @@ describe('ProposalFacetBreakdown — per-participant vote indicators', () => {
       <ProposalFacetBreakdown
         row={row(proposal)}
         facetStatusIndex={EMPTY_INDEX}
-        serverPerFacetStatus={undefined}
         votesByFacetIndex={votesIndexWith(EDGE_E, 'substance', votes)}
       />,
     );
@@ -455,7 +398,6 @@ describe('ProposalFacetBreakdown — per-participant vote indicators', () => {
       <ProposalFacetBreakdown
         row={row(proposal)}
         facetStatusIndex={EMPTY_INDEX}
-        serverPerFacetStatus={undefined}
         votesByFacetIndex={votesIndexWith(NODE_X, 'classification', votes)}
       />,
     );
@@ -483,7 +425,6 @@ describe('ProposalFacetBreakdown — per-participant vote indicators', () => {
       <ProposalFacetBreakdown
         row={row(proposal)}
         facetStatusIndex={EMPTY_INDEX}
-        serverPerFacetStatus={undefined}
         votesByFacetIndex={votesIndexWith(NODE_X, 'classification', votes)}
       />,
     );
@@ -506,12 +447,11 @@ describe('ProposalFacetBreakdown — per-participant vote indicators', () => {
       classification: 'fact',
     };
     const votes: readonly Vote[] = [{ participantId: PARTICIPANT_A, choice: 'agree' }];
-    const server: Record<string, string> = { classification: 'disputed' };
+    const index = indexWith('node', NODE_X, 'classification', 'disputed');
     render(
       <ProposalFacetBreakdown
         row={row(proposal)}
-        facetStatusIndex={EMPTY_INDEX}
-        serverPerFacetStatus={server}
+        facetStatusIndex={index}
         votesByFacetIndex={votesIndexWith(NODE_X, 'classification', votes)}
       />,
     );

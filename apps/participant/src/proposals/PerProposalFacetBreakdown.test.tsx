@@ -2,7 +2,8 @@
 // the inline row of facet chips that renders inside each
 // `<PendingProposalRow>`'s expanded body region.
 //
-// Refinement: tasks/refinements/participant-ui/part_per_facet_breakdown_in_pane.md
+// Refinement: tasks/refinements/participant-ui/part_migrate_to_pending_proposal_facet_status.md
+//   (prior:    tasks/refinements/participant-ui/part_per_facet_breakdown_in_pane.md)
 //
 // Per ADR 0022 these are committed Vitest cases. They pin:
 //   (a) A `capture-node` proposal renders one chip with
@@ -14,9 +15,9 @@
 //   (c) A structural sub-kind (`decompose`) renders one chip with
 //       `data-facet-name="proposal"` and the
 //       `methodology.facet.proposal` label ("Proposal").
-//   (d) When `serverPerFacetStatus[facetName]` is present, the chip's
-//       `data-facet-status` reflects the server value (not the client
-//       mirror).
+//   (d) When the merged `facetStatusIndex` carries the facet, the chip's
+//       `data-facet-status` reflects the indexed value (the pre-D2
+//       three-tier server-precedence path collapsed to two tiers).
 //   (e) The breakdown container carries `data-proposal-id` matching the
 //       prop.
 
@@ -134,7 +135,6 @@ afterEach(() => {
 function renderBreakdown(
   proposal: ProposalPayload,
   facetStatusIndex: FacetStatusIndex = EMPTY_INDEX,
-  serverPerFacetStatus: Record<string, string> | undefined = undefined,
   proposalEventId: string = PROPOSAL_P,
   votesByFacetIndex?: VotesByFacetIndex,
   votesByProposalIndex?: OtherVotesByProposalIndex,
@@ -160,7 +160,6 @@ function renderBreakdown(
                 <PerProposalFacetBreakdown
                   proposal={proposal}
                   facetStatusIndex={facetStatusIndex}
-                  serverPerFacetStatus={serverPerFacetStatus}
                   proposalEventId={proposalEventId}
                   {...voteProps}
                 />
@@ -228,8 +227,8 @@ describe('<PerProposalFacetBreakdown>', () => {
       classification: 'fact',
     };
     for (const status of statuses) {
-      const server: Record<string, string> = { classification: status };
-      const { unmount } = renderBreakdown(proposal, EMPTY_INDEX, server);
+      const index = indexWith('node', NODE_X, 'classification', status);
+      const { unmount } = renderBreakdown(proposal, index);
       const chip = screen.getByTestId('participant-pending-proposal-row-facet');
       expect(chip.getAttribute('data-facet-status'), `status=${status}`).toBe(status);
       expect(chip.getAttribute('class'), `status=${status}`).toBe(
@@ -263,15 +262,14 @@ describe('<PerProposalFacetBreakdown>', () => {
     expect(chips[0]?.firstChild?.nodeValue).toBe('Proposal');
   });
 
-  it('(d) when serverPerFacetStatus carries the facet, the chip data-facet-status reflects the server value (not the client mirror)', () => {
+  it('(d) when the merged facetStatusIndex carries the facet, the chip data-facet-status reflects the indexed value', () => {
     const proposal: ProposalPayload = {
       kind: 'classify-node',
       node_id: NODE_X,
       classification: 'fact',
     };
-    const clientIndex = indexWith('node', NODE_X, 'classification', 'agreed');
-    const server: Record<string, string> = { classification: 'disputed' };
-    renderBreakdown(proposal, clientIndex, server);
+    const index = indexWith('node', NODE_X, 'classification', 'disputed');
+    renderBreakdown(proposal, index);
     const chip = screen.getByTestId('participant-pending-proposal-row-facet');
     expect(chip.getAttribute('data-facet-status')).toBe('disputed');
   });
@@ -282,7 +280,7 @@ describe('<PerProposalFacetBreakdown>', () => {
       node_id: NODE_X,
       participant: PARTICIPANT_A,
     };
-    renderBreakdown(proposal, EMPTY_INDEX, undefined, PROPOSAL_P);
+    renderBreakdown(proposal, EMPTY_INDEX, PROPOSAL_P);
     const container = screen.getByTestId('participant-pending-proposal-row-facets');
     expect(container.getAttribute('data-proposal-id')).toBe(PROPOSAL_P);
   });
@@ -298,7 +296,7 @@ describe('<PerProposalFacetBreakdown>', () => {
       { participantId: VOTER_B, choice: 'dispute' },
     ];
     const byFacet = votesByFacetWith(NODE_X, 'wording', votes);
-    renderBreakdown(proposal, EMPTY_INDEX, undefined, PROPOSAL_P, byFacet);
+    renderBreakdown(proposal, EMPTY_INDEX, PROPOSAL_P, byFacet);
     const chip = screen.getByTestId('participant-pending-proposal-row-facet');
     const row = chip.querySelector(
       '[data-testid="participant-pending-proposal-row-facet-vote-indicator-row"]',
@@ -352,8 +350,8 @@ describe('<PerProposalFacetBreakdown>', () => {
       node_id: NODE_X,
       classification: 'fact',
     };
-    const server: Record<string, string> = { classification: 'agreed' };
-    renderBreakdown(proposal, EMPTY_INDEX, server);
+    const index = indexWith('node', NODE_X, 'classification', 'agreed');
+    renderBreakdown(proposal, index);
     expect(
       screen.queryByTestId('participant-pending-proposal-row-facet-vote-button-agree'),
     ).toBeTruthy();
@@ -374,7 +372,7 @@ describe('<PerProposalFacetBreakdown>', () => {
       ]),
       proposals: new Map<string, 'agree' | 'dispute'>(),
     };
-    renderBreakdown(proposal, EMPTY_INDEX, undefined, PROPOSAL_P, undefined, undefined, ownVotes);
+    renderBreakdown(proposal, EMPTY_INDEX, PROPOSAL_P, undefined, undefined, ownVotes);
     expect(
       screen.queryByTestId('participant-pending-proposal-row-facet-vote-button-agree'),
     ).toBeNull();
@@ -401,7 +399,6 @@ describe('<PerProposalFacetBreakdown>', () => {
     renderBreakdown(
       proposal,
       EMPTY_INDEX,
-      undefined,
       PROPOSAL_P,
       undefined,
       undefined,
@@ -443,7 +440,7 @@ describe('<PerProposalFacetBreakdown>', () => {
     const byProposal = votesByProposalWith(PROPOSAL_P, [
       { participantId: VOTER_A, choice: 'agree' },
     ]);
-    renderBreakdown(proposal, EMPTY_INDEX, undefined, PROPOSAL_P, undefined, byProposal);
+    renderBreakdown(proposal, EMPTY_INDEX, PROPOSAL_P, undefined, byProposal);
     const chip = screen.getByTestId('participant-pending-proposal-row-facet');
     expect(chip.getAttribute('data-facet-name')).toBe('proposal');
     const row = chip.querySelector(

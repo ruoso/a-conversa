@@ -7,7 +7,7 @@
 
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import type { ProposalStatusPayload } from '@a-conversa/shared-types';
+import type { Event } from '@a-conversa/shared-types';
 
 import { I18nProvider, createI18nInstance, type I18nInstance } from '@a-conversa/shell';
 
@@ -18,13 +18,21 @@ import { useWsStore } from '../ws/wsStore';
 const SESSION_A = '00000000-0000-4000-8000-0000000000aa';
 const PROPOSAL_A = '00000000-0000-4000-8000-0000000000a1';
 const PROPOSAL_B = '00000000-0000-4000-8000-0000000000a2';
+const NODE_X = '00000000-0000-4000-8000-00000000000a';
+const NODE_Y = '00000000-0000-4000-8000-00000000000b';
+const ACTOR = '11112222-3333-4444-5555-666677778888';
 
-function makePayload(proposalId: string, sequence: number): ProposalStatusPayload {
+function classifyProposalEvent(seq: number, envelopeId: string, nodeId: string): Event {
   return {
+    id: envelopeId,
     sessionId: SESSION_A,
-    proposalId,
-    sequence,
-    perFacetStatus: { 'facet-a': 'pending' },
+    sequence: seq,
+    kind: 'proposal',
+    actor: ACTOR,
+    payload: {
+      proposal: { kind: 'classify-node', node_id: nodeId, classification: 'fact' },
+    },
+    createdAt: '2026-05-25T00:00:00.000Z',
   };
 }
 
@@ -92,16 +100,16 @@ describe('<PendingProposalsTabBar>', () => {
     expect(badge.getAttribute('data-count')).toBe('0');
   });
 
-  it('(e) badge data-count reflects pendingProposals size after seed', () => {
-    useWsStore.getState().applyProposalStatus(makePayload(PROPOSAL_A, 1));
-    useWsStore.getState().applyProposalStatus(makePayload(PROPOSAL_B, 2));
+  it('(e) badge data-count reflects the surviving-proposals count after seeding `proposal` events', () => {
+    useWsStore.getState().applyEvent(classifyProposalEvent(1, PROPOSAL_A, NODE_X));
+    useWsStore.getState().applyEvent(classifyProposalEvent(2, PROPOSAL_B, NODE_Y));
     renderBar();
     const badge = screen.getByTestId('participant-proposals-tabbar-badge');
     expect(badge.getAttribute('data-count')).toBe('2');
   });
 
   it('(f) badge text content matches data-count', () => {
-    useWsStore.getState().applyProposalStatus(makePayload(PROPOSAL_A, 1));
+    useWsStore.getState().applyEvent(classifyProposalEvent(1, PROPOSAL_A, NODE_X));
     renderBar();
     const badge = screen.getByTestId('participant-proposals-tabbar-badge');
     expect(badge.textContent).toBe('1');

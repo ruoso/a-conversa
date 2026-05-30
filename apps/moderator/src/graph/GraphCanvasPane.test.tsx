@@ -2195,7 +2195,7 @@ describe('selectEdgesForSession — diagnostic-highlight enrichment (mod_diagnos
         [SESSION_ID]: {
           lastAppliedSequence: 0,
           events,
-          pendingProposals: {},
+          pendingProposalFacetStatus: new Map(),
           activeDiagnostics: new Map(),
         },
       },
@@ -2221,7 +2221,7 @@ describe('selectEdgesForSession — diagnostic-highlight enrichment (mod_diagnos
         [SESSION_ID]: {
           lastAppliedSequence: 0,
           events,
-          pendingProposals: {},
+          pendingProposalFacetStatus: new Map(),
           activeDiagnostics: new Map(),
         },
       },

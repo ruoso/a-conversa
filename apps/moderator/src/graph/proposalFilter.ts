@@ -4,7 +4,7 @@
 // Refinement: tasks/refinements/moderator-ui/mod_proposal_filter_search.md
 //
 // `matchesProposalFilter(row, filter, currentParticipantIds,
-// votesByFacetIndex, facetStatusIndex, serverPerFacetStatus)` is a
+// votesByFacetIndex, facetStatusIndex)` is a
 // pure function — no closure over time, no `Date.now()`, no
 // `Math.random()`. The two filter dimensions are AND-composed:
 //
@@ -80,11 +80,12 @@ export function isDefaultFilter(filter: ProposalFilter): boolean {
  * @param votesByFacetIndex The per-(entityId, facet) vote bucket from
  *   `projectVotesByFacet(events)` — needed by `derivePerProposalFacets`
  *   to compute the row's facet entries.
- * @param facetStatusIndex The client-side `computeFacetStatuses(events)`
- *   output — the fallback when no server frame has arrived yet.
- * @param serverPerFacetStatus The per-proposal server-broadcast status
- *   map (from `useWsStore.sessionState[id].pendingProposals[proposalId]
- *   .perFacetStatus`). `undefined` when no server frame has landed.
+ * @param facetStatusIndex The merged facet-status index — the pane
+ *   builds it from `merge(eventsBasedIndex,
+ *   buildFacetStatusIndexFromBroadcast(pendingProposalFacetStatus))`
+ *   with broadcast winning per cell (per
+ *   `tasks/refinements/participant-ui/part_migrate_to_pending_proposal_facet_status.md`
+ *   D2).
  * @returns `true` iff both filter dimensions admit the row.
  */
 export function matchesProposalFilter(
@@ -93,7 +94,6 @@ export function matchesProposalFilter(
   currentParticipantIds: ReadonlySet<string>,
   votesByFacetIndex: VotesByFacetIndex,
   facetStatusIndex: FacetStatusIndex,
-  serverPerFacetStatus: Record<string, string> | undefined,
   votesByProposalIndex?: VotesByProposalIndex,
 ): boolean {
   // Default-fast-path: the predicate is the identity for the default
@@ -126,7 +126,6 @@ export function matchesProposalFilter(
   const entries = derivePerProposalFacets(
     row.proposal,
     facetStatusIndex,
-    serverPerFacetStatus,
     votesByFacetIndex,
     row.proposalEventId,
     votesByProposalIndex,

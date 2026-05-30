@@ -1043,7 +1043,7 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
             [sessionId]: {
               lastAppliedSequence: 0,
               events: events as Event[],
-              pendingProposals: {},
+              pendingProposalFacetStatus: new Map(),
               activeDiagnostics: EMPTY_ACTIVE_DIAGNOSTICS,
             },
           },

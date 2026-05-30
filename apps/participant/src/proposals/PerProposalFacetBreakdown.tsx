@@ -44,7 +44,6 @@ import { ProposalFacetVoteButtons } from './ProposalFacetVoteButtons';
 export interface PerProposalFacetBreakdownProps {
   readonly proposal: ProposalPayload;
   readonly facetStatusIndex: FacetStatusIndex;
-  readonly serverPerFacetStatus: Record<string, string> | undefined;
   readonly proposalEventId: string;
   readonly votesByFacetIndex?: VotesByFacetIndex;
   readonly votesByProposalIndex?: OtherVotesByProposalIndex;
@@ -57,7 +56,6 @@ function PerProposalFacetBreakdownImpl(props: PerProposalFacetBreakdownProps): R
   const {
     proposal,
     facetStatusIndex,
-    serverPerFacetStatus,
     proposalEventId,
     votesByFacetIndex,
     votesByProposalIndex,
@@ -71,19 +69,11 @@ function PerProposalFacetBreakdownImpl(props: PerProposalFacetBreakdownProps): R
       derivePerProposalFacets(
         proposal,
         facetStatusIndex,
-        serverPerFacetStatus,
         votesByFacetIndex ?? EMPTY_VOTES_BY_FACET_INDEX,
         proposalEventId,
         votesByProposalIndex ?? EMPTY_OTHER_VOTES_BY_PROPOSAL_INDEX,
       ),
-    [
-      proposal,
-      facetStatusIndex,
-      serverPerFacetStatus,
-      votesByFacetIndex,
-      proposalEventId,
-      votesByProposalIndex,
-    ],
+    [proposal, facetStatusIndex, votesByFacetIndex, proposalEventId, votesByProposalIndex],
   );
 
   return (

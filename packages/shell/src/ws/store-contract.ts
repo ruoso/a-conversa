@@ -53,22 +53,6 @@ export interface BaseWsSessionState {
   /** Dedup'd event log, in arrival order. */
   events: Event[];
   /**
-   * Per-proposal status frames keyed by `proposalId`. Retained for
-   * backward compatibility with the participant pane's per-proposal
-   * lookup (`apps/participant/src/proposals/PendingProposalsPane.tsx`)
-   * and the per-row server-frame surface in the moderator's
-   * `<PendingProposalRow>` filter path. New moderator consumers read
-   * from `pendingProposalFacetStatus` (per-`(entityKind, entityId,
-   * facet)` cell-keyed) so multi-component proposals
-   * (decompose / interpretive-split) populate one cell per component
-   * instead of last-write-winning a single proposalId slot.
-   *
-   * Migration tech debt: `participant_ui.part_migrate_to_pending_proposal_facet_status`
-   * — once the participant surfaces consume the per-entity map, this
-   * slot becomes deletable.
-   */
-  pendingProposals: Record<string, ProposalStatusPayload>;
-  /**
    * Per-`(entityKind, entityId, facetName)` server-derived facet status
    * cell-keyed by `${entityKind}:${entityId}:${facetName}`. Populated
    * by `applyProposalStatus` from each `proposal-status` envelope that
@@ -85,14 +69,8 @@ export interface BaseWsSessionState {
    * `ws_proposal_status_broadcast`'s D3 "no terminal envelope on
    * withdraw" contract pins the receive-side cleanup to the
    * `entity-removed` event-applied frame.
-   *
-   * **Optional on the type** so synthetic `BaseWsSessionState` literals
-   * (test fixtures, narrow harness shapes that pre-date this slot) keep
-   * compiling. The default-store factory always initializes it to an
-   * empty `Map`; readers narrow it as `value ?? EMPTY_MAP` defensively
-   * for the test-fixture path.
    */
-  pendingProposalFacetStatus?: ReadonlyMap<string, FacetStatus>;
+  pendingProposalFacetStatus: ReadonlyMap<string, FacetStatus>;
   /**
    * Active-set of fired-but-not-cleared diagnostics keyed by the
    * canonical `diagnosticIdentityKey(payload)`.

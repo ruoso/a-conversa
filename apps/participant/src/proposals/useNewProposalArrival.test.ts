@@ -118,7 +118,7 @@ describe('useNewProposalArrival', () => {
           [SESSION_ID]: {
             lastAppliedSequence: 0,
             events: [],
-            pendingProposals: {},
+            pendingProposalFacetStatus: new Map(),
             activeDiagnostics: new Map(),
           },
         },

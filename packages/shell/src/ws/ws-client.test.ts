@@ -320,6 +320,8 @@ describe('inbound dispatch — store writes', () => {
         proposalId: '00000000-0000-4000-8000-0000000aabbb',
         sequence: 5,
         perFacetStatus: { substance: 'proposed' },
+        entityKind: 'node',
+        entityId: '00000000-0000-4000-8000-0000000aacc1',
       },
     });
     harness.sockets[0]!.receive({
@@ -336,7 +338,11 @@ describe('inbound dispatch — store writes', () => {
     });
 
     const sessionState = harness.store.getState().sessionState[SESSION_A];
-    expect(sessionState?.pendingProposals['00000000-0000-4000-8000-0000000aabbb']).toBeDefined();
+    expect(
+      sessionState?.pendingProposalFacetStatus.get(
+        'node:00000000-0000-4000-8000-0000000aacc1:substance',
+      ),
+    ).toBe('proposed');
     expect(sessionState?.lastDiagnostic?.kind).toBe('cycle');
   });
 

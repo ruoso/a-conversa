@@ -200,11 +200,17 @@ test.describe('Participant operate route — pending-proposals tab seam', () => 
             },
             createdAt: '2026-05-17T00:00:01.000Z',
           });
+          // Per `part_migrate_to_pending_proposal_facet_status` D1, the
+          // `proposal-status` envelope now carries explicit
+          // `entityKind` + `entityId` so the receive-side reducer can
+          // populate the per-`(entityKind, entityId, facet)` cell-map.
           state.applyProposalStatus({
             sessionId: seed.sessionId,
             proposalId: seed.proposalId,
             sequence: 1_000_003,
-            perFacetStatus: { [seed.facetId]: 'pending' },
+            perFacetStatus: { [seed.facetId]: 'proposed' },
+            entityKind: 'node',
+            entityId: seed.proposalNodeId,
           });
         },
         {

@@ -1,9 +1,15 @@
 // Vitest cases for the participant's `derivePerProposalFacets` selector.
 //
-// Refinement: tasks/refinements/participant-ui/part_per_facet_breakdown_in_pane.md
+// Refinement: tasks/refinements/participant-ui/part_migrate_to_pending_proposal_facet_status.md
+//   (prior:    tasks/refinements/participant-ui/part_per_facet_breakdown_in_pane.md)
 //
 // Per ADR 0022 these are committed Vitest cases. They pin the selector
-// contract enumerated in the refinement's Acceptance criterion 5:
+// contract enumerated in the refinement's Acceptance criteria. Per D2
+// the three-tier precedence (server frame → client mirror → default)
+// collapses to two tiers (merged-index → `'proposed'` default) because
+// the pane now passes a `FacetStatusIndex` that already merges the
+// broadcast-derived per-entity cell map over the events-derived mirror
+// with broadcast winning per cell.
 //
 //   (a) Each of the five facet-targeting sub-kinds (capture-node +
 //       classify-node + set-node-substance + set-edge-substance +
@@ -12,11 +18,10 @@
 //   (b) Each of the seven structural sub-kinds (decompose,
 //       interpretive-split, axiom-mark, meta-move, break-edge,
 //       amend-node, annotate) emits one entry with `facet: 'proposal'`.
-//   (c) Server `serverPerFacetStatus[facet]` overrides the client mirror.
-//   (d) Client mirror is used when `serverPerFacetStatus` is undefined
-//       OR does not carry the facet.
-//   (e) Default-to-`'proposed'` when neither surface carries the facet.
-//   (f) Pure (two calls with the same inputs return deep-equal outputs).
+//   (c) Merged-index value is returned when present for the facet.
+//   (d) Default-to-`'proposed'` when the merged index does NOT carry
+//       the facet (post-subscribe / pre-seed window).
+//   (e) Pure (two calls with the same inputs return deep-equal outputs).
 
 import { describe, expect, it } from 'vitest';
 import type { ProposalPayload } from '@a-conversa/shared-types';
@@ -116,7 +121,7 @@ describe('derivePerProposalFacets — facet-targeting sub-kinds emit one entry w
 
   it('emits one entry per facet-targeting sub-kind with the expected facet + labelKey', () => {
     for (const { name, payload, expectedFacet } of facetTargetingCases) {
-      const out = derivePerProposalFacets(payload, EMPTY_INDEX, undefined);
+      const out = derivePerProposalFacets(payload, EMPTY_INDEX);
       expect(out, `${name}: should emit exactly one entry`).toHaveLength(1);
       expect(out[0]?.facet, `${name}: facet`).toBe(expectedFacet);
       expect(out[0]?.labelKey, `${name}: labelKey`).toBe(`methodology.facet.${expectedFacet}`);
@@ -200,7 +205,7 @@ describe('derivePerProposalFacets — structural sub-kinds emit one synthetic "p
 
   it('emits one synthetic "proposal" entry per structural sub-kind', () => {
     for (const { name, payload } of structuralCases) {
-      const out = derivePerProposalFacets(payload, EMPTY_INDEX, undefined);
+      const out = derivePerProposalFacets(payload, EMPTY_INDEX);
       expect(out, `${name}: should emit exactly one entry`).toHaveLength(1);
       expect(out[0]?.facet, `${name}: facet`).toBe('proposal');
       expect(out[0]?.labelKey, `${name}: labelKey`).toBe('methodology.facet.proposal');
@@ -208,43 +213,27 @@ describe('derivePerProposalFacets — structural sub-kinds emit one synthetic "p
   });
 });
 
-describe('derivePerProposalFacets — status precedence: server → client mirror → default', () => {
+describe('derivePerProposalFacets — status precedence: merged-index → default', () => {
   const classifyNode: ProposalPayload = {
     kind: 'classify-node',
     node_id: NODE_X,
     classification: 'fact',
   };
 
-  it('server perFacetStatus overrides the client mirror for the same facet', () => {
-    const clientIndex = indexWith('node', NODE_X, 'classification', 'agreed');
-    const server: Record<string, string> = { classification: 'disputed' };
-    const out = derivePerProposalFacets(classifyNode, clientIndex, server);
-    expect(out[0]?.status).toBe('disputed');
+  it('returns the merged-index value when the index carries the facet', () => {
+    const index = indexWith('node', NODE_X, 'classification', 'agreed');
+    const out = derivePerProposalFacets(classifyNode, index);
+    expect(out[0]?.status).toBe('agreed');
   });
 
-  it('client mirror is used when server perFacetStatus is undefined OR does not carry the facet', () => {
-    const clientIndex = indexWith('node', NODE_X, 'classification', 'agreed');
-    expect(
-      derivePerProposalFacets(classifyNode, clientIndex, undefined)[0]?.status,
-      'undefined server frame falls through to client mirror',
-    ).toBe('agreed');
-    const serverWithoutKey: Record<string, string> = { substance: 'disputed' };
-    expect(
-      derivePerProposalFacets(classifyNode, clientIndex, serverWithoutKey)[0]?.status,
-      'server frame missing the facet key falls through to client mirror',
-    ).toBe('agreed');
-  });
-
-  it('defaults to "proposed" when neither surface carries the facet (and structural sub-kinds default the same way)', () => {
-    expect(derivePerProposalFacets(classifyNode, EMPTY_INDEX, undefined)[0]?.status).toBe(
-      'proposed',
-    );
+  it('defaults to "proposed" when the merged index does not carry the facet (facet-targeting + structural sub-kinds alike)', () => {
+    expect(derivePerProposalFacets(classifyNode, EMPTY_INDEX)[0]?.status).toBe('proposed');
     const axiomMark: ProposalPayload = {
       kind: 'axiom-mark',
       node_id: NODE_X,
       participant: PARTICIPANT_A,
     };
-    expect(derivePerProposalFacets(axiomMark, EMPTY_INDEX, undefined)[0]?.status).toBe('proposed');
+    expect(derivePerProposalFacets(axiomMark, EMPTY_INDEX)[0]?.status).toBe('proposed');
   });
 });
 
@@ -256,12 +245,9 @@ describe('derivePerProposalFacets — purity', () => {
       classification: 'fact',
     };
     const index = indexWith('node', NODE_X, 'classification', 'disputed');
-    const server: Record<string, string> = { classification: 'agreed' };
-    const serverBefore = { ...server };
-    const a = derivePerProposalFacets(proposal, index, server);
-    const b = derivePerProposalFacets(proposal, index, server);
+    const a = derivePerProposalFacets(proposal, index);
+    const b = derivePerProposalFacets(proposal, index);
     expect(a).toEqual(b);
-    expect(server).toEqual(serverBefore);
     expect(index.nodes.get(NODE_X)).toEqual({ classification: 'disputed' });
   });
 });
@@ -303,7 +289,7 @@ describe('derivePerProposalFacets — votes field (part_vote_indicators_in_pane)
       { participantId: VOTER_B, choice: 'dispute' },
     ];
     const index = votesByFacetWith(NODE_X, 'wording', votes);
-    const out = derivePerProposalFacets(proposal, EMPTY_INDEX, undefined, index);
+    const out = derivePerProposalFacets(proposal, EMPTY_INDEX, index);
     expect(out).toHaveLength(1);
     expect(out[0]?.facet).toBe('wording');
     expect(out[0]?.votes).toEqual(votes);
@@ -335,7 +321,6 @@ describe('derivePerProposalFacets — votes field (part_vote_indicators_in_pane)
       proposal,
       EMPTY_INDEX,
       undefined,
-      undefined,
       PROPOSAL_DECOMPOSE,
       byProposal,
     );
@@ -353,14 +338,7 @@ describe('derivePerProposalFacets — votes field (part_vote_indicators_in_pane)
     const byProposal = votesByProposalWith(PROPOSAL_DECOMPOSE, [
       { participantId: VOTER_A, choice: 'agree' },
     ]);
-    const out = derivePerProposalFacets(
-      proposal,
-      EMPTY_INDEX,
-      undefined,
-      undefined,
-      undefined,
-      byProposal,
-    );
+    const out = derivePerProposalFacets(proposal, EMPTY_INDEX, undefined, undefined, byProposal);
     expect(out[0]?.facet).toBe('proposal');
     expect(out[0]?.votes).toBe(EMPTY_VOTES);
   });
@@ -378,7 +356,7 @@ describe('derivePerProposalFacets — voteTarget field (part_vote_button_per_fac
       node_id: NODE_X,
       wording: 'fresh wording',
     };
-    const out = derivePerProposalFacets(proposal, EMPTY_INDEX, undefined);
+    const out = derivePerProposalFacets(proposal, EMPTY_INDEX);
     expect(out[0]?.voteTarget).toEqual({
       kind: 'facet',
       entity_kind: 'node',
@@ -393,7 +371,7 @@ describe('derivePerProposalFacets — voteTarget field (part_vote_button_per_fac
       edge_id: EDGE_E,
       value: 'agreed',
     };
-    const out = derivePerProposalFacets(proposal, EMPTY_INDEX, undefined);
+    const out = derivePerProposalFacets(proposal, EMPTY_INDEX);
     expect(out[0]?.voteTarget).toEqual({
       kind: 'facet',
       entity_kind: 'edge',
@@ -423,7 +401,6 @@ describe('derivePerProposalFacets — voteTarget field (part_vote_button_per_fac
       proposal,
       EMPTY_INDEX,
       undefined,
-      undefined,
       PROPOSAL_DECOMPOSE,
       undefined,
     );
@@ -439,7 +416,7 @@ describe('derivePerProposalFacets — voteTarget field (part_vote_button_per_fac
       node_id: NODE_X,
       participant: PARTICIPANT_A,
     };
-    const out = derivePerProposalFacets(proposal, EMPTY_INDEX, undefined);
+    const out = derivePerProposalFacets(proposal, EMPTY_INDEX);
     expect(out[0]?.voteTarget).toEqual({ kind: 'proposal', proposal_id: '' });
   });
 });

@@ -1,9 +1,13 @@
 // `<PendingProposalsPane>` — participant pending-proposals tab pane.
 //
-// Refinement: tasks/refinements/participant-ui/part_proposal_list_view.md
-//   (prior:    tasks/refinements/participant-ui/part_proposals_tab.md —
-//    Decision §5 established the stable container testid + ARIA
-//    contract sibling leaves bind to; this leaf renders rows.)
+// Refinement: tasks/refinements/participant-ui/part_migrate_to_pending_proposal_facet_status.md
+//   (prior:    tasks/refinements/participant-ui/part_proposal_list_view.md,
+//              tasks/refinements/participant-ui/part_proposals_tab.md.
+//    D2 — the pane's `facetStatusIndex` merges the broadcast-derived
+//    `pendingProposalFacetStatus` cell-map over the events-derived
+//    mirror with broadcast winning per `(entityKind, entityId, facet)`
+//    cell. The per-row `serverPerFacetStatus` prop pass is gone — the
+//    merged index already carries the data.)
 //
 // The pane reads `useWsStore.sessionState[sessionId].events`, derives
 // the surviving in-flight proposals via `derivePendingProposals`, and
@@ -12,23 +16,18 @@
 // has zero surviving proposals (mirrors the moderator's pane source-
 // of-truth choice per `mod_proposal_list` Decision §2).
 //
-// **The badge count is unchanged** — `usePendingProposalsCount` still
-// reads the `pendingProposals` broadcast-frame map per the predecessor's
-// Decision §3. The deliberate skew converges within one WS frame in
-// well-formed sessions; the badge-source alignment is deferred to
-// `part_vote_indicators_in_pane`.
-//
 // **No interactivity in v1** — the row is a plain non-interactive list
 // item; tap-to-expand lands in `part_proposal_expand`.
 
 import { useMemo, type ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { Event, ProposalPayload, ProposalStatusPayload } from '@a-conversa/shared-types';
+import type { Event, ProposalPayload } from '@a-conversa/shared-types';
 import { formatRelativeTime } from '@a-conversa/i18n-catalogs';
 
 import { useWsStore } from '../ws/wsStore';
 import { useUiStore } from '../stores/uiStore';
 import {
+  buildFacetStatusIndexFromBroadcast,
   computeFacetStatuses,
   projectOtherVotesByFacet,
   type FacetStatusIndex,
@@ -47,7 +46,6 @@ import {
 } from './otherVotesByProposal';
 
 const EMPTY_EVENTS: readonly Event[] = Object.freeze([]);
-const EMPTY_PENDING_PROPOSALS: Readonly<Record<string, ProposalStatusPayload>> = Object.freeze({});
 
 export interface PendingProposalsPaneProps {
   sessionId: string;
@@ -75,11 +73,34 @@ export function PendingProposalsPane({
 }: PendingProposalsPaneProps): ReactElement {
   const { t } = useTranslation();
   const events = useWsStore((s) => s.sessionState[sessionId]?.events ?? EMPTY_EVENTS);
-  const pendingProposals = useWsStore(
-    (s) => s.sessionState[sessionId]?.pendingProposals ?? EMPTY_PENDING_PROPOSALS,
+  const pendingProposalFacetStatus = useWsStore(
+    (s) => s.sessionState[sessionId]?.pendingProposalFacetStatus,
   );
   const rows = useMemo(() => derivePendingProposals(events), [events]);
-  const facetStatusIndex = useMemo(() => computeFacetStatuses(events), [events]);
+  // Per `part_migrate_to_pending_proposal_facet_status` D2 — merge the
+  // broadcast-derived per-entity cell map over the events-derived
+  // mirror with broadcast winning per `(entityKind, entityId, facet)`
+  // cell. Mirrors the moderator's pattern at
+  // `apps/moderator/src/layout/PendingProposalsPane.tsx:646–663`.
+  const eventsBasedFacetStatusIndex = useMemo(() => computeFacetStatuses(events), [events]);
+  const facetStatusIndex = useMemo<FacetStatusIndex>(() => {
+    const broadcastIndex =
+      pendingProposalFacetStatus === undefined || pendingProposalFacetStatus.size === 0
+        ? null
+        : buildFacetStatusIndexFromBroadcast(pendingProposalFacetStatus);
+    if (broadcastIndex === null) return eventsBasedFacetStatusIndex;
+    const mergedNodes = new Map(eventsBasedFacetStatusIndex.nodes);
+    for (const [id, cells] of broadcastIndex.nodes) {
+      const existing = mergedNodes.get(id);
+      mergedNodes.set(id, existing ? { ...existing, ...cells } : cells);
+    }
+    const mergedEdges = new Map(eventsBasedFacetStatusIndex.edges);
+    for (const [id, cells] of broadcastIndex.edges) {
+      const existing = mergedEdges.get(id);
+      mergedEdges.set(id, existing ? { ...existing, ...cells } : cells);
+    }
+    return { nodes: mergedNodes, edges: mergedEdges };
+  }, [pendingProposalFacetStatus, eventsBasedFacetStatusIndex]);
   const votesByFacetIndex = useMemo(
     () => projectOtherVotesByFacet(events, currentParticipantId),
     [events, currentParticipantId],
@@ -123,7 +144,6 @@ export function PendingProposalsPane({
               nowMs={nowMs}
               systemAuthorLabel={systemAuthorLabel}
               facetStatusIndex={facetStatusIndex}
-              serverPerFacetStatus={pendingProposals[row.proposalEventId]?.perFacetStatus}
               votesByFacetIndex={votesByFacetIndex}
               votesByProposalIndex={votesByProposalIndex}
               ownFacetVotes={ownFacetVotes}
@@ -140,7 +160,6 @@ function PendingProposalRow({
   nowMs,
   systemAuthorLabel,
   facetStatusIndex,
-  serverPerFacetStatus,
   votesByFacetIndex,
   votesByProposalIndex,
   ownFacetVotes,
@@ -149,7 +168,6 @@ function PendingProposalRow({
   readonly nowMs: number;
   readonly systemAuthorLabel: string;
   readonly facetStatusIndex: FacetStatusIndex;
-  readonly serverPerFacetStatus: Record<string, string> | undefined;
   readonly votesByFacetIndex: VotesByFacetIndex;
   readonly votesByProposalIndex: OtherVotesByProposalIndex;
   readonly ownFacetVotes: OwnFacetVoteIndex;
@@ -219,7 +237,6 @@ function PendingProposalRow({
           <PerProposalFacetBreakdown
             proposal={row.proposal}
             facetStatusIndex={facetStatusIndex}
-            serverPerFacetStatus={serverPerFacetStatus}
             proposalEventId={row.proposalEventId}
             votesByFacetIndex={votesByFacetIndex}
             votesByProposalIndex={votesByProposalIndex}

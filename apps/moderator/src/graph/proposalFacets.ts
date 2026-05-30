@@ -1,19 +1,18 @@
 // Pure selector that decodes a pending-proposal payload into the
 // per-facet entries the right-sidebar's breakdown row renders.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_per_facet_breakdown.md
+// Refinement: tasks/refinements/participant-ui/part_migrate_to_pending_proposal_facet_status.md
+//   (prior:    tasks/refinements/moderator-ui/mod_per_facet_breakdown.md)
 //
 // Companion to `facetStatus.ts` and `pendingProposals.ts` — same idiom
 // (pure derivation, no closure over time, no `Date.now()`,
 // no `Math.random()`). The selector decodes the proposal's facet shape
 // via a per-sub-kind switch (Decision §1), then resolves each facet's
-// status by reading — in priority order — (a) the server-broadcast
-// `serverPerFacetStatus` for that facet name (the source of truth when
-// present), (b) the client-side
-// `facetStatusIndex.{nodes,edges}.get(entityId)?.[facet]` for facet-
-// targeting sub-kinds when no server frame has arrived yet, (c)
-// `'proposed'` as the default for facet entries the proposal introduces
-// but neither surface has computed yet (Decision §5).
+// status by reading the merged `facetStatusIndex` cell or falling back
+// to `'proposed'` for the post-subscribe / pre-seed window. Per
+// `part_migrate_to_pending_proposal_facet_status` D2 — the merged
+// index already fuses broadcast-derived and events-derived sources
+// with broadcast winning per `(entityKind, entityId, facet)` cell.
 //
 // For structural sub-kinds (decompose, interpretive-split, axiom-mark,
 // meta-move, break-edge, amend-node — note `amend-node` actually targets
@@ -178,43 +177,23 @@ export type VotesByProposalIndex = ReadonlyMap<string, readonly Vote[]>;
 const EMPTY_VOTES_BY_PROPOSAL_INDEX: VotesByProposalIndex = new Map();
 
 /**
- * Resolve the per-facet status by precedence: server frame → client
- * mirror → default. Decision §5.
+ * Resolve the per-facet status by precedence: merged-index → `'proposed'`
+ * default.
  *
- * @param facet The facet name (real `FacetName` or the synthetic
- *   `'proposal'` lifecycle entry).
+ * Per `tasks/refinements/participant-ui/part_migrate_to_pending_proposal_facet_status.md`
+ * D2 — the caller now passes a `FacetStatusIndex` that already merges
+ * the broadcast-derived per-entity cell map over the events-derived
+ * mirror with broadcast winning per cell, so the three-tier precedence
+ * `mod_per_facet_breakdown` shipped collapses to two tiers.
+ *
  * @param target The `(entityKind, entityId, facet)` triple if the
  *   proposal targets a real facet (`null` for structural sub-kinds).
- * @param facetStatusIndex The client-side derivation off the event log.
- * @param serverPerFacetStatus The server-broadcast status map keyed by
- *   `FacetName` strings (a `Record<string, string>` on the wire; we
- *   defensively narrow to the `FacetStatus` enum below).
+ * @param facetStatusIndex The merged facet-status index.
  */
 function resolveStatus(
-  facet: LifecycleFacetName,
   target: FacetTarget | null,
   facetStatusIndex: FacetStatusIndex,
-  serverPerFacetStatus: Record<string, string> | undefined,
 ): FacetStatus {
-  // (a) Server frame from `pendingProposals[proposalId].perFacetStatus`
-  // (last-write-wins per proposalId — sufficient for the breakdown's
-  // facet-targeting sub-kinds where there's exactly one envelope per
-  // proposal).
-  if (serverPerFacetStatus) {
-    const fromServer = serverPerFacetStatus[facet];
-    if (fromServer && isFacetStatus(fromServer)) {
-      return fromServer;
-    }
-  }
-  // (b) Broadcast-derived per-entity index — `facetStatusIndex` is now
-  // the `buildFacetStatusIndexFromBroadcast` adapter shape (per
-  // `migrate_off_compute_facet_statuses_onto_proposal_status_broadcast`
-  // D5), NOT the client-side `computeFacetStatuses(events)` mirror. The
-  // arm survives D4 only as a defensive fallback when (a)'s
-  // proposalId-keyed slot has not yet been populated for this proposal
-  // but the per-entity cell already has (e.g. a multi-component
-  // proposal whose proposalId-keyed slot only holds the LAST
-  // component's frame).
   if (target) {
     const perEntity =
       target.entityKind === 'node'
@@ -225,27 +204,10 @@ function resolveStatus(
       return fromClient;
     }
   }
-  // (c) Default — proposal exists in the pending list; the
+  // Default — proposal exists in the pending list; the
   // post-`event-applied` / pre-`proposal-status` window briefly surfaces
   // this fallback before the seed / live broadcast lands.
   return 'proposed';
-}
-
-const FACET_STATUS_VALUES: ReadonlySet<string> = new Set<FacetStatus>([
-  'proposed',
-  'agreed',
-  'disputed',
-  'committed',
-  'withdrawn',
-  'meta-disagreement',
-  // `'awaiting-proposal'` (per ADR 0030 §10) is now emitted from
-  // `deriveFacetStatus` for facets with no candidate value yet. The
-  // narrow-helper accepts it as a valid server-frame value verbatim.
-  'awaiting-proposal',
-]);
-
-function isFacetStatus(value: string): value is FacetStatus {
-  return FACET_STATUS_VALUES.has(value);
 }
 
 /**
@@ -269,12 +231,13 @@ function labelKeyFor(facet: LifecycleFacetName): string {
  * Derive the per-facet entries for a single pending proposal.
  *
  * @param proposal The proposal payload (the discriminated-union sub-kind).
- * @param facetStatusIndex Client-side `computeFacetStatuses(events)`
- *   output — the fallback when no server frame has arrived yet (or the
- *   broadcast is rate-limited).
- * @param serverPerFacetStatus Per-proposal server-broadcast status map
- *   (from `useWsStore.sessionState[id].pendingProposals[proposalId].perFacetStatus`).
- *   `undefined` when no server frame has landed for this proposal id.
+ * @param facetStatusIndex The merged facet-status index — the pane
+ *   builds it from `merge(eventsBasedIndex,
+ *   buildFacetStatusIndexFromBroadcast(pendingProposalFacetStatus))`
+ *   with broadcast winning per `(entityKind, entityId, facet)` cell
+ *   (per
+ *   `tasks/refinements/participant-ui/part_migrate_to_pending_proposal_facet_status.md`
+ *   D2).
  * @param votesByFacetIndex Per-(entityId, facet) vote bucket from
  *   `projectVotesByFacet(events)`. Defaults to an empty map so the
  *   handful of call sites that were authored before the sidebar
@@ -289,14 +252,13 @@ function labelKeyFor(facet: LifecycleFacetName): string {
 export function derivePerProposalFacets(
   proposal: ProposalPayload,
   facetStatusIndex: FacetStatusIndex,
-  serverPerFacetStatus: Record<string, string> | undefined,
   votesByFacetIndex: VotesByFacetIndex = EMPTY_VOTES_BY_FACET_INDEX,
   proposalEventId?: string,
   votesByProposalIndex: VotesByProposalIndex = EMPTY_VOTES_BY_PROPOSAL_INDEX,
 ): readonly ProposalFacetEntry[] {
   const target = facetTargetOf(proposal);
   if (target) {
-    const status = resolveStatus(target.facet, target, facetStatusIndex, serverPerFacetStatus);
+    const status = resolveStatus(target, facetStatusIndex);
     // Lookup keyed by `entityId` (node id OR edge id — UUIDs are
     // disjoint by construction; the projection extension in
     // Decision §4 unifies node and edge buckets under the same
@@ -313,10 +275,6 @@ export function derivePerProposalFacets(
     ];
   }
   // Structural sub-kind (or unknown) — one synthetic lifecycle entry.
-  // Status resolution still consults the server frame (a future
-  // broadcast tightening may carry a `'proposal'` keyed status); the
-  // client-mirror lookup is skipped because the mirror does not track
-  // structural proposals.
   //
   // Per commit `421353f` the server's `checkUnanimousAgreeStructural`
   // walks the pending proposal's `perParticipantVotes` map. On the
@@ -330,7 +288,7 @@ export function derivePerProposalFacets(
   // collapses to `EMPTY_VOTES` (the historical behaviour) and the
   // commit gate falls back to `participants-not-voted` until the
   // caller threads the new arguments through.
-  const status = resolveStatus('proposal', null, facetStatusIndex, serverPerFacetStatus);
+  const status = resolveStatus(null, facetStatusIndex);
   const votes =
     proposalEventId !== undefined
       ? (votesByProposalIndex.get(proposalEventId) ?? EMPTY_VOTES)

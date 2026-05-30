@@ -301,7 +301,6 @@ function PendingProposalRow(props: {
   readonly systemAuthorLabel: string;
   readonly t: (key: string) => string;
   readonly facetStatusIndex: FacetStatusIndex;
-  readonly serverPerFacetStatus: Record<string, string> | undefined;
   readonly votesByFacetIndex: VotesByFacetIndex;
   readonly votesByProposalIndex: VotesByProposalIndex;
   readonly currentParticipantIds: ReadonlySet<string>;
@@ -313,7 +312,6 @@ function PendingProposalRow(props: {
     systemAuthorLabel,
     t,
     facetStatusIndex,
-    serverPerFacetStatus,
     votesByFacetIndex,
     votesByProposalIndex,
     currentParticipantIds,
@@ -339,7 +337,6 @@ function PendingProposalRow(props: {
   const entries = derivePerProposalFacets(
     row.proposal,
     facetStatusIndex,
-    serverPerFacetStatus,
     votesByFacetIndex,
     row.proposalEventId,
     votesByProposalIndex,
@@ -540,7 +537,6 @@ function PendingProposalRow(props: {
       <ProposalFacetBreakdown
         row={row}
         facetStatusIndex={facetStatusIndex}
-        serverPerFacetStatus={serverPerFacetStatus}
         votesByFacetIndex={votesByFacetIndex}
         votesByProposalIndex={votesByProposalIndex}
       />
@@ -605,16 +601,6 @@ export function PendingProposalsPane(props: PendingProposalsPaneProps): ReactEle
   // re-renders the pane the moment a new event lands.
   const events = useWsStore((state) => state.sessionState[sessionId]?.events);
 
-  // Second Zustand selector — read the per-proposal server-broadcast
-  // `proposal-status` map (new read in
-  // `tasks/refinements/moderator-ui/mod_per_facet_breakdown.md`). The
-  // reference-equality check re-renders the pane when a new
-  // `proposal-status` envelope lands (the writer
-  // `applyProposalStatus` creates a fresh object each call). Two
-  // separate subscriptions keep each cell narrow per the established
-  // moderator-pane convention.
-  const pendingProposals = useWsStore((state) => state.sessionState[sessionId]?.pendingProposals);
-
   // Per `migrate_off_compute_facet_statuses_onto_proposal_status_broadcast`,
   // the per-entity facet status comes from the shell store's broadcast-
   // derived `pendingProposalFacetStatus` cell-map (the
@@ -623,6 +609,10 @@ export function PendingProposalsPane(props: PendingProposalsPaneProps): ReactEle
   // it to the existing `FacetStatusIndex.nodes.get(id)?.[facet]` lookup
   // shape so the downstream `derivePerProposalFacets` + filter code
   // paths stay untouched.
+  //
+  // Per `part_migrate_to_pending_proposal_facet_status` D3 the legacy
+  // proposalId-keyed `pendingProposals` map is gone; the pane reads
+  // the per-entity cell-map only.
   const pendingProposalFacetStatus = useWsStore(
     (state) => state.sessionState[sessionId]?.pendingProposalFacetStatus,
   );
@@ -722,7 +712,6 @@ export function PendingProposalsPane(props: PendingProposalsPaneProps): ReactEle
         currentParticipantIds,
         votesByFacetIndex,
         facetStatusIndex,
-        pendingProposals?.[row.proposalEventId]?.perFacetStatus,
         votesByProposalIndex,
       ),
     );
@@ -733,7 +722,6 @@ export function PendingProposalsPane(props: PendingProposalsPaneProps): ReactEle
     votesByFacetIndex,
     votesByProposalIndex,
     facetStatusIndex,
-    pendingProposals,
   ]);
 
   const resolvedNowMs = nowMs ?? Date.now();
@@ -839,7 +827,6 @@ export function PendingProposalsPane(props: PendingProposalsPaneProps): ReactEle
               systemAuthorLabel={systemAuthorLabel}
               t={t}
               facetStatusIndex={facetStatusIndex}
-              serverPerFacetStatus={pendingProposals?.[row.proposalEventId]?.perFacetStatus}
               votesByFacetIndex={votesByFacetIndex}
               votesByProposalIndex={votesByProposalIndex}
               currentParticipantIds={currentParticipantIds}

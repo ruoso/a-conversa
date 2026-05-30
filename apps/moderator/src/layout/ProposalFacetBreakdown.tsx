@@ -56,23 +56,17 @@ export interface ProposalFacetBreakdownProps {
   /** The pending-proposal row this breakdown belongs to. */
   readonly row: PendingProposalRow;
   /**
-   * Broadcast-derived per-entity per-facet status index, built by
-   * `buildFacetStatusIndexFromBroadcast` over the shell store's
-   * `pendingProposalFacetStatus` cell-map. Per
-   * `migrate_off_compute_facet_statuses_onto_proposal_status_broadcast`,
-   * this replaces the prior client-side `computeFacetStatuses(events)`
-   * mirror as the per-entity fallback when the
-   * `pendingProposals[proposalId].perFacetStatus` slot has not yet
-   * caught up.
+   * Merged facet-status index, built by the pane from
+   * `merge(eventsBasedIndex,
+   * buildFacetStatusIndexFromBroadcast(pendingProposalFacetStatus))`
+   * with broadcast winning per `(entityKind, entityId, facet)` cell.
+   * Per
+   * `tasks/refinements/participant-ui/part_migrate_to_pending_proposal_facet_status.md`
+   * D2 — the merged index supersedes the prior three-tier precedence
+   * (server frame → client mirror → default); the per-proposal
+   * `serverPerFacetStatus` prop is gone.
    */
   readonly facetStatusIndex: FacetStatusIndex;
-  /**
-   * Per-proposal server-broadcast `perFacetStatus` map (from
-   * `useWsStore.sessionState[id].pendingProposals[proposalId]
-   * .perFacetStatus`). `undefined` when no server frame has landed.
-   * When present, takes precedence over the client mirror.
-   */
-  readonly serverPerFacetStatus: Record<string, string> | undefined;
   /**
    * Per-(entityId, facet) vote bucket — `projectVotesByFacet(events)`'s
    * return value, computed ONCE per pane render and threaded through
@@ -111,7 +105,6 @@ function ProposalFacetBreakdownImpl(props: ProposalFacetBreakdownProps): ReactEl
   const {
     row,
     facetStatusIndex,
-    serverPerFacetStatus,
     votesByFacetIndex = EMPTY_VOTES_BY_FACET_INDEX,
     votesByProposalIndex = EMPTY_VOTES_BY_PROPOSAL_INDEX,
   } = props;
@@ -120,8 +113,10 @@ function ProposalFacetBreakdownImpl(props: ProposalFacetBreakdownProps): ReactEl
   // Per Decision §8 of `mod_per_facet_breakdown` (and Decision §10 of
   // `mod_vote_indicators_in_sidebar`) — memoize the per-row derivation
   // so re-renders that don't change the underlying references skip
-  // the work. The `serverPerFacetStatus` reference changes only when a
-  // new `proposal-status` envelope lands for this proposal id; the
+  // the work. The `facetStatusIndex` reference changes when a new
+  // `proposal-status` envelope lands or the events log grows (the pane
+  // rebuilds the merged index per
+  // `part_migrate_to_pending_proposal_facet_status` D2); the
   // `votesByFacetIndex` and `votesByProposalIndex` references change
   // whenever a new event (any kind) lands in the session log.
   const entries = useMemo(
@@ -129,19 +124,11 @@ function ProposalFacetBreakdownImpl(props: ProposalFacetBreakdownProps): ReactEl
       derivePerProposalFacets(
         row.proposal,
         facetStatusIndex,
-        serverPerFacetStatus,
         votesByFacetIndex,
         row.proposalEventId,
         votesByProposalIndex,
       ),
-    [
-      row.proposal,
-      row.proposalEventId,
-      facetStatusIndex,
-      serverPerFacetStatus,
-      votesByFacetIndex,
-      votesByProposalIndex,
-    ],
+    [row.proposal, row.proposalEventId, facetStatusIndex, votesByFacetIndex, votesByProposalIndex],
   );
 
   return (
@@ -196,7 +183,7 @@ function ProposalFacetBreakdownImpl(props: ProposalFacetBreakdownProps): ReactEl
 /**
  * Memo'd breakdown — the pane re-renders on each event-applied frame,
  * but each row's breakdown only changes when its proposal payload, the
- * facetStatusIndex reference, or the row's server-broadcast
- * perFacetStatus reference changes. Decision §8.
+ * facetStatusIndex reference, or the vote-projection references
+ * change. Decision §8.
  */
 export const ProposalFacetBreakdown = memo(ProposalFacetBreakdownImpl);

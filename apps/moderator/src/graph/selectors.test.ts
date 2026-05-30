@@ -113,7 +113,11 @@ function makeState(events: Event[]): WsState {
   // every action handler the live store ships.
   return {
     sessionState: {
-      [SESSION]: { lastAppliedSequence: events.length, events, pendingProposals: {} },
+      [SESSION]: {
+        lastAppliedSequence: events.length,
+        events,
+        pendingProposalFacetStatus: new Map(),
+      },
     },
   } as unknown as WsState;
 }
