@@ -1122,4 +1122,271 @@ describe('projectGraph (audience baseline)', () => {
     expect(interleavedOut.nodes).toEqual(directOut.nodes);
     expect(interleavedOut.edges).toEqual(directOut.edges);
   });
+
+  // ---------------------------------------------------------------
+  // aud_render_annotation_endpoint_edges — hybrid promotion of
+  // annotation-endpoint edges. The L308-321 skip-guard is lifted;
+  // referenced annotations materialize as Cytoscape graph-nodes with
+  // sentinel defaults; the synthetic annotation-host tether anchors
+  // each promoted annotation to its host; the DOM-overlay-badge
+  // population is filtered to exclude promoted ids (mutual exclusion).
+  // ---------------------------------------------------------------
+
+  function makeAnnotationEndpointEdge(opts: {
+    sequence: number;
+    edgeId: string;
+    sourceNodeId?: string;
+    targetNodeId?: string;
+    sourceAnnotationId?: string;
+    targetAnnotationId?: string;
+    role?: EdgeRole;
+  }): Event {
+    const payload: Record<string, unknown> = {
+      edge_id: opts.edgeId,
+      role: opts.role ?? 'contradicts',
+      created_by: ACTOR,
+      created_at: '2026-05-30T00:00:00.000Z',
+    };
+    if (opts.sourceNodeId !== undefined) payload.source_node_id = opts.sourceNodeId;
+    else payload.source_annotation_id = opts.sourceAnnotationId;
+    if (opts.targetNodeId !== undefined) payload.target_node_id = opts.targetNodeId;
+    else payload.target_annotation_id = opts.targetAnnotationId;
+    return {
+      id: `00000000-0000-4000-8000-${(0x600 + opts.sequence).toString(16).padStart(12, '0')}`,
+      sessionId: SESSION_ID,
+      sequence: opts.sequence,
+      kind: 'edge-created',
+      actor: ACTOR,
+      payload: payload as Event extends { kind: 'edge-created'; payload: infer P } ? P : never,
+      createdAt: '2026-05-30T00:00:00.000Z',
+    };
+  }
+
+  const AEP_ANNO_1 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa601';
+  const AEP_ANNO_2 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa602';
+  const AEP_EDGE = '00000000-0000-4000-8000-000000000601';
+  const AEP_HOST_EDGE = '00000000-0000-4000-8000-000000000602';
+
+  it('(aep-1) stamps nodeKind: "statement" and annotationKind: null on every node from a node-created', () => {
+    const events: Event[] = [makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' })];
+    const { nodes } = projectGraph(events);
+    expect(nodes[0]?.data.nodeKind).toBe('statement');
+    expect(nodes[0]?.data.annotationKind).toBeNull();
+  });
+
+  it('(aep-2) stamps entityRole: "statement" on every edge from a statement edge-created', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeNodeCreated({ sequence: 2, nodeId: NODE_B, wording: 'B' }),
+      makeEdgeCreated({ sequence: 3, edgeId: EDGE_A, source: NODE_A, target: NODE_B }),
+    ];
+    const { edges } = projectGraph(events);
+    expect(edges[0]?.data.entityRole).toBe('statement');
+  });
+
+  it('(aep-3) emits an annotation-endpoint edge (node → annotation) with the promoted annotation node + host tether', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'N_A' }),
+      makeAnnotationCreated({
+        sequence: 2,
+        annotationId: AEP_ANNO_1,
+        kind: 'reframe',
+        content: 'reframe of N_A',
+        targetNodeId: NODE_A,
+        targetEdgeId: null,
+      }),
+      makeAnnotationEndpointEdge({
+        sequence: 3,
+        edgeId: AEP_EDGE,
+        sourceNodeId: NODE_A,
+        targetAnnotationId: AEP_ANNO_1,
+        role: 'contradicts',
+      }),
+    ];
+    const { nodes, edges } = projectGraph(events);
+    // Statement node + promoted annotation node both exist.
+    const annotationNode = nodes.find((n) => n.data.id === AEP_ANNO_1);
+    expect(annotationNode?.data.nodeKind).toBe('annotation');
+    expect(annotationNode?.data.annotationKind).toBe('reframe');
+    expect(annotationNode?.data.wording).toBe('reframe of N_A');
+    // Lifted statement edge with annotation-id target.
+    const statementEdge = edges.find((e) => e.data.id === AEP_EDGE);
+    expect(statementEdge?.data.source).toBe(NODE_A);
+    expect(statementEdge?.data.target).toBe(AEP_ANNO_1);
+    expect(statementEdge?.data.entityRole).toBe('statement');
+    // Synthetic host pseudo-edge.
+    const hostEdge = edges.find((e) => e.data.id === `annotation-host-${AEP_ANNO_1}`);
+    expect(hostEdge?.data.source).toBe(NODE_A);
+    expect(hostEdge?.data.target).toBe(AEP_ANNO_1);
+    expect(hostEdge?.data.entityRole).toBe('annotation-host');
+  });
+
+  it('(aep-4) emits an annotation-source-endpoint edge resolving data.source to the annotation id', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'N_A' }),
+      makeAnnotationCreated({
+        sequence: 2,
+        annotationId: AEP_ANNO_1,
+        kind: 'note',
+        targetNodeId: NODE_A,
+        targetEdgeId: null,
+      }),
+      makeAnnotationEndpointEdge({
+        sequence: 3,
+        edgeId: AEP_EDGE,
+        sourceAnnotationId: AEP_ANNO_1,
+        targetNodeId: NODE_A,
+      }),
+    ];
+    const { edges } = projectGraph(events);
+    const statementEdge = edges.find((e) => e.data.id === AEP_EDGE);
+    expect(statementEdge?.data.source).toBe(AEP_ANNO_1);
+    expect(statementEdge?.data.target).toBe(NODE_A);
+  });
+
+  it('(aep-5) emits an annotation-to-annotation edge with both endpoints resolved as annotation ids', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeAnnotationCreated({
+        sequence: 2,
+        annotationId: AEP_ANNO_1,
+        kind: 'note',
+        targetNodeId: NODE_A,
+        targetEdgeId: null,
+      }),
+      makeAnnotationCreated({
+        sequence: 3,
+        annotationId: AEP_ANNO_2,
+        kind: 'stance',
+        targetNodeId: NODE_A,
+        targetEdgeId: null,
+      }),
+      makeAnnotationEndpointEdge({
+        sequence: 4,
+        edgeId: AEP_EDGE,
+        sourceAnnotationId: AEP_ANNO_1,
+        targetAnnotationId: AEP_ANNO_2,
+      }),
+    ];
+    const { nodes, edges } = projectGraph(events);
+    expect(nodes.find((n) => n.data.id === AEP_ANNO_1)).toBeDefined();
+    expect(nodes.find((n) => n.data.id === AEP_ANNO_2)).toBeDefined();
+    const statementEdge = edges.find((e) => e.data.id === AEP_EDGE);
+    expect(statementEdge?.data.source).toBe(AEP_ANNO_1);
+    expect(statementEdge?.data.target).toBe(AEP_ANNO_2);
+  });
+
+  it('(aep-6) mutual exclusion: a node-targeted annotation promoted by an edge endpoint drops from data.annotations on the host node', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeAnnotationCreated({
+        sequence: 2,
+        annotationId: AEP_ANNO_1,
+        kind: 'note',
+        targetNodeId: NODE_A,
+        targetEdgeId: null,
+      }),
+      makeAnnotationEndpointEdge({
+        sequence: 3,
+        edgeId: AEP_EDGE,
+        sourceNodeId: NODE_A,
+        targetAnnotationId: AEP_ANNO_1,
+      }),
+    ];
+    const { nodes } = projectGraph(events);
+    const statementNode = nodes.find((n) => n.data.id === NODE_A);
+    expect(statementNode?.data.annotations.map((a) => a.id)).toEqual([]);
+  });
+
+  it('(aep-7) defensive skip: an annotation-endpoint edge referencing an unknown annotation id is silently dropped', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeAnnotationEndpointEdge({
+        sequence: 2,
+        edgeId: AEP_EDGE,
+        sourceNodeId: NODE_A,
+        targetAnnotationId: AEP_ANNO_1,
+      }),
+    ];
+    const { nodes, edges } = projectGraph(events);
+    expect(nodes.find((n) => n.data.id === NODE_A)).toBeDefined();
+    expect(edges.find((e) => e.data.id === AEP_EDGE)).toBeUndefined();
+  });
+
+  it('(aep-8) annotation nodes carry sentinel defaults for statement-only fields', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeAnnotationCreated({
+        sequence: 2,
+        annotationId: AEP_ANNO_1,
+        kind: 'reframe',
+        targetNodeId: NODE_A,
+        targetEdgeId: null,
+      }),
+      makeAnnotationEndpointEdge({
+        sequence: 3,
+        edgeId: AEP_EDGE,
+        sourceNodeId: NODE_A,
+        targetAnnotationId: AEP_ANNO_1,
+      }),
+    ];
+    const { nodes } = projectGraph(events);
+    const annotationNode = nodes.find((n) => n.data.id === AEP_ANNO_1);
+    expect(annotationNode?.data.kind).toBeNull();
+    expect(annotationNode?.data.facetStatuses).toEqual({});
+    expect(annotationNode?.data.rollupStatus).toBe('none');
+    expect(annotationNode?.data.axiomMarks).toEqual([]);
+    expect(annotationNode?.data.annotations).toEqual([]);
+    expect(annotationNode?.data.decomposed).toBeUndefined();
+  });
+
+  it('(aep-9) host pseudo-edge is omitted (and node carries hostMissing) when the host cannot be resolved', () => {
+    const events: Event[] = [
+      // Annotation is decorating NODE_B but NODE_B is never created.
+      makeAnnotationCreated({
+        sequence: 1,
+        annotationId: AEP_ANNO_1,
+        kind: 'note',
+        targetNodeId: NODE_B,
+        targetEdgeId: null,
+      }),
+      makeNodeCreated({ sequence: 2, nodeId: NODE_A, wording: 'A' }),
+      makeAnnotationEndpointEdge({
+        sequence: 3,
+        edgeId: AEP_EDGE,
+        sourceNodeId: NODE_A,
+        targetAnnotationId: AEP_ANNO_1,
+      }),
+    ];
+    const { nodes, edges } = projectGraph(events);
+    const annotationNode = nodes.find((n) => n.data.id === AEP_ANNO_1);
+    expect(annotationNode?.data.hostMissing).toBe(true);
+    expect(edges.find((e) => e.data.id === `annotation-host-${AEP_ANNO_1}`)).toBeUndefined();
+  });
+
+  it('(aep-10) an edge-hosted annotation tethers to the host edge source node', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeNodeCreated({ sequence: 2, nodeId: NODE_B, wording: 'B' }),
+      makeEdgeCreated({ sequence: 3, edgeId: AEP_HOST_EDGE, source: NODE_A, target: NODE_B }),
+      makeAnnotationCreated({
+        sequence: 4,
+        annotationId: AEP_ANNO_1,
+        kind: 'scope-change',
+        targetNodeId: null,
+        targetEdgeId: AEP_HOST_EDGE,
+      }),
+      makeAnnotationEndpointEdge({
+        sequence: 5,
+        edgeId: AEP_EDGE,
+        sourceNodeId: NODE_A,
+        targetAnnotationId: AEP_ANNO_1,
+      }),
+    ];
+    const { edges } = projectGraph(events);
+    const hostEdge = edges.find((e) => e.data.id === `annotation-host-${AEP_ANNO_1}`);
+    expect(hostEdge?.data.source).toBe(NODE_A);
+    expect(hostEdge?.data.target).toBe(AEP_ANNO_1);
+    expect(hostEdge?.data.entityRole).toBe('annotation-host');
+  });
 });

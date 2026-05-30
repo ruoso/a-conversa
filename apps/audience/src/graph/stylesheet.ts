@@ -83,6 +83,15 @@ export const BROADCAST_NODE_FONT_WEIGHT = 600 as const;
 export const BROADCAST_EDGE_FONT_WEIGHT = 500 as const;
 
 /**
+ * Font size (px) for promoted annotation nodes. Smaller than statement
+ * nodes (14 px) so annotations read as visually subordinate to the
+ * statements they comment on — per `aud_render_annotation_endpoint_edges`
+ * Decision §5. Matches the participant's annotation-node selector (12 px)
+ * for cross-surface typographic consistency on the Cytoscape canvas.
+ */
+export const BROADCAST_ANNOTATION_FONT_SIZE_PX = 12 as const;
+
+/**
  * Per-state color pins for the audience's Cytoscape `STYLESHEET`.
  *
  * One entry per agreement-layer state that differentiates on color
@@ -282,6 +291,86 @@ export const STYLESHEET: StylesheetJson = [
     selector: 'node[?decomposed]',
     style: {
       opacity: 0.15,
+    },
+  },
+  // `aud_render_annotation_endpoint_edges` Decision §5 — annotation
+  // graph-node baseline. The `nodeKind` attribute key is fresh (no
+  // cross-layer interference with the per-rollupStatus / `[?decomposed]`
+  // selectors above — annotation nodes stamp the sentinel
+  // `rollupStatus: 'none'` and `decomposed: undefined` so those
+  // selectors don't match). Round-tag shape signals "commentary"
+  // visually; the 140×48 footprint is proportional to (and smaller
+  // than) the statement node 200×80 so promoted annotations read as
+  // subordinate. Baseline palette is amber-100 fill + amber-900
+  // border/text (Decision §5 note kind); the four per-kind overrides
+  // below claim background + border + text on the non-`note` kinds.
+  {
+    selector: "node[nodeKind = 'annotation']",
+    style: {
+      shape: 'round-tag',
+      width: 140,
+      height: 48,
+      'background-color': '#fef3c7',
+      'border-color': '#92400e',
+      'border-width': 1,
+      color: '#92400e',
+      'font-size': BROADCAST_ANNOTATION_FONT_SIZE_PX,
+      'text-max-width': '120px',
+    },
+  },
+  // Per-kind palette overrides per Decision §5: amber-100/-900 (note),
+  // violet-100/-900 (reframe), teal-100/-900 (scope-change), sky-100/-900
+  // (stance). Matches the participant's `part_render_annotation_endpoint_edges`
+  // D4 cross-surface vocabulary; the per-kind colour is the only way to
+  // communicate annotation kind on the broadcast canvas (no per-node
+  // React subtree, no title-attribute hover affordance).
+  {
+    selector: "node[nodeKind = 'annotation'][annotationKind = 'note']",
+    style: {
+      'background-color': '#fef3c7',
+      'border-color': '#92400e',
+      color: '#92400e',
+    },
+  },
+  {
+    selector: "node[nodeKind = 'annotation'][annotationKind = 'reframe']",
+    style: {
+      'background-color': '#ede9fe',
+      'border-color': '#4c1d95',
+      color: '#4c1d95',
+    },
+  },
+  {
+    selector: "node[nodeKind = 'annotation'][annotationKind = 'scope-change']",
+    style: {
+      'background-color': '#ccfbf1',
+      'border-color': '#134e4a',
+      color: '#134e4a',
+    },
+  },
+  {
+    selector: "node[nodeKind = 'annotation'][annotationKind = 'stance']",
+    style: {
+      'background-color': '#e0f2fe',
+      'border-color': '#0c4a6e',
+      color: '#0c4a6e',
+    },
+  },
+  // `aud_render_annotation_endpoint_edges` Decision §7 — synthetic
+  // annotation-host pseudo-edge. Dashed slate-300 line, no arrow, no
+  // label. The `label: ''` override is intentional — Cytoscape edge
+  // labels are stylesheet-driven; setting `label: ''` overrides the
+  // baseline `label: 'data(roleLabel)'` so the host pseudo-edge stays
+  // unannotated. The audience's `autoungrabify: true` core posture
+  // already disables interaction; no `pointer-events: none` analog is
+  // needed.
+  {
+    selector: "edge[entityRole = 'annotation-host']",
+    style: {
+      'line-style': 'dashed',
+      'line-color': '#cbd5e1',
+      'target-arrow-shape': 'none',
+      label: '',
     },
   },
 ];

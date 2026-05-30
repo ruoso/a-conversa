@@ -38,7 +38,8 @@
 // shared per-session user-creation path: alice, ben, maria, dave,
 // erin, frank. Later additions extend the pool: scenario (7) reuses
 // alice under a fresh `freshAuthedContext`, scenario (8) reuses alice
-// likewise, scenario (9) takes `grace`.
+// likewise, scenario (9) takes `grace`, scenario (10) takes `henry`,
+// scenario (11) takes `ivan`.
 //
 // Refinement: tasks/refinements/audience/aud_diagnostic_edge_fire_animation.md
 //   (Decision §6 — Playwright spec lands INLINE here, not deferred. The
@@ -53,6 +54,15 @@
 //   the fresh-session post-empty-mount cycle-fire animates the three
 //   node-locus halos at the system seam. Pool member: `henry` (next
 //   unallocated after grace).)
+// Refinement: tasks/refinements/audience/aud_render_annotation_endpoint_edges.md
+//   (Decision §8 — Playwright cover IS in scope (not deferred); the
+//   audience surface is reachable via `aud_session_url`. Scenario (11)
+//   below seeds `node-created` + `annotation-created` +
+//   `edge-created (target_annotation_id)` via the same dev seam and
+//   pins the mutual-exclusion contract: the promoted annotation
+//   renders as a Cytoscape graph-node, and the DOM-overlay badge for
+//   its id is suppressed. Pool member: `ivan` (next unallocated after
+//   henry).)
 
 import {
   expect,
@@ -202,6 +212,134 @@ async function seedEdgeCreated(
           created_at: '2026-05-27T00:00:00.000Z',
         },
         createdAt: '2026-05-27T00:00:00.000Z',
+      });
+    },
+    seed,
+  );
+}
+
+/**
+ * Seed a synthetic `annotation-created` event into the audience
+ * surface's WS store via the dev-only `window.__aConversaWsStore`
+ * seam. Used by scenario (11) below to materialize a promoted
+ * annotation graph-node on the broadcast canvas.
+ */
+async function seedAnnotationCreated(
+  page: Page,
+  seed: {
+    sessionId: string;
+    sequence: number;
+    eventId: string;
+    annotationId: string;
+    kind: 'note' | 'reframe' | 'scope-change' | 'stance';
+    content: string;
+    targetNodeId: string | null;
+    targetEdgeId: string | null;
+    actorId: string;
+  },
+): Promise<void> {
+  await page.evaluate(
+    (s: {
+      sessionId: string;
+      sequence: number;
+      eventId: string;
+      annotationId: string;
+      kind: 'note' | 'reframe' | 'scope-change' | 'stance';
+      content: string;
+      targetNodeId: string | null;
+      targetEdgeId: string | null;
+      actorId: string;
+    }) => {
+      const store = (
+        window as unknown as {
+          __aConversaWsStore?: {
+            getState: () => { applyEvent: (event: unknown) => void };
+          };
+        }
+      ).__aConversaWsStore;
+      if (!store) {
+        throw new Error('__aConversaWsStore is not exposed on window (audience dev seam)');
+      }
+      const apply = store.getState().applyEvent.bind(store.getState());
+      apply({
+        id: s.eventId,
+        sessionId: s.sessionId,
+        sequence: s.sequence,
+        kind: 'annotation-created',
+        actor: s.actorId,
+        payload: {
+          annotation_id: s.annotationId,
+          kind: s.kind,
+          content: s.content,
+          target_node_id: s.targetNodeId,
+          target_edge_id: s.targetEdgeId,
+          created_by: s.actorId,
+          created_at: '2026-05-30T00:00:00.000Z',
+        },
+        createdAt: '2026-05-30T00:00:00.000Z',
+      });
+    },
+    seed,
+  );
+}
+
+/**
+ * Seed a synthetic annotation-endpoint `edge-created` event — i.e. an
+ * `edge-created` whose `target_annotation_id` (or `source_annotation_id`)
+ * is set instead of the node-id endpoint. Used by scenario (11) to
+ * exercise the lifted skip-guard at
+ * `apps/audience/src/graph/projectGraph.ts:308-321`.
+ */
+async function seedAnnotationEndpointEdgeCreated(
+  page: Page,
+  seed: {
+    sessionId: string;
+    sequence: number;
+    eventId: string;
+    edgeId: string;
+    sourceNodeId: string;
+    targetAnnotationId: string;
+    role: 'contradicts' | 'supports' | 'rebuts';
+    actorId: string;
+  },
+): Promise<void> {
+  await page.evaluate(
+    (s: {
+      sessionId: string;
+      sequence: number;
+      eventId: string;
+      edgeId: string;
+      sourceNodeId: string;
+      targetAnnotationId: string;
+      role: 'contradicts' | 'supports' | 'rebuts';
+      actorId: string;
+    }) => {
+      const store = (
+        window as unknown as {
+          __aConversaWsStore?: {
+            getState: () => { applyEvent: (event: unknown) => void };
+          };
+        }
+      ).__aConversaWsStore;
+      if (!store) {
+        throw new Error('__aConversaWsStore is not exposed on window (audience dev seam)');
+      }
+      const apply = store.getState().applyEvent.bind(store.getState());
+      apply({
+        id: s.eventId,
+        sessionId: s.sessionId,
+        sequence: s.sequence,
+        kind: 'edge-created',
+        actor: s.actorId,
+        payload: {
+          edge_id: s.edgeId,
+          role: s.role,
+          source_node_id: s.sourceNodeId,
+          target_annotation_id: s.targetAnnotationId,
+          created_by: s.actorId,
+          created_at: '2026-05-30T00:00:00.000Z',
+        },
+        createdAt: '2026-05-30T00:00:00.000Z',
       });
     },
     seed,
@@ -832,6 +970,103 @@ test.describe('Audience live session route — /a/sessions/:sessionId', () => {
       await expect(nodeHaloLocator.nth(0)).toHaveClass(/aud-diagnostic-fire-blocking/);
       await expect(nodeHaloLocator.nth(1)).toHaveClass(/aud-diagnostic-fire-blocking/);
       await expect(nodeHaloLocator.nth(2)).toHaveClass(/aud-diagnostic-fire-blocking/);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('(11) Annotation-endpoint edge promotes annotation to a Cytoscape node + suppresses the DOM-overlay badge', async ({
+    browser,
+  }) => {
+    // Refinement: tasks/refinements/audience/aud_render_annotation_endpoint_edges.md
+    //   (Decision §8 — Playwright cover IS in scope; the audience surface
+    //   is reachable via `/a/sessions/:sessionId` and the
+    //   `window.__aConversaWsStore` dev seam lets the scenario seed the
+    //   minimum sequence of events that exercises the lifted
+    //   skip-guard at `projectGraph.ts:308-321`. The load-bearing
+    //   observable contract pinned end-to-end here is the
+    //   mutual-exclusion rule from Decisions §1 + §3: an annotation
+    //   referenced as an edge endpoint becomes a Cytoscape graph-node
+    //   and SUPPRESSES its DOM-overlay badge. The Vitest layer pins
+    //   the Cytoscape-side projection + stylesheet branches; this
+    //   scenario asserts the end-to-end wiring round-trips through the
+    //   WS store + the live React + Cytoscape mount on the real route.
+    //   Pool member: `ivan` (next unallocated after henry).)
+    const context = await freshAuthedContext(browser);
+    const page = await context.newPage();
+    try {
+      const ivan = await loginAs(page, { username: 'ivan' });
+      expect(ivan.screenName.toLowerCase()).toBe('ivan');
+      const sessionId = await createSession(page, {
+        topic: 'Annotation-endpoint edge promotes to a Cytoscape node on the audience canvas',
+        privacy: 'public',
+      });
+
+      await page.goto(`/a/sessions/${sessionId}`);
+      await expect(page.getByTestId('audience-graph-root')).toBeVisible({ timeout: 15_000 });
+
+      const NODE_1_ID = 'cccccccc-1111-4ccc-8ccc-cccccccccccc';
+      const ANNO_1_ID = 'cccccccc-aaaa-4ccc-8ccc-ccccccccaaaa';
+      const STATEMENT_EDGE_ID = 'cccccccc-eeee-4ccc-8ccc-cccccccceeee';
+
+      // Seed: N1 → A1 (reframe, target_node_id=N1) → edge(N1 →
+      // target_annotation_id=A1). After the projection runs, A1 is
+      // promoted to a Cytoscape graph-node and the DOM badge for A1 is
+      // suppressed.
+      await seedNodeCreated(page, {
+        sessionId,
+        sequence: 1_000_500,
+        eventId: 'cccccccc-dddd-4ccc-8ccc-cccccccc0001',
+        nodeId: NODE_1_ID,
+        wording: 'Means-testing carries stigma costs',
+        actorId: ivan.userId,
+      });
+      await seedAnnotationCreated(page, {
+        sessionId,
+        sequence: 1_000_501,
+        eventId: 'cccccccc-dddd-4ccc-8ccc-cccccccc0002',
+        annotationId: ANNO_1_ID,
+        kind: 'reframe',
+        content: 'Means-test ≠ universal',
+        targetNodeId: NODE_1_ID,
+        targetEdgeId: null,
+        actorId: ivan.userId,
+      });
+      await seedAnnotationEndpointEdgeCreated(page, {
+        sessionId,
+        sequence: 1_000_502,
+        eventId: 'cccccccc-dddd-4ccc-8ccc-cccccccc0003',
+        edgeId: STATEMENT_EDGE_ID,
+        sourceNodeId: NODE_1_ID,
+        targetAnnotationId: ANNO_1_ID,
+        role: 'contradicts',
+        actorId: ivan.userId,
+      });
+
+      await expect
+        .poll(() => readEventsLength(page, sessionId), { timeout: 15_000 })
+        .toBeGreaterThanOrEqual(3);
+
+      // Canvas is mounted — Cytoscape's render layers are present.
+      const canvasCount = await page.getByTestId('audience-graph-root').locator('canvas').count();
+      expect(canvasCount).toBeGreaterThan(0);
+
+      // Mutual-exclusion contract per Decision §3 + Constraint §2: the
+      // DOM-overlay badge for the promoted annotation must NOT mount;
+      // the annotation renders as a Cytoscape graph-node instead. This
+      // is the unique behavioural pin this scenario adds to the
+      // existing Vitest cover.
+      await expect(
+        page.locator(`[data-testid="audience-annotation-badge-${ANNO_1_ID}"]`),
+      ).toHaveCount(0);
+
+      // The audience-annotation-overlay continues to mount (the third
+      // sibling of audience-graph-root, per `aud_annotation_rendering`),
+      // but it carries no row for the promoted annotation id.
+      const overlay = page.getByTestId('audience-annotation-overlay');
+      await expect(overlay).toHaveCount(1);
+      const promotedRow = overlay.locator(`[data-element-id="${ANNO_1_ID}"]`);
+      await expect(promotedRow).toHaveCount(0);
     } finally {
       await context.close();
     }

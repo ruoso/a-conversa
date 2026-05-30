@@ -72,6 +72,22 @@
 //   Decision §1 — completes the meta-commentary layer's symmetry
 //   between node and edge entities on the broadcast canvas.)
 //
+// Refinement: tasks/refinements/audience/aud_render_annotation_endpoint_edges.md
+//   (Decisions §1–§11 — hybrid promotion: lift the L308-321 skip-guard
+//   on annotation-endpoint edges by promoting referenced annotations to
+//   standalone Cytoscape graph-nodes. `AudienceNodeData` widens with
+//   `nodeKind: 'statement' | 'annotation'`, `annotationKind:
+//   AnnotationKind | null`, and optional `hostMissing`. `AudienceEdgeData`
+//   widens with `entityRole: 'statement' | 'annotation-host'`. End-of-
+//   walk builds the promoted set via `computeAnnotationsAsEndpoints`,
+//   concatenates `projectAnnotationNodes` onto `nodes`, concatenates
+//   `projectAnnotationHostEdges` onto `edges`, and post-filters the
+//   `nodeAnnotationIndex` / `edgeAnnotationIndex` buckets against the
+//   promoted set so promoted annotations render as Cytoscape nodes only
+//   — never also as DOM-overlay badges. A defensive `continue`-skip
+//   protects against `edge-created` payloads that reference an
+//   annotation id whose `annotation-created` envelope hasn't been seen.)
+//
 // Refinement: tasks/refinements/audience/aud_decomposition_animation.md
 //   (Decision §1 — the audience surface paints a one-shot slate-tinted
 //   halo on parents whose `data.decomposed` first flips to `true` mid-
@@ -107,7 +123,13 @@
 //           projection stays robust against either wire shape).
 
 import type { ElementDefinition } from 'cytoscape';
-import type { EdgeRole, Event, StatementKind } from '@a-conversa/shared-types';
+import type { AnnotationKind, EdgeRole, Event, StatementKind } from '@a-conversa/shared-types';
+
+import {
+  computeAnnotationsAsEndpoints,
+  projectAnnotationHostEdges,
+  projectAnnotationNodes,
+} from './annotations.js';
 
 import {
   cardRollupStatus,
@@ -146,8 +168,40 @@ import {
 export interface AudienceNodeData {
   /** Node id (mirrors Cytoscape's `data.id` convention). */
   readonly id: string;
-  /** Original wording from the `node-created` payload. */
+  /** Original wording from the `node-created` payload (or annotation
+   * `content` for promoted annotation nodes per
+   * `aud_render_annotation_endpoint_edges` Decision §6). */
   readonly wording: string;
+  /**
+   * Discriminates statement nodes (emitted from `node-created` events)
+   * from annotation graph-nodes (materialized when an `edge-created`
+   * payload references an annotation id via `source_annotation_id` /
+   * `target_annotation_id`). Per
+   * `aud_render_annotation_endpoint_edges` Decision §3 the shared shape
+   * carries the discriminator so the stylesheet and overlay code branch
+   * via `nodeKind` rather than via a discriminated-union split.
+   * Statement-only fields (`kind`, `facetStatuses`, `rollupStatus`,
+   * `axiomMarks`, `annotations`, `decomposed`) carry sentinel defaults
+   * on annotation nodes so the existing per-status / decomposed /
+   * axiom-mark selectors don't paint on them.
+   */
+  readonly nodeKind: 'statement' | 'annotation';
+  /**
+   * For annotation graph-nodes (`nodeKind === 'annotation'`), the wire
+   * `annotation-created.kind` enum value (`'note'` / `'reframe'` /
+   * `'scope-change'` / `'stance'`). `null` for statement nodes — the
+   * stylesheet's `[annotationKind = "..."]` selectors then paint
+   * nothing on statement nodes.
+   */
+  readonly annotationKind: AnnotationKind | null;
+  /**
+   * Stamped `true` on a promoted annotation node when its host can't
+   * be resolved per `aud_render_annotation_endpoint_edges` Decision §4
+   * (defensive case — wire-protocol violation). Absent on every other
+   * node. The annotation still renders so the broadcast viewer can see
+   * the entity rather than encountering a silent drop.
+   */
+  readonly hostMissing?: boolean;
   /** Committed classification, or `null` while the node is unclassified. */
   readonly kind: StatementKind | null;
   /** Per-facet status record, sourced from the `FacetStatusIndex`. */
@@ -195,6 +249,17 @@ export interface AudienceEdgeData {
   readonly target: string;
   /** Methodology edge role (`supports`, `rebuts`, etc.). */
   readonly role: EdgeRole;
+  /**
+   * Discriminates statement edges (emitted from `edge-created` events)
+   * from synthetic annotation-host pseudo-edges (one dashed tether per
+   * promoted annotation per
+   * `aud_render_annotation_endpoint_edges` Decision §4). The
+   * `edge[entityRole = 'annotation-host']` selector paints the dashed
+   * slate tether without a target arrow or label; statement edges
+   * inherit the baseline `edge` selector. Default `'statement'` is
+   * stamped on every emitted statement edge.
+   */
+  readonly entityRole: 'statement' | 'annotation-host';
   /** Per-facet status record, sourced from the `FacetStatusIndex`. */
   readonly facetStatuses: Readonly<Partial<Record<FacetName, FacetStatus>>>;
   /** Highest-priority facet status, or `'none'` (sentinel) when empty. */
@@ -254,8 +319,30 @@ export function projectGraph(events: readonly Event[]): {
   const facetStatusIndex = computeFacetStatuses(events);
   const axiomMarkIndex = groupAxiomMarksByNode(projectAxiomMarks(events));
   const projectedAnnotations = projectAnnotations(events);
-  const nodeAnnotationIndex = groupAnnotationsByNode(projectedAnnotations);
-  const edgeAnnotationIndex = groupAnnotationsByEdge(projectedAnnotations);
+  // Hybrid promotion per `aud_render_annotation_endpoint_edges` Decisions
+  // §1 + §3: an annotation referenced as an edge endpoint becomes a
+  // Cytoscape graph-node; the DOM-overlay badge is suppressed for that
+  // id. The promoted set is computed once up-front and used to filter
+  // both the node-targeted and edge-targeted annotation buckets before
+  // they're stamped on `data.annotations`, AND to drive the end-of-walk
+  // materialization pass.
+  const promotedAnnotationIds = computeAnnotationsAsEndpoints(events);
+  const nodeAnnotationIndex = filterAnnotationIndex(
+    groupAnnotationsByNode(projectedAnnotations),
+    promotedAnnotationIds,
+  );
+  const edgeAnnotationIndex = filterAnnotationIndex(
+    groupAnnotationsByEdge(projectedAnnotations),
+    promotedAnnotationIds,
+  );
+  // Track which annotation ids have been seen as `annotation-created`
+  // by the time their `edge-created` reference arrives. The lifted
+  // `edge-created` arm defensively `continue`-skips any
+  // annotation-endpoint edge whose endpoint hasn't been seen yet — per
+  // Decision §8 + Constraint §11 (Cytoscape's orphan-edge invariant
+  // would otherwise throw at mount because the promoted-annotation
+  // node hasn't been emitted yet for that id).
+  const seenAnnotationIds = new Set<string>();
   const nodes: AudienceNodeElement[] = [];
   const nodeIndexById = new Map<string, number>();
   const edges: AudienceEdgeElement[] = [];
@@ -293,6 +380,8 @@ export function projectGraph(events: readonly Event[]): {
         data: {
           id: event.payload.node_id,
           wording: event.payload.wording,
+          nodeKind: 'statement',
+          annotationKind: null,
           kind: null,
           facetStatuses,
           rollupStatus,
@@ -305,17 +394,45 @@ export function projectGraph(events: readonly Event[]): {
       continue;
     }
 
+    if (event.kind === 'annotation-created') {
+      // Track the annotation id so a later annotation-endpoint
+      // `edge-created` referencing it survives the defensive seen-id
+      // skip below. Per Decision §8 the projection-time order matters:
+      // an `edge-created (target_annotation_id = A)` arriving before
+      // `annotation-created (id = A)` is a wire-protocol violation and
+      // the edge silently drops; once `annotation-created` lands, the
+      // edge re-materialises on the next projection pass.
+      seenAnnotationIds.add(event.payload.annotation_id);
+      continue;
+    }
+
     if (event.kind === 'edge-created') {
-      // Annotation-endpoint edges (per `edge_target_annotation_schema_extension`
-      // + `projection_edge_annotation_endpoint`) flow through the
-      // projection layer now, but the audience's Cytoscape canvas
-      // doesn't yet render annotations as graph nodes — so an
-      // annotation-endpoint edge has no source/target id to bind to.
-      // Skip until `aud_render_annotation_endpoint_edges` resolves
-      // the canvas-rendering design.
+      // Annotation-endpoint widening per
+      // `aud_render_annotation_endpoint_edges` Decisions §1 + §8.
+      // The wire schema's XOR `.refine()` guarantees exactly one of
+      // `source_node_id` / `source_annotation_id` is set per endpoint
+      // (symmetric for target); the `?? null` tail is defensive — if
+      // the refinement were ever weakened the projector falls through
+      // and the edge silently drops rather than throwing.
+      const sourceId = event.payload.source_node_id ?? event.payload.source_annotation_id ?? null;
+      const targetId = event.payload.target_node_id ?? event.payload.target_annotation_id ?? null;
+      if (sourceId === null || targetId === null) continue;
+      // Decision §2 + Constraint §8 — defensive skip when an
+      // annotation-endpoint references an annotation id whose
+      // `annotation-created` event hasn't been seen. The materialization
+      // pass at end-of-walk emits one Cytoscape node per id in the
+      // `(promoted ∩ projectedAnnotations)` intersection; an edge whose
+      // annotation endpoint never materializes a node would orphan at
+      // Cytoscape's `cy.add()` invariant (Constraint §11).
       if (
-        event.payload.source_node_id === undefined ||
-        event.payload.target_node_id === undefined
+        event.payload.source_annotation_id !== undefined &&
+        !seenAnnotationIds.has(event.payload.source_annotation_id)
+      ) {
+        continue;
+      }
+      if (
+        event.payload.target_annotation_id !== undefined &&
+        !seenAnnotationIds.has(event.payload.target_annotation_id)
       ) {
         continue;
       }
@@ -327,9 +444,10 @@ export function projectGraph(events: readonly Event[]): {
         group: 'edges',
         data: {
           id: event.payload.edge_id,
-          source: event.payload.source_node_id,
-          target: event.payload.target_node_id,
+          source: sourceId,
+          target: targetId,
           role: event.payload.role,
+          entityRole: 'statement',
           facetStatuses,
           rollupStatus,
           annotations,
@@ -407,5 +525,62 @@ export function projectGraph(events: readonly Event[]): {
     }
   }
 
+  // Annotation graph-node + host-edge materialization pass per
+  // `aud_render_annotation_endpoint_edges` Decisions §1 + §4.
+  // Constraint §11 — emit nodes BEFORE concatenating edges so the
+  // synthetic host pseudo-edges' `target` (the annotation id) is a
+  // known graph element at Cytoscape `cy.add()` time. The
+  // `nondanglingEdges` filter at the `<AudienceGraphView>` layer is
+  // the belt-and-suspenders pin against orphan edges; emitting in
+  // dependency order here keeps the projection itself self-consistent.
+  const annotationNodes = projectAnnotationNodes(
+    projectedAnnotations,
+    promotedAnnotationIds,
+    events,
+  );
+  for (const annotationNode of annotationNodes) {
+    nodeIndexById.set(annotationNode.data.id, nodes.length);
+    nodes.push(annotationNode);
+  }
+  const annotationHostEdges = projectAnnotationHostEdges(
+    projectedAnnotations,
+    promotedAnnotationIds,
+    events,
+  );
+  for (const hostEdge of annotationHostEdges) {
+    edges.push(hostEdge);
+  }
+
   return { nodes, edges };
+}
+
+/**
+ * Drop entries whose annotation id is in the promoted set so the
+ * remaining `data.annotations` array on each entity carries only the
+ * DOM-overlay-badge population (mutual exclusion per
+ * `aud_render_annotation_endpoint_edges` Decision §3 + Constraint §2).
+ *
+ * The filter walks each `(entityId, annotations)` pair once and either
+ * preserves the original array reference (no promoted entries — stable
+ * React-memoization identity) or replaces it with a new filtered array.
+ * Entities whose ALL annotations got promoted drop out of the index
+ * entirely so the `index.get(entityId)` lookup falls back to
+ * `EMPTY_ANNOTATIONS` on the corresponding node/edge arm.
+ */
+function filterAnnotationIndex(
+  index: Map<string, Annotation[]>,
+  promotedSet: ReadonlySet<string>,
+): Map<string, Annotation[]> {
+  if (promotedSet.size === 0) return index;
+  const out = new Map<string, Annotation[]>();
+  for (const [entityId, annotations] of index) {
+    const kept = annotations.filter((annotation) => !promotedSet.has(annotation.id));
+    if (kept.length === 0) continue;
+    if (kept.length === annotations.length) {
+      out.set(entityId, annotations);
+      continue;
+    }
+    out.set(entityId, kept);
+  }
+  return out;
 }

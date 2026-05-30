@@ -322,6 +322,7 @@ task audience "Audience and broadcast" {
     task aud_render_annotation_endpoint_edges "Render annotation-endpoint edges on audience Cytoscape canvas" {
       effort 1.5d
       allocate team
+      complete 100
       depends !aud_annotation_rendering, data_and_methodology.projection.projection_edge_annotation_endpoint
       note -8<-
         Source of debt: projection_edge_annotation_endpoint — the audience Cytoscape canvas currently

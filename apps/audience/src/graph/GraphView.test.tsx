@@ -1350,6 +1350,47 @@ describe('<AudienceGraphView>', () => {
     );
   });
 
+  // ---------------------------------------------------------------
+  // aud_render_annotation_endpoint_edges — annotation graph-node +
+  // host pseudo-edge structural pins on STYLESHEET + mount-time
+  // computed-style regression cover. The projection-time emission +
+  // mutual-exclusion logic is pinned in `projectGraph.test.ts`; the
+  // helpers themselves are pinned in `annotations.test.ts`; this
+  // layer asserts what Cytoscape resolves at mount.
+  // ---------------------------------------------------------------
+
+  it("(aep-ss-a) STYLESHEET carries a node[nodeKind = 'annotation'] entry with round-tag shape and amber baseline", () => {
+    const style = findStylesheetEntry("node[nodeKind = 'annotation']");
+    expect(style.shape).toBe('round-tag');
+    expect(style.width).toBe(140);
+    expect(style.height).toBe(48);
+    expect(style['background-color']).toBe('#fef3c7');
+    expect(style['border-color']).toBe('#92400e');
+  });
+
+  it("(aep-ss-b) STYLESHEET carries an annotationKind = 'reframe' override with the violet palette", () => {
+    const style = findStylesheetEntry("node[nodeKind = 'annotation'][annotationKind = 'reframe']");
+    expect(style['border-color']).toBe('#4c1d95');
+    expect(style['background-color']).toBe('#ede9fe');
+  });
+
+  it("(aep-ss-c) STYLESHEET carries an edge[entityRole = 'annotation-host'] entry with dashed slate-300 line and no arrow", () => {
+    const style = findStylesheetEntry("edge[entityRole = 'annotation-host']");
+    expect(style['line-style']).toBe('dashed');
+    expect(style['line-color']).toBe('#cbd5e1');
+    expect(style['target-arrow-shape']).toBe('none');
+    expect(style.label).toBe('');
+  });
+
+  it('(aep-mm-a) a statement node continues to render with the baseline (no annotation-selector bleed)', () => {
+    const result = renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    const cy = result.getCy();
+    const node = cy.getElementById(NODE_A);
+    expect(node.data('nodeKind')).toBe('statement');
+    expect(node.style('shape')).toBe('round-rectangle');
+  });
+
   it('(ww) a session with one node-targeted + one edge-targeted annotation mounts two distinct rows', async () => {
     renderView();
     seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
