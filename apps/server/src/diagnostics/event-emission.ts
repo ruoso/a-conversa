@@ -51,6 +51,7 @@ import {
   type SelfContradictsHint,
   type AnnotationOfAnnotationChainHint,
   type SelfReferentialAnnotationContradictsHint,
+  type NonSelfReferentialAnnotationContradictsHint,
 } from './coherency-hint-detection.js';
 
 // ---------------------------------------------------------------
@@ -268,6 +269,8 @@ function coherencyHintIdentityKey(hint: CoherencyHint): string {
       return annotationOfAnnotationChainKey(hint);
     case 'self-referential-annotation-contradicts':
       return selfReferentialAnnotationContradictsKey(hint);
+    case 'non-self-referential-annotation-contradicts':
+      return nonSelfReferentialAnnotationContradictsKey(hint);
   }
 }
 
@@ -297,6 +300,15 @@ function selfReferentialAnnotationContradictsKey(
   // and `annotation-of-annotation-chain` — one diagnostic per
   // qualifying edge.
   return `coherency-hint\0self-referential-annotation-contradicts\0${hint.edgeId}`;
+}
+
+function nonSelfReferentialAnnotationContradictsKey(
+  hint: NonSelfReferentialAnnotationContradictsHint,
+): string {
+  // Identity is the qualifying edge id — one diagnostic per qualifying
+  // edge. Mirrors the four other edge-id-keyed coherency-hint identity
+  // shapes.
+  return `coherency-hint\0non-self-referential-annotation-contradicts\0${hint.edgeId}`;
 }
 
 // ---------------------------------------------------------------

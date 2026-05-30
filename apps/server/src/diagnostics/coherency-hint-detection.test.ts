@@ -955,15 +955,21 @@ describe('detectCoherencyHints — self-referential-annotation-contradicts hints
     expect(detectCoherencyHints(projection)).toEqual([]);
   });
 
-  it('annotation anchors a different node → no hint', () => {
+  it('annotation anchors a different node → no self-referential hint', () => {
+    // The cross-anchor shape (A anchors on N2 but the contradicts edge runs
+    // N1 ↔ A) is owned by the sibling `non-self-referential-annotation-contradicts`
+    // rule; filter to scope this assertion to the self-referential rule only.
     resetSeq();
     const projection = seedSession();
     createNode(projection, NODE_SR, 'N1');
     createNode(projection, NODE_SR_2, 'N2');
-    // A anchors on N2 but the contradicts edge runs N1 ↔ A.
     createAnnotation(projection, ANN_SR_1, { nodeId: NODE_SR_2 });
     createNodeToAnnotationEdge(projection, EDGE_SRAC_1, NODE_SR, ANN_SR_1, 'contradicts');
-    expect(detectCoherencyHints(projection)).toEqual([]);
+    expect(
+      detectCoherencyHints(projection).filter(
+        (h) => h.kind === 'self-referential-annotation-contradicts',
+      ),
+    ).toEqual([]);
   });
 
   it('annotation anchors an edge (not a node) → no hint (per D3 — edge-anchor variant out of scope)', () => {
@@ -1096,6 +1102,213 @@ describe('detectCoherencyHints — self-referential-annotation-contradicts hints
         edgeId: EDGE_SRAC_1,
         nodeId: NODE_SR,
         annotationId: ANN_SR_1,
+      },
+    ]);
+  });
+});
+
+// ---------------------------------------------------------------
+// Non-self-referential-annotation-contradicts hints.
+//
+// Refinement: tasks/refinements/data-and-methodology/coherency_non_self_referential_annotation_contradicts_rule.md
+//
+// The rule fires once per visible `contradicts` edge connecting a
+// node `N1` and an annotation `A` whose anchor is some *other* node
+// `N2` (`A.targetNodeId !== null` AND `A.targetNodeId !== N1`) — in
+// either edge direction (per D2). The anchor-mismatch filter is the
+// inverse of the sibling self-referential rule's anchor-match filter;
+// the two rules partition the mixed-endpoint contradicts shape space.
+// Per D8 the payload carries `anchorNodeId` to surface the third
+// structurally-load-bearing entity (the annotation's actual anchor).
+// ---------------------------------------------------------------
+
+const EDGE_NSRC_1 = '00000000-0000-4000-8000-0000000c6e01';
+const EDGE_NSRC_2 = '00000000-0000-4000-8000-0000000c6e02';
+const EDGE_NSRC_PEER = '00000000-0000-4000-8000-0000000c6e21';
+
+describe('detectCoherencyHints — non-self-referential-annotation-contradicts hints', () => {
+  it('node N1 → contradicts → annotation A where A annotates N2 (cross-anchor) → one hint', () => {
+    // Generalises the walkthrough E15 shape: N19 contradicts A2 where
+    // A2 annotates N6 (not N19).
+    resetSeq();
+    const projection = seedSession();
+    createNode(projection, NODE_SR, 'N1');
+    createNode(projection, NODE_SR_2, 'N2');
+    createAnnotation(projection, ANN_SR_1, { nodeId: NODE_SR_2 });
+    createNodeToAnnotationEdge(projection, EDGE_NSRC_1, NODE_SR, ANN_SR_1, 'contradicts');
+    expect(detectCoherencyHints(projection)).toEqual([
+      {
+        kind: 'non-self-referential-annotation-contradicts',
+        edgeId: EDGE_NSRC_1,
+        nodeId: NODE_SR,
+        annotationId: ANN_SR_1,
+        anchorNodeId: NODE_SR_2,
+      },
+    ]);
+  });
+
+  it('annotation A → contradicts → node N1 where A annotates N2 (cross-anchor) → one hint (direction-symmetric per D2)', () => {
+    resetSeq();
+    const projection = seedSession();
+    createNode(projection, NODE_SR, 'N1');
+    createNode(projection, NODE_SR_2, 'N2');
+    createAnnotation(projection, ANN_SR_1, { nodeId: NODE_SR_2 });
+    createAnnotationToNodeEdge(projection, EDGE_NSRC_1, ANN_SR_1, NODE_SR, 'contradicts');
+    expect(detectCoherencyHints(projection)).toEqual([
+      {
+        kind: 'non-self-referential-annotation-contradicts',
+        edgeId: EDGE_NSRC_1,
+        nodeId: NODE_SR,
+        annotationId: ANN_SR_1,
+        anchorNodeId: NODE_SR_2,
+      },
+    ]);
+  });
+
+  it('self-referential anchor (A.targetNodeId === N1) → no non-self-referential hint (owned by sibling rule per D4)', () => {
+    resetSeq();
+    const projection = seedSession();
+    createNode(projection, NODE_SR, 'N1');
+    createAnnotation(projection, ANN_SR_1, { nodeId: NODE_SR });
+    createNodeToAnnotationEdge(projection, EDGE_NSRC_1, NODE_SR, ANN_SR_1, 'contradicts');
+    expect(
+      detectCoherencyHints(projection).filter(
+        (h) => h.kind === 'non-self-referential-annotation-contradicts',
+      ),
+    ).toEqual([]);
+  });
+
+  it('wrong role (supports) on the same cross-anchor shape → no hint (per D5 — contradicts only)', () => {
+    resetSeq();
+    const projection = seedSession();
+    createNode(projection, NODE_SR, 'N1');
+    createNode(projection, NODE_SR_2, 'N2');
+    createAnnotation(projection, ANN_SR_1, { nodeId: NODE_SR_2 });
+    createNodeToAnnotationEdge(projection, EDGE_NSRC_1, NODE_SR, ANN_SR_1, 'supports');
+    expect(detectCoherencyHints(projection)).toEqual([]);
+  });
+
+  it('annotation anchors an edge (not a node) → no hint (per D3 — edge-anchor variant out of scope)', () => {
+    resetSeq();
+    const projection = seedSession();
+    createNode(projection, NODE_SR, 'N1');
+    createNode(projection, NODE_SR_2, 'N2');
+    // A peer edge to anchor the annotation against.
+    createEdge(projection, EDGE_NSRC_PEER, NODE_SR, NODE_SR_2, 'supports');
+    createAnnotation(projection, ANN_SR_1, { edgeId: EDGE_NSRC_PEER });
+    createNodeToAnnotationEdge(projection, EDGE_NSRC_1, NODE_SR, ANN_SR_1, 'contradicts');
+    expect(detectCoherencyHints(projection)).toEqual([]);
+  });
+
+  it('both endpoints are annotations (annotation→annotation contradicts on distinct-anchor annotations) → no hint', () => {
+    // A1 anchors on N1, A2 anchors on N2. Edge A1 → contradicts → A2.
+    // The mixed-endpoint filter excludes both-annotation edges.
+    resetSeq();
+    const projection = seedSession();
+    createNode(projection, NODE_SR, 'N1');
+    createNode(projection, NODE_SR_2, 'N2');
+    createAnnotation(projection, ANN_SR_1, { nodeId: NODE_SR });
+    createAnnotation(projection, ANN_SR_2, { nodeId: NODE_SR_2 });
+    createAnnotationEdge(projection, EDGE_NSRC_1, ANN_SR_1, ANN_SR_2, 'contradicts');
+    expect(
+      detectCoherencyHints(projection).filter(
+        (h) => h.kind === 'non-self-referential-annotation-contradicts',
+      ),
+    ).toEqual([]);
+  });
+
+  it('both endpoints are nodes (node→node contradicts) → no hint (mixed-endpoint filter)', () => {
+    resetSeq();
+    const projection = seedSession();
+    createNode(projection, NODE_SR, 'N1');
+    createNode(projection, NODE_SR_2, 'N2');
+    createEdge(projection, EDGE_NSRC_1, NODE_SR, NODE_SR_2, 'contradicts');
+    expect(
+      detectCoherencyHints(projection).filter(
+        (h) => h.kind === 'non-self-referential-annotation-contradicts',
+      ),
+    ).toEqual([]);
+  });
+
+  it('invisible edge → no hint', () => {
+    resetSeq();
+    const projection = seedSession();
+    createNode(projection, NODE_SR, 'N1');
+    createNode(projection, NODE_SR_2, 'N2');
+    createAnnotation(projection, ANN_SR_1, { nodeId: NODE_SR_2 });
+    createNodeToAnnotationEdge(projection, EDGE_NSRC_1, NODE_SR, ANN_SR_1, 'contradicts');
+    projection.setEdgeVisible(EDGE_NSRC_1, false);
+    expect(detectCoherencyHints(projection)).toEqual([]);
+  });
+
+  it('invisible node endpoint → no hint', () => {
+    resetSeq();
+    const projection = seedSession();
+    createNode(projection, NODE_SR, 'N1');
+    createNode(projection, NODE_SR_2, 'N2');
+    createAnnotation(projection, ANN_SR_1, { nodeId: NODE_SR_2 });
+    createNodeToAnnotationEdge(projection, EDGE_NSRC_1, NODE_SR, ANN_SR_1, 'contradicts');
+    projection.setNodeVisible(NODE_SR, false);
+    expect(detectCoherencyHints(projection)).toEqual([]);
+  });
+
+  it('invisible annotation endpoint → no hint', () => {
+    resetSeq();
+    const projection = seedSession();
+    createNode(projection, NODE_SR, 'N1');
+    createNode(projection, NODE_SR_2, 'N2');
+    createAnnotation(projection, ANN_SR_1, { nodeId: NODE_SR_2 });
+    createNodeToAnnotationEdge(projection, EDGE_NSRC_1, NODE_SR, ANN_SR_1, 'contradicts');
+    projection.setAnnotationVisible(ANN_SR_1, false);
+    expect(detectCoherencyHints(projection)).toEqual([]);
+  });
+
+  it('anchor node N2 invisible → hint still fires (per D10 — anchor visibility is NOT a hint suppressor)', () => {
+    resetSeq();
+    const projection = seedSession();
+    createNode(projection, NODE_SR, 'N1');
+    createNode(projection, NODE_SR_2, 'N2');
+    createAnnotation(projection, ANN_SR_1, { nodeId: NODE_SR_2 });
+    createNodeToAnnotationEdge(projection, EDGE_NSRC_1, NODE_SR, ANN_SR_1, 'contradicts');
+    projection.setNodeVisible(NODE_SR_2, false);
+    expect(detectCoherencyHints(projection)).toEqual([
+      {
+        kind: 'non-self-referential-annotation-contradicts',
+        edgeId: EDGE_NSRC_1,
+        nodeId: NODE_SR,
+        annotationId: ANN_SR_1,
+        anchorNodeId: NODE_SR_2,
+      },
+    ]);
+  });
+
+  it('coexists with self-referential-annotation-contradicts on a different edge, in rule-declaration order', () => {
+    // E1: N1 → contradicts → A1 where A1 annotates N2 (cross-anchor, this rule).
+    // E2: N3 → contradicts → A2 where A2 annotates N3 (self-referential, sibling).
+    // Rule declaration order: self-referential-annotation-contradicts (rule 5)
+    // emits before non-self-referential-annotation-contradicts (rule 6).
+    resetSeq();
+    const projection = seedSession();
+    createNode(projection, NODE_SR, 'N1');
+    createNode(projection, NODE_SR_2, 'N2');
+    createNode(projection, NODE_ANCHOR, 'N3');
+    createAnnotation(projection, ANN_SR_1, { nodeId: NODE_SR_2 });
+    createAnnotation(projection, ANN_SR_2, { nodeId: NODE_ANCHOR });
+    createNodeToAnnotationEdge(projection, EDGE_NSRC_1, NODE_SR, ANN_SR_1, 'contradicts');
+    createNodeToAnnotationEdge(projection, EDGE_NSRC_2, NODE_ANCHOR, ANN_SR_2, 'contradicts');
+    expect(detectCoherencyHints(projection)).toEqual([
+      {
+        kind: 'self-referential-annotation-contradicts',
+        edgeId: EDGE_NSRC_2,
+        nodeId: NODE_ANCHOR,
+        annotationId: ANN_SR_2,
+      },
+      {
+        kind: 'non-self-referential-annotation-contradicts',
+        edgeId: EDGE_NSRC_1,
+        nodeId: NODE_SR,
+        annotationId: ANN_SR_1,
+        anchorNodeId: NODE_SR_2,
       },
     ]);
   });

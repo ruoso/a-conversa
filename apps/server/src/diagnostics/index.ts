@@ -31,6 +31,7 @@ export {
   type SelfContradictsHint,
   type AnnotationOfAnnotationChainHint,
   type SelfReferentialAnnotationContradictsHint,
+  type NonSelfReferentialAnnotationContradictsHint,
 } from './coherency-hint-detection.js';
 export { detectPendingConsequences, type PendingConsequence } from './pending-consequences.js';
 export {

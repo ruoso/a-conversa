@@ -352,6 +352,7 @@ task data_and_methodology "Data and methodology" {
     task coherency_non_self_referential_annotation_contradicts_rule "Coherency hint: cross-anchor annotation-endpoint contradicts edge" {
       effort 0.5d
       allocate team
+      complete 100
       depends !contradiction_annotation_endpoint_semantics_audit, !coherency_self_referential_annotation_contradicts_rule
       note -8<-
         Source of debt: contradiction_annotation_endpoint_semantics_audit D3.
