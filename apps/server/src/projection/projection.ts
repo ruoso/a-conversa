@@ -75,22 +75,69 @@ function buildEdge(input: NewEdgeInput): ProjectedEdge {
   // matching `candidateProposalEventId` is `null`). The substance
   // facet enters life `awaiting-proposal` (no candidate yet) until a
   // `set-edge-substance` proposal lands.
+  //
+  // Per `projection_edge_annotation_endpoint`, each endpoint pair is
+  // polymorphic — exactly one of (sourceNodeId, sourceAnnotationId)
+  // must be set; same for target. The wire schema's `.refine()` already
+  // enforces this at validation time; the check below is defense-in-
+  // depth for any direct `addEdge` from a future code site. Mirrors the
+  // `buildAnnotation` precedent below.
+  if ((input.sourceNodeId === null) === (input.sourceAnnotationId === null)) {
+    throw new ProjectionInvariantError(
+      `edge ${input.id}: exactly one of sourceNodeId / sourceAnnotationId must be set`,
+    );
+  }
+  if ((input.targetNodeId === null) === (input.targetAnnotationId === null)) {
+    throw new ProjectionInvariantError(
+      `edge ${input.id}: exactly one of targetNodeId / targetAnnotationId must be set`,
+    );
+  }
   const shape: EdgeShape = {
     role: input.role,
     sourceNodeId: input.sourceNodeId,
+    sourceAnnotationId: input.sourceAnnotationId,
     targetNodeId: input.targetNodeId,
+    targetAnnotationId: input.targetAnnotationId,
   };
   return {
     id: input.id,
     role: input.role,
     sourceNodeId: input.sourceNodeId,
+    sourceAnnotationId: input.sourceAnnotationId,
     targetNodeId: input.targetNodeId,
+    targetAnnotationId: input.targetAnnotationId,
     createdBy: input.createdBy,
     createdAt: input.createdAt,
     visible: true,
     shapeFacet: { ...emptyFacet<EdgeShape>(), value: shape, candidateValue: shape },
     substanceFacet: emptyFacet(),
   };
+}
+
+// Resolve the polymorphic endpoint slot to the id used as the index
+// key — node id OR annotation id, whichever is non-null. The
+// `buildEdge` XOR check guarantees exactly one is set, so the `??`
+// always resolves to a string at this seam.
+function edgeSourceKey(edge: {
+  sourceNodeId: string | null;
+  sourceAnnotationId: string | null;
+}): string {
+  const key = edge.sourceNodeId ?? edge.sourceAnnotationId;
+  if (key === null) {
+    throw new ProjectionInvariantError('edge: both sourceNodeId and sourceAnnotationId are null');
+  }
+  return key;
+}
+
+function edgeTargetKey(edge: {
+  targetNodeId: string | null;
+  targetAnnotationId: string | null;
+}): string {
+  const key = edge.targetNodeId ?? edge.targetAnnotationId;
+  if (key === null) {
+    throw new ProjectionInvariantError('edge: both targetNodeId and targetAnnotationId are null');
+  }
+  return key;
 }
 
 function buildAnnotation(input: NewAnnotationInput): ProjectedAnnotation {
@@ -230,8 +277,12 @@ export class Projection {
     }
     const edge = buildEdge(input);
     this.#edges.set(edge.id, edge);
-    addToIndex(this.#edgesBySource, edge.sourceNodeId, edge.id);
-    addToIndex(this.#edgesByTarget, edge.targetNodeId, edge.id);
+    // Per `projection_edge_annotation_endpoint` D2: the index stores
+    // whichever endpoint id is non-null (node id OR annotation id).
+    // `getEdgesBySource(nodeId)` and `getEdgesBySource(annotationId)`
+    // both work uniformly off the same string-keyed Map.
+    addToIndex(this.#edgesBySource, edgeSourceKey(edge), edge.id);
+    addToIndex(this.#edgesByTarget, edgeTargetKey(edge), edge.id);
     return edge;
   }
 
@@ -244,8 +295,8 @@ export class Projection {
       for (const annotationId of [...annotationIds]) this.removeAnnotation(annotationId);
     }
 
-    removeFromIndex(this.#edgesBySource, edge.sourceNodeId, edgeId);
-    removeFromIndex(this.#edgesByTarget, edge.targetNodeId, edgeId);
+    removeFromIndex(this.#edgesBySource, edgeSourceKey(edge), edgeId);
+    removeFromIndex(this.#edgesByTarget, edgeTargetKey(edge), edgeId);
     this.#annotationsByEdge.delete(edgeId);
     this.#edges.delete(edgeId);
   }

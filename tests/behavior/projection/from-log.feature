@@ -62,6 +62,23 @@ Feature: projectFromLog — replay events from session_events through to a Proje
     When I read the seeded-session events out of session_events and project them
     Then the projection has the labeled snapshot at log position 5
 
+  Scenario: annotation-endpoint edge round-trips through projectFromLog
+    # Per `projection_edge_annotation_endpoint`, the projection layer
+    # carries polymorphic-endpoint edges (node OR annotation per
+    # endpoint). The DB-round-trip pin: insert an `edge-created`
+    # event whose `source_node_id` resolves a node and whose
+    # `target_annotation_id` resolves an annotation, replay through
+    # `projectFromLog`, assert the projected edge carries the four
+    # polymorphic slots with the right two non-null and the other two
+    # null.
+    Given a seeded session with three participants in session_events
+    And a node-created event for the seeded session
+    And an annotation-created event targeting that node
+    And an edge-created event from the node to the annotation
+    When I read the seeded-session events out of session_events and project them
+    Then the projection has 1 edge
+    And the projected edge's source is the seeded node and its target is the seeded annotation
+
   Scenario: events round-trip through JSONB without field loss
     # The committed probe per ADR 0022: insert an event whose payload
     # is a non-trivial discriminated-union shape (a meta-move proposal

@@ -223,6 +223,7 @@ task data_and_methodology "Data and methodology" {
     task projection_edge_annotation_endpoint "Extend ProjectedEdge and handleEdgeCreated for annotation endpoints" {
       effort 1d
       allocate team
+      complete 100
       depends data_and_methodology.event_types.edge_target_annotation_schema_extension
       note -8<-
         Source of debt: edge_target_annotation_schema_extension — widens ProjectedEdge and EdgeShape to
@@ -294,6 +295,20 @@ task data_and_methodology "Data and methodology" {
       complete 100
       depends !cycle_detection, !contradiction_detection, !multi_warrant_detection, !dangling_claim_detection, !coherency_hint_detection
       note "Refinement: tasks/refinements/data-and-methodology/blocking_vs_advisory_classification.md"
+    }
+    task diagnostics_annotation_endpoint_semantics_audit "Revisit per-diagnostic semantics for annotation-endpoint edges" {
+      effort 1d
+      allocate team
+      depends data_and_methodology.projection.projection_edge_annotation_endpoint
+      note -8<-
+        Source of debt: projection_edge_annotation_endpoint — each diagnostic conservatively skips
+        annotation-endpoint edges by checking for null sourceNodeId or targetNodeId. Once the
+        methodology resolves the structural meaning of annotation-endpoint edges, revisit whether
+        cycle, dangling-claim, coherency-hint, multi-warrant, and pending-consequences detectors
+        should surface findings on those edges. The default established by
+        projection_edge_annotation_endpoint is skip; coherency-hint detection in particular may want
+        per-rule annotation-endpoint handling.
+      ->8-
     }
   }
 

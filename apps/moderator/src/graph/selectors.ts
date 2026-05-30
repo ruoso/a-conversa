@@ -363,12 +363,14 @@ export function selectEdgesForSession(
   const out: Edge<StatementEdgeData>[] = [];
   for (const event of session.events) {
     if (event.kind !== 'edge-created') continue;
-    // Annotation-endpoint edges (per
-    // `edge_target_annotation_schema_extension`) are rejected at the
-    // projection-layer's `handleEdgeCreated` guard, so this branch is
-    // dead at runtime; the narrowing keeps TypeScript happy until
-    // `projection_edge_annotation_endpoint` widens the consumer
-    // surface to render them.
+    // Annotation-endpoint edges (per `edge_target_annotation_schema_extension`
+    // + `projection_edge_annotation_endpoint`) flow through the
+    // projection layer now, but the moderator's ReactFlow canvas
+    // doesn't yet render annotations as graph nodes — so an
+    // annotation-endpoint edge has no source/target ReactFlow node to
+    // connect to. Skip until `mod_render_annotation_endpoint_edges`
+    // resolves the canvas-rendering design (annotation-as-graph-node
+    // vs. annotation-as-edge-attachment).
     if (event.payload.source_node_id === undefined || event.payload.target_node_id === undefined) {
       continue;
     }

@@ -671,6 +671,18 @@ task moderator_ui "Moderator UI" {
       allocate team
       depends !mod_propose_annotation_action
     }
+    task mod_render_annotation_endpoint_edges "Render annotation-endpoint edges on moderator ReactFlow canvas" {
+      effort 1.5d
+      allocate team
+      depends !mod_render_annotations, data_and_methodology.projection.projection_edge_annotation_endpoint
+      note -8<-
+        Source of debt: projection_edge_annotation_endpoint — the moderator ReactFlow canvas currently
+        skips annotation-endpoint edges (apps/moderator/src/graph/selectors.ts) because annotations
+        are not yet rendered as ReactFlow nodes. Rendering annotation-endpoint edges requires resolving
+        the design question of how the canvas surfaces annotations as graph nodes with positions.
+        Includes Playwright cover asserting an annotation-endpoint edge appears on the canvas.
+      ->8-
+    }
   }
 
   task mod_session_setup "Session setup screens" {

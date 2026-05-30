@@ -204,33 +204,37 @@ function handleEdgeCreated(
   payload: EdgeCreatedPayload,
   changes: ProjectionChange[],
 ): void {
-  // Per `edge_target_annotation_schema_extension`, the wire payload was
-  // widened to allow annotation endpoints (`source_annotation_id` /
-  // `target_annotation_id`). The projection layer still only handles
-  // node↔node edges; the follow-up
-  // `projection_edge_annotation_endpoint` widens `ProjectedEdge` /
-  // `EdgeShape` and lifts this guard.
-  if (payload.source_node_id === undefined || payload.target_node_id === undefined) {
-    throw new ReplayError(
-      `edge-created: annotation-endpoint edge ${payload.edge_id} is not yet handled by the projection layer (see follow-up task projection_edge_annotation_endpoint)`,
-    );
-  }
+  // Per `projection_edge_annotation_endpoint`, the projection layer's
+  // `ProjectedEdge` carries polymorphic endpoint slots — each endpoint
+  // is a node id OR an annotation id (`string | null` per slot, XOR
+  // invariant enforced by `buildEdge`). The wire schema
+  // (`edgeCreatedPayloadSchema`) carries the same shape as four
+  // `.optional()` fields with two `.refine()` XOR blocks; here we
+  // coerce `undefined` → `null` at the projection seam (per D2).
   if (projection.getEdge(payload.edge_id) !== undefined) {
     throw new ReplayError(`edge-created: edge ${payload.edge_id} already present`);
   }
+  const sourceNodeId = payload.source_node_id ?? null;
+  const sourceAnnotationId = payload.source_annotation_id ?? null;
+  const targetNodeId = payload.target_node_id ?? null;
+  const targetAnnotationId = payload.target_annotation_id ?? null;
   projection.addEdge({
     id: payload.edge_id,
     role: payload.role,
-    sourceNodeId: payload.source_node_id,
-    targetNodeId: payload.target_node_id,
+    sourceNodeId,
+    sourceAnnotationId,
+    targetNodeId,
+    targetAnnotationId,
     createdBy: payload.created_by,
     createdAt: payload.created_at,
   });
   changes.push({
     kind: 'edge-added',
     edgeId: payload.edge_id,
-    sourceNodeId: payload.source_node_id,
-    targetNodeId: payload.target_node_id,
+    sourceNodeId,
+    sourceAnnotationId,
+    targetNodeId,
+    targetAnnotationId,
     role: payload.role,
   });
 }

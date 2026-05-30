@@ -1244,6 +1244,27 @@ function validateSetEdgeSubstanceProposal(
     };
   }
 
+  // Per `projection_edge_annotation_endpoint` D6: the projection now
+  // carries polymorphic endpoint edges (node OR annotation per
+  // endpoint). The `set-edge-substance` proposal kind does NOT yet
+  // carry annotation endpoints — the follow-up
+  // `set_edge_substance_annotation_endpoint` widens the proposal-side.
+  // Until that lands, defensively reject any case whose resolved
+  // existing edge carries annotation endpoints (covers both the
+  // substance-only re-vote and the all-three-endpoint shapes); the
+  // Phase 2c triple comparison below would otherwise mis-fire
+  // (`string` !== `null` is always true).
+  const existingEdge = projection.getEdge(edgeId);
+  if (existingEdge !== undefined) {
+    if (existingEdge.sourceNodeId === null || existingEdge.targetNodeId === null) {
+      return {
+        ok: false,
+        reason: 'illegal-state-transition',
+        detail: `propose set-edge-substance: the projected edge ${edgeId} carries annotation endpoints; this proposal sub-kind does not yet carry annotation endpoints — see follow-up task set_edge_substance_annotation_endpoint`,
+      };
+    }
+  }
+
   // Substance-only re-vote: no endpoint fields → no further checks.
   if (!allPresent) return null;
 
@@ -1272,7 +1293,9 @@ function validateSetEdgeSubstanceProposal(
   // names a projected edge). The carried triple MUST equal the
   // projected edge's `(sourceNodeId, targetNodeId, role)` triple;
   // entity identity is fixed at `edge-created` time per ADR 0027.
-  const existingEdge = projection.getEdge(edgeId);
+  // (The annotation-endpoint case is handled by the pre-Phase-2 guard
+  // above; here we know both `existingEdge.sourceNodeId` and
+  // `.targetNodeId` are non-null.)
   if (existingEdge !== undefined) {
     if (
       existingEdge.sourceNodeId !== sourceNodeId ||

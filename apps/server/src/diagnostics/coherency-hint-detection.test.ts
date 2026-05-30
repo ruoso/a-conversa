@@ -399,3 +399,43 @@ describe('detectCoherencyHints — multiple rules combined', () => {
     ]);
   });
 });
+
+// ---------------------------------------------------------------
+// Annotation-endpoint edges — per `projection_edge_annotation_endpoint`
+// D4, coherency-hint detection skips annotation-endpoint edges (warrant
+// rules + self-contradicts are node-node constructs).
+// ---------------------------------------------------------------
+
+describe('detectCoherencyHints — annotation-endpoint edges (skipped per D4)', () => {
+  it('warrant with bridges-from to an annotation target → no incomplete-warrant hint emitted', () => {
+    resetSeq();
+    const projection = seedSession();
+    const ANNOTATION_ID = '00000000-0000-4000-8000-0000000c1001';
+    const ANNOT_EDGE_ID = '00000000-0000-4000-8000-0000000c1002';
+    createNode(projection, WARRANT_W, 'W');
+    applyEvent(
+      projection,
+      makeEvent(nextSeq(), 'annotation-created', DEBATER_A_ID, T2, {
+        annotation_id: ANNOTATION_ID,
+        kind: 'note',
+        content: 'annotation target',
+        target_node_id: WARRANT_W,
+        target_edge_id: null,
+        created_by: DEBATER_A_ID,
+        created_at: T2,
+      }),
+    );
+    applyEvent(
+      projection,
+      makeEvent(nextSeq(), 'edge-created', DEBATER_A_ID, T2, {
+        edge_id: ANNOT_EDGE_ID,
+        role: 'bridges-from',
+        source_node_id: WARRANT_W,
+        target_annotation_id: ANNOTATION_ID,
+        created_by: DEBATER_A_ID,
+        created_at: T2,
+      }),
+    );
+    expect(detectCoherencyHints(projection)).toEqual([]);
+  });
+});

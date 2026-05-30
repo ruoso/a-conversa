@@ -559,6 +559,96 @@ describe('propose set-edge-substance — rule 2c: agreement-with-existing-edge',
       expect(r.detail).toContain('rebuts');
     }
   });
+
+  it('rejects when the resolved existing edge carries annotation endpoints (per projection_edge_annotation_endpoint D6)', () => {
+    const p = seedSession();
+    // Build an annotation-endpoint edge by raw `applyEvent` of an
+    // annotation-target `edge-created` event — the wire schema permits
+    // this shape; the projection layer (post
+    // `projection_edge_annotation_endpoint`) records it; the
+    // `set-edge-substance` proposal doesn't yet carry annotation
+    // endpoints (`set_edge_substance_annotation_endpoint` is the
+    // follow-up). The substance-only re-vote shape (zero endpoint
+    // fields) is what we then send.
+    const ANNOTATION_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeece';
+    applyEvent(
+      p,
+      makeEvent(nextSequence(p), 'annotation-created', DEBATER_A_ID, T2, {
+        annotation_id: ANNOTATION_ID,
+        kind: 'note',
+        content: 'annotation',
+        target_node_id: SOURCE_NODE_ID,
+        target_edge_id: null,
+        created_by: DEBATER_A_ID,
+        created_at: T2,
+      }),
+    );
+    applyEvent(
+      p,
+      makeEvent(nextSequence(p), 'edge-created', DEBATER_A_ID, T2, {
+        edge_id: EXTANT_EDGE_ID,
+        role: 'contradicts',
+        source_node_id: SOURCE_NODE_ID,
+        target_annotation_id: ANNOTATION_ID,
+        created_by: DEBATER_A_ID,
+        created_at: T2,
+      }),
+    );
+    applyEvent(
+      p,
+      makeEvent(nextSequence(p), 'entity-included', DEBATER_A_ID, T2, {
+        entity_kind: 'edge',
+        entity_id: EXTANT_EDGE_ID,
+        included_by: DEBATER_A_ID,
+        included_at: T2,
+      }),
+    );
+    // Advance the edge's shape facet to `'committed'` so the
+    // sequence gate accepts and we reach the per-sub-kind validator.
+    for (const voter of [MODERATOR_ID, DEBATER_A_ID, DEBATER_B_ID]) {
+      applyEvent(
+        p,
+        makeEvent(nextSequence(p), 'vote', voter, T3, {
+          target: 'facet' as const,
+          entity_kind: 'edge' as const,
+          entity_id: EXTANT_EDGE_ID,
+          facet: 'shape' as const,
+          participant: voter,
+          choice: 'agree' as const,
+          voted_at: T3,
+        }),
+      );
+    }
+    applyEvent(
+      p,
+      makeEvent(nextSequence(p), 'commit', MODERATOR_ID, T3, {
+        target: 'facet' as const,
+        entity_kind: 'edge' as const,
+        entity_id: EXTANT_EDGE_ID,
+        facet: 'shape' as const,
+        committed_by: MODERATOR_ID,
+        committed_at: T3,
+      }),
+    );
+    // Substance-only re-vote shape (zero endpoint fields). The
+    // validator resolves the existing edge by id, sees the annotation
+    // endpoint, and rejects with the follow-up name in the message.
+    const action = makeSetEdgeSubstanceAction(p, {
+      edge_id: EXTANT_EDGE_ID,
+      value: 'disputed',
+      source_node_id: undefined,
+      target_node_id: undefined,
+      role: undefined,
+    });
+    const r = validateAction(p, action);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.reason).toBe('illegal-state-transition');
+      expect(r.detail).toContain(EXTANT_EDGE_ID);
+      expect(r.detail).toContain('annotation endpoints');
+      expect(r.detail).toContain('set_edge_substance_annotation_endpoint');
+    }
+  });
 });
 
 // ---------------------------------------------------------------

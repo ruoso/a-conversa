@@ -445,3 +445,45 @@ describe('detectPendingConsequences — pending consequences detected', () => {
     ]);
   });
 });
+
+// ---------------------------------------------------------------
+// Annotation-endpoint edges — per `projection_edge_annotation_endpoint`
+// D4, pending-consequences skips annotation-endpoint edges (the walk
+// requires a node source with substance).
+// ---------------------------------------------------------------
+
+describe('detectPendingConsequences — annotation-endpoint edges (skipped per D4)', () => {
+  it('annotation-source edge → no pending-consequences finding', () => {
+    resetSeq();
+    const projection = seedSession();
+    const ANNOTATION_ID = '00000000-0000-4000-8000-0000000c1001';
+    const ANNOT_EDGE_ID = '00000000-0000-4000-8000-0000000c1002';
+    createNode(projection, SOURCE_NODE_ID, 'source');
+    createNode(projection, TARGET_NODE_ID, 'target');
+    applyEvent(
+      projection,
+      makeEvent(nextSeq(), 'annotation-created', DEBATER_A_ID, T2, {
+        annotation_id: ANNOTATION_ID,
+        kind: 'note',
+        content: 'annotation source',
+        target_node_id: SOURCE_NODE_ID,
+        target_edge_id: null,
+        created_by: DEBATER_A_ID,
+        created_at: T2,
+      }),
+    );
+    applyEvent(
+      projection,
+      makeEvent(nextSeq(), 'edge-created', DEBATER_A_ID, T2, {
+        edge_id: ANNOT_EDGE_ID,
+        role: 'supports',
+        source_annotation_id: ANNOTATION_ID,
+        target_node_id: TARGET_NODE_ID,
+        created_by: DEBATER_A_ID,
+        created_at: T2,
+      }),
+    );
+    commitEdgeAgreed(projection, ANNOT_EDGE_ID);
+    expect(detectPendingConsequences(projection)).toEqual([]);
+  });
+});

@@ -281,8 +281,57 @@ describe('applyEventIncremental — change-feed coverage by discriminator', () =
         kind: 'edge-added',
         edgeId: EDGE_ID_1,
         sourceNodeId: NODE_ID_1,
+        sourceAnnotationId: null,
         targetNodeId: NODE_ID_2,
+        targetAnnotationId: null,
         role: 'supports',
+      },
+    ]);
+  });
+
+  it('edge-added: annotation-endpoint edge-created emits the polymorphic-endpoint shape (per projection_edge_annotation_endpoint)', () => {
+    const projection = createEmptyProjection(SESSION_ID);
+    applyEventIncremental(
+      projection,
+      makeEvent(1, 'node-created', DEBATER_A_ID, T0, {
+        node_id: NODE_ID_1,
+        wording: 'a',
+        created_by: DEBATER_A_ID,
+        created_at: T0,
+      }),
+    );
+    applyEventIncremental(
+      projection,
+      makeEvent(2, 'annotation-created', DEBATER_A_ID, T1, {
+        annotation_id: ANNOTATION_ID_1,
+        kind: 'note',
+        content: 'note targeting NODE_ID_1',
+        target_node_id: NODE_ID_1,
+        target_edge_id: null,
+        created_by: DEBATER_A_ID,
+        created_at: T1,
+      }),
+    );
+    const changes = applyEventIncremental(
+      projection,
+      makeEvent(3, 'edge-created', DEBATER_A_ID, T1, {
+        edge_id: EDGE_ID_1,
+        role: 'contradicts',
+        source_node_id: NODE_ID_1,
+        target_annotation_id: ANNOTATION_ID_1,
+        created_by: DEBATER_A_ID,
+        created_at: T1,
+      }),
+    );
+    expect(changes).toEqual([
+      {
+        kind: 'edge-added',
+        edgeId: EDGE_ID_1,
+        sourceNodeId: NODE_ID_1,
+        sourceAnnotationId: null,
+        targetNodeId: null,
+        targetAnnotationId: ANNOTATION_ID_1,
+        role: 'contradicts',
       },
     ]);
   });

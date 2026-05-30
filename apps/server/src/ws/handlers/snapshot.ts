@@ -315,8 +315,13 @@ export function serializeProjectionForWire(projection: Projection): Record<strin
     edges: Array.from(projection.edges()).map((edge) => ({
       id: edge.id,
       role: edge.role,
+      // Per `projection_edge_annotation_endpoint`, each endpoint slot
+      // is nullable on the wire; exactly one of (node, annotation) per
+      // pair is non-null (the projector's XOR check guarantees it).
       sourceNodeId: edge.sourceNodeId,
+      sourceAnnotationId: edge.sourceAnnotationId,
       targetNodeId: edge.targetNodeId,
+      targetAnnotationId: edge.targetAnnotationId,
       createdBy: edge.createdBy,
       createdAt: edge.createdAt,
       visible: edge.visible,

@@ -110,6 +110,11 @@ function buildSupportsAdjacency(projection: Projection): Map<string, Set<string>
   for (const edge of projection.edges()) {
     if (!edge.visible) continue;
     if (edge.role !== 'supports') continue;
+    // Per `projection_edge_annotation_endpoint` D4: cycles are over
+    // the node-supports subgraph. Annotation-endpoint edges have no
+    // node id on at least one slot, so skip — they can't participate
+    // in node-node cycle detection.
+    if (edge.sourceNodeId === null || edge.targetNodeId === null) continue;
     // `isEdgeActive` requires the source node to exist in the
     // projection; an edge whose source is absent would throw. The
     // visibility filter above doesn't guarantee both endpoints are

@@ -172,6 +172,10 @@ function detectIncompleteWarrantsMissingBridgesTo(
 
     for (const edge of outgoing) {
       if (!edge.visible) continue;
+      // Per `projection_edge_annotation_endpoint` D4: warrants are
+      // node-node constructs; an annotation-endpoint target has no
+      // node-substance role in the warrant rule. Skip.
+      if (edge.targetNodeId === null) continue;
       // Defensive endpoint-visibility check, matching the sibling
       // detectors. The projection cascades endpoint visibility onto
       // edges (per data-model.md lines 287–293) so a visible edge
@@ -218,6 +222,10 @@ function detectIncompleteWarrantsMissingBridgesFrom(
 
     for (const edge of outgoing) {
       if (!edge.visible) continue;
+      // Per `projection_edge_annotation_endpoint` D4: warrants are
+      // node-node constructs; an annotation-endpoint target has no
+      // role in the warrant rule. Skip.
+      if (edge.targetNodeId === null) continue;
       const target = projection.getNode(edge.targetNodeId);
       if (!target || !target.visible) continue;
 
@@ -254,6 +262,10 @@ function detectSelfContradicts(projection: Projection): SelfContradictsHint[] {
   for (const edge of projection.edges()) {
     if (!edge.visible) continue;
     if (edge.role !== 'contradicts') continue;
+    // Per `projection_edge_annotation_endpoint` D4: self-contradicts
+    // is a node-node degenerate-cycle rule; annotation endpoints have
+    // no concept of "same node on both ends." Skip.
+    if (edge.sourceNodeId === null || edge.targetNodeId === null) continue;
     if (edge.sourceNodeId !== edge.targetNodeId) continue;
 
     const node = projection.getNode(edge.sourceNodeId);

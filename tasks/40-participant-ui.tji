@@ -205,6 +205,18 @@ task participant_ui "Participant (debater) UI" {
       depends !part_per_facet_state_styling
       note "Refinement: tasks/refinements/participant-ui/part_layout_measured_dimensions.md"
     }
+    task part_render_annotation_endpoint_edges "Render annotation-endpoint edges on participant Cytoscape canvas" {
+      effort 1.5d
+      allocate team
+      depends !part_annotation_render, data_and_methodology.projection.projection_edge_annotation_endpoint
+      note -8<-
+        Source of debt: projection_edge_annotation_endpoint — the participant Cytoscape canvas currently
+        skips annotation-endpoint edges (apps/participant/src/graph/projectGraph.ts) because annotations
+        are not yet rendered as Cytoscape nodes. Rendering annotation-endpoint edges requires resolving
+        the design question of how the canvas surfaces annotations as standalone graph nodes.
+        Includes Playwright cover asserting an annotation-endpoint edge appears on the canvas.
+      ->8-
+    }
   }
 
   task part_pending_proposals "Pending proposals pane" {

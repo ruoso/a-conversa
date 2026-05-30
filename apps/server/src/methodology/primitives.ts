@@ -538,6 +538,11 @@ export function nodeIsPartyToAgreedContradicts(projection: Projection, nodeId: s
   for (const edge of projection.edges()) {
     if (!edge.visible) continue;
     if (edge.role !== 'contradicts') continue;
+    // Per `projection_edge_annotation_endpoint` D4: under the widened
+    // types `sourceNodeId` / `targetNodeId` are `string | null`. A
+    // null endpoint never matches `nodeId` (a uuid string), so the
+    // check below correctly excludes annotation-endpoint edges; no
+    // explicit null guard is required.
     if (edge.sourceNodeId !== nodeId && edge.targetNodeId !== nodeId) continue;
     const facet = edge.substanceFacet;
     const status = facet.status;

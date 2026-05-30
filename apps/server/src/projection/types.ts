@@ -219,17 +219,27 @@ export interface ProjectedNode {
 // facet's `candidateValue` is the inline carriage and the derivation
 // returns `'proposed'` (with no votes / commit) or `'agreed'` / etc.
 // once votes land. See `facetStateForTarget` for the resolution.
+// Per `projection_edge_annotation_endpoint` (and the predecessor wire
+// widening in `edge_target_annotation_schema_extension`), each endpoint
+// of an edge is polymorphic: either a node OR an annotation. The
+// in-memory shape mirrors `ProjectedAnnotation`'s `targetNodeId` /
+// `targetEdgeId` precedent — `string | null` per endpoint slot with an
+// XOR invariant per pair enforced by `buildEdge`.
 export type EdgeShape = {
   readonly role: EdgeRole;
-  readonly sourceNodeId: string;
-  readonly targetNodeId: string;
+  readonly sourceNodeId: string | null;
+  readonly sourceAnnotationId: string | null;
+  readonly targetNodeId: string | null;
+  readonly targetAnnotationId: string | null;
 };
 
 export interface ProjectedEdge {
   id: string;
   role: EdgeRole;
-  sourceNodeId: string;
-  targetNodeId: string;
+  sourceNodeId: string | null;
+  sourceAnnotationId: string | null;
+  targetNodeId: string | null;
+  targetAnnotationId: string | null;
   createdBy: string;
   createdAt: string;
   visible: boolean;
@@ -260,8 +270,10 @@ export interface NewNodeInput {
 export interface NewEdgeInput {
   id: string;
   role: EdgeRole;
-  sourceNodeId: string;
-  targetNodeId: string;
+  sourceNodeId: string | null;
+  sourceAnnotationId: string | null;
+  targetNodeId: string | null;
+  targetAnnotationId: string | null;
   createdBy: string;
   createdAt: string;
 }
@@ -381,8 +393,10 @@ export interface NodeAddedChange {
 export interface EdgeAddedChange {
   kind: 'edge-added';
   edgeId: string;
-  sourceNodeId: string;
-  targetNodeId: string;
+  sourceNodeId: string | null;
+  sourceAnnotationId: string | null;
+  targetNodeId: string | null;
+  targetAnnotationId: string | null;
   role: EdgeRole;
 }
 

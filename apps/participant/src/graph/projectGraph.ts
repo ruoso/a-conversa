@@ -501,12 +501,13 @@ export function projectGraph(
     }
 
     if (event.kind === 'edge-created') {
-      // Annotation-endpoint edges (per
-      // `edge_target_annotation_schema_extension`) are rejected at the
-      // projection-layer's `handleEdgeCreated` guard, so this branch is
-      // dead at runtime; the narrowing keeps TypeScript happy until
-      // `projection_edge_annotation_endpoint` widens the consumer
-      // surface to render them.
+      // Annotation-endpoint edges (per `edge_target_annotation_schema_extension`
+      // + `projection_edge_annotation_endpoint`) flow through the
+      // projection layer now, but the participant's Cytoscape canvas
+      // doesn't yet render annotations as graph nodes — so an
+      // annotation-endpoint edge has no source/target id to bind to.
+      // Skip until `part_render_annotation_endpoint_edges` resolves
+      // the canvas-rendering design.
       if (
         event.payload.source_node_id === undefined ||
         event.payload.target_node_id === undefined

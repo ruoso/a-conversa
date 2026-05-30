@@ -419,3 +419,42 @@ describe('detectDanglingClaims — detected', () => {
     expect(detectDanglingClaims(projection)).toEqual([{ nodeId: NODE_B }]);
   });
 });
+
+// ---------------------------------------------------------------
+// Annotation-endpoint edges — per `projection_edge_annotation_endpoint`
+// D4, dangling-claim detection skips annotation-endpoint edges.
+// ---------------------------------------------------------------
+
+describe('detectDanglingClaims — annotation-endpoint edges (skipped per D4)', () => {
+  it('node with only an annotation-source incoming edge → no findings (annotation-source edge is skipped)', () => {
+    resetSeq();
+    const projection = seedSession();
+    const ANNOTATION_ID = '00000000-0000-4000-8000-0000000d1001';
+    const ANNOT_EDGE_ID = '00000000-0000-4000-8000-0000000d1002';
+    createNode(projection, NODE_A, 'A');
+    applyEvent(
+      projection,
+      makeEvent(nextSeq(), 'annotation-created', DEBATER_A_ID, T2, {
+        annotation_id: ANNOTATION_ID,
+        kind: 'note',
+        content: 'annotation source',
+        target_node_id: NODE_A,
+        target_edge_id: null,
+        created_by: DEBATER_A_ID,
+        created_at: T2,
+      }),
+    );
+    applyEvent(
+      projection,
+      makeEvent(nextSeq(), 'edge-created', DEBATER_A_ID, T2, {
+        edge_id: ANNOT_EDGE_ID,
+        role: 'defines',
+        source_annotation_id: ANNOTATION_ID,
+        target_node_id: NODE_A,
+        created_by: DEBATER_A_ID,
+        created_at: T2,
+      }),
+    );
+    expect(detectDanglingClaims(projection)).toEqual([]);
+  });
+});

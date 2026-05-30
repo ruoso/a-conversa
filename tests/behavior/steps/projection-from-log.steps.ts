@@ -755,3 +755,70 @@ Then(
     assert.equal(snap.logPosition, position);
   },
 );
+
+// ---------------------------------------------------------------
+// Annotation-endpoint edge scenario steps. Pins the DB-round-trip
+// for the polymorphic-endpoint edge shape per
+// `projection_edge_annotation_endpoint`.
+// ---------------------------------------------------------------
+
+const ANNOTATION_FROMLOG_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa00f';
+const EDGE_FROMLOG_ID = '77777777-7777-4777-8777-77777777700f';
+
+Given('an annotation-created event targeting that node', async function (this: AConversaWorld) {
+  const seq = nextSeq(this);
+  await insertEventRow(this, {
+    id: evId(seq * 10),
+    sequence: seq,
+    kind: 'annotation-created',
+    actor: DEBATER_A_ID,
+    payload: {
+      annotation_id: ANNOTATION_FROMLOG_ID,
+      kind: 'note',
+      content: 'an annotation that an edge targets',
+      target_node_id: NODE_GENERIC_ID,
+      target_edge_id: null,
+      created_by: DEBATER_A_ID,
+      created_at: tsAt(seq),
+    },
+    createdAt: tsAt(seq),
+  });
+});
+
+Given(
+  'an edge-created event from the node to the annotation',
+  async function (this: AConversaWorld) {
+    const seq = nextSeq(this);
+    await insertEventRow(this, {
+      id: evId(seq * 10),
+      sequence: seq,
+      kind: 'edge-created',
+      actor: DEBATER_A_ID,
+      payload: {
+        edge_id: EDGE_FROMLOG_ID,
+        role: 'contradicts',
+        source_node_id: NODE_GENERIC_ID,
+        target_annotation_id: ANNOTATION_FROMLOG_ID,
+        created_by: DEBATER_A_ID,
+        created_at: tsAt(seq),
+      },
+      createdAt: tsAt(seq),
+    });
+  },
+);
+
+Then('the projection has {int} edge', function (this: AConversaWorld, n: number) {
+  assert.equal(getProjection(this).edgeCount(), n);
+});
+
+Then(
+  "the projected edge's source is the seeded node and its target is the seeded annotation",
+  function (this: AConversaWorld) {
+    const edge = getProjection(this).getEdge(EDGE_FROMLOG_ID);
+    assert.ok(edge, 'expected the annotation-endpoint edge to be in the projection');
+    assert.equal(edge.sourceNodeId, NODE_GENERIC_ID);
+    assert.equal(edge.sourceAnnotationId, null);
+    assert.equal(edge.targetNodeId, null);
+    assert.equal(edge.targetAnnotationId, ANNOTATION_FROMLOG_ID);
+  },
+);

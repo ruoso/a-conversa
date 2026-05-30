@@ -489,6 +489,72 @@ describe('isEdgeActive — error paths', () => {
     const bogus = '00000000-0000-4000-8000-deadbeefdead';
     expect(() => isEdgeActive(projection, bogus)).toThrow(ActiveFiringComputationError);
   });
+
+  it('throws on an annotation-endpoint edge (active-firing is undefined for annotation endpoints in v1 — see projection_edge_annotation_endpoint D4)', () => {
+    resetSeq();
+    const projection = seedSessionWithEdge();
+    const ANNOTATION_ID = '00000000-0000-4000-8000-0000000a0001';
+    const ANNOT_EDGE_ID = '00000000-0000-4000-8000-0000000a0002';
+    applyEvent(
+      projection,
+      makeEvent(nextSeq(), 'annotation-created', DEBATER_A_ID, T2, {
+        annotation_id: ANNOTATION_ID,
+        kind: 'note',
+        content: 'A2',
+        target_node_id: SOURCE_NODE_ID,
+        target_edge_id: null,
+        created_by: DEBATER_A_ID,
+        created_at: T2,
+      }),
+    );
+    applyEvent(
+      projection,
+      makeEvent(nextSeq(), 'edge-created', DEBATER_A_ID, T2, {
+        edge_id: ANNOT_EDGE_ID,
+        role: 'contradicts',
+        source_node_id: SOURCE_NODE_ID,
+        target_annotation_id: ANNOTATION_ID,
+        created_by: DEBATER_A_ID,
+        created_at: T2,
+      }),
+    );
+    expect(() => isEdgeActive(projection, ANNOT_EDGE_ID)).toThrow(ActiveFiringComputationError);
+  });
+
+  it('getActiveFiring skips annotation-endpoint edges (composability with mixed projections)', () => {
+    resetSeq();
+    const projection = seedSessionWithEdge();
+    const ANNOTATION_ID = '00000000-0000-4000-8000-0000000a0003';
+    const ANNOT_EDGE_ID = '00000000-0000-4000-8000-0000000a0004';
+    applyEvent(
+      projection,
+      makeEvent(nextSeq(), 'annotation-created', DEBATER_A_ID, T2, {
+        annotation_id: ANNOTATION_ID,
+        kind: 'note',
+        content: 'A2',
+        target_node_id: SOURCE_NODE_ID,
+        target_edge_id: null,
+        created_by: DEBATER_A_ID,
+        created_at: T2,
+      }),
+    );
+    applyEvent(
+      projection,
+      makeEvent(nextSeq(), 'edge-created', DEBATER_A_ID, T2, {
+        edge_id: ANNOT_EDGE_ID,
+        role: 'contradicts',
+        source_node_id: SOURCE_NODE_ID,
+        target_annotation_id: ANNOTATION_ID,
+        created_by: DEBATER_A_ID,
+        created_at: T2,
+      }),
+    );
+    const map = getActiveFiring(projection);
+    // Map contains the original node↔node edge (false; substance not
+    // settled), NOT the annotation-endpoint one.
+    expect(map.has(EDGE_ID)).toBe(true);
+    expect(map.has(ANNOT_EDGE_ID)).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------

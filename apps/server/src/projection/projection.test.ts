@@ -45,7 +45,9 @@ function edgeInput(id: string, source: string, target: string): NewEdgeInput {
     id,
     role: 'supports',
     sourceNodeId: source,
+    sourceAnnotationId: null,
     targetNodeId: target,
+    targetAnnotationId: null,
     createdBy: USER_ID,
     createdAt: NOW,
   };
@@ -178,6 +180,72 @@ describe('edge mutations', () => {
     expect(() => projection.addEdge(edgeInput(EDGE_ID_1, NODE_ID_1, NODE_ID_2))).toThrow(
       ProjectionInvariantError,
     );
+  });
+
+  it('addEdge throws ProjectionInvariantError when both source slots are set (XOR per projection_edge_annotation_endpoint)', () => {
+    const projection = createEmptyProjection(SESSION_ID);
+    const input: NewEdgeInput = {
+      id: EDGE_ID_1,
+      role: 'supports',
+      sourceNodeId: NODE_ID_1,
+      sourceAnnotationId: ANNOTATION_ID_1,
+      targetNodeId: NODE_ID_2,
+      targetAnnotationId: null,
+      createdBy: USER_ID,
+      createdAt: NOW,
+    };
+    expect(() => projection.addEdge(input)).toThrow(ProjectionInvariantError);
+  });
+
+  it('addEdge throws ProjectionInvariantError when neither source slot is set (XOR per projection_edge_annotation_endpoint)', () => {
+    const projection = createEmptyProjection(SESSION_ID);
+    const input: NewEdgeInput = {
+      id: EDGE_ID_1,
+      role: 'supports',
+      sourceNodeId: null,
+      sourceAnnotationId: null,
+      targetNodeId: NODE_ID_2,
+      targetAnnotationId: null,
+      createdBy: USER_ID,
+      createdAt: NOW,
+    };
+    expect(() => projection.addEdge(input)).toThrow(ProjectionInvariantError);
+  });
+
+  it('addEdge throws ProjectionInvariantError when both target slots are set', () => {
+    const projection = createEmptyProjection(SESSION_ID);
+    const input: NewEdgeInput = {
+      id: EDGE_ID_1,
+      role: 'supports',
+      sourceNodeId: NODE_ID_1,
+      sourceAnnotationId: null,
+      targetNodeId: NODE_ID_2,
+      targetAnnotationId: ANNOTATION_ID_1,
+      createdBy: USER_ID,
+      createdAt: NOW,
+    };
+    expect(() => projection.addEdge(input)).toThrow(ProjectionInvariantError);
+  });
+
+  it('addEdge with annotation endpoints indexes mixed node + annotation ids in the same edgesBySource/edgesByTarget Maps', () => {
+    const projection = createEmptyProjection(SESSION_ID);
+    const input: NewEdgeInput = {
+      id: EDGE_ID_1,
+      role: 'contradicts',
+      sourceNodeId: NODE_ID_1,
+      sourceAnnotationId: null,
+      targetNodeId: null,
+      targetAnnotationId: ANNOTATION_ID_1,
+      createdBy: USER_ID,
+      createdAt: NOW,
+    };
+    projection.addEdge(input);
+    expect(projection.getEdgesBySource(NODE_ID_1).map((e) => e.id)).toEqual([EDGE_ID_1]);
+    expect(projection.getEdgesByTarget(ANNOTATION_ID_1).map((e) => e.id)).toEqual([EDGE_ID_1]);
+    // removeEdge resolves the same polymorphic key.
+    projection.removeEdge(EDGE_ID_1);
+    expect(projection.getEdgesBySource(NODE_ID_1)).toEqual([]);
+    expect(projection.getEdgesByTarget(ANNOTATION_ID_1)).toEqual([]);
   });
 
   it('removeEdge clears both source and target indices', () => {
@@ -477,8 +545,11 @@ describe('property-style sweep — random distinct nodes, random subset removal'
     for (const id of toRemove) projection.removeNode(id);
 
     for (const edge of projection.edges()) {
-      expect(projection.getNode(edge.sourceNodeId)).toBeDefined();
-      expect(projection.getNode(edge.targetNodeId)).toBeDefined();
+      // Every fuzz-generated edge in this test is a node↔node edge.
+      expect(edge.sourceNodeId).not.toBeNull();
+      expect(edge.targetNodeId).not.toBeNull();
+      expect(projection.getNode(edge.sourceNodeId!)).toBeDefined();
+      expect(projection.getNode(edge.targetNodeId!)).toBeDefined();
     }
   });
 });

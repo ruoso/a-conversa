@@ -305,7 +305,7 @@ describe('applyEvent — entity creation events', () => {
     ).toThrow(ReplayError);
   });
 
-  it('edge-created with an annotation-endpoint payload throws ReplayError (projection layer is still node-only — see follow-up projection_edge_annotation_endpoint)', () => {
+  it('edge-created with source_node_id + target_annotation_id round-trips through the projection (the load-bearing E15 shape)', () => {
     const projection = createEmptyProjection(SESSION_ID);
     applyEvent(
       projection,
@@ -316,19 +316,139 @@ describe('applyEvent — entity creation events', () => {
         created_at: T0,
       }),
     );
-    expect(() =>
-      applyEvent(
-        projection,
-        makeEvent(2, 'edge-created', DEBATER_A_ID, T1, {
-          edge_id: EDGE_ID_1,
-          role: 'contradicts',
-          source_node_id: NODE_ID_1,
-          target_annotation_id: ANNOTATION_ID_1,
-          created_by: DEBATER_A_ID,
-          created_at: T1,
-        }),
-      ),
-    ).toThrow(/projection_edge_annotation_endpoint/);
+    applyEvent(
+      projection,
+      makeEvent(2, 'annotation-created', DEBATER_A_ID, T1, {
+        annotation_id: ANNOTATION_ID_1,
+        kind: 'note',
+        content: 'A2',
+        target_node_id: NODE_ID_1,
+        target_edge_id: null,
+        created_by: DEBATER_A_ID,
+        created_at: T1,
+      }),
+    );
+    applyEvent(
+      projection,
+      makeEvent(3, 'edge-created', DEBATER_A_ID, T1, {
+        edge_id: EDGE_ID_1,
+        role: 'contradicts',
+        source_node_id: NODE_ID_1,
+        target_annotation_id: ANNOTATION_ID_1,
+        created_by: DEBATER_A_ID,
+        created_at: T1,
+      }),
+    );
+    const edge = projection.getEdge(EDGE_ID_1);
+    expect(edge).toBeDefined();
+    expect(edge?.sourceNodeId).toBe(NODE_ID_1);
+    expect(edge?.sourceAnnotationId).toBeNull();
+    expect(edge?.targetNodeId).toBeNull();
+    expect(edge?.targetAnnotationId).toBe(ANNOTATION_ID_1);
+    expect(edge?.role).toBe('contradicts');
+    // The polymorphic index keys mix node ids and annotation ids in
+    // the same Map<string, Set<string>> structure.
+    expect(projection.getEdgesBySource(NODE_ID_1).map((e) => e.id)).toEqual([EDGE_ID_1]);
+    expect(projection.getEdgesByTarget(ANNOTATION_ID_1).map((e) => e.id)).toEqual([EDGE_ID_1]);
+  });
+
+  it('edge-created with source_annotation_id + target_node_id (annotation-source case) round-trips', () => {
+    const projection = createEmptyProjection(SESSION_ID);
+    applyEvent(
+      projection,
+      makeEvent(1, 'node-created', DEBATER_A_ID, T0, {
+        node_id: NODE_ID_1,
+        wording: 'a',
+        created_by: DEBATER_A_ID,
+        created_at: T0,
+      }),
+    );
+    applyEvent(
+      projection,
+      makeEvent(2, 'annotation-created', DEBATER_A_ID, T1, {
+        annotation_id: ANNOTATION_ID_1,
+        kind: 'note',
+        content: 'annotation as source',
+        target_node_id: NODE_ID_1,
+        target_edge_id: null,
+        created_by: DEBATER_A_ID,
+        created_at: T1,
+      }),
+    );
+    applyEvent(
+      projection,
+      makeEvent(3, 'edge-created', DEBATER_A_ID, T1, {
+        edge_id: EDGE_ID_1,
+        role: 'contradicts',
+        source_annotation_id: ANNOTATION_ID_1,
+        target_node_id: NODE_ID_1,
+        created_by: DEBATER_A_ID,
+        created_at: T1,
+      }),
+    );
+    const edge = projection.getEdge(EDGE_ID_1);
+    expect(edge?.sourceNodeId).toBeNull();
+    expect(edge?.sourceAnnotationId).toBe(ANNOTATION_ID_1);
+    expect(edge?.targetNodeId).toBe(NODE_ID_1);
+    expect(edge?.targetAnnotationId).toBeNull();
+    expect(projection.getEdgesBySource(ANNOTATION_ID_1).map((e) => e.id)).toEqual([EDGE_ID_1]);
+    expect(projection.getEdgesByTarget(NODE_ID_1).map((e) => e.id)).toEqual([EDGE_ID_1]);
+  });
+
+  it('edge-created with source_annotation_id + target_annotation_id (annotation-to-annotation case) round-trips', () => {
+    const projection = createEmptyProjection(SESSION_ID);
+    const ANNOTATION_ID_2 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaab';
+    applyEvent(
+      projection,
+      makeEvent(1, 'node-created', DEBATER_A_ID, T0, {
+        node_id: NODE_ID_1,
+        wording: 'a',
+        created_by: DEBATER_A_ID,
+        created_at: T0,
+      }),
+    );
+    applyEvent(
+      projection,
+      makeEvent(2, 'annotation-created', DEBATER_A_ID, T1, {
+        annotation_id: ANNOTATION_ID_1,
+        kind: 'note',
+        content: 'first annotation',
+        target_node_id: NODE_ID_1,
+        target_edge_id: null,
+        created_by: DEBATER_A_ID,
+        created_at: T1,
+      }),
+    );
+    applyEvent(
+      projection,
+      makeEvent(3, 'annotation-created', DEBATER_A_ID, T1, {
+        annotation_id: ANNOTATION_ID_2,
+        kind: 'note',
+        content: 'second annotation',
+        target_node_id: NODE_ID_1,
+        target_edge_id: null,
+        created_by: DEBATER_A_ID,
+        created_at: T1,
+      }),
+    );
+    applyEvent(
+      projection,
+      makeEvent(4, 'edge-created', DEBATER_A_ID, T1, {
+        edge_id: EDGE_ID_1,
+        role: 'contradicts',
+        source_annotation_id: ANNOTATION_ID_1,
+        target_annotation_id: ANNOTATION_ID_2,
+        created_by: DEBATER_A_ID,
+        created_at: T1,
+      }),
+    );
+    const edge = projection.getEdge(EDGE_ID_1);
+    expect(edge?.sourceNodeId).toBeNull();
+    expect(edge?.sourceAnnotationId).toBe(ANNOTATION_ID_1);
+    expect(edge?.targetNodeId).toBeNull();
+    expect(edge?.targetAnnotationId).toBe(ANNOTATION_ID_2);
+    expect(projection.getEdgesBySource(ANNOTATION_ID_1).map((e) => e.id)).toEqual([EDGE_ID_1]);
+    expect(projection.getEdgesByTarget(ANNOTATION_ID_2).map((e) => e.id)).toEqual([EDGE_ID_1]);
   });
 
   it('edge-created adds an edge with the supplied role and endpoints', () => {

@@ -516,3 +516,56 @@ describe('detectSupportsCycles — filter rules', () => {
     expect(new Set(cycles[0]?.nodes ?? [])).toEqual(new Set([NODE_A, NODE_B, NODE_C]));
   });
 });
+
+// ---------------------------------------------------------------
+// Annotation-endpoint edges — per `projection_edge_annotation_endpoint`
+// D4, the cycle detector skips annotation-endpoint edges (the
+// node-supports subgraph has no semantics for them).
+// ---------------------------------------------------------------
+
+describe('detectSupportsCycles — annotation-endpoint edges (skipped per D4)', () => {
+  it('projection containing only annotation-endpoint supports edges → no cycles', () => {
+    resetSeq();
+    const projection = seedSession();
+    const ANNOTATION_ID_1 = '00000000-0000-4000-8000-0000000a1001';
+    const ANNOTATION_ID_2 = '00000000-0000-4000-8000-0000000a1002';
+    const ANNOT_EDGE_ID = '00000000-0000-4000-8000-0000000a1003';
+    createNode(projection, NODE_A, 'A');
+    applyEvent(
+      projection,
+      makeEvent(nextSeq(), 'annotation-created', DEBATER_A_ID, T2, {
+        annotation_id: ANNOTATION_ID_1,
+        kind: 'note',
+        content: 'annotation 1',
+        target_node_id: NODE_A,
+        target_edge_id: null,
+        created_by: DEBATER_A_ID,
+        created_at: T2,
+      }),
+    );
+    applyEvent(
+      projection,
+      makeEvent(nextSeq(), 'annotation-created', DEBATER_A_ID, T2, {
+        annotation_id: ANNOTATION_ID_2,
+        kind: 'note',
+        content: 'annotation 2',
+        target_node_id: NODE_A,
+        target_edge_id: null,
+        created_by: DEBATER_A_ID,
+        created_at: T2,
+      }),
+    );
+    applyEvent(
+      projection,
+      makeEvent(nextSeq(), 'edge-created', DEBATER_A_ID, T2, {
+        edge_id: ANNOT_EDGE_ID,
+        role: 'supports',
+        source_annotation_id: ANNOTATION_ID_1,
+        target_annotation_id: ANNOTATION_ID_2,
+        created_by: DEBATER_A_ID,
+        created_at: T2,
+      }),
+    );
+    expect(detectSupportsCycles(projection)).toEqual([]);
+  });
+});

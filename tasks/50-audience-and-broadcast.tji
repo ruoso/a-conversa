@@ -319,6 +319,18 @@ task audience "Audience and broadcast" {
         Decision §5 (component not yet reachable through any route).
       ->8-
     }
+    task aud_render_annotation_endpoint_edges "Render annotation-endpoint edges on audience Cytoscape canvas" {
+      effort 1.5d
+      allocate team
+      depends !aud_annotation_rendering, data_and_methodology.projection.projection_edge_annotation_endpoint
+      note -8<-
+        Source of debt: projection_edge_annotation_endpoint — the audience Cytoscape canvas currently
+        skips annotation-endpoint edges (apps/audience/src/graph/projectGraph.ts) because annotations
+        are not yet rendered as Cytoscape nodes. Rendering annotation-endpoint edges requires resolving
+        the design question of how the canvas surfaces annotations as standalone graph nodes.
+        Includes Playwright cover asserting an annotation-endpoint edge appears on the canvas.
+      ->8-
+    }
   }
 
   task aud_animations "Animations on commit and graph changes" {

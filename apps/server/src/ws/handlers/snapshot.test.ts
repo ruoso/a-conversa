@@ -818,4 +818,102 @@ describe('serializeProjectionForWire — wire-shape pin', () => {
     expect(perParticipant[DEBATER_A_ID]).toBeDefined();
     expect((perParticipant[DEBATER_A_ID] as { vote?: unknown }).vote).toBe('agree');
   });
+
+  it('serializes annotation-endpoint edges with the four polymorphic endpoint slots (per projection_edge_annotation_endpoint)', () => {
+    const projection = new Projection(SEEDED_SESSION_ID);
+    const EDGE_ID = '00000000-0000-4000-8000-000000000ed1';
+    const ANNOTATION_ID = '00000000-0000-4000-8000-000000000ed2';
+    const events: Event[] = [
+      {
+        id: 'cccccccc-cccc-4ccc-8ccc-cccccccccc01',
+        sessionId: SEEDED_SESSION_ID,
+        sequence: 1,
+        kind: 'session-created',
+        actor: FIXTURE_USER_ID,
+        payload: {
+          host_user_id: FIXTURE_USER_ID,
+          privacy: 'public',
+          topic: 'annotation-endpoint serializer pin',
+          created_at: '2026-05-11T10:00:00.000Z',
+        },
+        createdAt: '2026-05-11T10:00:00.000Z',
+      },
+      {
+        id: 'cccccccc-cccc-4ccc-8ccc-cccccccccc02',
+        sessionId: SEEDED_SESSION_ID,
+        sequence: 2,
+        kind: 'participant-joined',
+        actor: FIXTURE_USER_ID,
+        payload: {
+          user_id: FIXTURE_USER_ID,
+          role: 'moderator',
+          screen_name: FIXTURE_SCREEN_NAME,
+          joined_at: '2026-05-11T10:00:01.000Z',
+        },
+        createdAt: '2026-05-11T10:00:01.000Z',
+      },
+      {
+        id: 'cccccccc-cccc-4ccc-8ccc-cccccccccc03',
+        sessionId: SEEDED_SESSION_ID,
+        sequence: 3,
+        kind: 'node-created',
+        actor: FIXTURE_USER_ID,
+        payload: {
+          node_id: NODE_ID,
+          wording: 'A node for the annotation-endpoint edge.',
+          created_by: FIXTURE_USER_ID,
+          created_at: '2026-05-11T10:00:02.000Z',
+        },
+        createdAt: '2026-05-11T10:00:02.000Z',
+      },
+      {
+        id: 'cccccccc-cccc-4ccc-8ccc-cccccccccc04',
+        sessionId: SEEDED_SESSION_ID,
+        sequence: 4,
+        kind: 'annotation-created',
+        actor: FIXTURE_USER_ID,
+        payload: {
+          annotation_id: ANNOTATION_ID,
+          kind: 'note' as const,
+          content: 'A2',
+          target_node_id: NODE_ID,
+          target_edge_id: null,
+          created_by: FIXTURE_USER_ID,
+          created_at: '2026-05-11T10:00:03.000Z',
+        },
+        createdAt: '2026-05-11T10:00:03.000Z',
+      },
+      {
+        id: 'cccccccc-cccc-4ccc-8ccc-cccccccccc05',
+        sessionId: SEEDED_SESSION_ID,
+        sequence: 5,
+        kind: 'edge-created',
+        actor: FIXTURE_USER_ID,
+        payload: {
+          edge_id: EDGE_ID,
+          role: 'contradicts',
+          source_node_id: NODE_ID,
+          target_annotation_id: ANNOTATION_ID,
+          created_by: FIXTURE_USER_ID,
+          created_at: '2026-05-11T10:00:04.000Z',
+        },
+        createdAt: '2026-05-11T10:00:04.000Z',
+      },
+    ];
+    for (const evt of events) {
+      applyEvent(projection, evt);
+    }
+
+    const wire = serializeProjectionForWire(projection);
+    const roundTripped = JSON.parse(JSON.stringify(wire)) as Record<string, unknown>;
+    const edges = roundTripped.edges as Array<Record<string, unknown>>;
+    expect(edges).toHaveLength(1);
+    const edge = edges[0]!;
+    expect(edge.id).toBe(EDGE_ID);
+    expect(edge.role).toBe('contradicts');
+    expect(edge.sourceNodeId).toBe(NODE_ID);
+    expect(edge.sourceAnnotationId).toBeNull();
+    expect(edge.targetNodeId).toBeNull();
+    expect(edge.targetAnnotationId).toBe(ANNOTATION_ID);
+  });
 });

@@ -126,6 +126,17 @@ export function isEdgeActive(projection: Projection, edgeId: string): boolean {
   if (!edge) {
     throw new ActiveFiringComputationError(`edge ${edgeId} not present in projection`);
   }
+  // Per `projection_edge_annotation_endpoint` D4: active-firing is a
+  // node-substance computation (reads source-node substance via
+  // `deriveFacetStatus`). An annotation-endpoint edge has no
+  // substance facet to read on either side; calling `isEdgeActive` on
+  // one is a category error. Throw loud rather than silently
+  // coercing — `getActiveFiring` filters at the call-site instead.
+  if (edge.sourceNodeId === null || edge.targetNodeId === null) {
+    throw new ActiveFiringComputationError(
+      `edge ${edgeId}: active-firing is undefined for annotation-endpoint edges (see follow-up task diagnostics_annotation_endpoint_semantics_audit)`,
+    );
+  }
   const sourceNode = projection.getNode(edge.sourceNodeId);
   if (!sourceNode) {
     throw new ActiveFiringComputationError(
@@ -169,6 +180,13 @@ export function isEdgeActive(projection: Projection, edgeId: string): boolean {
 export function getActiveFiring(projection: Projection): Map<string, boolean> {
   const result = new Map<string, boolean>();
   for (const edge of projection.edges()) {
+    // Per `projection_edge_annotation_endpoint` D4: annotation-endpoint
+    // edges have no node-substance to walk; the per-edge `isEdgeActive`
+    // throws on them. Skip at the bulk level so a projection that mixes
+    // node↔node edges and annotation-endpoint edges stays composable
+    // (the audit follow-up `diagnostics_annotation_endpoint_semantics_audit`
+    // revisits whether to surface firing semantics for these edges).
+    if (edge.sourceNodeId === null || edge.targetNodeId === null) continue;
     result.set(edge.id, isEdgeActive(projection, edge.id));
   }
   return result;

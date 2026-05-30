@@ -373,3 +373,43 @@ describe('detectMultiWarrants — multi-warrants detected', () => {
     expect(dc2Entry?.warrantNodeIds).toEqual([WARRANT_W1, WARRANT_W3]);
   });
 });
+
+// ---------------------------------------------------------------
+// Annotation-endpoint edges — per `projection_edge_annotation_endpoint`
+// D4, multi-warrant detection skips annotation-endpoint edges (warrants
+// are node-node constructs).
+// ---------------------------------------------------------------
+
+describe('detectMultiWarrants — annotation-endpoint edges (skipped per D4)', () => {
+  it('bridges-from with annotation source/target → no findings', () => {
+    resetSeq();
+    const projection = seedSession();
+    const ANNOTATION_ID = '00000000-0000-4000-8000-0000000c1001';
+    const ANNOT_EDGE_ID = '00000000-0000-4000-8000-0000000c1002';
+    createNode(projection, NODE_D, 'D');
+    applyEvent(
+      projection,
+      makeEvent(nextSeq(), 'annotation-created', DEBATER_A_ID, T2, {
+        annotation_id: ANNOTATION_ID,
+        kind: 'note',
+        content: 'annotation source',
+        target_node_id: NODE_D,
+        target_edge_id: null,
+        created_by: DEBATER_A_ID,
+        created_at: T2,
+      }),
+    );
+    applyEvent(
+      projection,
+      makeEvent(nextSeq(), 'edge-created', DEBATER_A_ID, T2, {
+        edge_id: ANNOT_EDGE_ID,
+        role: 'bridges-from',
+        source_annotation_id: ANNOTATION_ID,
+        target_node_id: NODE_D,
+        created_by: DEBATER_A_ID,
+        created_at: T2,
+      }),
+    );
+    expect(detectMultiWarrants(projection)).toEqual([]);
+  });
+});

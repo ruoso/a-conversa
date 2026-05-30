@@ -95,6 +95,11 @@ export function detectMultiWarrants(projection: Projection): MultiWarrant[] {
   for (const fromEdge of projection.edges()) {
     if (!fromEdge.visible) continue;
     if (fromEdge.role !== 'bridges-from') continue;
+    // Per `projection_edge_annotation_endpoint` D4: warrants are
+    // node-node constructs (the (data, warrant, claim) triple is
+    // three nodes). An annotation endpoint can't play the data or
+    // warrant role here. Skip.
+    if (fromEdge.sourceNodeId === null || fromEdge.targetNodeId === null) continue;
 
     const warrantId = fromEdge.sourceNodeId;
     const dataId = fromEdge.targetNodeId;
@@ -112,6 +117,9 @@ export function detectMultiWarrants(projection: Projection): MultiWarrant[] {
     for (const toEdge of projection.getEdgesBySource(warrantId)) {
       if (!toEdge.visible) continue;
       if (toEdge.role !== 'bridges-to') continue;
+      // Per `projection_edge_annotation_endpoint` D4: an annotation-
+      // endpoint target can't play the claim role. Skip.
+      if (toEdge.targetNodeId === null) continue;
 
       const claimId = toEdge.targetNodeId;
       const claimNode = projection.getNode(claimId);
