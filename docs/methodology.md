@@ -233,6 +233,7 @@ Methodological opportunities — visible but non-blocking. The participants may 
 - **Dangling claim** — a soft prompt; the moderator asks for support or asks whether the claim is being conceded/accepted.
 - **Coherency hints** — advisory only; no required resolution.
   - **Annotation-of-annotation chain (depth ≥ 2)** — an edge whose source is an annotation and whose target is an annotation, where the source annotation is itself the target of another such edge, indicates an annotation-on-annotation chain of depth ≥ 2 — a signal that the discussion has migrated off the substance graph. Surfaced as advisory; resolution is typically to withdraw the deeper annotations and re-land the discussion at the substance level the metadata originally pointed at.
+  - **Self-referential annotation contradicts (node ↔ own annotation)** — a `contradicts` edge between a node `N` and an annotation `A` whose anchor is `N` indicates the formal contradiction mechanism is being applied between an entity and its own metadata layer. Surfaced as advisory; the typical resolution is to withdraw or restructure the annotation rather than resolve the contradiction at the substance layer — the methodology positions `contradicts` as a substance-layer relation between peer entities, not between an entity and its commentary. Fires in both edge directions (`N → contradicts → A` and `A → contradicts → N`) because the structural smell is symmetric.
 
 ## Cross-session inclusion
 

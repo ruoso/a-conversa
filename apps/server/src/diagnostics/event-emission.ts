@@ -50,6 +50,7 @@ import {
   type IncompleteWarrantMissingBridgesFromHint,
   type SelfContradictsHint,
   type AnnotationOfAnnotationChainHint,
+  type SelfReferentialAnnotationContradictsHint,
 } from './coherency-hint-detection.js';
 
 // ---------------------------------------------------------------
@@ -265,6 +266,8 @@ function coherencyHintIdentityKey(hint: CoherencyHint): string {
       return selfContradictsKey(hint);
     case 'annotation-of-annotation-chain':
       return annotationOfAnnotationChainKey(hint);
+    case 'self-referential-annotation-contradicts':
+      return selfReferentialAnnotationContradictsKey(hint);
   }
 }
 
@@ -285,6 +288,15 @@ function annotationOfAnnotationChainKey(hint: AnnotationOfAnnotationChainHint): 
   // per qualifying edge; same edge across two snapshots is the same
   // diagnostic.
   return `coherency-hint\0annotation-of-annotation-chain\0${hint.edgeId}`;
+}
+
+function selfReferentialAnnotationContradictsKey(
+  hint: SelfReferentialAnnotationContradictsHint,
+): string {
+  // Identity is the qualifying edge id, mirroring `self-contradicts`
+  // and `annotation-of-annotation-chain` — one diagnostic per
+  // qualifying edge.
+  return `coherency-hint\0self-referential-annotation-contradicts\0${hint.edgeId}`;
 }
 
 // ---------------------------------------------------------------

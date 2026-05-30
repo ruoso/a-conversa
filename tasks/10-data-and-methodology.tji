@@ -314,6 +314,7 @@ task data_and_methodology "Data and methodology" {
     task coherency_self_referential_annotation_contradicts_rule "Coherency hint: node contradicts its own annotation" {
       effort 0.5d
       allocate team
+      complete 100
       depends !diagnostics_annotation_endpoint_semantics_audit
       note -8<-
         Source of debt: diagnostics_annotation_endpoint_semantics_audit D3.

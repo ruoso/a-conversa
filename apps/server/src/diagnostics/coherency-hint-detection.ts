@@ -68,13 +68,17 @@
 //       `docs/methodology.md` "Advisory diagnostics → Coherency hints
 //       → Annotation-of-annotation chain (depth ≥ 2)". Refinement:
 //       `tasks/refinements/data-and-methodology/coherency_annotation_of_annotation_chain_rule.md`.
-//     - `self-referential-annotation-contradicts` (candidate-future) —
-//       a `node N → contradicts → annotation A` edge where `A`
-//       annotates `N`. Structurally points at "withdraw the
-//       annotation" as the resolution rather than "resolve the
-//       contradiction." Future task slot
-//       `coherency_self_referential_annotation_contradicts_rule`;
-//       conditional on a separate `docs/methodology.md` enumeration.
+//     - `self-referential-annotation-contradicts` (LANDED — rule 5
+//       below). A `contradicts` edge connecting a node `N` and an
+//       annotation `A` whose anchor is `N`, in either edge direction.
+//       Structurally points at "withdraw the annotation" as the
+//       resolution rather than "resolve the contradiction at the
+//       substance layer" — the methodology positions `contradicts` as
+//       a peer-substance relation, not an entity↔metadata one. Cites
+//       `docs/methodology.md` "Advisory diagnostics → Coherency hints
+//       → Self-referential annotation contradicts (node ↔ own
+//       annotation)". Refinement:
+//       `tasks/refinements/data-and-methodology/coherency_self_referential_annotation_contradicts_rule.md`.
 //
 // Boundary with siblings:
 //   - `multi_warrant_detection` (settled) counts only COMPLETE
@@ -112,7 +116,8 @@ export type HintKind =
   | 'incomplete-warrant-missing-bridges-to'
   | 'incomplete-warrant-missing-bridges-from'
   | 'self-contradicts'
-  | 'annotation-of-annotation-chain';
+  | 'annotation-of-annotation-chain'
+  | 'self-referential-annotation-contradicts';
 
 /**
  * Hint emitted by the `incomplete-warrant-missing-bridges-to` rule.
@@ -184,6 +189,29 @@ export interface AnnotationOfAnnotationChainHint {
 }
 
 /**
+ * Hint emitted by the `self-referential-annotation-contradicts` rule.
+ * A visible `contradicts` edge with exactly one node endpoint and
+ * exactly one annotation endpoint, where the annotation's anchor is
+ * that same node (`annotation.targetNodeId === node.id`). Fires in
+ * both edge directions (`N → contradicts → A` and `A → contradicts → N`);
+ * the structural smell is symmetric.
+ *
+ * Cites `docs/methodology.md` "Advisory diagnostics → Coherency hints
+ * → Self-referential annotation contradicts (node ↔ own annotation)".
+ *
+ * The payload carries the three involved entity ids — the qualifying
+ * edge, its node endpoint, and its annotation endpoint — direction-
+ * agnostic so the UI can render either arrow direction from the
+ * underlying edge fields without re-encoding direction in the hint.
+ */
+export interface SelfReferentialAnnotationContradictsHint {
+  kind: 'self-referential-annotation-contradicts';
+  edgeId: string;
+  nodeId: string;
+  annotationId: string;
+}
+
+/**
  * One coherency hint. Discriminated union over `HintKind`. Downstream
  * consumers `switch` on `kind` and handle the per-variant payload.
  */
@@ -191,7 +219,8 @@ export type CoherencyHint =
   | IncompleteWarrantMissingBridgesToHint
   | IncompleteWarrantMissingBridgesFromHint
   | SelfContradictsHint
-  | AnnotationOfAnnotationChainHint;
+  | AnnotationOfAnnotationChainHint
+  | SelfReferentialAnnotationContradictsHint;
 
 // ---------------------------------------------------------------
 // Rule functions — one per HintKind, composed by detectCoherencyHints.
@@ -406,6 +435,77 @@ function detectAnnotationOfAnnotationChains(
   return hints;
 }
 
+/**
+ * Detect visible `contradicts` edges connecting a node and an
+ * annotation whose anchor is that node — the formal contradiction
+ * mechanism applied between an entity and its own metadata.
+ *
+ * Cites `docs/methodology.md` "Advisory diagnostics → Coherency hints
+ * → Self-referential annotation contradicts (node ↔ own annotation)".
+ *
+ * Per refinement D2 the rule fires in both edge directions
+ * (`node → contradicts → annotation` AND `annotation → contradicts →
+ * node`): the structural smell is direction-agnostic. Per D3 the
+ * anchor scope is direct node-anchor only — annotations anchored on an
+ * edge (`targetEdgeId !== null`) do not qualify.
+ *
+ * Iteration: walks `projection.edges()` in insertion order; for each
+ * mixed-endpoint contradicts edge looks up the annotation via
+ * `projection.getAnnotation` and checks the anchor-match property
+ * against the node endpoint.
+ */
+function detectSelfReferentialAnnotationContradicts(
+  projection: Projection,
+): SelfReferentialAnnotationContradictsHint[] {
+  const hints: SelfReferentialAnnotationContradictsHint[] = [];
+  for (const edge of projection.edges()) {
+    if (!edge.visible) continue;
+    if (edge.role !== 'contradicts') continue;
+
+    // Mixed-endpoint filter — exactly one node endpoint and exactly
+    // one annotation endpoint. Both-node edges are owned by
+    // `self-contradicts`; both-annotation edges by
+    // `annotation-of-annotation-chain`.
+    let nodeId: string;
+    let annotationId: string;
+    if (
+      edge.sourceNodeId !== null &&
+      edge.targetAnnotationId !== null &&
+      edge.sourceAnnotationId === null &&
+      edge.targetNodeId === null
+    ) {
+      nodeId = edge.sourceNodeId;
+      annotationId = edge.targetAnnotationId;
+    } else if (
+      edge.sourceAnnotationId !== null &&
+      edge.targetNodeId !== null &&
+      edge.sourceNodeId === null &&
+      edge.targetAnnotationId === null
+    ) {
+      nodeId = edge.targetNodeId;
+      annotationId = edge.sourceAnnotationId;
+    } else {
+      continue;
+    }
+
+    const node = projection.getNode(nodeId);
+    if (!node || !node.visible) continue;
+    const annotation = projection.getAnnotation(annotationId);
+    if (!annotation || !annotation.visible) continue;
+
+    // Anchor-match filter — annotation anchors directly on this node.
+    if (annotation.targetNodeId !== nodeId) continue;
+
+    hints.push({
+      kind: 'self-referential-annotation-contradicts',
+      edgeId: edge.id,
+      nodeId,
+      annotationId,
+    });
+  }
+  return hints;
+}
+
 // ---------------------------------------------------------------
 // Rule registry.
 // ---------------------------------------------------------------
@@ -427,6 +527,7 @@ const RULES: ReadonlyArray<(projection: Projection) => CoherencyHint[]> = [
   detectIncompleteWarrantsMissingBridgesFrom,
   detectSelfContradicts,
   detectAnnotationOfAnnotationChains,
+  detectSelfReferentialAnnotationContradicts,
 ];
 
 /**
