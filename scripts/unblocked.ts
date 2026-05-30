@@ -46,7 +46,9 @@
 //   7. In the full (unfiltered) report, also print **orphans**: leaf
 //      tasks in NO milestone's gating set — nothing in the plan
 //      transitively requires them. These are the audit target for "wire
-//      to a milestone or descope".
+//      to a milestone or descope". Only *incomplete* orphans are printed;
+//      completed orphans are done work that needs no triage. When no
+//      incomplete orphans remain, the section is omitted entirely.
 
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -469,28 +471,23 @@ function main(): void {
   // a plan-wide view rather than a per-milestone one.
   if (filterId === undefined) {
     const orphans = computeOrphans(g, declared, milestoneIds, gatingMemo);
+    // Only incomplete orphans are actionable: a completed orphan is done work
+    // that needs no "wire-or-descope" triage, so we omit it. When none remain,
+    // skip the whole section — a clean plan needs no audit banner.
     const incomplete = orphans.filter((id) => g.byId.get(id)!.completePct < 100);
-    const complete = orphans.filter((id) => g.byId.get(id)!.completePct >= 100);
-    lines.push('────────────────────────────────────────────────────────────');
-    lines.push('ORPHANS — leaf tasks no milestone transitively depends on');
-    lines.push('(nothing in the plan requires them — audit: wire to a milestone or descope)');
-    lines.push('');
-    lines.push(`  INCOMPLETE (${String(incomplete.length)}):`);
-    if (incomplete.length === 0) {
-      lines.push('    (none)');
-    } else {
+    if (incomplete.length > 0) {
+      lines.push('────────────────────────────────────────────────────────────');
+      lines.push('ORPHANS — incomplete leaf tasks no milestone transitively depends on');
+      lines.push('(nothing in the plan requires them — audit: wire to a milestone or descope)');
+      lines.push('(completed orphans are omitted — done work needs no triage)');
+      lines.push('');
+      lines.push(`  INCOMPLETE (${String(incomplete.length)}):`);
       for (const id of incomplete) {
         const leaf = g.byId.get(id)!;
         lines.push(`    ${id}${formatEffort(leaf.effortDays)} [${String(leaf.completePct)}%]`);
       }
+      lines.push('');
     }
-    lines.push(`  COMPLETE (${String(complete.length)}):`);
-    if (complete.length === 0) {
-      lines.push('    (none)');
-    } else {
-      for (const id of complete) lines.push(`    ${id}`);
-    }
-    lines.push('');
   }
 
   process.stdout.write(lines.join('\n'));
