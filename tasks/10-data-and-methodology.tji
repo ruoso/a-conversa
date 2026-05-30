@@ -325,12 +325,14 @@ task data_and_methodology "Data and methodology" {
     task coherency_annotation_of_annotation_chain_rule "Coherency hint: annotation-of-annotation chain depth ≥ 2" {
       effort 0.5d
       allocate team
+      complete 100
       depends !diagnostics_annotation_endpoint_semantics_audit
       note -8<-
         Source of debt: diagnostics_annotation_endpoint_semantics_audit D3.
         Candidate coherency-hint rule: annotation → role → annotation chains of depth ≥ 2.
         Conditional on docs/methodology.md enumerating the pattern as a named coherency hint.
         Includes Vitest cover; no Cucumber delta.
+        Refinement: tasks/refinements/data-and-methodology/coherency_annotation_of_annotation_chain_rule.md
       ->8-
     }
     task contradiction_annotation_endpoint_semantics_audit "Audit contradiction_detection for annotation-endpoint edges" {

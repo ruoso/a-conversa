@@ -232,6 +232,7 @@ Methodological opportunities — visible but non-blocking. The participants may 
 - **Multiple competing warrants on one data→claim** — decompose the claim. After decomposition, each warrant attaches to a different component. Often surfaces a hidden compound structure, but if the participants don't see it that way, no requirement to act.
 - **Dangling claim** — a soft prompt; the moderator asks for support or asks whether the claim is being conceded/accepted.
 - **Coherency hints** — advisory only; no required resolution.
+  - **Annotation-of-annotation chain (depth ≥ 2)** — an edge whose source is an annotation and whose target is an annotation, where the source annotation is itself the target of another such edge, indicates an annotation-on-annotation chain of depth ≥ 2 — a signal that the discussion has migrated off the substance graph. Surfaced as advisory; resolution is typically to withdraw the deeper annotations and re-land the discussion at the substance level the metadata originally pointed at.
 
 ## Cross-session inclusion
 

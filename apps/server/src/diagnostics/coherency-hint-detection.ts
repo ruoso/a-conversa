@@ -55,27 +55,26 @@
 // detectors' structural-only stance and diverges deliberately from
 // the cycle / contradiction detectors (which gate on `isEdgeActive`).
 //
-// Annotation-endpoint edges (v1: skip).
-//   The per-rule inline guards skip annotation-endpoint edges. v1
-//   coherency-hint rules are node-node by construction — see
+// Annotation-endpoint edges.
+//   The three v1 per-rule inline guards skip annotation-endpoint
+//   edges — those rules are node-node by construction (see
 //   `diagnostics_annotation_endpoint_semantics_audit` D3 for the
-//   per-rule rationale. The audit names two candidate-future rules
-//   that would, if methodology-doc enumeration lands, surface
-//   annotation-endpoint structural smells:
-//     - `self-referential-annotation-contradicts` — a
-//       `node N → contradicts → annotation A` edge where `A`
+//   per-rule rationale). Annotation-endpoint structural smells are
+//   surfaced by dedicated rules that the audit named:
+//     - `annotation-of-annotation-chain` (LANDED — rule 4 below). An
+//       `annotation A → role → annotation B` chain of depth ≥ 2;
+//       arbitrarily deep annotation-on-annotation chains indicate the
+//       meta-discussion has migrated off the substance graph. Cites
+//       `docs/methodology.md` "Advisory diagnostics → Coherency hints
+//       → Annotation-of-annotation chain (depth ≥ 2)". Refinement:
+//       `tasks/refinements/data-and-methodology/coherency_annotation_of_annotation_chain_rule.md`.
+//     - `self-referential-annotation-contradicts` (candidate-future) —
+//       a `node N → contradicts → annotation A` edge where `A`
 //       annotates `N`. Structurally points at "withdraw the
 //       annotation" as the resolution rather than "resolve the
 //       contradiction." Future task slot
-//       `coherency_self_referential_annotation_contradicts_rule`.
-//     - `annotation-of-annotation chain` — an
-//       `annotation A → role X → annotation B` chain of depth ≥ 2.
-//       Arbitrarily deep annotation-on-annotation chains may indicate
-//       the meta-discussion has migrated off the substance graph.
-//       Future task slot `coherency_annotation_of_annotation_chain_rule`.
-//   Both rules are conditional on `docs/methodology.md` adding the
-//   pattern to its coherency-hint catalogue; adding them without a
-//   methodology citation would be speculation.
+//       `coherency_self_referential_annotation_contradicts_rule`;
+//       conditional on a separate `docs/methodology.md` enumeration.
 //
 // Boundary with siblings:
 //   - `multi_warrant_detection` (settled) counts only COMPLETE
@@ -112,7 +111,8 @@ import type { Projection } from '../projection/projection.js';
 export type HintKind =
   | 'incomplete-warrant-missing-bridges-to'
   | 'incomplete-warrant-missing-bridges-from'
-  | 'self-contradicts';
+  | 'self-contradicts'
+  | 'annotation-of-annotation-chain';
 
 /**
  * Hint emitted by the `incomplete-warrant-missing-bridges-to` rule.
@@ -157,13 +157,41 @@ export interface SelfContradictsHint {
 }
 
 /**
+ * Hint emitted by the `annotation-of-annotation-chain` rule. An edge
+ * whose source is an annotation and whose target is an annotation,
+ * where the source annotation is itself the target of another visible
+ * annotation-to-annotation edge — i.e., the chain of contiguous
+ * annotation-to-annotation hops reaches depth ≥ 2 at this edge.
+ *
+ * Cites `docs/methodology.md` "Advisory diagnostics → Coherency hints
+ * → Annotation-of-annotation chain (depth ≥ 2)" — the smell is that
+ * the discussion has migrated off the substance graph onto its own
+ * metadata layer; the typical resolution is to withdraw the deeper
+ * annotations and re-land the discussion at the substance level.
+ *
+ * Per the refinement Decisions, the rule emits one hint per
+ * second-or-later hop (a chain of depth D emits D−1 hints; cycles
+ * emit one hint per edge). `incomingEdgeId` identifies the prior
+ * annotation-to-annotation edge whose target equals this edge's
+ * source — the structural witness that establishes the chain.
+ */
+export interface AnnotationOfAnnotationChainHint {
+  kind: 'annotation-of-annotation-chain';
+  edgeId: string;
+  sourceAnnotationId: string;
+  targetAnnotationId: string;
+  incomingEdgeId: string;
+}
+
+/**
  * One coherency hint. Discriminated union over `HintKind`. Downstream
  * consumers `switch` on `kind` and handle the per-variant payload.
  */
 export type CoherencyHint =
   | IncompleteWarrantMissingBridgesToHint
   | IncompleteWarrantMissingBridgesFromHint
-  | SelfContradictsHint;
+  | SelfContradictsHint
+  | AnnotationOfAnnotationChainHint;
 
 // ---------------------------------------------------------------
 // Rule functions — one per HintKind, composed by detectCoherencyHints.
@@ -308,6 +336,76 @@ function detectSelfContradicts(projection: Projection): SelfContradictsHint[] {
   return hints;
 }
 
+/**
+ * Detect visible annotation-to-annotation edges whose source
+ * annotation is itself the target of another visible annotation-to-
+ * annotation edge — i.e., the contiguous annotation-to-annotation
+ * chain reaches depth ≥ 2 at this edge.
+ *
+ * Cites `docs/methodology.md` "Advisory diagnostics → Coherency hints
+ * → Annotation-of-annotation chain (depth ≥ 2)".
+ *
+ * Iteration: walks `projection.edges()` in insertion order. For each
+ * candidate, uses `projection.getEdgesByTarget(sourceAnnotationId)` —
+ * the polymorphic-key index accepts annotation IDs as well as node
+ * IDs per `projection_edge_annotation_endpoint` — to find a visible
+ * incoming annotation-to-annotation edge. Per the refinement D2 a
+ * chain spans only contiguous annotation-to-annotation hops; a node
+ * in the middle of the path breaks the chain because the methodology
+ * smell is "the discussion has migrated off the substance graph",
+ * and a node-endpoint edge is *on* the substance graph.
+ */
+function detectAnnotationOfAnnotationChains(
+  projection: Projection,
+): AnnotationOfAnnotationChainHint[] {
+  const hints: AnnotationOfAnnotationChainHint[] = [];
+  for (const edge of projection.edges()) {
+    if (!edge.visible) continue;
+    if (edge.sourceAnnotationId === null || edge.targetAnnotationId === null) continue;
+
+    // Defensive endpoint-visibility guard — mirrors the sibling rules'
+    // pattern. Per refinement D7 an invisible endpoint annotation
+    // breaks the chain.
+    const sourceAnn = projection.getAnnotation(edge.sourceAnnotationId);
+    if (!sourceAnn || !sourceAnn.visible) continue;
+    const targetAnn = projection.getAnnotation(edge.targetAnnotationId);
+    if (!targetAnn || !targetAnn.visible) continue;
+
+    // Look for a visible incoming annotation-to-annotation edge whose
+    // target equals this edge's source annotation. First match wins —
+    // if multiple incoming edges qualify, any one of them is a valid
+    // structural witness of the chain at this hop.
+    //
+    // The witness must be a DISTINCT edge — an `A → A` self-loop's
+    // `getEdgesByTarget(A)` includes the edge itself, but the rule's
+    // "chain reaches depth ≥ 2 at this edge" framing (per refinement
+    // D8's cycle example `A → B → A`) requires another edge as the
+    // first hop. A single self-loop is depth 1, not 2.
+    let incomingEdgeId: string | null = null;
+    for (const incoming of projection.getEdgesByTarget(edge.sourceAnnotationId)) {
+      if (incoming.id === edge.id) continue;
+      if (!incoming.visible) continue;
+      if (incoming.sourceAnnotationId === null || incoming.targetAnnotationId === null) {
+        continue;
+      }
+      const incomingSourceAnn = projection.getAnnotation(incoming.sourceAnnotationId);
+      if (!incomingSourceAnn || !incomingSourceAnn.visible) continue;
+      incomingEdgeId = incoming.id;
+      break;
+    }
+    if (incomingEdgeId === null) continue;
+
+    hints.push({
+      kind: 'annotation-of-annotation-chain',
+      edgeId: edge.id,
+      sourceAnnotationId: edge.sourceAnnotationId,
+      targetAnnotationId: edge.targetAnnotationId,
+      incomingEdgeId,
+    });
+  }
+  return hints;
+}
+
 // ---------------------------------------------------------------
 // Rule registry.
 // ---------------------------------------------------------------
@@ -328,6 +426,7 @@ const RULES: ReadonlyArray<(projection: Projection) => CoherencyHint[]> = [
   detectIncompleteWarrantsMissingBridgesTo,
   detectIncompleteWarrantsMissingBridgesFrom,
   detectSelfContradicts,
+  detectAnnotationOfAnnotationChains,
 ];
 
 /**

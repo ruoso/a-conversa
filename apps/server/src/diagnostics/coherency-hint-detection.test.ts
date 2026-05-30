@@ -175,6 +175,49 @@ function createEdge(
   );
 }
 
+// Helpers for annotation-of-annotation-chain test cases. Per refinement
+// D6 these wrap the existing `applyEvent` + `makeEvent` pattern; each
+// new case needs 2–4 annotations and 1–3 annotation-to-annotation
+// edges, and inlining the events would clutter the file.
+function createAnnotation(
+  projection: Projection,
+  annotationId: string,
+  anchor: { nodeId: string } | { edgeId: string },
+): void {
+  applyEvent(
+    projection,
+    makeEvent(nextSeq(), 'annotation-created', DEBATER_A_ID, T2, {
+      annotation_id: annotationId,
+      kind: 'note',
+      content: 'a',
+      target_node_id: 'nodeId' in anchor ? anchor.nodeId : null,
+      target_edge_id: 'edgeId' in anchor ? anchor.edgeId : null,
+      created_by: DEBATER_A_ID,
+      created_at: T2,
+    }),
+  );
+}
+
+function createAnnotationEdge(
+  projection: Projection,
+  edgeId: string,
+  sourceAnnotationId: string,
+  targetAnnotationId: string,
+  role: EdgeRole,
+): void {
+  applyEvent(
+    projection,
+    makeEvent(nextSeq(), 'edge-created', DEBATER_A_ID, T2, {
+      edge_id: edgeId,
+      role,
+      source_annotation_id: sourceAnnotationId,
+      target_annotation_id: targetAnnotationId,
+      created_by: DEBATER_A_ID,
+      created_at: T2,
+    }),
+  );
+}
+
 // ---------------------------------------------------------------
 // No hints.
 // ---------------------------------------------------------------
@@ -542,5 +585,251 @@ describe('detectCoherencyHints — annotation-endpoint edges (skipped per audit 
       }),
     );
     expect(detectCoherencyHints(projection)).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------
+// Annotation-of-annotation-chain hints.
+//
+// Refinement: tasks/refinements/data-and-methodology/coherency_annotation_of_annotation_chain_rule.md
+//
+// The rule fires once per visible annotation-to-annotation edge whose
+// source annotation is itself the target of another visible
+// annotation-to-annotation edge — i.e., the contiguous annotation-to-
+// annotation chain reaches depth ≥ 2 at that edge.
+// ---------------------------------------------------------------
+
+const NODE_ANCHOR = '66666666-6666-4666-8666-666666666aaa';
+const NODE_ANCHOR_2 = '66666666-6666-4666-8666-666666666abb';
+
+const ANN_A1 = '00000000-0000-4000-8000-0000000aa001';
+const ANN_A2 = '00000000-0000-4000-8000-0000000aa002';
+const ANN_A3 = '00000000-0000-4000-8000-0000000aa003';
+const ANN_A4 = '00000000-0000-4000-8000-0000000aa004';
+
+const EDGE_AAE_1 = '00000000-0000-4000-8000-0000000ae001';
+const EDGE_AAE_2 = '00000000-0000-4000-8000-0000000ae002';
+const EDGE_AAE_3 = '00000000-0000-4000-8000-0000000ae003';
+
+describe('detectCoherencyHints — annotation-of-annotation-chain hints', () => {
+  it('single annotation-to-annotation edge (chain depth 1) → no hint', () => {
+    resetSeq();
+    const projection = seedSession();
+    createNode(projection, NODE_ANCHOR, 'anchor');
+    createNode(projection, NODE_ANCHOR_2, 'anchor2');
+    createAnnotation(projection, ANN_A1, { nodeId: NODE_ANCHOR });
+    createAnnotation(projection, ANN_A2, { nodeId: NODE_ANCHOR_2 });
+    createAnnotationEdge(projection, EDGE_AAE_1, ANN_A1, ANN_A2, 'supports');
+    expect(detectCoherencyHints(projection)).toEqual([]);
+  });
+
+  it('chain depth 2 → one hint on the second hop, carrying the first hop as incomingEdgeId', () => {
+    resetSeq();
+    const projection = seedSession();
+    createNode(projection, NODE_ANCHOR, 'anchor');
+    createAnnotation(projection, ANN_A1, { nodeId: NODE_ANCHOR });
+    createAnnotation(projection, ANN_A2, { nodeId: NODE_ANCHOR });
+    createAnnotation(projection, ANN_A3, { nodeId: NODE_ANCHOR });
+    createAnnotationEdge(projection, EDGE_AAE_1, ANN_A1, ANN_A2, 'supports');
+    createAnnotationEdge(projection, EDGE_AAE_2, ANN_A2, ANN_A3, 'supports');
+    expect(detectCoherencyHints(projection)).toEqual([
+      {
+        kind: 'annotation-of-annotation-chain',
+        edgeId: EDGE_AAE_2,
+        sourceAnnotationId: ANN_A2,
+        targetAnnotationId: ANN_A3,
+        incomingEdgeId: EDGE_AAE_1,
+      },
+    ]);
+  });
+
+  it('chain depth 3 → two hints, one per second-or-later hop', () => {
+    resetSeq();
+    const projection = seedSession();
+    createNode(projection, NODE_ANCHOR, 'anchor');
+    createAnnotation(projection, ANN_A1, { nodeId: NODE_ANCHOR });
+    createAnnotation(projection, ANN_A2, { nodeId: NODE_ANCHOR });
+    createAnnotation(projection, ANN_A3, { nodeId: NODE_ANCHOR });
+    createAnnotation(projection, ANN_A4, { nodeId: NODE_ANCHOR });
+    createAnnotationEdge(projection, EDGE_AAE_1, ANN_A1, ANN_A2, 'supports');
+    createAnnotationEdge(projection, EDGE_AAE_2, ANN_A2, ANN_A3, 'supports');
+    createAnnotationEdge(projection, EDGE_AAE_3, ANN_A3, ANN_A4, 'supports');
+    expect(detectCoherencyHints(projection)).toEqual([
+      {
+        kind: 'annotation-of-annotation-chain',
+        edgeId: EDGE_AAE_2,
+        sourceAnnotationId: ANN_A2,
+        targetAnnotationId: ANN_A3,
+        incomingEdgeId: EDGE_AAE_1,
+      },
+      {
+        kind: 'annotation-of-annotation-chain',
+        edgeId: EDGE_AAE_3,
+        sourceAnnotationId: ANN_A3,
+        targetAnnotationId: ANN_A4,
+        incomingEdgeId: EDGE_AAE_2,
+      },
+    ]);
+  });
+
+  it('branched chain → only the leaf with annotation-to-annotation incoming emits a hint', () => {
+    // E1: A1 → A2, E2: A1 → A3, E3: A2 → A3. A2 is the target of E1
+    // (an annotation-to-annotation edge), so E3 has an annotation-to-
+    // annotation incoming. A1 is no annotation-to-annotation edge's
+    // target, so E2 has none.
+    resetSeq();
+    const projection = seedSession();
+    createNode(projection, NODE_ANCHOR, 'anchor');
+    createAnnotation(projection, ANN_A1, { nodeId: NODE_ANCHOR });
+    createAnnotation(projection, ANN_A2, { nodeId: NODE_ANCHOR });
+    createAnnotation(projection, ANN_A3, { nodeId: NODE_ANCHOR });
+    createAnnotationEdge(projection, EDGE_AAE_1, ANN_A1, ANN_A2, 'supports');
+    createAnnotationEdge(projection, EDGE_AAE_2, ANN_A1, ANN_A3, 'supports');
+    createAnnotationEdge(projection, EDGE_AAE_3, ANN_A2, ANN_A3, 'supports');
+    expect(detectCoherencyHints(projection)).toEqual([
+      {
+        kind: 'annotation-of-annotation-chain',
+        edgeId: EDGE_AAE_3,
+        sourceAnnotationId: ANN_A2,
+        targetAnnotationId: ANN_A3,
+        incomingEdgeId: EDGE_AAE_1,
+      },
+    ]);
+  });
+
+  it('self-loop / cycle → every edge in the cycle emits a hint', () => {
+    // E1: A1 → A2, E2: A2 → A1. Both annotations are the target of an
+    // annotation-to-annotation edge, so every edge in the cycle is a
+    // second-or-later hop.
+    resetSeq();
+    const projection = seedSession();
+    createNode(projection, NODE_ANCHOR, 'anchor');
+    createAnnotation(projection, ANN_A1, { nodeId: NODE_ANCHOR });
+    createAnnotation(projection, ANN_A2, { nodeId: NODE_ANCHOR });
+    createAnnotationEdge(projection, EDGE_AAE_1, ANN_A1, ANN_A2, 'supports');
+    createAnnotationEdge(projection, EDGE_AAE_2, ANN_A2, ANN_A1, 'supports');
+    expect(detectCoherencyHints(projection)).toEqual([
+      {
+        kind: 'annotation-of-annotation-chain',
+        edgeId: EDGE_AAE_1,
+        sourceAnnotationId: ANN_A1,
+        targetAnnotationId: ANN_A2,
+        incomingEdgeId: EDGE_AAE_2,
+      },
+      {
+        kind: 'annotation-of-annotation-chain',
+        edgeId: EDGE_AAE_2,
+        sourceAnnotationId: ANN_A2,
+        targetAnnotationId: ANN_A1,
+        incomingEdgeId: EDGE_AAE_1,
+      },
+    ]);
+  });
+
+  it('node-endpoint edge in the middle of the path breaks the chain → no hint', () => {
+    // E1: A1 → A2 (annotation-to-annotation), E2: A2 → N1 (node-target,
+    // breaks chain), E3: N1 → A3 (node-source, also broken). Per D2 a
+    // node anywhere in the path is *on* the substance graph, not the
+    // metadata layer — the chain ends at the node.
+    resetSeq();
+    const projection = seedSession();
+    createNode(projection, NODE_ANCHOR, 'anchor');
+    createNode(projection, NODE_X, 'mid-chain node');
+    createAnnotation(projection, ANN_A1, { nodeId: NODE_ANCHOR });
+    createAnnotation(projection, ANN_A2, { nodeId: NODE_ANCHOR });
+    createAnnotation(projection, ANN_A3, { nodeId: NODE_ANCHOR });
+    createAnnotationEdge(projection, EDGE_AAE_1, ANN_A1, ANN_A2, 'supports');
+    // E2: A2 → N1 (annotation source, node target).
+    applyEvent(
+      projection,
+      makeEvent(nextSeq(), 'edge-created', DEBATER_A_ID, T2, {
+        edge_id: EDGE_AAE_2,
+        role: 'supports',
+        source_annotation_id: ANN_A2,
+        target_node_id: NODE_X,
+        created_by: DEBATER_A_ID,
+        created_at: T2,
+      }),
+    );
+    // E3: N1 → A3 (node source, annotation target).
+    applyEvent(
+      projection,
+      makeEvent(nextSeq(), 'edge-created', DEBATER_A_ID, T2, {
+        edge_id: EDGE_AAE_3,
+        role: 'supports',
+        source_node_id: NODE_X,
+        target_annotation_id: ANN_A3,
+        created_by: DEBATER_A_ID,
+        created_at: T2,
+      }),
+    );
+    const result = detectCoherencyHints(projection);
+    expect(result.filter((h) => h.kind === 'annotation-of-annotation-chain')).toEqual([]);
+  });
+
+  it('invisibility of the chain-establishing edge breaks the chain', () => {
+    // E1: A1 → A2, E2: A2 → A3. Mark E1 invisible. A2 is no longer the
+    // target of a *visible* annotation-to-annotation edge, so E2 emits
+    // no hint.
+    resetSeq();
+    const projection = seedSession();
+    createNode(projection, NODE_ANCHOR, 'anchor');
+    createAnnotation(projection, ANN_A1, { nodeId: NODE_ANCHOR });
+    createAnnotation(projection, ANN_A2, { nodeId: NODE_ANCHOR });
+    createAnnotation(projection, ANN_A3, { nodeId: NODE_ANCHOR });
+    createAnnotationEdge(projection, EDGE_AAE_1, ANN_A1, ANN_A2, 'supports');
+    createAnnotationEdge(projection, EDGE_AAE_2, ANN_A2, ANN_A3, 'supports');
+    projection.setEdgeVisible(EDGE_AAE_1, false);
+    expect(detectCoherencyHints(projection)).toEqual([]);
+  });
+
+  it('invisible endpoint annotation breaks the chain', () => {
+    // E1: A1 → A2, E2: A2 → A3 — both edges visible, but A2 marked
+    // invisible. The defensive endpoint-visibility guard rejects both
+    // E1 (target A2 invisible) and E2 (source A2 invisible).
+    resetSeq();
+    const projection = seedSession();
+    createNode(projection, NODE_ANCHOR, 'anchor');
+    createAnnotation(projection, ANN_A1, { nodeId: NODE_ANCHOR });
+    createAnnotation(projection, ANN_A2, { nodeId: NODE_ANCHOR });
+    createAnnotation(projection, ANN_A3, { nodeId: NODE_ANCHOR });
+    createAnnotationEdge(projection, EDGE_AAE_1, ANN_A1, ANN_A2, 'supports');
+    createAnnotationEdge(projection, EDGE_AAE_2, ANN_A2, ANN_A3, 'supports');
+    projection.setAnnotationVisible(ANN_A2, false);
+    expect(detectCoherencyHints(projection)).toEqual([]);
+  });
+
+  it('coexists with other coherency hints in rule-declaration order', () => {
+    // One incomplete-warrant (node-node) AND one depth-2 annotation
+    // chain. The aggregator emits the incomplete-warrant hint before
+    // the annotation-of-annotation-chain hint (rules 1–3 before rule
+    // 4 in the registry).
+    resetSeq();
+    const projection = seedSession();
+    // Incomplete warrant: W has bridges-from to D but no bridges-to.
+    createNode(projection, NODE_D, 'D');
+    createNode(projection, WARRANT_W, 'W');
+    createEdge(projection, EDGE_W_FROM_D, WARRANT_W, NODE_D, 'bridges-from');
+    // Depth-2 annotation chain on an unrelated anchor.
+    createNode(projection, NODE_ANCHOR, 'anchor');
+    createAnnotation(projection, ANN_A1, { nodeId: NODE_ANCHOR });
+    createAnnotation(projection, ANN_A2, { nodeId: NODE_ANCHOR });
+    createAnnotation(projection, ANN_A3, { nodeId: NODE_ANCHOR });
+    createAnnotationEdge(projection, EDGE_AAE_1, ANN_A1, ANN_A2, 'supports');
+    createAnnotationEdge(projection, EDGE_AAE_2, ANN_A2, ANN_A3, 'supports');
+    expect(detectCoherencyHints(projection)).toEqual([
+      {
+        kind: 'incomplete-warrant-missing-bridges-to',
+        warrantNodeId: WARRANT_W,
+        dataNodeId: NODE_D,
+      },
+      {
+        kind: 'annotation-of-annotation-chain',
+        edgeId: EDGE_AAE_2,
+        sourceAnnotationId: ANN_A2,
+        targetAnnotationId: ANN_A3,
+        incomingEdgeId: EDGE_AAE_1,
+      },
+    ]);
   });
 });

@@ -29,6 +29,7 @@ export {
   type IncompleteWarrantMissingBridgesToHint,
   type IncompleteWarrantMissingBridgesFromHint,
   type SelfContradictsHint,
+  type AnnotationOfAnnotationChainHint,
 } from './coherency-hint-detection.js';
 export { detectPendingConsequences, type PendingConsequence } from './pending-consequences.js';
 export {
