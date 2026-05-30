@@ -70,7 +70,7 @@ import { useUiStore } from '../stores/uiStore';
 import { autoSelectionFromEvent } from '../graph/autoSelect';
 import {
   groupAnnotationsByEdge,
-  groupAnnotationsByNode,
+  groupAnnotationsByEntityId,
   projectAnnotations,
 } from '../graph/annotations';
 import { groupAxiomMarksByNode, projectAxiomMarks } from '../graph/axiomMarks';
@@ -278,7 +278,7 @@ function OperateRouteAuthenticatedBody({
   const axiomMarkIndex = useMemo(() => groupAxiomMarksByNode(projectAxiomMarks(events)), [events]);
 
   const annotations = useMemo(() => projectAnnotations(events), [events]);
-  const nodeAnnotationIndex = useMemo(() => groupAnnotationsByNode(annotations), [annotations]);
+  const nodeAnnotationIndex = useMemo(() => groupAnnotationsByEntityId(annotations), [annotations]);
   const edgeAnnotationIndex = useMemo(() => groupAnnotationsByEdge(annotations), [annotations]);
 
   const diagnosticHighlightIndex = useMemo(

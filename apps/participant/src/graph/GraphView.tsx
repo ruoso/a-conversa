@@ -842,7 +842,7 @@ export interface GraphViewProps {
   readonly facetStatusIndex: FacetStatusIndex;
   /** Per-node axiom-mark bucket from `groupAxiomMarksByNode(projectAxiomMarks(events))`. */
   readonly axiomMarkIndex: ReadonlyMap<string, readonly AxiomMark[]>;
-  /** Per-node annotation bucket from `groupAnnotationsByNode(projectAnnotations(events))`. */
+  /** Per-entity annotation bucket from `groupAnnotationsByEntityId(projectAnnotations(events))`. */
   readonly nodeAnnotationIndex: ReadonlyMap<string, readonly Annotation[]>;
   /** Per-edge annotation bucket from `groupAnnotationsByEdge(projectAnnotations(events))`. */
   readonly edgeAnnotationIndex: ReadonlyMap<string, readonly Annotation[]>;

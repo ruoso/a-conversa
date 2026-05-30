@@ -687,8 +687,10 @@ export function projectGraph(
   // `isAxiom: false`, `ownVote: 'none'`, `otherVotes: EMPTY_OTHER_VOTES_LIST`,
   // `diagnosticHighlight: null`. `hasAnnotation` / `annotationCount` /
   // `isFlashing` are sourced uniformly from the existing indexes so
-  // annotation-of-annotation overlay propagation (Decision §7 — future
-  // task) and flash on new-annotation arrival both work today via the
+  // annotation-of-annotation overlay propagation (lit up by
+  // `part_annotation_of_annotation_overlay_chain`, refinement at
+  // `tasks/refinements/participant-ui/part_annotation_of_annotation_overlay_chain.md`)
+  // and flash on new-annotation arrival both work today via the
   // existing entity-id keying.
   for (const [annotationId, payload] of annotationPayloads) {
     if (!referencedAnnotationIds.has(annotationId)) continue;

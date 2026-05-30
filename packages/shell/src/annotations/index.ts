@@ -5,6 +5,7 @@
 export {
   EMPTY_ANNOTATIONS,
   groupAnnotationsByEdge,
+  groupAnnotationsByEntityId,
   groupAnnotationsByNode,
   projectAnnotations,
   type Annotation,

@@ -61,7 +61,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { AnnotationKind, EdgeRole, Event, StatementKind } from '@a-conversa/shared-types';
 
 import { projectGraph } from './projectGraph';
-import type { Annotation } from './annotations';
+import { groupAnnotationsByEntityId, projectAnnotations, type Annotation } from './annotations';
 import type { AxiomMark } from './axiomMarks';
 import {
   EMPTY_DIAGNOSTIC_HIGHLIGHTS,
@@ -2093,5 +2093,150 @@ describe('projectGraph — annotation-endpoint rendering (part_render_annotation
       EMPTY_OTHERS_VOTES,
     );
     expect(nodes.map((n) => n.data.id)).toEqual([NODE_A, ANNOTATION_Y, ANNOTATION_X]);
+  });
+});
+
+// -------------------------------------------------------------------
+// Annotation-of-annotation overlay propagation — added by
+// `participant_ui.part_graph_view.part_annotation_of_annotation_overlay_chain`.
+// Refinement: tasks/refinements/participant-ui/part_annotation_of_annotation_overlay_chain.md
+//
+// Cases ann-oa-1..3 pin the polymorphic-entity-id propagation through
+// the shell-level `groupAnnotationsByEntityId` bucketer: when an
+// `annotation-created` event carries another annotation's id in its
+// `target_node_id` slot, the bucketer keys the source annotation under
+// the target annotation's id, and `projectGraph`'s annotation graph-node
+// materialization pass at L693-720 surfaces `hasAnnotation: true` +
+// `annotationCount: N` on the target's emitted node via the existing
+// `nodeHasAnnotation` / `annotationCountFor` lookup.
+// -------------------------------------------------------------------
+
+describe('projectGraph — annotation-of-annotation overlay propagation (part_annotation_of_annotation_overlay_chain)', () => {
+  it("(ann-oa-1) an annotation A2 whose target_node_id carries A1's id surfaces hasAnnotation: true + annotationCount: 1 on A1's materialized graph-node", () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeAnnotationCreated({
+        sequence: 2,
+        annotationId: ANNOTATION_X,
+        kind: 'note',
+        targetNodeId: NODE_A,
+      }),
+      makeAnnotationCreated({
+        sequence: 3,
+        annotationId: ANNOTATION_Y,
+        kind: 'reframe',
+        targetNodeId: ANNOTATION_X,
+      }),
+      makeEdgeCreatedWithAnnotationEndpoint({
+        sequence: 4,
+        edgeId: EDGE_A,
+        source: { kind: 'node', id: NODE_A },
+        target: { kind: 'annotation', id: ANNOTATION_X },
+      }),
+    ];
+    const nodeAnnotationIndex = groupAnnotationsByEntityId(projectAnnotations(events));
+    const { nodes } = projectGraph(
+      events,
+      emptyIndex(),
+      emptyAxiomIndex(),
+      nodeAnnotationIndex,
+      emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      EMPTY_OWN_VOTES,
+      EMPTY_OTHERS_VOTES,
+    );
+    const annotationNode = nodes.find((n) => n.data.id === ANNOTATION_X);
+    expect(annotationNode).toBeDefined();
+    expect(annotationNode?.data.hasAnnotation).toBe(true);
+    expect(annotationNode?.data.annotationCount).toBe(1);
+    // The statement node N1 also keeps its existing overlay (A1 targets N1).
+    const statementNode = nodes.find((n) => n.data.id === NODE_A);
+    expect(statementNode?.data.hasAnnotation).toBe(true);
+    expect(statementNode?.data.annotationCount).toBe(1);
+  });
+
+  it('(ann-oa-2) multiple annotations targeting the same materialized annotation graph-node aggregate the count', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeAnnotationCreated({
+        sequence: 2,
+        annotationId: ANNOTATION_X,
+        kind: 'note',
+        targetNodeId: NODE_A,
+      }),
+      makeAnnotationCreated({
+        sequence: 3,
+        annotationId: ANNOTATION_Y,
+        kind: 'reframe',
+        targetNodeId: ANNOTATION_X,
+      }),
+      makeAnnotationCreated({
+        sequence: 4,
+        annotationId: ANNOTATION_Z,
+        kind: 'stance',
+        targetNodeId: ANNOTATION_X,
+      }),
+      makeEdgeCreatedWithAnnotationEndpoint({
+        sequence: 5,
+        edgeId: EDGE_A,
+        source: { kind: 'node', id: NODE_A },
+        target: { kind: 'annotation', id: ANNOTATION_X },
+      }),
+    ];
+    const nodeAnnotationIndex = groupAnnotationsByEntityId(projectAnnotations(events));
+    const { nodes } = projectGraph(
+      events,
+      emptyIndex(),
+      emptyAxiomIndex(),
+      nodeAnnotationIndex,
+      emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      EMPTY_OWN_VOTES,
+      EMPTY_OTHERS_VOTES,
+    );
+    const annotationNode = nodes.find((n) => n.data.id === ANNOTATION_X);
+    expect(annotationNode?.data.hasAnnotation).toBe(true);
+    expect(annotationNode?.data.annotationCount).toBe(2);
+  });
+
+  it('(ann-oa-3) annotation-on-annotation where the target annotation is NOT materialized surfaces nowhere — N1 keeps its existing overlay, A1 and A2 are NOT emitted as graph-nodes', () => {
+    // No `edge-created` references A1 — per the predecessor's conditional-
+    // materialization rule (Decision §1 of
+    // `part_render_annotation_endpoint_edges`) A1 stays an overlay on N1
+    // and is NOT emitted as a graph-node. A2 targets A1 (which is itself
+    // not materialized) — the orphan A2 surfaces nowhere visually.
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeAnnotationCreated({
+        sequence: 2,
+        annotationId: ANNOTATION_X,
+        kind: 'note',
+        targetNodeId: NODE_A,
+      }),
+      makeAnnotationCreated({
+        sequence: 3,
+        annotationId: ANNOTATION_Y,
+        kind: 'reframe',
+        targetNodeId: ANNOTATION_X,
+      }),
+    ];
+    const nodeAnnotationIndex = groupAnnotationsByEntityId(projectAnnotations(events));
+    const { nodes } = projectGraph(
+      events,
+      emptyIndex(),
+      emptyAxiomIndex(),
+      nodeAnnotationIndex,
+      emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      EMPTY_OWN_VOTES,
+      EMPTY_OTHERS_VOTES,
+    );
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0]?.data.id).toBe(NODE_A);
+    expect(nodes[0]?.data.hasAnnotation).toBe(true);
+    expect(nodes[0]?.data.annotationCount).toBe(1);
+    // A1 and A2 are NOT emitted as graph-nodes.
+    expect(nodes.find((n) => n.data.id === ANNOTATION_X)).toBeUndefined();
+    expect(nodes.find((n) => n.data.id === ANNOTATION_Y)).toBeUndefined();
   });
 });

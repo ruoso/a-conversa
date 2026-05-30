@@ -41,7 +41,11 @@ import {
 
 import { GraphView, MAX_ZOOM, MIN_ZOOM, STYLESHEET, handleTap } from './GraphView';
 import { installCytoscapeTestEnv, type CytoscapeTestEnvRestoreHandle } from './cytoscapeTestEnv';
-import { groupAnnotationsByEdge, groupAnnotationsByNode, projectAnnotations } from './annotations';
+import {
+  groupAnnotationsByEdge,
+  groupAnnotationsByEntityId,
+  projectAnnotations,
+} from './annotations';
 import { groupAxiomMarksByNode, projectAxiomMarks } from './axiomMarks';
 import { projectOwnVotes } from './ownVotes';
 import { projectOtherVotes } from './otherVotes';
@@ -211,7 +215,7 @@ function ProjectingGraphView(props: {
   );
   const annotations = React.useMemo(() => projectAnnotations(events), [events]);
   const nodeAnnotationIndex = React.useMemo(
-    () => groupAnnotationsByNode(annotations),
+    () => groupAnnotationsByEntityId(annotations),
     [annotations],
   );
   const edgeAnnotationIndex = React.useMemo(

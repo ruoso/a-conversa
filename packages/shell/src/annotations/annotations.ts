@@ -98,7 +98,18 @@ export function projectAnnotations(events: readonly Event[]): Annotation[] {
 }
 
 /**
- * Bucket annotations by their node target.
+ * Bucket annotations by the polymorphic entity-id carried in the wire
+ * `annotation-created.target_node_id` slot.
+ *
+ * Refinement: tasks/refinements/participant-ui/part_annotation_of_annotation_overlay_chain.md
+ *   (Decision §1 — the renamed export makes the polymorphic-entity-id
+ *   convention honest; the bucket key is whatever UUID lives in
+ *   `targetNodeId`, which the wire schema permits to be a statement-node
+ *   id OR an annotation id OR any other UUID-keyed entity. Consumers
+ *   look up by the entity id they have, regardless of kind. The legacy
+ *   export name `groupAnnotationsByNode` stays as a thin alias for
+ *   backward compat — audience + moderator continue importing it until
+ *   their own propagation tasks land.)
  *
  * Returns a `Map` rather than a plain `Object` so `get(id)` lookups are
  * O(1) without the JSON-key string-coercion gotcha that surfaces when
@@ -107,7 +118,7 @@ export function projectAnnotations(events: readonly Event[]): Annotation[] {
  * (enforced by Zod at validation time) guarantees each annotation goes
  * to exactly one bucket between this helper and `groupAnnotationsByEdge`.
  */
-export function groupAnnotationsByNode(
+export function groupAnnotationsByEntityId(
   annotations: readonly Annotation[],
 ): Map<string, Annotation[]> {
   const out = new Map<string, Annotation[]>();
@@ -122,6 +133,18 @@ export function groupAnnotationsByNode(
   }
   return out;
 }
+
+/**
+ * Backward-compat alias for {@link groupAnnotationsByEntityId}.
+ *
+ * The name is retained so audience + moderator surfaces can continue
+ * importing the legacy symbol until their own propagation refinements
+ * (`aud_annotation_of_annotation_overlay_chain`,
+ * `mod_annotation_of_annotation_overlay_chain`) adopt the
+ * polymorphic-entity-id name in their own commits. New call sites should
+ * prefer {@link groupAnnotationsByEntityId}.
+ */
+export const groupAnnotationsByNode = groupAnnotationsByEntityId;
 
 /**
  * Bucket annotations by their edge target. Annotations targeting a

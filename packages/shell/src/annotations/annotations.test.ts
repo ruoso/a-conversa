@@ -40,6 +40,7 @@ import type { AnnotationKind, Event } from '@a-conversa/shared-types';
 import {
   EMPTY_ANNOTATIONS,
   groupAnnotationsByEdge,
+  groupAnnotationsByEntityId,
   groupAnnotationsByNode,
   projectAnnotations,
   type Annotation,
@@ -428,6 +429,45 @@ describe('groupAnnotationsByEdge', () => {
     expect(grouped.get(EDGE_M)?.map((a) => a.id)).toEqual([ANNO_1, ANNO_3]);
     expect(grouped.get(EDGE_N)?.map((a) => a.id)).toEqual([ANNO_2]);
     expect(grouped.has(NODE_X)).toBe(false);
+  });
+});
+
+describe('groupAnnotationsByEntityId — polymorphic-entity-id convention', () => {
+  // Refinement: tasks/refinements/participant-ui/part_annotation_of_annotation_overlay_chain.md
+  //   (Decision §1 — the bucketer is target-kind-agnostic by construction;
+  //   this case pins the convention that the `targetNodeId` slot may carry
+  //   any UUID, including another annotation's id. The legacy
+  //   `groupAnnotationsByNode` alias is asserted to be the same function
+  //   reference so existing call sites keep working.)
+  it('(k) buckets an annotation whose targetNodeId carries another annotation id under that annotation id, and the legacy `groupAnnotationsByNode` alias points at the same function', () => {
+    const events: Event[] = [
+      // A1 targets a statement node (the existing convention).
+      makeAnnotationCreated({
+        sequence: 1,
+        annotationId: ANNO_1,
+        kind: 'note',
+        targetNodeId: NODE_X,
+        targetEdgeId: null,
+      }),
+      // A2 targets A1 — the polymorphic-entity-id case. The wire schema's
+      // `target_node_id: z.string().uuid().nullable()` slot accepts any
+      // UUID; the bucketer keys on the raw UUID regardless of kind.
+      makeAnnotationCreated({
+        sequence: 2,
+        annotationId: ANNO_2,
+        kind: 'reframe',
+        targetNodeId: ANNO_1,
+        targetEdgeId: null,
+      }),
+    ];
+    const grouped: ReadonlyMap<string, readonly Annotation[]> = groupAnnotationsByEntityId(
+      projectAnnotations(events),
+    );
+    expect(grouped.get(NODE_X)?.map((a) => a.id)).toEqual([ANNO_1]);
+    expect(grouped.get(ANNO_1)?.map((a) => a.id)).toEqual([ANNO_2]);
+    // The legacy name is a thin alias — exact identity, so audience +
+    // moderator imports continue resolving to the same function.
+    expect(groupAnnotationsByNode).toBe(groupAnnotationsByEntityId);
   });
 });
 

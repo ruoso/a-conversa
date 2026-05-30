@@ -235,6 +235,7 @@ task participant_ui "Participant (debater) UI" {
     task part_annotation_of_annotation_overlay_chain "Annotation-of-annotation overlay propagation on materialized annotation graph-nodes" {
       effort 0.5d
       allocate team
+      complete 100
       depends !part_render_annotation_endpoint_edges
       note -8<-
         Source of debt: part_render_annotation_endpoint_edges — annotation graph-nodes today emit
