@@ -121,11 +121,21 @@ The build-artifact grep is run by the implementer at task close; the captured nu
 
 ## Status
 
-**Done** — 2026-05-27.
+**Done** — 2026-05-30 (re-opened and completed; supersedes the 2026-05-27 blocked close below).
 
-- Implementation blocked before any edit: the Inter v20 woff2 binaries required by Decision §5(A) (`inter-latin.woff2`, `inter-latin-ext.woff2`) could not be downloaded — the auto-mode classifier denied `curl` requests to `fonts.googleapis.com` / `fonts.gstatic.com`, and the operator dismissed the `AskUserQuestion` confirmation prompt. Decision §5(B) and §5(C) were already rejected in-refinement, so no in-scope alternative was available.
-- No files were created or edited; `apps/audience/src/index.css` Google Fonts `@import` (line 19) is unchanged; `apps/audience/public/fonts/` was not created.
-- Acceptance criteria requiring committed woff2 binaries and `@font-face` CSS replacement remain unmet; the task is closed blocked.
+- Implemented per Decisions §1, §2, §5(A). The two Inter v20 woff2 subsets were downloaded (operator-approved network fetch) and committed under `apps/audience/public/fonts/`, alongside the SIL Open Font License text required by OFL-1.1 redistribution terms:
+  - `inter-latin.woff2` — 48,256 B — SHA-256 `3100e775e8616cd2611beecfa23a4263d7037586789b43f035236a2e6fbd4c62` — source `https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2`.
+  - `inter-latin-ext.woff2` — 85,068 B — SHA-256 `34b9c504cab7a73e37b746343a449132e56cf7b5481af2cb81dc74dcff25c956` — source `https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa25L7SUc.woff2`.
+  - `OFL.txt` — 4,380 B — SIL Open Font License 1.1, verbatim from `rsms/inter` `LICENSE.txt` ("Copyright (c) 2016 The Inter Project Authors"). Total committed asset cost ~137 KiB.
+- `apps/audience/src/index.css`: the Google Fonts `@import` (was line 19) is replaced by two `@font-face` blocks (one per subset), `font-weight: 400 700`, `font-display: swap`, `src: url('../fonts/inter-<subset>.woff2')`, with the `unicode-range` values transcribed verbatim from Google Fonts' served Inter CSS. The header comment (lines 4–8) is amended to cite this refinement. `@import 'tailwindcss';` and the `@theme` `--font-broadcast` block are unchanged.
+- Build verification (fresh `pnpm -F @a-conversa/audience build`, per Decision §6 + Acceptance criteria):
+  - Built `dist/assets/audience-*.css` references `inter-latin` (grep > 0) and contains zero `fonts.googleapis.com` refs (grep == 0).
+  - `dist/fonts/inter-latin.woff2`, `dist/fonts/inter-latin-ext.woff2` (and `OFL.txt`) are present — Vite's default `copyPublicDir` copied them; no `build.copyPublicDir` override was needed.
+  - The build log emits the expected `"../fonts/...woff2 ... didn't resolve at build time, it will remain unchanged to be resolved at runtime"` notice — confirming the literal relative URL survives the pipeline (the CSS lands at `dist/assets/`, so `../fonts/` resolves correctly against the served `/_surfaces/audience/assets/` stylesheet).
 - Existing Vitest typography cases (`aud_clean_typography` suite) remain green without modification — they pin `BROADCAST_FONT_STACK`, not the font-loading mechanism.
-- Verification (driver-run, deterministic chain): `pnpm run check` PASS, `pnpm run test:smoke` PASS, `pnpm run test:behavior:smoke` PASS, `make test:e2e:compose` PASS — all pass because no source was changed and no test pins the absent font files.
-- Tech-debt `aud_pw_typography_smoke` (~0.5d, deferred Playwright spec) not registered per Acceptance criteria conditional: the trigger condition (audience surface acquires a reachable route) is not met in the current WBS.
+- Note on the global gate: at completion time the repo working tree contained unrelated in-flight coherency work (`apps/participant/src/graph/projectGraph.ts` extending `ParticipantNodeData`) that left `pnpm run check` / `pnpm run test:smoke` red for reasons independent of this change; the `@a-conversa/audience` package build is green. The build+test gate must be re-run green (with that WIP finished) before the commit lands.
+- Tech-debt `aud_pw_typography_smoke` (~0.5d, deferred Playwright spec) still not registered: the trigger condition (audience surface acquires a reachable route) remains unmet in the current WBS.
+
+### Superseded — original blocked close (2026-05-27)
+
+- Implementation blocked before any edit: the Inter v20 woff2 binaries required by Decision §5(A) could not be downloaded — the auto-mode classifier denied `curl` requests to `fonts.googleapis.com` / `fonts.gstatic.com`, and the operator dismissed the `AskUserQuestion` confirmation prompt. Decision §5(B)/(C) were already rejected in-refinement, so no in-scope alternative was available at that time. The task was marked `complete 100` while its acceptance criteria were unmet — a false completion corrected by the 2026-05-30 re-open above.
