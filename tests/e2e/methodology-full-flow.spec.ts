@@ -1258,6 +1258,38 @@ test.describe
   });
 
   test('Phase 6.2: ben + maria vote agree on the decomposition proposal facet; alice commits', async () => {
+    // Per `mod_per_component_decompose_sidebar_breakdown` Decision §5:
+    // assert that alice's right-sidebar `<ProposalFacetBreakdown>` for
+    // the in-flight decompose row renders exactly 2 chips — one per
+    // component — at `data-facet-name="classification"`,
+    // `data-facet-status="proposed"`. This pins the moderator-side per-
+    // component fan-out in the same phase the participant pane already
+    // covers. The 2 components fanned out from Phase 6.1's payload
+    // (`fact` + `fact`); the chips share the proposal-arm vote bucket so
+    // the commit-gate predicate counts the bucket once per proposal.
+    const decomposeBreakdown = alicePage
+      .locator('[data-testid="pending-proposal-row"]')
+      .filter({
+        has: alicePage.locator('[data-testid="pending-proposal-row-kind"]', {
+          hasText: /Decompose/i,
+        }),
+      })
+      .first()
+      .locator('[data-testid="proposal-facet-breakdown"]');
+    await expect(decomposeBreakdown).toBeVisible({ timeout: 15_000 });
+    const classificationChips = decomposeBreakdown.locator(
+      '[data-testid="proposal-facet-row"][data-facet-name="classification"]',
+    );
+    await expect(classificationChips).toHaveCount(2, { timeout: 15_000 });
+    await expect(classificationChips.nth(0)).toHaveAttribute('data-facet-status', 'proposed');
+    await expect(classificationChips.nth(1)).toHaveAttribute('data-facet-status', 'proposed');
+    // The synthetic `'proposal'` chip must NOT render — the per-component
+    // arm replaces it for decompose / interpretive-split (Decision §1
+    // partition: per-component XOR synthetic).
+    await expect(
+      decomposeBreakdown.locator('[data-testid="proposal-facet-row"][data-facet-name="proposal"]'),
+    ).toHaveCount(0);
+
     // Auto-select: alice's `decompose` proposal targets the parent
     // node (N1), so every participant's detail panel auto-surfaces
     // N1's structural proposal rows. Click agree on each surface.

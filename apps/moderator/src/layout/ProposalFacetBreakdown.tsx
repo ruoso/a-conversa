@@ -137,7 +137,7 @@ function ProposalFacetBreakdownImpl(props: ProposalFacetBreakdownProps): ReactEl
       data-proposal-id={row.proposalEventId}
       className={BREAKDOWN_CONTAINER_CLASSES}
     >
-      {entries.map((entry) => {
+      {entries.map((entry, entryIndex) => {
         const className = `${PILL_BASE_CLASSNAME} ${PILL_STATUS_CLASSNAME[entry.status]}`;
         // Per `mod_vote_indicators_in_sidebar` Decision §2, the
         // indicator row mirrors `<FacetPill>`'s in-pill row 1:1:
@@ -165,7 +165,7 @@ function ProposalFacetBreakdownImpl(props: ProposalFacetBreakdownProps): ReactEl
           ) : null;
         return (
           <span
-            key={entry.facet}
+            key={`${entry.facet}-${entryIndex}`}
             data-testid="proposal-facet-row"
             data-facet-name={entry.facet}
             data-facet-status={entry.status}

@@ -148,45 +148,13 @@ describe('derivePerProposalFacets — facet-targeting sub-kinds emit the expecte
 });
 
 describe('derivePerProposalFacets — structural sub-kinds emit one synthetic "proposal" entry', () => {
+  // Per `mod_per_component_decompose_sidebar_breakdown` Decision §7: the
+  // structural-synthetic group narrows to the five non-componented
+  // sub-kinds (`axiom-mark`, `meta-move`, `break-edge`, `amend-node`,
+  // `annotate`). `decompose` + `interpretive-split` now fan out per-
+  // component classification chips covered by the sibling describe
+  // below.
   const cases: { name: string; payload: ProposalPayload }[] = [
-    {
-      name: 'decompose',
-      payload: {
-        kind: 'decompose',
-        parent_node_id: NODE_X,
-        components: [
-          {
-            wording: 'first',
-            classification: 'fact',
-            node_id: '00000000-0000-4000-8000-00000000f041',
-          },
-          {
-            wording: 'second',
-            classification: 'fact',
-            node_id: '00000000-0000-4000-8000-00000000f042',
-          },
-        ],
-      },
-    },
-    {
-      name: 'interpretive-split',
-      payload: {
-        kind: 'interpretive-split',
-        parent_node_id: NODE_X,
-        readings: [
-          {
-            wording: 'reading 1',
-            classification: 'value',
-            node_id: '00000000-0000-4000-8000-00000000f043',
-          },
-          {
-            wording: 'reading 2',
-            classification: 'value',
-            node_id: '00000000-0000-4000-8000-00000000f044',
-          },
-        ],
-      },
-    },
     {
       name: 'axiom-mark',
       payload: { kind: 'axiom-mark', node_id: NODE_X, participant: PARTICIPANT_A },
@@ -229,6 +197,132 @@ describe('derivePerProposalFacets — structural sub-kinds emit one synthetic "p
       expect(out[0]?.labelKey).toBe('methodology.facet.proposal');
     });
   }
+});
+
+// -- Per-component fan-out (`mod_per_component_decompose_sidebar_breakdown`)
+//
+// `decompose` + `interpretive-split` payloads carry a per-component list;
+// the server emits one `proposal-status` envelope per component keyed by
+// `(node, component.node_id, 'classification')`. The selector now fans
+// out one `'classification'` entry per component, each resolving status
+// against the merged index by the component's `node_id`. The `votes`
+// field stays the shared proposal-arm bucket (Decision §3).
+
+const COMPONENT_1 = '00000000-0000-4000-8000-00000000f001';
+const COMPONENT_2 = '00000000-0000-4000-8000-00000000f002';
+const COMPONENT_3 = '00000000-0000-4000-8000-00000000f003';
+const PROPOSAL_DECOMPOSE = '00000000-0000-4000-8000-00000000d010';
+
+describe('derivePerProposalFacets — per-component fan-out (decompose + interpretive-split)', () => {
+  it('(m) decompose with 2 components, both cells absent → 2 entries, each facet="classification", both status="proposed", labelKey="methodology.facet.classification"', () => {
+    const proposal: ProposalPayload = {
+      kind: 'decompose',
+      parent_node_id: NODE_X,
+      components: [
+        { wording: 'first', classification: 'fact', node_id: COMPONENT_1 },
+        { wording: 'second', classification: 'fact', node_id: COMPONENT_2 },
+      ],
+    };
+    const out = derivePerProposalFacets(
+      proposal,
+      EMPTY_INDEX,
+      EMPTY_VOTES_INDEX,
+      PROPOSAL_DECOMPOSE,
+    );
+    expect(out).toHaveLength(2);
+    expect(out[0]?.facet).toBe('classification');
+    expect(out[1]?.facet).toBe('classification');
+    expect(out[0]?.status).toBe('proposed');
+    expect(out[1]?.status).toBe('proposed');
+    expect(out[0]?.labelKey).toBe('methodology.facet.classification');
+    expect(out[1]?.labelKey).toBe('methodology.facet.classification');
+  });
+
+  it('(n) decompose with 2 components, one cell carries "committed" → 2 entries in payload order; statuses ["proposed", "committed"] (NOT sorted by status)', () => {
+    const proposal: ProposalPayload = {
+      kind: 'decompose',
+      parent_node_id: NODE_X,
+      components: [
+        { wording: 'first', classification: 'fact', node_id: COMPONENT_1 },
+        { wording: 'second', classification: 'fact', node_id: COMPONENT_2 },
+      ],
+    };
+    // Only COMPONENT_2 has a cell, and it's `'committed'`. COMPONENT_1
+    // falls back to the default `'proposed'`. Payload order is C1 then
+    // C2, so the entries surface as `['proposed', 'committed']` — NOT
+    // sorted by status.
+    const index: FacetStatusIndex = {
+      nodes: new Map([[COMPONENT_2, { classification: 'committed' }]]),
+      edges: new Map(),
+    };
+    const out = derivePerProposalFacets(proposal, index, EMPTY_VOTES_INDEX, PROPOSAL_DECOMPOSE);
+    expect(out).toHaveLength(2);
+    expect(out[0]?.status).toBe('proposed');
+    expect(out[1]?.status).toBe('committed');
+    expect(out[0]?.facet).toBe('classification');
+    expect(out[1]?.facet).toBe('classification');
+  });
+
+  it('(o) interpretive-split with 3 readings → 3 entries, each facet="classification", each status resolved against facetStatusIndex.nodes', () => {
+    const proposal: ProposalPayload = {
+      kind: 'interpretive-split',
+      parent_node_id: NODE_X,
+      readings: [
+        { wording: 'reading 1', classification: 'value', node_id: COMPONENT_1 },
+        { wording: 'reading 2', classification: 'value', node_id: COMPONENT_2 },
+        { wording: 'reading 3', classification: 'value', node_id: COMPONENT_3 },
+      ],
+    };
+    const index: FacetStatusIndex = {
+      nodes: new Map([
+        [COMPONENT_1, { classification: 'agreed' }],
+        [COMPONENT_3, { classification: 'disputed' }],
+      ]),
+      edges: new Map(),
+    };
+    const out = derivePerProposalFacets(proposal, index, EMPTY_VOTES_INDEX, PROPOSAL_DECOMPOSE);
+    expect(out).toHaveLength(3);
+    expect(out[0]?.facet).toBe('classification');
+    expect(out[1]?.facet).toBe('classification');
+    expect(out[2]?.facet).toBe('classification');
+    expect(out[0]?.status).toBe('agreed');
+    expect(out[1]?.status).toBe('proposed');
+    expect(out[2]?.status).toBe('disputed');
+  });
+
+  it('per-component entries share the proposal-arm votes bucket from votesByProposalIndex.get(proposalEventId)', () => {
+    // Decision §3: per-component chips share one `votes` array (by
+    // reference) sourced from the same `votesByProposalIndex` bucket the
+    // synthetic-`'proposal'` arm uses. The commit-gate predicate counts
+    // the bucket once per proposal regardless of chip count.
+    const proposal: ProposalPayload = {
+      kind: 'decompose',
+      parent_node_id: NODE_X,
+      components: [
+        { wording: 'first', classification: 'fact', node_id: COMPONENT_1 },
+        { wording: 'second', classification: 'fact', node_id: COMPONENT_2 },
+      ],
+    };
+    const votes: readonly Vote[] = [
+      { participantId: PARTICIPANT_A, choice: 'agree' },
+      { participantId: PARTICIPANT_B, choice: 'agree' },
+    ];
+    const votesByProposal: ReadonlyMap<string, readonly Vote[]> = new Map([
+      [PROPOSAL_DECOMPOSE, votes],
+    ]);
+    const out = derivePerProposalFacets(
+      proposal,
+      EMPTY_INDEX,
+      EMPTY_VOTES_INDEX,
+      PROPOSAL_DECOMPOSE,
+      votesByProposal,
+    );
+    expect(out).toHaveLength(2);
+    // Both per-component chips share the SAME `votes` reference (the
+    // proposal-arm bucket).
+    expect(out[0]?.votes).toBe(votes);
+    expect(out[1]?.votes).toBe(votes);
+  });
 });
 
 describe('derivePerProposalFacets — status precedence: merged-index → default', () => {
@@ -857,21 +951,16 @@ describe('deriveAllAgree — axiom-mark exclusion', () => {
 // ---------------------------------------------------------------------
 
 describe('derivePerProposalFacets — structural sub-kind votes (votesByProposalIndex)', () => {
-  const decomposeProposal: ProposalPayload = {
-    kind: 'decompose',
-    parent_node_id: NODE_X,
-    components: [
-      {
-        wording: 'first',
-        classification: 'fact',
-        node_id: '00000000-0000-4000-8000-00000000f061',
-      },
-      {
-        wording: 'second',
-        classification: 'fact',
-        node_id: '00000000-0000-4000-8000-00000000f062',
-      },
-    ],
+  // Per `mod_per_component_decompose_sidebar_breakdown` Decision §7,
+  // the synthetic-`'proposal'` arm now fires only for the five non-
+  // componented structural sub-kinds (`axiom-mark`, `meta-move`,
+  // `break-edge`, `amend-node`, `annotate`). Retarget this group's
+  // case fixture onto `axiom-mark` to keep covering the synthetic chip's
+  // per-proposal votes contract.
+  const axiomMarkProposal: ProposalPayload = {
+    kind: 'axiom-mark',
+    node_id: NODE_X,
+    participant: PARTICIPANT_A,
   };
   const PROPOSAL_ID = '00000000-0000-4000-8000-00000000d001';
 
@@ -882,7 +971,7 @@ describe('derivePerProposalFacets — structural sub-kind votes (votesByProposal
     ];
     const votesByProposal: ReadonlyMap<string, readonly Vote[]> = new Map([[PROPOSAL_ID, votes]]);
     const out = derivePerProposalFacets(
-      decomposeProposal,
+      axiomMarkProposal,
       EMPTY_INDEX,
       EMPTY_VOTES_INDEX,
       PROPOSAL_ID,
@@ -894,7 +983,7 @@ describe('derivePerProposalFacets — structural sub-kind votes (votesByProposal
 
   it('defaults to EMPTY_VOTES when the per-proposal index has no entry for the id', () => {
     const out = derivePerProposalFacets(
-      decomposeProposal,
+      axiomMarkProposal,
       EMPTY_INDEX,
       EMPTY_VOTES_INDEX,
       PROPOSAL_ID,
@@ -904,7 +993,7 @@ describe('derivePerProposalFacets — structural sub-kind votes (votesByProposal
   });
 
   it('back-compat — when the proposalEventId is omitted the structural entry stays at EMPTY_VOTES', () => {
-    const out = derivePerProposalFacets(decomposeProposal, EMPTY_INDEX);
+    const out = derivePerProposalFacets(axiomMarkProposal, EMPTY_INDEX);
     expect(out[0]?.facet).toBe('proposal');
     expect(out[0]?.votes).toBe(EMPTY_VOTES);
   });

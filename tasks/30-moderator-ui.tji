@@ -351,6 +351,7 @@ task moderator_ui "Moderator UI" {
     task mod_per_component_decompose_sidebar_breakdown "Port per-component classification chip fan-out to moderator sidebar derivePerProposalFacets" {
       effort 0.5d
       allocate team
+      complete 100
       depends !mod_pw_reconnect_seed_visible_styling
       note -8<-
         Source of debt: tasks/refinements/participant-ui/part_pw_multi_component_decompose_per_component_breakdown.md Decision §5 — the participant pane's derivePerProposalFacets now emits one classification chip per component for decompose + interpretive-split; the moderator sidebar's apps/moderator/src/graph/proposalFacets.ts still emits the single synthetic 'proposal' chip for those sub-kinds. This task ports the same componentTargetsOf fan-out arm to the moderator sidebar, including Vitest cover for the moderator's per-component breakdowns and a Playwright sub-step in the methodology-full-flow or moderator-pending-proposals spec.

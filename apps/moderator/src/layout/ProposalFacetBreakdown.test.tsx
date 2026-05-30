@@ -142,30 +142,6 @@ describe('ProposalFacetBreakdown — facet-targeting sub-kind renders one chip',
 });
 
 describe('ProposalFacetBreakdown — structural sub-kind renders synthetic "proposal" chip', () => {
-  it('decompose renders one chip with data-facet-name="proposal" and "Proposal" label', () => {
-    const proposal: ProposalPayload = {
-      kind: 'decompose',
-      parent_node_id: NODE_X,
-      components: [
-        {
-          wording: 'first',
-          classification: 'fact',
-          node_id: '00000000-0000-4000-8000-00000000f021',
-        },
-        {
-          wording: 'second',
-          classification: 'fact',
-          node_id: '00000000-0000-4000-8000-00000000f022',
-        },
-      ],
-    };
-    render(<ProposalFacetBreakdown row={row(proposal)} facetStatusIndex={EMPTY_INDEX} />);
-    const chips = screen.getAllByTestId('proposal-facet-row');
-    expect(chips).toHaveLength(1);
-    expect(chips[0]?.getAttribute('data-facet-name')).toBe('proposal');
-    expect(chips[0]?.textContent).toBe('Proposal');
-  });
-
   it('axiom-mark renders one chip with data-facet-name="proposal"', () => {
     const proposal: ProposalPayload = {
       kind: 'axiom-mark',
@@ -463,5 +439,45 @@ describe('ProposalFacetBreakdown — per-participant vote indicators', () => {
     // chip's outer className is unchanged).
     const expected = `${PILL_BASE_CLASSNAME} ${PILL_STATUS_CLASSNAME.disputed}`;
     expect(chip.getAttribute('class')).toBe(expected);
+  });
+});
+
+// Refinement: tasks/refinements/moderator-ui/mod_per_component_decompose_sidebar_breakdown.md
+//
+// `decompose` + `interpretive-split` proposals fan out one
+// `'classification'` chip per component on the sidebar, mirroring the
+// participant pane. These cases pin the render-side contract:
+//   - 2-component decompose renders two `proposal-facet-row` chips, both
+//     `data-facet-name="classification"`, both `data-facet-status="proposed"`;
+//   - the chip strip's React keys are composite `${facet}-${index}` so the
+//     two identically-`'classification'`-named chips do not collide on
+//     reconciliation (a key collision would log a console warning that we
+//     would catch via `console.error` interception, but the simplest
+//     coverage is asserting both chips render distinctly).
+describe('ProposalFacetBreakdown — per-component decompose fan-out', () => {
+  it('decompose with 2 components renders two chips, both data-facet-name="classification" + data-facet-status="proposed"', () => {
+    const proposal: ProposalPayload = {
+      kind: 'decompose',
+      parent_node_id: NODE_X,
+      components: [
+        {
+          wording: 'first',
+          classification: 'fact',
+          node_id: '00000000-0000-4000-8000-00000000f021',
+        },
+        {
+          wording: 'second',
+          classification: 'fact',
+          node_id: '00000000-0000-4000-8000-00000000f022',
+        },
+      ],
+    };
+    render(<ProposalFacetBreakdown row={row(proposal)} facetStatusIndex={EMPTY_INDEX} />);
+    const chips = screen.getAllByTestId('proposal-facet-row');
+    expect(chips).toHaveLength(2);
+    expect(chips[0]?.getAttribute('data-facet-name')).toBe('classification');
+    expect(chips[1]?.getAttribute('data-facet-name')).toBe('classification');
+    expect(chips[0]?.getAttribute('data-facet-status')).toBe('proposed');
+    expect(chips[1]?.getAttribute('data-facet-status')).toBe('proposed');
   });
 });
