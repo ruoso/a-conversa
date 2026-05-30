@@ -438,7 +438,9 @@ const authRoutesPluginAsync: FastifyPluginAsync<AuthRoutesOptions> = (
   // narrow user/session pool shims do not need to emulate auth_flow_state SQL.
   const flowState: FlowStateStore =
     opts.flowState ??
-    (opts.pool === undefined ? getDefaultFlowStateStore() : createFlowStateStore());
+    (opts.pool === undefined
+      ? getDefaultFlowStateStore()
+      : createFlowStateStore(opts.now !== undefined ? { now: opts.now } : {}));
 
   // Resolve the OIDC client lazily — only when the first request
   // arrives. Production callers don't pass `oidcClient`; tests pass
