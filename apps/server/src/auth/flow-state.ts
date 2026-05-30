@@ -19,13 +19,13 @@
 // page-load on a dev box without being so long that abandoned flows
 // accumulate.
 //
-// **In-process map, not Postgres or signed cookie.** Per ADR 0023 the
-// backend is a single Node process; per ADR 0002 the application
-// reads its OIDC trust signal off the id_token, not off a cookie. A
-// signed-cookie flow would overlap with `session_token_management`'s
-// signing-key story; a Postgres-backed flow would add operational
-// surface (migration, cleanup) for a 5-minute transient state. The
-// in-memory map is the simplest shape that satisfies the constraints.
+// **Postgres in production, in-memory for tests.** Per ADR 0035 the
+// production default persists confidential nonce + PKCE verifier values
+// server-side in Postgres so a callback can land on another app instance
+// (or after an app restart). A signed cookie is deliberately rejected:
+// integrity would not keep those values confidential from the browser.
+// `createFlowStateStore(...)` remains the deterministic in-memory test
+// double injected by route tests.
 //
 // **Garbage collection.** `take(state)` is lazy — if the entry has
 // expired by the time the callback arrives, it's removed without
@@ -97,6 +97,8 @@ export class FlowStateCapacityError extends Error {
  * this shape (not on the concrete `Map`-backed class) so tests can
  * substitute a custom implementation if needed.
  */
+export type MaybePromise<T> = T | Promise<T>;
+
 export interface FlowStateStore {
   /**
    * Add an entry to the store. Overwrites any prior entry for the same state.
@@ -106,22 +108,22 @@ export interface FlowStateStore {
    * did not free any slot (i.e. no entries are expired). Below the
    * cap, the cheap path is unaffected — no sweep is performed.
    */
-  put(state: string, entry: FlowStateEntry): void;
+  put(state: string, entry: FlowStateEntry): MaybePromise<void>;
   /**
    * Retrieve AND remove an entry. Returns `undefined` if no entry was
    * stored for `state`, OR if the stored entry has expired (in which
    * case it's also removed as a side effect — expired entries don't
    * linger past their first `take` attempt).
    */
-  take(state: string): FlowStateEntry | undefined;
+  take(state: string): MaybePromise<FlowStateEntry | undefined>;
   /** Current number of entries in the store. Used by tests and the sweeper. */
-  size(): number;
+  size(): MaybePromise<number>;
   /**
    * Walk the store and remove any entry whose `expiresAt` is past
    * the current clock. Called by the periodic sweeper; tests call it
    * directly to force expiry without timer manipulation.
    */
-  sweep(): void;
+  sweep(): MaybePromise<void>;
 }
 
 /**
@@ -129,6 +131,13 @@ export interface FlowStateStore {
  * suit the production singleton; tests supply `now` and `ttlMs`
  * overrides for hermetic time-based assertions.
  */
+export interface InMemoryFlowStateStore extends FlowStateStore {
+  put(state: string, entry: FlowStateEntry): void;
+  take(state: string): FlowStateEntry | undefined;
+  size(): number;
+  sweep(): void;
+}
+
 export interface FlowStateStoreOptions {
   /**
    * Time-to-live for each entry, in milliseconds. Default 5 minutes
@@ -224,7 +233,7 @@ export function resolveFlowStateMaxEntries(env: FlowStateMaxEntriesEnv = process
  * @param options - optional TTL and clock overrides.
  * @returns a `FlowStateStore` with the configured TTL.
  */
-export function createFlowStateStore(options: FlowStateStoreOptions = {}): FlowStateStore {
+export function createFlowStateStore(options: FlowStateStoreOptions = {}): InMemoryFlowStateStore {
   // `options.ttlMs` is accepted on the public surface for symmetry
   // with `computeExpiresAt(...)` (the route plugin uses both — TTL
   // here is informational; the store doesn't compute expiry, it
@@ -310,52 +319,137 @@ export function computeExpiresAt(options: { ttlMs?: number; now?: () => number }
 }
 
 /**
- * Module-level default store, shared by the route plugin in
- * production. Constructed eagerly because the construction is free
- * (an empty Map); the periodic sweeper is set up here too so the
- * default store doesn't accumulate expired entries.
- *
- * Tests do NOT use this singleton — they construct fresh stores via
- * `createFlowStateStore({ ttlMs, now })` and pass them to the route
- * plugin's options.
+ * Minimal query seam required by the Postgres-backed flow-state store.
+ * Structurally compatible with `DbPool` without importing the DB module
+ * into the in-memory implementation's public API.
  */
+export interface FlowStateDbPool {
+  query<TRow extends Record<string, unknown> = Record<string, unknown>>(
+    text: string,
+    params?: ReadonlyArray<unknown>,
+  ): Promise<{ rows: TRow[] }>;
+}
+
+export interface PostgresFlowStateStoreOptions {
+  readonly now?: () => number;
+  readonly maxEntries?: number;
+}
+
+interface PostgresFlowStateRow extends Record<string, unknown> {
+  readonly nonce: string;
+  readonly code_verifier: string;
+  readonly expires_at_ms: number | string;
+}
+
+const FLOW_STATE_CAPACITY_LOCK_KEY = 0x0a_c0_11;
+
+/**
+ * Build the production Postgres-backed store. `DELETE ... RETURNING` makes
+ * callback consumption atomic across app instances. The insert statement
+ * takes a transaction-scoped advisory lock before sweeping/counting/inserting
+ * so concurrent instances cannot race past the global capacity ceiling.
+ */
+export function createPostgresFlowStateStore(
+  pool: FlowStateDbPool,
+  options: PostgresFlowStateStoreOptions = {},
+): FlowStateStore {
+  const now = options.now ?? ((): number => Date.now());
+  const maxEntries = options.maxEntries ?? resolveFlowStateMaxEntries(process.env);
+
+  return {
+    async put(state: string, entry: FlowStateEntry): Promise<void> {
+      const result = await pool.query<{ state: string }>(
+        `WITH capacity_lock AS MATERIALIZED (
+           SELECT pg_advisory_xact_lock($5)
+         ), swept AS (
+           DELETE FROM auth_flow_state
+           USING capacity_lock
+           WHERE expires_at <= NOW()
+           RETURNING state
+         ), current_size AS (
+           SELECT COUNT(*)::int AS count
+           FROM auth_flow_state, capacity_lock
+         )
+         INSERT INTO auth_flow_state (state, nonce, code_verifier, expires_at)
+         SELECT $1, $2, $3, to_timestamp($4 / 1000.0)
+         FROM current_size
+         WHERE count < $6 OR EXISTS (SELECT 1 FROM auth_flow_state WHERE state = $1)
+         ON CONFLICT (state) DO UPDATE SET
+           nonce = EXCLUDED.nonce,
+           code_verifier = EXCLUDED.code_verifier,
+           expires_at = EXCLUDED.expires_at
+         RETURNING state`,
+        [
+          state,
+          entry.nonce,
+          entry.codeVerifier,
+          entry.expiresAt,
+          FLOW_STATE_CAPACITY_LOCK_KEY,
+          maxEntries,
+        ],
+      );
+      if (result.rows.length === 0) {
+        throw new FlowStateCapacityError();
+      }
+    },
+    async take(state: string): Promise<FlowStateEntry | undefined> {
+      const result = await pool.query<PostgresFlowStateRow>(
+        `DELETE FROM auth_flow_state
+         WHERE state = $1
+         RETURNING nonce, code_verifier, EXTRACT(EPOCH FROM expires_at) * 1000 AS expires_at_ms`,
+        [state],
+      );
+      const row = result.rows[0];
+      if (row === undefined) return undefined;
+      const entry: FlowStateEntry = {
+        nonce: row.nonce,
+        codeVerifier: row.code_verifier,
+        expiresAt: Number(row.expires_at_ms),
+      };
+      return entry.expiresAt <= now() ? undefined : entry;
+    },
+    async size(): Promise<number> {
+      const result = await pool.query<{ count: number | string }>(
+        `SELECT COUNT(*)::int AS count FROM auth_flow_state`,
+      );
+      return Number(result.rows[0]?.count ?? 0);
+    },
+    async sweep(): Promise<void> {
+      await pool.query(`DELETE FROM auth_flow_state WHERE expires_at <= NOW()`);
+    },
+  };
+}
+
+/** Process-wide production default, lazily bound to the existing DB pool. */
 let defaultStore: FlowStateStore | undefined;
 let defaultSweepTimer: NodeJS.Timeout | undefined;
 
 /**
- * Return the process-wide default store. Lazily constructs it on
- * first call and arms a 60-second periodic sweeper. The sweeper's
- * timer is `.unref()`ed so it doesn't keep the Node event loop alive
- * past graceful shutdown.
+ * Return the process-wide Postgres-backed store. The pool is lazy so merely
+ * registering auth routes in a DATABASE_URL-less test does not touch the DB.
  */
 export function getDefaultFlowStateStore(): FlowStateStore {
-  if (defaultStore !== undefined) {
-    return defaultStore;
-  }
-  defaultStore = createFlowStateStore();
-  // 60-second sweep cadence. Lower would burn CPU on a near-empty
-  // map; higher would let expired entries linger longer (still
-  // bounded — they're consumed-and-removed by `take` anyway).
-  //
-  // **Timing-observation note.** A response-time oracle on
-  // `/auth/callback?state=<expired>` can distinguish "entry was in the
-  // map, expired, lookup slower" from "entry was never in the map" —
-  // up to ~60 s after the entry's TTL fires. Low-impact leak (existence
-  // of a recent failed flow, not user identity); accepted for v1. See
-  // tasks/refinements/backend-hardening/flow_state_sweep_cadence_note.md
-  // (closes docs/security/m3-review/inputs.md F-012).
-  defaultSweepTimer = setInterval(() => {
-    defaultStore?.sweep();
+  if (defaultStore !== undefined) return defaultStore;
+  const lazyPool: FlowStateDbPool = {
+    async query<TRow extends Record<string, unknown> = Record<string, unknown>>(
+      text: string,
+      params?: ReadonlyArray<unknown>,
+    ): Promise<{ rows: TRow[] }> {
+      const { getDefaultPool } = await import('../db.js');
+      return getDefaultPool().query<TRow>(text, params === undefined ? undefined : [...params]);
+    },
+  };
+  defaultStore = createPostgresFlowStateStore(lazyPool);
+  defaultSweepTimer = setInterval((): void => {
+    void Promise.resolve(defaultStore?.sweep()).catch((err: unknown) => {
+      console.error('[auth_flow_state sweep failed]', err);
+    });
   }, 60_000);
   defaultSweepTimer.unref();
   return defaultStore;
 }
 
-/**
- * Test-only helper — reset the default store and its sweeper. Vitest
- * tests that exercise the default singleton (rare; most tests build
- * their own) use this to start fresh.
- */
+/** Test-only helper: drop the singleton and stop its timer. */
 export function __resetDefaultFlowStateStore(): void {
   if (defaultSweepTimer !== undefined) {
     clearInterval(defaultSweepTimer);
