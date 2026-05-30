@@ -16,13 +16,13 @@
 // disambiguates the (theoretical) case where a node id collides with
 // an edge id from a separate session run.
 //
-// **v1 annotation_kind = `'note'`.** The annotate proposal payload
-// carries an `annotation_kind` enum (`note` / `reframe` /
-// `scope-change` / `stance`). v1 of the moderator surface defaults to
-// `'note'` — the most generic kind — so the submenu only needs a text
-// field. A future "annotation-kind picker" task may surface the full
-// enum; the hook's signature already accepts the kind so that lift is
-// a one-line submenu change.
+// **`annotation_kind` is supplied by the call site.** The annotate
+// proposal payload carries an `annotation_kind` enum (`note` /
+// `reframe` / `scope-change` / `stance`) chosen by the moderator
+// through the submenu's radio-group picker; the hook just threads the
+// supplied kind into the propose envelope. `AnnotationKind` is a
+// closed union so TypeScript enforces the call-site contract at the
+// type layer. See `tasks/refinements/moderator-ui/mod_annotation_kind_tagging.md`.
 //
 // **Cap-aware content validation.** `MAX_METHODOLOGY_TEXT_LENGTH` from
 // `@a-conversa/shared-types` is the same upper bound the server schema
@@ -60,10 +60,11 @@ export interface UseAnnotateActionResult {
    * Trigger the annotate proposal for the hook-bound target. The
    * in-flight guard short-circuits a concurrent Submit on the SAME
    * `(targetKind, targetId)` pair while the prior round-trip is still
-   * in flight. The `content` is the moderator-typed annotation text.
-   * v1 always uses `annotation_kind === 'note'`.
+   * in flight. The `content` is the moderator-typed annotation text;
+   * `annotationKind` is the moderator-picked kind from the submenu
+   * radio-group.
    */
-  annotate: (content: string) => Promise<void>;
+  annotate: (content: string, annotationKind: AnnotationKind) => Promise<void>;
   /** True while an annotate for the bound target is in flight. */
   readonly inFlight: boolean;
   /** The wire-error from the last failed annotate, or undefined. */
@@ -177,7 +178,7 @@ export function useAnnotateAction(
   const inFlight = inFlightSet.has(key);
   const lastError = errorsMap.get(key);
 
-  async function annotate(content: string): Promise<void> {
+  async function annotate(content: string, annotationKind: AnnotationKind): Promise<void> {
     // In-flight guard — concurrent Submit on the SAME target is a
     // no-op (the existing round-trip will resolve on its own; we
     // don't fire a duplicate envelope).
@@ -221,10 +222,6 @@ export function useAnnotateAction(
       // envelope id at append time per `proposal_events.md`).
       const expectedSequence =
         useWsStore.getState().sessionState[sessionId]?.lastAppliedSequence ?? 0;
-      // v1: hard-code `annotation_kind` to `'note'`. The submenu only
-      // surfaces a text input; a future "annotation-kind picker" task
-      // can lift this into a submenu state value passed through here.
-      const annotation_kind: AnnotationKind = 'note';
       await client.send('propose', {
         sessionId,
         expectedSequence,
@@ -232,7 +229,7 @@ export function useAnnotateAction(
           kind: 'annotate',
           target_kind: targetKind,
           target_id: targetId,
-          annotation_kind,
+          annotation_kind: annotationKind,
           content,
         },
       });

@@ -192,6 +192,7 @@
     "moderator.annotateAction.submenu.inputAriaLabel",
     "moderator.annotateAction.submenu.submit",
     "moderator.annotateAction.submenu.submitInFlight",
+    "moderator.annotateAction.submenu.kindLegend",
     "moderator.annotateAction.errorBanner.timeout",
     "moderator.annotateAction.errorBanner.unknown",
     "moderator.annotateAction.errorBanner.contentEmpty",

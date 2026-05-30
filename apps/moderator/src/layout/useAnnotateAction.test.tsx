@@ -212,7 +212,7 @@ describe('useAnnotateAction — successful annotate path', () => {
     const probe = renderProbe(fake.client, NODE_ID, 'node');
     let annotatePromise: Promise<void> | undefined;
     act(() => {
-      annotatePromise = probe.result.annotate('a thought');
+      annotatePromise = probe.result.annotate('a thought', 'note');
     });
     expect(fake.calls.length).toBe(1);
     expect(fake.calls[0]?.type).toBe('propose');
@@ -249,7 +249,7 @@ describe('useAnnotateAction — successful annotate path', () => {
     const probe = renderProbe(fake.client, EDGE_ID, 'edge');
     let annotatePromise: Promise<void> | undefined;
     act(() => {
-      annotatePromise = probe.result.annotate('edge note');
+      annotatePromise = probe.result.annotate('edge note', 'note');
     });
     expect(fake.calls.length).toBe(1);
     expect(fake.calls[0]?.payload.proposal).toEqual({
@@ -288,7 +288,7 @@ describe('useAnnotateAction — successful annotate path', () => {
       } as never);
     });
     act(() => {
-      void probe.result.annotate('content');
+      void probe.result.annotate('content', 'note');
     });
     expect(fake.calls.length).toBe(1);
     expect(fake.calls[0]?.payload.expectedSequence).toBe(7);
@@ -300,7 +300,7 @@ describe('useAnnotateAction — successful annotate path', () => {
     const key = annotateStoreKey('node', NODE_ID);
     let annotatePromise: Promise<void> | undefined;
     act(() => {
-      annotatePromise = probe.result.annotate('content');
+      annotatePromise = probe.result.annotate('content', 'note');
     });
     expect(useAnnotateStore.getState().inFlight.has(key)).toBe(true);
     expect(probe.result.inFlight).toBe(true);
@@ -321,7 +321,7 @@ describe('useAnnotateAction — error paths', () => {
     const probe = renderProbe(fake.client);
     let annotatePromise: Promise<void> | undefined;
     act(() => {
-      annotatePromise = probe.result.annotate('content');
+      annotatePromise = probe.result.annotate('content', 'note');
     });
     act(() => {
       fake.rejectNext(
@@ -348,7 +348,7 @@ describe('useAnnotateAction — error paths', () => {
     const probe = renderProbe(fake.client);
     let annotatePromise: Promise<void> | undefined;
     act(() => {
-      annotatePromise = probe.result.annotate('content');
+      annotatePromise = probe.result.annotate('content', 'note');
     });
     act(() => {
       fake.rejectNext(new WsRequestTimeoutError('propose', 'req-id-1'));
@@ -366,7 +366,7 @@ describe('useAnnotateAction — error paths', () => {
     const probe = renderProbe(fake.client);
     let annotatePromise: Promise<void> | undefined;
     act(() => {
-      annotatePromise = probe.result.annotate('content');
+      annotatePromise = probe.result.annotate('content', 'note');
     });
     act(() => {
       fake.rejectNext(new Error('socket closed'));
@@ -385,7 +385,7 @@ describe('useAnnotateAction — error paths', () => {
     const probe = renderProbe(fake.client);
     let first: Promise<void> | undefined;
     act(() => {
-      first = probe.result.annotate('first');
+      first = probe.result.annotate('first', 'note');
     });
     act(() => {
       fake.rejectNext(
@@ -401,7 +401,7 @@ describe('useAnnotateAction — error paths', () => {
     const key = annotateStoreKey('node', NODE_ID);
     expect(useAnnotateStore.getState().errors.has(key)).toBe(true);
     act(() => {
-      void probe.result.annotate('second');
+      void probe.result.annotate('second', 'note');
     });
     expect(useAnnotateStore.getState().errors.has(key)).toBe(false);
     expect(fake.calls.length).toBe(2);
@@ -413,7 +413,7 @@ describe('useAnnotateAction — content validation guards', () => {
     const fake = makeFakeClient();
     const probe = renderProbe(fake.client);
     await act(async () => {
-      await probe.result.annotate('');
+      await probe.result.annotate('', 'note');
     });
     expect(fake.calls.length).toBe(0);
     expect(probe.result.lastError?.code).toBe('content-empty');
@@ -424,7 +424,7 @@ describe('useAnnotateAction — content validation guards', () => {
     const probe = renderProbe(fake.client);
     const overCap = 'x'.repeat(MAX_METHODOLOGY_TEXT_LENGTH + 1);
     await act(async () => {
-      await probe.result.annotate(overCap);
+      await probe.result.annotate(overCap, 'note');
     });
     expect(fake.calls.length).toBe(0);
     expect(probe.result.lastError?.code).toBe('content-too-long');
@@ -436,7 +436,7 @@ describe('useAnnotateAction — content validation guards', () => {
     const atCap = 'y'.repeat(MAX_METHODOLOGY_TEXT_LENGTH);
     let annotatePromise: Promise<void> | undefined;
     act(() => {
-      annotatePromise = probe.result.annotate(atCap);
+      annotatePromise = probe.result.annotate(atCap, 'note');
     });
     expect(fake.calls.length).toBe(1);
     expect(fake.calls[0]?.payload.proposal).toMatchObject({
@@ -458,11 +458,11 @@ describe('useAnnotateAction — concurrency + key isolation', () => {
     const fake = makeFakeClient();
     const probe = renderProbe(fake.client);
     act(() => {
-      void probe.result.annotate('first');
+      void probe.result.annotate('first', 'note');
     });
     expect(fake.calls.length).toBe(1);
     act(() => {
-      void probe.result.annotate('second');
+      void probe.result.annotate('second', 'note');
     });
     expect(fake.calls.length).toBe(1);
   });
@@ -480,7 +480,7 @@ describe('useAnnotateAction — concurrency + key isolation', () => {
     // Trigger via the edgeProbe (the only mounted probe after the
     // cleanup above). Whichever probe runs, the keys land disjointly.
     act(() => {
-      void edgeProbe.result.annotate('edge content');
+      void edgeProbe.result.annotate('edge content', 'note');
     });
     expect(useAnnotateStore.getState().inFlight.has(edgeKey)).toBe(true);
     expect(useAnnotateStore.getState().inFlight.has(nodeKey)).toBe(false);
@@ -495,7 +495,7 @@ describe('useAnnotateAction — concurrency + key isolation', () => {
     const probe = renderProbe(fake.client);
     let first: Promise<void> | undefined;
     act(() => {
-      first = probe.result.annotate('first');
+      first = probe.result.annotate('first', 'note');
     });
     act(() => {
       fake.rejectNext(
@@ -511,7 +511,7 @@ describe('useAnnotateAction — concurrency + key isolation', () => {
     expect(probe.result.lastError).toBeDefined();
     let second: Promise<void> | undefined;
     act(() => {
-      second = probe.result.annotate('second');
+      second = probe.result.annotate('second', 'note');
     });
     act(() => {
       fake.resolveNext({ sequence: 2 });
@@ -520,5 +520,55 @@ describe('useAnnotateAction — concurrency + key isolation', () => {
       await second;
     });
     expect(probe.result.lastError).toBeUndefined();
+  });
+});
+
+describe('useAnnotateAction — annotation_kind threading (picker lift)', () => {
+  it('reframe — annotationKind parameter lands as proposal.annotation_kind = "reframe"', () => {
+    const fake = makeFakeClient();
+    const probe = renderProbe(fake.client);
+    act(() => {
+      void probe.result.annotate('a reframe thought', 'reframe');
+    });
+    expect(fake.calls.length).toBe(1);
+    expect(fake.calls[0]?.payload.proposal).toEqual({
+      kind: 'annotate',
+      target_kind: 'node',
+      target_id: NODE_ID,
+      annotation_kind: 'reframe',
+      content: 'a reframe thought',
+    });
+  });
+
+  it('scope-change — annotationKind parameter lands as proposal.annotation_kind = "scope-change"', () => {
+    const fake = makeFakeClient();
+    const probe = renderProbe(fake.client);
+    act(() => {
+      void probe.result.annotate('a scope shift', 'scope-change');
+    });
+    expect(fake.calls.length).toBe(1);
+    expect(fake.calls[0]?.payload.proposal).toEqual({
+      kind: 'annotate',
+      target_kind: 'node',
+      target_id: NODE_ID,
+      annotation_kind: 'scope-change',
+      content: 'a scope shift',
+    });
+  });
+
+  it('stance — annotationKind parameter lands as proposal.annotation_kind = "stance"', () => {
+    const fake = makeFakeClient();
+    const probe = renderProbe(fake.client);
+    act(() => {
+      void probe.result.annotate('a stance read', 'stance');
+    });
+    expect(fake.calls.length).toBe(1);
+    expect(fake.calls[0]?.payload.proposal).toEqual({
+      kind: 'annotate',
+      target_kind: 'node',
+      target_id: NODE_ID,
+      annotation_kind: 'stance',
+      content: 'a stance read',
+    });
   });
 });

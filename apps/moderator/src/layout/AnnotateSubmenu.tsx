@@ -28,6 +28,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 import { MAX_METHODOLOGY_TEXT_LENGTH } from '@a-conversa/shared-types';
+import type { AnnotationKind } from '@a-conversa/shared-types';
 
 import {
   useAnnotateAction,
@@ -37,6 +38,14 @@ import {
   type UseAnnotateActionResult,
   type WireError,
 } from './useAnnotateAction';
+
+/**
+ * The four canonical annotation kinds the picker surfaces. Wire-format
+ * values from `annotationKindSchema`; rendered through the existing
+ * `methodology.annotationKind.<kind>` catalog keys (the same ones
+ * `<AnnotationBadge>` consumes — DRY).
+ */
+const ANNOTATION_KINDS: readonly AnnotationKind[] = ['note', 'reframe', 'scope-change', 'stance'];
 
 /**
  * Translator function shape — narrow facade over `react-i18next`'s
@@ -104,6 +113,9 @@ export function AnnotateSubmenu(props: AnnotateSubmenuProps): ReactElement {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const [content, setContent] = useState<string>('');
+  // Default to `'note'` (the v1 implicit default). See Decisions §1 in
+  // `tasks/refinements/moderator-ui/mod_annotation_kind_tagging.md`.
+  const [selectedKind, setSelectedKind] = useState<AnnotationKind>('note');
 
   // Always call the hook (Rules of Hooks). The `hookOverride` shadow
   // is for tests that inject a fully-stubbed result; in production
@@ -138,7 +150,7 @@ export function AnnotateSubmenu(props: AnnotateSubmenuProps): ReactElement {
   }, [onClose]);
 
   const handleSubmit = useCallback((): void => {
-    void hook.annotate(content).then(() => {
+    void hook.annotate(content, selectedKind).then(() => {
       // Close ONLY on success. On failure the error has landed in the
       // module-scoped store and the submenu stays open so the inline
       // error region is visible.
@@ -151,7 +163,7 @@ export function AnnotateSubmenu(props: AnnotateSubmenuProps): ReactElement {
         onClose();
       }
     });
-  }, [hook, content, onClose, targetId, targetKind]);
+  }, [hook, content, selectedKind, onClose, targetId, targetKind]);
 
   const inFlight = hook.inFlight;
   const error = hook.lastError;
@@ -186,6 +198,38 @@ export function AnnotateSubmenu(props: AnnotateSubmenuProps): ReactElement {
         placeholder={t('moderator.annotateAction.submenu.placeholder')}
         className="my-1 block w-full resize-y rounded border border-slate-300 px-2 py-1 text-sm text-slate-900 focus:border-blue-500 focus:outline-none"
       />
+      <fieldset className="mt-1 px-1">
+        <legend
+          data-testid="annotate-submenu-kind-legend"
+          className="mb-1 text-xs font-medium text-slate-700"
+        >
+          {t('moderator.annotateAction.submenu.kindLegend')}
+        </legend>
+        <div role="radiogroup" className="grid grid-cols-2 gap-1">
+          {ANNOTATION_KINDS.map((kind) => {
+            const isSelected = selectedKind === kind;
+            return (
+              <button
+                key={kind}
+                type="button"
+                role="radio"
+                aria-checked={isSelected}
+                data-testid={`annotate-submenu-kind-${kind}`}
+                data-selected={isSelected ? 'true' : 'false'}
+                disabled={inFlight}
+                onClick={() => setSelectedKind(kind)}
+                className={`rounded border px-2 py-1 text-xs ${
+                  isSelected
+                    ? 'border-blue-500 bg-blue-50 text-blue-900'
+                    : 'border-slate-300 bg-white text-slate-900 hover:bg-slate-50'
+                } disabled:cursor-not-allowed disabled:opacity-60`}
+              >
+                <span className="font-medium">{t(`methodology.annotationKind.${kind}`)}</span>
+              </button>
+            );
+          })}
+        </div>
+      </fieldset>
       <div className="flex justify-end gap-2 px-1 pt-1">
         <button
           type="button"

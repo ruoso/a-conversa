@@ -346,7 +346,8 @@
         "placeholder": "Escribe el contenido de la anotación…",
         "inputAriaLabel": "Contenido de la anotación",
         "submit": "Enviar",
-        "submitInFlight": "Enviando…"
+        "submitInFlight": "Enviando…",
+        "kindLegend": "Tipo"
       },
       "errorBanner": {
         "timeout": "La solicitud de anotación expiró — vuelve a intentarlo",

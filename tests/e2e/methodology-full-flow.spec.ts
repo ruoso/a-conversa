@@ -1494,6 +1494,17 @@ test.describe
     await alicePage
       .getByTestId('annotate-submenu-input')
       .fill('This restoration claim depends on the 1995 reintroduction baseline being intact.');
+
+    // Pick a non-default kind through the picker (per
+    // `mod_annotation_kind_tagging`) so the propose envelope carries
+    // `annotation_kind: 'reframe'` rather than the v1 implicit `'note'`
+    // default. Asserts the radio reflects the selection before Submit.
+    await alicePage.getByTestId('annotate-submenu-kind-reframe').click();
+    await expect(alicePage.getByTestId('annotate-submenu-kind-reframe')).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
+
     await alicePage.getByTestId('annotate-submenu-submit').click();
 
     // Two outcomes are acceptable signals of round-trip success: the
@@ -1529,6 +1540,14 @@ test.describe
       if (enabled) {
         await commitButton.click();
         await expect(annotateRow).toHaveCount(0, { timeout: 15_000 });
+
+        // The kind picker chose `'reframe'` in Phase 9.1, so the
+        // resulting badge stamps `data-annotation-kind="reframe"`
+        // (per `mod_annotation_rendering`'s shipped attribute seam).
+        const reframeBadge = alicePage
+          .locator('[data-testid^="annotation-badge-"][data-annotation-kind="reframe"]')
+          .first();
+        await expect(reframeBadge).toBeVisible({ timeout: 15_000 });
       }
     }
   });

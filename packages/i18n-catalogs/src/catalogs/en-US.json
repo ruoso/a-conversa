@@ -346,7 +346,8 @@
         "placeholder": "Type the annotation content…",
         "inputAriaLabel": "Annotation content",
         "submit": "Submit",
-        "submitInFlight": "Submitting…"
+        "submitInFlight": "Submitting…",
+        "kindLegend": "Kind"
       },
       "errorBanner": {
         "timeout": "The annotate request timed out — try again",

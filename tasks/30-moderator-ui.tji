@@ -674,7 +674,9 @@ task moderator_ui "Moderator UI" {
     task mod_annotation_kind_tagging "Annotation kind tagging (concern / reframe / stance / etc.)" {
       effort 0.5d
       allocate team
+      complete 100
       depends !mod_propose_annotation_action
+      note "Refinement: tasks/refinements/moderator-ui/mod_annotation_kind_tagging.md"
     }
     task mod_render_annotation_endpoint_edges "Render annotation-endpoint edges on moderator ReactFlow canvas" {
       effort 1.5d
