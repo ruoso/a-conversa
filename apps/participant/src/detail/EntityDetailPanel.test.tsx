@@ -248,6 +248,7 @@ interface RenderOpts {
   nodeAxiomMarkIndex?: ReadonlyMap<string, readonly AxiomMark[]>;
   nodeAnnotationIndex?: ReadonlyMap<string, readonly Annotation[]>;
   edgeAnnotationIndex?: ReadonlyMap<string, readonly Annotation[]>;
+  annotations?: readonly Annotation[];
   ownVoteIndex?: typeof EMPTY_OWN_VOTES;
   othersVoteIndex?: typeof EMPTY_OTHERS_VOTES;
   actionSlot?: React.ReactNode;
@@ -255,33 +256,49 @@ interface RenderOpts {
 
 function renderPanel(opts: RenderOpts = {}): void {
   const client = makeInertWsClient();
+  // Build the panel props imperatively so `exactOptionalPropertyTypes`
+  // doesn't reject `undefined`-valued optional props (the `annotations`
+  // + `actionSlot` props are optional with no `| undefined` widening).
+  const panelProps: React.ComponentProps<typeof EntityDetailPanel> = {
+    projectedNodes: opts.projectedNodes ?? [],
+    projectedEdges: opts.projectedEdges ?? [],
+    events: opts.events ?? [],
+    currentParticipantId: opts.currentParticipantId ?? ME,
+    nodeAxiomMarkIndex: opts.nodeAxiomMarkIndex ?? new Map(),
+    nodeAnnotationIndex: opts.nodeAnnotationIndex ?? new Map(),
+    edgeAnnotationIndex: opts.edgeAnnotationIndex ?? new Map(),
+    ownVoteIndex: opts.ownVoteIndex ?? EMPTY_OWN_VOTES,
+    othersVoteIndex: opts.othersVoteIndex ?? EMPTY_OTHERS_VOTES,
+    ...(opts.annotations !== undefined ? { annotations: opts.annotations } : {}),
+    ...(opts.actionSlot !== undefined ? { actionSlot: opts.actionSlot } : {}),
+  };
   render(
     <I18nProvider i18n={i18nInstance}>
       <MemoryRouter initialEntries={[`/sessions/${SESSION_ID}`]}>
         <WsClientProvider auth={{ status: 'authenticated' }} client={client}>
           <Routes>
-            <Route
-              path="/sessions/:id"
-              element={
-                <EntityDetailPanel
-                  projectedNodes={opts.projectedNodes ?? []}
-                  projectedEdges={opts.projectedEdges ?? []}
-                  events={opts.events ?? []}
-                  currentParticipantId={opts.currentParticipantId ?? ME}
-                  nodeAxiomMarkIndex={opts.nodeAxiomMarkIndex ?? new Map()}
-                  nodeAnnotationIndex={opts.nodeAnnotationIndex ?? new Map()}
-                  edgeAnnotationIndex={opts.edgeAnnotationIndex ?? new Map()}
-                  ownVoteIndex={opts.ownVoteIndex ?? EMPTY_OWN_VOTES}
-                  othersVoteIndex={opts.othersVoteIndex ?? EMPTY_OTHERS_VOTES}
-                  actionSlot={opts.actionSlot}
-                />
-              }
-            />
+            <Route path="/sessions/:id" element={<EntityDetailPanel {...panelProps} />} />
           </Routes>
         </WsClientProvider>
       </MemoryRouter>
     </I18nProvider>,
   );
+}
+
+const ANNOTATION_A_ID = '00000000-0000-4000-8000-0000000000a1';
+const ANNOTATION_B_ID = '00000000-0000-4000-8000-0000000000a2';
+const CONTRADICTING_EDGE_ID = '00000000-0000-4000-8000-0000000000ed';
+
+function makeAnnotation(opts: Partial<Annotation> & { id: string }): Annotation {
+  return {
+    id: opts.id,
+    kind: opts.kind ?? 'note',
+    content: opts.content ?? 'Annotation content',
+    targetNodeId: opts.targetNodeId ?? NODE_A_ID,
+    targetEdgeId: opts.targetEdgeId ?? null,
+    createdBy: opts.createdBy ?? ALICE_ID,
+    createdAt: opts.createdAt ?? '2026-05-30T00:00:00.000Z',
+  };
 }
 
 describe('EntityDetailPanel — empty-state branch', () => {
@@ -869,6 +886,179 @@ describe('EntityDetailPanel — action slot reservation', () => {
     });
     renderPanel({ projectedNodes: [node] });
     expect(screen.queryByTestId('participant-detail-panel-action-slot')).toBeNull();
+  });
+});
+
+describe('EntityDetailPanel — annotation entity-detail branch', () => {
+  it('(annotation-a) renders the new body (kind + content + author + target row + no contradicts section) when a matching annotation is selected', () => {
+    const node = makeNode({ id: NODE_A_ID, wording: 'UBI lifts the welfare floor' });
+    const annotation = makeAnnotation({
+      id: ANNOTATION_A_ID,
+      kind: 'note',
+      content: 'This needs evidence',
+      targetNodeId: NODE_A_ID,
+      createdBy: ALICE_ID,
+    });
+    act(() => {
+      useSelectionStore.getState().select({ kind: 'annotation', id: ANNOTATION_A_ID });
+    });
+    renderPanel({
+      projectedNodes: [node],
+      annotations: [annotation],
+      events: [joinedEvent({ sequence: 1, userId: ALICE_ID, screenName: 'alice' })],
+    });
+    const panel = screen.getByTestId('participant-detail-panel');
+    expect(panel.getAttribute('data-state')).toBe('annotation');
+    expect(panel.getAttribute('data-entity-kind')).toBe('annotation');
+    expect(panel.getAttribute('data-entity-id')).toBe(ANNOTATION_A_ID);
+    expect(
+      screen.getByTestId('participant-detail-panel-annotation-identity').textContent,
+    ).toContain('Annotation');
+    expect(screen.getByTestId('participant-detail-panel-annotation-kind').textContent).toBe('Note');
+    expect(screen.getByTestId('participant-detail-panel-annotation-id').textContent).toBe(
+      ANNOTATION_A_ID,
+    );
+    expect(screen.getByTestId('participant-detail-panel-annotation-content-body').textContent).toBe(
+      'This needs evidence',
+    );
+    expect(screen.getByTestId('participant-detail-panel-annotation-author-name').textContent).toBe(
+      'alice',
+    );
+    const targetLink = screen.getByTestId('participant-detail-panel-annotation-target-link');
+    expect(targetLink.getAttribute('data-target-kind')).toBe('node');
+    expect(targetLink.getAttribute('data-target-id')).toBe(NODE_A_ID);
+    expect(targetLink.textContent).toBe('UBI lifts the welfare floor');
+    expect(screen.queryByTestId('participant-detail-panel-annotation-contradicts')).toBeNull();
+  });
+
+  it('(annotation-b) contradicts section renders one row per role=contradicts edge anchored on either endpoint of the annotation', () => {
+    const node = makeNode({ id: NODE_A_ID, wording: 'Some statement' });
+    const otherNode = makeNode({ id: NODE_B_ID, wording: 'Counter statement' });
+    const annotation = makeAnnotation({ id: ANNOTATION_A_ID, targetNodeId: NODE_A_ID });
+    // Two contradicts edges — one with the annotation as `source`, one as `target`.
+    const edges: ParticipantEdgeData[] = [
+      makeEdge({
+        id: CONTRADICTING_EDGE_ID,
+        source: NODE_B_ID,
+        target: ANNOTATION_A_ID,
+        role: 'contradicts',
+      }),
+      makeEdge({
+        id: '00000000-0000-4000-8000-0000000000e2',
+        source: ANNOTATION_A_ID,
+        target: NODE_B_ID,
+        role: 'contradicts',
+      }),
+      makeEdge({
+        id: '00000000-0000-4000-8000-0000000000e3',
+        source: NODE_B_ID,
+        target: ANNOTATION_A_ID,
+        role: 'supports',
+      }),
+    ];
+    act(() => {
+      useSelectionStore.getState().select({ kind: 'annotation', id: ANNOTATION_A_ID });
+    });
+    renderPanel({
+      projectedNodes: [node, otherNode],
+      projectedEdges: edges,
+      annotations: [annotation],
+    });
+    const rows = screen.getAllByTestId('participant-detail-panel-annotation-contradicts-row');
+    expect(rows.length).toBe(2);
+    expect(rows.map((row) => row.getAttribute('data-edge-id'))).toEqual([
+      CONTRADICTING_EDGE_ID,
+      '00000000-0000-4000-8000-0000000000e2',
+    ]);
+  });
+
+  it('(annotation-c) target-link button onClick writes the correct {kind, id} to the selection store', () => {
+    const node = makeNode({ id: NODE_A_ID, wording: 'Target node' });
+    const annotation = makeAnnotation({ id: ANNOTATION_A_ID, targetNodeId: NODE_A_ID });
+    act(() => {
+      useSelectionStore.getState().select({ kind: 'annotation', id: ANNOTATION_A_ID });
+    });
+    renderPanel({ projectedNodes: [node], annotations: [annotation] });
+    const targetLink = screen.getByTestId('participant-detail-panel-annotation-target-link');
+    act(() => {
+      targetLink.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(useSelectionStore.getState().selected).toEqual({ kind: 'node', id: NODE_A_ID });
+  });
+
+  it('(annotation-d) contradicts-link button onClick writes {kind: edge, id} to the selection store', () => {
+    const node = makeNode({ id: NODE_A_ID });
+    const otherNode = makeNode({ id: NODE_B_ID });
+    const annotation = makeAnnotation({ id: ANNOTATION_A_ID, targetNodeId: NODE_A_ID });
+    const edge = makeEdge({
+      id: CONTRADICTING_EDGE_ID,
+      source: NODE_B_ID,
+      target: ANNOTATION_A_ID,
+      role: 'contradicts',
+    });
+    act(() => {
+      useSelectionStore.getState().select({ kind: 'annotation', id: ANNOTATION_A_ID });
+    });
+    renderPanel({
+      projectedNodes: [node, otherNode],
+      projectedEdges: [edge],
+      annotations: [annotation],
+    });
+    const link = screen.getByTestId('participant-detail-panel-annotation-contradicts-link');
+    act(() => {
+      link.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(useSelectionStore.getState().selected).toEqual({
+      kind: 'edge',
+      id: CONTRADICTING_EDGE_ID,
+    });
+  });
+
+  it('(annotation-e) a stale annotation id renders the stale-entity body + triggers the auto-clear useEffect', () => {
+    act(() => {
+      useSelectionStore.getState().select({ kind: 'annotation', id: ANNOTATION_A_ID });
+    });
+    renderPanel({ annotations: [] });
+    const state = screen.getByTestId('participant-detail-panel').getAttribute('data-state');
+    expect(['stale', 'empty']).toContain(state);
+    expect(useSelectionStore.getState().selected).toBeNull();
+  });
+
+  it('(annotation-f) the placeholder testid is gone after the annotation-view replaces it (negative assertion)', () => {
+    const annotation = makeAnnotation({ id: ANNOTATION_A_ID });
+    act(() => {
+      useSelectionStore.getState().select({ kind: 'annotation', id: ANNOTATION_A_ID });
+    });
+    renderPanel({
+      projectedNodes: [makeNode({ id: NODE_A_ID })],
+      annotations: [annotation],
+    });
+    expect(screen.queryByTestId('participant-detail-panel-annotation-placeholder')).toBeNull();
+  });
+
+  it('(annotation-g) when the annotation targets another annotation, the target row resolves via methodology.annotationKind of the target annotation', () => {
+    // A1 annotates A2 (annotation-on-annotation chain). A2 is a reframe.
+    const targetAnnotation = makeAnnotation({
+      id: ANNOTATION_B_ID,
+      kind: 'reframe',
+      targetNodeId: NODE_A_ID,
+    });
+    const annotation = makeAnnotation({
+      id: ANNOTATION_A_ID,
+      kind: 'note',
+      targetNodeId: ANNOTATION_B_ID,
+    });
+    act(() => {
+      useSelectionStore.getState().select({ kind: 'annotation', id: ANNOTATION_A_ID });
+    });
+    renderPanel({
+      projectedNodes: [makeNode({ id: NODE_A_ID })],
+      annotations: [annotation, targetAnnotation],
+    });
+    const targetLink = screen.getByTestId('participant-detail-panel-annotation-target-link');
+    expect(targetLink.getAttribute('data-target-kind')).toBe('annotation');
+    expect(targetLink.getAttribute('data-target-id')).toBe(ANNOTATION_B_ID);
+    expect(targetLink.textContent).toBe('Reframe');
   });
 });
 

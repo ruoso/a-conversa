@@ -221,6 +221,7 @@ task participant_ui "Participant (debater) UI" {
     task part_entity_detail_panel_annotation_view "Full annotation entity detail panel (kind/content/author/links)" {
       effort 1d
       allocate team
+      complete 100
       depends !part_render_annotation_endpoint_edges
       note -8<-
         Source of debt: part_render_annotation_endpoint_edges — the entity-detail-panel today renders a
@@ -245,6 +246,28 @@ task participant_ui "Participant (debater) UI" {
         Requires widening groupAnnotationsByNode to a unified groupAnnotationsByEntityId over
         {kind, id} buckets. Includes Vitest cover (no Playwright — observable via the mirror).
         Source commit: participant_ui.part_render_annotation_endpoint_edges landing commit.
+      ->8-
+    }
+    task part_e2e_user_pool_expansion_v2 "Expand Authelia dev user pool beyond 12 users so future participant e2e blocks can stay parallel" {
+      effort 0.5d
+      allocate team
+      depends !part_entity_detail_panel_annotation_view
+      note -8<-
+        Source of debt: tasks/refinements/participant-ui/part_entity_detail_panel_annotation_view.md
+        — implementation deviation note. The annotation-view Playwright cover was folded into the
+        existing block 12 (leo + kate role-swap) rather than a new block-4, because the 12-user
+        Authelia dev pool (alice+ben, maria+dave, frank+erin, grace+henry, ivan+julia, kate+leo) is
+        now fully recycled across all 12 test blocks in tests/e2e/participant-graph-render.spec.ts.
+        Any future participant e2e block that needs an OIDC dance requires either pool expansion or
+        accepting a .serial regression.
+
+        Scope: add 2+ more dev-user pairs to infra/authelia/users.yml and tests/e2e/fixtures/auth.ts,
+        bump the DEV_USER_POOL constant, and verify tests/e2e/participant-graph-render.spec.ts stays
+        fullyParallel. Mirror the part_e2e_user_pool_expansion (v1) scope (commit d4f3247) which
+        expanded from 6 to 12 users. The principled dynamic-allocation helper is explicitly out of
+        scope (same posture as v1).
+
+        Source commit: participant_ui.part_entity_detail_panel_annotation_view landing commit.
       ->8-
     }
   }

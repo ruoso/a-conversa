@@ -664,7 +664,8 @@
       "staleEntity": "Este elemento não está mais presente.",
       "identity": {
         "node": "Nó",
-        "edge": "Aresta"
+        "edge": "Aresta",
+        "annotation": "Anotação"
       },
       "sectionTitle": {
         "facets": "Facetas",
@@ -676,17 +677,21 @@
         "vote": "Registre seu voto",
         "markAxiom": "Meus axiomas"
       },
+      "annotation": {
+        "sectionTitle": {
+          "content": "Conteúdo",
+          "author": "Autor",
+          "target": "Anotando",
+          "contradicts": "Contradito por"
+        },
+        "unknownTarget": "Alvo desconhecido"
+      },
       "facetRow": {
         "awaitingProposal": "Aguardando proposta",
         "youVoted": {
           "agree": "Você votou: Concordar",
           "dispute": "Você votou: Discordar"
         }
-      }
-    },
-    "annotation": {
-      "detail": {
-        "placeholder": "Anotação selecionada — visualização de detalhes em breve"
       }
     },
     "voteButton": {

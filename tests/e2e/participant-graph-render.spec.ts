@@ -3239,7 +3239,21 @@ test.describe('Participant operate route — read-mostly graph render', () => {
     //   reports two nodes + one edge, and (e) a synthetic tap on the
     //   annotation node updates the selection store to
     //   `{ kind: 'annotation', id: A1 }` and the detail panel renders
-    //   the placeholder body.
+    //   the structured annotation entity-detail body (identity / kind /
+    //   content / author / target / contradicts).
+    //
+    // Refinement: tasks/refinements/participant-ui/part_entity_detail_panel_annotation_view.md
+    //   (Pool exhaustion follow-up: the refinement initially scoped a
+    //   thirteenth `henry + grace` block-4 role-swap, but that pair was
+    //   already claimed by block 10 — the 12-user pool is fully
+    //   recycled. The new annotation-view assertions are folded into
+    //   this block instead: the seed already carries the node +
+    //   annotation + contradicts-edge triple the new body needs, and an
+    //   additional `participant-joined` event for the synthetic actor
+    //   gives the author row a resolvable screen name. The block also
+    //   exercises the target-link click round-trip: after tapping the
+    //   "Annotating" link, the panel re-renders with
+    //   `data-state="detail"` against the underlying statement.)
     //
     //   Uses the `?aconversaTestMode=1` query-param to enable the
     //   `window.__aConversaCyInstance` seam (per Decision §9 of
@@ -3284,13 +3298,16 @@ test.describe('Participant operate route — read-mostly graph render', () => {
       });
       await expect(page.getByTestId('participant-detail-panel')).toBeVisible({ timeout: 15_000 });
 
-      // 5. Seed the events: one node, one annotation targeting that
-      //    node (so the existing `part_annotation_render` overlay also
-      //    fires), and one annotation-endpoint edge (N1 contradicts A1).
+      // 5. Seed the events: a synthetic-actor `participant-joined` (so
+      //    the annotation-view's author row resolves a screen name), one
+      //    node, one annotation targeting that node (so the existing
+      //    `part_annotation_render` overlay also fires), and one
+      //    annotation-endpoint edge (N1 contradicts A1).
       const NODE_ID = '11111111-1111-4111-8111-111111111111';
       const ANNOTATION_ID = '22222222-2222-4222-8222-222222222222';
       const EDGE_ID = '33333333-3333-4333-8333-333333333333';
       const ACTOR_ID = '44444444-4444-4444-8444-444444444444';
+      const ACTOR_SCREEN_NAME = 'annotator';
       await page.evaluate(
         (seed: {
           sessionId: string;
@@ -3298,6 +3315,7 @@ test.describe('Participant operate route — read-mostly graph render', () => {
           annotationId: string;
           edgeId: string;
           actorId: string;
+          actorScreenName: string;
           wording: string;
           annotationContent: string;
         }) => {
@@ -3312,6 +3330,20 @@ test.describe('Participant operate route — read-mostly graph render', () => {
             throw new Error('__aConversaWsStore is not exposed on window');
           }
           const apply = store.getState().applyEvent.bind(store.getState());
+          apply({
+            id: 'cccccccc-cccc-4ccc-8ccc-cccccccc0000',
+            sessionId: seed.sessionId,
+            sequence: 5_000_000,
+            kind: 'participant-joined',
+            actor: seed.actorId,
+            payload: {
+              user_id: seed.actorId,
+              role: 'debater-B',
+              screen_name: seed.actorScreenName,
+              joined_at: '2026-05-30T00:00:00.000Z',
+            },
+            createdAt: '2026-05-30T00:00:00.000Z',
+          });
           apply({
             id: 'cccccccc-cccc-4ccc-8ccc-cccccccc0001',
             sessionId: seed.sessionId,
@@ -3366,6 +3398,7 @@ test.describe('Participant operate route — read-mostly graph render', () => {
           annotationId: ANNOTATION_ID,
           edgeId: EDGE_ID,
           actorId: ACTOR_ID,
+          actorScreenName: ACTOR_SCREEN_NAME,
           wording: NODE_WORDING,
           annotationContent: ANNOTATION_CONTENT,
         },
@@ -3419,7 +3452,7 @@ test.describe('Participant operate route — read-mostly graph render', () => {
 
       // 8. Synthetic tap on the annotation graph-node — drives the
       //    selection store through `{ kind: 'annotation', id: A1 }` and
-      //    the detail panel into the placeholder branch.
+      //    the detail panel into the annotation entity-detail branch.
       await page.evaluate((annotationId: string) => {
         const cy = (
           window as unknown as {
@@ -3440,9 +3473,44 @@ test.describe('Participant operate route — read-mostly graph render', () => {
       await expect(panel).toHaveAttribute('data-state', 'annotation', { timeout: 15_000 });
       await expect(panel).toHaveAttribute('data-entity-kind', 'annotation');
       await expect(panel).toHaveAttribute('data-entity-id', ANNOTATION_ID);
-      await expect(
-        page.getByTestId('participant-detail-panel-annotation-placeholder'),
-      ).toBeVisible();
+
+      // 9. Annotation entity-detail body — per
+      //    `part_entity_detail_panel_annotation_view`. The five-section
+      //    body surfaces kind label, content text, author screen name,
+      //    target-link, and the contradicts-this-annotation list.
+      await expect(page.getByTestId('participant-detail-panel-annotation-kind')).toHaveText('Note');
+      await expect(page.getByTestId('participant-detail-panel-annotation-content-body')).toHaveText(
+        ANNOTATION_CONTENT,
+      );
+      await expect(page.getByTestId('participant-detail-panel-annotation-author-name')).toHaveText(
+        ACTOR_SCREEN_NAME,
+      );
+
+      const targetLink = page.getByTestId('participant-detail-panel-annotation-target-link');
+      await expect(targetLink).toBeVisible();
+      await expect(targetLink).toHaveAttribute('data-target-kind', 'node');
+      await expect(targetLink).toHaveAttribute('data-target-id', NODE_ID);
+      await expect(targetLink).toContainText(NODE_WORDING);
+
+      const contradictsRow = page.getByTestId(
+        'participant-detail-panel-annotation-contradicts-row',
+      );
+      await expect(contradictsRow).toHaveCount(1);
+      await expect(contradictsRow).toHaveAttribute('data-edge-id', EDGE_ID);
+
+      // 10. The legacy placeholder testid is gone — negative assertion
+      //     pinning the predecessor stub's removal.
+      await expect(page.getByTestId('participant-detail-panel-annotation-placeholder')).toHaveCount(
+        0,
+      );
+
+      // 11. Click the target-link and verify the panel re-renders with
+      //     the underlying statement entity selected (selection-store
+      //     round-trip via `useSelectionStore.getState().select(...)`).
+      await targetLink.click();
+      await expect(panel).toHaveAttribute('data-state', 'detail', { timeout: 15_000 });
+      await expect(panel).toHaveAttribute('data-entity-kind', 'node');
+      await expect(panel).toHaveAttribute('data-entity-id', NODE_ID);
     } finally {
       await context.close();
     }

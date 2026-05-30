@@ -664,7 +664,8 @@
       "staleEntity": "This element is no longer present.",
       "identity": {
         "node": "Node",
-        "edge": "Edge"
+        "edge": "Edge",
+        "annotation": "Annotation"
       },
       "sectionTitle": {
         "facets": "Facets",
@@ -676,17 +677,21 @@
         "vote": "Cast your vote",
         "markAxiom": "My axioms"
       },
+      "annotation": {
+        "sectionTitle": {
+          "content": "Content",
+          "author": "Author",
+          "target": "Annotating",
+          "contradicts": "Contradicted by"
+        },
+        "unknownTarget": "Unknown target"
+      },
       "facetRow": {
         "awaitingProposal": "Awaiting a proposal",
         "youVoted": {
           "agree": "You voted: Agree",
           "dispute": "You voted: Dispute"
         }
-      }
-    },
-    "annotation": {
-      "detail": {
-        "placeholder": "Annotation selected — detail view coming soon"
       }
     },
     "voteButton": {

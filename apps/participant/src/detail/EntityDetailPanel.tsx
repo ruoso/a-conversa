@@ -63,6 +63,7 @@ import {
   type FacetStatusIndex,
 } from '@a-conversa/shell';
 import type { Annotation } from '../graph/annotations';
+import type { AnnotationKind, EntityKind } from '@a-conversa/shared-types';
 import type { AxiomMark } from '../graph/axiomMarks';
 import type { OwnVoteIndex } from '../graph/ownVotes';
 import type { OthersVoteIndex } from '../graph/otherVotes';
@@ -318,6 +319,17 @@ export interface EntityDetailPanelProps {
   readonly nodeAnnotationIndex: ReadonlyMap<string, readonly Annotation[]>;
   readonly edgeAnnotationIndex: ReadonlyMap<string, readonly Annotation[]>;
   /**
+   * Flat list of every projected annotation. Threaded from the route's
+   * `projectAnnotations(events)` memo per Decision §1 of
+   * `part_entity_detail_panel_annotation_view` so the panel's
+   * `selection.kind === 'annotation'` branch can resolve the selected
+   * annotation by id. Optional with a frozen-empty default so legacy
+   * test fixtures (predating the annotation-view branch) compile; when
+   * absent the `'annotation'` arm of `lookupEntity` returns `null` and
+   * the panel falls through to the stale-entity body.
+   */
+  readonly annotations?: readonly Annotation[];
+  /**
    * Per-entity own-vote rollup the canvas also reads. The panel surfaces
    * the per-entity dispute-wins rollup as the "Your vote" badge header;
    * the per-facet detail under the header is re-derived from `events`
@@ -364,6 +376,14 @@ const EMPTY_FACET_STATUS_INDEX: FacetStatusIndex = {
   edges: new Map(),
 };
 
+/**
+ * Stable empty `Annotation[]` used as the panel-level fallback when no
+ * `annotations` prop is threaded through (legacy test fixtures). Re-
+ * using one frozen instance across re-renders keeps the panel's
+ * `lookupEntity` memo bailout meaningful.
+ */
+const EMPTY_ANNOTATIONS: readonly Annotation[] = Object.freeze([]);
+
 function EntityDetailPanelImpl(props: EntityDetailPanelProps): ReactElement {
   const {
     projectedNodes,
@@ -377,16 +397,18 @@ function EntityDetailPanelImpl(props: EntityDetailPanelProps): ReactElement {
     othersVoteIndex,
     facetStatusIndex,
     actionSlot,
+    annotations: annotationsProp,
   } = props;
+  const annotations = annotationsProp ?? EMPTY_ANNOTATIONS;
   const { t } = useTranslation();
   const selected = useSelectionStore((s) => s.selected);
 
   // Resolve the selection to an entity. `lookupEntity` discriminates on
   // `selected.kind` so the `entity` return is typed by the discriminated
-  // union of `ParticipantNodeData | ParticipantEdgeData | null`.
+  // union of `ParticipantNodeData | ParticipantEdgeData | Annotation | null`.
   const entity = useMemo(
-    () => lookupEntity(projectedNodes, projectedEdges, selected),
-    [projectedNodes, projectedEdges, selected],
+    () => lookupEntity(projectedNodes, projectedEdges, annotations, selected),
+    [projectedNodes, projectedEdges, annotations, selected],
   );
 
   // Per-session participant roster. Once per `events` change — same
@@ -394,18 +416,22 @@ function EntityDetailPanelImpl(props: EntityDetailPanelProps): ReactElement {
   const roster = useMemo(() => participantRosterFrom(events), [events]);
 
   // Per-voter per-facet other-vote map for the currently selected
-  // entity. Once per `(events, currentParticipantId, entity)` change;
-  // bypassed (empty map) when no entity is resolved so the helper
-  // doesn't walk events for nothing. Threaded into
+  // node/edge entity. Once per `(events, currentParticipantId, entity)`
+  // change; bypassed (empty map) when no node/edge entity is resolved so
+  // the helper doesn't walk events for nothing. Threaded into
   // `<OtherVotersSection>` so each per-voter row carries a sub-list of
   // per-facet rows underneath the rollup arm — see
   // `part_entity_detail_panel_per_facet_other_voter_breakdown` Decision §1.
+  //
+  // Skipped when the selection is an annotation (the annotation body
+  // does not render the other-voters section — annotations are entity-
+  // layer methodology vocabulary, not vote targets per ADR 0027).
   const perVoterFacets = useMemo(
     () =>
-      entity === null
+      entity === null || selected?.kind === 'annotation'
         ? (new Map() as ReadonlyMap<string, Partial<Record<FacetName, 'agree' | 'dispute'>>>)
         : deriveOtherFacetVotesByVoter(events, currentParticipantId, entity.id),
-    [events, currentParticipantId, entity],
+    [events, currentParticipantId, entity, selected],
   );
 
   // Auto-clear the selection on the stale-entity branch (Decision §10).
@@ -414,8 +440,15 @@ function EntityDetailPanelImpl(props: EntityDetailPanelProps): ReactElement {
   // `clear()`) renders the empty-state body. The effect only fires when
   // the selection is non-null AND the lookup returned null — i.e.
   // staleness is the active branch.
+  //
+  // Per Decision §6 of `part_entity_detail_panel_annotation_view` the
+  // `selected.kind !== 'annotation'` carve-out (which existed to keep
+  // the predecessor's placeholder body up despite a null `entity`
+  // lookup) is gone: the annotation branch now resolves a real
+  // `Annotation` record via `lookupEntity`, and the staleness behaviour
+  // is symmetric across all three kinds.
   useEffect(() => {
-    if (selected !== null && entity === null && selected.kind !== 'annotation') {
+    if (selected !== null && entity === null) {
       useSelectionStore.getState().clear();
     }
   }, [selected, entity]);
@@ -435,26 +468,59 @@ function EntityDetailPanelImpl(props: EntityDetailPanelProps): ReactElement {
     );
   }
 
-  // Annotation placeholder branch — per Decision §6 of
-  // `tasks/refinements/participant-ui/part_render_annotation_endpoint_edges.md`.
-  // The participant's canvas now materializes annotation graph-nodes
-  // when they are referenced as edge endpoints; tapping one writes
-  // `{ kind: 'annotation', id }` to the selection store. v0 surfaces a
-  // placeholder rather than a full annotation render — the
-  // `part_entity_detail_panel_annotation_view` follow-up will replace
-  // the placeholder with the kind / content / author detail view.
-  if (selected.kind === 'annotation') {
+  // Annotation entity-detail branch — per
+  // `tasks/refinements/participant-ui/part_entity_detail_panel_annotation_view.md`.
+  // The participant's canvas materializes annotation graph-nodes when
+  // they are referenced as edge endpoints; tapping one writes
+  // `{ kind: 'annotation', id }` to the selection store. When the
+  // selection points at a known annotation, the panel renders a
+  // structured detail body (identity / content / author / target /
+  // contradicts). When the selection points at an unknown annotation
+  // id (snapshot-reload race), the panel falls through to the shared
+  // stale-entity body + auto-clear (Decision §6).
+  if (selected.kind === 'annotation' && entity !== null) {
+    const annotation = entity as Annotation;
     return (
       <aside
         data-testid="participant-detail-panel"
         data-state="annotation"
         data-entity-kind="annotation"
         data-entity-id={selected.id}
-        className="w-80 shrink-0 border-l border-slate-200 bg-white overflow-y-auto p-4 text-sm"
+        className="w-80 shrink-0 border-l border-slate-200 bg-white overflow-y-auto p-4 text-sm flex flex-col gap-4"
       >
-        <p data-testid="participant-detail-panel-annotation-placeholder" className="text-slate-500">
-          {t('participant.annotation.detail.placeholder')}
-        </p>
+        <AnnotationIdentitySection
+          kindPrefixLabel={t('participant.detailPanel.identity.annotation')}
+          kindLabel={t(`methodology.annotationKind.${annotation.kind}`)}
+          annotationId={annotation.id}
+          annotationKind={annotation.kind}
+        />
+        <AnnotationContentSection content={annotation.content} />
+        <AnnotationAuthorSection
+          sectionHeading={t('participant.detailPanel.annotation.sectionTitle.author')}
+          authorName={screenNameFor(roster, annotation.createdBy)}
+        />
+        <AnnotationTargetSection
+          sectionHeading={t('participant.detailPanel.annotation.sectionTitle.target')}
+          annotation={annotation}
+          projectedNodes={projectedNodes}
+          projectedEdges={projectedEdges}
+          annotations={annotations}
+          unknownTargetLabel={t('participant.detailPanel.annotation.unknownTarget')}
+          edgeRoleLabel={(role) => t(`methodology.edgeRole.${role}.label`)}
+          annotationKindLabel={(kind) => t(`methodology.annotationKind.${kind}`)}
+        />
+        <AnnotationContradictsSection
+          sectionHeading={t('participant.detailPanel.annotation.sectionTitle.contradicts')}
+          annotationId={annotation.id}
+          projectedNodes={projectedNodes}
+          projectedEdges={projectedEdges}
+          annotations={annotations}
+          unknownTargetLabel={t('participant.detailPanel.annotation.unknownTarget')}
+          annotationKindLabel={(kind) => t(`methodology.annotationKind.${kind}`)}
+        />
+        {actionSlot !== undefined ? (
+          <div data-testid="participant-detail-panel-action-slot">{actionSlot}</div>
+        ) : null}
       </aside>
     );
   }
@@ -480,33 +546,42 @@ function EntityDetailPanelImpl(props: EntityDetailPanelProps): ReactElement {
   // header text. The 8 content sections below each render conditionally
   // — no empty containers, mirroring the moderator's "absent → omit
   // entirely" row posture.
-  const isNode = selected.kind === 'node';
+  //
+  // After the annotation branch above, the only way `entity` is an
+  // `Annotation` is via `selected.kind === 'annotation' && entity !== null`,
+  // which already returned. So here `selected.kind` is `'node' | 'edge'`
+  // and `entity` narrows to `ParticipantNodeData | ParticipantEdgeData`.
+  // TypeScript can't see through the multi-branch narrowing — assert the
+  // narrowed selection kind + entity once for the remaining JSX.
+  const nodeOrEdgeKind: 'node' | 'edge' = selected.kind === 'annotation' ? 'node' : selected.kind;
+  const nodeOrEdgeEntity = entity as ParticipantNodeData | ParticipantEdgeData;
+  const isNode = nodeOrEdgeKind === 'node';
   const identityLabel = isNode
     ? t('participant.detailPanel.identity.node')
     : t('participant.detailPanel.identity.edge');
   const wordingOrLabel = isNode
-    ? (entity as ParticipantNodeData).wording
-    : t(`methodology.edgeRole.${(entity as ParticipantEdgeData).role}.label`);
+    ? (nodeOrEdgeEntity as ParticipantNodeData).wording
+    : t(`methodology.edgeRole.${(nodeOrEdgeEntity as ParticipantEdgeData).role}.label`);
 
   return (
     <aside
       data-testid="participant-detail-panel"
       data-state="detail"
-      data-entity-kind={selected.kind}
-      data-entity-id={entity.id}
+      data-entity-kind={nodeOrEdgeKind}
+      data-entity-id={nodeOrEdgeEntity.id}
       className="w-80 shrink-0 border-l border-slate-200 bg-white overflow-y-auto p-4 text-sm flex flex-col gap-4"
     >
       <IdentitySection
-        kind={selected.kind}
+        kind={nodeOrEdgeKind}
         kindLabel={identityLabel}
         wording={wordingOrLabel}
-        entityId={entity.id}
+        entityId={nodeOrEdgeEntity.id}
       />
-      <RollupStatusSection rollupStatus={entity.rollupStatus} />
-      <FacetPillRowSection kind={selected.kind} facetStatuses={entity.facetStatuses} />
+      <RollupStatusSection rollupStatus={nodeOrEdgeEntity.rollupStatus} />
+      <FacetPillRowSection kind={nodeOrEdgeKind} facetStatuses={nodeOrEdgeEntity.facetStatuses} />
       {isNode ? (
         <AxiomMarkAttributionSection
-          marks={nodeAxiomMarkIndex.get(entity.id) ?? []}
+          marks={nodeAxiomMarkIndex.get(nodeOrEdgeEntity.id) ?? []}
           roster={roster}
           sectionHeading={t('participant.detailPanel.sectionTitle.axiomMarks')}
         />
@@ -514,23 +589,23 @@ function EntityDetailPanelImpl(props: EntityDetailPanelProps): ReactElement {
       <AnnotationsSection
         annotations={
           isNode
-            ? (nodeAnnotationIndex.get(entity.id) ?? [])
-            : (edgeAnnotationIndex.get(entity.id) ?? [])
+            ? (nodeAnnotationIndex.get(nodeOrEdgeEntity.id) ?? [])
+            : (edgeAnnotationIndex.get(nodeOrEdgeEntity.id) ?? [])
         }
         roster={roster}
         sectionHeading={t('participant.detailPanel.sectionTitle.annotations')}
         annotationKindLabel={(kind) => t(`methodology.annotationKind.${kind}`)}
       />
       <DiagnosticsSection
-        highlight={entity.diagnosticHighlight}
+        highlight={nodeOrEdgeEntity.diagnosticHighlight}
         sectionHeading={t('participant.detailPanel.sectionTitle.diagnostics')}
       />
       <OwnVoteSection
         events={events}
         currentParticipantId={currentParticipantId}
-        entityId={entity.id}
+        entityId={nodeOrEdgeEntity.id}
         ownVoteIndex={ownVoteIndex}
-        kind={selected.kind}
+        kind={nodeOrEdgeKind}
         sectionHeading={t('participant.detailPanel.sectionTitle.ownVote')}
         facetLabel={(facet) => t(`methodology.facet.${facet}`)}
         voteArmLabel={(arm) => t(`methodology.voteChoice.${arm}`)}
@@ -538,8 +613,8 @@ function EntityDetailPanelImpl(props: EntityDetailPanelProps): ReactElement {
       <OtherVotersSection
         votes={
           isNode
-            ? (othersVoteIndex.nodes.get(entity.id) ?? [])
-            : (othersVoteIndex.edges.get(entity.id) ?? [])
+            ? (othersVoteIndex.nodes.get(nodeOrEdgeEntity.id) ?? [])
+            : (othersVoteIndex.edges.get(nodeOrEdgeEntity.id) ?? [])
         }
         roster={roster}
         perVoterFacets={perVoterFacets}
@@ -556,8 +631,8 @@ function EntityDetailPanelImpl(props: EntityDetailPanelProps): ReactElement {
        * off `entityKind`). */}
       <ParticipantVoteButtons
         events={events}
-        entityKind={selected.kind}
-        entityId={entity.id}
+        entityKind={nodeOrEdgeKind}
+        entityId={nodeOrEdgeEntity.id}
         facetStatusIndex={facetStatusIndex ?? EMPTY_FACET_STATUS_INDEX}
         currentParticipantId={currentParticipantId}
       />
@@ -922,6 +997,299 @@ function OtherVotersSection(props: {
       </ul>
     </section>
   );
+}
+
+/**
+ * Annotation identity header — `<aside data-state="annotation">` section 1.
+ * Mirrors `<IdentitySection>`'s typography (upper-cased kind-prefix +
+ * primary label + small-mono id) so the panel's information hierarchy
+ * stays uniform across node / edge / annotation entities. Per Decision §4
+ * the kind label is textual (no chromatic accent — the canvas annotation
+ * graph-node carries the four-color palette).
+ */
+function AnnotationIdentitySection(props: {
+  kindPrefixLabel: string;
+  kindLabel: string;
+  annotationId: string;
+  annotationKind: AnnotationKind;
+}): ReactElement {
+  return (
+    <section data-testid="participant-detail-panel-annotation-identity">
+      <p className="text-xs uppercase tracking-wide text-slate-500">{props.kindPrefixLabel}</p>
+      <p
+        data-testid="participant-detail-panel-annotation-kind"
+        data-annotation-kind={props.annotationKind}
+        className="text-base text-slate-900"
+      >
+        {props.kindLabel}
+      </p>
+      <p
+        data-testid="participant-detail-panel-annotation-id"
+        className="text-[10px] text-slate-400 font-mono"
+      >
+        {props.annotationId}
+      </p>
+    </section>
+  );
+}
+
+/**
+ * Annotation content section. Always renders even when `content` is the
+ * empty string — content is load-bearing identity for the annotation
+ * entity per the Constraints sketch; an empty `<p>` is preferred over
+ * suppressing the section (which would erase the entity's primary
+ * payload).
+ */
+function AnnotationContentSection(props: { content: string }): ReactElement {
+  return (
+    <section data-testid="participant-detail-panel-annotation-content">
+      <p
+        data-testid="participant-detail-panel-annotation-content-body"
+        className="text-sm text-slate-800 whitespace-pre-wrap"
+      >
+        {props.content}
+      </p>
+    </section>
+  );
+}
+
+/**
+ * Annotation author attribution. Resolves the author screen name via
+ * the route-hoisted `participantRoster`; an unresolved author id falls
+ * through to `screenNameFor`'s default (the raw user id) so the row
+ * always renders something.
+ */
+function AnnotationAuthorSection(props: {
+  sectionHeading: string;
+  authorName: string;
+}): ReactElement {
+  return (
+    <section data-testid="participant-detail-panel-annotation-author">
+      <h3 className="text-xs uppercase tracking-wide text-slate-500 mb-1">
+        {props.sectionHeading}
+      </h3>
+      <p
+        data-testid="participant-detail-panel-annotation-author-name"
+        className="text-sm text-slate-800"
+      >
+        {props.authorName}
+      </p>
+    </section>
+  );
+}
+
+/**
+ * Target-of-this-annotation row. Resolves the annotation's polymorphic
+ * `targetNodeId` / `targetEdgeId` XOR to one of three render shapes:
+ *
+ *   - Edge target → resolves the projected edge and renders the
+ *     localized edge-role label, navigation writes
+ *     `{ kind: 'edge', id }` to the selection store.
+ *   - Node target that matches a projected statement node → renders
+ *     the statement wording, navigation writes `{ kind: 'node', id }`.
+ *   - Node target that matches another annotation in the projection →
+ *     renders the localized annotation-kind label, navigation writes
+ *     `{ kind: 'annotation', id }` (per Decision §3 the chain-walking
+ *     behaviour falls out of the unified `targetNodeId` slot when the
+ *     wire schema permits annotation-on-annotation).
+ *   - Unknown target (snapshot-reload race) → renders the localized
+ *     fallback label; the button is disabled.
+ */
+function AnnotationTargetSection(props: {
+  sectionHeading: string;
+  annotation: Annotation;
+  projectedNodes: readonly ParticipantNodeData[];
+  projectedEdges: readonly ParticipantEdgeData[];
+  annotations: readonly Annotation[];
+  unknownTargetLabel: string;
+  edgeRoleLabel: (role: ParticipantEdgeData['role']) => string;
+  annotationKindLabel: (kind: AnnotationKind) => string;
+}): ReactElement {
+  const resolved = resolveAnnotationTarget({
+    annotation: props.annotation,
+    projectedNodes: props.projectedNodes,
+    projectedEdges: props.projectedEdges,
+    annotations: props.annotations,
+    edgeRoleLabel: props.edgeRoleLabel,
+    annotationKindLabel: props.annotationKindLabel,
+    unknownTargetLabel: props.unknownTargetLabel,
+  });
+  return (
+    <section data-testid="participant-detail-panel-annotation-target">
+      <h3 className="text-xs uppercase tracking-wide text-slate-500 mb-1">
+        {props.sectionHeading}
+      </h3>
+      {(() => {
+        if (resolved.kind === 'unknown') {
+          return (
+            <button
+              type="button"
+              data-testid="participant-detail-panel-annotation-target-link"
+              data-target-kind="unknown"
+              data-target-id={resolved.id}
+              disabled
+              className="text-left text-sm text-slate-400"
+            >
+              {resolved.label}
+            </button>
+          );
+        }
+        const selectableKind: EntityKind = resolved.kind;
+        const selectableId = resolved.id;
+        return (
+          <button
+            type="button"
+            data-testid="participant-detail-panel-annotation-target-link"
+            data-target-kind={selectableKind}
+            data-target-id={selectableId}
+            onClick={() => {
+              useSelectionStore.getState().select({ kind: selectableKind, id: selectableId });
+            }}
+            className="text-left text-sm text-sky-700 underline"
+          >
+            {resolved.label}
+          </button>
+        );
+      })()}
+    </section>
+  );
+}
+
+/**
+ * Contradicts-this-annotation list. Walks `projectedEdges` once,
+ * collecting every edge with `role === 'contradicts'` AND either
+ * endpoint matching the selected annotation id. The other endpoint
+ * resolves via the same multi-kind resolver the target row uses
+ * (statement wording / annotation kind label / unknown fallback).
+ * Suppressed entirely when no contradicting edge anchors on the
+ * annotation (matches the panel's "absent → omit" posture).
+ */
+function AnnotationContradictsSection(props: {
+  sectionHeading: string;
+  annotationId: string;
+  projectedNodes: readonly ParticipantNodeData[];
+  projectedEdges: readonly ParticipantEdgeData[];
+  annotations: readonly Annotation[];
+  unknownTargetLabel: string;
+  annotationKindLabel: (kind: AnnotationKind) => string;
+}): ReactElement | null {
+  const contradictingEdges = props.projectedEdges.filter(
+    (edge) =>
+      edge.role === 'contradicts' &&
+      (edge.source === props.annotationId || edge.target === props.annotationId),
+  );
+  if (contradictingEdges.length === 0) return null;
+  return (
+    <section data-testid="participant-detail-panel-annotation-contradicts">
+      <h3 className="text-xs uppercase tracking-wide text-slate-500 mb-1">
+        {props.sectionHeading}
+      </h3>
+      <ul className="space-y-1">
+        {contradictingEdges.map((edge) => {
+          const otherEndpointId = edge.source === props.annotationId ? edge.target : edge.source;
+          const resolved = resolveEntityById({
+            id: otherEndpointId,
+            projectedNodes: props.projectedNodes,
+            annotations: props.annotations,
+            annotationKindLabel: props.annotationKindLabel,
+            unknownTargetLabel: props.unknownTargetLabel,
+          });
+          return (
+            <li
+              key={edge.id}
+              data-testid="participant-detail-panel-annotation-contradicts-row"
+              data-edge-id={edge.id}
+            >
+              <button
+                type="button"
+                data-testid="participant-detail-panel-annotation-contradicts-link"
+                data-edge-id={edge.id}
+                onClick={() => {
+                  useSelectionStore.getState().select({ kind: 'edge', id: edge.id });
+                }}
+                className="text-left text-sm text-sky-700 underline"
+              >
+                {resolved.label}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
+/**
+ * Discriminated resolution of an annotation's polymorphic target slot
+ * to a `{ kind, id, label }` triple the target-row consumes. The
+ * priority order honours the wire schema's XOR (`targetEdgeId` and
+ * `targetNodeId` are mutually exclusive) AND the polymorphic-id slot
+ * (`targetNodeId` may carry an annotation id rather than a statement
+ * node id — Decision §3 / `groupAnnotationsByEntityId`'s docstring).
+ */
+function resolveAnnotationTarget(args: {
+  annotation: Annotation;
+  projectedNodes: readonly ParticipantNodeData[];
+  projectedEdges: readonly ParticipantEdgeData[];
+  annotations: readonly Annotation[];
+  edgeRoleLabel: (role: ParticipantEdgeData['role']) => string;
+  annotationKindLabel: (kind: AnnotationKind) => string;
+  unknownTargetLabel: string;
+}): { kind: 'node' | 'edge' | 'annotation' | 'unknown'; id: string; label: string } {
+  if (args.annotation.targetEdgeId !== null) {
+    const targetId = args.annotation.targetEdgeId;
+    const edge = args.projectedEdges.find((candidate) => candidate.id === targetId) ?? null;
+    if (edge === null) {
+      return { kind: 'unknown', id: targetId, label: args.unknownTargetLabel };
+    }
+    return { kind: 'edge', id: edge.id, label: args.edgeRoleLabel(edge.role) };
+  }
+  if (args.annotation.targetNodeId !== null) {
+    const targetId = args.annotation.targetNodeId;
+    return resolveEntityById({
+      id: targetId,
+      projectedNodes: args.projectedNodes,
+      annotations: args.annotations,
+      annotationKindLabel: args.annotationKindLabel,
+      unknownTargetLabel: args.unknownTargetLabel,
+    });
+  }
+  return { kind: 'unknown', id: '', label: args.unknownTargetLabel };
+}
+
+/**
+ * Resolve a polymorphic entity id (`targetNodeId` or an edge endpoint id
+ * referencing an annotation graph-node) to a `{ kind, id, label }`
+ * triple. Statement nodes take precedence over annotations because the
+ * id space is shared but `projectedNodes` carries the statement-node
+ * descriptors directly (the annotation graph-nodes that materialize as
+ * edge endpoints carry `nodeKind: 'annotation'` and are NOT included in
+ * the panel's `projectedNodes` prop — the panel reads the canonical
+ * annotation record from the `annotations` array instead).
+ */
+function resolveEntityById(args: {
+  id: string;
+  projectedNodes: readonly ParticipantNodeData[];
+  annotations: readonly Annotation[];
+  annotationKindLabel: (kind: AnnotationKind) => string;
+  unknownTargetLabel: string;
+}): { kind: 'node' | 'annotation' | 'unknown'; id: string; label: string } {
+  const node =
+    args.projectedNodes.find(
+      (candidate) => candidate.id === args.id && candidate.nodeKind !== 'annotation',
+    ) ?? null;
+  if (node !== null) {
+    return { kind: 'node', id: node.id, label: node.wording };
+  }
+  const annotation = args.annotations.find((candidate) => candidate.id === args.id) ?? null;
+  if (annotation !== null) {
+    return {
+      kind: 'annotation',
+      id: annotation.id,
+      label: args.annotationKindLabel(annotation.kind),
+    };
+  }
+  return { kind: 'unknown', id: args.id, label: args.unknownTargetLabel };
 }
 
 /**

@@ -416,6 +416,7 @@ function OperateRouteAuthenticatedBody({
               nodeAxiomMarkIndex={axiomMarkIndex}
               nodeAnnotationIndex={nodeAnnotationIndex}
               edgeAnnotationIndex={edgeAnnotationIndex}
+              annotations={annotations}
               ownVoteIndex={ownVoteIndex}
               othersVoteIndex={othersVoteIndex}
               facetStatusIndex={facetStatusIndex}
