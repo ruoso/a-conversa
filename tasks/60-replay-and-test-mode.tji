@@ -128,33 +128,4 @@ task replay_test "Replay and test mode" {
       depends !snapshot_list_ui
     }
   }
-
-  task replay_test_tests "Tests for replay and test mode" {
-    depends !replay_ui, !test_mode
-    task replay_unit_tests "Replay UI component unit tests" {
-      effort 2d
-      allocate team
-    }
-    task test_mode_unit_tests "Test-mode UI component unit tests" {
-      effort 2d
-      allocate team
-    }
-    task replay_behavior_tests "BDD scenarios — 'rewind from end of debate, see prior state, advance one event at a time, verify graph matches expected'" {
-      effort 2d
-      allocate team
-    }
-    task replay_playwright_e2e "Playwright E2E for replay viewer (load saved session, scrub through it)" {
-      effort 2d
-      allocate team
-    }
-    task test_mode_playwright_e2e "Playwright E2E for test-mode scrubber" {
-      effort 2d
-      allocate team
-    }
-    task replay_visual_regression "Visual-regression tests on key replay positions" {
-      effort 1d
-      allocate team
-      depends !replay_playwright_e2e
-    }
-  }
 }

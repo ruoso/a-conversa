@@ -220,11 +220,5 @@ task per_facet_refactor "Per-facet refactor (ADR 0030)" {
       complete 100
       note "Refinement: tasks/refinements/per-facet-refactor/pf_e2e_methodology_full_flow_update.md"
     }
-    task pf_unit_test_audit "Unit-test audit + per-file revise/remove/keep decisions" {
-      effort 1.5d
-      allocate team
-      complete 100
-      note "Refinement: tasks/refinements/per-facet-refactor/pf_unit_test_audit.md"
-    }
   }
 }

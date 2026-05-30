@@ -549,68 +549,6 @@ task data_and_methodology "Data and methodology" {
   task data_methodology_tests "Tests for data + methodology" {
     depends !event_types, !projection, !diagnostics, !methodology_engine
 
-    task dm_unit_tests "Unit tests" {
-      task event_serialization_unit "Round-trip event serialization" {
-        effort 1d
-        allocate team
-      }
-      task projection_unit "Projection rebuild + incremental unit tests" {
-        effort 2d
-        allocate team
-      }
-      task agreement_state_unit "Agreement state machine unit tests (transitions, withdrawal)" {
-        effort 2d
-        allocate team
-      }
-      task diagnostic_unit "Diagnostic detectors on synthetic graphs" {
-        effort 2d
-        allocate team
-      }
-      task methodology_op_unit "Per-operation unit tests (decompose, axiom-mark, defeater, meta-move, etc.)" {
-        effort 3d
-        allocate team
-      }
-    }
-
-    task dm_behavior_tests "Behavior tests (BDD scenarios)" {
-      task scenarios_capture_classify "Scenario: capture a statement, propose classification, all agree, commit" {
-        effort 1d
-        allocate team
-      }
-      task scenarios_classification_dispute "Scenario: classification disputed, run diagnostic test, resolve" {
-        effort 1d
-        allocate team
-      }
-      task scenarios_decomposition "Scenario: decomposition replaces parent with components" {
-        effort 1d
-        allocate team
-      }
-      task scenarios_axiom_marks_per_participant "Scenario: per-participant axiom-marks; both debaters mark same node" {
-        effort 1d
-        allocate team
-      }
-      task scenarios_defeater_pre_commit "Scenario: defeater captured with pre-committed edge substance" {
-        effort 1d
-        allocate team
-      }
-      task scenarios_meta_move_contested "Scenario: meta-move proposed, contested, stays disputed" {
-        effort 1d
-        allocate team
-      }
-      task scenarios_withdrawal "Scenario: agreement withdrawn after commit; facet returns to disputed" {
-        effort 1d
-        allocate team
-      }
-      task scenarios_cycle_detection "Scenario: cycle in supports detected; resolution paths offered" {
-        effort 1d
-        allocate team
-      }
-      task scenarios_contradiction_resolution "Scenario: contradiction accepted-as-bedrock with axiom-marks each side" {
-        effort 1d
-        allocate team
-      }
-    }
-
     task dm_e2e_tests "End-to-end / integration tests (no UI)" {
       task walkthrough_replay_e2e "Replay the example walkthrough's event log; assert final state" {
         effort 2d
@@ -642,14 +580,6 @@ task data_and_methodology "Data and methodology" {
           exercises the same code path as production. Any raw-INSERT vs. append-API divergence will
           surface here first.
         ->8-
-      }
-      task projection_invariants_e2e "Projection invariants under random event sequences" {
-        effort 2d
-        allocate team
-      }
-      task event_log_property_tests "Property-based tests on the event log + projection" {
-        effort 2d
-        allocate team
       }
     }
   }

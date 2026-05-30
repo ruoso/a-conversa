@@ -408,93 +408,12 @@ task backend "Backend" {
   task backend_tests "Backend tests" {
     depends !api_skeleton, !auth, !session_management, !websocket_protocol
 
-    task be_unit_tests "Unit tests" {
-      task auth_unit "Auth helpers, session-token logic" {
-        effort 1d
-        allocate team
-      }
-      task session_management_unit "Session-management endpoint logic in isolation" {
-        effort 1d
-        allocate team
-      }
-      task ws_message_unit "WS message serialization / parsing" {
-        effort 1d
-        allocate team
-      }
-      task validation_unit "Server-side validation logic" {
-        effort 1d
-        allocate team
-      }
-    }
-
-    task be_behavior_tests "Behavior tests (BDD scenarios)" {
-      task scenario_oauth_login "Scenario: user logs in via generic OAuth, sets screen name" {
-        effort 1d
-        allocate team
-      }
-      task scenario_create_join_session "Scenario: moderator creates session; debaters join with assigned roles" {
-        effort 1d
-        allocate team
-      }
-      task scenario_propose_vote_commit "Scenario: moderator proposes; debaters vote; moderator commits; broadcast lands" {
-        effort 1d
-        allocate team
-      }
-      task scenario_per_facet_voting "Scenario: per-facet votes — agree wording, dispute classification" {
-        effort 1d
-        allocate team
-      }
-      task scenario_withdrawal_broadcast "Scenario: participant withdraws; broadcast reverts facet to disputed" {
-        effort 1d
-        allocate team
-      }
-      task scenario_private_session_referenced "Scenario: private session's nodes can't be referenced from another session" {
-        effort 1d
-        allocate team
-      }
-      task scenario_public_session_referenced "Scenario: public session's nodes referenceable by any authenticated user" {
-        effort 1d
-        allocate team
-      }
-      task scenario_non_moderator_cannot_commit "Scenario: non-moderator commit attempt is rejected" {
-        effort 0.5d
-        allocate team
-      }
-      task scenario_reconnection_state_catchup "Scenario: client reconnects and catches up to current state" {
-        effort 1d
-        allocate team
-      }
-    }
-
     task be_e2e_tests "End-to-end / integration tests" {
       task auth_flow_integration "OAuth flow integration tests (mock provider in compose)" {
         effort 2d
         allocate team
         complete 100
         note "Refinement: tasks/refinements/backend/auth_flow_integration.md"
-      }
-      task session_endpoint_integration "Session endpoint integration tests" {
-        effort 1d
-        allocate team
-      }
-      task ws_protocol_integration "WebSocket protocol integration tests" {
-        effort 3d
-        allocate team
-      }
-      task multi_client_integration "Multi-client event-broadcast integration tests" {
-        effort 2d
-        allocate team
-        depends !ws_protocol_integration
-      }
-      task permission_integration "Cross-session permission integration tests" {
-        effort 1d
-        allocate team
-        depends backend.cross_session_permissions
-      }
-      task replay_endpoint_integration "Replay-endpoint integration tests (event log, state-at-position, snapshots)" {
-        effort 1d
-        allocate team
-        depends backend.replay_endpoints
       }
     }
   }

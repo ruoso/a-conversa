@@ -748,118 +748,11 @@ task moderator_ui "Moderator UI" {
   task mod_tests "Moderator UI tests" {
     depends !mod_capture_flow, !mod_decompose_flow, !mod_diagnostic_flow, !mod_pending_proposals_pane, root_app.root_moderator_cutover
 
-    task mod_unit_tests "Unit tests (components in isolation)" {
-      task mod_unit_capture_pane "Capture pane component" {
-        effort 1d
-        allocate team
-      }
-      task mod_unit_classification_palette "Classification palette + keymap" {
-        effort 0.5d
-        allocate team
-      }
-      task mod_unit_proposal_list "Proposal list components" {
-        effort 1d
-        allocate team
-      }
-      task mod_unit_vote_indicators "Per-participant vote indicator components" {
-        effort 0.5d
-        allocate team
-      }
-      task mod_unit_history_pane "Change history pane" {
-        effort 1d
-        allocate team
-      }
-      task mod_unit_diagnostic_flag_pane "Diagnostic flag pane" {
-        effort 0.5d
-        allocate team
-      }
-      task mod_unit_state_management "State-management reducers / stores" {
-        effort 1d
-        allocate team
-      }
-    }
-
-    task mod_behavior_tests "Behavior tests (BDD scenarios)" {
-      task mod_scenario_capture_simple "Scenario: moderator captures a simple statement, all agree, commit" {
-        effort 1d
-        allocate team
-      }
-      task mod_scenario_classification_dispute "Scenario: classification disputed, run operationalization, resolve" {
-        effort 1d
-        allocate team
-      }
-      task mod_scenario_decomposition "Scenario: decomposition mode, capture components, commit" {
-        effort 1d
-        allocate team
-      }
-      task mod_scenario_capture_defeater "Scenario: capture defeater during operationalization" {
-        effort 1d
-        allocate team
-      }
-      task mod_scenario_axiom_mark "Scenario: capture axiom-mark for a participant" {
-        effort 0.5d
-        allocate team
-      }
-      task mod_scenario_meta_move "Scenario: capture meta-move; remains disputed when contested" {
-        effort 1d
-        allocate team
-      }
-      task mod_scenario_diagnostic_resolution "Scenario: blocking cycle diagnostic fires; pick resolution path" {
-        effort 1d
-        allocate team
-      }
-      task mod_scenario_snapshot "Scenario: snapshot a segment at a natural break" {
-        effort 0.5d
-        allocate team
-      }
-    }
-
     task mod_e2e_playwright "End-to-end Playwright tests" {
-      task mod_pw_capture_flow "Playwright: capture flow end-to-end" {
-        effort 1.5d
-        allocate team
-      }
-      task mod_pw_decompose_flow "Playwright: decomposition flow" {
-        effort 1.5d
-        allocate team
-      }
-      task mod_pw_diagnostic_flow "Playwright: run a diagnostic test end-to-end" {
-        effort 1.5d
-        allocate team
-        note "Inherits deferred-e2e debt from moderator_ui.mod_diagnostic_flow.mod_is_ought_prompt and moderator_ui.mod_diagnostic_flow.mod_disputation_test_display (Acceptance #7-#8 of tasks/refinements/moderator-ui/mod_disputation_test_display.md): the spec MUST cover an end-to-end disputation scenario asserting (a) a node with an agreed substance facet renders the 'Data' chip and the data-hover-popover-section='disputation' row, and (b) a node with a disputed substance facet renders the 'Claim' chip and matching popover row. Stable seams: data-disputation-chip, data-disputation-outcome, data-hover-popover-section='disputation'. Reaching the chip surface end-to-end requires the standalone set-node-substance propose-UI work (part of F3 / F7 operationalization-mode capture) — add that as a prerequisite when it lands. Also inherits deferred-e2e debt from moderator_ui.mod_diagnostic_flow.mod_diagnostic_methodology_suggestions (Acceptance #7 of tasks/refinements/moderator-ui/mod_diagnostic_methodology_suggestions.md): with at least one active blocking diagnostic in the session, the moderator's 'diagnostic-flags' sidebar pane MUST contain a data-testid='diagnostic-suggestions-panel' element whose data-diagnostic-kind matches the fired diagnostic's kind and whose chip row contains the kind-specific move chips in canonical order (cycle → break-edge/decompose/axiom-mark; contradiction → decompose/amend/axiom-mark-both; multi-warrant → decompose; dangling-claim → prompt-for-support/mark-conceded; coherency-hint → review-configuration/repair-configuration/leave-as-intentional). Stable seams: data-testid='diagnostic-suggestions-panel', data-suggestion-move='<move>', data-suggestion-diagnostic-kind='<kind>', data-diagnostic-severity='<severity>'. Picker-side chip wiring (chips fire real propose actions) is owned by mod_resolution_path_picker, not this task."
-      }
-      task mod_pw_axiom_mark "Playwright: axiom-mark flow" {
-        effort 1d
-        allocate team
-      }
-      task mod_pw_defeater_capture "Playwright: defeater capture flow" {
-        effort 1d
-        allocate team
-      }
-      task mod_pw_meta_move "Playwright: meta-move flow" {
-        effort 1d
-        allocate team
-      }
-      task mod_pw_keyboard_workflow "Playwright: keyboard-driven workflow" {
-        effort 1d
-        allocate team
-      }
       task mod_pw_full_session_run "Playwright: full session run (recreate the example walkthrough scenario)" {
         effort 3d
         allocate team
         note "Drives moderator + two participant tablets in parallel browser contexts; produces a complete debate."
-      }
-    }
-
-    task mod_visual_regression "Visual regression tests" {
-      depends !mod_e2e_playwright
-      task mod_vr_state_styling "Visual regression on per-facet state styling" {
-        effort 1d
-        allocate team
-      }
-      task mod_vr_layout "Visual regression on overall layout" {
-        effort 1d
-        allocate team
       }
     }
   }

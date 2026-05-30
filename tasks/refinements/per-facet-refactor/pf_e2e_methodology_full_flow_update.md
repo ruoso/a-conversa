@@ -2,7 +2,7 @@
 
 **TaskJuggler entry**: [tasks/15-per-facet-refactor.tji](../../15-per-facet-refactor.tji) — task `per_facet_refactor.tests.pf_e2e_methodology_full_flow_update`
 **Effort estimate**: 2d
-**Inherited dependencies**: every other `pf_*` task except `pf_unit_test_audit`. The e2e is the integration verification — it depends on the full surface being in place.
+**Inherited dependencies**: every other `pf_*` task. The e2e is the integration verification — it depends on the full surface being in place. (The former `pf_unit_test_audit` task was descoped 2026-05-30 — unit tests ride along with their implementation tasks, not as a separate WBS task.)
 
 ## What this task is
 
