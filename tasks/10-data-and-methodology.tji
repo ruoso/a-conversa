@@ -151,6 +151,17 @@ task data_and_methodology "Data and methodology" {
       depends !proposal_events, !vote_events, !resolution_events
       note "Refinement: tasks/refinements/data-and-methodology/event_validation.md"
     }
+    task edge_target_annotation_schema_extension "Extend edge endpoint schema to allow annotation endpoints" {
+      effort 0.5d
+      allocate team
+      depends !entity_creation_events
+      note -8<-
+        Source of debt: walkthrough_replay_e2e — the edge schema currently only allows node↔node endpoints.
+        The walkthrough's E15 (N19 contradicts A2) had to be encoded as N19→contradicts→N6 (the node A2
+        annotates) as the closest faithful encoding within today's schema. Extend edge-created payload
+        to accept annotation ids as valid source/target endpoints so E15 can be encoded faithfully.
+      ->8-
+    }
   }
 
   task projection "In-memory graph projection" {
@@ -496,7 +507,20 @@ task data_and_methodology "Data and methodology" {
       task walkthrough_replay_e2e "Replay the example walkthrough's event log; assert final state" {
         effort 2d
         allocate team
+        complete 100
         note "Encodes the example-walkthrough.md scenario as a test fixture."
+      }
+      task r23_loader_replay_through_append_for_walkthrough "Rewrite fixture loader to drive append API for walkthrough fixture" {
+        effort 0.5d
+        allocate team
+        depends !walkthrough_replay_e2e, backend.api_skeleton
+        note -8<-
+          Source of debt: walkthrough_replay_e2e — the fixture loader uses truncate-then-raw-INSERT
+          today, bypassing event validation. Rewrite to route walkthrough fixture events through the
+          append API (event_validation + backend.api_skeleton both complete) so the largest fixture
+          exercises the same code path as production. Any raw-INSERT vs. append-API divergence will
+          surface here first.
+        ->8-
       }
       task projection_invariants_e2e "Projection invariants under random event sequences" {
         effort 2d

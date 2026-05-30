@@ -1,0 +1,4 @@
+{
+  "name": "walkthrough",
+  "description": "22-turn debate from docs/example-walkthrough.md encoded as a deterministic event log. Anna (debater-A) defends modern accredited zoos; Ben (debater-B) defends the negative; Maria (moderator) operates the platform. The fixture exercises decomposition (turns 5, 9), defeater pre-commit (turns 11, 13, 17), per-participant axiom-marks on N12 (turns 14, 16), interpretive split of N14 into N16/N17 (turn 17), annotations A1-A3, and a snapshot at \"Segment 1 close\" (turn 22). Walkthrough identifiers map to stable UUIDs: nodes N1-N19 -> 10000010-...-0000000000NN; edges E1-E15 -> 10000020-...-000000000NNN (E11a/b use suffix 011a/011b); annotations A1-A3 -> 10000030-...-00000000000N; snapshot -> 10000040-...-000000000001. Anna's compound opener and Ben's captivity leg are implicit decompose parents (UUIDs ending 0000a0 and 0000b0) that become invisible after the turn-5 and turn-9 decompose commits."
+}

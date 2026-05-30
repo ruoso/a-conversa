@@ -1,0 +1,20 @@
+[
+  {
+    "id": "10000001-0000-4000-8000-00000000a001",
+    "oauth_subject": "fixture:walkthrough:anna",
+    "screen_name": "Anna",
+    "created_at": "2026-03-01T17:00:00.000Z"
+  },
+  {
+    "id": "10000001-0000-4000-8000-00000000b001",
+    "oauth_subject": "fixture:walkthrough:ben",
+    "screen_name": "Ben",
+    "created_at": "2026-03-01T17:00:00.000Z"
+  },
+  {
+    "id": "10000001-0000-4000-8000-00000000c001",
+    "oauth_subject": "fixture:walkthrough:maria",
+    "screen_name": "Maria",
+    "created_at": "2026-03-01T17:00:00.000Z"
+  }
+]
