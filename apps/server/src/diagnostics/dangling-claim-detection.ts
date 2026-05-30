@@ -127,12 +127,11 @@ export function detectDanglingClaims(projection: Projection): DanglingClaim[] {
 
     for (const edge of projection.getEdgesByTarget(node.id)) {
       if (!edge.visible) continue;
-      // Per `projection_edge_annotation_endpoint` D4: the dangling-
-      // claim rule walks the node-substance subgraph. Annotation-
-      // endpoint edges with a node target may technically reach this
-      // loop; skip them — the rule has no semantics for an annotation
-      // source. The audit follow-up
-      // (`diagnostics_annotation_endpoint_semantics_audit`) revisits.
+      // Per `diagnostics_annotation_endpoint_semantics_audit` D2: a
+      // claim's justification requirement (data-model.md L193-195) is
+      // satisfied by incoming supports/rebuts/bridges-to from NODE
+      // sources; annotation-source edges don't carry substantive
+      // justification.
       if (edge.sourceNodeId === null) continue;
       // Defensive: the projection's visibility derivation cascades
       // endpoint visibility onto edges (per data-model.md lines

@@ -55,6 +55,28 @@
 // detectors' structural-only stance and diverges deliberately from
 // the cycle / contradiction detectors (which gate on `isEdgeActive`).
 //
+// Annotation-endpoint edges (v1: skip).
+//   The per-rule inline guards skip annotation-endpoint edges. v1
+//   coherency-hint rules are node-node by construction — see
+//   `diagnostics_annotation_endpoint_semantics_audit` D3 for the
+//   per-rule rationale. The audit names two candidate-future rules
+//   that would, if methodology-doc enumeration lands, surface
+//   annotation-endpoint structural smells:
+//     - `self-referential-annotation-contradicts` — a
+//       `node N → contradicts → annotation A` edge where `A`
+//       annotates `N`. Structurally points at "withdraw the
+//       annotation" as the resolution rather than "resolve the
+//       contradiction." Future task slot
+//       `coherency_self_referential_annotation_contradicts_rule`.
+//     - `annotation-of-annotation chain` — an
+//       `annotation A → role X → annotation B` chain of depth ≥ 2.
+//       Arbitrarily deep annotation-on-annotation chains may indicate
+//       the meta-discussion has migrated off the substance graph.
+//       Future task slot `coherency_annotation_of_annotation_chain_rule`.
+//   Both rules are conditional on `docs/methodology.md` adding the
+//   pattern to its coherency-hint catalogue; adding them without a
+//   methodology citation would be speculation.
+//
 // Boundary with siblings:
 //   - `multi_warrant_detection` (settled) counts only COMPLETE
 //     warrants (both bridge edges present) on the same (D, C) pair.
@@ -172,9 +194,11 @@ function detectIncompleteWarrantsMissingBridgesTo(
 
     for (const edge of outgoing) {
       if (!edge.visible) continue;
-      // Per `projection_edge_annotation_endpoint` D4: warrants are
-      // node-node constructs; an annotation-endpoint target has no
-      // node-substance role in the warrant rule. Skip.
+      // Per `diagnostics_annotation_endpoint_semantics_audit` D3: v1
+      // coherency-hint rules (incomplete-warrant, self-contradicts)
+      // are node-node (data-model.md L197-199); candidate
+      // annotation-endpoint rules are named under that refinement's
+      // Tech-debt registration.
       if (edge.targetNodeId === null) continue;
       // Defensive endpoint-visibility check, matching the sibling
       // detectors. The projection cascades endpoint visibility onto
@@ -222,9 +246,11 @@ function detectIncompleteWarrantsMissingBridgesFrom(
 
     for (const edge of outgoing) {
       if (!edge.visible) continue;
-      // Per `projection_edge_annotation_endpoint` D4: warrants are
-      // node-node constructs; an annotation-endpoint target has no
-      // role in the warrant rule. Skip.
+      // Per `diagnostics_annotation_endpoint_semantics_audit` D3: v1
+      // coherency-hint rules (incomplete-warrant, self-contradicts)
+      // are node-node (data-model.md L197-199); candidate
+      // annotation-endpoint rules are named under that refinement's
+      // Tech-debt registration.
       if (edge.targetNodeId === null) continue;
       const target = projection.getNode(edge.targetNodeId);
       if (!target || !target.visible) continue;
@@ -262,9 +288,11 @@ function detectSelfContradicts(projection: Projection): SelfContradictsHint[] {
   for (const edge of projection.edges()) {
     if (!edge.visible) continue;
     if (edge.role !== 'contradicts') continue;
-    // Per `projection_edge_annotation_endpoint` D4: self-contradicts
-    // is a node-node degenerate-cycle rule; annotation endpoints have
-    // no concept of "same node on both ends." Skip.
+    // Per `diagnostics_annotation_endpoint_semantics_audit` D3: v1
+    // coherency-hint rules (incomplete-warrant, self-contradicts) are
+    // node-node (data-model.md L197-199); candidate annotation-
+    // endpoint rules are named under that refinement's Tech-debt
+    // registration.
     if (edge.sourceNodeId === null || edge.targetNodeId === null) continue;
     if (edge.sourceNodeId !== edge.targetNodeId) continue;
 

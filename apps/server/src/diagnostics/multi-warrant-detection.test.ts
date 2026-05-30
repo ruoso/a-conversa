@@ -375,12 +375,13 @@ describe('detectMultiWarrants — multi-warrants detected', () => {
 });
 
 // ---------------------------------------------------------------
-// Annotation-endpoint edges — per `projection_edge_annotation_endpoint`
-// D4, multi-warrant detection skips annotation-endpoint edges (warrants
-// are node-node constructs).
+// Annotation-endpoint edges — per `diagnostics_annotation_endpoint_semantics_audit`
+// D4, multi-warrant detection skips annotation-endpoint edges:
+// warrants are nodes (data-model.md L189-191), so an annotation
+// cannot play the warrant role.
 // ---------------------------------------------------------------
 
-describe('detectMultiWarrants — annotation-endpoint edges (skipped per D4)', () => {
+describe('detectMultiWarrants — annotation-endpoint edges (skipped per audit D4)', () => {
   it('bridges-from with annotation source/target → no findings', () => {
     resetSeq();
     const projection = seedSession();
@@ -406,6 +407,83 @@ describe('detectMultiWarrants — annotation-endpoint edges (skipped per D4)', (
         role: 'bridges-from',
         source_annotation_id: ANNOTATION_ID,
         target_node_id: NODE_D,
+        created_by: DEBATER_A_ID,
+        created_at: T2,
+      }),
+    );
+    expect(detectMultiWarrants(projection)).toEqual([]);
+  });
+
+  it('annotation-endpoint bridges-from/bridges-to are never counted toward multi-warrant', () => {
+    resetSeq();
+    const projection = seedSession();
+    // Two would-be warrants whose source is an annotation, both
+    // bridging-from a shared annotation D and bridges-to the same
+    // node-claim C. The outer walk's top-of-loop guard skips any
+    // bridges-from with an annotation endpoint, so neither warrant
+    // ever enters the (D, C) accumulator. No multi-warrant emerges.
+    const ANN_W1 = '00000000-0000-4000-8000-0000000d4001';
+    const ANN_W2 = '00000000-0000-4000-8000-0000000d4002';
+    const ANN_D = '00000000-0000-4000-8000-0000000d4003';
+    const E_W1_FROM_ANN_D = '00000000-0000-4000-8000-0000000d4101';
+    const E_W1_TO_C = '00000000-0000-4000-8000-0000000d4102';
+    const E_W2_FROM_ANN_D = '00000000-0000-4000-8000-0000000d4103';
+    const E_W2_TO_C = '00000000-0000-4000-8000-0000000d4104';
+    createNode(projection, NODE_C, 'C');
+    for (const annId of [ANN_W1, ANN_W2, ANN_D]) {
+      applyEvent(
+        projection,
+        makeEvent(nextSeq(), 'annotation-created', DEBATER_A_ID, T2, {
+          annotation_id: annId,
+          kind: 'note',
+          content: 'a',
+          target_node_id: NODE_C,
+          target_edge_id: null,
+          created_by: DEBATER_A_ID,
+          created_at: T2,
+        }),
+      );
+    }
+    applyEvent(
+      projection,
+      makeEvent(nextSeq(), 'edge-created', DEBATER_A_ID, T2, {
+        edge_id: E_W1_FROM_ANN_D,
+        role: 'bridges-from',
+        source_annotation_id: ANN_W1,
+        target_annotation_id: ANN_D,
+        created_by: DEBATER_A_ID,
+        created_at: T2,
+      }),
+    );
+    applyEvent(
+      projection,
+      makeEvent(nextSeq(), 'edge-created', DEBATER_A_ID, T2, {
+        edge_id: E_W1_TO_C,
+        role: 'bridges-to',
+        source_annotation_id: ANN_W1,
+        target_node_id: NODE_C,
+        created_by: DEBATER_A_ID,
+        created_at: T2,
+      }),
+    );
+    applyEvent(
+      projection,
+      makeEvent(nextSeq(), 'edge-created', DEBATER_A_ID, T2, {
+        edge_id: E_W2_FROM_ANN_D,
+        role: 'bridges-from',
+        source_annotation_id: ANN_W2,
+        target_annotation_id: ANN_D,
+        created_by: DEBATER_A_ID,
+        created_at: T2,
+      }),
+    );
+    applyEvent(
+      projection,
+      makeEvent(nextSeq(), 'edge-created', DEBATER_A_ID, T2, {
+        edge_id: E_W2_TO_C,
+        role: 'bridges-to',
+        source_annotation_id: ANN_W2,
+        target_node_id: NODE_C,
         created_by: DEBATER_A_ID,
         created_at: T2,
       }),

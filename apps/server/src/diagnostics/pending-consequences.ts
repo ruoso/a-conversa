@@ -131,9 +131,10 @@ export function detectPendingConsequences(projection: Projection): PendingConseq
     if (!statusEstablishesTruth(edgeStatus)) continue;
     if (resolveSubstanceValue(projection, edge.substanceFacet) !== 'agreed') continue;
 
-    // Per `projection_edge_annotation_endpoint` D4: pending-
-    // consequences walks substance from source NODE; an annotation-
-    // source edge has no substance to walk. Skip.
+    // Per `diagnostics_annotation_endpoint_semantics_audit` D5:
+    // pending-consequences walks source-NODE substance (data-model.md
+    // L106 — possible-future-feature stub); an annotation has no
+    // substance facet to read.
     if (edge.sourceNodeId === null) continue;
 
     // Rule 3: source-node present and visible.

@@ -447,12 +447,13 @@ describe('detectPendingConsequences — pending consequences detected', () => {
 });
 
 // ---------------------------------------------------------------
-// Annotation-endpoint edges — per `projection_edge_annotation_endpoint`
-// D4, pending-consequences skips annotation-endpoint edges (the walk
-// requires a node source with substance).
+// Annotation-endpoint edges — per `diagnostics_annotation_endpoint_semantics_audit`
+// D5, pending-consequences skips annotation-source edges: the rule
+// walks source-NODE substance (data-model.md L106 — possible-future-
+// feature stub); an annotation has no substance facet to read.
 // ---------------------------------------------------------------
 
-describe('detectPendingConsequences — annotation-endpoint edges (skipped per D4)', () => {
+describe('detectPendingConsequences — annotation-endpoint edges (skipped per audit D5)', () => {
   it('annotation-source edge → no pending-consequences finding', () => {
     resetSeq();
     const projection = seedSession();
@@ -484,6 +485,47 @@ describe('detectPendingConsequences — annotation-endpoint edges (skipped per D
       }),
     );
     commitEdgeAgreed(projection, ANNOT_EDGE_ID);
+    expect(detectPendingConsequences(projection)).toEqual([]);
+  });
+
+  it('annotation-source edges are never pending consequences regardless of source-annotation state', () => {
+    resetSeq();
+    const projection = seedSession();
+    // An agreed-substance edge whose source is an annotation. The
+    // annotation-source skip fires before the source-substance walk,
+    // so no candidate is ever produced — independent of whether the
+    // annotation itself has any facet state.
+    const ANN_SRC = '00000000-0000-4000-8000-0000000c5001';
+    const ANNOT_EDGE_ID = '00000000-0000-4000-8000-0000000c5002';
+    createNode(projection, SOURCE_NODE_ID, 'anchor');
+    createNode(projection, TARGET_NODE_ID, 'target');
+    applyEvent(
+      projection,
+      makeEvent(nextSeq(), 'annotation-created', DEBATER_A_ID, T2, {
+        annotation_id: ANN_SRC,
+        kind: 'note',
+        content: 'annotation source',
+        target_node_id: SOURCE_NODE_ID,
+        target_edge_id: null,
+        created_by: DEBATER_A_ID,
+        created_at: T2,
+      }),
+    );
+    applyEvent(
+      projection,
+      makeEvent(nextSeq(), 'edge-created', DEBATER_A_ID, T2, {
+        edge_id: ANNOT_EDGE_ID,
+        role: 'supports',
+        source_annotation_id: ANN_SRC,
+        target_node_id: TARGET_NODE_ID,
+        created_by: DEBATER_A_ID,
+        created_at: T2,
+      }),
+    );
+    commitEdgeAgreed(projection, ANNOT_EDGE_ID);
+    // Even with the edge substance committed-agreed, no pending
+    // consequence emerges — the annotation source has no substance
+    // facet to interrogate.
     expect(detectPendingConsequences(projection)).toEqual([]);
   });
 });

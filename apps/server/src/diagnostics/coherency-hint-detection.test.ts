@@ -401,12 +401,14 @@ describe('detectCoherencyHints — multiple rules combined', () => {
 });
 
 // ---------------------------------------------------------------
-// Annotation-endpoint edges — per `projection_edge_annotation_endpoint`
-// D4, coherency-hint detection skips annotation-endpoint edges (warrant
-// rules + self-contradicts are node-node constructs).
+// Annotation-endpoint edges — per `diagnostics_annotation_endpoint_semantics_audit`
+// D3, coherency-hint detection skips annotation-endpoint edges. The
+// v1 rules (incomplete-warrant, self-contradicts) are node-node by
+// construction; candidate annotation-endpoint rules are pre-named
+// under the audit's Tech-debt registration.
 // ---------------------------------------------------------------
 
-describe('detectCoherencyHints — annotation-endpoint edges (skipped per D4)', () => {
+describe('detectCoherencyHints — annotation-endpoint edges (skipped per audit D3)', () => {
   it('warrant with bridges-from to an annotation target → no incomplete-warrant hint emitted', () => {
     resetSeq();
     const projection = seedSession();
@@ -432,6 +434,109 @@ describe('detectCoherencyHints — annotation-endpoint edges (skipped per D4)', 
         role: 'bridges-from',
         source_node_id: WARRANT_W,
         target_annotation_id: ANNOTATION_ID,
+        created_by: DEBATER_A_ID,
+        created_at: T2,
+      }),
+    );
+    expect(detectCoherencyHints(projection)).toEqual([]);
+  });
+
+  it('incomplete-warrant rules emit no hints when bridges-from/bridges-to are annotation-endpoint', () => {
+    resetSeq();
+    const projection = seedSession();
+    // A would-be warrant W reached entirely via annotation-endpoint
+    // bridges-from and bridges-to. The rule walks outgoing edges of W
+    // and skips annotation-target edges; from the detector's view W
+    // has zero visible bridges-from and zero visible bridges-to → no
+    // incomplete-warrant hint can fire.
+    const ANN_D = '00000000-0000-4000-8000-0000000c2001';
+    const ANN_C = '00000000-0000-4000-8000-0000000c2002';
+    const E_W_FROM_ANN = '00000000-0000-4000-8000-0000000c2101';
+    const E_W_TO_ANN = '00000000-0000-4000-8000-0000000c2102';
+    createNode(projection, WARRANT_W, 'W');
+    for (const annId of [ANN_D, ANN_C]) {
+      applyEvent(
+        projection,
+        makeEvent(nextSeq(), 'annotation-created', DEBATER_A_ID, T2, {
+          annotation_id: annId,
+          kind: 'note',
+          content: 'a',
+          target_node_id: WARRANT_W,
+          target_edge_id: null,
+          created_by: DEBATER_A_ID,
+          created_at: T2,
+        }),
+      );
+    }
+    applyEvent(
+      projection,
+      makeEvent(nextSeq(), 'edge-created', DEBATER_A_ID, T2, {
+        edge_id: E_W_FROM_ANN,
+        role: 'bridges-from',
+        source_node_id: WARRANT_W,
+        target_annotation_id: ANN_D,
+        created_by: DEBATER_A_ID,
+        created_at: T2,
+      }),
+    );
+    applyEvent(
+      projection,
+      makeEvent(nextSeq(), 'edge-created', DEBATER_A_ID, T2, {
+        edge_id: E_W_TO_ANN,
+        role: 'bridges-to',
+        source_node_id: WARRANT_W,
+        target_annotation_id: ANN_C,
+        created_by: DEBATER_A_ID,
+        created_at: T2,
+      }),
+    );
+    expect(detectCoherencyHints(projection)).toEqual([]);
+  });
+
+  it('self-contradicts rule emits no hint on annotation-endpoint self-loop-shaped contradicts edges', () => {
+    resetSeq();
+    const projection = seedSession();
+    // A self-contradicts-like shape that crosses through an annotation:
+    // node X contradicts an annotation that annotates X itself. The
+    // self-contradicts rule requires sourceNodeId === targetNodeId
+    // (node-node degenerate cycle); the annotation-endpoint guard
+    // skips before the equality check, so no hint fires.
+    const ANN_ON_X = '00000000-0000-4000-8000-0000000c3001';
+    const E_X_CON_ANN = '00000000-0000-4000-8000-0000000c3002';
+    const E_ANN_CON_ANN = '00000000-0000-4000-8000-0000000c3003';
+    createNode(projection, NODE_X, 'X');
+    applyEvent(
+      projection,
+      makeEvent(nextSeq(), 'annotation-created', DEBATER_A_ID, T2, {
+        annotation_id: ANN_ON_X,
+        kind: 'note',
+        content: 'a',
+        target_node_id: NODE_X,
+        target_edge_id: null,
+        created_by: DEBATER_A_ID,
+        created_at: T2,
+      }),
+    );
+    // node X → contradicts → annotation-on-X (node-source, annotation-target)
+    applyEvent(
+      projection,
+      makeEvent(nextSeq(), 'edge-created', DEBATER_A_ID, T2, {
+        edge_id: E_X_CON_ANN,
+        role: 'contradicts',
+        source_node_id: NODE_X,
+        target_annotation_id: ANN_ON_X,
+        created_by: DEBATER_A_ID,
+        created_at: T2,
+      }),
+    );
+    // annotation-on-X → contradicts → annotation-on-X (ann→ann self-loop)
+    applyEvent(
+      projection,
+      makeEvent(nextSeq(), 'edge-created', DEBATER_A_ID, T2, {
+        edge_id: E_ANN_CON_ANN,
+        role: 'contradicts',
+        source_annotation_id: ANN_ON_X,
+        target_annotation_id: ANN_ON_X,
         created_by: DEBATER_A_ID,
         created_at: T2,
       }),

@@ -299,6 +299,7 @@ task data_and_methodology "Data and methodology" {
     task diagnostics_annotation_endpoint_semantics_audit "Revisit per-diagnostic semantics for annotation-endpoint edges" {
       effort 1d
       allocate team
+      complete 100
       depends data_and_methodology.projection.projection_edge_annotation_endpoint
       note -8<-
         Source of debt: projection_edge_annotation_endpoint — each diagnostic conservatively skips
@@ -308,6 +309,51 @@ task data_and_methodology "Data and methodology" {
         should surface findings on those edges. The default established by
         projection_edge_annotation_endpoint is skip; coherency-hint detection in particular may want
         per-rule annotation-endpoint handling.
+      ->8-
+    }
+    task coherency_self_referential_annotation_contradicts_rule "Coherency hint: node contradicts its own annotation" {
+      effort 0.5d
+      allocate team
+      depends !diagnostics_annotation_endpoint_semantics_audit
+      note -8<-
+        Source of debt: diagnostics_annotation_endpoint_semantics_audit D3.
+        Candidate coherency-hint rule: node N → contradicts → annotation A where A annotates N.
+        Conditional on docs/methodology.md enumerating the pattern as a named coherency hint.
+        Includes Vitest cover; no Cucumber delta.
+      ->8-
+    }
+    task coherency_annotation_of_annotation_chain_rule "Coherency hint: annotation-of-annotation chain depth ≥ 2" {
+      effort 0.5d
+      allocate team
+      depends !diagnostics_annotation_endpoint_semantics_audit
+      note -8<-
+        Source of debt: diagnostics_annotation_endpoint_semantics_audit D3.
+        Candidate coherency-hint rule: annotation → role → annotation chains of depth ≥ 2.
+        Conditional on docs/methodology.md enumerating the pattern as a named coherency hint.
+        Includes Vitest cover; no Cucumber delta.
+      ->8-
+    }
+    task contradiction_annotation_endpoint_semantics_audit "Audit contradiction_detection for annotation-endpoint edges" {
+      effort 1d
+      allocate team
+      depends !diagnostics_annotation_endpoint_semantics_audit
+      note -8<-
+        Source of debt: diagnostics_annotation_endpoint_semantics_audit D8.
+        Out of this task's .tji-defined scope: revisit whether contradiction_detection should surface
+        findings on annotation-endpoint contradicts edges (E15 case — N19 contradicts A2).
+        Requires a methodology-doc edit specifying what "an agreed contradiction targeting an
+        annotation" means structurally before the audit can conclude.
+      ->8-
+    }
+    task pending_consequences_annotation_endpoint_revisit "Re-audit pending-consequences annotation-endpoint skip when stub graduates" {
+      effort 0.25d
+      allocate team
+      depends !diagnostics_annotation_endpoint_semantics_audit
+      note -8<-
+        Source of debt: diagnostics_annotation_endpoint_semantics_audit D5.
+        When pending_consequences graduates from v1 stub to full implementation, re-audit the
+        annotation-endpoint skip. Pre-stated answer: skip still holds (annotations carry no
+        substance facet). Register to prevent future implementer from re-deriving the call.
       ->8-
     }
   }

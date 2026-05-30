@@ -421,11 +421,13 @@ describe('detectDanglingClaims — detected', () => {
 });
 
 // ---------------------------------------------------------------
-// Annotation-endpoint edges — per `projection_edge_annotation_endpoint`
-// D4, dangling-claim detection skips annotation-endpoint edges.
+// Annotation-endpoint edges — per `diagnostics_annotation_endpoint_semantics_audit`
+// D2, dangling-claim detection skips annotation-source incomings
+// entirely. Only NODE incomings of role supports/rebuts/bridges-to
+// satisfy the justification requirement (data-model.md L193-195).
 // ---------------------------------------------------------------
 
-describe('detectDanglingClaims — annotation-endpoint edges (skipped per D4)', () => {
+describe('detectDanglingClaims — annotation-endpoint edges (skipped per audit D2)', () => {
   it('node with only an annotation-source incoming edge → no findings (annotation-source edge is skipped)', () => {
     resetSeq();
     const projection = seedSession();
@@ -451,6 +453,112 @@ describe('detectDanglingClaims — annotation-endpoint edges (skipped per D4)', 
         role: 'defines',
         source_annotation_id: ANNOTATION_ID,
         target_node_id: NODE_A,
+        created_by: DEBATER_A_ID,
+        created_at: T2,
+      }),
+    );
+    expect(detectDanglingClaims(projection)).toEqual([]);
+  });
+
+  it('a node with only annotation-source incoming edges still surfaces as dangling', () => {
+    resetSeq();
+    const projection = seedSession();
+    // Per audit D2, annotation-source incomings of role supports /
+    // rebuts / bridges-to are invisible to the justification check.
+    // The node here is claim-positioned by a node-source `defines`
+    // (non-justifying); the three annotation-source incomings of
+    // justification-triplet roles don't lift it out of dangling.
+    const NODE_SRC = '66666666-6666-4666-8666-66666666661c';
+    const ANN_S = '00000000-0000-4000-8000-0000000d2001';
+    const ANN_R = '00000000-0000-4000-8000-0000000d2002';
+    const ANN_B = '00000000-0000-4000-8000-0000000d2003';
+    const E_DEFINES = '77777777-7777-4777-8777-7777777777e1';
+    const E_ANN_SUP = '00000000-0000-4000-8000-0000000d2101';
+    const E_ANN_REB = '00000000-0000-4000-8000-0000000d2102';
+    const E_ANN_BRT = '00000000-0000-4000-8000-0000000d2103';
+    createNode(projection, NODE_SRC, 'source');
+    createNode(projection, NODE_A, 'A');
+    createEdge(projection, E_DEFINES, NODE_SRC, NODE_A, 'defines');
+    for (const annId of [ANN_S, ANN_R, ANN_B]) {
+      applyEvent(
+        projection,
+        makeEvent(nextSeq(), 'annotation-created', DEBATER_A_ID, T2, {
+          annotation_id: annId,
+          kind: 'note',
+          content: 'a',
+          target_node_id: NODE_A,
+          target_edge_id: null,
+          created_by: DEBATER_A_ID,
+          created_at: T2,
+        }),
+      );
+    }
+    applyEvent(
+      projection,
+      makeEvent(nextSeq(), 'edge-created', DEBATER_A_ID, T2, {
+        edge_id: E_ANN_SUP,
+        role: 'supports',
+        source_annotation_id: ANN_S,
+        target_node_id: NODE_A,
+        created_by: DEBATER_A_ID,
+        created_at: T2,
+      }),
+    );
+    applyEvent(
+      projection,
+      makeEvent(nextSeq(), 'edge-created', DEBATER_A_ID, T2, {
+        edge_id: E_ANN_REB,
+        role: 'rebuts',
+        source_annotation_id: ANN_R,
+        target_node_id: NODE_A,
+        created_by: DEBATER_A_ID,
+        created_at: T2,
+      }),
+    );
+    applyEvent(
+      projection,
+      makeEvent(nextSeq(), 'edge-created', DEBATER_A_ID, T2, {
+        edge_id: E_ANN_BRT,
+        role: 'bridges-to',
+        source_annotation_id: ANN_B,
+        target_node_id: NODE_A,
+        created_by: DEBATER_A_ID,
+        created_at: T2,
+      }),
+    );
+    expect(detectDanglingClaims(projection)).toEqual([{ nodeId: NODE_A }]);
+  });
+
+  it("annotation-target edges don't suppress an otherwise-satisfied claim", () => {
+    resetSeq();
+    const projection = seedSession();
+    // NODE_B has a node-source supports incoming (justifies it) plus
+    // an outgoing edge whose target is an annotation. The rule walks
+    // INCOMINGS only, so the annotation-target outgoing is irrelevant.
+    const ANN_OUT = '00000000-0000-4000-8000-0000000d3001';
+    const E_ANN_OUT = '00000000-0000-4000-8000-0000000d3002';
+    createNode(projection, NODE_A, 'A');
+    createNode(projection, NODE_B, 'B');
+    createEdge(projection, EDGE_AB, NODE_A, NODE_B, 'supports');
+    applyEvent(
+      projection,
+      makeEvent(nextSeq(), 'annotation-created', DEBATER_A_ID, T2, {
+        annotation_id: ANN_OUT,
+        kind: 'note',
+        content: 'a',
+        target_node_id: NODE_B,
+        target_edge_id: null,
+        created_by: DEBATER_A_ID,
+        created_at: T2,
+      }),
+    );
+    applyEvent(
+      projection,
+      makeEvent(nextSeq(), 'edge-created', DEBATER_A_ID, T2, {
+        edge_id: E_ANN_OUT,
+        role: 'supports',
+        source_node_id: NODE_B,
+        target_annotation_id: ANN_OUT,
         created_by: DEBATER_A_ID,
         created_at: T2,
       }),

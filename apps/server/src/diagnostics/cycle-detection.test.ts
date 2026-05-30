@@ -518,12 +518,13 @@ describe('detectSupportsCycles — filter rules', () => {
 });
 
 // ---------------------------------------------------------------
-// Annotation-endpoint edges — per `projection_edge_annotation_endpoint`
-// D4, the cycle detector skips annotation-endpoint edges (the
-// node-supports subgraph has no semantics for them).
+// Annotation-endpoint edges — per `diagnostics_annotation_endpoint_semantics_audit`
+// D1, the cycle detector skips annotation-endpoint edges (cycles are
+// over the node-supports subgraph; annotation endpoints are
+// entity-layer metadata, not part of the supports subgraph).
 // ---------------------------------------------------------------
 
-describe('detectSupportsCycles — annotation-endpoint edges (skipped per D4)', () => {
+describe('detectSupportsCycles — annotation-endpoint edges (skipped per audit D1)', () => {
   it('projection containing only annotation-endpoint supports edges → no cycles', () => {
     resetSeq();
     const projection = seedSession();
@@ -562,6 +563,96 @@ describe('detectSupportsCycles — annotation-endpoint edges (skipped per D4)', 
         role: 'supports',
         source_annotation_id: ANNOTATION_ID_1,
         target_annotation_id: ANNOTATION_ID_2,
+        created_by: DEBATER_A_ID,
+        created_at: T2,
+      }),
+    );
+    expect(detectSupportsCycles(projection)).toEqual([]);
+  });
+
+  it('annotation-endpoint supports edges produce no cycles regardless of annotation shape', () => {
+    resetSeq();
+    const projection = seedSession();
+    // Three would-be-cycle shapes, all via the `supports` role:
+    //   - node→ann→node (NODE_A → ANN_X → NODE_A)
+    //   - ann→node→ann (ANN_Y → NODE_A → ANN_Y)
+    //   - ann→ann self-loop (ANN_Z → ANN_Z)
+    // Every annotation-endpoint supports edge is skipped at the
+    // top-of-loop guard, so no cycle entry can emerge.
+    const ANN_X = '00000000-0000-4000-8000-0000000a2001';
+    const ANN_Y = '00000000-0000-4000-8000-0000000a2002';
+    const ANN_Z = '00000000-0000-4000-8000-0000000a2003';
+    const E_NODE_TO_ANN_X = '00000000-0000-4000-8000-0000000a2101';
+    const E_ANN_X_TO_NODE = '00000000-0000-4000-8000-0000000a2102';
+    const E_ANN_Y_TO_NODE = '00000000-0000-4000-8000-0000000a2103';
+    const E_NODE_TO_ANN_Y = '00000000-0000-4000-8000-0000000a2104';
+    const E_ANN_Z_SELF = '00000000-0000-4000-8000-0000000a2105';
+    createNode(projection, NODE_A, 'A');
+    for (const annId of [ANN_X, ANN_Y, ANN_Z]) {
+      applyEvent(
+        projection,
+        makeEvent(nextSeq(), 'annotation-created', DEBATER_A_ID, T2, {
+          annotation_id: annId,
+          kind: 'note',
+          content: 'a',
+          target_node_id: NODE_A,
+          target_edge_id: null,
+          created_by: DEBATER_A_ID,
+          created_at: T2,
+        }),
+      );
+    }
+    applyEvent(
+      projection,
+      makeEvent(nextSeq(), 'edge-created', DEBATER_A_ID, T2, {
+        edge_id: E_NODE_TO_ANN_X,
+        role: 'supports',
+        source_node_id: NODE_A,
+        target_annotation_id: ANN_X,
+        created_by: DEBATER_A_ID,
+        created_at: T2,
+      }),
+    );
+    applyEvent(
+      projection,
+      makeEvent(nextSeq(), 'edge-created', DEBATER_A_ID, T2, {
+        edge_id: E_ANN_X_TO_NODE,
+        role: 'supports',
+        source_annotation_id: ANN_X,
+        target_node_id: NODE_A,
+        created_by: DEBATER_A_ID,
+        created_at: T2,
+      }),
+    );
+    applyEvent(
+      projection,
+      makeEvent(nextSeq(), 'edge-created', DEBATER_A_ID, T2, {
+        edge_id: E_ANN_Y_TO_NODE,
+        role: 'supports',
+        source_annotation_id: ANN_Y,
+        target_node_id: NODE_A,
+        created_by: DEBATER_A_ID,
+        created_at: T2,
+      }),
+    );
+    applyEvent(
+      projection,
+      makeEvent(nextSeq(), 'edge-created', DEBATER_A_ID, T2, {
+        edge_id: E_NODE_TO_ANN_Y,
+        role: 'supports',
+        source_node_id: NODE_A,
+        target_annotation_id: ANN_Y,
+        created_by: DEBATER_A_ID,
+        created_at: T2,
+      }),
+    );
+    applyEvent(
+      projection,
+      makeEvent(nextSeq(), 'edge-created', DEBATER_A_ID, T2, {
+        edge_id: E_ANN_Z_SELF,
+        role: 'supports',
+        source_annotation_id: ANN_Z,
+        target_annotation_id: ANN_Z,
         created_by: DEBATER_A_ID,
         created_at: T2,
       }),
