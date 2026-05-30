@@ -43,6 +43,10 @@
 //      direct precursor set (expanded to leaves) is fully complete and
 //      the leaf itself is incomplete. Print those, plus counts for the
 //      blocked + already-complete leaves.
+//   7. In the full (unfiltered) report, also print **orphans**: leaf
+//      tasks in NO milestone's gating set — nothing in the plan
+//      transitively requires them. These are the audit target for "wire
+//      to a milestone or descope".
 
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -307,6 +311,39 @@ function isLeafUnblocked(g: Graph, leafId: string, milestoneIds: Set<string>): b
   return true;
 }
 
+// --- Orphan detection ----------------------------------------------------
+// An "orphan" is a leaf task that is in NO milestone's gating set — i.e. no
+// milestone transitively depends on it (directly, via a named precursor, or
+// via inherited container-level depends). Nothing in the plan requires it, so
+// completing it advances no milestone. This is strictly broader than "pure
+// dependency-sink" (a leaf no other task names as a precursor): it also
+// surfaces whole disconnected clusters whose tip happens to be depended-on by
+// another orphan. The audit question for each is: should a milestone depend
+// on it, or should it be descoped?
+function computeOrphans(
+  g: Graph,
+  declared: string[],
+  milestoneIds: Set<string>,
+  gatingMemo: Map<string, string[]>,
+): string[] {
+  const reached = new Set<string>();
+  for (const msId of declared) {
+    if (!milestoneIds.has(msId)) continue;
+    for (const leaf of milestoneGatingSet(g, msId, milestoneIds, gatingMemo)) {
+      reached.add(leaf);
+    }
+  }
+  const orphans: string[] = [];
+  for (const r of g.byId.values()) {
+    if (g.childrenOf.has(r.id)) continue; // container, not a leaf
+    if (r.id.startsWith('milestones.')) continue; // milestones aren't tasks
+    if (reached.has(r.id)) continue;
+    orphans.push(r.id);
+  }
+  orphans.sort();
+  return orphans;
+}
+
 // --- Milestone ordering from 99-milestones.tji --------------------------
 
 function readMilestoneOrder(): string[] {
@@ -424,6 +461,34 @@ function main(): void {
       }
       lines.push(`  BLOCKED (still waiting on incomplete predecessors): ${String(blocked.length)}`);
       lines.push(`  COMPLETE: ${String(complete.length)} / ${String(gating.length)} leaves`);
+    }
+    lines.push('');
+  }
+
+  // Global orphan audit — only in the full (unfiltered) report, since it is
+  // a plan-wide view rather than a per-milestone one.
+  if (filterId === undefined) {
+    const orphans = computeOrphans(g, declared, milestoneIds, gatingMemo);
+    const incomplete = orphans.filter((id) => g.byId.get(id)!.completePct < 100);
+    const complete = orphans.filter((id) => g.byId.get(id)!.completePct >= 100);
+    lines.push('────────────────────────────────────────────────────────────');
+    lines.push('ORPHANS — leaf tasks no milestone transitively depends on');
+    lines.push('(nothing in the plan requires them — audit: wire to a milestone or descope)');
+    lines.push('');
+    lines.push(`  INCOMPLETE (${String(incomplete.length)}):`);
+    if (incomplete.length === 0) {
+      lines.push('    (none)');
+    } else {
+      for (const id of incomplete) {
+        const leaf = g.byId.get(id)!;
+        lines.push(`    ${id}${formatEffort(leaf.effortDays)} [${String(leaf.completePct)}%]`);
+      }
+    }
+    lines.push(`  COMPLETE (${String(complete.length)}):`);
+    if (complete.length === 0) {
+      lines.push('    (none)');
+    } else {
+      for (const id of complete) lines.push(`    ${id}`);
     }
     lines.push('');
   }
