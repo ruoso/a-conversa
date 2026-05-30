@@ -16,8 +16,11 @@ Each agent CLI invocation streams JSON so the driver can print live progress
 The full event stream is tee'd to `orchestrator/logs/iter-NNNN-<phase>.log` for
 post-mortem.
 
-No session resume: each invocation is a fresh top-level session with the tool
-access exposed by the selected CLI.
+Each invocation is normally a fresh top-level session with the tool access
+exposed by the selected CLI. The exception is auto-retry: when a turn fails
+with an API error or session-limit (429) and the CLI surfaced a session id,
+the retry resumes that session (see `run_agent_with_retry`) so partial work
+is preserved rather than recomputed from scratch.
 
 Select the CLI with `AGENT_CLI=claude` (the default) or `AGENT_CLI=codex`.
 """
@@ -547,14 +550,50 @@ def _looks_transient(text: str) -> bool:
     return any(pat.lower() in low for pat in TRANSIENT_API_ERROR_PATTERNS)
 
 
+# codex surfaces a hit usage/quota limit differently from claude's 429: an
+# `error` (and trailing `turn.failed`) event whose message reads e.g.
+#   "You've hit your usage limit. ... or try again at 8:52 PM."
+# There's no api_error_status and no IANA timezone — just a wall-clock time in
+# the user's local zone. We detect the limit and parse that time so the driver
+# waits for the window to reopen instead of hard-failing or burning the
+# transient backoff (which caps far below a multi-hour quota reset).
+CODEX_USAGE_LIMIT_RE = re.compile(r"usage limit|usage cap|hit your .*limit", re.IGNORECASE)
+CODEX_RESET_RE = re.compile(
+    r"try again at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)", re.IGNORECASE
+)
+# Fallback wait when a usage-limit message carries no parseable reset time.
+CODEX_USAGE_LIMIT_FALLBACK = timedelta(hours=1)
+
+
+def parse_codex_reset(text: str) -> Optional[datetime]:
+    """Parse 'try again at 8:52 PM' into the next future datetime matching that
+    wall-clock time in the system local timezone. Returns None if no time is
+    present."""
+    m = CODEX_RESET_RE.search(text)
+    if not m:
+        return None
+    hour = int(m.group(1))
+    minute = int(m.group(2) or 0)
+    if m.group(3).lower() == "pm" and hour != 12:
+        hour += 12
+    elif m.group(3).lower() == "am" and hour == 12:
+        hour = 0
+    now = datetime.now().astimezone()
+    reset = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if reset <= now:
+        reset += timedelta(days=1)
+    return reset
+
+
 class SessionLimitError(RuntimeError):
     """Raised when `claude -p` exits because the account's session limit was
     hit. Carries the parsed reset datetime so callers can sleep until then."""
 
-    def __init__(self, reset_at: datetime, message: str):
+    def __init__(self, reset_at: datetime, message: str, session_id: Optional[str] = None):
         super().__init__(f"session limit hit; resets at {reset_at.isoformat()}")
         self.reset_at = reset_at
         self.message = message
+        self.session_id = session_id
 
 
 def parse_session_limit_reset(text: str, pattern: re.Pattern[str]) -> Optional[datetime]:
@@ -610,6 +649,16 @@ def wait_until_reset(reset_at: datetime, buffer_seconds: int = 30) -> None:
 # fails loudly rather than burning hours in a retry loop.
 TRANSIENT_BACKOFF_SECONDS: list[int] = [30, 60, 120, 300, 600]
 
+# Prompt carried by a resumed turn. The session already holds the prior
+# context, so we only nudge the agent to pick up where the interrupted turn
+# left off rather than re-sending the original (full) prompt.
+RESUME_NUDGE = (
+    "The previous turn was interrupted by an API error before it could finish. "
+    "Continue the task from where you left off — do not restart from scratch. "
+    "Pick up the in-progress work and complete it, then emit your final result "
+    "exactly as the original instructions required."
+)
+
 
 class TransientApiError(RuntimeError):
     """A non-fatal API error that should be retried with backoff (socket
@@ -617,9 +666,10 @@ class TransientApiError(RuntimeError):
     SessionLimitError because the retry strategy is exponential backoff
     rather than waiting for a wall-clock reset."""
 
-    def __init__(self, message: str):
+    def __init__(self, message: str, session_id: Optional[str] = None):
         super().__init__(message)
         self.message = message
+        self.session_id = session_id
 
 
 def _archive_failed_log(log_path: Path, attempt: int) -> None:
@@ -639,6 +689,7 @@ class NormalizedAgentEvent:
     session_reset: Optional[datetime] = None
     session_message: str = ""
     transient_message: Optional[str] = None
+    session_id: Optional[str] = None
 
 
 class AgentEventNormalizer(ABC):
@@ -675,8 +726,11 @@ class AgentCli(ABC):
         """Default model by prompt role, plus a `default` fallback."""
 
     @abstractmethod
-    def command(self, prompt: str, model: str) -> list[str]:
-        """Build the headless CLI argv."""
+    def command(
+        self, prompt: str, model: str, resume_session: Optional[str] = None
+    ) -> list[str]:
+        """Build the headless CLI argv. When ``resume_session`` is set, build a
+        resume invocation that continues that session instead of a fresh one."""
 
     @abstractmethod
     def new_normalizer(self) -> AgentEventNormalizer:
@@ -685,6 +739,11 @@ class AgentCli(ABC):
     @abstractmethod
     def extract_final_result(self, log_path: Path) -> str:
         """Extract the final assistant message from a persisted JSONL log."""
+
+    @abstractmethod
+    def extract_session_id(self, log_path: Path) -> Optional[str]:
+        """Extract the session/thread id from a persisted JSONL log so the
+        session can be resumed, or None if the log carries no id."""
 
 
 class ClaudeEventNormalizer(AgentEventNormalizer):
@@ -741,6 +800,11 @@ class ClaudeEventNormalizer(AgentEventNormalizer):
                     self.chains.pop(block.get("tool_use_id", ""), None)
 
         result = NormalizedAgentEvent(lines)
+        # Every top-level Claude event carries the session id; surface it so the
+        # driver can resume this session if the turn fails. Sub-agent events
+        # (parent_ref set) belong to nested sessions — ignore those.
+        if not parent_ref and event.get("session_id"):
+            result.session_id = event.get("session_id")
         if event.get("type") == "result" and not parent_ref:
             result.final_text = event.get("result", "")
             if event.get("is_error"):
@@ -759,7 +823,8 @@ class CodexEventNormalizer(AgentEventNormalizer):
         event_type = event.get("type", "?")
         if event_type == "thread.started":
             return NormalizedAgentEvent(
-                [f"{DIM}● init{RESET} thread={event.get('thread_id', '?')}"]
+                [f"{DIM}● init{RESET} thread={event.get('thread_id', '?')}"],
+                session_id=event.get("thread_id"),
             )
         if event_type == "turn.started":
             return NormalizedAgentEvent([f"{DIM}● turn started{RESET}"])
@@ -791,12 +856,30 @@ class CodexEventNormalizer(AgentEventNormalizer):
                  f"{usage.get('output_tokens', '?')} output tokens"]
             )
         if event_type == "error":
-            message = str(event.get("message", event))
-            return NormalizedAgentEvent(
-                [f"{RED}✗{RESET} {_shorten(message, 200)}"],
-                transient_message=message if _looks_transient(message) else None,
-            )
+            return self._failure(str(event.get("message", event)))
+        if event_type == "turn.failed":
+            err = event.get("error")
+            if isinstance(err, dict):
+                message = str(err.get("message") or err)
+            else:
+                message = str(err) if err else "turn failed"
+            return self._failure(message)
         return NormalizedAgentEvent([f"{DIM}● event {event_type}{RESET}"])
+
+    def _failure(self, message: str) -> NormalizedAgentEvent:
+        """Classify a codex failure message into quota (session_reset),
+        transient, or hard-fail, mirroring claude's 429 handling."""
+        line = f"{RED}✗{RESET} {_shorten(message, 200)}"
+        if CODEX_USAGE_LIMIT_RE.search(message):
+            reset = parse_codex_reset(message)
+            if reset is None:
+                reset = datetime.now().astimezone() + CODEX_USAGE_LIMIT_FALLBACK
+            return NormalizedAgentEvent(
+                [line], session_reset=reset, session_message=message.strip()
+            )
+        return NormalizedAgentEvent(
+            [line], transient_message=message if _looks_transient(message) else None
+        )
 
 
 class ClaudeCli(AgentCli):
@@ -810,8 +893,10 @@ class ClaudeCli(AgentCli):
         "default": "claude-opus-4-7",
     }
 
-    def command(self, prompt: str, model: str) -> list[str]:
-        return [
+    def command(
+        self, prompt: str, model: str, resume_session: Optional[str] = None
+    ) -> list[str]:
+        cmd = [
             "claude",
             "-p",
             prompt,
@@ -821,6 +906,9 @@ class ClaudeCli(AgentCli):
             "stream-json",
             "--verbose",
         ]
+        if resume_session:
+            cmd += ["--resume", resume_session]
+        return cmd
 
     def new_normalizer(self) -> AgentEventNormalizer:
         return ClaudeEventNormalizer()
@@ -836,6 +924,20 @@ class ClaudeCli(AgentCli):
             ),
         )
 
+    def extract_session_id(self, log_path: Path) -> Optional[str]:
+        try:
+            return extract_matching_result(
+                log_path,
+                lambda event: (
+                    event.get("session_id")
+                    if event.get("session_id")
+                    and not event.get("parent_tool_use_id")
+                    else None
+                ),
+            )
+        except ValueError:
+            return None
+
 
 class CodexCli(AgentCli):
     name = "codex"
@@ -848,22 +950,25 @@ class CodexCli(AgentCli):
         "default": "gpt-5.4",
     }
 
-    def command(self, prompt: str, model: str) -> list[str]:
-        return [
-            "codex",
-            "-a",
-            "never",
-            "exec",
+    def command(
+        self, prompt: str, model: str, resume_session: Optional[str] = None
+    ) -> list[str]:
+        # `--ephemeral` is intentionally omitted so the session rollout is
+        # persisted and can be resumed after an API error. `exec resume` does
+        # not accept `--sandbox`, so the sandbox policy is set via `-c
+        # sandbox_mode` (works for both fresh and resumed invocations).
+        opts = [
             "--json",
-            "--ephemeral",
-            "--sandbox",
-            "workspace-write",
+            "-c",
+            'sandbox_mode="workspace-write"',
             "-c",
             "sandbox_workspace_write.network_access=true",
             "--model",
             model,
-            prompt,
         ]
+        if resume_session:
+            return ["codex", "-a", "never", "exec", "resume", *opts, resume_session, prompt]
+        return ["codex", "-a", "never", "exec", *opts, prompt]
 
     def new_normalizer(self) -> AgentEventNormalizer:
         return CodexEventNormalizer()
@@ -878,6 +983,19 @@ class CodexCli(AgentCli):
                 else None
             ),
         )
+
+    def extract_session_id(self, log_path: Path) -> Optional[str]:
+        try:
+            return extract_matching_result(
+                log_path,
+                lambda event: (
+                    event.get("thread_id")
+                    if event.get("type") == "thread.started"
+                    else None
+                ),
+            )
+        except ValueError:
+            return None
 
 
 def select_agent_cli() -> AgentCli:
@@ -895,20 +1013,43 @@ def select_agent_cli() -> AgentCli:
 AGENT = select_agent_cli()
 
 
-def run_agent_with_retry(prompt: str, log_path: Path, model: str) -> str:
+def run_agent_with_retry(
+    prompt: str,
+    log_path: Path,
+    model: str,
+    resume_session: Optional[str] = None,
+) -> str:
     """Wrap run_agent with auto-retry on SessionLimitError and
     TransientApiError. Failed-attempt logs are preserved with `.attempt-N`
     suffix so the post-mortem chain survives the retry. Session limits
     sleep until the wall-clock reset; transient API errors use exponential
-    backoff (`TRANSIENT_BACKOFF_SECONDS`) and eventually give up."""
+    backoff (`TRANSIENT_BACKOFF_SECONDS`) and eventually give up.
+
+    When the failing turn surfaced a session id, the retry resumes that
+    session (carrying `RESUME_NUDGE`) so completed work isn't thrown away;
+    otherwise it falls back to re-running the original prompt fresh. Pass
+    `resume_session` to start already resuming a session (e.g. an operator
+    `--resume` replaying a recorded log)."""
     attempt = 0
     transient_attempts = 0
+    next_prompt = prompt
+
+    def _resume_from(e: "SessionLimitError | TransientApiError") -> None:
+        nonlocal next_prompt, resume_session
+        if e.session_id:
+            resume_session = e.session_id
+            next_prompt = RESUME_NUDGE
+            print_wrapped(
+                f"{DIM}↻  will resume session {e.session_id}{RESET}"
+            )
+
     while True:
         try:
-            return run_agent(prompt, log_path, model)
+            return run_agent(next_prompt, log_path, model, resume_session)
         except SessionLimitError as e:
             attempt += 1
             _archive_failed_log(log_path, attempt)
+            _resume_from(e)
             wait_until_reset(e.reset_at)
         except TransientApiError as e:
             if transient_attempts >= len(TRANSIENT_BACKOFF_SECONDS):
@@ -925,6 +1066,7 @@ def run_agent_with_retry(prompt: str, log_path: Path, model: str) -> str:
             attempt += 1
             transient_attempts += 1
             _archive_failed_log(log_path, attempt)
+            _resume_from(e)
             print_wrapped(
                 f"{YELLOW}⚠  transient API error "
                 f"(attempt {transient_attempts}/"
@@ -941,14 +1083,20 @@ def run_agent_with_retry(prompt: str, log_path: Path, model: str) -> str:
             print_wrapped(f"{GREEN}⏵  retrying{RESET}")
 
 
-def run_agent(prompt: str, log_path: Path, model: str) -> str:
-    """Run the selected CLI with streaming and return its final assistant text."""
+def run_agent(
+    prompt: str, log_path: Path, model: str, resume_session: Optional[str] = None
+) -> str:
+    """Run the selected CLI with streaming and return its final assistant text.
+
+    When ``resume_session`` is set, the CLI is invoked in resume mode so it
+    continues that session rather than starting fresh."""
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    cmd = AGENT.command(prompt, model)
+    cmd = AGENT.command(prompt, model, resume_session)
     final_text: Optional[str] = None
     session_reset: Optional[datetime] = None
     session_message: str = ""
     transient_message: Optional[str] = None
+    session_id: Optional[str] = resume_session
     normalizer = AGENT.new_normalizer()
     proc = subprocess.Popen(
         cmd,
@@ -985,6 +1133,8 @@ def run_agent(prompt: str, log_path: Path, model: str) -> str:
                     session_message = normalized.session_message
                 if normalized.transient_message is not None:
                     transient_message = normalized.transient_message
+                if normalized.session_id is not None:
+                    session_id = normalized.session_id
             rc = proc.wait()
             logf.write(f"\n---RC---\n{rc}\n")
     except KeyboardInterrupt:
@@ -996,9 +1146,9 @@ def run_agent(prompt: str, log_path: Path, model: str) -> str:
         raise
     if rc != 0:
         if session_reset is not None:
-            raise SessionLimitError(session_reset, session_message)
+            raise SessionLimitError(session_reset, session_message, session_id)
         if transient_message is not None:
-            raise TransientApiError(transient_message)
+            raise TransientApiError(transient_message, session_id)
         raise RuntimeError(f"{AGENT.name} failed (rc={rc}); see {log_path}")
     if final_text is None:
         raise RuntimeError(f"{AGENT.name} produced no final message; see {log_path}")
@@ -1447,10 +1597,12 @@ def parse_args(argv: list[str]) -> "argparse.Namespace":
         type=Path,
         default=None,
         help=(
-            "Path to an iter-NNNN-<phase>.log file. The driver replays "
-            "that step using the prompt persisted in the log, then "
-            "continues the normal loop from the next iteration. The "
-            "previous log is preserved as .attempt-N."
+            "Path to an iter-NNNN-<phase>.log file. The driver resumes the "
+            "session recorded in that log (carrying --note as the new turn) "
+            "so prior work is preserved, then continues the normal loop from "
+            "the next iteration. If the log has no recoverable session id, it "
+            "falls back to re-running the persisted prompt fresh. The previous "
+            "log is preserved as .attempt-N."
         ),
     )
     parser.add_argument(
@@ -1480,12 +1632,24 @@ def replay_step(
     step)."""
     iteration, phase = parse_resume_target(log_path)
     original_prompt = read_prompt_from_log(log_path)
-    replay_prompt = original_prompt
-    if note:
+
+    # Prefer resuming the recorded session so prior work is preserved. The
+    # session id is recoverable from the persisted JSONL stream; read it
+    # before the log is archived below. When resuming, the session already
+    # holds the original prompt + its work, so the new turn carries only the
+    # operator note (or a continuation nudge) rather than re-sending it.
+    resume_session = AGENT.extract_session_id(log_path)
+    if resume_session:
         replay_prompt = (
-            f"## Note from operator (resume)\n\n{note}\n\n"
-            f"---\n\n{original_prompt}"
+            f"## Note from operator (resume)\n\n{note}" if note else RESUME_NUDGE
         )
+    else:
+        replay_prompt = original_prompt
+        if note:
+            replay_prompt = (
+                f"## Note from operator (resume)\n\n{note}\n\n"
+                f"---\n\n{original_prompt}"
+            )
 
     # Archive the prior log so the failed run is preserved for post-mortem
     # alongside the new attempt. Use the same numbering convention the
@@ -1522,13 +1686,19 @@ def replay_step(
     print_wrapped(
         f"  {DIM}log: {log_path} · model: {AGENT.display_model(model)}{RESET}"
     )
+    if resume_session:
+        print_wrapped(f"  {DIM}↻ resuming session {resume_session}{RESET}")
+    else:
+        print_wrapped(
+            f"  {DIM}↳ no session id in log — re-running fresh{RESET}"
+        )
     if note:
         print_wrapped(f"  {DIM}↳ operator note: {note}{RESET}")
     if template_vars:
         for line in fmt_vars_passed(template_vars):
             print_wrapped(line)
 
-    sub_stdout = run_agent_with_retry(replay_prompt, log_path, model)
+    sub_stdout = run_agent_with_retry(replay_prompt, log_path, model, resume_session)
     for line in fmt_returned(sub_stdout):
         print_wrapped(line)
     return iteration, phase, sub_stdout, template_vars
