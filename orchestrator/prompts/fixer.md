@@ -15,7 +15,7 @@ passes.
 You do NOT need to run prettier yourself — the driver re-runs
 `pnpm run format` before re-verifying after your return.
 
-You are a fresh top-level Claude session. You have full tool access. You do
+You are a fresh top-level agent session. You have full tool access. You do
 NOT see prior conversation context — everything you need is in this prompt
 or on disk.
 

@@ -1,10 +1,10 @@
 # orchestrator/
 
-Python driver that loops a planning Claude session ("the orchestrator") with a
-sequence of working Claude sessions ("sub-agents"), replacing the
+Python driver that loops a planning agent session ("the orchestrator") with a
+sequence of working agent sessions ("sub-agents"), replacing the
 `ORCHESTRATOR.md`-as-startup-prompt approach.
 
-Each iteration is at least two `claude -p` invocations, plus — after every
+Each iteration is at least two agent CLI invocations, plus — after every
 `implementer` dispatch — a deterministic verification + fixer + closer tail
 that the driver owns:
 
@@ -14,8 +14,7 @@ that the driver owns:
    `{"next": {"template": "refinement_writer"|"implementer", "vars": {...}}, "context_summary": "..."}`
    or `{"stop": "<reason>"}`.
 2. **Sub-agent turn** — `prompts/<template>.md` rendered with `vars`, run as
-   a fresh top-level Claude session (full freedom to spawn its own sub-agents
-   via the `Task` tool — e.g. Explore on Haiku for log scanning).
+   a fresh top-level agent session.
 3. **(implementer only) deterministic tail** — the driver runs
    `pnpm run check`, `pnpm run test:smoke`, `pnpm run test:behavior:smoke`,
    `make test:e2e:compose` (each output tee'd to
@@ -26,9 +25,8 @@ that the driver owns:
    pass-block as `$test_results`. The closer's return is what feeds back
    into the next orchestrator turn.
 
-All `claude -p` invocations use `--output-format stream-json --verbose` so the
-driver prints live event summaries (tool calls, assistant messages, results)
-as they arrive. Full event streams are tee'd to `logs/iter-NNNN-<phase>.log`.
+All invocations stream JSON so the driver prints live event summaries as they
+arrive. Full event streams are tee'd to `logs/iter-NNNN-<phase>.log`.
 
 ## Persistent state
 
@@ -51,19 +49,31 @@ cd orchestrator
 python3 driver.py
 ```
 
+The default CLI is Claude Code. Use Codex CLI with:
+
+```
+AGENT_CLI=codex python3 driver.py
+```
+
 No dependencies beyond stdlib. The `.venv` is set up for future use (e.g.
 `pytest`) but is not currently required.
 
 Stop with Ctrl-C; in-flight sub-agent processes get SIGTERM'd cleanly.
+Prompt files are loaded immediately before each dispatch, so edits under
+`prompts/` take effect on the next agent turn without restarting the driver.
+
+Before every orchestrator turn, the driver also injects persisted
+`orchestrator/state/context_summary.md` snapshots from all registered git
+worktrees. The orchestrator uses those snapshots to avoid assigning sibling
+worktrees overlapping tasks or workstreams.
 
 ## Models
 
-Per-template model selection lives in `TEMPLATE_MODELS` in `driver.py`:
+Per-template model selection lives in the selected `AgentCli` adapter:
 
-- `ORCH_MODEL` (orchestrator) — Sonnet by default; structured meta-routing.
-- `CLOSER_MODEL` (closer) — Sonnet by default; mechanical ritual + commit.
-- `SUB_MODEL` (refinement_writer / implementer / fixer) — Opus by default;
-  actual code work.
+- Claude uses Sonnet for `orchestrator` / `closer` and Opus for working agents.
+- Codex uses `gpt-5.4-mini` for `orchestrator` / `closer` and `gpt-5.4` for
+  working agents.
 
 Override via env vars (`ORCH_MODEL`, `SUB_MODEL`, `CLOSER_MODEL`) when you
 want to experiment.
@@ -93,7 +103,14 @@ that needs them, since sub-agents are fresh sessions with no shared state.
 
 ## Permissions
 
-The driver passes no permission flags to `claude -p`. Whatever
+For Claude, the driver passes no permission flags to `claude -p`. Whatever
 `~/.claude/settings.json` provides as the default is what the sub-agents
 get. If headless runs block on tool prompts, add e.g.
-`--permission-mode acceptAll` to `CLAUDE_ARGS` in `driver.py`.
+`--permission-mode acceptAll` in `ClaudeCli.command()`.
+
+For Codex, the adapter runs
+`codex -a never exec --sandbox workspace-write -c sandbox_workspace_write.network_access=true`.
+Enabling sandbox network access lets sub-agents reach the local Docker daemon
+for compose-based verification without disabling the filesystem sandbox. This
+also permits general network access from sandboxed commands; it is not a
+Docker-socket-only grant.

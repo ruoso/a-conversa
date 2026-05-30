@@ -6,11 +6,12 @@ mission is complete. Each turn, you:
 
 1. Read the latest on-disk WBS state via `make unblocked` (you may also `Read`
    `tasks/99-milestones.tji`, and only that file).
-2. Decide the next sub-agent to dispatch (or whether to stop).
-3. Emit a single **JSON envelope** as your final assistant message.
+2. Consult the driver-provided worktree coordination snapshot in your prompt.
+3. Decide the next sub-agent to dispatch (or whether to stop).
+4. Emit a single **JSON envelope** as your final assistant message.
 
 The driver parses your final message, spawns the sub-agent you named (a fresh
-top-level `claude -p` session — it has full freedom to spawn its own
+top-level agent CLI session — it has full freedom to spawn its own
 sub-agents via the `Task` tool), captures the sub-agent's final assistant
 message, and feeds it back to you on your next turn along with whatever
 `context_summary` you chose to carry forward.
@@ -55,6 +56,13 @@ for each milestone — enough to interpret `make unblocked` output and to route
 picks intelligently. Nothing else is loaded; per-task `.tji` and refinement
 files stay sub-agent-only. READY-leaf state is read on demand, one milestone
 at a time, via `make unblocked MILESTONE=<id>` during the pick step.
+
+The driver also injects a **worktree coordination snapshot** into each turn.
+It identifies your current worktree and includes the persisted
+`orchestrator/state/context_summary.md` from every worktree registered for
+this repository. Do not scan for this state yourself. Use the injected
+snapshot to infer which task and workstream each sibling agent is already
+working on.
 
 Refinements live at `tasks/refinements/<area>/<task_name>.md` (path convention
 from `tasks/refinements/README.md`). You KNOW that path mapping — `<area>` is
@@ -109,7 +117,7 @@ with a non-empty READY list is the source for this pick.
 
 `make unblocked` already enforces the two structural eligibility properties:
 the listed leaves are not `complete 100` and have every predecessor
-`complete 100`. You add two filters on top of that:
+`complete 100`. You add three filters on top of that:
 
 - **Scope filter** — skip any READY leaf whose id starts with `deployment.`
   (the M9 / out-of-scope rule).
@@ -124,6 +132,17 @@ the listed leaves are not `complete 100` and have every predecessor
   2026-05-30). Leave them for human intervention — see §Stop conditions.
   (The closer template is also forbidden from registering such tasks, so in
   a clean tree you should rarely see one; the filter is a backstop.)
+- **Cross-worktree conflict filter** — inspect the driver-provided worktree
+  coordination snapshot before choosing a READY leaf. Do not pick the same
+  task, the same active workstream, or a task likely to edit the same feature
+  area as a sibling worktree. A workstream is normally the top-level task
+  namespace (`backend`, `moderator_ui`, `participant_ui`, `audience`,
+  `shell_package`, etc.); use a narrower subgroup only when the sibling state
+  makes the separation unambiguous. Prefer an eligible task from a different
+  workstream even when another task would otherwise rank slightly higher
+  under the debt heuristics below. If every eligible leaf conflicts, pick the
+  least-overlapping leaf and state that constraint explicitly in your
+  reasoning.
 
 **Within the READY list, use judgment to pick the leaf that generates the
 least amount of tech debt**, where "tech debt" means deferred assertions,
@@ -224,6 +243,8 @@ Include:
 - Which milestone you're currently working through and why.
 - Which WBS task you're partway through (refinement done? implementer
   dispatched?) so you know which sub-agent comes next.
+- The active workstream for this worktree, stated explicitly so sibling
+  orchestrators can avoid it.
 - Coverage trend notes (Cucumber/Playwright deltas you're watching).
 - Any deferred design questions you said "decide next time."
 - The last 3–5 commits in a one-line trail so you don't immediately re-pick
@@ -318,6 +339,10 @@ aware they exist and reflect them in your picking:
   sessions in this architecture and CAN spawn Explore. The headless-mode
   name for the agent-spawning tool is `Task`, not `Agent`. Never pipe to
   `tail`; never read raw verification logs inline.
+- **Merging worktrees** ­— If you are in the main worktree, cherry pick
+  commits from the sibling worktrees before starting new work. If you
+  are in one of the sibling worktrees, rebase on top of main before
+  starting new work.
 
 ## Reference paths
 

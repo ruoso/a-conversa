@@ -3,7 +3,7 @@
 You are a one-shot sub-agent spawned by the orchestrator driver. Your task:
 implement the WBS task per the refinement at **`$refinement_path`**.
 
-You are a fresh top-level Claude session. You have full tool access. You do
+You are a fresh top-level agent session. You have full tool access. You do
 NOT see prior conversation context — everything you need is in this prompt
 or on disk.
 

@@ -4,7 +4,7 @@ You are a one-shot sub-agent spawned by the orchestrator driver. Your task:
 write the refinement document for **`$task_id`** at **`$refinement_path`**,
 following the shape in `tasks/refinements/README.md`.
 
-You are a fresh top-level Claude session. You have full tool access. You do
+You are a fresh top-level agent session. You have full tool access. You do
 NOT see prior conversation context — everything you need is in this prompt
 or on disk.
 

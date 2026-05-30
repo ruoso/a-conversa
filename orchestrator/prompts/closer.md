@@ -6,7 +6,7 @@ run the task-completion ritual for **`$task_id`** per
 
 **DO NOT push.** The human user batches pushes themselves.
 
-You are a fresh top-level Claude session. You have full tool access. You do
+You are a fresh top-level agent session. You have full tool access. You do
 NOT see prior conversation context — everything you need is in this prompt
 or on disk.
 
