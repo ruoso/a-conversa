@@ -166,7 +166,11 @@ Tech-debt registration:
 
 ## Status
 
-**Pending** — 2026-05-30.
+**Descoped — 2026-05-30.** The conditional re-audit slot and its `..._trigger_gate` sentinel were removed from `tasks/10-data-and-methodology.tji`; no WBS task tracks this re-audit any longer.
+
+Rationale: the answer is already decided and recorded — the annotation-endpoint skip holds regardless of how `pending_consequences` graduates, because annotations carry no substance facet (`ProjectedAnnotation` has no `substanceFacet` field), per [`diagnostics_annotation_endpoint_semantics_audit`](./diagnostics_annotation_endpoint_semantics_audit.md) D5. A standing `complete 0` gate plus a re-audit task waiting on an unscheduled, v1-deferred feature was pure pick-task overhead for a one-sentence conclusion already written down. The pre-stated answer is now folded into [`pending_consequences_stub.md`](./pending_consequences_stub.md) so whoever eventually authors the full implementation sees it inline. This document is retained as the historical record of the decision (it is cited by sibling annotation-endpoint audit refinements); it is no longer a task refinement.
+
+### Superseded — original pending registration (2026-05-30)
 
 - Trigger condition unmet: no `pending_consequences` full-implementation task exists on the WBS or in git history (`pending_consequences_stub` is `complete 100` at 11841ef; no graduation commit found via `git log`).
 - Per the refinement's first acceptance criterion ("If neither holds, this task remains pending; the closer of this task confirms the trigger before doing the work") — task remains pending. No source/test changes landed.

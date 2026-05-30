@@ -135,3 +135,7 @@ Test counts:
 - Playwright smoke: 1 passed (unchanged).
 
 WBS bookkeeping: `tasks/10-data-and-methodology.tji` carries `complete 100` for `pending_consequences_stub` plus the `note "Refinement: ..."` link. `tj3 project.tjp 2>&1 | grep -iE "error|fatal"` is silent (clean parse). `make test` end-to-end green.
+
+### Note for the future full-implementation (annotation-endpoint skip)
+
+When this stub is promoted to a full diagnostic, the **annotation-endpoint skip carries forward unchanged**: pending-consequences must not surface findings on annotation-endpoint edges (N→A, A→N, A→A), because annotations carry no substance facet (`ProjectedAnnotation` has no `substanceFacet` field) — there is no source substance for an annotation endpoint to be "unagreed" about. This holds for any new substance-facet walk the full implementation adds (target-node substance, transitive source-of-source, etc.). Decided in [`diagnostics_annotation_endpoint_semantics_audit`](./diagnostics_annotation_endpoint_semantics_audit.md) D5; the skip lives at `apps/server/src/diagnostics/pending-consequences.ts`. This note replaces the former standing `pending_consequences_annotation_endpoint_revisit` task + trigger-gate, which were descoped 2026-05-30 (a pre-decided one-sentence conclusion does not warrant a gated re-audit slot) — see [`pending_consequences_annotation_endpoint_revisit.md`](./pending_consequences_annotation_endpoint_revisit.md) Status.

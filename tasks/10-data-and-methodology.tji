@@ -365,30 +365,6 @@ task data_and_methodology "Data and methodology" {
         Includes Vitest cover; no Cucumber delta.
       ->8-
     }
-    task pending_consequences_annotation_endpoint_revisit "Re-audit pending-consequences annotation-endpoint skip when stub graduates" {
-      effort 0.25d
-      allocate team
-      depends !diagnostics_annotation_endpoint_semantics_audit, !pending_consequences_annotation_endpoint_revisit_trigger_gate
-      note -8<-
-        Source of debt: diagnostics_annotation_endpoint_semantics_audit D5.
-        When pending_consequences graduates from v1 stub to full implementation, re-audit the
-        annotation-endpoint skip. Pre-stated answer: skip still holds (annotations carry no
-        substance facet). Register to prevent future implementer from re-deriving the call.
-        Refinement: tasks/refinements/data-and-methodology/pending_consequences_annotation_endpoint_revisit.md
-      ->8-
-    }
-    task pending_consequences_annotation_endpoint_revisit_trigger_gate "Gate: flip to complete 100 when pending-consequences full-implementation lands" {
-      effort 0.1d
-      allocate team
-      depends !diagnostics_annotation_endpoint_semantics_audit
-      note -8<-
-        Source of debt: pending_consequences_annotation_endpoint_revisit — trigger condition unmet
-        (2026-05-30). Flip complete 100 on this gate when a pending_consequences full-implementation
-        task lands and its closer verifies the graduation has shipped. The orchestrator will then
-        surface pending_consequences_annotation_endpoint_revisit on the next pick-task pass.
-        Refinement: tasks/refinements/data-and-methodology/pending_consequences_annotation_endpoint_revisit.md
-      ->8-
-    }
   }
 
   task methodology_engine "Methodology engine" {
