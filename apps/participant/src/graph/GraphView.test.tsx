@@ -2260,3 +2260,112 @@ describe('GraphView — new-proposal-arrival flash overlay', () => {
     expect(edgeFlash?.style['underlay-color']).toBe('#f59e0b');
   });
 });
+
+// -------------------------------------------------------------------
+// Annotation-endpoint rendering — added by
+// `participant_ui.part_graph_view.part_render_annotation_endpoint_edges`.
+// Refinement: tasks/refinements/participant-ui/part_render_annotation_endpoint_edges.md
+//
+// Mirror-attribute cases pin `data-node-kind` (sentinel-string posture
+// — `"statement"` or `"annotation"`) on per-node rows, and
+// `data-annotation-kind` (the wire kind enum or empty string) on
+// annotation rows specifically. Also pins the stylesheet branch.
+// -------------------------------------------------------------------
+
+const ANNOTATION_END_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaae001';
+
+function annotationEndpointEdgeEvent(opts: {
+  sequence: number;
+  edgeId: string;
+  sourceNodeId: string;
+  targetAnnotationId: string;
+}): Event {
+  return {
+    id: `00000000-0000-4000-8000-${(0x700 + opts.sequence).toString(16).padStart(12, '0')}`,
+    sessionId: SESSION_ID,
+    sequence: opts.sequence,
+    kind: 'edge-created',
+    actor: ACTOR,
+    payload: {
+      edge_id: opts.edgeId,
+      role: 'contradicts',
+      source_node_id: opts.sourceNodeId,
+      target_annotation_id: opts.targetAnnotationId,
+      created_by: ACTOR,
+      created_at: '2026-05-17T00:00:00.000Z',
+    },
+    createdAt: '2026-05-17T00:00:00.000Z',
+  };
+}
+
+describe('GraphView — annotation-endpoint mirror attributes', () => {
+  it('(ann-mirror-a) every statement node row carries data-node-kind="statement" and data-annotation-kind=""', () => {
+    renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    const item = document.querySelector(
+      `[data-testid="participant-node-status"][data-node-id="${NODE_A}"]`,
+    );
+    expect(item).not.toBeNull();
+    expect(item?.getAttribute('data-node-kind')).toBe('statement');
+    expect(item?.getAttribute('data-annotation-kind')).toBe('');
+  });
+
+  it('(ann-mirror-b) a materialized annotation graph-node row carries data-node-kind="annotation" + the wire annotationKind', () => {
+    renderView();
+    seedEvent(nodeCreatedEvent({ sequence: 1, nodeId: NODE_A, wording: 'A' }));
+    seedEvent(
+      annotationCreatedEvent({
+        sequence: 2,
+        annotationId: ANNOTATION_END_ID,
+        kind: 'note',
+        targetNodeId: NODE_A,
+        targetEdgeId: null,
+      }),
+    );
+    seedEvent(
+      annotationEndpointEdgeEvent({
+        sequence: 3,
+        edgeId: EDGE_A,
+        sourceNodeId: NODE_A,
+        targetAnnotationId: ANNOTATION_END_ID,
+      }),
+    );
+    const annotationRow = document.querySelector(
+      `[data-testid="participant-node-status"][data-node-id="${ANNOTATION_END_ID}"]`,
+    );
+    expect(annotationRow).not.toBeNull();
+    expect(annotationRow?.getAttribute('data-node-kind')).toBe('annotation');
+    expect(annotationRow?.getAttribute('data-annotation-kind')).toBe('note');
+    // The edge mirror row uses the annotation id as data-target-id —
+    // uniformly with statement-node ids per Decision §5.
+    const edgeRow = document.querySelector(
+      `[data-testid="participant-edge-status"][data-edge-id="${EDGE_A}"]`,
+    );
+    expect(edgeRow).not.toBeNull();
+  });
+
+  it('(ann-mirror-c) STYLESHEET contains node[nodeKind = "annotation"] with round-tag shape + amber palette baseline', () => {
+    const sheet = STYLESHEET as unknown as ReadonlyArray<{
+      selector: string;
+      style: Record<string, unknown>;
+    }>;
+    const baseline = sheet.find((entry) => entry.selector === 'node[nodeKind = "annotation"]');
+    expect(baseline).toBeDefined();
+    expect(baseline?.style.shape).toBe('round-tag');
+    expect(baseline?.style['background-color']).toBe('#fef3c7');
+    expect(baseline?.style['border-color']).toBe('#d97706');
+    const reframe = sheet.find(
+      (entry) => entry.selector === 'node[nodeKind = "annotation"][annotationKind = "reframe"]',
+    );
+    const scope = sheet.find(
+      (entry) =>
+        entry.selector === 'node[nodeKind = "annotation"][annotationKind = "scope-change"]',
+    );
+    const stance = sheet.find(
+      (entry) => entry.selector === 'node[nodeKind = "annotation"][annotationKind = "stance"]',
+    );
+    expect(reframe?.style['border-color']).toBe('#7c3aed');
+    expect(scope?.style['border-color']).toBe('#0d9488');
+    expect(stance?.style['border-color']).toBe('#0284c7');
+  });
+});

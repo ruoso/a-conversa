@@ -98,6 +98,8 @@ function makeNode(opts: Partial<ParticipantNodeData> & { id: string }): Particip
   return {
     id: opts.id,
     wording: opts.wording ?? 'Wording text',
+    nodeKind: opts.nodeKind ?? 'statement',
+    annotationKind: opts.annotationKind ?? null,
     kind: opts.kind ?? null,
     facetStatuses: opts.facetStatuses ?? EMPTY_FACET_STATUSES,
     rollupStatus: opts.rollupStatus ?? 'none',

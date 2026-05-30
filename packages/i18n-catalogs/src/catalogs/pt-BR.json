@@ -684,6 +684,11 @@
         }
       }
     },
+    "annotation": {
+      "detail": {
+        "placeholder": "Anotação selecionada — visualização de detalhes em breve"
+      }
+    },
     "voteButton": {
       "agreeLabel": "Concordar",
       "disputeLabel": "Contestar",

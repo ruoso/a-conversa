@@ -97,7 +97,7 @@
 // per Decision §5.
 
 import type { ElementDefinition } from 'cytoscape';
-import type { EdgeRole, Event, StatementKind } from '@a-conversa/shared-types';
+import type { AnnotationKind, EdgeRole, Event, StatementKind } from '@a-conversa/shared-types';
 
 import {
   annotationCountFor,
@@ -141,6 +141,28 @@ export interface ParticipantNodeData {
   readonly id: string;
   /** Original wording from the `node-created` payload. */
   readonly wording: string;
+  /**
+   * Discriminates statement nodes (emitted from `node-created` events)
+   * from annotation graph-nodes (materialized when an `edge-created`
+   * payload references an annotation id via `source_annotation_id` /
+   * `target_annotation_id`). The shared `ParticipantNodeData` shape per
+   * Decision §3 of `part_render_annotation_endpoint_edges` lets the
+   * Cytoscape stylesheet and the DOM mirror branch on this single
+   * discriminator rather than splitting the type. Statement-only fields
+   * (`kind`, `facetStatuses`, `rollupStatus`, `isAxiom`, `ownVote`,
+   * `otherVotes`, `diagnosticHighlight`) carry their existing sentinel
+   * defaults on annotation nodes so the existing per-status / axiom-mark
+   * / vote / diagnostic selectors paint nothing on them.
+   */
+  readonly nodeKind: 'statement' | 'annotation';
+  /**
+   * For annotation graph-nodes (`nodeKind === 'annotation'`), the wire
+   * `annotation-created` kind enum value (`'note'` / `'reframe'` /
+   * `'scope-change'` / `'stance'`). `null` for statement nodes — the
+   * stylesheet's `[annotationKind = "..."]` selectors then paint nothing
+   * on statement nodes.
+   */
+  readonly annotationKind: AnnotationKind | null;
   /** Committed classification, or `null` while the node is unclassified. */
   readonly kind: StatementKind | null;
   /** Per-facet status record, sourced from the `FacetStatusIndex`. */
@@ -470,6 +492,21 @@ export function projectGraph(
   // entry per ADR 0030 §7.
   const currentClassificationByNode = new Map<string, StatementKind>();
   const edges: ParticipantEdgeElement[] = [];
+  // Annotation-endpoint widening per
+  // `tasks/refinements/participant-ui/part_render_annotation_endpoint_edges.md`.
+  // `annotationPayloads` caches `{ id, kind, content }` from each
+  // `annotation-created` event in arrival order; the deferred
+  // materialization pass at the end of the walk emits one annotation
+  // graph-node per id in `referencedAnnotationIds ∩ annotationPayloads`
+  // (per Decision §1 — conditional materialization, only annotations
+  // referenced as an edge endpoint become graph-nodes). The Map
+  // preserves insertion order so the emitted nodes inherit the
+  // `annotation-created` arrival order (acceptance criterion case H).
+  const annotationPayloads = new Map<
+    string,
+    { id: string; kind: AnnotationKind; content: string }
+  >();
+  const referencedAnnotationIds = new Set<string>();
 
   for (const event of events) {
     if (event.kind === 'node-created') {
@@ -480,6 +517,8 @@ export function projectGraph(
         data: {
           id: event.payload.node_id,
           wording: event.payload.wording,
+          nodeKind: 'statement',
+          annotationKind: null,
           kind: null,
           facetStatuses: slot.facetStatuses,
           rollupStatus: slot.rollupStatus,
@@ -500,17 +539,55 @@ export function projectGraph(
       continue;
     }
 
+    if (event.kind === 'annotation-created') {
+      // Cache the annotation payload for the deferred materialization
+      // pass after the walk. Per Decision §1 of
+      // `part_render_annotation_endpoint_edges` annotations are only
+      // emitted as graph-nodes when referenced as an `edge-created`
+      // endpoint — the cache lets the materialization pass look up the
+      // kind + content without re-walking. Insertion order matches the
+      // `annotation-created` arrival order so the eventual emit order is
+      // deterministic (acceptance criterion case H).
+      annotationPayloads.set(event.payload.annotation_id, {
+        id: event.payload.annotation_id,
+        kind: event.payload.kind,
+        content: event.payload.content,
+      });
+      continue;
+    }
+
     if (event.kind === 'edge-created') {
-      // Annotation-endpoint edges (per `edge_target_annotation_schema_extension`
-      // + `projection_edge_annotation_endpoint`) flow through the
-      // projection layer now, but the participant's Cytoscape canvas
-      // doesn't yet render annotations as graph nodes — so an
-      // annotation-endpoint edge has no source/target id to bind to.
-      // Skip until `part_render_annotation_endpoint_edges` resolves
-      // the canvas-rendering design.
+      // Annotation-endpoint resolution — the wire schema's XOR `.refine()`
+      // guarantees exactly one of `source_node_id` / `source_annotation_id`
+      // is set per endpoint (symmetric for target). The `?? null` tail is
+      // defensive: if the refinement were ever weakened the projector
+      // falls through and the edge silently drops rather than throwing.
+      const sourceId = event.payload.source_node_id ?? event.payload.source_annotation_id ?? null;
+      const targetId = event.payload.target_node_id ?? event.payload.target_annotation_id ?? null;
+      if (sourceId === null || targetId === null) continue;
+      // Track annotation-endpoint references so the materialization pass
+      // emits a graph-node per referenced annotation id.
+      if (event.payload.source_annotation_id !== undefined) {
+        referencedAnnotationIds.add(event.payload.source_annotation_id);
+      }
+      if (event.payload.target_annotation_id !== undefined) {
+        referencedAnnotationIds.add(event.payload.target_annotation_id);
+      }
+      // Per Decision §2: an `edge-created` referencing an annotation id
+      // whose `annotation-created` event hasn't been seen (malformed log)
+      // silently `continue`-skips — the materialization pass only emits
+      // graph-nodes for `referencedAnnotationIds ∩ annotationPayloads`,
+      // so a Cytoscape `cy.add()` on this edge would otherwise throw
+      // for an unknown source/target id.
       if (
-        event.payload.source_node_id === undefined ||
-        event.payload.target_node_id === undefined
+        event.payload.source_annotation_id !== undefined &&
+        !annotationPayloads.has(event.payload.source_annotation_id)
+      ) {
+        continue;
+      }
+      if (
+        event.payload.target_annotation_id !== undefined &&
+        !annotationPayloads.has(event.payload.target_annotation_id)
       ) {
         continue;
       }
@@ -519,8 +596,8 @@ export function projectGraph(
         group: 'edges',
         data: {
           id: event.payload.edge_id,
-          source: event.payload.source_node_id,
-          target: event.payload.target_node_id,
+          source: sourceId,
+          target: targetId,
           role: event.payload.role,
           facetStatuses: slot.facetStatuses,
           rollupStatus: slot.rollupStatus,
@@ -596,6 +673,50 @@ export function projectGraph(
       };
       continue;
     }
+  }
+
+  // Annotation graph-node materialization pass — per Decision §1 of
+  // `part_render_annotation_endpoint_edges`. Emit one node per id in
+  // `referencedAnnotationIds ∩ annotationPayloads.keys()` (only
+  // annotations whose `annotation-created` event was seen, and only
+  // those referenced by at least one `edge-created` endpoint). Iterate
+  // `annotationPayloads` (insertion order = `annotation-created` arrival
+  // order) so the emit order is deterministic (case H). Statement-only
+  // fields carry sentinel defaults per Decision §3 — `kind: null`,
+  // `facetStatuses: EMPTY_FACET_STATUSES`, `rollupStatus: 'none'`,
+  // `isAxiom: false`, `ownVote: 'none'`, `otherVotes: EMPTY_OTHER_VOTES_LIST`,
+  // `diagnosticHighlight: null`. `hasAnnotation` / `annotationCount` /
+  // `isFlashing` are sourced uniformly from the existing indexes so
+  // annotation-of-annotation overlay propagation (Decision §7 — future
+  // task) and flash on new-annotation arrival both work today via the
+  // existing entity-id keying.
+  for (const [annotationId, payload] of annotationPayloads) {
+    if (!referencedAnnotationIds.has(annotationId)) continue;
+    const dimensions = computeNodeDimensions(payload.content);
+    const element: ParticipantNodeElement = {
+      group: 'nodes',
+      data: {
+        id: payload.id,
+        wording: payload.content,
+        nodeKind: 'annotation',
+        annotationKind: payload.kind,
+        kind: null,
+        facetStatuses: EMPTY_FACET_STATUSES,
+        rollupStatus: 'none',
+        isAxiom: false,
+        hasAnnotation: nodeHasAnnotation(nodeAnnotationIndex, payload.id),
+        annotationCount: annotationCountFor(nodeAnnotationIndex, payload.id),
+        diagnosticHighlight: null,
+        ownVote: 'none',
+        otherVotes: EMPTY_OTHER_VOTES_LIST,
+        isFlashing: flashIndex.get(payload.id) === true,
+        width: dimensions.width,
+        height: dimensions.height,
+        textMaxWidth: dimensions.textMaxWidth,
+      },
+    };
+    nodeIndexById.set(payload.id, nodes.length);
+    nodes.push(element);
   }
 
   return { nodes, edges };

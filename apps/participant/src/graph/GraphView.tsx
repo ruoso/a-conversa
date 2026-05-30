@@ -729,6 +729,63 @@ export const STYLESHEET: StylesheetJson = [
       width: 4,
     },
   },
+  // Annotation graph-node branch — per Decision §4 of
+  // `tasks/refinements/participant-ui/part_render_annotation_endpoint_edges.md`.
+  // The skip-guard at `projectGraph.ts:503-516` previously dropped
+  // annotation-endpoint edges because annotations had no graph-node id
+  // to bind to; the projection-layer + Cytoscape now materialize an
+  // annotation graph-node per referenced-annotation-id, and this
+  // selector group paints those nodes distinctly from statement nodes.
+  //
+  // Round-tag shape (Cytoscape's `'round-tag'`) reads as "commentary"
+  // rather than "statement"; amber-50 fill + amber-600 border match the
+  // existing annotation overlay vocabulary; smaller font (12 vs 14)
+  // signals visual subordinance to statement nodes. The per-status /
+  // axiom-mark / vote / diagnostic selectors above continue to fire on
+  // annotation nodes because the projector stamps sentinel defaults
+  // (`rollupStatus: 'none'`, `isAxiom: false`, `ownVote: 'none'`,
+  // `diagnosticHighlight: null`) per Decision §3 — and each of those
+  // selectors only paints on non-sentinel values, so the composition
+  // produces no cross-layer interference.
+  {
+    selector: 'node[nodeKind = "annotation"]',
+    style: {
+      shape: 'round-tag',
+      'background-color': '#fef3c7', // amber-50
+      'border-color': '#d97706', // amber-600
+      'border-width': 1.5,
+      'font-size': '12px',
+    },
+  },
+  // Per-`annotationKind` palette overrides — matches the moderator's
+  // `AnnotationBadge` four-color vocabulary so cross-surface identity
+  // stays consistent. Each override claims `border-color` only; shape
+  // + fill + font stay owned by the `node[nodeKind = "annotation"]`
+  // baseline above.
+  {
+    selector: 'node[nodeKind = "annotation"][annotationKind = "note"]',
+    style: {
+      'border-color': '#d97706', // amber-600
+    },
+  },
+  {
+    selector: 'node[nodeKind = "annotation"][annotationKind = "reframe"]',
+    style: {
+      'border-color': '#7c3aed', // violet-600
+    },
+  },
+  {
+    selector: 'node[nodeKind = "annotation"][annotationKind = "scope-change"]',
+    style: {
+      'border-color': '#0d9488', // teal-600
+    },
+  },
+  {
+    selector: 'node[nodeKind = "annotation"][annotationKind = "stance"]',
+    style: {
+      'border-color': '#0284c7', // sky-600
+    },
+  },
 ];
 
 export interface GraphViewProps {
@@ -922,7 +979,7 @@ function ownVoteAttr(value: OwnVote): 'agree' | 'dispute' | 'none' {
 function selectedFlag(
   id: string,
   selected: Selection | null,
-  kind: 'node' | 'edge',
+  kind: 'node' | 'edge' | 'annotation',
 ): 'true' | 'false' {
   return selected?.kind === kind && selected.id === id ? 'true' : 'false';
 }
@@ -983,12 +1040,23 @@ export function handleTap(event: EventObject): void {
   // unknown-target branch unreachable for any future target shape.
   const targetWithIsNode = target as { isNode?: () => boolean; isEdge?: () => boolean };
   if (typeof targetWithIsNode.isNode === 'function' && targetWithIsNode.isNode()) {
-    const node = target as { id: () => string; select: () => unknown };
+    const node = target as {
+      id: () => string;
+      data: (key: string) => unknown;
+      select: () => unknown;
+    };
     cy.$(':selected')
       .not(target as never)
       .unselect();
     node.select();
-    useSelectionStore.getState().select({ kind: 'node', id: node.id() });
+    // Read `data.nodeKind` to discriminate between statement nodes and
+    // materialized annotation graph-nodes (per Decision §6 of
+    // `part_render_annotation_endpoint_edges`). Annotation taps write
+    // the `'annotation'` discriminant so the entity-detail-panel renders
+    // the placeholder branch instead of the statement detail body.
+    const nodeKind = node.data('nodeKind');
+    const selectionKind = nodeKind === 'annotation' ? 'annotation' : 'node';
+    useSelectionStore.getState().select({ kind: selectionKind, id: node.id() });
     return;
   }
   if (typeof targetWithIsNode.isEdge === 'function' && targetWithIsNode.isEdge()) {
@@ -1334,6 +1402,8 @@ export function GraphView({
             key={`node-${node.data.id}`}
             data-testid="participant-node-status"
             data-node-id={node.data.id}
+            data-node-kind={node.data.nodeKind}
+            data-annotation-kind={node.data.annotationKind ?? ''}
             data-rollup-status={rollupAttr(node.data.rollupStatus)}
             data-facet-classification={facetAttr(node.data.facetStatuses.classification)}
             data-facet-substance={facetAttr(node.data.facetStatuses.substance)}
@@ -1344,7 +1414,11 @@ export function GraphView({
             data-diagnostic-severity={diagnosticSeverityAttr(node.data.diagnosticHighlight)}
             data-diagnostic-kinds={diagnosticKindsAttr(node.data.diagnosticHighlight)}
             data-own-vote={ownVoteAttr(node.data.ownVote)}
-            data-selected={selectedFlag(node.data.id, selected, 'node')}
+            data-selected={selectedFlag(
+              node.data.id,
+              selected,
+              node.data.nodeKind === 'annotation' ? 'annotation' : 'node',
+            )}
             data-flashing={flashingAttr(node.data.isFlashing)}
             className={node.data.isFlashing ? 'motion-safe:animate-pulse' : undefined}
           >

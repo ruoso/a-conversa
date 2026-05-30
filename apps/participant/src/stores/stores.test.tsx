@@ -105,6 +105,21 @@ describe('useSelectionStore', () => {
     useSelectionStore.getState().clear();
     expect(useSelectionStore.getState().selected).toBeNull();
   });
+
+  it('round-trips the annotation discriminant per part_render_annotation_endpoint_edges Decision §6', () => {
+    // Annotation graph-nodes are materialized when an `edge-created`
+    // payload references an annotation id; tapping one writes the
+    // `'annotation'` discriminant to the store so the entity-detail-panel
+    // renders the placeholder instead of the statement-node body.
+    const ANNOTATION_ID = '00000000-0000-4000-8000-0000000000aa';
+    useSelectionStore.getState().select({ kind: 'annotation', id: ANNOTATION_ID });
+    expect(useSelectionStore.getState().selected).toEqual({
+      kind: 'annotation',
+      id: ANNOTATION_ID,
+    });
+    useSelectionStore.getState().clear();
+    expect(useSelectionStore.getState().selected).toBeNull();
+  });
 });
 
 describe('useUiStore', () => {

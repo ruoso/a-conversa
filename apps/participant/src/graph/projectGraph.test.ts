@@ -58,7 +58,7 @@
 // envelope construction idiom.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { EdgeRole, Event, StatementKind } from '@a-conversa/shared-types';
+import type { AnnotationKind, EdgeRole, Event, StatementKind } from '@a-conversa/shared-types';
 
 import { projectGraph } from './projectGraph';
 import type { Annotation } from './annotations';
@@ -1740,5 +1740,358 @@ describe('projectGraph — isFlashing stamping (part_proposal_notification)', ()
     );
     expect(nodes[0]?.data.kind).toBe('fact');
     expect(nodes[0]?.data.isFlashing).toBe(true);
+  });
+});
+
+// -------------------------------------------------------------------
+// Annotation-endpoint edge rendering — added by
+// `participant_ui.part_graph_view.part_render_annotation_endpoint_edges`.
+// Refinement: tasks/refinements/participant-ui/part_render_annotation_endpoint_edges.md
+//
+// Cases A–H pin the conditional materialization rule (Decision §1),
+// the three round-trip endpoint shapes, the malformed-log skip
+// (Decision §2), the sentinel-default posture for statement-only
+// fields on annotation nodes (Decision §3), the `nodeKind` /
+// `annotationKind` discriminator surfaces, and the deterministic emit
+// order (annotation graph-nodes appear at the end of `nodes` in
+// `annotation-created` arrival order filtered by referenced-set
+// membership).
+// -------------------------------------------------------------------
+
+const ANNOTATION_X = '00000000-0000-4000-8000-000000000a01';
+const ANNOTATION_Y = '00000000-0000-4000-8000-000000000a02';
+const ANNOTATION_Z = '00000000-0000-4000-8000-000000000a03';
+
+function makeAnnotationCreated(opts: {
+  sequence: number;
+  annotationId: string;
+  kind: AnnotationKind;
+  content?: string;
+  targetNodeId?: string | null;
+  targetEdgeId?: string | null;
+}): Event {
+  // The wire schema's XOR `.refine()` requires exactly one of
+  // `target_node_id` / `target_edge_id` to be non-null. Default the
+  // unspecified arm to `null` so callers only pin the side they care
+  // about — for the annotation-endpoint cases the target is usually
+  // irrelevant (the edge does the binding).
+  const targetNodeId = opts.targetNodeId ?? null;
+  const targetEdgeId =
+    opts.targetEdgeId ?? (targetNodeId === null ? '00000000-0000-4000-8000-000000000abc' : null);
+  return {
+    id: `00000000-0000-4000-8000-${(0x400 + opts.sequence).toString(16).padStart(12, '0')}`,
+    sessionId: SESSION_ID,
+    sequence: opts.sequence,
+    kind: 'annotation-created',
+    actor: ACTOR,
+    payload: {
+      annotation_id: opts.annotationId,
+      kind: opts.kind,
+      content: opts.content ?? 'annotation body',
+      target_node_id: targetNodeId,
+      target_edge_id: targetEdgeId,
+      created_by: ACTOR,
+      created_at: '2026-05-17T00:00:00.000Z',
+    },
+    createdAt: '2026-05-17T00:00:00.000Z',
+  };
+}
+
+function makeEdgeCreatedWithAnnotationEndpoint(opts: {
+  sequence: number;
+  edgeId: string;
+  source: { kind: 'node' | 'annotation'; id: string };
+  target: { kind: 'node' | 'annotation'; id: string };
+  role?: EdgeRole;
+}): Event {
+  return {
+    id: `00000000-0000-4000-8000-${(0x600 + opts.sequence).toString(16).padStart(12, '0')}`,
+    sessionId: SESSION_ID,
+    sequence: opts.sequence,
+    kind: 'edge-created',
+    actor: ACTOR,
+    payload: {
+      edge_id: opts.edgeId,
+      role: opts.role ?? 'contradicts',
+      ...(opts.source.kind === 'node'
+        ? { source_node_id: opts.source.id }
+        : { source_annotation_id: opts.source.id }),
+      ...(opts.target.kind === 'node'
+        ? { target_node_id: opts.target.id }
+        : { target_annotation_id: opts.target.id }),
+      created_by: ACTOR,
+      created_at: '2026-05-17T00:00:00.000Z',
+    },
+    createdAt: '2026-05-17T00:00:00.000Z',
+  };
+}
+
+describe('projectGraph — annotation-endpoint rendering (part_render_annotation_endpoint_edges)', () => {
+  it('(ann-A) round-trips node→annotation endpoints — emits the statement node, the annotation graph-node, and one edge', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeAnnotationCreated({
+        sequence: 2,
+        annotationId: ANNOTATION_X,
+        kind: 'note',
+        content: 'commentary on A',
+      }),
+      makeEdgeCreatedWithAnnotationEndpoint({
+        sequence: 3,
+        edgeId: EDGE_A,
+        source: { kind: 'node', id: NODE_A },
+        target: { kind: 'annotation', id: ANNOTATION_X },
+      }),
+    ];
+    const { nodes, edges } = projectGraph(
+      events,
+      emptyIndex(),
+      emptyAxiomIndex(),
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      EMPTY_OWN_VOTES,
+      EMPTY_OTHERS_VOTES,
+    );
+    expect(nodes).toHaveLength(2);
+    const byId = new Map(nodes.map((n) => [n.data.id, n.data]));
+    expect(byId.get(NODE_A)?.nodeKind).toBe('statement');
+    expect(byId.get(ANNOTATION_X)?.nodeKind).toBe('annotation');
+    expect(edges).toHaveLength(1);
+    expect(edges[0]?.data.source).toBe(NODE_A);
+    expect(edges[0]?.data.target).toBe(ANNOTATION_X);
+  });
+
+  it('(ann-B) round-trips annotation→node endpoints — symmetric with case A', () => {
+    const events: Event[] = [
+      makeAnnotationCreated({
+        sequence: 1,
+        annotationId: ANNOTATION_X,
+        kind: 'reframe',
+      }),
+      makeNodeCreated({ sequence: 2, nodeId: NODE_A, wording: 'A' }),
+      makeEdgeCreatedWithAnnotationEndpoint({
+        sequence: 3,
+        edgeId: EDGE_A,
+        source: { kind: 'annotation', id: ANNOTATION_X },
+        target: { kind: 'node', id: NODE_A },
+      }),
+    ];
+    const { nodes, edges } = projectGraph(
+      events,
+      emptyIndex(),
+      emptyAxiomIndex(),
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      EMPTY_OWN_VOTES,
+      EMPTY_OTHERS_VOTES,
+    );
+    expect(nodes).toHaveLength(2);
+    expect(edges).toHaveLength(1);
+    expect(edges[0]?.data.source).toBe(ANNOTATION_X);
+    expect(edges[0]?.data.target).toBe(NODE_A);
+  });
+
+  it('(ann-C) round-trips annotation→annotation endpoints — emits both annotations as graph-nodes plus the edge', () => {
+    const events: Event[] = [
+      makeAnnotationCreated({
+        sequence: 1,
+        annotationId: ANNOTATION_X,
+        kind: 'note',
+      }),
+      makeAnnotationCreated({
+        sequence: 2,
+        annotationId: ANNOTATION_Y,
+        kind: 'stance',
+      }),
+      makeEdgeCreatedWithAnnotationEndpoint({
+        sequence: 3,
+        edgeId: EDGE_A,
+        source: { kind: 'annotation', id: ANNOTATION_X },
+        target: { kind: 'annotation', id: ANNOTATION_Y },
+      }),
+    ];
+    const { nodes, edges } = projectGraph(
+      events,
+      emptyIndex(),
+      emptyAxiomIndex(),
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      EMPTY_OWN_VOTES,
+      EMPTY_OTHERS_VOTES,
+    );
+    expect(nodes).toHaveLength(2);
+    expect(nodes.every((n) => n.data.nodeKind === 'annotation')).toBe(true);
+    expect(edges).toHaveLength(1);
+    expect(edges[0]?.data.source).toBe(ANNOTATION_X);
+    expect(edges[0]?.data.target).toBe(ANNOTATION_Y);
+  });
+
+  it('(ann-D) overlay-only annotations (not referenced as edge endpoints) do NOT materialize as graph-nodes', () => {
+    // An `annotation-created` with no `edge-created` referencing it stays
+    // an overlay on its target node/edge (existing
+    // `part_annotation_render` contract). Per Decision §1 only referenced
+    // annotations materialize.
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeAnnotationCreated({
+        sequence: 2,
+        annotationId: ANNOTATION_X,
+        kind: 'note',
+        targetNodeId: NODE_A,
+      }),
+    ];
+    const { nodes } = projectGraph(
+      events,
+      emptyIndex(),
+      emptyAxiomIndex(),
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      EMPTY_OWN_VOTES,
+      EMPTY_OTHERS_VOTES,
+    );
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0]?.data.id).toBe(NODE_A);
+    expect(nodes[0]?.data.nodeKind).toBe('statement');
+  });
+
+  it('(ann-E) an edge referencing an unknown annotation id (no preceding annotation-created) is skipped — no edge emitted, no throw', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeEdgeCreatedWithAnnotationEndpoint({
+        sequence: 2,
+        edgeId: EDGE_A,
+        source: { kind: 'node', id: NODE_A },
+        target: { kind: 'annotation', id: ANNOTATION_X },
+      }),
+    ];
+    const { nodes, edges } = projectGraph(
+      events,
+      emptyIndex(),
+      emptyAxiomIndex(),
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      EMPTY_OWN_VOTES,
+      EMPTY_OTHERS_VOTES,
+    );
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0]?.data.id).toBe(NODE_A);
+    expect(edges).toHaveLength(0);
+  });
+
+  it('(ann-F) annotation graph-nodes carry sentinel defaults for the statement-only fields', () => {
+    const events: Event[] = [
+      makeAnnotationCreated({
+        sequence: 1,
+        annotationId: ANNOTATION_X,
+        kind: 'note',
+      }),
+      makeNodeCreated({ sequence: 2, nodeId: NODE_A, wording: 'A' }),
+      makeEdgeCreatedWithAnnotationEndpoint({
+        sequence: 3,
+        edgeId: EDGE_A,
+        source: { kind: 'node', id: NODE_A },
+        target: { kind: 'annotation', id: ANNOTATION_X },
+      }),
+    ];
+    const { nodes } = projectGraph(
+      events,
+      emptyIndex(),
+      emptyAxiomIndex(),
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      EMPTY_OWN_VOTES,
+      EMPTY_OTHERS_VOTES,
+    );
+    const annotation = nodes.find((n) => n.data.id === ANNOTATION_X);
+    expect(annotation?.data.kind).toBeNull();
+    expect(annotation?.data.facetStatuses).toEqual({});
+    expect(annotation?.data.rollupStatus).toBe('none');
+    expect(annotation?.data.isAxiom).toBe(false);
+    expect(annotation?.data.ownVote).toBe('none');
+    expect(annotation?.data.otherVotes).toBe(EMPTY_OTHER_VOTES_LIST);
+    expect(annotation?.data.diagnosticHighlight).toBeNull();
+  });
+
+  it('(ann-G) annotation graph-nodes carry nodeKind: "annotation", annotationKind matching the wire kind, wording from the content, and the annotation id as data.id', () => {
+    const events: Event[] = [
+      makeAnnotationCreated({
+        sequence: 1,
+        annotationId: ANNOTATION_X,
+        kind: 'reframe',
+        content: 'reframe text',
+      }),
+      makeNodeCreated({ sequence: 2, nodeId: NODE_A, wording: 'A' }),
+      makeEdgeCreatedWithAnnotationEndpoint({
+        sequence: 3,
+        edgeId: EDGE_A,
+        source: { kind: 'node', id: NODE_A },
+        target: { kind: 'annotation', id: ANNOTATION_X },
+      }),
+    ];
+    const { nodes } = projectGraph(
+      events,
+      emptyIndex(),
+      emptyAxiomIndex(),
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      EMPTY_OWN_VOTES,
+      EMPTY_OTHERS_VOTES,
+    );
+    const annotation = nodes.find((n) => n.data.id === ANNOTATION_X);
+    expect(annotation).toBeDefined();
+    expect(annotation?.data.nodeKind).toBe('annotation');
+    expect(annotation?.data.annotationKind).toBe('reframe');
+    expect(annotation?.data.wording).toBe('reframe text');
+  });
+
+  it('(ann-H) annotation graph-nodes emit at the end of the nodes array in annotation-created arrival order filtered by referenced-set membership', () => {
+    // Z is created first but only Y and X get referenced as endpoints
+    // (in that order via two edges). The statement node N appears in
+    // `nodes` first; then the annotation graph-nodes appear in their
+    // `annotation-created` arrival order — Y then X — filtered by the
+    // referenced set (Z is excluded). The unreferenced annotation Z
+    // stays an overlay, not a graph-node.
+    const EDGE_B = '00000000-0000-4000-8000-00000000000f';
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeAnnotationCreated({ sequence: 2, annotationId: ANNOTATION_Y, kind: 'note' }),
+      makeAnnotationCreated({ sequence: 3, annotationId: ANNOTATION_X, kind: 'stance' }),
+      makeAnnotationCreated({
+        sequence: 4,
+        annotationId: ANNOTATION_Z,
+        kind: 'reframe',
+        targetNodeId: NODE_A,
+      }),
+      makeEdgeCreatedWithAnnotationEndpoint({
+        sequence: 5,
+        edgeId: EDGE_A,
+        source: { kind: 'node', id: NODE_A },
+        target: { kind: 'annotation', id: ANNOTATION_Y },
+      }),
+      makeEdgeCreatedWithAnnotationEndpoint({
+        sequence: 6,
+        edgeId: EDGE_B,
+        source: { kind: 'node', id: NODE_A },
+        target: { kind: 'annotation', id: ANNOTATION_X },
+      }),
+    ];
+    const { nodes } = projectGraph(
+      events,
+      emptyIndex(),
+      emptyAxiomIndex(),
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      EMPTY_OWN_VOTES,
+      EMPTY_OTHERS_VOTES,
+    );
+    expect(nodes.map((n) => n.data.id)).toEqual([NODE_A, ANNOTATION_Y, ANNOTATION_X]);
   });
 });

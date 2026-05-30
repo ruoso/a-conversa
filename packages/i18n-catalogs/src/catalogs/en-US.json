@@ -684,6 +684,11 @@
         }
       }
     },
+    "annotation": {
+      "detail": {
+        "placeholder": "Annotation selected — detail view coming soon"
+      }
+    },
     "voteButton": {
       "agreeLabel": "Agree",
       "disputeLabel": "Dispute",

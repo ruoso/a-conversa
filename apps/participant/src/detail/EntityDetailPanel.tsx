@@ -435,6 +435,30 @@ function EntityDetailPanelImpl(props: EntityDetailPanelProps): ReactElement {
     );
   }
 
+  // Annotation placeholder branch — per Decision §6 of
+  // `tasks/refinements/participant-ui/part_render_annotation_endpoint_edges.md`.
+  // The participant's canvas now materializes annotation graph-nodes
+  // when they are referenced as edge endpoints; tapping one writes
+  // `{ kind: 'annotation', id }` to the selection store. v0 surfaces a
+  // placeholder rather than a full annotation render — the
+  // `part_entity_detail_panel_annotation_view` follow-up will replace
+  // the placeholder with the kind / content / author detail view.
+  if (selected.kind === 'annotation') {
+    return (
+      <aside
+        data-testid="participant-detail-panel"
+        data-state="annotation"
+        data-entity-kind="annotation"
+        data-entity-id={selected.id}
+        className="w-80 shrink-0 border-l border-slate-200 bg-white overflow-y-auto p-4 text-sm"
+      >
+        <p data-testid="participant-detail-panel-annotation-placeholder" className="text-slate-500">
+          {t('participant.annotation.detail.placeholder')}
+        </p>
+      </aside>
+    );
+  }
+
   // Stale-entity branch — selection points at an id no current element
   // matches. Decision §10 — render the explanatory body; `useEffect`
   // above clears the selection on the next tick.
@@ -473,16 +497,13 @@ function EntityDetailPanelImpl(props: EntityDetailPanelProps): ReactElement {
       className="w-80 shrink-0 border-l border-slate-200 bg-white overflow-y-auto p-4 text-sm flex flex-col gap-4"
     >
       <IdentitySection
-        kind={selected.kind as 'node' | 'edge'}
+        kind={selected.kind}
         kindLabel={identityLabel}
         wording={wordingOrLabel}
         entityId={entity.id}
       />
       <RollupStatusSection rollupStatus={entity.rollupStatus} />
-      <FacetPillRowSection
-        kind={selected.kind as 'node' | 'edge'}
-        facetStatuses={entity.facetStatuses}
-      />
+      <FacetPillRowSection kind={selected.kind} facetStatuses={entity.facetStatuses} />
       {isNode ? (
         <AxiomMarkAttributionSection
           marks={nodeAxiomMarkIndex.get(entity.id) ?? []}
@@ -509,7 +530,7 @@ function EntityDetailPanelImpl(props: EntityDetailPanelProps): ReactElement {
         currentParticipantId={currentParticipantId}
         entityId={entity.id}
         ownVoteIndex={ownVoteIndex}
-        kind={selected.kind as 'node' | 'edge'}
+        kind={selected.kind}
         sectionHeading={t('participant.detailPanel.sectionTitle.ownVote')}
         facetLabel={(facet) => t(`methodology.facet.${facet}`)}
         voteArmLabel={(arm) => t(`methodology.voteChoice.${arm}`)}

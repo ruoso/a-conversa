@@ -208,6 +208,7 @@ task participant_ui "Participant (debater) UI" {
     task part_render_annotation_endpoint_edges "Render annotation-endpoint edges on participant Cytoscape canvas" {
       effort 1.5d
       allocate team
+      complete 100
       depends !part_annotation_render, data_and_methodology.projection.projection_edge_annotation_endpoint
       note -8<-
         Source of debt: projection_edge_annotation_endpoint — the participant Cytoscape canvas currently
@@ -215,6 +216,34 @@ task participant_ui "Participant (debater) UI" {
         are not yet rendered as Cytoscape nodes. Rendering annotation-endpoint edges requires resolving
         the design question of how the canvas surfaces annotations as standalone graph nodes.
         Includes Playwright cover asserting an annotation-endpoint edge appears on the canvas.
+      ->8-
+    }
+    task part_entity_detail_panel_annotation_view "Full annotation entity detail panel (kind/content/author/links)" {
+      effort 1d
+      allocate team
+      depends !part_render_annotation_endpoint_edges
+      note -8<-
+        Source of debt: part_render_annotation_endpoint_edges — the entity-detail-panel today renders a
+        placeholder ("Annotation selected — detail view coming soon") when the selected entity is an
+        annotation. This task replaces the placeholder with the full annotation view: kind label, content
+        text, author attribution, target-of-this-annotation link, contradicts-this-annotation edge list.
+        Likely mirrors the moderator's AnnotationBadge extracted into the shell package. Includes
+        Playwright cover asserting the panel surfaces annotation content + kind + author.
+        Source commit: participant_ui.part_render_annotation_endpoint_edges landing commit.
+      ->8-
+    }
+    task part_annotation_of_annotation_overlay_chain "Annotation-of-annotation overlay propagation on materialized annotation graph-nodes" {
+      effort 0.5d
+      allocate team
+      depends !part_render_annotation_endpoint_edges
+      note -8<-
+        Source of debt: part_render_annotation_endpoint_edges — annotation graph-nodes today emit
+        hasAnnotation: false / annotationCount: 0 regardless of whether other annotations target them.
+        Once the methodology engine adopts coherency_annotation_of_annotation_chain_rule end-to-end,
+        annotation A1 targeting annotation A2 should overlay on A2's materialized graph-node body.
+        Requires widening groupAnnotationsByNode to a unified groupAnnotationsByEntityId over
+        {kind, id} buckets. Includes Vitest cover (no Playwright — observable via the mirror).
+        Source commit: participant_ui.part_render_annotation_endpoint_edges landing commit.
       ->8-
     }
   }

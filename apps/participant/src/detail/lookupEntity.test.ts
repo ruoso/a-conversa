@@ -20,6 +20,8 @@ function nodeData(id: string, wording: string): ParticipantNodeData {
   return {
     id,
     wording,
+    nodeKind: 'statement',
+    annotationKind: null,
     kind: null,
     facetStatuses: EMPTY_FACET_STATUSES,
     rollupStatus: 'none',

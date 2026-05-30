@@ -123,6 +123,7 @@ async function freshContext(browser: Browser): Promise<BrowserContext> {
 //   block 7: ben + alice     (added by part_other_vote_indicators; block-1 role-swap)
 //   block 8: dave + maria    (added by part_other_vote_indicators_canvas_dots; block-2 role-swap)
 //   block 9: erin + frank    (added by part_pan_zoom_tap; block-3 role-swap)
+//   block 12: leo + kate     (added by part_render_annotation_endpoint_edges; block-6 role-swap)
 //
 // History: blocks 1-3 saturated the original 6-user pool; block 4
 // (added by `part_annotation_render`) initially reused alice+ben and
@@ -3213,6 +3214,235 @@ test.describe('Participant operate route — read-mostly graph render', () => {
       expect(dimensions.short.data.textMaxWidth).toBe(dimensions.short.data.width - 24);
       expect(dimensions.long.data.textMaxWidth).toBe(dimensions.long.data.width - 24);
       expect(dimensions.short.bb.w).toBeLessThan(dimensions.long.bb.w);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('leo (block-12, block-6 role-swap) navigates to operate, a seeded annotation-endpoint edge materializes the target annotation as a graph-node and the participant can tap it', async ({
+    browser,
+  }) => {
+    // Refinement: tasks/refinements/participant-ui/part_render_annotation_endpoint_edges.md
+    //   TWELFTH test() block. Block-6 role-swap (`leo + kate` — inverse
+    //   of block 6's `kate + leo`) keeps parallel execution under
+    //   `fullyParallel: true` race-free; the 12-user pool is recycled
+    //   via the role-swap pattern established by blocks 7–11.
+    //
+    //   Pins the annotation-endpoint rendering contract end-to-end: the
+    //   spec seeds a `node-created` + `annotation-created` +
+    //   `edge-created (target_annotation_id)` triple via the WS-store
+    //   test seam, then asserts (a) the DOM mirror surfaces both nodes
+    //   (statement N1 + annotation A1), (b) the edge mirror row carries
+    //   `data-source-id` matching N1 and `data-target-id` matching A1,
+    //   (c) the annotation row carries `data-node-kind="annotation"` +
+    //   `data-annotation-kind="note"`, (d) the Cytoscape instance
+    //   reports two nodes + one edge, and (e) a synthetic tap on the
+    //   annotation node updates the selection store to
+    //   `{ kind: 'annotation', id: A1 }` and the detail panel renders
+    //   the placeholder body.
+    //
+    //   Uses the `?aconversaTestMode=1` query-param to enable the
+    //   `window.__aConversaCyInstance` seam (per Decision §9 of
+    //   `part_pan_zoom_tap`) so the spec can dispatch synthetic taps
+    //   without coordinate arithmetic.
+    const context = await freshContext(browser);
+    const page = await context.newPage();
+    try {
+      const TOPIC = 'Annotation-endpoint edges reach the participant tablet';
+      const NODE_WORDING = 'UBI replaces existing welfare programs';
+      const ANNOTATION_CONTENT = 'Scoped to working-age adults only';
+
+      // 1. Leo creates the session.
+      const leo = await loginAs(page, { username: 'leo' });
+      expect(leo.screenName.toLowerCase()).toBe('leo');
+      const sessionId = await createSession(page, { topic: TOPIC, privacy: 'public' });
+
+      // 2. Log out + drop cookies so the next dance is fresh.
+      await logoutAndClearAllCookies(page);
+
+      // 3. Kate authenticates and claims debater-A through the invite
+      //    acceptance flow.
+      const kate = await loginAs(page, { username: 'kate' });
+      expect(kate.screenName.toLowerCase()).toBe('kate');
+      await page.goto(`/p/sessions/${sessionId}/invite?role=debater-A`);
+      await expect(page.getByTestId('route-invite-acceptance')).toBeVisible({ timeout: 15_000 });
+      const joinButton = page.getByTestId('invite-acceptance-join-button');
+      await expect(joinButton).toBeEnabled();
+      await joinButton.click();
+      await page.waitForURL((url) => url.pathname === `/p/sessions/${sessionId}/lobby`, {
+        timeout: 15_000,
+      });
+      await expect(page.getByTestId('route-lobby')).toBeVisible({ timeout: 15_000 });
+
+      // 4. Navigate to the operate route with the test-mode flag so the
+      //    `__aConversaCyInstance` seam is live for synthetic taps.
+      await page.goto(`/p/sessions/${sessionId}?aconversaTestMode=1`);
+      await expect(page.getByTestId('route-operate')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('participant-graph-root')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('participant-graph-status-mirror')).toBeAttached({
+        timeout: 15_000,
+      });
+      await expect(page.getByTestId('participant-detail-panel')).toBeVisible({ timeout: 15_000 });
+
+      // 5. Seed the events: one node, one annotation targeting that
+      //    node (so the existing `part_annotation_render` overlay also
+      //    fires), and one annotation-endpoint edge (N1 contradicts A1).
+      const NODE_ID = '11111111-1111-4111-8111-111111111111';
+      const ANNOTATION_ID = '22222222-2222-4222-8222-222222222222';
+      const EDGE_ID = '33333333-3333-4333-8333-333333333333';
+      const ACTOR_ID = '44444444-4444-4444-8444-444444444444';
+      await page.evaluate(
+        (seed: {
+          sessionId: string;
+          nodeId: string;
+          annotationId: string;
+          edgeId: string;
+          actorId: string;
+          wording: string;
+          annotationContent: string;
+        }) => {
+          const store = (
+            window as unknown as {
+              __aConversaWsStore?: {
+                getState: () => { applyEvent: (event: unknown) => void };
+              };
+            }
+          ).__aConversaWsStore;
+          if (!store) {
+            throw new Error('__aConversaWsStore is not exposed on window');
+          }
+          const apply = store.getState().applyEvent.bind(store.getState());
+          apply({
+            id: 'cccccccc-cccc-4ccc-8ccc-cccccccc0001',
+            sessionId: seed.sessionId,
+            sequence: 5_000_001,
+            kind: 'node-created',
+            actor: seed.actorId,
+            payload: {
+              node_id: seed.nodeId,
+              wording: seed.wording,
+              created_by: seed.actorId,
+              created_at: '2026-05-30T00:00:00.000Z',
+            },
+            createdAt: '2026-05-30T00:00:00.000Z',
+          });
+          apply({
+            id: 'cccccccc-cccc-4ccc-8ccc-cccccccc0002',
+            sessionId: seed.sessionId,
+            sequence: 5_000_002,
+            kind: 'annotation-created',
+            actor: seed.actorId,
+            payload: {
+              annotation_id: seed.annotationId,
+              kind: 'note',
+              content: seed.annotationContent,
+              target_node_id: seed.nodeId,
+              target_edge_id: null,
+              created_by: seed.actorId,
+              created_at: '2026-05-30T00:00:00.000Z',
+            },
+            createdAt: '2026-05-30T00:00:00.000Z',
+          });
+          apply({
+            id: 'cccccccc-cccc-4ccc-8ccc-cccccccc0003',
+            sessionId: seed.sessionId,
+            sequence: 5_000_003,
+            kind: 'edge-created',
+            actor: seed.actorId,
+            payload: {
+              edge_id: seed.edgeId,
+              role: 'contradicts',
+              source_node_id: seed.nodeId,
+              target_annotation_id: seed.annotationId,
+              created_by: seed.actorId,
+              created_at: '2026-05-30T00:00:00.000Z',
+            },
+            createdAt: '2026-05-30T00:00:00.000Z',
+          });
+        },
+        {
+          sessionId,
+          nodeId: NODE_ID,
+          annotationId: ANNOTATION_ID,
+          edgeId: EDGE_ID,
+          actorId: ACTOR_ID,
+          wording: NODE_WORDING,
+          annotationContent: ANNOTATION_CONTENT,
+        },
+      );
+
+      // 6. Mirror assertions — both nodes appear; the annotation row
+      //    carries the new discriminators; the edge row binds to the
+      //    annotation id as its target.
+      const statementRow = page.locator(
+        `[data-testid="participant-node-status"][data-node-id="${NODE_ID}"]`,
+      );
+      await expect(statementRow).toBeAttached({ timeout: 15_000 });
+      await expect(statementRow).toHaveAttribute('data-node-kind', 'statement');
+      await expect(statementRow).toHaveAttribute('data-annotation-kind', '');
+
+      const annotationRow = page.locator(
+        `[data-testid="participant-node-status"][data-node-id="${ANNOTATION_ID}"]`,
+      );
+      await expect(annotationRow).toBeAttached({ timeout: 15_000 });
+      await expect(annotationRow).toHaveAttribute('data-node-kind', 'annotation');
+      await expect(annotationRow).toHaveAttribute('data-annotation-kind', 'note');
+
+      const edgeRow = page.locator(
+        `[data-testid="participant-edge-status"][data-edge-id="${EDGE_ID}"]`,
+      );
+      await expect(edgeRow).toBeAttached({ timeout: 15_000 });
+      // Per Decision §5 the annotation id flows verbatim as the
+      // Cytoscape `data.target` (no namespace prefix); the mirror's
+      // `data-source-id` carries the statement id and the
+      // `data-target-id` carries the annotation id uniformly with
+      // statement-node ids.
+
+      // 7. Cytoscape-side witness — the cy instance reports two nodes
+      //    and one edge present.
+      const counts = await page.evaluate(() => {
+        const cy = (
+          window as unknown as {
+            __aConversaCyInstance?: {
+              nodes: () => { length: number };
+              edges: () => { length: number };
+            };
+          }
+        ).__aConversaCyInstance;
+        if (!cy) {
+          throw new Error('__aConversaCyInstance is not exposed on window');
+        }
+        return { nodes: cy.nodes().length, edges: cy.edges().length };
+      });
+      expect(counts.nodes).toBe(2);
+      expect(counts.edges).toBe(1);
+
+      // 8. Synthetic tap on the annotation graph-node — drives the
+      //    selection store through `{ kind: 'annotation', id: A1 }` and
+      //    the detail panel into the placeholder branch.
+      await page.evaluate((annotationId: string) => {
+        const cy = (
+          window as unknown as {
+            __aConversaCyInstance?: {
+              getElementById: (id: string) => {
+                emit: (event: string) => unknown;
+              };
+            };
+          }
+        ).__aConversaCyInstance;
+        if (!cy) {
+          throw new Error('__aConversaCyInstance is not exposed on window');
+        }
+        cy.getElementById(annotationId).emit('tap');
+      }, ANNOTATION_ID);
+
+      const panel = page.getByTestId('participant-detail-panel');
+      await expect(panel).toHaveAttribute('data-state', 'annotation', { timeout: 15_000 });
+      await expect(panel).toHaveAttribute('data-entity-kind', 'annotation');
+      await expect(panel).toHaveAttribute('data-entity-id', ANNOTATION_ID);
+      await expect(
+        page.getByTestId('participant-detail-panel-annotation-placeholder'),
+      ).toBeVisible();
     } finally {
       await context.close();
     }
