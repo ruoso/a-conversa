@@ -89,6 +89,7 @@ vi.mock('openid-client', () => ({
 const { beginAuthFlow, completeAuthFlow, AuthStateMismatchError } = await import('./flow.js');
 const {
   createFlowStateStore,
+  createPostgresFlowStateStore,
   FlowStateCapacityError,
   FLOW_STATE_MAX_ENTRIES_ENV,
   MAX_FLOW_STATE_ENTRIES,
@@ -470,5 +471,108 @@ describe('resolveFlowStateMaxEntries', () => {
         process.env['FLOW_STATE_MAX_ENTRIES'] = prior;
       }
     }
+  });
+});
+
+describe('Postgres flow-state store (ADR 0035 / M3-review auth.md F-005)', () => {
+  interface StoredRow {
+    nonce: string;
+    codeVerifier: string;
+    expiresAt: number;
+  }
+
+  function makeSharedPool(now: () => number): {
+    readonly rows: Map<string, StoredRow>;
+    readonly sql: string[];
+    query<TRow extends Record<string, unknown> = Record<string, unknown>>(
+      text: string,
+      params?: ReadonlyArray<unknown>,
+    ): Promise<{ rows: TRow[] }>;
+  } {
+    const rows = new Map<string, StoredRow>();
+    const sql: string[] = [];
+    return {
+      rows,
+      sql,
+      query<TRow extends Record<string, unknown> = Record<string, unknown>>(
+        text: string,
+        params: ReadonlyArray<unknown> = [],
+      ): Promise<{ rows: TRow[] }> {
+        sql.push(text);
+        const result: Array<Record<string, unknown>> = [];
+        if (text.includes('INSERT INTO auth_flow_state')) {
+          for (const [state, entry] of rows) {
+            if (entry.expiresAt <= now()) rows.delete(state);
+          }
+          const [state, nonce, codeVerifier, expiresAt, , maxEntries] = params as [
+            string,
+            string,
+            string,
+            number,
+            number,
+            number,
+          ];
+          if (rows.has(state) || rows.size < maxEntries) {
+            rows.set(state, { nonce, codeVerifier, expiresAt });
+            result.push({ state });
+          }
+        } else if (text.includes('RETURNING nonce, code_verifier')) {
+          const state = String(params[0]);
+          const entry = rows.get(state);
+          rows.delete(state);
+          if (entry !== undefined) {
+            result.push({
+              nonce: entry.nonce,
+              code_verifier: entry.codeVerifier,
+              expires_at_ms: entry.expiresAt,
+            });
+          }
+        } else if (text.includes('COUNT(*)::int AS count')) {
+          result.push({ count: rows.size });
+        } else if (text.includes('DELETE FROM auth_flow_state WHERE expires_at <= NOW()')) {
+          for (const [state, entry] of rows) {
+            if (entry.expiresAt <= now()) rows.delete(state);
+          }
+        }
+        return Promise.resolve({ rows: result as TRow[] });
+      },
+    };
+  }
+
+  it('shares state across instances and consumes it exactly once', async () => {
+    const pool = makeSharedPool(() => 1000);
+    const instanceA = createPostgresFlowStateStore(pool, { now: () => 1000 });
+    const instanceB = createPostgresFlowStateStore(pool, { now: () => 1000 });
+    await instanceA.put('shared-state', { nonce: 'n', codeVerifier: 'v', expiresAt: 6000 });
+    await expect(instanceB.take('shared-state')).resolves.toEqual({
+      nonce: 'n',
+      codeVerifier: 'v',
+      expiresAt: 6000,
+    });
+    await expect(instanceA.take('shared-state')).resolves.toBeUndefined();
+  });
+
+  it('rejects an expired destructive read and sweeps abandoned expired rows', async () => {
+    let clock = 1000;
+    const pool = makeSharedPool(() => clock);
+    const store = createPostgresFlowStateStore(pool, { now: () => clock });
+    await store.put('expired-on-take', { nonce: 'n', codeVerifier: 'v', expiresAt: 1500 });
+    clock = 2000;
+    await expect(store.take('expired-on-take')).resolves.toBeUndefined();
+    await store.put('abandoned', { nonce: 'n', codeVerifier: 'v', expiresAt: 2500 });
+    clock = 3000;
+    await store.sweep();
+    await expect(store.size()).resolves.toBe(0);
+  });
+
+  it('serializes cap-boundary inserts and preserves the typed capacity error', async () => {
+    const pool = makeSharedPool(() => 1000);
+    const store = createPostgresFlowStateStore(pool, { maxEntries: 1 });
+    await store.put('first', { nonce: 'n', codeVerifier: 'v', expiresAt: 6000 });
+    await expect(
+      store.put('overflow', { nonce: 'n', codeVerifier: 'v', expiresAt: 6000 }),
+    ).rejects.toBeInstanceOf(FlowStateCapacityError);
+    expect(pool.sql[0]).toContain('pg_advisory_xact_lock');
+    await expect(store.size()).resolves.toBe(1);
   });
 });

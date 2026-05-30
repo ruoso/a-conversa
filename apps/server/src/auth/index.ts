@@ -38,13 +38,17 @@ export {
 
 export {
   createFlowStateStore,
+  createPostgresFlowStateStore,
   getDefaultFlowStateStore,
   computeExpiresAt,
   DEFAULT_FLOW_STATE_TTL_MS,
   __resetDefaultFlowStateStore,
   type FlowStateStore,
+  type InMemoryFlowStateStore,
   type FlowStateEntry,
   type FlowStateStoreOptions,
+  type FlowStateDbPool,
+  type PostgresFlowStateStoreOptions,
 } from './flow-state.js';
 
 export {

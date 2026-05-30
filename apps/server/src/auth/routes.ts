@@ -432,10 +432,13 @@ const authRoutesPluginAsync: FastifyPluginAsync<AuthRoutesOptions> = (
   // pass a pre-built `oidcConfig`.
   const oidcConfig: OidcConfig = opts.oidcConfig ?? loadOidcConfig(process.env);
 
-  // Resolve the flow-state store. Production uses the singleton; tests
-  // pass a fresh per-scenario store. We resolve eagerly at registration
-  // time because the store has no constructor cost.
-  const flowState: FlowStateStore = opts.flowState ?? getDefaultFlowStateStore();
+  // Resolve the flow-state store. Production uses the Postgres-backed
+  // singleton. Tests normally inject a deterministic per-scenario store;
+  // older DB-pool-injection fixtures inherit an in-memory store so their
+  // narrow user/session pool shims do not need to emulate auth_flow_state SQL.
+  const flowState: FlowStateStore =
+    opts.flowState ??
+    (opts.pool === undefined ? getDefaultFlowStateStore() : createFlowStateStore());
 
   // Resolve the OIDC client lazily — only when the first request
   // arrives. Production callers don't pass `oidcClient`; tests pass
@@ -521,7 +524,7 @@ const authRoutesPluginAsync: FastifyPluginAsync<AuthRoutesOptions> = (
       const computeOpts: { now?: () => number } = {};
       if (opts.now !== undefined) computeOpts.now = opts.now;
       try {
-        flowState.put(state, {
+        await flowState.put(state, {
           nonce,
           codeVerifier,
           expiresAt: computeExpiresAt(computeOpts),
@@ -614,7 +617,7 @@ const authRoutesPluginAsync: FastifyPluginAsync<AuthRoutesOptions> = (
         );
       }
 
-      const stored = flowState.take(inboundState);
+      const stored = await flowState.take(inboundState);
       if (stored === undefined) {
         throw new ApiError(
           400,
