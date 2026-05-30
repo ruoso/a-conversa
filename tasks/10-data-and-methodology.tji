@@ -525,6 +525,7 @@ task data_and_methodology "Data and methodology" {
     effort 0.1d
     depends !align_vote_facet_target_vocabulary
     allocate team
+    complete 100
     note "Source of debt: tasks/refinements/data-and-methodology/align_vote_facet_target_vocabulary.md Decision §5 (option B — separate task). ADR 0030 line 82 still lists amend-node as facet-valued; the canonical implementation (server broadcast, replay projector, vote-facet-keyed.feature) classifies it as structural. Registered in commit for data_and_methodology.align_vote_facet_target_vocabulary."
   }
 

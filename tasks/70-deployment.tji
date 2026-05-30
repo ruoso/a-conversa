@@ -165,22 +165,6 @@ task deployment "Deployment" {
     }
   }
 
-  task multi_tenant "Multi-tenancy in production" {
-    depends !prod_compose, backend.session_management
-    task tenant_isolation_audit "Audit tenant isolation: no cross-session leakage" {
-      effort 1d
-      allocate team
-    }
-    task per_session_resource_limits "Per-session resource caps (event volume, connected clients)" {
-      effort 2d
-      allocate team
-    }
-    task abandoned_session_cleanup "Clean up / archive abandoned sessions" {
-      effort 1d
-      allocate team
-    }
-  }
-
   task release_process "Release process" {
     depends !prod_container, !prod_compose, !observability
     task release_versioning "Versioning scheme (semver, tags, changelog)" {
@@ -201,11 +185,6 @@ task deployment "Deployment" {
 
   task deployment_docs "Operator-facing documentation" {
     depends !prod_compose, !observability, !backup_and_export, !release_process
-    task self_host_guide "Self-hosting guide" {
-      effort 2d
-      allocate team
-      note "How to run your own a-conversa instance from scratch."
-    }
     task obs_setup_guide "OBS setup guide for show producers" {
       effort 1d
       allocate team

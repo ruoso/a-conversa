@@ -389,19 +389,27 @@ task backend "Backend" {
     task moderator_only_commit "Reject commits from non-moderator clients" {
       effort 0.5d
       allocate team
+      complete 100
+      note "Shipped inline with the WS commit handler: methodology/handlers/commit.ts requireModerator (Rule 1); requester taken from connection.user.id, never the payload. Cover: tests/behavior/backend/ws-commit.feature ('non-moderator cannot commit') + apps/server/src/ws/handlers/commit.test.ts (incl. SECURITY: ignores client-supplied moderatorId). Verified by parking-lot triage 2026-05-30."
     }
     task proposer_authority "Anyone may propose; validate proposer identity" {
       effort 0.5d
       allocate team
+      complete 100
+      note "Shipped inline with the WS propose handler: apps/server/src/ws/handlers/propose.ts stamps requester/actor from connection.user.id; the wire payload carries no proposerId/actor field. Cover: propose.test.ts (SECURITY: ignores client-supplied proposerId/actor) + tests/behavior/backend/ws-propose.feature. Verified by parking-lot triage 2026-05-30."
     }
     task reject_invalid_event_payload "Reject malformed proposals before append" {
       effort 1d
       allocate team
+      complete 100
       depends data_and_methodology.event_types.event_validation
+      note "Shipped as schema-on-write (ADR 0021): validateEvent() runs before every append in the propose/vote/commit handlers (apps/server/src/events/validate.ts); wire envelopes parsed via parseWsEnvelopeJson in ws/connection.ts. Cover: tests/behavior/backend/ws-error.feature + apps/server/src/events/validate.test.ts. Verified by parking-lot triage 2026-05-30."
     }
     task reject_orphan_references "Reject events that reference non-existent entities" {
       effort 0.5d
       allocate team
+      complete 100
+      note "Shipped inline as target-entity-not-found checks across the methodology handlers (propose.ts decompose/axiom-mark/meta-move Rule 1, vote.ts facet-target resolution, commit.ts facet checks). Cover: tests/behavior/methodology/propose-{decompose,axiom-mark,meta-move,break-edge,annotate}.feature unknown-target scenarios. Verified by parking-lot triage 2026-05-30."
     }
   }
 

@@ -518,6 +518,7 @@ task moderator_ui "Moderator UI" {
     task phase_3_1_layout_race "Strengthen Phase 3.1 drag-edge mitigation against debounce race" {
       effort 0.5d
       allocate team
+      complete 100
       depends !mod_role_palette_on_drop
       note "Tech-debt from participant_ui.part_pending_proposals.part_vote_button_per_facet (fixer attempt 3): pre-existing dagre-layout / measurement-debounce race in moderator-draw-edge.spec.ts Phase 3.1 — DrawEdgeRolePicker never mounts because the target handle moves during the 75 ms layout debounce. The test already has waitForBoundingBoxStable mitigation but the race leaks on slow runners. Strengthen the Phase 3.1 setup (explicit wait after tidy-up click for debounce to fire, re-sample handle bboxes before mouseup) so the flake no longer hard-fails the chain."
     }
@@ -660,11 +661,15 @@ task moderator_ui "Moderator UI" {
     task mod_render_annotations "Render annotations on entities" {
       effort 1d
       allocate team
+      complete 100
+      note "Already delivered by moderator_ui.mod_graph_rendering.mod_annotation_rendering (done 2026-05-11): AnnotationBadge.tsx + selectors.ts (selectAnnotations/projectAnnotations/groupAnnotationsBy{Node,Edge}) + StatementNode/StatementEdge/GraphCanvasPane badge enrichment, with tests. This entry is the same deliverable; marked complete on verification by parking-lot triage 2026-05-30."
     }
     task mod_propose_annotation_action "Propose annotation action" {
       effort 1d
       allocate team
+      complete 100
       depends !mod_render_annotations
+      note "Shipped: apps/moderator/src/layout/useAnnotateAction.ts (fires a propose envelope, kind: 'annotate') + AnnotateSubmenu.tsx, wired into GraphCanvasPane.tsx context menu (rendered at the canvas, opened on node/edge right-click). Cover: useAnnotateAction.test.tsx (success / error / validation / concurrent-gate). Verified by parking-lot triage 2026-05-30. (v1 submits annotation_kind 'note'; the kind-picker UI remains open as mod_annotation_kind_tagging.)"
     }
     task mod_annotation_kind_tagging "Annotation kind tagging (concern / reframe / stance / etc.)" {
       effort 0.5d

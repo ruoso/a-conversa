@@ -89,4 +89,22 @@ Alternatives considered and rejected:
 
 ## Amendments
 
-(none yet)
+### 2026-05-30 — `amend-node` is structural, not facet-valued
+
+The decision body above (the `proposalFacetTarget` bullet) lists `amend-node`
+among the facet-valued proposal sub-kinds. That listing is **stale**. As the
+methodology engine landed, `amend-node` was classified as **structural**
+(proposal-keyed), alongside `axiom-mark` / `meta-move` / `break-edge` /
+`annotate` — it has no facet target. The canonical implementation reflects this
+consistently:
+
+- Server broadcast — [`apps/server/src/ws/broadcast/proposal-status.ts`](../../apps/server/src/ws/broadcast/proposal-status.ts) (`facetTargetsForProposal` returns `[]` for `amend-node`).
+- Replay projector — [`apps/server/src/projection/replay.ts`](../../apps/server/src/projection/replay.ts) (`facetTargetsForReplay` lists `amend-node` among the purely-structural sub-kinds).
+- Methodology spec — [`tests/behavior/methodology/vote-facet-keyed.feature`](../../tests/behavior/methodology/vote-facet-keyed.feature) (votes against `amend-node` use `target: 'proposal'`, keyed by `proposal_id`).
+
+The client-side projectors were realigned to match by
+`data_and_methodology.align_vote_facet_target_vocabulary` (done 2026-05-28),
+which registered this amendment as follow-up. Read the facet-valued enumeration
+above as the four sub-kinds `classify-node` / `set-node-substance` /
+`set-edge-substance` / `edit-wording` only; `amend-node` belongs in the
+structural list.
