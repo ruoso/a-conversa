@@ -358,6 +358,62 @@ export function edgeIsVisible(projection: Projection, edgeId: string): boolean {
 }
 
 // ---------------------------------------------------------------
+// `annotationIsVisible` — does the projection have a visible annotation with this id?
+//
+// Used by the polymorphic-endpoint propose validators (per
+// `set_edge_substance_annotation_endpoint`'s Phase 2a/2b widening, and
+// `validateCaptureNodeProposal`'s rule 3 for the annotation-endpoint
+// arm of a capture-with-edge gesture). The check mirrors the
+// `nodeIsVisible` / `edgeIsVisible` precedent: an annotation is
+// "currently visible" iff `projection.getAnnotation(annotationId)`
+// returns a record with `visible === true`. The annotation record
+// carries a `.visible: boolean` field set to `true` at
+// `annotation-created` time; no replay arm currently flips it (no
+// `annotation-retract` event has shipped yet), but the helper aligns
+// with the established visibility-check pattern so the agreement
+// downstream of any future retraction event is structurally consistent.
+//
+// Returns `false` for unknown annotation ids; callers that need to
+// distinguish "doesn't exist" from "exists but not visible" should
+// call `projection.getAnnotation(annotationId)` directly.
+// ---------------------------------------------------------------
+
+export function annotationIsVisible(projection: Projection, annotationId: string): boolean {
+  const annotation = projection.getAnnotation(annotationId);
+  return annotation !== undefined && annotation.visible === true;
+}
+
+// ---------------------------------------------------------------
+// `entityIsVisible` — polymorphic visibility dispatcher over the three
+// entity kinds.
+//
+// Used by the polymorphic-endpoint propose validators
+// (`validateSetEdgeSubstanceProposal`'s Phase 2a/2b and
+// `validateCaptureNodeProposal`'s rule 3 — each endpoint slot resolves
+// to a `kind` derived from "which slot is set" and an `id` derived
+// from the slot's value). Per the refinement's D2 the dispatcher
+// covers all three entity kinds (`'node' | 'annotation' | 'edge'`)
+// for symmetry; the `'edge'` arm composes `edgeIsVisible` even though
+// no validator uses it in v1 (the existing `edgeIsVisible` call site
+// in `meta_move_logic` could migrate later — cosmetic refactor, no
+// follow-up registered).
+//
+// Callers that statically know the kind continue to call the per-kind
+// helper directly (cheaper, locally legible); callers that route on
+// `kind` (the polymorphic-endpoint validators) call this dispatcher.
+// ---------------------------------------------------------------
+
+export function entityIsVisible(
+  projection: Projection,
+  kind: 'node' | 'annotation' | 'edge',
+  id: string,
+): boolean {
+  if (kind === 'node') return nodeIsVisible(projection, id);
+  if (kind === 'annotation') return annotationIsVisible(projection, id);
+  return edgeIsVisible(projection, id);
+}
+
+// ---------------------------------------------------------------
 // `hasAxiomMark` — does the projection have a committed axiom-mark on
 // `nodeId` for `participantId`?
 //

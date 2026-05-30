@@ -117,8 +117,19 @@ export type ClassifyNodeProposal = z.infer<typeof classifyNodeProposalSchema>;
 //
 // **Wire shape.** `node_id` (UUID minted client-side) + `wording`
 // (the captured statement text). The optional `edge` block carries
-// the four edge-shape fields for the capture-with-edge case (per ADR
-// 0030 §5): `edge_id` + `role` + `source_node_id` + `target_node_id`.
+// the polymorphic-endpoint edge-shape fields for the capture-with-
+// edge case (per ADR 0030 §5 + the polymorphic-endpoint chain landed
+// by `edge_target_annotation_schema_extension` /
+// `projection_edge_annotation_endpoint` /
+// `set_edge_substance_annotation_endpoint`): `edge_id` + `role` +
+// per-endpoint `(source_node_id | source_annotation_id)` +
+// `(target_node_id | target_annotation_id)` — each endpoint is
+// independently a node id or an annotation id. The schema's
+// per-endpoint `.refine()` enforces exactly-one-per-pair (capture-
+// with-edge always carries fully-specified endpoints; there is no
+// "substance-only" capture shape — the edge IS minted by the
+// capture).
+//
 // When `edge` is present the propose handler emits node-created +
 // entity-included(node) + edge-created + entity-included(edge) +
 // proposal; when absent it emits node-created + entity-included(node)
@@ -134,12 +145,25 @@ export type ClassifyNodeProposal = z.infer<typeof classifyNodeProposalSchema>;
 // Propose`'s `classify-node` branch retired.
 // Methodology-text cap per F-003 — see `limits.ts`.
 
-export const captureNodeEdgeShapeSchema = z.object({
-  edge_id: z.string().uuid(),
-  role: edgeRoleSchema,
-  source_node_id: z.string().uuid(),
-  target_node_id: z.string().uuid(),
-});
+export const captureNodeEdgeShapeSchema = z
+  .object({
+    edge_id: z.string().uuid(),
+    role: edgeRoleSchema,
+    source_node_id: z.string().uuid().optional(),
+    source_annotation_id: z.string().uuid().optional(),
+    target_node_id: z.string().uuid().optional(),
+    target_annotation_id: z.string().uuid().optional(),
+  })
+  .refine(
+    (payload) =>
+      (payload.source_node_id === undefined) !== (payload.source_annotation_id === undefined),
+    { message: 'exactly one of source_node_id / source_annotation_id must be set' },
+  )
+  .refine(
+    (payload) =>
+      (payload.target_node_id === undefined) !== (payload.target_annotation_id === undefined),
+    { message: 'exactly one of target_node_id / target_annotation_id must be set' },
+  );
 
 export type CaptureNodeEdgeShape = z.infer<typeof captureNodeEdgeShapeSchema>;
 
@@ -167,46 +191,80 @@ export type SetNodeSubstanceProposal = z.infer<typeof setNodeSubstanceProposalSc
 // -- Sub-kind: set-edge-substance ------------------------------------
 //
 // Propose a substance value for an edge. Same base shape as
-// node-substance but addressing an edge, plus three OPTIONAL endpoint
-// fields (`source_node_id`, `target_node_id`, `role`) used by the
-// connecting-edge case.
+// node-substance but addressing an edge, plus FOUR optional polymorphic
+// endpoint fields (`source_node_id`, `source_annotation_id`,
+// `target_node_id`, `target_annotation_id`) + an optional `role` —
+// used by the connecting-edge case. Per the polymorphic-endpoint chain
+// (`edge_target_annotation_schema_extension` /
+// `projection_edge_annotation_endpoint` /
+// `set_edge_substance_annotation_endpoint`) each endpoint is
+// independently a node id or an annotation id, mirroring the wire
+// `edgeCreatedPayloadSchema` precedent.
 //
 // **Wire-shape evolution.** Pre-ADR-0027, set-edge-substance carried
 // only `edge_id` + `value` — the connecting case minted the edge
 // client-side and the edge surfaced on the canvas only after commit.
 // That flow violated `docs/methodology.md` L57 ("A proposed change
 // appears on the graph in `proposed` state from the moment it is
-// made"). The optional `source_node_id` / `target_node_id` / `role`
-// fields reinstate the methodology contract: the client passes the
-// endpoints inline; the server emits `edge-created` + `entity-included`
-// + `proposal` in one envelope chain so subscribers see the proposed
-// edge immediately.
+// made"). The optional endpoint fields + `role` reinstate the
+// methodology contract: the client passes the endpoints inline; the
+// server emits `edge-created` + `entity-included` + `proposal` in one
+// envelope chain so subscribers see the proposed edge immediately.
+// The annotation-endpoint widening
+// (`set_edge_substance_annotation_endpoint`) lets the connecting case
+// mint annotation-endpoint edges (e.g. E15 N19→A2 in the example
+// walkthrough).
 //
 // The fields are `.optional()` (not required) because the sub-kind
 // serves two distinct use-cases on the wire:
 //   (a) Proposing the substance for a freshly-minted edge (the
-//       connecting case) — all three endpoint fields are present and
-//       the propose handler emits `edge-created` + `entity-included`.
+//       connecting case) — exactly one source-side endpoint slot,
+//       exactly one target-side endpoint slot, and the `role` field
+//       are all present; the propose handler emits `edge-created` +
+//       `entity-included`.
 //   (b) Proposing a substance re-vote against an extant edge (e.g.
 //       the defeater-precommit flow in
 //       `apps/server/src/methodology/handlers/proposeDefeaterPreCommit.test.ts`)
 //       — none of the endpoint fields are present and the propose
 //       handler emits only the `proposal` envelope.
-// The propose handler discriminates via the fresh-edge predicate
-// `projection.getEdge(edge_id) === undefined && source_node_id !==
-// undefined && target_node_id !== undefined && role !== undefined`.
+//
+// The schema's per-endpoint `.refine()` enforces at-most-one-per-pair
+// (the substance-only re-vote shape carries zero endpoint slots —
+// neither source side, neither target side, no role). Cross-side
+// symmetry ("all sides present together when any is present") is the
+// validator's responsibility per
+// `validateSetEdgeSubstanceProposal`'s Phase 1 — the validator emits a
+// legible multi-field rejection message naming whichever side(s) are
+// short. The propose handler's fresh-edge predicate becomes
+// polymorphic-form-aware: `projection.getEdge(edge_id) === undefined &&
+// (source_node_id !== undefined || source_annotation_id !== undefined)
+// && (target_node_id !== undefined || target_annotation_id !==
+// undefined) && role !== undefined`.
 // The `role` field reuses `edgeRoleSchema` so the proposal payload and
 // the matching `edgeCreatedPayloadSchema` share one source of truth
 // for the seven-value vocabulary.
 
-export const setEdgeSubstanceProposalSchema = z.object({
-  kind: z.literal('set-edge-substance'),
-  edge_id: z.string().uuid(),
-  value: z.enum(['agreed', 'disputed']),
-  source_node_id: z.string().uuid().optional(),
-  target_node_id: z.string().uuid().optional(),
-  role: edgeRoleSchema.optional(),
-});
+export const setEdgeSubstanceProposalSchema = z
+  .object({
+    kind: z.literal('set-edge-substance'),
+    edge_id: z.string().uuid(),
+    value: z.enum(['agreed', 'disputed']),
+    source_node_id: z.string().uuid().optional(),
+    source_annotation_id: z.string().uuid().optional(),
+    target_node_id: z.string().uuid().optional(),
+    target_annotation_id: z.string().uuid().optional(),
+    role: edgeRoleSchema.optional(),
+  })
+  .refine(
+    (payload) =>
+      !(payload.source_node_id !== undefined && payload.source_annotation_id !== undefined),
+    { message: 'at most one of source_node_id / source_annotation_id may be set' },
+  )
+  .refine(
+    (payload) =>
+      !(payload.target_node_id !== undefined && payload.target_annotation_id !== undefined),
+    { message: 'at most one of target_node_id / target_annotation_id may be set' },
+  );
 
 export type SetEdgeSubstanceProposal = z.infer<typeof setEdgeSubstanceProposalSchema>;
 

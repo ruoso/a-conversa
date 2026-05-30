@@ -257,6 +257,7 @@ import { deriveFacetStatus, deriveFacetStatusFromState } from '../../projection/
 import type { FacetStatus } from '../../projection/types.js';
 import {
   edgeIsVisible,
+  entityIsVisible,
   findConflictingBreakEdgeProposal,
   findConflictingProposalAgainst,
   hasAxiomMark,
@@ -1133,53 +1134,75 @@ function validateAnnotateProposal(
 //
 // **Sub-kind context.** Per ADR 0027 (entity / facet layer separation)
 // the `set-edge-substance` payload carries `edge_id` + `value`
-// (substance vote) plus three OPTIONAL endpoint fields
-// (`source_node_id`, `target_node_id`, `role`). The optional fields
-// serve the **connecting-edge** shape: a moderator proposing the first
-// substance vote against a freshly-minted edge passes the endpoints
-// inline so the structural-event builder (at the bottom of this file)
-// emits `edge-created` + `entity-included` propose-time, putting the
-// proposed edge on the canvas immediately per
-// `docs/methodology.md` L57. The substance-only re-vote shape (e.g.
-// the defeater-precommit flow) carries zero endpoint fields — only
-// `edge_id` + `value`.
+// (substance vote) plus FOUR OPTIONAL polymorphic endpoint fields
+// (`source_node_id`, `source_annotation_id`, `target_node_id`,
+// `target_annotation_id`) + an OPTIONAL `role`. Per the polymorphic-
+// endpoint chain (`edge_target_annotation_schema_extension` /
+// `projection_edge_annotation_endpoint` /
+// `set_edge_substance_annotation_endpoint`) each endpoint is
+// independently a node id or an annotation id. The connecting-edge
+// shape sets exactly one source-side slot, exactly one target-side
+// slot, and the `role`; the substance-only re-vote shape sets none of
+// them. The schema's per-endpoint `.refine()` enforces at-most-one
+// per side; cross-side symmetry (Phase 1 below) is this validator's
+// responsibility.
 //
 // The structural-event builder is wire-shape emission; it does NOT
 // methodology-validate the carried endpoints. This validator closes
-// that gap per `mod_set_edge_substance_endpoint_carriage.md`'s D2.
+// that gap per `mod_set_edge_substance_endpoint_carriage.md`'s D2 and
+// `set_edge_substance_annotation_endpoint`'s polymorphic widening.
 //
 // Rules run in two phases driven by the same fresh-edge predicate the
 // builder uses:
 //
-//   1. **Symmetry (payload-only).** If any of the three endpoint
-//      fields is present, all three MUST be present. A partial payload
-//      (two-of-three) signals client malformation. →
-//      `'illegal-state-transition'`, detail names the missing field(s).
-//      Short-circuits before any projection lookup.
+//   1. **Symmetry (payload-only).** If any of the four endpoint slots
+//      or the `role` is present, every "side" MUST be present —
+//      exactly one source-side slot, exactly one target-side slot,
+//      and the `role`. A partial payload signals client malformation.
+//      → `'illegal-state-transition'`, detail names the missing
+//      side(s). Short-circuits before any projection lookup.
 //
-//   2. **Referential (projection-indexing).** When all three endpoint
-//      fields are present, three sub-rules run in order:
-//      2a. **Source-node-visible.** `nodeIsVisible(projection,
-//          source_node_id) === true` — the source either doesn't exist
-//          on the projection or has been superseded by a prior
-//          decompose / interpretive-split / restructure. →
+//   2. **Referential (projection-indexing).** When the all-sides-
+//      present predicate holds, three sub-rules run in order:
+//      2a. **Source-entity-visible.** Resolves the source kind from
+//          which slot is set (`'node'` if `source_node_id !== undefined`
+//          else `'annotation'`) and the id from the same slot;
+//          rejects when `entityIsVisible(projection, kind, id) === false`
+//          (the entity either doesn't exist on the projection or has
+//          been superseded / retracted). →
+//          `'target-entity-not-found'`. Detail names whichever slot
+//          was set (`source_node_id` or `source_annotation_id`).
+//      2b. **Target-entity-visible.** Symmetric to 2a against
+//          `target_node_id` / `target_annotation_id`. →
 //          `'target-entity-not-found'`.
-//      2b. **Target-node-visible.** Symmetric to 2a against
-//          `target_node_id`. → `'target-entity-not-found'`.
 //      2c. **Agreement-with-existing-edge.** When
 //          `projection.getEdge(edge_id) !== undefined` the carried
-//          triple MUST equal the projected edge's `(sourceNodeId,
-//          targetNodeId, role)` triple. Disagreement is structurally
-//          incoherent (entity identity is fixed at `edge-created` time
-//          per ADR 0027) — a substance-only re-vote with a payload
-//          that lies about the endpoints would silently corrupt
-//          downstream consumers. → `'illegal-state-transition'`, detail
-//          names both triples.
+//          polymorphic triple MUST equal the projected edge's
+//          polymorphic triple — `(sourceNodeId, sourceAnnotationId,
+//          targetNodeId, targetAnnotationId, role)`. The comparison
+//          coerces carried `undefined` to projected `null` per
+//          slot, then equality-tests every slot + the role.
+//          Disagreement is structurally incoherent (entity identity
+//          is fixed at `edge-created` time per ADR 0027) — a
+//          substance-only re-vote with a payload that lies about the
+//          endpoints would silently corrupt downstream consumers. →
+//          `'illegal-state-transition'`, detail names both triples.
+//
+// **Annotation-endpoint edges are now first-class.** The defensive
+// guard introduced by `projection_edge_annotation_endpoint` D6 (which
+// rejected any substance proposal addressing an annotation-endpoint
+// projected edge with a "see follow-up task" breadcrumb) is REMOVED:
+// THIS validator's Phase 2c polymorphic triple comparison is the
+// proper check, and the lifted guard unblocks substance votes against
+// annotation-endpoint edges (the E15-shape edges per the example
+// walkthrough).
 //
 // **Substance-only re-vote stays valid.** A proposal carrying zero
 // endpoint fields satisfies Phase 1 trivially (antecedent false) and
-// skips Phase 2 entirely. The `proposeDefeaterPreCommit.test.ts`
-// baseline test passes without modification.
+// skips Phase 2 entirely (except 2c, which only fires when both
+// `edge_id` resolves AND endpoints are carried). The
+// `proposeDefeaterPreCommit.test.ts` baseline test passes without
+// modification.
 //
 // **No new `RejectionReason` in v1 per D2.** Both reused codes
 // (`'target-entity-not-found'`, `'illegal-state-transition'`) line up
@@ -1224,88 +1247,103 @@ function validateSetEdgeSubstanceProposal(
   const proposal = action.proposal;
   const edgeId = proposal.edge_id;
   const sourceNodeId = proposal.source_node_id;
+  const sourceAnnotationId = proposal.source_annotation_id;
   const targetNodeId = proposal.target_node_id;
+  const targetAnnotationId = proposal.target_annotation_id;
   const role = proposal.role;
 
-  // Phase 1 — symmetry. If any endpoint field is present, all three
-  // must be present. Short-circuits before any projection lookup; the
-  // substance-only re-vote shape (all three absent) passes trivially.
-  const anyPresent = sourceNodeId !== undefined || targetNodeId !== undefined || role !== undefined;
-  const allPresent = sourceNodeId !== undefined && targetNodeId !== undefined && role !== undefined;
-  if (anyPresent && !allPresent) {
+  const sourceSidePresent = sourceNodeId !== undefined || sourceAnnotationId !== undefined;
+  const targetSidePresent = targetNodeId !== undefined || targetAnnotationId !== undefined;
+  const rolePresent = role !== undefined;
+
+  // Phase 1 — symmetry. If any endpoint slot or the role is present,
+  // every side MUST be present. The schema's per-endpoint `.refine()`
+  // already guarantees at-most-one per side; this check enforces the
+  // cross-side "all sides together" rule. The substance-only re-vote
+  // shape (no sides present) passes trivially.
+  const anySidePresent = sourceSidePresent || targetSidePresent || rolePresent;
+  const allSidesPresent = sourceSidePresent && targetSidePresent && rolePresent;
+  if (anySidePresent && !allSidesPresent) {
     const missing: string[] = [];
-    if (sourceNodeId === undefined) missing.push('source_node_id');
-    if (targetNodeId === undefined) missing.push('target_node_id');
-    if (role === undefined) missing.push('role');
+    if (!sourceSidePresent)
+      missing.push('source-side endpoint (source_node_id or source_annotation_id)');
+    if (!targetSidePresent)
+      missing.push('target-side endpoint (target_node_id or target_annotation_id)');
+    if (!rolePresent) missing.push('role');
     return {
       ok: false,
       reason: 'illegal-state-transition',
-      detail: `propose set-edge-substance: partial endpoint payload against edge_id ${edgeId} — when any of (source_node_id, target_node_id, role) is present, all three must be present; missing: ${missing.join(', ')}`,
+      detail: `propose set-edge-substance: partial endpoint payload against edge_id ${edgeId} — when any endpoint slot or the role is present, all sides must be present; missing: ${missing.join(', ')}`,
     };
   }
 
-  // Per `projection_edge_annotation_endpoint` D6: the projection now
-  // carries polymorphic endpoint edges (node OR annotation per
-  // endpoint). The `set-edge-substance` proposal kind does NOT yet
-  // carry annotation endpoints — the follow-up
-  // `set_edge_substance_annotation_endpoint` widens the proposal-side.
-  // Until that lands, defensively reject any case whose resolved
-  // existing edge carries annotation endpoints (covers both the
-  // substance-only re-vote and the all-three-endpoint shapes); the
-  // Phase 2c triple comparison below would otherwise mis-fire
-  // (`string` !== `null` is always true).
   const existingEdge = projection.getEdge(edgeId);
-  if (existingEdge !== undefined) {
-    if (existingEdge.sourceNodeId === null || existingEdge.targetNodeId === null) {
-      return {
-        ok: false,
-        reason: 'illegal-state-transition',
-        detail: `propose set-edge-substance: the projected edge ${edgeId} carries annotation endpoints; this proposal sub-kind does not yet carry annotation endpoints — see follow-up task set_edge_substance_annotation_endpoint`,
-      };
-    }
+
+  // Substance-only re-vote: no endpoint fields → no Phase 2a/2b.
+  if (!allSidesPresent) {
+    // Phase 2c still applies for the substance-only shape only via the
+    // existing-edge comparison below (the carried-side `undefined`
+    // values match projected `null` values when the projection's edge
+    // is fully node-only, but the substance-only shape carries nothing
+    // to disagree with — every carried slot is `undefined`, every
+    // projected slot is whatever it is — and the projected nullable
+    // shape is compared against `undefined` only when sides are
+    // present). Skip the full 2c check.
+    return null;
   }
 
-  // Substance-only re-vote: no endpoint fields → no further checks.
-  if (!allPresent) return null;
+  // Phase 2 — referential checks (run only when every side is present).
 
-  // Phase 2 — referential checks (run only when all three endpoint
-  // fields are present).
+  // Resolve each endpoint to (kind, id).
+  const sourceKind: 'node' | 'annotation' = sourceNodeId !== undefined ? 'node' : 'annotation';
+  const sourceId = (sourceNodeId ?? sourceAnnotationId) as string;
+  const sourceSlotName = sourceKind === 'node' ? 'source_node_id' : 'source_annotation_id';
 
-  // Rule 2a — source node exists and is currently visible.
-  if (!nodeIsVisible(projection, sourceNodeId)) {
+  const targetKind: 'node' | 'annotation' = targetNodeId !== undefined ? 'node' : 'annotation';
+  const targetId = (targetNodeId ?? targetAnnotationId) as string;
+  const targetSlotName = targetKind === 'node' ? 'target_node_id' : 'target_annotation_id';
+
+  // Rule 2a — source entity exists and is currently visible.
+  if (!entityIsVisible(projection, sourceKind, sourceId)) {
     return {
       ok: false,
       reason: 'target-entity-not-found',
-      detail: `propose set-edge-substance: source_node_id ${sourceNodeId} does not reference a visible node in session ${projection.sessionId} (either unknown or superseded by a prior decompose / interpretive-split / restructure)`,
+      detail: `propose set-edge-substance: ${sourceSlotName} ${sourceId} does not reference a visible ${sourceKind} in session ${projection.sessionId} (either unknown or superseded / retracted)`,
     };
   }
 
-  // Rule 2b — target node exists and is currently visible.
-  if (!nodeIsVisible(projection, targetNodeId)) {
+  // Rule 2b — target entity exists and is currently visible.
+  if (!entityIsVisible(projection, targetKind, targetId)) {
     return {
       ok: false,
       reason: 'target-entity-not-found',
-      detail: `propose set-edge-substance: target_node_id ${targetNodeId} does not reference a visible node in session ${projection.sessionId} (either unknown or superseded by a prior decompose / interpretive-split / restructure)`,
+      detail: `propose set-edge-substance: ${targetSlotName} ${targetId} does not reference a visible ${targetKind} in session ${projection.sessionId} (either unknown or superseded / retracted)`,
     };
   }
 
   // Rule 2c — agreement with existing edge (when edge_id already
-  // names a projected edge). The carried triple MUST equal the
-  // projected edge's `(sourceNodeId, targetNodeId, role)` triple;
-  // entity identity is fixed at `edge-created` time per ADR 0027.
-  // (The annotation-endpoint case is handled by the pre-Phase-2 guard
-  // above; here we know both `existingEdge.sourceNodeId` and
-  // `.targetNodeId` are non-null.)
+  // names a projected edge). The carried polymorphic triple MUST
+  // equal the projected edge's polymorphic triple; entity identity
+  // is fixed at `edge-created` time per ADR 0027. Coerce carried
+  // `undefined` to projected `null` per slot for the comparison.
   if (existingEdge !== undefined) {
+    const carriedSourceNode = sourceNodeId ?? null;
+    const carriedSourceAnnotation = sourceAnnotationId ?? null;
+    const carriedTargetNode = targetNodeId ?? null;
+    const carriedTargetAnnotation = targetAnnotationId ?? null;
     if (
-      existingEdge.sourceNodeId !== sourceNodeId ||
-      existingEdge.targetNodeId !== targetNodeId ||
+      existingEdge.sourceNodeId !== carriedSourceNode ||
+      existingEdge.sourceAnnotationId !== carriedSourceAnnotation ||
+      existingEdge.targetNodeId !== carriedTargetNode ||
+      existingEdge.targetAnnotationId !== carriedTargetAnnotation ||
       existingEdge.role !== role
     ) {
+      const carriedTriple = `(source_node=${String(carriedSourceNode)}, source_annotation=${String(carriedSourceAnnotation)}, target_node=${String(carriedTargetNode)}, target_annotation=${String(carriedTargetAnnotation)}, role=${role})`;
+      const projectedTriple = `(source_node=${String(existingEdge.sourceNodeId)}, source_annotation=${String(existingEdge.sourceAnnotationId)}, target_node=${String(existingEdge.targetNodeId)}, target_annotation=${String(existingEdge.targetAnnotationId)}, role=${existingEdge.role})`;
       return {
         ok: false,
         reason: 'illegal-state-transition',
-        detail: `propose set-edge-substance: carried endpoint triple disagrees with the projected edge ${edgeId} — carried (source=${sourceNodeId}, target=${targetNodeId}, role=${role}) vs projected (source=${existingEdge.sourceNodeId}, target=${existingEdge.targetNodeId}, role=${existingEdge.role}); entity identity is fixed at edge-created time per ADR 0027`,
+        detail: `propose set-edge-substance: carried endpoint triple disagrees with the projected edge ${edgeId} — carried ${carriedTriple} vs projected ${projectedTriple}; entity identity is fixed at edge-created time per ADR 0027`,
       };
     }
   }
@@ -1384,26 +1422,53 @@ function validateCaptureNodeProposal(
       };
     }
 
-    // Rule 3 — source / target node references resolve. Either the
-    // node exists and is visible OR equals the just-captured node_id
-    // (self-reference for the connecting capture's common case).
-    const sourceRefOk =
-      edge.source_node_id === nodeId || nodeIsVisible(projection, edge.source_node_id);
-    if (!sourceRefOk) {
-      return {
-        ok: false,
-        reason: 'target-entity-not-found',
-        detail: `propose capture-node (with edge): source_node_id ${edge.source_node_id} does not reference a visible node in session ${projection.sessionId} and is not the just-captured node ${nodeId}`,
-      };
+    // Rule 3 — source / target endpoint references resolve. The
+    // capture-node edge shape is polymorphic per
+    // `set_edge_substance_annotation_endpoint`: each endpoint is
+    // independently a node id or an annotation id (the schema's
+    // per-endpoint `.refine()` enforces exactly-one per pair). The
+    // node-id self-reference path stays (capture mints a node, so a
+    // node-endpoint slot may name the just-captured node id); the
+    // annotation-endpoint path routes through `entityIsVisible` since
+    // annotations cannot self-reference a capture-time-minted entity
+    // per the refinement's D7.
+    if (edge.source_node_id !== undefined) {
+      const sourceRefOk =
+        edge.source_node_id === nodeId || nodeIsVisible(projection, edge.source_node_id);
+      if (!sourceRefOk) {
+        return {
+          ok: false,
+          reason: 'target-entity-not-found',
+          detail: `propose capture-node (with edge): source_node_id ${edge.source_node_id} does not reference a visible node in session ${projection.sessionId} and is not the just-captured node ${nodeId}`,
+        };
+      }
+    } else if (edge.source_annotation_id !== undefined) {
+      if (!entityIsVisible(projection, 'annotation', edge.source_annotation_id)) {
+        return {
+          ok: false,
+          reason: 'target-entity-not-found',
+          detail: `propose capture-node (with edge): source_annotation_id ${edge.source_annotation_id} does not reference a visible annotation in session ${projection.sessionId}`,
+        };
+      }
     }
-    const targetRefOk =
-      edge.target_node_id === nodeId || nodeIsVisible(projection, edge.target_node_id);
-    if (!targetRefOk) {
-      return {
-        ok: false,
-        reason: 'target-entity-not-found',
-        detail: `propose capture-node (with edge): target_node_id ${edge.target_node_id} does not reference a visible node in session ${projection.sessionId} and is not the just-captured node ${nodeId}`,
-      };
+    if (edge.target_node_id !== undefined) {
+      const targetRefOk =
+        edge.target_node_id === nodeId || nodeIsVisible(projection, edge.target_node_id);
+      if (!targetRefOk) {
+        return {
+          ok: false,
+          reason: 'target-entity-not-found',
+          detail: `propose capture-node (with edge): target_node_id ${edge.target_node_id} does not reference a visible node in session ${projection.sessionId} and is not the just-captured node ${nodeId}`,
+        };
+      }
+    } else if (edge.target_annotation_id !== undefined) {
+      if (!entityIsVisible(projection, 'annotation', edge.target_annotation_id)) {
+        return {
+          ok: false,
+          reason: 'target-entity-not-found',
+          detail: `propose capture-node (with edge): target_annotation_id ${edge.target_annotation_id} does not reference a visible annotation in session ${projection.sessionId}`,
+        };
+      }
     }
   }
 
@@ -1724,26 +1789,32 @@ export const proposeHandler: Validator<ProposeAction> = (
 // `classify-node` proposal only names a classification candidate
 // against an extant node.
 //
-// **set-edge-substance**: the proposal carries `edge_id` plus three
-// OPTIONAL endpoint fields (`source_node_id`, `target_node_id`,
-// `role`) per ADR 0027 (entity vs facet layer separation). When all
-// four predicate branches hold — `projection.getEdge(edge_id) ===
-// undefined && source_node_id !== undefined && target_node_id !==
-// undefined && role !== undefined` — the connecting-edge fan-out
-// fires: emit `edge-created` + `entity-included` so the canvas
-// projector renders the proposed edge in `proposed` state immediately
-// (the facet status derives `proposed` so long as the proposal is
-// pending). The four-branch predicate: endpoint-absence OR pre-
-// existing edge → no structural fan-out (substance-only re-vote
-// against an extant edge, e.g. the defeater-precommit flow at
-// `apps/server/src/methodology/handlers/proposeDefeaterPreCommit.test.ts`).
-// The cross-field referential check (symmetry of the three endpoint
-// fields, source / target visibility, and agreement with an extant
-// edge's projected `(source, target, role)` triple) is enforced by
+// **set-edge-substance**: the proposal carries `edge_id` plus FOUR
+// OPTIONAL polymorphic endpoint slots (`source_node_id`,
+// `source_annotation_id`, `target_node_id`, `target_annotation_id`) +
+// an OPTIONAL `role` per ADR 0027 (entity vs facet layer separation)
+// + the polymorphic-endpoint chain (`set_edge_substance_annotation
+// _endpoint`). When the connecting-edge predicate holds —
+// `projection.getEdge(edge_id) === undefined && (source_node_id !==
+// undefined || source_annotation_id !== undefined) && (target_node_id
+// !== undefined || target_annotation_id !== undefined) && role !==
+// undefined` — the fan-out fires: emit `edge-created` + `entity-
+// included` so the canvas projector renders the proposed edge in
+// `proposed` state immediately (the facet status derives `proposed`
+// so long as the proposal is pending). The connecting case may mint
+// node-endpoint, annotation-endpoint, or mixed-endpoint edges. The
+// predicate fails for pre-existing edges OR endpoint-absence (no side
+// supplied) — substance-only re-vote against an extant edge, e.g.
+// the defeater-precommit flow at
+// `apps/server/src/methodology/handlers/proposeDefeaterPreCommit.test.ts`.
+// The cross-field referential check (cross-side symmetry, per-endpoint
+// visibility, and polymorphic agreement with an extant edge's
+// projected `(source_node, source_annotation, target_node,
+// target_annotation, role)` quintuple) is enforced by
 // `validateSetEdgeSubstanceProposal` in the dispatcher above; this
 // builder runs against an already-validated payload and never sees a
-// partial endpoint payload, a source / target that doesn't reference
-// a visible node, or a triple that disagrees with the projected edge.
+// partial endpoint payload, a missing / invisible endpoint, or a
+// quintuple that disagrees with the projected edge.
 // The lockstep `entitiesToRetractForWithdraw` arm in
 // `apps/server/src/ws/handlers/withdraw.ts` is the inverse — see D3
 // of `tasks/refinements/backend/ws_withdraw_proposal_message.md`.
@@ -1857,8 +1928,14 @@ function buildStructuralEventsForPropose(
         // Capture-with-edge — the moderator captured the node AND a
         // connecting supports / contradicts / etc. edge in one
         // gesture (ADR 0030 §4 "compound gesture survives"). Emit
-        // `edge-created` carrying the role + endpoints inline (ADR
-        // 0030 §5), followed by `entity-included(edge)`.
+        // `edge-created` carrying the role + polymorphic endpoints
+        // inline (ADR 0030 §5 + the polymorphic-endpoint chain landed
+        // by `set_edge_substance_annotation_endpoint`), followed by
+        // `entity-included(edge)`. Each endpoint slot is threaded
+        // through with `?? undefined` for the absent side; the wire
+        // schema's per-endpoint `.refine()` enforces exactly-one per
+        // pair and `captureNodeEdgeShapeSchema` mirrors the same
+        // constraint at the proposal layer.
         const edgeCreated: EventToAppendEnvelope<'edge-created'> = {
           id: randomUUID(),
           sessionId: action.sessionId,
@@ -1868,8 +1945,10 @@ function buildStructuralEventsForPropose(
           payload: {
             edge_id: edge.edge_id,
             role: edge.role,
-            source_node_id: edge.source_node_id,
-            target_node_id: edge.target_node_id,
+            source_node_id: edge.source_node_id ?? undefined,
+            source_annotation_id: edge.source_annotation_id ?? undefined,
+            target_node_id: edge.target_node_id ?? undefined,
+            target_annotation_id: edge.target_annotation_id ?? undefined,
             created_by: action.requester,
             created_at: action.createdAt,
           },
@@ -1897,20 +1976,28 @@ function buildStructuralEventsForPropose(
     case 'set-edge-substance': {
       const edgeId = action.proposal.edge_id;
       const sourceNodeId = action.proposal.source_node_id;
+      const sourceAnnotationId = action.proposal.source_annotation_id;
       const targetNodeId = action.proposal.target_node_id;
+      const targetAnnotationId = action.proposal.target_annotation_id;
       const role = action.proposal.role;
+      const sourceSidePresent = sourceNodeId !== undefined || sourceAnnotationId !== undefined;
+      const targetSidePresent = targetNodeId !== undefined || targetAnnotationId !== undefined;
       if (
         projection.getEdge(edgeId) === undefined &&
-        sourceNodeId !== undefined &&
-        targetNodeId !== undefined &&
+        sourceSidePresent &&
+        targetSidePresent &&
         role !== undefined
       ) {
         // Connecting-edge case — the client minted a fresh edge id
-        // and supplied the three endpoint fields. Mint
-        // `edge-created` + `entity-included` so the canvas projector
-        // renders the proposed edge in `proposed` state immediately.
-        // See the header docblock for the four-branch predicate
-        // rationale.
+        // and supplied a fully-specified polymorphic endpoint pair
+        // (per-side: node id OR annotation id). Mint `edge-created`
+        // + `entity-included` so the canvas projector renders the
+        // proposed edge in `proposed` state immediately. Each
+        // endpoint slot threads through with `?? undefined` for the
+        // absent side; the wire `edgeCreatedPayloadSchema`'s
+        // per-endpoint `.refine()` enforces exactly-one per pair and
+        // the validator's Phase 1 symmetry has already gated the
+        // shape.
         const edgeCreated: EventToAppendEnvelope<'edge-created'> = {
           id: randomUUID(),
           sessionId: action.sessionId,
@@ -1920,8 +2007,10 @@ function buildStructuralEventsForPropose(
           payload: {
             edge_id: edgeId,
             role,
-            source_node_id: sourceNodeId,
-            target_node_id: targetNodeId,
+            source_node_id: sourceNodeId ?? undefined,
+            source_annotation_id: sourceAnnotationId ?? undefined,
+            target_node_id: targetNodeId ?? undefined,
+            target_annotation_id: targetAnnotationId ?? undefined,
             created_by: action.requester,
             created_at: action.createdAt,
           },

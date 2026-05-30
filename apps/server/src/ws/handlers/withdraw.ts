@@ -421,16 +421,18 @@ export function registerWithdrawProposalHandlers(
  *     `pf_mod_capture_pane_wording_only` (ADR 0030 §1) the legacy
  *     bundled capture path is retired; the propose handler's
  *     `classify-node` arm emits no structural events at propose-time.
- *   - `set-edge-substance` with the three optional endpoint fields
- *     (`source_node_id`, `target_node_id`, `role`) present AND
- *     `edge_id` resolving to an existing edge on the projection →
- *     retract the edge. The propose handler emits `edge-created` +
- *     `entity-included` for the connecting case (the four-branch
- *     fresh-edge predicate); withdrawing retracts the edge entity
- *     via `entity-removed(edge)`. Mirrors the `classify-node` arm:
- *     the endpoint-presence is the propose-time signal; the
- *     projector-side existence check guards against double-retraction
- *     (the projector's `handleEntityRemoved` would reject anyway).
+ *   - `set-edge-substance` with the polymorphic endpoint fields
+ *     present (one source-side slot ∈ {`source_node_id`,
+ *     `source_annotation_id`}, one target-side slot ∈ {`target_node_id`,
+ *     `target_annotation_id`}, plus `role`) AND `edge_id` resolving
+ *     to an existing edge on the projection → retract the edge. The
+ *     propose handler emits `edge-created` + `entity-included` for
+ *     the connecting case (the polymorphic fresh-edge predicate per
+ *     `set_edge_substance_annotation_endpoint`); withdrawing retracts
+ *     the edge entity via `entity-removed(edge)`. The endpoint-
+ *     presence is the propose-time signal; the projector-side
+ *     existence check guards against double-retraction (the
+ *     projector's `handleEntityRemoved` would reject anyway).
  *   - `decompose` → walk `payload.components` in array order; for
  *     each component whose `node_id` resolves to an extant node on
  *     the projection, push one `{ entityKind: 'node', entityId:
@@ -481,27 +483,26 @@ function entitiesToRetractForWithdraw(
     }
     case 'set-edge-substance': {
       // Mirror of `buildStructuralEventsForPropose`'s
-      // `set-edge-substance` arm: the propose handler emits
-      // `edge-created` + `entity-included` only when the three
-      // endpoint fields are present AND `projection.getEdge(edge_id)`
-      // returned `undefined` at propose-time. By withdraw-time the
-      // log replay has rebuilt the edge on the projection (if it was
-      // minted at propose-time), so the right withdraw-side gate is
-      // "did the propose payload carry the endpoints" — the same
-      // signal the propose handler used. The `getEdge !== undefined`
+      // `set-edge-substance` arm. Per the polymorphic-endpoint chain
+      // (`set_edge_substance_annotation_endpoint`) each side is
+      // independently a node id or an annotation id: the propose
+      // handler emits `edge-created` + `entity-included` when each
+      // side carries SOMETHING (node id or annotation id) AND `role`
+      // is present AND `projection.getEdge(edge_id)` returned
+      // `undefined` at propose-time. By withdraw-time the log replay
+      // has rebuilt the edge on the projection (if it was minted at
+      // propose-time), so the right withdraw-side gate replays the
+      // same per-side presence predicate. The `getEdge !== undefined`
       // defensive check guards against a missing-entity retraction
       // (the projector's `handleEntityRemoved` would reject anyway).
       const edgeId = payload.edge_id;
-      const sourceNodeId = payload.source_node_id;
-      const targetNodeId = payload.target_node_id;
+      const sourceSidePresent =
+        payload.source_node_id !== undefined || payload.source_annotation_id !== undefined;
+      const targetSidePresent =
+        payload.target_node_id !== undefined || payload.target_annotation_id !== undefined;
       const role = payload.role;
       const edge = projection.getEdge(edgeId);
-      if (
-        sourceNodeId !== undefined &&
-        targetNodeId !== undefined &&
-        role !== undefined &&
-        edge !== undefined
-      ) {
+      if (sourceSidePresent && targetSidePresent && role !== undefined && edge !== undefined) {
         targets.push({ entityKind: 'edge', entityId: edgeId });
       }
       break;

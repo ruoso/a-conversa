@@ -441,3 +441,171 @@ describe('propose capture-node — wording-only capture (pf_capture_emits_inline
     expect(r.events).toHaveLength(5);
   });
 });
+
+// ---------------------------------------------------------------
+// Capture-with-edge annotation-endpoint cases per
+// `set_edge_substance_annotation_endpoint`. The edge's endpoints are
+// independently a node id or an annotation id. The capture mints a
+// node, so the self-reference path applies only to the node-id slot
+// (per the refinement's D7 — annotations cannot self-reference a
+// capture-time-minted entity).
+// ---------------------------------------------------------------
+
+const TARGET_ANNOTATION_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeee01ee';
+const UNKNOWN_ANNOTATION_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeee99ee';
+
+// Seed one annotation attached to the pre-existing target node, used
+// by the polymorphic capture-with-edge cases below.
+function seedOneNodeAndAnnotation(): ReturnType<typeof createEmptyProjection> {
+  const projection = seedOneNode();
+  applyEvent(
+    projection,
+    makeEvent(nextSequence(projection), 'annotation-created', DEBATER_A_ID, T2, {
+      annotation_id: TARGET_ANNOTATION_ID,
+      kind: 'note',
+      content: 'Annotation on the target node.',
+      target_node_id: TARGET_NODE_ID,
+      target_edge_id: null,
+      created_by: DEBATER_A_ID,
+      created_at: T2,
+    }),
+  );
+  return projection;
+}
+
+describe('propose capture-node — polymorphic annotation-endpoint cases', () => {
+  it('rejects when target_annotation_id references an unknown annotation', () => {
+    const p = seedOneNodeAndAnnotation();
+    const action: ProposeAction = {
+      kind: 'propose',
+      requester: MODERATOR_ID,
+      sessionId: SESSION_ID,
+      eventId: NEW_EVENT_ID,
+      sequence: nextSequence(p),
+      actor: MODERATOR_ID,
+      createdAt: T9,
+      proposal: {
+        kind: 'capture-node',
+        node_id: FRESH_NODE_ID,
+        wording: 'Capture targeting an unknown annotation.',
+        edge: {
+          edge_id: FRESH_EDGE_ID,
+          role: 'contradicts',
+          source_node_id: FRESH_NODE_ID,
+          target_annotation_id: UNKNOWN_ANNOTATION_ID,
+        },
+      },
+    };
+    const r = validateAction(p, action);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.reason).toBe('target-entity-not-found');
+    expect(r.detail).toContain('target_annotation_id');
+    expect(r.detail).toContain(UNKNOWN_ANNOTATION_ID);
+  });
+
+  it('rejects when target_annotation_id references an invisible annotation', () => {
+    const p = seedOneNodeAndAnnotation();
+    p.setAnnotationVisible(TARGET_ANNOTATION_ID, false);
+    expect(p.getAnnotation(TARGET_ANNOTATION_ID)?.visible).toBe(false);
+
+    const action: ProposeAction = {
+      kind: 'propose',
+      requester: MODERATOR_ID,
+      sessionId: SESSION_ID,
+      eventId: NEW_EVENT_ID,
+      sequence: nextSequence(p),
+      actor: MODERATOR_ID,
+      createdAt: T9,
+      proposal: {
+        kind: 'capture-node',
+        node_id: FRESH_NODE_ID,
+        wording: 'Capture targeting an invisible annotation.',
+        edge: {
+          edge_id: FRESH_EDGE_ID,
+          role: 'contradicts',
+          source_node_id: FRESH_NODE_ID,
+          target_annotation_id: TARGET_ANNOTATION_ID,
+        },
+      },
+    };
+    const r = validateAction(p, action);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.reason).toBe('target-entity-not-found');
+    expect(r.detail).toContain('target_annotation_id');
+  });
+
+  it('node→annotation capture-with-edge happy path — self-source minted node + visible target annotation', () => {
+    const p = seedOneNodeAndAnnotation();
+    const action: ProposeAction = {
+      kind: 'propose',
+      requester: MODERATOR_ID,
+      sessionId: SESSION_ID,
+      eventId: NEW_EVENT_ID,
+      sequence: nextSequence(p),
+      actor: MODERATOR_ID,
+      createdAt: T9,
+      proposal: {
+        kind: 'capture-node',
+        node_id: FRESH_NODE_ID,
+        wording: 'Fresh node contradicts an existing annotation.',
+        edge: {
+          edge_id: FRESH_EDGE_ID,
+          role: 'contradicts',
+          source_node_id: FRESH_NODE_ID,
+          target_annotation_id: TARGET_ANNOTATION_ID,
+        },
+      },
+    };
+    const r = validateAction(p, action);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.events).toHaveLength(5);
+    const edgeCreated = r.events[2]!;
+    expect(edgeCreated.kind).toBe('edge-created');
+    if (edgeCreated.kind === 'edge-created') {
+      const payload: EdgeCreatedPayload = edgeCreated.payload;
+      expect(payload.source_node_id).toBe(FRESH_NODE_ID);
+      expect(payload.target_annotation_id).toBe(TARGET_ANNOTATION_ID);
+      expect(payload.target_node_id).toBeUndefined();
+      expect(payload.source_annotation_id).toBeUndefined();
+    }
+  });
+
+  it('annotation→node capture-with-edge happy path — source annotation + self-target minted node', () => {
+    const p = seedOneNodeAndAnnotation();
+    const action: ProposeAction = {
+      kind: 'propose',
+      requester: MODERATOR_ID,
+      sessionId: SESSION_ID,
+      eventId: NEW_EVENT_ID,
+      sequence: nextSequence(p),
+      actor: MODERATOR_ID,
+      createdAt: T9,
+      proposal: {
+        kind: 'capture-node',
+        node_id: FRESH_NODE_ID,
+        wording: 'Annotation supports a fresh node.',
+        edge: {
+          edge_id: FRESH_EDGE_ID,
+          role: 'supports',
+          source_annotation_id: TARGET_ANNOTATION_ID,
+          target_node_id: FRESH_NODE_ID,
+        },
+      },
+    };
+    const r = validateAction(p, action);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.events).toHaveLength(5);
+    const edgeCreated = r.events[2]!;
+    if (edgeCreated.kind === 'edge-created') {
+      const payload: EdgeCreatedPayload = edgeCreated.payload;
+      expect(payload.source_annotation_id).toBe(TARGET_ANNOTATION_ID);
+      expect(payload.target_node_id).toBe(FRESH_NODE_ID);
+      expect(payload.source_node_id).toBeUndefined();
+      expect(payload.target_annotation_id).toBeUndefined();
+    }
+  });
+});

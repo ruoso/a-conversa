@@ -683,6 +683,21 @@ task moderator_ui "Moderator UI" {
         Includes Playwright cover asserting an annotation-endpoint edge appears on the canvas.
       ->8-
     }
+    task mod_propose_annotation_endpoint_gestures "Wire moderator set-edge-substance and capture-with-edge gestures to emit polymorphic-endpoint proposals" {
+      effort 2d
+      allocate team
+      depends !mod_render_annotation_endpoint_edges, data_and_methodology.methodology_engine.set_edge_substance_annotation_endpoint
+      note -8<-
+        Source of debt: set_edge_substance_annotation_endpoint (2026-05-30) — the proposal-schema
+        widening and validator polymorphic threading landed; the moderator UI gesture that mints
+        annotation-endpoint edges from the canvas (endpoint-carriage picker picking an annotation
+        node, capture-with-edge targeting an annotation) requires annotations to be canvas-renderable
+        click-targets first (mod_render_annotation_endpoint_edges). Includes Playwright cover: a spec
+        where the moderator targets an annotation when minting an edge via set-edge-substance and
+        capture-with-edge. The closer may choose to bundle or split the two gestures depending on
+        whether the design surfaces differ enough to warrant separate tasks.
+      ->8-
+    }
   }
 
   task mod_session_setup "Session setup screens" {

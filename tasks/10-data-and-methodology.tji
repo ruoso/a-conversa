@@ -424,6 +424,7 @@ task data_and_methodology "Data and methodology" {
     task set_edge_substance_annotation_endpoint "Widen setEdgeSubstanceProposalSchema and validator to allow annotation endpoints" {
       effort 0.5d
       allocate team
+      complete 100
       depends data_and_methodology.event_types.edge_target_annotation_schema_extension
       note -8<-
         Source of debt: edge_target_annotation_schema_extension — widens setEdgeSubstanceProposalSchema's

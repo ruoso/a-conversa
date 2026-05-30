@@ -164,6 +164,94 @@ describe('proposal payload — set-edge-substance', () => {
       }
     });
   });
+
+  // Per `set_edge_substance_annotation_endpoint` the schema gains two
+  // more optional endpoint fields (`source_annotation_id`,
+  // `target_annotation_id`) plus per-endpoint `.refine()` at-most-one
+  // checks. The connecting shape may pair any node-or-annotation
+  // source with any node-or-annotation target; the substance-only
+  // re-vote shape stays valid (zero endpoint fields).
+  describe('polymorphic endpoints (set_edge_substance_annotation_endpoint)', () => {
+    const ANNOTATION_ID_A = 'eeeeeeee-eeee-4eee-8eee-eeeeeeee01ee';
+    const ANNOTATION_ID_B = 'eeeeeeee-eeee-4eee-8eee-eeeeeeee02ee';
+
+    it('round-trips node→annotation connecting case', () => {
+      const payload = {
+        ...valid,
+        source_node_id: NODE_ID,
+        target_annotation_id: ANNOTATION_ID_A,
+        role: 'contradicts' as const,
+      };
+      expect(roundTrip(payload)).toEqual(payload);
+    });
+
+    it('round-trips annotation→node connecting case', () => {
+      const payload = {
+        ...valid,
+        source_annotation_id: ANNOTATION_ID_A,
+        target_node_id: NODE_ID,
+        role: 'contradicts' as const,
+      };
+      expect(roundTrip(payload)).toEqual(payload);
+    });
+
+    it('round-trips annotation→annotation connecting case', () => {
+      const payload = {
+        ...valid,
+        source_annotation_id: ANNOTATION_ID_A,
+        target_annotation_id: ANNOTATION_ID_B,
+        role: 'contradicts' as const,
+      };
+      expect(roundTrip(payload)).toEqual(payload);
+    });
+
+    it('rejects when both source_node_id and source_annotation_id are set', () => {
+      const result = proposalPayloadSchema.safeParse({
+        ...valid,
+        source_node_id: NODE_ID,
+        source_annotation_id: ANNOTATION_ID_A,
+        target_node_id: NODE_ID_2,
+        role: 'supports' as const,
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('rejects when both target_node_id and target_annotation_id are set', () => {
+      const result = proposalPayloadSchema.safeParse({
+        ...valid,
+        source_node_id: NODE_ID,
+        target_node_id: NODE_ID_2,
+        target_annotation_id: ANNOTATION_ID_A,
+        role: 'supports' as const,
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('rejects a non-UUID source_annotation_id', () => {
+      const result = proposalPayloadSchema.safeParse({
+        ...valid,
+        source_annotation_id: 'not-a-uuid',
+        target_node_id: NODE_ID_2,
+        role: 'supports' as const,
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('rejects a non-UUID target_annotation_id', () => {
+      const result = proposalPayloadSchema.safeParse({
+        ...valid,
+        source_node_id: NODE_ID,
+        target_annotation_id: 'not-a-uuid',
+        role: 'supports' as const,
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('continues to accept the zero-endpoint substance-only shape', () => {
+      const result = proposalPayloadSchema.safeParse(valid);
+      expect(result.success).toBe(true);
+    });
+  });
 });
 
 describe('proposal payload — edit-wording (reword)', () => {
@@ -513,6 +601,155 @@ describe('proposal payload — annotate', () => {
       target_id: EDGE_ID,
     });
     expect(result.success).toBe(true);
+  });
+});
+
+// Per `set_edge_substance_annotation_endpoint` the
+// `captureNodeEdgeShapeSchema` widens to four polymorphic endpoint
+// fields with per-endpoint EXACTLY-ONE refines (capture-with-edge
+// always carries fully-specified endpoints; no substance-only shape).
+describe('proposal payload — capture-node (capture-with-edge polymorphic endpoints)', () => {
+  const ANNOTATION_ID_A = 'eeeeeeee-eeee-4eee-8eee-eeeeeeee01ee';
+  const ANNOTATION_ID_B = 'eeeeeeee-eeee-4eee-8eee-eeeeeeee02ee';
+
+  const baseValid = {
+    kind: 'capture-node' as const,
+    node_id: NODE_ID,
+    wording: 'A fresh node.',
+  };
+
+  it('round-trips wording-only capture (no edge block)', () => {
+    expect(roundTrip(baseValid)).toEqual(baseValid);
+  });
+
+  it('round-trips node→node capture-with-edge', () => {
+    const payload = {
+      ...baseValid,
+      edge: {
+        edge_id: EDGE_ID,
+        role: 'supports' as const,
+        source_node_id: NODE_ID,
+        target_node_id: NODE_ID_2,
+      },
+    };
+    expect(roundTrip(payload)).toEqual(payload);
+  });
+
+  it('round-trips node→annotation capture-with-edge', () => {
+    const payload = {
+      ...baseValid,
+      edge: {
+        edge_id: EDGE_ID,
+        role: 'contradicts' as const,
+        source_node_id: NODE_ID,
+        target_annotation_id: ANNOTATION_ID_A,
+      },
+    };
+    expect(roundTrip(payload)).toEqual(payload);
+  });
+
+  it('round-trips annotation→node capture-with-edge', () => {
+    const payload = {
+      ...baseValid,
+      edge: {
+        edge_id: EDGE_ID,
+        role: 'supports' as const,
+        source_annotation_id: ANNOTATION_ID_A,
+        target_node_id: NODE_ID_2,
+      },
+    };
+    expect(roundTrip(payload)).toEqual(payload);
+  });
+
+  it('round-trips annotation→annotation capture-with-edge', () => {
+    const payload = {
+      ...baseValid,
+      edge: {
+        edge_id: EDGE_ID,
+        role: 'contradicts' as const,
+        source_annotation_id: ANNOTATION_ID_A,
+        target_annotation_id: ANNOTATION_ID_B,
+      },
+    };
+    expect(roundTrip(payload)).toEqual(payload);
+  });
+
+  it('rejects when both source_node_id and source_annotation_id are set', () => {
+    const result = proposalPayloadSchema.safeParse({
+      ...baseValid,
+      edge: {
+        edge_id: EDGE_ID,
+        role: 'supports' as const,
+        source_node_id: NODE_ID,
+        source_annotation_id: ANNOTATION_ID_A,
+        target_node_id: NODE_ID_2,
+      },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects when both target_node_id and target_annotation_id are set', () => {
+    const result = proposalPayloadSchema.safeParse({
+      ...baseValid,
+      edge: {
+        edge_id: EDGE_ID,
+        role: 'supports' as const,
+        source_node_id: NODE_ID,
+        target_node_id: NODE_ID_2,
+        target_annotation_id: ANNOTATION_ID_A,
+      },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects when neither source-side slot is set (exactly-one required)', () => {
+    const result = proposalPayloadSchema.safeParse({
+      ...baseValid,
+      edge: {
+        edge_id: EDGE_ID,
+        role: 'supports' as const,
+        target_node_id: NODE_ID_2,
+      },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects when neither target-side slot is set (exactly-one required)', () => {
+    const result = proposalPayloadSchema.safeParse({
+      ...baseValid,
+      edge: {
+        edge_id: EDGE_ID,
+        role: 'supports' as const,
+        source_node_id: NODE_ID,
+      },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a non-UUID source_annotation_id', () => {
+    const result = proposalPayloadSchema.safeParse({
+      ...baseValid,
+      edge: {
+        edge_id: EDGE_ID,
+        role: 'supports' as const,
+        source_annotation_id: 'not-a-uuid',
+        target_node_id: NODE_ID_2,
+      },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a non-UUID target_annotation_id', () => {
+    const result = proposalPayloadSchema.safeParse({
+      ...baseValid,
+      edge: {
+        edge_id: EDGE_ID,
+        role: 'supports' as const,
+        source_node_id: NODE_ID,
+        target_annotation_id: 'not-a-uuid',
+      },
+    });
+    expect(result.success).toBe(false);
   });
 });
 

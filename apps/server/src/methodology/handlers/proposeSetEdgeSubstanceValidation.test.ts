@@ -58,6 +58,12 @@ const FRESH_EDGE_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaace';
 
 const UNKNOWN_NODE_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbce';
 
+// Annotation ids — used by the polymorphic-endpoint cases per
+// `set_edge_substance_annotation_endpoint`.
+const SOURCE_ANNOTATION_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeee01ce';
+const TARGET_ANNOTATION_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeee02ce';
+const UNKNOWN_ANNOTATION_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeee99ce';
+
 const PRIOR_DECOMPOSE_PROPOSAL_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccce1';
 const NEW_EVENT_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddddce1';
 
@@ -200,34 +206,7 @@ function seedSessionWithExtantEdge(): ReturnType<typeof createEmptyProjection> {
       included_at: T2,
     }),
   );
-  // Advance the edge's shape facet to `'committed'` so the gate
-  // accepts. Each current participant (moderator + both debaters)
-  // votes agree on `(edge, 'shape')`, then the moderator commits.
-  for (const voter of [MODERATOR_ID, DEBATER_A_ID, DEBATER_B_ID]) {
-    applyEvent(
-      projection,
-      makeEvent(nextSequence(projection), 'vote', voter, T3, {
-        target: 'facet' as const,
-        entity_kind: 'edge' as const,
-        entity_id: EXTANT_EDGE_ID,
-        facet: 'shape' as const,
-        participant: voter,
-        choice: 'agree' as const,
-        voted_at: T3,
-      }),
-    );
-  }
-  applyEvent(
-    projection,
-    makeEvent(nextSequence(projection), 'commit', MODERATOR_ID, T3, {
-      target: 'facet' as const,
-      entity_kind: 'edge' as const,
-      entity_id: EXTANT_EDGE_ID,
-      facet: 'shape' as const,
-      committed_by: MODERATOR_ID,
-      committed_at: T3,
-    }),
-  );
+  advanceShapeToCommitted(projection, EXTANT_EDGE_ID);
   return projection;
 }
 
@@ -313,13 +292,18 @@ interface ProposalOverrides {
   // Pass `undefined` (explicitly) to omit the field; pass a string to
   // override the default seed value. Absent key → default seed value.
   source_node_id?: string | undefined;
+  source_annotation_id?: string | undefined;
   target_node_id?: string | undefined;
+  target_annotation_id?: string | undefined;
   role?: EdgeRoleLiteral | undefined;
 }
 
 // Build a `set-edge-substance` propose action at the next-expected
 // sequence. Default: moderator proposes a fresh connecting edge with
-// all three endpoint fields set.
+// the node-source + node-target endpoint pair + `role: 'supports'`.
+// Pass `source_node_id: undefined` + `source_annotation_id: <id>` (and
+// symmetric for target) to mint a polymorphic-endpoint proposal per
+// `set_edge_substance_annotation_endpoint`.
 function makeSetEdgeSubstanceAction(
   projection: ReturnType<typeof createEmptyProjection>,
   proposalOverrides: ProposalOverrides = {},
@@ -330,8 +314,16 @@ function makeSetEdgeSubstanceAction(
   // present-but-undefined → omit, present string → use" semantics.
   const sourceNodeId =
     'source_node_id' in proposalOverrides ? proposalOverrides.source_node_id : SOURCE_NODE_ID;
+  const sourceAnnotationId =
+    'source_annotation_id' in proposalOverrides
+      ? proposalOverrides.source_annotation_id
+      : undefined;
   const targetNodeId =
     'target_node_id' in proposalOverrides ? proposalOverrides.target_node_id : TARGET_NODE_ID;
+  const targetAnnotationId =
+    'target_annotation_id' in proposalOverrides
+      ? proposalOverrides.target_annotation_id
+      : undefined;
   const role: EdgeRoleLiteral | undefined =
     'role' in proposalOverrides ? proposalOverrides.role : 'supports';
   const proposal: SetEdgeSubstanceProposal = {
@@ -339,7 +331,9 @@ function makeSetEdgeSubstanceAction(
     edge_id: proposalOverrides.edge_id ?? FRESH_EDGE_ID,
     value: proposalOverrides.value ?? 'agreed',
     ...(sourceNodeId !== undefined ? { source_node_id: sourceNodeId } : {}),
+    ...(sourceAnnotationId !== undefined ? { source_annotation_id: sourceAnnotationId } : {}),
     ...(targetNodeId !== undefined ? { target_node_id: targetNodeId } : {}),
+    ...(targetAnnotationId !== undefined ? { target_annotation_id: targetAnnotationId } : {}),
     ...(role !== undefined ? { role } : {}),
   };
   return {
@@ -352,6 +346,72 @@ function makeSetEdgeSubstanceAction(
     createdAt: T9,
     proposal,
   };
+}
+
+// Advance an extant edge's `shape` facet to `'committed'` so the
+// propose-handler sequence gate accepts. The three current
+// participants each vote agree on `(edge, 'shape')`, then the
+// moderator commits.
+function advanceShapeToCommitted(
+  projection: ReturnType<typeof createEmptyProjection>,
+  edgeId: string,
+): void {
+  for (const voter of [MODERATOR_ID, DEBATER_A_ID, DEBATER_B_ID]) {
+    applyEvent(
+      projection,
+      makeEvent(nextSequence(projection), 'vote', voter, T3, {
+        target: 'facet' as const,
+        entity_kind: 'edge' as const,
+        entity_id: edgeId,
+        facet: 'shape' as const,
+        participant: voter,
+        choice: 'agree' as const,
+        voted_at: T3,
+      }),
+    );
+  }
+  applyEvent(
+    projection,
+    makeEvent(nextSequence(projection), 'commit', MODERATOR_ID, T3, {
+      target: 'facet' as const,
+      entity_kind: 'edge' as const,
+      entity_id: edgeId,
+      facet: 'shape' as const,
+      committed_by: MODERATOR_ID,
+      committed_at: T3,
+    }),
+  );
+}
+
+// Seed two annotations attached to the seeded nodes (`SOURCE_NODE_ID` /
+// `TARGET_NODE_ID`); used by the polymorphic-endpoint Phase 2a/2b/2c
+// cases. The annotations are visible by default (the projection sets
+// `visible: true` at `annotation-created` time).
+function seedAnnotations(projection: ReturnType<typeof createEmptyProjection>): void {
+  applyEvent(
+    projection,
+    makeEvent(nextSequence(projection), 'annotation-created', DEBATER_A_ID, T2, {
+      annotation_id: SOURCE_ANNOTATION_ID,
+      kind: 'note',
+      content: 'Annotation on the source node.',
+      target_node_id: SOURCE_NODE_ID,
+      target_edge_id: null,
+      created_by: DEBATER_A_ID,
+      created_at: T2,
+    }),
+  );
+  applyEvent(
+    projection,
+    makeEvent(nextSequence(projection), 'annotation-created', DEBATER_B_ID, T2, {
+      annotation_id: TARGET_ANNOTATION_ID,
+      kind: 'note',
+      content: 'Annotation on the target node.',
+      target_node_id: TARGET_NODE_ID,
+      target_edge_id: null,
+      created_by: DEBATER_B_ID,
+      created_at: T2,
+    }),
+  );
 }
 
 // ---------------------------------------------------------------
@@ -560,36 +620,24 @@ describe('propose set-edge-substance — rule 2c: agreement-with-existing-edge',
     }
   });
 
-  it('rejects when the resolved existing edge carries annotation endpoints (per projection_edge_annotation_endpoint D6)', () => {
+  // Per `set_edge_substance_annotation_endpoint` D5 the polymorphic
+  // triple comparison covers four-or-six field equalities. The three
+  // cases below pin the cross-kind disagreement paths (projected-
+  // annotation vs carried-node, projected-node vs carried-annotation,
+  // both-annotation-but-different-ids).
+
+  it('rejects when projected edge has annotation source but carried payload has node source', () => {
     const p = seedSession();
-    // Build an annotation-endpoint edge by raw `applyEvent` of an
-    // annotation-target `edge-created` event — the wire schema permits
-    // this shape; the projection layer (post
-    // `projection_edge_annotation_endpoint`) records it; the
-    // `set-edge-substance` proposal doesn't yet carry annotation
-    // endpoints (`set_edge_substance_annotation_endpoint` is the
-    // follow-up). The substance-only re-vote shape (zero endpoint
-    // fields) is what we then send.
-    const ANNOTATION_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeece';
-    applyEvent(
-      p,
-      makeEvent(nextSequence(p), 'annotation-created', DEBATER_A_ID, T2, {
-        annotation_id: ANNOTATION_ID,
-        kind: 'note',
-        content: 'annotation',
-        target_node_id: SOURCE_NODE_ID,
-        target_edge_id: null,
-        created_by: DEBATER_A_ID,
-        created_at: T2,
-      }),
-    );
+    seedAnnotations(p);
+    // Build an annotation-source extant edge by raw `applyEvent`. The
+    // edge runs SOURCE_ANNOTATION_ID → TARGET_NODE_ID.
     applyEvent(
       p,
       makeEvent(nextSequence(p), 'edge-created', DEBATER_A_ID, T2, {
         edge_id: EXTANT_EDGE_ID,
         role: 'contradicts',
-        source_node_id: SOURCE_NODE_ID,
-        target_annotation_id: ANNOTATION_ID,
+        source_annotation_id: SOURCE_ANNOTATION_ID,
+        target_node_id: TARGET_NODE_ID,
         created_by: DEBATER_A_ID,
         created_at: T2,
       }),
@@ -603,50 +651,110 @@ describe('propose set-edge-substance — rule 2c: agreement-with-existing-edge',
         included_at: T2,
       }),
     );
-    // Advance the edge's shape facet to `'committed'` so the
-    // sequence gate accepts and we reach the per-sub-kind validator.
-    for (const voter of [MODERATOR_ID, DEBATER_A_ID, DEBATER_B_ID]) {
-      applyEvent(
-        p,
-        makeEvent(nextSequence(p), 'vote', voter, T3, {
-          target: 'facet' as const,
-          entity_kind: 'edge' as const,
-          entity_id: EXTANT_EDGE_ID,
-          facet: 'shape' as const,
-          participant: voter,
-          choice: 'agree' as const,
-          voted_at: T3,
-        }),
-      );
-    }
-    applyEvent(
-      p,
-      makeEvent(nextSequence(p), 'commit', MODERATOR_ID, T3, {
-        target: 'facet' as const,
-        entity_kind: 'edge' as const,
-        entity_id: EXTANT_EDGE_ID,
-        facet: 'shape' as const,
-        committed_by: MODERATOR_ID,
-        committed_at: T3,
-      }),
-    );
-    // Substance-only re-vote shape (zero endpoint fields). The
-    // validator resolves the existing edge by id, sees the annotation
-    // endpoint, and rejects with the follow-up name in the message.
+    advanceShapeToCommitted(p, EXTANT_EDGE_ID);
+    // Carry node source against the annotation-source projected edge.
     const action = makeSetEdgeSubstanceAction(p, {
       edge_id: EXTANT_EDGE_ID,
-      value: 'disputed',
-      source_node_id: undefined,
-      target_node_id: undefined,
-      role: undefined,
+      source_node_id: SOURCE_NODE_ID,
+      source_annotation_id: undefined,
+      target_node_id: TARGET_NODE_ID,
+      target_annotation_id: undefined,
+      role: 'contradicts',
     });
     const r = validateAction(p, action);
     expect(r.ok).toBe(false);
     if (!r.ok) {
       expect(r.reason).toBe('illegal-state-transition');
       expect(r.detail).toContain(EXTANT_EDGE_ID);
-      expect(r.detail).toContain('annotation endpoints');
-      expect(r.detail).toContain('set_edge_substance_annotation_endpoint');
+      expect(r.detail).toContain(SOURCE_ANNOTATION_ID);
+      expect(r.detail).toContain(SOURCE_NODE_ID);
+    }
+  });
+
+  it('rejects when projected edge has node target but carried payload has annotation target', () => {
+    const p = seedSession();
+    seedAnnotations(p);
+    // Standard node→node extant edge already seeded by helper; rebuild
+    // inline for clarity. SOURCE_NODE_ID → TARGET_NODE_ID.
+    applyEvent(
+      p,
+      makeEvent(nextSequence(p), 'edge-created', DEBATER_A_ID, T2, {
+        edge_id: EXTANT_EDGE_ID,
+        role: 'supports',
+        source_node_id: SOURCE_NODE_ID,
+        target_node_id: TARGET_NODE_ID,
+        created_by: DEBATER_A_ID,
+        created_at: T2,
+      }),
+    );
+    applyEvent(
+      p,
+      makeEvent(nextSequence(p), 'entity-included', DEBATER_A_ID, T2, {
+        entity_kind: 'edge',
+        entity_id: EXTANT_EDGE_ID,
+        included_by: DEBATER_A_ID,
+        included_at: T2,
+      }),
+    );
+    advanceShapeToCommitted(p, EXTANT_EDGE_ID);
+    const action = makeSetEdgeSubstanceAction(p, {
+      edge_id: EXTANT_EDGE_ID,
+      source_node_id: SOURCE_NODE_ID,
+      target_node_id: undefined,
+      target_annotation_id: TARGET_ANNOTATION_ID,
+      role: 'supports',
+    });
+    const r = validateAction(p, action);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.reason).toBe('illegal-state-transition');
+      expect(r.detail).toContain(EXTANT_EDGE_ID);
+      expect(r.detail).toContain(TARGET_ANNOTATION_ID);
+      expect(r.detail).toContain(TARGET_NODE_ID);
+    }
+  });
+
+  it('rejects when projected and carried are both annotation targets but the annotation ids differ', () => {
+    const p = seedSession();
+    seedAnnotations(p);
+    // Project an annotation-target extant edge against
+    // SOURCE_ANNOTATION_ID; the propose payload then names
+    // TARGET_ANNOTATION_ID — the ids differ.
+    applyEvent(
+      p,
+      makeEvent(nextSequence(p), 'edge-created', DEBATER_A_ID, T2, {
+        edge_id: EXTANT_EDGE_ID,
+        role: 'contradicts',
+        source_node_id: SOURCE_NODE_ID,
+        target_annotation_id: SOURCE_ANNOTATION_ID,
+        created_by: DEBATER_A_ID,
+        created_at: T2,
+      }),
+    );
+    applyEvent(
+      p,
+      makeEvent(nextSequence(p), 'entity-included', DEBATER_A_ID, T2, {
+        entity_kind: 'edge',
+        entity_id: EXTANT_EDGE_ID,
+        included_by: DEBATER_A_ID,
+        included_at: T2,
+      }),
+    );
+    advanceShapeToCommitted(p, EXTANT_EDGE_ID);
+    const action = makeSetEdgeSubstanceAction(p, {
+      edge_id: EXTANT_EDGE_ID,
+      source_node_id: SOURCE_NODE_ID,
+      target_node_id: undefined,
+      target_annotation_id: TARGET_ANNOTATION_ID,
+      role: 'contradicts',
+    });
+    const r = validateAction(p, action);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.reason).toBe('illegal-state-transition');
+      expect(r.detail).toContain(EXTANT_EDGE_ID);
+      expect(r.detail).toContain(SOURCE_ANNOTATION_ID);
+      expect(r.detail).toContain(TARGET_ANNOTATION_ID);
     }
   });
 });
@@ -715,6 +823,302 @@ describe('propose set-edge-substance — accept paths', () => {
     const r = validateAction(p, action);
     expect(r.ok).toBe(true);
     if (r.ok) {
+      expect(r.events).toHaveLength(1);
+      expect(r.events[0]!.kind).toBe('proposal');
+    }
+  });
+});
+
+// ---------------------------------------------------------------
+// Polymorphic-endpoint cases per `set_edge_substance_annotation_endpoint`.
+// Each endpoint is independently a node id or an annotation id.
+// ---------------------------------------------------------------
+
+describe('propose set-edge-substance — polymorphic Phase 1 symmetry', () => {
+  it('rejects when target_annotation_id + role are present but no source-side slot is set', () => {
+    const p = seedSession();
+    seedAnnotations(p);
+    const action = makeSetEdgeSubstanceAction(p, {
+      source_node_id: undefined,
+      source_annotation_id: undefined,
+      target_node_id: undefined,
+      target_annotation_id: TARGET_ANNOTATION_ID,
+      role: 'contradicts',
+    });
+    const r = validateAction(p, action);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.reason).toBe('illegal-state-transition');
+      expect(r.detail).toContain('source-side');
+      expect(r.detail).toContain(FRESH_EDGE_ID);
+    }
+  });
+
+  it('rejects when both source-side AND target-side annotation slots are present but role is absent', () => {
+    const p = seedSession();
+    seedAnnotations(p);
+    const action = makeSetEdgeSubstanceAction(p, {
+      source_node_id: undefined,
+      source_annotation_id: SOURCE_ANNOTATION_ID,
+      target_node_id: undefined,
+      target_annotation_id: TARGET_ANNOTATION_ID,
+      role: undefined,
+    });
+    const r = validateAction(p, action);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.reason).toBe('illegal-state-transition');
+      expect(r.detail).toContain('role');
+      expect(r.detail).toContain(FRESH_EDGE_ID);
+    }
+  });
+});
+
+describe('propose set-edge-substance — polymorphic Phase 2a: source annotation visibility', () => {
+  it('rejects when source_annotation_id references an unknown annotation', () => {
+    const p = seedSession();
+    seedAnnotations(p);
+    const action = makeSetEdgeSubstanceAction(p, {
+      source_node_id: undefined,
+      source_annotation_id: UNKNOWN_ANNOTATION_ID,
+      role: 'contradicts',
+    });
+    const r = validateAction(p, action);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.reason).toBe('target-entity-not-found');
+      expect(r.detail).toContain('source_annotation_id');
+      expect(r.detail).toContain(UNKNOWN_ANNOTATION_ID);
+    }
+  });
+
+  it('rejects when source_annotation_id references an annotation that exists but is invisible', () => {
+    const p = seedSession();
+    seedAnnotations(p);
+    // Flip the source annotation to invisible directly on the
+    // projection — no `annotation-retract` replay arm exists today;
+    // the helper aligns with the established visibility-check
+    // pattern.
+    p.setAnnotationVisible(SOURCE_ANNOTATION_ID, false);
+    expect(p.getAnnotation(SOURCE_ANNOTATION_ID)?.visible).toBe(false);
+
+    const action = makeSetEdgeSubstanceAction(p, {
+      source_node_id: undefined,
+      source_annotation_id: SOURCE_ANNOTATION_ID,
+      role: 'contradicts',
+    });
+    const r = validateAction(p, action);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.reason).toBe('target-entity-not-found');
+      expect(r.detail).toContain('source_annotation_id');
+      expect(r.detail).toContain(SOURCE_ANNOTATION_ID);
+    }
+  });
+});
+
+describe('propose set-edge-substance — polymorphic Phase 2b: target annotation visibility', () => {
+  it('rejects when target_annotation_id references an unknown annotation', () => {
+    const p = seedSession();
+    seedAnnotations(p);
+    const action = makeSetEdgeSubstanceAction(p, {
+      target_node_id: undefined,
+      target_annotation_id: UNKNOWN_ANNOTATION_ID,
+      role: 'contradicts',
+    });
+    const r = validateAction(p, action);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.reason).toBe('target-entity-not-found');
+      expect(r.detail).toContain('target_annotation_id');
+      expect(r.detail).toContain(UNKNOWN_ANNOTATION_ID);
+    }
+  });
+
+  it('rejects when target_annotation_id references an annotation that is invisible', () => {
+    const p = seedSession();
+    seedAnnotations(p);
+    p.setAnnotationVisible(TARGET_ANNOTATION_ID, false);
+
+    const action = makeSetEdgeSubstanceAction(p, {
+      target_node_id: undefined,
+      target_annotation_id: TARGET_ANNOTATION_ID,
+      role: 'contradicts',
+    });
+    const r = validateAction(p, action);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.reason).toBe('target-entity-not-found');
+      expect(r.detail).toContain('target_annotation_id');
+      expect(r.detail).toContain(TARGET_ANNOTATION_ID);
+    }
+  });
+});
+
+describe('propose set-edge-substance — polymorphic happy paths', () => {
+  it('accepts node→annotation connecting case (the E15 shape)', () => {
+    const p = seedSession();
+    seedAnnotations(p);
+    const action = makeSetEdgeSubstanceAction(p, {
+      edge_id: FRESH_EDGE_ID,
+      source_node_id: SOURCE_NODE_ID,
+      target_node_id: undefined,
+      target_annotation_id: TARGET_ANNOTATION_ID,
+      role: 'contradicts',
+    });
+    const r = validateAction(p, action);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.events).toHaveLength(3);
+      expect(r.events[0]!.kind).toBe('edge-created');
+      const first = r.events[0]!;
+      if (first.kind === 'edge-created') {
+        const payload = first.payload;
+        expect(payload.source_node_id).toBe(SOURCE_NODE_ID);
+        expect(payload.target_annotation_id).toBe(TARGET_ANNOTATION_ID);
+        expect(payload.target_node_id).toBeUndefined();
+        expect(payload.source_annotation_id).toBeUndefined();
+      }
+      expect(r.events[1]!.kind).toBe('entity-included');
+      expect(r.events[2]!.kind).toBe('proposal');
+    }
+  });
+
+  it('accepts annotation→node connecting case', () => {
+    const p = seedSession();
+    seedAnnotations(p);
+    const action = makeSetEdgeSubstanceAction(p, {
+      edge_id: FRESH_EDGE_ID,
+      source_node_id: undefined,
+      source_annotation_id: SOURCE_ANNOTATION_ID,
+      target_node_id: TARGET_NODE_ID,
+      role: 'contradicts',
+    });
+    const r = validateAction(p, action);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.events).toHaveLength(3);
+      const first = r.events[0]!;
+      if (first.kind === 'edge-created') {
+        const payload = first.payload;
+        expect(payload.source_annotation_id).toBe(SOURCE_ANNOTATION_ID);
+        expect(payload.target_node_id).toBe(TARGET_NODE_ID);
+        expect(payload.source_node_id).toBeUndefined();
+        expect(payload.target_annotation_id).toBeUndefined();
+      }
+    }
+  });
+
+  it('accepts annotation→annotation connecting case', () => {
+    const p = seedSession();
+    seedAnnotations(p);
+    const action = makeSetEdgeSubstanceAction(p, {
+      edge_id: FRESH_EDGE_ID,
+      source_node_id: undefined,
+      source_annotation_id: SOURCE_ANNOTATION_ID,
+      target_node_id: undefined,
+      target_annotation_id: TARGET_ANNOTATION_ID,
+      role: 'contradicts',
+    });
+    const r = validateAction(p, action);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.events).toHaveLength(3);
+      const first = r.events[0]!;
+      if (first.kind === 'edge-created') {
+        const payload = first.payload;
+        expect(payload.source_annotation_id).toBe(SOURCE_ANNOTATION_ID);
+        expect(payload.target_annotation_id).toBe(TARGET_ANNOTATION_ID);
+        expect(payload.source_node_id).toBeUndefined();
+        expect(payload.target_node_id).toBeUndefined();
+      }
+    }
+  });
+
+  // Regression for the lifted defensive guard
+  // (`projection_edge_annotation_endpoint` D6's breadcrumb): a
+  // substance-only re-vote against an annotation-endpoint extant edge
+  // used to reject with the follow-up-task name in the detail. THIS
+  // task lifts the guard; the re-vote now accepts and emits one
+  // event (the proposal envelope).
+  it('accepts the substance-only re-vote against an extant annotation-endpoint edge (lifted-guard regression)', () => {
+    const p = seedSession();
+    seedAnnotations(p);
+    applyEvent(
+      p,
+      makeEvent(nextSequence(p), 'edge-created', DEBATER_A_ID, T2, {
+        edge_id: EXTANT_EDGE_ID,
+        role: 'contradicts',
+        source_node_id: SOURCE_NODE_ID,
+        target_annotation_id: TARGET_ANNOTATION_ID,
+        created_by: DEBATER_A_ID,
+        created_at: T2,
+      }),
+    );
+    applyEvent(
+      p,
+      makeEvent(nextSequence(p), 'entity-included', DEBATER_A_ID, T2, {
+        entity_kind: 'edge',
+        entity_id: EXTANT_EDGE_ID,
+        included_by: DEBATER_A_ID,
+        included_at: T2,
+      }),
+    );
+    advanceShapeToCommitted(p, EXTANT_EDGE_ID);
+
+    const action = makeSetEdgeSubstanceAction(p, {
+      edge_id: EXTANT_EDGE_ID,
+      value: 'disputed',
+      source_node_id: undefined,
+      target_node_id: undefined,
+      role: undefined,
+    });
+    const r = validateAction(p, action);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.events).toHaveLength(1);
+      expect(r.events[0]!.kind).toBe('proposal');
+    }
+  });
+
+  it('accepts the agreement-with-extant case carrying a matching polymorphic triple (target_annotation)', () => {
+    const p = seedSession();
+    seedAnnotations(p);
+    applyEvent(
+      p,
+      makeEvent(nextSequence(p), 'edge-created', DEBATER_A_ID, T2, {
+        edge_id: EXTANT_EDGE_ID,
+        role: 'contradicts',
+        source_node_id: SOURCE_NODE_ID,
+        target_annotation_id: TARGET_ANNOTATION_ID,
+        created_by: DEBATER_A_ID,
+        created_at: T2,
+      }),
+    );
+    applyEvent(
+      p,
+      makeEvent(nextSequence(p), 'entity-included', DEBATER_A_ID, T2, {
+        entity_kind: 'edge',
+        entity_id: EXTANT_EDGE_ID,
+        included_by: DEBATER_A_ID,
+        included_at: T2,
+      }),
+    );
+    advanceShapeToCommitted(p, EXTANT_EDGE_ID);
+
+    const action = makeSetEdgeSubstanceAction(p, {
+      edge_id: EXTANT_EDGE_ID,
+      value: 'agreed',
+      source_node_id: SOURCE_NODE_ID,
+      target_node_id: undefined,
+      target_annotation_id: TARGET_ANNOTATION_ID,
+      role: 'contradicts',
+    });
+    const r = validateAction(p, action);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      // The fresh-edge predicate fails because the edge already exists;
+      // only the proposal envelope fires.
       expect(r.events).toHaveLength(1);
       expect(r.events[0]!.kind).toBe('proposal');
     }
