@@ -86,9 +86,15 @@ task milestones "Milestones" {
     note "Completed debates can be replayed; the test-mode timeline scrubber lets developers and producers walk through any saved session."
   }
 
+  task m_public_landing "M8-landing: Public landing page" {
+    milestone
+    depends !m_audience_mvp, landing_page
+    note "a-conversa.org has a real public front door instead of the developer placeholder at `/`. The page sells the methodology — why better debate needs this platform — and is channel-agnostic (for anyone interested in better debate, not tied to a particular show). Its centrepiece is a self-contained interactive walkthrough of the encoded 'Should zoos exist?' debate, built by reusing the audience surface's pure client-side projector + Cytoscape renderer (extracted into a shared package) over the existing walkthrough event log — deliberately NOT the replay primitive / backend.replay_endpoints work (M8), which is live-session server replay. Labelled M8-landing (sits in the M8 timeframe; depends on the audience renderer from M6, not on replay) and gates M9 — production should not go live with the placeholder front door."
+  }
+
   task m_deployment_ready "M9: Deployment ready" {
     milestone
-    depends !m_end_to_end_debate, !m_backend_review, deployment.prod_container, deployment.prod_compose, deployment.prod_secrets, deployment.prod_migrations, deployment.observability, deployment.backup_and_export.postgres_backup, deployment.backup_and_export.backup_restore_test, deployment.deployment_docs, deployment.deployment_tests
+    depends !m_end_to_end_debate, !m_backend_review, !m_public_landing, deployment.prod_container, deployment.prod_compose, deployment.prod_secrets, deployment.prod_migrations, deployment.observability, deployment.backup_and_export.postgres_backup, deployment.backup_and_export.backup_restore_test, deployment.deployment_docs, deployment.deployment_tests
     note "An always-on cloud server can host live sessions in production. Backups, observability, secrets, and operator docs all in place. Depends on M3-review (backend security hardening) — public network exposure is gated on that work. The two backup_and_export leaves are listed individually (not the parent rollup) because deployment.backup_and_export.event_log_export is deferred to post-v1 per the deployment design decisions captured in [ADR 0031](../docs/adr/0031-production-hosting-railway-paas.md) (v1 ships a single hosted instance at a-conversa.org). The deployment.deployment_tests rollup (smoke_test_after_deploy, migration_dry_run, backup_restore_drill, load_test) gates M9 in full per the 2026-05-30 parking-lot triage — these production/operational validations are M9 deliverables, not tests-alongside-impl. Multi-tenancy (deployment.multi_tenant) and the self-hosting guide (deployment.deployment_docs.self_host_guide) were descoped from the plan on 2026-05-30 — post-v1 per ADR 0031 — so no deferred-orphan leaves remain under deployment."
   }
 

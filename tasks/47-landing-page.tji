@@ -1,0 +1,177 @@
+# 47 — Public landing page (apps/root/, public surface)
+#
+# The public front door at a-conversa.org. Sells the *methodology* — why
+# better debate needs this platform — with an interactive, client-side
+# walkthrough of a real sample debate. Channel-agnostic: it is for anyone
+# interested in debate and how to make debates better, not tied to any
+# particular YouTube channel.
+#
+# Sits in the 47 slot — after root_app (45) and audience (50's renderer is
+# reused via extraction) — and gates M8-landing, which in turn gates M9
+# (Deployment ready): a-conversa.org should not go to production with the
+# developer placeholder currently served at `/`.
+#
+# Key architecture decision (R, 2026-05-30): the interactive walkthrough is
+# a self-contained, no-server, no-auth, no-replay-milestone component. It
+# reuses the audience surface's pure client-side projector + Cytoscape
+# renderer (extracted into a shared package) over the already-encoded
+# "Should zoos exist?" walkthrough event log. It does NOT depend on the
+# replay primitive / backend.replay_endpoints work (M8) — those are about
+# live-session server replay, a different concern.
+
+task landing_page "Public landing page" {
+  task extract_readonly_graph_package "Extract the audience read-only graph renderer into a shared package" {
+    effort 3d
+    allocate team
+    depends audience.aud_graph_rendering
+    note -8<-
+      Lift the audience surface's pure projector + Cytoscape renderer
+      (apps/audience/src/graph/{projectGraph.ts, GraphView.tsx} + its layout
+      options, stylesheet, and overlay siblings) into a shared workspace
+      package (e.g. @a-conversa/graph-view) consumed by BOTH apps/audience and
+      apps/root. Carries an ADR for the package boundary: what is genuinely
+      surface-agnostic read-only rendering vs. what stays audience-specific.
+      Acceptance: apps/audience is refactored onto the package with NO
+      behaviour change and its full test suite stays green; the package
+      exposes a read-only graph view that takes a precomputed event log (no
+      WebSocket / session / server wiring).
+    ->8-
+  }
+
+  task landing_walkthrough_seed "Ship a curated copy of the walkthrough event log as a prod asset" {
+    effort 0.5d
+    allocate team
+    depends data_and_methodology.data_methodology_tests.dm_e2e_tests.walkthrough_replay_e2e
+    note -8<-
+      The "Should zoos exist?" debate is already encoded at
+      packages/test-fixtures/src/fixtures/walkthrough/events.json. Use it
+      as-is (decision R, 2026-05-30 — no fresh authoring), but expose it as a
+      shippable production asset rather than importing from a test-only
+      fixtures package: a small importable module/JSON the landing bundle can
+      load. No content rewrite; this is a packaging/location task.
+    ->8-
+  }
+
+  task split_public_and_home_routes "Split the public marketing landing (/) from the authenticated dashboard (/home)" {
+    effort 1d
+    allocate team
+    depends root_app
+    note -8<-
+      Today `/` (apps/root/src/routes/LandingRoute.tsx) is one route doing two
+      jobs: a public placeholder for anonymous visitors AND the authenticated
+      app home. Split them: `/` becomes the public marketing page (anonymous);
+      move the authenticated dashboard (welcome + start-a-session + logout) to
+      its own route, e.g. `/home`. Preserve the deep-link return-to handling
+      (takeRememberedReturnTo) and keep the /login, /screen-name, /logout auth
+      chrome symmetric. Update the affected root tests + auth-callback routing.
+    ->8-
+  }
+
+  task landing_hero_and_method "Hero + 'how it works' + 'what it surfaces' narrative sections" {
+    effort 2d
+    allocate team
+    depends !split_public_and_home_routes
+    note -8<-
+      The methodology pitch, localized (en-US / pt-BR / es-419 per the i18n
+      catalog workflow). Hero: name + one-line value prop + the hypothesis
+      (most disagreements are people contradicting themselves, or talking past
+      each other by treating the same statement as different KINDS of thing).
+      "How it works": two debaters + one moderator, a single shared
+      live-growing graph, nothing lands until everyone agrees. "What it
+      surfaces": the three diagnostic goals (internal contradictions, category
+      mismatches, bedrock axioms). New strings drafted en-US with machine
+      pt-BR/es-419 + PENDING review trackers; native-speaker sign-off stays on
+      the parked translation-review item (not a WBS leaf).
+    ->8-
+  }
+
+  task landing_opensource_and_cta "Open-source section, secondary call-to-action, footer" {
+    effort 0.5d
+    allocate team
+    depends !split_public_and_home_routes
+    note -8<-
+      Open-source / "adopt the format" section (GitHub link, license), a
+      secondary "start a debate" / login CTA (secondary because the page sells
+      the method, not a sign-up funnel), and the page footer + locale switcher.
+      Localized. Real repo URL / license are content inputs.
+    ->8-
+  }
+
+  task walkthrough_narration_script "Design the walkthrough narration: step beats + en-US caption copy" {
+    effort 0.5d
+    allocate team
+    depends !landing_walkthrough_seed
+    note -8<-
+      Content-design task (not coding). Choose which steps of the zoos
+      walkthrough the demo pauses on and write, in en-US, what each pause
+      teaches — tying the visible graph change to the methodology concept
+      (a classification, a decomposition, a surfaced contradiction, an
+      axiom-mark). Output is the script the captions task implements; this is
+      where the "sell the methodology" story is actually written.
+    ->8-
+  }
+
+  task walkthrough_demo_stepper "Embedded interactive walkthrough stepper / scrubber" {
+    effort 3d
+    allocate team
+    depends !extract_readonly_graph_package, !landing_walkthrough_seed
+    note -8<-
+      The interactive demo component embedded in the landing page. Loads the
+      seed event log and lets the visitor step / scrub through it: on each
+      position it projects events[0..pos] and re-renders the graph via the
+      shared @a-conversa/graph-view package. No server, no auth, no session,
+      no replay endpoints. Play/pause/auto-advance optional. This is the
+      "walkthrough of what it looks like" the page is built around.
+    ->8-
+  }
+
+  task walkthrough_demo_narration "Per-step captions wired into the demo, localized" {
+    effort 1d
+    allocate team
+    depends !walkthrough_demo_stepper, !walkthrough_narration_script
+    note -8<-
+      Implement the narration: render the per-step caption alongside the
+      graph as the visitor advances, driven by the script from
+      walkthrough_narration_script. Localized (en-US authored; machine
+      pt-BR/es-419 + PENDING review trackers, native review stays parked).
+    ->8-
+  }
+
+  task landing_demo_mobile_fallback "Reduced demo mode for small screens" {
+    effort 1d
+    allocate team
+    depends !walkthrough_demo_stepper
+    note -8<-
+      Interactive Cytoscape on a phone is heavy. Define a reduced/fallback
+      mode for small viewports — e.g. show the final (or per-segment) graph
+      with simple step buttons and skip animated re-layout — so the demo
+      degrades gracefully rather than being treated as a bug later. Decision R
+      (2026-05-30): handle this as first-class scope, not afterthought.
+    ->8-
+  }
+
+  task landing_responsive_a11y "Responsive layout + accessibility pass across the page" {
+    effort 1d
+    allocate team
+    depends !landing_hero_and_method, !landing_opensource_and_cta, !walkthrough_demo_stepper
+    note -8<-
+      General responsive layout (narrative sections, hero, footer) across
+      breakpoints and an accessibility pass (landmarks, headings, focus order,
+      contrast, the demo's keyboard operability and reduced-motion handling).
+      The small-screen demo behaviour itself is landing_demo_mobile_fallback;
+      this is the whole-page polish.
+    ->8-
+  }
+
+  task landing_e2e "Playwright cover for the public landing + walkthrough demo" {
+    effort 1d
+    allocate team
+    depends !landing_hero_and_method, !landing_opensource_and_cta, !walkthrough_demo_narration, !landing_demo_mobile_fallback, !landing_responsive_a11y
+    note -8<-
+      Playwright spec: an anonymous visit to `/` renders the narrative
+      sections and the walkthrough demo; stepping the demo advances the graph
+      through to the final state with the matching caption; `/home` requires
+      auth (anonymous is routed to login). Asserts the public/home split holds.
+    ->8-
+  }
+}
