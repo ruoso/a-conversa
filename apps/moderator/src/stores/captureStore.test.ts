@@ -27,6 +27,7 @@ import { MAX_METHODOLOGY_TEXT_LENGTH } from '@a-conversa/shared-types';
 import {
   createEmptyDecomposeComponents,
   createEmptyProposalRows,
+  selectIsCaptureDefeaterReady,
   useCaptureStore,
   validateDecomposeComponents,
   validateProposalRows,
@@ -731,6 +732,32 @@ describe('useCaptureStore — capture-defeater-mode slice (mod_capture_defeater_
     const state = useCaptureStore.getState();
     expect(state.mode).toBe('idle');
     expect(state.captureDefeaterTargetNodeId).toBeNull();
+  });
+
+  it('selectIsCaptureDefeaterReady truth table — only true when all four gates pass', () => {
+    // Gate 1: mode must be capture-defeater.
+    expect(selectIsCaptureDefeaterReady(useCaptureStore.getState())).toBe(false);
+
+    useCaptureStore.getState().enterCaptureDefeaterMode('n1');
+    // Gate 3 still failing — text is empty after enter cleared it.
+    expect(selectIsCaptureDefeaterReady(useCaptureStore.getState())).toBe(false);
+
+    useCaptureStore.getState().setText('   ');
+    // Gate 3 still failing — whitespace-only text trims to empty.
+    expect(selectIsCaptureDefeaterReady(useCaptureStore.getState())).toBe(false);
+
+    useCaptureStore.getState().setText('a defeater wording');
+    // All four gates pass.
+    expect(selectIsCaptureDefeaterReady(useCaptureStore.getState())).toBe(true);
+
+    // Gate 4: a propose round-trip in flight blocks readiness.
+    useCaptureStore.getState().setProposing(true);
+    expect(selectIsCaptureDefeaterReady(useCaptureStore.getState())).toBe(false);
+    useCaptureStore.getState().setProposing(false);
+
+    // Gate 2: clearing the target node id blocks readiness.
+    useCaptureStore.getState().setCaptureDefeaterTargetNodeId(null);
+    expect(selectIsCaptureDefeaterReady(useCaptureStore.getState())).toBe(false);
   });
 
   it('enterCaptureDefeaterMode then enterOperationalizationMode flips mode but leaves captureDefeaterTargetNodeId stale (per-slice ownership)', () => {

@@ -591,6 +591,32 @@ const initialCaptureState: Pick<
   captureDefeaterTargetNodeId: null,
 };
 
+/**
+ * Pure selector — `true` iff the four input gates for proposing a
+ * defeater node are all met: capture-defeater mode is active, a
+ * target node is staged, a non-whitespace wording is in the F1 `text`
+ * slice (reused per Decision §D3 of mod_defeater_node_creation), and
+ * no propose round-trip is in flight.
+ *
+ * Mirrors the free-function shape of `validateProposalRows` /
+ * `validateDecomposeComponents`. Consumed by the
+ * `useProposeCaptureDefeaterAction` hook's `canPropose` calculation
+ * alongside the session-id + WS-connection gates that live outside the
+ * store.
+ *
+ * Refinement:
+ * `tasks/refinements/moderator-ui/mod_defeater_node_creation.md`
+ * (Acceptance criterion §4).
+ */
+export function selectIsCaptureDefeaterReady(state: CaptureState): boolean {
+  return (
+    state.mode === 'capture-defeater' &&
+    state.captureDefeaterTargetNodeId !== null &&
+    state.text.trim().length > 0 &&
+    state.proposing === false
+  );
+}
+
 export const useCaptureStore = create<CaptureState>()(
   withDevtools('moderator/capture', (set) => ({
     ...initialCaptureState,

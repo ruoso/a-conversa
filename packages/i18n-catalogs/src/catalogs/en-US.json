@@ -493,6 +493,14 @@
       },
       "banner": {
         "targetWording": "Defeating {nodeWording}"
+      },
+      "capturePane": {
+        "placeholder": "Type the retraction condition that defeats this statement…",
+        "ariaLabel": "Defeater wording — what would defeat the selected statement?"
+      },
+      "propose": {
+        "label": "Capture defeater",
+        "inFlightLabel": "Capturing defeater…"
       }
     },
     "proposalFilter": {

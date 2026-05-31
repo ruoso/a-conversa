@@ -2188,4 +2188,113 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
     await expect(page.getByTestId('mode-banner')).toHaveAttribute('data-mode', 'idle');
     await expect(page.getByTestId('capture-defeater-mode-exit')).toHaveCount(0);
   });
+
+  // Capture-defeater node creation e2e cover — the next step in the F6
+  // chain. Right-click X → "Capture defeater" enters the mode; this test
+  // then types Y's wording into the new capture pane, clicks "Capture
+  // defeater", and asserts the `propose capture-node`-with-edge envelope
+  // reaches the real dev-compose server. Owned by
+  // `tasks/refinements/moderator-ui/mod_defeater_node_creation.md`.
+  //
+  // **Why we assert the wire-error region, not a successful surface of
+  // Y + the rebut edge**: same reason the sibling `propose-decomposition`
+  // / `propose-interpretive-split` full-chain regression covers above
+  // assert wire-error — `seedWsStore` writes only to the moderator's
+  // client-side Zustand store; the seeded target node X does NOT exist
+  // in the real Postgres-backed event log. So the propose envelope DOES
+  // reach the server, but either:
+  //   - `validateCaptureNodeProposal` rule 3 rejects with
+  //     `target-entity-not-found` (the `target_node_id` does not
+  //     reference a visible node), or
+  //   - the universal sequence gate rejects earlier with
+  //     `sequence-mismatch` when `seedWsStore` leaves the local
+  //     `lastAppliedSequence` ahead of the server-side high-water mark.
+  // Both codes prove the round-trip completed. The hook's
+  // snapshot-restore then re-mounts the capture pane with the prior
+  // state and surfaces the wire-error region — both observable here.
+  // Per Decision §D7 of the refinement the hook explicitly does NOT
+  // exit the mode on failure (so the moderator can edit + retry); the
+  // mode-flip-to-idle-on-success path is covered by the sibling
+  // Vitest cases in `useProposeCaptureDefeaterAction.test.tsx`.
+  test('alice: capture-defeater mode → type wording → "Capture defeater" → envelope reaches the server (wire-error region surfaces the typed rejection)', async ({
+    page,
+  }) => {
+    await loginAs(page, { username: TEST_USERNAME });
+    await page.goto('/m/sessions/new');
+    await expect(page.getByTestId('route-create-session')).toBeVisible();
+
+    await page
+      .getByTestId('create-session-topic-input')
+      .fill('Capture-defeater node-creation e2e regression check.');
+    await page.getByTestId('create-session-submit').click();
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    await seedInviteParticipantsForGate(page);
+    await page.getByTestId('invite-enter-session').click();
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
+    await expect(page.getByTestId('route-operate')).toBeVisible();
+
+    if (!(await isWsStoreReachable(page))) {
+      test.skip(
+        true,
+        'window.__aConversaWsStore is not reachable — the dev-only attachment did not fire. Full-chain assertion deferred to the seed-infrastructure environment.',
+      );
+      return;
+    }
+
+    const url = new URL(page.url());
+    const sessionId = url.pathname.split('/')[3] ?? '';
+    expect(sessionId, 'session id must be parsed from the URL').toBeTruthy();
+
+    const SEED_NODE_ID = '88888888-8888-4888-8888-8888888888ce';
+    const SEED_WORDING = 'Workers should earn a living wage.';
+    await seedWsStore(page, {
+      sessionId,
+      nodes: [{ nodeId: SEED_NODE_ID, wording: SEED_WORDING }],
+    });
+
+    const nodeCard = page.getByTestId(`statement-node-${SEED_NODE_ID}`);
+    await expect(nodeCard).toBeVisible({ timeout: 10_000 });
+
+    // Enter capture-defeater mode via the right-click menu item the
+    // predecessor wired up.
+    await rightClickNodeUntilContextMenuOpens(page, nodeCard);
+    await page.getByTestId('graph-context-menu-item-capture-defeater').click();
+    await expect(page.getByTestId('mode-banner')).toHaveAttribute('data-mode', 'capture-defeater');
+
+    // The capture-defeater capture pane is now mounted with the wording
+    // textarea (the F1 textarea is swapped out by the textInput slot).
+    const wordingTextarea = page.getByTestId('capture-defeater-capture-pane-wording');
+    await expect(wordingTextarea).toBeVisible();
+
+    // Propose button starts disabled (text is empty after enter cleared it).
+    const proposeButton = page.getByTestId('capture-defeater-propose-button');
+    await expect(proposeButton).toBeDisabled();
+
+    const DEFEATER_WORDING = 'Cost-of-living adjustments fully cover all worker expenses.';
+    await wordingTextarea.fill(DEFEATER_WORDING);
+
+    // Button is enabled once a non-empty wording is staged.
+    await expect(proposeButton).toBeEnabled();
+
+    await proposeButton.click();
+
+    // The propose envelope reached the server: either rule 3 of
+    // `validateCaptureNodeProposal` rejected with
+    // `target-entity-not-found` (the seeded node only exists in the
+    // client-side WS store), or the dispatcher's universal sequence
+    // gate rejected earlier with `sequence-mismatch`. Both codes prove
+    // the round-trip completed.
+    const wireError = page.getByTestId('capture-defeater-propose-wire-error');
+    await expect(wireError).toBeVisible({ timeout: 10_000 });
+    await expect(wireError).toContainText(/target-entity-not-found|sequence-mismatch/);
+
+    // Per Decision §D7 of the refinement the hook does NOT exit
+    // capture-defeater mode on failure — the moderator can edit + retry.
+    // Snapshot-restore re-mounts the capture pane with the moderator's
+    // typed wording verbatim so the retry doesn't require re-typing.
+    await expect(page.getByTestId('mode-banner')).toHaveAttribute('data-mode', 'capture-defeater');
+    await expect(page.getByTestId('capture-defeater-capture-pane-wording')).toHaveValue(
+      DEFEATER_WORDING,
+    );
+  });
 });

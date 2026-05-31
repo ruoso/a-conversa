@@ -27,6 +27,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
 import { AuthProvider, createI18nInstance } from '@a-conversa/shell';
 import { useWsStore } from '../ws/wsStore';
+import { useCaptureStore } from '../stores/captureStore';
 
 // ────────────────────────────────────────────────────────────────────────
 // Stub the heavy children so the test renders the install effect
@@ -39,7 +40,21 @@ vi.mock('../graph/GraphCanvasPane', () => ({
   GraphCanvasPane: () => <div data-testid="graph-canvas-pane-stub" />,
 }));
 vi.mock('../layout/BottomStripCapture', () => ({
-  BottomStripCapture: () => <div data-testid="bottom-strip-stub" />,
+  BottomStripCapture: (props: {
+    modeBanner?: React.ReactNode;
+    textInput?: React.ReactNode;
+    classificationPalette?: React.ReactNode;
+    edgeRoleSelector?: React.ReactNode;
+    proposeAction?: React.ReactNode;
+  }) => (
+    <div data-testid="bottom-strip-stub">
+      <div data-testid="slot-mode-banner">{props.modeBanner}</div>
+      <div data-testid="slot-text-input">{props.textInput}</div>
+      <div data-testid="slot-classification-palette">{props.classificationPalette}</div>
+      <div data-testid="slot-edge-role-selector">{props.edgeRoleSelector}</div>
+      <div data-testid="slot-propose-action">{props.proposeAction}</div>
+    </div>
+  ),
 }));
 vi.mock('../layout/RightSidebar', () => ({
   RightSidebar: () => <div data-testid="right-sidebar-stub" />,
@@ -113,6 +128,7 @@ afterAll(() => {
 afterEach(() => {
   cleanup();
   useWsStore.getState().reset();
+  useCaptureStore.getState().reset();
   // Belt-and-suspenders: scrub the window namespace in case a test
   // left a leak behind (e.g., a test that failed before unmount ran).
   const w = window as unknown as { __testHooks?: Record<string, unknown> };
@@ -157,6 +173,40 @@ function renderRoute(): { unmount: () => void } {
   );
   return { unmount };
 }
+
+describe('Operate route — bottom-strip slot swap for capture-defeater mode (mod_defeater_node_creation)', () => {
+  it('mounts <CaptureDefeaterCapturePanel> in textInput slot, null in edgeRoleSelector, and <ProposeCaptureDefeaterAction> in proposeAction slot when mode is capture-defeater', async () => {
+    global.fetch = stubAuthMeFetch();
+    // Pre-stage the mode + target before the route mounts so the
+    // first render observes capture-defeater. The store is shared;
+    // the afterEach() reset keeps tests isolated.
+    act(() => {
+      useCaptureStore.getState().enterCaptureDefeaterMode('11111111-1111-4111-8111-111111111111');
+    });
+    renderRoute();
+    await waitFor(() => {
+      const stripStub = document.querySelector('[data-testid="bottom-strip-stub"]');
+      expect(stripStub).not.toBeNull();
+    });
+    // textInput → capture-defeater panel
+    const textInputSlot = document.querySelector('[data-testid="slot-text-input"]');
+    expect(
+      textInputSlot?.querySelector('[data-testid="capture-defeater-capture-pane"]'),
+    ).not.toBeNull();
+    // edgeRoleSelector → null (no CaptureTargetAndRole inside the slot)
+    const edgeRoleSlot = document.querySelector('[data-testid="slot-edge-role-selector"]');
+    expect(edgeRoleSlot?.querySelector('[data-testid="capture-target-and-role"]')).toBeNull();
+    expect(edgeRoleSlot?.children.length ?? 0).toBe(0);
+    // proposeAction → capture-defeater propose button
+    const proposeSlot = document.querySelector('[data-testid="slot-propose-action"]');
+    expect(
+      proposeSlot?.querySelector('[data-testid="capture-defeater-propose-button"]'),
+    ).not.toBeNull();
+    await act(async () => {
+      await Promise.resolve();
+    });
+  });
+});
 
 describe('Operate route — window.__testHooks.killWebSocket install (mod_pw_reconnect_seed_visible_styling)', () => {
   it('mount installs window.__testHooks.killWebSocket as a function reference', async () => {

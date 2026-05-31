@@ -552,7 +552,9 @@ task moderator_ui "Moderator UI" {
     task mod_defeater_node_creation "Create new node + rebuts edge in one action" {
       effort 1d
       allocate team
+      complete 100
       depends !mod_capture_defeater_mode
+      note "Refinement: tasks/refinements/moderator-ui/mod_defeater_node_creation.md"
     }
     task mod_defeater_substance_precommit "Pre-commit edge substance as agreed; source substance proposed" {
       effort 1d

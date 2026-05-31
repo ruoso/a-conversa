@@ -493,6 +493,14 @@
       },
       "banner": {
         "targetWording": "Refutando {nodeWording}"
+      },
+      "capturePane": {
+        "placeholder": "Escribe la condición de retractación que refuta esta afirmación…",
+        "ariaLabel": "Texto de la refutación — ¿qué refutaría la afirmación seleccionada?"
+      },
+      "propose": {
+        "label": "Capturar refutación",
+        "inFlightLabel": "Capturando refutación…"
       }
     },
     "proposalFilter": {

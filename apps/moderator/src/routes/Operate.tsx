@@ -78,8 +78,10 @@ import { OperationalizationCapturePanel } from '../layout/OperationalizationCapt
 import { OperationalizationModeExitButton } from '../layout/OperationalizationModeExitButton';
 import { WarrantElicitationCapturePanel } from '../layout/WarrantElicitationCapturePanel';
 import { WarrantElicitationModeExitButton } from '../layout/WarrantElicitationModeExitButton';
+import { CaptureDefeaterCapturePanel } from '../layout/CaptureDefeaterCapturePanel';
 import { CaptureDefeaterModeExitButton } from '../layout/CaptureDefeaterModeExitButton';
 import { ProposeAction } from '../layout/ProposeAction';
+import { ProposeCaptureDefeaterAction } from '../layout/ProposeCaptureDefeaterAction';
 import { ProposeDecompositionAction } from '../layout/ProposeDecompositionAction';
 import { ProposeInterpretiveSplitAction } from '../layout/ProposeInterpretiveSplitAction';
 import { useProposeAction } from '../layout/useProposeAction';
@@ -158,6 +160,11 @@ function OperateRouteInner(props: { sessionId: string }): ReactElement {
   // gate verbatim (both are diagnostic-test modes with the unified
   // capture-panel + per-mode exit-button slot-swap shape).
   const isWarrantElicitationMode = mode === 'warrant-elicitation';
+  // Parallel gate for capture-defeater mode — introduced by
+  // mod_defeater_node_creation.md to mount the F6 capture pane +
+  // propose-action into the bottom-strip's `textInput` +
+  // `proposeAction` slots when the moderator is composing a defeater.
+  const isCaptureDefeaterMode = mode === 'capture-defeater';
 
   useEffect(() => {
     if (sessionId === '') return;
@@ -237,6 +244,8 @@ function OperateRouteInner(props: { sessionId: string }): ReactElement {
                 <WarrantElicitationCapturePanel />
               ) : isOperationalizationMode ? (
                 <OperationalizationCapturePanel />
+              ) : isCaptureDefeaterMode ? (
+                <CaptureDefeaterCapturePanel />
               ) : isProposalMode ? (
                 isInterpretiveSplitMode ? (
                   <InterpretiveSplitReadingsGrid />
@@ -261,7 +270,10 @@ function OperateRouteInner(props: { sessionId: string }): ReactElement {
             // structural).
             classificationPalette={null}
             edgeRoleSelector={
-              isWarrantElicitationMode || isOperationalizationMode || isProposalMode ? null : (
+              isWarrantElicitationMode ||
+              isOperationalizationMode ||
+              isCaptureDefeaterMode ||
+              isProposalMode ? null : (
                 <CaptureTargetAndRole />
               )
             }
@@ -270,6 +282,8 @@ function OperateRouteInner(props: { sessionId: string }): ReactElement {
                 <ProposeDecompositionAction />
               ) : isInterpretiveSplitMode ? (
                 <ProposeInterpretiveSplitAction />
+              ) : isCaptureDefeaterMode ? (
+                <ProposeCaptureDefeaterAction />
               ) : isOperationalizationMode || isWarrantElicitationMode ? null : (
                 <ProposeAction />
               )

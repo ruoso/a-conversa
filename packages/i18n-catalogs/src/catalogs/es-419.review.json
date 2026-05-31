@@ -323,7 +323,11 @@
     "moderator.contextMenu.node.captureDefeater",
     "moderator.captureDefeater.exit.ariaLabel",
     "moderator.captureDefeater.exit.tooltip",
-    "moderator.captureDefeater.banner.targetWording"
+    "moderator.captureDefeater.banner.targetWording",
+    "moderator.captureDefeater.capturePane.placeholder",
+    "moderator.captureDefeater.capturePane.ariaLabel",
+    "moderator.captureDefeater.propose.label",
+    "moderator.captureDefeater.propose.inFlightLabel"
   ],
   "signed_off": []
 }
