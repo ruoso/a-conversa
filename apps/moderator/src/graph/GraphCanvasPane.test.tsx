@@ -1137,7 +1137,7 @@ describe('GraphCanvasPane — selection visual layer (mod_selection)', () => {
 // downstream tasks that replace each stub with a real handler can swap
 // the `onSelect` body without changing this contract.
 describe('GraphCanvasPane — context-menu item factories (mod_context_menus)', () => {
-  it('buildNodeMenuItems returns the nine node-scope actions in order (propose-edit-wording lands between propose-interpretive-split and run-operationalization-test per mod_edit_wording_action)', () => {
+  it('buildNodeMenuItems returns the ten node-scope actions in order (capture-defeater lands between run-warrant-elicitation-test and propose-meta-disagreement per mod_capture_defeater_mode Decision §D2)', () => {
     const items = buildNodeMenuItems({ kind: 'node', id: NODE_A });
     expect(items.map((it) => it.id)).toEqual([
       'propose-vote',
@@ -1146,6 +1146,7 @@ describe('GraphCanvasPane — context-menu item factories (mod_context_menus)', 
       'propose-edit-wording',
       'run-operationalization-test',
       'run-warrant-elicitation-test',
+      'capture-defeater',
       'propose-meta-disagreement',
       'annotate',
       'axiom-mark',
@@ -1157,6 +1158,7 @@ describe('GraphCanvasPane — context-menu item factories (mod_context_menus)', 
       'moderator.contextMenu.node.proposeEditWording',
       'moderator.contextMenu.node.runOperationalization',
       'moderator.contextMenu.node.runWarrantElicitation',
+      'moderator.contextMenu.node.captureDefeater',
       'moderator.contextMenu.node.proposeMetaDisagreement',
       'moderator.contextMenu.node.annotate',
       'moderator.contextMenu.node.axiomMark',
@@ -1209,9 +1211,9 @@ describe('GraphCanvasPane — context-menu item factories (mod_context_menus)', 
       for (const item of buildPaneMenuItems({ kind: 'pane', id: null })) {
         expect(() => item.onSelect()).not.toThrow();
       }
-      // 9 + 3 + 1 = 13 stub fires (the node menu grew by the
-      // propose-edit-wording item — mod_edit_wording_action).
-      expect(infoSpy).toHaveBeenCalledTimes(13);
+      // 10 + 3 + 1 = 14 stub fires (the node menu grew by the
+      // capture-defeater item — mod_capture_defeater_mode).
+      expect(infoSpy).toHaveBeenCalledTimes(14);
     } finally {
       infoSpy.mockRestore();
     }
@@ -1446,6 +1448,84 @@ describe('GraphCanvasPane — context-menu item factories (mod_context_menus)', 
     );
     const we = items.find((it) => it.id === 'run-warrant-elicitation-test');
     expect(we?.disabled).toBe(true);
+  });
+
+  // Refinement: tasks/refinements/moderator-ui/mod_capture_defeater_mode.md
+  //
+  // The capture-defeater item adds a seventh optional handler parameter
+  // to `buildNodeMenuItems` (peer to the warrant-elicitation seam),
+  // inserted before the two submenu openers so the prior six positions
+  // stay stable (Decision §D8). The item has no `disabled` gate per
+  // Decision §D9 — defeater capture is unconditionally available on
+  // any node target. When omitted, the legacy stub path is retained.
+  it('buildNodeMenuItems (no extra args) wires capture-defeater to the legacy actionStub', () => {
+    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    try {
+      const items = buildNodeMenuItems({ kind: 'node', id: NODE_A });
+      const cd = items.find((it) => it.id === 'capture-defeater');
+      expect(cd).toBeDefined();
+      cd?.onSelect();
+      expect(infoSpy).toHaveBeenCalledTimes(1);
+      expect(infoSpy.mock.calls[0]?.[0]).toContain('capture-defeater');
+    } finally {
+      infoSpy.mockRestore();
+    }
+  });
+
+  it('buildNodeMenuItems wires capture-defeater to onEnterCaptureDefeaterMode when supplied (node target)', () => {
+    const onEnter = vi.fn<(nodeId: string) => void>();
+    const items = buildNodeMenuItems(
+      { kind: 'node', id: NODE_A },
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      onEnter,
+    );
+    const cd = items.find((it) => it.id === 'capture-defeater');
+    expect(cd).toBeDefined();
+    cd?.onSelect();
+    expect(onEnter).toHaveBeenCalledTimes(1);
+    expect(onEnter).toHaveBeenCalledWith(NODE_A);
+  });
+
+  it('buildNodeMenuItems falls back to actionStub for capture-defeater on non-node targets', () => {
+    const onEnter = vi.fn<(nodeId: string) => void>();
+    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    try {
+      const items = buildNodeMenuItems(
+        { kind: 'pane', id: null },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        onEnter,
+      );
+      const cd = items.find((it) => it.id === 'capture-defeater');
+      expect(cd).toBeDefined();
+      cd?.onSelect();
+      expect(onEnter).not.toHaveBeenCalled();
+      expect(infoSpy.mock.calls.some((c) => String(c[0]).includes('capture-defeater'))).toBe(true);
+    } finally {
+      infoSpy.mockRestore();
+    }
+  });
+
+  it('buildNodeMenuItems capture-defeater item has no disabled gate (always enabled per Decision §D9)', () => {
+    const items = buildNodeMenuItems({ kind: 'node', id: NODE_A });
+    const cd = items.find((it) => it.id === 'capture-defeater');
+    expect(cd).toBeDefined();
+    // The capture-defeater item omits the optional `disabled` field
+    // entirely (per Decision §D9 — defeater capture has no methodology-
+    // state precondition gate). Mirrors the propose-vote /
+    // propose-decompose / propose-meta-disagreement items.
+    expect(cd?.disabled).toBeUndefined();
   });
 });
 
@@ -1932,6 +2012,44 @@ describe('GraphCanvasPane — run-warrant-elicitation-test entry (mod_warrant_el
   });
 });
 
+// Refinement: tasks/refinements/moderator-ui/mod_capture_defeater_mode.md
+//
+// End-to-end wire-up of the capture-defeater context menu item:
+// right-click a rendered node → click "Capture defeater" → the capture
+// store flips mode to 'capture-defeater' and stashes the right-clicked
+// node id in `captureDefeaterTargetNodeId`. The canvas's
+// `enterCaptureDefeaterMode` callback (threaded into `buildNodeMenuItems`)
+// is the bridge under test. Unlike the diagnostic-test items there is
+// no methodology-state gate (Decision §D9).
+describe('GraphCanvasPane — capture-defeater entry (mod_capture_defeater_mode)', () => {
+  it('right-clicking a node and clicking "Capture defeater" enters capture-defeater mode for that node', () => {
+    useWsStore.getState().applyEvent(
+      makeNodeCreated({
+        sequence: 1,
+        nodeId: NODE_A,
+        wording: 'A statement to defeat.',
+      }),
+    );
+    render(<GraphCanvasPane sessionId={SESSION_ID} />);
+    expect(useCaptureStore.getState().mode).toBe('idle');
+    expect(useCaptureStore.getState().captureDefeaterTargetNodeId).toBeNull();
+
+    const card = screen.getByTestId(`statement-node-${NODE_A}`);
+    act(() => {
+      fireEvent.contextMenu(card, { clientX: 10, clientY: 20 });
+    });
+    const item = screen.getByTestId('graph-context-menu-item-capture-defeater');
+    expect(item).toBeTruthy();
+
+    act(() => {
+      fireEvent.click(item);
+    });
+
+    expect(useCaptureStore.getState().mode).toBe('capture-defeater');
+    expect(useCaptureStore.getState().captureDefeaterTargetNodeId).toBe(NODE_A);
+  });
+});
+
 // -- Context-menu wire-up (mod_context_menus) -------------------------
 //
 // The handlers wire ReactFlow's `onNodeContextMenu` / `onEdgeContextMenu`
@@ -1980,6 +2098,7 @@ describe('GraphCanvasPane — context-menu wire-up (mod_context_menus)', () => {
     expect(screen.getByTestId('graph-context-menu-item-propose-interpretive-split')).toBeTruthy();
     expect(screen.getByTestId('graph-context-menu-item-run-operationalization-test')).toBeTruthy();
     expect(screen.getByTestId('graph-context-menu-item-run-warrant-elicitation-test')).toBeTruthy();
+    expect(screen.getByTestId('graph-context-menu-item-capture-defeater')).toBeTruthy();
     expect(screen.getByTestId('graph-context-menu-item-propose-meta-disagreement')).toBeTruthy();
     expect(screen.getByTestId('graph-context-menu-item-annotate')).toBeTruthy();
     expect(screen.getByTestId('graph-context-menu-item-axiom-mark')).toBeTruthy();

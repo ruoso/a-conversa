@@ -325,6 +325,18 @@ function actionStub(action: string, target: ContextMenuState['target']): void {
  * through an independent `disabledRunWarrantElicitationTest` boolean
  * so a future divergence of the warrant-elicitation gate is a one-line
  * change at the call site.
+ *
+ * **`onEnterCaptureDefeaterMode` seam (mod_capture_defeater_mode).**
+ * Same shape as the decompose / operationalization / warrant-elicitation
+ * seams: the canvas threads in a callback that dispatches to
+ * `useCaptureStore.getState().enterCaptureDefeaterMode(nodeId)` — the
+ * parent menu's `capture-defeater` item (inserted between
+ * `run-warrant-elicitation-test` and `propose-meta-disagreement` per
+ * Decision §D2) then atomically flips `mode` to `'capture-defeater'` +
+ * sets `captureDefeaterTargetNodeId` + clears the F1 capture-flow
+ * slices. Per Decision §D9 the item has no methodology-state
+ * precondition gate; defeater capture is unconditionally available on
+ * any node target.
  */
 export function buildNodeMenuItems(
   target: ContextMenuState['target'],
@@ -335,6 +347,7 @@ export function buildNodeMenuItems(
   disabledRunOperationalizationTest?: boolean,
   onEnterWarrantElicitationMode?: (nodeId: string) => void,
   disabledRunWarrantElicitationTest?: boolean,
+  onEnterCaptureDefeaterMode?: (nodeId: string) => void,
   onOpenAnnotateSubmenu?: () => void,
   onOpenEditWordingSubmenu?: () => void,
 ): readonly MenuItem[] {
@@ -389,6 +402,14 @@ export function buildNodeMenuItems(
           ? () => onEnterWarrantElicitationMode(target.id as string)
           : () => actionStub('run-warrant-elicitation-test', target),
       disabled: disabledRunWarrantElicitationTest ?? false,
+    },
+    {
+      id: 'capture-defeater',
+      labelKey: 'moderator.contextMenu.node.captureDefeater',
+      onSelect:
+        target.kind === 'node' && target.id !== null && onEnterCaptureDefeaterMode
+          ? () => onEnterCaptureDefeaterMode(target.id as string)
+          : () => actionStub('capture-defeater', target),
     },
     {
       id: 'propose-meta-disagreement',
@@ -1063,6 +1084,13 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
     (nodeId: string) => useCaptureStore.getState().enterWarrantElicitationMode(nodeId),
     [],
   );
+  // Sibling stable mode-entry callback for the new
+  // `capture-defeater` item. Refinement:
+  // `mod_capture_defeater_mode`.
+  const enterCaptureDefeaterMode = useCallback(
+    (nodeId: string) => useCaptureStore.getState().enterCaptureDefeaterMode(nodeId),
+    [],
+  );
   // **Important:** `closeContextMenu` does NOT cascade-close the
   // submenu. The `<GraphContextMenu>` shell calls `onClose` after a
   // menu item's `onSelect` runs (including the axiom-mark item that
@@ -1565,6 +1593,7 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
         disabledRunOperationalizationTest,
         enterWarrantElicitationMode,
         disabledRunWarrantElicitationTest,
+        enterCaptureDefeaterMode,
         () => {
           // Open the annotate submenu against the right-clicked node.
           if (nodeIdForSubmenu === null) return;

@@ -503,6 +503,55 @@ export interface CaptureState {
    */
   exitWarrantElicitationMode: () => void;
 
+  /**
+   * The id of the node currently being defeated when `mode ===
+   * 'capture-defeater'`; `null` otherwise. Set atomically by
+   * `enterCaptureDefeaterMode(nodeId)` and cleared by
+   * `exitCaptureDefeaterMode()` / `reset()`. The sibling
+   * `mod_defeater_node_creation` task reads this to know which node X
+   * the new defeater node Y will rebut (i.e. which node becomes the
+   * destination of the rebut edge Y → X); the further-downstream
+   * `mod_defeater_substance_precommit` transitively relies on the same
+   * slice for the propose-set-edge-substance step.
+   *
+   * Refinement:
+   * `tasks/refinements/moderator-ui/mod_capture_defeater_mode.md`.
+   */
+  captureDefeaterTargetNodeId: string | null;
+
+  /**
+   * Set `captureDefeaterTargetNodeId` directly. Direct callers should
+   * prefer the coupled helpers (`enterCaptureDefeaterMode` /
+   * `exitCaptureDefeaterMode`); this setter mirrors
+   * `setWarrantElicitationTargetNodeId` /
+   * `setOperationalizationTargetNodeId` for symmetry / test seams.
+   */
+  setCaptureDefeaterTargetNodeId: (id: string | null) => void;
+  /**
+   * Enter capture-defeater mode for `nodeId`. Atomic multi-field update
+   * mirroring `enterOperationalizationMode` /
+   * `enterWarrantElicitationMode`: sets `mode = 'capture-defeater'`,
+   * `captureDefeaterTargetNodeId = nodeId`, and clears the F1
+   * capture-flow slices so a stale F1 draft does not bleed into the
+   * defeater-capture flow.
+   *
+   * Like the diagnostic-test modes there is no per-row seed
+   * (defeater capture is single-target; the new defeater node's
+   * wording lives in the sibling task `mod_defeater_node_creation`'s
+   * capture-pane surface, not in this slice).
+   *
+   * Refinement:
+   * `tasks/refinements/moderator-ui/mod_capture_defeater_mode.md`.
+   */
+  enterCaptureDefeaterMode: (nodeId: string) => void;
+  /**
+   * Exit capture-defeater mode. Atomic update mirroring
+   * `exitOperationalizationMode` / `exitWarrantElicitationMode`: sets
+   * `mode = 'idle'`, `captureDefeaterTargetNodeId = null`. The F1
+   * slices are NOT re-populated.
+   */
+  exitCaptureDefeaterMode: () => void;
+
   /** Reset the pane to a fresh idle state — called after a successful propose. */
   reset: () => void;
 }
@@ -523,6 +572,7 @@ const initialCaptureState: Pick<
   | 'interpretiveSplitReadings'
   | 'operationalizationTargetNodeId'
   | 'warrantElicitationTargetNodeId'
+  | 'captureDefeaterTargetNodeId'
 > = {
   text: '',
   classification: null,
@@ -538,6 +588,7 @@ const initialCaptureState: Pick<
   interpretiveSplitReadings: [],
   operationalizationTargetNodeId: null,
   warrantElicitationTargetNodeId: null,
+  captureDefeaterTargetNodeId: null,
 };
 
 export const useCaptureStore = create<CaptureState>()(
@@ -729,6 +780,29 @@ export const useCaptureStore = create<CaptureState>()(
       set({
         mode: 'idle',
         warrantElicitationTargetNodeId: null,
+      }),
+    setCaptureDefeaterTargetNodeId: (captureDefeaterTargetNodeId) =>
+      set({ captureDefeaterTargetNodeId }),
+    enterCaptureDefeaterMode: (nodeId) =>
+      set({
+        mode: 'capture-defeater',
+        captureDefeaterTargetNodeId: nodeId,
+        // F1-coupling clear (mirrors enterOperationalizationMode /
+        // enterWarrantElicitationMode — Decision §D4 of
+        // mod_capture_defeater_mode.md, carried over from
+        // mod_decompose_mode Decision §6): a stale in-progress F1 draft
+        // must not bleed into the defeater-capture flow.
+        text: '',
+        classification: null,
+        targetEntityId: null,
+        targetEntityKind: 'node',
+        edgeRole: null,
+        edgeDirection: 'targets',
+      }),
+    exitCaptureDefeaterMode: () =>
+      set({
+        mode: 'idle',
+        captureDefeaterTargetNodeId: null,
       }),
     reset: () => set({ ...initialCaptureState }),
   })),

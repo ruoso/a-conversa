@@ -486,6 +486,15 @@
         "route-defer": "Defer — no clear bridge"
       }
     },
+    "captureDefeater": {
+      "exit": {
+        "ariaLabel": "Exit capture-defeater mode",
+        "tooltip": "Exit capture-defeater mode (Esc)"
+      },
+      "banner": {
+        "targetWording": "Defeating {nodeWording}"
+      }
+    },
     "proposalFilter": {
       "textPlaceholder": "Filter proposals…",
       "textAriaLabel": "Filter pending proposals by text",
@@ -576,6 +585,7 @@
         "proposeEditWording": "Edit wording",
         "runOperationalization": "Run operationalization test",
         "runWarrantElicitation": "Elicit warrant",
+        "captureDefeater": "Capture defeater",
         "proposeMetaDisagreement": "Propose meta-disagreement",
         "annotate": "Annotate",
         "axiomMark": "Mark as axiom"

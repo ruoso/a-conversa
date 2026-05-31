@@ -2114,4 +2114,78 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
       'Capability-frustration just is welfare loss, ontologically.',
     );
   });
+
+  // Refinement: tasks/refinements/moderator-ui/mod_capture_defeater_mode.md
+  //
+  // Capture-defeater-mode entry e2e cover. Asserts the mode-entry +
+  // mode-exit chain only — per the refinement's UI-stream e2e scoping
+  // (Acceptance criteria §7), the defeater node creation + rebut edge
+  // emission + propose-substance-agreed cycle are not yet wired, so the
+  // test does NOT attempt to type defeater wording or propose anything.
+  // Those assertions belong to the sibling refinements
+  // (`mod_defeater_node_creation`, `mod_defeater_substance_precommit`).
+  test('alice: right-click a seeded node → "Capture defeater" flips mode banner to "Capture defeater" + Esc returns to idle', async ({
+    page,
+  }) => {
+    await loginAs(page, { username: TEST_USERNAME });
+    await page.goto('/m/sessions/new');
+    await expect(page.getByTestId('route-create-session')).toBeVisible();
+
+    await page
+      .getByTestId('create-session-topic-input')
+      .fill('Capture-defeater-mode entry e2e regression check.');
+    await page.getByTestId('create-session-submit').click();
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    await seedInviteParticipantsForGate(page);
+    await page.getByTestId('invite-enter-session').click();
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
+    await expect(page.getByTestId('route-operate')).toBeVisible();
+
+    if (!(await isWsStoreReachable(page))) {
+      test.skip(
+        true,
+        'window.__aConversaWsStore is not reachable — the dev-only attachment did not fire. Full-chain assertion deferred to the seed-infrastructure environment.',
+      );
+      return;
+    }
+
+    const url = new URL(page.url());
+    const sessionId = url.pathname.split('/')[3] ?? '';
+    expect(sessionId, 'session id must be parsed from the URL').toBeTruthy();
+
+    // Seed ONE node X — the candidate target the defeater will rebut.
+    const SEED_NODE_ID = '88888888-8888-4888-8888-8888888888cd';
+    const SEED_WORDING = 'Workers should earn a living wage.';
+    await seedWsStore(page, {
+      sessionId,
+      nodes: [{ nodeId: SEED_NODE_ID, wording: SEED_WORDING }],
+    });
+
+    const nodeCard = page.getByTestId(`statement-node-${SEED_NODE_ID}`);
+    await expect(nodeCard).toBeVisible({ timeout: 10_000 });
+
+    await expect(page.getByTestId('mode-banner')).toHaveAttribute('data-mode', 'idle');
+    await expect(page.getByTestId('capture-defeater-mode-exit')).toHaveCount(0);
+
+    await rightClickNodeUntilContextMenuOpens(page, nodeCard);
+    const contextMenu = page.getByTestId('graph-context-menu');
+    await expect(contextMenu).toBeVisible();
+    const item = page.getByTestId('graph-context-menu-item-capture-defeater');
+    await expect(item).toBeVisible();
+
+    await item.click();
+
+    await expect(page.getByTestId('mode-banner')).toHaveAttribute('data-mode', 'capture-defeater');
+    await expect(page.getByTestId('mode-banner-label')).toHaveText('Capture defeater');
+    await expect(page.getByTestId('capture-defeater-mode-exit')).toBeVisible();
+    await expect(page.getByTestId('capture-defeater-mode-target-wording')).toContainText(
+      SEED_WORDING,
+    );
+
+    await page.locator('body').focus();
+    await page.keyboard.press('Escape');
+
+    await expect(page.getByTestId('mode-banner')).toHaveAttribute('data-mode', 'idle');
+    await expect(page.getByTestId('capture-defeater-mode-exit')).toHaveCount(0);
+  });
 });

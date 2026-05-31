@@ -546,6 +546,8 @@ task moderator_ui "Moderator UI" {
     task mod_capture_defeater_mode "Capture-defeater mode with target selected" {
       effort 1d
       allocate team
+      complete 100
+      note "Refinement: tasks/refinements/moderator-ui/mod_capture_defeater_mode.md"
     }
     task mod_defeater_node_creation "Create new node + rebuts edge in one action" {
       effort 1d

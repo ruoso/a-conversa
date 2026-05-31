@@ -319,7 +319,11 @@
     "audience.placeholder.title",
     "audience.placeholder.body",
     "audience.privateSession.title",
-    "audience.privateSession.body"
+    "audience.privateSession.body",
+    "moderator.contextMenu.node.captureDefeater",
+    "moderator.captureDefeater.exit.ariaLabel",
+    "moderator.captureDefeater.exit.tooltip",
+    "moderator.captureDefeater.banner.targetWording"
   ],
   "signed_off": []
 }

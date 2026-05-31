@@ -63,6 +63,13 @@ When the human resolves an item, delete its block (git history preserves it).
 - **Why parked**: architectural decision with real implementation consequences either way; not an agent-implementable judgment call. The "Withdraw annotation" context menu item was explicitly deferred in Decision §3 pending this call.
 - **Suggested resolution**: decide whether the methodology spec intends annotations to be retractable. If yes, spec a `mod_withdraw_annotation_action` task (new proposal kind + event + projection arm + UI gesture); if no, close this item and the "Withdraw annotation" menu item stays permanently out of scope.
 
+### 2026-05-31 — Native-speaker review of capture-defeater-mode strings in pt-BR + es-419
+
+- **Source**: closer for `moderator_ui.mod_defeater_flow.mod_capture_defeater_mode`.
+- **Question**: the 4 new keys (`moderator.contextMenu.node.captureDefeater`, `moderator.captureDefeater.exit.ariaLabel`, `moderator.captureDefeater.exit.tooltip`, `moderator.captureDefeater.banner.targetWording`) have placeholder pt-BR and es-419 translations flagged PENDING in `packages/i18n-catalogs/src/catalogs/{pt-BR,es-419}.review.json`. Are the drafts idiomatic and accurate for a debate-methodology UI?
+- **Why parked**: native-speaker sign-off is human-only work; the agent drafted the translations as best-effort but cannot verify cultural/idiomatic fit or grammatical correctness when the ICU `{nodeWording}` substitution is a complete sentence with terminal punctuation (the `banner.targetWording` key).
+- **Suggested resolution**: have a native speaker verify the 4 keys per locale in `packages/i18n-catalogs/src/catalogs/{pt-BR,es-419}.json`. Special attention to `moderator.captureDefeater.banner.targetWording` — drafted as "Refutando {nodeWording}" for both pt-BR and es-419; confirm grammatical fit when `{nodeWording}` is a complete sentence. Update the catalog files and sign off the PENDING entries in `*.review.json` when satisfied.
+
 ### 2026-05-31 — Should `'meta-disagreement'` become a proper AnnotationKind variant?
 
 - **Source**: closer for `moderator_ui.mod_annotation_ui.mod_annotation_context_menu` (implementer tech-debt proposal).

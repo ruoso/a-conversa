@@ -78,6 +78,7 @@ import { OperationalizationCapturePanel } from '../layout/OperationalizationCapt
 import { OperationalizationModeExitButton } from '../layout/OperationalizationModeExitButton';
 import { WarrantElicitationCapturePanel } from '../layout/WarrantElicitationCapturePanel';
 import { WarrantElicitationModeExitButton } from '../layout/WarrantElicitationModeExitButton';
+import { CaptureDefeaterModeExitButton } from '../layout/CaptureDefeaterModeExitButton';
 import { ProposeAction } from '../layout/ProposeAction';
 import { ProposeDecompositionAction } from '../layout/ProposeDecompositionAction';
 import { ProposeInterpretiveSplitAction } from '../layout/ProposeInterpretiveSplitAction';
@@ -228,6 +229,7 @@ function OperateRouteInner(props: { sessionId: string }): ReactElement {
                 <InterpretiveSplitModeExitButton />
                 <OperationalizationModeExitButton />
                 <WarrantElicitationModeExitButton />
+                <CaptureDefeaterModeExitButton />
               </>
             }
             textInput={

@@ -30,7 +30,8 @@ export type ProposalMode =
   | 'decompose'
   | 'interpretive-split'
   | 'operationalization'
-  | 'warrant-elicitation';
+  | 'warrant-elicitation'
+  | 'capture-defeater';
 
 /**
  * Narrower type for the structural-restructure proposal modes — decompose
@@ -53,7 +54,7 @@ export type ProposalMode =
  */
 export type StructuralProposalMode = Exclude<
   ProposalMode,
-  'operationalization' | 'warrant-elicitation'
+  'operationalization' | 'warrant-elicitation' | 'capture-defeater'
 >;
 
 /**
@@ -111,6 +112,11 @@ const MODE_KEYS = {
     tooltip: 'moderator.warrantElicitation.exit.tooltip',
     targetWording: 'moderator.warrantElicitation.banner.targetWording',
   },
+  'capture-defeater': {
+    ariaLabel: 'moderator.captureDefeater.exit.ariaLabel',
+    tooltip: 'moderator.captureDefeater.exit.tooltip',
+    targetWording: 'moderator.captureDefeater.banner.targetWording',
+  },
 } as const;
 
 export interface ProposalModeExitAffordanceProps {
@@ -123,9 +129,9 @@ export function ProposalModeExitAffordance(
   const { mode: targetMode } = props;
   const { t } = useTranslation();
   const mode = useCaptureStore((s) => s.mode);
-  // 4-arm switch per mod_warrant_elicitation_mode.md Decision §D2 —
-  // a switch is more readable than a 4-arm nested ternary and pays off
-  // if a fifth mode ever lands.
+  // 5-arm switch — extended from 4 to 5 by mod_capture_defeater_mode.md
+  // (Decision §D2 of mod_warrant_elicitation_mode.md pinned the
+  // switch-over-ternary convention when this body widened from 3 to 4).
   const targetNodeId = useCaptureStore((s) => {
     switch (targetMode) {
       case 'decompose':
@@ -136,6 +142,8 @@ export function ProposalModeExitAffordance(
         return s.operationalizationTargetNodeId;
       case 'warrant-elicitation':
         return s.warrantElicitationTargetNodeId;
+      case 'capture-defeater':
+        return s.captureDefeaterTargetNodeId;
     }
   });
   const exitMode = useCaptureStore((s) => {
@@ -148,6 +156,8 @@ export function ProposalModeExitAffordance(
         return s.exitOperationalizationMode;
       case 'warrant-elicitation':
         return s.exitWarrantElicitationMode;
+      case 'capture-defeater':
+        return s.exitCaptureDefeaterMode;
     }
   });
   const { id: sessionId = '' } = useParams<{ id: string }>();

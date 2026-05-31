@@ -486,6 +486,15 @@
         "route-defer": "Adiar — sem ponte clara"
       }
     },
+    "captureDefeater": {
+      "exit": {
+        "ariaLabel": "Sair do modo de captura de refutação",
+        "tooltip": "Sair do modo de captura de refutação (Esc)"
+      },
+      "banner": {
+        "targetWording": "Refutando {nodeWording}"
+      }
+    },
     "proposalFilter": {
       "textPlaceholder": "Filtrar propostas…",
       "textAriaLabel": "Filtrar propostas pendentes por texto",
@@ -576,6 +585,7 @@
         "proposeEditWording": "Editar redação",
         "runOperationalization": "Executar teste de operacionalização",
         "runWarrantElicitation": "Eliciar a garantia",
+        "captureDefeater": "Capturar refutação",
         "proposeMetaDisagreement": "Propor meta-desacordo",
         "annotate": "Anotar",
         "axiomMark": "Marcar como axioma"

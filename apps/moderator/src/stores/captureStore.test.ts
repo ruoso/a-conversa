@@ -656,6 +656,98 @@ describe('useCaptureStore — warrant-elicitation-mode slice (mod_warrant_elicit
   });
 });
 
+describe('useCaptureStore — capture-defeater-mode slice (mod_capture_defeater_mode)', () => {
+  it('captureDefeaterTargetNodeId is null in the initial state', () => {
+    expect(useCaptureStore.getState().captureDefeaterTargetNodeId).toBeNull();
+  });
+
+  it('setCaptureDefeaterTargetNodeId mutates the slice without flipping mode', () => {
+    useCaptureStore.getState().setCaptureDefeaterTargetNodeId('n-direct');
+    const state = useCaptureStore.getState();
+    expect(state.captureDefeaterTargetNodeId).toBe('n-direct');
+    // The direct setter is a pure slice mutation — mode stays idle.
+    expect(state.mode).toBe('idle');
+    useCaptureStore.getState().setCaptureDefeaterTargetNodeId(null);
+    expect(useCaptureStore.getState().captureDefeaterTargetNodeId).toBeNull();
+  });
+
+  it('enterCaptureDefeaterMode(nodeId) flips mode to capture-defeater, stashes the target id, clears F1 slices', () => {
+    // Seed every F1 slice so we can assert the atomic clear.
+    useCaptureStore.getState().setText('a stale draft wording');
+    useCaptureStore.getState().setClassification('fact');
+    useCaptureStore.getState().setTargetEntityId('node-stale');
+    useCaptureStore.getState().setEdgeRole('supports');
+
+    useCaptureStore.getState().enterCaptureDefeaterMode('n1');
+
+    const state = useCaptureStore.getState();
+    expect(state.mode).toBe('capture-defeater');
+    expect(state.captureDefeaterTargetNodeId).toBe('n1');
+    expect(state.text).toBe('');
+    expect(state.classification).toBeNull();
+    expect(state.targetEntityId).toBeNull();
+    expect(state.targetEntityKind).toBe('node');
+    expect(state.edgeRole).toBeNull();
+    expect(state.edgeDirection).toBe('targets');
+  });
+
+  it('enterCaptureDefeaterMode uses a single set() — subscribers observe exactly one transition per call', () => {
+    let notifications = 0;
+    const unsubscribe = useCaptureStore.subscribe(() => {
+      notifications += 1;
+    });
+    try {
+      useCaptureStore.getState().enterCaptureDefeaterMode('n1');
+      expect(notifications).toBe(1);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('exitCaptureDefeaterMode reverts mode to idle and clears captureDefeaterTargetNodeId', () => {
+    useCaptureStore.getState().enterCaptureDefeaterMode('n1');
+    expect(useCaptureStore.getState().mode).toBe('capture-defeater');
+    useCaptureStore.getState().exitCaptureDefeaterMode();
+    const state = useCaptureStore.getState();
+    expect(state.mode).toBe('idle');
+    expect(state.captureDefeaterTargetNodeId).toBeNull();
+  });
+
+  it('exitCaptureDefeaterMode does NOT re-populate the F1 slices (mirrors exitOperationalizationMode discipline)', () => {
+    useCaptureStore.getState().setText('would have been a draft');
+    useCaptureStore.getState().enterCaptureDefeaterMode('n1');
+    useCaptureStore.getState().exitCaptureDefeaterMode();
+    const state = useCaptureStore.getState();
+    expect(state.text).toBe('');
+    expect(state.classification).toBeNull();
+    expect(state.targetEntityId).toBeNull();
+    expect(state.edgeRole).toBeNull();
+  });
+
+  it('reset() clears captureDefeaterTargetNodeId even after entering capture-defeater mode', () => {
+    useCaptureStore.getState().enterCaptureDefeaterMode('n1');
+    expect(useCaptureStore.getState().captureDefeaterTargetNodeId).toBe('n1');
+    useCaptureStore.getState().reset();
+    const state = useCaptureStore.getState();
+    expect(state.mode).toBe('idle');
+    expect(state.captureDefeaterTargetNodeId).toBeNull();
+  });
+
+  it('enterCaptureDefeaterMode then enterOperationalizationMode flips mode but leaves captureDefeaterTargetNodeId stale (per-slice ownership)', () => {
+    // Cross-mode invariant — the capture-defeater slice is owned by its
+    // own enter/exit pair; an external mode flip (e.g. into
+    // operationalization) leaves the stale target id alone. Mirrors the
+    // existing decompose / interpretive-split / operationalization /
+    // warrant-elicitation mutual-state behavior.
+    useCaptureStore.getState().enterCaptureDefeaterMode('cd-target');
+    useCaptureStore.getState().enterOperationalizationMode('op-target');
+    const state = useCaptureStore.getState();
+    expect(state.mode).toBe('operationalization');
+    expect(state.operationalizationTargetNodeId).toBe('op-target');
+    expect(state.captureDefeaterTargetNodeId).toBe('cd-target');
+  });
+});
+
 // Refinement: tasks/refinements/moderator-ui/mod_propose_annotation_endpoint_gestures.md
 //
 // `targetEntityKind` is a new parallel slice paired with
@@ -753,6 +845,14 @@ describe('useCaptureStore — targetEntityKind slice (mod_propose_annotation_end
   it('enterWarrantElicitationMode resets targetEntityKind to "node"', () => {
     useCaptureStore.getState().setTargetEntity('annotation', 'a-1');
     useCaptureStore.getState().enterWarrantElicitationMode('we-node');
+    const state = useCaptureStore.getState();
+    expect(state.targetEntityId).toBeNull();
+    expect(state.targetEntityKind).toBe('node');
+  });
+
+  it('enterCaptureDefeaterMode resets targetEntityKind to "node"', () => {
+    useCaptureStore.getState().setTargetEntity('annotation', 'a-1');
+    useCaptureStore.getState().enterCaptureDefeaterMode('cd-node');
     const state = useCaptureStore.getState();
     expect(state.targetEntityId).toBeNull();
     expect(state.targetEntityKind).toBe('node');

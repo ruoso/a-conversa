@@ -90,20 +90,24 @@ export interface CaptureKeymapHandlers {
   onPickEdgeRole?: (role: EdgeRole) => void;
   /**
    * Exit the current capture-pane mode (decompose / interpretive-split
-   * / other future modes that own their own Escape semantics).
+   * / operationalization / warrant-elicitation / capture-defeater /
+   * other future modes that own their own Escape semantics).
    * Triggered by `Escape` under the same modifier-bail / editable-
    * target / repeat-skip guards as `onClearTarget`. When
    * `useCaptureStore.getState().mode === 'decompose'` OR
-   * `=== 'interpretive-split'` (and future modes), this handler takes
-   * priority over `onClearTarget` — the operator's mental model is
-   * "I'm in a mode; Escape leaves the mode," and the staged-target
-   * chip the F1 clearer surfaces is below the operator's current
-   * attention while in a sub-mode.
+   * `=== 'interpretive-split'` OR `=== 'operationalization'` OR
+   * `=== 'warrant-elicitation'` OR `=== 'capture-defeater'` (and
+   * future modes), this handler takes priority over `onClearTarget` —
+   * the operator's mental model is "I'm in a mode; Escape leaves the
+   * mode," and the staged-target chip the F1 clearer surfaces is
+   * below the operator's current attention while in a sub-mode.
    *
    * Refinement: tasks/refinements/moderator-ui/mod_decompose_mode.md
    * (Decision §5 records the priority order).
    * Refinement: tasks/refinements/moderator-ui/mod_interpretive_split_mode.md
    * (Decision §8 records the generalisation to interpretive-split).
+   * Refinement: tasks/refinements/moderator-ui/mod_capture_defeater_mode.md
+   * (extends the priority to capture-defeater as the 5th mode).
    */
   onExitMode?: () => void;
   // future: onSubmit?: () => void;
@@ -232,7 +236,8 @@ export function attachCaptureKeymap(handlers: CaptureKeymapHandlers): () => void
         (mode === 'decompose' ||
           mode === 'interpretive-split' ||
           mode === 'operationalization' ||
-          mode === 'warrant-elicitation') &&
+          mode === 'warrant-elicitation' ||
+          mode === 'capture-defeater') &&
         handlers.onExitMode !== undefined
       ) {
         // 6. Consume the keystroke.
