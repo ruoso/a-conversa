@@ -3003,3 +3003,126 @@ describe('projectNodes — annotation-node promotion (mod_render_annotation_endp
     );
   });
 });
+
+// -- Edge-hosted annotation midpoint rendering ----------------------------
+//
+// Refinement: tasks/refinements/moderator-ui/mod_annotation_node_edge_host_midpoint.md
+//
+// When a promoted annotation's `targetEdgeId` resolves against an
+// already-projected host edge, the canvas surfaces:
+//   1. A real `<StatementNode>` for each endpoint of the host edge.
+//   2. A promoted `<AnnotationNode>` for the annotation.
+//   3. A synthetic 0×0 `<AnnotationHostMidpointNode>` keyed by host
+//      edge id.
+//   4. The host pseudo-edge tethering `midpointId → annotationId`
+//      (NOT `hostSourceNodeId → annotationId` per the v1 approximation).
+//
+// When the host edge has not been projected yet, neither midpoint nor
+// host pseudo-edge appears, and the annotation node carries
+// `data-host-missing="true"` (defensive case — same diagnosis surface
+// the v1 used for the `null`-host case).
+
+const HOST_EDGE_ID = '00000000-0000-4000-8000-0000000000e1';
+const HOST_ANNO_ID = '00000000-0000-4000-8000-0000000000d3';
+const ENDPOINT_ANNO_ID = '00000000-0000-4000-8000-0000000000d4';
+
+describe('GraphCanvasPane — edge-hosted annotation midpoint (mod_annotation_node_edge_host_midpoint)', () => {
+  it('renders an AnnotationHostMidpointNode keyed on the host edge id when an edge-hosted annotation is promoted', () => {
+    // Seed: N1, N2, E1 (N1→N2), A (targets E1), annotation-endpoint
+    // edge from N1 → A (promotes A).
+    const store = useWsStore.getState();
+    store.applyEvent(makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'a' }));
+    store.applyEvent(makeNodeCreated({ sequence: 2, nodeId: NODE_B, wording: 'b' }));
+    store.applyEvent(
+      makeEdgeCreated({ sequence: 3, edgeId: HOST_EDGE_ID, source: NODE_A, target: NODE_B }),
+    );
+    store.applyEvent(
+      makeAnnotationCreated({
+        sequence: 4,
+        annotationId: HOST_ANNO_ID,
+        kind: 'reframe',
+        targetNodeId: null,
+        targetEdgeId: HOST_EDGE_ID,
+      }),
+    );
+    store.applyEvent(
+      makeAnnotationEndpointEdgeCreated({
+        sequence: 5,
+        edgeId: '00000000-0000-4000-8000-0000000000f0',
+        sourceNodeId: NODE_A,
+        targetAnnotationId: HOST_ANNO_ID,
+      }),
+    );
+    renderGraphWithWsClient();
+    // Midpoint node renders keyed on the host edge id.
+    expect(screen.getByTestId(`annotation-host-midpoint-${HOST_EDGE_ID}`)).toBeTruthy();
+    // Promoted annotation node renders.
+    expect(screen.getByTestId(`annotation-node-${HOST_ANNO_ID}`)).toBeTruthy();
+    // Annotation node does NOT carry `data-host-missing` — the host
+    // edge resolved.
+    const annoRoot = screen.getByTestId(`annotation-node-${HOST_ANNO_ID}`);
+    expect(annoRoot.getAttribute('data-host-missing')).toBeNull();
+  });
+
+  it('emits no midpoint node for a node-hosted promoted annotation (regression baseline)', () => {
+    // The v1 predecessor's scenario must stay green: a node-hosted
+    // promoted annotation produces no midpoint node.
+    const store = useWsStore.getState();
+    store.applyEvent(makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'a' }));
+    store.applyEvent(
+      makeAnnotationCreated({
+        sequence: 2,
+        annotationId: ENDPOINT_ANNO_ID,
+        kind: 'reframe',
+        targetNodeId: NODE_A,
+        targetEdgeId: null,
+      }),
+    );
+    store.applyEvent(
+      makeAnnotationEndpointEdgeCreated({
+        sequence: 3,
+        edgeId: '00000000-0000-4000-8000-0000000000f1',
+        sourceNodeId: NODE_A,
+        targetAnnotationId: ENDPOINT_ANNO_ID,
+      }),
+    );
+    renderGraphWithWsClient();
+    expect(screen.getByTestId(`annotation-node-${ENDPOINT_ANNO_ID}`)).toBeTruthy();
+    // No midpoint node DOM exists for node-hosted promotion. Search
+    // by data-testid prefix — there should be zero matches.
+    expect(document.querySelectorAll('[data-testid^="annotation-host-midpoint-"]').length).toBe(0);
+  });
+
+  it('stamps data-host-missing on an edge-hosted promoted annotation whose host edge is not projected', () => {
+    // Seed an annotation whose `target_edge_id` references an edge
+    // that has NOT been projected (no `edge-created` event for it).
+    // The defensive path: annotation node renders with
+    // `data-host-missing="true"`, no midpoint node, no host pseudo-edge.
+    const store = useWsStore.getState();
+    store.applyEvent(makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'host-node' }));
+    store.applyEvent(
+      makeAnnotationCreated({
+        sequence: 2,
+        annotationId: HOST_ANNO_ID,
+        kind: 'note',
+        targetNodeId: null,
+        targetEdgeId: HOST_EDGE_ID,
+      }),
+    );
+    store.applyEvent(
+      makeAnnotationEndpointEdgeCreated({
+        sequence: 3,
+        edgeId: '00000000-0000-4000-8000-0000000000f2',
+        sourceNodeId: NODE_A,
+        targetAnnotationId: HOST_ANNO_ID,
+      }),
+    );
+    renderGraphWithWsClient();
+    const annoRoot = screen.getByTestId(`annotation-node-${HOST_ANNO_ID}`);
+    expect(annoRoot.getAttribute('data-host-missing')).toBe('true');
+    expect(document.querySelectorAll('[data-testid^="annotation-host-midpoint-"]').length).toBe(0);
+    expect(
+      document.querySelectorAll(`[data-testid="annotation-host-edge-${HOST_ANNO_ID}"]`).length,
+    ).toBe(0);
+  });
+});

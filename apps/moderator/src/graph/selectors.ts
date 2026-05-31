@@ -27,7 +27,18 @@ import { MarkerType, type Edge, type EdgeMarker, type Node } from 'reactflow';
 import type { EdgeRole, Event } from '@a-conversa/shared-types';
 
 import { ANNOTATION_HOST_EDGE_TYPE, type AnnotationHostEdgeData } from './AnnotationHostEdge.js';
-import { ANNOTATION_NODE_TYPE, type AnnotationNodeData } from './AnnotationNode.js';
+import {
+  ANNOTATION_HOST_MIDPOINT_NODE_TYPE,
+  ANNOTATION_HOST_MIDPOINT_NODE_WIDTH,
+  ANNOTATION_HOST_MIDPOINT_NODE_HEIGHT,
+  type AnnotationHostMidpointNodeData,
+} from './AnnotationHostMidpointNode.js';
+import {
+  ANNOTATION_NODE_TYPE,
+  ANNOTATION_NODE_WIDTH,
+  ANNOTATION_NODE_HEIGHT,
+  type AnnotationNodeData,
+} from './AnnotationNode.js';
 // `Vote` is imported from the shell after the `extract_facet_pill` lift
 // (refinement Decision §3 — the in-pill render-dependency chain ships
 // with `<FacetPill>` in `@a-conversa/shell`). The annotation projection
@@ -558,17 +569,34 @@ export function computeAnnotationsAsEndpoints(events: readonly Event[]): Set<str
 }
 
 /**
+ * Deterministic synthetic-id helper for the midpoint node that tethers
+ * an edge-hosted annotation's host pseudo-edge. Stable across renders
+ * (layout-cache safe) and 1-per-host-edge (annotations sharing the
+ * same `targetEdgeId` share one midpoint node — Decision §4 of
+ * `mod_annotation_node_edge_host_midpoint`).
+ *
+ * Exported as a top-level utility so the projectors, the post-layout
+ * placement helper, and downstream tests all read the same id shape.
+ */
+export function midpointIdFor(edgeId: string): string {
+  return `annotation-host-midpoint-${edgeId}`;
+}
+
+/**
  * Resolve each promoted annotation's host id — the entity the
  * annotation is *about*. Two cases per `mod_render_annotation_endpoint_edges`
- * Decision §4:
+ * Decision §4 (edge-hosted case updated per
+ * `mod_annotation_node_edge_host_midpoint`):
  *
  *   1. `targetNodeId` set → host is a node; the resolved host id is
  *      the node id when that node has been seen as `node-created` in
  *      the events log.
- *   2. `targetEdgeId` set → host is an edge; for v1 we resolve to the
- *      host edge's `source` endpoint (node id OR promoted annotation
- *      id). The future `mod_annotation_node_edge_host_midpoint` task
- *      may replace this with a synthetic midpoint node.
+ *   2. `targetEdgeId` set → host is an edge; resolves to the synthetic
+ *      midpoint node id (`annotation-host-midpoint-<edge-id>`) ONLY
+ *      when both the host edge's source AND target endpoints are
+ *      resolvable in the index (so the post-layout pass can compute
+ *      the centroid). The midpoint node itself is emitted in parallel
+ *      by `projectAnnotationHostMidpointNodes`.
  *
  * Returns `null` when neither case resolves — the caller surfaces
  * that as `data-host-missing` on the annotation node and omits the
@@ -582,28 +610,38 @@ function resolveAnnotationHostId(
   annotation: Annotation,
   knownNodeIds: ReadonlySet<string>,
   edgeSources: ReadonlyMap<string, string>,
+  edgeTargets: ReadonlyMap<string, string>,
 ): string | null {
   if (annotation.targetNodeId !== null && knownNodeIds.has(annotation.targetNodeId)) {
     return annotation.targetNodeId;
   }
   if (annotation.targetEdgeId !== null) {
     const hostSource = edgeSources.get(annotation.targetEdgeId);
-    if (hostSource !== undefined) return hostSource;
+    const hostTarget = edgeTargets.get(annotation.targetEdgeId);
+    if (hostSource !== undefined && hostTarget !== undefined) {
+      return midpointIdFor(annotation.targetEdgeId);
+    }
   }
   return null;
 }
 
 /**
- * Build the `(knownNodeIds, edgeSources)` resolution context for the
- * host lookup. Single pass over the events log; cheap to share across
- * the node + pseudo-edge projectors.
+ * Build the `(knownNodeIds, edgeSources, edgeTargets)` resolution
+ * context for the host lookup. Single pass over the events log; cheap
+ * to share across the node + pseudo-edge + midpoint-node projectors.
+ *
+ * `edgeTargets` was added by `mod_annotation_node_edge_host_midpoint`
+ * so the midpoint pass can compute the centroid of the host edge's
+ * two endpoint nodes — the v1 lookup only kept the source side.
  */
 function buildAnnotationHostIndex(events: readonly Event[]): {
   knownNodeIds: Set<string>;
   edgeSources: Map<string, string>;
+  edgeTargets: Map<string, string>;
 } {
   const knownNodeIds = new Set<string>();
   const edgeSources = new Map<string, string>();
+  const edgeTargets = new Map<string, string>();
   for (const event of events) {
     if (event.kind === 'node-created') {
       knownNodeIds.add(event.payload.node_id);
@@ -614,10 +652,14 @@ function buildAnnotationHostIndex(events: readonly Event[]): {
       if (sourceId !== undefined) {
         edgeSources.set(event.payload.edge_id, sourceId);
       }
+      const targetId = event.payload.target_node_id ?? event.payload.target_annotation_id;
+      if (targetId !== undefined) {
+        edgeTargets.set(event.payload.edge_id, targetId);
+      }
       continue;
     }
   }
-  return { knownNodeIds, edgeSources };
+  return { knownNodeIds, edgeSources, edgeTargets };
 }
 
 /**
@@ -648,11 +690,11 @@ export function projectAnnotationNodes(
   nodeAnnotationIndex: ReadonlyMap<string, readonly Annotation[]>,
 ): Node<AnnotationNodeData>[] {
   if (promotedSet.size === 0) return [];
-  const { knownNodeIds, edgeSources } = buildAnnotationHostIndex(events);
+  const { knownNodeIds, edgeSources, edgeTargets } = buildAnnotationHostIndex(events);
   const out: Node<AnnotationNodeData>[] = [];
   for (const annotation of annotations) {
     if (!promotedSet.has(annotation.id)) continue;
-    const hostId = resolveAnnotationHostId(annotation, knownNodeIds, edgeSources);
+    const hostId = resolveAnnotationHostId(annotation, knownNodeIds, edgeSources, edgeTargets);
     const propagatedAnnotations = nodeAnnotationIndex.get(annotation.id) ?? EMPTY_ANNOTATIONS;
     const data: AnnotationNodeData =
       hostId === null
@@ -699,11 +741,11 @@ export function projectAnnotationHostEdges(
   events: readonly Event[],
 ): Edge<AnnotationHostEdgeData>[] {
   if (promotedSet.size === 0) return [];
-  const { knownNodeIds, edgeSources } = buildAnnotationHostIndex(events);
+  const { knownNodeIds, edgeSources, edgeTargets } = buildAnnotationHostIndex(events);
   const out: Edge<AnnotationHostEdgeData>[] = [];
   for (const annotation of annotations) {
     if (!promotedSet.has(annotation.id)) continue;
-    const hostId = resolveAnnotationHostId(annotation, knownNodeIds, edgeSources);
+    const hostId = resolveAnnotationHostId(annotation, knownNodeIds, edgeSources, edgeTargets);
     if (hostId === null) continue;
     out.push({
       id: `annotation-host-${annotation.id}`,
@@ -714,6 +756,171 @@ export function projectAnnotationHostEdges(
     });
   }
   return out;
+}
+
+/**
+ * Project one synthetic midpoint node per (promoted, edge-hosted,
+ * host-edge-resolvable) annotation. Each midpoint node is the tether
+ * endpoint for the corresponding `AnnotationHostEdge` (Decision §1 of
+ * `mod_annotation_node_edge_host_midpoint`).
+ *
+ * Per Decision §4, midpoints deduplicate by host edge id — two
+ * annotations sharing the same `targetEdgeId` share one midpoint node
+ * (and both host pseudo-edges tether to it). Per Decision §6, an
+ * annotation whose host edge id has not been projected (or whose
+ * endpoints have been pruned) produces no midpoint; the matching
+ * annotation node carries `data-host-missing="true"` via the parallel
+ * defensive case in `resolveAnnotationHostId`.
+ *
+ * Position is `(0, 0)` at emit time; the post-layout pass
+ * `placeAnnotationHostMidpoints` overwrites with the centroid of the
+ * host edge's two endpoint node centers (Constraint §5).
+ *
+ * Pure function — no React, no store, no DOM.
+ */
+export function projectAnnotationHostMidpointNodes(
+  annotations: readonly Annotation[],
+  promotedSet: ReadonlySet<string>,
+  events: readonly Event[],
+): Node<AnnotationHostMidpointNodeData>[] {
+  if (promotedSet.size === 0) return [];
+  const { edgeSources, edgeTargets } = buildAnnotationHostIndex(events);
+  const out: Node<AnnotationHostMidpointNodeData>[] = [];
+  const emittedFor = new Set<string>();
+  for (const annotation of annotations) {
+    if (!promotedSet.has(annotation.id)) continue;
+    if (annotation.targetEdgeId === null) continue;
+    const hostEdgeId = annotation.targetEdgeId;
+    if (emittedFor.has(hostEdgeId)) continue;
+    if (!edgeSources.has(hostEdgeId) || !edgeTargets.has(hostEdgeId)) continue;
+    emittedFor.add(hostEdgeId);
+    out.push({
+      id: midpointIdFor(hostEdgeId),
+      type: ANNOTATION_HOST_MIDPOINT_NODE_TYPE,
+      position: { x: 0, y: 0 },
+      data: { hostEdgeId },
+    });
+  }
+  return out;
+}
+
+/**
+ * Build the `(edgeId → { sourceNodeId, targetNodeId })` anchor index
+ * the post-layout midpoint-placement pass uses to look up the two
+ * endpoint node ids for each midpoint node. Same single-pass-over-
+ * events shape as `buildAnnotationHostIndex`; exposed as its own
+ * helper so the GraphCanvasPane integration can build it once per
+ * `useMemo` tick alongside the dagre layout call.
+ */
+export function buildAnnotationHostEdgeAnchorIndex(
+  events: readonly Event[],
+): Map<string, { sourceNodeId: string; targetNodeId: string }> {
+  const out = new Map<string, { sourceNodeId: string; targetNodeId: string }>();
+  const { edgeSources, edgeTargets } = buildAnnotationHostIndex(events);
+  for (const [edgeId, sourceNodeId] of edgeSources) {
+    const targetNodeId = edgeTargets.get(edgeId);
+    if (targetNodeId === undefined) continue;
+    out.set(edgeId, { sourceNodeId, targetNodeId });
+  }
+  return out;
+}
+
+/**
+ * Per-node dimension lookup used by `placeAnnotationHostMidpoints` to
+ * compute each endpoint's geometric center. Reads from (in order):
+ *
+ *   1. An optional caller-supplied dimensions map (the same
+ *      `measurementCacheRef` the layout engine consumes), so the
+ *      midpoint stays aligned with the actually-rendered footprint.
+ *   2. `node.width` / `node.height` if set (the test seam — Vitest
+ *      cases pin centroid math with explicit numbers via these
+ *      fields).
+ *   3. Type-based constants — `ANNOTATION_NODE_WIDTH`/`HEIGHT` for
+ *      annotation nodes, the dagre default `(288, 90)` for everything
+ *      else (matching `DEFAULT_LAYOUT_OPTIONS` so the centroid agrees
+ *      with the layout pass's footprint when no measurement is
+ *      available).
+ */
+function getNodeRect(
+  node: Node,
+  dimensions?: ReadonlyMap<string, { readonly width: number; readonly height: number }>,
+): { width: number; height: number } {
+  const measured = dimensions?.get(node.id);
+  if (measured !== undefined) return measured;
+  if (node.width != null && node.height != null) {
+    return { width: node.width, height: node.height };
+  }
+  if (node.type === ANNOTATION_NODE_TYPE) {
+    return { width: ANNOTATION_NODE_WIDTH, height: ANNOTATION_NODE_HEIGHT };
+  }
+  if (node.type === ANNOTATION_HOST_MIDPOINT_NODE_TYPE) {
+    return {
+      width: ANNOTATION_HOST_MIDPOINT_NODE_WIDTH,
+      height: ANNOTATION_HOST_MIDPOINT_NODE_HEIGHT,
+    };
+  }
+  // Matches DEFAULT_LAYOUT_OPTIONS in layoutEngine.ts — keeping the two
+  // sources in lockstep is the cheapest way to keep the centroid aligned
+  // with the dagre placement when no measurement is available.
+  return { width: 288, height: 90 };
+}
+
+/**
+ * Post-layout pass that walks the midpoint subset of a `nodes` array
+ * and overwrites each midpoint's position with the geometric centroid
+ * of its host edge's two endpoint node centers (Constraint §5 of
+ * `mod_annotation_node_edge_host_midpoint`):
+ *
+ *   center(N) = (N.position.x + N.width / 2, N.position.y + N.height / 2)
+ *   midpoint  = ( (center(S).x + center(T).x) / 2,
+ *                 (center(S).y + center(T).y) / 2 )
+ *
+ * Non-midpoint nodes pass through by referential identity. Defensive:
+ * a midpoint node whose host edge id is missing from `hostEdgeAnchors`,
+ * or whose endpoint ids are missing from the input `nodes` array,
+ * passes through with its existing `(0, 0)` position (paired with the
+ * defensive omission of the midpoint node in
+ * `projectAnnotationHostMidpointNodes`; the case is a defensive
+ * backstop, not a steady-state path).
+ *
+ * Pure function — no React, no store, no DOM. Returns a fresh array
+ * (the mutated midpoint nodes get a fresh object reference so
+ * ReactFlow's prop-diff picks up the position change; non-midpoint
+ * nodes pass through by reference so memoization downstream is
+ * undisturbed).
+ */
+export function placeAnnotationHostMidpoints(
+  layoutedNodes: readonly Node[],
+  hostEdgeAnchors: ReadonlyMap<string, { sourceNodeId: string; targetNodeId: string }>,
+  dimensions?: ReadonlyMap<string, { readonly width: number; readonly height: number }>,
+): Node[] {
+  if (layoutedNodes.length === 0) return [];
+  const nodeById = new Map<string, Node>();
+  for (const n of layoutedNodes) nodeById.set(n.id, n);
+  return layoutedNodes.map((node) => {
+    if (node.type !== ANNOTATION_HOST_MIDPOINT_NODE_TYPE) return node;
+    const data = node.data as AnnotationHostMidpointNodeData | undefined;
+    const hostEdgeId = data?.hostEdgeId;
+    if (hostEdgeId === undefined) return node;
+    const anchors = hostEdgeAnchors.get(hostEdgeId);
+    if (anchors === undefined) return node;
+    const sourceNode = nodeById.get(anchors.sourceNodeId);
+    const targetNode = nodeById.get(anchors.targetNodeId);
+    if (sourceNode === undefined || targetNode === undefined) return node;
+    const sRect = getNodeRect(sourceNode, dimensions);
+    const tRect = getNodeRect(targetNode, dimensions);
+    const sCenterX = sourceNode.position.x + sRect.width / 2;
+    const sCenterY = sourceNode.position.y + sRect.height / 2;
+    const tCenterX = targetNode.position.x + tRect.width / 2;
+    const tCenterY = targetNode.position.y + tRect.height / 2;
+    return {
+      ...node,
+      position: {
+        x: (sCenterX + tCenterX) / 2,
+        y: (sCenterY + tCenterY) / 2,
+      },
+    };
+  });
 }
 
 // -- Per-node per-facet votes shared-empty constant -----------------

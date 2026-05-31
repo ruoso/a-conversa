@@ -724,6 +724,7 @@ task moderator_ui "Moderator UI" {
     task mod_annotation_node_edge_host_midpoint "Tether edge-hosted annotation pseudo-edge to host edge midpoint" {
       effort 0.5d
       allocate team
+      complete 100
       depends !mod_render_annotation_endpoint_edges
       note -8<-
         Source of debt: mod_render_annotation_endpoint_edges (2026-05-30) — the v1 host pseudo-edge for

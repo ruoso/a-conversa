@@ -37,8 +37,12 @@ interface CreatedSession {
 }
 
 const NODE_ID = '11111111-1111-4111-8111-111111111201';
+const NODE_ID_2 = '11111111-1111-4111-8111-111111111202';
 const ANNOTATION_ID = '22222222-2222-4222-8222-222222222201';
+const EDGE_HOSTED_ANNOTATION_ID = '22222222-2222-4222-8222-222222222202';
 const EDGE_ID = '33333333-3333-4333-8333-333333333301';
+const HOST_EDGE_ID = '33333333-3333-4333-8333-333333333302';
+const ENDPOINT_EDGE_TO_EDGE_HOSTED_ID = '33333333-3333-4333-8333-333333333303';
 
 test.describe.serial('moderator annotation-endpoint canvas rendering', () => {
   test('an annotation-endpoint edge surfaces a promoted AnnotationNode + host pseudo-edge on the canvas', async ({
@@ -159,5 +163,68 @@ test.describe.serial('moderator annotation-endpoint canvas rendering', () => {
     // miss surfaces here as the `(?)` fallback, not as a thrown error.
     await expect(endpointsRow).toContainText('(node)');
     await expect(endpointsRow).toContainText('(annotation)');
+
+    // -- Edge-hosted annotation midpoint rendering --------------------
+    //
+    // Refinement: `mod_annotation_node_edge_host_midpoint`. Seed a
+    // second node N2, a host node→node edge E (N1→N2), an annotation
+    // A2 whose `target_edge_id` references E, and an annotation-
+    // endpoint edge promoting A2. The canvas must render:
+    //   1. A 0×0 `<AnnotationHostMidpointNode>` keyed on E's id
+    //      (`annotation-host-midpoint-<edge-id>`).
+    //   2. A host pseudo-edge for A2 tethering the midpoint to A2.
+    // The midpoint is invisible (0×0), so the locator pins to
+    // `toBeAttached` rather than `toBeVisible`.
+    await seedWsStore(page, {
+      sessionId: session.id,
+      nodes: [{ nodeId: NODE_ID_2, wording: 'Second host statement N2' }],
+      edges: [
+        {
+          edgeId: HOST_EDGE_ID,
+          source: NODE_ID,
+          target: NODE_ID_2,
+          role: 'supports',
+          sourceKind: 'node',
+          targetKind: 'node',
+        },
+      ],
+      annotations: [
+        {
+          annotationId: EDGE_HOSTED_ANNOTATION_ID,
+          kind: 'note',
+          content: 'an annotation about the N1 → N2 edge',
+          targetEdgeId: HOST_EDGE_ID,
+        },
+      ],
+    });
+    await seedWsStore(page, {
+      sessionId: session.id,
+      edges: [
+        {
+          edgeId: ENDPOINT_EDGE_TO_EDGE_HOSTED_ID,
+          source: NODE_ID,
+          target: EDGE_HOSTED_ANNOTATION_ID,
+          role: 'contradicts',
+          sourceKind: 'node',
+          targetKind: 'annotation',
+        },
+      ],
+    });
+    // Midpoint node renders, keyed on host edge id (invisible: assert
+    // attachment, not visibility).
+    await expect(
+      page.locator(`[data-testid="annotation-host-midpoint-${HOST_EDGE_ID}"]`),
+      'midpoint node must render for an edge-hosted promoted annotation',
+    ).toBeAttached({ timeout: 10_000 });
+    // Promoted annotation node for the edge-hosted annotation renders.
+    await expect(
+      page.getByTestId(`annotation-node-${EDGE_HOSTED_ANNOTATION_ID}`),
+      'edge-hosted promoted annotation node must render',
+    ).toBeVisible({ timeout: 10_000 });
+    // Host pseudo-edge for the edge-hosted annotation renders.
+    await expect(
+      page.locator(`[data-testid="annotation-host-edge-${EDGE_HOSTED_ANNOTATION_ID}"]`),
+      'host pseudo-edge for the edge-hosted annotation must render alongside its midpoint',
+    ).toBeAttached({ timeout: 10_000 });
   });
 });

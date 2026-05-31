@@ -37,16 +37,20 @@
 // `shell_package.extract_cytoscape_projectors` lift.
 
 import { describe, expect, it } from 'vitest';
-import { MarkerType } from 'reactflow';
+import { MarkerType, type Node } from 'reactflow';
 import type { AnnotationKind, EdgeRole, Event } from '@a-conversa/shared-types';
 
 import { AXIOM_MARK_PALETTE_SIZE, EMPTY_ANNOTATIONS, axiomMarkColorFor } from '@a-conversa/shell';
 
 import type { WsState } from '../ws/wsStore.js';
 import {
+  buildAnnotationHostEdgeAnchorIndex,
   computeAnnotationsAsEndpoints,
   groupPendingAxiomMarksByNode,
+  midpointIdFor,
+  placeAnnotationHostMidpoints,
   projectAnnotationHostEdges,
+  projectAnnotationHostMidpointNodes,
   projectAnnotationNodes,
   projectPendingAxiomMarks,
   selectAnnotations,
@@ -54,6 +58,7 @@ import {
   selectNodeWordingById,
 } from './selectors.js';
 import { ANNOTATION_HOST_EDGE_TYPE, type AnnotationHostEdgeData } from './AnnotationHostEdge.js';
+import { ANNOTATION_HOST_MIDPOINT_NODE_TYPE } from './AnnotationHostMidpointNode.js';
 import { ANNOTATION_NODE_TYPE, type AnnotationNodeData } from './AnnotationNode.js';
 import type { Annotation } from '@a-conversa/shell';
 
@@ -1617,7 +1622,7 @@ describe('projectAnnotationHostEdges', () => {
     expect(edges[0]).toEqual(expected);
   });
 
-  it('tethers an edge-hosted annotation to its host edge source-node id', () => {
+  it('tethers an edge-hosted annotation to the synthetic midpoint node id (mod_annotation_node_edge_host_midpoint)', () => {
     const annotations: Annotation[] = [
       makeAnnotation({ id: ANNO_A, kind: 'note', targetEdgeId: EDGE_HOSTED_BY_NODE }),
     ];
@@ -1634,7 +1639,7 @@ describe('projectAnnotationHostEdges', () => {
     ];
     const edges = projectAnnotationHostEdges(annotations, new Set([ANNO_A]), events);
     expect(edges).toHaveLength(1);
-    expect(edges[0]?.source).toBe(NODE_A);
+    expect(edges[0]?.source).toBe(`annotation-host-midpoint-${EDGE_HOSTED_BY_NODE}`);
     expect(edges[0]?.target).toBe(ANNO_A);
   });
 
@@ -1644,6 +1649,220 @@ describe('projectAnnotationHostEdges', () => {
     ];
     const edges = projectAnnotationHostEdges(annotations, new Set([ANNO_A]), []);
     expect(edges).toEqual([]);
+  });
+
+  it('omits the host pseudo-edge when the edge-hosted annotation cannot resolve both endpoints', () => {
+    // host edge id present on the annotation but no `edge-created` event
+    // for it — both endpoints missing from the host index, midpoint
+    // cannot be computed, so no pseudo-edge is emitted (paired with
+    // `data-host-missing` on the AnnotationNode).
+    const annotations: Annotation[] = [
+      makeAnnotation({ id: ANNO_A, kind: 'note', targetEdgeId: EDGE_HOSTED_BY_NODE }),
+    ];
+    const edges = projectAnnotationHostEdges(annotations, new Set([ANNO_A]), []);
+    expect(edges).toEqual([]);
+  });
+});
+
+// -- midpoint-node projection + post-layout placement -------------------
+//
+// Refinement: tasks/refinements/moderator-ui/mod_annotation_node_edge_host_midpoint.md
+//
+// The edge-hosted host pseudo-edge tethers to a synthetic 0×0 midpoint
+// node positioned at the centroid of the host edge's two endpoint
+// nodes' centers (Constraint §5). The projector emits one midpoint per
+// host edge (1-per-edge, not 1-per-annotation — Decision §4); the
+// post-layout placement helper translates `(0, 0)` placeholders to the
+// computed centroid.
+
+describe('midpointIdFor', () => {
+  it('returns the deterministic `annotation-host-midpoint-${edgeId}` shape', () => {
+    expect(midpointIdFor('edge-1')).toBe('annotation-host-midpoint-edge-1');
+    expect(midpointIdFor(EDGE_HOSTED_BY_NODE)).toBe(
+      `annotation-host-midpoint-${EDGE_HOSTED_BY_NODE}`,
+    );
+  });
+});
+
+describe('projectAnnotationHostMidpointNodes', () => {
+  it('returns [] for an empty promotion set', () => {
+    expect(projectAnnotationHostMidpointNodes([], new Set(), [])).toEqual([]);
+  });
+
+  it('emits no midpoint nodes when the only promoted annotation is node-hosted', () => {
+    const annotations: Annotation[] = [
+      makeAnnotation({ id: ANNO_A, kind: 'note', targetNodeId: NODE_A }),
+    ];
+    const events: Event[] = [makeNodeCreated(1, NODE_A)];
+    const nodes = projectAnnotationHostMidpointNodes(annotations, new Set([ANNO_A]), events);
+    expect(nodes).toEqual([]);
+  });
+
+  it('emits one midpoint node for a promoted edge-hosted annotation with both endpoints resolved', () => {
+    const annotations: Annotation[] = [
+      makeAnnotation({ id: ANNO_A, kind: 'note', targetEdgeId: EDGE_HOSTED_BY_NODE }),
+    ];
+    const events: Event[] = [
+      makeNodeCreated(1, NODE_A),
+      makeNodeCreated(2, NODE_B),
+      makeEdgeCreated({
+        sequence: 3,
+        edgeId: EDGE_HOSTED_BY_NODE,
+        role: 'supports',
+        source: NODE_A,
+        target: NODE_B,
+      }),
+    ];
+    const nodes = projectAnnotationHostMidpointNodes(annotations, new Set([ANNO_A]), events);
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0]).toEqual({
+      id: `annotation-host-midpoint-${EDGE_HOSTED_BY_NODE}`,
+      type: ANNOTATION_HOST_MIDPOINT_NODE_TYPE,
+      position: { x: 0, y: 0 },
+      data: { hostEdgeId: EDGE_HOSTED_BY_NODE },
+    });
+  });
+
+  it('emits exactly ONE midpoint node when two promoted annotations share the same target edge (dedup per Decision §4)', () => {
+    const annotations: Annotation[] = [
+      makeAnnotation({ id: ANNO_A, kind: 'note', targetEdgeId: EDGE_HOSTED_BY_NODE }),
+      makeAnnotation({ id: ANNO_B, kind: 'reframe', targetEdgeId: EDGE_HOSTED_BY_NODE }),
+    ];
+    const events: Event[] = [
+      makeNodeCreated(1, NODE_A),
+      makeNodeCreated(2, NODE_B),
+      makeEdgeCreated({
+        sequence: 3,
+        edgeId: EDGE_HOSTED_BY_NODE,
+        role: 'supports',
+        source: NODE_A,
+        target: NODE_B,
+      }),
+    ];
+    const nodes = projectAnnotationHostMidpointNodes(
+      annotations,
+      new Set([ANNO_A, ANNO_B]),
+      events,
+    );
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0]?.id).toBe(`annotation-host-midpoint-${EDGE_HOSTED_BY_NODE}`);
+  });
+
+  it('emits no midpoint node when the host edge has not been projected (defensive omission)', () => {
+    const annotations: Annotation[] = [
+      makeAnnotation({ id: ANNO_A, kind: 'note', targetEdgeId: EDGE_HOSTED_BY_NODE }),
+    ];
+    // No `edge-created` for EDGE_HOSTED_BY_NODE — both endpoints
+    // missing from the host index; midpoint omitted.
+    const events: Event[] = [makeNodeCreated(1, NODE_A)];
+    const nodes = projectAnnotationHostMidpointNodes(annotations, new Set([ANNO_A]), events);
+    expect(nodes).toEqual([]);
+  });
+});
+
+describe('placeAnnotationHostMidpoints', () => {
+  function makeStatementNode(
+    id: string,
+    position: { x: number; y: number },
+    width = 288,
+    height = 90,
+  ): Node {
+    return {
+      id,
+      type: 'statement',
+      position,
+      width,
+      height,
+      data: {},
+    };
+  }
+
+  function makeMidpointNodeAt(
+    hostEdgeId: string,
+    position: { x: number; y: number } = { x: 0, y: 0 },
+  ): Node {
+    return {
+      id: midpointIdFor(hostEdgeId),
+      type: ANNOTATION_HOST_MIDPOINT_NODE_TYPE,
+      position,
+      data: { hostEdgeId },
+    };
+  }
+
+  it('returns [] for an empty nodes array', () => {
+    expect(placeAnnotationHostMidpoints([], new Map())).toEqual([]);
+  });
+
+  it('passes statement / annotation nodes through unchanged when no midpoint node is present', () => {
+    const s = makeStatementNode(NODE_A, { x: 0, y: 0 });
+    const t = makeStatementNode(NODE_B, { x: 100, y: 100 });
+    const out = placeAnnotationHostMidpoints([s, t], new Map());
+    expect(out).toEqual([s, t]);
+    // Referential identity — non-midpoint nodes pass through by reference.
+    expect(out[0]).toBe(s);
+    expect(out[1]).toBe(t);
+  });
+
+  it('overwrites a midpoint node position with the centroid of its host edge endpoints centers (Constraint §5)', () => {
+    // S at (0, 0) size 288×90 → center (144, 45)
+    // T at (400, 200) size 288×90 → center (544, 245)
+    // centroid = ( (144 + 544) / 2, (45 + 245) / 2 ) = (344, 145)
+    const s = makeStatementNode(NODE_A, { x: 0, y: 0 }, 288, 90);
+    const t = makeStatementNode(NODE_B, { x: 400, y: 200 }, 288, 90);
+    const midpoint = makeMidpointNodeAt(EDGE_HOSTED_BY_NODE);
+    const anchors = new Map([
+      [EDGE_HOSTED_BY_NODE, { sourceNodeId: NODE_A, targetNodeId: NODE_B }],
+    ]);
+    const out = placeAnnotationHostMidpoints([s, t, midpoint], anchors);
+    const placed = out.find((n) => n.id === midpointIdFor(EDGE_HOSTED_BY_NODE));
+    expect(placed?.position).toEqual({ x: 344, y: 145 });
+  });
+
+  it('leaves the midpoint position at (0, 0) when the host edge anchors are missing (defensive backstop)', () => {
+    const s = makeStatementNode(NODE_A, { x: 0, y: 0 });
+    const midpoint = makeMidpointNodeAt(EDGE_HOSTED_BY_NODE);
+    // Empty anchors map → midpoint passes through unchanged.
+    const out = placeAnnotationHostMidpoints([s, midpoint], new Map());
+    const placed = out.find((n) => n.id === midpointIdFor(EDGE_HOSTED_BY_NODE));
+    expect(placed?.position).toEqual({ x: 0, y: 0 });
+  });
+
+  it('leaves the midpoint position at (0, 0) when an endpoint node is missing from the nodes array (defensive)', () => {
+    // Only the source node is present; target missing — centroid cannot
+    // be computed, midpoint stays at (0, 0).
+    const s = makeStatementNode(NODE_A, { x: 0, y: 0 });
+    const midpoint = makeMidpointNodeAt(EDGE_HOSTED_BY_NODE);
+    const anchors = new Map([
+      [EDGE_HOSTED_BY_NODE, { sourceNodeId: NODE_A, targetNodeId: NODE_B }],
+    ]);
+    const out = placeAnnotationHostMidpoints([s, midpoint], anchors);
+    const placed = out.find((n) => n.id === midpointIdFor(EDGE_HOSTED_BY_NODE));
+    expect(placed?.position).toEqual({ x: 0, y: 0 });
+  });
+});
+
+describe('buildAnnotationHostEdgeAnchorIndex', () => {
+  it('returns an empty map for an event log with no edge-created events', () => {
+    expect(buildAnnotationHostEdgeAnchorIndex([]).size).toBe(0);
+  });
+
+  it('records (sourceNodeId, targetNodeId) per node→node edge', () => {
+    const events: Event[] = [
+      makeNodeCreated(1, NODE_A),
+      makeNodeCreated(2, NODE_B),
+      makeEdgeCreated({
+        sequence: 3,
+        edgeId: EDGE_HOSTED_BY_NODE,
+        role: 'supports',
+        source: NODE_A,
+        target: NODE_B,
+      }),
+    ];
+    const index = buildAnnotationHostEdgeAnchorIndex(events);
+    expect(index.get(EDGE_HOSTED_BY_NODE)).toEqual({
+      sourceNodeId: NODE_A,
+      targetNodeId: NODE_B,
+    });
   });
 });
 

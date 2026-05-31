@@ -106,6 +106,10 @@ import {
   ANNOTATION_NODE_WIDTH,
   AnnotationNode,
 } from './AnnotationNode.js';
+import {
+  ANNOTATION_HOST_MIDPOINT_NODE_TYPE,
+  AnnotationHostMidpointNode,
+} from './AnnotationHostMidpointNode.js';
 import { edgeTypes } from './edgeTypes.js';
 import { DrawEdgeRolePicker } from './DrawEdgeRolePicker.js';
 import { GraphContextMenu, type MenuItem } from './GraphContextMenu.js';
@@ -123,9 +127,12 @@ import { disputationOutcome } from './disputationOutcome.js';
 import {
   EMPTY_PENDING_AXIOM_MARKS,
   EMPTY_VOTES_BY_FACET,
+  buildAnnotationHostEdgeAnchorIndex,
   computeAnnotationsAsEndpoints,
   groupPendingAxiomMarksByNode,
+  placeAnnotationHostMidpoints,
   projectAnnotationHostEdges,
+  projectAnnotationHostMidpointNodes,
   projectAnnotationNodes,
   projectPendingAxiomMarks,
   selectEdgesForSession,
@@ -155,6 +162,7 @@ import type { DiagnosticPayload } from '@a-conversa/shared-types';
 const NODE_TYPES: NodeTypes = {
   [STATEMENT_NODE_TYPE]: StatementNode,
   [ANNOTATION_NODE_TYPE]: AnnotationNode,
+  [ANNOTATION_HOST_MIDPOINT_NODE_TYPE]: AnnotationHostMidpointNode,
 };
 
 /**
@@ -1204,7 +1212,32 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
     for (const node of laidOut) {
       positionCacheRef.current.set(node.id, node.position);
     }
-    return laidOut;
+    // Append synthetic midpoint nodes for edge-hosted promoted
+    // annotations (refinement `mod_annotation_node_edge_host_midpoint`).
+    // Per Decision §2 these are NOT fed to dagre — they're added in a
+    // downstream pass and positioned by `placeAnnotationHostMidpoints`
+    // against the dagre output of the host edge's two endpoint nodes.
+    // Their ids never enter `knownNodeIdsRef` / `positionCacheRef`, so
+    // the ADR 0025 Amendment 2026-05-24 cache-stability contract holds
+    // (midpoint ids don't trigger relayout when a new annotation
+    // promotes; their position is derived from the dagre-managed
+    // statement-node positions every render).
+    const allAnnotations = projectAnnotations(events);
+    const promotedAnnotationIds = computeAnnotationsAsEndpoints(events);
+    const midpointNodes = projectAnnotationHostMidpointNodes(
+      allAnnotations,
+      promotedAnnotationIds,
+      events,
+    );
+    if (midpointNodes.length === 0) {
+      return laidOut;
+    }
+    const hostEdgeAnchors = buildAnnotationHostEdgeAnchorIndex(events);
+    const combined = [...laidOut, ...(midpointNodes as unknown as Node<StatementNodeData>[])];
+    // `placeAnnotationHostMidpoints` widens to `Node[]`; ReactFlow's
+    // `nodes` prop accepts the same shape — node-type discrimination is
+    // per-node via `node.type` regardless of the static `T` on `Node<T>`.
+    return placeAnnotationHostMidpoints(combined, hostEdgeAnchors, dimensions);
     // `edges` is a new dep relative to the pre-layout-engine memo —
     // dagre's placement depends on the edge set, so adding an edge
     // between an existing node and a new node MUST re-run the layout.
