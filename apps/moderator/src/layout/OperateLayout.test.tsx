@@ -77,4 +77,29 @@ describe('OperateLayout — three-pane scaffold', () => {
     expect(screen.getByTestId('operate-right-sidebar').textContent).toBe('');
     expect(screen.getByTestId('operate-bottom-strip').textContent).toBe('');
   });
+
+  // Refinement: tasks/refinements/moderator-ui/mod_snapshot_action.md
+  // (Decision §3 — the testability seam for the F10 snapshot trigger.)
+  describe('data-snapshot-flow-open seam', () => {
+    it('defaults to "false" when the prop is omitted', () => {
+      render(<OperateLayout />);
+      expect(
+        screen.getByTestId('operate-layout-root').getAttribute('data-snapshot-flow-open'),
+      ).toBe('false');
+    });
+
+    it('renders "false" when dataSnapshotFlowOpen={false}', () => {
+      render(<OperateLayout dataSnapshotFlowOpen={false} />);
+      expect(
+        screen.getByTestId('operate-layout-root').getAttribute('data-snapshot-flow-open'),
+      ).toBe('false');
+    });
+
+    it('renders "true" when dataSnapshotFlowOpen={true}', () => {
+      render(<OperateLayout dataSnapshotFlowOpen={true} />);
+      expect(
+        screen.getByTestId('operate-layout-root').getAttribute('data-snapshot-flow-open'),
+      ).toBe('true');
+    });
+  });
 });

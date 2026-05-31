@@ -22,12 +22,13 @@
 // the Playwright e2e suite end-to-end.
 
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, render, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
 import { AuthProvider, createI18nInstance } from '@a-conversa/shell';
 import { useWsStore } from '../ws/wsStore';
 import { useCaptureStore } from '../stores/captureStore';
+import { resetSnapshotFlowStore, useSnapshotFlowStore } from '../layout/useSnapshotFlowStore';
 
 // ────────────────────────────────────────────────────────────────────────
 // Stub the heavy children so the test renders the install effect
@@ -129,6 +130,7 @@ afterEach(() => {
   cleanup();
   useWsStore.getState().reset();
   useCaptureStore.getState().reset();
+  resetSnapshotFlowStore();
   // Belt-and-suspenders: scrub the window namespace in case a test
   // left a leak behind (e.g., a test that failed before unmount ran).
   const w = window as unknown as { __testHooks?: Record<string, unknown> };
@@ -202,6 +204,65 @@ describe('Operate route — bottom-strip slot swap for capture-defeater mode (mo
     expect(
       proposeSlot?.querySelector('[data-testid="capture-defeater-propose-button"]'),
     ).not.toBeNull();
+    await act(async () => {
+      await Promise.resolve();
+    });
+  });
+});
+
+describe('Operate route — F10 snapshot trigger wiring (mod_snapshot_action)', () => {
+  it('mounts <SnapshotActionButton> inside the rightSidebar slot, ABOVE the <RightSidebar /> stub', async () => {
+    global.fetch = stubAuthMeFetch();
+    renderRoute();
+    await waitFor(() => {
+      expect(document.querySelector('[data-testid="snapshot-action-button"]')).not.toBeNull();
+    });
+    const button = document.querySelector('[data-testid="snapshot-action-button"]');
+    const sidebarStub = document.querySelector('[data-testid="right-sidebar-stub"]');
+    expect(button).not.toBeNull();
+    expect(sidebarStub).not.toBeNull();
+    // DOCUMENT_POSITION_FOLLOWING (bit 0x04) means `sidebarStub` comes
+    // AFTER `button` — i.e., the button is positioned above the pane
+    // stack in the right-sidebar slot, matching Decision §2.b.
+    expect(button!.compareDocumentPosition(sidebarStub!) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+  });
+
+  it('clicking the snapshot button flips useSnapshotFlowStore.isLabelInputOpen to true', async () => {
+    global.fetch = stubAuthMeFetch();
+    renderRoute();
+    await waitFor(() => {
+      expect(document.querySelector('[data-testid="snapshot-action-button"]')).not.toBeNull();
+    });
+    expect(useSnapshotFlowStore.getState().isLabelInputOpen).toBe(false);
+    act(() => {
+      fireEvent.click(document.querySelector('[data-testid="snapshot-action-button"]')!);
+    });
+    expect(useSnapshotFlowStore.getState().isLabelInputOpen).toBe(true);
+    await act(async () => {
+      await Promise.resolve();
+    });
+  });
+
+  it('Cmd/Ctrl+S dispatched at the document level flips useSnapshotFlowStore.isLabelInputOpen', async () => {
+    global.fetch = stubAuthMeFetch();
+    renderRoute();
+    await waitFor(() => {
+      expect(document.querySelector('[data-testid="snapshot-action-button"]')).not.toBeNull();
+    });
+    expect(useSnapshotFlowStore.getState().isLabelInputOpen).toBe(false);
+    // happy-dom's default navigator.platform is empty — the hook's
+    // isMacPlatform() returns false, so it watches for Ctrl+S.
+    act(() => {
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true, cancelable: true }),
+      );
+    });
+    expect(useSnapshotFlowStore.getState().isLabelInputOpen).toBe(true);
     await act(async () => {
       await Promise.resolve();
     });

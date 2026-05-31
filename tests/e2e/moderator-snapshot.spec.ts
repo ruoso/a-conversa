@@ -1,0 +1,150 @@
+// E2E spec for the F10 snapshot-trigger affordance on the moderator's
+// operate route.
+//
+// Refinement: tasks/refinements/moderator-ui/mod_snapshot_action.md
+// ADRs:        docs/adr/0008-e2e-framework-playwright.md
+//              docs/adr/0017-mock-oauth-authelia-users-file.md
+//              docs/adr/0022-no-throwaway-verifications.md
+// TaskJuggler: moderator_ui.mod_snapshot_flow.mod_snapshot_action
+//
+// **What this spec pins.** The snapshot-flow store is module-scoped
+// inside the moderator bundle and not (yet) exposed on `window`. The
+// trigger flag is reflected onto the layout root as
+// `data-snapshot-flow-open="true"|"false"` (Decision §3 — the
+// testability seam). This spec asserts the two trigger paths:
+//
+//   - Test 1 — sidebar button: visible on the operate route, the
+//     seam attribute defaults to `"false"`, clicking the button flips
+//     it to `"true"`.
+//   - Test 2 — Cmd/Ctrl+S shortcut: from a clean page, the seam
+//     defaults to `"false"`, dispatching the chord flips it to
+//     `"true"`. The browser's "Save Page As…" dialog MUST NOT fire
+//     (asserted via `page.on('dialog', ...)` — the listener throws
+//     if any dialog appears during the chord).
+//
+// **No modal yet.** The `mod_snapshot_label_input` sibling task lands
+// the modal that observes the trigger flag; until then, the data-
+// attribute seam is the only end-to-end observable. Once the modal
+// lands, the spec there can replace the seam assertion with the
+// modal's own selector — or the seam can stay as a regression cover
+// for the trigger plumbing (Decision §3 explicitly leaves both
+// options open).
+//
+// **Single locale (en-US).** The cross-locale label / aria-label
+// resolution is pinned at the catalog-parity layer in
+// `SnapshotActionButton.test.tsx`; this spec only asserts the trigger
+// plumbing, which is locale-independent. The button is reached by
+// `data-testid="snapshot-action-button"`, not by visible text.
+
+import { expect, test } from './fixtures/no-scrollbars';
+
+import { loginAs } from './fixtures/auth';
+import { seedParticipants } from './fixtures/wsStoreSeed';
+import type { Page } from '@playwright/test';
+
+const TEST_USERNAME = 'alice';
+
+// mod_session_lobby strict-gates the invite Enter-session button until
+// both debaters are filled. Seed both via the WS test seam so the gate
+// opens (the snapshot-trigger assertions live on /operate, not on the
+// gate behaviour). Mirrors the helper in moderator-capture.spec.ts.
+const GATE_DEBATER_A_USER_ID = '00000000-0000-4000-8000-0000000000a1';
+const GATE_DEBATER_B_USER_ID = '00000000-0000-4000-8000-0000000000b1';
+
+async function seedInviteParticipantsForGate(page: Page): Promise<void> {
+  const url = page.url();
+  const match = url.match(/\/m\/sessions\/([0-9a-f-]+)\/invite$/);
+  if (match === null) {
+    throw new Error(`seedInviteParticipantsForGate: URL did not match the invite shape: ${url}`);
+  }
+  const sessionId = match[1] as string;
+  await seedParticipants(page, {
+    sessionId,
+    participants: [
+      { userId: GATE_DEBATER_A_USER_ID, role: 'debater-A', screenName: 'ben' },
+      { userId: GATE_DEBATER_B_USER_ID, role: 'debater-B', screenName: 'maria' },
+    ],
+  });
+}
+
+async function reachOperate(page: Page, topic: string): Promise<void> {
+  await loginAs(page, { username: TEST_USERNAME });
+  await page.goto('/m/sessions/new');
+  await expect(page.getByTestId('route-create-session')).toBeVisible();
+  await page.getByTestId('create-session-topic-input').fill(topic);
+  await page.getByTestId('create-session-submit').click();
+  await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+  await seedInviteParticipantsForGate(page);
+  await page.getByTestId('invite-enter-session').click();
+  await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
+  await expect(page.getByTestId('route-operate')).toBeVisible();
+}
+
+test.describe('moderator snapshot trigger — sidebar button + Cmd/Ctrl+S shortcut both flip the trigger flag', () => {
+  test('Test 1 — clicking the sidebar button flips data-snapshot-flow-open to "true"', async ({
+    page,
+  }) => {
+    await reachOperate(page, 'Snapshot trigger button regression check.');
+
+    const button = page.getByTestId('snapshot-action-button');
+    await expect(button, 'the snapshot-action button mounts in the right sidebar').toBeVisible();
+
+    const layoutRoot = page.getByTestId('operate-layout-root');
+    await expect(
+      layoutRoot,
+      'data-snapshot-flow-open baseline is "false" before any trigger',
+    ).toHaveAttribute('data-snapshot-flow-open', 'false');
+
+    await button.click();
+    await expect(
+      layoutRoot,
+      'clicking the button flips data-snapshot-flow-open to "true"',
+    ).toHaveAttribute('data-snapshot-flow-open', 'true');
+  });
+
+  test('Test 2 — Cmd/Ctrl+S keyboard shortcut flips data-snapshot-flow-open without firing the browser save dialog', async ({
+    page,
+  }) => {
+    // The browser's "Save Page As…" dialog is fired as a `beforeunload`
+    // /  print-style event — Playwright's `page.on('dialog')` covers
+    // window.alert / confirm / prompt / beforeunload. Wire up a listener
+    // that fails the test if anything pops; the listener is a no-op
+    // unless preventDefault() failed and the chord leaked to the host.
+    const dialogPromises: Array<Promise<void>> = [];
+    page.on('dialog', (dialog) => {
+      dialogPromises.push(
+        (async () => {
+          await dialog.dismiss();
+          throw new Error(`Unexpected dialog fired: ${dialog.type()} — ${dialog.message()}`);
+        })(),
+      );
+    });
+
+    await reachOperate(page, 'Snapshot trigger shortcut regression check.');
+
+    const layoutRoot = page.getByTestId('operate-layout-root');
+    await expect(layoutRoot).toHaveAttribute('data-snapshot-flow-open', 'false');
+
+    // Pick the platform-appropriate chord. Playwright's `keyboard.press`
+    // dispatches the modifier + key as a single chord; the moderator's
+    // `useSnapshotShortcut` reads `event.metaKey` on macOS and
+    // `event.ctrlKey` elsewhere.
+    const chord = process.platform === 'darwin' ? 'Meta+s' : 'Control+s';
+    // Click the operate route's main element first so the chord lands
+    // with focus inside the page (rather than the URL bar or a
+    // chrome-level overlay). The route-operate testid is on the
+    // <main> element wrapping the layout.
+    await page.getByTestId('route-operate').click();
+    await page.keyboard.press(chord);
+
+    await expect(layoutRoot).toHaveAttribute('data-snapshot-flow-open', 'true');
+
+    // The page must still be on the operate URL — a leaked Cmd/Ctrl+S
+    // could fire navigation under a frame-trapping browser action.
+    await expect(page).toHaveURL(/\/m\/sessions\/[0-9a-f-]+\/operate$/);
+
+    // No dialog should have fired. If `page.on('dialog')` queued
+    // anything, awaiting the promise re-throws and fails the test.
+    await Promise.all(dialogPromises);
+  });
+});

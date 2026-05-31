@@ -288,6 +288,11 @@
       "errorRoleLabel": "Error de confirmación",
       "reason": "{reason, select, sessionNotConnected {la sesión no está conectada — reconectando…} proposalMetaDisagreement {esta propuesta está marcada como meta-desacuerdo; resuélvelo antes de confirmar} noCurrentParticipants {ningún participante se ha unido a la sesión todavía} participantsNotVoted {uno o más participantes no han votado en cada aspecto} participantsDisagree {uno o más participantes no han concordado en cada aspecto} structuralSubKindNotSupported {este tipo de propuesta aún no admite confirmación} other {desconocido}}"
     },
+    "snapshotAction": {
+      "label": "Instantánea",
+      "ariaLabel": "Tomar una instantánea de la posición actual del registro de eventos",
+      "shortcutHint": "Cmd/Ctrl+S"
+    },
     "markMetaDisagreementButton": {
       "label": "Marcar meta-desacuerdo",
       "inFlightLabel": "Marcando…",

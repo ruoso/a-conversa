@@ -613,6 +613,7 @@ task moderator_ui "Moderator UI" {
     task mod_snapshot_action "Snapshot action (button + shortcut)" {
       effort 0.5d
       allocate team
+      complete 100
     }
     task mod_snapshot_label_input "Snapshot label input modal" {
       effort 0.5d

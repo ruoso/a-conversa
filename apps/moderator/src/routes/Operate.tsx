@@ -91,6 +91,9 @@ import { IsOughtPrompt } from '../layout/IsOughtPrompt';
 import { DiagnosticSuggestionsPanel } from '../layout/DiagnosticSuggestionsPanel';
 import { PendingProposalsPane } from '../layout/PendingProposalsPane';
 import { RightSidebar } from '../layout/RightSidebar';
+import { SnapshotActionButton } from '../layout/SnapshotActionButton';
+import { useSnapshotFlowStore } from '../layout/useSnapshotFlowStore';
+import { useSnapshotShortcut } from '../layout/useSnapshotShortcut';
 import { useCaptureStore } from '../stores/captureStore';
 import { WsClientProvider, useWsClient } from '@a-conversa/shell';
 import { useWsStore } from '../ws/wsStore';
@@ -136,6 +139,12 @@ function OperateRouteInner(props: { sessionId: string }): ReactElement {
   const { sessionId } = props;
   const client = useWsClient();
   const { propose } = useProposeAction();
+  // F10 snapshot trigger — mount the Cmd/Ctrl+S shortcut once at route
+  // scope (Decision §8 of mod_snapshot_action.md keeps the binding
+  // alive whenever the moderator is on the operate page) and reflect
+  // the trigger flag onto the layout root as a stable Playwright seam.
+  useSnapshotShortcut();
+  const isSnapshotLabelInputOpen = useSnapshotFlowStore((state) => state.isLabelInputOpen);
   // Read the mode to drive the bottom-strip slot swap. In decompose
   // mode the `textInput` slot mounts `<DecomposeComponentsGrid>`
   // (mod_multi_component_capture) and the `classificationPalette` +
@@ -225,6 +234,7 @@ function OperateRouteInner(props: { sessionId: string }): ReactElement {
         {sessionId}
       </span>
       <OperateLayout
+        dataSnapshotFlowOpen={isSnapshotLabelInputOpen}
         graphPane={<GraphCanvasPane sessionId={sessionId} />}
         bottomStrip={
           <BottomStripCapture
@@ -291,10 +301,13 @@ function OperateRouteInner(props: { sessionId: string }): ReactElement {
           />
         }
         rightSidebar={
-          <RightSidebar
-            pendingProposalsSlot={<PendingProposalsPane sessionId={sessionId} />}
-            diagnosticFlagsSlot={<DiagnosticSuggestionsPanel sessionId={sessionId} />}
-          />
+          <>
+            <SnapshotActionButton />
+            <RightSidebar
+              pendingProposalsSlot={<PendingProposalsPane sessionId={sessionId} />}
+              diagnosticFlagsSlot={<DiagnosticSuggestionsPanel sessionId={sessionId} />}
+            />
+          </>
         }
       />
     </main>

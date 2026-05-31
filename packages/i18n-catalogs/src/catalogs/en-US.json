@@ -288,6 +288,11 @@
       "errorRoleLabel": "Commit error",
       "reason": "{reason, select, sessionNotConnected {the session is not connected — reconnecting…} proposalMetaDisagreement {this proposal is marked as meta-disagreement; resolve it before committing} noCurrentParticipants {no participants have joined the session yet} participantsNotVoted {one or more participants have not voted on every facet} participantsDisagree {one or more participants have not agreed on every facet} structuralSubKindNotSupported {this proposal kind is not yet supported for commit} other {unknown}}"
     },
+    "snapshotAction": {
+      "label": "Snapshot",
+      "ariaLabel": "Snapshot the current event-log position",
+      "shortcutHint": "Cmd/Ctrl+S"
+    },
     "markMetaDisagreementButton": {
       "label": "Mark meta-disagreement",
       "inFlightLabel": "Marking…",

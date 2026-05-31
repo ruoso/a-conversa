@@ -343,7 +343,7 @@ export default defineConfig({
     {
       name: 'chromium-create-session',
       testMatch:
-        /(create-session-flow|moderator-capture|moderator-real-capture-flow|invite-participants-flow|moderator-proposed-entity-canvas-visibility|moderator-warrant-elicitation-mode)\.spec\.ts$/,
+        /(create-session-flow|moderator-capture|moderator-real-capture-flow|invite-participants-flow|moderator-proposed-entity-canvas-visibility|moderator-warrant-elicitation-mode|moderator-snapshot)\.spec\.ts$/,
       dependencies: ['setup-auth'],
       use: {
         ...devices['Desktop Chrome'],

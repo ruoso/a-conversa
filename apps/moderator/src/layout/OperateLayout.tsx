@@ -47,13 +47,29 @@ export interface OperateLayoutProps {
   rightSidebar?: ReactNode;
   /** Content for the bottom-strip capture pane. */
   bottomStrip?: ReactNode;
+  /**
+   * Reflects the F10 snapshot-flow trigger flag as a stable
+   * `data-snapshot-flow-open="true"|"false"` attribute on the layout
+   * root. The attribute is ALWAYS present (defaults to `"false"`) so
+   * Playwright specs can flip-assert on its value instead of waiting
+   * for the attribute to appear; the modal that consumes the flag
+   * (`mod_snapshot_label_input`) does not exist yet, so this seam
+   * gives `tests/e2e/moderator-snapshot.spec.ts` a stable assertion
+   * target until the modal lands and the spec can replace this seam
+   * with the modal's own selector.
+   *
+   * Refinement: tasks/refinements/moderator-ui/mod_snapshot_action.md
+   * (Decision §3 — testability seam rationale).
+   */
+  dataSnapshotFlowOpen?: boolean;
 }
 
 export function OperateLayout(props: OperateLayoutProps): ReactElement {
-  const { graphPane, rightSidebar, bottomStrip } = props;
+  const { graphPane, rightSidebar, bottomStrip, dataSnapshotFlowOpen = false } = props;
   return (
     <div
       data-testid="operate-layout-root"
+      data-snapshot-flow-open={dataSnapshotFlowOpen ? 'true' : 'false'}
       className="grid h-screen w-screen bg-slate-50"
       style={{
         gridTemplateColumns: '1fr 20rem',
