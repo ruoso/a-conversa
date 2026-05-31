@@ -360,6 +360,15 @@ task backend "Backend" {
         Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit landing mod_decompose_propose_time_canvas_visibility).
       ->8-
     }
+    task ws_label_snapshot_message "Label-snapshot write-side WS handler (C→S label-snapshot, S→C snapshot-labeled)" {
+      effort 0.5d
+      allocate team
+      depends !ws_message_envelope, !ws_snapshot_message, data_and_methodology.methodology_engine.snapshot_create_logic
+      note -8<-
+        Source of debt: tasks/refinements/moderator-ui/mod_snapshot_label_input.md Decision §1.a — the label-snapshot write-side WS envelope (C→S `label-snapshot`, S→C `snapshot-labeled`) is a prerequisite for the snapshot label input modal. Mirrors the ws_commit_message / ws_meta_disagreement_message skeleton: subscribe-before-act gate, moderator-only authority gate (`'moderator-only'` rejection), `expectedSequence` optimistic-concurrency gate (`'sequence-conflict'`), call-through to snapshot_create_logic, append `snapshot-created` event, broadcast `event-applied`, ack with `snapshot-labeled` payload `{ snapshotId }`. Extends `wsMessageTypes` in packages/shared-types/src/ws-envelope.ts with `'label-snapshot'` (Group-B) and `'snapshot-labeled'` (Group-C) plus matching payload schemas and `WsMessagePayloadMap` entries.
+        Registered by closer (2026-05-31) while closing moderator_ui.mod_snapshot_flow.mod_snapshot_label_input.
+      ->8-
+    }
   }
 
   task replay_endpoints "Replay and history endpoints" {
