@@ -2,6 +2,7 @@
 // participate as edge endpoints.
 //
 // Refinement: tasks/refinements/moderator-ui/mod_render_annotation_endpoint_edges.md
+// (also:      tasks/refinements/moderator-ui/mod_annotation_of_annotation_overlay_chain.md)
 // ADRs:        docs/adr/0004-graph-libraries-reactflow-and-cytoscape.md,
 //              docs/adr/0024-frontend-i18n-react-i18next-with-icu.md
 //
@@ -12,24 +13,44 @@
 // canvas can connect annotation-endpoint edges to them. Per Decision §1
 // of this refinement, badge OR node (mutual exclusion), never both.
 //
-// The card renders a small two-row layout sized for short content:
+// The card renders a small layout sized for short content:
 //   1. The localized kind label header (`methodology.annotationKind.<kind>`
 //      — the same i18n key the badge consumes; Decision §6 DRY).
 //   2. The annotation content body (truncated to fit the card; full
 //      content surfaced via the `title` attribute).
+//   3. (Optional) A badge-list row beneath the content row when
+//      `data.annotations.length > 0` — one `<AnnotationBadge>` per
+//      annotation-of-annotation propagated onto this card. Per
+//      `mod_annotation_of_annotation_overlay_chain` D4, the card's
+//      fixed `height: 56` relaxes to `minHeight: 56` so the row can
+//      grow the card vertically; dagre's per-node footprint
+//      (`ANNOTATION_NODE_HEIGHT = 56`) is unchanged and reconciled by
+//      `mod_layout_measured_dimensions`'s post-mount measurement pass.
 //
-// Dimensions (`width: 192, height: 56` per Decision §5) match the
-// Tailwind sizing of the rendered card so dagre allocates a footprint
-// that matches what gets drawn.
+// Dimensions (`width: 192, minHeight: 56` per Decision §5 + the meta-
+// annotation-row delta) match the Tailwind sizing of the rendered card
+// so dagre allocates a footprint that matches the empty-meta baseline.
 
 import { memo, type ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Handle, Position, type NodeProps } from 'reactflow';
 import type { AnnotationKind } from '@a-conversa/shared-types';
+import type { Annotation } from '@a-conversa/shell';
+
+import { AnnotationBadge } from './AnnotationBadge.js';
 
 export interface AnnotationNodeData {
   readonly kind: AnnotationKind;
   readonly content: string;
+  /**
+   * Annotations whose `targetNodeId` is this promoted annotation's id
+   * — propagated by `projectAnnotationNodes` from the bucketer-keyed
+   * index. Rendered as a `<AnnotationBadge>` list row beneath the
+   * content row when non-empty; the row is absent (not present-but-
+   * empty) when length is zero. Refinement:
+   * `mod_annotation_of_annotation_overlay_chain`.
+   */
+  readonly annotations: readonly Annotation[];
   /**
    * `true` when the annotation's host (its `targetNodeId` or
    * `targetEdgeId`) cannot be resolved in the projection layer (a
@@ -61,7 +82,7 @@ export const ANNOTATION_NODE_HEIGHT = 56;
 function AnnotationNodeImpl(props: NodeProps<AnnotationNodeData>): ReactElement {
   const { id, data } = props;
   const { t } = useTranslation();
-  const { kind, content, hostMissing } = data;
+  const { kind, content, annotations, hostMissing } = data;
 
   const kindLabel = t(`methodology.annotationKind.${kind}`);
 
@@ -75,7 +96,7 @@ function AnnotationNodeImpl(props: NodeProps<AnnotationNodeData>): ReactElement 
       data-annotation-kind={kind}
       title={content}
       className="rounded-md border border-amber-300 bg-amber-50 px-2 py-1 shadow-sm"
-      style={{ width: ANNOTATION_NODE_WIDTH, height: ANNOTATION_NODE_HEIGHT }}
+      style={{ width: ANNOTATION_NODE_WIDTH, minHeight: ANNOTATION_NODE_HEIGHT }}
       {...rootProps}
     >
       <Handle type="target" position={Position.Top} />
@@ -92,6 +113,13 @@ function AnnotationNodeImpl(props: NodeProps<AnnotationNodeData>): ReactElement 
       >
         {content}
       </p>
+      {annotations.length > 0 ? (
+        <div data-testid={`annotation-node-badge-list-${id}`} className="mt-1 flex flex-wrap gap-1">
+          {annotations.map((a) => (
+            <AnnotationBadge annotation={a} key={a.id} />
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

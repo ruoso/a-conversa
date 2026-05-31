@@ -34,7 +34,7 @@ import type { AnnotationKind } from '@a-conversa/shared-types';
 import { ReactFlowProvider, type NodeProps } from 'reactflow';
 
 import { ANNOTATION_NODE_TYPE, AnnotationNode, type AnnotationNodeData } from './AnnotationNode';
-import { createI18nInstance } from '@a-conversa/shell';
+import { createI18nInstance, type Annotation } from '@a-conversa/shell';
 
 async function render(ui: ReactElement, options?: RenderOptions): Promise<RenderResult> {
   let result!: RenderResult;
@@ -108,7 +108,7 @@ describe('AnnotationNode — localized kind label per kind × locale', () => {
       it(`renders the ${kind} label as "${LABELS_BY_LOCALE[locale][kind]}" in ${locale}`, async () => {
         await i18next.changeLanguage(locale);
         const id = `anno-${locale}-${kind}`;
-        const props = makeProps(id, { kind, content: 'body text' });
+        const props = makeProps(id, { kind, content: 'body text', annotations: [] });
         await render(
           <ReactFlowProvider>
             <AnnotationNode {...props} />
@@ -128,7 +128,12 @@ describe('AnnotationNode — localized kind label per kind × locale', () => {
 describe('AnnotationNode — host-missing seam', () => {
   it('stamps data-host-missing="true" when data.hostMissing is true', async () => {
     const id = 'anno-orphan';
-    const props = makeProps(id, { kind: 'note', content: 'orphan body', hostMissing: true });
+    const props = makeProps(id, {
+      kind: 'note',
+      content: 'orphan body',
+      annotations: [],
+      hostMissing: true,
+    });
     await render(
       <ReactFlowProvider>
         <AnnotationNode {...props} />
@@ -140,7 +145,7 @@ describe('AnnotationNode — host-missing seam', () => {
 
   it('omits data-host-missing when data.hostMissing is undefined', async () => {
     const id = 'anno-with-host';
-    const props = makeProps(id, { kind: 'note', content: 'body' });
+    const props = makeProps(id, { kind: 'note', content: 'body', annotations: [] });
     await render(
       <ReactFlowProvider>
         <AnnotationNode {...props} />
@@ -152,7 +157,11 @@ describe('AnnotationNode — host-missing seam', () => {
 
   it('renders the annotation content body verbatim', async () => {
     const id = 'anno-content-pin';
-    const props = makeProps(id, { kind: 'reframe', content: 'a specific body string' });
+    const props = makeProps(id, {
+      kind: 'reframe',
+      content: 'a specific body string',
+      annotations: [],
+    });
     await render(
       <ReactFlowProvider>
         <AnnotationNode {...props} />
@@ -160,5 +169,73 @@ describe('AnnotationNode — host-missing seam', () => {
     );
     const contentEl = screen.getByTestId(`annotation-node-content-${id}`);
     expect(contentEl.textContent).toBe('a specific body string');
+  });
+});
+
+// -- annotation-of-annotation badge-list row -----------------------
+//
+// Refinement: tasks/refinements/moderator-ui/mod_annotation_of_annotation_overlay_chain.md
+//
+// When `data.annotations` is non-empty, `<AnnotationNode>` renders a
+// flex-wrap badge row beneath the content row — one `<AnnotationBadge>`
+// per propagated annotation. When empty, the badge-row `<div>` is
+// absent entirely (no allocated DOM space for the no-meta-annotation
+// baseline).
+
+function makeMetaAnnotation(overrides: Partial<Annotation> & { id: string }): Annotation {
+  return {
+    id: overrides.id,
+    kind: overrides.kind ?? 'note',
+    content: overrides.content ?? 'meta-annotation body',
+    targetNodeId: overrides.targetNodeId ?? null,
+    targetEdgeId: overrides.targetEdgeId ?? null,
+    createdBy: overrides.createdBy ?? '00000000-0000-4000-8000-0000000000aa',
+    createdAt: overrides.createdAt ?? '2026-05-30T00:00:00.000Z',
+  };
+}
+
+describe('AnnotationNode — annotation-of-annotation badge row', () => {
+  it('renders one <AnnotationBadge> per entry when data.annotations is non-empty', async () => {
+    const id = 'anno-meta-host';
+    const a2 = makeMetaAnnotation({
+      id: '00000000-0000-4000-8000-000000000b02',
+      kind: 'reframe',
+      content: 'A2 reframes A1',
+    });
+    const a3 = makeMetaAnnotation({
+      id: '00000000-0000-4000-8000-000000000b03',
+      kind: 'stance',
+      content: 'A3 stance on A1',
+    });
+    const props = makeProps(id, {
+      kind: 'note',
+      content: 'A1 (the host annotation)',
+      annotations: [a2, a3],
+    });
+    await render(
+      <ReactFlowProvider>
+        <AnnotationNode {...props} />
+      </ReactFlowProvider>,
+    );
+    const list = screen.getByTestId(`annotation-node-badge-list-${id}`);
+    const badges = list.querySelectorAll('[data-testid^="annotation-badge-"]');
+    expect(badges).toHaveLength(2);
+    expect(badges[0]?.getAttribute('data-annotation-kind')).toBe('reframe');
+    expect(badges[1]?.getAttribute('data-annotation-kind')).toBe('stance');
+  });
+
+  it('renders no badge-list row when data.annotations is empty', async () => {
+    const id = 'anno-no-meta';
+    const props = makeProps(id, {
+      kind: 'note',
+      content: 'a bare annotation',
+      annotations: [],
+    });
+    await render(
+      <ReactFlowProvider>
+        <AnnotationNode {...props} />
+      </ReactFlowProvider>,
+    );
+    expect(screen.queryByTestId(`annotation-node-badge-list-${id}`)).toBeNull();
   });
 });

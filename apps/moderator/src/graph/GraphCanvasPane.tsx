@@ -133,7 +133,7 @@ import {
 import {
   EMPTY_ANNOTATIONS,
   EMPTY_AXIOM_MARKS,
-  groupAnnotationsByNode,
+  groupAnnotationsByEntityId,
   groupAxiomMarksByNode,
   projectAnnotations,
   projectAxiomMarks,
@@ -542,7 +542,7 @@ export function projectNodes(
   // node's `data.annotations` excludes them — mutual exclusion between
   // badge and node.
   const allAnnotations = projectAnnotations(events);
-  const annotationsByNode = groupAnnotationsByNode(
+  const annotationsByNode = groupAnnotationsByEntityId(
     promotedAnnotationIds.size === 0
       ? allAnnotations
       : allAnnotations.filter((annotation) => !promotedAnnotationIds.has(annotation.id)),
@@ -716,7 +716,12 @@ export function projectNodes(
   // annotation's host inline and stamps `data.hostMissing` when the
   // host can't be found in the events log (Decision §4 defensive
   // case). Refinement: `mod_render_annotation_endpoint_edges`.
-  const annotationNodes = projectAnnotationNodes(allAnnotations, promotedAnnotationIds, events);
+  const annotationNodes = projectAnnotationNodes(
+    allAnnotations,
+    promotedAnnotationIds,
+    events,
+    annotationsByNode,
+  );
   if (annotationNodes.length === 0) {
     return nodes;
   }

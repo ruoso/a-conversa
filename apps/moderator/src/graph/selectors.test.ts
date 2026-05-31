@@ -40,7 +40,7 @@ import { describe, expect, it } from 'vitest';
 import { MarkerType } from 'reactflow';
 import type { AnnotationKind, EdgeRole, Event } from '@a-conversa/shared-types';
 
-import { AXIOM_MARK_PALETTE_SIZE, axiomMarkColorFor } from '@a-conversa/shell';
+import { AXIOM_MARK_PALETTE_SIZE, EMPTY_ANNOTATIONS, axiomMarkColorFor } from '@a-conversa/shell';
 
 import type { WsState } from '../ws/wsStore.js';
 import {
@@ -1394,9 +1394,11 @@ function makeAnnotation(overrides: Partial<Annotation> & { id: string }): Annota
   };
 }
 
+const EMPTY_NODE_ANNOTATION_INDEX: ReadonlyMap<string, readonly Annotation[]> = new Map();
+
 describe('projectAnnotationNodes', () => {
   it('returns [] for an empty promotion set', () => {
-    expect(projectAnnotationNodes([], new Set(), [])).toEqual([]);
+    expect(projectAnnotationNodes([], new Set(), [], EMPTY_NODE_ANNOTATION_INDEX)).toEqual([]);
   });
 
   it('emits one Node<AnnotationNodeData> for a promoted annotation hosted by a known node', () => {
@@ -1409,7 +1411,12 @@ describe('projectAnnotationNodes', () => {
       }),
     ];
     const events: Event[] = [makeNodeCreated(1, NODE_A)];
-    const nodes = projectAnnotationNodes(annotations, new Set([ANNO_A]), events);
+    const nodes = projectAnnotationNodes(
+      annotations,
+      new Set([ANNO_A]),
+      events,
+      EMPTY_NODE_ANNOTATION_INDEX,
+    );
     expect(nodes).toHaveLength(1);
     const expected: {
       id: string;
@@ -1420,7 +1427,7 @@ describe('projectAnnotationNodes', () => {
       id: ANNO_A,
       type: ANNOTATION_NODE_TYPE,
       position: { x: 0, y: 0 },
-      data: { kind: 'reframe', content: 'a reframe note' },
+      data: { kind: 'reframe', content: 'a reframe note', annotations: EMPTY_ANNOTATIONS },
     };
     expect(nodes[0]).toEqual(expected);
   });
@@ -1435,11 +1442,17 @@ describe('projectAnnotationNodes', () => {
         targetNodeId: 'unknown-node',
       }),
     ];
-    const nodes = projectAnnotationNodes(annotations, new Set([ANNO_A]), []);
+    const nodes = projectAnnotationNodes(
+      annotations,
+      new Set([ANNO_A]),
+      [],
+      EMPTY_NODE_ANNOTATION_INDEX,
+    );
     expect(nodes).toHaveLength(1);
     expect(nodes[0]?.data).toEqual({
       kind: 'note',
       content: 'orphan annotation',
+      annotations: EMPTY_ANNOTATIONS,
       hostMissing: true,
     });
   });
@@ -1450,9 +1463,127 @@ describe('projectAnnotationNodes', () => {
       makeAnnotation({ id: ANNO_B, kind: 'reframe', targetNodeId: NODE_A }),
     ];
     const events: Event[] = [makeNodeCreated(1, NODE_A)];
-    const nodes = projectAnnotationNodes(annotations, new Set([ANNO_B]), events);
+    const nodes = projectAnnotationNodes(
+      annotations,
+      new Set([ANNO_B]),
+      events,
+      EMPTY_NODE_ANNOTATION_INDEX,
+    );
     expect(nodes).toHaveLength(1);
     expect(nodes[0]?.id).toBe(ANNO_B);
+  });
+});
+
+// -- annotation-of-annotation overlay propagation --------------------
+//
+// Refinement: tasks/refinements/moderator-ui/mod_annotation_of_annotation_overlay_chain.md
+//
+// When annotation A1 is promoted to a `<AnnotationNode>` (because some
+// `edge-created` references its id), an annotation A2 whose
+// `targetNodeId` carries A1's UUID surfaces in A1's emitted
+// `data.annotations` array. `<AnnotationNode>` then renders A2 as an
+// `<AnnotationBadge>` pill on the annotation card. The bucketer
+// (`groupAnnotationsByEntityId`) is target-id-keyed, so A2 lands in
+// bucket A1; `projectAnnotationNodes` reads that bucket per promoted
+// annotation. Three cases mirror the participant predecessor's
+// `ann-oa-1/2/3` shape.
+
+describe('projectAnnotationNodes — annotation-of-annotation overlay propagation', () => {
+  const ANNO_C = '00000000-0000-4000-8000-000000000b03';
+
+  it("(ann-oa-1) an annotation A2 whose target_node_id carries A1's id surfaces in A1's data.annotations array", () => {
+    const a1 = makeAnnotation({
+      id: ANNO_A,
+      kind: 'reframe',
+      content: 'A1 reframes N1',
+      targetNodeId: NODE_A,
+    });
+    const a2 = makeAnnotation({
+      id: ANNO_B,
+      kind: 'note',
+      content: 'A2 notes A1',
+      targetNodeId: ANNO_A,
+    });
+    const events: Event[] = [
+      makeNodeCreated(1, NODE_A),
+      makeAnnotationEndpointEdgeCreated({
+        sequence: 4,
+        edgeId: EDGE_NODE_TO_ANNO,
+        role: 'contradicts',
+        sourceNodeId: NODE_A,
+        targetAnnotationId: ANNO_A,
+      }),
+    ];
+    const promotedSet = new Set([ANNO_A]);
+    // Bucketer input mirrors GraphCanvasPane's filter posture: drop
+    // promoted annotations from the input set (so A1 doesn't self-
+    // overlay). A2 survives — it's not promoted — and buckets under
+    // key A1 via its targetNodeId.
+    const nodeAnnotationIndex = new Map<string, readonly Annotation[]>([[ANNO_A, [a2]]]);
+    const nodes = projectAnnotationNodes([a1, a2], promotedSet, events, nodeAnnotationIndex);
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0]?.id).toBe(ANNO_A);
+    expect(nodes[0]?.data.annotations).toEqual([a2]);
+  });
+
+  it('(ann-oa-2) multiple annotations targeting the same promoted annotation aggregate in data.annotations (bucketer append order)', () => {
+    const a1 = makeAnnotation({
+      id: ANNO_A,
+      kind: 'reframe',
+      content: 'A1 reframes N1',
+      targetNodeId: NODE_A,
+    });
+    const a2 = makeAnnotation({
+      id: ANNO_B,
+      kind: 'note',
+      content: 'A2 notes A1',
+      targetNodeId: ANNO_A,
+    });
+    const a3 = makeAnnotation({
+      id: ANNO_C,
+      kind: 'stance',
+      content: 'A3 stance on A1',
+      targetNodeId: ANNO_A,
+    });
+    const events: Event[] = [
+      makeNodeCreated(1, NODE_A),
+      makeAnnotationEndpointEdgeCreated({
+        sequence: 5,
+        edgeId: EDGE_NODE_TO_ANNO,
+        role: 'contradicts',
+        sourceNodeId: NODE_A,
+        targetAnnotationId: ANNO_A,
+      }),
+    ];
+    const promotedSet = new Set([ANNO_A]);
+    const nodeAnnotationIndex = new Map<string, readonly Annotation[]>([[ANNO_A, [a2, a3]]]);
+    const nodes = projectAnnotationNodes([a1, a2, a3], promotedSet, events, nodeAnnotationIndex);
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0]?.data.annotations).toEqual([a2, a3]);
+  });
+
+  it('(ann-oa-3) annotation-on-annotation where the target annotation is NOT promoted surfaces no annotation node — orphan A2 bucket exists but nothing reads it', () => {
+    const a1 = makeAnnotation({
+      id: ANNO_A,
+      kind: 'reframe',
+      content: 'A1 reframes N1',
+      targetNodeId: NODE_A,
+    });
+    const a2 = makeAnnotation({
+      id: ANNO_B,
+      kind: 'note',
+      content: 'A2 notes A1',
+      targetNodeId: ANNO_A,
+    });
+    // No `edge-created` references A1 — promotion set is empty.
+    const events: Event[] = [makeNodeCreated(1, NODE_A)];
+    const promotedSet = new Set<string>();
+    // The bucket under A1 still exists in the index (A2 targets A1);
+    // nothing reads it because A1 wasn't promoted.
+    const nodeAnnotationIndex = new Map<string, readonly Annotation[]>([[ANNO_A, [a2]]]);
+    const nodes = projectAnnotationNodes([a1, a2], promotedSet, events, nodeAnnotationIndex);
+    expect(nodes).toHaveLength(0);
+    expect(nodeAnnotationIndex.get(ANNO_A)).toEqual([a2]);
   });
 });
 

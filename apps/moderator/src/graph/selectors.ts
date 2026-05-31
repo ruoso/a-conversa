@@ -4,7 +4,8 @@
 // Refinement: tasks/refinements/moderator-ui/mod_axiom_mark_decoration.md
 // (prior:     tasks/refinements/moderator-ui/mod_proposed_state_styling.md,
 //             tasks/refinements/moderator-ui/mod_annotation_rendering.md,
-//             tasks/refinements/moderator-ui/mod_edge_rendering.md)
+//             tasks/refinements/moderator-ui/mod_edge_rendering.md,
+//             tasks/refinements/moderator-ui/mod_annotation_of_annotation_overlay_chain.md)
 //
 // `selectEdgesForSession` walks the per-session event log in `useWsStore`
 // and projects every `edge-created` event into a ReactFlow `Edge<{ role,
@@ -569,12 +570,21 @@ function buildAnnotationHostIndex(events: readonly Event[]): {
  * moderator sees the orphaned entity rather than encountering a
  * silent drop.
  *
+ * `data.annotations` is sourced from
+ * `nodeAnnotationIndex.get(annotation.id) ?? EMPTY_ANNOTATIONS` —
+ * when another annotation A2 targets this promoted annotation A1
+ * (A1's id appears in A2's `targetNodeId`), A2 surfaces in A1's
+ * `data.annotations` array and `<AnnotationNode>` renders the badge
+ * row over A1's card. Refinement:
+ * `mod_annotation_of_annotation_overlay_chain`.
+ *
  * Pure function — no React, no store, no DOM.
  */
 export function projectAnnotationNodes(
   annotations: readonly Annotation[],
   promotedSet: ReadonlySet<string>,
   events: readonly Event[],
+  nodeAnnotationIndex: ReadonlyMap<string, readonly Annotation[]>,
 ): Node<AnnotationNodeData>[] {
   if (promotedSet.size === 0) return [];
   const { knownNodeIds, edgeSources } = buildAnnotationHostIndex(events);
@@ -582,10 +592,20 @@ export function projectAnnotationNodes(
   for (const annotation of annotations) {
     if (!promotedSet.has(annotation.id)) continue;
     const hostId = resolveAnnotationHostId(annotation, knownNodeIds, edgeSources);
+    const propagatedAnnotations = nodeAnnotationIndex.get(annotation.id) ?? EMPTY_ANNOTATIONS;
     const data: AnnotationNodeData =
       hostId === null
-        ? { kind: annotation.kind, content: annotation.content, hostMissing: true }
-        : { kind: annotation.kind, content: annotation.content };
+        ? {
+            kind: annotation.kind,
+            content: annotation.content,
+            annotations: propagatedAnnotations,
+            hostMissing: true,
+          }
+        : {
+            kind: annotation.kind,
+            content: annotation.content,
+            annotations: propagatedAnnotations,
+          };
     out.push({
       id: annotation.id,
       type: ANNOTATION_NODE_TYPE,
