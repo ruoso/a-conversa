@@ -4,7 +4,7 @@ A debate platform that helps people debate by classifying every statement and on
 
 ## Status
 
-**M0–M6 complete; M7 (End-to-end debate) and M3-review in flight.** Foundation, data model + methodology engine, backend MVP, the M3-lobby manual smoke, and the Moderator, Participant, and Audience MVPs (M0–M6) have all landed (see [milestones in `tasks/99-milestones.tji`](tasks/99-milestones.tji)). Active work is the End-to-end debate milestone (M7 — 314/337 leaves done), the M3-review backend security hardening pass (172/173 leaves done), and the Replay MVP (M8 — 314/357 leaves done). The orchestrator that drives WBS work is described in [ORCHESTRATOR.md](ORCHESTRATOR.md); `make unblocked` is the canonical "what's ready to pick up." If you're new to the project, start with [DESIGN.md](DESIGN.md) and follow the document index from there. Architectural decisions taken so far live in [docs/adr/](docs/adr/).
+**M0–M6 complete; M7 (End-to-end debate) in flight.** Foundation, data model + methodology engine, backend MVP, the M3-lobby manual smoke, and the Moderator, Participant, and Audience MVPs (M0–M6) have all landed (see [milestones in `tasks/99-milestones.tji`](tasks/99-milestones.tji)). Active work is the End-to-end debate milestone (M7 — 314/337 leaves done), and the Replay MVP (M8 — 314/357 leaves done). The orchestrator that drives WBS work is described in [orchestrator/README.md](orchestrator/README.md); `make unblocked` is the canonical "what's ready to pick up." If you're new to the project, start with [DESIGN.md](DESIGN.md) and follow the document index from there. Architectural decisions taken so far live in [docs/adr/](docs/adr/).
 
 ## What is a-conversa?
 

@@ -266,17 +266,6 @@ task backend_hardening "M3-review hardening (security audit follow-ups)" {
         Refinement: tasks/refinements/backend-hardening/defensive_500_message_sanitize.md
       ->8-
     }
-    task e2e_login_as_case_insensitive "Make tests/e2e/fixtures/auth.ts loginAs screenName-equality probe case-insensitive (or wipe dev DB) to clear 32 pre-existing e2e failures" {
-      effort 0.25d
-      allocate team
-      note -8<-
-        Source of debt: tasks/refinements/moderator-ui/mod_proposed_entity_canvas_visibility.md — implementer surfaced 32 pre-existing Playwright failures while landing the new spec. Root cause: tests/e2e/fixtures/auth.ts line 227 compares the polled /api/auth/me screenName against the requested screenName with strict equality; when the dev DB carries a prior screen-name registration under a different case for the same user (e.g. NFKC-normalized form vs the test's raw form), the probe never returns and the test stalls until timeout. Fix: relax the equality to case-insensitive (parallel to backend_hardening.data_hygiene.screen_name_nfkc_normalization's NFKC discipline) or document a dev-DB wipe in the e2e-runner README. Both unblock the 32 stalled tests; the case-insensitive probe is the smaller, idempotent change.
-
-        Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit landing mod_proposed_entity_canvas_visibility).
-
-        Re-surfaced 2026-05-17 by participant-lobby.spec.ts regression check during part_lobby_view_ws_absence_merge_fix (commit landing part_lobby_view_ws_absence_merge_fix): the same "alice" vs "Alice" capitalization mismatch in loginAs() stalled the participant-lobby e2e on a clean dev DB. Confirmed by stashing the merge-fix change and re-running on pristine HEAD — same 2 tests fail with identical error, so the bug is upstream of the merge-fix surface and persists across make down/make up cycles.
-      ->8-
-    }
   }
 
   task protocol_test_pinning "Test pinning of protocol invariants" {

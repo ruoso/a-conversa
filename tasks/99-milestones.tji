@@ -42,6 +42,7 @@ task milestones "Milestones" {
 
   task m_backend_review "M3-review: Backend security hardening" {
     milestone
+    complete 100
     depends !m_backend_mvp, backend_hardening
     note "Production hardening + test pinning + DoS controls rolling up the three independent M3 security reviews (auth + secrets, input validation / DoS, test-coverage gaps). Source documents live at docs/security/m3-review/. Blocks M9 — the public network surface should not be exposed before this milestone."
   }
