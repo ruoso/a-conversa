@@ -132,6 +132,7 @@ import {
 } from './GraphCanvasPane';
 import { CaptureTextInput } from '../layout/CaptureTextInput';
 import { STATEMENT_NODE_TYPE } from './StatementNode';
+import { ANNOTATION_NODE_TYPE } from './AnnotationNode';
 import { applyLayout } from './layoutEngine';
 import { projectDiagnosticHighlights } from '@a-conversa/shell';
 import { selectEdgesForSession } from './selectors';
@@ -1063,6 +1064,35 @@ describe('GraphCanvasPane — click-to-select handlers (mod_selection)', () => {
     useSelectionStore.getState().select({ kind: 'edge', id: 'edge-prior' });
     handleNodeClick(undefined, { id: NODE_B } as Parameters<typeof handleNodeClick>[1]);
     expect(useSelectionStore.getState().selected).toEqual({ kind: 'node', id: NODE_B });
+  });
+
+  // Refinement:
+  // tasks/refinements/moderator-ui/mod_propose_annotation_endpoint_gestures.md
+  //
+  // `handleNodeClick` discriminates on the ReactFlow `node.type` so a
+  // click on an annotation-typed node lands as
+  // `{ kind: 'annotation', id }` rather than `{ kind: 'node', id }`.
+  // The downstream `<CaptureTargetChip>` selection-bridge effect stages
+  // the annotation as the capture target on the back of this seam.
+  it('handleNodeClick on an annotation-typed node writes { kind: "annotation", id }', () => {
+    expect(useSelectionStore.getState().selected).toBeNull();
+    handleNodeClick(undefined, {
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      type: ANNOTATION_NODE_TYPE,
+    } as unknown as Parameters<typeof handleNodeClick>[1]);
+    expect(useSelectionStore.getState().selected).toEqual({
+      kind: 'annotation',
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    });
+  });
+
+  it('handleNodeClick on a statement-typed node writes { kind: "node", id }', () => {
+    expect(useSelectionStore.getState().selected).toBeNull();
+    handleNodeClick(undefined, {
+      id: NODE_A,
+      type: STATEMENT_NODE_TYPE,
+    } as unknown as Parameters<typeof handleNodeClick>[1]);
+    expect(useSelectionStore.getState().selected).toEqual({ kind: 'node', id: NODE_A });
   });
 });
 

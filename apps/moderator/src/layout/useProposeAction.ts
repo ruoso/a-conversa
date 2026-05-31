@@ -73,7 +73,11 @@ import { useParams } from 'react-router-dom';
 import { create } from 'zustand';
 import type { EdgeRole, ProposalPayload } from '@a-conversa/shared-types';
 
-import { useCaptureStore, type EdgeDirection } from '../stores/captureStore';
+import {
+  useCaptureStore,
+  type CaptureTargetKind,
+  type EdgeDirection,
+} from '../stores/captureStore';
 import { useWsClient } from '@a-conversa/shell';
 import { useWsStore } from '../ws/wsStore';
 import { WsRequestError, WsRequestTimeoutError } from '@a-conversa/shell';
@@ -203,10 +207,32 @@ function randomUuid(): string {
 function buildCaptureNodeProposal(args: {
   nodeId: string;
   wording: string;
-  edge?: { edgeId: string; otherNodeId: string; role: EdgeRole; direction: EdgeDirection };
+  edge?: {
+    edgeId: string;
+    otherEntity: { kind: CaptureTargetKind; id: string };
+    role: EdgeRole;
+    direction: EdgeDirection;
+  };
 }): ProposalPayload {
   if (args.edge !== undefined) {
     const newNodeIsSource = args.edge.direction === 'targets';
+    // The just-captured entity is always a node (capture mints a
+    // statement node, never an annotation). The OTHER endpoint is
+    // either a node OR a promoted annotation per the polymorphic-
+    // endpoint widening landed by `set_edge_substance_annotation_endpoint`.
+    // Route each id to its kind-appropriate slot — the schema's
+    // per-endpoint `.refine()` (EXACTLY-ONE for capture-node) is the
+    // first-line guard.
+    const newNodeSlot = newNodeIsSource
+      ? { source_node_id: args.nodeId }
+      : { target_node_id: args.nodeId };
+    const otherSlot = newNodeIsSource
+      ? args.edge.otherEntity.kind === 'annotation'
+        ? { target_annotation_id: args.edge.otherEntity.id }
+        : { target_node_id: args.edge.otherEntity.id }
+      : args.edge.otherEntity.kind === 'annotation'
+        ? { source_annotation_id: args.edge.otherEntity.id }
+        : { source_node_id: args.edge.otherEntity.id };
     return {
       kind: 'capture-node',
       node_id: args.nodeId,
@@ -214,8 +240,8 @@ function buildCaptureNodeProposal(args: {
       edge: {
         edge_id: args.edge.edgeId,
         role: args.edge.role,
-        source_node_id: newNodeIsSource ? args.nodeId : args.edge.otherNodeId,
-        target_node_id: newNodeIsSource ? args.edge.otherNodeId : args.nodeId,
+        ...newNodeSlot,
+        ...otherSlot,
       },
     };
   }
@@ -349,6 +375,7 @@ export function useProposeAction(): UseProposeActionResult {
     const connectionStatusNow = wsState.connectionStatus;
     const textNow = currentState.text;
     const targetEntityIdNow = currentState.targetEntityId;
+    const targetEntityKindNow = currentState.targetEntityKind;
     const edgeRoleNow = currentState.edgeRole;
     const edgeDirectionNow = currentState.edgeDirection;
 
@@ -370,6 +397,7 @@ export function useProposeAction(): UseProposeActionResult {
     const snapshot = {
       text: textNow,
       targetEntityId: targetEntityIdNow,
+      targetEntityKind: targetEntityKindNow,
       edgeRole: edgeRoleNow,
       edgeDirection: edgeDirectionNow,
     };
@@ -407,7 +435,7 @@ export function useProposeAction(): UseProposeActionResult {
               wording: textNow,
               edge: {
                 edgeId,
-                otherNodeId: targetEntityIdNow,
+                otherEntity: { kind: targetEntityKindNow, id: targetEntityIdNow },
                 role: edgeRoleNow,
                 direction: edgeDirectionNow,
               },
@@ -429,6 +457,7 @@ export function useProposeAction(): UseProposeActionResult {
       useCaptureStore.setState({
         text: snapshot.text,
         targetEntityId: snapshot.targetEntityId,
+        targetEntityKind: snapshot.targetEntityKind,
         edgeRole: snapshot.edgeRole,
         edgeDirection: snapshot.edgeDirection,
         proposing: false,

@@ -46,11 +46,27 @@ function randomUuid(): string {
   return `${b[0]}${b[1]}${b[2]}${b[3]}-${b[4]}${b[5]}-${b[6]}${b[7]}-${b[8]}${b[9]}-${b[10]}${b[11]}${b[12]}${b[13]}${b[14]}${b[15]}`;
 }
 
+/**
+ * Kind discriminator for an endpoint id — whether the id names a
+ * statement node or a promoted annotation. Drives which polymorphic
+ * schema slot the proposal payload routes the id into
+ * (`source_node_id` vs `source_annotation_id`, and likewise for
+ * `target_*`).
+ *
+ * Refinement:
+ * `tasks/refinements/moderator-ui/mod_propose_annotation_endpoint_gestures.md`.
+ */
+export type DrawEdgeEndpointKind = 'node' | 'annotation';
+
 export interface DrawEdgeRolePickerProps {
-  /** Source node id (where the drag started). */
+  /** Source endpoint id (where the drag started). */
   readonly source: string;
-  /** Target node id (where the drag ended). */
+  /** Source endpoint kind (statement node vs promoted annotation). */
+  readonly sourceKind: DrawEdgeEndpointKind;
+  /** Target endpoint id (where the drag ended). */
   readonly target: string;
+  /** Target endpoint kind (statement node vs promoted annotation). */
+  readonly targetKind: DrawEdgeEndpointKind;
   /** Cursor x-coordinate (client coords) where the drop landed. */
   readonly x: number;
   /** Cursor y-coordinate (client coords) where the drop landed. */
@@ -60,7 +76,7 @@ export interface DrawEdgeRolePickerProps {
 }
 
 export function DrawEdgeRolePicker(props: DrawEdgeRolePickerProps): ReactElement {
-  const { source, target, x, y, onClose } = props;
+  const { source, sourceKind, target, targetKind, x, y, onClose } = props;
   const { t } = useTranslation();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const client = useWsClient();
@@ -100,6 +116,15 @@ export function DrawEdgeRolePicker(props: DrawEdgeRolePickerProps): ReactElement
     try {
       const expectedSequence =
         useWsStore.getState().sessionState[sessionId]?.lastAppliedSequence ?? 0;
+      // Route each endpoint id to its kind-appropriate schema slot per
+      // `set_edge_substance_annotation_endpoint`'s polymorphic widening.
+      // Per-endpoint AT-MOST-ONE is enforced by `.refine()` on
+      // `setEdgeSubstanceProposalSchema` — write to ONE slot per
+      // endpoint and leave the other absent.
+      const sourceSlot =
+        sourceKind === 'annotation' ? { source_annotation_id: source } : { source_node_id: source };
+      const targetSlot =
+        targetKind === 'annotation' ? { target_annotation_id: target } : { target_node_id: target };
       await client.send('propose', {
         sessionId,
         expectedSequence,
@@ -107,8 +132,8 @@ export function DrawEdgeRolePicker(props: DrawEdgeRolePickerProps): ReactElement
           kind: 'set-edge-substance',
           edge_id: randomUuid(),
           value: 'agreed',
-          source_node_id: source,
-          target_node_id: target,
+          ...sourceSlot,
+          ...targetSlot,
           role,
         },
       });
@@ -136,7 +161,9 @@ export function DrawEdgeRolePicker(props: DrawEdgeRolePickerProps): ReactElement
       role="menu"
       data-testid="draw-edge-role-picker"
       data-source-id={source}
+      data-source-kind={sourceKind}
       data-target-id={target}
+      data-target-kind={targetKind}
       style={{ position: 'fixed', top: y, left: x, zIndex: 60 }}
       className="min-w-[14rem] rounded-md border border-slate-200 bg-white p-2 shadow-md"
     >

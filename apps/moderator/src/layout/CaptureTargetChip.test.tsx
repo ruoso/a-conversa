@@ -39,6 +39,31 @@ const SHORT_WORDING = 'Short wording.';
 const LONG_WORDING = 'The proposed minimum wage would raise prices for everyone, allegedly.';
 const LONG_WORDING_TRUNCATED = `${LONG_WORDING.slice(0, 32)}…`;
 
+function makeAnnotationCreated(
+  sequence: number,
+  annotationId: string,
+  content: string,
+  kind: 'note' | 'reframe' | 'scope-change' | 'stance' = 'note',
+): Event {
+  return {
+    id: `00000000-0000-4000-8000-${(0x500 + sequence).toString(16).padStart(12, '0')}`,
+    sessionId: SESSION_ID,
+    sequence,
+    kind: 'annotation-created',
+    actor: ACTOR,
+    payload: {
+      annotation_id: annotationId,
+      kind,
+      content,
+      target_node_id: null,
+      target_edge_id: null,
+      created_by: ACTOR,
+      created_at: '2026-05-11T00:00:00.000Z',
+    },
+    createdAt: '2026-05-11T00:00:00.000Z',
+  };
+}
+
 function makeNodeCreated(sequence: number, nodeId: string, wording: string): Event {
   return {
     id: `00000000-0000-4000-8000-${sequence.toString(16).padStart(12, '0')}`,
@@ -195,13 +220,22 @@ describe('CaptureTargetChip — non-node selections do not auto-stage', () => {
     expect(screen.getByTestId('capture-target-chip-label').textContent).toBe('No target yet');
   });
 
-  it('annotation selection does NOT write to the target slice', async () => {
+  // Per `mod_propose_annotation_endpoint_gestures` Decision §4 the
+  // annotation-selection bridge is the explicit-override path: when
+  // the moderator's selection lands on an annotation, the chip stages
+  // it as the capture target with `kind: 'annotation'`. Auto-suggest
+  // (the node-scoped path) is unchanged.
+  it('annotation selection stages the annotation as the capture target with kind="annotation"', async () => {
+    seedEvents([makeAnnotationCreated(1, 'a-1', 'annotation body')]);
     await renderChip();
     act(() => {
       useSelectionStore.setState({ selected: { kind: 'annotation', id: 'a-1' } });
     });
-    expect(useCaptureStore.getState().targetEntityId).toBeNull();
-    expect(screen.getByTestId('capture-target-chip-label').textContent).toBe('No target yet');
+    expect(useCaptureStore.getState().targetEntityId).toBe('a-1');
+    expect(useCaptureStore.getState().targetEntityKind).toBe('annotation');
+    expect(screen.getByTestId('capture-target-chip-label').textContent).toBe(
+      'Target: annotation body',
+    );
   });
 
   it('preserves an existing auto-suggested id when an edge is selected afterwards', async () => {
@@ -566,6 +600,104 @@ describe('CaptureTargetChip — re-engagement after clear', () => {
     });
     expect(useCaptureStore.getState().targetEntityId).toBeNull();
     expect(screen.getByTestId('capture-target-chip-label').textContent).toBe('No target yet');
+  });
+});
+
+// Refinement: tasks/refinements/moderator-ui/mod_propose_annotation_endpoint_gestures.md
+//
+// Annotation-staging surface — the click-on-annotation bridge effect,
+// the wording-lookup branch (annotation content vs node wording), and
+// the chip's `data-target-kind` attribute pin.
+describe('CaptureTargetChip — annotation staging (mod_propose_annotation_endpoint_gestures)', () => {
+  it('chip carries data-target-kind="node" in the empty state', async () => {
+    await renderChip();
+    expect(screen.getByTestId('capture-target-chip').getAttribute('data-target-kind')).toBe('node');
+  });
+
+  it('chip carries data-target-kind="node" after a statement node is staged', async () => {
+    seedEvents([makeNodeCreated(1, 'n-1', SHORT_WORDING)]);
+    await renderChip();
+    act(() => {
+      useSelectionStore.setState({ selected: { kind: 'node', id: 'n-1' } });
+    });
+    expect(screen.getByTestId('capture-target-chip').getAttribute('data-target-kind')).toBe('node');
+  });
+
+  it('chip flips data-target-kind to "annotation" when an annotation is staged', async () => {
+    seedEvents([makeAnnotationCreated(1, 'a-1', 'annotation body')]);
+    await renderChip();
+    act(() => {
+      useSelectionStore.setState({ selected: { kind: 'annotation', id: 'a-1' } });
+    });
+    expect(screen.getByTestId('capture-target-chip').getAttribute('data-target-kind')).toBe(
+      'annotation',
+    );
+  });
+
+  it('truncates annotation content longer than 32 characters and appends an ellipsis', async () => {
+    const longContent = 'an annotation body whose content far exceeds the truncation budget';
+    seedEvents([makeAnnotationCreated(1, 'a-long', longContent)]);
+    await renderChip();
+    act(() => {
+      useSelectionStore.setState({ selected: { kind: 'annotation', id: 'a-long' } });
+    });
+    expect(screen.getByTestId('capture-target-chip-label').textContent).toBe(
+      `Target: ${longContent.slice(0, 32)}…`,
+    );
+  });
+
+  it('falls back to the raw annotation id when no annotation-created event exists', async () => {
+    // No events seeded — the lookup returns null and the chip falls
+    // back to rendering the raw id (mirrors the node-staged fallback).
+    await renderChip();
+    act(() => {
+      useSelectionStore.setState({ selected: { kind: 'annotation', id: 'a-missing' } });
+    });
+    expect(screen.getByTestId('capture-target-chip-label').textContent).toBe('Target: a-missing');
+  });
+
+  it('clear gesture (× button) resets targetEntityKind back to "node"', async () => {
+    seedEvents([makeAnnotationCreated(1, 'a-1', 'annotation body')]);
+    await renderChip();
+    act(() => {
+      useSelectionStore.setState({ selected: { kind: 'annotation', id: 'a-1' } });
+    });
+    expect(useCaptureStore.getState().targetEntityKind).toBe('annotation');
+    act(() => {
+      fireEvent.click(screen.getByTestId('capture-target-chip-clear'));
+    });
+    expect(useCaptureStore.getState().targetEntityId).toBeNull();
+    expect(useCaptureStore.getState().targetEntityKind).toBe('node');
+  });
+
+  it('an annotation override survives a subsequent statement-node selection (no stomp)', async () => {
+    seedEvents([
+      makeNodeCreated(1, 'n-1', 'first node'),
+      makeAnnotationCreated(2, 'a-1', 'annotation body'),
+    ]);
+    await renderChip();
+    // 1. Auto-suggest fires on a node selection.
+    act(() => {
+      useSelectionStore.setState({ selected: { kind: 'node', id: 'n-1' } });
+    });
+    expect(useCaptureStore.getState().targetEntityId).toBe('n-1');
+
+    // 2. Annotation click stages the annotation (the bridge effect).
+    act(() => {
+      useSelectionStore.setState({ selected: { kind: 'annotation', id: 'a-1' } });
+    });
+    expect(useCaptureStore.getState().targetEntityId).toBe('a-1');
+    expect(useCaptureStore.getState().targetEntityKind).toBe('annotation');
+
+    // 3. A subsequent statement-node selection does NOT stomp the
+    //    annotation — Case 3 of the auto-stage effect's override
+    //    contract holds (the staged id no longer matches the
+    //    lastAutoStagedRef).
+    act(() => {
+      useSelectionStore.setState({ selected: { kind: 'node', id: 'n-1' } });
+    });
+    expect(useCaptureStore.getState().targetEntityId).toBe('a-1');
+    expect(useCaptureStore.getState().targetEntityKind).toBe('annotation');
   });
 });
 

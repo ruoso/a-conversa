@@ -199,8 +199,27 @@ const EMPTY_ACTIVE_DIAGNOSTICS: ReadonlyMap<string, DiagnosticPayload> = new Map
  * measurements) doesn't fire in happy-dom; the test suite invokes these
  * handlers directly to pin the wire-up contract.
  */
+/**
+ * Map the ReactFlow `node.type` discriminator to the `EntityKind` the
+ * selection store and downstream gestures (capture-target staging,
+ * draw-edge endpoint routing) use. `STATEMENT_NODE_TYPE` and the
+ * annotation host midpoint type both resolve to `'node'`; only
+ * `ANNOTATION_NODE_TYPE` flips to `'annotation'`. A future addition
+ * of a new node type with its own endpoint identity would need to
+ * extend this map — the default arm keeps the contract honest by
+ * falling back to `'node'`.
+ *
+ * Refinement:
+ * `tasks/refinements/moderator-ui/mod_propose_annotation_endpoint_gestures.md`
+ * (Constraint 1 — kind discrimination at the ReactFlow-node layer).
+ */
+function endpointKindFromNodeType(type: string | undefined): 'node' | 'annotation' {
+  if (type === ANNOTATION_NODE_TYPE) return 'annotation';
+  return 'node';
+}
+
 export function handleNodeClick(_event: unknown, node: Node): void {
-  useSelectionStore.getState().select({ kind: 'node', id: node.id });
+  useSelectionStore.getState().select({ kind: endpointKindFromNodeType(node.type), id: node.id });
 }
 
 export function handleEdgeClick(_event: unknown, edge: Edge): void {
@@ -848,6 +867,15 @@ export function GraphCanvasPane(props: GraphCanvasPaneProps): ReactElement {
 function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
   const { sessionId } = props;
 
+  // ReactFlow handle — stable across the component lifetime; lets
+  // `handleConnect` / `handleConnectEnd` resolve the live
+  // `node.type` for either endpoint of a drag-to-create-edge gesture
+  // so the picker can route the resulting payload to the kind-
+  // appropriate schema slot (`source_node_id` vs
+  // `source_annotation_id`, symmetric for target). Refinement:
+  // `mod_propose_annotation_endpoint_gestures` Decision §2.
+  const reactFlow = useReactFlow();
+
   // Context-menu state — `null` when no menu is open. Set by the right-
   // click handlers below; cleared by the menu's `onClose`. Refinement:
   // `mod_context_menus`.
@@ -890,7 +918,9 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
   // Refinement: `mod_draw_edge_flow`.
   const [drawEdgePicker, setDrawEdgePicker] = useState<{
     readonly source: string;
+    readonly sourceKind: 'node' | 'annotation';
     readonly target: string;
+    readonly targetKind: 'node' | 'annotation';
     readonly x: number;
     readonly y: number;
   } | null>(null);
@@ -899,15 +929,34 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
   // pipeline; the matching `onConnectEnd` fires immediately after with
   // the native MouseEvent carrying the drop coordinates. We stash the
   // valid (source, target) pair from `onConnect` in a ref and read
-  // it back inside `onConnectEnd` to combine with the cursor x/y.
-  const pendingConnectionRef = useRef<{ source: string; target: string } | null>(null);
-  const handleConnect = useCallback((params: Connection): void => {
-    if (params.source === null || params.target === null || params.source === params.target) {
-      pendingConnectionRef.current = null;
-      return;
-    }
-    pendingConnectionRef.current = { source: params.source, target: params.target };
-  }, []);
+  // it back inside `onConnectEnd` to combine with the cursor x/y. The
+  // endpoint kinds are resolved from the ReactFlow store at drop time
+  // via `reactFlow.getNode(id)?.type`; the kinds ride alongside the
+  // pair so the picker can route the proposal's endpoint slots per
+  // `mod_propose_annotation_endpoint_gestures`.
+  const pendingConnectionRef = useRef<{
+    source: string;
+    sourceKind: 'node' | 'annotation';
+    target: string;
+    targetKind: 'node' | 'annotation';
+  } | null>(null);
+  const handleConnect = useCallback(
+    (params: Connection): void => {
+      if (params.source === null || params.target === null || params.source === params.target) {
+        pendingConnectionRef.current = null;
+        return;
+      }
+      const sourceKind = endpointKindFromNodeType(reactFlow.getNode(params.source)?.type);
+      const targetKind = endpointKindFromNodeType(reactFlow.getNode(params.target)?.type);
+      pendingConnectionRef.current = {
+        source: params.source,
+        sourceKind,
+        target: params.target,
+        targetKind,
+      };
+    },
+    [reactFlow],
+  );
   const handleConnectEnd = useCallback<OnConnectEnd>((event) => {
     const pending = pendingConnectionRef.current;
     pendingConnectionRef.current = null;
@@ -928,7 +977,9 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
     }
     setDrawEdgePicker({
       source: pending.source,
+      sourceKind: pending.sourceKind,
       target: pending.target,
+      targetKind: pending.targetKind,
       x: clientX,
       y: clientY,
     });
@@ -981,7 +1032,7 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
   // then opens menu" convention.
   const handleNodeContextMenu = useCallback((event: ReactMouseEvent, node: Node): void => {
     event.preventDefault();
-    useSelectionStore.getState().select({ kind: 'node', id: node.id });
+    useSelectionStore.getState().select({ kind: endpointKindFromNodeType(node.type), id: node.id });
     // A fresh right-click dismisses any stale axiom-mark / annotate
     // submenu from a prior gesture before opening the new parent menu.
     setAxiomMarkSubmenu(null);
@@ -1262,7 +1313,7 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
   // reads the post-relayout positions when computing the bounding box.
   // The measurement cache is preserved — only positions are recomputed.
   const { t } = useTranslation();
-  const { fitView } = useReactFlow();
+  const { fitView } = reactFlow;
   const handleTidyUp = useCallback((): void => {
     positionCacheRef.current.clear();
     setLayoutRevision((r) => r + 1);
@@ -1587,7 +1638,9 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
       {drawEdgePicker !== null ? (
         <DrawEdgeRolePicker
           source={drawEdgePicker.source}
+          sourceKind={drawEdgePicker.sourceKind}
           target={drawEdgePicker.target}
+          targetKind={drawEdgePicker.targetKind}
           x={drawEdgePicker.x}
           y={drawEdgePicker.y}
           onClose={closeDrawEdgePicker}

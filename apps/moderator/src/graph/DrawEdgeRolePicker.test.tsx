@@ -64,7 +64,18 @@ function makeStubClient(opts?: { rejectWith?: Error }): {
   return { client, sent };
 }
 
-function renderPicker(opts: { onClose: () => void; client: WsClient }): ReturnType<typeof render> {
+function renderPicker(opts: {
+  onClose: () => void;
+  client: WsClient;
+  source?: string;
+  sourceKind?: 'node' | 'annotation';
+  target?: string;
+  targetKind?: 'node' | 'annotation';
+}): ReturnType<typeof render> {
+  const source = opts.source ?? SOURCE_ID;
+  const sourceKind = opts.sourceKind ?? 'node';
+  const target = opts.target ?? TARGET_ID;
+  const targetKind = opts.targetKind ?? 'node';
   return render(
     <MemoryRouter initialEntries={[`/m/sessions/${SESSION_ID}/operate`]}>
       <WsClientProvider auth={{ status: 'authenticated' }} client={opts.client}>
@@ -73,8 +84,10 @@ function renderPicker(opts: { onClose: () => void; client: WsClient }): ReturnTy
             path="/m/sessions/:id/operate"
             element={
               <DrawEdgeRolePicker
-                source={SOURCE_ID}
-                target={TARGET_ID}
+                source={source}
+                sourceKind={sourceKind}
+                target={target}
+                targetKind={targetKind}
                 x={120}
                 y={240}
                 onClose={opts.onClose}
@@ -174,6 +187,94 @@ describe('DrawEdgeRolePicker', () => {
       fireEvent.mouseDown(document.body);
     });
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  // Refinement: tasks/refinements/moderator-ui/mod_propose_annotation_endpoint_gestures.md
+  //
+  // The picker's payload-routing branch on `sourceKind` / `targetKind`
+  // (each `'node'` or `'annotation'`). Four-case matrix pins that the
+  // emitted `set-edge-substance` proposal carries the kind-appropriate
+  // schema slot for each endpoint and OMITS the opposing slot (the
+  // `setEdgeSubstanceProposalSchema` per-endpoint `.refine()` enforces
+  // AT-MOST-ONE; the proposal-builder respects this by writing ONE
+  // slot per endpoint).
+  describe('endpoint-kind routing (mod_propose_annotation_endpoint_gestures)', () => {
+    interface Permutation {
+      readonly sourceKind: 'node' | 'annotation';
+      readonly targetKind: 'node' | 'annotation';
+      readonly expectedSource: 'source_node_id' | 'source_annotation_id';
+      readonly expectedTarget: 'target_node_id' | 'target_annotation_id';
+    }
+    const PERMUTATIONS: readonly Permutation[] = [
+      {
+        sourceKind: 'node',
+        targetKind: 'node',
+        expectedSource: 'source_node_id',
+        expectedTarget: 'target_node_id',
+      },
+      {
+        sourceKind: 'node',
+        targetKind: 'annotation',
+        expectedSource: 'source_node_id',
+        expectedTarget: 'target_annotation_id',
+      },
+      {
+        sourceKind: 'annotation',
+        targetKind: 'node',
+        expectedSource: 'source_annotation_id',
+        expectedTarget: 'target_node_id',
+      },
+      {
+        sourceKind: 'annotation',
+        targetKind: 'annotation',
+        expectedSource: 'source_annotation_id',
+        expectedTarget: 'target_annotation_id',
+      },
+    ];
+
+    for (const perm of PERMUTATIONS) {
+      it(`${perm.sourceKind}→${perm.targetKind}: routes ids to ${perm.expectedSource} + ${perm.expectedTarget}`, async () => {
+        const { client, sent } = makeStubClient();
+        renderPicker({
+          onClose: () => undefined,
+          client,
+          sourceKind: perm.sourceKind,
+          targetKind: perm.targetKind,
+        });
+        await act(async () => {
+          fireEvent.click(screen.getByTestId('draw-edge-role-picker-button-supports'));
+          await Promise.resolve();
+        });
+        expect(sent).toHaveLength(1);
+        const payload = sent[0]!.payload as {
+          proposal: Record<string, unknown>;
+        };
+        expect(payload.proposal[perm.expectedSource]).toBe(SOURCE_ID);
+        expect(payload.proposal[perm.expectedTarget]).toBe(TARGET_ID);
+        // The opposing slots are absent (per-endpoint AT-MOST-ONE).
+        const opposingSource =
+          perm.expectedSource === 'source_node_id' ? 'source_annotation_id' : 'source_node_id';
+        const opposingTarget =
+          perm.expectedTarget === 'target_node_id' ? 'target_annotation_id' : 'target_node_id';
+        expect(payload.proposal[opposingSource]).toBeUndefined();
+        expect(payload.proposal[opposingTarget]).toBeUndefined();
+      });
+    }
+
+    it('renders data-source-kind / data-target-kind attributes on the picker root', () => {
+      const { client } = makeStubClient();
+      renderPicker({
+        onClose: () => undefined,
+        client,
+        sourceKind: 'annotation',
+        targetKind: 'node',
+      });
+      const root = screen.getByTestId('draw-edge-role-picker');
+      expect(root.getAttribute('data-source-kind')).toBe('annotation');
+      expect(root.getAttribute('data-target-kind')).toBe('node');
+      expect(root.getAttribute('data-source-id')).toBe(SOURCE_ID);
+      expect(root.getAttribute('data-target-id')).toBe(TARGET_ID);
+    });
   });
 
   it('on wire-error keeps the picker open and surfaces an inline error region', async () => {

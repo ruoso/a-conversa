@@ -694,6 +694,7 @@ task moderator_ui "Moderator UI" {
     task mod_propose_annotation_endpoint_gestures "Wire moderator set-edge-substance and capture-with-edge gestures to emit polymorphic-endpoint proposals" {
       effort 2d
       allocate team
+      complete 100
       depends !mod_render_annotation_endpoint_edges, data_and_methodology.methodology_engine.set_edge_substance_annotation_endpoint
       note -8<-
         Source of debt: set_edge_substance_annotation_endpoint (2026-05-30) — the proposal-schema
@@ -745,6 +746,33 @@ task moderator_ui "Moderator UI" {
         each endpoint id in the popover's endpoint-references row would disambiguate the two kinds.
         Belongs in moderator_ui.mod_annotation_ui.*.
         Source refinement: tasks/refinements/moderator-ui/mod_render_annotation_endpoint_edges.md (Decisions §10, §11).
+      ->8-
+    }
+    task mod_annotation_capture_auto_suggest "Widen capture-target auto-suggest to surface annotation nodes" {
+      effort 0.5d
+      allocate team
+      depends !mod_propose_annotation_endpoint_gestures
+      note -8<-
+        Source of debt: mod_propose_annotation_endpoint_gestures (2026-05-31) — auto-suggest stays
+        node-scoped per Decision §5 of that task. A follow-up widens selectMostRecentlyActiveNodeId
+        (or adds a sibling selector) so the auto-suggest considers the most-recently-active entity
+        (node or annotation) when an annotation node is the last canvas click. Deferred because
+        annotation-staging is rarer than node-staging and the explicit-stage path is honest about
+        user intent; widen if walkthrough usage shows annotation-staging is common.
+        Source refinement: tasks/refinements/moderator-ui/mod_propose_annotation_endpoint_gestures.md (Decision §5, §11).
+      ->8-
+    }
+    task mod_annotation_context_menu "Dedicated annotation-node context menu with annotation-specific items" {
+      effort 0.5d
+      allocate team
+      depends !mod_propose_annotation_endpoint_gestures
+      note -8<-
+        Source of debt: mod_propose_annotation_endpoint_gestures (2026-05-31) — the existing right-click
+        context menu opens on annotation nodes (after handleNodeContextMenu widening) but shows
+        unchanged items. A dedicated AnnotationContextMenu component with annotation-specific items
+        (e.g. "annotate this annotation", "withdraw annotation") was deferred for v1 per Decision §6
+        of that task. Split out when annotation-specific items materialize.
+        Source refinement: tasks/refinements/moderator-ui/mod_propose_annotation_endpoint_gestures.md (Decision §6, §11).
       ->8-
     }
   }

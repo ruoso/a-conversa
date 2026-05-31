@@ -152,13 +152,45 @@ export type CaptureMode =
  */
 export type EdgeDirection = 'targets' | 'targeted-by';
 
+/**
+ * Discriminator for the staged capture target — whether the id in
+ * `targetEntityId` names a statement node or a promoted annotation.
+ *
+ * Paired with `targetEntityId` per Decision §3 of
+ * `tasks/refinements/moderator-ui/mod_propose_annotation_endpoint_gestures.md`
+ * (parallel slices rather than a discriminated-union shape — the
+ * existing `targetEntityId: string | null` slice is wired through
+ * many consumers as a string and the parallel slice keeps the gate-
+ * shape stable).
+ *
+ * Auto-suggest stays node-scoped (Decision §5): a deliberate
+ * annotation click is the only writer that lands `'annotation'`.
+ * The legacy `setTargetEntityId(id)` setter forces `'node'`; the new
+ * `setTargetEntity(kind, id)` action lands both slices atomically.
+ */
+export type CaptureTargetKind = 'node' | 'annotation';
+
 export interface CaptureState {
   /** The free-text statement under construction. */
   text: string;
   /** Selected statement kind, or `null` when not yet classified. */
   classification: StatementKind | null;
-  /** Target entity id (node or edge) the proposal will hang off, or `null` for a free-floating new node. */
+  /** Target entity id (node or annotation) the proposal will hang off, or `null` for a free-floating new node. */
   targetEntityId: string | null;
+  /**
+   * Discriminator for `targetEntityId`. `'node'` whenever
+   * `targetEntityId` is null OR was written by the legacy
+   * `setTargetEntityId(id)` setter (the auto-suggest path); flips to
+   * `'annotation'` only when `setTargetEntity('annotation', id)` is
+   * called explicitly (the moderator clicked an annotation on the
+   * canvas during capture).
+   *
+   * Refinement:
+   * `tasks/refinements/moderator-ui/mod_propose_annotation_endpoint_gestures.md`
+   * (Decision §3 — parallel slice rather than a discriminated-union
+   * widening of `targetEntityId`).
+   */
+  targetEntityKind: CaptureTargetKind;
   /**
    * Selected edge role for the in-progress connect, or `null` when no
    * role has been picked yet. Only meaningful while
@@ -224,7 +256,29 @@ export interface CaptureState {
 
   setText: (text: string) => void;
   setClassification: (classification: StatementKind | null) => void;
+  /**
+   * Legacy single-slice setter. Writes `targetEntityId` and FORCES
+   * `targetEntityKind` to `'node'` so existing call sites
+   * (auto-suggest, override-by-id from sibling components) continue
+   * to behave as before. The atomic two-slice writer is
+   * `setTargetEntity(kind, id)`.
+   *
+   * Refinement:
+   * `tasks/refinements/moderator-ui/mod_propose_annotation_endpoint_gestures.md`
+   * (Decision §3 — preserves the existing wide-blast-radius contract).
+   */
   setTargetEntityId: (id: string | null) => void;
+  /**
+   * Atomic two-slice setter — writes `targetEntityId` AND
+   * `targetEntityKind` in a single `set()` so the slice invariant
+   * (`targetEntityId !== null` ⇒ `targetEntityKind` reflects the
+   * staged entity kind) is never observably violated. The only
+   * writer that lands `kind === 'annotation'`.
+   *
+   * Refinement:
+   * `tasks/refinements/moderator-ui/mod_propose_annotation_endpoint_gestures.md`.
+   */
+  setTargetEntity: (kind: CaptureTargetKind, id: string) => void;
   setEdgeRole: (role: EdgeRole | null) => void;
   setEdgeDirection: (direction: EdgeDirection) => void;
   setMode: (mode: CaptureMode) => void;
@@ -458,6 +512,7 @@ const initialCaptureState: Pick<
   | 'text'
   | 'classification'
   | 'targetEntityId'
+  | 'targetEntityKind'
   | 'edgeRole'
   | 'edgeDirection'
   | 'mode'
@@ -472,6 +527,7 @@ const initialCaptureState: Pick<
   text: '',
   classification: null,
   targetEntityId: null,
+  targetEntityKind: 'node',
   edgeRole: null,
   edgeDirection: 'targets',
   mode: 'idle',
@@ -489,7 +545,9 @@ export const useCaptureStore = create<CaptureState>()(
     ...initialCaptureState,
     setText: (text) => set({ text }),
     setClassification: (classification) => set({ classification }),
-    setTargetEntityId: (targetEntityId) => set({ targetEntityId }),
+    setTargetEntityId: (targetEntityId) => set({ targetEntityId, targetEntityKind: 'node' }),
+    setTargetEntity: (targetEntityKind, targetEntityId) =>
+      set({ targetEntityId, targetEntityKind }),
     setEdgeRole: (edgeRole) => set({ edgeRole }),
     setEdgeDirection: (edgeDirection) => set({ edgeDirection }),
     setMode: (mode) => set({ mode }),
@@ -505,6 +563,7 @@ export const useCaptureStore = create<CaptureState>()(
         text: '',
         classification: null,
         targetEntityId: null,
+        targetEntityKind: 'node',
         edgeRole: null,
         edgeDirection: 'targets',
         // Two-empty-row seed (mod_multi_component_capture Decision §1):
@@ -574,6 +633,7 @@ export const useCaptureStore = create<CaptureState>()(
         text: '',
         classification: null,
         targetEntityId: null,
+        targetEntityKind: 'node',
         edgeRole: null,
         edgeDirection: 'targets',
         // Two-empty-row seed (mirrors enterDecomposeMode).
@@ -639,6 +699,7 @@ export const useCaptureStore = create<CaptureState>()(
         text: '',
         classification: null,
         targetEntityId: null,
+        targetEntityKind: 'node',
         edgeRole: null,
         edgeDirection: 'targets',
       }),
@@ -660,6 +721,7 @@ export const useCaptureStore = create<CaptureState>()(
         text: '',
         classification: null,
         targetEntityId: null,
+        targetEntityKind: 'node',
         edgeRole: null,
         edgeDirection: 'targets',
       }),

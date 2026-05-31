@@ -434,6 +434,136 @@ describe('useProposeAction — connecting-capture success path (capture-node wit
   });
 });
 
+// Refinement: tasks/refinements/moderator-ui/mod_propose_annotation_endpoint_gestures.md
+//
+// When the staged capture target is an annotation, the inline `edge`
+// block on the `capture-node` proposal routes the annotation id into
+// the kind-appropriate slot (`source_annotation_id` /
+// `target_annotation_id` depending on `direction`). The captured node
+// always lands in its `*_node_id` slot — captures mint a node, never
+// an annotation. The opposing slot on each endpoint is OMITTED per
+// the schema's EXACTLY-ONE-per-endpoint constraint
+// (`captureNodeEdgeShapeSchema.refine()`).
+describe('useProposeAction — annotation-endpoint capture-with-edge (mod_propose_annotation_endpoint_gestures)', () => {
+  it('direction "targets" + annotation target → edge.source_node_id=<new>, edge.target_annotation_id=<staged>', async () => {
+    const fake = makeFakeClient();
+    const probe = renderProbe(fake.client);
+    act(() => {
+      useCaptureStore.getState().setText('a connecting wording');
+      useCaptureStore
+        .getState()
+        .setTargetEntity('annotation', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+      useCaptureStore.getState().setEdgeRole('contradicts');
+      // direction defaults to 'targets' — assert the default at the
+      // store layer rather than re-setting it.
+    });
+    expect(useCaptureStore.getState().edgeDirection).toBe('targets');
+    let proposePromise: Promise<void> | undefined;
+    act(() => {
+      proposePromise = probe.result.propose();
+    });
+    expect(fake.calls.length).toBe(1);
+    const payload = fake.calls[0]?.payload as {
+      proposal: {
+        kind: string;
+        node_id: string;
+        wording: string;
+        edge?: Record<string, unknown>;
+      };
+    };
+    expect(payload.proposal.kind).toBe('capture-node');
+    const edge = payload.proposal.edge!;
+    expect(edge.role).toBe('contradicts');
+    // The just-captured node is the SOURCE (direction: 'targets').
+    expect(edge.source_node_id).toBe(payload.proposal.node_id);
+    // The staged annotation rides on the target_annotation_id slot.
+    expect(edge.target_annotation_id).toBe('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+    // Opposing slots are absent (per-endpoint EXACTLY-ONE).
+    expect(edge.source_annotation_id).toBeUndefined();
+    expect(edge.target_node_id).toBeUndefined();
+
+    act(() => {
+      fake.resolveNext({ sequence: 1 });
+    });
+    await act(async () => {
+      await proposePromise;
+    });
+  });
+
+  it('direction "targeted-by" + annotation target → edge.source_annotation_id=<staged>, edge.target_node_id=<new>', async () => {
+    const fake = makeFakeClient();
+    const probe = renderProbe(fake.client);
+    act(() => {
+      useCaptureStore.getState().setText('a connecting wording');
+      useCaptureStore
+        .getState()
+        .setTargetEntity('annotation', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
+      useCaptureStore.getState().setEdgeRole('rebuts');
+      useCaptureStore.getState().setEdgeDirection('targeted-by');
+    });
+    let proposePromise: Promise<void> | undefined;
+    act(() => {
+      proposePromise = probe.result.propose();
+    });
+    expect(fake.calls.length).toBe(1);
+    const payload = fake.calls[0]?.payload as {
+      proposal: {
+        node_id: string;
+        edge?: Record<string, unknown>;
+      };
+    };
+    const edge = payload.proposal.edge!;
+    expect(edge.role).toBe('rebuts');
+    // The staged annotation is the SOURCE (direction: 'targeted-by').
+    expect(edge.source_annotation_id).toBe('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
+    // The just-captured node is the TARGET.
+    expect(edge.target_node_id).toBe(payload.proposal.node_id);
+    expect(edge.source_node_id).toBeUndefined();
+    expect(edge.target_annotation_id).toBeUndefined();
+
+    act(() => {
+      fake.resolveNext({ sequence: 1 });
+    });
+    await act(async () => {
+      await proposePromise;
+    });
+  });
+
+  it('regression: a node-staged target continues to emit the existing node-endpoint shape', async () => {
+    const fake = makeFakeClient();
+    const probe = renderProbe(fake.client);
+    act(() => {
+      useCaptureStore.getState().setText('a connecting wording');
+      useCaptureStore.getState().setTargetEntity('node', 'cccccccc-cccc-4ccc-8ccc-cccccccccccc');
+      useCaptureStore.getState().setEdgeRole('supports');
+    });
+    let proposePromise: Promise<void> | undefined;
+    act(() => {
+      proposePromise = probe.result.propose();
+    });
+    expect(fake.calls.length).toBe(1);
+    const payload = fake.calls[0]?.payload as {
+      proposal: {
+        node_id: string;
+        edge?: Record<string, unknown>;
+      };
+    };
+    const edge = payload.proposal.edge!;
+    expect(edge.role).toBe('supports');
+    expect(edge.source_node_id).toBe(payload.proposal.node_id);
+    expect(edge.target_node_id).toBe('cccccccc-cccc-4ccc-8ccc-cccccccccccc');
+    expect(edge.source_annotation_id).toBeUndefined();
+    expect(edge.target_annotation_id).toBeUndefined();
+
+    act(() => {
+      fake.resolveNext({ sequence: 1 });
+    });
+    await act(async () => {
+      await proposePromise;
+    });
+  });
+});
+
 describe('useProposeAction — error paths', () => {
   it('snapshot restore on WsRequestError; lastError carries wire code + message', async () => {
     const fake = makeFakeClient();

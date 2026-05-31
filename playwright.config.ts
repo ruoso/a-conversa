@@ -260,6 +260,28 @@ export default defineConfig({
         storageState: AUTH_STORAGE_STATE_PATH,
       },
     },
+    // Annotation-endpoint propose-gesture e2e
+    // (mod_propose_annotation_endpoint_gestures). Drives the
+    // moderator's operate route, seeds an annotation-endpoint edge
+    // into the Zustand WS store via `wsStoreSeed.ts`, then exercises
+    // two propose-side gestures: (1) drag from a promoted annotation
+    // node onto a statement node to open `<DrawEdgeRolePicker>` with
+    // the kind-discriminated data-attributes; (2) click an annotation
+    // node during capture to stage it as the capture target on
+    // `<CaptureTargetChip>`. Same browser profile as
+    // `chromium-moderator-annotation-endpoint` — same seed seam, same
+    // single-locale rationale (data-attribute / content assertions).
+    {
+      name: 'chromium-moderator-annotation-endpoint-gestures',
+      testMatch: /annotation-endpoint-gestures\.spec\.ts$/,
+      dependencies: ['setup-auth'],
+      use: {
+        ...devices['Desktop Chrome'],
+        locale: 'en-US',
+        ignoreHTTPSErrors: true,
+        storageState: AUTH_STORAGE_STATE_PATH,
+      },
+    },
     // Graph layout e2e (mod_layout_engine_choice, ADR 0025). Drives the
     // moderator's operate route, seeds a 6-node / 5-edge claim+evidence
     // +rebut fixture into the Zustand WS store, and asserts: pairwise

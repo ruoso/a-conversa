@@ -655,3 +655,114 @@ describe('useCaptureStore — warrant-elicitation-mode slice (mod_warrant_elicit
     expect(state.warrantElicitationTargetNodeId).toBe('we-target');
   });
 });
+
+// Refinement: tasks/refinements/moderator-ui/mod_propose_annotation_endpoint_gestures.md
+//
+// `targetEntityKind` is a new parallel slice paired with
+// `targetEntityId` (Decision §3). The invariant the cases below pin:
+//
+//   1. Initial state: `targetEntityKind === 'node'`.
+//   2. `setTargetEntityId(id)` (legacy single-slice setter) FORCES
+//      kind to `'node'`, regardless of the prior kind — preserves
+//      the auto-suggest contract (auto-suggest is node-scoped per
+//      Decision §5).
+//   3. `setTargetEntity('annotation', id)` writes both slices in one
+//      `set()` — subscribers observe exactly one transition; the
+//      invariant `targetEntityId !== null ⇒ targetEntityKind reflects
+//      the staged entity kind` is never observably violated.
+//   4. All four mode-entry helpers' F1 clear blocks reset kind to
+//      `'node'` alongside `targetEntityId: null`.
+//   5. `reset()` restores both slices to their initial values.
+describe('useCaptureStore — targetEntityKind slice (mod_propose_annotation_endpoint_gestures)', () => {
+  it('targetEntityKind defaults to "node" in the initial state', () => {
+    expect(useCaptureStore.getState().targetEntityKind).toBe('node');
+    expect(useCaptureStore.getState().targetEntityId).toBeNull();
+  });
+
+  it('setTargetEntity("node", id) writes both slices atomically', () => {
+    useCaptureStore.getState().setTargetEntity('node', 'n-1');
+    const state = useCaptureStore.getState();
+    expect(state.targetEntityId).toBe('n-1');
+    expect(state.targetEntityKind).toBe('node');
+  });
+
+  it('setTargetEntity("annotation", id) writes both slices atomically', () => {
+    useCaptureStore.getState().setTargetEntity('annotation', 'a-1');
+    const state = useCaptureStore.getState();
+    expect(state.targetEntityId).toBe('a-1');
+    expect(state.targetEntityKind).toBe('annotation');
+  });
+
+  it('setTargetEntity uses a single set() — subscribers observe exactly one transition per call', () => {
+    let notifications = 0;
+    const unsubscribe = useCaptureStore.subscribe(() => {
+      notifications += 1;
+    });
+    try {
+      useCaptureStore.getState().setTargetEntity('annotation', 'a-2');
+      expect(notifications).toBe(1);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('setTargetEntityId(id) forces kind to "node" (preserves the auto-suggest contract)', () => {
+    // First stage an annotation explicitly to assert the legacy
+    // single-slice setter FLIPS kind back to 'node' rather than
+    // leaving the slice mismatched.
+    useCaptureStore.getState().setTargetEntity('annotation', 'a-1');
+    expect(useCaptureStore.getState().targetEntityKind).toBe('annotation');
+    useCaptureStore.getState().setTargetEntityId('n-2');
+    const state = useCaptureStore.getState();
+    expect(state.targetEntityId).toBe('n-2');
+    expect(state.targetEntityKind).toBe('node');
+  });
+
+  it('setTargetEntityId(null) resets the slice and forces kind to "node"', () => {
+    useCaptureStore.getState().setTargetEntity('annotation', 'a-1');
+    useCaptureStore.getState().setTargetEntityId(null);
+    const state = useCaptureStore.getState();
+    expect(state.targetEntityId).toBeNull();
+    expect(state.targetEntityKind).toBe('node');
+  });
+
+  it('enterDecomposeMode resets targetEntityKind to "node" alongside the F1 clear', () => {
+    useCaptureStore.getState().setTargetEntity('annotation', 'a-1');
+    useCaptureStore.getState().enterDecomposeMode('decomp-node');
+    const state = useCaptureStore.getState();
+    expect(state.targetEntityId).toBeNull();
+    expect(state.targetEntityKind).toBe('node');
+  });
+
+  it('enterInterpretiveSplitMode resets targetEntityKind to "node"', () => {
+    useCaptureStore.getState().setTargetEntity('annotation', 'a-1');
+    useCaptureStore.getState().enterInterpretiveSplitMode('split-node');
+    const state = useCaptureStore.getState();
+    expect(state.targetEntityId).toBeNull();
+    expect(state.targetEntityKind).toBe('node');
+  });
+
+  it('enterOperationalizationMode resets targetEntityKind to "node"', () => {
+    useCaptureStore.getState().setTargetEntity('annotation', 'a-1');
+    useCaptureStore.getState().enterOperationalizationMode('op-node');
+    const state = useCaptureStore.getState();
+    expect(state.targetEntityId).toBeNull();
+    expect(state.targetEntityKind).toBe('node');
+  });
+
+  it('enterWarrantElicitationMode resets targetEntityKind to "node"', () => {
+    useCaptureStore.getState().setTargetEntity('annotation', 'a-1');
+    useCaptureStore.getState().enterWarrantElicitationMode('we-node');
+    const state = useCaptureStore.getState();
+    expect(state.targetEntityId).toBeNull();
+    expect(state.targetEntityKind).toBe('node');
+  });
+
+  it('reset() restores targetEntityKind to "node"', () => {
+    useCaptureStore.getState().setTargetEntity('annotation', 'a-1');
+    useCaptureStore.getState().reset();
+    const state = useCaptureStore.getState();
+    expect(state.targetEntityId).toBeNull();
+    expect(state.targetEntityKind).toBe('node');
+  });
+});

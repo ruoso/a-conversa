@@ -249,6 +249,31 @@ export function selectNodeWordingById(events: readonly Event[], nodeId: string):
 }
 
 /**
+ * Resolve the current content for a single annotation by id from a
+ * session's event log. Mirrors `selectNodeWordingById`'s shape — one
+ * O(N) scan over events, last-write-wins on duplicates (a wire-
+ * protocol violation but the selector stays deterministic regardless),
+ * returns `null` when no `annotation-created` event for the id exists.
+ *
+ * Refinement:
+ * `tasks/refinements/moderator-ui/mod_propose_annotation_endpoint_gestures.md`
+ * (chip wording-label dispatch for annotation-staged targets per
+ * Decision §7).
+ */
+export function selectAnnotationContentById(
+  events: readonly Event[],
+  annotationId: string,
+): string | null {
+  let content: string | null = null;
+  for (const event of events) {
+    if (event.kind !== 'annotation-created') continue;
+    if (event.payload.annotation_id !== annotationId) continue;
+    content = event.payload.content;
+  }
+  return content;
+}
+
+/**
  * Camel-cased projection of one **pending** (proposed-but-not-yet-
  * committed) axiom-mark on a node.
  *

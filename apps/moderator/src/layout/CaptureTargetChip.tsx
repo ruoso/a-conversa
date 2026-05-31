@@ -69,7 +69,7 @@ import { useCaptureStore, type EdgeDirection } from '../stores/captureStore';
 import { useSelectionStore } from '../stores/selectionStore';
 import { selectMostRecentlyActiveNodeId } from '../stores/recentlyActiveNode';
 import { useWsStore } from '../ws/wsStore';
-import { selectNodeWordingById } from '../graph/selectors';
+import { selectAnnotationContentById, selectNodeWordingById } from '../graph/selectors';
 import { attachCaptureKeymap, type CaptureKeymapHandlers } from './captureKeymap';
 
 /**
@@ -120,10 +120,13 @@ export function CaptureTargetChip(): ReactElement {
   const { id: sessionId = '' } = useParams<{ id: string }>();
 
   const stagedTargetId = useCaptureStore((s) => s.targetEntityId);
+  const stagedTargetKind = useCaptureStore((s) => s.targetEntityKind);
   const setTargetEntityId = useCaptureStore((s) => s.setTargetEntityId);
+  const setTargetEntity = useCaptureStore((s) => s.setTargetEntity);
   const setEdgeRole = useCaptureStore((s) => s.setEdgeRole);
   const edgeDirection = useCaptureStore((s) => s.edgeDirection);
   const setEdgeDirection = useCaptureStore((s) => s.setEdgeDirection);
+  const selectedEntity = useSelectionStore((s) => s.selected);
   const recentlyActiveNodeId = useSelectionStore(selectMostRecentlyActiveNodeId);
   const events = useWsStore((s) => s.sessionState[sessionId]?.events ?? EMPTY_EVENTS);
 
@@ -209,11 +212,53 @@ export function CaptureTargetChip(): ReactElement {
     // (× button / Esc) explicitly clears the slice.
   }, [recentlyActiveNodeId, stagedTargetId, setTargetEntityId]);
 
+  // Tracks the last annotation id this component staged via the
+  // selection-bridge effect below. Mirrors `lastAutoStagedRef` for the
+  // node-side auto-suggest: lets the clear gesture (× button / Esc)
+  // distinguish "the moderator just cleared this annotation, stay
+  // cleared" from "the moderator selected a different annotation after
+  // clearing, re-engage."
+  const lastAnnotationStagedRef = useRef<string | null>(null);
+
+  // Annotation-staging bridge (Decision §4 of
+  // `mod_propose_annotation_endpoint_gestures.md`). When the
+  // moderator's selection lands on an annotation node, stage it as
+  // the capture target with `kind: 'annotation'`. Auto-suggest stays
+  // node-scoped (Decision §5) — this is the ONLY path that writes
+  // `targetEntityKind: 'annotation'`. The deliberate click counts
+  // as a re-engage gesture against any prior clear when the
+  // selection-annotation id differs from the last-staged annotation
+  // id, mirroring Case 0 of the auto-stage effect above (a fresh
+  // selection re-engages; staying on the just-cleared entity does
+  // not).
+  useEffect(() => {
+    if (selectedEntity === null) return;
+    if (selectedEntity.kind !== 'annotation') return;
+    // Respect a deliberate clear gesture: stay cleared unless the
+    // moderator's selection has moved to a different annotation id.
+    if (userHasClearedRef.current) {
+      if (selectedEntity.id === lastAnnotationStagedRef.current) return;
+      userHasClearedRef.current = false;
+    }
+    // Idempotent guard — don't re-fire when the slice already matches.
+    if (stagedTargetId === selectedEntity.id && stagedTargetKind === 'annotation') return;
+    setTargetEntity('annotation', selectedEntity.id);
+    lastAnnotationStagedRef.current = selectedEntity.id;
+  }, [selectedEntity, stagedTargetId, stagedTargetKind, setTargetEntity]);
+
   // Render-side derivation. Resolve the staged target's display label
-  // from the events log; fall back to the raw id when no `node-created`
-  // event has been seen for it yet.
+  // from the events log; fall back to the raw id when the kind-
+  // appropriate selector returns null. Per Decision §7 of
+  // `mod_propose_annotation_endpoint_gestures.md`, annotation-staged
+  // targets resolve through `selectAnnotationContentById` (returns the
+  // annotation's `content` body) — moderators distinguish one
+  // annotation from another by content more than by kind.
   const targetWording =
-    stagedTargetId === null ? null : selectNodeWordingById(events, stagedTargetId);
+    stagedTargetId === null
+      ? null
+      : stagedTargetKind === 'annotation'
+        ? selectAnnotationContentById(events, stagedTargetId)
+        : selectNodeWordingById(events, stagedTargetId);
   const targetLabel =
     stagedTargetId === null
       ? ''
@@ -234,6 +279,7 @@ export function CaptureTargetChip(): ReactElement {
     return (
       <span
         data-testid="capture-target-chip"
+        data-target-kind={stagedTargetKind}
         aria-label={t('moderator.captureTargetChip.ariaLabel')}
         className={`${CHIP_BASE_CLASSES} ${CHIP_EMPTY_CLASSES}`}
       >
@@ -247,6 +293,7 @@ export function CaptureTargetChip(): ReactElement {
   return (
     <span
       data-testid="capture-target-chip"
+      data-target-kind={stagedTargetKind}
       aria-label={t('moderator.captureTargetChip.ariaLabel')}
       className={`${CHIP_BASE_CLASSES} ${CHIP_FILLED_CLASSES}`}
     >

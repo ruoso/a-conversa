@@ -53,6 +53,7 @@ import {
   projectAnnotationHostMidpointNodes,
   projectAnnotationNodes,
   projectPendingAxiomMarks,
+  selectAnnotationContentById,
   selectAnnotations,
   selectEdgesForSession,
   selectNodeWordingById,
@@ -1252,6 +1253,104 @@ describe('selectNodeWordingById', () => {
       },
     ];
     expect(selectNodeWordingById(events, 'n-dup')).toBe('second wording');
+  });
+});
+
+// Refinement: tasks/refinements/moderator-ui/mod_propose_annotation_endpoint_gestures.md
+//
+// `selectAnnotationContentById` mirrors `selectNodeWordingById`'s
+// shape for annotations — used by the `<CaptureTargetChip>` when the
+// staged target is an annotation (Decision §7: the chip shows the
+// annotation's `content` body, not its kind).
+describe('selectAnnotationContentById', () => {
+  it('returns the content for a matching annotation-created event', () => {
+    const events: Event[] = [
+      {
+        id: '00000000-0000-4000-8000-000000000301',
+        sessionId: SESSION,
+        sequence: 1,
+        kind: 'annotation-created',
+        actor: ACTOR,
+        payload: {
+          annotation_id: 'a-target',
+          kind: 'note',
+          content: 'a thoughtful annotation body',
+          target_node_id: null,
+          target_edge_id: null,
+          created_by: ACTOR,
+          created_at: '2026-05-11T00:00:00.000Z',
+        },
+        createdAt: '2026-05-11T00:00:00.000Z',
+      },
+    ];
+    expect(selectAnnotationContentById(events, 'a-target')).toBe('a thoughtful annotation body');
+  });
+
+  it('returns null when no matching annotation-created event exists', () => {
+    const events: Event[] = [
+      {
+        id: '00000000-0000-4000-8000-000000000302',
+        sessionId: SESSION,
+        sequence: 1,
+        kind: 'annotation-created',
+        actor: ACTOR,
+        payload: {
+          annotation_id: 'a-other',
+          kind: 'note',
+          content: 'irrelevant content',
+          target_node_id: null,
+          target_edge_id: null,
+          created_by: ACTOR,
+          created_at: '2026-05-11T00:00:00.000Z',
+        },
+        createdAt: '2026-05-11T00:00:00.000Z',
+      },
+    ];
+    expect(selectAnnotationContentById(events, 'a-missing')).toBeNull();
+  });
+
+  it('returns null on an empty event log', () => {
+    expect(selectAnnotationContentById([], 'a-anything')).toBeNull();
+  });
+
+  it('returns the latest content when multiple annotation-created events exist for the same id (last-write-wins)', () => {
+    const events: Event[] = [
+      {
+        id: '00000000-0000-4000-8000-000000000303',
+        sessionId: SESSION,
+        sequence: 1,
+        kind: 'annotation-created',
+        actor: ACTOR,
+        payload: {
+          annotation_id: 'a-dup',
+          kind: 'note',
+          content: 'first content',
+          target_node_id: null,
+          target_edge_id: null,
+          created_by: ACTOR,
+          created_at: '2026-05-11T00:00:00.000Z',
+        },
+        createdAt: '2026-05-11T00:00:00.000Z',
+      },
+      {
+        id: '00000000-0000-4000-8000-000000000304',
+        sessionId: SESSION,
+        sequence: 2,
+        kind: 'annotation-created',
+        actor: ACTOR,
+        payload: {
+          annotation_id: 'a-dup',
+          kind: 'note',
+          content: 'second content',
+          target_node_id: null,
+          target_edge_id: null,
+          created_by: ACTOR,
+          created_at: '2026-05-11T00:00:00.000Z',
+        },
+        createdAt: '2026-05-11T00:00:00.000Z',
+      },
+    ];
+    expect(selectAnnotationContentById(events, 'a-dup')).toBe('second content');
   });
 });
 
