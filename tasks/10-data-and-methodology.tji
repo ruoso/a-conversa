@@ -531,9 +531,10 @@ task data_and_methodology "Data and methodology" {
 
   task replay_primitive "Render-at-log-position primitive" {
     depends !projection
-    task project_at_position "Project the graph state at any event-log position" {
+  task project_at_position "Project the graph state at any event-log position" {
       effort 2d
       allocate team
+      complete 100
     }
     task position_navigation "Move position forward / backward through the log" {
       effort 1d

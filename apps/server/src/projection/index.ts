@@ -4,6 +4,7 @@
 //   - tasks/refinements/data-and-methodology/projection_data_structure.md
 //   - tasks/refinements/data-and-methodology/project_from_log.md
 //   - tasks/refinements/data-and-methodology/project_incrementally.md
+//   - tasks/refinements/data-and-methodology/project_at_position.md
 //   - tasks/refinements/data-and-methodology/per_facet_status_derivation.md
 //   - tasks/refinements/data-and-methodology/active_firing_computation.md
 //   - tasks/refinements/data-and-methodology/projection_caching.md
@@ -55,6 +56,7 @@ export type {
   VoteRecordedChange,
 } from './types.js';
 export { applyEvent, OutOfOrderEventError, projectFromLog, ReplayError } from './replay.js';
+export { projectAtPosition, ReplayPositionError } from './at-position.js';
 export { applyEventIncremental } from './incremental.js';
 export {
   deriveFacetStatus,

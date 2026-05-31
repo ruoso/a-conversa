@@ -14,7 +14,7 @@
 // **DB-row → Event-envelope field mapping.** `session_events` uses
 // snake_case column names; the `EventEnvelope` type
 // (packages/shared-types/src/events.ts) uses camelCase property
-// names. The `rowToEventEnvelope` helper below performs the
+// names. `tests/behavior/support/event-rows.ts` performs the
 // mapping explicitly:
 //   id          (UUID)         -> id          (string)
 //   session_id  (UUID)         -> sessionId   (string)
@@ -41,6 +41,14 @@ import { Given, Then, When } from '@cucumber/cucumber';
 import { strict as assert } from 'node:assert';
 import type { AConversaWorld, QueryResult } from '../support/world.js';
 import { loadFixture } from '../../../packages/test-fixtures/src/loader.js';
+import {
+  evId,
+  insertEventRow,
+  rowToEnvelopeShape,
+  rowToValidatedEvent,
+  selectEvents,
+  type SessionEventRow,
+} from '../support/event-rows.js';
 // Relative-path imports for shared-types and the projection module —
 // matches the existing pattern in tests/behavior/steps/fixtures.steps.ts
 // (which imports the test-fixtures loader by relative path rather than
@@ -91,14 +99,6 @@ const PROPOSAL_META_MOVE_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3';
 
 const SNAPSHOT_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
 
-// Event-id helper. The dispatcher derives `pendingProposal` keys
-// from `event.id`, so we need stable ids for proposal events
-// referenced by later vote/commit events.
-function evId(n: number): string {
-  const hex = n.toString(16).padStart(12, '0');
-  return `00000000-0000-4000-8000-${hex}`;
-}
-
 // Stable timestamps. The replay dispatcher reads `event.createdAt`
 // for snapshot records; pin a fixed ISO-8601 string so assertions
 // are deterministic.
@@ -107,67 +107,6 @@ const TS_BASE = '2026-05-10T12:00:00.000Z';
 function tsAt(offsetSeconds: number): string {
   const base = new Date(TS_BASE).getTime();
   return new Date(base + offsetSeconds * 1000).toISOString();
-}
-
-// ---------------------------------------------------------------
-// DB-row mapping. The raw row shape returned by pglite's `query`.
-// ---------------------------------------------------------------
-
-interface SessionEventRow {
-  id: string;
-  session_id: string;
-  // BIGINT — pglite typically returns as `string`; we coerce.
-  sequence: string | number;
-  kind: string;
-  actor: string | null;
-  // JSONB — pglite parses to a JS value (object/array/primitive).
-  payload: unknown;
-  // TIMESTAMPTZ — pglite returns as a JS Date.
-  created_at: Date | string;
-}
-
-// Map a `session_events` row to the unvalidated envelope shape the
-// `validateEvent` parser expects (camelCased keys; sequence as
-// number; createdAt as ISO-8601 string). Caller decides whether to
-// run `validateEvent` on the result.
-function rowToEnvelopeShape(row: SessionEventRow): {
-  id: string;
-  sessionId: string;
-  sequence: number;
-  kind: string;
-  actor: string | null;
-  payload: unknown;
-  createdAt: string;
-} {
-  const createdAt =
-    row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at);
-  return {
-    id: row.id,
-    sessionId: row.session_id,
-    // BIGINT coercion. JS number is safe up to 2^53 — the
-    // documented per-session-sequence ceiling.
-    sequence: Number(row.sequence),
-    kind: row.kind,
-    actor: row.actor,
-    payload: row.payload,
-    createdAt,
-  };
-}
-
-async function selectEvents(world: AConversaWorld, sessionId: string): Promise<SessionEventRow[]> {
-  const res = (await world.db.query(
-    `SELECT id, session_id, sequence, kind, actor, payload, created_at
-     FROM session_events
-     WHERE session_id = $1
-     ORDER BY sequence ASC`,
-    [sessionId],
-  )) as QueryResult<SessionEventRow>;
-  return res.rows;
-}
-
-// Validated row → typed Event. Used by every scenario in this file.
-function rowToValidatedEvent(row: SessionEventRow): Event {
-  return validateEvent(rowToEnvelopeShape(row));
 }
 
 // ---------------------------------------------------------------
@@ -199,33 +138,6 @@ When(
 // shared by every richer scenario in the file.
 // ---------------------------------------------------------------
 
-async function insertEventRow(
-  world: AConversaWorld,
-  args: {
-    id: string;
-    sequence: number;
-    kind: string;
-    actor: string | null;
-    payload: Record<string, unknown>;
-    createdAt: string;
-  },
-): Promise<void> {
-  await world.db.query(
-    `INSERT INTO session_events
-       (id, session_id, sequence, kind, actor, payload, created_at)
-     VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)`,
-    [
-      args.id,
-      SEEDED_SESSION_ID,
-      args.sequence,
-      args.kind,
-      args.actor,
-      JSON.stringify(args.payload),
-      args.createdAt,
-    ],
-  );
-}
-
 Given(
   'a seeded session with three participants in session_events',
   async function (this: AConversaWorld) {
@@ -248,7 +160,7 @@ Given(
     // session-created + three participant-joined. Payloads conform
     // to the tightened Zod schemas (session_lifecycle_events) so
     // these rows DO round-trip through validateEvent cleanly.
-    await insertEventRow(this, {
+    await insertEventRow(this, SEEDED_SESSION_ID, {
       id: evId(1),
       sequence: 1,
       kind: 'session-created',
@@ -261,7 +173,7 @@ Given(
       },
       createdAt: tsAt(0),
     });
-    await insertEventRow(this, {
+    await insertEventRow(this, SEEDED_SESSION_ID, {
       id: evId(2),
       sequence: 2,
       kind: 'participant-joined',
@@ -274,7 +186,7 @@ Given(
       },
       createdAt: tsAt(1),
     });
-    await insertEventRow(this, {
+    await insertEventRow(this, SEEDED_SESSION_ID, {
       id: evId(3),
       sequence: 3,
       kind: 'participant-joined',
@@ -287,7 +199,7 @@ Given(
       },
       createdAt: tsAt(2),
     });
-    await insertEventRow(this, {
+    await insertEventRow(this, SEEDED_SESSION_ID, {
       id: evId(4),
       sequence: 4,
       kind: 'participant-joined',
@@ -319,7 +231,7 @@ function nextSeq(world: AConversaWorld): number {
 
 Given('a node-created event for the seeded session', async function (this: AConversaWorld) {
   const seq = nextSeq(this);
-  await insertEventRow(this, {
+  await insertEventRow(this, SEEDED_SESSION_ID, {
     id: evId(seq * 10),
     sequence: seq,
     kind: 'node-created',
@@ -336,7 +248,7 @@ Given('a node-created event for the seeded session', async function (this: AConv
 
 Given('an entity-included event for that node', async function (this: AConversaWorld) {
   const seq = nextSeq(this);
-  await insertEventRow(this, {
+  await insertEventRow(this, SEEDED_SESSION_ID, {
     id: evId(seq * 10),
     sequence: seq,
     kind: 'entity-included',
@@ -355,7 +267,7 @@ Given(
   'a classify-node proposal event for that node with classification {string}',
   async function (this: AConversaWorld, classification: string) {
     const seq = nextSeq(this);
-    await insertEventRow(this, {
+    await insertEventRow(this, SEEDED_SESSION_ID, {
       id: PROPOSAL_CLASSIFY_ID,
       sequence: seq,
       kind: 'proposal',
@@ -375,7 +287,7 @@ Given(
 Given('three agree votes on that proposal', async function (this: AConversaWorld) {
   for (const voter of [HOST_ID, DEBATER_A_ID, DEBATER_B_ID]) {
     const seq = nextSeq(this);
-    await insertEventRow(this, {
+    await insertEventRow(this, SEEDED_SESSION_ID, {
       id: evId(seq * 10),
       sequence: seq,
       kind: 'vote',
@@ -394,7 +306,7 @@ Given('three agree votes on that proposal', async function (this: AConversaWorld
 
 Given('a commit event for that proposal', async function (this: AConversaWorld) {
   const seq = nextSeq(this);
-  await insertEventRow(this, {
+  await insertEventRow(this, SEEDED_SESSION_ID, {
     id: evId(seq * 10),
     sequence: seq,
     kind: 'commit',
@@ -426,7 +338,7 @@ Given(
     const nodeId = NAMED_NODES[name];
     assert.ok(nodeId, `unknown named node "${name}"`);
     const seq = nextSeq(this);
-    await insertEventRow(this, {
+    await insertEventRow(this, SEEDED_SESSION_ID, {
       id: evId(seq * 10),
       sequence: seq,
       kind: 'node-created',
@@ -448,7 +360,7 @@ Given(
     const parentId = NAMED_NODES[parentName];
     assert.ok(parentId, `unknown named node "${parentName}"`);
     const seq = nextSeq(this);
-    await insertEventRow(this, {
+    await insertEventRow(this, SEEDED_SESSION_ID, {
       id: PROPOSAL_DECOMPOSE_ID,
       sequence: seq,
       kind: 'proposal',
@@ -478,7 +390,7 @@ Given(
 
 Given('a commit event for that decompose proposal', async function (this: AConversaWorld) {
   const seq = nextSeq(this);
-  await insertEventRow(this, {
+  await insertEventRow(this, SEEDED_SESSION_ID, {
     id: evId(seq * 10),
     sequence: seq,
     kind: 'commit',
@@ -501,7 +413,7 @@ Given(
   'a snapshot-created event with label {string} at log position {int}',
   async function (this: AConversaWorld, label: string, logPosition: number) {
     const seq = nextSeq(this);
-    await insertEventRow(this, {
+    await insertEventRow(this, SEEDED_SESSION_ID, {
       id: evId(seq * 10),
       sequence: seq,
       kind: 'snapshot-created',
@@ -541,7 +453,7 @@ Given(
     this.scratch['probeSequence'] = seq;
     this.scratch['probeCreatedAt'] = tsAt(seq);
     this.scratch['probePayload'] = META_MOVE_PROBE_PAYLOAD;
-    await insertEventRow(this, {
+    await insertEventRow(this, SEEDED_SESSION_ID, {
       id: PROPOSAL_META_MOVE_ID,
       sequence: seq,
       kind: 'proposal',
@@ -743,7 +655,7 @@ const EDGE_FROMLOG_ID = '77777777-7777-4777-8777-77777777700f';
 
 Given('an annotation-created event targeting that node', async function (this: AConversaWorld) {
   const seq = nextSeq(this);
-  await insertEventRow(this, {
+  await insertEventRow(this, SEEDED_SESSION_ID, {
     id: evId(seq * 10),
     sequence: seq,
     kind: 'annotation-created',
@@ -765,7 +677,7 @@ Given(
   'an edge-created event from the node to the annotation',
   async function (this: AConversaWorld) {
     const seq = nextSeq(this);
-    await insertEventRow(this, {
+    await insertEventRow(this, SEEDED_SESSION_ID, {
       id: evId(seq * 10),
       sequence: seq,
       kind: 'edge-created',
