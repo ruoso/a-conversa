@@ -25,6 +25,10 @@ import {
 } from '../support/event-rows.js';
 import { type Event, type EventKind } from '../../../packages/shared-types/src/events.js';
 import {
+  appendSessionEvent,
+  type SessionEventAppendClient,
+} from '../../../apps/server/src/events/append.js';
+import {
   applyEventIncremental,
   createEmptyProjection,
   OutOfOrderEventError,
@@ -32,6 +36,16 @@ import {
   type Projection,
   type ProjectionChange,
 } from '../../../apps/server/src/projection/index.js';
+
+// Bridge the loader's wider `LoadFixtureClient` to
+// `appendSessionEvent`'s narrower `SessionEventAppendClient`. Both
+// shapes are satisfied by the underlying pglite handle.
+async function appendForFixture(
+  client: { query: (text: string, params?: ReadonlyArray<unknown>) => Promise<unknown> },
+  event: Event,
+): Promise<void> {
+  await appendSessionEvent(client as unknown as SessionEventAppendClient, event);
+}
 
 // ---------------------------------------------------------------
 // Stable UUIDs. Distinct from projection-from-log.steps.ts so
@@ -86,7 +100,7 @@ function envelopeToEvent(shape: EnvelopeShape): Event {
 Given(
   'the empty fixture is loaded and the projection has caught up',
   async function (this: AConversaWorld) {
-    await loadFixture('empty', this.client);
+    await loadFixture('empty', this.client, { appendEvent: appendForFixture });
     const rows = await selectEvents(this, EMPTY_FIXTURE_SESSION_ID);
     const projection = createEmptyProjection(EMPTY_FIXTURE_SESSION_ID);
     for (const row of rows) {

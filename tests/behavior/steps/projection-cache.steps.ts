@@ -22,10 +22,24 @@ import {
 } from '../support/event-rows.js';
 import { type Event, type EventKind } from '../../../packages/shared-types/src/events.js';
 import {
+  appendSessionEvent,
+  type SessionEventAppendClient,
+} from '../../../apps/server/src/events/append.js';
+import {
   ProjectionCache,
   type EventLoader,
   type Projection,
 } from '../../../apps/server/src/projection/index.js';
+
+// Bridge the loader's wider `LoadFixtureClient` to
+// `appendSessionEvent`'s narrower `SessionEventAppendClient`. Both
+// shapes are satisfied by the underlying pglite handle.
+async function appendForFixture(
+  client: { query: (text: string, params?: ReadonlyArray<unknown>) => Promise<unknown> },
+  event: Event,
+): Promise<void> {
+  await appendSessionEvent(client as unknown as SessionEventAppendClient, event);
+}
 
 const EMPTY_FIXTURE_SESSION_ID = '55555555-5555-4555-8555-555555555555';
 const NEW_PARTICIPANT_ID = '44444444-4444-4444-8444-444444444444';
@@ -69,7 +83,7 @@ function getCacheScratch(world: AConversaWorld): CacheScratch {
 }
 
 Given('the empty fixture is loaded for cache tests', async function (this: AConversaWorld) {
-  await loadFixture('empty', this.client);
+  await loadFixture('empty', this.client, { appendEvent: appendForFixture });
 });
 
 When('I build a pglite-driven event loader and a ProjectionCache', function (this: AConversaWorld) {

@@ -50,6 +50,11 @@ async function readWalkthroughEvents(): Promise<RawFixtureEvent[]> {
   return JSON.parse(text) as RawFixtureEvent[];
 }
 
+async function readEmptyEvents(): Promise<RawFixtureEvent[]> {
+  const text = await readFile(join(FIXTURES_DIR, 'empty', 'events.json'), 'utf8');
+  return JSON.parse(text) as RawFixtureEvent[];
+}
+
 function rowToEnvelope(row: RawFixtureEvent): {
   id: string;
   sessionId: string;
@@ -113,6 +118,24 @@ describe('walkthrough fixture event-log schema cover', () => {
     const payload = snapshots[0]!.payload as { label: string; log_position: number };
     expect(payload.label).toBe('Segment 1 close');
     expect(payload.log_position).toBeGreaterThan(0);
+  });
+});
+
+describe('empty fixture event-log schema cover', () => {
+  it('every event validates against the per-kind Zod schema', async () => {
+    const events = await readEmptyEvents();
+    expect(events.length).toBe(4);
+    for (const row of events) {
+      try {
+        validateEvent(rowToEnvelope(row));
+      } catch (cause) {
+        const reason = cause instanceof Error ? cause.message : String(cause);
+        throw new Error(
+          `empty event seq=${row.sequence} kind=${row.kind} failed validateEvent: ${reason}`,
+          { cause },
+        );
+      }
+    }
   });
 });
 

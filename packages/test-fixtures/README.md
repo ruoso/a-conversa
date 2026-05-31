@@ -1,8 +1,9 @@
 # @a-conversa/test-fixtures
 
-Versioned JSON event-log fixtures for tests, plus a `loadFixture(name, db)`
-helper that resets the relevant tables and replays a fixture into a clean
-database.
+Versioned JSON event-log fixtures for tests, plus a
+`loadFixture(name, db, options)` helper that resets the relevant
+tables and replays a fixture into a clean database through the
+production event-append helper.
 
 ## Why this workspace exists
 
@@ -39,34 +40,34 @@ src/
 ```ts
 import { loadFixture, listFixtures } from '@a-conversa/test-fixtures';
 import pg from 'pg';
+import { appendSessionEvent } from '@a-conversa/server/events/append';
 
 const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
 await client.connect();
-await loadFixture('empty', client);
+await loadFixture('empty', client, {
+  appendEvent: (c, event) => appendSessionEvent(c, event).then(() => undefined),
+});
 await client.end();
 ```
 
-`loadFixture(name, client)` is **idempotent**: it truncates the tables
-the fixture touches (in foreign-key dependency order) and then inserts
-the fixture's contents. Safe to call repeatedly.
+`loadFixture(name, client, options)` is **idempotent**: it truncates
+the tables the fixture touches (in foreign-key dependency order),
+inserts the users / session / participants rows, then for each event
+in the fixture runs `validateEvent` and replays through the caller-
+injected `appendEvent` helper. Production callers wire it to
+`appendSessionEvent` so the fixture and the production write path
+share one SQL surface. Safe to call repeatedly.
 
 `listFixtures()` returns the names of all bundled fixtures.
 
-## Deferred work (R23)
+## Why callback injection
 
-The settled R23 decision is that the loader should **replay through the
-application's event-append code path**, so fixtures only contain valid
-events and the same validation runs in tests as in production.
-
-That code path does not exist yet — it lives in
-`data_and_methodology.event_types.event_validation` and
-`backend.api_skeleton`. Until both land, this loader uses **raw INSERTs**
-against `session_events`, bypassing per-kind payload validation. The
-loader carries a `// TODO(R23):` comment at the relevant call site, and
-this README is the second place to find that note.
-
-When `event_validation` and `backend.api_skeleton` land, the loader is
-rewritten to drive the real append API and this section is updated.
+`@a-conversa/test-fixtures` is a leaf workspace package whose only dep
+is `@a-conversa/shared-types`. Importing `appendSessionEvent`
+directly would invert the apps → packages layering and drag the
+server's runtime transitive deps into a test-support package. The
+callback keeps the loader agnostic; callers wire the concrete helper
+(the same pattern this file already uses for the DB client).
 
 ## Fixture status
 

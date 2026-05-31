@@ -32,11 +32,10 @@
 //
 // **`validateEvent` is the type bridge.** Rows are mapped to the
 // envelope shape, then passed through `validateEvent` so the full
-// validator → projection chain runs end-to-end. The empty-fixture
-// scenario is the one exception (the bundled fixture's payloads
-// pre-date the tightened payload schemas; we skip validation there
-// and rely on the dispatcher's payload-field-tolerance, which is
-// itself documented in `replay.ts`).
+// validator → projection chain runs end-to-end. This holds for the
+// empty-fixture scenario too — the loader now validates every event
+// on the append path, so the empty fixture's payloads round-trip
+// through `validateEvent` cleanly.
 
 import { Given, Then, When } from '@cucumber/cucumber';
 import { strict as assert } from 'node:assert';
@@ -48,12 +47,22 @@ import { loadFixture } from '../../../packages/test-fixtures/src/loader.js';
 // pulling the workspace package into the test code's dependency
 // graph). The Cucumber runner loads these step files directly via
 // tsx without workspace-package resolution.
+import { type Event, validateEvent } from '../../../packages/shared-types/src/events.js';
 import {
-  type Event,
-  type EventKind,
-  validateEvent,
-} from '../../../packages/shared-types/src/events.js';
+  appendSessionEvent,
+  type SessionEventAppendClient,
+} from '../../../apps/server/src/events/append.js';
 import { type Projection, projectFromLog } from '../../../apps/server/src/projection/index.js';
+
+// Bridge the loader's wider `LoadFixtureClient` to
+// `appendSessionEvent`'s narrower `SessionEventAppendClient`. Both
+// shapes are satisfied by the underlying pglite handle.
+async function appendForFixture(
+  client: { query: (text: string, params?: ReadonlyArray<unknown>) => Promise<unknown> },
+  event: Event,
+): Promise<void> {
+  await appendSessionEvent(client as unknown as SessionEventAppendClient, event);
+}
 
 // ---------------------------------------------------------------
 // Stable UUIDs for the seeded scenarios. The bundled empty
@@ -156,18 +165,9 @@ async function selectEvents(world: AConversaWorld, sessionId: string): Promise<S
   return res.rows;
 }
 
-// Validated row → typed Event. Used by every scenario except the
-// empty-fixture one (whose payload schemas are looser than the
-// validator allows).
+// Validated row → typed Event. Used by every scenario in this file.
 function rowToValidatedEvent(row: SessionEventRow): Event {
   return validateEvent(rowToEnvelopeShape(row));
-}
-
-// Lookup the `kind` field on `EventKind` — narrows the row's
-// `kind` string to the enum. Used by the empty-fixture path which
-// builds an Event envelope by hand (bypassing validateEvent).
-function asEventKind(k: string): EventKind {
-  return k as EventKind;
 }
 
 // ---------------------------------------------------------------
@@ -177,7 +177,7 @@ function asEventKind(k: string): EventKind {
 When(
   'I load the {string} fixture for projection',
   async function (this: AConversaWorld, name: string) {
-    await loadFixture(name, this.client);
+    await loadFixture(name, this.client, { appendEvent: appendForFixture });
   },
 );
 
@@ -188,31 +188,7 @@ When(
     // fixtures/src/fixtures/empty/session.json).
     const sessionId = SEEDED_SESSION_ID;
     const rows = await selectEvents(this, sessionId);
-
-    // Build Event envelopes WITHOUT running validateEvent. The
-    // bundled empty fixture's payloads pre-date the tightened
-    // payload Zod schemas (e.g. session-created omits the now-
-    // required `created_at`; participant-joined carries an extra
-    // `participant_id` that the schema strips). The replay
-    // dispatcher reads only the payload fields it needs, so the
-    // projection populates correctly even though `validateEvent`
-    // would reject. We document this here rather than rewrite the
-    // fixture — the fixture's payload schema is owned by a
-    // separate task; the replay layer's contract is that events
-    // arrive already-validated, and downstream tightening of the
-    // fixture is its own work.
-    const events: Event[] = rows.map((row) => {
-      const shape = rowToEnvelopeShape(row);
-      return {
-        id: shape.id,
-        sessionId: shape.sessionId,
-        sequence: shape.sequence,
-        kind: asEventKind(shape.kind),
-        actor: shape.actor,
-        payload: shape.payload,
-        createdAt: shape.createdAt,
-      } as Event;
-    });
+    const events: Event[] = rows.map(rowToValidatedEvent);
     this.scratch['projection'] = projectFromLog(events, sessionId);
   },
 );

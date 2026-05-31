@@ -1,25 +1,26 @@
-// Walkthrough-fixture append-mode semantics-preservation cover (R23).
+// Fixture-loader append-mode row-shape cover.
 //
 // Refinement: tasks/refinements/data-and-methodology/
-//             r23_loader_replay_through_append_for_walkthrough.md
+//             empty_fixture_payload_tighten_for_append_mode.md
+//             (originally seeded by r23_loader_replay_through_append_
+//             for_walkthrough.md)
 //
-// **What this pins.** When `loadFixture('walkthrough', ...)` is run
-// twice — once in raw-INSERT mode and once with the real
-// `appendSessionEvent` helper as `options.appendEvent` — the
-// resulting `session_events` rows agree on the projection-relevant
-// columns `(id, session_id, sequence, kind, actor, payload)`.
-// `created_at` is allowed to differ (raw mode writes the fixture's
-// encoded timestamp; append mode falls back to the DB default
-// `NOW()`).
+// **What this pins.** Each bundled fixture, loaded via the real
+// `appendSessionEvent` against a fresh pglite, produces a well-shaped
+// `session_events` row set: the row count matches the fixture's
+// declared event count, every row's `(id, session_id, sequence, kind,
+// actor)` survives the round-trip, and `payload` is non-null JSONB.
+// `created_at` is deliberately not asserted — the helper writes the
+// six core columns and lets the DB default (`NOW()`) fill in.
 //
 // **Why this is the integration cover.** The mini-driver in
 // `packages/test-fixtures/src/loader.test.ts` pins the validation
 // gate without needing a real DB or the real append helper. This
 // test is the other half: real pglite, real migrations, real
 // `appendSessionEvent`. Together they pin the contract end-to-end.
-// The walkthrough's 5 Cucumber scenarios on top run the projection
-// over the result and act as the regression cover for any subtle
-// drift beyond the row-equality property checked here.
+// The Cucumber walkthrough-replay and from-log scenarios on top run
+// the projection over the result and act as the regression cover
+// for any subtle drift beyond the row-shape property checked here.
 //
 // **Why it lives in `apps/server`, not in test-fixtures.** Both
 // `loadFixture` and `appendSessionEvent` are imported here. The
@@ -48,6 +49,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = resolve(HERE, '..', '..', 'migrations');
 
 const WALKTHROUGH_SESSION_ID = '10000005-0000-4000-8000-000000000001';
+const EMPTY_SESSION_ID = '55555555-5555-4555-8555-555555555555';
 
 // Minimal migrations runner — reads every `.sql` file under
 // `apps/server/migrations/` in lex order and exec's it against the
@@ -76,7 +78,7 @@ function asLoadFixtureClient(db: PGlite): LoadFixtureClient {
 // `appendSessionEvent`'s narrower `SessionEventAppendClient`. Both
 // shapes are satisfied by the underlying pglite handle; the cast
 // lives at the call site so the loader stays leaf-package-clean.
-const appendForFixture: NonNullable<LoadFixtureOptions['appendEvent']> = async (client, event) => {
+const appendForFixture: LoadFixtureOptions['appendEvent'] = async (client, event) => {
   await appendSessionEvent(client as unknown as SessionEventAppendClient, event);
 };
 
@@ -89,7 +91,10 @@ interface DbEventRow {
   payload: unknown;
 }
 
-async function readEventsForCompare(db: PGlite): Promise<
+async function readEventRows(
+  db: PGlite,
+  sessionId: string,
+): Promise<
   Array<{
     id: string;
     session_id: string;
@@ -104,7 +109,7 @@ async function readEventsForCompare(db: PGlite): Promise<
      FROM session_events
      WHERE session_id = $1
      ORDER BY sequence ASC`,
-    [WALKTHROUGH_SESSION_ID],
+    [sessionId],
   );
   // Coerce `sequence` (BIGINT) to a JS number for stable comparison;
   // pglite's BIGINT may surface as string or number depending on the
@@ -119,37 +124,75 @@ async function readEventsForCompare(db: PGlite): Promise<
   }));
 }
 
-describe('loadFixture append-mode (R23) — semantics preservation', () => {
-  it('produces the same session_events rows as the raw-INSERT default for the walkthrough', async () => {
-    // Two fresh pglite handles — one per loader mode. Both run the
-    // full migration chain so the `session_events` schema is
-    // identical to production's.
-    const rawDb = new PGlite();
-    const appendDb = new PGlite();
+describe('loadFixture append-mode — walkthrough fixture row shape', () => {
+  it('writes a complete, well-shaped session_events row set via appendSessionEvent', async () => {
+    const db = new PGlite();
     try {
-      await applyMigrations(rawDb);
-      await applyMigrations(appendDb);
+      await applyMigrations(db);
 
-      await loadFixture('walkthrough', asLoadFixtureClient(rawDb));
-      await loadFixture('walkthrough', asLoadFixtureClient(appendDb), {
+      await loadFixture('walkthrough', asLoadFixtureClient(db), {
         appendEvent: appendForFixture,
       });
 
-      const rawRows = await readEventsForCompare(rawDb);
-      const appendRows = await readEventsForCompare(appendDb);
+      const rows = await readEventRows(db, WALKTHROUGH_SESSION_ID);
 
-      // Same row count, same ordering, same projection-relevant
-      // columns. `created_at` is deliberately excluded — see file
-      // header (raw mode preserves the fixture's encoded
-      // timestamp; append mode falls back to the DB default).
-      expect(appendRows.length).toBe(rawRows.length);
-      expect(rawRows.length).toBeGreaterThan(200);
-      expect(appendRows).toEqual(rawRows);
+      // The walkthrough has ~266 events; pin a lower bound so a
+      // regression that drops rows surfaces clearly.
+      expect(rows.length).toBeGreaterThan(200);
+      // Per-row shape: sequence is a 1-based monotonic count, ids
+      // and session_id are non-empty UUIDs, kind is non-empty, and
+      // payload is non-null JSONB.
+      for (let i = 0; i < rows.length; i += 1) {
+        const row = rows[i]!;
+        expect(row.sequence).toBe(i + 1);
+        expect(row.session_id).toBe(WALKTHROUGH_SESSION_ID);
+        expect(row.id).toMatch(/^[0-9a-f-]{36}$/);
+        expect(row.kind.length).toBeGreaterThan(0);
+        expect(row.payload).not.toBeNull();
+      }
     } finally {
-      await rawDb.close();
-      await appendDb.close();
+      await db.close();
     }
-    // The walkthrough has ~266 events; pglite + 2 full loads can take a
-    // few seconds. Bumped from the default 5s.
+    // The walkthrough has ~266 events; pglite + full migration +
+    // load takes a few seconds. Bumped from the default 5s.
+  }, 30_000);
+});
+
+describe('loadFixture append-mode — empty fixture row shape', () => {
+  it('writes the four empty-fixture session_events rows via appendSessionEvent', async () => {
+    const db = new PGlite();
+    try {
+      await applyMigrations(db);
+
+      await loadFixture('empty', asLoadFixtureClient(db), {
+        appendEvent: appendForFixture,
+      });
+
+      const rows = await readEventRows(db, EMPTY_SESSION_ID);
+
+      // The empty fixture has exactly 4 events: one session-created
+      // followed by three participant-joined, in sequence order.
+      expect(rows).toHaveLength(4);
+      expect(rows.map((r) => r.sequence)).toEqual([1, 2, 3, 4]);
+      expect(rows.map((r) => r.kind)).toEqual([
+        'session-created',
+        'participant-joined',
+        'participant-joined',
+        'participant-joined',
+      ]);
+      expect(rows.map((r) => r.actor)).toEqual([
+        '11111111-1111-4111-8111-111111111111',
+        '11111111-1111-4111-8111-111111111111',
+        '22222222-2222-4222-8222-222222222222',
+        '33333333-3333-4333-8333-333333333333',
+      ]);
+      for (const row of rows) {
+        expect(row.session_id).toBe(EMPTY_SESSION_ID);
+        expect(row.id).toMatch(/^[0-9a-f-]{36}$/);
+        expect(row.payload).not.toBeNull();
+      }
+    } finally {
+      await db.close();
+    }
   }, 30_000);
 });

@@ -587,6 +587,7 @@ task data_and_methodology "Data and methodology" {
       task empty_fixture_payload_tighten_for_append_mode "Tighten empty fixture payloads and flip to append-mode" {
         effort 0.5d
         allocate team
+        complete 100
         depends !r23_loader_replay_through_append_for_walkthrough
         note -8<-
           Source of debt: r23_loader_replay_through_append_for_walkthrough (2026-05-30). The bundled

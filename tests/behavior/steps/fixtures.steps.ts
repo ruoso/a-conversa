@@ -9,13 +9,28 @@ import { Then, When } from '@cucumber/cucumber';
 import { strict as assert } from 'node:assert';
 import type { AConversaWorld, QueryResult } from '../support/world.js';
 import { loadFixture } from '../../../packages/test-fixtures/src/loader.js';
+import { type Event } from '../../../packages/shared-types/src/events.js';
+import {
+  appendSessionEvent,
+  type SessionEventAppendClient,
+} from '../../../apps/server/src/events/append.js';
+
+// Bridge the loader's wider `LoadFixtureClient` to
+// `appendSessionEvent`'s narrower `SessionEventAppendClient`. Both
+// shapes are satisfied by the underlying pglite handle.
+async function appendForFixture(
+  client: { query: (text: string, params?: ReadonlyArray<unknown>) => Promise<unknown> },
+  event: Event,
+): Promise<void> {
+  await appendSessionEvent(client as unknown as SessionEventAppendClient, event);
+}
 
 When('I load the {string} fixture', async function (this: AConversaWorld, name: string) {
-  await loadFixture(name, this.client);
+  await loadFixture(name, this.client, { appendEvent: appendForFixture });
 });
 
 When('I load the {string} fixture again', async function (this: AConversaWorld, name: string) {
-  await loadFixture(name, this.client);
+  await loadFixture(name, this.client, { appendEvent: appendForFixture });
 });
 
 Then('the session_events row count is {int}', async function (this: AConversaWorld, n: number) {
@@ -50,7 +65,7 @@ Then(
 When('I try to load a fixture named {string}', async function (this: AConversaWorld, name: string) {
   this.scratch['lastError'] = undefined;
   try {
-    await loadFixture(name, this.client);
+    await loadFixture(name, this.client, { appendEvent: appendForFixture });
   } catch (err) {
     this.scratch['lastError'] = err;
   }
