@@ -37,24 +37,10 @@ When the human resolves an item, delete its block (git history preserves it).
 
 ### 2026-05-30 — Native-speaker review of pt-BR + es-419 translations
 
-- **Source**: WBS cleanup (2026-05-30) — removed the 33 `frontend_i18n.i18n_*_native_review` leaves (a serial chain gating no milestone).
-- **Question**: every v1 string the surfaces ship has a drafted pt-BR + es-419 translation flagged `PENDING` in the `*.review.json` trackers; these need a native-speaker (+ philosophical-accuracy, for the methodology vocabulary) review pass per locale before a real show.
+- **Source**: Every new label added to the catalog needs human review
+- **Question**: every string the surfaces ship has a drafted pt-BR + es-419 translation flagged `PENDING` in the `*.review.json` trackers; these need a native-speaker (+ philosophical-accuracy, for the methodology vocabulary) review pass per locale before a real show.
 - **Why parked**: native-speaker sign-off is inherently human work — the agent can draft translations but cannot review/approve them, so it does not belong in the WBS (same reasoning as audit tasks). It was never a task for the orchestrator loop.
-- **Suggested resolution**: when the v1 surfaces are string-complete, run one review pass per locale over the `packages/i18n-catalogs` `*.review.json` trackers and sign them off. Track it here (or in an external translation-ops tracker), not as WBS leaves. The catalog/review workflow itself is `frontend_i18n.i18n_catalog_workflow` (already complete).
-
-### 2026-05-30 — Native-speaker review of endpoint-kind labels in pt-BR + es-419
-
-- **Source**: closer for `moderator_ui.mod_annotation_ui.mod_hover_popover_endpoint_kind_disambiguation`.
-- **Question**: the new endpoint-kind labels drafted for the edge-hover popover (`anotação` / `nó` for pt-BR, `anotación` / `nodo` for es-419) are short nouns — are they idiomatic and contextually accurate for a debate-methodology UI?
-- **Why parked**: native-speaker sign-off is human-only work; the agent drafted the labels per the closest equivalent nouns but cannot verify cultural/idiomatic fit. Per Decision §5 of the refinement, a native-speaker reviewer may flag a more idiomatic Portuguese or Spanish form.
-- **Suggested resolution**: have a native speaker verify the four labels (`anotação`, `nó`, `anotación`, `nodo`) in context (the popover renders them as `<uuid> (anotação)` / `<uuid> (nó)` etc.). If a more idiomatic term is preferred, update the ICU templates in `packages/i18n-catalogs/src/catalogs/{pt-BR,es-419}.json` at the `moderator.hoverPopover.edgeEndpointsReference` key.
-
-### 2026-05-31 — Native-speaker review of annotation context menu labels in pt-BR + es-419
-
-- **Source**: closer for `moderator_ui.mod_annotation_ui.mod_annotation_context_menu` (Open questions §1).
-- **Question**: the two new annotation context menu labels — `moderator.contextMenu.annotation.annotate` ("Annotate this annotation") and `moderator.contextMenu.annotation.metaDisagree` ("Disagree with this annotation") — have placeholder pt-BR and es-419 translations. Are they idiomatic and contextually accurate?
-- **Why parked**: native-speaker sign-off is human-only work; the agent drafted the strings as best-effort translations but cannot verify philosophical-accuracy fit for the debate-methodology vocabulary.
-- **Suggested resolution**: have a native speaker (with methodology familiarity) verify the two labels per locale in `packages/i18n-catalogs/src/catalogs/{pt-BR,es-419}.json` at the `moderator.contextMenu.annotation.*` keys and update if needed.
+- **Suggested resolution**: when the v1 surfaces are string-complete, run one review pass per locale over the `packages/i18n-catalogs` `*.review.json` trackers and sign them off. There is no need to add detailed parking lot items for each one, nor WBS tasks. The review will be done in a single pass at the end.
 
 ### 2026-05-31 — Should annotations be withdrawable post-commit?
 
@@ -63,13 +49,6 @@ When the human resolves an item, delete its block (git history preserves it).
 - **Why parked**: architectural decision with real implementation consequences either way; not an agent-implementable judgment call. The "Withdraw annotation" context menu item was explicitly deferred in Decision §3 pending this call.
 - **Suggested resolution**: decide whether the methodology spec intends annotations to be retractable. If yes, spec a `mod_withdraw_annotation_action` task (new proposal kind + event + projection arm + UI gesture); if no, close this item and the "Withdraw annotation" menu item stays permanently out of scope.
 
-### 2026-05-31 — Native-speaker review of capture-defeater-mode strings in pt-BR + es-419
-
-- **Source**: closer for `moderator_ui.mod_defeater_flow.mod_capture_defeater_mode`.
-- **Question**: the 4 new keys (`moderator.contextMenu.node.captureDefeater`, `moderator.captureDefeater.exit.ariaLabel`, `moderator.captureDefeater.exit.tooltip`, `moderator.captureDefeater.banner.targetWording`) have placeholder pt-BR and es-419 translations flagged PENDING in `packages/i18n-catalogs/src/catalogs/{pt-BR,es-419}.review.json`. Are the drafts idiomatic and accurate for a debate-methodology UI?
-- **Why parked**: native-speaker sign-off is human-only work; the agent drafted the translations as best-effort but cannot verify cultural/idiomatic fit or grammatical correctness when the ICU `{nodeWording}` substitution is a complete sentence with terminal punctuation (the `banner.targetWording` key).
-- **Suggested resolution**: have a native speaker verify the 4 keys per locale in `packages/i18n-catalogs/src/catalogs/{pt-BR,es-419}.json`. Special attention to `moderator.captureDefeater.banner.targetWording` — drafted as "Refutando {nodeWording}" for both pt-BR and es-419; confirm grammatical fit when `{nodeWording}` is a complete sentence. Update the catalog files and sign off the PENDING entries in `*.review.json` when satisfied.
-
 ### 2026-05-31 — Should `'meta-disagreement'` become a proper AnnotationKind variant?
 
 - **Source**: closer for `moderator_ui.mod_annotation_ui.mod_annotation_context_menu` (implementer tech-debt proposal).
@@ -77,16 +56,3 @@ When the human resolves an item, delete its block (git history preserves it).
 - **Why parked**: architectural call — whether `meta-disagreement` is a KIND (warranting its own enum variant, badge color, i18n key) or a STANCE POSTURE (correctly expressed as `annotation_kind: 'stance'` with a facet pre-set) requires a methodology owner decision. The implementer chose `'stance'` as the conservative interpretation.
 - **Suggested resolution**: if the methodology owner decides `'meta-disagreement'` is a distinct kind, create a `mod_annotation_kind_meta_disagreement` task to widen `annotationKindSchema`, add badge rendering, update catalog keys in all three locales, and change the disagree item to pre-select the new kind instead of `'stance'`.
 
-### 2026-05-31 — Native-speaker review of capture-defeater-node-creation strings in pt-BR + es-419
-
-- **Source**: closer for `moderator_ui.mod_defeater_flow.mod_defeater_node_creation`.
-- **Question**: the 4 new keys (`moderator.captureDefeater.capturePane.placeholder`, `moderator.captureDefeater.capturePane.ariaLabel`, `moderator.captureDefeater.propose.label`, `moderator.captureDefeater.propose.inFlightLabel`) have placeholder pt-BR and es-419 translations flagged PENDING in `packages/i18n-catalogs/src/catalogs/{pt-BR,es-419}.review.json`. Are the drafts idiomatic and accurate for a debate-methodology UI?
-- **Why parked**: native-speaker sign-off is human-only work; the agent drafted the translations as best-effort but cannot verify cultural/idiomatic fit or grammatical correctness, particularly for the progressive verb form in `propose.inFlightLabel` ("Capturando refutação…" / "Capturando refutación…").
-- **Suggested resolution**: have a native speaker verify the 4 keys per locale in `packages/i18n-catalogs/src/catalogs/{pt-BR,es-419}.json`. Special attention to `propose.inFlightLabel` — confirm the progressive verb form matches the cadence of existing in-flight keys (e.g., `moderator.propose.inFlightLabel`). Update the catalog files and sign off the PENDING entries in `*.review.json` when satisfied.
-
-### 2026-05-31 — Native-speaker review of rebut-edge-pre-commit strings in pt-BR + es-419
-
-- **Source**: closer for `moderator_ui.mod_defeater_flow.mod_defeater_substance_precommit`.
-- **Question**: the 4 new keys (`moderator.rebutEdgePreCommit.hint`, `moderator.rebutEdgePreCommit.valueButton.agreed`, `moderator.rebutEdgePreCommit.valueButton.disputed`, `moderator.rebutEdgePreCommit.valueButtonAriaLabel`) have placeholder pt-BR and es-419 translations flagged PENDING in `packages/i18n-catalogs/src/catalogs/{pt-BR,es-419}.review.json`. Are the drafts idiomatic and accurate for a debate-methodology UI?
-- **Why parked**: native-speaker sign-off is human-only work; the agent drafted the translations as best-effort but cannot verify cultural/idiomatic fit or grammatical correctness for the methodology-flavored "pre-commit" framing ("Pré-comprometa" / "Pre-comprométete"). Verify tone consistency with existing `moderator.captureDefeater.*` strings in the same locales.
-- **Suggested resolution**: have a native speaker verify the 4 keys per locale in `packages/i18n-catalogs/src/catalogs/{pt-BR,es-419}.json`. Special attention to the hint key — a long compound sentence with a conditional clause; confirm it reads naturally in both locales. Update the catalog files and sign off the PENDING entries in `*.review.json` when satisfied.
