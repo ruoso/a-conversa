@@ -503,6 +503,14 @@
         "inFlightLabel": "Capturando refutación…"
       }
     },
+    "rebutEdgePreCommit": {
+      "hint": "Pre-comprométete a la refutación: aceptar aquí registra que, si esta condición se sostiene, refutaría el objetivo.",
+      "valueButton": {
+        "agreed": "Pre-comprometer como aceptado",
+        "disputed": "Marcar como disputado"
+      },
+      "valueButtonAriaLabel": "{label} sustancia para esta refutación"
+    },
     "proposalFilter": {
       "textPlaceholder": "Filtrar propuestas…",
       "textAriaLabel": "Filtrar propuestas pendientes por texto",

@@ -503,6 +503,14 @@
         "inFlightLabel": "Capturing defeater…"
       }
     },
+    "rebutEdgePreCommit": {
+      "hint": "Pre-commit the retraction: agreeing here records that if this condition holds, it would defeat the target.",
+      "valueButton": {
+        "agreed": "Pre-commit as agreed",
+        "disputed": "Mark disputed"
+      },
+      "valueButtonAriaLabel": "{label} substance for this rebut edge"
+    },
     "proposalFilter": {
       "textPlaceholder": "Filter proposals…",
       "textAriaLabel": "Filter pending proposals by text",

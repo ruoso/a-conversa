@@ -327,7 +327,11 @@
     "moderator.captureDefeater.capturePane.placeholder",
     "moderator.captureDefeater.capturePane.ariaLabel",
     "moderator.captureDefeater.propose.label",
-    "moderator.captureDefeater.propose.inFlightLabel"
+    "moderator.captureDefeater.propose.inFlightLabel",
+    "moderator.rebutEdgePreCommit.hint",
+    "moderator.rebutEdgePreCommit.valueButton.agreed",
+    "moderator.rebutEdgePreCommit.valueButton.disputed",
+    "moderator.rebutEdgePreCommit.valueButtonAriaLabel"
   ],
   "signed_off": []
 }

@@ -2297,4 +2297,131 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
       DEFEATER_WORDING,
     );
   });
+
+  // Refinement: tasks/refinements/moderator-ui/mod_defeater_substance_precommit.md
+  //
+  // F6 step-4 substance-precommit e2e cover. Pins the new
+  // `<RebutEdgePreCommitAffordance>` wire path: a seeded `edge-created`
+  // event with `role: 'rebuts'` flows through the projection; the edge
+  // renders with its localized role label ("Rebuts") on the canvas.
+  // The substance affordance is GATED on shape facet settling
+  // (`agreed` / `committed`) AND substance status
+  // `'awaiting-proposal'` (per `<StatementEdge>` L160's
+  // `showSubstanceAffordance` predicate). Because `seedWsStore` does
+  // not currently seed `facet-vote` / `facet-committed` events
+  // (only structural `node-created` / `edge-created`), the seeded
+  // rebut edge surfaces with empty facetStatuses — neither affordance
+  // mounts in this baseline. This pins the gate behavior.
+  //
+  // **Why the full F6 step-4 happy-path is deferred.** The refinement
+  // (Acceptance criteria §5) scopes a full chain — capture defeater →
+  // vote+commit on shape → rebut affordance appears → click "Pre-commit
+  // as agreed" → vote+commit on substance → end-state assertions.
+  // Reaching that requires either: (a) `seedWsStore` extended to
+  // synthesize the facet-vote + facet-committed events the projection
+  // consumes to derive shape='committed' + substance='awaiting-proposal';
+  // or (b) running a participant-tablet alongside the moderator UI to
+  // drive real votes through the WS protocol (the
+  // `participant_ui.part_pw_concurrent_with_moderator` pattern). Both
+  // are out of scope here; the engine-side end-state is already pinned
+  // by Cucumber (`tests/behavior/methodology/defeater-capture.feature`
+  // scenarios 1 + 2) and the propose-handler arm by the Vitest pin
+  // (`proposeDefeaterPreCommit.test.ts`). The unit-level wire pin for
+  // the new affordance — render, click-fires-propose, in-flight,
+  // wire-error — is in `RebutEdgePreCommitAffordance.test.tsx`. The
+  // mounting switch is pinned in `StatementEdge.test.tsx`. The deferred
+  // full-chain Playwright cover is registered as the follow-up
+  // `playwright_f6_substance_precommit_full_chain`.
+  test('alice: seeded rebut edge (Y→X) renders with the Rebuts label; the rebut-pre-commit affordance is gated absent without committed shape facet', async ({
+    page,
+  }) => {
+    await loginAs(page, { username: TEST_USERNAME });
+    await page.goto('/m/sessions/new');
+    await expect(page.getByTestId('route-create-session')).toBeVisible();
+
+    await page
+      .getByTestId('create-session-topic-input')
+      .fill('F6 step-4 rebut-affordance gate baseline check.');
+    await page.getByTestId('create-session-submit').click();
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    await seedInviteParticipantsForGate(page);
+    await page.getByTestId('invite-enter-session').click();
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
+    await expect(page.getByTestId('route-operate')).toBeVisible();
+
+    if (!(await isWsStoreReachable(page))) {
+      test.skip(
+        true,
+        'window.__aConversaWsStore is not reachable — the dev-only attachment did not fire. Full-chain assertion deferred to the seed-infrastructure environment.',
+      );
+      return;
+    }
+
+    const url = new URL(page.url());
+    const sessionId = url.pathname.split('/')[3] ?? '';
+    expect(sessionId, 'session id must be parsed from the URL').toBeTruthy();
+
+    // Seed X (target), Y (defeater node), and the Y→X rebut edge — the
+    // structural shell F6 step 3 would have produced if the chain
+    // landed end-to-end on the real server.
+    const X_NODE_ID = '99999999-9999-4999-8999-999999999901';
+    const Y_NODE_ID = '99999999-9999-4999-8999-999999999902';
+    const REBUT_EDGE_ID = '99999999-9999-4999-8999-9999999999e1';
+    await seedWsStore(page, {
+      sessionId,
+      nodes: [
+        { nodeId: X_NODE_ID, wording: 'Workers should earn a living wage.' },
+        {
+          nodeId: Y_NODE_ID,
+          wording: 'Cost-of-living adjustments fully cover all worker expenses.',
+        },
+      ],
+      edges: [
+        {
+          edgeId: REBUT_EDGE_ID,
+          source: Y_NODE_ID,
+          target: X_NODE_ID,
+          role: 'rebuts',
+        },
+      ],
+    });
+
+    // The rebut edge label renders on the canvas with the localized
+    // "Rebuts" role label. Stable seam: `graph-edge-label-<id>` carries
+    // `data-edge-role="rebuts"`.
+    const edgeLabel = page.getByTestId(`graph-edge-label-${REBUT_EDGE_ID}`);
+    await expect(edgeLabel).toBeVisible({ timeout: 10_000 });
+    await expect(edgeLabel).toHaveText('Rebuts');
+    await expect(edgeLabel).toHaveAttribute('data-edge-role', 'rebuts');
+
+    // Substance affordance gate: with no shape-facet vote / commit
+    // events seeded, the projection computes empty `facetStatuses` for
+    // the rebut edge. `<StatementEdge>`'s
+    // `showSubstanceAffordance` predicate (`isShapeSettled &&
+    // substance === 'awaiting-proposal'`) is FALSE, so neither
+    // affordance mounts. Pins the gate behavior — premature surfacing
+    // would be a regression.
+    await expect(page.getByTestId(`rebut-edge-pre-commit-affordance-${REBUT_EDGE_ID}`)).toHaveCount(
+      0,
+    );
+    await expect(page.getByTestId(`edge-card-substance-affordance-${REBUT_EDGE_ID}`)).toHaveCount(
+      0,
+    );
+
+    // Defer the full F6 step-4 happy-path: shape vote+commit → rebut
+    // affordance appears → click "Pre-commit as agreed" → substance
+    // vote+commit → end-state assertions. The deferred coverage is
+    // registered as `playwright_f6_substance_precommit_full_chain` —
+    // unblocks once `seedWsStore` (or a sibling helper) synthesizes
+    // facet-vote / facet-committed events. The unit-level pins
+    // (`RebutEdgePreCommitAffordance.test.tsx` +
+    // `StatementEdge.test.tsx`) already cover the affordance's wire
+    // path and the role-discriminator switch; the engine-side end
+    // state is pinned by the Cucumber scenarios in
+    // `tests/behavior/methodology/defeater-capture.feature`.
+    test.skip(
+      true,
+      'F6 step-4 happy-path (shape vote+commit → rebut affordance → substance vote+commit) requires facet-vote / facet-committed seed-infrastructure not yet shipped. Deferred to `playwright_f6_substance_precommit_full_chain`.',
+    );
+  });
 });

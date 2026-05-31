@@ -49,6 +49,7 @@ import { AnnotationBadge } from './AnnotationBadge.js';
 import { EdgeCardSubstanceAffordance } from './EdgeCardSubstanceAffordance.js';
 import { EdgeShapeCommitAffordance } from './EdgeShapeCommitAffordance.js';
 import { HoverPopover } from './HoverPopover.js';
+import { RebutEdgePreCommitAffordance } from './RebutEdgePreCommitAffordance.js';
 import type { StatementEdgeData } from './selectors.js';
 
 function StatementEdgeImpl(props: EdgeProps<StatementEdgeData>): ReactElement {
@@ -304,7 +305,20 @@ function StatementEdgeImpl(props: EdgeProps<StatementEdgeData>): ReactElement {
             {label}
           </div>
           {showShapeCommitAffordance ? <EdgeShapeCommitAffordance edgeId={id} /> : null}
-          {showSubstanceAffordance ? <EdgeCardSubstanceAffordance edgeId={id} /> : null}
+          {showSubstanceAffordance ? (
+            data?.role === 'rebuts' ? (
+              // F6 step 4 — methodology-flavored pre-commit affordance
+              // on rebut edges. Refinement:
+              // `mod_defeater_substance_precommit`. The wire path is
+              // unchanged (substance-only re-vote of `set-edge-substance`
+              // — same hook); the variant reframes the UI surface with
+              // a methodology hint paragraph + defeater-specific button
+              // labels. Decision §D3 of the refinement.
+              <RebutEdgePreCommitAffordance edgeId={id} />
+            ) : (
+              <EdgeCardSubstanceAffordance edgeId={id} />
+            )
+          ) : null}
           {annotations.length > 0 ? (
             <div
               data-testid={`annotation-badge-list-edge-${id}`}

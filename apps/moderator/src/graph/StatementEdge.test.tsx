@@ -20,15 +20,26 @@
 // queries the resulting label by `data-testid`.
 
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import i18next from 'i18next';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import ReactFlow, { MarkerType, Position, type Edge, type Node } from 'reactflow';
 import 'reactflow/dist/style.css';
+import type { ReactElement, ReactNode } from 'react';
 
-import { createI18nInstance, type Annotation, type DiagnosticHighlight } from '@a-conversa/shell';
+import {
+  createI18nInstance,
+  WsClientProvider,
+  type Annotation,
+  type DiagnosticHighlight,
+} from '@a-conversa/shell';
+import type { SendFn, WsClient, WsClientStatus } from '@a-conversa/shell';
+import type { WsEnvelopeUnion, WsMessagePayloadMap, WsMessageType } from '@a-conversa/shared-types';
 import { edgeTypes } from './edgeTypes';
 import type { StatementEdgeData } from './selectors';
 import { useSelectionStore } from '../stores';
+import { resetSetEdgeSubstanceStore } from '../layout/useProposeSetEdgeSubstanceAction';
+import { useWsStore } from '../ws/wsStore';
 
 const ALL_ROLES = [
   'supports',
@@ -1067,5 +1078,146 @@ describe('StatementEdge — hover popover wiring (mod_hover_details)', () => {
     expect(label.getAttribute('data-selected')).toBe('true');
     expect(label.getAttribute('data-facet-status')).toBe('disputed');
     expect(label.getAttribute('data-diagnostic-severity')).toBe('blocking');
+  });
+});
+
+// -- F6 step-4 rebut affordance switch (mod_defeater_substance_precommit) ---
+//
+// `<StatementEdge>` mounts a role-discriminator switch around the
+// existing substance-affordance mount: when the edge's role is
+// `'rebuts'` AND the existing `showSubstanceAffordance` predicate
+// (`isShapeSettled && substance === 'awaiting-proposal'`) holds, the
+// methodology-flavored `<RebutEdgePreCommitAffordance>` renders in
+// place of the generic `<EdgeCardSubstanceAffordance>`. For every
+// other role the generic affordance is unchanged.
+
+const SWITCH_SESSION_ID = '11111111-1111-4111-8111-111111111111';
+
+function makeSwitchClient(): WsClient {
+  const send: SendFn = <T extends WsMessageType>(
+    _type: T,
+    _payload: WsMessagePayloadMap[T],
+  ): Promise<WsEnvelopeUnion> => {
+    return new Promise<WsEnvelopeUnion>(() => undefined);
+  };
+  return {
+    status: (): WsClientStatus => 'open',
+    connect: (): void => undefined,
+    close: (): void => undefined,
+    killWebSocket: (): void => undefined,
+    send,
+    trackSession: () => Promise.resolve(),
+    untrackSession: () => Promise.resolve(),
+    onEnvelope: () => () => undefined,
+    url: '/api/ws',
+  };
+}
+
+function renderEdgeWithProviders(edge: Edge<StatementEdgeData>): void {
+  const client = makeSwitchClient();
+  function Wrapper({ children }: { children: ReactNode }): ReactElement {
+    return (
+      <MemoryRouter initialEntries={[`/sessions/${SWITCH_SESSION_ID}/operate`]}>
+        <WsClientProvider auth={{ status: 'authenticated' }} client={client}>
+          <Routes>
+            <Route path="/sessions/:id/operate" element={children} />
+          </Routes>
+        </WsClientProvider>
+      </MemoryRouter>
+    );
+  }
+  render(
+    <Wrapper>
+      <div style={{ width: 400, height: 400 }}>
+        <ReactFlow nodes={NODES} edges={[edge]} edgeTypes={edgeTypes} />
+      </div>
+    </Wrapper>,
+  );
+}
+
+describe('StatementEdge — F6 rebut affordance switch (mod_defeater_substance_precommit)', () => {
+  beforeEach(() => {
+    useWsStore.getState().reset();
+    resetSetEdgeSubstanceStore();
+    act(() => {
+      useWsStore.getState().setConnectionStatus('open');
+    });
+  });
+
+  it('mounts <RebutEdgePreCommitAffordance> (and NOT the generic substance affordance) when role is rebuts and shape settled + substance awaiting-proposal', async () => {
+    const edge: Edge<StatementEdgeData> = {
+      id: 'edge-rebut-switch',
+      source: 'n1',
+      target: 'n2',
+      type: 'statement',
+      data: {
+        role: 'rebuts',
+        annotations: [],
+        facetStatuses: { shape: 'committed', substance: 'awaiting-proposal' },
+        sourceId: 'n1',
+        targetId: 'n2',
+        sourceKind: 'node',
+        targetKind: 'node',
+        sourceWording: 'A',
+        targetWording: 'B',
+      },
+    };
+    renderEdgeWithProviders(edge);
+    await waitFor(() => screen.getByTestId('graph-edge-label-edge-rebut-switch'));
+    expect(screen.getByTestId('rebut-edge-pre-commit-affordance-edge-rebut-switch')).toBeTruthy();
+    expect(screen.queryByTestId('edge-card-substance-affordance-edge-rebut-switch')).toBeNull();
+  });
+
+  it('mounts the generic <EdgeCardSubstanceAffordance> (and NOT the rebut variant) for non-rebut roles under the same gate', async () => {
+    const edge: Edge<StatementEdgeData> = {
+      id: 'edge-supports-switch',
+      source: 'n1',
+      target: 'n2',
+      type: 'statement',
+      data: {
+        role: 'supports',
+        annotations: [],
+        facetStatuses: { shape: 'committed', substance: 'awaiting-proposal' },
+        sourceId: 'n1',
+        targetId: 'n2',
+        sourceKind: 'node',
+        targetKind: 'node',
+        sourceWording: 'A',
+        targetWording: 'B',
+      },
+    };
+    renderEdgeWithProviders(edge);
+    await waitFor(() => screen.getByTestId('graph-edge-label-edge-supports-switch'));
+    expect(screen.getByTestId('edge-card-substance-affordance-edge-supports-switch')).toBeTruthy();
+    expect(
+      screen.queryByTestId('rebut-edge-pre-commit-affordance-edge-supports-switch'),
+    ).toBeNull();
+  });
+
+  it('mounts neither affordance for a rebut edge whose shape has not settled (gate blocks the switch entirely)', async () => {
+    const edge: Edge<StatementEdgeData> = {
+      id: 'edge-rebut-no-gate',
+      source: 'n1',
+      target: 'n2',
+      type: 'statement',
+      data: {
+        role: 'rebuts',
+        annotations: [],
+        // Shape still 'proposed' — `isShapeSettled` is false, so the
+        // substance affordance must not mount at all (regardless of
+        // role).
+        facetStatuses: { shape: 'proposed', substance: 'awaiting-proposal' },
+        sourceId: 'n1',
+        targetId: 'n2',
+        sourceKind: 'node',
+        targetKind: 'node',
+        sourceWording: 'A',
+        targetWording: 'B',
+      },
+    };
+    renderEdgeWithProviders(edge);
+    await waitFor(() => screen.getByTestId('graph-edge-label-edge-rebut-no-gate'));
+    expect(screen.queryByTestId('rebut-edge-pre-commit-affordance-edge-rebut-no-gate')).toBeNull();
+    expect(screen.queryByTestId('edge-card-substance-affordance-edge-rebut-no-gate')).toBeNull();
   });
 });

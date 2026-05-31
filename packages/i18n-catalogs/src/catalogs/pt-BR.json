@@ -503,6 +503,14 @@
         "inFlightLabel": "Capturando refutação…"
       }
     },
+    "rebutEdgePreCommit": {
+      "hint": "Pré-comprometa a refutação: concordar aqui registra que, se esta condição se sustentar, ela refutaria o alvo.",
+      "valueButton": {
+        "agreed": "Pré-comprometer como concordado",
+        "disputed": "Marcar como contestado"
+      },
+      "valueButtonAriaLabel": "{label} substância para esta refutação"
+    },
     "proposalFilter": {
       "textPlaceholder": "Filtrar propostas…",
       "textAriaLabel": "Filtrar propostas pendentes por texto",
