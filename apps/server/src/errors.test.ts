@@ -108,6 +108,7 @@ describe('rejectedToApiError', () => {
   // is the single source of truth; if it falls out of sync with the
   // engine, this test fails fast.
   const mapping: ReadonlyArray<{ reason: RejectionReason; status: number }> = [
+    { reason: 'invalid-label', status: 400 },
     { reason: 'not-a-moderator', status: 403 },
     { reason: 'not-a-participant', status: 403 },
     { reason: 'self-vote-not-allowed', status: 403 },
@@ -170,6 +171,7 @@ describe('rejectedToApiError', () => {
       'cannot-remove-moderator': true,
       'entity-not-referenceable': true,
       'entity-already-included': true,
+      'invalid-label': true,
     };
     expect(Object.keys(allReasons).sort()).toEqual(mapping.map((row) => row.reason).sort());
   });

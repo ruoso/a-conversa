@@ -504,6 +504,7 @@ task data_and_methodology "Data and methodology" {
     task snapshot_create_logic "Snapshot creation handler — validates label, mints snapshot-created event" {
       effort 0.5d
       allocate team
+      complete 100
       note -8<-
         Source of debt: tasks/refinements/moderator-ui/mod_snapshot_label_input.md Decision §1.b — stateless methodology-engine handler at apps/server/src/methodology/handlers/createSnapshot.ts. Takes { sessionId, label, currentSequence, moderatorId, now }; validates label (trimmed, 1..128 chars per MAX_SNAPSHOT_LABEL_LENGTH); generates snapshot_id UUID; returns snapshot-created payload { snapshot_id, label, log_position: currentSequence + 1 } per snapshot_events.md Decisions. No interaction with agreement_state_machine — snapshots are not facets. Pure-logic Vitest coverage mirroring the engine handlers alongside it.
         Registered by closer (2026-05-31) while closing moderator_ui.mod_snapshot_flow.mod_snapshot_label_input.

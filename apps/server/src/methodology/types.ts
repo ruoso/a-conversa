@@ -295,7 +295,16 @@ export type RejectionReason =
   //     `tasks/refinements/backend/entity_inclusion_endpoint.md` for
   //     the 403-vs-404 and 409-vs-200-idempotent rationale.
   | 'entity-not-referenceable'
-  | 'entity-already-included';
+  | 'entity-already-included'
+  // Snapshot-label specific — owned by
+  // `data_and_methodology.methodology_engine.snapshot_create_logic`.
+  // Emitted by the standalone `createSnapshot` helper when the
+  // moderator-supplied label fails the trim / non-empty / length-cap
+  // rule set. Distinct from `'illegal-state-transition'` because the
+  // snapshot itself is legal — only the label is invalid. See
+  // `tasks/refinements/data-and-methodology/snapshot_create_logic.md`
+  // Decisions §4.
+  | 'invalid-label';
 
 // ---------------------------------------------------------------
 // `RequireResult<T>` — the discriminated result shape returned by

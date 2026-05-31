@@ -22,3 +22,11 @@ export { commitHandler } from './commit.js';
 export { placeholderProposeHandler } from './propose.js';
 export { voteHandler } from './vote.js';
 export { markMetaDisagreementHandler } from './markMetaDisagreement.js';
+
+// Standalone helper — NOT registered with `validateAction`. Snapshots
+// are not facets, take no `Projection`, and have no participant gate at
+// the engine layer; the WS handler `ws_label_snapshot_message` imports
+// `createSnapshot` directly from this barrel. See
+// `tasks/refinements/data-and-methodology/snapshot_create_logic.md`
+// Decisions §1 for the rationale.
+export { createSnapshot, type CreateSnapshotInput } from './createSnapshot.js';

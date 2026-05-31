@@ -149,6 +149,8 @@ const REJECTION_REASON_MAP = {
   // Entity-inclusion.
   'entity-not-referenceable': true,
   'entity-already-included': true,
+  // Snapshot-label specific (added by snapshot_create_logic).
+  'invalid-label': true,
 } satisfies Record<RejectionReason, true>;
 
 const REJECTION_REASONS = new Set<string>(Object.keys(REJECTION_REASON_MAP));

@@ -173,6 +173,15 @@ export function rejectedToApiError(rejection: RejectedValidationResult): ApiErro
  */
 function statusCodeForRejection(reason: RejectionReason): number {
   switch (reason) {
+    // 400 — request payload is malformed at the application semantics
+    // level (well-formed JSON, but a field's content fails a
+    // validator). `invalid-label` (added by snapshot_create_logic):
+    // the moderator-supplied snapshot label is empty after trim or
+    // exceeds the length cap; the failure is at the input layer and
+    // the client should re-prompt rather than retry. See
+    // `tasks/refinements/data-and-methodology/snapshot_create_logic.md`.
+    case 'invalid-label':
+      return 400;
     // 403 — authenticated but the role / relationship is wrong.
     // `cannot-remove-moderator` (added by participant_assignment): the
     // host/moderator is bound to the session for its lifetime and cannot
