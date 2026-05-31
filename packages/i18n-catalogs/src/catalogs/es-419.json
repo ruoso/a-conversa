@@ -293,6 +293,21 @@
       "ariaLabel": "Tomar una instantánea de la posición actual del registro de eventos",
       "shortcutHint": "Cmd/Ctrl+S"
     },
+    "snapshotLabelInput": {
+      "title": "Tomar una instantánea de la posición actual",
+      "fieldLabel": "Etiqueta de la instantánea",
+      "placeholder": "p. ej., Cierre del segmento 1",
+      "helper": "{used}/{max} caracteres",
+      "submitLabel": "Guardar instantánea",
+      "inFlightLabel": "Guardando…",
+      "cancelLabel": "Cancelar",
+      "errors": {
+        "moderatorOnly": "Solo quien modera puede nombrar una instantánea.",
+        "sequenceMismatch": "La sesión avanzó — por favor vuelve a intentarlo.",
+        "timeout": "La solicitud de instantánea expiró. Verifica tu conexión y vuelve a intentarlo.",
+        "unknown": "No se pudo guardar la instantánea — por favor reintenta."
+      }
+    },
     "markMetaDisagreementButton": {
       "label": "Marcar meta-desacuerdo",
       "inFlightLabel": "Marcando…",

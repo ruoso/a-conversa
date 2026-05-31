@@ -293,6 +293,21 @@
       "ariaLabel": "Snapshot the current event-log position",
       "shortcutHint": "Cmd/Ctrl+S"
     },
+    "snapshotLabelInput": {
+      "title": "Snapshot the current position",
+      "fieldLabel": "Snapshot label",
+      "placeholder": "e.g., Segment 1 close",
+      "helper": "{used}/{max} characters",
+      "submitLabel": "Save snapshot",
+      "inFlightLabel": "Saving…",
+      "cancelLabel": "Cancel",
+      "errors": {
+        "moderatorOnly": "Only the moderator can name a snapshot.",
+        "sequenceMismatch": "The session has moved on — please try again.",
+        "timeout": "The snapshot request timed out. Check your connection and try again.",
+        "unknown": "Could not save the snapshot — please retry."
+      }
+    },
     "markMetaDisagreementButton": {
       "label": "Mark meta-disagreement",
       "inFlightLabel": "Marking…",

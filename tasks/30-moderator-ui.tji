@@ -618,6 +618,7 @@ task moderator_ui "Moderator UI" {
     task mod_snapshot_label_input "Snapshot label input modal" {
       effort 0.5d
       allocate team
+      complete 100
       depends !mod_snapshot_action, backend.websocket_protocol.ws_label_snapshot_message, data_and_methodology.methodology_engine.snapshot_create_logic
     }
     task mod_snapshot_visual_marker "Visual marker on graph for snapshot point" {

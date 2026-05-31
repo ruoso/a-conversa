@@ -293,6 +293,21 @@
       "ariaLabel": "Capturar um instantâneo da posição atual do log de eventos",
       "shortcutHint": "Cmd/Ctrl+S"
     },
+    "snapshotLabelInput": {
+      "title": "Capturar um instantâneo da posição atual",
+      "fieldLabel": "Rótulo do instantâneo",
+      "placeholder": "ex.: Fim do segmento 1",
+      "helper": "{used}/{max} caracteres",
+      "submitLabel": "Salvar instantâneo",
+      "inFlightLabel": "Salvando…",
+      "cancelLabel": "Cancelar",
+      "errors": {
+        "moderatorOnly": "Apenas a pessoa moderadora pode nomear um instantâneo.",
+        "sequenceMismatch": "A sessão avançou — por favor tente novamente.",
+        "timeout": "A solicitação de instantâneo expirou. Verifique sua conexão e tente novamente.",
+        "unknown": "Não foi possível salvar o instantâneo — por favor tente novamente."
+      }
+    },
     "markMetaDisagreementButton": {
       "label": "Marcar meta-discordância",
       "inFlightLabel": "Marcando…",

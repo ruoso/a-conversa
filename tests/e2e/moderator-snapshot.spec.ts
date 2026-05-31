@@ -102,6 +102,92 @@ test.describe('moderator snapshot trigger — sidebar button + Cmd/Ctrl+S shortc
     ).toHaveAttribute('data-snapshot-flow-open', 'true');
   });
 
+  test('Test 3 — clicking sidebar button opens the modal; typing + submit closes the modal and flips data-snapshot-flow-open back to "false"', async ({
+    page,
+  }) => {
+    await reachOperate(page, 'Snapshot modal submit-success regression check.');
+
+    const layoutRoot = page.getByTestId('operate-layout-root');
+    const modal = page.getByTestId('snapshot-label-input-modal');
+    const input = page.getByTestId('snapshot-label-input-field');
+    const submit = page.getByTestId('snapshot-label-input-submit');
+
+    await expect(modal).toHaveCount(0);
+    await page.getByTestId('snapshot-action-button').click();
+    await expect(modal, 'modal mounts after the button click').toBeVisible();
+    await expect(layoutRoot).toHaveAttribute('data-snapshot-flow-open', 'true');
+
+    await input.fill('Segment 1 close');
+    await expect(submit).toBeEnabled();
+    await submit.click();
+
+    await expect(modal, 'modal unmounts after a successful submit ack').toHaveCount(0, {
+      timeout: 10_000,
+    });
+    await expect(
+      layoutRoot,
+      'data-snapshot-flow-open flips back to "false" once the modal closes',
+    ).toHaveAttribute('data-snapshot-flow-open', 'false');
+  });
+
+  test('Test 4 — pressing Escape inside the open modal closes it and flips data-snapshot-flow-open back to "false"', async ({
+    page,
+  }) => {
+    await reachOperate(page, 'Snapshot modal Escape regression check.');
+
+    const layoutRoot = page.getByTestId('operate-layout-root');
+    const modal = page.getByTestId('snapshot-label-input-modal');
+
+    await page.getByTestId('snapshot-action-button').click();
+    await expect(modal).toBeVisible();
+    await expect(layoutRoot).toHaveAttribute('data-snapshot-flow-open', 'true');
+
+    await page.keyboard.press('Escape');
+    await expect(modal).toHaveCount(0);
+    await expect(layoutRoot).toHaveAttribute('data-snapshot-flow-open', 'false');
+  });
+
+  test('Test 5 — Cmd/Ctrl+S while the modal is open is a no-op (open() is idempotent)', async ({
+    page,
+  }) => {
+    await reachOperate(page, 'Snapshot modal idempotent-shortcut regression check.');
+
+    const layoutRoot = page.getByTestId('operate-layout-root');
+    const modal = page.getByTestId('snapshot-label-input-modal');
+
+    await page.getByTestId('snapshot-action-button').click();
+    await expect(modal).toBeVisible();
+    await expect(layoutRoot).toHaveAttribute('data-snapshot-flow-open', 'true');
+
+    const chord = process.platform === 'darwin' ? 'Meta+s' : 'Control+s';
+    await page.keyboard.press(chord);
+
+    // The chord must NOT close the modal and must NOT navigate.
+    await expect(modal, 'modal stays open after the chord').toBeVisible();
+    await expect(layoutRoot).toHaveAttribute('data-snapshot-flow-open', 'true');
+    await expect(page).toHaveURL(/\/m\/sessions\/[0-9a-f-]+\/operate$/);
+  });
+
+  test('Test 6 — clicking the backdrop (outside the card) closes the modal', async ({ page }) => {
+    await reachOperate(page, 'Snapshot modal backdrop-click regression check.');
+
+    const layoutRoot = page.getByTestId('operate-layout-root');
+    const modal = page.getByTestId('snapshot-label-input-modal');
+
+    await page.getByTestId('snapshot-action-button').click();
+    await expect(modal).toBeVisible();
+
+    // Click near the top-left corner of the backdrop — well outside the
+    // centered card. The backdrop element IS the modal root (the card
+    // is a child), so clicking the root targets the backdrop directly.
+    const box = await modal.boundingBox();
+    if (box === null) throw new Error('modal bounding box is null');
+    await page.mouse.click(box.x + 10, box.y + 10);
+
+    await expect(modal).toHaveCount(0);
+    await expect(layoutRoot).toHaveAttribute('data-snapshot-flow-open', 'false');
+  });
+
   test('Test 2 — Cmd/Ctrl+S keyboard shortcut flips data-snapshot-flow-open without firing the browser save dialog', async ({
     page,
   }) => {

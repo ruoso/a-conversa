@@ -92,6 +92,7 @@ import { DiagnosticSuggestionsPanel } from '../layout/DiagnosticSuggestionsPanel
 import { PendingProposalsPane } from '../layout/PendingProposalsPane';
 import { RightSidebar } from '../layout/RightSidebar';
 import { SnapshotActionButton } from '../layout/SnapshotActionButton';
+import { SnapshotLabelInputMount } from '../layout/SnapshotLabelInputMount';
 import { useSnapshotFlowStore } from '../layout/useSnapshotFlowStore';
 import { useSnapshotShortcut } from '../layout/useSnapshotShortcut';
 import { useCaptureStore } from '../stores/captureStore';
@@ -310,6 +311,12 @@ function OperateRouteInner(props: { sessionId: string }): ReactElement {
           </>
         }
       />
+      {/*
+       * Sibling of `<OperateLayout>` so the fixed-position overlay
+       * covers the entire layout from `z-50+` without participating in
+       * the grid (mod_snapshot_label_input Decision §3).
+       */}
+      <SnapshotLabelInputMount />
     </main>
   );
 }

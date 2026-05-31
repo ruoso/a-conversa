@@ -269,6 +269,57 @@ describe('Operate route — F10 snapshot trigger wiring (mod_snapshot_action)', 
   });
 });
 
+describe('Operate route — F10 snapshot-label modal mount wiring (mod_snapshot_label_input)', () => {
+  it('mounts <SnapshotLabelInputMount /> as a sibling of <OperateLayout> inside <main data-testid="route-operate">', async () => {
+    global.fetch = stubAuthMeFetch();
+    renderRoute();
+    await waitFor(() => {
+      expect(document.querySelector('[data-testid="route-operate"]')).not.toBeNull();
+    });
+    // When the flag is false, the mount renders null — flip it on and
+    // observe the modal appear as a direct child of <main>.
+    expect(document.querySelector('[data-testid="snapshot-label-input-modal"]')).toBeNull();
+    act(() => {
+      useSnapshotFlowStore.getState().open();
+    });
+    await waitFor(() => {
+      expect(document.querySelector('[data-testid="snapshot-label-input-modal"]')).not.toBeNull();
+    });
+    // The modal is a sibling of the OperateLayout stub, not a child.
+    const main = document.querySelector('[data-testid="route-operate"]');
+    const modal = document.querySelector('[data-testid="snapshot-label-input-modal"]');
+    expect(main?.contains(modal)).toBe(true);
+    const layoutStub = document.querySelector('[data-testid="operate-layout-stub"]');
+    expect(layoutStub?.contains(modal)).toBe(false);
+    await act(async () => {
+      await Promise.resolve();
+    });
+  });
+
+  it('flipping isLabelInputOpen back to false unmounts the modal', async () => {
+    global.fetch = stubAuthMeFetch();
+    renderRoute();
+    await waitFor(() => {
+      expect(document.querySelector('[data-testid="route-operate"]')).not.toBeNull();
+    });
+    act(() => {
+      useSnapshotFlowStore.getState().open();
+    });
+    await waitFor(() => {
+      expect(document.querySelector('[data-testid="snapshot-label-input-modal"]')).not.toBeNull();
+    });
+    act(() => {
+      useSnapshotFlowStore.getState().close();
+    });
+    await waitFor(() => {
+      expect(document.querySelector('[data-testid="snapshot-label-input-modal"]')).toBeNull();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+  });
+});
+
 describe('Operate route — window.__testHooks.killWebSocket install (mod_pw_reconnect_seed_visible_styling)', () => {
   it('mount installs window.__testHooks.killWebSocket as a function reference', async () => {
     global.fetch = stubAuthMeFetch();
