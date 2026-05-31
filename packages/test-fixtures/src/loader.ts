@@ -1,26 +1,56 @@
-// Fixture loader — truncate-then-insert implementation.
+// Fixture loader — truncate-then-insert + opt-in append-API replay.
 //
-// `loadFixture(name, client)` is idempotent: it truncates the tables
-// the fixtures touch (in dependency order, via a single `TRUNCATE ...
-// CASCADE` statement) and then INSERTs the named fixture's users,
-// session, participants, and event-log rows. Safe to call repeatedly.
+// `loadFixture(name, client, options?)` is idempotent: it truncates the
+// tables the fixtures touch (in dependency order, via a single
+// `TRUNCATE ... CASCADE` statement) and then INSERTs the named
+// fixture's users, session, participants, and event-log rows. Safe to
+// call repeatedly.
 //
-// **Deferred R23 — replay through the application's event-append code.**
-// The settled refinement decision (R23 in
-// tasks/refinements/data-and-methodology/seed_data_for_tests.md) is
-// that fixtures should be loaded by *replaying* their events through
-// the same append API that production writes use, so per-kind payload
-// validation runs against fixtures too. That API does not exist yet —
-// it lives in `data_and_methodology.event_types.event_validation` and
-// `backend.api_skeleton`. Today this loader uses raw INSERTs against
-// `session_events`, which means a malformed payload in a fixture will
-// not be caught at load time. See the TODO comment on
-// `insertEvents` below; that is the call site that gets rewritten when
-// the prerequisites land.
+// **Two modes for the event-log step.** The users / session /
+// participants steps are always raw INSERTs (those rows have no
+// per-row schema-on-write gate to share with production). The events
+// step has two modes:
+//
+//   1. **Default (no `options.appendEvent`).** Raw INSERT into
+//      `session_events`. Preserves the fixture's encoded
+//      `created_at` verbatim. This is the mode the bundled `empty`
+//      fixture and ~10 of its downstream callers rely on — the empty
+//      fixture's payloads predate the tightened per-kind Zod schemas
+//      (see the rationale in
+//      `tests/behavior/steps/projection-from-log.steps.ts` L184-217),
+//      so forcing it through `validateEvent` would reject. The
+//      registered follow-up
+//      `empty_fixture_payload_tighten_for_append_mode` tightens that
+//      fixture's payloads; until then the default path is unchanged.
+//
+//   2. **Opt-in (`options.appendEvent` supplied).** For each fixture
+//      event the loader normalizes the snake-case on-disk record to
+//      a camelCase `Event` envelope, runs `validateEvent` (rejecting
+//      with `EventValidationError` from `@a-conversa/shared-types` on
+//      failure), then invokes the caller-supplied
+//      `appendEvent(client, validatedEvent)`. The callback is the
+//      injection seam — production callers wire it to
+//      `appendSessionEvent` from `apps/server/src/events/append.ts`,
+//      so the walkthrough fixture (the canonical at-scale event log)
+//      replays through the same SQL the production write path runs.
+//      `created_at` is NOT passed to the append helper — it falls
+//      back to the DB default (`NOW()`), matching production. The
+//      fixture's encoded narrative timestamps remain on disk for
+//      human readers; they do not reach the DB on the append path.
+//
+// **Why callback injection rather than importing `appendSessionEvent`
+// directly.** `@a-conversa/test-fixtures` is a leaf workspace package
+// whose only dep is `@a-conversa/shared-types`. Importing the helper
+// directly would invert the apps → packages layering and drag the
+// server's runtime transitive deps into a test-support package. The
+// callback keeps the loader agnostic; callers wire the concrete
+// helper (the same pattern this file already uses for the DB client).
 
 import { readFile, readdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import { type Event, validateEvent } from '@a-conversa/shared-types';
 
 // We don't import the pg `Client` type directly — pulling
 // `@types/pg` into the public types of this package would make every
@@ -29,6 +59,21 @@ import { fileURLToPath } from 'node:url';
 // `pg.PoolClient`, or any other shape that implements `query`.
 export interface LoadFixtureClient {
   query(text: string, params?: ReadonlyArray<unknown>): Promise<unknown>;
+}
+
+/**
+ * Options bag for `loadFixture`.
+ *
+ * `appendEvent` opts the loader into the validate-then-append mode
+ * described in the file header. The callback receives the loader's
+ * client unchanged plus the validated `Event` envelope; production
+ * callers wire it to `appendSessionEvent` from
+ * `apps/server/src/events/append.ts`. When omitted, the loader's
+ * event-log step is byte-identical to the pre-R23 raw-INSERT
+ * behavior, including writing the fixture's encoded `created_at`.
+ */
+export interface LoadFixtureOptions {
+  readonly appendEvent?: (client: LoadFixtureClient, event: Event) => Promise<void>;
 }
 
 interface FixtureMeta {
@@ -95,7 +140,11 @@ export async function listFixtures(): Promise<string[]> {
     .sort();
 }
 
-export async function loadFixture(name: string, client: LoadFixtureClient): Promise<void> {
+export async function loadFixture(
+  name: string,
+  client: LoadFixtureClient,
+  options?: LoadFixtureOptions,
+): Promise<void> {
   const known = await listFixtures();
   if (!known.includes(name)) {
     throw new Error(`Unknown fixture: ${name}. Known fixtures: ${known.join(', ') || '(none)'}`);
@@ -120,7 +169,7 @@ export async function loadFixture(name: string, client: LoadFixtureClient): Prom
   await insertUsers(client, users);
   await insertSession(client, session);
   await insertParticipants(client, participants);
-  await insertEvents(client, events);
+  await insertEvents(client, events, options);
 }
 
 async function truncateAll(client: LoadFixtureClient): Promise<void> {
@@ -168,16 +217,52 @@ async function insertParticipants(
   }
 }
 
+// Snake-case on-disk record → camelCase `Event` envelope. Mirrors
+// `rowToEnvelopeShape` in `tests/behavior/steps/projection-from-log
+// .steps.ts` L130-146; duplicated here because this package is a leaf
+// workspace dep and cannot reach into `tests/behavior/`. The transform
+// is six lines and both copies validate the same envelope shape, so a
+// drift in the envelope type would surface as a compile-time error
+// in both places.
+function fixtureEventToEnvelope(e: FixtureEvent): unknown {
+  return {
+    id: e.id,
+    sessionId: e.session_id,
+    sequence: e.sequence,
+    kind: e.kind,
+    actor: e.actor,
+    payload: e.payload,
+    createdAt: e.created_at,
+  };
+}
+
 async function insertEvents(
   client: LoadFixtureClient,
   events: readonly FixtureEvent[],
+  options?: LoadFixtureOptions,
 ): Promise<void> {
-  // TODO(R23): replay through event-append code once it exists.
-  // Today this is a raw INSERT, bypassing per-kind payload validation
-  // (`data_and_methodology.event_types.event_validation`). When that
-  // task and `backend.api_skeleton` land, rewrite this function to
-  // drive the application's append API instead, so fixtures and
-  // production share a single validation path.
+  if (options?.appendEvent) {
+    // Validate-then-append path. Each event runs `validateEvent`
+    // (throws `EventValidationError` from `@a-conversa/shared-types`
+    // on failure, surfacing fixture-author slips at load time
+    // rather than silently bypassing the schema gate) and then
+    // routes through the caller-injected helper — which production
+    // wires to `appendSessionEvent`, so the fixture and the
+    // production write path share one SQL surface.
+    const append = options.appendEvent;
+    for (const e of events) {
+      const validated = validateEvent(fixtureEventToEnvelope(e));
+      await append(client, validated);
+    }
+    return;
+  }
+
+  // Default raw-INSERT path. Bypasses `validateEvent`; preserves the
+  // fixture's encoded `created_at`. Required by the bundled `empty`
+  // fixture (whose payloads predate the tightened per-kind Zod
+  // schemas). Tightening the empty fixture is registered as a
+  // separate follow-up; once it lands, all fixtures can flip to the
+  // append-mode default.
   for (const e of events) {
     await client.query(
       `INSERT INTO session_events

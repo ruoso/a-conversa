@@ -29,6 +29,8 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@a-conversa/test-fixtures": "workspace:^",
+    "@electric-sql/pglite": "^0.4.5",
     "@types/pg": "^8.20.0",
     "@types/ws": "8.18.1"
   }

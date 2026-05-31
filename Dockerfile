@@ -53,6 +53,7 @@ COPY apps/root/package.json          ./apps/root/package.json
 COPY packages/shared-types/package.json ./packages/shared-types/package.json
 COPY packages/i18n-catalogs/package.json ./packages/i18n-catalogs/package.json
 COPY packages/shell/package.json     ./packages/shell/package.json
+COPY packages/test-fixtures/package.json ./packages/test-fixtures/package.json
 
 # `prepare` (Husky) runs on `pnpm install`; skip it inside Docker —
 # there's no .git directory and no need for client-side git hooks.
@@ -128,6 +129,7 @@ COPY apps/root/package.json          ./apps/root/package.json
 COPY packages/shared-types/package.json ./packages/shared-types/package.json
 COPY packages/i18n-catalogs/package.json ./packages/i18n-catalogs/package.json
 COPY packages/shell/package.json     ./packages/shell/package.json
+COPY packages/test-fixtures/package.json ./packages/test-fixtures/package.json
 
 # Production-only install. Skips devDependencies (typescript, eslint,
 # vitest, etc.) so the runtime layer stays small.

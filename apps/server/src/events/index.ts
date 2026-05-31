@@ -15,3 +15,5 @@ export {
   type EventValidationIssue,
   type ValidatedEvent,
 } from './validate.js';
+
+export { appendSessionEvent, type SessionEventAppendClient } from './append.js';

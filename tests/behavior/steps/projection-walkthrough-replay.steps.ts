@@ -18,6 +18,10 @@ import { strict as assert } from 'node:assert';
 import { loadFixture } from '../../../packages/test-fixtures/src/loader.js';
 import { type Event, validateEvent } from '../../../packages/shared-types/src/events.js';
 import {
+  appendSessionEvent,
+  type SessionEventAppendClient,
+} from '../../../apps/server/src/events/append.js';
+import {
   deriveFacetStatus,
   isEdgeActive,
   type Projection,
@@ -146,8 +150,19 @@ function resolveAnnotation(label: string): string {
 // Steps.
 // ---------------------------------------------------------------
 
+// Bridge the loader's wider `LoadFixtureClient` (Promise<unknown>) to
+// `appendSessionEvent`'s narrower `SessionEventAppendClient`. Both are
+// satisfied by the same underlying pglite handle; the cast lives at
+// the cucumber boundary so the loader stays leaf-package-clean.
+async function appendForFixture(
+  client: { query: (text: string, params?: ReadonlyArray<unknown>) => Promise<unknown> },
+  event: Event,
+): Promise<void> {
+  await appendSessionEvent(client as unknown as SessionEventAppendClient, event);
+}
+
 When('I load the walkthrough fixture and project it', async function (this: AConversaWorld) {
-  await loadFixture('walkthrough', this.client);
+  await loadFixture('walkthrough', this.client, { appendEvent: appendForFixture });
   const res = (await this.db.query(
     `SELECT id, session_id, sequence, kind, actor, payload, created_at
      FROM session_events
@@ -162,7 +177,7 @@ When('I load the walkthrough fixture and project it', async function (this: ACon
 Given(
   'the walkthrough fixture has been loaded and projected',
   async function (this: AConversaWorld) {
-    await loadFixture('walkthrough', this.client);
+    await loadFixture('walkthrough', this.client, { appendEvent: appendForFixture });
     const res = (await this.db.query(
       `SELECT id, session_id, sequence, kind, actor, payload, created_at
      FROM session_events

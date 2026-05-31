@@ -1,21 +1,37 @@
 // Loader + walkthrough-fixture schema cover.
 //
-// Per the walkthrough_replay_e2e refinement (D2 + "Constraints"): even
-// though the loader uses raw INSERTs today (TODO(R23) — replay-through-
-// append-API is deferred until event_validation + backend.api_skeleton
-// land), the walkthrough fixture is authored to satisfy each per-kind Zod
-// schema. This file is the discipline cover for that authoring contract —
-// every event in the walkthrough's events.json round-trips through
-// validateEvent, with createdAt mapped to ISO-8601 and the snake_case row
-// keys remapped to the camelCase envelope shape the validator expects.
+// **Two layers of cover.**
+//
+//   1. **Author-time schema cover.** The walkthrough fixture is
+//      authored to satisfy each per-kind Zod schema. Every event in
+//      `events.json` round-trips through `validateEvent` here, with
+//      `createdAt` mapped to ISO-8601 and snake_case row keys
+//      remapped to the camelCase envelope. This is the "dry" cover —
+//      reads JSON, validates, never touches DB.
+//
+//   2. **Append-mode validation gate (R23).** The loader's opt-in
+//      `appendEvent` mode runs `validateEvent` on every event before
+//      calling the caller-supplied helper. The discipline test
+//      below feeds a synthetic malformed `snapshot-created` event
+//      through a mini-driver that mirrors `loader.ts:insertEvents`'
+//      append-mode loop, and asserts the call throws
+//      `EventValidationError` from `@a-conversa/shared-types`. No
+//      append happens — the validate call rejects first.
+//
+//      The companion semantics-preservation cover (R23) lives in
+//      `apps/server/src/events/fixture-append-mode.test.ts` — that
+//      test exercises the real `appendSessionEvent` against pglite,
+//      which test-fixtures can't import from (its tsconfig rootDir
+//      is `src`; apps → packages layering keeps the helper out of
+//      this package).
 
 import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-import { validateEvent } from '@a-conversa/shared-types';
-import { listFixtures } from './loader.js';
+import { type Event, EventValidationError, validateEvent } from '@a-conversa/shared-types';
+import { listFixtures, type LoadFixtureClient } from './loader.js';
 
 const FIXTURES_DIR = join(dirname(fileURLToPath(import.meta.url)), 'fixtures');
 
@@ -97,5 +113,48 @@ describe('walkthrough fixture event-log schema cover', () => {
     const payload = snapshots[0]!.payload as { label: string; log_position: number };
     expect(payload.label).toBe('Segment 1 close');
     expect(payload.log_position).toBeGreaterThan(0);
+  });
+});
+
+describe('loadFixture append-mode validation gate (R23)', () => {
+  it('rejects a malformed event at load time with EventValidationError', async () => {
+    // Mini-driver mirroring `insertEvents`' append-mode per-event
+    // loop (see ./loader.ts: normalize snake-case → camelCase, then
+    // `validateEvent`, then call the append callback). A real
+    // `loadFixture` call would require a synthetic fixture
+    // directory; the per-event driver is the focused cover and
+    // matches the production path byte-for-byte at the call site
+    // that fails.
+    const malformed: RawFixtureEvent = {
+      id: '10000040-0000-4000-8000-00000000bad0',
+      session_id: '10000005-0000-4000-8000-000000000001',
+      sequence: 1,
+      kind: 'snapshot-created',
+      actor: '10000001-0000-4000-8000-00000000a001',
+      // Missing required `label` / `log_position`; `snapshot-created`'s
+      // payload schema requires both. The failure surfaces at the
+      // per-kind payload stage, not the envelope stage.
+      payload: { unexpected_field: true },
+      created_at: '2026-03-01T18:00:01.000Z',
+    };
+
+    let appendCallCount = 0;
+    const sink: LoadFixtureClient = { query: () => Promise.resolve(undefined) };
+    const appendStub = (_client: LoadFixtureClient, _event: Event): Promise<void> => {
+      appendCallCount += 1;
+      return Promise.resolve();
+    };
+    const driver = async (): Promise<void> => {
+      // Mirror loader.ts:insertEvents append-mode branch.
+      const envelope = rowToEnvelope(malformed);
+      const validated = validateEvent(envelope);
+      await appendStub(sink, validated);
+    };
+
+    await expect(driver()).rejects.toBeInstanceOf(EventValidationError);
+    // The append callback must NOT have run — validation throws
+    // first, the same property that makes the load-time gate
+    // useful (no rows leak into the DB on a malformed fixture).
+    expect(appendCallCount).toBe(0);
   });
 });

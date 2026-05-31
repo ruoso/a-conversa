@@ -574,6 +574,7 @@ task data_and_methodology "Data and methodology" {
       task r23_loader_replay_through_append_for_walkthrough "Rewrite fixture loader to drive append API for walkthrough fixture" {
         effort 0.5d
         allocate team
+        complete 100
         depends !walkthrough_replay_e2e, backend.api_skeleton
         note -8<-
           Source of debt: walkthrough_replay_e2e — the fixture loader uses truncate-then-raw-INSERT
@@ -581,6 +582,20 @@ task data_and_methodology "Data and methodology" {
           append API (event_validation + backend.api_skeleton both complete) so the largest fixture
           exercises the same code path as production. Any raw-INSERT vs. append-API divergence will
           surface here first.
+        ->8-
+      }
+      task empty_fixture_payload_tighten_for_append_mode "Tighten empty fixture payloads and flip to append-mode" {
+        effort 0.5d
+        allocate team
+        depends !r23_loader_replay_through_append_for_walkthrough
+        note -8<-
+          Source of debt: r23_loader_replay_through_append_for_walkthrough (2026-05-30). The bundled
+          empty fixture's payloads predate the tightened Zod schemas (session-created omits
+          now-required created_at; participant-joined carries an extra participant_id per
+          projection-from-log.steps.ts L192-203). Tighten those payloads and flip the empty
+          fixture's load sites to appendEvent-mode so the no-option default can be flipped to
+          append-mode, completing the raw-INSERT divergence closure started by R23.
+          Refinement: tasks/refinements/data-and-methodology/r23_loader_replay_through_append_for_walkthrough.md
         ->8-
       }
     }

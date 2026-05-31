@@ -4,9 +4,10 @@
 // `listFixtures` to enumerate the bundled fixture names. The actual
 // loader implementation lives in ./loader; this file just re-exports.
 //
-// See ./loader.ts and ../README.md for the deferred R23 note (replay
-// through the application's event-append code is rewritten in once that
-// code path exists).
+// `LoadFixtureOptions` is the opt-in seam that routes a fixture's
+// event log through the production append helper instead of raw
+// INSERTs — see ./loader.ts for the file header that documents the
+// two modes.
 
 export { loadFixture, listFixtures } from './loader.js';
-export type { LoadFixtureClient } from './loader.js';
+export type { LoadFixtureClient, LoadFixtureOptions } from './loader.js';

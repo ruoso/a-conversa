@@ -3,14 +3,24 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
   "scripts": {
-    "build": "echo nothing to build yet"
+    "build": "tsc -b"
   },
   "dependencies": {
     "@a-conversa/shared-types": "workspace:*",
     "pg": "8.20.0"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.4.5",
     "@types/node": "^22.0.0",
     "@types/pg": "^8.20.0"
   }

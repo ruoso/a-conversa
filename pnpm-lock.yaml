@@ -345,6 +345,12 @@ importers:
         specifier: 4.4.3
         version: 4.4.3
     devDependencies:
+      '@a-conversa/test-fixtures':
+        specifier: workspace:^
+        version: link:../../packages/test-fixtures
+      '@electric-sql/pglite':
+        specifier: ^0.4.5
+        version: 0.4.5
       '@types/pg':
         specifier: ^8.20.0
         version: 8.20.0
@@ -419,6 +425,9 @@ importers:
         specifier: 8.20.0
         version: 8.20.0
     devDependencies:
+      '@electric-sql/pglite':
+        specifier: ^0.4.5
+        version: 0.4.5
       '@types/node':
         specifier: ^22.0.0
         version: 22.19.18
