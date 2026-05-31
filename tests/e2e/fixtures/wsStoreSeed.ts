@@ -95,11 +95,56 @@ export interface SeedAnnotation {
   readonly targetEdgeId?: string | null;
 }
 
+/**
+ * One synthetic `proposal` event the seeder injects. The outer envelope
+ * is `kind: 'proposal'` with `payload: { proposal: <inner> }` per
+ * `proposalEnvelopePayloadSchema`; the inner payload is one of the
+ * `proposalPayloadSchema` arms (e.g.,
+ * `{ kind: 'set-edge-substance', edge_id, value }`).
+ *
+ * Refinement: tasks/refinements/moderator-ui/playwright_f6_substance_precommit_full_chain.md
+ */
+export interface SeedProposal {
+  readonly proposalEventId?: string;
+  readonly proposal: Record<string, unknown>;
+  readonly actor?: string;
+}
+
+/**
+ * One synthetic facet-keyed `vote` event the seeder injects. Mirrors
+ * `facetVotePayloadSchema` — `target: 'facet'` discriminator, the
+ * `(entity_kind, entity_id, facet)` triple, the participant id, and the
+ * `agree | dispute` choice. `actor` on the outer envelope is the voter.
+ */
+export interface SeedFacetVote {
+  readonly entityKind: 'node' | 'edge';
+  readonly entityId: string;
+  readonly facet: 'shape' | 'substance' | 'classification' | 'wording';
+  readonly participant: string;
+  readonly choice: 'agree' | 'dispute';
+}
+
+/**
+ * One synthetic facet-keyed `commit` event the seeder injects. Mirrors
+ * `facetCommitPayloadSchema` — `target: 'facet'` discriminator, the
+ * `(entity_kind, entity_id, facet)` triple, and `committed_by`
+ * (defaults to the moderator UUID; the outer envelope's `actor` matches).
+ */
+export interface SeedFacetCommit {
+  readonly entityKind: 'node' | 'edge';
+  readonly entityId: string;
+  readonly facet: 'shape' | 'substance' | 'classification' | 'wording';
+  readonly committedBy?: string;
+}
+
 export interface SeedSessionOptions {
   readonly sessionId: string;
   readonly nodes?: readonly SeedNode[];
   readonly edges?: readonly SeedEdge[];
   readonly annotations?: readonly SeedAnnotation[];
+  readonly proposals?: readonly SeedProposal[];
+  readonly votes?: readonly SeedFacetVote[];
+  readonly commits?: readonly SeedFacetCommit[];
 }
 
 /**
@@ -121,9 +166,17 @@ export async function seedWsStore(
   page: Page,
   options: SeedSessionOptions,
 ): Promise<{ eventCount: number }> {
-  const { sessionId, nodes = [], edges = [], annotations = [] } = options;
+  const {
+    sessionId,
+    nodes = [],
+    edges = [],
+    annotations = [],
+    proposals = [],
+    votes = [],
+    commits = [],
+  } = options;
   return page.evaluate(
-    ({ sessionId, nodes, edges, annotations }) => {
+    ({ sessionId, nodes, edges, annotations, proposals, votes, commits }) => {
       const store = (
         window as unknown as {
           __aConversaWsStore?: {
@@ -215,10 +268,69 @@ export async function seedWsStore(
         });
         sequence += 1;
       }
+      // Loop order — nodes → annotations → edges → proposals → votes →
+      // commits — honors two invariants in one pass: (1) structural
+      // entities precede the facet rounds that reference them, and (2)
+      // a facet round is itself ordered proposal → votes → commit
+      // (Decision §D3 of `playwright_f6_substance_precommit_full_chain`).
+      for (const proposal of proposals) {
+        store.getState().applyEvent({
+          id:
+            proposal.proposalEventId ??
+            `00000000-0000-4000-8000-${(0x6000 + sequence).toString(16).padStart(12, '0')}`,
+          sessionId,
+          sequence,
+          kind: 'proposal',
+          actor: proposal.actor ?? actor,
+          payload: { proposal: proposal.proposal },
+          createdAt,
+        });
+        sequence += 1;
+      }
+      for (const vote of votes) {
+        store.getState().applyEvent({
+          id: `00000000-0000-4000-8000-${(0x7000 + sequence).toString(16).padStart(12, '0')}`,
+          sessionId,
+          sequence,
+          kind: 'vote',
+          actor: vote.participant,
+          payload: {
+            target: 'facet',
+            entity_kind: vote.entityKind,
+            entity_id: vote.entityId,
+            facet: vote.facet,
+            participant: vote.participant,
+            choice: vote.choice,
+            voted_at: createdAt,
+          },
+          createdAt,
+        });
+        sequence += 1;
+      }
+      for (const commit of commits) {
+        const committedBy = commit.committedBy ?? actor;
+        store.getState().applyEvent({
+          id: `00000000-0000-4000-8000-${(0x8000 + sequence).toString(16).padStart(12, '0')}`,
+          sessionId,
+          sequence,
+          kind: 'commit',
+          actor: committedBy,
+          payload: {
+            target: 'facet',
+            entity_kind: commit.entityKind,
+            entity_id: commit.entityId,
+            facet: commit.facet,
+            committed_by: committedBy,
+            committed_at: createdAt,
+          },
+          createdAt,
+        });
+        sequence += 1;
+      }
       const after = store.getState().sessionState[sessionId];
       return { eventCount: after?.events.length ?? 0 };
     },
-    { sessionId, nodes, edges, annotations },
+    { sessionId, nodes, edges, annotations, proposals, votes, commits },
   );
 }
 

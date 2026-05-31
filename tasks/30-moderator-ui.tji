@@ -828,6 +828,7 @@ task moderator_ui "Moderator UI" {
       task playwright_f6_substance_precommit_full_chain "Extend seedWsStore to synthesize facet-vote/committed events; unskip full F6 step-4 e2e chain" {
         effort 1d
         allocate team
+        complete 100
         depends moderator_ui.mod_defeater_flow.mod_defeater_substance_precommit
         note -8<-
           Source of debt: mod_defeater_substance_precommit (commit closing that task) — the full F6 step-4 happy-path (shape vote+commit → rebut affordance → substance vote+commit) is test.skip in tests/e2e/moderator-capture.spec.ts because seedWsStore does not synthesize facet-vote/committed events. This task extends seedWsStore (or adds a sibling helper) to synthesize those events so the skipped test can be unskipped and the end-to-end chain pinned.
