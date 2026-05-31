@@ -88,6 +88,19 @@
 //   protects against `edge-created` payloads that reference an
 //   annotation id whose `annotation-created` envelope hasn't been seen.)
 //
+// Refinement: tasks/refinements/audience/aud_annotation_of_annotation_overlay_chain.md
+//   (Decisions §1–§5 — migrate the bucketer call to
+//   `groupAnnotationsByEntityId` and thread `nodeAnnotationIndex` into
+//   `projectAnnotationNodes` so annotations targeting a promoted
+//   annotation graph-node surface on its `data.annotations` array and
+//   render via the existing DOM overlay. The local variable identifier
+//   `nodeAnnotationIndex` is preserved per D2; the shell-level rename
+//   carries the polymorphic-entity-id semantic. The propagation lights
+//   up the meta-commentary chain end-to-end: A2's `target_node_id`
+//   carrying A1's UUID surfaces A2 in A1's `data.annotations` array,
+//   which the existing `<AudienceAnnotationOverlay>` reads via
+//   `node.data('annotations')`.)
+//
 // Refinement: tasks/refinements/audience/aud_decomposition_animation.md
 //   (Decision §1 — the audience surface paints a one-shot slate-tinted
 //   halo on parents whose `data.decomposed` first flips to `true` mid-
@@ -142,7 +155,7 @@ import {
   EMPTY_ANNOTATIONS,
   EMPTY_AXIOM_MARKS,
   groupAnnotationsByEdge,
-  groupAnnotationsByNode,
+  groupAnnotationsByEntityId,
   groupAxiomMarksByNode,
   projectAnnotations,
   projectAxiomMarks,
@@ -328,7 +341,7 @@ export function projectGraph(events: readonly Event[]): {
   // materialization pass.
   const promotedAnnotationIds = computeAnnotationsAsEndpoints(events);
   const nodeAnnotationIndex = filterAnnotationIndex(
-    groupAnnotationsByNode(projectedAnnotations),
+    groupAnnotationsByEntityId(projectedAnnotations),
     promotedAnnotationIds,
   );
   const edgeAnnotationIndex = filterAnnotationIndex(
@@ -537,6 +550,7 @@ export function projectGraph(events: readonly Event[]): {
     projectedAnnotations,
     promotedAnnotationIds,
     events,
+    nodeAnnotationIndex,
   );
   for (const annotationNode of annotationNodes) {
     nodeIndexById.set(annotationNode.data.id, nodes.length);

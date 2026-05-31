@@ -1389,4 +1389,127 @@ describe('projectGraph (audience baseline)', () => {
     expect(hostEdge?.data.target).toBe(AEP_ANNO_1);
     expect(hostEdge?.data.entityRole).toBe('annotation-host');
   });
+
+  // ---------------------------------------------------------------
+  // aud_annotation_of_annotation_overlay_chain — propagation through
+  // the polymorphic-entity-id bucketer. An annotation A2 whose
+  // `target_node_id` carries promoted annotation A1's UUID surfaces in
+  // A1's `data.annotations` array on the materialized annotation
+  // graph-node, and the existing `<AudienceAnnotationOverlay>` renders
+  // the DOM badge over it. Mirrors participant ann-oa-1/2/3.
+  // ---------------------------------------------------------------
+
+  const ANN_OA_A1 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa701';
+  const ANN_OA_A2 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa702';
+  const ANN_OA_A3 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa703';
+  const ANN_OA_EDGE = '00000000-0000-4000-8000-000000000701';
+
+  it("(ann-oa-1) an annotation A2 whose target_node_id carries A1's id surfaces in A1's materialized graph-node data.annotations array", () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'N_A' }),
+      makeAnnotationCreated({
+        sequence: 2,
+        annotationId: ANN_OA_A1,
+        kind: 'note',
+        targetNodeId: NODE_A,
+        targetEdgeId: null,
+      }),
+      makeAnnotationCreated({
+        sequence: 3,
+        annotationId: ANN_OA_A2,
+        kind: 'reframe',
+        targetNodeId: ANN_OA_A1,
+        targetEdgeId: null,
+      }),
+      makeAnnotationEndpointEdge({
+        sequence: 4,
+        edgeId: ANN_OA_EDGE,
+        sourceNodeId: NODE_A,
+        targetAnnotationId: ANN_OA_A1,
+      }),
+    ];
+    const { nodes } = projectGraph(events);
+    const annotationNode = nodes.find((n) => n.data.id === ANN_OA_A1);
+    expect(annotationNode?.data.nodeKind).toBe('annotation');
+    expect(annotationNode?.data.annotations.map((a) => a.id)).toEqual([ANN_OA_A2]);
+    // N1's DOM-overlay population excludes the promoted A1 (mutual
+    // exclusion per aud_render_annotation_endpoint_edges); A2 targets
+    // A1 not N1, so N1's bucket is empty.
+    const statementNode = nodes.find((n) => n.data.id === NODE_A);
+    expect(statementNode?.data.annotations).toEqual([]);
+  });
+
+  it('(ann-oa-2) multiple annotations targeting the same materialized annotation graph-node aggregate in arrival order', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'N_A' }),
+      makeAnnotationCreated({
+        sequence: 2,
+        annotationId: ANN_OA_A1,
+        kind: 'note',
+        targetNodeId: NODE_A,
+        targetEdgeId: null,
+      }),
+      makeAnnotationCreated({
+        sequence: 3,
+        annotationId: ANN_OA_A2,
+        kind: 'reframe',
+        targetNodeId: ANN_OA_A1,
+        targetEdgeId: null,
+      }),
+      makeAnnotationCreated({
+        sequence: 4,
+        annotationId: ANN_OA_A3,
+        kind: 'stance',
+        targetNodeId: ANN_OA_A1,
+        targetEdgeId: null,
+      }),
+      makeAnnotationEndpointEdge({
+        sequence: 5,
+        edgeId: ANN_OA_EDGE,
+        sourceNodeId: NODE_A,
+        targetAnnotationId: ANN_OA_A1,
+      }),
+    ];
+    const { nodes } = projectGraph(events);
+    const annotationNode = nodes.find((n) => n.data.id === ANN_OA_A1);
+    expect(annotationNode?.data.annotations.map((a) => a.id)).toEqual([ANN_OA_A2, ANN_OA_A3]);
+  });
+
+  it('(ann-oa-3) annotation-on-annotation where the target annotation is NOT materialized surfaces nowhere visually', () => {
+    // No `edge-created` references A1 — A1 stays a DOM-overlay badge on
+    // N1 and is NOT promoted to a graph-node. A2 targets A1 (not
+    // materialized); the orphan A2 surfaces nowhere.
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'N_A' }),
+      makeAnnotationCreated({
+        sequence: 2,
+        annotationId: ANN_OA_A1,
+        kind: 'note',
+        targetNodeId: NODE_A,
+        targetEdgeId: null,
+      }),
+      makeAnnotationCreated({
+        sequence: 3,
+        annotationId: ANN_OA_A2,
+        kind: 'reframe',
+        targetNodeId: ANN_OA_A1,
+        targetEdgeId: null,
+      }),
+    ];
+    const { nodes } = projectGraph(events);
+    // A1 and A2 are NOT emitted as graph-nodes.
+    expect(nodes).toHaveLength(1);
+    expect(nodes.find((n) => n.data.id === ANN_OA_A1)).toBeUndefined();
+    expect(nodes.find((n) => n.data.id === ANN_OA_A2)).toBeUndefined();
+    // N1 keeps its existing overlay (A1 targets N1 — A1 is not
+    // promoted, so the filter preserves it on N1's bucket).
+    const statementNode = nodes.find((n) => n.data.id === NODE_A);
+    expect(statementNode?.data.annotations.map((a) => a.id)).toEqual([ANN_OA_A1]);
+    // The orphan A2 surfaces on no node: A2's bucket is keyed under
+    // A1, but A1 was not materialized as a graph-node so nothing reads
+    // that bucket.
+    for (const n of nodes) {
+      expect(n.data.annotations.find((a) => a.id === ANN_OA_A2)).toBeUndefined();
+    }
+  });
 });

@@ -138,7 +138,15 @@ function resolveAnnotationHostId(
  *     annotation.kind` (Decision §3);
  *   - sentinel defaults for statement-only fields (`kind: null`,
  *     `facetStatuses: EMPTY_FACET_STATUSES`, `rollupStatus: 'none'`,
- *     `axiomMarks: EMPTY_AXIOM_MARKS`, `annotations: EMPTY_ANNOTATIONS`);
+ *     `axiomMarks: EMPTY_AXIOM_MARKS`);
+ *   - `data.annotations` is sourced from
+ *     `nodeAnnotationIndex.get(annotation.id) ?? EMPTY_ANNOTATIONS` —
+ *     when another annotation A2 targets this promoted annotation A1
+ *     (A1's id appears in A2's `targetNodeId`), A2 surfaces in A1's
+ *     `data.annotations` array and the existing
+ *     `<AudienceAnnotationOverlay>` renders the DOM badge on top of
+ *     A1's graph-node. Refinement:
+ *     `aud_annotation_of_annotation_overlay_chain`.
  *   - `data.hostMissing = true` when the annotation's host can't be
  *     resolved (Decision §4 defensive case — the orphaned annotation
  *     still renders so the broadcast viewer can see the entity).
@@ -149,6 +157,7 @@ export function projectAnnotationNodes(
   annotations: readonly Annotation[],
   promotedSet: ReadonlySet<string>,
   events: readonly Event[],
+  nodeAnnotationIndex: ReadonlyMap<string, readonly Annotation[]>,
 ): AudienceNodeElement[] {
   if (promotedSet.size === 0) return [];
   const { knownNodeIds, edgeSources } = buildAnnotationHostIndex(events);
@@ -156,6 +165,7 @@ export function projectAnnotationNodes(
   for (const annotation of annotations) {
     if (!promotedSet.has(annotation.id)) continue;
     const hostId = resolveAnnotationHostId(annotation, knownNodeIds, edgeSources);
+    const propagatedAnnotations = nodeAnnotationIndex.get(annotation.id) ?? EMPTY_ANNOTATIONS;
     const baseData = {
       id: annotation.id,
       wording: annotation.content,
@@ -165,7 +175,7 @@ export function projectAnnotationNodes(
       facetStatuses: EMPTY_FACET_STATUSES,
       rollupStatus: 'none',
       axiomMarks: EMPTY_AXIOM_MARKS,
-      annotations: EMPTY_ANNOTATIONS,
+      annotations: propagatedAnnotations,
     } as const;
     const element: AudienceNodeElement =
       hostId === null

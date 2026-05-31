@@ -158,7 +158,7 @@ describe('projectAnnotationNodes', () => {
     const annotations: Annotation[] = [
       makeAnnotation({ annotationId: ANNO_1, targetNodeId: NODE_A }),
     ];
-    expect(projectAnnotationNodes(annotations, new Set<string>(), [])).toEqual([]);
+    expect(projectAnnotationNodes(annotations, new Set<string>(), [], new Map())).toEqual([]);
   });
 
   it('(aep-f) emits one node descriptor per promoted annotation with the sentinel defaults', () => {
@@ -171,7 +171,7 @@ describe('projectAnnotationNodes', () => {
       }),
     ];
     const events: Event[] = [makeNodeCreated({ sequence: 1, nodeId: NODE_A })];
-    const out = projectAnnotationNodes(annotations, new Set<string>([ANNO_1]), events);
+    const out = projectAnnotationNodes(annotations, new Set<string>([ANNO_1]), events, new Map());
     expect(out).toHaveLength(1);
     const node = out[0];
     expect(node?.group).toBe('nodes');
@@ -197,9 +197,52 @@ describe('projectAnnotationNodes', () => {
     ];
     // NODE_B is not in events — the host can't be resolved.
     const events: Event[] = [makeNodeCreated({ sequence: 1, nodeId: NODE_A })];
-    const out = projectAnnotationNodes(annotations, new Set<string>([ANNO_UNKNOWN_HOST]), events);
+    const out = projectAnnotationNodes(
+      annotations,
+      new Set<string>([ANNO_UNKNOWN_HOST]),
+      events,
+      new Map(),
+    );
     expect(out).toHaveLength(1);
     expect(out[0]?.data.hostMissing).toBe(true);
+  });
+
+  // -----------------------------------------------------------------
+  // aud_annotation_of_annotation_overlay_chain — `projectAnnotationNodes`
+  // reads the threaded `nodeAnnotationIndex` so an annotation A2 whose
+  // `targetNodeId` carries promoted-annotation A1's id surfaces on A1's
+  // emitted `data.annotations` array. The fallback to `EMPTY_ANNOTATIONS`
+  // preserves stable React-memoization identity when no propagation
+  // applies.
+  // -----------------------------------------------------------------
+
+  it('(aep-k) reads the threaded nodeAnnotationIndex and stamps propagated annotations on the promoted node', () => {
+    const a1 = makeAnnotation({ annotationId: ANNO_1, kind: 'reframe', targetNodeId: NODE_A });
+    const a2 = makeAnnotation({ annotationId: ANNO_2, kind: 'note', targetNodeId: ANNO_1 });
+    const events: Event[] = [makeNodeCreated({ sequence: 1, nodeId: NODE_A })];
+    const nodeAnnotationIndex = new Map<string, readonly Annotation[]>([[ANNO_1, [a2]]]);
+    const out = projectAnnotationNodes(
+      [a1, a2],
+      new Set<string>([ANNO_1]),
+      events,
+      nodeAnnotationIndex,
+    );
+    expect(out).toHaveLength(1);
+    expect(out[0]?.data.id).toBe(ANNO_1);
+    expect(out[0]?.data.annotations.map((a) => a.id)).toEqual([ANNO_2]);
+  });
+
+  it('(aep-l) falls back to EMPTY_ANNOTATIONS when the threaded index has no entry for the promoted id', () => {
+    const a1 = makeAnnotation({ annotationId: ANNO_1, kind: 'reframe', targetNodeId: NODE_A });
+    const events: Event[] = [makeNodeCreated({ sequence: 1, nodeId: NODE_A })];
+    const out = projectAnnotationNodes(
+      [a1],
+      new Set<string>([ANNO_1]),
+      events,
+      new Map<string, readonly Annotation[]>(),
+    );
+    expect(out).toHaveLength(1);
+    expect(out[0]?.data.annotations).toEqual([]);
   });
 });
 
