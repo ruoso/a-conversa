@@ -65,6 +65,8 @@ function edgeData(overrides: Partial<StatementEdgeData> = {}): StatementEdgeData
     facetStatuses: overrides.facetStatuses ?? {},
     sourceId: overrides.sourceId ?? 'src-default',
     targetId: overrides.targetId ?? 'tgt-default',
+    sourceKind: overrides.sourceKind ?? 'node',
+    targetKind: overrides.targetKind ?? 'node',
     sourceWording: overrides.sourceWording ?? 'source wording',
     targetWording: overrides.targetWording ?? 'target wording',
     ...(overrides.diagnosticHighlight !== undefined
@@ -460,6 +462,221 @@ describe('HoverPopover — edge target rendering', () => {
     expect(rows[0]?.getAttribute('data-hover-popover-facet')).toBe('substance');
     expect(rows[0]?.textContent).toContain('Substance');
     expect(rows[0]?.textContent).toContain('Agreed');
+  });
+
+  // -- Endpoint-kind disambiguation (mod_hover_popover_endpoint_kind_disambiguation) --
+  //
+  // The endpoints row now renders a localized parenthesized kind label
+  // after each id — `<src-id> (node) -> <tgt-id> (annotation)` for the
+  // canonical annotation-endpoint shape. The kind labels live inline
+  // in the existing `moderator.hoverPopover.edgeEndpointsReference`
+  // ICU template via two `select` blocks (Decision §3); test-stable
+  // observation rides the new `data-hover-popover-source-kind` /
+  // `data-hover-popover-target-kind` attribute seams (Constraint §4).
+
+  it('renders the (node) and (annotation) kind suffixes on a node→annotation edge under en-US', async () => {
+    await render(
+      <HoverPopover
+        id="edge-na-en"
+        target={{
+          kind: 'edge',
+          data: edgeData({
+            sourceId: 'src-na',
+            targetId: 'tgt-na',
+            sourceKind: 'node',
+            targetKind: 'annotation',
+          }),
+        }}
+      />,
+    );
+    const endpoints = screen
+      .getByTestId('hover-popover-edge-na-en')
+      .querySelector('[data-hover-popover-section="endpoints"]');
+    expect(endpoints).not.toBeNull();
+    expect(endpoints!.textContent).toContain('(node)');
+    expect(endpoints!.textContent).toContain('(annotation)');
+  });
+
+  it('renders the symmetric (annotation) and (node) suffixes on an annotation→node edge', async () => {
+    await render(
+      <HoverPopover
+        id="edge-an-en"
+        target={{
+          kind: 'edge',
+          data: edgeData({
+            sourceId: 'src-an',
+            targetId: 'tgt-an',
+            sourceKind: 'annotation',
+            targetKind: 'node',
+          }),
+        }}
+      />,
+    );
+    const endpoints = screen
+      .getByTestId('hover-popover-edge-an-en')
+      .querySelector('[data-hover-popover-section="endpoints"]');
+    expect(endpoints).not.toBeNull();
+    // Order matters: source kind appears before the arrow, target after.
+    const text = endpoints!.textContent ?? '';
+    const srcIdx = text.indexOf('src-an');
+    const arrowIdx = text.indexOf('->');
+    const tgtIdx = text.indexOf('tgt-an');
+    expect(srcIdx).toBeLessThan(arrowIdx);
+    expect(arrowIdx).toBeLessThan(tgtIdx);
+    // The (annotation) label sits between src id and arrow; the (node)
+    // label sits between tgt id and end-of-line.
+    const annotationIdx = text.indexOf('(annotation)');
+    const nodeIdx = text.indexOf('(node)');
+    expect(annotationIdx).toBeGreaterThan(srcIdx);
+    expect(annotationIdx).toBeLessThan(arrowIdx);
+    expect(nodeIdx).toBeGreaterThan(tgtIdx);
+  });
+
+  it('renders the (node) suffix on both sides of a baseline node→node edge', async () => {
+    await render(
+      <HoverPopover
+        id="edge-nn-en"
+        target={{
+          kind: 'edge',
+          data: edgeData({ sourceId: 'src-nn', targetId: 'tgt-nn' }),
+        }}
+      />,
+    );
+    const endpoints = screen
+      .getByTestId('hover-popover-edge-nn-en')
+      .querySelector('[data-hover-popover-section="endpoints"]');
+    expect(endpoints).not.toBeNull();
+    // Two `(node)` occurrences — one per endpoint.
+    const matches = (endpoints!.textContent ?? '').match(/\(node\)/g) ?? [];
+    expect(matches.length).toBe(2);
+  });
+
+  it('localizes the kind suffix per locale: pt-BR uses (nó) / (anotação)', async () => {
+    await i18next.changeLanguage('pt-BR');
+    await render(
+      <HoverPopover
+        id="edge-na-pt"
+        target={{
+          kind: 'edge',
+          data: edgeData({
+            sourceId: 'src-na',
+            targetId: 'tgt-na',
+            sourceKind: 'node',
+            targetKind: 'annotation',
+          }),
+        }}
+      />,
+    );
+    const endpoints = screen
+      .getByTestId('hover-popover-edge-na-pt')
+      .querySelector('[data-hover-popover-section="endpoints"]');
+    expect(endpoints).not.toBeNull();
+    expect(endpoints!.textContent).toContain('(nó)');
+    expect(endpoints!.textContent).toContain('(anotação)');
+    await act(async () => {
+      await i18next.changeLanguage('en-US');
+    });
+  });
+
+  it('localizes the kind suffix per locale: es-419 uses (nodo) / (anotación)', async () => {
+    await i18next.changeLanguage('es-419');
+    await render(
+      <HoverPopover
+        id="edge-na-es"
+        target={{
+          kind: 'edge',
+          data: edgeData({
+            sourceId: 'src-na',
+            targetId: 'tgt-na',
+            sourceKind: 'node',
+            targetKind: 'annotation',
+          }),
+        }}
+      />,
+    );
+    const endpoints = screen
+      .getByTestId('hover-popover-edge-na-es')
+      .querySelector('[data-hover-popover-section="endpoints"]');
+    expect(endpoints).not.toBeNull();
+    expect(endpoints!.textContent).toContain('(nodo)');
+    expect(endpoints!.textContent).toContain('(anotación)');
+    await act(async () => {
+      await i18next.changeLanguage('en-US');
+    });
+  });
+
+  it('stamps data-hover-popover-source-kind / data-hover-popover-target-kind on the endpoints row', async () => {
+    await render(
+      <HoverPopover
+        id="edge-seam-kind"
+        target={{
+          kind: 'edge',
+          data: edgeData({
+            sourceKind: 'node',
+            targetKind: 'annotation',
+          }),
+        }}
+      />,
+    );
+    const endpoints = screen
+      .getByTestId('hover-popover-edge-seam-kind')
+      .querySelector('[data-hover-popover-section="endpoints"]');
+    expect(endpoints).not.toBeNull();
+    expect(endpoints!.getAttribute('data-hover-popover-source-kind')).toBe('node');
+    expect(endpoints!.getAttribute('data-hover-popover-target-kind')).toBe('annotation');
+  });
+
+  it('stamps the data-attribute seams symmetrically for annotation→node', async () => {
+    await render(
+      <HoverPopover
+        id="edge-seam-kind-an"
+        target={{
+          kind: 'edge',
+          data: edgeData({
+            sourceKind: 'annotation',
+            targetKind: 'node',
+          }),
+        }}
+      />,
+    );
+    const endpoints = screen
+      .getByTestId('hover-popover-edge-seam-kind-an')
+      .querySelector('[data-hover-popover-section="endpoints"]');
+    expect(endpoints).not.toBeNull();
+    expect(endpoints!.getAttribute('data-hover-popover-source-kind')).toBe('annotation');
+    expect(endpoints!.getAttribute('data-hover-popover-target-kind')).toBe('node');
+  });
+
+  it('falls back to the ICU `other {?}` branch when an unrecognized kind reaches the renderer', async () => {
+    // Forward-compatibility guard (Constraint §3): a future
+    // `EdgeEndpointKind` widening that lands without a catalog update
+    // should NOT crash the renderer; the ICU template's `other {?}`
+    // arm renders `?` instead. TypeScript-cast through `unknown` to
+    // model the runtime-unknown value flowing through the strict
+    // `EdgeEndpointKind` type.
+    const unknownKind = 'edge' as unknown as 'node';
+    await render(
+      <HoverPopover
+        id="edge-unknown-kind"
+        target={{
+          kind: 'edge',
+          data: edgeData({
+            sourceKind: unknownKind,
+            targetKind: 'node',
+          }),
+        }}
+      />,
+    );
+    const endpoints = screen
+      .getByTestId('hover-popover-edge-unknown-kind')
+      .querySelector('[data-hover-popover-section="endpoints"]');
+    expect(endpoints).not.toBeNull();
+    // The renderer survives + emits the `?` typographic neutral.
+    expect(endpoints!.textContent).toContain('(?)');
+    // And the data-attribute seam still carries the (unknown) literal
+    // — the seam is a verbatim mirror of the prop, not a localized
+    // lookup.
+    expect(endpoints!.getAttribute('data-hover-popover-source-kind')).toBe('edge');
   });
 
   it('renders the diagnostic section on edges identically to nodes', async () => {

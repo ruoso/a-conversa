@@ -55,6 +55,30 @@ import {
 
 import type { WsState } from '../ws/wsStore.js';
 
+/**
+ * Discriminator for an edge endpoint — whether the id on the carriage
+ * (`sourceId` / `targetId`) names a statement node or a promoted
+ * annotation.
+ *
+ * Refinement:
+ * `tasks/refinements/moderator-ui/mod_hover_popover_endpoint_kind_disambiguation.md`
+ * (prior: `mod_render_annotation_endpoint_edges`).
+ *
+ * Derived in `selectEdgesForSession` from which polymorphic payload
+ * field carried the endpoint id — `source_node_id` present →
+ * `'node'`; `source_annotation_id` present → `'annotation'` (and
+ * symmetric for the target side). The wire schema's per-endpoint XOR
+ * guarantees exactly one of each pair is set, so the discriminator is
+ * always derivable; the carriage fields on `StatementEdgeData` are
+ * declared non-optional accordingly.
+ *
+ * Read by `<HoverPopover>` to localize the kind suffix on the edge
+ * popover's endpoint-references row (`<id> (node|annotation)`); future
+ * surfaces (per-kind edge styling) may consume the same fields without
+ * reaching back to the events log.
+ */
+export type EdgeEndpointKind = 'node' | 'annotation';
+
 /** Payload carried on each rendered edge — the role drives the label and (later) the per-state styling. */
 export interface StatementEdgeData {
   role: EdgeRole;
@@ -100,6 +124,27 @@ export interface StatementEdgeData {
    * Refinement: `tasks/refinements/moderator-ui/mod_edge_popover_full_target_wording.md`.
    */
   targetId: string;
+  /**
+   * Discriminator for whether `sourceId` names a node or a promoted
+   * annotation. Derived in `selectEdgesForSession` from which
+   * polymorphic payload field carried the source id
+   * (`source_node_id` → `'node'`, `source_annotation_id` →
+   * `'annotation'`). Read by `<HoverPopover>` to localize the kind
+   * suffix on the endpoint-references row. Refinement:
+   * `tasks/refinements/moderator-ui/mod_hover_popover_endpoint_kind_disambiguation.md`.
+   *
+   * Non-optional: the wire schema's per-endpoint XOR guarantees the
+   * discriminator is always derivable, so the selector always projects
+   * one of `'node'` / `'annotation'` here.
+   */
+  sourceKind: EdgeEndpointKind;
+  /**
+   * Discriminator for whether `targetId` names a node or a promoted
+   * annotation. Same semantics, derivation, and consumers as
+   * `sourceKind`. Refinement:
+   * `tasks/refinements/moderator-ui/mod_hover_popover_endpoint_kind_disambiguation.md`.
+   */
+  targetKind: EdgeEndpointKind;
   /**
    * Wording of this edge's source node, as projected from the per-session
    * `node-created` payloads. Refinements:
@@ -389,6 +434,18 @@ export function selectEdgesForSession(
       // with `undefined` endpoints.
       continue;
     }
+    // Endpoint-kind discriminator. Derived from "which polymorphic
+    // payload field carried the endpoint id" — same one-shot
+    // resolution as the `sourceId` / `targetId` lookups above. The
+    // wire schema's per-endpoint XOR guarantees exactly one of each
+    // pair is set, so the `!== undefined` check is unambiguous; the
+    // defensive guard above already filters edges where neither is
+    // set. Refinement:
+    // `mod_hover_popover_endpoint_kind_disambiguation`.
+    const sourceKind: EdgeEndpointKind =
+      event.payload.source_node_id !== undefined ? 'node' : 'annotation';
+    const targetKind: EdgeEndpointKind =
+      event.payload.target_node_id !== undefined ? 'node' : 'annotation';
     const annotations = annotationsByEdge.get(event.payload.edge_id) ?? EMPTY_ANNOTATIONS;
     const facetStatuses = facetStatusIndex.edges.get(event.payload.edge_id) ?? EMPTY_FACET_STATUSES;
     // Per-edge diagnostic-highlight enrichment from the precomputed
@@ -421,6 +478,8 @@ export function selectEdgesForSession(
             facetStatuses,
             sourceId,
             targetId,
+            sourceKind,
+            targetKind,
             sourceWording,
             targetWording,
           }
@@ -431,6 +490,8 @@ export function selectEdgesForSession(
             diagnosticHighlight,
             sourceId,
             targetId,
+            sourceKind,
+            targetKind,
             sourceWording,
             targetWording,
           };

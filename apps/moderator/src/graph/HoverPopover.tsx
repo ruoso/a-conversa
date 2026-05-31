@@ -288,7 +288,8 @@ export function HoverPopover(props: HoverPopoverProps): ReactElement {
   // popover — the cards already show wording with measured dimensions
   // per `mod_layout_measured_dimensions`. The endpoint references row
   // surfaces the canvas-stable canonical handle (the node ids) instead.
-  const { role, facetStatuses, diagnosticHighlight, sourceId, targetId } = target.data;
+  const { role, facetStatuses, diagnosticHighlight, sourceId, targetId, sourceKind, targetKind } =
+    target.data;
   const roleLabel = t(`methodology.edgeRole.${role}.label`);
   // Conditional role-description seam. Refinement:
   // `mod_edge_popover_full_target_wording` (Option C). The popover
@@ -307,12 +308,17 @@ export function HoverPopover(props: HoverPopoverProps): ReactElement {
   // `moderator.hoverPopover.edgeEndpointsReference` is the ICU template
   // that replaced the retired `edgeEndpoints` template in
   // `mod_edge_popover_full_target_wording`. Substitutes `{sourceId}` /
-  // `{targetId}` — node ids, not user-authored wordings. Locale-
-  // identical body (pure punctuation per the typography codepoint-range
-  // policy).
+  // `{targetId}` — the canvas-stable ids — and now also
+  // `{sourceKind}` / `{targetKind}` (per
+  // `mod_hover_popover_endpoint_kind_disambiguation`), which the
+  // catalog feeds through an ICU `select` to emit a localized
+  // parenthesized kind label after each id. The arrow stays ASCII per
+  // the typography codepoint-range policy.
   const endpointsLine = t('moderator.hoverPopover.edgeEndpointsReference', {
     sourceId,
     targetId,
+    sourceKind,
+    targetKind,
   });
   const facetRows = FACET_RENDER_ORDER.flatMap((facet) => {
     const status = facetStatuses[facet];
@@ -355,6 +361,8 @@ export function HoverPopover(props: HoverPopoverProps): ReactElement {
         data-hover-popover-section="endpoints"
         data-hover-popover-source-id={sourceId}
         data-hover-popover-target-id={targetId}
+        data-hover-popover-source-kind={sourceKind}
+        data-hover-popover-target-kind={targetKind}
         className="text-xs text-slate-700 font-mono break-all"
       >
         {endpointsLine}

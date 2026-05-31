@@ -590,7 +590,7 @@
       }
     },
     "hoverPopover": {
-      "edgeEndpointsReference": "{sourceId} -> {targetId}"
+      "edgeEndpointsReference": "{sourceId} ({sourceKind, select, annotation {annotation} node {node} other {?}}) -> {targetId} ({targetKind, select, annotation {annotation} node {node} other {?}})"
     },
     "graph": {
       "tidyUp": {

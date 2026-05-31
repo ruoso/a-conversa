@@ -736,6 +736,7 @@ task moderator_ui "Moderator UI" {
     task mod_hover_popover_endpoint_kind_disambiguation "Disambiguate annotation vs node endpoint ids in edge-hover popover" {
       effort 0.5d
       allocate team
+      complete 100
       depends !mod_render_annotation_endpoint_edges
       note -8<-
         Source of debt: mod_render_annotation_endpoint_edges (2026-05-30) — the v1 edge-hover popover

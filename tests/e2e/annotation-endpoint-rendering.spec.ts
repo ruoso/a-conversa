@@ -121,5 +121,43 @@ test.describe.serial('moderator annotation-endpoint canvas rendering', () => {
       page.locator(`[data-testid="annotation-badge-${ANNOTATION_ID}"]`),
       'annotation badge must NOT render for a promoted annotation (mutual exclusion)',
     ).toHaveCount(0);
+
+    // -- Endpoint-kind disambiguation in the edge-hover popover ------
+    //
+    // Refinement: `mod_hover_popover_endpoint_kind_disambiguation`.
+    // The edge-hover popover's endpoint-references row now surfaces a
+    // localized parenthesized kind label (`(node)` / `(annotation)`)
+    // after each id, plus matching `data-hover-popover-source-kind` /
+    // `data-hover-popover-target-kind` attributes for stable test
+    // observation. The canonical surface for the assertion is the
+    // annotation-endpoint edge already on the canvas — hovering the
+    // edge label opens the popover; the seeded `N1 -[contradicts]-> A1`
+    // shape pins `source-kind=node` + `target-kind=annotation`.
+    //
+    // Pattern mirrors `tests/e2e/moderator-hover-details.spec.ts`
+    // (the canonical edge-popover spec for node→node edges) — same
+    // hover seam + same `data-hover-target-kind="edge"` + same
+    // endpoints-row selector vocabulary.
+    const edgeLabel = page.getByTestId(`graph-edge-label-${EDGE_ID}`);
+    await expect(edgeLabel, 'annotation-endpoint edge label must render').toBeVisible({
+      timeout: 10_000,
+    });
+    await edgeLabel.hover();
+    const edgePopover = page.getByTestId(`hover-popover-${EDGE_ID}`);
+    await expect(
+      edgePopover,
+      'hover popover must appear when the annotation-endpoint edge is hovered',
+    ).toBeVisible();
+    await expect(edgePopover).toHaveAttribute('data-hover-target-kind', 'edge');
+    const endpointsRow = edgePopover.locator('[data-hover-popover-section="endpoints"]');
+    // Stable data-attribute seams — locale-independent.
+    await expect(endpointsRow).toHaveAttribute('data-hover-popover-source-kind', 'node');
+    await expect(endpointsRow).toHaveAttribute('data-hover-popover-target-kind', 'annotation');
+    // Rendered text under the en-US default locale — pins the catalog
+    // + selector + renderer chain end-to-end. Per Decision §3, the
+    // kind labels live inline in the existing ICU template; a catalog
+    // miss surfaces here as the `(?)` fallback, not as a thrown error.
+    await expect(endpointsRow).toContainText('(node)');
+    await expect(endpointsRow).toContainText('(annotation)');
   });
 });

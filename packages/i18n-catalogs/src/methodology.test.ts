@@ -283,19 +283,22 @@ describe('methodology edgeRole description: known canonical translations', () =>
   });
 });
 
-// Hover-popover ICU template (mod_edge_popover_full_target_wording).
+// Hover-popover ICU template (mod_edge_popover_full_target_wording +
+// mod_hover_popover_endpoint_kind_disambiguation).
 //
 // `moderator.hoverPopover.edgeEndpointsReference` is the ICU template
 // the edge popover renders in place of the retired
 // `moderator.hoverPopover.edgeEndpoints` wording-bearing template. The
-// new template substitutes only `{sourceId}` / `{targetId}` — the
-// node-id pair, not user-authored wording strings — so the popover
-// surfaces the canonical canvas-stable handle (every node card stamps
-// `data-testid="statement-node-<id>"`) instead of duplicating wording
-// the card already shows. All three locales share the same template
-// body because the content is pure punctuation (ASCII `->` per the
-// existing `typography.ts:V1_LOCALE_CODEPOINT_RANGES` policy — Latin
-// Extended-A + General Punctuation only, no Arrows block expansion).
+// template substitutes `{sourceId}` / `{targetId}` (the canvas-stable
+// node-id pair) plus `{sourceKind}` / `{targetKind}` (each fed through
+// an ICU `select` block per
+// `mod_hover_popover_endpoint_kind_disambiguation` Decision §3 — the
+// per-kind labels live inline rather than as a separate
+// `endpointKind.<kind>` catalog key family). The arrow + parens are
+// ASCII per the existing `typography.ts:V1_LOCALE_CODEPOINT_RANGES`
+// policy (Latin Extended-A + General Punctuation only, no Arrows
+// block expansion); the localized surface is the kind noun inside
+// the parens.
 //
 // The negative-assertion block also pins that the retired
 // `moderator.hoverPopover.edgeEndpoints` key no longer resolves in any
@@ -313,6 +316,8 @@ describe('moderator.hoverPopover.edgeEndpointsReference round-trip', () => {
       const rendered = instance.t('moderator.hoverPopover.edgeEndpointsReference', {
         sourceId: 'src-1',
         targetId: 'tgt-1',
+        sourceKind: 'node',
+        targetKind: 'node',
       });
       // Non-empty.
       expect(rendered).toBeTruthy();
@@ -327,6 +332,49 @@ describe('moderator.hoverPopover.edgeEndpointsReference round-trip', () => {
       expect(rendered).toContain('->');
     });
   }
+
+  // Per-locale kind-suffix substitutions (mod_hover_popover_endpoint_kind_disambiguation).
+  // Each locale's `select` arms render its own noun for `node` /
+  // `annotation`; the round-trip catches a catalog-row drift in any
+  // single locale.
+  const KIND_LABELS = {
+    'en-US': { node: 'node', annotation: 'annotation' },
+    'pt-BR': { node: 'nó', annotation: 'anotação' },
+    'es-419': { node: 'nodo', annotation: 'anotación' },
+  } as const;
+  for (const locale of SUPPORTED_LOCALES) {
+    it(`renders the localized (kind) suffix for both endpoints in ${locale}`, async () => {
+      const instance = i18next.createInstance();
+      await instance.use(ICU).init(buildInitOptions(locale));
+      const labels = KIND_LABELS[locale];
+      const rendered = instance.t('moderator.hoverPopover.edgeEndpointsReference', {
+        sourceId: 'src-1',
+        targetId: 'tgt-1',
+        sourceKind: 'node',
+        targetKind: 'annotation',
+      });
+      expect(rendered).toContain(`src-1 (${labels.node})`);
+      expect(rendered).toContain(`tgt-1 (${labels.annotation})`);
+      expect(rendered).toContain('->');
+    });
+  }
+
+  it('renders the ICU `other {?}` fallback for an unrecognized endpoint kind across every locale', async () => {
+    for (const locale of SUPPORTED_LOCALES) {
+      const instance = i18next.createInstance();
+      await instance.use(ICU).init(buildInitOptions(locale));
+      const rendered = instance.t('moderator.hoverPopover.edgeEndpointsReference', {
+        sourceId: 'src-1',
+        targetId: 'tgt-1',
+        sourceKind: 'unknown-future-kind',
+        targetKind: 'unknown-future-kind',
+      });
+      // The select's `other {?}` arm renders `?` — no thrown error, no
+      // catalog miss; the renderer surfaces a typographic neutral
+      // instead of an unlocalized identifier.
+      expect(rendered, `${locale} fallback`).toContain('(?)');
+    }
+  });
 
   it('retires the legacy moderator.hoverPopover.edgeEndpoints key from every locale', async () => {
     // i18next returns the key itself when no translation is found

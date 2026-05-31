@@ -187,6 +187,8 @@ describe('selectEdgesForSession', () => {
         facetStatuses: { substance: 'awaiting-proposal', shape: 'proposed' },
         sourceId: '00000000-0000-4000-8000-000000000001',
         targetId: '00000000-0000-4000-8000-000000000002',
+        sourceKind: 'node',
+        targetKind: 'node',
         sourceWording: '—',
         targetWording: '—',
       },
@@ -1712,6 +1714,107 @@ describe('selectEdgesForSession — annotation-endpoint edges (lifted guard)', (
     expect(edges).toHaveLength(1);
     expect(edges[0]?.source).toBe(ANNO_A);
     expect(edges[0]?.target).toBe(ANNO_B);
+  });
+
+  // -- Endpoint-kind discriminator carriage --------------------------
+  //
+  // Refinement: `mod_hover_popover_endpoint_kind_disambiguation`.
+  // The selector projects `sourceKind` / `targetKind` (an
+  // `EdgeEndpointKind = 'node' | 'annotation'` literal union) onto
+  // `StatementEdgeData` so `<HoverPopover>` can localize a per-kind
+  // suffix on the endpoint-references row without re-walking the
+  // events log. Derivation rule:
+  // `event.payload.source_node_id !== undefined ? 'node' : 'annotation'`
+  // (and symmetric for the target side). The wire schema's
+  // per-endpoint XOR guarantees the kind is always derivable, so the
+  // carriage fields are non-optional.
+  //
+  // These four cases pin every combination of the 2×2 endpoint shape
+  // space (node/annotation × node/annotation) so a regression in
+  // either branch surfaces independently.
+
+  it('stamps sourceKind=node + targetKind=node for a node→node edge', () => {
+    const events: Event[] = [
+      makeEdgeCreated({
+        sequence: 1,
+        edgeId: 'edge-nn',
+        role: 'supports',
+        source: NODE_A,
+        target: NODE_B,
+      }),
+    ];
+    const edges = selectEdgesForSession(makeState(events), SESSION);
+    expect(edges).toHaveLength(1);
+    expect(edges[0]?.data?.sourceKind).toBe('node');
+    expect(edges[0]?.data?.targetKind).toBe('node');
+  });
+
+  it('stamps sourceKind=node + targetKind=annotation for a node→annotation edge', () => {
+    const events: Event[] = [
+      makeAnnotationEndpointEdgeCreated({
+        sequence: 1,
+        edgeId: 'edge-na',
+        role: 'contradicts',
+        sourceNodeId: NODE_A,
+        targetAnnotationId: ANNO_A,
+      }),
+    ];
+    const edges = selectEdgesForSession(makeState(events), SESSION);
+    expect(edges).toHaveLength(1);
+    expect(edges[0]?.data?.sourceKind).toBe('node');
+    expect(edges[0]?.data?.targetKind).toBe('annotation');
+  });
+
+  it('stamps sourceKind=annotation + targetKind=node for an annotation→node edge', () => {
+    const events: Event[] = [
+      makeAnnotationEndpointEdgeCreated({
+        sequence: 1,
+        edgeId: 'edge-an',
+        role: 'supports',
+        sourceAnnotationId: ANNO_A,
+        targetNodeId: NODE_B,
+      }),
+    ];
+    const edges = selectEdgesForSession(makeState(events), SESSION);
+    expect(edges).toHaveLength(1);
+    expect(edges[0]?.data?.sourceKind).toBe('annotation');
+    expect(edges[0]?.data?.targetKind).toBe('node');
+  });
+
+  it('stamps sourceKind=annotation + targetKind=annotation for an annotation→annotation edge', () => {
+    const events: Event[] = [
+      makeAnnotationEndpointEdgeCreated({
+        sequence: 1,
+        edgeId: 'edge-aa',
+        role: 'supports',
+        sourceAnnotationId: ANNO_A,
+        targetAnnotationId: ANNO_B,
+      }),
+    ];
+    const edges = selectEdgesForSession(makeState(events), SESSION);
+    expect(edges).toHaveLength(1);
+    expect(edges[0]?.data?.sourceKind).toBe('annotation');
+    expect(edges[0]?.data?.targetKind).toBe('annotation');
+  });
+
+  it('drops an edge-created event with no source endpoint id BEFORE kind derivation runs (defensive guard regression)', () => {
+    // Wire-protocol violation: neither `source_node_id` nor
+    // `source_annotation_id` set. The defensive guard at L386-391 of
+    // `selectEdgesForSession` filters this edge before the kind
+    // discriminator code runs — so the discriminator never observes
+    // `undefined`. We pin the drop here so a future refactor that
+    // moves the kind derivation above the guard fails loudly.
+    const events: Event[] = [
+      makeAnnotationEndpointEdgeCreated({
+        sequence: 1,
+        edgeId: 'edge-invalid',
+        role: 'supports',
+        targetNodeId: NODE_B,
+        // No source id set on purpose.
+      }),
+    ];
+    const edges = selectEdgesForSession(makeState(events), SESSION);
+    expect(edges).toEqual([]);
   });
 
   it('filters promoted annotations out of an edge data.annotations bucket (mutual exclusion)', () => {
