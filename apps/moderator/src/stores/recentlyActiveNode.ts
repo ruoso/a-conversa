@@ -1,13 +1,16 @@
-// Pure derivation selector — "most-recently-active node id" from the
+// Pure derivation selector — "most-recently-active entity" from the
 // selection store.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_target_auto_suggest.md
+// Refinement: tasks/refinements/moderator-ui/mod_annotation_capture_auto_suggest.md
+// Predecessor: tasks/refinements/moderator-ui/mod_target_auto_suggest.md
 //
 // The rule is: "if `state.selected !== null` AND
-// `state.selected.kind === 'node'`, return `state.selected.id`; otherwise
-// return `null`." Only node selections count as "active" for the
-// auto-suggest target — edges and annotations are excluded because the
-// auto-suggested target is the node-end of a future edge (per
+// `state.selected.kind !== 'edge'`, return
+// `{ kind: state.selected.kind, id: state.selected.id }`; otherwise
+// return `null`." Both node selections AND annotation selections count
+// as "active" for the auto-suggest target — edges are excluded because
+// edges are not valid capture-target endpoints (the staged target is
+// the source/target endpoint of a future edge or annotation-edge per
 // `docs/moderator-ui.md:45`).
 //
 // The selector lives in its own file because future capture-flow tasks
@@ -19,17 +22,20 @@
 import type { SelectionState } from './selectionStore.js';
 
 /**
- * Most-recently-active node id, derived from the selection store.
+ * Kind-aware most-recently-active entity, derived from the selection
+ * store.
  *
- * Returns the id of the currently-selected node, or `null` if nothing
- * is selected OR the selection is an edge / annotation (only node
- * selections count as "active" for auto-suggest purposes — see
- * refinement Decision §1).
+ * Returns `{ kind, id }` for the currently-selected node or annotation,
+ * or `null` if nothing is selected OR the selection is an edge (only
+ * node + annotation selections count as "active" for auto-suggest
+ * purposes — see refinement Decision §1).
  *
  * Pure: depends only on the input state; no side effects.
  */
-export function selectMostRecentlyActiveNodeId(state: SelectionState): string | null {
+export function selectMostRecentlyActiveEntity(
+  state: SelectionState,
+): { kind: 'node' | 'annotation'; id: string } | null {
   if (state.selected === null) return null;
-  if (state.selected.kind !== 'node') return null;
-  return state.selected.id;
+  if (state.selected.kind === 'edge') return null;
+  return { kind: state.selected.kind, id: state.selected.id };
 }

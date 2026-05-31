@@ -2,13 +2,15 @@
 // the bottom-strip capture pane.
 //
 // Refinement: tasks/refinements/moderator-ui/mod_target_auto_suggest.md
+// Refinement: tasks/refinements/moderator-ui/mod_annotation_capture_auto_suggest.md
 //
 // Per ADR 0022 these are committed Vitest cases, not throwaway probes.
 // They lock in:
 //   - The chip's three render states (empty / auto-suggested /
 //     overridden) and their stable testids.
-//   - The auto-stage no-stomp ref contract — a moderator override
-//     survives subsequent selection changes.
+//   - The unified kind-aware auto-stage no-stomp ref contract —
+//     Cases 0/1/2/3 spanning both node and annotation selections,
+//     including cross-kind transitions.
 //   - The wording-truncation display rule and the raw-id fallback when
 //     no `node-created` event is present.
 //   - Per-locale parity round-trip for the four new catalog keys.
@@ -670,34 +672,205 @@ describe('CaptureTargetChip — annotation staging (mod_propose_annotation_endpo
     expect(useCaptureStore.getState().targetEntityKind).toBe('node');
   });
 
-  it('an annotation override survives a subsequent statement-node selection (no stomp)', async () => {
+  // Manual-override path (mod_annotation_capture_auto_suggest Decision
+  // §4): an annotation written into the capture store via an external
+  // writer (e.g. a programmatic stage call) AFTER auto-suggest has
+  // already auto-staged a different entity counts as a Case 3 override
+  // and survives subsequent selection changes — including cross-kind
+  // ones.
+  it('an annotation set via manual override (Case 3) survives a subsequent node selection', async () => {
     seedEvents([
       makeNodeCreated(1, 'n-1', 'first node'),
       makeAnnotationCreated(2, 'a-1', 'annotation body'),
     ]);
     await renderChip();
-    // 1. Auto-suggest fires on a node selection.
+    // 1. Auto-suggest fires on node n-1 → lastAutoStaged = {node, n-1}.
     act(() => {
       useSelectionStore.setState({ selected: { kind: 'node', id: 'n-1' } });
     });
     expect(useCaptureStore.getState().targetEntityId).toBe('n-1');
 
-    // 2. Annotation click stages the annotation (the bridge effect).
+    // 2. External writer stages the annotation (override path — NOT
+    //    via selection). Staged is now {annotation, a-1} but
+    //    lastAutoStaged is still {node, n-1}.
+    act(() => {
+      useCaptureStore.getState().setTargetEntity('annotation', 'a-1');
+    });
+    expect(useCaptureStore.getState().targetEntityId).toBe('a-1');
+    expect(useCaptureStore.getState().targetEntityKind).toBe('annotation');
+
+    // 3. A subsequent node selection: stagedMatchesLastAuto is false
+    //    (a-1 ≠ n-1, annotation ≠ node). Case 3 holds — do not stomp.
+    act(() => {
+      useSelectionStore.setState({ selected: { kind: 'node', id: 'n-1' } });
+    });
+    expect(useCaptureStore.getState().targetEntityId).toBe('a-1');
+    expect(useCaptureStore.getState().targetEntityKind).toBe('annotation');
+  });
+});
+
+// Refinement: tasks/refinements/moderator-ui/mod_annotation_capture_auto_suggest.md
+//
+// Unified auto-suggest contract — the four-case matrix repeated for
+// annotation selections plus the cross-kind transition cases that the
+// unified effect now spans (Decision §4).
+describe('CaptureTargetChip — unified annotation auto-suggest (mod_annotation_capture_auto_suggest)', () => {
+  it('Case 1: empty state + annotation selection → chip stages with kind="annotation"', async () => {
+    seedEvents([makeAnnotationCreated(1, 'a-1', 'annotation body')]);
+    await renderChip();
+    act(() => {
+      useSelectionStore.setState({ selected: { kind: 'annotation', id: 'a-1' } });
+    });
+    expect(useCaptureStore.getState().targetEntityId).toBe('a-1');
+    expect(useCaptureStore.getState().targetEntityKind).toBe('annotation');
+    expect(screen.queryByTestId('capture-target-chip-override-marker')).toBeNull();
+  });
+
+  it('Case 2: annotation A1 auto-staged, select annotation A2 → re-stage to A2', async () => {
+    seedEvents([
+      makeAnnotationCreated(1, 'a-1', 'first annotation'),
+      makeAnnotationCreated(2, 'a-2', 'second annotation'),
+    ]);
+    await renderChip();
     act(() => {
       useSelectionStore.setState({ selected: { kind: 'annotation', id: 'a-1' } });
     });
     expect(useCaptureStore.getState().targetEntityId).toBe('a-1');
     expect(useCaptureStore.getState().targetEntityKind).toBe('annotation');
 
-    // 3. A subsequent statement-node selection does NOT stomp the
-    //    annotation — Case 3 of the auto-stage effect's override
-    //    contract holds (the staged id no longer matches the
-    //    lastAutoStagedRef).
+    act(() => {
+      useSelectionStore.setState({ selected: { kind: 'annotation', id: 'a-2' } });
+    });
+    expect(useCaptureStore.getState().targetEntityId).toBe('a-2');
+    expect(useCaptureStore.getState().targetEntityKind).toBe('annotation');
+    expect(screen.queryByTestId('capture-target-chip-override-marker')).toBeNull();
+  });
+
+  it('Case 3: annotation override survives subsequent annotation selections (no stomp)', async () => {
+    seedEvents([
+      makeAnnotationCreated(1, 'a-1', 'first annotation'),
+      makeAnnotationCreated(2, 'a-2', 'second annotation'),
+      makeAnnotationCreated(3, 'a-other', 'manual override annotation'),
+    ]);
+    await renderChip();
+    // 1. Auto-suggest stages a-1 → lastAutoStaged = {annotation, a-1}.
+    act(() => {
+      useSelectionStore.setState({ selected: { kind: 'annotation', id: 'a-1' } });
+    });
+    expect(useCaptureStore.getState().targetEntityId).toBe('a-1');
+
+    // 2. External writer overrides with a-other.
+    act(() => {
+      useCaptureStore.getState().setTargetEntity('annotation', 'a-other');
+    });
+    expect(useCaptureStore.getState().targetEntityId).toBe('a-other');
+
+    // 3. Subsequent annotation selection does NOT stomp the override.
+    act(() => {
+      useSelectionStore.setState({ selected: { kind: 'annotation', id: 'a-2' } });
+    });
+    expect(useCaptureStore.getState().targetEntityId).toBe('a-other');
+    expect(useCaptureStore.getState().targetEntityKind).toBe('annotation');
+    expect(screen.getByTestId('capture-target-chip-override-marker')).toBeTruthy();
+  });
+
+  it('Case 0: stage annotation A1, clear, re-select A1 → stays cleared; select A2 → re-engages', async () => {
+    seedEvents([
+      makeAnnotationCreated(1, 'a-1', 'first annotation'),
+      makeAnnotationCreated(2, 'a-2', 'second annotation'),
+    ]);
+    await renderChip();
+    act(() => {
+      useSelectionStore.setState({ selected: { kind: 'annotation', id: 'a-1' } });
+    });
+    expect(useCaptureStore.getState().targetEntityId).toBe('a-1');
+
+    act(() => {
+      fireEvent.click(screen.getByTestId('capture-target-chip-clear'));
+    });
+    expect(useCaptureStore.getState().targetEntityId).toBeNull();
+
+    // Re-select the just-cleared annotation a-1 — stays cleared.
+    act(() => {
+      useSelectionStore.setState({ selected: { kind: 'annotation', id: 'a-1' } });
+    });
+    expect(useCaptureStore.getState().targetEntityId).toBeNull();
+
+    // Select a different annotation a-2 — re-engages.
+    act(() => {
+      useSelectionStore.setState({ selected: { kind: 'annotation', id: 'a-2' } });
+    });
+    expect(useCaptureStore.getState().targetEntityId).toBe('a-2');
+    expect(useCaptureStore.getState().targetEntityKind).toBe('annotation');
+  });
+
+  it('cross-kind Case 2: node N1 auto-staged → annotation A1 selected → re-stage to A1', async () => {
+    seedEvents([
+      makeNodeCreated(1, 'n-1', 'first node'),
+      makeAnnotationCreated(2, 'a-1', 'annotation body'),
+    ]);
+    await renderChip();
     act(() => {
       useSelectionStore.setState({ selected: { kind: 'node', id: 'n-1' } });
     });
+    expect(useCaptureStore.getState().targetEntityId).toBe('n-1');
+    expect(useCaptureStore.getState().targetEntityKind).toBe('node');
+
+    act(() => {
+      useSelectionStore.setState({ selected: { kind: 'annotation', id: 'a-1' } });
+    });
     expect(useCaptureStore.getState().targetEntityId).toBe('a-1');
     expect(useCaptureStore.getState().targetEntityKind).toBe('annotation');
+    expect(screen.queryByTestId('capture-target-chip-override-marker')).toBeNull();
+  });
+
+  it('cross-kind Case 2: annotation A1 auto-staged → node N1 selected → re-stage to N1', async () => {
+    seedEvents([
+      makeAnnotationCreated(1, 'a-1', 'annotation body'),
+      makeNodeCreated(2, 'n-1', 'first node'),
+    ]);
+    await renderChip();
+    act(() => {
+      useSelectionStore.setState({ selected: { kind: 'annotation', id: 'a-1' } });
+    });
+    expect(useCaptureStore.getState().targetEntityId).toBe('a-1');
+    expect(useCaptureStore.getState().targetEntityKind).toBe('annotation');
+
+    act(() => {
+      useSelectionStore.setState({ selected: { kind: 'node', id: 'n-1' } });
+    });
+    expect(useCaptureStore.getState().targetEntityId).toBe('n-1');
+    expect(useCaptureStore.getState().targetEntityKind).toBe('node');
+    expect(screen.queryByTestId('capture-target-chip-override-marker')).toBeNull();
+  });
+
+  it('override marker lights up across kinds: node staged + annotation selected (override case)', async () => {
+    seedEvents([
+      makeNodeCreated(1, 'n-1', 'first node'),
+      makeNodeCreated(2, 'n-other', 'manually chosen target'),
+      makeAnnotationCreated(3, 'a-1', 'annotation body'),
+    ]);
+    await renderChip();
+    // 1. Auto-suggest stages n-1, then external writer overrides with
+    //    n-other → Case 3 override active.
+    act(() => {
+      useSelectionStore.setState({ selected: { kind: 'node', id: 'n-1' } });
+    });
+    act(() => {
+      useCaptureStore.getState().setTargetEntityId('n-other');
+    });
+    expect(useCaptureStore.getState().targetEntityId).toBe('n-other');
+    expect(screen.getByTestId('capture-target-chip-override-marker')).toBeTruthy();
+
+    // 2. Selecting an annotation — staged is {node, n-other},
+    //    recentlyActiveEntity is {annotation, a-1}. The override stays
+    //    (Case 3) AND the marker stays visible (kinds differ).
+    act(() => {
+      useSelectionStore.setState({ selected: { kind: 'annotation', id: 'a-1' } });
+    });
+    expect(useCaptureStore.getState().targetEntityId).toBe('n-other');
+    expect(useCaptureStore.getState().targetEntityKind).toBe('node');
+    expect(screen.getByTestId('capture-target-chip-override-marker')).toBeTruthy();
   });
 });
 

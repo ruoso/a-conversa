@@ -1,42 +1,50 @@
 // `<CaptureTargetChip>` — staged edge-target chip for the bottom-strip
 // capture pane.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_target_auto_suggest.md
+// Refinement: tasks/refinements/moderator-ui/mod_annotation_capture_auto_suggest.md
+// Predecessor: tasks/refinements/moderator-ui/mod_target_auto_suggest.md
+// Predecessor: tasks/refinements/moderator-ui/mod_propose_annotation_endpoint_gestures.md
 // Design doc: docs/moderator-ui.md (F1 capture flow, step 3)
 //
 // Mounts into the `bottom-strip-edge-role` sub-slot exposed by
 // `<BottomStripCapture>` (the scaffold from `mod_bottom_strip_capture`).
-// Reads `targetEntityId` from `useCaptureStore` and `selected` from
-// `useSelectionStore`; writes back to `useCaptureStore.setTargetEntityId`
-// only via the auto-stage effect described below. Reads the wording
-// for the staged target from `useWsStore` via the
-// `selectNodeWordingById` selector.
+// Reads `targetEntityId` + `targetEntityKind` from `useCaptureStore` and
+// `selected` from `useSelectionStore`; writes back to
+// `useCaptureStore.setTargetEntity` only via the unified auto-stage
+// effect described below. Reads the wording for the staged target from
+// `useWsStore` via `selectNodeWordingById` (node-staged) or
+// `selectAnnotationContentById` (annotation-staged).
 //
-// **Auto-stage no-stomp contract.** A `useRef` tracks the last id this
-// component wrote via auto-stage. The effect runs four cases (the
-// 0-case below was added by `mod_target_clear_override`):
+// **Unified kind-aware auto-stage no-stomp contract.** A `useRef`
+// tracks the last `{ kind, id }` this component wrote via auto-stage.
+// The effect runs four cases against the kind-aware
+// most-recently-active entity selector (which returns
+// `{ kind: 'node' | 'annotation'; id } | null`; edges never qualify):
 //   (0) `userHasClearedRef.current === true` → the moderator deliberately
 //       cleared via the × button or `Esc`. Stay cleared until the
-//       most-recently-active node id changes (a deliberate
-//       selection-change re-engages the auto-stage path); only then
-//       de-bump the ref, auto-stage the new id, and update
+//       most-recently-active entity changes (by kind OR id); only then
+//       de-bump the ref, auto-stage the new entity, and update
 //       `lastAutoStagedRef`.
-//   (1) `targetEntityId === null` AND the derived "most-recently-active
-//       node id" is non-null → write the id and remember it.
-//   (2) `targetEntityId === lastAutoStagedRef.current` AND the derived
-//       id changed → re-auto-stage to the new id (the moderator never
-//       overrode; selection just moved).
-//   (3) `targetEntityId !== lastAutoStagedRef.current` AND non-null →
-//       the slice is an override (a different writer wrote a value the
-//       auto-stage didn't put there); do NOT stomp.
+//   (1) `targetEntityId === null` AND the derived entity is non-null →
+//       write `{ kind, id }` and remember it.
+//   (2) The staged target equals the previously auto-staged
+//       `{ kind, id }` AND the derived entity changed (by kind OR id)
+//       → re-auto-stage to the new entity (the moderator never
+//       overrode; selection just moved, possibly across kinds).
+//   (3) The staged target is NOT the previously auto-staged `{ kind,
+//       id }` AND non-null → the slice is an override; do NOT stomp.
 // The ref-tracked seam is what lets an override survive subsequent
-// selection changes without the auto-stage clobbering it.
+// selection changes without the auto-stage clobbering it. Cross-kind
+// transitions are first-class (Decision §4): clicking an annotation
+// after staging a node, or vice versa, triggers Case 2 when no
+// override is active.
 //
 // **Override marker.** When `targetEntityId !== null` AND the derived
-// most-recently-active node id differs from `targetEntityId`, the chip
-// renders a small amber dot marker (informational only, screen-reader
-// labelled). The marker is invisible when the slice is `null`, and
-// invisible when the slice matches the auto-suggestion.
+// most-recently-active entity differs from the staged target (by kind
+// OR id), the chip renders a small amber dot marker (informational
+// only, screen-reader labelled). The marker is invisible when the
+// slice is `null`, and invisible when the slice matches the
+// auto-suggestion.
 //
 // **Clear gesture.** In the filled state the chip also renders a small
 // `×` button (testid `capture-target-chip-clear`). Clicking it — or
@@ -63,11 +71,12 @@
 import { useCallback, useEffect, useRef, type ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router-dom';
+import { useShallow } from 'zustand/react/shallow';
 import type { Event } from '@a-conversa/shared-types';
 
 import { useCaptureStore, type EdgeDirection } from '../stores/captureStore';
 import { useSelectionStore } from '../stores/selectionStore';
-import { selectMostRecentlyActiveNodeId } from '../stores/recentlyActiveNode';
+import { selectMostRecentlyActiveEntity } from '../stores/recentlyActiveNode';
 import { useWsStore } from '../ws/wsStore';
 import { selectAnnotationContentById, selectNodeWordingById } from '../graph/selectors';
 import { attachCaptureKeymap, type CaptureKeymapHandlers } from './captureKeymap';
@@ -126,23 +135,28 @@ export function CaptureTargetChip(): ReactElement {
   const setEdgeRole = useCaptureStore((s) => s.setEdgeRole);
   const edgeDirection = useCaptureStore((s) => s.edgeDirection);
   const setEdgeDirection = useCaptureStore((s) => s.setEdgeDirection);
-  const selectedEntity = useSelectionStore((s) => s.selected);
-  const recentlyActiveNodeId = useSelectionStore(selectMostRecentlyActiveNodeId);
+  // `useShallow` is required because the kind-aware selector returns a
+  // fresh `{ kind, id }` object each call; without shallow equality
+  // Zustand v5's `useSyncExternalStore`-backed subscription would warn
+  // about an unstable snapshot and re-render on every store touch.
+  const recentlyActiveEntity = useSelectionStore(useShallow(selectMostRecentlyActiveEntity));
   const events = useWsStore((s) => s.sessionState[sessionId]?.events ?? EMPTY_EVENTS);
 
-  // Tracks the last id this component wrote via auto-stage. The ref
-  // distinguishes "the staged target is whatever auto-suggest last
-  // wrote" from "the staged target is a deliberate override" — see the
-  // file header for the four-case contract. The ref persists across
-  // renders without itself triggering a re-render on update.
-  const lastAutoStagedRef = useRef<string | null>(null);
+  // Tracks the last `{ kind, id }` this component wrote via auto-stage.
+  // The ref distinguishes "the staged target is whatever auto-suggest
+  // last wrote" from "the staged target is a deliberate override" —
+  // see the file header for the four-case contract. The ref persists
+  // across renders without itself triggering a re-render on update.
+  // Kind-aware so cross-kind transitions (node↔annotation) participate
+  // in Case 2 (Decision §4 of mod_annotation_capture_auto_suggest).
+  const lastAutoStagedRef = useRef<{ kind: 'node' | 'annotation'; id: string } | null>(null);
 
   // Tracks whether the moderator deliberately cleared the target via
   // the × button or `Esc`. `true` after a clear gesture; reset to
   // `false` by Case 0 of the auto-stage effect when the
-  // most-recently-active node id changes (a deliberate
-  // selection-change re-engages the auto-stage path). Per-mount UI
-  // state — the same idiom as `lastAutoStagedRef`.
+  // most-recently-active entity changes (a deliberate selection-change
+  // re-engages the auto-stage path). Per-mount UI state — the same
+  // idiom as `lastAutoStagedRef`.
   const userHasClearedRef = useRef<boolean>(false);
 
   const handleClear = useCallback(() => {
@@ -178,73 +192,59 @@ export function CaptureTargetChip(): ReactElement {
   }, []);
 
   useEffect(() => {
-    if (recentlyActiveNodeId === null) return;
+    if (recentlyActiveEntity === null) return;
+    const stagedMatchesLastAuto =
+      lastAutoStagedRef.current !== null &&
+      stagedTargetId === lastAutoStagedRef.current.id &&
+      stagedTargetKind === lastAutoStagedRef.current.kind;
+    const activeDiffersFromLastAuto =
+      lastAutoStagedRef.current === null ||
+      lastAutoStagedRef.current.id !== recentlyActiveEntity.id ||
+      lastAutoStagedRef.current.kind !== recentlyActiveEntity.kind;
     // Case 0: the moderator deliberately cleared (via × button or
-    // `Esc`). Wait for the most-recently-active node id to change
-    // before re-engaging the auto-stage path. If the active node has
-    // changed, de-bump the ref and re-stage; otherwise stay cleared.
+    // `Esc`). Wait for the most-recently-active entity to change
+    // (by kind OR id) before re-engaging the auto-stage path. If the
+    // active entity has changed, de-bump the ref and re-stage;
+    // otherwise stay cleared.
     if (userHasClearedRef.current) {
-      if (recentlyActiveNodeId !== lastAutoStagedRef.current) {
+      if (activeDiffersFromLastAuto) {
         userHasClearedRef.current = false;
-        setTargetEntityId(recentlyActiveNodeId);
-        lastAutoStagedRef.current = recentlyActiveNodeId;
+        setTargetEntity(recentlyActiveEntity.kind, recentlyActiveEntity.id);
+        lastAutoStagedRef.current = {
+          kind: recentlyActiveEntity.kind,
+          id: recentlyActiveEntity.id,
+        };
       }
       return;
     }
     // Case 1: nothing staged yet — auto-stage.
     if (stagedTargetId === null) {
-      setTargetEntityId(recentlyActiveNodeId);
-      lastAutoStagedRef.current = recentlyActiveNodeId;
+      setTargetEntity(recentlyActiveEntity.kind, recentlyActiveEntity.id);
+      lastAutoStagedRef.current = {
+        kind: recentlyActiveEntity.kind,
+        id: recentlyActiveEntity.id,
+      };
       return;
     }
     // Case 2: the staged target IS the previously auto-staged one
-    // AND the most-recently-active node has changed — re-auto-stage
-    // to the new active node (the moderator never overrode; they just
-    // moved selection).
-    if (stagedTargetId === lastAutoStagedRef.current && stagedTargetId !== recentlyActiveNodeId) {
-      setTargetEntityId(recentlyActiveNodeId);
-      lastAutoStagedRef.current = recentlyActiveNodeId;
+    // (same kind + id) AND the most-recently-active entity has
+    // changed (by kind OR id) — re-auto-stage to the new active
+    // entity (the moderator never overrode; they just moved
+    // selection, possibly across kinds).
+    if (stagedMatchesLastAuto && activeDiffersFromLastAuto) {
+      setTargetEntity(recentlyActiveEntity.kind, recentlyActiveEntity.id);
+      lastAutoStagedRef.current = {
+        kind: recentlyActiveEntity.kind,
+        id: recentlyActiveEntity.id,
+      };
       return;
     }
     // Case 3: the staged target is NOT the previously auto-staged one
     // — the moderator has overridden. Do not stomp. The override
-    // survives subsequent selection changes until the clear gesture
-    // (× button / Esc) explicitly clears the slice.
-  }, [recentlyActiveNodeId, stagedTargetId, setTargetEntityId]);
-
-  // Tracks the last annotation id this component staged via the
-  // selection-bridge effect below. Mirrors `lastAutoStagedRef` for the
-  // node-side auto-suggest: lets the clear gesture (× button / Esc)
-  // distinguish "the moderator just cleared this annotation, stay
-  // cleared" from "the moderator selected a different annotation after
-  // clearing, re-engage."
-  const lastAnnotationStagedRef = useRef<string | null>(null);
-
-  // Annotation-staging bridge (Decision §4 of
-  // `mod_propose_annotation_endpoint_gestures.md`). When the
-  // moderator's selection lands on an annotation node, stage it as
-  // the capture target with `kind: 'annotation'`. Auto-suggest stays
-  // node-scoped (Decision §5) — this is the ONLY path that writes
-  // `targetEntityKind: 'annotation'`. The deliberate click counts
-  // as a re-engage gesture against any prior clear when the
-  // selection-annotation id differs from the last-staged annotation
-  // id, mirroring Case 0 of the auto-stage effect above (a fresh
-  // selection re-engages; staying on the just-cleared entity does
-  // not).
-  useEffect(() => {
-    if (selectedEntity === null) return;
-    if (selectedEntity.kind !== 'annotation') return;
-    // Respect a deliberate clear gesture: stay cleared unless the
-    // moderator's selection has moved to a different annotation id.
-    if (userHasClearedRef.current) {
-      if (selectedEntity.id === lastAnnotationStagedRef.current) return;
-      userHasClearedRef.current = false;
-    }
-    // Idempotent guard — don't re-fire when the slice already matches.
-    if (stagedTargetId === selectedEntity.id && stagedTargetKind === 'annotation') return;
-    setTargetEntity('annotation', selectedEntity.id);
-    lastAnnotationStagedRef.current = selectedEntity.id;
-  }, [selectedEntity, stagedTargetId, stagedTargetKind, setTargetEntity]);
+    // survives subsequent selection changes (including cross-kind
+    // moves) until the clear gesture (× button / Esc) explicitly
+    // clears the slice.
+  }, [recentlyActiveEntity, stagedTargetId, stagedTargetKind, setTargetEntity]);
 
   // Render-side derivation. Resolve the staged target's display label
   // from the events log; fall back to the raw id when the kind-
@@ -267,13 +267,13 @@ export function CaptureTargetChip(): ReactElement {
         : truncate(targetWording, WORDING_TRUNCATE_AT);
 
   // Override marker is visible only when the staged target is non-null
-  // AND differs from the derived most-recently-active node id (the
-  // auto-suggestion). The marker is invisible in the empty state and
-  // invisible when the staged target IS the auto-suggestion.
+  // AND differs (by kind OR id) from the derived most-recently-active
+  // entity (the auto-suggestion). The marker is invisible in the empty
+  // state and invisible when the staged target IS the auto-suggestion.
   const overrideActive =
     stagedTargetId !== null &&
-    recentlyActiveNodeId !== null &&
-    stagedTargetId !== recentlyActiveNodeId;
+    recentlyActiveEntity !== null &&
+    (stagedTargetId !== recentlyActiveEntity.id || stagedTargetKind !== recentlyActiveEntity.kind);
 
   if (stagedTargetId === null) {
     return (

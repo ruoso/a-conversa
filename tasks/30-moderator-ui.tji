@@ -751,6 +751,7 @@ task moderator_ui "Moderator UI" {
     task mod_annotation_capture_auto_suggest "Widen capture-target auto-suggest to surface annotation nodes" {
       effort 0.5d
       allocate team
+      complete 100
       depends !mod_propose_annotation_endpoint_gestures
       note -8<-
         Source of debt: mod_propose_annotation_endpoint_gestures (2026-05-31) — auto-suggest stays
