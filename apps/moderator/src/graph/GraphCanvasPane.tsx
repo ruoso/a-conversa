@@ -113,6 +113,7 @@ import {
 import { edgeTypes } from './edgeTypes.js';
 import { DrawEdgeRolePicker } from './DrawEdgeRolePicker.js';
 import { GraphContextMenu, type MenuItem } from './GraphContextMenu.js';
+import { SnapshotMarkerStrip } from './SnapshotMarkerStrip.js';
 import { applyLayout, relayoutAll } from './layoutEngine.js';
 import {
   buildFacetStatusIndexFromBroadcast,
@@ -1716,6 +1717,7 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
       >
         {t('moderator.graph.tidyUp.label')}
       </button>
+      <SnapshotMarkerStrip sessionId={sessionId} />
       {contextMenu !== null ? (
         <GraphContextMenu
           x={contextMenu.x}

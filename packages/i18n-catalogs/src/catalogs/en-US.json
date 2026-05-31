@@ -308,6 +308,11 @@
         "unknown": "Could not save the snapshot — please retry."
       }
     },
+    "snapshotMarker": {
+      "stripAriaLabel": "Snapshot markers",
+      "header": "Snapshots ({n, number})",
+      "overflowLabel": "{n, plural, one {# more snapshot} other {# more snapshots}}"
+    },
     "markMetaDisagreementButton": {
       "label": "Mark meta-disagreement",
       "inFlightLabel": "Marking…",

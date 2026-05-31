@@ -308,6 +308,11 @@
         "unknown": "Não foi possível salvar o instantâneo — por favor tente novamente."
       }
     },
+    "snapshotMarker": {
+      "stripAriaLabel": "Marcadores de instantâneo",
+      "header": "Instantâneos ({n, number})",
+      "overflowLabel": "{n, plural, one {mais # instantâneo} other {mais # instantâneos}}"
+    },
     "markMetaDisagreementButton": {
       "label": "Marcar meta-discordância",
       "inFlightLabel": "Marcando…",

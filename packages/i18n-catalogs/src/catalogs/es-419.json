@@ -308,6 +308,11 @@
         "unknown": "No se pudo guardar la instantánea — por favor reintenta."
       }
     },
+    "snapshotMarker": {
+      "stripAriaLabel": "Marcadores de instantánea",
+      "header": "Instantáneas ({n, number})",
+      "overflowLabel": "{n, plural, one {# instantánea más} other {# instantáneas más}}"
+    },
     "markMetaDisagreementButton": {
       "label": "Marcar meta-desacuerdo",
       "inFlightLabel": "Marcando…",

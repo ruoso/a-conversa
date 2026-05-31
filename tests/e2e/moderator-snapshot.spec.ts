@@ -233,4 +233,78 @@ test.describe('moderator snapshot trigger — sidebar button + Cmd/Ctrl+S shortc
     // anything, awaiting the promise re-throws and fails the test.
     await Promise.all(dialogPromises);
   });
+
+  // -- mod_snapshot_visual_marker — pay down deferred-e2e debt -------
+  //
+  // The marker is the on-graph visual confirmation that an F10 snapshot
+  // landed. Tests 7 and 8 close the loop registered by
+  // `mod_snapshot_label_input` ("labeled-snapshot event arrives →
+  // marker renders") by driving the modal end-to-end and asserting
+  // the canvas-corner overlay updates.
+
+  test('Test 7 — submitting a labeled snapshot mounts the snapshot-marker strip with one card carrying the label', async ({
+    page,
+  }) => {
+    await reachOperate(page, 'Snapshot marker landing regression check.');
+
+    // Baseline: no snapshots → strip is absent.
+    await expect(
+      page.getByTestId('snapshot-marker-strip'),
+      'no marker strip mounts when no snapshot-created events exist',
+    ).toHaveCount(0);
+
+    // Drive the modal: open → type → submit.
+    await page.getByTestId('snapshot-action-button').click();
+    const modal = page.getByTestId('snapshot-label-input-modal');
+    await expect(modal).toBeVisible();
+    await page.getByTestId('snapshot-label-input-field').fill('Segment 1 close');
+    await page.getByTestId('snapshot-label-input-submit').click();
+    await expect(modal, 'modal unmounts after a successful submit ack').toHaveCount(0, {
+      timeout: 10_000,
+    });
+
+    // The `snapshot-created` event has now flowed through the
+    // projection. The strip appears with one card whose
+    // `data-snapshot-label` mirrors the submitted text.
+    const strip = page.getByTestId('snapshot-marker-strip');
+    await expect(strip, 'marker strip mounts once the snapshot event is projected').toBeVisible();
+    const cards = strip.locator(
+      '[data-testid^="snapshot-marker-"]:not([data-testid="snapshot-marker-overflow"])',
+    );
+    await expect(cards).toHaveCount(1);
+    await expect(cards.first()).toHaveAttribute('data-snapshot-label', 'Segment 1 close');
+  });
+
+  test('Test 8 — a second snapshot stacks newest-first in the marker strip', async ({ page }) => {
+    await reachOperate(page, 'Snapshot marker reverse-chrono regression check.');
+
+    // First snapshot via sidebar button + modal.
+    await page.getByTestId('snapshot-action-button').click();
+    await page.getByTestId('snapshot-label-input-field').fill('Segment 1 close');
+    await page.getByTestId('snapshot-label-input-submit').click();
+    await expect(page.getByTestId('snapshot-label-input-modal')).toHaveCount(0, {
+      timeout: 10_000,
+    });
+
+    // Second snapshot via Cmd/Ctrl+S shortcut + modal.
+    const chord = process.platform === 'darwin' ? 'Meta+s' : 'Control+s';
+    await page.getByTestId('route-operate').click();
+    await page.keyboard.press(chord);
+    await expect(page.getByTestId('snapshot-label-input-modal')).toBeVisible();
+    await page.getByTestId('snapshot-label-input-field').fill('Segment 2 close');
+    await page.getByTestId('snapshot-label-input-submit').click();
+    await expect(page.getByTestId('snapshot-label-input-modal')).toHaveCount(0, {
+      timeout: 10_000,
+    });
+
+    // Both cards visible; newest first.
+    const strip = page.getByTestId('snapshot-marker-strip');
+    await expect(strip).toBeVisible();
+    const cards = strip.locator(
+      '[data-testid^="snapshot-marker-"]:not([data-testid="snapshot-marker-overflow"])',
+    );
+    await expect(cards).toHaveCount(2);
+    await expect(cards.nth(0)).toHaveAttribute('data-snapshot-label', 'Segment 2 close');
+    await expect(cards.nth(1)).toHaveAttribute('data-snapshot-label', 'Segment 1 close');
+  });
 });

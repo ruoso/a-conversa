@@ -3481,3 +3481,64 @@ describe('GraphCanvasPane — annotation-node right-click routing (mod_annotatio
     );
   });
 });
+
+// -- mod_snapshot_visual_marker --------------------------------------
+//
+// The snapshot-marker strip mounts inside the canvas container as a
+// sibling of the tidy-up button. Tests assert: (a) it is mounted (the
+// component-level empty-state collapses to null, so we observe its
+// absence in the empty case), (b) injecting a `snapshot-created` event
+// into the WS store flips the strip to visible with the correct card.
+//
+// The strip's own behavioural coverage (reverse-chrono order, cap,
+// overflow row, ICU plural, i18n parity) lives in
+// `SnapshotMarkerStrip.test.tsx`. These cases only pin the mount
+// contract on the GraphCanvasPane side.
+
+function makeSnapshotCreatedForCanvas(opts: {
+  sequence: number;
+  envelopeId: string;
+  snapshotId: string;
+  label: string;
+  logPosition: number;
+}): Event {
+  return {
+    id: opts.envelopeId,
+    sessionId: SESSION_ID,
+    sequence: opts.sequence,
+    kind: 'snapshot-created',
+    actor: ACTOR,
+    payload: {
+      snapshot_id: opts.snapshotId,
+      label: opts.label,
+      log_position: opts.logPosition,
+    },
+    createdAt: '2026-05-31T00:00:00.000Z',
+  };
+}
+
+describe('GraphCanvasPane — snapshot marker strip mount (mod_snapshot_visual_marker)', () => {
+  it('(a) does NOT render the marker strip when no snapshot-created events exist', () => {
+    renderGraphWithWsClient();
+    expect(screen.queryByTestId('snapshot-marker-strip')).toBeNull();
+  });
+
+  it('(b) renders the marker strip with one card after a snapshot-created event lands', () => {
+    const SNAP_ID = '00000000-0000-4000-8000-0000000000a1';
+    useWsStore.getState().applyEvent(
+      makeSnapshotCreatedForCanvas({
+        sequence: 1,
+        envelopeId: '00000000-0000-4000-8000-0000000000f1',
+        snapshotId: SNAP_ID,
+        label: 'Segment 1 close',
+        logPosition: 4,
+      }),
+    );
+    renderGraphWithWsClient();
+    const strip = screen.getByTestId('snapshot-marker-strip');
+    expect(strip).toBeTruthy();
+    const card = screen.getByTestId(`snapshot-marker-${SNAP_ID}`);
+    expect(card.getAttribute('data-snapshot-label')).toBe('Segment 1 close');
+    expect(card.getAttribute('data-log-position')).toBe('4');
+  });
+});

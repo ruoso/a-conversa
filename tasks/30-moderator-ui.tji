@@ -624,6 +624,7 @@ task moderator_ui "Moderator UI" {
     task mod_snapshot_visual_marker "Visual marker on graph for snapshot point" {
       effort 0.5d
       allocate team
+      complete 100
       depends !mod_snapshot_action
     }
   }

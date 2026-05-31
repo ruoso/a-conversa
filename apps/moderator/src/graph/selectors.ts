@@ -406,6 +406,44 @@ export function groupPendingAxiomMarksByNode(
 // `<VoteIndicator>` / tests) import directly from `@a-conversa/shell`.
 
 /**
+ * Camel-cased projection of one `snapshot-created` event — the named
+ * event-log marker minted by F10 ("Snapshot a segment").
+ *
+ * Refinement: tasks/refinements/moderator-ui/mod_snapshot_visual_marker.md
+ *
+ * Snapshots are immutable once minted (no terminator events, no
+ * amendment); the projection is a straight 1:1 mapping from each
+ * `snapshot-created` envelope to a `Snapshot` record.
+ */
+export interface Snapshot {
+  readonly snapshotId: string;
+  readonly label: string;
+  readonly logPosition: number;
+  readonly createdAt: string;
+}
+
+/**
+ * Pure projection from a session's event log to the `Snapshot[]` shape —
+ * one record per `snapshot-created` envelope, emitted in event-log
+ * (chronological) order. Consumers reverse for newest-first display.
+ *
+ * `O(events)`; pure; no React, no store reads.
+ */
+export function projectSnapshots(events: readonly Event[]): Snapshot[] {
+  const out: Snapshot[] = [];
+  for (const event of events) {
+    if (event.kind !== 'snapshot-created') continue;
+    out.push({
+      snapshotId: event.payload.snapshot_id,
+      label: event.payload.label,
+      logPosition: event.payload.log_position,
+      createdAt: event.createdAt,
+    });
+  }
+  return out;
+}
+
+/**
  * Project the per-session WS event log into the ReactFlow edge list.
  *
  * Walks `state.sessionState[sessionId]?.events` once, picks every
