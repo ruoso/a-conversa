@@ -60,6 +60,7 @@ import {
   type Event,
   type ProposalPayload,
 } from './events.js';
+import { MAX_SNAPSHOT_LABEL_LENGTH } from './limits.js';
 
 // -- Message-type vocabulary ----------------------------------------
 //
@@ -121,6 +122,7 @@ export const wsMessageTypes = [
   'catch-up',
   'withdraw-proposal',
   'withdraw-agreement',
+  'label-snapshot',
   // Group C — server → client ack / result types correlated via
   // `inResponseTo`. Append future sibling ack/result types at this
   // group's tail.
@@ -134,6 +136,7 @@ export const wsMessageTypes = [
   'caught-up',
   'proposal-withdrawn',
   'agreement-withdrawn',
+  'snapshot-labeled',
   // Group A — server-emitted unsolicited broadcast + the canonical
   // error envelope (which `inResponseTo` echoes when correlated).
   'event-applied',
@@ -1221,6 +1224,126 @@ export const agreementWithdrawnPayloadSchema = z.object({
 
 export type AgreementWithdrawnPayload = z.infer<typeof agreementWithdrawnPayloadSchema>;
 
+// -- label-snapshot / snapshot-labeled payloads --------------------
+//
+// `label-snapshot` (client → server): the moderator asks the server to
+// mint a labeled snapshot of the current projection state. The payload
+// carries `{ sessionId, expectedSequence, label }`; the handler runs
+// the wire-layer gate stack (subscribe-before-act → visibility
+// re-check → moderator-only authority gate → `expectedSequence`
+// optimistic-concurrency gate), calls the standalone
+// `createSnapshot` helper to validate the label and mint a
+// `snapshot-created` event envelope, appends the event, broadcasts
+// the `event-applied` frame, and acks the originating socket with a
+// `snapshot-labeled` envelope carrying `{ snapshotId }`.
+//
+// **Owned by `ws_label_snapshot_message`.** This task adds
+// `label-snapshot` to Group B and `snapshot-labeled` to Group C of
+// the union-extension convention documented in `wsMessageTypes`
+// above. Mirrors the commit / mark-meta-disagreement skeleton — same
+// gate stack, same dual-signal contract, same dispatcher-seam error
+// path. Differs from the four agreement-engine handlers in three
+// ways: (1) no projection load (the engine helper does not consume a
+// `Projection`); (2) moderator-only authority is enforced at the WS
+// layer (the helper does no role gating); (3) the ack envelope name
+// is `snapshot-labeled` rather than a past-participle of the request
+// verb — pre-reserved by [`ws_snapshot_message`](./snapshot.ts)
+// Decision §"snapshot-state is the response envelope name".
+//
+// **Wire-type naming.** Request `label-snapshot` is verb-noun (mirrors
+// `mark-meta-disagreement`); ack `snapshot-labeled` is past-participle
+// (mirrors the family's `proposed` / `voted` / `committed` /
+// `meta-disagreement-marked`). The read-side `snapshot` /
+// `snapshot-state` pair owns its own namespace; the write-side names
+// are kept distinct to keep wire traces unambiguous.
+//
+// **Moderator identity comes from the connection, not the payload.**
+// The handler reads `connection.user.id` and uses it as both the
+// moderator-only check key AND the event actor. The request payload
+// carries NO `moderatorId` field. Symmetric with propose / vote /
+// commit / mark-meta-disagreement.
+//
+// **Label validation is the engine helper's responsibility.** The
+// wire schema's `min(1).max(128)` is the cheap-rejection guard at
+// the envelope-parse layer; the engine's trim-then-non-empty check
+// is the source-of-truth for the `'invalid-label'` rejection. A
+// whitespace-only label passes the wire schema (`length >= 1`) and
+// gets rejected by the engine — by design.
+
+/**
+ * Client → server. Asks the server to mint a labeled snapshot of the
+ * current projection state for `sessionId`. The client must have
+ * already sent a successful `subscribe` for the same session (the
+ * server enforces); otherwise the wire response is an `error`
+ * envelope with `code: 'forbidden'`.
+ *
+ * The handler enforces moderator-only authority at the WS layer —
+ * the session's moderator (`host_user_id`) is the only authorized
+ * actor. A non-moderator subscribed participant receives an `error`
+ * envelope with `code: 'moderator-only'` (status 403).
+ *
+ * Authority + state checks the handler enforces (each a distinct
+ * typed wire `code`):
+ *
+ *   - Not subscribed: wire `code: 'forbidden'`.
+ *   - Session not visible: wire `code: 'not-found'` (existence-non-leak
+ *     — re-checked inside the FOR UPDATE'd transaction).
+ *   - Not the moderator: wire `code: 'moderator-only'` (status 403).
+ *   - Sequence-mismatch: wire `code: 'sequence-mismatch'`
+ *     (optimistic-concurrency check fails inside the FOR UPDATE'd
+ *     transaction).
+ *   - Invalid label (empty after trim, or over the 128-char cap): wire
+ *     `code: 'invalid-label'` (status 400) — emitted by the engine
+ *     helper's `createSnapshot`.
+ *
+ * On success the server sends two server-emitted envelopes to the
+ * moderator:
+ *
+ *   1. The standard `event-applied` broadcast (carrying the appended
+ *      `snapshot-created` event verbatim). Every connection in
+ *      `connectionsForSession(sessionId)` — including the moderator —
+ *      receives this.
+ *   2. A `snapshot-labeled` ack (this envelope's request-response
+ *      pair), correlated via `inResponseTo`. Carries
+ *      `{ snapshotId }` — the `payload.snapshot_id` from the minted
+ *      `snapshot-created` event so the moderator's modal can
+ *      correlate the success with the projection's incoming snapshot
+ *      record.
+ *
+ * Broadcast precedes ack (same ordering as commit /
+ * mark-meta-disagreement) — keeps the "everyone, including the
+ * originator, sees the broadcast" invariant intact.
+ */
+export const wsLabelSnapshotPayloadSchema = z.object({
+  sessionId: z.string().uuid(),
+  expectedSequence: z.number().int().nonnegative(),
+  label: z.string().min(1).max(MAX_SNAPSHOT_LABEL_LENGTH),
+});
+
+export type WsLabelSnapshotPayload = z.infer<typeof wsLabelSnapshotPayloadSchema>;
+
+/**
+ * Server → client ack. Echoes the originating `label-snapshot`
+ * envelope's `id` via `inResponseTo`. Payload carries the
+ * `snapshotId` minted by the engine helper inside the
+ * `snapshot-created` event's `payload.snapshot_id` — distinct from
+ * the event envelope's `id` (the envelope id identifies the row in
+ * `session_events`; the snapshot id identifies the snapshot record
+ * within the projection). The ack lets the moderator's modal
+ * correlate the success with the projection's incoming snapshot.
+ *
+ * Suffixed `AckPayloadSchema` to leave room for a future event-side
+ * `snapshotLabeledPayloadSchema` exported from `events.ts` if the
+ * event-kind catalog ever grows a separate `snapshot-labeled` event
+ * (today there is none — `snapshot-created` is the only
+ * snapshot-related event kind).
+ */
+export const snapshotLabeledAckPayloadSchema = z.object({
+  snapshotId: z.string().uuid(),
+});
+
+export type SnapshotLabeledAckPayload = z.infer<typeof snapshotLabeledAckPayloadSchema>;
+
 // -- event-applied payload -----------------------------------------
 //
 // `event-applied` (server → client): emitted by the broadcast surface
@@ -1593,6 +1716,7 @@ export const wsMessagePayloadSchemas: Record<WsMessageType, z.ZodTypeAny> = {
   'catch-up': catchUpPayloadSchema,
   'withdraw-proposal': wsWithdrawProposalPayloadSchema,
   'withdraw-agreement': wsWithdrawAgreementPayloadSchema,
+  'label-snapshot': wsLabelSnapshotPayloadSchema,
   // Group C — server → client ack/result payload schemas.
   subscribed: subscribedPayloadSchema,
   unsubscribed: unsubscribedPayloadSchema,
@@ -1604,6 +1728,7 @@ export const wsMessagePayloadSchemas: Record<WsMessageType, z.ZodTypeAny> = {
   'caught-up': caughtUpPayloadSchema,
   'proposal-withdrawn': proposalWithdrawnPayloadSchema,
   'agreement-withdrawn': agreementWithdrawnPayloadSchema,
+  'snapshot-labeled': snapshotLabeledAckPayloadSchema,
   // The outer event envelope is checked; the per-kind payload inside
   // the event is `z.unknown()` per the schema in `events.ts` and is
   // re-validated by `validateEvent` on the receiving side. Server-side
@@ -1635,6 +1760,7 @@ export interface WsMessagePayloadMap {
   'catch-up': CatchUpPayload;
   'withdraw-proposal': WsWithdrawProposalPayload;
   'withdraw-agreement': WsWithdrawAgreementPayload;
+  'label-snapshot': WsLabelSnapshotPayload;
   // Group C — server → client ack/result payload types.
   subscribed: SubscribedPayload;
   unsubscribed: UnsubscribedPayload;
@@ -1646,6 +1772,7 @@ export interface WsMessagePayloadMap {
   'caught-up': CaughtUpPayload;
   'proposal-withdrawn': ProposalWithdrawnPayload;
   'agreement-withdrawn': AgreementWithdrawnPayload;
+  'snapshot-labeled': SnapshotLabeledAckPayload;
   'event-applied': EventAppliedPayload;
   error: ErrorPayload;
   diagnostic: DiagnosticPayload;

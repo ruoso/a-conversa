@@ -352,10 +352,25 @@ test.describe
     await waitForBoundingBoxStable(sourceHandle);
     await waitForBoundingBoxStable(targetHandle);
 
-    await dragFromHandleToHandle(alicePage, sourceHandle, targetHandle);
-
+    // Retry the drag once if the picker doesn't surface within ~2.5 s.
+    // The mid-drag layout race described above can swallow `onConnect`
+    // even after a successful stability wait: the 75 ms measurement
+    // debounce can fire BETWEEN the stable read and the actual pointer
+    // sequence. A single retry — re-running tidy-up + stability wait +
+    // drag — is enough to clear the race on a slow runner (see
+    // iter-0037 evidence: first attempt timed out at 5 s; the gesture
+    // itself is the contract, not the first-try success).
     const picker = alicePage.getByTestId('draw-edge-role-picker');
-    await expect(picker).toBeVisible({ timeout: 5_000 });
+    await dragFromHandleToHandle(alicePage, sourceHandle, targetHandle);
+    try {
+      await expect(picker).toBeVisible({ timeout: 2_500 });
+    } catch {
+      await alicePage.getByTestId('graph-tidy-up-button').click();
+      await waitForBoundingBoxStable(sourceHandle);
+      await waitForBoundingBoxStable(targetHandle);
+      await dragFromHandleToHandle(alicePage, sourceHandle, targetHandle);
+      await expect(picker).toBeVisible({ timeout: 5_000 });
+    }
     const sourceId = await picker.getAttribute('data-source-id');
     const targetId = await picker.getAttribute('data-target-id');
     expect(sourceId).toBe(n1Id);

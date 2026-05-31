@@ -230,6 +230,24 @@ Clients MUST dedupe `event-applied` frames by `event.sequence` — the per-event
 }
 ```
 
+### `label-snapshot`
+
+- **Direction**: C→S request.
+- **Payload schema**: `wsLabelSnapshotPayloadSchema` — `{ sessionId, expectedSequence, label }`. The `label` is bounded `1 ≤ length ≤ 128` at the wire layer; the engine's trim-then-non-empty check is authoritative for the `'invalid-label'` rejection.
+- **When**: the moderator mints a labeled snapshot of the current projection state (F10 in the moderator UI). Must be preceded by a successful `subscribe`.
+- **Authority**: moderator-only — enforced at the WS layer (not the engine helper). The handler compares `connection.user.id` against the just-FOR-UPDATE'd `sessions.host_user_id`; a non-moderator subscribed participant gets `code: 'moderator-only'` (403). The wire payload has NO `moderatorId` field — moderator identity comes from the authenticated connection.
+- **Correlation**: closes with [`snapshot-labeled`](#snapshot-labeled) ack (correlated) AND one [`event-applied`](#event-applied) broadcast (the appended `snapshot-created` event). Every subscriber's local `applyEvent` runs `projection.addSnapshot`.
+- **Engine-rejection wire codes**: [`moderator-only`](#methodology-rejectionreason-codes) (403, the requester is not the session moderator), [`sequence-mismatch`](#methodology-rejectionreason-codes) (409), [`invalid-label`](#methodology-rejectionreason-codes) (400, the label is empty after trim or exceeds the 128-char cap), [`forbidden`](#http-apierror-codes-kebab-case) (not subscribed or unauth, 403), [`not-found`](#http-apierror-codes-kebab-case) (404, the session became invisible between subscribe and act).
+- **Owner**: [`apps/server/src/ws/handlers/label-snapshot.ts`](../apps/server/src/ws/handlers/label-snapshot.ts).
+
+```json
+{
+  "type": "label-snapshot",
+  "id": "…",
+  "payload": { "sessionId": "…", "expectedSequence": 12, "label": "Segment 1 close" }
+}
+```
+
 ### `subscribed`
 
 - **Direction**: S→C ack.
@@ -372,6 +390,19 @@ The `reason` enum (`unsubscribedReasons` in [`packages/shared-types/src/ws-envel
   "payload": { "sessionId": "…", "sequence": 18, "eventId": "…" } }
 ```
 
+### `snapshot-labeled`
+
+- **Direction**: S→C ack.
+- **Payload schema**: `snapshotLabeledAckPayloadSchema` — `{ snapshotId }`. The `snapshotId` is the `payload.snapshot_id` field minted by the engine inside the `snapshot-created` event — distinct from the event envelope's own `id`.
+- **When**: after a successful [`label-snapshot`](#label-snapshot), sent on the moderator's socket alongside the matching [`event-applied`](#event-applied) broadcast carrying the appended `snapshot-created` event.
+- **Correlation**: `inResponseTo` echoes the originating [`label-snapshot`](#label-snapshot)'s `id`. The `snapshotId` lets the moderator's modal correlate the ack against the incoming projection snapshot record.
+- **Owner**: [`apps/server/src/ws/handlers/label-snapshot.ts`](../apps/server/src/ws/handlers/label-snapshot.ts).
+
+```json
+{ "type": "snapshot-labeled", "id": "…", "inResponseTo": "…",
+  "payload": { "snapshotId": "…" } }
+```
+
 ### `event-applied`
 
 - **Direction**: S→C unsolicited.
@@ -496,6 +527,7 @@ From [`apps/server/src/methodology/types.ts`](../apps/server/src/methodology/typ
 | `sequence-mismatch` | universal (optimistic concurrency) | propose / vote / commit / mark-meta-disagreement |
 | `session-mismatch` | universal | every C→S write |
 | `not-a-moderator` | role-gated | commit / mark-meta-disagreement |
+| `moderator-only` | role-gated (WS-layer flavor) | label-snapshot |
 | `proposal-not-found` | proposal-reference | vote / commit / mark-meta-disagreement |
 | `proposal-not-pending` | proposal-reference | vote |
 | `proposal-already-committed` | proposal-reference | vote / commit / mark-meta-disagreement |

@@ -36,6 +36,7 @@ import {
   resolveCatchUpRateLimit,
 } from './catch-up.js';
 import { registerCommitHandlers } from './commit.js';
+import { registerLabelSnapshotHandlers } from './label-snapshot.js';
 import { registerMarkMetaDisagreementHandlers } from './meta-disagreement.js';
 import { registerProposeHandlers } from './propose.js';
 import { registerSnapshotHandlers } from './snapshot.js';
@@ -65,6 +66,9 @@ export {
   registerMarkMetaDisagreementHandlers,
 } from './meta-disagreement.js';
 export type { MarkMetaDisagreementHandlerOptions } from './meta-disagreement.js';
+
+export { buildLabelSnapshotHandler, registerLabelSnapshotHandlers } from './label-snapshot.js';
+export type { LabelSnapshotHandlerOptions } from './label-snapshot.js';
 
 export {
   buildSnapshotHandler,
@@ -230,6 +234,26 @@ const wsHandlersPluginAsync: FastifyPluginAsync<WsHandlersOptions> = (
     registry: app.wsSubscriptions,
     broadcast: app.wsBroadcast,
     log: app.log,
+  });
+
+  // Register the label-snapshot write-side handler. Structurally
+  // mirrors the mark-meta-disagreement registration — same gate stack
+  // + dual-signal contract + dispatcher-seam error path. The handler
+  // calls the standalone `createSnapshot` engine helper (which owns
+  // label validation + UUID minting); moderator-only authority is
+  // enforced at the WS layer (the helper does no role gating) via
+  // comparison of `connection.user.id` against `sessions.host_user_id`
+  // under the FOR UPDATE lock. The READ-side `snapshot` handler below
+  // is the sibling that owns `'snapshot'` / `'snapshot-state'` — this
+  // handler owns `'label-snapshot'` / `'snapshot-labeled'`.
+  registerLabelSnapshotHandlers(app.wsDispatcher, {
+    get pool() {
+      return ensurePool();
+    },
+    registry: app.wsSubscriptions,
+    broadcast: app.wsBroadcast,
+    log: app.log,
+    ...(opts.now !== undefined ? { now: opts.now } : {}),
   });
 
   // Register the snapshot handler. Unlike the four write handlers

@@ -121,6 +121,8 @@ const REJECTION_REASON_MAP = {
   'session-mismatch': true,
   // Role-gated.
   'not-a-moderator': true,
+  // Role-gated, WS-layer flavor (added by ws_label_snapshot_message).
+  'moderator-only': true,
   // Proposal-reference.
   'proposal-not-found': true,
   'proposal-not-pending': true,

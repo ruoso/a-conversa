@@ -217,6 +217,18 @@ export type RejectionReason =
   | 'session-mismatch'
   // Role-gated — used by `commit_logic` and `meta_disagreement_logic`.
   | 'not-a-moderator'
+  // Role-gated, WS-layer flavor — owned by
+  // `backend.websocket_protocol.ws_label_snapshot_message`. The
+  // label-snapshot WS handler synthesizes this reason for a
+  // non-moderator subscribed participant attempting to mint a
+  // snapshot. Distinct from `'not-a-moderator'` (the engine's reason
+  // word) per `mod_snapshot_label_input.md`'s wire-error vocabulary —
+  // the modal's i18n key for the role-gate fail is canonicalised as
+  // `'moderator-only'`. See
+  // `tasks/refinements/backend/ws_label_snapshot_message.md`
+  // Decision §4 for the vocabulary-unification rationale (deferred to
+  // a future project-wide rename).
+  | 'moderator-only'
   // Proposal-reference — used by `vote`, `commit`, and `mark-meta-disagreement`.
   | 'proposal-not-found'
   | 'proposal-not-pending'

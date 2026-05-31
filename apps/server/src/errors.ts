@@ -193,6 +193,7 @@ function statusCodeForRejection(reason: RejectionReason): number {
     // (the entity may exist; the caller just isn't allowed to
     // reference it). See `tasks/refinements/backend/entity_inclusion_endpoint.md`.
     case 'not-a-moderator':
+    case 'moderator-only':
     case 'not-a-participant':
     case 'self-vote-not-allowed':
     case 'axiom-mark-not-self':

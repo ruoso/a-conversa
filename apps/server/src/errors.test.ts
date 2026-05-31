@@ -133,6 +133,8 @@ describe('rejectedToApiError', () => {
     { reason: 'illegal-state-transition', status: 422 },
     { reason: 'methodology-not-exhausted', status: 422 },
     { reason: 'facet-sequence-out-of-order', status: 422 },
+    // moderator-only — owned by ws_label_snapshot_message; mapped to 403.
+    { reason: 'moderator-only', status: 403 },
   ];
 
   // Sanity: the mapping covers every member of the union. We use a
@@ -148,6 +150,7 @@ describe('rejectedToApiError', () => {
     // tripwire if someone bypasses the type system.
     const allReasons: Record<RejectionReason, true> = {
       'not-a-moderator': true,
+      'moderator-only': true,
       'not-a-participant': true,
       'sequence-mismatch': true,
       'session-mismatch': true,
