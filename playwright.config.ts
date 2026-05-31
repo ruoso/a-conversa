@@ -282,6 +282,26 @@ export default defineConfig({
         storageState: AUTH_STORAGE_STATE_PATH,
       },
     },
+    // Annotation context-menu e2e
+    // (mod_annotation_context_menu). Drives the moderator's operate
+    // route, seeds a host node + promoted annotation via `wsStoreSeed.ts`,
+    // then right-clicks the annotation node and asserts the dedicated
+    // annotation menu opens with `data-target-kind="annotation"` and the
+    // two v1 items (`annotate`, `meta-disagree`). Picking each item
+    // opens the `<AnnotateSubmenu>` with `data-target-kind="annotation"`.
+    // Same browser profile and single-locale rationale as the rest of
+    // the annotation-endpoint family.
+    {
+      name: 'chromium-moderator-annotation-context-menu',
+      testMatch: /annotation-context-menu\.spec\.ts$/,
+      dependencies: ['setup-auth'],
+      use: {
+        ...devices['Desktop Chrome'],
+        locale: 'en-US',
+        ignoreHTTPSErrors: true,
+        storageState: AUTH_STORAGE_STATE_PATH,
+      },
+    },
     // Graph layout e2e (mod_layout_engine_choice, ADR 0025). Drives the
     // moderator's operate route, seeds a 6-node / 5-edge claim+evidence
     // +rebut fixture into the Zustand WS store, and asserts: pairwise

@@ -89,7 +89,7 @@ import ReactFlow, {
   type XYPosition,
 } from 'reactflow';
 import { useTranslation } from 'react-i18next';
-import type { Event, StatementKind } from '@a-conversa/shared-types';
+import type { AnnotationKind, Event, StatementKind } from '@a-conversa/shared-types';
 
 import 'reactflow/dist/style.css';
 
@@ -241,7 +241,10 @@ export function handlePaneClick(): void {
  * `null` for pane right-clicks (no target entity).
  */
 export interface ContextMenuState {
-  readonly target: { readonly kind: 'node' | 'edge' | 'pane'; readonly id: string | null };
+  readonly target: {
+    readonly kind: 'node' | 'edge' | 'pane' | 'annotation';
+    readonly id: string | null;
+  };
   readonly x: number;
   readonly y: number;
 }
@@ -401,6 +404,48 @@ export function buildNodeMenuItems(
       id: 'axiom-mark',
       labelKey: 'moderator.contextMenu.node.axiomMark',
       onSelect: onOpenAxiomMarkSubmenu ?? (() => actionStub('axiom-mark', target)),
+    },
+  ];
+}
+
+/**
+ * Build the menu items for an annotation right-click. Refinement:
+ * `mod_annotation_context_menu`. Annotations carry an entirely
+ * different vocabulary from nodes / edges — the methodology's
+ * node-scope and edge-scope actions (vote / decompose / axiom-mark /
+ * etc.) don't apply to annotations. The two v1 items both open the
+ * existing `<AnnotateSubmenu>` against the annotation target so the
+ * round-trip emits an `annotate` proposal with
+ * `target_kind: 'annotation'` — the wire widening that lands
+ * alongside this factory (Decision §1) makes those proposals real,
+ * not stubs.
+ *
+ * The "Disagree with this annotation" item pre-biases the kind-radio
+ * to `'stance'` via the submenu's optional `initialAnnotationKind`
+ * prop. `'stance'` is the closest existing annotation kind that
+ * conveys a moderator's disagreement with an annotation's content
+ * — `'meta-disagreement'` is a facet-state, not an annotation kind
+ * (the AnnotationKind enum is `note / reframe / scope-change /
+ * stance` per `annotationKindSchema`). The disagree label
+ * communicates the intent; the picker stays adjustable so the
+ * moderator can override before submitting. Decision §2 of the
+ * refinement.
+ */
+export function buildAnnotationMenuItems(
+  target: ContextMenuState['target'],
+  onOpenAnnotateSubmenu?: () => void,
+  onOpenMetaDisagreeSubmenu?: () => void,
+): readonly MenuItem[] {
+  return [
+    {
+      id: 'annotate',
+      labelKey: 'moderator.contextMenu.annotation.annotate',
+      onSelect: onOpenAnnotateSubmenu ?? (() => actionStub('annotate', target)),
+    },
+    {
+      id: 'meta-disagree',
+      labelKey: 'moderator.contextMenu.annotation.metaDisagree',
+      onSelect: onOpenMetaDisagreeSubmenu ?? (() => actionStub('meta-disagree', target)),
     },
   ];
 }
@@ -894,12 +939,17 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
     readonly y: number;
   } | null>(null);
   const closeAxiomMarkSubmenu = useCallback(() => setAxiomMarkSubmenu(null), []);
-  // Annotate submenu state.
+  // Annotate submenu state. `initialAnnotationKind` (optional) lets the
+  // annotation-context-menu's "Disagree with this annotation" item
+  // pre-bias the kind-radio picker; node / edge openers omit it and
+  // fall back to the submenu's default of `'note'`. Refinement:
+  // `mod_annotation_context_menu`.
   const [annotateSubmenu, setAnnotateSubmenu] = useState<{
     readonly targetId: string;
     readonly targetKind: AnnotateTargetKind;
     readonly x: number;
     readonly y: number;
+    readonly initialAnnotationKind?: AnnotationKind;
   } | null>(null);
   const closeAnnotateSubmenu = useCallback(() => setAnnotateSubmenu(null), []);
   // Edit-wording submenu state.
@@ -1032,14 +1082,20 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
   // then opens menu" convention.
   const handleNodeContextMenu = useCallback((event: ReactMouseEvent, node: Node): void => {
     event.preventDefault();
-    useSelectionStore.getState().select({ kind: endpointKindFromNodeType(node.type), id: node.id });
+    // Single-source the kind discrimination — the same
+    // `endpointKindFromNodeType(node.type)` value flows into both the
+    // selection dispatch and the context-menu target so the two stay in
+    // sync (per `mod_annotation_context_menu` Decision §5 and
+    // Constraint 2).
+    const kind = endpointKindFromNodeType(node.type);
+    useSelectionStore.getState().select({ kind, id: node.id });
     // A fresh right-click dismisses any stale axiom-mark / annotate
     // submenu from a prior gesture before opening the new parent menu.
     setAxiomMarkSubmenu(null);
     setAnnotateSubmenu(null);
     setEditWordingSubmenu(null);
     setContextMenu({
-      target: { kind: 'node', id: node.id },
+      target: { kind, id: node.id },
       x: event.clientX,
       y: event.clientY,
     });
@@ -1547,6 +1603,39 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
           y: submenuY + 16,
         });
       });
+    } else if (contextMenu.target.kind === 'annotation') {
+      // Annotation-context-menu arm (mod_annotation_context_menu). Both
+      // v1 items open the existing `<AnnotateSubmenu>` against the
+      // annotation target; the "Disagree" opener pre-biases the
+      // kind-radio to `'stance'` so the moderator's disagreement is
+      // framed as a stance-shaped annotation. The annotate proposal
+      // round-trip carries `target_kind: 'annotation'` (the wire
+      // widening landed alongside this factory).
+      const annotationIdForSubmenu = contextMenu.target.id;
+      const submenuX = contextMenu.x;
+      const submenuY = contextMenu.y;
+      menuItems = buildAnnotationMenuItems(
+        contextMenu.target,
+        () => {
+          if (annotationIdForSubmenu === null) return;
+          setAnnotateSubmenu({
+            targetId: annotationIdForSubmenu,
+            targetKind: 'annotation',
+            x: submenuX + 16,
+            y: submenuY + 16,
+          });
+        },
+        () => {
+          if (annotationIdForSubmenu === null) return;
+          setAnnotateSubmenu({
+            targetId: annotationIdForSubmenu,
+            targetKind: 'annotation',
+            x: submenuX + 16,
+            y: submenuY + 16,
+            initialAnnotationKind: 'stance',
+          });
+        },
+      );
     } else {
       menuItems = buildPaneMenuItems(contextMenu.target, focusCaptureTextarea);
     }
@@ -1623,6 +1712,9 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
           targetKind={annotateSubmenu.targetKind}
           x={annotateSubmenu.x}
           y={annotateSubmenu.y}
+          {...(annotateSubmenu.initialAnnotationKind !== undefined
+            ? { initialAnnotationKind: annotateSubmenu.initialAnnotationKind }
+            : {})}
           onClose={closeAnnotateSubmenu}
         />
       ) : null}

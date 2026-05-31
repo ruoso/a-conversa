@@ -56,6 +56,7 @@ import { createI18nInstance } from '@a-conversa/shell';
 const SESSION_ID = '11111111-1111-4111-8111-111111111111';
 const NODE_ID = '22222222-2222-4222-8222-222222222222';
 const EDGE_ID = '33333333-3333-4333-8333-333333333333';
+const ANNOTATION_ID = '44444444-4444-4444-8444-444444444444';
 
 beforeAll(async () => {
   await createI18nInstance('en-US');
@@ -266,6 +267,35 @@ describe('useAnnotateAction — successful annotate path', () => {
       await annotatePromise;
     });
     expect(probe.result.inFlight).toBe(false);
+  });
+
+  // Refinement: tasks/refinements/moderator-ui/mod_annotation_context_menu.md
+  // (the hook's third target arm — annotation-of-annotation gestures).
+  it('fires exactly one propose envelope with target_kind: annotation for an annotation target', async () => {
+    const fake = makeFakeClient();
+    const probe = renderProbe(fake.client, ANNOTATION_ID, 'annotation');
+    let annotatePromise: Promise<void> | undefined;
+    act(() => {
+      annotatePromise = probe.result.annotate('disagree with this annotation', 'stance');
+    });
+    expect(fake.calls.length).toBe(1);
+    expect(fake.calls[0]?.payload.proposal).toEqual({
+      kind: 'annotate',
+      target_kind: 'annotation',
+      target_id: ANNOTATION_ID,
+      annotation_kind: 'stance',
+      content: 'disagree with this annotation',
+    });
+    act(() => {
+      fake.resolveNext({ sequence: 1 });
+    });
+    await act(async () => {
+      await annotatePromise;
+    });
+    const key = annotateStoreKey('annotation', ANNOTATION_ID);
+    expect(probe.result.inFlight).toBe(false);
+    expect(probe.result.lastError).toBeUndefined();
+    expect(useAnnotateStore.getState().inFlight.has(key)).toBe(false);
   });
 
   it('expectedSequence reads lastAppliedSequence off useWsStore at annotate-time', () => {

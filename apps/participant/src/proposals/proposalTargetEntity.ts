@@ -22,10 +22,15 @@
 // targeting arms only), `proposalTargetEntity` for flash placement (all
 // arms with a renderable target).
 //
-// The `null` arm is defensive — every current sub-kind has a target,
-// but a future zero-target sub-kind (e.g. a session-level meta-move)
-// would land here without breaking the consumer (the badge still
-// pulses; the graph flash is skipped for that arrival).
+// The `null` arm covers two cases: (1) a future zero-target sub-kind
+// (e.g. a session-level meta-move) would land here without breaking
+// the consumer (the badge still pulses; the graph flash is skipped),
+// and (2) an `annotate` proposal whose `target_kind === 'annotation'`
+// — the participant graph does not render annotations as standalone
+// cytoscape entities (see `graph/annotations.ts`: annotations collapse
+// to a boolean + count overlay on the parent node/edge), so there is
+// no flashable element for an annotation-on-annotation proposal at
+// this layer.
 
 import type { ProposalPayload } from '@a-conversa/shared-types';
 
@@ -73,6 +78,7 @@ export function proposalTargetEntity(proposal: ProposalPayload): ProposalTargetE
     case 'amend-node':
       return { kind: 'node', id: proposal.node_id };
     case 'annotate':
+      if (proposal.target_kind === 'annotation') return null;
       return { kind: proposal.target_kind, id: proposal.target_id };
   }
 }

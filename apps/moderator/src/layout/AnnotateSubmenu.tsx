@@ -91,7 +91,7 @@ export function resolveAnnotateErrorMessage(error: WireError, t: AnnotateTransla
 export interface AnnotateSubmenuProps {
   /** The target entity id the parent context menu targets. */
   readonly targetId: string;
-  /** Whether the target is a node or an edge. */
+  /** Whether the target is a node, an edge, or an annotation. */
   readonly targetKind: AnnotateTargetKind;
   /** Cursor x-coordinate (client coordinates) where the submenu opens. */
   readonly x: number;
@@ -99,6 +99,16 @@ export interface AnnotateSubmenuProps {
   readonly y: number;
   /** Close handler — fires on outside-click, Escape, or after a successful Submit. */
   readonly onClose: () => void;
+  /**
+   * Optional initial kind for the kind-radio picker. Defaults to
+   * `'note'` (the v1 implicit default per `mod_annotation_kind_tagging`)
+   * when omitted. The annotation-context-menu "Disagree with this
+   * annotation" item passes `'stance'` here to bias the moderator
+   * toward a stance-shaped annotation that frames their disagreement,
+   * without forking a separate submenu component. Refinement:
+   * `mod_annotation_context_menu`.
+   */
+  readonly initialAnnotationKind?: AnnotationKind;
   /**
    * Test seam — inject a hook result instead of calling
    * `useAnnotateAction` internally. When omitted (production), the
@@ -108,14 +118,17 @@ export interface AnnotateSubmenuProps {
 }
 
 export function AnnotateSubmenu(props: AnnotateSubmenuProps): ReactElement {
-  const { targetId, targetKind, x, y, onClose, hookOverride } = props;
+  const { targetId, targetKind, x, y, onClose, initialAnnotationKind, hookOverride } = props;
   const { t } = useTranslation();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const [content, setContent] = useState<string>('');
   // Default to `'note'` (the v1 implicit default). See Decisions §1 in
-  // `tasks/refinements/moderator-ui/mod_annotation_kind_tagging.md`.
-  const [selectedKind, setSelectedKind] = useState<AnnotationKind>('note');
+  // `tasks/refinements/moderator-ui/mod_annotation_kind_tagging.md`. The
+  // optional `initialAnnotationKind` prop overrides for menu items that
+  // pre-bias the picker (e.g. the annotation-context-menu's
+  // "Disagree with this annotation" pre-selects `'stance'`).
+  const [selectedKind, setSelectedKind] = useState<AnnotationKind>(initialAnnotationKind ?? 'note');
 
   // Always call the hook (Rules of Hooks). The `hookOverride` shadow
   // is for tests that inject a fully-stubbed result; in production

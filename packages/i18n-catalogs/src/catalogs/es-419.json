@@ -587,6 +587,10 @@
       },
       "pane": {
         "createStatement": "Crear nueva afirmación"
+      },
+      "annotation": {
+        "annotate": "Anotar esta anotación",
+        "metaDisagree": "Discrepar con esta anotación"
       }
     },
     "hoverPopover": {

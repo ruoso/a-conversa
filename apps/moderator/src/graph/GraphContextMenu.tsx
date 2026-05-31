@@ -59,7 +59,7 @@ export interface GraphContextMenuProps {
   /** Cursor y-coordinate where the menu opens (client coordinates). */
   readonly y: number;
   /** What got right-clicked. Stamped on the menu root for tests. */
-  readonly targetKind: 'node' | 'edge' | 'pane';
+  readonly targetKind: 'node' | 'edge' | 'pane' | 'annotation';
   /**
    * The id of the right-clicked entity, or `null` when the menu was
    * opened from a pane right-click (no target entity).

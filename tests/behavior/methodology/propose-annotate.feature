@@ -41,3 +41,30 @@ Feature: methodology engine — propose annotate handler against a DB-projected 
     When a debater constructs a propose-annotate action against an unknown node target
     And the methodology engine validates the propose action against the projected session
     Then the validation result is Rejected with reason "target-entity-not-found"
+
+  # ---------------------------------------------------------------
+  # Refinement: tasks/refinements/moderator-ui/mod_annotation_context_menu.md
+  # (Decision §1 wire widening — the annotate validator gains an
+  # `annotation` arm so the dedicated annotation context menu's items
+  # are real, not stubs.)
+  # ---------------------------------------------------------------
+
+  Scenario: a participant proposes an annotation-of-annotation on a visible annotation
+    # Three participants joined; a visible node carries a first-order
+    # annotation. A debater proposes a second-order `reframe` annotation
+    # whose target is the first annotation; the handler validates against
+    # the DB-projected projection and returns Valid.
+    Given a seeded session with three participants and a visible candidate annotation for propose-annotate tests
+    When a debater constructs a propose-annotate action against the visible annotation
+    And the methodology engine validates the propose action against the projected session
+    Then the validation result is Valid
+    And the result carries a single proposal event for the annotate action targeting the annotation
+
+  Scenario: a propose-annotate against an invisible annotation is rejected as illegal-state-transition
+    # The annotation exists but its visibility was flipped off (the
+    # entity-removed(annotation) flow simulated via the projection
+    # seam). Rule 2 rejects with illegal-state-transition.
+    Given a seeded session with three participants and an invisible target annotation for propose-annotate tests
+    When a debater constructs a propose-annotate action against the invisible annotation
+    And the methodology engine validates the propose action against the projected session
+    Then the validation result is Rejected with reason "illegal-state-transition"

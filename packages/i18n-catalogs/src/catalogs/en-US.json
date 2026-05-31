@@ -587,6 +587,10 @@
       },
       "pane": {
         "createStatement": "Create new statement"
+      },
+      "annotation": {
+        "annotate": "Annotate this annotation",
+        "metaDisagree": "Disagree with this annotation"
       }
     },
     "hoverPopover": {

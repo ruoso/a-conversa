@@ -366,6 +366,20 @@ function buildStructuralEventsForCommit(
 ): EventToAppend[] {
   const events: EventToAppend[] = [];
   if (proposalPayload.kind === 'annotate') {
+    // `annotation-created`'s wire shape has `target_node_id` /
+    // `target_edge_id` (the schema's XOR refine requires exactly one).
+    // For an annotation-of-annotation proposal (`target_kind:
+    // 'annotation'`), the parent annotation's id rides in
+    // `target_node_id` — the projection's `addAnnotation` indexes the
+    // child under `annotationsByNode` keyed on that id, which the
+    // renderer's `groupAnnotationsByEntityId(...)` then surfaces under
+    // the parent annotation's `data.annotations` bucket. This shared
+    // keyspace is the mechanism the predecessor
+    // `mod_annotation_of_annotation_overlay_chain` established for
+    // overlaying nested annotations on a promoted annotation node.
+    // Refinement: tasks/refinements/moderator-ui/mod_annotation_context_menu.md
+    // (Decision §1 wire widening).
+    const targetIsEdge = proposalPayload.target_kind === 'edge';
     const annotationCreated: EventToAppendEnvelope<'annotation-created'> = {
       id: randomUUID(),
       sessionId: action.sessionId,
@@ -376,8 +390,8 @@ function buildStructuralEventsForCommit(
         annotation_id: randomUUID(),
         kind: proposalPayload.annotation_kind,
         content: proposalPayload.content,
-        target_node_id: proposalPayload.target_kind === 'node' ? proposalPayload.target_id : null,
-        target_edge_id: proposalPayload.target_kind === 'edge' ? proposalPayload.target_id : null,
+        target_node_id: targetIsEdge ? null : proposalPayload.target_id,
+        target_edge_id: targetIsEdge ? proposalPayload.target_id : null,
         created_by: action.requester,
         created_at: action.createdAt,
       },

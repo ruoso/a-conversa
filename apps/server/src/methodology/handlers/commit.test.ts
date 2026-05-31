@@ -860,4 +860,63 @@ describe('commit handler — structural sub-kind: annotate', () => {
       }
     }
   });
+
+  // Refinement: tasks/refinements/moderator-ui/mod_annotation_context_menu.md
+  // (Decision §1 wire widening — annotate-on-annotation commit lands the
+  // parent annotation's id in `target_node_id` because that's the field
+  // the projection's `addAnnotation` indexes for the renderer's nested-
+  // annotation overlay chain established by
+  // `mod_annotation_of_annotation_overlay_chain`).
+  it('annotate-on-annotation commit emits annotation-created with the parent annotation id in target_node_id', () => {
+    const p = seedSession();
+    // Seed a first-order annotation on NODE_ID_1 so the projection has
+    // a visible annotation A1 to target.
+    const ANN_A1_ID = '9aaa9aaa-9aaa-4aaa-8aaa-9aaa9aaa10aa';
+    applyEvent(
+      p,
+      makeEvent(nextSequence(p), 'annotation-created', DEBATER_A_ID, T3, {
+        annotation_id: ANN_A1_ID,
+        kind: 'note',
+        content: 'A first-order annotation.',
+        target_node_id: NODE_ID_1,
+        target_edge_id: null,
+        created_by: DEBATER_A_ID,
+        created_at: T3,
+      }),
+    );
+    // Now a second-order annotate proposal targeting A1.
+    applyEvent(p, {
+      ...makeEvent(nextSequence(p), 'proposal', DEBATER_A_ID, T3, {
+        proposal: {
+          kind: 'annotate',
+          target_kind: 'annotation',
+          target_id: ANN_A1_ID,
+          annotation_kind: 'reframe',
+          content: 'A second-order reframe on the first annotation.',
+        },
+      }),
+      id: PROPOSAL_ID_STRUCT,
+    });
+    voteStructural(p, MODERATOR_ID, 'agree', PROPOSAL_ID_STRUCT);
+    voteStructural(p, DEBATER_A_ID, 'agree', PROPOSAL_ID_STRUCT);
+    voteStructural(p, DEBATER_B_ID, 'agree', PROPOSAL_ID_STRUCT);
+    const action = makeCommitAction(p, MODERATOR_ID, PROPOSAL_ID_STRUCT);
+    const r = validateAction(p, action);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.events).toHaveLength(2);
+      const annotationEvent = r.events[0]!;
+      expect(annotationEvent.kind).toBe('annotation-created');
+      if (annotationEvent.kind === 'annotation-created') {
+        // The parent annotation's id rides in `target_node_id` — that's
+        // the projection's shared keyspace for nested-annotation overlays.
+        expect(annotationEvent.payload.target_node_id).toBe(ANN_A1_ID);
+        expect(annotationEvent.payload.target_edge_id).toBeNull();
+        expect(annotationEvent.payload.kind).toBe('reframe');
+        expect(annotationEvent.payload.content).toBe(
+          'A second-order reframe on the first annotation.',
+        );
+      }
+    }
+  });
 });

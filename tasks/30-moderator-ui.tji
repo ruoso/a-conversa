@@ -764,8 +764,9 @@ task moderator_ui "Moderator UI" {
       ->8-
     }
     task mod_annotation_context_menu "Dedicated annotation-node context menu with annotation-specific items" {
-      effort 0.5d
+      effort 1.5d
       allocate team
+      complete 100
       depends !mod_propose_annotation_endpoint_gestures
       note -8<-
         Source of debt: mod_propose_annotation_endpoint_gestures (2026-05-31) — the existing right-click
@@ -773,7 +774,7 @@ task moderator_ui "Moderator UI" {
         unchanged items. A dedicated AnnotationContextMenu component with annotation-specific items
         (e.g. "annotate this annotation", "withdraw annotation") was deferred for v1 per Decision §6
         of that task. Split out when annotation-specific items materialize.
-        Source refinement: tasks/refinements/moderator-ui/mod_propose_annotation_endpoint_gestures.md (Decision §6, §11).
+        Source refinement: tasks/refinements/moderator-ui/mod_annotation_context_menu.md
       ->8-
     }
   }

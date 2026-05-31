@@ -602,6 +602,23 @@ describe('proposal payload — annotate', () => {
     });
     expect(result.success).toBe(true);
   });
+
+  // Refinement: tasks/refinements/moderator-ui/mod_annotation_context_menu.md
+  // (Decision §1 — wire widening so the menu's items are real, not stubs).
+  it('accepts an annotation target', () => {
+    const ANNOTATION_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa01ee';
+    const result = proposalPayloadSchema.safeParse({
+      ...valid,
+      target_kind: 'annotation' as const,
+      target_id: ANNOTATION_ID,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a bogus target_kind ('proposal')", () => {
+    const result = proposalPayloadSchema.safeParse({ ...valid, target_kind: 'proposal' });
+    expect(result.success).toBe(false);
+  });
 });
 
 // Per `set_edge_substance_annotation_endpoint` the

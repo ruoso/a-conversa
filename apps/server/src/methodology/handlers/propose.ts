@@ -1108,21 +1108,46 @@ function validateAnnotateProposal(
     }
     return null;
   }
-  // target_kind === 'edge'
-  const edge = projection.getEdge(targetId);
-  if (edge === undefined) {
+  if (targetKind === 'edge') {
+    const edge = projection.getEdge(targetId);
+    if (edge === undefined) {
+      return {
+        ok: false,
+        reason: 'target-entity-not-found',
+        detail: `propose annotate: target_id ${targetId} (target_kind 'edge') does not reference any edge in session ${projection.sessionId}`,
+      };
+    }
+    // Rule 2 — edge is currently visible.
+    if (!edgeIsVisible(projection, targetId)) {
+      return {
+        ok: false,
+        reason: 'illegal-state-transition',
+        detail: `propose annotate: target edge ${targetId} is not currently visible (already broken by a prior break-edge commit) — an annotation on an invisible entity is meaningless`,
+      };
+    }
+    return null;
+  }
+  // target_kind === 'annotation' — the polymorphic-endpoint widening
+  // per `mod_annotation_context_menu`. Mirrors the node/edge arms with
+  // existence + visibility checks via the projection's annotation index.
+  // `entityIsVisible(projection, 'annotation', id)` returns false when
+  // the annotation does not exist OR exists but is not visible; we
+  // discriminate the two with an explicit `getAnnotation` lookup so the
+  // rejection detail names the right reason (mirrors the
+  // node/edge arms above).
+  const annotation = projection.getAnnotation(targetId);
+  if (annotation === undefined) {
     return {
       ok: false,
       reason: 'target-entity-not-found',
-      detail: `propose annotate: target_id ${targetId} (target_kind 'edge') does not reference any edge in session ${projection.sessionId}`,
+      detail: `propose annotate: target_id ${targetId} (target_kind 'annotation') does not reference any annotation in session ${projection.sessionId}`,
     };
   }
-  // Rule 2 — edge is currently visible.
-  if (!edgeIsVisible(projection, targetId)) {
+  if (!entityIsVisible(projection, 'annotation', targetId)) {
     return {
       ok: false,
       reason: 'illegal-state-transition',
-      detail: `propose annotate: target edge ${targetId} is not currently visible (already broken by a prior break-edge commit) — an annotation on an invisible entity is meaningless`,
+      detail: `propose annotate: target annotation ${targetId} is not currently visible — an annotation on an invisible entity is meaningless`,
     };
   }
   return null;

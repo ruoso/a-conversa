@@ -458,7 +458,7 @@ export type AmendNodeProposal = z.infer<typeof amendNodeProposalSchema>;
 
 export const annotateProposalSchema = z.object({
   kind: z.literal('annotate'),
-  target_kind: z.enum(['node', 'edge']),
+  target_kind: z.enum(['node', 'edge', 'annotation']),
   target_id: z.string().uuid(),
   annotation_kind: annotationKindSchema,
   // Methodology-text cap per F-003 — see `limits.ts`.

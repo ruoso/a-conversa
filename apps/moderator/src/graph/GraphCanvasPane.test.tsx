@@ -122,6 +122,7 @@ import {
   GraphCanvasPane,
   MAX_ZOOM,
   MIN_ZOOM,
+  buildAnnotationMenuItems,
   buildEdgeMenuItems,
   buildNodeMenuItems,
   buildPaneMenuItems,
@@ -3154,5 +3155,210 @@ describe('GraphCanvasPane — edge-hosted annotation midpoint (mod_annotation_no
     expect(
       document.querySelectorAll(`[data-testid="annotation-host-edge-${HOST_ANNO_ID}"]`).length,
     ).toBe(0);
+  });
+});
+
+// -- Annotation context-menu factory + routing (mod_annotation_context_menu) --
+//
+// Pin the dedicated annotation menu (two v1 items: annotate, meta-disagree),
+// the `handleNodeContextMenu` widening that routes annotation-node right-
+// clicks to `kind: 'annotation'`, and the menu-mount JSX arm that opens the
+// `<AnnotateSubmenu>` with `targetKind: 'annotation'` (with the
+// initialAnnotationKind=stance pre-bias for the disagree item).
+
+const MENU_ANNOTATION_ID = '00000000-0000-4000-8000-0000000000c1';
+
+describe('GraphCanvasPane — buildAnnotationMenuItems (mod_annotation_context_menu)', () => {
+  it('returns the two annotation-scope actions in order with the documented labelKeys', () => {
+    const items = buildAnnotationMenuItems({ kind: 'annotation', id: MENU_ANNOTATION_ID });
+    expect(items.map((it) => it.id)).toEqual(['annotate', 'meta-disagree']);
+    expect(items.map((it) => it.labelKey)).toEqual([
+      'moderator.contextMenu.annotation.annotate',
+      'moderator.contextMenu.annotation.metaDisagree',
+    ]);
+  });
+
+  it('wires annotate to onOpenAnnotateSubmenu when supplied', () => {
+    const onAnnotate = vi.fn();
+    const items = buildAnnotationMenuItems(
+      { kind: 'annotation', id: MENU_ANNOTATION_ID },
+      onAnnotate,
+    );
+    items.find((it) => it.id === 'annotate')?.onSelect();
+    expect(onAnnotate).toHaveBeenCalledTimes(1);
+  });
+
+  it('wires meta-disagree to onOpenMetaDisagreeSubmenu when supplied', () => {
+    const onMetaDisagree = vi.fn();
+    const items = buildAnnotationMenuItems(
+      { kind: 'annotation', id: MENU_ANNOTATION_ID },
+      undefined,
+      onMetaDisagree,
+    );
+    items.find((it) => it.id === 'meta-disagree')?.onSelect();
+    expect(onMetaDisagree).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to the legacy actionStub for both items when no openers are supplied', () => {
+    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    try {
+      for (const item of buildAnnotationMenuItems({
+        kind: 'annotation',
+        id: MENU_ANNOTATION_ID,
+      })) {
+        expect(() => item.onSelect()).not.toThrow();
+      }
+      expect(infoSpy).toHaveBeenCalledTimes(2);
+    } finally {
+      infoSpy.mockRestore();
+    }
+  });
+});
+
+describe('GraphCanvasPane — annotation-node right-click routing (mod_annotation_context_menu)', () => {
+  it('right-clicking a promoted annotation node opens the dedicated annotation menu with data-target-kind="annotation"', () => {
+    const store = useWsStore.getState();
+    store.applyEvent(makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'host wording' }));
+    store.applyEvent(
+      makeAnnotationCreated({
+        sequence: 2,
+        annotationId: MENU_ANNOTATION_ID,
+        kind: 'reframe',
+        content: 'annotation body',
+        targetNodeId: NODE_A,
+        targetEdgeId: null,
+      }),
+    );
+    store.applyEvent(
+      makeAnnotationEndpointEdgeCreated({
+        sequence: 3,
+        edgeId: '00000000-0000-4000-8000-0000000000c2',
+        sourceNodeId: NODE_A,
+        targetAnnotationId: MENU_ANNOTATION_ID,
+      }),
+    );
+    renderGraphWithWsClient();
+    const annNode = screen.getByTestId(`annotation-node-${MENU_ANNOTATION_ID}`);
+    act(() => {
+      fireEvent.contextMenu(annNode, { clientX: 33, clientY: 44 });
+    });
+    const menu = screen.getByTestId('graph-context-menu');
+    expect(menu.getAttribute('data-target-kind')).toBe('annotation');
+    expect(menu.getAttribute('data-target-id')).toBe(MENU_ANNOTATION_ID);
+    expect(screen.getByTestId('graph-context-menu-item-annotate')).toBeTruthy();
+    expect(screen.getByTestId('graph-context-menu-item-meta-disagree')).toBeTruthy();
+    // The node-scope items must NOT render on the annotation menu.
+    expect(screen.queryByTestId('graph-context-menu-item-propose-vote')).toBeNull();
+    expect(screen.queryByTestId('graph-context-menu-item-propose-decompose')).toBeNull();
+    expect(screen.queryByTestId('graph-context-menu-item-axiom-mark')).toBeNull();
+  });
+
+  it('right-clicking an annotation node also selects it with kind="annotation"', () => {
+    const store = useWsStore.getState();
+    store.applyEvent(makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'host' }));
+    store.applyEvent(
+      makeAnnotationCreated({
+        sequence: 2,
+        annotationId: MENU_ANNOTATION_ID,
+        kind: 'note',
+        targetNodeId: NODE_A,
+        targetEdgeId: null,
+      }),
+    );
+    store.applyEvent(
+      makeAnnotationEndpointEdgeCreated({
+        sequence: 3,
+        edgeId: '00000000-0000-4000-8000-0000000000c3',
+        sourceNodeId: NODE_A,
+        targetAnnotationId: MENU_ANNOTATION_ID,
+      }),
+    );
+    renderGraphWithWsClient();
+    expect(useSelectionStore.getState().selected).toBeNull();
+    const annNode = screen.getByTestId(`annotation-node-${MENU_ANNOTATION_ID}`);
+    act(() => {
+      fireEvent.contextMenu(annNode, { clientX: 7, clientY: 9 });
+    });
+    expect(useSelectionStore.getState().selected).toEqual({
+      kind: 'annotation',
+      id: MENU_ANNOTATION_ID,
+    });
+  });
+
+  it('picking the annotate item opens the AnnotateSubmenu with data-target-kind="annotation"', () => {
+    const store = useWsStore.getState();
+    store.applyEvent(makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'host' }));
+    store.applyEvent(
+      makeAnnotationCreated({
+        sequence: 2,
+        annotationId: MENU_ANNOTATION_ID,
+        kind: 'note',
+        targetNodeId: NODE_A,
+        targetEdgeId: null,
+      }),
+    );
+    store.applyEvent(
+      makeAnnotationEndpointEdgeCreated({
+        sequence: 3,
+        edgeId: '00000000-0000-4000-8000-0000000000c4',
+        sourceNodeId: NODE_A,
+        targetAnnotationId: MENU_ANNOTATION_ID,
+      }),
+    );
+    renderGraphWithWsClient();
+    const annNode = screen.getByTestId(`annotation-node-${MENU_ANNOTATION_ID}`);
+    act(() => {
+      fireEvent.contextMenu(annNode, { clientX: 7, clientY: 9 });
+    });
+    act(() => {
+      fireEvent.click(screen.getByTestId('graph-context-menu-item-annotate'));
+    });
+    const submenu = screen.getByTestId('annotate-submenu');
+    expect(submenu.getAttribute('data-target-kind')).toBe('annotation');
+    expect(submenu.getAttribute('data-target-id')).toBe(MENU_ANNOTATION_ID);
+    // The default kind selector is 'note' (no initialAnnotationKind
+    // pre-bias for the plain annotate opener).
+    expect(screen.getByTestId('annotate-submenu-kind-note').getAttribute('data-selected')).toBe(
+      'true',
+    );
+  });
+
+  it('picking the meta-disagree item opens the AnnotateSubmenu pre-biased to stance', () => {
+    const store = useWsStore.getState();
+    store.applyEvent(makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'host' }));
+    store.applyEvent(
+      makeAnnotationCreated({
+        sequence: 2,
+        annotationId: MENU_ANNOTATION_ID,
+        kind: 'note',
+        targetNodeId: NODE_A,
+        targetEdgeId: null,
+      }),
+    );
+    store.applyEvent(
+      makeAnnotationEndpointEdgeCreated({
+        sequence: 3,
+        edgeId: '00000000-0000-4000-8000-0000000000c5',
+        sourceNodeId: NODE_A,
+        targetAnnotationId: MENU_ANNOTATION_ID,
+      }),
+    );
+    renderGraphWithWsClient();
+    const annNode = screen.getByTestId(`annotation-node-${MENU_ANNOTATION_ID}`);
+    act(() => {
+      fireEvent.contextMenu(annNode, { clientX: 7, clientY: 9 });
+    });
+    act(() => {
+      fireEvent.click(screen.getByTestId('graph-context-menu-item-meta-disagree'));
+    });
+    const submenu = screen.getByTestId('annotate-submenu');
+    expect(submenu.getAttribute('data-target-kind')).toBe('annotation');
+    expect(submenu.getAttribute('data-target-id')).toBe(MENU_ANNOTATION_ID);
+    // The disagree opener pre-biases the kind-radio to 'stance' (the
+    // closest existing AnnotationKind to a moderator's disagreement —
+    // 'meta-disagreement' is a facet-state, not an annotation kind).
+    expect(screen.getByTestId('annotate-submenu-kind-stance').getAttribute('data-selected')).toBe(
+      'true',
+    );
   });
 });

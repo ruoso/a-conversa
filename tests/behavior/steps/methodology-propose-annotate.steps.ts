@@ -50,6 +50,12 @@ const PA_EDGE_ID = 'c3eeeeee-eeee-4eee-8eee-eeeeeeeee006';
 const PA_UNKNOWN_NODE_ID = 'c3eeeeee-eeee-4eee-8eee-eeeeeeeee0aa';
 const PA_NEW_EVENT_ID = 'c3eeeeee-eeee-4eee-8eee-eeeeeeeee007';
 
+// Refinement: tasks/refinements/moderator-ui/mod_annotation_context_menu.md
+// (Decision §1 wire widening). The candidate-annotation ids backing the
+// annotation-of-annotation scenarios.
+const PA_ANNOTATION_A_ID = 'c3eeeeee-eeee-4eee-8eee-eeeeeeeee008';
+const PA_NEW_EVENT_ID_ANNOTATION = 'c3eeeeee-eeee-4eee-8eee-eeeeeeeee009';
+
 const TS_BASE = '2026-05-10T23:30:00.000Z';
 
 function tsAt(offsetSeconds: number): string {
@@ -175,6 +181,47 @@ async function insertEdgePair(world: AConversaWorld): Promise<void> {
   });
 }
 
+async function insertCandidateAnnotation(world: AConversaWorld): Promise<void> {
+  // First-order annotation targeting NODE_A. This is the candidate target
+  // for the annotation-of-annotation scenarios — a second-order annotate
+  // proposal aims at this annotation's id.
+  await insertEventRow(world, PA_SESSION_ID, {
+    id: evId(1208),
+    sequence: 6,
+    kind: 'annotation-created',
+    actor: PA_DEBATER_A_ID,
+    payload: {
+      annotation_id: PA_ANNOTATION_A_ID,
+      kind: 'note',
+      content: 'A first-order annotation that participants want to react to.',
+      target_node_id: PA_NODE_A_ID,
+      target_edge_id: null,
+      created_by: PA_DEBATER_A_ID,
+      created_at: tsAt(7),
+    },
+    createdAt: tsAt(7),
+  });
+}
+
+async function insertEntityRemovedForAnnotation(world: AConversaWorld): Promise<void> {
+  // Drive the annotation invisible via an `entity-removed(annotation)`
+  // event. Mirrors the projection's set-visible-false path the validator
+  // consults via `entityIsVisible(projection, 'annotation', id)`.
+  await insertEventRow(world, PA_SESSION_ID, {
+    id: evId(1209),
+    sequence: 7,
+    kind: 'entity-removed',
+    actor: PA_HOST_ID,
+    payload: {
+      entity_kind: 'annotation',
+      entity_id: PA_ANNOTATION_A_ID,
+      removed_by: PA_HOST_ID,
+      removed_at: tsAt(8),
+    },
+    createdAt: tsAt(8),
+  });
+}
+
 async function projectFromDb(world: AConversaWorld): Promise<Projection> {
   const rows = await selectEvents(world, PA_SESSION_ID);
   const events: Event[] = rows.map(rowToValidatedEvent);
@@ -210,6 +257,34 @@ Given(
     await seedLifecycle(this);
     // No node-created event — the target_id referenced in the propose
     // action will not resolve in the projection.
+    this.scratch['proposeProjection'] = await projectFromDb(this);
+  },
+);
+
+// Refinement: tasks/refinements/moderator-ui/mod_annotation_context_menu.md
+// (Decision §1 wire widening). The visible-annotation scenario seeds a
+// first-order annotation targeting NODE_A so a second-order annotate
+// proposal can name its id; the invisible-annotation scenario follows up
+// with an `entity-removed(annotation)` event so the projection's
+// `entityIsVisible(projection, 'annotation', id)` returns false.
+
+Given(
+  'a seeded session with three participants and a visible candidate annotation for propose-annotate tests',
+  async function (this: AConversaWorld) {
+    await seedLifecycle(this);
+    await insertCandidateNode(this);
+    await insertCandidateAnnotation(this);
+    this.scratch['proposeProjection'] = await projectFromDb(this);
+  },
+);
+
+Given(
+  'a seeded session with three participants and an invisible target annotation for propose-annotate tests',
+  async function (this: AConversaWorld) {
+    await seedLifecycle(this);
+    await insertCandidateNode(this);
+    await insertCandidateAnnotation(this);
+    await insertEntityRemovedForAnnotation(this);
     this.scratch['proposeProjection'] = await projectFromDb(this);
   },
 );
@@ -290,6 +365,54 @@ When(
   },
 );
 
+When(
+  'a debater constructs a propose-annotate action against the visible annotation',
+  function (this: AConversaWorld) {
+    const projection = this.scratch['proposeProjection'] as Projection;
+    const action: ProposeAction = {
+      kind: 'propose',
+      requester: PA_DEBATER_A_ID,
+      sessionId: PA_SESSION_ID,
+      eventId: PA_NEW_EVENT_ID_ANNOTATION,
+      sequence: nextSequence(projection),
+      actor: PA_DEBATER_A_ID,
+      createdAt: tsAt(20),
+      proposal: {
+        kind: 'annotate',
+        target_kind: 'annotation',
+        target_id: PA_ANNOTATION_A_ID,
+        annotation_kind: 'reframe',
+        content: 'A second-order annotation that reframes the first.',
+      },
+    };
+    this.scratch['proposeAction'] = action;
+  },
+);
+
+When(
+  'a debater constructs a propose-annotate action against the invisible annotation',
+  function (this: AConversaWorld) {
+    const projection = this.scratch['proposeProjection'] as Projection;
+    const action: ProposeAction = {
+      kind: 'propose',
+      requester: PA_DEBATER_A_ID,
+      sessionId: PA_SESSION_ID,
+      eventId: PA_NEW_EVENT_ID_ANNOTATION,
+      sequence: nextSequence(projection),
+      actor: PA_DEBATER_A_ID,
+      createdAt: tsAt(20),
+      proposal: {
+        kind: 'annotate',
+        target_kind: 'annotation',
+        target_id: PA_ANNOTATION_A_ID,
+        annotation_kind: 'stance',
+        content: 'A disagreement on the (now-invisible) annotation.',
+      },
+    };
+    this.scratch['proposeAction'] = action;
+  },
+);
+
 // The "validates the propose action against the projected session"
 // When step is shared with the propose-decompose feature and lives in
 // `methodology-propose-decompose.steps.ts`. Reused as-is.
@@ -339,6 +462,29 @@ Then(
         assert.equal(inner.annotation_kind, 'reframe');
         assert.equal(inner.target_kind, 'edge');
         assert.equal(inner.target_id, PA_EDGE_ID);
+      }
+    }
+  },
+);
+
+Then(
+  'the result carries a single proposal event for the annotate action targeting the annotation',
+  function (this: AConversaWorld) {
+    const result = this.scratch['methodologyResult'] as ValidationResult;
+    assert.ok(result.ok, `expected Valid, got ${JSON.stringify(result)}`);
+    if (!result.ok) return;
+    assert.equal(result.events.length, 1, 'expected exactly one event');
+    const ev = result.events[0]!;
+    assert.equal(ev.kind, 'proposal');
+    assert.equal(ev.sessionId, PA_SESSION_ID);
+    assert.equal(ev.id, PA_NEW_EVENT_ID_ANNOTATION);
+    if (ev.kind === 'proposal') {
+      const inner = ev.payload.proposal;
+      assert.equal(inner.kind, 'annotate');
+      if (inner.kind === 'annotate') {
+        assert.equal(inner.annotation_kind, 'reframe');
+        assert.equal(inner.target_kind, 'annotation');
+        assert.equal(inner.target_id, PA_ANNOTATION_A_ID);
       }
     }
   },

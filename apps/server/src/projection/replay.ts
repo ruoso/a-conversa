@@ -319,13 +319,13 @@ function handleEntityRemoved(
           `entity-removed(annotation ${payload.entity_id}): not in projection — the matching annotation-created event must have run earlier`,
         );
       }
-      // Annotations don't carry a `visible` flag on the projection
-      // record today (per docs/data-model.md L295-300, annotation
-      // visibility is derived from `(annotation-created fired) AND
-      // (target entity visible)`). The `entity-removed` event simply
-      // records the historical fact; the visible-graph derivation
-      // checks for the matching removal on read. No projection
-      // mutation needed beyond the change-feed entry.
+      projection.setAnnotationVisible(payload.entity_id, false);
+      changes.push({
+        kind: 'visibility-changed',
+        entityKind: 'annotation',
+        entityId: payload.entity_id,
+        visible: false,
+      });
       return;
     }
   }

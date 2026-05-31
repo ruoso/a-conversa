@@ -53,7 +53,7 @@ export interface WireError {
   readonly message: string;
 }
 
-export type AnnotateTargetKind = 'node' | 'edge';
+export type AnnotateTargetKind = 'node' | 'edge' | 'annotation';
 
 export interface UseAnnotateActionResult {
   /**

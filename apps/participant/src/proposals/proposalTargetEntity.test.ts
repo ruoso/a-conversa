@@ -168,4 +168,15 @@ describe('proposalTargetEntity', () => {
     };
     expect(proposalTargetEntity(proposal)).toEqual({ kind: 'edge', id: EDGE_A });
   });
+
+  it('(p) annotate targeting an annotation → null (no flashable element)', () => {
+    const proposal: ProposalPayload = {
+      kind: 'annotate',
+      target_kind: 'annotation',
+      target_id: PARENT_A,
+      annotation_kind: 'note',
+      content: 'note content',
+    };
+    expect(proposalTargetEntity(proposal)).toBeNull();
+  });
 });

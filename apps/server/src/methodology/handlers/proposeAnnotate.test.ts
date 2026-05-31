@@ -162,7 +162,7 @@ function makeAnnotateAction(
   overrides: Partial<{
     annotationKind: 'note' | 'reframe' | 'scope-change' | 'stance';
     content: string;
-    targetKind: 'node' | 'edge';
+    targetKind: 'node' | 'edge' | 'annotation';
     targetId: string;
     requester: string;
     eventId: string;
@@ -415,6 +415,113 @@ describe('propose annotate — accept path', () => {
           expect(inner.annotation_kind).toBe('stance');
           expect(inner.target_kind).toBe('node');
           expect(inner.target_id).toBe(NODE_B_ID);
+        }
+      }
+    }
+  });
+});
+
+// ---------------------------------------------------------------
+// Annotation-target arm — refinement:
+// tasks/refinements/moderator-ui/mod_annotation_context_menu.md
+// (Decision §1 wire widening). Mirrors the node/edge arms above:
+// (1) unknown annotation id is `target-entity-not-found`;
+// (2) invisible annotation is `illegal-state-transition`;
+// (3) visible annotation accepts and the result mirrors the action.
+// ---------------------------------------------------------------
+
+const ANNOTATION_A_ID = '9aaa9aaa-9aaa-4aaa-8aaa-9aaa9aaa01aa';
+const UNKNOWN_ANNOTATION_ID = '9aaa9aaa-9aaa-4aaa-8aaa-9aaa9aaa02aa';
+const ANNOTATION_NEW_EVENT_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddd1aa2';
+
+function seedSessionWithVisibleAnnotation(): ReturnType<typeof createEmptyProjection> {
+  const projection = seedSession();
+  // An `annotation-created` event lands a visible annotation targeting
+  // NODE_A. The annotation index in the projection exposes
+  // `getAnnotation(id)` per `projection.ts:setAnnotationVisible`'s
+  // mirror; we drive the projection directly.
+  applyEvent(
+    projection,
+    makeEvent(8, 'annotation-created', DEBATER_A_ID, T3, {
+      annotation_id: ANNOTATION_A_ID,
+      kind: 'note',
+      content: 'A first-order annotation on the host claim.',
+      target_node_id: NODE_A_ID,
+      target_edge_id: null,
+      created_by: DEBATER_A_ID,
+      created_at: T3,
+    }),
+  );
+  return projection;
+}
+
+describe('propose annotate — rule 1 (annotation): target-entity-exists', () => {
+  it('rejects when target_kind=annotation and target_id refers to no annotation in the projection', () => {
+    const p = seedSessionWithVisibleAnnotation();
+    const action = makeAnnotateAction(p, {
+      targetKind: 'annotation',
+      targetId: UNKNOWN_ANNOTATION_ID,
+      eventId: ANNOTATION_NEW_EVENT_ID,
+    });
+    const r = validateAction(p, action);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.reason).toBe('target-entity-not-found');
+      expect(r.detail).toContain(UNKNOWN_ANNOTATION_ID);
+      expect(r.detail).toContain("'annotation'");
+    }
+  });
+});
+
+describe('propose annotate — rule 2 (annotation): target-entity-visible', () => {
+  it('rejects when the target annotation is not visible (flipped off via setAnnotationVisible)', () => {
+    const p = seedSessionWithVisibleAnnotation();
+    // Drive the projection's annotation-visibility seam directly — the
+    // mirror of `entity-removed(annotation)` per replay.ts. This bypass
+    // matches the test pattern used in proposeCaptureNode.test.ts and
+    // proposeSetEdgeSubstanceValidation.test.ts for invisible-annotation
+    // arms.
+    p.setAnnotationVisible(ANNOTATION_A_ID, false);
+    expect(p.getAnnotation(ANNOTATION_A_ID)?.visible).toBe(false);
+
+    const action = makeAnnotateAction(p, {
+      targetKind: 'annotation',
+      targetId: ANNOTATION_A_ID,
+      eventId: ANNOTATION_NEW_EVENT_ID,
+    });
+    const r = validateAction(p, action);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.reason).toBe('illegal-state-transition');
+      expect(r.detail).toContain(ANNOTATION_A_ID);
+      expect(r.detail).toContain('not currently visible');
+    }
+  });
+});
+
+describe('propose annotate — accept path (annotation target)', () => {
+  it('accepts a reframe annotation against a visible annotation (annotation-of-annotation)', () => {
+    const p = seedSessionWithVisibleAnnotation();
+    const action = makeAnnotateAction(p, {
+      annotationKind: 'reframe',
+      targetKind: 'annotation',
+      targetId: ANNOTATION_A_ID,
+      eventId: ANNOTATION_NEW_EVENT_ID,
+      content: 'A second-order annotation reframing the first.',
+    });
+    const r = validateAction(p, action);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.events).toHaveLength(1);
+      const ev = r.events[0]!;
+      expect(ev.kind).toBe('proposal');
+      if (ev.kind === 'proposal') {
+        const inner = ev.payload.proposal;
+        expect(inner.kind).toBe('annotate');
+        if (inner.kind === 'annotate') {
+          expect(inner.annotation_kind).toBe('reframe');
+          expect(inner.target_kind).toBe('annotation');
+          expect(inner.target_id).toBe(ANNOTATION_A_ID);
         }
       }
     }

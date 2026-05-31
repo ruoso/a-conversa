@@ -116,6 +116,42 @@ describe('GraphContextMenu — rendering', () => {
     expect(root.getAttribute('data-target-id')).toBe('edge-42');
   });
 
+  // Refinement: tasks/refinements/moderator-ui/mod_annotation_context_menu.md
+  // Pin the fourth targetKind variant (the union widening landed
+  // alongside the dedicated annotation menu).
+  it('stamps data-target-kind="annotation" when the menu opens against an annotation node', async () => {
+    await render(
+      <GraphContextMenu
+        x={0}
+        y={0}
+        targetKind="annotation"
+        targetId="ann-7"
+        items={[
+          {
+            id: 'annotate',
+            labelKey: 'moderator.contextMenu.annotation.annotate',
+            onSelect: () => undefined,
+          },
+          {
+            id: 'meta-disagree',
+            labelKey: 'moderator.contextMenu.annotation.metaDisagree',
+            onSelect: () => undefined,
+          },
+        ]}
+        onClose={() => undefined}
+      />,
+    );
+    const root = screen.getByTestId('graph-context-menu');
+    expect(root.getAttribute('data-target-kind')).toBe('annotation');
+    expect(root.getAttribute('data-target-id')).toBe('ann-7');
+    expect(screen.getByTestId('graph-context-menu-item-annotate').textContent).toBe(
+      'Annotate this annotation',
+    );
+    expect(screen.getByTestId('graph-context-menu-item-meta-disagree').textContent).toBe(
+      'Disagree with this annotation',
+    );
+  });
+
   it('stamps an empty data-target-id when targetId is null (pane menu)', async () => {
     await render(
       <GraphContextMenu
