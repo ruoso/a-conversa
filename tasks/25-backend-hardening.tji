@@ -58,6 +58,7 @@ task backend_hardening "M3-review hardening (security audit follow-ups)" {
     task multi_instance_flow_state "Cross-instance OIDC flow-state backing store" {
       effort 2d
       allocate team
+      complete 100
       note -8<-
         Source: docs/security/m3-review/auth.md F-005
 
