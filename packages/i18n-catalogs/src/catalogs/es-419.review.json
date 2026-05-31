@@ -348,7 +348,22 @@
     "moderator.rebutEdgePreCommit.hint",
     "moderator.rebutEdgePreCommit.valueButton.agreed",
     "moderator.rebutEdgePreCommit.valueButton.disputed",
-    "moderator.rebutEdgePreCommit.valueButtonAriaLabel"
+    "moderator.rebutEdgePreCommit.valueButtonAriaLabel",
+    "moderator.metaMove.exit.ariaLabel",
+    "moderator.metaMove.exit.tooltip",
+    "moderator.metaMoveAction.label",
+    "moderator.metaMoveAction.inFlightLabel",
+    "moderator.metaMoveAction.ariaLabel",
+    "moderator.metaMoveAction.validationError",
+    "moderator.metaMoveAction.wireError",
+    "moderator.metaMoveAction.timeoutError",
+    "moderator.metaMoveAction.unknownError",
+    "moderator.metaMoveAction.reason.sessionMissing",
+    "moderator.metaMoveAction.reason.notConnected",
+    "moderator.metaMoveAction.reason.contentMissing",
+    "moderator.metaMoveAction.reason.targetMissing",
+    "moderator.metaMoveAction.reason.targetKindInvalid",
+    "moderator.metaMoveAction.reason.kindMissing"
   ],
   "signed_off": []
 }

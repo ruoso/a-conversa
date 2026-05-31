@@ -2503,4 +2503,132 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
       0,
     );
   });
+
+  // Refinement: tasks/refinements/moderator-ui/mod_meta_move_action.md
+  //
+  // The F8 meta-move propose chain regression cover. Drives the full
+  // chain end-to-end against the dev compose stack:
+  //
+  //   - login → create session → enter operate → seed a node into the
+  //     WS store (so the capture-target chip has something to
+  //     auto-suggest),
+  //   - click the seeded node → chip flips to "Target: <wording-prefix>",
+  //   - press F8 → mode flips to meta-move (the bottom-strip's textarea
+  //     mounts inside `<MetaMoveCapturePanel>`),
+  //   - type the meta-move content,
+  //   - press Cmd/Ctrl+Enter on the textarea → the propose round-trip
+  //     fires and reaches the server.
+  //
+  // The seeded target node (via `seedWsStore`) does NOT exist in the
+  // server's Postgres event log, so either
+  // `validateMetaMoveProposal` rule 1 rejects with
+  // `target-entity-not-found`, or the dispatcher's universal sequence
+  // gate rejects earlier with `sequence-mismatch` when the local
+  // sequence state gets ahead of the server. Either way, the wire-error
+  // region surfaces the typed code which proves the round-trip
+  // completed (envelope reached the server; the server validated and
+  // rejected; the error envelope correlated back through the WS
+  // client's pending-request map; the hook's `toWireError` mapped it to
+  // the store's per-key error slice; the propose-action region
+  // re-rendered with the inline error). Snapshot restore re-stages the
+  // textarea with the moderator's typed content. Mirrors the sibling
+  // interpretive-split full-chain block (lines 2038–2116).
+  //
+  // Skips gracefully when `window.__aConversaWsStore` is unreachable,
+  // matching the discipline of the propose-action / axiom-mark covers.
+  test('alice: F8 → propose a meta-move on a seeded node; the meta-move envelope reaches the server', async ({
+    page,
+  }) => {
+    await loginAs(page, { username: TEST_USERNAME });
+    await page.goto('/m/sessions/new');
+    await expect(page.getByTestId('route-create-session')).toBeVisible();
+
+    await page
+      .getByTestId('create-session-topic-input')
+      .fill('Meta-move action e2e regression check.');
+    await page.getByTestId('create-session-submit').click();
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    await seedInviteParticipantsForGate(page);
+    await page.getByTestId('invite-enter-session').click();
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
+    await expect(page.getByTestId('route-operate')).toBeVisible();
+
+    // Probe the WS-store seed path. If the dev-only attachment didn't
+    // fire, skip the seeded-graph case — without a target node staged
+    // there's nothing for the meta-move propose to fire against.
+    const seedAvailable = await isWsStoreReachable(page);
+    if (!seedAvailable) {
+      test.skip(
+        true,
+        'window.__aConversaWsStore is not reachable — the dev-only attachment did not fire. Full-chain assertion deferred to the seed-infrastructure environment.',
+      );
+      return;
+    }
+
+    const url = new URL(page.url());
+    const sessionId = url.pathname.split('/')[3] ?? '';
+    expect(sessionId, 'session id must be parsed from the URL').toBeTruthy();
+
+    const SEEDED_NODE_ID = '44444444-4444-4444-8444-444444444401';
+    const SEEDED_WORDING = 'Meta-move target node under test.';
+    await seedWsStore(page, {
+      sessionId,
+      nodes: [{ nodeId: SEEDED_NODE_ID, wording: SEEDED_WORDING }],
+    });
+
+    // Click the seeded node so the capture-target chip auto-stages it.
+    const seededNode = page.getByTestId(`statement-node-${SEEDED_NODE_ID}`);
+    await expect(seededNode, 'seeded node must render').toBeVisible({ timeout: 10_000 });
+    await clickNodeUntilTargetStaged(page, seededNode, 'Target: Meta-move target node');
+
+    // Press F8 (outside an editable target) → mode flips to meta-move
+    // and the `<MetaMoveCapturePanel>` mounts in the bottom strip's
+    // textInput slot. The exit-button affordance becomes visible.
+    await page.keyboard.press('F8');
+    await expect(page.getByTestId('meta-move-capture-pane')).toBeVisible();
+    await expect(page.getByTestId('meta-move-mode-exit')).toBeVisible();
+
+    // The text input mounts (reused F1 `<CaptureTextInput>`); the
+    // target chip stays staged from the pre-F8 click (the chip's
+    // `userHasClearedRef` logic preserves the staged target across the
+    // mode flip).
+    await expect(page.getByTestId('capture-target-chip-label')).toContainText(
+      'Target: Meta-move target node',
+    );
+
+    const content = 'The netting question is the operational form of the deeper dispute.';
+    const textarea = page.getByTestId('capture-text-input-textarea');
+    await textarea.fill(content);
+
+    // The propose button is now enabled (target staged, content typed,
+    // metaMoveKind defaulted to 'reframe' per Decision §3).
+    const button = page.getByTestId('meta-move-propose-button');
+    await expect(button).toBeEnabled();
+
+    // Fire Cmd/Ctrl+Enter from the textarea. The propose envelope flies
+    // to the server; the server rejects (the seeded target node only
+    // lives in the client-side WS store, so rule 1 of
+    // `validateMetaMoveProposal` returns `target-entity-not-found`, or
+    // the universal sequence gate returns `sequence-mismatch` if the
+    // local sequence is ahead). The failure path of `proposeMetaMove`
+    // restores the snapshot (textarea + chip stay populated) and
+    // surfaces the wire error inline.
+    const submitKey = process.platform === 'darwin' ? 'Meta+Enter' : 'Control+Enter';
+    await textarea.press(submitKey);
+
+    // The wire-error region surfaces the typed rejection code, proving
+    // the round-trip completed. Match against the code substring (not
+    // the localized wording) so this assertion is robust to catalog
+    // edits.
+    const wireError = page.getByTestId('meta-move-propose-error');
+    await expect(wireError).toBeVisible({ timeout: 10_000 });
+    await expect(wireError).toContainText(/target-entity-not-found|sequence-mismatch/);
+
+    // Snapshot restore — textarea retains the typed content and the
+    // chip stays staged so the moderator can fix the input and retry.
+    await expect(textarea).toHaveValue(content);
+    await expect(page.getByTestId('capture-target-chip-label')).toContainText(
+      'Target: Meta-move target node',
+    );
+  });
 });

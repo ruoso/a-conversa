@@ -528,6 +528,29 @@
         "inFlightLabel": "Capturando refutación…"
       }
     },
+    "metaMove": {
+      "exit": {
+        "ariaLabel": "Salir del modo meta-movimiento",
+        "tooltip": "Salir del modo meta-movimiento (Esc)"
+      }
+    },
+    "metaMoveAction": {
+      "label": "Proponer meta-movimiento",
+      "inFlightLabel": "Proponiendo meta-movimiento…",
+      "ariaLabel": "Proponer un meta-movimiento (replanteo / cambio de alcance / postura) sobre el objetivo seleccionado",
+      "validationError": "No se puede proponer: {reason}",
+      "wireError": "Falló la propuesta de meta-movimiento: {message} ({code})",
+      "timeoutError": "La solicitud de propuesta de meta-movimiento agotó el tiempo. Verifica tu conexión e inténtalo de nuevo.",
+      "unknownError": "No se pudo proponer el meta-movimiento — intenta de nuevo ({message})",
+      "reason": {
+        "sessionMissing": "ninguna sesión cargada",
+        "notConnected": "la sesión no está conectada — reconectando…",
+        "contentMissing": "escribe primero el contenido del meta-movimiento",
+        "targetMissing": "selecciona un nodo objetivo — haz clic en un nodo para fijarlo",
+        "targetKindInvalid": "los meta-movimientos apuntan a un nodo — limpia el objetivo de anotación y elige un nodo",
+        "kindMissing": "elige un tipo de meta-movimiento (replanteo / cambio de alcance / postura)"
+      }
+    },
     "rebutEdgePreCommit": {
       "hint": "Pre-comprométete a la refutación: aceptar aquí registra que, si esta condición se sostiene, refutaría el objetivo.",
       "valueButton": {

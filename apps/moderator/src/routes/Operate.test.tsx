@@ -176,6 +176,39 @@ function renderRoute(): { unmount: () => void } {
   return { unmount };
 }
 
+describe('Operate route — bottom-strip slot swap for meta-move mode (mod_meta_move_action)', () => {
+  it('mounts <MetaMoveCapturePanel> in textInput slot, null in edgeRoleSelector, and <MetaMoveProposeAction> in proposeAction slot when mode is meta-move', async () => {
+    global.fetch = stubAuthMeFetch();
+    // Pre-stage the meta-move mode before the route mounts so the first
+    // render observes the F8 mode. The store is shared; the afterEach()
+    // reset keeps tests isolated.
+    act(() => {
+      useCaptureStore.getState().enterMetaMoveMode();
+    });
+    renderRoute();
+    await waitFor(() => {
+      const stripStub = document.querySelector('[data-testid="bottom-strip-stub"]');
+      expect(stripStub).not.toBeNull();
+    });
+    // textInput → meta-move panel
+    const textInputSlot = document.querySelector('[data-testid="slot-text-input"]');
+    expect(textInputSlot?.querySelector('[data-testid="meta-move-capture-pane"]')).not.toBeNull();
+    // edgeRoleSelector → null (no CaptureTargetAndRole inside the slot)
+    const edgeRoleSlot = document.querySelector('[data-testid="slot-edge-role-selector"]');
+    expect(edgeRoleSlot?.querySelector('[data-testid="capture-target-and-role"]')).toBeNull();
+    expect(edgeRoleSlot?.children.length ?? 0).toBe(0);
+    // proposeAction → meta-move propose button
+    const proposeSlot = document.querySelector('[data-testid="slot-propose-action"]');
+    expect(proposeSlot?.querySelector('[data-testid="meta-move-propose-button"]')).not.toBeNull();
+    // modeBanner → meta-move exit button
+    const modeBannerSlot = document.querySelector('[data-testid="slot-mode-banner"]');
+    expect(modeBannerSlot?.querySelector('[data-testid="meta-move-mode-exit"]')).not.toBeNull();
+    await act(async () => {
+      await Promise.resolve();
+    });
+  });
+});
+
 describe('Operate route — bottom-strip slot swap for capture-defeater mode (mod_defeater_node_creation)', () => {
   it('mounts <CaptureDefeaterCapturePanel> in textInput slot, null in edgeRoleSelector, and <ProposeCaptureDefeaterAction> in proposeAction slot when mode is capture-defeater', async () => {
     global.fetch = stubAuthMeFetch();

@@ -170,6 +170,24 @@ export type EdgeDirection = 'targets' | 'targeted-by';
  */
 export type CaptureTargetKind = 'node' | 'annotation';
 
+/**
+ * The three meta-move sub-kinds the schema accepts
+ * (`metaMoveProposalSchema.meta_kind`,
+ * `packages/shared-types/src/events/proposals.ts:412-419`):
+ *
+ *   - `'reframe'` — the netting question is the operational form of a
+ *     deeper dispute; the moderator names the reframing.
+ *   - `'scope-change'` — the debate should defend the typical case, not
+ *     the edge case (or vice versa); the moderator names the rescoping.
+ *   - `'stance'` — a methodological refusal: "I won't press this point
+ *     on principle"; the moderator records the stance.
+ *
+ * Refinement: tasks/refinements/moderator-ui/mod_meta_move_action.md
+ * (Decision §3 — defaults to `'reframe'` so the propose path is
+ * functional ahead of the kind-selector sibling).
+ */
+export type MetaMoveKind = 'reframe' | 'scope-change' | 'stance';
+
 export interface CaptureState {
   /** The free-text statement under construction. */
   text: string;
@@ -552,6 +570,52 @@ export interface CaptureState {
    */
   exitCaptureDefeaterMode: () => void;
 
+  /**
+   * The currently-selected meta-move sub-kind when `mode === 'meta-move'`,
+   * defaulting to `'reframe'` (Decision §3 of mod_meta_move_action — the
+   * action ships in a propose-able state ahead of the kind-selector
+   * sibling). The typing keeps the slot extensible (the kind-selector
+   * sibling can null out the slice to force the moderator to pick), and
+   * the validator gate accepts any of the three enum values.
+   *
+   * Refinement: tasks/refinements/moderator-ui/mod_meta_move_action.md
+   */
+  metaMoveKind: MetaMoveKind | null;
+
+  /**
+   * Set the meta-move sub-kind slice directly. The kind-selector sibling
+   * task will write through this; the action task seeds the default.
+   *
+   * Refinement: tasks/refinements/moderator-ui/mod_meta_move_action.md
+   */
+  setMetaMoveKind: (kind: MetaMoveKind | null) => void;
+
+  /**
+   * Enter meta-move mode. Atomic multi-field update mirroring
+   * `enterCaptureDefeaterMode`: sets `mode = 'meta-move'` and clears
+   * the F1 capture-flow slices so a stale F1 draft does not bleed into
+   * the meta-move flow. The `metaMoveKind` slice resets to the default
+   * `'reframe'` so the propose path is functional immediately.
+   *
+   * Unlike the other sub-modes there is no per-mode `targetEntityId`
+   * slice — meta-move reuses the F1 `targetEntityId` slice (Decision §4
+   * narrows v1 to `target_kind: 'node'`, surfaced via the existing
+   * `<CaptureTargetChip>` auto-suggest).
+   *
+   * Refinement: tasks/refinements/moderator-ui/mod_meta_move_action.md
+   * (Decision §1 — bottom-strip mode-entry pattern; Decision §5 — text
+   * slice reuse).
+   */
+  enterMetaMoveMode: () => void;
+
+  /**
+   * Exit meta-move mode. Atomic update mirroring
+   * `exitCaptureDefeaterMode`: sets `mode = 'idle'` and restores
+   * `metaMoveKind` to its `'reframe'` default. The F1 slices are NOT
+   * re-populated.
+   */
+  exitMetaMoveMode: () => void;
+
   /** Reset the pane to a fresh idle state — called after a successful propose. */
   reset: () => void;
 }
@@ -573,6 +637,7 @@ const initialCaptureState: Pick<
   | 'operationalizationTargetNodeId'
   | 'warrantElicitationTargetNodeId'
   | 'captureDefeaterTargetNodeId'
+  | 'metaMoveKind'
 > = {
   text: '',
   classification: null,
@@ -589,6 +654,7 @@ const initialCaptureState: Pick<
   operationalizationTargetNodeId: null,
   warrantElicitationTargetNodeId: null,
   captureDefeaterTargetNodeId: null,
+  metaMoveKind: 'reframe',
 };
 
 /**
@@ -829,6 +895,30 @@ export const useCaptureStore = create<CaptureState>()(
       set({
         mode: 'idle',
         captureDefeaterTargetNodeId: null,
+      }),
+    setMetaMoveKind: (metaMoveKind) => set({ metaMoveKind }),
+    enterMetaMoveMode: () =>
+      set({
+        mode: 'meta-move',
+        // F1-coupling clear (mirrors enterCaptureDefeaterMode — Decision
+        // §5 of mod_meta_move_action.md): a stale in-progress F1 draft
+        // must not bleed into the meta-move flow.
+        text: '',
+        classification: null,
+        targetEntityId: null,
+        targetEntityKind: 'node',
+        edgeRole: null,
+        edgeDirection: 'targets',
+        // Default the kind to 'reframe' so the propose path is
+        // functional ahead of the kind-selector sibling (Decision §3).
+        metaMoveKind: 'reframe',
+      }),
+    exitMetaMoveMode: () =>
+      set({
+        mode: 'idle',
+        // Reset the kind slice back to the default so the next
+        // `enterMetaMoveMode` starts from a clean state.
+        metaMoveKind: 'reframe',
       }),
     reset: () => set({ ...initialCaptureState }),
   })),

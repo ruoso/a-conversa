@@ -595,6 +595,19 @@ task moderator_ui "Moderator UI" {
     task mod_meta_move_action "Capture meta-move action with target selected" {
       effort 1d
       allocate team
+      complete 100
+    }
+    task mod_meta_move_edge_target_gesture "Edge-target gesture for meta-move" {
+      effort 0.5d
+      allocate team
+      depends !mod_meta_move_action
+      note "Source: moderator_ui.mod_meta_move_flow.mod_meta_move_action AC §11 — adds an edge-target gesture so a meta-move can target an edge per the schema's target_kind: 'edge' branch. The v1 node-only narrowing is documented in Decision §4 of tasks/refinements/moderator-ui/mod_meta_move_action.md."
+    }
+    task mod_meta_move_annotation_target_gesture "Annotation-target handling for meta-move" {
+      effort 0.5d
+      allocate team
+      depends !mod_meta_move_action
+      note "Source: moderator_ui.mod_meta_move_flow.mod_meta_move_action AC §12 — decides whether meta-moves on annotations should be permissible (engine-side enum widening) or whether the v1 rejection remains as a permanent product rule. Concrete spec-write + implementation per Decision §4 of tasks/refinements/moderator-ui/mod_meta_move_action.md."
     }
     task mod_meta_move_kind_selector "Kind selector — reframe / scope-change / stance" {
       effort 0.5d

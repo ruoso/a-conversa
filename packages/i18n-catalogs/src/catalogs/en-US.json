@@ -528,6 +528,29 @@
         "inFlightLabel": "Capturing defeater…"
       }
     },
+    "metaMove": {
+      "exit": {
+        "ariaLabel": "Exit meta-move mode",
+        "tooltip": "Exit meta-move mode (Esc)"
+      }
+    },
+    "metaMoveAction": {
+      "label": "Propose meta-move",
+      "inFlightLabel": "Proposing meta-move…",
+      "ariaLabel": "Propose a meta-move (reframe / scope-change / stance) about the selected target",
+      "validationError": "Cannot propose: {reason}",
+      "wireError": "Meta-move propose failed: {message} ({code})",
+      "timeoutError": "The meta-move propose request timed out. Check your connection and try again.",
+      "unknownError": "Could not propose the meta-move — please retry ({message})",
+      "reason": {
+        "sessionMissing": "no session is loaded",
+        "notConnected": "the session is not connected — reconnecting…",
+        "contentMissing": "type the meta-move content first",
+        "targetMissing": "pick a target node — click a node to stage it",
+        "targetKindInvalid": "meta-moves target a node — clear the annotation target and pick a node",
+        "kindMissing": "pick a meta-move kind (reframe / scope-change / stance)"
+      }
+    },
     "rebutEdgePreCommit": {
       "hint": "Pre-commit the retraction: agreeing here records that if this condition holds, it would defeat the target.",
       "valueButton": {

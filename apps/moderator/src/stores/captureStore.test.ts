@@ -893,3 +893,87 @@ describe('useCaptureStore — targetEntityKind slice (mod_propose_annotation_end
     expect(state.targetEntityKind).toBe('node');
   });
 });
+
+// Refinement: tasks/refinements/moderator-ui/mod_meta_move_action.md
+//
+// The meta-move slice + setter + mode-entry / mode-exit pair landed by
+// the action task. Pins: the default `'reframe'` (Decision §3 — the
+// propose path is functional ahead of the kind-selector sibling), the
+// direct setter, and the atomic enter/exit semantics (single set() per
+// call, F1 slices cleared on entry, kind reset to default on exit).
+describe('useCaptureStore — meta-move slice (mod_meta_move_action)', () => {
+  it('metaMoveKind defaults to "reframe" in the initial state', () => {
+    expect(useCaptureStore.getState().metaMoveKind).toBe('reframe');
+  });
+
+  it('setMetaMoveKind writes through to the slice', () => {
+    useCaptureStore.getState().setMetaMoveKind('scope-change');
+    expect(useCaptureStore.getState().metaMoveKind).toBe('scope-change');
+    useCaptureStore.getState().setMetaMoveKind('stance');
+    expect(useCaptureStore.getState().metaMoveKind).toBe('stance');
+    useCaptureStore.getState().setMetaMoveKind(null);
+    expect(useCaptureStore.getState().metaMoveKind).toBeNull();
+  });
+
+  it('enterMetaMoveMode() flips mode to meta-move, clears F1 slices, and reseeds metaMoveKind to "reframe"', () => {
+    // Seed every F1 slice + an off-default metaMoveKind so we can assert
+    // the atomic clear (mirrors the enterCaptureDefeaterMode coverage).
+    useCaptureStore.getState().setText('a stale draft wording');
+    useCaptureStore.getState().setClassification('fact');
+    useCaptureStore.getState().setTargetEntityId('node-stale');
+    useCaptureStore.getState().setEdgeRole('supports');
+    useCaptureStore.getState().setMetaMoveKind('stance');
+
+    useCaptureStore.getState().enterMetaMoveMode();
+
+    const state = useCaptureStore.getState();
+    expect(state.mode).toBe('meta-move');
+    expect(state.text).toBe('');
+    expect(state.classification).toBeNull();
+    expect(state.targetEntityId).toBeNull();
+    expect(state.targetEntityKind).toBe('node');
+    expect(state.edgeRole).toBeNull();
+    expect(state.edgeDirection).toBe('targets');
+    expect(state.metaMoveKind).toBe('reframe');
+  });
+
+  it('enterMetaMoveMode uses a single set() — subscribers observe exactly one transition per call', () => {
+    let notifications = 0;
+    const unsubscribe = useCaptureStore.subscribe(() => {
+      notifications += 1;
+    });
+    try {
+      useCaptureStore.getState().enterMetaMoveMode();
+      expect(notifications).toBe(1);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('exitMetaMoveMode reverts mode to idle and resets metaMoveKind to the "reframe" default', () => {
+    useCaptureStore.getState().enterMetaMoveMode();
+    useCaptureStore.getState().setMetaMoveKind('stance');
+    expect(useCaptureStore.getState().mode).toBe('meta-move');
+    useCaptureStore.getState().exitMetaMoveMode();
+    const state = useCaptureStore.getState();
+    expect(state.mode).toBe('idle');
+    expect(state.metaMoveKind).toBe('reframe');
+  });
+
+  it('exitMetaMoveMode does NOT re-populate the F1 slices (mirrors exitCaptureDefeaterMode discipline)', () => {
+    useCaptureStore.getState().setText('would have been a draft');
+    useCaptureStore.getState().enterMetaMoveMode();
+    useCaptureStore.getState().exitMetaMoveMode();
+    const state = useCaptureStore.getState();
+    expect(state.text).toBe('');
+    expect(state.classification).toBeNull();
+    expect(state.targetEntityId).toBeNull();
+    expect(state.edgeRole).toBeNull();
+  });
+
+  it('reset() restores metaMoveKind to the "reframe" default', () => {
+    useCaptureStore.getState().setMetaMoveKind('stance');
+    useCaptureStore.getState().reset();
+    expect(useCaptureStore.getState().metaMoveKind).toBe('reframe');
+  });
+});

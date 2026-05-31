@@ -80,6 +80,9 @@ import { WarrantElicitationCapturePanel } from '../layout/WarrantElicitationCapt
 import { WarrantElicitationModeExitButton } from '../layout/WarrantElicitationModeExitButton';
 import { CaptureDefeaterCapturePanel } from '../layout/CaptureDefeaterCapturePanel';
 import { CaptureDefeaterModeExitButton } from '../layout/CaptureDefeaterModeExitButton';
+import { MetaMoveCapturePanel } from '../layout/MetaMoveCapturePanel';
+import { MetaMoveModeExitButton } from '../layout/MetaMoveModeExitButton';
+import { MetaMoveProposeAction } from '../layout/MetaMoveProposeAction';
 import { ProposeAction } from '../layout/ProposeAction';
 import { ProposeCaptureDefeaterAction } from '../layout/ProposeCaptureDefeaterAction';
 import { ProposeDecompositionAction } from '../layout/ProposeDecompositionAction';
@@ -96,6 +99,7 @@ import { SnapshotLabelInputMount } from '../layout/SnapshotLabelInputMount';
 import { useSnapshotFlowStore } from '../layout/useSnapshotFlowStore';
 import { useSnapshotShortcut } from '../layout/useSnapshotShortcut';
 import { useCaptureStore } from '../stores/captureStore';
+import { attachCaptureKeymap } from '../layout/captureKeymap';
 import { WsClientProvider, useWsClient } from '@a-conversa/shell';
 import { useWsStore } from '../ws/wsStore';
 
@@ -175,6 +179,11 @@ function OperateRouteInner(props: { sessionId: string }): ReactElement {
   // propose-action into the bottom-strip's `textInput` +
   // `proposeAction` slots when the moderator is composing a defeater.
   const isCaptureDefeaterMode = mode === 'capture-defeater';
+  // Parallel gate for meta-move mode — introduced by
+  // mod_meta_move_action.md to mount the F8 capture pane +
+  // propose-action into the bottom-strip when the moderator is
+  // composing a meta-move (Decision §1 — bottom-strip mode-entry).
+  const isMetaMoveMode = mode === 'meta-move';
 
   useEffect(() => {
     if (sessionId === '') return;
@@ -183,6 +192,20 @@ function OperateRouteInner(props: { sessionId: string }): ReactElement {
       void client.untrackSession(sessionId);
     };
   }, [client, sessionId]);
+
+  // F8 capture-flow entry binding — attach the keymap's
+  // `onEnterMetaMove` handler at route scope so F8 anywhere outside an
+  // editable target enters meta-move mode (Decision §2 of
+  // mod_meta_move_action.md). The handler reads `enterMetaMoveMode`
+  // from the store via `getState()` so the closure stays stable across
+  // store transitions.
+  useEffect(() => {
+    return attachCaptureKeymap({
+      onEnterMetaMove: () => {
+        useCaptureStore.getState().enterMetaMoveMode();
+      },
+    });
+  }, []);
 
   // Install the `window.__testHooks.killWebSocket` test seam — reached
   // by `tests/e2e/moderator-proposed-entity-canvas-visibility.spec.ts`
@@ -248,6 +271,7 @@ function OperateRouteInner(props: { sessionId: string }): ReactElement {
                 <OperationalizationModeExitButton />
                 <WarrantElicitationModeExitButton />
                 <CaptureDefeaterModeExitButton />
+                <MetaMoveModeExitButton />
               </>
             }
             textInput={
@@ -257,6 +281,8 @@ function OperateRouteInner(props: { sessionId: string }): ReactElement {
                 <OperationalizationCapturePanel />
               ) : isCaptureDefeaterMode ? (
                 <CaptureDefeaterCapturePanel />
+              ) : isMetaMoveMode ? (
+                <MetaMoveCapturePanel />
               ) : isProposalMode ? (
                 isInterpretiveSplitMode ? (
                   <InterpretiveSplitReadingsGrid />
@@ -284,6 +310,7 @@ function OperateRouteInner(props: { sessionId: string }): ReactElement {
               isWarrantElicitationMode ||
               isOperationalizationMode ||
               isCaptureDefeaterMode ||
+              isMetaMoveMode ||
               isProposalMode ? null : (
                 <CaptureTargetAndRole />
               )
@@ -295,6 +322,8 @@ function OperateRouteInner(props: { sessionId: string }): ReactElement {
                 <ProposeInterpretiveSplitAction />
               ) : isCaptureDefeaterMode ? (
                 <ProposeCaptureDefeaterAction />
+              ) : isMetaMoveMode ? (
+                <MetaMoveProposeAction />
               ) : isOperationalizationMode || isWarrantElicitationMode ? null : (
                 <ProposeAction />
               )

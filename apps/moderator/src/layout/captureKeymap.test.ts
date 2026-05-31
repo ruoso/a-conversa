@@ -631,4 +631,144 @@ describe('captureKeymap — onExitMode handler (mode-aware Escape)', () => {
     expect(onExitMode).toHaveBeenCalledTimes(1);
     expect(onClearTarget).not.toHaveBeenCalled();
   });
+
+  // Refinement: tasks/refinements/moderator-ui/mod_meta_move_action.md
+  //
+  // Extends the mode-aware Escape branch to also route `onExitMode`
+  // when `mode === 'meta-move'` (the 6th mode). The priority over
+  // `onClearTarget` mirrors the decompose / interpretive-split /
+  // operationalization / warrant-elicitation / capture-defeater
+  // branches.
+  it('routes Escape to onExitMode when mode === meta-move', () => {
+    const onExitMode = vi.fn<() => void>();
+    useCaptureStore.getState().enterMetaMoveMode();
+    detach = attachCaptureKeymap({ onExitMode });
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(onExitMode).toHaveBeenCalledTimes(1);
+  });
+
+  it('meta-move exit takes priority over target-clear when both handlers are registered', () => {
+    const onExitMode = vi.fn<() => void>();
+    const onClearTarget = vi.fn<() => void>();
+    useCaptureStore.getState().enterMetaMoveMode();
+    detach = attachCaptureKeymap({ onExitMode, onClearTarget });
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(onExitMode).toHaveBeenCalledTimes(1);
+    expect(onClearTarget).not.toHaveBeenCalled();
+  });
+});
+
+// Refinement: tasks/refinements/moderator-ui/mod_meta_move_action.md
+//
+// F8 capture-flow entry binding. The handler the F8 owner registers
+// fires on a plain F8 keypress outside an editable target and inherits
+// the same modifier-bail / repeat-skip / editable-target guards as the
+// other handlers. F8 never collides with the single-letter kind / role
+// shortcut tables.
+describe('captureKeymap — onEnterMetaMove handler (F8 binding)', () => {
+  let detach: (() => void) | null = null;
+  let onEnterMetaMove: ReturnType<typeof vi.fn<() => void>>;
+
+  beforeEach(() => {
+    onEnterMetaMove = vi.fn();
+  });
+
+  afterEach(() => {
+    if (detach !== null) {
+      detach();
+      detach = null;
+    }
+    document.body.innerHTML = '';
+  });
+
+  it('routes a plain F8 keypress to onEnterMetaMove', () => {
+    detach = attachCaptureKeymap({ onEnterMetaMove });
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F8', bubbles: true }));
+    expect(onEnterMetaMove).toHaveBeenCalledTimes(1);
+  });
+
+  it('matches case-insensitively (lowercase `f8` also routes)', () => {
+    detach = attachCaptureKeymap({ onEnterMetaMove });
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'f8', bubbles: true }));
+    expect(onEnterMetaMove).toHaveBeenCalledTimes(1);
+  });
+
+  it('bails when metaKey is held (Cmd+F8 passes through)', () => {
+    detach = attachCaptureKeymap({ onEnterMetaMove });
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'F8', metaKey: true, bubbles: true }),
+    );
+    expect(onEnterMetaMove).not.toHaveBeenCalled();
+  });
+
+  it('bails when ctrlKey is held (Ctrl+F8 passes through)', () => {
+    detach = attachCaptureKeymap({ onEnterMetaMove });
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'F8', ctrlKey: true, bubbles: true }),
+    );
+    expect(onEnterMetaMove).not.toHaveBeenCalled();
+  });
+
+  it('bails when altKey is held (Alt+F8 passes through)', () => {
+    detach = attachCaptureKeymap({ onEnterMetaMove });
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'F8', altKey: true, bubbles: true }),
+    );
+    expect(onEnterMetaMove).not.toHaveBeenCalled();
+  });
+
+  it('bails when event.repeat is true (held F8 does not bounce)', () => {
+    detach = attachCaptureKeymap({ onEnterMetaMove });
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'F8', repeat: true, bubbles: true }),
+    );
+    expect(onEnterMetaMove).not.toHaveBeenCalled();
+  });
+
+  it('bails when document.activeElement is a textarea (editable-target guard)', () => {
+    const textarea = document.createElement('textarea');
+    document.body.appendChild(textarea);
+    textarea.focus();
+    expect(document.activeElement).toBe(textarea);
+
+    detach = attachCaptureKeymap({ onEnterMetaMove });
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F8', bubbles: true }));
+    expect(onEnterMetaMove).not.toHaveBeenCalled();
+  });
+
+  it('bails when document.activeElement is an input (editable-target guard)', () => {
+    const input = document.createElement('input');
+    input.type = 'text';
+    document.body.appendChild(input);
+    input.focus();
+    expect(document.activeElement).toBe(input);
+
+    detach = attachCaptureKeymap({ onEnterMetaMove });
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F8', bubbles: true }));
+    expect(onEnterMetaMove).not.toHaveBeenCalled();
+  });
+
+  it('preventDefault is called on a matched F8 (keystroke consumed)', () => {
+    detach = attachCaptureKeymap({ onEnterMetaMove });
+    const ev = new KeyboardEvent('keydown', { key: 'F8', bubbles: true, cancelable: true });
+    document.dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBe(true);
+  });
+
+  it('does not throw when F8 fires but no onEnterMetaMove handler is registered', () => {
+    detach = attachCaptureKeymap({});
+    expect(() => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F8', bubbles: true }));
+    }).not.toThrow();
+  });
+
+  it('a registered onEnterMetaMove alongside onPickKind both route their keys (no collision)', () => {
+    const onPickKind = vi.fn<(kind: MethodologyKind) => void>();
+    detach = attachCaptureKeymap({ onPickKind, onEnterMetaMove });
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', bubbles: true }));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F8', bubbles: true }));
+    expect(onPickKind).toHaveBeenCalledTimes(1);
+    expect(onPickKind).toHaveBeenCalledWith('fact');
+    expect(onEnterMetaMove).toHaveBeenCalledTimes(1);
+  });
 });

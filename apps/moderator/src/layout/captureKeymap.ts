@@ -108,8 +108,22 @@ export interface CaptureKeymapHandlers {
    * (Decision §8 records the generalisation to interpretive-split).
    * Refinement: tasks/refinements/moderator-ui/mod_capture_defeater_mode.md
    * (extends the priority to capture-defeater as the 5th mode).
+   * Refinement: tasks/refinements/moderator-ui/mod_meta_move_action.md
+   * (extends to meta-move as the 6th mode).
    */
   onExitMode?: () => void;
+  /**
+   * Enter meta-move mode. The F8 capture flow's entry binding. Triggered
+   * by the `F8` key under the same modifier-bail / editable-target /
+   * repeat-skip guards as the other handlers. F8 is reserved by name
+   * across the doc-blocks for this binding; no kind/role shortcut
+   * collision risk (the kind + role shortcut tables contain only single
+   * letters).
+   *
+   * Refinement: tasks/refinements/moderator-ui/mod_meta_move_action.md
+   * (Decision §2 — F8 binds to enterMetaMoveMode with no modifier).
+   */
+  onEnterMetaMove?: () => void;
   // future: onSubmit?: () => void;
   // future: onDecompose?: () => void;
 }
@@ -230,6 +244,17 @@ export function attachCaptureKeymap(handlers: CaptureKeymapHandlers): () => void
     // `onClearTarget` would be a no-op anyway. The branch sits after
     // the kind / role matches because the shortcut tables contain
     // only letter keys; `Escape` never collides.
+    // F8 routes to onEnterMetaMove (the F8 capture-flow entry binding —
+    // Decision §2 of mod_meta_move_action.md). Sits before the Escape
+    // branch because F8 never collides with the kind / role / Escape
+    // matches above. Inherits the modifier-bail / repeat-skip /
+    // editable-target guards already applied higher up.
+    if (key === 'f8' && handlers.onEnterMetaMove !== undefined) {
+      event.preventDefault();
+      handlers.onEnterMetaMove();
+      return;
+    }
+
     if (key === 'escape') {
       const mode = useCaptureStore.getState().mode;
       if (
@@ -237,7 +262,8 @@ export function attachCaptureKeymap(handlers: CaptureKeymapHandlers): () => void
           mode === 'interpretive-split' ||
           mode === 'operationalization' ||
           mode === 'warrant-elicitation' ||
-          mode === 'capture-defeater') &&
+          mode === 'capture-defeater' ||
+          mode === 'meta-move') &&
         handlers.onExitMode !== undefined
       ) {
         // 6. Consume the keystroke.
