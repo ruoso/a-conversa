@@ -534,6 +534,12 @@
         "tooltip": "Exit meta-move mode (Esc)"
       }
     },
+    "metaMoveKindSelector": {
+      "ariaLabel": "Meta-move kind — pick reframe / scope-change / stance",
+      "legend": "Meta-move kind",
+      "kindButtonAriaLabel": "{label} (shortcut: {key})",
+      "shortcutHint": "Or press M / C / T"
+    },
     "metaMoveAction": {
       "label": "Propose meta-move",
       "inFlightLabel": "Proposing meta-move…",

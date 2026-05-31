@@ -181,6 +181,68 @@ export function getShortcutForEdgeRole(
 }
 
 /**
+ * The three canonical meta-move kinds the moderator's meta-move
+ * kind-selector (and the help overlay) iterate. The wire-format enum
+ * (`packages/shared-types/src/events/proposals.ts` —
+ * `metaMoveProposalSchema.meta_kind`) is the source of truth; the local
+ * tuple is held here so this module has no dependency on shared-types.
+ *
+ * Refinement: tasks/refinements/moderator-ui/mod_meta_move_kind_selector.md
+ */
+export const META_MOVE_KINDS = ['reframe', 'scope-change', 'stance'] as const;
+
+export type MetaMoveKind = (typeof META_MOVE_KINDS)[number];
+
+/**
+ * The English-mnemonic shortcut for each meta-move kind. Single lowercase
+ * ASCII letter; modifiers (shift / ctrl / cmd) are NOT part of the
+ * shortcut surface — the moderator UI normalises the key event to its
+ * lowercase form before dispatching.
+ *
+ * Picked under the english-mnemonic policy (ADR 0024 +
+ * `i18n_keyboard_shortcuts_policy`) and verified non-colliding against
+ * both `KIND_TO_SHORTCUT` (`f`/`p`/`v`/`n`/`d`) and
+ * `EDGE_ROLE_TO_SHORTCUT` (`s`/`r`/`q`/`b`/`g`/`e`/`x`) so the three
+ * single-select surfaces on the bottom strip can coexist on the same
+ * document-level keydown listener. The picks per kind:
+ *
+ *   - `reframe`      -> `m` (`r`, `e`, `f` taken; "re**m**ap" / "re**m**odel"
+ *                            mnemonic — same second-best-letter pattern
+ *                            as `defines -> e`)
+ *   - `scope-change` -> `c` (`s` taken; first letter of "**c**hange",
+ *                            the action verb the moderator is selecting)
+ *   - `stance`       -> `t` (`s` taken; second letter "s**t**ance" —
+ *                            same fallback pattern as `defines -> e` /
+ *                            `bridges-to -> g`)
+ *
+ * Refinement: tasks/refinements/moderator-ui/mod_meta_move_kind_selector.md
+ *   Decision §1 records the full per-kind rationale + collision-avoidance
+ *   proof against the existing kind / role tables.
+ */
+export const META_MOVE_KIND_TO_SHORTCUT: Readonly<Record<MetaMoveKind, string>> = {
+  reframe: 'm',
+  'scope-change': 'c',
+  stance: 't',
+};
+
+/**
+ * Resolve the shortcut for a given meta-move kind. The `locale` parameter
+ * is accepted for forward compatibility — if the policy ever flips to
+ * per-locale, every call site is already passing the active locale.
+ * Under the current `'english-mnemonic'` policy the locale is ignored.
+ *
+ * The function is total over `MetaMoveKind` × `SupportedLocale`; it
+ * returns the same single-character lowercase string for any locale.
+ */
+export function getShortcutForMetaMoveKind(
+  kind: MetaMoveKind,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  locale: SupportedLocale,
+): string {
+  return META_MOVE_KIND_TO_SHORTCUT[kind];
+}
+
+/**
  * The full `(locale, kind | role) -> shortcut` matrix, materialised.
  * Useful for the help-overlay renderer (which iterates the
  * cross-product) and for the round-trip test that asserts totality +
@@ -197,6 +259,7 @@ export function getShortcutForEdgeRole(
 export interface ShortcutMatrixRow {
   kinds: Readonly<Record<MethodologyKind, string>>;
   roles: Readonly<Record<EdgeRole, string>>;
+  metaMoveKinds: Readonly<Record<MetaMoveKind, string>>;
 }
 
 export function buildShortcutMatrix(): Readonly<Record<SupportedLocale, ShortcutMatrixRow>> {
@@ -210,9 +273,14 @@ export function buildShortcutMatrix(): Readonly<Record<SupportedLocale, Shortcut
     for (const role of EDGE_ROLES) {
       roles[role] = getShortcutForEdgeRole(role, locale);
     }
+    const metaMoveKinds: Partial<Record<MetaMoveKind, string>> = {};
+    for (const kind of META_MOVE_KINDS) {
+      metaMoveKinds[kind] = getShortcutForMetaMoveKind(kind, locale);
+    }
     matrix[locale] = {
       kinds: kinds as Record<MethodologyKind, string>,
       roles: roles as Record<EdgeRole, string>,
+      metaMoveKinds: metaMoveKinds as Record<MetaMoveKind, string>,
     };
   }
   return matrix as Record<SupportedLocale, ShortcutMatrixRow>;

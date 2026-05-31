@@ -103,14 +103,14 @@ describe('MetaMoveCapturePanel — render gating', () => {
     });
   }
 
-  it('renders the slot composition (target chip + kind placeholder + text input) when mode is meta-move', async () => {
+  it('renders the slot composition (target chip + kind selector + text input) when mode is meta-move', async () => {
     act(() => {
       useCaptureStore.getState().enterMetaMoveMode();
     });
     await renderPanel(makeFakeClient());
     expect(screen.getByTestId('meta-move-capture-pane')).toBeTruthy();
     expect(screen.getByTestId('capture-target-chip')).toBeTruthy();
-    expect(screen.getByTestId('meta-move-kind-selector-placeholder')).toBeTruthy();
+    expect(screen.getByTestId('meta-move-kind-selector')).toBeTruthy();
     expect(screen.getByTestId('capture-text-input-textarea')).toBeTruthy();
   });
 });

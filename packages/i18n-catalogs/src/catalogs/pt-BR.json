@@ -534,6 +534,12 @@
         "tooltip": "Sair do modo meta-movimento (Esc)"
       }
     },
+    "metaMoveKindSelector": {
+      "ariaLabel": "Tipo de meta-movimento — escolha reenquadramento / mudança de escopo / postura",
+      "legend": "Tipo de meta-movimento",
+      "kindButtonAriaLabel": "{label} (atalho: {key})",
+      "shortcutHint": "Ou pressione M / C / T"
+    },
     "metaMoveAction": {
       "label": "Propor meta-movimento",
       "inFlightLabel": "Propondo meta-movimento…",

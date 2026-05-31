@@ -34,8 +34,11 @@ import {
   EDGE_ROLES,
   getShortcutForEdgeRole,
   getShortcutForKind,
+  getShortcutForMetaMoveKind,
   KEYBOARD_SHORTCUT_POLICY,
   KIND_TO_SHORTCUT,
+  META_MOVE_KIND_TO_SHORTCUT,
+  META_MOVE_KINDS,
   METHODOLOGY_KINDS,
   type EdgeRole,
   type MethodologyKind,
@@ -104,13 +107,14 @@ describe('getShortcutForKind: locale-independent resolution', () => {
 });
 
 describe('buildShortcutMatrix: totality and collision properties', () => {
-  it('is total over (SupportedLocale x MethodologyKind) and over (SupportedLocale x EdgeRole)', () => {
+  it('is total over (SupportedLocale x MethodologyKind), (SupportedLocale x EdgeRole), and (SupportedLocale x MetaMoveKind)', () => {
     const matrix = buildShortcutMatrix();
     expect(Object.keys(matrix).sort()).toEqual([...SUPPORTED_LOCALES].sort());
     for (const locale of SUPPORTED_LOCALES) {
       const row = matrix[locale];
       expect(Object.keys(row.kinds).sort()).toEqual([...METHODOLOGY_KINDS].sort());
       expect(Object.keys(row.roles).sort()).toEqual([...EDGE_ROLES].sort());
+      expect(Object.keys(row.metaMoveKinds).sort()).toEqual([...META_MOVE_KINDS].sort());
       for (const kind of METHODOLOGY_KINDS) {
         const shortcut = row.kinds[kind];
         expect(shortcut, `${locale}/kind/${kind} must be defined and non-empty`).toBeTruthy();
@@ -121,18 +125,31 @@ describe('buildShortcutMatrix: totality and collision properties', () => {
         expect(shortcut, `${locale}/role/${role} must be defined and non-empty`).toBeTruthy();
         expect(shortcut.length).toBeGreaterThan(0);
       }
+      for (const metaKind of META_MOVE_KINDS) {
+        const shortcut = row.metaMoveKinds[metaKind];
+        expect(
+          shortcut,
+          `${locale}/metaMoveKind/${metaKind} must be defined and non-empty`,
+        ).toBeTruthy();
+        expect(shortcut.length).toBeGreaterThan(0);
+      }
     }
   });
 
-  it('has no collisions within any single locale (kinds + roles unioned)', () => {
+  it('has no collisions within any single locale (kinds + roles + metaMoveKinds unioned)', () => {
     const matrix = buildShortcutMatrix();
     for (const locale of SUPPORTED_LOCALES) {
       const row = matrix[locale];
-      const values = [...Object.values(row.kinds), ...Object.values(row.roles)];
+      const values = [
+        ...Object.values(row.kinds),
+        ...Object.values(row.roles),
+        ...Object.values(row.metaMoveKinds),
+      ];
       const unique = new Set(values);
-      expect(unique.size, `locale ${locale} has a duplicate shortcut across kinds+roles`).toBe(
-        values.length,
-      );
+      expect(
+        unique.size,
+        `locale ${locale} has a duplicate shortcut across kinds+roles+metaMoveKinds`,
+      ).toBe(values.length);
     }
   });
 
@@ -144,6 +161,9 @@ describe('buildShortcutMatrix: totality and collision properties', () => {
       }
       for (const role of EDGE_ROLES) {
         expect(matrix[locale].roles[role]).toBe(EDGE_ROLE_TO_SHORTCUT[role]);
+      }
+      for (const metaKind of META_MOVE_KINDS) {
+        expect(matrix[locale].metaMoveKinds[metaKind]).toBe(META_MOVE_KIND_TO_SHORTCUT[metaKind]);
       }
     }
   });
@@ -268,6 +288,108 @@ describe('getShortcutForEdgeRole: locale-independent resolution', () => {
       for (const role of EDGE_ROLES) {
         expect(getShortcutForEdgeRole(role, locale)).toBe(EDGE_ROLE_TO_SHORTCUT[role]);
       }
+    }
+  });
+});
+
+// Refinement: tasks/refinements/moderator-ui/mod_meta_move_kind_selector.md
+//
+// Companion cases for the meta-move-kind-selector's shortcut table.
+// The english-mnemonic policy is already pinned by the kind cases
+// above; here we lock the per-kind picks + the
+// no-collision-with-kinds-or-roles property the propose-flow keymap
+// depends on. The three single-letter shortcut tables together must
+// form an injection — the regression assertion enforces it.
+describe('META_MOVE_KINDS literal tuple', () => {
+  it('has exactly three values (reframe / scope-change / stance)', () => {
+    expect(META_MOVE_KINDS.length).toBe(3);
+  });
+
+  it('matches the canonical order (mirrors metaMoveProposalSchema.meta_kind)', () => {
+    expect([...META_MOVE_KINDS]).toEqual(['reframe', 'scope-change', 'stance']);
+  });
+});
+
+describe('META_MOVE_KIND_TO_SHORTCUT (english-mnemonic source of truth)', () => {
+  it('maps reframe -> m (Decision §1)', () => {
+    expect(META_MOVE_KIND_TO_SHORTCUT.reframe).toBe('m');
+  });
+
+  it('maps scope-change -> c (Decision §1)', () => {
+    expect(META_MOVE_KIND_TO_SHORTCUT['scope-change']).toBe('c');
+  });
+
+  it('maps stance -> t (Decision §1)', () => {
+    expect(META_MOVE_KIND_TO_SHORTCUT.stance).toBe('t');
+  });
+
+  it('covers every meta-move kind exactly once', () => {
+    const keys = Object.keys(META_MOVE_KIND_TO_SHORTCUT).sort();
+    expect(keys).toEqual([...META_MOVE_KINDS].sort());
+  });
+
+  it('uses single lowercase ASCII letters', () => {
+    for (const kind of META_MOVE_KINDS) {
+      const shortcut = META_MOVE_KIND_TO_SHORTCUT[kind];
+      expect(shortcut, `shortcut for ${kind}`).toMatch(/^[a-z]$/);
+    }
+  });
+
+  it('has no within-table collisions (three distinct keys)', () => {
+    const values = Object.values(META_MOVE_KIND_TO_SHORTCUT);
+    const unique = new Set(values);
+    expect(unique.size).toBe(values.length);
+  });
+
+  it('does NOT collide with KIND_TO_SHORTCUT (collision-avoidance proof)', () => {
+    const kindKeys = new Set(Object.values(KIND_TO_SHORTCUT));
+    const metaKeys = new Set(Object.values(META_MOVE_KIND_TO_SHORTCUT));
+    const intersection = [...kindKeys].filter((k) => metaKeys.has(k));
+    expect(
+      intersection,
+      'KIND_TO_SHORTCUT and META_MOVE_KIND_TO_SHORTCUT must be disjoint',
+    ).toEqual([]);
+  });
+
+  it('does NOT collide with EDGE_ROLE_TO_SHORTCUT (collision-avoidance proof)', () => {
+    const roleKeys = new Set(Object.values(EDGE_ROLE_TO_SHORTCUT));
+    const metaKeys = new Set(Object.values(META_MOVE_KIND_TO_SHORTCUT));
+    const intersection = [...roleKeys].filter((k) => metaKeys.has(k));
+    expect(
+      intersection,
+      'EDGE_ROLE_TO_SHORTCUT and META_MOVE_KIND_TO_SHORTCUT must be disjoint',
+    ).toEqual([]);
+  });
+
+  it('the union of all three shortcut tables forms an injection (every letter maps to at most one surface)', () => {
+    const all = [
+      ...Object.values(KIND_TO_SHORTCUT),
+      ...Object.values(EDGE_ROLE_TO_SHORTCUT),
+      ...Object.values(META_MOVE_KIND_TO_SHORTCUT),
+    ];
+    const unique = new Set(all);
+    expect(
+      unique.size,
+      'the union of kind + role + meta-move-kind shortcut tables must be collision-free',
+    ).toBe(all.length);
+  });
+});
+
+describe('getShortcutForMetaMoveKind: locale-independent resolution', () => {
+  it('returns the english-mnemonic shortcut regardless of locale', () => {
+    for (const locale of SUPPORTED_LOCALES) {
+      for (const kind of META_MOVE_KINDS) {
+        expect(getShortcutForMetaMoveKind(kind, locale)).toBe(META_MOVE_KIND_TO_SHORTCUT[kind]);
+      }
+    }
+  });
+
+  it('returns three letters disjoint from kind / role shortcuts (sanity)', () => {
+    const seen = new Set<string>();
+    for (const kind of META_MOVE_KINDS) {
+      const key = getShortcutForMetaMoveKind(kind, 'en-US');
+      expect(seen.has(key), `${kind} duplicates an earlier meta-move-kind shortcut`).toBe(false);
+      seen.add(key);
     }
   });
 });

@@ -612,6 +612,7 @@ task moderator_ui "Moderator UI" {
     task mod_meta_move_kind_selector "Kind selector — reframe / scope-change / stance" {
       effort 0.5d
       allocate team
+      complete 100
       depends !mod_meta_move_action
     }
     task mod_meta_move_disputed_visibility "Render contested meta-move as disputed annotation" {

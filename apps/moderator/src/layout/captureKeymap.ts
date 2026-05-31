@@ -55,7 +55,9 @@
 import {
   EDGE_ROLE_TO_SHORTCUT,
   KIND_TO_SHORTCUT,
+  META_MOVE_KIND_TO_SHORTCUT,
   type EdgeRole,
+  type MetaMoveKind,
   type MethodologyKind,
 } from '@a-conversa/i18n-catalogs';
 
@@ -88,6 +90,16 @@ export interface CaptureKeymapHandlers {
    * Refinement: tasks/refinements/moderator-ui/mod_edge_role_selector.md
    */
   onPickEdgeRole?: (role: EdgeRole) => void;
+  /**
+   * Pick a meta-move kind. The meta-move kind-selector wires this;
+   * triggered by the kind's english-mnemonic letter (`m`/`c`/`t`) under
+   * the same modifier-bail / editable-target / repeat-skip guards as
+   * `onPickKind` / `onPickEdgeRole`. The re-press-no-op asymmetry lives
+   * in the consumer's handler closure (mirrors the edge-role pattern).
+   *
+   * Refinement: tasks/refinements/moderator-ui/mod_meta_move_kind_selector.md
+   */
+  onPickMetaMoveKind?: (kind: MetaMoveKind) => void;
   /**
    * Exit the current capture-pane mode (decompose / interpretive-split
    * / operationalization / warrant-elicitation / capture-defeater /
@@ -155,6 +167,24 @@ export const SHORTCUT_TO_EDGE_ROLE: Readonly<Record<string, EdgeRole>> = (() => 
   const out: Record<string, EdgeRole> = {};
   for (const [role, key] of Object.entries(EDGE_ROLE_TO_SHORTCUT)) {
     out[key] = role as EdgeRole;
+  }
+  return out;
+})();
+
+/**
+ * The inverse of `META_MOVE_KIND_TO_SHORTCUT`. Materialised once at
+ * module load. The meta-move kind-selector + tests use this to resolve
+ * a pressed key to its kind without a linear scan per keystroke.
+ *
+ * Disjoint by construction from both `SHORTCUT_TO_KIND` and
+ * `SHORTCUT_TO_EDGE_ROLE` (Decision §1 of
+ * `mod_meta_move_kind_selector.md` records the collision-avoidance
+ * proof; `keyboard-shortcuts.test.ts` regression-locks it).
+ */
+export const SHORTCUT_TO_META_MOVE_KIND: Readonly<Record<string, MetaMoveKind>> = (() => {
+  const out: Record<string, MetaMoveKind> = {};
+  for (const [kind, key] of Object.entries(META_MOVE_KIND_TO_SHORTCUT)) {
+    out[key] = kind as MetaMoveKind;
   }
   return out;
 })();
@@ -230,6 +260,25 @@ export function attachCaptureKeymap(handlers: CaptureKeymapHandlers): () => void
       // 6. Consume the keystroke.
       event.preventDefault();
       handlers.onPickEdgeRole(role);
+      return;
+    }
+
+    // 7b. Route to meta-move-kind handler when the key is in the
+    // meta-move-kind shortcut table. Sits between the edge-role match
+    // and the F8 match so all single-letter shortcut routes form one
+    // contiguous region (Decision §7 of `mod_meta_move_kind_selector.md`).
+    // The three letters (`m`/`c`/`t`) are disjoint from both the kind
+    // table (`f`/`p`/`v`/`n`/`d`) and the role table (`s`/`r`/`q`/`b`/
+    // `g`/`e`/`x`) — Decision §1 records the collision-avoidance proof
+    // and `keyboard-shortcuts.test.ts` regression-locks the invariant.
+    // The re-press-no-op asymmetry (Decision §3) lives in the
+    // consumer's handler closure — this module stays a pure dispatch
+    // layer.
+    const metaMoveKind = SHORTCUT_TO_META_MOVE_KIND[key];
+    if (metaMoveKind !== undefined && handlers.onPickMetaMoveKind !== undefined) {
+      // 6. Consume the keystroke.
+      event.preventDefault();
+      handlers.onPickMetaMoveKind(metaMoveKind);
       return;
     }
 

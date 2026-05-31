@@ -43,10 +43,14 @@ export {
   EDGE_ROLES,
   type EdgeRole,
   EDGE_ROLE_TO_SHORTCUT,
+  META_MOVE_KINDS,
+  type MetaMoveKind,
+  META_MOVE_KIND_TO_SHORTCUT,
   type ShortcutMatrixRow,
   buildShortcutMatrix,
   getShortcutForKind,
   getShortcutForEdgeRole,
+  getShortcutForMetaMoveKind,
 } from './keyboard-shortcuts.js';
 
 export {

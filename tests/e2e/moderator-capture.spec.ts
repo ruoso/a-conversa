@@ -2631,4 +2631,133 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
       'Target: Meta-move target node',
     );
   });
+
+  // Refinement: tasks/refinements/moderator-ui/mod_meta_move_kind_selector.md
+  //
+  // Kind-change cover — companion to the F8 default-kind block above
+  // (lines 2509+). Decision §5 records the two-block shape: the prior
+  // block pins the propose-with-default-`'reframe'` path; this block
+  // pins that the kind shortcut writes the slice (visible via
+  // `aria-pressed`) and the propose round-trip still completes on the
+  // non-default kind path.
+  //
+  // Drives: login → create session → enter operate → seed a node into
+  // the WS store → click it to stage the target → F8 → assert default
+  // `reframe` aria-pressed → press `c` → assert
+  // `meta-move-kind-selector-button-scope-change` has
+  // `aria-pressed="true"` → type content → Cmd/Ctrl+Enter → assert
+  // the wire-error surfaces (proving the round-trip completed with
+  // the scope-change-keyed slice still active).
+  //
+  // **Why wire-error rather than proposal-event assertion.** The
+  // seeded target node only lives client-side; the server rejects
+  // (`target-entity-not-found` / `sequence-mismatch`) so no
+  // `event-applied` broadcast lands a `proposal` event in
+  // `useWsStore.sessionState[sessionId].events`. The Vitest layer
+  // (`MetaMoveKindSelector.test.tsx`) already pins that
+  // `setMetaMoveKind('scope-change')` is what the keyboard binding
+  // does; `useMetaMoveAction` source pins that the slice is
+  // serialised verbatim into the wire envelope's `meta_kind` field.
+  // The e2e completes the chain by proving the keystroke survives
+  // browser dispatch end-to-end, then surfaces the round-trip
+  // outcome via the wire-error region — the same discipline as the
+  // sibling F8 block.
+  //
+  // Skips gracefully when `window.__aConversaWsStore` is unreachable,
+  // matching the discipline of the surrounding seeded-graph covers.
+  test('alice: F8 → press `c` to pick scope-change → propose; the kind shortcut surfaces aria-pressed and the round-trip completes', async ({
+    page,
+  }) => {
+    await loginAs(page, { username: TEST_USERNAME });
+    await page.goto('/m/sessions/new');
+    await expect(page.getByTestId('route-create-session')).toBeVisible();
+
+    await page
+      .getByTestId('create-session-topic-input')
+      .fill('Meta-move kind-selector e2e regression check.');
+    await page.getByTestId('create-session-submit').click();
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    await seedInviteParticipantsForGate(page);
+    await page.getByTestId('invite-enter-session').click();
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
+    await expect(page.getByTestId('route-operate')).toBeVisible();
+
+    const seedAvailable = await isWsStoreReachable(page);
+    if (!seedAvailable) {
+      test.skip(
+        true,
+        'window.__aConversaWsStore is not reachable — the dev-only attachment did not fire. Full-chain assertion deferred to the seed-infrastructure environment.',
+      );
+      return;
+    }
+
+    const url = new URL(page.url());
+    const sessionId = url.pathname.split('/')[3] ?? '';
+    expect(sessionId, 'session id must be parsed from the URL').toBeTruthy();
+
+    const SEEDED_NODE_ID = '44444444-4444-4444-8444-444444444402';
+    const SEEDED_WORDING = 'Meta-move kind-selector target node under test.';
+    await seedWsStore(page, {
+      sessionId,
+      nodes: [{ nodeId: SEEDED_NODE_ID, wording: SEEDED_WORDING }],
+    });
+
+    const seededNode = page.getByTestId(`statement-node-${SEEDED_NODE_ID}`);
+    await expect(seededNode, 'seeded node must render').toBeVisible({ timeout: 10_000 });
+    await clickNodeUntilTargetStaged(page, seededNode, 'Target: Meta-move kind-selector target');
+
+    // Press F8 → mode flips to meta-move; the kind selector mounts
+    // alongside the target chip + text input.
+    await page.keyboard.press('F8');
+    await expect(page.getByTestId('meta-move-capture-pane')).toBeVisible();
+    await expect(page.getByTestId('meta-move-kind-selector')).toBeVisible();
+
+    // Default kind is 'reframe' (action-task Decision §3) — the
+    // reframe button reports aria-pressed=true on mount.
+    await expect(page.getByTestId('meta-move-kind-selector-button-reframe')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+
+    // Press `c` (outside any editable target — the F8 entry doesn't
+    // focus the textarea). The keymap routes the keystroke to
+    // `setMetaMoveKind('scope-change')`; the aria-pressed surfacing
+    // tracks the new slice value.
+    await page.keyboard.press('c');
+    await expect(page.getByTestId('meta-move-kind-selector-button-scope-change')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await expect(page.getByTestId('meta-move-kind-selector-button-reframe')).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+
+    // Type the meta-move content + fire Cmd/Ctrl+Enter. The propose
+    // envelope flies with `meta_kind: 'scope-change'` (the slice
+    // useMetaMoveAction serialises is the one the keyboard binding
+    // wrote); the server rejects (the seeded target node only lives
+    // client-side) and the wire-error surfaces the typed rejection
+    // code — proving the round-trip completed on the non-default
+    // kind path.
+    const content =
+      'Defend the typical case, not the corner — this rescoping changes what counts as evidence.';
+    const textarea = page.getByTestId('capture-text-input-textarea');
+    await textarea.fill(content);
+    const submitKey = process.platform === 'darwin' ? 'Meta+Enter' : 'Control+Enter';
+    await textarea.press(submitKey);
+
+    const wireError = page.getByTestId('meta-move-propose-error');
+    await expect(wireError).toBeVisible({ timeout: 10_000 });
+    await expect(wireError).toContainText(/target-entity-not-found|sequence-mismatch/);
+
+    // After the failure-path snapshot restore, scope-change stays the
+    // active kind — the moderator's pick survives the rejected
+    // round-trip so they can fix the input and retry without
+    // re-pressing the shortcut.
+    await expect(page.getByTestId('meta-move-kind-selector-button-scope-change')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+  });
 });

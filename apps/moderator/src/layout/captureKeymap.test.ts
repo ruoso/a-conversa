@@ -13,12 +13,20 @@ import {
   EDGE_ROLE_TO_SHORTCUT,
   EDGE_ROLES,
   KIND_TO_SHORTCUT,
+  META_MOVE_KIND_TO_SHORTCUT,
+  META_MOVE_KINDS,
   METHODOLOGY_KINDS,
   type EdgeRole,
+  type MetaMoveKind,
   type MethodologyKind,
 } from '@a-conversa/i18n-catalogs';
 
-import { attachCaptureKeymap, SHORTCUT_TO_EDGE_ROLE, SHORTCUT_TO_KIND } from './captureKeymap';
+import {
+  attachCaptureKeymap,
+  SHORTCUT_TO_EDGE_ROLE,
+  SHORTCUT_TO_KIND,
+  SHORTCUT_TO_META_MOVE_KIND,
+} from './captureKeymap';
 import { useCaptureStore } from '../stores/captureStore';
 
 describe('captureKeymap — SHORTCUT_TO_KIND inverse table', () => {
@@ -770,5 +778,155 @@ describe('captureKeymap — onEnterMetaMove handler (F8 binding)', () => {
     expect(onPickKind).toHaveBeenCalledTimes(1);
     expect(onPickKind).toHaveBeenCalledWith('fact');
     expect(onEnterMetaMove).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Refinement: tasks/refinements/moderator-ui/mod_meta_move_kind_selector.md
+//
+// SHORTCUT_TO_META_MOVE_KIND inverse-table sanity + the m/c/t →
+// onPickMetaMoveKind routing the kind-selector consumes. Sits inside
+// the same `attachCaptureKeymap` listener as the kind / role / F8
+// branches and inherits the same modifier-bail / editable-target /
+// repeat-skip guards. The re-press-no-op asymmetry (Decision §3) lives
+// in the consumer's handler closure — these cases assert the pure
+// dispatch behaviour.
+describe('captureKeymap — SHORTCUT_TO_META_MOVE_KIND inverse table', () => {
+  it('is the inverse of META_MOVE_KIND_TO_SHORTCUT', () => {
+    for (const kind of META_MOVE_KINDS) {
+      const key = META_MOVE_KIND_TO_SHORTCUT[kind];
+      expect(SHORTCUT_TO_META_MOVE_KIND[key]).toBe(kind);
+    }
+  });
+
+  it('covers every kind in META_MOVE_KINDS', () => {
+    const reverseValues = new Set(Object.values(SHORTCUT_TO_META_MOVE_KIND));
+    for (const kind of META_MOVE_KINDS) {
+      expect(reverseValues.has(kind)).toBe(true);
+    }
+  });
+
+  it('has exactly three entries (one per meta-move kind)', () => {
+    expect(Object.keys(SHORTCUT_TO_META_MOVE_KIND).length).toBe(META_MOVE_KINDS.length);
+  });
+});
+
+describe('captureKeymap — onPickMetaMoveKind handler', () => {
+  let detach: (() => void) | null = null;
+  let onPickMetaMoveKind: ReturnType<typeof vi.fn<(kind: MetaMoveKind) => void>>;
+
+  beforeEach(() => {
+    onPickMetaMoveKind = vi.fn();
+  });
+
+  afterEach(() => {
+    if (detach !== null) {
+      detach();
+      detach = null;
+    }
+    document.body.innerHTML = '';
+  });
+
+  it('routes a plain `m` keypress to onPickMetaMoveKind(`reframe`)', () => {
+    detach = attachCaptureKeymap({ onPickMetaMoveKind });
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'm', bubbles: true }));
+    expect(onPickMetaMoveKind).toHaveBeenCalledTimes(1);
+    expect(onPickMetaMoveKind).toHaveBeenCalledWith('reframe');
+  });
+
+  it('routes each meta-move-kind shortcut to its matching kind', () => {
+    detach = attachCaptureKeymap({ onPickMetaMoveKind });
+    for (const kind of META_MOVE_KINDS) {
+      onPickMetaMoveKind.mockClear();
+      const key = META_MOVE_KIND_TO_SHORTCUT[kind];
+      document.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+      expect(onPickMetaMoveKind).toHaveBeenCalledWith(kind);
+    }
+  });
+
+  it('matches case-insensitively (uppercase `C` -> scope-change)', () => {
+    detach = attachCaptureKeymap({ onPickMetaMoveKind });
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'C', bubbles: true }));
+    expect(onPickMetaMoveKind).toHaveBeenCalledTimes(1);
+    expect(onPickMetaMoveKind).toHaveBeenCalledWith('scope-change');
+  });
+
+  it('bails when metaKey is held (Cmd+M passes through)', () => {
+    detach = attachCaptureKeymap({ onPickMetaMoveKind });
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'm', metaKey: true, bubbles: true }),
+    );
+    expect(onPickMetaMoveKind).not.toHaveBeenCalled();
+  });
+
+  it('bails when ctrlKey is held (Ctrl+M passes through)', () => {
+    detach = attachCaptureKeymap({ onPickMetaMoveKind });
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'm', ctrlKey: true, bubbles: true }),
+    );
+    expect(onPickMetaMoveKind).not.toHaveBeenCalled();
+  });
+
+  it('bails when altKey is held (Alt+M passes through)', () => {
+    detach = attachCaptureKeymap({ onPickMetaMoveKind });
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'm', altKey: true, bubbles: true }));
+    expect(onPickMetaMoveKind).not.toHaveBeenCalled();
+  });
+
+  it('bails when event.repeat is true (held key does not bounce)', () => {
+    detach = attachCaptureKeymap({ onPickMetaMoveKind });
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'm', repeat: true, bubbles: true }));
+    expect(onPickMetaMoveKind).not.toHaveBeenCalled();
+  });
+
+  it('bails when document.activeElement is a textarea (editable-target guard)', () => {
+    const textarea = document.createElement('textarea');
+    document.body.appendChild(textarea);
+    textarea.focus();
+    expect(document.activeElement).toBe(textarea);
+
+    detach = attachCaptureKeymap({ onPickMetaMoveKind });
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'm', bubbles: true }));
+    expect(onPickMetaMoveKind).not.toHaveBeenCalled();
+  });
+
+  it('returns a detach function that removes the listener', () => {
+    detach = attachCaptureKeymap({ onPickMetaMoveKind });
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'm', bubbles: true }));
+    expect(onPickMetaMoveKind).toHaveBeenCalledTimes(1);
+
+    detach();
+    detach = null;
+    onPickMetaMoveKind.mockClear();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'm', bubbles: true }));
+    expect(onPickMetaMoveKind).not.toHaveBeenCalled();
+  });
+
+  it('preventDefault is called on a matched meta-move key (keystroke consumed)', () => {
+    detach = attachCaptureKeymap({ onPickMetaMoveKind });
+    const ev = new KeyboardEvent('keydown', { key: 'm', bubbles: true, cancelable: true });
+    document.dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBe(true);
+  });
+
+  it('does not throw when a meta-move key fires but no onPickMetaMoveKind handler is registered', () => {
+    detach = attachCaptureKeymap({});
+    expect(() => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'm', bubbles: true }));
+    }).not.toThrow();
+  });
+
+  it('a registered onPickMetaMoveKind alongside onPickKind + onPickEdgeRole all route their keys (no collision)', () => {
+    const onPickKind = vi.fn<(kind: MethodologyKind) => void>();
+    const onPickEdgeRole = vi.fn<(role: EdgeRole) => void>();
+    detach = attachCaptureKeymap({ onPickKind, onPickEdgeRole, onPickMetaMoveKind });
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', bubbles: true }));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 's', bubbles: true }));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'm', bubbles: true }));
+    expect(onPickKind).toHaveBeenCalledTimes(1);
+    expect(onPickKind).toHaveBeenCalledWith('fact');
+    expect(onPickEdgeRole).toHaveBeenCalledTimes(1);
+    expect(onPickEdgeRole).toHaveBeenCalledWith('supports');
+    expect(onPickMetaMoveKind).toHaveBeenCalledTimes(1);
+    expect(onPickMetaMoveKind).toHaveBeenCalledWith('reframe');
   });
 });

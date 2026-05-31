@@ -363,7 +363,11 @@
     "moderator.metaMoveAction.reason.contentMissing",
     "moderator.metaMoveAction.reason.targetMissing",
     "moderator.metaMoveAction.reason.targetKindInvalid",
-    "moderator.metaMoveAction.reason.kindMissing"
+    "moderator.metaMoveAction.reason.kindMissing",
+    "moderator.metaMoveKindSelector.ariaLabel",
+    "moderator.metaMoveKindSelector.legend",
+    "moderator.metaMoveKindSelector.kindButtonAriaLabel",
+    "moderator.metaMoveKindSelector.shortcutHint"
   ],
   "signed_off": []
 }
