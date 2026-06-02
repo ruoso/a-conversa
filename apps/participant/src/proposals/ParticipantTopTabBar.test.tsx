@@ -1,4 +1,4 @@
-// Vitest cases for `<PendingProposalsTabBar>`.
+// Vitest cases for `<ParticipantTopTabBar>`.
 //
 // Refinement: tasks/refinements/participant-ui/part_proposals_tab.md
 //   (Test layers per ADR 0022 — 6 cases pinning labels, active-tab
@@ -11,7 +11,7 @@ import type { Event } from '@a-conversa/shared-types';
 
 import { I18nProvider, createI18nInstance, type I18nInstance } from '@a-conversa/shell';
 
-import { PendingProposalsTabBar } from './PendingProposalsTabBar';
+import { ParticipantTopTabBar } from './ParticipantTopTabBar';
 import { useUiStore } from '../stores/uiStore';
 import { useWsStore } from '../ws/wsStore';
 
@@ -51,12 +51,12 @@ afterEach(() => {
 function renderBar(): ReturnType<typeof render> {
   return render(
     <I18nProvider i18n={i18n}>
-      <PendingProposalsTabBar sessionId={SESSION_A} />
+      <ParticipantTopTabBar sessionId={SESSION_A} />
     </I18nProvider>,
   );
 }
 
-describe('<PendingProposalsTabBar>', () => {
+describe('<ParticipantTopTabBar>', () => {
   it('(a) renders three role="tab" buttons with the en-US labels', () => {
     renderBar();
     const buttons = screen.getAllByRole('tab');
@@ -132,7 +132,7 @@ describe('<PendingProposalsTabBar>', () => {
   it('(h) badge data-flashing="true" + motion-safe:animate-pulse class when isFlashing prop is true', () => {
     render(
       <I18nProvider i18n={i18n}>
-        <PendingProposalsTabBar sessionId={SESSION_A} isFlashing />
+        <ParticipantTopTabBar sessionId={SESSION_A} isFlashing />
       </I18nProvider>,
     );
     const badge = screen.getByTestId('participant-proposals-tabbar-badge');
@@ -170,14 +170,14 @@ describe('<PendingProposalsTabBar>', () => {
   it('(i) badge data-flashing flips back to "false" when isFlashing prop drops back to false', () => {
     const { rerender } = render(
       <I18nProvider i18n={i18n}>
-        <PendingProposalsTabBar sessionId={SESSION_A} isFlashing />
+        <ParticipantTopTabBar sessionId={SESSION_A} isFlashing />
       </I18nProvider>,
     );
     let badge = screen.getByTestId('participant-proposals-tabbar-badge');
     expect(badge.getAttribute('data-flashing')).toBe('true');
     rerender(
       <I18nProvider i18n={i18n}>
-        <PendingProposalsTabBar sessionId={SESSION_A} isFlashing={false} />
+        <ParticipantTopTabBar sessionId={SESSION_A} isFlashing={false} />
       </I18nProvider>,
     );
     badge = screen.getByTestId('participant-proposals-tabbar-badge');

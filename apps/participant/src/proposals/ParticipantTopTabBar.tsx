@@ -1,4 +1,4 @@
-// `<PendingProposalsTabBar>` — top-of-main two-button tab strip for the
+// `<ParticipantTopTabBar>` — top-of-main two-button tab strip for the
 // participant operate route.
 //
 // Refinement: tasks/refinements/participant-ui/part_proposals_tab.md
@@ -17,7 +17,7 @@ import { useUiStore, type ParticipantTab } from '../stores/uiStore';
 
 import { usePendingProposalsCount } from './usePendingProposalsCount';
 
-export interface PendingProposalsTabBarProps {
+export interface ParticipantTopTabBarProps {
   sessionId: string;
   /**
    * Transient new-proposal-arrival flag threaded down from
@@ -33,10 +33,10 @@ export interface PendingProposalsTabBarProps {
   isFlashing?: boolean;
 }
 
-export function PendingProposalsTabBar({
+export function ParticipantTopTabBar({
   sessionId,
   isFlashing = false,
-}: PendingProposalsTabBarProps): ReactElement {
+}: ParticipantTopTabBarProps): ReactElement {
   const { t } = useTranslation();
   const currentTab = useUiStore((s) => s.currentTab);
   const setCurrentTab = useUiStore((s) => s.setCurrentTab);

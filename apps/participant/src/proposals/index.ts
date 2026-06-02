@@ -5,7 +5,7 @@
 //    Decision §5 established the participant-local location; this leaf
 //    adds the row-rendering selector + summary exports.)
 
-export { PendingProposalsTabBar, type PendingProposalsTabBarProps } from './PendingProposalsTabBar';
+export { ParticipantTopTabBar, type ParticipantTopTabBarProps } from './ParticipantTopTabBar';
 export { PendingProposalsPane, type PendingProposalsPaneProps } from './PendingProposalsPane';
 export { MyAgreementsPane, type MyAgreementsPaneProps } from './MyAgreementsPane';
 export {

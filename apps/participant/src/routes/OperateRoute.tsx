@@ -62,7 +62,7 @@ import { ParticipantAxiomMarkButton } from '../detail/ParticipantAxiomMarkButton
 import {
   MyAgreementsPane,
   PendingProposalsPane,
-  PendingProposalsTabBar,
+  ParticipantTopTabBar,
   useNewProposalArrival,
 } from '../proposals';
 import { useSelectionStore } from '../stores/selectionStore';
@@ -389,7 +389,7 @@ function OperateRouteAuthenticatedBody({
 
   return (
     <div data-testid="route-operate" className="flex h-full w-full flex-col">
-      <PendingProposalsTabBar sessionId={id} isFlashing={arrival.isBadgeFlashing} />
+      <ParticipantTopTabBar sessionId={id} isFlashing={arrival.isBadgeFlashing} />
       <div data-testid="route-operate-active-tab" className="flex flex-1 overflow-hidden">
         {currentTab === 'graph' ? (
           <div data-testid="route-operate-graph-region" className="flex h-full w-full flex-1">

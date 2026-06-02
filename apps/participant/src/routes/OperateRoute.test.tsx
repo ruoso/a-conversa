@@ -326,7 +326,7 @@ describe('OperateRoute — auto-select on incoming proposal events', () => {
 // `participant_ui.part_pending_proposals.part_proposals_tab`.
 // Refinement: tasks/refinements/participant-ui/part_proposals_tab.md
 //
-// Decision §1 mounts `<PendingProposalsTabBar>` at the top of the
+// Decision §1 mounts `<ParticipantTopTabBar>` at the top of the
 // authenticated body; Decision §4 hoists the projection chain at the
 // route so tab switches do NOT re-run the projector. This case pins
 // the body-region swap: starting on `'graph'`, the graph region is in
