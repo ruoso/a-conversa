@@ -15,10 +15,13 @@
 //                          `warrant-elicitation`) on a target node.
 //   - `proposal-submenu` — open a proposal submenu (`axiom-mark`,
 //                          `edit-wording`) seeded with a target node.
+//   - `break-edge-chooser` — present the cycle's candidate `supports`
+//                          edges; picking one dispatches a real
+//                          `propose { kind: 'break-edge', edge_id }`
+//                          (`mod_break_edge_resolution_action`).
 //   - `focus-only`       — frame the affected region but emit nothing
 //                          (advisory moves with no committable proposal
-//                          kind, plus `break-edge` whose full dispatch is
-//                          deferred to `mod_break_edge_resolution_action`).
+//                          kind).
 //
 // Target derivation (Decision §D4): when a diagnostic implicates a single
 // applicable node the plan dispatches directly; when it implicates several
@@ -70,6 +73,15 @@ export type ResolutionPlan =
       readonly disposition: 'proposal-submenu';
       readonly submenu: 'axiom-mark' | 'edit-wording';
       readonly target: ResolutionTarget;
+      readonly focus: FocusTarget;
+    }
+  | {
+      readonly disposition: 'break-edge-chooser';
+      // The cycle's node ids carried forward so the panel can derive the
+      // breakable `supports` edges against the live projection (the router
+      // is pure over the payload and has no graph — Decision §D3). The
+      // candidate-edge derivation itself lives in `candidateBreakEdges`.
+      readonly cycleNodeIds: readonly string[];
       readonly focus: FocusTarget;
     }
   | {
@@ -165,6 +177,22 @@ function promptForSupportCandidates(d: WireDiagnostic, focus: FocusTarget): read
   }
 }
 
+function breakEdgeCycleNodeIds(d: WireDiagnostic, focus: FocusTarget): readonly string[] {
+  // `break-edge` is paired with `cycle` in the methodology catalog; the
+  // cycle's node ids are the set the panel derives candidate `supports`
+  // edges against. The off-catalog kinds fall back to the affected node
+  // set so the router stays total.
+  switch (d.kind) {
+    case 'cycle':
+      return d.nodes;
+    case 'contradiction':
+    case 'multi-warrant':
+    case 'dangling-claim':
+    case 'coherency-hint':
+      return focus.nodeIds;
+  }
+}
+
 function assertNever(move: never): never {
   throw new Error(`resolutionPlanForMove: unrouted move ${String(move)}`);
 }
@@ -214,11 +242,18 @@ export function resolutionPlanForMove(
         target: targetFromCandidates(amendCandidates(d, focus)),
         focus,
       };
-    // `break-edge` full dispatch is deferred to
-    // `mod_break_edge_resolution_action` (Decision §D5); the advisory
-    // moves carry no committable proposal kind. All focus the affected
-    // region only.
     case 'break-edge':
+      // The panel derives the cycle's candidate `supports` edges from the
+      // live projection (`candidateBreakEdges`) and dispatches a real
+      // `propose { kind: 'break-edge', edge_id }`
+      // (`mod_break_edge_resolution_action`, Decision §D3).
+      return {
+        disposition: 'break-edge-chooser',
+        cycleNodeIds: dedupe(breakEdgeCycleNodeIds(d, focus)),
+        focus,
+      };
+    // The advisory moves carry no committable proposal kind — focus the
+    // affected region only.
     case 'mark-conceded':
     case 'review-configuration':
     case 'repair-configuration':

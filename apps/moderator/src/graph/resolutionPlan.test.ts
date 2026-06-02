@@ -100,11 +100,20 @@ function coherencyHintPayload(): DiagnosticPayload {
 describe('resolutionPlanForMove — cycle catalog', () => {
   const payload = cyclePayload();
 
-  it('break-edge is focus-only and frames the cycle nodes (deferred dispatch, Decision §D5)', () => {
+  it('break-edge is a break-edge-chooser carrying the cycle node ids + focus (Acceptance §3)', () => {
     const plan = resolutionPlanForMove('break-edge', payload);
-    expect(plan.disposition).toBe('focus-only');
+    if (plan.disposition !== 'break-edge-chooser') throw new Error('expected break-edge-chooser');
+    // The router is pure over the payload — it carries the cycle node ids
+    // forward; the candidate edges are derived by the panel (Decision §D3).
+    expect(plan.cycleNodeIds).toEqual([NODE_A, NODE_B, NODE_C]);
     expect(plan.focus.nodeIds).toEqual([NODE_A, NODE_B, NODE_C]);
     expect(plan.focus.edgeIds).toEqual([]);
+  });
+
+  it('break-edge dedupes repeated cycle node ids in the descriptor', () => {
+    const plan = resolutionPlanForMove('break-edge', cyclePayload([NODE_A, NODE_B, NODE_A]));
+    if (plan.disposition !== 'break-edge-chooser') throw new Error('expected break-edge-chooser');
+    expect(plan.cycleNodeIds).toEqual([NODE_A, NODE_B]);
   });
 
   it('decompose enters decompose mode with a chooser over the cycle nodes', () => {
@@ -214,8 +223,11 @@ describe('resolutionPlanForMove — exhaustiveness over the catalog', () => {
         dispositions.add(plan.disposition);
       }
     }
-    // Representative of each disposition class is observed (Acceptance §2).
-    expect(dispositions).toEqual(new Set(['mode-entry', 'proposal-submenu', 'focus-only']));
+    // Representative of each disposition class is observed (Acceptance §2 /
+    // §4 — including the new break-edge-chooser arm).
+    expect(dispositions).toEqual(
+      new Set(['mode-entry', 'proposal-submenu', 'break-edge-chooser', 'focus-only']),
+    );
   });
 
   it('every SuggestionMove member routes without throwing (union exhaustiveness)', () => {

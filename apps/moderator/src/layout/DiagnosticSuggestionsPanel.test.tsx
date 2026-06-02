@@ -32,6 +32,7 @@ import type { WsClient, WsClientStatus } from '@a-conversa/shell';
 import { WsClientProvider } from '@a-conversa/shell';
 
 import { DiagnosticSuggestionsPanel } from './DiagnosticSuggestionsPanel';
+import { resetBreakEdgeStore } from './useBreakEdgeAction';
 import { useWsStore } from '../ws/wsStore';
 import { useUiStore } from '../stores/uiStore';
 import { useCaptureStore } from '../stores/captureStore';
@@ -97,6 +98,7 @@ beforeEach(async () => {
   useWsStore.getState().reset();
   useCaptureStore.getState().reset();
   useUiStore.setState({ focusRequest: null });
+  resetBreakEdgeStore();
   await createI18nInstance('en-US');
   await i18next.changeLanguage('en-US');
 });
@@ -486,5 +488,218 @@ describe('DiagnosticSuggestionsPanel — picker: advisory / deferred focus-only 
     expect(useUiStore.getState().focusRequest?.nodeIds).toEqual([NODE_A, NODE_B]);
     expect(useCaptureStore.getState().mode).toBe('idle');
     expect(screen.queryByTestId('diagnostic-resolution-chooser')).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------
+// break-edge resolution action (mod_break_edge_resolution_action).
+// ---------------------------------------------------------------
+//
+// The cycle's `break-edge` chip derives the breakable `supports` edges
+// from the live projection (`candidateBreakEdges`): ≥2 → inline edge
+// chooser; exactly 1 → direct dispatch; 0 → focus-only. Picking /
+// dispatching emits `propose { kind: 'break-edge', edge_id }` via
+// `useBreakEdgeAction` (Acceptance §6-§8). These cases mount the panel
+// inside the `wrap` provider chain (the break-edge child components call
+// `useBreakEdgeAction` → `useWsClient`) and seed `edge-created` events so
+// the candidate derivation is non-empty.
+
+const SEED_ACTOR = '00000000-0000-4000-8000-0000000000aa';
+const SEED_TS = '2026-05-11T00:00:00.000Z';
+
+function nextSeedSequence(): number {
+  return (useWsStore.getState().sessionState[SESSION]?.lastAppliedSequence ?? 0) + 1;
+}
+
+function seedNode(nodeId: string, wording: string): void {
+  const sequence = nextSeedSequence();
+  act(() => {
+    useWsStore.getState().applyEvent({
+      id: `00000000-0000-4000-8000-${(0x1000 + sequence).toString(16).padStart(12, '0')}`,
+      sessionId: SESSION,
+      sequence,
+      kind: 'node-created',
+      actor: SEED_ACTOR,
+      payload: { node_id: nodeId, wording, created_by: SEED_ACTOR, created_at: SEED_TS },
+      createdAt: SEED_TS,
+    } as never);
+  });
+}
+
+function seedEdge(
+  edgeId: string,
+  source: string,
+  target: string,
+  role: 'supports' | 'rebuts' = 'supports',
+): void {
+  const sequence = nextSeedSequence();
+  act(() => {
+    useWsStore.getState().applyEvent({
+      id: `00000000-0000-4000-8000-${(0x2000 + sequence).toString(16).padStart(12, '0')}`,
+      sessionId: SESSION,
+      sequence,
+      kind: 'edge-created',
+      actor: SEED_ACTOR,
+      payload: {
+        edge_id: edgeId,
+        role,
+        source_node_id: source,
+        target_node_id: target,
+        created_by: SEED_ACTOR,
+        created_at: SEED_TS,
+      },
+      createdAt: SEED_TS,
+    } as never);
+  });
+}
+
+interface RecordingClient {
+  readonly client: WsClient;
+  readonly calls: Array<{
+    type: string;
+    payload: { proposal?: { kind?: string; edge_id?: string } };
+  }>;
+}
+
+function makeRecordingClient(): RecordingClient {
+  const calls: RecordingClient['calls'] = [];
+  const client: WsClient = {
+    status: (): WsClientStatus => 'open',
+    connect: (): void => undefined,
+    close: (): void => undefined,
+    killWebSocket: (): void => undefined,
+    send: (type: string, payload: unknown) => {
+      calls.push({ type, payload: payload as RecordingClient['calls'][number]['payload'] });
+      // Never resolves — the chooser closes optimistically on pick, so the
+      // round-trip result is irrelevant to these assertions.
+      return new Promise(() => undefined);
+    },
+    trackSession: () => Promise.resolve(),
+    untrackSession: () => Promise.resolve(),
+    onEnvelope: () => () => undefined,
+    url: '/api/ws',
+  };
+  return { client, calls };
+}
+
+function wrapWith(client: WsClient, children: ReactNode): ReactElement {
+  return (
+    <MemoryRouter initialEntries={[`/sessions/${SESSION}/operate`]}>
+      <WsClientProvider auth={{ status: 'authenticated' }} client={client}>
+        <Routes>
+          <Route path="/sessions/:id/operate" element={children} />
+        </Routes>
+      </WsClientProvider>
+    </MemoryRouter>
+  );
+}
+
+describe('DiagnosticSuggestionsPanel — break-edge chooser (Acceptance §6-§8)', () => {
+  it('two candidate supports edges → chooser lists them + focus frames cycle nodes and the edges', () => {
+    seedNode(NODE_A, 'A');
+    seedNode(NODE_B, 'B');
+    // Two supports edges with both endpoints in {A, B} — a 2-cycle.
+    seedEdge('edge-ab', NODE_A, NODE_B, 'supports');
+    seedEdge('edge-ba', NODE_B, NODE_A, 'supports');
+    applyDiagnostic(cycleFiredPayload([NODE_A, NODE_B]));
+    render(
+      wrapWith(makeRecordingClient().client, <DiagnosticSuggestionsPanel sessionId={SESSION} />),
+    );
+
+    fireEvent.click(screen.getByTestId('diagnostic-suggestions-move-break-edge'));
+
+    const chooser = screen.getByTestId('diagnostic-resolution-chooser');
+    expect(chooser.getAttribute('data-chooser-kind')).toBe('edge');
+    expect(screen.getByTestId('diagnostic-resolution-chooser-candidate-edge-ab')).toBeTruthy();
+    expect(screen.getByTestId('diagnostic-resolution-chooser-candidate-edge-ba')).toBeTruthy();
+    // Rows are labelled via selectEdgeLabelById (role + endpoint snippets).
+    expect(
+      screen.getByTestId('diagnostic-resolution-chooser-candidate-edge-ab').textContent,
+    ).toContain('supports');
+    // Focus framed the cycle nodes AND the candidate edges (Constraint §5).
+    const focus = useUiStore.getState().focusRequest;
+    expect(focus?.nodeIds).toEqual([NODE_A, NODE_B]);
+    expect(focus?.edgeIds).toEqual(['edge-ab', 'edge-ba']);
+  });
+
+  it('picking a candidate edge dispatches propose break-edge for THAT edge and closes the chooser', () => {
+    seedNode(NODE_A, 'A');
+    seedNode(NODE_B, 'B');
+    seedEdge('edge-ab', NODE_A, NODE_B, 'supports');
+    seedEdge('edge-ba', NODE_B, NODE_A, 'supports');
+    applyDiagnostic(cycleFiredPayload([NODE_A, NODE_B]));
+    const recording = makeRecordingClient();
+    render(wrapWith(recording.client, <DiagnosticSuggestionsPanel sessionId={SESSION} />));
+
+    fireEvent.click(screen.getByTestId('diagnostic-suggestions-move-break-edge'));
+    fireEvent.click(screen.getByTestId('diagnostic-resolution-chooser-candidate-edge-ba'));
+
+    expect(recording.calls).toHaveLength(1);
+    expect(recording.calls[0]?.type).toBe('propose');
+    expect(recording.calls[0]?.payload.proposal).toEqual({
+      kind: 'break-edge',
+      edge_id: 'edge-ba',
+    });
+    // Chooser dismissed after the pick.
+    expect(screen.queryByTestId('diagnostic-resolution-chooser')).toBeNull();
+  });
+
+  it('exactly one candidate edge dispatches directly with no chooser (Acceptance §8)', () => {
+    seedNode(NODE_A, 'A');
+    seedNode(NODE_B, 'B');
+    // Only one supports edge among the cycle nodes.
+    seedEdge('edge-ab', NODE_A, NODE_B, 'supports');
+    applyDiagnostic(cycleFiredPayload([NODE_A, NODE_B]));
+    const recording = makeRecordingClient();
+    render(wrapWith(recording.client, <DiagnosticSuggestionsPanel sessionId={SESSION} />));
+
+    fireEvent.click(screen.getByTestId('diagnostic-suggestions-move-break-edge'));
+
+    // No chooser — dispatched directly.
+    expect(screen.queryByTestId('diagnostic-resolution-chooser')).toBeNull();
+    expect(recording.calls).toHaveLength(1);
+    expect(recording.calls[0]?.payload.proposal).toEqual({
+      kind: 'break-edge',
+      edge_id: 'edge-ab',
+    });
+    // Focus still framed the cycle nodes + the single candidate edge.
+    expect(useUiStore.getState().focusRequest?.edgeIds).toEqual(['edge-ab']);
+  });
+
+  it('zero candidate edges falls back to focus-only — no chooser, no proposal (Acceptance §8)', () => {
+    seedNode(NODE_A, 'A');
+    seedNode(NODE_B, 'B');
+    // A non-supports edge between the cycle nodes is not breakable.
+    seedEdge('edge-ab-rebuts', NODE_A, NODE_B, 'rebuts');
+    applyDiagnostic(cycleFiredPayload([NODE_A, NODE_B]));
+    const recording = makeRecordingClient();
+    render(wrapWith(recording.client, <DiagnosticSuggestionsPanel sessionId={SESSION} />));
+
+    fireEvent.click(screen.getByTestId('diagnostic-suggestions-move-break-edge'));
+
+    expect(screen.queryByTestId('diagnostic-resolution-chooser')).toBeNull();
+    expect(recording.calls).toHaveLength(0);
+    // Focus still framed the affected cycle region (edges empty).
+    const focus = useUiStore.getState().focusRequest;
+    expect(focus?.nodeIds).toEqual([NODE_A, NODE_B]);
+    expect(focus?.edgeIds).toEqual([]);
+  });
+});
+
+describe('DiagnosticSuggestionsPanel — break-edge i18n parity', () => {
+  it('resolves chooser.headerEdge to a distinct non-empty string in each locale', async () => {
+    const key = 'moderator.diagnostic.suggestions.chooser.headerEdge';
+    await i18next.changeLanguage('en-US');
+    const en = i18next.t(key);
+    expect(en).toBeTruthy();
+    expect(en).not.toBe(key);
+    for (const locale of ['pt-BR', 'es-419'] as const) {
+      await i18next.changeLanguage(locale);
+      const localized = i18next.t(key);
+      expect(localized, `${locale} resolved`).toBeTruthy();
+      expect(localized, `${locale} not literal key`).not.toBe(key);
+      expect(localized, `${locale} differs from en-US`).not.toBe(en);
+    }
+    await i18next.changeLanguage('en-US');
   });
 });

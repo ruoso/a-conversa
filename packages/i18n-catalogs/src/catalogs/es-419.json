@@ -647,6 +647,7 @@
         },
         "chooser": {
           "header": "Elige un nodo",
+          "headerEdge": "Elige una arista de apoyo para romper",
           "cancel": "Cancelar"
         }
       },

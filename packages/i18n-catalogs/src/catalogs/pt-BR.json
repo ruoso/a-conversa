@@ -647,6 +647,7 @@
         },
         "chooser": {
           "header": "Escolha um nó",
+          "headerEdge": "Escolha uma aresta de apoio para romper",
           "cancel": "Cancelar"
         }
       },

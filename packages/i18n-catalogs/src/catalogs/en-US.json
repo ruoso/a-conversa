@@ -647,6 +647,7 @@
         },
         "chooser": {
           "header": "Choose a node",
+          "headerEdge": "Choose a supports edge to break",
           "cancel": "Cancel"
         }
       },

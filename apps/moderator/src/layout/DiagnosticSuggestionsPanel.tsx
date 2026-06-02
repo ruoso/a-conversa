@@ -22,13 +22,31 @@
 // The chips are now LIVE (`mod_resolution_path_picker`): each is an
 // enabled `<button>` whose `onClick` routes the `(move, diagnostic)`
 // pair through `resolutionPlanForMove(...)` and dispatches the shipped
-// affordance — enter a capture mode, open a proposal submenu, or (for
-// the advisory / deferred-`break-edge` moves) focus the affected region
-// only. The chip markup and the `data-suggestion-move` /
+// affordance — enter a capture mode, open a proposal submenu, present
+// the break-edge edge chooser, or (for the advisory moves) focus the
+// affected region only. The chip markup and the `data-suggestion-move` /
 // `data-suggestion-diagnostic-kind` seams are preserved (Decision §D2 —
 // flip `disabled`/`aria-disabled` + add `onClick`, no markup refactor).
+//
+// **break-edge** (`mod_break_edge_resolution_action`): a cycle's
+// `break-edge` chip derives the candidate `supports` edges from the live
+// projection (`candidateBreakEdges`). Two-or-more → the inline chooser
+// lists the edges (labelled via `selectEdgeLabelById`); exactly one →
+// direct dispatch; zero → focus-only. Picking / dispatching emits a real
+// `propose { kind: 'break-edge', edge_id }` via `useBreakEdgeAction`. The
+// hook lives in child components that mount only when the surface is open,
+// so the panel itself never calls `useWsClient()` — the bare-render tests
+// (no `<WsClientProvider>`) keep working.
 
-import { useCallback, useMemo, useState, type MouseEvent, type ReactElement } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent,
+  type ReactElement,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import type { DiagnosticPayload, Event, WsDiagnosticSeverity } from '@a-conversa/shared-types';
 
@@ -39,8 +57,11 @@ import { useUiStore } from '../stores/uiStore.js';
 import { useWsStore } from '../ws/wsStore.js';
 import { suggestionsForDiagnostic, type SuggestionMove } from '../graph/diagnosticSuggestions.js';
 import { resolutionPlanForMove } from '../graph/resolutionPlan.js';
+import { candidateBreakEdges } from '../graph/candidateBreakEdges.js';
+import { selectEdgeLabelById, selectEdgesForSession } from '../graph/selectors.js';
 import { AxiomMarkSubmenu } from './AxiomMarkSubmenu.js';
 import { EditWordingSubmenu } from './EditWordingSubmenu.js';
+import { useBreakEdgeAction } from './useBreakEdgeAction.js';
 import { resolveProposalTargetWording } from './ProposalModeExitAffordance.js';
 import {
   ADVISORY_PANEL_CLASSES,
@@ -76,11 +97,24 @@ type ChooserFollowUp =
   | { readonly kind: 'mode-entry'; readonly mode: 'decompose' | 'warrant-elicitation' }
   | { readonly kind: 'submenu'; readonly submenu: 'axiom-mark' | 'edit-wording' };
 
-/** Open inline-target-chooser state (Decision §D4). */
-interface ChooserState {
-  readonly candidateNodeIds: readonly string[];
-  readonly followUp: ChooserFollowUp;
-}
+/**
+ * Open inline-chooser state (Decision §D4 / §D5). The `node` variant lists
+ * candidate node ids and runs a `ChooserFollowUp` on pick (mode entry /
+ * proposal submenu); the `edge` variant lists a cycle's candidate
+ * `supports` edge ids and dispatches `break-edge` directly on pick
+ * (`mod_break_edge_resolution_action`). One chooser shell, two candidate
+ * kinds — no second control.
+ */
+type ChooserState =
+  | {
+      readonly candidateKind: 'node';
+      readonly candidateNodeIds: readonly string[];
+      readonly followUp: ChooserFollowUp;
+    }
+  | {
+      readonly candidateKind: 'edge';
+      readonly candidateEdgeIds: readonly string[];
+    };
 
 /** Open axiom-mark submenu state — cursor-anchored like the canvas's. */
 interface AxiomSubmenuState {
@@ -120,6 +154,57 @@ function pickFocusedDiagnostic(
   return orderActiveDiagnostics(activeDiagnostics)[0] ?? null;
 }
 
+/**
+ * One break-edge chooser row. Binds `useBreakEdgeAction(edgeId)` per row
+ * (one hook per mounted instance — Rules of Hooks safe inside the `.map`)
+ * and, on click, dispatches the `break-edge` proposal then closes the
+ * chooser. Mounts only while the edge chooser is open, so the bound hook's
+ * `useWsClient()` never runs in the bare-render path.
+ */
+function BreakEdgeCandidateButton(props: {
+  readonly edgeId: string;
+  readonly label: string;
+  readonly onPicked: () => void;
+}): ReactElement {
+  const { edgeId, label, onPicked } = props;
+  const { propose } = useBreakEdgeAction(edgeId);
+  return (
+    <button
+      type="button"
+      data-testid={`diagnostic-resolution-chooser-candidate-${edgeId}`}
+      data-candidate-edge-id={edgeId}
+      onClick={() => {
+        void propose();
+        onPicked();
+      }}
+      className="block w-full rounded border border-slate-300 bg-white px-2 py-1 text-left text-xs text-slate-900 hover:bg-slate-100"
+    >
+      {label}
+    </button>
+  );
+}
+
+/**
+ * Single-candidate direct dispatch (Constraint §6): when a cycle has
+ * exactly one breakable `supports` edge, no chooser is shown — this
+ * (render-nothing) component mounts, fires the `break-edge` proposal once
+ * on mount, and unmounts on the next chip click. Mounts only on the
+ * single-candidate path, so `useWsClient()` stays out of the bare-render
+ * path. `key={edgeId}` on the mount site remounts it for a different edge.
+ */
+function BreakEdgeDirectDispatch(props: { readonly edgeId: string }): null {
+  const { edgeId } = props;
+  const { propose } = useBreakEdgeAction(edgeId);
+  // Keep the latest `propose` in a ref so the mount-only effect dispatches
+  // exactly once without re-firing when the hook returns a fresh closure.
+  const proposeRef = useRef(propose);
+  proposeRef.current = propose;
+  useEffect(() => {
+    void proposeRef.current();
+  }, []);
+  return null;
+}
+
 export function DiagnosticSuggestionsPanel(props: DiagnosticSuggestionsPanelProps): ReactElement {
   const { sessionId } = props;
   const { t } = useTranslation();
@@ -139,11 +224,15 @@ export function DiagnosticSuggestionsPanel(props: DiagnosticSuggestionsPanelProp
   const [chooser, setChooser] = useState<ChooserState | null>(null);
   const [axiomSubmenu, setAxiomSubmenu] = useState<AxiomSubmenuState | null>(null);
   const [editSubmenu, setEditSubmenu] = useState<EditSubmenuState | null>(null);
+  // The edge id of a single-candidate break-edge dispatch in progress, or
+  // null. Mounts `<BreakEdgeDirectDispatch>` (Constraint §6).
+  const [breakEdgeDirectEdgeId, setBreakEdgeDirectEdgeId] = useState<string | null>(null);
 
   const closeSurfaces = useCallback(() => {
     setChooser(null);
     setAxiomSubmenu(null);
     setEditSubmenu(null);
+    setBreakEdgeDirectEdgeId(null);
   }, []);
 
   const enterMode = useCallback((mode: 'decompose' | 'warrant-elicitation', nodeId: string) => {
@@ -176,10 +265,31 @@ export function DiagnosticSuggestionsPanel(props: DiagnosticSuggestionsPanelProp
   const handleChipClick = useCallback(
     (move: SuggestionMove, focusedPayload: DiagnosticPayload, e: MouseEvent<HTMLButtonElement>) => {
       const plan = resolutionPlanForMove(move, focusedPayload);
-      // Frame the affected region on every chip click (Constraint §5).
-      requestCanvasFocus({ nodeIds: plan.focus.nodeIds, edgeIds: plan.focus.edgeIds });
       // Reset any surface left open by a prior chip before dispatching.
       closeSurfaces();
+      if (plan.disposition === 'break-edge-chooser') {
+        // Derive the cycle's breakable `supports` edges from the live
+        // projection (the router is pure over the payload — Decision §D3).
+        const edges = selectEdgesForSession(useWsStore.getState(), sessionId);
+        const candidateEdgeIds = candidateBreakEdges(edges, plan.cycleNodeIds);
+        // Frame the cycle nodes AND the candidate edges so the affected
+        // region is visible while the moderator chooses (Constraint §5).
+        requestCanvasFocus({ nodeIds: plan.cycleNodeIds, edgeIds: candidateEdgeIds });
+        if (candidateEdgeIds.length === 0) {
+          // Defensive: a real cycle always has ≥2 supports edges. Zero →
+          // focus-only, no empty chooser (Constraint §6).
+          return;
+        }
+        if (candidateEdgeIds.length === 1) {
+          // Exactly one → dispatch directly, no chooser (Constraint §6).
+          setBreakEdgeDirectEdgeId(candidateEdgeIds[0] as string);
+          return;
+        }
+        setChooser({ candidateKind: 'edge', candidateEdgeIds });
+        return;
+      }
+      // Frame the affected region on every other chip click (Constraint §5).
+      requestCanvasFocus({ nodeIds: plan.focus.nodeIds, edgeIds: plan.focus.edgeIds });
       if (plan.disposition === 'focus-only') {
         return;
       }
@@ -190,6 +300,7 @@ export function DiagnosticSuggestionsPanel(props: DiagnosticSuggestionsPanelProp
           enterMode(plan.mode, plan.target.nodeId);
         } else {
           setChooser({
+            candidateKind: 'node',
             candidateNodeIds: plan.target.candidateNodeIds,
             followUp: { kind: 'mode-entry', mode: plan.mode },
           });
@@ -201,12 +312,13 @@ export function DiagnosticSuggestionsPanel(props: DiagnosticSuggestionsPanelProp
         openSubmenu(plan.submenu, plan.target.nodeId, x, y);
       } else {
         setChooser({
+          candidateKind: 'node',
           candidateNodeIds: plan.target.candidateNodeIds,
           followUp: { kind: 'submenu', submenu: plan.submenu },
         });
       }
     },
-    [requestCanvasFocus, closeSurfaces, enterMode, openSubmenu],
+    [requestCanvasFocus, closeSurfaces, enterMode, openSubmenu, sessionId],
   );
 
   const handleCandidatePick = useCallback(
@@ -293,33 +405,52 @@ export function DiagnosticSuggestionsPanel(props: DiagnosticSuggestionsPanelProp
       {chooser !== null ? (
         <div
           data-testid="diagnostic-resolution-chooser"
+          data-chooser-kind={chooser.candidateKind}
           role="group"
-          aria-label={t('moderator.diagnostic.suggestions.chooser.header')}
+          aria-label={t(
+            chooser.candidateKind === 'edge'
+              ? 'moderator.diagnostic.suggestions.chooser.headerEdge'
+              : 'moderator.diagnostic.suggestions.chooser.header',
+          )}
           className="mt-2 rounded border border-slate-300 bg-white p-1.5"
         >
           <p
             data-testid="diagnostic-resolution-chooser-header"
             className="mb-1 text-xs font-medium text-slate-700"
           >
-            {t('moderator.diagnostic.suggestions.chooser.header')}
+            {t(
+              chooser.candidateKind === 'edge'
+                ? 'moderator.diagnostic.suggestions.chooser.headerEdge'
+                : 'moderator.diagnostic.suggestions.chooser.header',
+            )}
           </p>
           <ul className="space-y-1">
-            {chooser.candidateNodeIds.map((nodeId) => {
-              const wording = resolveProposalTargetWording(events, nodeId);
-              return (
-                <li key={nodeId}>
-                  <button
-                    type="button"
-                    data-testid={`diagnostic-resolution-chooser-candidate-${nodeId}`}
-                    data-candidate-node-id={nodeId}
-                    onClick={(e) => handleCandidatePick(chooser.followUp, nodeId, e)}
-                    className="block w-full rounded border border-slate-300 bg-white px-2 py-1 text-left text-xs text-slate-900 hover:bg-slate-100"
-                  >
-                    {wording ?? nodeId}
-                  </button>
-                </li>
-              );
-            })}
+            {chooser.candidateKind === 'edge'
+              ? chooser.candidateEdgeIds.map((edgeId) => (
+                  <li key={edgeId}>
+                    <BreakEdgeCandidateButton
+                      edgeId={edgeId}
+                      label={selectEdgeLabelById(events, edgeId) ?? edgeId}
+                      onPicked={() => setChooser(null)}
+                    />
+                  </li>
+                ))
+              : chooser.candidateNodeIds.map((nodeId) => {
+                  const wording = resolveProposalTargetWording(events, nodeId);
+                  return (
+                    <li key={nodeId}>
+                      <button
+                        type="button"
+                        data-testid={`diagnostic-resolution-chooser-candidate-${nodeId}`}
+                        data-candidate-node-id={nodeId}
+                        onClick={(e) => handleCandidatePick(chooser.followUp, nodeId, e)}
+                        className="block w-full rounded border border-slate-300 bg-white px-2 py-1 text-left text-xs text-slate-900 hover:bg-slate-100"
+                      >
+                        {wording ?? nodeId}
+                      </button>
+                    </li>
+                  );
+                })}
           </ul>
           <button
             type="button"
@@ -348,6 +479,9 @@ export function DiagnosticSuggestionsPanel(props: DiagnosticSuggestionsPanelProp
           currentWording={editSubmenu.currentWording}
           onClose={() => setEditSubmenu(null)}
         />
+      ) : null}
+      {breakEdgeDirectEdgeId !== null ? (
+        <BreakEdgeDirectDispatch key={breakEdgeDirectEdgeId} edgeId={breakEdgeDirectEdgeId} />
       ) : null}
     </section>
   );

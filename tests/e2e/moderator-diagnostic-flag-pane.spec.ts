@@ -393,3 +393,68 @@ test.describe('moderator resolution-path picker — chips launch the shipped aff
     await expect(panel).toHaveAttribute('data-warrant-elicitation-target-node-id', NODE_A);
   });
 });
+
+// Refinement: tasks/refinements/moderator-ui/mod_break_edge_resolution_action.md
+//             (Acceptance §9, Decision §D6 — single-actor observable
+//              behavior is IN SCOPE here; the multi-actor
+//              propose→agree→commit→flag-clears walk stays deferred to
+//              `mod_pw_diagnostic_flow`)
+//
+// The break-edge chip derives the cycle's breakable `supports` edges from
+// the live projection. Seeding a cycle over the two-node subset {A, B}
+// with TWO supports edges between them (the base graph's A→B plus a
+// seeded back-edge B→A) gives ≥2 candidates → the inline edge chooser.
+// The subset (two of the three graph nodes) forces the focus zoom past
+// the initial fit-all framing, so the viewport transform must change.
+test.describe('moderator resolution-path picker — break-edge edge chooser', () => {
+  test('break-edge chip opens the edge chooser, focuses the region, and a pick dismisses it', async ({
+    page,
+  }) => {
+    const sessionId = await reachOperateWithGraph(page, 'Resolution picker — break-edge path.');
+
+    // Close the A→B / B→? base graph into a real 2-cycle over {A, B}: add a
+    // back-edge B→A so {A, B} carries two breakable supports edges.
+    await seedWsStore(page, {
+      sessionId,
+      edges: [{ edgeId: 'edge-ba', source: NODE_B, target: NODE_A, role: 'supports' }],
+    });
+
+    await applyDiagnostic(page, {
+      sessionId,
+      kind: 'cycle',
+      severity: 'blocking',
+      status: 'fired',
+      sequence: 90,
+      diagnostic: { kind: 'cycle', nodes: [NODE_A, NODE_B] },
+    });
+
+    const body = page.getByTestId('right-sidebar-pane-body-diagnostic-flags');
+    await expect(body).toBeVisible();
+
+    const breakEdgeChip = body.getByTestId('diagnostic-suggestions-move-break-edge');
+    await expect(breakEdgeChip).toBeEnabled();
+
+    const viewport = page.locator('.react-flow__viewport');
+    await expect(viewport).toBeVisible();
+    const readTransform = (): Promise<string> =>
+      viewport.evaluate((el) => (el as HTMLElement).style.transform);
+    const before = await readTransform();
+
+    // Clicking the chip frames the affected region (focus fires) and opens
+    // the inline edge chooser populated with the cycle's supports edges.
+    await breakEdgeChip.click();
+    await expect.poll(readTransform, { timeout: 5_000 }).not.toBe(before);
+
+    const chooser = body.getByTestId('diagnostic-resolution-chooser');
+    await expect(chooser).toBeVisible();
+    await expect(chooser).toHaveAttribute('data-chooser-kind', 'edge');
+    await expect(body.getByTestId('diagnostic-resolution-chooser-candidate-edge-ab')).toBeVisible();
+    await expect(body.getByTestId('diagnostic-resolution-chooser-candidate-edge-ba')).toBeVisible();
+
+    // Picking an edge dispatches the break-edge proposal and dismisses the
+    // chooser (the pick closes optimistically; the multi-actor commit walk
+    // is `mod_pw_diagnostic_flow`'s remit).
+    await body.getByTestId('diagnostic-resolution-chooser-candidate-edge-ab').click();
+    await expect(chooser).toHaveCount(0);
+  });
+});

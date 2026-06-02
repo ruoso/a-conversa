@@ -595,6 +595,7 @@ task moderator_ui "Moderator UI" {
     task mod_break_edge_resolution_action "Wire break-edge chip to a real break-edge proposal action" {
       effort 1d
       allocate team
+      complete 100
       depends !mod_resolution_path_picker
       note "Source of debt: tasks/refinements/moderator-ui/mod_resolution_path_picker.md §D5 deferral + Named follow-up tasks. The break-edge chip is focus-only in v1 because affectedEntities for a cycle returns no edges and no useBreakEdgeAction hook or edge-target affordance exists. This task adds a useBreakEdgeAction hook sending propose kind:break-edge edge_id (engine commit handler at apps/server/src/projection/replay.ts:1291-1303 and schema at packages/shared-types/src/events/proposals.ts:429-432 already exist) plus an edge-target selection affordance over the cycle candidate supports edges. Depends on mod_resolution_path_picker."
     }
