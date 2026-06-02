@@ -300,3 +300,96 @@ test.describe('moderator blocking-diagnostic banner — announces the blocked se
     await expect(flagsPane).toHaveAttribute('data-active', 'true');
   });
 });
+
+// Refinement: tasks/refinements/moderator-ui/mod_resolution_path_picker.md
+//             (Acceptance §10/§11, Decision §D6 — single-actor observable
+//              behavior is IN SCOPE here; the multi-actor
+//              resolve→agree→commit→flag-clears walk stays deferred to
+//              `mod_pw_diagnostic_flow`)
+//
+// The picker turns the methodology-suggestion chips live: a chip click
+// frames the affected region (focus fires) and launches the shipped
+// affordance for that move (a capture mode, or — for multi-candidate
+// diagnostics — an inline target chooser that then opens a proposal
+// submenu). These two scenarios pin the reachable, single-actor behavior:
+//
+//   10. A blocking `contradiction` → the decompose/amend/axiom-mark-both
+//       chips render enabled; clicking `amend` fires canvas focus (the
+//       viewport transform changes) and, after a chooser pick, opens the
+//       edit-wording submenu.
+//   11. An advisory `dangling-claim` → clicking `prompt-for-support`
+//       enters warrant-elicitation mode (its capture panel becomes visible).
+test.describe('moderator resolution-path picker — chips launch the shipped affordances', () => {
+  test('contradiction chips are enabled; amend focuses the region + opens the edit-wording submenu', async ({
+    page,
+  }) => {
+    const sessionId = await reachOperateWithGraph(
+      page,
+      'Resolution picker — contradiction amend path.',
+    );
+
+    await applyDiagnostic(page, {
+      sessionId,
+      kind: 'contradiction',
+      severity: 'blocking',
+      status: 'fired',
+      sequence: 70,
+      // A two-node subset of the three-node graph — focusing it zooms past
+      // the initial fit-all framing, so the viewport transform must change.
+      diagnostic: { kind: 'contradiction', nodeA: NODE_A, nodeB: NODE_B, edges: ['edge-ab'] },
+    });
+
+    const body = page.getByTestId('right-sidebar-pane-body-diagnostic-flags');
+    await expect(body).toBeVisible();
+
+    // The three contradiction chips render live (enabled), per Acceptance §4.
+    await expect(body.getByTestId('diagnostic-suggestions-move-decompose')).toBeEnabled();
+    await expect(body.getByTestId('diagnostic-suggestions-move-axiom-mark-both')).toBeEnabled();
+    const amendChip = body.getByTestId('diagnostic-suggestions-move-amend');
+    await expect(amendChip).toBeEnabled();
+
+    const viewport = page.locator('.react-flow__viewport');
+    await expect(viewport).toBeVisible();
+    const readTransform = (): Promise<string> =>
+      viewport.evaluate((el) => (el as HTMLElement).style.transform);
+    const before = await readTransform();
+
+    // Clicking the chip frames the affected region (focus fires) and, for
+    // the multi-candidate contradiction, presents the inline target chooser.
+    await amendChip.click();
+    await expect.poll(readTransform, { timeout: 5_000 }).not.toBe(before);
+
+    // Pick a candidate node → the edit-wording submenu opens seeded with it.
+    await body.getByTestId(`diagnostic-resolution-chooser-candidate-${NODE_A}`).click();
+    const submenu = page.getByTestId('edit-wording-submenu');
+    await expect(submenu).toBeVisible();
+    await expect(submenu).toHaveAttribute('data-node-id', NODE_A);
+  });
+
+  test('dangling-claim prompt-for-support enters warrant-elicitation mode', async ({ page }) => {
+    const sessionId = await reachOperateWithGraph(
+      page,
+      'Resolution picker — dangling-claim prompt path.',
+    );
+
+    await applyDiagnostic(page, {
+      sessionId,
+      kind: 'dangling-claim',
+      severity: 'advisory',
+      status: 'fired',
+      sequence: 80,
+      diagnostic: { kind: 'dangling-claim', nodeId: NODE_A },
+    });
+
+    const body = page.getByTestId('right-sidebar-pane-body-diagnostic-flags');
+    await expect(body).toBeVisible();
+
+    await body.getByTestId('diagnostic-suggestions-move-prompt-for-support').click();
+
+    // Warrant-elicitation mode opened against the dangling claim node — its
+    // capture panel is route-rendered in the bottom strip when the mode is on.
+    const panel = page.getByTestId('warrant-elicitation-capture-panel');
+    await expect(panel).toBeVisible();
+    await expect(panel).toHaveAttribute('data-warrant-elicitation-target-node-id', NODE_A);
+  });
+});

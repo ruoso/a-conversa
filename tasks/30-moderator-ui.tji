@@ -588,8 +588,15 @@ task moderator_ui "Moderator UI" {
     task mod_resolution_path_picker "UI to pick resolution path (decompose / amend / break-edge / accept-as-bedrock)" {
       effort 2d
       allocate team
+      complete 100
       depends !mod_diagnostic_focus_action
       note "Inherits the chip-wiring contract from moderator_ui.mod_diagnostic_flow.mod_diagnostic_methodology_suggestions (Decisions §D3 of tasks/refinements/moderator-ui/mod_diagnostic_methodology_suggestions.md): this task owns turning the disabled-placeholder suggestion chips into real propose-action handlers + the engine-side resolution events. The chip identifiers pinned by the suggestions panel (break-edge, decompose, axiom-mark, amend, axiom-mark-both, prompt-for-support, mark-conceded, review-configuration, repair-configuration, leave-as-intentional) and the stable data-suggestion-move / data-suggestion-diagnostic-kind seams are the contract this picker switches on; flipping disabled={false} + adding onClick handlers should be the diff shape, not a markup refactor."
+    }
+    task mod_break_edge_resolution_action "Wire break-edge chip to a real break-edge proposal action" {
+      effort 1d
+      allocate team
+      depends !mod_resolution_path_picker
+      note "Source of debt: tasks/refinements/moderator-ui/mod_resolution_path_picker.md §D5 deferral + Named follow-up tasks. The break-edge chip is focus-only in v1 because affectedEntities for a cycle returns no edges and no useBreakEdgeAction hook or edge-target affordance exists. This task adds a useBreakEdgeAction hook sending propose kind:break-edge edge_id (engine commit handler at apps/server/src/projection/replay.ts:1291-1303 and schema at packages/shared-types/src/events/proposals.ts:429-432 already exist) plus an edge-target selection affordance over the cycle candidate supports edges. Depends on mod_resolution_path_picker."
     }
   }
 

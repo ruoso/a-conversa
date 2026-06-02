@@ -77,3 +77,10 @@ When the human resolves an item, delete its block (git history preserves it).
 - **Why parked**: native-speaker sign-off is inherently human work. Per ADR 0024 the en-US copy is authoritative at land; non-English drafts ship as parity-complete pending review.
 - **Suggested resolution**: review the two keys in `pt-BR.json` and `es-419.json`; accept or correct in place and close this item.
 
+### 2026-06-02 — Durable semantics for advisory diagnostic moves (mark-conceded, review-/repair-configuration, leave-as-intentional)
+
+- **Source**: closer for `moderator_ui.mod_diagnostic_resolution_flow.mod_resolution_path_picker` (Decision §D5, named follow-up tasks).
+- **Question**: should `mark-conceded` (dangling-claim) and the coherency moves `review-configuration`, `repair-configuration`, `leave-as-intentional` gain durable structural or acknowledge/dismiss semantics, or remain focus-only conversational prompts? Currently these chips focus the affected region but emit no proposal.
+- **Why parked**: a methodology/product decision — what does it mean to "concede" a dangling claim, or mark a coherency hint as "intentional"? These carry no existing engine proposal kind and no precondition that recomputes away. Giving them durable semantics requires deciding what state they record (a new event kind, an annotation, a flag dismiss) and what the methodology intends. Not agent-implementable without that call.
+- **Suggested resolution**: if the methodology owner decides any of these should be actionable, spec a WBS task per move naming the proposal kind, event, projection arm, and UI gesture. Until then, focus-only is the faithful behavior.
+

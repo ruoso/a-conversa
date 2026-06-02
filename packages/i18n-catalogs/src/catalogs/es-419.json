@@ -644,6 +644,10 @@
           "review-configuration": "Revisar configuración",
           "repair-configuration": "Reparar configuración",
           "leave-as-intentional": "Mantener como intencional"
+        },
+        "chooser": {
+          "header": "Elige un nodo",
+          "cancel": "Cancelar"
         }
       },
       "flags": {

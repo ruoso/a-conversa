@@ -19,19 +19,29 @@
 // that future task can wrap or replace the panel without re-arranging
 // the layout.
 //
-// The chips are inert placeholders (disabled `<button>` with
-// `aria-disabled="true"`) — same pattern as `<IsOughtPrompt>`'s
-// decompose / warrant actions. The picker landing in F7 will flip
-// `disabled={false}` and add `onClick` handlers in one diff.
+// The chips are now LIVE (`mod_resolution_path_picker`): each is an
+// enabled `<button>` whose `onClick` routes the `(move, diagnostic)`
+// pair through `resolutionPlanForMove(...)` and dispatches the shipped
+// affordance — enter a capture mode, open a proposal submenu, or (for
+// the advisory / deferred-`break-edge` moves) focus the affected region
+// only. The chip markup and the `data-suggestion-move` /
+// `data-suggestion-diagnostic-kind` seams are preserved (Decision §D2 —
+// flip `disabled`/`aria-disabled` + add `onClick`, no markup refactor).
 
-import { useMemo, type ReactElement } from 'react';
+import { useCallback, useMemo, useState, type MouseEvent, type ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { DiagnosticPayload, WsDiagnosticSeverity } from '@a-conversa/shared-types';
+import type { DiagnosticPayload, Event, WsDiagnosticSeverity } from '@a-conversa/shared-types';
 
 import { diagnosticIdentityKey } from '@a-conversa/shell';
 
+import { useCaptureStore } from '../stores/captureStore.js';
+import { useUiStore } from '../stores/uiStore.js';
 import { useWsStore } from '../ws/wsStore.js';
-import { suggestionsForDiagnostic } from '../graph/diagnosticSuggestions.js';
+import { suggestionsForDiagnostic, type SuggestionMove } from '../graph/diagnosticSuggestions.js';
+import { resolutionPlanForMove } from '../graph/resolutionPlan.js';
+import { AxiomMarkSubmenu } from './AxiomMarkSubmenu.js';
+import { EditWordingSubmenu } from './EditWordingSubmenu.js';
+import { resolveProposalTargetWording } from './ProposalModeExitAffordance.js';
 import {
   ADVISORY_PANEL_CLASSES,
   BLOCKING_PANEL_CLASSES,
@@ -49,7 +59,43 @@ export interface DiagnosticSuggestionsPanelProps {
 // `EMPTY_ACTIVE_DIAGNOSTICS` constant `<GraphCanvasPane>` keeps.
 const EMPTY_ACTIVE_DIAGNOSTICS: ReadonlyMap<string, DiagnosticPayload> = new Map();
 
+// Stable empty-events reference for the no-events baseline (same guard
+// `<GraphCanvasPane>` / `<WarrantElicitationCapturePanel>` keep) so the
+// selector doesn't return a fresh array per read and trip a re-render
+// loop.
+const EMPTY_EVENTS: readonly Event[] = Object.freeze([]);
+
 const EMPTY_PANEL_CLASSES = 'rounded border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs';
+
+/**
+ * What the inline target chooser dispatches once the moderator picks a
+ * candidate node: either enter a capture mode on it, or open a proposal
+ * submenu seeded with it.
+ */
+type ChooserFollowUp =
+  | { readonly kind: 'mode-entry'; readonly mode: 'decompose' | 'warrant-elicitation' }
+  | { readonly kind: 'submenu'; readonly submenu: 'axiom-mark' | 'edit-wording' };
+
+/** Open inline-target-chooser state (Decision §D4). */
+interface ChooserState {
+  readonly candidateNodeIds: readonly string[];
+  readonly followUp: ChooserFollowUp;
+}
+
+/** Open axiom-mark submenu state — cursor-anchored like the canvas's. */
+interface AxiomSubmenuState {
+  readonly nodeId: string;
+  readonly x: number;
+  readonly y: number;
+}
+
+/** Open edit-wording submenu state — pre-fills the textarea. */
+interface EditSubmenuState {
+  readonly nodeId: string;
+  readonly x: number;
+  readonly y: number;
+  readonly currentWording: string;
+}
 
 function panelClassesFor(severity: WsDiagnosticSeverity): string {
   return severity === 'blocking' ? BLOCKING_PANEL_CLASSES : ADVISORY_PANEL_CLASSES;
@@ -80,6 +126,100 @@ export function DiagnosticSuggestionsPanel(props: DiagnosticSuggestionsPanelProp
   const activeDiagnostics = useWsStore(
     (state) => state.sessionState[sessionId]?.activeDiagnostics ?? EMPTY_ACTIVE_DIAGNOSTICS,
   );
+  // Per-session events selector — feeds the axiom-mark submenu's
+  // participant derivation and the edit-wording / chooser wording
+  // resolution. Same reference-stable scoping as `<GraphCanvasPane>`.
+  const events = useWsStore((state) => state.sessionState[sessionId]?.events ?? EMPTY_EVENTS);
+  const requestCanvasFocus = useUiStore((state) => state.requestCanvasFocus);
+
+  // Transient resolution surfaces (Decision §D4): at most one of the
+  // inline target chooser / axiom-mark submenu / edit-wording submenu is
+  // open at a time. A fresh chip click resets all three before opening
+  // the new one.
+  const [chooser, setChooser] = useState<ChooserState | null>(null);
+  const [axiomSubmenu, setAxiomSubmenu] = useState<AxiomSubmenuState | null>(null);
+  const [editSubmenu, setEditSubmenu] = useState<EditSubmenuState | null>(null);
+
+  const closeSurfaces = useCallback(() => {
+    setChooser(null);
+    setAxiomSubmenu(null);
+    setEditSubmenu(null);
+  }, []);
+
+  const enterMode = useCallback((mode: 'decompose' | 'warrant-elicitation', nodeId: string) => {
+    const store = useCaptureStore.getState();
+    if (mode === 'decompose') {
+      store.enterDecomposeMode(nodeId);
+    } else {
+      store.enterWarrantElicitationMode(nodeId);
+    }
+  }, []);
+
+  const openSubmenu = useCallback(
+    (submenu: 'axiom-mark' | 'edit-wording', nodeId: string, x: number, y: number) => {
+      if (submenu === 'axiom-mark') {
+        setEditSubmenu(null);
+        setAxiomSubmenu({ nodeId, x, y });
+      } else {
+        setAxiomSubmenu(null);
+        setEditSubmenu({
+          nodeId,
+          x,
+          y,
+          currentWording: resolveProposalTargetWording(events, nodeId) ?? '',
+        });
+      }
+    },
+    [events],
+  );
+
+  const handleChipClick = useCallback(
+    (move: SuggestionMove, focusedPayload: DiagnosticPayload, e: MouseEvent<HTMLButtonElement>) => {
+      const plan = resolutionPlanForMove(move, focusedPayload);
+      // Frame the affected region on every chip click (Constraint §5).
+      requestCanvasFocus({ nodeIds: plan.focus.nodeIds, edgeIds: plan.focus.edgeIds });
+      // Reset any surface left open by a prior chip before dispatching.
+      closeSurfaces();
+      if (plan.disposition === 'focus-only') {
+        return;
+      }
+      const x = e.clientX;
+      const y = e.clientY;
+      if (plan.disposition === 'mode-entry') {
+        if (plan.target.kind === 'direct') {
+          enterMode(plan.mode, plan.target.nodeId);
+        } else {
+          setChooser({
+            candidateNodeIds: plan.target.candidateNodeIds,
+            followUp: { kind: 'mode-entry', mode: plan.mode },
+          });
+        }
+        return;
+      }
+      // proposal-submenu
+      if (plan.target.kind === 'direct') {
+        openSubmenu(plan.submenu, plan.target.nodeId, x, y);
+      } else {
+        setChooser({
+          candidateNodeIds: plan.target.candidateNodeIds,
+          followUp: { kind: 'submenu', submenu: plan.submenu },
+        });
+      }
+    },
+    [requestCanvasFocus, closeSurfaces, enterMode, openSubmenu],
+  );
+
+  const handleCandidatePick = useCallback(
+    (followUp: ChooserFollowUp, nodeId: string, e: MouseEvent<HTMLButtonElement>) => {
+      setChooser(null);
+      if (followUp.kind === 'mode-entry') {
+        enterMode(followUp.mode, nodeId);
+      } else {
+        openSubmenu(followUp.submenu, nodeId, e.clientX, e.clientY);
+      }
+    },
+    [enterMode, openSubmenu],
+  );
 
   // Memoize the focused pick + the derived moves on the
   // `activeDiagnostics` map reference so a noisy re-render of
@@ -89,7 +229,7 @@ export function DiagnosticSuggestionsPanel(props: DiagnosticSuggestionsPanelProp
   const { focused, moves } = useMemo(() => {
     const picked = pickFocusedDiagnostic(activeDiagnostics);
     if (picked === null) {
-      return { focused: null as DiagnosticPayload | null, moves: [] as readonly string[] };
+      return { focused: null as DiagnosticPayload | null, moves: [] as readonly SuggestionMove[] };
     }
     return { focused: picked, moves: suggestionsForDiagnostic(picked) };
   }, [activeDiagnostics]);
@@ -139,18 +279,76 @@ export function DiagnosticSuggestionsPanel(props: DiagnosticSuggestionsPanelProp
           <li key={move}>
             <button
               type="button"
-              disabled
-              aria-disabled="true"
               data-testid={`diagnostic-suggestions-move-${move}`}
               data-suggestion-move={move}
               data-suggestion-diagnostic-kind={focused.kind}
-              className="rounded border border-slate-400 bg-white px-2 py-0.5 text-xs text-slate-700 disabled:cursor-not-allowed disabled:opacity-70"
+              onClick={(e) => handleChipClick(move, focused, e)}
+              className="rounded border border-slate-400 bg-white px-2 py-0.5 text-xs text-slate-700 hover:bg-slate-100"
             >
               {t(`moderator.diagnostic.suggestions.move.${move}`)}
             </button>
           </li>
         ))}
       </ul>
+      {chooser !== null ? (
+        <div
+          data-testid="diagnostic-resolution-chooser"
+          role="group"
+          aria-label={t('moderator.diagnostic.suggestions.chooser.header')}
+          className="mt-2 rounded border border-slate-300 bg-white p-1.5"
+        >
+          <p
+            data-testid="diagnostic-resolution-chooser-header"
+            className="mb-1 text-xs font-medium text-slate-700"
+          >
+            {t('moderator.diagnostic.suggestions.chooser.header')}
+          </p>
+          <ul className="space-y-1">
+            {chooser.candidateNodeIds.map((nodeId) => {
+              const wording = resolveProposalTargetWording(events, nodeId);
+              return (
+                <li key={nodeId}>
+                  <button
+                    type="button"
+                    data-testid={`diagnostic-resolution-chooser-candidate-${nodeId}`}
+                    data-candidate-node-id={nodeId}
+                    onClick={(e) => handleCandidatePick(chooser.followUp, nodeId, e)}
+                    className="block w-full rounded border border-slate-300 bg-white px-2 py-1 text-left text-xs text-slate-900 hover:bg-slate-100"
+                  >
+                    {wording ?? nodeId}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          <button
+            type="button"
+            data-testid="diagnostic-resolution-chooser-cancel"
+            onClick={() => setChooser(null)}
+            className="mt-1 rounded px-2 py-0.5 text-xs text-slate-500 hover:text-slate-700"
+          >
+            {t('moderator.diagnostic.suggestions.chooser.cancel')}
+          </button>
+        </div>
+      ) : null}
+      {axiomSubmenu !== null ? (
+        <AxiomMarkSubmenu
+          nodeId={axiomSubmenu.nodeId}
+          x={axiomSubmenu.x}
+          y={axiomSubmenu.y}
+          events={events}
+          onClose={() => setAxiomSubmenu(null)}
+        />
+      ) : null}
+      {editSubmenu !== null ? (
+        <EditWordingSubmenu
+          nodeId={editSubmenu.nodeId}
+          x={editSubmenu.x}
+          y={editSubmenu.y}
+          currentWording={editSubmenu.currentWording}
+          onClose={() => setEditSubmenu(null)}
+        />
+      ) : null}
     </section>
   );
 }
