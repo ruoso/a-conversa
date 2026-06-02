@@ -21,14 +21,15 @@
 //     across en-US / pt-BR / es-419.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import i18next from 'i18next';
 import type { DiagnosticPayload } from '@a-conversa/shared-types';
 
-import { createI18nInstance, diagnosticIdentityKey } from '@a-conversa/shell';
+import { affectedEntities, createI18nInstance, diagnosticIdentityKey } from '@a-conversa/shell';
 
 import { DiagnosticFlagPane } from './DiagnosticFlagPane';
 import { useWsStore } from '../ws/wsStore';
+import { useUiStore } from '../stores/uiStore';
 
 const SESSION = '00000000-0000-4000-8000-000000000099';
 const NODE_A = 'node-a';
@@ -89,6 +90,7 @@ function applyDiagnostic(payload: DiagnosticPayload): void {
 
 beforeEach(async () => {
   useWsStore.getState().reset();
+  useUiStore.setState({ focusRequest: null });
   await createI18nInstance('en-US');
   await i18next.changeLanguage('en-US');
 });
@@ -165,14 +167,97 @@ describe('DiagnosticFlagPane — flag list (blocking cycle + advisory multi-warr
     expect(action).toContain('Break one supports edge');
   });
 
-  it('rows carry no click handler (presentational only — Decision §D3)', () => {
+  it('each row wraps its content in a real focus button (keyboard-operable)', () => {
     applyDiagnostic(cycleFiredPayload([NODE_A, NODE_B, NODE_C], 5));
     render(<DiagnosticFlagPane sessionId={SESSION} />);
     const row = screen.getAllByTestId('diagnostic-flag-row')[0];
-    // A presentational `<li>` row exposes no button/link affordance.
     expect(row?.tagName.toLowerCase()).toBe('li');
-    expect(row?.querySelector('button')).toBeNull();
-    expect(row?.getAttribute('onclick')).toBeNull();
+    // The clickable affordance is a native `<button type="button">`
+    // (Decision §D3) — Enter/Space activation + focus-ring for free.
+    const button = row?.querySelector('button');
+    expect(button).toBeTruthy();
+    expect(button?.getAttribute('type')).toBe('button');
+    expect(button?.getAttribute('data-testid')).toBe('diagnostic-flag-focus-button');
+  });
+});
+
+describe('DiagnosticFlagPane — click focuses the affected region (Decision §D1)', () => {
+  it('clicking a row dispatches requestCanvasFocus with its deduped affectedEntities', () => {
+    const payload = cycleFiredPayload([NODE_A, NODE_B, NODE_C], 5);
+    applyDiagnostic(payload);
+    render(<DiagnosticFlagPane sessionId={SESSION} />);
+
+    expect(useUiStore.getState().focusRequest).toBeNull();
+    fireEvent.click(screen.getByTestId('diagnostic-flag-focus-button'));
+
+    const request = useUiStore.getState().focusRequest;
+    const expected = affectedEntities(payload);
+    expect(request?.nodeIds).toEqual([...new Set(expected.nodes)]);
+    expect(request?.edgeIds).toEqual([...new Set(expected.edges)]);
+    expect(request?.nonce).toBe(1);
+  });
+
+  it('dedupes repeated ids before dispatching and stamping', () => {
+    // A cycle whose node list repeats NODE_A — the dispatch + seam must
+    // each carry NODE_A once.
+    const payload = cycleFiredPayload([NODE_A, NODE_B, NODE_A], 5);
+    applyDiagnostic(payload);
+    render(<DiagnosticFlagPane sessionId={SESSION} />);
+
+    fireEvent.click(screen.getByTestId('diagnostic-flag-focus-button'));
+    expect(useUiStore.getState().focusRequest?.nodeIds).toEqual([NODE_A, NODE_B]);
+
+    const row = screen.getByTestId('diagnostic-flag-row');
+    expect(row.getAttribute('data-diagnostic-affected-nodes')).toBe(`${NODE_A} ${NODE_B}`);
+  });
+
+  it("clicking a non-head (advisory) row dispatches that row's region, not the head's", () => {
+    const cycle = cycleFiredPayload([NODE_A, NODE_B, NODE_C], 5); // blocking head
+    const multiWarrant = multiWarrantFiredPayload(1); // advisory tail
+    applyDiagnostic(multiWarrant);
+    applyDiagnostic(cycle);
+    render(<DiagnosticFlagPane sessionId={SESSION} />);
+
+    const rows = screen.getAllByTestId('diagnostic-flag-row');
+    expect(rows[0]?.getAttribute('data-diagnostic-kind')).toBe('cycle');
+    // Click the advisory (non-head) row's button.
+    const advisoryButton = rows[1]?.querySelector(
+      '[data-testid="diagnostic-flag-focus-button"]',
+    ) as HTMLButtonElement;
+    fireEvent.click(advisoryButton);
+
+    const request = useUiStore.getState().focusRequest;
+    const expected = affectedEntities(multiWarrant);
+    expect(request?.nodeIds).toEqual([...new Set(expected.nodes)]);
+  });
+
+  it('each row stamps data-diagnostic-affected-nodes / -edges from its deduped affectedEntities', () => {
+    const cycle = cycleFiredPayload([NODE_A, NODE_B, NODE_C], 5);
+    const contradiction = contradictionFiredPayload('node-aa', 'node-ab', 6);
+    applyDiagnostic(cycle);
+    applyDiagnostic(contradiction);
+    render(<DiagnosticFlagPane sessionId={SESSION} />);
+
+    for (const row of screen.getAllByTestId('diagnostic-flag-row')) {
+      const kind = row.getAttribute('data-diagnostic-kind');
+      const payload = kind === 'cycle' ? cycle : contradiction;
+      const expected = affectedEntities(payload);
+      expect(row.getAttribute('data-diagnostic-affected-nodes')).toBe(
+        [...new Set(expected.nodes)].join(' '),
+      );
+      expect(row.getAttribute('data-diagnostic-affected-edges')).toBe(
+        [...new Set(expected.edges)].join(' '),
+      );
+    }
+  });
+
+  it('the focus button aria-label resolves via moderator.diagnostic.flags.focusAria', () => {
+    applyDiagnostic(cycleFiredPayload([NODE_A, NODE_B, NODE_C], 5));
+    render(<DiagnosticFlagPane sessionId={SESSION} />);
+    const button = screen.getByTestId('diagnostic-flag-focus-button');
+    const label = button.getAttribute('aria-label') ?? '';
+    expect(label).toBe('Focus the canvas on Cycle in supports');
+    expect(label).not.toContain('focusAria');
   });
 });
 
@@ -218,13 +303,14 @@ describe('DiagnosticFlagPane — i18n catalog parity', () => {
     'moderator.diagnostic.flags.severity.blocking',
     'moderator.diagnostic.flags.severity.advisory',
     'moderator.diagnostic.flags.countAria',
+    'moderator.diagnostic.flags.focusAria',
   ] as const;
 
   it('resolves all new flag keys to non-empty, non-literal strings in each locale', async () => {
     for (const locale of ['en-US', 'pt-BR', 'es-419'] as const) {
       await i18next.changeLanguage(locale);
       for (const key of KEYS) {
-        const value = i18next.t(key, { count: 2 });
+        const value = i18next.t(key, { count: 2, title: 'X' });
         expect(value, `${locale}::${key} resolved`).toBeTruthy();
         expect(value, `${locale}::${key} not literal key`).not.toBe(key);
       }

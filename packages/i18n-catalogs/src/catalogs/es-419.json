@@ -652,7 +652,8 @@
           "blocking": "Bloqueante",
           "advisory": "Consultivo"
         },
-        "countAria": "{count, plural, one {# diagnóstico activo} other {# diagnósticos activos}}"
+        "countAria": "{count, plural, one {# diagnóstico activo} other {# diagnósticos activos}}",
+        "focusAria": "Enfocar el lienzo en {title}"
       }
     },
     "contextMenu": {

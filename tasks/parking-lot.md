@@ -63,3 +63,10 @@ When the human resolves an item, delete its block (git history preserves it).
 - **Why parked**: native-speaker sign-off is inherently human work — the agent drafted the corrections to maintain catalog parity but cannot approve their fluency or register. Per ADR 0024 the en-US copy is authoritative at land; pt-BR/es-419 ship as parity-complete drafts pending review.
 - **Suggested resolution**: a native-speaker review pass over `packages/i18n-catalogs/src/catalogs/pt-BR.json` and `es-419.json` for the two keys `reason.targetMissing` and `reason.targetKindInvalid` (lines ~555–556 in each catalog). Accept the drafts or correct them in place and close this item.
 
+### 2026-06-02 — i18n native review — diagnostic focusAria (pt-BR, es-419)
+
+- **Source**: closer for `moderator_ui.mod_diagnostic_resolution_flow.mod_diagnostic_focus_action`.
+- **Question**: the pt-BR and es-419 values for `moderator.diagnostic.flags.focusAria` were machine-drafted; they need native-speaker review for fluency, register, and philosophical-methodology accuracy.
+- **Why parked**: native-speaker sign-off is inherently human work. Per ADR 0024 the en-US copy is authoritative at land; non-English drafts ship as parity-complete pending review, tracked in `packages/i18n-catalogs/src/catalogs/pt-BR.review.json` and `es-419.review.json`.
+- **Suggested resolution**: review `moderator.diagnostic.flags.focusAria` in `pt-BR.json` and `es-419.json`; accept or correct and remove from the `*.review.json` pending lists.
+

@@ -372,7 +372,8 @@
     "moderator.diagnostic.flags.header",
     "moderator.diagnostic.flags.severity.blocking",
     "moderator.diagnostic.flags.severity.advisory",
-    "moderator.diagnostic.flags.countAria"
+    "moderator.diagnostic.flags.countAria",
+    "moderator.diagnostic.flags.focusAria"
   ],
   "signed_off": []
 }

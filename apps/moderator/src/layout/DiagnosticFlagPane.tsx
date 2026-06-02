@@ -14,21 +14,27 @@
 // suggestions panel; the panel keeps showing its focused diagnostic and
 // its methodology-suggestion chips.
 //
-// **Presentational only (Decision §D3).** Rows carry the full
-// `data-diagnostic-*` seam set + a `data-focused` marker but no
-// `onClick`. Turning a flag click into a canvas-focus gesture (and
-// stamping `data-suggestion-affected-*` via `affectedEntities`) is the
-// next leaf `mod_diagnostic_focus_action`; shipping inert rows with
-// stable seams lets that leaf be a handler-addition diff, not a markup
-// rewrite. No selection store field is introduced — "focused" is purely
-// derived from the order's head (Decision §D4).
+// **Each flag row is clickable (Decision §D3).** The row's inner content
+// is wrapped in a real `<button>` that focuses the graph canvas on the
+// diagnostic's affected region — it dispatches a `requestCanvasFocus`
+// command onto `useUiStore`, which a thin effect inside the
+// `<ReactFlowProvider>` (`useCanvasFocusEffect`) consumes to call
+// `fitView`. The pane is in the right sidebar, OUTSIDE the provider, so
+// it cannot call `fitView` directly (Decision §D1). Each row also stamps
+// `data-diagnostic-affected-nodes` / `-edges` (the §D5 deferral from
+// `mod_diagnostic_methodology_suggestions`, paid here) so the focus
+// target is deterministically assertable. Clicking focuses the canvas
+// ONLY — no selection, no order change; "focused" stays derived from
+// the order's head (Decision §D6). Refinement:
+// `mod_diagnostic_focus_action`.
 
 import { useMemo, type ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { DiagnosticPayload } from '@a-conversa/shared-types';
 
-import { diagnosticIdentityKey } from '@a-conversa/shell';
+import { affectedEntities, diagnosticIdentityKey } from '@a-conversa/shell';
 
+import { useUiStore } from '../stores/uiStore.js';
 import { useWsStore } from '../ws/wsStore.js';
 import { DiagnosticSuggestionsPanel } from './DiagnosticSuggestionsPanel.js';
 import {
@@ -57,9 +63,17 @@ function badgeClassesFor(severity: DiagnosticPayload['severity']): string {
     : 'rounded bg-amber-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900';
 }
 
+/** Stable, order-preserving de-dup. `affectedEntities` may repeat ids
+ * (it documents that it does not deduplicate); the focus target and the
+ * DOM seam both want each id once. */
+function dedupe(ids: readonly string[]): readonly string[] {
+  return [...new Set(ids)];
+}
+
 export function DiagnosticFlagPane(props: DiagnosticFlagPaneProps): ReactElement {
   const { sessionId } = props;
   const { t } = useTranslation();
+  const requestCanvasFocus = useUiStore((state) => state.requestCanvasFocus);
   const activeDiagnostics = useWsStore(
     (state) => state.sessionState[sessionId]?.activeDiagnostics ?? EMPTY_ACTIVE_DIAGNOSTICS,
   );
@@ -116,6 +130,11 @@ export function DiagnosticFlagPane(props: DiagnosticFlagPaneProps): ReactElement
           const key = diagnosticIdentityKey(payload);
           const isFocused = key === focusedKey;
           const localizedKindTitle = t(`diagnostics.${payload.kind}.title`);
+          // Affected entities for this row, deduped once and reused for
+          // both the focus dispatch and the DOM seams so they can't drift.
+          const affected = affectedEntities(payload);
+          const affectedNodeIds = dedupe(affected.nodes);
+          const affectedEdgeIds = dedupe(affected.edges);
           return (
             <li
               key={key}
@@ -123,24 +142,38 @@ export function DiagnosticFlagPane(props: DiagnosticFlagPaneProps): ReactElement
               data-diagnostic-key={key}
               data-diagnostic-kind={payload.kind}
               data-diagnostic-severity={payload.severity}
+              data-diagnostic-affected-nodes={affectedNodeIds.join(' ')}
+              data-diagnostic-affected-edges={affectedEdgeIds.join(' ')}
               data-focused={isFocused ? 'true' : 'false'}
               aria-current={isFocused ? 'true' : undefined}
               className={rowClassesFor(payload.severity)}
             >
-              <div className="flex items-center gap-1.5">
-                <span
-                  data-testid="diagnostic-flag-severity"
-                  className={badgeClassesFor(payload.severity)}
-                >
-                  {t(`moderator.diagnostic.flags.severity.${payload.severity}`)}
-                </span>
-                <span data-testid="diagnostic-flag-kind-title" className="text-sm font-medium">
-                  {localizedKindTitle}
-                </span>
-              </div>
-              <p data-testid="diagnostic-flag-action-prose" className="mt-0.5 text-xs">
-                {t(`diagnostics.${payload.kind}.action`)}
-              </p>
+              <button
+                type="button"
+                data-testid="diagnostic-flag-focus-button"
+                aria-label={t('moderator.diagnostic.flags.focusAria', {
+                  title: localizedKindTitle,
+                })}
+                onClick={() =>
+                  requestCanvasFocus({ nodeIds: affectedNodeIds, edgeIds: affectedEdgeIds })
+                }
+                className="w-full text-left"
+              >
+                <div className="flex items-center gap-1.5">
+                  <span
+                    data-testid="diagnostic-flag-severity"
+                    className={badgeClassesFor(payload.severity)}
+                  >
+                    {t(`moderator.diagnostic.flags.severity.${payload.severity}`)}
+                  </span>
+                  <span data-testid="diagnostic-flag-kind-title" className="text-sm font-medium">
+                    {localizedKindTitle}
+                  </span>
+                </div>
+                <p data-testid="diagnostic-flag-action-prose" className="mt-0.5 text-xs">
+                  {t(`diagnostics.${payload.kind}.action`)}
+                </p>
+              </button>
             </li>
           );
         })}

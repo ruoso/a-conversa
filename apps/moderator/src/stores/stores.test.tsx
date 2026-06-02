@@ -131,6 +131,33 @@ describe('useUiStore', () => {
     useUiStore.getState().setZoom(Number.NaN);
     expect(useUiStore.getState().zoom).toBe(1);
   });
+
+  // Refinement: tasks/refinements/moderator-ui/mod_diagnostic_focus_action.md
+  //             (Acceptance §1)
+  describe('requestCanvasFocus (canvas-focus command)', () => {
+    it('starts with no focus request', () => {
+      expect(useUiStore.getState().focusRequest).toBeNull();
+    });
+
+    it('sets focusRequest with the given ids and nonce 1 from the initial null', () => {
+      useUiStore.getState().requestCanvasFocus({ nodeIds: ['n1', 'n2'], edgeIds: ['e1'] });
+      const request = useUiStore.getState().focusRequest;
+      expect(request).toEqual({ nodeIds: ['n1', 'n2'], edgeIds: ['e1'], nonce: 1 });
+    });
+
+    it('advances the nonce and replaces the ids on a second call', () => {
+      useUiStore.getState().requestCanvasFocus({ nodeIds: ['n1'], edgeIds: [] });
+      const first = useUiStore.getState().focusRequest;
+      useUiStore.getState().requestCanvasFocus({ nodeIds: ['n9'], edgeIds: ['e9'] });
+      const second = useUiStore.getState().focusRequest;
+
+      expect(first?.nonce).toBe(1);
+      expect(second).toEqual({ nodeIds: ['n9'], edgeIds: ['e9'], nonce: 2 });
+      // Fresh object reference each call — the ref-guard consumer keys off
+      // identity-via-nonce, never a mutated-in-place object.
+      expect(second).not.toBe(first);
+    });
+  });
 });
 
 describe('React components re-render on store updates', () => {

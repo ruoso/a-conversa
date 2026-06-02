@@ -580,6 +580,7 @@ task moderator_ui "Moderator UI" {
     task mod_diagnostic_focus_action "Click flag to focus affected region" {
       effort 0.5d
       allocate team
+      complete 100
       depends !mod_diagnostic_flag_pane
       note "Inherits the affected-entity seam contract from moderator_ui.mod_diagnostic_flow.mod_diagnostic_methodology_suggestions (Decisions §D5 of tasks/refinements/moderator-ui/mod_diagnostic_methodology_suggestions.md): this task will add data-suggestion-affected-nodes / data-suggestion-affected-edges (or equivalent) seams on the suggestions-panel chip row (or its successor in mod_diagnostic_flag_pane), computed via the already-shipped affectedEntities(payload) helper in apps/moderator/src/graph/diagnosticHighlights.ts, so a click on a suggestion or flag focuses the canvas on the affected region."
     }

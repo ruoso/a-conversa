@@ -160,3 +160,58 @@ test.describe('moderator diagnostic-flag pane — renders the active-diagnostic 
     await expect(body.getByTestId('diagnostic-flag-row')).toHaveCount(0);
   });
 });
+
+// Refinement: tasks/refinements/moderator-ui/mod_diagnostic_focus_action.md
+//             (Acceptance §5, Decision §D5 — e2e IN SCOPE, extends this spec)
+//
+// Clicking a flag row's focus button re-frames the graph canvas on the
+// diagnostic's affected region. The behavioral pin is the
+// `.react-flow__viewport` `transform` changing on click (the viewport
+// moved/zoomed); the deterministic pin is the row's
+// `data-diagnostic-affected-nodes` seam matching the seeded cycle's
+// nodes. A cycle over a TWO-node SUBSET of the three-node graph
+// guarantees the focus zoom differs from the initial fit-all framing.
+test.describe('moderator diagnostic-flag pane — click focuses the affected region', () => {
+  test('clicking the cycle row focuses the canvas on its affected nodes', async ({ page }) => {
+    const sessionId = await reachOperateWithGraph(
+      page,
+      'Diagnostic flag pane — focus the affected region.',
+    );
+
+    await applyDiagnostic(page, {
+      sessionId,
+      kind: 'cycle',
+      severity: 'blocking',
+      status: 'fired',
+      sequence: 30,
+      // A two-node subset (A, B) of the three-node graph — focusing it
+      // zooms past the initial fit-all framing, so the transform must
+      // change.
+      diagnostic: { kind: 'cycle', nodes: [NODE_A, NODE_B] },
+    });
+
+    const body = page.getByTestId('right-sidebar-pane-body-diagnostic-flags');
+    await expect(body).toBeVisible();
+
+    // The blocking cycle is the order head — the first (and only) row.
+    const row = body.getByTestId('diagnostic-flag-row').first();
+    await expect(row).toHaveAttribute('data-diagnostic-kind', 'cycle');
+    await expect(row).toHaveAttribute('data-diagnostic-affected-nodes', `${NODE_A} ${NODE_B}`);
+
+    const viewport = page.locator('.react-flow__viewport');
+    await expect(viewport).toBeVisible();
+    // `.react-flow__viewport` is a `<div>`; ReactFlow applies the pan/zoom
+    // via the inline CSS `style.transform` (`translate(...) scale(...)`),
+    // NOT an HTML `transform` attribute — `getAttribute('transform')` on a
+    // div is always `null`. Read the live inline transform instead.
+    const readTransform = (): Promise<string> =>
+      viewport.evaluate((el) => (el as HTMLElement).style.transform);
+    const before = await readTransform();
+
+    await row.getByTestId('diagnostic-flag-focus-button').click();
+
+    // The `duration: 250` animated pan settles asynchronously — poll the
+    // transform until it differs from the pre-click framing.
+    await expect.poll(readTransform, { timeout: 5_000 }).not.toBe(before);
+  });
+});

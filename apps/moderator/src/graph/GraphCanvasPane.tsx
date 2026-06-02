@@ -111,6 +111,7 @@ import {
   AnnotationHostMidpointNode,
 } from './AnnotationHostMidpointNode.js';
 import { edgeTypes } from './edgeTypes.js';
+import { useCanvasFocusEffect } from './useCanvasFocusEffect.js';
 import { DrawEdgeRolePicker } from './DrawEdgeRolePicker.js';
 import { GraphContextMenu, type MenuItem } from './GraphContextMenu.js';
 import { SnapshotMarkerStrip } from './SnapshotMarkerStrip.js';
@@ -951,6 +952,11 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
   // `source_annotation_id`, symmetric for target). Refinement:
   // `mod_propose_annotation_endpoint_gestures` Decision §2.
   const reactFlow = useReactFlow();
+
+  // Consume canvas-focus commands dispatched by the diagnostic flag pane
+  // (which lives outside this `<ReactFlowProvider>`). Refinement:
+  // `mod_diagnostic_focus_action`.
+  useCanvasFocusEffect(reactFlow);
 
   // Context-menu state — `null` when no menu is open. Set by the right-
   // click handlers below; cleared by the menu's `onClose`. Refinement:

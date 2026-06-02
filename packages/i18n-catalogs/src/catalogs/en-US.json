@@ -652,7 +652,8 @@
           "blocking": "Blocking",
           "advisory": "Advisory"
         },
-        "countAria": "{count, plural, one {# active diagnostic} other {# active diagnostics}}"
+        "countAria": "{count, plural, one {# active diagnostic} other {# active diagnostics}}",
+        "focusAria": "Focus the canvas on {title}"
       }
     },
     "contextMenu": {

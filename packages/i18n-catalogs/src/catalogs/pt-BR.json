@@ -652,7 +652,8 @@
           "blocking": "Bloqueante",
           "advisory": "Consultivo"
         },
-        "countAria": "{count, plural, one {# diagnóstico ativo} other {# diagnósticos ativos}}"
+        "countAria": "{count, plural, one {# diagnóstico ativo} other {# diagnósticos ativos}}",
+        "focusAria": "Focar a tela em {title}"
       }
     },
     "contextMenu": {
