@@ -163,8 +163,9 @@ function renderRoute(): { client: WsClient } {
 function stubSessionFetch(
   builder: () => Response,
   participantsBuilder: () => Response = () => okParticipantsResponse([]),
-): ReturnType<typeof vi.fn> {
-  return vi.fn((url: string) => {
+) {
+  return vi.fn((input: URL | RequestInfo) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     if (url === '/api/auth/me') {
       return Promise.resolve(
         new Response(

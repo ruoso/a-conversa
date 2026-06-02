@@ -59,8 +59,8 @@ afterAll(() => {
  * but the per-call factory keeps the test isolated from response-body
  * consumption details if a future refactor calls `fetch` twice.
  */
-function stubFetch(builder: () => Response): ReturnType<typeof vi.fn> {
-  return vi.fn(() => Promise.resolve(builder()));
+function stubFetch(builder: () => Response) {
+  return vi.fn((_input?: URL | RequestInfo, _init?: RequestInit) => Promise.resolve(builder()));
 }
 
 function renderRoute(): void {
@@ -175,7 +175,7 @@ describe('CreateSession route — submit behaviour', () => {
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalled();
     });
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe('/api/sessions');
     expect(init.method).toBe('POST');
     expect(init.credentials).toBe('include');
@@ -243,7 +243,7 @@ describe('CreateSession route — submit behaviour', () => {
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalled();
     });
-    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(JSON.parse(init.body as string)).toEqual({
       topic: 'private topic',
       privacy: 'private',

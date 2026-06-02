@@ -104,7 +104,7 @@ describe('root app routes', () => {
 
   it('posts /api/auth/logout and replaces the browser location from /logout', async () => {
     const replaceSpy = vi.spyOn(window.location, 'replace').mockImplementation(() => undefined);
-    global.fetch = vi.fn().mockResolvedValue(new Response('', { status: 204 }));
+    global.fetch = vi.fn().mockResolvedValue(new Response('', { status: 204 })) as typeof fetch;
 
     renderWithProviders(<App />, {
       initialEntries: ['/logout'],

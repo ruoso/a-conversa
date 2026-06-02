@@ -52,8 +52,8 @@ function AuthProbe(props: ProbeProps): ReactElement {
   );
 }
 
-function fetchOk(body: unknown): ReturnType<typeof vi.fn> {
-  return vi.fn(() =>
+function fetchOk(body: unknown) {
+  return vi.fn((_input?: URL | RequestInfo) =>
     Promise.resolve(
       new Response(JSON.stringify(body), {
         status: 200,
@@ -63,7 +63,7 @@ function fetchOk(body: unknown): ReturnType<typeof vi.fn> {
   );
 }
 
-function fetchStatus(status: number, body = ''): ReturnType<typeof vi.fn> {
+function fetchStatus(status: number, body = '') {
   return vi.fn(() => Promise.resolve(new Response(body, { status })));
 }
 
@@ -281,7 +281,7 @@ describe('AuthProvider — single-fetch consolidation', () => {
       userId: '00000000-0000-4000-8000-000000000004',
       screenName: 'carol',
     });
-    global.fetch = fetchMock as typeof fetch;
+    global.fetch = fetchMock;
 
     render(
       <AuthProvider>

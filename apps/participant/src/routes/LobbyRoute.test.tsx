@@ -107,7 +107,7 @@ function stubFetch(
     header?: () => Response;
     participants?: () => Response;
   } = {},
-): ReturnType<typeof vi.fn> {
+) {
   const headerHandler = handlers.header ?? defaultHeaderOk;
   const participantsHandler = handlers.participants ?? defaultParticipantsOk;
   return vi.fn((input: URL | RequestInfo): Promise<Response> => {

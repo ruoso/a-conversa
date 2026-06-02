@@ -585,9 +585,9 @@ describe('<AudienceGraphView>', () => {
    * the fit calls behind the in-component viewport-ready check.
    */
   interface LayoutEngineSpies {
-    fit: ReturnType<typeof vi.fn>;
-    layout: ReturnType<typeof vi.fn>;
-    layoutRun: ReturnType<typeof vi.fn>;
+    fit: ReturnType<typeof vi.fn<(...args: unknown[]) => void>>;
+    layout: ReturnType<typeof vi.fn<(opts: LayoutOptions) => void>>;
+    layoutRun: ReturnType<typeof vi.fn<() => void>>;
   }
   function installLayoutEngineSpies(cy: Core): LayoutEngineSpies {
     const spies: LayoutEngineSpies = {

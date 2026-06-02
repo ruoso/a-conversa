@@ -105,8 +105,8 @@ afterAll(() => {
   global.fetch = originalFetch;
 });
 
-function stubFetch(builder: () => Response): ReturnType<typeof vi.fn> {
-  return vi.fn(() => Promise.resolve(builder()));
+function stubFetch(builder: () => Response) {
+  return vi.fn((_input?: URL | RequestInfo, _init?: RequestInit) => Promise.resolve(builder()));
 }
 
 function renderRoute(opts: { role?: string; auth?: AuthContextValue }): FakeClient {
@@ -230,7 +230,7 @@ describe('InviteAcceptanceRoute — claim POST happy path + trackSession lifecyc
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalled();
     });
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe(`/api/sessions/${SESSION_ID}/invite/claim`);
     expect(init.method).toBe('POST');
     expect(init.credentials).toBe('include');

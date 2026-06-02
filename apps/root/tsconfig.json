@@ -9,7 +9,7 @@
     "outDir": "dist",
     "rootDir": "src",
     "noEmit": false,
-    "types": ["vite/client"]
+    "types": ["node", "vite/client"]
   },
   "include": ["src"],
   "references": [{ "path": "../../packages/i18n-catalogs" }, { "path": "../../packages/shell" }]

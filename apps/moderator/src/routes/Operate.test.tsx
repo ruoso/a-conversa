@@ -141,7 +141,7 @@ afterEach(() => {
 
 const SESSION_ID = '00000000-0000-4000-8000-0000000000ab';
 
-function stubAuthMeFetch(): ReturnType<typeof vi.fn> {
+function stubAuthMeFetch() {
   // `<AuthProvider>` fires `/api/auth/me` on mount. Resolve it to an
   // authenticated payload so the inner `<WsClientProvider>`'s
   // connect-effect can fire (even though the WS factory is the

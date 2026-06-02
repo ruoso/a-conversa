@@ -52,7 +52,7 @@ function renderForm(onSuccess: () => void = () => undefined): ReactElement {
   );
 }
 
-function stubAuthMePending(): ReturnType<typeof vi.fn> {
+function stubAuthMePending() {
   return vi.fn((url: string) => {
     if (url === '/api/auth/me') {
       return Promise.resolve(
