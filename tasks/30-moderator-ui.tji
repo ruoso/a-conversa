@@ -570,6 +570,7 @@ task moderator_ui "Moderator UI" {
     task mod_diagnostic_flag_pane "Diagnostic flags pane in sidebar" {
       effort 1d
       allocate team
+      complete 100
     }
     task mod_blocking_diagnostic_banner "Blocking diagnostic banner / status indicator" {
       effort 1d
@@ -852,6 +853,16 @@ task moderator_ui "Moderator UI" {
         depends moderator_ui.mod_defeater_flow.mod_defeater_substance_precommit
         note -8<-
           Source of debt: mod_defeater_substance_precommit (commit closing that task) — the full F6 step-4 happy-path (shape vote+commit → rebut affordance → substance vote+commit) is test.skip in tests/e2e/moderator-capture.spec.ts because seedWsStore does not synthesize facet-vote/committed events. This task extends seedWsStore (or adds a sibling helper) to synthesize those events so the skipped test can be unskipped and the end-to-end chain pinned.
+
+          Surfaced via tech-debt registration policy in ORCHESTRATOR.md.
+        ->8-
+      }
+      task mod_pw_diagnostic_flow "Playwright: full F3/F7 enabled-state diagnostic flow" {
+        effort 2d
+        allocate team
+        depends moderator_ui.mod_diagnostic_resolution_flow
+        note -8<-
+          Source of debt: accumulated deferral from 9 F3/F7 refinements. The enabled-state Playwright scenarios require the set-node-substance propose-action UI (ships with mod_resolution_path_picker) and the full mod_diagnostic_resolution_flow container to be complete. Inherited debt includes: (1) mod_diagnostic_methodology_suggestions D10 — panel presence + per-kind chip-row seams; (2) mod_operationalization_mode AC #10 — right-click → pick "Run operationalization test" → OperationalizationCapturePanel; (3) mod_warrant_elicitation_mode D8 — right-click → pick "Run warrant elicitation test" → WarrantElicitationCapturePanel (disabled-state pinned inline by mod_warrant_elicitation_mode; only enabled-state remains here); (4) mod_disputation_test_display — disputation chip enabled-state. Registered here to exit the orphan state; flagged for the closer of mod_diagnostic_flag_pane (commit closing that task).
 
           Surfaced via tech-debt registration policy in ORCHESTRATOR.md.
         ->8-

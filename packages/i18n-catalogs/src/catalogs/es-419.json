@@ -645,6 +645,14 @@
           "repair-configuration": "Reparar configuración",
           "leave-as-intentional": "Mantener como intencional"
         }
+      },
+      "flags": {
+        "header": "Indicadores de diagnóstico",
+        "severity": {
+          "blocking": "Bloqueante",
+          "advisory": "Consultivo"
+        },
+        "countAria": "{count, plural, one {# diagnóstico activo} other {# diagnósticos activos}}"
       }
     },
     "contextMenu": {

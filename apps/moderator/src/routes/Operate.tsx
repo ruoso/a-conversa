@@ -91,7 +91,7 @@ import { useProposeAction } from '../layout/useProposeAction';
 import { GraphCanvasPane } from '../graph/GraphCanvasPane';
 import { ModeBanner } from '../layout/ModeBanner';
 import { IsOughtPrompt } from '../layout/IsOughtPrompt';
-import { DiagnosticSuggestionsPanel } from '../layout/DiagnosticSuggestionsPanel';
+import { DiagnosticFlagPane } from '../layout/DiagnosticFlagPane';
 import { PendingProposalsPane } from '../layout/PendingProposalsPane';
 import { RightSidebar } from '../layout/RightSidebar';
 import { SnapshotActionButton } from '../layout/SnapshotActionButton';
@@ -335,7 +335,7 @@ function OperateRouteInner(props: { sessionId: string }): ReactElement {
             <SnapshotActionButton />
             <RightSidebar
               pendingProposalsSlot={<PendingProposalsPane sessionId={sessionId} />}
-              diagnosticFlagsSlot={<DiagnosticSuggestionsPanel sessionId={sessionId} />}
+              diagnosticFlagsSlot={<DiagnosticFlagPane sessionId={sessionId} />}
             />
           </>
         }

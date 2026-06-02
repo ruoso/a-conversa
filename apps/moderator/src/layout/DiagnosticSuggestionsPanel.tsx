@@ -32,6 +32,11 @@ import { diagnosticIdentityKey } from '@a-conversa/shell';
 
 import { useWsStore } from '../ws/wsStore.js';
 import { suggestionsForDiagnostic } from '../graph/diagnosticSuggestions.js';
+import {
+  ADVISORY_PANEL_CLASSES,
+  BLOCKING_PANEL_CLASSES,
+  orderActiveDiagnostics,
+} from './orderActiveDiagnostics.js';
 
 export interface DiagnosticSuggestionsPanelProps {
   readonly sessionId: string;
@@ -44,10 +49,6 @@ export interface DiagnosticSuggestionsPanelProps {
 // `EMPTY_ACTIVE_DIAGNOSTICS` constant `<GraphCanvasPane>` keeps.
 const EMPTY_ACTIVE_DIAGNOSTICS: ReadonlyMap<string, DiagnosticPayload> = new Map();
 
-const BLOCKING_PANEL_CLASSES =
-  'rounded border border-rose-400 bg-rose-50 px-2 py-1.5 text-xs text-rose-900';
-const ADVISORY_PANEL_CLASSES =
-  'rounded border border-amber-300 bg-amber-50 px-2 py-1.5 text-xs text-amber-900';
 const EMPTY_PANEL_CLASSES = 'rounded border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs';
 
 function panelClassesFor(severity: WsDiagnosticSeverity): string {
@@ -60,28 +61,17 @@ function panelClassesFor(severity: WsDiagnosticSeverity): string {
  * ascending `sequence` (oldest first), then by `diagnosticIdentityKey`
  * lexicographic order (deterministic tiebreak).
  *
+ * Defined as the head of the shared `orderActiveDiagnostics(...)` total
+ * order so the focus-pick and the flag-pane list (which lists the same
+ * order top-to-bottom) can never disagree about which flag is "first"
+ * (`mod_diagnostic_flag_pane` Decision §D2).
+ *
  * Returns `null` when the map is empty.
  */
 function pickFocusedDiagnostic(
   activeDiagnostics: ReadonlyMap<string, DiagnosticPayload>,
 ): DiagnosticPayload | null {
-  if (activeDiagnostics.size === 0) return null;
-  const entries = [...activeDiagnostics.values()];
-  entries.sort((a, b) => {
-    // blocking < advisory
-    if (a.severity !== b.severity) {
-      return a.severity === 'blocking' ? -1 : 1;
-    }
-    if (a.sequence !== b.sequence) {
-      return a.sequence - b.sequence;
-    }
-    const keyA = diagnosticIdentityKey(a);
-    const keyB = diagnosticIdentityKey(b);
-    if (keyA < keyB) return -1;
-    if (keyA > keyB) return 1;
-    return 0;
-  });
-  return entries[0] ?? null;
+  return orderActiveDiagnostics(activeDiagnostics)[0] ?? null;
 }
 
 export function DiagnosticSuggestionsPanel(props: DiagnosticSuggestionsPanelProps): ReactElement {

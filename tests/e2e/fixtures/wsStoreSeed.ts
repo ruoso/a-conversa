@@ -335,6 +335,56 @@ export async function seedWsStore(
 }
 
 /**
+ * One synthetic `diagnostic` the seeder applies via the store's
+ * `applyDiagnostic` reducer (not `applyEvent` — diagnostics ride a
+ * separate broadcast frame). Shape mirrors the server-side
+ * `DiagnosticPayload` envelope narrowed to the fields the moderator's
+ * `activeDiagnostics` projection + the flag pane consume.
+ *
+ * Refinement: tasks/refinements/moderator-ui/mod_diagnostic_flag_pane.md
+ *             (Decision §D5 — e2e seeds a fired diagnostic via the
+ *             `window.__aConversaWsStore` backdoor). Mirrors the inline
+ *             helper in `tests/e2e/audience-live-session.spec.ts` but
+ *             lives in `fixtures/` so the moderator-side specs reuse it.
+ */
+export interface SeedDiagnostic {
+  readonly sessionId: string;
+  readonly kind: string;
+  readonly severity: 'blocking' | 'advisory';
+  readonly status: 'fired' | 'cleared';
+  readonly sequence: number;
+  readonly diagnostic: unknown;
+}
+
+/**
+ * Apply a structural diagnostic to the moderator's WS store via the
+ * dev-only `window.__aConversaWsStore` seam. Reaches the
+ * `applyDiagnostic` reducer (which maintains the `activeDiagnostics`
+ * map the flag pane + suggestions panel read), not `applyEvent`.
+ *
+ * Throws when the window-attached store is unreachable — the signal the
+ * dev-only assignment didn't fire (production build / bundler scope
+ * mismatch).
+ */
+export async function applyDiagnostic(page: Page, payload: SeedDiagnostic): Promise<void> {
+  await page.evaluate((p: SeedDiagnostic) => {
+    const store = (
+      window as unknown as {
+        __aConversaWsStore?: {
+          getState: () => { applyDiagnostic: (payload: unknown) => void };
+        };
+      }
+    ).__aConversaWsStore;
+    if (store === undefined) {
+      throw new Error(
+        'applyDiagnostic: window.__aConversaWsStore is undefined — the dev-only assignment did not run. Ensure the SPA is running in dev mode (Vite import.meta.env.DEV === true).',
+      );
+    }
+    store.getState().applyDiagnostic(p);
+  }, payload);
+}
+
+/**
  * Probe whether the moderator SPA exposes `window.__aConversaWsStore`.
  * Used by the spec's setup phase to decide whether to drive the full-
  * content path or the empty-canvas fallback.

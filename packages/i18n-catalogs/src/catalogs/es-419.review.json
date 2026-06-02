@@ -368,7 +368,11 @@
     "moderator.metaMoveKindSelector.legend",
     "moderator.metaMoveKindSelector.kindButtonAriaLabel",
     "moderator.metaMoveKindSelector.shortcutHint",
-    "moderator.annotation.disputedAriaSuffix"
+    "moderator.annotation.disputedAriaSuffix",
+    "moderator.diagnostic.flags.header",
+    "moderator.diagnostic.flags.severity.blocking",
+    "moderator.diagnostic.flags.severity.advisory",
+    "moderator.diagnostic.flags.countAria"
   ],
   "signed_off": []
 }

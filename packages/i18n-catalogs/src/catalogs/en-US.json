@@ -645,6 +645,14 @@
           "repair-configuration": "Repair configuration",
           "leave-as-intentional": "Leave as intentional"
         }
+      },
+      "flags": {
+        "header": "Diagnostic flags",
+        "severity": {
+          "blocking": "Blocking",
+          "advisory": "Advisory"
+        },
+        "countAria": "{count, plural, one {# active diagnostic} other {# active diagnostics}}"
       }
     },
     "contextMenu": {
