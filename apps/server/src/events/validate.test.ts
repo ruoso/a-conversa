@@ -159,6 +159,11 @@ const REPRESENTATIVE_PAYLOADS: Record<EventKind, unknown> = {
     participant: PARTICIPANT_ID,
     withdrawn_at: '2026-05-10T12:34:56Z',
   },
+  'proposal-withdrawn': {
+    proposal_id: PROPOSAL_ID,
+    withdrawn_by: USER_ID,
+    withdrawn_at: '2026-05-10T12:34:56Z',
+  },
 };
 
 /** Build a full envelope around a payload for the given kind. */
@@ -477,6 +482,9 @@ const PAYLOAD_CORRUPTIONS: Record<EventKind, (base: Record<string, unknown>) => 
   // and entity-included payloads — facet-valued proposals don't target
   // annotations in v1).
   'withdraw-agreement': (base) => ({ ...base, entity_kind: 'annotation' }),
+  // Corrupting `proposal_id` to a non-UUID surfaces a payload-level
+  // failure on the proposal-keyed terminator (ADR 0037).
+  'proposal-withdrawn': (base) => ({ ...base, proposal_id: 'not-a-uuid' }),
 };
 
 describe('validateEvent — payload-level failure per kind', () => {

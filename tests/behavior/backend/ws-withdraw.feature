@@ -69,6 +69,17 @@ Feature: WebSocket withdraw-proposal (client → server, proposer-only)
     And the client sends a withdraw-proposal envelope for session "c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1" with expectedSequence 11 on proposal "c3c3c3c3-c3c3-4c3c-8c3c-c3c3c3c3c3c3"
     Then the client receives an error envelope with code "proposal-already-committed" referencing the withdraw envelope
 
+  Scenario: A proposer withdraws their own zero-emission axiom-mark proposal — a proposal-withdrawn terminator event is appended, broadcast, and acked with removedEventCount 0; a re-withdraw is rejected proposal-not-found
+    Given a withdrawable axiom-mark session for "alice-withdraw" exists with id "e1e1e1e1-e1e1-4e1e-8e1e-e1e1e1e1e1e1" and node id "e2e2e2e2-e2e2-4e2e-8e2e-e2e2e2e2e2e2" and pending proposal id "e3e3e3e3-e3e3-4e3e-8e3e-e3e3e3e3e3e3"
+    When an authenticated WebSocket client connects to "/api/ws"
+    And the client sends a subscribe envelope for session "e1e1e1e1-e1e1-4e1e-8e1e-e1e1e1e1e1e1"
+    And the client sends a withdraw-proposal envelope for session "e1e1e1e1-e1e1-4e1e-8e1e-e1e1e1e1e1e1" with expectedSequence 5 on proposal "e3e3e3e3-e3e3-4e3e-8e3e-e3e3e3e3e3e3"
+    Then the client receives a proposal-withdrawn ack referencing the withdraw envelope with removedEventCount 0
+    And the client also receives an event-applied envelope for a proposal-withdrawn event at sequence 6 with proposal_id "e3e3e3e3-e3e3-4e3e-8e3e-e3e3e3e3e3e3"
+    And the session "e1e1e1e1-e1e1-4e1e-8e1e-e1e1e1e1e1e1" log contains exactly one proposal-withdrawn event for proposal "e3e3e3e3-e3e3-4e3e-8e3e-e3e3e3e3e3e3" with a non-null withdrawn_by
+    When the client sends a withdraw-proposal envelope for session "e1e1e1e1-e1e1-4e1e-8e1e-e1e1e1e1e1e1" with expectedSequence 6 on proposal "e3e3e3e3-e3e3-4e3e-8e3e-e3e3e3e3e3e3"
+    Then the client receives an error envelope with code "proposal-not-found" referencing the withdraw envelope
+
   Scenario: An unsubscribed client cannot withdraw — receives a forbidden error envelope
     Given a withdrawable classify-node session for "alice-withdraw" exists with id "d1d1d1d1-d1d1-4d1d-8d1d-d1d1d1d1d1d1" and node id "d2d2d2d2-d2d2-4d2d-8d2d-d2d2d2d2d2d2" and pending proposal id "d3d3d3d3-d3d3-4d3d-8d3d-d3d3d3d3d3d3"
     When an authenticated WebSocket client connects to "/api/ws"

@@ -31,9 +31,14 @@
 //      `proposal-withdrawn` ack on the same socket. The ack's
 //      `removedEventCount` is 1.
 //   9. Successful withdraw of a sub-kind that introduced ZERO entities
-//      at propose-time (`set-node-substance`) → zero `entity-removed`
-//      events appended + ack with `removedEventCount: 0` (no
-//      broadcast). Pins the per-sub-kind mapping's zero-emission case.
+//      at propose-time (`set-node-substance`) → per ADR 0037 the
+//      otherwise-log-silent withdraw appends exactly one
+//      `proposal-withdrawn` TERMINATOR event (zero `entity-removed`) +
+//      an `event-applied` broadcast carrying it + an ack with
+//      `removedEventCount: 0` (the terminator is a proposal-layer
+//      event, not an entity removal — D4). Pins the zero-emission
+//      terminator. The entity-emitting happy-path test (#8) carries
+//      the matching regression guard: NO terminator on its path.
 //  10. **SECURITY**: even when the client includes a spoofed
 //      `proposerId` on the payload, the handler ignores it and uses
 //      `connection.user.id` for the authority match. A non-proposer
@@ -1763,12 +1768,20 @@ describe('ws_withdraw_proposal_message — handler integration', () => {
       expect(appendedPayload?.entity_kind).toBe('node');
       expect(appendedPayload?.entity_id).toBe(NODE_ID);
       expect(appendedPayload?.removed_by).toBe(FIXTURE_USER_ID);
+
+      // Regression guard (ADR 0037 D2): an entity-emitting withdraw is
+      // NOT log-silent, so NO `proposal-withdrawn` terminator is
+      // appended — the `entity-removed` event is the observable signal.
+      const terminatorCount = store.events.filter(
+        (e) => e.session_id === WITHDRAWABLE_SESSION_ID && e.kind === 'proposal-withdrawn',
+      ).length;
+      expect(terminatorCount).toBe(0);
     } finally {
       ws.terminate();
     }
   });
 
-  it('subscribed + visible + proposer + zero-emission sub-kind (set-node-substance) → no entity-removed events + ack with removedEventCount: 0', async () => {
+  it('subscribed + visible + proposer + zero-emission sub-kind (set-node-substance) → one proposal-withdrawn terminator event + event-applied broadcast + ack with removedEventCount: 0', async () => {
     const cookie = await fixtureCookieHeader();
     const { ws, next } = await openWsClient(app, cookie);
     try {
@@ -1778,26 +1791,86 @@ describe('ws_withdraw_proposal_message — handler integration', () => {
       const subAck = JSON.parse(await next()) as { type?: unknown };
       expect(subAck.type).toBe('subscribed');
 
-      // MAX(sequence) for NO_EMIT_SESSION_ID is 5.
+      // MAX(sequence) for NO_EMIT_SESSION_ID is 5. Per ADR 0037 the
+      // `set-node-substance` withdraw retracts no entities, so it is
+      // otherwise log-silent and the handler appends exactly one
+      // `proposal-withdrawn` TERMINATOR event at seq 6. The proposer
+      // (also a subscriber) receives BOTH the `event-applied` broadcast
+      // for the terminator AND the ack.
       ws.send(withdrawFrame(WITHDRAW_MSG_ID, NO_EMIT_SESSION_ID, 5, NO_EMIT_PROPOSAL_EVENT_ID));
 
-      // No event-applied broadcast should arrive (zero-emission). The
-      // ack lands directly. Read the next frame and expect it to be
-      // the ack.
-      const ack = await readUntilType(next, 'proposal-withdrawn');
-      expect(ack.parsed.inResponseTo).toBe(WITHDRAW_MSG_ID);
-      const ackPayload = ack.parsed.payload as {
-        sessionId?: unknown;
-        proposalEventId?: unknown;
-        removedEventCount?: unknown;
-      };
-      expect(ackPayload.sessionId).toBe(NO_EMIT_SESSION_ID);
-      expect(ackPayload.proposalEventId).toBe(NO_EMIT_PROPOSAL_EVENT_ID);
-      expect(ackPayload.removedEventCount).toBe(0);
+      const frames: Record<string, unknown>[] = [];
+      for (let i = 0; i < 2; i++) {
+        const raw = await next();
+        frames.push(JSON.parse(raw) as Record<string, unknown>);
+      }
+      const types = frames.map((f) => f.type);
+      expect(types).toContain('proposal-withdrawn');
+      expect(types).toContain('event-applied');
 
-      // No event was appended — the store still has MAX(sequence)=5.
-      const eventCount = store.events.filter((e) => e.session_id === NO_EMIT_SESSION_ID).length;
-      expect(eventCount).toBe(5);
+      // Ack — `removedEventCount` keeps its "entity-removed count"
+      // meaning, so it is 0; the terminator is NOT counted (D4).
+      const ack = frames.find((f) => f.type === 'proposal-withdrawn') as
+        | {
+            inResponseTo?: unknown;
+            payload?: {
+              sessionId?: unknown;
+              proposalEventId?: unknown;
+              removedEventCount?: unknown;
+            };
+          }
+        | undefined;
+      expect(ack?.inResponseTo).toBe(WITHDRAW_MSG_ID);
+      expect(ack?.payload?.sessionId).toBe(NO_EMIT_SESSION_ID);
+      expect(ack?.payload?.proposalEventId).toBe(NO_EMIT_PROPOSAL_EVENT_ID);
+      expect(ack?.payload?.removedEventCount).toBe(0);
+
+      // `event-applied` broadcast carries the proposal-keyed
+      // `proposal-withdrawn` terminator; the actor + payload's
+      // withdrawn_by/withdrawn_at are server-owned (from the connection
+      // + injected clock, never the wire payload).
+      const applied = frames.find((f) => f.type === 'event-applied') as
+        | {
+            payload?: {
+              event?: {
+                kind?: unknown;
+                sequence?: unknown;
+                sessionId?: unknown;
+                actor?: unknown;
+                payload?: {
+                  proposal_id?: unknown;
+                  withdrawn_by?: unknown;
+                  withdrawn_at?: unknown;
+                };
+              };
+            };
+          }
+        | undefined;
+      expect(applied?.payload?.event?.kind).toBe('proposal-withdrawn');
+      expect(applied?.payload?.event?.sequence).toBe(6);
+      expect(applied?.payload?.event?.sessionId).toBe(NO_EMIT_SESSION_ID);
+      expect(applied?.payload?.event?.actor).toBe(FIXTURE_USER_ID);
+      expect(applied?.payload?.event?.payload?.proposal_id).toBe(NO_EMIT_PROPOSAL_EVENT_ID);
+      expect(applied?.payload?.event?.payload?.withdrawn_by).toBe(FIXTURE_USER_ID);
+      expect(typeof applied?.payload?.event?.payload?.withdrawn_at).toBe('string');
+
+      // Exactly one event was appended (the terminator) — MAX(sequence)
+      // is now 6 — and ZERO `entity-removed` events.
+      const sessionEvents = store.events.filter((e) => e.session_id === NO_EMIT_SESSION_ID);
+      expect(sessionEvents).toHaveLength(6);
+      const terminator = sessionEvents.find((e) => e.sequence === 6);
+      expect(terminator?.kind).toBe('proposal-withdrawn');
+      expect(terminator?.actor).toBe(FIXTURE_USER_ID);
+      const terminatorPayload = terminator?.payload as {
+        proposal_id?: unknown;
+        withdrawn_by?: unknown;
+        withdrawn_at?: unknown;
+      };
+      expect(terminatorPayload?.proposal_id).toBe(NO_EMIT_PROPOSAL_EVENT_ID);
+      expect(terminatorPayload?.withdrawn_by).toBe(FIXTURE_USER_ID);
+      expect(typeof terminatorPayload?.withdrawn_at).toBe('string');
+      const entityRemovedCount = sessionEvents.filter((e) => e.kind === 'entity-removed').length;
+      expect(entityRemovedCount).toBe(0);
     } finally {
       ws.terminate();
     }

@@ -90,13 +90,22 @@
 //     stays in the log forever. The projector's response to the
 //     entity retractions is what removes the proposal from the
 //     canvas + the sidebar.
-//   - Mint a new `'proposal-withdrawn'` event KIND (distinct from
-//     this handler's `'proposal-withdrawn'` WS ENVELOPE type — the
-//     overlap is intentional + namespace-distinct). If a future
-//     consumer (a history-browser, a snapshot label, a methodology-
-//     trace renderer) needs an explicit terminal marker on the
-//     proposal, that's the right time to mint it; v1's entity-layer
-//     removals are sufficient for the canvas + sidebar UX.
+// **Zero-emission terminator (ADR 0037).** When the per-sub-kind
+// retraction mapping produces NO `entity-removed` events — the seven
+// sub-kinds that mint no structural entity at propose-time
+// (`axiom-mark`, `annotate`, `set-node-substance`, `edit-wording`,
+// `meta-move`, `break-edge`, `amend-node`) — the withdraw would
+// otherwise be log-silent: nothing on the immutable log, so the
+// pending row never clears and the withdraw is not replayable. For
+// that case ONLY, the handler appends one `'proposal-withdrawn'` event
+// KIND (distinct from this handler's `'proposal-withdrawn'` WS ENVELOPE
+// type — the overlap is intentional + namespace-distinct). It is the
+// proposal-keyed terminal marker for the *withdrawn* disposition,
+// symmetric with `commit` / `meta-disagreement-marked`. The emission
+// predicate is "this withdraw is otherwise log-silent," computed in
+// the same handler pass as the retraction mapping so the two cannot
+// drift. An entity-emitting withdraw is byte-for-byte unchanged (its
+// `entity-removed` events are the observable signal; no terminator).
 //
 // **Proposer identity comes from the connection, not the payload.**
 // The handler reads `connection.user.id` and matches it against
@@ -118,6 +127,7 @@ import type {
   Event,
   EntityRemovedPayload,
   ProposalPayload,
+  ProposalWithdrawnEventPayload,
   WsEnvelope,
 } from '@a-conversa/shared-types';
 
@@ -358,17 +368,53 @@ export function buildWithdrawProposalHandler(
         validateEvent(removalEvent);
         appendedEvents.push(await appendSessionEvent(client, removalEvent));
       }
+
+      // 9. Zero-emission terminator. Per ADR 0037 (D2/D3 of this
+      //    task): iff the per-sub-kind retraction mapping produced no
+      //    `entity-removed` events, this withdraw is otherwise
+      //    log-silent — append exactly one `proposal-withdrawn` event
+      //    so the *withdrawn* disposition is observable on the
+      //    immutable log and every read surface (the server
+      //    `pendingProposals` projection + both client pending panes)
+      //    can terminate the pending row. When the withdraw DID retract
+      //    entities, those `entity-removed` events are the observable
+      //    signal and NO terminator is emitted — the predicate is
+      //    self-correcting (a sub-kind that later grows propose-time
+      //    emission stops being log-silent without a code change here).
+      //    The terminator is proposal-keyed (symmetric with
+      //    `commit` / `meta-disagreement-marked`); the actor +
+      //    timestamp come from the connection + injected clock, never
+      //    the wire payload.
+      if (retractedEntities.length === 0) {
+        const withdrawnPayload: ProposalWithdrawnEventPayload = {
+          proposal_id: proposalEventId,
+          withdrawn_by: userId,
+          withdrawn_at: createdAtIso,
+        };
+        const withdrawnEvent: EventToAppendEnvelope<'proposal-withdrawn'> = {
+          id: randomUUID(),
+          sessionId,
+          sequence: maxSeq + 1,
+          kind: 'proposal-withdrawn',
+          actor: userId,
+          payload: withdrawnPayload,
+          createdAt: createdAtIso,
+        };
+        validateEvent(withdrawnEvent);
+        appendedEvents.push(await appendSessionEvent(client, withdrawnEvent));
+      }
     });
 
     // Post-commit emit + ack. Same ordering as the propose / vote /
     // commit / mark-meta-disagreement handlers: emit FIRST so every
     // subscribed client (including the proposer) receives any
     // `event-applied` envelopes, THEN send the request-correlated
-    // `proposal-withdrawn` ack on the proposer's socket. For the
-    // zero-emission sub-kinds (every sub-kind other than free-floating
-    // `classify-node` today) the broadcast loop is a no-op; the ack
-    // still lands (signals "your request was processed"). See D3 + D5
-    // of the refinement for the zero-emission rationale.
+    // `proposal-withdrawn` ack on the proposer's socket. A zero-emission
+    // withdraw now broadcasts exactly one `proposal-withdrawn` EVENT
+    // (the terminator — distinct from this `proposal-withdrawn` ack
+    // ENVELOPE; see ADR 0037 + the docblock's namespace note); an
+    // entity-emitting withdraw broadcasts its `entity-removed` events.
+    // The ack always lands last (signals "your request was processed").
     for (const evt of appendedEvents) {
       opts.broadcast.emit({ event: evt });
     }
@@ -379,7 +425,13 @@ export function buildWithdrawProposalHandler(
       payload: {
         sessionId,
         proposalEventId,
-        removedEventCount: appendedEvents.length,
+        // `removedEventCount` keeps its documented meaning — the count
+        // of `entity-removed` (structural retraction) events (D4 +
+        // ADR 0037). The zero-emission terminator is a proposal-layer
+        // event and is NOT counted here, so this is `0` for a
+        // log-silent withdraw. The proposer observes the termination
+        // via the `event-applied` broadcast carrying the terminator.
+        removedEventCount: appendedEvents.filter((evt) => evt.kind === 'entity-removed').length,
       },
     };
     connection.socket.send(serializeWsEnvelope(ack));

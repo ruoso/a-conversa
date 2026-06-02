@@ -72,6 +72,7 @@ import type {
   ProposalCommitPayload,
   MetaDisagreementMarkedPayload,
   WithdrawAgreementPayload,
+  ProposalWithdrawnEventPayload,
 } from '@a-conversa/shared-types';
 
 import { Projection, ProjectionInvariantError, createEmptyProjection } from './projection.js';
@@ -1059,6 +1060,37 @@ function handleWithdrawAgreement(
   // see the withdrawal set on the facet.)
 }
 
+// Per ADR 0037: `proposal-withdrawn` is the proposal-keyed terminal
+// marker for the *withdrawn* disposition, emitted by the
+// `withdraw-proposal` handler iff the withdraw was otherwise log-silent
+// (zero `entity-removed` events). The projection arm mirrors the
+// commit / meta-disagreement proposal arms' one-line termination:
+// drop the proposal from `pendingProposals` so the pending row clears
+// on every read surface. This also closes the latent "withdrawn
+// proposal lingers in `pendingProposals`" defect for the zero-emission
+// case — a re-withdraw now correctly fails `proposal-not-found`
+// (`findProposal` returns `null` after this).
+function handleProposalWithdrawn(
+  projection: Projection,
+  payload: ProposalWithdrawnEventPayload,
+  changes: ProjectionChange[],
+): void {
+  const pending = projection.getPendingProposal(payload.proposal_id);
+  if (pending === undefined) {
+    // A well-formed log only carries a `proposal-withdrawn` event for a
+    // proposal that was pending at withdraw-time (the handler rejects a
+    // re-withdraw with `proposal-not-found` before appending), so this
+    // mirrors the meta-disagreement arm's strict guard.
+    throw new ReplayError(`proposal-withdrawn: proposal ${payload.proposal_id} is not pending`);
+  }
+  projection.removePendingProposal(payload.proposal_id);
+  changes.push({
+    kind: 'pending-proposal-cleared',
+    proposalId: payload.proposal_id,
+    reason: 'withdraw',
+  });
+}
+
 function handleSnapshotCreated(
   projection: Projection,
   payload: SnapshotCreatedPayload,
@@ -1414,6 +1446,9 @@ export function applyEvent(projection: Projection, event: Event): ProjectionChan
         break;
       case 'withdraw-agreement':
         handleWithdrawAgreement(projection, event.payload, changes);
+        break;
+      case 'proposal-withdrawn':
+        handleProposalWithdrawn(projection, event.payload, changes);
         break;
     }
   } catch (cause) {

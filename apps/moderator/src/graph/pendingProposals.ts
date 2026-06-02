@@ -6,24 +6,29 @@
 // `derivePendingProposals(events)` walks `useWsStore.sessionState[id].events`
 // once, collects every `kind === 'proposal'` envelope, and removes any
 // proposal whose id has been referenced by a `commit` or
-// `meta-disagreement-marked` event, OR whose propose-time-minted
-// entities have been retracted by `entity-removed` events (a withdraw —
-// the three lifecycle terminators). The surviving set is returned
+// `meta-disagreement-marked` event, by a `proposal-withdrawn` terminator,
+// OR whose propose-time-minted entities have been retracted by
+// `entity-removed` events (a withdraw). The surviving set is returned
 // newest-first by event `sequence` (descending) so the right-sidebar
 // pane renders the freshly-proposed row at the top.
 //
-// **Withdraw termination.** A `withdraw-proposal` does NOT mint a
-// dedicated `proposal-withdrawn` EVENT (per
-// `ws_withdraw_proposal_message` D5 — the proposal envelope stays in
-// the immutable log forever); it emits one `entity-removed` event per
-// propose-time-created entity. To clear the pending-proposal row the
-// selector mirrors the server's `entitiesToRetractForWithdraw`
-// (`apps/server/src/ws/handlers/withdraw.ts`) INVERSE: it maps each
-// proposal's propose-time-created entities `(entity_kind, entity_id)`
-// back to the proposal event id, then terminates the proposal when any
-// of those entities is retracted by a later `entity-removed`. The two
-// mappings MUST stay in sync — a sub-kind whose propose handler mints
-// new entities must register them here so its withdraw clears the row.
+// **Withdraw termination — two coexisting paths (ADR 0037, D5).** A
+// `withdraw-proposal` terminates the pending row by one of two log
+// signals depending on whether it was log-silent:
+//   1. ENTITY-EMITTING withdraw — emits one `entity-removed` per
+//      propose-time-created entity. The selector mirrors the server's
+//      `entitiesToRetractForWithdraw`
+//      (`apps/server/src/ws/handlers/withdraw.ts`) INVERSE: it maps each
+//      proposal's propose-time-created entities `(entity_kind, entity_id)`
+//      back to the proposal event id, then terminates the proposal when
+//      any of those entities is retracted by a later `entity-removed`.
+//      The two mappings MUST stay in sync — a sub-kind whose propose
+//      handler mints new entities must register them here.
+//   2. ZERO-EMISSION (log-silent) withdraw — emits a single
+//      proposal-keyed `proposal-withdrawn` terminator event (ADR 0037).
+//      The selector terminates the row directly off `payload.proposal_id`.
+// Both paths are wired and additive (set membership), so row termination
+// is robust to the zero-emission boundary moving.
 //
 // **Pure / idempotent** (Decision §1, Constraints): no closure over time,
 // no `Date.now()`, no `Math.random()`. The relative-time formatting is a
@@ -202,6 +207,15 @@ export function derivePendingProposals(events: readonly Event[]): readonly Pendi
         entityKey(event.payload.entity_kind, event.payload.entity_id),
       );
       if (proposalId !== undefined) terminatedProposalIds.add(proposalId);
+    } else if (event.kind === 'proposal-withdrawn') {
+      // Per ADR 0037: a log-silent (zero-emission) withdraw appends a
+      // proposal-keyed `proposal-withdrawn` terminator instead of any
+      // `entity-removed`. Terminate the pending row directly off it.
+      // This coexists with the `entity-removed` mirror above (D5) —
+      // the two terminator paths are additive + idempotent (set
+      // membership), so termination is robust whether a withdraw is
+      // log-silent or entity-emitting.
+      terminatedProposalIds.add(event.payload.proposal_id);
     }
   }
 

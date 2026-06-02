@@ -161,6 +161,22 @@ function entityRemovedEvent(
   };
 }
 
+function proposalWithdrawnEvent(seq: number, proposalId: string): Event {
+  return {
+    id: envId('w', seq),
+    sessionId: SESSION,
+    sequence: seq,
+    kind: 'proposal-withdrawn',
+    actor: ACTOR,
+    payload: {
+      proposal_id: proposalId,
+      withdrawn_by: ACTOR,
+      withdrawn_at: '2026-05-16T00:00:45.000Z',
+    },
+    createdAt: '2026-05-16T00:00:45.000Z',
+  };
+}
+
 const classifyNode: ProposalPayload = {
   kind: 'classify-node',
   node_id: NODE_X,
@@ -333,6 +349,38 @@ describe('derivePendingProposals — lifecycle filter (terminators)', () => {
     const events: Event[] = [
       proposalEvent(1, PROPOSAL_P, setSubstance),
       entityRemovedEvent(2, 'node', NODE_X),
+    ];
+    const rows = derivePendingProposals(events);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.proposalEventId).toBe(PROPOSAL_P);
+  });
+
+  // Zero-emission withdraw termination (ADR 0037). A log-silent
+  // withdraw appends a proposal-keyed `proposal-withdrawn` terminator;
+  // the selector clears the row directly off it (there is no
+  // `entity-removed` for a zero-emission sub-kind to infer from).
+  it('removes a `set-node-substance` proposal when a `proposal-withdrawn` terminator names it (a log-silent withdraw)', () => {
+    const setSubstance: ProposalPayload = {
+      kind: 'set-node-substance',
+      node_id: NODE_X,
+      value: 'agreed',
+    };
+    const events: Event[] = [
+      proposalEvent(1, PROPOSAL_P, setSubstance),
+      proposalWithdrawnEvent(2, PROPOSAL_P),
+    ];
+    expect(derivePendingProposals(events)).toEqual([]);
+  });
+
+  it('a `proposal-withdrawn` for an unrelated proposal id is a no-op (defensive)', () => {
+    const setSubstance: ProposalPayload = {
+      kind: 'set-node-substance',
+      node_id: NODE_X,
+      value: 'agreed',
+    };
+    const events: Event[] = [
+      proposalEvent(1, PROPOSAL_P, setSubstance),
+      proposalWithdrawnEvent(2, PROPOSAL_Q),
     ];
     const rows = derivePendingProposals(events);
     expect(rows).toHaveLength(1);

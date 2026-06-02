@@ -21,6 +21,7 @@ import {
   nodeCreatedPayloadSchema,
   participantJoinedPayloadSchema,
   participantLeftPayloadSchema,
+  proposalWithdrawnEventPayloadSchema,
   sessionCreatedPayloadSchema,
   sessionEndedPayloadSchema,
   sessionModeChangedPayloadSchema,
@@ -1550,6 +1551,11 @@ describe('placeholder payload schemas', () => {
       // event kind so the per-facet withdrawal transition is a direct
       // read of the log.
       'withdraw-agreement',
+      // Added by ws_withdraw_proposal_zero_emission_terminator (ADR 0037) —
+      // the proposal-keyed terminal marker a log-silent (zero-emission)
+      // withdraw appends so the withdrawn disposition is observable +
+      // replay-deterministic.
+      'proposal-withdrawn',
     ] as const;
     for (const kind of expectedKinds) {
       expect(eventPayloadSchemas[kind]).toBeDefined();
@@ -1734,6 +1740,84 @@ describe('withdraw-agreement payload schema', () => {
     }
     expect(caught).toBeInstanceOf(EventValidationError);
     expect((caught as Error).message).toContain("'withdraw-agreement'");
+  });
+});
+
+// -- proposal-withdrawn payload schema -------------------------------
+//
+// Per ADR 0037 — the proposal-keyed terminal marker for the *withdrawn*
+// disposition, the fourth sibling of `commit` / `meta-disagreement-marked`.
+// `proposal_id` mirrors those proposal-keyed payloads; `withdrawn_by` /
+// `withdrawn_at` mirror `entity-removed`'s `removed_by` / `removed_at`.
+
+describe('proposal-withdrawn payload schema', () => {
+  const valid = {
+    proposal_id: PROPOSAL_ID,
+    withdrawn_by: USER_ID,
+    withdrawn_at: '2026-05-10T12:34:56Z',
+  };
+
+  it('round-trips a well-formed payload through JSON', () => {
+    const parsed = proposalWithdrawnEventPayloadSchema.parse(valid);
+    const wire = JSON.parse(JSON.stringify(parsed)) as unknown;
+    expect(proposalWithdrawnEventPayloadSchema.parse(wire)).toEqual(valid);
+  });
+
+  it('rejects a missing proposal_id', () => {
+    const { proposal_id: _ignored, ...partial } = valid;
+    void _ignored;
+    const result = proposalWithdrawnEventPayloadSchema.safeParse(partial);
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a missing withdrawn_by', () => {
+    const { withdrawn_by: _ignored, ...partial } = valid;
+    void _ignored;
+    const result = proposalWithdrawnEventPayloadSchema.safeParse(partial);
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a missing withdrawn_at', () => {
+    const { withdrawn_at: _ignored, ...partial } = valid;
+    void _ignored;
+    const result = proposalWithdrawnEventPayloadSchema.safeParse(partial);
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a non-UUID proposal_id', () => {
+    const result = proposalWithdrawnEventPayloadSchema.safeParse({
+      ...valid,
+      proposal_id: 'not-a-uuid',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a non-ISO withdrawn_at', () => {
+    const result = proposalWithdrawnEventPayloadSchema.safeParse({
+      ...valid,
+      withdrawn_at: 'today',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('routes a payload-shape error through validateEvent naming the kind', () => {
+    const envelope = {
+      id: EVENT_ID,
+      sessionId: SESSION_ID,
+      sequence: 21,
+      kind: 'proposal-withdrawn' as const,
+      actor: USER_ID,
+      payload: { ...valid, proposal_id: 'not-a-uuid' },
+      createdAt: '2026-05-10T12:34:56Z',
+    };
+    let caught: unknown;
+    try {
+      validateEvent(envelope);
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(EventValidationError);
+    expect((caught as Error).message).toContain("'proposal-withdrawn'");
   });
 });
 
@@ -1930,6 +2014,11 @@ const REPRESENTATIVE_PAYLOADS: Record<EventKind, unknown> = {
     entity_id: NODE_ID,
     facet: 'classification',
     participant: PARTICIPANT_ID,
+    withdrawn_at: '2026-05-10T12:34:56Z',
+  },
+  'proposal-withdrawn': {
+    proposal_id: PROPOSAL_ID,
+    withdrawn_by: USER_ID,
     withdrawn_at: '2026-05-10T12:34:56Z',
   },
 };

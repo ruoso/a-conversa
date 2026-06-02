@@ -19,6 +19,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { Event } from '@a-conversa/shared-types';
 
+import { findProposal } from '../methodology/primitives.js';
 import { deriveFacetStatus } from './facet-status.js';
 import { createEmptyProjection } from './projection.js';
 import { applyEvent, projectFromLog, ReplayError } from './replay.js';
@@ -726,6 +727,61 @@ describe('applyEvent — meta-disagreement-marked', () => {
           proposal_id: PROPOSAL_ID_1,
           marked_by: MODERATOR_ID,
           marked_at: T0,
+        }),
+      ),
+    ).toThrow(ReplayError);
+  });
+});
+
+describe('applyEvent — proposal-withdrawn (ADR 0037)', () => {
+  it('removes the proposal from pendingProposals; findProposal then returns null', () => {
+    const projection = createEmptyProjection(SESSION_ID);
+    applyEvent(
+      projection,
+      makeEvent(1, 'node-created', DEBATER_A_ID, T0, {
+        node_id: NODE_ID_1,
+        wording: 'a',
+        created_by: DEBATER_A_ID,
+        created_at: T0,
+      }),
+    );
+    // A zero-emission sub-kind (set-node-substance) — the proposal
+    // envelope is the only thing on the log for it.
+    const proposal: Event = {
+      ...makeEvent(2, 'proposal', DEBATER_A_ID, T1, {
+        proposal: { kind: 'set-node-substance', node_id: NODE_ID_1, value: 'agreed' },
+      }),
+      id: PROPOSAL_ID_1,
+    };
+    applyEvent(projection, proposal);
+    expect(projection.getPendingProposal(PROPOSAL_ID_1)).toBeDefined();
+
+    applyEvent(
+      projection,
+      makeEvent(3, 'proposal-withdrawn', DEBATER_A_ID, T2, {
+        proposal_id: PROPOSAL_ID_1,
+        withdrawn_by: DEBATER_A_ID,
+        withdrawn_at: T2,
+      }),
+    );
+
+    expect(projection.getPendingProposal(PROPOSAL_ID_1)).toBeUndefined();
+    expect(projection.pendingProposalCount()).toBe(0);
+    // The latent "withdrawn proposal lingers in pendingProposals"
+    // defect is closed for the zero-emission case: a re-withdraw would
+    // find nothing (findProposal returns null → proposal-not-found).
+    expect(findProposal(projection, PROPOSAL_ID_1)).toBeNull();
+  });
+
+  it('proposal-withdrawn of an unknown proposal throws ReplayError', () => {
+    const projection = createEmptyProjection(SESSION_ID);
+    expect(() =>
+      applyEvent(
+        projection,
+        makeEvent(1, 'proposal-withdrawn', MODERATOR_ID, T0, {
+          proposal_id: PROPOSAL_ID_1,
+          withdrawn_by: MODERATOR_ID,
+          withdrawn_at: T0,
         }),
       ),
     ).toThrow(ReplayError);

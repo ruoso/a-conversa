@@ -167,6 +167,15 @@ export const eventKinds = [
   // disputed" is a direct read of the log rather than a derivation
   // off the proposal-keyed vote shape that ADR 0030 dismantles.
   'withdraw-agreement',
+  // Proposal-withdrawn terminator (per ADR 0037). The proposal-keyed
+  // terminal marker for the *withdrawn* disposition, symmetric with
+  // `commit` / `meta-disagreement-marked`. Emitted by the
+  // `withdraw-proposal` handler iff the withdraw is otherwise
+  // log-silent (zero `entity-removed` events) so the withdrawn
+  // disposition is observable + replay-deterministic. Shares a name
+  // with the `proposal-withdrawn` WS ack ENVELOPE type, but lives in
+  // a separate namespace (`eventKinds` vs `wsMessageTypes`).
+  'proposal-withdrawn',
 ] as const;
 
 export type EventKind = (typeof eventKinds)[number];
@@ -698,6 +707,41 @@ export const withdrawAgreementPayloadSchema = z.object({
 
 export type WithdrawAgreementPayload = z.infer<typeof withdrawAgreementPayloadSchema>;
 
+// -- Proposal-withdrawn terminator event payload schema --------------
+//
+// Per ADR 0037 — a dedicated terminal marker for the *withdrawn*
+// proposal disposition, the fourth sibling of the proposal-keyed
+// `commit` / `meta-disagreement-marked` events. Emitted by the
+// `withdraw-proposal` handler iff the withdraw is otherwise log-silent
+// (zero `entity-removed` events), so a zero-emission withdraw (one of
+// the seven sub-kinds that mint no structural entity at propose-time)
+// becomes observable on the immutable log and replay-deterministic.
+//
+// `proposal_id` mirrors the proposal-keyed `commit` /
+// `meta-disagreement-marked` payloads (it is the original `proposal`
+// event's id). `withdrawn_by` / `withdrawn_at` mirror `entity-removed`'s
+// `removed_by` / `removed_at`: the authenticated connection's user id +
+// the server-injected clock, never the wire payload.
+//
+// **Name note.** This is the EVENT-layer payload schema. The WS ack
+// ENVELOPE of the same wire name (`'proposal-withdrawn'`) has its own,
+// differently-shaped payload schema in `./ws-envelope.ts`
+// (`proposalWithdrawnPayloadSchema` there — `{ sessionId,
+// proposalEventId, removedEventCount }`). The two live in separate
+// namespaces (`eventKinds` vs `wsMessageTypes`); the `Event` symbols
+// carry the `…Event…` infix so the flattened package surface
+// (`packages/shared-types/src/index.ts` re-exports both modules) stays
+// collision-free.
+//
+// Refinement: tasks/refinements/backend/ws_withdraw_proposal_zero_emission_terminator.md
+export const proposalWithdrawnEventPayloadSchema = z.object({
+  proposal_id: z.string().uuid(),
+  withdrawn_by: z.string().uuid(),
+  withdrawn_at: z.string().datetime({ offset: true }),
+});
+
+export type ProposalWithdrawnEventPayload = z.infer<typeof proposalWithdrawnEventPayloadSchema>;
+
 // The registry. Keys are exhaustive over `EventKind` (TypeScript
 // enforces this via the explicit type annotation).
 export const eventPayloadSchemas: Record<EventKind, z.ZodTypeAny> = {
@@ -727,6 +771,8 @@ export const eventPayloadSchemas: Record<EventKind, z.ZodTypeAny> = {
   'session-mode-changed': sessionModeChangedPayloadSchema,
   // Owned by pf_withdraw_agreement_event_kind (ADR 0030 §3)
   'withdraw-agreement': withdrawAgreementPayloadSchema,
+  // Owned by ws_withdraw_proposal_zero_emission_terminator (ADR 0037)
+  'proposal-withdrawn': proposalWithdrawnEventPayloadSchema,
 };
 
 // -- Per-kind payload type map ---------------------------------------
@@ -754,6 +800,7 @@ export interface EventPayloadMap {
   'entity-removed': EntityRemovedPayload;
   'session-mode-changed': SessionModeChangedPayload;
   'withdraw-agreement': WithdrawAgreementPayload;
+  'proposal-withdrawn': ProposalWithdrawnEventPayload;
 }
 
 export type PayloadFor<K extends EventKind> = EventPayloadMap[K];

@@ -189,6 +189,22 @@ function entityRemovedEvent(
   };
 }
 
+function proposalWithdrawnEvent(seq: number, proposalId: string): Event {
+  return {
+    id: envId('w', seq),
+    sessionId: SESSION,
+    sequence: seq,
+    kind: 'proposal-withdrawn',
+    actor: ACTOR,
+    payload: {
+      proposal_id: proposalId,
+      withdrawn_by: ACTOR,
+      withdrawn_at: '2026-05-25T00:00:45.000Z',
+    },
+    createdAt: '2026-05-25T00:00:45.000Z',
+  };
+}
+
 const classifyP: ProposalPayload = {
   kind: 'classify-node',
   node_id: NODE_X,
@@ -337,6 +353,29 @@ describe('derivePendingProposals (participant)', () => {
     const events: Event[] = [
       proposalEvent(1, PROPOSAL_P, setNodeSubstanceP),
       entityRemovedEvent(2, 'node', NODE_X),
+    ];
+    const rows = derivePendingProposals(events);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.proposalEventId).toBe(PROPOSAL_P);
+  });
+
+  // Zero-emission withdraw termination (ADR 0037). A log-silent
+  // withdraw (a sub-kind that mints no propose-time entity) appends a
+  // proposal-keyed `proposal-withdrawn` terminator; the selector clears
+  // the row directly off it (the `entity-removed` mirror cannot, since
+  // there is no entity-removed).
+  it('(n) set-node-substance proposal → proposal-withdrawn terminator → row terminated', () => {
+    const events: Event[] = [
+      proposalEvent(1, PROPOSAL_P, setNodeSubstanceP),
+      proposalWithdrawnEvent(2, PROPOSAL_P),
+    ];
+    expect(derivePendingProposals(events)).toEqual([]);
+  });
+
+  it('(o) proposal-withdrawn for an unrelated proposal id is a no-op (defensive)', () => {
+    const events: Event[] = [
+      proposalEvent(1, PROPOSAL_P, setNodeSubstanceP),
+      proposalWithdrawnEvent(2, PROPOSAL_Q),
     ];
     const rows = derivePendingProposals(events);
     expect(rows).toHaveLength(1);

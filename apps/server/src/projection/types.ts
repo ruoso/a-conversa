@@ -421,7 +421,7 @@ export interface PendingProposalAddedChange {
 export interface PendingProposalClearedChange {
   kind: 'pending-proposal-cleared';
   proposalId: string;
-  reason: 'commit' | 'meta-disagreement';
+  reason: 'commit' | 'meta-disagreement' | 'withdraw';
 }
 
 export interface VoteRecordedChange {

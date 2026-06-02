@@ -232,6 +232,120 @@ Given(
 );
 
 /**
+ * Seed a withdrawable ZERO-EMISSION session: 1 host (moderator) + a
+ * pending `axiom-mark` proposal. `axiom-mark` mints NO structural
+ * entity at propose-time, so the event log carries only the node it
+ * marks (pre-existing) + the proposal envelope — withdrawing it is
+ * otherwise log-silent and (per ADR 0037) appends a single
+ * `proposal-withdrawn` terminator. MAX(sequence) = 5 after the seed;
+ * the withdraw lands the terminator at sequence 6.
+ */
+Given(
+  'a withdrawable axiom-mark session for {string} exists with id {string} and node id {string} and pending proposal id {string}',
+  async function (
+    this: AConversaWorld,
+    hostScreenName: string,
+    sessionId: string,
+    nodeId: string,
+    proposalId: string,
+  ) {
+    const hostId = await lookupUserId(this, hostScreenName);
+
+    await this.db.query(
+      `INSERT INTO sessions (id, host_user_id, privacy, topic) VALUES ($1, $2, 'public', $3)`,
+      [sessionId, hostId, `Axiom-mark withdraw test (${hostScreenName})`],
+    );
+    await this.db.query(
+      `INSERT INTO session_participants (session_id, user_id, role) VALUES ($1, $2, 'moderator')`,
+      [sessionId, hostId],
+    );
+
+    const t = (n: number) => `2026-05-11T10:00:${String(n).padStart(2, '0')}.000Z`;
+    await this.db.query(
+      `INSERT INTO session_events (id, session_id, sequence, kind, actor, payload, created_at)
+       VALUES ($1, $2, 1, 'session-created', $3, $4::jsonb, $5)`,
+      [
+        randomUUID(),
+        sessionId,
+        hostId,
+        JSON.stringify({
+          host_user_id: hostId,
+          privacy: 'public',
+          topic: `Axiom-mark withdraw test (${hostScreenName})`,
+          created_at: t(0),
+        }),
+        t(0),
+      ],
+    );
+    await this.db.query(
+      `INSERT INTO session_events (id, session_id, sequence, kind, actor, payload, created_at)
+       VALUES ($1, $2, 2, 'participant-joined', $3, $4::jsonb, $5)`,
+      [
+        randomUUID(),
+        sessionId,
+        hostId,
+        JSON.stringify({
+          user_id: hostId,
+          role: 'moderator',
+          screen_name: hostScreenName,
+          joined_at: t(1),
+        }),
+        t(1),
+      ],
+    );
+    await this.db.query(
+      `INSERT INTO session_events (id, session_id, sequence, kind, actor, payload, created_at)
+       VALUES ($1, $2, 3, 'node-created', $3, $4::jsonb, $5)`,
+      [
+        randomUUID(),
+        sessionId,
+        hostId,
+        JSON.stringify({
+          node_id: nodeId,
+          wording: 'A pre-existing claim to axiom-mark, then withdraw.',
+          created_by: hostId,
+          created_at: t(2),
+        }),
+        t(2),
+      ],
+    );
+    await this.db.query(
+      `INSERT INTO session_events (id, session_id, sequence, kind, actor, payload, created_at)
+       VALUES ($1, $2, 4, 'entity-included', $3, $4::jsonb, $5)`,
+      [
+        randomUUID(),
+        sessionId,
+        hostId,
+        JSON.stringify({
+          entity_kind: 'node',
+          entity_id: nodeId,
+          included_by: hostId,
+          included_at: t(2),
+        }),
+        t(2),
+      ],
+    );
+    await this.db.query(
+      `INSERT INTO session_events (id, session_id, sequence, kind, actor, payload, created_at)
+       VALUES ($1, $2, 5, 'proposal', $3, $4::jsonb, $5)`,
+      [
+        proposalId,
+        sessionId,
+        hostId,
+        JSON.stringify({
+          proposal: {
+            kind: 'axiom-mark',
+            node_id: nodeId,
+            participant: hostId,
+          },
+        }),
+        t(2),
+      ],
+    );
+  },
+);
+
+/**
  * Seed a session where the cucumber user is a DEBATER, not the
  * original proposer (a foreign moderator hosted + proposed). Used
  * for the proposer-only authority gate scenario. MAX(sequence) = 6
@@ -700,6 +814,75 @@ Then(
     assert.ok(
       broadcast,
       `did not receive event-applied envelope (kind=entity-removed, entity_id=${expectedEntityId}) for sequence ${String(sequence)}`,
+    );
+  },
+);
+
+Then(
+  'the client also receives an event-applied envelope for a proposal-withdrawn event at sequence {int} with proposal_id {string}',
+  async function (this: AConversaWorld, sequence: number, expectedProposalId: string) {
+    // The zero-emission terminator counterpart of the entity-removed
+    // broadcast step: per ADR 0037 a log-silent withdraw broadcasts a
+    // single `proposal-withdrawn` EVENT (distinct from the
+    // `proposal-withdrawn` ack ENVELOPE — namespace-distinct). Asserts
+    // the inner event is a `proposal-withdrawn` kind keyed by the
+    // withdrawn proposal's id.
+    const queue = ensureWithdrawFramesQueue(this);
+    const broadcast = await waitForFrame(queue, (parsed) => {
+      if (parsed.type !== 'event-applied') return false;
+      const payload = parsed.payload as
+        | {
+            event?: {
+              sequence?: unknown;
+              kind?: unknown;
+              payload?: { proposal_id?: unknown };
+            };
+          }
+        | undefined;
+      return (
+        payload?.event?.sequence === sequence &&
+        payload?.event?.kind === 'proposal-withdrawn' &&
+        payload?.event?.payload?.proposal_id === expectedProposalId
+      );
+    });
+    assert.ok(
+      broadcast,
+      `did not receive event-applied envelope (kind=proposal-withdrawn, proposal_id=${expectedProposalId}) for sequence ${String(sequence)}`,
+    );
+  },
+);
+
+Then(
+  'the session {string} log contains exactly one proposal-withdrawn event for proposal {string} with a non-null withdrawn_by',
+  async function (this: AConversaWorld, sessionId: string, expectedProposalId: string) {
+    // Query the WS/replay seam directly — the immutable log is the
+    // source of truth. Pins that the handler appended EXACTLY one
+    // `proposal-withdrawn` event, keyed by the withdrawn proposal's id,
+    // with a server-owned (non-null) `withdrawn_by`.
+    const res = (await this.db.query(
+      `SELECT actor, payload
+       FROM session_events
+       WHERE session_id = $1 AND kind = 'proposal-withdrawn'
+       ORDER BY sequence ASC`,
+      [sessionId],
+    )) as QueryResult<{
+      actor: string | null;
+      payload: { proposal_id?: string; withdrawn_by?: string };
+    }>;
+    assert.equal(
+      res.rows.length,
+      1,
+      `expected exactly one proposal-withdrawn event in session ${sessionId}, got ${String(res.rows.length)}`,
+    );
+    const row = res.rows[0]!;
+    assert.equal(
+      row.payload.proposal_id,
+      expectedProposalId,
+      'expected the terminator payload.proposal_id to match the withdrawn proposal id',
+    );
+    assert.ok(
+      typeof row.payload.withdrawn_by === 'string' && row.payload.withdrawn_by.length > 0,
+      'expected a non-null withdrawn_by in the terminator payload',
     );
   },
 );

@@ -363,6 +363,7 @@ task backend "Backend" {
     task ws_withdraw_proposal_zero_emission_terminator "Make zero-emission proposal withdrawals append a log-observable terminator event" {
       effort 1d
       allocate team
+      complete 100
       depends !ws_withdraw_proposal_message
       note -8<-
         Source of debt: tasks/refinements/participant-ui/part_withdraw_proposal_gesture.md §A4 deferred sub-scenario + §D6 — axiom-mark / annotate / set-node-substance / edit-wording / meta-move / break-edge / amend-node mint no structural entities at propose-time, so withdraw-proposal appends no entity-removed event (withdraw.ts:570-583), leaving every read surface stale. Append a persisted, log-observable terminator for zero-emission withdrawals (a dedicated proposal-withdrawn event or an overlay-entity entity-removed) so projectors can terminate rows + overlays on the immutable log. The refinement for this task decides the terminator's exact shape and writes an ADR if a new event kind is introduced. Add a Cucumber scenario at the WS/replay seam (ws_withdraw_proposal_message precedent) and wire both pending panes (moderator + participant) to terminate on the new terminator.
