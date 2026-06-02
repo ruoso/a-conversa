@@ -59,7 +59,7 @@ SYSTEM_PROMPT_PATH = PROMPTS_DIR / "orchestrator_system.md"
 # block to CONTEXT_FILE and exits non-zero — re-running the driver picks
 # the persisted context back up so the orchestrator sees the failure on
 # its next turn.
-MAX_FIXER_ATTEMPTS = 5
+MAX_FIXER_ATTEMPTS = 10
 
 # Auto-format step run deterministically before the verification chain on
 # every iteration. `prettier --write` is a pure formatting fixup — if the
@@ -523,6 +523,12 @@ def render_template(template: str, vars: dict) -> str:
 #   • a `result` event with `is_error: true` + `api_error_status: 429`
 # We key off the 429 result event and parse the reset clock-time + IANA tz out
 # of its `result` field so the driver can sleep until the window reopens.
+# Fallback wait when a 429 carries no parseable reset clock (unrecognized tz,
+# ZoneInfo unavailable on py<3.9, or an unmatched message format). Without it a
+# genuine quota exhaustion would hard-fail instead of waiting out the window —
+# mirrors CODEX_USAGE_LIMIT_FALLBACK on the codex path.
+SESSION_LIMIT_FALLBACK = timedelta(hours=1)
+
 # Substrings in the final result text that mark a transient API failure
 # worth retrying (socket dropped mid-stream, gateway hiccup, etc.). The
 # wrapper's exponential backoff handles the actual retry — this just
@@ -809,9 +815,14 @@ class ClaudeEventNormalizer(AgentEventNormalizer):
             result.final_text = event.get("result", "")
             if event.get("is_error"):
                 if event.get("api_error_status") == 429:
-                    result.session_reset = parse_session_limit_reset(
+                    reset = parse_session_limit_reset(
                         result.final_text, self.session_limit_re
                     )
+                    if reset is None:
+                        # Unparseable reset clock — still a quota stall, so
+                        # wait a fixed fallback rather than hard-failing.
+                        reset = datetime.now().astimezone() + SESSION_LIMIT_FALLBACK
+                    result.session_reset = reset
                     result.session_message = result.final_text.strip()
                 elif _looks_transient(result.final_text):
                     result.transient_message = result.final_text.strip()
@@ -886,11 +897,11 @@ class ClaudeCli(AgentCli):
     name = "claude"
     default_models = {
         "orchestrator": "claude-sonnet-4-6",
-        "refinement_writer": "claude-opus-4-7",
-        "implementer": "claude-opus-4-7",
-        "fixer": "claude-opus-4-7",
+        "refinement_writer": "claude-opus-4-8",
+        "implementer": "claude-opus-4-8",
+        "fixer": "claude-opus-4-8",
         "closer": "claude-sonnet-4-6",
-        "default": "claude-opus-4-7",
+        "default": "claude-opus-4-8",
     }
 
     def command(
