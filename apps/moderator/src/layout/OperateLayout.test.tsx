@@ -57,15 +57,19 @@ describe('OperateLayout — three-pane scaffold', () => {
   it('applies the Tailwind grid utility classes to the layout root', () => {
     // Locks in the Tailwind-via-Vite chain: if the bundler is not running
     // Tailwind over JSX, the layout still renders but downstream pane
-    // tasks will be invisible because the grid never claims viewport
-    // height. The class-name assertion is the cheapest test that catches
-    // a broken styling chain.
+    // tasks will be invisible because the grid never claims its height.
+    // The grid fills its flex parent (`flex-1` + `min-h-0`) — `OperateRoute`
+    // owns the viewport-height flex column so the blocking-diagnostic banner
+    // can sit above the grid without pushing the page past 100vh. The
+    // class-name assertion is the cheapest test that catches a broken
+    // styling chain.
     render(<OperateLayout />);
     const root = screen.getByTestId('operate-layout-root');
     const classes = root.className.split(/\s+/);
     expect(classes).toContain('grid');
-    expect(classes).toContain('h-screen');
-    expect(classes).toContain('w-screen');
+    expect(classes).toContain('flex-1');
+    expect(classes).toContain('min-h-0');
+    expect(classes).toContain('w-full');
   });
 
   it('renders empty regions cleanly when no slots are passed', () => {

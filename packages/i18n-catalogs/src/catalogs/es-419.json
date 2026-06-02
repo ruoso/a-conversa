@@ -654,6 +654,10 @@
         },
         "countAria": "{count, plural, one {# diagnóstico activo} other {# diagnósticos activos}}",
         "focusAria": "Enfocar el lienzo en {title}"
+      },
+      "banner": {
+        "message": "{count, plural, one {# diagnóstico bloqueante debe resolverse} other {# diagnósticos bloqueantes deben resolverse}}",
+        "reviewAria": "Revisar el diagnóstico bloqueante {title}"
       }
     },
     "contextMenu": {

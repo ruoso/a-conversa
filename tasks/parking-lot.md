@@ -70,3 +70,10 @@ When the human resolves an item, delete its block (git history preserves it).
 - **Why parked**: native-speaker sign-off is inherently human work. Per ADR 0024 the en-US copy is authoritative at land; non-English drafts ship as parity-complete pending review, tracked in `packages/i18n-catalogs/src/catalogs/pt-BR.review.json` and `es-419.review.json`.
 - **Suggested resolution**: review `moderator.diagnostic.flags.focusAria` in `pt-BR.json` and `es-419.json`; accept or correct and remove from the `*.review.json` pending lists.
 
+### 2026-06-02 — i18n native review — diagnostic banner message + reviewAria (pt-BR, es-419)
+
+- **Source**: closer for `moderator_ui.mod_diagnostic_resolution_flow.mod_blocking_diagnostic_banner`.
+- **Question**: the pt-BR and es-419 values for `moderator.diagnostic.banner.message` (ICU plural) and `moderator.diagnostic.banner.reviewAria` were machine-drafted; they need native-speaker review for fluency, register, and philosophical-methodology accuracy.
+- **Why parked**: native-speaker sign-off is inherently human work. Per ADR 0024 the en-US copy is authoritative at land; non-English drafts ship as parity-complete pending review.
+- **Suggested resolution**: review the two keys in `pt-BR.json` and `es-419.json`; accept or correct in place and close this item.
+

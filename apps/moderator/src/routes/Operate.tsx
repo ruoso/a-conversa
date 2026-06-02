@@ -91,6 +91,7 @@ import { useProposeAction } from '../layout/useProposeAction';
 import { GraphCanvasPane } from '../graph/GraphCanvasPane';
 import { ModeBanner } from '../layout/ModeBanner';
 import { IsOughtPrompt } from '../layout/IsOughtPrompt';
+import { BlockingDiagnosticBanner } from '../layout/BlockingDiagnosticBanner';
 import { DiagnosticFlagPane } from '../layout/DiagnosticFlagPane';
 import { PendingProposalsPane } from '../layout/PendingProposalsPane';
 import { RightSidebar } from '../layout/RightSidebar';
@@ -245,7 +246,15 @@ function OperateRouteInner(props: { sessionId: string }): ReactElement {
   }, [client]);
 
   return (
-    <main data-testid="route-operate">
+    // The operate console is a viewport-height flex column: the blocking
+    // banner (when present) takes its natural height at the top and the
+    // `<OperateLayout>` grid fills the remainder (`flex-1`/`min-h-0`). The
+    // grid used to be a hard `h-screen` (100vh); with any in-flow sibling
+    // above it — i.e. the banner — that pushed total content past the
+    // viewport and tripped the e2e no-scrollbars harness. Bounding the
+    // column to `h-screen` + `overflow-hidden` keeps the page scrollbar-free
+    // whether or not the banner is showing.
+    <main data-testid="route-operate" className="flex h-screen w-screen flex-col overflow-hidden">
       {/*
        * `session-id` survives the placeholder removal — `App.test.tsx`
        * asserts the router captured the path param. Tailwind's
@@ -257,6 +266,14 @@ function OperateRouteInner(props: { sessionId: string }): ReactElement {
       <span data-testid="session-id" className="sr-only">
         {sessionId}
       </span>
+      {/*
+       * Sibling BEFORE `<OperateLayout>` so the blocking-diagnostic status
+       * indicator sits at the top of the console flow, above the three-pane
+       * grid, and is unaffected by the right sidebar's per-pane collapse
+       * state (mod_blocking_diagnostic_banner Decision §D1). It self-hides
+       * when no blocking diagnostic is active.
+       */}
+      <BlockingDiagnosticBanner sessionId={sessionId} />
       <OperateLayout
         dataSnapshotFlowOpen={isSnapshotLabelInputOpen}
         graphPane={<GraphCanvasPane sessionId={sessionId} />}

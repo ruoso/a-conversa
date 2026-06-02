@@ -654,6 +654,10 @@
         },
         "countAria": "{count, plural, one {# active diagnostic} other {# active diagnostics}}",
         "focusAria": "Focus the canvas on {title}"
+      },
+      "banner": {
+        "message": "{count, plural, one {# blocking diagnostic must be resolved} other {# blocking diagnostics must be resolved}}",
+        "reviewAria": "Review the blocking {title} diagnostic"
       }
     },
     "contextMenu": {

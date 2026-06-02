@@ -215,3 +215,88 @@ test.describe('moderator diagnostic-flag pane — click focuses the affected reg
     await expect.poll(readTransform, { timeout: 5_000 }).not.toBe(before);
   });
 });
+
+// Refinement: tasks/refinements/moderator-ui/mod_blocking_diagnostic_banner.md
+//             (Acceptance §2, Decision §D5 — e2e IN SCOPE, extends this spec)
+//
+// The blocking-diagnostic banner is route-rendered at the TOP of
+// `Operate.tsx`'s `<main data-testid="route-operate">`, above the
+// three-pane grid (Decision §D1). It is present ONLY while ≥1
+// `blocking`-severity diagnostic is active and absent otherwise — advisory
+// diagnostics never raise it. Its review button re-frames the canvas (the
+// transform pin already lives in the focus-action scenario above) AND
+// foregrounds the diagnostic-flags sidebar pane.
+test.describe('moderator blocking-diagnostic banner — announces the blocked session', () => {
+  test('seeding a blocking cycle raises the banner with the right count + head kind', async ({
+    page,
+  }) => {
+    const sessionId = await reachOperateWithGraph(page, 'Blocking banner — present when blocked.');
+
+    await applyDiagnostic(page, {
+      sessionId,
+      kind: 'cycle',
+      severity: 'blocking',
+      status: 'fired',
+      sequence: 40,
+      diagnostic: { kind: 'cycle', nodes: [NODE_A, NODE_B, NODE_C] },
+    });
+
+    const banner = page.getByTestId('blocking-diagnostic-banner');
+    await expect(banner).toBeVisible();
+    await expect(banner).toHaveAttribute('data-blocking-count', '1');
+    await expect(banner).toHaveAttribute('data-diagnostic-kind', 'cycle');
+  });
+
+  test('seeding only an advisory multi-warrant leaves the banner absent', async ({ page }) => {
+    // End-to-end proof that advisory diagnostics do not raise the banner —
+    // while the flag pane still lists the advisory row.
+    const sessionId = await reachOperateWithGraph(page, 'Blocking banner — absent when advisory.');
+
+    await applyDiagnostic(page, {
+      sessionId,
+      kind: 'multi-warrant',
+      severity: 'advisory',
+      status: 'fired',
+      sequence: 50,
+      diagnostic: {
+        kind: 'multi-warrant',
+        dataNodeId: NODE_A,
+        claimNodeId: NODE_B,
+        warrantNodeIds: [NODE_C],
+      },
+    });
+
+    await expect(page.getByTestId('blocking-diagnostic-banner')).toHaveCount(0);
+
+    const body = page.getByTestId('right-sidebar-pane-body-diagnostic-flags');
+    const row = body.getByTestId('diagnostic-flag-row');
+    await expect(row).toHaveCount(1);
+    await expect(row.first()).toHaveAttribute('data-diagnostic-kind', 'multi-warrant');
+  });
+
+  test('clicking review foregrounds the diagnostic-flags pane', async ({ page }) => {
+    const sessionId = await reachOperateWithGraph(
+      page,
+      'Blocking banner — review foregrounds pane.',
+    );
+
+    await applyDiagnostic(page, {
+      sessionId,
+      kind: 'cycle',
+      severity: 'blocking',
+      status: 'fired',
+      sequence: 60,
+      // A two-node subset of the three-node graph — mirrors the focus-action
+      // scenario; the canvas re-frame transform is pinned there + at the unit
+      // layer, so this scenario asserts only the pane foregrounding.
+      diagnostic: { kind: 'cycle', nodes: [NODE_A, NODE_B] },
+    });
+
+    const flagsPane = page.getByTestId('right-sidebar-pane-diagnostic-flags');
+    await expect(flagsPane).toHaveAttribute('data-active', 'false');
+
+    await page.getByTestId('blocking-diagnostic-banner-review').click();
+
+    await expect(flagsPane).toHaveAttribute('data-active', 'true');
+  });
+});

@@ -575,6 +575,7 @@ task moderator_ui "Moderator UI" {
     task mod_blocking_diagnostic_banner "Blocking diagnostic banner / status indicator" {
       effort 1d
       allocate team
+      complete 100
       depends !mod_diagnostic_flag_pane
     }
     task mod_diagnostic_focus_action "Click flag to focus affected region" {

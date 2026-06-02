@@ -37,6 +37,15 @@
 // forced an internal scrollbar on every test run. With `auto`, the
 // graph pane (1fr) shrinks to absorb the strip's true height; with no
 // scroll on either pane the page presents zero scrollbars by default.
+//
+// Height: the grid fills its flex parent (`flex-1` + `min-h-0`) rather
+// than claiming a hard `h-screen`. `OperateRoute` wraps the shell in a
+// viewport-height flex column so the blocking-diagnostic banner can sit
+// above the grid in normal flow without pushing the page past 100vh (a
+// hard `h-screen` here did exactly that and tripped the e2e
+// no-scrollbars harness). `min-h-0` lets the grid shrink below its
+// content's intrinsic size so the internal `1fr auto` row split — not
+// the page — absorbs the available height.
 
 import type { ReactElement, ReactNode } from 'react';
 
@@ -70,7 +79,7 @@ export function OperateLayout(props: OperateLayoutProps): ReactElement {
     <div
       data-testid="operate-layout-root"
       data-snapshot-flow-open={dataSnapshotFlowOpen ? 'true' : 'false'}
-      className="grid h-screen w-screen bg-slate-50"
+      className="grid min-h-0 w-full flex-1 bg-slate-50"
       style={{
         gridTemplateColumns: '1fr 20rem',
         gridTemplateRows: '1fr auto',
