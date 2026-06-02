@@ -178,7 +178,7 @@ describe('MetaMoveProposeAction — canPropose disabled toggle', () => {
     const button = screen.getByTestId<HTMLButtonElement>('meta-move-propose-button');
     expect(button.disabled).toBe(true);
     expect(screen.getByTestId('meta-move-propose-validation-error').textContent).toContain(
-      'meta-moves target a node',
+      'meta-moves target nodes or edges — clear the annotation target and pick a node or edge',
     );
   });
 

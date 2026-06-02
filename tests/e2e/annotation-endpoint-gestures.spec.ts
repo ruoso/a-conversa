@@ -38,13 +38,103 @@
 // (`useProposeAction.test.tsx` annotation-endpoint cases); the
 // Playwright spec covers the moderator-visible staging UX.
 
-import { expect, test } from './fixtures/no-scrollbars';
+import { expect, test, type Locator, type Page } from './fixtures/no-scrollbars';
 
 import { loginAs } from './fixtures/auth';
 import { isWsStoreReachable, seedWsStore } from './fixtures/wsStoreSeed';
 
 interface CreatedSession {
   readonly id: string;
+}
+
+/**
+ * Drive a low-level pointer drag from one handle locator to another.
+ * Ported verbatim from `moderator-draw-edge.spec.ts` — the source rect
+ * is sampled via `hover()` while the handle is idle, the target rect via
+ * `boundingBox()` immediately before `mouse.up()` (a `hover()` there
+ * waits forever for stability while ReactFlow's connection-line
+ * projection re-runs per frame), and the intermediate moves keep the
+ * connection-line tracker fed so the gesture reads as a drag, not a
+ * click.
+ */
+async function dragFromHandleToHandle(
+  page: Page,
+  sourceHandle: Locator,
+  targetHandle: Locator,
+): Promise<void> {
+  await sourceHandle.hover();
+  const sourceBox = await sourceHandle.boundingBox();
+  if (sourceBox === null) {
+    throw new Error('dragFromHandleToHandle: source handle bounding box was null');
+  }
+  await page.mouse.down();
+
+  const targetBoxStart = await targetHandle.boundingBox();
+  if (targetBoxStart !== null) {
+    const fromX = sourceBox.x + sourceBox.width / 2;
+    const fromY = sourceBox.y + sourceBox.height / 2;
+    const toX = targetBoxStart.x + targetBoxStart.width / 2;
+    const toY = targetBoxStart.y + targetBoxStart.height / 2;
+    const steps = 6;
+    for (let i = 1; i <= steps; i += 1) {
+      await page.mouse.move(
+        fromX + ((toX - fromX) * i) / steps,
+        fromY + ((toY - fromY) * i) / steps,
+        { steps: 2 },
+      );
+    }
+  }
+
+  const targetBoxFinal = await targetHandle.boundingBox();
+  if (targetBoxFinal !== null) {
+    await page.mouse.move(
+      targetBoxFinal.x + targetBoxFinal.width / 2,
+      targetBoxFinal.y + targetBoxFinal.height / 2,
+    );
+  }
+  await page.mouse.up();
+}
+
+/**
+ * Poll a locator's bounding box until two consecutive reads match within
+ * 0.5 px. Ported from `moderator-draw-edge.spec.ts`. After the seed
+ * mints the host node + promoted annotation, `mod_layout_measured_
+ * dimensions` debounces the ResizeObserver measurements for 75 ms and
+ * bumps `layoutRevision`, re-running dagre against the measured
+ * footprint. On a slow CI runner that debounce can fire DURING the drag
+ * and move the target handle out from under the pointer, so ReactFlow's
+ * `onConnect` never sees a valid (source, target) pair and
+ * `<DrawEdgeRolePicker>` never mounts. Waiting for a stable box closes
+ * the window.
+ */
+async function waitForBoundingBoxStable(
+  locator: Locator,
+  options: { timeoutMs?: number; intervalMs?: number; toleranceMs?: number } = {},
+): Promise<{ x: number; y: number; width: number; height: number }> {
+  const timeoutMs = options.timeoutMs ?? 5_000;
+  const intervalMs = options.intervalMs ?? 50;
+  const tolerance = options.toleranceMs ?? 0.5;
+  const deadline = Date.now() + timeoutMs;
+  let prev: { x: number; y: number; width: number; height: number } | null = null;
+  while (Date.now() < deadline) {
+    const box = await locator.boundingBox();
+    if (box !== null) {
+      if (
+        prev !== null &&
+        Math.abs(prev.x - box.x) < tolerance &&
+        Math.abs(prev.y - box.y) < tolerance &&
+        Math.abs(prev.width - box.width) < tolerance &&
+        Math.abs(prev.height - box.height) < tolerance
+      ) {
+        return box;
+      }
+      prev = box;
+    } else {
+      prev = null;
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+  throw new Error('waitForBoundingBoxStable: bounding box never stabilized within timeout');
 }
 
 const NODE_ID = '11111111-1111-4111-8111-111111111301';
@@ -141,32 +231,42 @@ test.describe.serial('moderator annotation-endpoint propose gestures', () => {
       );
       return;
     }
-    const sourceBox = await annotationSourceHandle.first().boundingBox();
-    const targetBox = await statementTargetHandle.first().boundingBox();
-    if (sourceBox === null || targetBox === null) {
+    const sourceHandle = annotationSourceHandle.first();
+    const targetHandle = statementTargetHandle.first();
+    if (
+      (await sourceHandle.boundingBox()) === null ||
+      (await targetHandle.boundingBox()) === null
+    ) {
       test.skip(
         true,
         'Handle bounding boxes were null — drag simulation cannot fire. Annotation-source draw-edge gesture coverage deferred.',
       );
       return;
     }
-    const sx = sourceBox.x + sourceBox.width / 2;
-    const sy = sourceBox.y + sourceBox.height / 2;
-    const tx = targetBox.x + targetBox.width / 2;
-    const ty = targetBox.y + targetBox.height / 2;
 
-    await page.mouse.move(sx, sy);
-    await page.mouse.down();
-    // Two intermediate moves so ReactFlow's internal connection-line
-    // pipeline registers the drag, then move to the target handle.
-    await page.mouse.move((sx + tx) / 2, (sy + ty) / 2, { steps: 5 });
-    await page.mouse.move(tx, ty, { steps: 5 });
-    await page.mouse.up();
-
+    // Settle dagre's measurement-driven re-layout before sampling the
+    // handle coordinates, then drive the drag. The drag is idempotent —
+    // each successful drop re-opens the picker at the latest pointer
+    // position — so on the rare run where the first drop loses the
+    // re-layout race (picker never mounts), re-settle and re-drag. Same
+    // race-robust posture as `moderator-draw-edge.spec.ts` lines
+    // 363-373.
     const picker = page.getByTestId('draw-edge-role-picker');
-    await expect(picker, 'draw-edge role picker must mount after the drop').toBeVisible({
-      timeout: 10_000,
-    });
+    await waitForBoundingBoxStable(sourceHandle);
+    await waitForBoundingBoxStable(targetHandle);
+    await dragFromHandleToHandle(page, sourceHandle, targetHandle);
+    try {
+      await expect(picker, 'draw-edge role picker must mount after the drop').toBeVisible({
+        timeout: 2_500,
+      });
+    } catch {
+      await waitForBoundingBoxStable(sourceHandle);
+      await waitForBoundingBoxStable(targetHandle);
+      await dragFromHandleToHandle(page, sourceHandle, targetHandle);
+      await expect(picker, 'draw-edge role picker must mount after the drop').toBeVisible({
+        timeout: 10_000,
+      });
+    }
     // Annotation-source / node-target endpoint-kind disambiguation —
     // the picker's data-attributes are the canonical observation
     // seam (Acceptance criterion: `data-source-kind` /

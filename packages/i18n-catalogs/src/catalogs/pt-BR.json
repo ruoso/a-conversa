@@ -552,8 +552,8 @@
         "sessionMissing": "nenhuma sessão carregada",
         "notConnected": "a sessão não está conectada — reconectando…",
         "contentMissing": "digite o conteúdo do meta-movimento primeiro",
-        "targetMissing": "selecione um nó-alvo — clique em um nó para defini-lo",
-        "targetKindInvalid": "meta-movimentos têm como alvo um nó — limpe o alvo de anotação e escolha um nó",
+        "targetMissing": "selecione um alvo (nó ou aresta) — clique em um para defini-lo",
+        "targetKindInvalid": "meta-movimentos têm como alvo nós ou arestas — limpe o alvo de anotação e escolha um nó ou aresta",
         "kindMissing": "escolha um tipo de meta-movimento (reenquadramento / mudança de escopo / postura)"
       }
     },

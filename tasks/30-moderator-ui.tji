@@ -607,6 +607,7 @@ task moderator_ui "Moderator UI" {
     task mod_meta_move_annotation_target_gesture "Annotation-target handling for meta-move" {
       effort 0.5d
       allocate team
+      complete 100
       depends !mod_meta_move_action
       note "Source: moderator_ui.mod_meta_move_flow.mod_meta_move_action AC §12 — decides whether meta-moves on annotations should be permissible (engine-side enum widening) or whether the v1 rejection remains as a permanent product rule. Concrete spec-write + implementation per Decision §4 of tasks/refinements/moderator-ui/mod_meta_move_action.md."
     }

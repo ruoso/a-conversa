@@ -552,8 +552,8 @@
         "sessionMissing": "no session is loaded",
         "notConnected": "the session is not connected — reconnecting…",
         "contentMissing": "type the meta-move content first",
-        "targetMissing": "pick a target node — click a node to stage it",
-        "targetKindInvalid": "meta-moves target a node — clear the annotation target and pick a node",
+        "targetMissing": "pick a target node or edge — click one to stage it",
+        "targetKindInvalid": "meta-moves target nodes or edges — clear the annotation target and pick a node or edge",
         "kindMissing": "pick a meta-move kind (reframe / scope-change / stance)"
       }
     },

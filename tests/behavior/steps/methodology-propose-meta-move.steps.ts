@@ -49,6 +49,7 @@ const PMM_NODE_B_ID = 'b2eeeeee-eeee-4eee-8eee-eeeeeeeee005';
 const PMM_EDGE_ID = 'b2eeeeee-eeee-4eee-8eee-eeeeeeeee006';
 const PMM_UNKNOWN_NODE_ID = 'b2eeeeee-eeee-4eee-8eee-eeeeeeeee0aa';
 const PMM_NEW_EVENT_ID = 'b2eeeeee-eeee-4eee-8eee-eeeeeeeee007';
+const PMM_ANNOTATION_ID = 'b2eeeeee-eeee-4eee-8eee-eeeeeeeee008';
 
 const TS_BASE = '2026-05-10T23:00:00.000Z';
 
@@ -144,6 +145,28 @@ async function insertCandidateNode(world: AConversaWorld): Promise<void> {
   });
 }
 
+async function insertAnnotationOnNodeA(world: AConversaWorld): Promise<void> {
+  // Annotation hanging off NODE_A — the cross-layer pin scenario (ADR
+  // 0036) needs an annotation id present in projection so the rejection
+  // path can be exercised distinctly from the "unknown id" scenario.
+  await insertEventRow(world, PMM_SESSION_ID, {
+    id: evId(1108),
+    sequence: 6,
+    kind: 'annotation-created',
+    actor: PMM_DEBATER_A_ID,
+    payload: {
+      annotation_id: PMM_ANNOTATION_ID,
+      kind: 'note',
+      content: 'A note hanging off the candidate node.',
+      target_node_id: PMM_NODE_A_ID,
+      target_edge_id: null,
+      created_by: PMM_DEBATER_A_ID,
+      created_at: tsAt(5),
+    },
+    createdAt: tsAt(5),
+  });
+}
+
 async function insertEdgePair(world: AConversaWorld): Promise<void> {
   await insertEventRow(world, PMM_SESSION_ID, {
     id: evId(1106),
@@ -214,6 +237,16 @@ Given(
   },
 );
 
+Given(
+  'a seeded session with three participants, a visible node, and an annotation hanging off it for propose-meta-move tests',
+  async function (this: AConversaWorld) {
+    await seedLifecycle(this);
+    await insertCandidateNode(this);
+    await insertAnnotationOnNodeA(this);
+    this.scratch['proposeProjection'] = await projectFromDb(this);
+  },
+);
+
 // ---------------------------------------------------------------
 // When steps.
 // ---------------------------------------------------------------
@@ -260,6 +293,36 @@ When(
         content: 'We should be defending the typical case, not the edge case.',
         target_kind: 'edge',
         target_id: PMM_EDGE_ID,
+      },
+    };
+    this.scratch['proposeAction'] = action;
+  },
+);
+
+When(
+  "a debater constructs a propose-meta-move action carrying the annotation id under target_kind 'node'",
+  function (this: AConversaWorld) {
+    // ADR 0036 / refinement mod_meta_move_annotation_target_gesture §3
+    // — the cross-layer rule pin. A misbehaving client could in
+    // principle send `target_kind: 'node'` with an annotation id as
+    // `target_id`; the engine's projection has no `getAnnotation`
+    // accessor on the node-resolution path, so the validator's rule 1
+    // returns `target-entity-not-found`.
+    const projection = this.scratch['proposeProjection'] as Projection;
+    const action: ProposeAction = {
+      kind: 'propose',
+      requester: PMM_DEBATER_A_ID,
+      sessionId: PMM_SESSION_ID,
+      eventId: PMM_NEW_EVENT_ID,
+      sequence: nextSequence(projection),
+      actor: PMM_DEBATER_A_ID,
+      createdAt: tsAt(20),
+      proposal: {
+        kind: 'meta-move',
+        meta_kind: 'reframe',
+        content: 'An annotation id smuggled in under target_kind: node.',
+        target_kind: 'node',
+        target_id: PMM_ANNOTATION_ID,
       },
     };
     this.scratch['proposeAction'] = action;

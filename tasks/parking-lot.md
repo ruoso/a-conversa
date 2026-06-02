@@ -56,3 +56,10 @@ When the human resolves an item, delete its block (git history preserves it).
 - **Why parked**: architectural call — whether `meta-disagreement` is a KIND (warranting its own enum variant, badge color, i18n key) or a STANCE POSTURE (correctly expressed as `annotation_kind: 'stance'` with a facet pre-set) requires a methodology owner decision. The implementer chose `'stance'` as the conservative interpretation.
 - **Suggested resolution**: if the methodology owner decides `'meta-disagreement'` is a distinct kind, create a `mod_annotation_kind_meta_disagreement` task to widen `annotationKindSchema`, add badge rendering, update catalog keys in all three locales, and change the disagree item to pre-select the new kind instead of `'stance'`.
 
+### 2026-06-02 — i18n native review — meta-move targetMissing/targetKindInvalid (pt-BR, es-419)
+
+- **Source**: closer for `moderator_ui.mod_meta_move_flow.mod_meta_move_annotation_target_gesture`.
+- **Question**: the pt-BR and es-419 corrections to `reason.targetMissing` and `reason.targetKindInvalid` (now referencing "node or edge" rather than "node" only) were drafted by the agent; they need native-speaker review for accuracy and register.
+- **Why parked**: native-speaker sign-off is inherently human work — the agent drafted the corrections to maintain catalog parity but cannot approve their fluency or register. Per ADR 0024 the en-US copy is authoritative at land; pt-BR/es-419 ship as parity-complete drafts pending review.
+- **Suggested resolution**: a native-speaker review pass over `packages/i18n-catalogs/src/catalogs/pt-BR.json` and `es-419.json` for the two keys `reason.targetMissing` and `reason.targetKindInvalid` (lines ~555–556 in each catalog). Accept the drafts or correct them in place and close this item.
+

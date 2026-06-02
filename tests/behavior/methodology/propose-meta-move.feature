@@ -41,3 +41,22 @@ Feature: methodology engine — propose meta-move handler against a DB-projected
     When a debater constructs a propose-meta-move action against an unknown node target
     And the methodology engine validates the propose action against the projected session
     Then the validation result is Rejected with reason "target-entity-not-found"
+
+  Scenario: a propose-meta-move carrying an annotation id under target_kind 'node' is rejected as target-entity-not-found
+    # Defensive cross-layer pin — ADR 0036 / refinement
+    # mod_meta_move_annotation_target_gesture §3.
+    #
+    # The wire schema's target_kind enum is `{'node', 'edge'}`; a well-
+    # behaved client never sends `target_kind: 'node'` with an annotation
+    # id as `target_id`. The engine's projection has no
+    # `getAnnotation(...)` resolution on the node-resolution path, so a
+    # misbehaving client (or a future projection refactor that
+    # accidentally let annotation ids resolve through `getNode`) is
+    # caught at the validator with `target-entity-not-found`. This
+    # scenario pins that cross-layer guarantee so the methodology
+    # layer's "annotations are never meta-move targets" rule (ADR 0036)
+    # stays load-bearing regardless of structural projection refactors.
+    Given a seeded session with three participants, a visible node, and an annotation hanging off it for propose-meta-move tests
+    When a debater constructs a propose-meta-move action carrying the annotation id under target_kind 'node'
+    And the methodology engine validates the propose action against the projected session
+    Then the validation result is Rejected with reason "target-entity-not-found"

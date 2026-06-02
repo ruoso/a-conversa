@@ -414,6 +414,7 @@ export const metaMoveProposalSchema = z.object({
   meta_kind: z.enum(['reframe', 'scope-change', 'stance']),
   // Methodology-text cap per F-003 — see `limits.ts`.
   content: z.string().min(1).max(MAX_METHODOLOGY_TEXT_LENGTH),
+  // see ADR 0036 — annotation targets intentionally absent
   target_kind: z.enum(['node', 'edge']),
   target_id: z.string().uuid(),
 });

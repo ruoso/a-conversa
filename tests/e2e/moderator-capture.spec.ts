@@ -2893,4 +2893,201 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
       'edge',
     );
   });
+
+  // Refinement:
+  // tasks/refinements/moderator-ui/mod_meta_move_annotation_target_gesture.md
+  // ADR: docs/adr/0036-meta-move-target-scope-nodes-and-edges-only.md
+  //
+  // Annotation-target rejection cover — companion to the F8 default-kind
+  // block (lines 2539+), the kind-selector block (2668+), and the
+  // edge-target block (2792+). Acceptance criterion §8: this gesture is
+  // user-reachable (annotation click → F8 → submit), so e2e is in scope
+  // per the UI-stream default policy.
+  //
+  // Drives: login → create session → enter operate → seed a node + an
+  // annotation hanging from it → click the annotation (stages it as the
+  // capture target with `data-target-kind="annotation"`) → press F8 →
+  // assert the chip carries the annotation kind and renders the
+  // annotation content → type meta-move content → press the submit key
+  // → assert the inline `meta-move-propose-validation-error` region
+  // renders the corrected en-US `targetKindInvalid` copy (the
+  // post-edge-widening wording naming both node AND edge as the valid
+  // kinds) → assert no `proposal` event lands in
+  // `useWsStore.sessionState[sessionId].events` (the client-side guard
+  // short-circuits before any envelope is sent).
+  //
+  // **Why a validation-error assertion, not wire-error.** ADR 0036
+  // freezes annotation rejection as a permanent product rule; the
+  // client-side `useMetaMoveAction` guard fires the rejection inline
+  // (via the validation-error region `meta-move-propose-validation-error`)
+  // BEFORE any wire round-trip. The wire never carries an
+  // annotation-targeted meta-move propose — the schema's enum-typed
+  // `target_kind` is `{'node', 'edge'}` and the hook's call-time guard
+  // short-circuits. The block pins both halves: the corrected copy
+  // surfaces, and the events log stays free of a propose envelope.
+  //
+  // Skips gracefully when `window.__aConversaWsStore` is unreachable.
+  test('alice: select an annotation → F8 → propose; the inline validation-error surfaces the corrected targetKindInvalid copy and no propose envelope is sent', async ({
+    page,
+  }) => {
+    await loginAs(page, { username: TEST_USERNAME });
+    await page.goto('/m/sessions/new');
+    await expect(page.getByTestId('route-create-session')).toBeVisible();
+
+    await page
+      .getByTestId('create-session-topic-input')
+      .fill('Meta-move annotation-rejection e2e regression check.');
+    await page.getByTestId('create-session-submit').click();
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    await seedInviteParticipantsForGate(page);
+    await page.getByTestId('invite-enter-session').click();
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
+    await expect(page.getByTestId('route-operate')).toBeVisible();
+
+    const seedAvailable = await isWsStoreReachable(page);
+    if (!seedAvailable) {
+      test.skip(
+        true,
+        'window.__aConversaWsStore is not reachable — the dev-only attachment did not fire. Full-chain assertion deferred to the seed-infrastructure environment.',
+      );
+      return;
+    }
+
+    const url = new URL(page.url());
+    const sessionId = url.pathname.split('/')[3] ?? '';
+    expect(sessionId, 'session id must be parsed from the URL').toBeTruthy();
+
+    const HOST_NODE_ID = '44444444-4444-4444-8444-444444444421';
+    const ANNOTATION_ID = '66666666-6666-4666-8666-666666666621';
+    const PROMOTING_EDGE_ID = '55555555-5555-4555-8555-555555555521';
+    const ANNOTATION_CONTENT = 'A note hanging off the host statement.';
+    // The annotation is only rendered as a clickable standalone
+    // `<AnnotationNode>` (testid `annotation-node-${id}`) when it
+    // appears as an edge endpoint — the badge-only path renders an
+    // `<AnnotationBadge>` on the host node instead. Per
+    // `mod_render_annotation_endpoint_edges` Decision §1, promotion is
+    // mutually exclusive with the badge form. The endpoint edge below
+    // promotes the annotation so the gesture under test has a target
+    // to click. (The annotation-endpoint edge is structural setup, not
+    // the gesture under test: the test still asserts the ADR-0036
+    // client-side rejection of the annotation as a meta-move target.)
+    await seedWsStore(page, {
+      sessionId,
+      nodes: [{ nodeId: HOST_NODE_ID, wording: 'Host statement of the annotation target.' }],
+      annotations: [
+        {
+          annotationId: ANNOTATION_ID,
+          kind: 'note',
+          content: ANNOTATION_CONTENT,
+          targetNodeId: HOST_NODE_ID,
+        },
+      ],
+      edges: [
+        {
+          edgeId: PROMOTING_EDGE_ID,
+          source: HOST_NODE_ID,
+          target: ANNOTATION_ID,
+          role: 'contradicts',
+          sourceKind: 'node',
+          targetKind: 'annotation',
+        },
+      ],
+    });
+
+    // Click the annotation node — `handleNodeClick` dispatches
+    // `select({ kind: 'annotation', id })`; the chip's selection-bridge
+    // effect picks it up and stages the annotation as the capture
+    // target. Use the shared `clickNodeUntilTargetStaged` helper, which
+    // RE-CLICKS on each poll tick: ReactFlow's `onNodeClick` only fires
+    // after the (newly-seeded) node has been measured into
+    // `nodeInternals` via ResizeObserver, so the first click can no-op
+    // on a busy runner and the selection never registers. The helper's
+    // re-click poll defeats that race; a single-shot `toPass` whose
+    // inner `toHaveAttribute` eats the whole timeout budget on one
+    // attempt cannot (the click is never retried). Asserting the chip
+    // label also confirms the annotation content resolved through
+    // `selectAnnotationContentById`.
+    const annotationNode = page.getByTestId(`annotation-node-${ANNOTATION_ID}`);
+    await expect(annotationNode, 'seeded annotation node must render').toBeVisible({
+      timeout: 10_000,
+    });
+    await clickNodeUntilTargetStaged(page, annotationNode, 'Target: A note hanging off the host');
+    // The chip now carries the annotation kind (the staging is settled,
+    // so this is a non-racy confirmation rather than a poll).
+    await expect(page.getByTestId('capture-target-chip')).toHaveAttribute(
+      'data-target-kind',
+      'annotation',
+    );
+
+    // Press F8 → meta-move mode entered; the staged annotation target
+    // survives the mode flip (the chip's `userHasClearedRef` logic
+    // preserves it). The chip should still carry the annotation kind
+    // and render its content.
+    await page.keyboard.press('F8');
+    await expect(page.getByTestId('meta-move-capture-pane')).toBeVisible();
+    await expect(page.getByTestId('capture-target-chip')).toHaveAttribute(
+      'data-target-kind',
+      'annotation',
+    );
+    // The chip truncates the label to 32 characters with an ellipsis
+    // (the `WORDING_TRUNCATE_AT` contract in `CaptureTargetChip.tsx`),
+    // so assert a prefix of the annotation content that survives
+    // truncation rather than the full 38-character string — same
+    // pattern as the node-staged assertion above (line 2595).
+    await expect(page.getByTestId('capture-target-chip-label')).toContainText(
+      'Target: A note hanging off the host',
+    );
+
+    // Type the meta-move content. With content in place, the gate
+    // chain falls through `content-missing` / `target-missing` and
+    // settles on `target-kind-invalid` (the staged annotation is
+    // rejected by ADR 0036's client guard).
+    const content = 'Attempting to meta-move an annotation — should be rejected client-side.';
+    const textarea = page.getByTestId('capture-text-input-textarea');
+    await textarea.fill(content);
+
+    // The validation-error region renders the corrected en-US copy —
+    // post-edge-widening wording naming both node AND edge as the
+    // valid target kinds (refinement Acceptance criterion §4 + §8).
+    const validationError = page.getByTestId('meta-move-propose-validation-error');
+    await expect(validationError).toBeVisible({ timeout: 10_000 });
+    await expect(validationError).toContainText(
+      'meta-moves target nodes or edges — clear the annotation target and pick a node or edge',
+    );
+
+    // The button is disabled (canPropose=false because of the
+    // annotation gate). Press the submit shortcut anyway — the hook's
+    // call-time re-check short-circuits, so no envelope is sent.
+    await expect(page.getByTestId('meta-move-propose-button')).toBeDisabled();
+    const submitKey = process.platform === 'darwin' ? 'Meta+Enter' : 'Control+Enter';
+    await textarea.press(submitKey);
+
+    // The validation-error region still surfaces the corrected copy —
+    // the gate is render-time, so it survives the no-op submit.
+    await expect(validationError).toContainText(
+      'meta-moves target nodes or edges — clear the annotation target and pick a node or edge',
+    );
+
+    // The wire-error region is absent — no wire round-trip happened.
+    await expect(page.getByTestId('meta-move-propose-error')).toHaveCount(0);
+
+    // Probe `useWsStore.sessionState[sessionId].events` — only the
+    // seeded `node-created` + `annotation-created` events are present.
+    // No `proposal` event lands; the client guard short-circuits before
+    // the WS envelope is sent.
+    const proposalCount = await page.evaluate((sid) => {
+      const store = (
+        window as unknown as {
+          __aConversaWsStore?: {
+            getState(): {
+              sessionState: Record<string, { events: Array<{ kind: string }> }>;
+            };
+          };
+        }
+      ).__aConversaWsStore;
+      const session = store?.getState().sessionState[sid];
+      return (session?.events ?? []).filter((e) => e.kind === 'proposal').length;
+    }, sessionId);
+    expect(proposalCount, 'no propose envelope should land for an annotation target').toBe(0);
+  });
 });

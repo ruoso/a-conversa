@@ -26,6 +26,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { act, cleanup, render } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import i18next from 'i18next';
 import type { ReactElement, ReactNode } from 'react';
 
 import {
@@ -47,6 +48,7 @@ const TARGET_EDGE_ID = '55555555-5555-4555-8555-555555555555';
 
 beforeAll(async () => {
   await createI18nInstance('en-US');
+  await i18next.changeLanguage('en-US');
 });
 
 interface ProposeCall<T extends WsMessageType = 'propose'> {
@@ -242,6 +244,18 @@ describe('useMetaMoveAction — validation gates', () => {
       useCaptureStore.getState().setTargetEntity('annotation', 'a-1');
     });
     expect(probe.result.validationError).toBe('target-kind-invalid');
+  });
+
+  // ADR 0036 / refinement `mod_meta_move_annotation_target_gesture` §6 —
+  // the reason key pinned above resolves to the corrected en-US copy
+  // through the catalog. Pins the value side of the localized message
+  // (the reason-key test above pins the discriminant; this one pins
+  // the user-visible wording after the edge-target widening).
+  it('the target-kind-invalid reason resolves to the corrected en-US copy naming both node and edge as valid targets', () => {
+    const localized = i18next.t('moderator.metaMoveAction.reason.targetKindInvalid');
+    expect(localized).toBe(
+      'meta-moves target nodes or edges — clear the annotation target and pick a node or edge',
+    );
   });
 
   it('validationError is kind-missing when metaMoveKind is null', () => {

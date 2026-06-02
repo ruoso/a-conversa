@@ -552,8 +552,8 @@
         "sessionMissing": "ninguna sesión cargada",
         "notConnected": "la sesión no está conectada — reconectando…",
         "contentMissing": "escribe primero el contenido del meta-movimiento",
-        "targetMissing": "selecciona un nodo objetivo — haz clic en un nodo para fijarlo",
-        "targetKindInvalid": "los meta-movimientos apuntan a un nodo — limpia el objetivo de anotación y elige un nodo",
+        "targetMissing": "selecciona un objetivo (nodo o arista) — haz clic en uno para fijarlo",
+        "targetKindInvalid": "los meta-movimientos apuntan a nodos o aristas — limpia el objetivo de anotación y elige un nodo o arista",
         "kindMissing": "elige un tipo de meta-movimiento (replanteo / cambio de alcance / postura)"
       }
     },

@@ -22,8 +22,8 @@
 // targets are still rejected client-side (rather than silently coerced)
 // so the confusing engine-side `'target-entity-not-found'` rejection
 // is surfaced inline as a localized validation gate instead. The
-// annotation-target decision is deferred to
-// `mod_meta_move_annotation_target_gesture`.
+// permanence of the annotation rejection is recorded in ADR 0036
+// (`docs/adr/0036-meta-move-target-scope-nodes-and-edges-only.md`).
 //
 // On success: clears `text` and `targetEntityId` optimistically (the
 // moderator's next propose starts from an empty draft); leaves mode
@@ -139,8 +139,9 @@ export function useMetaMoveAction(): UseMetaMoveActionResult {
     // allow-list is `{'node', 'edge'}`. Annotation targets are rejected
     // client-side so the engine's `'target-entity-not-found'` rejection
     // is surfaced as a clearer inline message instead of a confusing
-    // wire error. The annotation-target decision lives with the sibling
-    // `mod_meta_move_annotation_target_gesture` task.
+    // wire error. ADR 0036 freezes annotation rejection as a permanent
+    // product rule (see
+    // `docs/adr/0036-meta-move-target-scope-nodes-and-edges-only.md`).
     validationError = 'target-kind-invalid';
   } else if (metaMoveKind === null) {
     validationError = 'kind-missing';
