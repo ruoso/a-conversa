@@ -894,11 +894,21 @@ task moderator_ui "Moderator UI" {
   task mod_withdraw_proposal_gesture "Proposer-side withdraw-proposal gesture wiring (UI + dispatch through WS)" {
     effort 1d
     allocate team
+    complete 100
     depends !mod_graph_rendering.mod_proposed_entity_canvas_visibility, backend.websocket_protocol.ws_withdraw_proposal_message
     note -8<-
       Source of debt: tasks/refinements/moderator-ui/mod_proposed_entity_canvas_visibility.md D4 + D7 — the `entity-removed` event kind + payload schema + SQL migration landed in the commit that closes mod_proposed_entity_canvas_visibility, but the proposer-side UI gesture that dispatches the WS `withdraw-proposal` message is unimplemented. Per D7 only the original proposer (identified by action.actor on the original proposal event) may withdraw; engine + handler enforce, but the gesture surface is missing. Closes the propose-then-withdraw scenario (Scenario 4) that ships deferred in the e2e at tests/e2e/moderator-proposed-entity-canvas-visibility.spec.ts.
 
       Surfaced via tech-debt registration policy in ORCHESTRATOR.md (commit landing mod_proposed_entity_canvas_visibility).
+    ->8-
+  }
+
+  task mod_withdraw_proposal_canvas_edge_annotation_removal "Fix edge and annotation canvas projectors to honor entity-removed on proposal withdraw" {
+    effort 0.5d
+    allocate team
+    depends !mod_withdraw_proposal_gesture
+    note -8<-
+      Source of debt: tasks/refinements/moderator-ui/mod_withdraw_proposal_gesture.md Status block (commit landing mod_withdraw_proposal_gesture) — the node canvas projector was fixed to honor `entity-removed` (projectNodes skips removed node ids), but the edge and annotation canvas projections in GraphCanvasPane.tsx also ignore `entity-removed`. Withdrawing a `set-edge-substance` or `capture-node`-with-edge proposal would leave the edge/annotation on the canvas. Not exercised by the single-actor e2e (which only proposes a free-floating statement), but a latent gap that mirrors the node fix. Surfaced by Fixer 1 in the mod_withdraw_proposal_gesture implementation run.
     ->8-
   }
 

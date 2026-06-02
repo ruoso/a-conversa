@@ -480,4 +480,13 @@ task participant_ui "Participant (debater) UI" {
       Purely mechanical; no semantic change. Can land at any time post-part_my_agreements_view.
     ->8-
   }
+
+  task part_withdraw_proposal_gesture "Participant-tablet withdraw-proposal gesture + cross-surface 3-context propose-then-withdraw Playwright spec" {
+    effort 1d
+    allocate team
+    depends moderator_ui.mod_withdraw_proposal_gesture
+    note -8<-
+      Source of debt: tasks/refinements/moderator-ui/mod_withdraw_proposal_gesture.md §D5 + Status block (commit landing mod_withdraw_proposal_gesture) — the single-actor moderator propose-then-withdraw e2e was paid inline; the cross-surface 3-context variant (debater proposes/withdraws from participant tablet while moderator observes node disappear) requires a participant-side withdraw affordance. Also covers the participant pending-proposals row: a withdraw button rendered only when the current user is the proposal's actor, dispatching `withdraw-proposal` WS message via a `useWithdrawProposalAction`-equivalent hook for the participant surface. Deferred from mod_withdraw_proposal_gesture per §D5 — participant operate surface must exist first.
+    ->8-
+  }
 }

@@ -1655,13 +1655,26 @@ test.describe
       })
       .first();
     await expect(row).toBeVisible({ timeout: 15_000 });
+    // Capture the row's stable proposal id so the settlement check can
+    // assert that THIS row leaves the list. A successful withdraw mints
+    // no terminator event on the row itself — it emits `entity-removed`
+    // for the proposal's propose-time entities, which
+    // `derivePendingProposals` honors by dropping the row. When this is
+    // the last pending proposal, no sibling withdraw button remains to
+    // re-enable, so the success signal is the row's disappearance, not
+    // a still-mounted enabled button.
+    const proposalId = await row.getAttribute('data-proposal-id');
+    expect(proposalId, 'pending row must carry a data-proposal-id').not.toBeNull();
     const withdrawButton = row.locator('[data-testid="withdraw-proposal-button"]');
     await expect(withdrawButton).toBeVisible();
     await withdrawButton.click();
-    // Tolerant — the row removal OR an inline wire-error proves the
-    // envelope completed its round-trip.
+    // Tolerant — the row's removal OR an inline wire-error on that row
+    // proves the envelope completed its round-trip. The `:has` negation
+    // resolves once the withdrawn row unmounts (mirrors the Phase 11.x
+    // submenu-unmount settlement pattern above).
     const settled = alicePage.locator(
-      '[data-testid="withdraw-proposal-button-wire-error"], [data-testid="withdraw-proposal-button"][data-withdraw-state="enabled"]',
+      `[data-testid="withdraw-proposal-button-wire-error"][data-proposal-id="${proposalId}"], ` +
+        `body:not(:has([data-testid="pending-proposal-row"][data-proposal-id="${proposalId}"]))`,
     );
     await expect(settled.first()).toBeVisible({ timeout: 15_000 });
   });

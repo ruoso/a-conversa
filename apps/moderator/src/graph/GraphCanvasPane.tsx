@@ -685,8 +685,32 @@ export function projectNodes(
   // `mod_vote_indicators_on_graph`.
   const votesByFacetIndex = projectVotesByFacet(events);
 
+  // Removed-node set — every node id retracted by an `entity-removed`
+  // event (`entity_kind: 'node'`). Withdrawing a still-pending proposal
+  // emits one `entity-removed` per propose-time-created entity
+  // (`apps/server/src/ws/handlers/withdraw.ts`); the projection must
+  // drop the matching node so the proposed entity leaves the canvas.
+  // The original `node-created` event stays in the immutable log (ADR
+  // 0021), so the removal can only be honored here, at projection time.
+  // Up-front pass: `entity-removed` always follows its `node-created`
+  // in the log, so collecting the removed ids first lets the main loop
+  // skip them in one pass. Refinement:
+  // `mod_withdraw_proposal_gesture`.
+  const removedNodeIds = new Set<string>();
+  for (const event of events) {
+    if (event.kind === 'entity-removed' && event.payload.entity_kind === 'node') {
+      removedNodeIds.add(event.payload.entity_id);
+    }
+  }
+
   for (const event of events) {
     if (event.kind === 'node-created') {
+      // Skip nodes retracted by a later `entity-removed` (a withdrawn
+      // proposal's propose-time node). The node never reaches the
+      // ReactFlow array, so it leaves the canvas.
+      if (removedNodeIds.has(event.payload.node_id)) {
+        continue;
+      }
       const annotations = annotationsByNode.get(event.payload.node_id) ?? EMPTY_ANNOTATIONS;
       const facetStatuses =
         facetStatusIndex.nodes.get(event.payload.node_id) ?? EMPTY_FACET_STATUSES;

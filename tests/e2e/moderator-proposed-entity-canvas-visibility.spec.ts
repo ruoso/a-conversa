@@ -20,9 +20,13 @@
 //      `data-facet-status="proposed"`.
 //   3. 2-component `decompose` propose: parent stays visible, both
 //      child nodes render with `data-facet-status="proposed"`.
-//   4. Propose-then-withdraw across 3 contexts (moderator + proposer
-//      debater + non-proposer debater): proposed node disappears from
-//      every canvas after `withdraw-proposal`.
+//   4. Single-actor propose-then-withdraw (moderator proposes then
+//      withdraws their own pending proposal): proposed node leaves the
+//      canvas and the pending-proposal row is removed after
+//      `withdraw-proposal`. Owned by `mod_withdraw_proposal_gesture`,
+//      which pays down the single-actor slice of the originally-3-context
+//      Scenario 4 debt; the cross-surface 3-context variant stays
+//      deferred to `participant_ui.part_withdraw_proposal_gesture`.
 //
 // Authored failing-first per the refinement (red commit shows
 // `statement-node-*` testids missing for the proposed node); the fix
@@ -395,19 +399,71 @@ test.describe('mod_proposed_entity_canvas_visibility — proposed entities rende
       .toBe(0);
   });
 
-  // Scenario 4 (propose-then-withdraw 3-context flow) remains
-  // deferred per the parent refinement: it needs the participant-side
-  // withdraw gesture (M5 leaf) AND the cross-surface 3-context test
-  // fixture (re-using `cross-surface-lobby-start.spec.ts:46-95`'s
-  // shape). The follow-up task is `mod_withdraw_proposal_gesture`;
-  // the wire-layer `withdraw-proposal` handler + the
-  // `entity-removed` event lifecycle ship in this commit cluster
-  // (Vitest + Cucumber coverage pin the wire contract).
+  // Scenario 4 — single-actor propose-then-withdraw. Owned by
+  // `moderator_ui.mod_withdraw_proposal_gesture`, which pays down the
+  // single-actor slice of the Scenario 4 debt the canvas-visibility
+  // refinement deferred (§D5 of that task's refinement). The withdraw
+  // button is route-rendered on the operate console's pending-proposals
+  // row and the proposal is seedable by the moderator's own propose
+  // gesture, so under the strict UI-stream reachability test e2e is in
+  // scope here, not deferred again.
   //
-  // The scenario is intentionally LEFT OUT — re-adding it as silent
-  // `test.fixme` would violate the refinement's D6 ("Failing-first
-  // e2e is a real failing test, not a `test.fixme` or `test.fail()`
-  // annotation"). The follow-up refinement MUST scope its own
-  // Playwright cell per the tech-debt registration policy (see
-  // ORCHESTRATOR.md).
+  // The CROSS-SURFACE 3-context variant (a *debater* proposing and
+  // withdrawing from the participant tablet while the moderator observes
+  // the node disappear on a second context) remains genuinely
+  // unreachable: it needs a participant-side withdraw affordance that
+  // does not exist yet. That dimension is deferred to the new task
+  // `participant_ui.part_withdraw_proposal_gesture` (re-using
+  // `cross-surface-lobby-start.spec.ts:46-95`'s 3-context fixture),
+  // NOT to a silent `test.fixme` here.
+  test('Scenario 4: single-actor propose-then-withdraw → proposed node leaves the canvas and the pending-proposal row is removed', async ({
+    page,
+  }) => {
+    const wording = 'The proposed levy should be scrapped before it ever takes effect.';
+    await moderatorReachOperate(
+      page,
+      'Scenario 4 — single-actor propose-then-withdraw canvas-visibility check.',
+    );
+
+    // Step 1 — propose a free-floating statement (the Scenario 1
+    // shape). Exactly one `statement-node-*` testid surfaces in
+    // `proposed` state.
+    await proposeStatement(page, wording);
+    const nodes = page.getByTestId(/^statement-node-[0-9a-f-]+$/);
+    await expect(nodes).toHaveCount(1, { timeout: 15_000 });
+    await expect(nodes.first()).toHaveAttribute('data-facet-status', 'proposed', {
+      timeout: 15_000,
+    });
+
+    // Step 2 — a pending-proposal row surfaces for the proposal. The
+    // moderator (alice) is the original proposer (`row.actor ===
+    // auth.user.userId`), so the proposer-gated withdraw button renders
+    // on that row (per `mod_withdraw_proposal_gesture` §D3 — UX gating;
+    // the server independently enforces proposer authority).
+    const rows = page.getByTestId('pending-proposal-row');
+    await expect(rows).toHaveCount(1, { timeout: 15_000 });
+    const withdrawButton = rows.first().getByTestId('withdraw-proposal-button');
+    await expect(withdrawButton).toBeVisible({ timeout: 15_000 });
+    await expect(withdrawButton).toHaveAttribute('data-withdraw-state', 'enabled');
+
+    // Step 3 — click withdraw. The hook dispatches the existing
+    // `withdraw-proposal` WS message
+    // (`apps/moderator/src/layout/useWithdrawProposalAction.ts`); the
+    // server's `withdraw.ts` handler derives the retraction set from the
+    // proposal sub-kind and emits one `entity-removed` event per
+    // propose-time-created entity plus the `proposal-withdrawn` ack. No
+    // wire error must surface in the row's error region.
+    await withdrawButton.click();
+    await expect(rows.first().getByTestId('withdraw-proposal-button-wire-error')).toHaveCount(0, {
+      timeout: 15_000,
+    });
+
+    // Step 4 — the `entity-removed` broadcast applies on the canvas
+    // projector: the proposed node leaves the canvas (zero matching
+    // `statement-node` elements) and the pending-proposal row is
+    // removed. This is the headline assertion that pays down the
+    // deferred Scenario 4 single-actor observable behaviour.
+    await expect(nodes).toHaveCount(0, { timeout: 15_000 });
+    await expect(rows).toHaveCount(0, { timeout: 15_000 });
+  });
 });

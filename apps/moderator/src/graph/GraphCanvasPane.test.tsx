@@ -282,6 +282,27 @@ function makeCommit(opts: { sequence: number; proposalEnvelopeId: string }): Eve
   };
 }
 
+function makeEntityRemoved(opts: {
+  sequence: number;
+  entityKind: 'node' | 'edge' | 'annotation';
+  entityId: string;
+}): Event {
+  return {
+    id: `00000000-0000-4000-8000-${(0x400 + opts.sequence).toString(16).padStart(12, '0')}`,
+    sessionId: SESSION_ID,
+    sequence: opts.sequence,
+    kind: 'entity-removed',
+    actor: ACTOR,
+    payload: {
+      entity_kind: opts.entityKind,
+      entity_id: opts.entityId,
+      removed_by: ACTOR,
+      removed_at: '2026-05-11T00:00:00.000Z',
+    },
+    createdAt: '2026-05-11T00:00:00.000Z',
+  };
+}
+
 function makeAnnotationCreated(opts: {
   sequence: number;
   annotationId: string;
@@ -509,6 +530,24 @@ describe('projectNodes — pure projection from events to ReactFlow nodes', () =
     // Distinct x AND y is sufficient for the "not all stacked at the
     // origin" baseline.
     expect(laidOut[0]?.position).not.toEqual(laidOut[1]?.position);
+  });
+
+  it('drops a node retracted by an entity-removed event (a withdrawn proposal leaves the canvas)', () => {
+    // Refinement: `mod_withdraw_proposal_gesture`. Withdrawing a still-
+    // pending proposal emits one `entity-removed` per propose-time node
+    // (`apps/server/src/ws/handlers/withdraw.ts`); the original
+    // `node-created` stays in the immutable log (ADR 0021), so the node
+    // must be dropped at projection time. NODE_A is withdrawn; NODE_B
+    // survives.
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'withdrawn' }),
+      makeNodeCreated({ sequence: 2, nodeId: NODE_B, wording: 'survivor' }),
+      makeEntityRemoved({ sequence: 3, entityKind: 'node', entityId: NODE_A }),
+    ];
+    const nodes = projectNodes(events);
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0]?.id).toBe(NODE_B);
+    expect(nodes[0]?.data.wording).toBe('survivor');
   });
 
   it('applies a committed classify-node proposal to the matching node', () => {
