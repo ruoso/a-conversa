@@ -1,12 +1,13 @@
 // Pin for the Authelia dev-user pool exported from the e2e auth fixture.
 //
-// Refinement: tasks/refinements/participant-ui/part_e2e_user_pool_expansion.md
+// Refinements: tasks/refinements/participant-ui/part_e2e_user_pool_expansion.md
+//              tasks/refinements/participant-ui/part_e2e_user_pool_expansion_v2.md
 // ADRs:        docs/adr/0017-mock-oauth-authelia-users-file.md
 //              docs/adr/0022-no-throwaway-verifications.md
-// TaskJuggler: participant_ui.part_graph_view.part_e2e_user_pool_expansion
+// TaskJuggler: participant_ui.part_graph_view.part_e2e_user_pool_expansion_v2
 //
 // Per the refinement's Acceptance criteria, this Vitest case asserts
-// `DEV_USER_POOL.length === 12`, the no-duplicates property, and the
+// `DEV_USER_POOL.length === 18`, the no-duplicates property, and the
 // `/^[a-z]+$/` ASCII-only naming convention. The pool is the
 // single source of truth that backs the Authelia users-file at
 // `infra/authelia/users.yml`; a future PR that drops or renames a
@@ -29,8 +30,8 @@ import { describe, expect, it } from 'vitest';
 import { DEV_USER_POOL } from '../e2e/fixtures/dev-users';
 
 describe('Authelia dev user pool', () => {
-  it('exposes exactly 12 users (the 6-user → 12-user expansion landed)', () => {
-    expect(DEV_USER_POOL).toHaveLength(12);
+  it('exposes exactly 18 users (the 12-user → 18-user expansion landed)', () => {
+    expect(DEV_USER_POOL).toHaveLength(18);
   });
 
   it('contains every entry as an ASCII lowercase-only identifier (no diacritics, no digits)', () => {
@@ -43,7 +44,7 @@ describe('Authelia dev user pool', () => {
     expect(new Set(DEV_USER_POOL).size).toBe(DEV_USER_POOL.length);
   });
 
-  it('lists the canonical 12 names in source order matching infra/authelia/users.yml', () => {
+  it('lists the canonical 18 names in source order matching infra/authelia/users.yml', () => {
     // Order is part of the contract: spec authors that hand-pick pairs
     // ("block N owns DEV_USER_POOL[2*N]/[2*N+1]") rely on a stable
     // index assignment.
@@ -60,6 +61,12 @@ describe('Authelia dev user pool', () => {
       'julia',
       'kate',
       'leo',
+      'nora',
+      'oscar',
+      'peter',
+      'quinn',
+      'rosa',
+      'sam',
     ]);
   });
 });

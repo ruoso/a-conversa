@@ -1,7 +1,8 @@
 // Canonical roster of the dev-only Authelia users seeded in
 // `infra/authelia/users.yml`, plus the shared dev password.
 //
-// Refinement: tasks/refinements/participant-ui/part_e2e_user_pool_expansion.md
+// Refinements: tasks/refinements/participant-ui/part_e2e_user_pool_expansion.md
+//              tasks/refinements/participant-ui/part_e2e_user_pool_expansion_v2.md
 // ADRs:        docs/adr/0017-mock-oauth-authelia-users-file.md
 //              docs/adr/0022-no-throwaway-verifications.md
 //
@@ -18,7 +19,7 @@
 
 /**
  * The dev-only shared password baked into `infra/authelia/users.yml`
- * for the twelve seeded dev users (per ADR 0017). Hard-coded here
+ * for the eighteen seeded dev users (per ADR 0017). Hard-coded here
  * rather than read from env — the value is committed in the public
  * repo (the file's header acknowledges it as dev-only), and treating
  * it as a secret would be theater. Production Authelia uses a
@@ -27,11 +28,13 @@
 export const AUTHELIA_DEV_PASSWORD = 'aconversa-dev';
 
 /**
- * The 12 dev-only Authelia users seeded in `infra/authelia/users.yml`,
+ * The 18 dev-only Authelia users seeded in `infra/authelia/users.yml`,
  * in source order. Maintained as a single source of truth so spec
  * authors can iterate or pick from a freelist without hard-coding the
  * roster. The 6-user → 12-user expansion is documented in
  * `tasks/refinements/participant-ui/part_e2e_user_pool_expansion.md`;
+ * the 12-user → 18-user expansion in
+ * `tasks/refinements/participant-ui/part_e2e_user_pool_expansion_v2.md`;
  * the underlying ADR is `docs/adr/0017-mock-oauth-authelia-users-file.md`.
  *
  * Every entry is a valid `loginAs` username and authenticates with
@@ -50,4 +53,10 @@ export const DEV_USER_POOL: readonly string[] = [
   'julia',
   'kate',
   'leo',
+  'nora',
+  'oscar',
+  'peter',
+  'quinn',
+  'rosa',
+  'sam',
 ] as const;

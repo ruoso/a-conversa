@@ -106,9 +106,9 @@ async function freshContext(browser: Browser): Promise<BrowserContext> {
   });
 }
 
-// The four `test()` blocks below run in parallel under Playwright's
+// The twelve `test()` blocks below run in parallel under Playwright's
 // default `fullyParallel: true` posture. Each block claims a distinct
-// `{ creator, debater }` pair from the 12-user Authelia dev pool
+// `{ creator, debater }` pair from the 18-user Authelia dev pool
 // (`infra/authelia/users.yml`) to avoid the in-file per-session
 // `users` upsert race that surfaces when two blocks within the same
 // worker claim the same user-id concurrently.
@@ -124,6 +124,14 @@ async function freshContext(browser: Browser): Promise<BrowserContext> {
 //   block 8: dave + maria    (added by part_other_vote_indicators_canvas_dots; block-2 role-swap)
 //   block 9: erin + frank    (added by part_pan_zoom_tap; block-3 role-swap)
 //   block 12: leo + kate     (added by part_render_annotation_endpoint_edges; block-6 role-swap)
+//
+// The pool was expanded to 18 by
+// `tasks/refinements/participant-ui/part_e2e_user_pool_expansion_v2.md`,
+// so three spare pairs — `nora+oscar`, `peter+quinn`, `rosa+sam` —
+// are reserved for blocks 13+ (each pair + its role-swap yields two
+// block-slots, so blocks 13-18 are available without revisiting the
+// test-auth seam). The new users sit dormant until a future feature
+// leaf consumes them.
 //
 // History: blocks 1-3 saturated the original 6-user pool; block 4
 // (added by `part_annotation_render`) initially reused alice+ben and

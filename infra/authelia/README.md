@@ -89,12 +89,14 @@ material change.
 
 ## Dev users and dev password
 
-Twelve dev users are seeded in `users.yml`: **`alice`**, **`ben`**,
+Eighteen dev users are seeded in `users.yml`: **`alice`**, **`ben`**,
 **`maria`**, **`dave`**, **`erin`**, **`frank`**, **`grace`**,
-**`henry`**, **`ivan`**, **`julia`**, **`kate`**, **`leo`**. All
-twelve share a single dev password — **`aconversa-dev`** — so
-`make up` produces a working login immediately and Playwright tests
-can log any of them in without per-user secret management.
+**`henry`**, **`ivan`**, **`julia`**, **`kate`**, **`leo`**,
+**`nora`**, **`oscar`**, **`peter`**, **`quinn`**, **`rosa`**,
+**`sam`**. All eighteen share a single dev password —
+**`aconversa-dev`** — so `make up` produces a working login
+immediately and Playwright tests can log any of them in without
+per-user secret management.
 
 The pool was originally seeded with six users by
 `tasks/refinements/foundation/dockerfile_mock_oauth.md`; it was
@@ -103,7 +105,10 @@ expanded to twelve by
 so the participant-UI Playwright suite could drop
 `test.describe.serial` on `tests/e2e/participant-graph-render.spec.ts`
 and run its four blocks in parallel again, each with a distinct
-`{ creator, debater }` pair.
+`{ creator, debater }` pair. It was expanded again to eighteen by
+`tasks/refinements/participant-ui/part_e2e_user_pool_expansion_v2.md`
+to keep future participant/audience e2e blocks parallel as the
+12-user pool was fully recycled across the spec's twelve blocks.
 
 The shared password is intentional and dev-only: it is documented here,
 in the users-file header, and in the ADR. Production never reads this

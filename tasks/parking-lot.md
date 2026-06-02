@@ -84,3 +84,17 @@ When the human resolves an item, delete its block (git history preserves it).
 - **Why parked**: a methodology/product decision — what does it mean to "concede" a dangling claim, or mark a coherency hint as "intentional"? These carry no existing engine proposal kind and no precondition that recomputes away. Giving them durable semantics requires deciding what state they record (a new event kind, an annotation, a flag dismiss) and what the methodology intends. Not agent-implementable without that call.
 - **Suggested resolution**: if the methodology owner decides any of these should be actionable, spec a WBS task per move naming the proposal kind, event, projection arm, and UI gesture. Until then, focus-only is the faithful behavior.
 
+### 2026-06-02 — Reconsider dynamic round-robin auth helper before a v3 pool expansion
+
+- **Source**: closer for `participant_ui.part_graph_view.part_e2e_user_pool_expansion_v2` (implementer return summary + refinement Decision §1, §"Out of scope").
+- **Question**: v2 is the second static expansion of the Authelia dev user pool (6→12 in v1, 12→18 in v2). The role-swap doubling trick (N pairs → 2N block-slots) is also being fully exploited. If a v3 expansion is contemplated (e.g., to cover future `mod_*` Playwright blocks that need their own OIDC dance), should the team build a principled dynamic round-robin allocator (`fixtures/userPool.ts` freelist that hands out `{ creator, debater }` pairs and blocks on contention) rather than a mechanical 18→24 static bump?
+- **Why parked**: architectural/scope decision with real seam impact (rewrites how every spec acquires users). Not a pure config rotation like v1/v2 — requires a human call on the right trade-off before an agent refines and implements.
+- **Suggested resolution**: when the next pool-expansion need is identified, decide whether a v3 static bump or the dynamic allocator is the right path. If the dynamic allocator, spec a `part_e2e_user_pool_allocator` task covering the `userPool.ts` freelist design, migration of existing specs, and the updated smoke pin.
+
+### 2026-06-02 — `users.yml` ↔ `DEV_USER_POOL` drift cross-check test
+
+- **Source**: closer for `participant_ui.part_graph_view.part_e2e_user_pool_expansion_v2` (implementer return summary + refinement Decision §6).
+- **Question**: `tests/smoke/dev-user-pool.test.ts` asserts the TS array's shape but never reads `infra/authelia/users.yml`, so a user added to one file but not the other won't be caught until a Playwright login fails. A drift cross-check test that parses `users.yml` and asserts its keys equal `DEV_USER_POOL` would close that gap.
+- **Why parked**: adding YAML parsing (and likely a parser dependency) into a smoke test is scope beyond a 0.5d config rotation; the dependency addition itself is an ADR-adjacent decision. Deliberately out of scope for v2 per Decision §6. Drift risk grows with each expansion.
+- **Suggested resolution**: if a third expansion is undertaken, add the cross-check as part of that leaf (or as a standalone hardening task). The test would live in `tests/smoke/`, parse `infra/authelia/users.yml` with a lightweight YAML parser, and assert `Object.keys(parsed.users).sort()` equals `[...DEV_USER_POOL].sort()`.
+

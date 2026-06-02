@@ -251,6 +251,7 @@ task participant_ui "Participant (debater) UI" {
     task part_e2e_user_pool_expansion_v2 "Expand Authelia dev user pool beyond 12 users so future participant e2e blocks can stay parallel" {
       effort 0.5d
       allocate team
+      complete 100
       depends !part_entity_detail_panel_annotation_view
       note -8<-
         Source of debt: tasks/refinements/participant-ui/part_entity_detail_panel_annotation_view.md

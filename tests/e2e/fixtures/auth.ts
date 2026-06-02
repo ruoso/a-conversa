@@ -114,11 +114,9 @@ export { AUTHELIA_DEV_PASSWORD, DEV_USER_POOL } from './dev-users';
 export interface LoginAsOptions {
   /**
    * Authelia username. Must be one of the seeded dev users in
-   * `infra/authelia/users.yml` — `alice`, `ben`, `maria`, `dave`,
-   * `erin`, `frank`, `grace`, `henry`, `ivan`, `julia`, `kate`,
-   * `leo` (per ADR 0017 +
-   * `tasks/refinements/participant-ui/part_e2e_user_pool_expansion.md`).
-   * The canonical roster lives in {@link DEV_USER_POOL}.
+   * `infra/authelia/users.yml`; the canonical roster lives in
+   * {@link DEV_USER_POOL} (per ADR 0017 +
+   * `tasks/refinements/participant-ui/part_e2e_user_pool_expansion_v2.md`).
    */
   readonly username: string;
   /**
