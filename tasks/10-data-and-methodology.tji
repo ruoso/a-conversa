@@ -513,6 +513,7 @@ task data_and_methodology "Data and methodology" {
     task meta_move_commit_logic "Extend applyCommittedProposal meta-move arm to emit annotation-created on commit" {
       effort 1.5d
       allocate team
+      complete 100
       depends !meta_move_logic, !commit_logic
       note -8<-
         Source of debt: tasks/refinements/moderator-ui/mod_meta_move_disputed_visibility.md AC §10 — today's applyCommittedProposal meta-move arm (replay.ts L687-706 per meta_move_logic.md) synthesises an annotation id but does not emit annotation-created; the disputed-visibility selector seam (enrichAnnotationsWithFacetStatuses) is in place but receives no annotations to enrich. Scope: flip the meta-move commit arm to emit annotation-created; flip commit_logic rule 4 rejection of meta-move commits to accept; cover with Cucumber + pglite (tests/behavior/methodology/commit-meta-move.feature). Registered by closer 2026-06-01.

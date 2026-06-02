@@ -1300,24 +1300,15 @@ function applyCommittedProposal(
       return;
     }
     case 'meta-move': {
-      // TODO(meta_move_logic): rendering semantics (where the
-      // meta-move annotation surfaces, whether it grants edit-
-      // privileges, etc.) live in the methodology engine. The
-      // structural effect per docs/data-model.md is "meta-moves
-      // are events recorded in history; their effects appear on
-      // the graph" — for M1 we synthesize an annotation tied to
-      // the target so the projection has a visible artifact.
-      // Annotation id is derived from the proposal id (stable
-      // across replay; collision-free vs. user annotations
-      // because user-created annotations have UUIDs from a
-      // separate generation path).
-      const annotationId = `meta-move:${proposal.target_id}:${proposal.meta_kind}:${proposal.content.length}`;
-      // We don't have the proposal-event id at this layer (the
-      // `payload` argument is just the inner proposal payload).
-      // Honest scope: leave the meta-move's projection-level
-      // representation to the methodology engine. For now, no
-      // structural change.
-      void annotationId;
+      // No-op on the read side. A committed meta-move materializes as an
+      // annotation, but the annotation is created by a separate
+      // `annotation-created` event emitted at commit time by
+      // `buildStructuralEventsForCommit` (write side) and applied by
+      // `handleAnnotationCreated` above. This arm must NOT also create
+      // an annotation — doing so would double-create (the matching
+      // `handleAnnotationCreated` would throw on the duplicate id) and
+      // would re-mint a non-persisted id on every replay.
+      // Refinement: tasks/refinements/data-and-methodology/meta_move_commit_logic.md
       return;
     }
     case 'break-edge': {

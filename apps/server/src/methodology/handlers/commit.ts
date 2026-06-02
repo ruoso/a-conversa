@@ -351,13 +351,16 @@ function checkUnanimousAgreeStructural(
 // effect (parent invisibility, axiom-mark recording, etc.) directly on
 // the receiving side.
 //
-// `annotate` is the exception: the annotation entity has its own
-// lifecycle (its own visibility, its own facets) and so requires a
-// matching `annotation-created` event on the log. The id is minted at
-// commit time (pre-commit no annotation entity exists). The event
-// precedes the `commit` envelope in the returned list so the
-// projection's incremental `applyEvent` sees the annotation lands
-// BEFORE the `handleCommit` arm runs.
+// `annotate` and `meta-move` are the exceptions: each materializes an
+// annotation entity with its own lifecycle (its own visibility, its own
+// facets) and so requires a matching `annotation-created` event on the
+// log. (`annotate` carries the kind/content/target directly; a
+// committed meta-move surfaces as an annotation whose `kind` is the
+// proposal's `meta_kind`.) The id is minted at commit time (pre-commit
+// no annotation entity exists). The event precedes the `commit`
+// envelope in the returned list so the projection's incremental
+// `applyEvent` sees the annotation land BEFORE the `handleCommit` arm
+// runs.
 // ---------------------------------------------------------------
 
 function buildStructuralEventsForCommit(
@@ -389,6 +392,36 @@ function buildStructuralEventsForCommit(
       payload: {
         annotation_id: randomUUID(),
         kind: proposalPayload.annotation_kind,
+        content: proposalPayload.content,
+        target_node_id: targetIsEdge ? null : proposalPayload.target_id,
+        target_edge_id: targetIsEdge ? proposalPayload.target_id : null,
+        created_by: action.requester,
+        created_at: action.createdAt,
+      },
+      createdAt: action.createdAt,
+    };
+    events.push(annotationCreated);
+  } else if (proposalPayload.kind === 'meta-move') {
+    // A committed meta-move materializes as a visible annotation on its
+    // target — exactly the way `annotate` does above. The annotation's
+    // `kind` IS the meta-move's `meta_kind` (`annotationKindSchema`
+    // already admits `reframe` / `scope-change` / `stance`; no mapping
+    // table). The id is minted here and persisted, so it is stable
+    // across every subsequent replay. Per ADR 0036 a meta-move targets
+    // a node or an edge — never an annotation — so the `target_node_id`
+    // / `target_edge_id` XOR is set directly from `target_kind` /
+    // `target_id` (no annotation-of-annotation case to handle).
+    // Refinement: tasks/refinements/data-and-methodology/meta_move_commit_logic.md
+    const targetIsEdge = proposalPayload.target_kind === 'edge';
+    const annotationCreated: EventToAppendEnvelope<'annotation-created'> = {
+      id: randomUUID(),
+      sessionId: action.sessionId,
+      sequence: action.sequence + events.length,
+      kind: 'annotation-created',
+      actor: action.actor,
+      payload: {
+        annotation_id: randomUUID(),
+        kind: proposalPayload.meta_kind,
         content: proposalPayload.content,
         target_node_id: targetIsEdge ? null : proposalPayload.target_id,
         target_edge_id: targetIsEdge ? proposalPayload.target_id : null,

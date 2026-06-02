@@ -29,6 +29,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Event } from '@a-conversa/shared-types';
+import { annotationCreatedPayloadSchema } from '@a-conversa/shared-types';
 
 import { createEmptyProjection } from '../../projection/projection.js';
 import { applyEvent } from '../../projection/replay.js';
@@ -45,6 +46,11 @@ const DEBATER_B_ID = '55555555-5555-4555-8555-555555555555';
 
 const NODE_ID_1 = '77777777-7777-4777-8777-777777777777';
 const NODE_ID_STRUCT = '88888888-8888-4888-8888-888888888888';
+const EDGE_ID_1 = '99999999-9999-4999-8999-999999999999';
+
+// RFC 4122 v4 UUID shape — the meta-move arm mints `annotation_id` /
+// envelope `id` via `randomUUID()`, so both must match this.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const PROPOSAL_ID_1 = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const PROPOSAL_ID_STRUCT = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
 const PROPOSAL_ID_UNKNOWN = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
@@ -917,6 +923,162 @@ describe('commit handler — structural sub-kind: annotate', () => {
           'A second-order reframe on the first annotation.',
         );
       }
+    }
+  });
+});
+
+// ---------------------------------------------------------------
+// Structural sub-kind: meta-move.
+//
+// A committed meta-move materializes as a visible annotation on its
+// target — mirroring `annotate` above. The handler emits an
+// `annotation-created` event (kind = the proposal's `meta_kind`)
+// ahead of the `commit` envelope, so the accept path returns
+// `[annotation-created, commit]`. Per ADR 0036 the target is always a
+// node or edge (never an annotation), so the `target_node_id` /
+// `target_edge_id` XOR is set directly from `target_kind` / `target_id`.
+//
+// Refinement: tasks/refinements/data-and-methodology/meta_move_commit_logic.md
+// ---------------------------------------------------------------
+
+describe('commit handler — structural sub-kind: meta-move', () => {
+  function seedMetaMove(
+    targetKind: 'node' | 'edge',
+    targetId: string,
+    metaKind: 'reframe' | 'scope-change' | 'stance',
+    content: string,
+  ): ReturnType<typeof createEmptyProjection> {
+    const p = seedSession();
+    applyEvent(p, {
+      ...makeEvent(nextSequence(p), 'proposal', DEBATER_A_ID, T3, {
+        proposal: {
+          kind: 'meta-move',
+          meta_kind: metaKind,
+          content,
+          target_kind: targetKind,
+          target_id: targetId,
+        },
+      }),
+      id: PROPOSAL_ID_STRUCT,
+    });
+    return p;
+  }
+
+  it('accepts a fully-agreed meta-move (reframe) on a node and emits annotation-created + commit', () => {
+    const p = seedMetaMove(
+      'node',
+      NODE_ID_1,
+      'reframe',
+      'The real question is the operational form, not the surface phrasing.',
+    );
+    voteStructural(p, MODERATOR_ID, 'agree', PROPOSAL_ID_STRUCT);
+    voteStructural(p, DEBATER_A_ID, 'agree', PROPOSAL_ID_STRUCT);
+    voteStructural(p, DEBATER_B_ID, 'agree', PROPOSAL_ID_STRUCT);
+    const action = makeCommitAction(p, MODERATOR_ID, PROPOSAL_ID_STRUCT);
+    const r = validateAction(p, action);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      // annotation-created precedes commit; commit envelope is last.
+      expect(r.events).toHaveLength(2);
+      expect(r.events[0]!.kind).toBe('annotation-created');
+      expect(r.events[1]!.kind).toBe('commit');
+      const annotationEvent = r.events[0]!;
+      if (annotationEvent.kind === 'annotation-created') {
+        // kind is the meta_kind verbatim; content echoed; node target XOR.
+        expect(annotationEvent.payload.kind).toBe('reframe');
+        expect(annotationEvent.payload.content).toBe(
+          'The real question is the operational form, not the surface phrasing.',
+        );
+        expect(annotationEvent.payload.target_node_id).toBe(NODE_ID_1);
+        expect(annotationEvent.payload.target_edge_id).toBeNull();
+        expect(annotationEvent.payload.created_by).toBe(MODERATOR_ID);
+        // annotation_id and envelope id are valid UUIDs — the payload
+        // round-trips through the wire schema's UUID + XOR refine.
+        expect(() => annotationCreatedPayloadSchema.parse(annotationEvent.payload)).not.toThrow();
+        expect(annotationEvent.id).toMatch(UUID_RE);
+      }
+    }
+  });
+
+  it('accepts a fully-agreed meta-move (scope-change) on an edge with the target_edge_id branch set', () => {
+    const p = seedMetaMove(
+      'edge',
+      EDGE_ID_1,
+      'scope-change',
+      'We should be defending the typical case, not the edge case.',
+    );
+    voteStructural(p, MODERATOR_ID, 'agree', PROPOSAL_ID_STRUCT);
+    voteStructural(p, DEBATER_A_ID, 'agree', PROPOSAL_ID_STRUCT);
+    voteStructural(p, DEBATER_B_ID, 'agree', PROPOSAL_ID_STRUCT);
+    const action = makeCommitAction(p, MODERATOR_ID, PROPOSAL_ID_STRUCT);
+    const r = validateAction(p, action);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.events).toHaveLength(2);
+      const annotationEvent = r.events[0]!;
+      expect(annotationEvent.kind).toBe('annotation-created');
+      if (annotationEvent.kind === 'annotation-created') {
+        expect(annotationEvent.payload.kind).toBe('scope-change');
+        // edge target → target_edge_id set, target_node_id null.
+        expect(annotationEvent.payload.target_edge_id).toBe(EDGE_ID_1);
+        expect(annotationEvent.payload.target_node_id).toBeNull();
+        expect(() => annotationCreatedPayloadSchema.parse(annotationEvent.payload)).not.toThrow();
+        expect(annotationEvent.payload.annotation_id).toMatch(UUID_RE);
+      }
+    }
+  });
+
+  it('replays the emitted events so the annotation surfaces on the target and re-applying the commit does not double-create', () => {
+    const p = seedMetaMove(
+      'node',
+      NODE_ID_1,
+      'reframe',
+      'A reframe that should surface as an annotation on the node.',
+    );
+    voteStructural(p, MODERATOR_ID, 'agree', PROPOSAL_ID_STRUCT);
+    voteStructural(p, DEBATER_A_ID, 'agree', PROPOSAL_ID_STRUCT);
+    voteStructural(p, DEBATER_B_ID, 'agree', PROPOSAL_ID_STRUCT);
+    const action = makeCommitAction(p, MODERATOR_ID, PROPOSAL_ID_STRUCT);
+    const r = validateAction(p, action);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const annotationEvent = r.events[0]!;
+    expect(annotationEvent.kind).toBe('annotation-created');
+    if (annotationEvent.kind !== 'annotation-created') return;
+    const annotationId = annotationEvent.payload.annotation_id;
+
+    // Apply the emitted events in order: annotation-created lands the
+    // annotation; the commit's `applyCommittedProposal` meta-move arm is
+    // now a no-op (does NOT also create an annotation). This guards
+    // against a double-create — `handleAnnotationCreated` would throw a
+    // ReplayError on a duplicate id if the read-side arm still synthesized
+    // one.
+    expect(() => {
+      for (const ev of r.events) {
+        applyEvent(p, ev);
+      }
+    }).not.toThrow();
+
+    const ann = p.getAnnotation(annotationId);
+    expect(ann).toBeDefined();
+    expect(ann!.kind).toBe('reframe');
+    expect(ann!.targetNodeId).toBe(NODE_ID_1);
+    expect(ann!.targetEdgeId).toBeNull();
+    // The annotation is indexed against its target node.
+    expect(p.getAnnotationsByNode(NODE_ID_1).map((a) => a.id)).toContain(annotationId);
+  });
+
+  it('rejects a meta-move commit that is not unanimously agreed (no annotation emitted)', () => {
+    const p = seedMetaMove('node', NODE_ID_1, 'stance', 'A stance the room has not all agreed to.');
+    voteStructural(p, MODERATOR_ID, 'agree', PROPOSAL_ID_STRUCT);
+    voteStructural(p, DEBATER_A_ID, 'agree', PROPOSAL_ID_STRUCT);
+    // DEBATER_B has not voted — structural unanimity fails.
+    const action = makeCommitAction(p, MODERATOR_ID, PROPOSAL_ID_STRUCT);
+    const r = validateAction(p, action);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.reason).toBe('unanimous-agree-required');
+      expect(r.detail).toContain(DEBATER_B_ID);
     }
   });
 });

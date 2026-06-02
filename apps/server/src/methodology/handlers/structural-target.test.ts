@@ -605,14 +605,27 @@ describe('structural-target pin — meta-move', () => {
     const commitResult = validateAction(p, commitAction);
     expect(commitResult.ok).toBe(true);
     if (!commitResult.ok) return;
-    const commitEvent = commitResult.events[0]!;
+    // A committed meta-move materializes a visible annotation on its
+    // target — `commit.ts`'s `buildStructuralEventsForCommit` emits a
+    // paired `annotation-created` + `commit` (the annotation `kind` is
+    // the meta-move's `meta_kind`). The commit envelope is the LAST
+    // event in the list. Per ADR 0030 §9 it must still carry
+    // `target: 'proposal'`.
+    expect(commitResult.events).toHaveLength(2);
+    expect(commitResult.events[0]!.kind).toBe('annotation-created');
+    const commitEvent = commitResult.events[1]!;
     expect(commitEvent.kind).toBe('commit');
     if (commitEvent.kind !== 'commit') return;
     expect(commitEvent.payload.target).toBe('proposal');
     if (commitEvent.payload.target !== 'proposal') return;
     expect(commitEvent.payload.proposal_id).toBe(META_MOVE_PROPOSAL_ID);
 
-    applyEvent(p, commitEvent);
+    // Apply both events in emission order so the annotation lands
+    // before the commit (matches the projection's incremental
+    // `applyEvent` contract).
+    for (const ev of commitResult.events) {
+      applyEvent(p, ev);
+    }
     expect(p.getCommittedProposal(META_MOVE_PROPOSAL_ID)).toBeDefined();
   });
 });
