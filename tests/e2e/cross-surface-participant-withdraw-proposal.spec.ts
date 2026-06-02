@@ -5,6 +5,10 @@
 //   (§A4 — two blocks; pays down the cross-surface 3-context debt that
 //    `mod_withdraw_proposal_gesture` §D5 deferred because there was no
 //    participant-side withdraw affordance to drive it.)
+// Refinement: tasks/refinements/participant-ui/part_withdraw_proposal_overlay_removal.md
+//   (§A2 — extends Block 1 with the deferred self-withdraw cross-surface
+//    convergence, now reachable via the zero-emission `proposal-withdrawn`
+//    terminator (ADR 0037).)
 // ADRs:        docs/adr/0008-e2e-framework-playwright.md
 //              docs/adr/0017-mock-oauth-authelia-users-file.md
 //              docs/adr/0022-no-throwaway-verifications.md
@@ -22,11 +26,13 @@
 //   row since the moderator is not its actor). Debater-A clicks withdraw →
 //   the `proposal-withdrawn` ack lands cleanly (the wire-error region
 //   stays empty). Because axiom-mark is a ZERO-EMISSION proposal the
-//   server appends no terminator on withdraw (`withdraw.ts:570-583`), so
-//   the row does NOT vanish today; that disappearance assertion is the
-//   §A4 deferred sub-scenario (→ `part_withdraw_proposal_overlay_removal`,
-//   blocked on the backend zero-emission terminator). Block 1 therefore
-//   pins only what IS observable: affordance + clean ack (§D4).
+//   server appends the `proposal-withdrawn` terminator (ADR 0037) rather
+//   than a structural event; off that event on the immutable log the
+//   pending row converges to count 0 on all three surfaces (debater-A,
+//   debater-B, moderator) — the §A4 deferred sub-scenario, now paid here
+//   (`part_withdraw_proposal_overlay_removal` §A2). The pending axiom-mark
+//   never decorated the canvas (the badge is commit-gated, §D1), pinned by
+//   a `data-is-axiom="false"` sanity check.
 //
 // - **Block 2 — observe-the-withdrawal-land (projector cleanup).** The
 //   moderator captures a node; both debaters observe it on their canvas
@@ -171,7 +177,7 @@ async function captureNode(moderatorPage: Page, wording: string): Promise<string
 }
 
 test.describe('Cross-surface participant withdraw-proposal (three real browser contexts)', () => {
-  test('Block 1 — debater-A axiom-marks a node; the proposer-only withdraw button shows only on debater-A; the accepted withdraw round-trip lands cleanly', async ({
+  test('Block 1 — debater-A axiom-marks a node; the proposer-only withdraw button shows only on debater-A; the self-withdraw converges the pending row on every surface', async ({
     browser,
   }) => {
     const s = await reachOperate(browser, {
@@ -275,13 +281,33 @@ test.describe('Cross-surface participant withdraw-proposal (three real browser c
       });
 
       // Debater-A clicks withdraw → the `proposal-withdrawn` ack lands
-      // cleanly (empty wire-error region). The row does NOT disappear
-      // because axiom-mark is zero-emission (§A4 deferred sub-scenario);
-      // we pin only the accepted round-trip here (§D4).
+      // cleanly (empty wire-error region).
       await aWithdrawButtons.first().click();
       await expect(
         debaterAPage.getByTestId('participant-withdraw-proposal-button-wire-error'),
       ).toHaveCount(0, { timeout: 15_000 });
+
+      // §A2 — the deferred §A4 cross-surface convergence, now reachable via
+      // the zero-emission `proposal-withdrawn` terminator (ADR 0037). Off the
+      // new event on the immutable log the pending axiom-mark row vanishes on
+      // every surface: debater-A's own tablet, debater-B's tablet, and the
+      // moderator console. This is the debt-paying check.
+      await expect(aAxiomRow).toHaveCount(0, { timeout: 15_000 });
+      await expect(
+        debaterBPage.locator(
+          `[data-testid="participant-pending-proposal-row"][data-proposal-id="${axiomProposalId}"]`,
+        ),
+      ).toHaveCount(0, { timeout: 15_000 });
+      await expect(modAxiomRow).toHaveCount(0, { timeout: 15_000 });
+
+      // Commit-gating sanity (§D1): the participant canvas never decorated the
+      // *pending* axiom-mark, since the badge is commit-gated and the mark was
+      // never committed. Switch debater-A back to the graph mirror; the
+      // (still-present, moderator-captured) node carries no axiom badge.
+      await debaterAPage.getByTestId('participant-proposals-tabbar-graph').click();
+      await expect(
+        debaterAPage.locator(`[data-testid="participant-node-status"][data-node-id="${nodeId}"]`),
+      ).toHaveAttribute('data-is-axiom', 'false', { timeout: 15_000 });
     } finally {
       await s.teardown();
     }
