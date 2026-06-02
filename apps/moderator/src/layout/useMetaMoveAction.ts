@@ -15,13 +15,15 @@
 // (`packages/shared-types/src/events/proposals.ts:412-419`): `{ kind:
 // 'meta-move', meta_kind, content, target_kind: 'node', target_id }`.
 //
-// **Target narrowed to 'node' in v1** (Decision §4): the schema accepts
-// `target_kind: 'edge'` but the moderator UI's only target-selection
-// mechanism today is the node-scoped chip; meta-moves on edges are
-// deferred to `mod_meta_move_edge_target_gesture`. Annotation targets
-// are rejected client-side (rather than silently coerced) so the
-// confusing engine-side `'target-entity-not-found'` rejection is
-// surfaced inline as a localized validation gate instead.
+// **Target kind allow-list: `{'node', 'edge'}`** (Decision §3 of
+// `mod_meta_move_edge_target_gesture.md`). The schema sanctions both
+// values; the hook derives `target_kind` from the staged
+// `targetEntityKind` rather than hardcoding `'node'`. Annotation
+// targets are still rejected client-side (rather than silently coerced)
+// so the confusing engine-side `'target-entity-not-found'` rejection
+// is surfaced inline as a localized validation gate instead. The
+// annotation-target decision is deferred to
+// `mod_meta_move_annotation_target_gesture`.
 //
 // On success: clears `text` and `targetEntityId` optimistically (the
 // moderator's next propose starts from an empty draft); leaves mode
@@ -132,10 +134,13 @@ export function useMetaMoveAction(): UseMetaMoveActionResult {
     validationError = 'content-missing';
   } else if (targetEntityId === null) {
     validationError = 'target-missing';
-  } else if (targetEntityKind !== 'node') {
-    // Decision §4 corollary: annotation targets are rejected client-side
-    // so the engine's `'target-entity-not-found'` rejection is surfaced
-    // as a clearer inline message instead of a confusing wire error.
+  } else if (targetEntityKind !== 'node' && targetEntityKind !== 'edge') {
+    // Decision §3 of `mod_meta_move_edge_target_gesture.md`: the schema
+    // allow-list is `{'node', 'edge'}`. Annotation targets are rejected
+    // client-side so the engine's `'target-entity-not-found'` rejection
+    // is surfaced as a clearer inline message instead of a confusing
+    // wire error. The annotation-target decision lives with the sibling
+    // `mod_meta_move_annotation_target_gesture` task.
     validationError = 'target-kind-invalid';
   } else if (metaMoveKind === null) {
     validationError = 'kind-missing';
@@ -192,7 +197,7 @@ export function useMetaMoveAction(): UseMetaMoveActionResult {
     if (connectionStatusNow !== 'open') return;
     if (textNow.trim().length === 0) return;
     if (targetEntityIdNow === null) return;
-    if (targetEntityKindNow !== 'node') return;
+    if (targetEntityKindNow !== 'node' && targetEntityKindNow !== 'edge') return;
     if (metaMoveKindNow === null) return;
 
     // Snapshot the capture slices BEFORE the optimistic clear. On any
@@ -215,7 +220,10 @@ export function useMetaMoveAction(): UseMetaMoveActionResult {
           kind: 'meta-move',
           meta_kind: metaMoveKindNow,
           content: textNow,
-          target_kind: 'node',
+          // Derived from the staged target kind (Decision §3 of
+          // `mod_meta_move_edge_target_gesture.md`). The gate above
+          // narrowed `targetEntityKindNow` to `'node' | 'edge'`.
+          target_kind: targetEntityKindNow,
           target_id: targetEntityIdNow,
         },
       });

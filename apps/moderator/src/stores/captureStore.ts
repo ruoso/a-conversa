@@ -154,7 +154,8 @@ export type EdgeDirection = 'targets' | 'targeted-by';
 
 /**
  * Discriminator for the staged capture target — whether the id in
- * `targetEntityId` names a statement node or a promoted annotation.
+ * `targetEntityId` names a statement node, a promoted annotation, or
+ * an edge.
  *
  * Paired with `targetEntityId` per Decision §3 of
  * `tasks/refinements/moderator-ui/mod_propose_annotation_endpoint_gestures.md`
@@ -163,12 +164,20 @@ export type EdgeDirection = 'targets' | 'targeted-by';
  * many consumers as a string and the parallel slice keeps the gate-
  * shape stable).
  *
- * Auto-suggest stays node-scoped (Decision §5): a deliberate
- * annotation click is the only writer that lands `'annotation'`.
+ * Auto-suggest stays node-scoped (Decision §5 of the annotation
+ * refinement, Decision §5 of
+ * `mod_meta_move_edge_target_gesture.md`): a deliberate annotation /
+ * edge click is the only writer that lands `'annotation'` / `'edge'`.
  * The legacy `setTargetEntityId(id)` setter forces `'node'`; the new
  * `setTargetEntity(kind, id)` action lands both slices atomically.
+ *
+ * The `'edge'` member was added by
+ * `tasks/refinements/moderator-ui/mod_meta_move_edge_target_gesture.md`
+ * so the F8 meta-move flow can target an edge per the schema's
+ * `target_kind: 'edge'` branch. Every reset site continues to default
+ * the kind to `'node'`.
  */
-export type CaptureTargetKind = 'node' | 'annotation';
+export type CaptureTargetKind = 'node' | 'annotation' | 'edge';
 
 /**
  * The three meta-move sub-kinds the schema accepts

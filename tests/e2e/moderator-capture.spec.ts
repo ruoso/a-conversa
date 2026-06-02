@@ -2760,4 +2760,137 @@ test.describe('Capture-pane textarea — moderator types wording, sees helper co
       'true',
     );
   });
+
+  // Refinement:
+  // tasks/refinements/moderator-ui/mod_meta_move_edge_target_gesture.md
+  //
+  // Edge-target cover — companion to the F8 default-kind block above
+  // (lines 2539+) and the kind-selector block (2668+). Decision §6
+  // records the single-block shape: lands alongside the existing two
+  // meta-move blocks rather than as a new spec file.
+  //
+  // Drives: login → create session → enter operate → seed two nodes +
+  // one connecting edge → press F8 → click the seeded edge (the
+  // mode-gated `handleEdgeClick` branch stages the edge as the capture
+  // target) → assert the chip carries `data-target-kind="edge"` and
+  // renders the edge label → type meta-move content → Cmd/Ctrl+Enter →
+  // assert the wire-error region surfaces (proving the round-trip
+  // completed with `target_kind: 'edge'`).
+  //
+  // **Why wire-error rather than proposal-event assertion.** The
+  // seeded entities only live client-side; the server rejects
+  // (`target-entity-not-found` / `sequence-mismatch`) so no
+  // `event-applied` broadcast lands a `proposal` event in
+  // `useWsStore.sessionState[sessionId].events`. The Vitest layer
+  // (`useMetaMoveAction.test.tsx`) already pins the wire envelope's
+  // `target_kind: 'edge'` shape; the e2e completes the chain by
+  // proving the gesture (F8 → edge click → submit) survives browser
+  // dispatch end-to-end.
+  //
+  // Skips gracefully when `window.__aConversaWsStore` is unreachable,
+  // matching the discipline of the surrounding seeded-graph covers.
+  test('alice: F8 → click a seeded edge → propose; the meta-move envelope carries target_kind=edge', async ({
+    page,
+  }) => {
+    await loginAs(page, { username: TEST_USERNAME });
+    await page.goto('/m/sessions/new');
+    await expect(page.getByTestId('route-create-session')).toBeVisible();
+
+    await page
+      .getByTestId('create-session-topic-input')
+      .fill('Meta-move edge-target e2e regression check.');
+    await page.getByTestId('create-session-submit').click();
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/invite$/, { timeout: 10_000 });
+    await seedInviteParticipantsForGate(page);
+    await page.getByTestId('invite-enter-session').click();
+    await page.waitForURL(/\/m\/sessions\/[0-9a-f-]+\/operate$/, { timeout: 10_000 });
+    await expect(page.getByTestId('route-operate')).toBeVisible();
+
+    const seedAvailable = await isWsStoreReachable(page);
+    if (!seedAvailable) {
+      test.skip(
+        true,
+        'window.__aConversaWsStore is not reachable — the dev-only attachment did not fire. Full-chain assertion deferred to the seed-infrastructure environment.',
+      );
+      return;
+    }
+
+    const url = new URL(page.url());
+    const sessionId = url.pathname.split('/')[3] ?? '';
+    expect(sessionId, 'session id must be parsed from the URL').toBeTruthy();
+
+    const SRC_NODE_ID = '44444444-4444-4444-8444-444444444411';
+    const TGT_NODE_ID = '44444444-4444-4444-8444-444444444412';
+    const EDGE_ID = '55555555-5555-4555-8555-555555555511';
+    await seedWsStore(page, {
+      sessionId,
+      nodes: [
+        { nodeId: SRC_NODE_ID, wording: 'Source statement of the meta-move edge target.' },
+        { nodeId: TGT_NODE_ID, wording: 'Target statement of the meta-move edge target.' },
+      ],
+      edges: [{ edgeId: EDGE_ID, source: SRC_NODE_ID, target: TGT_NODE_ID, role: 'supports' }],
+    });
+
+    // Press F8 to enter meta-move mode (no target staged yet — the
+    // edge-click below stages it). The bottom-strip mounts; the chip
+    // is in its empty state.
+    await page.keyboard.press('F8');
+    await expect(page.getByTestId('meta-move-capture-pane')).toBeVisible();
+
+    // Click the seeded edge — the mode-gated `handleEdgeClick` branch
+    // dispatches `setTargetEntity('edge', edge.id)`; the chip's
+    // wording-lookup branches to `selectEdgeLabelById` and renders the
+    // role-prefixed endpoint snippets.
+    //
+    // ReactFlow wraps each edge in a `<g class="react-flow__edge">`
+    // with `data-testid="rf__edge-<edge id>"` (per `EdgeWrapper` in
+    // `@reactflow/core` — edges expose `data-testid`, not `data-id`;
+    // `data-id` is only stamped on node wrappers) and a child `<path
+    // class="react-flow__edge-path">` (the click target). The label is
+    // rendered via `EdgeLabelRenderer` in a separate DOM tree —
+    // clicking the label does NOT fire ReactFlow's `onEdgeClick`.
+    const seededEdgeLabel = page.getByTestId(`graph-edge-label-${EDGE_ID}`);
+    await expect(seededEdgeLabel, 'seeded edge label must render').toBeVisible({
+      timeout: 10_000,
+    });
+    const seededEdgePath = page.locator(
+      `[data-testid="rf__edge-${EDGE_ID}"] .react-flow__edge-path`,
+    );
+    await expect(seededEdgePath, 'seeded edge SVG path must render').toHaveCount(1, {
+      timeout: 10_000,
+    });
+    // Retry until the chip carries the edge kind — ReactFlow's edge
+    // click pipeline can debounce as the underlying path measures in.
+    await expect(async () => {
+      await seededEdgePath.click({ force: true });
+      await expect(page.getByTestId('capture-target-chip')).toHaveAttribute(
+        'data-target-kind',
+        'edge',
+      );
+    }).toPass({ timeout: 5_000 });
+    await expect(page.getByTestId('capture-target-chip-label')).toContainText('supports:');
+
+    const content = 'Reframe the inferential link itself — is the support real?';
+    const textarea = page.getByTestId('capture-text-input-textarea');
+    await textarea.fill(content);
+
+    const submitKey = process.platform === 'darwin' ? 'Meta+Enter' : 'Control+Enter';
+    await textarea.press(submitKey);
+
+    // The wire-error region surfaces the typed rejection code, proving
+    // the round-trip completed with `target_kind: 'edge'` (otherwise
+    // the schema would have rejected client-side at the WS layer).
+    const wireError = page.getByTestId('meta-move-propose-error');
+    await expect(wireError).toBeVisible({ timeout: 10_000 });
+    await expect(wireError).toContainText(/target-entity-not-found|sequence-mismatch/);
+
+    // Snapshot restore — the textarea retains the typed content and
+    // the chip stays staged with the edge so the moderator can fix
+    // and retry without re-clicking the edge.
+    await expect(textarea).toHaveValue(content);
+    await expect(page.getByTestId('capture-target-chip')).toHaveAttribute(
+      'data-target-kind',
+      'edge',
+    );
+  });
 });

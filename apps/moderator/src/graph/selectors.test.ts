@@ -55,6 +55,7 @@ import {
   projectPendingAxiomMarks,
   selectAnnotationContentById,
   selectAnnotations,
+  selectEdgeLabelById,
   selectEdgesForSession,
   selectNodeWordingById,
 } from './selectors.js';
@@ -1351,6 +1352,202 @@ describe('selectAnnotationContentById', () => {
       },
     ];
     expect(selectAnnotationContentById(events, 'a-dup')).toBe('second content');
+  });
+});
+
+// -- selectEdgeLabelById ----------------------------------------------
+//
+// Refinement:
+// tasks/refinements/moderator-ui/mod_meta_move_edge_target_gesture.md
+//
+// The `<CaptureTargetChip>` calls `selectEdgeLabelById(events, edgeId)`
+// when a staged edge target needs its display label. The selector
+// formats `<role>: <source-snippet> → <target-snippet>` with each
+// endpoint snippet truncated; missing endpoints fall back to their
+// raw ids; a missing `edge-created` event returns null so the chip can
+// render the raw edge id defensively.
+describe('selectEdgeLabelById', () => {
+  const EDGE_ID = '00000000-0000-4000-8000-0000000000e1';
+  const SRC_NODE = '00000000-0000-4000-8000-0000000000a1';
+  const TGT_NODE = '00000000-0000-4000-8000-0000000000a2';
+  const ANNO_ID = '00000000-0000-4000-8000-0000000000b1';
+
+  function makeEdgeCreated(payload: {
+    edgeId: string;
+    role: EdgeRole;
+    sourceNodeId?: string;
+    sourceAnnotationId?: string;
+    targetNodeId?: string;
+    targetAnnotationId?: string;
+    sequence: number;
+  }): Event {
+    const inner: Record<string, unknown> = {
+      edge_id: payload.edgeId,
+      role: payload.role,
+      created_by: ACTOR,
+      created_at: '2026-05-11T00:00:00.000Z',
+    };
+    if (payload.sourceNodeId !== undefined) inner.source_node_id = payload.sourceNodeId;
+    if (payload.sourceAnnotationId !== undefined)
+      inner.source_annotation_id = payload.sourceAnnotationId;
+    if (payload.targetNodeId !== undefined) inner.target_node_id = payload.targetNodeId;
+    if (payload.targetAnnotationId !== undefined)
+      inner.target_annotation_id = payload.targetAnnotationId;
+    return {
+      id: `00000000-0000-4000-8000-${(0x9000 + payload.sequence).toString(16).padStart(12, '0')}`,
+      sessionId: SESSION,
+      sequence: payload.sequence,
+      kind: 'edge-created',
+      actor: ACTOR,
+      payload: inner,
+      createdAt: '2026-05-11T00:00:00.000Z',
+    } as Event;
+  }
+
+  function makeNode(sequence: number, nodeId: string, wording: string): Event {
+    return {
+      id: `00000000-0000-4000-8000-${(0xa000 + sequence).toString(16).padStart(12, '0')}`,
+      sessionId: SESSION,
+      sequence,
+      kind: 'node-created',
+      actor: ACTOR,
+      payload: {
+        node_id: nodeId,
+        wording,
+        created_by: ACTOR,
+        created_at: '2026-05-11T00:00:00.000Z',
+      },
+      createdAt: '2026-05-11T00:00:00.000Z',
+    };
+  }
+
+  function makeAnnotation(sequence: number, annotationId: string, content: string): Event {
+    return {
+      id: `00000000-0000-4000-8000-${(0xb000 + sequence).toString(16).padStart(12, '0')}`,
+      sessionId: SESSION,
+      sequence,
+      kind: 'annotation-created',
+      actor: ACTOR,
+      payload: {
+        annotation_id: annotationId,
+        kind: 'note',
+        content,
+        target_node_id: null,
+        target_edge_id: null,
+        created_by: ACTOR,
+        created_at: '2026-05-11T00:00:00.000Z',
+      },
+      createdAt: '2026-05-11T00:00:00.000Z',
+    };
+  }
+
+  it('formats <role>: <source-snippet> → <target-snippet> for a node→node edge', () => {
+    // Both endpoint wordings stay under the 12-char endpoint-snippet
+    // budget so the snippets pass through untruncated.
+    const events: Event[] = [
+      makeNode(1, SRC_NODE, 'first'),
+      makeNode(2, TGT_NODE, 'second'),
+      makeEdgeCreated({
+        sequence: 3,
+        edgeId: EDGE_ID,
+        role: 'supports',
+        sourceNodeId: SRC_NODE,
+        targetNodeId: TGT_NODE,
+      }),
+    ];
+    expect(selectEdgeLabelById(events, EDGE_ID)).toBe('supports: first → second');
+  });
+
+  it('truncates each endpoint snippet independently', () => {
+    const events: Event[] = [
+      makeNode(1, SRC_NODE, 'a-very-long-source-wording-that-exceeds-the-budget'),
+      makeNode(2, TGT_NODE, 'b-very-long-target-wording-that-exceeds-the-budget'),
+      makeEdgeCreated({
+        sequence: 3,
+        edgeId: EDGE_ID,
+        role: 'rebuts',
+        sourceNodeId: SRC_NODE,
+        targetNodeId: TGT_NODE,
+      }),
+    ];
+    expect(selectEdgeLabelById(events, EDGE_ID)).toBe('rebuts: a-very-long-… → b-very-long-…');
+  });
+
+  it('returns null when no edge-created event exists for the id', () => {
+    expect(selectEdgeLabelById([], EDGE_ID)).toBeNull();
+  });
+
+  it('returns null when an edge-created exists but does not match the id', () => {
+    const events: Event[] = [
+      makeEdgeCreated({
+        sequence: 1,
+        edgeId: '00000000-0000-4000-8000-0000000000e9',
+        role: 'supports',
+        sourceNodeId: SRC_NODE,
+        targetNodeId: TGT_NODE,
+      }),
+    ];
+    expect(selectEdgeLabelById(events, EDGE_ID)).toBeNull();
+  });
+
+  it('falls back to the raw endpoint id when an endpoint projection misses', () => {
+    // `edge-created` references nodes whose `node-created` event is
+    // absent from the slice — the selector should not crash; each
+    // endpoint label falls back to the raw id.
+    const events: Event[] = [
+      makeEdgeCreated({
+        sequence: 1,
+        edgeId: EDGE_ID,
+        role: 'qualifies',
+        sourceNodeId: SRC_NODE,
+        targetNodeId: TGT_NODE,
+      }),
+    ];
+    const label = selectEdgeLabelById(events, EDGE_ID);
+    expect(label).not.toBeNull();
+    expect(label!.startsWith('qualifies: ')).toBe(true);
+    // Each id renders truncated to the endpoint-snippet budget.
+    expect(label!).toContain('→');
+  });
+
+  it('honors annotation endpoints via the annotation-content lookup', () => {
+    const events: Event[] = [
+      makeAnnotation(1, ANNO_ID, 'an annotation body'),
+      makeNode(2, TGT_NODE, 'target node wording'),
+      makeEdgeCreated({
+        sequence: 3,
+        edgeId: EDGE_ID,
+        role: 'bridges-from',
+        sourceAnnotationId: ANNO_ID,
+        targetNodeId: TGT_NODE,
+      }),
+    ];
+    const label = selectEdgeLabelById(events, EDGE_ID);
+    expect(label).not.toBeNull();
+    expect(label!.startsWith('bridges-from: ')).toBe(true);
+  });
+
+  it('returns the role + endpoints from the latest edge-created when duplicates exist', () => {
+    const events: Event[] = [
+      makeNode(1, SRC_NODE, 'left node'),
+      makeNode(2, TGT_NODE, 'right node'),
+      makeEdgeCreated({
+        sequence: 3,
+        edgeId: EDGE_ID,
+        role: 'supports',
+        sourceNodeId: SRC_NODE,
+        targetNodeId: TGT_NODE,
+      }),
+      makeEdgeCreated({
+        sequence: 4,
+        edgeId: EDGE_ID,
+        role: 'rebuts',
+        sourceNodeId: SRC_NODE,
+        targetNodeId: TGT_NODE,
+      }),
+    ];
+    const label = selectEdgeLabelById(events, EDGE_ID);
+    expect(label!.startsWith('rebuts: ')).toBe(true);
   });
 });
 

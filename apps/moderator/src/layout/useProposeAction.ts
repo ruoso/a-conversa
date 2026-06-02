@@ -390,6 +390,14 @@ export function useProposeAction(): UseProposeActionResult {
     if (textNow.trim().length === 0) return;
     if (targetEntityIdNow !== null && edgeRoleNow === null) return;
     if (edgeRoleNow !== null && targetEntityIdNow === null) return;
+    // Cross-flow defensive guard (Decision §4 of
+    // `mod_meta_move_edge_target_gesture.md`): the F1 capture-with-edge
+    // flow only routes endpoints by `'node' | 'annotation'`; an `'edge'`
+    // kind would be misrouted by `buildCaptureNodeProposal`'s endpoint
+    // ternary. The edge-click gesture is mode-gated to `'meta-move'`,
+    // so this guard fires only on a programmatic stage outside the
+    // normal user paths — drop silently rather than emit a wire-trap.
+    if (targetEntityIdNow !== null && targetEntityKindNow === 'edge') return;
 
     // Snapshot the capture slices BEFORE the optimistic clear. On any
     // error path we restore from the snapshot so the moderator can

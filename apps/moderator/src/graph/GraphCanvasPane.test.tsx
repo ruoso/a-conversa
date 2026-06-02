@@ -1054,6 +1054,46 @@ describe('GraphCanvasPane — click-to-select handlers (mod_selection)', () => {
     expect(useSelectionStore.getState().selected).toEqual({ kind: 'edge', id: 'edge-7' });
   });
 
+  // Refinement:
+  // tasks/refinements/moderator-ui/mod_meta_move_edge_target_gesture.md
+  //
+  // Decision §1 — the edge-click handler gains a meta-move-mode branch
+  // that stages the clicked edge as the capture target. The selection-
+  // store update remains in both modes; the capture-store side-effect
+  // is gated on `mode === 'meta-move'` so a stray click during F1
+  // capture does not silently flip the F1 target to an edge.
+  it('handleEdgeClick in meta-move mode also stages the clicked edge as the capture target', () => {
+    useCaptureStore.getState().enterMetaMoveMode();
+    expect(useCaptureStore.getState().mode).toBe('meta-move');
+    expect(useCaptureStore.getState().targetEntityId).toBeNull();
+    handleEdgeClick(undefined, {
+      id: 'edge-meta-1',
+      source: NODE_A,
+      target: NODE_B,
+    });
+    // Selection store still updates (the existing contract).
+    expect(useSelectionStore.getState().selected).toEqual({ kind: 'edge', id: 'edge-meta-1' });
+    // Capture store now carries the clicked edge as the staged target.
+    expect(useCaptureStore.getState().targetEntityId).toBe('edge-meta-1');
+    expect(useCaptureStore.getState().targetEntityKind).toBe('edge');
+  });
+
+  it('handleEdgeClick outside meta-move mode does NOT touch the capture store', () => {
+    // Default `mode === 'idle'`; the capture store stays untouched.
+    expect(useCaptureStore.getState().mode).toBe('idle');
+    expect(useCaptureStore.getState().targetEntityId).toBeNull();
+    handleEdgeClick(undefined, {
+      id: 'edge-idle-1',
+      source: NODE_A,
+      target: NODE_B,
+    });
+    // Selection store updates (existing contract).
+    expect(useSelectionStore.getState().selected).toEqual({ kind: 'edge', id: 'edge-idle-1' });
+    // Capture store stayed pristine — no silent F1-target flip to an edge.
+    expect(useCaptureStore.getState().targetEntityId).toBeNull();
+    expect(useCaptureStore.getState().targetEntityKind).toBe('node');
+  });
+
   it('handlePaneClick clears the selection store', () => {
     useSelectionStore.getState().select({ kind: 'node', id: NODE_A });
     expect(useSelectionStore.getState().selected).toEqual({ kind: 'node', id: NODE_A });

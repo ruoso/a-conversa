@@ -360,6 +360,78 @@ export function selectAnnotationContentById(
 }
 
 /**
+ * Max characters of each endpoint's wording/content rendered inside a
+ * staged-edge chip label before truncation kicks in. The label format
+ * is `<role>: <source-snippet> → <target-snippet>`; both snippets get
+ * their own (shorter) budget so the full label fits one strip cell
+ * alongside the chip's role prefix.
+ */
+const EDGE_ENDPOINT_SNIPPET_MAX = 12;
+
+function truncateSnippet(text: string, max: number): string {
+  if (text.length <= max) return text;
+  return `${text.slice(0, max)}…`;
+}
+
+/**
+ * Resolve a single-line display label for a staged edge by id, from a
+ * session's event log. Returns `<role>: <source-snippet> → <target-snippet>`
+ * with each snippet truncated to a short fixed length so the label fits
+ * the bottom-strip chip's single-line height invariant. Falls back to
+ * `null` when no `edge-created` event for the id exists; the caller
+ * (the `<CaptureTargetChip>`) then renders the raw (truncated) edge id
+ * defensively.
+ *
+ * Refinement:
+ * `tasks/refinements/moderator-ui/mod_meta_move_edge_target_gesture.md`
+ * (Decision §2 — edge chip label format).
+ *
+ * Resolution rules:
+ *   - The latest `edge-created` event for the id wins (last-write-wins,
+ *     mirroring `selectNodeWordingById` / `selectAnnotationContentById`).
+ *   - Each endpoint resolves via the polymorphic FK encoding: if
+ *     `source_node_id` is set, the source snippet comes from the node's
+ *     wording (`selectNodeWordingById`); if `source_annotation_id` is
+ *     set, it comes from the annotation's content
+ *     (`selectAnnotationContentById`). Target endpoint mirrors source.
+ *   - When an endpoint's projection lookup misses (e.g. the staged
+ *     `edge-created` references an entity not in the session's event
+ *     slice), that endpoint renders as the raw id (truncated).
+ */
+export function selectEdgeLabelById(events: readonly Event[], edgeId: string): string | null {
+  let role: string | null = null;
+  let sourceNodeId: string | undefined;
+  let sourceAnnotationId: string | undefined;
+  let targetNodeId: string | undefined;
+  let targetAnnotationId: string | undefined;
+  let found = false;
+  for (const event of events) {
+    if (event.kind !== 'edge-created') continue;
+    if (event.payload.edge_id !== edgeId) continue;
+    found = true;
+    role = event.payload.role;
+    sourceNodeId = event.payload.source_node_id;
+    sourceAnnotationId = event.payload.source_annotation_id;
+    targetNodeId = event.payload.target_node_id;
+    targetAnnotationId = event.payload.target_annotation_id;
+  }
+  if (!found || role === null) return null;
+  const sourceLabel =
+    sourceNodeId !== undefined
+      ? (selectNodeWordingById(events, sourceNodeId) ?? sourceNodeId)
+      : sourceAnnotationId !== undefined
+        ? (selectAnnotationContentById(events, sourceAnnotationId) ?? sourceAnnotationId)
+        : '';
+  const targetLabel =
+    targetNodeId !== undefined
+      ? (selectNodeWordingById(events, targetNodeId) ?? targetNodeId)
+      : targetAnnotationId !== undefined
+        ? (selectAnnotationContentById(events, targetAnnotationId) ?? targetAnnotationId)
+        : '';
+  return `${role}: ${truncateSnippet(sourceLabel, EDGE_ENDPOINT_SNIPPET_MAX)} → ${truncateSnippet(targetLabel, EDGE_ENDPOINT_SNIPPET_MAX)}`;
+}
+
+/**
  * Camel-cased projection of one **pending** (proposed-but-not-yet-
  * committed) axiom-mark on a node.
  *

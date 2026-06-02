@@ -225,6 +225,15 @@ export function handleNodeClick(_event: unknown, node: Node): void {
 
 export function handleEdgeClick(_event: unknown, edge: Edge): void {
   useSelectionStore.getState().select({ kind: 'edge', id: edge.id });
+  // Mode-gated capture-target side-effect (Decision §1 of
+  // `tasks/refinements/moderator-ui/mod_meta_move_edge_target_gesture.md`):
+  // while the bottom-strip is in meta-move mode, an edge click also
+  // stages the clicked edge as the capture target. Outside meta-move
+  // mode the gesture is a pure selection update — a stray click during
+  // F1 capture must not silently flip the F1 target to an edge.
+  if (useCaptureStore.getState().mode === 'meta-move') {
+    useCaptureStore.getState().setTargetEntity('edge', edge.id);
+  }
 }
 
 export function handlePaneClick(): void {

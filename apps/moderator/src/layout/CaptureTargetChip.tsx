@@ -78,7 +78,11 @@ import { useCaptureStore, type EdgeDirection } from '../stores/captureStore';
 import { useSelectionStore } from '../stores/selectionStore';
 import { selectMostRecentlyActiveEntity } from '../stores/recentlyActiveNode';
 import { useWsStore } from '../ws/wsStore';
-import { selectAnnotationContentById, selectNodeWordingById } from '../graph/selectors';
+import {
+  selectAnnotationContentById,
+  selectEdgeLabelById,
+  selectNodeWordingById,
+} from '../graph/selectors';
 import { attachCaptureKeymap, type CaptureKeymapHandlers } from './captureKeymap';
 
 /**
@@ -253,18 +257,28 @@ export function CaptureTargetChip(): ReactElement {
   // targets resolve through `selectAnnotationContentById` (returns the
   // annotation's `content` body) — moderators distinguish one
   // annotation from another by content more than by kind.
-  const targetWording =
-    stagedTargetId === null
-      ? null
-      : stagedTargetKind === 'annotation'
-        ? selectAnnotationContentById(events, stagedTargetId)
-        : selectNodeWordingById(events, stagedTargetId);
-  const targetLabel =
-    stagedTargetId === null
-      ? ''
-      : targetWording === null
-        ? stagedTargetId
-        : truncate(targetWording, WORDING_TRUNCATE_AT);
+  // Per-kind wording-lookup dispatch. `'node'` → `selectNodeWordingById`;
+  // `'annotation'` → `selectAnnotationContentById` (per
+  // `mod_propose_annotation_endpoint_gestures` Decision §7);
+  // `'edge'` → `selectEdgeLabelById` (per Decision §2 of
+  // `mod_meta_move_edge_target_gesture.md`). The edge label is already
+  // formatted with role + truncated endpoint snippets, so the chip
+  // applies the standard 32-char truncation as a defensive cap rather
+  // than as the primary truncation.
+  let targetLabel = '';
+  if (stagedTargetId !== null) {
+    if (stagedTargetKind === 'edge') {
+      const edgeLabel = selectEdgeLabelById(events, stagedTargetId);
+      targetLabel = edgeLabel === null ? stagedTargetId : truncate(edgeLabel, WORDING_TRUNCATE_AT);
+    } else {
+      const targetWording =
+        stagedTargetKind === 'annotation'
+          ? selectAnnotationContentById(events, stagedTargetId)
+          : selectNodeWordingById(events, stagedTargetId);
+      targetLabel =
+        targetWording === null ? stagedTargetId : truncate(targetWording, WORDING_TRUNCATE_AT);
+    }
+  }
 
   // Override marker is visible only when the staged target is non-null
   // AND differs (by kind OR id) from the derived most-recently-active

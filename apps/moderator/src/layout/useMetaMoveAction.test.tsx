@@ -43,6 +43,7 @@ import { createI18nInstance } from '@a-conversa/shell';
 
 const SESSION_ID = '11111111-1111-4111-8111-111111111111';
 const TARGET_NODE_ID = '22222222-2222-4222-8222-222222222222';
+const TARGET_EDGE_ID = '55555555-5555-4555-8555-555555555555';
 
 beforeAll(async () => {
   await createI18nInstance('en-US');
@@ -295,6 +296,34 @@ describe('useMetaMoveAction — success path', () => {
     );
     expect(payload.proposal.target_kind).toBe('node');
     expect(payload.proposal.target_id).toBe(TARGET_NODE_ID);
+  });
+
+  // Refinement:
+  // tasks/refinements/moderator-ui/mod_meta_move_edge_target_gesture.md
+  //
+  // The Decision §3 widening — `target_kind` is derived from the staged
+  // `targetEntityKind` instead of hardcoded to `'node'`. An edge-staged
+  // target lands `target_kind: 'edge'` on the wire; the annotation
+  // rejection stays in place (asserted above in the validation-gates
+  // block).
+  it('sends target_kind="edge" when the staged target is an edge', () => {
+    const fake = makeFakeClient();
+    const probe = renderProbe(fake.client);
+    act(() => {
+      useCaptureStore.getState().enterMetaMoveMode();
+      useCaptureStore.getState().setText('Reframing the inferential link itself.');
+      useCaptureStore.getState().setTargetEntity('edge', TARGET_EDGE_ID);
+    });
+    expect(probe.result.canPropose).toBe(true);
+    act(() => {
+      void probe.result.proposeMetaMove();
+    });
+    expect(fake.calls.length).toBe(1);
+    const payload = fake.calls[0]?.payload as {
+      proposal: { target_kind: string; target_id: string };
+    };
+    expect(payload.proposal.target_kind).toBe('edge');
+    expect(payload.proposal.target_id).toBe(TARGET_EDGE_ID);
   });
 
   it('honors metaMoveKind="scope-change" when set explicitly', () => {

@@ -874,6 +874,97 @@ describe('CaptureTargetChip — unified annotation auto-suggest (mod_annotation_
   });
 });
 
+// Refinement:
+// tasks/refinements/moderator-ui/mod_meta_move_edge_target_gesture.md
+//
+// Edge-target staging surface — the chip's wording-lookup branch
+// dispatches to `selectEdgeLabelById` (Decision §2) when an edge is
+// staged as the capture target. Edges never auto-suggest (Decision §5);
+// the only writer is `setTargetEntity('edge', id)`, which the
+// mode-gated edge-click gesture in `<GraphCanvasPane>` dispatches while
+// the capture store is in `'meta-move'` mode. From the chip's
+// perspective the staged-edge entry behaves like a Case 3 override.
+describe('CaptureTargetChip — edge-target staging (mod_meta_move_edge_target_gesture)', () => {
+  function makeEdgeCreated(
+    sequence: number,
+    edgeId: string,
+    role: 'supports' | 'rebuts',
+    sourceNodeId: string,
+    targetNodeId: string,
+  ): Event {
+    return {
+      id: `00000000-0000-4000-8000-${(0x600 + sequence).toString(16).padStart(12, '0')}`,
+      sessionId: SESSION_ID,
+      sequence,
+      kind: 'edge-created',
+      actor: ACTOR,
+      payload: {
+        edge_id: edgeId,
+        role,
+        source_node_id: sourceNodeId,
+        target_node_id: targetNodeId,
+        created_by: ACTOR,
+        created_at: '2026-05-11T00:00:00.000Z',
+      },
+      createdAt: '2026-05-11T00:00:00.000Z',
+    };
+  }
+
+  it('chip flips data-target-kind to "edge" when an edge is staged', async () => {
+    seedEvents([
+      makeNodeCreated(1, 'n-src', 'src'),
+      makeNodeCreated(2, 'n-tgt', 'tgt'),
+      makeEdgeCreated(3, 'e-1', 'supports', 'n-src', 'n-tgt'),
+    ]);
+    await renderChip();
+    act(() => {
+      useCaptureStore.getState().setTargetEntity('edge', 'e-1');
+    });
+    expect(screen.getByTestId('capture-target-chip').getAttribute('data-target-kind')).toBe('edge');
+  });
+
+  it('renders <role>: <source-snippet> → <target-snippet> when the edge resolves', async () => {
+    seedEvents([
+      makeNodeCreated(1, 'n-src', 'src'),
+      makeNodeCreated(2, 'n-tgt', 'tgt'),
+      makeEdgeCreated(3, 'e-1', 'supports', 'n-src', 'n-tgt'),
+    ]);
+    await renderChip();
+    act(() => {
+      useCaptureStore.getState().setTargetEntity('edge', 'e-1');
+    });
+    expect(screen.getByTestId('capture-target-chip-label').textContent).toBe(
+      'Target: supports: src → tgt',
+    );
+  });
+
+  it('falls back to the raw edge id when no edge-created event exists for the staged target', async () => {
+    await renderChip();
+    act(() => {
+      useCaptureStore.getState().setTargetEntity('edge', 'e-missing');
+    });
+    expect(screen.getByTestId('capture-target-chip-label').textContent).toBe('Target: e-missing');
+  });
+
+  it('clearing the chip via × resets the staged edge back to default ("node", null)', async () => {
+    seedEvents([
+      makeNodeCreated(1, 'n-src', 'src'),
+      makeNodeCreated(2, 'n-tgt', 'tgt'),
+      makeEdgeCreated(3, 'e-1', 'supports', 'n-src', 'n-tgt'),
+    ]);
+    await renderChip();
+    act(() => {
+      useCaptureStore.getState().setTargetEntity('edge', 'e-1');
+    });
+    expect(useCaptureStore.getState().targetEntityKind).toBe('edge');
+    act(() => {
+      fireEvent.click(screen.getByTestId('capture-target-chip-clear'));
+    });
+    expect(useCaptureStore.getState().targetEntityId).toBeNull();
+    expect(useCaptureStore.getState().targetEntityKind).toBe('node');
+  });
+});
+
 describe('CaptureTargetChip — i18n catalog parity', () => {
   const KEYS = [
     'moderator.captureTargetChip.empty',

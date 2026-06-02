@@ -892,6 +892,44 @@ describe('useCaptureStore — targetEntityKind slice (mod_propose_annotation_end
     expect(state.targetEntityId).toBeNull();
     expect(state.targetEntityKind).toBe('node');
   });
+
+  // Refinement:
+  // tasks/refinements/moderator-ui/mod_meta_move_edge_target_gesture.md
+  //
+  // The `CaptureTargetKind` widening to include `'edge'`. The setter
+  // path mirrors the annotation case; no reset-site changes (every
+  // reset still defaults the kind to `'node'`).
+  it('setTargetEntity("edge", id) writes both slices atomically', () => {
+    useCaptureStore.getState().setTargetEntity('edge', 'e-1');
+    const state = useCaptureStore.getState();
+    expect(state.targetEntityId).toBe('e-1');
+    expect(state.targetEntityKind).toBe('edge');
+  });
+
+  it('setTargetEntityId(id) forces kind back to "node" even when the prior kind was "edge"', () => {
+    useCaptureStore.getState().setTargetEntity('edge', 'e-1');
+    expect(useCaptureStore.getState().targetEntityKind).toBe('edge');
+    useCaptureStore.getState().setTargetEntityId('n-2');
+    const state = useCaptureStore.getState();
+    expect(state.targetEntityId).toBe('n-2');
+    expect(state.targetEntityKind).toBe('node');
+  });
+
+  it('enterMetaMoveMode resets a staged edge target back to default ("node", null)', () => {
+    useCaptureStore.getState().setTargetEntity('edge', 'e-1');
+    useCaptureStore.getState().enterMetaMoveMode();
+    const state = useCaptureStore.getState();
+    expect(state.targetEntityId).toBeNull();
+    expect(state.targetEntityKind).toBe('node');
+  });
+
+  it('reset() restores targetEntityKind to "node" after an edge stage', () => {
+    useCaptureStore.getState().setTargetEntity('edge', 'e-1');
+    useCaptureStore.getState().reset();
+    const state = useCaptureStore.getState();
+    expect(state.targetEntityId).toBeNull();
+    expect(state.targetEntityKind).toBe('node');
+  });
 });
 
 // Refinement: tasks/refinements/moderator-ui/mod_meta_move_action.md
