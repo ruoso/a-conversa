@@ -6,9 +6,24 @@
 // `derivePendingProposals(events)` walks `useWsStore.sessionState[id].events`
 // once, collects every `kind === 'proposal'` envelope, and removes any
 // proposal whose id has been referenced by a `commit` or
-// `meta-disagreement-marked` event (the two lifecycle terminators). The
-// surviving set is returned newest-first by event `sequence` (descending)
-// so the pane renders the freshly-proposed row at the top.
+// `meta-disagreement-marked` event, OR whose propose-time-minted entities
+// have been retracted by `entity-removed` events (a withdraw — the three
+// lifecycle terminators). The surviving set is returned newest-first by
+// event `sequence` (descending) so the pane renders the freshly-proposed
+// row at the top.
+//
+// **Withdraw termination.** A `withdraw-proposal` does NOT mint a
+// dedicated `proposal-withdrawn` EVENT (the proposal envelope stays in
+// the immutable log forever per ADR 0021); it emits one `entity-removed`
+// event per propose-time-created entity. To clear the pending-proposal
+// row the selector mirrors the server's `entitiesToRetractForWithdraw`
+// (`apps/server/src/ws/handlers/withdraw.ts`) INVERSE: it maps each
+// proposal's propose-time-created entities `(entity_kind, entity_id)` back
+// to the proposal event id, then terminates the proposal when any of those
+// entities is retracted by a later `entity-removed`. The two mappings MUST
+// stay in sync — a sub-kind whose propose handler mints new entities must
+// register them here so its withdraw clears the row. Mirror of the
+// moderator's `pendingProposals.ts` per `part_withdraw_proposal_gesture`.
 //
 // **Pure / idempotent**: no closure over time, no `Date.now()`, no
 // `Math.random()`. The relative-time formatting is a render-time concern
@@ -122,9 +137,17 @@ export function derivePendingProposals(events: readonly Event[]): readonly Pendi
   const currentProposalByFacet = new Map<string, string>();
   const facetKey = (entityKind: string, entityId: string, facet: string): string =>
     `${entityKind}|${entityId}|${facet}`;
+  // Withdraw termination: map each proposal's propose-time-created
+  // entity `(entity_kind, entity_id)` back to its proposal event id.
+  // A later `entity-removed` naming one of those entities terminates
+  // the proposal (the inverse of the server's per-sub-kind retraction
+  // mapping — see the module docblock).
+  const proposalByCreatedEntity = new Map<string, string>();
+  const entityKey = (entityKind: string, entityId: string): string => `${entityKind}|${entityId}`;
   for (const event of events) {
     if (event.kind === 'proposal') {
       const inner = event.payload.proposal;
+      registerProposeTimeEntities(inner, event.id, proposalByCreatedEntity, entityKey);
       if (inner.kind === 'capture-node') {
         currentProposalByFacet.set(facetKey('node', inner.node_id, 'wording'), event.id);
       } else if (inner.kind === 'classify-node') {
@@ -156,6 +179,15 @@ export function derivePendingProposals(events: readonly Event[]): readonly Pendi
         );
         if (proposalId !== undefined) terminatedProposalIds.add(proposalId);
       }
+    } else if (event.kind === 'entity-removed') {
+      // A withdraw retracts the proposal's propose-time-created
+      // entities (the proposal envelope itself stays in the log per
+      // ADR 0021). Terminate the proposal that minted the retracted
+      // entity so its pending row clears.
+      const proposalId = proposalByCreatedEntity.get(
+        entityKey(event.payload.entity_kind, event.payload.entity_id),
+      );
+      if (proposalId !== undefined) terminatedProposalIds.add(proposalId);
     }
   }
 
@@ -179,4 +211,71 @@ export function derivePendingProposals(events: readonly Event[]): readonly Pendi
   rows.sort((a, b) => b.sequence - a.sequence);
 
   return rows;
+}
+
+/**
+ * Register a proposal's propose-time-created entities into the
+ * `proposalByCreatedEntity` map so a later `entity-removed` (a
+ * withdraw) can terminate the proposal's pending row.
+ *
+ * The INVERSE of `entitiesToRetractForWithdraw`
+ * (`apps/server/src/ws/handlers/withdraw.ts`) and a mirror of the
+ * moderator's `pendingProposals.ts` `registerProposeTimeEntities` — the
+ * three MUST stay in sync. When a sub-kind's propose handler starts
+ * minting new entities at propose-time, register them here so its
+ * withdraw clears the row.
+ *
+ * Unlike the server's retraction mapping, this client-side mirror has
+ * no projection to existence-check against, so it registers every
+ * candidate propose-time entity unconditionally. That is sound: the
+ * server only emits `entity-removed` for entities it actually minted,
+ * so a registered key that was never minted simply never matches.
+ */
+function registerProposeTimeEntities(
+  proposal: ProposalPayload,
+  proposalEventId: string,
+  proposalByCreatedEntity: Map<string, string>,
+  entityKey: (entityKind: string, entityId: string) => string,
+): void {
+  switch (proposal.kind) {
+    case 'capture-node':
+      // Always mints the captured node; mints a connecting edge when
+      // `edge` is present (ADR 0030 §1 wording-only capture).
+      proposalByCreatedEntity.set(entityKey('node', proposal.node_id), proposalEventId);
+      if (proposal.edge !== undefined) {
+        proposalByCreatedEntity.set(entityKey('edge', proposal.edge.edge_id), proposalEventId);
+      }
+      break;
+    case 'set-edge-substance': {
+      // Connecting case only — mints a fresh edge when each endpoint
+      // side carries something + `role` is present (the polymorphic
+      // fresh-edge predicate). The substance-only re-vote mints
+      // nothing, so it registers nothing.
+      const sourceSidePresent =
+        proposal.source_node_id !== undefined || proposal.source_annotation_id !== undefined;
+      const targetSidePresent =
+        proposal.target_node_id !== undefined || proposal.target_annotation_id !== undefined;
+      if (sourceSidePresent && targetSidePresent && proposal.role !== undefined) {
+        proposalByCreatedEntity.set(entityKey('edge', proposal.edge_id), proposalEventId);
+      }
+      break;
+    }
+    case 'decompose':
+      // Mints one component node per `components[i]`.
+      for (const component of proposal.components) {
+        proposalByCreatedEntity.set(entityKey('node', component.node_id), proposalEventId);
+      }
+      break;
+    case 'interpretive-split':
+      // Symmetric to `decompose` — mints one node per `readings[i]`.
+      for (const reading of proposal.readings) {
+        proposalByCreatedEntity.set(entityKey('node', reading.node_id), proposalEventId);
+      }
+      break;
+    default:
+      // Every other sub-kind mints no structural entities at
+      // propose-time, so a withdraw retracts nothing and the proposal
+      // row clears only via commit / meta-disagreement (or stays).
+      break;
+  }
 }

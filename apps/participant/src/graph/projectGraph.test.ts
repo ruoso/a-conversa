@@ -2240,3 +2240,91 @@ describe('projectGraph — annotation-of-annotation overlay propagation (part_an
     expect(nodes.find((n) => n.data.id === ANNOTATION_Y)).toBeUndefined();
   });
 });
+
+// `part_withdraw_proposal_gesture` §A3 — projector honours `entity-removed`
+// (a withdraw). A node / edge named by a later `entity-removed` is dropped
+// from the projected graph; entities never retracted are unaffected. The
+// original `*-created` event stays in the immutable log (ADR 0021); the
+// retraction can only be honoured here, at projection time.
+describe('projectGraph — entity-removed (withdraw) cleanup', () => {
+  function makeEntityRemoved(opts: {
+    sequence: number;
+    entityKind: 'node' | 'edge' | 'annotation';
+    entityId: string;
+  }): Event {
+    return {
+      id: `00000000-0000-4000-8000-${(0x700 + opts.sequence).toString(16).padStart(12, '0')}`,
+      sessionId: SESSION_ID,
+      sequence: opts.sequence,
+      kind: 'entity-removed',
+      actor: ACTOR,
+      payload: {
+        entity_kind: opts.entityKind,
+        entity_id: opts.entityId,
+        removed_by: ACTOR,
+        removed_at: '2026-05-17T00:00:00.000Z',
+      },
+      createdAt: '2026-05-17T00:00:00.000Z',
+    };
+  }
+
+  it('drops a node retracted by a later entity-removed(node); a sibling node survives', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'kept' }),
+      makeNodeCreated({ sequence: 2, nodeId: NODE_B, wording: 'withdrawn' }),
+      makeEntityRemoved({ sequence: 3, entityKind: 'node', entityId: NODE_B }),
+    ];
+    const { nodes } = projectGraph(
+      events,
+      emptyIndex(),
+      emptyAxiomIndex(),
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      EMPTY_OWN_VOTES,
+      EMPTY_OTHERS_VOTES,
+    );
+    expect(nodes.map((n) => n.data.id)).toEqual([NODE_A]);
+  });
+
+  it('drops an edge retracted by a later entity-removed(edge); its endpoint nodes survive', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'A' }),
+      makeNodeCreated({ sequence: 2, nodeId: NODE_B, wording: 'B' }),
+      makeEdgeCreated({ sequence: 3, edgeId: EDGE_A, source: NODE_A, target: NODE_B }),
+      makeEntityRemoved({ sequence: 4, entityKind: 'edge', entityId: EDGE_A }),
+    ];
+    const { nodes, edges } = projectGraph(
+      events,
+      emptyIndex(),
+      emptyAxiomIndex(),
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      EMPTY_OWN_VOTES,
+      EMPTY_OTHERS_VOTES,
+    );
+    expect(edges).toEqual([]);
+    // The edge is dropped but its endpoint nodes are never over-retracted
+    // (match keys solely on the edge id, never on endpoint ids).
+    expect(nodes.map((n) => n.data.id).sort()).toEqual([NODE_A, NODE_B].sort());
+  });
+
+  it('leaves a node untouched when an unrelated entity-removed names a different id', () => {
+    const events: Event[] = [
+      makeNodeCreated({ sequence: 1, nodeId: NODE_A, wording: 'kept' }),
+      makeEntityRemoved({ sequence: 2, entityKind: 'node', entityId: NODE_B }),
+    ];
+    const { nodes } = projectGraph(
+      events,
+      emptyIndex(),
+      emptyAxiomIndex(),
+      emptyAnnotationIndex(),
+      emptyAnnotationIndex(),
+      EMPTY_DIAGNOSTIC_HIGHLIGHTS,
+      EMPTY_OWN_VOTES,
+      EMPTY_OTHERS_VOTES,
+    );
+    expect(nodes.map((n) => n.data.id)).toEqual([NODE_A]);
+  });
+});

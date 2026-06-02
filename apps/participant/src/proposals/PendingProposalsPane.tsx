@@ -38,6 +38,7 @@ import {
   derivePendingProposals,
   type PendingProposalRow as PendingProposalRowData,
 } from './derivePendingProposals';
+import { useWithdrawProposalAction } from './useWithdrawProposalAction';
 import { summaryText } from './proposalSummary';
 import { PerProposalFacetBreakdown } from './PerProposalFacetBreakdown';
 import {
@@ -143,6 +144,7 @@ export function PendingProposalsPane({
               row={row}
               nowMs={nowMs}
               systemAuthorLabel={systemAuthorLabel}
+              currentParticipantId={currentParticipantId}
               facetStatusIndex={facetStatusIndex}
               votesByFacetIndex={votesByFacetIndex}
               votesByProposalIndex={votesByProposalIndex}
@@ -159,6 +161,7 @@ function PendingProposalRow({
   row,
   nowMs,
   systemAuthorLabel,
+  currentParticipantId,
   facetStatusIndex,
   votesByFacetIndex,
   votesByProposalIndex,
@@ -167,6 +170,7 @@ function PendingProposalRow({
   readonly row: PendingProposalRowData;
   readonly nowMs: number;
   readonly systemAuthorLabel: string;
+  readonly currentParticipantId: string;
   readonly facetStatusIndex: FacetStatusIndex;
   readonly votesByFacetIndex: VotesByFacetIndex;
   readonly votesByProposalIndex: OtherVotesByProposalIndex;
@@ -175,6 +179,11 @@ function PendingProposalRow({
   const { t } = useTranslation();
   const expandedProposalId = useUiStore((s) => s.expandedProposalId);
   const setExpandedProposalId = useUiStore((s) => s.setExpandedProposalId);
+  const {
+    withdraw,
+    inFlight: withdrawInFlight,
+    lastError: withdrawLastError,
+  } = useWithdrawProposalAction(row.proposalEventId);
   const chip = kindChipText(row.proposal, t);
   const summary = summaryText(row.proposal);
   const author = row.actor === null ? systemAuthorLabel : row.actor.slice(0, 8);
@@ -185,6 +194,33 @@ function PendingProposalRow({
   const toggle = (): void => {
     setExpandedProposalId(isExpanded ? null : row.proposalEventId);
   };
+
+  // Proposer-only UX guard (Decision §D1): render the withdraw button
+  // only when the current authenticated participant is the original
+  // proposer. The server's `forbidden` gate is the authority — this is
+  // a UX-affordance hide that keeps the happy path branchless. A
+  // system-authored proposal (`row.actor === null`) never matches.
+  const isProposer = row.actor !== null && row.actor === currentParticipantId;
+
+  // Withdraw button — no client-side gate; only the server's
+  // proposer-only `forbidden` check is authoritative.
+  const withdrawState: 'enabled' | 'in-flight' = withdrawInFlight ? 'in-flight' : 'enabled';
+  const withdrawDisabled = withdrawState !== 'enabled';
+  const withdrawLabel = withdrawInFlight
+    ? t('participant.withdrawProposalButton.inFlightLabel')
+    : t('participant.withdrawProposalButton.label');
+  const withdrawAriaLabel = t('participant.withdrawProposalButton.ariaLabel');
+
+  let withdrawWireMessage: string | undefined;
+  if (withdrawLastError !== undefined) {
+    withdrawWireMessage =
+      withdrawLastError.code === 'timeout'
+        ? withdrawLastError.message
+        : t('participant.withdrawProposalButton.wireError', {
+            code: withdrawLastError.code,
+            message: withdrawLastError.message,
+          });
+  }
   return (
     <li
       data-testid="participant-pending-proposal-row"
@@ -226,6 +262,35 @@ function PendingProposalRow({
           {ago}
         </span>
       </button>
+      {isProposer ? (
+        <div className="flex flex-row justify-end px-3 pb-2">
+          <button
+            type="button"
+            data-testid="participant-withdraw-proposal-button"
+            data-proposal-id={row.proposalEventId}
+            data-withdraw-state={withdrawState}
+            disabled={withdrawDisabled}
+            aria-disabled={withdrawDisabled}
+            aria-label={withdrawAriaLabel}
+            onClick={() => {
+              void withdraw();
+            }}
+            className="inline-flex h-7 items-center rounded-md border border-slate-200 px-3 text-xs font-medium text-slate-700 disabled:opacity-50"
+          >
+            {withdrawLabel}
+          </button>
+        </div>
+      ) : null}
+      {withdrawWireMessage !== undefined ? (
+        <p
+          data-testid="participant-withdraw-proposal-button-wire-error"
+          data-proposal-id={row.proposalEventId}
+          role="alert"
+          className="border-t border-slate-100 px-3 py-2 text-xs text-rose-600"
+        >
+          {withdrawWireMessage}
+        </p>
+      ) : null}
       {isExpanded ? (
         <div
           id={bodyId}

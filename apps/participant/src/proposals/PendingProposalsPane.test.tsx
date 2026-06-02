@@ -19,6 +19,7 @@ import type {
 import {
   I18nProvider,
   WsClientProvider,
+  WsRequestError,
   createI18nInstance,
   type I18nInstance,
   type SendFn,
@@ -30,6 +31,7 @@ import { PendingProposalsPane } from './PendingProposalsPane';
 import { useWsStore } from '../ws/wsStore';
 import { useUiStore } from '../stores/uiStore';
 import { resetVoteActionStore } from '../detail/useVoteAction';
+import { resetWithdrawProposalStore } from './useWithdrawProposalAction';
 
 const SESSION_A = '00000000-0000-4000-8000-0000000000aa';
 const PROPOSAL_A = '00000000-0000-4000-8000-0000000000a1';
@@ -135,6 +137,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   resetVoteActionStore();
+  resetWithdrawProposalStore();
   act(() => {
     useWsStore.getState().setConnectionStatus('open');
   });
@@ -693,5 +696,98 @@ describe('<PendingProposalsPane>', () => {
     expect(screen.queryByTestId('participant-pending-proposal-row-body-summary')).toBeNull();
     // The chip strip replaces it.
     expect(screen.getByTestId('participant-pending-proposal-row-facets')).toBeTruthy();
+  });
+});
+
+// `part_withdraw_proposal_gesture` §A2 — proposer-only withdraw button +
+// guard + in-flight disable + inline wire-error region.
+describe('<PendingProposalsPane> — withdraw-proposal button (§A2)', () => {
+  /**
+   * A client whose `send` rejects on the next round-trip. Used to pin the
+   * inline wire-error region.
+   */
+  function makeRejectingClient(err: Error): WsClient {
+    const send: SendFn = (): Promise<WsEnvelopeUnion> => {
+      return Promise.reject(err);
+    };
+    return {
+      status: (): WsClientStatus => 'open',
+      connect: () => undefined,
+      close: () => undefined,
+      killWebSocket: () => undefined,
+      send,
+      trackSession: () => Promise.resolve(),
+      untrackSession: () => Promise.resolve(),
+      onEnvelope: () => () => undefined,
+      url: '/api/ws',
+    };
+  }
+
+  it('renders the withdraw button only on a row authored by the current participant', () => {
+    useWsStore.getState().applyEvent(proposalEvent(1, PROPOSAL_A, 'classify-node', NODE_X, ME));
+    renderPane(ME);
+    const button = screen.getByTestId('participant-withdraw-proposal-button');
+    expect(button.getAttribute('data-proposal-id')).toBe(PROPOSAL_A);
+    expect(button.getAttribute('data-withdraw-state')).toBe('enabled');
+  });
+
+  it('hides the withdraw button on a row authored by another participant', () => {
+    useWsStore.getState().applyEvent(proposalEvent(1, PROPOSAL_A, 'classify-node', NODE_X, OTHER));
+    renderPane(ME);
+    expect(screen.queryByTestId('participant-withdraw-proposal-button')).toBeNull();
+  });
+
+  it('hides the withdraw button on a system-authored row (actor === null)', () => {
+    useWsStore.getState().applyEvent(proposalEvent(1, PROPOSAL_A, 'classify-node', NODE_X, null));
+    renderPane(ME);
+    expect(screen.queryByTestId('participant-withdraw-proposal-button')).toBeNull();
+  });
+
+  it('renders the withdraw button on the proposer row and hides it on the other-author row', () => {
+    useWsStore.getState().applyEvent(proposalEvent(1, PROPOSAL_A, 'classify-node', NODE_X, ME));
+    useWsStore.getState().applyEvent(proposalEvent(2, PROPOSAL_B, 'classify-node', NODE_Y, OTHER));
+    renderPane(ME);
+    const buttons = screen.getAllByTestId('participant-withdraw-proposal-button');
+    expect(buttons).toHaveLength(1);
+    expect(buttons[0]?.getAttribute('data-proposal-id')).toBe(PROPOSAL_A);
+  });
+
+  it('clicking the withdraw button dispatches the withdraw-proposal envelope and flips the button to in-flight (disabled)', () => {
+    useWsStore.getState().applyEvent(proposalEvent(1, PROPOSAL_A, 'classify-node', NODE_X, ME));
+    const fake = makeFakeClient();
+    renderPane(ME, fake.client);
+    const button = screen.getByTestId('participant-withdraw-proposal-button');
+    act(() => {
+      fireEvent.click(button);
+    });
+    expect(fake.calls.length).toBe(1);
+    expect(fake.calls[0]?.type).toBe('withdraw-proposal');
+    expect(fake.calls[0]?.payload).toEqual({
+      sessionId: SESSION_A,
+      expectedSequence: 1,
+      proposalEventId: PROPOSAL_A,
+    });
+    // The fake's `send` never resolves → the row stays in-flight and the
+    // button disables.
+    const inFlight = screen.getByTestId('participant-withdraw-proposal-button');
+    expect(inFlight.getAttribute('data-withdraw-state')).toBe('in-flight');
+    expect((inFlight as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('a rejected withdraw renders the inline wire-error region (role="alert")', async () => {
+    useWsStore.getState().applyEvent(proposalEvent(1, PROPOSAL_A, 'classify-node', NODE_X, ME));
+    const client = makeRejectingClient(
+      new WsRequestError({ code: 'forbidden', message: 'Not the proposer.' }),
+    );
+    renderPane(ME, client);
+    const button = screen.getByTestId('participant-withdraw-proposal-button');
+    await act(async () => {
+      fireEvent.click(button);
+      await Promise.resolve();
+    });
+    const error = await screen.findByTestId('participant-withdraw-proposal-button-wire-error');
+    expect(error.getAttribute('role')).toBe('alert');
+    expect(error.getAttribute('data-proposal-id')).toBe(PROPOSAL_A);
+    expect(error.textContent).toContain('forbidden');
   });
 });

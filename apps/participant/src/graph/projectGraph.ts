@@ -438,15 +438,26 @@ function resolveFacetSlot(
  *   node's `data.kind` to the cached classification.
  * - `edge-created` → emit one `{ group: 'edges', data: { id, source,
  *   target, role, facetStatuses, rollupStatus } }` descriptor.
+ * - `entity-removed` → mark the named node / edge id as retracted (a
+ *   withdraw — `apps/server/src/ws/handlers/withdraw.ts` emits one per
+ *   propose-time-created entity). The original `node-created` /
+ *   `edge-created` stays in the immutable log (ADR 0021), so the
+ *   retraction can only be honored here at projection time: a retracted
+ *   node / edge never reaches the Cytoscape array, so it leaves the
+ *   canvas. Collected in an up-front pass (an `entity-removed` always
+ *   follows its `*-created` in the log) so the main loop skips them in
+ *   one pass — mirrors the moderator projectors per
+ *   `part_withdraw_proposal_gesture`. Annotation-overlay cleanup
+ *   (`entity_kind: 'annotation'`) is deferred to
+ *   `part_withdraw_proposal_overlay_removal` (blocked on the
+ *   zero-emission terminator anyway).
  * - All other event kinds (`participant-joined`, `participant-left`,
  *   `vote`, `annotation-created`, `meta-disagreement-marked`,
- *   `snapshot-created`, `entity-included`, `entity-removed`, …) are
- *   ignored at this layer; the visual-vocabulary they drive lives in
- *   the sibling-task layers (`part_annotation_render`,
- *   `part_own_vote_indicators`, etc.). The per-facet status they
- *   contribute to is computed BEFORE this call via
- *   `computeFacetStatuses(events)` and passed in as
- *   `facetStatusIndex`.
+ *   `snapshot-created`, `entity-included`, …) are ignored at this layer;
+ *   the visual-vocabulary they drive lives in the sibling-task layers
+ *   (`part_annotation_render`, `part_own_vote_indicators`, etc.). The
+ *   per-facet status they contribute to is computed BEFORE this call via
+ *   `computeFacetStatuses(events)` and passed in as `facetStatusIndex`.
  *
  * Order: nodes are emitted in `node-created` arrival order; edges are
  * emitted in `edge-created` arrival order. The two arrays are
@@ -508,8 +519,37 @@ export function projectGraph(
   >();
   const referencedAnnotationIds = new Set<string>();
 
+  // Up-front retraction pass — collect every node / edge id retracted by
+  // an `entity-removed` event (a withdraw — one per propose-time-created
+  // entity, per `apps/server/src/ws/handlers/withdraw.ts`). An
+  // `entity-removed` always follows its `node-created` / `edge-created`
+  // in the log, so collecting the ids first lets the main loop skip them
+  // in one forward pass. The original `*-created` events stay in the
+  // immutable log (ADR 0021); the retraction can only be honored here, at
+  // projection time, so the proposed node / edge leaves the canvas. Match
+  // keys solely on `entity_kind` against the entity id, never on endpoint
+  // ids: the server emits an explicit `entity-removed(edge)` for every
+  // edge it retracts, so a committed edge sharing an endpoint with a
+  // withdrawn node is not over-retracted. Annotation retraction
+  // (`entity_kind: 'annotation'`) is deferred to
+  // `part_withdraw_proposal_overlay_removal`.
+  const removedNodeIds = new Set<string>();
+  const removedEdgeIds = new Set<string>();
+  for (const event of events) {
+    if (event.kind !== 'entity-removed') continue;
+    if (event.payload.entity_kind === 'node') {
+      removedNodeIds.add(event.payload.entity_id);
+    } else if (event.payload.entity_kind === 'edge') {
+      removedEdgeIds.add(event.payload.entity_id);
+    }
+  }
+
   for (const event of events) {
     if (event.kind === 'node-created') {
+      // Skip nodes retracted by a later `entity-removed` (a withdrawn
+      // proposal's propose-time node). The node never reaches the
+      // Cytoscape array, so it leaves the canvas.
+      if (removedNodeIds.has(event.payload.node_id)) continue;
       const slot = resolveFacetSlot(facetStatusIndex.nodes, event.payload.node_id);
       const dimensions = computeNodeDimensions(event.payload.wording);
       const element: ParticipantNodeElement = {
@@ -557,6 +597,11 @@ export function projectGraph(
     }
 
     if (event.kind === 'edge-created') {
+      // Skip edges retracted by a later `entity-removed` (a withdrawn
+      // proposal's propose-time edge). The edge never reaches the
+      // Cytoscape array — and no annotation-endpoint references it
+      // contributes are tracked — so it leaves the canvas.
+      if (removedEdgeIds.has(event.payload.edge_id)) continue;
       // Annotation-endpoint resolution — the wire schema's XOR `.refine()`
       // guarantees exactly one of `source_node_id` / `source_annotation_id`
       // is set per endpoint (symmetric for target). The `?? null` tail is

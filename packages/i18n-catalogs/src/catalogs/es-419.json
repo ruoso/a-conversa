@@ -830,6 +830,14 @@
       "timeoutError": "La solicitud de retiro expiró. Revisa tu conexión e inténtalo de nuevo.",
       "errorRoleLabel": "Error de retiro"
     },
+    "withdrawProposalButton": {
+      "label": "Retirar",
+      "inFlightLabel": "Retirando…",
+      "ariaLabel": "Retirar esta propuesta (solo quien la propuso puede retirarla)",
+      "wireError": "Falló la retirada: {message} ({code})",
+      "timeoutError": "La solicitud de retirada expiró. Verifica tu conexión y vuelve a intentarlo.",
+      "errorRoleLabel": "Error de retirada"
+    },
     "proposalsTab": {
       "graphLabel": "Grafo",
       "proposalsLabel": "Propuestas",

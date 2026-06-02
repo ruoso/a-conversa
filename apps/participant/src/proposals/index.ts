@@ -15,6 +15,13 @@ export {
 } from './derivePersonalAgreements';
 export { usePendingProposalsCount } from './usePendingProposalsCount';
 export { derivePendingProposals, type PendingProposalRow } from './derivePendingProposals';
+export {
+  useWithdrawProposalAction,
+  useWithdrawProposalStore,
+  resetWithdrawProposalStore,
+  type UseWithdrawProposalActionResult,
+  type WireError,
+} from './useWithdrawProposalAction';
 export { summaryText } from './proposalSummary';
 export {
   PerProposalFacetBreakdown,

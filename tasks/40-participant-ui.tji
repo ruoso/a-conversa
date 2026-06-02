@@ -485,9 +485,20 @@ task participant_ui "Participant (debater) UI" {
   task part_withdraw_proposal_gesture "Participant-tablet withdraw-proposal gesture + cross-surface 3-context propose-then-withdraw Playwright spec" {
     effort 1d
     allocate team
+    complete 100
     depends moderator_ui.mod_withdraw_proposal_gesture
     note -8<-
       Source of debt: tasks/refinements/moderator-ui/mod_withdraw_proposal_gesture.md §D5 + Status block (commit landing mod_withdraw_proposal_gesture) — the single-actor moderator propose-then-withdraw e2e was paid inline; the cross-surface 3-context variant (debater proposes/withdraws from participant tablet while moderator observes node disappear) requires a participant-side withdraw affordance. Also covers the participant pending-proposals row: a withdraw button rendered only when the current user is the proposal's actor, dispatching `withdraw-proposal` WS message via a `useWithdrawProposalAction`-equivalent hook for the participant surface. Deferred from mod_withdraw_proposal_gesture per §D5 — participant operate surface must exist first.
+    ->8-
+  }
+
+  task part_withdraw_proposal_overlay_removal "Port participant axiom-mark + annotation overlay projectors to honor zero-emission withdrawal terminator; extend cross-surface spec with deferred Block-1 counterpart" {
+    effort 0.5d
+    allocate team
+    depends participant_ui.part_withdraw_proposal_gesture, backend.websocket_protocol.ws_withdraw_proposal_zero_emission_terminator
+    note -8<-
+      Source of debt: tasks/refinements/participant-ui/part_withdraw_proposal_gesture.md §A4 deferred sub-scenario + §D3 — axiom-mark and annotation overlay projectors (apps/participant/src/graph/axiomMarks.ts, apps/participant/src/graph/annotations.ts) are separate modules from projectGraph.ts and cannot honor entity-removed until the server appends a log-observable terminator for zero-emission withdrawals. Once ws_withdraw_proposal_zero_emission_terminator ships, this task ports both overlay projectors and extends cross-surface-participant-withdraw-proposal.spec.ts with the deferred Block-1 counterpart (debater-A's own axiom-mark row + overlay vanish after self-withdraw). This is the participant analogue of moderator_ui.mod_withdraw_proposal_canvas_edge_annotation_removal.
+      Registered by closer (2026-06-02) while closing participant_ui.part_withdraw_proposal_gesture.
     ->8-
   }
 }

@@ -168,6 +168,27 @@ function nodeCreatedEvent(seq: number, nodeId: string): Event {
   };
 }
 
+function entityRemovedEvent(
+  seq: number,
+  entityKind: 'node' | 'edge' | 'annotation',
+  entityId: string,
+): Event {
+  return {
+    id: envId('r', seq),
+    sessionId: SESSION,
+    sequence: seq,
+    kind: 'entity-removed',
+    actor: ACTOR,
+    payload: {
+      entity_kind: entityKind,
+      entity_id: entityId,
+      removed_by: ACTOR,
+      removed_at: '2026-05-25T00:00:40.000Z',
+    },
+    createdAt: '2026-05-25T00:00:40.000Z',
+  };
+}
+
 const classifyP: ProposalPayload = {
   kind: 'classify-node',
   node_id: NODE_X,
@@ -178,6 +199,12 @@ const setNodeSubstanceP: ProposalPayload = {
   kind: 'set-node-substance',
   node_id: NODE_X,
   value: 'agreed',
+};
+
+const captureNodeP: ProposalPayload = {
+  kind: 'capture-node',
+  node_id: NODE_X,
+  wording: 'A freshly-proposed free-floating statement.',
 };
 
 describe('derivePendingProposals (participant)', () => {
@@ -265,6 +292,51 @@ describe('derivePendingProposals (participant)', () => {
       nodeCreatedEvent(1, NODE_X),
       proposalEvent(2, PROPOSAL_P, classifyP),
       voteEvent(3, PROPOSAL_P),
+    ];
+    const rows = derivePendingProposals(events);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.proposalEventId).toBe(PROPOSAL_P);
+  });
+
+  // Withdraw termination (`part_withdraw_proposal_gesture` §A3). A
+  // withdraw mints no `commit` / `meta-disagreement-marked`; it emits
+  // one `entity-removed` per propose-time-created entity. The selector
+  // mirrors the server's retraction inverse to clear the pending row.
+  it('(j) capture-node proposal → entity-removed (node) → row terminated', () => {
+    const events: Event[] = [
+      proposalEvent(1, PROPOSAL_P, captureNodeP),
+      entityRemovedEvent(2, 'node', NODE_X),
+    ];
+    expect(derivePendingProposals(events)).toEqual([]);
+  });
+
+  it('(k) decompose proposal → entity-removed of ANY component node → row terminated', () => {
+    const decompose: ProposalPayload = {
+      kind: 'decompose',
+      parent_node_id: NODE_Y,
+      components: [{ node_id: NODE_X, wording: 'component one', classification: 'fact' }],
+    };
+    const events: Event[] = [
+      proposalEvent(1, PROPOSAL_P, decompose),
+      entityRemovedEvent(2, 'node', NODE_X),
+    ];
+    expect(derivePendingProposals(events)).toEqual([]);
+  });
+
+  it('(l) entity-removed for an entity no proposal minted is a no-op (defensive)', () => {
+    const events: Event[] = [
+      proposalEvent(1, PROPOSAL_P, captureNodeP),
+      entityRemovedEvent(2, 'node', NODE_Y),
+    ];
+    const rows = derivePendingProposals(events);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.proposalEventId).toBe(PROPOSAL_P);
+  });
+
+  it('(m) set-node-substance (mints no entities) is NOT cleared by an entity-removed on its target node', () => {
+    const events: Event[] = [
+      proposalEvent(1, PROPOSAL_P, setNodeSubstanceP),
+      entityRemovedEvent(2, 'node', NODE_X),
     ];
     const rows = derivePendingProposals(events);
     expect(rows).toHaveLength(1);
