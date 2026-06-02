@@ -673,6 +673,9 @@
         "metaDisagree": "Disagree with this annotation"
       }
     },
+    "annotation": {
+      "disputedAriaSuffix": "(disputed)"
+    },
     "hoverPopover": {
       "edgeEndpointsReference": "{sourceId} ({sourceKind, select, annotation {annotation} node {node} other {?}}) -> {targetId} ({targetKind, select, annotation {annotation} node {node} other {?}})"
     },

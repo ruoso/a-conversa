@@ -1,7 +1,8 @@
 // Tests for `<AnnotationBadge>` — the small pill rendering an annotation
 // on a statement node or edge.
 //
-// Refinement: tasks/refinements/moderator-ui/mod_annotation_rendering.md
+// Refinement: tasks/refinements/moderator-ui/mod_meta_move_disputed_visibility.md
+// (prior:     tasks/refinements/moderator-ui/mod_annotation_rendering.md)
 //
 // Per ADR 0022 these are committed Vitest cases, not throwaway probes.
 // They lock in:
@@ -16,6 +17,15 @@
 //   3. The `title` attribute carries the annotation's `content` —
 //      the cheap baseline hover surface until the dedicated
 //      `mod_hover_details` task ships a richer card.
+//   4. The disputed-rollup styling branch — every kind × disputed
+//      rollup stamps `data-facet-status="disputed"`, applies the rose
+//      ring, and appends the localized `(disputed)` aria-label suffix.
+//   5. The meta-disagreement rollup branch — every kind × meta-
+//      disagreement rollup applies the same rose ring + aria-suffix
+//      but stamps `data-facet-status="meta-disagreement"` so tests can
+//      discriminate (Decision §5).
+//   6. Non-disputed rollups (`'agreed'`, `'committed'`) preserve the
+//      baseline amber styling and omit `data-facet-status`.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
@@ -30,7 +40,12 @@ import { act, type ReactElement } from 'react';
 import type { AnnotationKind } from '@a-conversa/shared-types';
 
 import { AnnotationBadge } from './AnnotationBadge';
-import { createI18nInstance, type Annotation } from '@a-conversa/shell';
+import {
+  createI18nInstance,
+  type Annotation,
+  type FacetName,
+  type FacetStatus,
+} from '@a-conversa/shell';
 
 // `useTranslation()` schedules a microtask-deferred setState when its
 // internal i18next subscription registers on mount. The deferred update
@@ -90,6 +105,8 @@ function makeAnnotation(overrides: Partial<Annotation> & { id: string }): Annota
   };
 }
 
+const ROSE_MARKER_CLASS = 'border-solid border-rose-600 ring-2 ring-rose-500 opacity-100';
+
 beforeEach(async () => {
   await createI18nInstance('en-US');
   await i18next.changeLanguage('en-US');
@@ -114,7 +131,102 @@ describe('AnnotationBadge — localized kind label per kind × locale', () => {
         expect(badge.textContent).toBe(LABELS_BY_LOCALE[locale][kind]);
         expect(badge.getAttribute('data-annotation-kind')).toBe(kind);
         expect(badge.getAttribute('title')).toBe('body text');
+        // Baseline (no `facetStatuses`): no rose marker, no
+        // `data-facet-status`, no `aria-label` suffix.
+        expect(badge.className).not.toContain('ring-rose-500');
+        expect(badge.getAttribute('data-facet-status')).toBeNull();
+        expect(badge.getAttribute('aria-label')).toBeNull();
       });
     }
   }
+});
+
+describe('AnnotationBadge — disputed rollup branch (per kind)', () => {
+  for (const kind of ALL_KINDS) {
+    it(`stamps disputed marker + suffix for kind="${kind}"`, async () => {
+      const annotation = makeAnnotation({
+        id: `anno-disputed-${kind}`,
+        kind,
+        content: 'contested annotation',
+      });
+      const facetStatuses: Readonly<Partial<Record<FacetName, FacetStatus>>> = {
+        wording: 'disputed',
+      };
+      await render(<AnnotationBadge annotation={annotation} facetStatuses={facetStatuses} />);
+      const badge = screen.getByTestId(`annotation-badge-${annotation.id}`);
+      expect(badge.getAttribute('data-facet-status')).toBe('disputed');
+      expect(badge.getAttribute('data-annotation-kind')).toBe(kind);
+      for (const cls of ROSE_MARKER_CLASS.split(' ')) {
+        expect(badge.className).toContain(cls);
+      }
+      expect(badge.getAttribute('aria-label')).toBe(`${EN_LABELS[kind]} (disputed)`);
+    });
+  }
+});
+
+describe('AnnotationBadge — meta-disagreement rollup branch (per kind)', () => {
+  for (const kind of ALL_KINDS) {
+    it(`stamps meta-disagreement marker + suffix for kind="${kind}"`, async () => {
+      const annotation = makeAnnotation({
+        id: `anno-meta-${kind}`,
+        kind,
+        content: 'meta-disagreement annotation',
+      });
+      const facetStatuses: Readonly<Partial<Record<FacetName, FacetStatus>>> = {
+        wording: 'meta-disagreement',
+      };
+      await render(<AnnotationBadge annotation={annotation} facetStatuses={facetStatuses} />);
+      const badge = screen.getByTestId(`annotation-badge-${annotation.id}`);
+      expect(badge.getAttribute('data-facet-status')).toBe('meta-disagreement');
+      expect(badge.getAttribute('data-annotation-kind')).toBe(kind);
+      for (const cls of ROSE_MARKER_CLASS.split(' ')) {
+        expect(badge.className).toContain(cls);
+      }
+      // Meta-disagreement shares the rose marker visual class with
+      // disputed (Decision §5); the aria-suffix is also shared.
+      expect(badge.getAttribute('aria-label')).toBe(`${EN_LABELS[kind]} (disputed)`);
+    });
+  }
+});
+
+describe('AnnotationBadge — non-disputed rollups preserve baseline', () => {
+  it('agreed rollup keeps baseline amber styling and omits data-facet-status', async () => {
+    const annotation = makeAnnotation({ id: 'anno-agreed', kind: 'note' });
+    const facetStatuses: Readonly<Partial<Record<FacetName, FacetStatus>>> = {
+      wording: 'agreed',
+    };
+    await render(<AnnotationBadge annotation={annotation} facetStatuses={facetStatuses} />);
+    const badge = screen.getByTestId(`annotation-badge-${annotation.id}`);
+    expect(badge.getAttribute('data-facet-status')).toBeNull();
+    expect(badge.className).not.toContain('ring-rose-500');
+    expect(badge.className).toContain('bg-amber-100');
+    expect(badge.getAttribute('aria-label')).toBeNull();
+  });
+
+  it('committed rollup keeps baseline amber styling and omits data-facet-status', async () => {
+    const annotation = makeAnnotation({ id: 'anno-committed', kind: 'reframe' });
+    const facetStatuses: Readonly<Partial<Record<FacetName, FacetStatus>>> = {
+      wording: 'committed',
+    };
+    await render(<AnnotationBadge annotation={annotation} facetStatuses={facetStatuses} />);
+    const badge = screen.getByTestId(`annotation-badge-${annotation.id}`);
+    expect(badge.getAttribute('data-facet-status')).toBeNull();
+    expect(badge.className).not.toContain('ring-rose-500');
+    expect(badge.className).toContain('bg-amber-100');
+    expect(badge.getAttribute('aria-label')).toBeNull();
+  });
+});
+
+describe('AnnotationBadge — facetStatuses on the render carrier', () => {
+  it('reads facetStatuses off the annotation carrier when no explicit prop is passed', async () => {
+    const annotation: Annotation = makeAnnotation({ id: 'anno-carrier', kind: 'stance' });
+    const carrier = {
+      ...annotation,
+      facetStatuses: { wording: 'disputed' } as Readonly<Partial<Record<FacetName, FacetStatus>>>,
+    };
+    await render(<AnnotationBadge annotation={carrier} />);
+    const badge = screen.getByTestId(`annotation-badge-${annotation.id}`);
+    expect(badge.getAttribute('data-facet-status')).toBe('disputed');
+    expect(badge.getAttribute('aria-label')).toBe(`${EN_LABELS.stance} (disputed)`);
+  });
 });

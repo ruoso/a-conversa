@@ -198,9 +198,89 @@ export interface StatementEdgeData {
 }
 
 /**
+ * Moderator-side render carrier wrapping the shell's wire-shaped
+ * `Annotation` with an optional per-facet `FacetStatus` record. The
+ * field rides on this carrier — NOT on `Annotation` itself — to keep the
+ * shell projection (which the audience / replay surfaces also consume)
+ * pure to the wire payload (per `mod_meta_move_disputed_visibility`
+ * Decision §1).
+ *
+ * `<AnnotationBadge>` reads `facetStatuses` to dispatch on
+ * `cardRollupStatus(facetStatuses)`: `'disputed'` /
+ * `'meta-disagreement'` activate the rose-marker styling; everything
+ * else falls back to the baseline amber pill.
+ *
+ * Today's selectors always emit the carrier with `facetStatuses ===
+ * undefined` (no engine path populates the index — see
+ * `enrichAnnotationsWithFacetStatuses` below). The future
+ * `data_and_methodology.methodology_engine.annotation_facet_status_logic`
+ * task is the planned populator.
+ */
+export type AnnotationRenderData = Annotation & {
+  readonly facetStatuses?: Readonly<Partial<Record<FacetName, FacetStatus>>>;
+};
+
+/**
+ * Per-annotation facet-status lookup index. The future engine-side
+ * `annotation_facet_status_logic` task populates this map from the
+ * methodology engine's per-participant vote aggregation; the moderator
+ * render layer joins on annotation id without re-implementing the
+ * computation (per `mod_meta_move_disputed_visibility` Decision §2).
+ */
+export type AnnotationFacetStatusIndex = ReadonlyMap<
+  string,
+  Readonly<Partial<Record<FacetName, FacetStatus>>>
+>;
+
+/**
+ * Module-scope shared empty annotation facet-status index. Hands a
+ * stable reference to `selectAnnotations` so React / ReactFlow
+ * memoization downstream of `enrichAnnotationsWithFacetStatuses`
+ * doesn't see a fresh `Map` identity on every selector tick (per
+ * `mod_meta_move_disputed_visibility` Decision §7).
+ */
+export const EMPTY_ANNOTATION_FACET_STATUS_INDEX: AnnotationFacetStatusIndex = new Map();
+
+/**
+ * Pure join: enrich each annotation with its per-facet `FacetStatus`
+ * record from the index, producing the render carrier
+ * `AnnotationRenderData`. Annotations with no entry in the index pass
+ * through unchanged (the carrier is structurally compatible because
+ * `facetStatuses` is optional).
+ *
+ * Pure / total / referentially stable: same input → same output array,
+ * no mutation of either input. Per
+ * `mod_meta_move_disputed_visibility` Decision §2, the function is
+ * deliberately ignorant of where the index comes from — the future
+ * `annotation_facet_status_logic` engine task is the planned populator;
+ * today's `selectAnnotations` passes the
+ * `EMPTY_ANNOTATION_FACET_STATUS_INDEX` singleton so no annotation
+ * receives `facetStatuses`.
+ */
+export function enrichAnnotationsWithFacetStatuses(
+  annotations: readonly Annotation[],
+  index: AnnotationFacetStatusIndex,
+): readonly AnnotationRenderData[] {
+  if (index.size === 0) return annotations;
+  const out: AnnotationRenderData[] = [];
+  for (const annotation of annotations) {
+    const statuses = index.get(annotation.id);
+    if (statuses === undefined) {
+      out.push(annotation);
+    } else {
+      out.push({ ...annotation, facetStatuses: statuses });
+    }
+  }
+  return out;
+}
+
+/**
  * Project the per-session WS event log into the camelCased annotation
- * list. Walks `state.sessionState[sessionId]?.events` once and picks
- * every `annotation-created` envelope.
+ * render-carrier list. Walks `state.sessionState[sessionId]?.events`
+ * once via `projectAnnotations` and threads the result through
+ * `enrichAnnotationsWithFacetStatuses` so the
+ * `mod_meta_move_disputed_visibility` selector seam is in place even
+ * though today's index is always empty.
  *
  * Thin moderator-internal wrapper around the shell-lifted
  * `projectAnnotations` that adds the null-safe session lookup off
@@ -211,10 +291,16 @@ export interface StatementEdgeData {
  *
  * Empty for an unknown `sessionId` or an empty event log.
  */
-export function selectAnnotations(state: WsState, sessionId: string): Annotation[] {
+export function selectAnnotations(
+  state: WsState,
+  sessionId: string,
+): readonly AnnotationRenderData[] {
   const session = state.sessionState[sessionId];
   if (!session) return [];
-  return projectAnnotations(session.events);
+  return enrichAnnotationsWithFacetStatuses(
+    projectAnnotations(session.events),
+    EMPTY_ANNOTATION_FACET_STATUS_INDEX,
+  );
 }
 
 /**
