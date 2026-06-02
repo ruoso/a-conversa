@@ -27,6 +27,13 @@
 //      which pays down the single-actor slice of the originally-3-context
 //      Scenario 4 debt; the cross-surface 3-context variant stays
 //      deferred to `participant_ui.part_withdraw_proposal_gesture`.
+//   5. Propose-connecting-capture-node-then-withdraw: the composition of
+//      Scenario 2 (a connecting `capture-node` seeds a source node + a
+//      fresh edge) and Scenario 4 (withdraw). The proposed EDGE leaves the
+//      canvas on withdraw (not just the node + row). Owned by
+//      `mod_withdraw_proposal_canvas_edge_annotation_removal`, which fixes
+//      the moderator edge projector (`selectEdgesForSession`) to honor
+//      `entity-removed(edge)` — the gap the node-only fix left open.
 //
 // Authored failing-first per the refinement (red commit shows
 // `statement-node-*` testids missing for the proposed node); the fix
@@ -465,5 +472,90 @@ test.describe('mod_proposed_entity_canvas_visibility — proposed entities rende
     // deferred Scenario 4 single-actor observable behaviour.
     await expect(nodes).toHaveCount(0, { timeout: 15_000 });
     await expect(rows).toHaveCount(0, { timeout: 15_000 });
+  });
+
+  // Scenario 5 — propose-with-edge-then-withdraw. Owned by
+  // `moderator_ui.mod_withdraw_proposal_canvas_edge_annotation_removal`.
+  // The composition of Scenario 2 (connecting `capture-node` seeds a
+  // source node + a fresh edge) and Scenario 4 (single-actor withdraw).
+  // Withdrawing the connecting `capture-node` emits one
+  // `entity-removed(node)` (the source) AND one `entity-removed(edge)` (the
+  // minted connecting edge). The node projector already drops the source
+  // node; this task's edge projector fix (`selectEdgesForSession`
+  // `removedEdgeIds` pass) drops the edge — so the proposed edge leaves the
+  // canvas, not just the proposed node and the pending-proposal row. This
+  // pins the edge-projector fix end-to-end.
+  //
+  // Both the connecting-capture gesture and the withdraw button are
+  // route-rendered in the operate console and seedable by the moderator's
+  // own gestures, so this e2e is IN SCOPE (strict reachability met), not
+  // deferred.
+  test('Scenario 5: propose connecting capture-node then withdraw → proposed edge and source node leave the canvas', async ({
+    page,
+  }) => {
+    const targetWording = 'Universal basic income reduces poverty.';
+    const sourceWording = 'It also reduces work incentives.';
+    await moderatorReachOperate(
+      page,
+      'Scenario 5 — propose-with-edge-then-withdraw canvas-visibility check.',
+    );
+
+    // Step 1 — propose the target statement so the connecting capture has
+    // something to point at. One `statement-node-*` testid surfaces.
+    await proposeStatement(page, targetWording);
+    const firstNodes = page.getByTestId(/^statement-node-[0-9a-f-]+$/);
+    await expect(firstNodes).toHaveCount(1, { timeout: 15_000 });
+
+    // Step 2 — connecting capture (Scenario 2 seed): click the target to
+    // stage it, type the source wording, pick the `supports` edge role,
+    // fire submit. Per ADR 0030 §4 this is a single `capture-node` whose
+    // inline `edge` block carries the role + endpoints; the server emits
+    // node-created + entity-included(node) + edge-created +
+    // entity-included(edge) + proposal at propose-time.
+    await firstNodes.first().click();
+    const textarea = page.getByTestId('capture-text-input-textarea');
+    await textarea.fill(sourceWording);
+    const supportsButton = page.getByTestId('edge-role-selector-button-supports');
+    await expect(supportsButton).toBeVisible({ timeout: 5_000 });
+    // Synthetic click — same rationale as Scenario 2 (bottom-strip reflow
+    // can keep the button under the propose-action cell for the hit-test).
+    await supportsButton.dispatchEvent('click');
+    const submitKey = process.platform === 'darwin' ? 'Meta+Enter' : 'Control+Enter';
+    await textarea.press(submitKey);
+    await expect(textarea).toHaveValue('');
+
+    // Seed assertion — both nodes (prior target + new source) render, and
+    // exactly one proposed edge label surfaces.
+    const nodes = page.getByTestId(/^statement-node-[0-9a-f-]+$/);
+    await expect(nodes).toHaveCount(2, { timeout: 15_000 });
+    const edgeLabels = page.locator('[data-testid^="graph-edge-label-"]');
+    await expect(edgeLabels).toHaveCount(1, { timeout: 15_000 });
+
+    // Step 3 — two pending-proposal rows now exist (the target propose +
+    // the connecting capture). They surface in proposal-arrival order, so
+    // the connecting capture-node is the LAST row. Click its withdraw
+    // button. The server's `withdraw.ts` handler emits
+    // `entity-removed(node)` for the source and `entity-removed(edge)` for
+    // the minted connecting edge plus the `proposal-withdrawn` ack. No
+    // wire error must surface.
+    const rows = page.getByTestId('pending-proposal-row');
+    await expect(rows).toHaveCount(2, { timeout: 15_000 });
+    const connectingRow = rows.last();
+    const withdrawButton = connectingRow.getByTestId('withdraw-proposal-button');
+    await expect(withdrawButton).toBeVisible({ timeout: 15_000 });
+    await expect(withdrawButton).toHaveAttribute('data-withdraw-state', 'enabled');
+    await withdrawButton.click();
+    await expect(connectingRow.getByTestId('withdraw-proposal-button-wire-error')).toHaveCount(0, {
+      timeout: 15_000,
+    });
+
+    // Step 4 — the headline assertion: after the `entity-removed`
+    // broadcast applies, the proposed edge leaves the canvas (edge label
+    // count returns to 0) and the source node is removed (one
+    // `statement-node` remains — the original target). The connecting
+    // capture's pending row is gone; the target's row stays.
+    await expect(edgeLabels).toHaveCount(0, { timeout: 15_000 });
+    await expect(nodes).toHaveCount(1, { timeout: 15_000 });
+    await expect(rows).toHaveCount(1, { timeout: 15_000 });
   });
 });

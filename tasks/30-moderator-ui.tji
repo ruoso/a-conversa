@@ -906,6 +906,7 @@ task moderator_ui "Moderator UI" {
   task mod_withdraw_proposal_canvas_edge_annotation_removal "Fix edge and annotation canvas projectors to honor entity-removed on proposal withdraw" {
     effort 0.5d
     allocate team
+    complete 100
     depends !mod_withdraw_proposal_gesture
     note -8<-
       Source of debt: tasks/refinements/moderator-ui/mod_withdraw_proposal_gesture.md Status block (commit landing mod_withdraw_proposal_gesture) — the node canvas projector was fixed to honor `entity-removed` (projectNodes skips removed node ids), but the edge and annotation canvas projections in GraphCanvasPane.tsx also ignore `entity-removed`. Withdrawing a `set-edge-substance` or `capture-node`-with-edge proposal would leave the edge/annotation on the canvas. Not exercised by the single-actor e2e (which only proposes a free-floating statement), but a latent gap that mirrors the node fix. Surfaced by Fixer 1 in the mod_withdraw_proposal_gesture implementation run.

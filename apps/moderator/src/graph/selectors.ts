@@ -602,6 +602,40 @@ export function projectSnapshots(events: readonly Event[]): Snapshot[] {
 }
 
 /**
+ * Moderator-local annotation projection: `projectAnnotations` output with
+ * any annotation retracted by an `entity-removed` event
+ * (`entity_kind: 'annotation'`) dropped.
+ *
+ * This is the moderator-canvas seam every annotation rendering flows
+ * through — per-edge badge buckets (`selectEdgesForSession`), per-node
+ * badge buckets, annotation host edges, and midpoint nodes all read it.
+ * Filtering here keeps a withdrawn annotation off the moderator canvas
+ * (badge, promoted node, host edge, and midpoint) the same way the node
+ * and edge projectors honor their own `entity-removed` kinds.
+ *
+ * §D2 (refinement `mod_withdraw_proposal_canvas_edge_annotation_removal`):
+ * this is a forward-looking guard, not a live bug. No producer emits
+ * `entity-removed(annotation)` today — `annotate` proposals create no
+ * propose-time structural event, so nothing is ever retracted on withdraw.
+ * The guard lives at the moderator layer (a local filter over the shared
+ * `projectAnnotations` output) rather than in the shared
+ * `@a-conversa/shell` projector, so the participant / audience surfaces are
+ * untouched by this moderator-only correctness fix. Pinned by a unit test
+ * against a synthesized event.
+ */
+export function projectModeratorAnnotations(events: readonly Event[]): Annotation[] {
+  const removedAnnotationIds = new Set<string>();
+  for (const event of events) {
+    if (event.kind === 'entity-removed' && event.payload.entity_kind === 'annotation') {
+      removedAnnotationIds.add(event.payload.entity_id);
+    }
+  }
+  const annotations = projectAnnotations(events);
+  if (removedAnnotationIds.size === 0) return annotations;
+  return annotations.filter((annotation) => !removedAnnotationIds.has(annotation.id));
+}
+
+/**
  * Project the per-session WS event log into the ReactFlow edge list.
  *
  * Walks `state.sessionState[sessionId]?.events` once, picks every
@@ -623,7 +657,7 @@ export function selectEdgesForSession(
 ): Edge<StatementEdgeData>[] {
   const session = state.sessionState[sessionId];
   if (!session) return [];
-  const annotations = projectAnnotations(session.events);
+  const annotations = projectModeratorAnnotations(session.events);
   const promotedAnnotationIds = computeAnnotationsAsEndpoints(session.events);
   const annotationsByEdge = groupAnnotationsByEdge(
     promotedAnnotationIds.size === 0
@@ -647,9 +681,37 @@ export function selectEdgesForSession(
       wordingByNodeId.set(event.payload.node_id, event.payload.wording);
     }
   }
+  // Removed-edge set — every edge id retracted by an `entity-removed`
+  // event (`entity_kind: 'edge'`). Withdrawing a still-pending proposal
+  // emits one `entity-removed` per propose-time-created entity
+  // (`apps/server/src/ws/handlers/withdraw.ts`); a `set-edge-substance`
+  // or connecting `capture-node` withdrawal retracts its minted edge, so
+  // the projection must drop the matching edge so the proposed edge
+  // leaves the canvas. The original `edge-created` event stays in the
+  // immutable log (ADR 0021), so the removal can only be honored here, at
+  // projection time. Up-front pass: `entity-removed` always follows its
+  // `edge-created` in the log, so collecting the removed ids first lets
+  // the main loop skip them in one pass. Mirrors the node-projector pass
+  // in `GraphCanvasPane.tsx`. Refinement:
+  // `mod_withdraw_proposal_canvas_edge_annotation_removal`.
+  const removedEdgeIds = new Set<string>();
+  for (const event of session.events) {
+    if (event.kind === 'entity-removed' && event.payload.entity_kind === 'edge') {
+      removedEdgeIds.add(event.payload.entity_id);
+    }
+  }
   const out: Edge<StatementEdgeData>[] = [];
   for (const event of session.events) {
     if (event.kind !== 'edge-created') continue;
+    // Skip edges retracted by a later `entity-removed` (a withdrawn
+    // proposal's propose-time edge). The edge never reaches the ReactFlow
+    // array — and no annotation-badge / facet-status enrichment is
+    // computed for it — so it leaves the canvas. Match keys solely on
+    // `entity_kind === 'edge'` against `edge_id`, never on endpoint ids
+    // (§D3): the server emits an explicit `entity-removed(edge)` for every
+    // edge it retracts, so committed edges sharing an endpoint with a
+    // withdrawn node are not over-retracted.
+    if (removedEdgeIds.has(event.payload.edge_id)) continue;
     // Annotation-endpoint edges (per `edge_target_annotation_schema_extension`
     // + `projection_edge_annotation_endpoint`) render via the new
     // `annotation` ReactFlow node-type per

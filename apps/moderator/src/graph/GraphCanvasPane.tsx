@@ -136,6 +136,7 @@ import {
   projectAnnotationHostEdges,
   projectAnnotationHostMidpointNodes,
   projectAnnotationNodes,
+  projectModeratorAnnotations,
   projectPendingAxiomMarks,
   selectEdgesForSession,
 } from './selectors.js';
@@ -144,7 +145,6 @@ import {
   EMPTY_AXIOM_MARKS,
   groupAnnotationsByEntityId,
   groupAxiomMarksByNode,
-  projectAnnotations,
   projectAxiomMarks,
   projectVotesByFacet,
 } from '@a-conversa/shell';
@@ -645,7 +645,7 @@ export function projectNodes(
   // endpoints) are filtered out of the badge bucket here so the host
   // node's `data.annotations` excludes them — mutual exclusion between
   // badge and node.
-  const allAnnotations = projectAnnotations(events);
+  const allAnnotations = projectModeratorAnnotations(events);
   const annotationsByNode = groupAnnotationsByEntityId(
     promotedAnnotationIds.size === 0
       ? allAnnotations
@@ -1288,7 +1288,11 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
     if (promoted.size === 0) {
       return statementEdges;
     }
-    const hostEdges = projectAnnotationHostEdges(projectAnnotations(events), promoted, events);
+    const hostEdges = projectAnnotationHostEdges(
+      projectModeratorAnnotations(events),
+      promoted,
+      events,
+    );
     if (hostEdges.length === 0) {
       return statementEdges;
     }
@@ -1397,7 +1401,7 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
     // (midpoint ids don't trigger relayout when a new annotation
     // promotes; their position is derived from the dagre-managed
     // statement-node positions every render).
-    const allAnnotations = projectAnnotations(events);
+    const allAnnotations = projectModeratorAnnotations(events);
     const promotedAnnotationIds = computeAnnotationsAsEndpoints(events);
     const midpointNodes = projectAnnotationHostMidpointNodes(
       allAnnotations,

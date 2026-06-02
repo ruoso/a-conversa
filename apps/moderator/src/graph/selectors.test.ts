@@ -52,6 +52,7 @@ import {
   projectAnnotationHostEdges,
   projectAnnotationHostMidpointNodes,
   projectAnnotationNodes,
+  projectModeratorAnnotations,
   projectPendingAxiomMarks,
   selectAnnotationContentById,
   selectAnnotations,
@@ -114,6 +115,27 @@ function makeNodeCreated(sequence: number, nodeId: string): Event {
       wording: 'a node',
       created_by: ACTOR,
       created_at: '2026-05-11T00:00:00.000Z',
+    },
+    createdAt: '2026-05-11T00:00:00.000Z',
+  };
+}
+
+function makeEntityRemoved(opts: {
+  sequence: number;
+  entityKind: 'node' | 'edge' | 'annotation';
+  entityId: string;
+}): Event {
+  return {
+    id: `00000000-0000-4000-8000-${(0x400 + opts.sequence).toString(16).padStart(12, '0')}`,
+    sessionId: SESSION,
+    sequence: opts.sequence,
+    kind: 'entity-removed',
+    actor: ACTOR,
+    payload: {
+      entity_kind: opts.entityKind,
+      entity_id: opts.entityId,
+      removed_by: ACTOR,
+      removed_at: '2026-05-11T00:00:00.000Z',
     },
     createdAt: '2026-05-11T00:00:00.000Z',
   };
@@ -247,6 +269,100 @@ describe('selectEdgesForSession', () => {
     expect(edges).toHaveLength(1);
     expect(edges[0]?.id).toBe('edge-1');
     expect(edges[0]?.data?.role).toBe('defines');
+  });
+
+  // Refinement: `mod_withdraw_proposal_canvas_edge_annotation_removal`.
+  // Withdrawing a `set-edge-substance` or connecting `capture-node`
+  // proposal emits one `entity-removed(edge)` per propose-time-minted
+  // edge (`apps/server/src/ws/handlers/withdraw.ts`); the original
+  // `edge-created` stays in the immutable log (ADR 0021), so the edge must
+  // be dropped at projection time, mirroring the node projector.
+  it('drops an edge retracted by an entity-removed event with entity_kind edge', () => {
+    const state = makeState([
+      makeEdgeCreated({
+        sequence: 1,
+        edgeId: 'edge-withdrawn',
+        role: 'supports',
+        source: 'n1',
+        target: 'n2',
+      }),
+      makeEntityRemoved({ sequence: 2, entityKind: 'edge', entityId: 'edge-withdrawn' }),
+    ]);
+    const edges = selectEdgesForSession(state, SESSION);
+    expect(edges).toHaveLength(0);
+  });
+
+  // §D3: each projector honors only its own `entity_kind`. An
+  // `entity-removed(node)` or `entity-removed(annotation)` naming an
+  // edge_id must NOT drop the edge — only `entity_kind: 'edge'` retracts an
+  // edge. A second, unrelated edge whose id is not retracted still renders.
+  it('only retracts an edge when entity_kind is edge — node/annotation kinds do not drop it', () => {
+    const state = makeState([
+      makeEdgeCreated({
+        sequence: 1,
+        edgeId: 'edge-keep-a',
+        role: 'supports',
+        source: 'n1',
+        target: 'n2',
+      }),
+      makeEdgeCreated({
+        sequence: 2,
+        edgeId: 'edge-keep-b',
+        role: 'rebuts',
+        source: 'n2',
+        target: 'n3',
+      }),
+      // Same id as edge-keep-a, but the wrong entity_kind — must be ignored
+      // by the edge filter.
+      makeEntityRemoved({ sequence: 3, entityKind: 'node', entityId: 'edge-keep-a' }),
+      makeEntityRemoved({ sequence: 4, entityKind: 'annotation', entityId: 'edge-keep-b' }),
+    ]);
+    const edges = selectEdgesForSession(state, SESSION);
+    expect(edges.map((e) => e.id)).toEqual(['edge-keep-a', 'edge-keep-b']);
+  });
+
+  // No stranded enrichment: the dropped edge contributes no edge to the
+  // output, and the surviving edge keeps the exact `data` shape it had
+  // before the fix (the pre-fix single-edge projection above pins that
+  // shape).
+  it('leaves the surviving edge unchanged when a sibling edge is retracted', () => {
+    const state = makeState([
+      makeEdgeCreated({
+        sequence: 1,
+        edgeId: 'edge-withdrawn',
+        role: 'supports',
+        source: '00000000-0000-4000-8000-000000000001',
+        target: '00000000-0000-4000-8000-000000000002',
+      }),
+      makeEdgeCreated({
+        sequence: 2,
+        edgeId: 'edge-survivor',
+        role: 'supports',
+        source: '00000000-0000-4000-8000-000000000001',
+        target: '00000000-0000-4000-8000-000000000002',
+      }),
+      makeEntityRemoved({ sequence: 3, entityKind: 'edge', entityId: 'edge-withdrawn' }),
+    ]);
+    const edges = selectEdgesForSession(state, SESSION);
+    expect(edges).toHaveLength(1);
+    expect(edges[0]).toEqual({
+      id: 'edge-survivor',
+      source: '00000000-0000-4000-8000-000000000001',
+      target: '00000000-0000-4000-8000-000000000002',
+      type: 'statement',
+      markerEnd: { type: MarkerType.ArrowClosed },
+      data: {
+        role: 'supports',
+        annotations: [],
+        facetStatuses: { substance: 'awaiting-proposal', shape: 'proposed' },
+        sourceId: '00000000-0000-4000-8000-000000000001',
+        targetId: '00000000-0000-4000-8000-000000000002',
+        sourceKind: 'node',
+        targetKind: 'node',
+        sourceWording: '—',
+        targetWording: '—',
+      },
+    });
   });
 
   // The seven-role round-trip pins the contract that every role from the
@@ -778,6 +894,68 @@ describe('selectAnnotations', () => {
       createdBy: ACTOR,
       createdAt: '2026-05-11T00:00:00.000Z',
     });
+  });
+});
+
+// -- projectModeratorAnnotations (annotation-removal guard, §D2) ------
+//
+// Refinement: tasks/refinements/moderator-ui/
+//   mod_withdraw_proposal_canvas_edge_annotation_removal.md
+//
+// This is a FORWARD-LOOKING GUARD, not a live bug: no producer emits an
+// `entity-removed` event with `entity_kind: 'annotation'` today (`annotate`
+// proposals create no propose-time structural event, so nothing is ever
+// retracted on withdraw — see withdraw.ts:570-584). These cases pin the
+// moderator-seam projector contract against a SYNTHESIZED event so the
+// guard does not silently re-open the moment a backend `annotation-created`
+// propose/withdraw arm lands. The filter lives at the moderator layer (not
+// the shared shell `projectAnnotations`) so participant / audience surfaces
+// are untouched (§D2).
+describe('projectModeratorAnnotations', () => {
+  it('drops an annotation named by an entity-removed event with entity_kind annotation', () => {
+    const events: Event[] = [
+      makeAnnotationCreated({
+        sequence: 1,
+        annotationId: 'anno-withdrawn',
+        kind: 'note',
+        targetNodeId: 'node-x',
+        targetEdgeId: null,
+      }),
+      makeAnnotationCreated({
+        sequence: 2,
+        annotationId: 'anno-survivor',
+        kind: 'note',
+        targetNodeId: 'node-y',
+        targetEdgeId: null,
+      }),
+      makeEntityRemoved({ sequence: 3, entityKind: 'annotation', entityId: 'anno-withdrawn' }),
+    ];
+    const annotations = projectModeratorAnnotations(events);
+    expect(annotations.map((a) => a.id)).toEqual(['anno-survivor']);
+  });
+
+  it('leaves all annotations intact when no entity-removed(annotation) is present', () => {
+    const events: Event[] = [
+      makeAnnotationCreated({
+        sequence: 1,
+        annotationId: 'anno-1',
+        kind: 'note',
+        targetNodeId: 'node-x',
+        targetEdgeId: null,
+      }),
+      makeAnnotationCreated({
+        sequence: 2,
+        annotationId: 'anno-2',
+        kind: 'note',
+        targetNodeId: 'node-y',
+        targetEdgeId: null,
+      }),
+      // entity-removed of a different kind naming an annotation id must be
+      // ignored — only `entity_kind: 'annotation'` retracts an annotation.
+      makeEntityRemoved({ sequence: 3, entityKind: 'node', entityId: 'anno-1' }),
+    ];
+    const annotations = projectModeratorAnnotations(events);
+    expect(annotations.map((a) => a.id)).toEqual(['anno-1', 'anno-2']);
   });
 });
 
