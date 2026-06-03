@@ -60,7 +60,7 @@ import {
   type Vote,
   type WsClient,
 } from '@a-conversa/shell';
-import { useSelectionStore } from '../stores';
+import { useFlashStore, useSelectionStore } from '../stores';
 
 // Session id used to satisfy `useParams<{ id: string }>()` for the
 // palette-mount gate cases below. The visibility tests don't dispatch
@@ -218,11 +218,13 @@ beforeEach(async () => {
   // nothing is selected (the `mod_selection` cases at the bottom of the
   // file explicitly opt into selection by calling `select(...)` first).
   useSelectionStore.getState().clear();
+  useFlashStore.setState({ flashingIds: new Set<string>(), flashNonce: 0 });
 });
 
 afterEach(() => {
   cleanup();
   useSelectionStore.getState().clear();
+  useFlashStore.setState({ flashingIds: new Set<string>(), flashNonce: 0 });
 });
 
 describe('StatementNode — rendering', () => {
@@ -2808,5 +2810,55 @@ describe('StatementNode — inline classification commit affordance mount gate',
     expect(
       screen.queryByTestId('node-classification-commit-affordance-n-class-commit-awaiting'),
     ).toBeNull();
+  });
+});
+
+// -- Entity-flash visual state (mod_history_click_to_flash) -----------
+//
+// `<StatementNode>` subscribes to `useFlashStore` and stamps a
+// `data-flashing="true"` attribute + a Tailwind fuchsia ring when the
+// store's `flashingIds` set contains this node's id. The store-write
+// side (the change-history row's activation handler) is exercised in
+// `ChangeHistoryPane.test.tsx`; these cases lock in the per-card READ
+// path — the transient pulse the moderator sees when a history row is
+// activated.
+
+describe('StatementNode — entity-flash visual state (mod_history_click_to_flash)', () => {
+  it('has no data-flashing attribute and no fuchsia ring when not flashing', async () => {
+    await render(
+      <StatementNode
+        {...makeNodeProps({ id: 'n-unflashed', data: { wording: 'w', kind: 'fact' } })}
+      />,
+    );
+    const card = screen.getByTestId('statement-node-n-unflashed');
+    expect(card.getAttribute('data-flashing')).toBeNull();
+    expect(card.className).not.toContain('ring-fuchsia-500');
+  });
+
+  it('stamps data-flashing="true" + the motion-safe fuchsia ring when its id is flashing', async () => {
+    useFlashStore.getState().flash(['n-flashed']);
+    await render(
+      <StatementNode
+        {...makeNodeProps({ id: 'n-flashed', data: { wording: 'w', kind: 'fact' } })}
+      />,
+    );
+    const card = screen.getByTestId('statement-node-n-flashed');
+    expect(card.getAttribute('data-flashing')).toBe('true');
+    expect(card.className).toContain('ring-4');
+    expect(card.className).toContain('ring-fuchsia-500');
+    // The pulse is motion-safe-gated so reduced-motion users get a static ring.
+    expect(card.className).toContain('motion-safe:animate-pulse');
+  });
+
+  it('does not flash a node whose id is NOT in the flashing set', async () => {
+    useFlashStore.getState().flash(['some-other-id']);
+    await render(
+      <StatementNode
+        {...makeNodeProps({ id: 'n-not-flashed', data: { wording: 'w', kind: 'fact' } })}
+      />,
+    );
+    const card = screen.getByTestId('statement-node-n-not-flashed');
+    expect(card.getAttribute('data-flashing')).toBeNull();
+    expect(card.className).not.toContain('ring-fuchsia-500');
   });
 });

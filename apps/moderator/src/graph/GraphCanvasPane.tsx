@@ -112,6 +112,7 @@ import {
 } from './AnnotationHostMidpointNode.js';
 import { edgeTypes } from './edgeTypes.js';
 import { useCanvasFocusEffect } from './useCanvasFocusEffect.js';
+import { useFlashAutoClear } from './useFlashAutoClear.js';
 import { DrawEdgeRolePicker } from './DrawEdgeRolePicker.js';
 import { GraphContextMenu, type MenuItem } from './GraphContextMenu.js';
 import { SnapshotMarkerStrip } from './SnapshotMarkerStrip.js';
@@ -995,6 +996,12 @@ function GraphCanvasPaneInner(props: GraphCanvasPaneProps): ReactElement {
   // (which lives outside this `<ReactFlowProvider>`). Refinement:
   // `mod_diagnostic_focus_action`.
   useCanvasFocusEffect(reactFlow);
+
+  // Self-clear the entity-flash channel a fixed duration after each
+  // activation. The flash itself is read by id in the node / edge
+  // components; this effect owns the clock that empties the set.
+  // Refinement: `mod_history_click_to_flash`.
+  useFlashAutoClear();
 
   // Context-menu state — `null` when no menu is open. Set by the right-
   // click handlers below; cleared by the menu's `onClose`. Refinement:

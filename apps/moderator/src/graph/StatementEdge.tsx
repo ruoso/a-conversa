@@ -44,7 +44,7 @@ import { memo, useState, type ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 import { BaseEdge, EdgeLabelRenderer, getBezierPath, type EdgeProps } from 'reactflow';
 
-import { useSelectionStore } from '../stores/index.js';
+import { useFlashStore, useSelectionStore } from '../stores/index.js';
 import { AnnotationBadge } from './AnnotationBadge.js';
 import { EdgeCardSubstanceAffordance } from './EdgeCardSubstanceAffordance.js';
 import { EdgeShapeCommitAffordance } from './EdgeShapeCommitAffordance.js';
@@ -79,6 +79,15 @@ function StatementEdgeImpl(props: EdgeProps<StatementEdgeData>): ReactElement {
   const isSelected = useSelectionStore(
     (state) => state.selected?.kind === 'edge' && state.selected.id === id,
   );
+
+  // Entity-flash state for this edge. Refinement:
+  // `mod_history_click_to_flash`. Same read-by-id projection as selection:
+  // only the edge(s) being flashed re-render when `flashingIds` changes.
+  // The decoration lives on the role-label div (the visible, id-targetable
+  // DOM seam) — the `<BaseEdge>` `<path>` is inside ReactFlow's SVG and
+  // isn't directly id-targetable, mirroring the selection / diagnostic
+  // decision on the same label.
+  const isFlashing = useFlashStore((state) => state.flashingIds.has(id));
 
   const [edgePath, labelX, labelY] = getBezierPath({
     sourceX,
@@ -266,6 +275,10 @@ function StatementEdgeImpl(props: EdgeProps<StatementEdgeData>): ReactElement {
     ...(diagnosticHighlight !== undefined
       ? { 'data-diagnostic-severity': diagnosticHighlight.severity }
       : {}),
+    // `data-flashing` is stamped only while the edge is flashing (mirrors
+    // the `data-diagnostic-severity` decision to omit on baseline).
+    // Refinement: `mod_history_click_to_flash`.
+    ...(isFlashing ? { 'data-flashing': 'true' } : {}),
     ...(isHovered ? { 'aria-describedby': `hover-popover-${id}` } : {}),
   };
   // Selection ring (refinement `mod_selection`). Composed via Tailwind
@@ -273,6 +286,14 @@ function StatementEdgeImpl(props: EdgeProps<StatementEdgeData>): ReactElement {
   // selected nodes and selected edges read as the same "selected" signal
   // across the canvas.
   const labelSelectionClassName = isSelected ? ' ring-4 ring-sky-500' : '';
+  // Entity-flash ring (refinement `mod_history_click_to_flash`). Transient
+  // fuchsia pulse on the role-label pill, DISTINCT from selection (sky) and
+  // diagnostic (amber); `motion-safe:`-gated so reduced-motion users get a
+  // static ring. Same vocabulary as the node card's flash ring (Decision
+  // §D4). Exact values are tunable, not contract.
+  const labelFlashClassName = isFlashing
+    ? ' ring-4 ring-fuchsia-500 ring-offset-2 ring-offset-white motion-safe:animate-pulse'
+    : '';
 
   return (
     <>
@@ -294,7 +315,7 @@ function StatementEdgeImpl(props: EdgeProps<StatementEdgeData>): ReactElement {
           <div
             data-testid={`graph-edge-label-${id}`}
             data-edge-role={data?.role ?? ''}
-            className={`rounded bg-white px-1 text-xs text-slate-900 shadow-sm${labelSelectionClassName}${labelDiagnosticClassName}`}
+            className={`rounded bg-white px-1 text-xs text-slate-900 shadow-sm${labelSelectionClassName}${labelDiagnosticClassName}${labelFlashClassName}`}
             tabIndex={0}
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}

@@ -15,6 +15,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Event } from '@a-conversa/shared-types';
 
+import { affectedEntities } from './affectedEntities';
 import { mergeAndOrderEventLog } from './changeHistory';
 import { summarizeEvent } from './eventSummary';
 
@@ -116,6 +117,41 @@ describe('mergeAndOrderEventLog', () => {
     expect(bySeq.get(2)?.summary).toEqual({
       type: 'i18n',
       key: 'moderator.changeHistory.summary.choice.agree',
+    });
+  });
+
+  it('populates each row.affected from affectedEntities for that event (mod_history_click_to_flash D2)', () => {
+    const node = nodeEvent(1);
+    const edge = {
+      id: '00000000-0000-4000-8000-0000000000ee',
+      sessionId: SESSION,
+      sequence: 2,
+      kind: 'edge-created',
+      actor: ACTOR,
+      payload: {
+        edge_id: '00000000-0000-4000-8000-0000000000e9',
+        role: 'supports',
+        source_node_id: '00000000-0000-4000-8000-0000000000n1',
+        target_node_id: '00000000-0000-4000-8000-0000000000n2',
+        created_by: ACTOR,
+        created_at: '2026-06-03T00:00:00.000Z',
+      },
+      createdAt: '2026-06-03T00:00:00.000Z',
+    } as Event;
+
+    const rows = mergeAndOrderEventLog([node, edge], []);
+    const bySeq = new Map(rows.map((r) => [r.sequence, r]));
+    // The node-created row carries its own node id, no edges.
+    expect(bySeq.get(1)?.affected).toEqual(affectedEntities(node));
+    expect(bySeq.get(1)?.affected).toEqual({
+      nodeIds: ['00000000-0000-4000-8000-000000000001'],
+      edgeIds: [],
+    });
+    // The edge-created row carries the edge id + both node endpoints.
+    expect(bySeq.get(2)?.affected).toEqual(affectedEntities(edge));
+    expect(bySeq.get(2)?.affected).toEqual({
+      nodeIds: ['00000000-0000-4000-8000-0000000000n1', '00000000-0000-4000-8000-0000000000n2'],
+      edgeIds: ['00000000-0000-4000-8000-0000000000e9'],
     });
   });
 });

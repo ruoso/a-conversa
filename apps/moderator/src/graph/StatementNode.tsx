@@ -56,7 +56,7 @@ import {
   type Vote,
 } from '@a-conversa/shell';
 
-import { useSelectionStore } from '../stores/index.js';
+import { useFlashStore, useSelectionStore } from '../stores/index.js';
 import { AnnotationBadge } from './AnnotationBadge.js';
 import { DisputationTestChip } from './DisputationTestChip.js';
 import { HoverPopover } from './HoverPopover.js';
@@ -218,6 +218,15 @@ export function StatementNode(props: NodeProps<StatementNodeData>): ReactElement
     (state) => state.selected?.kind === 'node' && state.selected.id === id,
   );
 
+  // Entity-flash state for this card. Refinement:
+  // `mod_history_click_to_flash`. Same read-by-id projection as selection:
+  // the selector reduces the store's `flashingIds` set to a boolean
+  // specific to THIS node, so only the node(s) being flashed re-render
+  // when the set changes. The set is written imperatively by the change-
+  // history row's activation handler (`useFlashStore.flash`) and emptied by
+  // `useFlashAutoClear` after a fixed duration.
+  const isFlashing = useFlashStore((state) => state.flashingIds.has(id));
+
   // Resolve the kind label off the canonical glossary namespace from
   // `i18n_methodology_glossary`. `t('methodology.kind.fact')` etc.
   // returns the localized string for the active locale; on `null` we
@@ -294,9 +303,21 @@ export function StatementNode(props: NodeProps<StatementNodeData>): ReactElement
       : diagnosticHighlight.severity === 'blocking'
         ? 'ring-4 ring-amber-500/80 ring-offset-2 ring-offset-white motion-safe:animate-pulse'
         : 'ring-2 ring-amber-300/70 ring-offset-1 ring-offset-white';
+  // Entity-flash ring (refinement `mod_history_click_to_flash`). A
+  // transient fuchsia pulse, DISTINCT from selection (sky) and diagnostic
+  // (amber) so it reads unambiguously when rings stack. `motion-safe:`-
+  // gated like the diagnostic halo, so `prefers-reduced-motion` users get
+  // a static ring rather than a pulse. Exact colour / radius / duration
+  // are tunable, not contract (Decision §D4 — a `mod_vr_*` sibling pins
+  // pixels; this task pins behaviour).
+  const flashClassName = isFlashing
+    ? 'ring-4 ring-fuchsia-500 ring-offset-2 ring-offset-white motion-safe:animate-pulse'
+    : '';
   const cardClassName = `${baseClassName} ${styleClassName}${
     selectionClassName ? ` ${selectionClassName}` : ''
-  }${diagnosticClassName ? ` ${diagnosticClassName}` : ''} relative`;
+  }${diagnosticClassName ? ` ${diagnosticClassName}` : ''}${
+    flashClassName ? ` ${flashClassName}` : ''
+  } relative`;
   // Hover / focus-visible state for the per-card popover. Refinement:
   // `mod_hover_details`. Single boolean flipped by both pointer and
   // keyboard input paths so WCAG 2.1 SC 1.4.13 ("Content on Hover or
@@ -327,6 +348,10 @@ export function StatementNode(props: NodeProps<StatementNodeData>): ReactElement
     ...(diagnosticHighlight !== undefined
       ? { 'data-diagnostic-severity': diagnosticHighlight.severity }
       : {}),
+    // `data-flashing` is stamped only while the node is flashing (mirrors
+    // the `data-diagnostic-severity` decision to omit on baseline rather
+    // than stamp a `"false"`). Refinement: `mod_history_click_to_flash`.
+    ...(isFlashing ? { 'data-flashing': 'true' } : {}),
     ...(isHovered ? { 'aria-describedby': `hover-popover-${id}` } : {}),
   };
 

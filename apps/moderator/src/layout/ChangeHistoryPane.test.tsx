@@ -31,6 +31,7 @@ import { createI18nInstance } from '@a-conversa/shell';
 
 import { ChangeHistoryPane } from './ChangeHistoryPane';
 import { useWsStore } from '../ws/wsStore';
+import { useFlashStore, useUiStore } from '../stores';
 
 const SESSION = '00000000-0000-4000-8000-0000000000a1';
 const ACTOR = '00000000-0000-4000-8000-0000000000aa';
@@ -113,6 +114,8 @@ const originalFetch = global.fetch;
 
 beforeEach(async () => {
   useWsStore.getState().reset();
+  useUiStore.setState({ focusRequest: null });
+  useFlashStore.setState({ flashingIds: new Set<string>(), flashNonce: 0 });
   await createI18nInstance('en-US');
   await i18next.changeLanguage('en-US');
 });
@@ -215,6 +218,69 @@ describe('ChangeHistoryPane — per-row payload summary (mod_history_event_summa
 
     const row = await screen.findByTestId('change-history-row');
     expect(within(row).queryByTestId('change-history-row-summary')).toBeNull();
+  });
+});
+
+describe('ChangeHistoryPane — click-to-flash activation (mod_history_click_to_flash)', () => {
+  it('exposes an accessible activation button per row (role + aria-label)', async () => {
+    global.fetch = vi.fn(() =>
+      Promise.resolve(jsonResponse({ events: [nodeEvent(1)], nextCursor: null })),
+    );
+    render(<ChangeHistoryPane sessionId={SESSION} nowMs={NOW_MS} />);
+
+    const row = await screen.findByTestId('change-history-row');
+    const button = within(row).getByTestId('change-history-row-activate');
+    // A real <button> — keyboard Enter/Space activation comes free with the
+    // element semantics (Decision §D5); the accessible name is non-empty.
+    expect(button.tagName).toBe('BUTTON');
+    expect(button.getAttribute('type')).toBe('button');
+    expect(button.hasAttribute('disabled')).toBe(false);
+    expect(button.getAttribute('aria-label')).toBeTruthy();
+    // The button is queryable by its button role + accessible name.
+    expect(screen.getByRole('button', { name: button.getAttribute('aria-label') ?? '' })).toBe(
+      button,
+    );
+  });
+
+  it('activating a node row dispatches requestCanvasFocus + flash with the row affected ids', async () => {
+    global.fetch = vi.fn(() =>
+      Promise.resolve(jsonResponse({ events: [nodeEvent(1)], nextCursor: null })),
+    );
+    render(<ChangeHistoryPane sessionId={SESSION} nowMs={NOW_MS} />);
+
+    const row = await screen.findByTestId('change-history-row');
+    const button = within(row).getByTestId('change-history-row-activate');
+    const nodeId = '00000000-0000-4000-8000-000000000101';
+
+    act(() => {
+      fireEvent.click(button);
+    });
+
+    // Re-frame channel: the focus request carries the node id, no edges.
+    expect(useUiStore.getState().focusRequest?.nodeIds).toEqual([nodeId]);
+    expect(useUiStore.getState().focusRequest?.edgeIds).toEqual([]);
+    // Flash channel: the flashing set is exactly the node id.
+    expect([...useFlashStore.getState().flashingIds]).toEqual([nodeId]);
+  });
+
+  it('activating an empty-affected row (session-ended) dispatches empty sets without error', async () => {
+    global.fetch = vi.fn(() =>
+      Promise.resolve(jsonResponse({ events: [sessionEndedEvent(1)], nextCursor: null })),
+    );
+    render(<ChangeHistoryPane sessionId={SESSION} nowMs={NOW_MS} />);
+
+    const row = await screen.findByTestId('change-history-row');
+    const button = within(row).getByTestId('change-history-row-activate');
+
+    act(() => {
+      fireEvent.click(button);
+    });
+
+    expect(useUiStore.getState().focusRequest?.nodeIds).toEqual([]);
+    expect(useUiStore.getState().focusRequest?.edgeIds).toEqual([]);
+    expect(useFlashStore.getState().flashingIds.size).toBe(0);
+    // The nonce still advanced — a no-op flash is a real dispatch.
+    expect(useFlashStore.getState().flashNonce).toBe(1);
   });
 });
 

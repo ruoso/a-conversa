@@ -49,6 +49,7 @@ import { useTranslation } from 'react-i18next';
 import { formatRelativeTime } from '@a-conversa/i18n-catalogs';
 
 import { useWsStore } from '../ws/wsStore';
+import { useFlashStore, useUiStore } from '../stores';
 import { mergeAndOrderEventLog, type ChangeHistoryRow } from '../graph/changeHistory';
 import type { EventSummary } from '../graph/eventSummary';
 import { useSessionEventLogPrefetch } from './useSessionEventLogPrefetch';
@@ -77,7 +78,15 @@ export interface ChangeHistoryPaneProps {
 // no wide button cluster, unlike `PendingProposalsPane`).
 const PANE_CONTAINER_CLASSES = 'flex max-h-full flex-col gap-1 overflow-y-auto text-slate-700';
 const LIST_CLASSES = 'm-0 flex list-none flex-col gap-1 p-0';
-const ROW_CLASSES = 'flex items-center gap-2 rounded border border-slate-200 bg-white px-2 py-1';
+// The row's interactive surface is a real `<button>` (Decision §D5) filling
+// the `<li>`: keyboard Enter/Space + screen-reader semantics + the
+// `focus-visible:` ring come free, and the `<li>` keeps its stable
+// `data-event-id` / `-kind` / `-sequence` contract untouched. The flex /
+// border / background that used to live on the `<li>` move here; `w-full`
+// + `text-left` make the button span the row and align like the old `<li>`,
+// `cursor-pointer` + the hover tint signal it's actionable.
+const ROW_BUTTON_CLASSES =
+  'flex w-full cursor-pointer items-center gap-2 rounded border border-slate-200 bg-white px-2 py-1 text-left hover:border-slate-300 hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500';
 const KIND_CHIP_CLASSES =
   'flex-shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-xs font-medium text-slate-700';
 // The summary is the row's primary, growing column (`mod_history_event_summary`):
@@ -145,10 +154,26 @@ function summaryDisplayText(
 }
 
 /**
+ * Activate a row: re-frame the canvas on the row's affected entities AND
+ * flash them (`mod_history_click_to_flash`, Constraint §10, Decision §D1).
+ * Two channels, one gesture — both read the row's precomputed `affected`
+ * (no store read for the data, no click-time log walk; Decision §D2). A
+ * row whose `affected` is empty (session/participant/mode/snapshot kinds)
+ * dispatches empty sets — a harmless no-op, no special casing.
+ */
+function activateRow(affected: ChangeHistoryRow['affected']): void {
+  const { nodeIds, edgeIds } = affected;
+  useUiStore.getState().requestCanvasFocus({ nodeIds, edgeIds });
+  useFlashStore.getState().flash([...nodeIds, ...edgeIds]);
+}
+
+/**
  * One row in the list. Co-located inside this file (small enough not to
  * warrant its own file in v1). Sibling tasks extend this row contract;
  * the `data-testid` + `data-event-id` / `data-event-kind` /
- * `data-sequence` attributes are the stable seam (Constraints §5).
+ * `data-sequence` attributes are the stable seam (Constraints §5) and
+ * stay on the `<li>`. The row's columns are wrapped in a `<button>` (the
+ * accessible activation affordance — Constraint §9 / Decision §D5).
  */
 function ChangeHistoryRowItem(props: {
   readonly row: ChangeHistoryRow;
@@ -161,28 +186,44 @@ function ChangeHistoryRowItem(props: {
   const summary = summaryDisplayText(row.summary, t);
   const actor = actorText(row.actor, systemActorLabel);
   const ago = relativeTimeFor(row.createdAt, nowMs);
+  // Accessible name for the activation button. Composed from the row's
+  // existing localized columns (kind label + payload summary) — no new
+  // i18n catalog key (the flash affordance is non-textual; the
+  // refinement scopes no catalog work). Activation semantics ("this
+  // jumps to the entity on the graph") are carried by the `<button>`
+  // role itself.
+  const buttonLabel = summary !== null ? `${kindLabel}: ${summary}` : kindLabel;
   return (
     <li
       data-testid="change-history-row"
       data-event-id={row.id}
       data-event-kind={row.kind}
       data-sequence={row.sequence}
-      className={ROW_CLASSES}
     >
-      <span data-testid="change-history-row-kind" className={KIND_CHIP_CLASSES}>
-        {kindLabel}
-      </span>
-      {summary !== null && (
-        <span data-testid="change-history-row-summary" className={SUMMARY_CLASSES}>
-          {summary}
+      <button
+        type="button"
+        data-testid="change-history-row-activate"
+        aria-label={buttonLabel}
+        className={ROW_BUTTON_CLASSES}
+        onClick={() => {
+          activateRow(row.affected);
+        }}
+      >
+        <span data-testid="change-history-row-kind" className={KIND_CHIP_CLASSES}>
+          {kindLabel}
         </span>
-      )}
-      <span data-testid="change-history-row-actor" className={ACTOR_CLASSES}>
-        {actor}
-      </span>
-      <span data-testid="change-history-row-timestamp" className={TIMESTAMP_CLASSES}>
-        {ago}
-      </span>
+        {summary !== null && (
+          <span data-testid="change-history-row-summary" className={SUMMARY_CLASSES}>
+            {summary}
+          </span>
+        )}
+        <span data-testid="change-history-row-actor" className={ACTOR_CLASSES}>
+          {actor}
+        </span>
+        <span data-testid="change-history-row-timestamp" className={TIMESTAMP_CLASSES}>
+          {ago}
+        </span>
+      </button>
     </li>
   );
 }

@@ -9,6 +9,7 @@
 // every moderator-side Zustand store.
 
 export { useCaptureStore, type CaptureMode, type CaptureState } from './captureStore.js';
+export { useFlashStore, type FlashState } from './flashStore.js';
 export { useSelectionStore, type Selection, type SelectionState } from './selectionStore.js';
 export { useUiStore, type SidebarPane, type UiState, MIN_ZOOM, MAX_ZOOM } from './uiStore.js';
 export {

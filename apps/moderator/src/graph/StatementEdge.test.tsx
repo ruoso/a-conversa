@@ -37,7 +37,7 @@ import type { SendFn, WsClient, WsClientStatus } from '@a-conversa/shell';
 import type { WsEnvelopeUnion, WsMessagePayloadMap, WsMessageType } from '@a-conversa/shared-types';
 import { edgeTypes } from './edgeTypes';
 import type { StatementEdgeData } from './selectors';
-import { useSelectionStore } from '../stores';
+import { useFlashStore, useSelectionStore } from '../stores';
 import { resetSetEdgeSubstanceStore } from '../layout/useProposeSetEdgeSubstanceAction';
 import { useWsStore } from '../ws/wsStore';
 
@@ -234,11 +234,13 @@ beforeEach(async () => {
   // Reset the selection store between cases — the `mod_selection`
   // tests at the end of the file explicitly opt into selection.
   useSelectionStore.getState().clear();
+  useFlashStore.setState({ flashingIds: new Set<string>(), flashNonce: 0 });
 });
 
 afterEach(() => {
   cleanup();
   useSelectionStore.getState().clear();
+  useFlashStore.setState({ flashingIds: new Set<string>(), flashNonce: 0 });
 });
 
 describe('StatementEdge — methodology role label × locale', () => {
@@ -1219,5 +1221,53 @@ describe('StatementEdge — F6 rebut affordance switch (mod_defeater_substance_p
     await waitFor(() => screen.getByTestId('graph-edge-label-edge-rebut-no-gate'));
     expect(screen.queryByTestId('rebut-edge-pre-commit-affordance-edge-rebut-no-gate')).toBeNull();
     expect(screen.queryByTestId('edge-card-substance-affordance-edge-rebut-no-gate')).toBeNull();
+  });
+});
+
+// -- Entity-flash visual state (mod_history_click_to_flash) -----------
+//
+// The fuchsia flash ring composes on the role-label pill (NOT the
+// BaseEdge path, same seam as selection / diagnostic) when the edge's id
+// is in `useFlashStore.flashingIds`. The `data-flashing="true"` attribute
+// stamps the stable DOM seam. The store-write side (the change-history
+// row's activation handler) is exercised in `ChangeHistoryPane.test.tsx`;
+// these cases lock in the per-edge READ path.
+
+describe('StatementEdge — entity-flash visual state (mod_history_click_to_flash)', () => {
+  it('has no data-flashing attribute and no fuchsia ring when not flashing', async () => {
+    render(
+      <div style={{ width: 400, height: 400 }}>
+        <ReactFlow nodes={NODES} edges={[edgeFor('supports')]} edgeTypes={edgeTypes} />
+      </div>,
+    );
+    const label = await waitFor(() => screen.getByTestId('graph-edge-label-edge-supports'));
+    expect(label.getAttribute('data-flashing')).toBeNull();
+    expect(label.className).not.toContain('ring-fuchsia-500');
+  });
+
+  it('stamps data-flashing="true" + the motion-safe fuchsia ring when the edge id is flashing', async () => {
+    useFlashStore.getState().flash(['edge-supports']);
+    render(
+      <div style={{ width: 400, height: 400 }}>
+        <ReactFlow nodes={NODES} edges={[edgeFor('supports')]} edgeTypes={edgeTypes} />
+      </div>,
+    );
+    const label = await waitFor(() => screen.getByTestId('graph-edge-label-edge-supports'));
+    expect(label.getAttribute('data-flashing')).toBe('true');
+    expect(label.className).toContain('ring-4');
+    expect(label.className).toContain('ring-fuchsia-500');
+    expect(label.className).toContain('motion-safe:animate-pulse');
+  });
+
+  it('does not flash an edge whose id is NOT in the flashing set', async () => {
+    useFlashStore.getState().flash(['some-other-id']);
+    render(
+      <div style={{ width: 400, height: 400 }}>
+        <ReactFlow nodes={NODES} edges={[edgeFor('supports')]} edgeTypes={edgeTypes} />
+      </div>,
+    );
+    const label = await waitFor(() => screen.getByTestId('graph-edge-label-edge-supports'));
+    expect(label.getAttribute('data-flashing')).toBeNull();
+    expect(label.className).not.toContain('ring-fuchsia-500');
   });
 });

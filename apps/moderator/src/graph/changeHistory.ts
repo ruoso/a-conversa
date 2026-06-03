@@ -26,6 +26,7 @@
 
 import type { Event, EventKind } from '@a-conversa/shared-types';
 
+import { affectedEntities, type AffectedEntities } from './affectedEntities';
 import { type EventSummary, summarizeEvent } from './eventSummary';
 
 /**
@@ -66,6 +67,15 @@ export interface ChangeHistoryRow {
    * layer a flat view-model with no event envelope leaking in.
    */
   readonly summary: EventSummary;
+  /**
+   * The graph entities this event affected (`mod_history_click_to_flash`,
+   * Decision §D2). Precomputed here from the full `Event` via
+   * `affectedEntities` — NOT resolved at click time — so the pane stays
+   * store-free and the row's activation handler is a synchronous two-line
+   * dispatch (`requestCanvasFocus` + `flash`). Empty `{ nodeIds: [],
+   * edgeIds: [] }` for kinds that touch no graph entity.
+   */
+  readonly affected: AffectedEntities;
 }
 
 /**
@@ -98,6 +108,7 @@ export function mergeAndOrderEventLog(
       actor: event.actor,
       createdAt: event.createdAt,
       summary: summarizeEvent(event),
+      affected: affectedEntities(event),
     });
   }
 

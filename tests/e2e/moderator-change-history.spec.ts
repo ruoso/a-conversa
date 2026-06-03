@@ -168,4 +168,44 @@ test.describe('moderator change-history pane — reverse-chronological scroller'
       .first();
     await expect(voteRow.getByTestId('change-history-row-summary')).toHaveText('Dispute');
   });
+
+  test('activating a change-history row flashes the affected graph node', async ({ page }) => {
+    // `mod_history_click_to_flash` Acceptance §15 — e2e is IN SCOPE: the
+    // pane AND the canvas are both route-rendered, so activating a row
+    // flashes the entity it touched. Seed a `node-created` (+ an
+    // `edge-created` so the surrounding log is realistic); the most-recent
+    // node (`flash-node-b`) owns the topmost `node-created` row. Click that
+    // row's activation button and assert the matching ReactFlow node card
+    // stamps `data-flashing="true"`. Single locale (en-US) — the affordance
+    // is non-textual, so no cross-locale assertion is needed.
+    const sessionId = await reachOperate(page, 'Change history — click-to-flash.');
+
+    await seedWsStore(page, {
+      sessionId,
+      nodes: [
+        { nodeId: 'flash-node-a', wording: 'Flash source statement' },
+        { nodeId: 'flash-node-b', wording: 'Flash target statement' },
+      ],
+      edges: [{ edgeId: 'flash-edge-1', source: 'flash-node-a', target: 'flash-node-b' }],
+    });
+
+    const pane = page.getByTestId('change-history-pane');
+    await expect(pane).toBeVisible();
+
+    // The seeded node card is on the canvas, not yet flashing.
+    const nodeCard = page.getByTestId('statement-node-flash-node-b');
+    await expect(nodeCard).toBeVisible();
+    await expect(nodeCard).not.toHaveAttribute('data-flashing', 'true');
+
+    // The topmost `node-created` row is `flash-node-b` (highest seeded
+    // sequence among node-created events). Activate it.
+    const nodeRow = pane
+      .locator('[data-testid="change-history-row"][data-event-kind="node-created"]')
+      .first();
+    await nodeRow.getByTestId('change-history-row-activate').click();
+
+    // The matching ReactFlow node flashes (the pulse self-clears after a
+    // short delay, but `toHaveAttribute` polls fast enough to catch it).
+    await expect(nodeCard).toHaveAttribute('data-flashing', 'true');
+  });
 });
