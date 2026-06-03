@@ -137,6 +137,26 @@ export interface SeedFacetCommit {
   readonly committedBy?: string;
 }
 
+/**
+ * One synthetic `entity-removed` event the seeder injects. Mirrors
+ * `entityRemovedPayloadSchema` (`packages/shared-types/src/events.ts`) —
+ * the `(entity_kind, entity_id)` pair plus a `removed_by` / `removed_at`
+ * stamp. This is the commit-time fan-out the server emits when a
+ * propose-minted entity leaves the structure (e.g. a `break-edge`
+ * resolution retiring a cycle's `supports` edge): the moderator's edge /
+ * annotation projectors drop the entity once the `entity-removed` lands
+ * (`selectEdgesForSession` honors it at `apps/moderator/src/graph/selectors.ts`).
+ *
+ * Refinement: tasks/refinements/moderator-ui/mod_pw_diagnostic_flow.md
+ *             (AC #7 — the F7 resolution-lifecycle projection response:
+ *             a broken edge is no longer rendered after the resolution
+ *             commit's `entity-removed(edge)` fan-out arrives).
+ */
+export interface SeedEntityRemoval {
+  readonly entityKind: 'node' | 'edge' | 'annotation';
+  readonly entityId: string;
+}
+
 export interface SeedSessionOptions {
   readonly sessionId: string;
   readonly nodes?: readonly SeedNode[];
@@ -145,6 +165,7 @@ export interface SeedSessionOptions {
   readonly proposals?: readonly SeedProposal[];
   readonly votes?: readonly SeedFacetVote[];
   readonly commits?: readonly SeedFacetCommit[];
+  readonly entityRemovals?: readonly SeedEntityRemoval[];
 }
 
 /**
@@ -174,9 +195,10 @@ export async function seedWsStore(
     proposals = [],
     votes = [],
     commits = [],
+    entityRemovals = [],
   } = options;
   return page.evaluate(
-    ({ sessionId, nodes, edges, annotations, proposals, votes, commits }) => {
+    ({ sessionId, nodes, edges, annotations, proposals, votes, commits, entityRemovals }) => {
       const store = (
         window as unknown as {
           __aConversaWsStore?: {
@@ -269,10 +291,14 @@ export async function seedWsStore(
         sequence += 1;
       }
       // Loop order — nodes → annotations → edges → proposals → votes →
-      // commits — honors two invariants in one pass: (1) structural
-      // entities precede the facet rounds that reference them, and (2)
-      // a facet round is itself ordered proposal → votes → commit
-      // (Decision §D3 of `playwright_f6_substance_precommit_full_chain`).
+      // commits → entity-removals — honors three invariants in one pass:
+      // (1) structural entities precede the facet rounds that reference
+      // them, (2) a facet round is itself ordered proposal → votes →
+      // commit (Decision §D3 of
+      // `playwright_f6_substance_precommit_full_chain`), and (3) an
+      // `entity-removed` retraction lands LAST (it is the commit-time
+      // fan-out of a resolution proposal, e.g. `break-edge` — per
+      // `mod_pw_diagnostic_flow` AC #7).
       for (const proposal of proposals) {
         store.getState().applyEvent({
           id:
@@ -327,10 +353,27 @@ export async function seedWsStore(
         });
         sequence += 1;
       }
+      for (const removal of entityRemovals) {
+        store.getState().applyEvent({
+          id: `00000000-0000-4000-8000-${(0x9000 + sequence).toString(16).padStart(12, '0')}`,
+          sessionId,
+          sequence,
+          kind: 'entity-removed',
+          actor,
+          payload: {
+            entity_kind: removal.entityKind,
+            entity_id: removal.entityId,
+            removed_by: actor,
+            removed_at: createdAt,
+          },
+          createdAt,
+        });
+        sequence += 1;
+      }
       const after = store.getState().sessionState[sessionId];
       return { eventCount: after?.events.length ?? 0 };
     },
-    { sessionId, nodes, edges, annotations, proposals, votes, commits },
+    { sessionId, nodes, edges, annotations, proposals, votes, commits, entityRemovals },
   );
 }
 

@@ -889,6 +889,7 @@ task moderator_ui "Moderator UI" {
       task mod_pw_diagnostic_flow "Playwright: full F3/F7 enabled-state diagnostic flow" {
         effort 2d
         allocate team
+        complete 100
         depends moderator_ui.mod_diagnostic_resolution_flow
         note -8<-
           Source of debt: accumulated deferral from 9 F3/F7 refinements. The enabled-state Playwright scenarios require the set-node-substance propose-action UI (ships with mod_resolution_path_picker) and the full mod_diagnostic_resolution_flow container to be complete. Inherited debt includes: (1) mod_diagnostic_methodology_suggestions D10 — panel presence + per-kind chip-row seams; (2) mod_operationalization_mode AC #10 — right-click → pick "Run operationalization test" → OperationalizationCapturePanel; (3) mod_warrant_elicitation_mode D8 — right-click → pick "Run warrant elicitation test" → WarrantElicitationCapturePanel (disabled-state pinned inline by mod_warrant_elicitation_mode; only enabled-state remains here); (4) mod_disputation_test_display — disputation chip enabled-state. Registered here to exit the orphan state; flagged for the closer of mod_diagnostic_flag_pane (commit closing that task).
