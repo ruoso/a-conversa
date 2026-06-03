@@ -387,6 +387,7 @@ task backend "Backend" {
     task get_session_log "GET /sessions/:id/events — paginated event log" {
       effort 1d
       allocate team
+      complete 100
     }
     task get_at_position "GET /sessions/:id/state?position=... — projected state at log position" {
       effort 1d

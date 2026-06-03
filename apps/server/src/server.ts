@@ -84,6 +84,7 @@ import { openapiPlugin } from './openapi.js';
 import { healthzPlugin } from './routes/healthz.js';
 import { staticFrontendsPlugin } from './routes/static-frontends.js';
 import { sessionsRoutesPlugin } from './sessions/routes.js';
+import { replayRoutesPlugin } from './replay/routes.js';
 import { resolveWsOriginAllowlist } from './ws-origin-allowlist.js';
 import { wsHandlersPlugin } from './ws/handlers/index.js';
 import {
@@ -618,6 +619,18 @@ export async function createServer(options: CreateServerOptions = {}): Promise<F
   // `prefix` option would be ignored). Refinement:
   //   tasks/refinements/backend/serve_static_frontends_path_collision_fix.md.
   await app.register(sessionsRoutesPlugin);
+
+  // Replay-family routes (`GET /api/sessions/:id/events` today; the
+  // sibling `get_at_position`, `list_snapshots`, `get_snapshot`
+  // endpoints land in the same `.tji` block). Registered AFTER the auth
+  // middleware so the route's `preHandler: app.authenticate` resolves
+  // the decorator at registration time, and AFTER the sessions plugin so
+  // both share the auth surface. The plugin lazily reaches for the DB
+  // pool on the first authenticated request. Like the sessions plugin,
+  // it is `fastify-plugin`-wrapped, so the `/api/*` prefix lives in the
+  // route literals rather than a `prefix` option. Refinement:
+  //   tasks/refinements/backend/get_session_log.md.
+  await app.register(replayRoutesPlugin);
 
   // WebSocket connection lifecycle. Registers `@fastify/websocket`
   // (decorating `app.websocketServer` + `app.injectWS`) and a single
