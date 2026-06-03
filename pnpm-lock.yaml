@@ -115,6 +115,9 @@ importers:
 
   apps/audience:
     dependencies:
+      '@a-conversa/graph-view':
+        specifier: workspace:*
+        version: link:../../packages/graph-view
       '@a-conversa/i18n-catalogs':
         specifier: workspace:*
         version: link:../../packages/i18n-catalogs
@@ -360,6 +363,34 @@ importers:
       '@types/ws':
         specifier: 8.18.1
         version: 8.18.1
+
+  packages/graph-view:
+    dependencies:
+      cytoscape:
+        specifier: ^3.30.0
+        version: 3.33.3
+      react:
+        specifier: '*'
+        version: 18.3.1
+      react-dom:
+        specifier: '*'
+        version: 18.3.1(react@18.3.1)
+      react-i18next:
+        specifier: ^17.0.7
+        version: 17.0.7(i18next@26.1.0(typescript@6.0.3))(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@6.0.3)
+    devDependencies:
+      '@a-conversa/i18n-catalogs':
+        specifier: workspace:*
+        version: link:../i18n-catalogs
+      '@a-conversa/shared-types':
+        specifier: workspace:^
+        version: link:../shared-types
+      '@a-conversa/shell':
+        specifier: workspace:*
+        version: link:../shell
+      vite:
+        specifier: 8.0.13
+        version: 8.0.13(@types/node@22.19.18)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.8.4)
 
   packages/i18n-catalogs:
     dependencies:
@@ -2838,10 +2869,6 @@ packages:
   tinyexec@1.2.4:
     resolution: {integrity: sha512-SHf/r48b7vOrjve9PxJo3MN5v5yuyjHvdUcrQffT3WXMUfnGmHDVbC4k3sHJaJTgZCwpUplIaAo5ANtMyp3YHg==}
     engines: {node: '>=18'}
-
-  tinyglobby@0.2.16:
-    resolution: {integrity: sha512-pn99VhoACYR8nFHhxqix+uvsbXineAasWm5ojXoN8xEwK5Kd3/TrhNn1wByuD52UxWRLy8pu+kRMniEi6Eq9Zg==}
-    engines: {node: '>=12.0.0'}
 
   tinyglobby@0.2.17:
     resolution: {integrity: sha512-wXR/dYpcqKmfWpEdZjiKJOwCNFndD0DMnrW/cYjVGttEkBfVgcLFHoNrlj47mjOVic9yyNu65alsgF4NQyTa2g==}
@@ -5541,11 +5568,6 @@ snapshots:
 
   tinyexec@1.2.4: {}
 
-  tinyglobby@0.2.16:
-    dependencies:
-      fdir: 6.5.0(picomatch@4.0.4)
-      picomatch: 4.0.4
-
   tinyglobby@0.2.17:
     dependencies:
       fdir: 6.5.0(picomatch@4.0.4)
@@ -5654,7 +5676,7 @@ snapshots:
       picomatch: 4.0.4
       postcss: 8.5.14
       rolldown: 1.0.1
-      tinyglobby: 0.2.16
+      tinyglobby: 0.2.17
     optionalDependencies:
       '@types/node': 22.19.18
       esbuild: 0.27.7

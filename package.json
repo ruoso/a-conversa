@@ -16,7 +16,7 @@
     "unblocked": "tsx scripts/unblocked.ts",
     "migrate": "pnpm --filter @a-conversa/server run migrate",
     "test:smoke": "pnpm run build && vitest run tests/smoke packages apps",
-    "test:behavior:smoke": "pnpm run build && NODE_OPTIONS='--import tsx --conditions=source' cucumber-js",
+    "test:behavior:smoke": "pnpm run build && NODE_OPTIONS='--import tsx --conditions=source' node --no-memory-protection-keys node_modules/@cucumber/cucumber/bin/cucumber.js",
     "test:e2e:smoke": "pnpm run build && playwright test --config=playwright.config.ts",
     "test:e2e": "pnpm run build && playwright test --config=playwright.config.ts",
     "build": "pnpm -r --workspace-concurrency=1 build",

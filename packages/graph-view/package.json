@@ -1,0 +1,39 @@
+{
+  "name": "@a-conversa/graph-view",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./test-utils": {
+      "source": "./src/cytoscapeTestEnv.ts",
+      "types": "./dist/cytoscapeTestEnv.d.ts",
+      "default": "./dist/cytoscapeTestEnv.js"
+    }
+  },
+  "scripts": {
+    "build": "vite build && tsc -b tsconfig.json --emitDeclarationOnly --force",
+    "typecheck": "tsc -b"
+  },
+  "peerDependencies": {
+    "@a-conversa/i18n-catalogs": "workspace:*",
+    "@a-conversa/shared-types": "workspace:^",
+    "@a-conversa/shell": "workspace:*",
+    "cytoscape": "^3.30.0",
+    "react": "*",
+    "react-dom": "*",
+    "react-i18next": "^17.0.7"
+  },
+  "devDependencies": {
+    "@a-conversa/i18n-catalogs": "workspace:*",
+    "@a-conversa/shared-types": "workspace:^",
+    "@a-conversa/shell": "workspace:*",
+    "vite": "8.0.13"
+  }
+}

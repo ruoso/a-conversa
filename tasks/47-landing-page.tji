@@ -23,6 +23,7 @@ task landing_page "Public landing page" {
   task extract_readonly_graph_package "Extract the audience read-only graph renderer into a shared package" {
     effort 3d
     allocate team
+    complete 100
     depends audience.aud_graph_rendering
     note -8<-
       Lift the audience surface's pure projector + Cytoscape renderer

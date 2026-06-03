@@ -26,9 +26,38 @@ import type { DiagnosticPayload } from '@a-conversa/shared-types';
 
 import { AudienceDiagnosticEdgeFireOverlay } from './DiagnosticEdgeFireOverlay';
 import { installCytoscapeTestEnv, type CytoscapeTestEnvRestoreHandle } from './cytoscapeTestEnv';
-import { audienceWsStore } from '../ws/wsStore';
 
 const SESSION = '00000000-0000-4000-8000-000000000001';
+
+// The package overlay takes the active-diagnostics map as a plain prop
+// (no WS store). These helpers replicate the audience store's
+// `applyDiagnostic` reducer — `fired` sets, `cleared` deletes, keyed by
+// the canonical `diagnosticIdentityKey` — so the suite drives the same
+// observable behavior through the prop seam the audience adapter feeds.
+const EMPTY_ACTIVE: ReadonlyMap<string, DiagnosticPayload> = new Map();
+
+function applyDiagnosticToMap(
+  prev: ReadonlyMap<string, DiagnosticPayload>,
+  payload: DiagnosticPayload,
+): ReadonlyMap<string, DiagnosticPayload> {
+  const next = new Map(prev);
+  const key = diagnosticIdentityKey(payload);
+  if (payload.status === 'fired') next.set(key, payload);
+  else next.delete(key);
+  return next;
+}
+
+function buildActive(
+  payloads: readonly DiagnosticPayload[],
+): ReadonlyMap<string, DiagnosticPayload> {
+  let map: ReadonlyMap<string, DiagnosticPayload> = EMPTY_ACTIVE;
+  for (const p of payloads) map = applyDiagnosticToMap(map, p);
+  return map;
+}
+
+// Set by the mounted `OverlayHarness`; `fire()` drives the overlay's
+// `active` prop through it, mirroring a WS-store dispatch.
+let applyDiagnostic: ((payload: DiagnosticPayload) => void) | null = null;
 const NODE_A = '00000000-0000-4000-8000-00000000ee01';
 const NODE_B = '00000000-0000-4000-8000-00000000ee02';
 const NODE_C = '00000000-0000-4000-8000-00000000ee03';
@@ -53,12 +82,12 @@ afterAll(() => {
 
 beforeEach(async () => {
   await i18next.changeLanguage('en-US');
-  audienceWsStore.getState().reset();
+  applyDiagnostic = null;
 });
 
 afterEach(() => {
   cleanup();
-  audienceWsStore.getState().reset();
+  applyDiagnostic = null;
 });
 
 async function flushRaf(): Promise<void> {
@@ -68,9 +97,27 @@ async function flushRaf(): Promise<void> {
   });
 }
 
-function OverlayHarness({ onReady }: { onReady: (cy: Core) => void }): ReactElement {
+function OverlayHarness({
+  onReady,
+  initialActive,
+}: {
+  onReady: (cy: Core) => void;
+  initialActive?: ReadonlyMap<string, DiagnosticPayload>;
+}): ReactElement {
   const containerRef = createRef<HTMLDivElement>();
   const [cy, setCy] = useState<Core | null>(null);
+  const [active, setActive] = useState<ReadonlyMap<string, DiagnosticPayload>>(
+    initialActive ?? EMPTY_ACTIVE,
+  );
+
+  useEffect(() => {
+    applyDiagnostic = (payload) => {
+      setActive((prev) => applyDiagnosticToMap(prev, payload));
+    };
+    return () => {
+      applyDiagnostic = null;
+    };
+  }, []);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -95,12 +142,19 @@ function OverlayHarness({ onReady }: { onReady: (cy: Core) => void }): ReactElem
   return (
     <div style={{ position: 'relative', width: 800, height: 600 }}>
       <div ref={containerRef} style={{ width: 800, height: 600 }} data-testid="cy-mount" />
-      <AudienceDiagnosticEdgeFireOverlay cy={cy} containerRef={containerRef} sessionId={SESSION} />
+      <AudienceDiagnosticEdgeFireOverlay
+        cy={cy}
+        containerRef={containerRef}
+        instanceKey={SESSION}
+        active={active}
+      />
     </div>
   );
 }
 
-function renderOverlayWithCy(): Promise<{ cy: Core; unmount: () => void }> {
+function renderOverlayWithCy(
+  initialActive?: ReadonlyMap<string, DiagnosticPayload>,
+): Promise<{ cy: Core; unmount: () => void }> {
   return new Promise((resolve) => {
     let captured: Core | null = null;
     const utils = render(
@@ -109,6 +163,7 @@ function renderOverlayWithCy(): Promise<{ cy: Core; unmount: () => void }> {
           onReady={(cy) => {
             captured = cy;
           }}
+          {...(initialActive !== undefined ? { initialActive } : {})}
         />
       </I18nProvider>,
     );
@@ -213,7 +268,10 @@ function selfContradicts(edgeId: string, nodeId: string, sequence = 6): Diagnost
 
 function fire(payload: DiagnosticPayload): void {
   act(() => {
-    audienceWsStore.getState().applyDiagnostic(payload);
+    if (applyDiagnostic === null) {
+      throw new Error('overlay harness not mounted');
+    }
+    applyDiagnostic(payload);
   });
 }
 
@@ -249,8 +307,7 @@ describe('AudienceDiagnosticEdgeFireOverlay', () => {
     // gate with all currently-active (identityKey, edgeId) pairs, so
     // mid-session joiners do NOT see retrospective animation.
     const payload = contradiction(NODE_A, NODE_B, [EDGE_1, EDGE_2]);
-    audienceWsStore.getState().applyDiagnostic(payload);
-    const { cy, unmount } = await renderOverlayWithCy();
+    const { cy, unmount } = await renderOverlayWithCy(buildActive([payload]));
     try {
       seedNodes(cy);
       addEdgeWithBox(cy, EDGE_1, NODE_A, NODE_B, { x1: 100, x2: 200, y1: 50, y2: 130 });

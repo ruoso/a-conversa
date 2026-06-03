@@ -10,6 +10,7 @@
     "typecheck": "tsc -b"
   },
   "dependencies": {
+    "@a-conversa/graph-view": "workspace:*",
     "@a-conversa/i18n-catalogs": "workspace:*",
     "@a-conversa/shared-types": "workspace:^",
     "@a-conversa/shell": "workspace:*",

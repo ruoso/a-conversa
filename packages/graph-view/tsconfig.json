@@ -9,13 +9,13 @@
     "outDir": "dist",
     "rootDir": "src",
     "noEmit": false,
-    "types": ["node", "vite/client"]
+    "emitDeclarationOnly": true,
+    "types": ["node"]
   },
   "include": ["src"],
   "references": [
-    { "path": "../../packages/shared-types" },
-    { "path": "../../packages/i18n-catalogs" },
-    { "path": "../../packages/shell" },
-    { "path": "../../packages/graph-view" }
+    { "path": "../shared-types" },
+    { "path": "../i18n-catalogs" },
+    { "path": "../shell" }
   ]
 }

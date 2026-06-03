@@ -6,6 +6,7 @@
     { "path": "packages/test-fixtures" },
     { "path": "packages/i18n-catalogs" },
     { "path": "packages/shell" },
+    { "path": "packages/graph-view" },
     { "path": "apps/server" },
     { "path": "apps/moderator" },
     { "path": "apps/participant" },

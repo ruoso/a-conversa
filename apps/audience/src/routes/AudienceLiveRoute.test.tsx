@@ -33,7 +33,7 @@ import { AudienceLiveRoute } from './AudienceLiveRoute';
 import {
   installCytoscapeTestEnv,
   type CytoscapeTestEnvRestoreHandle,
-} from '../graph/cytoscapeTestEnv';
+} from '@a-conversa/graph-view/test-utils';
 import { audienceWsStore } from '../ws/wsStore';
 
 const SESSION_ID_A = '00000000-0000-4000-8000-0000000000aa';

@@ -77,8 +77,8 @@ import {
   type DiagnosticEdgeFireTuple,
   type DiagnosticHighlightSeverity,
 } from '@a-conversa/shell';
+import type { DiagnosticPayload } from '@a-conversa/shared-types';
 import { useCytoscapeOverlayPlacements } from './cytoscapeOverlayHooks.js';
-import { useAudienceActiveDiagnostics } from '../ws/useAudienceActiveDiagnostics.js';
 
 export interface AudienceDiagnosticEdgeFireOverlayProps {
   /**
@@ -93,13 +93,17 @@ export interface AudienceDiagnosticEdgeFireOverlayProps {
    */
   readonly containerRef: RefObject<HTMLDivElement | null>;
   /**
-   * Current session id parsed from the URL (`null` before the URL has
-   * resolved to a `/sessions/<uuid>` path). The overlay subscribes to
-   * the audience WS store's per-session `activeDiagnostics` map keyed
-   * by this id; a `null` session resolves to the stable empty-map
-   * sentinel.
+   * Opaque per-render identity (the audience session id today). Scopes
+   * the seen-key gate's composite key so two independently-mounted
+   * renders of the same diagnostic identity animate independently.
    */
-  readonly sessionId: string | null;
+  readonly instanceKey: string;
+  /**
+   * The active-diagnostics map (identity key → payload) for this
+   * render. Supplied by the host as a plain prop — the package reads
+   * no store. An empty map yields no halos.
+   */
+  readonly active: ReadonlyMap<string, DiagnosticPayload>;
 }
 
 /**
@@ -118,18 +122,18 @@ interface DiagnosticEdgeFirePlacement {
 export function AudienceDiagnosticEdgeFireOverlay({
   cy,
   containerRef,
-  sessionId,
+  instanceKey,
+  active,
 }: AudienceDiagnosticEdgeFireOverlayProps): ReactElement {
   void containerRef;
-  const active = useAudienceActiveDiagnostics(sessionId);
   // Flattened (identityKey, edgeId, severity) tuples. Memoized on
-  // `active` so identity stability is the same as the Zustand
+  // `active` so identity stability is the same as the host store
   // selector's: a no-change render returns the same array reference,
   // which keeps `triggers: [tuples]` stable across no-ops.
   const tuples = useMemo(() => flattenActiveDiagnosticsForEdgeFire(active), [active]);
-  // Seed the seen-Set synchronously on the FIRST render from the store-
-  // derived tuples, not lazily on the first non-empty placement commit.
-  // Rationale: tuples are read synchronously from the WS store at mount
+  // Seed the seen-Set synchronously on the FIRST render from the
+  // prop-derived tuples, not lazily on the first non-empty placement
+  // commit. Rationale: the host passes `active` synchronously at mount
   // time, so mid-session joiners with already-active diagnostics seed
   // their composite keys here (no retro animation), AND fresh sessions
   // (tuples empty at mount) seed with an empty set so the next arrival
@@ -142,7 +146,9 @@ export function AudienceDiagnosticEdgeFireOverlay({
   // this issue is out of scope for this leaf.
   const seenKeysRef = useRef<Set<string> | null>(null);
   if (seenKeysRef.current === null) {
-    seenKeysRef.current = new Set(tuples.map((t) => `${t.identityKey}\0${t.edgeId}`));
+    seenKeysRef.current = new Set(
+      tuples.map((t) => `${instanceKey}\0${t.identityKey}\0${t.edgeId}`),
+    );
   }
   const isNewPair = (key: string): boolean => {
     const seen = seenKeysRef.current;
@@ -153,7 +159,7 @@ export function AudienceDiagnosticEdgeFireOverlay({
   };
   const placements = useCytoscapeOverlayPlacements<DiagnosticEdgeFirePlacement>(
     cy,
-    (cyInstance) => commitDiagnosticEdgeFirePlacements(cyInstance, tuples),
+    (cyInstance) => commitDiagnosticEdgeFirePlacements(cyInstance, instanceKey, tuples),
     [tuples],
   );
 
@@ -194,6 +200,7 @@ export function AudienceDiagnosticEdgeFireOverlay({
 
 function commitDiagnosticEdgeFirePlacements(
   cy: Core,
+  instanceKey: string,
   tuples: readonly DiagnosticEdgeFireTuple[],
 ): readonly DiagnosticEdgeFirePlacement[] {
   const next: DiagnosticEdgeFirePlacement[] = [];
@@ -209,7 +216,7 @@ function commitDiagnosticEdgeFirePlacements(
     if (edge.empty() || !edge.isEdge()) continue;
     const bb = edge.renderedBoundingBox();
     next.push({
-      compositeKey: `${t.identityKey}\0${t.edgeId}`,
+      compositeKey: `${instanceKey}\0${t.identityKey}\0${t.edgeId}`,
       identityKey: t.identityKey,
       edgeId: t.edgeId,
       severity: t.severity,
