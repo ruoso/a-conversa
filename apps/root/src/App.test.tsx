@@ -53,7 +53,7 @@ describe('root app routes', () => {
     });
   });
 
-  it('renders the authenticated landing route with a moderator handoff', async () => {
+  it('redirects an authenticated visit to / onward to the /home dashboard', async () => {
     renderWithProviders(<App />, {
       initialEntries: ['/'],
       auth: {
@@ -67,9 +67,33 @@ describe('root app routes', () => {
       },
     });
 
+    // `/` bounces the authenticated visitor to `/home`, where the
+    // dashboard (its `route-home` main + moderator handoff) renders.
+    await waitFor(() => {
+      expect(screen.getByTestId('route-home')).toBeTruthy();
+    });
+    expect(screen.getByTestId('root-open-moderator')).toBeTruthy();
+  });
+
+  it('renders the /home dashboard for an authenticated user', async () => {
+    renderWithProviders(<App />, {
+      initialEntries: ['/home'],
+      auth: {
+        status: 'authenticated',
+        user: {
+          userId: '00000000-0000-4000-8000-000000000004',
+          screenName: 'alice',
+        },
+        refresh: () => undefined,
+        logout: () => undefined,
+      },
+    });
+
     await waitFor(() => {
       expect(screen.getByTestId('root-open-moderator')).toBeTruthy();
     });
+    expect(screen.getByTestId('route-title').textContent).toContain('alice');
+    expect(screen.getByTestId('root-logout-link')).toBeTruthy();
   });
 
   it('redirects protected moderator paths through /login to the SSO endpoint and remembers the target', async () => {

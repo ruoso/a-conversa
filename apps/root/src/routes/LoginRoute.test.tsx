@@ -32,7 +32,7 @@ function renderLogin(options: Parameters<typeof renderWithProviders>[1]) {
   return renderWithProviders(
     <Routes>
       <Route path="/login" element={<LoginRoute />} />
-      <Route path="/" element={<HomeStub />} />
+      <Route path="/home" element={<HomeStub />} />
       <Route path="/screen-name" element={<ScreenNameStub />} />
       <Route path="/m/sessions/abc" element={<DeepLinkStub />} />
     </Routes>,
@@ -76,7 +76,7 @@ describe('LoginRoute', () => {
     expect(replaceSpy).not.toHaveBeenCalled();
   });
 
-  it('navigates to / when authenticated and no return-to is remembered', async () => {
+  it('navigates to /home when authenticated and no return-to is remembered', async () => {
     renderLogin({
       auth: {
         status: 'authenticated',

@@ -56,6 +56,7 @@ task landing_page "Public landing page" {
   task split_public_and_home_routes "Split the public marketing landing (/) from the authenticated dashboard (/home)" {
     effort 1d
     allocate team
+    complete 100
     depends root_app
     note -8<-
       Today `/` (apps/root/src/routes/LandingRoute.tsx) is one route doing two

@@ -30,7 +30,7 @@
 //   - `/api/auth/me` growing an extra field (no-profile-data-policy
 //     regression) — caught by the exact-shape assertion.
 //
-// **Scenario ordering — `test.describe.serial`.** The six scenarios
+// **Scenario ordering — `test.describe.serial`.** The seven scenarios
 // share the compose stack's `users` table state within a CI run:
 //
 //   1. new-user — CREATES the `users` row for `alice` (the OIDC
@@ -60,12 +60,18 @@
 //      runs the OIDC dance for a fresh user (`maria` — the first
 //      seeded dev user after `alice` and `ben`, so her users-table
 //      row does not exist yet and the new-user branch fires), submits
-//      the screen-name form via `loginAs`, and lands back on the bare
-//      `/` with no remembered return-to. Asserts the authenticated
-//      landing card renders with `maria` interpolated into the welcome
-//      title. Pins the `/login` → `/screen-name` → `/` happy path
-//      that ADR 0026 named but no prior scenario covered end-to-end
-//      (scenario #5 ends on `/m/sessions/new`, not `/`).
+//      the screen-name form via `loginAs`, and lands on the `/home`
+//      dashboard with no remembered return-to (the public `/` vs
+//      authenticated `/home` split — `split_public_and_home_routes`).
+//      Asserts the authenticated dashboard renders with `maria`
+//      interpolated into the welcome title. Pins the `/login` →
+//      `/screen-name` → `/home` happy path that ADR 0026 named but no
+//      prior scenario covered end-to-end (scenario #5 ends on
+//      `/m/sessions/new`, not `/home`).
+//   7. home-requires-auth — an anonymous visit to `/home` is deflected
+//      into login (`HomeRoute` → `/login` → SSO). Pins constraint 3 of
+//      `split_public_and_home_routes`: `/home` never renders the
+//      dashboard to an unauthenticated user.
 //
 // Ordering matters because Authelia's users-file mode has no
 // programmatic user-creation API; the `users` row IS the test
@@ -318,7 +324,7 @@ test.describe.serial('OAuth flow integration — full handshake against Authelia
   // Refinement: tasks/refinements/root-app/root_tests.md
   // ADR:        docs/adr/0026-micro-frontend-root-app.md (the
   //             root-app smoke contract this scenario discharges).
-  test('root-landing-new-user: unauthenticated visitor on / clicks LoginButton, completes OIDC as a new user, lands back on / with the authenticated landing card', async ({
+  test('root-landing-new-user: unauthenticated visitor on / clicks LoginButton, completes OIDC as a new user, lands on the /home dashboard; anonymous /home is routed to login', async ({
     browser,
   }) => {
     // Fresh browser context — no cookies or sessionStorage from the
@@ -360,22 +366,25 @@ test.describe.serial('OAuth flow integration — full handshake against Authelia
       //    `/screen-name?from=callback` form is filled, and the SPA's
       //    onSuccess + auth.refresh transition the route into the
       //    authenticated arm that consumes the (empty) remembered
-      //    return-to and `Navigate`s to `/`.
+      //    return-to and `Navigate`s to `/home` (the post-auth
+      //    fallback after the public/home route split).
       await loginAs(page, { username: 'maria' });
 
-      // 4. URL settles on `/` — the post-auth target from an empty
-      //    remembered slot. Assert the authenticated landing renders:
-      //    the eyebrow, the welcome title with `maria` interpolated,
-      //    and the moderator-handoff link.
-      await page.waitForURL((url) => url.pathname === '/', { timeout: 15_000 });
+      // 4. URL settles on `/home` — the post-auth target from an empty
+      //    remembered slot. (An authenticated visit to `/` would also
+      //    bounce here via `LandingRoute`'s `Navigate('/home')`.) Assert
+      //    the authenticated dashboard renders: the eyebrow, the welcome
+      //    title with `maria` interpolated, and the moderator-handoff
+      //    link.
+      await page.waitForURL((url) => url.pathname === '/home', { timeout: 15_000 });
       await expect(
         page.getByTestId('root-authenticated-eyebrow'),
-        'authenticated landing eyebrow must be visible on /',
+        'authenticated dashboard eyebrow must be visible on /home',
       ).toBeVisible({ timeout: 15_000 });
       const openModerator = page.getByTestId('root-open-moderator');
       await expect(
         openModerator,
-        'authenticated landing must render the moderator-handoff link',
+        'authenticated dashboard must render the moderator-handoff link',
       ).toBeVisible();
       expect(
         await openModerator.getAttribute('href'),
@@ -383,8 +392,34 @@ test.describe.serial('OAuth flow integration — full handshake against Authelia
       ).toBe('/m/sessions/new');
       await expect(
         page.getByTestId('route-title'),
-        'authenticated landing welcome title must interpolate the screen name',
+        'authenticated dashboard welcome title must interpolate the screen name',
       ).toContainText('maria');
+    } finally {
+      await context.close();
+    }
+  });
+
+  // Refinement: tasks/refinements/landing_page/split_public_and_home_routes.md
+  // (constraint 3 — `/home` requires auth).
+  test('home-requires-auth: an anonymous visit to /home is routed into login (kicks off SSO)', async ({
+    browser,
+  }) => {
+    // Fresh context — no cookies, so `useAuth()` resolves to
+    // `unauthenticated`. `HomeRoute`'s anonymous branch `Navigate`s to
+    // `/login`, whose unauthenticated useEffect immediately
+    // `window.location.replace('/api/auth/login')`, which the server
+    // 302s onto Authelia. We assert the browser leaves the SPA for the
+    // Authelia origin — the observable "`/home` never renders to an
+    // anonymous user" contract — without completing the dance.
+    const context = await browser.newContext({ ignoreHTTPSErrors: true });
+    const page = await context.newPage();
+    try {
+      await page.goto('/home');
+      await page.waitForURL(/authelia\.aconversa\.local/, { timeout: 15_000 });
+      expect(
+        page.url(),
+        'anonymous /home must be deflected to SSO, never render the dashboard',
+      ).toMatch(/authelia\.aconversa\.local/);
     } finally {
       await context.close();
     }

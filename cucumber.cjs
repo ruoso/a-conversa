@@ -6,12 +6,20 @@ module.exports = {
     // convention is that everything imported here registers its own
     // hooks/step-defs as a side effect.
     import: ['tests/behavior/steps/**/*.ts', 'tests/behavior/support/**/*.ts'],
-    // Force process.exit() once the test run completes. Required on
+    // Force process.exit() once the test run completes. Backstop for
     // Node 24+: V8's WASM JIT teardown crashes (jit_page allocation
     // erase check) when pglite has been used, which happens in every
-    // scenario via the per-scenario PGlite handle. The crash fires
-    // after all steps pass, producing a spurious non-zero exit (133).
-    // forceExit bypasses the teardown by exiting immediately.
+    // scenario via the per-scenario PGlite handle. forceExit bypasses
+    // the FINAL teardown by exiting immediately.
+    //
+    // forceExit alone is insufficient: the same crash also fires on the
+    // per-scenario `this.db.close()` (see tests/behavior/support/world.ts)
+    // mid-run, which forceExit cannot guard. The root-cause fix lives in
+    // the `test:behavior:smoke` script in package.json, which runs
+    // cucumber under `node --no-memory-protection-keys` to disable V8's
+    // PKU code-memory protection (the `ThreadIsolation::Unregister*`
+    // path that hits the buggy assertion). This flag is kept here as
+    // defense-in-depth.
     forceExit: true,
   },
 };

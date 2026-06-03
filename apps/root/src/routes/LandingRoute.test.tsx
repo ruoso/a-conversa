@@ -19,23 +19,23 @@ function ScreenNameStub(): ReactElement {
   return <main data-testid="route-screen-name-stub" />;
 }
 
-function DeepLinkStub(): ReactElement {
-  return <main data-testid="route-deep-link-stub" />;
+function HomeStub(): ReactElement {
+  return <main data-testid="route-home-stub" />;
 }
 
 function renderLanding(initialPath: string, options: Parameters<typeof renderWithProviders>[1]) {
   return renderWithProviders(
     <Routes>
       <Route path="/" element={<LandingRoute />} />
+      <Route path="/home" element={<HomeStub />} />
       <Route path="/screen-name" element={<ScreenNameStub />} />
-      <Route path="/m/sessions/new" element={<DeepLinkStub />} />
     </Routes>,
     { ...(options ?? {}), initialEntries: [initialPath] },
   );
 }
 
 describe('LandingRoute', () => {
-  it('renders the LoadingFrame while auth is resolving and does not render route-home', async () => {
+  it('renders the LoadingFrame while auth is resolving and does not render route-landing', async () => {
     renderLanding('/', {
       auth: {
         status: 'loading',
@@ -47,7 +47,7 @@ describe('LandingRoute', () => {
     await waitFor(() => {
       expect(screen.getByTestId('auth-checking')).toBeTruthy();
     });
-    expect(screen.queryByTestId('route-home')).toBeNull();
+    expect(screen.queryByTestId('route-landing')).toBeNull();
   });
 
   it('navigates to /screen-name when status is needs-screen-name', async () => {
@@ -62,10 +62,10 @@ describe('LandingRoute', () => {
     await waitFor(() => {
       expect(screen.getByTestId('route-screen-name-stub')).toBeTruthy();
     });
-    expect(screen.queryByTestId('route-home')).toBeNull();
+    expect(screen.queryByTestId('route-landing')).toBeNull();
   });
 
-  it('consumes a remembered return-to and navigates to it on an authenticated visit to /', async () => {
+  it('redirects an authenticated visitor to /home without rendering the dashboard or consuming return-to', async () => {
     window.sessionStorage.setItem('a-conversa:return-to', '/m/sessions/new');
 
     renderLanding('/', {
@@ -81,34 +81,16 @@ describe('LandingRoute', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByTestId('route-deep-link-stub')).toBeTruthy();
+      expect(screen.getByTestId('route-home-stub')).toBeTruthy();
     });
-    expect(window.sessionStorage.getItem('a-conversa:return-to')).toBeNull();
+    // `/` no longer renders the dashboard card...
     expect(screen.queryByTestId('route-home')).toBeNull();
+    expect(screen.queryByTestId('root-open-moderator')).toBeNull();
+    // ...and no longer consumes the return-to — that is `/home`'s job.
+    expect(window.sessionStorage.getItem('a-conversa:return-to')).toBe('/m/sessions/new');
   });
 
-  it('renders the authenticated welcome card with the user screen name when no return-to is remembered', async () => {
-    renderLanding('/', {
-      auth: {
-        status: 'authenticated',
-        user: {
-          userId: '00000000-0000-4000-8000-000000000011',
-          screenName: 'bob',
-        },
-        refresh: () => undefined,
-        logout: () => undefined,
-      },
-    });
-
-    await waitFor(() => {
-      expect(screen.getByTestId('root-open-moderator')).toBeTruthy();
-    });
-    expect(screen.getByTestId('route-title').textContent).toContain('bob');
-    expect(screen.getByTestId('root-authenticated-eyebrow').textContent).toBe('a-conversa');
-    expect(screen.getByTestId('root-logout-link')).toBeTruthy();
-  });
-
-  it('renders the unauthenticated landing with i18n eyebrow + body and the login button', async () => {
+  it('renders the public landing with i18n eyebrow + body and the login button for anonymous visitors', async () => {
     renderLanding('/', {
       auth: {
         status: 'unauthenticated',
@@ -121,11 +103,13 @@ describe('LandingRoute', () => {
       expect(screen.getByTestId('root-start-session')).toBeTruthy();
     });
     expect(screen.getByTestId('auth-login-button')).toBeTruthy();
+    // The public surface uses the new `route-landing` testid, not `route-home`.
+    expect(screen.queryByTestId('route-home')).toBeNull();
     // i18n-resolved strings (the catalogs have 'a-conversa' / 'Micro-frontend host app');
     // proves these are coming through `t(...)` and not raw literals — a raw literal
     // would still match, but a missing key would render the dotted-path back instead.
-    const home = screen.getByTestId('route-home');
-    expect(home.textContent).toContain('a-conversa');
-    expect(home.textContent).toContain('Micro-frontend host app');
+    const landing = screen.getByTestId('route-landing');
+    expect(landing.textContent).toContain('a-conversa');
+    expect(landing.textContent).toContain('Micro-frontend host app');
   });
 });
