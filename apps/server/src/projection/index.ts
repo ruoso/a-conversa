@@ -58,6 +58,13 @@ export type {
 export { applyEvent, OutOfOrderEventError, projectFromLog, ReplayError } from './replay.js';
 export { projectAtPosition, replayHeadSequence, ReplayPositionError } from './at-position.js';
 export { isAtEnd, isAtStart, nextPosition, prevPosition } from './position-navigation.js';
+export {
+  nextSnapshotPosition,
+  prevSnapshotPosition,
+  resolveSnapshotPosition,
+  SnapshotNotFoundError,
+  snapshotPositions,
+} from './snapshot-resolution.js';
 export { applyEventIncremental } from './incremental.js';
 export {
   deriveFacetStatus,
