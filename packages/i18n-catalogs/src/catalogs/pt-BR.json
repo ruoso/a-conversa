@@ -274,6 +274,15 @@
         }
       }
     },
+    "historyFilter": {
+      "regionAriaLabel": "Filtros do histórico de mudanças",
+      "kindGroupAriaLabel": "Filtrar por tipo de evento",
+      "actorGroupAriaLabel": "Filtrar por autor",
+      "targetToggleLabel": "Apenas a entidade selecionada",
+      "targetDisabledHint": "Selecione uma declaração ou conexão no grafo para filtrar o histórico por ela",
+      "clearLabel": "Limpar filtros",
+      "filteredEmpty": "Nenhum evento corresponde ao filtro atual"
+    },
     "captureTextInput": {
       "label": "Texto da declaração",
       "placeholder": "Digite o texto da declaração aqui…",

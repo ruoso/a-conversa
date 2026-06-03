@@ -170,6 +170,52 @@ describe('moderator changeHistory summary: ICU templates render with sample valu
   });
 });
 
+// The strip-authored prose for the change-history filter
+// (`mod_history_filtering`). Distinct `moderator.historyFilter.*`
+// namespace; the kind chip labels reuse `moderator.changeHistory.kind.*`
+// and the System actor label reuses `moderator.changeHistory.systemActor`,
+// so only these strings are genuinely new (Decision §6).
+const HISTORY_FILTER_KEYS = [
+  'moderator.historyFilter.regionAriaLabel',
+  'moderator.historyFilter.kindGroupAriaLabel',
+  'moderator.historyFilter.actorGroupAriaLabel',
+  'moderator.historyFilter.targetToggleLabel',
+  'moderator.historyFilter.targetDisabledHint',
+  'moderator.historyFilter.clearLabel',
+  'moderator.historyFilter.filteredEmpty',
+] as const;
+
+describe('moderator historyFilter catalog round-trip', () => {
+  for (const locale of SUPPORTED_LOCALES) {
+    describe(`locale ${locale}`, () => {
+      for (const key of HISTORY_FILTER_KEYS) {
+        it(`resolves ${key} to a non-empty string with no leftover {placeholder}`, async () => {
+          const t = await makeT(locale);
+          const value = t(key);
+          expect(value).toBeTruthy();
+          expect(value.length).toBeGreaterThan(0);
+          // i18next returns the dotted key itself when an entry is missing.
+          expect(value).not.toBe(key);
+          // ADR 0024: no unresolved ICU placeholders survive the render.
+          expect(value).not.toContain('{');
+          expect(value).not.toContain('}');
+        });
+      }
+    });
+  }
+
+  it('every historyFilter key resolves to a locale-distinct string', async () => {
+    const tEn = await makeT('en-US');
+    const tPt = await makeT('pt-BR');
+    const tEs = await makeT('es-419');
+    for (const key of HISTORY_FILTER_KEYS) {
+      const en = tEn(key);
+      expect(tPt(key), `pt-BR.${key} should differ from en-US`).not.toBe(en);
+      expect(tEs(key), `es-419.${key} should differ from en-US`).not.toBe(en);
+    }
+  });
+});
+
 describe('moderator changeHistory: known canonical translations', () => {
   it('en-US per-kind label for node-created is "Statement created"', async () => {
     const t = await makeT('en-US');

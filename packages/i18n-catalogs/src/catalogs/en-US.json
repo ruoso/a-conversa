@@ -274,6 +274,15 @@
         }
       }
     },
+    "historyFilter": {
+      "regionAriaLabel": "Change history filters",
+      "kindGroupAriaLabel": "Filter by event kind",
+      "actorGroupAriaLabel": "Filter by actor",
+      "targetToggleLabel": "Selected entity only",
+      "targetDisabledHint": "Select a statement or connection on the graph to filter the history by it",
+      "clearLabel": "Clear filters",
+      "filteredEmpty": "No events match the current filter"
+    },
     "captureTextInput": {
       "label": "Statement wording",
       "placeholder": "Type the statement wording here…",

@@ -208,4 +208,84 @@ test.describe('moderator change-history pane — reverse-chronological scroller'
     // short delay, but `toHaveAttribute` polls fast enough to catch it).
     await expect(nodeCard).toHaveAttribute('data-flashing', 'true');
   });
+
+  test('the filter strip narrows the change-history list by kind and actor', async ({ page }) => {
+    // `mod_history_filtering` Acceptance §5 — e2e is IN SCOPE: the pane is
+    // route-rendered and `seedWsStore`-driven, so the filter strip is
+    // reachable with no new harness hook. Seed a mixed log: two
+    // `node-created` events (actor `…aa`) and a `vote` cast by the
+    // gate-seeded debater-A (whose `participant-joined` carries the screen
+    // name "ben"), giving ≥2 kinds and ≥2 distinct actors — one labeled by
+    // name. Single locale (en-US), matching the spec header's convention.
+    const sessionId = await reachOperate(page, 'Change history — filter by kind / actor.');
+
+    await seedWsStore(page, {
+      sessionId,
+      nodes: [
+        { nodeId: 'filter-node-a', wording: 'First statement' },
+        { nodeId: 'filter-node-b', wording: 'Second statement' },
+      ],
+      votes: [
+        {
+          entityKind: 'node',
+          entityId: 'filter-node-a',
+          facet: 'substance',
+          participant: GATE_DEBATER_A_USER_ID,
+          choice: 'dispute',
+        },
+      ],
+    });
+
+    const pane = page.getByTestId('change-history-pane');
+    await expect(pane).toBeVisible();
+    const rows = pane.getByTestId('change-history-row');
+    const totalRows = await rows.count();
+    expect(totalRows).toBeGreaterThanOrEqual(3);
+
+    // The target toggle is present and disabled on a fresh load (no graph
+    // selection) — rendered-but-inert affordance per the UI-stream policy.
+    const targetToggle = pane.getByTestId('change-history-filter-target');
+    await expect(targetToggle).toBeVisible();
+    await expect(targetToggle).toBeDisabled();
+
+    const kindChip = (kind: string) =>
+      pane.locator(`[data-testid="change-history-filter-kind"][data-filter-kind="${kind}"]`);
+    const actorChip = (actor: string) =>
+      pane.locator(`[data-testid="change-history-filter-actor"][data-filter-actor="${actor}"]`);
+    const visibleKinds = () =>
+      rows.evaluateAll((els) => els.map((el) => el.getAttribute('data-event-kind')));
+
+    // (a) Pressing the node-created kind chip narrows to that kind.
+    await kindChip('node-created').click();
+    await expect(kindChip('node-created')).toHaveAttribute('aria-pressed', 'true');
+    await expect(rows).toHaveCount(2);
+    expect((await visibleKinds()).every((k) => k === 'node-created')).toBe(true);
+
+    // (d) The clear button restores the full list.
+    await pane.getByTestId('change-history-filter-clear').click();
+    await expect(rows).toHaveCount(totalRows);
+
+    // (b) Pressing the debater-A actor chip narrows to that actor — the
+    // node-created rows (authored by `…aa`) drop out.
+    await actorChip(GATE_DEBATER_A_USER_ID).click();
+    await expect(
+      pane.locator('[data-testid="change-history-row"][data-event-kind="node-created"]'),
+    ).toHaveCount(0);
+    expect((await visibleKinds()).length).toBeGreaterThanOrEqual(1);
+
+    // (c) Adding the vote kind chip narrows to the intersection (the vote
+    // cast by debater-A).
+    await kindChip('vote').click();
+    expect((await visibleKinds()).every((k) => k === 'vote')).toBe(true);
+    await expect(rows.first()).toHaveAttribute('data-event-kind', 'vote');
+
+    // (e) A filter that excludes every row surfaces the filtered-empty
+    // state: debater-A created no nodes, so node-created ∩ debater-A is
+    // empty.
+    await pane.getByTestId('change-history-filter-clear').click();
+    await kindChip('node-created').click();
+    await actorChip(GATE_DEBATER_A_USER_ID).click();
+    await expect(pane.getByTestId('change-history-pane-filtered-empty')).toBeVisible();
+    await expect(pane.getByTestId('change-history-filter-strip')).toBeVisible();
+  });
 });

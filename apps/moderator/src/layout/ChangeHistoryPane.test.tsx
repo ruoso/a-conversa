@@ -31,10 +31,12 @@ import { createI18nInstance } from '@a-conversa/shell';
 
 import { ChangeHistoryPane } from './ChangeHistoryPane';
 import { useWsStore } from '../ws/wsStore';
-import { useFlashStore, useUiStore } from '../stores';
+import { useFlashStore, useSelectionStore, useUiStore } from '../stores';
 
 const SESSION = '00000000-0000-4000-8000-0000000000a1';
 const ACTOR = '00000000-0000-4000-8000-0000000000aa';
+const ACTOR_A = '00000000-0000-4000-8000-0000000000a2';
+const ACTOR_B = '00000000-0000-4000-8000-0000000000b2';
 // 2026-06-03T00:01:30.000Z — fixed "now" so relative timestamps stay
 // stable across runs.
 const NOW_MS = Date.parse('2026-06-03T00:01:30.000Z');
@@ -88,6 +90,51 @@ function sessionEndedEvent(seq: number): Event {
   };
 }
 
+function participantJoinedEvent(seq: number, userId: string, screenName: string): Event {
+  return {
+    id: `00000000-0000-4000-8000-${(0x3000 + seq).toString(16).padStart(12, '0')}`,
+    sessionId: SESSION,
+    sequence: seq,
+    kind: 'participant-joined',
+    actor: userId,
+    payload: {
+      user_id: userId,
+      role: 'debater-A',
+      screen_name: screenName,
+      joined_at: '2026-06-03T00:01:00.000Z',
+    },
+    createdAt: '2026-06-03T00:01:00.000Z',
+  };
+}
+
+function voteEventBy(seq: number, actor: string): Event {
+  return { ...voteEvent(seq), actor };
+}
+
+// The node id `nodeEvent(2)` carries — used by the target-dimension test.
+const NODE_2_ID = '00000000-0000-4000-8000-000000000102';
+
+/**
+ * A `fetch` mock serving a single page of a mixed log: a
+ * `participant-joined` (ACTOR_A → "Alice"), a `node-created` by ACTOR_A,
+ * and a `vote` by ACTOR_B. Yields three kinds and two distinct actors —
+ * one labeled by screen name, one falling back to its id prefix.
+ */
+function mixedLogFetch(): typeof fetch {
+  return vi.fn(() =>
+    Promise.resolve(
+      jsonResponse({
+        events: [
+          participantJoinedEvent(1, ACTOR_A, 'Alice'),
+          nodeEvent(2, ACTOR_A),
+          voteEventBy(3, ACTOR_B),
+        ],
+        nextCursor: null,
+      }),
+    ),
+  );
+}
+
 function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status: 200,
@@ -116,6 +163,7 @@ beforeEach(async () => {
   useWsStore.getState().reset();
   useUiStore.setState({ focusRequest: null });
   useFlashStore.setState({ flashingIds: new Set<string>(), flashNonce: 0 });
+  useSelectionStore.getState().clear();
   await createI18nInstance('en-US');
   await i18next.changeLanguage('en-US');
 });
@@ -339,5 +387,161 @@ describe('ChangeHistoryPane — loading / error / empty states', () => {
     global.fetch = vi.fn(() => Promise.resolve(new Response('nope', { status: 404 })));
     render(<ChangeHistoryPane sessionId={SESSION} nowMs={NOW_MS} />);
     await screen.findByTestId('change-history-pane-error');
+  });
+});
+
+describe('ChangeHistoryPane — filter strip (mod_history_filtering)', () => {
+  function kindChip(kind: string): HTMLElement {
+    const chip = screen
+      .getAllByTestId('change-history-filter-kind')
+      .find((c) => c.getAttribute('data-filter-kind') === kind);
+    if (chip === undefined) throw new Error(`no kind chip for ${kind}`);
+    return chip;
+  }
+  function actorChip(actor: string): HTMLElement {
+    const chip = screen
+      .getAllByTestId('change-history-filter-actor')
+      .find((c) => c.getAttribute('data-filter-actor') === actor);
+    if (chip === undefined) throw new Error(`no actor chip for ${actor}`);
+    return chip;
+  }
+  function visibleRows(): HTMLElement[] {
+    return screen.queryAllByTestId('change-history-row');
+  }
+
+  it('renders a kind chip per available kind and an actor chip per available actor', async () => {
+    global.fetch = mixedLogFetch();
+    render(<ChangeHistoryPane sessionId={SESSION} nowMs={NOW_MS} />);
+    await screen.findByTestId('change-history-pane-list');
+
+    // Three kinds present (participant-joined, node-created, vote) in
+    // canonical order.
+    expect(
+      screen
+        .getAllByTestId('change-history-filter-kind')
+        .map((c) => c.getAttribute('data-filter-kind')),
+    ).toEqual(['participant-joined', 'node-created', 'vote']);
+
+    // Two actors — ACTOR_A labeled by screen name, ACTOR_B by id prefix.
+    const actorChips = screen.getAllByTestId('change-history-filter-actor');
+    expect(actorChips.map((c) => c.getAttribute('data-filter-actor'))).toEqual([ACTOR_A, ACTOR_B]);
+    expect(actorChip(ACTOR_A).textContent).toBe('Alice');
+    expect(actorChip(ACTOR_B).textContent).toBe(ACTOR_B.slice(0, 8));
+  });
+
+  it('pressing a kind chip narrows the list to that kind and flips aria-pressed', async () => {
+    global.fetch = mixedLogFetch();
+    render(<ChangeHistoryPane sessionId={SESSION} nowMs={NOW_MS} />);
+    await screen.findByTestId('change-history-pane-list');
+
+    expect(visibleRows()).toHaveLength(3);
+    fireEvent.click(kindChip('vote'));
+    expect(kindChip('vote').getAttribute('aria-pressed')).toBe('true');
+    const rows = visibleRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.getAttribute('data-event-kind')).toBe('vote');
+  });
+
+  it('pressing a second kind chip widens the list to the union', async () => {
+    global.fetch = mixedLogFetch();
+    render(<ChangeHistoryPane sessionId={SESSION} nowMs={NOW_MS} />);
+    await screen.findByTestId('change-history-pane-list');
+
+    fireEvent.click(kindChip('vote'));
+    fireEvent.click(kindChip('node-created'));
+    const kinds = visibleRows().map((r) => r.getAttribute('data-event-kind'));
+    expect(kinds).toHaveLength(2);
+    expect(new Set(kinds)).toEqual(new Set(['vote', 'node-created']));
+  });
+
+  it('pressing an actor chip AND a kind chip narrows to the intersection', async () => {
+    global.fetch = mixedLogFetch();
+    render(<ChangeHistoryPane sessionId={SESSION} nowMs={NOW_MS} />);
+    await screen.findByTestId('change-history-pane-list');
+
+    // node-created ∩ ACTOR_A → the single node row authored by ACTOR_A.
+    fireEvent.click(kindChip('node-created'));
+    fireEvent.click(actorChip(ACTOR_A));
+    const rows = visibleRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.getAttribute('data-event-kind')).toBe('node-created');
+  });
+
+  it('the target toggle is disabled with no selection and enabled once one is set; toggling narrows by affected', async () => {
+    global.fetch = mixedLogFetch();
+    render(<ChangeHistoryPane sessionId={SESSION} nowMs={NOW_MS} />);
+    await screen.findByTestId('change-history-pane-list');
+
+    const target = screen.getByTestId('change-history-filter-target');
+    expect(target.hasAttribute('disabled')).toBe(true);
+    expect(target.getAttribute('title')).toBeTruthy();
+
+    // Seed a graph selection — the pane reads `useSelectionStore`.
+    act(() => {
+      useSelectionStore.getState().select({ kind: 'node', id: NODE_2_ID });
+    });
+    expect(screen.getByTestId('change-history-filter-target').hasAttribute('disabled')).toBe(false);
+
+    fireEvent.click(screen.getByTestId('change-history-filter-target'));
+    expect(screen.getByTestId('change-history-filter-target').getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+    // Only the node-created row touches NODE_2_ID.
+    const rows = visibleRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.getAttribute('data-event-kind')).toBe('node-created');
+  });
+
+  it('the clear button appears only when the filter is non-default and resets the full list', async () => {
+    global.fetch = mixedLogFetch();
+    render(<ChangeHistoryPane sessionId={SESSION} nowMs={NOW_MS} />);
+    await screen.findByTestId('change-history-pane-list');
+
+    expect(screen.queryByTestId('change-history-filter-clear')).toBeNull();
+    fireEvent.click(kindChip('vote'));
+    expect(visibleRows()).toHaveLength(1);
+    const clear = screen.getByTestId('change-history-filter-clear');
+
+    fireEvent.click(clear);
+    expect(visibleRows()).toHaveLength(3);
+    expect(screen.queryByTestId('change-history-filter-clear')).toBeNull();
+    expect(kindChip('vote').getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('a filter that excludes every row surfaces the filtered-empty state, not the default empty', async () => {
+    global.fetch = mixedLogFetch();
+    render(<ChangeHistoryPane sessionId={SESSION} nowMs={NOW_MS} />);
+    await screen.findByTestId('change-history-pane-list');
+
+    // vote ∩ ACTOR_A → empty (ACTOR_A never voted).
+    fireEvent.click(kindChip('vote'));
+    fireEvent.click(actorChip(ACTOR_A));
+    expect(visibleRows()).toHaveLength(0);
+    expect(screen.getByTestId('change-history-pane-filtered-empty')).toBeTruthy();
+    expect(screen.queryByTestId('change-history-pane-empty')).toBeNull();
+    // The strip remains the escape hatch from the filtered-empty state.
+    expect(screen.getByTestId('change-history-filter-strip')).toBeTruthy();
+  });
+
+  it('keeps the strip visible in the default-empty state', async () => {
+    global.fetch = vi.fn(() => Promise.resolve(jsonResponse({ events: [], nextCursor: null })));
+    render(<ChangeHistoryPane sessionId={SESSION} nowMs={NOW_MS} />);
+    await screen.findByTestId('change-history-pane-empty');
+
+    expect(screen.getByTestId('change-history-filter-strip')).toBeTruthy();
+    expect(screen.queryByTestId('change-history-pane-filtered-empty')).toBeNull();
+  });
+
+  it('leaves the existing row contract unaffected', async () => {
+    global.fetch = mixedLogFetch();
+    render(<ChangeHistoryPane sessionId={SESSION} nowMs={NOW_MS} />);
+    await screen.findByTestId('change-history-pane-list');
+
+    const nodeRow = screen
+      .getAllByTestId('change-history-row')
+      .find((r) => r.getAttribute('data-event-kind') === 'node-created');
+    expect(nodeRow?.getAttribute('data-event-id')).toBe(nodeEvent(2, ACTOR_A).id);
+    expect(nodeRow?.getAttribute('data-sequence')).toBe('2');
+    expect(within(nodeRow as HTMLElement).getByTestId('change-history-row-kind')).toBeTruthy();
   });
 });

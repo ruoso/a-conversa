@@ -126,3 +126,17 @@ When the human resolves an item, delete its block (git history preserves it).
 - **Why parked**: value is uncertain given click-to-flash; the enhancement is speculative and should not be registered as a WBS leaf until it is established that click-to-flash is insufficient for the audit use case.
 - **Suggested resolution**: after `mod_history_click_to_flash` ships, assess whether id-prefix summaries are still a gap in practice. If yes, spec a `mod_history_row_summary_resolve_ids` task covering the multi-event summarizer variant (passing a log snapshot into the summary layer), extending `ChangeHistoryRow`, and updating the pane + tests.
 
+### 2026-06-03 — Per-entity target picker for change-history filter (wording-resolved dropdown)
+
+- **Source**: closer for `moderator_ui.mod_change_history_pane.mod_history_filtering` (Decision D3, implementer return summary).
+- **Question**: should the target dimension of the history filter offer a per-entity picker that resolves entity ids to wordings via `selectNodeWordingById`/`selectEdgeLabelById`, rather than the shipped selection-coupled toggle?
+- **Why parked**: value of the picker over the selection-coupled toggle is uncertain — the moderator typically already has the entity selected when asking "what happened to this?" — per the speculative-enhancement rule in Decision D3. Registered as a parking-lot item per that decision; not a WBS leaf.
+- **Suggested resolution**: if walkthrough usage shows moderators frequently want to filter history for non-selected entities without clicking the canvas first, spec a `mod_history_target_picker` task covering a dropdown using `selectNodeWordingById`/`selectEdgeLabelById`, its i18n keys, Vitest + Playwright cover, and a migration from the toggle UI.
+
+### 2026-06-03 — Intermittent V8 JIT/WASM teardown SIGABRT under Node 24 during workspace tsc -b
+
+- **Source**: fixer sub-agent for `moderator_ui.mod_change_history_pane.mod_history_filtering` (attempt 1 return summary).
+- **Question**: should we pin the Node version or add a build-process guard against the intermittent `Check failed: jit_page_->allocations_.erase(addr) == 1` SIGABRT / exit-133 that aborted `pnpm run build`'s `tsc -b` pass on Node v24.15.0 during one verification attempt?
+- **Why parked**: the abort is non-deterministic (re-running the identical command produced exit 0); it is a V8 JIT/WASM teardown race rather than a code defect, so no source change can address it. The decision to pin Node or add a guard requires human judgment on whether the flake rate justifies the maintenance cost.
+- **Suggested resolution**: if the SIGABRT recurs in CI or developer builds more than once or twice, consider pinning Node to a stable LTS (e.g. 22.x) or adding a `|| pnpm run build` retry in the CI chain. If it does not recur, close this item.
+

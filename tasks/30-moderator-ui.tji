@@ -690,6 +690,7 @@ task moderator_ui "Moderator UI" {
     task mod_history_filtering "Filter by event kind / actor / target" {
       effort 1d
       allocate team
+      complete 100
       depends !mod_history_scroller
     }
   }
