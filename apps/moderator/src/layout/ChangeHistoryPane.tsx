@@ -44,12 +44,13 @@
 //     data-sequence>` per event (newest-first). Each row's three columns
 //     carry `change-history-row-kind` / `-actor` / `-timestamp`.
 
-import { useMemo, type ReactElement } from 'react';
+import { useCallback, useMemo, type ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 import { formatRelativeTime } from '@a-conversa/i18n-catalogs';
 
 import { useWsStore } from '../ws/wsStore';
 import { mergeAndOrderEventLog, type ChangeHistoryRow } from '../graph/changeHistory';
+import type { EventSummary } from '../graph/eventSummary';
 import { useSessionEventLogPrefetch } from './useSessionEventLogPrefetch';
 
 /**
@@ -79,8 +80,14 @@ const LIST_CLASSES = 'm-0 flex list-none flex-col gap-1 p-0';
 const ROW_CLASSES = 'flex items-center gap-2 rounded border border-slate-200 bg-white px-2 py-1';
 const KIND_CHIP_CLASSES =
   'flex-shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-xs font-medium text-slate-700';
-const ACTOR_CLASSES = 'flex-1 truncate text-xs text-slate-500';
-const TIMESTAMP_CLASSES = 'flex-shrink-0 text-xs text-slate-500';
+// The summary is the row's primary, growing column (`mod_history_event_summary`):
+// it `flex-1`-grows and `truncate`s on one line (Constraints §6), so the actor
+// drops to `flex-shrink-0` and the timestamp pins right via `ml-auto` (keeping
+// the timestamp right-aligned even on `{ type: 'none' }` rows that emit no
+// summary element).
+const SUMMARY_CLASSES = 'min-w-0 flex-1 truncate text-xs text-slate-700';
+const ACTOR_CLASSES = 'flex-shrink-0 truncate text-xs text-slate-500';
+const TIMESTAMP_CLASSES = 'ml-auto flex-shrink-0 text-xs text-slate-500';
 const EMPTY_STATE_CLASSES = 'italic text-slate-500';
 const LOADING_STATE_CLASSES = 'italic text-slate-500';
 const ERROR_CONTAINER_CLASSES = 'flex flex-col gap-1';
@@ -117,6 +124,27 @@ function relativeTimeFor(createdAt: string, nowMs: number): string {
 }
 
 /**
+ * Resolve a summary descriptor (`mod_history_event_summary`, Decision
+ * §D1) into the row's display text, or `null` when there is none to
+ * render (Decision §D5 — empty-payload kinds emit NO summary element).
+ * `text` passes through verbatim (user-authored, never translated);
+ * `i18n` resolves the structural words via `t(key, values)`.
+ */
+function summaryDisplayText(
+  summary: EventSummary,
+  t: (key: string, values?: Record<string, string>) => string,
+): string | null {
+  switch (summary.type) {
+    case 'text':
+      return summary.text;
+    case 'i18n':
+      return t(summary.key, summary.values);
+    case 'none':
+      return null;
+  }
+}
+
+/**
  * One row in the list. Co-located inside this file (small enough not to
  * warrant its own file in v1). Sibling tasks extend this row contract;
  * the `data-testid` + `data-event-id` / `data-event-kind` /
@@ -126,10 +154,11 @@ function ChangeHistoryRowItem(props: {
   readonly row: ChangeHistoryRow;
   readonly nowMs: number;
   readonly systemActorLabel: string;
-  readonly t: (key: string) => string;
+  readonly t: (key: string, values?: Record<string, string>) => string;
 }): ReactElement {
   const { row, nowMs, systemActorLabel, t } = props;
   const kindLabel = t(`moderator.changeHistory.kind.${row.kind}`);
+  const summary = summaryDisplayText(row.summary, t);
   const actor = actorText(row.actor, systemActorLabel);
   const ago = relativeTimeFor(row.createdAt, nowMs);
   return (
@@ -143,6 +172,11 @@ function ChangeHistoryRowItem(props: {
       <span data-testid="change-history-row-kind" className={KIND_CHIP_CLASSES}>
         {kindLabel}
       </span>
+      {summary !== null && (
+        <span data-testid="change-history-row-summary" className={SUMMARY_CLASSES}>
+          {summary}
+        </span>
+      )}
       <span data-testid="change-history-row-actor" className={ACTOR_CLASSES}>
         {actor}
       </span>
@@ -156,6 +190,15 @@ function ChangeHistoryRowItem(props: {
 export function ChangeHistoryPane(props: ChangeHistoryPaneProps): ReactElement {
   const { sessionId, nowMs } = props;
   const { t } = useTranslation();
+
+  // Narrow adapter over react-i18next's `TFunction` — the row component
+  // (and `summaryDisplayText`) want a plain `(key, values?) => string`
+  // for the summary's `t(key, values)` resolution; `TFunction`'s
+  // overload set is not directly assignable to that simpler signature.
+  const translate = useCallback(
+    (key: string, values?: Record<string, string>) => t(key, values ?? {}),
+    [t],
+  );
 
   // Full-log source: prefetch the complete REST log, then overlay the
   // live WS events (Decision §D1). The prefetch owns the loading / error
@@ -221,7 +264,7 @@ export function ChangeHistoryPane(props: ChangeHistoryPaneProps): ReactElement {
             row={row}
             nowMs={resolvedNowMs}
             systemActorLabel={systemActorLabel}
-            t={t}
+            t={translate}
           />
         ))}
       </ol>

@@ -16,6 +16,7 @@ import { describe, expect, it } from 'vitest';
 import type { Event } from '@a-conversa/shared-types';
 
 import { mergeAndOrderEventLog } from './changeHistory';
+import { summarizeEvent } from './eventSummary';
 
 const SESSION = '00000000-0000-4000-8000-0000000000a1';
 const ACTOR = '00000000-0000-4000-8000-0000000000aa';
@@ -83,5 +84,38 @@ describe('mergeAndOrderEventLog', () => {
       createdAt: '2026-06-03T00:00:00.000Z',
     });
     expect(typeof rows[0]?.id).toBe('string');
+  });
+
+  it('populates each row.summary from summarizeEvent for that event (D2)', () => {
+    // A free-text node and an enum-driven vote — both round-trip through
+    // the row builder identically to a direct `summarizeEvent` call.
+    const node = nodeEvent(1);
+    const vote = {
+      id: '00000000-0000-4000-8000-0000000000bb',
+      sessionId: SESSION,
+      sequence: 2,
+      kind: 'vote',
+      actor: ACTOR,
+      payload: {
+        target: 'facet',
+        entity_kind: 'node',
+        entity_id: '00000000-0000-4000-8000-0000000000e1',
+        facet: 'substance',
+        participant: ACTOR,
+        choice: 'agree',
+        voted_at: '2026-06-03T00:00:00.000Z',
+      },
+      createdAt: '2026-06-03T00:00:00.000Z',
+    } as Event;
+
+    const rows = mergeAndOrderEventLog([node, vote], []);
+    const bySeq = new Map(rows.map((r) => [r.sequence, r]));
+    expect(bySeq.get(1)?.summary).toEqual(summarizeEvent(node));
+    expect(bySeq.get(1)?.summary).toEqual({ type: 'text', text: 'node 1' });
+    expect(bySeq.get(2)?.summary).toEqual(summarizeEvent(vote));
+    expect(bySeq.get(2)?.summary).toEqual({
+      type: 'i18n',
+      key: 'moderator.changeHistory.summary.choice.agree',
+    });
   });
 });

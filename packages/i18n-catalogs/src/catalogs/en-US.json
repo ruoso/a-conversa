@@ -244,6 +244,34 @@
         "session-mode-changed": "Session mode changed",
         "withdraw-agreement": "Agreement withdrawn",
         "proposal-withdrawn": "Proposal withdrawn"
+      },
+      "summary": {
+        "participantJoined": "{name} ({role, select, moderator {Moderator} debaterA {Debater A} debaterB {Debater B} other {{role}}})",
+        "sessionModeChanged": "{previous, select, lobby {Lobby} operate {Operate} other {{previous}}} -> {next, select, lobby {Lobby} operate {Operate} other {{next}}}",
+        "edgeRole": {
+          "supports": "Supports",
+          "rebuts": "Rebuts",
+          "qualifies": "Qualifies",
+          "bridges-from": "Bridges from",
+          "bridges-to": "Bridges to",
+          "defines": "Defines",
+          "contradicts": "Contradicts"
+        },
+        "choice": {
+          "agree": "Agree",
+          "dispute": "Dispute"
+        },
+        "entityKind": {
+          "node": "Node",
+          "edge": "Edge",
+          "annotation": "Annotation"
+        },
+        "facet": {
+          "classification": "Classification",
+          "substance": "Substance",
+          "wording": "Wording",
+          "shape": "Shape"
+        }
       }
     },
     "captureTextInput": {

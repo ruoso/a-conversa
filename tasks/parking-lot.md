@@ -112,3 +112,17 @@ When the human resolves an item, delete its block (git history preserves it).
 - **Why parked**: methodology owner decision — should annotations be append-only commentary (once committed, they stand) or first-class deliberation targets (post-commit disputes allowed)? Either answer is defensible; the implementer deferred to human confirmation.
 - **Suggested resolution**: confirm the intended behavior before `annotation_facet_vote_seam` is implemented. If disputable: proceed with the registered task. If append-only: descope `annotation_facet_vote_seam` and `mod_annotation_dispute_e2e` from the WBS and remove them from M7's `depends`; the `substanceFacet` type may also warrant narrowing to `'agreed'` only.
 
+### 2026-06-03 — Re-localize shared `summaryText` structural words for proposal change-history rows
+
+- **Source**: closer for `moderator_ui.mod_change_history_pane.mod_history_event_summary` (Decision D3).
+- **Question**: `proposalSummary.summaryText` (used by both `PendingProposalsPane` and the new change-history row for `kind === 'proposal'`) emits English structural words ("Set substance = …", "Decompose into N components") and id-prefix fallbacks. Re-localizing it would give proposal rows the same ICU-template treatment the 16 non-proposal kinds received in this task, but requires touching `PendingProposalsPane`, `proposalFilter.ts`, and `proposalSummary.ts` in a cross-cutting refactor.
+- **Why parked**: the re-localization churn touches multiple panes and is a judgment call on whether the inconsistency is worth fixing. The refinement explicitly routes this to the parking lot (not a WBS task) because the value is uncertain given the scope and the risk of spawning a self-perpetuating audit chain.
+- **Suggested resolution**: if native speakers or the methodology owner flag the hard-coded English structural words in the change-history proposal rows as a real UX issue, spec a `mod_proposal_summary_i18n` task covering `proposalSummary.ts` + `PendingProposalsPane` + `proposalFilter.ts` + catalog parity across all three locales.
+
+### 2026-06-03 — Cross-event id→wording resolution for change-history row summaries
+
+- **Source**: closer for `moderator_ui.mod_change_history_pane.mod_history_event_summary` (Decision D4).
+- **Question**: `vote`, `commit`, `edge-created`, and `meta-disagreement-marked` rows show target ids (or id prefixes) rather than the referenced statement's wording. Resolvers exist (`selectNodeWordingById`, `selectEdgeLabelById`, `selectAnnotationContentById` in `apps/moderator/src/graph/selectors.ts`), but using them would break the single-event purity of `summarizeEvent` and add an O(n²) walk. The sibling `mod_history_click_to_flash` will make references navigable on the graph — a better affordance than inlining wordings into rows.
+- **Why parked**: value is uncertain given click-to-flash; the enhancement is speculative and should not be registered as a WBS leaf until it is established that click-to-flash is insufficient for the audit use case.
+- **Suggested resolution**: after `mod_history_click_to_flash` ships, assess whether id-prefix summaries are still a gap in practice. If yes, spec a `mod_history_row_summary_resolve_ids` task covering the multi-event summarizer variant (passing a log snapshot into the summary layer), extending `ChangeHistoryRow`, and updating the pane + tests.
+

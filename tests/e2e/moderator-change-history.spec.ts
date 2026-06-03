@@ -127,4 +127,45 @@ test.describe('moderator change-history pane — reverse-chronological scroller'
     const sortedDesc = [...sequences].sort((a, b) => b - a);
     expect(sequences).toEqual(sortedDesc);
   });
+
+  test('rows render a per-row payload summary (free text + localized enum)', async ({ page }) => {
+    // `mod_history_event_summary` Acceptance §5 / Decision §D6 — e2e is IN
+    // SCOPE: seed a free-text `node-created` (verbatim wording) and an
+    // enum-driven `vote` (localized choice), then assert each row's
+    // `change-history-row-summary`. Single locale (en-US), matching the
+    // spec header's convention.
+    const sessionId = await reachOperate(page, 'Change history — per-row payload summary.');
+
+    await seedWsStore(page, {
+      sessionId,
+      nodes: [{ nodeId: 'sum-node-a', wording: 'Markets allocate capital efficiently' }],
+      votes: [
+        {
+          entityKind: 'node',
+          entityId: 'sum-node-a',
+          facet: 'substance',
+          participant: GATE_DEBATER_A_USER_ID,
+          choice: 'dispute',
+        },
+      ],
+    });
+
+    const pane = page.getByTestId('change-history-pane');
+    await expect(pane).toBeVisible();
+
+    // Free-text summary: the node row shows the wording verbatim.
+    const nodeRow = pane
+      .locator('[data-testid="change-history-row"][data-event-kind="node-created"]')
+      .first();
+    await expect(nodeRow.getByTestId('change-history-row-summary')).toHaveText(
+      'Markets allocate capital efficiently',
+    );
+
+    // Enum summary: the vote row shows the localized (en-US) choice label
+    // (`summary.choice.dispute` → "Dispute").
+    const voteRow = pane
+      .locator('[data-testid="change-history-row"][data-event-kind="vote"]')
+      .first();
+    await expect(voteRow.getByTestId('change-history-row-summary')).toHaveText('Dispute');
+  });
 });

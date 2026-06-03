@@ -678,6 +678,7 @@ task moderator_ui "Moderator UI" {
     task mod_history_event_summary "Brief payload summary per entry" {
       effort 1d
       allocate team
+      complete 100
       depends !mod_history_scroller
     }
     task mod_history_click_to_flash "Click entry to flash affected entities on graph" {

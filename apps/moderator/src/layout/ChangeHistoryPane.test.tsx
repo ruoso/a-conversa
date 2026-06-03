@@ -55,6 +55,38 @@ function nodeEvent(seq: number, actor: string | null = ACTOR): Event {
   };
 }
 
+function voteEvent(seq: number): Event {
+  return {
+    id: `00000000-0000-4000-8000-${(0x7000 + seq).toString(16).padStart(12, '0')}`,
+    sessionId: SESSION,
+    sequence: seq,
+    kind: 'vote',
+    actor: ACTOR,
+    payload: {
+      target: 'facet',
+      entity_kind: 'node',
+      entity_id: '00000000-0000-4000-8000-0000000000e1',
+      facet: 'substance',
+      participant: ACTOR,
+      choice: 'dispute',
+      voted_at: '2026-06-03T00:01:00.000Z',
+    },
+    createdAt: '2026-06-03T00:01:00.000Z',
+  };
+}
+
+function sessionEndedEvent(seq: number): Event {
+  return {
+    id: `00000000-0000-4000-8000-${(0x9000 + seq).toString(16).padStart(12, '0')}`,
+    sessionId: SESSION,
+    sequence: seq,
+    kind: 'session-ended',
+    actor: ACTOR,
+    payload: { ended_at: '2026-06-03T00:01:00.000Z' },
+    createdAt: '2026-06-03T00:01:00.000Z',
+  };
+}
+
 function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status: 200,
@@ -150,6 +182,39 @@ describe('ChangeHistoryPane — row contract', () => {
 
     const row = await screen.findByTestId('change-history-row');
     expect(within(row).getByTestId('change-history-row-actor').textContent).toBe('System');
+  });
+});
+
+describe('ChangeHistoryPane — per-row payload summary (mod_history_event_summary)', () => {
+  it('renders a free-text summary (node wording) verbatim', async () => {
+    global.fetch = vi.fn(() =>
+      Promise.resolve(jsonResponse({ events: [nodeEvent(1)], nextCursor: null })),
+    );
+    render(<ChangeHistoryPane sessionId={SESSION} nowMs={NOW_MS} />);
+
+    const row = await screen.findByTestId('change-history-row');
+    expect(within(row).getByTestId('change-history-row-summary').textContent).toBe('node 1');
+  });
+
+  it('renders an enum summary (vote choice) as the localized label', async () => {
+    global.fetch = vi.fn(() =>
+      Promise.resolve(jsonResponse({ events: [voteEvent(1)], nextCursor: null })),
+    );
+    render(<ChangeHistoryPane sessionId={SESSION} nowMs={NOW_MS} />);
+
+    const row = await screen.findByTestId('change-history-row');
+    // en-US: `summary.choice.dispute` → "Dispute".
+    expect(within(row).getByTestId('change-history-row-summary').textContent).toBe('Dispute');
+  });
+
+  it('emits NO summary element for a { type: none } kind (session-ended)', async () => {
+    global.fetch = vi.fn(() =>
+      Promise.resolve(jsonResponse({ events: [sessionEndedEvent(1)], nextCursor: null })),
+    );
+    render(<ChangeHistoryPane sessionId={SESSION} nowMs={NOW_MS} />);
+
+    const row = await screen.findByTestId('change-history-row');
+    expect(within(row).queryByTestId('change-history-row-summary')).toBeNull();
   });
 });
 

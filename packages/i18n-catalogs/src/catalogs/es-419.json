@@ -244,6 +244,34 @@
         "session-mode-changed": "Modo de sesión cambiado",
         "withdraw-agreement": "Acuerdo retirado",
         "proposal-withdrawn": "Propuesta retirada"
+      },
+      "summary": {
+        "participantJoined": "{name} ({role, select, moderator {Moderador(a)} debaterA {Debatiente A} debaterB {Debatiente B} other {{role}}})",
+        "sessionModeChanged": "{previous, select, lobby {Sala de espera} operate {Operación} other {{previous}}} -> {next, select, lobby {Sala de espera} operate {Operación} other {{next}}}",
+        "edgeRole": {
+          "supports": "Apoya",
+          "rebuts": "Refuta",
+          "qualifies": "Califica",
+          "bridges-from": "Puente desde",
+          "bridges-to": "Puente hacia",
+          "defines": "Define",
+          "contradicts": "Contradice"
+        },
+        "choice": {
+          "agree": "De acuerdo",
+          "dispute": "En desacuerdo"
+        },
+        "entityKind": {
+          "node": "Nodo",
+          "edge": "Arista",
+          "annotation": "Anotación"
+        },
+        "facet": {
+          "classification": "Clasificación",
+          "substance": "Sustancia",
+          "wording": "Redacción",
+          "shape": "Forma"
+        }
       }
     },
     "captureTextInput": {

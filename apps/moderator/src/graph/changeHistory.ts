@@ -26,6 +26,8 @@
 
 import type { Event, EventKind } from '@a-conversa/shared-types';
 
+import { type EventSummary, summarizeEvent } from './eventSummary';
+
 /**
  * One row in the change-history pane. Decision §D4 — the minimal v1 row
  * carries only the fields the three columns render (kind label, actor,
@@ -56,6 +58,14 @@ export interface ChangeHistoryRow {
    * value so the formatter sees the canonical timestamp.
    */
   readonly createdAt: string;
+  /**
+   * Per-kind payload summary descriptor (`mod_history_event_summary`,
+   * Decision §D2). Computed here from the full `Event` in hand via
+   * `summarizeEvent`; the pane turns it into display text (`text`
+   * verbatim, `i18n` via `t()`, `none` → render nothing). Keeps the view
+   * layer a flat view-model with no event envelope leaking in.
+   */
+  readonly summary: EventSummary;
 }
 
 /**
@@ -87,6 +97,7 @@ export function mergeAndOrderEventLog(
       kind: event.kind,
       actor: event.actor,
       createdAt: event.createdAt,
+      summary: summarizeEvent(event),
     });
   }
 
