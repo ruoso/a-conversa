@@ -42,6 +42,7 @@ task landing_page "Public landing page" {
   task landing_walkthrough_seed "Ship a curated copy of the walkthrough event log as a prod asset" {
     effort 0.5d
     allocate team
+    complete 100
     depends data_and_methodology.data_methodology_tests.dm_e2e_tests.walkthrough_replay_e2e
     note -8<-
       The "Should zoos exist?" debate is already encoded at

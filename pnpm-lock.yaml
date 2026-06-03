@@ -271,6 +271,9 @@ importers:
       '@a-conversa/i18n-catalogs':
         specifier: workspace:*
         version: link:../../packages/i18n-catalogs
+      '@a-conversa/shared-types':
+        specifier: workspace:*
+        version: link:../../packages/shared-types
       '@a-conversa/shell':
         specifier: workspace:*
         version: link:../../packages/shell
