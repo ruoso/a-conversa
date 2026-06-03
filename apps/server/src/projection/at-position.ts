@@ -22,7 +22,7 @@ export class ReplayPositionError extends Error {
   }
 }
 
-function headSequenceOf(events: readonly Event[]): number {
+export function replayHeadSequence(events: readonly Event[]): number {
   return events.length === 0 ? 0 : events[events.length - 1]!.sequence;
 }
 
@@ -37,7 +37,7 @@ export function projectAtPosition(
   sessionId: string,
   position: number,
 ): Projection {
-  const headSequence = headSequenceOf(events);
+  const headSequence = replayHeadSequence(events);
   assertValidPosition(position, headSequence);
 
   const projection = createEmptyProjection(sessionId);

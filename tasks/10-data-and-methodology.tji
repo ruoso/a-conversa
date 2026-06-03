@@ -578,6 +578,7 @@ task data_and_methodology "Data and methodology" {
     task position_navigation "Move position forward / backward through the log" {
       effort 1d
       allocate team
+      complete 100
       depends !project_at_position
     }
     task snapshot_resolution "Resolve a named snapshot to its log position" {
